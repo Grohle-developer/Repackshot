@@ -114,6 +114,9 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **E1** · Workspace del motor en Rust sin dependencias: `rt-core`,
   `rt-cli`, `rt-wasm`, formato RSB, PNG propio, lanzador de rayos de
   marcador, CI con cross-compilación a ARM64, RISC-V y wasm — **Sonnet**.
+- **U1** · La interfaz completa de `UI.md` sobre el *store*, con el visor
+  de vista previa de three.js, modo estándar por defecto, 201 tests y
+  capturas en `docs/ui/` — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -152,7 +155,7 @@ interfaz de cualquier commit sin release.
 
 ---
 
-## U1 · La interfaz — **Opus** — abierta
+## U1 · La interfaz — **Opus** — hecha
 
 **Qué.** Toda la interfaz de `UI.md`, funcional sobre el *store* de
 `ARCHITECTURE.md` §4 y un visor de vista previa con three.js detrás de
@@ -190,7 +193,42 @@ interfaz de cualquier commit sin release.
 vista previa y usado por `main.ts` a través de una variable, de modo que
 E4 solo tenga que añadir la segunda implementación (el pool de workers
 sobre `rt.wasm`), el cambio automático *preview mientras se mueve,
-trazador cuando se para*, y una acción `setEngine`. Los tipos `SceneNode`, `MaterialInstance`, `LightInstance`,
+trazador cuando se para*, y una acción `setEngine`.
+
+**Hecho.** Toda la interfaz de `UI.md` funciona sobre el *store*
+(`src/core/store.ts`: estado inmutable, deshacer y rehacer con etiquetas
+bilingües, transacciones por gesto, `reset`) y el visor de vista previa
+de three.js (`src/render/preview.ts`, con la conversión Z-arriba → Y-arriba
+solo en `toThree`). El flujo de aceptación sin ratón (paleta: ejemplo →
+joyería → crear estudio → oro → `Ctrl ⏎`) descarga un PNG de 1920 × 1080
+y deshacer lo revierte paso a paso; arrastrar un `.glb` sobre el estado
+vacío importa, apoya y encuadra; los cuatro niveles de selección, el
+inventario de confirmación, las 72 miniaturas y las 77 esferas
+renderizadas en el navegador, el cajón de animación con reproducción, la
+cola, el Doctor con siete chequeos de escena, la guía con flechas, los
+dos temas y los dos idiomas en caliente, y el modo estándar al arrancar
+(el estado base del historial, que deshacer no puede quitar). 201 tests
+en 16 ficheros; `tests/ui-achromatic.test.ts` y `tests/strings.test.ts`
+en verde. Capturas: `docs/ui/dark-studio.png`, `light-materials.png`,
+`animation-drawer.png`. Parámetros de URL para demos y capturas
+documentados en `src/ui/README.md`.
+
+Lo que no encajaba con el plan, resuelto así: la geometría vive en un
+registro fuera del estado (`core/meshes.ts`) y el estado guarda solo
+id, recuentos y caja, para seguir siendo JSON plano; la selección y la
+cola de render no son deshacibles; los focos se colocan y apuntan al
+centro de la pieza visible, no al origen del mundo, porque la pieza
+apoya su base en el origen; el bisel se guarda en el material y se
+muestra en la sección Pieza; `render()` admite una cámara para que cada
+trabajo de la cola use la suya; *Crear estudio* pide siempre
+confirmación porque con el modo estándar siempre hay estudio; el
+importador glTF hace su propia conversión Y-arriba → Z-arriba (es del
+formato, no del visor); el tema *Sistema* es oscuro salvo que el sistema
+pida claro; three.js deja el paquete en 1.1 MB; en la vista previa,
+*Cielo* y *HDRI* usan la cúpula, el campo claro es un disco suave en la
+posición del panel, y reflejo del suelo, halo, nitidez, saturación,
+contraste y viñeta se guardan pero no se pintan (todos marcados
+*próximamente*). Queda para U2: abrir proyectos y las mallas embebidas. Los tipos `SceneNode`, `MaterialInstance`, `LightInstance`,
 `CameraState`, `Shot`, `MotionClip`, `RenderJob` en `src/core/*.ts`,
 exportados y documentados con una línea cada uno.
 
