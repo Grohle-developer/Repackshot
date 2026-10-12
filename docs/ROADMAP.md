@@ -131,7 +131,7 @@ marcador. La captura usa `--use-gl=swiftshader` y espera a
 Ver `src/data/README.md`. Las claves son las de EZ Packshot. Los tests
 fijan: 16 estudios; 72 montajes (PRODUCT 12, TRADITIONAL 13, CINEMATIC
 11, CREATIVE 8, EMOTIONAL 8, EXPERIMENTAL 8, SIGNATURE 6, SPICY 6; tres
-con `world: 'SKY'`); 77 materiales en 7 categorías; 8 ópticas; 15
+con `world: 'SKY'`); 77 materiales en 7 categorías; 8 ópticas; 16
 secuencias; 14 chequeos; 9 básicos de desgaste y 8 tipos. `setupRig`
 iguala la irradiancia de cualquier montaje a la del tipo de producto.
 
@@ -398,7 +398,7 @@ Reproducción fluida en el visor con la vista previa.
 **Depende de.** U1, R1.
 
 **Criterio.** Tests de `evaluate` con números (orbitar 90° en 4 s a mitad
-con `EASE` da 45°); los 15 presets producen un estado válido en cada
+con `EASE` da 45°); los 16 presets producen un estado válido en cada
 fotograma; un vídeo de 2 s a 12 fps sale y se reproduce.
 
 ## N2 · Cola, pases y lotes — **Sonnet**
