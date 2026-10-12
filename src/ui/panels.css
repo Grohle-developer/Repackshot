@@ -623,3 +623,23 @@
 .doctor-row.is-warn .doctor-title {
   font-weight: 600;
 }
+.anim-col-host {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.anim-col-host > .anim-col {
+  flex: 1;
+  min-width: 0;
+}
+.anim > .anim-col-host + .anim-col,
+.anim > .anim-col + .anim-col-host {
+  border-left: 1px solid var(--line);
+}
+.drawer-host:empty {
+  display: none;
+}
+.bar .select {
+  max-width: 190px;
+}

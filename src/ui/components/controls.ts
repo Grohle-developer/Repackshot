@@ -31,6 +31,8 @@ export interface NumberFieldProps {
   disabled?: boolean;
   /** Draw a thin bar for where the value sits between min and max. */
   fill?: boolean;
+  /** Custom display of the value (the field still edits the raw number). */
+  format?: (value: number) => string;
   /** Called on every change with the gesture token of the drag / edit. */
   onChange(value: number, gesture: string): void;
 }
@@ -75,7 +77,7 @@ export function numberField(p: NumberFieldProps): Control<number> {
     fillEl,
   );
   const render = () => {
-    valueEl.textContent = formatNumber(value, getLang(), digits);
+    valueEl.textContent = p.format ? p.format(value) : formatNumber(value, getLang(), digits);
     el.setAttribute('aria-valuenow', String(value));
     if (fillEl && p.min !== undefined && p.max !== undefined) {
       fillEl.style.width = `${(100 * (value - p.min)) / (p.max - p.min || 1)}%`;

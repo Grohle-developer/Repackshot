@@ -18,6 +18,7 @@ export { lightName };
 export function materialName(mat: MaterialInstance | undefined, lang: Lang = getLang()): string {
   if (!mat) return tIn(lang, 'material.none');
   if (mat.name) return mat.name;
+  if (mat.role === 'DEFAULT') return mat.edited ? tIn(lang, 'material.edited', { name: tIn(lang, 'material.default') }) : tIn(lang, 'material.default');
   const base = mat.origin ? (materialPreset(mat.origin)?.label[lang] ?? mat.origin) : tIn(lang, 'material.own');
   return mat.edited ? tIn(lang, 'material.edited', { name: base }) : base;
 }
@@ -30,7 +31,9 @@ export function presetLabel(key: string): Label {
   return materialPreset(key)?.label ?? { en: key, es: key };
 }
 
+/** Product type label; GENERIC shows as "Standard" (the boot mode). */
 export function studioLabel(key: string): Label {
+  if (key === 'GENERIC') return { en: tIn('en', 'product.standard'), es: tIn('es', 'product.standard') };
   return studioPreset(key)?.label ?? { en: key, es: key };
 }
 

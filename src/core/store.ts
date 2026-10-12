@@ -9,7 +9,7 @@ import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
-import { lightsFromRig, reduceStudio, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
+import { buildStudio, lightsFromRig, reduceStudio, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
 import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialInstance } from './materials';
 import { reduceRender, type OutputFormat, type RenderAction, type RenderJob, type RenderProgress, type RenderQuality } from './render';
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
@@ -145,7 +145,13 @@ export function isVolatile(action: Action): boolean {
   return VOLATILE_ACTIONS.has(action.type);
 }
 
-/** The state of a new, empty project. */
+/**
+ * The state of a new, empty project: Standard mode, everything already set.
+ * The GENERIC ("Standard") studio is built (its rig, the studio dome, the
+ * reference camera, PREVIEW quality, HD), so nothing has to be chosen before
+ * importing or loading the example. It is the base of the history: undo
+ * cannot go before it.
+ */
 export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } = {}): ProjectState {
   const partSizeMm = 200;
   const base: ProjectState = {
@@ -188,7 +194,8 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
     },
     doctor: { results: [], stamp: 0 },
   };
-  return { ...base, doctor: { results: runDoctor(base), stamp: 0 } };
+  const built = buildStudio(base);
+  return { ...built, doctor: { results: runDoctor(built), stamp: 0 } };
 }
 
 function reduceMeta(state: ProjectState, action: MetaAction): ProjectState {

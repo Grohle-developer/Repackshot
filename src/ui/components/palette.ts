@@ -10,7 +10,7 @@ import { STUDIO_PRESETS } from '../../data/studios';
 import type { Label } from '../../data/types';
 import * as cmd from '../commands';
 import { h } from '../dom';
-import { cameraLabel } from '../names';
+import { cameraLabel, studioLabel } from '../names';
 import type { Ctx } from '../reactive';
 import { ACTIONS, kbdText } from '../shortcuts';
 import { L, getLang, t, type StringKey } from '../strings';
@@ -40,7 +40,7 @@ function items(ctx: Ctx): Item[] {
     if (a.palette === false) continue;
     out.push({ id: `action:${a.id}`, category: 'palette.cat.action', label: L(a.label), kbd: kbdText(a.keys), run: () => a.run(ctx) });
   }
-  for (const p of STUDIO_PRESETS) out.push({ id: `product:${p.key}`, category: 'palette.cat.product', label: p.label, run: () => cmd.setProductType(ctx, p.key) });
+  for (const p of STUDIO_PRESETS) out.push({ id: `product:${p.key}`, category: 'palette.cat.product', label: studioLabel(p.key), run: () => cmd.setProductType(ctx, p.key) });
   for (const m of MATERIAL_PRESETS) out.push({ id: `material:${m.key}`, category: 'palette.cat.material', label: m.label, run: () => cmd.requestAssign(ctx, { preset: m.key }) });
   for (const st of LIGHT_SETUPS) out.push({ id: `setup:${st.key}`, category: 'palette.cat.setup', label: st.label, run: () => cmd.requestSetup(ctx, st.key) });
   for (const cam of Object.values(s.camera.cameras)) out.push({ id: `camera:${cam.id}`, category: 'palette.cat.camera', label: cameraLabel(s, cam), run: () => cmd.activateCamera(ctx, cam.id) });

@@ -58,6 +58,8 @@ export interface UiState {
   /** Window narrower than 1100 px: side panels become drawers. */
   narrow: boolean;
   wizard: WizardState | null;
+  /** Clip selected in the animation drawer. */
+  selectedClip: string | null;
   customResolution: boolean;
   /** A file is being dragged over the viewport. */
   fileDrag: boolean;
@@ -117,6 +119,7 @@ export function defaultUiState(): UiState {
     toasts: [],
     narrow: false,
     wizard: null,
+    selectedClip: null,
     customResolution: false,
     fileDrag: false,
     shortcutsOpen: false,

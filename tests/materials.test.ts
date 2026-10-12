@@ -4,6 +4,8 @@ import { WEAR_FAMILY_TYPES } from '../src/data/wear';
 import {
   FAMILY_PARAMS,
   assignAction,
+  defaultInstance,
+  inventoryFor,
   indicesToRanges,
   instanceFromPreset,
   triangleMaterials,
@@ -116,5 +118,30 @@ describe('face ranges', () => {
     const per = triangleMaterials(s.scene.nodes[ids.body]);
     const preset = (i: number) => s.materials[per[i]!].preset;
     expect([0, 1, 2, 3, 4].map(preset)).toEqual(['RUBBER', 'RUBBER', 'GOLD', 'RUBBER', 'PAINT_MET']);
+  });
+});
+
+describe('default material', () => {
+  it('is the neutral WHITE_STUDIO preset marked DEFAULT', () => {
+    const d = defaultInstance('m9', 100);
+    expect(d.origin).toBe('WHITE_STUDIO');
+    expect(d.role).toBe('DEFAULT');
+  });
+
+  it('counts as no material for the inventory and for KEEP', () => {
+    let s = exampleState();
+    const ids = keyIds(s);
+    // Cap and collar come in without a material: they carry the Default.
+    const nodes = { ...s.scene.nodes };
+    for (const k of ['cap', 'collar']) nodes[ids[k]] = { ...nodes[ids[k]], material: 'mdef' };
+    s = { ...s, scene: { ...s.scene, nodes }, materials: { ...s.materials, mdef: defaultInstance('mdef', 121) } };
+    // Closure holds only Defaults: no question.
+    expect(inventoryFor(s, assignAction(s, { preset: 'GOLD' }, 'REPLACE', [ids.closure])).needsConfirm).toBe(false);
+    // Body (paint) + cap (Default): one real material, no question either.
+    expect(inventoryFor(s, assignAction(s, { preset: 'GOLD' }, 'REPLACE', [ids.body, ids.cap])).needsConfirm).toBe(false);
+    // KEEP fills the Default parts and leaves the painted body.
+    const t = apply(s, assignAction(s, { preset: 'BRASS' }, 'KEEP', [ids.model]));
+    expect(t.materials[t.scene.nodes[ids.cap].material!].preset).toBe('BRASS');
+    expect(t.materials[t.scene.nodes[ids.body].material!].preset).toBe('PAINT_MET');
   });
 });

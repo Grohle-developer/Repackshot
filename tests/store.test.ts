@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { assignAction, inventoryFor, materialInventory } from '../src/core/materials';
 import { createInitialState, createStore, reduce, type Action } from '../src/core/store';
 import { partsUnder } from '../src/core/scene';
+import { studioRig } from '../src/core/rig';
+import { buildExample } from '../src/core/example';
 import { exampleState, exampleStore, keyIds } from './helpers';
 
 const presetOf = (state: ReturnType<typeof exampleState>, partId: string): string | null => {
@@ -198,5 +200,38 @@ describe('store', () => {
     store.dispatch({ type: 'render/enqueue', name: 'Job' });
     const s = store.get();
     expect(JSON.parse(JSON.stringify(s))).toEqual(s);
+  });
+});
+
+describe('boot state (Standard mode)', () => {
+  it('starts with the GENERIC studio already built', () => {
+    const s = createInitialState();
+    expect(s.studio.preset).toBe('GENERIC');
+    expect(s.studio.built).toBe(true);
+    expect(s.studio.lightSetup).toBe('PRESET');
+    expect(s.studio.lights.map((l) => [l.role, l.power])).toEqual(studioRig('GENERIC').map((r) => [r.role, r.energy]));
+    expect(s.environment.kind).toBe('STUDIO');
+    expect(s.environment.strength).toBe(0.6);
+    expect(s.render.quality).toBe('PREVIEW');
+    expect([s.render.width, s.render.height]).toEqual([1920, 1080]);
+    const cam = s.camera.cameras[s.camera.active];
+    expect([cam.focalMm, cam.fstop, cam.azimuth, cam.elevation]).toEqual([85, 5.6, -35, 22]);
+    expect(s.meta.dirty).toBe(false);
+  });
+
+  it('cannot be undone, and the example loads on top of it', () => {
+    const store = createStore(createInitialState());
+    store.undo();
+    expect(store.get().studio.built).toBe(true);
+    expect(store.history().undo).toEqual([]);
+    store.transaction('Load example', () => {
+      store.dispatch({ type: 'scene/addModel', payload: buildExample(), replace: true });
+      store.dispatch({ type: 'camera/frame' });
+    });
+    expect(store.get().scene.partSizeMm).toBeCloseTo(121, 2);
+    store.undo();
+    store.undo();
+    expect(store.get().scene.roots).toEqual([]);
+    expect(store.get().studio.built).toBe(true);
   });
 });

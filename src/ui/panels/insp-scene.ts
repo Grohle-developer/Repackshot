@@ -28,7 +28,7 @@ function productSection(ctx: Ctx, scope: Scope): HTMLElement {
   const { store } = ctx;
   const s0 = store.get();
   const typeSel = select(
-    STUDIO_PRESETS.map((p) => ({ value: p.key, label: lbl(p.label) })),
+    STUDIO_PRESETS.map((p) => ({ value: p.key, label: lbl(studioLabel(p.key)) })),
     s0.studio.preset,
     (v) => cmd.setProductType(ctx, v),
     t('product.type'),

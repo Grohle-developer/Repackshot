@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { defaultInstance } from '../src/core/materials';
+import { materialName, studioLabel } from '../src/ui/names';
 import { L, STRINGS, setLang, t } from '../src/ui/strings';
 
 describe('interface strings', () => {
@@ -32,5 +34,15 @@ describe('interface strings', () => {
 
   it('English is the default', () => {
     expect(t('app.untitled')).toBe('Untitled');
+  });
+});
+
+describe('names shown for model objects', () => {
+  it('the Default material and the Standard product type', () => {
+    const d = defaultInstance('m1', 100);
+    expect(materialName(d, 'en')).toBe('Default');
+    expect(materialName(d, 'es')).toBe('Predeterminado');
+    expect(studioLabel('GENERIC')).toEqual({ en: 'Standard', es: 'Estándar' });
+    expect(studioLabel('JEWELLERY').en).toBe('Jewellery');
   });
 });

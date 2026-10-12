@@ -43,6 +43,21 @@ export interface MaterialInstance {
   textures: MaterialTextures;
   /** Rounded-edge radius in millimetres (0 = no bevel). */
   bevelRadiusMm: number;
+  /** 'DEFAULT': the neutral material a part gets when it comes without one. */
+  role?: 'DEFAULT';
+}
+
+/** Preset of the neutral default material. */
+export const DEFAULT_MATERIAL_PRESET = 'WHITE_STUDIO';
+
+/** The neutral material of a part imported without one (shown as "Default"). */
+export function defaultInstance(id: MaterialId, partSizeMm: number): MaterialInstance {
+  return { ...instanceFromPreset(id, DEFAULT_MATERIAL_PRESET, partSizeMm)!, role: 'DEFAULT' };
+}
+
+/** A real choice of material (not missing, not the neutral default). */
+function isChosen(mat: MaterialInstance | undefined): boolean {
+  return mat !== undefined && mat.role !== 'DEFAULT';
 }
 
 /** How an assignment treats parts that already carry a material. */
@@ -180,6 +195,7 @@ function structuredCloneParams(p: MaterialParams): MaterialParams {
 
 /** Identity used to decide whether two parts carry "the same" material. */
 export function materialIdentity(mat: MaterialInstance): string {
+  if (mat.role === 'DEFAULT' && !mat.edited) return 'default';
   return mat.preset && !mat.edited ? `preset:${mat.preset}` : `instance:${mat.id}`;
 }
 
@@ -208,7 +224,8 @@ export interface Inventory {
 
 /**
  * What the target parts hold before an assignment (UI §4.1). Instances of the
- * same unedited preset count as one material.
+ * same unedited preset count as one material; the neutral default counts as
+ * no material.
  */
 export function materialInventory(state: ProjectState, parts: readonly NodeId[]): Inventory {
   const byIdentity = new Map<string, InventoryEntry>();
@@ -216,7 +233,7 @@ export function materialInventory(state: ProjectState, parts: readonly NodeId[])
   for (const p of parts) {
     const node = state.scene.nodes[p];
     if (!node || node.kind !== 'PART') continue;
-    const mats = partMaterials(node).filter((m) => state.materials[m]);
+    const mats = partMaterials(node).filter((m) => isChosen(state.materials[m]));
     if (mats.length === 0) unassigned++;
     const seenHere = new Set<string>();
     for (const m of mats) {
@@ -311,7 +328,7 @@ export type MaterialAction =
 
 /** Instance for a catalogue key: reuses an unedited one of the same preset. */
 function ensureInstance(state: ProjectState, presetKey: string): { state: ProjectState; id: MaterialId | null } {
-  const existing = Object.values(state.materials).find((m) => m.preset === presetKey && !m.edited);
+  const existing = Object.values(state.materials).find((m) => m.preset === presetKey && !m.edited && m.role !== 'DEFAULT');
   if (existing) return { state, id: existing.id };
   const id = nextId('m', Object.keys(state.materials));
   const inst = instanceFromPreset(id, presetKey, state.scene.partSizeMm);
@@ -339,7 +356,7 @@ function assign(state: ProjectState, action: Extract<MaterialAction, { type: 'ma
     if (parts.length === 0) return state;
     for (const p of parts) {
       const node = nodes[p];
-      const has = partMaterials(node).length > 0;
+      const has = partMaterials(node).some((m) => isChosen(next.materials[m]));
       if (action.mode === 'KEEP' && has) continue;
       if (node.material === matId && !node.faceMaterials?.length) continue;
       const updated: SceneNode = { ...node, material: matId };
@@ -479,7 +496,7 @@ export function inventoryFor(state: ProjectState, action: Extract<MaterialAction
   let unassigned = 0;
   for (const i of action.faces.indices) {
     const m = per[i];
-    if (!m || !state.materials[m]) {
+    if (!m || !isChosen(state.materials[m])) {
       unassigned++;
       continue;
     }
