@@ -159,8 +159,8 @@ const TABLE = {
   'viewport.noEngine': ['WebGL is not available: the viewport cannot draw.', 'WebGL no está disponible: el visor no puede dibujar.'],
   'empty.title': ['Drop a model here', 'Suelta aquí un modelo'],
   'empty.formats': [
-    'glTF and GLB now · OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE and USD coming soon',
-    'glTF y GLB ya · OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE y USD próximamente',
+    'glTF, GLB, OBJ and STL now · FBX, 3DM, STEP, IGES, 3MF, PLY, DAE and USD coming soon',
+    'glTF, GLB, OBJ y STL ya · FBX, 3DM, STEP, IGES, 3MF, PLY, DAE y USD próximamente',
   ],
   'empty.import': ['Import model', 'Importar modelo'],
   'empty.example': ['Load example part', 'Cargar pieza de ejemplo'],
@@ -169,6 +169,21 @@ const TABLE = {
   'import.soon': ['{format} import is coming soon', 'La importación de {format} llega próximamente'],
   'import.unknown': ['{name} is not a model file this version reads', '{name} no es un archivo de modelo que esta versión lea'],
   'import.done': ['Imported {name}', 'Importado {name}'],
+  'import.msg.scaleSmall': [
+    '{name} measures {size} mm. If the file is in metres, the Doctor can scale it ×1000.',
+    '{name} mide {size} mm. Si el archivo está en metros, el Doctor puede escalarlo ×1000.',
+  ],
+  'import.msg.scaleLarge': [
+    '{name} measures {size} mm. If the file is in micrometres, the Doctor can scale it ÷1000.',
+    '{name} mide {size} mm. Si el archivo está en micrómetros, el Doctor puede escalarlo ÷1000.',
+  ],
+  'import.msg.mtlIgnored': [
+    'Material libraries ({files}) are not read yet: parts start with a grey material named after usemtl.',
+    'Las bibliotecas de materiales ({files}) aún no se leen: las piezas empiezan con un material gris con el nombre de usemtl.',
+  ],
+  'import.msg.degenerate': ['{count} empty triangles dropped from {part}', 'Se descartaron {count} triángulos vacíos de {part}'],
+  'import.msg.badFace': ['{count} malformed faces skipped', 'Se omitieron {count} caras mal formadas'],
+  'import.msg.partialNormals': ['{part} has normals on only some faces: they were recomputed', '{part} trae normales solo en algunas caras: se recalcularon'],
   'example.model': ['Example bottle', 'Frasco de ejemplo'],
   'example.closure': ['Closure', 'Cierre'],
   'example.base': ['Base', 'Base'],
@@ -521,6 +536,14 @@ const TABLE = {
   'doctor.unavailable': ['Not available yet: needs the engine', 'No disponible aún: necesita el motor'],
   'doctor.fixSoon': ['Fix coming soon', 'Arreglo próximamente'],
   'doctor.scale.declared': ['The model measures {actual} mm but its declared size is {expected} mm.', 'El modelo mide {actual} mm pero su tamaño declarado es {expected} mm.'],
+  'doctor.scale.metres': [
+    'The model measures {actual} mm: it looks like a file in metres. The fix scales it ×1000.',
+    'El modelo mide {actual} mm: parece un archivo en metros. El arreglo lo escala ×1000.',
+  ],
+  'doctor.scale.micro': [
+    'The model measures {actual} mm: it looks like a file in micrometres. The fix scales it ÷1000.',
+    'El modelo mide {actual} mm: parece un archivo en micrómetros. El arreglo lo escala ÷1000.',
+  ],
   'doctor.scale.preset': ['The model measures {actual} mm; this product type is about {expected} mm.', 'El modelo mide {actual} mm; este tipo de producto ronda los {expected} mm.'],
   'doctor.transform': ['{count} parts carry an unapplied scale.', '{count} piezas llevan una escala sin aplicar.'],
   'doctor.origin': ['The origin is off-centre or the model does not rest on the floor ({gap} mm).', 'El origen está descentrado o el modelo no se apoya en el suelo ({gap} mm).'],

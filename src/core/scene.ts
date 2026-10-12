@@ -54,6 +54,11 @@ export interface ModelSource {
   /** File name, or the example key. */
   name: string;
   format?: string;
+  /**
+   * Set by importers of unit-less formats (OBJ, STL) when the size looks like metres (1000) or
+   * micrometres (0.001): the factor that would bring it to millimetres. The Doctor's scale check uses it.
+   */
+  unitHint?: 1000 | 0.001;
 }
 
 /** One node of the scene tree: model, group or part (SPEC §3.1). */

@@ -3,6 +3,8 @@ import { DOCTOR_CHECKS } from '../src/data/doctor';
 import { SCENE_CHECKS, runDoctor, warningCount } from '../src/core/doctor';
 import { boundsOf, measuredSizeMm, sceneBounds } from '../src/core/scene';
 import type { ProjectState } from '../src/core/store';
+import { buildExample } from '../src/core/example';
+import { createInitialState } from '../src/core/store';
 import { apply, exampleState, keyIds } from './helpers';
 
 const status = (s: ProjectState, key: string) => runDoctor(s).find((r) => r.key === key)!.status;
@@ -41,6 +43,38 @@ describe('doctor', () => {
     const fixed2 = fix(declared, 'scale');
     expect(status(fixed2, 'scale')).toBe('OK');
     expect(measuredSizeMm(fixed2)).toBeCloseTo(30, 3);
+  });
+
+  it('scale: an importer hint (metres, micrometres) gives the exact factor; without one the typical size', () => {
+    // The example bottle, re-imported as if an OBJ reader had flagged its unit.
+    const hinted = (hint: 1000 | 0.001 | undefined, mm: number) => {
+      const payload = buildExample();
+      const root = payload.nodes[payload.roots[0]];
+      root.source = { kind: 'FILE', name: 'bottle.obj', format: 'OBJ', ...(hint ? { unitHint: hint } : {}) };
+      const state = apply(createInitialState(), { type: 'scene/addModel', payload, replace: true });
+      return apply(state, { type: 'scene/setPartSize', mm });
+    };
+    const scale = (s: ProjectState) => runDoctor(s).find((r) => r.key === 'scale')!;
+    // A file in metres: 0.121 mm declared and measured, in a 200 mm studio. x1000 gives 121, not 200.
+    const metres = hinted(1000, 0.121);
+    expect(scale(metres).detail).toMatchObject({ reason: 'preset', actual: 0.121, expected: 200, factor: 1000 });
+    const fixedMetres = fix(metres, 'scale');
+    expect(measuredSizeMm(fixedMetres)).toBeCloseTo(121, 6);
+    expect(status(fixedMetres, 'scale')).toBe('OK');
+    // The hint is spent by the fix.
+    expect(fixedMetres.scene.nodes[fixedMetres.scene.roots[0]].source).toEqual({ kind: 'FILE', name: 'bottle.obj', format: 'OBJ' });
+    // A file in micrometres: 150 000 mm, so /1000 gives 150.
+    const micro = hinted(0.001, 150000);
+    expect(scale(micro).detail).toMatchObject({ reason: 'preset', factor: 0.001 });
+    expect(measuredSizeMm(fix(micro, 'scale'))).toBeCloseTo(150, 6);
+    // A hint whose factor would still leave the size out of range is not offered.
+    expect(scale(hinted(1000, 0.0003)).detail.factor).toBeUndefined();
+    expect(measuredSizeMm(fix(hinted(1000, 0.0003), 'scale'))).toBeCloseTo(200, 6);
+    // No hint, no factor: the product type's size, as before.
+    expect(scale(hinted(undefined, 0.121)).detail.factor).toBeUndefined();
+    expect(measuredSizeMm(fix(hinted(undefined, 0.121), 'scale'))).toBeCloseTo(200, 6);
+    // Small sizes are not rounded away in the message.
+    expect(scale(hinted(1000, 0.0123)).detail.actual).toBe(0.0123);
   });
 
   it('origin: off-centre origin and a model floating above the floor', () => {

@@ -54,6 +54,12 @@ export interface RenderRequest {
   onProgress?: (progress: number) => void;
 }
 
+/** A note or warning an importer attaches. `code` selects the string `import.msg.<code>`. */
+export interface ImportMessage {
+  code: string;
+  params: Record<string, string | number>;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -62,7 +68,7 @@ export interface AppServices {
   /** The viewport as it is now, PNG. */
   captureViewport(): Promise<Blob | null>;
   /** Reads a model file; throws with a readable reason. Names come from the file. */
-  importFile(file: File): Promise<ModelPayload>;
+  importFile(file: File): Promise<ModelPayload & { warnings?: ImportMessage[]; notes?: ImportMessage[] }>;
   /** The project as a .repack.json blob. */
   serializeProject(state: ProjectState): Blob;
 }

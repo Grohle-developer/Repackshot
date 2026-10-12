@@ -83,8 +83,8 @@ const services: AppServices = {
   },
   captureViewport: () => (preview ? preview.capture() : Promise.resolve(null)),
   async importFile(file) {
-    const { readGltf } = await import('./io/gltf');
-    return readGltf(file);
+    const { importFile } = await import('./io/import');
+    return importFile(file);
   },
   serializeProject,
 };

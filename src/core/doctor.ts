@@ -54,19 +54,38 @@ function floorTolerance(state: ProjectState): number {
   return Math.max(0.01, state.scene.partSizeMm * 0.002);
 }
 
+/** Rounds a size for the message: whole millimetres, or three significant digits below 10. */
+function roundSize(mm: number): number {
+  return mm >= 10 ? Math.round(mm) : Number(mm.toPrecision(3));
+}
+
+/**
+ * The unit factor an importer suggested for the model (metres: 1000, micrometres: 0.001), when
+ * every model of the scene agrees on it.
+ */
+function unitHint(state: ProjectState): 1000 | 0.001 | null {
+  const hints = state.scene.roots.map((r) => state.scene.nodes[r]?.source?.unitHint ?? null);
+  return hints.length > 0 && hints.every((h) => h !== null && h === hints[0]) ? hints[0] : null;
+}
+
 function checkScale(state: ProjectState): DoctorResult {
   const actual = measuredSizeMm(state);
   if (actual <= 0) return ok('scale');
   const declared = state.scene.partSizeMm;
   const r1 = actual / declared;
   if (declared > 0 && (r1 > SCALE_RATIO || r1 < 1 / SCALE_RATIO)) {
-    return warn('scale', { reason: 'declared', actual: Math.round(actual), expected: Math.round(declared) });
+    return warn('scale', { reason: 'declared', actual: roundSize(actual), expected: roundSize(declared) });
   }
   const preset = studioPreset(state.studio.preset);
   if (preset) {
     const r2 = actual / preset.sizeMm;
     if (r2 > SCALE_RATIO || r2 < 1 / SCALE_RATIO) {
-      return warn('scale', { reason: 'preset', actual: Math.round(actual), expected: preset.sizeMm, preset: preset.key });
+      // The importer saw a size that looks like metres or micrometres: offer that exact factor when it
+      // brings the model inside the range this check accepts.
+      const hint = unitHint(state);
+      const r3 = hint ? (actual * hint) / preset.sizeMm : 0;
+      const factor = hint && r3 <= SCALE_RATIO && r3 >= 1 / SCALE_RATIO ? hint : null;
+      return warn('scale', { reason: 'preset', actual: roundSize(actual), expected: preset.sizeMm, preset: preset.key, ...(factor ? { factor } : {}) });
     }
   }
   return ok('scale');
@@ -197,7 +216,20 @@ export function fixDoctor(state: ProjectState, key: DoctorCheckKey): ProjectStat
     case 'scale': {
       const r = checkScale(state);
       if (r.status !== 'WARN') return state;
-      return reduceScene(state, { type: 'scene/setPartSize', mm: Number(r.detail.expected) });
+      // A file in metres or micrometres: the exact unit factor, otherwise the typical size.
+      const factor = Number(r.detail.factor);
+      const mm = factor > 0 ? measuredSizeMm(state) * factor : Number(r.detail.expected);
+      const next = reduceScene(state, { type: 'scene/setPartSize', mm });
+      // The hint is spent: the model is in millimetres now.
+      const nodes = { ...next.scene.nodes };
+      for (const root of next.scene.roots) {
+        const source = nodes[root]?.source;
+        if (!source?.unitHint) continue;
+        const spent = { ...source };
+        delete spent.unitHint;
+        nodes[root] = { ...nodes[root], source: spent };
+      }
+      return { ...next, scene: { ...next.scene, nodes } };
     }
     case 'origin': {
       let next = state;

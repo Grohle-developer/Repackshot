@@ -11,12 +11,14 @@ import { defaultInstance, plainInstance, type MaterialId, type MaterialInstance 
 import { boxCenter } from '../core/math';
 import { positionsBounds, registerMesh } from '../core/meshes';
 import type { ModelPayload, NodeId, SceneNode } from '../core/scene';
+import { yUpToZUp } from './mesh-common';
 
 let importCounter = 0;
 
 /** glTF space (Y up, metres) to model space (Z up, millimetres). */
 function fromGltf(x: number, y: number, z: number): [number, number, number] {
-  return [x * 1000, -z * 1000, y * 1000];
+  const p = yUpToZUp(x, y, z);
+  return [p[0] * 1000, p[1] * 1000, p[2] * 1000];
 }
 
 function materialParams(m: THREE.Material): { name: string; params: Record<string, unknown> } {
@@ -39,7 +41,10 @@ function parse(buffer: ArrayBuffer): Promise<GLTF> {
   });
 }
 
-export async function readGltf(file: File): Promise<ModelPayload> {
+/** A File, or anything with a name and its bytes (see `importFile` in import.ts). */
+export type GltfSource = Pick<File, 'name' | 'arrayBuffer'>;
+
+export async function readGltf(file: GltfSource): Promise<ModelPayload> {
   const buffer = await file.arrayBuffer();
   const gltf = await parse(buffer);
   const root = gltf.scene;

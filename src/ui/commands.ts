@@ -16,8 +16,9 @@ import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
 import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, setupLabel, studioLabel, targetLabel } from './names';
 import { writePref } from './prefs';
+import type { ImportMessage } from './ports';
 import type { Ctx } from './reactive';
-import { L, formatClock, getLang, t, type StringKey } from './strings';
+import { L, formatClock, formatNumber, getLang, t, type StringKey } from './strings';
 
 export type { ConfirmSpec };
 
@@ -55,9 +56,20 @@ export function pickFiles(accept: string, multiple = false): Promise<File[]> {
   });
 }
 
-/** Formats the empty state lists; only glTF is read in this version. */
-export const SOON_FORMATS = ['obj', 'stl', 'fbx', '3dm', 'step', 'stp', 'iges', 'igs', '3mf', 'ply', 'dae', 'usd', 'usdz', 'usda', 'usdc'];
-export const MODEL_ACCEPT = ['.glb', '.gltf', ...SOON_FORMATS.map((f) => `.${f}`)].join(',');
+/** Extensions read in this version (the importers live in src/io/import.ts; ui cannot import them). */
+export const READ_FORMATS = ['glb', 'gltf', 'obj', 'stl'];
+/** Formats the empty state lists as coming soon. */
+export const SOON_FORMATS = ['fbx', '3dm', 'step', 'stp', 'iges', 'igs', '3mf', 'ply', 'dae', 'usd', 'usdz', 'usda', 'usdc'];
+export const MODEL_ACCEPT = [...READ_FORMATS, ...SOON_FORMATS].map((f) => `.${f}`).join(',');
+
+/** Shows what an importer reports (dropped triangles, a suspicious size...) as toasts, warnings first. */
+function reportImport(ctx: Ctx, name: string, messages: readonly ImportMessage[]): void {
+  for (const m of messages.slice(0, 2)) {
+    const params: Record<string, string | number> = { name };
+    for (const [k, v] of Object.entries(m.params)) params[k] = typeof v === 'number' ? formatNumber(v, getLang(), 4) : v;
+    ctx.ui.toast(t(dyn(`import.msg.${m.code}`), params));
+  }
+}
 
 export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<void> {
   for (const file of files) {
@@ -68,7 +80,7 @@ export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<voi
       ctx.ui.toast(msg);
       continue;
     }
-    if (ext !== 'glb' && ext !== 'gltf') {
+    if (!READ_FORMATS.includes(ext)) {
       const msg = t('import.unknown', { name: file.name });
       ctx.ui.set({ importMessage: msg });
       ctx.ui.toast(msg);
@@ -76,7 +88,8 @@ export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<voi
     }
     ctx.ui.set({ importMessage: t('import.busy', { name: file.name }) });
     try {
-      const payload = await ctx.services.importFile(file);
+      const result = await ctx.services.importFile(file);
+      const payload = { nodes: result.nodes, roots: result.roots, materials: result.materials };
       const replace = ctx.store.get().scene.roots.length === 0;
       // The Standard studio is already there: the part shows lit, resting on the floor and framed.
       ctx.store.transaction(L('undo.import', { name: file.name }), () => {
@@ -87,6 +100,7 @@ export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<voi
       });
       ctx.ui.set({ importMessage: null });
       ctx.ui.toast(t('import.done', { name: file.name }));
+      reportImport(ctx, file.name, [...(result.warnings ?? []), ...(result.notes ?? [])]);
     } catch (err) {
       const msg = t('import.failed', { name: file.name, reason: err instanceof Error ? err.message : String(err) });
       ctx.ui.set({ importMessage: msg });

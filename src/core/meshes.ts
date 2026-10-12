@@ -14,6 +14,14 @@ export interface MeshData {
   normals: Float32Array;
   indices: Uint32Array;
   uvs?: Float32Array;
+  /**
+   * Hard edges, as pairs of vertex indices (`[a0, b0, a1, b1, ...]`). An edge
+   * is hard when the angle between its two faces exceeds the smoothing angle.
+   * Each edge appears once; the other face of the edge has the same positions
+   * but may use other vertex indices (the vertices are split along hard edges).
+   * Importers that cannot tell leave it out.
+   */
+  sharpEdges?: Uint32Array;
 }
 
 /** What the state keeps about a mesh: enough for bounds, counts and the Doctor. */

@@ -18,6 +18,8 @@ function sentence(r: DoctorResult): string {
   const d = r.detail;
   switch (r.key) {
     case 'scale':
+      if (d.factor === 1000) return t('doctor.scale.metres', { actual: formatNumber(Number(d.actual), getLang(), 4) });
+      if (d.factor === 0.001) return t('doctor.scale.micro', { actual: formatNumber(Number(d.actual), getLang(), 4) });
       return t(d.reason === 'preset' ? 'doctor.scale.preset' : 'doctor.scale.declared', { actual: Number(d.actual), expected: Number(d.expected) });
     case 'transform':
       return t('doctor.transform', { count: Number(d.count) });
