@@ -743,6 +743,12 @@
   margin-top: -4px;
   padding-left: 116px;
 }
+.field.wide + .import-aux {
+  padding-left: 0;
+}
+.import-sheet .field.wide {
+  gap: 4px;
+}
 .import-actions {
   position: sticky;
   bottom: 0;

@@ -125,6 +125,9 @@ decisiones escritas (datos, contratos, revisión), no código.
   iguales), BVH4/8 con SAH y recorrido SIMD, intersección *watertight*,
   instancias, `pick`, `rt-bench`; 121 tests, también ejecutados en wasm
   — **Opus**.
+- **I3** · FBX, 3DM, 3MF, PLY, DAE y USD por cargadores MIT bajo demanda,
+  hoja de importación en línea con unidades y eje detectados por formato,
+  tubería de opciones pura; 405 tests — **Sonnet**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -324,7 +327,7 @@ calidad cambia el número de triángulos; el módulo no se descarga hasta
 que se importa un STEP (test de que `import('…/occt')` no aparece en el
 chunk inicial de `vite build`).
 
-## I3 · Importadores y hoja de importación — **Sonnet**
+## I3 · Importadores y hoja de importación — **Sonnet** — hecha
 
 **Qué.** `src/io/import.ts`: detección por extensión y cabecera,
 **hoja de importación** en línea (`UI.md` §2.3, `SPEC.md` §5) con
@@ -348,6 +351,31 @@ grupos, triángulos y materiales; la hoja aplica cada opción (test del
 *store*: unidades × 25.4, eje arriba intercambia Y/Z, agrupar por
 material produce N grupos); el chunk inicial no contiene ningún
 importador (test sobre `dist/`).
+
+**Hecho.** Lectores `fbx.ts` (ASCII y binario 7400/7500, `UnitScaleFactor`
+y `UpAxis`), `rhino.ts` (rhino3dm 8.35.0 MIT en un worker, capas como
+grupos, capas ocultas, unidades del documento, aviso de B-rep sin malla
+de render), `threemf.ts`, `ply.ts`, `collada.ts`, `usd.ts` (`USDLoader`,
+porque `USDZLoader` está obsoleto en three 0.186) y `three-scene.ts`
+(conversión común de `Object3D` a nodos); `src/core/import-options.ts`
+con `applyImportOptions` puro (unidades, eje, invertir normales, agrupar
+por, política de materiales, separar) por el que pasan también glTF, OBJ
+y STL, que ya no escalan ni giran por su cuenta; hoja de importación en
+el inspector con los valores detectados; `frameBox` ajusta los planos de
+recorte. 405 tests en 29 ficheros, 58 mutaciones comprobadas; en el
+navegador, FBX, 3DM, 3MF, DAE, PLY, USDA y USDZ abren la hoja e importan
+con `Enter`, sin errores de consola.
+
+Lo que no encajaba: un fichero por lector en vez de `mesh-formats.ts`;
+`npm run qa` pasa a `check → build → test` para que el test de *chunks*
+corra siempre sobre el `dist/` fresco; *Centrar* mueve también el origen
+del modelo al centro (`centrePivot`) para que el Doctor no avise tras
+importar; las texturas incrustadas se recogen en el *payload* y no se
+aplican (M2); la vista previa limita el plano cercano a 0,01 mm, así que
+un modelo por debajo de 0,05 mm aún puede recortarse; `.usdc` binario no
+se escanea; FBX con eje X arriba no se ofrece; materiales Phong con
+rugosidad derivada del brillo. `rhino3dm` se copia a `public/vendor/` en
+`predev` y `prebuild` (`tools/vendor.mjs`).
 
 ## E1 · Andamiaje del motor en Rust — **Sonnet** — hecha
 

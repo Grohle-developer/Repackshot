@@ -132,6 +132,8 @@ export interface PartSpec {
   layer?: string;
   /** Name of the group the part sits in (created once per name). */
   group?: string;
+  /** Geometry to use instead of a box of `size`. */
+  data?: MeshData;
 }
 
 let payloadCounter = 0;
@@ -182,7 +184,7 @@ export function makePayload(parts: PartSpec[], detected: Partial<ImportPayload['
       }
       parent = g;
     }
-    const data = boxData(...p.size);
+    const data = p.data ?? boxData(...p.size);
     const node: SceneNode = { ...base(id, p.name, 'PART', parent), mesh: registerMesh(`test:${run}:${id}`, data), smooth: true, visible: p.visible !== false };
     node.material = matId(p.material);
     if (p.ranges) node.faceMaterials = p.ranges.map(([start, count, m]) => ({ start, count, material: matId(m) }));

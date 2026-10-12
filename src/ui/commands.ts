@@ -7,7 +7,7 @@ import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Lang } from '../data/types';
 import { activeCamera } from '../core/camera';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
-import { applyImportOptions, defaultImportOptions, releaseImport, type ImportMessage, type ImportOptions } from '../core/import-options';
+import { applyImportOptions, centrePivot, defaultImportOptions, releaseImport, type ImportMessage, type ImportOptions } from '../core/import-options';
 import { actionParts, assignAction, inventoryFor, type MaterialId } from '../core/materials';
 import { resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
 import { createInitialState, type ThemeSetting } from '../core/store';
@@ -76,9 +76,17 @@ function reportImport(ctx: Ctx, name: string, messages: readonly ImportMessage[]
 
 // --- Importing: read, then the sheet, then the store ------------------------------------------------
 
-/** Files waiting their turn while the sheet is open or a file is being read. */
-const waiting: File[] = [];
-let reading = false;
+/** Files waiting their turn while the sheet is open or a file is being read, per interface (there is one in the app). */
+interface ImportQueue {
+  waiting: File[];
+  reading: boolean;
+}
+const queues = new WeakMap<object, ImportQueue>();
+const queueOf = (ctx: Ctx): ImportQueue => {
+  let q = queues.get(ctx.ui);
+  if (!q) queues.set(ctx.ui, (q = { waiting: [], reading: false }));
+  return q;
+};
 let sheetCounter = 0;
 
 /**
@@ -87,20 +95,21 @@ let sheetCounter = 0;
  * Several files are shown one after the other.
  */
 export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<void> {
-  waiting.push(...files);
+  const q = queueOf(ctx);
+  q.waiting.push(...files);
   const sheet = ctx.ui.get().importSheet;
-  if (sheet) ctx.ui.set({ importSheet: { ...sheet, queued: waiting.length } });
-  if (sheet || reading) return;
-  reading = true;
+  if (sheet) ctx.ui.set({ importSheet: { ...sheet, queued: q.waiting.length } });
+  if (sheet || q.reading) return;
+  q.reading = true;
   try {
-    while (waiting.length > 0 && !ctx.ui.get().importSheet) await readNext(ctx);
+    while (q.waiting.length > 0 && !ctx.ui.get().importSheet) await readNext(ctx, q);
   } finally {
-    reading = false;
+    q.reading = false;
   }
 }
 
-async function readNext(ctx: Ctx): Promise<void> {
-  const file = waiting.shift()!;
+async function readNext(ctx: Ctx, q: ImportQueue): Promise<void> {
+  const file = q.waiting.shift()!;
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
   if (SOON_FORMATS.includes(ext)) {
     const msg = t('import.soon', { format: ext.toUpperCase() });
@@ -121,7 +130,7 @@ async function readNext(ctx: Ctx): Promise<void> {
     ctx.ui.set({
       importMessage: t('import.sheetHint', { name: file.name }),
       rightCollapsed: false,
-      importSheet: { id: ++sheetCounter, name: file.name, format: read.format, payload: read, warnings: read.warnings, notes: read.notes, options, queued: waiting.length },
+      importSheet: { id: ++sheetCounter, name: file.name, format: read.format, payload: read, warnings: read.warnings, notes: read.notes, options, queued: q.waiting.length },
     });
   } catch (err) {
     const msg = t('import.failed', { name: file.name, reason: err instanceof Error ? err.message : String(err) });
@@ -138,7 +147,7 @@ export function setImportOptions(ctx: Ctx, patch: Partial<ImportOptions>): void 
 
 function closeSheet(ctx: Ctx): void {
   ctx.ui.set({ importSheet: null, importMessage: null });
-  if (waiting.length > 0) void importFiles(ctx, []);
+  if (queueOf(ctx).waiting.length > 0) void importFiles(ctx, []);
 }
 
 /** Import (Enter): applies the sheet's options to the file and adds the result to the scene. */
@@ -153,7 +162,9 @@ export function confirmImport(ctx: Ctx): void {
     return;
   }
   releaseImport(payload, applied);
-  const model = { nodes: applied.nodes, roots: applied.roots, materials: applied.materials };
+  // "Center" also puts the model's origin at the centre of its bounds, where the Doctor expects it.
+  const placed = options.center ? centrePivot(applied) : applied;
+  const model = { nodes: placed.nodes, roots: placed.roots, materials: placed.materials };
   // The Standard studio is already there: the part shows lit, centred, resting on the floor and framed.
   ctx.store.transaction(L('undo.import', { name }), () => {
     ctx.store.dispatch({ type: 'scene/addModel', payload: model, replace: options.mode === 'replace' });

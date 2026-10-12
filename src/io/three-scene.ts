@@ -284,7 +284,11 @@ export function convertScene(source: THREE.Object3D, o: ConvertOptions): Convert
     if ((obj as THREE.Mesh).isMesh) {
       const part = makePart(obj as THREE.Mesh);
       if (part === null) return kids;
-      if (kids.length === 0) return [part];
+      if (kids.length === 0) {
+        nodes[part].visible = obj.visible;
+        return [part];
+      }
+      // A mesh with children: the group carries the visibility of the object (and so hides the children), the part is shown by it.
       const gid = newId();
       nodes[gid] = { ...base(gid, obj.name || `Group ${n}`, 'GROUP'), visible: obj.visible };
       link(nodes[gid], [part, ...kids]);
@@ -364,8 +368,9 @@ async function imageOf(tex: THREE.Texture, ms = 4000): Promise<unknown> {
 
 /** The bytes of a texture image: the original when it came from a blob or data URL, else a PNG drawn from it. */
 async function textureBlob(tex: THREE.Texture): Promise<Blob | null> {
+  if (typeof document === 'undefined') return null;
   const img = await imageOf(tex);
-  if (!img || typeof document === 'undefined') return null;
+  if (!img) return null;
   try {
     if (img instanceof HTMLImageElement) {
       await img.decode();

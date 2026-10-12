@@ -3,7 +3,7 @@
 //
 //   Assembly            (layer, parent of the next two)
 //     Body              render material "Steel" (200, 40, 30), mesh "Body" 40 x 40 x 60 + a sphere B-rep without render meshes
-//     Cap               no material, mesh "Cap" 20 x 20 x 10 on top of the body
+//     Cap               no material, mesh "Cap" 20 x 20 x 10 on top of the body (and, on request, a hidden mesh "Spare")
 //   Construction        hidden layer, mesh "Guide" 5 x 5 x 5
 //
 // Written here rather than committed so the file is always what the library
@@ -17,6 +17,8 @@ export interface RhinoFixtureOptions {
   units?: RhinoUnitName;
   /** Leave the sphere B-rep (no render mesh) out. */
   noBrep?: boolean;
+  /** Add a mesh "Spare" hidden on its own (the object is hidden, its layer Cap is not). */
+  hiddenObject?: boolean;
 }
 
 type Rhino = Awaited<ReturnType<typeof rhino3dm>>;
@@ -70,16 +72,18 @@ export async function buildRhinoFile(options: RhinoFixtureOptions = {}): Promise
   const cap = layer('Cap', assembly);
   const construction = layer('Construction', null, false);
 
-  const add = (geometry: unknown, name: string, layerIndex: number, kind: 'Mesh' | 'Brep' = 'Mesh') => {
+  const add = (geometry: unknown, name: string, layerIndex: number, kind: 'Mesh' | 'Brep' = 'Mesh', hidden = false) => {
     const a = new r.ObjectAttributes();
     a.name = name;
     a.layerIndex = layerIndex;
+    if (hidden) a.visible = false;
     if (kind === 'Mesh') doc.objects().addMesh(geometry as never, a);
     else doc.objects().addBrep(geometry as never, a);
   };
   add(boxMesh(r, [0, 0, 0], [40, 40, 60]), 'Body', body);
   add(boxMesh(r, [10, 10, 60], [20, 20, 10]), 'Cap', cap);
   add(boxMesh(r, [100, 0, 0], [5, 5, 5]), 'Guide', construction);
+  if (options.hiddenObject) add(boxMesh(r, [200, 0, 0], [5, 5, 5]), 'Spare', cap, 'Mesh', true);
   if (!options.noBrep) add(r.Brep.createFromSphere(new r.Sphere([0, 0, 0], 5)), 'Sphere', body, 'Brep');
 
   const bytes = doc.toByteArray();

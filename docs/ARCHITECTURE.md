@@ -33,7 +33,11 @@ con su licencia (solo MIT, Apache-2.0, BSD, ISC, CC0 o compatibles). El
 
 **Versiones instaladas** en el andamiaje inicial: three 0.186, Vite 8,
 TypeScript 7, vitest 5, playwright-core 1.64 (el `package-lock.json` es
-la verdad; esta lista orienta). Motor: Rust estable (1.97 al arrancar),
+la verdad; esta lista orienta). **rhino3dm 8.35.0** (openNURBS, MIT,
+Robert McNeel & Associates): lee `.3dm` en `io/rhino.ts`, cargado bajo
+demanda en un worker; `rhino3dm.js` y `.wasm` se copian de
+`node_modules` a `public/vendor/rhino3dm/` al construir
+(`tools/vendor.mjs`). Motor: Rust estable (1.97 al arrancar),
 objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 `riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
 
@@ -65,7 +69,7 @@ src/
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
-    gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  step.ts (OCCT, bajo demanda)  mesh-formats.ts (3MF, PLY, DAE, USD)
+    gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts (I2, OCCT)
     project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2)
   ui/                       INTERFAZ. Habla con core a través del store (§6)

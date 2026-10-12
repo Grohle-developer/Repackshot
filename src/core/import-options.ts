@@ -464,6 +464,12 @@ function regroup(nodes: Record<NodeId, SceneNode>, rootId: NodeId, by: 'material
   const root = nodes[rootId];
   if (!root) return;
   const parts = partIdsOf(nodes, [rootId]);
+  // The old groups go, and with them what they hid: a part hidden through a group or the model is hidden itself now.
+  for (const id of parts) {
+    let visible = true;
+    for (let cur: NodeId | null = id; cur; cur = nodes[cur]?.parent ?? null) if (nodes[cur] && !nodes[cur].visible) visible = false;
+    nodes[id].visible = visible;
+  }
   const keyOf = (id: NodeId): string | null => {
     if (by === 'layer') return layers[id] ?? null;
     const n = nodes[id];
@@ -511,6 +517,43 @@ function partsBelong(nodes: Record<NodeId, SceneNode>, id: NodeId, rootId: NodeI
     cur = nodes[cur]?.parent ?? null;
   }
   return false;
+}
+
+/**
+ * Puts the origin of each model at the centre of its bounds without moving any geometry: the model node takes the
+ * offset and its children give it back. This is the origin the Doctor looks for (a pivot that is off the model
+ * makes it ask to move it), and what "Center" in the sheet means together with the store's centre and rest actions.
+ */
+export function centrePivot(p: ModelPayload): ModelPayload {
+  const nodes: Record<NodeId, SceneNode> = { ...p.nodes };
+  for (const rootId of p.roots) {
+    const root = nodes[rootId];
+    if (!root) continue;
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    const walk = (id: NodeId, off: readonly number[]): void => {
+      const n = p.nodes[id];
+      if (!n) return;
+      const here = [off[0] + n.transform.position[0], off[1] + n.transform.position[1], off[2] + n.transform.position[2]];
+      if (n.kind === 'PART' && n.mesh) {
+        for (let k = 0; k < 3; k++) {
+          min[k] = Math.min(min[k], here[k] + n.mesh.bounds.min[k]);
+          max[k] = Math.max(max[k], here[k] + n.mesh.bounds.max[k]);
+        }
+      }
+      for (const c of n.children) walk(c, here);
+    };
+    walk(rootId, [0, 0, 0]);
+    if (!Number.isFinite(min[0])) continue;
+    // Bounds are in the space around the model node: its own offset is already part of them.
+    const c = [0, 1, 2].map((k) => (min[k] + max[k]) / 2 - root.transform.position[k]);
+    nodes[rootId] = { ...root, transform: { ...root.transform, position: [root.transform.position[0] + c[0], root.transform.position[1] + c[1], root.transform.position[2] + c[2]] } };
+    for (const childId of root.children) {
+      const child = nodes[childId];
+      if (child) nodes[childId] = { ...child, transform: { ...child.transform, position: [child.transform.position[0] - c[0], child.transform.position[1] - c[1], child.transform.position[2] - c[2]] } };
+    }
+  }
+  return { ...p, nodes };
 }
 
 /** Forgets the registered meshes of a payload that was not (or no longer is) used; `keep` lists the ones to spare. */

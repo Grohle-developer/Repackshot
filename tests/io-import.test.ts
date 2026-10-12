@@ -5,16 +5,16 @@ import { detectFormat, importFile } from '../src/io/import';
 import { buildMesh } from '../src/io/mesh-common';
 import cubeTwoGroups from './fixtures/cube-two-groups.obj?raw';
 import tetrahedronAscii from './fixtures/tetrahedron.stl?raw';
-import { binaryStl, encode, meshOf, partsOf, roof } from './io-helpers';
+import { binaryStl, encode, meshOf, partsOf, readWithDefaults, roof } from './io-helpers';
 
-/** A GLB with one triangle named "Tri": enough to take the glTF path of importFile. */
-function glb(): Uint8Array {
+/** A GLB with one triangle named "Tri": enough to take the glTF path of importFile. `node` adds to its node (a scale, say). */
+function glb(node: Record<string, unknown> = {}): Uint8Array {
   const pos = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
   const json = JSON.stringify({
     asset: { version: '2.0' },
     scene: 0,
     scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0, name: 'Tri' }],
+    nodes: [{ mesh: 0, name: 'Tri', ...node }],
     meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
     accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }],
     bufferViews: [{ buffer: 0, byteLength: 36 }],
@@ -36,6 +36,8 @@ function glb(): Uint8Array {
   out.set(new Uint8Array(pos.buffer), o + 8);
   return out;
 }
+
+const close = (got: readonly number[], want: readonly number[], digits = 4) => want.forEach((w, i) => expect(got[i], `[${i}]`).toBeCloseTo(w, digits));
 
 describe('detectFormat', () => {
   const tetra = binaryStl([[0, 0, 0, 1, 0, 0, 0, 1, 0]]);
@@ -62,6 +64,30 @@ describe('detectFormat', () => {
     expect(detectFormat('part.step', encode('ISO-10303-21;'))).toBeNull();
   });
 
+  it('knows the extension of every format this version reads, case aside', () => {
+    const none = new Uint8Array(0);
+    const table: Record<string, string> = {
+      'a.glb': 'GLTF', 'a.gltf': 'GLTF', 'a.obj': 'OBJ', 'a.stl': 'STL', 'a.fbx': 'FBX', 'a.3dm': '3DM', 'a.3mf': '3MF',
+      'a.ply': 'PLY', 'a.dae': 'DAE', 'a.usd': 'USD', 'a.usda': 'USD', 'a.usdc': 'USD', 'a.usdz': 'USD', 'A.FBX': 'FBX', 'a.3DM': '3DM',
+    };
+    for (const [name, format] of Object.entries(table)) expect(detectFormat(name, none), name).toBe(format);
+    // CAD is not read yet.
+    for (const name of ['a.step', 'a.stp', 'a.iges', 'a.igs']) expect(detectFormat(name, none), name).toBeNull();
+  });
+
+  it('sniffs the header of the new formats when the extension says nothing', () => {
+    expect(detectFormat('a.dat', encode('ply\nformat ascii 1.0\nend_header\n'))).toBe('PLY');
+    expect(detectFormat('a.dat', encode('ply\r\nformat ascii 1.0\r\n'))).toBe('PLY');
+    expect(detectFormat('a.dat', encode('; FBX 7.4.0 project file'))).toBe('FBX');
+    expect(detectFormat('a.dat', encode('Kaydara FBX Binary  \u0000\u001a\u0000'))).toBe('FBX');
+    expect(detectFormat('a.dat', encode('3D Geometry File Format        \u0000'))).toBe('3DM');
+    expect(detectFormat('a.dat', encode('#usda 1.0\n(\n)\n'))).toBe('USD');
+    expect(detectFormat('a.dat', encode('<?xml version="1.0"?>\n<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema">'))).toBe('DAE');
+    // Not mistaken for each other: a PLY-looking word is not a PLY file, an OBJ is still an OBJ.
+    expect(detectFormat('a.dat', encode('plywood is not a format'))).toBeNull();
+    expect(detectFormat('a.dat', encode(cubeTwoGroups))).toBe('OBJ');
+  });
+
   it('rejects a file it cannot place with a reason', async () => {
     await expect(importFile({ name: 'x.bin', bytes: encode('nothing') })).rejects.toThrow('unknown file format');
   });
@@ -82,12 +108,44 @@ describe('importFile', () => {
     expect(partsOf(whole).map((p) => p.name)).toEqual(['Caps', 'Body']);
   });
 
-  it('sends glTF through the same entry point', async () => {
+  it('sends glTF through the same entry point, as the file has it: Y up, in metres', async () => {
     const r = await importFile({ name: 'tri.glb', bytes: glb() });
     expect(r.format).toBe('GLTF');
     expect(partsOf(r).map((p) => p.name)).toEqual(['Tri']);
     expect(r.nodes[r.roots[0]].source).toEqual({ kind: 'FILE', name: 'tri.glb', format: 'GLTF' });
     expect(r.warnings).toEqual([]);
+    expect(r.notes).toEqual([]);
+    // The reader does not scale or turn anything: the triangle (0,0,0) (1,0,0) (0,1,0) is still that.
+    expect(partsOf(r)[0].mesh!.bounds.max[0] - partsOf(r)[0].mesh!.bounds.min[0]).toBeCloseTo(1, 6);
+    expect(partsOf(r)[0].mesh!.bounds.max[1] - partsOf(r)[0].mesh!.bounds.min[1]).toBeCloseTo(1, 6);
+    expect(r.detected).toEqual({ units: 'm', upAxis: 'Y', upAxisDeclared: true, size: 1, hasLayers: false, hiddenParts: 0 });
+    // A primitive without a material takes the neutral Default, not a material of the loader's making.
+    expect(Object.keys(r.materials)).toEqual(['tm_default']);
+    expect(partsOf(r)[0].material).toBe('tm_default');
+    expect(r.materials.tm_default.role).toBe('DEFAULT');
+  });
+
+  it('a mirrored node keeps its fronts outward: the winding is reversed with the mirror', async () => {
+    // The triangle (0,0,0) (1,0,0) (0,1,0) faces +z. Mirrored in x it would face -z unless the winding is turned back.
+    const r = await importFile({ name: 'mirror.glb', bytes: glb({ scale: [-1, 1, 1] }) });
+    const m = meshOf(partsOf(r)[0]);
+    expect(m.positions.length / 3).toBe(3);
+    // Mirrored in x: the part spans -1..0 around its pivot at -0.5.
+    expect(partsOf(r)[0].transform.position[0]).toBeCloseTo(-0.5, 6);
+    expect(partsOf(r)[0].mesh!.bounds.max[0] - partsOf(r)[0].mesh!.bounds.min[0]).toBeCloseTo(1, 6);
+    for (let i = 0; i < m.normals.length; i += 3) close(Array.from(m.normals.subarray(i, i + 3)), [0, 0, 1], 6);
+    // And a plain one faces the same way.
+    const plain = meshOf(partsOf(await importFile({ name: 'plain.glb', bytes: glb() }))[0]);
+    for (let i = 0; i < plain.normals.length; i += 3) close(Array.from(plain.normals.subarray(i, i + 3)), [0, 0, 1], 6);
+  });
+
+  it('glTF goes through the options with its detected defaults: metres x 1000, Y up to Z up', async () => {
+    const r = await readWithDefaults({ name: 'tri.glb', bytes: glb() });
+    expect(r.options).toMatchObject({ units: 'm', upAxis: 'Y' });
+    const [tri] = partsOf(r);
+    // x 0..1 m is 1000 mm along x; y 0..1 m (up in the file) is 1000 mm along z; there is no depth.
+    close(tri.mesh!.bounds.max.map((v, i) => v - tri.mesh!.bounds.min[i]), [1000, 0, 1000]);
+    close(tri.transform.position, [500, -0, 500]);
     expect(r.notes).toEqual([]);
   });
 
@@ -118,7 +176,7 @@ describe('importFile', () => {
 
 describe('what the interface does with an import', () => {
   it('adds the model, detects the part size, rests it on the floor and keeps the materials', async () => {
-    const r = await importFile({ name: 'cube.obj', bytes: encode(cubeTwoGroups) });
+    const r = await readWithDefaults({ name: 'cube.obj', bytes: encode(cubeTwoGroups) });
     let s = reduce(createInitialState(), { type: 'scene/addModel', payload: { nodes: r.nodes, roots: r.roots, materials: r.materials }, replace: true });
     expect(s.scene.partSizeMm).toBe(20);
     expect(measuredSizeMm(s)).toBeCloseTo(20, 4);

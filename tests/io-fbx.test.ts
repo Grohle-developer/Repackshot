@@ -119,6 +119,12 @@ describe('FBX: GlobalSettings', () => {
     }
   });
 
+  it('takes the values from GlobalSettings, not from a property of the same name elsewhere in the file', () => {
+    const decoy = twoParts.replace('FBXHeaderExtension:  {', 'FBXHeaderExtension:  {\n\tSceneInfo: "SceneInfo::GlobalInfo", "UserData" {\n\t\tProperties70:  {\n\t\t\tP: "UpAxis", "int", "Integer", "",2\n\t\t\tP: "UnitScaleFactor", "double", "Number", "",100\n\t\t}\n\t}');
+    expect(decoy).not.toBe(twoParts);
+    expect(scanFbxGlobals(buffer(encode(decoy)))).toEqual({ upAxis: 1, unitScaleFactor: 1 });
+  });
+
   it('knows nothing about a file without settings', () => {
     const bare = twoParts.replace(/GlobalSettings:\s*{[\s\S]*?\n}\n/, '');
     expect(bare).not.toBe(twoParts);

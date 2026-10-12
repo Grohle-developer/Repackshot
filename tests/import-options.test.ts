@@ -95,8 +95,15 @@ describe('up axis', () => {
       close(Array.from(after.normals.subarray(3 * v, 3 * v + 3)), [0, 0, 1], 6);
       expect(after.positions[3 * v + 2]).toBeCloseTo(10, 5);
     }
-    // The file's +Z face points at -Y now.
-    for (const v of verticesWithNormal(before, [0, 0, 1])) close(Array.from(after.normals.subarray(3 * v, 3 * v + 3)), [0, -1, 0], 6);
+    // The file's +Z face points at -Y now, and lies at y = -15 (the file's z of 15), not +15.
+    const backFace = verticesWithNormal(before, [0, 0, 1]);
+    expect(backFace).toHaveLength(4);
+    for (const v of backFace) {
+      close(Array.from(after.normals.subarray(3 * v, 3 * v + 3)), [0, -1, 0], 6);
+      expect(after.positions[3 * v + 1]).toBeCloseTo(-15, 5);
+    }
+    // And the file's +x stays +x.
+    for (const v of verticesWithNormal(before, [1, 0, 0])) expect(after.positions[3 * v]).toBeCloseTo(5, 5);
     // A rotation keeps the winding: the triangles are the same, index for index.
     expect(Array.from(after.indices)).toEqual(Array.from(before.indices));
   });
@@ -198,6 +205,31 @@ describe('group by', () => {
     expect(describePayload(out).groups).toBe(1);
   });
 
+  it('regrouping keeps what was hidden hidden: the part carries the flag of the group that is gone', () => {
+    // Two layers, the second hidden as a whole (its group is hidden, its part is not).
+    const raw = makePayload(
+      [
+        { name: 'Wall', size: [1, 1, 1], material: 'Steel', group: 'Frame', layer: 'Frame' },
+        { name: 'Guide', size: [1, 1, 1], at: [100, 0, 0], material: 'Steel', group: 'Construction', layer: 'Construction' },
+      ],
+      { hasLayers: true },
+    );
+    raw.nodes.g2 = { ...raw.nodes.g2, visible: false };
+    for (const groupBy of ['layer', 'material'] as const) {
+      const out = applyImportOptions(raw, optionsFor({ groupBy, importHidden: true }));
+      const wall = Object.values(out.nodes).find((n) => n.name === 'Wall')!;
+      const guide = Object.values(out.nodes).find((n) => n.name === 'Guide')!;
+      expect([groupBy, wall.visible, guide.visible]).toEqual([groupBy, true, false]);
+      // No group of the result is hidden: the flag lives on the part.
+      expect(Object.values(out.nodes).filter((n) => n.kind === 'GROUP' && !n.visible)).toEqual([]);
+      const s = reduce(createInitialState(), { type: 'scene/addModel', payload: out, replace: true });
+      expect(boundsOf(s, s.scene.roots, true).max[0]).toBeCloseTo(0.5, 6);
+    }
+    // And without "import hidden" the guide is simply not there, whatever the grouping.
+    const dropped = applyImportOptions(raw, optionsFor({ groupBy: 'layer' }));
+    expect(Object.values(dropped.nodes).some((n) => n.name === 'Guide')).toBe(false);
+  });
+
   it('the grouped model is a valid tree for the store: every part is reached once', () => {
     const out = applyImportOptions(four(), optionsFor({ groupBy: 'material' }));
     const s = reduce(createInitialState(), { type: 'scene/addModel', payload: out, replace: true });
@@ -234,6 +266,24 @@ describe('separate by material', () => {
     const b = boundsOf(s, s.scene.roots);
     close(b.min, [95, -10, -15]);
     close(b.max, [105, 10, 15]);
+  });
+
+  it('keeps a hard edge only where a triangle of the piece has both its vertices', () => {
+    // Two quads sharing nothing but the corner vertices: T0 (0,1,2), T1 (0,2,3), T2 (1,4,5), T3 (1,5,2); (0,1) is a hard edge of T0.
+    const data = {
+      positions: Float32Array.from([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 2, 0, 0, 2, 1, 0]),
+      normals: Float32Array.from(Array.from({ length: 18 }, (_, i) => (i % 3 === 2 ? 1 : 0))),
+      indices: Uint32Array.from([0, 1, 2, 0, 2, 3, 1, 4, 5, 1, 5, 2]),
+      sharpEdges: Uint32Array.from([0, 1]),
+    };
+    // T1 and T2 are brass: together they hold vertices 0 and 1 but no triangle with the edge between them.
+    const raw = makePayload([{ name: 'Plate', size: [1, 1, 1], data, material: 'Steel', ranges: [[1, 2, 'Brass']] }]);
+    const out = applyImportOptions(raw, optionsFor({ separate: 'material' }));
+    const [steel, brass] = partsOf(out);
+    expect([steel.name, brass.name]).toEqual(['Plate (Steel)', 'Plate (Brass)']);
+    expect([steel.mesh!.triangles, brass.mesh!.triangles]).toEqual([2, 2]);
+    expect(Array.from(meshOf(steel).sharpEdges!)).toHaveLength(2); // T0 has the edge
+    expect(Array.from(meshOf(brass).sharpEdges!)).toHaveLength(0); // T1 and T2 do not
   });
 
   it('leaves a part with one material alone, and does nothing when off', () => {

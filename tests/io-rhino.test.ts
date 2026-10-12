@@ -120,6 +120,22 @@ describe('3DM: units', () => {
   });
 });
 
+describe('3DM: hidden objects', () => {
+  it('an object hidden on a visible layer is a hidden part under a visible group', async () => {
+    const r = await read({ hiddenObject: true, noBrep: true });
+    const spare = Object.values(r.nodes).find((n) => n.name === 'Spare' && n.kind === 'PART')!;
+    expect(spare.visible).toBe(false);
+    expect(r.nodes[spare.parent!]).toMatchObject({ name: 'Cap', kind: 'GROUP', visible: true });
+    // Two hidden parts now: the guide on its hidden layer and the spare.
+    expect(r.detected.hiddenParts).toBe(2);
+    const off = await readWithDefaults({ name: 'a.3dm', bytes: await buildRhinoFile({ hiddenObject: true, noBrep: true }) });
+    expect(Object.values(off.nodes).some((n) => n.name === 'Spare')).toBe(false);
+    const on = await readWithDefaults({ name: 'a.3dm', bytes: await buildRhinoFile({ hiddenObject: true, noBrep: true }) }, { importHidden: true });
+    expect(Object.values(on.nodes).find((n) => n.name === 'Spare')!.visible).toBe(false);
+    expect(Object.values(on.nodes).find((n) => n.name === 'Cap' && n.kind === 'PART')!.visible).toBe(true);
+  });
+});
+
 describe('3DM: the sheet options', () => {
   it('drops the hidden layer by default and keeps it, hidden, when asked', async () => {
     const r = await readWithDefaults({ name: 'a.3dm', bytes: await buildRhinoFile({ noBrep: true }) });

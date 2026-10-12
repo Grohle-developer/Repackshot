@@ -15,6 +15,13 @@ import { dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
 import { formatNumber, getLang, t } from '../strings';
 
+/** A field whose control has the whole row: the label above it (long button labels). */
+const wide = (label: string, ...controls: Node[]): HTMLElement => {
+  const el = field(label, ...controls);
+  el.classList.add('wide');
+  return el;
+};
+
 /** A hint under a control, lined up with the controls. */
 const aux = (text: string): HTMLElement => h('div', { class: 'note import-aux' }, text);
 
@@ -97,7 +104,7 @@ export function importSheet(ctx: Ctx, scope: Scope): HTMLElement {
     field(t('import.center'), center.el),
     field(t('import.rest'), rest.el),
     field(t('import.frame'), frame.el),
-    field(t('import.scene'), mode.el),
+    wide(t('import.scene'), mode.el),
   );
 
   // Parts and materials.
@@ -135,8 +142,8 @@ export function importSheet(ctx: Ctx, scope: Scope): HTMLElement {
     { class: 'stack' },
     field(t('import.groupBy'), groupBy.el),
     ...(detected.hasLayers ? [] : [aux(t('import.aux.noLayers'))]),
-    field(t('import.materials'), materials.el),
-    field(t('import.separate'), separate.el),
+    wide(t('import.materials'), materials.el),
+    wide(t('import.separate'), separate.el),
     aux(`${t('import.separate.face')}: ${t('import.aux.cadSoon')} · ${t('common.comingSoon')}`),
   );
 
