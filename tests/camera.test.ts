@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeCamera, cameraBasis, cameraPosition, fieldOfView, frameBox, orbitFromPosition, outputFrameRect, FRAME_MARGIN } from '../src/core/camera';
+import { activeCamera, cameraBasis, cameraPosition, clipPlanesFor, CLIP_NEAR_MIN_MM, fieldOfView, frameBox, orbitFromPosition, outputFrameRect, FRAME_MARGIN } from '../src/core/camera';
 import { boxCenter, dot, sub } from '../src/core/math';
 import { sceneBounds } from '../src/core/scene';
 import { apply, exampleState } from './helpers';
@@ -70,5 +70,49 @@ describe('camera', () => {
     expect(Object.keys(s.camera.cameras)).toHaveLength(1);
     const t = apply(s, { type: 'camera/delete', id: s.camera.active });
     expect(t).toBe(s);
+  });
+});
+
+describe('clip planes follow the framing (phase I3)', () => {
+  /** A scene whose model measures `mm`, framed. */
+  const framedAt = (mm: number) => apply(exampleState(), { type: 'scene/setPartSize', mm }, { type: 'camera/frame' });
+
+  it('near is 0.001 x the distance and the whole model lies between the planes', () => {
+    const s = framedAt(200);
+    const cam = activeCamera(s);
+    expect(cam.clipStart).toBeCloseTo(cam.distance * 0.001, 9);
+    const box = sceneBounds(s);
+    const radius = Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]) / 2;
+    expect(cam.clipStart).toBeLessThan(cam.distance - radius);
+    expect(cam.clipEnd).toBeGreaterThan(cam.distance + radius);
+  });
+
+  it('a model imported at the wrong scale is still between the planes, from a micron to a kilometre', () => {
+    for (const mm of [0.02, 0.5, 20, 20_000, 2_000_000]) {
+      const s = framedAt(mm);
+      const cam = activeCamera(s);
+      const box = sceneBounds(s);
+      const radius = Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]) / 2;
+      expect(cam.clipStart, `near at ${mm} mm`).toBeLessThan(cam.distance - radius);
+      expect(cam.clipEnd, `far at ${mm} mm`).toBeGreaterThan(cam.distance + radius);
+      // The Doctor does not complain about the planes the framing chose.
+      expect(cam.clipStart).toBeLessThanOrEqual(s.scene.partSizeMm * 0.05);
+    }
+  });
+
+  it('near never goes below a micron and never past half the way to the model', () => {
+    expect(clipPlanesFor(1e-6, 1e-7).clipStart).toBe(CLIP_NEAR_MIN_MM);
+    expect(clipPlanesFor(100, 99.9).clipStart).toBeCloseTo(0.05, 9); // 0.001 x 100 would be 0.1, past half of the 0.1 to the model
+    expect(clipPlanesFor(10_000, 100).clipStart).toBeCloseTo(10, 9);
+  });
+
+  it('stale planes from a rescale are replaced when the camera frames again', () => {
+    let s = exampleState();
+    s = apply(s, { type: 'scene/setPartSize', mm: 0.02 });
+    // setPartSize rescales distance but leaves the planes: 1 mm near, farther than the model is wide.
+    const stale = activeCamera(s);
+    expect(stale.clipStart).toBeGreaterThan(stale.distance);
+    s = apply(s, { type: 'camera/frame' });
+    expect(activeCamera(s).clipStart).toBeLessThan(activeCamera(s).distance);
   });
 });

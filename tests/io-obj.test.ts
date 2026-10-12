@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { reduce, createInitialState } from '../src/core/store';
 import { runDoctor, fixDoctor } from '../src/core/doctor';
 import { boundsOf, measuredSizeMm } from '../src/core/scene';
-import { importFile } from '../src/io/import';
+import type { ImportOptions } from '../src/core/import-options';
 import cubeTwoGroups from './fixtures/cube-two-groups.obj?raw';
-import { distinctPositions, encode, meshOf, normalLengthError, partsOf, roof, sharpEdgeSegments } from './io-helpers';
+import { distinctPositions, encode, meshOf, normalLengthError, partsOf, readWithDefaults, roof, sharpEdgeSegments } from './io-helpers';
 
-const read = (name: string, text: string) => importFile({ name, bytes: encode(text) });
+const read = (name: string, text: string, overrides: Partial<ImportOptions> = {}) => readWithDefaults({ name, bytes: encode(text) }, overrides);
 
 /** The same cube without group or material statements: one part. */
 const singlePartCube = cubeTwoGroups.replace(/^(g|usemtl) .*$/gm, '');
@@ -276,8 +276,18 @@ describe('OBJ: smoothing angle and hard edges', () => {
 describe('OBJ: size and units', () => {
   const cubeOf = (side: number) => cubeTwoGroups.replace(/^v (.*)$/gm, (_m, xyz: string) => `v ${xyz.split(/\s+/).filter(Boolean).map((x) => Number(x) * (side / 20)).join(' ')}`);
 
-  it('keeps a file in metres as it is and notes it; the Doctor then offers x1000', async () => {
+  it('takes a file under a millimetre as metres: the sheet starts on m and the model comes out 20 mm', async () => {
     const r = await read('metres.obj', cubeOf(0.02));
+    expect(r.detected).toMatchObject({ units: null, upAxis: 'Y', upAxisDeclared: false });
+    expect(r.detected.size).toBeCloseTo(0.02, 6);
+    expect(r.options.units).toBe('m');
+    expect(partsOf(r)[0].mesh!.bounds.max[0]).toBeCloseTo(10, 4);
+    expect(r.notes.filter((n) => n.code === 'scaleSmall' || n.code === 'scaleLarge')).toEqual([]);
+    expect(r.nodes[r.roots[0]].source!.unitHint).toBeUndefined();
+  });
+
+  it('keeps a file in metres as it is when millimetres are chosen and notes it; the Doctor then offers x1000', async () => {
+    const r = await read('metres.obj', cubeOf(0.02), { units: 'mm' });
     expect(r.notes).toContainEqual({ code: 'scaleSmall', params: { size: 0.02, factor: 1000 } });
     expect(r.nodes[r.roots[0]].source!.unitHint).toBe(1000);
     expect(partsOf(r)[0].mesh!.bounds.max[0]).toBeCloseTo(0.01, 6);
@@ -295,6 +305,7 @@ describe('OBJ: size and units', () => {
 
   it('notes a file in micrometres and leaves a plausible size alone', async () => {
     const big = await read('um.obj', cubeOf(30000));
+    expect(big.options.units).toBe('mm');
     expect(big.notes).toContainEqual({ code: 'scaleLarge', params: { size: 30000, factor: 0.001 } });
     expect(big.nodes[big.roots[0]].source!.unitHint).toBe(0.001);
     const s = reduce(createInitialState(), { type: 'scene/addModel', payload: big, replace: true });
@@ -307,8 +318,10 @@ describe('OBJ: size and units', () => {
       expect(ok.notes.filter((n) => n.code === 'scaleSmall' || n.code === 'scaleLarge')).toEqual([]);
       expect(ok.nodes[ok.roots[0]].source!.unitHint).toBeUndefined();
     }
-    const edge = await read('edge.obj', cubeOf(0.99));
-    expect(edge.notes.some((n) => n.code === 'scaleSmall')).toBe(true);
+    // The edges of the heuristic: 0.99 is metres (the sheet picks m, so no note), 10001 is flagged.
+    expect((await read('edge.obj', cubeOf(0.99))).options.units).toBe('m');
+    expect((await read('edge.obj', cubeOf(1))).options.units).toBe('mm');
+    expect((await read('edge.obj', cubeOf(0.99), { units: 'mm' })).notes.some((n) => n.code === 'scaleSmall')).toBe(true);
     const edge2 = await read('edge.obj', cubeOf(10001));
     expect(edge2.notes.some((n) => n.code === 'scaleLarge')).toBe(true);
   });

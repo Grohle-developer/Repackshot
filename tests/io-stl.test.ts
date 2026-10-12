@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { fixDoctor, runDoctor } from '../src/core/doctor';
 import { measuredSizeMm } from '../src/core/scene';
 import { createInitialState, reduce } from '../src/core/store';
-import { importFile } from '../src/io/import';
+import type { ImportOptions } from '../src/core/import-options';
 import tetrahedronAscii from './fixtures/tetrahedron.stl?raw';
-import { binaryStl, distinctPositions, encode, meshOf, normalLengthError, partsOf, roof, sharpEdgeSegments } from './io-helpers';
+import { binaryStl, distinctPositions, encode, meshOf, normalLengthError, partsOf, readWithDefaults, roof, sharpEdgeSegments } from './io-helpers';
 
 /** The tetrahedron of the ASCII fixture, facet by facet: 10 mm legs on the three axes. */
 const TETRA: number[][] = [
@@ -14,8 +14,8 @@ const TETRA: number[][] = [
   [10, 0, 0, 0, 10, 0, 0, 0, 10],
 ];
 
-const readAscii = (name: string, text: string) => importFile({ name, bytes: encode(text) });
-const readBinary = (name: string, triangles: number[][], header?: string) => importFile({ name, bytes: binaryStl(triangles, header) });
+const readAscii = (name: string, text: string, overrides: Partial<ImportOptions> = {}) => readWithDefaults({ name, bytes: encode(text) }, overrides);
+const readBinary = (name: string, triangles: number[][], header?: string, overrides: Partial<ImportOptions> = {}) => readWithDefaults({ name, bytes: binaryStl(triangles, header) }, overrides);
 
 describe('STL: the same tetrahedron as binary and ASCII', () => {
   it('welds to 4 positions, 4 triangles, 12 vertices (split along hard edges) and 6 hard edges', async () => {
@@ -74,8 +74,8 @@ describe('STL: the same tetrahedron as binary and ASCII', () => {
     // Zero the normal of the first facet and flip the second.
     for (let k = 0; k < 3; k++) dv.setFloat32(84 + 4 * k, 0, true);
     for (let k = 0; k < 3; k++) dv.setFloat32(84 + 50 + 4 * k, -dv.getFloat32(84 + 50 + 4 * k, true), true);
-    const a = meshOf(partsOf(await importFile({ name: 'a.stl', bytes: good }))[0]);
-    const b = meshOf(partsOf(await importFile({ name: 'a.stl', bytes: bad }))[0]);
+    const a = meshOf(partsOf(await readWithDefaults({ name: 'a.stl', bytes: good }))[0]);
+    const b = meshOf(partsOf(await readWithDefaults({ name: 'a.stl', bytes: bad }))[0]);
     expect(Array.from(b.normals)).toEqual(Array.from(a.normals));
   });
 
@@ -93,8 +93,8 @@ describe('STL: detection', () => {
     // One byte more: not binary any more, and it does not read as ASCII either.
     const longer = new Uint8Array(bytes.length + 1);
     longer.set(bytes);
-    await expect(importFile({ name: 'x.stl', bytes: longer })).rejects.toThrow('not a binary or ASCII STL');
-    await expect(importFile({ name: 'x.stl', bytes: bytes.subarray(0, bytes.length - 1) })).rejects.toThrow('not a binary or ASCII STL');
+    await expect(readWithDefaults({ name: 'x.stl', bytes: longer })).rejects.toThrow('not a binary or ASCII STL');
+    await expect(readWithDefaults({ name: 'x.stl', bytes: bytes.subarray(0, bytes.length - 1) })).rejects.toThrow('not a binary or ASCII STL');
   });
 
   it('accepts ASCII only when it starts with solid and has a facet', async () => {
@@ -198,9 +198,19 @@ describe('STL: welding and normals', () => {
 });
 
 describe('STL: size and units', () => {
-  it('a 0.03 tall part in a jewellery studio is in metres: the note, then the Doctor fix x1000', async () => {
-    const small = TETRA.map((t) => t.map((x) => x * 0.003));
+  const small = TETRA.map((t) => t.map((x) => x * 0.003));
+
+  it('a 0.03 tall part is taken as metres by default: 30 mm, no note', async () => {
     const r = await readBinary('ring.stl', small);
+    expect(r.detected).toMatchObject({ units: null, upAxis: 'Z', upAxisDeclared: false });
+    expect(r.options.units).toBe('m');
+    expect(r.notes).toEqual([]);
+    expect(r.nodes[r.roots[0]].source).toEqual({ kind: 'FILE', name: 'ring.stl', format: 'STL' });
+    expect(partsOf(r)[0].mesh!.bounds.max[0]).toBeCloseTo(15, 4);
+  });
+
+  it('left in millimetres it gets the note, then the Doctor fix x1000 in a jewellery studio', async () => {
+    const r = await readBinary('ring.stl', small, undefined, { units: 'mm' });
     expect(r.notes).toEqual([{ code: 'scaleSmall', params: { size: 0.03, factor: 1000 } }]);
     expect(r.nodes[r.roots[0]].source).toEqual({ kind: 'FILE', name: 'ring.stl', format: 'STL', unitHint: 1000 });
     // The geometry is not touched.

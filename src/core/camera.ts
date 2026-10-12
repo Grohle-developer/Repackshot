@@ -121,10 +121,29 @@ export function fitDistance(radius: number, focalMm: number, aspect: number, mar
   return (radius * margin) / Math.sin(half);
 }
 
+/** Near plane as a fraction of the camera distance when framing (phase I3). */
+export const CLIP_NEAR_RATIO = 0.001;
+/** The near plane never goes below this (mm). */
+export const CLIP_NEAR_MIN_MM = 0.001;
+
+/**
+ * Clip planes for a camera `distance` away from a model of bounding-sphere `radius`: the near plane is
+ * 0.001 x distance, never closer than a micron and never beyond half the way to the model's nearest
+ * point; the far plane reaches 200 radii past the target (the floor is 60 sizes wide) and at least the
+ * Doctor's default. A model imported at the wrong scale is still inside them.
+ */
+export function clipPlanesFor(distance: number, radius: number): { clipStart: number; clipEnd: number } {
+  const reach = Math.max(distance - radius, 0);
+  const clipStart = Math.min(Math.max(distance * CLIP_NEAR_RATIO, CLIP_NEAR_MIN_MM), Math.max(reach * 0.5, CLIP_NEAR_MIN_MM));
+  const clipEnd = Math.max(distance + radius * 200, clipEndFor(radius * 2));
+  return { clipStart, clipEnd };
+}
+
 /**
  * Frames a box without changing the orientation (SPEC §3.5 "Encuadrar"): the
  * target goes to the centre of the box and the distance (or the orthographic
- * width) is the smallest that keeps the eight corners inside the frame.
+ * width) is the smallest that keeps the eight corners inside the frame. The clip planes follow the
+ * framed distance (`clipPlanesFor`), so the camera sees the model whatever its scale.
  */
 export function frameBox(cam: CameraState, box: Box, aspect: number, margin = FRAME_MARGIN): CameraState {
   if (isEmptyBox(box)) return cam;
@@ -155,6 +174,7 @@ export function frameBox(cam: CameraState, box: Box, aspect: number, margin = FR
     distance,
     focusDistance: distance,
     orthoWidth,
+    ...clipPlanesFor(distance, radius),
   };
 }
 

@@ -3,8 +3,9 @@
 // services from the engine and the importers and hands them in.
 
 import type { CameraId } from '../core/camera';
+import type { ImportMessage, ImportPayload } from '../core/import-options';
 import type { MaterialInstance } from '../core/materials';
-import type { ModelPayload, NodeId } from '../core/scene';
+import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import type { Tool } from './ui-state';
 
@@ -54,10 +55,18 @@ export interface RenderRequest {
   onProgress?: (progress: number) => void;
 }
 
-/** A note or warning an importer attaches. `code` selects the string `import.msg.<code>`. */
-export interface ImportMessage {
-  code: string;
-  params: Record<string, string | number>;
+export type { ImportMessage };
+
+/**
+ * A model as the file has it (the units and axes of the file) plus what the reader said and detected. The
+ * import sheet chooses the options and `applyImportOptions` (core) turns it into what the store adds.
+ */
+export interface ImportRead extends ImportPayload {
+  format: string;
+  /** Data that was repaired or dropped while reading. */
+  warnings: ImportMessage[];
+  /** Informational: B-reps without a mesh, textures kept, units the sheet does not offer... */
+  notes: ImportMessage[];
 }
 
 export interface AppServices {
@@ -68,7 +77,7 @@ export interface AppServices {
   /** The viewport as it is now, PNG. */
   captureViewport(): Promise<Blob | null>;
   /** Reads a model file; throws with a readable reason. Names come from the file. */
-  importFile(file: File): Promise<ModelPayload & { warnings?: ImportMessage[]; notes?: ImportMessage[] }>;
+  importFile(file: File): Promise<ImportRead>;
   /** The project as a .repack.json blob. */
   serializeProject(state: ProjectState): Blob;
 }

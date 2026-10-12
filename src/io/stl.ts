@@ -7,7 +7,8 @@
 // and the text starts with `solid` and has a `facet`.
 //
 // STL has no up axis (CAD and printing are Z up, like the model) and no
-// units: the numbers are kept as millimetres. One part per file; an ASCII
+// units: the numbers are kept as the file has them (Z up is the detected
+// default; the units come from the size heuristic). One part per file; an ASCII
 // file with several `solid` blocks gives one part per block. Vertices are
 // welded and normals come from the geometry (30 degree smoothing); the
 // facet normal in the file is only a fallback.

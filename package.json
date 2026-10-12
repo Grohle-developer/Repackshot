@@ -9,8 +9,11 @@
     "node": ">=22"
   },
   "scripts": {
+    "vendor": "node tools/vendor.mjs",
+    "predev": "npm run vendor",
     "dev": "vite",
     "build": "vite build",
+    "prebuild": "npm run vendor",
     "preview": "vite preview --port 4173 --strictPort",
     "check": "tsc --noEmit",
     "test": "vitest run",
@@ -21,6 +24,7 @@
     "engine:test": "cargo test --manifest-path engine/Cargo.toml --workspace"
   },
   "dependencies": {
+    "rhino3dm": "8.35.0",
     "three": "^0.186.1"
   },
   "devDependencies": {

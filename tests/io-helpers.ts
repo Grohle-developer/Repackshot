@@ -1,13 +1,29 @@
 // Helpers for the importer tests: read the parts of an ImportResult back as data.
 
-import { getMesh, type MeshData } from '../src/core/meshes';
+import { applyImportOptions, defaultImportOptions, type AppliedImport, type ImportOptions, type ImportPayload } from '../src/core/import-options';
+import { defaultInstance, plainInstance, type MaterialInstance } from '../src/core/materials';
+import { getMesh, registerMesh, type MeshData } from '../src/core/meshes';
 import type { SceneNode } from '../src/core/scene';
-import type { ImportResult } from '../src/io/import';
+import { importFile, type ImportResult, type ImportSource } from '../src/io/import';
 
 export const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
 
+/** What the tests look at after an import: the payload the store would add, plus what the reader said. */
+export type ReadBack = AppliedImport & Pick<ImportResult, 'format' | 'warnings' | 'detected'> & { raw: ImportResult; options: ImportOptions };
+
+/**
+ * A file read and the import options applied with the values the sheet starts with (the detected units and
+ * up axis), as the interface does when Enter is pressed. `overrides` change single options.
+ */
+export async function readWithDefaults(file: ImportSource, overrides: Partial<ImportOptions> = {}): Promise<ReadBack> {
+  const raw = await importFile(file);
+  const options = { ...defaultImportOptions(raw.detected, false), ...overrides };
+  const applied = applyImportOptions(raw, options);
+  return { ...applied, notes: [...raw.notes, ...applied.notes], format: raw.format, warnings: raw.warnings, detected: raw.detected, raw, options };
+}
+
 /** The PART nodes of the single model of a result, in file order. */
-export function partsOf(result: ImportResult): SceneNode[] {
+export function partsOf(result: Pick<AppliedImport, 'nodes' | 'roots'>): SceneNode[] {
   const model = result.nodes[result.roots[0]];
   return model.children.map((id) => result.nodes[id]);
 }
@@ -76,3 +92,118 @@ export function roof(foldDeg: number): number[][] {
     [...r1, ...b2, ...b1],
   ];
 }
+
+// --- Payloads built by hand, for the options pipeline ---------------------------------------------
+
+/** A box of w x d x h centred on its own origin: 24 vertices (flat faces), 12 triangles, normals along the axes. */
+export function boxData(w: number, d: number, h: number): MeshData {
+  const faces: { n: [number, number, number]; c: [number, number, number][] }[] = [
+    { n: [1, 0, 0], c: [[1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]] },
+    { n: [-1, 0, 0], c: [[-1, 1, -1], [-1, -1, -1], [-1, -1, 1], [-1, 1, 1]] },
+    { n: [0, 1, 0], c: [[1, 1, -1], [-1, 1, -1], [-1, 1, 1], [1, 1, 1]] },
+    { n: [0, -1, 0], c: [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1]] },
+    { n: [0, 0, 1], c: [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]] },
+    { n: [0, 0, -1], c: [[-1, 1, -1], [1, 1, -1], [1, -1, -1], [-1, -1, -1]] },
+  ];
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  faces.forEach((f, i) => {
+    for (const c of f.c) {
+      positions.push((c[0] * w) / 2, (c[1] * d) / 2, (c[2] * h) / 2);
+      normals.push(...f.n);
+    }
+    const o = 4 * i;
+    indices.push(o, o + 1, o + 2, o, o + 2, o + 3);
+  });
+  return { positions: Float32Array.from(positions), normals: Float32Array.from(normals), indices: Uint32Array.from(indices) };
+}
+
+export interface PartSpec {
+  name: string;
+  size: [number, number, number];
+  /** Pivot position (where the node sits). */
+  at?: [number, number, number];
+  /** Material name (one instance per name; omit for the neutral Default). */
+  material?: string;
+  /** Triangle runs of another material: [start, count, material name]. */
+  ranges?: [number, number, string][];
+  visible?: boolean;
+  layer?: string;
+  /** Name of the group the part sits in (created once per name). */
+  group?: string;
+}
+
+let payloadCounter = 0;
+
+/** A payload like a reader returns it: one MODEL, optional groups, parts with registered boxes, materials by name. */
+export function makePayload(parts: PartSpec[], detected: Partial<ImportPayload['detected']> = {}): ImportPayload {
+  const run = ++payloadCounter;
+  const nodes: Record<string, SceneNode> = {};
+  const materials: Record<string, MaterialInstance> = {};
+  const layers: Record<string, string> = {};
+  const base = (id: string, name: string, kind: SceneNode['kind'], parent: string | null): SceneNode => ({
+    id,
+    name,
+    kind,
+    parent,
+    children: [],
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    visible: true,
+    locked: false,
+  });
+  nodes.m = { ...base('m', 'model', 'MODEL', null), source: { kind: 'FILE', name: 'model.test', format: 'TEST' } };
+  const byName = new Map<string, string>();
+  // Like the readers: one SIMPLE instance per name, and the neutral Default for a part without a material.
+  const matId = (name?: string): string => {
+    if (name === undefined) {
+      materials.tm_default ??= defaultInstance('tm_default', 100);
+      return 'tm_default';
+    }
+    let id = byName.get(name);
+    if (!id) {
+      id = `tm${byName.size + 1}`;
+      byName.set(name, id);
+      materials[id] = plainInstance(id, name, { baseColor: [0.5, 0.5, 0.5, 1], metallic: 0, roughness: 0.5 });
+    }
+    return id;
+  };
+  const groupIds = new Map<string, string>();
+  parts.forEach((p, i) => {
+    const id = `p${i + 1}`;
+    let parent = 'm';
+    if (p.group) {
+      let g = groupIds.get(p.group);
+      if (!g) {
+        g = `g${groupIds.size + 1}`;
+        groupIds.set(p.group, g);
+        nodes[g] = base(g, p.group, 'GROUP', 'm');
+        nodes.m.children.push(g);
+      }
+      parent = g;
+    }
+    const data = boxData(...p.size);
+    const node: SceneNode = { ...base(id, p.name, 'PART', parent), mesh: registerMesh(`test:${run}:${id}`, data), smooth: true, visible: p.visible !== false };
+    node.material = matId(p.material);
+    if (p.ranges) node.faceMaterials = p.ranges.map(([start, count, m]) => ({ start, count, material: matId(m) }));
+    node.transform.position = p.at ?? [0, 0, 0];
+    nodes[id] = node;
+    nodes[parent].children.push(id);
+    if (p.layer) layers[id] = p.layer;
+  });
+  return {
+    nodes,
+    roots: ['m'],
+    materials,
+    layers,
+    detected: { units: null, upAxis: 'Z', upAxisDeclared: false, size: 0, hasLayers: Object.keys(layers).length > 0, hiddenParts: parts.filter((p) => p.visible === false).length, ...detected },
+  };
+}
+
+/** The sheet's defaults for Z up, millimetres, with `overrides`. */
+export function optionsFor(overrides: Partial<ImportOptions> = {}): ImportOptions {
+  return { ...defaultImportOptions({ units: 'mm', upAxis: 'Z', upAxisDeclared: true, size: 100, hasLayers: false, hiddenParts: 0 }, false), ...overrides };
+}
+
+/** The base colour of a material as a plain array. */
+export const colorOf = (m: MaterialInstance): number[] => [...(m.params.baseColor ?? [])];

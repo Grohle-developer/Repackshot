@@ -3,6 +3,7 @@
 // parts worth remembering between sessions go to localStorage.
 
 import type { LightStyle, MaterialCategory } from '../data/types';
+import type { ImportMessage, ImportOptions, ImportPayload } from '../core/import-options';
 import type { NodeId } from '../core/scene';
 import type { ClipTarget } from '../core/animation';
 import type { MoveKind, EasingKind } from '../data/types';
@@ -27,6 +28,20 @@ export interface WizardState {
   duration: number;
   easing: EasingKind;
   shot: number | null;
+}
+
+/** A file that was read and waits for the import sheet (UI.md §2.3). The options are the sheet's current values. */
+export interface PendingImport {
+  /** Changes with every file, so the sheet is rebuilt for the next one and only then. */
+  id: number;
+  name: string;
+  format: string;
+  payload: ImportPayload;
+  warnings: ImportMessage[];
+  notes: ImportMessage[];
+  options: ImportOptions;
+  /** Files dropped together with this one that are waiting for their turn. */
+  queued: number;
 }
 
 export interface UiState {
@@ -67,6 +82,8 @@ export interface UiState {
   shortcutsOpen: boolean;
   /** Message line of the empty state (import progress or error). */
   importMessage: string | null;
+  /** The import sheet, in the inspector, while a file waits for its options. */
+  importSheet: PendingImport | null;
 }
 
 export type UiListener = (ui: UiState, prev: UiState) => void;
@@ -124,6 +141,7 @@ export function defaultUiState(): UiState {
     fileDrag: false,
     shortcutsOpen: false,
     importMessage: null,
+    importSheet: null,
   };
 }
 

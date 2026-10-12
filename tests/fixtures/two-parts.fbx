@@ -1,0 +1,130 @@
+; FBX 7.4.0 project file
+; Hand-written for Repackshot's tests (phase I3): two groups (Assembly, Fittings) with a box each, one material.
+; MIT licence, like the rest of the repository. Units: centimetres. Up axis: Y.
+FBXHeaderExtension:  {
+	FBXHeaderVersion: 1003
+	FBXVersion: 7400
+	Creator: "Repackshot tests"
+}
+GlobalSettings:  {
+	Version: 1000
+	Properties70:  {
+		P: "UpAxis", "int", "Integer", "",1
+		P: "UpAxisSign", "int", "Integer", "",1
+		P: "FrontAxis", "int", "Integer", "",2
+		P: "FrontAxisSign", "int", "Integer", "",1
+		P: "CoordAxis", "int", "Integer", "",0
+		P: "CoordAxisSign", "int", "Integer", "",1
+		P: "UnitScaleFactor", "double", "Number", "",1
+	}
+}
+Definitions:  {
+	Version: 100
+	Count: 7
+	ObjectType: "Model" {
+		Count: 4
+	}
+	ObjectType: "Geometry" {
+		Count: 2
+	}
+	ObjectType: "Material" {
+		Count: 1
+	}
+}
+Objects:  {
+	Geometry: 2001, "Geometry::Body", "Mesh" {
+		Vertices: *24 {
+			a: -2,0,-2,2,0,-2,2,6,-2,-2,6,-2,-2,0,2,2,0,2,2,6,2,-2,6,2
+		}
+		PolygonVertexIndex: *24 {
+			a: 0,3,2,-2,4,5,6,-8,0,1,5,-5,3,7,6,-3,0,4,7,-4,1,2,6,-6
+		}
+		GeometryVersion: 124
+		LayerElementMaterial: 0 {
+			Version: 101
+			Name: ""
+			MappingInformationType: "AllSame"
+			ReferenceInformationType: "IndexToDirect"
+			Materials: *1 {
+				a: 0
+			}
+		}
+		Layer: 0 {
+			Version: 100
+			LayerElement:  {
+				Type: "LayerElementMaterial"
+				TypedIndex: 0
+			}
+		}
+	}
+	Geometry: 2002, "Geometry::Cap", "Mesh" {
+		Vertices: *24 {
+			a: -1,6,-1,1,6,-1,1,7,-1,-1,7,-1,-1,6,1,1,6,1,1,7,1,-1,7,1
+		}
+		PolygonVertexIndex: *24 {
+			a: 0,3,2,-2,4,5,6,-8,0,1,5,-5,3,7,6,-3,0,4,7,-4,1,2,6,-6
+		}
+		GeometryVersion: 124
+		LayerElementMaterial: 0 {
+			Version: 101
+			Name: ""
+			MappingInformationType: "AllSame"
+			ReferenceInformationType: "IndexToDirect"
+			Materials: *1 {
+				a: 0
+			}
+		}
+		Layer: 0 {
+			Version: 100
+			LayerElement:  {
+				Type: "LayerElementMaterial"
+				TypedIndex: 0
+			}
+		}
+	}
+	Model: 1000, "Model::Assembly", "Null" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,0
+		}
+	}
+	Model: 1003, "Model::Fittings", "Null" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,0
+		}
+	}
+	Model: 1001, "Model::Body", "Mesh" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,0
+		}
+	}
+	Model: 1002, "Model::Cap", "Mesh" {
+		Version: 232
+		Properties70:  {
+			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,0
+		}
+	}
+	Material: 3001, "Material::Steel", "" {
+		Version: 102
+		ShadingModel: "phong"
+		MultiLayer: 0
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",0.8,0.2,0.1
+			P: "SpecularColor", "Color", "", "A",0.5,0.5,0.5
+			P: "Shininess", "Number", "", "A",50
+			P: "Opacity", "double", "Number", "",1
+		}
+	}
+}
+Connections:  {
+	C: "OO",1000,0
+	C: "OO",1001,1000
+	C: "OO",1003,0
+	C: "OO",1002,1003
+	C: "OO",2001,1001
+	C: "OO",2002,1002
+	C: "OO",3001,1001
+	C: "OO",3001,1002
+}

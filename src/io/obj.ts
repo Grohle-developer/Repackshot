@@ -4,12 +4,12 @@
 // `usemtl` names the material a face takes. Comments, blank lines, `s`
 // and every other statement are skipped. CRLF and LF both work.
 //
-// OBJ has no up axis: files are taken as Y up and converted to the model's
-// Z up (the glTF importer does the same). Units are not declared either, so
-// the numbers are kept as millimetres and `import.ts` flags implausible sizes.
+// OBJ has no up axis and no units: the numbers are kept as the file has them
+// and the import options decide (Y up is the detected default, like glTF;
+// the units come from the size heuristic, `import-options.ts`).
 // `.mtl` libraries are not read yet: the importer only notes that they exist.
 
-import { buildMesh, FloatBuffer, yUpToZUp, type ImportMessage, type MaterialRange, type ParsedModel, type ParsedPart, type RawMesh } from './mesh-common';
+import { buildMesh, FloatBuffer, type ImportMessage, type MaterialRange, type ParsedModel, type ParsedPart, type RawMesh } from './mesh-common';
 
 /** A part being filled: a triangle soup plus what each triangle uses. */
 class PartAcc {
@@ -56,7 +56,7 @@ export function parseObj(text: string, fileName: string): ParsedModel {
   const notes: ImportMessage[] = [];
   const baseName = fileName.replace(/\.[^.]+$/, '') || 'Part';
 
-  // Pools, already in model axes.
+  // Pools, in the axes of the file.
   const v = new FloatBuffer(1024);
   const vn = new FloatBuffer(1024);
   const vt = new FloatBuffer(1024);
@@ -107,14 +107,12 @@ export function parseObj(text: string, fileName: string): ParsedModel {
     // Fast paths for the statements that make up almost every file.
     if (c0 === 118 /* v */ && c1 === 32) {
       read3(raw, 1, xyz);
-      const p = yUpToZUp(xyz[0], xyz[1], xyz[2]);
-      v.push3(p[0], p[1], p[2]);
+      v.push3(xyz[0], xyz[1], xyz[2]);
       continue;
     }
     if (c0 === 118 && c1 === 110 /* vn */ && raw.charCodeAt(2) <= 32) {
       read3(raw, 2, xyz);
-      const p = yUpToZUp(xyz[0], xyz[1], xyz[2]);
-      vn.push3(p[0], p[1], p[2]);
+      vn.push3(xyz[0], xyz[1], xyz[2]);
       continue;
     }
     const line = raw.trim();
@@ -125,14 +123,12 @@ export function parseObj(text: string, fileName: string): ParsedModel {
     switch (key) {
       case 'v': {
         read3(line, 1, xyz);
-        const p = yUpToZUp(xyz[0], xyz[1], xyz[2]);
-        v.push3(p[0], p[1], p[2]);
+        v.push3(xyz[0], xyz[1], xyz[2]);
         break;
       }
       case 'vn': {
         read3(line, 2, xyz);
-        const p = yUpToZUp(xyz[0], xyz[1], xyz[2]);
-        vn.push3(p[0], p[1], p[2]);
+        vn.push3(xyz[0], xyz[1], xyz[2]);
         break;
       }
       case 'vt': {

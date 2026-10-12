@@ -7,6 +7,7 @@ import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Lang } from '../data/types';
 import { activeCamera } from '../core/camera';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
+import { applyImportOptions, defaultImportOptions, releaseImport, type ImportMessage, type ImportOptions } from '../core/import-options';
 import { actionParts, assignAction, inventoryFor, type MaterialId } from '../core/materials';
 import { resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
 import { createInitialState, type ThemeSetting } from '../core/store';
@@ -16,7 +17,6 @@ import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
 import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, setupLabel, studioLabel, targetLabel } from './names';
 import { writePref } from './prefs';
-import type { ImportMessage } from './ports';
 import type { Ctx } from './reactive';
 import { L, formatClock, formatNumber, getLang, t, type StringKey } from './strings';
 
@@ -56,57 +56,124 @@ export function pickFiles(accept: string, multiple = false): Promise<File[]> {
   });
 }
 
-/** Extensions read in this version (the importers live in src/io/import.ts; ui cannot import them). */
-export const READ_FORMATS = ['glb', 'gltf', 'obj', 'stl'];
-/** Formats the empty state lists as coming soon. */
-export const SOON_FORMATS = ['fbx', '3dm', 'step', 'stp', 'iges', 'igs', '3mf', 'ply', 'dae', 'usd', 'usdz', 'usda', 'usdc'];
+/** Extensions read in this version (the importers live in src/io/import.ts; ui cannot import them: a test keeps both lists equal). */
+export const READ_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', '3dm', '3mf', 'ply', 'dae', 'usd', 'usda', 'usdc', 'usdz'];
+/** Formats the empty state lists as coming soon (CAD, phase I2). */
+export const SOON_FORMATS = ['step', 'stp', 'iges', 'igs'];
 export const MODEL_ACCEPT = [...READ_FORMATS, ...SOON_FORMATS].map((f) => `.${f}`).join(',');
+
+/** The sentence for a note or warning an importer attached. */
+export function importMessageText(name: string, m: ImportMessage): string {
+  const params: Record<string, string | number> = { name };
+  for (const [k, v] of Object.entries(m.params)) params[k] = typeof v === 'number' ? formatNumber(v, getLang(), 4) : v;
+  return t(dyn(`import.msg.${m.code}`), params);
+}
 
 /** Shows what an importer reports (dropped triangles, a suspicious size...) as toasts, warnings first. */
 function reportImport(ctx: Ctx, name: string, messages: readonly ImportMessage[]): void {
-  for (const m of messages.slice(0, 2)) {
-    const params: Record<string, string | number> = { name };
-    for (const [k, v] of Object.entries(m.params)) params[k] = typeof v === 'number' ? formatNumber(v, getLang(), 4) : v;
-    ctx.ui.toast(t(dyn(`import.msg.${m.code}`), params));
+  for (const m of messages.slice(0, 2)) ctx.ui.toast(importMessageText(name, m));
+}
+
+// --- Importing: read, then the sheet, then the store ------------------------------------------------
+
+/** Files waiting their turn while the sheet is open or a file is being read. */
+const waiting: File[] = [];
+let reading = false;
+let sheetCounter = 0;
+
+/**
+ * A file dropped or chosen: it is read (in the units and axes of the file) and the inspector shows the import
+ * sheet with the detected values; nothing reaches the scene until the person presses Import (UI.md §2.3).
+ * Several files are shown one after the other.
+ */
+export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<void> {
+  waiting.push(...files);
+  const sheet = ctx.ui.get().importSheet;
+  if (sheet) ctx.ui.set({ importSheet: { ...sheet, queued: waiting.length } });
+  if (sheet || reading) return;
+  reading = true;
+  try {
+    while (waiting.length > 0 && !ctx.ui.get().importSheet) await readNext(ctx);
+  } finally {
+    reading = false;
   }
 }
 
-export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<void> {
-  for (const file of files) {
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    if (SOON_FORMATS.includes(ext)) {
-      const msg = t('import.soon', { format: ext.toUpperCase() });
-      ctx.ui.set({ importMessage: msg });
-      ctx.ui.toast(msg);
-      continue;
-    }
-    if (!READ_FORMATS.includes(ext)) {
-      const msg = t('import.unknown', { name: file.name });
-      ctx.ui.set({ importMessage: msg });
-      ctx.ui.toast(msg);
-      continue;
-    }
-    ctx.ui.set({ importMessage: t('import.busy', { name: file.name }) });
-    try {
-      const result = await ctx.services.importFile(file);
-      const payload = { nodes: result.nodes, roots: result.roots, materials: result.materials };
-      const replace = ctx.store.get().scene.roots.length === 0;
-      // The Standard studio is already there: the part shows lit, resting on the floor and framed.
-      ctx.store.transaction(L('undo.import', { name: file.name }), () => {
-        ctx.store.dispatch({ type: 'scene/addModel', payload, replace });
-        const roots = ctx.store.get().scene.roots;
-        ctx.store.dispatch({ type: 'scene/restOnFloor', ids: [roots[roots.length - 1]] });
-        ctx.store.dispatch({ type: 'camera/frame' });
-      });
-      ctx.ui.set({ importMessage: null });
-      ctx.ui.toast(t('import.done', { name: file.name }));
-      reportImport(ctx, file.name, [...(result.warnings ?? []), ...(result.notes ?? [])]);
-    } catch (err) {
-      const msg = t('import.failed', { name: file.name, reason: err instanceof Error ? err.message : String(err) });
-      ctx.ui.set({ importMessage: msg });
-      ctx.ui.toast(msg);
-    }
+async function readNext(ctx: Ctx): Promise<void> {
+  const file = waiting.shift()!;
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  if (SOON_FORMATS.includes(ext)) {
+    const msg = t('import.soon', { format: ext.toUpperCase() });
+    ctx.ui.set({ importMessage: msg });
+    ctx.ui.toast(msg);
+    return;
   }
+  if (!READ_FORMATS.includes(ext)) {
+    const msg = t('import.unknown', { name: file.name });
+    ctx.ui.set({ importMessage: msg });
+    ctx.ui.toast(msg);
+    return;
+  }
+  ctx.ui.set({ importMessage: t('import.busy', { name: file.name }) });
+  try {
+    const read = await ctx.services.importFile(file);
+    const options = defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0);
+    ctx.ui.set({
+      importMessage: t('import.sheetHint', { name: file.name }),
+      rightCollapsed: false,
+      importSheet: { id: ++sheetCounter, name: file.name, format: read.format, payload: read, warnings: read.warnings, notes: read.notes, options, queued: waiting.length },
+    });
+  } catch (err) {
+    const msg = t('import.failed', { name: file.name, reason: err instanceof Error ? err.message : String(err) });
+    ctx.ui.set({ importMessage: msg });
+    ctx.ui.toast(msg);
+  }
+}
+
+/** Changes some of the sheet's values. */
+export function setImportOptions(ctx: Ctx, patch: Partial<ImportOptions>): void {
+  const sheet = ctx.ui.get().importSheet;
+  if (sheet) ctx.ui.set({ importSheet: { ...sheet, options: { ...sheet.options, ...patch } } });
+}
+
+function closeSheet(ctx: Ctx): void {
+  ctx.ui.set({ importSheet: null, importMessage: null });
+  if (waiting.length > 0) void importFiles(ctx, []);
+}
+
+/** Import (Enter): applies the sheet's options to the file and adds the result to the scene. */
+export function confirmImport(ctx: Ctx): void {
+  const sheet = ctx.ui.get().importSheet;
+  if (!sheet) return;
+  const { options, payload, name } = sheet;
+  const applied = applyImportOptions(payload, options);
+  if (applied.roots.length === 0) {
+    // Every part is hidden in the file: say so and let the person turn "Import hidden layers" on.
+    ctx.ui.toast(t('import.noParts', { name }));
+    return;
+  }
+  releaseImport(payload, applied);
+  const model = { nodes: applied.nodes, roots: applied.roots, materials: applied.materials };
+  // The Standard studio is already there: the part shows lit, centred, resting on the floor and framed.
+  ctx.store.transaction(L('undo.import', { name }), () => {
+    ctx.store.dispatch({ type: 'scene/addModel', payload: model, replace: options.mode === 'replace' });
+    const roots = ctx.store.get().scene.roots;
+    const added = [roots[roots.length - 1]];
+    if (options.center) ctx.store.dispatch({ type: 'scene/center', ids: added });
+    if (options.restOnFloor) ctx.store.dispatch({ type: 'scene/restOnFloor', ids: added });
+    if (options.frameCamera) ctx.store.dispatch({ type: 'camera/frame' });
+  });
+  ctx.ui.toast(t('import.done', { name }));
+  reportImport(ctx, name, [...sheet.warnings, ...sheet.notes, ...applied.notes]);
+  closeSheet(ctx);
+}
+
+/** Cancel (Esc): forgets the file. */
+export function cancelImport(ctx: Ctx): void {
+  const sheet = ctx.ui.get().importSheet;
+  if (!sheet) return;
+  releaseImport(sheet.payload);
+  closeSheet(ctx);
 }
 
 export async function importDialog(ctx: Ctx): Promise<void> {
@@ -115,6 +182,7 @@ export async function importDialog(ctx: Ctx): Promise<void> {
 }
 
 export function newProject(ctx: Ctx): void {
+  cancelImport(ctx);
   const s = ctx.store.get();
   ctx.store.reset(createInitialState({ lang: s.meta.lang, theme: s.meta.theme }));
   ctx.ui.set({ catalogOpen: false, pickMode: null, wizard: null, importMessage: null });

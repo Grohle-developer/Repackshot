@@ -1,7 +1,8 @@
-// Geometry shared by the mesh importers (OBJ, STL): the Y-up to Z-up axis
-// change, a growable float buffer, a hash table keyed by 32-bit words, and
-// `buildMesh`, which turns a triangle soup into an indexed mesh with welded
-// vertices, smoothing-angle normals and hard edges.
+// Geometry shared by the mesh importers: a growable float buffer, a hash table
+// keyed by 32-bit words, and `buildMesh`, which turns a triangle soup into an
+// indexed mesh with welded vertices, smoothing-angle normals and hard edges.
+// Readers leave the geometry in the axes and units of the file: the import
+// options (core/import-options.ts) turn it into the model's Z up and millimetres.
 //
 // Rules (ROADMAP I1): positions are welded first on their exact float bits
 // and then within 1e-5 of the mesh size; two faces share a vertex normal only
@@ -9,7 +10,10 @@
 // default), so vertices are split along hard edges; an edge is hard when that
 // angle is exceeded. Boundary edges have no second face and are not hard.
 
+import type { ImportMessage } from '../core/import-options';
 import type { MeshData } from '../core/meshes';
+
+export type { ImportMessage, ImportMessageCode } from '../core/import-options';
 
 /** Faces closer than this (degrees) share smooth normals; edges beyond it are hard. */
 export const SMOOTH_ANGLE_DEG = 30;
@@ -18,22 +22,7 @@ export const WELD_TOLERANCE = 1e-5;
 /** Triangles whose doubled area is below this fraction of size squared are dropped. */
 const AREA_EPSILON = 1e-10;
 
-/** Y-up (OBJ, glTF) to the model's Z-up. A rotation, so winding is preserved. */
-export function yUpToZUp(x: number, y: number, z: number): [number, number, number] {
-  return [x, -z, y];
-}
-
 // --- Messages and parsed shapes --------------------------------------------------
-
-/**
- * Something the interface tells the person after an import. `code` selects the
- * string `import.msg.<code>`; `params` fill its placeholders.
- */
-export type ImportMessageCode = 'degenerate' | 'badFace' | 'partialNormals' | 'scaleSmall' | 'scaleLarge' | 'mtlIgnored';
-export interface ImportMessage {
-  code: ImportMessageCode;
-  params: Record<string, string | number>;
-}
 
 /** A run of triangles whose material differs from the part's initial one. */
 export interface MaterialRange {
@@ -43,7 +32,7 @@ export interface MaterialRange {
   material: string | null;
 }
 
-/** One part as a reader hands it over: geometry in model axes, file units. */
+/** One part as a reader hands it over: geometry in the axes and units of the file. */
 export interface ParsedPart {
   name: string;
   mesh: MeshData;
@@ -215,7 +204,7 @@ export class KeyTable {
 
 // --- Building a mesh ---------------------------------------------------------------------
 
-/** A triangle soup: three corners per triangle, nothing shared. Model axes. */
+/** A triangle soup: three corners per triangle, nothing shared. Axes of the file. */
 export interface RawMesh {
   /** 9 floats per triangle. Modified in place (negative zero is normalised). */
   positions: Float32Array;

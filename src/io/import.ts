@@ -1,40 +1,59 @@
-// Import entry point: detects the format by header and extension, reads the
-// file with the right importer (each one loaded on demand) and builds the
-// nodes the store adds. `importFile` is what the interface calls; the OBJ and
-// STL readers return parts and this module does the rest: part pivots, the
-// materials the file names, the neutral Default for parts without one, the
-// MODEL node and the scale note.
+// Import entry point: detects the format by header and extension and reads the
+// file with the right importer (each one loaded on demand, so none is in the
+// initial chunk). A reader returns the model as the file has it: the units and
+// axes of the file, one MODEL with GROUP and PART nodes, the file's materials as
+// SIMPLE instances, and in `detected` what the file says about its units and up
+// axis. The import sheet (ui/panels/import-sheet.ts) chooses the options and
+// `applyImportOptions` (core/import-options.ts) turns that into the nodes the
+// store adds, the same way for every format.
 //
-// The caller (ui/commands.ts) then adds the payload with `scene/addModel`,
-// rests it on the floor and frames the camera, exactly as for glTF.
+// The OBJ and STL readers are our own (phase I1); glTF, FBX, 3DM, 3MF, PLY,
+// DAE and USD go through three.js loaders (ARCHITECTURE §1) and the shared
+// converter in three-scene.ts.
 
+import { payloadSize, type ImportMessage, type ImportPayload } from '../core/import-options';
 import { defaultInstance, plainInstance, type MaterialId, type MaterialInstance } from '../core/materials';
 import { boxCenter } from '../core/math';
 import { positionsBounds, registerMesh } from '../core/meshes';
-import type { FaceRange, ModelPayload, NodeId, SceneNode } from '../core/scene';
-import { isBinaryStl, largestDimension, looksLikeAsciiStl, type ImportMessage, type ParsedModel } from './mesh-common';
+import type { FaceRange, NodeId, SceneNode } from '../core/scene';
+import { isBinaryStl, looksLikeAsciiStl, type ParsedModel } from './mesh-common';
 
-export type ImportFormat = 'GLTF' | 'OBJ' | 'STL';
+export { LARGE_MODEL_MM, SMALL_MODEL_MM } from '../core/import-options';
+
+export type ImportFormat = 'GLTF' | 'OBJ' | 'STL' | 'FBX' | '3DM' | '3MF' | 'PLY' | 'DAE' | 'USD';
 
 /** Something to import: a browser `File`, or a name with its bytes (tests, drops from other sources). */
 export type ImportSource = File | { name: string; bytes: ArrayBuffer | ArrayBufferView };
 
-export interface ImportResult extends ModelPayload {
+/** A model as the file has it (units, axes, materials) plus what the reader found out about it. */
+export interface ImportResult extends ImportPayload {
   format: ImportFormat;
   /** Data that was repaired or dropped while reading. */
   warnings: ImportMessage[];
-  /** Informational: a suspicious size, material libraries that were not read. */
+  /** Informational: material libraries that were not read, B-reps without a mesh, textures kept. */
   notes: ImportMessage[];
 }
 
-/** Largest dimension (mm) under which a file is probably in metres. */
-export const SMALL_MODEL_MM = 1;
-/** Largest dimension (mm) above which a file is probably in micrometres, or wrong. */
-export const LARGE_MODEL_MM = 10_000;
-
 let importCounter = 0;
 
-const EXTENSIONS: Record<string, ImportFormat> = { glb: 'GLTF', gltf: 'GLTF', obj: 'OBJ', stl: 'STL' };
+const EXTENSIONS: Record<string, ImportFormat> = {
+  glb: 'GLTF',
+  gltf: 'GLTF',
+  obj: 'OBJ',
+  stl: 'STL',
+  fbx: 'FBX',
+  '3dm': '3DM',
+  '3mf': '3MF',
+  ply: 'PLY',
+  dae: 'DAE',
+  usd: 'USD',
+  usda: 'USD',
+  usdc: 'USD',
+  usdz: 'USD',
+};
+
+/** Extensions this version reads (the interface lists them; it cannot import this module). */
+export const READ_EXTENSIONS: readonly string[] = Object.keys(EXTENSIONS);
 
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.');
@@ -46,10 +65,33 @@ function head(bytes: Uint8Array): string {
   return new TextDecoder('utf-8').decode(bytes.subarray(0, Math.min(bytes.byteLength, 4096))).replace(/^﻿/, '');
 }
 
+const latin1 = (bytes: Uint8Array, from: number, to: number): string => new TextDecoder('latin1').decode(bytes.subarray(from, Math.min(bytes.byteLength, to)));
+
+/** The format a file's own header gives away (not STL or OBJ, which have no magic of their own), or null. */
+function sniffHeader(bytes: Uint8Array): ImportFormat | null {
+  const top = latin1(bytes, 0, 64);
+  if (top.startsWith('Kaydara FBX Binary')) return 'FBX';
+  if (top.startsWith('3D Geometry File Format')) return '3DM';
+  if (top.startsWith('PXR-USDC')) return 'USD';
+  if (/^ply\r?\n/.test(top)) return 'PLY';
+  const text = head(bytes).trimStart();
+  if (text.startsWith('#usda')) return 'USD';
+  if (text.startsWith('; FBX')) return 'FBX';
+  if (/<COLLADA[\s>]/.test(text)) return 'DAE';
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 3 && bytes[3] === 4) {
+    // A zip: the names of its entries are stored in plain text, at the front and in the directory at the back.
+    const names = latin1(bytes, 0, 8192) + latin1(bytes, Math.max(0, bytes.byteLength - 65536), bytes.byteLength);
+    if (/3D\/[^\0]*\.model/i.test(names)) return '3MF';
+    if (/\.usd[acz]?\b/i.test(names)) return 'USD';
+  }
+  return null;
+}
+
 /**
  * Detects the format: a binary glTF by its magic number, then the extension,
- * then the header for a file without a known extension (binary STL by its
- * size, JSON glTF, ASCII STL, OBJ statements).
+ * then the header for a file without a known extension (the magic numbers and
+ * first lines of FBX, 3DM, PLY, USD, DAE, 3MF; binary STL by its size, JSON
+ * glTF, ASCII STL, OBJ statements).
  */
 export function detectFormat(name: string, bytes: Uint8Array): ImportFormat | null {
   const ext = extensionOf(name);
@@ -57,6 +99,8 @@ export function detectFormat(name: string, bytes: Uint8Array): ImportFormat | nu
   if (magic && ext !== 'stl') return 'GLTF';
   const byExtension = EXTENSIONS[ext];
   if (byExtension) return byExtension;
+  const byHeader = sniffHeader(bytes);
+  if (byHeader) return byHeader;
   if (isBinaryStl(bytes)) return 'STL';
   const text = head(bytes).trimStart();
   if (text.startsWith('{') && text.includes('"asset"')) return 'GLTF';
@@ -72,32 +116,59 @@ async function readBytes(file: ImportSource): Promise<{ name: string; bytes: Uin
   return { name: file.name, bytes: b instanceof ArrayBuffer ? new Uint8Array(b) : new Uint8Array(b.buffer, b.byteOffset, b.byteLength) };
 }
 
-/** Reads a model file. Throws an Error with a readable reason when it cannot. */
+/** The bytes of a view as an ArrayBuffer of exactly that length (a copy only when the view is a slice). */
+function arrayBufferOf(bytes: Uint8Array): ArrayBuffer {
+  const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+  return (whole ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)) as ArrayBuffer;
+}
+
+/**
+ * Reads a model file in the units and axes of the file; throws an Error with a readable reason when it
+ * cannot. The caller applies the import options (`applyImportOptions`) to get something the store adds.
+ */
 export async function importFile(file: ImportSource): Promise<ImportResult> {
   const { name, bytes } = await readBytes(file);
   const format = detectFormat(name, bytes);
   if (!format) throw new Error('unknown file format');
-  if (format === 'GLTF') {
-    const { readGltf } = await import('./gltf');
-    const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
-    const buffer = (whole ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)) as ArrayBuffer;
-    const payload = await readGltf({ name, arrayBuffer: async () => buffer });
-    return { ...payload, format, warnings: [], notes: [] };
+  switch (format) {
+    case 'GLTF': {
+      const { readGltf } = await import('./gltf');
+      const buffer = arrayBufferOf(bytes);
+      return { ...(await readGltf({ name, arrayBuffer: async () => buffer })), format };
+    }
+    case 'FBX': {
+      const { readFbx } = await import('./fbx');
+      return { ...(await readFbx(name, arrayBufferOf(bytes))), format };
+    }
+    case '3DM': {
+      const { readRhino } = await import('./rhino');
+      return { ...(await readRhino(name, arrayBufferOf(bytes).slice(0))), format };
+    }
+    case '3MF': {
+      const { readThreeMf } = await import('./threemf');
+      return { ...(await readThreeMf(name, arrayBufferOf(bytes))), format };
+    }
+    case 'PLY': {
+      const { readPly } = await import('./ply');
+      return { ...(await readPly(name, arrayBufferOf(bytes))), format };
+    }
+    case 'DAE': {
+      const { readCollada } = await import('./collada');
+      return { ...(await readCollada(name, new TextDecoder('utf-8').decode(bytes))), format };
+    }
+    case 'USD': {
+      const { readUsd } = await import('./usd');
+      return { ...(await readUsd(name, arrayBufferOf(bytes))), format };
+    }
+    case 'OBJ': {
+      const { parseObj } = await import('./obj');
+      return assemble(parseObj(new TextDecoder('utf-8').decode(bytes), name), name, format);
+    }
+    case 'STL': {
+      const { parseStl } = await import('./stl');
+      return assemble(parseStl(bytes, name), name, format);
+    }
   }
-  let parsed: ParsedModel;
-  if (format === 'OBJ') {
-    const { parseObj } = await import('./obj');
-    parsed = parseObj(new TextDecoder('utf-8').decode(bytes), name);
-  } else {
-    const { parseStl } = await import('./stl');
-    parsed = parseStl(bytes, name);
-  }
-  return assemble(parsed, name, format);
-}
-
-/** Rounds to three significant digits, for messages. */
-function round3(x: number): number {
-  return Number(x.toPrecision(3));
 }
 
 /** Turns parsed parts into nodes, materials and registered meshes. */
@@ -137,20 +208,10 @@ export function assemble(parsed: ParsedModel, fileName: string, format: ImportFo
     return id;
   };
 
-  const size = largestDimension(parsed.parts.map((p) => p.mesh.positions));
-  const notes = [...parsed.notes];
-  if (size > 0 && size < SMALL_MODEL_MM) {
-    notes.push({ code: 'scaleSmall', params: { size: round3(size), factor: 1000 } });
-    nodes[modelId].source!.unitHint = 1000;
-  } else if (size > LARGE_MODEL_MM) {
-    notes.push({ code: 'scaleLarge', params: { size: round3(size), factor: 0.001 } });
-    nodes[modelId].source!.unitHint = 0.001;
-  }
-
   for (const part of parsed.parts) {
     const id = newId();
     const mesh = part.mesh;
-    // Re-centre the part on its own bounds, as the glTF importer does: the node carries the offset.
+    // Re-centre the part on its own bounds: the node carries the offset.
     const c = boxCenter(positionsBounds(mesh.positions));
     for (let i = 0; i < mesh.positions.length; i += 3) {
       mesh.positions[i] -= c[0];
@@ -167,5 +228,9 @@ export function assemble(parsed: ParsedModel, fileName: string, format: ImportFo
     nodes[id] = node;
     nodes[modelId].children.push(id);
   }
-  return { nodes, roots: [modelId], materials, format, warnings: parsed.warnings, notes };
+  const payload = { nodes, roots: [modelId], materials };
+  // OBJ and STL declare neither axis nor units: OBJ is taken as Y up (like glTF), STL as Z up (CAD and printing);
+  // the units come from the size heuristic in the defaults (core/import-options.ts).
+  const detected = { units: null, upAxis: format === 'OBJ' ? ('Y' as const) : ('Z' as const), upAxisDeclared: false, size: payloadSize(payload), hasLayers: false, hiddenParts: 0 };
+  return { ...payload, detected, format, warnings: parsed.warnings, notes: [...parsed.notes] };
 }

@@ -65,6 +65,11 @@ export function meshRef(id: MeshId, data: MeshData): MeshRef {
   };
 }
 
+/** Forgets a mesh (an import that was cancelled, or the raw meshes an import replaced). */
+export function unregisterMesh(id: MeshId): void {
+  registry.delete(id);
+}
+
 export function getMesh(id: MeshId): MeshData | undefined {
   return registry.get(id);
 }
