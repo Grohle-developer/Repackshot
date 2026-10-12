@@ -32,3 +32,5 @@ out/
 .vite/
 *.local
 .DS_Store
+engine/target/
+public/engine/

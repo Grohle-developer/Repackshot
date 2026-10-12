@@ -1,0 +1,18 @@
+[package]
+name = "rt-cli"
+description = "Native command line front end of the Repackshot engine: reads an .rsb scene, writes a PNG."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "rt_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rt"
+path = "src/main.rs"
+
+[dependencies]
+rt-core = { path = "../rt-core" }

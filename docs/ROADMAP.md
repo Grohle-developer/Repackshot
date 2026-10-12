@@ -111,6 +111,9 @@ decisiones escritas (datos, contratos, revisión), no código.
   recuento, fórmula y normalización 16 × 71 — **Sonnet**.
 - **A3** · `.github/workflows/qa.yml`, plantilla de PR, `CONTRIBUTING.md`
   — **Haiku**.
+- **E1** · Workspace del motor en Rust sin dependencias: `rt-core`,
+  `rt-cli`, `rt-wasm`, formato RSB, PNG propio, lanzador de rayos de
+  marcador, CI con cross-compilación a ARM64, RISC-V y wasm — **Sonnet**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -231,7 +234,7 @@ aísla (módulo cargado bajo demanda, nunca en el paquete base).
 con las caras CAD originales conservadas como rangos de triángulos (lo
 que necesita M1 para "una cara de CAD es una cara").
 
-## E1 · Andamiaje del motor en Rust — **Sonnet** — abierta
+## E1 · Andamiaje del motor en Rust — **Sonnet** — hecha
 
 **Qué.** El workspace de Cargo en `engine/` con los tres *crates* de
 `ARCHITECTURE.md` §5.1 y **cero dependencias externas**: `rt-core` con
@@ -255,6 +258,26 @@ el centro más claro que la esquina; tests de determinismo (baldosas en
 cualquier orden dan la misma película), ida y vuelta RSB con sección
 desconocida ignorada, PNG estructuralmente válido; el `.wasm` no importa
 nada de WASI.
+
+**Hecho.** 79 tests (`rt-core` 63, `rt-cli` 10, `rt-wasm` 6), fmt, clippy
+y `cargo doc -D warnings` limpios; `Cargo.lock` sin ninguna fuente
+externa; `cargo check` cruzado a `aarch64-unknown-linux-gnu` y
+`riscv64gc-unknown-linux-gnu` en verde; `rt_wasm.wasm` de 50 KB sin
+sección de importaciones. El mismo RSB renderizado en nativo x86_64 y en
+wasm (cargado en Node) da el mismo hash de baldosa, y un test lo fija.
+Fuerza bruta sobre 322 triángulos a 4 hilos: 1.4 M rayos/s, que es el
+número que E2 tiene que multiplicar.
+
+Lo que no encajaba o quedó abierto, para E2–E4: la semilla del RNG es
+por (escena, píxel, muestra) y no por baldosa, así que la película es
+idéntica con cualquier tamaño de baldosa, no solo con cualquier orden;
+`MATL.kind`, `ENVR.background_mode` y `LGHT.flags` se guardan en bruto
+porque sus significados los fija E3; `RNDR.max_seconds` se lee pero el
+CLI no lo aplica aún; el sombreado de marcador ignora la potencia de la
+luz. La escena de ejemplo vive en `rt_core::example` porque `rt-wasm`
+también la necesita en sus tests. Las funciones de `rt-wasm` que reciben
+punteros son `unsafe extern "C"`; el registro de escenas es un `Mutex`,
+no un `static mut`.
 
 ## E2 · Geometría y aceleración — **Opus**
 

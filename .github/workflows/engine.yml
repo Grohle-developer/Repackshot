@@ -1,0 +1,91 @@
+# Engine CI: the Rust render engine in `engine/`.
+#
+# The engine promises to run on any OS and any CPU architecture. That promise is checked here by
+# cross-compiling the whole workspace for WebAssembly (built and inspected), aarch64 and riscv64
+# on every push, next to the native format, lint, test and release build.
+#
+# The engine also promises zero external dependencies. That rule is checked by requiring that
+# Cargo.lock contains only workspace members: a `[[package]]` with a `source =` line is a crate
+# from a registry or from git, and the "Zero external dependencies" step fails on it.
+name: Engine
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown, aarch64-unknown-linux-gnu, riscv64gc-unknown-linux-gnu
+
+      - name: Zero external dependencies
+        run: |
+          if grep -n '^source = ' Cargo.lock; then
+            echo "::error file=engine/Cargo.lock::Cargo.lock lists a crate from a registry or git. The engine must depend on nothing but the workspace crates and std."
+            exit 1
+          fi
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Release build of the CLI
+        run: cargo build --release -p rt-cli
+
+      - name: WebAssembly release build
+        run: cargo build -p rt-wasm --target wasm32-unknown-unknown --release
+
+      - name: WebAssembly binary has no OS imports
+        run: |
+          if grep -q wasi_snapshot_preview1 target/wasm32-unknown-unknown/release/rt_wasm.wasm; then
+            echo "::error::rt_wasm.wasm imports WASI functions. The engine must not use OS APIs."
+            exit 1
+          fi
+
+      - name: Cross-check aarch64
+        run: cargo check --workspace --target aarch64-unknown-linux-gnu
+
+      - name: Cross-check riscv64
+        run: cargo check --workspace --target riscv64gc-unknown-linux-gnu
+
+      - name: Render the example scene
+        run: |
+          mkdir -p ../out
+          cargo run --release -p rt-cli -- --example -o ../out/engine-example.png
+
+      - name: Upload the example render
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-example
+          path: out/engine-example.png
+          if-no-files-found: error
+
+      - name: Upload the WebAssembly engine
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-wasm
+          path: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
+          if-no-files-found: error

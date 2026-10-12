@@ -1,0 +1,24 @@
+# Repackshot render engine workspace.
+#
+# Rule: ZERO external dependencies. Only `std` / `core` / `alloc`.
+# `Cargo.lock` must list the workspace crates and nothing else (CI checks it).
+
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[profile.release.package."*"]
+opt-level = 3
+codegen-units = 1
