@@ -19,7 +19,7 @@ function emptyState(ctx: Ctx, scope: Scope): HTMLElement {
       { class: 'empty-zone' },
       icon('upload', 28),
       h('div', { class: 'empty-title' }, t('empty.title')),
-      h('div', { class: 'aux' }, t('empty.formats')),
+      h('div', { class: 'note' }, t('empty.formats')),
       h(
         'div',
         { class: 'row', style: 'justify-content:center;margin-top:8px', 'data-guide': 'empty-actions' },

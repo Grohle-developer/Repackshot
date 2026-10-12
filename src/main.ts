@@ -97,8 +97,11 @@ if (engine && preview) {
 
   // The outline ink follows the theme (--ink-0).
   const updateInk = () => {
-    const v = getComputedStyle(document.documentElement).getPropertyValue('--ink-0').trim();
-    const hex = /^#([0-9a-f]{6})$/i.exec(v)?.[1];
+    // The browser may shorten the token (#000); a 2D context normalises any CSS colour to #rrggbb.
+    const probe = document.createElement('canvas').getContext('2d')!;
+    probe.fillStyle = '#ffffff';
+    probe.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink-0').trim() || '#ffffff';
+    const hex = /^#([0-9a-f]{6})$/i.exec(String(probe.fillStyle))?.[1];
     const c = hex ? parseInt(hex, 16) : 0xffffff;
     const lin = (x: number) => {
       const s = x / 255;

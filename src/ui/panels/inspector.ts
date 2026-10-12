@@ -44,7 +44,11 @@ function breadcrumb(ctx: Ctx, scope: Scope): HTMLElement {
       const root = h('button', { type: 'button', class: 'crumb', onclick: () => cmd.deselect(ctx) }, t('inspector.scene'));
       let tail: string | null = null;
       if (c.kind === 'parts') {
-        if (c.faces && s.selection.faces) tail = t('inspector.faces', { n: s.selection.faces.indices.length, part: s.scene.nodes[s.selection.faces.part]?.name ?? '' });
+        if (c.faces && s.selection.faces) {
+          const n = s.selection.faces.indices.length;
+          const part = s.scene.nodes[s.selection.faces.part]?.name ?? '';
+          tail = n === 1 ? t('inspector.face', { part }) : t('inspector.faces', { n, part });
+        }
         else tail = c.ids.length === 1 ? s.scene.nodes[c.ids[0]].name : t('inspector.parts', { n: c.ids.length });
       } else if (c.kind === 'light') tail = lightName(s, c.id, getLang());
       else if (c.kind === 'camera') tail = cameraName(s, s.camera.cameras[c.id]);

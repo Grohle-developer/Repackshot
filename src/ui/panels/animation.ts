@@ -126,6 +126,10 @@ function shotsColumn(ctx: Ctx, scope: Scope): HTMLElement {
   );
 }
 
+/** Width of the lane-label gutter of the timeline, px. */
+const GUTTER = 84;
+const ROW_H = 20;
+
 function timeline(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui } = ctx;
   const el = h('div', { class: 'timeline', 'aria-label': t('anim.timeline') });
@@ -133,64 +137,74 @@ function timeline(ctx: Ctx, scope: Scope): HTMLElement {
     const s = store.get();
     const a = s.animation;
     const total = Math.max(totalDuration(s), 1);
-    const w = el.clientWidth || 600;
+    const w = Math.max(100, (el.clientWidth || 600) - GUTTER - 8);
     const px = w / total;
     const conflicts = clipConflicts(s);
     const starts = shotStarts(s);
-    const ruler = h('div', { class: 'tl-shots' }, ...a.shots.map((shot, i) => h('div', { class: 'tl-shot', style: `left:${starts[i] * px}px;width:${shot.duration * px}px` }, t('anim.shot', { n: i + 1 }))));
+    const ruler = h(
+      'div',
+      { class: 'tl-shots', style: `margin-left:${GUTTER}px` },
+      ...a.shots.map((shot, i) => h('div', { class: 'tl-shot', style: `left:${starts[i] * px}px;width:${shot.duration * px}px` }, t('anim.shot', { n: i + 1 }))),
+    );
     ruler.addEventListener('pointerdown', (e) => {
-      const r = el.getBoundingClientRect();
+      const r = ruler.getBoundingClientRect();
       store.dispatch({ type: 'anim/playhead', t: Math.max(0, (e.clientX - r.left) / px) });
     });
-    const lanes = new Map<string, { target: ClipTarget; clips: MotionClip[] }>();
+    // One lane per target; overlapping moves of a lane stack in rows.
+    const lanes = new Map<string, { target: ClipTarget; rows: MotionClip[][] }>();
     for (const c of a.clips) {
       const k = targetKey(c.target);
-      if (!lanes.has(k)) lanes.set(k, { target: c.target, clips: [] });
-      lanes.get(k)!.clips.push(c);
+      if (!lanes.has(k)) lanes.set(k, { target: c.target, rows: [] });
+      const lane = lanes.get(k)!;
+      const row = lane.rows.find((r) => r.every((o) => c.start >= o.start + o.duration || o.start >= c.start + c.duration));
+      if (row) row.push(c);
+      else lane.rows.push([c]);
     }
     const laneEls = [...lanes.values()].map((lane) =>
       h(
         'div',
-        { class: 'tl-lane' },
-        h('span', { class: 'tl-lane-label' }, laneLabel(s, lane.target)),
-        ...lane.clips.map((c) => {
-          const label = lbl(moveKind(c.move)?.label ?? { en: c.move, es: c.move });
-          const block = h(
-            'div',
-            {
-              class: `tl-block${ui.get().selectedClip === c.id ? ' is-selected' : ''}${conflicts.has(c.id) ? ' is-conflict' : ''}`,
-              style: `left:${c.start * px}px;width:${Math.max(6, c.duration * px)}px`,
-              'data-tip': clipSentence(s, c, getLang()) + (conflicts.has(c.id) ? ` · ${t('anim.conflict')}` : ''),
-            },
-            label,
-            h('span', { class: 'tl-handle' }),
-          );
-          block.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            ui.set({ selectedClip: c.id, wizard: null });
-            const stretch = (e.target as HTMLElement).classList.contains('tl-handle');
-            const x0 = e.clientX;
-            const start0 = c.start;
-            const dur0 = c.duration;
-            const gesture = `clip${c.id}${Date.now()}`;
-            block.setPointerCapture(e.pointerId);
-            const move = (ev: PointerEvent) => {
-              const d = Math.round(((ev.clientX - x0) / px) * 20) / 20;
-              const patch = stretch ? { duration: Math.max(0.05, dur0 + d) } : { start: Math.max(0, start0 + d) };
-              store.dispatch({ type: 'anim/setClip', id: c.id, patch, gesture, label: L('undo.editClip') });
-            };
-            const up = () => {
-              block.removeEventListener('pointermove', move);
-              block.removeEventListener('pointerup', up);
-            };
-            block.addEventListener('pointermove', move);
-            block.addEventListener('pointerup', up);
-          });
-          return block;
-        }),
+        { class: 'tl-lane', style: `height:${lane.rows.length * ROW_H + 4}px` },
+        h('span', { class: 'tl-lane-label', style: `width:${GUTTER - 8}px` }, laneLabel(s, lane.target)),
+        ...lane.rows.flatMap((row, ri) =>
+          row.map((c) => {
+            const label = lbl(moveKind(c.move)?.label ?? { en: c.move, es: c.move });
+            const block = h(
+              'div',
+              {
+                class: `tl-block${ui.get().selectedClip === c.id ? ' is-selected' : ''}${conflicts.has(c.id) ? ' is-conflict' : ''}`,
+                style: `left:${GUTTER + c.start * px}px;top:${3 + ri * ROW_H}px;width:${Math.max(6, c.duration * px)}px`,
+                'data-tip': clipSentence(s, c, getLang()) + (conflicts.has(c.id) ? ` · ${t('anim.conflict')}` : ''),
+              },
+              label,
+              h('span', { class: 'tl-handle' }),
+            );
+            block.addEventListener('pointerdown', (e) => {
+              e.preventDefault();
+              ui.set({ selectedClip: c.id, wizard: null });
+              const stretch = (e.target as HTMLElement).classList.contains('tl-handle');
+              const x0 = e.clientX;
+              const start0 = c.start;
+              const dur0 = c.duration;
+              const gesture = `clip${c.id}${Date.now()}`;
+              block.setPointerCapture(e.pointerId);
+              const move = (ev: PointerEvent) => {
+                const d = Math.round(((ev.clientX - x0) / px) * 20) / 20;
+                const patch = stretch ? { duration: Math.max(0.05, dur0 + d) } : { start: Math.max(0, start0 + d) };
+                store.dispatch({ type: 'anim/setClip', id: c.id, patch, gesture, label: L('undo.editClip') });
+              };
+              const up = () => {
+                block.removeEventListener('pointermove', move);
+                block.removeEventListener('pointerup', up);
+              };
+              block.addEventListener('pointermove', move);
+              block.addEventListener('pointerup', up);
+            });
+            return block;
+          }),
+        ),
       ),
     );
-    const head = h('div', { class: 'tl-playhead', style: `left:${a.playhead * px}px` });
+    const head = h('div', { class: 'tl-playhead', style: `left:${GUTTER + a.playhead * px}px` });
     el.replaceChildren(ruler, ...laneEls, head);
   };
   scope.watch((s, u) => [s.animation.shots, s.animation.clips, s.scene.nodes, u.selectedClip], draw, shallowEq);
@@ -199,7 +213,8 @@ function timeline(ctx: Ctx, scope: Scope): HTMLElement {
     (p) => {
       const s = store.get();
       const head = el.querySelector('.tl-playhead') as HTMLElement | null;
-      if (head) head.style.left = `${p * ((el.clientWidth || 600) / Math.max(totalDuration(s), 1))}px`;
+      const w = Math.max(100, (el.clientWidth || 600) - GUTTER - 8);
+      if (head) head.style.left = `${GUTTER + p * (w / Math.max(totalDuration(s), 1))}px`;
     },
   );
   const ro = new ResizeObserver(draw);

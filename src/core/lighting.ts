@@ -6,7 +6,7 @@ import { CAMERA_AZIMUTH_DEG, CAMERA_ELEVATION_DEG, SPEC_DEFAULTS, lightSetup } f
 import { QUALITY_PRESETS } from '../data/quality';
 import { studioPreset } from '../data/studios';
 import type { LightRole, LightShape, LightSpec, LightType, RGB } from '../data/types';
-import { kelvinToRgb, polar, specIrradiance } from './light-math';
+import { kelvinToRgb, polar, specIrradiance, toWorldAzimuth } from './light-math';
 import { activeRig } from './rig';
 import type { ActionBase, EnvironmentState, ImageState, ProjectState } from './store';
 import { activeCamera, cameraPosition, frameBox, outputAspect, type CameraState } from './camera';
@@ -127,7 +127,7 @@ export function rigPivot(state: ProjectState): Vec3 {
 
 /** World position of a light, millimetres. */
 export function lightPosition(state: ProjectState, l: Pick<LightInstance, 'az' | 'el' | 'dist'>): Vec3 {
-  return add(rigPivot(state), polar(l.az + CAMERA_AZIMUTH_DEG, l.el, l.dist * state.scene.partSizeMm));
+  return add(rigPivot(state), polar(toWorldAzimuth(l.az), l.el, l.dist * state.scene.partSizeMm));
 }
 
 /**

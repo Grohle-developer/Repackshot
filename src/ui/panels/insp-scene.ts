@@ -28,7 +28,10 @@ function productSection(ctx: Ctx, scope: Scope): HTMLElement {
   const { store } = ctx;
   const s0 = store.get();
   const typeSel = select(
-    STUDIO_PRESETS.map((p) => ({ value: p.key, label: lbl(studioLabel(p.key)) })),
+    [
+      ...STUDIO_PRESETS.map((p) => ({ value: p.key, label: lbl(studioLabel(p.key)) })),
+      { value: '__mine', label: `${t('catalog.mine')} · ${t('common.comingSoon')}`, disabled: true },
+    ],
     s0.studio.preset,
     (v) => cmd.setProductType(ctx, v),
     t('product.type'),
@@ -169,6 +172,7 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
         ...styles.map((st) =>
           h('button', { type: 'button', class: 'chip', role: 'tab', 'aria-pressed': String(st === style), onclick: () => ui.set({ lightStyle: st }) }, st === 'ALL' ? t('light.all') : lbl(LIGHT_STYLES.find((x) => x.key === st)!.label)),
         ),
+        h('button', { type: 'button', class: 'chip', disabled: true, 'data-tip': t('catalog.mineSoon') }, t('catalog.mine')),
       );
     },
   );

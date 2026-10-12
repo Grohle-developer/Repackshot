@@ -69,7 +69,9 @@ export async function readGltf(file: File): Promise<ModelPayload> {
     if (hit) return hit;
     // A primitive without a material gets the loader's built-in one, which no
     // glTF material maps to: the part takes the neutral Default instead.
-    if (!gltf.parser.associations.has(mat)) {
+    // (Clones made for flat shading carry an undefined mapping, so test the value.)
+    const mapping = gltf.parser.associations.get(mat) as { materials?: number } | undefined;
+    if (mapping?.materials === undefined) {
       const id = 'tm_default';
       materials[id] = defaultInstance(id, 100);
       matIds.set(mat.uuid, id);

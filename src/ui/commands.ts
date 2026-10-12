@@ -301,7 +301,9 @@ export function requestAssign(ctx: Ctx, src: { preset?: string; material?: Mater
   const base = assignAction(s, src, 'REPLACE', ids);
   const matLabel = src.material ? materialLabel(s.materials[src.material]) : presetLabel(src.preset ?? '');
   const tgt = base.faces
-    ? L('inspector.faces', { n: base.faces.indices.length, part: s.scene.nodes[base.faces.part]?.name ?? '' })
+    ? base.faces.indices.length === 1
+      ? L('inspector.face', { part: s.scene.nodes[base.faces.part]?.name ?? '' })
+      : L('inspector.faces', { n: base.faces.indices.length, part: s.scene.nodes[base.faces.part]?.name ?? '' })
     : targetLabel(s, base.targets.length === s.scene.roots.length && !ids && selectedNodes(s).length === 0 ? [] : base.targets);
   const label = L('undo.assign', { material: matLabel, target: tgt });
   const inv = inventoryFor(s, base);

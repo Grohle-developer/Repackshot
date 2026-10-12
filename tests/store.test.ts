@@ -235,3 +235,16 @@ describe('boot state (Standard mode)', () => {
     expect(store.get().studio.built).toBe(true);
   });
 });
+
+describe('history notifications', () => {
+  it('a closed transaction notifies once its entry is in the history', () => {
+    const { store } = exampleStore();
+    const seen: string[][] = [];
+    store.subscribe((_s, _p, a) => a.type === 'history/commit' && seen.push(store.history().undo));
+    store.transaction('Two steps', () => {
+      store.dispatch({ type: 'image/set', patch: { exposureEv: 1 } });
+      store.dispatch({ type: 'image/set', patch: { exposureEv: 2 } });
+    });
+    expect(seen).toEqual([['Two steps']]);
+  });
+});

@@ -104,7 +104,8 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
     (s) => s.scene.nodes,
     () => {
       const s = store.get();
-      counts.textContent = `${t('status.parts', { n: allParts(s).length })} · ${t('status.triangles', { n: formatNumber(triangleCount(s), getLang(), 0) })}`;
+      const n = allParts(s).length;
+      counts.textContent = `${n === 1 ? t('status.part') : t('status.parts', { n })} · ${t('status.triangles', { n: formatNumber(triangleCount(s), getLang(), 0) })}`;
     },
   );
   const engine = h('span');
@@ -120,7 +121,7 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       engine.textContent = t('status.engine', { device: st.device });
       samples.textContent = `${st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: st.samples })} · ${formatNumber(st.seconds * 1000, getLang(), 1)} ms`;
     };
-    port.onFrame(update);
+    scope.onDispose(port.onFrame(update));
     update();
   } else engine.textContent = t('status.noEngine');
   const langBtn = h('button', { type: 'button', class: 'doctor-btn', onclick: () => cmd.setLanguage(ctx, store.get().meta.lang === 'en' ? 'es' : 'en'), 'data-tip': t('menu.language') }, t(dyn(`lang.${store.get().meta.lang}`)));

@@ -91,6 +91,7 @@ export function isTyping(e: Event): boolean {
   const el = e.target as HTMLElement | null;
   if (!el) return false;
   if (el.isContentEditable) return true;
+  if (el.getAttribute?.('role') === 'spinbutton') return true;
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return true;
   if (el instanceof HTMLInputElement) return !['checkbox', 'radio', 'button', 'range', 'color'].includes(el.type);
   return false;

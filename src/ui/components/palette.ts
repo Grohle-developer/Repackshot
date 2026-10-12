@@ -33,7 +33,8 @@ export function normalize(s: string): string {
     .trim();
 }
 
-function items(ctx: Ctx): Item[] {
+/** Everything the palette can find (exported for tests). */
+export function paletteItems(ctx: Ctx): Item[] {
   const s = ctx.store.get();
   const out: Item[] = [];
   for (const a of ACTIONS) {
@@ -95,7 +96,7 @@ export function closePalette(): void {
 /** Opens the palette; closing sets `paletteOpen` back to false. */
 export function openPalette(ctx: Ctx): void {
   if (open) return;
-  const all = items(ctx);
+  const all = paletteItems(ctx);
   const backdrop = h('div', { class: 'palette-backdrop' });
   const input = h('input', { class: 'palette-input', type: 'text', placeholder: t('palette.placeholder'), 'aria-label': t('palette.placeholder'), autocomplete: 'off', spellcheck: 'false' }) as HTMLInputElement;
   const list = h('div', { class: 'palette-list', role: 'listbox' });

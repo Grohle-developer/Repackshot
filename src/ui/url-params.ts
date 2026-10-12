@@ -62,7 +62,12 @@ export function applyUrlParams(ctx: Ctx, p: UrlParams): void {
     cmd.setProductType(ctx, p.preset);
     cmd.buildStudio(ctx);
   }
-  if (p.setup) cmd.chooseSetup(ctx, p.setup);
+  if (p.setup) {
+    cmd.chooseSetup(ctx, p.setup);
+    // Show the style of the chosen setup so it is visible in the catalogue.
+    const style = lightSetup(p.setup)?.style;
+    if (style && p.setup !== 'PRESET') ctx.ui.set({ lightStyle: style });
+  }
   if (p.select) {
     const s = ctx.store.get();
     const node = Object.values(s.scene.nodes).find((n) => n.key === p.select || n.name.toLowerCase() === p.select);

@@ -64,7 +64,9 @@ function applyTheme(setting: 'dark' | 'light' | 'system'): void {
 
 /** Handles global shortcuts. Returns true when the event was used. */
 function onKey(ctx: Ctx, e: KeyboardEvent): boolean {
-  const typing = isTyping(e);
+  // A focused number field swallows plain keys (digits, letters) but not Ctrl/⌘ combinations.
+  const spin = (e.target as HTMLElement | null)?.getAttribute?.('role') === 'spinbutton';
+  const typing = isTyping(e) && !(spin && (e.ctrlKey || e.metaKey));
   const u = ctx.ui.get();
   if (e.key === 'Escape' && !typing) {
     if (u.pickMode) {

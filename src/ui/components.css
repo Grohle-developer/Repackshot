@@ -219,7 +219,7 @@ kbd,
 /* Fields -------------------------------------------------------------- */
 .field {
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
+  grid-template-columns: 108px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   min-height: 30px;
@@ -228,9 +228,8 @@ kbd,
 .field-label {
   font-size: var(--fs-label);
   color: var(--ink-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 .field-control {
   display: flex;
@@ -508,6 +507,11 @@ kbd,
 }
 .chip:hover {
   border-color: var(--ink-3);
+}
+.chip:disabled {
+  color: var(--ink-3);
+  border-style: dashed;
+  cursor: not-allowed;
 }
 .chip[aria-pressed='true'] {
   background: var(--inv-bg);

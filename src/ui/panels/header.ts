@@ -99,16 +99,16 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
   // Undo / redo with the label in the tooltip.
   const undoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('header.undo'), 'data-kbd': kbdFor('undo'), onclick: () => store.undo() }, icon('undo'));
   const redoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('header.redo'), 'data-kbd': kbdFor('redo'), onclick: () => store.redo() }, icon('redo'));
-  scope.watch(
-    (s) => s,
-    () => {
+  const refresh = () => {
       const hist = store.history();
       undoBtn.disabled = hist.undo.length === 0;
       redoBtn.disabled = hist.redo.length === 0;
       undoBtn.setAttribute('data-tip', hist.undo.length ? t('header.undoWhat', { label: hist.undo[0] }) : t('header.nothingUndo'));
       redoBtn.setAttribute('data-tip', hist.redo.length ? t('header.redoWhat', { label: hist.redo[0] }) : t('header.nothingRedo'));
-    },
-  );
+  };
+  // Every notification, including the commit of a transaction (which does not change the state).
+  refresh();
+  scope.onDispose(store.subscribe(refresh));
 
   const search = h(
     'button',

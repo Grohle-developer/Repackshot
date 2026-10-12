@@ -99,7 +99,7 @@ export type EnvironmentAction = { type: 'env/set'; patch: Partial<EnvironmentSta
 export type ImageAction = { type: 'image/set'; patch: Partial<ImageState> } & ActionBase;
 
 /** Sent to subscribers when the history moves or the state is replaced; reducers ignore it. */
-export type HistoryAction = { type: 'history/undo' | 'history/redo' | 'history/reset' } & ActionBase;
+export type HistoryAction = { type: 'history/undo' | 'history/redo' | 'history/reset' | 'history/commit' } & ActionBase;
 
 /** Every action the store understands. */
 export type Action =
@@ -139,6 +139,7 @@ export const VOLATILE_ACTIONS: ReadonlySet<ActionType> = new Set<ActionType>([
   'history/undo',
   'history/redo',
   'history/reset',
+  'history/commit',
 ]);
 
 export function isVolatile(action: Action): boolean {
@@ -418,10 +419,13 @@ export function createStore(initial: ProjectState = createInitialState()): Store
       } finally {
         txDepth--;
         if (txDepth === 0) {
-          if (txHistoric && txBefore && txBefore !== state) push({ state: txBefore, label });
+          const committed = txHistoric && txBefore !== null && txBefore !== state;
+          if (committed) push({ state: txBefore!, label });
           txBefore = null;
           txHistoric = false;
           lastGesture = null;
+          // The entry exists only now: tell listeners that show the history (state unchanged).
+          if (committed) notify(state, state, { type: 'history/commit', label });
         }
       }
     },

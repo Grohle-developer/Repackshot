@@ -8,12 +8,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
-import { CAMERA_AZIMUTH_DEG } from '../data/light-setups';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, type Pose } from '../core/animation';
 import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
-import { polar } from '../core/light-math';
-import { rigPivot, type LightInstance } from '../core/lighting';
+import { polar, toWorldAzimuth } from '../core/light-math';
+import { lightPosition, rigPivot, type LightInstance } from '../core/lighting';
 import { boxCenter, boxMaxDim, isEmptyBox, type Vec3 } from '../core/math';
 import { getMesh } from '../core/meshes';
 import { partsUnder, sceneBounds, type NodeId, type SceneNode } from '../core/scene';
@@ -223,8 +222,14 @@ export class PreviewEngine implements RenderEngine {
       const ext = gl.getExtension('WEBGL_debug_renderer_info');
       const r = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
       if (r) {
-        const inner = r.match(/\(([^)]*)\)/)?.[1] ?? r;
-        name += ` · ${inner.split(',').slice(0, 2).join(',').trim().slice(0, 48)}`;
+        // "ANGLE (Vendor, Renderer (details), Backend)": keep the renderer's short name.
+        let short = r;
+        if (/swiftshader/i.test(r)) short = 'SwiftShader';
+        else {
+          const inner = r.replace(/^ANGLE \(/, '').replace(/\)$/, '');
+          short = (inner.split(', ')[1] ?? inner).replace(/\s*\(.*$/, '').replace(/Direct3D.*$/, '').trim();
+        }
+        name += ` · ${short.slice(0, 40)}`;
       }
     } catch {
       // The renderer name is optional.
@@ -276,12 +281,16 @@ export class PreviewEngine implements RenderEngine {
     if (nodesChanged || matsChanged) this.assignMaterials(state);
     const anim = state.animation;
     const posed = anim.clips.length > 0 && (anim.playing || anim.playhead > 0);
-    const poseChanged = posed !== this.poseActive || (posed && (full || anim !== prev.animation));
+    const poseToggled = posed !== this.poseActive;
+    const poseChanged = poseToggled || (posed && (full || anim !== prev.animation));
     const pose = posed ? evaluate(state, anim.playhead) : null;
     if (posed || this.poseActive) this.applyNodePose(state, pose);
     this.poseActive = posed;
-    if (full || nodesChanged || poseChanged || state.studio !== prev.studio || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncLights(state, pose);
-    if (full || state.environment !== prev.environment || poseChanged) this.syncEnvironment(state, pose);
+    // Lights and environment follow the playhead only when a clip moves them.
+    const poseLights = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'LIGHT'));
+    const poseEnv = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'SCENE'));
+    if (full || nodesChanged || poseLights || state.studio !== prev.studio || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncLights(state, pose);
+    if (full || state.environment !== prev.environment || poseEnv) this.syncEnvironment(state, pose);
     if (full || state.image !== prev.image) this.syncImage(state);
     if (full || nodesChanged || state.studio !== prev.studio || state.environment !== prev.environment) this.syncFloor(state);
     if (full || state.camera !== prev.camera || state.render.width !== prev.render.width || state.render.height !== prev.render.height || poseChanged || nodesChanged) {
@@ -443,7 +452,8 @@ export class PreviewEngine implements RenderEngine {
       const l = lp ? { ...l0, power: lp.power, color: lp.color, az: lp.az, el: lp.el, enabled: lp.enabled } : l0;
       if (!l.enabled) continue;
       if (!key && l.role === 'KEY') key = l;
-      const pos = toThree([pivot[0], pivot[1], pivot[2]].map((v, i) => v + polar(l.az + CAMERA_AZIMUTH_DEG, l.el, l.dist * size)[i]));
+      // polar(toWorldAzimuth(az), el, dist · part size) around the rig pivot (core/lighting.ts).
+      const pos = toThree(lightPosition(state, l));
       const color = new THREE.Color().setRGB(l.color[0], l.color[1], l.color[2], THREE.LinearSRGBColorSpace);
       if (l.type === 'SUN') {
         const sun = new THREE.DirectionalLight(color, l.power * SUN_K);
@@ -463,13 +473,15 @@ export class PreviewEngine implements RenderEngine {
         // A panel the camera sees: a soft disc, never a hard-edged rectangle.
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.disc, color, transparent: true, depthWrite: false, toneMapped: false }));
         sprite.position.copy(pos);
+        // Drawn before the shadow-catching floor, so the floor never cuts it into a hard edge.
+        sprite.renderOrder = -2;
         const s = Math.max(l.size, l.sizeY) * size;
         sprite.scale.set(s, s, 1);
         this.lightRoot.add(sprite);
       }
     }
     // The shadow caster: a zero-intensity sun from above, leaning toward the key light.
-    const keyDir = key ? polar(key.az + CAMERA_AZIMUTH_DEG, Math.max(55, key.el), 1) : [0, 0, 1];
+    const keyDir = key ? polar(toWorldAzimuth(key.az), Math.max(55, key.el), 1) : [0, 0, 1];
     const d = toThree(keyDir).normalize();
     const b = sceneBounds(state, true);
     const radius = isEmptyBox(b) ? size : boxMaxDim(b) * 0.9;

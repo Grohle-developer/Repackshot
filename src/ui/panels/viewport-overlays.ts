@@ -101,7 +101,7 @@ function topRight(ctx: Ctx, scope: Scope): HTMLElement {
   return h('div', { class: 'ov ov-tr' }, camBtn, h('span', { class: 'ov-sep' }), resBtn);
 }
 
-function meter(ctx: Ctx): HTMLElement {
+function meter(ctx: Ctx, scope: Scope): HTMLElement {
   const port = ctx.services.viewport!;
   const line = h('div', { class: 'aux tabular' });
   const bar = h('div', { class: 'bar-meter' }, h('div', { style: 'width:0%' }));
@@ -116,7 +116,7 @@ function meter(ctx: Ctx): HTMLElement {
     line.textContent = `${st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: st.samples })} · ${formatNumber(st.seconds * 1000, getLang(), 1)} ms`;
     (bar.firstElementChild as HTMLElement).style.width = st.converged ? '100%' : '30%';
   };
-  port.onFrame(update);
+  scope.onDispose(port.onFrame(update));
   return el;
 }
 
@@ -194,6 +194,10 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     shallowEq,
   );
 
+  // The canvas outlives a rebuild of the interface (language switch): its listeners go with the scope.
+  const off = new AbortController();
+  scope.onDispose(() => off.abort());
+  const listen = { signal: off.signal };
   const local = (e: { clientX: number; clientY: number }) => {
     const r = canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -229,18 +233,18 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
         label.style.top = `${p.y + 12}px`;
       } else label.style.display = 'none';
     });
-  });
+  }, listen);
   canvas.addEventListener('pointerleave', () => {
     label.style.display = 'none';
     if (ui.get().hover) ui.set({ hover: null });
-  });
+  }, listen);
 
   // Click (a press without a drag): pick modes, then selection by level.
   let down: { x: number; y: number } | null = null;
   canvas.addEventListener('pointerdown', (e) => {
     down = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
     canvas.focus({ preventScroll: true });
-  });
+  }, listen);
   canvas.addEventListener('pointerup', (e) => {
     if (!down || e.button !== 0) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
@@ -274,12 +278,12 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       return;
     }
     store.dispatch({ type: 'scene/select', ids: [tg.id], mode: toggle ? 'toggle' : add ? 'add' : 'set' });
-  });
+  }, listen);
   canvas.addEventListener('dblclick', (e) => {
     const p = local(e);
     const tg = targetAt(p.x, p.y);
     if (tg) cmd.frameSelection(ctx, [tg.id]);
-  });
+  }, listen);
 
   // Drag and drop: materials onto parts, model files anywhere.
   const isMaterial = (e: DragEvent) => e.dataTransfer?.types.includes('application/x-repackshot-material') ?? false;
@@ -326,5 +330,5 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     scope.watch((s) => s.scene.roots.length === 0, (empty) => (el.style.visibility = empty ? 'hidden' : ''));
     return el;
   };
-  return [hideWhenEmpty(toolbar(ctx, scope)), topRight(ctx, scope), meter(ctx), hideWhenEmpty(axes(ctx, scope)), label, pickBanner, confirmHost];
+  return [hideWhenEmpty(toolbar(ctx, scope)), topRight(ctx, scope), meter(ctx, scope), hideWhenEmpty(axes(ctx, scope)), label, pickBanner, confirmHost];
 }

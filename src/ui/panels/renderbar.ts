@@ -35,7 +35,7 @@ export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
   );
   const custom = h('span', { class: 'aux' }, t('render.custom'));
 
-  const resOptions = [...RESOLUTION_PRESETS.map((r) => ({ value: r.key, label: `${lbl(r.label)} · ${r.width} × ${r.height}` })), { value: 'CUSTOM', label: t('render.customSize') }];
+  const resOptions = [...RESOLUTION_PRESETS.map((r) => ({ value: r.key, label: lbl(r.label) })), { value: 'CUSTOM', label: t('render.customSize') }];
   const resSel = select(
     resOptions,
     matchResolution(r0.width, r0.height),
@@ -51,6 +51,7 @@ export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
     t('render.resolution'),
   );
   resSel.el.setAttribute('data-guide', 'resolution');
+  scope.watch((s) => `${s.render.width} × ${s.render.height}`, (v) => resSel.el.setAttribute('data-tip', v));
   const width = numberField({ value: r0.width, min: 16, max: 8192, step: 1, unit: 'px', ariaLabel: t('render.width'), onChange: (v, g) => store.dispatch({ type: 'render/set', patch: { width: v }, gesture: g, label: L('undo.render') }) });
   const height = numberField({ value: r0.height, min: 16, max: 8192, step: 1, unit: 'px', ariaLabel: t('render.height'), onChange: (v, g) => store.dispatch({ type: 'render/set', patch: { height: v }, gesture: g, label: L('undo.render') }) });
   const customBox = h('span', { class: 'bar-group' }, width.el, h('span', { class: 'aux' }, '×'), height.el);
@@ -114,7 +115,10 @@ export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
     'div',
     { class: 'bar', role: 'toolbar', 'aria-label': t('render.render') },
     h('div', { class: 'bar-group' }, drawerTabs.el),
-    h('div', { class: 'bar-group' }, h('span', { class: 'field-label' }, t('render.quality')), quality.el, custom),
+    h(
+      'div',
+      { class: 'bar-mid' },
+    h('div', { class: 'bar-group', 'data-tip': t('render.quality') }, h('span', { class: 'field-label' }, t('render.quality')), quality.el, custom),
     h('div', { class: 'bar-group' }, h('span', { class: 'field-label' }, t('render.resolution')), resSel.el, customBox),
     h(
       'div',
@@ -127,7 +131,7 @@ export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
       seconds.el,
     ),
     h('div', { class: 'bar-group' }, h('span', { class: 'field-label' }, t('render.format')), format.el, transparent.el),
-    h('div', { class: 'bar-spacer' }),
+    ),
     h('div', { class: 'render-btn-wrap' }, queueBtn, renderBtn),
   );
   return h('section', { class: 'bar-wrap' }, drawer, bar);

@@ -406,7 +406,7 @@
 /* Animation drawer ---------------------------------------------------------------- */
 .anim {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 230px;
+  grid-template-columns: 236px minmax(0, 1fr) 236px;
   grid-template-rows: 36px minmax(0, 1fr);
   height: 100%;
 }
@@ -432,7 +432,8 @@
 }
 .shot-row {
   display: grid;
-  grid-template-columns: 1fr 76px auto;
+  grid-template-columns: minmax(0, 1fr) 66px auto;
+  white-space: nowrap;
   gap: 4px;
   align-items: center;
 }
@@ -490,16 +491,19 @@
 }
 .tl-lane {
   position: relative;
-  height: 22px;
+  min-height: 22px;
   border-bottom: 1px solid var(--line);
 }
 .tl-lane-label {
   position: absolute;
-  left: 4px;
-  top: 3px;
+  left: 6px;
+  top: 4px;
   font-size: 10px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tl-block {
   position: absolute;
@@ -642,4 +646,54 @@
 }
 .bar .select {
   max-width: 190px;
+}
+/* Scene tabs: icon over a short word, so four fit in the narrowest panel. */
+.side-left .side-head {
+  padding-left: 6px;
+  min-height: 46px;
+}
+.side-left .tabs {
+  gap: 0;
+}
+.side-left .tab {
+  flex-direction: column;
+  gap: 2px;
+  height: 40px;
+  padding: 3px 6px 2px;
+  font-size: 11px;
+  min-width: 46px;
+}
+.bar .num {
+  width: 70px;
+}
+.bar .select {
+  max-width: 150px;
+}
+.bar .render-btn-wrap {
+  flex: none;
+}
+/* The middle of the bar gives way (scrolls) before the Render button does. */
+.bar-mid {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.bar-mid::-webkit-scrollbar {
+  display: none;
+}
+/* Tighter windows: the section words go, the controls stay. */
+@media (max-width: 1720px) {
+  .bar .field-label {
+    display: none;
+  }
+}
+@media (max-width: 1400px) {
+  .bar .bar-group .aux {
+    display: none;
+  }
 }
