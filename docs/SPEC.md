@@ -27,10 +27,21 @@ guarda proyectos en un archivo.
 
 ## 2 · El flujo de trabajo
 
-1. **Importar o cargar el ejemplo.** Arrastrar un GLB/glTF (más adelante
-   OBJ, STL, STEP) o pulsar *Cargar pieza de ejemplo*: una pieza
-   procedural original, con varias partes agrupadas, que sirve para ver
-   un resultado terminado sin traer nada.
+**Modo estándar, por defecto.** La aplicación abre con todo ya puesto,
+como hace KeyShot: el estudio *Estándar* (tres puntos, cúpula de estudio,
+cámara de referencia, calidad de previa, HD) está construido antes de
+importar nada, y una pieza importada sin material recibe un material
+neutro por defecto. No hay que elegir nada para empezar a trabajar; los
+tipos de producto y el resto de presets son atajos encima de ese estado,
+no un requisito.
+
+1. **Importar o cargar el ejemplo.** Arrastrar un archivo (ver §6: glTF,
+   OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE, USD) o pulsar *Cargar
+   pieza de ejemplo*: una pieza procedural original, con varias partes
+   agrupadas, que sirve para ver un resultado terminado sin traer nada.
+   Al importar, una hoja de opciones en línea (unidades, eje arriba,
+   centrar, apoyar en el suelo, encuadrar, agrupar por, mantener
+   materiales, calidad de teselado) con valores por defecto que funcionan.
 2. **Tipo de producto y estudio.** Elegir una de 16 categorías (joyería,
    relojería, perfumería, cosmética, electrónica, electrodoméstico,
    mobiliario interior y exterior, calzado, textil, packaging, automoción,
@@ -45,7 +56,10 @@ guarda proyectos en un archivo.
 4. **Luz.** Elegir un montaje del catálogo (72 en 8 estilos) por su
    miniatura e intención; la exposición no cambia al cambiar de montaje.
    Afinar focos si se quiere; colocar un foco por reflejo apuntando a
-   dónde se quiere el brillo.
+   dónde se quiere el brillo. **O montar la luz desde cero**: añadir
+   focos propios (área, punto, foco direccional, sol; IES más adelante),
+   moverlos y apuntarlos con el *gizmo*, y guardar el resultado como
+   montaje propio en la biblioteca.
 5. **Cámara e imagen.** Óptica, focal, diafragma, enfoque con clic,
    encuadre, perspectiva u ortográfica; exposición, transformada de vista,
    halo, viñeta. Guardar cámaras y estudios.
@@ -83,6 +97,37 @@ del desgaste y del grano.
 **Apoyo en el suelo**: el punto más bajo de **todas** las mallas del
 objetivo (no de una sola) baja a `z = 0`. **Centrar**: el centro de la caja
 envolvente en XY a `(0, 0)`.
+
+**Operaciones sobre piezas, al estilo KeyShot.** Sobre cualquier
+selección (modelo, grupo o pieza):
+
+- **Herramienta de mover**: *gizmo* en el visor con asas de traslación,
+  rotación y escala, ejes locales o globales, incrementos con `Shift`,
+  campos numéricos en el inspector (posición, rotación en grados, escala
+  con bloqueo proporcional), y *Restablecer transformación*.
+- **Pivote**: centro de la caja envolvente (por defecto), base de la caja,
+  origen del archivo, o un punto picado; *Establecer pivote*.
+- **Apoyar en el suelo** (el punto más bajo de todas las mallas de la
+  selección a `z = 0`), **Centrar** (centro XY a `0, 0`), **Centrar y
+  apoyar** en una acción.
+- **Ocultar / Mostrar / Aislar / Mostrar todo**, **Bloquear**,
+  **Renombrar**, **Eliminar**, **Encuadrar**, **Fijar como objetivo de
+  cámara** (la cámara mira a la selección).
+- **Duplicar** (copia independiente) y **Duplicar enlazado** (comparte
+  malla y material; cambiar uno cambia todos), **Agrupar / Desagrupar**,
+  **Mover a grupo**.
+- **Patrón**: lineal (n copias a distancia en un eje) y circular (n
+  copias alrededor de un eje), como instancias enlazadas, editable
+  después.
+- **Materiales**: *Desenlazar material* (la pieza pasa a tener su propia
+  copia), *Enlazar con…* (varias piezas comparten uno), *Copiar / Pegar
+  material*, *Seleccionar por material*.
+- **Geometría**: *Invertir normales*, *Suavizado* (ángulo), *Bisel de
+  aristas* (radio en mm, solo sombreado), *Separar por caras CAD* y
+  *Separar por material* (cada rango pasa a ser una pieza).
+
+Todas son acciones del *store*, deshacibles, y las que tienen sentido en
+masa aplican a toda la selección.
 
 ### 3.2 · Selección por niveles
 
@@ -133,6 +178,23 @@ modificado).
 **Normalización**: la irradiancia total de un montaje aplicado se iguala a
 la del rig del tipo de producto. Cambiar de montaje no cambia la
 exposición.
+
+**Luces propias, al estilo KeyShot.** Además de los montajes, se pueden
+**añadir focos** desde la pestaña *Luces*: **Área** (rectángulo, disco o
+esfera, con tamaño), **Punto** (radio), **Foco direccional** (ángulo de
+cono y transición), **Sol** (ángulo del disco), y **IES** (perfil de
+archivo; fase posterior). Cada foco es un nodo de la escena con
+transformación propia: se mueve y apunta con el mismo *gizmo* que las
+piezas, se **apunta a una pieza** (*Apuntar a…*), se **coloca por
+reflejo** o **sobre una superficie** (clic: el foco queda a una distancia
+dada a lo largo de la normal). Propiedades: potencia en vatios (y su
+equivalente en lúmenes como ayuda), temperatura de color o color,
+tamaño, dispersión, *visible en reflejos*, *visible a cámara*, *proyecta
+sombra*, encendido. Cualquier pieza con material emisor también ilumina.
+Un rig editado a mano se **guarda como montaje propio** (nombre, estilo
+*Míos*, miniatura renderizada por el propio producto) en la biblioteca
+del usuario, con la misma normalización de exposición que los del
+catálogo cuando se aplica a otro tipo de producto.
 
 **Colocar por reflejo**: dado un punto de la pieza y su normal, el foco
 seleccionado se coloca en la dirección reflejada del rayo de cámara, a su
@@ -200,12 +262,21 @@ transparente, pases (fase posterior: alfa, profundidad, normales, id de
 pieza). La **cola** acumula trabajos (cámara, estudio, resolución,
 calidad) y los ejecuta en serie con progreso y cancelación.
 
-### 3.9 · Estudios y proyecto
+### 3.9 · Estudios, biblioteca propia y proyecto
 
 Un **estudio** guarda una cámara, un montaje de luz y entorno, un set de
 materiales por pieza y la visibilidad de piezas; restaurarlo es una sola
 acción deshacible. El **proyecto** es el estado completo en un archivo
 `.repack.json`, con las mallas dentro.
+
+La **biblioteca propia** guarda lo que el usuario crea y quiere reutilizar
+entre proyectos: materiales (*Guardar material como…*), montajes de luz
+(*Guardar montaje como…*), tipos de producto (*Guardar como tipo de
+producto*: el estudio actual como preset) y estudios. Aparece como pestaña
+*Míos* en cada catálogo, con miniaturas renderizadas por el producto, se
+persiste en el navegador y se exporta e importa como un archivo JSON para
+llevarla a otra máquina. Los presets de fábrica no se editan: editar uno
+crea una copia propia.
 
 ---
 
@@ -223,7 +294,53 @@ cambia nada sin que se le pida y explica cada aviso en una frase.
 
 ---
 
-## 5 · Lo que distingue este producto
+## 5 · Importación: lo que entra y cómo
+
+La importación es el tronco del producto: lo que no entra, no se
+renderiza. Se comporta como en KeyShot: arrastrar o *Importar*, una hoja
+de opciones con valores que funcionan, y la pieza aparece centrada,
+apoyada y encuadrada.
+
+**Formatos y origen.** Los programas de origen tienen formatos nativos
+propietarios y sin documentación pública; en sala limpia no se leen (ni
+se harán análisis de sus binarios, ver `README.md`). Lo que sí se lee es
+lo que cada uno **exporta** con un clic, que es lo que hace cualquiera
+que trabaja con KeyShot:
+
+| Origen | Nativo | ¿Se lee? | Camino que funciona |
+| --- | --- | --- | --- |
+| Rhinoceros | `.3dm` | **Sí** (openNURBS es MIT): mallas de render guardadas en el archivo, capas, materiales básicos; los B-rep sin malla de render avisan de guardar con mallas | `.3dm` directo; o STEP / OBJ / FBX |
+| KeyShot | `.bip`, `.ksp` | No (propietario, sin especificación) | *File ▸ Export* de KeyShot a glTF, FBX, OBJ, USD o STL |
+| Maya | `.ma`, `.mb` | No | FBX, OBJ, USD, glTF |
+| SolidWorks | `.sldprt`, `.sldasm` | No (propietario) | **STEP AP214** (lo que SolidWorks exporta por defecto), IGES, 3MF, STL |
+| ZBrush | `.ztl`, `.zpr` | No | OBJ (con grupos de polígonos), FBX |
+| Fusion 360 | `.f3d` | No | STEP, OBJ, FBX, 3MF, STL |
+| Blender, Cinema 4D, 3ds Max, SketchUp… | varios | No | glTF, FBX, OBJ, USD |
+| Universal | glTF / GLB, OBJ, STL, FBX, STEP, IGES, 3MF, PLY, DAE (Collada), USD / USDZ | **Sí** | directo |
+
+STEP e IGES (CAD de verdad: superficies, no mallas) se teselan al
+importar con calidad ajustable, conservando **cada cara CAD** como rango
+de triángulos (lo que hace que *Caras* seleccione una cara entera) y los
+**colores y nombres** del ensamblaje. FBX trae jerarquía, materiales,
+texturas incrustadas y unidades. Los formatos de malla traen lo que
+traen; el importador reconstruye normales y aristas vivas si faltan.
+
+**Hoja de importación** (en línea, no modal), con los valores por defecto
+ya puestos: **unidades** del archivo (mm, cm, m, pulgadas; detectadas
+cuando el formato las declara), **eje arriba** (Y o Z; detectado), **centrar**,
+**apoyar en el suelo**, **encuadrar la cámara**, **añadir a la escena** o
+**escena nueva**, **agrupar por** (objeto, material, capa), **mantener
+materiales y texturas** del archivo o aplicar el material por defecto,
+**separar piezas** (por material, por cara CAD), **calidad de teselado**
+(solo CAD: tolerancia de cuerda y ángulo), **importar capas ocultas**,
+**invertir normales**. Un archivo arrastrado sobre una escena con piezas
+pregunta *añadir o sustituir* en línea.
+
+Las bibliotecas de lectura de formatos viven en la capa `io/` del lado
+web y se cargan bajo demanda; el motor de render no las conoce
+(`ARCHITECTURE.md` §1).
+
+## 6 · Lo que distingue este producto
 
 - **El visor es el render.** No hay dos modos: la imagen converge donde se
   trabaja y *Render* solo la guarda a tamaño completo.
@@ -237,6 +354,11 @@ cambia nada sin que se le pida y explica cada aviso en una frase.
 - **Sin entorno que descargar**: la cúpula de estudio procedural ilumina
   y se refleja sin ningún HDRI.
 - **Interfaz en blanco y negro**: el único color en pantalla es la imagen.
+- **Modo estándar por defecto**: abre listo para importar y renderizar;
+  los presets son atajos, y todo lo que hace un preset se puede hacer a
+  mano y guardar como propio.
+- **Importa lo que la gente exporta**: STEP, IGES, 3DM, FBX, OBJ, glTF,
+  USD, 3MF, STL, PLY, DAE, con una hoja de opciones al estilo KeyShot.
 - **Motor propio, en Rust y sin dependencias**, que corre en cualquier
   máquina: en el navegador por WebAssembly, en la línea de comandos y en
   el escritorio en nativo, con el mismo resultado píxel a píxel.

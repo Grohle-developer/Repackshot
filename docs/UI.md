@@ -148,13 +148,33 @@ suelo, Centrar, Eliminar.
 Encima del árbol, un campo de **filtro** por nombre y, al lado, el
 **selector de nivel** de la selección (ver §4.1).
 
+El **menú contextual** completo de una fila (fase U3, con las acciones de
+`SPEC.md` §3.1): Encuadrar · Mover (activa el *gizmo*) · Apoyar en el
+suelo · Centrar · Centrar y apoyar · Restablecer transformación ·
+Establecer pivote ▸ (centro, base, origen, punto picado) · Fijar como
+objetivo de cámara · separador · Ocultar · Aislar · Mostrar todo ·
+Bloquear · separador · Duplicar · Duplicar enlazado · Patrón ▸ (lineal,
+circular) · Agrupar · Desagrupar · Mover a grupo ▸ · separador ·
+Material ▸ (Desenlazar, Enlazar con…, Copiar, Pegar, Seleccionar por
+material) · Geometría ▸ (Invertir normales, Suavizado…, Separar por
+caras CAD, Separar por material) · separador · Renombrar · Eliminar.
+En U1 existen las que ya están en §2.2 y el resto se añade en U3 sin
+cambiar la estructura del menú.
+
 **Cámaras**: lista de cámaras guardadas con la activa marcada. Botones:
 *Nueva desde la vista actual*, *Duplicar*, *Eliminar*. Clic activa la
 cámara en el visor.
 
 **Luces**: la lista de focos del montaje activo (Principal, Relleno,
-Contra, Cenital…), con su potencia relativa en una barra fina y un
-interruptor cada uno. Clic selecciona el foco y el inspector lo edita.
+Contra, Cenital…) más los **focos propios**, con su potencia relativa en
+una barra fina y un interruptor cada uno. Clic selecciona el foco y el
+inspector lo edita. Botón **+ Añadir luz** con menú: Área (rectángulo,
+disco, esfera), Punto, Foco direccional, Sol, IES (*próximamente*). Un
+foco nuevo aparece delante y arriba de la pieza, encendido y seleccionado.
+Acciones por fila: duplicar, apuntar a la selección, eliminar. Debajo,
+**Guardar montaje como…** (nombre; va a la pestaña *Míos* del catálogo
+con miniatura renderizada) y **Restablecer al montaje** cuando el rig
+está modificado.
 
 **Estudios**: combinaciones guardadas de cámara + montaje de luz + entorno
 + set de materiales, como en KeyShot pero sin pantalla aparte: *Guardar
@@ -186,9 +206,26 @@ tapar la pieza:
   selecciona; `Esc` deselecciona.
 
 **Estado vacío** (sin modelo): zona de arrastre con borde discontinuo y
-dos botones: *Importar modelo* (GLB, glTF, OBJ, STL) y *Cargar pieza de
-ejemplo*. Arrastrar un archivo sobre cualquier punto del visor también
-importa.
+dos botones: *Importar modelo* (glTF, OBJ, STL, FBX, 3DM, STEP, IGES, 3MF,
+PLY, DAE, USD; en U1 solo glTF funciona y el resto dice *próximamente*) y
+*Cargar pieza de ejemplo*. Arrastrar un archivo sobre cualquier punto del
+visor también importa. El estudio *Estándar* ya está construido detrás:
+la pieza aparece iluminada, apoyada y encuadrada sin tocar nada.
+
+**Hoja de importación** (fase I3): al soltar o elegir un archivo, el
+inspector muestra una hoja en línea con las opciones de `SPEC.md` §5
+(unidades, eje arriba, centrar, apoyar, encuadrar, añadir o sustituir,
+agrupar por, mantener materiales, separar piezas, calidad de teselado) con
+los valores detectados ya puestos y un botón primario *Importar*. `Enter`
+importa con los valores por defecto.
+
+**Herramienta de mover** (fase U3): con una selección y la herramienta
+*Mover* (`M`) activa, un *gizmo* sobre el pivote con asas de traslación
+(flechas por eje y planos), rotación (anillos) y escala (cubos), en ejes
+locales o globales (`L`/`G` o el conmutador de la barra de vista),
+incrementos con `Shift`, y los campos del inspector actualizándose en
+vivo. Arrastrar es una sola entrada de deshacer. Las luces se mueven y
+apuntan con el mismo *gizmo* (la asa de apuntar es una línea al objetivo).
 
 **Arrastrar un material** del inspector sobre una pieza del visor la
 asigna; mientras se arrastra, la pieza bajo el cursor se resalta.
@@ -208,8 +245,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
 **Con la escena seleccionada (nada seleccionado):**
 
 1. **Producto** — Tipo de producto (desplegable con los 16
-   `STUDIO_PRESETS`, con su etiqueta y, debajo en auxiliar, focal y
-   diafragma que trae). Tamaño de la pieza en mm (detectado al importar,
+   `STUDIO_PRESETS`, *Estándar* el primero y activo por defecto, con su
+   etiqueta y, debajo en auxiliar, focal y diafragma que trae; más los
+   tipos propios de la pestaña *Míos* y *Guardar como tipo de producto*). Tamaño de la pieza en mm (detectado al importar,
    editable). Interruptores *Suelo* y *Sombra de contacto*. Botón
    primario **Crear estudio**: monta luces, suelo, cámara y ajustes de
    motor del preset. Si ya hay estudio, pide confirmación en línea (no
@@ -262,9 +300,19 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
    radio de bisel de aristas (mm), suavizado.
 
-**Con un foco seleccionado:** rol, tipo (área / sol), forma, tamaño,
-acimut y elevación (relativos a cámara), distancia, dispersión, temperatura
-o color, potencia, *visible en reflejos*, *visible a cámara*.
+**Con un foco seleccionado:** nombre, rol (si viene de un montaje), tipo
+(área / punto / foco direccional / sol), forma, tamaño, **posición**
+(acimut y elevación relativos a cámara, y distancia; o XYZ en el
+desplegable *Coordenadas*), **apuntar a** (origen, pieza, punto),
+dispersión o ángulo de cono, temperatura o color, potencia en vatios
+(con el equivalente en lúmenes en auxiliar), *visible en reflejos*,
+*visible a cámara*, *proyecta sombra*, encendido; botones *Colocar por
+reflejo*, *Colocar sobre superficie*, *Duplicar*, *Eliminar*.
+
+**Pestaña *Míos*** en cada catálogo (materiales, montajes de luz, tipos de
+producto, estudios): lo guardado por el usuario, con miniatura, renombrar
+y eliminar al pasar el ratón, y los botones *Exportar biblioteca* e
+*Importar biblioteca* (JSON) al pie. Fase U4.
 
 **Con una cámara seleccionada:** lo mismo que la sección Cámara de la
 escena, más nombre y *Activar*.
@@ -527,7 +575,10 @@ Lo que revisa quien reciba el PR, en este orden:
 
 ## 8 · Lo que no es de U1
 
-Trazador de caminos, importadores OBJ/STL/STEP, cara CAD entera, pelusa,
+Trazador de caminos, importadores más allá de glTF (OBJ, STL, FBX, 3DM,
+STEP, IGES, 3MF, PLY, DAE, USD y la hoja de importación), *gizmo* de
+mover y el menú contextual completo de piezas (U3), focos propios y
+guardar montajes (L4), biblioteca *Míos* (U4), cara CAD entera, pelusa,
 desgaste visible, campo claro por entorno, cielo procedural, HDRI de
 archivo, colocación por reflejo exacta, vídeo, pases de render, etiquetas
 y texturas de imagen, vista en sección. Todo está en `ROADMAP.md` con su

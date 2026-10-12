@@ -16,7 +16,7 @@ no una iniciativa dentro de un PR.
 | Interfaz | **HTML + CSS + TypeScript sin framework** | La interfaz es un conjunto de paneles con estado centralizado; un framework añadiría una dependencia y un estilo que luego hay que enseñar a cada agente. Componentes como funciones que devuelven elementos DOM y se suscriben al *store* |
 | Vista previa | **three.js** (`WebGLRenderer`) | Rasterizado rápido para orbitar, seleccionar y colocar mientras la cámara se mueve. **No es el motor**: es la vista interactiva |
 | Motor de render | **Rust, desde cero, sin dependencias externas** (`engine/`): trazador de caminos en CPU que compila a **WebAssembly** para el navegador y a **binario nativo** para la línea de comandos y el escritorio | Corre en cualquier sistema y arquitectura (x86_64, ARM64, RISC-V, wasm32) sin GPU ni drivers; el mismo código renderiza en el navegador, en el runner de CI y en el escritorio; determinista; eficiente por diseño (BVH ancho con SIMD, muestreo de baja discrepancia, colas de baldosas) |
-| Importación | `GLTFLoader` de three para GLB/glTF; OBJ y STL propios (son triviales); STEP en una fase propia con `occt-import-js` si su licencia (LGPL-2.1 con excepción) se confirma compatible, o nada | glTF es el formato de intercambio moderno; STEP es lo que trae quien viene de CAD y hay que resolverlo, pero sin hipotecar la licencia |
+| Importación | En `src/io/`, cargada bajo demanda: `GLTFLoader`, `FBXLoader`, `3MFLoader`, `PLYLoader`, `ColladaLoader`, `USDZLoader` y `3DMLoader` de three (MIT); **rhino3dm** (openNURBS, MIT) para `.3dm`; **occt-import-js** (MIT) sobre **OpenCascade** (LGPL-2.1 con la excepción de Open CASCADE, que permite enlazarlo sin contagiar la licencia) para STEP e IGES; OBJ y STL propios. **Decidido**: estas bibliotecas se aceptan en la capa `io/` porque son MIT o LGPL con excepción, se cargan solo al importar y nunca entran en el motor | La importación es el tronco del producto: lo que la gente exporta desde Rhino, SolidWorks, Fusion, Maya, ZBrush y KeyShot tiene que entrar con un arrastre. Los formatos nativos propietarios de esos programas no se leen (`SPEC.md` §5) |
 | Tests | **vitest** (modelo e interfaz), **cargo test** (motor: escenas analíticas, determinismo, paridad wasm/nativo), **playwright-core** con el Chromium local para capturas | La suite de la interfaz corre sin GPU; la del motor corre en cualquier CPU |
 | Empaquetado de escritorio | Fuera de alcance hasta v0.3; cuando llegue, **Tauri** | Es Rust: enlaza el motor nativo directamente, sin wasm ni IPC; la interfaz web no cambia |
 
@@ -64,7 +64,9 @@ src/
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
-    gltf.ts  obj.ts  stl.ts  project.ts (.repack.json)  image.ts (PNG/JPEG/EXR)
+    import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
+    gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  step.ts (OCCT, bajo demanda)  mesh-formats.ts (3MF, PLY, DAE, USD)
+    project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en

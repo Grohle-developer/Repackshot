@@ -93,9 +93,9 @@ decisiones escritas (datos, contratos, revisión), no código.
 
 | Versión | Qué se puede hacer | Fases |
 | --- | --- | --- |
-| **v0.1** — "parece el producto" | Importar glTF, tipo de producto, materiales del catálogo, montaje de luz, y el motor en Rust renderizando progresivamente en el visor y a PNG, en el navegador y en la línea de comandos | F0, A1–A3, U1, U2, I1, E1–E4 |
-| **v0.2** — "sirve para trabajar" | Vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, HDRI, miniaturas propias renderizadas en CI, recetas revisadas, cara CAD, cola y pases | E5, E6, L1, L2, L3, M1, N2, D1, P1 |
-| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo, STEP, lotes nativos, escritorio | E7, E8, M2, N1, I2, P2, Q1 |
+| **v0.1** — "parece el producto" | Abre en modo estándar; importa glTF, OBJ, STL, FBX, 3DM, 3MF, PLY, DAE y USD con la hoja de importación; tipo de producto, materiales del catálogo, montaje de luz; el motor en Rust renderizando progresivamente en el visor y a PNG, en el navegador y en la línea de comandos | F0, A1–A3, U1, U2, I1, I3, E1–E4 |
+| **v0.2** — "sirve para trabajar" | STEP e IGES con caras CAD; herramienta de mover y operaciones de pieza al estilo KeyShot; focos propios y montajes guardados; biblioteca propia; vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, HDRI, miniaturas propias, recetas revisadas, cara CAD, cola y pases | I2, U3, U4, L4, E5, E6, L1, L2, L3, M1, N2, D1, P1 |
+| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo, luces IES, lotes nativos, escritorio | E7, E8, M2, N1, L5, P2, Q1 |
 
 ---
 
@@ -162,6 +162,12 @@ interfaz de cualquier commit sin release.
 
 **Criterio de aceptación.** La lista de `UI.md` §7, punto por punto, y:
 
+- **Modo estándar por defecto** (`SPEC.md` §2): al abrir, y tras *Nuevo*,
+  el estudio `GENERIC` (etiqueta *Estándar*) ya está construido con su
+  rig, la cúpula, la cámara de referencia y calidad de previa; una pieza
+  importada sin material recibe el material por defecto; deshacer no
+  puede deshacer ese estado inicial.
+
 - `tests/store.test.ts`: asignar material por nivel (los cuatro),
   inventario de confirmación cuando hay materiales distintos y no cuando
   son iguales, deshacer y rehacer de una secuencia de diez acciones,
@@ -221,18 +227,58 @@ ofrece ×1000 con el Doctor). El estado vacío acepta los tres formatos.
 tetraedro) comprobando vértices, caras, grupos, normales y aristas vivas
 con números exactos. El Doctor sugiere la escala cuando procede.
 
-## I2 · STEP — **Opus**, tras informe de licencia (**Fable** decide)
+## I2 · STEP e IGES — **Opus**
 
-**Qué, primera parte (informe).** Un agente Sonnet redacta
-`docs/notes/step-import.md`: opciones para leer STEP en el navegador
-(`occt-import-js` sobre OpenCascade, licencias exactas de cada capa,
-tamaño del WASM, calidad del teselado, alternativas), y una
-recomendación. **Fable decide** si entra, con qué licencia y cómo se
-aísla (módulo cargado bajo demanda, nunca en el paquete base).
+**Decisión tomada (Fable).** Se lee STEP (AP203, AP214, AP242) e IGES con
+**OpenCascade** compilado a wasm a través de `occt-import-js` (envoltorio
+MIT; OCCT es LGPL-2.1 con la excepción de Open CASCADE, que permite
+enlazarlo sin contagiar la licencia del proyecto). Entra solo en la capa
+`io/` del lado web, se carga **bajo demanda** al soltar el primer archivo
+CAD (unos MB que no se pagan si no se usan), y el motor de render no lo
+conoce. Un teselador de B-rep propio en Rust queda como idea para
+después, no como requisito.
 
-**Qué, segunda parte (si procede).** `src/io/step.ts` como carga diferida,
-con las caras CAD originales conservadas como rangos de triángulos (lo
-que necesita M1 para "una cara de CAD es una cara").
+**Qué.** `src/io/step.ts`: carga diferida del módulo, lectura con la
+**calidad de teselado** de la hoja de importación (tolerancia de cuerda y
+ángulo), conservando **cada cara CAD** como rango de triángulos
+(`faceRanges`, lo que usa M1 para que *Caras* coja una cara entera), los
+**nombres y colores** del ensamblaje como jerarquía de grupos y
+materiales iniciales, y las unidades declaradas. IGES por el mismo camino.
+Aristas vivas desde la topología (aristas entre caras), no por ángulo.
+
+**Depende de.** I3 (la hoja de importación y `import.ts`).
+
+**Criterio.** Fixtures STEP pequeños escritos a mano o exportados de un
+CAD libre (un cubo con nombre y color, un cilindro, un ensamblaje de dos
+piezas): número de caras CAD, de piezas y de grupos exactos; cambiar la
+calidad cambia el número de triángulos; el módulo no se descarga hasta
+que se importa un STEP (test de que `import('…/occt')` no aparece en el
+chunk inicial de `vite build`).
+
+## I3 · Importadores y hoja de importación — **Sonnet**
+
+**Qué.** `src/io/import.ts`: detección por extensión y cabecera,
+**hoja de importación** en línea (`UI.md` §2.3, `SPEC.md` §5) con
+unidades, eje arriba, centrar, apoyar, encuadrar, añadir o sustituir,
+agrupar por, mantener materiales, separar piezas, invertir normales, y
+las conversiones correspondientes a nodos del *store*. Formatos por
+bibliotecas MIT ya decididas en `ARCHITECTURE.md` §1, cada una en un
+chunk cargado bajo demanda: **FBX** (`FBXLoader`: jerarquía, materiales,
+texturas incrustadas, unidades), **3DM** (`3DMLoader` + rhino3dm: mallas
+de render, capas como grupos, materiales; aviso claro cuando un B-rep
+no trae malla), **3MF**, **PLY**, **DAE**, **USD/USDZ**. OBJ y STL siguen
+siendo propios (I1). Los materiales que trae el archivo se convierten a
+instancias `SIMPLE` con color, rugosidad y metal aproximados; las
+texturas se guardan para M2.
+
+**Depende de.** U1, I1.
+
+**Criterio.** Un fixture pequeño por formato (generado con herramientas
+libres y con su licencia anotada) con recuentos exactos de piezas,
+grupos, triángulos y materiales; la hoja aplica cada opción (test del
+*store*: unidades × 25.4, eje arriba intercambia Y/Z, agrupar por
+material produce N grupos); el chunk inicial no contiene ningún
+importador (test sobre `dist/`).
 
 ## E1 · Andamiaje del motor en Rust — **Sonnet** — hecha
 
@@ -427,6 +473,77 @@ y mejoras de la BVH y del muestreo con cifras antes y después en el PR.
 plantilla; `--bench` en CI deja el número en el resumen del job (no es
 puerta); ninguna regresión de determinismo.
 
+## U3 · Herramienta de mover y operaciones de pieza — **Opus**
+
+**Qué.** Todo lo de `SPEC.md` §3.1 "Operaciones sobre piezas, al estilo
+KeyShot": *gizmo* de traslación, rotación y escala en el visor (ejes
+locales y globales, incrementos, una entrada de deshacer por arrastre),
+pivote (centro, base, origen, punto picado), apoyar, centrar, restablecer
+transformación, fijar como objetivo de cámara, duplicar y duplicar
+enlazado, agrupar, desagrupar, mover a grupo, patrón lineal y circular
+como instancias, desenlazar y enlazar materiales, copiar y pegar
+material, seleccionar por material, invertir normales, suavizado, separar
+por caras CAD y por material; el menú contextual completo de `UI.md` §2.2
+y los campos numéricos del inspector de pieza.
+
+**Depende de.** U1.
+
+**Criterio.** `tests/transform.test.ts`: cada operación como acción pura
+con números (apoyar deja `minZ = 0` para un grupo de tres piezas; patrón
+circular de 6 deja ángulos de 60°; duplicar enlazado comparte `meshId` y
+`materialId`, desenlazar los separa; deshacer revierte cada una);
+captura con el *gizmo* sobre una pieza seleccionada.
+
+## U4 · Biblioteca propia — **Sonnet**
+
+**Qué.** `src/core/library.ts` y `src/io/library.ts`: guardar materiales,
+montajes de luz, tipos de producto y estudios propios con nombre y
+miniatura (renderizada por el visor como las del catálogo), pestaña
+*Míos* en cada catálogo con renombrar y eliminar, persistencia en
+`localStorage` (en `try/catch`) y exportar e importar como JSON con
+versión de esquema. Los presets de fábrica no se editan: editar uno crea
+una copia propia.
+
+**Depende de.** U1.
+
+**Criterio.** Ida y vuelta del JSON; un material propio aparece en la
+paleta de comandos; eliminar uno en uso no rompe la escena (la instancia
+sigue, ya sin origen).
+
+## L4 · Focos propios — **Opus**
+
+**Qué.** Lo de `SPEC.md` §3.4 "Luces propias, al estilo KeyShot": añadir
+focos (área rectángulo, disco y esfera; punto; foco direccional con cono
+y transición; sol), nodos `LIGHT` con transformación propia movidos y
+apuntados con el *gizmo* de U3, *Apuntar a…*, *Colocar sobre superficie*,
+propiedades completas (potencia en vatios con lúmenes en auxiliar,
+temperatura o color, tamaño, dispersión, visible en reflejos y a cámara,
+sombra, encendido), duplicar y eliminar, *Guardar montaje como…* a la
+biblioteca de U4 con normalización de exposición al aplicarlo a otro tipo
+de producto, *Restablecer al montaje*. En la vista previa, cada tipo con
+su luz de three; en el motor, las secciones `LGHT` correspondientes (E3
+ya cubre área y sol; punto y foco direccional se añaden al integrador
+aquí, con test de energía).
+
+**Depende de.** U3, U4, E3.
+
+**Criterio.** Un montaje propio de tres focos guardado y aplicado sobre
+otro tipo de producto mantiene la irradiancia total del tipo (test);
+captura con un foco direccional apuntado a una pieza; paridad nativo /
+wasm sigue en verde.
+
+## L5 · Luces IES — **Sonnet**
+
+**Qué.** Lector propio del formato IES LM-63 (texto público) en
+`rt-core`, foco de tipo IES en el motor y en la vista previa (aproximado
+por un foco direccional con la intensidad del eje), sección RSB propia,
+y el tipo en *+ Añadir luz*.
+
+**Depende de.** L4, E5.
+
+**Criterio.** Dos perfiles IES de prueba escritos a mano; la intensidad
+muestreada a 0°, 30° y 60° coincide con el archivo.
+
 ## L1 · Colocación por reflejo, campo claro, luces editables — **Sonnet**
 
 **Qué.** Colocación por reflejo exacta con `pick` del motor en Rust
@@ -595,6 +712,12 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 ## Decisiones pendientes de Fable (no adelantar)
 
 - **I2**: licencia y entrada de STEP, tras el informe.
+- **Formatos nativos** (`.bip`, `.ksp`, `.sldprt`, `.ma`, `.ztl`, `.f3d`):
+  decidido que **no** se leen (propietarios, sin especificación pública;
+  leerlos exigiría analizar sus binarios, que las reglas de sala limpia
+  prohíben). La entrada es lo que cada programa exporta (`SPEC.md` §5).
+  Se revisa solo si aparece una especificación pública o una biblioteca
+  MIT/Apache que los lea.
 - **E4**: si el trazador en wasm no da interactividad suficiente en
   portátiles, mantener three.js como vista previa (la decisión actual) o
   pasar a trazado a baja resolución mientras se mueve y retirar three.
@@ -614,11 +737,16 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
    esqueleto del motor. Sin la primera no hay dónde ver nada; sin el
    segundo no hay dónde construir el trazador.
 2. **E2** → **E3** (Opus): aceleración e integrador. Mientras tanto,
-   **U2** e **I1** (Sonnet): proyecto en archivo, OBJ y STL.
+   **U2**, **I1** e **I3** (Sonnet): proyecto en archivo, OBJ y STL, y el
+   resto de importadores con la hoja de importación. La importación es
+   el tronco: va delante de todo lo que no sea el motor.
 3. **E4** (Opus): el motor en el navegador. Cierra v0.1 con un render de
    verdad en el visor y en la línea de comandos.
-4. **E5** → **E6** → **L1** → **L2** → **L3**: la luz y los materiales
+4. **I2** (STEP e IGES), **U3** (mover y operaciones de pieza), **U4**
+   (biblioteca) y **L4** (focos propios): lo que hace que se comporte
+   como KeyShot en el día a día.
+5. **E5** → **E6** → **L1** → **L2** → **L3**: la luz y los materiales
    hasta que las 72 recetas estén revisadas sobre el motor propio.
-5. **M1**, **N2**, **D1**, **P1**: cierran v0.2.
-6. **E7**, **M2**, **N1**, **E8**, **I2**, **Q1**, **P2**: v0.3.
-7. **H1** al cierre de cada versión.
+6. **M1**, **N2**, **D1**, **P1**: cierran v0.2.
+7. **E7**, **M2**, **N1**, **L5**, **E8**, **Q1**, **P2**: v0.3.
+8. **H1** al cierre de cada versión.
