@@ -292,7 +292,20 @@ function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
     },
     shallowEq,
   );
-  return h('div', { class: 'tab-body' }, note, h('div', { class: 'side-scroll' }, list));
+  const reset = h('button', { type: 'button', class: 'btn', style: 'flex:1', onclick: () => store.dispatch({ type: 'studio/resetLights', label: L('undo.resetLights') }) }, t('lights.reset'));
+  scope.watch((s) => s.studio.modified, (m) => (reset.disabled = !m));
+  return h(
+    'div',
+    { class: 'tab-body' },
+    note,
+    h('div', { class: 'side-scroll' }, list),
+    h(
+      'div',
+      { class: 'side-foot' },
+      h('button', { type: 'button', class: 'btn btn-block', disabled: true, 'data-tip': t('lights.addSoon') }, icon('plus', 14), t('lights.add'), h('span', { class: 'aux' }, t('common.comingSoon'))),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', style: 'flex:1', disabled: true, 'data-tip': t('lights.saveSetupSoon') }, t('lights.saveSetup')), reset),
+    ),
+  );
 }
 
 function studiosTab(ctx: Ctx, scope: Scope): HTMLElement {

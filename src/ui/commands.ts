@@ -55,12 +55,14 @@ export function pickFiles(accept: string, multiple = false): Promise<File[]> {
   });
 }
 
-export const MODEL_ACCEPT = '.glb,.gltf,.obj,.stl';
+/** Formats the empty state lists; only glTF is read in this version. */
+export const SOON_FORMATS = ['obj', 'stl', 'fbx', '3dm', 'step', 'stp', 'iges', 'igs', '3mf', 'ply', 'dae', 'usd', 'usdz', 'usda', 'usdc'];
+export const MODEL_ACCEPT = ['.glb', '.gltf', ...SOON_FORMATS.map((f) => `.${f}`)].join(',');
 
 export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<void> {
   for (const file of files) {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    if (ext === 'obj' || ext === 'stl') {
+    if (SOON_FORMATS.includes(ext)) {
       const msg = t('import.soon', { format: ext.toUpperCase() });
       ctx.ui.set({ importMessage: msg });
       ctx.ui.toast(msg);
@@ -76,8 +78,11 @@ export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<voi
     try {
       const payload = await ctx.services.importFile(file);
       const replace = ctx.store.get().scene.roots.length === 0;
+      // The Standard studio is already there: the part shows lit, resting on the floor and framed.
       ctx.store.transaction(L('undo.import', { name: file.name }), () => {
         ctx.store.dispatch({ type: 'scene/addModel', payload, replace });
+        const roots = ctx.store.get().scene.roots;
+        ctx.store.dispatch({ type: 'scene/restOnFloor', ids: [roots[roots.length - 1]] });
         ctx.store.dispatch({ type: 'camera/frame' });
       });
       ctx.ui.set({ importMessage: null });

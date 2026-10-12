@@ -110,6 +110,11 @@ const TABLE = {
   'lights.empty': ['The active setup has no lights.', 'El montaje activo no tiene focos.'],
   'lights.share': ['{pct} % of the light', '{pct} % de la luz'],
   'lights.toggle': ['Switch on or off', 'Encender o apagar'],
+  'lights.add': ['Add light', 'Añadir luz'],
+  'lights.addSoon': ['Own lights (area, point, spot, sun, IES): coming soon', 'Focos propios (área, punto, foco, sol, IES): próximamente'],
+  'lights.saveSetup': ['Save setup as…', 'Guardar montaje como…'],
+  'lights.saveSetupSoon': ['Saved setups go to the Mine tab: coming soon', 'Los montajes guardados van a la pestaña Míos: próximamente'],
+  'lights.reset': ['Reset to setup', 'Restablecer al montaje'],
   'lights.notBuilt': ['Preview of the {preset} rig. Create the studio to apply the full preset.', 'Vista del rig de {preset}. Crea el estudio para aplicar el preset completo.'],
   'studios.save': ['Save as studio', 'Guardar como estudio'],
   'studios.empty': [
@@ -153,7 +158,10 @@ const TABLE = {
   ],
   'viewport.noEngine': ['WebGL is not available: the viewport cannot draw.', 'WebGL no está disponible: el visor no puede dibujar.'],
   'empty.title': ['Drop a model here', 'Suelta aquí un modelo'],
-  'empty.formats': ['GLB and glTF now · OBJ and STL coming soon', 'GLB y glTF ya · OBJ y STL próximamente'],
+  'empty.formats': [
+    'glTF and GLB now · OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE and USD coming soon',
+    'glTF y GLB ya · OBJ, STL, FBX, 3DM, STEP, IGES, 3MF, PLY, DAE y USD próximamente',
+  ],
   'empty.import': ['Import model', 'Importar modelo'],
   'empty.example': ['Load example part', 'Cargar pieza de ejemplo'],
   'import.busy': ['Importing {name}…', 'Importando {name}…'],
@@ -386,6 +394,10 @@ const TABLE = {
   'lightEdit.glossy': ['Visible in reflections', 'Visible en reflejos'],
   'lightEdit.camera': ['Visible to camera', 'Visible a cámara'],
   'lightEdit.enabled': ['On', 'Encendido'],
+  'lightEdit.moreSoon': [
+    'Point and spot lights, aiming, XYZ coordinates, shadows, duplicate and delete: coming soon',
+    'Focos de punto y direccionales, apuntar, coordenadas XYZ, sombras, duplicar y eliminar: próximamente',
+  ],
   'lightEdit.brightField': ['Bright field: the recipe wants the camera to see it.', 'Campo claro: la receta quiere que la cámara lo vea.'],
 
   // Render bar
