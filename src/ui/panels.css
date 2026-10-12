@@ -697,3 +697,63 @@
     display: none;
   }
 }
+
+/* Import sheet (UI.md §2.3): in line in the inspector, never a dialog. */
+.import-sheet {
+  display: flex;
+  flex-direction: column;
+}
+.import-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--pad);
+  border-bottom: 1px solid var(--line);
+}
+.import-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.import-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--ink-0);
+}
+.import-format {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ink-0);
+}
+.import-note {
+  color: var(--ink-1);
+}
+.import-aux {
+  margin-top: -4px;
+  padding-left: 116px;
+}
+.import-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: var(--pad);
+  border-top: 1px solid var(--line);
+  background: var(--bg-1);
+}
+.import-keys {
+  margin-left: auto;
+}

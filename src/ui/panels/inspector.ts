@@ -10,6 +10,7 @@ import { dynamic, type Ctx, type Scope } from '../reactive';
 import { kbdFor } from '../shortcuts';
 import { getLang, t } from '../strings';
 import { guideStrip } from './guide';
+import { importSheet } from './import-sheet';
 import { cameraInspector, lightInspector, partsInspector } from './insp-parts';
 import { levelSelector } from './scene';
 import { sceneInspector } from './insp-scene';
@@ -64,7 +65,7 @@ export function inspectorPanel(ctx: Ctx, scope: Scope): HTMLElement {
   const { ui } = ctx;
   const levelHost = dynamic(
     scope,
-    (s) => contextOf(s).kind === 'parts',
+    (s, u) => !u.importSheet && contextOf(s).kind === 'parts',
     (sc, isParts) => (isParts ? h('div', { style: 'padding:6px var(--pad) 8px;border-bottom:1px solid var(--line)' }, levelSelector(ctx, sc)) : null),
   );
   const head = h(
@@ -74,7 +75,9 @@ export function inspectorPanel(ctx: Ctx, scope: Scope): HTMLElement {
     h('span', { style: 'flex:1' }),
     h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('common.collapse'), 'data-tip': t('common.collapse'), 'data-kbd': kbdFor('panels'), onclick: () => ui.set({ rightCollapsed: true }) }, icon('panelRight')),
   );
-  const body = dynamic(scope, contextKey, (sc) => {
+  // While a file waits for its options the sheet takes the place of the contextual inspector (UI.md §2.3).
+  const body = dynamic(scope, (s, u) => (u.importSheet ? `import:${u.importSheet.id}` : contextKey(s)), (sc) => {
+    if (ctx.ui.get().importSheet) return importSheet(ctx, sc);
     const s = ctx.store.get();
     const c = contextOf(s);
     if (c.kind === 'parts') return partsInspector(ctx, sc, c.ids, c.faces);

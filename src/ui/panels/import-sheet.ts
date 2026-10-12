@@ -8,7 +8,7 @@
 
 import { describePayload, IMPORT_UNITS, type ImportOptions } from '../../core/import-options';
 import * as cmd from '../commands';
-import { field, segmented, toggle, type Control } from '../components/controls';
+import { field, segmented, toggle } from '../components/controls';
 import { section } from '../components/section';
 import { h, isTyping } from '../dom';
 import { dyn } from '../names';
@@ -172,24 +172,22 @@ export function importSheet(ctx: Ctx, scope: Scope): HTMLElement {
   );
 
   // Keep the controls in step with the options (a language switch rebuilds them from the same values).
-  const controls: [Control<never>, (o: ImportOptions) => unknown][] = [
-    [units as Control<never>, (x) => x.units],
-    [upAxis as Control<never>, (x) => x.upAxis],
-    [center as Control<never>, (x) => x.center],
-    [rest as Control<never>, (x) => x.restOnFloor],
-    [frame as Control<never>, (x) => x.frameCamera],
-    [mode as Control<never>, (x) => x.mode],
-    [groupBy as Control<never>, (x) => x.groupBy],
-    [materials as Control<never>, (x) => x.materials],
-    [separate as Control<never>, (x) => x.separate],
-    [tessellation as Control<never>, (x) => x.tessellation],
-    [hidden as Control<never>, (x) => x.importHidden],
-    [flip as Control<never>, (x) => x.flipNormals],
-  ];
   scope.watch(
     (_s, u) => u.importSheet?.options,
     (opts) => {
-      if (opts) for (const [control, pick] of controls) control.set(pick(opts) as never);
+      if (!opts) return;
+      units.set(opts.units);
+      upAxis.set(opts.upAxis);
+      center.set(opts.center);
+      rest.set(opts.restOnFloor);
+      frame.set(opts.frameCamera);
+      mode.set(opts.mode);
+      groupBy.set(opts.groupBy);
+      materials.set(opts.materials);
+      separate.set(opts.separate);
+      tessellation.set(opts.tessellation);
+      hidden.set(opts.importHidden);
+      flip.set(opts.flipNormals);
     },
   );
   scope.watch(
