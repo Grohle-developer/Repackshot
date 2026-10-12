@@ -121,6 +121,10 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **I1** · Importadores OBJ y STL propios con soldadura, normales por
   ángulo, aristas vivas, detección de escala y arreglo de unidades en el
   Doctor; `importFile` común para glTF, OBJ y STL — **Sonnet**.
+- **E2** · SIMD propio (escalar, SSE2, AVX2, NEON, simd128, bit a bit
+  iguales), BVH4/8 con SAH y recorrido SIMD, intersección *watertight*,
+  instancias, `pick`, `rt-bench`; 121 tests, también ejecutados en wasm
+  — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -390,7 +394,7 @@ también la necesita en sus tests. Las funciones de `rt-wasm` que reciben
 punteros son `unsafe extern "C"`; el registro de escenas es un `Mutex`,
 no un `static mut`.
 
-## E2 · Geometría y aceleración — **Opus**
+## E2 · Geometría y aceleración — **Opus** — hecha
 
 **Qué.** En `rt-core`: el módulo `simd` (`f32x4`/`f32x8` con referencia
 escalar y rutas SSE2/AVX2, NEON y `simd128`, test de igualdad dentro de
@@ -411,6 +415,40 @@ ejemplo, malla aleatoria con triángulos degenerados); construcción
 determinista; SIMD = escalar. Objetivo medido (se apunta en el PR, no
 es puerta): ≥ 10 M rayos/s por núcleo en x86_64 con AVX2 sobre la pieza
 de ejemplo.
+
+**Hecho.** Medido en una máquina virtual de 4 núcleos (Xeon 2,8 GHz,
+AVX2, BVH8): pieza de ejemplo **12–14 M rayos/s por núcleo** (54–80 M en
+4 hilos según coherencia y *any-hit*); malla de un millón de triángulos,
+3,9 M por núcleo coherente y 1,0 M incoherente (limitada por fallos de
+caché); construcción de la BVH de 1 M en 1,1 s. Render completo de
+ejemplo: de 1,4 M a **15,2 M rayos/s** en 4 hilos. En wasm bajo Node, un
+hilo: 2,8 M escalar y 3,7 M con `simd128`, frente a 4,5 M nativo. Las
+rutas SIMD escalar, SSE2, AVX2 y `simd128` se ejecutan y comparan bit a
+bit (sin FMA, `min`/`max` con la semántica de x86 en todas, reducciones
+en árbol fijo); NEON solo compilada y comprobada con clippy (no hay
+máquina ARM aquí). 121 tests (rt-core 102, rt-cli 13, rt-wasm 6) en
+debug, release y **wasm32-wasip1 bajo Node** (`engine/tools/wasi-run.mjs`),
+con tres mutaciones comprobadas (culling, desempate, orden de operandos
+de `min` en SSE). El hash de la película se fija ahora sobre dos baldosas
+y en todas las rutas SIMD; el wasm real da los mismos hashes.
+
+Lo que no encajaba: nueva sección RSB **`INST`** (malla, transformación
+3 × 4, material, banderas) para que las instancias viajen; sin ella, una
+instancia identidad por malla como antes (anotado en `ARCHITECTURE.md`
+§5.2). La detección de AVX2 vive en `rt-core` (`Isa::detect`, CPUID, no
+es una API del sistema) con despacho por baldosa y caída segura a
+escalar. La anchura de la BVH depende de la máquina (BVH8 solo con AVX2),
+con resultado idéntico porque el impacto más cercano es el menor
+`(t, instancia, triángulo)`. Paquetes de triángulos de 4 en todas las
+rutas; 8 carriles solo en los nodos. `Scene.meshes` pasa a
+`Scene.geometry` y `Mesh` es inmutable. Una instancia con transformación
+singular nunca se golpea, no es error. `[profile.test] opt-level = 1`
+(los tests de fuerza bruta pasan de 18 s a 2 s); `rt-cli` tiene ahora
+dos binarios (`rt`, `rt-bench`) y `default-run`. CI ejecuta además los
+tests de `rt-core` en wasm (escalar y `simd128`, en `--release` porque
+Node 22 falla con el binario de depuración entero) y un humo de
+`rt-bench`. El `.wasm` pasa de 50 a 114 KB; `engine:build` sigue siendo
+escalar y la variante `simd128` se decide en E4.
 
 ## E3 · Integrador v1 — **Opus**
 

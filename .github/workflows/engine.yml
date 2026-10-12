@@ -4,6 +4,10 @@
 # cross-compiling the whole workspace for WebAssembly (built and inspected), aarch64 and riscv64
 # on every push, next to the native format, lint, test and release build.
 #
+# The SIMD paths that this x86_64 runner can execute (scalar, SSE2, AVX2) are tested natively;
+# the WebAssembly `simd128` path is executed too, by running the rt-core tests as a
+# `wasm32-wasip1` binary under Node's WASI (tools/wasi-run.mjs). NEON is compile-checked only.
+#
 # The engine also promises zero external dependencies. That rule is checked by requiring that
 # Cargo.lock contains only workspace members: a `[[package]]` with a `source =` line is a crate
 # from a registry or from git, and the "Zero external dependencies" step fails on it.
@@ -34,7 +38,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown, aarch64-unknown-linux-gnu, riscv64gc-unknown-linux-gnu
+          targets: wasm32-unknown-unknown, wasm32-wasip1, aarch64-unknown-linux-gnu, riscv64gc-unknown-linux-gnu
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Zero external dependencies
         run: |
@@ -64,6 +72,16 @@ jobs:
             echo "::error::rt_wasm.wasm imports WASI functions. The engine must not use OS APIs."
             exit 1
           fi
+
+      - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: node ${{ github.workspace }}/engine/tools/wasi-run.mjs
+        run: |
+          cargo test -p rt-core --release --target wasm32-wasip1
+          RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-core --release --target wasm32-wasip1
+
+      - name: Ray throughput (smoke run of rt-bench)
+        run: cargo run --release -p rt-cli --bin rt-bench -- --rays 200000 --triangles 200000
 
       - name: Cross-check aarch64
         run: cargo check --workspace --target aarch64-unknown-linux-gnu

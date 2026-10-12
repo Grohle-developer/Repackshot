@@ -286,8 +286,10 @@ tercio del nativo.
 
 La única interfaz entre la interfaz y el motor es un **blob binario
 little-endian**, `RSB1`: cabecera y secciones `[u32 tag][u32 len][payload]`
-(`CAMR`, `MESH`, `MATL`, `LGHT`, `ENVR`, `RNDR`…), con secciones
-desconocidas ignoradas para compatibilidad hacia delante. `rt-core`
+(`CAMR`, `MESH`, `MATL`, `LGHT`, `ENVR`, `RNDR`, `INST`…), con secciones
+desconocidas ignoradas para compatibilidad hacia delante. `INST`
+(instancia: índice de malla, transformación 3 × 4 por filas, material,
+banderas) es opcional: sin ella, cada malla es una instancia identidad. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
 TypeScript, y un test de paridad escribe la misma escena por los dos
 lados y compara los bytes. El `.repack.json` sigue siendo el formato de

@@ -7,6 +7,9 @@ pub mod rsb;
 use crate::color::Rgb;
 use crate::math::{Aabb, Ray, Vec3};
 
+pub use crate::geometry::{
+    Geometry, GeometryError, Hit, Instance, Mesh, MeshError, RayHit, Transform, INSTANCE_ONE_SIDED,
+};
 pub use rsb::RsbError;
 
 /// A camera: thin lens perspective or orthographic.
@@ -108,41 +111,6 @@ impl Camera {
         let focus_point = self.position + dir * (self.focus_dist / dir.dot(forward));
         let origin = self.position + (right * lens.0 + up * lens.1) * radius;
         Ray::new(origin, (focus_point - origin).normalize())
-    }
-}
-
-/// An indexed triangle mesh in world space.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Mesh {
-    /// Vertex positions.
-    pub positions: Vec<Vec3>,
-    /// Vertex normals, one per position (a zero normal means "use the face normal").
-    pub normals: Vec<Vec3>,
-    /// Triangle vertex indices, three per triangle.
-    pub indices: Vec<u32>,
-    /// Index into [`Scene::materials`].
-    pub material_id: u32,
-}
-
-impl Mesh {
-    /// Number of triangles.
-    pub fn triangle_count(&self) -> usize {
-        self.indices.len() / 3
-    }
-
-    /// The three corners of triangle `i`, or `None` if `i` or an index is out of range.
-    pub fn triangle(&self, i: usize) -> Option<[Vec3; 3]> {
-        let idx = self.indices.get(i * 3..i * 3 + 3)?;
-        Some([
-            *self.positions.get(idx[0] as usize)?,
-            *self.positions.get(idx[1] as usize)?,
-            *self.positions.get(idx[2] as usize)?,
-        ])
-    }
-
-    /// Bounding box of all vertices ([`Aabb::EMPTY`] for an empty mesh).
-    pub fn bounds(&self) -> Aabb {
-        self.positions.iter().fold(Aabb::EMPTY, |b, &p| b.extend(p))
     }
 }
 
@@ -377,10 +345,10 @@ impl Default for RenderSettings {
 pub struct Scene {
     /// The camera.
     pub camera: Camera,
-    /// Materials, referenced by [`Mesh::material_id`].
+    /// Materials, referenced by [`Instance::material_id`] (and [`Mesh::material_id`]).
     pub materials: Vec<Material>,
-    /// Geometry.
-    pub meshes: Vec<Mesh>,
+    /// Meshes, instances and their acceleration structures.
+    pub geometry: Geometry,
     /// Light sources.
     pub lights: Vec<Light>,
     /// Environment lighting.
@@ -390,16 +358,25 @@ pub struct Scene {
 }
 
 impl Scene {
-    /// Total number of triangles in all meshes.
+    /// Number of distinct triangles (each mesh counted once, however many instances use it).
     pub fn triangle_count(&self) -> usize {
-        self.meshes.iter().map(Mesh::triangle_count).sum()
+        self.geometry.triangle_count()
     }
 
-    /// Bounding box of all geometry ([`Aabb::EMPTY`] when there is none).
+    /// World bounding box of all geometry ([`Aabb::EMPTY`] when there is none).
     pub fn bounds(&self) -> Aabb {
-        self.meshes
-            .iter()
-            .fold(Aabb::EMPTY, |b, m| b.union(m.bounds()))
+        self.geometry.bounds()
+    }
+
+    /// The front-most surface along `ray` within `[t_min, t_max]`: instance, triangle, point,
+    /// normals and barycentrics. Used to select, to focus by click and to place by reflection.
+    pub fn pick(&self, ray: &Ray) -> Option<Hit> {
+        self.geometry.intersect(ray)
+    }
+
+    /// True when anything blocks `ray` within `[t_min, t_max]` (shadow rays, early exit).
+    pub fn occluded(&self, ray: &Ray) -> bool {
+        self.geometry.occluded(ray)
     }
 }
 
@@ -503,34 +480,33 @@ mod tests {
     }
 
     #[test]
-    fn mesh_triangles_and_bounds() {
-        let mesh = Mesh {
-            positions: vec![
+    fn scene_counts_bounds_and_pick() {
+        let mesh = Mesh::new(
+            &[
                 Vec3::ZERO,
                 Vec3::new(1.0, 0.0, 0.0),
                 Vec3::new(0.0, 2.0, 3.0),
             ],
-            normals: vec![Vec3::ZERO; 3],
-            indices: vec![0, 1, 2],
-            material_id: 0,
-        };
-        assert_eq!(mesh.triangle_count(), 1);
-        assert_eq!(
-            mesh.triangle(0),
-            Some([mesh.positions[0], mesh.positions[1], mesh.positions[2]])
-        );
-        assert_eq!(mesh.triangle(1), None);
-        assert_eq!(
-            mesh.bounds(),
-            Aabb::new(Vec3::ZERO, Vec3::new(1.0, 2.0, 3.0))
-        );
-        assert!(Mesh::default().bounds().is_empty());
+            &[],
+            &[0, 1, 2],
+            0,
+        )
+        .expect("valid");
         let scene = Scene {
-            meshes: vec![mesh],
+            geometry: Geometry::from_meshes(vec![mesh]),
             ..Scene::default()
         };
         assert_eq!(scene.triangle_count(), 1);
-        assert_eq!(scene.bounds().max, Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(
+            scene.bounds(),
+            Aabb::new(Vec3::ZERO, Vec3::new(1.0, 2.0, 3.0))
+        );
+        let ray = Ray::new(Vec3::new(0.2, 0.2, -5.0), Vec3::new(0.0, 0.0, 1.0));
+        let hit = scene.pick(&ray).expect("hit");
+        assert_eq!((hit.instance, hit.triangle), (0, 0));
+        assert!(scene.occluded(&ray));
+        assert!(Scene::default().bounds().is_empty());
+        assert_eq!(Scene::default().pick(&ray), None);
     }
 
     #[test]

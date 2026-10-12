@@ -19,7 +19,7 @@
 //!   `f32::MAX`).
 //! * Degenerate triangles (zero area, repeated vertices) give `det == 0` and are never hit.
 //!
-//! The scalar [`watertight`] function is the reference; the 4-lane [`packet_hits`] used by the
+//! The scalar `watertight` function is the reference; the 4-lane `packet_hits` used by the
 //! BVH evaluates **the same operations in the same order**, so both return identical bits, which
 //! the BVH-versus-brute-force tests rely on.
 
@@ -43,13 +43,13 @@ pub(crate) struct PreparedRay {
     pub org: [f32; 3],
     /// `1 / dir` per axis (may be infinite).
     pub inv: [f32; 3],
-    /// Index into a node's bounds of the plane the ray meets first on each axis.
-    pub near: [usize; 3],
-    /// Index into a node's bounds of the plane the ray meets last on each axis.
-    pub far: [usize; 3],
+    /// Per axis: the direction is negative (`-0` included), so the ray meets the max plane of a
+    /// box first.
+    pub negative: [bool; 3],
     /// Axis permutation of the sheared space.
     pub k: [usize; 3],
-    /// Shear constants `d[kx]/d[kz]`, `d[ky]/d[kz]`, `1/d[kz]`.
+    /// Shear constants `d[kx] / d[kz]`, `d[ky] / d[kz]`, `1 / d[kz]` (the first two computed as
+    /// `d[kx] * (1 / d[kz])`; any formula works as long as every triangle uses the same one).
     pub shear: [f32; 3],
     /// Start of the parameter interval.
     pub t_min: f32,
@@ -76,25 +76,24 @@ impl PreparedRay {
             // Keeps the winding (and so the sign of `det`) independent of the ray direction.
             std::mem::swap(&mut kx, &mut ky);
         }
-        let mut near = [0; 3];
-        let mut far = [0; 3];
-        for axis in 0..3 {
-            // Bounds are stored [min_x, max_x, min_y, max_y, min_z, max_z]. A negative
-            // direction (including -0, whose reciprocal is -inf) meets the max plane first.
-            let negative = usize::from(inv[axis].is_sign_negative());
-            near[axis] = axis * 2 + negative;
-            far[axis] = axis * 2 + 1 - negative;
-        }
+        let sz = inv[kz];
         PreparedRay {
             org: [ray.origin.x, ray.origin.y, ray.origin.z],
             inv,
-            near,
-            far,
+            // A negative direction (including -0, whose reciprocal is -inf) meets the max plane
+            // of a box first.
+            negative: inv.map(f32::is_sign_negative),
             k: [kx, ky, kz],
-            shear: [d[kx] / d[kz], d[ky] / d[kz], 1.0 / d[kz]],
+            shear: [d[kx] * sz, d[ky] * sz, sz],
             t_min: ray.t_min,
             t_max: ray.t_max.min(f32::MAX),
         }
+    }
+
+    /// True when `[t_min, t_max]` holds at least one value (false for NaN bounds).
+    #[inline(always)]
+    pub fn has_interval(&self) -> bool {
+        self.t_min <= self.t_max
     }
 }
 
@@ -183,7 +182,11 @@ impl<V: Vector<Array = [f32; 4]>> RayLanes<V> {
         let [kx, ky, kz] = r.k;
         RayLanes {
             k: r.k,
-            org: [V::splat(r.org[kx]), V::splat(r.org[ky]), V::splat(r.org[kz])],
+            org: [
+                V::splat(r.org[kx]),
+                V::splat(r.org[ky]),
+                V::splat(r.org[kz]),
+            ],
             shear: [
                 V::splat(r.shear[0]),
                 V::splat(r.shear[1]),
@@ -206,16 +209,22 @@ pub(crate) fn packet_hits<V: Vector<Array = [f32; 4]>>(
     let [kx, ky, kz] = r.k;
     let [ox, oy, oz] = r.org;
     let [sx, sy, sz] = r.shear;
-    let corner = |c: &[[f32; 4]; 3]| {
-        (
-            V::load(&c[kx]) - ox,
-            V::load(&c[ky]) - oy,
-            V::load(&c[kz]) - oz,
-        )
-    };
-    let (a_x, a_y, a_z) = corner(&p.v[0]);
-    let (b_x, b_y, b_z) = corner(&p.v[1]);
-    let (c_x, c_y, c_z) = corner(&p.v[2]);
+    let [a, b, c] = &p.v;
+    let (a_x, a_y, a_z) = (
+        V::load(&a[kx]) - ox,
+        V::load(&a[ky]) - oy,
+        V::load(&a[kz]) - oz,
+    );
+    let (b_x, b_y, b_z) = (
+        V::load(&b[kx]) - ox,
+        V::load(&b[ky]) - oy,
+        V::load(&b[kz]) - oz,
+    );
+    let (c_x, c_y, c_z) = (
+        V::load(&c[kx]) - ox,
+        V::load(&c[ky]) - oy,
+        V::load(&c[kz]) - oz,
+    );
     let (ax, ay) = (a_x - sx * a_z, a_y - sy * a_z);
     let (bx, by) = (b_x - sx * b_z, b_y - sy * b_z);
     let (cx, cy) = (c_x - sx * c_z, c_y - sy * c_z);
@@ -309,9 +318,9 @@ mod tests {
         for (origin, dir, front) in [
             (Vec3::new(0.2, 0.3, 5.0), Vec3::new(0.0, 0.0, -1.0), true),
             (Vec3::new(0.2, 0.3, -5.0), Vec3::new(0.0, 0.0, 1.0), false),
-            (Vec3::new(0.2, 0.3, 5.0), Vec3::new(0.1, -0.2, -1.0), true),
-            (Vec3::new(5.0, 0.3, 0.1), Vec3::new(-1.0, 0.0, -0.05), true),
-            (Vec3::new(5.0, 0.3, -0.1), Vec3::new(-1.0, 0.0, 0.05), false),
+            (Vec3::new(0.2, 0.3, 5.0), Vec3::new(0.02, -0.04, -1.0), true),
+            (Vec3::new(1.0, 0.3, 0.05), Vec3::new(-1.0, 0.0, -0.1), true),
+            (Vec3::new(1.0, 0.3, -0.05), Vec3::new(-1.0, 0.0, 0.1), false),
         ] {
             let r = PreparedRay::new(&Ray::new(origin, dir));
             let two = watertight(&r, a, b, c, f32::MAX, Cull::None).expect("hit");
@@ -382,7 +391,7 @@ mod tests {
     #[test]
     fn packets_match_the_scalar_test_on_every_path() {
         let mut rng = Pcg32::seeded(9, 1);
-        let mut coord = |rng: &mut Pcg32| (rng.next_f32() - 0.5) * 4.0;
+        let coord = |rng: &mut Pcg32| (rng.next_f32() - 0.5) * 4.0;
         let mut packets = Vec::new();
         for _ in 0..64 {
             let mut p = TriPacket {
@@ -417,15 +426,14 @@ mod tests {
                 for cull in [Cull::None, Cull::Back] {
                     let mut bits = 0;
                     let mut t = [0u32; 4];
-                    for lane in 0..4 {
-                        let corner = |c: usize| {
-                            Vec3::new(p.v[c][0][lane], p.v[c][1][lane], p.v[c][2][lane])
-                        };
+                    for (lane, slot) in t.iter_mut().enumerate() {
+                        let corner =
+                            |c: usize| Vec3::new(p.v[c][0][lane], p.v[c][1][lane], p.v[c][2][lane]);
                         if let Some(h) =
                             watertight(r, corner(0), corner(1), corner(2), r.t_max, cull)
                         {
                             bits |= 1 << lane;
-                            t[lane] = h.t.to_bits();
+                            *slot = h.t.to_bits();
                         }
                     }
                     reference.push((bits, t));

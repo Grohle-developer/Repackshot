@@ -116,7 +116,7 @@ impl Mesh {
         material_id: u32,
         width: BvhWidth,
     ) -> Result<Mesh, MeshError> {
-        if indices.len() % 3 != 0 {
+        if !indices.len().is_multiple_of(3) {
             return Err(MeshError::IndexCount);
         }
         if indices.len() / 3 > MAX_TRIANGLES || positions.len() >= u32::MAX as usize {
@@ -156,9 +156,9 @@ impl Mesh {
         let mut boxes = Vec::with_capacity(count);
         let mut centroids = Vec::with_capacity(count);
         for i in 0..count {
-            let b = self
-                .triangle(i)
-                .map_or(Aabb::EMPTY, |[a, b, c]| Aabb::EMPTY.extend(a).extend(b).extend(c));
+            let b = self.triangle(i).map_or(Aabb::EMPTY, |[a, b, c]| {
+                Aabb::EMPTY.extend(a).extend(b).extend(c)
+            });
             boxes.push(b);
             centroids.push(b.centroid());
         }

@@ -26,14 +26,24 @@
 //! ENVR  40 B  u32 kind (0 studio, 1 flat); f32 floor horizon zenith strength rotation_deg
 //!             background_color[3]; u32 background_mode
 //! RNDR  28 B  u32 width height max_samples seed; f32 max_seconds exposure_ev; u32 tonemap
+//! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
+//!             u32 material_id; u32 flags (1 one-sided)
 //! ```
 //!
 //! `CAMR`, `ENVR` and `RNDR` may appear at most once (a missing one means "defaults");
-//! `MESH`, `MATL` and `LGHT` repeat. A mesh refers to a material by its position among the `MATL`
-//! sections, wherever they are in the file. All floats must be finite.
+//! `MESH`, `MATL`, `LGHT` and `INST` repeat. A mesh refers to a material by its position among the
+//! `MATL` sections, an instance to a mesh by its position among the `MESH` sections, wherever they
+//! are in the file. All floats must be finite.
+//!
+//! **Instances.** A file without `INST` sections draws every mesh once, untransformed, with the
+//! mesh's own `material_id` (one implicit instance per mesh: what files written before `INST`
+//! existed mean). A file with `INST` sections draws exactly the instances listed, in that order;
+//! a mesh no instance refers to is not drawn. The writer emits `INST` only when the instances
+//! differ from the implicit ones, so scenes without instancing keep their exact bytes.
 
 use super::{
-    Camera, EnvKind, Environment, Light, LightKind, Material, Mesh, RenderSettings, Scene,
+    Camera, EnvKind, Environment, Geometry, Instance, Light, LightKind, Material, Mesh,
+    RenderSettings, Scene, Transform,
 };
 use crate::color::Rgb;
 use crate::math::Vec3;
@@ -54,6 +64,8 @@ pub const TAG_LGHT: [u8; 4] = *b"LGHT";
 pub const TAG_ENVR: [u8; 4] = *b"ENVR";
 /// Render settings section tag.
 pub const TAG_RNDR: [u8; 4] = *b"RNDR";
+/// Instance section tag.
+pub const TAG_INST: [u8; 4] = *b"INST";
 
 /// Why an RSB file could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -219,11 +231,23 @@ fn parse_mesh(r: &mut Reader) -> Result<Mesh, RsbError> {
         }
         indices.push(index);
     }
-    Ok(Mesh {
-        positions,
-        normals,
-        indices,
+    let material_id = r.u32()?;
+    Mesh::new(&positions, &normals, &indices, material_id).map_err(|e| r.invalid(e.reason()))
+}
+
+fn parse_instance(r: &mut Reader) -> Result<Instance, RsbError> {
+    let mesh = r.u32()?;
+    let mut rows = [[0.0f32; 4]; 3];
+    for row in &mut rows {
+        for value in row.iter_mut() {
+            *value = r.f32()?;
+        }
+    }
+    Ok(Instance {
+        mesh,
+        transform: Transform::from_rows(rows),
         material_id: r.u32()?,
+        flags: r.u32()?,
     })
 }
 
@@ -320,6 +344,8 @@ impl Scene {
         let mut camera = None;
         let mut environment = None;
         let mut render = None;
+        let mut meshes = Vec::new();
+        let mut instances = Vec::new();
         let mut scene = Scene::default();
 
         while pos < bytes.len() {
@@ -341,23 +367,41 @@ impl Scene {
                 TAG_CAMR => set_once(&mut camera, tag, parse_camera(&mut r)?)?,
                 TAG_ENVR => set_once(&mut environment, tag, parse_environment(&mut r)?)?,
                 TAG_RNDR => set_once(&mut render, tag, parse_render(&mut r)?)?,
-                TAG_MESH => scene.meshes.push(parse_mesh(&mut r)?),
+                TAG_MESH => meshes.push(parse_mesh(&mut r)?),
+                TAG_INST => instances.push(parse_instance(&mut r)?),
                 TAG_MATL => scene.materials.push(parse_material(&mut r)?),
                 TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
                 _ => {} // Unknown section: skipped for forward compatibility.
             }
         }
 
-        if scene
-            .meshes
-            .iter()
-            .any(|m| m.material_id as usize >= scene.materials.len())
-        {
+        let materials = scene.materials.len();
+        if meshes.iter().any(|m| m.material_id() as usize >= materials) {
             return Err(RsbError::Invalid {
                 tag: TAG_MESH,
                 reason: "material_id does not refer to a MATL section",
             });
         }
+        if instances.is_empty() {
+            instances = Geometry::implicit_instances(&meshes);
+        }
+        let invalid_instance = |reason| RsbError::Invalid {
+            tag: TAG_INST,
+            reason,
+        };
+        if instances.iter().any(|i| i.mesh as usize >= meshes.len()) {
+            return Err(invalid_instance("mesh_id does not refer to a MESH section"));
+        }
+        if instances
+            .iter()
+            .any(|i| i.material_id as usize >= materials)
+        {
+            return Err(invalid_instance(
+                "material_id does not refer to a MATL section",
+            ));
+        }
+        scene.geometry =
+            Geometry::new(meshes, instances).map_err(|_| invalid_instance("too many instances"))?;
         scene.camera = camera.unwrap_or_default();
         scene.environment = environment.unwrap_or_default();
         scene.render = render.unwrap_or_default();
@@ -400,21 +444,34 @@ impl Scene {
                 w.f32(m.emission_power);
             });
         }
-        for mesh in &self.meshes {
+        for mesh in self.geometry.meshes() {
             w.section(TAG_MESH, |w| {
-                w.u32(mesh.positions.len() as u32);
-                w.u32(mesh.indices.len() as u32);
-                for &p in &mesh.positions {
-                    w.vec3(p);
+                let n = mesh.vertex_count();
+                w.u32(n as u32);
+                w.u32(mesh.indices().len() as u32);
+                for i in 0..n {
+                    w.vec3(mesh.position(i).unwrap_or_default());
                 }
-                for &n in &mesh.normals {
-                    w.vec3(n);
+                for i in 0..n {
+                    w.vec3(mesh.normal(i).unwrap_or_default());
                 }
-                for &i in &mesh.indices {
+                for &i in mesh.indices() {
                     w.u32(i);
                 }
-                w.u32(mesh.material_id);
+                w.u32(mesh.material_id());
             });
+        }
+        if !self.geometry.has_implicit_instances() {
+            for instance in self.geometry.instances() {
+                w.section(TAG_INST, |w| {
+                    w.u32(instance.mesh);
+                    for v in instance.transform.rows.iter().flatten() {
+                        w.f32(*v);
+                    }
+                    w.u32(instance.material_id);
+                    w.u32(instance.flags);
+                });
+            }
         }
         for l in &self.lights {
             w.section(TAG_LGHT, |w| {
@@ -526,25 +583,27 @@ mod tests {
                     emission_power: 12.0,
                 },
             ],
-            meshes: vec![
-                Mesh {
-                    positions: vec![
+            geometry: Geometry::from_meshes(vec![
+                Mesh::new(
+                    &[
                         Vec3::new(0.0, 0.0, 0.0),
                         Vec3::new(1.0, 0.0, 0.0),
                         Vec3::new(0.0, 1.0, 0.0),
                         Vec3::new(1.0, 1.0, 0.0),
                     ],
-                    normals: vec![Vec3::new(0.0, 0.0, 1.0); 4],
-                    indices: vec![0, 1, 2, 2, 1, 3],
-                    material_id: 1,
-                },
-                Mesh {
-                    positions: vec![Vec3::new(5.0, 5.0, 5.0); 3],
-                    normals: vec![Vec3::ZERO; 3],
-                    indices: vec![0, 1, 2],
-                    material_id: 0,
-                },
-            ],
+                    &[Vec3::new(0.0, 0.0, 1.0); 4],
+                    &[0, 1, 2, 2, 1, 3],
+                    1,
+                )
+                .unwrap(),
+                Mesh::new(
+                    &[Vec3::new(5.0, 5.0, 5.0); 3],
+                    &[Vec3::ZERO; 3],
+                    &[0, 1, 2],
+                    0,
+                )
+                .unwrap(),
+            ]),
             lights: vec![
                 Light::default(),
                 Light {
@@ -855,6 +914,85 @@ mod tests {
             Scene::from_rsb(&mesh_bytes(3, &[0, 1, 2], 1)),
             Err(RsbError::Invalid { tag: TAG_MESH, .. })
         ));
+    }
+
+    /// `full_scene` with explicit instances: the first mesh twice, the second once.
+    fn instanced_scene() -> Scene {
+        let mut scene = full_scene();
+        let meshes = scene.geometry.meshes().to_vec();
+        let moved = Transform::from_rows([
+            [0.0, -1.0, 0.0, 10.0],
+            [2.0, 0.0, 0.0, -5.0],
+            [0.0, 0.0, 0.5, 1.25],
+        ]);
+        let instances = vec![
+            Instance::new(0, Transform::IDENTITY, 1),
+            Instance {
+                flags: crate::scene::INSTANCE_ONE_SIDED,
+                ..Instance::new(0, moved, 0)
+            },
+            Instance::new(1, Transform::translation(Vec3::new(1.0, 2.0, 3.0)), 1),
+        ];
+        scene.geometry = Geometry::new(meshes, instances).unwrap();
+        scene
+    }
+
+    #[test]
+    fn instances_round_trip_and_implicit_ones_are_not_written() {
+        let scene = instanced_scene();
+        let bytes = scene.to_rsb();
+        let inst: Vec<Vec<u8>> = sections(&bytes)
+            .into_iter()
+            .filter(|(t, _)| *t == TAG_INST)
+            .map(|(_, p)| p)
+            .collect();
+        assert_eq!(inst.len(), 3);
+        assert!(inst.iter().all(|p| p.len() == 15 * 4));
+        assert_eq!(Scene::from_rsb(&bytes), Ok(scene));
+        // Without explicit instances the file has no INST section and reads back the same.
+        let plain = full_scene().to_rsb();
+        assert!(sections(&plain).iter().all(|(t, _)| *t != TAG_INST));
+        let read = Scene::from_rsb(&plain).unwrap();
+        assert!(read.geometry.has_implicit_instances());
+        assert_eq!(read.geometry.instances().len(), 2);
+    }
+
+    #[test]
+    fn instances_must_refer_to_existing_meshes_and_materials() {
+        let good = instanced_scene().to_rsb();
+        let rebuild = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = good[..8].to_vec();
+            for (tag, mut payload) in sections(&good) {
+                if tag == TAG_INST {
+                    edit(&mut payload);
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        let bad_mesh = rebuild(&|p| p[0..4].copy_from_slice(&7u32.to_le_bytes()));
+        assert_eq!(
+            Scene::from_rsb(&bad_mesh),
+            Err(RsbError::Invalid {
+                tag: TAG_INST,
+                reason: "mesh_id does not refer to a MESH section"
+            })
+        );
+        let bad_material = rebuild(&|p| p[52..56].copy_from_slice(&9u32.to_le_bytes()));
+        assert!(matches!(
+            Scene::from_rsb(&bad_material),
+            Err(RsbError::Invalid { tag: TAG_INST, .. })
+        ));
+        let nan = rebuild(&|p| p[8..12].copy_from_slice(&f32::NAN.to_le_bytes()));
+        assert!(matches!(
+            Scene::from_rsb(&nan),
+            Err(RsbError::Invalid { tag: TAG_INST, .. })
+        ));
+        let short = rebuild(&|p| p.truncate(40));
+        assert_eq!(
+            Scene::from_rsb(&short),
+            Err(RsbError::SectionTooShort { tag: TAG_INST })
+        );
     }
 
     #[test]

@@ -45,6 +45,7 @@ pub(crate) const MAX_LEAF_FIRST: usize = (1 << (31 - COUNT_BITS)) - 2;
 /// Encodes a leaf reference. `count` must be in `1..=MAX_LEAF_ITEMS`.
 #[inline]
 pub(crate) fn leaf_ref(first: usize, count: usize) -> u32 {
+    debug_assert!((1..=MAX_LEAF_ITEMS).contains(&count) && first <= MAX_LEAF_FIRST);
     LEAF | ((first as u32) << COUNT_BITS) | (count as u32 - 1)
 }
 
@@ -88,41 +89,47 @@ impl BvhWidth {
 
 /// A wide node: the boxes of its `N` children, structure-of-arrays, and their references.
 ///
-/// `bounds` is `[min_x, max_x, min_y, max_y, min_z, max_z]`, one lane per child. Empty slots have
-/// an empty box (`min = +inf`, `max = -inf`), which no ray hits, and the reference [`EMPTY`].
+/// `bounds[axis][0]` holds the minima and `bounds[axis][1]` the maxima along `axis`, one lane per
+/// child. Empty slots have an empty box (`min = +inf`, `max = -inf`), which no ray hits, and the
+/// reference [`EMPTY`].
 #[derive(Clone, Debug, PartialEq)]
 #[repr(C, align(64))]
 pub(crate) struct WideNode<const N: usize> {
     /// Child boxes.
-    pub bounds: [[f32; N]; 6],
+    pub bounds: [[[f32; N]; 2]; 3],
     /// Child references: an inner node index, a leaf reference ([`LEAF`] set) or [`EMPTY`].
     pub child: [u32; N],
 }
 
 impl<const N: usize> WideNode<N> {
     fn empty() -> Self {
-        let mut bounds = [[f32::INFINITY; N]; 6];
-        for axis in 0..3 {
-            bounds[axis * 2 + 1] = [f32::NEG_INFINITY; N];
-        }
         WideNode {
-            bounds,
+            bounds: [[[f32::INFINITY; N], [f32::NEG_INFINITY; N]]; 3],
             child: [EMPTY; N],
         }
     }
 
     fn set_bounds(&mut self, slot: usize, b: &Aabb) {
         for axis in 0..3 {
-            self.bounds[axis * 2][slot] = b.min[axis];
-            self.bounds[axis * 2 + 1][slot] = b.max[axis];
+            self.bounds[axis][0][slot] = b.min[axis];
+            self.bounds[axis][1][slot] = b.max[axis];
         }
     }
 
     /// Box of child `slot`.
+    #[cfg(test)]
     pub fn child_bounds(&self, slot: usize) -> Aabb {
         Aabb::new(
-            Vec3::new(self.bounds[0][slot], self.bounds[2][slot], self.bounds[4][slot]),
-            Vec3::new(self.bounds[1][slot], self.bounds[3][slot], self.bounds[5][slot]),
+            Vec3::new(
+                self.bounds[0][0][slot],
+                self.bounds[1][0][slot],
+                self.bounds[2][0][slot],
+            ),
+            Vec3::new(
+                self.bounds[0][1][slot],
+                self.bounds[1][1][slot],
+                self.bounds[2][1][slot],
+            ),
         )
     }
 }
@@ -157,7 +164,7 @@ impl Default for Bvh {
     }
 }
 
-/// Size figures of a [`Bvh`].
+/// Size figures of a BVH (see [`Mesh::bvh_stats`](super::Mesh::bvh_stats)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BvhStats {
     /// Children per node.
@@ -196,6 +203,9 @@ impl Bvh {
         width: BvhWidth,
         emit_leaf: impl FnMut(&[u32]) -> u32,
     ) -> Bvh {
+        if prim_bounds.is_empty() {
+            return Bvh::default(); // One canonical empty tree, whatever the width.
+        }
         let binary = build_binary(prim_bounds, centroids, params);
         match width {
             BvhWidth::Four => collapse::<4>(&binary, emit_leaf, WideNodes::Four),
@@ -385,8 +395,8 @@ impl Builder<'_> {
                 if n == 0 || right_count[plane] == 0 {
                     continue;
                 }
-                let cost = acc.surface_area() * n as f32
-                    + right_area[plane] * right_count[plane] as f32;
+                let cost =
+                    acc.surface_area() * n as f32 + right_area[plane] * right_count[plane] as f32;
                 if best.is_none_or(|(_, _, c)| cost < c) {
                     best = Some((axis, plane, cost));
                 }
@@ -546,7 +556,10 @@ mod tests {
         if reference & LEAF != 0 {
             let (first, _) = leaf_range(reference);
             for &p in &leaves[first] {
-                assert!(inside(&boxes[p as usize]), "primitive {p} outside its leaf box");
+                assert!(
+                    inside(&boxes[p as usize]),
+                    "primitive {p} outside its leaf box"
+                );
                 seen.push(p);
             }
             return;

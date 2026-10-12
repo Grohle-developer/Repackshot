@@ -22,3 +22,9 @@ panic = "abort"
 [profile.release.package."*"]
 opt-level = 3
 codegen-units = 1
+
+# Tests compare the BVH against a brute-force loop over every triangle (tens of millions of
+# triangle tests): a little optimisation makes `cargo test` ten times faster. Debug assertions
+# and overflow checks stay on.
+[profile.test]
+opt-level = 1

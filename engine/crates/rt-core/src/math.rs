@@ -255,6 +255,13 @@ pub struct Aabb {
     pub max: Vec3,
 }
 
+/// The default box is [`Aabb::EMPTY`].
+impl Default for Aabb {
+    fn default() -> Aabb {
+        Aabb::EMPTY
+    }
+}
+
 impl Aabb {
     /// The empty box: the identity of [`Aabb::union`] and [`Aabb::extend`].
     pub const EMPTY: Aabb = Aabb {

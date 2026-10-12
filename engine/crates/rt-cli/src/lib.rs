@@ -11,6 +11,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+pub mod bench;
 pub mod cli;
 
 /// Edge length of the square tiles handed to the worker threads.

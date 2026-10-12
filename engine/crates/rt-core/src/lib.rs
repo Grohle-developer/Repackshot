@@ -2,7 +2,8 @@
 //!
 //! A CPU path tracer written from scratch with zero external dependencies. This crate holds
 //! everything that is independent of the host: vector maths, the random number generator,
-//! colour handling, the film, the PNG writer, the RSB scene format and the renderer itself.
+//! colour handling, the film, the PNG writer, the RSB scene format, SIMD, geometry (meshes,
+//! instances, BVHs, ray queries) and the renderer itself.
 //!
 //! It deliberately avoids every OS API (`std::fs`, `std::net`, `std::time`, `std::thread`) so
 //! that it compiles unchanged to `wasm32-unknown-unknown` and to any native target. Threading,
@@ -15,6 +16,7 @@
 
 pub mod color;
 pub mod example;
+pub mod geometry;
 pub mod image;
 pub mod math;
 pub mod png;

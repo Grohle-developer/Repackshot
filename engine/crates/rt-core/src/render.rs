@@ -1,20 +1,20 @@
 //! The renderer.
 //!
-//! **Phase E1 placeholder.** [`render_tile`] is already a real ray caster (thin lens camera,
-//! exact Moeller-Trumbore triangle intersection, deterministic per-pixel random streams) but it is
-//! deliberately naive:
+//! [`render_tile`] is a real ray caster: thin lens camera, deterministic per-pixel random streams,
+//! and since E2 the two-level BVH of [`crate::geometry`] with the watertight triangle test,
+//! dispatched to the best SIMD path of the machine (every path gives the same bits).
 //!
-//! * E2 replaces the brute-force loop over every triangle with a BVH.
-//! * E3 replaces the `n.l` shading below with the path tracer (materials, lights, environment).
-//!
-//! The function signature, the tile/film contract and the determinism guarantees are the parts
-//! that stay.
+//! The shading is still the E1 placeholder (`n.l` of the first light plus a flat ambient): E3
+//! replaces it with the path tracer (materials, lights, environment). The function signature, the
+//! tile/film contract and the determinism guarantees are the parts that stay.
 
 use crate::color::Rgb;
+use crate::geometry::RayHit;
 use crate::image::Film;
-use crate::math::{Ray, Vec3};
+use crate::math::Ray;
 use crate::rng::{mix64, Pcg32};
 use crate::scene::Scene;
+use crate::simd::Isa;
 
 /// A rectangle of pixels in image space.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,46 +48,6 @@ pub fn tile_grid(width: u32, height: u32, size: u32) -> Vec<TileRect> {
     tiles
 }
 
-/// Result of a ray / triangle test.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TriangleHit {
-    /// Ray parameter of the hit.
-    pub t: f32,
-    /// Barycentric weight of the second vertex.
-    pub u: f32,
-    /// Barycentric weight of the third vertex. The first vertex has weight `1 - u - v`.
-    pub v: f32,
-}
-
-/// Moeller-Trumbore ray / triangle intersection. Triangles are two sided. Only hits with
-/// `t` inside `[ray.t_min, ray.t_max]` count.
-#[inline]
-pub fn intersect_triangle(ray: &Ray, p0: Vec3, p1: Vec3, p2: Vec3) -> Option<TriangleHit> {
-    let e1 = p1 - p0;
-    let e2 = p2 - p0;
-    let pvec = ray.dir.cross(e2);
-    let det = e1.dot(pvec);
-    if det.abs() < 1.0e-12 {
-        return None; // Ray parallel to the triangle plane, or a degenerate triangle.
-    }
-    let inv = 1.0 / det;
-    let tvec = ray.origin - p0;
-    let u = tvec.dot(pvec) * inv;
-    if !(0.0..=1.0).contains(&u) {
-        return None;
-    }
-    let qvec = tvec.cross(e1);
-    let v = ray.dir.dot(qvec) * inv;
-    if v < 0.0 || u + v > 1.0 {
-        return None;
-    }
-    let t = e2.dot(qvec) * inv;
-    if t < ray.t_min || t > ray.t_max {
-        return None;
-    }
-    Some(TriangleHit { t, u, v })
-}
-
 /// Random stream for one pixel and one sample. It depends only on the scene seed, the image
 /// space pixel and the sample index, never on how the image is cut into tiles or on the order the
 /// tiles are rendered, so every schedule and every platform produces the same film.
@@ -111,65 +71,20 @@ fn sample_unit_disk(rng: &mut Pcg32) -> (f32, f32) {
     (0.0, 0.0)
 }
 
-/// Brute-force closest hit over every triangle of every mesh: `(mesh, triangle, hit)`.
-fn closest_hit(scene: &Scene, ray: &Ray) -> Option<(usize, usize, TriangleHit)> {
-    let mut ray = *ray;
-    let mut best = None;
-    for (mi, mesh) in scene.meshes.iter().enumerate() {
-        for (ti, tri) in mesh.indices.chunks_exact(3).enumerate() {
-            let (Some(&p0), Some(&p1), Some(&p2)) = (
-                mesh.positions.get(tri[0] as usize),
-                mesh.positions.get(tri[1] as usize),
-                mesh.positions.get(tri[2] as usize),
-            ) else {
-                continue;
-            };
-            if let Some(hit) = intersect_triangle(&ray, p0, p1, p2) {
-                ray.t_max = hit.t;
-                best = Some((mi, ti, hit));
-            }
-        }
-    }
-    best
-}
-
 /// Placeholder shading: albedo times (`n.l` of the first light plus a flat ambient taken from
 /// the environment `horizon`). Misses are black. No shadows, no bounces: E3 replaces all of it.
-fn shade(scene: &Scene, ray: &Ray) -> Rgb {
-    let Some((mi, ti, hit)) = closest_hit(scene, ray) else {
+fn shade(scene: &Scene, ray: &Ray, hit: Option<RayHit>) -> Rgb {
+    let Some(hit) = hit.and_then(|h| scene.geometry.hit_details(ray, h)) else {
         return Rgb::BLACK;
     };
-    let mesh = &scene.meshes[mi];
-    let tri = &mesh.indices[ti * 3..ti * 3 + 3];
-    let corner = |k: usize| mesh.positions[tri[k] as usize];
-    let geometric = (corner(1) - corner(0))
-        .cross(corner(2) - corner(0))
-        .normalize();
-
-    // Smooth normal when the mesh provides usable ones, geometric normal otherwise.
-    let w0 = 1.0 - hit.u - hit.v;
-    let smooth = match (
-        mesh.normals.get(tri[0] as usize),
-        mesh.normals.get(tri[1] as usize),
-    ) {
-        (Some(&n0), Some(&n1)) => match mesh.normals.get(tri[2] as usize) {
-            Some(&n2) => n0 * w0 + n1 * hit.u + n2 * hit.v,
-            None => Vec3::ZERO,
-        },
-        _ => Vec3::ZERO,
-    };
-    let mut normal = if smooth.length_squared() > 1.0e-12 {
-        smooth.normalize()
-    } else {
-        geometric
-    };
-    if normal.dot(ray.dir) > 0.0 {
-        normal = -normal; // Two sided: face the viewer.
-    }
-
+    // `hit.normal` is the smooth normal when the mesh has usable ones, the geometric normal
+    // otherwise, already turned to face the viewer (two-sided shading).
+    let normal = hit.normal;
     let albedo = scene
-        .materials
-        .get(mesh.material_id as usize)
+        .geometry
+        .instances()
+        .get(hit.instance as usize)
+        .and_then(|instance| scene.materials.get(instance.material_id as usize))
         .map_or(Rgb::splat(0.8), |m| m.base_color);
     let ambient = Rgb::splat(scene.environment.horizon * scene.environment.strength);
     let direct = scene.lights.first().map_or(Rgb::BLACK, |light| {
@@ -189,15 +104,53 @@ fn shade(scene: &Scene, ray: &Ray) -> Rgb {
 ///   the same samples in any tile order, with any tile size, on any platform, gives identical
 ///   films.
 ///
-/// Phase E1: brute-force intersection and `n.l` shading; see the module documentation.
+/// Intersection goes through the scene's BVH; shading is the E1 placeholder (see the module
+/// documentation).
 pub fn render_tile(scene: &Scene, tile: TileRect, sample_index: u32, film: &mut Film) -> u64 {
+    render_tile_with(scene, tile, sample_index, film, Isa::detect())
+}
+
+/// [`render_tile`] on an explicit SIMD path. Every path gives the same film, bit for bit.
+pub fn render_tile_with(
+    scene: &Scene,
+    tile: TileRect,
+    sample_index: u32,
+    film: &mut Film,
+    isa: Isa,
+) -> u64 {
+    render_tile_traced(scene, tile, sample_index, film, |rays, hits| {
+        scene.geometry.trace_batch_with(rays, hits, isa);
+    })
+}
+
+/// [`render_tile`] with every triangle of every instance tested against every ray, without the
+/// BVH: the reference the accelerated renderer is checked against. Tests only.
+#[cfg(test)]
+fn render_tile_brute_force(scene: &Scene, tile: TileRect, sample_index: u32, film: &mut Film) {
+    render_tile_traced(scene, tile, sample_index, film, |rays, hits| {
+        for (ray, hit) in rays.iter().zip(hits.iter_mut()) {
+            *hit = scene.geometry.brute_force(ray).0;
+        }
+    });
+}
+
+/// The body of the tile renderers: camera rays, `trace` to find their nearest hits, shading.
+fn render_tile_traced(
+    scene: &Scene,
+    tile: TileRect,
+    sample_index: u32,
+    film: &mut Film,
+    trace: impl FnOnce(&[Ray], &mut [Option<RayHit>]),
+) -> u64 {
     let (width, height) = (scene.render.width, scene.render.height);
     let aspect = width as f32 / height as f32;
     let x_end = tile.x.saturating_add(tile.w).min(width);
     let y_end = tile.y.saturating_add(tile.h).min(height);
     let thin_lens = scene.camera.lens_radius() > 0.0;
-    let mut rays = 0u64;
+    let pixels = (x_end.saturating_sub(tile.x) as usize) * (y_end.saturating_sub(tile.y) as usize);
 
+    // Camera rays of the whole tile first, then one SIMD dispatch to trace them all.
+    let mut rays = Vec::with_capacity(pixels);
     for y in tile.y..y_end {
         for x in tile.x..x_end {
             let mut rng = pixel_rng(scene.render.seed, x, y, sample_index);
@@ -208,18 +161,45 @@ pub fn render_tile(scene: &Scene, tile: TileRect, sample_index: u32, film: &mut 
             } else {
                 (0.0, 0.0)
             };
-            let ray = scene.camera.generate_ray(aspect, u, v, lens);
-            film.splat(x, y, shade(scene, &ray));
-            rays += 1;
+            rays.push(scene.camera.generate_ray(aspect, u, v, lens));
         }
     }
-    rays
+    let mut hits = vec![None; rays.len()];
+    trace(&rays, &mut hits);
+
+    let mut i = 0;
+    for y in tile.y..y_end {
+        for x in tile.x..x_end {
+            film.splat(x, y, shade(scene, &rays[i], hits[i]));
+            i += 1;
+        }
+    }
+    rays.len() as u64
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::{Camera, Environment, Light, LightKind, Material, Mesh, RenderSettings};
+    use crate::math::Vec3;
+    use crate::scene::{
+        Camera, Environment, Geometry, Light, LightKind, Material, Mesh, RenderSettings,
+    };
+
+    /// The triangle of `triangle_scene`, with or without its vertex normals.
+    fn facing_triangle(normals: bool) -> Mesh {
+        let n = [Vec3::new(0.0, -1.0, 0.0); 3];
+        Mesh::new(
+            &[
+                Vec3::new(-10.0, 0.0, -10.0),
+                Vec3::new(10.0, 0.0, -10.0),
+                Vec3::new(0.0, 0.0, 10.0),
+            ],
+            if normals { &n } else { &[] },
+            &[0, 1, 2],
+            0,
+        )
+        .expect("valid")
+    }
 
     /// One big triangle facing the camera, which looks along +Y from y = -100 at the origin.
     fn triangle_scene() -> Scene {
@@ -232,16 +212,7 @@ mod tests {
                 ..Camera::default()
             },
             materials: vec![Material::default()],
-            meshes: vec![Mesh {
-                positions: vec![
-                    Vec3::new(-10.0, 0.0, -10.0),
-                    Vec3::new(10.0, 0.0, -10.0),
-                    Vec3::new(0.0, 0.0, 10.0),
-                ],
-                normals: vec![Vec3::new(0.0, -1.0, 0.0); 3],
-                indices: vec![0, 1, 2],
-                material_id: 0,
-            }],
+            geometry: Geometry::from_meshes(vec![facing_triangle(true)]),
             lights: vec![Light {
                 kind: LightKind::Sun,
                 direction: Vec3::new(0.0, 1.0, 0.0),
@@ -303,7 +274,7 @@ mod tests {
     #[test]
     fn shading_without_normals_or_materials_uses_defaults() {
         let mut scene = triangle_scene();
-        scene.meshes[0].normals.clear();
+        scene.geometry = Geometry::from_meshes(vec![facing_triangle(false)]);
         scene.materials.clear();
         scene.lights.clear();
         let mut film = Film::new(16, 16);
@@ -457,19 +428,66 @@ mod tests {
 
     #[test]
     fn a_tile_of_the_example_has_a_pinned_hash_on_every_platform() {
-        // The render path uses only IEEE add/mul/div/sqrt and integer maths, so the bits are
-        // identical on x86-64, aarch64, riscv64 and wasm32. The same tile rendered by the wasm
-        // build under Node gives the same hash.
+        // The render path uses only IEEE add/mul/div/sqrt and integer maths, and every SIMD path
+        // gives the same bits, so the hashes are identical on x86-64 (scalar, SSE2, AVX2),
+        // aarch64, riscv64 and wasm32 (with and without simd128). The same tiles rendered by the
+        // wasm build under Node give the same hashes.
+        //
+        // E2 changed both values on purpose: the watertight triangle test replaced
+        // Moeller-Trumbore (same image, different last bits), and the example gained a second,
+        // smaller instance of the sphere. The first tile is the centre of the big sphere; the
+        // second one covers the small sphere.
         let scene = crate::example::scene();
-        let tile = TileRect {
-            x: 240,
-            y: 176,
-            w: 32,
-            h: 32,
-        };
-        let mut film = Film::region(tile.x, tile.y, tile.w, tile.h);
-        render_tile(&scene, tile, 3, &mut film);
-        assert_eq!(fnv1a(&film.resolve()), 0x6b5a_9e50);
+        let tiles = [
+            (
+                TileRect {
+                    x: 240,
+                    y: 176,
+                    w: 32,
+                    h: 32,
+                },
+                PINNED_CENTRE,
+            ),
+            (
+                TileRect {
+                    x: 48,
+                    y: 144,
+                    w: 32,
+                    h: 32,
+                },
+                PINNED_SMALL_SPHERE,
+            ),
+        ];
+        for (tile, pinned) in tiles {
+            for isa in Isa::available() {
+                let mut film = Film::region(tile.x, tile.y, tile.w, tile.h);
+                render_tile_with(&scene, tile, 3, &mut film, isa);
+                let hash = fnv1a(&film.resolve());
+                eprintln!("{tile:?} {}: {hash:#010x}", isa.name());
+                assert_eq!(hash, pinned, "{tile:?} on {}", isa.name());
+            }
+        }
+    }
+
+    /// Pinned hash of the tile at the centre of the example (sample 3).
+    const PINNED_CENTRE: u32 = 0xfcde_1072;
+    /// Pinned hash of the tile over the small sphere of the example (sample 3).
+    const PINNED_SMALL_SPHERE: u32 = 0x68f4_65fb;
+
+    #[test]
+    fn the_bvh_renders_exactly_what_brute_force_renders() {
+        let mut scene = crate::example::scene();
+        scene.render.width = 96;
+        scene.render.height = 72;
+        scene.camera.fstop = 2.8; // thin lens: rays from many origins
+        for sample in 0..2 {
+            let tile = whole(&scene);
+            let mut accelerated = Film::new(96, 72);
+            render_tile(&scene, tile, sample, &mut accelerated);
+            let mut reference = Film::new(96, 72);
+            render_tile_brute_force(&scene, tile, sample, &mut reference);
+            assert_eq!(accelerated, reference);
+        }
     }
 
     #[test]
@@ -491,35 +509,6 @@ mod tests {
     }
 
     #[test]
-    fn triangle_intersection_hits_misses_and_respects_the_interval() {
-        let (a, b, c) = (
-            Vec3::ZERO,
-            Vec3::new(1.0, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-        );
-        let down = Ray::new(Vec3::new(0.25, 0.25, 2.0), Vec3::new(0.0, 0.0, -1.0));
-        let hit = intersect_triangle(&down, a, b, c).expect("hit");
-        assert!((hit.t - 2.0).abs() < 1.0e-6);
-        assert!((hit.u - 0.25).abs() < 1.0e-6 && (hit.v - 0.25).abs() < 1.0e-6);
-        // Two sided: the same triangle seen from below.
-        let up = Ray::new(Vec3::new(0.25, 0.25, -2.0), Vec3::new(0.0, 0.0, 1.0));
-        assert!(intersect_triangle(&up, a, b, c).is_some());
-        // Outside of the triangle, parallel, and out of the interval.
-        let outside = Ray::new(Vec3::new(0.9, 0.9, 2.0), Vec3::new(0.0, 0.0, -1.0));
-        assert!(intersect_triangle(&outside, a, b, c).is_none());
-        let parallel = Ray::new(Vec3::new(0.25, 0.25, 2.0), Vec3::new(1.0, 0.0, 0.0));
-        assert!(intersect_triangle(&parallel, a, b, c).is_none());
-        let mut short = down;
-        short.t_max = 1.0;
-        assert!(intersect_triangle(&short, a, b, c).is_none());
-        let mut behind = down;
-        behind.t_min = 3.0;
-        assert!(intersect_triangle(&behind, a, b, c).is_none());
-        // Degenerate triangle.
-        assert!(intersect_triangle(&down, a, a, a).is_none());
-    }
-
-    #[test]
     fn the_nearer_surface_wins() {
         let mut scene = triangle_scene();
         // A second, nearer triangle with a different colour covering the first.
@@ -527,16 +516,18 @@ mod tests {
             base_color: Rgb::new(0.0, 0.0, 0.0),
             ..Material::default()
         });
-        scene.meshes.push(Mesh {
-            positions: vec![
+        let nearer = Mesh::new(
+            &[
                 Vec3::new(-20.0, -50.0, -20.0),
                 Vec3::new(20.0, -50.0, -20.0),
                 Vec3::new(0.0, -50.0, 20.0),
             ],
-            normals: vec![],
-            indices: vec![0, 1, 2],
-            material_id: 1,
-        });
+            &[],
+            &[0, 1, 2],
+            1,
+        )
+        .expect("valid");
+        scene.geometry = Geometry::from_meshes(vec![facing_triangle(true), nearer]);
         let mut film = Film::new(16, 16);
         render_tile(&scene, whole(&scene), 0, &mut film);
         assert_eq!(film.resolve()[(8 * 16 + 8) * 3], 0.0);

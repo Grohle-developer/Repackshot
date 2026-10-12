@@ -191,9 +191,14 @@ pub fn run(command: Command) -> Result<(), String> {
             let (samples, threads) = options.apply(&mut scene);
             let (width, height) = (scene.render.width, scene.render.height);
             println!(
-                "scene: {} triangles, {} lights; image {width}x{height}, {samples} spp, {threads} threads",
+                "scene: {} triangles in {} meshes, {} instances, {} lights; image {width}x{height}, \
+                 {samples} spp, {threads} threads; simd {}, BVH{}",
                 scene.triangle_count(),
-                scene.lights.len()
+                scene.geometry.meshes().len(),
+                scene.geometry.instances().len(),
+                scene.lights.len(),
+                rt_core::simd::Isa::detect().name(),
+                scene.geometry.bvh_stats().width.lanes()
             );
 
             let result = render(&scene, samples, threads);
