@@ -21,6 +21,8 @@ pub mod png;
 pub mod render;
 pub mod rng;
 pub mod scene;
+#[allow(unsafe_code)]
+pub mod simd;
 
 /// Parses a decimal component of the crate version at compile time.
 const fn version_part(text: &str) -> u32 {

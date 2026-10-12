@@ -16,7 +16,8 @@ class PartAcc {
   positions = new FloatBuffer(512);
   normals = new FloatBuffer(512);
   uvs = new FloatBuffer(512);
-  materials: (string | null)[] = [];
+  /** Per triangle, an index into the file's material table. */
+  materials: number[] = [];
   /** Corners with a normal / with a uv; compared with `corners` to see if it is all or nothing. */
   withNormal = 0;
   withUv = 0;
@@ -33,6 +34,12 @@ function splitLines(text: string): string[] {
     while (line.endsWith('\\') && i + 1 < lines.length) line = line.slice(0, -1) + ' ' + lines[++i];
     out.push(line);
   }
+  return out;
+}
+
+function growInts(a: Int32Array): Int32Array {
+  const out = new Int32Array(a.length * 2);
+  out.set(a);
   return out;
 }
 
@@ -73,7 +80,43 @@ export function parseObj(text: string, fileName: string): ParsedModel {
     return part;
   };
 
+  // Material names in order of first use; triangles hold indices into it (0 is "no material").
+  const materialNames: (string | null)[] = [null];
+  let materialIndex = 0;
+  // Corner indices of the face being read, reused between faces.
+  let cv: Int32Array = new Int32Array(16);
+  let ct: Int32Array = new Int32Array(16);
+  let cn: Int32Array = new Int32Array(16);
+
+  /** Reads three numbers after the keyword (`v`, `vn`) into `out`, skipping blanks. */
+  const read3 = (line: string, from: number, out: number[]): void => {
+    let p = from;
+    for (let k = 0; k < 3; k++) {
+      while (p < line.length && line.charCodeAt(p) <= 32) p++;
+      let e = p;
+      while (e < line.length && line.charCodeAt(e) > 32) e++;
+      out[k] = e > p ? Number(line.substring(p, e)) : NaN;
+      p = e;
+    }
+  };
+  const xyz = [0, 0, 0];
+
   for (const raw of splitLines(text)) {
+    const c0 = raw.charCodeAt(0);
+    const c1 = raw.charCodeAt(1);
+    // Fast paths for the statements that make up almost every file.
+    if (c0 === 118 /* v */ && c1 === 32) {
+      read3(raw, 1, xyz);
+      const p = yUpToZUp(xyz[0], xyz[1], xyz[2]);
+      v.push3(p[0], p[1], p[2]);
+      continue;
+    }
+    if (c0 === 118 && c1 === 110 /* vn */ && raw.charCodeAt(2) <= 32) {
+      read3(raw, 2, xyz);
+      const p = yUpToZUp(xyz[0], xyz[1], xyz[2]);
+      vn.push3(p[0], p[1], p[2]);
+      continue;
+    }
     const line = raw.trim();
     if (line === '' || line.charCodeAt(0) === 35 /* # */) continue;
     const sp = line.search(/\s/);
@@ -81,14 +124,14 @@ export function parseObj(text: string, fileName: string): ParsedModel {
     const rest = sp < 0 ? '' : line.slice(sp + 1).trim();
     switch (key) {
       case 'v': {
-        const t = rest.split(/\s+/);
-        const p = yUpToZUp(Number(t[0]), Number(t[1]), Number(t[2]));
+        read3(line, 1, xyz);
+        const p = yUpToZUp(xyz[0], xyz[1], xyz[2]);
         v.push3(p[0], p[1], p[2]);
         break;
       }
       case 'vn': {
-        const t = rest.split(/\s+/);
-        const p = yUpToZUp(Number(t[0]), Number(t[1]), Number(t[2]));
+        read3(line, 2, xyz);
+        const p = yUpToZUp(xyz[0], xyz[1], xyz[2]);
         vn.push3(p[0], p[1], p[2]);
         break;
       }
@@ -102,39 +145,52 @@ export function parseObj(text: string, fileName: string): ParsedModel {
         pendingName = rest || null;
         current = null;
         break;
-      case 'usemtl':
+      case 'usemtl': {
         material = rest || null;
+        let i = materialNames.indexOf(material);
+        if (i < 0) i = materialNames.push(material) - 1;
+        materialIndex = i;
         break;
+      }
       case 'mtllib':
         if (rest) libraries.push(rest);
         break;
       case 'f': {
-        const tokens = rest.split(/\s+/).filter(Boolean);
-        if (tokens.length < 3) {
-          badFaces++;
-          break;
-        }
         const nv = v.length / 3;
         const nvt = vt.length / 2;
         const nvn = vn.length / 3;
-        const cv: number[] = [];
-        const ct: number[] = [];
-        const cn: number[] = [];
+        let count = 0;
         let ok = true;
-        for (const tok of tokens) {
-          const f = tok.split('/');
-          const iv = resolveIndex(f[0], nv);
-          const it = f.length > 1 && f[1] !== '' ? resolveIndex(f[1], nvt) : -2;
-          const inn = f.length > 2 && f[2] !== '' ? resolveIndex(f[2], nvn) : -2;
+        let p = 0;
+        while (p < rest.length) {
+          while (p < rest.length && rest.charCodeAt(p) <= 32) p++;
+          let e = p;
+          while (e < rest.length && rest.charCodeAt(e) > 32) e++;
+          if (e === p) break;
+          // One corner: v, v/vt, v//vn or v/vt/vn.
+          const s1 = rest.indexOf('/', p);
+          const hasSlash = s1 >= 0 && s1 < e;
+          const s2 = hasSlash ? rest.indexOf('/', s1 + 1) : -1;
+          const hasSecond = s2 >= 0 && s2 < e;
+          const iv = resolveIndex(rest.substring(p, hasSlash ? s1 : e), nv);
+          const it = hasSlash && s1 + 1 < (hasSecond ? s2 : e) ? resolveIndex(rest.substring(s1 + 1, hasSecond ? s2 : e), nvt) : -2;
+          const inn = hasSecond && s2 + 1 < e ? resolveIndex(rest.substring(s2 + 1, e), nvn) : -2;
           if (iv < 0 || it === -1 || inn === -1) {
             ok = false;
             break;
           }
-          cv.push(iv);
-          ct.push(it);
-          cn.push(inn);
+          if (count === cv.length) {
+            cv = growInts(cv);
+            ct = growInts(ct);
+            cn = growInts(cn);
+          }
+          cv[count] = iv;
+          ct[count] = it;
+          cn[count] = inn;
+          count++;
+          p = e;
         }
-        if (!ok) {
+        if (!ok || count < 3) {
           badFaces++;
           break;
         }
@@ -151,11 +207,11 @@ export function parseObj(text: string, fileName: string): ParsedModel {
           } else part.uvs.push2(0, 0);
           part.corners++;
         };
-        for (let i = 1; i + 1 < cv.length; i++) {
+        for (let i = 1; i + 1 < count; i++) {
           emit(0);
           emit(i);
           emit(i + 1);
-          part.materials.push(material);
+          part.materials.push(materialIndex);
         }
         break;
       }
@@ -185,7 +241,7 @@ export function parseObj(text: string, fileName: string): ParsedModel {
       continue;
     }
     if (built.dropped > 0) warnings.push({ code: 'degenerate', params: { part: part.name, count: built.dropped } });
-    const mats = Array.from(built.source, (s) => part.materials[s]);
+    const mats = Array.from(built.source, (s) => materialNames[part.materials[s]]);
     const initial = mats[0] ?? null;
     const ranges: MaterialRange[] = [];
     for (let i = 0; i < mats.length; i++) {

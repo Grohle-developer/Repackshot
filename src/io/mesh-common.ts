@@ -240,12 +240,6 @@ export interface BuiltMesh {
   source: Uint32Array;
 }
 
-function sub3(a: Float32Array, i: number, j: number, out: number[]): void {
-  out[0] = a[3 * i] - a[3 * j];
-  out[1] = a[3 * i + 1] - a[3 * j + 1];
-  out[2] = a[3 * i + 2] - a[3 * j + 2];
-}
-
 /** Welds positions: exact float bits first, then within `tol`. Returns welded ids per corner. */
 function weldPositions(raw: RawMesh, finite: Uint8Array, min: [number, number, number], tol: number): { cornerPos: Int32Array; positions: Float32Array; count: number } {
   const pos = raw.positions;
@@ -371,11 +365,10 @@ export function buildMesh(raw: RawMesh, options: BuildOptions = {}): BuiltMesh |
   const { cornerPos, positions: wpos } = weldPositions(raw, finite, min, WELD_TOLERANCE * size);
 
   // Keep the triangles that still span an area; remember their face normals and corner angles.
-  const kept: number[] = [];
-  const fnList: number[] = [];
-  const angList: number[] = [];
-  const e1 = [0, 0, 0];
-  const e2 = [0, 0, 0];
+  const keptBuf = new Uint32Array(T);
+  const fnBuf = new Float64Array(3 * T);
+  const angBuf = new Float64Array(3 * T);
+  let K = 0;
   const areaMin = AREA_EPSILON * size * size;
   for (let t = 0; t < T; t++) {
     if (!finite[t]) continue;
@@ -383,57 +376,64 @@ export function buildMesh(raw: RawMesh, options: BuildOptions = {}): BuiltMesh |
     const b = cornerPos[3 * t + 1];
     const c = cornerPos[3 * t + 2];
     if (a === b || b === c || a === c) continue;
-    sub3(wpos, b, a, e1);
-    sub3(wpos, c, a, e2);
-    const cx = e1[1] * e2[2] - e1[2] * e2[1];
-    const cy = e1[2] * e2[0] - e1[0] * e2[2];
-    const cz = e1[0] * e2[1] - e1[1] * e2[0];
+    const ax = wpos[3 * a];
+    const ay = wpos[3 * a + 1];
+    const az = wpos[3 * a + 2];
+    const abx = wpos[3 * b] - ax;
+    const aby = wpos[3 * b + 1] - ay;
+    const abz = wpos[3 * b + 2] - az;
+    const acx = wpos[3 * c] - ax;
+    const acy = wpos[3 * c + 1] - ay;
+    const acz = wpos[3 * c + 2] - az;
+    const cx = aby * acz - abz * acy;
+    const cy = abz * acx - abx * acz;
+    const cz = abx * acy - aby * acx;
     const len = Math.hypot(cx, cy, cz);
     if (!(len > areaMin)) continue;
-    kept.push(t);
-    fnList.push(cx / len, cy / len, cz / len);
-    // Interior angles at a, b, c.
-    const ab = [e1[0], e1[1], e1[2]];
-    const ac = [e2[0], e2[1], e2[2]];
-    const bc = [wpos[3 * c] - wpos[3 * b], wpos[3 * c + 1] - wpos[3 * b + 1], wpos[3 * c + 2] - wpos[3 * b + 2]];
-    const angleAt = (u: number[], v: number[]) => {
-      const dot = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-      const cr = Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]);
-      return Math.atan2(cr, dot);
-    };
-    const angA = angleAt(ab, ac);
-    const angB = angleAt([-ab[0], -ab[1], -ab[2]], bc);
-    angList.push(angA, angB, Math.max(0, Math.PI - angA - angB));
+    keptBuf[K] = t;
+    fnBuf[3 * K] = cx / len;
+    fnBuf[3 * K + 1] = cy / len;
+    fnBuf[3 * K + 2] = cz / len;
+    // Interior angles: every pair of edges of a triangle has the same cross product length, `len`.
+    const bcx = acx - abx;
+    const bcy = acy - aby;
+    const bcz = acz - abz;
+    angBuf[3 * K] = Math.atan2(len, abx * acx + aby * acy + abz * acz);
+    angBuf[3 * K + 1] = Math.atan2(len, -(abx * bcx + aby * bcy + abz * bcz));
+    angBuf[3 * K + 2] = Math.atan2(len, acx * bcx + acy * bcy + acz * bcz);
+    K++;
   }
-  const K = kept.length;
   const dropped = T - K;
   if (K === 0) return null;
-  const source = Uint32Array.from(kept);
-  const fn = Float64Array.from(fnList);
-  const ang = Float64Array.from(angList);
+  const kept = keptBuf.subarray(0, K);
+  const source = kept.slice();
+  const fn = fnBuf.subarray(0, 3 * K);
+  const ang = angBuf.subarray(0, 3 * K);
   const tri = new Int32Array(3 * K);
   for (let k = 0; k < K; k++) for (let j = 0; j < 3; j++) tri[3 * k + j] = cornerPos[3 * kept[k] + j];
 
   // Edges: which faces meet along each pair of welded vertices.
   const edgeTable = new KeyTable(2, Math.min(3 * K, 1 << 20));
-  const ea: number[] = [];
-  const eb: number[] = [];
-  const ef0: number[] = [];
-  const ef1: number[] = [];
-  const ecount: number[] = [];
+  const ea = new Int32Array(3 * K);
+  const eb = new Int32Array(3 * K);
+  const ef0 = new Int32Array(3 * K);
+  const ef1 = new Int32Array(3 * K);
+  const ecount = new Int32Array(3 * K);
   const extra = new Map<number, number[]>();
   for (let k = 0; k < K; k++) {
     for (let j = 0; j < 3; j++) {
       const a = tri[3 * k + j];
       const b = tri[3 * k + ((j + 1) % 3)];
+      const lo = a < b ? a : b;
+      const hi = a < b ? b : a;
       const before = edgeTable.count;
-      const e = edgeTable.getOrAdd(Math.min(a, b), Math.max(a, b));
+      const e = edgeTable.getOrAdd(lo, hi);
       if (edgeTable.count !== before) {
-        ea.push(Math.min(a, b));
-        eb.push(Math.max(a, b));
-        ef0.push(k);
-        ef1.push(-1);
-        ecount.push(1);
+        ea[e] = lo;
+        eb[e] = hi;
+        ef0[e] = k;
+        ef1[e] = -1;
+        ecount[e] = 1;
       } else {
         ecount[e]++;
         if (ef1[e] < 0) ef1[e] = k;
