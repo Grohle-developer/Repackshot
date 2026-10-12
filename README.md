@@ -41,21 +41,35 @@ those internals.
 
 ## Stack
 
-TypeScript + Vite, three.js for the fast preview viewport, an in-house
-progressive path tracer on WebGPU (WebGL2 fallback) for the final image,
-vitest for tests, and the local Chromium for screenshots. No UI framework,
-no icon fonts, no network fonts. Decisions and module boundaries are in
+- **Interface**: TypeScript + Vite, no UI framework, no icon fonts, no
+  network fonts; three.js only for the interactive preview while the
+  camera moves.
+- **Render engine**: **Rust, written from scratch, zero external
+  dependencies** (`engine/`). A CPU path tracer compiled to WebAssembly
+  for the browser (a pool of Web Workers) and to native binaries for the
+  command line and the desktop app. It runs on any operating system and
+  any CPU architecture (x86_64, ARM64, RISC-V, wasm32), is deterministic
+  across platforms, and is built for efficiency: wide SIMD BVH traversal,
+  low-discrepancy sampling, tile queues, adaptive sampling.
+- **Tests**: vitest for the interface and model, `cargo test` for the
+  engine, the local Chromium for screenshots.
+
+Decisions and module boundaries are in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Getting started
 
-Requires Node 22.
+Requires Node 22 and a stable Rust toolchain (`rustup`) with the
+`wasm32-unknown-unknown` target.
 
 ```bash
 npm ci
-npm run dev          # http://localhost:5173
-npm run qa           # typecheck + tests + build — must be green before any PR
-npm run screenshot   # builds nothing; screenshots dist/ with the local Chromium
+npm run dev            # http://localhost:5173
+npm run qa             # typecheck + tests + build — must be green before any PR
+npm run screenshot     # screenshots dist/ with the local Chromium (build first)
+npm run engine:test    # cargo test for the engine workspace
+npm run engine:build   # builds rt.wasm into public/engine/
+cargo run --manifest-path engine/Cargo.toml --release -p rt-cli -- --example -o out/example.png
 ```
 
 ## Documentation
@@ -77,8 +91,9 @@ in English; the interface ships in English and Spanish.
 Scaffold, catalogues and documentation in place; the interface is being
 built (phase U1). See the milestones in `docs/ROADMAP.md`:
 
-- **v0.1** — glTF import, product types, materials, light setups,
-  progressive render to PNG in the viewport.
+- **v0.1** — glTF import, product types, materials, light setups, and
+  the Rust path tracer rendering progressively in the viewport and to
+  PNG, in the browser and from the command line.
 - **v0.2** — glass and emitters, wood and fabric, edge bevel, place by
   reflection, bright field, sky, own thumbnails, CAD-face selection,
   render queue and passes.

@@ -23,9 +23,15 @@ lenguaje de fotógrafo.
 
 ```bash
 npm ci
-npm run qa          # tipos + tests + build. Tiene que estar en verde.
-npm run screenshot  # deja out/screenshot.png con el Chromium local
+npm run qa            # tipos + tests + build de la interfaz. Tiene que estar en verde.
+npm run engine:test   # cargo test del motor. También en verde.
+npm run screenshot    # deja out/screenshot.png con el Chromium local
 ```
+
+Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings` y
+`cargo build -p rt-wasm --target wasm32-unknown-unknown --release`, desde
+`engine/`.
 
 ## Reglas de trabajo (no negociables)
 
@@ -46,8 +52,15 @@ npm run screenshot  # deja out/screenshot.png con el Chromium local
 6. **Toda mutación pasa por el *store*** (`src/core/store.ts`) y es
    deshacible. `ui → core`, `render → core`, `io → core`; nunca al revés.
 7. **Claves de catálogo estables** (`src/data/`): se añade, no se renombra.
-8. **Dependencias**: solo con licencia MIT/Apache/BSD/ISC/CC0 y una línea en
-   `docs/ARCHITECTURE.md` §1.
+8. **Dependencias**: en la interfaz, solo con licencia MIT/Apache/BSD/ISC/
+   CC0 y una línea en `docs/ARCHITECTURE.md` §1. **En el motor, ninguna**:
+   `engine/` es Rust desde cero, solo `std`; nada de crates.io, nada
+   copiado de otros renderizadores. CI lo comprueba.
+8b. **El motor es portable y determinista**: sin APIs del sistema en
+   `rt-core`, sin `unsafe` fuera del módulo `simd` y del *shim* de wasm,
+   `f32` en todo, y la misma escena con la misma semilla da los mismos
+   píxeles en cualquier arquitectura y con cualquier número de hilos.
+   `clippy -D warnings` y `cargo fmt` limpios.
 9. Código, identificadores y comentarios en **inglés**; documentación en
    **español**; la interfaz en los dos idiomas.
 10. **No se inventan números en la interfaz**: el medidor del visor pinta
@@ -68,3 +81,9 @@ npm run screenshot  # deja out/screenshot.png con el Chromium local
   `src/render/preview.ts` (`toThree`).
 - `pkill -f "vite"` mata la propia shell que lo lanza. Usa
   `pgrep -f "[v]ite"`.
+- En este entorno crates.io está bloqueado (403). No importa: el motor no
+  tiene dependencias. `rustup target add wasm32-unknown-unknown` sí
+  funciona.
+- `rt.wasm` no se sube al repositorio: `npm run engine:build` lo genera en
+  `public/engine/`; la interfaz tiene que arrancar sin él (solo con la
+  vista previa) y decirlo en el medidor.

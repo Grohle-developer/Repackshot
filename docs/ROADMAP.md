@@ -23,20 +23,27 @@ con flechas que no tapa.
 - `src/core/` — modelo de datos puro y *store* (`ARCHITECTURE.md` §4)
 - `src/data/` — catálogos portados: 16 estudios, 72 montajes, 77
   materiales, desgaste, ópticas, movimientos, secuencias, Doctor
-- `src/render/` — motores detrás de `RenderEngine` (`ARCHITECTURE.md` §5)
+- `engine/` — **el motor**: Rust desde cero, sin dependencias, portable
+  (`ARCHITECTURE.md` §5.1); `rt-core`, `rt-cli`, `rt-wasm`
+- `src/render/` — vista previa (three.js) y puente al motor en wasm
+  (`ARCHITECTURE.md` §5.0, §5.3)
 - `src/ui/` — la interfaz (`UI.md`)
 - `tests/` — vitest; `tools/screenshot.mjs` — captura con Chromium local
-- `.github/workflows/qa.yml` — la suite corre en cada pull request
+- `.github/workflows/qa.yml` y `engine.yml` — las dos suites corren en
+  cada pull request; la del motor compila cruzado a ARM64, RISC-V y wasm
 
 **Reglas de trabajo no negociables** (ampliadas en `../CLAUDE.md`):
 
-1. Ningún cambio se entrega sin `npm run qa` en verde.
+1. Ningún cambio se entrega sin `npm run qa` en verde (y `npm run
+   engine:test`, `clippy` y `fmt` si toca el motor).
 2. Todo bug corregido lleva su test de regresión, comprobado que falla
    si se reintroduce el bug.
 3. Una fase por PR; al cerrarla se marca aquí con un párrafo de qué se
    hizo y qué no encajó con el plan.
 4. Cromo acromático; cadenas en `es` y `en`; todo por el *store*; claves
-   de catálogo estables; sin binarios ni recursos de KeyShot.
+   de catálogo estables; sin binarios ni recursos de KeyShot; **ninguna
+   dependencia externa en el motor** y ningún código de otro
+   renderizador.
 5. Lo marcado **Fable** no lo decide otro modelo: se prepara el terreno y
    se anota.
 
@@ -52,9 +59,9 @@ trabajo, no la dificultad:
   render), criterio visual de la interfaz, revisión de lo entregado.
   Escribe las fases; no las ejecuta salvo que sean solo datos.
 - **Opus** — construcción con superficie de diseño grande y muchas
-  decisiones acopladas: la interfaz, el trazador de caminos, los
-  importadores complejos, la animación. Lee la fase, la ejecuta entera y
-  anota lo que no encajó.
+  decisiones acopladas: la interfaz, el motor en Rust (BVH, integrador,
+  materiales), los importadores complejos, la animación. Lee la fase, la
+  ejecuta entera y anota lo que no encajó.
 - **Sonnet** — trabajo mecánico con criterio de corrección claro y
   testeable: portar datos, implementar reductores sobre un contrato dado,
   importadores sencillos, generadores, tests de invariantes.
@@ -86,9 +93,9 @@ decisiones escritas (datos, contratos, revisión), no código.
 
 | Versión | Qué se puede hacer | Fases |
 | --- | --- | --- |
-| **v0.1** — "parece el producto" | Importar glTF, tipo de producto, materiales del catálogo, montaje de luz, render progresivo a PNG en el visor | F0, A1–A3, U1, U2, I1, R1 |
-| **v0.2** — "sirve para trabajar" | Vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, miniaturas propias, recetas revisadas, cara CAD, cola y pases | R2, R3, L1, L2, L3, M1, N2, D1, P1 |
-| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo, STEP, escritorio | R4, M2, N1, I2, P2, Q1 |
+| **v0.1** — "parece el producto" | Importar glTF, tipo de producto, materiales del catálogo, montaje de luz, y el motor en Rust renderizando progresivamente en el visor y a PNG, en el navegador y en la línea de comandos | F0, A1–A3, U1, U2, I1, E1–E4 |
+| **v0.2** — "sirve para trabajar" | Vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, HDRI, miniaturas propias renderizadas en CI, recetas revisadas, cara CAD, cola y pases | E5, E6, L1, L2, L3, M1, N2, D1, P1 |
+| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo, STEP, lotes nativos, escritorio | E7, E8, M2, N1, I2, P2, Q1 |
 
 ---
 
@@ -172,8 +179,9 @@ interfaz de cualquier commit sin release.
 
 **Qué dejar preparado para después.** `RenderEngine` implementado por la
 vista previa y usado por `main.ts` a través de una variable, de modo que
-R1 solo tenga que añadir una segunda implementación y una acción
-`setEngine`. Los tipos `SceneNode`, `MaterialInstance`, `LightInstance`,
+E4 solo tenga que añadir la segunda implementación (el pool de workers
+sobre `rt.wasm`), el cambio automático *preview mientras se mueve,
+trazador cuando se para*, y una acción `setEngine`. Los tipos `SceneNode`, `MaterialInstance`, `LightInstance`,
 `CameraState`, `Shot`, `MotionClip`, `RenderJob` en `src/core/*.ts`,
 exportados y documentados con una línea cada uno.
 
@@ -223,104 +231,190 @@ aísla (módulo cargado bajo demanda, nunca en el paquete base).
 con las caras CAD originales conservadas como rangos de triángulos (lo
 que necesita M1 para "una cara de CAD es una cara").
 
-## R1 · Trazador de caminos v1 — **Opus**
+## E1 · Andamiaje del motor en Rust — **Sonnet** — abierta
 
-**Qué.** `src/render/pathtracer/`: el motor que hace que el visor sea el
-render. WebGPU con *fallback* a WebGL2 (o `three-gpu-pathtracer` como
-motor provisional detrás de la misma interfaz, si la implementación
-propia no llega a tiempo: se anota cuál es). BVH en GPU; BSDF de
-principio físico (difuso Lambert/Burley + especular GGX con Fresnel +
-metal) con rugosidad y color; luces de área rectangulares, cuadradas y de
-disco con muestreo explícito (NEE) y MIS contra el BSDF; sol direccional
-con disco angular; cúpula procedural de estudio como luz de entorno con
-muestreo por importancia; suelo con sombra de contacto y opción de solo
-sombra (fondo transparente); acumulación progresiva con reinicio al
-cambiar algo; exposición y transformada de vista del estado; `pick` por
-rayo. Entra como motor por defecto cuando WebGPU está disponible; la
-vista previa se queda para orbitar si el dispositivo no llega.
+**Qué.** El workspace de Cargo en `engine/` con los tres *crates* de
+`ARCHITECTURE.md` §5.1 y **cero dependencias externas**: `rt-core` con
+matemáticas (`Vec3`, `Ray`, `Aabb`), RNG PCG32, color (sRGB, ACES,
+exposición), película, codificador PNG propio (zlib almacenado + CRC-32 +
+Adler-32), lector y escritor del formato de escena **RSB** v1
+(`ARCHITECTURE.md` §5.2) y un `render_tile` de marcador que ya es un
+lanzador de rayos real (cámara de lente fina, Möller–Trumbore por fuerza
+bruta, `n·l`); `rt-cli` con cola de baldosas e hilos, `--example` y
+`--write-example`; `rt-wasm` con las exportaciones `extern "C"` escritas
+a mano. `.github/workflows/engine.yml`: fmt, clippy `-D warnings`, test,
+build nativo y wasm, `cargo check` cruzado a `aarch64-unknown-linux-gnu`
+y `riscv64gc-unknown-linux-gnu`, y un paso que falla si `Cargo.lock`
+contiene una fuente externa. `npm run engine:test` y `npm run
+engine:build`.
 
-**Depende de.** U1.
+**Depende de.** —
 
-**Criterio.** `tests/pathtracer/`: furnace test (esfera blanca en entorno
-uniforme converge a la radiancia del entorno ±1 %), esfera difusa bajo luz
-de área contra la solución analítica del factor de forma (±2 %), espejo
-plano que refleja la cúpula con el gradiente correcto (media de tres
-franjas), energía conservada con rugosidad 0 → 1 (la imagen no gana luz).
-Las pruebas se ejecutan con Chromium local (`--enable-unsafe-webgpu` o
-swiftshader para WebGL2) y se saltan con aviso si no hay GPU. Hoja de
-contactos `tools/contact-sheet.mjs`: 16 estudios × 12 montajes elegidos,
-con media, quemados y tapados por imagen, como la de EZ Packshot; se
-adjunta al PR como `out/contact-sheet.html`.
+**Criterio.** Los cinco *gates* en verde; el ejemplo renderiza un PNG con
+el centro más claro que la esquina; tests de determinismo (baldosas en
+cualquier orden dan la misma película), ida y vuelta RSB con sección
+desconocida ignorada, PNG estructuralmente válido; el `.wasm` no importa
+nada de WASI.
+
+## E2 · Geometría y aceleración — **Opus**
+
+**Qué.** En `rt-core`: el módulo `simd` (`f32x4`/`f32x8` con referencia
+escalar y rutas SSE2/AVX2, NEON y `simd128`, test de igualdad dentro de
+1 ulp); mallas indexadas en *structure-of-arrays*; BVH con construcción
+SAH por *binning* y nodos anchos (BVH4, BVH8 donde haya 8 carriles)
+recorridos con SIMD y pila explícita; intersección *watertight*; normales
+suaves por baricentro; instancias (misma malla, varias transformaciones);
+rayos de sombra con salida temprana; `pick` (rayo único con id de nodo,
+cara, punto y normal). Un binario `rt-bench` en `rt-cli` que mide
+rayos/s sobre la pieza de ejemplo y un modelo de un millón de triángulos
+generado por procedimiento.
+
+**Depende de.** E1.
+
+**Criterio.** Tests: el BVH devuelve exactamente lo mismo que la fuerza
+bruta en 10 000 rayos aleatorios sobre tres escenas (esfera, pieza de
+ejemplo, malla aleatoria con triángulos degenerados); construcción
+determinista; SIMD = escalar. Objetivo medido (se apunta en el PR, no
+es puerta): ≥ 10 M rayos/s por núcleo en x86_64 con AVX2 sobre la pieza
+de ejemplo.
+
+## E3 · Integrador v1 — **Opus**
+
+**Qué.** El trazador de caminos de verdad: muestreador Sobol con
+*scrambling* de Owen (números de dirección de Joe y Kuo citados) sembrado
+por (baldosa, píxel, muestra); cámara de lente fina con diafragma y
+enfoque, ortográfica; BSDF de principio físico (difuso Lambert/Burley +
+especular GGX con Fresnel + metal) con rugosidad y color; luces de área
+rectangulares, cuadradas y de disco con muestreo explícito y MIS contra
+el BSDF, con `glossy` (visible en reflejos) y `spread`; sol direccional
+con disco angular; **cúpula de estudio procedural** (suelo → horizonte →
+cenit) como luz de entorno con muestreo por importancia; fondo liso,
+transparente o el propio entorno; suelo con sombra de contacto y modo
+*solo sombra*; ruleta rusa; acumulación progresiva por baldosa;
+exposición y transformadas Estándar, Fílmica y AgX (ajustes de la
+literatura, citados). Todo determinista y con 1 y N hilos idéntico.
+
+**Depende de.** E2.
+
+**Criterio.** Tests analíticos en `cargo test`: furnace test (esfera
+blanca en entorno uniforme converge a la radiancia del entorno ±1 %);
+esfera difusa bajo panel contra el factor de forma analítico (±2 %);
+espejo plano que refleja la cúpula con el gradiente correcto; energía
+conservada con rugosidad 0 → 1 (la imagen no gana luz); hash idéntico con
+1 y 4 hilos. Hoja de contactos con `rt`: 16 estudios × 12 montajes
+elegidos, con media, quemados y tapados por imagen (`tools/contact-sheet.mjs`
+llama al binario; sale `out/contact-sheet.html` y se adjunta al PR).
 
 **Qué no tocar.** Las recetas (`src/data/`): si un montaje sale mal, se
 anota para L3, no se cambia.
 
-## R2 · Dieléctricos, emisores, barniz, cielo — **Opus**
+## E4 · El motor en el navegador — **Opus**
 
-**Qué.** Transmisión con IOR y absorción (vidrio, acrílico, policarbonato,
-vidrio tintado), rugosidad en transmisión; barniz (coat) como capa
-dieléctrica; anisotropía; subsuperficie aproximada (difusión por
-*random walk* corto o perfil de Burley); emisores de cuerpo negro y
-color; control de cáusticas (AUTO sigue al tipo de producto); cielo
-procedural (modelo de literatura pública: Preetham o similar con
-atribución) para `world: 'SKY'`, con el sol del rig; HDRI de archivo
-(RGBE y EXR mediante decodificador propio o licencia compatible) con
-rotación e intensidad; fondo de imagen. Denoise ligero propio al terminar
-(filtro guiado por normales y albedo, opcional).
+**Qué.** `src/io/rsb.ts`: escritor RSB en TypeScript desde el
+`ProjectState` (mallas, materiales, rig resuelto por `setupRig`, cámara,
+entorno, render), con test de paridad byte a byte contra el escritor de
+`rt-core` (fixture generado por `rt --write-example`). `src/render/worker.ts`
+y `src/render/pathtracer.ts`: pool de workers, cada uno con su `rt.wasm`
+y su copia de la escena, baldosas intercaladas, acumulación y
+transformada en el hilo principal, `status()` honesto (muestras, tiempo,
+workers, SIMD disponible). Cambio automático *preview mientras se mueve,
+trazador cuando se para*, con reinicio al cambiar cualquier cosa de la
+escena; `setEngine` para forzar. *Render* y la cola usan el pool a la
+resolución de salida y con el presupuesto. Si `rt.wasm` no está (no se
+ha ejecutado `npm run engine:build`), la interfaz arranca solo con la
+vista previa y el medidor lo dice.
 
-**Depende de.** R1.
+**Depende de.** U1, E3.
+
+**Criterio.** Paridad: la misma escena renderizada por `rt` y por el pool
+en Chromium local (vía `tools/screenshot.mjs` con `?engine=pathtracer`)
+da el mismo hash de imagen a 4 muestras; `tests/rsb.test.ts` en verde;
+captura del visor convergiendo con el medidor mostrando muestras reales;
+orbitar sigue siendo fluido.
+
+## E5 · Dieléctricos, emisores, barniz, cielo, HDRI — **Opus**
+
+**Qué.** En `rt-core`: transmisión con IOR y absorción (vidrio, acrílico,
+policarbonato, tintado), rugosidad en transmisión; barniz como capa
+dieléctrica; anisotropía; subsuperficie aproximada (*random walk* corto
+o perfil de Burley); emisores de cuerpo negro y color; control de
+cáusticas (AUTO sigue al tipo de producto); cielo procedural (modelo de
+la literatura pública, citado) para `world: 'SKY'` con el sol del rig;
+lectores propios de **RGBE (.hdr)** y **OpenEXR** (solo escaneado, sin
+compresión o con ZIP: el *inflate* también propio) para HDRI de archivo,
+con rotación e intensidad, como sección RSB; fondo de imagen; *denoise*
+ligero propio al terminar (filtro guiado por normales y albedo).
+
+**Depende de.** E3.
 
 **Criterio.** Vidrio en furnace test con absorción cero no pierde energía
-(±2 %); una esfera de vidrio frente a un panel con `camera = true` produce
-el campo claro del montaje BACKLIT; test de cielo: luminancia del cenit
-frente a horizonte en el orden esperado y color del sol de 5200 K; hoja de
+(±2 %); una esfera de vidrio frente a un panel con `camera = true`
+produce el campo claro del montaje BACKLIT; test de cielo: cenit frente a
+horizonte en el orden esperado y color del sol de 5200 K; el lector HDR
+reproduce un fichero de prueba generado por el propio escritor; hoja de
 contactos con los tres montajes SKY y los de campo claro.
 
-## R3 · Madera, tela y bisel en el sombreado — **Sonnet**
+## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
 
-**Qué.** Portar las recetas procedurales de EZ Packshot (veta de anillos
-con dos colores, variación, ruido axial y poro; trama de hilos con tipo
-de tejido, hilos por cm y relieve) como funciones de sombreado del
-trazador, con escala en tamaños de pieza; bisel de aristas en el
-sombreado (normal redondeada cerca de aristas vivas, radio en mm) para
-que un CAD no delate el render. La pelusa queda fuera (fase propia si
-hace falta).
+**Qué.** Portar a `rt-core` las recetas procedurales de EZ Packshot (veta
+de anillos con dos colores, variación, ruido axial y poro; trama de hilos
+con tipo de tejido, hilos por cm y relieve) como funciones de sombreado
+con ruido propio (Perlin o *simplex*, escrito aquí y con la estadística
+fijada por test), escala en tamaños de pieza; bisel de aristas en el
+sombreado (normal redondeada cerca de aristas vivas, radio en mm). La
+pelusa queda fuera.
 
-**Depende de.** R1.
+**Depende de.** E3.
 
-**Criterio.** `shadereval`-like: evaluar las funciones en CPU sobre un
-plano y comprobar estadísticas (periodo de anillos, contraste, media de
-rugosidad); captura de las 13 maderas y las 12 telas como esferas de
-catálogo; el bisel cambia la normal solo a menos del radio de una arista
-viva (test con un cubo).
+**Criterio.** Evaluar las funciones sobre un plano y comprobar
+estadísticas (periodo de anillos, contraste, media de rugosidad);
+renders de las 13 maderas y las 12 telas como esferas con `rt`; el bisel
+cambia la normal solo a menos del radio de una arista viva (cubo).
 
-## R4 · Desgaste visible — **Opus**, con visto bueno **Fable**
+## E7 · Desgaste visible — **Opus**, con visto bueno **Fable**
 
 **Qué.** Los ocho tipos de desgaste de `src/data/wear.ts` como capas del
-sombreado (aristas por curvatura y bisel, arañazos por curva de nivel de
-ruidos estirados, huellas, polvo por normal hacia arriba, suciedad por
-oclusión, pátina por manchas, micro-rugosidad, abolladuras), con la
-escala física, semilla y variación por pieza de la receta. Calibración:
-Opus implementa y Fable ajusta umbrales sobre una hoja de contactos de
-desgaste (materiales × básicos). Después del visto bueno, el panel de
-desgaste deja de decir *próximamente*.
+sombreado en `rt-core` (aristas por curvatura y bisel, arañazos por curva
+de nivel de ruidos estirados, huellas, polvo por normal hacia arriba,
+suciedad por oclusión, pátina por manchas, micro-rugosidad, abolladuras),
+con la escala física, semilla y variación por pieza de la receta.
+Calibración: Opus implementa y Fable ajusta umbrales sobre una hoja de
+contactos de desgaste (materiales × básicos) renderizada con `rt`.
+Después del visto bueno, el panel de desgaste deja de decir
+*próximamente*.
 
-**Depende de.** R3.
+**Depende de.** E6.
 
 **Criterio.** Hoja `out/wear-sheet.html`; con el maestro a 0 la imagen es
 idéntica a sin desgaste (test de píxeles); el mismo material en dos piezas
 con `wearPerObject` no repite el patrón (correlación baja entre máscaras).
 
+## E8 · Lotes nativos y rendimiento — **Sonnet**
+
+**Qué.** `rt` lee también el `.repack.json` (analizador JSON propio, con
+tests) y renderiza proyectos enteros: cámaras × estudios, fotogramas de
+animación (usa la misma `evaluate` portada a Rust o recibe un RSB por
+fotograma generado por la interfaz: decidir con Fable), salida PNG 16
+bits y EXR propio; `--bench` con informe de rayos/s por hilo; perfilado
+y mejoras de la BVH y del muestreo con cifras antes y después en el PR.
+
+**Depende de.** E5, N1.
+
+**Criterio.** Un lote de 2 × 2 produce 4 imágenes con nombre por
+plantilla; `--bench` en CI deja el número en el resumen del job (no es
+puerta); ninguna regresión de determinismo.
+
 ## L1 · Colocación por reflejo, campo claro, luces editables — **Sonnet**
 
-**Qué.** Colocación por reflejo exacta con `pick` del motor (reflejar el
-rayo de cámara en la normal picada y poner el foco a su distancia);
+**Qué.** Colocación por reflejo exacta con `pick` del motor en Rust
+(reflejar el rayo de cámara en la normal picada y poner el foco a su
+distancia);
 campo claro por entorno para `camera = true` (disco suave en coordenadas
 de ventana, radio aparente a partir del tamaño y la distancia del panel,
 radiancia acotada), de modo que ningún foco se vea nunca como objeto con
 bordes; edición foco a foco con `modified`; *Restablecer montaje*.
 
-**Depende de.** R1.
+**Depende de.** E4.
 
 **Criterio.** Test geométrico: con una esfera y un clic en su punto
 (x, y), el foco acaba en la dirección reflejada (producto escalar > 0.999);
@@ -329,21 +423,22 @@ rectángulos.
 
 ## L2 · Miniaturas propias — **Sonnet**
 
-**Qué.** `tools/render-thumbs.mjs`: renderiza con el propio motor (Chromium
-local) las 72 miniaturas de montaje (160 × 120 y 64 × 64) con la pieza de
-ejemplo en gris neutro, y las esferas de los 77 materiales, con el hash
-de su receta en un chunk `tEXt` del PNG; `--check` falla si alguna está
-desactualizada y la suite lo ejecuta. Sustituye las PNG portadas de EZ
-Packshot en `public/thumbs/`.
+**Qué.** `tools/render-thumbs.mjs`: genera un RSB por miniatura con
+`src/io/rsb.ts` y las renderiza con el binario nativo `rt` (sin
+navegador, en CI): las 72 miniaturas de montaje (160 × 120 y 64 × 64) con
+la pieza de ejemplo en gris neutro, y las esferas de los 77 materiales,
+con el hash de su receta en un chunk `tEXt` del PNG; `--check` falla si
+alguna está desactualizada y la suite lo ejecuta. Sustituye las PNG
+portadas de EZ Packshot en `public/thumbs/`.
 
-**Depende de.** R2 (para que las de color y vidrio salgan bien).
+**Depende de.** E4, E5 (para que las de color y vidrio salgan bien).
 
 **Criterio.** `--check` en verde en CI; cambiar un número de un montaje
 sin regenerar hace fallar la suite.
 
 ## L3 · Revisión fotográfica de las recetas — **Fable**
 
-**Qué.** Con la hoja de contactos de R1/R2 y las miniaturas de L2, revisar
+**Qué.** Con la hoja de contactos de E3/E5 y las miniaturas de L2, revisar
 los 72 montajes y los 16 rigs de tipo de producto sobre el motor propio y
 ajustar **solo datos** (`src/data/light-setups.ts`, `studios.ts`). Lo que
 se mide: un brillo por fuente con la forma de la fuente; menos del 1 % de
@@ -352,7 +447,7 @@ dentro de ±0.3 EV entre montajes del mismo tipo de producto; nada de
 zonas negras por encima del 5 % en fondos claros; la miniatura tiene el
 brillo donde el render.
 
-**Depende de.** R2, L2.
+**Depende de.** E5, L2.
 
 ## M1 · Cara CAD entera — **Sonnet**
 
@@ -377,9 +472,10 @@ quita su condición.
 caja, plana, cilíndrica y UV, escala, rotación y desplazamiento; etiquetas
 (*labels*): una imagen con alfa proyectada sobre una zona de la pieza,
 colocada con clic y arrastre, con su propio acabado (brillo distinto del
-sustrato). Es la función más usada de packaging y cosmética.
+sustrato). Es la función más usada de packaging y cosmética. Las
+imágenes viajan al motor como secciones RSB propias.
 
-**Depende de.** R2.
+**Depende de.** E5.
 
 **Criterio.** Captura con una botella etiquetada; test de proyección caja
 (un cubo recibe la textura sin estirar en las seis caras); el proyecto
@@ -390,12 +486,13 @@ guarda las imágenes embebidas.
 **Qué.** `evaluate(state, t)` completo para todos los `MOVE_KINDS`;
 despiece (centro, disposición, factor); fundidos a color y cruzado (el
 cruzado renderiza dos cámaras en la ventana de solape); conflicto visible
-entre movimientos; *Construir vídeo*: fotogramas por el motor con el
-presupuesto de la barra de render y codificación en el navegador
-(WebCodecs → WebM/MP4; secuencia PNG como alternativa siempre disponible).
-Reproducción fluida en el visor con la vista previa.
+entre movimientos; *Construir vídeo*: un RSB por fotograma renderizado
+por el pool de workers con el presupuesto de la barra de render y
+codificación en el navegador (WebCodecs → WebM/MP4; secuencia PNG como
+alternativa siempre disponible). Reproducción fluida en el visor con la
+vista previa.
 
-**Depende de.** U1, R1.
+**Depende de.** U1, E4.
 
 **Criterio.** Tests de `evaluate` con números (orbitar 90° en 4 s a mitad
 con `EASE` da 45°); los 16 presets producen un estado válido en cada
@@ -405,24 +502,26 @@ fotograma; un vídeo de 2 s a 12 fps sale y se reproduce.
 
 **Qué.** Cola de render con progreso y cancelación sobre `render()` del
 motor; pases alfa, profundidad, normales e id de pieza como salidas
-opcionales (PNG 16 bits o EXR); lote cámaras × estudios con nombre de
-archivo por plantilla (`{proyecto}_{camara}_{estudio}`); descarga en ZIP
-propio (sin dependencia: el formato *store* de ZIP es trivial).
+opcionales del integrador (sección `RNDR` con máscara de pases; PNG 16
+bits o EXR); lote cámaras × estudios con nombre de archivo por plantilla
+(`{proyecto}_{camara}_{estudio}`); descarga en ZIP propio (sin
+dependencia: el formato *store* de ZIP es trivial).
 
-**Depende de.** R1.
+**Depende de.** E4.
 
 **Criterio.** Tests de nombre de archivo y de cola (orden, cancelar el
 segundo deja el tercero); un lote de 2 × 2 produce 4 imágenes.
 
 ## D1 · Doctor de motor — **Sonnet**
 
-**Qué.** Los chequeos que dependen del motor: dispositivo (WebGPU
-disponible, caída a WebGL2 avisada), denoise, transformada de vista,
-cáusticas (fireflies: muestras aisladas muy brillantes detectadas en la
-acumulación), formato de salida de vídeo, tiempo estimado frente al
-presupuesto. *Arreglar todo* en un clic.
+**Qué.** Los chequeos que dependen del motor: `rt.wasm` cargado y
+número de workers (y aviso si el navegador solo da uno), SIMD disponible
+en wasm, denoise, transformada de vista, cáusticas (fireflies: muestras
+aisladas muy brillantes detectadas en la acumulación), formato de salida
+de vídeo, tiempo estimado frente al presupuesto. *Arreglar todo* en un
+clic.
 
-**Depende de.** R1.
+**Depende de.** E4.
 
 **Criterio.** `tests/doctor-engine.test.ts` con un motor falso que simula
 cada estado; cada chequeo se dispara y se limpia.
@@ -441,10 +540,12 @@ la página de Pages carga la interfaz.
 
 ## P2 · Escritorio con Tauri — **Opus**
 
-**Qué.** Empaquetar la aplicación web con Tauri para Windows, macOS y
-Linux, con diálogos nativos de archivo, carpeta de salida y lectura de
-HDRI/modelos grandes sin pasar por `<input>`. Sin cambios en `src/` más
-allá de una capa `io/native.ts` detrás de la misma interfaz que la web.
+**Qué.** Empaquetar la aplicación web con Tauri (Rust) para Windows,
+macOS y Linux, enlazando `rt-core` **en nativo** (todos los hilos, sin
+wasm) detrás de la misma interfaz `RenderEngine`, con diálogos nativos
+de archivo, carpeta de salida y lectura de HDRI/modelos grandes sin
+pasar por `<input>`. Sin cambios en `src/` más allá de `io/native.ts` y
+`render/native.ts` detrás de las mismas interfaces que la web.
 
 **Depende de.** v0.2 cerrada.
 
@@ -452,10 +553,10 @@ allá de una capa `io/native.ts` detrás de la misma interfaz que la web.
 
 **Qué.** Plano de corte por clic + eje, por dos puntos, o animado como un
 movimiento más (`MOVE_KINDS` gana `SECTION`); se implementa en el
-sombreado del trazador (descartar la parte del plano, tapar con el color
-del material) y en la vista previa con `clippingPlanes` de three.
+integrador (descartar la parte del plano, tapar con el color del
+material) y en la vista previa con `clippingPlanes` de three.
 
-**Depende de.** R1, N1.
+**Depende de.** E3, N1.
 
 ## H1 · Accesibilidad e i18n — **Haiku**
 
@@ -471,11 +572,13 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 ## Decisiones pendientes de Fable (no adelantar)
 
 - **I2**: licencia y entrada de STEP, tras el informe.
-- **R1**: si el trazador propio no cierra en un PR razonable, aceptar
-  `three-gpu-pathtracer` como motor provisional y en qué condiciones se
-  sustituye.
+- **E4**: si el trazador en wasm no da interactividad suficiente en
+  portátiles, mantener three.js como vista previa (la decisión actual) o
+  pasar a trazado a baja resolución mientras se mueve y retirar three.
+- **E8**: cómo renderiza `rt` una animación (portar `evaluate` a Rust o
+  un RSB por fotograma).
 - **L3**: los números de las recetas sobre el motor propio.
-- **R4**: umbrales del desgaste sobre la hoja de contactos.
+- **E7**: umbrales del desgaste sobre la hoja de contactos.
 - **UI**: si tras U1 el inspector contextual necesita una pestaña
   *Biblioteca* separada (la decisión de `UI.md` es que no; se revisa con
   uso real).
@@ -484,11 +587,15 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 
 ## Orden sugerido
 
-1. **U1** (Opus): la interfaz. Sin ella no hay dónde ver nada.
-2. **U2** e **I1** (Sonnet), en paralelo: proyecto en archivo, OBJ y STL.
-3. **R1** (Opus): el trazador. Cierra v0.1 con un render de verdad.
-4. **R2** → **R3** → **L1** → **L2** → **L3**: la luz y los materiales
+1. **U1** (Opus) y **E1** (Sonnet), en paralelo: la interfaz y el
+   esqueleto del motor. Sin la primera no hay dónde ver nada; sin el
+   segundo no hay dónde construir el trazador.
+2. **E2** → **E3** (Opus): aceleración e integrador. Mientras tanto,
+   **U2** e **I1** (Sonnet): proyecto en archivo, OBJ y STL.
+3. **E4** (Opus): el motor en el navegador. Cierra v0.1 con un render de
+   verdad en el visor y en la línea de comandos.
+4. **E5** → **E6** → **L1** → **L2** → **L3**: la luz y los materiales
    hasta que las 72 recetas estén revisadas sobre el motor propio.
 5. **M1**, **N2**, **D1**, **P1**: cierran v0.2.
-6. **R4**, **M2**, **N1**, **I2**, **Q1**, **P2**: v0.3.
+6. **E7**, **M2**, **N1**, **E8**, **I2**, **Q1**, **P2**: v0.3.
 7. **H1** al cierre de cada versión.

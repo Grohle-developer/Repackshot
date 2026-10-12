@@ -14,23 +14,28 @@ no una iniciativa dentro de un PR.
 | Lenguaje | **TypeScript** estricto, ES2022, módulos ES | Un solo lenguaje para modelo, motor e interfaz; tipos como contrato entre fases ejecutadas por agentes distintos |
 | Empaquetado | **Vite** | Arranque instantáneo, `build` estático, sin configuración que mantener |
 | Interfaz | **HTML + CSS + TypeScript sin framework** | La interfaz es un conjunto de paneles con estado centralizado; un framework añadiría una dependencia y un estilo que luego hay que enseñar a cada agente. Componentes como funciones que devuelven elementos DOM y se suscriben al *store* |
-| Vista previa | **three.js** (`WebGLRenderer`) | Rasterizado rápido para orbitar, seleccionar y colocar; materiales físicos y luces de área listos |
-| Render final | **Trazador de caminos propio en WebGPU** (fases R·) con *fallback* a WebGL2 | Es lo que hace que el producto sea el producto: la imagen progresiva que converge en el propio visor. Base de partida permitida: `three-gpu-pathtracer` (MIT) como referencia de arquitectura y como motor provisional detrás de la interfaz `RenderEngine` |
+| Vista previa | **three.js** (`WebGLRenderer`) | Rasterizado rápido para orbitar, seleccionar y colocar mientras la cámara se mueve. **No es el motor**: es la vista interactiva |
+| Motor de render | **Rust, desde cero, sin dependencias externas** (`engine/`): trazador de caminos en CPU que compila a **WebAssembly** para el navegador y a **binario nativo** para la línea de comandos y el escritorio | Corre en cualquier sistema y arquitectura (x86_64, ARM64, RISC-V, wasm32) sin GPU ni drivers; el mismo código renderiza en el navegador, en el runner de CI y en el escritorio; determinista; eficiente por diseño (BVH ancho con SIMD, muestreo de baja discrepancia, colas de baldosas) |
 | Importación | `GLTFLoader` de three para GLB/glTF; OBJ y STL propios (son triviales); STEP en una fase propia con `occt-import-js` si su licencia (LGPL-2.1 con excepción) se confirma compatible, o nada | glTF es el formato de intercambio moderno; STEP es lo que trae quien viene de CAD y hay que resolverlo, pero sin hipotecar la licencia |
-| Tests | **vitest** (unidad e integración del modelo), **playwright-core** con el Chromium local para capturas y humo de interfaz | La suite corre sin GPU en CI; el visor se prueba con captura |
-| Empaquetado de escritorio | Fuera de alcance hasta v0.3; cuando llegue, **Tauri** | Pequeño, sin Chromium embebido; la aplicación web no cambia |
+| Tests | **vitest** (modelo e interfaz), **cargo test** (motor: escenas analíticas, determinismo, paridad wasm/nativo), **playwright-core** con el Chromium local para capturas | La suite de la interfaz corre sin GPU; la del motor corre en cualquier CPU |
+| Empaquetado de escritorio | Fuera de alcance hasta v0.3; cuando llegue, **Tauri** | Es Rust: enlaza el motor nativo directamente, sin wasm ni IPC; la interfaz web no cambia |
 
 Lo que **no** se usa: React/Vue/Svelte, Tailwind, fuentes de iconos,
-fuentes de red, Electron, WASM de terceros con licencia no compatible,
-ningún binario ni recurso de KeyShot (ver `README.md`, reglas de sala
-limpia).
+fuentes de red, Electron, WebGPU, ningún renderizador existente (ni
+Embree, ni OptiX, ni ports de pbrt, ni `three-gpu-pathtracer`), ningún
+*crate* externo en el motor, ningún binario ni recurso de KeyShot (ver
+`README.md`, reglas de sala limpia).
 
-Añadir una dependencia exige una línea en esta tabla con su licencia
-(solo MIT, Apache-2.0, BSD, ISC, CC0 o compatibles).
+Añadir una dependencia **a la interfaz** exige una línea en esta tabla
+con su licencia (solo MIT, Apache-2.0, BSD, ISC, CC0 o compatibles). El
+**motor no admite dependencias**: `engine/Cargo.lock` solo contiene los
+*crates* del propio workspace, y CI lo comprueba.
 
 **Versiones instaladas** en el andamiaje inicial: three 0.186, Vite 8,
 TypeScript 7, vitest 5, playwright-core 1.64 (el `package-lock.json` es
-la verdad; esta lista orienta).
+la verdad; esta lista orienta). Motor: Rust estable (1.97 al arrancar),
+objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
+`riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
 
 ---
 
@@ -53,12 +58,14 @@ src/
     wear.ts                 valores por defecto del desgaste            (portado)
     version.ts
   data/                     CATÁLOGOS. Solo datos y tipos (§3)
-  render/                   MOTORES. Dependen de core, nunca de ui
+  render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
-    preview.ts              three.js: vista previa rasterizada
-    pathtracer/             fases R·: trazador progresivo
+    preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara
+    pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
+    worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     gltf.ts  obj.ts  stl.ts  project.ts (.repack.json)  image.ts (PNG/JPEG/EXR)
+    rsb.ts                  escritor del formato de escena binario del motor (§5.2)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
     theme.css  layout.css  components.css  …
@@ -70,13 +77,21 @@ public/
 tests/                      vitest; *.test.ts por módulo
 tools/                      scripts de desarrollo: capturas, generadores, hojas de contacto
 docs/                       este documento, SPEC, UI, ROADMAP
+engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
+  Cargo.toml  rust-toolchain.toml  README.md
+  crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG
+  crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG con hilos; hojas de contacto
+  crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
+public/engine/rt.wasm       el motor compilado para el navegador (generado por npm run engine:build; no se sube)
 ```
 
 **Regla de dependencias**: `ui → core`, `render → core`, `io → core`,
 `core → data`. Nunca al revés, nunca `ui → render` directamente (el
 *store* expone lo que el visor necesita y el visor se suscribe). Un test
-de la suite (`tests/boundaries.test.ts`, fase A2) recorre los `import` y
-falla si se viola.
+de la suite (`tests/boundaries.test.ts`, fase U2) recorre los `import` y
+falla si se viola. El motor (`engine/`) no conoce nada de `src/`: su
+única interfaz con el resto es el formato RSB (§5.2) y las exportaciones
+de `rt-wasm` (§5.3).
 
 ---
 
@@ -186,7 +201,9 @@ Reglas:
 
 ---
 
-## 5 · Motores (`src/render/engine.ts`)
+## 5 · Motores
+
+### 5.0 · La interfaz del lado web (`src/render/engine.ts`)
 
 ```ts
 export interface RenderEngine {
@@ -207,10 +224,96 @@ export interface RenderEngine {
   `converged: true`; el trazador, las muestras acumuladas. La interfaz
   pinta lo que el motor dice, nunca un contador propio.
 - `pick` sirve para seleccionar, enfocar con clic y colocar por reflejo.
-- El cambio de motor es una acción del store; `main.ts` instancia el que
-  toque y le pasa el mismo canvas.
+- Dos implementaciones conviven: **`preview`** (three.js) mientras la
+  cámara se mueve o se arrastra un control, y **`pathtracer`** (el motor
+  en Rust vía wasm) en cuanto la escena se queda quieta. El visor
+  muestra siempre el último fotograma del motor que esté activo; el
+  cambio es automático y no es una acción del *store*. Forzar uno u
+  otro sí lo es (`setEngine`), para máquinas donde el trazador no da
+  interactividad.
 
----
+### 5.1 · El motor: Rust, desde cero, sin dependencias
+
+Vive en `engine/`, un workspace de Cargo con tres *crates*:
+
+| Crate | Qué es | Reglas |
+| --- | --- | --- |
+| `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
+| `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+
+**Sin dependencias externas** quiere decir exactamente eso: ningún
+*crate* de crates.io en ningún *crate* del workspace. `Cargo.lock` solo
+lista `rt-core`, `rt-cli` y `rt-wasm`, y CI falla si aparece un
+`source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
+baja discrepancia, zlib/PNG, lectores HDR, hilos) se escribe aquí.
+Fórmulas y tablas de la literatura pública (PCG, Sobol con números de
+dirección de Joe y Kuo, el ajuste ACES, el modelo de cielo) se citan en
+el comentario de su módulo.
+
+**Portabilidad.** El motor compila y pasa sus tests en x86_64, ARM64,
+RISC-V y wasm32; CI compila cruzado los tres primeros y construye el
+wasm en cada PR. No hay rutas de código específicas de sistema
+operativo. El `simd` es una abstracción propia (`f32x4`, `f32x8`) con
+**implementación escalar de referencia** y rutas con intrínsecos
+estables bajo `cfg(target_arch)`: SSE2 como base y AVX2 por detección en
+tiempo de ejecución en x86_64, NEON en aarch64, `simd128` en wasm32
+cuando el navegador lo soporta; cualquier otra arquitectura usa la
+escalar. Los tests ejecutan las dos rutas y exigen el mismo resultado
+dentro de 1 ulp.
+
+**Determinismo.** La misma escena RSB, la misma semilla y el mismo
+índice de muestra producen los mismos píxeles en cualquier plataforma y
+con cualquier número de hilos o workers: el muestreador se siembra por
+(baldosa, píxel, muestra), nunca por hilo, y la acumulación es por
+baldosa en orden fijo. Un test compara el hash de una imagen de
+referencia entre el binario nativo y el wasm (paridad), y entre 1 y N
+hilos.
+
+**Eficiencia, por diseño** (los números son objetivos medidos, no
+puertas de CI): BVH con construcción SAH por *binning* y nodos anchos
+(BVH4/BVH8) recorridos con SIMD; intersección triángulo-rayo
+*watertight*; estructuras *structure-of-arrays* alineadas; baldosas en
+orden Morton; ruleta rusa; muestreo explícito de luces con MIS; Sobol
+con *scrambling* de Owen; muestreo adaptativo por varianza; *denoise*
+guiado al final. Objetivo para la pieza de ejemplo en x86_64 con AVX2:
+≥ 10 millones de rayos por segundo y núcleo; en wasm, alrededor de un
+tercio del nativo.
+
+### 5.2 · RSB: el formato de escena
+
+La única interfaz entre la interfaz y el motor es un **blob binario
+little-endian**, `RSB1`: cabecera y secciones `[u32 tag][u32 len][payload]`
+(`CAMR`, `MESH`, `MATL`, `LGHT`, `ENVR`, `RNDR`…), con secciones
+desconocidas ignoradas para compatibilidad hacia delante. `rt-core`
+tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
+TypeScript, y un test de paridad escribe la misma escena por los dos
+lados y compara los bytes. El `.repack.json` sigue siendo el formato de
+proyecto; el RSB es lo que viaja al motor (y lo que `rt` lee en la línea
+de comandos). Los mapas de bits (texturas, HDRI) viajan como secciones
+propias cuando lleguen (E5, M2).
+
+### 5.3 · En el navegador: workers
+
+`src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
+Web Workers** (`navigator.hardwareConcurrency − 1`, mínimo 1). Cada
+worker instancia su propia copia de `rt.wasm` y recibe el RSB entero
+(sin `SharedArrayBuffer`, para que funcione en cualquier servidor sin
+cabeceras COOP/COEP, GitHub Pages incluido); las baldosas se reparten
+intercaladas, cada worker devuelve `Float32Array` lineales por baldosa,
+y el hilo principal acumula, aplica exposición y transformada, y pinta
+en el canvas. El *preview* de three.js sigue activo mientras la cámara se
+mueve; al pararse, el trazador arranca desde la muestra 0 y la imagen
+converge en el propio visor. *Render* usa el mismo pool a la resolución
+de salida y con el presupuesto de la barra de render.
+
+### 5.4 · En nativo
+
+`rt` renderiza un `.rsb` con todos los hilos de la máquina y escribe PNG
+(8 o 16 bits) o EXR; sirve para lotes, para la hoja de contactos de CI y
+para generar las miniaturas de los catálogos sin navegador. La
+aplicación de escritorio (P2, Tauri) enlaza `rt-core` directamente y usa
+el mismo RSB que la web.
 
 ## 6 · Interfaz (`src/ui/`)
 
@@ -237,7 +340,8 @@ export interface RenderEngine {
 | Modelo | `tests/store.test.ts`, `scene`, `materials`, `doctor`… | Acciones puras: dado un estado, la acción produce el esperado; deshacer lo devuelve |
 | Interfaz | `tests/strings.test.ts`, `ui-achromatic.test.ts` | Invariantes estáticas sobre fuentes |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
-| Motor (fases R·) | `tests/pathtracer/*.test.ts` + hoja de contactos | Escenas analíticas (furnace test, esfera difusa bajo cielo uniforme) con tolerancias numéricas; hoja preset × montaje con estadísticas (media, quemados, tapados) |
+| Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
+| Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |
 
 Reglas, heredadas de EZ Packshot y no negociables:
 

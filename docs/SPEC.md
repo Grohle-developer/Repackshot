@@ -237,3 +237,6 @@ cambia nada sin que se le pida y explica cada aviso en una frase.
 - **Sin entorno que descargar**: la cúpula de estudio procedural ilumina
   y se refleja sin ningún HDRI.
 - **Interfaz en blanco y negro**: el único color en pantalla es la imagen.
+- **Motor propio, en Rust y sin dependencias**, que corre en cualquier
+  máquina: en el navegador por WebAssembly, en la línea de comandos y en
+  el escritorio en nativo, con el mismo resultado píxel a píxel.
