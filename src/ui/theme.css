@@ -16,7 +16,8 @@
   --viewport-bg: #8c8c8c;
   --overlay: rgba(255, 255, 255, 0.82);
   --overlay-line: rgba(0, 0, 0, 0.12);
-  --mask: rgba(0, 0, 0, 0.28);
+  /* Outside the output frame: the theme's neutral viewport grey over the render. */
+  --mask: rgba(140, 140, 140, 0.82);
   --soft: rgba(0, 0, 0, 0.06);
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.12);
   --inv-bg: #000000;
@@ -54,7 +55,7 @@
   --viewport-bg: #262626;
   --overlay: rgba(14, 14, 14, 0.78);
   --overlay-line: rgba(255, 255, 255, 0.1);
-  --mask: rgba(0, 0, 0, 0.42);
+  --mask: rgba(38, 38, 38, 0.8);
   --soft: rgba(255, 255, 255, 0.07);
   --shadow: 0 10px 32px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.5);
   --inv-bg: #ffffff;
