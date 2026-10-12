@@ -335,16 +335,47 @@ Siempre visible, 56 px. De izquierda a derecha:
   **Añadir a la cola**. Durante un render el botón pasa a *Detener* y
   muestra el progreso como una barra fina en su borde inferior.
 
-**Cajón Animación**: a la izquierda, los **planos** (lista de duraciones
-en segundos, añadir, reordenar); en el centro, los **movimientos** como
-tarjetas con la frase en lenguaje llano ("La cámara orbita 90° durante 4
-s, suave") y, debajo, una **línea de tiempo de bloques** (un carril por
-objetivo; los bloques se arrastran y se estiran); a la derecha, *Presets*
-(`SEQUENCE_PRESETS`) y el botón *Añadir movimiento*, que abre el asistente
-de tres preguntas en línea: ¿qué se mueve? (cámara, pieza, luz, entorno) ·
-¿cómo? (`MOVE_KINDS` filtrados por objetivo) · ¿cuánto y cuánto tiempo?
-(cantidad, inicio, duración, suavizado). Cabecera del cajón: reproducir /
-pausar, cuadro actual, fps, duración total, y *Construir vídeo*.
+**Cajón Animación**, al estilo de la línea de tiempo de KeyShot (la
+versión de U1 con planos y tarjetas se sustituye en N1 por esto):
+
+- **Cabecera del cajón**: ir al principio, reproducir / pausar, ir al
+  final, bucle; cabezal en `s` y en fotograma; fps; duración total;
+  conmutador *Vista previa rápida / Previa renderizada*; zoom de la línea
+  de tiempo; **+ Añadir animación** (abre el asistente) y *Presets*
+  (`SEQUENCE_PRESETS`, que añaden varias barras de golpe).
+- **Pistas**: una fila por objetivo con animaciones (cámara arriba,
+  después piezas y grupos, luces, entorno, materiales), con nombre y
+  triángulo para plegar; la **pista de cámara** muestra los tramos de
+  cámara activa y los eventos de cambio de cámara como marcas verticales
+  (corte o fundido). Cada animación es una **barra** con su frase; se
+  arrastra para mover el inicio y se estira por los extremos para cambiar
+  la duración (ajuste a fotograma con `Shift` libre); clic la selecciona
+  y el inspector pasa a editarla; doble clic renombra; menú contextual:
+  Duplicar, Invertir, Repetir…, Eliminar. Regla superior en segundos y
+  fotogramas; el cabezal se arrastra y, al soltarlo, el visor muestra ese
+  instante.
+- **Asistente de animación** (en línea, en el inspector, tres pasos con
+  *Atrás / Siguiente / Terminar*): 1) **Tipo**, en una rejilla de tarjetas
+  monocromas agrupadas como en `SPEC.md` §3.7 (Piezas · Cámara · Luz y
+  entorno · Materiales), cada una con un icono y una frase; 2)
+  **Objetivo**, la selección actual ya marcada y la posibilidad de
+  cambiarla en el árbol; 3) **Parámetros** del tipo (cantidad con unidad,
+  eje, pivote, local o global, inicio, duración, curva de tiempo,
+  invertida, repetir) con la frase resultante actualizándose en vivo.
+  *Terminar* añade la barra y la selecciona.
+- **Inspector de una animación**: nombre, objetivo (cambiable), tipo,
+  parámetros, inicio y fin (o duración), curva de tiempo con un pequeño
+  gráfico y, en *personalizada*, dos asas arrastrables, invertida,
+  repetir, y los botones *Duplicar*, *Invertir*, *Eliminar*. La frase en
+  lenguaje llano arriba, siempre.
+- En el **árbol de la escena**, cada objetivo con animaciones muestra un
+  desplegable *Animaciones* con una fila por barra (icono del tipo +
+  frase); seleccionarla selecciona la barra y viceversa.
+- En la **barra de render**, un segmento *Imagen / Animación*: en
+  *Animación* aparecen rango de fotogramas, fps, salida *Vídeo (WebM,
+  MP4) / Fotogramas (PNG, JPEG)*, presupuesto por fotograma y
+  estimación del total; *Render* o *Añadir a la cola* encolan el trabajo
+  de animación.
 
 **Cajón Cola**: lista de trabajos (nombre, cámara, resolución, calidad,
 estado, progreso), *Iniciar cola*, *Vaciar*.
@@ -491,10 +522,11 @@ Lo que **sí** debe funcionar de verdad en U1:
   opciones presentes pero marcadas *próximamente* en auxiliar.
 - Imagen: exposición y transformada de vista aplicadas al visor; el resto
   guardado en el estado.
-- Animación: planos, movimientos con frase, presets, asistente, línea de
-  tiempo de bloques; reproducir mueve la cámara y las piezas en el visor
-  con `ease()`; *Construir vídeo* queda deshabilitado con tooltip
-  "próximamente".
+- Animación: en U1, planos, movimientos con frase, presets, asistente y
+  línea de tiempo de bloques; reproducir mueve la cámara y las piezas en
+  el visor con `ease()`; *Construir vídeo* deshabilitado con tooltip
+  "próximamente". N1 la sustituye por la línea de tiempo de pistas al
+  estilo KeyShot descrita en §2.5.
 - Barra de render: todo el estado; **Render** produce de verdad una
   captura del visor a la resolución elegida (render a un canvas fuera de
   pantalla) y la descarga como PNG o JPEG; la cola acumula trabajos y los

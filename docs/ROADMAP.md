@@ -95,7 +95,7 @@ decisiones escritas (datos, contratos, revisión), no código.
 | --- | --- | --- |
 | **v0.1** — "parece el producto" | Abre en modo estándar; importa glTF, OBJ, STL, FBX, 3DM, 3MF, PLY, DAE y USD con la hoja de importación; tipo de producto, materiales del catálogo, montaje de luz; el motor en Rust renderizando progresivamente en el visor y a PNG, en el navegador y en la línea de comandos | F0, A1–A3, U1, U2, I1, I3, E1–E4 |
 | **v0.2** — "sirve para trabajar" | STEP e IGES con caras CAD; herramienta de mover y operaciones de pieza al estilo KeyShot; focos propios y montajes guardados; biblioteca propia; vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, HDRI, miniaturas propias, recetas revisadas, cara CAD, cola y pases | I2, U3, U4, L4, E5, E6, L1, L2, L3, M1, N2, D1, P1 |
-| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo, luces IES, lotes nativos, escritorio | E7, E8, M2, N1, L5, P2, Q1 |
+| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo al estilo KeyShot, luces IES, lotes nativos, escritorio | E7, E8, M2, N1, L5, P2, Q1 |
 
 ---
 
@@ -659,22 +659,49 @@ imágenes viajan al motor como secciones RSB propias.
 (un cubo recibe la textura sin estirar en las seis caras); el proyecto
 guarda las imágenes embebidas.
 
-## N1 · Animación y vídeo — **Opus**
+## N1 · Animación y vídeo al estilo KeyShot — **Opus**
 
-**Qué.** `evaluate(state, t)` completo para todos los `MOVE_KINDS`;
-despiece (centro, disposición, factor); fundidos a color y cruzado (el
-cruzado renderiza dos cámaras en la ventana de solape); conflicto visible
-entre movimientos; *Construir vídeo*: un RSB por fotograma renderizado
-por el pool de workers con el presupuesto de la barra de render y
-codificación en el navegador (WebCodecs → WebM/MP4; secuencia PNG como
-alternativa siempre disponible). Reproducción fluida en el visor con la
-vista previa.
+**Qué.** Sustituir el editor de U1 (planos + tarjetas) por el modelo de
+`SPEC.md` §3.7 y la interfaz de `UI.md` §2.5, que siguen cómo funciona
+el de KeyShot: una sola línea de tiempo con **una pista por objetivo** y
+**barras** arrastrables y estirables; la **pista de cámara** con tramos
+de cámara activa y eventos de **cambio de cámara** (corte o fundido a
+color); el **asistente de animación** en tres pasos (tipo en rejilla de
+tarjetas agrupadas, objetivo, parámetros) en línea en el inspector; el
+**inspector de animación** con curva de tiempo (incluida *personalizada*
+con dos asas), invertir y repetir; las animaciones **bajo su objetivo en
+el árbol**; reproducción con cabezal, fps, bucle y vista previa rápida.
+Tipos nuevos en `src/data/animation.ts` sin renombrar los existentes:
+`FADE`, `PAN`, `MATERIAL_COLOR`, `SUN_ARC` (este último se activa con E5),
+`PATH` reservado. `evaluate(state, t)` completo para todos los tipos,
+composición por objetivo y conflictos visibles; despiece (centro,
+disposición, factor). Migración del estado de U1: los planos pasan a
+tramos de la pista de cámara y los movimientos a barras, sin perder nada
+(test con un proyecto de U1 guardado). **Salida**: modo *Animación* en
+la barra de render (rango, fps, vídeo o fotogramas, presupuesto por
+fotograma, estimación), un RSB por fotograma renderizado por el pool de
+workers, codificación en el navegador (WebCodecs → WebM/MP4; secuencia
+PNG/JPEG como alternativa siempre disponible), trabajos de animación en
+la cola. La *previa renderizada* (motor a pocas muestras por fotograma)
+y el fundido cruzado quedan para después y se marcan *próximamente*.
 
-**Depende de.** U1, E4.
+**Depende de.** U1, U3 (el pivote y los ejes locales de las rotaciones),
+E4 (para la salida renderizada; la línea de tiempo y la vista previa
+rápida no dependen de él y pueden ir antes).
 
-**Criterio.** Tests de `evaluate` con números (orbitar 90° en 4 s a mitad
-con `EASE` da 45°); los 16 presets producen un estado válido en cada
-fotograma; un vídeo de 2 s a 12 fps sale y se reproduce.
+**Criterio.** Tests de `evaluate` con números (órbita de 90° en 4 s a
+mitad con *suave* da 45°; rotación con pivote en otra pieza mantiene la
+distancia a ese pivote; `FADE` invertida y repetida 2 veces da el valor
+esperado en 5 instantes; curva personalizada con asas en (0.42, 0) y
+(0.58, 1) coincide con la de referencia ±1e-3); los 16 presets producen
+un estado válido en cada fotograma; una barra arrastrada en la línea de
+tiempo produce una sola entrada de deshacer; el proyecto de U1 migra con
+el mismo resultado en `t = 2 s`; un vídeo de 2 s a 12 fps sale y se
+reproduce; captura de la línea de tiempo con tres pistas y el asistente
+abierto en el paso 1.
+
+**Qué no tocar.** Las claves existentes de `MOVE_KINDS` y
+`SEQUENCE_PRESETS` (se añade, no se renombra); el motor (`engine/`).
 
 ## N2 · Cola, pases y lotes — **Sonnet**
 

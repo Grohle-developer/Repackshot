@@ -232,26 +232,75 @@ halo (umbral, tamaño, mezcla), nitidez, saturación, contraste, viñeta.
 Se aplican en este orden fijo sobre la imagen lineal: halo → nitidez →
 color → viñeta → transformada. Con todo a cero, la imagen no cambia.
 
-### 3.7 · Animación
+### 3.7 · Animación, al estilo KeyShot
 
-**Planos**: lista de duraciones en segundos; el tiempo total es su suma.
-**Movimientos** (`MotionClip`): objetivo (cámara, pieza o grupo, foco,
-entorno), tipo (`MOVE_KINDS`: orbitar, subir, acercar, travelling,
-trasladar, girar, volcar, escalar, zoom óptico, enfoque, intensidad,
-color, barrido de luz, despiece, visibilidad), plano de referencia para
-la cámara, inicio, duración, cantidad y suavizado (`EASING_KINDS`). Cada
-movimiento se puede escribir como una frase ("La cámara orbita 90° durante
-4 s, suave"), y esa frase es su representación en la interfaz.
+El modelo sigue el de KeyShot, visto desde fuera: **no hay fotogramas
+clave que editar a mano**; cada animación es una **barra** con un
+objetivo, un tipo, unos parámetros, un inicio, una duración y una curva
+de tiempo, y todas conviven en **una sola línea de tiempo** con una pista
+por objetivo. Lo que en la primera versión eran "planos" es la **pista
+de cámara**: cada tramo dice qué cámara está activa (un *cambio de
+cámara* es un evento más de la pista).
+
+**Tipos de animación** (`MOVE_KINDS`; las claves existentes se mantienen
+y se añaden las que faltan), agrupados como los agrupa el asistente:
+
+| Grupo | Tipo | Qué hace |
+| --- | --- | --- |
+| Piezas | **Plato giratorio** (`SPIN` sobre el modelo) | El modelo entero gira sobre su eje vertical |
+| | **Rotación** (`SPIN`, `TUMBLE` y eje libre) | Una pieza o grupo gira sobre un eje (X, Y, Z o personalizado) alrededor de un pivote (su centro, un punto, otra pieza) |
+| | **Traslación** (`MOVE`, `TRACK`) | Se desplaza una distancia en un eje, local o global |
+| | **Escala** (`SCALE`) | Cambia de tamaño por un factor |
+| | **Fundido** (`FADE`, nuevo) | Opacidad de 0 a 1 o de 1 a 0 |
+| | **Despiece** (`EXPLODE`) | Las piezas marcadas se separan del centro |
+| | **Visibilidad** (`VISIBILITY`) | Aparece o desaparece |
+| Cámara | **Órbita** (`ORBIT`) | Gira alrededor del objetivo, grados |
+| | **Inclinación** (`RISE`) | Sube o baja en arco, grados |
+| | **Zoom** (`ZOOM`) | Cambia la focal, mm |
+| | **Travelling** (`DOLLY`) | Se acerca o aleja, % de la distancia |
+| | **Panorámica** (`PAN`, nuevo) | Gira sobre su propio eje, grados |
+| | **Enfoque** (`FOCUS`) | Cambia la distancia de enfoque |
+| | **Cambio de cámara** (evento de la pista de cámara) | Pasa a otra cámara en ese instante, con corte o fundido |
+| | **Recorrido** (`PATH`, fase posterior) | Sigue una curva por puntos |
+| Luz y entorno | **Barrido de luz** (`HDRI`) | Gira el entorno |
+| | **Intensidad** (`INTENSITY`), **Color** (`TINT`) | De un foco |
+| | **Arco solar** (`SUN_ARC`, con el cielo de E5) | El sol recorre el día |
+| Materiales | **Color de material** (`MATERIAL_COLOR`, nuevo), **Fundido de material** (`FADE` sobre el material) | Transición de color u opacidad |
+
+**Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,
+cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,
+eje, pivote, local o global), inicio y duración en segundos, **curva de
+tiempo** (`EASING_KINDS`: lineal, suave, entrada, salida, fuerte, y
+*personalizada* con una curva de dos asas), **invertida** (sí/no) y
+**repetir** (n veces). Su frase en lenguaje llano ("La cámara orbita 90°
+durante 4 s, suave") es su nombre por defecto y su representación en la
+interfaz; también aparece **bajo su objetivo en el árbol de la escena**,
+como hace KeyShot.
 
 **Evaluación**: `evaluate(state, t)` devuelve las transformaciones y
-parámetros en el instante `t` aplicando cada movimiento activo con
-`ease()` y componiendo por objetivo; es una función pura que usa la vista
-previa para reproducir y el motor para renderizar fotograma a fotograma.
-Conflicto: dos movimientos del mismo tipo sobre el mismo objetivo y
-tiempo se marcan en la interfaz, no se silencian.
+parámetros en el instante `t` aplicando cada animación activa con su
+curva y componiendo por objetivo (las rotaciones se componen en el
+orden de inicio); es una función pura que la vista previa usa para
+reproducir y el motor para renderizar fotograma a fotograma. Dos
+animaciones del mismo tipo sobre el mismo objetivo y tiempo se suman si
+son traslaciones o rotaciones y se marcan en la interfaz si no pueden
+convivir; nunca se silencian.
 
-**Fundido** entre planos: a color (negro o blanco) con curva; el fundido
-cruzado es una fase posterior.
+**Reproducción**: la línea de tiempo tiene cabezal, fps (24, 25, 30, 60),
+duración total (la del último evento), reproducir, pausar, ir al
+principio y al final, bucle, y **vista previa rápida** (la vista previa
+rasterizada) o **previa renderizada** (el motor a pocas muestras por
+fotograma, fase posterior).
+
+**Fundidos** entre cámaras: corte, fundido a color (negro o blanco), o
+cruzado (fase posterior, exige dos cámaras en el solape).
+
+**Salida**: en la barra de render, el modo **Animación** añade rango de
+fotogramas (todo, o de–a), fps, y salida como **vídeo** (WebM o MP4
+codificado en el navegador) o como **secuencia de fotogramas** (PNG o
+JPEG con numeración), con el presupuesto de muestras o tiempo **por
+fotograma** y la estimación del total; el trabajo entra en la cola como
+cualquier otro.
 
 ### 3.8 · Render
 
