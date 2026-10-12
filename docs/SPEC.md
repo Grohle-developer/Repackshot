@@ -329,6 +329,19 @@ crea una copia propia.
 
 ---
 
+### 3.10 · Interiores y mobiliario
+
+Un **tipo de escena** (*Producto · Interior · Estudio de catálogo*) que
+solo cambia valores por defecto; una **habitación** paramétrica como nodo
+(medidas, aberturas, material por superficie, pared frontal oculta,
+ciclorama); **ventanas que iluminan solas** (portales automáticos, vidrio
+fino, vista exterior en un plano con paralaje); **cámara de interiores**
+(verticales rectas, altura de ojo, panorámica, alzados y planta,
+exposición automática, recorrido); Doctor de interiores; grupos de luz
+ajustables tras el render; entregables de mobiliario (silos con alfa y
+cotas, variantes, 360). Las decisiones, las fuentes y las fases están en
+`INTERIORS.md`.
+
 ## 4 · El Doctor
 
 Catorce chequeos, cada uno con detección y arreglo (`DOCTOR_CHECKS` en

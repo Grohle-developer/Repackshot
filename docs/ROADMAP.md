@@ -95,7 +95,8 @@ decisiones escritas (datos, contratos, revisión), no código.
 | --- | --- | --- |
 | **v0.1** — "parece el producto" | Abre en modo estándar; importa glTF, OBJ, STL, FBX, 3DM, 3MF, PLY, DAE y USD con la hoja de importación; tipo de producto, materiales del catálogo, montaje de luz; el motor en Rust renderizando progresivamente en el visor y a PNG, en el navegador y en la línea de comandos | F0, A1–A3, U1, U2, I1, I3, E1–E4 |
 | **v0.2** — "sirve para trabajar" | STEP e IGES con caras CAD; herramienta de mover y operaciones de pieza al estilo KeyShot; focos propios y montajes guardados; biblioteca propia; vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, HDRI, miniaturas propias, recetas revisadas, cara CAD, cola y pases | I2, U3, U4, L4, E5, E6, L1, L2, L3, M1, N2, D1, P1 |
-| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo al estilo KeyShot, luces IES, lotes nativos, escritorio | E7, E8, M2, N1, L5, P2, Q1 |
+| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo al estilo KeyShot, luces IES, lotes nativos, escritorio; tipo de escena *Interior* con sus valores por defecto, habitación paramétrica y cámara de interiores | E7, E8, M2, N1, L5, P2, Q1, K1, K2, K3 |
+| **v0.4** — "interiores y mobiliario" | El motor renderiza habitaciones iluminadas por ventana con portales, árbol de luces, adaptativo y *denoise*; guiado de caminos; entregables de mobiliario; grupos de luz tras el render | K4, K5, K6, K7, K8 |
 
 ---
 
@@ -731,6 +732,161 @@ clic.
 **Criterio.** `tests/doctor-engine.test.ts` con un motor falso que simula
 cada estado; cada chequeo se dispara y se limpia.
 
+## K1 · Tipo de escena, luz de interior y Doctor de interiores — **Sonnet**
+
+**Qué.** `scene.type ∈ {PRODUCT, INTERIOR, CATALOGUE}` en el *store* y en
+la sección *Producto* del inspector, con la tabla de valores por defecto
+de `INTERIORS.md` §3.1 aplicada al cambiarlo (solo defaults: ningún
+control desaparece); nuevo estilo **Interior** en `LIGHT_STYLES` y
+`LIGHT_SETUPS` (*Ventana de mañana*, *de mediodía*, *de tarde*,
+*Nublado*, *Lámparas de noche*, *Hora azul*, *Sala blanca de estudio*),
+cada receta con `world` y exposición, sin tocar las 72 existentes; los
+chequeos de escena del Doctor de interiores de `INTERIORS.md` §3.6 que
+no dependen del motor (escala y unidades, abertura ausente con sol o
+cielo, vidrio grueso, óptica < 18 mm, altura de ojo, recorte cercano,
+normales invertidas) con su arreglo.
+
+**Depende de.** U1, L4.
+
+**Criterio.** Cambiar de tipo y volver deja el estado idéntico salvo lo
+que el usuario tocó (test); los montajes nuevos pasan los tests de
+recuento y normalización; cada chequeo nuevo detecta su caso y su arreglo
+lo limpia; captura con el tipo *Interior* activo.
+
+## K2 · Habitación, portales y vista exterior — **Opus**
+
+**Qué.** Nodo `ROOM` paramétrico de `INTERIORS.md` §3.2 (ancho, fondo,
+alto; aberturas con posición, tamaño y alféizar; material por superficie;
+zócalo; *ocultar pared del lado de la cámara*; variante ciclorama con el
+perfil de EZ Packshot), editable en el inspector y en el visor (asas en
+las aberturas), guardado en el proyecto y exportado al RSB como mallas
+más una sección `PORT` por abertura; **portales automáticos** también
+para habitaciones importadas (heurística: cuadriláteros de vidrio o
+transparentes en la envolvente), sin jerga en la interfaz; material
+*Vidrio de ventana* fino no refractivo; **vista exterior** como imagen
+en un plano detrás de cada ventana con paralaje opcional (sección RSB de
+imagen de M2). Habitación de ejemplo procedural (*Cargar sala de
+ejemplo*) con un sofá y una lámpara.
+
+**Depende de.** U3, I3, M2 (para la imagen de la vista).
+
+**Criterio.** Tests de geometría (aberturas recortadas con el número de
+triángulos esperado, portales con el área exacta de cada hueco, pared
+oculta solo en cámara); la heurística marca el vidrio de un fixture de
+habitación importada y no marca un vaso; captura de la sala de ejemplo
+en la vista previa.
+
+## K3 · Cámara de interiores — **Opus**
+
+**Qué.** `INTERIORS.md` §3.4: *shift* con cálculo automático
+(*verticales rectas*, apagable), altura de ojo con presets, ópticas de
+interior, **visibilidad a cámara por objeto** (en vista previa y en el
+RSB), ortográfica para alzados y planta, cámara **panorámica**
+equirectangular 2:1 y *fisheye* (en la vista previa, por seis caras; en
+el motor, por franjas), **exposición automática** con mando EV y presets
+y el multiplicador de exterior en el rayo de cámara, recorrido WASD con
+altura fija. Exposición y curva como pases del estado `image`.
+
+**Depende de.** U1, E3.
+
+**Criterio.** Test de *shift*: con la cámara inclinada 10° las verticales
+de un cubo quedan paralelas en la proyección (±0,1 px a 1080p); la
+panorámica de la vista previa coincide con la del motor en seis
+direcciones de prueba; la planta no muestra el techo y la habitación
+sigue iluminada por él (comparación de medias); capturas.
+
+## K4 · Motor para interiores, conjunto mínimo — **Opus**
+
+**Qué.** `INTERIORS.md` §4, puntos 1 a 7, en `rt-core`: desplazamiento
+de origen por ULP (Wächter y Binder) y BVH de dos niveles con instancias;
+sol como disco con muestreo de cono y excluido del entorno; cielo
+Hošek–Wilkie (tras confirmar la licencia de las tablas; si no,
+Preetham) e HDRI con CDF 2D; rectángulos y discos por ángulo sólido;
+vidrio fino; **portales** (sección `PORT`) con tabla de área sumada por
+portal y MIS; **árbol de luces** (Conty y Kulla, nodo compacto como
+pbrt-v4; todas las luces si ≤ 8); *clamping* de directo e indirecto en
+unidades de exposición, regularización, ruleta; **muestreo adaptativo**
+por dos medios búferes en bloques; AOV (albedo, normal, profundidad,
+varianza, recuento) y **denoise** à-trous demodulado guiado por varianza
+al final y en previas; ajustes de *Interior* del tipo de escena pasados
+por RSB.
+
+**Depende de.** E5, K2.
+
+**Criterio.** Escenas de prueba propias (una sala cerrada con una
+ventana, una sala con doce lámparas, una mesa de cristal) con tests
+numéricos: con portales el error cuadrático a 64 muestras baja al menos
+a la mitad frente a sin ellos; el árbol de luces da la misma media que
+muestrear todas (±1 %) con menos varianza; la imagen sin *clamping* y
+con él difieren menos del 2 % en media; el *denoise* a 64 muestras queda
+más cerca de la referencia de 4096 que la de 256 sin *denoise* (PSNR);
+determinismo y paridad nativo/wasm intactos; hoja de contactos de las
+siete recetas de interior con media, quemados y tapados.
+
+## K5 · Guiado de caminos — **Opus**, con visto bueno **Fable**
+
+**Qué.** Árbol SD de Müller, Gross y Novák 2017 implementado **desde el
+artículo** (la referencia es GPL y no se mira): árbol espacial binario
+con cuadtrees direccionales en las hojas, iteraciones que doblan las
+muestras, estructura congelada por iteración y sumada entre workers sin
+memoria compartida, MIS con el muestreo explícito de luz y los portales;
+presupuesto de memoria configurable; encendido por defecto en *Interior*.
+Portales automáticos por mapa de visibilidad como subproducto.
+
+**Depende de.** K4.
+
+**Criterio.** En la sala con una ventana, la misma calidad (PSNR frente a
+referencia) con al menos 1,5× menos muestras que K4; sin pérdida en la
+botella de producto (±2 % de tiempo); memoria del árbol por debajo del
+presupuesto en las tres escenas de prueba.
+
+## K6 · Entregables de mobiliario — **Sonnet**
+
+**Qué.** `INTERIORS.md` §3.7 sobre N2: silo sobre blanco con alfa y con
+cotas (dimensiones de la caja envolvente dibujadas en una capa), hoja de
+**variantes** de tela y acabado de una escena (lista de materiales ×
+piezas → lote), panorámica por franjas en el navegador, alzados y planta
+como trabajos de lote, plantilla de nombre con variante.
+
+**Depende de.** K3, N2.
+
+**Criterio.** Un lote de 3 variantes × 2 vistas produce 6 imágenes con
+nombres correctos; la panorámica 4096 × 2048 se ensambla sin costuras
+(test de continuidad en los bordes de franja); captura de una hoja de
+variantes.
+
+## K7 · Activos de ejemplo e interiores en CI — **Sonnet**
+
+**Qué.** Habitación de ejemplo procedural con sofá y lámpara (K2) y, como
+activos descargables bajo demanda y nunca en el paquete base, una
+selección de Poly Haven (modelos de mobiliario y HDRI de interior, CC0) y
+ambientCG (HDRI y texturas, CC0) con **licencia y origen registrados por
+archivo** en un `assets.json`; nada de Quaternius ni 3D Warehouse;
+atribución para Khronos si se usa. Hoja de contactos de interiores en CI
+con `rt`.
+
+**Depende de.** K2, K4.
+
+**Criterio.** Test que falla si un activo no tiene licencia registrada o
+si su licencia no está en la lista permitida; la hoja de contactos sale
+en CI.
+
+## K8 · Grupos de luz tras el render — **Opus**
+
+**Qué.** Al estilo *LightMix*: cada luz (y el sol, el cielo y los
+emisores) pertenece a un **grupo**; el motor emite un pase por grupo
+(suma lineal) y la interfaz ofrece, tras el render o en el visor, un
+mezclador con intensidad y color por grupo cuya salida es una
+combinación lineal; guardar la mezcla como ajuste de la escena (aplica
+los factores a las luces reales) y como variantes (*día*, *atardecer*,
+*noche*) para la cola.
+
+**Depende de.** K4.
+
+**Criterio.** La suma de los pases por grupo es igual al render completo
+(±1e-4); una mezcla guardada y re-renderizada coincide con la mezcla
+(±2 %); captura del mezclador.
+
 ## P1 · Releases y demo pública — **Haiku**
 
 **Qué.** Workflow de release: versión en `package.json`, etiqueta `vX.Y.Z`
@@ -777,6 +933,10 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 ## Decisiones pendientes de Fable (no adelantar)
 
 - **I2**: licencia y entrada de STEP, tras el informe.
+- **Interiores** (`INTERIORS.md`): licencia exacta de las tablas de
+  Hošek–Wilkie (si no se confirma, Preetham); si se activa el aislamiento
+  de origen cruzado para compartir la escena entre workers; número de
+  luces a partir del cual entra el árbol.
 - **Formatos nativos** (`.bip`, `.ksp`, `.sldprt`, `.ma`, `.ztl`, `.f3d`):
   decidido que **no** se leen (propietarios, sin especificación pública;
   leerlos exigiría analizar sus binarios, que las reglas de sala limpia
@@ -813,5 +973,8 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 5. **E5** → **E6** → **L1** → **L2** → **L3**: la luz y los materiales
    hasta que las 72 recetas estén revisadas sobre el motor propio.
 6. **M1**, **N2**, **D1**, **P1**: cierran v0.2.
-7. **E7**, **M2**, **N1**, **L5**, **E8**, **Q1**, **P2**: v0.3.
-8. **H1** al cierre de cada versión.
+7. **E7**, **M2**, **N1**, **L5**, **E8**, **Q1**, **P2**, y **K1** →
+   **K2** → **K3** (tipo de escena, habitación y cámara de interiores):
+   v0.3.
+8. **K4** → **K5**, **K6**, **K7**, **K8**: interiores y mobiliario, v0.4.
+9. **H1** al cierre de cada versión.

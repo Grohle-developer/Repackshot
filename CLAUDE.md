@@ -18,6 +18,8 @@ lenguaje de fotógrafo.
 3. `docs/SPEC.md` — qué hace el producto (comportamiento, modelo de datos).
 4. `docs/ARCHITECTURE.md` — stack, mapa de módulos, *store*, motores.
 5. `docs/UI.md` — la interfaz, control por control.
+6. `docs/INTERIORS.md` — interiores y mobiliario: decisión de integración,
+   fuentes y fases K1–K8. Solo si tu fase es una de esas.
 
 ## Antes de tocar nada
 
