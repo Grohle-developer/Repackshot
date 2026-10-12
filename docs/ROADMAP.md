@@ -118,6 +118,9 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **U1** · La interfaz completa de `UI.md` sobre el *store*, con el visor
   de vista previa de three.js, modo estándar por defecto, 201 tests y
   capturas en `docs/ui/` — **Opus**.
+- **I1** · Importadores OBJ y STL propios con soldadura, normales por
+  ángulo, aristas vivas, detección de escala y arreglo de unidades en el
+  Doctor; `importFile` común para glTF, OBJ y STL — **Sonnet**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -249,7 +252,7 @@ tiene que seguir cargando en cada versión.
 **Criterio.** Los tres tests en verde; *Guardar* y *Abrir* del menú
 funcionan en el navegador con descarga y `<input type="file">`.
 
-## I1 · Importadores OBJ y STL — **Sonnet**
+## I1 · Importadores OBJ y STL — **Sonnet** — hecha
 
 **Qué.** `src/io/obj.ts` y `src/io/stl.ts` propios (ASCII y binario para
 STL; OBJ con grupos `o`/`g` como piezas y `usemtl` como material inicial
@@ -265,6 +268,29 @@ ofrece ×1000 con el Doctor). El estado vacío acepta los tres formatos.
 (un cubo OBJ con dos grupos, un STL binario y uno ASCII del mismo
 tetraedro) comprobando vértices, caras, grupos, normales y aristas vivas
 con números exactos. El Doctor sugiere la escala cuando procede.
+
+**Hecho.** `src/io/obj.ts`, `stl.ts`, `mesh-common.ts` (soldadura por
+posición con tolerancia 1e-5 del tamaño, normales con ángulo de
+suavizado de 30°, aristas vivas, conversión Y-arriba → Z-arriba) e
+`import.ts` (`importFile` por extensión y cabecera, con cada lector en
+su propio *chunk*; glTF pasa también por aquí). 49 tests nuevos con
+recuentos exactos y 46 mutaciones comprobadas una a una; arrastrar OBJ,
+STL ASCII y binario y GLB funciona en el navegador; 1 M de triángulos
+en ~4 s (OBJ) y ~3 s (STL binario) en el hilo principal. El Doctor
+ofrece ×1000 / ÷1000 exactos cuando el importador deja una pista de
+unidades (`ModelSource.unitHint`).
+
+Lo que no encajaba: las aristas vivas son por pieza y no cuentan las
+abiertas, así que un CAD que exporta un grupo por cara no tiene aristas
+vivas (M1 las sacará de la topología); los vértices se parten a lo largo
+de las aristas vivas (24 en un cubo), y los recuentos "soldados" se
+fijan como posiciones distintas; STL se deja Z-arriba y en milímetros,
+sin escalar; un grupo OBJ con varios `usemtl` es una pieza con
+`faceMaterials`; los `.mtl` se ignoran con aviso; un archivo en metros
+se ve vacío al principio porque el plano cercano de la cámara (1 mm) lo
+tapa hasta aplicar el arreglo de escala: I3 lo resuelve aplicando las
+unidades de la hoja de importación antes de añadir el modelo y ajustando
+los planos de recorte al encuadrar.
 
 ## I2 · STEP e IGES — **Opus**
 

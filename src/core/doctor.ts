@@ -36,6 +36,8 @@ export const SCENE_CHECKS: ReadonlySet<DoctorCheckKey> = new Set<DoctorCheckKey>
 
 /** A scale is off when the ratio leaves [1/20, 20]. */
 const SCALE_RATIO = 20;
+/** An importer's unit hint is still trusted while the result stays within this ratio of the product type. */
+const HINT_RATIO = SCALE_RATIO * SCALE_RATIO;
 /** Origin farther than 40 % of the bounding radius from the bounds centre. */
 const ORIGIN_RATIO = 0.4;
 /** Meshes above this many triangles must have smooth shading. */
@@ -80,11 +82,12 @@ function checkScale(state: ProjectState): DoctorResult {
   if (preset) {
     const r2 = actual / preset.sizeMm;
     if (r2 > SCALE_RATIO || r2 < 1 / SCALE_RATIO) {
-      // The importer saw a size that looks like metres or micrometres: offer that exact factor when it
-      // brings the model inside the range this check accepts.
+      // The importer saw a size that looks like metres or micrometres. That is evidence of a unit mix-up,
+      // so its exact factor is offered even when the result is small or large for the product type (a 3 mm
+      // screw is not a 200 mm bottle); it is dropped when it would still leave the model absurd.
       const hint = unitHint(state);
       const r3 = hint ? (actual * hint) / preset.sizeMm : 0;
-      const factor = hint && r3 <= SCALE_RATIO && r3 >= 1 / SCALE_RATIO ? hint : null;
+      const factor = hint && r3 <= HINT_RATIO && r3 >= 1 / HINT_RATIO ? hint : null;
       return warn('scale', { reason: 'preset', actual: roundSize(actual), expected: preset.sizeMm, preset: preset.key, ...(factor ? { factor } : {}) });
     }
   }

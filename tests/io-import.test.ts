@@ -151,6 +151,41 @@ describe('buildMesh', () => {
     expect(Array.from(healthy.data.normals.subarray(0, 3))).toEqual([0, 0, 1]);
   });
 
+  it('weights the normal of a smooth vertex by the angle each face has there', () => {
+    // Two triangles on the edge V-P, folded 20 degrees: at V the first spans 30 degrees, the second 150.
+    const rad = (d: number) => (d * Math.PI) / 180;
+    const fold = rad(20);
+    const nA = [0, 0, 1];
+    const nB = [0, -Math.sin(fold), Math.cos(fold)];
+    const dB = [0, -Math.cos(fold), -Math.sin(fold)];
+    const V = [0, 0, 0];
+    const P = [10, 0, 0];
+    const QA = [10 * Math.cos(rad(30)), 10 * Math.sin(rad(30)), 0];
+    const QB = [10 * Math.cos(rad(150)), 10 * Math.sin(rad(150)) * dB[1], 10 * Math.sin(rad(150)) * dB[2]];
+    const built = buildMesh({ positions: Float32Array.from([...tri(V, P, QA), ...tri(V, QB, P)]) })!;
+    expect(built.data.positions.length / 3).toBe(4);
+    expect(built.data.sharpEdges!.length).toBe(0);
+    const normalAt = (pt: number[]): number[] => {
+      for (let i = 0; i < built.data.positions.length; i += 3) if (Math.hypot(built.data.positions[i] - pt[0], built.data.positions[i + 1] - pt[1], built.data.positions[i + 2] - pt[2]) < 1e-4) return Array.from(built.data.normals.subarray(i, i + 3));
+      throw new Error('vertex not found');
+    };
+    const weighted = (wa: number, wb: number) => {
+      const v = [0, 1, 2].map((k) => wa * nA[k] + wb * nB[k]);
+      const l = Math.hypot(v[0], v[1], v[2]);
+      return v.map((x) => x / l);
+    };
+    // V: 30 and 150 degrees. P: 75 and 15 degrees (both triangles are isosceles). The others belong to one face.
+    for (const [pt, want] of [
+      [V, weighted(rad(30), rad(150))],
+      [P, weighted(rad(75), rad(15))],
+      [QA, nA],
+      [QB, nB],
+    ] as [number[], number[]][]) {
+      const got = normalAt(pt);
+      for (let k = 0; k < 3; k++) expect(got[k]).toBeCloseTo(want[k], 5);
+    }
+  });
+
   it('makes an edge shared by three faces hard and splits the vertices along it', () => {
     // Three fins on the edge from (0,0,0) to (1,0,0), 120 degrees apart.
     const fin = (deg: number) => {

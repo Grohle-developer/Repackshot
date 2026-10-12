@@ -67,7 +67,11 @@ describe('doctor', () => {
     const micro = hinted(0.001, 150000);
     expect(scale(micro).detail).toMatchObject({ reason: 'preset', factor: 0.001 });
     expect(measuredSizeMm(fix(micro, 'scale'))).toBeCloseTo(150, 6);
-    // A hint whose factor would still leave the size out of range is not offered.
+    // A 3 mm screw in a file in metres: the hint is trusted although 3 mm is small for a 200 mm studio.
+    const screw = hinted(1000, 0.003);
+    expect(scale(screw).detail).toMatchObject({ reason: 'preset', actual: 0.003, factor: 1000 });
+    expect(measuredSizeMm(fix(screw, 'scale'))).toBeCloseTo(3, 6);
+    // A hint whose factor would still leave the size absurd (0.3 mm in a 200 mm studio) is not offered.
     expect(scale(hinted(1000, 0.0003)).detail.factor).toBeUndefined();
     expect(measuredSizeMm(fix(hinted(1000, 0.0003), 'scale'))).toBeCloseTo(200, 6);
     // No hint, no factor: the product type's size, as before.
