@@ -120,7 +120,8 @@ De izquierda a derecha:
 1. **Menú de aplicación** (icono de tres líneas + "Repackshot"): Nuevo,
    Abrir proyecto, Guardar proyecto (`.repack.json`), Importar modelo,
    Exportar imagen, separador, Idioma (Inglés / Español), Tema (Oscuro /
-   Claro / Sistema), separador, Guía, Atajos de teclado, Acerca de.
+   Claro / Sistema), **Ajustes…** (`Ctrl/⌘ ,`), separador, Guía, Atajos
+   de teclado, Acerca de.
 2. **Nombre del proyecto**, editable al hacer clic (texto plano, sin caja
    hasta que se edita). Un punto delante cuando hay cambios sin guardar.
 3. Centro: **Deshacer / Rehacer** con el nombre de la acción en el
@@ -329,23 +330,22 @@ y eliminar al pasar el ratón, y los botones *Exportar biblioteca* e
 **Con una cámara seleccionada:** lo mismo que la sección Cámara de la
 escena, más nombre y *Activar*.
 
-### 2.5 · Barra de render (abajo)
+### 2.5 · Barra inferior: Animación · Cola · Render
 
-Siempre visible, 56 px. De izquierda a derecha:
+Siempre visible, 48 px. La configuración del render **no vive aquí**:
+vive en la **ventana de render** (§2.7), que se abre con el botón
+*Render…*. La barra queda con tres cosas:
 
-- Pestañas de la barra desplegable: **Animación · Cola** (abren un cajón
-  de 240 px sobre la barra).
-- Calidad: segmento de tres posiciones **Borrador · Previa · Final**
-  (`QUALITY_PRESETS`) y, al lado, *A medida* cuando se ha tocado algo.
-- Resolución: desplegable con `RESOLUTION_PRESETS` y *Personalizada…*
-  (ancho × alto en línea).
-- Presupuesto: *hasta N muestras* **o** *hasta MM:SS*, lo que llegue
-  antes; estimación de tiempo en texto auxiliar cuando el motor la dé.
-- Formato de salida: PNG / JPEG / EXR, con *fondo transparente* como
-  interruptor cuando el formato lo admite.
-- **Render** (botón primario, el más grande de la pantalla) y a su lado
-  **Añadir a la cola**. Durante un render el botón pasa a *Detener* y
-  muestra el progreso como una barra fina en su borde inferior.
+- A la izquierda, los cajones **Animación** y **Cola** (abren un cajón de
+  240 px sobre la barra). *Cola* lleva un contador de trabajos pendientes
+  y, mientras hay uno en marcha, una barra de progreso fina en su borde
+  inferior con el nombre del trabajo y el tiempo restante en el tooltip.
+- En el centro, en texto auxiliar, el último resultado (*Joyería_Cámara 1
+  · 1920 × 1080 · hace 2 min*); clic lo abre en el visor de resultados
+  (§2.8).
+- A la derecha, **Render…** (botón primario, el más grande de la
+  pantalla; `Ctrl/⌘ ⏎`), que abre la ventana de render. `Ctrl/⌘ ⇧ ⏎`
+  renderiza directamente con los últimos ajustes, sin abrir la ventana.
 
 **Cajón Animación**, al estilo de la línea de tiempo de KeyShot (la
 versión de U1 con planos y tarjetas se sustituye en N1 por esto):
@@ -383,14 +383,16 @@ versión de U1 con planos y tarjetas se sustituye en N1 por esto):
 - En el **árbol de la escena**, cada objetivo con animaciones muestra un
   desplegable *Animaciones* con una fila por barra (icono del tipo +
   frase); seleccionarla selecciona la barra y viceversa.
-- En la **barra de render**, un segmento *Imagen / Animación*: en
-  *Animación* aparecen rango de fotogramas, fps, salida *Vídeo (WebM,
-  MP4) / Fotogramas (PNG, JPEG)*, presupuesto por fotograma y
-  estimación del total; *Render* o *Añadir a la cola* encolan el trabajo
-  de animación.
+- El vídeo se renderiza desde la **ventana de render** en modo
+  *Animación* (§2.7), con los mismos botones *Render* y *+ Añadir a la
+  cola* que una imagen.
 
-**Cajón Cola**: lista de trabajos (nombre, cámara, resolución, calidad,
-estado, progreso), *Iniciar cola*, *Vaciar*.
+**Cajón Cola**: lista de trabajos en orden (miniatura, nombre, cámara,
+tamaño, *Terminar por*, IA sí o no, estado y progreso), arrastrables para
+reordenar; por trabajo: *Editar* (reabre la ventana de render con sus
+ajustes), *Duplicar*, *Quitar*; arriba *Iniciar cola* / *Pausar* y
+*Vaciar terminados*. Los terminados quedan en la lista con su miniatura;
+clic abre el visor de resultados.
 
 ### 2.6 · Barra de estado
 
@@ -407,6 +409,94 @@ escena (escala, origen, suavizado, bisel, clipping) se implementan sobre
 el modelo de datos.
 
 ---
+
+### 2.7 · Ventana de render, al estilo de KeyShot
+
+Se abre con **Render…** o `Ctrl/⌘ ⏎`. Es una ventana flotante de unos
+760 × 640 px centrada sobre la aplicación, con el visor visible detrás
+(atenuado un 40 %), que se mueve arrastrando su barra de título y se
+cierra con `Esc` o con la ×, conservando los ajustes. Los ajustes son
+del proyecto (`state.render`) y se recuerdan. Toda la ventana es
+acromática, como el resto del cromo.
+
+**Barra de título**: *Render* y un segmento **Imagen · Animación** que
+decide qué se va a renderizar. Debajo, tres secciones desplegables.
+
+**1 · Salida**
+
+- **Nombre**: plantilla con fichas insertables (`{proyecto}`,
+  `{cámara}`, `{estudio}`, `{fecha}`, `{n}`) y la vista previa del nombre
+  resultante en auxiliar (*Botella_Cámara 1_0001.png*).
+- **Carpeta al terminar**: dónde se guarda. En el navegador, *Descargas*
+  por defecto o **Elegir carpeta…** (con el acceso al sistema de
+  archivos del navegador donde exista; el permiso se recuerda y la
+  carpeta se muestra por su nombre); donde no exista, el selector dice
+  *Este navegador solo permite descargar* y se usa *Descargas*. En el
+  escritorio (P2), una ruta normal. Interruptor *Mostrar al terminar*.
+- **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR; *Fondo
+  transparente* cuando el formato lo admite; *Pases* (alfa, profundidad,
+  normales, id de pieza) cuando existan (N2), con *próximamente* hasta
+  entonces.
+- **Cámara**: desplegable con *La activa*, cada cámara guardada y
+  **Todas las cámaras** (un trabajo por cámara).
+- **Tamaño**: desplegable de presets (`RESOLUTION_PRESETS` y
+  *Personalizado*), **ancho × alto en píxeles** con candado de
+  proporción, y **tamaño de impresión** en mm, cm o pulgadas con su
+  **resolución en ppp (DPI)**. Los píxeles mandan: cambiar el tamaño de
+  impresión recalcula los píxeles a los ppp actuales, cambiar los ppp
+  recalcula el tamaño de impresión. Los ppp se escriben en el archivo
+  (PNG y JPEG) para que la imprenta lea el tamaño correcto. Presets de
+  impresión: A4, A3, carta, 10 × 15 cm a 300 ppp.
+- **Región** (*próximamente*): un recuadro dibujado en el visor.
+
+**2 · Calidad**
+
+- **Terminar por**: segmento **Muestras · Tiempo**. *Muestras*: campo con
+  atajos *Borrador 64 · Previa 256 · Final 1024* y valor libre. *Tiempo*:
+  campo `hh:mm:ss`. En *Avanzado*, la opción *Lo que llegue antes* con
+  los dos campos.
+- **Estimación** en auxiliar, a partir de las muestras por segundo que
+  mide el motor en el visor (*≈ 4 min en este equipo*); si el motor no
+  ha medido todavía, dice *Estimación al cabo de unos segundos en modo
+  Completo*. Nunca un número inventado.
+- **Avanzado** (plegado): rebotes máximos, recorte de indirecta,
+  semilla, cáusticas, *denoise* cuando exista.
+
+**2 bis · Animación** (en lugar de *Tamaño* y junto a *Calidad*, cuando
+el segmento está en *Animación*): **rango** (*Todo* o de–a en
+fotogramas o segundos), **fps** (24, 25, 30, 60), duración resultante,
+**salida** *Vídeo* (MP4 H.264 o WebM VP9, con calidad) o *Fotogramas*
+(secuencia PNG o JPEG con numeración `0001`), *Terminar por* aplicado
+**a cada fotograma**, y la estimación del total. La cámara es la pista de
+cámara de la línea de tiempo.
+
+**3 · Post-procesado IA**: el interruptor, su configurador y su vista
+previa, descritos en `AI-POST.md` §4. Plegado y apagado por defecto.
+
+**Pie de la ventana**: a la izquierda, el resumen en una línea
+(*1920 × 1080 · 300 ppp · 256 muestras · PNG → Descargas · IA
+apagada*); a la derecha **+ Añadir a la cola** (secundario) y
+**Render** (primario). *Render* mete el trabajo en la cola **en primera
+posición y lo arranca ya**, cierra la ventana y deja ver el progreso en
+el botón *Cola*; es "renderizar solo esta". *+ Añadir a la cola* lo pone
+al final sin arrancar, deja la ventana abierta para añadir más (aviso
+*Añadido a la cola · 3 trabajos*) y es la forma de preparar lotes. En la
+ventana, `⏎` es *Render* y `⇧ ⏎` es *+ Añadir a la cola*.
+
+### 2.8 · Visor de resultados
+
+Al terminar un trabajo, su imagen se abre en una capa sobre el visor
+(no en otra ventana) con: la imagen a su tamaño o ajustada, zoom y
+desplazamiento, el nombre y los datos (tamaño, muestras, tiempo,
+cámara), y los botones *Guardar de nuevo*, *Abrir carpeta* (donde
+exista) y *Cerrar*. Si el trabajo llevaba post-procesado IA, se
+conservan **las dos imágenes** (la del motor y la de la IA) y el visor
+muestra un **divisor deslizable** vertical: a la izquierda el render del
+motor, a la derecha el de la IA, con una asa que se arrastra (y las
+teclas ← →), etiquetas *Render* · *IA* en las esquinas y los botones
+*Solo render*, *Solo IA*, *Dividir*; se pueden guardar las dos. Los
+resultados quedan en el historial del proyecto (cajón *Cola*,
+terminados) y en el almacenamiento del navegador hasta que se borran.
 
 ## 3 · Paleta de comandos y teclado
 
@@ -427,7 +517,8 @@ de teclado* del menú):
 | `Ctrl/⌘ Z` / `Ctrl/⌘ ⇧ Z` | Deshacer / Rehacer |
 | `Ctrl/⌘ I` | Importar modelo |
 | `Ctrl/⌘ S` | Guardar proyecto |
-| `Ctrl/⌘ ⏎` | Render |
+| `Ctrl/⌘ ⏎` | Ventana de render |
+| `Ctrl/⌘ ⇧ ⏎` | Render con los últimos ajustes, sin abrir la ventana |
 | `F` | Encuadrar selección (o todo) |
 | `V` `O` `P` `Z` | Herramientas de vista |
 | `H` / `⇧ H` / `Alt H` | Ocultar selección / Aislar / Mostrar todo |
@@ -468,12 +559,16 @@ en *A medida* de la barra de render. Cada catálogo muestra una frase de
 **intención** ("Una sola fuente grande: una sombra, un brillo"), no una
 lista de parámetros.
 
-### 4.3 · Nada modal
+### 4.3 · Casi nada modal
 
 Toda confirmación es **en línea**, en el sitio donde se pulsó, con dos o
-tres botones y `Esc` para cancelar. Los únicos elementos flotantes son los
-menús, la paleta y el popover del Doctor. No hay ventanas de render
-separadas ni diálogos de ajustes.
+tres botones y `Esc` para cancelar. Los elementos flotantes son los
+menús, la paleta, el popover del Doctor y **dos ventanas**, abiertas solo
+a petición: la **ventana de render** (§2.7), porque un render es una
+decisión con muchos parámetros que se toma de una vez, como en KeyShot,
+y la ventana de **Ajustes** (idioma, tema, motor, modelos de IA,
+almacenamiento; ver `AI-POST.md` §5). Ninguna otra ventana; nada se abre
+solo.
 
 ### 4.4 · Campos numéricos
 

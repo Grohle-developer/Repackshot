@@ -94,8 +94,8 @@ decisiones escritas (datos, contratos, revisión), no código.
 | Versión | Qué se puede hacer | Fases |
 | --- | --- | --- |
 | **v0.1** — "parece el producto" | Abre en modo estándar; importa glTF, OBJ, STL, FBX, 3DM, 3MF, PLY, DAE y USD con la hoja de importación; tipo de producto, materiales del catálogo, montaje de luz; el motor en Rust renderizando progresivamente en el visor y a PNG, en el navegador y en la línea de comandos | F0, A1–A3, U1, U2, I1, I3, E1–E4 |
-| **v0.2** — "sirve para trabajar" | STEP e IGES con caras CAD; herramienta de mover y operaciones de pieza al estilo KeyShot; focos propios y montajes guardados; biblioteca propia; vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, HDRI, miniaturas propias, recetas revisadas, cara CAD, cola y pases | I2, U3, U4, L4, E5, E6, L1, L2, L3, M1, N2, D1, P1 |
-| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo al estilo KeyShot, luces IES, lotes nativos, escritorio; tipo de escena *Interior* con sus valores por defecto, habitación paramétrica y cámara de interiores | E7, E8, M2, N1, L5, P2, Q1, K1, K2, K3 |
+| **v0.2** — "sirve para trabajar" | STEP e IGES con caras CAD; herramienta de mover y operaciones de pieza al estilo KeyShot; focos propios y montajes guardados; biblioteca propia; ventana de render al estilo KeyShot con cola y visor de resultados; vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, HDRI, miniaturas propias, recetas revisadas, cara CAD, pases | I2, U3, U4, U5, L4, E5, E6, L1, L2, L3, M1, N2, D1, P1 |
+| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo al estilo KeyShot con paseo de cámara, luces IES, lotes nativos, escritorio; tipo de escena *Interior* con sus valores por defecto, habitación paramétrica y cámara de interiores; post-procesado IA opcional | E7, E8, M2, N1, N3, L5, P2, Q1, K1, K2, K3, X1–X5 |
 | **v0.4** — "interiores y mobiliario" | El motor renderiza habitaciones iluminadas por ventana con portales, árbol de luces, adaptativo y *denoise*; guiado de caminos; entregables de mobiliario; grupos de luz tras el render | K4, K5, K6, K7, K8 |
 
 ---
@@ -945,6 +945,66 @@ clic.
 **Criterio.** `tests/doctor-engine.test.ts` con un motor falso que simula
 cada estado; cada chequeo se dispara y se limpia.
 
+## U5 · Ventana de render y visor de resultados — **Opus**
+
+**Qué.** `UI.md` §2.5, §2.7 y §2.8: la barra inferior pierde calidad,
+resolución, presupuesto y formato, y queda con *Animación*, *Cola* (con
+contador y progreso) y **Render…**; la **ventana de render** al estilo de
+KeyShot con *Imagen · Animación*, *Salida* (nombre por plantilla con
+fichas, carpeta al terminar con el acceso al sistema de archivos del
+navegador donde exista y *Descargas* donde no, formato, transparente,
+cámara una o todas, tamaño en píxeles y tamaño de impresión con **ppp**
+enlazados y escritos en el archivo —`pHYs` en PNG, densidad JFIF en
+JPEG—), *Calidad* (*Terminar por* muestras o tiempo, *lo que llegue
+antes* en avanzado, estimación a partir de las muestras por segundo
+medidas), *Animación* (rango, fps, vídeo o fotogramas, presupuesto por
+fotograma, estimación total; la secuencia de fotogramas funciona ya, el
+vídeo codificado llega con N1 y se marca *próximamente* hasta entonces),
+la sección *Post-procesado IA* como hueco plegado (*próximamente* hasta
+X3), y el pie con **+ Añadir a la cola** y **Render** (este último pone
+el trabajo el primero y lo arranca); `RenderJob` completo en el *store*
+con migración del estado de U1; cajón *Cola* con reordenar, editar,
+duplicar, pausar y terminados; **visor de resultados** sobre el visor
+con zoom, datos y el **componente de comparación con divisor
+deslizable** genérico (dos imágenes cualesquiera), que X3 reutiliza;
+historial de resultados en el almacenamiento del navegador (IndexedDB u
+OPFS) con límite y borrado; atajos `Ctrl ⏎`, `Ctrl ⇧ ⏎`, `⏎`, `⇧ ⏎`.
+
+**Depende de.** E4 (render siempre con el trazador).
+
+**Criterio.** Tests: `px = tamaño × ppp` en los dos sentidos con
+redondeo y candado; el PNG lleva `pHYs` con los ppp (lectura del
+fichero en el test) y el JPEG su densidad; plantilla de nombre con todas
+las fichas; *Render* y *+ Añadir a la cola* producen la cola esperada;
+*Todas las cámaras* crea un trabajo por cámara; *Terminar por tiempo*
+corta en el límite (±1 pasada); migración de un proyecto de U1; la
+ventana no aparece en la captura del visor. Capturas de la ventana en
+*Imagen* y en *Animación*, del cajón *Cola* con tres trabajos y del
+visor de resultados con el divisor.
+
+## N3 · Paseo de cámara — **Sonnet**
+
+**Qué.** El tipo de animación `WALK` de `SPEC.md` §3.7: herramienta
+*Trazar paseo* en el visor (clic en el suelo por punto, `⏎` termina,
+puntos arrastrables, la curva dibujada en tinta), *Paseo alrededor de la
+selección* en un clic, Catmull–Rom centrípeta recorrida a velocidad
+constante por longitud de arco con arranque y parada suaves, altura de
+ojos, mirada hacia delante / hacia un objetivo / por puntos con giro
+suavizado, y **Simular pasos** (cadencia, balanceo vertical y lateral,
+inclinación, sincronizados con la distancia y apagados al pararse). Se
+edita en el inspector de animación y aparece como barra en la pista de
+cámara. *Recorrido de la sala* se activa cuando exista K2.
+
+**Depende de.** N1.
+
+**Criterio.** Tests de `evaluate`: la velocidad es constante ±1 % en
+toda la curva salvo arranque y parada; la altura de la cámara es la de
+ojos ±0 sin pasos y oscila con la amplitud y la cadencia pedidas con
+pasos; con *hacia un objetivo* el objetivo queda en el centro del
+encuadre ±0,5°; parar a mitad de curva apaga el balanceo en menos de un
+paso; el mismo `t` da la misma cámara siempre. Un vídeo de 4 s del
+paseo alrededor de la botella, con y sin pasos.
+
 ## K1 · Tipo de escena, luz de interior y Doctor de interiores — **Sonnet**
 
 **Qué.** `scene.type ∈ {PRODUCT, INTERIOR, CATALOGUE}` en el *store* y en
@@ -1181,13 +1241,14 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
    el tronco: va delante de todo lo que no sea el motor.
 3. **E4** (Opus): el motor en el navegador. Cierra v0.1 con un render de
    verdad en el visor y en la línea de comandos.
-4. **I2** (STEP e IGES), **U3** (mover y operaciones de pieza), **U4**
-   (biblioteca) y **L4** (focos propios): lo que hace que se comporte
-   como KeyShot en el día a día.
+4. **U5** (ventana de render), **I2** (STEP e IGES), **L4** (focos
+   propios): lo que hace que se comporte como KeyShot en el día a día
+   (U3 y U4 ya están).
 5. **E5** → **E6** → **L1** → **L2** → **L3**: la luz y los materiales
    hasta que las 72 recetas estén revisadas sobre el motor propio.
 6. **M1**, **N2**, **D1**, **P1**: cierran v0.2.
-7. **E7**, **M2**, **N1**, **L5**, **E8**, **Q1**, **P2**, y **K1** →
+7. **E7**, **M2**, **N1** → **N3**, **L5**, **E8**, **Q1**, **P2**,
+   **X1** → **X5** (post-procesado IA, `AI-POST.md`), y **K1** →
    **K2** → **K3** (tipo de escena, habitación y cámara de interiores):
    v0.3.
 8. **K4** → **K5**, **K6**, **K7**, **K8**: interiores y mobiliario, v0.4.

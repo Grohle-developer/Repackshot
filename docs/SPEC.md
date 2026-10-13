@@ -267,10 +267,29 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | | **Enfoque** (`FOCUS`) | Cambia la distancia de enfoque |
 | | **Cambio de cámara** (evento de la pista de cámara) | Pasa a otra cámara en ese instante, con corte o fundido |
 | | **Recorrido** (`PATH`, fase posterior) | Sigue una curva por puntos |
+| | **Paseo** (`WALK`) | La cámara camina por una trayectoria a altura de ojos, con o sin simulación de pasos (ver abajo) |
 | Luz y entorno | **Barrido de luz** (`HDRI`) | Gira el entorno |
 | | **Intensidad** (`INTENSITY`), **Color** (`TINT`) | De un foco |
 | | **Arco solar** (`SUN_ARC`, con el cielo de E5) | El sol recorre el día |
 | Materiales | **Color de material** (`MATERIAL_COLOR`, nuevo), **Fundido de material** (`FADE` sobre el material) | Transición de color u opacidad |
+
+**Paseo (`WALK`)**, pensado para mobiliario e interiores: crea la
+trayectoria de la cámara por ti. La trayectoria se traza en el visor con
+la herramienta *Trazar paseo* (clic en el suelo para cada punto, `⏎`
+para terminar; los puntos se arrastran después) o se genera con un clic:
+*Paseo alrededor de la selección* (un arco a altura de ojos que rodea la
+pieza a la distancia de encuadre) y, con la habitación de K2, *Recorrido
+de la sala* (entra por la puerta y recorre el espacio libre). La curva es
+suave (Catmull–Rom centrípeta) y se recorre a **velocidad constante**
+(1,2 m/s por defecto, editable), con arranque y parada suaves. Parámetros:
+**altura de ojos** (1,5 m de pie, 1,1 m sentado, o libre), **mirada**
+(*hacia delante*, *hacia un objetivo* —una pieza o un punto—, o *por
+puntos*, con giro suavizado), y el interruptor **Simular pasos**: añade
+el movimiento de una persona que camina —cadencia (1,8 pasos/s), balanceo
+vertical (2,5 cm), balanceo lateral (1 cm), leve inclinación (0,5°)—
+sincronizado con la distancia recorrida, que se apaga al pararse. Sin
+simulación, la cámara se desliza como en un *travelling* de cine. Todo es
+una función determinista del tiempo, como el resto de animaciones.
 
 **Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,
 cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,
@@ -309,12 +328,24 @@ cualquier otro.
 
 ### 3.8 · Render
 
-`quality` (borrador 64 muestras, previa 256, final 1024; o a medida),
-resolución, presupuesto (`maxSamples`, `maxSeconds`: lo que llegue
-antes), formato (PNG 8/16 bits, JPEG con calidad, EXR lineal), fondo
+Se configura en la **ventana de render** (`UI.md` §2.7), al estilo de la
+de KeyShot, y no en la barra inferior. Un **trabajo de render**
+(`RenderJob`) guarda: modo (*imagen* o *animación*), nombre como
+plantilla, carpeta de destino (en el navegador, *Descargas* o una
+carpeta elegida con el acceso al sistema de archivos donde exista),
+formato (PNG 8/16 bits, JPEG con calidad, EXR lineal), fondo
 transparente, pases (fase posterior: alfa, profundidad, normales, id de
-pieza). La **cola** acumula trabajos (cámara, estudio, resolución,
-calidad) y los ejecuta en serie con progreso y cancelación.
+pieza), cámara (una o todas), tamaño en píxeles con su tamaño de
+impresión y **ppp** (los píxeles mandan; los ppp se escriben en el
+archivo), **terminar por** muestras o por tiempo (o lo que llegue antes,
+en avanzado), ajustes avanzados del motor, en animación el rango, los fps
+y la salida (vídeo MP4/WebM o secuencia de fotogramas), y el
+**post-procesado IA** con sus ajustes (`AI-POST.md`). *Render* pone el
+trabajo el primero de la **cola** y lo arranca; *+ Añadir a la cola* lo
+pone al final. La cola ejecuta en serie, con progreso, pausa, reordenar y
+cancelación, **siempre con el motor completo**. Cada resultado guarda la
+imagen del motor y, si hubo post-procesado, también la de la IA, para
+compararlas con un divisor deslizable.
 
 ### 3.9 · Estudios, biblioteca propia y proyecto
 
