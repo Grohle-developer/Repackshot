@@ -2,8 +2,11 @@
 // another, always with the path tracer (`services.renderFrame`, never the
 // preview), each image saved where its settings say and kept in the results
 // history. *Render* runs only the jobs it just put first ("render just this
-// one"); *Start queue* runs every waiting job in order; *Pause* stops now and
-// the job in progress waits again (a render cannot resume halfway).
+// one"); *Start queue* runs every waiting job in order; *Pause* stops now (the
+// engine is free at once) and the job in progress waits again (a render cannot
+// resume halfway); *Resume* goes on with what was paused. Pausing and resuming
+// are taken at once, even while the stopped job is still winding down: a
+// Resume pressed then is not lost, it carries on in the same loop.
 //
 // Status and progress go through volatile store actions (`render/job`,
 // `render/running`), throttled, so they never reach the undo history. If the
@@ -22,9 +25,12 @@ import type { Ctx } from './reactive';
 import { t, tIn } from './strings';
 
 interface Runner {
-  mode: 'IDLE' | 'ALL' | 'ONLY';
+  /** IDLE: not started; ALL: every waiting job; ONLY: Render's jobs; PAUSED: stopped by Pause, waiting for Resume. */
+  mode: 'IDLE' | 'ALL' | 'ONLY' | 'PAUSED';
   /** Jobs Render asked for, in ONLY mode. */
   only: Set<string>;
+  /** What Resume goes on with after a Pause. */
+  resume: { mode: 'ALL' | 'ONLY'; only: string[] } | null;
   current: { id: string; abort: AbortController; why: 'PAUSE' | 'STOP' | 'GONE' | null } | null;
   loop: Promise<void> | null;
   unsubscribe: (() => void) | null;
@@ -35,7 +41,7 @@ const runners = new WeakMap<object, Runner>();
 function runnerOf(ctx: Ctx): Runner {
   let r = runners.get(ctx.store);
   if (!r) {
-    r = { mode: 'IDLE', only: new Set(), current: null, loop: null, unsubscribe: null };
+    r = { mode: 'IDLE', only: new Set(), resume: null, current: null, loop: null, unsubscribe: null };
     runners.set(ctx.store, r);
   }
   return r;
@@ -272,11 +278,14 @@ function watchQueue(ctx: Ctx, r: Runner): void {
   });
 }
 
+const running = (r: Runner) => r.mode === 'ALL' || r.mode === 'ONLY';
+
 async function loop(ctx: Ctx, r: Runner): Promise<void> {
   watchQueue(ctx, r);
   try {
     for (;;) {
-      if (r.mode === 'IDLE') break;
+      // Paused (or never started): the loop ends here; resumed meanwhile, it goes on.
+      if (!running(r)) break;
       const job = nextJob(ctx, r);
       if (!job) break;
       const abort = new AbortController();
@@ -315,14 +324,17 @@ async function loop(ctx: Ctx, r: Runner): Promise<void> {
         }
         ctx.store.dispatch({ type: 'render/running', running: null });
       }
-      if (status === 'QUEUED') break; // paused
     }
   } finally {
     r.loop = null;
-    r.only.clear();
-    setMode(ctx, r, 'IDLE');
     r.unsubscribe?.();
     r.unsubscribe = null;
+    // A Start or Resume that came while the loop was ending is not lost.
+    if (running(r) && nextJob(ctx, r)) ensureLoop(ctx, r);
+    else if (r.mode !== 'PAUSED') {
+      r.only.clear();
+      setMode(ctx, r, 'IDLE');
+    }
   }
 }
 
@@ -330,10 +342,17 @@ function ensureLoop(ctx: Ctx, r: Runner): void {
   if (!r.loop) r.loop = loop(ctx, r);
 }
 
-/** Start queue: every waiting job, in order. */
+/** Start queue: every waiting job, in order. After a Pause (Resume): what was paused goes on. */
 export function startQueue(ctx: Ctx): void {
   const r = runnerOf(ctx);
-  setMode(ctx, r, 'ALL');
+  const resume = r.mode === 'PAUSED' ? r.resume : null;
+  r.resume = null;
+  const queued = new Set(ctx.store.get().render.queue.filter((j) => j.status === 'QUEUED' || j.status === 'RUNNING').map((j) => j.id));
+  const only = resume?.mode === 'ONLY' ? resume.only.filter((id) => queued.has(id)) : [];
+  if (only.length > 0) {
+    r.only = new Set(only);
+    setMode(ctx, r, 'ONLY');
+  } else setMode(ctx, r, 'ALL');
   ensureLoop(ctx, r);
 }
 
@@ -343,8 +362,12 @@ export function startQueue(ctx: Ctx): void {
  */
 export function runOnly(ctx: Ctx, ids: readonly string[]): 'NOW' | 'NEXT' {
   const r = runnerOf(ctx);
-  const busy = r.current !== null;
+  // A job still winding down after a Pause does not count: Render starts now.
+  const busy = r.current !== null && running(r);
   if (r.mode !== 'ALL') {
+    // Render after a Pause renders just its job; what was paused stays waiting.
+    if (r.mode !== 'ONLY') r.only.clear();
+    r.resume = null;
     for (const id of ids) r.only.add(id);
     setMode(ctx, r, 'ONLY');
   }
@@ -352,10 +375,12 @@ export function runOnly(ctx: Ctx, ids: readonly string[]): 'NOW' | 'NEXT' {
   return busy ? 'NEXT' : 'NOW';
 }
 
-/** Pause: stops now; the job in progress waits again and the queue stays where it is. */
+/** Pause: stops now (the engine is free at once); the job in progress waits again and Resume goes on from there. */
 export function pauseQueue(ctx: Ctx): void {
   const r = runnerOf(ctx);
-  setMode(ctx, r, 'IDLE');
+  if (!running(r)) return;
+  r.resume = { mode: r.mode === 'ONLY' ? 'ONLY' : 'ALL', only: [...r.only] };
+  setMode(ctx, r, 'PAUSED');
   if (r.current) {
     r.current.why = 'PAUSE';
     r.current.abort.abort();

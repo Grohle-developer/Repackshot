@@ -2,7 +2,7 @@
 // and Stop, a removed job stops, frame sequences, names, results, and no engine means no render.
 // The engine, the files and the history are fakes; the store and the commands are the real ones.
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { totalDuration } from '../src/core/animation';
 import { createStore } from '../src/core/store';
 import { memoryResultsStore } from '../src/io/results';
@@ -10,6 +10,9 @@ import * as cmd from '../src/ui/commands';
 import type { AppServices, FrameRequest, FrameResult } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
 import { jobFileNames, queueSettled } from '../src/ui/render-queue';
+import { queueButton } from '../src/ui/panels/queue';
+import { NativeEngine } from '../src/render/native';
+import { LauncherMock } from './launcher-mock';
 import { setLang } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
 import { exampleState } from './helpers';
@@ -220,5 +223,129 @@ describe('frame sequences', () => {
     expect(f.saved[0]).toBe('shot-0001.jpg');
     expect(f.saved[frames - 1]).toBe(`shot-${String(frames).padStart(4, '0')}.jpg`);
     expect(f.requests[frames - 1].time).toBeCloseTo((frames - 1) / 24, 10);
+  });
+});
+
+// ------------------------------------------------------------------ phase P3a: Pause, Resume, Start queue
+
+describe('Pause and Resume', () => {
+  it('the button says Pause while it runs, Resume after a Pause, Start queue otherwise', async () => {
+    expect(queueButton('IDLE', false)).toMatchObject({ state: 'START', label: 'queue.start', disabled: true });
+    expect(queueButton('IDLE', true)).toMatchObject({ state: 'START', label: 'queue.start', icon: 'play', disabled: false });
+    expect(queueButton('ALL', true)).toMatchObject({ state: 'PAUSE', label: 'queue.pause', icon: 'pause', disabled: false });
+    expect(queueButton('ONLY', false)).toMatchObject({ state: 'PAUSE', disabled: false });
+    expect(queueButton('PAUSED', true)).toMatchObject({ state: 'RESUME', label: 'queue.resume', tip: 'queue.resumeTip', disabled: false });
+    // Paused with nothing left to resume: Start queue, disabled.
+    expect(queueButton('PAUSED', false)).toMatchObject({ state: 'START', disabled: true });
+    // The drawer follows the runner.
+    const f = makeCtx();
+    const { ctx } = f;
+    f.hold = true;
+    cmd.enqueue(ctx);
+    cmd.enqueue(ctx);
+    cmd.toggleQueue(ctx);
+    expect(ctx.ui.get().queueRun).toBe('ALL');
+    await tick();
+    cmd.toggleQueue(ctx);
+    expect(ctx.ui.get().queueRun).toBe('PAUSED');
+    await queueSettled(ctx);
+    expect(ctx.ui.get().queueRun).toBe('PAUSED');
+    expect(statuses(f)).toEqual(['QUEUED', 'QUEUED']);
+    cmd.toggleQueue(ctx);
+    expect(ctx.ui.get().queueRun).toBe('ALL');
+    await tick();
+    expect(statuses(f)).toEqual(['RUNNING', 'QUEUED']);
+    f.hold = false;
+    f.release();
+    await queueSettled(ctx);
+    expect(statuses(f)).toEqual(['DONE', 'DONE']);
+    expect(ctx.ui.get().queueRun).toBe('IDLE');
+  });
+
+  it('Pause and then Resume at once is not lost while the stopped job winds down', async () => {
+    const f = makeCtx();
+    const { ctx } = f;
+    f.hold = true;
+    cmd.enqueue(ctx);
+    cmd.enqueue(ctx);
+    cmd.toggleQueue(ctx);
+    await tick();
+    expect(statuses(f)).toEqual(['RUNNING', 'QUEUED']);
+    cmd.toggleQueue(ctx); // Pause
+    cmd.toggleQueue(ctx); // Resume, before the paused job has even let go
+    await tick();
+    await tick();
+    expect(ctx.ui.get().queueRun).toBe('ALL');
+    expect(statuses(f)).toEqual(['RUNNING', 'QUEUED']);
+    expect(f.requests).toHaveLength(2);
+    f.hold = false;
+    f.release();
+    await queueSettled(ctx);
+    expect(statuses(f)).toEqual(['DONE', 'DONE']);
+  });
+
+  it('Resume after pausing a Render goes on with just that job; Render after a Pause renders just its own', async () => {
+    const f = makeCtx();
+    const { ctx } = f;
+    f.hold = true;
+    cmd.enqueue(ctx); // waits, not started
+    await cmd.renderNow(ctx); // Render: first, and only it runs
+    await tick();
+    const [rendered, waiting] = ctx.store.get().render.queue;
+    expect([rendered.status, waiting.status]).toEqual(['RUNNING', 'QUEUED']);
+    cmd.toggleQueue(ctx); // Pause
+    await queueSettled(ctx);
+    cmd.toggleQueue(ctx); // Resume: the Render's job, not the whole queue
+    expect(ctx.ui.get().queueRun).toBe('ONLY');
+    f.hold = false;
+    f.release();
+    await queueSettled(ctx);
+    expect(ctx.store.get().render.queue.map((j) => j.status)).toEqual(['DONE', 'QUEUED']);
+    // Pause the whole queue, then Render something new: that one renders, the paused one keeps waiting.
+    f.hold = true;
+    cmd.toggleQueue(ctx);
+    await tick();
+    cmd.toggleQueue(ctx); // Pause
+    await queueSettled(ctx);
+    f.hold = false;
+    await cmd.renderNow(ctx);
+    await queueSettled(ctx);
+    expect(ctx.store.get().render.queue.map((j) => j.status)).toEqual(['DONE', 'DONE', 'QUEUED']);
+    expect(ctx.ui.get().queueRun).toBe('IDLE');
+  });
+
+  it('with the native engine and a launcher that never answers, Pause stops at once and Resume renders again', async () => {
+    // The real engine of the desktop (render/native.ts) instead of a fake that always lets go: the mock was more
+    // permissive than reality, which is how a Pause that could not reach the launcher went unseen.
+    const launcher = new LauncherMock();
+    launcher.hangPolls = true;
+    const source = { build: () => ({ meshKey: 'm', bytes: () => new Uint8Array([1, 4, 0, 3, 0, 1]) }), tone: () => ({ exposureEv: 0, tonemap: 1 }) };
+    const engine = new NativeEngine({ request: launcher.request }, source, { threads: 8, isa: 'avx2' });
+    const f = makeCtx();
+    const { ctx } = f;
+    engine.sync(ctx.store.get(), null);
+    ctx.services.renderFrame = async (req: FrameRequest): Promise<FrameResult> => {
+      f.requests.push(req);
+      const px = await engine.renderPixels({ width: 4, height: 3, maxSamples: 4, maxSeconds: 0, transparent: false, ...(req.signal ? { signal: req.signal } : {}) });
+      return { file: new Blob([new Uint8Array(4)]), display: null, width: px.width, height: px.height, samples: px.samples, seconds: px.seconds };
+    };
+    cmd.enqueue(ctx);
+    cmd.toggleQueue(ctx);
+    await vi.waitFor(() => expect(launcher.log.some((l) => l.startsWith('GET /api/render/'))).toBe(true));
+    expect(statuses(f)).toEqual(['RUNNING']);
+    const t0 = performance.now();
+    cmd.toggleQueue(ctx); // Pause
+    await queueSettled(ctx);
+    expect(performance.now() - t0).toBeLessThan(500);
+    expect(statuses(f)).toEqual(['QUEUED']);
+    expect(ctx.ui.get().queueRun).toBe('PAUSED');
+    expect(launcher.log.some((l) => l.startsWith('DELETE /api/render/'))).toBe(true);
+    // The launcher answers again: Resume renders the job to the end.
+    launcher.hangPolls = false;
+    launcher.pollMs = 1;
+    cmd.toggleQueue(ctx);
+    await queueSettled(ctx);
+    expect(statuses(f)).toEqual(['DONE']);
+    expect(launcher.queued).toBe(0);
   });
 });

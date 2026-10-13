@@ -47,13 +47,14 @@ export function installSettingsEffects(ctx: Ctx): () => void {
       services.viewport?.setNavigation({ mouse: s['viewport.mouse'], invertZoom: s['viewport.invertZoom'], orbitSpeed: s['viewport.orbitSpeed'] / 100, zoomSpeed: s['viewport.zoomSpeed'] / 100 });
     }
     if (changed(['viewport.floorGrid', 'viewport.gizmoSize'])) services.viewport?.setDisplay({ floorGrid: s['viewport.floorGrid'], gizmoScale: s['viewport.gizmoSize'] / 100 });
-    if (changed(['engine.backend', 'engine.threads', 'engine.simd', 'viewport.gestureResolution', 'engine.viewportLimit', 'engine.viewportSamples', 'engine.viewportSeconds'])) {
+    if (changed(['engine.backend', 'engine.threads', 'engine.simd', 'viewport.gestureResolution', 'engine.viewportLimit', 'engine.viewportSamples', 'engine.viewportSeconds', 'engine.whileRender'])) {
       services.engine.configure({
         backend: s['engine.backend'],
         threads: s['engine.threads'],
         simd: s['engine.simd'],
         gestureResolution: s['viewport.gestureResolution'],
         viewportLimit: { by: s['engine.viewportLimit'], samples: s['engine.viewportSamples'], seconds: s['engine.viewportSeconds'] },
+        whileRender: s['engine.whileRender'],
       });
     }
     if (prev !== null && changed(['storage.historyCount', 'storage.historyMB']) && services.results.setLimits) {

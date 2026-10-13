@@ -155,7 +155,8 @@ scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       schedule();
       return;
     case 'cancel':
-      if (job && job.generation <= msg.generation) job = null;
+      // Exactly that generation: a Render and the viewport may run side by side in the pool.
+      if (job && job.generation === msg.generation) job = null;
       return;
     case 'tonemap': {
       const bytes = exactBytes(new Float32Array(msg.sum), msg.samples, msg.ev, msg.tonemap);

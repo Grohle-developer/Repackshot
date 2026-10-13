@@ -517,3 +517,130 @@ fn hardware_and_open_folder_validation() {
     assert_eq!(t.api("GET", "/api/nothing", b"").status, 404);
     assert_eq!(t.api("PUT", "/api/info", b"").status, 405);
 }
+
+/// An id from a `POST /api/render` answer.
+fn job_id(t: &TestServer, target: &str, rsb: &[u8]) -> u32 {
+    let r = t.api("POST", target, rsb);
+    assert_eq!(r.status, 200, "{target}: {}", r.text());
+    rt_app::json::parse(&r.text())
+        .unwrap()
+        .get("id")
+        .unwrap()
+        .as_f64()
+        .unwrap() as u32
+}
+
+/// A scene with no geometry (cheap to render at any size), marked whole with `full=1`.
+fn empty_scene(samples: u32, w: u32, h: u32) -> Vec<u8> {
+    let mut scene = rt_core::example::scene();
+    scene.geometry = rt_core::scene::Geometry::default();
+    scene.render.width = w;
+    scene.render.height = h;
+    scene.render.max_samples = samples;
+    scene.to_rsb()
+}
+
+#[test]
+fn viewport_views_in_order_shares_and_the_render_state() {
+    let t = TestServer::start("render-options", 4);
+    let rsb = empty_scene(100_000, 64, 48);
+    let view = "/api/render?kind=viewport&mesh=e&client=w&full=1";
+    let newer = job_id(&t, &format!("{view}&seq=5&share=1"), &rsb);
+    // A view that arrives after a newer one of the same window: 409 stale, and the newer one goes on.
+    let late = t.api("POST", &format!("{view}&seq=4&share=1"), &rsb);
+    assert_eq!(late.status, 409);
+    assert!(late.text().contains("\"stale\""), "{}", late.text());
+    assert_eq!(
+        t.api("GET", &format!("/api/render/{newer}?data=0"), b"")
+            .status,
+        200
+    );
+    // Bad numbers are refused.
+    for q in ["&seq=x", "&share=-1"] {
+        assert_eq!(
+            t.api("POST", &format!("{view}{q}"), &rsb).status,
+            400,
+            "{q}"
+        );
+    }
+    // The diagnostics: the gate, the jobs (with their share) and the windows.
+    let state = t.json("GET", "/api/render/state", b"");
+    let engine = state.get("engine").unwrap();
+    assert_eq!(engine.get("threads").unwrap().as_f64(), Some(4.0));
+    let jobs = engine.get("jobs").unwrap().as_array().unwrap();
+    let job = jobs
+        .iter()
+        .find(|j| j.get("id").unwrap().as_f64() == Some(f64::from(newer)))
+        .expect("the viewport job");
+    assert_eq!(job.get("kind").unwrap().as_str(), Some("viewport"));
+    assert_eq!(job.get("share").unwrap().as_f64(), Some(1.0));
+    let windows = engine.get("viewports").unwrap().as_array().unwrap();
+    assert_eq!(windows[0].get("lastSeq").unwrap().as_f64(), Some(5.0));
+    assert!(state.get("connections").unwrap().as_f64().unwrap() >= 1.0);
+    // With log=1 it also goes to the log (the page's watchdog asks for this).
+    assert_eq!(
+        t.api(
+            "GET",
+            "/api/render/state?log=1&reason=no%20pass%20for%2030%20s",
+            b""
+        )
+        .status,
+        200
+    );
+    assert_eq!(
+        t.api("DELETE", &format!("/api/render/{newer}"), b"").status,
+        204
+    );
+}
+
+#[test]
+fn a_long_polled_frame_nobody_reads_frees_its_connection() {
+    let t = TestServer::start("unread-frame", 2);
+    t.server
+        .app
+        .frame_write_timeout_ms
+        .store(300, std::sync::atomic::Ordering::Relaxed);
+    // 2400 x 2400: 92 MB of sums, more than the sockets hold.
+    let id = job_id(
+        &t,
+        "/api/render?kind=viewport&mesh=e&client=w&full=1",
+        &empty_scene(100_000, 2400, 2400),
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(120);
+    loop {
+        let r = t.api("GET", &format!("/api/render/{id}?after=0&data=0"), b"");
+        if u32::from_le_bytes(r.body[8..12].try_into().unwrap()) >= 1 {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "no first pass");
+    }
+    // A page that asked for the frame and then went on to a newer view without reading it.
+    let mut s = TcpStream::connect(("127.0.0.1", t.port())).unwrap();
+    write!(
+        s,
+        "GET /api/render/{id}?after=0 HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nX-Repackshot-Token: {TOKEN}\r\n\r\n",
+        t.port()
+    )
+    .unwrap();
+    let mut seen = Vec::new();
+    for _ in 0..10 {
+        seen.push(t.server.app.connections());
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(seen.iter().any(|&n| n >= 1), "{seen:?}");
+    // The server gives the write up soon and closes that connection; it does not keep the thread
+    // (and the browser its connection) for minutes.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while t.server.app.connections() > 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the unread frame still holds its connection"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        t.api("DELETE", &format!("/api/render/{id}"), b"").status,
+        204
+    );
+    drop(s);
+}

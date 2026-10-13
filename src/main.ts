@@ -145,6 +145,9 @@ const ui = createUiStore(
 );
 ui.subscribe((u, prev) => u.settings !== prev.settings && saveSettings());
 window.addEventListener('pagehide', () => {
+  // The launcher stops this window's render jobs at once (the requests outlive the page); were the page to come
+  // back from the browser's cache, the viewport posts its view again.
+  if (tracer instanceof NativeEngine) tracer.release();
   if (saveTimer) {
     window.clearTimeout(saveTimer);
     saveTimer = 0;
@@ -225,6 +228,7 @@ const cores = typeof navigator.hardwareConcurrency === 'number' && navigator.har
 const useTracer = (t: PathTracerEngine | NativeEngine, cfg: EngineConfig, info: EngineInfo) => {
   t.setGestureResolution(cfg.gestureResolution);
   t.setViewportLimit(cfg.viewportLimit);
+  t.setWhileRender(cfg.whileRender);
   t.mount(backdrop);
   if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
   t.sync(store.get(), null);
@@ -313,6 +317,7 @@ function configureEngine(cfg: EngineConfig): void {
   }
   tracer?.setGestureResolution(cfg.gestureResolution);
   tracer?.setViewportLimit(cfg.viewportLimit);
+  tracer?.setWhileRender(cfg.whileRender);
   void nativeReady.then((native) => {
     const backend = native && cfg.backend !== 'WASM' ? 'native' : 'wasm';
     // The native engine's threads are the launcher's (--threads): only the backend restarts it.
@@ -779,23 +784,36 @@ if (preview) {
     else if (v) tracer.gestureView({ azimuth: v.azimuth, elevation: v.elevation, distance: v.distance, target: v.target, focusDistance: v.distance, ...(v.orthoWidth ? { orthoWidth: v.orthoWidth } : {}) });
   });
 
-  // One loop: animation playback, then a frame when something changed.
+  // One loop: animation playback, then a frame when something changed. The next frame is asked for first: an
+  // error in one frame is reported and the loop goes on (it used to stop the viewport for good).
   let last = performance.now();
+  let lastError = '';
+  const step = (name: string, fn: () => void) => {
+    try {
+      fn();
+    } catch (err) {
+      const text = `viewport frame (${name}): ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`;
+      if (text !== lastError) console.error(text);
+      lastError = text;
+    }
+  };
   const loop = (now: number) => {
+    requestAnimationFrame(loop);
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    const s = store.get();
-    if (s.animation.playing) {
-      const total = totalDuration(s);
-      if (total <= 0) store.dispatch({ type: 'anim/play', playing: false });
-      else {
-        const t = s.animation.playhead + dt;
-        store.dispatch({ type: 'anim/playhead', t: t > total ? t - total : t });
+    step('animation', () => {
+      const s = store.get();
+      if (s.animation.playing) {
+        const total = totalDuration(s);
+        if (total <= 0) store.dispatch({ type: 'anim/play', playing: false });
+        else {
+          const t = s.animation.playhead + dt;
+          store.dispatch({ type: 'anim/playhead', t: t > total ? t - total : t });
+        }
       }
-    }
-    preview!.frame();
-    if (full) tracer?.frame();
-    requestAnimationFrame(loop);
+    });
+    step('preview', () => preview!.frame());
+    if (full) step('path tracer', () => tracer?.frame());
   };
   requestAnimationFrame(loop);
 }

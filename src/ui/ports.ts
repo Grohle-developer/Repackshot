@@ -46,8 +46,20 @@ export interface EngineStatus {
   frames?: number;
   /** Path tracer: milliseconds the last reduced-resolution frame took. */
   frameMs?: number;
-  /** Path tracer: a Render has the pool, the viewport waits. */
+  /** Path tracer: a Render is running (the viewport shares the engine with it, or waits). */
   rendering?: boolean;
+  /** Path tracer, while a Render runs: the viewport goes on with `share` of the engine, or waits for it. */
+  renderShare?: 'SHARED' | 'PAUSED';
+  /** Threads (native) or workers (pool) the viewport renders on while it shares, of how many. */
+  share?: { n: number; of: number };
+  /** Path tracer: why the view is not simply converging (render/watchdog.ts `ViewportIssue`). */
+  issue?: { kind: 'WAITING' | 'FAILED' | 'RESTARTED'; detail: string; seconds?: number };
+  /** Path tracer: passes received since it started, and times its watchdog restarted the view (for checks). */
+  passes?: number;
+  watchdog?: number;
+  /** Path tracer: the scene of the image on the canvas and the scene of the project now (equal: up to date). */
+  shownKey?: string;
+  wantKey?: string;
   /** Path tracer: pixels the samples above are counted on (the render window's estimate). */
   pixels?: number;
   /** The desktop launcher's native engine renders (threads and SIMD path below). */
@@ -108,6 +120,8 @@ export interface EngineConfig {
   simd: 'AUTO' | 'OFF';
   gestureResolution: 'AUTO' | 'HALF' | 'QUARTER';
   viewportLimit: ViewportLimit;
+  /** While a render runs: the viewport keeps a quarter of the engine, or waits. */
+  whileRender: 'SHARE' | 'PAUSE';
 }
 
 export interface EnginePort {

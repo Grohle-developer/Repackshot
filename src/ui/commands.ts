@@ -1830,9 +1830,10 @@ export function clearFinished(ctx: Ctx): void {
   ctx.store.dispatch({ type: 'render/clearFinished', label: L('undo.clearFinished') });
 }
 
-/** Start queue / Pause. */
+/** Start queue / Pause / Resume: the drawer's one button. */
 export function toggleQueue(ctx: Ctx): void {
-  if (queueMode(ctx) === 'IDLE') startQueue(ctx);
+  const mode = queueMode(ctx);
+  if (mode === 'IDLE' || mode === 'PAUSED') startQueue(ctx);
   else pauseQueue(ctx);
 }
 

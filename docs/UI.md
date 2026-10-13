@@ -224,8 +224,17 @@ tapar la pieza:
   *Rápido* dice literalmente *Rápido · vista previa rasterizada*; en
   *Completo* dice *Completo · 128 muestras · 00:12* y, durante un gesto
   de cámara, *Completo · ¼ de resolución*. Una segunda línea dice *3
-  workers · SIMD* en *Completo* y *x ms por fotograma* en *Rápido*.
-  **Nunca se inventa un número.**
+  workers · SIMD* en *Completo* (*Nativo · 16 hilos · AVX2* en
+  escritorio) y *x ms por fotograma* en *Rápido*. Mientras corre un
+  *Render*, el visor sigue vivo y lo dice con lo que usa: *Completo ·
+  compartido con el render · 4 de 16 hilos* (o *1 de 3 workers*); si en
+  *Ajustes* se eligió pausarlo, *Completo · en pausa mientras se
+  renderiza*. Si el motor no contesta, rechaza la vista o el *watchdog*
+  tuvo que volver a arrancarla, una nota bajo la barra lo dice (*Esperando
+  al motor · 5 s*; *El motor rechazó la vista: <su motivo> · se vuelve a
+  intentar en 2 s*; *La vista se había parado y se ha vuelto a arrancar*),
+  con las palabras del motor en el *tooltip*: nunca «0 muestras» en
+  silencio. **Nunca se inventa un número.**
 - **Abajo a la derecha**: ejes de orientación (tres trazos finos X Y Z,
   monocromos) y el tamaño de la pieza en mm.
 - **Al pasar por una pieza**: su contorno se ilumina (silueta de 1 px en
@@ -471,9 +480,15 @@ versión de U1 con planos y tarjetas se sustituye en N1 por esto):
 **Cajón Cola**: lista de trabajos en orden (miniatura, nombre, cámara,
 tamaño, *Terminar por*, IA sí o no, estado y progreso), arrastrables para
 reordenar; por trabajo: *Editar* (reabre la ventana de render con sus
-ajustes), *Duplicar*, *Quitar*; arriba *Iniciar cola* / *Pausar* y
-*Vaciar terminados*. Los terminados quedan en la lista con su miniatura;
-clic abre el visor de resultados.
+ajustes), *Duplicar*, *Quitar*; arriba *Vaciar terminados* y un botón
+que sigue el estado de la cola: **Pausar** mientras corre (para el trabajo
+en curso y libera el motor al momento; el trabajo vuelve a *En espera*),
+**Reanudar** tras una pausa (sigue con lo pausado, y el trabajo pausado
+vuelve a empezar: un render no se reanuda a medias) e **Iniciar cola** si
+no, desactivado cuando no hay nada en espera. Un *Reanudar* pulsado
+mientras el trabajo pausado aún se está parando no se pierde. Los
+terminados quedan en la lista con su miniatura; clic abre el visor de
+resultados.
 
 ### 2.6 · Barra de estado
 
@@ -665,7 +680,7 @@ título del grupo en versalitas auxiliares:
 | | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
-| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
+| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
 | | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Mientras la tubería de X3 no exista, arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |

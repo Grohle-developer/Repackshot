@@ -464,6 +464,30 @@ mueve; al pararse, el trazador arranca desde la muestra 0 y la imagen
 converge en el propio visor. *Render* usa el mismo pool a la resolución
 de salida y con el presupuesto de la barra de render.
 
+**Mientras corre un *Render*, el visor sigue vivo** (P3a): se queda con la
+cuarta parte de los workers (al menos uno; en un pool de uno, espera) y el
+render usa los demás en cada pasada, o todos si el visor está en
+*Rápido*; con *Ajustes ▸ Motor de render ▸ Mientras se renderiza ▸ Pausar
+el visor*, el visor espera y el render los usa todos. Qué worker renderiza
+una baldosa no cambia un píxel, así que el render da los mismos bits con o
+sin visor. Cada worker tiene una sola escena: el pool recuerda la última
+que mandó a cada uno, y un worker que cambia de manos recibe la otra como
+actualización (las mallas se quedan). Como el render y el visor van a la
+vez, una cancelación es de una generación exacta, y un worker que pasa a
+otra generación para la que tenía. Al terminar el render, el visor vuelve
+a empezar en todos los workers.
+
+**Nunca parado en silencio** (P3a, `src/render/watchdog.ts`, el mismo en
+los dos motores): en cada fotograma se comprueba que la vista en curso
+recibe baldosas (en nativo, que el lanzador contesta y que llegan
+pasadas, con el plazo según lo que tardó la anterior) y que lo que llega
+se pinta; si no, la vista vuelve a arrancar, la consola lo dice y el
+medidor también (una nota bajo la barra). Los plazos se doblan cada vez
+que salta sin progreso entre medias, para no reiniciar una escena que solo
+es lenta, y una ventana oculta no cuenta. Un temporizador pinta si el
+bucle de animación de la página dejara de llamar, y ese bucle (`main.ts`)
+ya no se para por una excepción en un fotograma.
+
 ### 5.4 · En nativo
 
 `rt` renderiza un `.rsb` con todos los hilos de la máquina y escribe PNG
@@ -507,6 +531,31 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    (regla de determinismo), así que la interfaz no distingue más que en
    la velocidad. `src/render/native.ts` implementa `RenderEngine` contra
    esa API y se elige cuando `/api/info` responde.
+
+   Con lo aprendido en P3a: la página manda **una vista de visor cada
+   vez**, numerada (`seq`; una que llega tarde recibe 409 `stale` y no
+   sustituye a una más nueva), y **lee o cancela siempre el cuerpo de cada
+   respuesta**: una sin leer retiene una de las seis conexiones HTTP/1.1
+   que el navegador abre al lanzador, y con las seis retenidas todo
+   esperaba para siempre (el visor, el render y *Pausar* de la v0.1.0).
+   Con `share=<hilos>` el trabajo de visor **sigue vivo mientras corre un
+   final**, en esos hilos (la página pide la cuarta parte, al menos uno),
+   y el final se queda con el resto, o con todos cuando no queda un visor
+   vivo; sin `share` (*Pausar el visor*), el visor se para entre baldosas.
+   Bandera 32 de la trama: comparte, y la cabecera dice con cuántos hilos.
+   El lanzador corta a los 10 s la escritura de una trama que nadie lee;
+   un trabajo por el que nadie pregunta se para solo (visor a los 10 s,
+   final a los 20 s: su página se fue); con las 8 ventanas ocupadas, una
+   que lleva 3 s sin preguntar (una página recargada) cede su sitio, así
+   que las recargas solas nunca llegan a 503 `busy`; un render que entra
+   en pánico termina como fallido y suelta la puerta, y un trabajo que no
+   se para en 5 s se deja atrás sin su escena. `GET /api/render/state` da
+   el diagnóstico (la puerta, los trabajos, las ventanas, las conexiones)
+   y con `log=1` lo apunta en el registro: lo pide el *watchdog* de la
+   página cuando salta. Las peticiones de *Render* llevan la señal de
+   cancelación, así que *Pausar* y *Detener* responden al momento aunque
+   el lanzador no conteste. El contrato completo, en
+   `engine/crates/rt-app/README.md`.
 4. **Datos y modelos**: carpeta de datos en `%LOCALAPPDATA%\Repackshot`
    (Windows) o `$XDG_DATA_HOME/repackshot` (Linux); en las versiones
    **portables** (un fichero `portable.txt` junto al ejecutable), en
