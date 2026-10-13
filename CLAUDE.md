@@ -20,6 +20,8 @@ lenguaje de fotógrafo.
 5. `docs/UI.md` — la interfaz, control por control.
 6. `docs/INTERIORS.md` — interiores y mobiliario: decisión de integración,
    fuentes y fases K1–K8. Solo si tu fase es una de esas.
+7. `docs/AI-POST.md` — post-procesado IA opcional: modelo, protecciones,
+   interfaz y fases X1–X5. Solo si tu fase es una de esas.
 
 ## Antes de tocar nada
 

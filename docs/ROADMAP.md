@@ -1005,6 +1005,89 @@ encuadre ±0,5°; parar a mitad de curva apaga el balanceo en menos de un
 paso; el mismo `t` da la misma cámara siempre. Un vídeo de 4 s del
 paseo alrededor de la botella, con y sin pasos.
 
+## X1 · Confirmar el modelo de IA — **Fable**, con Sonnet preparando
+
+**Qué.** `AI-POST.md` §2: releer y citar al pie de la letra las licencias
+de Z-Image-Turbo, su codificador, su VAE y su ControlNet, y de FLUX.2
+klein 4B; fijar los `sha256` de los ficheros cuantizados (web q4f16 y
+GGUF de escritorio); Sonnet prepara una hoja comparativa (8 renders del
+motor —producto e interior—, 3 intervenciones, los dos modelos, con las
+métricas de la guarda de §3.2 y el tiempo) y **Fable elige** y fija las
+tolerancias iniciales (ΔE₀₀, bordes, nitidez). Prueba de ONNX Runtime
+nativo frente a stable-diffusion.cpp para escritorio.
+
+**Depende de.** X2, X3 (la guarda tiene que existir para medir).
+
+## X2 · Pases del motor para la IA — **Opus**
+
+**Qué.** En `rt-core`: pases de albedo (primer rebote no especular),
+normal, profundidad, id de pieza, id de material y mapa de desenfoque
+(círculo de confusión de la cámara de lente fina), con máscara de pases
+en `RNDR`, exportación en `rt-wasm`, acumulación en el pool de E4 y
+lectura en TypeScript. Coincide con la parte de pases de N2 y la
+adelanta.
+
+**Depende de.** E4.
+
+**Criterio.** Tests: el id de pieza de cada píxel coincide con el `pick`
+del centro del píxel; el albedo de un material difuso es su color; el
+mapa de desenfoque es cero en el plano de enfoque y crece con la
+distancia según la fórmula de lente fina (±1 %); determinismo y paridad
+nativo/wasm intactos.
+
+## X3 · Tubería de post-procesado y guarda — **Opus**
+
+**Qué.** `AI-POST.md` §2.3 y §3: `src/ai/` con ONNX Runtime Web (MIT) en
+workers por etapa, descarga con progreso y `sha256`, caché en OPFS con
+`persist()`, fragmentos de ≤ 1 GiB, mosaicos con solape, relleno y
+recorte a resolución exacta, *prompt* desde materiales y luces,
+condicionamiento con profundidad y bordes de id cuando el motor de
+ejecución lo soporte, y la **guarda determinista** completa
+(transferencia de sombreado, separación de frecuencias, regiones por id
+con ΔE₀₀, nitidez frente al mapa de desenfoque, comprobación y retroceso)
+como funciones puras probadas sin modelo. Integración en la cola: el
+trabajo guarda las dos imágenes y el informe de la guarda. Dependencia
+nueva anotada en `ARCHITECTURE.md` §1.
+
+**Depende de.** X2, U5.
+
+**Criterio.** La guarda, probada con un "modelo" sintético que hace
+cosas prohibidas (mueve una arista, cambia el color de un material,
+emborrona lo enfocado, cambia el tamaño): cada una se detecta y se
+corrige o se rechaza; con intervención 0 la salida es idéntica bit a bit
+a la entrada; la resolución de salida es siempre la del trabajo. En el
+navegador con WebGPU, una imagen de 1024² sale con el modelo real (se
+anota el tiempo); sin WebGPU, el interruptor queda deshabilitado con el
+motivo.
+
+## X4 · Interfaz del post-procesado — **Sonnet**
+
+**Qué.** `AI-POST.md` §4: interruptor, configurador de seis controles,
+fichas de protecciones, *Otra variación*, vista previa en modo Rápido con
+divisor, actualización al soltar con el tiempo medido, opción de vista
+previa con el motor completo, informe de la guarda en el visor de
+resultados con el divisor de U5, y las dos miniaturas en la cola.
+
+**Depende de.** X3.
+
+**Criterio.** Cada control a 0 no cambia su aspecto (test con el modelo
+sintético); la vista previa no se recalcula durante un arrastre; capturas
+de la sección y del visor con el divisor.
+
+## X5 · Ajustes y modelos — **Sonnet**
+
+**Qué.** `AI-POST.md` §5: ventana de Ajustes (idioma, tema, motor,
+modelos, almacenamiento), lista de modelos, importación de safetensors,
+GGUF y ONNX con el manifiesto `model.repackshot.json` validado, rechazo
+de *pickle*, descargas y borrado, marcas de licencia, detección del
+equipo.
+
+**Depende de.** X3.
+
+**Criterio.** Un manifiesto inválido se rechaza con el motivo; un modelo
+no comercial no puede ser el de por defecto; un `.ckpt` se rechaza; borrar
+el modelo activo vuelve al de origen.
+
 ## K1 · Tipo de escena, luz de interior y Doctor de interiores — **Sonnet**
 
 **Qué.** `scene.type ∈ {PRODUCT, INTERIOR, CATALOGUE}` en el *store* y en
@@ -1206,6 +1289,9 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 ## Decisiones pendientes de Fable (no adelantar)
 
 - **I2**: licencia y entrada de STEP, tras el informe.
+- **Post-procesado IA** (`AI-POST.md`): el modelo por defecto
+  (provisional: Z-Image-Turbo) y las tolerancias de la guarda, tras la
+  comparación de X1.
 - **Interiores** (`INTERIORS.md`): licencia exacta de las tablas de
   Hošek–Wilkie (si no se confirma, Preetham); si se activa el aislamiento
   de origen cruzado para compartir la escena entre workers; número de
