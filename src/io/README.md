@@ -64,3 +64,6 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
   oldest evicted first; in memory when the browser keeps nothing (a private window).
 - `files.ts`: where outputs go: the downloads, or a folder of the File System Access API (`showDirectoryPicker`;
   the handle kept in IndexedDB, the permission asked again from a click, never overwriting: `name (2).png`).
+- `updates.ts`: the update feed: one `GET` of GitHub's `releases/latest` for the repository in
+  `data/update-feed.ts`, 10 s limit (abort signal and a race), no cookies or referrer. It never throws: the answer
+  is a release (read by `core/updates.ts`) or the honest reason it could not be had.

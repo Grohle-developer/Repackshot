@@ -1713,6 +1713,25 @@ integra todo lo que la interfaz marca *próximamente***.
 | **U8** | Sonnet | Lo pequeño de la interfaz: copia automática y recuperación, letras de acceso en menús, cambiar atajos, *Buscar actualizaciones*, los chequeos del Doctor que faltan y sus *Arreglar* (**D1**) |
 | **X1b–X4** | Fable, Opus, Sonnet | Ya descritas: el post-procesado IA completo |
 
+**P3b hecha.** Diálogos del sistema (carpeta, abrir, guardar) desde el
+lanzador con PowerShell en Windows y `zenity`/`kdialog` en Linux, y API
+de archivos que solo toca lo que la persona eligió en un diálogo durante
+ese arranque (carpetas de salida solo para archivos nuevos, nunca se
+sobrescribe; extensiones permitidas; *Descargas* y el último proyecto
+como únicas excepciones del lanzador); renders, proyectos, importaciones,
+exportaciones y modelos pasan por ahí y la burbuja de descargas no
+aparece. Interruptores de endurecimiento y preferencias de perfil para
+Edge/Chromium en una sola constante que reutiliza P3c; la página bloquea
+el menú contextual, la selección del cromo, la traducción, el zoom, la
+recarga, la impresión, la búsqueda y la navegación del navegador
+(`src/ui/guards.ts`), sin romper ningún atajo propio; `Ctrl W`/`Ctrl Q`
+pasan por nuestra pregunta; los enlaces externos salen por un único
+`openExternal` (lanzador en escritorio) y un test impide `alert`,
+`confirm`, `prompt`, `print` y `window.open`; favicon, iconos y
+manifiesto propios. Sin probar en Windows real: que los diálogos salgan
+delante de la ventana y que el minimenú de Edge desaparezca del todo (lo
+garantiza P3c).
+
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
 **N2**; oleada 4 **X1b**, **X2**, **X3**, **X4**. Cada fase quita sus

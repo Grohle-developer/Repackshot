@@ -1,0 +1,27 @@
+/* The chrome is an application, not a document (P3b, ui/guards.ts): no text
+   selection or text cursor outside the fields where text is typed, no
+   dragging images or links out of the window. Zero-specificity selectors
+   (:where) so every component's own cursor still wins. */
+
+html {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='button'], [type='submit'], [type='reset'], [type='file']), textarea, [contenteditable]:not([contenteditable='false']), [data-selectable]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='button'], [type='submit'], [type='reset'], [type='file']), textarea, [contenteditable]:not([contenteditable='false'])) {
+  cursor: text;
+}
+
+:where(img, a, svg) {
+  -webkit-user-drag: none;
+}
+
+:where([draggable='true']) {
+  -webkit-user-drag: element;
+}

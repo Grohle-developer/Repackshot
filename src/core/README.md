@@ -11,3 +11,7 @@ which drives the Settings window and its search), `models.ts` (the AI model mana
 blob, imported manifests, states, what a delete removes, the fallback of the model in use, measured speed),
 `sha256.ts` (streaming SHA-256 whose state can be saved and restored, so a download resumed after a reload goes on
 hashing where it stopped).
+
+Updates: `updates.ts` (versions and their order with semver's pre-release rule, reading and checking the answer of
+the release feed, which package of a release is for this computer, why a check fails, and what the Updates section
+says; the request is `io/updates.ts`, the repository's name `data/update-feed.ts`).

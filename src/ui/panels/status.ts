@@ -13,6 +13,7 @@ import { h } from '../dom';
 import { dyn } from '../names';
 import { Scope, type Ctx } from '../reactive';
 import { formatClock, formatNumber, getLang, isaLabel, lbl, t } from '../strings';
+import { dismissUpdateNotice, downloadUpdate, openReleaseNotes } from '../updates';
 
 function sentence(r: DoctorResult): string {
   const d = r.detail;
@@ -63,6 +64,33 @@ function doctorPopover(ctx: Ctx, scope: Scope): HTMLElement {
       el.replaceChildren(
         h('div', { class: 'row', style: 'justify-content:space-between;padding:2px 4px 6px' }, h('strong', null, t('doctor.title')), h('button', { type: 'button', class: 'btn btn-primary', disabled: !fixable, onclick: () => cmd.doctorFixAll(ctx) }, t('doctor.fixAll'))),
         ...rows,
+      );
+    },
+  );
+  return el;
+}
+
+/**
+ * A newer version was found at startup: one quiet line, never a window (UI.md §4.3). Download opens the
+ * package for this computer (or the release page), Release notes the page, Later hides it until the next start.
+ */
+function updateNotice(ctx: Ctx, scope: Scope): HTMLElement {
+  const el = h('span', { class: 'update-notice', role: 'status', 'aria-live': 'polite' });
+  scope.watch(
+    (_s, u) => u.updates.notice,
+    (release) => {
+      el.hidden = !release;
+      el.dataset.version = release?.version ?? '';
+      if (!release) {
+        el.replaceChildren();
+        return;
+      }
+      el.replaceChildren(
+        h('span', { class: 'update-text' }, t('up.available', { version: release.version })),
+        h('button', { type: 'button', class: 'btn-link update-download', onclick: () => downloadUpdate(ctx, release) }, t('up.download')),
+        h('button', { type: 'button', class: 'btn-link update-notes', onclick: () => openReleaseNotes(ctx, release) }, t('up.notes')),
+        h('button', { type: 'button', class: 'btn-link update-later', onclick: () => dismissUpdateNotice(ctx) }, t('up.later')),
+        h('span', { class: 'sep' }),
       );
     },
   );
@@ -149,6 +177,6 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
     engine,
     h('span', { class: 'sep' }),
     samples,
-    h('div', { class: 'status-right' }, langBtn, h('span', { class: 'tabular' }, `v${VERSION}`)),
+    h('div', { class: 'status-right' }, updateNotice(ctx, scope), langBtn, h('span', { class: 'tabular' }, `v${VERSION}`)),
   );
 }

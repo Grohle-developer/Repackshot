@@ -6,7 +6,8 @@
 // the desktop launcher's window the native one (render/native.ts), else the
 // wasm pool.
 // Sets #app[data-ready="1"] once the interface has painted and the viewport
-// has drawn its first frame.
+// has drawn its first frame, and then starts the check for a newer version
+// (Settings ▸ Updates ▸ Check at startup) in the background.
 
 import './ui/theme.css';
 import './ui/layout.css';
@@ -14,6 +15,7 @@ import './ui/components.css';
 import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
+import './ui/guards.css';
 import { evaluate, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
 import { activeCamera, sameView } from './core/camera';
@@ -22,7 +24,8 @@ import { createInitialState, createStore } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
 import { detectWebHardware, fromNativeHardware } from './io/hardware';
 import { nativeModelStore, workerModelStore } from './io/model-store';
-import { createFiles } from './io/files';
+import { createFiles, type FilesService } from './io/files';
+import { createDesktopDialogs, createDesktopFiles, createDesktopProjectFiles, hashNativeFile, NativeFile, whenReady } from './io/desktop-files';
 import { buildExample } from './core/example';
 import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { LIBRARY_STORAGE_KEY, exportLibrary, importLibrary, loadLibrary, saveLibrary } from './io/library';
@@ -30,6 +33,7 @@ import { connectNative, type PendingModels } from './io/native';
 import { readProjectFile, serializeProject } from './io/project';
 import { createProjectFiles } from './io/project-file';
 import { openResultsStore } from './io/results';
+import { fetchLatestRelease } from './io/updates';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
@@ -37,8 +41,10 @@ import { PreviewEngine } from './render/preview';
 import { clearThumbCache, thumbCacheBytes, ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize } from './render/tiles';
 import { mountApp } from './ui/app';
-import { exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject } from './ui/commands';
-import { downloadBlob } from './ui/dom';
+import { exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
+import { installGuards } from './ui/guards';
+import { downloadBlob, openInNewTab } from './ui/dom';
+import { startupUpdateCheck } from './ui/updates';
 import type { AppServices, EngineConfig, ViewportPort } from './ui/ports';
 import { loadSettingsDoc, readPref, saveSettingsDoc, writePref } from './ui/prefs';
 import { isaLabel, L, t } from './ui/strings';
@@ -46,12 +52,17 @@ import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
 
 const appEl = document.getElementById('app')!;
+// The page behaves like an application: no browser menus, selection, zoom, reload, print... (ui/guards.ts).
+const guards = installGuards(window, import.meta.env.PROD);
 // In the desktop launcher's window: its token leaves the address bar now, and the heartbeat keeps
 // the launcher running while this page is open.
 const nativeReady = connectNative().then((client) => {
   client?.startHeartbeat();
   return client;
 });
+// The launcher's dialogs and file API (P3b): files, projects, imports and exports go through it, never through the
+// browser's pickers, downloads or permission prompts.
+const desktopIo = nativeReady.then((n) => (n && n.hasFiles ? n : null));
 const params = readUrlParams(window.location.search);
 
 // The application settings (U6, core/settings.ts): one document in localStorage, migrated from the loose
@@ -312,7 +323,8 @@ const modelsService = (() => {
   const store = nativeReady.then(async (native) => {
     if (!native) return hasOpfs ? local : null;
     pendingAtStart = await native.pendingModels().catch(() => null);
-    return nativeModelStore(native, local.hash);
+    // A file chosen in the launcher's dialog stays there: the launcher hashes it.
+    return nativeModelStore(native, (blob, onProgress) => (blob instanceof NativeFile ? hashNativeFile(native, blob, onProgress) : local.hash(blob, onProgress)));
   });
   const manager = new DownloadManager({
     store,
@@ -377,15 +389,28 @@ const viewport: ViewportPort | null = preview
     }
   : null;
 
-// The results history (IndexedDB, or memory when the browser keeps nothing) and where outputs go.
+// The results history (IndexedDB, or memory when the browser keeps nothing) and where outputs go: the browser's
+// downloads or a folder of its file system access, and on the desktop the launcher's folders.
 const resultsReady = openResultsStore(historyLimits(startSettings));
-const files = createFiles(
-  {
-    putHandle: async (id, handle) => (await resultsReady).putHandle(id, handle),
-    getHandle: async (id) => (await resultsReady).getHandle(id),
-  },
-  downloadBlob,
-  window as unknown as { showDirectoryPicker?: unknown; isSecureContext?: boolean },
+/** A dialog of the launcher did not open: why, in a toast. */
+const dialogError = (code: string) => ui.toast(t(code === 'no-dialog' ? 'dialog.err.noDialog' : code === 'dialog-open' ? 'dialog.err.busy' : 'dialog.err.failed'));
+const localMemory = (() => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+})();
+const files = whenReady<FilesService>(
+  createFiles(
+    {
+      putHandle: async (id, handle) => (await resultsReady).putHandle(id, handle),
+      getHandle: async (id) => (await resultsReady).getHandle(id),
+    },
+    downloadBlob,
+    window as unknown as { showDirectoryPicker?: unknown; isSecureContext?: boolean },
+  ),
+  desktopIo.then((n) => n && createDesktopFiles(n, { folderTitle: () => t('dialog.chooseFolder'), confirmTitle: () => t('dialog.confirmFolder'), folderItem: () => t('dialog.folderItem'), onDialogError: dialogError, memory: localMemory })),
 );
 
 const LAST_PROJECT_HANDLE = 'project:last';
@@ -464,11 +489,14 @@ const services: AppServices = {
     return importFile(file, options);
   },
   project: { serialize: serializeProject, open: readProjectFile },
-  projectFiles: createProjectFiles(window as never, downloadBlob, {
-    description: () => t('project.fileType'),
-    // The last project file's handle, next to the output folders' handles (General ▸ On start ▸ Last project).
-    remember: { put: async (h) => (await resultsReady).putHandle(LAST_PROJECT_HANDLE, h), get: async () => (await resultsReady).getHandle(LAST_PROJECT_HANDLE) },
-  }),
+  projectFiles: whenReady(
+    createProjectFiles(window as never, downloadBlob, {
+      description: () => t('project.fileType'),
+      // The last project file's handle, next to the output folders' handles (General ▸ On start ▸ Last project).
+      remember: { put: async (h) => (await resultsReady).putHandle(LAST_PROJECT_HANDLE, h), get: async () => (await resultsReady).getHandle(LAST_PROJECT_HANDLE) },
+    }),
+    desktopIo.then((n) => n && createDesktopProjectFiles(n, { description: () => t('project.fileType'), openTitle: () => t('dialog.openProject'), saveTitle: () => t('dialog.saveProject'), allFiles: () => t('dialog.allFiles'), onDialogError: dialogError })),
+  ),
   library: {
     export: (lib) => new Blob([exportLibrary(lib)], { type: 'application/json' }),
     import: importLibrary,
@@ -543,7 +571,20 @@ const services: AppServices = {
       if (!native) throw new Error('not in the desktop application');
       await native.openFolder(target);
     },
+    // The app window of the launcher's browser closes from the page (it has one history entry).
+    closeWindow: () => window.close(),
   },
+  updates: { latest: () => fetchLatestRelease() },
+  // Links out of the application (https only): the system's browser on the desktop, a new tab in the browser.
+  async openExternal(url) {
+    if (!/^https:\/\/[^\s"'<>\\^`{|}]+$/.test(url)) return;
+    const native = await nativeReady;
+    if (native?.hasFiles) await native.openUrl(url);
+    else if (!native) openInNewTab(url);
+    else throw new Error('this launcher cannot open links');
+  },
+  // The system's dialogs for imports and exports: set once the launcher answered (null in the browser).
+  dialogs: null,
   async licenceText(path) {
     // Only the licence texts shipped with the build (tools/licences.mjs, tools/vendor.mjs).
     if (!/^(licences\/[A-Za-z0-9._-]+|vendor\/occt-import-js\/license\.[a-z-]+\.txt)$/.test(path)) return null;
@@ -565,8 +606,14 @@ void loadResults(app.ctx);
 // model chooser. In the browser this resolves at once to null: OPFS models, no Desktop section.
 void nativeReady.then(async (native) => {
   if (!native) return;
+  // The desktop window: Ctrl/⌘ W asks our own question, links open in the system's browser.
+  guards.setDesktop(true, {
+    onClose: () => requestCloseWindow(app.ctx),
+    openExternal: (url) => void services.openExternal(url).catch((err: unknown) => console.warn(`open ${url}: ${err instanceof Error ? err.message : String(err)}`)),
+  });
+  if (native.hasFiles) services.dialogs = createDesktopDialogs(native, dialogError);
   const i = native.info;
-  ui.set({ desktop: { portable: i.portable, dataDir: i.dataDir, modelsDir: i.modelsDir, logsDir: i.logsDir, browser: i.browser, version: i.version } });
+  ui.set({ desktop: { portable: i.portable, dataDir: i.dataDir, modelsDir: i.modelsDir, logsDir: i.logsDir, browser: i.browser, version: i.version, os: i.os, arch: i.arch } });
   // The manager has read what the installer chose (if anything) once it has started.
   await modelsService.started;
   maybeShowModelChooser(app.ctx, { portable: i.portable, pending: !!pendingAtStart && pendingAtStart.keys.length > 0 });
@@ -675,7 +722,11 @@ void app.painted.then(() => {
     const spheresDone = thumbs.pendingCount() === 0;
     const elapsed = performance.now() - started;
     if (((firstFrame || !preview) && spheresDone && elapsed > 300) || elapsed > 9000) {
-      requestAnimationFrame(() => (appEl.dataset.ready = '1'));
+      requestAnimationFrame(() => {
+        appEl.dataset.ready = '1';
+        // Updates ▸ Check at startup: once, in the background, now that the interface is there. Never waited for.
+        void startupUpdateCheck(app.ctx);
+      });
       return;
     }
     setTimeout(check, 100);

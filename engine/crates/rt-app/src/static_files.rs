@@ -22,6 +22,7 @@ pub fn mime(name: &str) -> &'static str {
         "js" | "mjs" => "text/javascript; charset=utf-8",
         "css" => "text/css; charset=utf-8",
         "json" | "map" => "application/json; charset=utf-8",
+        "webmanifest" => "application/manifest+json; charset=utf-8",
         "wasm" => "application/wasm",
         "svg" => "image/svg+xml",
         "png" => "image/png",
@@ -247,6 +248,11 @@ mod tests {
         assert_eq!(mime("index.HTML"), "text/html; charset=utf-8");
         assert_eq!(mime("x.mjs"), "text/javascript; charset=utf-8");
         assert_eq!(mime("noext"), "application/octet-stream");
+        assert_eq!(
+            mime("manifest.webmanifest"),
+            "application/manifest+json; charset=utf-8"
+        );
+        assert_eq!(mime("favicon.ico"), "image/x-icon");
         let dir = site();
         let root = dir.join("app");
         let (status, headers, bytes) = body(serve(&root, &request("/", &[])));

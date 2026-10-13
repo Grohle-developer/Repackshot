@@ -351,6 +351,28 @@ summary.sw-block-title {
   font-size: calc(16px * var(--text-scale));
   font-weight: 600;
 }
+/* Updates -------------------------------------------------------------------------- */
+.sw-update-out {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 560px;
+}
+.sw-update-line {
+  color: var(--ink-1);
+}
+.sw-update-line.is-fault,
+.sw-update-line.is-result {
+  color: var(--ink-0);
+}
+.sw-update-line.is-result {
+  font-weight: 600;
+}
+.sw-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .sw-info {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

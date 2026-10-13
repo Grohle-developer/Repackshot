@@ -65,9 +65,25 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
   const fitBtn = h('button', { type: 'button', class: 'btn btn-sm', 'data-kbd': '0', onclick: () => split?.fit() }, t('rv.fit'));
   const actualBtn = h('button', { type: 'button', class: 'btn btn-sm', 'data-kbd': '1', onclick: () => split?.actual() }, '100 %');
   const saveBtn = h('button', { type: 'button', class: 'btn', onclick: () => meta && void cmd.saveResultAgain(ctx, meta.id) }, icon('download', 14), t('rv.saveAgain'));
+  // Where the image went, in the file manager (the desktop: with the file selected; Downloads too).
+  const files = ctx.services.files;
+  const folderId = meta?.savedTo.kind === 'FOLDER' ? meta.savedTo.id : meta && files.canOpenDownloads ? 'downloads' : null;
   const folderBtn =
-    ctx.services.files.canOpenFolder && meta?.savedTo.kind === 'FOLDER'
-      ? h('button', { type: 'button', class: 'btn', onclick: () => meta.savedTo.kind === 'FOLDER' && void ctx.services.files.openFolder(meta.savedTo.id) }, icon('folder', 14), t('rv.openFolder'))
+    files.canOpenFolder && meta && folderId
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn',
+            onclick: () =>
+              void files.openFolder(folderId, meta.name).catch((err: unknown) => {
+                console.warn(`open folder: ${err instanceof Error ? err.message : String(err)}`);
+                ctx.ui.toast(t('set.st.openFolderFailed'));
+              }),
+          },
+          icon('folder', 14),
+          t('rv.openFolder'),
+        )
       : null;
   const deleteBtn = h('button', { type: 'button', class: 'btn', 'data-tip': t('rv.deleteTip'), onclick: () => meta && void cmd.deleteResult(ctx, meta.id) }, icon('trash', 14), t('common.delete'));
   const closeBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('common.close'), 'data-tip': t('common.close'), 'data-kbd': t('key.escape'), onclick: () => cmd.closeResult(ctx) }, icon('close'));

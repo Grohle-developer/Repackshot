@@ -13,6 +13,8 @@
 pub mod browser;
 pub mod cli;
 pub mod client;
+pub mod dialogs;
+pub mod files;
 pub mod hardware;
 pub mod http;
 pub mod instance;

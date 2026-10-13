@@ -15,6 +15,7 @@ import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
 import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
+import type { ReleaseInfo, UpdateFault } from '../core/updates';
 
 export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
 /** What the viewport shows (UI.md §2.1): the rasterised preview or the path tracer. */
@@ -153,6 +154,23 @@ export interface DesktopInfo {
   logsDir: string;
   browser: string | null;
   version: string;
+  /** The launcher's `os` (`windows`, `linux`, `macos`) and `arch` (`x86_64`): which package updates this one. */
+  os?: string;
+  arch?: string;
+}
+
+/** The update check in this session (Settings ▸ Updates, the notice in the status bar); not remembered. */
+export interface UpdatesUi {
+  /** A check is running. */
+  checking: boolean;
+  /** Why the last check of this session failed; null when it worked or none has run. */
+  fault: UpdateFault | null;
+  /** The check at startup has had its turn (it runs once, whatever the setting said). */
+  startupDone: boolean;
+  /** The release the status bar announces; null: no notice (none found, or dismissed with Later). */
+  notice: ReleaseInfo | null;
+  /** Versions announced in this session, dismissed or not: a version is announced once. */
+  announced: string[];
 }
 
 /** What the queue runner is doing: nothing, the whole queue, or only the jobs Render started. */
@@ -236,6 +254,10 @@ export interface UiState {
   settingsSection: SectionId;
   /** The desktop portable's model chooser was shown (once). */
   chooserShown: boolean;
+  /** When the update feed last answered (remembered), and the latest release it named. */
+  updateCheckedAt: number | null;
+  updateLatest: ReleaseInfo | null;
+  updates: UpdatesUi;
   /** The model manager's view (null: no manager in this build or not started). */
   models: ModelsSnapshot | null;
   /** What was detected of this computer for the AI models. */
@@ -280,6 +302,8 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'viewportMode',
   'settingsSection',
   'chooserShown',
+  'updateCheckedAt',
+  'updateLatest',
 ];
 
 export const PANEL_MIN = 220;
@@ -335,6 +359,9 @@ export function defaultUiState(): UiState {
     settingsPos: null,
     settingsSection: 'general',
     chooserShown: false,
+    updateCheckedAt: null,
+    updateLatest: null,
+    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [] },
     models: null,
     hardware: { state: 'IDLE', info: null },
     perf: { state: 'IDLE' },

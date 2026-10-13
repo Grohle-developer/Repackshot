@@ -14,6 +14,7 @@ import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
+import type { UpdateOutcome } from '../core/updates';
 import type { PerfResult, Tool } from './ui-state';
 
 export interface PickResult {
@@ -120,6 +121,13 @@ export interface StoragePort {
 /** The desktop launcher's folders (P2), when the page runs in its window. */
 export interface DesktopPort {
   openFolder(target: 'data' | 'models' | 'logs' | 'results'): Promise<void>;
+  /** Closes the app window (Ctrl/⌘ W and Ctrl Q after the unsaved-changes question). */
+  closeWindow?(): void;
+}
+
+/** The release feed (src/io/updates.ts): the latest published release, or why it could not be had. Never throws. */
+export interface UpdatesPort {
+  latest(): Promise<UpdateOutcome>;
 }
 
 export interface RenderRequest {
@@ -194,13 +202,39 @@ export interface FilesPort {
   readonly canChooseFolder: boolean;
   /** The folder can be shown in the system's file manager (the desktop build); never in a browser. */
   readonly canOpenFolder: boolean;
+  /** The desktop launcher writes the files: a folder is a path, Downloads the system's folder. */
+  readonly desktop?: boolean;
+  /** Results saved to Downloads can be shown in the file manager too (the desktop). */
+  readonly canOpenDownloads?: boolean;
   /** Asks for a folder (a user gesture); null when the person cancels. */
   chooseFolder(): Promise<{ id: string; name: string } | null>;
   /** Write permission for a remembered folder, asked again when needed (call it from a user gesture). */
   ensureAccess(id: string): Promise<boolean>;
   /** Saves under the destination; a download when the folder is gone or not writable. */
   save(dest: Destination, name: string, blob: Blob): Promise<'FOLDER' | 'DOWNLOAD'>;
-  openFolder(id: string): Promise<void>;
+  /** Shows the folder (`downloads`: the Downloads folder) in the file manager, with the file `name` saved there selected when known. */
+  openFolder(id: string, name?: string): Promise<void>;
+}
+
+/** A file type of the system's dialogs: `extensions` without the dot; `*` is every file. */
+export interface DialogFilter {
+  name: string;
+  extensions: string[];
+}
+
+/**
+ * The system's own dialogs for imports and exports (the desktop launcher, io/desktop-files.ts); null in the browser,
+ * which uses `<input type="file">` and downloads.
+ */
+export interface DialogsPort {
+  /** Files to read; null when cancelled. `lazy`: read in ranges through the launcher (AI model files of many GB). */
+  openFiles(req: { title: string; filters: DialogFilter[]; multiple?: boolean; lazy?: boolean }): Promise<File[] | null>;
+  /** Every file under a folder (an AI model's folder), each with its `webkitRelativePath`; null when cancelled. */
+  openFolderFiles(req: { title: string; folderItem: string }): Promise<File[] | null>;
+  /** Writes `blob` where the person says in the save dialog. */
+  saveFile(blob: Blob, suggestedName: string, req: { title: string; filters: DialogFilter[] }): Promise<{ kind: 'SAVED'; name: string; path: string } | { kind: 'CANCELLED' } | { kind: 'FAILED'; reason: string }>;
+  /** Opens an https:// address in the system's browser, not in the app window. */
+  openExternal(url: string): Promise<void>;
 }
 
 export type { ImportMessage };
@@ -315,6 +349,15 @@ export interface AppServices {
   storage: StoragePort;
   /** Null outside the desktop application. */
   desktop: DesktopPort | null;
+  /** Where new versions are published (Settings ▸ Updates). */
+  updates: UpdatesPort;
+  /**
+   * Opens an https:// address outside the application, never in its window: the system's browser on the desktop (the
+   * launcher's /api/open-url), a new tab in the browser version. Anything else than https:// is ignored.
+   */
+  openExternal(url: string): Promise<void>;
+  /** The system's dialogs for imports and exports; absent or null in the browser. */
+  dialogs?: DialogsPort | null;
   /** A licence text shipped with the build (`licences/<file>`, copied by tools/licences.mjs); null when missing. */
   licenceText(file: string): Promise<string | null>;
 }

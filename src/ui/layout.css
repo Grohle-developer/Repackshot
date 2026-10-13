@@ -373,4 +373,27 @@ textarea {
   display: flex;
   gap: 12px;
   align-items: center;
+  min-width: 0;
+}
+/* A newer version was found at startup (UI.md §4.3: a quiet line, never a window). */
+.update-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--ink-0);
+}
+.update-notice[hidden] {
+  display: none;
+}
+.update-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.update-notice .btn-link {
+  flex: none;
+  font: inherit;
+  color: var(--ink-0);
 }
