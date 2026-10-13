@@ -293,7 +293,35 @@ little-endian**, `RSB1`: cabecera y secciones `[u32 tag][u32 len][payload]`
 (`CAMR`, `MESH`, `MATL`, `LGHT`, `ENVR`, `RNDR`, `INST`…), con secciones
 desconocidas ignoradas para compatibilidad hacia delante. `INST`
 (instancia: índice de malla, transformación 3 × 4 por filas, material,
-banderas) es opcional: sin ella, cada malla es una instancia identidad. `rt-core`
+banderas) es opcional: sin ella, cada malla es una instancia identidad.
+
+Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
+`rt-core`):
+
+- **`MATL`** (60 B; los de 56 B se leen con `flags = 0`): `kind` 0
+  principal (Lambert + GGX con barniz; `transmission` se ignora hasta E5),
+  1 vidrio (E5; hasta entonces se pinta como 0), 2 emisivo (radiancia
+  `emission × emission_power`); desconocido = 0. `flags` bit 0: el emisor
+  se muestrea también como luz.
+- **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
+  (L4; se leen y se ignoran); ≥ 5 es error. Rectángulo y disco:
+  unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
+  con la mitad de intensidad a `spread/2` (180 = sin caída). Sol: `power`
+  = irradiancia en W/m², disco de `angle_deg`. `flags` bit 0 *glossy*
+  (ilumina todos los lóbulos y se ve en reflejos; sin él solo difuso por
+  NEE), bit 1 visible a cámara.
+- **`ENVR`** `kind`: 0 cúpula (lineal en z: suelo −1, horizonte 0, cénit
+  +1, × `strength`), 1 plano, 2 cielo y 3 HDRI (E5; hasta entonces
+  cúpula); `background_mode`: 0 entorno, 1 color, 2 transparente (alfa
+  0), 3 imagen de fondo (M2; hasta entonces 1).
+- **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
+  lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
+- **`RNDR`** (36 B): además `max_depth` (0 = 8, tope 1024) y
+  `clamp_indirect` (0 = desactivado). `tonemap`: 0 lineal, 1 ACES, 2
+  fílmica, 3 AgX, 4 estándar; desconocido = ACES. Exposición 2^ev antes
+  de la curva.
+- El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
+  escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
 TypeScript, y un test de paridad escribe la misma escena por los dos
 lados y compara los bytes. El `.repack.json` sigue siendo el formato de

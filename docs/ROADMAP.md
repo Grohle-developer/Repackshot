@@ -131,6 +131,10 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **U3** · Herramienta de mover con *gizmo*, pivotes, apoyar y centrar,
   duplicar y enlazado, grupos, patrones, operaciones de material y de
   geometría, menú contextual completo y atajos; 442 tests — **Opus**.
+- **E3** · Integrador: Sobol con Owen, BSDF físico, luces de área y sol
+  con NEE y MIS, cúpula con muestreo por importancia, suelo y
+  atrapasombras, curvas de tono, hoja de contactos, paridad wasm; 178
+  tests con furnace, factor de forma y conservación de energía — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -481,7 +485,7 @@ Node 22 falla con el binario de depuración entero) y un humo de
 `rt-bench`. El `.wasm` pasa de 50 a 114 KB; `engine:build` sigue siendo
 escalar y la variante `simd128` se decide en E4.
 
-## E3 · Integrador v1 — **Opus**
+## E3 · Integrador v1 — **Opus** — hecha
 
 **Qué.** El trazador de caminos de verdad: muestreador Sobol con
 *scrambling* de Owen (números de dirección de Joe y Kuo citados) sembrado
@@ -510,6 +514,42 @@ llama al binario; sale `out/contact-sheet.html` y se adjunta al PR).
 
 **Qué no tocar.** Las recetas (`src/data/`): si un montaje sale mal, se
 anota para L3, no se cambia.
+
+**Hecho.** Muestreador Sobol con *scrambling* de Owen (tabla de Joe y Kuo
+de 63 dimensiones verificada contra el fichero original, licencia BSD en
+el módulo; pares 2-D con t ≤ 2; semilla por píxel y dimensión), cámara de
+lente fina y ortográfica, BSDF principal (Lambert × (1−F)² + GGX con
+Smith correlado y VNDF, Schlick con F0 de `ior` o color según `metallic`,
+barniz como segundo lóbulo), emisores, luces rectángulo y disco con
+caída `spread`, sol como disco, NEE con MIS por heurística de potencia y
+sin doble conteo, cúpula de estudio con CDF por elevación, fondo entorno,
+color o transparente con alfa, suelo visible o atrapasombras (sección
+`FLOR`), ruleta rusa, `clamp_indirect`, `max_depth`, `max_seconds` en el
+CLI por pasadas, curvas lineal, ACES, fílmica, AgX y estándar, `--sheet`
+con seis recetas internas y estadísticas, `rt_render_tile_rgba` y
+paridad del `.wasm` real en Node (`tools/wasm-parity.mjs`, en CI). 178
+tests: furnace 1 ± 1 % a 1024 muestras, metal rugoso sin ganancia de
+energía, reciprocidad, factor de forma ±2 %, gradiente de la cúpula en
+un espejo, mismo emisor por NEE y por BSDF ±2 %, alfa, atrapasombras,
+curvas monótonas, hilos y pasadas sin efecto en la película. Rendimiento
+con sombreado real: 7,9 M rayos/s en 4 hilos (2,7 rayos por camino).
+
+Lo que no encajaba: matemáticas deterministas propias (`fmath`: sin, cos,
+exp2, log2, pow, atan2, acos solo con las cuatro operaciones y raíz),
+porque las de `std` llaman a la biblioteca del sistema y romperían la
+igualdad de píxeles entre plataformas; `MATL.flags` nuevo (bit 0: el
+emisor también se muestrea como luz); `glossy` significa "ilumina todos
+los lóbulos y se ve en reflejos" (sin él, solo difuso por NEE); F90 =
+min(1, 50·F0) para que `ior` 1 sea Lambert puro; los metales rugosos
+pierden energía (GGX de una dispersión; se propone compensación
+Kulla–Conty para después); luces por área uniforme, una por vértice
+elegida por flujo (el árbol de luces es de K4); fílmica como rango log2
+más el polinomio de AgX; la matriz y el polinomio de AgX se escribieron
+de memoria y **Fable debe juzgar el aspecto**; los rayos de sombra y de
+rebote de mallas suaves parten de un punto elevado a la superficie que
+describen las normales (Hanika 2021), lo que quita el terminador dentado
+y deja un borde oscuro en siluetas de mallas gruesas; la luz del ejemplo
+pasa de 1000 a 5 W; `rt_version` 0.2.0 y `.wasm` de 180 KB.
 
 ## E4 · El motor en el navegador — **Opus**
 
