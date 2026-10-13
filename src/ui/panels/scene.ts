@@ -36,6 +36,7 @@ export function levelSelector(ctx: Ctx, scope: Scope): HTMLElement {
     { full: true, ariaLabel: t('level.title') },
   );
   scope.watch((s) => s.selection.level, (l) => seg.set(l));
+  seg.el.setAttribute('data-guide', 'levels');
   return seg.el;
 }
 
@@ -220,11 +221,11 @@ function partsTab(ctx: Ctx, scope: Scope): HTMLElement {
   filter.addEventListener('input', () => ctx.ui.set({ treeFilter: filter.value }));
   filter.addEventListener('keydown', (e) => e.stopPropagation());
   // + : Add ▸ Primitive (phase U9).
-  const add = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('menu.add'), 'aria-haspopup': 'menu', 'data-tip': t('add.aux'), 'data-add': 'primitive' }, icon('plus', 16));
+  const add = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('menu.add'), 'aria-haspopup': 'menu', 'data-tip': t('add.aux'), 'data-add': 'primitive', 'data-guide': 'add-primitive' }, icon('plus', 16));
   add.addEventListener('click', () => openMenu(add, primitiveMenuItems(ctx), 'end'));
   return h(
     'div',
-    { class: 'tab-body' },
+    { class: 'tab-body', 'data-guide': 'parts-tab' },
     h('div', { class: 'stack', style: 'padding:8px var(--pad);border-bottom:1px solid var(--line)' }, h('div', { class: 'row', style: 'gap:6px;align-items:center' }, h('div', { style: 'flex:1;min-width:0;display:flex' }, filter), add), levelSelector(ctx, scope)),
     h('div', { class: 'side-scroll' }, treeRows(ctx, scope)),
   );
@@ -430,5 +431,5 @@ export function scenePanel(ctx: Ctx, scope: Scope): HTMLElement {
     h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('common.expand'), 'data-tip': t('common.panelLeft'), onclick: () => ui.set({ leftCollapsed: false }) }, icon('panelLeft')),
     ...TABS.map((id) => h('button', { type: 'button', class: 'icon-btn', 'aria-label': t(dyn(`tab.${id}`)), 'data-tip': t(dyn(`tab.${id}`)), onclick: () => ui.set({ sceneTab: id, leftCollapsed: false }) }, icon(TAB_ICONS[id]))),
   );
-  return h('aside', { class: 'side side-left', 'aria-label': t('common.panelLeft') }, rail, h('div', { class: 'side-body' }, head, body));
+  return h('aside', { class: 'side side-left', 'aria-label': t('common.panelLeft'), 'data-guide': 'scene-panel' }, rail, h('div', { class: 'side-body' }, head, body));
 }

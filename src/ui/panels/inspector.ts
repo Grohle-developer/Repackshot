@@ -97,7 +97,7 @@ export function inspectorPanel(ctx: Ctx, scope: Scope): HTMLElement {
   );
   return h(
     'aside',
-    { class: 'side side-right', 'aria-label': t('common.panelRight') },
+    { class: 'side side-right', 'aria-label': t('common.panelRight'), 'data-guide': 'inspector' },
     rail,
     h('div', { class: 'side-body' }, head, guideStrip(ctx, scope), levelHost, h('div', { class: 'side-scroll' }, body)),
   );

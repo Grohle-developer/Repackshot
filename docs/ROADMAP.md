@@ -1712,7 +1712,7 @@ No encajó con el plan:
   herramienta, no abre el panel). Los modificadores de la caja de
   selección y los clics son los de *Mover*.
 
-## U10 · Recorrido guiado y avisos de la IA — **Sonnet**
+## U10 · Recorrido guiado y avisos de la IA — **Sonnet** — hecha
 
 **Petición del usuario (2026-10-13):** «avisar si no se tiene instalado el
 *inference runtime*; la primera vez que se inicie la app, un tutorial que
@@ -1750,6 +1750,82 @@ que existe; ningún paso apunta a un elemento oculto), de *Saltar* y del
 recuerdo (no vuelve a salir; sí desde *Ayuda*), del aviso con y sin motor
 de ejecución, del archivo de elección del instalador con el motor
 incluido (y del NSIS que lo escribe); capturas de tres pasos y del aviso.
+
+**Hecho.** *Recorrido guiado* (`src/ui/tour.ts`, `src/ui/panels/tour.ts`,
+`src/ui/tour.css`; `UI.md` §4.7): 30 pasos en la web y 31 en el escritorio,
+en el orden de arriba (bienvenida, menú, piezas y niveles, herramientas,
+*Rápido/Completo*, producto, luz, entorno, cámara, materiales, las tres
+pestañas, *Añadir ▸ Primitiva*, *Render…*, ventana de render, cola, IA,
+resultados, una sección de Ajustes por paso y el cierre), con texto corto en
+`es` y `en`, *Siguiente · Atrás · Saltar*, un punto por paso y `→ ← Esc`. Es
+modal (se queda con el puntero y con todas las teclas: `Supr` no borra bajo
+él), acromático, y localiza las zonas por los `data-guide` (los de la guía y
+los nuevos). Un paso cuya zona no está a la vista la pone (pestaña, panel
+lateral —en una ventana estrecha solo el que hace falta—, ventana de render
+o de Ajustes, cajón *Cola*, catálogo de materiales, selección) y al terminar
+todo vuelve a como estaba; un paso cuya zona no aparece en 0,7 s se salta.
+La tarjeta va al lado de la zona, fuera de la ventana de render o de
+Ajustes cuando hay sitio y, si no, dentro, donde no tape ningún control.
+*Saltar*, *Hecho* y `Esc` cuentan como visto: `layout.tourSeen` en el
+documento de ajustes (la carpeta de datos en escritorio, nada en el
+almacenamiento del navegador allí). Sale solo en el primer arranque, tras el
+selector de modelos de un portable, y desde *Ayuda ▸ Recorrido guiado* (nuevo
+submenú del menú de la aplicación, y la paleta).
+
+*Aviso del motor de ejecución*: `runtimeWarning` (`core/ai-runtimes.ts`, puro)
+dice qué pasa con un modelo instalado —no está, en pausa, bajando, no
+arranca, falta Visual C++ en Windows, no hay compilación para el sistema—;
+`ui/ai-runtime-state.ts` tiene el único sondeo del lanzador; el recuadro con
+*Instalar · 26 MB* (el flujo de la fila del motor de Ajustes), *Reanudar*,
+*Pausar*, *Instalar el entorno de Microsoft Visual C++…* y *Comprobar de
+nuevo* sale en la sección de IA de la ventana de render (con una marca en su
+título plegado) y arriba de *Ajustes ▸ Post-procesado IA*, y la barra de estado
+lleva una nota discreta una sola vez por sesión. **Instalador**: `repackshot
+--hardware` escribe `[runtime]` (la compilación que elige la regla de
+`ai-runtimes.json` para el sistema; con `--device cpu`, la de CPU), el paso
+*Modelos de IA* marca la casilla al elegir el primer modelo, se puede
+desmarcar y anota `"runtime"` en `pending-models.json`; el lanzador la
+descarga en el primer arranque (`Ai::start_pending_runtime`); el selector del
+primer arranque de un portable la ofrece igual y la baja con el primer
+modelo. Tests: la regla, la tabla de avisos, el sondeo, la nota una vez por
+sesión y los botones (`tests/ai-runtime-warning.test.ts`); el orden del
+recorrido, que cada ancla existe en el código, que cada paso abre lo que
+necesita y lo devuelve, *Saltar* y lo recordado, cuándo arranca, las teclas, la
+tarjeta y los textos en los dos idiomas (`tests/tour.test.ts`); el NSIS leído
+como texto contra el lanzador (`engine/crates/rt-app/tests/installer.rs`,
+`tests/installer-page.test.ts`); el lanzador descargando lo que el instalador
+dejó, sobre sockets con el `curl` real y un servidor local, y sin descargar
+nada con una clave de otro sistema, desconocida o sin motor
+(`tests/ai.rs`). Comprobaciones del navegador: `tools/tour-check.mjs` (el
+recorrido entero, ancho, estrecho y en español, con sus capturas) y
+`tools/ai-runtime-check.mjs` (contra el lanzador real: selector, avisos, nota,
+Visual C++ y el estado en la carpeta de datos). Cada test falla si se
+rompe lo que guarda. Capturas en `docs/ui/`: `tour-tools.png`,
+`tour-camera.png`, `tour-render-ai.png`, `tour-settings-es.png`,
+`ai-runtime-warning-render.png`, `ai-runtime-warning-settings.png`,
+`ai-runtime-warning-vc.png`, `ai-runtime-chooser.png`, `ai-runtime-note.png`.
+
+**No encajó con el plan.** (1) El *Ejecutar en el procesador* del instalador
+no se aplicaba a nada: para que el motor que marca el instalador sea el que
+la aplicación espera, el primer arranque lo convierte en *Ajustes ▸
+Post-procesado IA ▸ Ejecutar en* (`applyInstallerChoice`); es una decisión
+que no estaba en el plan. (2) La página del instalador no se puede ver aquí
+(*makensis* la compila con `-WX`, pero Wine no ejecuta un instalador NSIS):
+su lógica está cubierta como texto, y falta mirar en un Windows real que la
+fila nueva cabe en la página con seis modelos de dos líneas. (3) La
+descarga del motor desde el instalador, de punta a punta, tampoco se puede
+probar aquí; sí el lanzador (sockets) y la página (lanzador real). (4) Falta
+Visual C++ no se puede producir en Linux: el navegador lo prueba con la
+respuesta del lanzador cambiada. (5) La tarjeta de un paso de Ajustes va
+dentro de la ventana, donde no tapa ningún control pero sí texto de
+descripción; una sección que sea toda controles la dejaría en la esquina
+inferior derecha. (6) Quien actualiza desde una versión anterior ve el
+recorrido una vez (no hay marca previa que lo distinga de un primer
+arranque). (7) *Ayuda ▸* agrupa lo que antes eran tres entradas sueltas
+(*Guía*, *Atajos*, *Acerca de*); la *Guía* de seis pasos sigue como estaba y
+el recorrido no la sustituye. (8) Con los modelos todavía bajando (el
+instalador los dejó pendientes) no hay aviso: «hay un modelo» es un modelo
+instalado.
 
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 

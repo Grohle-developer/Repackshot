@@ -247,7 +247,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
     ),
     h(
       'div',
-      { class: 'queue-history' },
+      { class: 'queue-history', 'data-guide': 'history' },
       h('div', { class: 'queue-head' }, h('span', { class: 'field-label', style: 'font-weight:600' }, t('queue.history')), historyHead, h('span', { style: 'flex:1' }), clearHistory),
       history,
     ),

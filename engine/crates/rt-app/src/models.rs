@@ -805,9 +805,22 @@ impl Store {
     }
 }
 
-/// The installer's choice (`pending-models.json`), normalised: `{"device", "keys"}`, or `None`
-/// when there is none or it is not valid.
-pub fn read_pending(path: &Path) -> Option<String> {
+/// The installer's choice (`pending-models.json`): the device it ran the recommendation for, the
+/// models, and (phase U10) the inference runtime it ticked beside them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pending {
+    /// `gpu` or `cpu`.
+    pub device: String,
+    /// Model keys (`ai-models.json`), the valid names only.
+    pub keys: Vec<String>,
+    /// A runtime key (`ai-runtimes.json`): downloaded at the first launch, like the models. Only
+    /// the shape of the name is checked here; whether it is a build for this system is the
+    /// runtime store's to say.
+    pub runtime: Option<String>,
+}
+
+/// Reads `pending-models.json`; `None` when there is none or it is not valid.
+pub fn load_pending(path: &Path) -> Option<Pending> {
     let text = fs::read_to_string(path).ok()?;
     let v = json::parse(&text).ok()?;
     let device = v.get("device").and_then(Value::as_str)?;
@@ -818,14 +831,31 @@ pub fn read_pending(path: &Path) -> Option<String> {
         .get("keys")?
         .as_array()?
         .iter()
-        .filter_map(|k| k.as_str().filter(|k| valid_name(k)).map(json::string))
+        .filter_map(|k| k.as_str().filter(|k| valid_name(k)).map(str::to_string))
         .collect();
-    Some(
-        json::Object::new()
-            .str("device", device)
-            .raw("keys", &json::array(keys))
-            .build(),
-    )
+    let runtime = v
+        .get("runtime")
+        .and_then(Value::as_str)
+        .filter(|k| valid_name(k))
+        .map(str::to_string);
+    Some(Pending {
+        device: device.to_string(),
+        keys,
+        runtime,
+    })
+}
+
+/// The installer's choice normalised for the page (`GET /api/pending-models`): `{"device", "keys"}`
+/// and `"runtime"` when the installer ticked one; `None` when there is no valid choice.
+pub fn read_pending(path: &Path) -> Option<String> {
+    let p = load_pending(path)?;
+    let mut o = json::Object::new()
+        .str("device", &p.device)
+        .raw("keys", &json::array(p.keys.iter().map(|k| json::string(k))));
+    if let Some(r) = &p.runtime {
+        o = o.str("runtime", r);
+    }
+    Some(o.build())
 }
 
 #[cfg(test)]
@@ -1125,5 +1155,48 @@ mod tests {
         assert_eq!(read_pending(&path), None);
         fs::write(&path, "not json").unwrap();
         assert_eq!(read_pending(&path), None);
+    }
+
+    #[test]
+    fn pending_models_carry_the_runtime_the_installer_ticked() {
+        let dir = crate::test_dir("models-pending-runtime");
+        let path = dir.join("pending-models.json");
+        // What models-page.nsh writes with a model chosen and the runtime ticked.
+        fs::write(
+            &path,
+            "{\"device\": \"gpu\", \"keys\": [\"ZIMAGE_Q8\"], \"runtime\": \"SDCPP_WIN_VULKAN\"}\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_pending(&path).as_deref(),
+            Some(r#"{"device":"gpu","keys":["ZIMAGE_Q8"],"runtime":"SDCPP_WIN_VULKAN"}"#)
+        );
+        assert_eq!(
+            load_pending(&path),
+            Some(Pending {
+                device: "gpu".into(),
+                keys: vec!["ZIMAGE_Q8".into()],
+                runtime: Some("SDCPP_WIN_VULKAN".into()),
+            })
+        );
+        // Unticked: no member at all, so the page sees `undefined`.
+        fs::write(&path, r#"{"device":"cpu","keys":["SD15_LIGHT"]}"#).unwrap();
+        assert_eq!(
+            read_pending(&path).as_deref(),
+            Some(r#"{"device":"cpu","keys":["SD15_LIGHT"]}"#)
+        );
+        // A runtime that is not a name (a path, another type) is dropped; the models stay.
+        for bad in [r#""../x""#, r#""""#, "3", "null", r#""a b""#] {
+            fs::write(
+                &path,
+                format!(r#"{{"device":"gpu","keys":["ZIMAGE_Q8"],"runtime":{bad}}}"#),
+            )
+            .unwrap();
+            assert_eq!(
+                read_pending(&path).as_deref(),
+                Some(r#"{"device":"gpu","keys":["ZIMAGE_Q8"]}"#),
+                "{bad}"
+            );
+        }
     }
 }

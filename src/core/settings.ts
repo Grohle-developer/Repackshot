@@ -173,6 +173,8 @@ export interface Layout {
   settingsSection: SectionId;
   /** The desktop portable's model chooser was shown (it is shown once). */
   chooserShown: boolean;
+  /** The guided tour (phase U10) was finished or skipped: it starts by itself only until then. */
+  tourSeen: boolean;
   /** When the update feed last answered (ms since 1970), null: never. */
   updateCheckedAt: number | null;
   /** The latest release that answer named, so an offline start can still show it. */
@@ -275,6 +277,7 @@ export function defaultLayout(): Layout {
     viewportMode: 'FULL',
     settingsSection: 'general',
     chooserShown: false,
+    tourSeen: false,
     updateCheckedAt: null,
     updateLatest: null,
   };
@@ -558,7 +561,7 @@ export function validateLayout(raw: unknown): Layout {
     const v = raw[k];
     if (typeof v === 'number' && Number.isFinite(v)) out[k] = Math.round(Math.min(PANEL_MAX, Math.max(PANEL_MIN, v)));
   }
-  for (const k of ['leftCollapsed', 'rightCollapsed', 'tuneOpen', 'scaleLock', 'chooserShown'] as const) if (bool(k)) out[k] = raw[k] as boolean;
+  for (const k of ['leftCollapsed', 'rightCollapsed', 'tuneOpen', 'scaleLock', 'chooserShown', 'tourSeen'] as const) if (bool(k)) out[k] = raw[k] as boolean;
   if (isRecord(raw.sections)) {
     const sections: Record<string, boolean> = {};
     for (const [k, v] of Object.entries(raw.sections)) if (typeof v === 'boolean' && k.length <= 64) sections[k] = v;

@@ -1,0 +1,103 @@
+/* The guided tour (phase U10, UI.md §4.7): a layer over the whole application that dims everything but the area a
+   step talks about, a ring around that area and a card beside it. Achromatic like the rest of the chrome: black and
+   white and the greys of the theme. */
+
+.tour-mount:empty {
+  display: none;
+}
+.tour {
+  position: fixed;
+  inset: 0;
+  /* Over the render window and Settings (80, 81), menus (100) and the palette (200); under tooltips (300). */
+  z-index: 260;
+}
+.tour-shield {
+  position: absolute;
+  inset: 0;
+  cursor: default;
+}
+/* No area (the first and last steps, or while one is awaited): the whole screen is dimmed. */
+.tour.is-center .tour-shield {
+  background: rgba(0, 0, 0, 0.5);
+}
+.tour.is-center .tour-spot {
+  display: none;
+}
+/* The ring: white inside, black outside, so it shows on any content; the shadow around it is the dimming. */
+.tour-spot {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-radius: 6px;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 0 4px #000000,
+    0 0 0 100vmax rgba(0, 0, 0, 0.5);
+  transition:
+    left var(--ease),
+    top var(--ease),
+    width var(--ease),
+    height var(--ease);
+}
+.tour-card {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc((100vw - 20px) / var(--ui-zoom)));
+  padding: 14px 16px 12px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg-0);
+  color: var(--ink-0);
+  box-shadow: var(--shadow);
+}
+.tour-count {
+  font-size: var(--fs-aux);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.tour-title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+  line-height: 1.25;
+}
+.tour-text {
+  margin: 0;
+  line-height: 1.45;
+  color: var(--ink-1);
+}
+.tour-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0;
+}
+.tour-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--bg-3);
+}
+.tour-dot.is-done {
+  background: var(--ink-2);
+}
+.tour-dot.is-on {
+  background: var(--ink-0);
+  box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--ink-0);
+}
+.tour-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tour-keys {
+  font-size: var(--fs-aux);
+  color: var(--ink-2);
+}

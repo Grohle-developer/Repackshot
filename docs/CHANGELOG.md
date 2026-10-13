@@ -5,12 +5,19 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Interfaz
+
+- **Recorrido guiado** (U10): una capa propia que recorre la pantalla zona por zona —menú de la aplicación, árbol y niveles de selección, herramientas de vista, *Rápido* y *Completo*, el inspector (producto, luz y montajes, entorno y cielo, cámara y enfoque, materiales), las pestañas *Luces*, *Cámaras* y *Estudios*, *Añadir ▸ Primitiva*, la ventana de render (cola e IA), los resultados y *Ajustes* sección por sección— con un texto corto por paso, *Siguiente · Atrás · Saltar*, puntos de progreso y las teclas `→`, `←` y `Esc`; en español e inglés, acromática, y los pasos abren lo que necesitan (la ventana de render, Ajustes, la pestaña, el cajón) y lo dejan como estaba. Sale sola en el primer arranque y desde *Ayuda ▸ Recorrido guiado*; *Saltar* cuenta como visto, y se recuerda en el documento de ajustes (la carpeta de datos en escritorio).
+- El menú de la aplicación gana **Ayuda ▸** con *Recorrido guiado*, *Guía*, *Atajos de teclado* y *Acerca de*.
+
 ### Proyecto
 
 - Los ajustes de la IA de la ventana de render y de cada trabajo guardan también el *prompt* propio y el número de variantes; un proyecto anterior se abre sin *prompt* y con una variante (X4b).
 
 ### Post-procesado IA
 
+- **Aviso del motor de ejecución** (U10): con un modelo instalado y sin motor de ejecución (o con la descarga en pausa, o sin que arranque, o sin Microsoft Visual C++ en Windows), la sección de IA de la ventana de render y *Ajustes ▸ Post-procesado IA* lo dicen con un botón **Instalar** (el mismo flujo de la fila *Motor de ejecución*), y la barra de estado lleva una nota discreta una sola vez por sesión. Sin modelo, o con un motor que arranca, no dicen nada.
+- **El instalador pide también el motor de ejecución** (U10): al elegir algún modelo en el paso *Modelos de IA* se marca el motor recomendado para el equipo (Vulkan con tarjeta gráfica, CPU sin ella: la misma regla y los mismos datos que la aplicación), se puede desmarcar, y el lanzador lo descarga en el primer arranque junto a los modelos. El selector del primer arranque de los portables lo ofrece igual. Lo que el instalador elija en *Ejecutar en el procesador* pasa a ser *Ajustes ▸ Post-procesado IA ▸ Ejecutar en*.
 - **Prompt propio** en la sección *Post-procesado IA* de la ventana de render: un campo de varias líneas (hasta 400 caracteres) para describir la luz o el ambiente; va con el trabajo (se guarda en el proyecto, se deshace de una vez al salir del campo y cada trabajo de la cola lleva el suyo) y se añade al final del *prompt* de la escena, sin sustituirlo; el negativo fijo sigue igual. Si el modelo en uso no admite un *prompt* de texto, el campo se ve deshabilitado con el motivo y no se envía nada (X4b).
 - **Variantes**: un número de 1 a 8 (1 por defecto) junto a *Otra variación*. Un trabajo con N variantes hace un solo render del motor y N pasadas de la IA con semillas consecutivas, con el modelo cargado una vez; la cola dice *IA · variante 2 de 4 · mosaico 3 de 4*; cada variante lleva su informe de la guarda y su archivo (`_AI`, `_AI_2`, `_AI_3`…). Detener a mitad conserva el render y las variantes terminadas. La sección avisa del tiempo de IA estimado cuando ya se midió en este equipo (X4b).
 - El visor de resultados enseña una **tira de miniaturas** de las variantes bajo la cabecera: la elegida es la que el divisor compara con el render, con su informe; *Guardar esta variante* y *Guardar todas*. La cola y el historial dicen cuántas imágenes de IA tiene cada resultado (X4b).

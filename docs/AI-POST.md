@@ -83,6 +83,24 @@ instalar**:
   de la aplicación (`repackshot --hardware`), con los mismos datos y la
   misma regla que la interfaz, así que el instalador y *Ajustes*
   recomiendan siempre lo mismo.
+- **El motor de ejecución va con los modelos** (fase U10). Con cualquier
+  modelo elegido, el mismo paso marca también **el motor de ejecución**
+  que le hace falta para ejecutarlo (*Motor de ejecución de los modelos:
+  compilación Vulkan, para la tarjeta gráfica · 29 MB — Recomendado para tu
+  equipo*): la compilación de `src/data/ai-runtimes.json` que elige la
+  regla de §7.1 para este sistema (Vulkan con una GPU que usar, CPU sin
+  ella; con *Ejecutar en el procesador* elegido, la de CPU), con la misma
+  entrada y los mismos datos que usa la aplicación (`repackshot --hardware`
+  escribe una sección `[runtime]` con su clave y su tamaño). Se marca sola
+  al elegir el primer modelo, **se puede desmarcar**, se deshabilita
+  mientras no haya modelo, y no se anota nunca sin modelos. La casilla va
+  a `pending-models.json` como `"runtime": "SDCPP_WIN_VULKAN"`
+  (`{"device": "gpu", "keys": [...], "runtime": "..."}`), y **el propio
+  lanzador la descarga en el primer arranque** (los modelos los empieza la
+  página): con progreso, pausa y `sha256`, en *Ajustes ▸ Post-procesado IA ▸
+  Motor de ejecución*. El *Ejecutar en* del instalador pasa a ser el de
+  *Ajustes* (hoy solo el procesador cambia algo). Una clave desconocida,
+  de otro sistema o ya instalada no hace nada.
 - **Decidido: el instalador elige, la aplicación descarga.** El
   instalador deja la elección en la carpeta de datos y termina en
   segundos; la aplicación empieza a descargar lo elegido desde el primer
@@ -93,7 +111,8 @@ instalar**:
   deja a medias; así además la descarga es la misma en web y escritorio.
 - **Versiones portables** (escritorio sin instalar): no hay instalador,
   así que el mismo selector aparece una vez en el primer arranque, como
-  en la web.
+  en la web, y **ofrece también el motor de ejecución** (marcado, y
+  desmarcable) que baja con el primer modelo que se empieza a descargar.
 - **Versión web**: no hay instalador, así que la misma lista y la misma
   recomendación aparecen la primera vez que se activa el post-procesado y
   en *Ajustes ▸ Modelos de IA*, filtradas a lo que puede ejecutarse en el

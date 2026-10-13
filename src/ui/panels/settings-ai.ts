@@ -9,7 +9,7 @@
 // time left from the bytes that arrived (io/downloads.ts).
 
 import type { Recommendation } from '../../core/ai-recommend';
-import type { AiRuntimeEntryState, AiRuntimeReport } from '../../core/ai-runtimes';
+import type { AiRuntimeReport } from '../../core/ai-runtimes';
 import { aiRuntime, AI_RUNTIMES } from '../../data/ai-runtimes';
 import type { AiRecommendRow } from '../../data/ai-models';
 import {
@@ -37,6 +37,8 @@ import {
 import { composePrompt, DEFAULT_SYSTEM_PROMPT, isDefaultSystemPrompt, MAX_SYSTEM_PROMPT, normaliseSystemPrompt, SHORT_SYSTEM_PROMPT } from '../../core/ai-prompt';
 import type { RowMeta, SettingMeta } from '../../core/settings';
 import { aiRuntimeQuery, promptContext, recommendationOf } from '../ai-query';
+import { openVcRuntime, runtimeActions, runtimeWatch, startChosenRuntime, type RuntimeAction } from '../ai-runtime-state';
+import { runtimeNotice } from './ai-runtime-notice';
 import * as cmd from '../commands';
 import { select, textArea, textField, toggle } from '../components/controls';
 import { showConfirmIn } from '../components/widgets';
@@ -54,8 +56,9 @@ const size = (bytes: number) => formatBytes(bytes, getLang());
 const storeReason = (code: string) => (code === 'opfs' ? t('set.ai.noOpfs') : code);
 const pct = (done: number, total: number) => (total > 0 ? Math.floor((100 * done) / total) : 0);
 
-/** Microsoft's page with the official downloads of the Visual C++ runtime (the launcher sends the same). */
-export const VC_RUNTIME_URL = 'https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist';
+// The Runtime row's buttons and the page of Microsoft's Visual C++ runtime moved to ui/ai-runtime-state.ts with the
+// warnings that use them too (phase U10); they are still exported from here.
+export { openVcRuntime, runtimeActions, VC_RUNTIME_URL, type RuntimeAction } from '../ai-runtime-state';
 
 /** The recommendation for what was detected, by the rule of the catalogue (P2's core/ai-recommend.ts). */
 export function currentRecommendation(ctx: Ctx): Recommendation | null {
@@ -292,6 +295,8 @@ function modelRow(ctx: Ctx, key: string): { el: HTMLElement; update(snap: Models
   };
   const download = async (m: ModelView) => {
     const r = await svc.download(m.key);
+    // The first start's chooser: the runtime the models need goes down with the first model started (U10).
+    if (r === 'started') void startChosenRuntime(ctx);
     if (r === 'needsLicence') {
       panel.replaceChildren(
         licencePanel(
@@ -301,6 +306,7 @@ function modelRow(ctx: Ctx, key: string): { el: HTMLElement; update(snap: Models
             panel.replaceChildren();
             svc.acceptLicence(m.key);
             void svc.download(m.key);
+            void startChosenRuntime(ctx);
           },
           () => panel.replaceChildren(),
         ),
@@ -590,7 +596,7 @@ function guardBlock(ctx: Ctx, scope: Scope, rows: RowMeta[]): HTMLElement {
 }
 
 /** "Post-processing arrives in a coming version", where the pipeline is not built (the web before X3d): the service says. */
-function aiTop(ctx: Ctx): HTMLElement {
+function aiTop(ctx: Ctx, scope: Scope): HTMLElement {
   void cmd.detectHardware(ctx);
   const note = h('p', { class: 'note sw-ai-soon' }, t('set.ai.soon'));
   const service = ctx.services.ai?.service;
@@ -601,26 +607,50 @@ function aiTop(ctx: Ctx): HTMLElement {
       .then((st) => (note.style.display = st.reason === 'NOT_BUILT' ? '' : 'none'))
       .catch(() => (note.style.display = ''));
   }
-  return note;
+  // A model is installed and the inference runtime is not (or does not start): the first thing the section says (U10).
+  return h('div', { class: 'sw-ai-top' }, runtimeNotice(ctx, scope, 'settings'), note);
 }
 
 /** The desktop portable's first start (AI-POST.md §2.2): at the top of the list, which is where the deep link lands. */
 function chooserBanner(ctx: Ctx, scope: Scope): HTMLElement {
   const chooser = h('div', { class: 'sw-chooser', role: 'region', 'aria-label': t('set.ai.chooserTitle') });
+  // The inference runtime beside the models (phase U10), as the installer's page offers it: the build the rule chose for
+  // this computer, ticked, and the person can untick it. It downloads with the first model the person starts.
+  const runtimeRow = h('div', { class: 'sw-chooser-runtime', 'data-chooser-runtime': '', hidden: true });
+  const watch = runtimeWatch(ctx);
+  const drawRuntime = () => {
+    const rt = watch?.report?.runtime;
+    const offer = rt && watch?.report?.choice?.key && (rt.state === 'missing' || rt.state === 'paused') ? rt : null;
+    runtimeRow.hidden = !offer;
+    if (!offer) {
+      runtimeRow.replaceChildren();
+      return;
+    }
+    const on = ctx.ui.get().settingsWindow?.chooserRuntime !== false;
+    const box = toggle(on, () => {
+      const w = ctx.ui.get().settingsWindow;
+      if (w) ctx.ui.set({ settingsWindow: { ...w, chooserRuntime: w.chooserRuntime === false } });
+    }, t('set.ai.chooserRuntime', { backend: offer.backend === 'VULKAN' ? 'Vulkan' : 'CPU', size: size(offer.bytes) }));
+    runtimeRow.replaceChildren(box.el, h('span', { class: 'note' }, t('set.ai.chooserRuntime', { backend: offer.backend === 'VULKAN' ? 'Vulkan' : 'CPU', size: size(offer.bytes) })));
+  };
+  if (watch) scope.onDispose(watch.subscribe(drawRuntime));
   scope.watch(
-    (_s, u) => u.settingsWindow?.chooser === true,
-    (on) => {
+    (_s, u) => [u.settingsWindow?.chooser === true, u.settingsWindow?.chooserRuntime !== false] as const,
+    ([on]) => {
       chooser.style.display = on ? '' : 'none';
       chooser.replaceChildren(
         ...(on
           ? [
               h('div', { class: 'sw-strong' }, t('set.ai.chooserTitle')),
               h('p', { class: 'note' }, t('set.ai.chooserText')),
+              runtimeRow,
               h('button', { type: 'button', class: 'btn btn-primary', onclick: () => ctx.ui.set({ chooserShown: true, settingsWindow: { ...ctx.ui.get().settingsWindow!, chooser: false } }) }, t('set.ai.chooserDone')),
             ]
           : []),
       );
+      drawRuntime();
     },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
   );
   return chooser;
 }
@@ -628,34 +658,6 @@ function chooserBanner(ctx: Ctx, scope: Scope): HTMLElement {
 // ------------------------------------------------------------------ Runtime (desktop: stable-diffusion.cpp, X3b)
 
 const RUNTIME_BUSY = ['downloading', 'verifying', 'installing'];
-
-/** What the Runtime row offers for a build in a state. */
-export type RuntimeAction = 'download' | 'fromFile' | 'pause' | 'resume' | 'remove' | 'vcRuntime' | 'probe';
-
-/**
- * The Runtime row's buttons, in order: download it (or install the archive the person downloaded), pause, resume,
- * remove; and for an installed Windows build that does not start for want of Microsoft's Visual C++ runtime (X3c),
- * *Install Microsoft Visual C++ runtime…* (Microsoft's own page: we do not redistribute it) and *Check again*.
- */
-export function runtimeActions(rt: Pick<AiRuntimeEntryState, 'state' | 'vcRuntime'>): RuntimeAction[] {
-  switch (rt.state) {
-    case 'missing':
-      return ['download', 'fromFile'];
-    case 'downloading':
-      return ['pause'];
-    case 'paused':
-      return ['resume', 'remove'];
-    case 'installed':
-      return rt.vcRuntime === 'missing' ? ['vcRuntime', 'probe', 'remove'] : ['remove'];
-    default:
-      return [];
-  }
-}
-
-/** Opens Microsoft's download page of the Visual C++ runtime in the system's browser (the launcher's link, else ours). */
-export function openVcRuntime(ctx: Ctx, rt: Pick<AiRuntimeEntryState, 'vcRuntimeUrl'>): Promise<void> {
-  return ctx.services.openExternal(rt.vcRuntimeUrl ?? VC_RUNTIME_URL);
-}
 
 /**
  * The inference runtime the rule chose (AI-POST.md §7.1): which build and why, its state (downloading with

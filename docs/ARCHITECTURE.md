@@ -666,7 +666,8 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    browser-profile/     el perfil de la ventana de Edge o Chromium
    webview2/            el perfil de la ventana propia (P3c); window.json, su sitio
    launcher.json        el puerto; instance.json, la instancia en marcha
-   pending-models.json  lo que eligió el instalador
+   pending-models.json  lo que eligió el instalador: dispositivo, modelos y (U10) el
+                        motor de ejecución, que el lanzador empieza a descargar al arrancar
    ```
 
    En la página, **la costura de plataforma** (`src/io/platform.ts`): una
@@ -703,7 +704,15 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    VRAM, la RAM y la recomendación de `src/data/ai-models.json`
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
    procesos del sistema y sin `unsafe`); lo usan el instalador y
-   *Ajustes ▸ Post-procesado IA ▸ Equipo*.
+   *Ajustes ▸ Post-procesado IA ▸ Equipo*. Desde U10 el INI lleva también
+   `[runtime]`: la compilación del motor de ejecución que elige la regla de
+   `src/data/ai-runtimes.json` para este sistema (con `--device cpu`, la de
+   CPU), que el paso *Modelos de IA* del instalador ofrece junto a los
+   modelos y anota en `pending-models.json` (`"runtime"`); el lanzador la
+   descarga en el primer arranque (`Ai::start_pending_runtime`).
+   `engine/crates/rt-app/tests/installer.rs` lee `models-page.nsh` como
+   texto y comprueba que cada `ReadINIStr` tiene su clave en el INI y que la
+   línea que escribe es la que lee `read_pending`.
 7. **Post-procesado IA, el motor de ejecución** (X3b, `src/ai/`): la compilación de
    stable-diffusion.cpp que elige la regla de `src/data/ai-runtimes.json` (Vulkan si el equipo
    tiene GPU que usar, CPU si no, o la que se fuerce) se descarga con el `curl` del sistema
@@ -751,6 +760,20 @@ comentario de por qué es correcto, el resto del *crate* mantiene
 - Estado de interfaz que no es del proyecto (anchos de panel, secciones
   plegadas) en `localStorage`, siempre dentro de `try/catch` y con valor
   por defecto.
+- **El recorrido guiado** (U10): `ui/tour.ts` son los pasos como datos
+  (cada uno con los `data-guide` que anilla y lo que necesita en pantalla,
+  un `TourStage`), las reglas para arrancar, los comandos (`startTour`,
+  `tourNext`, `tourBack`, `endTour`) y la geometría de la tarjeta
+  (`placeCard`); `ui/panels/tour.ts` es la capa. Lo que se recuerda
+  (`tourSeen`) va en el `layout` del documento de ajustes, como
+  `chooserShown`, así que en escritorio está en la carpeta de datos.
+- **El aviso del motor de ejecución** (U10): `core/ai-runtimes.ts`
+  decide qué decir (`runtimeWarning`, puro, sobre el informe del lanzador);
+  `ui/ai-runtime-state.ts` tiene el único sondeo de
+  `GET /api/ai/runtime` (`RuntimeWatch`, solo mientras alguien escucha), la
+  comprobación una vez por sesión al arrancar (la nota de la barra de
+  estado) y los botones; `ui/panels/ai-runtime-notice.ts` dibuja el
+  recuadro de la ventana de render y de Ajustes.
 
 ### 6.1 · El puerto del visor (`src/ui/ports.ts`)
 

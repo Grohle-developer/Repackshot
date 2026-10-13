@@ -21,6 +21,8 @@ import { activeModel, allModels } from '../../core/models';
 import { AI_PERCENT_KEYS, type AiPercentKey, type AiSettings, type RenderSettings } from '../../core/render';
 import type { Label } from '../../data/types';
 import { aiStatusKey, promptContext, recommendationOf } from '../ai-query';
+import { hasModel, runtimeWatch } from '../ai-runtime-state';
+import { runtimeNotice } from './ai-runtime-notice';
 import { AiPreviewController, type AiPreviewInput, type AiPreviewState } from '../ai-preview';
 import { reportText } from '../ai-report';
 import * as cmd from '../commands';
@@ -147,7 +149,8 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
   // ------------------------------------------------------------------ the switch
   const sw = toggle(false, () => {
     if (action.kind === 'OPEN_SETTINGS') {
-      cmd.openSettings(ctx, 'ai.models');
+      // No runtime: the Runtime row has the Install button; no model: the model chooser.
+      cmd.openSettings(ctx, status?.reason === 'NO_RUNTIME' ? 'ai.runtime' : 'ai.models');
       return;
     }
     if (action.kind === 'SWITCH' && !animation()) {
@@ -342,10 +345,13 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
   const grid = h('div', { class: 'rw-ai-grid' }, controls, previewCol);
 
   // ------------------------------------------------------------------ the section
+  // A model is installed and the inference runtime is not (or does not start): said here, with its Install button (U10).
+  const notice = runtimeNotice(ctx, scope, 'render');
   const host = h(
     'div',
     { class: 'rw-section rw-ai' },
     h('div', { class: 'rw-row' }, h('div', { class: 'rw-label' }, t('rw.ai')), h('div', { class: 'rw-ctrl' }, h('div', { class: 'rw-inline' }, sw.el, aux))),
+    notice,
     why,
     grid,
     manage,
@@ -385,7 +391,9 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
       line = action.reason === 'NOT_BUILT' ? t('common.comingSoon') : '';
       reason = t(dyn(`rw.aiWhy.${(REASON_KEYS as readonly string[]).includes(action.reason) ? action.reason : 'NOT_BUILT'}`));
     } else if (action.kind === 'OPEN_SETTINGS') {
-      reason = status?.reason === 'NO_RUNTIME' ? t('rw.aiNoRuntime') : t('rw.aiNoModel');
+      // With a model installed the notice above says what is missing and offers the fix; the line is for the rest.
+      const noticed = status?.reason === 'NO_RUNTIME' && runtimeWatch(ctx) !== null && hasModel(ui.get());
+      reason = noticed ? '' : status?.reason === 'NO_RUNTIME' ? t('rw.aiNoRuntime') : t('rw.aiNoModel');
     } else {
       line = synthetic ? t('rw.aiSyntheticLine') : (model?.line ?? '');
     }

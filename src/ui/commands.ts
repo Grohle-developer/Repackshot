@@ -799,6 +799,19 @@ export function maybeShowModelChooser(ctx: Ctx, o: { portable: boolean; pending:
   return show;
 }
 
+/**
+ * What the desktop installer chose (`pending-models.json`, read at the first start) that is the person's from then on
+ * (phase U10): the page of the installer asks *Run on the graphics card / the processor*, and the processor is the
+ * only answer that differs from what the application decides alone (AI-POST.md §2.4), so it becomes
+ * Settings ▸ AI post-processing ▸ Run on. The inference runtime the installer ticked is the launcher's to download
+ * (`Ai::start_pending_runtime`), and the models are the manager's. Returns what was set.
+ */
+export function applyInstallerChoice(ctx: Ctx, pending: { device: 'gpu' | 'cpu' }): boolean {
+  if (pending.device !== 'cpu' || ctx.ui.get().settings['ai.device'] === 'CPU') return false;
+  setSetting(ctx, 'ai.device', 'CPU');
+  return true;
+}
+
 /** The person already answered our own question about closing (Ctrl/⌘ W on the desktop): the page closes without another. */
 let closeAnswered = false;
 
