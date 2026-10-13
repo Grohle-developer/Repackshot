@@ -45,7 +45,12 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
     const name = `${jobFileNames(s, j)[0] ?? ''}${anim ? '…' : ''}`;
     const frameCount = j.frames || jobFrames(s, j.settings).length;
     const cam = j.settings.camera.kind === 'ONE' ? s.camera.cameras[j.settings.camera.id] : undefined;
-    const pic = result?.thumb ? h('img', { src: result.thumb, alt: '', class: 'queue-pic' }) : h('span', { class: 'queue-pic queue-pic-empty' }, icon(anim ? 'film' : 'camera', 14));
+    // A result that went through the AI shows both pictures: the engine's and the AI's, side by side.
+    const pic = result?.thumb
+      ? result.ai?.thumb
+        ? h('span', { class: 'queue-pics', 'data-tip': t('queue.aiPair') }, h('img', { src: result.thumb, alt: '', class: 'queue-pic' }), h('img', { src: result.ai.thumb, alt: '', class: 'queue-pic queue-pic-ai' }))
+        : h('img', { src: result.thumb, alt: '', class: 'queue-pic' })
+      : h('span', { class: 'queue-pic queue-pic-empty' }, icon(anim ? 'film' : 'camera', 14));
     const statusText = running && anim && j.frames > 0 ? t('queue.frameOf', { i: j.frame || 1, n: j.frames }) : t(dyn(`queue.status.${j.status}`));
     const act = (label: string, iconName: 'edit' | 'duplicate' | 'close' | 'stop', fn: () => void, disabled = false) =>
       h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label, 'data-tip': label, disabled, onclick: (e: MouseEvent) => (e.stopPropagation(), fn()) }, icon(iconName, 14));
@@ -169,8 +174,9 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
           : results.map((r) =>
               h(
                 'button',
-                { type: 'button', class: 'history-item', 'data-result': r.id, 'data-tip': `${r.name} · ${r.width} × ${r.height}`, onclick: () => cmd.openResult(ctx, r.id) },
+                { type: 'button', class: `history-item${r.ai?.thumb ? ' history-pair' : ''}`, 'data-result': r.id, 'data-tip': `${r.name} · ${r.width} × ${r.height}`, onclick: () => cmd.openResult(ctx, r.id) },
                 r.thumb ? h('img', { src: r.thumb, alt: r.name }) : h('span', { class: 'queue-pic-empty' }, icon('camera', 14)),
+                r.ai?.thumb ? h('img', { src: r.ai.thumb, alt: r.ai.name }) : null,
               ),
             )),
       );

@@ -5,6 +5,7 @@
 
 import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
+import { aiFileName } from '../core/ai-post';
 import { activeCamera } from '../core/camera';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
 import {
@@ -1535,14 +1536,14 @@ export function windowSettings(ctx: Ctx): RenderSettings {
   return w?.kind === 'EDIT' ? w.draft : settingsOf(ctx.store.get().render);
 }
 
-/** Changes a setting of the window: the project's (undoable, one entry per gesture), or the draft of an edit. */
-export function setRenderSettings(ctx: Ctx, patch: Partial<RenderSettings>, gesture?: string): void {
+/** Changes a setting of the window: the project's (undoable, one entry per gesture), or the draft of an edit. `label`: the undo entry's name (default: Render settings). */
+export function setRenderSettings(ctx: Ctx, patch: Partial<RenderSettings>, gesture?: string, label?: Label): void {
   const w = ctx.ui.get().renderWindow;
   if (w?.kind === 'EDIT') {
     ctx.ui.set({ renderWindow: { ...w, draft: patchSettings(w.draft, patch) } });
     return;
   }
-  ctx.store.dispatch({ type: 'render/set', patch, label: L('undo.render'), ...(gesture ? { gesture } : {}) });
+  ctx.store.dispatch({ type: 'render/set', patch, label: label ?? L('undo.render'), ...(gesture ? { gesture } : {}) });
 }
 
 /** Asks again for the folder's permission while the click still counts as a user gesture. */
@@ -1684,17 +1685,19 @@ export function closeResult(ctx: Ctx): void {
   if (ctx.ui.get().resultView) ctx.ui.set({ resultView: null });
 }
 
-/** Saves a result again (to the folder it went to, or a download). */
-export async function saveResultAgain(ctx: Ctx, id: string): Promise<void> {
+/** Saves a result again (to the folder it went to, or a download). `which`: the engine's image (default) or the one the AI made. */
+export async function saveResultAgain(ctx: Ctx, id: string, which: 'RENDER' | 'AI' = 'RENDER'): Promise<void> {
   const meta = ctx.ui.get().results.find((r) => r.id === id);
   const blobs = meta ? await ctx.services.results.get(id) : null;
-  if (!meta || !blobs) {
+  const blob = which === 'AI' ? blobs?.ai : blobs?.file;
+  if (!meta || !blobs || !blob) {
     ctx.ui.toast(t('rv.missing'));
     return;
   }
+  const name = which === 'AI' ? (meta.ai?.name ?? aiFileName(meta.name)) : meta.name;
   if (meta.savedTo.kind === 'FOLDER') await ctx.services.files.ensureAccess(meta.savedTo.id);
-  const where = await ctx.services.files.save(meta.savedTo, meta.name, blobs.file);
-  ctx.ui.toast(where === 'FOLDER' && meta.savedTo.kind === 'FOLDER' ? t('render.doneFolder', { name: meta.name, folder: meta.savedTo.name }) : t('render.done', { name: meta.name }));
+  const where = await ctx.services.files.save(meta.savedTo, name, blob);
+  ctx.ui.toast(where === 'FOLDER' && meta.savedTo.kind === 'FOLDER' ? t('render.doneFolder', { name, folder: meta.savedTo.name }) : t('render.done', { name }));
 }
 
 export async function deleteResult(ctx: Ctx, id: string): Promise<void> {

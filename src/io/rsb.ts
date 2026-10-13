@@ -16,6 +16,7 @@ import { lightPosition, rigPivot, type LightInstance } from '../core/lighting';
 import type { MaterialInstance } from '../core/materials';
 import { mat4Compose, mat4Multiply, normalize, sub, type Mat4 } from '../core/math';
 import { getMesh, type MeshData } from '../core/meshes';
+import type { PassIds, PassInstance } from '../core/pass-ids';
 import { areaLightFlux, EMIT_RADIANCE_PER_WATT, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -420,6 +421,12 @@ export interface SceneView {
 export interface ProjectScene {
   scene: RsbScene;
   meshKey: string;
+  /**
+   * What each instance of `scene.instances` was made from, in the same order: the ids of the passes
+   * (`partId` is the index + 1, `materialId` the RSB material index + 1; AI-POST.md §7.4). The Fast-mode
+   * preview draws the same numbers (render/preview-passes.ts) from it.
+   */
+  ids: PassIds;
 }
 
 /** `image.viewTransform` to `RNDR.tonemap`. */
@@ -706,6 +713,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   const meshKeys: string[] = [];
   const meshIndex = new Map<string, number>();
   const instances: RsbInstance[] = [];
+  const passInstances: PassInstance[] = [];
   for (const id of allParts(state)) {
     const node = nodes[id];
     if (!node.mesh || !visible(id)) continue;
@@ -723,6 +731,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
         meshKeys.push(part.key);
       }
       instances.push({ mesh: mi, transform: rows, materialId, flags: 0 });
+      passInstances.push({ node: id, material: part.material, materialId: materialId + 1 });
     }
   }
   // A scene without parts still needs no material; one with parts always has its materials.
@@ -779,5 +788,6 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   return {
     scene: { camera, materials, meshes, instances, lights, environment, floor, render },
     meshKey: meshKeys.join(';'),
+    ids: { instances: passInstances },
   };
 }

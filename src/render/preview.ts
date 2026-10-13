@@ -14,7 +14,10 @@ import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFra
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { lightPosition, rigPivot, type LightInstance } from '../core/lighting';
 import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
+import { lensOf } from '../core/lens-coc';
 import { getMesh } from '../core/meshes';
+import type { PassIds } from '../core/pass-ids';
+import type { PassKey, RenderPasses } from '../core/passes';
 import { areaLightRadiance, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { partsUnder, sceneBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
@@ -22,6 +25,7 @@ import type { ProjectState } from '../core/store';
 import type { DisplayPrefs, EngineStatus, NavigationPrefs, PickHit, RenderEngine, RenderOptions } from './engine';
 import { Gizmo, GizmoDrag, modelRay } from './gizmo';
 import { applyMaterial, makeMaterial } from './materials';
+import { drawPasses, type PassMesh } from './preview-passes';
 
 /** Model space (Z up, mm) to three.js space (Y up): (x, y, z) -> (x, z, -y). */
 export function toThree(p: readonly number[]): THREE.Vector3 {
@@ -1069,6 +1073,86 @@ export class PreviewEngine implements RenderEngine {
     const seconds = (performance.now() - t0) / 1000;
     opts.onProgress?.({ jobId: null, progress: 1, samples: 1, seconds });
     return createImageBitmap(out);
+  }
+
+  // ------------------------------------------------------------------ AI frame (phase X4)
+
+  /** The visible parts as the passes draw them: mesh, node and the material key of every group (see PassMesh). */
+  private passMeshes(): PassMesh[] {
+    const s = this.state;
+    if (!s) return [];
+    this.scene.updateMatrixWorld(true);
+    const visible = (o: THREE.Object3D): boolean => {
+      for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+      return true;
+    };
+    const out: PassMesh[] = [];
+    for (const [id, obj] of this.objects) {
+      const node = s.scene.nodes[id];
+      if (!node || !(obj instanceof THREE.Mesh) || !node.mesh || !visible(obj)) continue;
+      const ids = obj.geometry.userData.materialIds as (string | null)[] | undefined;
+      // Group 0 is the part's own material (assignMaterials); the others are the face materials, as they appeared.
+      const keys = ids ? ids.map((m, i) => (i === 0 ? (node.material ?? null) : m)) : [node.material ?? null];
+      out.push({ mesh: obj, node: id, keys });
+    }
+    return out;
+  }
+
+  /**
+   * A frame for the AI step (AI-POST.md §4): the picture of a camera at `width × height` as the Fast mode
+   * draws it (8-bit sRGB, straight RGBA, rows from the top; null when `colour` is off, for a picture the
+   * path tracer draws) and the passes of §7.4 drawn at the same size from the same camera. `ids` come from
+   * the engine's scene (`projectScene(...).ids`), so the part and material ids are the engine's.
+   */
+  aiFrame(opts: { width: number; height: number; camera?: string; ids: PassIds; colour: boolean; passes?: readonly PassKey[] }): { rgba: Uint8ClampedArray | null; passes: RenderPasses } {
+    const s = this.state;
+    if (!s || !this.renderer) throw new Error('engine not ready');
+    const gl = this.renderer.getContext();
+    const max = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number;
+    if (opts.width > max || opts.height > max) throw new Error(`${opts.width} × ${opts.height} > ${max}`);
+    const cam = (opts.camera && s.camera.cameras[opts.camera]) || activeCamera(s);
+    const bg = this.scene.background;
+    const gridVisible = this.grid?.visible ?? false;
+    if (this.grid) this.grid.visible = false;
+    try {
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(opts.width, opts.height, false);
+      this.placeCamera(cam, opts.width, opts.height, opts.width, opts.height, false);
+      const three = cam.projection === 'ORTHOGRAPHIC' ? this.ortho : this.persp;
+      let rgba: Uint8ClampedArray | null = null;
+      if (opts.colour) {
+        if (gl.drawingBufferWidth !== opts.width || gl.drawingBufferHeight !== opts.height) throw new Error(`${opts.width} × ${opts.height}`);
+        this.renderer.setClearColor(0x000000, 0);
+        this.renderer.render(this.scene, three);
+        const out = document.createElement('canvas');
+        out.width = opts.width;
+        out.height = opts.height;
+        const g = out.getContext('2d', { willReadFrequently: true })!;
+        g.drawImage(this.renderer.domElement, 0, 0);
+        rgba = g.getImageData(0, 0, opts.width, opts.height).data;
+      }
+      // The images of three.js's axes in model space: the one place the Y-up is undone (toThree's inverse).
+      const axes = [fromThree(new THREE.Vector3(1, 0, 0)), fromThree(new THREE.Vector3(0, 1, 0)), fromThree(new THREE.Vector3(0, 0, 1))] as const;
+      const passes = drawPasses({
+        renderer: this.renderer,
+        camera: three,
+        meshes: this.passMeshes(),
+        ids: opts.ids,
+        width: opts.width,
+        height: opts.height,
+        lens: lensOf(cam),
+        axes,
+        passes: opts.passes ?? [],
+      });
+      return { rgba, passes };
+    } finally {
+      this.scene.background = bg;
+      if (this.grid) this.grid.visible = gridVisible;
+      this.renderer.setPixelRatio(this.dpr);
+      this.renderer.setSize(this.width, this.height, false);
+      this.syncCamera(s, this.poseActive ? evaluate(s, s.animation.playhead) : null);
+      this.needsRender = true;
+    }
   }
 
   /** The viewport as it is now (one fresh frame), PNG. */

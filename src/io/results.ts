@@ -14,12 +14,14 @@ import { evictionPlan, HISTORY_LIMITS, sortResults, type HistoryLimits, type Res
 export interface StoredBlobs {
   file: Blob;
   display: Blob | null;
+  /** The image the AI post-processing made (AI-POST.md §4); absent when the result has none. */
+  ai?: Blob | null;
 }
 
 export interface ResultsStore {
   readonly persistent: boolean;
   list(): Promise<ResultMeta[]>;
-  add(meta: ResultMeta, file: Blob, display: Blob | null): Promise<string[]>;
+  add(meta: ResultMeta, file: Blob, display: Blob | null, ai?: Blob | null): Promise<string[]>;
   get(id: string): Promise<StoredBlobs | null>;
   remove(id: string): Promise<void>;
   clear(): Promise<void>;
@@ -30,7 +32,7 @@ export interface ResultsStore {
   setLimits(limits: HistoryLimits): Promise<string[]>;
 }
 
-const blobBytes = (file: Blob, display: Blob | null): number => file.size + (display?.size ?? 0);
+const blobBytes = (file: Blob, display: Blob | null, ai?: Blob | null): number => file.size + (display?.size ?? 0) + (ai?.size ?? 0);
 
 /** The history in memory only: same behaviour and limits, gone with the page. */
 export function memoryResultsStore(initialLimits: HistoryLimits = HISTORY_LIMITS): ResultsStore {
@@ -41,10 +43,10 @@ export function memoryResultsStore(initialLimits: HistoryLimits = HISTORY_LIMITS
   return {
     persistent: false,
     list: async () => sortResults([...metas.values()]),
-    async add(meta, file, display) {
-      const m = { ...meta, bytes: blobBytes(file, display) };
+    async add(meta, file, display, ai) {
+      const m = { ...meta, bytes: blobBytes(file, display, ai) };
       metas.set(m.id, m);
-      blobs.set(m.id, { file, display });
+      blobs.set(m.id, ai ? { file, display, ai } : { file, display });
       const evict = evictionPlan([...metas.values()], limits, m.id);
       for (const id of evict) {
         metas.delete(id);
@@ -133,11 +135,11 @@ function idbResultsStore(db: IDBDatabase, initialLimits: HistoryLimits): Results
   return {
     persistent: true,
     list: async () => sortResults(await metas()),
-    async add(meta, file, display) {
-      const m = { ...meta, bytes: blobBytes(file, display) };
+    async add(meta, file, display, ai) {
+      const m = { ...meta, bytes: blobBytes(file, display, ai) };
       const tx = db.transaction(['meta', 'blobs'], 'readwrite');
       tx.objectStore('meta').put(m);
-      tx.objectStore('blobs').put({ file, display } satisfies StoredBlobs, m.id);
+      tx.objectStore('blobs').put((ai ? { file, display, ai } : { file, display }) satisfies StoredBlobs, m.id);
       await done(tx);
       const evict = evictionPlan(await metas(), limits, m.id);
       await drop(evict);
