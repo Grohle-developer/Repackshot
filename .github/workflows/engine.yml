@@ -8,8 +8,10 @@
 # the WebAssembly `simd128` path is executed too, by running the rt-core tests as a
 # `wasm32-wasip1` binary under Node's WASI (tools/wasi-run.mjs). NEON is compile-checked only.
 # The real `rt_wasm.wasm` renders the example scene in Node and must give the film hash the native
-# tests pin (tools/wasm-parity.mjs). The contact sheet of the six built-in light recipes is
-# rendered and uploaded on every run.
+# tests pin (tools/wasm-parity.mjs). The AI guard's `post.wasm` (rt-post-wasm) runs the scenarios of
+# tests/fixtures/ai-guard.json, which the native rt-post tests pin, and must give the same image bits
+# and report JSON (tests/ai-post-wasm.test.ts). The contact sheet of the six built-in light recipes
+# is rendered and uploaded on every run.
 #
 # The engine also promises zero external dependencies. That rule is checked by requiring that
 # Cargo.lock contains only workspace members: a `[[package]]` with a `source =` line is a crate
@@ -70,14 +72,25 @@ jobs:
         run: cargo build --release -p rt-cli
 
       - name: WebAssembly release build
-        run: cargo build -p rt-wasm --target wasm32-unknown-unknown --release
+        run: cargo build -p rt-wasm -p rt-post-wasm --target wasm32-unknown-unknown --release
 
-      - name: WebAssembly binary has no OS imports
+      - name: WebAssembly binaries have no OS imports
         run: |
-          if grep -q wasi_snapshot_preview1 target/wasm32-unknown-unknown/release/rt_wasm.wasm; then
-            echo "::error::rt_wasm.wasm imports WASI functions. The engine must not use OS APIs."
-            exit 1
-          fi
+          for wasm in rt_wasm rt_post_wasm; do
+            if grep -q wasi_snapshot_preview1 "target/wasm32-unknown-unknown/release/$wasm.wasm"; then
+              echo "::error::$wasm.wasm imports WASI functions. The engine must not use OS APIs."
+              exit 1
+            fi
+          done
+
+      - name: AI guard parity with native (the real post.wasm in Node)
+        working-directory: .
+        env:
+          REPACK_REQUIRE_POST_WASM: '1'
+          REPACK_POST_WASM: engine/target/wasm32-unknown-unknown/release/rt_post_wasm.wasm
+        run: |
+          npm ci
+          npx vitest run tests/ai-post-wasm.test.ts
 
       - name: WebAssembly parity with native (the real module in Node)
         run: |
