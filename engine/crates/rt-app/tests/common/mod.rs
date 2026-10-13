@@ -4,7 +4,7 @@
 
 use rt_app::client::{self, Reply};
 use rt_app::paths::Paths;
-use rt_app::server::Server;
+use rt_app::server::{Options, Server};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -33,11 +33,22 @@ impl TestServer {
         TestServer::start_with(name, threads, |_| {})
     }
 
-    /// Starts after `setup` has prepared the data folder (tests/ai.rs: a runtime catalogue
-    /// override, an installed runtime, model blobs).
+    /// Starts after `setup` has prepared the data folder (tests/ai.rs: an installed runtime,
+    /// model blobs).
     pub fn start_with(
         name: &str,
         threads: usize,
+        setup: impl FnOnce(&std::path::Path),
+    ) -> TestServer {
+        TestServer::start_with_options(name, threads, Options::default(), setup)
+    }
+
+    /// The same with server `options` (tests/ai.rs: a runtime catalogue whose build is the
+    /// fake), handed in the way only a test can: the application always starts with the default.
+    pub fn start_with_options(
+        name: &str,
+        threads: usize,
+        options: Options,
         setup: impl FnOnce(&std::path::Path),
     ) -> TestServer {
         let dir = temp_dir(name);
@@ -57,7 +68,7 @@ impl TestServer {
         };
         std::fs::create_dir_all(&paths.data_dir).unwrap();
         setup(&paths.data_dir);
-        let server = Server::start(paths, 0, TOKEN.into(), threads).unwrap();
+        let server = Server::start_with(paths, 0, TOKEN.into(), threads, options).unwrap();
         TestServer { server, dir }
     }
 

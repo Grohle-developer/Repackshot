@@ -406,28 +406,12 @@ pub struct Ai {
 
 impl Ai {
     /// The AI of the data folder `data_dir`, with the embedded catalogue and the system's
-    /// `curl`. A server a previous launch left running is stopped.
-    ///
-    /// Debug builds only (the tests, development): `<data>/ai/runtimes-override.json`, when it
-    /// is there, replaces the embedded catalogue and may name `http://` addresses (a local test
-    /// server). Release builds never read it.
+    /// `curl` over https: the only one the application builds. A server a previous launch left
+    /// running is stopped. Nothing in the data folder replaces the catalogue, in any build; the
+    /// tests hand theirs in through `server::Options` (`Ai::with`).
     pub fn new(data_dir: &Path) -> Arc<Ai> {
-        let root = data_dir.join("ai");
-        #[cfg(debug_assertions)]
-        if let Ok(text) = std::fs::read_to_string(root.join("runtimes-override.json")) {
-            match catalogue::parse_runtimes_allowing_http(&text) {
-                Ok(cat) => {
-                    let d = Downloader {
-                        allow_http: true,
-                        ..Downloader::system()
-                    };
-                    return Ai::with(root, cat, d);
-                }
-                Err(e) => crate::log!("runtimes-override.json: {e}"),
-            }
-        }
         Ai::with(
-            root,
+            data_dir.join("ai"),
             catalogue::runtime_catalogue().clone(),
             Downloader::system(),
         )
