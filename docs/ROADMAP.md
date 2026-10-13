@@ -1280,72 +1280,144 @@ tamaño exacto y `sha256`, la licencia con su texto citado y su URL, y la
 regla de recomendación como tabla de datos. Sin medidas todavía: los
 umbrales son los de la tabla, marcados *provisionales*.
 
-**Parte B, tras X3.** `AI-POST.md` §2: releer y citar al pie de la letra las licencias
+**Parte B, tras X3c.** `AI-POST.md` §2: releer y citar al pie de la letra las licencias
 de Z-Image-Turbo, su codificador, su VAE y su ControlNet, y de FLUX.2
-klein 4B; fijar los `sha256` de los ficheros cuantizados (web q4f16 y
-GGUF de escritorio); Sonnet prepara una hoja comparativa (8 renders del
-motor —producto e interior—, 3 intervenciones, los dos modelos, con las
-métricas de la guarda de §3.2 y el tiempo) y **Fable elige** y fija las
-tolerancias iniciales (ΔE₀₀, bordes, nitidez). Prueba de ONNX Runtime
-nativo frente a stable-diffusion.cpp para escritorio.
+klein 4B, y la de stable-diffusion.cpp y ggml; Sonnet prepara una
+**herramienta** que genera la hoja comparativa (8 renders del motor
+—producto e interior—, 3 intervenciones, los dos modelos, con las
+métricas de la guarda de §3.2, el tiempo y el pico de memoria, en Vulkan
+y en CPU) y que el usuario ejecuta **en su equipo** (aquí no hay GPU); con
+esa hoja **Fable elige** el modelo y fija las tolerancias iniciales
+(ΔE₀₀, bordes, nitidez) y los umbrales de la regla de §2.4. Los `sha256`
+de la web (q4f16) los fija X3d.
 
-**Depende de.** X2, X3 (la guarda tiene que existir para medir).
+**Depende de.** X3c (la tubería tiene que existir para medir).
 
 ## X2 · Pases del motor para la IA — **Opus**
 
-**Qué.** En `rt-core`: pases de albedo (primer rebote no especular),
-normal, profundidad, id de pieza, id de material y mapa de desenfoque
-(círculo de confusión de la cámara de lente fina), con máscara de pases
-en `RNDR`, exportación en `rt-wasm`, acumulación en el pool de E4 y
-lectura en TypeScript. Coincide con la parte de pases de N2 y la
-adelanta.
+**Qué.** Contrato en `AI-POST.md` §7.4 y `src/core/passes.ts`. En
+`rt-core`: pases de albedo (primer rebote no especular), normal,
+profundidad, id de pieza, id de material y mapa de desenfoque (círculo de
+confusión de la lente fina), con máscara de pases en `RNDR`; exportación
+en `rt-wasm`, acumulación en el pool de E4 y lectura en TypeScript; en el
+lanzador, `passes=…` en `/api/render` para los trabajos finales, que los
+guarda por id para la tubería, y `GET /api/render/<id>/passes`. Coincide
+con la parte de pases de N2 y la adelanta.
 
-**Depende de.** E4.
+**Depende de.** E4, y **E5 fusionada** (los dos tocan el integrador).
 
 **Criterio.** Tests: el id de pieza de cada píxel coincide con el `pick`
 del centro del píxel; el albedo de un material difuso es su color; el
 mapa de desenfoque es cero en el plano de enfoque y crece con la
-distancia según la fórmula de lente fina (±1 %); determinismo y paridad
-nativo/wasm intactos.
+distancia según la fórmula de lente fina (±1 %); pedir pases no cambia
+ni un píxel de la imagen; determinismo y paridad nativo/wasm intactos.
 
-## X3 · Tubería de post-procesado y guarda — **Opus**
+## X3 · Tubería de post-procesado y guarda — partida en X3a–X3d
 
-**Qué.** `AI-POST.md` §2.3 y §3: `src/ai/` con ONNX Runtime Web (MIT) en
-workers por etapa, descarga con progreso y `sha256`, caché en OPFS con
-`persist()`, fragmentos de ≤ 1 GiB, mosaicos con solape, relleno y
-recorte a resolución exacta, *prompt* desde materiales y luces,
-condicionamiento con profundidad y bordes de id cuando el motor de
-ejecución lo soporte, y la **guarda determinista** completa
-(transferencia de sombreado, separación de frecuencias, regiones por id
-con ΔE₀₀, nitidez frente al mapa de desenfoque, comprobación y retroceso)
-como funciones puras probadas sin modelo. Integración en la cola: el
-trabajo guarda las dos imágenes y el informe de la guarda. Dependencia
-nueva anotada en `ARCHITECTURE.md` §1.
+Decisión del líder (`AI-POST.md` §7): en escritorio todo nativo (la
+página solo envía ajustes y recibe resultados), la guarda en un *crate*
+propio sin dependencias, y la web detrás.
 
-**Depende de.** X2, U5.
+### X3a · `rt-post`: la guarda y los píxeles — **Opus**
+
+**Qué.** `AI-POST.md` §3.2 y §7.2: `engine/crates/rt-post` (solo `std`,
+`f32`, determinista, sin `unsafe`) con condicionamiento (bordes de los
+cambios de id y normal, profundidad normalizada), plan de mosaicos con
+solape y fusión, relleno a múltiplo de 16 y recorte, la **guarda**
+completa (transferencia de sombreado, separación de frecuencias, regiones
+por id con ΔE₀₀, nitidez frente al mapa de desenfoque), las
+comprobaciones y la máquina de pasos con retroceso; `rt-post-wasm` →
+`public/engine/post.wasm`; en `src/ai/`, la envoltura TypeScript de ese
+wasm y el *prompt* desde materiales y luces (`prompt.ts`). Informe con la
+forma de `GuardReport` (`src/core/ai.ts`).
+
+**Depende de.** Nada (los pases se sintetizan en los tests).
 
 **Criterio.** La guarda, probada con un "modelo" sintético que hace
 cosas prohibidas (mueve una arista, cambia el color de un material,
-emborrona lo enfocado, cambia el tamaño): cada una se detecta y se
-corrige o se rechaza; con intervención 0 la salida es idéntica bit a bit
-a la entrada; la resolución de salida es siempre la del trabajo. En el
-navegador con WebGPU, una imagen de 1024² sale con el modelo real (se
-anota el tiempo); sin WebGPU, el interruptor queda deshabilitado con el
-motivo.
+emborrona lo enfocado, enfoca lo desenfocado, cambia el tamaño, toca
+fuera de las regiones): cada una se detecta y se corrige o se rechaza;
+con intervención 0 la salida es idéntica bit a bit a la entrada sin
+llamar al modelo; la resolución de salida es siempre la del trabajo;
+mismo resultado en nativo y en wasm, bit a bit; puertas del motor
+(`fmt`, `clippy`, sin dependencias en `Cargo.lock`).
+
+### X3b · stable-diffusion.cpp en escritorio — **Opus**
+
+**Qué.** `AI-POST.md` §7.1: `src/data/ai-runtimes.json` con las
+compilaciones oficiales fijadas (Vulkan y CPU, Windows y Linux x86_64:
+URL, tamaño, `sha256`, licencia citada, versión, `supports` comprobado),
+la regla de elección (Vulkan con GPU, CPU sin ella) evaluada igual por la
+interfaz y el lanzador, descarga e instalación desde *Ajustes ▸
+Post-procesado IA* (fila *Motor de ejecución*, con progreso, reanudación
+y `sha256`, a `<datos>/ai/runtimes/<sha256>/`), el proceso auxiliar en
+`rt-app` (arranque, argumentos por clave de modelo, progreso,
+cancelación, tiempo límite, cierre con la aplicación, sin ventana de
+consola en Windows) y la API `/api/ai/runtime` (estado como
+`AiRuntimeStatus`) y `/api/ai/run` (una inferencia *img2img* sin guarda:
+imagen, control, *prompt*, fuerza, semilla).
+
+**Depende de.** P2.
+
+**Criterio.** Tests con un proceso auxiliar **falso** (un binario de
+prueba que habla el mismo protocolo): argumentos exactos por clave,
+progreso, cancelación, tiempo límite, proceso colgado, salida de tamaño
+distinto rechazada; un `sha256` que no coincide no se instala. Con la
+compilación real de Linux CPU, `--help`/versión se leen y la fila de
+*Ajustes* lo muestra. Sin descargar pesos de varios GB en este entorno: la
+primera imagen real se hace en el equipo del usuario.
+
+### X3c · La tubería completa de escritorio — **Opus**
+
+**Qué.** `AI-POST.md` §7.3: `/api/ai/post` en el lanzador (pases
+guardados del render → `rt-post` → stable-diffusion.cpp por mosaico →
+`rt-post` → reintentos), progreso y cancelación; el `AiPostService` de
+escritorio en `src/io/`; integración en la cola (el trabajo guarda las
+dos imágenes y el informe; el historial las conserva); `AI_AVAILABLE`
+pasa a ser lo que diga `status()`.
+
+**Depende de.** X2, X3a, X3b; X4 para verlo de punta a punta.
+
+**Criterio.** De punta a punta con el proceso auxiliar falso: un render
+final con IA deja dos imágenes y el informe en el historial; con
+intervención 0, la imagen de la IA es la del motor bit a bit; cancelar a
+mitad deja la del motor; un modelo que la compilación no carga sale con
+el motivo. Lista corta de comprobación para el equipo del usuario (Vulkan,
+una imagen de 1024², tiempo anotado).
+
+### X3d · La web — **Opus**
+
+**Qué.** `AI-POST.md` §2.3: ONNX Runtime Web (MIT) con WebGPU en
+workers por etapa, **exportar el codificador del VAE a ONNX** desde el
+`ae.safetensors` Apache-2.0 para que exista `ZIMAGE_WEB` (con sus
+`sha256`), caché en OPFS con `persist()`, fragmentos de ≤ 1 GiB, el
+conductor de la máquina de pasos en un worker con `post.wasm`.
+Dependencia nueva anotada en `ARCHITECTURE.md` §1.
+
+**Depende de.** X3c.
+
+**Criterio.** El mismo de X3c con el servicio web; sin WebGPU, el
+interruptor queda deshabilitado con el motivo.
 
 ## X4 · Interfaz del post-procesado — **Sonnet**
 
-**Qué.** `AI-POST.md` §4: interruptor, configurador de seis controles,
-fichas de protecciones, *Otra variación*, vista previa en modo Rápido con
-divisor, actualización al soltar con el tiempo medido, opción de vista
-previa con el motor completo, informe de la guarda en el visor de
-resultados con el divisor de U5, y las dos miniaturas en la cola.
+**Qué.** `AI-POST.md` §4 y §7.5: interruptor, configurador de seis
+controles, fichas de protecciones, *Otra variación*, vista previa en modo
+Rápido con divisor (los pases de §7.4 dibujados con three.js al tamaño de
+la vista previa), actualización al soltar con el tiempo medido, opción
+de vista previa con el motor completo, informe de la guarda en el visor
+de resultados con el divisor de U5, y las dos miniaturas en la cola; los
+ajustes en el *store* (§7.5). Todo contra `AiPostService`
+(`src/core/ai.ts`) con un **servicio sintético** (determinista, sin
+modelo) hasta que X3c conecte el real; mientras, el interruptor dice
+*próximamente* fuera de los tests.
 
-**Depende de.** X3.
+**Depende de.** U5, U6; el contrato de `src/core/ai.ts`.
 
-**Criterio.** Cada control a 0 no cambia su aspecto (test con el modelo
-sintético); la vista previa no se recalcula durante un arrastre; capturas
-de la sección y del visor con el divisor.
+**Criterio.** Cada control a 0 no cambia su aspecto (test con el servicio
+sintético); la vista previa no se recalcula durante un arrastre; los
+pases de three.js coinciden con los del motor en ids y profundidad en una
+escena de prueba; capturas de la sección y del visor con el divisor.
 
 ## X5 · Ajustes y modelos — absorbida en U6
 
@@ -1712,7 +1784,7 @@ integra todo lo que la interfaz marca *próximamente***.
 | **M2** | Opus | Ya descrita: texturas de imagen y etiquetas |
 | **N1**, **N2** | Opus, Sonnet | Vídeo codificado (WebCodecs y muxers MP4 y WebM propios) y lo que quede de pases y lotes |
 | **U8** | Sonnet | Lo pequeño de la interfaz: copia automática y recuperación, letras de acceso en menús, cambiar atajos, *Buscar actualizaciones*, los chequeos del Doctor que faltan y sus *Arreglar* (**D1**) |
-| **X1b–X4** | Fable, Opus, Sonnet | Ya descritas: el post-procesado IA completo |
+| **X1b–X4** | Fable, Opus, Sonnet | Ya descritas: el post-procesado IA completo (X3 partida en X3a–X3d, `AI-POST.md` §7) |
 
 **P3b hecha.** Diálogos del sistema (carpeta, abrir, guardar) desde el
 lanzador con PowerShell en Windows y `zenity`/`kdialog` en Linux, y API
@@ -1781,7 +1853,7 @@ aleatorio por arranque, que hace perder `localStorage` entre arranques
 
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
-**N2**; oleada 4 **X1b**, **X2**, **X3**, **X4**. Cada fase quita sus
+**N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b** y **X4** ya; **X2** al fusionarse E5; **X3c**, **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
 *próximamente* y no deja ninguno nuevo sin anotarlo aquí.
 
 ## Herramientas de estudio (óptica, entorno, luz, cámara, partículas)
