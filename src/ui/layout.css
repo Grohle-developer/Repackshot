@@ -109,9 +109,36 @@ textarea {
   flex: 1 1 0;
   justify-content: flex-end;
 }
-.brand {
-  font-weight: 600;
-  letter-spacing: 0.01em;
+/* The application menu: the app's mark and a caret (UI.md §2.1). */
+.brand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 6px 0 4px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  flex: none;
+  transition: background var(--ease), color var(--ease);
+}
+.brand-btn:hover,
+.brand-btn[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--ink-0);
+}
+.brand-btn:focus-visible {
+  outline: var(--focus-ring) solid var(--line-strong);
+  outline-offset: 1px;
+}
+.brand-mark {
+  display: block;
+  flex: none;
+  /* The tile is black in both themes: a hairline keeps its edge on the dark header. */
+  border-radius: 20%;
+  box-shadow: 0 0 0 1px var(--line);
 }
 .project-name {
   display: flex;

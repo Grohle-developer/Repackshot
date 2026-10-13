@@ -1014,20 +1014,37 @@ mod tests {
         assert!(a.starts_with('d') && a.len() == 25);
     }
 
+    /// An absolute path of this system for a Unix-style one (`C:\home\a` on Windows, where
+    /// `/home/a` is not absolute): `user-dirs.dirs` is read on Linux only, but its test runs on
+    /// every target.
+    fn abs(unix: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!("C:{}", unix.replace('/', "\\")))
+        } else {
+            PathBuf::from(unix)
+        }
+    }
+
     #[test]
     fn user_dirs_and_urls() {
-        let home = Path::new("/home/a");
+        let home = abs("/home/a");
+        let home = home.as_path();
         assert_eq!(
             parse_user_dirs(
                 "# x\nXDG_DESKTOP_DIR=\"$HOME/Desktop\"\nXDG_DOWNLOAD_DIR=\"$HOME/Descargas\"\n",
                 home
             ),
-            Some(PathBuf::from("/home/a/Descargas"))
+            Some(abs("/home/a/Descargas"))
         );
         assert_eq!(
-            parse_user_dirs("XDG_DOWNLOAD_DIR=\"/data/dl\"", home),
-            Some(PathBuf::from("/data/dl"))
+            parse_user_dirs(
+                &format!("XDG_DOWNLOAD_DIR=\"{}\"", abs("/data/dl").display()),
+                home
+            ),
+            Some(abs("/data/dl"))
         );
+        // A relative folder is not one.
+        assert_eq!(parse_user_dirs("XDG_DOWNLOAD_DIR=\"dl\"", home), None);
         assert_eq!(parse_user_dirs("XDG_DOWNLOAD_DIR=\"$HOME/\"", home), None);
         assert_eq!(parse_user_dirs("", home), None);
         assert!(openable_url(

@@ -305,6 +305,7 @@ impl App {
                 .str("resultsDir", &p.results().to_string_lossy())
                 .bool("portable", p.portable)
                 .opt_str("browser", lock(&self.browser).as_deref())
+                .raw("window", &crate::platform::report_json())
                 .num("pid", f64::from(std::process::id()))
                 // The dialogs and file API of files.rs (version 1).
                 .num("filesApi", 1.0)

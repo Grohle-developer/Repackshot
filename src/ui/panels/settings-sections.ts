@@ -18,6 +18,7 @@ import type { Ctx, Scope } from '../reactive';
 import { ACTIONS, kbdText, SHORTCUT_GROUPS, shortcutGroup } from '../shortcuts';
 import { formatNumber, getLang, isaLabel, t } from '../strings';
 import { blockEl, infoRow, rowLabel, rowShell, settingRow, type SettingRowOptions } from './settings-rows';
+import { desktopWindowText } from '../window-host';
 
 export interface SettingsHooks {
   /** Rows drawn by their own code, by row id. */
@@ -363,7 +364,7 @@ function desktopRows(): SettingsHooks['rows'] {
     },
     'desktop.browser': (ctx) => {
       const d = ctx.ui.get().desktop;
-      return d ? infoRow('desktop.browser', rowLabel('desktop.browser'), d.browser ?? t('set.dk.defaultBrowser')) : null;
+      return d ? infoRow('desktop.browser', rowLabel('desktop.browser'), desktopWindowText(d.window, d.browser)) : null;
     },
     'desktop.logs': (ctx) => {
       const d = ctx.ui.get().desktop;

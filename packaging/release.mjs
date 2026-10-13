@@ -10,7 +10,9 @@
 // engine:build) and the interface (npm run build); render the icon from
 // docs/media/logo.svg with the local Chromium; build `repackshot` for
 // x86_64-pc-windows-gnu (mingw-w64, icon and version embedded by its build.rs)
-// and x86_64-unknown-linux-musl (static); assemble the two portable folders
+// and x86_64-unknown-linux-musl (static); take Microsoft's WebView2Loader.dll
+// for the Windows window from the pinned NuGet package (lib/webview2.mjs,
+// cached in out/cache/); assemble the two portable folders
 // and archive them; build the installer with makensis (warnings are errors);
 // write the checksums. Archives use one fixed time (SOURCE_DATE_EPOCH, else the
 // last commit's), so the same tree gives the same bytes.
@@ -31,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { collect, targz, zip } from './lib/archive.mjs';
 import { ico, isAchromatic, renderIcon } from './lib/icon.mjs';
 import { thirdPartyNotices } from './lib/notices.mjs';
+import { webview2Loader, webview2Notice } from './lib/webview2.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ENGINE = join(ROOT, 'engine');
@@ -97,11 +100,17 @@ function readme(os, portable = true) {
   const exe = win ? 'repackshot.exe' : './repackshot';
   const browser = win ? 'Microsoft Edge (it comes with Windows; Google Chrome when Edge is missing)' : 'Chromium, Google Chrome, Microsoft Edge or Brave (the first one found; REPACKSHOT_BROWSER names another)';
   const navegador = win ? 'Microsoft Edge (viene con Windows; Google Chrome si falta Edge)' : 'Chromium, Google Chrome, Microsoft Edge o Brave (el primero que encuentre; REPACKSHOT_BROWSER indica otro)';
+  const opens = win
+    ? 'It opens Repackshot in its own window, drawn by the Microsoft Edge\nWebView2 Runtime that Windows 10 and 11 keep up to date (without it, in an\napp window of Microsoft Edge or Google Chrome),'
+    : `It opens Repackshot in an app window of ${browser}`;
+  const abre = win
+    ? 'Abre Repackshot en su propia ventana, dibujada por el Microsoft Edge\nWebView2 Runtime que Windows 10 y 11 mantienen al día (sin él, en una\nventana de aplicación de Microsoft Edge o Google Chrome),'
+    : `Abre Repackshot en una ventana de aplicación de ${navegador}`;
   const data = win ? '%LOCALAPPDATA%\\Repackshot' : '~/.local/share/repackshot';
   const text = `Repackshot ${VERSION} (${win ? 'Windows x64' : 'Linux x86_64'}${portable ? ', portable' : ''})
 https://github.com/Grohle-developer/Repackshot
 
-Run ${exe}. It opens Repackshot in an app window of ${browser} and renders with
+Run ${exe}. ${opens} and renders with
 every core of the computer. Close the window to quit.
 ${win ? '\nThe program is not signed: the first time, Windows SmartScreen may warn\n("More info", then "Run anyway").\n' : `\nTo add it to the applications menu: ./install-desktop-entry.sh
 (it installs icon.png and a copy of repackshot.desktop pointing here).\n`}
@@ -109,13 +118,13 @@ ${portable ? `Portable: settings, AI models and logs stay in the "data" folder n
 program, because portable.txt is here. Delete portable.txt to keep them in
 ${data} instead.` : `Settings, AI models and logs: ${data}. Uninstall from Settings > Apps.`}
 
-Requirements: ${win ? 'Windows 10 or 11, x64' : 'Linux x86_64 (any distribution: the program is static)'}, and ${win ? 'Edge or Chrome' : 'one of those browsers'}.
+Requirements: ${win ? 'Windows 10 or 11, x64, with the WebView2 Runtime (or Edge or Chrome)' : 'Linux x86_64 (any distribution: the program is static), and one of those browsers'}.
 Licence: PolyForm Noncommercial 1.0.0 (LICENSE): free for noncommercial use.
 Third-party licences: THIRD-PARTY-NOTICES.txt.
 
 --
 
-Ejecuta ${exe}. Abre Repackshot en una ventana de aplicación de ${navegador}
+Ejecuta ${exe}. ${abre}
 y renderiza con todos los núcleos del equipo. Cierra la ventana para salir.
 ${win ? '\nEl programa no está firmado: la primera vez, Windows SmartScreen puede\navisar ("Más información" y luego "Ejecutar de todas formas").\n' : '\nPara añadirlo al menú de aplicaciones: ./install-desktop-entry.sh\n'}
 ${portable ? `Portable: los ajustes, los modelos de IA y los registros se quedan en la carpeta
@@ -168,9 +177,15 @@ async function main() {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(BUILD, { recursive: true });
   const icon = await makeIcon();
+  // The loader of the Windows window (WebView2), pinned by SHA-256, and its licence for the notices.
+  const webview2 = webview2Loader(join(ROOT, 'out', 'cache'));
+  const loaderDll = join(BUILD, 'webview2', 'WebView2Loader.dll');
+  mkdirSync(join(BUILD, 'webview2'), { recursive: true });
+  writeFileSync(loaderDll, webview2.dll);
   const exe = cargoBuild(WIN, { REPACKSHOT_ICON: icon.ico });
   const bin = cargoBuild(LINUX);
   const notices = { text: thirdPartyNotices(ROOT, VERSION) };
+  const winNotices = { text: notices.text + crlf(`\n${webview2Notice(webview2.licence)}`) };
   const licence = join(ROOT, 'LICENSE');
   const mtime = sourceDate();
   const artifacts = [];
@@ -179,9 +194,10 @@ async function main() {
   const winDir = join(BUILD, 'windows', NAME);
   stage(winDir, {
     'repackshot.exe': exe,
+    'WebView2Loader.dll': loaderDll,
     'portable.txt': { text: crlf('Portable mode: Repackshot keeps its data in the "data" folder next to repackshot.exe.\nDelete this file to keep it in %LOCALAPPDATA%\\Repackshot instead.\n') },
     LICENSE: licence,
-    'THIRD-PARTY-NOTICES.txt': notices,
+    'THIRD-PARTY-NOTICES.txt': winNotices,
     'README.txt': { text: readme('windows') },
   }, mtime);
   const winZip = join(OUT, `${NAME}-windows-x64-portable.zip`);
@@ -212,8 +228,9 @@ async function main() {
     const instDir = join(BUILD, 'installer');
     stage(instDir, {
       'repackshot.exe': exe,
+      'WebView2Loader.dll': loaderDll,
       LICENSE: licence,
-      'THIRD-PARTY-NOTICES.txt': notices,
+      'THIRD-PARTY-NOTICES.txt': winNotices,
       'README.txt': { text: readme('windows', false) },
       'licence.txt': { text: `\uFEFF${crlf(readFileSync(licence, 'utf8'))}` },
     }, mtime);

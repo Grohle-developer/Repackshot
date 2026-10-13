@@ -146,6 +146,7 @@ Section "$(SecProgram)" SecProgram
   ; An update replaces the interface whole.
   RMDir /r "$INSTDIR\app"
   File "${STAGE}/repackshot.exe"
+  File "${STAGE}/WebView2Loader.dll"
   File "${STAGE}/LICENSE"
   File "${STAGE}/THIRD-PARTY-NOTICES.txt"
   File "${STAGE}/README.txt"
@@ -154,6 +155,9 @@ Section "$(SecProgram)" SecProgram
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\uninstall.exe"
   CreateShortCut "$SMPROGRAMS\Repackshot.lnk" "$INSTDIR\repackshot.exe" "" "$INSTDIR\repackshot.exe" 0
+  ; The shortcut gets the AppUserModelID the window's process has (Repackshot.App): a pinned shortcut and
+  ; the running window are one taskbar button. Failing it only costs that, so the exit code is ignored.
+  ExecWait '"$INSTDIR\repackshot.exe" --shortcut-id "$SMPROGRAMS\Repackshot.lnk"' $0
   WriteRegStr HKCU "${APP_KEY}" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "Repackshot"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
@@ -172,6 +176,7 @@ SectionEnd
 
 Section "$(SecDesktop)" SecDesktop
   CreateShortCut "$DESKTOP\Repackshot.lnk" "$INSTDIR\repackshot.exe" "" "$INSTDIR\repackshot.exe" 0
+  ExecWait '"$INSTDIR\repackshot.exe" --shortcut-id "$DESKTOP\Repackshot.lnk"' $0
 SectionEnd
 
 ; ---------------------------------------------------------------- AI models
@@ -202,6 +207,7 @@ Section "Uninstall"
   Call un.CheckNotRunning
   RMDir /r "$INSTDIR\app"
   Delete "$INSTDIR\repackshot.exe"
+  Delete "$INSTDIR\WebView2Loader.dll"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\THIRD-PARTY-NOTICES.txt"
   Delete "$INSTDIR\README.txt"

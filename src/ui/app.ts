@@ -24,6 +24,7 @@ import { cssZoom } from './dom';
 import { installSettingsEffects } from './settings-effects';
 import { setLang } from './strings';
 import { PANEL_MAX, PANEL_MIN, type UiStore } from './ui-state';
+import { installCloseGuard, installWindowHost } from './window-host';
 
 export interface App {
   ctx: Ctx;
@@ -237,13 +238,10 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
     cmd.dropFiles(ctx, files, handles);
   });
 
-  // Closing the window or the tab with unsaved changes: the browser asks (the text is the browser's own), unless
-  // General ▸ Confirm before closing is off.
-  window.addEventListener('beforeunload', (e) => {
-    if (!cmd.shouldConfirmClose(ctx)) return;
-    e.preventDefault();
-    e.returnValue = '';
-  });
+  // Closing with unsaved changes: in a browser the browser asks (its own words), unless General ▸ Confirm before
+  // closing is off; in Repackshot's own desktop window the window asks the page and we ask in our interface.
+  installCloseGuard(ctx, window, services.windowHost);
+  installWindowHost(ctx);
   installTooltips();
 
   const painted = new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));

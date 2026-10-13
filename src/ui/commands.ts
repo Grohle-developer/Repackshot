@@ -397,6 +397,11 @@ export async function importDialog(ctx: Ctx): Promise<void> {
 async function saveExport(ctx: Ctx, blob: Blob, name: string, title: string, filter: { name: string; extensions: string[] }): Promise<string | null> {
   const dialogs = ctx.services.dialogs;
   if (!dialogs) {
+    // Repackshot's own window (P3c) never downloads: WebView2 cancels it, and the dialogs come with the launcher.
+    if (ctx.services.windowHost) {
+      ctx.ui.toast(t('dialog.err.notReady'));
+      return null;
+    }
     downloadBlob(blob, name);
     return name;
   }
@@ -727,21 +732,38 @@ export function shouldConfirmClose(ctx: Ctx): boolean {
   return !closeAnswered && ctx.ui.get().settings['general.confirmClose'] && ctx.store.get().meta.dirty;
 }
 
+/** The close questions on screen (closing again while one is asked does not stack another). */
+const closeQuestions = new WeakSet<ConfirmSpec>();
+
 /**
- * Ctrl/⌘ W and Ctrl/⌘ Q in the desktop window (guards.ts): our unsaved-changes question (UI.md §4.3, when General ▸
- * Confirm before closing is on), then the window closes. Never the browser's own "Leave?" dialog.
+ * Closing the desktop window, the one flow for every way to ask it: Ctrl/⌘ W and Ctrl/⌘ Q (guards.ts) and, in
+ * Repackshot's own window (P3c), the window's own close (its close button, Alt F4, the taskbar, the system menu, which
+ * the window turns into `close-requested`). Our unsaved-changes question (UI.md §4.3, when General ▸ Confirm before
+ * closing is on: Save · Don't save · Cancel), then the window closes: `close-ok` to our own window, `window.close()` in
+ * the browser's app window. Never the browser's own "Leave?" dialog.
  */
 export function requestCloseWindow(ctx: Ctx): void {
+  const host = ctx.services.windowHost;
   const close = ctx.services.desktop?.closeWindow;
-  if (!close) return;
+  if (!host && !close) return;
   const go = () => {
+    // Our own window has no beforeunload to quieten: it closes when told.
+    if (host) return host.closeOk();
+    if (!close) return;
     closeAnswered = true;
     close();
     // A window that did not close (the browser refused): the next close asks again.
     setTimeout(() => (closeAnswered = false), 1500);
   };
   if (!ctx.ui.get().settings['general.confirmClose']) return go();
+  const asking = ctx.ui.get().prompt;
+  if (asking && closeQuestions.has(asking)) return;
   afterUnsavedCheck(ctx, t('project.unsavedClose', { name: ctx.store.get().meta.name || t('app.untitled') }), go);
+  const spec = ctx.ui.get().prompt;
+  if (!spec || spec === asking) return;
+  closeQuestions.add(spec);
+  // The question sits under the project name, in the header: the Settings window, which is modal, makes way.
+  if (ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
 }
 
 /** Settings ▸ Render engine ▸ Measure performance: a real run of the example scene with the engine in use. */

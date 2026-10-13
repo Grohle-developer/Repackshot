@@ -69,6 +69,8 @@ export interface NativeInfo {
   portable: boolean;
   /** The browser drawing the window (`msedge`, `chromium`, `default`), or null. */
   browser: string | null;
+  /** What draws the window and why (P3c): `{kind: webview2|browser|default|none, detail, reason}`; null with --serve-only. */
+  window?: { kind: string; detail: string | null; reason: string | null } | null;
   pid: number;
   /** The dialogs and file API (files.rs), version 1; absent in a launcher without them. */
   filesApi?: number;

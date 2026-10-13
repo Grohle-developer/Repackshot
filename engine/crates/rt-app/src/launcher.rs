@@ -1,14 +1,17 @@
 //! A normal run: folders, log, single instance, server, window, and the end of the application
-//! when the window closes (the browser process exits, or the page's heartbeat stops).
+//! when the window closes (our own window is destroyed; or, with the browser's app window, its
+//! process exits or the page's heartbeat stops).
 
 use crate::browser;
 use crate::cli::RunOptions;
 use crate::instance::{self, Instance};
 use crate::log;
 use crate::paths::{self, Env, Paths};
+use crate::platform::{self, Reason, WindowChoice, WindowReport};
 use crate::server::{app_version, engine_version, App, Server};
 use std::io::Write;
 use std::process::Child;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 /// Heartbeat silence after which the application ends.
@@ -55,9 +58,11 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
                     running.port,
                     running.pid
                 );
-                let (child, _) = open_window(&paths, &running.url());
+                let url = running.url();
                 // A handed-off browser exits at once; nothing else to wait for.
-                if let Some(mut c) = child {
+                if let Some((Some(mut c), _)) =
+                    window(&paths, &url, opts.window, Rc::new(|| true), Rc::new(|_| ()))?
+                {
                     std::thread::sleep(Duration::from_millis(200));
                     let _ = c.try_wait();
                 }
@@ -92,17 +97,91 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
     if let Err(e) = instance::write(&paths.instance(), &me) {
         crate::log!("cannot write instance.json: {e}");
     }
-    let (child, name) = open_window(&paths, &server.app.url());
-    *server
-        .app
-        .browser
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = name;
-    watch(&server.app, child);
+    let set_browser = |name: Option<String>| {
+        *server
+            .app
+            .browser
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = name;
+    };
+    if platform::plan(opts.window, cfg!(windows)).is_ok() {
+        set_browser(Some("webview2".into()));
+    }
+    let app = std::sync::Arc::clone(&server.app);
+    let owner = std::sync::Arc::clone(&server.app);
+    let shown = window(
+        &paths,
+        &server.app.url(),
+        opts.window,
+        Rc::new(move || app.silence() < SILENCE),
+        // The file dialogs open owned by our own window (in front of it, modal to it).
+        Rc::new(move |hwnd| {
+            if hwnd != 0 {
+                crate::log!("file dialogs owned by the window {hwnd:#x}");
+            }
+            owner.dialogs.set_owner_window(hwnd);
+        }),
+    );
+    match shown {
+        Ok(None) => {}
+        Ok(Some((child, name))) => {
+            set_browser(name);
+            watch(&server.app, child);
+        }
+        Err(e) => {
+            server.stop();
+            instance::remove_if_ours(&paths.instance(), me.pid);
+            return Err(e);
+        }
+    }
     crate::log!("closing");
     server.stop();
     instance::remove_if_ours(&paths.instance(), me.pid);
     Ok(())
+}
+
+/// The browser's app window: its process when it is ours to watch, and the browser's name.
+type BrowserWindow = (Option<Child>, Option<String>);
+
+/// The window: our own (`platform`, WebView2 on Windows), run here until it closes (`None`);
+/// where it cannot open, the browser's app window, whose process and name are returned to be
+/// watched. `Err` only when `--window=webview2` could not open ours.
+fn window(
+    paths: &Paths,
+    url: &str,
+    choice: WindowChoice,
+    page_alive: Rc<dyn Fn() -> bool>,
+    on_window: Rc<dyn Fn(u64)>,
+) -> Result<Option<BrowserWindow>, String> {
+    let native = match platform::plan(choice, cfg!(windows)) {
+        Ok(()) => platform::run_native_window(&platform::HostOptions {
+            url: url.to_string(),
+            origin: platform::origin_of(url),
+            data_dir: paths.data_dir.clone(),
+            exe_dir: paths.exe_dir.clone(),
+            page_alive,
+            on_window,
+        }),
+        Err(reason) => Err(platform::Unavailable::new(reason, "")),
+    };
+    let why = match native {
+        Ok(()) => {
+            crate::log!("the window closed");
+            return Ok(None);
+        }
+        Err(e) if choice == WindowChoice::WebView2 => {
+            return Err(format!(
+                "no native window ({e}), and --window=webview2 forbids the browser's"
+            ))
+        }
+        Err(e) => e,
+    };
+    if why.reason != Reason::NotWindows {
+        crate::log!("native window unavailable ({why}): opening the browser's app window");
+    }
+    let (child, name) = open_window(paths, url);
+    platform::set_report(WindowReport::fallback(name.as_deref(), Some(why.reason)));
+    Ok(Some((child, name)))
 }
 
 /// Opens the app window (or the default browser). Returns the browser process when it is ours
