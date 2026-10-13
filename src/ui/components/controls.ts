@@ -37,6 +37,9 @@ export interface NumberFieldProps {
   format?: (value: number) => string;
   /** Called on every change with the gesture token of the drag / edit. */
   onChange(value: number, gesture: string): void;
+  /** A drag began / ended: what is costly to redo (the AI preview) waits for the release. */
+  onHold?(): void;
+  onRelease?(): void;
 }
 
 function clampTo(v: number, min?: number, max?: number): number {
@@ -138,6 +141,7 @@ export function numberField(p: NumberFieldProps): Control<number> {
     if (!drag) return;
     const dx = e.clientX - drag.x;
     if (!drag.moved && Math.abs(dx) < 3) return;
+    if (!drag.moved) p.onHold?.();
     drag.moved = true;
     el.classList.add('is-dragging');
     drag.x = e.clientX;
@@ -147,8 +151,10 @@ export function numberField(p: NumberFieldProps): Control<number> {
     commit(drag.start + drag.acc, drag.gesture);
   });
   const endDrag = () => {
+    const moved = drag?.moved;
     drag = null;
     el.classList.remove('is-dragging');
+    if (moved) p.onRelease?.();
   };
   el.addEventListener('pointerup', endDrag);
   el.addEventListener('pointercancel', endDrag);
@@ -249,7 +255,22 @@ export function slider(p: SliderProps): Control<number> {
       p.onChange(v, g);
     },
   });
-  range.addEventListener('pointerdown', () => (gesture = newGesture('slide')));
+  // While the pointer holds the thumb, the thumb is the person's; any other time (an undo, a reset) it follows the value.
+  let dragging = false;
+  range.addEventListener('pointerdown', () => {
+    gesture = newGesture('slide');
+    dragging = true;
+    p.onHold?.();
+    // The drag ends wherever the pointer is let go.
+    const up = () => {
+      document.removeEventListener('pointerup', up, true);
+      document.removeEventListener('pointercancel', up, true);
+      dragging = false;
+      p.onRelease?.();
+    };
+    document.addEventListener('pointerup', up, true);
+    document.addEventListener('pointercancel', up, true);
+  });
   range.addEventListener('keydown', () => (gesture = newGesture('slide')));
   range.addEventListener('input', () => {
     const v = Number(range.value);
@@ -260,7 +281,7 @@ export function slider(p: SliderProps): Control<number> {
   return {
     el,
     set(v) {
-      if (document.activeElement !== range) range.value = String(v);
+      if (!dragging) range.value = String(v);
       field.set(v);
     },
   };

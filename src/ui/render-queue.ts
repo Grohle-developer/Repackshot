@@ -11,11 +11,12 @@
 // is stopped.
 
 import { totalDuration } from '../core/animation';
+import { aiFileName, pipelineOf } from '../core/ai-post';
 import { outputFileName, type NameValues } from '../core/name-template';
 import { formatExtension, frameRange, frameTime, jobCamera, type JobRuntime, type JobStatus, type RenderJob, type RenderSettings } from '../core/render';
-import type { ResultMeta } from '../core/results';
+import type { AiResultInfo, ResultMeta } from '../core/results';
 import type { ProjectState } from '../core/store';
-import { cameraName, studioLabel } from './names';
+import { cameraName, dyn, studioLabel } from './names';
 import type { FrameRequest, FrameResult } from './ports';
 import type { Ctx } from './reactive';
 import { t, tIn } from './strings';
@@ -112,11 +113,49 @@ function patchJob(ctx: Ctx, id: string, patch: Partial<JobRuntime>): void {
   ctx.store.dispatch({ type: 'render/job', id, patch });
 }
 
-/** Stores a result in the history and in the interface's list (evicted ones leave both). */
-export async function recordResult(ctx: Ctx, meta: ResultMeta, out: FrameResult): Promise<void> {
+const abortError = (): DOMException => new DOMException('aborted', 'AbortError');
+
+/**
+ * The AI post-processing of a finished image (AI-POST.md §4, §7): the engine's image has been saved already and
+ * stays the result's own; the service gets a copy and the passes of its camera, and what it makes is saved next
+ * to it (`…_AI.png`) and kept in the history with the guard's report. Never throws but for an abort: when the AI
+ * cannot run, or fails, the person is told and the engine's image is all there is. A REJECTED report keeps the
+ * report (the viewer words it) and no second image: the delivered image is the engine's, unchanged.
+ */
+export async function aiStep(ctx: Ctx, s: RenderSettings, out: FrameResult, cam: string | null, fileName: string, signal: AbortSignal): Promise<{ blob: Blob | null; info: AiResultInfo } | null> {
+  const port = ctx.services.ai;
+  if (!port) return null;
+  const skipped = (reason: string) => {
+    ctx.ui.toast(t('render.aiSkipped', { reason }));
+    return null;
+  };
+  try {
+    const status = await port.service.status();
+    if (!status.available) return skipped(t(dyn(`rw.aiWhy.${status.reason ?? 'NOT_BUILT'}`)));
+    const [image, passes] = await Promise.all([port.decode(out.display ?? out.file), port.passes({ width: out.width, height: out.height, camera: cam })]);
+    if (signal.aborted) throw abortError();
+    const text = port.scenePrompt(ctx.store.get());
+    const result = await port.service.post({ source: { kind: 'INLINE', image, passes }, settings: pipelineOf(s.ai), prompt: text.prompt, negative: text.negative, modelKey: status.activeModel ?? '' }, () => undefined, signal);
+    if (signal.aborted) throw abortError();
+    const name = aiFileName(fileName);
+    if (result.report.verdict === 'REJECTED') {
+      ctx.ui.toast(t('render.aiRejected'));
+      return { blob: null, info: { name, thumb: '', bytes: 0, report: result.report } };
+    }
+    const blob = await port.encode(result.image, { format: s.format, bitDepth: s.bitDepth, jpegQuality: s.jpegQuality, dpi: s.dpi, transparent: s.transparent });
+    await ctx.services.files.save(s.destination, name, blob);
+    return { blob, info: { name, thumb: await thumbnailOf(blob), bytes: blob.size, report: result.report } };
+  } catch (err) {
+    if (signal.aborted || (err instanceof Error && err.name === 'AbortError')) throw err;
+    return skipped(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** Stores a result in the history and in the interface's list (evicted ones leave both). `ai`: the image the AI post-processing made. */
+export async function recordResult(ctx: Ctx, meta: ResultMeta, out: FrameResult, ai: Blob | null = null): Promise<void> {
   let evicted: string[] = [];
   try {
-    evicted = await ctx.services.results.add(meta, out.file, out.display);
+    evicted = await ctx.services.results.add(meta, out.file, out.display, ai);
   } catch (err) {
     console.warn(`results history: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -178,6 +217,8 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
     if (out.seconds > 0 && out.samples > 0) ctx.ui.set({ throughput: (out.samples * out.width * out.height) / out.seconds });
     // The history keeps the image of a job (the first frame of an animation).
     if (k === 0) {
+      // AI post-processing: single images only (animations arrive later), after the engine's image is safe.
+      const ai = s.ai.enabled && !anim ? await aiStep(ctx, s, out, cam, names[k], signal) : null;
       const st = ctx.store.get();
       const camId = cam ?? st.camera.active;
       const meta: ResultMeta = {
@@ -196,10 +237,11 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
         bitDepth: s.bitDepth,
         savedTo: where === 'FOLDER' && s.destination.kind === 'FOLDER' ? s.destination : { kind: 'DOWNLOADS' },
         thumb: await thumbnailOf(out.display ?? out.file),
-        bytes: out.file.size + (out.display?.size ?? 0),
+        bytes: out.file.size + (out.display?.size ?? 0) + (ai?.blob?.size ?? 0),
         ...(anim ? { frame: frames[0].n ?? 1, frames: total } : {}),
+        ...(ai ? { ai: ai.info } : {}),
       };
-      await recordResult(ctx, meta, out);
+      await recordResult(ctx, meta, out, ai?.blob ?? null);
       resultIds.push(meta.id);
       patchJob(ctx, job.id, { resultIds: [...resultIds] });
     }

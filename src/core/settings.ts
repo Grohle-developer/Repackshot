@@ -769,6 +769,8 @@ export function withProjectDefaults(state: ProjectState, s: Settings): ProjectSt
     maxSamples: samples,
     maxSeconds: s['render.seconds'],
     quality: tier ?? 'CUSTOM',
+    // Settings ▸ AI post-processing ▸ Default intervention is also where a new project's window starts (UI.md §2.9).
+    ai: { ...state.render.ai, intervention: s['ai.intervention'] },
   });
   return {
     ...state,

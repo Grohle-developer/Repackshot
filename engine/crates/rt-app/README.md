@@ -332,9 +332,10 @@ almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src
 <datos>/settings.json              el documento de ajustes ({schema, settings, layout} de src/core/settings.ts)
 <datos>/state/<nombre>.json        documentos pequeños (descargas por reanudar, la marca de la migración...)
 <datos>/library/library.json       la biblioteca propia (U4)
-<datos>/results/index.json         el historial: {"version": 1, "results": [{id, file, type, display, meta}]}
+<datos>/results/index.json         el historial: {"version": 1, "results": [{id, file, type, display, ai, aiType, meta}]}
 <datos>/results/<id>.<ext>         el archivo de un resultado tal cual (png, jpg, exr, webp, tif)
 <datos>/results/<id>.display.png   su imagen para el visor, cuando la página no puede mostrar el archivo (EXR)
+<datos>/results/<id>.ai.<ext>      la imagen que hizo el post-procesado IA, cuando el resultado pasó por él (fase X4), en su tipo
 <datos>/cache/thumbs/<clave>.txt   las esferas de materiales (data URL): caché, se libera cuando se quiera
 ```
 
@@ -361,8 +362,9 @@ almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src
 | `GET /api/store/results` | `{"results": [meta...]}`, en el orden en que llegaron; un resultado cuyo archivo se borró a mano no aparece |
 | `PUT /api/store/results/<id>?type=<tipo>` | Cuerpo: el archivo (4 GiB como mucho, escrito por trozos al disco). `image/png`, `image/jpeg`, `image/x-exr`, `image/webp` o `image/tiff`; otro tipo, 415 |
 | `PUT /api/store/results/<id>/display` | Cuerpo: la imagen PNG para el visor (512 MiB como mucho) |
+| `PUT /api/store/results/<id>/ai?type=<tipo>` | Cuerpo: la imagen que hizo el post-procesado IA (X4), con los mismos tipos y límite que el archivo; otra vez en otro tipo deja un solo archivo. Entra en el registro con `PUT .../meta` si ya está |
 | `PUT /api/store/results/<id>/meta` | Cuerpo: el registro (`ResultMeta`, objeto con `id` igual al de la ruta, si no 400 `id-mismatch`). Entra en el índice solo si su archivo ya está (409 `no-file`) |
-| `GET` / `HEAD /api/store/results/<id>[/display]` | El archivo o su imagen, con su tipo y `Range`; 404 si no está |
+| `GET` / `HEAD /api/store/results/<id>[/display\|/ai]` | El archivo, su imagen o la imagen de la IA, con su tipo y `Range`; 404 si no está |
 | `DELETE /api/store/results/<id>` | 204: el registro y sus archivos |
 | `DELETE /api/store/results` | `{"deleted": n}`: el índice y lo que escribió el almacén en `results/` (un archivo que puso la persona se queda) |
 | `GET /api/store/cache/<clave>` | La miniatura (`text/plain`), o 204 si no está (lo normal, no un error) |

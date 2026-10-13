@@ -2,11 +2,13 @@
 // imports from `render` or `io` (ARCHITECTURE §2): main.ts builds these
 // services from the engine and the importers and hands them in.
 
+import type { AiPostService, LinearImage } from '../core/ai';
 import type { Projection, Rect } from '../core/box-select';
 import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
 import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
+import type { RenderPasses } from '../core/passes';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
@@ -230,15 +232,62 @@ export interface FrameResult {
   seconds: number;
 }
 
+// --- AI post-processing (phase X4, AI-POST.md §4, §7.3) ---------------------------------------------------------
+
+/** The inputs of an AI request for a camera: a picture and the passes of §7.4 drawn at the same size. */
+export interface AiFrameRequest {
+  width: number;
+  height: number;
+  /** The job's camera; null: the active one. */
+  camera: CameraId | null;
+  /** Start from the path tracer instead of Fast mode (the preview's "full engine" option), with the job's budget. */
+  fullEngine: { finishBy: FinishBy; maxSamples: number; maxSeconds: number } | null;
+  signal?: AbortSignal;
+}
+
+export interface AiFrame {
+  image: LinearImage;
+  passes: RenderPasses;
+}
+
+/** How a finished AI image is written (the job's format). */
+export interface AiEncodeOptions {
+  format: OutputFormat;
+  bitDepth: BitDepth;
+  /** 1..100 */
+  jpegQuality: number;
+  dpi: number;
+  transparent: boolean;
+}
+
+/**
+ * Everything the interface needs for the AI post-processing step. `service` is the pipeline (the desktop
+ * launcher's, the web's, or the synthetic one of tests and screenshots); the rest builds its inputs from the
+ * engine on screen and turns its output into files. `ui` never imports from `ai`, `render` or `io`.
+ */
+export interface AiPort {
+  readonly service: AiPostService;
+  /** The preview's inputs: the picture of a camera at a size (Fast mode, or the full engine) and its passes. */
+  frame(req: AiFrameRequest): Promise<AiFrame>;
+  /** The passes of §7.4 for a camera at a size, to go with a render that was already made. */
+  passes(req: { width: number; height: number; camera: CameraId | null }): Promise<RenderPasses>;
+  /** A finished render's picture as a linear image. */
+  decode(image: Blob): Promise<LinearImage>;
+  /** An image from the service as a file, in the job's format. */
+  encode(image: LinearImage, opts: AiEncodeOptions): Promise<Blob>;
+  /** The prompt and the negative for a scene (src/ai/prompt.ts arrives with X3a). */
+  scenePrompt(state: ProjectState): { prompt: string; negative: string };
+}
+
 /** The results history in the browser (src/io/results.ts). */
 export interface ResultsPort {
   /** Kept between sessions (IndexedDB), or only in memory (storage unavailable, e.g. a private window). */
   persistent(): Promise<boolean>;
   /** Newest first. */
   list(): Promise<ResultMeta[]>;
-  /** Stores a result; returns the ids evicted to stay within the limits (oldest first). */
-  add(meta: ResultMeta, file: Blob, display: Blob | null): Promise<string[]>;
-  get(id: string): Promise<{ file: Blob; display: Blob | null } | null>;
+  /** Stores a result (`ai`: the image the AI post-processing made, when there is one); returns the ids evicted to stay within the limits (oldest first). */
+  add(meta: ResultMeta, file: Blob, display: Blob | null, ai?: Blob | null): Promise<string[]>;
+  get(id: string): Promise<{ file: Blob; display: Blob | null; ai?: Blob | null } | null>;
   remove(id: string): Promise<void>;
   clear(): Promise<void>;
   /** New limits (Settings ▸ Storage); the ids evicted at once to fit them, oldest first. */
@@ -391,6 +440,8 @@ export interface AppServices {
   library: LibraryServices;
   /** The render engine's settings and Measure performance. */
   engine: EnginePort;
+  /** AI post-processing (phase X4); null or absent when this build has no way to draw its inputs. */
+  ai?: AiPort | null;
   /** The AI model manager; null when this build has none. */
   models: ModelsService | null;
   /** The desktop launcher's inference runtime (X3b, src/io/ai-runtime.ts); absent or null elsewhere. */

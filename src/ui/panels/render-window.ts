@@ -6,7 +6,7 @@
 // format, camera), Size (pixels with an aspect lock, and the print size with
 // its DPI: pixels rule) or, in Animation, the animation output; Quality
 // (finish by samples or time, the estimate from what the engine measured,
-// Advanced); AI post-processing (a placeholder until X3/X4). Footer: a
+// Advanced); AI post-processing (ui/panels/ai-post.ts). Footer: a
 // one-line summary, + Add to queue and Render; editing a queued job shows
 // Save changes instead. ⏎ is Render and ⇧ ⏎ + Add to queue.
 
@@ -14,7 +14,6 @@ import { totalDuration } from '../../core/animation';
 import { outputFileName } from '../../core/name-template';
 import { QUALITY_KEYS, QUALITY_PRESETS, RESOLUTION_PRESETS } from '../../data/quality';
 import {
-  AI_AVAILABLE,
   effectiveBounces,
   estimateSamples,
   estimateSeconds,
@@ -36,6 +35,7 @@ import { numberField, segmented, select, timeField, toggle } from '../components
 import { section } from '../components/section';
 import { h, icon, isTyping, placeAt } from '../dom';
 import { cameraName, dyn } from '../names';
+import { aiPostBody } from './ai-post';
 import type { Ctx, Scope } from '../reactive';
 import { nameValues } from '../render-queue';
 import { kbdText } from '../shortcuts';
@@ -67,7 +67,7 @@ function finishText(s: RenderSettings): string {
 export function summaryLine(s: RenderSettings, frames: number): string {
   const dest = s.destination.kind === 'FOLDER' ? s.destination.name : t('rw.downloads');
   const out = `${formatText(s)} → ${dest}`;
-  const ai = t('rw.summaryAiOff');
+  const ai = t(s.ai.enabled ? 'rw.summaryAiOn' : 'rw.summaryAiOff');
   if (s.mode === 'ANIMATION') {
     return [t('rw.summaryFrames', { frames: framesText(frames), fps: s.animation.fps }), `${s.width} × ${s.height}`, t('rw.perFrameShort', { x: finishText(s) }), out, ai].join(' · ');
   }
@@ -408,18 +408,8 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     section(ctx, 'rw.advanced', t('rw.advanced'), advancedBody, null, true),
   );
 
-  // ------------------------------------------------------------------ AI (X3/X4 mount here)
-  const aiMount = h('div', { class: 'rw-ai-mount', 'data-mount': 'ai-post' });
-  const aiDefault = h('span', { class: 'note' });
-  scope.watch((_s, u) => u.settings['ai.intervention'], (n) => (aiDefault.textContent = t('rw.aiDefault', { n })));
-  const aiBody = h(
-    'div',
-    { class: 'rw-section' },
-    row(t('rw.ai'), h('div', { class: 'rw-inline' }, toggle(false, () => {}, t('rw.ai'), !AI_AVAILABLE).el, h('span', { class: 'aux' }, t('common.comingSoon')))),
-    h('p', { class: 'note rw-ai-note' }, t('rw.aiSoon')),
-    row(t('set.block.models'), h('div', { class: 'rw-inline' }, h('button', { type: 'button', class: 'btn', 'data-settings-link': 'ai.models', onclick: () => cmd.openSettings(ctx, 'ai.models') }, t('rw.aiManage')), aiDefault)),
-    aiMount,
-  );
+  // ------------------------------------------------------------------ AI post-processing (X4, ui/panels/ai-post.ts)
+  const aiBody = aiPostBody(ctx, scope, { get, set: (patch, gesture, label) => cmd.setRenderSettings(ctx, patch, gesture, label) });
 
   const outputSec = section(ctx, 'rw.output', t('rw.output'), outputBody);
   const sizeSec = section(ctx, 'rw.size', t('rw.size'), sizeBody);

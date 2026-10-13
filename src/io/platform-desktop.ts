@@ -222,7 +222,7 @@ export async function migrateFromBrowser(
       for (const { meta, blobs } of old) {
         if (have.has(meta.id)) continue;
         try {
-          await store.putResult(meta.id, meta, blobs.file, blobs.display);
+          await store.putResult(meta.id, meta, blobs.file, blobs.display, blobs.ai ?? null);
           copied.push(`result:${meta.id}`);
         } catch (err) {
           failed.push(`result:${meta.id}`);

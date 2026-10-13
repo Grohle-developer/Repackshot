@@ -7,9 +7,10 @@
 //! <data>/settings.json              the settings document (src/core/settings.ts: {schema, settings, layout})
 //! <data>/state/<name>.json          small documents of the page (downloads to resume, the migration mark...)
 //! <data>/library/library.json       the user's library (U4)
-//! <data>/results/index.json         the results history: {"version": 1, "results": [{id, file, type, display, meta}]}
+//! <data>/results/index.json         the results history: {"version": 1, "results": [{id, file, type, display, ai, aiType, meta}]}
 //! <data>/results/<id>.<ext>         a result's file as it was saved (png, jpg, exr, webp, tif)
 //! <data>/results/<id>.display.png   its picture for the viewer, when the file is one a page cannot show (EXR)
+//! <data>/results/<id>.ai.<ext>      the image the AI post-processing made, when the result went through it (phase X4)
 //! <data>/cache/thumbs/<key>.txt     the material spheres (data URLs): a cache, freed at will
 //! ```
 //!
@@ -376,6 +377,10 @@ pub struct ResultEntry {
     pub media_type: String,
     /// The picture for the viewer, when there is one.
     pub display: Option<String>,
+    /// The image the AI post-processing made, when there is one.
+    pub ai: Option<String>,
+    /// The media type of that image.
+    pub ai_type: Option<String>,
     /// What the page keeps about it (`ResultMeta` of src/core/results.ts), as it sent it.
     pub meta: Value,
 }
@@ -387,6 +392,8 @@ impl ResultEntry {
             .str("file", &self.file)
             .str("type", &self.media_type)
             .opt_str("display", self.display.as_deref())
+            .opt_str("ai", self.ai.as_deref())
+            .opt_str("aiType", self.ai_type.as_deref())
             .raw("meta", &self.meta.to_json())
             .build()
     }
@@ -395,9 +402,11 @@ impl ResultEntry {
         let id = v.get("id")?.as_str()?.to_string();
         let file = v.get("file")?.as_str()?.to_string();
         let display = v.get("display").and_then(Value::as_str).map(str::to_string);
+        let ai = v.get("ai").and_then(Value::as_str).map(str::to_string);
         let ok = valid_name(&id)
             && valid_name(&file)
             && display.as_deref().is_none_or(valid_name)
+            && ai.as_deref().is_none_or(valid_name)
             && matches!(v.get("meta"), Some(Value::Object(_)));
         ok.then(|| ResultEntry {
             id,
@@ -408,6 +417,8 @@ impl ResultEntry {
                 .unwrap_or("application/octet-stream")
                 .to_string(),
             display,
+            ai,
+            ai_type: v.get("aiType").and_then(Value::as_str).map(str::to_string),
             meta: v.get("meta").cloned().unwrap_or(Value::Null),
         })
     }
@@ -441,11 +452,11 @@ fn write_index(data: &Path, entries: &[ResultEntry]) -> Result<(), Response> {
     write_atomic(&path, text.as_bytes()).map_err(|e| io_error(&e))
 }
 
-/// The files of a result on the disk (the file in any of its types, and its picture).
+/// The files of a result on the disk (the file in any of its types, its picture and the AI's image).
 fn result_files(id: &str) -> Vec<String> {
     let mut names: Vec<String> = RESULT_TYPES
         .iter()
-        .map(|(_, ext)| format!("{id}.{ext}"))
+        .flat_map(|(_, ext)| [format!("{id}.{ext}"), format!("{id}.ai.{ext}")])
         .collect();
     names.push(format!("{id}{DISPLAY_SUFFIX}"));
     names
@@ -530,6 +541,37 @@ fn put_result_display(req: &Request, body: &mut dyn Read, data: &Path, id: &str)
     }
 }
 
+/// The image the AI post-processing made (`PUT .../<id>/ai`): kept next to the result's file, in the type it came in.
+fn put_result_ai(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> Response {
+    if let Err(r) = check_id(id) {
+        return r;
+    }
+    let media = req
+        .query("type")
+        .or_else(|| req.header("content-type"))
+        .unwrap_or("");
+    let Some(ext) = result_extension(media) else {
+        return Response::error(415, "bad-type", "png, jpeg, exr, webp or tiff");
+    };
+    if req.content_length > MAX_RESULT {
+        return Response::error(413, "too-large", "the file is too large");
+    }
+    let path = match target(data, &[RESULTS], &format!("{id}.ai.{ext}")) {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    if let Err(e) = write_atomic_from(&path, req.content_length, body) {
+        return io_error(&e);
+    }
+    // The same image sent again in another type leaves one file.
+    if let Some(dir) = path.parent() {
+        for (_, other) in RESULT_TYPES.iter().filter(|(_, e)| *e != ext) {
+            let _ = remove_if_present(&dir.join(format!("{id}.ai.{other}")));
+        }
+    }
+    Response::empty(204)
+}
+
 /// Adds the result to the history once its file is there (`PUT .../<id>/meta`).
 fn commit_result(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> Response {
     if let Err(r) = check_id(id) {
@@ -557,11 +599,16 @@ fn commit_result(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> R
         return Response::error(409, "no-file", "send the result's file first");
     };
     let display = format!("{id}{DISPLAY_SUFFIX}");
+    let ai = RESULT_TYPES
+        .iter()
+        .find(|(_, e)| dir.join(format!("{id}.ai.{e}")).is_file());
     let entry = ResultEntry {
         id: id.to_string(),
         file: format!("{id}.{ext}"),
         media_type: (*media).to_string(),
         display: dir.join(&display).is_file().then_some(display),
+        ai: ai.map(|(_, e)| format!("{id}.ai.{e}")),
+        ai_type: ai.map(|(m, _)| (*m).to_string()),
         meta,
     };
     let mut entries: Vec<ResultEntry> = read_index(data)
@@ -575,16 +622,32 @@ fn commit_result(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> R
     }
 }
 
-fn serve_result(req: &Request, data: &Path, id: &str, display: bool) -> Response {
+/// Which of a result's files a request asks for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Part {
+    File,
+    Display,
+    Ai,
+}
+
+fn serve_result(req: &Request, data: &Path, id: &str, part: Part) -> Response {
     if let Err(r) = check_id(id) {
         return r;
     }
     let (name, media) = {
         let _guard = lock();
         match read_index(data).into_iter().find(|e| e.id == id) {
-            Some(e) if display => match e.display {
+            Some(e) if part == Part::Display => match e.display {
                 Some(d) => (d, "image/png".to_string()),
                 None => return Response::error(404, "not-found", "this result has no picture"),
+            },
+            Some(e) if part == Part::Ai => match e.ai {
+                Some(a) => (
+                    a,
+                    e.ai_type
+                        .unwrap_or_else(|| "application/octet-stream".to_string()),
+                ),
+                None => return Response::error(404, "not-found", "this result has no AI image"),
             },
             Some(e) => (e.file, e.media_type),
             None => return Response::error(404, "not-found", "no such result"),
@@ -849,10 +912,14 @@ pub fn route(
         ("GET", ["store", "results"]) => list_results(data),
         ("DELETE", ["store", "results"]) => clear_results(data),
         ("PUT", ["store", "results", id]) => put_result_file(req, body, data, id),
-        ("GET" | "HEAD", ["store", "results", id]) => serve_result(req, data, id, false),
+        ("GET" | "HEAD", ["store", "results", id]) => serve_result(req, data, id, Part::File),
         ("DELETE", ["store", "results", id]) => delete_result(data, id),
         ("PUT", ["store", "results", id, "display"]) => put_result_display(req, body, data, id),
-        ("GET" | "HEAD", ["store", "results", id, "display"]) => serve_result(req, data, id, true),
+        ("GET" | "HEAD", ["store", "results", id, "display"]) => {
+            serve_result(req, data, id, Part::Display)
+        }
+        ("PUT", ["store", "results", id, "ai"]) => put_result_ai(req, body, data, id),
+        ("GET" | "HEAD", ["store", "results", id, "ai"]) => serve_result(req, data, id, Part::Ai),
         ("PUT", ["store", "results", id, "meta"]) => commit_result(req, body, data, id),
         ("GET", ["store", "cache", key]) => get_cache(data, key),
         ("PUT", ["store", "cache", key]) => put_cache(req, body, data, key),
@@ -862,7 +929,7 @@ pub fn route(
             _,
             ["store", "settings" | "docs" | "library" | "results" | "cache"]
             | ["store", "docs" | "results" | "cache", _]
-            | ["store", "results", _, "display" | "meta"]
+            | ["store", "results", _, "display" | "meta" | "ai"]
             | ["storage", "usage"],
         ) => Response::error(405, "method", "method not allowed"),
         (_, ["store" | "storage", ..]) => Response::error(404, "not-found", "no such endpoint"),
