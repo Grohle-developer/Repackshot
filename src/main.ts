@@ -20,6 +20,7 @@ import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
 import './ui/guards.css';
+import './ui/tour.css';
 import { createSyntheticService } from './ai/synthetic';
 import { notBuiltService } from './ai/not-built';
 import { buildPrompt, guardMaterials } from './ai/prompt';
@@ -51,10 +52,12 @@ import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
-import { detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
+import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
+import { startupRuntimeCheck } from './ui/ai-runtime-state';
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
 import { startupUpdateCheck } from './ui/updates';
+import { maybeStartTour } from './ui/tour';
 import type { AiPort, AppServices, EngineConfig, ViewportPort } from './ui/ports';
 import { aiRuntimeQuery } from './ui/ai-query';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
@@ -725,8 +728,9 @@ const app = mountApp(appEl, store, ui, services);
 void loadResults(app.ctx);
 
 // The desktop launcher's window (P2): its folders, its model store and, in a portable folder's first start, the
-// model chooser. In the browser this resolves at once to null: OPFS models, no Desktop section.
-void nativeReady.then(async (native) => {
+// model chooser. In the browser this resolves at once to null: OPFS models, no Desktop section. `desktopStart` is
+// settled when all of that has had its turn (the guided tour waits for it: the chooser comes first).
+const desktopStart = nativeReady.then(async (native) => {
   if (!native) return;
   // The desktop window: Ctrl/⌘ W asks our own question, links open in the system's browser.
   guards.setDesktop(true, {
@@ -741,7 +745,11 @@ void nativeReady.then(async (native) => {
   if ((i.aiPost ?? 0) >= 1) void detectHardware(app.ctx);
   // The manager has read what the installer chose (if anything) once it has started.
   await modelsService.started;
+  // The installer's choice of device is the person's (the runtime it ticked is the launcher's to download).
+  if (pendingAtStart) applyInstallerChoice(app.ctx, pendingAtStart);
   maybeShowModelChooser(app.ctx, { portable: i.portable, pending: !!pendingAtStart && pendingAtStart.keys.length > 0 });
+  // A model is installed and the inference runtime is not: one quiet note in the status bar, once per session (U10).
+  void startupRuntimeCheck(app.ctx);
 });
 
 // Whatever changes the library is kept at once; if the browser cannot keep it, the person is told.
@@ -863,6 +871,9 @@ void app.painted.then(() => {
         appEl.dataset.ready = '1';
         // Updates ▸ Check at startup: once, in the background, now that the interface is there. Never waited for.
         void startupUpdateCheck(app.ctx);
+        // The guided tour (phase U10): by itself at the first start only, never under automation (ui/tour.ts). After the
+        // desktop's start (the portable's model chooser, which the tour then waits to be closed).
+        void desktopStart.catch(() => undefined).then(() => maybeStartTour(app.ctx, { automated: navigator.webdriver === true, param: params.tour ?? null }));
       });
       return;
     }

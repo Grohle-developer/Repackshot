@@ -5,6 +5,16 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Interfaz
+
+- **Recorrido guiado** (U10): una capa propia que recorre la pantalla zona por zona —menú de la aplicación, árbol y niveles de selección, herramientas de vista, *Rápido* y *Completo*, el inspector (producto, luz y montajes, entorno y cielo, cámara y enfoque, materiales), las pestañas *Luces*, *Cámaras* y *Estudios*, *Añadir ▸ Primitiva*, la ventana de render (cola e IA), los resultados y *Ajustes* sección por sección— con un texto corto por paso, *Siguiente · Atrás · Saltar*, puntos de progreso y las teclas `→`, `←` y `Esc`; en español e inglés, acromática, y los pasos abren lo que necesitan (la ventana de render, Ajustes, la pestaña, el cajón) y lo dejan como estaba. Sale sola en el primer arranque y desde *Ayuda ▸ Recorrido guiado*; *Saltar* cuenta como visto, y se recuerda en el documento de ajustes (la carpeta de datos en escritorio).
+- El menú de la aplicación gana **Ayuda ▸** con *Recorrido guiado*, *Guía*, *Atajos de teclado* y *Acerca de*.
+
+### Post-procesado IA
+
+- **Aviso del motor de ejecución** (U10): con un modelo instalado y sin motor de ejecución (o con la descarga en pausa, o sin que arranque, o sin Microsoft Visual C++ en Windows), la sección de IA de la ventana de render y *Ajustes ▸ Post-procesado IA* lo dicen con un botón **Instalar** (el mismo flujo de la fila *Motor de ejecución*), y la barra de estado lleva una nota discreta una sola vez por sesión. Sin modelo, o con un motor que arranca, no dicen nada.
+- **El instalador pide también el motor de ejecución** (U10): al elegir algún modelo en el paso *Modelos de IA* se marca el motor recomendado para el equipo (Vulkan con tarjeta gráfica, CPU sin ella: la misma regla y los mismos datos que la aplicación), se puede desmarcar, y el lanzador lo descarga en el primer arranque junto a los modelos. El selector del primer arranque de los portables lo ofrece igual. Lo que el instalador elija en *Ejecutar en el procesador* pasa a ser *Ajustes ▸ Post-procesado IA ▸ Ejecutar en*.
+
 ### Correcciones
 
 - *Enfocar con clic* enfoca justo en el punto clicado: medía la distancia en línea recta y el motor enfoca un plano perpendicular a la vista, así que cualquier punto fuera del centro quedaba detrás del plano de foco (aviso del usuario).

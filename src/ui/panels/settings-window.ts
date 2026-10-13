@@ -210,7 +210,7 @@ export function settingsWindow(ctx: Ctx, scope: Scope): HTMLElement {
   scope.watch((_s, u) => u.desktop !== null, () => renderNav());
 
   // ------------------------------------------------------------------ right column
-  const content = h('div', { class: 'sw-content' });
+  const content = h('div', { class: 'sw-content', 'data-guide': 'settings-content' });
   const sectionHost = dynamic(
     scope,
     (_s, u) => `${u.settingsWindow?.section ?? ''}|${u.desktop ? 'd' : 'w'}`,

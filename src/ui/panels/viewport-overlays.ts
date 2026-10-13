@@ -107,7 +107,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
     },
   );
   const frame = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('viewport.frameAll'), 'data-tip': t('viewport.frameAll'), 'data-kbd': kbdFor('frame'), 'data-guide': 'frame', onclick: () => cmd.frameSelection(ctx) }, icon('frame', 20));
-  return h('div', { class: 'ov ov-tl', role: 'toolbar', 'aria-label': t('viewport.views') }, ...buttons, space, xray, h('span', { class: 'ov-sep' }), frame, views, proj, h('span', { class: 'ov-sep' }), lock);
+  return h('div', { class: 'ov ov-tl', role: 'toolbar', 'aria-label': t('viewport.views'), 'data-guide': 'tools' }, ...buttons, space, xray, h('span', { class: 'ov-sep' }), frame, views, proj, h('span', { class: 'ov-sep' }), lock);
 }
 
 function topRight(ctx: Ctx, scope: Scope): HTMLElement {
@@ -624,9 +624,14 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     cmd.dropFiles(ctx, files, handles);
   });
 
-  const hideWhenEmpty = (el: HTMLElement) => {
-    scope.watch((s) => s.scene.roots.length === 0, (empty) => (el.style.visibility = empty ? 'hidden' : ''));
+  // Nothing to work with in an empty project, so the tools and the axes are hidden; the guided tour shows the tools there
+  // anyway (it is a tour of the screen, and the first start is an empty project).
+  const hideWhenEmpty = (el: HTMLElement, shownInTour = false) => {
+    scope.watch(
+      (s, u) => (s.scene.roots.length === 0 && !(shownInTour && u.tour !== null)) as boolean,
+      (hide) => (el.style.visibility = hide ? 'hidden' : ''),
+    );
     return el;
   };
-  return [hideWhenEmpty(toolbar(ctx, scope)), topRight(ctx, scope), meter(ctx, scope), hideWhenEmpty(axes(ctx, scope)), label, box, pickBanner, confirmHost];
+  return [hideWhenEmpty(toolbar(ctx, scope), true), topRight(ctx, scope), meter(ctx, scope), hideWhenEmpty(axes(ctx, scope)), label, box, pickBanner, confirmHost];
 }

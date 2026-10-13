@@ -14,6 +14,7 @@ import { settingsWindow } from './panels/settings-window';
 import { renderBar } from './panels/renderbar';
 import { scenePanel } from './panels/scene';
 import { statusBar } from './panels/status';
+import { tourOverlay } from './panels/tour';
 import { viewportPanel } from './panels/viewport';
 import type { AppServices } from './ports';
 import { dynamic, Root, Scope, type Ctx } from './reactive';
@@ -77,6 +78,8 @@ function onKey(ctx: Ctx, e: KeyboardEvent): boolean {
   const spin = (e.target as HTMLElement | null)?.getAttribute?.('role') === 'spinbutton';
   const typing = isTyping(e) && !(spin && (e.ctrlKey || e.metaKey));
   const u = ctx.ui.get();
+  // The guided tour is modal: its own listener (panels/tour.ts) took the keys it uses; the rest do nothing under it.
+  if (u.tour) return true;
   if (e.key === 'Escape' && !typing) {
     if (u.pickMode) {
       ctx.ui.set({ pickMode: null });
@@ -150,7 +153,9 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
     );
     // The Settings window (UI.md §2.9), the second and last window.
     const settingsHost = dynamic(sc, (_s, u) => (u.settingsWindow ? 'open' : null), (wsc, key) => (key ? settingsWindow(ctx, wsc) : null), undefined, 'div', 'sw-mount');
-    const next = h('div', { class: 'app' }, header(ctx, sc), left, viewportPanel(ctx, sc), right, renderBar(ctx, sc), statusBar(ctx, sc), toasts(sc), windowHost, settingsHost);
+    // The guided tour (phase U10) is over everything, windows included, and owns the keys and the pointer while it is up.
+    const tourHost = dynamic(sc, (_s, u) => (u.tour ? 'on' : null), (tsc, key) => (key ? tourOverlay(ctx, tsc) : null), undefined, 'div', 'tour-mount');
+    const next = h('div', { class: 'app' }, header(ctx, sc), left, viewportPanel(ctx, sc), right, renderBar(ctx, sc), statusBar(ctx, sc), toasts(sc), windowHost, settingsHost, tourHost);
     sc.watch(
       (_s, u) => [u.leftCollapsed, u.rightCollapsed, u.leftWidth, u.rightWidth, u.narrow, u.drawer] as const,
       ([lc, rc, lw, rw, narrow, drawer]) => {

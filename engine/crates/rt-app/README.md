@@ -245,7 +245,7 @@ Todas las rutas `/api/*` llevan `X-Repackshot-Token`. Errores en JSON:
 | `POST /api/alive` | 204. El latido. |
 | `GET /api/hardware[?device=gpu\|cpu][&refresh=1]` | `{cpu, cores, threads, ramBytes, ramGiB, ramUsableBytes, gpus[{name, vendor, vramBytes, vramGiB}], gpuDetection, gpuSources[{source, ok, found, detail}], device, gpuFound, detected, input, recommendation{rowId, recommended, offered[], skipped[]} \| null}`. `gpuDetection`: `ok` si alguna fuente de tarjetas gráficas contestó, `failed` si ninguna (entonces `gpus` vacío no quiere decir «sin tarjeta»); `gpuSources`: qué dijo cada una (`dxgi`, `registry`, `cim`, `wmic`; `nvidia-smi`, `drm`; `test`), con `detail` el error o las notas |
 | `POST /api/open-folder` | Cuerpo `{"folder":"data\|models\|logs\|results"}` o `{"path":"<dentro de la carpeta de datos>"}`; 204, 403 fuera de los datos |
-| `GET /api/pending-models` | Lo que eligió el instalador, normalizado: `{"device":"gpu\|cpu","keys":[...]}`, o `null` |
+| `GET /api/pending-models` | Lo que eligió el instalador, normalizado: `{"device":"gpu\|cpu","keys":[...],"runtime":"SDCPP_WIN_VULKAN"}`, o `null`. `runtime` (U10) solo está si el instalador lo dejó marcado junto a los modelos (un nombre válido; si no lo es, se omite). El lanzador empieza a descargarlo él mismo en el arranque (`Ai::start_pending_runtime`: una clave desconocida, de otro sistema o ya instalada no hace nada); los modelos los empieza la página, que luego borra el fichero |
 | `DELETE /api/pending-models` | 204: consumido |
 
 ### Diálogos y ficheros elegidos
@@ -534,6 +534,8 @@ El INI va en **UTF-16LE con BOM** (lo que leen como Unicode las funciones de INI
 cpu=…  cores=…  threads=…  ram_gib=16.0  gpu=…  vram_gib=12.0  gpu_found=1  detected=1
 [recommendation]
 device=gpu  row=gpu-12  key=ZIMAGE_Q8  offered=KLEIN4B_Q4
+[runtime]
+available=1  key=SDCPP_WIN_VULKAN  backend=VULKAN  file=sd-master-…-win-vulkan-x64.zip  size_mib=29  row=gpu
 [models]
 count=7
 [model0]
@@ -543,6 +545,16 @@ licence=Apache-2.0  commercial=1  restrictions=0  available=1  desktop=1  recomm
 
 (una clave por línea; aquí agrupadas para leerlas). `size_gib` son GiB con un decimal (lo que
 Windows muestra como "GB").
+
+`[runtime]` (fase U10) es **el motor de ejecución que el instalador ofrece junto a los modelos**: la
+compilación que elige la regla de `src/data/ai-runtimes.json` para este sistema (`std::env::consts`)
+con la misma entrada que usa `GET /api/ai/runtime`: GPU que usar si el lanzador mismo, sin forzar
+nada, elegiría la GPU (≥ 4 GiB efectivos), salvo que `--device cpu` pida el procesador. `--device
+gpu` no cambia nada, porque la aplicación solo sabe anular la regla hacia el procesador (`device=cpu`
+de la consulta). `available=0` con todo vacío cuando no hay compilación fijada para el sistema.
+`size_mib` son MiB redondeados (lo que Windows muestra como "MB"). `tests/installer.rs` lee
+`packaging/windows/models-page.nsh` como texto y comprueba que cada `ReadINIStr` tiene su clave en
+este INI y que la línea que escribe en `pending-models.json` es la que lee `read_pending`.
 
 ## IA: el motor de ejecución (X3b)
 

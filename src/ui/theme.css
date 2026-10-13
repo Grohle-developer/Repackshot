@@ -151,7 +151,8 @@
 .ov-pick,
 .ov-confirm > *,
 .rv-head,
-.empty-zone {
+.empty-zone,
+.tour-card {
   zoom: var(--ui-zoom);
 }
 /* A submenu sits inside its menu, which is zoomed already. */

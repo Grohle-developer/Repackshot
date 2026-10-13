@@ -14,6 +14,7 @@ import type { ClipTarget } from '../core/animation';
 import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
+import type { RuntimeWarning } from '../core/ai-runtimes';
 import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
 import type { ReleaseInfo, UpdateFault } from '../core/updates';
 
@@ -110,6 +111,26 @@ export interface SettingsWindowState {
   nonce: number;
   /** The desktop portable's first start: the Models part as a chooser (one, several or none). */
   chooser?: boolean;
+  /** The chooser's box for the inference runtime (phase U10): ticked unless the person unticked it. */
+  chooserRuntime?: boolean;
+}
+
+/** The guided tour (phase U10): the step shown (an index into the steps this computer has), and how it started. */
+export interface TourState {
+  step: number;
+  /** `first`: by itself at the first start; `menu`: Help ▸ Guided tour (or the palette, or `?tour=1`). */
+  how: 'first' | 'menu';
+}
+
+/**
+ * The note in the status bar about the inference runtime (phase U10): the application checks once at start whether
+ * a model is installed and the runtime is not (or does not start), and says so quietly; *Later* dismisses it.
+ */
+export interface RuntimeNote {
+  /** The check had its turn this session (it runs once). */
+  checked: boolean;
+  /** What to say; null: nothing (no problem, or dismissed). */
+  warning: RuntimeWarning | null;
 }
 
 /** What Measure performance measured (Settings ▸ Render engine): real numbers of a real run. */
@@ -274,6 +295,11 @@ export interface UiState {
   settingsSection: SectionId;
   /** The desktop portable's model chooser was shown (once). */
   chooserShown: boolean;
+  /** The guided tour was finished or skipped (remembered): it starts by itself only until then. */
+  tourSeen: boolean;
+  /** The guided tour on screen, or null (not remembered). */
+  tour: TourState | null;
+  runtimeNote: RuntimeNote;
   /** When the update feed last answered (remembered), and the latest release it named. */
   updateCheckedAt: number | null;
   updateLatest: ReleaseInfo | null;
@@ -322,6 +348,7 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'viewportMode',
   'settingsSection',
   'chooserShown',
+  'tourSeen',
   'updateCheckedAt',
   'updateLatest',
 ];
@@ -380,6 +407,9 @@ export function defaultUiState(): UiState {
     settingsPos: null,
     settingsSection: 'general',
     chooserShown: false,
+    tourSeen: false,
+    tour: null,
+    runtimeNote: { checked: false, warning: null },
     updateCheckedAt: null,
     updateLatest: null,
     updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [] },

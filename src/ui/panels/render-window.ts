@@ -36,6 +36,7 @@ import { section } from '../components/section';
 import { h, icon, isTyping, placeAt } from '../dom';
 import { cameraName, dyn } from '../names';
 import { aiPostBody } from './ai-post';
+import { runtimeBadge } from './ai-runtime-notice';
 import type { Ctx, Scope } from '../reactive';
 import { nameValues } from '../render-queue';
 import { kbdText } from '../shortcuts';
@@ -415,7 +416,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   const sizeSec = section(ctx, 'rw.size', t('rw.size'), sizeBody);
   const animSec = section(ctx, 'rw.anim', t('rw.animSection'), animBody);
   const qualitySec = section(ctx, 'rw.quality', t('rw.quality'), qualityBody);
-  const aiSec = section(ctx, 'rw.ai', t('rw.ai'), aiBody, null, true);
+  const aiSec = section(ctx, 'rw.ai', t('rw.ai'), aiBody, runtimeBadge(ctx, scope), true);
   const body = h('div', { class: 'rw-body' }, outputSec, sizeSec, animSec, qualitySec, aiSec);
 
   // ------------------------------------------------------------------ footer
@@ -424,9 +425,9 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   const renderBtn = h('button', { type: 'button', class: 'btn btn-primary btn-big', 'data-kbd': kbdText('enter'), 'data-tip': t('rw.renderTip'), onclick: () => void cmd.renderFromWindow(ctx) }, t('rw.render'));
   const cancelBtn = h('button', { type: 'button', class: 'btn', onclick: () => cmd.closeRenderWindow(ctx) }, t('common.cancel'));
   const saveBtn = h('button', { type: 'button', class: 'btn btn-primary btn-big', 'data-kbd': kbdText('enter'), onclick: () => cmd.saveJobEdit(ctx) }, t('rw.save'));
-  const foot = h('div', { class: 'rw-foot' }, summary, h('div', { class: 'rw-foot-actions' }, ...(editing ? [cancelBtn, saveBtn] : [addBtn, renderBtn])));
+  const foot = h('div', { class: 'rw-foot' }, summary, h('div', { class: 'rw-foot-actions', 'data-guide': 'rw-actions' }, ...(editing ? [cancelBtn, saveBtn] : [addBtn, renderBtn])));
 
-  const win = h('div', { class: 'rw', role: 'dialog', tabindex: -1, 'aria-label': t('rw.title'), 'aria-modal': 'false', 'data-render-window': '' }, titleBar, body, foot);
+  const win = h('div', { class: 'rw', role: 'dialog', tabindex: -1, 'aria-label': t('rw.title'), 'aria-modal': 'false', 'data-render-window': '', 'data-guide': 'render-window' }, titleBar, body, foot);
   const backdrop = h('div', { class: 'rw-backdrop', 'aria-hidden': 'true', onpointerdown: () => cmd.closeRenderWindow(ctx) });
   const host = h('div', { class: 'rw-host' }, backdrop, win);
 
