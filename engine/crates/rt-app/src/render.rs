@@ -452,12 +452,15 @@ impl Job {
         lock(&self.progress).error.clone()
     }
 
-    /// Waits up to `timeout` for a pass newer than `after` (or the end) and returns the frame.
+    /// Waits up to `timeout` for a pass newer than `after`, the end, or a change in how it renders
+    /// next to the finals (it starts or stops sharing, or waits: the page's meter says so at once),
+    /// and returns the frame.
     pub fn wait_newer(&self, after: u32, timeout: Duration) -> Frame {
         let deadline = Instant::now() + timeout;
         let mut p = lock(&self.progress);
+        let mode = (p.mode, p.active);
         loop {
-            if p.pass > after || p.ended.is_some() {
+            if p.pass > after || p.ended.is_some() || (p.mode, p.active) != mode {
                 return self.frame_of(&p);
             }
             let now = Instant::now();
@@ -2066,6 +2069,34 @@ mod tests {
             SubmitError::Busy
         );
         engine.shutdown();
+    }
+
+    #[test]
+    fn a_long_poll_hears_at_once_that_the_viewport_stopped_sharing() {
+        let scene = small_example(4, 8, 8);
+        let job = Arc::new(Job::new(
+            1,
+            Kind::Viewport,
+            &scene,
+            4,
+            &shared(1),
+            ORPHAN_VIEWPORT,
+        ));
+        job.set_mode(FLAG_SHARED, 1);
+        // The final ends: the job's first thread says so at its next turn, with no new pass.
+        let speaker = Arc::clone(&job);
+        let turn = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            speaker.set_mode(0, 4);
+        });
+        let t = Instant::now();
+        let f = job.wait_newer(0, Duration::from_secs(60));
+        turn.join().unwrap();
+        assert_eq!((f.flags & FLAG_SHARED, f.threads, f.pass), (0, 4, 0));
+        assert!(
+            t.elapsed() < Duration::from_secs(30),
+            "it waited for a pass that never came"
+        );
     }
 
     /// Drops the MESH sections of an RSB file.

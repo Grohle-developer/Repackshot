@@ -374,9 +374,11 @@ async function queuePhase(engine, p, log) {
     return { ok: bt?.state === 'RESUME' && !bt.disabled && /Resume/.test(bt.text) && st.every((x) => x === 'QUEUED') && f === 0, bt, st, finals: f };
   });
   check('Pause: the job waits again, the engine is free, the button says Resume', r.ok, { ...r.last, ms: Date.now() - t0 });
-  await sleep(1500);
-  const m2 = await readMeter(page);
-  check('paused: the viewport has the whole engine again', m2?.share === '' && !/sharing|paused while/.test(m2?.title ?? ''), m2?.title);
+  r = await waitFor(async () => {
+    const m = await readMeter(page);
+    return { ok: m?.share === '' && !/sharing|paused while/.test(m?.title ?? ''), title: m?.title };
+  });
+  check('paused: the viewport has the whole engine again', r.ok, { ...r.last, ms: r.ms });
   // Resume.
   await clickAt(page, page.locator('[data-queue-state]'));
   r = await waitFor(async () => {
