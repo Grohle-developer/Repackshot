@@ -1,14 +1,18 @@
 // Viewport overlays (UI.md §2.3): view toolbar (top left), camera and output
 // size (top right), quality meter (bottom left), axes and part size (bottom
-// right), hover label, pick modes and drag and drop of materials and files.
+// right), hover label, pick modes and drag and drop of materials (pointer events) and files.
 
 import { activeCamera, cameraBasis, cameraPosition, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox, length, sub } from '../../core/math';
+import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
+import { dropNodes, viewportDropTarget, type DropTarget } from '../../core/material-drop';
 import { partsUnder, resolvePick, sceneBounds, selectedNodes, type NodeId } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
 import { gizmoTransforms, movableTargets, selectionFrame, type GizmoFrame, type GizmoHandle } from '../../core/transform';
 import * as cmd from '../commands';
 import { newGesture } from '../components/controls';
+import { materialDragActive, registerDropZone } from '../components/material-drag';
+import { boxSelection } from './viewport-box';
 import { confirmBox, openMenu, openMenuAt } from '../components/widgets';
 import { h, icon } from '../dom';
 import type { IconName } from '../icons';
@@ -37,7 +41,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
         type: 'button',
         class: 'icon-btn',
         'aria-label': t(dyn(tl.action)),
-        'data-tip': t(dyn(tl.action)),
+        'data-tip': tl.id === 'select' ? `${t(dyn(tl.action))} · ${t('tool.selectBox')}` : t(dyn(tl.action)),
         'data-kbd': kbdFor(tl.action),
         'data-tool': tl.id,
         onclick: () => cmd.setTool(ctx, tl.id),
@@ -56,6 +60,16 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
       space.textContent = t(dyn(`space.${sp}`));
       space.setAttribute('aria-pressed', String(sp === 'LOCAL'));
       space.setAttribute('aria-label', `${t('viewport.space')}: ${t(dyn(`space.${sp}`))}`);
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
+  // X-ray of the box selection at the Faces level: hidden faces count too.
+  const xray = h('button', { type: 'button', class: 'ov-text-btn', 'data-tip': t('viewport.xrayAux'), onclick: () => ui.set({ boxXray: !ui.get().boxXray }) }, t('viewport.xray'));
+  scope.watch(
+    (s, u) => [s.selection.level === 'FACES' && (u.tool === 'select' || u.tool === 'move'), u.boxXray] as const,
+    ([show, on]) => {
+      xray.style.display = show ? '' : 'none';
+      xray.setAttribute('aria-pressed', String(on));
     },
     (a, b) => a[0] === b[0] && a[1] === b[1],
   );
@@ -87,7 +101,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
     },
   );
   const frame = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('viewport.frameAll'), 'data-tip': t('viewport.frameAll'), 'data-kbd': kbdFor('frame'), 'data-guide': 'frame', onclick: () => cmd.frameSelection(ctx) }, icon('frame', 20));
-  return h('div', { class: 'ov ov-tl', role: 'toolbar', 'aria-label': t('viewport.views') }, ...buttons, space, h('span', { class: 'ov-sep' }), frame, views, proj, h('span', { class: 'ov-sep' }), lock);
+  return h('div', { class: 'ov ov-tl', role: 'toolbar', 'aria-label': t('viewport.views') }, ...buttons, space, xray, h('span', { class: 'ov-sep' }), frame, views, proj, h('span', { class: 'ov-sep' }), lock);
 }
 
 function topRight(ctx: Ctx, scope: Scope): HTMLElement {
@@ -294,6 +308,8 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     raf = requestAnimationFrame(() => {
       raf = 0;
       const ev = lastMove!;
+      // A dragged material owns the outline and the label (its zone, below).
+      if (materialDragActive()) return;
       if (ev.buttons !== 0) {
         // Orbiting, panning or dragging a handle: no hover outline (it would follow the camera on every frame).
         label.style.display = 'none';
@@ -406,16 +422,7 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
   window.addEventListener('pointercancel', endDrag, listen);
 
   // Click (a press without a drag): pick modes, then selection by level.
-  let down: { x: number; y: number } | null = null;
-  canvas.addEventListener('pointerdown', (e) => {
-    down = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
-    canvas.focus({ preventScroll: true });
-  }, listen);
-  canvas.addEventListener('pointerup', (e) => {
-    if (!down || e.button !== 0) return;
-    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-    down = null;
-    if (moved > 4) return;
+  const clickAt = (e: { clientX: number; clientY: number }, mods: Mods) => {
     const p = local(e);
     const s = store.get();
     const pm = ui.get().pickMode;
@@ -438,18 +445,38 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     }
     // The move tool selects with a click too (a drag on a handle never gets here).
     if (ui.get().tool !== 'select' && ui.get().tool !== 'move') return;
-    const add = e.shiftKey;
-    const toggle = e.ctrlKey || e.metaKey;
+    // Plain: replace. Shift: add. Ctrl / Cmd: in or out. Alt: out (UI.md §4.1; the same for a face).
+    const mode = clickModeOf(mods);
     if (!tg) {
-      if (!add && !toggle) cmd.deselect(ctx);
+      if (mode === 'set') cmd.deselect(ctx);
       return;
     }
     if (s.selection.level === 'FACES') {
-      store.dispatch({ type: 'scene/selectFaces', part: tg.part, indices: [tg.face], mode: toggle ? 'toggle' : add ? 'add' : 'set' });
+      // Phase M1: the whole face under the pointer; Shift takes the triangle alone (and adds it).
+      cmd.selectFaceAt(ctx, tg.part, tg.face, { loose: mods.shift, mode });
       return;
     }
-    store.dispatch({ type: 'scene/select', ids: [tg.id], mode: toggle ? 'toggle' : add ? 'add' : 'set' });
+    if (mode === 'remove') {
+      if (s.selection.ids.includes(tg.id)) store.dispatch({ type: 'scene/select', ids: [tg.id], mode: 'toggle' });
+      return;
+    }
+    store.dispatch({ type: 'scene/select', ids: [tg.id], mode });
+  };
+  let down: { x: number; y: number } | null = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    down = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+    canvas.focus({ preventScroll: true });
   }, listen);
+  canvas.addEventListener('pointerup', (e) => {
+    if (!down || e.button !== 0 || materialDragActive()) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    down = null;
+    if (moved > CLICK_PIXELS) return;
+    // Alt takes out, except where "Alt + left button orbits": there it is the camera's.
+    clickAt(e, clickMods(ui.get().settings['viewport.mouse'], { shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey }));
+  }, listen);
+  // Selection by box with the Select tool (UI.md §4.1): Ctrl/Cmd + drag, or a plain drag where the left button is free; see core/box-select.ts.
+  const box = boxSelection(ctx, scope, vp, canvas, { busy: () => drag !== null, local, click: clickAt });
   // Right click on a part (a press without a drag: a right drag pans): the context menu of UI.md §2.2.
   let rightDown: { x: number; y: number } | null = null;
   canvas.addEventListener('pointerdown', (e) => {
@@ -477,17 +504,66 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     if (tg) cmd.frameSelection(ctx, [tg.id]);
   }, listen);
 
-  // Drag and drop: materials onto parts, model files anywhere.
-  const isMaterial = (e: DragEvent) => e.dataTransfer?.types.includes('application/x-repackshot-material') ?? false;
+  // A material dragged from the inspector (pointer events, ui/components/material-drag.ts) lands on what a click
+  // there would select at the level in force; at Faces, on the whole face under the pointer. The part, the group
+  // or the faces light up while it is over them.
+  // The face under the pointer is worked out once per triangle, not once per frame.
+  let memo: { nodes: ProjectState['scene']['nodes']; level: string; node: NodeId; face: number; target: DropTarget | null } | null = null;
+  let tinted: DropTarget | null = null;
+  const dropTarget = (x: number, y: number) => {
+    const p = local({ clientX: x, clientY: y });
+    const s = store.get();
+    const hit = port.pick(p.x, p.y);
+    if (hit && memo && memo.nodes === s.scene.nodes && memo.level === s.selection.level && memo.node === hit.node && memo.face === hit.face) return { p, target: memo.target };
+    const target = viewportDropTarget(s, hit, s.selection.level);
+    memo = hit ? { nodes: s.scene.nodes, level: s.selection.level, node: hit.node, face: hit.face, target } : null;
+    return { p, target };
+  };
+  const shown = (target: DropTarget | null) => {
+    const ids = target?.kind === 'nodes' ? target.ids[0] : null;
+    if (ui.get().hover !== ids) ui.set({ hover: ids });
+    const faces = target?.kind === 'faces' ? target : null;
+    if (faces === tinted) return;
+    tinted = faces;
+    port.setHoverFaces(faces ? { part: faces.part, indices: faces.indices } : null);
+  };
+  scope.onDispose(
+    registerDropZone(canvas, {
+      over: (pt) => {
+        const { p, target } = dropTarget(pt.x, pt.y);
+        shown(target);
+        const name = target ? store.get().scene.nodes[dropNodes(target)[0]]?.name : undefined;
+        label.style.display = name ? '' : 'none';
+        if (name) {
+          label.textContent = name;
+          label.style.left = `${p.x + 14}px`;
+          label.style.top = `${p.y + 12}px`;
+        }
+        return target !== null;
+      },
+      leave: () => {
+        shown(null);
+        memo = null;
+        label.style.display = 'none';
+      },
+      drop: (pt, payload) => {
+        const src = cmd.parseMaterialDrag(payload);
+        const { p, target } = dropTarget(pt.x, pt.y);
+        if (!src || !target) return;
+        const spec = cmd.requestDrop(ctx, src, target, pt.alt);
+        if (spec) {
+          confirmHost.style.left = `${Math.max(0, Math.min(p.x, vp.clientWidth - 370))}px`;
+          confirmHost.style.top = `${Math.max(0, Math.min(p.y, vp.clientHeight - 140))}px`;
+          confirmHost.replaceChildren(confirmBox(spec, () => confirmHost.replaceChildren()));
+        }
+      },
+    }),
+  );
+
+  // Model files anywhere on the viewport.
   const isFile = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false;
   vp.addEventListener('dragover', (e) => {
-    if (isMaterial(e)) {
-      e.preventDefault();
-      const p = local(e);
-      const tg = targetAt(p.x, p.y);
-      if (ui.get().hover !== (tg?.id ?? null)) ui.set({ hover: tg?.id ?? null });
-      if (e.dataTransfer) e.dataTransfer.dropEffect = tg ? 'copy' : 'none';
-    } else if (isFile(e)) {
+    if (isFile(e)) {
       e.preventDefault();
       vp.classList.add('is-drop-target');
     }
@@ -497,31 +573,16 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
   });
   vp.addEventListener('drop', (e) => {
     vp.classList.remove('is-drop-target');
-    if (isFile(e)) {
-      e.preventDefault();
-      // A project opens; models go to the import sheet.
-      const { files, handles } = cmd.readDrop(e.dataTransfer);
-      cmd.dropFiles(ctx, files, handles);
-      return;
-    }
-    if (!isMaterial(e)) return;
+    if (!isFile(e)) return;
     e.preventDefault();
-    ui.set({ hover: null });
-    const src = cmd.parseMaterialDrag(e.dataTransfer?.getData('application/x-repackshot-material') ?? '');
-    const p = local(e);
-    const tg = targetAt(p.x, p.y);
-    if (!src || !tg) return;
-    const spec = cmd.requestAssign(ctx, src, [tg.id]);
-    if (spec) {
-      confirmHost.style.left = `${Math.min(p.x, vp.clientWidth - 370)}px`;
-      confirmHost.style.top = `${Math.min(p.y, vp.clientHeight - 140)}px`;
-      confirmHost.replaceChildren(confirmBox(spec, () => confirmHost.replaceChildren()));
-    }
+    // A project opens; models go to the import sheet.
+    const { files, handles } = cmd.readDrop(e.dataTransfer);
+    cmd.dropFiles(ctx, files, handles);
   });
 
   const hideWhenEmpty = (el: HTMLElement) => {
     scope.watch((s) => s.scene.roots.length === 0, (empty) => (el.style.visibility = empty ? 'hidden' : ''));
     return el;
   };
-  return [hideWhenEmpty(toolbar(ctx, scope)), topRight(ctx, scope), meter(ctx, scope), hideWhenEmpty(axes(ctx, scope)), label, pickBanner, confirmHost];
+  return [hideWhenEmpty(toolbar(ctx, scope)), topRight(ctx, scope), meter(ctx, scope), hideWhenEmpty(axes(ctx, scope)), label, box, pickBanner, confirmHost];
 }

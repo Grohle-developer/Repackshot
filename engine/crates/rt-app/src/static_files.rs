@@ -6,6 +6,7 @@
 //! canonical folder (which also stops symbolic links that point outside).
 
 use crate::http::{parse_range, Body, RangeAnswer, Request, Response};
+use crate::sha256::{hex, Sha256};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -85,7 +86,55 @@ pub fn resolve(root: &Path, path: &str) -> Result<PathBuf, PathError> {
     Ok(real)
 }
 
+/// What a file Vite named by content hash is told: it never changes under that name.
+const IMMUTABLE: &str = "public, max-age=31536000, immutable";
+
+/// The largest file whose ETag is made from its bytes (the interface's own small assets).
+const CONTENT_ETAG_LIMIT: u64 = 8 << 20;
+
+/// True for the build's own chunks and files: directly inside `/assets/` and named `name-HASH.ext`, where
+/// the hash is the 8 characters (letters, digits, `_` and `-`) that Vite puts before the extension.
+/// The generated assets that `public/assets/` adds (`aperture/`, `gobo/`, their `index.json`) are not
+/// hashed and can change from one version to the next under the same name, so they are never immutable.
+pub fn is_hashed_asset(path: &str) -> bool {
+    let Some(name) = path.strip_prefix("/assets/") else {
+        return false;
+    };
+    if name.contains('/') || name.ends_with(".html") {
+        return false;
+    }
+    let Some((stem, ext)) = name.rsplit_once('.') else {
+        return false;
+    };
+    let bytes = stem.as_bytes();
+    // At least one character of name, the dash, and the 8 of the hash.
+    if bytes.len() < 10 || ext.is_empty() || !ext.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return false;
+    }
+    let (head, hash) = bytes.split_at(bytes.len() - 8);
+    head[head.len() - 1] == b'-'
+        && hash
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+}
+
+/// A strong ETag from the bytes of a small file: its SHA-256 in quotes.
+fn content_etag(path: &Path) -> Option<String> {
+    let mut file = File::open(path).ok()?;
+    if file.metadata().ok()?.len() > CONTENT_ETAG_LIMIT {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    Some(format!("\"{}\"", hex(&Sha256::digest(&bytes))))
+}
+
 /// Serves an interface file (GET or HEAD).
+///
+/// Only the files that Vite named by content hash are immutable. Everything else is revalidated on every
+/// request (`no-cache`); a small file under `/assets/` that is not hashed (the generated aperture masks and
+/// gobos) is tagged with the hash of its bytes, so a regenerated file is never taken for the old one even if
+/// its size and time are the same, and an unchanged one costs a 304.
 pub fn serve(root: &Path, req: &Request) -> Response {
     match resolve(root, &req.path) {
         Ok(path) => {
@@ -93,13 +142,15 @@ pub fn serve(root: &Path, req: &Request) -> Response {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            // Vite names everything under assets/ by content hash; the rest is checked every time.
-            let cache = if req.path.starts_with("/assets/") && !name.ends_with(".html") {
-                "public, max-age=31536000, immutable"
+            if is_hashed_asset(&req.path) {
+                return file_response(&path, req, mime(&name), IMMUTABLE);
+            }
+            let etag = if req.path.starts_with("/assets/") {
+                content_etag(&path)
             } else {
-                "no-cache"
+                None
             };
-            file_response(&path, req, mime(&name), cache)
+            file_response_tagged(&path, req, mime(&name), "no-cache", etag)
         }
         Err(PathError::Forbidden) => Response::text(400, "bad path"),
         Err(PathError::NotFound) => Response::text(404, "not found"),
@@ -108,6 +159,17 @@ pub fn serve(root: &Path, req: &Request) -> Response {
 
 /// A file as a response: 200, or 206 / 416 for a `Range`, or 304 when `If-None-Match` matches.
 pub fn file_response(path: &Path, req: &Request, content_type: &str, cache: &str) -> Response {
+    file_response_tagged(path, req, content_type, cache, None)
+}
+
+/// [`file_response`] with the ETag given by the caller (default: the size and the modification time).
+fn file_response_tagged(
+    path: &Path,
+    req: &Request,
+    content_type: &str,
+    cache: &str,
+    etag: Option<String>,
+) -> Response {
     let Ok(mut file) = File::open(path) else {
         return Response::text(404, "not found");
     };
@@ -120,7 +182,7 @@ pub fn file_response(path: &Path, req: &Request, content_type: &str, cache: &str
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_nanos());
-    let etag = format!("\"{len:x}-{mtime:x}\"");
+    let etag = etag.unwrap_or_else(|| format!("\"{len:x}-{mtime:x}\""));
     let common = |r: Response| {
         r.with("Cache-Control", cache)
             .with("Accept-Ranges", "bytes")
@@ -201,10 +263,17 @@ mod tests {
         std::fs::create_dir_all(dir.join("app/assets")).unwrap();
         std::fs::create_dir_all(dir.join("app/engine")).unwrap();
         std::fs::write(dir.join("app/index.html"), "<!doctype html>hi").unwrap();
-        std::fs::write(dir.join("app/assets/a-1234.js"), "console.log(1)").unwrap();
+        std::fs::write(dir.join("app/assets/a-AbCd1234.js"), "console.log(1)").unwrap();
         std::fs::write(dir.join("app/engine/rt.wasm"), b"\0asm0123456789").unwrap();
         std::fs::write(dir.join("secret.txt"), "outside").unwrap();
         dir
+    }
+
+    fn header(r: &Response, name: &str) -> Option<String> {
+        r.headers
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
     }
 
     #[test]
@@ -215,7 +284,7 @@ mod tests {
             resolve(&root, "/").unwrap(),
             root.join("index.html").canonicalize().unwrap()
         );
-        assert!(resolve(&root, "/assets/a-1234.js").is_ok());
+        assert!(resolve(&root, "/assets/a-AbCd1234.js").is_ok());
         assert_eq!(
             resolve(&root, "/engine/").unwrap_err(),
             PathError::NotFound,
@@ -226,7 +295,7 @@ mod tests {
             "/assets/../../secret.txt",
             "/./index.html",
             "//etc/passwd",
-            "/assets//a-1234.js",
+            "/assets//a-AbCd1234.js",
             "/..\\secret.txt",
             "/a\0b",
             "/C:/Windows/win.ini",
@@ -260,7 +329,7 @@ mod tests {
         assert_eq!(bytes, b"<!doctype html>hi");
         assert!(headers.contains(&("Cache-Control".into(), "no-cache".into())));
         assert!(headers.contains(&("Content-Type".into(), "text/html; charset=utf-8".into())));
-        let (_, headers, _) = body(serve(&root, &request("/assets/a-1234.js", &[])));
+        let (_, headers, _) = body(serve(&root, &request("/assets/a-AbCd1234.js", &[])));
         assert!(headers
             .iter()
             .any(|(n, v)| n == "Cache-Control" && v.contains("immutable")));
@@ -302,5 +371,145 @@ mod tests {
         let again = serve(&root, &request("/", &[("if-none-match", &etag)]));
         assert_eq!(again.status, 304);
         assert!(again.is_empty());
+    }
+
+    /// The names Vite gave the chunks of this very build (`dist/assets/`, Vite 8: `[name]-[hash]`, 8 characters
+    /// of base64url) and the names `public/assets/` adds without a hash (phase A6).
+    const VITE_NAMES: [&str; 8] = [
+        "/assets/index-CrEVO15M.js",
+        "/assets/index-CSYxRB1J.css",
+        "/assets/fflate.module-DXbirBWY.js",
+        "/assets/BufferGeometryUtils-CKdCIbpA.js",
+        "/assets/step-worker-CS6AyHqv.js",
+        "/assets/model-worker-BIUC3TRQ.js",
+        "/assets/worker-eCYHXH04.js",
+        "/assets/x-Ab-d_123.js",
+    ];
+    const UNHASHED_NAMES: [&str; 14] = [
+        "/assets/aperture/index.json",
+        "/assets/aperture/polygon-03.png",
+        "/assets/aperture/polygon-03-curved.png",
+        "/assets/aperture/filter-mesh.png",
+        "/assets/gobo/index.json",
+        "/assets/gobo/leaves-dense.png",
+        "/assets/gobo/window-arched.png",
+        "/assets/gobo/blinds-angled.png",
+        "/assets/README.md",
+        "/assets/scratches.png",
+        // Hash-like names in a folder are still not the build's own.
+        "/assets/aperture/index-CrEVO15M.js",
+        // Too short, no name, no extension, an HTML page.
+        "/assets/index-short.js",
+        "/assets/-AbCd1234.js",
+        "/assets/index-CrEVO15M",
+    ];
+
+    #[test]
+    fn is_hashed_asset_matches_what_vite_emits_and_nothing_else() {
+        for name in VITE_NAMES {
+            assert!(is_hashed_asset(name), "{name}");
+        }
+        for name in UNHASHED_NAMES {
+            assert!(!is_hashed_asset(name), "{name}");
+        }
+        assert!(!is_hashed_asset("/index-CrEVO15M.js"), "outside assets/");
+        assert!(!is_hashed_asset("/assets/index-CrEVO15M.html"));
+        assert!(!is_hashed_asset("/vendor/occt-import-js/occt-import-js.js"));
+    }
+
+    #[test]
+    fn only_files_with_a_content_hash_are_immutable() {
+        let dir = site();
+        let root = dir.join("app");
+        for name in VITE_NAMES.iter().chain(UNHASHED_NAMES.iter()) {
+            let file = root.join(name.trim_start_matches('/'));
+            if file.extension().is_none() {
+                continue;
+            }
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(&file, name.as_bytes()).unwrap();
+        }
+        for name in VITE_NAMES {
+            let r = serve(&root, &request(name, &[]));
+            assert_eq!(r.status, 200, "{name}");
+            assert_eq!(
+                header(&r, "Cache-Control").as_deref(),
+                Some("public, max-age=31536000, immutable"),
+                "{name}"
+            );
+        }
+        for name in UNHASHED_NAMES {
+            if !root.join(name.trim_start_matches('/')).is_file() {
+                continue;
+            }
+            let r = serve(&root, &request(name, &[]));
+            assert_eq!(r.status, 200, "{name}");
+            let cache = header(&r, "Cache-Control").unwrap();
+            assert_eq!(
+                cache, "no-cache",
+                "{name} must be revalidated, not immutable"
+            );
+            assert!(!cache.contains("immutable"), "{name}");
+            assert!(header(&r, "ETag").is_some(), "{name}");
+        }
+        // The real aperture and gobo folders: a PNG and the index of each.
+        for name in [
+            "/assets/aperture/polygon-03.png",
+            "/assets/gobo/leaves-dense.png",
+            "/assets/aperture/index.json",
+            "/assets/gobo/index.json",
+        ] {
+            let r = serve(&root, &request(name, &[]));
+            assert_ne!(
+                header(&r, "Cache-Control").as_deref(),
+                Some("public, max-age=31536000, immutable"),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unhashed_asset_is_tagged_by_its_bytes_and_a_changed_file_is_never_a_304() {
+        let dir = site();
+        let root = dir.join("app");
+        let file = root.join("assets/aperture/index.json");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, b"{\"v\":1}").unwrap();
+        let before = std::fs::metadata(&file).unwrap().modified().unwrap();
+
+        let first = serve(&root, &request("/assets/aperture/index.json", &[]));
+        let etag = header(&first, "ETag").unwrap();
+        // A strong ETag (no W/) made of the SHA-256 of the bytes.
+        assert_eq!(etag, format!("\"{}\"", hex(&Sha256::digest(b"{\"v\":1}"))));
+        let same = serve(
+            &root,
+            &request("/assets/aperture/index.json", &[("if-none-match", &etag)]),
+        );
+        assert_eq!(same.status, 304);
+        assert!(same.is_empty());
+        assert_eq!(header(&same, "Cache-Control").as_deref(), Some("no-cache"));
+
+        // The file is regenerated: other bytes, the same length and the same modification time (as in a package that
+        // normalises its timestamps). Size and time cannot tell, the bytes can.
+        std::fs::write(&file, b"{\"v\":2}").unwrap();
+        File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(before)
+            .unwrap();
+        let changed = serve(
+            &root,
+            &request("/assets/aperture/index.json", &[("if-none-match", &etag)]),
+        );
+        assert_eq!(
+            changed.status, 200,
+            "the old ETag must not match the new bytes"
+        );
+        assert_ne!(header(&changed, "ETag").unwrap(), etag);
+
+        // The interface's own files keep the size and time tag: no hashing of a big file for every request.
+        let r = serve(&root, &request("/engine/rt.wasm", &[]));
+        assert!(header(&r, "ETag").unwrap().contains('-'));
     }
 }

@@ -301,6 +301,13 @@ interface RowBase {
   comingSoon?: boolean;
   /** Only in the desktop application. */
   desktopOnly?: boolean;
+  /** Only in the web version: about what the browser keeps or allows (hidden in the desktop application, P3e). */
+  webOnly?: boolean;
+}
+
+/** Whether a row exists where the interface runs (`desktop`: the launcher's window). */
+export function rowShownHere(row: Pick<RowBase, 'desktopOnly' | 'webOnly'>, desktop: boolean): boolean {
+  return desktop ? !row.webOnly : !row.desktopOnly;
 }
 
 export interface SettingMeta extends RowBase {
@@ -327,7 +334,7 @@ const num = (min: number, max: number, step: number, unit?: string, zero?: boole
 function setting(id: SettingKey, section: SectionId, block: string, control: ControlSpec, keywords: Keywords, extra: Partial<Pick<SettingMeta, 'aux' | 'comingSoon' | 'desktopOnly' | 'newProjects'>> = {}): SettingMeta {
   return { kind: 'setting', id, section, block, control, keywords, ...extra };
 }
-function row(id: string, section: SectionId, block: string, keywords: Keywords, extra: Partial<Pick<ExtraRow, 'aux' | 'comingSoon' | 'desktopOnly'>> = {}): ExtraRow {
+function row(id: string, section: SectionId, block: string, keywords: Keywords, extra: Partial<Pick<ExtraRow, 'aux' | 'comingSoon' | 'desktopOnly' | 'webOnly'>> = {}): ExtraRow {
   return { kind: 'extra', id, section, block, keywords, ...extra };
 }
 
@@ -413,7 +420,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   row('storage.usage', 'storage', 'usage', kw('storage, space, disk, free up, delete, cache', 'almacenamiento, espacio, disco, liberar, borrar, caché')),
   setting('storage.historyCount', 'storage', 'history', num(1, 1000, 1), kw('history, results, limit, count', 'historial, resultados, límite, número')),
   setting('storage.historyMB', 'storage', 'history', num(50, 20000, 50, 'MB'), kw('history, results, limit, size, megabytes', 'historial, resultados, límite, tamaño, megas')),
-  row('storage.persist', 'storage', 'browser', kw('persistent storage, keep data, evict', 'almacenamiento persistente, conservar datos'), { aux: true }),
+  row('storage.persist', 'storage', 'browser', kw('persistent storage, keep data, evict', 'almacenamiento persistente, conservar datos'), { aux: true, webOnly: true }),
   row('storage.folder', 'storage', 'browser', kw('data folder, open folder', 'carpeta de datos, abrir carpeta'), { desktopOnly: true }),
 
   // Desktop
@@ -657,7 +664,7 @@ export interface SearchHit {
 
 /**
  * Rows whose label (in either language, through `label`) or keywords (either language) contain every word of
- * the query. `desktop` says whether desktop-only rows exist here. Ranked: label in the current language, then
+ * the query. `desktop` says whether desktop-only rows exist here (and web-only ones do not). Ranked: label in the current language, then
  * the other language, then keywords; ties keep the window's order.
  */
 export function searchSettings(query: string, opts: { lang: Lang; label: (row: RowMeta, lang: Lang) => string; desktop: boolean; rows?: readonly RowMeta[] }): SearchHit[] {
@@ -666,7 +673,7 @@ export function searchSettings(query: string, opts: { lang: Lang; label: (row: R
   const other: Lang = opts.lang === 'en' ? 'es' : 'en';
   const hits: SearchHit[] = [];
   for (const row of opts.rows ?? SETTING_ROWS) {
-    if (row.desktopOnly && !opts.desktop) continue;
+    if (!rowShownHere(row, opts.desktop)) continue;
     const mine = fold(opts.label(row, opts.lang));
     const theirs = fold(opts.label(row, other));
     const keys = [...row.keywords.en, ...row.keywords.es].map(fold).join(' | ');

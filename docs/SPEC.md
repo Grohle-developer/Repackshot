@@ -138,9 +138,59 @@ masa aplican a toda la selección.
 
 `level ∈ {MODEL, GROUP, PART, FACES}`, excluyentes. Un clic en el visor
 selecciona el ancestro del nivel elegido; `GROUP` sobre una pieza sin
-grupo selecciona la pieza. `FACES` guarda `{part, triangles[]}`. La
-selección decide el objetivo de materiales, de *Apoyar*, *Centrar*,
-*Ocultar*, y del inspector.
+grupo selecciona la pieza. `FACES` guarda `{part, indices[]}`: una sola
+pieza y los índices de sus triángulos. La selección decide el objetivo
+de materiales, de *Apoyar*, *Centrar*, *Ocultar*, y del inspector. La
+selección es estado volátil: no se deshace y no marca el proyecto como
+modificado.
+
+**Combinar con la selección que había** (el mismo vocabulario en un
+clic y en una caja): sustituir, **añadir**, **quitar**, y en un clic
+también **alternar** (meter o sacar). En el visor: sin tecla sustituye,
+`Shift` añade, `Ctrl/⌘` alterna, `Alt` quita; un clic en vacío limpia.
+
+**Caras por continuidad.** Un clic a nivel `FACES` coge una cara entera,
+no un triángulo (`src/core/faces.ts`):
+
+- En una pieza que viene de STEP o IGES, la **cara CAD** que contiene el
+  triángulo (`SceneNode.faceRanges`, rangos de triángulos): los rangos
+  ganan siempre.
+- En cualquier otra malla, la superficie que **continúa** desde el
+  triángulo picado (el algoritmo de EZ Packshot, fase E2): adyacencia por
+  **posición** de vértice (soldadura a `1e-5` de la diagonal de la malla,
+  no por índice, porque los teseladores duplican vértices en las
+  costuras); se cruza una arista si el diedro entre el triángulo que se
+  deja y el que se entra es menor que el ángulo de arista viva (30°) **y**
+  menor que 2,5 veces la curvatura propia de la cara (el menor diedro no
+  plano entre las aristas **que se podrían cruzar** del triángulo
+  picado; una cara plana no tiene, y se para en el primer redondeo; la
+  pared de un cilindro tiene uno constante y se coge entera, hasta las
+  tapas); las aristas que la malla marca como duras (`sharpEdges`) no se
+  cruzan nunca. El triángulo suelto (`Shift`) se coge sin crecer.
+- Límite conocido: un triángulo en el borde de una cara plana cuya única
+  arista que gira es un redondeo suave (unos pocos grados por paso) se
+  confunde con una faceta de cara curva y la cara sigue el redondeo; en
+  el interior de la misma cara no pasa, y con rangos CAD tampoco.
+
+**Selección por caja.** Un rectángulo arrastrado en pantalla coge, al
+nivel vigente, lo que queda **entero dentro** (*ventana*, arrastrando de
+izquierda a derecha) o lo que **toca** (*cruce*, de derecha a izquierda)
+(`src/core/box-select.ts`, todo en píxeles de pantalla y puro):
+
+- `MODEL`, `GROUP` y `PART`: cada nodo del nivel se prueba por la
+  geometría proyectada de sus piezas, primero la caja envolvente y luego
+  los triángulos recortados contra el plano cercano. Las piezas ocultas
+  no cuentan, y **no se mira qué tapa a qué**: una pieza detrás de otra
+  se coge también, como en cualquier CAD. Una ventana coge un grupo o un
+  modelo cuando **todas** sus piezas caben; un cruce cuando **alguna**
+  toca.
+- `FACES`: caras enteras (cara CAD o por continuidad) de **una** pieza
+  (la seleccionada o, si no hay, la que está en el centro de la caja) que
+  se **ven** en el rectángulo; con *Rayos X* también las ocultas, por
+  geometría. Una ventana coge una cara solo si todos sus triángulos
+  caben.
+- Se combina con la selección que había: sustituye, añade o quita. Un
+  arrastre de pocos píxeles es un clic, no una caja.
 
 ### 3.3 · Materiales
 
@@ -169,6 +219,31 @@ que no tienen sentido en una familia no existen para ella.
 
 **Miniaturas**: una esfera con el material, renderizada por el propio
 producto y cacheada; nunca imágenes estáticas que mientan.
+
+**Asignar, y arrastrar un material** (`material/assign`, una sola acción
+y una entrada de deshacer, también cuando el destino son varias piezas):
+
+- **Destino**: nodos a cualquier nivel (la acción llega a todas las
+  piezas que cuelgan de ellos) o **caras** de una pieza (triángulos, a
+  través de `faceMaterials`). Un clic en una miniatura asigna a la
+  selección; soltarla sobre algo asigna a lo que **seleccionaría un clic
+  ahí** al nivel vigente (pieza, ensamblaje, modelo o la cara entera bajo
+  el cursor), o a la fila del árbol y todo lo que cuelga de ella
+  (`src/core/material-drop.ts`).
+- **Origen y qué se asigna**: un preset del catálogo o un elemento de
+  *Míos* entra con la **instancia que la escena ya tiene** (se crea si no
+  hay; la misma que da un clic, así que soltar y hacer clic dejan el
+  mismo proyecto); una instancia (la esfera del material de la selección)
+  **enlaza** el destino con esa instancia, que comparte con las piezas
+  que ya la llevan; con **copia** (`Alt` al soltar), sea cual sea el
+  origen, el destino recibe una instancia **propia**, que no comparte con
+  ninguna pieza de fuera: editarla no cambia nada más.
+- **Modo**: `REPLACE` sustituye lo que había y `KEEP` solo rellena donde
+  no hay material; si el destino lleva materiales distintos, la interfaz
+  pregunta antes (`UI.md` §4.1) y no se asigna hasta que se contesta.
+- **Sin cambios no hay entrada**: asignar lo que el destino ya lleva
+  devuelve el mismo estado (ninguna entrada de deshacer). Las instancias
+  que quedan sin uso se podan como siempre.
 
 ### 3.4 · Luz
 
@@ -263,7 +338,7 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | | **Inclinación** (`RISE`) | Sube o baja en arco, grados |
 | | **Zoom** (`ZOOM`) | Cambia la focal, mm |
 | | **Travelling** (`DOLLY`) | Se acerca o aleja, % de la distancia |
-| | **Panorámica** (`PAN`, nuevo) | Gira sobre su propio eje, grados |
+| | **Panorámica** (`PAN`, nuevo) | Gira sobre su propio eje, grados. **Aún no está implementado** (no existe en `MoveKind` ni en `evaluate`): hasta que lo esté, el *barrido rápido* de la biblioteca de movimientos (`camera-moves.json`, A6) es una órbita rápida con curva fuerte alrededor del producto, y una variante con `PAN` se añadirá junto a él |
 | | **Enfoque** (`FOCUS`) | Cambia la distancia de enfoque |
 | | **Cambio de cámara** (evento de la pista de cámara) | Pasa a otra cámara en ese instante, con corte o fundido |
 | | **Recorrido** (`PATH`, fase posterior) | Sigue una curva por puntos |

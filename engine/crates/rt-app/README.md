@@ -15,7 +15,8 @@ interfaz COM de WebView2 por FFI. Es la aplicación de escritorio (`docs/ARCHITE
 3. renderiza con `rt-core` **en nativo**, con todos los hilos, los mismos píxeles que `rt` y que
    el pool de wasm;
 4. guarda los modelos de IA en la carpeta de datos, por contenido, comprobados con un SHA-256
-   propio;
+   propio, y **todo el estado de la página** (ajustes, biblioteca, historial de resultados, caché
+   de miniaturas, lo que queda por descargar): en escritorio la página es solo la interfaz (P3e);
 5. detecta el equipo y aplica la regla de recomendación de `src/data/ai-models.json`
    (`repackshot --hardware`, que lee el instalador);
 6. muestra los **diálogos del sistema** (carpeta, abrir, guardar) y lee y escribe **solo** lo que la
@@ -46,12 +47,17 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
 | --- | --- |
 | Interfaz | `<carpeta del ejecutable>/app/` (`--app-dir` la cambia) |
 | Datos, instalado | `%LOCALAPPDATA%\Repackshot` (Windows); `$XDG_DATA_HOME/repackshot` o `~/.local/share/repackshot` (Linux) |
-| Datos, **portable** | `data/` junto al ejecutable cuando existe `portable.txt` a su lado; el perfil del navegador va dentro, así que los ajustes en `localStorage` viajan con la carpeta |
-| Dentro de los datos | `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `models/`, `logs/`, `results/`, `instance.json`, `pending-models.json` |
+| Datos, **portable** | `data/` junto al ejecutable cuando existe `portable.txt` a su lado; todo va dentro (ajustes, biblioteca, resultados, modelos, perfiles de la ventana), así que viaja con la carpeta |
+| Dentro de los datos | `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` (estado de la página), `models/`, `logs/`, `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `launcher.json` (el puerto), `instance.json`, `pending-models.json` |
 
 `--data-dir` manda sobre todo lo anterior.
 
 ## Ciclo de vida
+
+- **Puerto estable por carpeta de datos** (P3e, `src/port.rs`): el lanzador apunta su puerto en
+  `<datos>/launcher.json` (`{"port": N}`) y lo vuelve a usar en el siguiente arranque si está
+  libre; solo si está ocupado toma otro libre, y lo apunta. Así el origen de la ventana
+  (`http://127.0.0.1:<puerto>`) no cambia de un arranque a otro. `--port N` usa N y no apunta nada.
 
 - **Instancia única**: `<datos>/instance.json` (`{port, token, pid}`, legible solo por su dueño
   en Unix). Un segundo arranque que encuentra una instancia viva (responde `/api/info` con su
@@ -312,6 +318,67 @@ cualquier número de hilos. `tests/parity.rs` lo comprueba: el ejemplo a 4 muest
 de `rt-core`, el mismo que reproduce el wasm (E4); una actualización de visor sin mallas da la
 película de la escena completa.
 
+### Estado de la página
+
+En escritorio la página es solo la interfaz (fase P3e): **todo lo que guarda lo escribe el
+lanzador** en la carpeta de datos, nunca el almacenamiento del navegador de la ventana (que además
+no duraría: cada arranque escucha en otro puerto, y otro puerto es otro origen, con el
+almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src/io/platform.ts`.
+
+```text
+<datos>/settings.json              el documento de ajustes ({schema, settings, layout} de src/core/settings.ts)
+<datos>/state/<nombre>.json        documentos pequeños (descargas por reanudar, la marca de la migración...)
+<datos>/library/library.json       la biblioteca propia (U4)
+<datos>/results/index.json         el historial: {"version": 1, "results": [{id, file, type, display, ai, aiType, meta}]}
+<datos>/results/<id>.<ext>         el archivo de un resultado tal cual (png, jpg, exr, webp, tif)
+<datos>/results/<id>.display.png   su imagen para el visor, cuando la página no puede mostrar el archivo (EXR)
+<datos>/results/<id>.ai.<ext>      la imagen que hizo el post-procesado IA, cuando el resultado pasó por él (fase X4), en su tipo
+<datos>/cache/thumbs/<clave>.txt   las esferas de materiales (data URL): caché, se libera cuando se quiera
+```
+
+- **Escrituras atómicas**: a un temporal junto al destino, `sync_all`, y `rename` encima; un corte
+  o un cierre deja el archivo viejo o el nuevo, nunca medio. Un cuerpo más corto de lo anunciado
+  es 400 `short-body` y no toca nada.
+- **Nombres**: `[a-z0-9._-]`, en minúscula (dos nombres nunca chocan en un disco que no distingue
+  mayúsculas), de 1 a 96 caracteres, sin empezar ni acabar en punto, sin `..` y nunca un nombre de
+  dispositivo de Windows (`con`, `nul`, `com1`...): si no, 400 `bad-name`.
+- **Confinamiento**: cada ruta es la carpeta de datos más carpetas fijas y un nombre así; cada
+  carpeta del camino tiene que ser una carpeta de verdad, no un enlace, y el archivo tampoco puede
+  ser un enlace (403 `outside`).
+- Un documento que no es JSON (editado a mano, un fallo del disco) se aparta como
+  `<nombre>.corrupt` y se lee como ninguno: la página arranca con los valores de fábrica.
+
+| Petición | Respuesta |
+| --- | --- |
+| `GET /api/store/settings` | El documento tal cual se guardó, o `null` |
+| `PUT /api/store/settings` | Cuerpo: un objeto JSON (1 MiB como mucho). 204 |
+| `DELETE /api/store/settings` | 204 |
+| `GET /api/store/docs` | `{"<nombre>": <valor>, ...}`: todos los documentos pequeños |
+| `GET` / `PUT` / `DELETE /api/store/docs/<nombre>` | Uno (`null` si no está); `PUT` admite cualquier valor JSON de 1 MiB como mucho |
+| `GET` / `PUT` / `DELETE /api/store/library` | La biblioteca: un objeto JSON de 64 MiB como mucho |
+| `GET /api/store/results` | `{"results": [meta...]}`, en el orden en que llegaron; un resultado cuyo archivo se borró a mano no aparece |
+| `PUT /api/store/results/<id>?type=<tipo>` | Cuerpo: el archivo (4 GiB como mucho, escrito por trozos al disco). `image/png`, `image/jpeg`, `image/x-exr`, `image/webp` o `image/tiff`; otro tipo, 415 |
+| `PUT /api/store/results/<id>/display` | Cuerpo: la imagen PNG para el visor (512 MiB como mucho) |
+| `PUT /api/store/results/<id>/ai?type=<tipo>` | Cuerpo: la imagen que hizo el post-procesado IA (X4), con los mismos tipos y límite que el archivo; otra vez en otro tipo deja un solo archivo. Entra en el registro con `PUT .../meta` si ya está |
+| `PUT /api/store/results/<id>/meta` | Cuerpo: el registro (`ResultMeta`, objeto con `id` igual al de la ruta, si no 400 `id-mismatch`). Entra en el índice solo si su archivo ya está (409 `no-file`) |
+| `GET` / `HEAD /api/store/results/<id>[/display\|/ai]` | El archivo, su imagen o la imagen de la IA, con su tipo y `Range`; 404 si no está |
+| `DELETE /api/store/results/<id>` | 204: el registro y sus archivos |
+| `DELETE /api/store/results` | `{"deleted": n}`: el índice y lo que escribió el almacén en `results/` (un archivo que puso la persona se queda) |
+| `GET /api/store/cache/<clave>` | La miniatura (`text/plain`), o 204 si no está (lo normal, no un error) |
+| `PUT /api/store/cache/<clave>` | Cuerpo: texto UTF-8 de 1 MiB como mucho. 204 |
+| `DELETE /api/store/cache` | `{"freed": bytes}`: borra las miniaturas (no otras cachés de `cache/`) |
+| `GET /api/storage/usage` | `{dataDir, total, files, folders: [{id, path, bytes, files}]}` con `id` `models`, `results`, `library`, `thumbs`, `logs`, `window` (el perfil de la ventana: `browser-profile/` y `webview2/`) y `other` (el resto: ajustes, `state/`...). Se mide recorriendo las carpetas sin seguir enlaces |
+
+**Migración, una vez.** Si la carpeta de datos no tiene `state/migration.json`, la página copia
+lo que una versión anterior dejó en el almacenamiento del navegador de su origen (ajustes, también
+las preferencias sueltas de antes; biblioteca; cada `repackshot.*` salvo las miniaturas; el
+historial de IndexedDB, resultado a resultado), solo lo que el lanzador no tenga ya, y escribe la
+marca con lo copiado y lo que falló. Después no vuelve a mirar el almacenamiento del navegador. La
+copia del navegador se deja como estaba.
+
+**Solo para pruebas**: `REPACKSHOT_TEST_GPUS="nombre|fabricante|bytes;..."` sustituye las tarjetas
+gráficas detectadas (la comprobación de interfaz de P3e en un equipo sin tarjeta).
+
 ### Modelos de IA
 
 Almacén **por contenido**: un fichero que comparten varios modelos (el codificador Qwen3-4B de
@@ -404,7 +471,9 @@ inválido, escapes Unicode y sustitutos, números, profundidad); el lector HTTP 
 petición, cabeceras, peticiones malas); `Range`; rutas de ficheros; el almacén de modelos
 (trozos desordenados y reanudados, *hash* erróneo → dañado, *blob* compartido conservado al
 borrar uno de dos modelos, manifiestos importados); la regla con el fichero de casos; los
-analizadores de `reg`, `/proc`, `nvidia-smi`; el INI. `src/dialogs.rs`: los argumentos de `zenity` y `kdialog`, la lectura de sus salidas y de la del
+analizadores de `reg`, `/proc`, `nvidia-smi`; el INI; el estado de la página (nombres, tipos,
+escritura atómica que deja el archivo viejo si el cuerpo se corta, documento dañado apartado,
+enlaces dentro de la carpeta de datos, medidas) y el puerto recordado. `src/dialogs.rs`: los argumentos de `zenity` y `kdialog`, la lectura de sus salidas y de la del
 guion de PowerShell, que las palabras de la página van como datos, base64, un diálogo a la vez y
 el cierre con la aplicación (con un `zenity` falso). `src/files.rs`: nombres seguros y numerados,
 ids estables, lo que cada concesión deja hacer, Descargas, el último proyecto entre arranques.
@@ -414,7 +483,10 @@ API de ficheros por HTTP con un `zenity` falso. Fuera del motor: `packaging/wine
 real bajo Xvfb) y el guion de PowerShell analizado y su C# compilado con `pwsh` 7.
 En `tests/`: el servidor por sockets reales
 (`Host` ajeno, token, `Origin`, sin CORS, *keep-alive*, ficheros, modelos por HTTP, *pending
-models*) y la paridad con `rt`.
+models*), el estado de la página por HTTP (`tests/appdata.rs`: seguridad, nombres que no salen de
+su carpeta, enlaces no seguidos, límites, una petición cortada, resultados con índice, caché y
+espacio usado, y que todo sigue ahí para otro arranque), el puerto estable (`tests/port.rs`: el
+mismo si está libre, otro recordado si está ocupado, `--port` sin recordar) y la paridad con `rt`.
 
 La ventana propia (`src/platform/`): en todas las plataformas, los GUID, nuestros objetos COM
 (recuento de referencias, `QueryInterface`, `Invoke`), el tamaño de cada vtable de WebView2 contra

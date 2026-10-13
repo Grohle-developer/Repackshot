@@ -970,7 +970,132 @@ focos y cúpula por tipo de producto lo decide Fable aquí;
 
 **Depende de.** E5, L2.
 
-## M1 · Cara CAD entera — **Sonnet**
+## U7 · Arrastrar un material y selección por caja — **Sonnet** — hecha
+
+**Qué.** Arrastrar un material (una miniatura del catálogo, de *Míos* o
+la esfera del material de la selección) sobre una pieza del visor o
+sobre una fila del árbol, con resaltado (`UI.md` §2.2 y §2.3). Con la
+herramienta *Seleccionar*, selección por caja (ventana y cruce) a cada
+nivel (`UI.md` §4.1), que se añadió a la fase con ella empezada.
+
+**Depende de.** U1, U4.
+
+**Criterio.** Reglas de la asignación por arrastre como acción pura con
+números; la selección por caja probada sobre geometría proyectada;
+comprobación en el navegador con ratón, lápiz y dedo en *Rápido* y
+*Completo*.
+
+**Hecho.**
+
+*Arrastrar un material.* Con eventos de puntero, no con el arrastrar y
+soltar del navegador (un *webview* de escritorio no siempre da la sesión
+nativa, y no deja decidir el fantasma, el lápiz ni `Esc`):
+`src/ui/components/material-drag.ts` es el controlador (umbral de 5 px,
+miniatura fantasma sobre y a la derecha del puntero, zonas de suelta
+registradas por elemento, `Esc` en fase de captura, clic tragado tras
+arrastrar; un dedo no arrastra y conserva su gesto de siempre). Las
+reglas viven en `src/core/material-drop.ts` y se prueban con números: en
+el visor, una suelta alcanza lo que seleccionaría un clic al nivel
+vigente (pieza, ensamblaje, modelo o, a nivel *Caras*, la cara entera
+bajo el cursor); en una fila del árbol, el nodo y todo lo que cuelga de
+él. Un preset del catálogo o un elemento de la biblioteca entran con
+**la instancia que la escena ya tiene de él** (la misma que un clic en
+la miniatura, así que soltar y hacer clic dejan el mismo proyecto); la
+esfera de la selección enlaza con **esa instancia**; con **`Alt`** la
+suelta da **una copia propia** (`material/assign` con `copy`, etiqueta
+*asignar una copia*). Siempre es **una sola acción** `material/assign` y
+una entrada de deshacer, con el nombre del material y del destino.
+Resaltado: contorno (el del visor) en las piezas, tinte en las caras y
+borde discontinuo en la fila del árbol, que además contornea en el visor
+lo que alcanzaría; el fantasma pone *Copia* mientras se pulsa `Alt`.
+`src/core/materials.ts` gana `copy` y `material/assign` ya no crea
+entrada cuando no cambia nada.
+
+*Selección por caja.* `src/core/box-select.ts` (puro, en píxeles de
+pantalla) y `src/ui/panels/viewport-box.ts` (el gesto). **`Ctrl/⌘` +
+arrastrar** dibuja la caja con *Seleccionar* y con *Mover* (donde no hay
+un asa bajo el puntero), en los tres esquemas del ratón; sin `Shift` ni
+`Alt` **sustituye** la selección, con `Shift` **añade** y con `Alt`
+**quita**. De izquierda a derecha es una **ventana** (lo que queda
+entero dentro; contorno continuo), de derecha a izquierda es **cruce**
+(lo que toca; contorno discontinuo), ambos acromáticos. Al nivel
+*Pieza*, *Grupo* o *Modelo* se prueba la geometría proyectada (primero
+la caja envolvente, luego los triángulos; sin mirar qué tapa a qué, como
+en un CAD: una pieza detrás de otra también se coge, y las ocultas no
+cuentan); a nivel *Caras* coge las caras enteras (CAD o por continuidad,
+ver **M1**) de una pieza, con el botón *Rayos X* en la barra de vista
+para coger también las ocultas. Un arrastre de unos pocos píxeles es un
+clic, `Esc` cancela, el lápiz hace lo que el ratón y un dedo no dibuja
+caja (sigue orbitando); la selección no se deshace (una caja no es una
+entrada de historial). Con los esquemas que dejan libre el botón
+izquierdo (*Alt + botón izquierdo orbita* y *Botón central orbita*), un
+arrastre sin más ya dibuja la caja y `Shift` añade sin `Ctrl`; con
+*Botón central*, `Alt` quita sin `Ctrl`; con *Alt + botón izquierdo*,
+`Alt` es la órbita y quitar es `Ctrl/⌘ + Alt`. Los clics no cambian:
+clic selecciona, `Shift` clic añade, `Ctrl/⌘` clic mete o saca, `Alt`
+clic quita (salvo con *Alt + botón izquierdo orbita*, donde `Alt` es de
+la cámara). En *Completo* se usa la geometría de la vista previa, igual
+que `pick`. Nuevos métodos de `ViewportPort`: `projection`,
+`visibleTriangles` y `setHoverFaces`.
+
+*Decisión del usuario sobre el gesto (2026-10-13).* El botón izquierdo
+sigue orbitando por defecto, y **`Ctrl/⌘` + arrastrar** es la caja; la
+primera versión armaba la caja con `Shift`, `Ctrl` o `Alt`. Lo que
+cambia respecto al visor anterior: con *Seleccionar* y *Mover*, `Ctrl/⌘`
++ arrastrar con el botón izquierdo ya no desplaza (era el atajo oculto
+de los controles de órbita; quedan el botón derecho, la rueda y la
+herramienta *Desplazar*). `Shift` + arrastrar y `Alt` + arrastrar no
+arman nada y hacen lo que hacía la cámara antes. El texto de *Ajustes ▸
+Preferencias ▸ Visor y navegación ▸ Ratón* y el tooltip de *Seleccionar*
+lo dicen en los dos idiomas, y se comprobó en el navegador que no
+desbordan (la fila de Ajustes pasa a cuatro líneas y el tooltip cabe en
+sus 280 px).
+
+*Pruebas.* 89 tests nuevos (25 de `material-drop.test.ts`, 35 de
+`box-select.test.ts` y los 29 de M1 en `faces.test.ts`; 1031 en total);
+63 mutaciones de los tests unitarios, todas detectadas salvo dos
+equivalentes (F9, y la de que `Ctrl` no arme en *Alt + botón izquierdo
+orbita*, que ya arma antes por otra rama), y 16 en el navegador, todas
+salvo una guarda de orden entre el resaltado de la suelta y el contorno
+al pasar que el navegador no puede observar.
+`tools/material-drag-check.mjs` y `tools/box-select-check.mjs`
+(Playwright con el Chromium local, en *Rápido* y *Completo*, con ratón,
+lápiz y dedo); capturas `docs/ui/material-drag.png`,
+`material-drag-tree.png`, `material-drag-faces.png`, `box-window.png`,
+`box-crossing.png` y `box-faces.png`. Las de *Completo*, que pesan
+mucho, se escriben en `out/` y no entran en el repositorio.
+
+No encajó con el plan:
+
+- **La suelta sobre un destino con materiales distintos conserva la
+  pregunta en línea de `UI.md` §4.1** (*Sustituir todos · Mantener los
+  existentes · Cancelar*, con inventario): es el caso de soltar sobre
+  un grupo o un modelo cuyas piezas llevan materiales distintos. La
+  fase pedía "una sola acción" y lo es (una entrada de deshacer una
+  vez respondida), pero no se aplica a ciegas. Si se prefiere que una
+  suelta sustituya sin preguntar, es una decisión de interfaz (Fable);
+  mientras tanto vale lo que dice §4.1.
+- **A nivel *Caras* el catálogo solo aparece cuando hay una cara
+  seleccionada**, así que no hay miniatura que arrastrar antes de
+  coger la primera; la suelta cae en **la cara bajo el cursor**, no en
+  las seleccionadas.
+- **El resaltado del arrastre ignora el ajuste *Contorno al pasar*:**
+  sin él, soltar no tendría ninguna señal de a dónde va.
+- **Un dedo no arrastra ni dibuja caja** (conserva lo que hacía:
+  desplazar los paneles y orbitar); el lápiz es un ratón.
+- **La caja no enseña una vista previa de lo que cogerá:** solo el
+  rectángulo; la selección cambia al soltar.
+- **En el esquema por defecto la caja no se dibuja con un arrastre sin
+  más**, sino con `Ctrl/⌘` + arrastrar (decisión del usuario): el
+  botón izquierdo orbita y una caja con un arrastre sin más le
+  quitaría la órbita. Quien la quiera sin tecla puede elegir el
+  esquema *Alt + botón izquierdo orbita* o *Botón central orbita*.
+- Dos cosas de estructura: los clics de `Alt` sobre el visor pasan por
+  `clickMods` para respetar el esquema *Alt + botón izquierdo orbita*,
+  y `ViewportPort` se amplió con tres métodos (`ARCHITECTURE.md`
+  §6.1).
+
+## M1 · Cara CAD entera — **Sonnet** — hecha
 
 **Qué.** Selección de caras por continuidad de superficie, portando el
 algoritmo E2 de EZ Packshot: adyacencia por **posición** de vértice
@@ -986,6 +1111,79 @@ los rangos de cara originales ganan.
 con tapas (la pared entera, se para en las tapas), perfil
 plano-redondeo-pared, arista marcada. Verificar que cada uno falla si se
 quita su condición.
+
+**Hecho.** `src/core/faces.ts` (modelo puro): `cadFaceRegion` hace
+crecer la cara desde el triángulo picado con las reglas de arriba y, en
+una pieza de STEP o IGES, devuelve el rango CAD que lo contiene (los
+rangos ganan); la topología se calcula una vez por malla y se guarda en
+un `WeakMap`. En el visor, a nivel *Caras* un clic coge **la cara
+entera**: clic sin más sustituye, `Shift` añade **un triángulo suelto**,
+`Ctrl/⌘` mete o saca la cara entera y `Alt` la quita; al arrastrar un
+material se tiñe la cara que recibiría (`ViewportPort.setHoverFaces`).
+*Separar por caras CAD* (`scene/separateByCadFaces`) deja de ser
+*próximamente*: está en el menú de pieza y en la hoja de importación
+(que ahora usa el mismo `facePieces`), cada pieza nueva conserva el
+color de su cara, la selección sigue a las piezas y el nivel pasa de
+*Caras* a *Pieza*. La acción comparte `replaceByPieces` con *Separar por
+material*. Además la selección por caja (ver **U7**) coge caras enteras.
+29 tests nuevos (`tests/faces.test.ts`: placa, placa con vértices
+duplicados, cilindro con tapas, perfil plano-redondeo-pared, arista
+marcada, rangos CAD, piezas separadas; las mutaciones se cuentan en
+**U7**); capturas `docs/ui/box-faces.png` y
+`docs/ui/material-drag-faces.png`; comprobado en el navegador con
+`tests/fixtures/box.step` (seis caras CAD).
+
+No encajó con el plan:
+
+- **Límite del borde con curvatura suave (decisión pendiente de
+  Fable).** Se cambió una cosa del algoritmo de EZ Packshot: su
+  estimación de la curvatura contaba también las aristas que son
+  frontera (marcadas o más agudas que 30°), y un triángulo en el borde
+  de una cara plana, junto a una pared, medía la curvatura de la
+  esquina y la cara se escapaba por un chaflán; aquí solo cuentan las
+  aristas que se podrían cruzar (test *a flat face is flat to its
+  rim*). Queda el caso que un clic sobre una malla no puede
+  distinguir: un triángulo en el borde de una cara plana cuya única
+  arista que gira es un redondeo suave (unos pocos grados por paso)
+  parece una faceta de una cara curva, y la cara sigue el redondeo; el
+  interior de la misma cara plana no. No afecta a STEP ni IGES (los
+  rangos no dudan) y la cabecera de `faces.ts` lo cuenta. Datos para
+  decidir si basta o si hace falta un criterio de malla (por ejemplo,
+  medir la curvatura en el interior de la región ya cogida): no se ha
+  cambiado nada por cuenta propia.
+- **`Shift` suelto y `Shift` añade.** M1 pedía "`Shift` da el
+  triángulo suelto" y `UI.md` §4.1 "`Shift` añade": a nivel *Caras*,
+  `Shift` hace las dos cosas, `Shift` clic **añade el triángulo
+  suelto**. Como `Shift` solo vuelve suelto el triángulo y el resto de
+  teclas conservan su sentido, `Ctrl/⌘ ⇧` clic lo mete o saca y `Alt
+  ⇧` clic lo quita (con *Alt + botón izquierdo orbita*, donde `Alt` es
+  de la cámara, no hay `Alt ⇧`); `Ctrl/⌘` y `Alt` sin `Shift` actúan
+  sobre la cara entera.
+- **La caja de caras trabaja sobre una sola pieza** (`Selection.faces`
+  es `{part, indices}`): la seleccionada y, si no hay, la que está en
+  el centro de la caja. Sin *Rayos X* solo coge lo que se ve, medido
+  con un pase de identificadores del visor (un id por triángulo, con
+  una erosión de un píxel para que no cuenten las siluetas de lo
+  oculto), así que una cara más estrecha que unos 3 px no se coge; con
+  *Rayos X* coge también las ocultas, por geometría.
+- ***Separar por caras CAD* solo existe para piezas con rangos** que
+  cubren la malla (`canSeparateByFaces`); en una malla sin ellos sigue
+  deshabilitado en lugar de partir por continuidad.
+- **El contador dice *caras* y cuenta triángulos** (`inspector.faces`:
+  un cubo de seis caras CAD entero dice *12 caras de* su pieza): el
+  modelo de datos guarda triángulos. Contar caras CAD pide guardar
+  también qué rangos se han cogido; se deja anotado.
+- **Un clic no tiñe la cara antes de cogerla**: al pasar el ratón sin
+  arrastrar nada, a nivel *Caras* solo se contornea la pieza; la cara
+  se ve al cogerla. El tinte previo es solo el del material
+  arrastrado.
+- La ayuda que `UI.md` llamaba `faceSel.help` no existe con ese
+  nombre: era `level.tip.FACES`, que ya no dice "próximamente" (se
+  reescribió), y se quitó `ops.separateCadSoon`.
+- Arreglos de fallos que ya estaban: el inspector no se reconstruía al
+  coger la primera cara (`contextKey` no distinguía si había caras;
+  con test), y `material/assign` sin cambios creaba una entrada de
+  deshacer vacía (ahora devuelve el mismo estado; con test).
 
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 
@@ -1776,7 +1974,8 @@ integra todo lo que la interfaz marca *próximamente***.
 | **P3a** | Opus | Modo Completo que no se para (reproducir con una sesión larga de cambios contra el lanzador y arreglar la causa), *Pausar* / *Reanudar* / *Iniciar cola* que funcionan en web y escritorio |
 | **P3b** | Opus | Escritorio sin rastro de navegador: diálogos nativos de carpeta y archivo desde el lanzador (PowerShell en Windows, `zenity`/`kdialog` en Linux, sin `unsafe`), escritura de renders, proyectos y modelos por el lanzador, menú contextual, selección, traducción, zoom, recarga, impresión, búsqueda y navegación del navegador desactivados, icono y título propios; estudio de WebView2 para Windows |
 | **P3c** | Opus | **Ventana propia en Windows** (decisión del líder tras la captura del aviso «¿Desea salir de la aplicación?» de Edge: *todos los avisos y ventanas con nuestra interfaz, nada de avisos web; producto cerrado y profesional*): ventana Win32 sin marco con **WebView2** (el motor de Edge que trae Windows 10/11) y barra de título dibujada por nosotros (título, minimizar, maximizar, cerrar, arrastre), menús contextuales, atajos, barra de estado, zoom, autorrelleno, traducción, descargas y diálogos de script del navegador **desactivados por la API**, y el cierre (botón, `Alt F4`, barra de tareas) **interceptado** para preguntar con nuestra propia ventana si hay cambios sin guardar; Edge `--app` solo como respaldo automático si falta el *runtime*. En Linux sigue Chromium en modo aplicación con el endurecimiento de P3b hasta P3d (ventana propia con WebKitGTK, que exige un binario glibc y no el musl estático) |
-| **U7** | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*) |
+| **P3e** | Opus | **Escritorio: todo sobre el lanzador** (decisión del líder tras «se pisa el texto» y «dice no pillar la GPU por ser browser»: *en escritorio la página es solo interfaz*): una costura de plataforma con implementación web y de lanzador; ajustes, biblioteca, historial, miniaturas, equipo y espacio usado en la carpeta de datos por el lanzador; puerto estable por carpeta de datos; ni una fila que hable del navegador; filas de Ajustes que no se pisan |
+| **U7** (hecha) | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*), más selección por caja con `Ctrl/⌘` + arrastrar. Ver U7 y M1 más arriba |
 | **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
 | **E5b** | Opus | Reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
 | **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie, anisotropía; desgaste visible en motor y visor |
@@ -1851,6 +2050,84 @@ todo lo de WebView2, queda por probar en Windows real. El puerto
 aleatorio por arranque, que hace perder `localStorage` entre arranques
 (en la ventana de Edge y en la propia), queda para P3e.
 
+**P3e hecha.** En escritorio la página es solo la interfaz. Una costura
+`Platform` (`src/io/platform.ts`), elegida una vez al arrancar, con dos
+implementaciones detrás de la misma interfaz: la web (`platform-web.ts`:
+localStorage, IndexedDB, OPFS, WebGPU, como hasta ahora) y la del lanzador
+(`platform-desktop.ts`), donde cada servicio y cada byte de estado son del
+lanzador: ajustes en `settings.json` de la carpeta de datos, cosas pequeñas
+recordadas en `state/`, biblioteca en `library/`, historial de resultados
+como archivos en `results/` con su índice, miniaturas en `cache/thumbs/`,
+modelos (ya lo eran), equipo siempre por `/api/hardware` y espacio usado
+medido por el lanzador (`/api/storage/usage`), con *Liberar* a través de
+él. Rutas nuevas `/api/store/*` y `/api/storage/usage`
+(`rt-app/src/appdata.rs`) con el *token*, `Host` y `Origin` de siempre,
+nombres en minúscula confinados a la carpeta de datos (ni enlaces ni
+nombres de dispositivo de Windows), escrituras atómicas, y un documento
+que no se pudo leer al arrancar nunca se sobrescribe. **Puerto estable por
+carpeta de datos** (`launcher.json`, `rt-app/src/port.rs`): el origen de la
+ventana ya no cambia en cada arranque, que era por lo que en v0.1.x se
+perdían ajustes, biblioteca e historial al cerrar. Migración, una sola vez
+por carpeta de datos (marca `state/migration.json`), de lo que quede en el
+almacenamiento del navegador del origen actual; para quien venga de v0.1.x
+suele estar vacío (cada arranque tenía otro puerto) y solo deja la marca.
+Ninguna fila habla del navegador en escritorio: las cadenas que lo
+nombraban tienen su versión de escritorio (`DESKTOP_TABLE` de
+`strings.ts`) o su fila oculta (`webOnly`: *Almacenamiento persistente*;
+WebGPU, cuota y memoria del navegador solo en la web), *Ventana dibujada
+por* dice un nombre (*Ventana de aplicación de Microsoft Edge*, y ya lee el
+`window` de P3c para *Ventana nativa (WebView2 x.y)*), la fila GPU lista
+las tarjetas del lanzador y sigue a la detección aunque llegue después, el
+distintivo *Solo en la aplicación de escritorio* no sale dentro de ella y
+el modelo solo para navegador no se lista. Filas de Ajustes que no se pisan
+a ningún ancho ni tamaño de interfaz: columna de etiqueta con mínimo,
+controles y distintivos que se parten, filas apiladas para valores largos
+(rutas en monoespaciado partidas donde haga falta, botón debajo, título con
+el texto entero) y consultas de contenedor que lo apilan todo en ventanas
+estrechas. Tests: la costura elige el lanzador y entonces no toca
+`localStorage`, `indexedDB` ni `navigator.storage` (espías), la migración
+una vez y con el origen vacío, escrituras en orden, resultados con sus
+límites, las cadenas del navegador cubiertas; en Rust, `tests/appdata.rs`
+(seguridad, confinamiento, enlaces, límites, petición cortada, resultados,
+caché, espacio, otro arranque) y `tests/port.rs`. Comprobación
+`tools/desktop-platform-check.mjs` contra el lanzador real (ajustes que
+sobreviven a reiniciar en un perfil de navegador nuevo, el mismo puerto,
+nada en el almacenamiento del navegador, un render en `results/`, las GPU
+del lanzador, ninguna mención del navegador en los dos idiomas, *Liberar*
+por el lanzador, y ningún solape en todas las secciones a 1600, 1280 y
+960 px, 90–150 %, dos idiomas, oscuro, claro y contraste alto); capturas
+`settings-desktop-paths.png`, `settings-storage-desktop.png`,
+`settings-ai-desktop.png`. Con P3b y P3c unidas, 1044 tests web y 309 del
+motor.
+
+Unida con P3b y P3c: las carpetas de salida, los proyectos (con el último
+que recuerda el lanzador) y los diálogos de importar y exportar salen
+también de la plataforma (en escritorio, los de P3b; nunca los selectores
+ni los *handles* del navegador), las carpetas elegidas se recuerdan en
+`state/desktop.folders.json` y no en `localStorage`, y *Ventana dibujada
+por* es una sola función (la de P3c, con sus motivos) que dice *La ventana
+propia de Repackshot (WebView2 x.y)* y nunca el nombre de un ejecutable
+(sin ventana del lanzador, `--serve-only`, ya no dice *El navegador por
+defecto*). La comprobación del lanzador real suma que *Elegir carpeta…* y
+*Guardar proyecto* pasan por los diálogos del lanzador (un `zenity` de
+prueba) sin tocar los selectores del navegador, que la carpeta queda en
+los datos y que *Descargas* lo escribe el lanzador. Al unir: la carpeta
+de salida elegida, que P3b muestra por su ruta, se salía de su fila; el
+botón dice su nombre y la ruta entera va debajo. Arreglado de paso un
+fallo intermitente del test de paridad (`tests/parity.rs`: si la última
+pasada llegaba entre dos consultas, el marco devuelto no venía marcado
+como terminado).
+
+No encajó con el plan: el *token* sigue en `sessionStorage` (es el secreto
+del arranque, no estado).
+La copia automática no existe todavía (U8): cuando llegue, a la carpeta de
+datos por la plataforma. `REPACKSHOT_TEST_GPUS` (tarjetas falsas, solo para
+pruebas) la lee también el binario de *release*. En Windows, si el puerto
+recordado está aún en `TIME_WAIT` al reabrir, se toma otro una vez y se
+recuerda. Encontrado de paso (de P3a): un trabajo de visor nativo de una
+página que se recarga sigue vivo hasta el tope de 8 (`503 busy`). Sin
+probar en un Windows real.
+
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
 **N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b** y **X4** ya; **X2** al fusionarse E5; **X3c**, **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
@@ -1863,7 +2140,7 @@ Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
 
 | Fase | Responsable | Qué |
 | --- | --- | --- |
-| **A6** | Sonnet | Assets sin motor nuevo: `lenses.json` (16 prescripciones con test paraxial), `bokeh.json` (20 tipos), máscaras de diafragma y gobos generados, `camera-moves.json` |
+| **A6** — hecha | Sonnet | Assets sin motor nuevo: `lenses.json` (16 prescripciones con test paraxial), `bokeh.json` (20 tipos), máscaras de diafragma y gobos generados, `camera-moves.json` |
 | **O1** | Opus | Lente fina mejorada: diafragma poligonal y por máscara, perfiles de pupila, obstrucción, ojo de gato aproximado, anamórfico, *tilt-shift*, *split diopter*, CA por canal; selector de bokeh |
 | **O2** | Opus | Lente trazada: prescripciones, intersección estable, límites de pupila, autoenfoque, respiración; las 16 lentes |
 | **O3** | Opus | CA por tres bandas, coatings (transmisión, tinte, T-stop), velo |
@@ -1879,6 +2156,87 @@ Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
 | **N5** | Opus | Dibujar y grabar recorridos, bloqueo de objetivo, desenfoque de movimiento |
 | **S0** | Fable | Decisiones de partículas: dónde vive el simulador, formato de caché, secciones RSB |
 | **S1**–**S10** | Opus, Sonnet | Dispersión e instancias; caída y reposo; gotas y condensación; emisores sin estado; volúmenes; humo; líquidos; pelo y césped; telas; mejoras (detalle en `docs/research/particles.md` §6) |
+
+### A6 · Assets sin motor nuevo — **Sonnet** — hecha
+
+**Hecho.** Todos los assets de las herramientas de estudio que no necesitan
+motor nuevo, sin marcas ni nombres de fabricante y generados por código del
+repositorio (nada sale de modelos de imagen por IA):
+
+- `src/data/lenses.json` (+ cargador tipado en `lenses.ts`, que conserva
+  `LENS_PRESETS`): las 16 prescripciones de `docs/research/optics.md` §2.3 en
+  el registro de §5 (superficies con radio, espesor, vidrio `nd`/`vd`,
+  semiapertura, tipo, diafragma y *coating*; focal de referencia, número f,
+  campo, círculo de imagen, foco y gaps móviles, iris), con la patente o el
+  libro en `source`. `tests/lenses.test.ts` traza un rayo paraxial propio y
+  reproduce focal y tiraje de cada lente dentro del 0,05 % de lo que trazó el
+  informe y del 1 % de lo que dice la patente (también la respiración del
+  teleobjetivo, el elemento flotante del macro, el recorrido del hueco del
+  blando, el aumento 1/2 del adaptador y la imagen detrás del espejo del
+  catadióptrico); el diafragma existe una sola vez en cada lente, las claves
+  son únicas y estables, ninguna marca ni vidrio de catálogo aparece, y todo
+  vidrio tiene `nd` en [1,4; 2,1] y `vd` en [15; 100]. Una relectura
+  independiente de la tabla del informe no encontró diferencias con lo
+  transcrito (salvo el hueco simbólico `dB0` y los `vd` estimados).
+- `src/data/bokeh.json` (+ `bokeh.ts`): los 20 tipos de `optics.md` §1 con
+  claves estables, nombres y descripciones en es/en y los parámetros del
+  modo de lente fina (láminas, redondez, giro, máscara, perfil de pupila,
+  obstrucción, ojo de gato, compresión anamórfica, CA, remolino, anillos,
+  textura), o la lente trazada que los da (`requires: "traced"`), o `requires:
+  "wave"` para el anillo de difracción (próximamente). Un test comprueba que
+  todo resuelve a máscaras y lentes que existen.
+- `tools/assets/` (`common.mjs`, `aperture-masks.mjs`, `gobos.mjs`) y
+  `public/assets/aperture/` (45 máscaras de 512²: polígonos de 3 a 18 láminas
+  rectos y curvos, estrellas, corazón, varios agujeros, anillos con
+  obstrucción 0,3 y 0,5, anillos de cebolla, polvo, rayas, malla) y
+  `public/assets/gobo/` (12 patrones de 1024²: ventanas, persianas, hojas,
+  luz moteada, puntos, líneas, ráfaga radial, rotura suave), cada uno con
+  receta, semilla y *hash* en su `index.json`. El *hash* canónico es el de los
+  píxeles (los bytes de un flujo de zlib pueden cambiar entre versiones);
+  `tests/assets.test.ts` regenera todo con las funciones puras del generador y
+  compara. El generador usa solo `+ − × ÷` y `sqrt` y funciones propias.
+- `src/data/camera-moves.json` (+ `camera-moves.ts` y `src/core/camera-moves.ts`):
+  14 movimientos (los 13 de STUDIO-TOOLS §4 con la espiral en dos) como listas
+  de los tipos de animación que ya existen, en unidades relativas al producto
+  (grados, % de la distancia de encuadre, tamaños de pieza, factores de focal y
+  de foco), y 3 presets de cámara en mano. `tests/camera-moves.test.ts` expande
+  cada uno en barras, las evalúa con `evaluate` en t = 0 y t = fin (finitas y
+  deterministas, y a t = 0 nada se ha movido), y comprueba que el contra-zoom
+  conserva focal / distancia, que el plato giratorio da una vuelta, etc.
+- **Servidor de escritorio** (`engine/crates/rt-app/src/static_files.rs`): hasta
+  ahora todo `/assets/` salía con `Cache-Control: immutable` de un año porque
+  Vite nombra ahí todo por *hash*; los assets nuevos no llevan *hash* y un
+  fichero regenerado con el mismo nombre se habría visto viejo para siempre. Ahora
+  solo es inmutable lo que está directamente en `/assets/` y se llama
+  `nombre-XXXXXXXX.ext` (el patrón de 8 caracteres base64url que emite Vite 8);
+  lo demás sale con `no-cache` y un ETag del SHA-256 de sus bytes (los ficheros
+  de hasta 8 MiB; responde 304 si no cambió, y un fichero regenerado con el mismo
+  tamaño y la misma hora ya no se confunde con el anterior). Tests de Rust que
+  fallan si algo sin *hash* se sirve inmutable (con los nombres que emitió esta
+  misma build y los de `aperture/` y `gobo/`). `tests/chunks.test.ts` ya no lee las
+  carpetas de `dist/assets/` como si fueran ficheros.
+
+**Valores provisionales, a la espera de O1 (regla 11, criterio visual de
+Fable).** Los *coatings* por época de las lentes (antes de 1935 sin tratar,
+hasta 1969 monocapa, después multicapa), los valores por defecto del
+diafragma (círculo, f/22 como máximo), los valores de partida de los tipos de
+bokeh (remolino 0,7, fuerza de los perfiles de pupila, obstrucción 0,49 del
+catadióptrico…), el significado de `profileParam` en cada perfil y las
+amplitudes de la cámara en mano (sutil, medio, fuerte) son puntos de partida
+con las claves como contrato; O1 los juzgará con renders. También quedan para
+O1 las miniaturas de bokeh renderizadas por el motor.
+
+**No encajó con el plan:** el tipo de animación `PAN` no existe todavía (SPEC
+§3.7), así que el barrido rápido es una órbita rápida con curva fuerte y el plato
+giratorio es `SPIN` sobre el modelo; el nombre «retrofoco» fue una marca y la
+lente se llama *gran angular de telefoto invertido*; `CAMERA_MOVES` ya existía en
+`animation.ts` (el conjunto de tipos solo de cámara) y la biblioteca es
+`CAMERA_MOVE_LIBRARY`; hizo falta un expansor en `src/core/camera-moves.ts` que
+el plan no nombraba (N4 lo amplía); la posición del diafragma solo la dan la
+fuente para 6 de las 16 lentes (`stopBasis`) y para 9 se supone en el medio del
+hueco que el informe nombra; el informe no da número f ni semiaperturas del macro,
+ni semiaperturas de casi ninguna lente, así que esos campos quedan vacíos o
+derivados y marcados.
 
 ## Orden sugerido
 

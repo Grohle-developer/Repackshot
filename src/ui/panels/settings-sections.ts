@@ -4,7 +4,9 @@
 // Storage (space by category, the history's limits, persistent storage),
 // Desktop and About (licence and third-party licences with their full texts).
 // Numbers here come from the engine, the browser or the launcher; none is
-// assumed (CLAUDE.md rule 10).
+// assumed (CLAUDE.md rule 10). In the desktop application the space used is
+// the data folder as the launcher measured it, and nothing speaks of what a
+// browser may keep or delete (P3e).
 
 import { allItems } from '../../core/library';
 import { formatBytes } from '../../core/models';
@@ -17,7 +19,7 @@ import { dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
 import { ACTIONS, kbdText, SHORTCUT_GROUPS, shortcutGroup } from '../shortcuts';
 import { formatNumber, getLang, isaLabel, t } from '../strings';
-import { blockEl, infoRow, rowLabel, rowShell, settingRow, type SettingRowOptions } from './settings-rows';
+import { blockEl, infoRow, rowLabel, rowShell, settingRow, valueRow, type SettingRowOptions } from './settings-rows';
 import { desktopWindowText } from '../window-host';
 
 export interface SettingsHooks {
@@ -79,10 +81,23 @@ function destinationRow(ctx: Ctx, scope: Scope, row: RowMeta): HTMLElement {
     (d) => {
       downloads.setAttribute('aria-pressed', String(d.kind === 'DOWNLOADS'));
       folder.setAttribute('aria-pressed', String(d.kind === 'FOLDER'));
-      folderName.textContent = d.kind === 'FOLDER' ? d.name : t('rw.chooseFolder');
+      // A folder is a path on the desktop (P3b): the button says its name, the line under the label the whole path.
+      folderName.textContent = d.kind === 'FOLDER' ? folderLabel(d.name) : t('rw.chooseFolder');
+      folder.title = d.kind === 'FOLDER' ? d.name : '';
     },
   );
-  return settingRow(ctx, scope, row as SettingMeta, { control: seg, aux: () => (files.canChooseFolder ? null : t('rw.onlyDownload')) });
+  return settingRow(ctx, scope, row as SettingMeta, {
+    control: seg,
+    aux: (s) => {
+      const d = s['render.destination'];
+      return !files.canChooseFolder ? t('rw.onlyDownload') : d.kind === 'FOLDER' && d.name !== folderLabel(d.name) ? d.name : null;
+    },
+  });
+}
+
+/** The last part of a folder's path (`/home/a/Renders` → `Renders`); a name that is not a path, as it is. */
+export function folderLabel(name: string): string {
+  return name.split(/[\\/]/).filter(Boolean).pop() ?? name;
 }
 
 // ------------------------------------------------------------------ Keyboard shortcuts
@@ -216,12 +231,11 @@ function engineInfoRow(ctx: Ctx, scope: Scope): HTMLElement {
 
 // ------------------------------------------------------------------ Storage
 
-interface Usage {
-  models: number | null;
-  results: number;
-  library: number;
-  cache: number;
-  estimate: { usage: number; quota: number } | null;
+interface UsageRow {
+  id: string;
+  label: string;
+  bytes: number | null;
+  free: (() => void) | null;
 }
 
 function storageUsageRow(ctx: Ctx, scope: Scope): HTMLElement {
@@ -230,30 +244,55 @@ function storageUsageRow(ctx: Ctx, scope: Scope): HTMLElement {
   const confirmHost = h('div', { class: 'sw-confirm' });
   const parts = rowShell('storage.usage', { control: null, wide: true, hideLabel: true });
   parts.el.append(total, list, confirmHost);
-  let usage: Usage | null = null;
+  const storage = ctx.services.storage;
+  // The desktop: the data folder, part by part, as the launcher measured it.
+  const folder = storage.kind === 'folder';
+  let rows: UsageRow[] = [];
+  let modelBytes = 0;
+  let resultBytes = 0;
+  let libraryBytes = 0;
+  let measuring = 0;
   const measure = async () => {
-    const models = ctx.ui.get().models;
-    const modelBytes = models?.ready ? Object.values(models.blobs).reduce((a, b) => a + (b.state === 'complete' ? (b.total ?? b.contiguous) : b.contiguous), 0) : null;
-    usage = {
-      models: modelBytes,
-      results: ctx.ui.get().results.reduce((a, r) => a + (r.bytes ?? 0), 0),
-      library: ctx.services.storage.libraryBytes(),
-      cache: ctx.services.storage.cacheBytes(),
-      estimate: await ctx.services.storage.estimate().catch(() => null),
-    };
-    draw();
-  };
-  const draw = () => {
-    if (!usage) return;
-    const u = usage;
-    total.textContent = u.estimate ? t('set.st.total', { used: formatBytes(u.estimate.usage, getLang()), quota: formatBytes(u.estimate.quota, getLang()) }) : t('set.st.totalUnknown');
-    const rows: { id: string; label: string; bytes: number | null; free: (() => void) | null }[] = [
-      { id: 'models', label: t('set.st.models'), bytes: u.models, free: u.models ? freeModels : null },
-      { id: 'results', label: t('set.st.results'), bytes: u.results, free: u.results > 0 ? freeResults : null },
-      { id: 'library', label: t('set.st.library'), bytes: u.library, free: u.library > 0 ? freeLibrary : null },
-      { id: 'cache', label: t('set.st.cache'), bytes: u.cache, free: u.cache > 0 ? freeCache : null },
+    const seq = ++measuring;
+    const u = ctx.ui.get();
+    const snapModels = u.models?.ready ? Object.values(u.models.blobs).reduce((a, b) => a + (b.state === 'complete' ? (b.total ?? b.contiguous) : b.contiguous), 0) : null;
+    const items = allItems(u.library).length;
+    if (folder) {
+      const usage = await storage.usage?.().catch(() => null);
+      if (seq !== measuring) return;
+      const of = (id: string) => usage?.folders.find((f) => f.id === id)?.bytes ?? null;
+      modelBytes = of('models') ?? snapModels ?? 0;
+      resultBytes = of('results') ?? 0;
+      libraryBytes = of('library') ?? 0;
+      const cache = of('thumbs');
+      rows = [
+        { id: 'models', label: t('set.st.models'), bytes: of('models'), free: (u.models?.installed.length ?? 0) > 0 || Object.keys(u.models?.downloads ?? {}).length > 0 ? freeModels : null },
+        { id: 'results', label: t('set.st.results'), bytes: of('results'), free: u.results.length > 0 ? freeResults : null },
+        { id: 'library', label: t('set.st.library'), bytes: of('library'), free: items > 0 ? freeLibrary : null },
+        { id: 'cache', label: t('set.st.cache'), bytes: cache, free: cache ? freeCache : null },
+        { id: 'logs', label: t('set.st.logs'), bytes: of('logs'), free: null },
+        { id: 'window', label: t('set.st.window'), bytes: of('window'), free: null },
+        { id: 'other', label: t('set.st.other'), bytes: of('other'), free: null },
+      ];
+      total.textContent = usage ? t('set.st.totalFolder', { used: formatBytes(usage.total, getLang()) }) : t('set.st.totalUnknown');
+      draw(Math.max(1, usage?.total ?? 0));
+      return;
+    }
+    const [lib, cache, estimate] = await Promise.all([Promise.resolve(storage.libraryBytes()), Promise.resolve(storage.cacheBytes()), storage.estimate().catch(() => null)]);
+    if (seq !== measuring) return;
+    modelBytes = snapModels ?? 0;
+    resultBytes = u.results.reduce((a, r) => a + (r.bytes ?? 0), 0);
+    libraryBytes = lib;
+    rows = [
+      { id: 'models', label: t('set.st.models'), bytes: snapModels, free: snapModels ? freeModels : null },
+      { id: 'results', label: t('set.st.results'), bytes: resultBytes, free: resultBytes > 0 ? freeResults : null },
+      { id: 'library', label: t('set.st.library'), bytes: lib, free: lib > 0 ? freeLibrary : null },
+      { id: 'cache', label: t('set.st.cache'), bytes: cache, free: cache > 0 ? freeCache : null },
     ];
-    const max = Math.max(1, u.estimate?.quota ?? 0, ...rows.map((r) => r.bytes ?? 0));
+    total.textContent = estimate ? t('set.st.total', { used: formatBytes(estimate.usage, getLang()), quota: formatBytes(estimate.quota, getLang()) }) : t('set.st.totalUnknown');
+    draw(Math.max(1, estimate?.quota ?? 0, ...rows.map((r) => r.bytes ?? 0)));
+  };
+  const draw = (max: number) => {
     list.replaceChildren(
       ...rows.map((r) =>
         h(
@@ -262,7 +301,7 @@ function storageUsageRow(ctx: Ctx, scope: Scope): HTMLElement {
           h('span', { class: 'sw-usage-label' }, r.label),
           h('span', { class: 'sw-bar', 'aria-hidden': 'true' }, h('span', { style: `width:${r.bytes ? Math.max(1, (100 * r.bytes) / max) : 0}%` })),
           h('span', { class: 'sw-usage-bytes tabular note' }, r.bytes === null ? '–' : formatBytes(r.bytes, getLang())),
-          h('button', { type: 'button', class: 'btn btn-sm', disabled: !r.free, onclick: () => r.free?.() }, t('set.st.free')),
+          h('button', { type: 'button', class: 'btn btn-sm', disabled: !r.free, ...(folder && !r.free && ['logs', 'window', 'other'].includes(r.id) ? { title: t('set.st.notFreed') } : {}), onclick: () => r.free?.() }, t('set.st.free')),
         ),
       ),
     );
@@ -278,17 +317,17 @@ function storageUsageRow(ctx: Ctx, scope: Scope): HTMLElement {
     const keep = ctx.ui.get().settings['ai.active'];
     const keys = m.installed.filter((k) => k !== keep);
     showConfirmIn(confirmHost, {
-      message: t('set.st.freeModels', { size: formatBytes(usage?.models ?? 0, getLang()) }),
+      message: t('set.st.freeModels', { size: formatBytes(modelBytes, getLang()) }),
       options: [
         {
           label: t('set.st.free'),
           primary: true,
           run: async () => {
-            const before = usage?.models ?? 0;
+            const before = modelBytes;
             for (const k of keys) await svc.remove(k);
             for (const k of Object.keys(m.downloads)) await svc.cancel(k);
             await measure();
-            done(Math.max(0, before - (usage?.models ?? 0)));
+            done(Math.max(0, before - modelBytes));
           },
         },
       ],
@@ -297,26 +336,28 @@ function storageUsageRow(ctx: Ctx, scope: Scope): HTMLElement {
   const freeResults = () => {
     const n = ctx.ui.get().results.length;
     showConfirmIn(confirmHost, {
-      message: t('set.st.freeResults', { n, size: formatBytes(usage?.results ?? 0, getLang()) }),
-      options: [{ label: t('set.st.free'), primary: true, run: async () => (await cmd.clearHistory(ctx), done(usage?.results ?? 0)) }],
+      message: t('set.st.freeResults', { n, size: formatBytes(resultBytes, getLang()) }),
+      options: [{ label: t('set.st.free'), primary: true, run: async () => (await cmd.clearHistory(ctx), done(resultBytes)) }],
     });
   };
   const freeLibrary = () => {
     const n = allItems(ctx.ui.get().library).length;
     showConfirmIn(confirmHost, {
       message: t('set.st.freeLibrary', { n }),
-      options: [{ label: t('set.st.free'), primary: true, run: () => (cmd.clearLibrary(ctx), done(usage?.library ?? 0)) }],
+      options: [{ label: t('set.st.free'), primary: true, run: () => (cmd.clearLibrary(ctx), done(libraryBytes)) }],
     });
   };
   const freeCache = () => {
-    showConfirmIn(confirmHost, { message: t('set.st.freeCache'), options: [{ label: t('set.st.free'), primary: true, run: () => done(ctx.services.storage.clearCache()) }] });
+    showConfirmIn(confirmHost, { message: t('set.st.freeCache'), options: [{ label: t('set.st.free'), primary: true, run: async () => done(await storage.clearCache()) }] });
   };
   scope.watch((_s, u) => [u.models, u.results, u.library] as const, () => void measure(), (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2]);
   return parts.el;
 }
 
-function persistRow(ctx: Ctx, scope: Scope): HTMLElement {
+function persistRow(ctx: Ctx, scope: Scope): HTMLElement | null {
   void scope;
+  // What the browser may delete is a question of the web version only (the row is `webOnly`).
+  if (ctx.ui.get().desktop || ctx.services.storage.kind === 'folder') return null;
   const state = h('span', { class: 'note' });
   const ask = h('button', { type: 'button', class: 'btn' }, t('set.st.persistAsk'));
   const parts = rowShell('storage.persist', { aux: t('set.storage.persist.aux'), control: h('div', { class: 'sw-inline' }, state, ask) });
@@ -341,26 +382,26 @@ function openFolder(ctx: Ctx, port: NonNullable<Ctx['services']['desktop']>, tar
   });
 }
 
+const folderButton = (ctx: Ctx, target: 'data' | 'logs') => {
+  const port = ctx.services.desktop;
+  return port ? h('button', { type: 'button', class: 'btn btn-sm', 'data-open': target, onclick: () => openFolder(ctx, port, target) }, icon('folder', 14), t('set.st.openFolder')) : null;
+};
+
 function dataFolderRow(ctx: Ctx, scope: Scope): HTMLElement | null {
   void scope;
   const d = ctx.ui.get().desktop;
-  const port = ctx.services.desktop;
-  if (!d || !port) return null;
-  return infoRow('storage.folder', rowLabel('storage.folder'), h('div', { class: 'sw-inline' }, h('code', { class: 'sw-path' }, d.dataDir), h('button', { type: 'button', class: 'btn btn-sm', onclick: () => openFolder(ctx, port, 'data') }, icon('folder', 14), t('set.st.openFolder'))));
+  if (!d || !ctx.services.desktop) return null;
+  return valueRow('storage.folder', rowLabel('storage.folder'), { path: d.dataDir, actions: [folderButton(ctx, 'data')] });
 }
 
 // ------------------------------------------------------------------ Desktop
 
 function desktopRows(): SettingsHooks['rows'] {
-  const folderButton = (ctx: Ctx, target: 'data' | 'logs') => {
-    const port = ctx.services.desktop;
-    return port ? h('button', { type: 'button', class: 'btn btn-sm', onclick: () => openFolder(ctx, port, target) }, icon('folder', 14), t('set.st.openFolder')) : null;
-  };
   return {
     'desktop.portable': (ctx) => {
       const d = ctx.ui.get().desktop;
       if (!d) return null;
-      return infoRow('desktop.portable', rowLabel('desktop.portable'), h('div', { class: 'sw-inline' }, h('span', null, d.portable ? t('set.dk.portableYes', { dir: d.dataDir }) : t('set.dk.portableNo', { dir: d.dataDir })), folderButton(ctx, 'data')));
+      return valueRow('desktop.portable', rowLabel('desktop.portable'), { text: d.portable ? t('set.dk.portableYes') : t('set.dk.portableNo'), path: d.dataDir, actions: [folderButton(ctx, 'data')] });
     },
     'desktop.browser': (ctx) => {
       const d = ctx.ui.get().desktop;
@@ -368,7 +409,7 @@ function desktopRows(): SettingsHooks['rows'] {
     },
     'desktop.logs': (ctx) => {
       const d = ctx.ui.get().desktop;
-      return d ? infoRow('desktop.logs', rowLabel('desktop.logs'), h('div', { class: 'sw-inline' }, h('code', { class: 'sw-path' }, d.logsDir), folderButton(ctx, 'logs'))) : null;
+      return d ? valueRow('desktop.logs', rowLabel('desktop.logs'), { path: d.logsDir, actions: [folderButton(ctx, 'logs')] }) : null;
     },
   };
 }

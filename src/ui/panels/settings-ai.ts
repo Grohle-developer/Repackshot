@@ -177,18 +177,32 @@ function activeRow(ctx: Ctx, scope: Scope): HTMLElement {
   return parts.el;
 }
 
+/**
+ * Which GPU (desktop only): the graphics cards the launcher detected (`/api/hardware`, names and VRAM), kept in
+ * step with the detection, which may answer after the section is drawn ("Detecting…" until then).
+ */
 function gpuRow(ctx: Ctx, scope: Scope, row: RowMeta): HTMLElement | null {
-  const hw = ctx.ui.get().hardware.info;
   if (!ctx.ui.get().desktop) return null;
-  const gpus = hw?.gpus ?? [];
-  const sel = select(
-    gpus.length ? gpus.map((g, i) => ({ value: String(i), label: g.vramGiB !== null ? `${g.name} · ${t('set.hw.gib', { n: formatNumber(g.vramGiB, getLang(), 1) })}` : g.name })) : [{ value: '0', label: t('set.hw.notReported'), disabled: true }],
-    String(ctx.ui.get().settings['ai.gpu']),
-    (v) => cmd.setSetting(ctx, 'ai.gpu', Number(v)),
-    rowLabel('ai.gpu'),
+  const host = h('div', { class: 'sw-gpu' });
+  scope.watch(
+    (_s, u) => [u.hardware, u.settings['ai.gpu']] as const,
+    ([hw, chosen]) => {
+      const gpus = hw.info?.gpus ?? [];
+      const sel = select(
+        gpus.length
+          ? gpus.map((g, i) => ({ value: String(i), label: g.vramGiB !== null ? `${g.name} · ${t('set.hw.gib', { n: formatNumber(g.vramGiB, getLang(), 1) })}` : g.name }))
+          : [{ value: '0', label: hw.state === 'DONE' ? (hw.info?.detected === false ? t('set.hw.notDetected') : t('set.hw.noGpu')) : t('set.hw.detecting'), disabled: true }],
+        String(Math.min(chosen, Math.max(0, gpus.length - 1))),
+        (v) => cmd.setSetting(ctx, 'ai.gpu', Number(v)),
+        rowLabel('ai.gpu'),
+      );
+      (sel.el as HTMLSelectElement).disabled = gpus.length < 2;
+      host.dataset.gpus = String(gpus.length);
+      host.replaceChildren(sel.el);
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
   );
-  (sel.el as HTMLSelectElement).disabled = gpus.length < 2;
-  return settingRow(ctx, scope, row as SettingMeta, { control: sel.el, visible: (s) => s['ai.device'] === 'GPU' });
+  return settingRow(ctx, scope, row as SettingMeta, { control: host, visible: (s) => s['ai.device'] === 'GPU' });
 }
 
 // ------------------------------------------------------------------ Models
@@ -476,7 +490,11 @@ function modelsBlock(ctx: Ctx, scope: Scope): HTMLElement {
         return;
       }
       where.textContent = snap.error ? t('set.ai.noStore', { reason: storeReason(snap.error) }) : !snap.ready ? t('set.ai.loading') : snap.kind === 'native' ? t('set.ai.whereDesktop', { dir: snap.location ?? '' }) : snap.kind === 'memory' ? t('set.ai.whereMemory') : t('set.ai.whereWeb');
-      const keys = allModels(snap).map((m) => m.key);
+      // The desktop lists what can run there: a model made only for the browser (the web build) is not one.
+      const here: 'web' | 'desktop' = u.desktop ? 'desktop' : 'web';
+      const keys = allModels(snap)
+        .filter((m) => here === 'web' || runsHere(m, 'desktop') || snap.installed.includes(m.key))
+        .map((m) => m.key);
       if (keys.join('|') !== [...rows.keys()].join('|')) {
         for (const k of [...rows.keys()]) if (!keys.includes(k)) rows.delete(k);
         for (const k of keys) if (!rows.has(k)) rows.set(k, modelRow(ctx, k));

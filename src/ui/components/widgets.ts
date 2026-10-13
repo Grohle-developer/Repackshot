@@ -4,6 +4,7 @@
 import { h, icon, placeAt } from '../dom';
 import type { IconName } from '../icons';
 import { t } from '../strings';
+import { dragSource, DRAGGING_CLASS } from './material-drag';
 
 // --- Thumbnails -----------------------------------------------------------
 
@@ -14,7 +15,7 @@ export interface ThumbProps {
   sphere?: boolean;
   title?: string;
   onClick(): void;
-  /** Drag payload (a material), when the thumbnail can be dragged. */
+  /** Drag payload (a material: "preset:GOLD"), when the thumbnail can be dragged onto a part (pointer events). */
   drag?: string;
 }
 
@@ -28,18 +29,11 @@ export function thumb(p: ThumbProps): HTMLButtonElement {
       'aria-pressed': String(p.active),
       'data-tip': p.title,
       onclick: p.onClick,
-      draggable: p.drag ? 'true' : undefined,
     },
     img,
     h('span', { class: 'thumb-caption' }, p.caption),
   ) as HTMLButtonElement;
-  if (p.drag) {
-    el.addEventListener('dragstart', (e) => {
-      e.dataTransfer?.setData('application/x-repackshot-material', p.drag!);
-      e.dataTransfer?.setData('text/plain', p.caption);
-      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
-    });
-  }
+  if (p.drag) dragSource(el, { payload: () => p.drag ?? null });
   return el;
 }
 
@@ -373,6 +367,11 @@ export function installTooltips(): () => void {
     placeAt(tip, left, top);
   };
   const over = (e: MouseEvent) => {
+    // No tooltips under a dragged material: they would sit on what it is about to land on.
+    if (document.body.classList.contains(DRAGGING_CLASS)) {
+      hide();
+      return;
+    }
     const el = (e.target as HTMLElement | null)?.closest?.('[data-tip]') as HTMLElement | null;
     if (el === current) return;
     hide();

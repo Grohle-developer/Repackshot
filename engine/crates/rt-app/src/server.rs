@@ -157,6 +157,10 @@ impl App {
         if let Some(r) = crate::files::route(self, req, &parts, body) {
             return api(r);
         }
+        // The page's state in the data folder (appdata.rs, phase P3e): /api/store/*, /api/storage/*.
+        if let Some(r) = crate::appdata::route(&self.paths, req, &parts, body) {
+            return api(r);
+        }
         let m = req.method.as_str();
         api(match (m, parts.as_slice()) {
             ("GET", ["info"]) => self.info(),

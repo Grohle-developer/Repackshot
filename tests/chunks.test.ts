@@ -34,10 +34,16 @@ const NAMES = ['FBXLoader', 'rhino3dm.js', 'ColladaLoader', 'PLYLoader', '3MFLoa
 const OCCT_GLUE = ['dynCall_iiiiiijj', 'both async and sync fetching of the wasm failed', 'occtimportjs'];
 const OCCT_FILES = ['occt-import-js.js', 'occt-import-js.wasm', 'license.occt-import-js.txt', 'license.occt.txt', 'README.txt'];
 
+/**
+ * The files directly in dist/assets: the build's own chunks. The folders next to them are public/assets/ (generated
+ * aperture masks and gobos, phase A6), which are images, not code: every chunk has an extension, a folder has none.
+ */
+const assetFiles = (): string[] => readdirSync(`${DIST}/assets`).filter((f) => /\.[A-Za-z0-9]+$/.test(f));
+
 /** Every file of dist/assets (JavaScript, CSS, anything) as text. */
 function allAssets(): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const f of readdirSync(`${DIST}/assets`)) out[f] = new TextDecoder('latin1').decode(readFileSync(`${DIST}/assets/${f}`));
+  for (const f of assetFiles()) out[f] = new TextDecoder('latin1').decode(readFileSync(`${DIST}/assets/${f}`));
   return out;
 }
 
@@ -48,7 +54,7 @@ function chunks(): { entry: string; lazy: Record<string, string> } {
   const entryFile = src.split('/').pop()!;
   const lazy: Record<string, string> = {};
   let entry = '';
-  for (const f of readdirSync(`${DIST}/assets`)) {
+  for (const f of assetFiles()) {
     if (!f.endsWith('.js')) continue;
     const text = readFileSync(`${DIST}/assets/${f}`, 'utf8');
     if (f === entryFile) entry = text;
@@ -125,7 +131,7 @@ describe.skipIf(!hasDist)('bundle: importers load on demand', () => {
     for (const [f, text] of Object.entries(assets)) for (const print of OCCT_GLUE) expect(text.includes(print), `${f} carries "${print}" of occt-import-js.js`).toBe(false);
     // Neither is the wasm: no asset is anywhere near its size, and none starts with the wasm magic.
     const wasmSize = readFileSync(`${DIST}/vendor/occt-import-js/occt-import-js.wasm`).length;
-    for (const f of readdirSync(`${DIST}/assets`)) {
+    for (const f of assetFiles()) {
       const bytes = readFileSync(`${DIST}/assets/${f}`);
       expect(bytes.length < wasmSize / 4, `${f} is ${bytes.length} bytes`).toBe(true);
       expect(bytes[0] === 0 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d, `${f} is wasm`).toBe(false);

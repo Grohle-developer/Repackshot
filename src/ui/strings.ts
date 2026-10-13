@@ -111,8 +111,8 @@ const TABLE = {
   'level.tip.GROUP': ['An assembly: a node with children', 'Un ensamblaje: un nodo con hijos'],
   'level.tip.PART': ['One mesh', 'Una malla'],
   'level.tip.FACES': [
-    'Triangles clicked in the viewport; whole CAD faces are coming soon',
-    'Triángulos pulsados en el visor; la cara CAD entera llega próximamente',
+    'A whole face per click (a CAD face, or the surface that continues); Shift adds one triangle, Ctrl adds or removes a face, Alt removes it; a Ctrl/⌘ + drag box takes the faces that show in it',
+    'Una cara entera por clic (una cara CAD, o la superficie que continúa); Shift añade un triángulo, Ctrl añade o quita una cara, Alt la quita; una caja con Ctrl/⌘ + arrastrar coge las caras que se ven en ella',
   ],
   'cameras.new': ['New from current view', 'Nueva desde la vista actual'],
   'cameras.active': ['Active', 'Activa'],
@@ -140,6 +140,10 @@ const TABLE = {
 
   // Viewport
   'tool.select': ['Select', 'Seleccionar'],
+  'tool.selectBox': [
+    'Box selection: hold Ctrl/⌘ and drag. Left to right is a window (what is entirely inside), right to left is crossing (what it touches). Add Shift to add, Alt to take out. Where the left button is free (the middle button or Alt + left orbits), a plain drag draws it',
+    'Selección por caja: mantén Ctrl/⌘ y arrastra. De izquierda a derecha es una ventana (lo que queda entero dentro), de derecha a izquierda es cruzar (lo que toca). Añade Shift para añadir, Alt para quitar. Donde el botón izquierdo está libre (orbita el central o Alt + izquierdo), arrastrar sin más la dibuja',
+  ],
   'tool.orbit': ['Orbit', 'Orbitar'],
   'tool.pan': ['Pan', 'Desplazar'],
   'tool.zoom': ['Zoom', 'Zoom'],
@@ -173,6 +177,11 @@ const TABLE = {
   'viewport.pickReflect': [
     'Click where you want the highlight of {light} · Esc cancels',
     'Haz clic donde quieres el brillo de {light} · Esc cancela',
+  ],
+  'viewport.xray': ['X-ray', 'Rayos X'],
+  'viewport.xrayAux': [
+    'Box selection at the Faces level also takes the faces hidden behind others',
+    'La selección por caja en el nivel Caras coge también las caras ocultas tras otras',
   ],
   'viewport.space': ['Axes of the move tool: global or local', 'Ejes de la herramienta de mover: globales o locales'],
   'viewport.pickPivot': ['Click on the part where the pivot goes · Esc cancels', 'Haz clic en la pieza donde va el pivote · Esc cancela'],
@@ -324,7 +333,7 @@ const TABLE = {
   'inspector.parts': ['{n} parts', '{n} piezas'],
   'inspector.faces': ['{n} faces of {part}', '{n} caras de {part}'],
   'inspector.face': ['1 face of {part}', '1 cara de {part}'],
-  'inspector.noFaces': ['Click triangles of {part} in the viewport', 'Haz clic en triángulos de {part} en el visor'],
+  'inspector.noFaces': ['Click a face of {part} in the viewport, or drag a box over faces (Shift: one triangle)', 'Haz clic en una cara de {part} en el visor, o arrastra una caja sobre caras (Shift: un triángulo)'],
   'section.product': ['Product', 'Producto'],
   'section.light': ['Light', 'Luz'],
   'section.environment': ['Environment', 'Entorno'],
@@ -459,7 +468,9 @@ const TABLE = {
   ],
   'material.notDrawn': ['stored, drawn by the engine (coming soon)', 'se guarda; lo pinta el motor (próximamente)'],
   'material.noMatch': ['No material matches.', 'Ningún material coincide.'],
-  'material.dragHint': ['Click to assign · drag onto a part', 'Clic para asignar · arrastra sobre una pieza'],
+  'material.dragHint': ['Click to assign · drag onto a part or a row of the tree (Alt: a copy)', 'Clic para asignar · arrastra sobre una pieza o una fila del árbol (Alt: una copia)'],
+  'material.sphereDrag': ['Drag onto a part to give it this material (Alt: a copy)', 'Arrastra sobre una pieza para darle este material (Alt: una copia)'],
+  'drag.copy': ['Copy', 'Copia'],
   'material.thumbBusy': ['Rendering spheres…', 'Renderizando esferas…'],
   'material.inventory': ['{target} contains {n} materials ({list}).', '{target} contiene {n} materiales ({list}).'],
   'material.replaceAll': ['Replace all', 'Sustituir todos'],
@@ -594,7 +605,6 @@ const TABLE = {
   'ops.flip': ['Flip normals', 'Invertir normales'],
   'ops.smoothing': ['Smoothing…', 'Suavizado…'],
   'ops.separateCad': ['Separate by CAD faces', 'Separar por caras CAD'],
-  'ops.separateCadSoon': ['Comes with whole CAD face selection · coming soon', 'Llega con la selección de cara CAD entera · próximamente'],
   'ops.separateMaterial': ['Separate by material', 'Separar por material'],
 
   // Light editor
@@ -962,7 +972,7 @@ const TABLE = {
   'set.sec.storage': ['Storage', 'Almacenamiento'],
   'set.sec.storage.desc': ['What Repackshot keeps on this computer, and how to free space.', 'Lo que Repackshot guarda en este equipo y cómo liberar espacio.'],
   'set.sec.desktop': ['Desktop', 'Escritorio'],
-  'set.sec.desktop.desc': ['The desktop application: where its data is and which browser draws its window.', 'La aplicación de escritorio: dónde están sus datos y qué navegador dibuja su ventana.'],
+  'set.sec.desktop.desc': ['The desktop application: where its data is and what draws its window.', 'La aplicación de escritorio: dónde están sus datos y qué dibuja su ventana.'],
   'set.sec.updates': ['Updates', 'Actualizaciones'],
   'set.sec.updates.desc': ['Which version you are running, and whether a newer one has been published.', 'Qué versión usas y si hay otra más reciente publicada.'],
   'set.sec.about': ['About', 'Acerca de'],
@@ -1025,7 +1035,10 @@ const TABLE = {
   'set.viewport.startMode.FULL': ['Full', 'Completo'],
   'set.viewport.startMode.LAST': ['The last one', 'El último'],
   'set.viewport.mouse': ['Mouse', 'Ratón'],
-  'set.viewport.mouse.aux': ['Which button orbits; the right button pans and the wheel zooms', 'Qué botón orbita; el derecho desplaza y la rueda hace zoom'],
+  'set.viewport.mouse.aux': [
+    'Which button orbits; the right button pans and the wheel zooms. With the Select tool, Ctrl/⌘ + drag draws a selection box in every case (add Shift to add, Alt to take out); where the left button is free, a plain drag does too',
+    'Qué botón orbita; el derecho desplaza y la rueda hace zoom. Con la herramienta Seleccionar, Ctrl/⌘ + arrastrar dibuja una caja de selección en cualquier caso (añade Shift para añadir, Alt para quitar); donde el botón izquierdo está libre, arrastrar sin más también',
+  ],
   'set.viewport.mouse.LEFT': ['Left button orbits', 'Botón izquierdo orbita'],
   'set.viewport.mouse.ALT_LEFT': ['Alt + left button orbits', 'Alt + botón izquierdo orbita'],
   'set.viewport.mouse.MIDDLE': ['Middle button orbits', 'Botón central orbita'],
@@ -1312,6 +1325,7 @@ const TABLE = {
   'set.hw.maxBuffer': ['Largest WebGPU buffer', 'Búfer WebGPU más grande'],
   'set.hw.notReported': ['Not reported by the browser', 'El navegador no lo dice'],
   'set.hw.notDetected': ['Not detected', 'No detectado'],
+  'set.hw.noGpu': ['No graphics card found', 'No se ha encontrado ninguna tarjeta gráfica'],
   'set.hw.again': ['Detect again', 'Detectar de nuevo'],
   'set.hw.cpu': ['Processor', 'Procesador'],
   'set.hw.noUsableGpu': ['No graphics card with 4 GB of video memory or more: the recommendation is for the processor', 'Ninguna tarjeta gráfica con 4 GB de memoria de vídeo o más: la recomendación es para el procesador'],
@@ -1361,8 +1375,17 @@ const TABLE = {
   'set.st.persistNone': ['This browser cannot be asked', 'A este navegador no se le puede pedir'],
   'set.st.openFolder': ['Open folder', 'Abrir carpeta'],
   'set.st.openFolderFailed': ['The system could not open the folder', 'El sistema no ha podido abrir la carpeta'],
-  'set.dk.portableYes': ['Yes: the data is next to the program, in {dir}', 'Sí: los datos están junto al programa, en {dir}'],
-  'set.dk.portableNo': ['No: the data is in {dir}', 'No: los datos están en {dir}'],
+  // Storage on the desktop (P3e): the data folder, measured by the application.
+  'set.st.totalFolder': ['{used} in the data folder', '{used} en la carpeta de datos'],
+  'set.st.logs': ['Logs', 'Registros'],
+  'set.st.window': ['Window data', 'Datos de la ventana'],
+  'set.st.other': ['Settings and the rest', 'Ajustes y lo demás'],
+  'set.st.notFreed': ['Kept while the application runs', 'Se conserva mientras la aplicación está abierta'],
+  'store.saveFailed': ['Could not save to the data folder: the change lasts until Repackshot closes', 'No se ha podido guardar en la carpeta de datos: el cambio dura hasta cerrar Repackshot'],
+  'set.dk.portableYes': ['Yes: the data is next to the program, in this folder:', 'Sí: los datos están junto al programa, en esta carpeta:'],
+  'set.dk.portableNo': ['No: the data is in this folder:', 'No: los datos están en esta carpeta:'],
+  // What draws the window, by name (never an executable's name). The default browser is said as it is: then
+  // the application really is in a browser tab.
   'set.dk.defaultBrowser': ['The default browser', 'El navegador por defecto'],
   'set.dk.window.webview2': ['Repackshot’s own window (WebView2 {version})', 'La ventana propia de Repackshot (WebView2 {version})'],
   'set.dk.window.app': ['{browser} app window', 'Ventana de aplicación de {browser}'],
@@ -1372,6 +1395,9 @@ const TABLE = {
   'set.dk.reason.loader-missing': ['WebView2Loader.dll is missing next to the program', 'falta WebView2Loader.dll junto al programa'],
   'set.dk.reason.runtime-missing': ['WebView2 runtime not found', 'no se encontró el runtime de WebView2'],
   'set.dk.reason.failed': ['WebView2 failed: see the logs', 'WebView2 falló: mira los registros'],
+  'set.dk.window.webview2Plain': ['Repackshot’s own window (WebView2)', 'La ventana propia de Repackshot (WebView2)'],
+  'set.dk.window.other': ['App window', 'Ventana de aplicación'],
+  'set.dk.window.unknown': ['A window the application did not open', 'Una ventana que no abrió la aplicación'],
   'up.checking': ['Checking…', 'Comprobando…'],
   'up.neverChecked': ['Not checked yet', 'Aún no se ha comprobado'],
   'up.never': ['Never', 'Nunca'],
@@ -1645,6 +1671,7 @@ const TABLE = {
   'undo.import': ['Import {name}', 'Importar {name}'],
   'undo.new': ['New project', 'Nuevo proyecto'],
   'undo.assign': ['Assign {material} to {target}', 'Asignar {material} a {target}'],
+  'undo.assignCopy': ['Assign a copy of {material} to {target}', 'Asignar una copia de {material} a {target}'],
   'undo.libraryRemoved': ['Remove {name} from the library', 'Quitar {name} de la biblioteca'],
   'undo.productType': ['Product type: {name}', 'Tipo de producto: {name}'],
   'undo.createStudio': ['Create studio', 'Crear estudio'],
@@ -1699,6 +1726,7 @@ const TABLE = {
   'undo.flip': ['Flip the normals of {target}', 'Invertir las normales de {target}'],
   'undo.smoothAngle': ['Smoothing angle of {target}', 'Ángulo de suavizado de {target}'],
   'undo.separate': ['Separate {target} by material', 'Separar {target} por material'],
+  'undo.separateCad': ['Separate {target} by CAD faces', 'Separar {target} por caras CAD'],
   'undo.smooth': ['Smoothing of {target}', 'Suavizado de {target}'],
   'undo.param': ['{material}: {param}', '{material}: {param}'],
   'undo.makeOwn': ['Make {material} my own', 'Convertir {material} en propio'],
@@ -1793,6 +1821,65 @@ const TABLE = {
 
 export type StringKey = keyof typeof TABLE;
 
+/**
+ * The desktop application's wording (phase P3e). In the launcher's window there is no browser for the
+ * person: the page is the application's interface, and what it keeps is in the data folder. So the strings
+ * that speak of "the browser" say it the desktop's way there, and the web version keeps the table above.
+ * Strings of rows the desktop never shows (persistent storage, WebGPU, the browser's quota) are in
+ * `WEB_ONLY_STRINGS` instead. tests/strings.test.ts checks that every string mentioning the browser is in
+ * one of the two.
+ */
+const DESKTOP_TABLE: Partial<Record<StringKey, readonly [string, string]>> = {
+  'header.fullNoWorkers': ['Full: the WebAssembly engine cannot start its workers here', 'Completo: el motor WebAssembly no puede arrancar sus workers aquí'],
+  'library.saveFailed': ['Your library could not be saved in the data folder', 'No se ha podido guardar tu biblioteca en la carpeta de datos'],
+  'rw.folderNote': ['Written into “{name}”', 'Se escribe en «{name}»'],
+  'rw.onlyDownload': ['The images go to the Downloads folder', 'Las imágenes van a la carpeta Descargas'],
+  'queue.storageMemory': ['Results are kept in memory only: the data folder could not be written', 'Los resultados solo se guardan en memoria: no se ha podido escribir en la carpeta de datos'],
+  'set.general.onStart.aux': ['What the window shows when Repackshot opens. Last project offers the file opened or saved last', 'Lo que muestra la ventana al abrir Repackshot. Último proyecto ofrece el archivo abierto o guardado por última vez'],
+  'set.general.autosave.aux': ['A copy of the project in the data folder every few minutes', 'Una copia del proyecto en la carpeta de datos cada pocos minutos'],
+  'set.general.confirmClose.aux': ['Asks before the window closes with unsaved changes', 'Pregunta antes de cerrar la ventana si hay cambios sin guardar'],
+  'set.engine.backend.WASM': ['WebAssembly', 'WebAssembly'],
+  'set.engine.threads.aux': ['Workers of the WebAssembly engine; a change restarts it', 'Workers del motor WebAssembly; cambiarlo lo reinicia'],
+  'set.eng.simdYes': ['WebAssembly has simd128 here', 'WebAssembly tiene simd128 aquí'],
+  'set.eng.simdNo': ['WebAssembly has no simd128 here: the scalar build runs', 'WebAssembly no tiene simd128 aquí: se usa la versión escalar'],
+  'set.ai.noStore': ['Models cannot be kept: {reason}', 'No se pueden guardar modelos: {reason}'],
+  'set.hw.notReported': ['Not detected', 'No detectado'],
+  'set.st.totalUnknown': ['The data folder could not be measured', 'No se ha podido medir la carpeta de datos'],
+  'set.block.browser': ['Where the data is', 'Dónde están los datos'],
+  'project.reopenFailed': ['Could not open “{name}”: the file moved or cannot be read', 'No se ha podido abrir «{name}»: el archivo se ha movido o no se puede leer'],
+  'project.err.tooLarge': ['{name} is too large to open. The current project was not touched.', '{name} es demasiado grande para abrirlo. El proyecto actual no se ha tocado.'],
+};
+
+/**
+ * Strings that mention the browser and never show in the desktop application: their rows are hidden there
+ * (`webOnly` in core/settings.ts) or their code only runs in the web version (WebGPU, the browser's quota and
+ * memory figures, the browser's own model store).
+ */
+export const WEB_ONLY_STRINGS: readonly StringKey[] = [
+  'set.storage.persist.aux',
+  'set.st.persisted',
+  'set.st.notPersisted',
+  'set.st.persistDenied',
+  'set.st.persistNone',
+  'set.st.total',
+  'set.ai.whereWeb',
+  'set.ai.whereMemory',
+  'set.hw.ramCapped',
+  'set.hw.rowWebGpu',
+  'set.hw.rowWebNone',
+  'set.hw.webCannot',
+];
+
+/**
+ * Strings of the desktop that name a browser because one really draws the window then: the default browser (no app
+ * window could open), the app window of the browser named in `{browser}` (Microsoft Edge…: a product's name, never an
+ * executable's), and the `--window=browser` the person chose on the command line (P3c).
+ */
+export const DESKTOP_BROWSER_FACTS: readonly StringKey[] = ['set.dk.defaultBrowser', 'set.dk.window.app', 'set.dk.reason.forced'];
+
+/** The desktop wording, for the tests. */
+export const DESKTOP_STRINGS: Readonly<Partial<Record<StringKey, readonly [string, string]>>> = DESKTOP_TABLE;
+
 function column(i: 0 | 1): Record<StringKey, string> {
   const out = {} as Record<StringKey, string>;
   for (const k of Object.keys(TABLE) as StringKey[]) out[k] = TABLE[k][i];
@@ -1809,6 +1896,25 @@ export const LANGS: readonly Lang[] = ['en', 'es'];
 
 let current: Lang = 'en';
 const listeners = new Set<(lang: Lang) => void>();
+let platform: 'web' | 'desktop' = 'web';
+
+/** Where the interface runs (io/platform.ts): the desktop's wording replaces the browser's. Set once, before anything is drawn. */
+export function setStringsPlatform(p: 'web' | 'desktop'): void {
+  platform = p;
+}
+
+export function getStringsPlatform(): 'web' | 'desktop' {
+  return platform;
+}
+
+/** The text of a key in a language, in the platform's wording. */
+export function stringIn(lang: Lang, key: StringKey): string {
+  if (platform === 'desktop') {
+    const d = DESKTOP_TABLE[key];
+    if (d) return d[lang === 'en' ? 0 : 1];
+  }
+  return STRINGS[lang][key];
+}
 
 export function getLang(): Lang {
   return current;
@@ -1840,12 +1946,12 @@ function interpolate(template: string, params: Record<string, Param> | undefined
 
 /** A string in the current language, with {params} filled in. */
 export function t(key: StringKey, params?: Record<string, Param>): string {
-  return interpolate(STRINGS[current][key], params, current);
+  return interpolate(stringIn(current, key), params, current);
 }
 
 /** A string in a given language. */
 export function tIn(lang: Lang, key: StringKey, params?: Record<string, Param>): string {
-  return interpolate(STRINGS[lang][key], params, lang);
+  return interpolate(stringIn(lang, key), params, lang);
 }
 
 /** The same string in both languages, e.g. for undo labels that survive a language switch. */

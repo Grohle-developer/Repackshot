@@ -58,7 +58,7 @@ propio (`io/step-worker.ts`) que descarga `occt-import-js.js` y `.wasm`
 sin modificar de `public/vendor/occt-import-js/`, copiados por
 `tools/vendor.mjs` con `license.occt-import-js.txt`, `license.occt.txt` y
 un `README.txt` con la versión y los enlaces al fuente;
-`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable (1.97 al arrancar),
+`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable, **fijado a 1.97.0 en CI** (`RUST_VERSION` y `RUSTUP_TOOLCHAIN` en `engine.yml` y `release.yml`, la misma versión que las máquinas de desarrollo: cada Rust nuevo trae *lints* nuevos de clippy y con `-D warnings` pondría el CI en rojo sin que nada cambie; subir de versión es un cambio a propósito que arregla sus *lints*),
 objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 `riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
 
@@ -77,7 +77,11 @@ src/
     lighting.ts             rig activo, focos, colocación por reflejo
     camera.ts               óptica, encuadre, cámaras guardadas
     animation.ts            planos, movimientos, evaluación en el tiempo
+    camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
+    faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
+    material-drop.ts        a qué llega una suelta de material y qué asigna (U7)
+    box-select.ts           selección por caja: geometría en pantalla, ventana y cruce, qué gesto la arma (U7)
     light-math.ts           kelvin → rgb, irradiancia, polar, ease   (portado)
     rig.ts                  studioRig / setupRig normalizados           (portado)
     wear.ts                 valores por defecto del desgaste            (portado)
@@ -96,14 +100,21 @@ src/
     rsb.ts                  escritor del formato de escena binario del motor (§5.2)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
+    ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
     theme.css  layout.css  components.css  …
     components/             NumberField, Section, Grid, Palette, …
+      material-drag.ts      arrastrar un material con eventos de puntero: fantasma, zonas de suelta, Esc (U7)
     panels/                 header, scene, viewport, inspector, renderbar, status
+      viewport-box.ts       el gesto de la caja de selección sobre el visor (U7)
 public/
   thumbs/setups/            72 miniaturas de montaje de luz (PNG)
+  assets/aperture/          45 máscaras de diafragma y texturas de pupila (PNG 512², gris de 8 bits) + index.json (A6)
+  assets/gobo/              12 patrones de gobo (PNG 1024², gris de 8 bits) + index.json (A6)
+  assets/README.md          procedencia: generador, receta, semilla y hash de cada fichero
   example/                  nada: la pieza de ejemplo es procedural
 tests/                      vitest; *.test.ts por módulo
 tools/                      scripts de desarrollo: capturas, generadores, hojas de contacto
+  assets/                   generadores deterministas de public/assets/ (A6): common.mjs, aperture-masks.mjs, gobos.mjs; solo node:zlib y node:crypto
 docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
@@ -153,6 +164,24 @@ de Cycles: un panel de potencia P y área A tiene radiancia P / (4 A). `kelvin` 
   `FABRIC`, `EMISSIVE`) y parámetros.
 - Desgaste, pelusa, ópticas, movimientos, suavizados, secuencias,
   chequeos del Doctor, calidad y resolución: ver sus ficheros.
+- **Herramientas de estudio (A6)**, datos propios y no portados
+  (`docs/STUDIO-TOOLS.md`): `lenses.json` (las 16 prescripciones de lente,
+  con su cargador tipado en `lenses.ts`), `bokeh.json` (los 20 tipos) y
+  `camera-moves.json` (14 movimientos de cámara relativos al producto y
+  3 presets de cámara en mano). Sus JSON se leen con una llamada marcada
+  `/* @__PURE__ */` para que la página no los lleve en el primer *chunk*
+  hasta que algo los use. Las máscaras y los gobos que referencian
+  están en `public/assets/` y se generan con `tools/assets/`.
+
+**Assets generados** (`public/assets/`, `tools/assets/`): cada fichero sale de
+una receta y una semilla por código puro (solo `+ − × ÷` y `sqrt`, sin
+`Math.sin` ni `Math.random`), y su `index.json` guarda receta, semilla y dos
+*hashes*: el de los píxeles (canónico) y el del PNG. `tests/assets.test.ts`
+los regenera y compara. El servidor de escritorio (`static_files.rs`) solo
+trata como inmutables los ficheros de `/assets/` que llevan el *hash* de
+contenido de Vite (`nombre-XXXXXXXX.ext`, 8 caracteres, directamente en
+`assets/`); los demás (estos assets y sus `index.json`) se revalidan en cada
+petición con un ETag del SHA-256 de sus bytes.
 
 **Normalización de exposición** (`src/core/rig.ts`): al aplicar un
 montaje sobre un tipo de producto, la suma de irradiancias de sus focos
@@ -408,13 +437,18 @@ externos). **Sin `unsafe` salvo en `src/platform/`** (decidido en P3c):
 la ventana propia de Windows necesita llamar a Win32 y a la interfaz COM
 de WebView2, y eso solo se hace con FFI; cada bloque `unsafe` lleva su
 comentario de por qué es correcto, el resto del *crate* mantiene
-`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace cinco cosas:
+`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace estas cosas:
 
-1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1` y
-   un puerto libre, con la carpeta `app/` (el `dist/` de Vite) junto al
-   ejecutable. Comprueba la cabecera `Host` (contra el *DNS rebinding*) y
-   exige en la API un *token* aleatorio por arranque que solo conoce la
-   página que abrió.
+1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1`,
+   con la carpeta `app/` (el `dist/` de Vite) junto al ejecutable.
+   Comprueba la cabecera `Host` (contra el *DNS rebinding*) y exige en la
+   API un *token* aleatorio por arranque que solo conoce la página que
+   abrió. **Puerto estable por carpeta de datos** (P3e, `src/port.rs`):
+   se apunta en `<datos>/launcher.json` y se vuelve a usar en el siguiente
+   arranque si está libre; solo si está ocupado se toma otro libre, que
+   pasa a ser el apuntado (`--port N` usa N y no apunta nada). Así el
+   origen de la ventana (`http://127.0.0.1:<puerto>`) no cambia de un
+   arranque a otro.
 2. **Abrir la ventana**: Edge en Windows (viene con el sistema) o el
    primer Chromium, Chrome, Edge o Brave en Linux, con `--app=<url>` y un
    perfil propio en la carpeta de datos; si no hay ninguno, el
@@ -433,17 +467,53 @@ comentario de por qué es correcto, el resto del *crate* mantiene
 4. **Datos y modelos**: carpeta de datos en `%LOCALAPPDATA%\Repackshot`
    (Windows) o `$XDG_DATA_HOME/repackshot` (Linux); en las versiones
    **portables** (un fichero `portable.txt` junto al ejecutable), en
-   `data/` al lado, perfil del navegador incluido. Los modelos de IA se
-   guardan ahí: la página los descarga con `fetch` y los entrega al
-   lanzador por trozos, que los escribe, reanuda y comprueba con un
-   SHA-256 propio.
+   `data/` al lado, con todo dentro. Los modelos de IA se guardan ahí: la
+   página los descarga con `fetch` y los entrega al lanzador por trozos,
+   que los escribe, reanuda y comprueba con un SHA-256 propio.
+5. **El estado de la página** (P3e, `src/appdata.rs`): en escritorio la
+   página es **solo la interfaz** y todo lo que guarda lo escribe el
+   lanzador en la carpeta de datos, nunca el almacenamiento del navegador
+   de la ventana. `/api/store/*` y `/api/storage/usage`, con el mismo
+   *token*, `Host` y `Origin`, nombres en minúscula confinados a la
+   carpeta de datos (ni enlaces ni nombres de dispositivo de Windows) y
+   escrituras atómicas (temporal, `sync_all`, `rename`). La carpeta:
+
+   ```text
+   settings.json        el documento de ajustes (src/core/settings.ts)
+   state/<nombre>.json  cosas pequeñas de la página: descargas por reanudar, carpetas elegidas,
+                        la marca de la migración desde el navegador
+   library/             la biblioteca propia (U4)
+   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json
+   cache/thumbs/        las esferas de materiales (caché)
+   models/              los modelos de IA, por sha256
+   logs/                el registro del lanzador
+   browser-profile/     el perfil de la ventana de Edge o Chromium
+   webview2/            el perfil de la ventana propia (P3c); window.json, su sitio
+   launcher.json        el puerto; instance.json, la instancia en marcha
+   pending-models.json  lo que eligió el instalador
+   ```
+
+   En la página, **la costura de plataforma** (`src/io/platform.ts`): una
+   interfaz `Platform` con todo servicio que guarda algo o pregunta al
+   equipo (ajustes, cosas pequeñas recordadas, biblioteca, historial de
+   resultados, almacén de modelos, equipo, espacio usado, miniaturas,
+   archivos de salida, proyectos, diálogos de importar y exportar),
+   elegida una vez al arrancar (`choosePlatform()`, antes de pintar nada)
+   con dos implementaciones: la web (`platform-web.ts`: localStorage,
+   IndexedDB, OPFS, WebGPU, los selectores y descargas del navegador) y
+   la del lanzador (`platform-desktop.ts`: lo anterior, más `/api/hardware`
+   y los diálogos y la API de archivos de P3b). `main.ts` construye con
+   ella los servicios de la interfaz, que no sabe cuál es. En escritorio
+   la página no toca el almacenamiento del navegador salvo una vez por
+   carpeta de datos, para copiar al lanzador lo que una versión anterior
+   dejó en el origen actual (marca `state/migration.json`).
 6. **Diálogos y archivos** (P3b): `POST /api/dialog/{folder,open,save}`
    abre los diálogos del sistema y devuelve un permiso por ruta; la API de
    archivos (`/api/files…`) solo lee o escribe rutas concedidas así en el
    arranque actual, con escritura atómica y sin sobrescribir en las
    carpetas de salida. La página nunca nombra una ruta que no le diera un
    diálogo.
-5. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
+7. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
    VRAM, la RAM y la recomendación de `src/data/ai-models.json`
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
    procesos del sistema y sin `unsafe`); lo usan el instalador y
@@ -464,6 +534,47 @@ comentario de por qué es correcto, el resto del *crate* mantiene
   plegadas) en `localStorage`, siempre dentro de `try/catch` y con valor
   por defecto.
 
+### 6.1 · El puerto del visor (`src/ui/ports.ts`)
+
+La interfaz no importa `render`: `main.ts` construye un `ViewportPort`
+sobre el motor que está en pantalla y se lo entrega. Es lo único que la
+interfaz sabe del visor:
+
+- **Imagen y tamaño**: `kind` (`'preview'` o `'pathtracer'`), `canvas`,
+  `backdrop` (la imagen del modo Completo, bajo el lienzo) y `resize`.
+- **Geometría, que es siempre la de la vista previa en los dos modos**:
+  `pick(x, y)` (la pieza, el triángulo, el punto y la normal bajo un
+  punto del lienzo), `projection()` y `visibleTriangles(part, rect)`.
+  - `projection(): Projection | null` da cómo se proyectan las piezas
+    **tal como se dibujan ahora** (ancho y alto en píxeles CSS y
+    `mvp(part)`, la matriz modelo-vista-proyección de una pieza). La
+    selección por caja (`core/box-select.ts`) prueba con ella la
+    geometría en pantalla, sin tocar three.
+  - `visibleTriangles(part, rect): Set<number> | null` devuelve los
+    triángulos de una pieza que se **ven** dentro de un rectángulo (px
+    CSS del lienzo): la vista previa dibuja la escena con un id de color
+    por triángulo en un destino fuera de pantalla, lee el rectángulo y
+    solo cuenta un píxel cuyos cuatro vecinos llevan el mismo id (una
+    erosión que quita los de silueta que se escapan de lo oculto). Lo que
+    otras piezas o la propia pieza tapan no cuenta; `null` si el visor no
+    puede decirlo. *Rayos X* no lo usa: coge por geometría.
+- **Resaltados**: `setHover(ids)` (contorno de piezas: bajo el cursor o
+  bajo un material arrastrado) y `setHoverFaces({ part, indices } | null)`
+  (las caras que alcanzaría un material arrastrado a nivel *Caras*: un
+  tinte sobre la pieza, en una capa aparte de la de las caras
+  seleccionadas).
+- **Herramientas y *gizmo***: `setTool`, `setGizmo`, `gizmoHover`,
+  `gizmoBegin`, `gizmoDrag`, `gizmoEnd`.
+- **Estado y miniaturas**: `status`, `onFrame`, `materialThumbnail`,
+  `thumbnailsPending`; **ajustes**: `setNavigation`, `setDisplay`.
+
+Los tres métodos nuevos de U7 y M1 (`projection`, `visibleTriangles`,
+`setHoverFaces`) son, en `main.ts`, una línea cada uno hacia la vista
+previa. Un doble de pruebas del visor basta para probar la selección por
+caja sin navegador (`tests/box-select.test.ts`); el gesto y lo que se
+ve se comprueban con `tools/box-select-check.mjs` y
+`tools/material-drag-check.mjs`.
+
 ---
 
 ## 7 · Pruebas
@@ -473,6 +584,8 @@ comentario de por qué es correcto, el resto del *crate* mantiene
 | Catálogos y matemáticas de luz | `tests/data.test.ts`, `light-math`, `rig` | Recuentos fijados, fórmulas con números, normalización 16 × 71 |
 | Modelo | `tests/store.test.ts`, `scene`, `materials`, `doctor`… | Acciones puras: dado un estado, la acción produce el esperado; deshacer lo devuelve |
 | Interfaz | `tests/strings.test.ts`, `ui-achromatic.test.ts` | Invariantes estáticas sobre fuentes |
+| Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
+| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs` | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |

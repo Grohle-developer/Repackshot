@@ -1,7 +1,9 @@
 // Material spheres rendered in the browser (UI.md §6): a sphere with the
 // material, 96 x 96, transparent background (so it sits on either theme),
 // rendered with its own small renderer one per frame and cached in memory
-// and in localStorage (wrapped: storage may be missing or full).
+// and in a `ThumbStore` the platform gives (io/platform.ts: localStorage in
+// the web version, the launcher's cache folder on the desktop). A store that
+// is missing, full or failing only means the sphere is rendered again.
 
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
@@ -10,54 +12,13 @@ import type { MaterialInstance } from '../core/materials';
 import { applyMaterial } from './materials';
 
 const SIZE = 96;
-const STORE_PREFIX = 'repackshot.thumb.v2.';
 
-function readCache(key: string): string | null {
-  try {
-    return window.localStorage.getItem(STORE_PREFIX + key);
-  } catch {
-    return null;
-  }
-}
-
-function writeCache(key: string, url: string): void {
-  try {
-    window.localStorage.setItem(STORE_PREFIX + key, url);
-  } catch {
-    // Full or blocked storage: the sphere is just rendered again next time.
-  }
-}
-
-/** Bytes the sphere cache takes in localStorage (characters of its entries, UTF-16). */
-export function thumbCacheBytes(): number {
-  try {
-    const ls = window.localStorage;
-    let n = 0;
-    for (let i = 0; i < ls.length; i++) {
-      const k = ls.key(i);
-      if (k?.startsWith('repackshot.thumb.')) n += (k.length + (ls.getItem(k)?.length ?? 0)) * 2;
-    }
-    return n;
-  } catch {
-    return 0;
-  }
-}
-
-/** Deletes the sphere cache (every version of it); the bytes freed. They are rendered again when needed. */
-export function clearThumbCache(): number {
-  const before = thumbCacheBytes();
-  try {
-    const ls = window.localStorage;
-    const keys: string[] = [];
-    for (let i = 0; i < ls.length; i++) {
-      const k = ls.key(i);
-      if (k?.startsWith('repackshot.thumb.')) keys.push(k);
-    }
-    for (const k of keys) ls.removeItem(k);
-  } catch {
-    return 0;
-  }
-  return before - thumbCacheBytes();
+/** Where rendered spheres are kept between sessions, by key (a data URL each). */
+export interface ThumbStore {
+  /** The cached sphere, or null; a promise where the store is not in this page (the desktop launcher). */
+  get(key: string): string | null | Promise<string | null>;
+  /** Keeps a sphere; never throws (a full store simply keeps nothing). */
+  set(key: string, url: string): void;
 }
 
 function dome(): HTMLCanvasElement {
@@ -92,6 +53,10 @@ export class ThumbnailRenderer {
   private readonly pending = new Map<string, Promise<string | null>>();
   private readonly queue: Job[] = [];
   private scheduled = false;
+  /** Store reads not answered yet (they count as pending: the sphere may still need rendering). */
+  private lookups = 0;
+
+  constructor(private readonly store: ThumbStore | null = null) {}
 
   private init(): THREE.WebGLRenderer | null {
     if (this.renderer) return this.renderer;
@@ -129,21 +94,45 @@ export class ThumbnailRenderer {
 
   /** Spheres waiting to be rendered. */
   pendingCount(): number {
-    return this.queue.length;
+    return this.queue.length + this.lookups;
   }
 
   /** Data URL of the material sphere; cached by `key`. Null when WebGL is unavailable. */
   get(mat: MaterialInstance, key: string): Promise<string | null> {
-    const hit = this.memory.get(key) ?? readCache(key);
-    if (hit) {
-      this.memory.set(key, hit);
-      return Promise.resolve(hit);
-    }
+    const hit = this.memory.get(key);
+    if (hit) return Promise.resolve(hit);
     const p = this.pending.get(key);
     if (p) return p;
-    const promise = new Promise<string | null>((resolve) => this.queue.push({ key, mat, resolve }));
+    let stored: string | null | Promise<string | null> = null;
+    try {
+      stored = this.store?.get(key) ?? null;
+    } catch {
+      stored = null;
+    }
+    if (typeof stored === 'string') {
+      this.memory.set(key, stored);
+      return Promise.resolve(stored);
+    }
+    const render = () => {
+      const job = new Promise<string | null>((resolve) => this.queue.push({ key, mat, resolve }));
+      this.schedule();
+      return job;
+    };
+    let promise: Promise<string | null>;
+    if (stored === null) promise = render();
+    else {
+      this.lookups++;
+      promise = stored
+        .catch(() => null)
+        .then((cached) => {
+          this.lookups--;
+          if (!cached) return render();
+          this.memory.set(key, cached);
+          this.pending.delete(key);
+          return cached;
+        });
+    }
     this.pending.set(key, promise);
-    this.schedule();
     return promise;
   }
 
@@ -165,7 +154,11 @@ export class ThumbnailRenderer {
           r.render(this.scene, this.camera);
           url = r.domElement.toDataURL('image/png');
           this.memory.set(job.key, url);
-          writeCache(job.key, url);
+          try {
+            this.store?.set(job.key, url);
+          } catch {
+            // Not kept: rendered again next time.
+          }
         }
         this.pending.delete(job.key);
         job.resolve(url);

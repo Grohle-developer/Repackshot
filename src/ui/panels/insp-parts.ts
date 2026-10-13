@@ -15,6 +15,7 @@ import type { LightInstance } from '../../core/lighting';
 import * as cmd from '../commands';
 import { colorField, field, lengthField, numberField, segmented, select, slider, textField, toggle, type Control } from '../components/controls';
 import { libraryFoot, mineCards, mineEmpty, namePrompt, type MineSpec } from '../components/library';
+import { dragSource } from '../components/material-drag';
 import { section } from '../components/section';
 import { setThumbImage, showConfirmIn, thumb } from '../components/widgets';
 import { h, icon } from '../dom';
@@ -49,7 +50,7 @@ function sphere(ctx: Ctx, mat: MaterialInstance, size = 64): HTMLElement {
   const port = ctx.services.viewport;
   if (port) {
     void port.materialThumbnail(mat, thumbKey(mat)).then((url) => {
-      if (url) ph.replaceWith(h('img', { class: 'mat-sphere', src: url, alt: '', width: size, height: size }));
+      if (url) ph.replaceWith(h('img', { class: 'mat-sphere', src: url, alt: '', width: size, height: size, draggable: false }));
     });
   }
   return ph;
@@ -180,6 +181,12 @@ function materialSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean):
       const changeBtn = h('button', { type: 'button', class: 'btn', 'aria-expanded': String(open), onclick: () => ui.set({ catalogOpen: !ui.get().catalogOpen, ...(mat ? { materialCategory: mat.category } : {}) }) }, open ? t('material.closeCatalog') : t('material.change'));
       const sphereHost = h('div', null, mat ? sphere(ctx, mat) : h('div', { class: 'mat-sphere' }));
       if (mat) {
+        // The sphere of the material of the selection is itself a thumbnail to drag: onto another part it links that
+        // part to this material, with Alt it gives it a copy (the neutral default is nothing to hand out).
+        if (mat.role !== 'DEFAULT') {
+          sphereHost.setAttribute('data-tip', t('material.sphereDrag'));
+          dragSource(sphereHost, { payload: () => `material:${mat.id}`, ghost: () => ({ src: sphereHost.querySelector('img')?.src ?? null, name: materialName(store.get().materials[mat.id]) }) });
+        }
         // The sphere follows edits, re-rendered once the value settles.
         let timer = 0;
         let first = true;
