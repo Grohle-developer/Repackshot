@@ -13,8 +13,9 @@
 //! extra trailing bytes (newer writers append fields), so old readers keep working.
 //!
 //! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
-//! fields after a `|` were appended later (E3, then `||` E5, `|||` E5c) and are optional: a shorter payload,
-//! as older writers wrote it, reads them as their defaults, and the writer always writes them):
+//! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c) and are
+//! optional: a shorter payload, as older writers wrote it, reads them as their defaults, and the
+//! writer always writes them):
 //!
 //! ```text
 //! CAMR  60 B  f32 position[3] target[3] up[3]; f32 focal_mm sensor_mm fstop focus_dist;
@@ -31,11 +32,12 @@
 //!             || u32 hdri_map (none) backplate_map (none) backplate_fit (0);
 //!             f32 sky_turbidity (3) sun_azimuth_deg (0) sun_elevation_deg (45)
 //!             backplate_rect[4] (0 0 1 1)                                          (80 B)
-//!             ||| u32 sky_model (0 physical)                                       (84 B)
+//!             |||| u32 sky_model (0 physical)                                      (84 B)
 //! BMAP  16 B  u32 format width height byte_len; u8 data[byte_len]; zero padding to 4 (E5, new)
 //! FLOR  20 B  u32 mode; f32 z; f32 color[3]                                        (E3, new)
 //! RNDR  28 B  u32 width height max_samples seed; f32 max_seconds exposure_ev; u32 tonemap
 //!             | u32 max_depth (default 8); f32 clamp_indirect (default 0)            (36 B)
+//!             ||| u32 passes (default 0)                                            (40 B)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
 //! ```
@@ -127,7 +129,10 @@
 //!   values mean ACES. `exposure_ev` multiplies by `2^ev` before the curve. `max_depth` is the
 //!   most surface interactions per path (0: 8); `clamp_indirect` caps each channel of every
 //!   indirect contribution (0: off). `max_seconds` is honoured by the host between sample
-//!   passes.
+//!   passes. `passes` (X2) is the mask of the exact passes the host writes next to the image:
+//!   bit `i` is [`crate::passes::PASS_KEYS`]`[i]` (albedo, normal, depth, partId, materialId,
+//!   coc); 0, or a file written before X2, asks for none, and unknown bits are kept and ignored.
+//!   Asking for passes never changes a pixel of the image.
 
 use super::{
     Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Light, LightKind,
@@ -457,6 +462,7 @@ fn parse_render(r: &mut Reader) -> Result<RenderSettings, RsbError> {
         tonemap: r.u32()?,
         max_depth: r.opt_u32(RenderSettings::DEFAULT_MAX_DEPTH)?,
         clamp_indirect: r.opt_f32(0.0)?,
+        passes: r.opt_u32(0)?,
     };
     let range = 1..=RenderSettings::MAX_DIMENSION;
     if !range.contains(&settings.width) || !range.contains(&settings.height) {
@@ -770,6 +776,7 @@ impl Scene {
             w.u32(r.tonemap);
             w.u32(r.max_depth);
             w.f32(r.clamp_indirect);
+            w.u32(r.passes);
         });
         w.buf
     }
@@ -931,6 +938,7 @@ mod tests {
                 tonemap: 3,
                 max_depth: 12,
                 clamp_indirect: 10.0,
+                passes: 0b10_1101,
             },
             bitmaps: test_bitmaps(),
         }
@@ -1004,7 +1012,7 @@ mod tests {
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
         assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
-        assert_eq!(size(b"RNDR"), Some(9 * 4));
+        assert_eq!(size(b"RNDR"), Some(10 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
         assert_eq!(sections(&bytes)[3].1.len(), (2 + 24 + 6 + 1) * 4);
     }
@@ -1144,6 +1152,30 @@ mod tests {
             assert_eq!(read.environment.sky_model, model, "{value}");
         }
         assert_eq!(Environment::default().sky_model, SkyModel::Physical);
+    }
+
+    #[test]
+    fn a_render_section_written_before_x2_asks_for_no_passes() {
+        // RNDR of 36 B (no pass mask), as E3 to E5 wrote it.
+        let scene = full_scene();
+        assert_ne!(scene.render.passes, 0);
+        let bytes = scene.to_rsb();
+        let mut old = bytes[..8].to_vec();
+        for (tag, mut payload) in sections(&bytes) {
+            if tag == TAG_RNDR {
+                assert_eq!(payload.len(), 40);
+                assert_eq!(payload[36..40], scene.render.passes.to_le_bytes());
+                payload.truncate(36);
+            }
+            old.extend(unknown_section(&tag, &payload));
+        }
+        let read = Scene::from_rsb(&old).expect("E5 layout reads");
+        assert_eq!(read.render.passes, 0);
+        assert_eq!(read.render.clamp_indirect, scene.render.clamp_indirect);
+        // Bits nobody knows yet are kept as they are (a newer writer's passes).
+        let mut newer = scene.clone();
+        newer.render.passes = 0xffff_ffff;
+        assert_eq!(Scene::from_rsb(&newer.to_rsb()), Ok(newer));
     }
 
     #[test]

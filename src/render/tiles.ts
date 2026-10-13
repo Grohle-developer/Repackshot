@@ -111,6 +111,10 @@ export interface TileResult {
   count: number;
   /** `count` consecutive samples of the tile, each `w * h * 4` floats, RGBA premultiplied. */
   data: Float32Array;
+  /** With passes (Render, phase X2): the albedo of the same samples, each `w * h * 3` floats. */
+  albedo?: Float32Array;
+  /** With passes, once per tile (the job whose `first` is 0): its exact planes (render/pass-planes.ts). */
+  exact?: Uint32Array;
 }
 
 /** Opaque coverage, give or take the rounding of `n * (1 / n)`. */

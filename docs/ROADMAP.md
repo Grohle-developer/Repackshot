@@ -1468,6 +1468,55 @@ No encajó con el plan:
   con test), y `material/assign` sin cambios creaba una entrada de
   deshacer vacía (ahora devuelve el mismo estado; con test).
 
+## U9 · Primitivas y herramienta de escalar — **Opus**
+
+**Petición del usuario (2026-10-13):** «quiero poder añadir geometrías
+sencillas, algo así como rectángulos de base, cilindros, esferas… y con el
+paneo, el típico apartado de escalar, aparte de poder escalar cada pieza
+con clic derecho».
+
+**Decisiones del líder.**
+- **Añadir ▸ Primitiva** (menú *Añadir* de la cabecera, el botón `+` del
+  panel *Escena*, la paleta de comandos y el menú contextual del visor en
+  vacío): *Caja* (con radio de bisel), *Plano*, *Disco*, *Cilindro*,
+  *Pedestal* (cilindro con bisel), *Esfera*, *Cono*, *Toro*, *Cápsula*,
+  *Tubo*, *Escalones* y *Fondo infinito* (la curva de estudio: suelo que
+  sube en curva hasta una pared). Claves estables en un catálogo de datos.
+- **Paramétricas y vivas**: cada primitiva guarda su tipo y sus medidas en
+  mm (ancho, fondo, alto, radio, bisel, segmentos…), editables en el
+  inspector (sección *Primitiva*); cambiar una medida regenera la malla con
+  **una acción del *store*** y una entrada de deshacer (un arrastre, una
+  sola). *Convertir en malla* la congela.
+- **Tamaño y sitio por defecto con criterio de estudio**: se crea apoyada
+  en el suelo, junto al producto o debajo si es una base (la *Caja* y el
+  *Pedestal* nacen como base: 1,4 × la huella del producto y el producto
+  apoyado encima), escalada a la escena; sin producto, a un tamaño
+  razonable. Material neutro del catálogo.
+- **Geometría limpia**: generación pura y determinista en `src/core/`,
+  normales y UV correctas (para M2), suavizado por ángulo, y **caras CAD**
+  (`faceRanges`) por cara lógica (la tapa, el lateral, el bisel…), para
+  que el nivel *Caras* y M1 funcionen con ellas.
+- **Proyecto**: la primitiva se guarda como parámetros (no como malla) en
+  un campo opcional del nodo; *schema* 2 sigue valiendo y un proyecto
+  antiguo abre igual. El motor la recibe como una malla más (RSB sin
+  cambios).
+- **Herramienta *Escalar*** (`S`) en la barra de vista, junto a
+  *Desplazar*: el mismo *gizmo* de *Mover* pero solo con las asas de
+  escala (por eje y uniforme en el centro), alrededor del pivote, en ejes
+  locales o globales, con incrementos con `Shift`; el inspector muestra
+  la escala en vivo. Un arrastre, una entrada de deshacer.
+- **Clic derecho ▸ Escalar…** en una pieza (visor y árbol): un panel en
+  línea con *Uniforme* (%), por eje (X, Y, Z en %) o **a medida** (mm del
+  ancho, fondo o alto con proporción bloqueada), *Aplicar* y *Restablecer
+  escala*; actúa sobre la selección al nivel vigente.
+
+**Criterio.** Tests de cada primitiva (cerrada donde debe, normales hacia
+fuera, UV en [0, 1], `faceRanges` que cubren la malla, determinismo,
+medidas exactas en mm), de la regeneración deshacible, del guardado y la
+apertura, de la escala por eje, uniforme y a medida (alrededor del
+pivote, a cada nivel); capturas del menú, del inspector y de la
+herramienta; cadenas en `es` y `en`; cromo acromático.
+
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 
 **Qué.** Texturas de color, rugosidad, metal, normal y alfa con proyección
@@ -1774,7 +1823,7 @@ de la web (q4f16) los fija X3d.
 
 **Depende de.** X3c (la tubería tiene que existir para medir).
 
-## X2 · Pases del motor para la IA — **Opus**
+## X2 · Pases del motor para la IA — **Opus** — hecha
 
 **Qué.** Contrato en `AI-POST.md` §7.4 y `src/core/passes.ts`. En
 `rt-core`: pases de albedo (primer rebote no especular), normal,
@@ -1792,6 +1841,76 @@ del centro del píxel; el albedo de un material difuso es su color; el
 mapa de desenfoque es cero en el plano de enfoque y crece con la
 distancia según la fórmula de lente fina (±1 %); pedir pases no cambia
 ni un píxel de la imagen; determinismo y paridad nativo/wasm intactos.
+
+**Hecho** (2026-10-13). `rt_core::passes` con el contrato de §7.4:
+`RNDR.passes` (40 B; los RSB anteriores no piden ninguno, los bits
+desconocidos se conservan), `render_tile_exact` (normal, profundidad,
+ids y círculo de confusión de **un rayo por el centro del píxel y de la
+lente**, `render::centre_ray`, una vez por baldosa) y `render_tile_albedo`
+(el rayo de cámara de cada muestra de la imagen, sumado en `f32` en orden
+de muestra y dividido como `Film::resolve`), sobre `integrator::first_hit`
+(lo más cercano entre geometría y suelo; un panel de luz visible a cámara
+cruzado antes es fondo) y `PassFilm`/`Passes`. El suelo del estudio
+(visible o atrapasombras) es `FLOOR_ID` en los dos ids; el fondo, 0 y
++∞. Los pases tienen rayos propios: la imagen conserva sus *hash*
+(`0x223515c3`, `0xbf8abd5b`, `0x2fcb098a`) con todos los pases
+intercalados. *Hash* fijados de los seis planos del ejemplo (albedo
+`0x43571da9`, normal `0x0aabfd24`, profundidad `0x25f8dd11`, ids
+`0xccd3d6c7` los dos, `coc` `0xdf87494c`) y del ejemplo de E5 (`0xace93461`,
+`0x714253d6`, `0x9b1b61c8`, `0x2c21fa55` ×2, `0x73bf76f1`), iguales en
+escalar, SSE2 y AVX2, en las dos pasadas de WASI, en el `rt.wasm` real
+(escalar y `simd128`, `tools/wasm-parity.mjs --expect-passes`, en CI),
+por la API del lanzador con 1 y 4 hilos y por el código de la página
+(`tests/passes-engine.test.ts`). `rt-wasm`: `rt_render_tile_passes` y
+`rt_render_tile_albedo`; el pool los pide con la máscara del trabajo y los
+junta con `PassAccumulator` (`src/render/pass-planes.ts`), y
+`renderPixels` devuelve `RenderPasses`. Lanzador: `passes=` en los
+finales (400 si nombra un pase que no existe o en el visor), almacén de
+los **cuatro últimos** renders con pases por id (imagen lineal y pases;
+los de más de 64 MiB en `<datos>/cache/ai/<id>.rpx` y `.rpp`, que se
+limpia al arrancar; `DELETE` del trabajo no los borra), servido como
+`RPP1` en `GET /api/render/<id>/passes` (404 si no existe o se desalojó,
+409 mientras se renderiza), `Engine::kept` para X3c; `native.ts` lo pide
+y lo lee con `parsePasses` y devuelve también `renderId`. El círculo de
+confusión es el de `lens-coc.ts` (los dos lados leen
+`tests/fixtures/lens-coc.json`) y coincide dentro de 1 % (en la práctica,
+1e-5) con el desenfoque medido de la lente de `Camera::generate_ray`.
+Los pases de three.js de X4 coinciden con los del motor en ids y
+profundidad en su escena de prueba (comparados en
+`tests/ai-passes-browser.test.ts` con el `rt.wasm` real), salvo el
+suelo. Tests: 22 nuevos en Rust (15 de `rt-core`, 1 de `rt-wasm` y 6 del
+lanzador: almacén, formato `RPP1`, trabajos y API) y 12 de vitest; 19
+mutaciones comprobadas (cada test falla si se rompe lo que guarda).
+
+**No encajó con el plan.** (1) **El suelo en los pases de three.js**: el
+contrato corregido (suelo = `FLOOR_ID`) lo cumple el motor; la vista
+previa de X4 todavía lo dibuja como fondo (0, +∞). No se toca aquí:
+§7.4 se lo da a X3c, y el test del navegador acepta hoy 0 en los píxeles
+del suelo y lo anota. (2) Decisiones donde el contrato no decía nada,
+anotadas en §7.4: el albedo de un emisor es su `base_color`; el del
+suelo, `FLOR.color` también en el atrapasombras (que no lo usa para
+pintar); con profundidad de campo el albedo sigue cada muestra por la
+lente y se emborrona como la imagen (la comparación de X2 con la
+referencia de X4 solo exige el color exacto donde `coc` < 0,25 px); un
+recorte o un vidrio paran el rayo de los pases, como `pick`; una
+instancia con índice de material fuera de rango lleva `materialId` 0.
+(3) En el ejemplo y en el de E5 la instancia *i* lleva el material *i*, así
+que sus planos de ids tienen el mismo *hash*: el orden de los dos planos
+lo vigilan el fichero `tests/fixtures/passes-3x2.rpp` (lo escribe el
+lanzador y lo lee la página) y la escena de X4, donde no coinciden.
+(4) La máscara viaja por dos sitios en el lanzador (`RNDR.passes` y
+`passes=`): un final renderiza la unión. (5) Los rayos de los pases
+cuentan en los rayos del trabajo (`rays` de la trama): uno por píxel para
+los exactos y uno por muestra para el albedo. (6) `engine/README.md` está
+entero en inglés; su sección de pases también, para no partir el
+fichero. (7) **Con P3a** (fusionada después): los pases se renderizan con
+los hilos o los workers que tenga el render, también cuando el visor
+sigue vivo en su parte (`share=`, los carriles del pool), y salen los
+mismos bits (lo prueban el lanzador y el pool); un final cancelado, huérfano
+(su página dejó de preguntar) o fallido no guarda nada; `native.ts` lee los
+pases con la señal de cancelación del render y antes de soltar el
+trabajo (`DELETE`, `pagehide`), y `GET /api/render/state` da la máscara de
+cada trabajo.
 
 ## X3 · Tubería de post-procesado y guarda — partida en X3a–X3d
 
@@ -2013,6 +2132,29 @@ reanudación esperaba más de 1 MB descargado, y en *release* el falso
 ocupa menos de 600 kB. El archivo lleva ahora 8 MiB de relleno y la
 pausa se pide a 1/8 del total. Se pasan las dos: `cargo test --workspace`
 y `cargo test --workspace --release`.
+
+**Segunda corrección (CI, el servidor huérfano).** En el ejecutor de
+GitHub, `a_server_left_by_a_previous_launch_is_stopped_at_start` fallaba
+una de cada dos veces con «the orphan still runs». La causa estaba en la
+prueba. Arrancaba el servidor falso un instante antes de la limpieza.
+`posix_spawn` es un *vfork*, y Linux deja seguir al padre antes de que
+termine el `execve` del hijo, cuando el hijo aún usa la memoria del
+padre. En ese momento `/proc/<pid>/exe` todavía nombra el ejecutable de
+la prueba, así que la limpieza acertaba al no matarlo. Se reprodujo en
+local reteniendo el `exec_update_lock` del hijo (`/proc/<pid>/syscall`):
+el `exe` leído era el binario de la prueba. Ahora la prueba espera, por
+condición y con un plazo de 60 s, a que el falso haya creado `args.log`
+(eso lo hace su propio código), y lo mata al terminar aunque falle. Con
+el bloqueo retenido pasa 20 de 20 veces; la forma anterior fallaba 2 de
+20. Al revisar cómo se reconoce el proceso apareció un huérfano real:
+la limpieza comparaba la ruta tal cual estaba escrita, y si la carpeta de
+datos está detrás de un enlace simbólico, el núcleo da la ruta con el
+enlace resuelto. Un servidor dejado ahí no se paraba nunca. Ahora se
+compara el archivo (dispositivo e inodo, `proc::runs_server`), o la ruta
+con los enlaces resueltos cuando el archivo ya no existe. Lo comprueban
+`a_server_left_in_a_data_folder_behind_a_link_is_stopped_too` y la
+prueba unitaria `a_server_is_recognised_through_a_link`; las dos fallan
+con la comparación anterior.
 
 ### X3c · La tubería completa de escritorio — **Opus**
 
@@ -2518,7 +2660,7 @@ integra todo lo que la interfaz marca *próximamente***.
 
 | Fase | Responsable | Qué |
 | --- | --- | --- |
-| **P3a** | Opus | Modo Completo que no se para (reproducir con una sesión larga de cambios contra el lanzador y arreglar la causa), *Pausar* / *Reanudar* / *Iniciar cola* que funcionan en web y escritorio |
+| **P3a** (hecha) | Opus | Modo Completo que no se para (reproducir con una sesión larga de cambios contra el lanzador y arreglar la causa), *Pausar* / *Reanudar* / *Iniciar cola* que funcionan en web y escritorio |
 | **P3b** | Opus | Escritorio sin rastro de navegador: diálogos nativos de carpeta y archivo desde el lanzador (PowerShell en Windows, `zenity`/`kdialog` en Linux, sin `unsafe`), escritura de renders, proyectos y modelos por el lanzador, menú contextual, selección, traducción, zoom, recarga, impresión, búsqueda y navegación del navegador desactivados, icono y título propios; estudio de WebView2 para Windows |
 | **P3c** | Opus | **Ventana propia en Windows** (decisión del líder tras la captura del aviso «¿Desea salir de la aplicación?» de Edge: *todos los avisos y ventanas con nuestra interfaz, nada de avisos web; producto cerrado y profesional*): ventana Win32 sin marco con **WebView2** (el motor de Edge que trae Windows 10/11) y barra de título dibujada por nosotros (título, minimizar, maximizar, cerrar, arrastre), menús contextuales, atajos, barra de estado, zoom, autorrelleno, traducción, descargas y diálogos de script del navegador **desactivados por la API**, y el cierre (botón, `Alt F4`, barra de tareas) **interceptado** para preguntar con nuestra propia ventana si hay cambios sin guardar; Edge `--app` solo como respaldo automático si falta el *runtime*. En Linux sigue Chromium en modo aplicación con el endurecimiento de P3b hasta P3d (ventana propia con WebKitGTK, que exige un binario glibc y no el musl estático) |
 | **P3e** | Opus | **Escritorio: todo sobre el lanzador** (decisión del líder tras «se pisa el texto» y «dice no pillar la GPU por ser browser»: *en escritorio la página es solo interfaz*): una costura de plataforma con implementación web y de lanzador; ajustes, biblioteca, historial, miniaturas, equipo y espacio usado en la carpeta de datos por el lanzador; puerto estable por carpeta de datos; ni una fila que hable del navegador; filas de Ajustes que no se pisan |
@@ -2532,6 +2674,97 @@ integra todo lo que la interfaz marca *próximamente***.
 | **N1**, **N2** | Opus, Sonnet | Vídeo codificado (WebCodecs y muxers MP4 y WebM propios) y lo que quede de pases y lotes |
 | **U8** | Sonnet | Lo pequeño de la interfaz: copia automática y recuperación, letras de acceso en menús, cambiar atajos, *Buscar actualizaciones*, los chequeos del Doctor que faltan y sus *Arreglar* (**D1**) |
 | **X1b–X4** | Fable, Opus, Sonnet | Ya descritas: el post-procesado IA completo (X3 partida en X3a–X3d, `AI-POST.md` §7) |
+
+**P3a hecha.** Reproducido de verdad con una sesión larga de cambios
+contra el lanzador (`tools/viewport-stress.mjs`, nuevo): en la v0.1.0, a
+los 90–300 s ninguna petición a `/api/render` volvía a contestarse, y
+`gdb` mostraba los hilos HTTP del lanzador bloqueados escribiendo tramas
+que nadie leía. **Causa principal (solo nativo)**: al sustituir una vista,
+la página abandonaba el sondeo de la anterior sin leer ni cancelar su
+respuesta; cada respuesta sin leer retiene una de las seis conexiones
+HTTP/1.1 que Chromium (y WebView2) abre al lanzador, y con las seis
+retenidas todas las peticiones esperan para siempre. Eso explica los tres
+síntomas que vio el usuario (la imagen vieja con el contorno nuevo encima;
+*Rápido → Completo* en gris con «0 muestras»; un render que no acaba nunca,
+con *Completo · en pausa mientras se renderiza*) y la mitad nativa de la
+cola que no se pausa (*Pausar* no llegaba al lanzador). Otras causas, cada
+una con su test: las peticiones de *Render* no llevaban la señal de
+cancelación; una vista que el lanzador olvidaba (404) o rechazaba (503) no
+se volvía a pedir, y a resolución reducida su «fotograma en vuelo» quedaba
+marcado para siempre; dos vistas podían salir a la vez y llegar al revés;
+en el pool, pasar a *Rápido* durante un fotograma reducido dejaba esa misma
+marca puesta y *Completo* no volvía a arrancar; en el lanzador, una
+escritura fallida se vaciaba otra vez con el plazo de 120 s, los trabajos
+de páginas que se fueron seguían renderizando, las recargas llenaban los 8
+sitios de ventana (`503 busy`, lo que encontró P3e), un render que entrase
+en pánico no terminaba nunca y un trabajo atascado bloqueaba al siguiente;
+y el bucle de animación de `main.ts` se paraba para siempre con cualquier
+excepción.
+
+Arreglos: en `render/native.ts`, toda respuesta se lee, se cancela o se
+aborta; una vista cada vez, numerada (`seq`); las rechazadas o perdidas se
+piden otra vez con espera creciente y el medidor dice por qué; todas las
+peticiones llevan la señal; la página cancela sus trabajos en `pagehide`.
+En el lanzador: `409 stale` para una vista que llega tarde, la escritura de
+una trama sin leer se corta a los 10 s, los trabajos por los que nadie
+pregunta se paran solos (visor 10 s, final 20 s), con los 8 sitios
+ocupados una ventana que lleva 3 s callada cede el suyo, un pánico termina
+el trabajo como fallido y suelta la puerta, y `GET /api/render/state` da el
+diagnóstico (con `log=1`, también al registro). Un *watchdog* en los dos
+motores (`render/watchdog.ts`) vuelve a arrancar la vista si el lanzador
+deja de contestar, si no llegan pasadas o si llegan y no se pintan, lo
+dice en la consola y en el registro del lanzador, y el medidor dice el
+motivo: nunca «0 muestras» en silencio.
+
+**Decisión del líder** (con la captura del usuario: el visor estaba *en
+pausa mientras se renderiza*): **el visor sigue vivo mientras se
+renderiza**, compartiendo el equipo. En nativo se queda con la cuarta
+parte de los hilos (al menos uno) y el render con el resto, o con todos
+cuando el visor ha convergido; en el pool, con la cuarta parte de los
+workers. El medidor lo dice (*Completo · compartido con el render · 4 de 16
+hilos*) y *Ajustes ▸ Motor de render ▸ Mientras se renderiza* lo elige
+(*Mantener el visor vivo (compartido)*, por defecto, · *Pausar el visor
+(render más rápido)*). El render da los mismos bits con o sin visor (tests
+en Rust, también contra el *hash* fijado con 16 hilos, y en el navegador
+el mismo archivo `4e3aa886…` en los dos motores).
+
+**La cola**: el botón de la v0.1.0 pasaba a *Iniciar cola* en cuanto se
+pulsaba *Pausar*, con el trabajo aún terminándose, y un *Reanudar* pulsado
+entonces se perdía. Ahora hay un estado *En pausa*: el botón dice *Pausar*
+mientras corre, *Reanudar* tras una pausa e *Iniciar cola* si no
+(desactivado sin nada en espera); *Pausar* para el trabajo y libera el
+motor (473 ms hasta que el lanzador no tiene ningún final; 167 ms en el
+pool) y *Reanudar* sigue con lo pausado (solo el trabajo de *Render* si era
+eso; el trabajo pausado vuelve a empezar).
+
+Tests: 23 nuevos en la web, con un lanzador simulado que modela las seis
+conexiones (los simulados de antes contestaban todo al momento, y por eso
+se escapó), y 13 nuevos o rehechos en Rust (4, 16 y 32 hilos); cada
+arreglo, quitado de uno en uno, hace fallar su test (18 mutaciones en
+TypeScript y 15 en Rust). El test de tiempos de un final en cola mide el
+reloj del propio trabajo y no lo que tarda la máquina (10 de 10 con otra
+compilación en marcha). Sesiones de 10 minutos de
+`tools/viewport-stress.mjs` (determinismo, cola y sesión larga con ráfagas
+de órbita, soltar y mover una pieza, comprobando que el lienzo muestra la
+escena actual):
+
+| Motor, 10 min | Acciones | Renders | Paradas | Imagen vieja | *Watchdog* | Cola |
+| --- | --- | --- | --- | --- | --- | --- |
+| Nativo, 16 hilos, 1.ª | 171 | 1 (cancelado por deshacer) | 0 | 0 de 15 | 0 | 10 de 10 |
+| Nativo, 16 hilos, 2.ª | 163 | 6 (5 terminados, 1 cancelado por deshacer) | 0 | 0 de 16 | 0 | — |
+| Pool, 3 workers | 143 | 5 (3 terminados, 2 cancelados por deshacer) | 0 | 0 de 6 | 0 | 10 de 10 |
+
+Lo que no encajó con el plan: con la máquina muy cargada por otros agentes
+(carga de 10 a 47 en 4 núcleos), unas 16 acciones por minuto y no
+*docenas*; la sesión de 5 minutos del pool contra la v0.1.0 no concluye
+(un clic perdido la dejó en *Rápido*), así que el fallo propio del pool lo
+prueba su test y no la sesión; un *deshacer* que se lleva el trabajo de la
+cola sigue cancelando su render (lo decidido en U5); en el pool, al
+terminar un render el visor vuelve a empezar para recuperar todos los
+workers (pierde las muestras de esa vista); y como en escritorio los
+renders los escribe el lanzador (P3b), la comprobación espera el archivo
+en su carpeta de *Descargas* (`XDG_DOWNLOAD_DIR`) y no una descarga del
+navegador. Sin probar en un Windows real.
 
 **P3b hecha.** Diálogos del sistema (carpeta, abrir, guardar) desde el
 lanzador con PowerShell en Windows y `zenity`/`kdialog` en Linux, y API
@@ -2678,7 +2911,7 @@ probar en un Windows real.
 
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
-**N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b** y **X4** ya; **X2** al fusionarse E5; **X3c**, **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
+**N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b**, **X4** y **X2** ya; **X3c**, **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
 *próximamente* y no deja ninguno nuevo sin anotarlo aquí.
 
 ## Herramientas de estudio (óptica, entorno, luz, cámara, partículas)

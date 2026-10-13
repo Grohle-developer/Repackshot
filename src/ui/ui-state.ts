@@ -191,7 +191,8 @@ export interface UpdatesUi {
 }
 
 /** What the queue runner is doing: nothing, the whole queue, or only the jobs Render started. */
-export type QueueRun = 'IDLE' | 'ALL' | 'ONLY';
+/** The queue: not started, running every job, running Render's jobs, or paused (Resume goes on). */
+export type QueueRun = 'IDLE' | 'ALL' | 'ONLY' | 'PAUSED';
 
 export interface UiState {
   sceneTab: SceneTab;

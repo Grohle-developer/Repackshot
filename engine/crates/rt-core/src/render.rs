@@ -7,10 +7,16 @@
 //! [`PixelSampler`] of (scene seed, pixel, sample index) only, so a tile can be rendered by any
 //! thread, in any order, cut in any way, on any platform: the film is the same. Accumulating
 //! samples `0..n` into a film in that order is progressive rendering; the hosts do it per tile.
+//!
+//! The exact passes of [`crate::passes`] are rendered next to the image, by rays of their own:
+//! [`render_tile_exact`] once per tile (one ray through each pixel's centre, [`centre_ray`]) and
+//! [`render_tile_albedo`] for every sample the image gets (the sample's own camera ray). Neither
+//! touches the image's film or its random numbers.
 
 use crate::image::Film;
-use crate::integrator::{radiance_at, BvhTracer, Prepared, Tracer};
+use crate::integrator::{first_hit, radiance_at, BvhTracer, Prepared, Tracer};
 use crate::math::Ray;
+use crate::passes::{albedo_of, Exact, PassFilm, PASS_ALBEDO, PASS_EXACT};
 use crate::sampler::{PixelSampler, DIM_CAMERA, DIM_LENS};
 use crate::scene::Scene;
 use crate::simd::Isa;
@@ -138,6 +144,97 @@ fn render_tile_traced<T: Tracer>(
     rays
 }
 
+/// The ray of the exact passes through image-space pixel `(x, y)`: through the centre of the
+/// pixel, without jitter, and through the centre of the lens (AI-POST.md §7.4). For a thin lens it
+/// is the pinhole ray of the same point, so it meets the focus plane where every sample of the
+/// pixel's centre does.
+pub fn centre_ray(scene: &Scene, x: u32, y: u32) -> Ray {
+    let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
+    let aspect = width as f32 / height as f32;
+    let u = (x as f32 + 0.5) / width as f32;
+    let v = (y as f32 + 0.5) / height as f32;
+    scene.camera.generate_ray(aspect, u, v, (0.0, 0.0))
+}
+
+/// Writes the exact passes of `film` (normal, depth, the ids, the circle of confusion: those in
+/// its mask) of every pixel of `tile`, clipped to the image, from [`centre_ray`]. They do not
+/// depend on the sample, so a host renders them once per tile. Returns the rays cast (one per
+/// pixel, none when the film holds no exact pass).
+pub fn render_tile_exact(
+    scene: &Scene,
+    prepared: &Prepared,
+    tile: TileRect,
+    film: &mut PassFilm,
+    isa: Isa,
+) -> u64 {
+    let tracer = BvhTracer {
+        geometry: &scene.geometry,
+        isa,
+    };
+    render_tile_exact_traced(scene, prepared, tile, film, &tracer)
+}
+
+fn render_tile_exact_traced<T: Tracer>(
+    scene: &Scene,
+    prepared: &Prepared,
+    tile: TileRect,
+    film: &mut PassFilm,
+    tracer: &T,
+) -> u64 {
+    if film.mask & PASS_EXACT == 0 {
+        return 0;
+    }
+    let x_end = tile.x.saturating_add(tile.w).min(scene.render.width);
+    let y_end = tile.y.saturating_add(tile.h).min(scene.render.height);
+    let mut rays = 0u64;
+    for y in tile.y..y_end {
+        for x in tile.x..x_end {
+            let ray = centre_ray(scene, x, y);
+            rays += 1;
+            let exact = Exact::of(scene, &ray, first_hit(scene, prepared, tracer, &ray));
+            film.set_exact(x, y, &exact);
+        }
+    }
+    rays
+}
+
+/// Adds to `film` the albedo of sample `sample_index` of every pixel of `tile`, clipped to the
+/// image: the base colour of what the sample's camera ray (the same position in the pixel and
+/// point on the lens as the image's sample) meets first ([`albedo_of`]). Returns the rays cast
+/// (one per pixel, none when the film has no albedo pass).
+pub fn render_tile_albedo(
+    scene: &Scene,
+    prepared: &Prepared,
+    tile: TileRect,
+    sample_index: u32,
+    film: &mut PassFilm,
+    isa: Isa,
+) -> u64 {
+    if film.mask & PASS_ALBEDO == 0 {
+        return 0;
+    }
+    let tracer = BvhTracer {
+        geometry: &scene.geometry,
+        isa,
+    };
+    let x_end = tile.x.saturating_add(tile.w).min(scene.render.width);
+    let y_end = tile.y.saturating_add(tile.h).min(scene.render.height);
+    let mut rays = 0u64;
+    for y in tile.y..y_end {
+        for x in tile.x..x_end {
+            let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
+            let ray = camera_ray(scene, &sampler, x, y);
+            rays += 1;
+            film.add_albedo(
+                x,
+                y,
+                albedo_of(scene, first_hit(scene, prepared, &tracer, &ray)),
+            );
+        }
+    }
+    rays
+}
+
 /// Every triangle of every instance tested against every ray, without the BVH: the reference
 /// the accelerated renderer is checked against. Tests only.
 #[cfg(test)]
@@ -172,6 +269,9 @@ pub(crate) fn render_tile_brute_force(
         &BruteForce(&scene.geometry),
     )
 }
+
+#[cfg(test)]
+mod passes_tests;
 
 #[cfg(test)]
 mod tests {

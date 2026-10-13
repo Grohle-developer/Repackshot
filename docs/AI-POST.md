@@ -466,6 +466,23 @@ determinismo siguen iguales) y salen por `rt-wasm` y por el lanzador
 (`/api/render` con `passes=…` en los trabajos finales, que los guarda
 para §7.3, y `GET /api/render/<id>/passes` en binario con cabecera).
 
+- **Hecho en X2** (2026-10-13): `rt_core::passes`, `rt_render_tile_passes`
+  y `rt_render_tile_albedo` en `rt.wasm`, `PassAccumulator` en el pool y
+  `parsePasses` para el fichero `RPP1` del lanzador
+  (`src/render/pass-planes.ts`), `passes=` y `GET /api/render/<id>/passes`
+  con el almacén de los cuatro últimos renders (`<datos>/cache/ai/` para
+  los de más de 64 MiB). Detalle en `ARCHITECTURE.md` §5.2 y §5.5 y en
+  `engine/crates/rt-app/README.md`. Decisiones de X2 donde el contrato no
+  decía nada: el albedo de un emisor es su `base_color` (no su emisión);
+  el del suelo, `FLOR.color` también en el atrapasombras; con
+  profundidad de campo el albedo sigue el rayo de cada muestra por la
+  lente (se emborrona como la imagen); un recorte o un vidrio paran el
+  rayo de los pases como paran `pick`; una instancia con un índice de
+  material fuera de rango lleva `materialId` 0. Los pases de three.js
+  coinciden con los del motor en ids y profundidad salvo en el suelo, que
+  sigue siendo fondo para ellos hasta X3c
+  (`tests/ai-passes-browser.test.ts`).
+
 ### 7.5 · Ajustes en el *store* (X4)
 
 `RenderSettings.ai` (`src/core/render.ts`) pasa de `{ enabled }` a

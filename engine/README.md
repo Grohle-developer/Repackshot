@@ -257,6 +257,34 @@ All of it uses `fmath` instead of `std`'s `sin`, `powf`, `exp2`...: those call t
 maths library, which differs between glibc, musl and the WebAssembly `libm`. `fmath` is built from
 IEEE `+ - * /` and `sqrt` only, so a scene renders to the same bits everywhere.
 
+## Exact passes (X2)
+
+`rt_core::passes` writes, next to the image, the per-pixel planes the AI post-processing guard
+leans on (`docs/AI-POST.md` §7.4; the contract is `src/core/passes.ts`). `RNDR.passes` asks for
+them, bit `i` for `PASS_KEYS[i]`:
+
+| Bit | Pass | Words | Content (background) |
+| --- | --- | --- | --- |
+| 1 | `albedo` | 3 `f32` | base colour of the material at the first hit, no specular bounce followed (glass: its tint); averaged over the pixel's samples like the image (0) |
+| 2 | `normal` | 3 `f32` | unit shading normal at the first hit, world space, turned towards the camera, both sides of a triangle (0) |
+| 4 | `depth` | `f32` | distance along the camera's view axis (+inf) |
+| 8 | `partId` | `u32` | RSB instance index + 1, what `Scene::pick` finds; the studio floor `0xffffffff` (0) |
+| 16 | `materialId` | `u32` | RSB material index + 1 of that instance; the floor `0xffffffff` (0) |
+| 32 | `coc` | `f32` | circle-of-confusion diameter in output pixels of the thin lens (0, also without depth of field) |
+
+`normal`, `depth`, the ids and `coc` come from **one ray through the centre of the pixel, through
+the centre of the lens, without jitter** (`render::centre_ray`, `render_tile_exact`, once per tile):
+exact, never blended across an edge. `albedo` follows the camera ray of every sample of the image
+(`render_tile_albedo`), summed in sample order in `f32` and divided like `Film::resolve`. The first
+hit (`integrator::first_hit`) is the nearer of the geometry and the floor; every surface stops it
+(cut-outs and glass too), and a camera-visible area light crossed first makes the pixel
+background, like the environment, the backdrop and transparency. `coc` is `coc_diameter`, the
+formula of `src/core/lens-coc.ts` (`tests/fixtures/lens-coc.json` is read by both), which matches
+the measured blur of `Camera::generate_ray`'s own lens within 1 %. The passes have rays of their
+own: they never change a pixel of the image, whose pinned hashes stay. The six planes of the
+example and of the E5 example are pinned too (`crates/rt-core/src/render/passes_tests.rs`), on
+every SIMD path, in the WASI runs, through the real `rt_wasm.wasm` and through the launcher.
+
 ## Geometry, BVH and SIMD
 
 * **Meshes** (`geometry::Mesh`) are indexed triangle meshes in their own space, positions and
@@ -329,8 +357,9 @@ CI runs these on every push. Rendering is deterministic: the random numbers depe
 scene seed, the pixel and the sample index (never on tiling, thread count or platform), the
 render path uses only IEEE add / mul / div / sqrt and the `fmath` functions built from them, and
 every SIMD path computes the same bits, so pinned tests (`render.rs`: two tiles, and the whole
-example at 4 spp) see the same bits on native (scalar, SSE2, AVX2) and WebAssembly (scalar,
-`simd128`) builds, whatever the BVH width. E5 pins two more hashes (`PINNED_E5_HDRI_4SPP`,
+example at 4 spp; `render/passes_tests.rs`: the six passes of the example and of the E5 example)
+see the same bits on native (scalar, SSE2, AVX2) and WebAssembly (scalar, `simd128`) builds,
+whatever the BVH width. E5 pins two more hashes (`PINNED_E5_HDRI_4SPP`,
 `PINNED_E5_SKY_4SPP`) of a scene that goes through glass, thin walls, cut-outs, anisotropy, an
 HDRI read from its RGBE bytes, a background image and the sky; the opaque path of E3 computes
 exactly what it computed before, so the original pinned hashes did not change. The real module
@@ -345,6 +374,11 @@ cargo run --release -p rt-cli -- --write-e5-example /tmp/e5.rsb
 node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm /tmp/e5.rsb \
      --expect "$(sed -n 's/.*PINNED_E5_HDRI_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)"
 ```
+
+With `--passes` the tool also renders every exact pass interleaved with the image (per tile
+`rt_render_tile_passes` once, `rt_render_tile_albedo` after every sample) and prints each plane's
+hash; `--expect-passes h1,…,h6` (the `PINNED_PASS_*` or `PINNED_E5_PASS_*` values, in `PASS_KEYS`
+order) checks them, as CI does, and the image must keep its hash.
 
 ## Produce the WebAssembly module
 
@@ -365,6 +399,8 @@ The module imports nothing (no WASI, no JavaScript glue). Exports:
 | `rt_scene_free(handle) -> status` | Forgets a scene |
 | `rt_render_tile(handle, x, y, w, h, sample_index, out_ptr) -> status` | Writes `w * h * 3` linear RGB floats for one sample of a tile |
 | `rt_render_tile_rgba(handle, x, y, w, h, sample_index, out_ptr) -> status` | The same with coverage: `w * h * 4` floats, RGB premultiplied by alpha (0 where a transparent background shows) |
+| `rt_render_tile_passes(handle, x, y, w, h, mask, out_ptr) -> status` | X2: the exact passes of `mask` (normal 2, depth 4, partId 8, materialId 16, coc 32; the albedo bit and unknown bits are ignored) of a tile, one plane after another in that order, `w * h * channels` little-endian words each (`f32`, `u32` for the ids). The same for every sample: once per tile |
+| `rt_render_tile_albedo(handle, x, y, w, h, sample_index, out_ptr) -> status` | X2: the albedo of one sample of a tile, `w * h * 3` floats; the host sums the samples in index order in `f32` and divides like the image |
 
 Status: 0 ok, 1 bad handle, 2 empty or oversized tile, 3 null pointer, 4 invalid scene update (the
 message is the last load error; the scene is unchanged). The scene's lights are prepared once, when
@@ -385,7 +421,8 @@ and `absorption_mm` (72 bytes), the environment's `hdri_map`, `backplate_map`, `
 `sky_turbidity`, `sun_azimuth_deg`, `sun_elevation_deg` and `backplate_rect` (80 bytes), and added
 `BMAP` (a 16-byte header `format width height byte_len`, the data, zero padding to 4 bytes; the
 environment names a bitmap by its position among the `BMAP` sections, `0xffffffff` for none).
-The exact field layout and the semantics
+X2 appended `RNDR.passes` (40 bytes), the mask of the exact passes above (0, and every older file:
+none). The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the

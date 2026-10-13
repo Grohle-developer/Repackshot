@@ -1,8 +1,8 @@
 // Queue drawer (UI.md §2.5): the jobs in order (thumbnail, name, camera,
 // size, finish by, AI, status and progress), dragged to reorder (or Alt ↑ ↓),
 // each with Edit (the render window with its settings and Save changes),
-// Duplicate and Remove (Stop while it runs); Start queue / Pause and Clear
-// finished at the top. Finished jobs keep their thumbnail and open the
+// Duplicate and Remove (Stop while it runs); Start queue / Pause / Resume and
+// Clear finished at the top. Finished jobs keep their thumbnail and open the
 // results viewer. On the right, the results history (newest first) with
 // Clear history; when the browser keeps no storage, it says so.
 
@@ -13,6 +13,7 @@ import { h, icon } from '../dom';
 import { cameraName, dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
 import { jobFileNames, jobFrames } from '../render-queue';
+import type { QueueRun } from '../ui-state';
 import { formatClock, formatNumber, framesText, getLang, t } from '../strings';
 
 function finishByText(s: RenderSettings): string {
@@ -23,6 +24,13 @@ function finishByText(s: RenderSettings): string {
 function sizeText(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   return mb >= 1 ? `${formatNumber(mb, getLang(), 1)} MB` : `${formatNumber(bytes / 1024, getLang(), 0)} kB`;
+}
+
+/** The drawer's Start queue / Pause / Resume button for the queue's state. */
+export function queueButton(run: QueueRun, waiting: boolean): { state: 'START' | 'PAUSE' | 'RESUME'; label: 'queue.start' | 'queue.pause' | 'queue.resume'; tip: 'queue.startTip' | 'queue.pauseTip' | 'queue.resumeTip'; icon: 'play' | 'pause'; disabled: boolean } {
+  if (run === 'ALL' || run === 'ONLY') return { state: 'PAUSE', label: 'queue.pause', tip: 'queue.pauseTip', icon: 'pause', disabled: false };
+  if (run === 'PAUSED' && waiting) return { state: 'RESUME', label: 'queue.resume', tip: 'queue.resumeTip', icon: 'play', disabled: false };
+  return { state: 'START', label: 'queue.start', tip: 'queue.startTip', icon: 'play', disabled: !waiting };
 }
 
 export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
@@ -133,9 +141,13 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
   scope.watch(
     (s, u) => [s.render.queue, u.results, u.queueRun] as const,
     ([queue, results, run]) => {
-      startBtn.replaceChildren(icon(run === 'IDLE' ? 'play' : 'pause', 14), run === 'IDLE' ? t('queue.start') : t('queue.pause'));
-      startBtn.setAttribute('data-tip', run === 'IDLE' ? t('queue.startTip') : t('queue.pauseTip'));
-      startBtn.disabled = run === 'IDLE' && !queue.some((j) => j.status === 'QUEUED');
+      // One button: Pause while it runs, Resume after a Pause, Start queue otherwise; nothing to start, disabled.
+      const waiting = queue.some((j) => j.status === 'QUEUED');
+      const state = queueButton(run, waiting);
+      startBtn.replaceChildren(icon(state.icon, 14), t(state.label));
+      startBtn.setAttribute('data-tip', t(state.tip));
+      startBtn.setAttribute('data-queue-state', state.state);
+      startBtn.disabled = state.disabled;
       clearBtn.disabled = !queue.some((j) => j.status === 'DONE' || j.status === 'FAILED' || j.status === 'CANCELLED');
       const next = shapeOf(queue, results, run);
       const same = next.length === shape.length && next.every((v, i) => v === shape[i]);

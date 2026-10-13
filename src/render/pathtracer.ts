@@ -17,16 +17,31 @@
 // Render: the same pool at the output size, within the sample and time
 // budget (checked between passes, so every pixel has the same samples), and
 // the exact 8-bit conversion of the engine, done by the workers in slices.
+// While it runs the viewport stays live on a quarter of the workers (the
+// render takes the others), or waits, as Settings ▸ Render engine ▸ While a
+// render runs says; which worker renders a tile never changes its pixels, so
+// the render is the same bits either way. Each worker holds one scene: the
+// pool remembers which one it was last sent, and a worker that changes hands
+// gets the other scene as an update (the meshes stay). A watchdog
+// (render/watchdog.ts) starts the view again when its tiles stop coming or
+// stop being drawn, and says so in the console.
+// With `passes` a Render also hands back the exact passes of AI-POST.md §7.4
+// (phase X2): its workers send each tile's exact planes with its first samples
+// and the albedo of every sample, and they are put together like the image
+// (render/pass-planes.ts); which worker renders a tile changes no pass either.
 
 import type { CameraState } from '../core/camera';
+import { passMask, type PassKey, type RenderPasses } from '../core/passes';
 import type { AdvancedSettings } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { EngineStatus, PickHit, RenderEngine, RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
+import { PassAccumulator } from './pass-planes';
 import { abortError, budgetProgress, runPasses, type PassBudget } from './schedule';
 import { Accumulator, assignTiles, chooseScale, Generations, nextPass, scaledSize, type Tile, type TileResult } from './tiles';
 import type { ViewportLimit } from '../core/settings';
 import { DisplayCurve } from './tonemap';
+import { bytesKey, Watchdog, WATCHDOG, type ViewportIssue } from './watchdog';
 
 /** How an image is framed and sampled (io/rsb.ts `SceneView`; main.ts connects the two). */
 export interface TracerView {
@@ -42,6 +57,8 @@ export interface TracerView {
   time?: number;
   /** Advanced engine settings (bounces, indirect clamp, seed). */
   advanced?: AdvancedSettings;
+  /** The exact passes to render next to the image (`RNDR.passes`; Render only). */
+  passes?: readonly PassKey[];
 }
 
 export interface BuiltScene {
@@ -122,6 +139,22 @@ interface JobState {
   done: (ok: boolean) => void;
 }
 
+/** Which scene a worker holds: its meshes and its update bytes (equal tags, equal scenes). */
+export interface SceneTag {
+  meshKey: string;
+  update: Uint8Array;
+}
+
+/** Workers `from .. to - 1`. */
+export function workerRange(from: number, to: number): number[] {
+  return Array.from({ length: Math.max(0, to - from) }, (_, i) => from + i);
+}
+
+/** Workers the viewport keeps while a Render runs: a quarter of the pool, at least one (none in a pool of one). */
+export function viewportWorkers(size: number): number {
+  return size < 2 ? 0 : Math.max(1, Math.floor(size / 4));
+}
+
 /** The workers and their messages. */
 export class Pool {
   readonly size: number;
@@ -133,11 +166,19 @@ export class Pool {
   private readonly jobs = new Map<number, JobState>();
   private tonemapSeq = 0;
   private readonly tonemaps = new Map<number, (bytes: Uint8ClampedArray) => void>();
+  /** The generation each worker is rendering (null: none). */
+  private readonly busy: (number | null)[];
+  /** The scene each worker holds once it has read its messages (null: unknown), and the id of the last one sent. */
+  private readonly tags: (SceneTag | null)[];
+  private readonly lastScene: number[];
 
   private constructor(workers: Worker[]) {
     this.workers = workers;
     this.size = workers.length;
-    workers.forEach((w) => (w.onmessage = (e: MessageEvent<WorkerReply>) => this.receive(e.data)));
+    this.busy = workers.map(() => null);
+    this.tags = workers.map(() => null);
+    this.lastScene = workers.map(() => 0);
+    workers.forEach((w, i) => (w.onmessage = (e: MessageEvent<WorkerReply>) => this.receive(e.data, i)));
   }
 
   /** Starts `size` workers on a compiled engine; fails with the first worker's reason. */
@@ -170,9 +211,16 @@ export class Pool {
     return pool;
   }
 
-  private receive(msg: WorkerReply): void {
+  /** Every worker, 0 .. size - 1. */
+  all(): number[] {
+    return workerRange(0, this.size);
+  }
+
+  private receive(msg: WorkerReply, worker: number): void {
     switch (msg.type) {
       case 'scene': {
+        // A worker that could not load its last scene holds who knows what: it gets the whole one next time.
+        if (msg.error && this.lastScene[worker] === msg.id) this.tags[worker] = null;
         const s = this.scenes.get(msg.id);
         if (!s) return;
         s.error ??= msg.error;
@@ -186,6 +234,7 @@ export class Pool {
         this.jobs.get(msg.generation)?.onTile(msg);
         return;
       case 'done': {
+        if (this.busy[worker] === msg.generation) this.busy[worker] = null;
         const j = this.jobs.get(msg.generation);
         if (j && --j.left === 0) {
           this.jobs.delete(msg.generation);
@@ -194,6 +243,7 @@ export class Pool {
         return;
       }
       case 'error': {
+        if (this.busy[worker] === msg.generation) this.busy[worker] = null;
         const j = this.jobs.get(msg.generation);
         if (j) {
           this.jobs.delete(msg.generation);
@@ -209,47 +259,79 @@ export class Pool {
     }
   }
 
-  /** Loads (`full`) or updates the scene of every worker; rejects with the first error. */
-  scene(bytes: Uint8Array, full: boolean): Promise<void> {
+  /** The scene `worker` will hold once it has read the messages sent so far (null: unknown). */
+  tagOf(worker: number): SceneTag | null {
+    return this.tags[worker];
+  }
+
+  /** A worker about to get other work: the generation it was rendering (if any) is cancelled, on every worker. */
+  private free(workers: readonly number[], keep: number | null = null): void {
+    for (const i of workers) {
+      const g = this.busy[i];
+      if (g !== null && g !== keep) this.cancel(g);
+    }
+  }
+
+  /**
+   * Loads (`full`) or updates the scene of `workers` (every worker by default); rejects with the first error.
+   * A worker rendering another generation stops it (a worker drops its job when a scene comes). `tag` says
+   * which scene it is, so the next caller knows what the worker holds.
+   */
+  scene(bytes: Uint8Array, full: boolean, workers: readonly number[] = this.all(), tag: SceneTag | null = null): Promise<void> {
     const id = ++this.sceneSeq;
+    this.free(workers);
     return new Promise((resolve, reject) => {
-      this.scenes.set(id, { left: this.size, error: null, done: (e) => (e ? reject(new Error(e)) : resolve()) });
-      for (const w of this.workers) {
+      if (workers.length === 0) {
+        resolve();
+        return;
+      }
+      this.scenes.set(id, { left: workers.length, error: null, done: (e) => (e ? reject(new Error(e)) : resolve()) });
+      for (const i of workers) {
+        this.lastScene[i] = id;
+        this.tags[i] = tag;
         // Every worker gets its own copy, transferred (no shared memory).
         const copy = bytes.slice().buffer;
-        w.postMessage({ type: 'scene', id, bytes: copy, full } satisfies WorkerRequest, [copy]);
+        this.workers[i].postMessage({ type: 'scene', id, bytes: copy, full } satisfies WorkerRequest, [copy]);
       }
     });
   }
 
   /**
-   * Renders samples `first .. first + count - 1` of the tiles, tile i on worker i mod n. Resolves
-   * true when every worker is done, false when the generation was cancelled.
+   * Renders samples `first .. first + count - 1` of the tiles on `workers` (every worker by default), tile i
+   * on workers[i mod n]. Resolves true when every worker is done, false when the generation was cancelled.
+   * A worker still rendering another generation stops it first. With a `passes` mask the tiles come back
+   * with their passes (the exact planes when `first` is 0).
    */
-  run(generation: number, tiles: readonly Tile[], first: number, count: number, onTile: (r: TileResult) => void): Promise<boolean> {
-    const parts = assignTiles(tiles, this.size);
+  run(generation: number, tiles: readonly Tile[], first: number, count: number, onTile: (r: TileResult) => void, workers: readonly number[] = this.all(), passes = 0): Promise<boolean> {
+    const parts = assignTiles(tiles, workers.length);
     const busy = parts.filter((p) => p.length > 0).length;
     if (busy === 0) return Promise.resolve(true);
+    this.free(workers.filter((_, k) => parts[k].length > 0), generation);
     return new Promise((resolve) => {
       this.jobs.set(generation, { left: busy, onTile, done: resolve });
-      parts.forEach((list, i) => {
+      parts.forEach((list, k) => {
         if (list.length === 0) return;
+        const i = workers[k];
+        this.busy[i] = generation;
         const packed = new Int32Array(list.length * 5);
-        list.forEach((t, k) => packed.set([t.x, t.y, t.w, t.h, t.index], k * 5));
-        this.workers[i].postMessage({ type: 'job', generation, tiles: packed, first, count } satisfies WorkerRequest, [packed.buffer]);
+        list.forEach((t, j) => packed.set([t.x, t.y, t.w, t.h, t.index], j * 5));
+        this.workers[i].postMessage({ type: 'job', generation, tiles: packed, first, count, ...(passes ? { passes } : {}) } satisfies WorkerRequest, [packed.buffer]);
       });
     });
   }
 
-  /** Stops every job up to `generation`; their `run` resolves false and their tiles are dropped. */
+  /** Stops the job of `generation` (exactly that one: a Render and the viewport run side by side); its `run` resolves false and its late tiles are dropped. */
   cancel(generation: number): void {
-    for (const [g, j] of [...this.jobs]) {
-      if (g <= generation) {
-        this.jobs.delete(g);
-        j.done(false);
-      }
+    const j = this.jobs.get(generation);
+    if (j) {
+      this.jobs.delete(generation);
+      j.done(false);
     }
-    for (const w of this.workers) w.postMessage({ type: 'cancel', generation } satisfies WorkerRequest);
+    this.workers.forEach((w, i) => {
+      if (this.busy[i] !== generation) return;
+      this.busy[i] = null;
+      w.postMessage({ type: 'cancel', generation } satisfies WorkerRequest);
+    });
   }
 
   /** The exact 8-bit image of RGBA sums of `samples` samples, converted in slices by the workers. */
@@ -294,6 +376,10 @@ export interface RenderedPixels {
   /** The exposure and curve the 8-bit image was converted with. */
   exposureEv: number;
   tonemap: number;
+  /** With `passes`: the exact passes of the image (AI-POST.md §7.4). */
+  passes?: RenderPasses;
+  /** The native engine: the launcher's id of this render, by which it keeps the image and its passes (AI-POST.md §7.3). */
+  renderId?: number;
 }
 
 /** What reaches the image, by reference: anything else (selection, names, the queue) does not restart it. */
@@ -339,16 +425,23 @@ export class PathTracerEngine implements RenderEngine {
   private viewW = 0;
   private viewH = 0;
   private dpr = 1;
+  /** Numbers for the generations of the viewport and of renders (one sequence: a number is never reused). */
   private readonly gens = new Generations();
+  /** The viewport's generation now (0: none); only its tiles are taken. */
+  private viewGen = 0;
+  /** That generation has all its samples (or its time): it renders nothing more. */
+  private viewDone = false;
   private acc: Accumulator | null = null;
   private accGen = 0;
   private accScale = 1;
+  /** The workers the viewport's generation renders on, and the scene key of its image. */
+  private accLane: readonly number[] = [];
+  private accKey = '';
   private firstPassDone = false;
   private curve: DisplayCurve | null = null;
   private readonly dirty = new Set<number>();
   private presentAll = false;
   private restartWanted = true;
-  private loadedMeshKey: string | null = null;
   private lastUpdate: Uint8Array | null = null;
   private gesture: { patch: Partial<Omit<CameraState, 'id'>> | null } | null = null;
   /** A reduced-resolution frame is being rendered: the next one waits for it. */
@@ -359,9 +452,12 @@ export class PathTracerEngine implements RenderEngine {
   private lastFrameMs: number | null = null;
   private lastScale = 4;
   private frames = 0;
+  private passes = 0;
   private genStart = 0;
   private stoppedAt = 0;
   private rendering = 0;
+  /** The workers a Render's pass is using right now (the viewport keeps off them). */
+  private finalPass: readonly number[] | null = null;
   private failure: string | null = null;
   private readonly frameListeners = new Set<() => void>();
   private tileImage: ImageData | null = null;
@@ -369,8 +465,19 @@ export class PathTracerEngine implements RenderEngine {
   private gestureScale: 'AUTO' | 'HALF' | 'QUARTER' = 'AUTO';
   /** Settings ▸ Render engine: when Full mode stops in the viewport. */
   private limit: ViewportLimit = { by: 'OUTPUT', samples: 1024, seconds: 120 };
+  /** Settings ▸ Render engine ▸ While a render runs: the viewport keeps a quarter of the workers, or waits. */
+  private whileRender: 'SHARE' | 'PAUSE' = 'SHARE';
   /** The viewport stopped because of its time limit. */
   private timedOut = false;
+  private readonly watchdog = new Watchdog('pool');
+  /** The watchdog's clocks: the viewport generation's last tile (or its start), the last frame(), undrawn work. */
+  private tileAt = 0;
+  private startAt = 0;
+  private lastFrameCall = 0;
+  private pendingSince = 0;
+  private shownKey: string | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private want: { state: ProjectState; w: number; h: number; dpr: number; limit: ViewportLimit; key: string } | null = null;
 
   constructor(
     private readonly pool: Pool,
@@ -388,6 +495,11 @@ export class PathTracerEngine implements RenderEngine {
     return `${v >> 16}.${(v >> 8) & 255}.${v & 255}`;
   }
 
+  /** Times the watchdog started the view again. */
+  get watchdogFires(): number {
+    return this.watchdog.fires;
+  }
+
   setGestureResolution(mode: 'AUTO' | 'HALF' | 'QUARTER'): void {
     this.gestureScale = mode;
   }
@@ -401,6 +513,28 @@ export class PathTracerEngine implements RenderEngine {
       this.lastUpdate = null;
       this.restartWanted = true;
     }
+  }
+
+  /** While a render runs: SHARE keeps the viewport live on a quarter of the workers, PAUSE stops it until the render ends. */
+  setWhileRender(mode: 'SHARE' | 'PAUSE'): void {
+    if (mode === this.whileRender) return;
+    this.whileRender = mode;
+    this.restartWanted = true;
+  }
+
+  /** The workers the viewport renders on: all of them, or its share while a Render runs (none when it waits). */
+  private viewLane(): number[] {
+    const n = this.pool.size;
+    if (this.rendering === 0) return this.pool.all();
+    const k = this.whileRender === 'SHARE' ? viewportWorkers(n) : 0;
+    return workerRange(n - k, n);
+  }
+
+  /** The workers a Render's next pass uses: all but the viewport's share while Full mode shares them. */
+  private finalLane(): number[] {
+    const n = this.pool.size;
+    const k = this.active && this.whileRender === 'SHARE' ? viewportWorkers(n) : 0;
+    return workerRange(0, n - k);
   }
 
   /** Samples the viewport converges to: the output's, or the limit's. */
@@ -430,11 +564,27 @@ export class PathTracerEngine implements RenderEngine {
       // Whatever an earlier session left on the canvas is not this scene.
       if (this.canvas && this.ctx) this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.restartWanted = true;
+      this.shownKey = null;
+      this.pendingSince = 0;
+      const now = performance.now();
+      this.tileAt = this.startAt = this.lastFrameCall = now;
+      if (!this.timer && typeof setInterval === 'function') this.timer = setInterval(() => this.checkFrames(), 1000);
       return;
     }
-    // A Render in progress keeps the pool: only the viewport's own frames stop.
-    if (this.rendering === 0) this.pool.cancel(this.gens.next());
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    // A Render in progress keeps its workers: only the viewport's own frames stop. A frame that was
+    // in flight is dropped with them, so it no longer holds the next restart back.
+    this.stopView();
     this.acc = null;
+    this.pendingSince = 0;
+  }
+
+  /** The viewport's generation stops (its late tiles are dropped). */
+  private stopView(): void {
+    if (this.viewGen) this.pool.cancel(this.viewGen);
+    this.viewGen = 0;
+    this.frameInFlight = false;
   }
 
   onFrame(fn: () => void): () => void {
@@ -500,13 +650,25 @@ export class PathTracerEngine implements RenderEngine {
 
   // ------------------------------------------------------------------ frames
 
+  /** The viewport may start a generation now: no Render, or its share of workers is free of the Render's pass. */
+  private viewCanRun(): boolean {
+    if (this.rendering === 0) return true;
+    const lane = this.viewLane();
+    const busy = this.finalPass;
+    return lane.length > 0 && !(busy && lane.some((i) => busy.includes(i)));
+  }
+
   frame(): void {
     if (!this.active || !this.canvas || !this.state) return;
     const now = performance.now();
+    // The animation loop did not run for a while (the window was hidden or frozen): the clocks start again.
+    if (now - this.lastFrameCall > WATCHDOG.frameMs) this.tileAt = this.startAt = this.pendingSince = now;
+    this.lastFrameCall = now;
     // Quiet again after a run of changes: back to full resolution.
     if (!this.restartWanted && this.acc && this.accScale > 1 && !this.interactive(now) && now - this.lastChangeAt >= QUIET_MS) this.restartWanted = true;
+    this.check(now);
     // A reduced-resolution frame in flight finishes first (otherwise a continuous drag would never show one).
-    if (this.restartWanted && this.rendering === 0 && !this.frameInFlight) {
+    if (this.restartWanted && !this.frameInFlight && this.viewCanRun()) {
       this.restartWanted = false;
       void this.restart();
     }
@@ -514,57 +676,82 @@ export class PathTracerEngine implements RenderEngine {
     for (const fn of this.frameListeners) fn();
   }
 
-  private async restart(): Promise<void> {
-    const state = this.state;
-    if (!state || this.viewW <= 0) return;
-    const t0 = performance.now();
-    const gesture = this.gesture;
-    const scale = this.interactive(t0) ? this.chooseGestureScale() : 1;
+  /** The view at a resolution divisor (and the camera of a gesture in progress). */
+  private viewOf(state: ProjectState, scale: number, patch: Partial<Omit<CameraState, 'id'>> | null): TracerView {
     const px = this.pixelSize();
     const size = scaledSize(px.width, px.height, scale);
-    const view: TracerView = {
+    return {
       width: size.width,
       height: size.height,
       maxSamples: this.viewportSamples(state),
       maxSeconds: 0,
       viewport: { viewW: this.viewW, viewH: this.viewH },
-      ...(gesture?.patch ? { cameraPatch: gesture.patch } : {}),
+      ...(patch ? { cameraPatch: patch } : {}),
     };
+  }
+
+  /**
+   * Loads the scene on the workers of `lane` that do not hold it: the whole scene where a worker has other meshes
+   * (or nothing), an update where it has the same ones (an update a worker refuses: the whole scene).
+   */
+  private async ensureScene(lane: readonly number[], built: BuiltScene, update: Uint8Array): Promise<void> {
+    const tag: SceneTag = { meshKey: built.meshKey, update };
+    const whole: number[] = [];
+    const partial: number[] = [];
+    for (const i of lane) {
+      const t = this.pool.tagOf(i);
+      if (t && t.meshKey === tag.meshKey && sameBytes(t.update, update)) continue;
+      (t && t.meshKey === tag.meshKey ? partial : whole).push(i);
+    }
+    const waits: Promise<void>[] = [];
+    if (whole.length > 0) waits.push(this.pool.scene(built.bytes(true), true, whole, tag));
+    if (partial.length > 0) waits.push(this.pool.scene(update, false, partial, tag).catch(() => this.pool.scene(built.bytes(true), true, partial, tag)));
+    await Promise.all(waits);
+  }
+
+  private async restart(): Promise<void> {
+    const state = this.state;
+    if (!state || this.viewW <= 0) return;
+    const lane = this.viewLane();
+    if (lane.length === 0) return;
+    const t0 = performance.now();
+    const gesture = this.gesture;
+    const scale = this.interactive(t0) ? this.chooseGestureScale() : 1;
+    const view = this.viewOf(state, scale, gesture?.patch ?? null);
     const built = this.source.build(state, view);
-    const full = built.meshKey !== this.loadedMeshKey;
     const update = built.bytes(false);
     const acc0 = this.acc;
     // Nothing that reaches the image changed (a rename, a hidden-then-shown light): keep going.
-    if (!full && acc0 && this.gens.accepts(this.accGen) && this.accScale === scale && acc0.width === size.width && acc0.height === size.height && sameBytes(this.lastUpdate, update)) return;
+    if (acc0 && this.viewGen !== 0 && this.accGen === this.viewGen && this.accScale === scale && sameLane(this.accLane, lane) && acc0.width === view.width && acc0.height === view.height && sameBytes(this.lastUpdate, update)) return;
 
     const gen = this.gens.next();
-    this.pool.cancel(gen - 1);
+    if (this.viewGen) this.pool.cancel(this.viewGen);
+    this.viewGen = gen;
+    this.viewDone = false;
     this.frameInFlight = scale > 1;
+    this.tileAt = this.startAt = t0;
     try {
-      try {
-        await this.pool.scene(full ? built.bytes(true) : update, full);
-      } catch (err) {
-        // An update the engine refuses: send everything instead.
-        if (full || !this.gens.accepts(gen)) throw err;
-        await this.pool.scene(built.bytes(true), true);
-      }
+      await this.ensureScene(lane, built, update);
     } catch (err) {
-      if (this.gens.accepts(gen)) {
+      if (gen === this.viewGen) {
         this.failure = err instanceof Error ? err.message : String(err);
         this.frameInFlight = false;
       }
       return;
     }
-    if (!this.gens.accepts(gen)) return;
+    if (gen !== this.viewGen) return;
     this.failure = null;
-    this.loadedMeshKey = built.meshKey;
     this.lastUpdate = update;
-    const acc = new Accumulator(size.width, size.height);
+    const acc = new Accumulator(view.width, view.height);
     this.acc = acc;
     this.accGen = gen;
     this.accScale = scale;
+    this.accLane = lane;
+    this.accKey = bytesKey(update);
     this.firstPassDone = false;
     this.dirty.clear();
+    this.pendingSince = 0;
+    this.tileAt = performance.now();
     if (scale === 1) {
       this.genStart = performance.now();
       this.stoppedAt = 0;
@@ -576,12 +763,14 @@ export class PathTracerEngine implements RenderEngine {
     for (;;) {
       const p = nextPass(done, pass, max);
       if (!p) break;
-      const ok = await this.pool.run(gen, acc.tiles, p.first, p.count, (r) => this.onTile(gen, r));
-      if (!this.gens.accepts(gen)) return;
+      const ok = await this.pool.run(gen, acc.tiles, p.first, p.count, (r) => this.onTile(gen, r), lane);
+      if (gen !== this.viewGen) return;
       if (!ok) {
         this.frameInFlight = false;
         return;
       }
+      this.passes++;
+      this.watchdog.progressed();
       if (!this.firstPassDone) {
         this.firstPassDone = true;
         if (scale > 1) {
@@ -591,7 +780,10 @@ export class PathTracerEngine implements RenderEngine {
           this.frameInFlight = false;
         }
       }
-      if (scale > 1) this.presentAll = true;
+      if (scale > 1) {
+        this.presentAll = true;
+        if (!this.pendingSince) this.pendingSince = performance.now();
+      }
       done += p.count;
       pass = p.count;
       // The next view of a gesture, or the next step of a drag: this frame is shown, start over.
@@ -603,12 +795,48 @@ export class PathTracerEngine implements RenderEngine {
       }
     }
     if (scale === 1) this.stoppedAt = performance.now();
+    // Converged (or stopped by time): nothing more comes, and the watchdog has nothing to wait for.
+    if (gen === this.viewGen) this.viewDone = true;
   }
 
   private onTile(gen: number, r: TileResult): void {
     const acc = this.acc;
-    if (!acc || gen !== this.accGen || !this.gens.accepts(gen)) return;
-    if (acc.add(r.index, r.first, r.count, r.data) && this.accScale === 1) this.dirty.add(r.index);
+    if (!acc || gen !== this.accGen || gen !== this.viewGen) return;
+    this.tileAt = performance.now();
+    if (acc.add(r.index, r.first, r.count, r.data) && this.accScale === 1) {
+      this.dirty.add(r.index);
+      if (!this.pendingSince) this.pendingSince = this.tileAt;
+    }
+  }
+
+  /** The watchdog: the viewport's generation must keep getting tiles and have them drawn; if not, it starts again. */
+  private check(now: number): void {
+    if (this.viewGen === 0 || this.viewDone || this.failure !== null || this.viewW <= 0) return;
+    const wd = this.watchdog;
+    // The scene is still loading, or a pass is out: tiles must come.
+    if (now - this.tileAt > wd.limit(this.acc && this.accGen === this.viewGen ? WATCHDOG.tileMs : WATCHDOG.startMs)) {
+      this.fire(this.acc && this.accGen === this.viewGen ? `no tile for ${Math.round((now - this.tileAt) / 1000)} s` : `the workers did not take the new view in ${Math.round((now - this.startAt) / 1000)} s`, now);
+    } else if (this.pendingSince && now - this.pendingSince > wd.limit(WATCHDOG.displayMs)) {
+      this.fire(`tiles arrived ${Math.round((now - this.pendingSince) / 1000)} s ago and are not drawn`, now);
+    }
+  }
+
+  /** Called by a timer: tiles that arrive must be drawn even if the page's animation loop stopped. */
+  private checkFrames(): void {
+    if (!this.active || typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+    const now = performance.now();
+    if (now - this.lastFrameCall < WATCHDOG.frameMs) return;
+    console.warn(`[viewport] watchdog (pool): no frame drawn for ${Math.round((now - this.lastFrameCall) / 1000)} s while the page is visible; drawing from a timer`);
+    this.frame();
+  }
+
+  private fire(reason: string, now: number): void {
+    this.watchdog.fire(reason, now);
+    this.stopView();
+    this.lastUpdate = null;
+    this.restartWanted = true;
+    this.tileAt = this.startAt = now;
+    this.pendingSince = 0;
   }
 
   private displayCurve(): DisplayCurve {
@@ -642,11 +870,15 @@ export class PathTracerEngine implements RenderEngine {
       ctx.imageSmoothingQuality = 'low';
       ctx.drawImage(low, 0, 0, this.canvas.width, this.canvas.height);
       ctx.restore();
+      this.pendingSince = 0;
+      this.shownKey = null;
       return;
     }
     this.presentAll = false;
+    // An image of another size than the canvas cannot be drawn tile by tile: the watchdog notices.
     if (acc.width !== this.canvas.width || acc.height !== this.canvas.height) return;
     const t0 = performance.now();
+    let drawn = 0;
     for (const i of this.dirty) {
       if (performance.now() - t0 > PRESENT_BUDGET_MS) break;
       this.dirty.delete(i);
@@ -654,19 +886,45 @@ export class PathTracerEngine implements RenderEngine {
       if (!this.tileImage || this.tileImage.width !== t.w || this.tileImage.height !== t.h) this.tileImage = new ImageData(t.w, t.h);
       acc.tileBytes(i, curve, this.tileImage.data);
       ctx.putImageData(this.tileImage, t.x, t.y);
+      drawn++;
     }
+    if (drawn > 0) {
+      // The canvas now shows this view (the first pass covers every tile).
+      if (acc.complete) this.shownKey = this.accKey;
+      this.pendingSince = this.dirty.size > 0 ? t0 : 0;
+    }
+  }
+
+  /** The scene of the project as the viewport would render it now (full resolution), cached per state. */
+  private wantKey(): string | undefined {
+    const state = this.state;
+    if (!state || this.viewW <= 0) return undefined;
+    const w = this.want;
+    if (w && w.state === state && w.w === this.viewW && w.h === this.viewH && w.dpr === this.dpr && w.limit === this.limit) return w.key;
+    const key = bytesKey(this.source.build(state, this.viewOf(state, 1, null)).bytes(false));
+    this.want = { state, w: this.viewW, h: this.viewH, dpr: this.dpr, limit: this.limit, key };
+    return key;
   }
 
   status(): EngineStatus {
     const acc = this.acc;
+    const now = performance.now();
     const full = acc !== null && this.accScale === 1;
     const samples = full ? acc.minSamples : 0;
     const max = this.state ? this.viewportSamples(this.state) : 1;
     const end = this.stoppedAt || performance.now();
+    const k = this.whileRender === 'SHARE' ? viewportWorkers(this.pool.size) : 0;
+    // While a Render runs: the viewport shares the pool, or waits (by choice, or in a pool of one); nothing to
+    // say once it has converged.
+    const converged = full && (samples >= max || this.timedOut);
+    const renderShare = this.rendering > 0 && !converged ? (k > 0 ? 'SHARED' : 'PAUSED') : undefined;
+    const restarted = this.watchdog.recent(now);
+    const issue: ViewportIssue | undefined = this.failure !== null ? { kind: 'FAILED', detail: this.failure } : restarted ? { kind: 'RESTARTED', detail: restarted } : undefined;
+    const wantKey = this.wantKey();
     return {
       samples,
       seconds: full && this.genStart ? (end - this.genStart) / 1000 : 0,
-      converged: full && (samples >= max || this.timedOut),
+      converged,
       device: this.failure ? `error: ${this.failure}` : `${this.pool.size} workers${this.simd ? ' · SIMD' : ''}`,
       workers: this.pool.size,
       simd: this.simd,
@@ -674,7 +932,14 @@ export class PathTracerEngine implements RenderEngine {
       frames: this.frames,
       ...(this.lastFrameMs !== null ? { frameMs: this.lastFrameMs } : {}),
       rendering: this.rendering > 0,
+      ...(renderShare ? { renderShare } : {}),
+      ...(renderShare === 'SHARED' ? { share: { n: k, of: this.pool.size } } : {}),
       ...(full ? { pixels: acc.width * acc.height } : {}),
+      ...(issue ? { issue } : {}),
+      passes: this.passes,
+      watchdog: this.watchdog.fires,
+      ...(this.shownKey ? { shownKey: this.shownKey } : {}),
+      ...(wantKey ? { wantKey } : {}),
     };
   }
 
@@ -687,8 +952,8 @@ export class PathTracerEngine implements RenderEngine {
   // ------------------------------------------------------------------ render
 
   /**
-   * Renders the output image with the whole pool and converts it exactly. Renders run one after
-   * another (Render pressed while the queue runs waits for the job in progress).
+   * Renders the output image with the pool (all of it, or all but the viewport's share) and converts it
+   * exactly. Renders run one after another (Render pressed while the queue runs waits for the job in progress).
    */
   renderPixels(opts: RenderOptions): Promise<RenderedPixels> {
     const run = this.renderChain.then(() => this.renderNow(opts));
@@ -705,9 +970,15 @@ export class PathTracerEngine implements RenderEngine {
     if (signal?.aborted) throw abortError();
     this.rendering++;
     const gen = this.gens.next();
-    this.pool.cancel(gen - 1);
-    this.acc = null;
-    this.frameInFlight = false;
+    // The viewport leaves the Render's workers: it starts again on its share (or waits, by choice). A
+    // converged image stays as it is.
+    if (this.viewGen !== 0 && !this.viewDone) {
+      const lane = this.finalLane();
+      if (this.accLane.some((i) => lane.includes(i))) {
+        this.stopView();
+        this.restartWanted = true;
+      }
+    }
     const onAbort = () => this.pool.cancel(gen);
     signal?.addEventListener('abort', onAbort);
     const t0 = performance.now();
@@ -721,21 +992,14 @@ export class PathTracerEngine implements RenderEngine {
         ...(opts.camera ? { camera: opts.camera } : {}),
         ...(opts.time !== undefined ? { time: opts.time } : {}),
         ...(opts.advanced ? { advanced: opts.advanced } : {}),
+        ...(opts.passes?.length ? { passes: opts.passes } : {}),
       };
+      const mask = passMask(opts.passes ?? []);
       const built = this.source.build(state, view);
-      const full = built.meshKey !== this.loadedMeshKey;
+      const update = built.bytes(false);
       opts.onProgress?.({ jobId: null, progress: 0, samples: 0, seconds: 0 });
-      try {
-        await this.pool.scene(built.bytes(full), full);
-      } catch (err) {
-        // An update the engine refuses: send everything instead.
-        if (full) throw err;
-        await this.pool.scene(built.bytes(true), true);
-      }
-      this.loadedMeshKey = built.meshKey;
-      this.lastUpdate = null;
-      if (signal?.aborted) throw abortError();
       const acc = new Accumulator(opts.width, opts.height);
+      const passes = mask ? new PassAccumulator(opts.width, opts.height, mask, acc.tiles) : null;
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
       const budget: PassBudget = { finishBy: opts.finishBy ?? (opts.maxSeconds > 0 ? 'FIRST' : 'SAMPLES'), maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds };
       let done = 0;
@@ -746,16 +1010,36 @@ export class PathTracerEngine implements RenderEngine {
       };
       const result = await runPasses(budget, {
         now: () => performance.now(),
-        // The pool hands this job only its own generation's tiles.
-        pass: (first, count) =>
-          this.pool.run(gen, acc.tiles, first, count, (r) => {
-            acc.add(r.index, r.first, r.count, r.data);
-            const now = performance.now();
-            if (now - lastReport > 100) {
-              lastReport = now;
-              report();
-            }
-          }),
+        // Each pass on the workers the viewport leaves free now (all of them in Fast mode); the pool hands this
+        // job only its own generation's tiles, and which worker renders a tile does not change a pixel, nor a pass.
+        pass: async (first, count) => {
+          const lane = this.finalLane();
+          this.finalPass = lane;
+          try {
+            await this.ensureScene(lane, built, update);
+            if (signal?.aborted) return false;
+            return await this.pool.run(
+              gen,
+              acc.tiles,
+              first,
+              count,
+              (r) => {
+                acc.add(r.index, r.first, r.count, r.data);
+                if (passes && r.albedo) passes.addAlbedo(r.index, r.first, r.count, r.albedo);
+                if (passes && r.exact) passes.setExact(r.index, r.exact);
+                const now = performance.now();
+                if (now - lastReport > 100) {
+                  lastReport = now;
+                  report();
+                }
+              },
+              lane,
+              mask,
+            );
+          } finally {
+            this.finalPass = null;
+          }
+        },
         aborted: () => signal?.aborted === true,
         progress: (samples) => {
           done = samples;
@@ -768,10 +1052,22 @@ export class PathTracerEngine implements RenderEngine {
       const data = await this.pool.tonemap(acc.sum, opts.width, opts.height, done, tone.exposureEv, tone.tonemap);
       const seconds = (performance.now() - t0) / 1000;
       opts.onProgress?.({ jobId: null, progress: 1, samples: done, seconds });
-      return { width: opts.width, height: opts.height, data, samples: done, seconds, exposureEv: tone.exposureEv, tonemap: tone.tonemap, ...(opts.keepLinear ? { sum: acc.sum } : {}) };
+      return {
+        width: opts.width,
+        height: opts.height,
+        data,
+        samples: done,
+        seconds,
+        exposureEv: tone.exposureEv,
+        tonemap: tone.tonemap,
+        ...(opts.keepLinear ? { sum: acc.sum } : {}),
+        ...(passes ? { passes: passes.resolve() } : {}),
+      };
     } finally {
       signal?.removeEventListener('abort', onAbort);
+      this.pool.cancel(gen);
       this.rendering--;
+      // The Render is over (or stopped): the viewport takes every worker again, at once.
       this.restartWanted = true;
     }
   }
@@ -787,6 +1083,12 @@ export class PathTracerEngine implements RenderEngine {
   }
 
   dispose(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
     this.pool.dispose();
   }
+}
+
+function sameLane(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
 }

@@ -109,6 +109,7 @@ fn with_catalogue(text: &str) -> Options {
                 ..Downloader::system()
             },
         )),
+        ..Options::default()
     }
 }
 
@@ -924,38 +925,92 @@ fn the_server_is_stopped_when_idle_when_released_and_when_the_application_ends()
     cleanup(t);
 }
 
+/// A child process killed when the test ends, passed or failed, so a failure leaves nothing
+/// running (CI's runner had to stop a fake server a failed run had left).
 #[cfg(target_os = "linux")]
-#[test]
-fn a_server_left_by_a_previous_launch_is_stopped_at_start() {
-    let base = temp_dir("ai-stale");
-    let data = base.join("data");
-    let rt = place_fake(&data);
+struct Reaped(std::process::Child);
+
+#[cfg(target_os = "linux")]
+impl Drop for Reaped {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// A server a previous launch left running, recorded in `<data>/ai/sidecar.json`, is stopped
+/// when the next launch starts (`Ai::new`).
+///
+/// The test starts that server an instant before, so it first waits until the server really runs:
+/// until it has created `args.log`, which only the fake's own code does. Until its `execve` has
+/// finished, Linux may already have let the parent go on (`posix_spawn` is a vfork) while
+/// `/proc/<pid>/exe` still names the parent's executable, the test binary, and a clean-up that
+/// does not kill that process is right. On the CI runner, without this wait, the test failed in
+/// about one run in two. A server a previous launch left has long finished starting.
+#[cfg(target_os = "linux")]
+fn a_stale_server_is_stopped(data: &Path) {
+    let rt = place_fake(data);
     let server = rt.join(server_name());
-    let mut orphan = std::process::Command::new(&server)
-        .args(["--listen-ip", "127.0.0.1", "--listen-port", "0"])
-        .current_dir(&rt)
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut orphan = Reaped(
+        std::process::Command::new(&server)
+            .args(["--listen-ip", "127.0.0.1", "--listen-port", "0"])
+            .current_dir(&rt)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let start = Instant::now();
+    while !rt.join("args.log").exists() {
+        assert!(
+            orphan.0.try_wait().unwrap().is_none(),
+            "the fake server ended before it ran"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(60),
+            "the fake server never started"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
     std::fs::write(
         data.join("ai/sidecar.json"),
         json::Object::new()
-            .num("pid", f64::from(orphan.id()))
+            .num("pid", f64::from(orphan.0.id()))
             .str("server", &server.to_string_lossy())
             .build(),
     )
     .unwrap();
-    let ai = rt_app::ai::Ai::new(&data);
+    let ai = rt_app::ai::Ai::new(data);
     let start = Instant::now();
-    while orphan.try_wait().unwrap().is_none() {
+    while orphan.0.try_wait().unwrap().is_none() {
         assert!(
-            start.elapsed() < Duration::from_secs(10),
+            start.elapsed() < Duration::from_secs(60),
             "the orphan still runs"
         );
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(20));
     }
     assert!(!data.join("ai/sidecar.json").exists());
     ai.shutdown();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_server_left_by_a_previous_launch_is_stopped_at_start() {
+    let base = temp_dir("ai-stale");
+    a_stale_server_is_stopped(&base.join("data"));
+    let _ = std::fs::remove_dir_all(base);
+}
+
+/// The same with the data folder reached through a symbolic link: the kernel names the server
+/// by its real path, the pid file by the path the launch used, and an orphan left there must be
+/// stopped all the same (the path as written was compared, and it was never stopped).
+#[cfg(target_os = "linux")]
+#[test]
+fn a_server_left_in_a_data_folder_behind_a_link_is_stopped_too() {
+    let base = temp_dir("ai-stale-link");
+    std::fs::create_dir_all(base.join("real")).unwrap();
+    std::os::unix::fs::symlink(base.join("real"), base.join("link")).unwrap();
+    a_stale_server_is_stopped(&base.join("link").join("data"));
     let _ = std::fs::remove_dir_all(base);
 }
 

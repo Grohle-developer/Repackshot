@@ -5,6 +5,7 @@
 // tracer. main.ts wires both.
 
 import type { CameraId } from '../core/camera';
+import type { PassKey } from '../core/passes';
 import type { AdvancedSettings, FinishBy, RenderProgress } from '../core/render';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -26,8 +27,24 @@ export interface EngineStatus {
   frames?: number;
   /** Path tracer: milliseconds the last reduced-resolution frame took, from the change to the image. */
   frameMs?: number;
-  /** Path tracer: a Render is using the pool, the viewport waits. */
+  /** Path tracer: a Render is running (the viewport shares the engine with it, or waits). */
   rendering?: boolean;
+  /**
+   * Path tracer, while a Render runs: SHARED, the viewport goes on with `share` of the threads or workers;
+   * PAUSED, it waits until the Render is over (Settings ▸ Render engine ▸ While a render runs, or a pool of one).
+   */
+  renderShare?: 'SHARED' | 'PAUSED';
+  /** Threads (native) or workers (pool) the viewport renders on while it shares, and how many there are. */
+  share?: { n: number; of: number };
+  /** Path tracer: why the view is not simply converging (the engine does not answer, refused it, or was restarted). */
+  issue?: import('./watchdog').ViewportIssue;
+  /** Path tracer: passes received since the engine started (for checks: it only grows). */
+  passes?: number;
+  /** Path tracer: times the watchdog started the view again. */
+  watchdog?: number;
+  /** Path tracer: the scene of the image on the canvas (full resolution), and the scene of the project now. */
+  shownKey?: string;
+  wantKey?: string;
   /** Path tracer: pixels of the image the samples above are counted on (for estimates). */
   pixels?: number;
   /** The native engine of the desktop launcher (render/native.ts) is rendering. */
@@ -59,6 +76,11 @@ export interface RenderOptions {
   advanced?: AdvancedSettings;
   /** Path tracer: also hand back the accumulated linear sums (16-bit PNG, EXR). */
   keepLinear?: boolean;
+  /**
+   * Path tracer: also render these exact passes next to the image and hand them back (AI-POST.md §7.4,
+   * phase X2); the image does not change. The launcher keeps them by the render's id for the AI.
+   */
+  passes?: readonly PassKey[];
   /** Render this project instead of the one on screen (Settings ▸ Measure performance renders the example). */
   state?: ProjectState;
 }

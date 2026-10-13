@@ -12,24 +12,45 @@
 //
 // Viewport: every change posts a viewport job (an RSB without meshes when the
 // geometry is the same: the launcher keeps it), which replaces the previous
-// one, and long-polls its passes. During camera gestures it renders at ½ or ¼
-// of the viewport, as the pool does. Render: a final job, which pauses the
-// viewport's while it runs. It finishes by samples, by time or whichever comes
+// one, and long-polls its passes. Only one job is posted at a time, each with
+// its number (`seq`, so one overtaken on the way cannot replace a newer one),
+// and a job that is replaced has its poll aborted: a response is never left
+// unread, because an unread one keeps one of the browser's six connections to
+// the launcher, and with all six kept every request queues for ever (the
+// viewport, Render and Pause all stop: phase P3a). During camera gestures it
+// renders at ½ or ¼ of the viewport, as the pool does. While a Render runs the
+// viewport keeps a quarter of the threads (`share`), or waits for it when the
+// settings say so. A refused or lost view is posted again (1, 2, 4… s), with
+// the reason on the meter, and a watchdog (render/watchdog.ts) starts the view
+// again when it stops answering, stops getting passes or stops being drawn,
+// writing what the launcher was doing to its log.
+//
+// Render: a final job. It finishes by samples, by time or whichever comes
 // first (`finish=`): the launcher stops between passes with the rule of
 // schedule.ts `runPasses`, so the end lands as the pool's does. Progress comes
 // from headers (schedule.ts `budgetProgress`), the sums once at the end; they
 // are converted to 8 bits exactly in slices and, with `keepLinear`, handed
-// back for 16-bit PNG and EXR. Aborting the signal cancels the job.
+// back for 16-bit PNG and EXR. Every request carries the abort signal, so
+// aborting (Pause, Stop) rejects at once and the job is cancelled.
+//
+// Passes (phase X2): a Render with `passes` asks the launcher for them
+// (`passes=` and `RNDR.passes`); it keeps the image and the passes by the job's
+// id for the AI (AI-POST.md §7.3, even after the page forgets the job), and the
+// page reads them once, before it lets the job go (`GET /api/render/<id>/passes`,
+// render/pass-planes.ts `parsePasses`), and hands them back with the render's id.
 
 import type { CameraState } from '../core/camera';
+import type { PassKey, RenderPasses } from '../core/passes';
 import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
 import type { EngineStatus, PickHit, RenderOptions } from './engine';
 import { QUIET_MS, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
+import { parsePasses } from './pass-planes';
 import { abortError, budgetProgress, type PassBudget } from './schedule';
 import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
 import { DisplayCurve } from './tonemap';
+import { bytesKey, retryDelay, Watchdog, WATCHDOG, type ViewportIssue } from './watchdog';
 
 /** How the engine reaches the launcher (io/native.ts's NativeClient, handed in by main.ts). */
 export interface NativeTransport {
@@ -43,6 +64,12 @@ export const FLAG_CANCELLED = 2;
 export const FLAG_FAILED = 4;
 export const FLAG_PAUSED = 8;
 export const FLAG_DATA = 16;
+export const FLAG_SHARED = 32;
+
+/** Threads the viewport keeps while a Render runs: a quarter, at least one (render.rs `viewport_share`). */
+export function viewportShare(threads: number): number {
+  return Math.max(1, Math.floor(threads / 4));
+}
 
 export interface NativeFrame {
   pass: number;
@@ -52,6 +79,7 @@ export interface NativeFrame {
   seconds: number;
   flags: number;
   maxSamples: number;
+  /** Threads rendering the job now (its share while it shares, 0 while it waits). */
   threads: number;
   rays: number;
   /** RGBA sums of `samples` samples per pixel (when the frame carries data). */
@@ -139,12 +167,26 @@ function touchesImage(s: ProjectState, p: ProjectState): boolean {
 }
 
 async function failureText(res: Response): Promise<string> {
+  return (await failure(res)).message;
+}
+
+/** The launcher's error: its code and message (the body is read, so the connection is free again). */
+async function failure(res: Response): Promise<{ code: string; message: string }> {
   try {
     const body = (await res.json()) as { message?: string; error?: string };
-    return body.message ?? body.error ?? `HTTP ${res.status}`;
+    return { code: body.error ?? `http-${res.status}`, message: body.message ?? body.error ?? `HTTP ${res.status}` };
   } catch {
-    return `HTTP ${res.status}`;
+    return { code: `http-${res.status}`, message: `HTTP ${res.status}` };
   }
+}
+
+/** A response whose body is not wanted: cancelled, so the browser can reuse its connection. */
+function discard(res: Response): void {
+  void res.body?.cancel().catch(() => undefined);
+}
+
+function isAbort(err: unknown): boolean {
+  return (err as { name?: string } | null)?.name === 'AbortError';
 }
 
 const PRESENT_BUDGET_MS = 8;
@@ -154,11 +196,23 @@ interface ViewJob {
   gen: number;
   scale: number;
   acc: Accumulator;
+  /** The scene of the job (`bytesKey` of its update bytes). */
+  key: string;
+  share: number;
   pass: number;
   samples: number;
   seconds: number;
   done: boolean;
   paused: boolean;
+  shared: boolean;
+  /** Threads rendering it now (from the launcher). */
+  threads: number;
+  /** Milliseconds the next pass should take (from the last one), for the watchdog. */
+  expectMs: number;
+  /** Its long-poll is running (it ends when the job ends, is replaced, or fails). */
+  alive: boolean;
+  /** Aborts its long-poll. */
+  abort: AbortController;
 }
 
 export class NativeEngine {
@@ -184,20 +238,41 @@ export class NativeEngine {
   private lastUpdate: Uint8Array | null = null;
   private gesture: { patch: Partial<Omit<CameraState, 'id'>> | null } | null = null;
   private frameInFlight = false;
+  /** The viewport job being posted (one at a time): its generation, since when, and its abort. */
+  private posting: { gen: number; at: number; abort: AbortController } | null = null;
   private lastChangeAt = -Infinity;
   private previousChangeAt = -Infinity;
   private lastFrameMs: number | null = null;
   private lastScale = 4;
   private frames = 0;
+  private passes = 0;
   private rendering = 0;
   private failure: string | null = null;
+  /** When a refused or lost view is posted again (0: none pending), and how many tries so far. */
+  private retryAt = 0;
+  private retries = 0;
+  private readonly watchdog = new Watchdog('native');
+  /** The watchdog's clocks: the last answer of the job's long-poll, its last new pass, the last frame(). */
+  private aliveAt = 0;
+  private progressAt = 0;
+  private lastFrameCall = 0;
+  /** The pass of the job on the canvas, and since when a newer one waits to be drawn. */
+  private shownPass = 0;
+  private shownKey: string | null = null;
+  private pendingSince = 0;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private want: { state: ProjectState; w: number; h: number; dpr: number; limit: ViewportLimit; key: string } | null = null;
   private readonly frameListeners = new Set<() => void>();
   private tileImage: ImageData | null = null;
   private renderChain: Promise<unknown> = Promise.resolve();
+  /** Jobs of renders in progress (cancelled if the page goes away). */
+  private readonly finals = new Set<number>();
   /** Settings ▸ Preferences: ½ or ¼ during gestures, or chosen from the last frame's time. */
   private gestureScale: 'AUTO' | 'HALF' | 'QUARTER' = 'AUTO';
   /** Settings ▸ Render engine: when Full mode stops in the viewport. */
   private limit: ViewportLimit = { by: 'OUTPUT', samples: 1024, seconds: 120 };
+  /** Settings ▸ Render engine ▸ While a render runs: the viewport keeps a share of the threads, or waits. */
+  private whileRender: 'SHARE' | 'PAUSE' = 'SHARE';
 
   constructor(
     private readonly api: NativeTransport,
@@ -222,6 +297,11 @@ export class NativeEngine {
     return this.info.engineVersion ?? '';
   }
 
+  /** Times the watchdog started the view again. */
+  get watchdogFires(): number {
+    return this.watchdog.fires;
+  }
+
   setGestureResolution(mode: 'AUTO' | 'HALF' | 'QUARTER'): void {
     this.gestureScale = mode;
   }
@@ -234,6 +314,19 @@ export class NativeEngine {
       this.lastUpdate = null;
       this.restartWanted = true;
     }
+  }
+
+  /** While a render runs: SHARE keeps the viewport live on a quarter of the threads, PAUSE stops it until the render ends. */
+  setWhileRender(mode: 'SHARE' | 'PAUSE'): void {
+    if (mode === this.whileRender) return;
+    this.whileRender = mode;
+    this.lastUpdate = null;
+    this.restartWanted = true;
+  }
+
+  /** The threads the viewport asks to keep while a final runs. */
+  private shareThreads(): number {
+    return this.whileRender === 'SHARE' ? viewportShare(this.info.threads) : 0;
   }
 
   /** Samples the viewport converges to: the output's, or the limit's. */
@@ -260,14 +353,37 @@ export class NativeEngine {
     if (on) {
       if (this.canvas && this.ctx) this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.restartWanted = true;
+      this.shownPass = 0;
+      this.shownKey = null;
+      this.pendingSince = 0;
+      const now = performance.now();
+      this.aliveAt = this.progressAt = this.lastFrameCall = now;
+      // The page's own animation loop draws the frames; this timer only notices when it stopped.
+      if (!this.timer && typeof setInterval === 'function') this.timer = setInterval(() => this.checkFrames(), 1000);
       return;
     }
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
     // Off: the launcher stops the viewport's job (a Render keeps going).
     this.gen++;
+    this.posting?.abort.abort();
+    this.posting = null;
     const job = this.job;
     this.job = null;
     this.frameInFlight = false;
-    if (job && !job.done) void this.api.request(`/api/render/${job.id}`, { method: 'DELETE' }).catch(() => undefined);
+    this.retryAt = 0;
+    this.pendingSince = 0;
+    if (job) {
+      job.abort.abort();
+      if (!job.done) this.deleteJob(job.id);
+    }
+  }
+
+  private deleteJob(id: number): void {
+    void this.api
+      .request(`/api/render/${id}`, { method: 'DELETE', keepalive: true })
+      .then(discard)
+      .catch(() => undefined);
   }
 
   onFrame(fn: () => void): () => void {
@@ -327,8 +443,17 @@ export class NativeEngine {
   frame(): void {
     if (!this.active || !this.canvas || !this.state) return;
     const now = performance.now();
+    // The animation loop did not run for a while (the window was hidden or frozen): the clocks start again.
+    if (now - this.lastFrameCall > WATCHDOG.frameMs) this.aliveAt = this.progressAt = this.pendingSince = now;
+    this.lastFrameCall = now;
     if (!this.restartWanted && this.job && this.job.scale > 1 && !this.interactive(now) && now - this.lastChangeAt >= QUIET_MS) this.restartWanted = true;
-    if (this.restartWanted && !this.frameInFlight) {
+    if (this.retryAt && now >= this.retryAt) {
+      this.retryAt = 0;
+      this.restartWanted = true;
+    }
+    this.check(now);
+    // One viewport job is posted at a time: the newest view goes when the one in flight is answered.
+    if (this.restartWanted && !this.frameInFlight && !this.posting) {
       this.restartWanted = false;
       void this.restart();
     }
@@ -336,17 +461,44 @@ export class NativeEngine {
     for (const fn of this.frameListeners) fn();
   }
 
+  /** The view at a resolution divisor (and the camera of a gesture in progress). */
+  private viewOf(state: ProjectState, scale: number, patch: Partial<Omit<CameraState, 'id'>> | null): { view: TracerView; timed: boolean } {
+    const px = this.pixelSize();
+    const size = scaledSize(px.width, px.height, scale);
+    // "After N seconds": the launcher stops the job between passes at the limit (or at the output's samples).
+    const timed = scale === 1 && this.limit.by === 'TIME';
+    return {
+      timed,
+      view: {
+        width: size.width,
+        height: size.height,
+        maxSamples: this.viewportSamples(state),
+        maxSeconds: timed ? this.limit.seconds : 0,
+        viewport: { viewW: this.viewW, viewH: this.viewH },
+        ...(patch ? { cameraPatch: patch } : {}),
+      },
+    };
+  }
+
   /**
    * Posts a job. `whole` says the bytes are the complete scene (`full=1`): the launcher then reads
    * them as such even without a MESH section, which is what an empty project writes; otherwise a
-   * viewport update the launcher cannot apply (409) is sent again whole.
+   * viewport update the launcher cannot apply (409 need-meshes) is sent again whole.
    */
-  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, whole: boolean, meshKey: string, again?: () => Uint8Array, finishBy?: FinishBy): Promise<number> {
-    const finish = finishBy ? `&finish=${finishBy.toLowerCase()}` : '';
-    const path = `/api/render?kind=${kind}${finish}&mesh=${meshKeyHash(meshKey)}&client=${this.client}`;
-    const send = (body: Uint8Array, full: boolean) => this.api.request(full ? `${path}&full=1` : path, { method: 'POST', body: body as Uint8Array<ArrayBuffer>, headers: { 'Content-Type': 'application/octet-stream' } });
+  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, whole: boolean, meshKey: string, again: (() => Uint8Array) | undefined, opts: { finish?: FinishBy; seq?: number; share?: number; signal?: AbortSignal; passes?: readonly PassKey[] }): Promise<number> {
+    const finish = opts.finish ? `&finish=${opts.finish.toLowerCase()}` : '';
+    const wanted = opts.passes?.length ? `&passes=${opts.passes.join(',')}` : '';
+    const order = opts.seq !== undefined ? `&seq=${opts.seq}` : '';
+    const share = opts.share ? `&share=${opts.share}` : '';
+    const path = `/api/render?kind=${kind}${finish}${wanted}&mesh=${meshKeyHash(meshKey)}&client=${this.client}${order}${share}`;
+    const send = (body: Uint8Array, full: boolean) =>
+      this.api.request(full ? `${path}&full=1` : path, { method: 'POST', body: body as Uint8Array<ArrayBuffer>, headers: { 'Content-Type': 'application/octet-stream' }, ...(opts.signal ? { signal: opts.signal } : {}) });
     let res = await send(bytes, whole);
-    if (res.status === 409 && again) res = await send(again(), true);
+    if (res.status === 409 && again) {
+      const why = await failure(res);
+      if (why.code !== 'need-meshes') throw new Error(why.message);
+      res = await send(again(), true);
+    }
     if (!res.ok) throw new Error(await failureText(res));
     return ((await res.json()) as { id: number }).id;
   }
@@ -357,85 +509,184 @@ export class NativeEngine {
     const t0 = performance.now();
     const gesture = this.gesture;
     const scale = this.interactive(t0) ? this.chooseGestureScale() : 1;
-    const px = this.pixelSize();
-    const size = scaledSize(px.width, px.height, scale);
-    // "After N seconds": the launcher stops the job between passes at the limit (or at the output's samples).
-    const timed = scale === 1 && this.limit.by === 'TIME';
-    const view: TracerView = {
-      width: size.width,
-      height: size.height,
-      maxSamples: this.viewportSamples(state),
-      maxSeconds: timed ? this.limit.seconds : 0,
-      viewport: { viewW: this.viewW, viewH: this.viewH },
-      ...(gesture?.patch ? { cameraPatch: gesture.patch } : {}),
-    };
+    const { view, timed } = this.viewOf(state, scale, gesture?.patch ?? null);
     const built = this.source.build(state, view);
     const meshes = built.meshKey !== this.loadedMeshKey;
     const update = built.bytes(false);
+    const share = this.shareThreads();
     const cur = this.job;
-    if (!meshes && cur && this.failure === null && cur.scale === scale && cur.acc.width === size.width && cur.acc.height === size.height && sameBytes(this.lastUpdate, update)) return;
+    // The same view, still followed (or done): it goes on.
+    if (!meshes && cur && (cur.alive || cur.done) && this.failure === null && cur.scale === scale && cur.share === share && cur.acc.width === view.width && cur.acc.height === view.height && sameBytes(this.lastUpdate, update)) return;
     const gen = ++this.gen;
+    // The view on screen stays until the new one has a pass; its long-poll stops now.
+    cur?.abort.abort();
     this.frameInFlight = scale > 1;
+    const posting = { gen, at: t0, abort: new AbortController() };
+    this.posting = posting;
     let id: number;
     try {
-      id = await this.post('viewport', meshes ? built.bytes(true) : update, meshes, built.meshKey, () => built.bytes(true), timed ? 'FIRST' : undefined);
+      id = await this.post('viewport', meshes ? built.bytes(true) : update, meshes, built.meshKey, () => built.bytes(true), {
+        ...(timed ? { finish: 'FIRST' as const } : {}),
+        seq: gen,
+        share,
+        signal: posting.abort.signal,
+      });
     } catch (err) {
-      if (gen === this.gen) {
-        this.failure = err instanceof Error ? err.message : String(err);
-        this.frameInFlight = false;
-      }
+      if (gen === this.gen) this.fail(err instanceof Error ? err.message : String(err));
+      return;
+    } finally {
+      if (this.posting === posting) this.posting = null;
+    }
+    if (gen !== this.gen) {
+      // Superseded while it was being posted (Fast mode, the watchdog): the launcher drops it.
+      this.deleteJob(id);
       return;
     }
-    if (gen !== this.gen) return;
     this.failure = null;
     this.loadedMeshKey = built.meshKey;
     this.lastUpdate = update;
-    const job: ViewJob = { id, gen, scale, acc: new Accumulator(size.width, size.height), pass: 0, samples: 0, seconds: 0, done: false, paused: false };
+    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, expectMs: 0, alive: true, abort: new AbortController() };
     this.job = job;
     this.dirty.clear();
-    for (;;) {
-      let frame: NativeFrame;
-      try {
-        const res = await this.api.request(`/api/render/${id}?after=${job.pass}`);
-        if (gen !== this.gen) return;
-        if (res.status === 404) return; // replaced or cancelled
-        if (!res.ok) throw new Error(await failureText(res));
-        frame = parseFrame(await res.arrayBuffer());
-      } catch (err) {
-        if (gen === this.gen) {
-          this.failure = err instanceof Error ? err.message : String(err);
-          this.frameInFlight = false;
+    this.shownPass = 0;
+    this.aliveAt = this.progressAt = performance.now();
+    this.pendingSince = 0;
+    try {
+      for (;;) {
+        const res = await this.api.request(`/api/render/${id}?after=${job.pass}`, { signal: job.abort.signal });
+        if (gen !== this.gen) {
+          discard(res);
+          return;
         }
-        return;
+        if (res.status === 404) {
+          // The launcher forgot it (replaced, cancelled, or it went unasked too long): post it again.
+          discard(res);
+          this.lost('the launcher no longer has the view');
+          return;
+        }
+        if (!res.ok) throw new Error(await failureText(res));
+        const frame = parseFrame(await res.arrayBuffer());
+        if (gen !== this.gen) return;
+        const now = performance.now();
+        this.aliveAt = now;
+        job.samples = frame.samples;
+        job.seconds = frame.seconds;
+        job.paused = (frame.flags & FLAG_PAUSED) !== 0;
+        job.shared = (frame.flags & FLAG_SHARED) !== 0;
+        job.threads = frame.threads;
+        // Waiting for a Render by choice is not a stall.
+        if (job.paused) this.progressAt = now;
+        if (frame.sums) {
+          job.acc.sum.set(frame.sums);
+          job.acc.samples.fill(frame.samples);
+          const first = job.pass === 0;
+          const counted = frame.pass - job.pass;
+          job.pass = frame.pass;
+          this.passes += Math.max(1, counted);
+          this.progressAt = now;
+          this.retries = 0;
+          this.watchdog.progressed();
+          if (this.pendingSince === 0) this.pendingSince = now;
+          // The next pass doubles, up to 16 samples: about that much longer than this one took per sample.
+          const per = frame.samples > 0 ? (frame.seconds * 1000) / frame.samples : 0;
+          job.expectMs = per * Math.min(16, Math.max(1, frame.samples));
+          if (scale > 1) {
+            this.presentAll = true;
+            if (first) {
+              this.lastFrameMs = performance.now() - t0;
+              this.lastScale = scale;
+              this.frames++;
+              this.frameInFlight = false;
+            }
+          } else for (const t of job.acc.tiles) this.dirty.add(t.index);
+        }
+        if (frame.flags & (FLAG_DONE | FLAG_CANCELLED | FLAG_FAILED)) {
+          if (frame.flags & FLAG_FAILED) this.fail('the render failed in the launcher');
+          else if (frame.flags & FLAG_CANCELLED) this.lost('the launcher stopped the view');
+          else job.done = true;
+          return;
+        }
       }
-      if (gen !== this.gen) return;
-      job.samples = frame.samples;
-      job.seconds = frame.seconds;
-      job.paused = (frame.flags & FLAG_PAUSED) !== 0;
-      if (frame.sums) {
-        job.acc.sum.set(frame.sums);
-        job.acc.samples.fill(frame.samples);
-        const first = job.pass === 0;
-        job.pass = frame.pass;
-        if (scale > 1) {
-          this.presentAll = true;
-          if (first) {
-            this.lastFrameMs = performance.now() - t0;
-            this.lastScale = scale;
-            this.frames++;
-            this.frameInFlight = false;
-          }
-        } else for (const t of job.acc.tiles) this.dirty.add(t.index);
-      }
-      if (frame.flags & (FLAG_DONE | FLAG_CANCELLED | FLAG_FAILED)) {
-        job.done = true;
-        if (frame.flags & FLAG_FAILED) this.failure = 'the render failed';
-        this.frameInFlight = false;
-        return;
-      }
-      // A newer view is waiting and this one is on screen: the next job replaces it.
-      if (this.restartWanted && job.pass > 0) return;
+    } catch (err) {
+      if (gen === this.gen && !isAbort(err)) this.fail(err instanceof Error ? err.message : String(err));
+    } finally {
+      job.alive = false;
+      if (gen === this.gen) this.frameInFlight = false;
     }
+  }
+
+  /** The launcher refused or failed the view: the meter says why and it is posted again a little later. */
+  private fail(reason: string): void {
+    this.failure = reason;
+    this.frameInFlight = false;
+    const wait = retryDelay(Math.max(1, this.retries));
+    this.retries++;
+    this.retryAt = performance.now() + wait;
+    this.lastUpdate = null;
+    console.warn(`[viewport] native: ${reason}; trying again in ${Math.round(wait / 1000)} s`);
+  }
+
+  /** The launcher dropped the view: it is posted again (at once the first time). */
+  private lost(reason: string): void {
+    this.frameInFlight = false;
+    const wait = retryDelay(this.retries);
+    this.retries++;
+    this.retryAt = performance.now() + Math.max(1, wait);
+    this.lastUpdate = null;
+    console.warn(`[viewport] native: ${reason}; posting it again`);
+  }
+
+  /** The watchdog: the view in flight must answer, get passes and be drawn; if not, it starts again. */
+  private check(now: number): void {
+    // A refused view is being retried (and the meter says so).
+    if (this.retryAt || this.viewW <= 0) return;
+    const wd = this.watchdog;
+    const p = this.posting;
+    if (p) {
+      if (now - p.at > wd.limit(WATCHDOG.startMs)) this.fire(`the launcher did not take the new view in ${Math.round((now - p.at) / 1000)} s`, now);
+      return;
+    }
+    const job = this.job;
+    if (!job || job.done || job.gen !== this.gen) return;
+    if (!job.alive) {
+      if (!this.restartWanted) this.fire('the view stopped being followed', now);
+      return;
+    }
+    const idleLimit = wd.limit(Math.max(WATCHDOG.idleMs, 4 * job.expectMs));
+    if (now - this.aliveAt > wd.limit(WATCHDOG.silentMs)) this.fire(`the launcher has not answered for ${Math.round((now - this.aliveAt) / 1000)} s`, now);
+    else if (now - this.progressAt > idleLimit) this.fire(`no new pass for ${Math.round((now - this.progressAt) / 1000)} s`, now);
+    else if (this.pendingSince && now - this.pendingSince > wd.limit(WATCHDOG.displayMs)) this.fire(`pass ${job.pass} arrived ${Math.round((now - this.pendingSince) / 1000)} s ago and is not drawn`, now);
+  }
+
+  /** Called by a timer: frames that arrive must be drawn even if the page's animation loop stopped. */
+  private checkFrames(): void {
+    if (!this.active || typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+    const now = performance.now();
+    if (now - this.lastFrameCall < WATCHDOG.frameMs) return;
+    console.warn(`[viewport] watchdog (native): no frame drawn for ${Math.round((now - this.lastFrameCall) / 1000)} s while the page is visible; drawing from a timer`);
+    this.frame();
+  }
+
+  private fire(reason: string, now: number): void {
+    this.watchdog.fire(reason, now);
+    // What the launcher was doing goes to its log (and to the console), for the report.
+    const ask = new AbortController();
+    const timeout = setTimeout(() => ask.abort(), 5000);
+    void this.api
+      .request(`/api/render/state?log=1&reason=${encodeURIComponent(`watchdog: ${reason}`.slice(0, 180))}`, { signal: ask.signal })
+      .then((res) => res.text())
+      .then((text) => console.warn(`[viewport] launcher state: ${text}`))
+      .catch(() => console.warn('[viewport] the launcher did not answer for its state either'))
+      .finally(() => clearTimeout(timeout));
+    this.gen++;
+    this.job?.abort.abort();
+    this.posting?.abort.abort();
+    this.posting = null;
+    this.frameInFlight = false;
+    this.lastUpdate = null;
+    this.restartWanted = true;
+    this.aliveAt = this.progressAt = now;
+    this.pendingSince = 0;
   }
 
   private displayCurve(): DisplayCurve {
@@ -448,6 +699,13 @@ export class NativeEngine {
     return this.curve;
   }
 
+  /** The job's pass is on the canvas. */
+  private shown(job: ViewJob): void {
+    this.shownPass = job.pass;
+    this.shownKey = job.scale === 1 ? job.key : null;
+    this.pendingSince = 0;
+  }
+
   private present(): void {
     const job = this.job;
     const ctx = this.ctx;
@@ -455,7 +713,10 @@ export class NativeEngine {
     const acc = job.acc;
     const curve = this.displayCurve();
     if (job.scale > 1) {
-      if (!this.presentAll) return;
+      if (!this.presentAll) {
+        if (job.pass > this.shownPass) this.shown(job);
+        return;
+      }
       this.presentAll = false;
       const low = this.low!;
       if (low.width !== acc.width || low.height !== acc.height) {
@@ -469,11 +730,14 @@ export class NativeEngine {
       ctx.imageSmoothingQuality = 'low';
       ctx.drawImage(low, 0, 0, this.canvas.width, this.canvas.height);
       ctx.restore();
+      this.shown(job);
       return;
     }
     this.presentAll = false;
+    // An image of another size than the canvas cannot be drawn tile by tile: the watchdog notices.
     if (acc.width !== this.canvas.width || acc.height !== this.canvas.height) return;
     const t0 = performance.now();
+    let drawn = 0;
     for (const i of this.dirty) {
       if (performance.now() - t0 > PRESENT_BUDGET_MS) break;
       this.dirty.delete(i);
@@ -481,14 +745,48 @@ export class NativeEngine {
       if (!this.tileImage || this.tileImage.width !== t.w || this.tileImage.height !== t.h) this.tileImage = new ImageData(t.w, t.h);
       acc.tileBytes(i, curve, this.tileImage.data);
       ctx.putImageData(this.tileImage, t.x, t.y);
+      drawn++;
     }
+    if (this.dirty.size === 0 && job.pass > this.shownPass) this.shown(job);
+    // Drawing goes on (a big image takes a few frames): not a stall.
+    else if (drawn > 0 && this.pendingSince) this.pendingSince = t0;
+  }
+
+  /** The scene of the project as the viewport would render it now (full resolution), cached per state. */
+  private wantKey(): string | undefined {
+    const state = this.state;
+    if (!state || this.viewW <= 0) return undefined;
+    const w = this.want;
+    if (w && w.state === state && w.w === this.viewW && w.h === this.viewH && w.dpr === this.dpr && w.limit === this.limit) return w.key;
+    const key = bytesKey(this.source.build(state, this.viewOf(state, 1, null).view).bytes(false));
+    this.want = { state, w: this.viewW, h: this.viewH, dpr: this.dpr, limit: this.limit, key };
+    return key;
+  }
+
+  private issue(now: number): ViewportIssue | undefined {
+    if (this.failure !== null) return { kind: 'FAILED', detail: this.failure, ...(this.retryAt ? { seconds: Math.max(0, Math.ceil((this.retryAt - now) / 1000)) } : {}) };
+    const p = this.posting;
+    if (p && now - p.at > 3000) return { kind: 'WAITING', detail: 'the launcher has not taken the view yet', seconds: Math.round((now - p.at) / 1000) };
+    const job = this.job;
+    if (job && job.alive && !job.done && now - this.aliveAt > 3000) return { kind: 'WAITING', detail: 'the launcher has not answered', seconds: Math.round((now - this.aliveAt) / 1000) };
+    const restarted = this.watchdog.recent(now);
+    if (restarted) return { kind: 'RESTARTED', detail: restarted };
+    return undefined;
   }
 
   status(): EngineStatus & { native: true; threads: number; isa: string } {
     const job = this.job;
+    const now = performance.now();
     const full = job !== null && job.scale === 1 && job.pass > 0;
     const samples = full ? job.samples : 0;
     const max = this.state ? this.viewportSamples(this.state) : 1;
+    // While a Render runs: what the launcher says the job does, or what it was asked to do (nothing to say
+    // once the view has converged: it does not render).
+    const share = this.shareThreads();
+    const live = job !== null && !job.done;
+    const renderShare = job?.shared ? 'SHARED' : job?.paused ? 'PAUSED' : this.rendering > 0 && (live || !job) ? (share > 0 ? 'SHARED' : 'PAUSED') : undefined;
+    const issue = this.issue(now);
+    const wantKey = this.wantKey();
     return {
       samples,
       seconds: full ? job.seconds : 0,
@@ -503,8 +801,15 @@ export class NativeEngine {
       scale: job ? job.scale : 1,
       frames: this.frames,
       ...(this.lastFrameMs !== null ? { frameMs: this.lastFrameMs } : {}),
-      rendering: this.rendering > 0 || (job?.paused ?? false),
+      rendering: this.rendering > 0 || (job?.paused ?? false) || (job?.shared ?? false),
+      ...(renderShare ? { renderShare } : {}),
+      ...(renderShare === 'SHARED' ? { share: { n: job?.shared && job.threads > 0 ? job.threads : share, of: this.info.threads } } : {}),
       ...(full ? { pixels: job.acc.width * job.acc.height } : {}),
+      ...(issue ? { issue } : {}),
+      passes: this.passes,
+      watchdog: this.watchdog.fires,
+      ...(this.shownKey ? { shownKey: this.shownKey } : {}),
+      ...(wantKey ? { wantKey } : {}),
     };
   }
 
@@ -527,10 +832,15 @@ export class NativeEngine {
     if (signal?.aborted) throw abortError();
     this.rendering++;
     let id: number | null = null;
+    let cancelled = false;
     const cancel = () => {
-      if (id !== null) void this.api.request(`/api/render/${id}`, { method: 'DELETE' }).catch(() => undefined);
+      if (id === null || cancelled) return;
+      cancelled = true;
+      this.deleteJob(id);
     };
     signal?.addEventListener('abort', cancel);
+    // Every request carries the signal: Pause or Stop rejects at once, whatever the launcher does.
+    const init = signal ? { signal } : {};
     try {
       const view: TracerView = {
         width: opts.width,
@@ -541,21 +851,29 @@ export class NativeEngine {
         ...(opts.camera ? { camera: opts.camera } : {}),
         ...(opts.time !== undefined ? { time: opts.time } : {}),
         ...(opts.advanced ? { advanced: opts.advanced } : {}),
+        ...(opts.passes?.length ? { passes: opts.passes } : {}),
       };
       const built = this.source.build(state, view);
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
       const budget: PassBudget = { finishBy: opts.finishBy ?? (opts.maxSeconds > 0 ? 'FIRST' : 'SAMPLES'), maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds };
       opts.onProgress?.({ jobId: null, progress: 0, samples: 0, seconds: 0 });
-      id = await this.post('final', built.bytes(true), true, built.meshKey, undefined, budget.finishBy);
+      id = await this.post('final', built.bytes(true), true, built.meshKey, undefined, { finish: budget.finishBy, ...init, ...(opts.passes?.length ? { passes: opts.passes } : {}) });
+      this.finals.add(id);
       if (signal?.aborted) {
         cancel();
         throw abortError();
       }
       let pass = 0;
       for (;;) {
-        const res = await this.api.request(`/api/render/${id}?after=${pass}&data=0`);
-        if (signal?.aborted) throw abortError();
-        if (!res.ok) throw new Error(res.status === 404 ? 'the render was interrupted' : await failureText(res));
+        const res = await this.api.request(`/api/render/${id}?after=${pass}&data=0`, init);
+        if (signal?.aborted) {
+          discard(res);
+          throw abortError();
+        }
+        if (!res.ok) {
+          if (res.status === 404) discard(res);
+          throw new Error(res.status === 404 ? 'the render was interrupted' : await failureText(res));
+        }
         const f = parseFrame(await res.arrayBuffer());
         pass = f.pass;
         const progress: RenderProgress = { jobId: null, progress: budgetProgress(budget, f.samples, f.seconds * 1000), samples: f.samples, seconds: f.seconds };
@@ -564,10 +882,12 @@ export class NativeEngine {
         if (f.flags & FLAG_FAILED) throw new Error('the render failed');
         if (f.flags & FLAG_DONE) break;
       }
-      const res = await this.api.request(`/api/render/${id}`);
+      const res = await this.api.request(`/api/render/${id}`, init);
       if (!res.ok) throw new Error(await failureText(res));
       const f = parseFrame(await res.arrayBuffer());
-      void this.api.request(`/api/render/${id}`, { method: 'DELETE' }).catch(() => undefined);
+      // The passes are read before the job is let go (the launcher keeps them for the AI all the same).
+      const passes = opts.passes?.length ? await this.passesOf(id, f.width, f.height, init) : undefined;
+      this.deleteJob(id);
       if (!f.sums) throw new Error('the render has no image');
       const tone = this.source.tone(state);
       const data = await exactBytesSliced(f.sums, f.width, f.height, f.samples, tone.exposureEv, tone.tonemap);
@@ -582,10 +902,40 @@ export class NativeEngine {
         tonemap: tone.tonemap,
         // The same f32 sums the pool keeps: 16-bit PNG and EXR are written from them.
         ...(opts.keepLinear ? { sum: f.sums } : {}),
+        ...(passes ? { passes } : {}),
+        renderId: id,
       };
+    } catch (err) {
+      // Aborted (Pause, Stop): the launcher stops the job, and the caller hears it as an abort.
+      if (signal?.aborted || isAbort(err)) {
+        cancel();
+        throw abortError();
+      }
+      throw err;
     } finally {
+      if (id !== null) this.finals.delete(id);
       signal?.removeEventListener('abort', cancel);
       this.rendering--;
+    }
+  }
+
+  /**
+   * The passes the launcher kept for final render `id`. A launcher that has none (one older than X2, or a
+   * failure) leaves the render without them, and says so in the console: the image is still the render.
+   */
+  private async passesOf(id: number, width: number, height: number, init: RequestInit): Promise<RenderPasses | undefined> {
+    try {
+      const res = await this.api.request(`/api/render/${id}/passes`, init);
+      // Every body is read (or its error text): an unread one would hold one of the six connections.
+      if (!res.ok) throw new Error(await failureText(res));
+      const p = parsePasses(await res.arrayBuffer());
+      if (p.id !== id || p.passes.width !== width || p.passes.height !== height) throw new Error(`passes of render ${p.id}, ${p.passes.width} × ${p.passes.height}`);
+      return p.passes;
+    } catch (err) {
+      // Pause or Stop while they come: an abort, like the rest of the render.
+      if (isAbort(err) || init.signal?.aborted) throw err;
+      console.warn(`render ${id}: no passes (${err instanceof Error ? err.message : String(err)})`);
+      return undefined;
     }
   }
 
@@ -599,7 +949,15 @@ export class NativeEngine {
     return null;
   }
 
+  /** The page goes away: the launcher stops this window's jobs at once (the requests outlive the page). */
+  release(): void {
+    for (const id of this.finals) this.deleteJob(id);
+    if (this.job && !this.job.done) this.deleteJob(this.job.id);
+  }
+
   dispose(): void {
+    this.release();
+    this.finals.clear();
     this.setActive(false);
   }
 }
