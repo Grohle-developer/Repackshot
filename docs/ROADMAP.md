@@ -647,10 +647,13 @@ con swiftshader: el visor *Completo* converge a 3,6 muestras/s en
 1000 × 875 (3,15 M caminos/s con 3 workers y SIMD) y orbita a 13 fps a ¼
 de resolución; *Render* de 1920 × 1080 a 128 muestras, 84–111 s. El
 render en modo *Rápido* sale del trazador (ruido de muestreo y sombra de
-contacto medidos). Brillo *Completo* frente a *Rápido*: 0,95, dentro de
-la tolerancia de ±10 %. Fotometría común en `src/core/photometry.ts`:
-flujo de un panel = potencia × tamaño² / 4 para igualar la irradiancia
-del rig; sensor de 36 mm en el lado largo. Capturas
+contacto medidos). Brillo *Completo* frente a *Rápido*: 0,95 (0,94 tras
+la corrección de abajo), dentro de la tolerancia de ±10 %. Fotometría
+común en `src/core/photometry.ts`: flujo de un panel = π/4 × potencia ×
+tamaño² (convención de Cycles; **corregido después de E4**: con `/ 4` los
+paneles daban π veces menos luz que en Blender y la cúpula los tapaba, de
+modo que cambiar de montaje apenas cambiaba el render; test de regresión
+en `tests/photometry.test.ts`); sensor de 36 mm en el lado largo. Capturas
 `docs/ui/viewport-full.png`, `viewport-fast.png`, `render-output.png`.
 
 Lo que no encajaba: nueva exportación `rt_scene_update`
@@ -921,6 +924,16 @@ píxeles de la pieza quemados a exposición 0; luminancia media de la pieza
 dentro de ±0.3 EV entre montajes del mismo tipo de producto; nada de
 zonas negras por encima del 5 % en fondos claros; la miniatura tiene el
 brillo donde el render.
+
+**Datos de partida (corrección de la potencia de las luces, tras U5).**
+Las recetas se evalúan ya con la convención de Cycles. Con JEWELLERY, la
+irradiancia de los focos frente a la de la cúpula sobre una cara hacia
+arriba es 2,31× en campo lejano y 1,4–1,9× integrando el panel; la cúpula
+sigue dando cerca de la mitad del brillo de la pieza, igual que en
+Blender con los mismos valores. REMBRANDT frente a NEON_NOIR cambian el
+48 % de los píxeles de la pieza (77 % sin cúpula). El equilibrio entre
+focos y cúpula por tipo de producto lo decide Fable aquí;
+`tools/setup-contrast.mjs` lo mide.
 
 **Depende de.** E5, L2.
 

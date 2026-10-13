@@ -139,7 +139,8 @@ Contratos (ver `src/data/types.ts`, que manda sobre este resumen):
   izquierda de cámara, `±90` laterales, `180` detrás de la pieza. `size`,
   `sizeY` y `dist` en **tamaños de pieza**: la misma receta vale para un
   anillo y para un sofá. `share` (montajes) es la fracción de la
-  irradiancia total; `energy` (estudios) vatios a tamaño 1. `kelvin` o
+  irradiancia total; `energy` (estudios) vatios a tamaño 1, en el sentido
+de Cycles: un panel de potencia P y área A tiene radiancia P / (4 A). `kelvin` o
   `color`; `color` gana. `camera = true` es un panel luminoso que la
   cámara ve (campo claro).
 - **`StudioPreset`** — tipo de producto: tamaño típico, focal, diafragma,
@@ -367,8 +368,9 @@ sin `MESH` que conserva las mallas cargadas y sus BVH (cámara, luces,
 materiales, entorno, render cambian sin reconstruir geometría); por eso
 las mallas declaran siempre material 0 y el material real va en `INST`,
 que se escribe siempre. Unidades: milímetros, Z arriba, sensor de 36 mm
-en el lado largo; flujo de un panel = potencia del rig × tamaño² / 4
-(`src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits (texturas, HDRI) viajan como secciones
+en el lado largo; flujo de un panel = π/4 × potencia del rig × tamaño²
+(convención de las luces de área de Blender Cycles, L = P / (4 A), con la
+que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits (texturas, HDRI) viajan como secciones
 propias cuando lleguen (E5, M2).
 
 ### 5.3 · En el navegador: workers
