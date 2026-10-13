@@ -2,7 +2,7 @@
 // sections and decodes each one back into the shapes of src/io/rsb.ts, so a round trip can be
 // compared field by field. Layout: engine/crates/rt-core/src/scene/rsb.rs.
 
-import type { RsbCamera, RsbEnvironment, RsbFloor, RsbInstance, RsbLight, RsbMaterial, RsbMesh, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
+import type { RsbBitmap, RsbCamera, RsbEnvironment, RsbFloor, RsbInstance, RsbLight, RsbMaterial, RsbMesh, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
 
 export interface Section {
   tag: string;
@@ -52,8 +52,14 @@ export function readCamera(p: DataView): RsbCamera {
 
 export function readMaterial(p: DataView): RsbMaterial {
   const c = new Cursor(p);
-  const m = { kind: c.u32(), baseColor: c.vec(), metallic: c.f32(), roughness: c.f32(), ior: c.f32(), transmission: c.f32(), coat: c.f32(), coatRoughness: c.f32(), emission: c.vec(), emissionPower: c.f32(), flags: 0 };
+  const m: RsbMaterial = { kind: c.u32(), baseColor: c.vec(), metallic: c.f32(), roughness: c.f32(), ior: c.f32(), transmission: c.f32(), coat: c.f32(), coatRoughness: c.f32(), emission: c.vec(), emissionPower: c.f32(), flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0 };
   m.flags = c.remaining >= 4 ? c.u32() : 0;
+  // E5 fields.
+  if (c.remaining >= 12) {
+    m.opacity = c.f32();
+    m.anisotropy = c.f32();
+    m.absorptionMm = c.f32();
+  }
   return m;
 }
 
@@ -85,7 +91,45 @@ export function readLight(p: DataView): RsbLight {
 
 export function readEnvironment(p: DataView): RsbEnvironment {
   const c = new Cursor(p);
-  return { kind: c.u32(), floor: c.f32(), horizon: c.f32(), zenith: c.f32(), strength: c.f32(), rotationDeg: c.f32(), backgroundColor: c.vec(), backgroundMode: c.u32() };
+  const e: RsbEnvironment = {
+    kind: c.u32(),
+    floor: c.f32(),
+    horizon: c.f32(),
+    zenith: c.f32(),
+    strength: c.f32(),
+    rotationDeg: c.f32(),
+    backgroundColor: c.vec(),
+    backgroundMode: c.u32(),
+    hdriMap: 0xffffffff,
+    backplateMap: 0xffffffff,
+    backplateFit: 0,
+    skyTurbidity: 3,
+    sunAzimuthDeg: 0,
+    sunElevationDeg: 45,
+    backplateRect: [0, 0, 1, 1],
+  };
+  // E5 fields.
+  if (c.remaining >= 40) {
+    e.hdriMap = c.u32();
+    e.backplateMap = c.u32();
+    e.backplateFit = c.u32();
+    e.skyTurbidity = c.f32();
+    e.sunAzimuthDeg = c.f32();
+    e.sunElevationDeg = c.f32();
+    e.backplateRect = [c.f32(), c.f32(), c.f32(), c.f32()];
+  }
+  return e;
+}
+
+/** A BMAP section (E5): format, size, the data (without its padding). */
+export function readBitmap(p: DataView): RsbBitmap {
+  const c = new Cursor(p);
+  const format = c.u32();
+  const width = c.u32();
+  const height = c.u32();
+  const len = c.u32();
+  const data = new Uint8Array(p.buffer.slice(p.byteOffset + 16, p.byteOffset + 16 + len));
+  return { format, width, height, data };
 }
 
 export function readFloor(p: DataView): RsbFloor {
@@ -102,12 +146,13 @@ export function readRender(p: DataView): RsbRender {
 }
 
 /** The whole file (singletons that are missing are left undefined). */
-export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: RsbMaterial[]; meshes: RsbMesh[]; lights: RsbLight[]; instances: RsbInstance[] | null; tags: string[] } {
-  const out: Partial<RsbScene> & { materials: RsbMaterial[]; meshes: RsbMesh[]; lights: RsbLight[]; instances: RsbInstance[] | null; tags: string[] } = {
+export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: RsbMaterial[]; meshes: RsbMesh[]; lights: RsbLight[]; instances: RsbInstance[] | null; bitmaps: RsbBitmap[]; tags: string[] } {
+  const out: Partial<RsbScene> & { materials: RsbMaterial[]; meshes: RsbMesh[]; lights: RsbLight[]; instances: RsbInstance[] | null; bitmaps: RsbBitmap[]; tags: string[] } = {
     materials: [],
     meshes: [],
     lights: [],
     instances: null,
+    bitmaps: [],
     tags: [],
   };
   for (const s of sections(bytes)) {
@@ -136,6 +181,9 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
         break;
       case 'RNDR':
         out.render = readRender(s.payload);
+        break;
+      case 'BMAP':
+        out.bitmaps.push(readBitmap(s.payload));
         break;
     }
   }

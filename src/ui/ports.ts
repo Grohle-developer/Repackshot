@@ -12,6 +12,7 @@ import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
+import type { ImageRef } from '../core/images';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
 import type { PerfResult, Tool } from './ui-state';
@@ -221,7 +222,7 @@ export interface ProjectFault {
 /** Something a load noticed that the person should hear about. */
 export interface ProjectWarning {
   /** This many parts have no geometry in the file (a project from before meshes were embedded). */
-  code: 'MISSING_MESHES';
+  code: 'MISSING_MESHES' | 'MISSING_IMAGES';
   count: number;
 }
 
@@ -280,6 +281,17 @@ export interface LibraryServices {
   import(text: string, lib: Library): ImportResult;
 }
 
+/** The environment's image files (src/io/hdri.ts, which the interface cannot import). */
+export interface ImagesPort {
+  /**
+   * Reads an HDRI (.hdr or .exr) into the image registry; rejects with an error whose `code` is FORMAT,
+   * DAMAGED, UNSUPPORTED or TOO_LARGE (and a message naming what is not supported).
+   */
+  loadHdri(file: File): Promise<ImageRef>;
+  /** Reads a background image (.png, .jpg, .webp) into the image registry; rejects like `loadHdri`. */
+  loadBackplate(file: File): Promise<ImageRef>;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -317,4 +329,6 @@ export interface AppServices {
   desktop: DesktopPort | null;
   /** A licence text shipped with the build (`licences/<file>`, copied by tools/licences.mjs); null when missing. */
   licenceText(file: string): Promise<string | null>;
+  /** The environment's HDRI and background image files. */
+  images: ImagesPort;
 }

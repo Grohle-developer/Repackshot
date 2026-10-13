@@ -47,6 +47,7 @@ import {
 } from '../core/library';
 import { LIBRARY_PREFIX, isLibraryKey } from '../core/lighting';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
+import { imageIdsInUse, retainImages } from '../core/images';
 import { retainMeshes } from '../core/meshes';
 import { meshIdsInUse, resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
 import {
@@ -389,8 +390,9 @@ export async function importDialog(ctx: Ctx): Promise<void> {
 function replaceProject(ctx: Ctx, state: ProjectState): void {
   cancelImport(ctx);
   ctx.store.reset(state);
-  // History is gone with the old project, and so is the geometry only it used.
+  // History is gone with the old project, and so are the geometry and the images only it used.
   retainMeshes(meshIdsInUse(state));
+  retainImages(imageIdsInUse(state.environment));
   ctx.ui.set({ catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null });
 }
 
@@ -517,7 +519,7 @@ export async function openProjectFile(ctx: Ctx, file: File, handle?: Promise<unk
     // Language and theme are the person's, not the project's.
     replaceProject(ctx, { ...state, meta: { ...state.meta, lang: cur.meta.lang, theme: cur.meta.theme } });
     ctx.ui.toast(t('project.opened', { name: file.name }));
-    for (const w of warnings) ctx.ui.toast(t('project.warn.missingMeshes', { n: w.count }));
+    for (const w of warnings) ctx.ui.toast(t(w.code === 'MISSING_IMAGES' ? 'project.warn.missingImages' : 'project.warn.missingMeshes', { n: w.count }));
     void place.then((h) => ctx.services.projectFiles.adopt(h ?? null));
   });
 }
@@ -581,13 +583,67 @@ export function readDrop(dt: DataTransfer | null): { files: File[]; handles: Pro
   return { files, handles };
 }
 
-/** Files dropped on the window: a project opens, models go to the import sheet. */
+// --- Environment images (E5) -------------------------------------------------------------------
+
+const HDRI_ACCEPT = '.hdr,.exr,.rgbe,.pic';
+const PLATE_ACCEPT = '.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp';
+
+/** An HDRI file by its name (dropped on the window it lights the scene instead of being imported). */
+export function isHdriFile(file: File): boolean {
+  return /\.(hdr|exr|rgbe|pic)$/i.test(file.name);
+}
+
+/** The toast for an image the environment could not take (the reader's error code: io/hdri.ts ImageFileError). */
+export function imageErrorText(name: string, err: unknown, plate: boolean): string {
+  const code = (err as { code?: unknown } | null)?.code;
+  const detail = err instanceof Error ? err.message : String(err);
+  if (code === 'FORMAT') return t(plate ? 'env.error.plateFormat' : 'env.error.hdriFormat', { name });
+  if (code === 'TOO_LARGE') return t('env.error.tooLarge', { name });
+  if (code === 'UNSUPPORTED') return t('env.error.unsupported', { name, detail });
+  return t('env.error.damaged', { name, detail });
+}
+
+/** Environment ▸ Load HDRI…: the file lights the scene (kind HDRI), in one undoable step. */
+export async function loadEnvironmentHdri(ctx: Ctx, file?: File): Promise<boolean> {
+  const f = file ?? (await pickFiles(HDRI_ACCEPT))[0];
+  if (!f) return false;
+  try {
+    const ref = await ctx.services.images.loadHdri(f);
+    ctx.store.dispatch({ type: 'env/set', patch: { kind: 'HDRI', hdri: ref }, label: L('undo.envHdri', { name: ref.name }) });
+    return true;
+  } catch (err) {
+    ctx.ui.toast(imageErrorText(f.name, err, false));
+    return false;
+  }
+}
+
+/** Environment ▸ Background image ▸ Load image…: the picture behind the part (background BACKPLATE). */
+export async function loadBackplateImage(ctx: Ctx, file?: File): Promise<boolean> {
+  const f = file ?? (await pickFiles(PLATE_ACCEPT))[0];
+  if (!f) return false;
+  try {
+    const ref = await ctx.services.images.loadBackplate(f);
+    ctx.store.dispatch({ type: 'env/set', patch: { background: 'BACKPLATE', backplate: ref }, label: L('undo.envPlate', { name: ref.name }) });
+    return true;
+  } catch (err) {
+    ctx.ui.toast(imageErrorText(f.name, err, true));
+    return false;
+  }
+}
+
+/** Files dropped on the window: a project opens, an HDRI lights the scene, models go to the import sheet. */
 export function dropFiles(ctx: Ctx, files: readonly File[], handles: readonly Promise<unknown>[] = []): void {
   const i = files.findIndex(isProjectFile);
   if (i >= 0) {
     if (files.length > 1) ctx.ui.toast(t('project.dropIgnored'));
     void openProjectFile(ctx, files[i], handles[i]);
-  } else if (files.length > 0) void importFiles(ctx, files);
+    return;
+  }
+  // An HDRI lights the scene; the other files are models.
+  const hdri = files.find(isHdriFile);
+  if (hdri) void loadEnvironmentHdri(ctx, hdri);
+  const models = files.filter((f) => !isHdriFile(f));
+  if (models.length > 0) void importFiles(ctx, models);
 }
 
 /** The engine's scene for the output image, as the RSB file `rt` renders on the command line. */

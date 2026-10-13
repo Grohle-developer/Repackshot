@@ -556,6 +556,16 @@ const services: AppServices = {
       return null;
     }
   },
+  images: {
+    async loadHdri(file) {
+      const { loadHdri } = await import('./io/hdri');
+      return loadHdri(file.name, new Uint8Array(await file.arrayBuffer()));
+    },
+    async loadBackplate(file) {
+      const { loadBackplate } = await import('./io/hdri');
+      return loadBackplate(file.name, new Uint8Array(await file.arrayBuffer()));
+    },
+  },
 };
 
 const app = mountApp(appEl, store, ui, services);

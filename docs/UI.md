@@ -284,9 +284,20 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    fase del motor).
 3. **Entorno** — Tipo: *Cúpula de estudio* (procedural, por defecto),
    *Cielo* (sol y cielo procedurales), *Plano* (color liso), *Archivo
-   HDRI*. Intensidad, rotación. Fondo: *El mismo entorno*, *Color*
-   (muestra), *Transparente*, *Imagen de fondo*. Sombra en el suelo y
-   reflejo en el suelo (intensidad).
+   HDRI*. Con *Archivo HDRI*, botón *Cargar HDRI…* (`.hdr`, `.exr`) y
+   debajo el nombre y el tamaño del archivo, o *Sin HDRI cargado: ilumina
+   la cúpula de estudio*; soltar un `.hdr` o `.exr` en la ventana hace lo
+   mismo. Con *Cielo*, *Bruma* (turbidez) y, si el montaje no tiene foco
+   de sol, *Azimut del sol* y *Altura del sol*; si lo tiene, una nota dice
+   que el sol del montaje coloca el del cielo. Intensidad, rotación (se
+   oculta con *Cielo*: lo coloca su sol). Fondo: *El mismo entorno*,
+   *Color* (muestra), *Transparente*, *Imagen de fondo*; con esta última,
+   *Cargar imagen…* (PNG, JPEG, WebP), su nombre y tamaño, *Encaje*
+   (*Llenar · Encajar · Estirar*, dentro del marco de salida) y el color,
+   que se ve alrededor de la imagen encajada o en su lugar mientras no hay
+   ninguna. Un archivo que no se puede leer se avisa en un *toast* que
+   dice qué le pasa. Sombra en el suelo y reflejo en el suelo
+   (intensidad).
 4. **Cámara** — Preset de óptica (8 `LENS_PRESETS`), focal en mm (campo
    arrastrable), diafragma (f/), distancia de enfoque + botón *Enfocar
    con clic*, interruptor Perspectiva / Ortográfica, *Encuadrar*, y
@@ -303,7 +314,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    4 columnas con el nombre debajo, filtro por texto. Clic asigna a la
    selección al nivel elegido (§4.1); arrastrar también vale. Debajo, los
    **parámetros** de la familia del material: color, metal, rugosidad,
-   barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; madera
+   barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; vidrio
+   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm y
+   *Paredes*: *Macizo · Pared fina*); madera
    (dos colores, densidad de anillos…); tela (dos colores de hilo, tipo de
    tejido, hilos por cm, pelusa); emisor (tipo, temperatura, potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material
@@ -718,7 +731,8 @@ Lo que **sí** debe funcionar de verdad en U1:
 - Entorno: cúpula procedural (gradiente suelo → horizonte → cenit con los
   valores de `src/data/environment.ts`), color plano, transparente;
   intensidad y rotación. *Cielo* y *Archivo HDRI* pueden quedar como
-  opciones presentes pero marcadas *próximamente* en auxiliar.
+  opciones presentes pero marcadas *próximamente* en auxiliar (U1; desde
+  E5 funcionan, con la imagen de fondo).
 - Imagen: exposición y transformada de vista aplicadas al visor; el resto
   guardado en el estado.
 - Animación: en U1, planos, movimientos con frase, presets, asistente y

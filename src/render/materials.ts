@@ -1,6 +1,8 @@
 // Material instances to three.js MeshPhysicalMaterial, shared by the
-// viewport and the thumbnail renderer. U1 approximations: wood and fabric
-// are flat colours, fuzz is sheen, wear is not drawn.
+// viewport and the thumbnail renderer. Approximations of the preview: wood and
+// fabric are flat colours, fuzz is sheen, wear is not drawn; the engine draws
+// glass (refraction, absorption, thin walls), the clear coat, opacity and
+// anisotropy (E5).
 
 import * as THREE from 'three';
 import { kelvinToRgb } from '../core/light-math';
@@ -62,14 +64,19 @@ export function applyMaterial(m: THREE.MeshPhysicalMaterial, inst: MaterialInsta
       break;
     }
     case 'GLASS': {
+      // As the engine (io/rsb.ts materialToRsb): the colour is what light keeps after `absorptionMm` inside
+      // (0: a surface tint); a thin wall does not refract.
       const base = rgbOf(p.baseColor, [1, 1, 1]);
-      setLinear(m.color, [1, 1, 1]);
+      const absorption = Math.max(0, num(p.absorptionMm, 50));
       m.roughness = num(p.roughness, 0);
       m.ior = num(p.ior, 1.52);
       m.transmission = num(p.transmission, 1);
-      m.thickness = partSizeMm * 0.06;
-      setLinear(m.attenuationColor, base);
-      m.attenuationDistance = partSizeMm * 0.25;
+      m.thickness = p.walls === 'THIN' ? 0 : partSizeMm * 0.06;
+      if (absorption > 0 && p.walls !== 'THIN') {
+        setLinear(m.color, [1, 1, 1]);
+        setLinear(m.attenuationColor, base);
+        m.attenuationDistance = absorption;
+      } else setLinear(m.color, base);
       break;
     }
     case 'WOOD': {

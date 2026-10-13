@@ -22,6 +22,8 @@ binary-ninja/
 
 # Render caches and large local assets (keep the repo lean)
 *.exr
+# ...except the small OpenEXR test fixtures of the readers (tools/exr-fixtures.mjs writes them).
+!tests/fixtures/exr-*.exr
 *.hdr.bak
 render-output/
 

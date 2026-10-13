@@ -708,7 +708,7 @@ salía como un disco de 31°, cuando en EZ Packshot está en **grados**
 *Render* **ya no cae a la vista previa** cuando falta `rt.wasm`: lo dice
 y no renderiza, como decidió el usuario.
 
-## E5 · Dieléctricos, emisores, barniz, cielo, HDRI — **Opus**
+## E5 · Dieléctricos, emisores, barniz, cielo, HDRI — **Opus** — hecha
 
 **Qué.** En `rt-core`: transmisión con IOR y absorción (vidrio, acrílico,
 policarbonato, tintado), rugosidad en transmisión; barniz como capa
@@ -729,6 +729,83 @@ produce el campo claro del montaje BACKLIT; test de cielo: cenit frente a
 horizonte en el orden esperado y color del sol de 5200 K; el lector HDR
 reproduce un fichero de prueba generado por el propio escritor; hoja de
 contactos con los tres montajes SKY y los de campo claro.
+
+**Hecho.** En `rt-core`: la parte `transmission` del material principal es
+vidrio de verdad, transmisión GGX lisa o rugosa (Walter et al. 2007) con el
+Fresnel dieléctrico exacto, reflexión total interna y el 1/η² del
+transporte de radiancia; absorción de Beer–Lambert dentro de los sólidos
+(`absorption_mm`: el color es lo que conserva la luz blanca tras esos
+milímetros), pared fina (refleja 2R/(1+R) y deja pasar el resto sin
+refractar), recortes por `opacity`, anisotropía GGX (Burley 2012, adelantada
+de E6) y barniz que atenúa las capas de debajo. El integrador sigue el
+sólido en el que va el camino; las paredes finas y los recortes son
+sucesos rectos que conservan la densidad del último vértice para que la MIS
+siga siendo correcta, y los rayos de sombra los atraviesan. Los emisores se
+eligen como luces por su flujo y respetan `emitKind`; radiancia = color ×
+emitPower × `EMIT_RADIANCE_PER_WATT` (0,06, `src/core/photometry.ts`).
+Cielo de Preetham, Shirley y Smits (1999), con el sol del rig, escalado a
+la irradiancia horizontal de la cúpula con los mismos valores. Lectores
+propios de RGBE (`.hdr`), OpenEXR de líneas (sin compresión, RLE, ZIPS y
+ZIP) e *inflate* (RFC 1950/1951); HDRI equirectangular en la convención de
+three.js, con rotación, intensidad y muestreo por importancia 2-D con su
+densidad exacta; imagen de fondo (llenar, encajar, estirar) en el marco de
+salida. RSB: `MATL` de 72 B, `ENVR` de 80 B y la sección nueva `BMAP`; un
+RSB sin `BMAP` conserva los mapas cargados. El camino opaco de E3 da los
+mismos bits que antes (sus hashes fijados no cambian); dos hashes nuevos
+fijan una escena E5 con vidrio, paredes finas, recortes, anisotropía, HDRI
+leído de sus bytes, imagen de fondo y cielo en nativo (escalar, SSE2,
+AVX2), en WASI (escalar y `simd128`) y con el `rt_wasm.wasm` real. En la
+interfaz: *Entorno* con *Cúpula de estudio*, *Cielo*, *Plano* y *Archivo
+HDRI*, *Cargar HDRI…*, bruma y sol propio del cielo, *Imagen de fondo* con
+*Cargar imagen…* y encaje; la vista previa usa los mismos píxeles del HDRI,
+el mismo cielo (portado a TypeScript, igual al del motor a 7·10⁻⁷) y la
+misma colocación del fondo; el proyecto guarda las imágenes (bloque
+`images`). Vidrio con *Distancia de absorción* y *Paredes*. Se quitan
+`env.kindSoon`, `env.backplateSoon` y `light.skyNote`. Hoja de contactos
+con la botella de vidrio ante el panel de BACKLIT (campo claro, también
+con test), el tablero de materiales, el filamento en una bombilla de
+pared fina, los tres montajes SKY y el HDRI de estudio procedural
+(`tests/fixtures/studio.hdr`): `docs/ui/engine-e5-*.png`. Los tests
+nuevos se comprobaron reintroduciendo catorce errores (sin el 1/η², otro
+Fresnel, media absorción, sin el desplazamiento de la MIS, sombras
+tapadas por paredes finas, `u` reflejado, encaje al revés, RGBE redondeado
+al centro, predictor de EXR sin deshacer, cielo mal escalado y cuatro del
+lado TypeScript): todos fallan. Rendimiento del ejemplo opaco: misma
+imagen y mismos rayos; sin diferencia medible por encima del ruido de una
+máquina compartida (mediana de un hilo +6 %, mejor −2 %).
+
+Lo que no encajó con el plan:
+
+- **Hošek–Wilkie no se portó.** El lead lo decidió (implementación de
+  referencia v1.4a, BSD de 3 cláusulas), pero el clasificador de permisos
+  de la sesión bloqueó usar la implementación descargada; queda pendiente
+  de la aprobación explícita del usuario. Preetham, el respaldo previsto,
+  está detrás de la misma interfaz (`Preetham::new`, `radiance`) y el
+  puerto TypeScript lo sigue con un test píxel a píxel, así que el cambio
+  será local. Crepúsculo y noche, fuera de E5.
+- **Imagen de fondo en *Rápido* frente a *Completo*: decisión para el
+  lead.** En *Completo* y en el render pasa por la exposición y la curva
+  de tono como el resto de la película, de modo que no sale idéntica a la
+  foto; en *Rápido* se pinta tal cual. Lo correcto parece componerla en
+  espacio de pantalla después de la curva (afecta al contrato de la
+  película y a la salida); se deja anotado. Los rayos refractados por un
+  sólido o reflejados ven el entorno, no la imagen de fondo.
+- **El vidrio rugoso pierde energía** (dispersión simple): a rugosidad 1 y
+  desde dentro conserva solo el 42 % en el peor caso. Un término de
+  dispersión múltiple (Kulla y Conty 2017, Heitz et al. 2016) lo
+  devolvería.
+- **Memoria del HDRI por worker**: cada worker decodifica su copia (hasta
+  4096 × 2048 en `f32`, unos 100 MB cada uno); los HDRI más anchos se
+  reducen a la mitad al leerlos.
+- **El vidrio macizo tapa los rayos de sombra**: sus cáusticas salen solo
+  del muestreo de la BSDF, con luciérnagas visibles cuando un emisor
+  pequeño se ve por reflexión especular (la bombilla de la hoja). El
+  control de cáusticas y el *denoise* pasan a **E5b**, como dice el plan
+  de oleadas.
+- **Subsuperficie, madera, tela y bisel**, a **E6**. PIZ, PXR24, B44, DWA
+  y los EXR en mosaico o profundos se rechazan con un mensaje que los
+  nombra. Las paredes finas no se difuminan con la rugosidad. El cielo
+  ignora la rotación (lo coloca su sol) y sujeta el sol a 1° como mínimo.
 
 ## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
 
@@ -1705,7 +1782,7 @@ integra todo lo que la interfaz marca *próximamente***.
 | **U7** | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*) |
 | **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
 | **E5b** | Opus | Profundidad de campo (lente fina), reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
-| **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie, anisotropía; desgaste visible en motor y visor |
+| **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie (la anisotropía llegó con E5); desgaste visible en motor y visor |
 | **L4**, **L5** | Opus, Sonnet | Ya descritas: focos propios (área, punto, foco, sol) con todas sus operaciones; IES |
 | **M2** | Opus | Ya descrita: texturas de imagen y etiquetas |
 | **N1**, **N2** | Opus, Sonnet | Vídeo codificado (WebCodecs y muxers MP4 y WebM propios) y lo que quede de pases y lotes |

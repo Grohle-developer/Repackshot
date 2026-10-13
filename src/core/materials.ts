@@ -108,6 +108,11 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
     { key: 'roughness', kind: 'number', ...unit(0, 1), fallback: 0, preview: true },
     { key: 'ior', kind: 'number', ...unit(1, 2.5), fallback: 1.52, preview: true },
     { key: 'transmission', kind: 'number', ...unit(0, 1), fallback: 1, preview: true },
+    // E5: the colour is what white light keeps after this many millimetres inside (Beer–Lambert); 0 tints the
+    // surface instead, once per pass through the part.
+    { key: 'absorptionMm', kind: 'number', min: 0, max: 5000, step: 1, unit: 'mm', fallback: 50, preview: true },
+    // E5: a thin wall (a sheet, a bulb, a visor modelled as one surface) lets light straight through.
+    { key: 'walls', kind: 'select', options: ['SOLID', 'THIN'], fallback: 'SOLID', preview: true },
   ],
   WOOD: [
     { key: 'woodColor1', kind: 'color', fallback: [0.56, 0.38, 0.21, 1], preview: true },

@@ -6,8 +6,9 @@
 // (tests/rsb.test.ts compares against a file written by `rt --write-example`).
 // `projectScene` maps a ProjectState onto it: the active camera, a mesh per
 // distinct geometry, an instance per visible part, a material per material
-// instance, the resolved rig, the studio dome, the floor and the render
-// settings. Model space only (Z up, millimetres): no three.js here.
+// instance, the resolved rig, the environment (dome, sky, flat or HDRI, and the
+// background image), the floor and the render settings. Model space only (Z up,
+// millimetres): no three.js here.
 
 import { evaluate, type Pose } from '../core/animation';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
@@ -17,6 +18,8 @@ import type { MaterialInstance } from '../core/materials';
 import { mat4Compose, mat4Multiply, normalize, sub, type Mat4 } from '../core/math';
 import { getMesh, type MeshData } from '../core/meshes';
 import { areaLightFlux, EMIT_RADIANCE_PER_WATT, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
+import { getImage } from '../core/images';
+import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import { QUALITY_PRESETS } from '../data/quality';
@@ -33,6 +36,7 @@ export const TAG_ENVR = 'ENVR';
 export const TAG_FLOR = 'FLOR';
 export const TAG_RNDR = 'RNDR';
 export const TAG_INST = 'INST';
+export const TAG_BMAP = 'BMAP';
 
 /** `MATL.kind`. */
 export const MATERIAL_PRINCIPLED = 0;
@@ -40,6 +44,8 @@ export const MATERIAL_GLASS = 1;
 export const MATERIAL_EMISSIVE = 2;
 /** `MATL.flags` bit 0: the emitter is also sampled as a light. */
 export const MATERIAL_FLAG_LIGHT = 1;
+/** `MATL.flags` bit 1: the clear part is a thin wall (straight transmission, no refraction). */
+export const MATERIAL_FLAG_THIN = 2;
 /** `LGHT.kind`. */
 export const LIGHT_RECT = 0;
 export const LIGHT_DISK = 1;
@@ -57,6 +63,20 @@ export const BACKGROUND_ENVIRONMENT = 0;
 export const BACKGROUND_COLOR = 1;
 export const BACKGROUND_TRANSPARENT = 2;
 export const BACKGROUND_BACKPLATE = 3;
+/** `ENVR.hdri_map` and `ENVR.backplate_map` without a bitmap. */
+export const NO_BITMAP = 0xffffffff;
+/** `ENVR.backplate_fit`. */
+export const BACKPLATE_FILL = 0;
+export const BACKPLATE_FIT = 1;
+export const BACKPLATE_STRETCH = 2;
+/** `BMAP.format`. */
+export const BITMAP_RGB8 = 0;
+export const BITMAP_RGBA8 = 1;
+export const BITMAP_RGB_F32 = 2;
+export const BITMAP_HDR = 16;
+export const BITMAP_EXR = 17;
+/** `ENVR.sky_turbidity` when nothing says otherwise. */
+export const DEFAULT_TURBIDITY = 3;
 /** `FLOR.mode`. */
 export const FLOOR_NONE = 0;
 export const FLOOR_VISIBLE = 1;
@@ -99,6 +119,12 @@ export interface RsbMaterial {
   emission: RsbVec;
   emissionPower: number;
   flags: number;
+  /** E5: coverage (below one, a stochastic cut-out). */
+  opacity: number;
+  /** E5: anisotropy of the GGX lobes, 0..1. */
+  anisotropy: number;
+  /** E5: absorption distance of the clear part in mm (0: a surface tint). */
+  absorptionMm: number;
 }
 
 export interface RsbMesh {
@@ -140,6 +166,26 @@ export interface RsbEnvironment {
   rotationDeg: number;
   backgroundColor: RsbVec;
   backgroundMode: number;
+  /** E5: the bitmap of the HDRI, or NO_BITMAP. */
+  hdriMap: number;
+  /** E5: the bitmap of the background image, or NO_BITMAP. */
+  backplateMap: number;
+  backplateFit: number;
+  skyTurbidity: number;
+  /** E5: where the sky's sun is, degrees: azimuth from +X towards +Y, elevation above the horizon. */
+  sunAzimuthDeg: number;
+  sunElevationDeg: number;
+  /** E5: the output frame inside the image, `[u0, v0, u1, v1]` from the top left. */
+  backplateRect: [number, number, number, number];
+}
+
+/** E5: an image the environment refers to (RSB `BMAP`). */
+export interface RsbBitmap {
+  format: number;
+  /** The size for the raw formats; 0 for the files that carry theirs. */
+  width: number;
+  height: number;
+  data: Uint8Array;
 }
 
 export interface RsbFloor {
@@ -171,6 +217,8 @@ export interface RsbScene {
   environment: RsbEnvironment;
   floor: RsbFloor;
   render: RsbRender;
+  /** E5: the bitmaps, referred to by index from the environment. */
+  bitmaps: RsbBitmap[];
 }
 
 // The defaults of rt-core (`impl Default` of each struct): what a field the
@@ -181,7 +229,7 @@ export function defaultCamera(): RsbCamera {
 }
 
 export function defaultMaterial(): RsbMaterial {
-  return { kind: MATERIAL_PRINCIPLED, baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.5, ior: 1.5, transmission: 0, coat: 0, coatRoughness: 0, emission: [0, 0, 0], emissionPower: 0, flags: 0 };
+  return { kind: MATERIAL_PRINCIPLED, baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.5, ior: 1.5, transmission: 0, coat: 0, coatRoughness: 0, emission: [0, 0, 0], emissionPower: 0, flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0 };
 }
 
 export function defaultLight(): RsbLight {
@@ -189,7 +237,23 @@ export function defaultLight(): RsbLight {
 }
 
 export function defaultEnvironment(): RsbEnvironment {
-  return { kind: ENV_STUDIO, floor: 0.1, horizon: 0.3, zenith: 0.6, strength: 1, rotationDeg: 0, backgroundColor: [0.05, 0.05, 0.05], backgroundMode: BACKGROUND_ENVIRONMENT };
+  return {
+    kind: ENV_STUDIO,
+    floor: 0.1,
+    horizon: 0.3,
+    zenith: 0.6,
+    strength: 1,
+    rotationDeg: 0,
+    backgroundColor: [0.05, 0.05, 0.05],
+    backgroundMode: BACKGROUND_ENVIRONMENT,
+    hdriMap: NO_BITMAP,
+    backplateMap: NO_BITMAP,
+    backplateFit: BACKPLATE_FILL,
+    skyTurbidity: DEFAULT_TURBIDITY,
+    sunAzimuthDeg: 0,
+    sunElevationDeg: 45,
+    backplateRect: [0, 0, 1, 1],
+  };
 }
 
 export function defaultFloor(): RsbFloor {
@@ -221,22 +285,28 @@ function sameInstances(a: readonly RsbInstance[], b: readonly RsbInstance[]): bo
 
 export interface WriteOptions {
   /**
-   * false: leave the MESH sections out, for `rt_scene_update` on a scene that already has these
-   * meshes (the engine keeps them and their BVHs). The INST sections are then always written.
+   * false: leave the MESH and BMAP sections out, for `rt_scene_update` on a scene that already has
+   * these meshes and bitmaps (the engine keeps them, and the meshes' BVHs). The INST sections are then
+   * always written. The project's mesh key names both, so a change of either sends everything.
    */
   meshes?: boolean;
 }
 
 const CAMR_BYTES = 60;
-const MATL_BYTES = 60;
+const MATL_BYTES = 72;
 const LGHT_BYTES = 76;
-const ENVR_BYTES = 40;
+const ENVR_BYTES = 80;
 const FLOR_BYTES = 20;
 const RNDR_BYTES = 36;
 const INST_BYTES = 60;
 
 function meshBytes(m: RsbMesh): number {
   return 4 * (2 + (m.positions.length / 3) * 6 + m.indices.length + 1);
+}
+
+/** A BMAP payload: four words, the data, zero padding to a multiple of four. */
+function bitmapBytes(b: RsbBitmap): number {
+  return 16 + b.data.length + ((4 - (b.data.length % 4)) % 4);
 }
 
 /** Little-endian writer over a buffer of the exact final size. */
@@ -265,6 +335,13 @@ class ByteWriter {
     this.f32(v[1]);
     this.f32(v[2]);
   }
+  raw(data: Uint8Array): void {
+    this.bytes.set(data, this.pos);
+    this.pos += data.length;
+  }
+  pad(n: number): void {
+    this.pos += n; // the buffer starts zeroed
+  }
   section(t: string, len: number, body: () => void): void {
     this.tag(t);
     this.u32(len);
@@ -289,6 +366,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   let size = 8 + 8 + CAMR_BYTES + scene.materials.length * (8 + MATL_BYTES) + scene.lights.length * (8 + LGHT_BYTES);
   size += 8 + ENVR_BYTES + 8 + FLOR_BYTES + 8 + RNDR_BYTES;
   if (withMeshes) for (const m of scene.meshes) size += 8 + meshBytes(m);
+  if (withMeshes) for (const b of scene.bitmaps) size += 8 + bitmapBytes(b);
   if (instances) size += instances.length * (8 + INST_BYTES);
 
   const w = new ByteWriter(size);
@@ -315,6 +393,9 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.vec(m.emission);
       w.f32(m.emissionPower);
       w.u32(m.flags);
+      w.f32(m.opacity);
+      w.f32(m.anisotropy);
+      w.f32(m.absorptionMm);
     });
   }
   if (withMeshes) {
@@ -356,12 +437,31 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.u32(l.flags);
     });
   }
+  if (withMeshes) {
+    for (const b of scene.bitmaps) {
+      w.section(TAG_BMAP, bitmapBytes(b), () => {
+        w.u32(b.format);
+        w.u32(b.width);
+        w.u32(b.height);
+        w.u32(b.data.length);
+        w.raw(b.data);
+        w.pad((4 - (b.data.length % 4)) % 4);
+      });
+    }
+  }
   const e = scene.environment;
   w.section(TAG_ENVR, ENVR_BYTES, () => {
     w.u32(e.kind);
     for (const v of [e.floor, e.horizon, e.zenith, e.strength, e.rotationDeg]) w.f32(v);
     w.vec(e.backgroundColor);
     w.u32(e.backgroundMode);
+    w.u32(e.hdriMap);
+    w.u32(e.backplateMap);
+    w.u32(e.backplateFit);
+    w.f32(e.skyTurbidity);
+    w.f32(e.sunAzimuthDeg);
+    w.f32(e.sunElevationDeg);
+    for (const v of e.backplateRect) w.f32(v);
   });
   const f = scene.floor;
   w.section(TAG_FLOR, FLOR_BYTES, () => {
@@ -440,11 +540,17 @@ function num(v: unknown, fallback: number): number {
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
+/** Absorption distance of a GLASS material without its own (`absorptionMm` of core/materials.ts). */
+export const GLASS_ABSORPTION_MM = 50;
+
 /**
- * A material instance with the E3 semantics: SIMPLE, WOOD and FABRIC as principled (wood and
- * fabric as their mean colour until E6, like the preview), GLASS as kind 1 (drawn as an opaque
- * tinted principled surface until E5), EMISSIVE as kind 2 with radiance `colour x emitPower x
- * EMIT_RADIANCE_PER_WATT`, sampled as a light when it emits. Wear and textures come later.
+ * A material instance with the semantics of rt-core: SIMPLE, WOOD and FABRIC as principled (wood
+ * and fabric as their mean colour until E6, like the preview; SIMPLE with its transmission,
+ * opacity and anisotropy, E5), GLASS as kind 1 (clear glass: its colour after `absorptionMm`
+ * millimetres inside, or a surface tint at 0; a thin wall with `walls` THIN), EMISSIVE as kind 2
+ * with radiance `colour x emitPower x EMIT_RADIANCE_PER_WATT` (the colour of a black body at its
+ * temperature, normalised to its largest channel, or the colour given), sampled as a light when
+ * it emits. Wear, wood and fabric patterns, bevel and subsurface come later (E6, E7).
  */
 export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMaterial {
   const m = defaultMaterial();
@@ -462,6 +568,8 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
       m.coatRoughness = clamp01(num(p.coatRoughness, 0.03));
       m.ior = Math.max(1, num(p.ior, 1.5));
       m.transmission = clamp01(num(p.transmission, 0));
+      m.opacity = clamp01(num(p.opacity, 1));
+      m.anisotropy = clamp01(num(p.anisotropic, 0));
       break;
     case 'GLASS':
       m.kind = MATERIAL_GLASS;
@@ -469,6 +577,8 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
       m.roughness = clamp01(num(p.roughness, 0));
       m.ior = Math.max(1, num(p.ior, 1.52));
       m.transmission = clamp01(num(p.transmission, 1));
+      m.absorptionMm = Math.max(0, num(p.absorptionMm, GLASS_ABSORPTION_MM));
+      m.flags = p.walls === 'THIN' ? MATERIAL_FLAG_THIN : 0;
       break;
     case 'WOOD': {
       const a = rgbOf(p.woodColor1, [0.56, 0.38, 0.21]);
@@ -729,17 +839,39 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
 
   // The resolved rig, posed like the preview poses it.
   const lights: RsbLight[] = [];
+  // The sky's sun is the rig's (first) sun light: SPEC §3.4, "sky and sun from the sun light".
+  let toSun: RsbVec | null = null;
   for (const l0 of state.studio.lights) {
     const lp = pose?.lights[l0.id];
     const l = lp ? { ...l0, power: lp.power, color: lp.color, az: lp.az, el: lp.el, enabled: lp.enabled } : l0;
     if (!l.enabled || !(l.power > 0)) continue;
-    lights.push(lightToRsb(state, l));
+    const light = lightToRsb(state, l);
+    if (l.type === 'SUN' && !toSun) toSun = [-light.direction[0], -light.direction[1], -light.direction[2]];
+    lights.push(light);
   }
 
   const env = state.environment;
   const flat = env.kind === 'FLAT';
   // The engine's flat environment is grey: the colour's luminance.
   const grey = 0.2126 * env.color[0] + 0.7152 * env.color[1] + 0.0722 * env.color[2];
+  // The bitmaps: the HDRI when it lights, the background image when it shows (and is loaded).
+  const bitmaps: RsbBitmap[] = [];
+  const imageKeys: string[] = [];
+  const hdri = env.kind === 'HDRI' && env.hdri ? getImage(env.hdri.id) : undefined;
+  const hdriMap = hdri && (hdri.format === 'HDR' || hdri.format === 'EXR') ? bitmaps.push({ format: hdri.format === 'HDR' ? BITMAP_HDR : BITMAP_EXR, width: 0, height: 0, data: hdri.bytes }) - 1 : NO_BITMAP;
+  if (hdriMap !== NO_BITMAP) imageKeys.push(env.hdri!.id);
+  const plate = !view.transparent && env.background === 'BACKPLATE' && env.backplate ? getImage(env.backplate.id) : undefined;
+  const backplateMap = plate?.rgba8 ? bitmaps.push({ format: BITMAP_RGBA8, width: plate.width, height: plate.height, data: plate.rgba8 }) - 1 : NO_BITMAP;
+  if (backplateMap !== NO_BITMAP) imageKeys.push(env.backplate!.id);
+  // Without a sun light the sky's sun is the environment's own, placed like a light (camera-relative).
+  const sun = toSun ?? polar(toWorldAzimuth(env.skySun.az), env.skySun.el, 1);
+  const sunLength = Math.hypot(sun[0], sun[1], sun[2]) || 1;
+  // The output frame inside a viewport image: the background image fits it.
+  let backplateRect: [number, number, number, number] = [0, 0, 1, 1];
+  if (view.viewport && view.viewport.viewW > 0 && view.viewport.viewH > 0) {
+    const f = outputFrameRect(view.viewport.viewW, view.viewport.viewH, state.render.width, state.render.height);
+    backplateRect = [f.x / view.viewport.viewW, f.y / view.viewport.viewH, (f.x + f.width) / view.viewport.viewW, (f.y + f.height) / view.viewport.viewH];
+  }
   const environment: RsbEnvironment = {
     kind: flat ? ENV_FLAT : env.kind === 'SKY' ? ENV_SKY : env.kind === 'HDRI' ? ENV_HDRI : ENV_STUDIO,
     floor: flat ? grey : DOME_FLOOR,
@@ -757,6 +889,13 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
           : env.background === 'BACKPLATE'
             ? BACKGROUND_BACKPLATE
             : BACKGROUND_ENVIRONMENT,
+    hdriMap,
+    backplateMap,
+    backplateFit: env.backplateFit === 'FIT' ? BACKPLATE_FIT : env.backplateFit === 'STRETCH' ? BACKPLATE_STRETCH : BACKPLATE_FILL,
+    skyTurbidity: Number.isFinite(env.skyTurbidity) ? Math.min(10, Math.max(1.7, env.skyTurbidity)) : DEFAULT_TURBIDITY,
+    sunAzimuthDeg: (Math.atan2(sun[1], sun[0]) * 180) / Math.PI,
+    sunElevationDeg: (Math.asin(Math.max(-1, Math.min(1, sun[2] / sunLength))) * 180) / Math.PI,
+    backplateRect,
   };
 
   // The preview's floor is a shadow catcher (a shadow on nothing), shown when floor and shadow are on.
@@ -777,7 +916,8 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   };
 
   return {
-    scene: { camera, materials, meshes, instances, lights, environment, floor, render },
-    meshKey: meshKeys.join(';'),
+    scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps },
+    // The bitmaps travel with the meshes (an update keeps both): a new image is a new key.
+    meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : ''),
   };
 }

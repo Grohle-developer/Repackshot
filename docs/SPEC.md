@@ -155,7 +155,7 @@ Familias y lo que significan para el motor:
 | Familia | Modelo | Parámetros propios |
 | --- | --- | --- |
 | `SIMPLE` | BSDF de principio físico: base, metal, rugosidad, barniz, anisotropía, subsuperficie, opacidad | — |
-| `GLASS` | dieléctrico con transmisión, IOR, rugosidad, color de absorción | `ior`, `transmission` |
+| `GLASS` | dieléctrico con transmisión, IOR, rugosidad, color de absorción: el color es lo que conserva la luz blanca tras `absorptionMm` milímetros dentro de la pieza (0: tinte de superficie); con `walls` `THIN`, pared fina sin interior (lámina, bombilla, visera modelada como una superficie), que deja pasar la luz recta | `ior`, `transmission`, `absorptionMm` (50), `walls` (`SOLID` · `THIN`) |
 | `WOOD` | veta procedural: dos colores, densidad y variación de anillos, ruido axial, poro | `woodColor1/2`, `ringDensity`… |
 | `FABRIC` | trama procedural: dos colores de hilo, tejido (tafetán, sarga, satén, punto, malla), hilos por cm, relieve, pelusa | `threadColor1/2`, `weave`, `threadCount`, `fuzz` |
 | `EMISSIVE` | emisor: cuerpo negro a temperatura o color, potencia | `emitKind`, `temperature`, `emitPower` |
@@ -211,7 +211,21 @@ archivo), `SKY` (sol y cielo procedurales a partir del foco de tipo sol),
 `FLAT` (color liso), `HDRI` (archivo del usuario, con rotación e
 intensidad). Lo que ilumina y lo que ve la cámara se separan: el fondo
 puede ser el entorno, un color, transparente o una imagen, sin cambiar la
-luz. Un panel con `camera = true` se pinta como **campo claro en el
+luz.
+
+`EnvironmentState` (E5) guarda además `hdri` y `backplate` (`ImageRef`:
+id, nombre, ancho y alto; los bytes viven en el registro de imágenes,
+como las mallas, y el proyecto los lleva dentro), `backplateFit`
+(`FILL` · `FIT` · `STRETCH`: la imagen cubre el encuadre recortándose,
+cabe entera con el color alrededor, o se estira), `skyTurbidity` (bruma
+del cielo, 3 por defecto: 2 muy limpio, 6 brumoso) y `skySun` (`az`,
+`el`: el sol del cielo cuando el montaje no tiene foco de sol, relativo a
+la cámara como un foco; -55°, 55° por defecto). Con un foco de sol
+encendido en el montaje, ese foco coloca el sol del cielo. El cielo es el
+modelo de Preetham (1999), escalado para que una superficie horizontal
+reciba la misma luz que con la cúpula de los mismos valores; solo de día
+(el sol, a 1° como mínimo). Un `HDRI` sin archivo cargado ilumina con la
+cúpula; una imagen de fondo sin archivo muestra el color. Un panel con `camera = true` se pinta como **campo claro en el
 fondo** (disco suave centrado en el encuadre), nunca como un rectángulo
 visible con bordes.
 

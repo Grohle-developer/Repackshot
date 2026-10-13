@@ -437,7 +437,7 @@ impl Lights {
             });
         }
 
-        let env = EnvLight::new(&scene.environment);
+        let env = EnvLight::new(&scene.environment, &scene.bitmaps);
         if !env.is_black() {
             weights.push(4.0 * fmath::PI * fmath::PI * env.mean_radiance());
             entries.push(LightRef::Environment);
@@ -579,6 +579,13 @@ impl Lights {
     /// weight; a BSDF-sampled ray sees the lights flagged `glossy`, weighted against
     /// next-event estimation with the power heuristic.
     pub fn crossed(&self, ray: &Ray, t_max: f32, bsdf_pdf: Option<f32>) -> Rgb {
+        self.crossed_from(ray, t_max, bsdf_pdf, 0.0)
+    }
+
+    /// [`Lights::crossed`] for a ray that continues, straight, one that left the last scattering
+    /// vertex `offset` earlier (it went through thin walls or cut-outs): the MIS weights use the
+    /// distance from that vertex, as next-event estimation there did.
+    pub fn crossed_from(&self, ray: &Ray, t_max: f32, bsdf_pdf: Option<f32>, offset: f32) -> Rgb {
         let mut sum = Rgb::BLACK;
         for light in &self.areas {
             let visible = match bsdf_pdf {
@@ -594,7 +601,8 @@ impl Lights {
             let weight = match bsdf_pdf {
                 None => 1.0,
                 Some(pdf) => {
-                    let light_pdf = light.pmf * t * t / (light.area * cos);
+                    let d = offset + t;
+                    let light_pdf = light.pmf * d * d / (light.area * cos);
                     power_heuristic(pdf, light_pdf)
                 }
             };
