@@ -1481,9 +1481,10 @@ variantes.
 
 **Qué.** Habitación de ejemplo procedural con sofá y lámpara (K2) y, como
 activos descargables bajo demanda y nunca en el paquete base, una
-selección de Poly Haven (modelos de mobiliario y HDRI de interior, CC0) y
-ambientCG (HDRI y texturas, CC0) con **licencia y origen registrados por
-archivo** en un `assets.json`; nada de Quaternius ni 3D Warehouse;
+selección de Poly Haven (modelos de mobiliario, CC0) y ambientCG
+(texturas, CC0) con **licencia y origen registrados por archivo** en un
+`assets.json`; **ningún HDRI de terceros** (decisión del usuario,
+`STUDIO-TOOLS.md` §2: los entornos son recetas propias); nada de Quaternius ni 3D Warehouse;
 atribución para Khronos si se usa. Hoja de contactos de interiores en CI
 con `rt`.
 
@@ -1705,7 +1706,7 @@ integra todo lo que la interfaz marca *próximamente***.
 | **P3c** | Opus | **Ventana propia en Windows** (decisión del líder tras la captura del aviso «¿Desea salir de la aplicación?» de Edge: *todos los avisos y ventanas con nuestra interfaz, nada de avisos web; producto cerrado y profesional*): ventana Win32 sin marco con **WebView2** (el motor de Edge que trae Windows 10/11) y barra de título dibujada por nosotros (título, minimizar, maximizar, cerrar, arrastre), menús contextuales, atajos, barra de estado, zoom, autorrelleno, traducción, descargas y diálogos de script del navegador **desactivados por la API**, y el cierre (botón, `Alt F4`, barra de tareas) **interceptado** para preguntar con nuestra propia ventana si hay cambios sin guardar; Edge `--app` solo como respaldo automático si falta el *runtime*. En Linux sigue Chromium en modo aplicación con el endurecimiento de P3b hasta P3d (ventana propia con WebKitGTK, que exige un binario glibc y no el musl estático) |
 | **U7** | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*) |
 | **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
-| **E5b** | Opus | Profundidad de campo (lente fina), reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
+| **E5b** | Opus | Reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
 | **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie, anisotropía; desgaste visible en motor y visor |
 | **L4**, **L5** | Opus, Sonnet | Ya descritas: focos propios (área, punto, foco, sol) con todas sus operaciones; IES |
 | **M2** | Opus | Ya descrita: texturas de imagen y etiquetas |
@@ -1736,6 +1737,30 @@ Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
 **N2**; oleada 4 **X1b**, **X2**, **X3**, **X4**. Cada fase quita sus
 *próximamente* y no deja ninguno nuevo sin anotarlo aquí.
+
+## Herramientas de estudio (óptica, entorno, luz, cámara, partículas)
+
+Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
+2 (la DoF de E5b pasa a O1):
+
+| Fase | Responsable | Qué |
+| --- | --- | --- |
+| **A6** | Sonnet | Assets sin motor nuevo: `lenses.json` (16 prescripciones con test paraxial), `bokeh.json` (20 tipos), máscaras de diafragma y gobos generados, `camera-moves.json` |
+| **O1** | Opus | Lente fina mejorada: diafragma poligonal y por máscara, perfiles de pupila, obstrucción, ojo de gato aproximado, anamórfico, *tilt-shift*, *split diopter*, CA por canal; selector de bokeh |
+| **O2** | Opus | Lente trazada: prescripciones, intersección estable, límites de pupila, autoenfoque, respiración; las 16 lentes |
+| **O3** | Opus | CA por tres bandas, coatings (transmisión, tinte, T-stop), velo |
+| **O4** | Opus | Flare con fantasmas, estrella de difracción, bloom y halación, polvo y rayas |
+| **O5** | Sonnet | Editor de lentes: carácter, corte en SVG, ajustes no físicos marcados, *Guardar lente como…* |
+| **W1** | Opus | Evaluador de pines en el motor con muestreo por importancia; editor de pines; *Colocar brillo* |
+| **W2** | Sonnet | Biblioteca de 39 entornos (recetas, miniaturas, *hash*), exportar HDR/EXR, interiores horneados |
+| **L6** | Sonnet | Colocación *Reflejo · Directo · Órbita*, normal suavizada, obstáculos, potencia automática |
+| **L7** | Opus | Emisores con perfil procedural, gobos, banderas, reflectores |
+| **L8** | Opus | Difuso/especular por luz, enlazado de luz y sombra, solo, parpadeo |
+| **L9** | Sonnet | Falso color por zonas, fotómetro, hornear el montaje a entorno |
+| **N4** | Sonnet | Biblioteca de movimientos de cámara, cámara en mano, rampas, proporciones |
+| **N5** | Opus | Dibujar y grabar recorridos, bloqueo de objetivo, desenfoque de movimiento |
+| **S0** | Fable | Decisiones de partículas: dónde vive el simulador, formato de caché, secciones RSB |
+| **S1**–**S10** | Opus, Sonnet | Dispersión e instancias; caída y reposo; gotas y condensación; emisores sin estado; volúmenes; humo; líquidos; pelo y césped; telas; mejoras (detalle en `docs/research/particles.md` §6) |
 
 ## Orden sugerido
 
