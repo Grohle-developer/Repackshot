@@ -162,6 +162,12 @@ export interface AiPostRequest {
   negative: string;
   /** ai-models.json key. */
   modelKey: string;
+  /**
+   * The guard's material table (X3c): every RSB material by its `materialId`, with its name, whether wear may
+   * enter it and whether it is locked (`guardMaterials` of src/ai/prompt.ts, over io/rsb.ts's material order).
+   * Regions it does not name are guarded with defaults; the studio floor (FLOOR_ID) is named "Floor".
+   */
+  materials?: AiGuardMaterial[];
 }
 
 export type AiPostStage = 'LOADING' | 'CONDITIONING' | 'INFERENCE' | 'GUARD' | 'RETRY';

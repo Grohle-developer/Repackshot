@@ -540,6 +540,11 @@ export interface ProjectScene {
    * preview draws the same numbers (render/preview-passes.ts) from it.
    */
   ids: PassIds;
+  /**
+   * The project material of every RSB material, in RSB order (`materialId` `i + 1` is `materialOrder[i]`; null:
+   * the neutral material of a part without one). What the AI guard's table is made from (`guardMaterials`).
+   */
+  materialOrder: (string | null)[];
 }
 
 /** `image.viewTransform` to `RNDR.tonemap`. */
@@ -821,12 +826,14 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   };
 
   const materials: RsbMaterial[] = [];
+  const materialOrder: (string | null)[] = [];
   const materialIndex = new Map<string | null, number>();
   const materialFor = (id: string | null): number => {
     const key = id && state.materials[id] ? id : null;
     let i = materialIndex.get(key);
     if (i === undefined) {
       i = materials.push(materialToRsb(key ? state.materials[key] : null)) - 1;
+      materialOrder.push(key);
       materialIndex.set(key, i);
     }
     return i;
@@ -944,6 +951,13 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : ''),
-    ids: { instances: passInstances },
+    ids: {
+      instances: passInstances,
+      floor:
+        floor.mode === FLOOR_NONE
+          ? null
+          : { z: floor.z, albedo: [floor.color[0], floor.color[1], floor.color[2]], camera: { position: camera.position, target: camera.target, up: camera.up, focalMm: camera.focalMm, sensorMm: camera.sensorMm, ortho: camera.ortho, orthoWidth: camera.orthoWidth } },
+    },
+    materialOrder,
   };
 }

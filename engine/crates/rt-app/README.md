@@ -654,6 +654,48 @@ ponen el suyo (la compilación falsa, direcciones `http://` de un servidor local
 `server::Options { ai_runtimes }` al construir el servidor (`Server::start_with`); la
 aplicación arranca siempre con `Server::start`, que usa las opciones por defecto.
 
+## IA: la tubería (X3c)
+
+`docs/AI-POST.md` §7.3, `src/ai/post.rs`. La página no manda píxeles de un render final: el
+lanzador guardó su imagen lineal y sus pases (`src/kept.rs`, con su exposición y su curva de
+tono, `Look`) y la página pide el post-procesado **por el id del render** (`RENDER`). La vista
+previa del modo Rápido, que no es un render del lanzador, manda su imagen y sus pases en el mismo
+cuerpo (`INLINE`, ≤ 512 px de lado). En el lanzador, la máquina de pasos de `rt-post`:
+`plan` → por mosaico `tile_input` (sRGB de 8 bits con la curva del render) y la imagen de control
+de `control_planes` → `sd-server` (el mismo servidor de X3b, que se queda cargado: varias llamadas
+seguidas no lo reinician) con la fuerza del intento, la semilla y el tamaño exacto del mosaico
+con relleno → `accept` → reintento a `RETRY_FACTOR` de la fuerza hasta `MAX_ATTEMPTS` o rechazo.
+**Con Intervención 0 (o todos los aspectos a 0) el plan no tiene mosaicos: no se arranca el
+motor de ejecución, no hace falta ni que esté instalado ni el modelo, y la imagen es la del motor
+bit a bit.** Un mosaico que vuelve de otro tamaño es la comprobación `size` fallida: rechazo a la
+primera y la imagen del motor. La imagen lineal de un render es la conversión de la página
+(`exactBytes`): las sumas por las muestras, el color dividido por la cobertura donde no es opaca y
+alfa 1 donde lo es (el umbral, `1 − 1e-6` en `f64`, como el número de JavaScript).
+
+- **Control**: la primera de `depth`, `tile` que tenga el perfil de la familia (hoy solo SD 1.5:
+  `depth`, el plano de profundidad de los pases en gris; `tile` sería la propia imagen del
+  mosaico). Una sola, la misma en vista previa y en final, para no reiniciar el servidor.
+- **El suelo del estudio** (`FLOOR_ID` en los dos ids) es una región más de la guarda: se reilumina
+  y tiene su comprobación de color, con el nombre *Floor* si la tabla de materiales no lo nombra.
+- **Huérfanos**: un post en marcha por el que nadie pregunta en `ORPHAN_AFTER` (2 min) se para (su
+  página se fue); la página pregunta al menos cada segundo.
+- `GET /api/info` lleva `aiPost: 1`.
+
+| Petición | Respuesta |
+| --- | --- |
+| `POST /api/ai/post` (JSON, ≤ 1 MiB) | `{source: {kind: "RENDER", renderId}, settings: {intervention, light, bounce, wear, style, styleStrength, seed}, prompt, negative, modelKey, materials?: [{materialId, name, allowsWear, locked}], tolerances?: {clave: número}, steps?, force?, device?}` (los controles, enteros 0..100; `tolerances` con las claves de `rt_post::Tolerances::KEYS`, para calibrar en X1 parte B). 202 con el estado; 400 `bad-body` o `size` (un mosaico de menos de 64 px), 404 `not-kept` (el render no se guardó o se desalojó), 409 `no-passes`, 409 `unavailable` con `reason` (`NO_RUNTIME`, `NO_MODEL`, `MODEL_UNSUPPORTED`; solo si el plan llama al modelo), 503 `busy` con 4 en marcha |
+| `POST /api/ai/post` (`application/octet-stream`, ≤ 64 MiB) | `INLINE`: `"RPI1"`, `u32` longitud del JSON, el JSON (`source: {kind: "INLINE", tonemap?, exposureEv?}`: por defecto lineal y 0 EV, la imagen ya es lo que se ve), la imagen `RPL1` y los pases `RPP1`, del mismo tamaño, ≤ 512 px de lado |
+| `GET /api/ai/post/<id>[?after=<versión>]` | `{id, state: QUEUED\|LOADING\|CONDITIONING\|INFERENCE\|GUARD\|RETRY\|DONE\|FAILED\|CANCELLED, stage (el AiPostStage o null), tile, tiles, attempt, maxAttempts, strength, step, steps, fraction, seconds, version, calls, renderId, model, runtime, width, height, tonemap, exposureEv, verdict, report (el GuardReport al terminar), error, message}`; con `after` espera hasta 1 s a una versión posterior. `tile` y `attempt` empiezan en 1; `fraction` nunca retrocede |
+| `GET /api/ai/post/<id>/image` | La imagen entregada cuando `DONE` (la del motor sin cambios si `REJECTED`): `"RPL1"`, `u32` 16, ancho, alto, y `f32` RGBA lineal con alfa recto, filas desde arriba; 409 si no ha terminado |
+| `DELETE /api/ai/post/<id>` | Cancela uno en marcha (204; el modelo sigue cargado) u olvida uno terminado (se guardan los 8 últimos, 10 min) |
+
+`GET /api/ai/runtimes/<clave>` lleva además `vcRuntime: "missing"` cuando una compilación de
+Windows no arranca porque falta una DLL (`0xC0000135` o `0xC0000139`, `Probe.dllMissing`) y falta
+alguna de las del entorno de Microsoft Visual C++ 2015–2022 (`MSVCP140.dll`, `VCRUNTIME140.dll`,
+`VCRUNTIME140_1.dll`, `VCOMP140.DLL`, `MSVCP140_CODECVT_IDS.dll`) en su carpeta y en
+`System32`, y `vcRuntimeUrl` (la página oficial de Microsoft) en las de Windows: no
+redistribuimos esas DLL.
+
 ## Icono y versión del `.exe`
 
 `build.rs`, solo al compilar para Windows con mingw-w64: escribe un `.rc` con `VERSIONINFO`
@@ -705,10 +747,19 @@ colgado, tiempo límite, caída al cargar y al generar, fallo, tamaño distinto 
 rechazos con su motivo, el estado, liberar por petición, por inactividad y al cerrar, el que
 dejó un arranque anterior; y con el `curl` real contra un servidor local: descarga, pausa,
 reanudación desde el byte, instalación, borrado, un `sha256` distinto que no instala nada y un
-archivo elegido. Ignoradas salvo que se pidan: el zip real de cada compilación descomprimido
+archivo elegido. `tests/ai_post.rs` (X3c), con el mismo falso (que en modo `gain` aclara con
+suavidad, como un modelo que hace lo que se le pide): Intervención 0 bit a bit sin arrancar el
+motor (también sin motor instalado), un render de dos mosaicos con progreso por mosaico y la
+fracción que no retrocede, reintentos con la fuerza exacta del plan y la imagen del motor al
+final, un mosaico de otro tamaño rechazado a la primera, cancelar a mitad con el modelo aún
+cargado, `MODEL_UNSUPPORTED` y `NO_MODEL` con su motivo, peticiones malas, la vista previa en
+línea, el suelo reiluminado con su comprobación de color y el post huérfano que se para.
+Ignoradas salvo que se pidan: el zip real de cada compilación descomprimido
 (`RPX_SDCPP_ZIP`), la compilación real de Linux CPU instalada y respondiendo `--version`,
 `--list-devices` y `--help` (`RPX_SDCPP_LINUX_CPU_ZIP`), la descarga real desde GitHub con pausa
-(`RPX_REAL_DOWNLOAD=1`) y un *img2img* real con SD 1.5 en CPU (`RPX_SD15_WEIGHTS`).
+(`RPX_REAL_DOWNLOAD=1`), un *img2img* real con SD 1.5 en CPU (`RPX_SD15_WEIGHTS`) y la tubería
+entera con SD 1.5 y su ControlNet de profundidad (`RPX_SD15_WEIGHTS` y `RPX_SD15_DEPTH`; 53 s en
+cuatro núcleos para 256 × 192 y 10 pasos, aceptada al primer intento).
 En `tests/`: el servidor por sockets reales
 (`Host` ajeno, token, `Origin`, sin CORS, *keep-alive*, ficheros, modelos por HTTP, *pending
 models*, `seq` y `share`, el diagnóstico, una trama sin leer que suelta su conexión), el estado de la página por HTTP (`tests/appdata.rs`: seguridad, nombres que no salen de

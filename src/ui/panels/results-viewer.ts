@@ -75,12 +75,14 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
   const hasAi = !!meta?.ai && meta.ai.bytes > 0;
   const saveBtn = h('button', { type: 'button', class: 'btn', onclick: () => meta && void cmd.saveResultAgain(ctx, meta.id) }, icon('download', 14), hasAi ? t('rv.saveRender') : t('rv.saveAgain'));
   const saveAiBtn = hasAi ? h('button', { type: 'button', class: 'btn', 'data-save': 'ai', onclick: () => meta && void cmd.saveResultAgain(ctx, meta.id, 'AI') }, icon('download', 14), t('rv.saveAi')) : null;
-  // The guard's report, in a line under the data (AI-POST.md §4): what was checked, and what the guard did.
+  // The guard's report (AI-POST.md §4): what was checked, and what the guard did. Its own line under the title and
+  // the toolbar, the whole width, one line; where it does not fit it ends in an ellipsis and the tooltip has it all,
+  // with what ran.
   const report = meta?.ai ? reportText(meta.ai.report) : null;
   const reportEl = report
     ? h(
         'div',
-        { class: 'rv-report', 'data-verdict': meta!.ai!.report.verdict, title: reportDetails(meta!.ai!.report, meta!.ai!.report.modelKey) },
+        { class: 'rv-report', 'data-verdict': meta!.ai!.report.verdict, title: `${[report.checked, report.note].filter(Boolean).join(' · ')}\n${reportDetails(meta!.ai!.report, meta!.ai!.report.modelKey)}` },
         report.checked ? h('span', { class: 'rv-report-checked tabular' }, report.checked) : null,
         report.note ? h('span', { class: `rv-report-note${meta!.ai!.report.verdict === 'REJECTED' ? ' is-rejected' : ''}` }, report.note) : null,
       )
@@ -106,7 +108,7 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
         )
       : null;
   const deleteBtn = h('button', { type: 'button', class: 'btn', 'data-tip': t('rv.deleteTip'), onclick: () => meta && void cmd.deleteResult(ctx, meta.id) }, icon('trash', 14), t('common.delete'));
-  const closeBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('common.close'), 'data-tip': t('common.close'), 'data-kbd': t('key.escape'), onclick: () => cmd.closeResult(ctx) }, icon('close'));
+  const closeBtn = h('button', { type: 'button', class: 'icon-btn rv-close', 'aria-label': t('common.close'), 'data-tip': t('common.close'), 'data-kbd': t('key.escape'), onclick: () => cmd.closeResult(ctx) }, icon('close'));
   const memory = h('div', { class: 'note rv-memory' }, t('queue.storageMemory'));
   scope.watch((_s, u) => u.resultsStorage, (st) => (memory.style.display = st === 'MEMORY' ? '' : 'none'));
 
@@ -116,8 +118,16 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
     h(
       'div',
       { class: 'rv-head' },
-      h('div', { class: 'rv-info' }, title, data, reportEl, memory),
-      h('div', { class: 'rv-actions' }, compareBtn, h('span', { class: 'rv-sep' }), fitBtn, actualBtn, zoomText, h('span', { class: 'rv-sep' }), saveBtn, saveAiBtn, folderBtn, deleteBtn, closeBtn),
+      // The title block and the toolbar share a line while both fit; otherwise the toolbar goes under the title.
+      // Close stays in the corner.
+      h(
+        'div',
+        { class: 'rv-top' },
+        h('div', { class: 'rv-info' }, title, data, memory),
+        h('div', { class: 'rv-actions' }, compareBtn, h('span', { class: 'rv-sep' }), fitBtn, actualBtn, zoomText, h('span', { class: 'rv-sep' }), saveBtn, saveAiBtn, folderBtn, deleteBtn),
+      ),
+      reportEl,
+      closeBtn,
     ),
     frame,
   );

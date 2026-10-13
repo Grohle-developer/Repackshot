@@ -524,17 +524,28 @@
   background: var(--viewport-bg);
 }
 .rv-head {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 2px;
   flex: none;
   min-height: 52px;
-  padding: 6px 8px 6px 14px;
+  /* Room on the right for Close, which stays in the corner. */
+  padding: 6px 46px 6px 14px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--line);
 }
+/* The title block and the toolbar: on one line while both fit; otherwise the toolbar wraps under the title (and its
+   buttons wrap among themselves), so the title block is never squeezed below its basis. */
+.rv-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 38px;
+}
 .rv-info {
-  flex: 1;
+  flex: 1 1 280px;
   min-width: 0;
 }
 .rv-title {
@@ -549,12 +560,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The guard's report: its own line under the title and the toolbar, the whole width, one line (the tooltip has it
+   all). What the guard did ("limited to 23 %", rejected) follows on the same line. */
 .rv-report {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-label);
   color: var(--ink-1);
+}
+.rv-report-checked + .rv-report-note {
+  margin-left: 14px;
 }
 .rv-report-note {
   color: var(--ink-0);
@@ -562,9 +578,18 @@
 }
 .rv-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 100%;
+  margin-left: auto;
+}
+.rv-close {
+  position: absolute;
+  top: 7px;
+  right: 8px;
 }
 .rv-sep {
   width: 1px;

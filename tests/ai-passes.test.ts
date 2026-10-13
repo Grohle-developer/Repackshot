@@ -10,9 +10,10 @@ import { aiFileName, failedItems, limitedPercent, previewSize, reportItems, swit
 import { cameraPosition, SENSOR_MM } from '../src/core/camera';
 import { cocDiameter, cocPass, hasDepthOfField, lensOf } from '../src/core/lens-coc';
 import { indexPassIds } from '../src/core/pass-ids';
-import { PASS_KEYS, passMask } from '../src/core/passes';
-import { cameraToRsb, projectScene } from '../src/io/rsb';
-import { assemblePasses, packId, unpackIds } from '../src/render/preview-passes';
+import { FLOOR_ID, PASS_KEYS, passMask } from '../src/core/passes';
+import { cameraToRsb, FLOOR_SHADOW_CATCHER, projectScene, writeRsb } from '../src/io/rsb';
+import { assemblePasses, floorHits, packId, unpackIds } from '../src/render/preview-passes';
+import { loadRt, renderWithPasses, RT_WASM } from './wasm-engine';
 import { reportText } from '../src/ui/ai-report';
 import { setLang } from '../src/ui/strings';
 import { passScene } from './browser/pass-scene';
@@ -79,6 +80,100 @@ describe('assembling the planes', () => {
     const only = assemblePasses({ part, material: null, nd: null, albedo: null }, 2, 2, axes, lens, ['partId']);
     expect(Object.keys(only).sort()).toEqual(['height', 'partId', 'width']);
     expect(passMask(['partId'])).toBe(1 << PASS_KEYS.indexOf('partId'));
+  });
+});
+
+describe('the studio floor in the three.js passes (X3c)', () => {
+  // The pass scene from low down (the horizon in view), as the engine's scene has it.
+  const W = 96;
+  const H = 64;
+  const low = (projection: 'PERSPECTIVE' | 'ORTHOGRAPHIC', elevation = 6) => {
+    const s = passScene(W, H);
+    const cam = s.camera.cameras[s.camera.active];
+    return { ...s, camera: { ...s.camera, cameras: { ...s.camera.cameras, [cam.id]: { ...cam, elevation, projection, orthoWidth: 400 } } } };
+  };
+  const axes = [[1, 0, 0], [0, 0, 1], [0, -1, 0]] as const;
+
+  it('is in the engine’s scene as the ids say, and nowhere when the floor is off', () => {
+    const s = passScene(W, H);
+    const { scene, ids } = projectScene(s, { width: W, height: H, maxSamples: 1, maxSeconds: 0 });
+    expect(scene.floor.mode).toBe(FLOOR_SHADOW_CATCHER);
+    expect(ids.floor).toEqual({ z: scene.floor.z, albedo: scene.floor.color, camera: { position: scene.camera.position, target: scene.camera.target, up: scene.camera.up, focalMm: scene.camera.focalMm, sensorMm: scene.camera.sensorMm, ortho: false, orthoWidth: scene.camera.orthoWidth } });
+    const off = projectScene({ ...s, studio: { ...s.studio, floor: false } }, { width: W, height: H, maxSamples: 1, maxSeconds: 0 });
+    expect(off.ids.floor).toBeNull();
+  });
+
+  it('is nearer than a part behind it and farther than one in front, with its normal up and its colour', () => {
+    const { ids } = projectScene(low('PERSPECTIVE'), { width: W, height: H, maxSamples: 1, maxSeconds: 0 });
+    const hits = floorHits(ids.floor!, W, H);
+    const bottom = (H - 1) * W + W / 2;
+    const top = W / 2;
+    expect(Number.isFinite(hits.depth[bottom])).toBe(true);
+    expect(hits.depth[top]).toBe(Infinity);
+    expect(hits.normalZ[bottom]).toBe(1);
+    // 2 × 1 raw planes of the bottom row's middle pixels: a part farther than the floor, and one nearer.
+    const d = hits.depth[bottom];
+    const one = { ...ids.floor!, camera: ids.floor!.camera };
+    const part = new Uint8Array(W * H * 4);
+    const nd = new Float32Array(W * H * 4);
+    // Raw rows start at the bottom: raw pixel x of row 0 is the picture's bottom row.
+    part.set(packId(1), (W / 2) * 4);
+    nd.set([0, 0, 1, d * 2], (W / 2) * 4);
+    part.set(packId(2), (W / 2 + 1) * 4);
+    nd.set([0, 0, 1, d / 2], (W / 2 + 1) * 4);
+    const out = assemblePasses({ part, material: part, nd, albedo: null }, W, H, axes, { focalMm: 85, fstop: 0, focusDist: 1, sensorMm: 36, ortho: false }, PASS_KEYS, one);
+    expect(out.partId![bottom]).toBe(FLOOR_ID);
+    expect(out.materialId![bottom]).toBe(FLOOR_ID);
+    expect(out.depth![bottom]).toBe(Math.fround(d));
+    expect([...out.normal!.subarray(bottom * 3, bottom * 3 + 3)]).toEqual([0, 0, 1]);
+    expect([...out.albedo!.subarray(bottom * 3, bottom * 3 + 3)]).toEqual([...ids.floor!.albedo].map(Math.fround));
+    expect(out.partId![bottom + 1]).toBe(2);
+    expect(out.partId![top]).toBe(0);
+    // Without a depth target the part is kept (the floor only fills what is background).
+    const flat = assemblePasses({ part, material: part, nd: null, albedo: null }, W, H, axes, { focalMm: 85, fstop: 0, focusDist: 1, sensorMm: 36, ortho: false }, ['partId'], one);
+    expect(flat.partId![bottom]).toBe(1);
+  });
+
+  it.skipIf(!RT_WASM)('agrees with the engine’s own passes on every floor pixel, the horizon included', async () => {
+    const rt = await loadRt();
+    let albedoChecked = 0;
+    // From just above the floor (perspective and orthographic), and from below it (its normal then faces down).
+    for (const [projection, elevation] of [['PERSPECTIVE', 6], ['ORTHOGRAPHIC', 6], ['PERSPECTIVE', -3]] as const) {
+      // The floor alone: the parts hidden, so the raw planes hold nothing but background.
+      const s = low(projection, elevation);
+      const nodes = Object.fromEntries(Object.entries(s.scene.nodes).map(([k, n]) => [k, n.kind === 'PART' ? { ...n, visible: false } : n]));
+      const floorOnly = { ...s, scene: { ...s.scene, nodes } };
+      const { scene, ids } = projectScene(floorOnly, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: [...PASS_KEYS] });
+      expect(scene.instances).toEqual([]);
+      const engine = renderWithPasses(rt, writeRsb(scene), W, H, 1, passMask([...PASS_KEYS])).passes;
+      const empty = new Uint8Array(W * H * 4);
+      const out = assemblePasses({ part: empty, material: empty, nd: new Float32Array(W * H * 4), albedo: new Float32Array(W * H * 4) }, W, H, axes, { focalMm: 85, fstop: 0, focusDist: 1, sensorMm: 36, ortho: false }, PASS_KEYS, ids.floor!);
+      let floor = 0;
+      let background = 0;
+      let down = 0;
+      for (let i = 0; i < W * H; i++) {
+        expect(out.partId![i], `${projection} ${elevation}° pixel ${i}`).toBe(engine.partId![i]);
+        if (engine.partId![i] === FLOOR_ID && engine.normal![i * 3 + 2] === -1) down++;
+        expect(out.materialId![i]).toBe(engine.materialId![i]);
+        if (engine.partId![i] === FLOOR_ID) {
+          floor++;
+          expect(Math.abs(out.depth![i] - engine.depth![i])).toBeLessThan(1e-4 * engine.depth![i] + 1e-3);
+          // The albedo is the engine's average over its samples' own rays (jittered, through the lens): the
+          // floor's colour exactly wherever those rays all meet the floor (in focus, away from the horizon).
+          const settled = engine.coc![i] < 0.25 && i >= 2 * W && engine.partId![i - W] === FLOOR_ID && engine.partId![i - 2 * W] === FLOOR_ID;
+          if (settled) albedoChecked++;
+          for (let c = 0; c < 3; c++) {
+            expect(out.normal![i * 3 + c]).toBe(engine.normal![i * 3 + c]);
+            if (settled) expect(out.albedo![i * 3 + c]).toBe(engine.albedo![i * 3 + c]);
+          }
+        } else background++;
+      }
+      // The horizon is in view: floor on one side of it, background on the other.
+      expect(floor).toBeGreaterThan(W * 4);
+      expect(background).toBeGreaterThan(W * 4);
+      expect(down === floor, `${elevation}°: the floor seen from ${elevation < 0 ? 'below' : 'above'}`).toBe(elevation < 0);
+    }
+    expect(albedoChecked).toBeGreaterThan(W * 4);
   });
 });
 

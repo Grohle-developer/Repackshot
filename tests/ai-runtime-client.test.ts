@@ -4,12 +4,16 @@
 // and a cancel. The launcher side of the same contract is tested over sockets in
 // engine/crates/rt-app/tests/ai.rs.
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { runtimeQuery, type AiRunState } from '../src/core/ai-runtimes';
 import { AiRunError, AiRuntimeClient, statusQuery } from '../src/io/ai-runtime';
 import { NativeClient, NativeError, type NativeInfo } from '../src/io/native';
 import { STRINGS } from '../src/ui/strings';
 import { AI_RUNTIMES } from '../src/data/ai-runtimes';
+import { openVcRuntime, runtimeActions, VC_RUNTIME_URL } from '../src/ui/panels/settings-ai';
+import { LICENCE_PATHS } from '../src/ui/panels/settings-sections';
+import type { Ctx } from '../src/ui/reactive';
 
 const TOKEN = '00112233445566778899aabbccddeeff';
 const INFO = { app: 'repackshot', aiApi: 1, filesApi: 1 } as unknown as NativeInfo;
@@ -153,5 +157,44 @@ describe('the Runtime row says why each choice was made, in both languages', () 
       expect(STRINGS.en[key], row.id).toBeTruthy();
       expect(STRINGS.es[key], row.id).toBeTruthy();
     }
+  });
+});
+
+describe('the Windows builds and the Microsoft Visual C++ runtime (X3c)', () => {
+  const installed = { state: 'installed' as const, vcRuntime: null };
+
+  it('an installed build that lacks it offers Microsoft’s page and a new check, before Remove; otherwise not', () => {
+    expect(runtimeActions({ ...installed, vcRuntime: 'missing' })).toEqual(['vcRuntime', 'probe', 'remove']);
+    expect(runtimeActions(installed)).toEqual(['remove']);
+    expect(runtimeActions({ state: 'missing', vcRuntime: null })).toEqual(['download', 'fromFile']);
+    expect(runtimeActions({ state: 'paused', vcRuntime: 'missing' })).toEqual(['resume', 'remove']);
+    expect(runtimeActions({ state: 'downloading', vcRuntime: null })).toEqual(['pause']);
+  });
+
+  it('the button opens Microsoft’s official page in the system’s browser: we do not ship its DLLs', async () => {
+    const opened: string[] = [];
+    const ctx = { services: { openExternal: async (url: string) => void opened.push(url) } } as unknown as Ctx;
+    await openVcRuntime(ctx, { vcRuntimeUrl: 'https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist' });
+    await openVcRuntime(ctx, { vcRuntimeUrl: null });
+    expect(opened).toEqual([VC_RUNTIME_URL, VC_RUNTIME_URL]);
+    expect(VC_RUNTIME_URL).toMatch(/^https:\/\/learn\.microsoft\.com\//);
+    for (const key of ['set.rt.vcRuntime', 'set.rt.vcRuntimeInstall', 'set.rt.vcRuntimeTip', 'set.rt.probe'] as const) {
+      expect(STRINGS.en[key], key).toBeTruthy();
+      expect(STRINGS.es[key], key).toBeTruthy();
+    }
+    expect(STRINGS.en['set.rt.vcRuntimeInstall']).toBe('Install Microsoft Visual C++ runtime…');
+  });
+
+  it('About lists stable-diffusion.cpp and ggml with their MIT licences, shipped as files', () => {
+    expect(LICENCE_PATHS.sdcpp).toBe('licences/stable-diffusion.cpp.LICENSE.txt');
+    expect(LICENCE_PATHS.ggml).toBe('licences/ggml.LICENSE.txt');
+    expect(STRINGS.en['set.ab.sdcpp']).toMatch(/^stable-diffusion\.cpp: .*\(MIT\)$/);
+    expect(STRINGS.es['set.ab.ggml']).toMatch(/^ggml: .*\(MIT\)$/);
+    // tools/licences.mjs copies them byte for byte from tools/third-party/.
+    const tool = readFileSync('tools/licences.mjs', 'utf8');
+    expect(tool).toContain("['tools/third-party/stable-diffusion.cpp-d637cfb.LICENSE', 'stable-diffusion.cpp.LICENSE.txt']");
+    expect(tool).toContain("['tools/third-party/ggml-d25b121.LICENSE', 'ggml.LICENSE.txt']");
+    expect(readFileSync('tools/third-party/stable-diffusion.cpp-d637cfb.LICENSE', 'utf8')).toMatch(/^MIT License\n\nCopyright \(c\) 2023 leejet\n/);
+    expect(readFileSync('tools/third-party/ggml-d25b121.LICENSE', 'utf8')).toMatch(/^MIT License\n\nCopyright \(c\) 2023-2026 The ggml authors\n/);
   });
 });

@@ -2297,7 +2297,7 @@ con los enlaces resueltos cuando el archivo ya no existe. Lo comprueban
 prueba unitaria `a_server_is_recognised_through_a_link`; las dos fallan
 con la comparación anterior.
 
-### X3c · La tubería completa de escritorio — **Opus**
+### X3c · La tubería completa de escritorio — **Opus** — hecha
 
 **Qué.** `AI-POST.md` §7.3: `/api/ai/post` en el lanzador (pases
 guardados del render → `rt-post` → stable-diffusion.cpp por mosaico →
@@ -2320,6 +2320,94 @@ intervención 0, la imagen de la IA es la del motor bit a bit; cancelar a
 mitad deja la del motor; un modelo que la compilación no carga sale con
 el motivo. Lista corta de comprobación para el equipo del usuario (Vulkan,
 una imagen de 1024², tiempo anotado).
+
+**Hecho** (2026-10-13). **Lanzador** (`rt-app/src/ai/post.rs`, que enlaza ahora `rt-post`):
+`POST /api/ai/post` con `{source: {kind: RENDER, renderId}, settings, prompt, negative, modelKey,
+materials}` o, para la vista previa, el cuerpo binario `RPI1` (JSON, imagen `RPL1`, pases `RPP1`,
+≤ 512 px); `GET /api/ai/post/<id>?after=n` (estado, `stage`, mosaico y intento desde 1, fracción
+que no retrocede, `calls`, el `GuardReport` al terminar), `GET …/image` (`RPL1`, lineal con alfa
+recto) y `DELETE`; `aiPost: 1` en `/api/info`. El conductor nativo es la máquina de pasos de X3a
+(`plan` → `tile_input` y `control_planes` por mosaico → el `sd-server` de X3b, cargado entre
+llamadas → `accept` → reintentos a `RETRY_FACTOR` hasta `MAX_ATTEMPTS`); con Intervención 0 el plan
+no tiene mosaicos, no se prepara ni se arranca el motor de ejecución (funciona sin él instalado) y
+la imagen es la del motor bit a bit; un mosaico de otro tamaño llega a la guarda como tal (la
+comprobación `size`) y rechaza a la primera; un post por el que nadie pregunta en 2 min se para.
+El almacén de X2 guarda con cada render su exposición y su curva (`Look`, también en disco), y la
+imagen lineal es la conversión de la página (`linear_of`: las sumas por `fround(1/n)`, el color entre
+la cobertura donde no es opaca, el umbral `1 − 1e-6` en `f64` como el número de JavaScript; un
+umbral `f32` habría llamado opaco al `f32` justo por debajo, y la prueba lo vigila). El falso
+`rt-fake-sd` gana un modo `gain` (aclara con suavidad, como un modelo que obedece) y `acceptMs` (un motor que tarda en tomar el trabajo, para ver el estado de inicio de cada mosaico). **Visual C++**:
+`proc::missing_dll`, `Probe.dllMissing` y `needs_vc_runtime` (Windows, una DLL que falta y alguna del
+entorno de Visual C++ ausente de la carpeta del motor y de `System32`) → `vcRuntime: "missing"` y
+`vcRuntimeUrl` en la fila; la interfaz enseña *Instalar el entorno de Microsoft Visual C++…* (la página
+oficial de Microsoft con `openExternal`: no redistribuimos sus DLL) y *Comprobar de nuevo*.
+*Acerca de* lista stable-diffusion.cpp y ggml con sus textos MIT, copiados byte a byte de los *commits*
+fijados (`tools/third-party/`, `tools/licences.mjs`). **Página**: `src/io/ai-post.ts`
+(`DesktopAiService`: `status()` es `/api/ai/runtime` con los ajustes de la persona y el modelo activo,
+`aiRuntimeQuery` de `src/ui/ai-query.ts`; `post()` manda, sigue, lee la imagen y olvida; un aborto manda `DELETE`); `main.ts` lo
+usa cuando el lanzador dice `aiPost`, la web sigue con `notBuiltService` y `?ai=synthetic` con el
+sintético; **`AI_AVAILABLE` ya no existe**. La cola pide al render que deje los pases de la guarda en el
+lanzador (`aiPasses`, `passesInLauncher`: ni siquiera vuelven a la página; sin albedo, que la guarda no
+usa y cuesta un rayo por muestra), manda la fuente `RENDER` con la tabla de materiales
+(`guardMaterials` sobre `ProjectScene.materialOrder`) y el *prompt* de `src/ai/prompt.ts`, enseña el
+progreso por mosaico en la fila (*IA · mosaico 2 de 4 · intento 2*, `RenderProgress.ai`) y escribe la
+imagen de la IA desde la luz lineal con la exposición y la curva del render (`straightBytes`,
+`straightWords16`, `straightExr`: PNG de 8 y 16 bits bit a bit con el del motor, EXR en cada píxel opaco);
+detener o pausar durante la IA conserva la imagen del motor en el historial y, con *Pausar*, el trabajo
+vuelve a esperar como en P3a. **El suelo, `FLOOR_ID`**: en la guarda era casi una región, pero
+`FLOOR_ID` es `u32::MAX`, el mismo valor con el que empezaba la caché de regiones, así que un suelo visto
+antes que cualquier pieza se quedaba como fondo; ahora es una región de verdad, que se reilumina y tiene
+su comprobación de color (*Floor*, sin desgaste); la profundidad del control se normaliza sobre las piezas
+y el suelo se dibuja a esa escala, recortado (su plano llega al horizonte); el servicio sintético lo nombra;
+los pases de three.js lo encuentran con los rayos centrales del motor (`floorHits`, perspectiva y
+ortográfica, también desde debajo del suelo) y coinciden con los del motor en cada píxel del suelo,
+horizonte incluido. **De verdad aquí**: el lanzador real con todo el código de la página (motor nativo,
+cola, servicio de escritorio) contra el falso instalado donde iría la compilación fijada de Linux
+(`tests/ai-desktop.test.ts`); y una vez la tubería entera con stable-diffusion.cpp real y SD 1.5 con su
+ControlNet de profundidad en CPU (`real_post_with_sd15_and_its_depth_controlnet_on_the_cpu`, ignorada sin los pesos): el ejemplo de 256 × 192 con el suelo, Intervención 100 y 10 pasos (5 de muestreo a fuerza 0,4), **53 s** en 4 núcleos (13 s de carga de pesos, ~6,5 s por paso), aceptada al primer intento: detalle 0,998, bordes 0,02, ΔE₉₅ 1,9 en el coral y 1,6 en el azul; el suelo llegó a 2,2 y la guarda dejó su cambio de color al 71 %. Los pesos se borraron después. **Con el falso**: todo lo demás. Pruebas: 13 nuevas en
+Rust (3 de `rt-post`, 3 unitarias de `rt-app` y 9 de `tests/ai_post.rs`, una más ignorada con los pesos
+reales) y 29 de vitest (14 del servicio y de lo que se le pregunta, 4 contra el lanzador real, 4 de la cola, 3 de los pases, 1 del
+sintético, 3 de la fila del motor y *Acerca de*), más las de X2 y X4 que cambian con el suelo; 26
+mutaciones comprobadas, cada prueba falla si se rompe lo que guarda.
+
+**No encajó con el plan.** (1) **El control**: §3.2 pide bordes y profundidad al ControlNet, y *tile*
+para salidas grandes; `sd-server` lleva un solo ControlNet cargado y solo SD 1.5 tiene alguno en los
+perfiles (*tile* y *depth*), así que se manda la profundidad de los pases (la primera de `depth`, `tile`
+que tenga la familia) en vista previa y en final por igual, para no reiniciar el servidor entre una y
+otra; los bordes no tienen ControlNet en los perfiles. Decisión provisional para X1b. (2) **La profundidad
+con suelo**: §7.2 dice «normalizada sobre toda la imagen»; con el suelo como superficie, su plano hasta
+el horizonte dejaba el producto en unos pocos niveles, así que la escala es la de las piezas y el suelo se
+recorta a ella (sin piezas, el suelo marca la escala). Pendiente de Fable en X1b. (3) **EXR en el
+visor**: el historial guarda la imagen de la IA de un trabajo EXR tal cual (EXR) y los navegadores no la
+muestran: la miniatura sale de una copia de 8 bits, pero el visor no compara *Render | IA* en EXR (haría
+falta una segunda imagen de vista en el historial, como el `display` del motor; queda anotado). (4)
+**Pausar durante la IA**: el trabajo vuelve a esperar (P3a: un render no se reanuda a medias) y la imagen
+del motor ya está en el historial, así que *Reanudar* deja un segundo resultado del mismo trabajo. (5)
+**`AiPostRequest`** gana `materials?` (añadido); el resto del contrato añadido va fuera de `core/ai.ts`:
+`FrameRequest.aiPasses`, `FrameResult.renderId` y `tone`, `AiEncodeOptions.tone`, `AiPort.materials` y
+`renderSource`, `AiPort.scenePrompt(state, settings?)`, `RenderProgress.ai`, `PassIds.floor`,
+`RenderOptions.passesInLauncher`, `AI_GUARD_PASSES` (`core/ai-post.ts`). (6) La fracción de la IA ocupa la
+barra del trabajo en su lugar (el render ya terminó): la fila dice qué mide. (7) Las Visual C++ no van
+junto al ejecutable ni en el instalador: no se redistribuyen; el botón lleva a Microsoft. (8) *Ajustes ▸
+Post-procesado IA* ya no dice *llega en una próxima versión* donde el servicio no dice `NOT_BUILT`.
+(9) Apagar el interruptor libera el modelo (`DELETE /api/ai/sidecar`, que no hace nada si un trabajo lo
+usa). (10) La tolerancia `detailSsim` (y las demás) se puede pasar en la petición (`tolerances`) para
+calibrar en X1b; las pruebas lo usan para forzar reintentos. (11) Con el motor real, la primera
+llamada dice *inferencia* medio segundo antes de que `sd-server` pinte su barra de carga (el trabajo ya
+está `generating` y aún no hay barra); la fracción no retrocede y luego dice *cargando*: cosmético,
+anotado para X3b. (12) **El modelo activo en la ventana de render**: sin un modelo elegido a mano, el activo
+es la recomendación para el equipo, y la detección del equipo solo la lanzaba *Ajustes*; con el servicio de
+escritorio, el interruptor decía *No hay ningún modelo descargado* y llevaba a *Ajustes* aunque el modelo
+estuviera instalado (lo enseñaron las capturas contra el lanzador real). Ahora el escritorio con `aiPost`
+detecta el equipo al arrancar, la sección también la lanza, y la sección vuelve a preguntar cuando cambia lo
+que pregunta (`aiStatusKey`: el dispositivo, el *backend*, el modelo activo, los modelos instalados), con su
+prueba. (13) **La cabecera del visor de resultados** apretaba el informe de la guarda en una columna estrecha
+junto al título, una o dos palabras por línea (la barra de botones no cedía sitio): ahora el informe tiene su
+línea propia a todo lo ancho (una sola, con puntos suspensivos y el texto entero en el aviso), la barra pasa bajo
+el título cuando no caben juntos y *Cerrar* se queda en la esquina. `tools/ai-post-check.mjs` (j) lo mide a
+1600, 1280 y 960 px en inglés y en español (solapes, salidas de la cabecera, una línea, a todo lo ancho, el
+título entero) y falla con la cabecera de antes; capturas `docs/ui/ai-results-viewer.png` y
+`ai-results-light.png` rehechas.
 
 ### X3d · La web — **Opus**
 
@@ -3101,7 +3189,7 @@ INI no cambia).
 
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
-**N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b**, **X4** y **X2** ya; **X3c**, **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
+**N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b**, **X4**, **X2** y **X3c** ya; **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
 *próximamente* y no deja ninguno nuevo sin anotarlo aquí.
 
 ## Herramientas de estudio (óptica, entorno, luz, cámara, partículas)

@@ -25,6 +25,8 @@ doc = false
 
 [dependencies]
 rt-core = { path = "../rt-core" }
+# The AI guard and its pixel work (X3a): the desktop pipeline drives its step machine (ai/post.rs).
+rt-post = { path = "../rt-post" }
 
 [dev-dependencies]
 # Parity: the launcher's native renderer must give exactly the film of `rt`.

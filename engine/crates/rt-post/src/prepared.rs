@@ -3,6 +3,7 @@
 
 use crate::image::{Display, LinearImage, Passes};
 use crate::job::{fraction, Job};
+use rt_core::passes::FLOOR_ID;
 use std::collections::BTreeSet;
 
 /// Standard deviation of the blur below which the checks see the high band, pixels.
@@ -13,6 +14,9 @@ pub(crate) const SIGMA_WEAR: f32 = 3.0;
 
 /// Region index of background pixels.
 pub(crate) const BACKGROUND: u32 = u32::MAX;
+
+/// The name of the studio floor's region when the job's table does not name it.
+pub const FLOOR_NAME: &str = "Floor";
 
 /// One material region present in the image.
 #[derive(Clone, Debug)]
@@ -78,7 +82,9 @@ pub(crate) struct Prepared<'a> {
     pub gain: f32,
     /// Display-linear RGB of the engine image.
     pub disp: Vec<f32>,
-    /// Dense region index per pixel, [`BACKGROUND`] where `partId` is 0.
+    /// Dense region index per pixel, [`BACKGROUND`] where `partId` is 0. The studio floor
+    /// ([`FLOOR_ID`] in both ids) is a region like a material's: it may be relit, and its colour
+    /// is checked.
     pub region: Vec<u32>,
     pub regions: Vec<Region>,
     /// Cosine of the crease angle.
@@ -112,6 +118,14 @@ impl<'a> Prepared<'a> {
                     allows_wear: m.allows_wear,
                     locked: m.locked,
                 },
+                // The floor's contact shadows and bounced light are what Light and Bounce improve;
+                // it is no product material, so no wear enters it.
+                None if id == FLOOR_ID => Region {
+                    id,
+                    name: FLOOR_NAME.into(),
+                    allows_wear: false,
+                    locked: false,
+                },
                 None => Region {
                     id,
                     name: format!("#{id}"),
@@ -121,18 +135,24 @@ impl<'a> Prepared<'a> {
             })
             .collect();
         let mut region = vec![BACKGROUND; w * h];
-        let mut cache = (u32::MAX, BACKGROUND);
+        // The last material id looked up and its region. `None` at first: every id, FLOOR_ID
+        // (u32::MAX) included, is looked up the first time it is seen.
+        let mut cache: Option<(u32, u32)> = None;
         for (p, r) in region.iter_mut().enumerate() {
             if passes.part_id[p] == 0 {
                 continue;
             }
             let m = passes.material_id[p];
-            if m != cache.0 {
-                // `ids` holds every id present, so the search always finds it.
-                let i = ids.binary_search(&m).unwrap_or(0) as u32;
-                cache = (m, i);
-            }
-            *r = cache.1;
+            let hit = cache.filter(|c| c.0 == m).map(|c| c.1);
+            *r = match hit {
+                Some(i) => i,
+                None => {
+                    // `ids` holds every id present, so the search always finds it.
+                    let i = ids.binary_search(&m).unwrap_or(0) as u32;
+                    cache = Some((m, i));
+                    i
+                }
+            };
         }
         let crease_cos =
             rt_core::fmath::cos(job.tolerances.crease_deg * rt_core::fmath::DEG_TO_RAD);

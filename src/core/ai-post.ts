@@ -4,7 +4,14 @@
 // `AiPostService` (core/ai.ts), the settings live in `RenderSettings.ai` (core/render.ts).
 
 import { PREVIEW_MAX_SIDE, type AiPipelineSettings, type AiUnavailableReason, type GuardReport } from './ai';
+import type { PassKey } from './passes';
 import type { AiSettings } from './render';
+
+/**
+ * The passes a final render keeps for the guard (X3c, engine/crates/rt-post): the ids, the normal, the depth and the
+ * circle of confusion. Not the albedo: the guard does not use it, and it costs a ray per sample.
+ */
+export const AI_GUARD_PASSES: readonly PassKey[] = ['normal', 'depth', 'partId', 'materialId', 'coc'];
 
 /** The smallest side the preview is drawn at (AI-POST.md §4: 384–512 px); the slower the computer, the nearer to it. */
 export const PREVIEW_MIN_SIDE = 384;

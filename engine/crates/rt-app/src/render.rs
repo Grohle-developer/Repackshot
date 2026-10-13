@@ -31,7 +31,7 @@
 //! [`crate::kept`] before the job says it is done, so they are there for whoever reads the end.
 //! Viewport jobs never render passes.
 
-use crate::kept::{KeepLimits, Kept, KeptRender, PassesBody};
+use crate::kept::{KeepLimits, Kept, KeptRender, Look, PassesBody};
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, Passes, PASS_ALL};
@@ -1201,6 +1201,10 @@ impl Engine {
                                         id: run.id,
                                         image,
                                         passes: Arc::new(passes),
+                                        look: Look {
+                                            tonemap: scene.render.tonemap,
+                                            exposure_ev: scene.render.exposure_ev,
+                                        },
                                     });
                                 }
                                 run.end(end_flags(&run), None);
@@ -1480,6 +1484,9 @@ mod tests {
         let mut scene = small_example(5, 40, 30);
         // Asked in the RSB and by the caller: the job renders both.
         scene.render.passes = PASS_DEPTH;
+        // The look is kept with the render (the AI sees the image through it, X3c).
+        scene.render.tonemap = 3;
+        scene.render.exposure_ev = -0.75;
         let job = engine
             .submit_with(
                 Kind::Final,
@@ -1499,6 +1506,13 @@ mod tests {
         let kept = engine.kept(job.id).expect("kept as it ended");
         assert_eq!(kept.image.sums, f.sums, "the image of the last frame");
         assert_eq!((kept.image.samples, kept.image.flags), (5, FLAG_DONE));
+        assert_eq!(
+            kept.look,
+            Look {
+                tonemap: 3,
+                exposure_ev: -0.75
+            }
+        );
         // The passes rt-core renders on its own, for the same tiles and samples.
         let prepared = Prepared::new(&scene);
         let mut reference = Passes::new(40, 30, PASS_ALL);

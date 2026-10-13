@@ -333,7 +333,7 @@ con sus apartados *Modelo activo*, *Modelos* y *Equipo*:
 | **X2** | Opus | Pases del motor (§7.4): albedo, normal, profundidad, id de pieza y de material, mapa de desenfoque, en `rt-core`, el RSB, el wasm, el lanzador y el lado TypeScript. **Tras fusionar E5** (los dos tocan el integrador) |
 | **X3a** | Opus | `engine/crates/rt-post` y `post.wasm` (§7.2): condicionamiento, mosaicos, relleno y recorte, **guarda determinista** con comprobaciones y la máquina de pasos con retroceso; envoltura TypeScript y el *prompt* de la escena (`src/ai/`). Probado con el "modelo" sintético |
 | **X3b** | Opus | stable-diffusion.cpp en escritorio (§7.1): `src/data/ai-runtimes.json` fijado, descarga e instalación desde *Ajustes*, proceso auxiliar en `rt-app`, `/api/ai/runtime` y `/api/ai/run` (una inferencia sin guarda), con un proceso auxiliar falso en los tests |
-| **X3c** | Opus | La tubería completa de escritorio (§7.3), tras X2, X3a y X3b: `/api/ai/post` en el lanzador (mosaicos → stable-diffusion.cpp → `rt-post` → retroceso), el servicio de escritorio en `src/io/`, integración en la cola con las dos imágenes y el informe, `AI_AVAILABLE` real |
+| **X3c** | Opus | **Hecha.** La tubería completa de escritorio (§7.3), tras X2, X3a y X3b: `/api/ai/post` en el lanzador (mosaicos → stable-diffusion.cpp → `rt-post` → retroceso), el servicio de escritorio en `src/io/`, integración en la cola con las dos imágenes y el informe; `AI_AVAILABLE` ya no existe: lo dice `status()` |
 | **X3d** | Opus | La web, tras X3c: ONNX Runtime Web con WebGPU en workers, **exportar el codificador del VAE a ONNX** para que exista `ZIMAGE_WEB`, conductor en worker con `post.wasm`, caché OPFS con `sha256` y fragmentos de ≤ 1 GiB |
 | **X4** | Sonnet | **Hecha.** La interfaz de §4 contra `AiPostService` (`src/core/ai.ts`), con un servicio sintético hasta X3c: sección de la ventana de render, configurador, fichas, vista previa en modo Rápido con los pases dibujados por three.js y divisor, informe de la guarda y divisor en el visor de resultados, dos miniaturas en la cola, ajustes en el *store* (`ROADMAP.md` X4) |
 | ~~X5~~ | — | **Absorbida en U6** (ventana de Ajustes, `ROADMAP.md`): el gestor de modelos de §5 y el selector de §2.2–§2.4 no necesitan la tubería, así que llegan antes. Lo que queda para después de X3 (comprobar en vivo que el modelo activo cabe y una prueba de una imagen) entra en X4 |
@@ -380,7 +380,13 @@ nativo que gobierna el lanzador.
   lanzador con el `curl` del sistema (mismo progreso, pausa, reanudación y
   `sha256`, misma carpeta), con *Instalar desde un archivo…* de respaldo.
   Las compilaciones de Windows necesitan el entorno de Visual C++
-  2015–2022, que no traen.
+  2015–2022, que no traen. **X3c**: cuando no arrancan por eso (una DLL que
+  falta y alguna del entorno de Visual C++ ausente de su carpeta y de
+  `System32`), *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* enseña
+  *Instalar el entorno de Microsoft Visual C++…*, que abre la página
+  oficial de Microsoft en el navegador del sistema (`openExternal`), y
+  *Comprobar de nuevo*: no redistribuimos sus DLL. *Acerca de* lista
+  stable-diffusion.cpp y ggml con sus licencias MIT.
 
 ### 7.2 · La guarda y los píxeles: el *crate* `rt-post`
 
@@ -429,6 +435,37 @@ los ajustes y recibe las dos imágenes y el informe. El modelo se carga
 una vez y queda cargado mientras se use (vista previa tras vista previa);
 se descarga al cerrar *Post-procesado IA* o tras un rato sin uso, para
 devolver la memoria.
+
+- **Hecho en X3c** (2026-10-13). En el lanzador, `rt-app/src/ai/post.rs`:
+  `POST /api/ai/post` con `{source: {kind: RENDER, renderId}, settings,
+  prompt, negative, modelKey, materials}` (JSON), o la fuente `INLINE`
+  (cuerpo binario `RPI1`: el JSON, la imagen `RPL1` y los pases `RPP1`,
+  ≤ 512 px); progreso y cancelación como los trabajos de render
+  (`GET /api/ai/post/<id>?after=n`, `DELETE`), imagen en
+  `GET /api/ai/post/<id>/image` (`RPL1`: lineal `f32` con alfa recto) y
+  `aiPost: 1` en `/api/info`. El conductor nativo es el de §7.2: `plan`,
+  por mosaico `tile_input` y la imagen de control, el `sd-server` de X3b
+  (un servidor, el modelo cargado entre llamadas), `accept`, reintentos a
+  `RETRY_FACTOR` hasta `MAX_ATTEMPTS`. **Con Intervención 0 no se arranca
+  el motor de ejecución** (ni hace falta que esté instalado) y la imagen
+  es la del motor bit a bit. El render guarda con su imagen lineal su
+  exposición y su curva (`Look`), así que el modelo ve lo que ve la
+  persona. Contrato completo en `engine/crates/rt-app/README.md`. En la
+  página: `src/io/ai-post.ts` (`DesktopAiService`, el servicio del
+  escritorio cuando el lanzador dice `aiPost`; la web sigue con
+  `notBuiltService` hasta X3d y `?ai=synthetic` con el sintético); la cola
+  pide al render que deje los pases en el lanzador (`aiPasses`), manda el
+  id, enseña el progreso por mosaico (*IA · mosaico 2 de 4 · intento 2*) y
+  escribe la imagen de la IA **desde la luz lineal del render** con su
+  propia exposición y curva (`straightBytes`, `straightWords16`,
+  `straightExr` de `src/render/tiles.ts`): un PNG de 16 bits o un EXR lo
+  siguen siendo, y con Intervención 0 el fichero de la IA es el del motor
+  byte a byte. Detener o pausar durante la IA deja la imagen del motor en
+  el historial (solo se pierde la de la IA). El *prompt* es el de
+  `src/ai/prompt.ts` y la tabla de materiales de la guarda, `guardMaterials`
+  sobre el orden de materiales que exporta `io/rsb.ts`
+  (`ProjectScene.materialOrder`). Lo que corre de verdad aquí y lo que es
+  falso, y lo que no encajó: `ROADMAP.md` X3c.
 
 ### 7.4 · Pases (X2)
 
@@ -482,6 +519,21 @@ para §7.3, y `GET /api/render/<id>/passes` en binario con cabecera).
   coinciden con los del motor en ids y profundidad salvo en el suelo, que
   sigue siendo fondo para ellos hasta X3c
   (`tests/ai-passes-browser.test.ts`).
+- **Hecho en X3c**: el suelo con `FLOOR_ID` en todas partes. En la guarda
+  (`rt-post`) es una región más, que se reilumina y tiene su comprobación
+  de color (*Floor*), y se encontró un fallo de verdad: `FLOOR_ID`
+  (`u32::MAX`) era también el valor inicial de la caché de regiones, así
+  que un suelo visto antes que cualquier pieza caía al fondo. La
+  profundidad del control se normaliza sobre las piezas y el suelo se
+  dibuja a esa escala, recortado (su plano llega al horizonte y aplastaba
+  el producto en unos pocos niveles). En el servicio sintético, región
+  *Floor*. En los pases de three.js, el suelo no se dibuja: se lanza el
+  rayo central del motor en cada píxel contra su plano (`floorHits`, la
+  cámara de `Camera::generate_ray`, también ortográfica) y es `FLOOR_ID`
+  donde está delante de las piezas, con la normal hacia la cámara y su
+  color como albedo; coincide con los pases del motor en cada píxel del
+  suelo, horizonte incluido (`tests/ai-passes.test.ts`,
+  `tests/ai-passes-browser.test.ts`).
 
 ### 7.5 · Ajustes en el *store* (X4)
 
@@ -490,7 +542,8 @@ para §7.3, y `GET /api/render/<id>/passes` en binario con cabecera).
 por defecto de `DEFAULT_AI_PIPELINE`; los proyectos antiguos se abren con
 esos valores. Cambiar un control es una acción del *store* y se deshace;
 cada trabajo copia sus ajustes. `AI_AVAILABLE` deja de ser una
-constante en X3c: lo dice `AiPostService.status()`.
+constante en X3c: lo dice `AiPostService.status()`. **Hecho**: la constante
+ya no existe.
 
 ### 7.6 · Orden
 
@@ -501,3 +554,46 @@ en cuanto se fusione E5. **X3c** cuando estén X2, X3a y X3b; **X3d** y
 **X1 parte B** detrás. Dependencias nuevas, en `ARCHITECTURE.md` §1:
 stable-diffusion.cpp (escritorio, proceso aparte, X3b) y ONNX Runtime
 Web (web, X3d).
+
+### 7.7 · Lista de comprobación en tu equipo (tras X3c, para X1 parte B)
+
+Aquí no hay GPU ni se pueden bajar los modelos grandes: la tubería se probó
+de punta a punta con un motor de ejecución falso y una sola vez con SD 1.5
+de verdad en CPU (`ROADMAP.md` X3c). La primera imagen real con Z-Image se
+hace en tu equipo:
+
+1. **Requisitos.** Windows 10 u 11 x64 (o Linux x86_64 con glibc ≥ 2.38) y
+   el controlador de la tarjeta gráfica al día (trae Vulkan). En Windows,
+   además, el entorno de **Microsoft Visual C++ 2015–2022 (x64)**: si falta,
+   *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* lo dice y el botón
+   *Instalar el entorno de Microsoft Visual C++…* abre la página de
+   Microsoft; instala el paquete x64 y pulsa *Comprobar de nuevo*.
+2. **El motor de ejecución Vulkan.** En esa misma fila, *Descargar* (con GPU
+   la regla elige Vulkan). Tiene que acabar en *Instalado ·
+   stable-diffusion.cpp version …, commit d637cfb* y *se ejecuta en* el
+   nombre de tu tarjeta. Si dice CPU teniendo GPU, apúntalo.
+3. **El modelo.** *Ajustes ▸ Post-procesado IA ▸ Modelos*: **Z-Image-Turbo
+   Q4** (`ZIMAGE_Q4`, ≈ 6,5 GB) y *Usar*. En un equipo modesto o sin GPU,
+   **SD 1.5 ligero** (`SD15_LIGHT`, ≈ 3,6 GB).
+4. **Un render final de 1024² con IA.** Abre el ejemplo (o un proyecto
+   tuyo), ventana de render: 1024 × 1024, PNG de 16 bits, el presupuesto de
+   siempre; enciende *Post-procesado IA* con los valores por defecto y
+   *Render*. La cola dice *IA · cargando el modelo* y luego *IA · mosaico 1
+   de 1* (y *· intento 2* si la guarda pidió repetir).
+5. **Apunta los tiempos**: el del render del motor, y el de la IA la primera
+   vez (carga el modelo) y una segunda seguida (ya cargado). El informe trae
+   los segundos de la IA (`seconds`).
+6. **Apunta el informe de la guarda**: en el visor de resultados, la línea
+   *Comprobado: …* y, si sale, *La IA se limitó al N %* o el rechazo (al
+   pasar el ratón por la línea salen los números). Compara con el divisor
+   *Render | IA*: ¿cambió algo que no debía (formas, texto, color de un
+   material, enfoque)?
+7. **Intervención 0**: el mismo render con Intervención 0 tiene que dar un
+   `…_AI.png` idéntico byte a byte al del motor, y el motor de ejecución no
+   debe arrancar (la fila sigue sin *cargado:*).
+8. **Qué mandar**: las dos imágenes (`…_0001.png` y `…_0001_AI.png`), la
+   entrada del resultado en `<datos>/results/index.json` (lleva el informe
+   completo, `ai.report`), el registro del lanzador (`<datos>/logs/`), una
+   captura de la fila *Motor de ejecución*, tu GPU y su VRAM (*Ajustes ▸
+   Post-procesado IA ▸ Equipo*), los tiempos del paso 5 y, si algo falla, el
+   mensaje tal cual.

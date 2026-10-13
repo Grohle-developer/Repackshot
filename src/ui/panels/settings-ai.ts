@@ -8,8 +8,8 @@
 // everything else works. Every size comes from the data, every speed and
 // time left from the bytes that arrived (io/downloads.ts).
 
-import { recommend, type Recommendation } from '../../core/ai-recommend';
-import { runtimeQuery, type AiRuntimeReport } from '../../core/ai-runtimes';
+import type { Recommendation } from '../../core/ai-recommend';
+import type { AiRuntimeEntryState, AiRuntimeReport } from '../../core/ai-runtimes';
 import { aiRuntime, AI_RUNTIMES } from '../../data/ai-runtimes';
 import type { AiRecommendRow } from '../../data/ai-models';
 import {
@@ -26,7 +26,6 @@ import {
   MANIFEST_FORMAT,
   modelState,
   recommendationView,
-  recommendInput,
   rowBadges,
   runsHere,
   type ImportOutcome,
@@ -36,6 +35,7 @@ import {
   type ModelView,
 } from '../../core/models';
 import type { RowMeta, SettingMeta } from '../../core/settings';
+import { aiRuntimeQuery, recommendationOf } from '../ai-query';
 import * as cmd from '../commands';
 import { select, textField, toggle } from '../components/controls';
 import { showConfirmIn } from '../components/widgets';
@@ -53,13 +53,14 @@ const size = (bytes: number) => formatBytes(bytes, getLang());
 const storeReason = (code: string) => (code === 'opfs' ? t('set.ai.noOpfs') : code);
 const pct = (done: number, total: number) => (total > 0 ? Math.floor((100 * done) / total) : 0);
 
+/** Microsoft's page with the official downloads of the Visual C++ runtime (the launcher sends the same). */
+export const VC_RUNTIME_URL = 'https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist';
+
 /** The recommendation for what was detected, by the rule of the catalogue (P2's core/ai-recommend.ts). */
 export function currentRecommendation(ctx: Ctx): Recommendation | null {
-  const u = ctx.ui.get();
-  const snap = u.models;
-  if (!snap || u.hardware.state !== 'DONE') return null;
-  return recommend(recommendInput(u.hardware.info, u.settings['ai.device'], u.settings['ai.gpu']), snap.catalogue);
+  return recommendationOf(ctx.ui.get());
 }
+
 
 const modelName = (m: ModelView) => lbl(m.label);
 
@@ -580,9 +581,19 @@ function guardBlock(ctx: Ctx, scope: Scope, rows: RowMeta[]): HTMLElement {
   return det;
 }
 
+/** "Post-processing arrives in a coming version", where the pipeline is not built (the web before X3d): the service says. */
 function aiTop(ctx: Ctx): HTMLElement {
   void cmd.detectHardware(ctx);
-  return h('p', { class: 'note sw-ai-soon' }, t('set.ai.soon'));
+  const note = h('p', { class: 'note sw-ai-soon' }, t('set.ai.soon'));
+  const service = ctx.services.ai?.service;
+  if (service) {
+    note.style.display = 'none';
+    void service
+      .status()
+      .then((st) => (note.style.display = st.reason === 'NOT_BUILT' ? '' : 'none'))
+      .catch(() => (note.style.display = ''));
+  }
+  return note;
 }
 
 /** The desktop portable's first start (AI-POST.md §2.2): at the top of the list, which is where the deep link lands. */
@@ -609,6 +620,34 @@ function chooserBanner(ctx: Ctx, scope: Scope): HTMLElement {
 // ------------------------------------------------------------------ Runtime (desktop: stable-diffusion.cpp, X3b)
 
 const RUNTIME_BUSY = ['downloading', 'verifying', 'installing'];
+
+/** What the Runtime row offers for a build in a state. */
+export type RuntimeAction = 'download' | 'fromFile' | 'pause' | 'resume' | 'remove' | 'vcRuntime' | 'probe';
+
+/**
+ * The Runtime row's buttons, in order: download it (or install the archive the person downloaded), pause, resume,
+ * remove; and for an installed Windows build that does not start for want of Microsoft's Visual C++ runtime (X3c),
+ * *Install Microsoft Visual C++ runtime…* (Microsoft's own page: we do not redistribute it) and *Check again*.
+ */
+export function runtimeActions(rt: Pick<AiRuntimeEntryState, 'state' | 'vcRuntime'>): RuntimeAction[] {
+  switch (rt.state) {
+    case 'missing':
+      return ['download', 'fromFile'];
+    case 'downloading':
+      return ['pause'];
+    case 'paused':
+      return ['resume', 'remove'];
+    case 'installed':
+      return rt.vcRuntime === 'missing' ? ['vcRuntime', 'probe', 'remove'] : ['remove'];
+    default:
+      return [];
+  }
+}
+
+/** Opens Microsoft's download page of the Visual C++ runtime in the system's browser (the launcher's link, else ours). */
+export function openVcRuntime(ctx: Ctx, rt: Pick<AiRuntimeEntryState, 'vcRuntimeUrl'>): Promise<void> {
+  return ctx.services.openExternal(rt.vcRuntimeUrl ?? VC_RUNTIME_URL);
+}
 
 /**
  * The inference runtime the rule chose (AI-POST.md §7.1): which build and why, its state (downloading with
@@ -639,12 +678,7 @@ function runtimeRow(ctx: Ctx, scope: Scope): HTMLElement | null {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
   let lastActions = '';
-  const query = () => {
-    const u = ctx.ui.get();
-    const snap = u.models;
-    const active = snap?.ready ? activeModel(u.settings['ai.active'], allModels(snap), snap.installed, currentRecommendation(ctx)) : null;
-    return runtimeQuery(u.settings['ai.backend'], u.settings['ai.device'], active ?? null);
-  };
+  const query = () => aiRuntimeQuery(ctx.ui.get());
   const refresh = async () => {
     if (timer) clearTimeout(timer);
     timer = null;
@@ -722,6 +756,7 @@ function runtimeRow(ctx: Ctx, scope: Scope): HTMLElement | null {
     const warnings = [
       rt.error ? t('set.rt.failed', { error: rt.error }) : null,
       rt.probeError ? t('set.rt.probeError', { error: rt.probeError }) : null,
+      rt.vcRuntime === 'missing' ? t('set.rt.vcRuntime') : null,
       !r.downloader && rt.state !== 'installed' ? t('set.rt.noCurl') : null,
       // AI-POST.md §7.1: a model the installed build does not load says so, with the reason.
       r.reason === 'MODEL_UNSUPPORTED' && r.activeModel ? t('set.rt.modelUnsupported', { name: r.activeModel, reason: r.detail ?? '–' }) : null,
@@ -730,7 +765,7 @@ function runtimeRow(ctx: Ctx, scope: Scope): HTMLElement | null {
     warn.replaceChildren(...warnings.flatMap((w) => [h('span', { class: 'sw-warn-dot', 'aria-hidden': 'true' }), w, h('br')]));
     if (rt.state === 'missing' || rt.state === 'paused') hint.textContent = t('set.rt.fromFileHint', { name: rt.name });
     const key = rt.key;
-    const actionKey = `${key}|${rt.state}|${getLang()}`;
+    const actionKey = `${key}|${rt.state}|${rt.vcRuntime === 'missing'}|${getLang()}`;
     if (actionKey === lastActions) return;
     lastActions = actionKey;
     const fromFile = () => button(t('set.rt.fromFile'), () => svc.installFromFile(key, { title: t('dialog.aiRuntime'), filterName: t('dialog.zipFiles') }), false, 'folder');
@@ -741,23 +776,18 @@ function runtimeRow(ctx: Ctx, scope: Scope): HTMLElement | null {
         'aria-label': `${t('set.ai.delete')}: ${t('set.ai.runtime')}`,
         onclick: () => showConfirmIn(panel, { message: t('set.rt.removeConfirm', { size: size(rt.state === 'installed' ? rt.bytes : rt.done) }), options: [{ label: t('set.ai.delete'), primary: true, run: act(() => svc.remove(key)) }] }),
       }, icon('trash', 14), t('set.ai.delete'));
-    const list: HTMLElement[] = [];
-    switch (rt.state) {
-      case 'missing':
-        list.push(button(t('set.ai.download'), () => svc.download(key), true, 'download'), fromFile());
-        break;
-      case 'downloading':
-        list.push(button(t('set.ai.pause'), () => svc.pause(key), false, 'pause'));
-        break;
-      case 'paused':
-        list.push(button(t('set.ai.resume'), () => svc.download(key), true, 'play'), remove());
-        break;
-      case 'installed':
-        list.push(remove());
-        break;
-      default:
-        break;
-    }
+    const make: Record<RuntimeAction, () => HTMLElement> = {
+      download: () => button(t('set.ai.download'), () => svc.download(key), true, 'download'),
+      fromFile,
+      pause: () => button(t('set.ai.pause'), () => svc.pause(key), false, 'pause'),
+      resume: () => button(t('set.ai.resume'), () => svc.download(key), true, 'play'),
+      remove,
+      // The Windows builds need Microsoft's Visual C++ runtime: its official page, in the system's browser.
+      vcRuntime: () =>
+        h('button', { type: 'button', class: 'btn btn-sm btn-primary', 'data-vc-runtime': '', 'data-tip': t('set.rt.vcRuntimeTip'), onclick: () => void openVcRuntime(ctx, rt).catch(() => undefined) }, icon('download', 14), t('set.rt.vcRuntimeInstall')),
+      probe: () => button(t('set.rt.probe'), () => svc.probe(key)),
+    };
+    const list = runtimeActions(rt).map((a) => make[a]());
     actions.replaceChildren(...list);
   }
   scope.onDispose(() => {

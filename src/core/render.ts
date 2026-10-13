@@ -11,7 +11,7 @@
 
 import { QUALITY_PRESETS, RESOLUTION_PRESETS } from '../data/quality';
 import type { QualityKey, ResolutionKey } from '../data/types';
-import { AI_STYLES, DEFAULT_AI_PIPELINE, type AiPipelineSettings, type AiStyle } from './ai';
+import { AI_STYLES, DEFAULT_AI_PIPELINE, type AiPipelineSettings, type AiPostStage, type AiStyle } from './ai';
 import type { ActionBase, ProjectState } from './store';
 import type { CameraId } from './camera';
 import { nextId } from './ids';
@@ -166,6 +166,11 @@ export interface RenderProgress {
   /** Animation: the frame being rendered (1-based) and the frames in the job. */
   frame?: number;
   frames?: number;
+  /**
+   * The AI post-processing of the job's image is running (X3c): `progress` is then the pipeline's own, and this
+   * says where it is (the tile and the attempt, 1-based).
+   */
+  ai?: { stage: AiPostStage; tile: number; tiles: number; attempt: number };
 }
 
 /** `state.render`: the window's settings, the queue, the job in flight and the last render number. */
@@ -182,13 +187,6 @@ export const WRITABLE_FORMATS: ReadonlySet<OutputFormat> = new Set<OutputFormat>
 export const FPS_CHOICES: readonly number[] = [24, 25, 30, 60];
 /** Encoded video arrives with N1; until then the output is a frame sequence. */
 export const VIDEO_AVAILABLE = false;
-/**
- * The build ships the AI pipeline. False until X3c. Since X4 nothing in the store reads it: whether the
- * switch can be turned on is what `AiPostService.status()` says (core/ai.ts), and a project may hold
- * `ai.enabled` whatever this build can run.
- */
-export const AI_AVAILABLE = false;
-
 /** Formats that carry an alpha channel. */
 export function supportsAlpha(format: OutputFormat): boolean {
   return format === 'PNG' || format === 'EXR';

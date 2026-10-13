@@ -1,10 +1,13 @@
 // The passes as the engine's rules give them, by ray casting on the CPU (phase X4): the engine's camera
 // (`rt_core::scene::Camera::generate_ray`: the sensor 36 mm along the longer side, one ray through the pixel
 // centre, the lens centre for the passes), the instances of `projectScene` with their transforms, and
-// double-sided triangles. The reference for the passes the preview draws with three.js.
+// double-sided triangles. The reference for the passes the preview draws with three.js. X3c: the studio floor
+// too (`FLOR`, visible or a shadow catcher): FLOOR_ID in both ids where it is the nearest, its normal turned to
+// the ray, its colour as the albedo.
 
 import { projectScene } from '../../src/io/rsb';
-import type { RenderPasses } from '../../src/core/passes';
+import { FLOOR_ID, type RenderPasses } from '../../src/core/passes';
+import { FLOOR_NONE } from '../../src/io/rsb';
 import type { ProjectState } from '../../src/core/store';
 
 type V = [number, number, number];
@@ -77,8 +80,19 @@ export function referencePasses(state: ProjectState, width: number, height: numb
           hit = { instance: tri.instance, normal: nrm };
         }
       }
-      if (!hit) continue;
       const o = py * width + px;
+      if (scene.floor.mode !== FLOOR_NONE && dir[2] !== 0) {
+        const t = (scene.floor.z - cam.position[2]) / dir[2];
+        if (t > 1e-3 && t < best) {
+          out.partId![o] = FLOOR_ID;
+          out.materialId![o] = FLOOR_ID;
+          out.depth![o] = t * dot(dir, forward);
+          out.normal!.set([0, 0, dir[2] < 0 ? 1 : -1], o * 3);
+          out.albedo!.set(scene.floor.color, o * 3);
+          continue;
+        }
+      }
+      if (!hit) continue;
       const inst = scene.instances![hit.instance];
       out.partId![o] = hit.instance + 1;
       out.materialId![o] = inst.materialId + 1;

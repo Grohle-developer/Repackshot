@@ -148,14 +148,21 @@ describe.skipIf(!RT_WASM)('the passes of the real rt.wasm, rendered the pool’s
     let edges = 0;
     for (let i = 0; i < W * H; i++) {
       const id = passes.partId![i];
+      if (ref.partId![i] === FLOOR_ID) {
+        // The studio floor (X3c: the reference casts it too): FLOOR_ID in both ids, facing up, at its depth.
+        if (near(i)) {
+          if (id !== FLOOR_ID) edges++;
+          continue;
+        }
+        expect(id, `pixel ${i}`).toBe(FLOOR_ID);
+        expect(passes.materialId![i]).toBe(FLOOR_ID);
+        expect(Array.from(passes.normal!.subarray(i * 3, i * 3 + 3))).toEqual([0, 0, 1]);
+        expect(Math.abs(passes.depth![i] - ref.depth![i])).toBeLessThan(1e-4 * ref.depth![i]);
+        floor++;
+        continue;
+      }
       if (ref.partId![i] === 0) {
-        // The reference has no floor: background there, unless the engine's floor is under it.
-        if (id === FLOOR_ID) {
-          expect(passes.materialId![i]).toBe(FLOOR_ID);
-          expect(Array.from(passes.normal!.subarray(i * 3, i * 3 + 3))).toEqual([0, 0, 1]);
-          expect(Number.isFinite(passes.depth![i])).toBe(true);
-          floor++;
-        } else if (!near(i)) {
+        if (!near(i)) {
           expect(id, `pixel ${i}`).toBe(0);
           expect(passes.depth![i]).toBe(Infinity);
         }

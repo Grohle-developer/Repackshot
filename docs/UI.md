@@ -690,9 +690,15 @@ defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
   three.js: ids de pieza y de material del propio RSB, profundidad, normales
   en el mundo con Z arriba, albedo, círculo de confusión de la lente fina) se
   calculan una vez y se reutilizan mientras cambian solo los controles.
-- Sin la tubería (hasta X3c) el interruptor dice *próximamente*; con
-  `?ai=synthetic` corre el servicio sintético de `src/ai/synthetic.ts` (sin
-  modelo, determinista) para capturas, demos y pruebas. Capturas:
+- **De dónde sale** (X3c): en la aplicación de escritorio, de la tubería del
+  lanzador (`src/io/ai-post.ts`): el interruptor puede encenderse cuando
+  `/api/ai/runtime` dice que el motor de ejecución y el modelo activo están
+  listos (si no, el motivo: sin motor, sin modelo, modelo que este motor no
+  carga), y la vista previa manda su fotograma y sus pases al lanzador. En la
+  web, hasta X3d, el interruptor dice *próximamente*; con `?ai=synthetic`
+  corre el servicio sintético de `src/ai/synthetic.ts` (sin modelo,
+  determinista) para capturas, demos y pruebas. Apagar el interruptor
+  devuelve la memoria del modelo (si ningún trabajo lo usa). Capturas:
   `docs/ui/ai-section-dark.png` y `docs/ui/ai-section-light.png`.
 
 **Pie de la ventana**: a la izquierda, el resumen en una línea
@@ -724,12 +730,18 @@ terminados) y en el almacenamiento del navegador hasta que se borran.
 primero la imagen del motor (siempre) y después la de la IA al lado
 (`…_AI.png`, en el formato del trabajo); el resultado conserva las dos y el
 **informe de la guarda**. El visor abre *Render* contra *IA* con el divisor
-(etiquetas *Render · IA*, botones *Solo render · Solo IA · Dividir*) y, bajo
-los datos, una línea: *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) ·
-resolución ✓ · enfoque ✓* (la geometría reúne bordes, píxeles fuera de las
-regiones permitidas y detalle de banda alta; ΔE máx es el mayor ΔE₀₀ medio de
-un material), y *La IA se limitó al 23 % para respetar las protecciones* si
-la guarda tuvo que bajar la intervención. Si la guarda la **rechaza**, el
+(etiquetas *Render · IA*, botones *Solo render · Solo IA · Dividir*) y una
+línea propia bajo el título y la barra de botones, a todo lo ancho de la
+cabecera: *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) · resolución ✓ ·
+enfoque ✓* (la geometría reúne bordes, píxeles fuera de las regiones
+permitidas y detalle de banda alta; ΔE máx es el mayor ΔE₀₀ medio de un
+material) y, en la misma línea, *La IA se limitó al 23 % para respetar las
+protecciones* si la guarda tuvo que bajar la intervención. Es siempre una sola
+línea: si no cabe acaba en puntos suspensivos y el aviso al pasar el ratón la
+tiene entera, con lo que se ejecutó. La barra de botones comparte línea con el
+título mientras caben los dos; si no, pasa debajo (y sus botones saltan de
+línea), sin estrechar nunca el título; *Cerrar* se queda en la esquina (X3c;
+`tools/ai-post-check.mjs` lo mide a 1600, 1280 y 960 px en los dos idiomas). Si la guarda la **rechaza**, el
 resultado queda con la imagen del motor sin cambios, el informe dice qué
 protección se rompió y no hay segunda imagen. Se guardan las dos por separado
 (*Guardar el render de nuevo*, *Guardar la imagen IA*); *Comparar con…* pone
@@ -739,6 +751,21 @@ resultado: IndexedDB en la web y `<datos>/results/<id>.ai.<ext>` en el
 escritorio (`PUT/GET /api/store/results/<id>/ai` del lanzador). Capturas:
 `docs/ui/ai-results-viewer.png`, `docs/ui/ai-results-light.png` y
 `docs/ui/ai-queue.png`.
+
+**En el escritorio (X3c).** El render final con IA deja su imagen lineal y sus
+pases en el lanzador, que hace la IA sin que los píxeles vayan y vuelvan; la
+imagen de la IA llega como luz lineal y se escribe **con la exposición y la curva
+del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG o EXR),
+así que con Intervención 0 es el mismo fichero byte a byte. Mientras la IA
+trabaja, la fila de la cola dice dónde está —*IA · cargando el modelo*, *IA ·
+mosaico 2 de 4*, *· intento 2* tras un reintento, *IA · comprobando*— y la barra
+mide la tubería, no ya el render. *Detener* o *Pausar* en ese momento paran la
+IA al instante y **la imagen del motor se queda en el historial** (aviso *Post-procesado
+IA detenido: la imagen del motor se conserva en el historial*); con *Pausar*, el
+trabajo vuelve a esperar y *Reanudar* lo hace entero. Los navegadores no
+muestran EXR: la miniatura de la IA de un trabajo EXR sale de una copia de 8
+bits, pero el visor solo compara *Render | IA* cuando la IA es PNG o JPEG (el
+historial guarda el EXR tal cual; una copia para la vista queda pendiente).
 
 ### 2.9 · Ventana de Ajustes
 
@@ -767,11 +794,11 @@ título del grupo en versalitas auxiliares:
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
 | **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
-| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Mientras la tubería de X3 no exista, arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
+| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
 | | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con **Descargar**, el paquete de esta plataforma, y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con *Descargar · Notas · Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`) |
-| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
+| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
 
 **Columna derecha**: título de la sección, una frase de qué se ajusta
 ahí y las filas en bloques con un subtítulo y una línea fina entre
@@ -828,7 +855,11 @@ y *cargado: <motor>/<modelo>* mientras el modelo está en memoria); licencia y v
 acciones *Descargar*, *Pausar*, *Reanudar*, *Eliminar* (con confirmación) e *Instalar desde un
 archivo…* (un zip descargado con el navegador, que solo se instala si su `sha256` es el fijado);
 avisos en línea si el último intento falló, si no arranca en este equipo (con el motivo, p. ej. la
-DLL que falta) o si no hay `curl` para descargar. Debajo, **Ejecutar con**: *Automático* (Vulkan
+DLL que falta) o si no hay `curl` para descargar. Si una compilación de Windows no arranca porque
+falta el entorno de **Microsoft Visual C++ 2015–2022** (X3c: lo comprueba el lanzador, sus DLL ni en
+la carpeta del motor ni en `System32`), el aviso lo dice y salen **Instalar el entorno de Microsoft
+Visual C++…**, que abre la página oficial de Microsoft en el navegador del sistema (no
+redistribuimos sus DLL), y **Comprobar de nuevo**. Debajo, **Ejecutar con**: *Automático* (Vulkan
 con tarjeta gráfica, la CPU sin ella) · *Vulkan (tarjeta gráfica)* · *CPU*. Nada de esta fila se
 estima: todo lo dice el lanzador.
 

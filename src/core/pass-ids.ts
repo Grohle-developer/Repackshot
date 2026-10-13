@@ -15,9 +15,34 @@ export interface PassInstance {
   materialId: number;
 }
 
+/** The engine's camera as the RSB writes it (io/rsb.ts `RsbCamera`): what a ray through a pixel centre follows. */
+export interface PassCamera {
+  position: readonly [number, number, number];
+  target: readonly [number, number, number];
+  up: readonly [number, number, number];
+  focalMm: number;
+  /** Along the longer image side. */
+  sensorMm: number;
+  ortho: boolean;
+  orthoWidth: number;
+}
+
+/**
+ * The studio floor of the engine's scene (RSB `FLOR`, visible or a shadow catcher): the plane `z` (Z up), the
+ * albedo the engine gives it in the passes (its colour, in the shadow catcher too) and the camera, so the floor's
+ * pixels can be found by casting the engine's own centre rays (render/preview-passes.ts). Both ids are FLOOR_ID.
+ */
+export interface PassFloor {
+  z: number;
+  albedo: readonly [number, number, number];
+  camera: PassCamera;
+}
+
 /** The instances in RSB order: instance `i` has `partId` `i + 1`. */
 export interface PassIds {
   instances: PassInstance[];
+  /** The studio floor when the scene has one (X3c: it is a surface the AI relights, not background). */
+  floor?: PassFloor | null;
 }
 
 /** Lookups over `PassIds`. */

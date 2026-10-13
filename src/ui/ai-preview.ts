@@ -12,7 +12,7 @@
 // Everything the controller needs from outside is in `AiPreviewDeps`, so the tests drive it with fakes and a
 // clock they move by hand.
 
-import type { AiPipelineSettings, AiPostProgress, AiPostService, GuardReport, LinearImage } from '../core/ai';
+import type { AiGuardMaterial, AiPipelineSettings, AiPostProgress, AiPostService, GuardReport, LinearImage } from '../core/ai';
 import type { RenderPasses } from '../core/passes';
 
 /** What the preview is made from, read when it is about to be computed. */
@@ -25,6 +25,8 @@ export interface AiPreviewInput {
   prompt: string;
   negative: string;
   modelKey: string;
+  /** The guard's material table (X3c). */
+  materials?: AiGuardMaterial[];
 }
 
 export interface AiPreviewDeps {
@@ -179,7 +181,7 @@ export class AiPreviewController {
       this.set({ phase: 'WORKING', before: image, progress: 0, error: null });
       const t0 = this.deps.now();
       const result = await this.deps.service.post(
-        { source: { kind: 'INLINE', image, passes }, settings: input.settings, prompt: input.prompt, negative: input.negative, modelKey: input.modelKey },
+        { source: { kind: 'INLINE', image, passes }, settings: input.settings, prompt: input.prompt, negative: input.negative, modelKey: input.modelKey, ...(input.materials ? { materials: input.materials } : {}) },
         (p: AiPostProgress) => live() && this.set({ progress: p.fraction }),
         ctl.signal,
       );

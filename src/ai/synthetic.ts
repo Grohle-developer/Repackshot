@@ -9,6 +9,9 @@
 //     AI-POST.md §3.2), so edges, textures and the depth-of-field blur are kept by construction.
 //   - A control at 0 leaves its aspect alone, and with every aspect at 0 (or Intervention 0) the image
 //     comes back bit for bit.
+//   - The studio floor (FLOOR_ID in both ids, X3c) is a surface like a material: it is relit and has its own
+//     colour check, named "Floor"; only the background (0) never changes. The request's material table names
+//     the others.
 //   - The guard's report is measured on what it did (size, pixels outside the objects, edge displacement,
 //     high-band SSIM, per-tile sharpness, ΔE₀₀ per material) and the retry rule of §7.2 applies: a result
 //     that fails its limits is tried again at RETRY_FACTOR of the strength, up to MAX_ATTEMPTS, and when none
@@ -16,7 +19,7 @@
 
 import { MAX_ATTEMPTS, RETRY_FACTOR, type AiPipelineSettings, type AiPostProgress, type AiPostRequest, type AiPostResult, type AiPostService, type AiRuntimeStatus, type AiStyle, type GuardCheck, type GuardMaterialCheck, type GuardReport, type LinearImage } from '../core/ai';
 import { luminance } from '../core/ai-image';
-import type { RenderPasses } from '../core/passes';
+import { FLOOR_ID, type RenderPasses } from '../core/passes';
 import { AI_MODELS } from '../data/ai-models';
 import { deltaE2000, linearRgbToLab } from './color';
 
@@ -323,8 +326,15 @@ export function sharpnessDeviation(yBefore: Float32Array, yAfter: Float32Array, 
   return worst;
 }
 
-/** ΔE₀₀ per material region (pixels of the same `materialId`), mean and 95th percentile over a regular sample of at most 65 536 pixels each. */
-export function materialDeltas(before: LinearImage, after: LinearImage, passes: RenderPasses | null, limits: SyntheticLimits): GuardMaterialCheck[] {
+/** The name of a material region in the report: the request's table, "Floor" for the studio floor, else its number. */
+export function regionName(id: number, materials?: readonly { materialId: number; name: string }[]): string {
+  const named = materials?.find((m) => m.materialId === id);
+  if (named) return named.name;
+  return id === FLOOR_ID ? 'Floor' : `Material ${id}`;
+}
+
+/** ΔE₀₀ per material region (pixels of the same `materialId`, the floor's included), mean and 95th percentile over a regular sample of at most 65 536 pixels each. */
+export function materialDeltas(before: LinearImage, after: LinearImage, passes: RenderPasses | null, limits: SyntheticLimits, materials?: readonly { materialId: number; name: string }[]): GuardMaterialCheck[] {
   const ids = passes?.materialId;
   if (!ids || ids.length !== before.width * before.height) return [];
   const regions = new Map<number, number[]>();
@@ -350,7 +360,7 @@ export function materialDeltas(before: LinearImage, after: LinearImage, passes: 
     des.sort((x, y) => x - y);
     const mean = des.reduce((s, v) => s + v, 0) / des.length;
     const p95 = des[Math.min(des.length - 1, Math.floor(0.95 * (des.length - 1)))];
-    out.push({ materialId: id, name: `Material ${id}`, deltaEMean: mean, deltaEP95: p95, limit: limits.deltaEMean, ok: mean <= limits.deltaEMean && p95 <= limits.deltaEP95 });
+    out.push({ materialId: id, name: regionName(id, materials), deltaEMean: mean, deltaEP95: p95, limit: limits.deltaEMean, ok: mean <= limits.deltaEMean && p95 <= limits.deltaEP95 });
   }
   return out;
 }
@@ -365,7 +375,7 @@ interface Measured {
   ok: boolean;
 }
 
-function measure(before: LinearImage, after: LinearImage, passes: RenderPasses | null, limits: SyntheticLimits): Measured {
+function measure(before: LinearImage, after: LinearImage, passes: RenderPasses | null, limits: SyntheticLimits, names?: readonly { materialId: number; name: string }[]): Measured {
   const sameSize = before.width === after.width && before.height === after.height;
   const size: GuardCheck = { ok: sameSize, value: sameSize ? 1 : 0, limit: 1 };
   const outsideN = pixelsOutside(before, after, passes);
@@ -378,7 +388,7 @@ function measure(before: LinearImage, after: LinearImage, passes: RenderPasses |
   const detail: GuardCheck = { ok: ssim >= limits.detail, value: ssim, limit: limits.detail };
   const dev = sharpnessDeviation(yBefore, yAfter, before.width, before.height);
   const focus: GuardCheck = { ok: dev <= limits.focus, value: dev, limit: limits.focus };
-  const materials = materialDeltas(before, after, passes, limits);
+  const materials = materialDeltas(before, after, passes, limits, names);
   return { size, outside, edges, detail, focus, materials, ok: size.ok && outside.ok && edges.ok && detail.ok && focus.ok && materials.every((m) => m.ok) };
 }
 
@@ -425,7 +435,7 @@ export function createSyntheticService(opts: SyntheticOptions = {}): AiPostServi
       const asked = weightsOf(s);
       // Nothing asked: the very same pixels, without a pass over them.
       if (!(Math.max(asked.light, asked.bounce, asked.style) > 0)) {
-        const m = measure(image, image, passes, limits);
+        const m = measure(image, image, passes, limits, request.materials);
         report('GUARD', 1, 1);
         return { image: copy(), report: { verdict: 'ACCEPTED', usedFraction: 1, attempts: 1, size: m.size, outside: m.outside, edges: m.edges, detail: m.detail, focus: m.focus, materials: m.materials, ...base, seconds: Math.max(0, (now() - t0) / 1000) } };
       }
@@ -437,7 +447,7 @@ export function createSyntheticService(opts: SyntheticOptions = {}): AiPostServi
         const out = applySynthetic(image, passes, weightsOf(s, scale), s.style, s.seed);
         check();
         report('GUARD', 0.3 + 0.2 * attempt, attempt);
-        const m = measure(image, out, passes, limits);
+        const m = measure(image, out, passes, limits, request.materials);
         last = m;
         if (m.ok) {
           const verdict = attempt === 1 ? 'ACCEPTED' : 'LIMITED';

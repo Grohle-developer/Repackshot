@@ -52,6 +52,9 @@ pub struct Probe {
     pub devices: Vec<Device>,
     /// Why it could not answer (a missing DLL or library...).
     pub error: Option<String>,
+    /// It could not start because a DLL it needs is missing (the Windows status codes of
+    /// [`proc::missing_dll`]).
+    pub dll_missing: bool,
 }
 
 impl Probe {
@@ -77,6 +80,7 @@ impl Probe {
                 })),
             )
             .opt_str("error", self.error.as_deref())
+            .bool("dllMissing", self.dll_missing)
             .build()
     }
 
@@ -96,8 +100,57 @@ impl Probe {
                 })
                 .collect(),
             error: v.get("error").and_then(Value::as_str).map(str::to_string),
+            dll_missing: v.get("dllMissing").and_then(Value::as_bool) == Some(true),
         }
     }
+}
+
+/// The DLLs of the Microsoft Visual C++ 2015–2022 runtime (x64) the Windows builds link to
+/// (`docs/ai-licences.md` §7). We do not redistribute them: the person installs Microsoft's own
+/// package ([`VC_RUNTIME_URL`]).
+pub const VC_RUNTIME_DLLS: [&str; 5] = [
+    "MSVCP140.dll",
+    "VCRUNTIME140.dll",
+    "VCRUNTIME140_1.dll",
+    "VCOMP140.DLL",
+    "MSVCP140_CODECVT_IDS.dll",
+];
+
+/// Microsoft's page with the official downloads of that runtime.
+pub const VC_RUNTIME_URL: &str =
+    "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist";
+
+/// The DLLs of [`VC_RUNTIME_DLLS`] that are in none of `dirs` (names compared without case, as
+/// Windows does).
+pub fn vc_runtime_missing(dirs: &[PathBuf]) -> Vec<&'static str> {
+    let present: Vec<String> = dirs
+        .iter()
+        .filter_map(|d| fs::read_dir(d).ok())
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .map(|n| n.to_ascii_lowercase())
+        .collect();
+    VC_RUNTIME_DLLS
+        .iter()
+        .copied()
+        .filter(|dll| !present.contains(&dll.to_ascii_lowercase()))
+        .collect()
+}
+
+/// Where Windows looks for the runtime's DLLs besides the program's own folder: `System32`.
+pub fn system_dll_dirs() -> Vec<PathBuf> {
+    std::env::var_os("SystemRoot")
+        .or_else(|| std::env::var_os("windir"))
+        .map(|root| vec![PathBuf::from(root).join("System32")])
+        .unwrap_or_default()
+}
+
+/// Whether a build of `os` that failed its probe with `probe` needs the Microsoft Visual C++
+/// runtime installed: a Windows build that could not start for a missing DLL while some of the
+/// runtime's DLLs are in neither its own folder nor the system's (a missing `vulkan-1.dll`, the
+/// graphics driver's, is not this).
+pub fn needs_vc_runtime(os: &str, probe: &Probe, dirs: &[PathBuf]) -> bool {
+    os == "windows" && probe.dll_missing && !vc_runtime_missing(dirs).is_empty()
 }
 
 /// Reads `--version` and `--list-devices` outputs.
@@ -119,6 +172,7 @@ pub fn parse_probe(version_out: &str, devices_out: &str) -> Probe {
             })
             .collect(),
         error: None,
+        dll_missing: false,
     }
 }
 
@@ -362,6 +416,7 @@ impl Runtimes {
                     .find(|l| !l.trim().is_empty())
                     .unwrap_or("");
                 Probe {
+                    dll_missing: !bad.timed_out && proc::missing_dll(bad.code),
                     error: Some(if bad.timed_out {
                         "it did not answer within a minute".to_string()
                     } else {
@@ -644,5 +699,46 @@ mod tests {
         let cpu = parse_probe("v", "CPU\tSome CPU\n");
         assert_eq!(cpu.device().map(|(b, _)| b), Some(Backend::Cpu));
         assert_eq!(Probe::from_json(&json::parse(&p.to_json()).unwrap()), p);
+        let dll = Probe {
+            error: Some("a DLL it needs is missing".into()),
+            dll_missing: true,
+            ..Probe::default()
+        };
+        assert_eq!(Probe::from_json(&json::parse(&dll.to_json()).unwrap()), dll);
+    }
+
+    #[test]
+    fn the_visual_cpp_runtime_is_asked_for_only_when_its_dlls_are_missing() {
+        let dir = crate::test_dir("vc-runtime");
+        let (system, own) = (dir.join("System32"), dir.join("runtime"));
+        fs::create_dir_all(&system).unwrap();
+        fs::create_dir_all(&own).unwrap();
+        let dirs = [own.clone(), system.clone()];
+        let failed = Probe {
+            error: Some("a DLL it needs is missing (0xC0000135)".into()),
+            dll_missing: true,
+            ..Probe::default()
+        };
+        assert_eq!(vc_runtime_missing(&dirs).len(), VC_RUNTIME_DLLS.len());
+        assert!(needs_vc_runtime("windows", &failed, &dirs));
+        // Not for Linux builds, nor for a probe that started, nor another failure.
+        assert!(!needs_vc_runtime("linux", &failed, &dirs));
+        assert!(!needs_vc_runtime("windows", &Probe::default(), &dirs));
+        let crashed = Probe {
+            dll_missing: false,
+            ..failed.clone()
+        };
+        assert!(!needs_vc_runtime("windows", &crashed, &dirs));
+        // Installed (in System32, in any case of letters; one next to the program counts too):
+        // the DLL that is missing is another one (vulkan-1.dll, the graphics driver's).
+        for (i, dll) in VC_RUNTIME_DLLS.iter().enumerate() {
+            let target = if i == 0 { &own } else { &system };
+            fs::write(target.join(dll.to_ascii_uppercase()), b"MZ").unwrap();
+        }
+        assert!(vc_runtime_missing(&dirs).is_empty());
+        assert!(!needs_vc_runtime("windows", &failed, &dirs));
+        fs::remove_file(system.join(VC_RUNTIME_DLLS[1].to_ascii_uppercase())).unwrap();
+        assert_eq!(vc_runtime_missing(&dirs), [VC_RUNTIME_DLLS[1]]);
+        assert!(needs_vc_runtime("windows", &failed, &dirs));
     }
 }

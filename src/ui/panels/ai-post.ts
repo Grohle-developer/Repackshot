@@ -9,12 +9,12 @@
 // cannot draw the inputs) the section stays the placeholder it was: the switch says *coming soon*.
 
 import { AI_STYLES, type AiRuntimeStatus, type AiStyle } from '../../core/ai';
-import { recommend } from '../../core/ai-recommend';
 import { AI_PROTECTIONS, nextSeed, previewSize, switchAction, type SwitchAction } from '../../core/ai-post';
 import { linearToRgba8 } from '../../core/ai-image';
-import { activeModel, allModels, recommendInput } from '../../core/models';
+import { activeModel, allModels } from '../../core/models';
 import { AI_PERCENT_KEYS, type AiPercentKey, type AiSettings, type RenderSettings } from '../../core/render';
 import type { Label } from '../../data/types';
+import { aiStatusKey, recommendationOf } from '../ai-query';
 import { AiPreviewController, type AiPreviewInput, type AiPreviewState } from '../ai-preview';
 import { reportText } from '../ai-report';
 import * as cmd from '../commands';
@@ -59,8 +59,7 @@ function activeModelLine(ctx: Ctx): { key: string; line: string } | null {
   const snap = u.models;
   if (!snap || !snap.ready) return null;
   const models = allModels(snap);
-  const rec = u.hardware.state === 'DONE' ? recommend(recommendInput(u.hardware.info, u.settings['ai.device'], u.settings['ai.gpu']), snap.catalogue) : null;
-  const key = activeModel(u.settings['ai.active'], models, snap.installed, rec);
+  const key = activeModel(u.settings['ai.active'], models, snap.installed, recommendationOf(u));
   const m = key ? models.find((x) => x.key === key) : undefined;
   return m ? { key: m.key, line: t('rw.aiModelLine', { name: m.label[getLang()], licence: m.licence.spdx }) } : null;
 }
@@ -88,15 +87,17 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     const size = previewSize(s.width, s.height, status?.backend === 'CPU' ? 384 : 512);
     const camera = s.camera.kind === 'ONE' ? s.camera.id : null;
     const fullEngine = s.ai.previewFullEngine ? { finishBy: s.finishBy, maxSamples: s.maxSamples, maxSeconds: s.maxSeconds } : null;
-    const text = port.scenePrompt(st);
+    const settings = { intervention: s.ai.intervention, light: s.ai.light, bounce: s.ai.bounce, wear: s.ai.wear, style: s.ai.style, styleStrength: s.ai.styleStrength, seed: s.ai.seed };
+    const text = port.scenePrompt(st, settings);
     return {
       // The picture depends on the scene, the camera, the look and the size; not on the AI controls.
       frameKey: [st.scene.nodes, st.scene.roots, st.materials, st.studio, st.environment, st.camera, st.image, st.animation, size.width, size.height, camera, s.ai.previewFullEngine, fullEngine?.maxSamples, fullEngine?.maxSeconds, fullEngine?.finishBy],
       frame: (signal) => port.frame({ width: size.width, height: size.height, camera, fullEngine, signal }),
-      settings: { intervention: s.ai.intervention, light: s.ai.light, bounce: s.ai.bounce, wear: s.ai.wear, style: s.ai.style, styleStrength: s.ai.styleStrength, seed: s.ai.seed },
+      settings,
       prompt: text.prompt,
       negative: text.negative,
       modelKey: status?.activeModel ?? '',
+      materials: port.materials(st, camera),
     };
   };
   const preview = new AiPreviewController(
@@ -117,7 +118,12 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
       cmd.openSettings(ctx, 'ai.models');
       return;
     }
-    if (action.kind === 'SWITCH' && !animation()) patchAi({ enabled: !ai().enabled }, undefined, L('undo.aiSwitch'));
+    if (action.kind === 'SWITCH' && !animation()) {
+      const was = ai().enabled;
+      patchAi({ enabled: !was }, undefined, L('undo.aiSwitch'));
+      // Off: the model gives its memory back now (AI-POST.md §7.3), unless a job still uses it (the launcher says no).
+      if (was) void ctx.services.aiRuntime?.release().catch(() => undefined);
+    }
   }, t('rw.aiSwitch'), true);
   sw.el.setAttribute('data-ai-switch', '');
   const aux = h('span', { class: 'aux rw-ai-line' });
@@ -328,9 +334,11 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     (_s, u) => u.sections['rw.ai'] ?? true,
     (folded, prev) => prev !== undefined && !folded && preview.refresh(),
   );
-  // What the service can do changes with the models on this computer (a download finishing, another one chosen): ask again.
+  // What the service can do changes with what it is asked (the active model, which may be the recommendation for the
+  // hardware, so the detection is started here as Settings does) and the models on this computer: ask again.
+  void cmd.detectHardware(ctx);
   scope.watch(
-    (_s, u) => [u.models?.ready, u.models?.installed.join(','), u.settings['ai.active']].join('|'),
+    (_s, u) => aiStatusKey(u),
     () => void refreshStatus(),
   );
   return host;

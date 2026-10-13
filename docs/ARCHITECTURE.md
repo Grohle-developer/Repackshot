@@ -103,7 +103,7 @@ src/
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
-    preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4)
+    preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
     pass-planes.ts          los pases exactos del motor en la página (X2): junta los de rt.wasm por baldosa y lee el RPP1 del lanzador
@@ -115,7 +115,8 @@ src/
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
     project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR)
-    rsb.ts                  escritor del formato de escena binario del motor (§5.2)
+    rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c)
+    ai-runtime.ts           el motor de ejecución de la IA del lanzador (X3b); ai-post.ts, la tubería de escritorio (`DesktopAiService`, X3c)
     hdri.ts                 lectores propios de RGBE y OpenEXR, imagen de fondo, copia para la vista previa (E5)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
@@ -344,7 +345,7 @@ Vive en `engine/`, un workspace de Cargo con siete *crates*:
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
 | `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
-| `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlazará `rt-app` (X3c) |
+| `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
 | `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
@@ -708,6 +709,21 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    `GET /api/ai/run/<id>?after=n`, imagen en `/image` y cancelación con `DELETE`, como los
    trabajos de render. La guarda, los mosaicos y la tubería son X3a y X3c. Contrato completo en
    `engine/crates/rt-app/README.md`.
+8. **Post-procesado IA, la tubería** (X3c, `src/ai/post.rs`; `rt-app` enlaza ahora `rt-post`):
+   **`POST /api/ai/post`** con `{source: {kind: RENDER, renderId}, settings, prompt, negative,
+   modelKey, materials}`. La imagen lineal y los pases salen del almacén de X2 por el id del render
+   (con la exposición y la curva de su escena, para que el modelo vea lo que ve la persona); la
+   vista previa del modo Rápido manda los suyos en el cuerpo (`INLINE`, binario `RPI1` con la imagen
+   `RPL1` y los pases `RPP1`, ≤ 512 px). El conductor es la máquina de pasos de `rt-post`: `plan` →
+   por mosaico `tile_input` y el control (`depth` de los pases si la familia lo carga) →
+   `sd-server` (el de X3b, cargado entre llamadas) → `accept` → reintentos a `RETRY_FACTOR` hasta
+   `MAX_ATTEMPTS`. Con Intervención 0 el plan no tiene mosaicos y no se arranca nada: la imagen es
+   la del motor bit a bit. Progreso por mosaico y cancelación como los trabajos de render
+   (`GET /api/ai/post/<id>?after=n`, `DELETE`), un post huérfano se para a los 2 min sin
+   preguntas, y la imagen vuelve una vez, lineal (`GET /api/ai/post/<id>/image`). `/api/info`
+   dice `aiPost: 1`; entonces la página usa `src/io/ai-post.ts` (`DesktopAiService`), y la cola
+   escribe la imagen de la IA desde esa luz lineal con la exposición y la curva del render, como el
+   fichero del motor.
 
 ## 6 · Interfaz (`src/ui/`)
 

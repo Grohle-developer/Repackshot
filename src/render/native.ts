@@ -885,8 +885,9 @@ export class NativeEngine {
       const res = await this.api.request(`/api/render/${id}`, init);
       if (!res.ok) throw new Error(await failureText(res));
       const f = parseFrame(await res.arrayBuffer());
-      // The passes are read before the job is let go (the launcher keeps them for the AI all the same).
-      const passes = opts.passes?.length ? await this.passesOf(id, f.width, f.height, init) : undefined;
+      // The passes are read before the job is let go (the launcher keeps them for the AI all the same); for the
+      // AI step of a Render they stay there (X3c: the pixels do not travel).
+      const passes = opts.passes?.length && !opts.passesInLauncher ? await this.passesOf(id, f.width, f.height, init) : undefined;
       this.deleteJob(id);
       if (!f.sums) throw new Error('the render has no image');
       const tone = this.source.tone(state);

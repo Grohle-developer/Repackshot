@@ -11,11 +11,17 @@
 //!   `N = steps × strength` as img2img does.
 //!
 //! Next to the executable: `fake-sd.json` (optional) says how to load (`{"load":
-//! "ok|hang|crash", "loadMs": 40, "stepMs": 10, "devices": "CPU\tFake CPU", "fail": "version"}`);
+//! "ok|hang|crash", "loadMs": 40, "stepMs": 10, "acceptMs": 0, "devices": "CPU\tFake CPU",
+//! "fail": "version", "image": "wrap|gain"}`; `acceptMs` delays the answer to each `img_gen`);
 //! `args.log` gets every start's arguments (one JSON array a line) and `requests.log` every job
 //! (its JSON with the images replaced by their length). A prompt with `[fake:hang]`,
 //! `[fake:crash]`, `[fake:slow]`, `[fake:fail]`, `[fake:quiet]` or `[fake:size=WxH]` makes that
 //! job hang, crash the process, go slowly, fail, print nothing, or answer another size.
+//!
+//! The image: `wrap` (the default) lifts every byte by `round(strength × 64) + seed mod 7`,
+//! wrapping at 256 (a model that does something wrong); `gain` (or a prompt with `[fake:gain]`)
+//! brightens smoothly, `v × (1 + strength / 2)` saturating, with a warmer red (a model that does
+//! what the pipeline asks: more light, the guard lets it through).
 
 use rt_app::ai::{b64, png};
 use rt_app::http::{read_request, write_response, Response};
@@ -240,6 +246,7 @@ fn tag<'a>(prompt: &'a str, name: &str) -> Option<&'a str> {
 }
 
 fn submit(body: &[u8], jobs: &Jobs, next: &AtomicU32, step_ms: u64) -> Response {
+    let gain_mode = control().get("image").and_then(Value::as_str) == Some("gain");
     let text = String::from_utf8_lossy(body);
     let Ok(v) = json::parse(&text) else {
         return Response::json(400, "{\"error\":\"invalid JSON\"}".into());
@@ -350,6 +357,7 @@ fn submit(body: &[u8], jobs: &Jobs, next: &AtomicU32, step_ms: u64) -> Response 
             .unwrap_or((src.width, src.height));
         // Deterministic: the input brightened by the strength and shifted by the seed.
         let lift = (strength * 64.0).round() as u32 + (seed % 7) as u32;
+        let gain = gain_mode || tag(&prompt, "gain").is_some();
         let mut rgb = Vec::with_capacity((w * h * 3) as usize);
         for y in 0..h {
             for x in 0..w {
@@ -359,7 +367,14 @@ fn submit(body: &[u8], jobs: &Jobs, next: &AtomicU32, step_ms: u64) -> Response 
                     } else {
                         128
                     };
-                    rgb.push(((v + lift) % 256) as u8);
+                    rgb.push(if gain {
+                        let warm = if c == 0 { 1.1 } else { 1.0 };
+                        (f64::from(v) * (1.0 + strength / 2.0) * warm)
+                            .round()
+                            .min(255.0) as u8
+                    } else {
+                        ((v + lift) % 256) as u8
+                    });
                 }
             }
         }
@@ -369,6 +384,13 @@ fn submit(body: &[u8], jobs: &Jobs, next: &AtomicU32, step_ms: u64) -> Response 
             j.image = Some(out.clone());
         });
     });
+    // A runtime slow to take the job (`acceptMs`): whatever the caller said before asking stays
+    // its last word that long.
+    let accept_ms = control()
+        .get("acceptMs")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0) as u64;
+    std::thread::sleep(Duration::from_millis(accept_ms));
     Response::json(
         202,
         json::Object::new()

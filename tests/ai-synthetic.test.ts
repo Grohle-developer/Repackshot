@@ -4,11 +4,11 @@
 // measures it reports with.
 
 import { describe, expect, it } from 'vitest';
-import { createSyntheticService, SYNTHETIC_LIMITS, SYNTHETIC_MODEL_KEY, applySynthetic, edgeDisplacement, highBandSsim, pixelsOutside, sharpnessDeviation, softLuminance, weightsOf, type SyntheticLimits } from '../src/ai/synthetic';
+import { createSyntheticService, SYNTHETIC_LIMITS, SYNTHETIC_MODEL_KEY, applySynthetic, edgeDisplacement, highBandSsim, pixelsOutside, regionName, sharpnessDeviation, softLuminance, weightsOf, type SyntheticLimits } from '../src/ai/synthetic';
 import { deltaE2000, linearRgbToLab } from '../src/ai/color';
 import { DEFAULT_AI_PIPELINE, MAX_ATTEMPTS, type AiPipelineSettings, type AiPostProgress, type AiPostResult, type LinearImage } from '../src/core/ai';
 import { byteToLinear, linearToByte, linearToRgba8, luminance, rgba8ToLinear, sameImage, srgbToLinear, linearToSrgb } from '../src/core/ai-image';
-import type { RenderPasses } from '../src/core/passes';
+import { FLOOR_ID, type RenderPasses } from '../src/core/passes';
 
 const W = 96;
 const H = 64;
@@ -370,5 +370,44 @@ describe('colour', () => {
     const bytes = new Uint8ClampedArray(W * H * 4);
     for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 37 + (i >> 3)) & 255;
     expect([...linearToRgba8(rgba8ToLinear(bytes, W, H))]).toEqual([...bytes]);
+  });
+});
+
+describe('the studio floor in the synthetic service (X3c)', () => {
+  it('is relit with its own colour check named Floor; the background still never changes', async () => {
+    const { image, passes } = scene();
+    // The background below row 58 is the studio floor (FLOOR_ID in both ids).
+    const partId = new Uint32Array(passes.partId!);
+    const materialId = new Uint32Array(passes.materialId!);
+    for (let i = 58 * W; i < W * H; i++) {
+      if (partId[i] === 0) {
+        partId[i] = FLOOR_ID;
+        materialId[i] = FLOOR_ID;
+      }
+    }
+    const svc = createSyntheticService();
+    const res = await svc.post(
+      { source: { kind: 'INLINE', image, passes: { width: W, height: H, partId, materialId } }, settings: { ...OFF, light: 80, bounce: 60 }, prompt: '', negative: '', modelKey: SYNTHETIC_MODEL_KEY, materials: [{ materialId: 1, name: 'Bottle glass', allowsWear: false, locked: false }] },
+      () => undefined,
+      never,
+    );
+    let floorChanged = 0;
+    let floor = 0;
+    for (let i = 0; i < W * H; i++) {
+      const same = [0, 1, 2, 3].every((c) => Object.is(res.image.rgba[i * 4 + c], image.rgba[i * 4 + c]));
+      if (partId[i] === 0) expect(same, `background ${i}`).toBe(true);
+      if (partId[i] === FLOOR_ID) {
+        floor++;
+        if (!same) floorChanged++;
+      }
+    }
+    expect(floor).toBeGreaterThan(200);
+    expect(floorChanged).toBeGreaterThan(floor * 0.9);
+    const check = res.report.materials.find((m) => m.materialId === FLOOR_ID);
+    expect(check).toMatchObject({ name: 'Floor', ok: true });
+    // The request's table names the materials.
+    expect(res.report.materials.find((m) => m.materialId === 1)?.name).toBe('Bottle glass');
+    expect(res.report.materials.find((m) => m.materialId === 2)?.name).toBe('Material 2');
+    expect(regionName(FLOOR_ID)).toBe('Floor');
   });
 });

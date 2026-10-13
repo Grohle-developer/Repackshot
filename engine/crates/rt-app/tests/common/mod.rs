@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+pub mod ai;
+
 use rt_app::client::{self, Reply};
 use rt_app::paths::Paths;
 use rt_app::server::{Options, Server};

@@ -423,6 +423,8 @@ export const LICENCE_PATHS = {
   rhino3dm: 'licences/rhino3dm.LICENSE.txt',
   occt: 'vendor/occt-import-js/license.occt-import-js.txt',
   opencascade: 'vendor/occt-import-js/license.occt.txt',
+  sdcpp: 'licences/stable-diffusion.cpp.LICENSE.txt',
+  ggml: 'licences/ggml.LICENSE.txt',
 } as const;
 
 /** A model licence's text by its SPDX id, when the build ships it. */
@@ -452,6 +454,14 @@ function aboutRows(): SettingsHooks['rows'] {
           licenceDetails(ctx, t('set.ab.occt'), LICENCE_PATHS.occt),
           licenceDetails(ctx, t('set.ab.occtOcct'), LICENCE_PATHS.opencascade),
           h('p', { class: 'note' }, `${t('set.ab.source')}: `, link('https://github.com/kovacsv/occt-import-js', 'occt-import-js'), ' · ', link('https://git.dev.opencascade.org/repos/occt.git', 'OpenCascade')),
+        ),
+        // The desktop's AI runtime (X3b, X3c): a separate program the launcher downloads; never linked, never shipped.
+        h(
+          'div',
+          { class: 'sw-tp', 'data-tp': 'sdcpp' },
+          licenceDetails(ctx, t('set.ab.sdcpp'), LICENCE_PATHS.sdcpp),
+          licenceDetails(ctx, t('set.ab.ggml'), LICENCE_PATHS.ggml),
+          h('p', { class: 'note' }, `${t('set.ab.source')}: `, link('https://github.com/leejet/stable-diffusion.cpp', 'stable-diffusion.cpp'), ' · ', link('https://github.com/leejet/ggml', 'ggml')),
         ),
         h('h5', { class: 'sw-sc-title aux' }, t('set.ab.models')),
         models,

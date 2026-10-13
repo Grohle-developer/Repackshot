@@ -6,6 +6,7 @@ use crate::fixture::{self, Edit, Scene, FULL, H, W};
 use crate::guard::Steps;
 use crate::prepared::{Prepared, BACKGROUND};
 use crate::*;
+use crate::{FLOOR_ID, FLOOR_NAME};
 
 fn run_steps(
     job: &Job,
@@ -801,6 +802,157 @@ fn every_forbidden_thing_at_once_is_guarded() {
         let prep = Prepared::new(&job, &scene.image, scene.passes());
         assert!(prep.region.contains(&BACKGROUND));
     }
+}
+
+// --- The studio floor (AI-POST.md §7.4, the lead's correction after X4) ---
+
+/// The fixture with the background below the objects turned into the studio floor (both ids
+/// FLOOR_ID, facing up, receding): a surface, not background.
+fn floor_scene() -> fixture::Scene {
+    let mut scene = fixture::scene();
+    for y in 290..H {
+        for x in 0..W {
+            let p = (y * W + x) as usize;
+            if scene.part[p] == 0 {
+                scene.part[p] = FLOOR_ID;
+                scene.material[p] = FLOOR_ID;
+                scene.normal[p * 3..p * 3 + 3].copy_from_slice(&[0.0, 0.0, 1.0]);
+                scene.depth[p] = 3000.0 - y as f32;
+            }
+        }
+    }
+    scene
+}
+
+/// Turns the floor blue (it starts below row 290 and wherever the passes say).
+fn blue_floor(r: &TileRequest) -> Rgb8Image {
+    let mut e = Edit::of(r);
+    e.map(|e, _, y, i, j, c| {
+        let v = e.get(i, j, c);
+        if y < 292 {
+            v
+        } else if c == 2 {
+            v + 60
+        } else {
+            v - 30
+        }
+    });
+    e.done()
+}
+
+#[test]
+fn a_floor_seen_first_is_a_region_like_any_other() {
+    // The floor in the first rows, a part below: FLOOR_ID is u32::MAX, which once also stood for
+    // "no material looked up yet", and the floor seen first fell into the background.
+    let (w, h) = (8u32, 4u32);
+    let n = (w * h) as usize;
+    let mut part = vec![FLOOR_ID; n];
+    let mut material = vec![FLOOR_ID; n];
+    for p in n / 2..n {
+        part[p] = 1;
+        material[p] = 1;
+    }
+    let image = LinearImage {
+        width: w,
+        height: h,
+        rgba: vec![0.25; n * 4],
+    };
+    let passes = Passes {
+        width: w,
+        height: h,
+        part_id: &part,
+        material_id: &material,
+        normal: None,
+        depth: None,
+        coc: None,
+    };
+    let job = Job::new(w, h, FULL);
+    let prep = Prepared::new(&job, &image, passes);
+    let open = prep.open_mask();
+    for (p, &r) in prep.region.iter().enumerate().take(n / 2) {
+        assert_ne!(r, BACKGROUND, "floor pixel {p} is background");
+        let region = &prep.regions[r as usize];
+        assert_eq!(
+            (
+                region.id,
+                region.name.as_str(),
+                region.allows_wear,
+                region.locked
+            ),
+            (FLOOR_ID, FLOOR_NAME, false, false)
+        );
+        assert!(open[p], "floor pixel {p} may be relit");
+    }
+    assert!(prep.region[n / 2..]
+        .iter()
+        .all(|&r| prep.regions[r as usize].id == 1));
+}
+
+#[test]
+fn the_floor_is_relit_and_colour_checked_never_background() {
+    let scene = floor_scene();
+    let job = fixture::job(FULL);
+    // The model brightens everything: the floor brightens with the objects, the background stays.
+    let (image, report) = run_with(&job, &scene, background);
+    assert_eq!(report.verdict, Verdict::Accepted, "{:?}", report.reason);
+    assert_eq!(report.outside.value, 0.0);
+    let (mut floor, mut lit) = (0, 0);
+    for p in 0..(W * H) as usize {
+        let same = (0..4)
+            .all(|c| image.rgba[p * 4 + c].to_bits() == scene.image.rgba[p * 4 + c].to_bits());
+        match scene.part[p] {
+            0 => assert!(same, "background pixel {p} changed"),
+            FLOOR_ID => {
+                floor += 1;
+                if image.rgba[p * 4 + 1] > scene.image.rgba[p * 4 + 1] {
+                    lit += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    assert!(floor > 40_000, "{floor}");
+    assert!(
+        lit * 10 > floor * 9,
+        "the floor brightened: {lit} of {floor}"
+    );
+    // Its own colour check, by name.
+    let check = report
+        .materials
+        .iter()
+        .find(|m| m.material_id == FLOOR_ID)
+        .expect("the floor's colour check");
+    assert_eq!(check.name, FLOOR_NAME);
+    assert!(check.ok, "{check:?}");
+    // A model that turns the floor blue: the floor's own ΔE limits how much of it goes through.
+    let mut loose = job.clone();
+    loose.tolerances.cap_bounce = 0.5;
+    let (image, report) = run_with(&loose, &scene, blue_floor);
+    assert_ne!(report.verdict, Verdict::Rejected, "{:?}", report.reason);
+    let check = report
+        .materials
+        .iter()
+        .find(|m| m.material_id == FLOOR_ID)
+        .unwrap();
+    assert!(
+        check.ok && check.delta_e_mean <= 2.0 && check.delta_e_p95 <= 3.0,
+        "{check:?}"
+    );
+    assert!(
+        report
+            .reason
+            .as_deref()
+            .unwrap_or("")
+            .contains("colour change of Floor kept to"),
+        "{:?}",
+        report.reason
+    );
+    let (d0, d1) = (display(&job, &scene.image), display(&job, &image));
+    let (a, b) = (pixel(&d0, 40, 320), pixel(&d1, 40, 320));
+    assert!(
+        b[2] / b[0] > a[2] / a[0],
+        "some blue went through: {a:?} -> {b:?}"
+    );
 }
 
 // --- The fixture shared with the WebAssembly parity test (tests/ai-post-wasm.test.ts) ---
