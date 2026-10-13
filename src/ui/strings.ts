@@ -1394,6 +1394,7 @@ const TABLE = {
   'set.hw.notReported': ['Not reported by the browser', 'El navegador no lo dice'],
   'set.hw.notDetected': ['Not detected', 'No detectado'],
   'set.hw.noGpu': ['No graphics card found', 'No se ha encontrado ninguna tarjeta gráfica'],
+  'set.hw.gpuFailed': ['The graphics cards could not be read: see the logs', 'No se han podido leer las tarjetas gráficas: mira los registros'],
   'set.hw.again': ['Detect again', 'Detectar de nuevo'],
   'set.hw.cpu': ['Processor', 'Procesador'],
   'set.hw.noUsableGpu': ['No graphics card with 4 GB of video memory or more: the recommendation is for the processor', 'Ninguna tarjeta gráfica con 4 GB de memoria de vídeo o más: la recomendación es para el procesador'],

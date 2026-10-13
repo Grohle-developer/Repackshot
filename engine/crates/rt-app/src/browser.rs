@@ -263,7 +263,10 @@ pub(crate) fn expand(text: &str) -> String {
 fn app_path(root: &str, exe: &str) -> Option<PathBuf> {
     let key = format!(r"{root}\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe}");
     let out = crate::process::output(
-        crate::process::command("reg", &["query", &key, "/ve"]),
+        crate::process::command(
+            crate::process::system32(&["reg.exe"]),
+            &["query", &key, "/ve"],
+        ),
         Duration::from_secs(5),
     )?;
     out.lines()

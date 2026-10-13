@@ -492,6 +492,8 @@ export interface HardwareInfo {
   ramGiB: number | null;
   ramCapped?: boolean;
   gpus: { name: string; vramGiB: number | null }[];
+  /** Desktop: the launcher could not ask for the graphics cards at all, so `gpus` being empty says nothing. */
+  gpuDetectionFailed?: boolean;
   webgpu: boolean | null;
   /** WebGPU adapter's maxBufferSize, bytes. */
   maxBufferBytes: number | null;

@@ -750,7 +750,11 @@ estima: todo lo dice el lanzador.
 RAM, núcleos, WebGPU sí o no y el tamaño máximo de búfer) y la
 recomendación que sale de la regla de `AI-POST.md` §2.4, con la fila de
 la tabla que la decide. Si la detección falla, se dice y no se
-recomienda nada.
+recomienda nada. En escritorio, sin tarjetas en la lista, *Tarjeta
+gráfica* y la fila *GPU* distinguen *No se ha encontrado ninguna tarjeta
+gráfica* (el lanzador preguntó y no hay) de *No se han podido leer las
+tarjetas gráficas: mira los registros* (ninguna fuente contestó,
+`gpuDetection: failed`).
 
 **Último proyecto** (*General ▸ Al arrancar*): el encabezado pregunta
 *¿Abrir el último proyecto, «X»?* con *Abrir* y *Ahora no*; si el archivo

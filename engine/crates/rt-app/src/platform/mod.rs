@@ -12,6 +12,8 @@
 //!
 //! * plain Rust, compiled and tested on every system: [`com`] (GUIDs, `IUnknown`, our own COM
 //!   objects), [`webview2`] (the interface layouts, checked against the IDL's method counts),
+//!   [`dxgi`] (the graphics adapters for the hardware detection: its layouts, and on Windows the
+//!   enumeration itself),
 //!   [`protocol`] (the messages with the page), [`state`] (where the window was), [`policy`]
 //!   (what the web view may do), [`flags`] (Chromium switches);
 //! * Windows only: `win32` (the system functions), `window` (the window: icon, title, theme,
@@ -23,6 +25,7 @@
 //! Evergreen runtime that Windows 10 and 11 keep up to date.
 
 pub mod com;
+pub mod dxgi;
 pub mod flags;
 pub mod policy;
 pub mod protocol;

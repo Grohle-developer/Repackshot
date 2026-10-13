@@ -542,7 +542,7 @@ pub fn downloads_dir() -> Option<PathBuf> {
         let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders";
         let text = crate::process::output(
             crate::process::command(
-                "reg",
+                crate::process::system32(&["reg.exe"]),
                 &["query", key, "/v", "{374DE290-123F-4565-9164-39C4925E467B}"],
             ),
             std::time::Duration::from_secs(5),
