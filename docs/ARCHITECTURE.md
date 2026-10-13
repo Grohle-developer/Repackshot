@@ -77,6 +77,7 @@ src/
     lighting.ts             rig activo, focos, colocación por reflejo
     camera.ts               óptica, encuadre, cámaras guardadas
     animation.ts            planos, movimientos, evaluación en el tiempo
+    camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
     light-math.ts           kelvin → rgb, irradiancia, polar, ease   (portado)
     rig.ts                  studioRig / setupRig normalizados           (portado)
@@ -101,9 +102,13 @@ src/
     panels/                 header, scene, viewport, inspector, renderbar, status
 public/
   thumbs/setups/            72 miniaturas de montaje de luz (PNG)
+  assets/aperture/          45 máscaras de diafragma y texturas de pupila (PNG 512², gris de 8 bits) + index.json (A6)
+  assets/gobo/              12 patrones de gobo (PNG 1024², gris de 8 bits) + index.json (A6)
+  assets/README.md          procedencia: generador, receta, semilla y hash de cada fichero
   example/                  nada: la pieza de ejemplo es procedural
 tests/                      vitest; *.test.ts por módulo
 tools/                      scripts de desarrollo: capturas, generadores, hojas de contacto
+  assets/                   generadores deterministas de public/assets/ (A6): common.mjs, aperture-masks.mjs, gobos.mjs; solo node:zlib y node:crypto
 docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
@@ -153,6 +158,24 @@ de Cycles: un panel de potencia P y área A tiene radiancia P / (4 A). `kelvin` 
   `FABRIC`, `EMISSIVE`) y parámetros.
 - Desgaste, pelusa, ópticas, movimientos, suavizados, secuencias,
   chequeos del Doctor, calidad y resolución: ver sus ficheros.
+- **Herramientas de estudio (A6)**, datos propios y no portados
+  (`docs/STUDIO-TOOLS.md`): `lenses.json` (las 16 prescripciones de lente,
+  con su cargador tipado en `lenses.ts`), `bokeh.json` (los 20 tipos) y
+  `camera-moves.json` (14 movimientos de cámara relativos al producto y
+  3 presets de cámara en mano). Sus JSON se leen con una llamada marcada
+  `/* @__PURE__ */` para que la página no los lleve en el primer *chunk*
+  hasta que algo los use. Las máscaras y los gobos que referencian
+  están en `public/assets/` y se generan con `tools/assets/`.
+
+**Assets generados** (`public/assets/`, `tools/assets/`): cada fichero sale de
+una receta y una semilla por código puro (solo `+ − × ÷` y `sqrt`, sin
+`Math.sin` ni `Math.random`), y su `index.json` guarda receta, semilla y dos
+*hashes*: el de los píxeles (canónico) y el del PNG. `tests/assets.test.ts`
+los regenera y compara. El servidor de escritorio (`static_files.rs`) solo
+trata como inmutables los ficheros de `/assets/` que llevan el *hash* de
+contenido de Vite (`nombre-XXXXXXXX.ext`, 8 caracteres, directamente en
+`assets/`); los demás (estos assets y sus `index.json`) se revalidan en cada
+petición con un ETag del SHA-256 de sus bytes.
 
 **Normalización de exposición** (`src/core/rig.ts`): al aplicar un
 montaje sobre un tipo de producto, la suma de irradiancias de sus focos

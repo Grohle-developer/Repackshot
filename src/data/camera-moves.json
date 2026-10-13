@@ -1,0 +1,214 @@
+{
+  "version": 1,
+  "moves": [
+    {
+      "key": "turntable",
+      "name": { "en": "Turntable", "es": "Plato giratorio" },
+      "description": { "en": "The whole model turns once about its vertical axis under fixed lights.", "es": "El modelo entero gira una vuelta sobre su eje vertical bajo luces fijas." },
+      "durationS": 8,
+      "easing": "LINEAR",
+      "loop": true,
+      "clips": [
+        { "target": "SUBJECT", "move": "SPIN", "start": 0, "length": 1, "degrees": 360 }
+      ]
+    },
+    {
+      "key": "three_quarter_push_in",
+      "name": { "en": "Three-quarter push-in", "es": "Acercamiento ¾" },
+      "description": { "en": "From a three-quarter view the camera glides in toward the product while drifting slightly around it.", "es": "Desde una vista de tres cuartos la cámara se acerca al producto mientras se desplaza un poco a su alrededor." },
+      "durationS": 5,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "DOLLY", "start": 0, "length": 1, "percent": 35 },
+        { "target": "CAMERA", "move": "ORBIT", "start": 0, "length": 1, "degrees": 12 }
+      ]
+    },
+    {
+      "key": "pull_back_reveal",
+      "name": { "en": "Pull-back reveal", "es": "Alejarse y revelar" },
+      "description": { "en": "The camera backs away and rises a little, revealing the product in its surroundings.", "es": "La cámara se aleja y sube un poco, revelando el producto en su entorno." },
+      "durationS": 6,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "DOLLY", "start": 0, "length": 1, "percent": -55 },
+        { "target": "CAMERA", "move": "RISE", "start": 0, "length": 1, "degrees": 6 }
+      ]
+    },
+    {
+      "key": "arc_rise",
+      "name": { "en": "Arc rise", "es": "Arco ascendente" },
+      "description": { "en": "The camera sweeps in an arc around the product while climbing toward a high angle.", "es": "La cámara barre un arco alrededor del producto mientras sube hacia un ángulo alto." },
+      "durationS": 6,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "ORBIT", "start": 0, "length": 1, "degrees": 60 },
+        { "target": "CAMERA", "move": "RISE", "start": 0, "length": 1, "degrees": 28 }
+      ]
+    },
+    {
+      "key": "truck_slide",
+      "name": { "en": "Truck slide", "es": "Desplazamiento lateral" },
+      "description": { "en": "The camera slides sideways past the product without turning, keeping its distance.", "es": "La cámara se desliza hacia un lado ante el producto sin girar, manteniendo la distancia." },
+      "durationS": 5,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "TRACK", "start": 0, "length": 1, "vector": [1.2, 0, 0] }
+      ]
+    },
+    {
+      "key": "pedestal",
+      "name": { "en": "Pedestal", "es": "Desplazamiento vertical" },
+      "description": { "en": "The camera rises straight up along the product, like a lift, keeping its angle.", "es": "La cámara sube en vertical a lo largo del producto, como un ascensor, manteniendo el ángulo." },
+      "durationS": 5,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "TRACK", "start": 0, "length": 1, "vector": [0, 0, 0.9] }
+      ]
+    },
+    {
+      "key": "contra_zoom",
+      "name": { "en": "Dolly zoom", "es": "Contra-zoom" },
+      "description": { "en": "The camera pushes in while the lens widens so the product keeps its size and the background swells.", "es": "La cámara se acerca mientras la lente se abre, de modo que el producto conserva su tamaño y el fondo se expande." },
+      "durationS": 5,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "DOLLY", "start": 0, "length": 1, "percent": 40 },
+        { "target": "CAMERA", "move": "ZOOM", "start": 0, "length": 1, "focalFactor": 0.6 }
+      ]
+    },
+    {
+      "key": "spiral_up",
+      "name": { "en": "Spiral up", "es": "Espiral ascendente" },
+      "description": { "en": "The camera circles the product three quarters of a turn, climbing and closing in.", "es": "La cámara rodea el producto tres cuartos de vuelta, subiendo y cerrándose sobre él." },
+      "durationS": 8,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "ORBIT", "start": 0, "length": 1, "degrees": 270 },
+        { "target": "CAMERA", "move": "RISE", "start": 0, "length": 1, "degrees": 32 },
+        { "target": "CAMERA", "move": "DOLLY", "start": 0, "length": 1, "percent": 12 }
+      ]
+    },
+    {
+      "key": "spiral_down",
+      "name": { "en": "Spiral down", "es": "Espiral descendente" },
+      "description": { "en": "The camera circles the product three quarters of a turn, sinking toward a low angle and closing in.", "es": "La cámara rodea el producto tres cuartos de vuelta, bajando hacia un ángulo bajo y cerrándose sobre él." },
+      "durationS": 8,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "ORBIT", "start": 0, "length": 1, "degrees": 270 },
+        { "target": "CAMERA", "move": "RISE", "start": 0, "length": 1, "degrees": -20 },
+        { "target": "CAMERA", "move": "DOLLY", "start": 0, "length": 1, "percent": 12 }
+      ]
+    },
+    {
+      "key": "rack_focus",
+      "name": { "en": "Rack focus between two parts", "es": "Cambio de foco entre piezas" },
+      "description": { "en": "The focus shifts from a near part to a far one, with a short hold at each end.", "es": "El foco pasa de una pieza cercana a otra lejana, con una breve pausa en cada extremo." },
+      "durationS": 4,
+      "easing": "EASE",
+      "loop": false,
+      "needsParts": 2,
+      "clips": [
+        { "target": "CAMERA", "move": "FOCUS", "start": 0.2, "length": 0.6, "focus": { "from": 0.85, "to": 1.15 } }
+      ]
+    },
+    {
+      "key": "macro_edge_slide",
+      "name": { "en": "Macro edge slide", "es": "Recorrido macro por una arista" },
+      "description": { "en": "The camera moves close and slides slowly along an edge, with the focus following the approach.", "es": "La cámara se acerca mucho y se desliza despacio a lo largo de una arista, con el foco siguiendo el acercamiento." },
+      "durationS": 8,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "DOLLY", "start": 0, "length": 0.4, "percent": 55 },
+        { "target": "CAMERA", "move": "FOCUS", "start": 0, "length": 0.4, "focus": { "from": 1, "to": 0.45 } },
+        { "target": "CAMERA", "move": "TRACK", "start": 0.3, "length": 0.7, "vector": [0.8, 0, 0] }
+      ]
+    },
+    {
+      "key": "exploded_orbit",
+      "name": { "en": "Exploded-view orbit", "es": "Órbita de vista explosionada" },
+      "description": { "en": "The parts fly apart while the camera backs off and orbits to show every piece.", "es": "Las piezas se separan mientras la cámara se aleja y orbita para mostrar cada pieza." },
+      "durationS": 10,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "SUBJECT", "move": "EXPLODE", "start": 0.1, "length": 0.45, "parts": 1.2 },
+        { "target": "CAMERA", "move": "DOLLY", "start": 0.1, "length": 0.45, "percent": -22 },
+        { "target": "CAMERA", "move": "ORBIT", "start": 0, "length": 1, "degrees": 140 }
+      ]
+    },
+    {
+      "key": "crane",
+      "name": { "en": "Crane", "es": "Grúa" },
+      "description": { "en": "The camera booms up and back in one sweep, looking down on the product from a high, wide view.", "es": "La cámara sube y se aleja en un solo barrido, mirando el producto desde una vista alta y amplia." },
+      "durationS": 7,
+      "easing": "EASE",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "RISE", "start": 0, "length": 1, "degrees": 40 },
+        { "target": "CAMERA", "move": "DOLLY", "start": 0, "length": 1, "percent": -25 }
+      ]
+    },
+    {
+      "key": "whip_pan",
+      "name": { "en": "Whip pan", "es": "Barrido rápido" },
+      "description": { "en": "A held frame, then a fast sweep around the product to a new angle, and a held frame again.", "es": "Un encuadre fijo, un barrido rápido alrededor del producto hasta un nuevo ángulo y otra vez un encuadre fijo." },
+      "durationS": 2.5,
+      "easing": "EASE_STRONG",
+      "loop": false,
+      "clips": [
+        { "target": "CAMERA", "move": "ORBIT", "start": 0.3, "length": 0.4, "degrees": 100 }
+      ]
+    }
+  ],
+  "handheld": [
+    {
+      "key": "subtle",
+      "name": { "en": "Subtle", "es": "Sutil" },
+      "description": { "en": "A steady hand: a slight breathing of the frame.", "es": "Pulso firme: una ligera respiración del encuadre." },
+      "seed": 1,
+      "bandHz": [0.4, 3.5],
+      "octaves": 3,
+      "rotationDeg": { "pitch": 0.12, "yaw": 0.12, "roll": 0.06 },
+      "positionPartSizes": 0.004,
+      "referenceFocalMm": 50,
+      "scaleWithFocal": true,
+      "scaleWithDistance": true
+    },
+    {
+      "key": "medium",
+      "name": { "en": "Medium", "es": "Medio" },
+      "description": { "en": "A relaxed handheld look: clear, natural drift and wobble.", "es": "Aspecto de cámara en mano relajado: deriva y vaivén claros y naturales." },
+      "seed": 2,
+      "bandHz": [0.5, 5],
+      "octaves": 3,
+      "rotationDeg": { "pitch": 0.3, "yaw": 0.3, "roll": 0.15 },
+      "positionPartSizes": 0.01,
+      "referenceFocalMm": 50,
+      "scaleWithFocal": true,
+      "scaleWithDistance": true
+    },
+    {
+      "key": "strong",
+      "name": { "en": "Strong", "es": "Fuerte" },
+      "description": { "en": "A restless, on-the-move look: quick, large shakes.", "es": "Aspecto inquieto, en movimiento: sacudidas rápidas y grandes." },
+      "seed": 3,
+      "bandHz": [0.6, 7],
+      "octaves": 4,
+      "rotationDeg": { "pitch": 0.7, "yaw": 0.7, "roll": 0.4 },
+      "positionPartSizes": 0.025,
+      "referenceFocalMm": 50,
+      "scaleWithFocal": true,
+      "scaleWithDistance": true
+    }
+  ]
+}
