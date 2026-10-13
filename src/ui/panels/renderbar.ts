@@ -1,104 +1,99 @@
-// Render bar (UI.md §2.5): drawer tabs, quality, resolution, budget, format,
-// Render and Add to queue. The drawer (Animation or Queue) opens above it.
+// Bottom bar (UI.md §2.5): on the left the Animation and Queue drawers (Queue
+// with the jobs waiting and, while one runs, a thin progress bar on its
+// bottom edge, its name and the time left in the tooltip); in the centre the
+// last result, which opens the results viewer; on the right Render…, the
+// largest button on screen, which opens the render window. The render
+// settings live in that window, not here.
 
-import { QUALITY_KEYS, QUALITY_PRESETS, RESOLUTION_PRESETS } from '../../data/quality';
-import { matchResolution, supportsAlpha, type OutputFormat } from '../../core/render';
 import * as cmd from '../commands';
-import { numberField, segmented, select, toggle } from '../components/controls';
 import { h, icon } from '../dom';
-import { dynamic, shallowEq, type Ctx, type Scope } from '../reactive';
+import { dynamic, type Ctx, type Scope } from '../reactive';
+import { jobFileNames } from '../render-queue';
 import { kbdFor } from '../shortcuts';
-import { L, formatClock, lbl, t } from '../strings';
+import { formatClock, getLang, t } from '../strings';
 import { animationDrawer } from './animation';
 import { queueDrawer } from './queue';
 
+/** "2 min ago", "just now". */
+export function ago(ms: number, now = Date.now()): string {
+  const s = Math.round((ms - now) / 1000);
+  if (Math.abs(s) < 45) return t('render.justNow');
+  try {
+    const rtf = new Intl.RelativeTimeFormat(getLang() === 'es' ? 'es' : 'en', { numeric: 'auto' });
+    const m = Math.round(s / 60);
+    if (Math.abs(m) < 60) return rtf.format(m, 'minute');
+    const hr = Math.round(m / 60);
+    if (Math.abs(hr) < 24) return rtf.format(hr, 'hour');
+    return rtf.format(Math.round(hr / 24), 'day');
+  } catch {
+    return '';
+  }
+}
+
+/** The name of a result without its extension. */
+function baseName(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
 export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui } = ctx;
-  const r0 = store.get().render;
 
-  const drawerTabs = segmented(
-    [
-      { value: 'animation' as const, label: h('span', { style: 'display:inline-flex;gap:5px;align-items:center' }, icon('film', 14), t('render.animation')) },
-      { value: 'queue' as const, label: h('span', { style: 'display:inline-flex;gap:5px;align-items:center' }, icon('queue', 14), t('render.queue')) },
-    ],
-    ui.get().drawer,
-    (v) => ui.set({ drawer: ui.get().drawer === v ? null : v }),
-    { ariaLabel: t('render.animation') },
-  );
-  scope.watch((_s, u) => u.drawer, (d) => drawerTabs.set(d));
-
-  const quality = segmented(
-    QUALITY_KEYS.map((k) => ({ value: k, label: lbl(QUALITY_PRESETS[k].label) })),
-    r0.quality === 'CUSTOM' ? null : r0.quality,
-    (q) => store.dispatch({ type: 'render/quality', quality: q, label: L('undo.quality', { name: QUALITY_PRESETS[q].label }) }),
-    { ariaLabel: t('render.quality') },
-  );
-  const custom = h('span', { class: 'aux' }, t('render.custom'));
-
-  const resOptions = [...RESOLUTION_PRESETS.map((r) => ({ value: r.key, label: lbl(r.label) })), { value: 'CUSTOM', label: t('render.customSize') }];
-  const resSel = select(
-    resOptions,
-    matchResolution(r0.width, r0.height),
-    (v) => {
-      if (v === 'CUSTOM') {
-        ui.set({ customResolution: true });
-        return;
-      }
-      ui.set({ customResolution: false });
-      const p = RESOLUTION_PRESETS.find((x) => x.key === v)!;
-      store.dispatch({ type: 'render/set', patch: { width: p.width, height: p.height }, label: L('undo.resolution', { w: p.width, h: p.height }) });
-    },
-    t('render.resolution'),
-  );
-  resSel.el.setAttribute('data-guide', 'resolution');
-  scope.watch((s) => `${s.render.width} × ${s.render.height}`, (v) => resSel.el.setAttribute('data-tip', v));
-  const width = numberField({ value: r0.width, min: 16, max: 8192, step: 1, unit: 'px', ariaLabel: t('render.width'), onChange: (v, g) => store.dispatch({ type: 'render/set', patch: { width: v }, gesture: g, label: L('undo.render') }) });
-  const height = numberField({ value: r0.height, min: 16, max: 8192, step: 1, unit: 'px', ariaLabel: t('render.height'), onChange: (v, g) => store.dispatch({ type: 'render/set', patch: { height: v }, gesture: g, label: L('undo.render') }) });
-  const customBox = h('span', { class: 'bar-group' }, width.el, h('span', { class: 'aux' }, '×'), height.el);
-
-  const samples = numberField({ value: r0.maxSamples, min: 1, max: 100000, step: 16, ariaLabel: t('render.samples'), onChange: (v, g) => store.dispatch({ type: 'render/set', patch: { maxSamples: v }, gesture: g, label: L('undo.render') }) });
-  const seconds = numberField({ value: r0.maxSeconds, min: 0, max: 86400, step: 10, format: formatClock, ariaLabel: t('render.budget'), onChange: (v, g) => store.dispatch({ type: 'render/set', patch: { maxSeconds: v }, gesture: g, label: L('undo.render') }) });
-
-  const format = segmented<OutputFormat>(
-    [
-      { value: 'PNG', label: 'PNG' },
-      { value: 'JPEG', label: 'JPEG' },
-      { value: 'EXR', label: 'EXR', disabled: true, title: t('render.exrSoon') },
-    ],
-    r0.format,
-    (v) => store.dispatch({ type: 'render/set', patch: { format: v }, label: L('undo.render') }),
-    { ariaLabel: t('render.format') },
-  );
-  const transparent = toggle(r0.transparent, (v) => store.dispatch({ type: 'render/set', patch: { transparent: v }, label: L('undo.render') }), t('render.transparent'));
-  transparent.el.setAttribute('data-tip', t('render.transparent'));
-
+  const drawerBtn = (id: 'animation' | 'queue', label: string, iconName: 'film' | 'queue') =>
+    h('button', { type: 'button', class: 'btn drawer-btn', 'aria-pressed': 'false', 'data-drawer': id, onclick: () => ui.set({ drawer: ui.get().drawer === id ? null : id }) }, icon(iconName, 14), h('span', null, label));
+  const animBtn = drawerBtn('animation', t('render.animation'), 'film');
+  const queueBtn = drawerBtn('queue', t('render.queue'), 'queue');
+  const badge = h('span', { class: 'badge tabular', 'aria-hidden': 'true' });
   const edge = h('span', { class: 'progress-edge', style: 'width:0' });
-  const renderLabel = h('span', null, t('render.render'));
-  const renderBtn = h('button', { type: 'button', class: 'btn btn-primary btn-big', 'data-kbd': kbdFor('render'), 'data-tip': t('action.render'), 'data-guide': 'render', onclick: () => void cmd.render(ctx) }, renderLabel, edge);
-  const queueBtn = h('button', { type: 'button', class: 'btn', onclick: () => cmd.enqueue(ctx) }, icon('plus', 14), t('render.addQueue'));
-
+  queueBtn.append(badge, edge);
+  scope.watch((_s, u) => u.drawer, (d) => {
+    animBtn.setAttribute('aria-pressed', String(d === 'animation'));
+    queueBtn.setAttribute('aria-pressed', String(d === 'queue'));
+  });
   scope.watch(
-    (s, u) => [s.render, u.customResolution],
-    () => {
-      const r = store.get().render;
-      quality.set(r.quality === 'CUSTOM' ? null : r.quality);
-      custom.style.display = r.quality === 'CUSTOM' ? '' : 'none';
-      const match = matchResolution(r.width, r.height);
-      const isCustom = ui.get().customResolution || match === 'CUSTOM';
-      resSel.set(isCustom ? 'CUSTOM' : match);
-      customBox.style.display = isCustom ? '' : 'none';
-      width.set(r.width);
-      height.set(r.height);
-      samples.set(r.maxSamples);
-      seconds.set(r.maxSeconds);
-      format.set(r.format);
-      transparent.set(r.transparent);
-      (transparent.el as HTMLButtonElement).disabled = !supportsAlpha(r.format);
-      const running = r.running && r.running.jobId === null ? r.running : null;
-      renderLabel.textContent = running ? t('render.stop') : t('render.render');
-      edge.style.width = running ? `${Math.round(running.progress * 100)}%` : '0';
+    (s) => [s.render.queue, s.render.running] as const,
+    ([queue, running]) => {
+      const waiting = queue.filter((j) => j.status === 'QUEUED' || j.status === 'RUNNING').length;
+      badge.textContent = waiting > 0 ? String(waiting) : '';
+      badge.style.display = waiting > 0 ? '' : 'none';
+      const job = running?.jobId ? queue.find((j) => j.id === running.jobId) : undefined;
+      edge.style.width = running ? `${Math.round(Math.min(1, running.progress) * 100)}%` : '0';
+      queueBtn.classList.toggle('is-running', running !== null);
+      let tip = waiting === 0 ? t('render.queueEmptyTip') : t('render.queueTip', { n: waiting });
+      if (running && job) {
+        const name = baseName(jobFileNames(store.get(), job)[0] ?? '');
+        const elapsed = job.startedAt ? (Date.now() - job.startedAt) / 1000 : running.seconds;
+        const p = running.progress;
+        const left = p > 0.02 ? (elapsed * (1 - p)) / p : null;
+        tip = left === null ? t('render.queueRunningTip', { name }) : t('render.queueLeftTip', { name, left: formatClock(left) });
+      }
+      queueBtn.setAttribute('data-tip', tip);
+      queueBtn.setAttribute('aria-label', `${t('render.queue')}: ${tip}`);
     },
-    shallowEq,
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
+
+  // The last result: "Bottle_Camera 1 · 1920 × 1080 · 2 min ago"; click opens it.
+  const last = h('button', { type: 'button', class: 'last-result', 'data-tip': t('render.lastResultTip'), onclick: () => cmd.openLastResult(ctx) });
+  const paintLast = () => {
+    const r = ui.get().results[0];
+    last.style.visibility = r ? 'visible' : 'hidden';
+    if (!r) {
+      last.replaceChildren();
+      return;
+    }
+    const pic = r.thumb ? h('img', { src: r.thumb, alt: '', class: 'last-result-pic' }) : null;
+    last.replaceChildren(pic ?? '', h('span', { class: 'aux tabular' }, `${baseName(r.name)} · ${r.width} × ${r.height} · ${ago(r.createdAt)}`));
+  };
+  scope.watch((_s, u) => u.results[0], paintLast);
+  // "2 min ago" moves on by itself.
+  const timer = window.setInterval(paintLast, 30000);
+  scope.onDispose(() => window.clearInterval(timer));
+
+  const renderBtn = h(
+    'button',
+    { type: 'button', class: 'btn btn-primary btn-big render-btn', 'data-kbd': kbdFor('render'), 'data-tip': t('render.renderWindowTip'), 'data-guide': 'render', onclick: () => cmd.openRenderWindow(ctx) },
+    t('render.renderWindow'),
   );
 
   const drawer = dynamic(
@@ -113,26 +108,10 @@ export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
 
   const bar = h(
     'div',
-    { class: 'bar', role: 'toolbar', 'aria-label': t('render.render') },
-    h('div', { class: 'bar-group' }, drawerTabs.el),
-    h(
-      'div',
-      { class: 'bar-mid' },
-    h('div', { class: 'bar-group', 'data-tip': t('render.quality') }, h('span', { class: 'field-label' }, t('render.quality')), quality.el, custom),
-    h('div', { class: 'bar-group' }, h('span', { class: 'field-label' }, t('render.resolution')), resSel.el, customBox),
-    h(
-      'div',
-      { class: 'bar-group', 'data-tip': t('render.previewNote') },
-      h('span', { class: 'field-label' }, t('render.budget')),
-      h('span', { class: 'aux' }, t('render.upTo')),
-      samples.el,
-      h('span', { class: 'aux' }, t('render.samples')),
-      h('span', { class: 'aux' }, t('render.or')),
-      seconds.el,
-    ),
-    h('div', { class: 'bar-group' }, h('span', { class: 'field-label' }, t('render.format')), format.el, transparent.el),
-    ),
-    h('div', { class: 'render-btn-wrap' }, queueBtn, renderBtn),
+    { class: 'bar', role: 'toolbar', 'aria-label': t('render.barLabel') },
+    h('div', { class: 'bar-group' }, animBtn, queueBtn),
+    h('div', { class: 'bar-mid' }, last),
+    h('div', { class: 'render-btn-wrap' }, renderBtn),
   );
   return h('section', { class: 'bar-wrap' }, drawer, bar);
 }

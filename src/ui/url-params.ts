@@ -29,6 +29,8 @@ export interface UrlParams {
   tool?: Tool;
   /** The viewport mode (Fast or Full), for screenshots. */
   mode?: ViewportMode;
+  /** Opens the render window in Image or Animation mode. */
+  render?: 'IMAGE' | 'ANIMATION';
 }
 
 export function readUrlParams(search: string): UrlParams {
@@ -60,6 +62,8 @@ export function readUrlParams(search: string): UrlParams {
   if (tool && (TOOLS as readonly string[]).includes(tool)) out.tool = tool as Tool;
   const mode = q.get('mode')?.toLowerCase();
   if (mode === 'fast' || mode === 'full') out.mode = mode === 'fast' ? 'FAST' : 'FULL';
+  const render = q.get('render')?.toLowerCase();
+  if (render === 'image' || render === 'animation') out.render = render === 'image' ? 'IMAGE' : 'ANIMATION';
   return out;
 }
 
@@ -95,4 +99,8 @@ export function applyUrlParams(ctx: Ctx, p: UrlParams): void {
   if (p.tool) cmd.setTool(ctx, p.tool);
   // The chosen mode, applied as soon as the engine allows (Full waits for it to load).
   if (p.mode) ctx.ui.set({ viewportMode: p.mode });
+  if (p.render) {
+    if (ctx.store.get().render.mode !== p.render) ctx.store.dispatch({ type: 'render/set', patch: { mode: p.render } });
+    cmd.openRenderWindow(ctx);
+  }
 }

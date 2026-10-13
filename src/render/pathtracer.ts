@@ -19,10 +19,11 @@
 // the exact 8-bit conversion of the engine, done by the workers in slices.
 
 import type { CameraState } from '../core/camera';
-import type { RenderProgress } from '../core/render';
+import type { AdvancedSettings } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { EngineStatus, PickHit, RenderEngine, RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
+import { abortError, budgetProgress, runPasses, type PassBudget } from './schedule';
 import { Accumulator, assignTiles, chooseScale, Generations, nextPass, scaledSize, type Tile, type TileResult } from './tiles';
 import { DisplayCurve } from './tonemap';
 
@@ -36,6 +37,10 @@ export interface TracerView {
   camera?: string;
   cameraPatch?: Partial<Omit<CameraState, 'id'>>;
   viewport?: { viewW: number; viewH: number };
+  /** Animation: the instant whose pose is rendered. */
+  time?: number;
+  /** Advanced engine settings (bounces, indirect clamp, seed). */
+  advanced?: AdvancedSettings;
 }
 
 export interface BuiltScene {
@@ -274,6 +279,11 @@ export interface RenderedPixels {
   data: Uint8ClampedArray;
   samples: number;
   seconds: number;
+  /** With `keepLinear`: the RGBA sums of `samples` samples per pixel (premultiplied, linear). */
+  sum?: Float32Array;
+  /** The exposure and curve the 8-bit image was converted with. */
+  exposureEv: number;
+  tonemap: number;
 }
 
 /** What reaches the image, by reference: anything else (selection, names, the queue) does not restart it. */
@@ -609,6 +619,7 @@ export class PathTracerEngine implements RenderEngine {
       frames: this.frames,
       ...(this.lastFrameMs !== null ? { frameMs: this.lastFrameMs } : {}),
       rendering: this.rendering > 0,
+      ...(full ? { pixels: acc.width * acc.height } : {}),
     };
   }
 
@@ -636,7 +647,7 @@ export class PathTracerEngine implements RenderEngine {
     const state = this.state;
     if (!state) throw new Error('engine not ready');
     const signal = opts.signal;
-    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    if (signal?.aborted) throw abortError();
     this.rendering++;
     const gen = this.gens.next();
     this.pool.cancel(gen - 1);
@@ -646,7 +657,16 @@ export class PathTracerEngine implements RenderEngine {
     signal?.addEventListener('abort', onAbort);
     const t0 = performance.now();
     try {
-      const view: TracerView = { width: opts.width, height: opts.height, maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds, transparent: opts.transparent, ...(opts.camera ? { camera: opts.camera } : {}) };
+      const view: TracerView = {
+        width: opts.width,
+        height: opts.height,
+        maxSamples: opts.maxSamples,
+        maxSeconds: opts.maxSeconds,
+        transparent: opts.transparent,
+        ...(opts.camera ? { camera: opts.camera } : {}),
+        ...(opts.time !== undefined ? { time: opts.time } : {}),
+        ...(opts.advanced ? { advanced: opts.advanced } : {}),
+      };
       const built = this.source.build(state, view);
       const full = built.meshKey !== this.loadedMeshKey;
       opts.onProgress?.({ jobId: null, progress: 0, samples: 0, seconds: 0 });
@@ -659,43 +679,41 @@ export class PathTracerEngine implements RenderEngine {
       }
       this.loadedMeshKey = built.meshKey;
       this.lastUpdate = null;
-      if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+      if (signal?.aborted) throw abortError();
       const acc = new Accumulator(opts.width, opts.height);
-      const max = Math.max(1, Math.round(opts.maxSamples));
-      const budget = opts.maxSeconds > 0 ? opts.maxSeconds * 1000 : Infinity;
-      const total = acc.tiles.length * max;
-      let lastReport = 0;
-      const report = (done: number) => {
-        const elapsed = performance.now() - t0;
-        const progress: RenderProgress = { jobId: null, progress: Math.min(0.99, Math.max(acc.totalSamples / total, elapsed / budget)), samples: done, seconds: elapsed / 1000 };
-        opts.onProgress?.(progress);
-      };
+      // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
+      const budget: PassBudget = { finishBy: opts.finishBy ?? (opts.maxSeconds > 0 ? 'FIRST' : 'SAMPLES'), maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds };
       let done = 0;
-      let pass = 0;
-      for (;;) {
-        const p = nextPass(done, pass, max);
-        if (!p) break;
+      let lastReport = 0;
+      const report = () => {
+        const elapsed = performance.now() - t0;
+        opts.onProgress?.({ jobId: null, progress: budgetProgress(budget, acc.totalSamples / Math.max(1, acc.tiles.length), elapsed), samples: done, seconds: elapsed / 1000 });
+      };
+      const result = await runPasses(budget, {
+        now: () => performance.now(),
         // The pool hands this job only its own generation's tiles.
-        const ok = await this.pool.run(gen, acc.tiles, p.first, p.count, (r) => {
-          acc.add(r.index, r.first, r.count, r.data);
-          const now = performance.now();
-          if (now - lastReport > 100) {
-            lastReport = now;
-            report(done);
-          }
-        });
-        if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
-        if (!ok) throw new Error('the render was interrupted');
-        done += p.count;
-        pass = p.count;
-        report(done);
-        if (performance.now() - t0 >= budget) break;
-      }
+        pass: (first, count) =>
+          this.pool.run(gen, acc.tiles, first, count, (r) => {
+            acc.add(r.index, r.first, r.count, r.data);
+            const now = performance.now();
+            if (now - lastReport > 100) {
+              lastReport = now;
+              report();
+            }
+          }),
+        aborted: () => signal?.aborted === true,
+        progress: (samples) => {
+          done = samples;
+          report();
+        },
+      });
+      done = result.samples;
       const tone = this.source.tone(state);
+      // The workers convert slices of a copy; the sums stay here when they are wanted.
       const data = await this.pool.tonemap(acc.sum, opts.width, opts.height, done, tone.exposureEv, tone.tonemap);
       const seconds = (performance.now() - t0) / 1000;
       opts.onProgress?.({ jobId: null, progress: 1, samples: done, seconds });
-      return { width: opts.width, height: opts.height, data, samples: done, seconds };
+      return { width: opts.width, height: opts.height, data, samples: done, seconds, exposureEv: tone.exposureEv, tonemap: tone.tonemap, ...(opts.keepLinear ? { sum: acc.sum } : {}) };
     } finally {
       signal?.removeEventListener('abort', onAbort);
       this.rendering--;

@@ -5,7 +5,7 @@
 // tracer. main.ts wires both.
 
 import type { CameraId } from '../core/camera';
-import type { RenderProgress } from '../core/render';
+import type { AdvancedSettings, FinishBy, RenderProgress } from '../core/render';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 
@@ -26,6 +26,8 @@ export interface EngineStatus {
   frameMs?: number;
   /** Path tracer: a Render is using the pool, the viewport waits. */
   rendering?: boolean;
+  /** Path tracer: pixels of the image the samples above are counted on (for estimates). */
+  pixels?: number;
 }
 
 export interface RenderOptions {
@@ -33,11 +35,22 @@ export interface RenderOptions {
   height: number;
   maxSamples: number;
   maxSeconds: number;
+  /**
+   * When to stop (render/schedule.ts). Absent: the samples or the time, whichever comes first,
+   * with `maxSeconds` 0 meaning no time limit.
+   */
+  finishBy?: FinishBy;
   transparent: boolean;
   onProgress?: (p: RenderProgress) => void;
   signal?: AbortSignal;
-  /** Camera to render through (default: the active one). Extension used by the queue. */
+  /** Camera to render through (default: the active one, or the camera track at `time`). */
   camera?: CameraId;
+  /** Animation: the instant whose pose is rendered, seconds. */
+  time?: number;
+  /** Engine settings of the window's Advanced section. */
+  advanced?: AdvancedSettings;
+  /** Path tracer: also hand back the accumulated linear sums (16-bit PNG, EXR). */
+  keepLinear?: boolean;
 }
 
 export interface PickHit {

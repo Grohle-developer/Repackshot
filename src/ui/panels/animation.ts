@@ -19,6 +19,7 @@ import {
 import { activeCamera } from '../../core/camera';
 import { allParts } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
+import * as cmd from '../commands';
 import { field, numberField, segmented, select } from '../components/controls';
 import { h, icon } from '../dom';
 import { dyn, lightName } from '../names';
@@ -84,7 +85,21 @@ function head(ctx: Ctx, scope: Scope): HTMLElement {
     },
     shallowEq,
   );
-  const video = h('button', { type: 'button', class: 'btn', disabled: true, 'data-tip': t('anim.videoSoon') }, icon('film', 14), t('anim.buildVideo'), h('span', { class: 'aux' }, t('common.comingSoon')));
+  // Animations render from the render window in Animation mode (UI.md §2.5).
+  const video = h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn',
+      'data-tip': t('anim.renderTip'),
+      onclick: () => {
+        if (store.get().render.mode !== 'ANIMATION') store.dispatch({ type: 'render/set', patch: { mode: 'ANIMATION' }, label: L('undo.render') });
+        cmd.openRenderWindow(ctx);
+      },
+    },
+    icon('film', 14),
+    t('anim.renderAnimation'),
+  );
   return h('div', { class: 'anim-head' }, play, rewind, time, frame, fps.el, h('span', { style: 'flex:1' }), video, h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('render.drawerClose'), 'data-tip': t('render.drawerClose'), onclick: () => ctx.ui.set({ drawer: null }) }, icon('close')));
 }
 

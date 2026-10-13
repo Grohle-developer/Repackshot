@@ -30,7 +30,7 @@ function installKeys(ctx: Ctx, scope: Scope): void {
   const onKey = (e: KeyboardEvent): void => {
     if (e.defaultPrevented || e.isComposing) return;
     const u = ctx.ui.get();
-    if (!u.importSheet || u.paletteOpen || u.menuOpen || u.shortcutsOpen || u.pickMode) return;
+    if (!u.importSheet || u.paletteOpen || u.menuOpen || u.shortcutsOpen || u.pickMode || u.renderWindow || u.resultView) return;
     if (e.key === 'Escape' && !isTyping(e)) {
       e.preventDefault();
       e.stopPropagation();

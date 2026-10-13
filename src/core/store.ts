@@ -4,14 +4,13 @@
 // download) live outside and subscribe.
 
 import type { Label, Lang, RGBA, StudioPreset } from '../data/types';
-import { QUALITY_PRESETS } from '../data/quality';
 import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
 import { buildStudio, lightsFromRig, reduceStudio, type CustomSetup, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
 import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialInstance } from './materials';
-import { reduceRender, type OutputFormat, type RenderAction, type RenderJob, type RenderProgress, type RenderQuality } from './render';
+import { carryRuntime, defaultRenderState, reduceRender, type RenderAction, type RenderState } from './render';
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
 import { reduceTransform, type TransformAction } from './transform';
 
@@ -80,17 +79,8 @@ export interface ProjectState {
   camera: { active: CameraId; cameras: Record<CameraId, CameraState> };
   image: ImageState;
   animation: { shots: Shot[]; clips: MotionClip[]; fps: number; playhead: number; playing: boolean };
-  render: {
-    quality: RenderQuality;
-    width: number;
-    height: number;
-    maxSamples: number;
-    maxSeconds: number;
-    format: OutputFormat;
-    transparent: boolean;
-    queue: RenderJob[];
-    running: RenderProgress | null;
-  };
+  /** The render window's settings, the queue and the job in flight (core/render.ts). */
+  render: RenderState;
   doctor: { results: DoctorResult[]; stamp: number };
 }
 
@@ -126,7 +116,8 @@ export type ActionType = Action['type'];
 /**
  * Actions that change interface state, not the project: they are not undone,
  * do not mark the project dirty and do not enter the history
- * (ARCHITECTURE §4: language, theme, playhead; also selection and the queue).
+ * (ARCHITECTURE §4: language, theme, playhead; also selection, and what a
+ * running render job reports). Queue edits are project state (U5): undoable.
  */
 export const VOLATILE_ACTIONS: ReadonlySet<ActionType> = new Set<ActionType>([
   'scene/select',
@@ -137,10 +128,7 @@ export const VOLATILE_ACTIONS: ReadonlySet<ActionType> = new Set<ActionType>([
   'meta/saved',
   'anim/playhead',
   'anim/play',
-  'render/enqueue',
   'render/job',
-  'render/removeJob',
-  'render/clearQueue',
   'render/running',
   'history/undo',
   'history/redo',
@@ -188,17 +176,7 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
     camera: { active: 'cam1', cameras: { cam1: makeCamera('cam1', '', partSizeMm) } },
     image: { exposureEv: 0, viewTransform: 'FILMIC', bloom: 0, sharpen: 0, saturation: 0, contrast: 0, vignette: 0 },
     animation: { shots: [], clips: [], fps: 24, playhead: 0, playing: false },
-    render: {
-      quality: 'PREVIEW',
-      width: 1920,
-      height: 1080,
-      maxSamples: QUALITY_PRESETS.PREVIEW.samples,
-      maxSeconds: 120,
-      format: 'PNG',
-      transparent: false,
-      queue: [],
-      running: null,
-    },
+    render: defaultRenderState(),
     doctor: { results: [], stamp: 0 },
   };
   const built = buildStudio(base);
@@ -323,10 +301,8 @@ function carryVolatile(snapshot: ProjectState, current: ProjectState): ProjectSt
     snapshot.animation.playhead === current.animation.playhead && snapshot.animation.playing === current.animation.playing
       ? snapshot.animation
       : { ...snapshot.animation, playhead: current.animation.playhead, playing: current.animation.playing };
-  const render =
-    snapshot.render.queue === current.render.queue && snapshot.render.running === current.render.running
-      ? snapshot.render
-      : { ...snapshot.render, queue: current.render.queue, running: current.render.running };
+  // The queue's edits come back with the snapshot; what running jobs reported stays (core/render.ts).
+  const render = carryRuntime(snapshot.render, current.render);
   return cleanSelection({ ...snapshot, meta, animation: anim, render, selection: current.selection });
 }
 

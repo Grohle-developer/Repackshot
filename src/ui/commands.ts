@@ -43,13 +43,14 @@ import {
   type Space,
 } from '../core/transform';
 import { createInitialState, type ThemeSetting } from '../core/store';
-import { supportsAlpha } from '../core/render';
+import { patchSettings, settingsOf, type RenderSettings } from '../core/render';
 import { doctorCheck } from '../data/doctor';
 import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
 import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
 import { writePref } from './prefs';
 import type { Ctx } from './reactive';
+import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob } from './render-queue';
 import { effectiveMode, type Tool, type ViewportMode } from './ui-state';
 import { L, formatClock, formatNumber, getLang, t, type StringKey } from './strings';
 
@@ -864,7 +865,7 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
  * when there is no engine or a render is running; the item then shows a generic icon.
  */
 export async function captureThumb(ctx: Ctx): Promise<string | undefined> {
-  if (!ctx.services.viewport || isRendering() || ctx.store.get().render.running) return undefined;
+  if (!ctx.services.viewport || isRendering(ctx) || ctx.store.get().render.running) return undefined;
   try {
     const blob = await ctx.services.renderImage({ width: THUMB_W, height: THUMB_H, maxSamples: 1, maxSeconds: 1, transparent: false, format: 'JPEG', quick: true });
     return await blobToDataUrl(blob);
@@ -1013,106 +1014,216 @@ export function openGuide(ctx: Ctx): void {
   ctx.ui.set({ guideStep: 0, rightCollapsed: false });
 }
 
-// --- Render -------------------------------------------------------------------------
+// --- Render (UI.md §2.5, §2.7, §2.8) -----------------------------------------------------
 
-let renderAbort: AbortController | null = null;
-let queueAbort: AbortController | null = null;
-
-export function isRendering(): boolean {
-  return renderAbort !== null;
-}
-
-function outputName(ctx: Ctx, cameraId: string, w: number, h: number, ext: string): string {
-  const s = ctx.store.get();
-  return `${projectFileBase(ctx)}-${slug(cameraName(s, s.camera.cameras[cameraId]))}-${w}x${h}.${ext}`;
-}
-
-/** Render button (Ctrl+Enter): renders at output size and downloads. Pressed again, stops. */
-export async function render(ctx: Ctx): Promise<void> {
-  if (renderAbort) {
-    renderAbort.abort();
+/** Opens the render window (Render…, Ctrl/⌘ ⏎); pressed while it is open, renders. */
+export function openRenderWindow(ctx: Ctx): void {
+  const w = ctx.ui.get().renderWindow;
+  if (w) {
+    void renderFromWindow(ctx);
     return;
   }
-  const s = ctx.store.get();
-  const r = s.render;
-  const format = r.format === 'JPEG' ? 'JPEG' : 'PNG';
-  renderAbort = new AbortController();
-  const started = performance.now();
-  ctx.store.dispatch({ type: 'render/running', running: { jobId: null, progress: 0, samples: 0, seconds: 0 } });
-  try {
-    const blob = await ctx.services.renderImage({
-      width: r.width,
-      height: r.height,
-      maxSamples: r.maxSamples,
-      maxSeconds: r.maxSeconds,
-      transparent: r.transparent && supportsAlpha(format),
-      format,
-      signal: renderAbort.signal,
-      onProgress: (p, samples) =>
-        ctx.store.dispatch({ type: 'render/running', running: { jobId: null, progress: p, samples: samples ?? 0, seconds: (performance.now() - started) / 1000 } }),
-    });
-    const name = outputName(ctx, s.camera.active, r.width, r.height, format === 'JPEG' ? 'jpg' : 'png');
-    downloadBlob(blob, name);
-    ctx.ui.toast(t('render.done', { name }));
-  } catch (err) {
-    if (renderAbort?.signal.aborted) ctx.ui.toast(t('render.cancelled'));
-    else ctx.ui.toast(t('render.failed', { reason: err instanceof Error ? err.message : String(err) }));
-  } finally {
-    renderAbort = null;
-    ctx.store.dispatch({ type: 'render/running', running: null });
-  }
+  ctx.ui.set({ renderWindow: { kind: 'NEW' }, paletteOpen: false });
 }
 
+export function closeRenderWindow(ctx: Ctx): void {
+  if (ctx.ui.get().renderWindow) ctx.ui.set({ renderWindow: null });
+}
+
+/** The settings the window shows: the project's, or the draft of the job being edited. */
+export function windowSettings(ctx: Ctx): RenderSettings {
+  const w = ctx.ui.get().renderWindow;
+  return w?.kind === 'EDIT' ? w.draft : settingsOf(ctx.store.get().render);
+}
+
+/** Changes a setting of the window: the project's (undoable, one entry per gesture), or the draft of an edit. */
+export function setRenderSettings(ctx: Ctx, patch: Partial<RenderSettings>, gesture?: string): void {
+  const w = ctx.ui.get().renderWindow;
+  if (w?.kind === 'EDIT') {
+    ctx.ui.set({ renderWindow: { ...w, draft: patchSettings(w.draft, patch) } });
+    return;
+  }
+  ctx.store.dispatch({ type: 'render/set', patch, label: L('undo.render'), ...(gesture ? { gesture } : {}) });
+}
+
+/** Asks again for the folder's permission while the click still counts as a user gesture. */
+async function folderAccess(ctx: Ctx, s: RenderSettings): Promise<void> {
+  if (s.destination.kind !== 'FOLDER') return;
+  if (!(await ctx.services.files.ensureAccess(s.destination.id))) ctx.ui.toast(t('rw.folderDenied'));
+}
+
+/** Adds jobs made from settings (first or last); returns the new jobs' ids. */
+function enqueueSettings(ctx: Ctx, settings: RenderSettings, position: 'FIRST' | 'LAST'): string[] {
+  const before = new Set(ctx.store.get().render.queue.map((j) => j.id));
+  ctx.store.dispatch({ type: 'render/enqueue', at: Date.now(), position, settings, label: L('undo.enqueue') });
+  return ctx.store.get().render.queue.filter((j) => !before.has(j.id)).map((j) => j.id);
+}
+
+/**
+ * Render: the job (one per camera with "All cameras") goes first in the queue and starts now; the
+ * window closes and the Queue button shows the progress. "Render just this one".
+ */
+export async function renderFromWindow(ctx: Ctx): Promise<void> {
+  const w = ctx.ui.get().renderWindow;
+  if (w?.kind === 'EDIT') {
+    saveJobEdit(ctx);
+    return;
+  }
+  const settings = settingsOf(ctx.store.get().render);
+  closeRenderWindow(ctx);
+  await renderWith(ctx, settings);
+}
+
+/** Ctrl/⌘ ⇧ ⏎: renders at once with the window's last settings, without opening it. */
+export async function renderNow(ctx: Ctx): Promise<void> {
+  const w = ctx.ui.get().renderWindow;
+  if (w) {
+    await renderFromWindow(ctx);
+    return;
+  }
+  await renderWith(ctx, settingsOf(ctx.store.get().render));
+}
+
+async function renderWith(ctx: Ctx, settings: RenderSettings): Promise<void> {
+  const access = folderAccess(ctx, settings);
+  const ids = enqueueSettings(ctx, settings, 'FIRST');
+  await access;
+  if (ids.length === 0) return;
+  if (runOnly(ctx, ids) === 'NEXT') ctx.ui.toast(t('rw.startsAfter'));
+}
+
+/** + Add to queue: last in the queue, not started; the window stays open for the next one. */
+export async function addToQueueFromWindow(ctx: Ctx): Promise<void> {
+  const w = ctx.ui.get().renderWindow;
+  if (w?.kind === 'EDIT') return;
+  const settings = settingsOf(ctx.store.get().render);
+  const access = folderAccess(ctx, settings);
+  enqueueSettings(ctx, settings, 'LAST');
+  await access;
+  const n = ctx.store.get().render.queue.filter((j) => j.status === 'QUEUED' || j.status === 'RUNNING').length;
+  ctx.ui.toast(n === 1 ? t('rw.added1') : t('rw.added', { n }));
+}
+
+/** The palette's "Add to queue": the window's settings, last in the queue. */
 export function enqueue(ctx: Ctx): void {
-  const n = ctx.store.get().render.queue.length + 1;
-  ctx.store.dispatch({ type: 'render/enqueue', name: t('queue.job', { n }) });
+  const ids = enqueueSettings(ctx, settingsOf(ctx.store.get().render), 'LAST');
+  if (ids.length === 0) return;
+  const n = ctx.store.get().render.queue.filter((j) => j.status === 'QUEUED' || j.status === 'RUNNING').length;
+  ctx.ui.toast(n === 1 ? t('rw.added1') : t('rw.added', { n }));
+}
+
+/** Edit: the window opens with the job's settings and Save changes. */
+export function editJob(ctx: Ctx, id: string): void {
+  const job = ctx.store.get().render.queue.find((j) => j.id === id);
+  if (!job || job.status === 'RUNNING') return;
+  ctx.ui.set({ renderWindow: { kind: 'EDIT', jobId: id, draft: job.settings } });
+}
+
+export function saveJobEdit(ctx: Ctx): void {
+  const w = ctx.ui.get().renderWindow;
+  if (w?.kind !== 'EDIT') return;
+  ctx.store.dispatch({ type: 'render/updateJob', id: w.jobId, settings: w.draft, label: L('undo.editJob') });
+  ctx.ui.set({ renderWindow: null });
+  ctx.ui.toast(t('rw.saved'));
+}
+
+export function duplicateJob(ctx: Ctx, id: string): void {
+  ctx.store.dispatch({ type: 'render/duplicateJob', id, at: Date.now(), label: L('undo.duplicateJob') });
+}
+
+export function removeJob(ctx: Ctx, id: string): void {
+  ctx.store.dispatch({ type: 'render/removeJob', id, label: L('undo.removeJob') });
+}
+
+export function moveJob(ctx: Ctx, id: string, to: number): void {
+  ctx.store.dispatch({ type: 'render/moveJob', id, to, label: L('undo.moveJob') });
+}
+
+export function clearFinished(ctx: Ctx): void {
+  ctx.store.dispatch({ type: 'render/clearFinished', label: L('undo.clearFinished') });
+}
+
+/** Start queue / Pause. */
+export function toggleQueue(ctx: Ctx): void {
+  if (queueMode(ctx) === 'IDLE') startQueue(ctx);
+  else pauseQueue(ctx);
+}
+
+export { isRendering, queueMode, stopJob };
+
+export function openQueue(ctx: Ctx): void {
   ctx.ui.set({ drawer: 'queue' });
 }
 
-export function isQueueRunning(): boolean {
-  return queueAbort !== null;
+// --- Results -------------------------------------------------------------------------------
+
+/** Loads the results history (at start). */
+export async function loadResults(ctx: Ctx): Promise<void> {
+  try {
+    const [persistent, list] = await Promise.all([ctx.services.results.persistent(), ctx.services.results.list()]);
+    ctx.ui.set({ results: list, resultsStorage: persistent ? 'PERSISTENT' : 'MEMORY' });
+  } catch {
+    ctx.ui.set({ resultsStorage: 'MEMORY' });
+  }
 }
 
-/** Runs the queued jobs one after another with the same mechanism as Render. */
-export async function startQueue(ctx: Ctx): Promise<void> {
-  if (queueAbort) {
-    queueAbort.abort();
+export function openResult(ctx: Ctx, id: string): void {
+  if (!ctx.ui.get().results.some((r) => r.id === id)) {
+    ctx.ui.toast(t('rv.missing'));
     return;
   }
-  queueAbort = new AbortController();
-  try {
-    for (;;) {
-      const job = ctx.store.get().render.queue.find((j) => j.status === 'QUEUED');
-      if (!job || queueAbort.signal.aborted) break;
-      ctx.store.dispatch({ type: 'render/job', id: job.id, patch: { status: 'RUNNING', progress: 0 } });
-      ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress: 0, samples: 0, seconds: 0 } });
-      try {
-        const format = job.format === 'JPEG' ? 'JPEG' : 'PNG';
-        const blob = await ctx.services.renderImage({
-          width: job.width,
-          height: job.height,
-          maxSamples: job.maxSamples,
-          maxSeconds: job.maxSeconds,
-          transparent: job.transparent && supportsAlpha(format),
-          format,
-          camera: job.camera,
-          signal: queueAbort.signal,
-          onProgress: (p) => ctx.store.dispatch({ type: 'render/job', id: job.id, patch: { progress: p } }),
-        });
-        downloadBlob(blob, outputName(ctx, job.camera, job.width, job.height, format === 'JPEG' ? 'jpg' : 'png'));
-        ctx.store.dispatch({ type: 'render/job', id: job.id, patch: { status: 'DONE', progress: 1 } });
-      } catch {
-        ctx.store.dispatch({ type: 'render/job', id: job.id, patch: { status: queueAbort.signal.aborted ? 'CANCELLED' : 'FAILED' } });
-      }
-    }
-  } finally {
-    queueAbort = null;
-    ctx.store.dispatch({ type: 'render/running', running: null });
-  }
+  ctx.ui.set({ resultView: { id, compare: null, split: 'SPLIT', position: 0.5 }, renderWindow: null });
 }
 
-export function clearQueue(ctx: Ctx): void {
-  ctx.store.dispatch({ type: 'render/clearQueue' });
+export function openLastResult(ctx: Ctx): void {
+  const r = ctx.ui.get().results[0];
+  if (r) openResult(ctx, r.id);
+  else ctx.ui.toast(t('render.noResult'));
+}
+
+export function closeResult(ctx: Ctx): void {
+  if (ctx.ui.get().resultView) ctx.ui.set({ resultView: null });
+}
+
+/** Saves a result again (to the folder it went to, or a download). */
+export async function saveResultAgain(ctx: Ctx, id: string): Promise<void> {
+  const meta = ctx.ui.get().results.find((r) => r.id === id);
+  const blobs = meta ? await ctx.services.results.get(id) : null;
+  if (!meta || !blobs) {
+    ctx.ui.toast(t('rv.missing'));
+    return;
+  }
+  if (meta.savedTo.kind === 'FOLDER') await ctx.services.files.ensureAccess(meta.savedTo.id);
+  const where = await ctx.services.files.save(meta.savedTo, meta.name, blobs.file);
+  ctx.ui.toast(where === 'FOLDER' && meta.savedTo.kind === 'FOLDER' ? t('render.doneFolder', { name: meta.name, folder: meta.savedTo.name }) : t('render.done', { name: meta.name }));
+}
+
+export async function deleteResult(ctx: Ctx, id: string): Promise<void> {
+  try {
+    await ctx.services.results.remove(id);
+  } catch {
+    // Gone already.
+  }
+  const v = ctx.ui.get().resultView;
+  ctx.ui.set({
+    results: ctx.ui.get().results.filter((r) => r.id !== id),
+    ...(v && v.id === id ? { resultView: null } : v && v.compare === id ? { resultView: { ...v, compare: null } } : {}),
+  });
+}
+
+export async function clearHistory(ctx: Ctx): Promise<void> {
+  try {
+    await ctx.services.results.clear();
+  } catch {
+    // Nothing to clear.
+  }
+  ctx.ui.set({ results: [], resultView: null });
+}
+
+/** Choose folder…: the browser's folder picker; the folder becomes the destination. */
+export async function chooseFolder(ctx: Ctx): Promise<void> {
+  const f = await ctx.services.files.chooseFolder();
+  if (f) setRenderSettings(ctx, { destination: { kind: 'FOLDER', id: f.id, name: f.name } });
 }
 
 // --- Labels for value edits ----------------------------------------------------------

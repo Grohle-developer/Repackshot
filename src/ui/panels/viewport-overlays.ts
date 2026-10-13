@@ -101,7 +101,7 @@ function topRight(ctx: Ctx, scope: Scope): HTMLElement {
       'end',
     );
   });
-  const resBtn = h('button', { type: 'button', class: 'ov-text-btn', 'data-tip': t('viewport.output'), onclick: () => (document.querySelector('[data-guide="resolution"]') as HTMLElement | null)?.focus() });
+  const resBtn = h('button', { type: 'button', class: 'ov-text-btn', 'data-tip': t('viewport.output'), onclick: () => cmd.openRenderWindow(ctx) });
   scope.watch(
     (s) => [s.camera, s.render.width, s.render.height],
     () => {
@@ -154,6 +154,12 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
             ? t('viewport.meterHalf')
             : t('viewport.meterFull', { samples, time: clock(st.seconds) });
       line.textContent = t('viewport.pool', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') });
+      // What this machine does, measured here (the render window's estimate): pixel-samples per second.
+      if (!st.rendering && scale === 1 && st.pixels && st.samples >= 2 && st.seconds >= 2) {
+        const tp = (st.samples * st.pixels) / st.seconds;
+        const prev = ctx.ui.get().throughput;
+        if (prev === null || Math.abs(tp - prev) > prev * 0.1) ctx.ui.set({ throughput: tp });
+      }
       const max = Math.max(1, ctx.store.get().render.maxSamples);
       (bar.firstElementChild as HTMLElement).style.width = `${Math.min(100, Math.round((st.samples / max) * 100))}%`;
       note.textContent = '';

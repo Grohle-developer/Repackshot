@@ -6,6 +6,8 @@ import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload } from '../core/import-options';
 import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
+import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
+import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
@@ -36,6 +38,8 @@ export interface EngineStatus {
   frameMs?: number;
   /** Path tracer: a Render has the pool, the viewport waits. */
   rendering?: boolean;
+  /** Path tracer: pixels the samples above are counted on (the render window's estimate). */
+  pixels?: number;
 }
 
 /** The viewport as the interface sees it. */
@@ -84,6 +88,70 @@ export interface RenderRequest {
   quick?: boolean;
 }
 
+/** One image of a render job (an image, or a frame of an animation): always the path tracer. */
+export interface FrameRequest {
+  width: number;
+  height: number;
+  finishBy: FinishBy;
+  maxSamples: number;
+  maxSeconds: number;
+  transparent: boolean;
+  format: OutputFormat;
+  bitDepth: BitDepth;
+  /** 1..100 */
+  jpegQuality: number;
+  /** Written into the file (PNG pHYs, JPEG JFIF). */
+  dpi: number;
+  /** An image job's camera. */
+  camera?: CameraId;
+  /** A frame of an animation: the instant rendered (the camera track's camera). */
+  time?: number;
+  advanced?: AdvancedSettings;
+  signal?: AbortSignal;
+  /** 0..1, the samples every pixel has so far, and seconds. */
+  onProgress?: (progress: number, samples: number, seconds: number) => void;
+}
+
+/** What a frame request gives back. */
+export interface FrameResult {
+  /** The file as it is saved. */
+  file: Blob;
+  /** An 8-bit picture of it when the browser cannot show the file (EXR); null otherwise. */
+  display: Blob | null;
+  width: number;
+  height: number;
+  samples: number;
+  seconds: number;
+}
+
+/** The results history in the browser (src/io/results.ts). */
+export interface ResultsPort {
+  /** Kept between sessions (IndexedDB), or only in memory (storage unavailable, e.g. a private window). */
+  persistent(): Promise<boolean>;
+  /** Newest first. */
+  list(): Promise<ResultMeta[]>;
+  /** Stores a result; returns the ids evicted to stay within the limits (oldest first). */
+  add(meta: ResultMeta, file: Blob, display: Blob | null): Promise<string[]>;
+  get(id: string): Promise<{ file: Blob; display: Blob | null } | null>;
+  remove(id: string): Promise<void>;
+  clear(): Promise<void>;
+}
+
+/** Where outputs go (src/io/files.ts): the downloads, or a folder of the File System Access API. */
+export interface FilesPort {
+  /** The browser can give write access to a folder (`showDirectoryPicker`). */
+  readonly canChooseFolder: boolean;
+  /** The folder can be shown in the system's file manager (the desktop build); never in a browser. */
+  readonly canOpenFolder: boolean;
+  /** Asks for a folder (a user gesture); null when the person cancels. */
+  chooseFolder(): Promise<{ id: string; name: string } | null>;
+  /** Write permission for a remembered folder, asked again when needed (call it from a user gesture). */
+  ensureAccess(id: string): Promise<boolean>;
+  /** Saves under the destination; a download when the folder is gone or not writable. */
+  save(dest: Destination, name: string, blob: Blob): Promise<'FOLDER' | 'DOWNLOAD'>;
+  openFolder(id: string): Promise<void>;
+}
+
 export type { ImportMessage };
 
 /**
@@ -109,8 +177,14 @@ export interface LibraryServices {
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
-  /** Renders at output size and encodes the image. */
+  /** A quick picture (`quick`: the preview) or a render at output size, encoded (the library's thumbnails). */
   renderImage(req: RenderRequest): Promise<Blob>;
+  /** One image of a render job with the path tracer (never the preview), encoded as the job asks. */
+  renderFrame(req: FrameRequest): Promise<FrameResult>;
+  /** The results history. */
+  results: ResultsPort;
+  /** Saving outputs. */
+  files: FilesPort;
   /** The viewport as it is now, PNG. */
   captureViewport(): Promise<Blob | null>;
   /** The engine's scene file (RSB, what `rt` renders on the command line) for the output image. */

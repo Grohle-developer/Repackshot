@@ -10,18 +10,23 @@ import './ui/theme.css';
 import './ui/layout.css';
 import './ui/components.css';
 import './ui/panels.css';
-import { totalDuration } from './core/animation';
+import './ui/render.css';
+import { evaluate, totalDuration } from './core/animation';
 import { activeCamera, sameView } from './core/camera';
 import { createInitialState, createStore } from './core/store';
-import { encodeImage, encodePixels } from './io/image';
+import { createFiles } from './io/files';
+import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { LIBRARY_STORAGE_KEY, exportLibrary, importLibrary, loadLibrary, saveLibrary } from './io/library';
 import { serializeProject } from './io/project';
+import { openResultsStore } from './io/results';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { loadEngineModule, PathTracerEngine, Pool, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
-import { poolSize } from './render/tiles';
+import { exactWords16, linearRgba, poolSize } from './render/tiles';
 import { mountApp } from './ui/app';
+import { loadResults } from './ui/commands';
+import { downloadBlob } from './ui/dom';
 import type { AppServices, ViewportPort } from './ui/ports';
 import { readPref } from './ui/prefs';
 import { L, t } from './ui/strings';
@@ -59,7 +64,12 @@ const thumbs = new ThumbnailRenderer();
 // The project to the engine's scene (io/rsb.ts); the path tracer only sees this interface.
 const sceneSource: SceneSource = {
   build(state, view) {
-    const { scene, meshKey } = projectScene(state, view);
+    const { scene, meshKey } = projectScene(state, {
+      ...view,
+      // A frame of an animation: the pose of that instant (the camera track's camera unless one is named).
+      ...(view.time !== undefined ? { pose: evaluate(state, view.time) } : {}),
+      ...(view.advanced ? { maxDepth: view.advanced.maxBounces ?? undefined, clampIndirect: view.advanced.clampIndirect, seed: view.advanced.seed } : {}),
+    });
     return { meshKey, bytes: (meshes) => writeRsb(scene, { meshes }) };
   },
   tone: (state) => ({ exposureEv: state.image.exposureEv, tonemap: tonemapFor(state.image.viewTransform) }),
@@ -152,8 +162,60 @@ const viewport: ViewportPort | null = preview
     }
   : null;
 
+// The results history (IndexedDB, or memory when the browser keeps nothing) and where outputs go.
+const resultsReady = openResultsStore();
+const files = createFiles(
+  {
+    putHandle: async (id, handle) => (await resultsReady).putHandle(id, handle),
+    getHandle: async (id) => (await resultsReady).getHandle(id),
+  },
+  downloadBlob,
+  window as unknown as { showDirectoryPicker?: unknown; isSecureContext?: boolean },
+);
+
 const services: AppServices = {
   viewport,
+  async renderFrame(req) {
+    // Render and every queue job use the path tracer, whatever the viewport shows; without the engine there is
+    // no render (the preview is never passed off as one).
+    if (!tracer) throw new Error(t('render.noEngine'));
+    const linear = req.format === 'EXR' || (req.format === 'PNG' && req.bitDepth === 16);
+    const px = await tracer.renderPixels({
+      width: req.width,
+      height: req.height,
+      finishBy: req.finishBy,
+      maxSamples: req.maxSamples,
+      maxSeconds: req.maxSeconds,
+      transparent: req.transparent,
+      signal: req.signal,
+      keepLinear: linear,
+      ...(req.camera ? { camera: req.camera } : {}),
+      ...(req.time !== undefined ? { time: req.time } : {}),
+      ...(req.advanced ? { advanced: req.advanced } : {}),
+      onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds),
+    });
+    let file: Blob;
+    let display: Blob | null = null;
+    if (req.format === 'EXR') {
+      const data = linearRgba(px.sum!, px.samples, px.exposureEv);
+      file = new Blob([encodeExr({ width: px.width, height: px.height, data }, { alpha: req.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
+      // Browsers do not show EXR: the viewer and the thumbnails use the 8-bit image of the same render.
+      display = await encodePixels(px, 'PNG', 0.92, { dpi: req.dpi });
+    } else if (req.format === 'PNG' && req.bitDepth === 16) {
+      const words = exactWords16(px.sum!, px.samples, px.exposureEv, px.tonemap);
+      file = new Blob([(await encodePng16({ width: px.width, height: px.height, data: words }, { dpi: req.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
+    } else file = await encodePixels(px, req.format === 'JPEG' ? 'JPEG' : 'PNG', req.jpegQuality / 100, { dpi: req.dpi });
+    return { file, display, width: px.width, height: px.height, samples: px.samples, seconds: px.seconds };
+  },
+  results: {
+    persistent: async () => (await resultsReady).persistent,
+    list: async () => (await resultsReady).list(),
+    add: async (meta, file, display) => (await resultsReady).add(meta, file, display),
+    get: async (id) => (await resultsReady).get(id),
+    remove: async (id) => (await resultsReady).remove(id),
+    clear: async () => (await resultsReady).clear(),
+  },
+  files,
   async renderImage(req) {
     const opts = {
       width: req.width,
@@ -192,6 +254,7 @@ const services: AppServices = {
 };
 
 const app = mountApp(appEl, store, ui, services);
+void loadResults(app.ctx);
 
 // Whatever changes the library is kept at once; if the browser cannot keep it, the person is told.
 {

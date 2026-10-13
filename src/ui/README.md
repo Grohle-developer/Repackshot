@@ -39,6 +39,7 @@ resultado es un estado normal y deshacible.
 | `guide=1..6` | Abre la guía en ese paso |
 | `tool=select\|orbit\|pan\|zoom\|move` | Activa esa herramienta del visor (`move`: la herramienta de mover, con el *gizmo* sobre la selección) |
 | `mode=fast\|full` | Modo del visor (*Rápido* o *Completo*); *Completo* entra en cuanto el motor ha cargado |
+| `render=image\|animation` | Abre la ventana de render (U5) en *Imagen* o en *Animación* |
 
 Ejemplos usados para las capturas de `docs/ui/`:
 

@@ -4,8 +4,9 @@
 import { outputFrameRect } from '../../core/camera';
 import * as cmd from '../commands';
 import { h, icon } from '../dom';
-import type { Ctx, Scope } from '../reactive';
+import { dynamic, type Ctx, type Scope } from '../reactive';
 import { t } from '../strings';
+import { resultsViewer } from './results-viewer';
 import { viewportOverlays } from './viewport-overlays';
 
 function emptyState(ctx: Ctx, scope: Scope): HTMLElement {
@@ -80,6 +81,17 @@ export function viewportPanel(ctx: Ctx, scope: Scope): HTMLElement {
   scope.watch((_s, u) => u.pickMode, (p) => el.toggleAttribute('data-picking', p !== null));
 
   if (port) el.append(...viewportOverlays(ctx, scope, el));
+  // The results viewer: a layer over the viewport (UI.md §2.8), rebuilt when the result or the comparison changes.
+  el.appendChild(
+    dynamic(
+      scope,
+      (_s, u) => (u.resultView ? `${u.resultView.id}|${u.resultView.compare ?? ''}` : null),
+      (sc, key) => (key ? resultsViewer(ctx, sc) : null),
+      undefined,
+      'div',
+      'rv-host',
+    ),
+  );
   void ui;
   return el;
 }

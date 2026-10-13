@@ -197,7 +197,7 @@ describe('store', () => {
     store.dispatch({ type: 'anim/preset', key: 'HERO' });
     store.dispatch({ type: 'scene/selectFaces', part: ids.body, indices: [1, 2], mode: 'set' });
     store.dispatch(assignAction(store.get(), { preset: 'GOLD' }));
-    store.dispatch({ type: 'render/enqueue', name: 'Job' });
+    store.dispatch({ type: 'render/enqueue', at: 1, position: 'LAST' });
     const s = store.get();
     expect(JSON.parse(JSON.stringify(s))).toEqual(s);
   });

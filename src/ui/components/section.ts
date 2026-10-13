@@ -3,8 +3,8 @@
 import { h, icon } from '../dom';
 import type { Ctx } from '../reactive';
 
-export function section(ctx: Ctx, id: string, title: string, body: Node, extra?: Node | null): HTMLElement {
-  const collapsed = ctx.ui.get().sections[id] === true;
+export function section(ctx: Ctx, id: string, title: string, body: Node, extra?: Node | null, defaultCollapsed = false): HTMLElement {
+  const collapsed = ctx.ui.get().sections[id] ?? defaultCollapsed;
   const chevron = h('span', null, icon(collapsed ? 'chevronRight' : 'chevronDown', 14));
   const head = h(
     'button',
