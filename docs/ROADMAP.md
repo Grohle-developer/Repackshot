@@ -1077,17 +1077,25 @@ de la sección y del visor con el divisor.
 
 ## X5 · Ajustes y modelos — **Sonnet**
 
-**Qué.** `AI-POST.md` §5: ventana de Ajustes (idioma, tema, motor,
-modelos, almacenamiento), lista de modelos, importación de safetensors,
+**Qué.** `AI-POST.md` §5 y §2.2–§2.4: ventana de Ajustes (idioma, tema,
+motor, modelos, almacenamiento); el **selector de modelos** como
+componente único que usan la versión web (primera activación y Ajustes)
+y el instalador de escritorio de P2, con la lista de
+`src/data/ai-models.ts`, la detección del equipo (VRAM de la GPU, o RAM
+si se elige CPU, o límites WebGPU) y la regla de recomendación; lista de
+modelos instalados, importación de safetensors,
 GGUF y ONNX con el manifiesto `model.repackshot.json` validado, rechazo
 de *pickle*, descargas y borrado, marcas de licencia, detección del
 equipo.
 
 **Depende de.** X3.
 
-**Criterio.** Un manifiesto inválido se rechaza con el motivo; un modelo
-no comercial no puede ser el de por defecto; un `.ckpt` se rechaza; borrar
-el modelo activo vuelve al de origen.
+**Criterio.** La regla de recomendación da el modelo de la tabla de
+`AI-POST.md` §2.4 para cada fila (test con equipos simulados en los
+bordes de cada tramo); sin detección no se recomienda nada; un manifiesto
+inválido se rechaza con el motivo; un modelo no comercial no puede ser
+el de por defecto; un `.ckpt` se rechaza; borrar el modelo activo vuelve
+a la recomendación.
 
 ## K1 · Tipo de escena, luz de interior y Doctor de interiores — **Sonnet**
 
@@ -1262,7 +1270,10 @@ la página de Pages carga la interfaz.
 macOS y Linux, enlazando `rt-core` **en nativo** (todos los hilos, sin
 wasm) detrás de la misma interfaz `RenderEngine`, con diálogos nativos
 de archivo, carpeta de salida y lectura de HDRI/modelos grandes sin
-pasar por `<input>`. Sin cambios en `src/` más allá de `io/native.ts` y
+pasar por `<input>`. El **instalador** incluye el paso *Modelos de IA*
+con el selector de X5: lista recomendada, detección de VRAM o RAM,
+recomendación marcada, elegir uno, varios o ninguno, y descarga con
+`sha256`. Sin cambios en `src/` más allá de `io/native.ts` y
 `render/native.ts` detrás de las mismas interfaces que la web.
 
 **Depende de.** v0.2 cerrada.

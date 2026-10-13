@@ -67,18 +67,27 @@ V2, SD 3.5 (tope de ingresos). Un usuario puede importarlos por su cuenta
 (§5): quedan marcados *no apto para uso comercial* y la licencia es
 suya.
 
-### 2.2 · "Precargado", en la práctica
+### 2.2 · El instalador elige el modelo, con una recomendación por equipo
 
 Los pesos ocupan varios GB, así que **no van en el repositorio ni en la
-página web**: el repositorio no contiene pesos. El modelo por defecto
-viene **preseleccionado y listo para descargar**: la primera vez que se
-activa el post-procesado (o desde *Ajustes ▸ Modelos de IA ▸ Descargar
-ahora*), la aplicación muestra tamaño y licencia, descarga una sola vez
-con verificación `sha256` fijada en el código y lo guarda en el
-almacenamiento privado del navegador (OPFS, con `navigator.storage.persist()`
-para que el navegador no lo borre). En el instalador de escritorio (P2)
-habrá una variante **con el modelo incluido**, que es el "precargado" en
-sentido estricto.
+página web**: el repositorio no contiene pesos. El modelo **se elige al
+instalar**:
+
+- **Instalador de escritorio (P2)**: un paso *Modelos de IA* muestra la
+  lista recomendada de §2.4, **detecta el equipo** (GPU y su VRAM, o la
+  RAM si se elige ejecutar en CPU) y **marca uno como *Recomendado para
+  tu equipo***. El usuario puede elegir ese, otro, varios o **ninguno**
+  (instalar sin IA). Cada fila dice tamaño de descarga, licencia, calidad
+  esperada y velocidad orientativa; la licencia se muestra antes de
+  descargar. Se descarga solo lo elegido, una vez, con `sha256` fijado en
+  el código.
+- **Versión web**: no hay instalador, así que la misma lista y la misma
+  recomendación aparecen la primera vez que se activa el post-procesado y
+  en *Ajustes ▸ Modelos de IA*, filtradas a lo que puede ejecutarse en el
+  navegador (WebGPU); se guarda en el almacenamiento privado del navegador
+  (OPFS, con `navigator.storage.persist()` para que no lo borre).
+- Después, en ambos casos, *Ajustes ▸ Modelos de IA* permite descargar
+  otro de la lista, importar uno propio (§5) o borrar.
 
 ### 2.3 · Motores de ejecución
 
@@ -104,6 +113,48 @@ sentido estricto.
   navegador o este equipo no pueden ejecutarlo. Tu imagen nunca se sube a
   ningún sitio. Usa la aplicación de escritorio, elige un modelo más
   ligero o deja la IA apagada: tu render no cambia."*
+
+### 2.4 · Lista recomendada y regla de recomendación
+
+La lista sale de la investigación del 2026-10-13. Vive como datos en
+`src/data/ai-models.ts` (claves estables, tamaños, `sha256`, licencia,
+requisitos), para que X1 corrija umbrales y tiempos con medidas reales
+sin tocar código. Tamaños de descarga aproximados, sumando transformador,
+codificador de texto y VAE.
+
+| Clave | Modelo y cuantización | Descarga | Licencia | Para qué |
+| --- | --- | --- | --- | --- |
+| `ZIMAGE_Q8` | Z-Image-Turbo GGUF Q8_0 + Qwen3-4B Q4_K_M | ≈ 9,3 GB | Apache-2.0 | **Calidad máxima del modelo por defecto** |
+| `ZIMAGE_Q4` | Z-Image-Turbo GGUF Q4_0 + Qwen3-4B Q4_K_M | ≈ 6,4 GB | Apache-2.0 | Equilibrio calidad / memoria |
+| `ZIMAGE_Q2` | Z-Image-Turbo GGUF Q2_K + Qwen3-4B Q4_K_M | ≈ 5,3 GB | Apache-2.0 | GPU pequeñas; algo menos de calidad |
+| `ZIMAGE_WEB` | Z-Image-Turbo ONNX q4f16 (navegador) | ≈ 6 GB | Apache-2.0 | La versión web |
+| `KLEIN4B_Q4` | FLUX.2 [klein] 4B GGUF Q4_K_M + Qwen3-4B Q4_K_M | ≈ 5,3 GB | Apache-2.0 | Alternativa: ediciones por instrucción ("más luz cálida") |
+| `QWENEDIT_Q4` | Qwen-Image-Edit-2511 GGUF Q4_K_M + Qwen2.5-VL-7B Q4_K_M | ≈ 18 GB | Apache-2.0 | *Pro*, solo escritorio: edición fuerte con LoRA de iluminación |
+| `SD15_LIGHT` | Stable Diffusion 1.5 + ControlNet 1.1 *tile* y *depth* (fp16) | ≈ 3,1 GB | CreativeML OpenRAIL-M (uso comercial con restricciones de uso que se muestran y se aceptan) | Equipos muy modestos |
+
+**Regla de recomendación** (valores de partida, a calibrar en X1 con el
+pico real de memoria a 1024² y un margen del 20–30 % para activaciones):
+
+| Equipo detectado | Recomendado | También se ofrece |
+| --- | --- | --- |
+| GPU con **≥ 24 GB** de VRAM | `ZIMAGE_Q8` | `QWENEDIT_Q4` (*Pro*), `KLEIN4B_Q4` |
+| GPU con **12–24 GB** | `ZIMAGE_Q8` | `KLEIN4B_Q4` |
+| GPU con **6–12 GB** | `ZIMAGE_Q4` | `KLEIN4B_Q4` |
+| GPU con **4–6 GB** | `ZIMAGE_Q2` (codificador de texto en RAM) | `SD15_LIGHT` |
+| GPU con **< 4 GB** | `SD15_LIGHT` | ninguno |
+| **CPU** con **≥ 32 GB** de RAM | `ZIMAGE_Q8` | `ZIMAGE_Q4` |
+| **CPU** con **16–32 GB** | `ZIMAGE_Q4` | `SD15_LIGHT` |
+| **CPU** con **8–16 GB** | `SD15_LIGHT` | ninguno |
+| **CPU** con **< 8 GB** | ninguno (instalar sin IA) | — |
+| **Navegador** con WebGPU y búferes de ≥ 1 GiB | `ZIMAGE_WEB` | — |
+| Navegador sin WebGPU | ninguno, con el mensaje de §2.3 | — |
+
+En CPU el instalador avisa de que cada imagen tarda **minutos** (cifra
+medida en X1, no estimada), y la vista previa del configurador se hace a
+menos resolución. La detección usa la API nativa en escritorio (VRAM
+dedicada de la GPU elegida; en Apple, la memoria unificada recomendada
+para GPU) y los límites del adaptador WebGPU en el navegador. Si la
+detección falla, no se recomienda nada y se muestra la tabla.
 
 ---
 
@@ -165,9 +216,10 @@ Sección **Post-procesado IA** de la ventana de render (`UI.md` §2.7),
 plegada y apagada por defecto.
 
 **Interruptor** *Post-procesado IA* con una línea auxiliar del modelo
-activo (*Z-Image-Turbo · Apache-2.0 · descargado*). Si el modelo no está
-descargado, el interruptor ofrece *Descargar (6,1 GB)*; si el equipo no
-puede, aparece deshabilitado con el motivo.
+activo (*Z-Image-Turbo Q4 · Apache-2.0 · descargado*). Si no hay ningún
+modelo descargado, el interruptor abre el selector de §2.2 con la
+recomendación para el equipo; si el equipo no puede ejecutar ninguno,
+aparece deshabilitado con el motivo.
 
 **Configurador**, debajo, con controles de 0 a 100 y una frase cada uno.
 A 0, el aspecto correspondiente no cambia:
@@ -235,8 +287,8 @@ En la ventana de **Ajustes** (`UI.md` §4.3), sección *Modelos de IA*:
 
 | Fase | Responsable | Qué |
 | --- | --- | --- |
-| **X1** | **Fable** (Sonnet prepara) | Confirmar el modelo: licencias releídas al pie de la letra y `sha256` fijados; comparación visual propia Z-Image-Turbo frente a FLUX.2 klein 4B sobre 8 renders × 3 intervenciones con las métricas de la guarda; prueba de ONNX Runtime nativo frente a stable-diffusion.cpp para escritorio |
+| **X1** | **Fable** (Sonnet prepara) | Confirmar el modelo y calibrar la tabla de §2.4 (pico de memoria y tiempo por entrada en GPU y CPU): licencias releídas al pie de la letra y `sha256` fijados; comparación visual propia Z-Image-Turbo frente a FLUX.2 klein 4B sobre 8 renders × 3 intervenciones con las métricas de la guarda; prueba de ONNX Runtime nativo frente a stable-diffusion.cpp para escritorio |
 | **X2** | Opus | Pases del motor para la IA: albedo, normal, profundidad, id de pieza y de material, mapa de desenfoque, en `rt-core`, el RSB, el wasm y el lado TypeScript |
 | **X3** | Opus | La tubería: `src/ai/` con ONNX Runtime Web en workers, descarga y caché con `sha256`, mosaicos, *prompt* de la escena, condicionamiento, **guarda determinista** con comprobación y retroceso, integración en la cola con las dos imágenes |
 | **X4** | Sonnet | La interfaz de §4 en la ventana de render, la vista previa en modo Rápido, el informe de la guarda y el divisor en el visor de resultados |
-| **X5** | Sonnet | Ajustes ▸ Modelos de IA de §5: lista, importación con validación del manifiesto, descargas, licencias, detección del equipo |
+| **X5** | Sonnet | Ajustes ▸ Modelos de IA de §5 y el **selector de modelos** de §2.2–§2.4 (el mismo componente para el instalador de P2 y la versión web): lista, detección del equipo, recomendación, importación con validación del manifiesto, descargas, licencias |
