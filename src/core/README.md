@@ -15,3 +15,7 @@ hashing where it stopped).
 Updates: `updates.ts` (versions and their order with semver's pre-release rule, reading and checking the answer of
 the release feed, which package of a release is for this computer, why a check fails, and what the Updates section
 says; the request is `io/updates.ts`, the repository's name `data/update-feed.ts`).
+
+Camera moves (A6): `camera-moves.ts` (expands a product-relative move of `data/camera-moves.json` into the clips of the
+timeline for a camera: degrees, percent of the framing distance and part sizes stay as they are, a focal or focus factor
+becomes the absolute value `evaluate` expects; a rack focus can ask the camera for a starting focus distance).

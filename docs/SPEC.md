@@ -263,7 +263,7 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | | **Inclinación** (`RISE`) | Sube o baja en arco, grados |
 | | **Zoom** (`ZOOM`) | Cambia la focal, mm |
 | | **Travelling** (`DOLLY`) | Se acerca o aleja, % de la distancia |
-| | **Panorámica** (`PAN`, nuevo) | Gira sobre su propio eje, grados |
+| | **Panorámica** (`PAN`, nuevo) | Gira sobre su propio eje, grados. **Aún no está implementado** (no existe en `MoveKind` ni en `evaluate`): hasta que lo esté, el *barrido rápido* de la biblioteca de movimientos (`camera-moves.json`, A6) es una órbita rápida con curva fuerte alrededor del producto, y una variante con `PAN` se añadirá junto a él |
 | | **Enfoque** (`FOCUS`) | Cambia la distancia de enfoque |
 | | **Cambio de cámara** (evento de la pista de cámara) | Pasa a otra cámara en ese instante, con corte o fundido |
 | | **Recorrido** (`PATH`, fase posterior) | Sigue una curva por puntos |

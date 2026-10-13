@@ -18,10 +18,12 @@ inglés tal como se preparó. Las fases están en `ROADMAP.md`.
   proyecto. Ningún nombre de producto ni de marca aparece en la interfaz,
   en las claves ni en los presets.
 - **Nombres genéricos.** Lentes por su familia óptica (*Triplete*,
-  *Doble Gauss rápido*, *Petzval de retrato*, *Retrofoco gran angular*,
-  *Catadióptrico*…), nunca por fabricante o modelo; los nombres
-  comerciales de diseños (Tessar, Sonnar, Planar, Biotar, Heliar, Cooke,
-  Imagon) no se usan. Los vidrios se guardan como `nd` y `vd`, nunca por
+  *Doble Gauss rápido*, *Petzval de retrato*, *Gran angular de telefoto
+  invertido*, *Catadióptrico*…), nunca por fabricante o modelo; los
+  nombres comerciales de diseños (Tessar, Sonnar, Planar, Biotar, Heliar,
+  Cooke, Imagon) no se usan, ni «retrofoco», que fue una marca registrada
+  (`docs/research/optics.md` §2.1, §2.6): el nombre genérico es *telefoto
+  invertido*. Un test falla si aparece una marca o un fabricante. Los vidrios se guardan como `nd` y `vd`, nunca por
   su nombre de catálogo.
 - **Procedencia de cada asset.** Todo asset se crea con un generador
   propio y determinista y se guarda como **receta** (parámetros, semilla,
@@ -85,16 +87,36 @@ ondas) y respiración de foco. Cada tipo es una combinación guardada de
 parámetros del modo 1 o una lente del modo 2; el usuario lo elige y,
 si quiere, lo afina.
 
-**Lentes de partida** (`src/data/lenses.json`, claves estables): las 16
-prescripciones de `docs/research/optics.md` §2.3 con nombre genérico y su
-procedencia (patente caducada o libro): triplete; cuatro elementos con
-doblete trasero; Petzval de retrato; cinco elementos simétrico; doble
-Gauss normal; doble Gauss rápido f/1.4; Gauss asimétrico rápido f/1.5;
-teleobjetivo de enfoque interno; retrofoco gran angular; ojo de pez 180°;
-catadióptrico; blando de aberración esférica variable; macro con
-elemento flotante; doblete acromático; menisco simple; adaptador
-anamórfico 2×. **Número de elementos y grupos**, longitud y diafragma se
-muestran desde la prescripción, nunca inventados.
+**Lentes de partida** (`src/data/lenses.json`, claves estables; hecho en
+A6): las 16 prescripciones de `docs/research/optics.md` §2.3 con nombre
+genérico y su procedencia (patente caducada o libro): triplete; cuatro
+elementos con doblete trasero; Petzval de retrato; cinco elementos
+simétrico; doble Gauss normal; doble Gauss rápido f/1.4; asimétrico
+rápido f/1.5; teleobjetivo de enfoque interno; gran angular de telefoto
+invertido; ojo de pez 180°; catadióptrico; blando de aberración esférica
+variable; macro con elemento flotante; doblete acromático; menisco
+simple; adaptador anamórfico 2×. **Número de elementos y grupos**,
+longitud y diafragma se muestran desde la prescripción, nunca inventados.
+
+El registro de cada lente sigue `optics.md` §5 y añade lo que A6 necesitó:
+las superficies van en **un solo marco global con signo** (la luz viaja
+hacia +z, un radio positivo tiene el centro a +z, `d` es la distancia con
+signo a la superficie siguiente y un espejo invierte la marcha, de modo que
+las distancias que le siguen son negativas; el catadióptrico queda como una
+secuencia desplegada); el vidrio es `{ nd, vd }`, más `vdEstimated` cuando la
+fuente no da el número de Abbe y `native` cuando la fuente daba índices de la
+línea e (el catadióptrico y el doble Gauss rápido: `nd` se convierte con
+la fórmula del informe y los valores nativos se conservan); `status`
+(`verified`, `caveat`, `experimental`, `own-design`) y `stopBasis`
+(`stated`, `assumed`, `placeholder`) dicen cuánto se fía uno de la
+prescripción y de la posición del diafragma (las seis que la fuente da y
+las nueve que se suponen en el medio del hueco que el informe nombra; la
+focal y el tiraje paraxiales no dependen de ello, el aspecto con el
+diafragma cerrado sí); `reported` guarda lo que el informe trazó y lo que
+dice la patente, con el que `tests/lenses.test.ts` compara un trazado
+paraxial propio (0,05 % con lo trazado por el informe, 1 % con la patente).
+Los *coatings* por época, los valores del diafragma y los del bokeh son
+**provisionales** hasta que O1 los juzgue con renders (regla 11).
 
 **Coatings y flare.** Reflectancia por superficie según el tratamiento:
 **sin tratar** (~4 %), **monocapa** (~1,3 % con tinte), **multicapa**
@@ -175,7 +197,7 @@ Sobre la animación de N1 y el paseo de N3:
   envuelve), cada uno se expande en barras de la línea de tiempo y es una
   función pura del tiempo: *Plato giratorio*, *Acercamiento ¾*, *Alejarse
   y revelar*, *Arco ascendente*, *Desplazamiento lateral y vertical*,
-  *Contra-zoom*, *Espiral*, *Cambio de foco entre piezas*, *Recorrido
+  *Contra-zoom*, *Espiral ascendente* y *descendente*, *Cambio de foco entre piezas*, *Recorrido
   macro por una arista*, *Órbita de vista explosionada*, *Grúa*, *Barrido
   rápido*. Sin las categorías de acción (disparos, caídas…) que no
   sirven para producto.
@@ -230,12 +252,12 @@ césped, y superficies de líquido reconstruidas.
 
 | Asset | Fichero | Cómo se crea |
 | --- | --- | --- |
-| Lentes de partida | `src/data/lenses.json` | Las 16 prescripciones de la investigación, transcritas con su procedencia y comprobadas con un test de focal y tiraje paraxiales |
-| Tipos de bokeh | `src/data/bokeh.json` | Los 20 tipos como combinaciones de parámetros; miniaturas renderizadas por el motor |
-| Máscaras de diafragma y texturas de pupila | `public/assets/aperture/` | Generador propio (`tools/assets/`): polígonos, estrellas, corazones, varios agujeros, polvo, rayas, anillos de cebolla; PNG de 512² con receta y *hash* |
+| Lentes de partida | `src/data/lenses.json` | Las 16 prescripciones de la investigación, transcritas con su procedencia y comprobadas con un test de focal y tiraje paraxiales (A6, hecha) |
+| Tipos de bokeh | `src/data/bokeh.json` | Los 20 tipos como combinaciones de parámetros (o la lente trazada que los da, o óptica de ondas: próximamente); miniaturas renderizadas por el motor (A6, hecha; las miniaturas, con O1) |
+| Máscaras de diafragma y texturas de pupila | `public/assets/aperture/` | Generador propio (`tools/assets/aperture-masks.mjs`): 45 PNG de 512²: polígonos de 3 a 18 láminas rectos y curvos, estrellas, corazón, varios agujeros, anillos con obstrucción, anillos de cebolla, polvo, rayas, malla; con receta, semilla y *hash* (A6, hecha) |
 | Entornos | `src/data/environments.json` | Las 39 recetas; los HDR se generan bajo demanda o al exportar, no se suben; miniaturas pequeñas sí |
-| Perfiles de emisor y gobos | `src/data/light-shapes.json`, `public/assets/gobo/` | Recetas procedurales (softbox, octabox, tira con rejilla, paraguas, plato, panel, anillo; persianas, ventana, hojas por ruido, puntos, rejilla) |
-| Movimientos de cámara | `src/data/camera-moves.json` | Datos en unidades relativas al producto |
+| Perfiles de emisor y gobos | `src/data/light-shapes.json`, `public/assets/gobo/` | Recetas procedurales (softbox, octabox, tira con rejilla, paraguas, plato, panel, anillo; persianas, ventana, hojas por ruido, puntos, rejilla). Los gobos están hechos (A6, `tools/assets/gobos.mjs`, 12 PNG de 1024²); los perfiles de emisor, con L7 |
+| Movimientos de cámara | `src/data/camera-moves.json` | Datos en unidades relativas al producto: **14 movimientos** (los 13 de §4 con la espiral en dos, ascendente y descendente) y 3 presets de cámara en mano; `src/core/camera-moves.ts` los expande en barras (A6, hecha) |
 | Efectos de partículas | `src/data/effects.json` | Claves y nombres; valores de partida por Fable |
 
 Primero se crean los que no necesitan motor nuevo (lentes, tipos de

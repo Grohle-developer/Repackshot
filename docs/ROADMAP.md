@@ -1745,7 +1745,7 @@ Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
 
 | Fase | Responsable | Qué |
 | --- | --- | --- |
-| **A6** | Sonnet | Assets sin motor nuevo: `lenses.json` (16 prescripciones con test paraxial), `bokeh.json` (20 tipos), máscaras de diafragma y gobos generados, `camera-moves.json` |
+| **A6** — hecha | Sonnet | Assets sin motor nuevo: `lenses.json` (16 prescripciones con test paraxial), `bokeh.json` (20 tipos), máscaras de diafragma y gobos generados, `camera-moves.json` |
 | **O1** | Opus | Lente fina mejorada: diafragma poligonal y por máscara, perfiles de pupila, obstrucción, ojo de gato aproximado, anamórfico, *tilt-shift*, *split diopter*, CA por canal; selector de bokeh |
 | **O2** | Opus | Lente trazada: prescripciones, intersección estable, límites de pupila, autoenfoque, respiración; las 16 lentes |
 | **O3** | Opus | CA por tres bandas, coatings (transmisión, tinte, T-stop), velo |
@@ -1761,6 +1761,87 @@ Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
 | **N5** | Opus | Dibujar y grabar recorridos, bloqueo de objetivo, desenfoque de movimiento |
 | **S0** | Fable | Decisiones de partículas: dónde vive el simulador, formato de caché, secciones RSB |
 | **S1**–**S10** | Opus, Sonnet | Dispersión e instancias; caída y reposo; gotas y condensación; emisores sin estado; volúmenes; humo; líquidos; pelo y césped; telas; mejoras (detalle en `docs/research/particles.md` §6) |
+
+### A6 · Assets sin motor nuevo — **Sonnet** — hecha
+
+**Hecho.** Todos los assets de las herramientas de estudio que no necesitan
+motor nuevo, sin marcas ni nombres de fabricante y generados por código del
+repositorio (nada sale de modelos de imagen por IA):
+
+- `src/data/lenses.json` (+ cargador tipado en `lenses.ts`, que conserva
+  `LENS_PRESETS`): las 16 prescripciones de `docs/research/optics.md` §2.3 en
+  el registro de §5 (superficies con radio, espesor, vidrio `nd`/`vd`,
+  semiapertura, tipo, diafragma y *coating*; focal de referencia, número f,
+  campo, círculo de imagen, foco y gaps móviles, iris), con la patente o el
+  libro en `source`. `tests/lenses.test.ts` traza un rayo paraxial propio y
+  reproduce focal y tiraje de cada lente dentro del 0,05 % de lo que trazó el
+  informe y del 1 % de lo que dice la patente (también la respiración del
+  teleobjetivo, el elemento flotante del macro, el recorrido del hueco del
+  blando, el aumento 1/2 del adaptador y la imagen detrás del espejo del
+  catadióptrico); el diafragma existe una sola vez en cada lente, las claves
+  son únicas y estables, ninguna marca ni vidrio de catálogo aparece, y todo
+  vidrio tiene `nd` en [1,4; 2,1] y `vd` en [15; 100]. Una relectura
+  independiente de la tabla del informe no encontró diferencias con lo
+  transcrito (salvo el hueco simbólico `dB0` y los `vd` estimados).
+- `src/data/bokeh.json` (+ `bokeh.ts`): los 20 tipos de `optics.md` §1 con
+  claves estables, nombres y descripciones en es/en y los parámetros del
+  modo de lente fina (láminas, redondez, giro, máscara, perfil de pupila,
+  obstrucción, ojo de gato, compresión anamórfica, CA, remolino, anillos,
+  textura), o la lente trazada que los da (`requires: "traced"`), o `requires:
+  "wave"` para el anillo de difracción (próximamente). Un test comprueba que
+  todo resuelve a máscaras y lentes que existen.
+- `tools/assets/` (`common.mjs`, `aperture-masks.mjs`, `gobos.mjs`) y
+  `public/assets/aperture/` (45 máscaras de 512²: polígonos de 3 a 18 láminas
+  rectos y curvos, estrellas, corazón, varios agujeros, anillos con
+  obstrucción 0,3 y 0,5, anillos de cebolla, polvo, rayas, malla) y
+  `public/assets/gobo/` (12 patrones de 1024²: ventanas, persianas, hojas,
+  luz moteada, puntos, líneas, ráfaga radial, rotura suave), cada uno con
+  receta, semilla y *hash* en su `index.json`. El *hash* canónico es el de los
+  píxeles (los bytes de un flujo de zlib pueden cambiar entre versiones);
+  `tests/assets.test.ts` regenera todo con las funciones puras del generador y
+  compara. El generador usa solo `+ − × ÷` y `sqrt` y funciones propias.
+- `src/data/camera-moves.json` (+ `camera-moves.ts` y `src/core/camera-moves.ts`):
+  14 movimientos (los 13 de STUDIO-TOOLS §4 con la espiral en dos) como listas
+  de los tipos de animación que ya existen, en unidades relativas al producto
+  (grados, % de la distancia de encuadre, tamaños de pieza, factores de focal y
+  de foco), y 3 presets de cámara en mano. `tests/camera-moves.test.ts` expande
+  cada uno en barras, las evalúa con `evaluate` en t = 0 y t = fin (finitas y
+  deterministas, y a t = 0 nada se ha movido), y comprueba que el contra-zoom
+  conserva focal / distancia, que el plato giratorio da una vuelta, etc.
+- **Servidor de escritorio** (`engine/crates/rt-app/src/static_files.rs`): hasta
+  ahora todo `/assets/` salía con `Cache-Control: immutable` de un año porque
+  Vite nombra ahí todo por *hash*; los assets nuevos no llevan *hash* y un
+  fichero regenerado con el mismo nombre se habría visto viejo para siempre. Ahora
+  solo es inmutable lo que está directamente en `/assets/` y se llama
+  `nombre-XXXXXXXX.ext` (el patrón de 8 caracteres base64url que emite Vite 8);
+  lo demás sale con `no-cache` y un ETag del SHA-256 de sus bytes (los ficheros
+  de hasta 8 MiB; responde 304 si no cambió, y un fichero regenerado con el mismo
+  tamaño y la misma hora ya no se confunde con el anterior). Tests de Rust que
+  fallan si algo sin *hash* se sirve inmutable (con los nombres que emitió esta
+  misma build y los de `aperture/` y `gobo/`). `tests/chunks.test.ts` ya no lee las
+  carpetas de `dist/assets/` como si fueran ficheros.
+
+**Valores provisionales, a la espera de O1 (regla 11, criterio visual de
+Fable).** Los *coatings* por época de las lentes (antes de 1935 sin tratar,
+hasta 1969 monocapa, después multicapa), los valores por defecto del
+diafragma (círculo, f/22 como máximo), los valores de partida de los tipos de
+bokeh (remolino 0,7, fuerza de los perfiles de pupila, obstrucción 0,49 del
+catadióptrico…), el significado de `profileParam` en cada perfil y las
+amplitudes de la cámara en mano (sutil, medio, fuerte) son puntos de partida
+con las claves como contrato; O1 los juzgará con renders. También quedan para
+O1 las miniaturas de bokeh renderizadas por el motor.
+
+**No encajó con el plan:** el tipo de animación `PAN` no existe todavía (SPEC
+§3.7), así que el barrido rápido es una órbita rápida con curva fuerte y el plato
+giratorio es `SPIN` sobre el modelo; el nombre «retrofoco» fue una marca y la
+lente se llama *gran angular de telefoto invertido*; `CAMERA_MOVES` ya existía en
+`animation.ts` (el conjunto de tipos solo de cámara) y la biblioteca es
+`CAMERA_MOVE_LIBRARY`; hizo falta un expansor en `src/core/camera-moves.ts` que
+el plan no nombraba (N4 lo amplía); la posición del diafragma solo la dan la
+fuente para 6 de las 16 lentes (`stopBasis`) y para 9 se supone en el medio del
+hueco que el informe nombra; el informe no da número f ni semiaperturas del macro,
+ni semiaperturas de casi ninguna lente, así que esos campos quedan vacíos o
+derivados y marcados.
 
 ## Orden sugerido
 
