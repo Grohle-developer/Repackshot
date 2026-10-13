@@ -5,11 +5,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { PRIMITIVE_KINDS, type PrimitiveKind } from '../src/data/primitives';
-import { rigPivot } from '../src/core/lighting';
+import { lightPosition, rigPivot } from '../src/core/lighting';
 import { activeCamera, cameraBasis, cameraPosition, fieldOfView, type CameraState } from '../src/core/camera';
 import { boxCenter, boxSize, mat4Compose, round, type Vec3 } from '../src/core/math';
 import { getMesh, meshIds, retainMeshes } from '../src/core/meshes';
-import { BASE_FOOTPRINT, fitSweep, footprintRadius, placePrimitive, roleOf, type PrimitiveAction } from '../src/core/primitive-ops';
+import { BASE_FOOTPRINT, fitSweep, footprintRadius, placePrimitive, roleOf, SWEEP_FIT, type PrimitiveAction } from '../src/core/primitive-ops';
 import { generatePrimitive, primitiveOwner } from '../src/core/primitives';
 import { boundsOf, measuredSizeMm, partsUnder, productBounds, productParts, type NodeId } from '../src/core/scene';
 import { runDoctor } from '../src/core/doctor';
@@ -599,27 +599,48 @@ describe('the infinity sweep fills the camera’s frame', () => {
     near(p.radius, 0.3 * p.height, 1);
   });
 
-  it('the wall stands about 1.75 subject depths behind the subject in the reference view', () => {
-    const s0 = exampleState();
-    const { state: s, id } = add(s0, 'SWEEP');
+  /** Along the camera's ground direction, from the subject's centre: its near and far extent, and where the wall stands. */
+  function depthsOf(s: ProjectState, id: NodeId) {
     const n = s.scene.nodes[id];
     const cam = activeCamera(s);
     const a = (cam.azimuth * Math.PI) / 180;
     const ey: Vec3 = [-Math.sin(a), Math.cos(a), 0];
     const product = productBounds(s);
     const c = boxCenter(product);
-    const proj = (v: readonly number[]) => (v[0] - c[0]) * ey[0] + (v[1] - c[1]) * ey[1];
+    const along = (v: readonly number[]) => (v[0] - c[0]) * ey[0] + (v[1] - c[1]) * ey[1];
     let lo = Infinity;
     let hi = -Infinity;
     for (let i = 0; i < 4; i++) {
-      const v = proj([i & 1 ? product.max[0] : product.min[0], i & 2 ? product.max[1] : product.min[1]]);
+      const v = along([i & 1 ? product.max[0] : product.min[0], i & 2 ? product.max[1] : product.min[1]]);
       lo = Math.min(lo, v);
       hi = Math.max(hi, v);
     }
-    const wall = proj(n.transform.position) + n.primitive!.params.depth / 2;
-    const ratio = wall / (hi - lo);
-    expect(ratio).toBeGreaterThanOrEqual(1.5);
-    expect(ratio).toBeLessThanOrEqual(2.5);
+    return { along, depth: hi - lo, wall: along(n.transform.position) + n.primitive!.params.depth / 2 };
+  }
+
+  it('with no light behind the subject, the wall stands 1.75 subject depths behind it in the reference view', () => {
+    const s0 = exampleState();
+    const off = s0.studio.lights.reduce((s, l) => apply(s, { type: 'studio/setLight', id: l.id, patch: { enabled: false } }), s0);
+    const { state: s, id } = add(off, 'SWEEP');
+    const { depth, wall } = depthsOf(s, id);
+    near(wall / depth, 1.75, 0.01);
+  });
+
+  it('with the Standard rig and the reference camera, every light of the rig stays in front of the wall', () => {
+    const s0 = exampleState();
+    expect(s0.studio.preset).toBe('GENERIC');
+    const { state: s, id } = add(s0, 'SWEEP');
+    const { along, depth, wall } = depthsOf(s, id);
+    const lights = s.studio.lights.filter((l) => l.enabled);
+    expect(lights.length).toBe(3);
+    // The rim light stands behind the subject, further back than 1.75 subject depths: the paper goes back for it.
+    const rim = lights.find((l) => l.role === 'RIM')!;
+    expect(along(lightPosition(s, rim))).toBeGreaterThan(SWEEP_FIT.wall * depth);
+    for (const l of lights) {
+      const half = (Math.max(l.size, l.sizeY) * s.scene.partSizeMm) / 2;
+      expect(along(lightPosition(s, l)) + half, l.role).toBeLessThan(wall);
+    }
+    near(wall, SWEEP_FIT.lights * along(lightPosition(s, rim)) + (Math.max(rim.size, rim.sizeY) * s.scene.partSizeMm) / 2, 1);
   });
 
   it('Fit to camera turns and sizes it for the camera in force, in one undo step', () => {

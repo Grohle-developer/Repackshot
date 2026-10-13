@@ -1387,10 +1387,11 @@ el producto, con el producto encima; planos bajo él, una milésima sobre el
 suelo; el resto junto a lo que está de pie; sin producto, en el origen y
 encuadrado), `fitSweep` (decisión del líder durante la fase, tras ver las
 primeras capturas: el fondo infinito de cara a la cámara activa, girado en
-Z a su acimut, la pared a 1,75 fondos del producto detrás de él, ancho
-1,3 veces el encuadre donde lo toca, por encima de lo más alto del
-encuadre, curva de 0,3 veces el alto; *Ajustar a la cámara* lo rehace con
-`scene/fitPrimitive`), y las acciones `scene/addPrimitive` (una entrada de
+Z a su acimut, la pared a 1,75 fondos del producto detrás de él y detrás
+de los focos del montaje que quedan detrás del producto
+(`wallBehindLights`), ancho 1,3 veces el encuadre donde lo toca, por
+encima de lo más alto del encuadre, curva de 0,3 veces el alto;
+*Ajustar a la cámara* lo rehace con `scene/fitPrimitive`), y las acciones `scene/addPrimitive` (una entrada de
 deshacer con el levantamiento), `scene/setPrimitive` (regenera, conserva el
 apoyo, arrastra las copias enlazadas, los materiales por cara y las caras
 seleccionadas siguen a sus caras por nombre) y `scene/convertPrimitive`.
@@ -1423,8 +1424,8 @@ cadenas). `tools/primitives-check.mjs` lo comprueba en el navegador en
 `scale-tool.png` y `scale-panel.png`, y además comprueba con los píxeles
 que el fondo infinito llena el encuadre (esquinas y centro del borde de
 arriba claros, no la cúpula oscura) y que *Ajustar a la cámara* lo
-rellena tras orbitar. 132 tests nuevos (91 de `primitives.test.ts` y 41
-de `primitive-ops.test.ts`; 1626 en total); 42 mutaciones del código
+rellena tras orbitar. 133 tests nuevos (91 de `primitives.test.ts` y 42
+de `primitive-ops.test.ts`; 1627 en total); 42 mutaciones del código
 nuevo, todas detectadas (cinco no lo eran a la primera: el recorte de las
 UV ocultaba un mapeo malo y se quitó, y la normal de la punta del cono, los
 materiales por cara que se desplazan, lo que está de pie junto a un fondo
@@ -1476,15 +1477,26 @@ No encajó con el plan:
   del encuadre en ocho cámaras (de frente, cenital, ortográfica, tele en
   vertical, gran angular cuadrada, un producto delgado) y todos dan en el
   fondo.
-- **Un fondo infinito tapa los focos que quedan detrás de su pared
-  (decisión pendiente de Fable).** Con el montaje *Estándar* y la cámara
-  de referencia, el contraluz (*RIM*, 70 W, a unos 290 mm detrás del
-  producto) queda detrás de la pared, que está a 154 mm: en *Completo* la
-  pared lo tapa y la imagen sale más plana y gris que en *Rápido* (la
-  vista previa no hace sombras de los focos). Opciones: alejar la pared más
-  allá de los focos traseros, acercar esos focos al montar un fondo, o
-  dejarlo así (un estudio real tampoco ilumina a través del papel). No se
-  ha cambiado nada por cuenta propia.
+- **Un fondo infinito tapaba los focos que quedan detrás de su pared
+  (decidido por Fable a mitad de fase).** Con el montaje *Estándar* y la
+  cámara de referencia, el contraluz (*RIM*, 70 W, a unos 290 mm detrás
+  del producto) quedaba detrás de la pared, que estaba a 154 mm: en
+  *Completo* la pared lo tapaba y la imagen salía más plana y gris que en
+  *Rápido* (la vista previa no hace sombras de los focos). **Decisión:** un
+  fotógrafo pone el papel lo bastante atrás para que el contraluz y los
+  focos traseros quepan entre el producto y el fondo, así que la luz que
+  eligió el usuario sigue funcionando. `fitSweep` (al añadir y en
+  *Ajustar a la cámara*) lleva la pared detrás de cada foco encendido del
+  montaje que está detrás del producto según la dirección de la cámara, a
+  1,25 veces lo que ese foco está detrás del centro del producto más la
+  mitad de su panel (`SWEEP_FIT.lights`, `wallBehindLights`; un sol no
+  cuenta), y luego calcula ancho, alto y curva para cubrir el encuadre a
+  esa distancia como antes. En la vista de referencia la pared pasa de
+  154 mm a unos 480 mm. Los focos traseros que acaben dentro del encuadre
+  quedan fuera de esta decisión. Test: con el montaje *Estándar* y la
+  cámara de referencia ningún foco queda detrás de la pared (falla con la
+  distancia antigua), y sin focos detrás la pared vuelve a estar a 1,75
+  fondos.
 - **El nombre de *Añadir*.** No hay un menú *Añadir* propio en la cabecera
   (UI.md §2.1 es *nada más*): es una entrada *Añadir ▸* del menú de
   aplicación, con el rótulo *Primitiva* y las doce formas debajo.

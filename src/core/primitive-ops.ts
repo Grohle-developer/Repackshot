@@ -16,12 +16,14 @@
 //   - The flat shapes and the sweep sit a hair (a thousandth of the scene) above the studio floor: their top is
 //     where the floor is, and a surface on the shadow catcher would flicker between the two.
 //   - The infinity sweep is fitted to the active camera (`fitSweep`): turned about Z to face it, its wall behind the
-//     subject at 1.75 times the subject's depth, wide and tall enough that every ray through the output frame meets
-//     it (with margin), its curve 0.3 of its height. Fit to camera (`scene/fitPrimitive`) does it again.
+//     subject at 1.75 times the subject's depth and behind every light of the rig that stands behind the subject
+//     (the lighting chosen keeps working), wide and tall enough that every ray through the output frame meets it
+//     (with margin), its curve 0.3 of its height. Fit to camera (`scene/fitPrimitive`) does it again.
 
 import { PRIMITIVE_MATERIAL, primitiveEntry, type PrimitiveKind, type PrimitiveRole } from '../data/primitives';
 import type { ActionBase, ProjectState } from './store';
 import { activeCamera, cameraBasis, cameraPosition, fieldOfView, frameActive, outputAspect, type CameraState } from './camera';
+import { lightPosition } from './lighting';
 import { nextId } from './ids';
 import { instanceFromPreset, triangleMaterials, type MaterialId } from './materials';
 import { add, boxCenter, boxMaxDim, boxSize, dot, emptyBox, isEmptyBox, round, scale, sub, transformDirection, unionBox, type Box, type Vec3 } from './math';
@@ -228,7 +230,28 @@ export const SWEEP_FIT = {
   radius: 0.3,
   /** The floor reaches this fraction of its depth in front of where the frame meets it. */
   front: 0.15,
+  /** A light behind the subject stays in front of the wall: the wall goes this many times its distance back (plus half its panel). */
+  lights: 1.25,
 } as const;
+
+/**
+ * How far behind the subject's centre (along `ey`, away from the camera) the wall has to stand so that every enabled
+ * light of the rig that is behind the subject stays in front of it (lead's decision, U9: a photographer sets the paper
+ * far enough back that the back and rim lights fit between the subject and the sweep). A sun is far away by nature:
+ * it does not count. Zero when no light is behind.
+ */
+export function wallBehindLights(state: ProjectState, centre: Vec3, ey: Vec3): number {
+  let need = 0;
+  for (const l of state.studio.lights) {
+    if (!l.enabled || l.type === 'SUN') continue;
+    const behind = dot(sub(lightPosition(state, l), centre), ey);
+    if (!(behind > 0)) continue;
+    const square = l.shape === 'SQUARE' || l.shape === 'DISK';
+    const half = (Math.max(l.size, square ? l.size : l.sizeY) * state.scene.partSizeMm) / 2;
+    need = Math.max(need, SWEEP_FIT.lights * behind + half);
+  }
+  return need;
+}
 
 /** A ray: origin and direction (not unit), world mm. */
 export interface FrameRay {
@@ -270,8 +293,8 @@ export interface SweepFit {
 /**
  * The infinity sweep for a camera (the active one by default) and the output aspect: turned about Z to the camera's
  * azimuth so its wall faces it, centred across on the subject (the visible product, else what the camera looks at),
- * its wall SWEEP_FIT.wall subject depths behind the subject's centre (further when its curve would reach under the
- * subject), as wide as SWEEP_FIT.width times what the frame spans where it meets the sweep, its top SWEEP_FIT.height
+ * its wall SWEEP_FIT.wall subject depths behind the subject's centre, or behind the rig's lights that are behind the
+ * subject (`wallBehindLights`), or further when its curve would reach under the subject, as wide as SWEEP_FIT.width times what the frame spans where it meets the sweep, its top SWEEP_FIT.height
  * above the highest point the frame reaches on the wall, its floor reaching in front of the lowest point the frame
  * meets, and a curve of SWEEP_FIT.radius of its height. Every ray of `frameRays` then meets it.
  */
@@ -308,7 +331,8 @@ export function fitSweep(state: ProjectState, cam: CameraState = activeCamera(st
     const o = sub(r.origin, centre);
     return { o: [dot(o, ex), dot(o, ey), r.origin[2] - lift] as Vec3, d: [dot(r.dir, ex), dot(r.dir, ey), r.dir[2]] as Vec3 };
   });
-  let wall = SWEEP_FIT.wall * depth;
+  // Behind the subject at 1.75 depths, and behind the lights of the rig that stand behind it.
+  let wall = Math.max(SWEEP_FIT.wall * depth, wallBehindLights(state, centre, ey));
   let H = 0;
   let R = 0;
   let maxX = half;

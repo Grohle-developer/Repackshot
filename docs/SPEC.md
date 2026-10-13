@@ -186,7 +186,10 @@ interior), `STEPS` (número de escalones, subiendo hacia +Y) y `SWEEP`
   activa** (`fitSweep`): girado en Z al acimut de la cámara (la pared de
   cara a ella), centrado de lado en el producto, la pared a 1,75 veces el
   fondo del producto detrás de su centro (más atrás si la curva llegaría
-  bajo el producto), el ancho 1,3 veces lo que el encuadre de salida abarca
+  bajo el producto, y siempre detrás de los focos encendidos del montaje
+  que están detrás del producto: a 1,25 veces lo que cada uno está detrás
+  del centro más la mitad de su panel, para que el contraluz quepa entre
+  el producto y el papel; un sol no cuenta), el ancho 1,3 veces lo que el encuadre de salida abarca
   donde toca el fondo, el alto 1,15 veces lo más alto que el encuadre
   alcanza en la pared (y al menos 1,25 veces el producto), el suelo hasta
   delante de lo más cercano que el encuadre ve de él, y una curva de 0,3

@@ -311,7 +311,8 @@ eje), y el producto sube a apoyarse encima, todo en una sola entrada de
 deshacer (*Deshacer: Añadir Caja bajo Frasco de ejemplo*). El *Plano* y el
 *Disco* se tienden en el suelo bajo el producto; el *Fondo infinito* se
 **ajusta a la cámara activa**: girado en Z hacia ella, con la pared detrás
-del producto a 1,75 veces su fondo, tan ancho como 1,3 veces lo que abarca
+del producto a 1,75 veces su fondo (o más atrás, para que el contraluz y
+los focos traseros del montaje queden entre el producto y el papel), tan ancho como 1,3 veces lo que abarca
 el encuadre donde lo toca, más alto que lo más alto que el encuadre
 alcanza en la pared, con el suelo hasta delante de lo que el encuadre ve
 de él y una curva de 0,3 veces su alto (todo el encuadre de salida, con
