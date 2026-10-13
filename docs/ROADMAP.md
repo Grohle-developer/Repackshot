@@ -150,6 +150,9 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **U2** · Guardar y abrir `.repack.json` con las mallas dentro, archivo
   recordado con File System Access, cambios sin guardar con pregunta en
   línea, test de límites entre capas; 792 tests — **Sonnet**.
+- **P2** · Lanzador de escritorio propio con motor nativo idéntico al
+  wasm, almacén de modelos por `sha256`, portables de Windows y Linux e
+  instalador NSIS; 846 tests web y 241 del motor — **Opus**.
 - **U5** · Ventana de render al estilo de KeyShot con *Imagen · Animación*,
   salida por plantilla, carpeta, ppp escritos en PNG y JPEG, PNG de 16
   bits y EXR, *Terminar por* muestras o tiempo, cola deshacible, visor de
@@ -1486,7 +1489,7 @@ GitHub Pages para la demo, para cuando vuelva a haber minutos.
 árbol limpio; `SHA256SUMS.txt` cuadra; la etiqueta apunta al commit de la
 release; el CHANGELOG lista las fases hechas.
 
-## P2 · Escritorio: lanzador propio, portables e instalador — **Opus**
+## P2 · Escritorio: lanzador propio, portables e instalador — **Opus** — hecha
 
 **Decisión tomada (Fable), sustituye a la de Tauri.** El escritorio es
 un **lanzador propio en Rust solo con `std`** (`engine/crates/rt-app`,
@@ -1546,6 +1549,33 @@ ventana real se prueba en Windows por el usuario). El portable de Linux
 arranca, abre la ventana con el Chromium local y renderiza en nativo
 (captura `docs/ui/desktop-linux.png`). El instalador se construye con
 `makensis` sin avisos.
+
+**Hecho.** `engine/crates/rt-app` (binario `repackshot`, solo `std`, sin
+`unsafe`): servidor HTTP/1.1 en `127.0.0.1` con comprobación de `Host`
+(421), *token* de 128 bits por arranque en el fragmento de la URL (401) y
+`Origin` ajeno rechazado (403); ventana de Edge o Chromium con perfil
+propio, instancia única y fin al cerrar o al faltar el latido; **motor
+nativo** por `/api/render` que repite el bucle de `rt` y da el mismo
+*hash* que `rt` y el pool wasm (`0x223515c3` en el ejemplo, con 1 y 4
+hilos, también el `.exe` bajo Wine), con *Terminar por* muestras, tiempo
+o lo primero, cancelación y sumas `f32` para PNG de 16 bits y EXR;
+almacén de modelos **por `sha256`** con SHA-256 propio, escritura por
+trozos desordenados y reanudación; detección del equipo y la regla de
+recomendación en Rust y TypeScript sobre el mismo fichero de 36 casos,
+con la memoria leída como *medida / 0,94*. `packaging/release.mjs`
+(`npm run release`): Windows portable (zip), Linux portable (tar.gz,
+binario musl estático) e instalador NSIS (por usuario, inglés y español,
+paso de modelos de IA, desinstalador), con icono propio acromático,
+avisos de terceros (three, rhino3dm, occt-import-js con sus licencias y
+fuentes) y `SHA256SUMS.txt`; tres construcciones dan los mismos bytes.
+846 tests web y 241 del motor. Captura `docs/ui/desktop-linux.png`.
+
+No encajó con el plan: AppImage solo bajo demanda (su *runtime* enlaza
+libfuse LGPL); instalador solo de 64 bits; en las filas del instalador no
+caben resumen, calidad ni velocidad; en Windows `--version` solo se ve
+redirigido (subsistema gráfico); sin probar en un Windows real (Edge por
+App Paths, VRAM con drivers reales, el instalador pulsado a mano,
+SmartScreen: el `.exe` no está firmado).
 
 ## Q1 · Vista en sección — **Sonnet**
 
