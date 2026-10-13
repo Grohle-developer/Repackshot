@@ -2567,6 +2567,39 @@ puedan hacer unas cuantas variantes; por defecto, una sola».
   historial y la cola muestran cuántas hay. Nombres de archivo con el
   sufijo `_AI`, `_AI_2`, `_AI_3`…
 
+- **Prompt del sistema** (petición del usuario, 2026-10-13): en *Ajustes ▸
+  Post-procesado IA* un apartado *Prompt del sistema*, general para todas
+  las imágenes (es un ajuste de la aplicación, no del proyecto), con un
+  campo de varias líneas, *Restablecer el predeterminado* y la nota de que
+  las protecciones de la guarda no dependen de él. Orden al componer:
+  **sistema → escena → propio del trabajo**; el negativo fijo, aparte. El
+  predeterminado lo fija el líder, en inglés (los codificadores de texto
+  de los modelos rinden mejor en inglés):
+
+  > Photorealistic product photograph. Keep the image exactly as rendered:
+  > the same composition, framing, geometry, proportions, edges,
+  > materials, colours, labels, text and logos. Respect the existing
+  > lighting: the direction, size, softness and colour of every light,
+  > and the shadows and reflections they cast. Respect the existing depth
+  > of field: what is in focus stays sharp, what is out of focus stays
+  > soft. Improve only realism and naturalness: subtle light falloff,
+  > soft contact shadows, natural bounce light and colour bleeding,
+  > believable highlight roll-off, fine surface micro-detail and gentle,
+  > plausible imperfections. True-to-life tones, as if shot with a
+  > high-end camera and lens. No stylisation, no added objects or props,
+  > no change of background.
+
+  Para modelos con límite de longitud del *prompt* (SD 1.5: 77 *tokens*
+  de CLIP; una capacidad `maxPromptTokens` en `ai-models.json`), se usa
+  la versión corta, también del líder, y el resto se recorta en este
+  orden (lo propio del trabajo primero, luego la escena, luego el
+  sistema), avisando de lo recortado:
+
+  > photorealistic product photo, same composition, geometry, materials
+  > and labels, same lighting and depth of field, natural soft shadows,
+  > subtle bounce light, realistic highlights, fine micro-detail,
+  > true-to-life colours, nothing added
+
 **Criterio.** Tests: el prompt propio llega al modelo tras el de la escena
 y el negativo fijo intacto; sin capacidad `textPrompt`, no se envía y el
 campo lo dice; N variantes = un render del motor y N llamadas con
