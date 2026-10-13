@@ -28,10 +28,21 @@ export interface AiPipelineSettings {
   styleStrength: number;
   /** "Another variation" changes it. */
   seed: number;
+  /**
+   * The job's own words for the model (X4b): at most MAX_USER_PROMPT characters, trimmed; appended after the scene's
+   * prompt, never in its place, and only sent to a model that takes a text prompt (`textPrompt` in ai-models.json).
+   * Absent: none.
+   */
+  userPrompt?: string;
+  /**
+   * How many AI images the job makes from its one render (X4b), 1..MAX_VARIANTS, with consecutive seeds (seed,
+   * seed + 1…). Absent: 1. The pipeline itself makes one image per request: the queue sends one request a variant.
+   */
+  variants?: number;
 }
 
 /** The configurator's defaults (AI-POST.md §4). */
-export const DEFAULT_AI_PIPELINE: Readonly<AiPipelineSettings> = {
+export const DEFAULT_AI_PIPELINE: Readonly<Required<AiPipelineSettings>> = {
   intervention: 30,
   light: 50,
   bounce: 40,
@@ -39,7 +50,14 @@ export const DEFAULT_AI_PIPELINE: Readonly<AiPipelineSettings> = {
   style: 'NATURAL',
   styleStrength: 30,
   seed: 0,
+  userPrompt: '',
+  variants: 1,
 };
+
+/** Longest prompt of a job's own (X4b), in characters. */
+export const MAX_USER_PROMPT = 400;
+/** Most AI images a job makes from its render (X4b). */
+export const MAX_VARIANTS = 8;
 
 /** The img2img strength at Intervention 100 (AI-POST.md §3.2 step 3). */
 export const MAX_STRENGTH = 0.4;

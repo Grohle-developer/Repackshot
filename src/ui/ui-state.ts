@@ -97,6 +97,8 @@ export interface ResultViewState {
   id: string;
   /** A second result shown with the split divider, or null. */
   compare: string | null;
+  /** The AI variant compared with the render (X4b), 1-based; absent: the first with an image. */
+  variant?: number;
   split: SplitMode;
   /** Divider position, 0..1 of the width. */
   position: number;
@@ -285,6 +287,11 @@ export interface UiState {
   resultsStorage: 'LOADING' | 'PERSISTENT' | 'MEMORY';
   /** Pixel-samples per second the engine reached on this machine (measured, never assumed); null until measured. */
   throughput: number | null;
+  /**
+   * Pixels a second the AI post-processing of a final render took on this machine (X4b: measured around the last
+   * request of a job, never assumed; the model's loading included when it loaded then); null until measured.
+   */
+  aiThroughput: number | null;
   queueRun: QueueRun;
   /** The application settings (core/settings.ts): not the project's, not undone. */
   settings: Settings;
@@ -401,6 +408,7 @@ export function defaultUiState(): UiState {
     results: [],
     resultsStorage: 'LOADING',
     throughput: null,
+    aiThroughput: null,
     queueRun: 'IDLE',
     settings: defaultSettings(),
     settingsWindow: null,

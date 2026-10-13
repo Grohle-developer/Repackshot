@@ -726,6 +726,30 @@ defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
   determinista) para capturas, demos y pruebas. Apagar el interruptor
   devuelve la memoria del modelo (si ningún trabajo lo usa). Capturas:
   `docs/ui/ai-section-dark.png` y `docs/ui/ai-section-light.png`.
+- **Prompt propio** (X4b), bajo los seis controles y sobre las protecciones: un
+  campo de varias líneas, vacío por defecto, de hasta 400 caracteres (contador
+  *n / 400*), con la nota *Describe la luz o el ambiente; la geometría, los
+  materiales y el enfoque siguen protegidos*. Es del trabajo: se guarda en el
+  proyecto, cada trabajo de la cola lleva el suyo y se deshace **de una vez por
+  visita al campo** (se guarda al dejar de escribir y al salir de él; todo lo de
+  una visita es una entrada de deshacer, nunca una por tecla). Se añade al final
+  del *prompt* que se genera de la escena, que va tras el *prompt del sistema*
+  de Ajustes; el negativo fijo sigue aparte. Si el modelo que va a ejecutarse no
+  admite un *prompt* de texto (`textPrompt` de `ai-models.json`, o el manifiesto
+  de un importado), el campo se ve deshabilitado y la línea de debajo lo dice
+  (*… no admite un prompt de texto: lo que se escriba aquí no se envía*). Con un
+  modelo que lee pocos *tokens* (SD 1.5: 77) la línea dice cuántos usa
+  (*≈ 64 de los 77 tokens que lee este modelo*) o qué se queda fuera
+  (*Demasiado largo para este modelo (77 tokens); no entra: tu prompt, el final de
+  la descripción de la escena*), con la estimación prudente de `AI-POST.md` §4.
+- **Variantes** (X4b), junto a *Otra variación*: un número de 1 a 8, **1 por
+  defecto**, deshacible (un arrastre, una entrada). Debajo, *Un render y después 4
+  imágenes de IA con las semillas 12 a 15; la vista previa enseña la primera ·
+  ≈ 2 min de IA en este equipo* (el tiempo es N × lo medido por píxel en el último
+  trabajo con IA de este equipo; sin medida, *el tiempo de la IA se mide con el
+  primer render con IA*). Cambiar el número no rehace la vista previa, que sigue
+  siendo de una sola imagen. El resumen del pie dice *IA activada · 4 variantes*.
+  Captura: `docs/ui/ai-section-prompt.png`.
 
 **Pie de la ventana**: a la izquierda, el resumen en una línea
 (*1920 × 1080 · 300 ppp · 256 muestras · PNG → Descargas · IA
@@ -793,6 +817,27 @@ muestran EXR: la miniatura de la IA de un trabajo EXR sale de una copia de 8
 bits, pero el visor solo compara *Render | IA* cuando la IA es PNG o JPEG (el
 historial guarda el EXR tal cual; una copia para la vista queda pendiente).
 
+**Variantes (X4b).** Un trabajo con varias variantes hace un solo render y una
+pasada de la IA por variante, con la semilla siguiente cada vez; se guardan como
+`…_AI.png`, `…_AI_2.png`, `…_AI_3.png`…, cada una con su informe. Mientras tanto
+la fila de la cola dice *IA · variante 2 de 4 · mosaico 3 de 4* y la barra mide las
+variantes juntas; *Detener* a mitad conserva el render y las variantes terminadas
+(*… el render y las 2 imágenes de IA terminadas se conservan en el historial*). Una
+variante que la guarda rechaza queda con su informe y sin imagen (aviso propio), y
+si una falla se conservan las anteriores. En el visor, **una tira de miniaturas**
+—una línea propia entre la cabecera y la imagen, *Variantes* y una miniatura por
+variante con su número, la elegida marcada, la rechazada sin imagen y deshabilitada—
+elige la que el divisor compara con el render (etiquetas *Render · IA 3*), sin
+perder el zum ni el divisor, y la línea del informe pasa a ser la suya (*Variante 3 ·
+Comprobado: …*). Botones *Guardar el render de nuevo*, *Guardar esta variante* y
+*Guardar todas* (cada una con su nombre). La cola y el historial ponen **×4** sobre
+las miniaturas y la columna IA de la cola dice *IA × 4*. En el historial, en la web
+van en el mismo registro de IndexedDB; en escritorio, `<datos>/results/<id>.ai.<n>.<ext>`
+(`PUT/GET /api/store/results/<id>/ai/<n>`; el `<id>.ai.<ext>` de un resultado de
+antes se lee como la variante 1). `tools/ai-post-check.mjs` (j) mide también la tira:
+una línea propia, sin solapes, a 1600, 1280 y 960 px. Captura:
+`docs/ui/ai-results-variants.png`.
+
 ### 2.9 · Ventana de Ajustes
 
 Se abre con **Ajustes…** del menú de aplicación o `Ctrl/⌘ ,`. Es la
@@ -854,6 +899,23 @@ render), semilla (*fija* o *nueva cada vez*), descargar el codificador de
 texto a RAM, y en *Avanzado* las tolerancias de la guarda
 (`AI-POST.md` §3.2; las de fábrica las fija X1). Un aviso en línea si el
 modelo no cabe en la memoria detectada.
+
+**Post-procesado IA ▸ Prompt del sistema** (X4b): unas palabras generales para
+todas las imágenes (es un ajuste de la aplicación, no del proyecto: no se deshace
+ni va en el `.repack.json`), en un campo de varias líneas con el predeterminado del
+líder (*Photorealistic product photograph. Keep the image exactly as rendered…*, en
+inglés: los codificadores de texto de los modelos rinden mejor en él), contador
+*n / 2000*, **Restablecer el predeterminado** (deshabilitado mientras lo es) y la
+línea auxiliar *Palabras generales para todas las imágenes; van antes de la
+descripción de la escena y del prompt propio de cada trabajo. Las protecciones de la
+guarda no dependen de ellas.* Se guarda al dejar de escribir o al salir del campo;
+puede quedarse vacío (ninguno). Con un modelo activo que lee pocos *tokens*, una
+línea dice qué recibe: *SD 1.5 ligero lee como mucho 77 tokens: recibe la versión
+corta de este prompt* (mientras el texto sea el predeterminado; *La versión corta*
+se despliega debajo), *≈ 40 de los 77 tokens que lee …* o *Demasiado largo para …:
+el final de este prompt se queda fuera, después de la descripción de la escena y del
+prompt del trabajo*. En escritorio va en `settings.json` de la carpeta de datos, como
+todos los ajustes (P3e). Captura: `docs/ui/settings-ai-prompt.png`.
 
 **Post-procesado IA ▸ Modelos**: la lista de `src/data/ai-models.json`
 (los mismos modelos que ofrece el instalador) y los importados. Por fila:

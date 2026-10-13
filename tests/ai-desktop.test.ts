@@ -142,7 +142,7 @@ function desktopCtx(l: Launcher, service: DesktopAiService) {
     results: {
       persistent: async () => results.persistent,
       list: () => results.list(),
-      add: (m: ResultMeta, file: Blob, display: Blob | null, aiBlob?: Blob | null) => results.add(m, file, display, aiBlob),
+      add: (m: ResultMeta, file: Blob, display: Blob | null, aiBlob?: Blob | null, more?: readonly (Blob | null)[]) => results.add(m, file, display, aiBlob, more),
       get: (id: string) => results.get(id),
       remove: (id: string) => results.remove(id),
       clear: () => results.clear(),
@@ -233,6 +233,39 @@ describe.skipIf(!READY)('the desktop AI pipeline against the real launcher and t
     expect(await sidecar(l)).toBe('ready');
   }, 180000);
 
+  it('three variants (X4b): one render, three posts of the kept render with consecutive seeds, the runtime started once', async () => {
+    const service = new DesktopAiService(l.native, query);
+    const { ctx, files } = desktopCtx(l, service);
+    const logged = () => (existsSync(join(l.runtimeDir, 'requests.log')) ? readFileSync(join(l.runtimeDir, 'requests.log'), 'utf8').trim().split('\n').filter(Boolean).map((x) => JSON.parse(x) as Record<string, unknown>) : []);
+    const before = logged().length;
+    const startsBefore = starts(l);
+    let renders = 0;
+    const renderFrame = ctx.services.renderFrame.bind(ctx.services);
+    (ctx.services as { renderFrame: typeof renderFrame }).renderFrame = (req) => (renders++, renderFrame(req));
+    withAi(ctx, { intervention: 60, light: 80, seed: 20, variants: 3 });
+    await cmd.renderNow(ctx);
+    await queueSettled(ctx);
+    const job = ctx.store.get().render.queue[0];
+    expect(job.status, job.error ?? '').toBe('DONE');
+    expect(renders).toBe(1);
+    expect(files.map((f) => f.name)).toEqual(['Desk_Camera 1_0001.png', 'Desk_Camera 1_0001_AI.png', 'Desk_Camera 1_0001_AI_2.png', 'Desk_Camera 1_0001_AI_3.png']);
+    // The runtime was asked three times, one tile each, with the job's seed and the two after it.
+    const asked = logged().slice(before);
+    expect(asked.map((r) => r.seed)).toEqual([20, 21, 22]);
+    // The model stayed loaded: the runtime did not start again for the second and third (it may have started once).
+    expect(starts(l) - startsBefore).toBeLessThanOrEqual(1);
+    const [r] = ctx.ui.get().results;
+    const variants = [r.ai!, ...(r.aiMore ?? [])];
+    expect(variants.map((v) => [v.report.verdict, v.report.seed])).toEqual([
+      ['ACCEPTED', 20],
+      ['ACCEPTED', 21],
+      ['ACCEPTED', 22],
+    ]);
+    const kept = await ctx.services.results.get(r.id);
+    expect(new Uint8Array(await kept!.aiMore![1]!.arrayBuffer())).toEqual(files[3].bytes);
+    expect(await sidecar(l)).toBe('ready');
+  }, 240000);
+
   it('cancelling mid-way keeps the engine’s image and stops the launcher’s post', async () => {
     writeFileSync(join(l.runtimeDir, 'fake-sd.json'), JSON.stringify({ image: 'gain', stepMs: 400 }));
     try {
@@ -256,7 +289,7 @@ describe.skipIf(!READY)('the desktop AI pipeline against the real launcher and t
       // post of this launcher is running, and the last one ended cancelled.
       const states = async () => {
         const out: string[] = [];
-        for (let id = 1; id <= 8; id++) {
+        for (let id = 1; id <= 12; id++) {
           const res = await l.native.request(`/api/ai/post/${id}`);
           if (res.ok) out.push(((await res.json()) as AiPostState).state);
           else await res.text();

@@ -7,7 +7,7 @@
 // Clear history; when the browser keeps no storage, it says so.
 
 import type { RenderJob, RenderProgress, RenderSettings } from '../../core/render';
-import type { ResultMeta } from '../../core/results';
+import { aiImagesOf, aiVariantsOf, type ResultMeta } from '../../core/results';
 import * as cmd from '../commands';
 import { h, icon } from '../dom';
 import { cameraName, dyn } from '../names';
@@ -33,13 +33,26 @@ export function queueButton(run: QueueRun, waiting: boolean): { state: 'START' |
   return { state: 'START', label: 'queue.start', tip: 'queue.startTip', icon: 'play', disabled: !waiting };
 }
 
-/** Where the AI post-processing of the job in flight is (X3c): "AI · tile 2 of 4", "· attempt 2" after a retry. */
+/**
+ * Where the AI post-processing of the job in flight is (X3c): "AI · tile 2 of 4", "· attempt 2" after a retry; with
+ * several variants (X4b), which one: "AI · variant 2 of 4 · tile 3 of 4".
+ */
 export function aiStatusText(ai: NonNullable<RenderProgress['ai']>): string {
-  if (ai.stage === 'LOADING') return t('queue.aiLoading');
-  if (ai.stage === 'GUARD') return t('queue.aiGuard');
   const i = Math.max(1, ai.tile);
   const n = Math.max(1, ai.tiles);
+  if (ai.variants && ai.variants > 1) {
+    const step = ai.stage === 'LOADING' ? t('queue.aiStep.loading') : ai.stage === 'GUARD' ? t('queue.aiStep.guard') : ai.attempt > 1 ? t('queue.aiStep.tileRetry', { i, n, a: ai.attempt }) : t('queue.aiStep.tile', { i, n });
+    return t('queue.aiVariant', { v: Math.max(1, ai.variant ?? 1), m: ai.variants, step });
+  }
+  if (ai.stage === 'LOADING') return t('queue.aiLoading');
+  if (ai.stage === 'GUARD') return t('queue.aiGuard');
   return ai.attempt > 1 ? t('queue.aiTileRetry', { i, n, a: ai.attempt }) : t('queue.aiTile', { i, n });
+}
+
+/** A small count over a thumbnail: how many AI images a result has, when more than one (X4b). */
+function variantBadge(r: ResultMeta): HTMLElement | null {
+  const n = aiImagesOf(r).length;
+  return n > 1 ? h('span', { class: 'variant-count tabular', 'data-variants': n, 'aria-label': t('queue.aiImages', { n }) }, `×${n}`) : null;
 }
 
 /** The status line of a job: its frame while an animation renders, where the AI is while it runs, else the status. */
@@ -69,10 +82,19 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
     const name = `${jobFileNames(s, j)[0] ?? ''}${anim ? '…' : ''}`;
     const frameCount = j.frames || jobFrames(s, j.settings).length;
     const cam = j.settings.camera.kind === 'ONE' ? s.camera.cameras[j.settings.camera.id] : undefined;
-    // A result that went through the AI shows both pictures: the engine's and the AI's, side by side.
+    // A result that went through the AI shows both pictures: the engine's and the AI's (its first image), side by side,
+    // and how many AI images it has when there are several (X4b).
+    const aiThumb = result ? aiImagesOf(result)[0]?.info.thumb : undefined;
+    const aiCount = result ? aiImagesOf(result).length : 0;
     const pic = result?.thumb
-      ? result.ai?.thumb
-        ? h('span', { class: 'queue-pics', 'data-tip': t('queue.aiPair') }, h('img', { src: result.thumb, alt: '', class: 'queue-pic' }), h('img', { src: result.ai.thumb, alt: '', class: 'queue-pic queue-pic-ai' }))
+      ? aiThumb
+        ? h(
+            'span',
+            { class: 'queue-pics', 'data-tip': aiCount > 1 ? t('queue.aiImagesTip', { n: aiCount }) : t('queue.aiPair') },
+            h('img', { src: result.thumb, alt: '', class: 'queue-pic' }),
+            h('img', { src: aiThumb, alt: '', class: 'queue-pic queue-pic-ai' }),
+            variantBadge(result),
+          )
         : h('img', { src: result.thumb, alt: '', class: 'queue-pic' })
       : h('span', { class: 'queue-pic queue-pic-empty' }, icon(anim ? 'film' : 'camera', 14));
     const statusText = statusTextOf(j, s.render.running);
@@ -96,7 +118,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       h('span', { class: 'aux' }, anim ? t('queue.timeline') : cam ? cameraName(s, cam) : '—'),
       h('span', { class: 'tabular' }, anim ? `${j.settings.width} × ${j.settings.height} · ${framesText(frameCount)}` : `${j.settings.width} × ${j.settings.height}`),
       h('span', { class: 'tabular' }, finishByText(j.settings)),
-      h('span', { class: 'aux' }, j.settings.ai.enabled ? t('queue.aiYes') : t('queue.aiNo')),
+      h('span', { class: 'aux' }, !j.settings.ai.enabled ? t('queue.aiNo') : j.settings.ai.variants > 1 && !anim ? t('queue.aiVariants', { n: j.settings.ai.variants }) : t('queue.aiYes')),
       h('span', { class: `queue-status${j.status === 'FAILED' ? ' warn-text' : ''}`, title: j.error ?? '' }, statusText, h('div', { class: 'bar-meter' }, h('div', { style: `width:${Math.round(j.progress * 100)}%` }))),
       h(
         'span',
@@ -199,14 +221,17 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       history.replaceChildren(
         ...(results.length === 0
           ? [h('p', { class: 'note' }, t('queue.historyEmpty'))]
-          : results.map((r) =>
-              h(
+          : results.map((r) => {
+              const first = aiImagesOf(r)[0]?.info;
+              const n = aiVariantsOf(r).length;
+              return h(
                 'button',
-                { type: 'button', class: `history-item${r.ai?.thumb ? ' history-pair' : ''}`, 'data-result': r.id, 'data-tip': `${r.name} · ${r.width} × ${r.height}`, onclick: () => cmd.openResult(ctx, r.id) },
+                { type: 'button', class: `history-item${first?.thumb ? ' history-pair' : ''}`, 'data-result': r.id, 'data-tip': `${r.name} · ${r.width} × ${r.height}${n > 1 ? ` · ${t('queue.aiImages', { n: aiImagesOf(r).length })}` : ''}`, onclick: () => cmd.openResult(ctx, r.id) },
                 r.thumb ? h('img', { src: r.thumb, alt: r.name }) : h('span', { class: 'queue-pic-empty' }, icon('camera', 14)),
-                r.ai?.thumb ? h('img', { src: r.ai.thumb, alt: r.ai.name }) : null,
-              ),
-            )),
+                first?.thumb ? h('img', { src: first.thumb, alt: first.name }) : null,
+                variantBadge(r),
+              );
+            })),
       );
     },
   );

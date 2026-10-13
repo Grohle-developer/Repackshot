@@ -546,8 +546,9 @@ const aiPort: AiPort | null = preview
       },
       decode: decodeLinear,
       encode: encodeLinear,
-      // The prompt from the scene's materials and lights, and the fixed negative (AI-POST.md §3.2, src/ai/prompt.ts).
-      scenePrompt: (state, settings) => buildPrompt(state, settings ?? pipelineOf(state.render.ai)),
+      // The prompt from the scene's materials and lights, and the fixed negative (AI-POST.md §3.2, src/ai/prompt.ts);
+      // with a context (X4b), Settings' system prompt first and the job's own last, fitted to the model.
+      scenePrompt: (state, settings, context) => buildPrompt(state, settings ?? pipelineOf(state.render.ai), context),
       // The guard's table, numbered as the engine's scene numbers its materials (io/rsb.ts).
       materials: (state, camera) => guardMaterials(state, projectScene(state, { width: 16, height: 16, maxSamples: 1, maxSeconds: 0, ...(camera ? { camera } : {}) }).materialOrder),
       renderSource: async () => (await aiServiceReady) instanceof DesktopAiService,
@@ -595,7 +596,7 @@ const services: AppServices = {
   results: {
     persistent: async () => (await resultsReady).persistent,
     list: async () => (await resultsReady).list(),
-    add: async (meta, file, display, ai) => (await resultsReady).add(meta, file, display, ai),
+    add: async (meta, file, display, ai, aiMore) => (await resultsReady).add(meta, file, display, ai, aiMore),
     get: async (id) => (await resultsReady).get(id),
     remove: async (id) => (await resultsReady).remove(id),
     clear: async () => (await resultsReady).clear(),

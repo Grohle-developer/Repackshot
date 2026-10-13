@@ -49,8 +49,25 @@ export interface ResultMeta {
   thumb: string;
   /** Bytes the stored blobs take. */
   bytes: number;
-  /** The AI post-processing this result went through, when it did (added in X4; older results have none). */
+  /**
+   * The AI post-processing this result went through, when it did (added in X4; older results have none). With
+   * several variants (X4b) this is the first one.
+   */
   ai?: AiResultInfo;
+  /** Variants 2 and on, in order, when the job made more than one (X4b); `ai` is the first. */
+  aiMore?: AiResultInfo[];
+}
+
+/** Every AI variant of a result, the first one first (a result of before X4b has one at most). */
+export function aiVariantsOf(r: Pick<ResultMeta, 'ai' | 'aiMore'>): AiResultInfo[] {
+  return r.ai ? [r.ai, ...(r.aiMore ?? [])] : [];
+}
+
+/** The variants whose image the guard let through (a REJECTED one keeps its report but has no image of its own). */
+export function aiImagesOf(r: Pick<ResultMeta, 'ai' | 'aiMore'>): { info: AiResultInfo; variant: number }[] {
+  return aiVariantsOf(r)
+    .map((info, i) => ({ info, variant: i + 1 }))
+    .filter((v) => v.info.bytes > 0);
 }
 
 export interface HistoryLimits {

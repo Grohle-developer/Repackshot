@@ -293,10 +293,42 @@ A 0, el aspecto correspondiente no cambia:
 | **Estilo** | Desplegable: *Natural fotográfico* (por defecto), *Catálogo limpio*, *Editorial*, *Cálido*, *Frío*, *Cinematográfico* | Natural |
 | **Fuerza del estilo** | Cuánto se aplica el estilo (solo color y ambiente de luz) | 30 |
 
+**Prompt propio** (X4b), debajo de los controles: un campo de varias líneas,
+vacío por defecto, de hasta 400 caracteres, con la nota *Describe la luz o el
+ambiente; la geometría, los materiales y el enfoque siguen protegidos*. Es del
+trabajo (se guarda en el proyecto, se deshace de una vez al salir del campo y
+cada trabajo de la cola lleva el suyo). Solo se envía a un modelo que lo admite
+(capacidad `textPrompt`); si no, el campo se ve deshabilitado con el motivo.
+
 Debajo, las **protecciones**, como fichas fijas con un candado y sin
 interruptor: *Geometría · Materiales · Resolución · Profundidad de campo
 · Encuadre · Texto y logotipos*. Un botón **Otra variación** cambia la
-semilla.
+semilla, y a su lado **Variantes** (X4b): de 1 a 8, una por defecto. Un
+trabajo con N variantes hace un solo render del motor y N pasadas de la IA
+con semillas consecutivas (semilla, semilla + 1…), el modelo cargado una
+vez; cada una con su informe y su archivo (`_AI`, `_AI_2`…). Se avisa del
+tiempo estimado (N × lo medido) cuando hay medida.
+
+**Las palabras que van al modelo** (X4b), en este orden: el **prompt del
+sistema** de *Ajustes ▸ Post-procesado IA* (general para todas las imágenes,
+del líder por defecto), el de la **escena** (`src/ai/prompt.ts`: materiales,
+luces, controles y estilo) y el **propio del trabajo**; el negativo fijo va
+aparte, siempre el mismo. Ninguna de ellas protege nada: lo protegido lo
+garantiza la guarda con números (§1.3, §3.2), digan lo que digan. Para un
+modelo que lee un número limitado de *tokens* (capacidad `maxPromptTokens`:
+SD 1.5 y SDXL leen 77 con CLIP) se usa la **versión corta** del predeterminado
+mientras la persona no lo cambie (si lo cambió, el suyo), y lo que no cabe se
+recorta palabra a palabra desde el final, **primero el propio del trabajo,
+luego el de la escena y por último el del sistema**, con una línea bajo el
+campo que dice qué se quedó fuera. La cuenta es una **estimación prudente**
+(`estimatePromptTokens`, `src/core/ai-prompt.ts`) que puede contar de más y
+nunca de menos, para que el modelo no corte nunca por su cuenta: el texto se
+parte como lo parte CLIP antes de sus fusiones (letras seguidas, dígitos
+sueltos, signos) y cuenta un *token* por cada 5 letras ASCII o fracción, uno
+más por cada letra fuera de ASCII, uno por dígito y uno por signo, más los dos
+de inicio y fin. La versión corta del predeterminado cuenta 65 de los 77 (con
+CLIP real son unos 45): a un modelo así le queda poco sitio para la escena y
+casi ninguno para el propio.
 
 **Vista previa**, a la derecha del configurador (o debajo en ventanas
 estrechas): un fotograma del **modo Rápido** desde la cámara del trabajo,
@@ -312,7 +344,10 @@ las dos imágenes con el divisor deslizable, y el informe de la guarda en
 una línea: *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) ·
 resolución ✓ · enfoque ✓*, más *La IA se limitó al 23 % para respetar
 las protecciones* cuando ocurra. Se pueden guardar las dos imágenes; la
-cola y el historial muestran las dos miniaturas.
+cola y el historial muestran las dos miniaturas. Con varias variantes
+(X4b), una tira de miniaturas elige la que el divisor compara con el
+render (con su informe), *Guardar esta variante* o *Guardar todas*, y la
+cola y el historial dicen cuántas hay.
 
 ---
 
@@ -335,12 +370,19 @@ con sus apartados *Modelo activo*, *Modelos* y *Equipo*:
   `qwen-image-edit`, `sdxl`, `sd15`), papel (*img2img*, edición,
   ControlNet, LoRA, VAE, codificador), cuantización, ficheros
   acompañantes, capacidades (`strength`, edición por referencia, tipos de
-  control), `sha256` y origen. Un modelo de licencia desconocida o no
+  control; X4b: `textPrompt`, si sigue un *prompt* de texto, y
+  `maxPromptTokens`, cuántos *tokens* lee; sin `textPrompt` no se le envía el
+  *prompt* propio del trabajo, y SD 1.5 o SDXL sin `maxPromptTokens` leen 77),
+  `sha256` y origen. Un modelo de licencia desconocida o no
   comercial se puede usar en local, queda marcado *no apto para uso
   comercial* y nunca es el de por defecto.
 - **Equipo**: GPU detectada, memoria disponible estimada, WebGPU sí o no,
   y el aviso si el modelo activo no cabe.
 - **Almacenamiento**: espacio usado por modelos y resultados, y *Liberar*.
+- **Prompt del sistema** (X4b): las palabras generales que van antes de las
+  de la escena y del *prompt* propio de cada trabajo, con *Restablecer el
+  predeterminado* y la nota de que las protecciones de la guarda no dependen de
+  ellas (§4, *Las palabras que van al modelo*).
 
 ---
 
@@ -355,6 +397,7 @@ con sus apartados *Modelo activo*, *Modelos* y *Equipo*:
 | **X3c** | Opus | **Hecha.** La tubería completa de escritorio (§7.3), tras X2, X3a y X3b: `/api/ai/post` en el lanzador (mosaicos → stable-diffusion.cpp → `rt-post` → retroceso), el servicio de escritorio en `src/io/`, integración en la cola con las dos imágenes y el informe; `AI_AVAILABLE` ya no existe: lo dice `status()` |
 | **X3d** | Opus | La web, tras X3c: ONNX Runtime Web con WebGPU en workers, **exportar el codificador del VAE a ONNX** para que exista `ZIMAGE_WEB`, conductor en worker con `post.wasm`, caché OPFS con `sha256` y fragmentos de ≤ 1 GiB |
 | **X4** | Sonnet | **Hecha.** La interfaz de §4 contra `AiPostService` (`src/core/ai.ts`), con un servicio sintético hasta X3c: sección de la ventana de render, configurador, fichas, vista previa en modo Rápido con los pases dibujados por three.js y divisor, informe de la guarda y divisor en el visor de resultados, dos miniaturas en la cola, ajustes en el *store* (`ROADMAP.md` X4) |
+| **X4b** | Opus | **Hecha.** Prompt propio del trabajo (si el modelo lo admite: `textPrompt`), variantes (1 a 8, un render y N pasadas con semillas consecutivas, tira de miniaturas en el visor) y prompt del sistema en Ajustes, con la versión corta y el recorte para modelos de 77 *tokens* (§4, §7.5b) |
 | ~~X5~~ | — | **Absorbida en U6** (ventana de Ajustes, `ROADMAP.md`): el gestor de modelos de §5 y el selector de §2.2–§2.4 no necesitan la tubería, así que llegan antes. Lo que queda para después de X3 (comprobar en vivo que el modelo activo cabe y una prueba de una imagen) entra en X4 |
 
 ---
@@ -563,6 +606,33 @@ esos valores. Cambiar un control es una acción del *store* y se deshace;
 cada trabajo copia sus ajustes. `AI_AVAILABLE` deja de ser una
 constante en X3c: lo dice `AiPostService.status()`. **Hecho**: la constante
 ya no existe.
+
+### 7.5b · Prompt propio, variantes y prompt del sistema (X4b)
+
+**Hecho** (2026-10-13). Contrato añadido, sin cambiar nada de lo que había:
+
+- `AiPipelineSettings.userPrompt?` (cadena recortada de hasta `MAX_USER_PROMPT` = 400
+  caracteres) y `variants?` (entero de 1 a `MAX_VARIANTS` = 8), opcionales en el
+  contrato (`src/core/ai.ts`) y siempre presentes en el *store* (`AiSettings` es
+  `Required<…>`); `DEFAULT_AI_PIPELINE` los trae vacío y 1. Un proyecto anterior se
+  abre sin *prompt* y con una variante. El lanzador no los lee: cada petición es una
+  imagen con su semilla y el *prompt* ya compuesto.
+- `src/core/ai-prompt.ts`: `DEFAULT_SYSTEM_PROMPT` y `SHORT_SYSTEM_PROMPT` (los textos
+  del líder), `composePrompt` (sistema → escena → propio, y el recorte), la estimación
+  de *tokens* y `PromptCaps`. `buildPrompt(state, settings, context?)` compone con un
+  contexto y, sin él, sigue dando solo el de la escena. El ajuste `ai.systemPrompt` de
+  `src/core/settings.ts` (puede quedarse vacío).
+- `ai-models.json` gana `capabilities: { textPrompt, maxPromptTokens? }` en cada
+  modelo (todos con `textPrompt`; `SD15_LIGHT` con 77) y `ModelView` los lleva; un
+  importado los declara en su manifiesto.
+- La cola (`src/ui/render-queue.ts`, `aiStep`): un render, N peticiones del mismo
+  origen (`RENDER` con el mismo `renderId`, o la misma imagen decodificada una vez) con
+  `variantSettings` (semilla + n − 1), cada imagen con `aiFileName(nombre, n)`.
+  `RenderProgress.ai` gana `variant` y `variants`.
+- Resultados: `ResultMeta.aiMore` (las variantes 2 y siguientes; `ai` es la primera),
+  `ResultsStore.add(…, ai, aiMore)`, y en el lanzador `<id>.ai.<n>.<ext>` con
+  `PUT/GET /api/store/results/<id>/ai/<n>` (`engine/crates/rt-app/src/appdata.rs`; el
+  `<id>.ai.<ext>` de antes es la variante 1).
 
 ### 7.6 · Orden
 
