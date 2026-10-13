@@ -1860,6 +1860,29 @@ ocupa menos de 600 kB. El archivo lleva ahora 8 MiB de relleno y la
 pausa se pide a 1/8 del total. Se pasan las dos: `cargo test --workspace`
 y `cargo test --workspace --release`.
 
+**Segunda corrección (CI, el servidor huérfano).** En el ejecutor de
+GitHub, `a_server_left_by_a_previous_launch_is_stopped_at_start` fallaba
+una de cada dos veces con «the orphan still runs». La causa estaba en la
+prueba. Arrancaba el servidor falso un instante antes de la limpieza.
+`posix_spawn` es un *vfork*, y Linux deja seguir al padre antes de que
+termine el `execve` del hijo, cuando el hijo aún usa la memoria del
+padre. En ese momento `/proc/<pid>/exe` todavía nombra el ejecutable de
+la prueba, así que la limpieza acertaba al no matarlo. Se reprodujo en
+local reteniendo el `exec_update_lock` del hijo (`/proc/<pid>/syscall`):
+el `exe` leído era el binario de la prueba. Ahora la prueba espera, por
+condición y con un plazo de 60 s, a que el falso haya creado `args.log`
+(eso lo hace su propio código), y lo mata al terminar aunque falle. Con
+el bloqueo retenido pasa 20 de 20 veces; la forma anterior fallaba 2 de
+20. Al revisar cómo se reconoce el proceso apareció un huérfano real:
+la limpieza comparaba la ruta tal cual estaba escrita, y si la carpeta de
+datos está detrás de un enlace simbólico, el núcleo da la ruta con el
+enlace resuelto. Un servidor dejado ahí no se paraba nunca. Ahora se
+compara el archivo (dispositivo e inodo, `proc::runs_server`), o la ruta
+con los enlaces resueltos cuando el archivo ya no existe. Lo comprueban
+`a_server_left_in_a_data_folder_behind_a_link_is_stopped_too` y la
+prueba unitaria `a_server_is_recognised_through_a_link`; las dos fallan
+con la comparación anterior.
+
 ### X3c · La tubería completa de escritorio — **Opus**
 
 **Qué.** `AI-POST.md` §7.3: `/api/ai/post` en el lanzador (pases
