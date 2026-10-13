@@ -11,7 +11,10 @@ import { panoramaDirection, preetham, SKY_HEIGHT, SKY_WIDTH, skyImage } from '..
 import { createInitialState, type ProjectState } from '../src/core/store';
 import { ImageFileError, loadBackplate, loadHdri, type PixelDecoder } from '../src/io/hdri';
 import { loadProject, readProjectFile, serializeProject } from '../src/io/project';
-import { imageErrorText, isHdriFile } from '../src/ui/commands';
+import { imageErrorText, isHdriFile, loadBackplateImage, loadEnvironmentHdri } from '../src/ui/commands';
+import type { AppServices } from '../src/ui/ports';
+import { createStore } from '../src/core/store';
+import { createUiStore } from '../src/ui/ui-state';
 import { setLang } from '../src/ui/strings';
 
 const fixture = (name: string) => new Uint8Array(readFileSync(`tests/fixtures/${name}`));
@@ -195,5 +198,41 @@ describe('telling the person about an image file', () => {
     setLang('en');
     expect(isHdriFile(new File([], 'studio.HDR'))).toBe(true);
     expect(isHdriFile(new File([], 'part.step'))).toBe(false);
+  });
+});
+
+describe('loading environment images from the inspector', () => {
+  it('asks the launcher’s open dialog on the desktop (never the browser’s file input), then lights with the file', async () => {
+    retainImages([]);
+    const asked: { title: string; filters: { name: string; extensions: string[] }[] }[] = [];
+    const answers = [new File([fixture('studio.hdr')], 'studio.hdr'), new File([new Uint8Array([1, 2, 3])], 'plate.png')];
+    const services = {
+      dialogs: {
+        openFiles: async (req: { title: string; filters: { name: string; extensions: string[] }[] }) => {
+          asked.push(req);
+          return [answers.shift()!];
+        },
+      },
+      images: {
+        loadHdri: async (f: File) => loadHdri(f.name, new Uint8Array(await f.arrayBuffer())),
+        loadBackplate: async (f: File) => loadBackplate(f.name, new Uint8Array(await f.arrayBuffer()), async () => ({ width: 1, height: 1, rgba: new Uint8Array([1, 2, 3, 255]) })),
+      },
+    } as unknown as AppServices;
+    const ctx = { store: createStore(createInitialState()), ui: createUiStore(), services };
+    expect(await loadEnvironmentHdri(ctx)).toBe(true);
+    expect(asked[0].filters[0].extensions).toContain('exr');
+    const env = ctx.store.get().environment;
+    expect(env.kind).toBe('HDRI');
+    expect(env.hdri?.name).toBe('studio.hdr');
+    expect(getImage(env.hdri!.id)!.width).toBe(1024);
+    expect(await loadBackplateImage(ctx)).toBe(true);
+    expect(asked[1].filters[0].extensions).toEqual(['png', 'jpg', 'jpeg', 'webp']);
+    expect(ctx.store.get().environment.background).toBe('BACKPLATE');
+    // One undo takes back the background image, a second the HDRI.
+    ctx.store.undo();
+    expect(ctx.store.get().environment.backplate).toBeNull();
+    ctx.store.undo();
+    expect(ctx.store.get().environment.hdri).toBeNull();
+    retainImages([]);
   });
 });

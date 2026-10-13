@@ -68,3 +68,17 @@ export const ICONS = {
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;
+
+/**
+ * The app's mark, as docs/media/logo.svg draws it (a black tile with the material sphere on the studio floor,
+ * its highlight and contact shadow in white), on the logo's 256 × 256 grid: achromatic in both themes. The
+ * header's application-menu button shows it (UI.md §2.1).
+ */
+export const LOGO_MARK = {
+  viewBox: '0 0 256 256',
+  tile: { rx: 51.2, fill: '#141414' },
+  strokes: ['M62 112a66 66 0 1 0 132 0a66 66 0 1 0 -132 0', 'M44 208h168', 'M98 78a40 40 0 0 1 38-22'],
+  strokeWidth: 14,
+  stroke: '#ffffff',
+  shadow: { cx: 128, cy: 208, rx: 52, ry: 7, fill: '#ffffff', opacity: 0.35 },
+} as const;

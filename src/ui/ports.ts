@@ -2,6 +2,7 @@
 // imports from `render` or `io` (ARCHITECTURE §2): main.ts builds these
 // services from the engine and the importers and hands them in.
 
+import type { Projection, Rect } from '../core/box-select';
 import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
 import type { ImportResult, Library } from '../core/library';
@@ -13,8 +14,11 @@ import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
 import type { ImageRef } from '../core/images';
+import type { AiRuntimePort } from '../core/ai-runtimes';
+import type { HostEvent, HostInfo } from '../core/host-protocol';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
+import type { UpdateOutcome } from '../core/updates';
 import type { PerfResult, Tool } from './ui-state';
 
 export interface PickResult {
@@ -64,6 +68,15 @@ export interface ViewportPort {
   pick(x: number, y: number): PickResult | null;
   /** Parts to outline as hovered (the ones under the cursor, or under a dragged material). */
   setHover(ids: readonly NodeId[]): void;
+  /** How the parts are projected as they are drawn now: selection by box tests them on the screen (core/box-select.ts). */
+  projection(): Projection | null;
+  /**
+   * The triangles of a part that show in a rectangle (CSS pixels of the canvas), found by drawing them with an id
+   * each: what other parts and the part itself hide does not count. Null when the viewport cannot tell.
+   */
+  visibleTriangles(part: NodeId, rect: Rect): Set<number> | null;
+  /** The faces of a part a dragged material would reach, tinted (null clears them). */
+  setHoverFaces(spec: { part: NodeId; indices: readonly number[] } | null): void;
   setTool(tool: Tool): void;
   /** The gizmo of the move tool for these nodes in these axes (UI.md §2.3); null hides it. */
   setGizmo(spec: { ids: readonly NodeId[]; space: Space } | null): void;
@@ -102,25 +115,69 @@ export interface EnginePort {
   measure(opts: { seconds: number; signal: AbortSignal; onProgress?: (elapsed: number) => void }): Promise<PerfResult>;
 }
 
-/** The browser's storage as Settings ▸ Storage shows it. */
+/** One part of the desktop's data folder, measured by the launcher (`models`, `results`, `library`, `thumbs`, `logs`, `window`, `other`). */
+export interface FolderPart {
+  id: string;
+  path: string | null;
+  bytes: number;
+  files: number;
+}
+
+/**
+ * Where the application's data is, as Settings ▸ Storage shows it (io/platform.ts): the browser's site storage in
+ * the web version, the data folder of the desktop application.
+ */
 export interface StoragePort {
-  /** What the browser reports (navigator.storage.estimate), or null when it does not. */
+  /** `browser`: the site's storage, which the browser may evict; `folder`: the desktop's data folder. Absent: `browser`. */
+  readonly kind?: 'browser' | 'folder';
+  /** What the browser reports (navigator.storage.estimate), or null when it does not (and on the desktop). */
   estimate(): Promise<{ usage: number; quota: number } | null>;
-  /** Whether the browser keeps the data (navigator.storage.persisted), null when it cannot say. */
+  /** Whether the browser keeps the data (navigator.storage.persisted), null when it cannot say (and on the desktop). */
   persisted(): Promise<boolean | null>;
   /** Asks the browser to keep the data; null when it cannot be asked. */
   persist(): Promise<boolean | null>;
-  /** Bytes of the library's entry. */
-  libraryBytes(): number;
+  /** Bytes of the library. */
+  libraryBytes(): number | Promise<number>;
   /** Bytes of the thumbnail cache. */
-  cacheBytes(): number;
+  cacheBytes(): number | Promise<number>;
   /** Deletes the thumbnail cache; the bytes freed. */
-  clearCache(): number;
+  clearCache(): number | Promise<number>;
+  /** The desktop's data folder by part, as the launcher measured it; null (or absent) in the web version. */
+  usage?(): Promise<{ dataDir: string; total: number; folders: FolderPart[] } | null>;
+}
+
+/**
+ * Repackshot's own window on the desktop (P3c, WebView2 on Windows, with the system's title bar): the page
+ * names its title, gives its colours and answers its close with our own question. Null in a browser and in
+ * the browser's app window.
+ */
+export interface WindowHostPort {
+  readonly kind: 'webview2';
+  /** The window's answer to `ready` (its WebView2 version), or null before it. */
+  info(): HostInfo | null;
+  /** Listens to the window's events; returns the function that stops. */
+  on(listener: (event: HostEvent) => void): () => void;
+  /** The page listens. */
+  ready(): void;
+  /** The project's name: the title becomes `Repackshot — <project>`. */
+  setTitle(project: string): void;
+  setTheme(dark: boolean, background: string): void;
+  /** Close as the system would: the window asks back (`close-requested`). */
+  close(): void;
+  /** The page agreed to close. */
+  closeOk(): void;
 }
 
 /** The desktop launcher's folders (P2), when the page runs in its window. */
 export interface DesktopPort {
   openFolder(target: 'data' | 'models' | 'logs' | 'results'): Promise<void>;
+  /** Closes the app window (Ctrl/⌘ W and Ctrl Q after the unsaved-changes question). */
+  closeWindow?(): void;
+}
+
+/** The release feed (src/io/updates.ts): the latest published release, or why it could not be had. Never throws. */
+export interface UpdatesPort {
+  latest(): Promise<UpdateOutcome>;
 }
 
 export interface RenderRequest {
@@ -195,13 +252,39 @@ export interface FilesPort {
   readonly canChooseFolder: boolean;
   /** The folder can be shown in the system's file manager (the desktop build); never in a browser. */
   readonly canOpenFolder: boolean;
+  /** The desktop launcher writes the files: a folder is a path, Downloads the system's folder. */
+  readonly desktop?: boolean;
+  /** Results saved to Downloads can be shown in the file manager too (the desktop). */
+  readonly canOpenDownloads?: boolean;
   /** Asks for a folder (a user gesture); null when the person cancels. */
   chooseFolder(): Promise<{ id: string; name: string } | null>;
   /** Write permission for a remembered folder, asked again when needed (call it from a user gesture). */
   ensureAccess(id: string): Promise<boolean>;
   /** Saves under the destination; a download when the folder is gone or not writable. */
   save(dest: Destination, name: string, blob: Blob): Promise<'FOLDER' | 'DOWNLOAD'>;
-  openFolder(id: string): Promise<void>;
+  /** Shows the folder (`downloads`: the Downloads folder) in the file manager, with the file `name` saved there selected when known. */
+  openFolder(id: string, name?: string): Promise<void>;
+}
+
+/** A file type of the system's dialogs: `extensions` without the dot; `*` is every file. */
+export interface DialogFilter {
+  name: string;
+  extensions: string[];
+}
+
+/**
+ * The system's own dialogs for imports and exports (the desktop launcher, io/desktop-files.ts); null in the browser,
+ * which uses `<input type="file">` and downloads.
+ */
+export interface DialogsPort {
+  /** Files to read; null when cancelled. `lazy`: read in ranges through the launcher (AI model files of many GB). */
+  openFiles(req: { title: string; filters: DialogFilter[]; multiple?: boolean; lazy?: boolean }): Promise<File[] | null>;
+  /** Every file under a folder (an AI model's folder), each with its `webkitRelativePath`; null when cancelled. */
+  openFolderFiles(req: { title: string; folderItem: string }): Promise<File[] | null>;
+  /** Writes `blob` where the person says in the save dialog. */
+  saveFile(blob: Blob, suggestedName: string, req: { title: string; filters: DialogFilter[] }): Promise<{ kind: 'SAVED'; name: string; path: string } | { kind: 'CANCELLED' } | { kind: 'FAILED'; reason: string }>;
+  /** Opens an https:// address in the system's browser, not in the app window. */
+  openExternal(url: string): Promise<void>;
 }
 
 export type { ImportMessage };
@@ -322,11 +405,24 @@ export interface AppServices {
   engine: EnginePort;
   /** The AI model manager; null when this build has none. */
   models: ModelsService | null;
+  /** The desktop launcher's inference runtime (X3b, src/io/ai-runtime.ts); absent or null elsewhere. */
+  aiRuntime?: AiRuntimePort | null;
   /** What this computer has, for the AI models (WebGPU limits in the browser, the launcher's detection on the desktop). */
   hardware(again?: boolean): Promise<HardwareInfo>;
   storage: StoragePort;
   /** Null outside the desktop application. */
   desktop: DesktopPort | null;
+  /** Where new versions are published (Settings ▸ Updates). */
+  updates: UpdatesPort;
+  /**
+   * Opens an https:// address outside the application, never in its window: the system's browser on the desktop (the
+   * launcher's /api/open-url), a new tab in the browser version. Anything else than https:// is ignored.
+   */
+  openExternal(url: string): Promise<void>;
+  /** The system's dialogs for imports and exports; absent or null in the browser. */
+  dialogs?: DialogsPort | null;
+  /** Repackshot's own window (P3c); null or absent in a browser and in the browser's app window. */
+  windowHost?: WindowHostPort | null;
   /** A licence text shipped with the build (`licences/<file>`, copied by tools/licences.mjs); null when missing. */
   licenceText(file: string): Promise<string | null>;
   /** The environment's HDRI and background image files. */

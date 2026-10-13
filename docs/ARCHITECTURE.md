@@ -17,7 +17,7 @@ no una iniciativa dentro de un PR.
 | Vista previa | **three.js** (`WebGLRenderer`) | Rasterizado rápido para orbitar, seleccionar y colocar mientras la cámara se mueve. **No es el motor**: es la vista interactiva |
 | Motor de render | **Rust, desde cero, sin dependencias externas** (`engine/`): trazador de caminos en CPU que compila a **WebAssembly** para el navegador y a **binario nativo** para la línea de comandos y el escritorio | Corre en cualquier sistema y arquitectura (x86_64, ARM64, RISC-V, wasm32) sin GPU ni drivers; el mismo código renderiza en el navegador, en el runner de CI y en el escritorio; determinista; eficiente por diseño (BVH ancho con SIMD, muestreo de baja discrepancia, colas de baldosas) |
 | Importación | En `src/io/`, cargada bajo demanda: `GLTFLoader`, `FBXLoader`, `3MFLoader`, `PLYLoader`, `ColladaLoader`, `USDZLoader` y `3DMLoader` de three (MIT); **rhino3dm** (openNURBS, MIT) para `.3dm`; **occt-import-js** (LGPL-2.1, OpenCascade compilado a wasm) para STEP e IGES, como **única excepción LGPL** y aislada (ver abajo); OBJ y STL propios. **Decidido**: estas bibliotecas se aceptan en la capa `io/`, se cargan solo al importar y nunca entran en el motor | La importación es el tronco del producto: lo que la gente exporta desde Rhino, SolidWorks, Fusion, Maya, ZBrush y KeyShot tiene que entrar con un arrastre. Los formatos nativos propietarios de esos programas no se leen (`SPEC.md` §5) |
-| Post-procesado IA (opcional) | **ONNX Runtime Web** (MIT) con WebGPU en workers, en `src/ai/`; en escritorio ONNX Runtime nativo o **stable-diffusion.cpp** (MIT) como proceso aparte. Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado en el primer uso con `sha256`, nunca en el repositorio. **Decidido** en `AI-POST.md`; la dependencia entra en X3 | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor, que sigue sin dependencias |
+| Post-procesado IA (opcional) | **Decidido** en `AI-POST.md` §7. Escritorio, todo nativo: **stable-diffusion.cpp** (MIT, sobre ggml, MIT) como **proceso aparte** que gobierna el lanzador, nunca enlazado ni dentro de `engine/`, en compilaciones oficiales fijadas con tamaño y `sha256` en `src/data/ai-runtimes.json` (*release* `master-959-d637cfb`: Vulkan y CPU para Windows y Linux x86_64, X3b), que el lanzador descarga bajo demanda desde *Ajustes* con el `curl` del sistema, descomprime con su propio lector de zip y arranca como `sd-server` en una dirección de bucle local aleatoria; no van en el instalador ni en los portables, y no se redistribuyen; la guarda y el trabajo con píxeles en `engine/crates/rt-post`, Rust sin dependencias (X3a). Web: **ONNX Runtime Web** (MIT) con WebGPU en workers y `rt-post` como `post.wasm` aparte (X3d). Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado con `sha256`, nunca en el repositorio | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor (`rt-core` no sabe que existe) |
 | Tests | **vitest** (modelo e interfaz), **cargo test** (motor: escenas analíticas, determinismo, paridad wasm/nativo), **playwright-core** con el Chromium local para capturas | La suite de la interfaz corre sin GPU; la del motor corre en cualquier CPU |
 | Empaquetado de escritorio | **Lanzador propio en Rust, solo `std`** (`engine/crates/rt-app`, binario `repackshot`), decidido para la primera release (P2). Sirve la interfaz en `127.0.0.1`, la abre en una ventana de aplicación de Edge (Windows) o Chromium/Chrome (Linux) y renderiza con `rt-core` **en nativo** con todos los hilos. Windows x86_64 compilado en cruzado con mingw-w64; Linux x86_64 estático con musl; instalador de Windows con **NSIS** (herramienta de construcción, no dependencia) | **Tauri queda descartado**: arrastra cientos de *crates* de crates.io (bloqueado en este entorno) y necesita compilar en Windows (sin minutos de Actions). El lanzador propio mantiene el proyecto sin dependencias en Rust, la interfaz web no cambia y Edge viene con Windows. Ver §5.5 |
 
@@ -58,7 +58,7 @@ propio (`io/step-worker.ts`) que descarga `occt-import-js.js` y `.wasm`
 sin modificar de `public/vendor/occt-import-js/`, copiados por
 `tools/vendor.mjs` con `license.occt-import-js.txt`, `license.occt.txt` y
 un `README.txt` con la versión y los enlaces al fuente;
-`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable (1.97 al arrancar),
+`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable, **fijado a 1.97.0 en CI** (`RUST_VERSION` y `RUSTUP_TOOLCHAIN` en `engine.yml` y `release.yml`, la misma versión que las máquinas de desarrollo: cada Rust nuevo trae *lints* nuevos de clippy y con `-D warnings` pondría el CI en rojo sin que nada cambie; subir de versión es un cambio a propósito que arregla sus *lints*),
 objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 `riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
 Los HDRI (`.hdr` y `.exr`) se leen con lectores propios, en la interfaz
@@ -81,9 +81,13 @@ src/
     lighting.ts             rig activo, focos, colocación por reflejo
     camera.ts               óptica, encuadre, cámaras guardadas
     animation.ts            planos, movimientos, evaluación en el tiempo
+    camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
     images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5)
     sky.ts                  el cielo de Preetham del motor, portado para la vista previa (E5)
+    faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
+    material-drop.ts        a qué llega una suelta de material y qué asigna (U7)
+    box-select.ts           selección por caja: geometría en pantalla, ventana y cruce, qué gesto la arma (U7)
     light-math.ts           kelvin → rgb, irradiancia, polar, ease   (portado)
     rig.ts                  studioRig / setupRig normalizados           (portado)
     wear.ts                 valores por defecto del desgaste            (portado)
@@ -94,7 +98,9 @@ src/
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
-  ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core; workers con ONNX Runtime Web; la guarda es TypeScript puro
+  ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core (y data), nunca al revés; la guarda NO es TypeScript: es rt-post
+    post-wasm.ts            envoltura tipada de public/engine/post.wasm (plan, condicionamiento, aceptar) y el conductor runGuarded; worker y Node
+    prompt.ts               el prompt de la escena (materiales, luces, estilo) y el negativo fijo; la tabla de materiales de la guarda
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
@@ -103,14 +109,21 @@ src/
     hdri.ts                 lectores propios de RGBE y OpenEXR, imagen de fondo, copia para la vista previa (E5)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
+    ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
     theme.css  layout.css  components.css  …
     components/             NumberField, Section, Grid, Palette, …
+      material-drag.ts      arrastrar un material con eventos de puntero: fantasma, zonas de suelta, Esc (U7)
     panels/                 header, scene, viewport, inspector, renderbar, status
+      viewport-box.ts       el gesto de la caja de selección sobre el visor (U7)
 public/
   thumbs/setups/            72 miniaturas de montaje de luz (PNG)
+  assets/aperture/          45 máscaras de diafragma y texturas de pupila (PNG 512², gris de 8 bits) + index.json (A6)
+  assets/gobo/              12 patrones de gobo (PNG 1024², gris de 8 bits) + index.json (A6)
+  assets/README.md          procedencia: generador, receta, semilla y hash de cada fichero
   example/                  nada: la pieza de ejemplo es procedural
 tests/                      vitest; *.test.ts por módulo
 tools/                      scripts de desarrollo: capturas, generadores, hojas de contacto
+  assets/                   generadores deterministas de public/assets/ (A6): common.mjs, aperture-masks.mjs, gobos.mjs; solo node:zlib y node:crypto
 docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
@@ -120,8 +133,11 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
                             (las escenas de E5 en scenes.rs)
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
+  crates/rt-post/           la guarda del post-procesado IA y todo su trabajo con píxeles (AI-POST.md §7.2); rt-core no la conoce
+  crates/rt-post-wasm/      exportaciones extern "C" de rt-post → public/engine/post.wasm
 packaging/                  guiones de empaquetado: portables de Windows y Linux, instalador NSIS (P2)
 public/engine/rt.wasm       el motor compilado para el navegador (generado por npm run engine:build; no se sube)
+public/engine/post.wasm     la guarda IA compilada (rt-post-wasm), generada por el mismo guion; tampoco se sube
 ```
 
 **Regla de dependencias**: `ui → core`, `render → core`, `io → core`,
@@ -162,6 +178,24 @@ de Cycles: un panel de potencia P y área A tiene radiancia P / (4 A). `kelvin` 
   `FABRIC`, `EMISSIVE`) y parámetros.
 - Desgaste, pelusa, ópticas, movimientos, suavizados, secuencias,
   chequeos del Doctor, calidad y resolución: ver sus ficheros.
+- **Herramientas de estudio (A6)**, datos propios y no portados
+  (`docs/STUDIO-TOOLS.md`): `lenses.json` (las 16 prescripciones de lente,
+  con su cargador tipado en `lenses.ts`), `bokeh.json` (los 20 tipos) y
+  `camera-moves.json` (14 movimientos de cámara relativos al producto y
+  3 presets de cámara en mano). Sus JSON se leen con una llamada marcada
+  `/* @__PURE__ */` para que la página no los lleve en el primer *chunk*
+  hasta que algo los use. Las máscaras y los gobos que referencian
+  están en `public/assets/` y se generan con `tools/assets/`.
+
+**Assets generados** (`public/assets/`, `tools/assets/`): cada fichero sale de
+una receta y una semilla por código puro (solo `+ − × ÷` y `sqrt`, sin
+`Math.sin` ni `Math.random`), y su `index.json` guarda receta, semilla y dos
+*hashes*: el de los píxeles (canónico) y el del PNG. `tests/assets.test.ts`
+los regenera y compara. El servidor de escritorio (`static_files.rs`) solo
+trata como inmutables los ficheros de `/assets/` que llevan el *hash* de
+contenido de Vite (`nombre-XXXXXXXX.ext`, 8 caracteres, directamente en
+`assets/`); los demás (estos assets y sus `index.json`) se revalidan en cada
+petición con un ETag del SHA-256 de sus bytes.
 
 **Normalización de exposición** (`src/core/rig.ts`): al aplicar un
 montaje sobre un tipo de producto, la suma de irradiancias de sus focos
@@ -285,7 +319,7 @@ export interface RenderEngine {
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 
-Vive en `engine/`, un workspace de Cargo con cuatro *crates*:
+Vive en `engine/`, un workspace de Cargo con seis *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
@@ -293,11 +327,13 @@ Vive en `engine/`, un workspace de Cargo con cuatro *crates*:
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
 | `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
+| `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlazará `rt-app` (X3c) |
+| `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
 **Sin dependencias externas** quiere decir exactamente eso: ningún
 *crate* de crates.io en ningún *crate* del workspace. `Cargo.lock` solo
-lista `rt-core`, `rt-cli`, `rt-wasm` y `rt-app`, y CI falla si aparece un
-`source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
+lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post` y `rt-post-wasm`,
+y CI falla si aparece un `source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
 baja discrepancia, zlib/PNG, lectores HDR, hilos) se escribe aquí.
 Fórmulas y tablas de la literatura pública (PCG, Sobol con números de
 dirección de Joe y Kuo, el ajuste ACES, el modelo de cielo) se citan en
@@ -320,7 +356,11 @@ con cualquier número de hilos o workers: el muestreador se siembra por
 (baldosa, píxel, muestra), nunca por hilo, y la acumulación es por
 baldosa en orden fijo. Un test compara el hash de una imagen de
 referencia entre el binario nativo y el wasm (paridad), y entre 1 y N
-hilos.
+hilos. La guarda IA tiene la misma garantía: `cargo test -p rt-post`
+fija en `tests/fixtures/ai-guard.json` el *hash* de la imagen entregada,
+el de lo que recibe el modelo y el JSON del informe de cinco escenarios,
+y `tests/ai-post-wasm.test.ts` los repite con el `post.wasm` real (en CI,
+el trabajo del motor) y exige lo mismo bit a bit.
 
 **Eficiencia, por diseño** (los números son objetivos medidos, no
 puertas de CI): BVH con construcción SAH por *binning* y nodos anchos
@@ -434,13 +474,22 @@ lanzador y usa el mismo RSB que la web (§5.5).
 
 `engine/crates/rt-app` es un binario de Rust **solo con `std`** (mismo
 workspace, mismas puertas: `fmt`, `clippy -D warnings`, cero *crates*
-externos, sin `unsafe`). Hace cinco cosas:
+externos). **Sin `unsafe` salvo en `src/platform/`** (decidido en P3c):
+la ventana propia de Windows necesita llamar a Win32 y a la interfaz COM
+de WebView2, y eso solo se hace con FFI; cada bloque `unsafe` lleva su
+comentario de por qué es correcto, el resto del *crate* mantiene
+`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace estas cosas:
 
-1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1` y
-   un puerto libre, con la carpeta `app/` (el `dist/` de Vite) junto al
-   ejecutable. Comprueba la cabecera `Host` (contra el *DNS rebinding*) y
-   exige en la API un *token* aleatorio por arranque que solo conoce la
-   página que abrió.
+1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1`,
+   con la carpeta `app/` (el `dist/` de Vite) junto al ejecutable.
+   Comprueba la cabecera `Host` (contra el *DNS rebinding*) y exige en la
+   API un *token* aleatorio por arranque que solo conoce la página que
+   abrió. **Puerto estable por carpeta de datos** (P3e, `src/port.rs`):
+   se apunta en `<datos>/launcher.json` y se vuelve a usar en el siguiente
+   arranque si está libre; solo si está ocupado se toma otro libre, que
+   pasa a ser el apuntado (`--port N` usa N y no apunta nada). Así el
+   origen de la ventana (`http://127.0.0.1:<puerto>`) no cambia de un
+   arranque a otro.
 2. **Abrir la ventana**: Edge en Windows (viene con el sistema) o el
    primer Chromium, Chrome, Edge o Brave en Linux, con `--app=<url>` y un
    perfil propio en la carpeta de datos; si no hay ninguno, el
@@ -459,15 +508,74 @@ externos, sin `unsafe`). Hace cinco cosas:
 4. **Datos y modelos**: carpeta de datos en `%LOCALAPPDATA%\Repackshot`
    (Windows) o `$XDG_DATA_HOME/repackshot` (Linux); en las versiones
    **portables** (un fichero `portable.txt` junto al ejecutable), en
-   `data/` al lado, perfil del navegador incluido. Los modelos de IA se
-   guardan ahí: la página los descarga con `fetch` y los entrega al
-   lanzador por trozos, que los escribe, reanuda y comprueba con un
-   SHA-256 propio.
-5. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
+   `data/` al lado, con todo dentro. Los modelos de IA se guardan ahí: la
+   página los descarga con `fetch` y los entrega al lanzador por trozos,
+   que los escribe, reanuda y comprueba con un SHA-256 propio.
+5. **El estado de la página** (P3e, `src/appdata.rs`): en escritorio la
+   página es **solo la interfaz** y todo lo que guarda lo escribe el
+   lanzador en la carpeta de datos, nunca el almacenamiento del navegador
+   de la ventana. `/api/store/*` y `/api/storage/usage`, con el mismo
+   *token*, `Host` y `Origin`, nombres en minúscula confinados a la
+   carpeta de datos (ni enlaces ni nombres de dispositivo de Windows) y
+   escrituras atómicas (temporal, `sync_all`, `rename`). La carpeta:
+
+   ```text
+   settings.json        el documento de ajustes (src/core/settings.ts)
+   state/<nombre>.json  cosas pequeñas de la página: descargas por reanudar, carpetas elegidas,
+                        la marca de la migración desde el navegador
+   library/             la biblioteca propia (U4)
+   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json
+   cache/thumbs/        las esferas de materiales (caché)
+   models/              los modelos de IA, por sha256
+   logs/                el registro del lanzador
+   browser-profile/     el perfil de la ventana de Edge o Chromium
+   webview2/            el perfil de la ventana propia (P3c); window.json, su sitio
+   launcher.json        el puerto; instance.json, la instancia en marcha
+   pending-models.json  lo que eligió el instalador
+   ```
+
+   En la página, **la costura de plataforma** (`src/io/platform.ts`): una
+   interfaz `Platform` con todo servicio que guarda algo o pregunta al
+   equipo (ajustes, cosas pequeñas recordadas, biblioteca, historial de
+   resultados, almacén de modelos, equipo, espacio usado, miniaturas,
+   archivos de salida, proyectos, diálogos de importar y exportar),
+   elegida una vez al arrancar (`choosePlatform()`, antes de pintar nada)
+   con dos implementaciones: la web (`platform-web.ts`: localStorage,
+   IndexedDB, OPFS, WebGPU, los selectores y descargas del navegador) y
+   la del lanzador (`platform-desktop.ts`: lo anterior, más `/api/hardware`
+   y los diálogos y la API de archivos de P3b). `main.ts` construye con
+   ella los servicios de la interfaz, que no sabe cuál es. En escritorio
+   la página no toca el almacenamiento del navegador salvo una vez por
+   carpeta de datos, para copiar al lanzador lo que una versión anterior
+   dejó en el origen actual (marca `state/migration.json`).
+6. **Diálogos y archivos** (P3b): `POST /api/dialog/{folder,open,save}`
+   abre los diálogos del sistema y devuelve un permiso por ruta; la API de
+   archivos (`/api/files…`) solo lee o escribe rutas concedidas así en el
+   arranque actual, con escritura atómica y sin sobrescribir en las
+   carpetas de salida. La página nunca nombra una ruta que no le diera un
+   diálogo.
+7. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
    VRAM, la RAM y la recomendación de `src/data/ai-models.json`
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
    procesos del sistema y sin `unsafe`); lo usan el instalador y
    *Ajustes ▸ Post-procesado IA ▸ Equipo*.
+7. **Post-procesado IA, el motor de ejecución** (X3b, `src/ai/`): la compilación de
+   stable-diffusion.cpp que elige la regla de `src/data/ai-runtimes.json` (Vulkan si el equipo
+   tiene GPU que usar, CPU si no, o la que se fuerce) se descarga con el `curl` del sistema
+   (solo `https`, reanudable, a `<datos>/ai/runtimes/<sha256>.zip.part`), se comprueba con el
+   SHA-256 propio (si no coincide, no se instala nada), se descomprime con un lector de zip e
+   *inflate* propios (RFC 1951) en `<datos>/ai/runtimes/<sha256>/` y se le pregunta
+   `--version` y `--list-devices`. Para inferir, el lanzador arranca `sd-server` con los
+   argumentos de la familia del modelo (rutas del almacén de modelos), sin ventana de consola,
+   en `127.a.b.c` aleatoria y puerto libre, lo mantiene cargado entre llamadas, sigue su
+   progreso en la salida estándar, lo para si calla o tarda más de la cuenta, si se cancela, a
+   los 5 min sin uso y al cerrar, y limpia el que dejara un arranque anterior. API:
+   `GET /api/ai/runtime` (un `AiRuntimeStatus` de `src/core/ai.ts` y más),
+   `/api/ai/runtimes/<clave>[/download|/pause|/import|/probe]`, y **`POST /api/ai/run`**: una
+   inferencia *img2img* en crudo, sin guarda (imagen y control en PNG), con progreso por
+   `GET /api/ai/run/<id>?after=n`, imagen en `/image` y cancelación con `DELETE`, como los
+   trabajos de render. La guarda, los mosaicos y la tubería son X3a y X3c. Contrato completo en
+   `engine/crates/rt-app/README.md`.
 
 ## 6 · Interfaz (`src/ui/`)
 
@@ -484,6 +592,47 @@ externos, sin `unsafe`). Hace cinco cosas:
   plegadas) en `localStorage`, siempre dentro de `try/catch` y con valor
   por defecto.
 
+### 6.1 · El puerto del visor (`src/ui/ports.ts`)
+
+La interfaz no importa `render`: `main.ts` construye un `ViewportPort`
+sobre el motor que está en pantalla y se lo entrega. Es lo único que la
+interfaz sabe del visor:
+
+- **Imagen y tamaño**: `kind` (`'preview'` o `'pathtracer'`), `canvas`,
+  `backdrop` (la imagen del modo Completo, bajo el lienzo) y `resize`.
+- **Geometría, que es siempre la de la vista previa en los dos modos**:
+  `pick(x, y)` (la pieza, el triángulo, el punto y la normal bajo un
+  punto del lienzo), `projection()` y `visibleTriangles(part, rect)`.
+  - `projection(): Projection | null` da cómo se proyectan las piezas
+    **tal como se dibujan ahora** (ancho y alto en píxeles CSS y
+    `mvp(part)`, la matriz modelo-vista-proyección de una pieza). La
+    selección por caja (`core/box-select.ts`) prueba con ella la
+    geometría en pantalla, sin tocar three.
+  - `visibleTriangles(part, rect): Set<number> | null` devuelve los
+    triángulos de una pieza que se **ven** dentro de un rectángulo (px
+    CSS del lienzo): la vista previa dibuja la escena con un id de color
+    por triángulo en un destino fuera de pantalla, lee el rectángulo y
+    solo cuenta un píxel cuyos cuatro vecinos llevan el mismo id (una
+    erosión que quita los de silueta que se escapan de lo oculto). Lo que
+    otras piezas o la propia pieza tapan no cuenta; `null` si el visor no
+    puede decirlo. *Rayos X* no lo usa: coge por geometría.
+- **Resaltados**: `setHover(ids)` (contorno de piezas: bajo el cursor o
+  bajo un material arrastrado) y `setHoverFaces({ part, indices } | null)`
+  (las caras que alcanzaría un material arrastrado a nivel *Caras*: un
+  tinte sobre la pieza, en una capa aparte de la de las caras
+  seleccionadas).
+- **Herramientas y *gizmo***: `setTool`, `setGizmo`, `gizmoHover`,
+  `gizmoBegin`, `gizmoDrag`, `gizmoEnd`.
+- **Estado y miniaturas**: `status`, `onFrame`, `materialThumbnail`,
+  `thumbnailsPending`; **ajustes**: `setNavigation`, `setDisplay`.
+
+Los tres métodos nuevos de U7 y M1 (`projection`, `visibleTriangles`,
+`setHoverFaces`) son, en `main.ts`, una línea cada uno hacia la vista
+previa. Un doble de pruebas del visor basta para probar la selección por
+caja sin navegador (`tests/box-select.test.ts`); el gesto y lo que se
+ve se comprueban con `tools/box-select-check.mjs` y
+`tools/material-drag-check.mjs`.
+
 ---
 
 ## 7 · Pruebas
@@ -493,6 +642,8 @@ externos, sin `unsafe`). Hace cinco cosas:
 | Catálogos y matemáticas de luz | `tests/data.test.ts`, `light-math`, `rig` | Recuentos fijados, fórmulas con números, normalización 16 × 71 |
 | Modelo | `tests/store.test.ts`, `scene`, `materials`, `doctor`… | Acciones puras: dado un estado, la acción produce el esperado; deshacer lo devuelve |
 | Interfaz | `tests/strings.test.ts`, `ui-achromatic.test.ts` | Invariantes estáticas sobre fuentes |
+| Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
+| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs` | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |

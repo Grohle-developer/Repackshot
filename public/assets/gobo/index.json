@@ -1,0 +1,222 @@
+{
+  "generator": "tools/assets/gobos.mjs",
+  "version": 1,
+  "size": 1024,
+  "bitDepth": 8,
+  "convention": "Covers [-1, 1]^2, v up; grey = light that passes (255 open). sha256 is of the PNG file; pixelsSha256 of the raw 8-bit pixels (canonical).",
+  "gobos": [
+    {
+      "id": "window_2x3",
+      "file": "window-2x3.png",
+      "seed": 0,
+      "recipe": {
+        "kind": "window",
+        "columns": 2,
+        "rows": 3,
+        "halfWidth": 0.62,
+        "halfHeight": 0.86,
+        "frame": 0.05,
+        "bar": 0.035
+      },
+      "description": "window with 2 x 3 panes",
+      "size": 1024,
+      "bytes": 2255,
+      "sha256": "b14316828cf571a92f4d60de1fa21717aa8116a4a6357d0f7573046ac4e82224",
+      "pixelsSha256": "8de839952a9b8d600dc8d21dd07b65c20136cd7587dce4fe0f69270ea33eeb87"
+    },
+    {
+      "id": "window_3x4",
+      "file": "window-3x4.png",
+      "seed": 0,
+      "recipe": {
+        "kind": "window",
+        "columns": 3,
+        "rows": 4,
+        "halfWidth": 0.7,
+        "halfHeight": 0.88,
+        "frame": 0.045,
+        "bar": 0.03
+      },
+      "description": "window with 3 x 4 panes",
+      "size": 1024,
+      "bytes": 2389,
+      "sha256": "d2e57af3c2a9cb2c18ed0aeefbe093f2bbf43d18d188c42e97b92bfcce0ae655",
+      "pixelsSha256": "97e5a1c43343acff8a678aa821ec313e951f8d4e25797f4e1d099b2b2edd7a6b"
+    },
+    {
+      "id": "window_arched",
+      "file": "window-arched.png",
+      "seed": 0,
+      "recipe": {
+        "kind": "archedWindow",
+        "halfWidth": 0.55,
+        "bottom": -0.9,
+        "spring": 0.2,
+        "frame": 0.05,
+        "bar": 0.035,
+        "rows": 3
+      },
+      "description": "arched window with a fan of bars",
+      "size": 1024,
+      "bytes": 9258,
+      "sha256": "d7bb9504aa33935f6db8f583afe77f29bcd8354acd2b4e7aad782e66e5603973",
+      "pixelsSha256": "780085b101994f7efb467250fc3f9cad2b1f205381743603b536a0cf5ee32c94"
+    },
+    {
+      "id": "blinds",
+      "file": "blinds.png",
+      "seed": 0,
+      "recipe": {
+        "kind": "blinds",
+        "slats": 16,
+        "closed": 0.58,
+        "angleDeg": 0,
+        "halfWidth": 0.9,
+        "halfHeight": 0.9
+      },
+      "description": "horizontal venetian blinds",
+      "size": 1024,
+      "bytes": 1991,
+      "sha256": "b7388cf5e0967a834988197c48a6161c1b3237a7efbde113e87bfee312b88374",
+      "pixelsSha256": "062b980e0e0cbc5df4c0c03c9baaeb270311299b79db230ed98343d1483a5e78"
+    },
+    {
+      "id": "blinds_angled",
+      "file": "blinds-angled.png",
+      "seed": 0,
+      "recipe": {
+        "kind": "blinds",
+        "slats": 12,
+        "closed": 0.5,
+        "angleDeg": 22,
+        "halfWidth": 0.9,
+        "halfHeight": 0.9
+      },
+      "description": "venetian blinds at 22 degrees",
+      "size": 1024,
+      "bytes": 31343,
+      "sha256": "f7ec8e546f6c76fd4246dc728741a4c90713560189163b2a88c943583a2480ea",
+      "pixelsSha256": "a5bfc133e05293e99a6f392950e49256307c35f250a714bcb9c49a8906ae26f9"
+    },
+    {
+      "id": "leaves",
+      "file": "leaves.png",
+      "seed": 2001,
+      "recipe": {
+        "kind": "leaves",
+        "count": 150,
+        "lengthMin": 0.2,
+        "lengthMax": 0.4,
+        "warp": 0.05,
+        "mottle": 0.25
+      },
+      "description": "foliage shadow, large leaves",
+      "size": 1024,
+      "bytes": 210900,
+      "sha256": "d0108de93b7bba31de2c461f509feec3e234131ab6512b7a05390e482424dab9",
+      "pixelsSha256": "d4f6c8780f9ad288ec3fce30c8b852231845c93c485b9948e6fe3593609dc4da"
+    },
+    {
+      "id": "leaves_dense",
+      "file": "leaves-dense.png",
+      "seed": 2004,
+      "recipe": {
+        "kind": "leaves",
+        "count": 270,
+        "lengthMin": 0.12,
+        "lengthMax": 0.26,
+        "warp": 0.04,
+        "mottle": 0.2
+      },
+      "description": "foliage shadow, small dense leaves",
+      "size": 1024,
+      "bytes": 244769,
+      "sha256": "ef1898d55ccb8a7dbd5f8e4d9f56c7dbbf1d3566879d8f5e958c6d0e4293b0d4",
+      "pixelsSha256": "e2e8236e5567f13ced39899bc9e6e83efadc6bdfe5a44f6c69bbf96011b9980f"
+    },
+    {
+      "id": "dappled",
+      "file": "dappled.png",
+      "seed": 2002,
+      "recipe": {
+        "kind": "dappled",
+        "scales": [
+          4,
+          8,
+          15
+        ],
+        "fill": 0.66,
+        "soft": 0.55,
+        "warp": 0.22
+      },
+      "description": "dappled sunlight through a canopy",
+      "size": 1024,
+      "bytes": 339605,
+      "sha256": "0479809adf22145773558283edce844d5360410e9b40b2c57d974874a96ed727",
+      "pixelsSha256": "ec281f71be1ca894183b9702e36e3abad7521c944b71f1db5ac4c6214b1b4e52"
+    },
+    {
+      "id": "dots",
+      "file": "dots.png",
+      "seed": 0,
+      "recipe": {
+        "kind": "dots",
+        "columns": 14,
+        "radius": 0.3
+      },
+      "description": "grid of round holes",
+      "size": 1024,
+      "bytes": 31678,
+      "sha256": "99850f20a832c36b81c92015063415a0e24bfc2d02f1a73f38ef4dda31f3d457",
+      "pixelsSha256": "81e2ad00c15dd5c68805235df271301e1bf08a4abd4cdfe2adad36faf3372080"
+    },
+    {
+      "id": "lines",
+      "file": "lines.png",
+      "seed": 0,
+      "recipe": {
+        "kind": "lines",
+        "count": 20,
+        "halfWidth": 0.2
+      },
+      "description": "thin vertical light lines",
+      "size": 1024,
+      "bytes": 2427,
+      "sha256": "6087ffe7b05231af535f135ba12631698ea876bc17e92c682be45cda1077c3c3",
+      "pixelsSha256": "6c352af91eadd13db41de1bc8c9d52ed8a06d4ec0d8ac1929cdef64a426ea6c1"
+    },
+    {
+      "id": "radial_burst",
+      "file": "radial-burst.png",
+      "seed": 0,
+      "recipe": {
+        "kind": "radial",
+        "rays": 28,
+        "soft": 0.12,
+        "hub": 0.07
+      },
+      "description": "burst of rays from the centre",
+      "size": 1024,
+      "bytes": 103017,
+      "sha256": "04273c7be187d77652b2547d06d7d585e83f68726d7b21a8ef5103b12d2b980f",
+      "pixelsSha256": "e7286fc0130b2118958460f6756c3b60da9dbed0848b7d9ea6a97887b2c64fd2"
+    },
+    {
+      "id": "breakup_soft",
+      "file": "breakup-soft.png",
+      "seed": 2003,
+      "recipe": {
+        "kind": "breakup",
+        "scale": 2.1,
+        "octaves": 4,
+        "low": 0.4,
+        "high": 0.6
+      },
+      "description": "soft irregular breakup of the light",
+      "size": 1024,
+      "bytes": 121064,
+      "sha256": "ed20655d8c3c5c84966c8627a1f4d5c3fe46433be955f521a519a3821e5713db",
+      "pixelsSha256": "37569ee249e969cb5c98ea2bc22c71218855f30cabdd5e55d14b1d4e6f3fc0ed"
+    }
+  ]
+}

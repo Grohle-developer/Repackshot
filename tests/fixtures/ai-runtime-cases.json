@@ -1,0 +1,16 @@
+[
+  {"note": "Windows with a GPU: the Vulkan build", "input": {"os": "windows", "arch": "x86_64", "gpu": true, "force": null}, "expect": {"rowId": "gpu", "backend": "VULKAN", "key": "SDCPP_WIN_VULKAN"}},
+  {"note": "Windows without one: the CPU build", "input": {"os": "windows", "arch": "x86_64", "gpu": false, "force": null}, "expect": {"rowId": "no-gpu", "backend": "CPU", "key": "SDCPP_WIN_CPU"}},
+  {"note": "Linux with a GPU", "input": {"os": "linux", "arch": "x86_64", "gpu": true, "force": null}, "expect": {"rowId": "gpu", "backend": "VULKAN", "key": "SDCPP_LINUX_VULKAN"}},
+  {"note": "Linux without one", "input": {"os": "linux", "arch": "x86_64", "gpu": false, "force": null}, "expect": {"rowId": "no-gpu", "backend": "CPU", "key": "SDCPP_LINUX_CPU"}},
+  {"note": "a failed detection counts as no GPU: the CPU build runs everywhere", "input": {"os": "linux", "arch": "x86_64", "gpu": null, "force": null}, "expect": {"rowId": "no-gpu", "backend": "CPU", "key": "SDCPP_LINUX_CPU"}},
+  {"note": "forced CPU with a GPU", "input": {"os": "windows", "arch": "x86_64", "gpu": true, "force": "CPU"}, "expect": {"rowId": "forced-cpu", "backend": "CPU", "key": "SDCPP_WIN_CPU"}},
+  {"note": "forced Vulkan without a GPU the launcher could use (a card under 4 GiB, or one it did not see)", "input": {"os": "linux", "arch": "x86_64", "gpu": false, "force": "VULKAN"}, "expect": {"rowId": "forced-vulkan", "backend": "VULKAN", "key": "SDCPP_LINUX_VULKAN"}},
+  {"input": {"os": "windows", "arch": "x86_64", "gpu": null, "force": "VULKAN"}, "expect": {"rowId": "forced-vulkan", "backend": "VULKAN", "key": "SDCPP_WIN_VULKAN"}},
+  {"input": {"os": "linux", "arch": "x86_64", "gpu": true, "force": "VULKAN"}, "expect": {"rowId": "forced-vulkan", "backend": "VULKAN", "key": "SDCPP_LINUX_VULKAN"}},
+  {"note": "no pinned build for this system: the row decides, no key", "input": {"os": "macos", "arch": "aarch64", "gpu": true, "force": null}, "expect": {"rowId": "gpu", "backend": "VULKAN", "key": null}},
+  {"input": {"os": "linux", "arch": "aarch64", "gpu": false, "force": null}, "expect": {"rowId": "no-gpu", "backend": "CPU", "key": null}},
+  {"input": {"os": "windows", "arch": "aarch64", "gpu": false, "force": "CPU"}, "expect": {"rowId": "forced-cpu", "backend": "CPU", "key": null}},
+  {"note": "an unknown forced backend is not a choice", "input": {"os": "windows", "arch": "x86_64", "gpu": true, "force": "CUDA"}, "expect": null},
+  {"note": "no input at all", "input": null, "expect": null}
+]

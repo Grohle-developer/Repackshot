@@ -4,7 +4,7 @@
 // and centre, reset, camera target, duplicate (independent or linked), group,
 // ungroup, move to group, linear and circular patterns of linked copies that
 // regenerate when edited, flip normals, smoothing angle and separate by
-// material. Pure functions over ProjectState; every operation is an action of
+// material or by CAD face. Pure functions over ProjectState; every operation is an action of
 // the store (prefix `scene/`), so it is undoable.
 
 import type { ActionBase, ProjectState } from './store';
@@ -31,7 +31,8 @@ import {
   type Mat4,
   type Vec3,
 } from './math';
-import { ensureMesh, flipMesh, getMesh, hashIndices, remapTriangleRanges, resmoothMesh, sliceMesh, triangleSource, type MeshId, type MeshRef } from './meshes';
+import { canSeparateByFaces, facePieces, type FacePiece } from './faces';
+import { ensureMesh, flipMesh, getMesh, hashIndices, remapTriangleRanges, resmoothMesh, sliceMesh, triangleSource, type MeshData, type MeshId, type MeshRef } from './meshes';
 import {
   boundsOf,
   centerXY,
@@ -422,6 +423,8 @@ export type TransformAction =
   | ({ type: 'scene/setSmoothAngle'; ids: NodeId[]; deg: number } & ActionBase)
   /** `names`: the name of each material, for the names of the new parts. */
   | ({ type: 'scene/separateByMaterial'; ids: NodeId[]; names?: Record<MaterialId, string> } & ActionBase)
+  /** Each part with CAD faces under `ids` becomes one part per face (phase M1). */
+  | ({ type: 'scene/separateByCadFaces'; ids: NodeId[] } & ActionBase)
   /** LIGHT: aims at a world point. */
   | ({ type: 'scene/aim'; id: NodeId; target: Vec3 } & ActionBase);
 
@@ -875,6 +878,49 @@ function setSmoothAngle(state: ProjectState, ids: readonly NodeId[], deg: number
   );
 }
 
+/**
+ * Replaces a part by one part per piece, in its place in the tree: each piece is a slice of the mesh, centred on
+ * its own bounds, with the transform of the part moved to that centre so the geometry stays where it was. The
+ * pieces keep the part's visibility, lock, smoothing and (renumbered) CAD faces. Returns their ids.
+ */
+function replaceByPieces(d: Draft, node: SceneNode, data: MeshData, pieces: readonly FacePiece[]): NodeId[] {
+  const at = d.detach(node.id);
+  const local = composeTransform(node.transform);
+  const made: NodeId[] = [];
+  for (const piece of pieces) {
+    const slice = sliceMesh(data, piece.tris);
+    const ref = ensureMesh(`${node.mesh!.id}~tris${hashIndices(piece.tris)}`, () => ({ data: slice.mesh }));
+    if (!ref) continue;
+    const id = d.newId();
+    const transform: Transform = { ...cloneTransform(node.transform), position: transformPoint(local, slice.centre).map((v) => round(v, 6)) as Vec3 };
+    const part: SceneNode = {
+      id,
+      name: piece.name,
+      kind: 'PART',
+      parent: node.parent,
+      children: [],
+      transform,
+      initial: cloneTransform(transform),
+      visible: node.visible,
+      locked: node.locked,
+      mesh: ref,
+      material: piece.material,
+      smooth: node.smooth,
+    };
+    if (piece.faceMaterials.length > 0) part.faceMaterials = piece.faceMaterials;
+    if (node.smoothAngle !== undefined) part.smoothAngle = node.smoothAngle;
+    // The CAD faces (STEP, IGES) of the slice, numbered in it.
+    if (node.faceRanges?.length) part.faceRanges = remapTriangleRanges(node.faceRanges, piece.tris);
+    d.nodes[id] = part;
+    made.push(id);
+  }
+  const list = [...d.children(node.parent)];
+  list.splice(at, 0, ...made);
+  d.setChildren(node.parent, list);
+  delete d.nodes[node.id];
+  return made;
+}
+
 function separateByMaterial(state: ProjectState, ids: readonly NodeId[], names: Record<MaterialId, string> = {}): ProjectState {
   const parts = partsUnder(state, ids).filter((p) => state.scene.nodes[p].faceMaterials?.length);
   if (parts.length === 0) return state;
@@ -895,43 +941,34 @@ function separateByMaterial(state: ProjectState, ids: readonly NodeId[], names: 
       if (selected.has(p)) nextSelection.push(p);
       continue;
     }
-    const at = d.detach(p);
-    const local = composeTransform(node.transform);
-    const made: NodeId[] = [];
     let i = 0;
-    for (const [mat, tris] of groups) {
-      const slice = sliceMesh(data, tris);
-      const ref = ensureMesh(`${node.mesh.id}~tris${hashIndices(tris)}`, () => ({ data: slice.mesh }));
-      if (!ref) continue;
-      const id = d.newId();
-      const transform: Transform = { ...cloneTransform(node.transform), position: transformPoint(local, slice.centre).map((v) => round(v, 6)) as Vec3 };
+    const pieces: FacePiece[] = [...groups].map(([mat, tris]) => {
       const label = mat === '' ? '' : (names[mat] ?? '');
       i++;
-      const part: SceneNode = {
-        id,
-        name: label ? `${node.name} (${label})` : `${node.name} ${i}`,
-        kind: 'PART',
-        parent: node.parent,
-        children: [],
-        transform,
-        initial: cloneTransform(transform),
-        visible: node.visible,
-        locked: node.locked,
-        mesh: ref,
-        material: mat === '' ? null : mat,
-        smooth: node.smooth,
-      };
-      if (node.smoothAngle !== undefined) part.smoothAngle = node.smoothAngle;
-      // The CAD faces (STEP, IGES) of the slice, numbered in it.
-      if (node.faceRanges?.length) part.faceRanges = remapTriangleRanges(node.faceRanges, tris);
-      d.nodes[id] = part;
-      made.push(id);
-    }
-    const list = [...d.children(node.parent)];
-    list.splice(at, 0, ...made);
-    d.setChildren(node.parent, list);
+      return { tris, name: label ? `${node.name} (${label})` : `${node.name} ${i}`, material: mat === '' ? null : mat, faceMaterials: [] };
+    });
+    const made = replaceByPieces(d, node, data, pieces);
     if (selected.has(p)) nextSelection.push(...made);
-    delete d.nodes[p];
+  }
+  return d.state(nextSelection, state.selection.level === 'FACES' ? 'PART' : state.selection.level);
+}
+
+/**
+ * Each part that carries two or more CAD faces (STEP, IGES; `faceRanges`) becomes one part per face, named after
+ * the part and numbered, with the colour the face had. Parts without CAD faces are left as they are.
+ */
+function separateByCadFaces(state: ProjectState, ids: readonly NodeId[]): ProjectState {
+  const parts = partsUnder(state, ids).filter((p) => canSeparateByFaces(state.scene.nodes[p]));
+  if (parts.length === 0) return state;
+  const d = new Draft(state);
+  const selected = new Set(state.selection.ids);
+  const nextSelection: NodeId[] = state.selection.ids.filter((id) => !parts.includes(id));
+  for (const p of parts) {
+    const node = d.nodes[p];
+    const data = node.mesh ? getMesh(node.mesh.id) : undefined;
+    if (!data) continue;
+    const made = replaceByPieces(d, node, data, facePieces(node));
+    if (selected.has(p)) nextSelection.push(...made);
   }
   return d.state(nextSelection, state.selection.level === 'FACES' ? 'PART' : state.selection.level);
 }
@@ -982,6 +1019,8 @@ export function reduceTransform(state: ProjectState, action: TransformAction): P
       return setSmoothAngle(state, action.ids, action.deg);
     case 'scene/separateByMaterial':
       return separateByMaterial(state, action.ids, action.names);
+    case 'scene/separateByCadFaces':
+      return separateByCadFaces(state, action.ids);
     case 'scene/aim':
       return aim(state, action.id, action.target);
     default:
@@ -1015,6 +1054,11 @@ export function sharesMaterial(state: ProjectState, ids: readonly NodeId[]): boo
     for (const m of partMaterials(state.scene.nodes[p])) if (partsWithMaterial(state, m).some((q) => q !== p)) return true;
   }
   return false;
+}
+
+/** Some part of `ids` carries CAD faces that "Separate by CAD faces" can cut (two or more). */
+export function hasCadFaces(state: ProjectState, ids: readonly NodeId[]): boolean {
+  return partsUnder(state, ids).some((p) => canSeparateByFaces(state.scene.nodes[p]));
 }
 
 /** Some part of `ids` carries face ranges that can be separated. */

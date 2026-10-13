@@ -3,6 +3,7 @@
 // need an inline confirmation return a ConfirmSpec for the caller to show
 // where the user acted (UI.md §4.3).
 
+import { materialPreset } from '../data/materials';
 import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
 import { activeCamera } from '../core/camera';
@@ -48,11 +49,15 @@ import {
 import { LIBRARY_PREFIX, isLibraryKey } from '../core/lighting';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
 import { imageIdsInUse, retainImages } from '../core/images';
-import { retainMeshes } from '../core/meshes';
+import { dropAction, type AssignAction, type DroppedMaterial, type DropTarget } from '../core/material-drop';
+import { applyBox, facesInBox, itemsInBox, type BoxCombine, type BoxMode, type Rect } from '../core/box-select';
+import { cadFaceRegion } from '../core/faces';
+import { getMesh, retainMeshes } from '../core/meshes';
 import { meshIdsInUse, resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
 import {
   cameraLookAt,
   defaultPatternParams,
+  hasCadFaces,
   movableTargets,
   partsWithMaterial,
   type PatternSpec,
@@ -381,9 +386,36 @@ export function cancelImport(ctx: Ctx): void {
   closeSheet(ctx);
 }
 
+/** "All files" in the system's dialogs. */
+const allFiles = () => ({ name: t('dialog.allFiles'), extensions: ['*'] });
+
 export async function importDialog(ctx: Ctx): Promise<void> {
-  const files = await pickFiles(MODEL_ACCEPT);
+  // The desktop: the system's open dialog through the launcher; the browser: its file input.
+  const dialogs = ctx.services.dialogs;
+  const files = dialogs ? ((await dialogs.openFiles({ title: t('dialog.importModel'), filters: [{ name: t('dialog.models'), extensions: [...READ_FORMATS] }, allFiles()] })) ?? []) : await pickFiles(MODEL_ACCEPT);
   if (files.length) await importFiles(ctx, files);
+}
+
+/**
+ * Writes an export (a scene, the viewport's image, the library): where the person says in the system's save dialog on
+ * the desktop, a download in the browser. Returns the name written, or null when nothing was.
+ */
+async function saveExport(ctx: Ctx, blob: Blob, name: string, title: string, filter: { name: string; extensions: string[] }): Promise<string | null> {
+  const dialogs = ctx.services.dialogs;
+  if (!dialogs) {
+    // Repackshot's own window (P3c) never downloads: WebView2 cancels it, and the dialogs come with the launcher.
+    if (ctx.services.windowHost) {
+      ctx.ui.toast(t('dialog.err.notReady'));
+      return null;
+    }
+    downloadBlob(blob, name);
+    return name;
+  }
+  const r = await dialogs.saveFile(blob, name, { title, filters: [filter] });
+  if (r.kind === 'SAVED') return r.name;
+  // A dialog that did not open has said why already (the launcher's error, in a toast).
+  if (r.kind === 'FAILED' && r.reason !== 'dialog') ctx.ui.toast(t('dialog.saveFailed', { name, reason: r.reason }));
+  return null;
 }
 
 /** The state of a new project, or of one just opened: nothing of the old one lingers in the interface. */
@@ -585,8 +617,17 @@ export function readDrop(dt: DataTransfer | null): { files: File[]; handles: Pro
 
 // --- Environment images (E5) -------------------------------------------------------------------
 
-const HDRI_ACCEPT = '.hdr,.exr,.rgbe,.pic';
-const PLATE_ACCEPT = '.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp';
+const HDRI_EXTENSIONS = ['hdr', 'exr', 'rgbe', 'pic'];
+const PLATE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
+
+/** One image file to read: the system's open dialog on the desktop (through the launcher), the file input in the browser. */
+async function pickImage(ctx: Ctx, title: StringKey, kind: StringKey, extensions: readonly string[]): Promise<File | undefined> {
+  const dialogs = ctx.services.dialogs;
+  const files = dialogs
+    ? ((await dialogs.openFiles({ title: t(title), filters: [{ name: t(kind), extensions: [...extensions] }, allFiles()] })) ?? [])
+    : await pickFiles(extensions.map((e) => `.${e}`).join(','));
+  return files[0];
+}
 
 /** An HDRI file by its name (dropped on the window it lights the scene instead of being imported). */
 export function isHdriFile(file: File): boolean {
@@ -605,7 +646,7 @@ export function imageErrorText(name: string, err: unknown, plate: boolean): stri
 
 /** Environment ▸ Load HDRI…: the file lights the scene (kind HDRI), in one undoable step. */
 export async function loadEnvironmentHdri(ctx: Ctx, file?: File): Promise<boolean> {
-  const f = file ?? (await pickFiles(HDRI_ACCEPT))[0];
+  const f = file ?? (await pickImage(ctx, 'dialog.loadHdri', 'dialog.hdri', HDRI_EXTENSIONS));
   if (!f) return false;
   try {
     const ref = await ctx.services.images.loadHdri(f);
@@ -619,7 +660,7 @@ export async function loadEnvironmentHdri(ctx: Ctx, file?: File): Promise<boolea
 
 /** Environment ▸ Background image ▸ Load image…: the picture behind the part (background BACKPLATE). */
 export async function loadBackplateImage(ctx: Ctx, file?: File): Promise<boolean> {
-  const f = file ?? (await pickFiles(PLATE_ACCEPT))[0];
+  const f = file ?? (await pickImage(ctx, 'dialog.loadPlate', 'dialog.images', PLATE_EXTENSIONS));
   if (!f) return false;
   try {
     const ref = await ctx.services.images.loadBackplate(f);
@@ -647,18 +688,16 @@ export function dropFiles(ctx: Ctx, files: readonly File[], handles: readonly Pr
 }
 
 /** The engine's scene for the output image, as the RSB file `rt` renders on the command line. */
-export function exportScene(ctx: Ctx): void {
-  const name = `${projectFileBase(ctx)}.rsb`;
-  downloadBlob(ctx.services.exportScene(ctx.store.get()), name);
-  ctx.ui.toast(t('toast.saved', { name }));
+export async function exportScene(ctx: Ctx): Promise<void> {
+  const saved = await saveExport(ctx, ctx.services.exportScene(ctx.store.get()), `${projectFileBase(ctx)}.rsb`, t('dialog.exportScene'), { name: t('dialog.scene'), extensions: ['rsb'] });
+  if (saved) ctx.ui.toast(t('toast.saved', { name: saved }));
 }
 
 export async function exportViewport(ctx: Ctx): Promise<void> {
   const blob = await ctx.services.captureViewport();
   if (!blob) return;
-  const name = `${projectFileBase(ctx)}-viewport.png`;
-  downloadBlob(blob, name);
-  ctx.ui.toast(t('toast.saved', { name }));
+  const saved = await saveExport(ctx, blob, `${projectFileBase(ctx)}-viewport.png`, t('dialog.exportImage'), { name: t('dialog.pngImage'), extensions: ['png'] });
+  if (saved) ctx.ui.toast(t('toast.saved', { name: saved }));
 }
 
 export function renameProject(ctx: Ctx, name: string): void {
@@ -755,9 +794,46 @@ export function maybeShowModelChooser(ctx: Ctx, o: { portable: boolean; pending:
   return show;
 }
 
+/** The person already answered our own question about closing (Ctrl/⌘ W on the desktop): the page closes without another. */
+let closeAnswered = false;
+
 /** Whether closing the page should ask first (General ▸ Confirm before closing; the page's beforeunload asks it). */
 export function shouldConfirmClose(ctx: Ctx): boolean {
-  return ctx.ui.get().settings['general.confirmClose'] && ctx.store.get().meta.dirty;
+  return !closeAnswered && ctx.ui.get().settings['general.confirmClose'] && ctx.store.get().meta.dirty;
+}
+
+/** The close questions on screen (closing again while one is asked does not stack another). */
+const closeQuestions = new WeakSet<ConfirmSpec>();
+
+/**
+ * Closing the desktop window, the one flow for every way to ask it: Ctrl/⌘ W and Ctrl/⌘ Q (guards.ts) and, in
+ * Repackshot's own window (P3c), the window's own close (its close button, Alt F4, the taskbar, the system menu, which
+ * the window turns into `close-requested`). Our unsaved-changes question (UI.md §4.3, when General ▸ Confirm before
+ * closing is on: Save · Don't save · Cancel), then the window closes: `close-ok` to our own window, `window.close()` in
+ * the browser's app window. Never the browser's own "Leave?" dialog.
+ */
+export function requestCloseWindow(ctx: Ctx): void {
+  const host = ctx.services.windowHost;
+  const close = ctx.services.desktop?.closeWindow;
+  if (!host && !close) return;
+  const go = () => {
+    // Our own window has no beforeunload to quieten: it closes when told.
+    if (host) return host.closeOk();
+    if (!close) return;
+    closeAnswered = true;
+    close();
+    // A window that did not close (the browser refused): the next close asks again.
+    setTimeout(() => (closeAnswered = false), 1500);
+  };
+  if (!ctx.ui.get().settings['general.confirmClose']) return go();
+  const asking = ctx.ui.get().prompt;
+  if (asking && closeQuestions.has(asking)) return;
+  afterUnsavedCheck(ctx, t('project.unsavedClose', { name: ctx.store.get().meta.name || t('app.untitled') }), go);
+  const spec = ctx.ui.get().prompt;
+  if (!spec || spec === asking) return;
+  closeQuestions.add(spec);
+  // The question sits under the project name, in the header: the Settings window, which is modal, makes way.
+  if (ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
 }
 
 /** Settings ▸ Render engine ▸ Measure performance: a real run of the example scene with the engine in use. */
@@ -809,6 +885,67 @@ export function setLevel(ctx: Ctx, level: SelectionLevel): void {
     ids = partsUnder(s, nodes).slice(0, 1);
   }
   ctx.store.dispatch({ type: 'scene/select', ids, mode: 'set', level });
+}
+
+/** What a click at the Faces level does with the faces already selected. */
+export type FaceClick = 'set' | 'add' | 'toggle' | 'remove';
+
+/**
+ * A click on a face at the Faces level (phase M1). The whole face under the pointer: a CAD face of a STEP or IGES
+ * part, otherwise the surface that continues from the triangle (core/faces.ts). `loose` (Shift) takes only the
+ * triangle that was hit. `mode`: replace the selection with it (plain click), add it (Shift), take it in or out
+ * (Ctrl: out when the triangle that was hit is already selected), take it out (Alt).
+ */
+export function selectFaceAt(ctx: Ctx, part: NodeId, tri: number, how: { loose?: boolean; mode?: FaceClick } = {}): void {
+  const s = ctx.store.get();
+  const node = s.scene.nodes[part];
+  if (!node || node.kind !== 'PART') return;
+  const data = node.mesh ? getMesh(node.mesh.id) : undefined;
+  const indices = how.loose || !data ? [tri] : cadFaceRegion(data, tri, { faceRanges: node.faceRanges });
+  if (indices.length === 0) return;
+  const held = s.selection.faces?.part === part && s.selection.faces.indices.includes(tri);
+  const mode = how.mode ?? 'set';
+  ctx.store.dispatch({ type: 'scene/selectFaces', part, indices, mode: mode === 'toggle' ? (held ? 'remove' : 'add') : mode });
+}
+
+/** The part that selection by box works on at the Faces level: the selected one, else the one at the middle of the box. */
+function facesTarget(ctx: Ctx, rect: Rect): NodeId | null {
+  const s = ctx.store.get();
+  const chosen = s.selection.faces?.part ?? partsUnder(s, selectedNodes(s))[0];
+  if (chosen && s.scene.nodes[chosen]?.kind === 'PART') return chosen;
+  const hit = ctx.services.viewport?.pick((rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2);
+  return hit && s.scene.nodes[hit.node]?.kind === 'PART' ? hit.node : null;
+}
+
+/**
+ * Selection by box with the Select tool (UI.md §4.1; core/box-select.ts has the rules): the models, groups or parts
+ * the rectangle reaches at the level in force, or at Faces the whole faces of the part being worked on that show in it
+ * (`xray`: also the hidden ones). `combine` replaces the selection, adds to it or takes from it. Returns how many items
+ * (faces' triangles) it reached; null when the viewport cannot project the parts. Selection is not undoable.
+ */
+export function selectInBox(ctx: Ctx, box: { rect: Rect; mode: BoxMode }, combine: BoxCombine, opts: { xray?: boolean } = {}): number | null {
+  const port = ctx.services.viewport;
+  const projection = port?.projection();
+  if (!port || !projection) return null;
+  const s = ctx.store.get();
+  if (s.selection.level !== 'FACES') {
+    const hit = itemsInBox(s, box.rect, box.mode, s.selection.level, projection);
+    ctx.store.dispatch({ type: 'scene/select', ids: applyBox(selectedNodes(s), hit, combine), mode: 'set', level: s.selection.level });
+    return hit.length;
+  }
+  const part = facesTarget(ctx, box.rect);
+  const node = part ? s.scene.nodes[part] : undefined;
+  const data = node?.mesh ? getMesh(node.mesh.id) : undefined;
+  const mvp = part ? projection.mvp(part) : null;
+  if (!part || !node || !data || !mvp) {
+    if (combine === 'replace') ctx.store.dispatch({ type: 'scene/select', ids: [], mode: 'set', level: 'FACES' });
+    return 0;
+  }
+  // What shows through the rectangle; a viewport that cannot tell leaves the geometry to decide, as X-ray does.
+  const visible = opts.xray ? null : port.visibleTriangles(part, box.rect);
+  const indices = facesInBox({ data, faceRanges: node.faceRanges, mvp, width: projection.width, height: projection.height, rect: box.rect, mode: box.mode, visible });
+  ctx.store.dispatch({ type: 'scene/selectFaces', part, indices, mode: combine === 'replace' ? 'set' : combine });
+  return indices.length;
 }
 
 export function deselect(ctx: Ctx): void {
@@ -1148,6 +1285,14 @@ export function separateByMaterial(ctx: Ctx, ids?: NodeId[]): void {
   ctx.store.dispatch({ type: 'scene/separateByMaterial', ids: target, names, label: L('undo.separate', { target: targetLabel(s, target) }) });
 }
 
+/** Separate by CAD faces (STEP, IGES): each part under the targets with CAD faces becomes one part per face. */
+export function separateByCadFaces(ctx: Ctx, ids?: NodeId[]): void {
+  const s = ctx.store.get();
+  const target = targetsOf(ctx, ids);
+  if (!hasCadFaces(s, target)) return;
+  ctx.store.dispatch({ type: 'scene/separateByCadFaces', ids: target, label: L('undo.separateCad', { target: targetLabel(s, target) }) });
+}
+
 /** Opens the inspector on a field of the selection and focuses it (Smoothing…, Rename from the viewport). */
 export function focusInspectorField(ctx: Ctx, field: string, section = 'part'): void {
   ctx.ui.set({ rightCollapsed: false });
@@ -1223,23 +1368,33 @@ export function requestSetup(ctx: Ctx, key: string): ConfirmSpec | null {
   };
 }
 
+/** What a dragged or chosen material is, before it is resolved: a catalogue key, an instance, or a library item. */
+export interface MaterialRef {
+  preset?: string;
+  material?: MaterialId;
+  library?: string;
+}
+
 /**
- * Assigns a material to the selection at its level (UI §4.1). When the
- * target holds different materials, returns the inventory to confirm.
+ * The name of what an assignment reaches, in both languages: a node, "3 parts", "1 face of Body". `faces` is how
+ * many faces the triangles of the target are (a drop reaches one; the selection may hold several, or loose triangles).
  */
-export function requestAssign(ctx: Ctx, src: { preset?: string; material?: MaterialId; library?: string }, ids?: NodeId[]): ConfirmSpec | null {
+function assignTarget(s: ProjectState, base: AssignAction, whole: boolean, faces?: number): Label {
+  if (base.faces) {
+    const part = s.scene.nodes[base.faces.part]?.name ?? '';
+    const n = faces ?? base.faces.indices.length;
+    return n === 1 ? L('inspector.face', { part }) : L('inspector.faces', { n, part });
+  }
+  return targetLabel(s, whole ? [] : base.targets);
+}
+
+/**
+ * Does the assignment, or returns the inline confirmation when the target holds materials that differ among
+ * themselves (UI §4.1): replace all, or keep the ones there are. One undo entry either way.
+ */
+function submitAssign(ctx: Ctx, base: AssignAction, matLabel: Label, tgt: Label): ConfirmSpec | null {
   const s = ctx.store.get();
-  // A material of the library (by item id) is offered to the store as the instance the item describes.
-  const item = src.library ? findItem(ctx.ui.get().library, 'material', src.library) : undefined;
-  if (src.library && !item) return null;
-  const base = assignAction(s, item ? { library: { id: item.id, instance: instanceFromItem(item) } } : { preset: src.preset, material: src.material }, 'REPLACE', ids);
-  const matLabel = item ? { en: item.name, es: item.name } : src.material ? materialLabel(s.materials[src.material]) : presetLabel(src.preset ?? '');
-  const tgt = base.faces
-    ? base.faces.indices.length === 1
-      ? L('inspector.face', { part: s.scene.nodes[base.faces.part]?.name ?? '' })
-      : L('inspector.faces', { n: base.faces.indices.length, part: s.scene.nodes[base.faces.part]?.name ?? '' })
-    : targetLabel(s, base.targets.length === s.scene.roots.length && !ids && selectedNodes(s).length === 0 ? [] : base.targets);
-  const label = L('undo.assign', { material: matLabel, target: tgt });
+  const label = L(base.copy ? 'undo.assignCopy' : 'undo.assign', { material: matLabel, target: tgt });
   const inv = inventoryFor(s, base);
   if (actionParts(s, base).length === 0) return null;
   if (!inv.needsConfirm) {
@@ -1257,8 +1412,46 @@ export function requestAssign(ctx: Ctx, src: { preset?: string; material?: Mater
   };
 }
 
+/** The assignment source of a reference and its name, or null when what it names is gone (a deleted library item). */
+function resolveMaterialRef(ctx: Ctx, src: MaterialRef): { source: DroppedMaterial; name: Label } | null {
+  const s = ctx.store.get();
+  if (src.library) {
+    // A material of the library (by item id) is offered to the store as the instance the item describes.
+    const item = findItem(ctx.ui.get().library, 'material', src.library);
+    return item ? { source: { library: { id: item.id, instance: instanceFromItem(item) } }, name: { en: item.name, es: item.name } } : null;
+  }
+  if (src.material) return s.materials[src.material] ? { source: { material: src.material }, name: materialLabel(s.materials[src.material]) } : null;
+  if (src.preset) return materialPreset(src.preset) ? { source: { preset: src.preset }, name: presetLabel(src.preset) } : null;
+  return null;
+}
+
+/**
+ * Assigns a material to the selection at its level (UI §4.1). When the
+ * target holds different materials, returns the inventory to confirm.
+ */
+export function requestAssign(ctx: Ctx, src: MaterialRef, ids?: NodeId[]): ConfirmSpec | null {
+  const s = ctx.store.get();
+  const ref = resolveMaterialRef(ctx, src);
+  if (!ref) return null;
+  const base = assignAction(s, ref.source, 'REPLACE', ids);
+  return submitAssign(ctx, base, ref.name, assignTarget(s, base, !ids && selectedNodes(s).length === 0 && base.targets.length === s.scene.roots.length));
+}
+
+/**
+ * A material dropped on something (UI §2.2, §2.3; the rules are in core/material-drop.ts): one assignment, one
+ * undo entry ("Assign Gold to Body"). `copy` (Alt) gives the target an instance of its own. May return the
+ * inline confirmation, like `requestAssign`.
+ */
+export function requestDrop(ctx: Ctx, src: MaterialRef, target: DropTarget, copy = false): ConfirmSpec | null {
+  const s = ctx.store.get();
+  const ref = resolveMaterialRef(ctx, src);
+  if (!ref) return null;
+  const base = dropAction(ref.source, target, copy);
+  return submitAssign(ctx, base, ref.name, assignTarget(s, base, false, 1));
+}
+
 /** Parses a drag payload: "preset:GOLD", "material:m3" or "library:<id>" (a material of the user's library). */
-export function parseMaterialDrag(data: string): { preset?: string; material?: MaterialId; library?: string } | null {
+export function parseMaterialDrag(data: string): MaterialRef | null {
   if (data.startsWith('preset:')) return { preset: data.slice(7) };
   if (data.startsWith('material:')) return { material: data.slice(9) };
   if (data.startsWith('library:')) return { library: data.slice(8) };
@@ -1444,16 +1637,15 @@ export function deleteLibraryItem(ctx: Ctx, kind: LibraryKind, id: string): void
   if (kind === 'material') ctx.store.dispatch({ type: 'material/unlinkLibrary', library: id, label: L('undo.libraryRemoved', { name: { en: item.name, es: item.name } }) });
 }
 
-/** Export library: downloads the JSON file. */
-export function exportLibraryFile(ctx: Ctx): void {
+/** Export library: the JSON file, downloaded (the browser) or where the save dialog says (the desktop). */
+export async function exportLibraryFile(ctx: Ctx): Promise<void> {
   const lib = ctx.ui.get().library;
   if (libraryIsEmpty(lib)) {
     ctx.ui.toast(t('library.exportEmpty'));
     return;
   }
-  const name = 'repackshot-library.json';
-  downloadBlob(ctx.services.library.export(lib), name);
-  ctx.ui.toast(t('library.exported', { n: allItems(lib).length, name }));
+  const name = await saveExport(ctx, ctx.services.library.export(lib), 'repackshot-library.json', t('dialog.exportLibrary'), { name: t('dialog.library'), extensions: ['json'] });
+  if (name) ctx.ui.toast(t('library.exported', { n: allItems(lib).length, name }));
 }
 
 /** Merges the text of a library file into the library and says what happened. */
@@ -1480,7 +1672,8 @@ export async function importLibraryFile(ctx: Ctx, file: File): Promise<void> {
 
 /** Import library: the system file picker, then the merge. */
 export async function importLibraryDialog(ctx: Ctx): Promise<void> {
-  const [file] = await pickFiles('.json,application/json');
+  const dialogs = ctx.services.dialogs;
+  const [file] = dialogs ? ((await dialogs.openFiles({ title: t('dialog.importLibrary'), filters: [{ name: t('dialog.library'), extensions: ['json'] }, allFiles()] })) ?? []) : await pickFiles('.json,application/json');
   if (file) await importLibraryFile(ctx, file);
 }
 
@@ -1542,7 +1735,7 @@ export function setRenderSettings(ctx: Ctx, patch: Partial<RenderSettings>, gest
 /** Asks again for the folder's permission while the click still counts as a user gesture. */
 async function folderAccess(ctx: Ctx, s: RenderSettings): Promise<void> {
   if (s.destination.kind !== 'FOLDER') return;
-  if (!(await ctx.services.files.ensureAccess(s.destination.id))) ctx.ui.toast(t('rw.folderDenied'));
+  if (!(await ctx.services.files.ensureAccess(s.destination.id))) ctx.ui.toast(t(ctx.services.files.desktop ? 'rw.folderDeniedDesktop' : 'rw.folderDenied'));
 }
 
 /** Adds jobs made from settings (first or last); returns the new jobs' ids. */

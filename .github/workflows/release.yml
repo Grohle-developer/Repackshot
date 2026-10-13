@@ -21,6 +21,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # The same pinned toolchain as engine.yml; wins over engine/rust-toolchain.toml.
+  RUST_VERSION: 1.97.0
+  RUSTUP_TOOLCHAIN: 1.97.0
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -38,8 +43,9 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           targets: wasm32-unknown-unknown, x86_64-pc-windows-gnu, x86_64-unknown-linux-musl
 
       - name: Packaging tools (mingw-w64 with windres, NSIS 3, musl)

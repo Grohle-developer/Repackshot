@@ -455,7 +455,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     folderBtn.setAttribute('aria-pressed', String(folder !== null));
     (folderBtn.querySelector('.rw-folder-name') as HTMLElement).textContent = folder ? folder.name : t('rw.chooseFolder');
     folderBtn.setAttribute('data-tip', folder ? t('rw.changeFolder') : files.canChooseFolder ? t('rw.chooseFolderTip') : t('rw.onlyDownload'));
-    destNote.textContent = files.canChooseFolder ? (folder ? t('rw.folderNote', { name: folder.name }) : '') : t('rw.onlyDownload');
+    destNote.textContent = files.canChooseFolder ? (folder ? t(files.desktop ? 'rw.folderNoteDesktop' : 'rw.folderNote', { name: folder.name }) : '') : t('rw.onlyDownload');
     showDone.set(s.showWhenDone);
     // Format.
     format.set(s.format);

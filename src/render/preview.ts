@@ -10,9 +10,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, type Pose } from '../core/animation';
+import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
-import { fitImageRect, getImage, type ImageData as RegistryImage, type Rect } from '../core/images';
+import { fitImageRect, getImage, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
 import { lightPosition, rigPivot, skySunDirection, type LightInstance } from '../core/lighting';
 import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
 import { getMesh } from '../core/meshes';
@@ -116,7 +117,7 @@ function imageCanvas(img: RegistryImage): HTMLCanvasElement {
  * The background of BACKPLATE for a `w x h` picture: the background colour, and over it the image placed
  * in `frame` by `fit` (core/images.ts `fitImageRect`, as the engine places it), clipped to the frame.
  */
-function plateCanvas(src: HTMLCanvasElement, fit: 'FILL' | 'FIT' | 'STRETCH', color: readonly number[], w: number, h: number, frame: Rect): HTMLCanvasElement {
+function plateCanvas(src: HTMLCanvasElement, fit: 'FILL' | 'FIT' | 'STRETCH', color: readonly number[], w: number, h: number, frame: FrameRect): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
@@ -233,6 +234,8 @@ export class PreviewEngine implements RenderEngine {
   private plateSource: { id: string; canvas: HTMLCanvasElement } | null = null;
   private readonly disc = softDisc();
   private faceOverlay: THREE.Mesh | null = null;
+  /** The faces a dragged material would reach (a lighter tint over the same depth rules as the selected faces). */
+  private dropOverlay: THREE.Mesh | null = null;
   private hover: readonly NodeId[] = [];
   private width = 1;
   private height = 1;
@@ -510,6 +513,8 @@ export class PreviewEngine implements RenderEngine {
       this.updateLayers();
       this.syncFaceOverlay(state);
     }
+    // The parts may have been rebuilt: the tint of a drag in progress would hang from one that is gone.
+    if (nodesChanged) this.dropOverlay = PreviewEngine.dropTint(this.dropOverlay);
     // The interface may hand the gizmo new ids before this sync: place it again with the state that has them.
     if (this.gizmoSpec && (full || nodesChanged || state.selection !== prev.selection)) this.placeGizmo();
     this.needsRender = true;
@@ -794,7 +799,7 @@ export class PreviewEngine implements RenderEngine {
   }
 
   /** The viewport's background image texture (`w x h` CSS pixels, at most 2048 on the longer side), cached. */
-  private viewportPlate(state: ProjectState, w: number, h: number, frame: Rect): THREE.Texture | null {
+  private viewportPlate(state: ProjectState, w: number, h: number, frame: FrameRect): THREE.Texture | null {
     const src = this.plateImage(state);
     if (!src) return null;
     const env = state.environment;
@@ -901,18 +906,15 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
-  private syncFaceOverlay(state: ProjectState): void {
-    this.faceOverlay?.removeFromParent();
-    this.faceOverlay?.geometry.dispose();
-    this.faceOverlay = null;
-    const f = state.selection.level === 'FACES' ? state.selection.faces : undefined;
-    if (!f || f.indices.length === 0) return;
-    const node = state.scene.nodes[f.part];
-    const obj = this.objects.get(f.part);
+  /** A tinted copy of some triangles of a part, a child of the part (so it moves with it); null without geometry. */
+  private faceTint(state: ProjectState, part: NodeId, indices: readonly number[], opacity: number): THREE.Mesh | null {
+    if (indices.length === 0) return null;
+    const node = state.scene.nodes[part];
+    const obj = this.objects.get(part);
     const data = node?.mesh ? getMesh(node.mesh.id) : undefined;
-    if (!obj || !data) return;
-    const pos = new Float32Array(f.indices.length * 9);
-    f.indices.forEach((tri, i) => {
+    if (!obj || !data) return null;
+    const pos = new Float32Array(indices.length * 9);
+    indices.forEach((tri, i) => {
       for (let k = 0; k < 3; k++) {
         const v = data.indices[tri * 3 + k];
         pos.set(data.positions.subarray(v * 3, v * 3 + 3), i * 9 + k * 3);
@@ -921,9 +923,30 @@ export class PreviewEngine implements RenderEngine {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const ink = this.outlineMaterial.uniforms.ink.value as THREE.Vector3;
-    const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(ink.x, ink.y, ink.z), transparent: true, opacity: 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false, side: THREE.DoubleSide });
-    this.faceOverlay = new THREE.Mesh(g, m);
-    obj.add(this.faceOverlay);
+    const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(ink.x, ink.y, ink.z), transparent: true, opacity, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(g, m);
+    obj.add(mesh);
+    return mesh;
+  }
+
+  private static dropTint(mesh: THREE.Mesh | null): null {
+    mesh?.removeFromParent();
+    mesh?.geometry.dispose();
+    (mesh?.material as THREE.Material | undefined)?.dispose();
+    return null;
+  }
+
+  private syncFaceOverlay(state: ProjectState): void {
+    this.faceOverlay = PreviewEngine.dropTint(this.faceOverlay);
+    const f = state.selection.level === 'FACES' ? state.selection.faces : undefined;
+    if (f) this.faceOverlay = this.faceTint(state, f.part, f.indices, 0.45);
+  }
+
+  /** The faces a dragged material would reach, tinted until the drag moves on (null clears them). */
+  setHoverFaces(spec: { part: NodeId; indices: readonly number[] } | null): void {
+    this.dropOverlay = PreviewEngine.dropTint(this.dropOverlay);
+    if (spec && this.state) this.dropOverlay = this.faceTint(this.state, spec.part, spec.indices, 0.3);
+    this.needsRender = true;
   }
 
   // ------------------------------------------------------------------ frame
@@ -948,7 +971,7 @@ export class PreviewEngine implements RenderEngine {
 
   /** Something to draw over the path tracer: an outline, selected faces, the gizmo. */
   private hasOverlay(): boolean {
-    if (this.faceOverlay || (this.gizmo.visible && !this.poseActive)) return true;
+    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive)) return true;
     for (const o of this.objects.values()) if (o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER)) return true;
     return false;
   }
@@ -989,8 +1012,8 @@ export class PreviewEngine implements RenderEngine {
    */
   private drawOverlayBase(cam: THREE.Camera): void {
     this.renderer.clear();
-    const faces = this.faceOverlay;
-    if (!faces) return;
+    const tints = [this.faceOverlay, this.dropOverlay].filter((m): m is THREE.Mesh => m !== null);
+    if (tints.length === 0) return;
     const bg = this.scene.background;
     const floorVisible = this.floor.visible;
     const lightsVisible = this.lightRoot.visible;
@@ -999,13 +1022,15 @@ export class PreviewEngine implements RenderEngine {
     this.floor.visible = false;
     this.lightRoot.visible = false;
     if (this.grid) this.grid.visible = false;
-    faces.visible = false;
+    for (const m of tints) m.visible = false;
     this.scene.overrideMaterial = this.depthOnly;
     this.renderer.render(this.scene, cam);
     this.scene.overrideMaterial = null;
-    faces.visible = true;
     this.renderer.autoClear = false;
-    this.renderer.render(faces, cam);
+    for (const m of tints) {
+      m.visible = true;
+      this.renderer.render(m, cam);
+    }
     this.renderer.autoClear = true;
     this.scene.background = bg;
     this.floor.visible = floorVisible;
@@ -1169,6 +1194,146 @@ export class PreviewEngine implements RenderEngine {
     const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
     const n = fromThree(normal);
     return { node: hit.object.userData.nodeId as NodeId, face: hit.faceIndex ?? 0, point: fromThree(hit.point), normal: [n[0], n[1], n[2]] };
+  }
+
+  // ------------------------------------------------------------------ box selection
+
+  /** How the parts are projected as they are drawn now (core/box-select.ts): the viewport's size and a matrix for each part. */
+  projection(): Projection | null {
+    if (!this.state || this.width <= 0) return null;
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const viewProj = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    return {
+      width: this.width,
+      height: this.height,
+      mvp: (id) => {
+        const obj = this.objects.get(id);
+        if (!(obj instanceof THREE.Mesh)) return null;
+        obj.updateWorldMatrix(true, false);
+        return new THREE.Matrix4().multiplyMatrices(viewProj, obj.matrixWorld).elements.slice();
+      },
+    };
+  }
+
+  private idTarget: THREE.WebGLRenderTarget | null = null;
+  private readonly idBlack = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, toneMapped: false });
+  private readonly idColours = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false });
+
+  /**
+   * The triangles of a part that show in a rectangle (CSS pixels), found by drawing the scene into an offscreen
+   * target with a flat colour for each: the other parts in black (they hide what is behind them), the part with the
+   * number of each triangle in its colour (and its own triangles hiding each other, as they do on the screen).
+   * A pixel counts when the four around it show the same triangle: the one-pixel lines along a silhouette, where
+   * the faces behind a ridge peep out by the rasterizer's rounding, are not what the person sees.
+   * Null when it cannot be drawn (too many triangles to number, no geometry).
+   */
+  visibleTriangles(part: NodeId, rect: Rect): Set<number> | null {
+    const state = this.state;
+    const obj = this.objects.get(part);
+    const node = state?.scene.nodes[part];
+    const data = node?.mesh ? getMesh(node.mesh.id) : undefined;
+    if (!state || !(obj instanceof THREE.Mesh) || !data || this.width <= 0 || this.height <= 0) return null;
+    const T = Math.floor(data.indices.length / 3);
+    if (T === 0 || T >= 0xffffff) return null;
+    const W = Math.max(1, Math.round(this.width));
+    const H = Math.max(1, Math.round(this.height));
+    if (!this.idTarget || this.idTarget.width !== W || this.idTarget.height !== H) {
+      this.idTarget?.dispose();
+      this.idTarget = new THREE.WebGLRenderTarget(W, H, { magFilter: THREE.NearestFilter, minFilter: THREE.NearestFilter, depthBuffer: true });
+    }
+    // The rectangle in target pixels, and a ring of one more around it for the pixels at its border.
+    const x0 = Math.min(W - 1, Math.max(0, Math.floor(rect.x0)));
+    const x1 = Math.min(W, Math.max(x0 + 1, Math.ceil(rect.x1)));
+    const y0 = Math.min(H - 1, Math.max(0, Math.floor(rect.y0)));
+    const y1 = Math.min(H, Math.max(y0 + 1, Math.ceil(rect.y1)));
+    const rx0 = Math.max(0, x0 - 1);
+    const rx1 = Math.min(W, x1 + 1);
+    const ry0 = Math.max(0, y0 - 1);
+    const ry1 = Math.min(H, y1 + 1);
+    // The part with an id in the colour of each triangle (not indexed: a colour for each corner).
+    const pos = new Float32Array(T * 9);
+    const col = new Uint8Array(T * 9);
+    for (let t = 0; t < T; t++) {
+      const id = t + 1;
+      for (let k = 0; k < 3; k++) {
+        const v = data.indices[3 * t + k];
+        pos.set(data.positions.subarray(3 * v, 3 * v + 3), 9 * t + 3 * k);
+        col[9 * t + 3 * k] = id & 255;
+        col[9 * t + 3 * k + 1] = (id >> 8) & 255;
+        col[9 * t + 3 * k + 2] = (id >> 16) & 255;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3, true));
+    const ids = new THREE.Mesh(g, this.idColours);
+    ids.frustumCulled = false;
+    obj.add(ids);
+    const r = this.renderer;
+    const cam = this.camera;
+    const was = { bg: this.scene.background, floor: this.floor.visible, lights: this.lightRoot.visible, grid: this.grid?.visible ?? false, part: obj.visible, faces: this.faceOverlay?.visible ?? false, drop: this.dropOverlay?.visible ?? false };
+    const found = new Set<number>();
+    try {
+      this.scene.background = null;
+      this.floor.visible = false;
+      this.lightRoot.visible = false;
+      if (this.grid) this.grid.visible = false;
+      if (this.faceOverlay) this.faceOverlay.visible = false;
+      if (this.dropOverlay) this.dropOverlay.visible = false;
+      r.setRenderTarget(this.idTarget);
+      r.setClearColor(0x000000, 1);
+      r.clear();
+      // Everything else is the occluder; the part is drawn after it, with its ids.
+      ids.visible = false;
+      obj.visible = false;
+      this.scene.overrideMaterial = this.idBlack;
+      r.autoClear = false;
+      r.render(this.scene, cam);
+      this.scene.overrideMaterial = null;
+      // Only `ids` (the part's child) is drawn now, as the root, over the depth of the rest.
+      ids.visible = true;
+      obj.visible = true;
+      r.render(ids, cam);
+      const pw = rx1 - rx0;
+      const ph = ry1 - ry0;
+      const buf = new Uint8Array(pw * ph * 4);
+      r.readRenderTargetPixels(this.idTarget, rx0, H - ry1, pw, ph, buf);
+      // Rows of the buffer run bottom up; `at` reads the id of a pixel by its screen coordinates (-1 outside the target).
+      const at = (x: number, y: number): number => {
+        if (x < 0 || y < 0 || x >= W || y >= H) return -1;
+        const i = ((ry1 - 1 - y) * pw + (x - rx0)) * 4;
+        return buf[i] | (buf[i + 1] << 8) | (buf[i + 2] << 16);
+      };
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const id = at(x, y);
+          if (id <= 0 || id > T || found.has(id - 1)) continue;
+          // A neighbour outside the target does not count against the pixel (the face runs off the screen).
+          const same = (nx: number, ny: number) => {
+            const n = at(nx, ny);
+            return n === id || n === -1;
+          };
+          if (same(x - 1, y) && same(x + 1, y) && same(x, y - 1) && same(x, y + 1)) found.add(id - 1);
+        }
+      }
+    } finally {
+      this.scene.overrideMaterial = null;
+      r.setRenderTarget(null);
+      r.autoClear = true;
+      r.setClearColor(0x000000, 0);
+      this.scene.background = was.bg;
+      this.floor.visible = was.floor;
+      this.lightRoot.visible = was.lights;
+      if (this.grid) this.grid.visible = was.grid;
+      obj.visible = was.part;
+      if (this.faceOverlay) this.faceOverlay.visible = was.faces;
+      if (this.dropOverlay) this.dropOverlay.visible = was.drop;
+      ids.removeFromParent();
+      g.dispose();
+      this.needsRender = true;
+    }
+    return found;
   }
 
   // ------------------------------------------------------------------ render

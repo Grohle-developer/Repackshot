@@ -156,8 +156,14 @@ de nivel (modelo / grupo / pieza), nombre, y a la derecha, al pasar el
 ratón, tres acciones en icono: ojo (ocultar), diana (encuadrar), candado
 (bloquear). Clic selecciona; `Ctrl` clic añade; `Shift` clic extiende;
 doble clic encuadra la pieza en el visor. Cada pieza muestra bajo su
-nombre, en texto auxiliar, el material que lleva. Arrastrar una miniatura
-de material del inspector sobre una fila la asigna. Menú contextual
+nombre, en texto auxiliar, el material que lleva. Arrastrar un material
+(una miniatura del catálogo o de *Míos*, o la esfera de la tarjeta del
+material, §2.4) sobre una fila lo asigna a esa fila y a todo lo que
+cuelga de ella (una pieza, un grupo, el modelo): la fila se marca con un
+borde discontinuo y el visor contornea lo que alcanzaría la suelta. Es una
+sola entrada de deshacer (*Deshacer: asignar Oro a Cuerpo*), `Alt` al
+soltar da una copia propia del material, `Esc` cancela y, si el destino
+lleva materiales distintos, antes se pregunta en línea (§4.1). Menú contextual
 (botón derecho): Aislar, Ocultar, Mostrar todo, Renombrar, Apoyar en el
 suelo, Centrar, Eliminar.
 
@@ -207,7 +213,10 @@ tapar la pieza:
 - **Arriba a la izquierda, barra de vista**: Seleccionar (`V`), Orbitar
   (`O`), Desplazar (`P`), Zoom (`Z`), separador, Encuadrar todo (`F`),
   Vistas (menú: tres cuartos, frontal, lateral, cenital, trasera),
-  Perspectiva / Ortográfica, separador, Bloquear cámara.
+  Perspectiva / Ortográfica, separador, Bloquear cámara. Con *Seleccionar*
+  o *Mover* y el nivel *Caras*, junto a las herramientas aparece el botón
+  de texto **Rayos X** (la caja de selección coge también las caras
+  ocultas).
 - **Arriba a la derecha**: nombre de la cámara activa (clic: lista) y
   resolución de salida actual (clic: abre la barra de render).
 - **Abajo a la izquierda, medidor de calidad**: modo y motor activos,
@@ -245,8 +254,55 @@ incrementos con `Shift`, y los campos del inspector actualizándose en
 vivo. Arrastrar es una sola entrada de deshacer. Las luces se mueven y
 apuntan con el mismo *gizmo* (la asa de apuntar es una línea al objetivo).
 
-**Arrastrar un material** del inspector sobre una pieza del visor la
-asigna; mientras se arrastra, la pieza bajo el cursor se resalta.
+**Arrastrar un material** (la misma fuente que en §2.2) sobre una pieza
+del visor lo asigna **al nivel de selección vigente**, igual que lo
+seleccionaría un clic en ese punto: con *Pieza*, la pieza; con *Grupo*,
+su ensamblaje (la pieza si no tiene); con *Modelo*, el modelo entero; con
+*Caras*, la cara entera bajo el cursor (la cara CAD, o la superficie que
+continúa, §4.1). Mientras se arrastra, una miniatura fantasma, arriba y a
+la derecha del puntero, lleva el nombre del material y dice *Copia* si se
+pulsa `Alt`; lo que alcanzaría la suelta se resalta (contorno en las
+piezas, tinte en las caras; se ve aunque *Contorno al pasar* esté
+apagado) y el cursor dice si se puede soltar. Soltar asigna con **una sola
+acción** y una entrada de deshacer; `Esc`, soltar fuera o salir de la
+ventana cancelan, y un clic sin mover en la miniatura sigue asignando a la
+selección. Un preset del catálogo o un elemento de *Míos* entra con la
+instancia que la escena ya tiene (la misma que un clic); la esfera de la
+selección **enlaza** el destino con su instancia (las piezas que la llevan
+comparten los cambios); con `Alt`, cualquiera de las tres da una **copia
+propia**. Si el destino lleva materiales distintos, se pregunta en línea
+antes de sobrescribir (§4.1). Un dedo no arrastra; el lápiz hace lo que el
+ratón.
+
+**Selección por caja** (herramientas *Seleccionar* y *Mover*, esta
+última donde no hay un asa del *gizmo* bajo el puntero): **`Ctrl/⌘` +
+arrastrar** con el botón izquierdo dibuja un rectángulo que **sustituye**
+la selección; con `Shift` además (`Ctrl/⌘ ⇧` + arrastrar) **añade**, y con
+`Alt` (`Ctrl/⌘ Alt` + arrastrar) **quita**. De izquierda a derecha es una
+**ventana** (coge lo que queda entero dentro; contorno continuo), de
+derecha a izquierda es un **cruce** (coge lo que toca; contorno
+discontinuo); los dos en tinta, sin color. Actúa al nivel vigente (§4.1):
+*Modelo*, *Grupo* y *Pieza* prueban la geometría proyectada de cada
+nodo (las piezas ocultas no cuentan, y no se mira qué tapa a qué: una
+pieza detrás de otra también se coge); *Caras* coge las caras enteras de **una pieza** (la seleccionada o,
+si no hay, la que está en el centro de la caja) que **se ven** dentro del
+rectángulo, y el botón **Rayos X** de la barra de vista (solo a ese nivel)
+las coge también aunque otras las tapen. Un arrastre de pocos píxeles es
+un clic (con sus teclas), `Esc` cancela, la caja solo dibuja el
+rectángulo (la selección cambia al soltar) y, como toda selección, no deja
+entrada de deshacer. La cámara no pierde nada: sin tecla, el botón
+izquierdo sigue orbitando, y `Shift` o `Alt` + arrastrar sin `Ctrl/⌘`
+son de la cámara como siempre; con *Seleccionar* y *Mover*, `Ctrl/⌘` +
+arrastrar ya no desplaza (quedan el botón derecho, la rueda y la
+herramienta *Desplazar*). Con el esquema *Alt + botón izquierdo orbita*
+o *Botón central orbita* (§2.9) el botón izquierdo está libre y **un
+arrastre sin más** dibuja la caja: `Shift` añade, con el central `Alt`
+quita y con *Alt + izquierdo* quitar es `Ctrl/⌘ Alt`. El lápiz es un
+ratón; un dedo sigue orbitando. El tooltip de *Seleccionar* lo cuenta, y
+funciona igual en *Rápido* y en *Completo*. Los **clics** no cambian: sin
+tecla sustituye, `Shift` añade, `Ctrl/⌘` mete o saca, `Alt` quita (salvo
+con *Alt + botón izquierdo orbita*, donde `Alt` es de la cámara), y un
+clic en vacío limpia.
 
 ### 2.4 · Inspector (derecha)
 
@@ -312,7 +368,14 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    nombre, categoría, y botón *Cambiar…* que despliega el **catálogo**:
    pestañas de categoría (`MATERIAL_CATEGORIES`), rejilla de esferas de
    4 columnas con el nombre debajo, filtro por texto. Clic asigna a la
-   selección al nivel elegido (§4.1); arrastrar también vale. Debajo, los
+   selección al nivel elegido (§4.1); **arrastrar también vale**: la
+   miniatura se suelta sobre una pieza del visor (§2.3) o una fila del
+   árbol (§2.2), y `Alt` al soltar da una copia propia. La esfera de la
+   tarjeta del material se arrastra igual (salvo la del material neutro
+   por defecto, que no es nada que repartir) y **enlaza** el destino con
+   esa instancia. A nivel *Caras* el catálogo aparece cuando hay una cara
+   seleccionada (mientras no, el inspector dice *Haz clic en una cara…*) y
+   la suelta cae en la cara bajo el cursor. Debajo, los
    **parámetros** de la familia del material: color, metal, rugosidad,
    barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; vidrio
    (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm y
@@ -540,13 +603,14 @@ título del grupo en versalitas auxiliares:
 | Grupo | Sección | Qué hay |
 | --- | --- | --- |
 | **Aplicación** | **General** | Idioma; tema (Oscuro · Claro · Sistema); al arrancar (*Modo estándar con el ejemplo* · *Proyecto vacío* · *Último proyecto*); unidades de la interfaz (mm, cm, m, pulgadas); recuperación automática (copia cada N minutos en el almacenamiento, *próximamente* hasta U2); confirmar al cerrar con cambios sin guardar |
-| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
+| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
 | **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
-| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo). Mientras la tubería de X3 no exista, arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
+| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Mientras la tubería de X3 no exista, arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
-| | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros, *Buscar actualizaciones* (*próximamente*) |
+| | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
+| | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con **Descargar**, el paquete de esta plataforma, y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con *Descargar · Notas · Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`) |
 | | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
 
 **Columna derecha**: título de la sección, una frase de qué se ajusta
@@ -557,6 +621,16 @@ desplegable). Una fila con un valor distinto del de fábrica lleva un
 punto y, al pasar, *Restablecer* en línea; al pie de cada sección,
 *Restablecer esta sección*. Lo que no existe todavía se ve,
 deshabilitado, con *próximamente*.
+
+**Ratón y caja de selección.** La fila *Ratón* (Preferencias ▸ Visor y
+navegación) dice en su línea auxiliar qué botón orbita (el derecho
+desplaza y la rueda hace zoom) y cómo se dibuja la caja de selección
+(§2.3): *con la herramienta Seleccionar, `Ctrl/⌘` + arrastrar dibuja una
+caja de selección en cualquier caso (añade `Shift` para añadir, `Alt` para
+quitar); donde el botón izquierdo está libre, un arrastre sin más
+también*. La frase ocupa tres o cuatro líneas auxiliares según el
+idioma, sin desbordar la fila, y el tooltip de *Seleccionar* cabe en sus
+280 px.
 
 **Post-procesado IA ▸ Modelo activo**: el modelo en uso (nombre,
 cuantización, licencia, tamaño) y su configuración: dispositivo
@@ -581,6 +655,22 @@ cerrar la aplicación) y cada fichero se comprueba con su `sha256` antes
 de marcarse *Listo*. **Importar modelo…** como describe `AI-POST.md` §5.
 Si el instalador dejó modelos elegidos para descargar, aparecen aquí
 descargándose desde el primer arranque.
+
+**Post-procesado IA ▸ Motor de ejecución** (solo escritorio, X3b): la compilación de
+stable-diffusion.cpp que toca (`src/data/ai-runtimes.json`) con su nombre y la marca *Aún sin
+probar en un equipo real* mientras `verified` esté vacío; por qué es esa (*Vulkan, porque se ha
+encontrado una tarjeta gráfica que usar* · *CPU, porque no…* · *como dice Ejecutar con*) y en qué
+dispositivo se ejecuta, tal como lo dijo el propio motor (`--list-devices`); su estado (*No
+descargado · 26 MB* · *Descargando 42 % · 11 MB de 26 MB* con barra · *En pausa* · *Comprobando el
+sha256* · *Descomprimiendo* · *Instalado · stable-diffusion.cpp version unknown, commit d637cfb*,
+y *cargado: <motor>/<modelo>* mientras el modelo está en memoria); licencia y versión de la
+*release* y lo que necesita el equipo (en Windows, el entorno de Visual C++; en Linux, glibc 2.38);
+acciones *Descargar*, *Pausar*, *Reanudar*, *Eliminar* (con confirmación) e *Instalar desde un
+archivo…* (un zip descargado con el navegador, que solo se instala si su `sha256` es el fijado);
+avisos en línea si el último intento falló, si no arranca en este equipo (con el motivo, p. ej. la
+DLL que falta) o si no hay `curl` para descargar. Debajo, **Ejecutar con**: *Automático* (Vulkan
+con tarjeta gráfica, la CPU sin ella) · *Vulkan (tarjeta gráfica)* · *CPU*. Nada de esta fila se
+estima: todo lo dice el lanzador.
 
 **Post-procesado IA ▸ Equipo**: lo detectado (GPU y su VRAM dedicada,
 RAM, núcleos, WebGPU sí o no y el tamaño máximo de búfer) y la
@@ -652,9 +742,26 @@ pieza). El selector aparece en la cabecera del inspector y encima del
   sobrescribir se pregunta en línea, con inventario: "Cuerpo contiene 3
   materiales (Oro, Vidrio, Goma). · Sustituir todos · Mantener los
   existentes y aplicar solo donde no hay · Cancelar".
-- En *Caras*, en U1 basta con el modo y la mecánica de selección por clic
-  sobre triángulos; la expansión a cara CAD entera es de una fase
-  posterior y lo dice el tooltip.
+- En *Caras* un clic coge **la cara entera** bajo el cursor: la cara CAD
+  si la pieza viene de STEP o IGES y, si no, la superficie que continúa
+  (crece desde el triángulo picado por continuidad, `SPEC.md` §3.2). Clic
+  sin más sustituye la selección de caras; `Ctrl/⌘` clic mete o saca la
+  cara entera; `Alt` clic la quita; `Shift` vuelve **suelto** el
+  triángulo picado: `Shift` clic lo añade, `Ctrl/⌘ ⇧` clic lo mete o saca
+  y `Alt ⇧` clic lo quita. El tooltip del nivel lo dice. *Separar por caras CAD* (menú de pieza) parte
+  la pieza en una nueva por cara CAD.
+- Con *Seleccionar* (o *Mover*), un clic en el visor, a cualquier nivel:
+  sin tecla sustituye la selección, `Shift` añade, `Ctrl/⌘` mete o saca,
+  `Alt` quita; un clic en vacío la limpia.
+- **Caja** (§2.3): `Ctrl/⌘` + arrastrar (con `Shift` añade, con `Alt`
+  quita), de izquierda a derecha una ventana y de derecha a izquierda un
+  cruce, al nivel vigente: modelos, grupos o piezas por su geometría
+  proyectada; caras enteras de una pieza, las que se ven (o todas con
+  *Rayos X*).
+- Soltar un material sobre algo (§2.2, §2.3) alcanza lo mismo que
+  alcanzaría un clic al nivel vigente, y la regla de los materiales
+  distintos de arriba vale igual: se pregunta en línea antes de
+  sobrescribir.
 
 ### 4.2 · Lenguaje de fotógrafo
 

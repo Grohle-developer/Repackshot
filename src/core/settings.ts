@@ -25,6 +25,7 @@ import { DEFAULT_DPI } from './print-size';
 import { patchSettings, type Destination, type OutputFormat } from './render';
 import type { SelectionLevel } from './scene';
 import type { ProjectState, ThemeSetting } from './store';
+import { validRelease, type ReleaseInfo } from './updates';
 
 /** Version of the stored document. 0 is the loose preferences of before (one localStorage entry each). */
 export const SETTINGS_SCHEMA = 1;
@@ -32,7 +33,7 @@ export const SETTINGS_SCHEMA = 1;
 export type LengthUnit = ImportUnit;
 export const LENGTH_UNITS: readonly LengthUnit[] = IMPORT_UNITS;
 
-export type SectionId = 'general' | 'preferences' | 'accessibility' | 'shortcuts' | 'engine' | 'ai' | 'storage' | 'desktop' | 'about';
+export type SectionId = 'general' | 'preferences' | 'accessibility' | 'shortcuts' | 'engine' | 'ai' | 'storage' | 'desktop' | 'updates' | 'about';
 export type SectionGroup = 'app' | 'render' | 'system';
 
 export interface SectionSpec {
@@ -52,6 +53,7 @@ export const SECTIONS: readonly SectionSpec[] = [
   { id: 'ai', group: 'render' },
   { id: 'storage', group: 'system' },
   { id: 'desktop', group: 'system', desktopOnly: true },
+  { id: 'updates', group: 'system' },
   { id: 'about', group: 'system' },
 ];
 export const SECTION_GROUPS: readonly SectionGroup[] = ['app', 'render', 'system'];
@@ -131,9 +133,14 @@ export interface Settings {
   'ai.guardDeltaE': number;
   'ai.guardDeltaE95': number;
   'ai.guardEdgePx': number;
+  /** Desktop: the inference runtime build, Automatic (Vulkan with a GPU, the CPU without one) or forced (AI-POST.md §7.1). */
+  'ai.backend': 'AUTO' | 'VULKAN' | 'CPU';
 
   'storage.historyCount': number;
   'storage.historyMB': number;
+
+  /** Look for a newer version once, in the background, when the application starts. */
+  'updates.atStartup': boolean;
 }
 
 export type SettingKey = keyof Settings;
@@ -158,6 +165,10 @@ export interface Layout {
   settingsSection: SectionId;
   /** The desktop portable's model chooser was shown (it is shown once). */
   chooserShown: boolean;
+  /** When the update feed last answered (ms since 1970), null: never. */
+  updateCheckedAt: number | null;
+  /** The latest release that answer named, so an offline start can still show it. */
+  updateLatest: ReleaseInfo | null;
 }
 
 export interface SettingsDoc {
@@ -229,9 +240,12 @@ export function defaultSettings(): Settings {
     'ai.guardDeltaE': 2,
     'ai.guardDeltaE95': 3,
     'ai.guardEdgePx': 2,
+    'ai.backend': 'AUTO',
 
     'storage.historyCount': 50,
     'storage.historyMB': 500,
+
+    'updates.atStartup': true,
   };
 }
 
@@ -251,6 +265,8 @@ export function defaultLayout(): Layout {
     viewportMode: 'FULL',
     settingsSection: 'general',
     chooserShown: false,
+    updateCheckedAt: null,
+    updateLatest: null,
   };
 }
 
@@ -288,6 +304,13 @@ interface RowBase {
   comingSoon?: boolean;
   /** Only in the desktop application. */
   desktopOnly?: boolean;
+  /** Only in the web version: about what the browser keeps or allows (hidden in the desktop application, P3e). */
+  webOnly?: boolean;
+}
+
+/** Whether a row exists where the interface runs (`desktop`: the launcher's window). */
+export function rowShownHere(row: Pick<RowBase, 'desktopOnly' | 'webOnly'>, desktop: boolean): boolean {
+  return desktop ? !row.webOnly : !row.desktopOnly;
 }
 
 export interface SettingMeta extends RowBase {
@@ -314,7 +337,7 @@ const num = (min: number, max: number, step: number, unit?: string, zero?: boole
 function setting(id: SettingKey, section: SectionId, block: string, control: ControlSpec, keywords: Keywords, extra: Partial<Pick<SettingMeta, 'aux' | 'comingSoon' | 'desktopOnly' | 'newProjects'>> = {}): SettingMeta {
   return { kind: 'setting', id, section, block, control, keywords, ...extra };
 }
-function row(id: string, section: SectionId, block: string, keywords: Keywords, extra: Partial<Pick<ExtraRow, 'aux' | 'comingSoon' | 'desktopOnly'>> = {}): ExtraRow {
+function row(id: string, section: SectionId, block: string, keywords: Keywords, extra: Partial<Pick<ExtraRow, 'aux' | 'comingSoon' | 'desktopOnly' | 'webOnly'>> = {}): ExtraRow {
   return { kind: 'extra', id, section, block, keywords, ...extra };
 }
 
@@ -394,20 +417,28 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   // AI post-processing ▸ Models and Hardware
   row('ai.models', 'ai', 'models', kw('models, download, z-image, flux, qwen, stable diffusion, licence', 'modelos, descargar, z-image, flux, qwen, stable diffusion, licencia')),
   row('ai.import', 'ai', 'models', kw('import model, safetensors, gguf, onnx, manifest', 'importar modelo, safetensors, gguf, onnx, manifiesto')),
+  // AI post-processing ▸ Runtime (desktop: stable-diffusion.cpp, X3b)
+  row('ai.runtime', 'ai', 'runtime', kw('runtime, stable-diffusion.cpp, sd.cpp, vulkan, cpu, download, inference', 'motor de ejecución, stable-diffusion.cpp, sd.cpp, vulkan, cpu, descargar, inferencia'), { desktopOnly: true }),
+  setting('ai.backend', 'ai', 'runtime', choice(['AUTO', 'VULKAN', 'CPU']), kw('run on, backend, vulkan, cpu, graphics card, force', 'ejecutar con, vulkan, cpu, tarjeta gráfica, forzar'), { aux: true, desktopOnly: true }),
   row('ai.hardware', 'ai', 'hardware', kw('hardware, gpu, vram, ram, webgpu, recommendation', 'equipo, gpu, vram, ram, webgpu, recomendación')),
 
   // Storage
   row('storage.usage', 'storage', 'usage', kw('storage, space, disk, free up, delete, cache', 'almacenamiento, espacio, disco, liberar, borrar, caché')),
   setting('storage.historyCount', 'storage', 'history', num(1, 1000, 1), kw('history, results, limit, count', 'historial, resultados, límite, número')),
   setting('storage.historyMB', 'storage', 'history', num(50, 20000, 50, 'MB'), kw('history, results, limit, size, megabytes', 'historial, resultados, límite, tamaño, megas')),
-  row('storage.persist', 'storage', 'browser', kw('persistent storage, keep data, evict', 'almacenamiento persistente, conservar datos'), { aux: true }),
+  row('storage.persist', 'storage', 'browser', kw('persistent storage, keep data, evict', 'almacenamiento persistente, conservar datos'), { aux: true, webOnly: true }),
   row('storage.folder', 'storage', 'browser', kw('data folder, open folder', 'carpeta de datos, abrir carpeta'), { desktopOnly: true }),
 
   // Desktop
   row('desktop.portable', 'desktop', 'desktop', kw('portable, data folder, installed', 'portable, carpeta de datos, instalado'), { desktopOnly: true }),
   row('desktop.browser', 'desktop', 'desktop', kw('browser, window, edge, chromium', 'navegador, ventana, edge, chromium'), { desktopOnly: true }),
   row('desktop.logs', 'desktop', 'desktop', kw('logs, log folder, diagnostics', 'registros, carpeta de registros, diagnóstico'), { desktopOnly: true }),
-  row('desktop.updates', 'desktop', 'desktop', kw('updates, new version', 'actualizaciones, nueva versión'), { desktopOnly: true, comingSoon: true }),
+
+  // Updates
+  row('updates.current', 'updates', 'updates', kw('installed version, current version, version, release', 'versión instalada, versión actual, versión, publicación')),
+  row('updates.check', 'updates', 'updates', kw('check for updates, updates, update, upgrade, new version, latest version, release, github', 'buscar actualizaciones, actualizaciones, actualizar, nueva versión, última versión, publicación, github')),
+  setting('updates.atStartup', 'updates', 'updates', toggle, kw('check at startup, updates, update, startup, automatic, background, new version', 'comprobar al iniciar, actualizaciones, actualizar, arranque, automático, segundo plano, nueva versión'), { aux: true }),
+  row('updates.last', 'updates', 'updates', kw('last checked, last check, updates, when', 'última comprobación, actualizaciones, cuándo')),
 
   // About
   row('about.version', 'about', 'version', kw('version, about', 'versión, acerca de')),
@@ -524,6 +555,8 @@ export function validateLayout(raw: unknown): Layout {
   if (raw.space === 'GLOBAL' || raw.space === 'LOCAL') out.space = raw.space;
   if (raw.viewportMode === 'FAST' || raw.viewportMode === 'FULL') out.viewportMode = raw.viewportMode;
   if (isSection(raw.settingsSection)) out.settingsSection = raw.settingsSection;
+  if (typeof raw.updateCheckedAt === 'number' && Number.isFinite(raw.updateCheckedAt) && raw.updateCheckedAt > 0 && raw.updateCheckedAt < 8.64e15) out.updateCheckedAt = Math.round(raw.updateCheckedAt);
+  out.updateLatest = validRelease(raw.updateLatest);
   return out;
 }
 
@@ -637,7 +670,7 @@ export interface SearchHit {
 
 /**
  * Rows whose label (in either language, through `label`) or keywords (either language) contain every word of
- * the query. `desktop` says whether desktop-only rows exist here. Ranked: label in the current language, then
+ * the query. `desktop` says whether desktop-only rows exist here (and web-only ones do not). Ranked: label in the current language, then
  * the other language, then keywords; ties keep the window's order.
  */
 export function searchSettings(query: string, opts: { lang: Lang; label: (row: RowMeta, lang: Lang) => string; desktop: boolean; rows?: readonly RowMeta[] }): SearchHit[] {
@@ -646,7 +679,7 @@ export function searchSettings(query: string, opts: { lang: Lang; label: (row: R
   const other: Lang = opts.lang === 'en' ? 'es' : 'en';
   const hits: SearchHit[] = [];
   for (const row of opts.rows ?? SETTING_ROWS) {
-    if (row.desktopOnly && !opts.desktop) continue;
+    if (!rowShownHere(row, opts.desktop)) continue;
     const mine = fold(opts.label(row, opts.lang));
     const theirs = fold(opts.label(row, other));
     const keys = [...row.keywords.en, ...row.keywords.es].map(fold).join(' | ');

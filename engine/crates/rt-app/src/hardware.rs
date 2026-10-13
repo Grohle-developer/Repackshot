@@ -351,7 +351,30 @@ pub fn detect() -> Hardware {
     if hw.cpu.is_empty() {
         hw.cpu = "CPU".into();
     }
+    if let Some(text) = std::env::var_os(TEST_GPUS) {
+        hw.gpus = parse_test_gpus(&text.to_string_lossy());
+    }
     hw
+}
+
+/// For tests only: replaces the detected graphics adapters (a check of the interface on a computer
+/// without a graphics card, phase P3e). `name|vendor|vram_bytes`, several separated by `;`; an
+/// empty or unreadable VRAM is unknown.
+pub const TEST_GPUS: &str = "REPACKSHOT_TEST_GPUS";
+
+/// The adapters of [`TEST_GPUS`].
+pub fn parse_test_gpus(text: &str) -> Vec<Gpu> {
+    text.split(';')
+        .filter_map(|item| {
+            let mut fields = item.split('|').map(str::trim);
+            let name = fields.next().filter(|n| !n.is_empty())?;
+            Some(Gpu {
+                name: name.to_string(),
+                vendor: fields.next().unwrap_or("").to_string(),
+                vram_bytes: fields.next().and_then(|v| v.parse().ok()),
+            })
+        })
+        .collect()
 }
 
 fn run(program: &str, args: &[&str], seconds: u64) -> Option<String> {
@@ -826,5 +849,26 @@ mod tests {
             Some("ZIMAGE_Q8")
         );
         assert_eq!(json.get("detected").unwrap().as_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_gpus_replace_the_detected_ones() {
+        assert_eq!(
+            parse_test_gpus("Test GPU 12 GB|NVIDIA|12884901888; Small|Intel|"),
+            vec![
+                Gpu {
+                    name: "Test GPU 12 GB".into(),
+                    vendor: "NVIDIA".into(),
+                    vram_bytes: Some(12_884_901_888),
+                },
+                Gpu {
+                    name: "Small".into(),
+                    vendor: "Intel".into(),
+                    vram_bytes: None,
+                },
+            ]
+        );
+        assert!(parse_test_gpus("").is_empty());
+        assert!(parse_test_gpus(" ; |x|1").is_empty());
     }
 }

@@ -21,6 +21,8 @@ Do not add a dependency. If something is missing, write it.
 | `crates/rt-cli` | binaries `rt`, `rt-bench` + library | Native front end: reads an `.rsb` file, renders progressively on all cores within the time budget, writes a PNG; `rt --sheet` renders the contact sheet; `rt-bench` measures ray throughput. Files, threads and timing live here. |
 | `crates/rt-wasm` | `cdylib` + `rlib` | WebAssembly build with a hand-written C ABI (no `wasm-bindgen`). Its `unsafe` is confined to `src/ffi.rs`. |
 | `crates/rt-app` | binary `repackshot` + library | The desktop launcher (P2): serves the interface on 127.0.0.1 with a per-launch token, opens it in an Edge or Chromium app window, renders natively on every thread through `/api/render` (the same film as `rt`), stores AI models by SHA-256 and detects the hardware for the model recommendation. `std` only, `#![forbid(unsafe_code)]`. Its API contract (in Spanish) is [`crates/rt-app/README.md`](crates/rt-app/README.md). |
+| `crates/rt-post` | library | The AI post-processing guard (AI-POST.md §3.2, §7.2) and all its pixel work: conditioning (edges from id and normal discontinuities, normalised depth), tiles of about 1024² with ≥ 128 px overlap and raised-cosine blending, padding to multiples of 16 and cropping back, the guard (shading transfer, frequency separation, regions by id with CIEDE2000), its checks and the step machine `plan` → `tile_input` / `conditioning` → `accept` (accepted, retry at a lower strength, rejected), with a `GuardReport`-shaped JSON report. Same rules as `rt-core` (no OS APIs, `#![forbid(unsafe_code)]`, `f32`, `fmath` only); `rt-core` does not know it exists. |
+| `crates/rt-post-wasm` | `cdylib` + `rlib` | `rt-post` for the browser with a hand-written C ABI (`public/engine/post.wasm`, a module of its own so `rt.wasm` does not grow). Its `unsafe` is confined to `src/ffi.rs`; data crosses as little-endian bytes, so no pointer needs alignment. |
 | `tools/wasi-run.mjs` | script | Cargo runner that executes `wasm32-wasip1` test binaries under Node's WASI (see below). |
 | `tools/wasm-parity.mjs` | script | Renders an RSB scene with the real `rt_wasm.wasm` in Node and checks its film hash against the native one. |
 
@@ -41,7 +43,15 @@ cargo build --release -p rt-cli                 # target/release/rt
 From the repository root, `npm run engine:test` runs the tests and `npm run engine:build` builds
 the WebAssembly module twice (`tools/engine-build.mjs`): `public/engine/rt.wasm`, scalar, and
 `public/engine/rt-simd.wasm`, built with `-C target-feature=+simd128` into its own target directory
-(`target/simd128`); the browser takes the second when it validates simd128. Both are git-ignored.
+(`target/simd128`); the browser takes the second when it validates simd128. The same script builds
+the AI guard, `public/engine/post.wasm` (`rt-post-wasm`, scalar). All are git-ignored.
+
+The guard's native/wasm parity: `cargo test -p rt-post` pins five scenarios (image hash, the hash
+of what the model is given, the report JSON) in `../tests/fixtures/ai-guard.json`
+(`REPACK_WRITE_FIXTURES=1 cargo test -p rt-post` rewrites it), and
+`npx vitest run tests/ai-post-wasm.test.ts` from the repository root runs them through the real
+`post.wasm` and must give the same bits (`REPACK_REQUIRE_POST_WASM=1` makes a missing module an
+error instead of a skip).
 
 The `test` profile uses `opt-level = 1`: the BVH tests compare against a brute-force loop over
 every triangle (tens of millions of triangle tests), which is ten times faster that way. Debug

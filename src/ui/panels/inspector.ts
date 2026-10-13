@@ -28,9 +28,14 @@ export function contextOf(s: ProjectState): Context {
   return { kind: 'scene' };
 }
 
-function contextKey(s: ProjectState): string {
+/**
+ * What the inspector is built for; it is rebuilt when this changes. At the Faces level the inspector is not the
+ * same with faces selected (material, wear, part) as without (a note to click one), so that goes in the key: the
+ * first face of a part that was selected without any has to bring the material section in.
+ */
+export function contextKey(s: ProjectState): string {
   const c = contextOf(s);
-  if (c.kind === 'parts') return `parts:${c.faces ? 'f:' : ''}${c.ids.join(',')}`;
+  if (c.kind === 'parts') return `parts:${c.faces ? `f${s.selection.faces && s.selection.faces.indices.length > 0 ? '+' : '-'}:` : ''}${c.ids.join(',')}`;
   if (c.kind === 'light' || c.kind === 'camera') return `${c.kind}:${c.id}`;
   return 'scene';
 }

@@ -1,0 +1,13 @@
+[package]
+name = "rt-post-wasm"
+description = "WebAssembly build of the Repackshot AI post-processing guard (rt-post): hand-written C ABI exports, no wasm-bindgen."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rt-post = { path = "../rt-post" }

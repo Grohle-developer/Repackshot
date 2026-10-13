@@ -222,9 +222,11 @@ cámaras × estudios × variantes de N2 cubren la producción.
 ### 3.8 · Activos de ejemplo
 
 Solo CC0 o con atribución registrada por archivo: **Poly Haven** (521
-modelos, 85 de mobiliario; 997 HDRI, 301 de interior;
-[licencia](https://polyhaven.com/license)), **ambientCG** (HDRI de
-interior y texturas de tela y madera; [licencia](https://docs.ambientcg.com/license/)),
+modelos, 85 de mobiliario; [licencia](https://polyhaven.com/license)),
+**ambientCG** (texturas de tela y madera;
+[licencia](https://docs.ambientcg.com/license/)). **Ningún HDRI de
+terceros**: los entornos son recetas propias generadas por nuestro motor
+(`STUDIO-TOOLS.md` §2),
 **Kenney** (kit de mobiliario CC0). **Khronos** (SheenChair,
 GlamVelvetSofa) es CC-BY 4.0 y exige atribución. **No** se empaqueta
 nada de Quaternius (licencia propia que prohíbe redistribuir) ni del 3D

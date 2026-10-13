@@ -68,7 +68,8 @@ Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
    `engine/` es Rust desde cero, solo `std`; nada de crates.io, nada
    copiado de otros renderizadores. CI lo comprueba.
 8b. **El motor es portable y determinista**: sin APIs del sistema en
-   `rt-core`, sin `unsafe` fuera del módulo `simd` y del *shim* de wasm,
+   `rt-core`, sin `unsafe` fuera del módulo `simd`, del *shim* de wasm y
+   de `rt-app/src/platform/` (la ventana nativa: Win32 y WebView2),
    `f32` en todo, y la misma escena con la misma semilla da los mismos
    píxeles en cualquier arquitectura y con cualquier número de hilos.
    `clippy -D warnings` y `cargo fmt` limpios.
@@ -95,6 +96,11 @@ Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
 - En este entorno crates.io está bloqueado (403). No importa: el motor no
   tiene dependencias. `rustup target add wasm32-unknown-unknown` sí
   funciona.
+- Con varios agentes trabajando a la vez la máquina va muy cargada y
+  algún test lento (`io-rhino`) puede pasar del tiempo límite: repite con
+  `npx vitest run --maxWorkers=2` antes de dar nada por roto. Y `pgrep -f`
+  también encuentra tu propia shell si el patrón aparece en la orden: usa
+  `pgrep -x`.
 - `rt.wasm` no se sube al repositorio: `npm run engine:build` lo genera en
   `public/engine/`; la interfaz tiene que arrancar sin él (solo con la
   vista previa) y decirlo en el medidor.

@@ -63,6 +63,11 @@ fn render(t: &TestServer, kind: &str, rsb: &[u8], extra: &str) -> Frame {
             last = f.pass;
             frame = Some(f);
         } else if f.flags & FLAG_DONE != 0 {
+            // Done with no newer pass: the last data frame was the final one (the end can land between two
+            // polls, so the reply that says so carries no data).
+            if let Some(last) = frame.as_mut() {
+                last.flags |= FLAG_DONE;
+            }
             break;
         }
         if frame.as_ref().is_some_and(|f| f.flags & FLAG_DONE != 0) {

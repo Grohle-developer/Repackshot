@@ -198,7 +198,8 @@ async function newPage(browser) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  // The check for a newer version at startup asks api.github.com; while the repository is private that is a 404 the browser logs itself.
+  page.on('console', (m) => m.type() === 'error' && !m.location().url.startsWith('https://api.github.com/') && errors.push(m.text()));
   return { context, page, errors };
 }
 

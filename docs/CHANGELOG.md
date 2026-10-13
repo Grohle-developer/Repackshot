@@ -3,6 +3,42 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Interfaz
+
+- Arrastrar un material (una miniatura del catálogo o de *Míos*, o la esfera del material de la selección) sobre una pieza del visor o una fila del árbol lo asigna, con fantasma, resaltado y `Esc` para cancelar; una sola entrada de deshacer. En el visor llega a lo que seleccionaría un clic al nivel vigente (pieza, ensamblaje, modelo o cara). `Alt` al soltar da una copia propia. Si el destino lleva materiales distintos, se sigue preguntando en línea (U7).
+- Selección por caja con *Seleccionar* y *Mover*: `Ctrl/⌘` + arrastrar sustituye la selección, con `Shift` añade y con `Alt` quita. De izquierda a derecha es una ventana (lo que queda entero dentro, contorno continuo) y de derecha a izquierda un cruce (lo que toca, contorno discontinuo), a nivel *Modelo*, *Grupo*, *Pieza* o *Caras*; el botón *Rayos X* coge también las caras ocultas. Con los esquemas del ratón que dejan libre el botón izquierdo, un arrastre sin más dibuja la caja. Sin `Ctrl/⌘`, el botón izquierdo sigue orbitando; `Ctrl/⌘` + arrastrar ya no desplaza con esas herramientas (U7).
+- A nivel *Caras*, un clic coge la cara entera (la cara CAD en STEP e IGES; en el resto de mallas, la superficie que continúa). `Shift` clic añade un triángulo suelto, `Ctrl/⌘` clic mete o saca la cara y `Alt` clic la quita (M1).
+- *Separar por caras CAD* deja de ser *próximamente*: está en el menú de pieza y parte una pieza de STEP o IGES en una por cara CAD, cada una con su color (M1).
+- Los clics en el visor combinan con la selección que había: `Shift` añade, `Ctrl/⌘` mete o saca, `Alt` quita (U7).
+- Ajustes ▸ Preferencias ▸ Visor y navegación ▸ Ratón y el tooltip de *Seleccionar* cuentan cómo se dibuja la caja, en español y en inglés (U7).
+
+### Correcciones
+
+- El inspector no se reconstruía al coger la primera cara de una pieza (M1).
+- Asignar un material que el destino ya llevaba creaba una entrada de deshacer vacía (U7).
+
+## v0.1.1 — 2026-10-13
+
+### Ajustes
+
+- **Actualizaciones**, una sección nueva encima de *Acerca de*: *Buscar
+  actualizaciones* con el resultado en su fila, *Buscar al iniciar*
+  (activado por defecto) y *Última comprobación*. Al arrancar comprueba
+  en segundo plano y avisa en la barra de estado, con *Descargar* (el
+  paquete de tu plataforma), *Notas* y *Más tarde*.
+
+### Limitaciones conocidas
+
+- La comprobación lee las releases públicas de GitHub de
+  `Grohle-developer/Repackshot`; mientras el repositorio sea privado
+  dirá que no encuentra versiones publicadas.
+- Siguen las de v0.1.0; los arreglos de escritorio que pediste (visor
+  vivo durante el render, cola que se pausa, ventana propia sin avisos
+  del navegador, diálogos nativos, arrastrar materiales) llegan en la
+  siguiente.
+
 ## v0.1.0 — 2026-10-13
 
 Primera versión. Abre en modo estándar, con un estudio ya montado.

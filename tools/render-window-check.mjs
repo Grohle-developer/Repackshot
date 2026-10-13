@@ -136,7 +136,8 @@ async function open(browser, query) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  // The check for a newer version at startup asks api.github.com; while the repository is private that is a 404 the browser logs itself.
+  page.on('console', (m) => m.type() === 'error' && !m.location().url.startsWith('https://api.github.com/') && errors.push(m.text()));
   await page.goto(`${BASE_URL}/?${query}`);
   await page.waitForSelector('#app[data-ready="1"]', { timeout: 90000 });
   // The engine is ready when Full can be chosen.

@@ -5,9 +5,11 @@ import type { StudioItem } from '../../core/library';
 import type { NodeId, SceneNode, SelectionLevel } from '../../core/scene';
 import { ancestors, effectiveVisible, levelForKind, SELECTION_LEVELS } from '../../core/scene';
 import { lightShares } from '../../core/lighting';
+import { treeDropTarget } from '../../core/material-drop';
 import * as cmd from '../commands';
 import { segmented, textField, toggle } from '../components/controls';
 import { libraryFoot, mineEmpty, mineRows, namePrompt, type MineSpec } from '../components/library';
+import { registerDropZone } from '../components/material-drag';
 import { confirmBox, openMenu, tabs } from '../components/widgets';
 import { partMenu } from './part-menu';
 import { h, icon } from '../dom';
@@ -119,25 +121,6 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
     });
     el.addEventListener('mouseenter', () => ui.set({ hover: node.id }));
     el.addEventListener('mouseleave', () => ui.get().hover === node.id && ui.set({ hover: null }));
-    // Drop a material from the catalogue onto the row.
-    el.addEventListener('dragover', (e) => {
-      if (!e.dataTransfer?.types.includes('application/x-repackshot-material')) return;
-      e.preventDefault();
-      el.classList.add('is-drop');
-    });
-    el.addEventListener('dragleave', () => el.classList.remove('is-drop'));
-    el.addEventListener('drop', (e) => {
-      el.classList.remove('is-drop');
-      const src = cmd.parseMaterialDrag(e.dataTransfer?.getData('application/x-repackshot-material') ?? '');
-      if (!src) return;
-      e.preventDefault();
-      const spec = cmd.requestAssign(ctx, src, [node.id]);
-      if (spec) {
-        const host = h('div', { class: 'tree-confirm' });
-        el.after(host);
-        host.appendChild(confirmBox(spec, () => host.remove()));
-      }
-    });
     return el;
   };
 
@@ -186,6 +169,47 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
 
   scope.watch((s, u) => [s.scene.nodes, s.scene.roots, s.materials, u.treeFilter, u.folded], rebuild, shallowEq);
   scope.watch((s, u) => [s.selection, u.hover], paint, shallowEq);
+
+  // A material dragged onto a row (a part, a group or the model) goes to everything under it, in one action.
+  // The row lights up, and so do the parts in the viewport (the same outline as the pointer over them).
+  const rowAt = (el: Element): HTMLElement | null => el.closest<HTMLElement>('.tree-row');
+  let marked: HTMLElement | null = null;
+  const mark = (row: HTMLElement | null) => {
+    if (row === marked) return;
+    marked?.classList.remove('is-drop');
+    row?.classList.add('is-drop');
+    marked = row;
+  };
+  scope.onDispose(
+    registerDropZone(list, {
+      over: (p) => {
+        const row = rowAt(p.el);
+        const id = row?.dataset.id;
+        const target = id ? treeDropTarget(store.get(), id) : null;
+        mark(target ? row : null);
+        const hover = target ? (id ?? null) : null;
+        if (ui.get().hover !== hover) ui.set({ hover });
+        return target !== null;
+      },
+      leave: () => {
+        mark(null);
+        if (ui.get().hover) ui.set({ hover: null });
+      },
+      drop: (p, payload) => {
+        const row = rowAt(p.el);
+        const id = row?.dataset.id;
+        const target = id ? treeDropTarget(store.get(), id) : null;
+        const src = cmd.parseMaterialDrag(payload);
+        if (!row || !target || !src) return;
+        const spec = cmd.requestDrop(ctx, src, target, p.alt);
+        if (spec) {
+          const host = h('div', { class: 'tree-confirm' });
+          row.after(host);
+          host.appendChild(confirmBox(spec, () => host.remove()));
+        }
+      },
+    }),
+  );
   return list;
 }
 
