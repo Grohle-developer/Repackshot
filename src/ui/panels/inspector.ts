@@ -76,7 +76,7 @@ export function inspectorPanel(ctx: Ctx, scope: Scope): HTMLElement {
     h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('common.collapse'), 'data-tip': t('common.collapse'), 'data-kbd': kbdFor('panels'), onclick: () => ui.set({ rightCollapsed: true }) }, icon('panelRight')),
   );
   // While a file waits for its options the sheet takes the place of the contextual inspector (UI.md §2.3).
-  const body = dynamic(scope, (s, u) => (u.importSheet ? `import:${u.importSheet.id}` : contextKey(s)), (sc) => {
+  const body = dynamic(scope, (s, u) => (u.importSheet ? `import:${u.importSheet.id}:${u.importSheet.rev ?? 0}` : contextKey(s)), (sc) => {
     if (ctx.ui.get().importSheet) return importSheet(ctx, sc);
     const s = ctx.store.get();
     const c = contextOf(s);

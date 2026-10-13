@@ -7,7 +7,21 @@ import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
 import { activeCamera } from '../core/camera';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
-import { applyImportOptions, centrePivot, defaultImportOptions, releaseImport, type ImportMessage, type ImportOptions } from '../core/import-options';
+import {
+  applyImportOptions,
+  centrePivot,
+  defaultImportOptions,
+  ImportError,
+  releaseImport,
+  TESSELLATION_PRESETS,
+  tessellationOf,
+  tessellationPreset,
+  type ImportDetected,
+  type ImportMessage,
+  type ImportOptions,
+  type ImportPayload,
+  type ImportProgress,
+} from '../core/import-options';
 import {
   addItem,
   cleanName,
@@ -51,7 +65,7 @@ import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel,
 import { writePref } from './prefs';
 import type { Ctx } from './reactive';
 import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob } from './render-queue';
-import { effectiveMode, type Tool, type ViewportMode } from './ui-state';
+import { effectiveMode, type CadReadState, type PendingImport, type Tool, type ViewportMode } from './ui-state';
 import { L, formatClock, formatNumber, getLang, t, type StringKey } from './strings';
 
 export type { ConfirmSpec };
@@ -90,11 +104,11 @@ export function pickFiles(accept: string, multiple = false): Promise<File[]> {
   });
 }
 
+/** CAD formats (phase I2): tessellated on import, so the sheet opens at once and reads them in the background. */
+export const CAD_FORMATS = ['step', 'stp', 'iges', 'igs'];
 /** Extensions read in this version (the importers live in src/io/import.ts; ui cannot import them: a test keeps both lists equal). */
-export const READ_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', '3dm', '3mf', 'ply', 'dae', 'usd', 'usda', 'usdc', 'usdz'];
-/** Formats the empty state lists as coming soon (CAD, phase I2). */
-export const SOON_FORMATS = ['step', 'stp', 'iges', 'igs'];
-export const MODEL_ACCEPT = [...READ_FORMATS, ...SOON_FORMATS].map((f) => `.${f}`).join(',');
+export const READ_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', '3dm', '3mf', 'ply', 'dae', 'usd', 'usda', 'usdc', 'usdz', ...CAD_FORMATS];
+export const MODEL_ACCEPT = READ_FORMATS.map((f) => `.${f}`).join(',');
 
 /** The sentence for a note or warning an importer attached. */
 export function importMessageText(name: string, m: ImportMessage): string {
@@ -145,10 +159,8 @@ export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<voi
 async function readNext(ctx: Ctx, q: ImportQueue): Promise<void> {
   const file = q.waiting.shift()!;
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  if (SOON_FORMATS.includes(ext)) {
-    const msg = t('import.soon', { format: ext.toUpperCase() });
-    ctx.ui.set({ importMessage: msg });
-    ctx.ui.toast(msg);
+  if (CAD_FORMATS.includes(ext)) {
+    openCadSheet(ctx, file, ext === 'iges' || ext === 'igs' ? 'IGES' : 'STEP', q.waiting.length);
     return;
   }
   if (!READ_FORMATS.includes(ext)) {
@@ -167,19 +179,130 @@ async function readNext(ctx: Ctx, q: ImportQueue): Promise<void> {
       importSheet: { id: ++sheetCounter, name: file.name, format: read.format, payload: read, warnings: read.warnings, notes: read.notes, options, queued: q.waiting.length },
     });
   } catch (err) {
-    const msg = t('import.failed', { name: file.name, reason: err instanceof Error ? err.message : String(err) });
+    const msg = t('import.failed', { name: file.name, reason: importErrorText(err) });
     ctx.ui.set({ importMessage: msg });
     ctx.ui.toast(msg);
   }
 }
 
-/** Changes some of the sheet's values. */
+// --- CAD files: the sheet opens at once and the file is read (again, at another quality) behind it ----------
+
+/** The CAD read of an interface: the file, its sheet, the read in flight and a re-read waiting for the fields to settle. */
+interface CadRead {
+  file: File;
+  sheet: number;
+  controller: AbortController | null;
+  timer: ReturnType<typeof setTimeout> | null;
+  /** The tessellation of the payload on the sheet (or being read), to know when the options ask for another. */
+  read: string;
+}
+const cadReads = new WeakMap<object, CadRead>();
+/** How long the tessellation fields must rest before the file is read again. */
+export const CAD_REREAD_DELAY_MS = 350;
+
+const EMPTY_DETECTED: ImportDetected = { units: null, upAxis: 'Z', upAxisDeclared: false, size: 0, hasLayers: false, hiddenParts: 0 };
+const emptyPayload = (): ImportPayload => ({ nodes: {}, roots: [], materials: {}, detected: { ...EMPTY_DETECTED } });
+const tessellationKey = (o: ImportOptions): string => JSON.stringify(tessellationOf(o));
+
+function setCad(ctx: Ctx, sheetId: number, patch: Partial<PendingImport> & { cad?: CadReadState }): void {
+  const sheet = ctx.ui.get().importSheet;
+  if (sheet && sheet.id === sheetId) ctx.ui.set({ importSheet: { ...sheet, ...patch } });
+}
+
+/** The sentence for an import that failed: the reason a CAD reader gave, or the reader's own message. */
+export function importErrorText(err: unknown): string {
+  if (err instanceof ImportError) return t(dyn(`import.error.${err.code}`));
+  return err instanceof Error ? err.message : String(err);
+}
+
+function openCadSheet(ctx: Ctx, file: File, format: 'STEP' | 'IGES', queued: number): void {
+  const options = defaultImportOptions(EMPTY_DETECTED, ctx.store.get().scene.roots.length > 0);
+  const id = ++sheetCounter;
+  ctx.ui.set({
+    importMessage: t('import.sheetHint', { name: file.name }),
+    rightCollapsed: false,
+    importSheet: { id, rev: 0, name: file.name, format, payload: emptyPayload(), warnings: [], notes: [], options, queued, cad: { stage: 'start' } },
+  });
+  cadReads.set(ctx.ui, { file, sheet: id, controller: null, timer: null, read: '' });
+  void readCad(ctx);
+}
+
+/** Reads the CAD file of the open sheet with the sheet's tessellation; the payload is replaced when it arrives. */
+async function readCad(ctx: Ctx): Promise<void> {
+  const r = cadReads.get(ctx.ui);
+  const sheet = ctx.ui.get().importSheet;
+  if (!r || !sheet || sheet.id !== r.sheet) return;
+  r.controller?.abort();
+  const controller = new AbortController();
+  r.controller = controller;
+  r.read = tessellationKey(sheet.options);
+  const sheetId = sheet.id;
+  const progress = (p: ImportProgress) => {
+    if (controller.signal.aborted) return;
+    const cad = ctx.ui.get().importSheet?.cad;
+    setCad(ctx, sheetId, { cad: { ...p, confirm: cad?.confirm } });
+  };
+  setCad(ctx, sheetId, { cad: { stage: 'start', confirm: sheet.cad?.confirm } });
+  try {
+    const read = await ctx.services.importFile(r.file, { tessellation: tessellationOf(sheet.options), signal: controller.signal, onProgress: progress });
+    const now = ctx.ui.get().importSheet;
+    if (controller.signal.aborted || !now || now.id !== sheetId) {
+      releaseImport(read);
+      return;
+    }
+    r.controller = null;
+    releaseImport(now.payload);
+    // The first read says the units the file declares: the sheet takes them, as it does for the other formats.
+    const first = (now.rev ?? 0) === 0;
+    const detected = defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0);
+    const options = first ? { ...now.options, units: detected.units, upAxis: detected.upAxis } : now.options;
+    const confirm = now.cad?.confirm === true;
+    ctx.ui.set({ importSheet: { ...now, rev: (now.rev ?? 0) + 1, format: read.format, payload: read, warnings: read.warnings, notes: read.notes, options, cad: { stage: 'ready' } } });
+    if (confirm) confirmImport(ctx);
+  } catch (err) {
+    if (controller.signal.aborted || (err instanceof ImportError && err.code === 'aborted')) return;
+    r.controller = null;
+    const reason = importErrorText(err);
+    setCad(ctx, sheetId, { cad: { stage: 'error', error: reason } });
+    if (ctx.ui.get().importSheet?.id === sheetId) ctx.ui.set({ importMessage: t('import.failed', { name: r.file.name, reason }) });
+  }
+}
+
+/** Stops the CAD read of the sheet (if any) and forgets it. */
+function stopCad(ctx: Ctx): void {
+  const r = cadReads.get(ctx.ui);
+  if (!r) return;
+  if (r.timer) clearTimeout(r.timer);
+  r.controller?.abort();
+  cadReads.delete(ctx.ui);
+}
+
+/** Changes some of the sheet's values. A new tessellation reads a CAD file again once the fields rest. */
 export function setImportOptions(ctx: Ctx, patch: Partial<ImportOptions>): void {
   const sheet = ctx.ui.get().importSheet;
-  if (sheet) ctx.ui.set({ importSheet: { ...sheet, options: { ...sheet.options, ...patch } } });
+  if (!sheet) return;
+  const options = { ...sheet.options, ...patch };
+  if (patch.tessellation && patch.tessellation !== 'CUSTOM') Object.assign(options, TESSELLATION_PRESETS[patch.tessellation]);
+  else if (patch.chordPercent !== undefined || patch.angleDeg !== undefined) {
+    Object.assign(options, tessellationOf(options));
+    options.tessellation = tessellationPreset(options);
+  }
+  const r = cadReads.get(ctx.ui);
+  if (!r || r.sheet !== sheet.id || tessellationKey(options) === r.read) {
+    ctx.ui.set({ importSheet: { ...sheet, options } });
+    return;
+  }
+  // The counts on the sheet are of the old quality from now on: it says so, and Import waits for the new read.
+  ctx.ui.set({ importSheet: { ...sheet, options, cad: { stage: 'read', confirm: sheet.cad?.confirm } } });
+  if (r.timer) clearTimeout(r.timer);
+  r.timer = setTimeout(() => {
+    r.timer = null;
+    void readCad(ctx);
+  }, CAD_REREAD_DELAY_MS);
 }
 
 function closeSheet(ctx: Ctx): void {
+  stopCad(ctx);
   ctx.ui.set({ importSheet: null, importMessage: null });
   if (queueOf(ctx).waiting.length > 0) void importFiles(ctx, []);
 }
@@ -188,6 +311,12 @@ function closeSheet(ctx: Ctx): void {
 export function confirmImport(ctx: Ctx): void {
   const sheet = ctx.ui.get().importSheet;
   if (!sheet) return;
+  if (sheet.cad && sheet.cad.stage !== 'ready') {
+    // A CAD file still being read imports as soon as it is; one that failed cannot.
+    if (sheet.cad.stage === 'error') ctx.ui.toast(t('import.failed', { name: sheet.name, reason: sheet.cad.error ?? '' }));
+    else ctx.ui.set({ importSheet: { ...sheet, cad: { ...sheet.cad, confirm: true } } });
+    return;
+  }
   const { options, payload, name } = sheet;
   const applied = applyImportOptions(payload, options);
   if (applied.roots.length === 0) {

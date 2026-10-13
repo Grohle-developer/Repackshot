@@ -9,9 +9,10 @@
 //
 // The OBJ and STL readers are our own (phase I1); glTF, FBX, 3DM, 3MF, PLY,
 // DAE and USD go through three.js loaders (ARCHITECTURE §1) and the shared
-// converter in three-scene.ts.
+// converter in three-scene.ts; STEP and IGES through occt-import-js in a
+// worker (step.ts, phase I2), tessellated with the quality the sheet asks for.
 
-import { payloadSize, type ImportMessage, type ImportPayload } from '../core/import-options';
+import { payloadSize, type ImportMessage, type ImportPayload, type ImportReadOptions } from '../core/import-options';
 import { defaultInstance, plainInstance, type MaterialId, type MaterialInstance } from '../core/materials';
 import { boxCenter } from '../core/math';
 import { positionsBounds, registerMesh } from '../core/meshes';
@@ -20,7 +21,10 @@ import { isBinaryStl, looksLikeAsciiStl, type ParsedModel } from './mesh-common'
 
 export { LARGE_MODEL_MM, SMALL_MODEL_MM } from '../core/import-options';
 
-export type ImportFormat = 'GLTF' | 'OBJ' | 'STL' | 'FBX' | '3DM' | '3MF' | 'PLY' | 'DAE' | 'USD';
+export type ImportFormat = 'GLTF' | 'OBJ' | 'STL' | 'FBX' | '3DM' | '3MF' | 'PLY' | 'DAE' | 'USD' | 'STEP' | 'IGES';
+
+/** What a read can be told (core/import-options.ts): the tessellation of STEP and IGES, a cancel signal, progress. */
+export type ImportFileOptions = ImportReadOptions;
 
 /** Something to import: a browser `File`, or a name with its bytes (tests, drops from other sources). */
 export type ImportSource = File | { name: string; bytes: ArrayBuffer | ArrayBufferView };
@@ -50,6 +54,10 @@ const EXTENSIONS: Record<string, ImportFormat> = {
   usda: 'USD',
   usdc: 'USD',
   usdz: 'USD',
+  step: 'STEP',
+  stp: 'STEP',
+  iges: 'IGES',
+  igs: 'IGES',
 };
 
 /** Extensions this version reads (the interface lists them; it cannot import this module). */
@@ -73,6 +81,9 @@ function sniffHeader(bytes: Uint8Array): ImportFormat | null {
   if (top.startsWith('Kaydara FBX Binary')) return 'FBX';
   if (top.startsWith('3D Geometry File Format')) return '3DM';
   if (top.startsWith('PXR-USDC')) return 'USD';
+  if (/^\s*ISO-10303-21\s*;/.test(top)) return 'STEP';
+  // IGES: 80-column records with the section letter in column 73, starting with the Start section.
+  if (/^[^\r\n]{72}S[ \d]{7}\r?\n/.test(top + latin1(bytes, 64, 90))) return 'IGES';
   if (/^ply\r?\n/.test(top)) return 'PLY';
   const text = head(bytes).trimStart();
   if (text.startsWith('#usda')) return 'USD';
@@ -90,8 +101,8 @@ function sniffHeader(bytes: Uint8Array): ImportFormat | null {
 /**
  * Detects the format: a binary glTF by its magic number, then the extension,
  * then the header for a file without a known extension (the magic numbers and
- * first lines of FBX, 3DM, PLY, USD, DAE, 3MF; binary STL by its size, JSON
- * glTF, ASCII STL, OBJ statements).
+ * first lines of FBX, 3DM, PLY, USD, DAE, 3MF, STEP, IGES; binary STL by its
+ * size, JSON glTF, ASCII STL, OBJ statements).
  */
 export function detectFormat(name: string, bytes: Uint8Array): ImportFormat | null {
   const ext = extensionOf(name);
@@ -126,11 +137,16 @@ function arrayBufferOf(bytes: Uint8Array): ArrayBuffer {
  * Reads a model file in the units and axes of the file; throws an Error with a readable reason when it
  * cannot. The caller applies the import options (`applyImportOptions`) to get something the store adds.
  */
-export async function importFile(file: ImportSource): Promise<ImportResult> {
+export async function importFile(file: ImportSource, options: ImportFileOptions = {}): Promise<ImportResult> {
   const { name, bytes } = await readBytes(file);
   const format = detectFormat(name, bytes);
   if (!format) throw new Error('unknown file format');
   switch (format) {
+    case 'STEP':
+    case 'IGES': {
+      const { readStep } = await import('./step');
+      return { ...(await readStep(name, bytes, format, options)), format };
+    }
     case 'GLTF': {
       const { readGltf } = await import('./gltf');
       const buffer = arrayBufferOf(bytes);

@@ -52,7 +52,13 @@ la verdad; esta lista orienta). **rhino3dm 8.35.0** (openNURBS, MIT,
 Robert McNeel & Associates): lee `.3dm` en `io/rhino.ts`, cargado bajo
 demanda en un worker; `rhino3dm.js` y `.wasm` se copian de
 `node_modules` a `public/vendor/rhino3dm/` al construir
-(`tools/vendor.mjs`). Motor: Rust estable (1.97 al arrancar),
+(`tools/vendor.mjs`). **occt-import-js 0.0.23** (OpenCascade en wasm,
+LGPL-2.1, Viktor Kovács): lee STEP e IGES en `io/step.ts` con un worker
+propio (`io/step-worker.ts`) que descarga `occt-import-js.js` y `.wasm`
+sin modificar de `public/vendor/occt-import-js/`, copiados por
+`tools/vendor.mjs` con `license.occt-import-js.txt`, `license.occt.txt` y
+un `README.txt` con la versión y los enlaces al fuente;
+`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable (1.97 al arrancar),
 objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 `riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
 
@@ -85,7 +91,7 @@ src/
   ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core; workers con ONNX Runtime Web; la guarda es TypeScript puro
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
-    gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts (I2, OCCT)
+    gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
     project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2)
   ui/                       INTERFAZ. Habla con core a través del store (§6)

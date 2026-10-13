@@ -144,6 +144,9 @@ decisiones escritas (datos, contratos, revisión), no código.
   `simd128`, conmutador **Rápido · Completo**, *Render* siempre con el
   trazador, paridad exacta navegador / nativo; 561 tests web y 182 del
   motor — **Opus**.
+- **I2** · STEP e IGES con occt-import-js aislado, caras CAD como rangos
+  de triángulos con aristas vivas topológicas, ensamblaje, colores,
+  unidades y calidad de teselado; 682 tests — **Opus**.
 - **U5** · Ventana de render al estilo de KeyShot con *Imagen · Animación*,
   salida por plantilla, carpeta, ppp escritos en PNG y JPEG, PNG de 16
   bits y EXR, *Terminar por* muestras o tiempo, cola deshacible, visor de
@@ -319,7 +322,7 @@ tapa hasta aplicar el arreglo de escala: I3 lo resuelve aplicando las
 unidades de la hoja de importación antes de añadir el modelo y ajustando
 los planos de recorte al encuadrar.
 
-## I2 · STEP e IGES — **Opus**
+## I2 · STEP e IGES — **Opus** — hecha
 
 **Decisión tomada (Fable).** Se lee STEP (AP203, AP214, AP242) e IGES con
 **OpenCascade** compilado a wasm a través de `occt-import-js` 0.0.23. El
@@ -349,6 +352,33 @@ piezas): número de caras CAD, de piezas y de grupos exactos; cambiar la
 calidad cambia el número de triángulos; el módulo no se descarga hasta
 que se importa un STEP (test de que `import('…/occt')` no aparece en el
 chunk inicial de `vite build`).
+
+**Hecho.** STEP (AP203/214/242) e IGES con occt-import-js 0.0.23 en un
+worker de módulo, cargado al soltar el primer archivo CAD; la hoja se
+abre al instante con una línea de estado (descarga en MB, lectura,
+piezas) y la calidad de teselado en vivo (Baja · Media · Alta y
+*Personalizada* con cuerda en % del tamaño y ángulo), que vuelve a leer
+el archivo. Cada cara CAD es un rango de triángulos
+(`SceneNode.faceRanges`) con vértices y normales propios; aristas vivas =
+aristas entre caras; ensamblaje como grupos con nombre; colores como
+instancias SIMPLE; unidades declaradas leídas del texto del archivo;
+*Separar por cara CAD* en la hoja. La biblioteca va copiada sin
+modificar a `public/vendor/occt-import-js/` con sus dos textos LGPL-2.1
+y un README con el enlace al fuente, y un test tras `vite build`
+comprueba que no está en ningún *chunk*. 61 tests nuevos (682 en total),
+41 mutaciones comprobadas; captura `docs/ui/import-step.png`.
+
+No encajó con el plan: la biblioteca aplana los subensamblajes (un nivel
+de grupos como mucho) y no da nombres de colores (las instancias se
+llaman por su hexadecimal); STEP e IGES no declaran eje arriba y se toma
+**Z** (pendiente de Fable, ver *Decisiones*); el worker ejecuta el guion
+sin modificar con `new Function` (una CSP futura necesitaría
+`unsafe-eval` o un worker clásico); la conversión corre en el hilo
+principal (≈ 0,65 s por 230 k triángulos) y `ReadFile` no informa de
+progreso mientras tesela; en un ensamblaje con varias unidades manda la
+primera; las caras tangentes también quedan como aristas vivas, con
+normales iguales, así que el sombreado sigue suave; la primera lectura
+es siempre en calidad Media.
 
 ## I3 · Importadores y hoja de importación — **Sonnet** — hecha
 
@@ -1500,7 +1530,11 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 ## Decisiones pendientes de Fable (no adelantar)
 
 - **I2**: decidido: `occt-import-js` (LGPL-2.1) como única excepción
-  LGPL, aislada con las condiciones de `ARCHITECTURE.md` §1.
+  LGPL, aislada con las condiciones de `ARCHITECTURE.md` §1. Pendiente:
+  el **eje arriba** de STEP e IGES (hoy Z); SolidWorks y Creo exportan
+  con Y arriba, así que se valora leer `originating_system` de la
+  cabecera del STEP para elegirlo, y el **aspecto de catálogo** para los
+  colores CAD (hoy SIMPLE, rugosidad 0,5).
 - **Escritorio**: decidido: lanzador propio solo con `std` en lugar de
   Tauri (`ARCHITECTURE.md` §5.5); instalador NSIS; el instalador elige
   los modelos y la aplicación los descarga (`AI-POST.md` §2.2).

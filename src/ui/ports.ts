@@ -3,7 +3,7 @@
 // services from the engine and the importers and hands them in.
 
 import type { CameraId } from '../core/camera';
-import type { ImportMessage, ImportPayload } from '../core/import-options';
+import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
 import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
@@ -189,8 +189,11 @@ export interface AppServices {
   captureViewport(): Promise<Blob | null>;
   /** The engine's scene file (RSB, what `rt` renders on the command line) for the output image. */
   exportScene(state: ProjectState): Blob;
-  /** Reads a model file; throws with a readable reason. Names come from the file. */
-  importFile(file: File): Promise<ImportRead>;
+  /**
+   * Reads a model file; throws with a readable reason (an ImportError with a code for the CAD formats). Names
+   * come from the file. STEP and IGES take the tessellation, can be cancelled and report their progress.
+   */
+  importFile(file: File, options?: ImportReadOptions): Promise<ImportRead>;
   /** The project as a .repack.json blob. */
   serializeProject(state: ProjectState): Blob;
   /** The user's library as a file (Export library / Import library). */

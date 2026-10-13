@@ -3,7 +3,7 @@
 // parts worth remembering between sessions go to localStorage.
 
 import type { LightStyle, MaterialCategory } from '../data/types';
-import type { ImportMessage, ImportOptions, ImportPayload } from '../core/import-options';
+import type { ImportMessage, ImportOptions, ImportPayload, ImportProgress } from '../core/import-options';
 import { emptyLibrary, type Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
 import type { RenderSettings } from '../core/render';
@@ -49,13 +49,32 @@ export interface WizardState {
   shot: number | null;
 }
 
+/**
+ * Where the read of a CAD file (STEP, IGES) is. The sheet opens at once for them and says it: the reader
+ * downloading (`loaded` of `total` bytes), starting, reading and tessellating, building parts, done (`ready`),
+ * or `error` with the reason. `confirm` remembers an Import pressed before the file was read.
+ */
+export interface CadReadState {
+  stage: ImportProgress['stage'] | 'ready' | 'error';
+  loaded?: number;
+  total?: number;
+  /** The reason, in the interface language, when `stage` is `error`. */
+  error?: string;
+  confirm?: boolean;
+}
+
 /** A file that was read and waits for the import sheet (UI.md §2.3). The options are the sheet's current values. */
 export interface PendingImport {
   /** Changes with every file, so the sheet is rebuilt for the next one and only then. */
   id: number;
+  /** Changes when the payload is replaced (a CAD file read again at another quality), so the sheet is rebuilt. */
+  rev?: number;
   name: string;
   format: string;
+  /** The model as read; empty while a CAD file is still being read. */
   payload: ImportPayload;
+  /** CAD files only: the read in progress. */
+  cad?: CadReadState;
   warnings: ImportMessage[];
   notes: ImportMessage[];
   options: ImportOptions;

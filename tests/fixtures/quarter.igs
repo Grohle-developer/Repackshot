@@ -1,0 +1,15 @@
+A quarter of a cylinder, radius 10, height 20: one rational B-spline.   S      1
+Written by hand for the Repackshot tests.                               S      2
+1H,,1H;,16Hrepackshot-tests,11Hquarter.igs,16HRepackshot tests,         G      1
+7Hby hand,32,38,6,308,15,7Hquarter,1.,2,2HMM,1,0.01,15H20261013.000000, G      2
+1.E-06,100.,10HRepackshot,10HRepackshot,11,0,15H20261013.000000;        G      3
+     128       1       0       1       0       0       0       000000000D      1
+     128       0       2       4       0                   SHELL       0D      2
+     406       5       0       1       0       0       0       000010000D      3
+     406       0       0       1      15                    NAME       0D      4
+128,2,1,2,1,0,0,0,0,0,0.,0.,0.,1.,1.,1.,0.,0.,1.,1.,1.,                1P      1
+0.7071067811865476,1.,1.,0.7071067811865476,1.,10.,0.,0.,10.,          1P      2
+10.,0.,0.,10.,0.,10.,0.,20.,10.,10.,20.,0.,10.,20.,0.,1.,0.,1.,        1P      3
+0,1,3;                                                                 1P      4
+406,1,13HQuarter shell;                                                3P      5
+S      2G      3D      4P      5                                        T      1
