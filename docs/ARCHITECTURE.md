@@ -58,7 +58,7 @@ propio (`io/step-worker.ts`) que descarga `occt-import-js.js` y `.wasm`
 sin modificar de `public/vendor/occt-import-js/`, copiados por
 `tools/vendor.mjs` con `license.occt-import-js.txt`, `license.occt.txt` y
 un `README.txt` con la versión y los enlaces al fuente;
-`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable (1.97 al arrancar),
+`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable, **fijado a 1.97.0 en CI** (`RUST_VERSION` y `RUSTUP_TOOLCHAIN` en `engine.yml` y `release.yml`, la misma versión que las máquinas de desarrollo: cada Rust nuevo trae *lints* nuevos de clippy y con `-D warnings` pondría el CI en rojo sin que nada cambie; subir de versión es un cambio a propósito que arregla sus *lints*),
 objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 `riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
 
