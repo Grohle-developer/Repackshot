@@ -3,6 +3,26 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## v0.1.1 — 2026-10-13
+
+### Ajustes
+
+- **Actualizaciones**, una sección nueva encima de *Acerca de*: *Buscar
+  actualizaciones* con el resultado en su fila, *Buscar al iniciar*
+  (activado por defecto) y *Última comprobación*. Al arrancar comprueba
+  en segundo plano y avisa en la barra de estado, con *Descargar* (el
+  paquete de tu plataforma), *Notas* y *Más tarde*.
+
+### Limitaciones conocidas
+
+- La comprobación lee las releases públicas de GitHub de
+  `Grohle-developer/Repackshot`; mientras el repositorio sea privado
+  dirá que no encuentra versiones publicadas.
+- Siguen las de v0.1.0; los arreglos de escritorio que pediste (visor
+  vivo durante el render, cola que se pausa, ventana propia sin avisos
+  del navegador, diálogos nativos, arrastrar materiales) llegan en la
+  siguiente.
+
 ## v0.1.0 — 2026-10-13
 
 Primera versión. Abre en modo estándar, con un estudio ya montado.
