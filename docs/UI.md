@@ -575,6 +575,14 @@ recomendación que sale de la regla de `AI-POST.md` §2.4, con la fila de
 la tabla que la decide. Si la detección falla, se dice y no se
 recomienda nada.
 
+**Último proyecto** (*General ▸ Al arrancar*): el encabezado pregunta
+*¿Abrir el último proyecto, «X»?* con *Abrir* y *Ahora no*; si el archivo
+se movió o falta el permiso, un aviso lo dice. En *Equipo* hay también el
+procesador y *Detectar de nuevo*. En escritorio, *Hilos* y *SIMD* dicen
+que el motor nativo usa los hilos con que arrancó el lanzador. En los
+portables, el selector de modelos aparece arriba de *Modelos* la primera
+vez (captura `docs/ui/settings-desktop.png`).
+
 **Enlaces directos**: cualquier parte de la interfaz puede abrir los
 Ajustes en una sección (*Gestionar modelos…* en la ventana de render,
 el medidor del visor cuando el motor no está), y `?settings=<sección>`

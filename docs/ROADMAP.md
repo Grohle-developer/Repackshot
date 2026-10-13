@@ -153,6 +153,9 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **P2** · Lanzador de escritorio propio con motor nativo idéntico al
   wasm, almacén de modelos por `sha256`, portables de Windows y Linux e
   instalador NSIS; 846 tests web y 241 del motor — **Opus**.
+- **U6** · Ventana de Ajustes con buscador y secciones agrupadas, gestor
+  de modelos de IA con descargas reanudables verificadas por `sha256`,
+  importación y recomendación por equipo; 939 tests — **Opus**.
 - **U5** · Ventana de render al estilo de KeyShot con *Imagen · Animación*,
   salida por plantilla, carpeta, ppp escritos en PNG y JPEG, PNG de 16
   bits y EXR, *Terminar por* muestras o tiempo, cola deshacible, visor de
@@ -1142,7 +1145,7 @@ carpeta* se oculta en el navegador. Observación para L3: con el estudio
 de joyería, REMBRANDT y NEON_NOIR solo cambian un 3 % de los píxeles; se
 revisa con las recetas sobre el motor propio.
 
-## U6 · Ventana de Ajustes y gestor de modelos — **Opus**
+## U6 · Ventana de Ajustes y gestor de modelos — **Opus** — hecha
 
 **Qué.** Petición del usuario: unos Ajustes profesionales, todo lo
 configurable separado por módulos y agrupado en una columna a la
@@ -1194,6 +1197,42 @@ fichero *Dañado*; contraste alto y tamaño de interfaz cambian los
 *tokens* y siguen acromáticos. Capturas en inglés de *General*,
 *Accesibilidad*, *Motor de renderizado* y *Post-procesado IA ▸ Modelos*
 con una descarga en curso.
+
+**Hecho.** `src/core/settings.ts`: unos 57 ajustes tipados con versión,
+valores de fábrica, validación, migración de las preferencias sueltas y
+una tabla de metadatos (`SETTING_ROWS`) de la que salen la ventana, el
+buscador en los dos idiomas, los puntos de *cambiado* y *Restablecer*. La
+ventana (`ui/panels/settings-*.ts`) con los grupos *Aplicación*,
+*Render* y *Sistema*, enlaces directos y `?settings=`; cada sección
+conectada de verdad (navegación y botones del ratón, resolución durante
+gestos, tamaño de interfaz y de texto, contraste alto, reducir
+movimiento, anuncios para lectores de pantalla, motor *Automático ·
+Nativo · WebAssembly*, hilos y SIMD, límite del visor, *Medir
+rendimiento* con un render real de 10 s, límites del historial, carpeta
+de datos, licencias de terceros completas copiadas al construir).
+*Último proyecto* funciona: el encabezado pregunta al arrancar si abrir
+el último archivo. Gestor de modelos con una interfaz `ModelStore` y tres
+implementaciones (OPFS en un worker con la misma disposición por
+`sha256` que el lanzador, el lanzador y memoria), descargas por trozos de
+4 MiB con `Range`, reanudación tras recargar, SHA-256 propio en
+streaming (fichero *Dañado* si no cuadra), dos ficheros a la vez, lo
+compartido una sola vez, licencia aceptada antes de descargar, importación
+con manifiesto y rechazo de *pickle*, la elección del instalador al
+arrancar y el selector una vez en los portables. 939 tests; comprobaciones
+en navegador web (`tools/settings-check.mjs`) y de escritorio con el
+lanzador real (`tools/settings-desktop-check.mjs`). Capturas
+`settings-general.png`, `settings-accessibility.png`,
+`settings-engine.png`, `settings-ai-models.png` y `settings-desktop.png`.
+
+No encajó con el plan: *Próximamente* la copia automática, las letras de
+acceso, cambiar atajos, *Buscar actualizaciones* y la tubería de IA; las
+descargas del catálogo por el lanzador no se probaron con ficheros de
+varios GB (la importación cubre el almacén de punta a punta); el test de
+límites de U2 tenía un falso positivo y el test acromático leía cadenas
+vacías en vez del CSS (los dos corregidos, con su caso); *Al arrancar*
+vale *Proyecto vacío* por defecto, como hasta ahora, con el modo
+estándar ya montado. Encontró un fallo de P2: un proyecto vacío nunca se
+renderiza en nativo (el lanzador pide mallas que no hay).
 
 ## N3 · Paseo de cámara — **Sonnet**
 
