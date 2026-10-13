@@ -19,8 +19,8 @@ import { dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
 import { ACTIONS, kbdText, SHORTCUT_GROUPS, shortcutGroup } from '../shortcuts';
 import { formatNumber, getLang, isaLabel, t } from '../strings';
-import type { DesktopInfo } from '../ui-state';
 import { blockEl, infoRow, rowLabel, rowShell, settingRow, valueRow, type SettingRowOptions } from './settings-rows';
+import { desktopWindowText } from '../window-host';
 
 export interface SettingsHooks {
   /** Rows drawn by their own code, by row id. */
@@ -81,10 +81,23 @@ function destinationRow(ctx: Ctx, scope: Scope, row: RowMeta): HTMLElement {
     (d) => {
       downloads.setAttribute('aria-pressed', String(d.kind === 'DOWNLOADS'));
       folder.setAttribute('aria-pressed', String(d.kind === 'FOLDER'));
-      folderName.textContent = d.kind === 'FOLDER' ? d.name : t('rw.chooseFolder');
+      // A folder is a path on the desktop (P3b): the button says its name, the line under the label the whole path.
+      folderName.textContent = d.kind === 'FOLDER' ? folderLabel(d.name) : t('rw.chooseFolder');
+      folder.title = d.kind === 'FOLDER' ? d.name : '';
     },
   );
-  return settingRow(ctx, scope, row as SettingMeta, { control: seg, aux: () => (files.canChooseFolder ? null : t('rw.onlyDownload')) });
+  return settingRow(ctx, scope, row as SettingMeta, {
+    control: seg,
+    aux: (s) => {
+      const d = s['render.destination'];
+      return !files.canChooseFolder ? t('rw.onlyDownload') : d.kind === 'FOLDER' && d.name !== folderLabel(d.name) ? d.name : null;
+    },
+  });
+}
+
+/** The last part of a folder's path (`/home/a/Renders` → `Renders`); a name that is not a path, as it is. */
+export function folderLabel(name: string): string {
+  return name.split(/[\\/]/).filter(Boolean).pop() ?? name;
 }
 
 // ------------------------------------------------------------------ Keyboard shortcuts
@@ -383,26 +396,6 @@ function dataFolderRow(ctx: Ctx, scope: Scope): HTMLElement | null {
 
 // ------------------------------------------------------------------ Desktop
 
-/**
- * What draws the window, in words: "Microsoft Edge app window", "Native window (WebView2 x.y)" (the launcher's
- * `window` report of P3c when there is one, else the browser it opened), never an executable's name.
- */
-export function windowDrawnBy(d: Pick<DesktopInfo, 'browser' | 'window'>): string {
-  const w = d.window ?? null;
-  if (w?.kind === 'webview2') return w.detail ? t('set.dk.window.webview2', { version: w.detail }) : t('set.dk.window.webview2Plain');
-  if (w?.kind === 'default') return t('set.dk.defaultBrowser');
-  if (w?.kind === 'none') return t('set.dk.window.unknown');
-  const raw = (w?.kind === 'browser' ? w.detail : null) ?? d.browser;
-  if (raw === null || raw === undefined || raw === '') return t('set.dk.window.unknown');
-  if (raw === 'default') return t('set.dk.defaultBrowser');
-  const name = (raw.split(/[\\/]/).pop() ?? raw).toLowerCase().replace(/\.exe$/, '');
-  if (/edge/.test(name)) return t('set.dk.window.edge');
-  if (/chromium/.test(name)) return t('set.dk.window.chromium');
-  if (/chrome/.test(name)) return t('set.dk.window.chrome');
-  if (/brave/.test(name)) return t('set.dk.window.brave');
-  return t('set.dk.window.other');
-}
-
 function desktopRows(): SettingsHooks['rows'] {
   return {
     'desktop.portable': (ctx) => {
@@ -412,7 +405,7 @@ function desktopRows(): SettingsHooks['rows'] {
     },
     'desktop.browser': (ctx) => {
       const d = ctx.ui.get().desktop;
-      return d ? infoRow('desktop.browser', rowLabel('desktop.browser'), windowDrawnBy(d)) : null;
+      return d ? infoRow('desktop.browser', rowLabel('desktop.browser'), desktopWindowText(d.window, d.browser)) : null;
     },
     'desktop.logs': (ctx) => {
       const d = ctx.ui.get().desktop;

@@ -12,6 +12,7 @@ import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
+import type { HostEvent, HostInfo } from '../core/host-protocol';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
 import type { UpdateOutcome } from '../core/updates';
@@ -133,9 +134,33 @@ export interface StoragePort {
   usage?(): Promise<{ dataDir: string; total: number; folders: FolderPart[] } | null>;
 }
 
+/**
+ * Repackshot's own window on the desktop (P3c, WebView2 on Windows, with the system's title bar): the page
+ * names its title, gives its colours and answers its close with our own question. Null in a browser and in
+ * the browser's app window.
+ */
+export interface WindowHostPort {
+  readonly kind: 'webview2';
+  /** The window's answer to `ready` (its WebView2 version), or null before it. */
+  info(): HostInfo | null;
+  /** Listens to the window's events; returns the function that stops. */
+  on(listener: (event: HostEvent) => void): () => void;
+  /** The page listens. */
+  ready(): void;
+  /** The project's name: the title becomes `Repackshot — <project>`. */
+  setTitle(project: string): void;
+  setTheme(dark: boolean, background: string): void;
+  /** Close as the system would: the window asks back (`close-requested`). */
+  close(): void;
+  /** The page agreed to close. */
+  closeOk(): void;
+}
+
 /** The desktop launcher's folders (P2), when the page runs in its window. */
 export interface DesktopPort {
   openFolder(target: 'data' | 'models' | 'logs' | 'results'): Promise<void>;
+  /** Closes the app window (Ctrl/⌘ W and Ctrl Q after the unsaved-changes question). */
+  closeWindow?(): void;
 }
 
 /** The release feed (src/io/updates.ts): the latest published release, or why it could not be had. Never throws. */
@@ -215,13 +240,39 @@ export interface FilesPort {
   readonly canChooseFolder: boolean;
   /** The folder can be shown in the system's file manager (the desktop build); never in a browser. */
   readonly canOpenFolder: boolean;
+  /** The desktop launcher writes the files: a folder is a path, Downloads the system's folder. */
+  readonly desktop?: boolean;
+  /** Results saved to Downloads can be shown in the file manager too (the desktop). */
+  readonly canOpenDownloads?: boolean;
   /** Asks for a folder (a user gesture); null when the person cancels. */
   chooseFolder(): Promise<{ id: string; name: string } | null>;
   /** Write permission for a remembered folder, asked again when needed (call it from a user gesture). */
   ensureAccess(id: string): Promise<boolean>;
   /** Saves under the destination; a download when the folder is gone or not writable. */
   save(dest: Destination, name: string, blob: Blob): Promise<'FOLDER' | 'DOWNLOAD'>;
-  openFolder(id: string): Promise<void>;
+  /** Shows the folder (`downloads`: the Downloads folder) in the file manager, with the file `name` saved there selected when known. */
+  openFolder(id: string, name?: string): Promise<void>;
+}
+
+/** A file type of the system's dialogs: `extensions` without the dot; `*` is every file. */
+export interface DialogFilter {
+  name: string;
+  extensions: string[];
+}
+
+/**
+ * The system's own dialogs for imports and exports (the desktop launcher, io/desktop-files.ts); null in the browser,
+ * which uses `<input type="file">` and downloads.
+ */
+export interface DialogsPort {
+  /** Files to read; null when cancelled. `lazy`: read in ranges through the launcher (AI model files of many GB). */
+  openFiles(req: { title: string; filters: DialogFilter[]; multiple?: boolean; lazy?: boolean }): Promise<File[] | null>;
+  /** Every file under a folder (an AI model's folder), each with its `webkitRelativePath`; null when cancelled. */
+  openFolderFiles(req: { title: string; folderItem: string }): Promise<File[] | null>;
+  /** Writes `blob` where the person says in the save dialog. */
+  saveFile(blob: Blob, suggestedName: string, req: { title: string; filters: DialogFilter[] }): Promise<{ kind: 'SAVED'; name: string; path: string } | { kind: 'CANCELLED' } | { kind: 'FAILED'; reason: string }>;
+  /** Opens an https:// address in the system's browser, not in the app window. */
+  openExternal(url: string): Promise<void>;
 }
 
 export type { ImportMessage };
@@ -338,6 +389,15 @@ export interface AppServices {
   desktop: DesktopPort | null;
   /** Where new versions are published (Settings ▸ Updates). */
   updates: UpdatesPort;
+  /**
+   * Opens an https:// address outside the application, never in its window: the system's browser on the desktop (the
+   * launcher's /api/open-url), a new tab in the browser version. Anything else than https:// is ignored.
+   */
+  openExternal(url: string): Promise<void>;
+  /** The system's dialogs for imports and exports; absent or null in the browser. */
+  dialogs?: DialogsPort | null;
+  /** Repackshot's own window (P3c); null or absent in a browser and in the browser's app window. */
+  windowHost?: WindowHostPort | null;
   /** A licence text shipped with the build (`licences/<file>`, copied by tools/licences.mjs); null when missing. */
   licenceText(file: string): Promise<string | null>;
 }

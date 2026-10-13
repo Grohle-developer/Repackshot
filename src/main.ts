@@ -19,6 +19,7 @@ import './ui/components.css';
 import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
+import './ui/guards.css';
 import { evaluate, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
 import { activeCamera, sameView } from './core/camera';
@@ -26,15 +27,14 @@ import { historyLimits, startViewportMode, withProjectDefaults, type Layout, typ
 import { createInitialState, createStore } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
 import { workerModelStore } from './io/model-store';
-import { createFiles } from './io/files';
 import { buildExample } from './core/example';
 import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { exportLibrary, importLibrary } from './io/library';
+import { connectHost, downloadsFor } from './io/host';
 import type { PendingModels } from './io/native';
 import { choosePlatform } from './io/platform';
 import { readPref, writePref } from './io/prefs';
 import { readProjectFile, serializeProject } from './io/project';
-import { createProjectFiles } from './io/project-file';
 import { fetchLatestRelease } from './io/updates';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { NativeEngine } from './render/native';
@@ -43,8 +43,9 @@ import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize } from './render/tiles';
 import { mountApp } from './ui/app';
-import { exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject } from './ui/commands';
-import { downloadBlob } from './ui/dom';
+import { exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
+import { installGuards } from './ui/guards';
+import { downloadBlob, openInNewTab } from './ui/dom';
 import { startupUpdateCheck } from './ui/updates';
 import type { AppServices, EngineConfig, ViewportPort } from './ui/ports';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
@@ -52,13 +53,21 @@ import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
 
 const appEl = document.getElementById('app')!;
+// The page behaves like an application: no browser menus, selection, zoom, reload, print... (ui/guards.ts).
+const guards = installGuards(window, import.meta.env.PROD);
 // The platform, once: in the desktop launcher's window (its token leaves the address bar at once) every service
-// and every byte of state is the launcher's, and the heartbeat keeps it running while this page is open; in the
-// browser the page keeps its own. The desktop's words never speak of a browser.
+// and every byte of state is the launcher's (P3e), its dialogs and file API included (P3b), and the heartbeat
+// keeps it running while this page is open; in the browser the page keeps its own. The desktop's words never
+// speak of a browser.
 const platform = await choosePlatform();
 const nativeReady = Promise.resolve(platform.native);
 platform.native?.startHeartbeat();
 setStringsPlatform(platform.kind);
+// Repackshot's own window (P3c, WebView2): known at once, before the interface decides on beforeunload.
+// Null in a browser and in the browser's app window.
+const windowHost = connectHost();
+// In that window nothing is ever downloaded: every file goes through the launcher's dialogs (P3b).
+const download = downloadsFor(windowHost, downloadBlob, () => ui.toast(t('dialog.err.notReady')));
 const params = readUrlParams(window.location.search);
 
 // The application settings (U6, core/settings.ts): one document, in localStorage on the web and in
@@ -117,7 +126,7 @@ const ui = createUiStore(
           version: nativeInfo.version,
           os: nativeInfo.os,
           arch: nativeInfo.arch,
-          window: (nativeInfo as { window?: { kind: string; detail: string | null } | null }).window ?? null,
+          window: nativeInfo.window ?? null,
         }
       : null,
   },
@@ -411,16 +420,22 @@ const viewport: ViewportPort | null = preview
   : null;
 
 // The results history (IndexedDB, or memory when the browser keeps nothing; the launcher's results folder on the
-// desktop) and where outputs go.
+// desktop) and where outputs go: the browser's downloads or a folder of its file system access, and on the desktop
+// the launcher's dialogs and folders (P3b), all through the platform.
 const resultsReady = platform.openResults(historyLimits(startSettings));
-const files = createFiles(
-  {
+/** A dialog of the launcher did not open: why, in a toast. */
+const dialogError = (code: string) => ui.toast(t(code === 'no-dialog' ? 'dialog.err.noDialog' : code === 'dialog-open' ? 'dialog.err.busy' : 'dialog.err.failed'));
+const files = platform.files({
+  handles: {
     putHandle: async (id, handle) => (await resultsReady).putHandle(id, handle),
     getHandle: async (id) => (await resultsReady).getHandle(id),
   },
-  downloadBlob,
-  window as unknown as { showDirectoryPicker?: unknown; isSecureContext?: boolean },
-);
+  download,
+  folderTitle: () => t('dialog.chooseFolder'),
+  confirmTitle: () => t('dialog.confirmFolder'),
+  folderItem: () => t('dialog.folderItem'),
+  onDialogError: dialogError,
+});
 
 const LAST_PROJECT_HANDLE = 'project:last';
 const services: AppServices = {
@@ -498,9 +513,16 @@ const services: AppServices = {
     return importFile(file, options);
   },
   project: { serialize: serializeProject, open: readProjectFile },
-  projectFiles: createProjectFiles(window as never, downloadBlob, {
+  // Projects: the launcher's dialogs and the file it remembers on the desktop (P3b); the browser's file system access,
+  // or downloads, on the web.
+  projectFiles: platform.projectFiles({
+    download,
     description: () => t('project.fileType'),
-    // The last project file's handle, next to the output folders' handles (General ▸ On start ▸ Last project).
+    openTitle: () => t('dialog.openProject'),
+    saveTitle: () => t('dialog.saveProject'),
+    allFiles: () => t('dialog.allFiles'),
+    onDialogError: dialogError,
+    // The web version: the last project file's handle, next to the output folders' handles (General ▸ On start).
     remember: { put: async (h) => (await resultsReady).putHandle(LAST_PROJECT_HANDLE, h), get: async () => (await resultsReady).getHandle(LAST_PROJECT_HANDLE) },
   }),
   library: {
@@ -535,6 +557,7 @@ const services: AppServices = {
   // The launcher keeps what it detected on the desktop ("Detect again" asks it to look again); WebGPU on the web.
   hardware: (again) => platform.hardware(again),
   storage: platform.storage,
+  windowHost,
   // Only reached where ui.desktop is set (the launcher answered).
   desktop: {
     async openFolder(target) {
@@ -542,8 +565,20 @@ const services: AppServices = {
       if (!native) throw new Error('not in the desktop application');
       await native.openFolder(target);
     },
+    // The app window of the launcher's browser closes from the page (it has one history entry).
+    closeWindow: () => window.close(),
   },
   updates: { latest: () => fetchLatestRelease() },
+  // Links out of the application (https only): the system's browser on the desktop, a new tab in the browser.
+  async openExternal(url) {
+    if (!/^https:\/\/[^\s"'<>\\^`{|}]+$/.test(url)) return;
+    const native = await nativeReady;
+    if (native?.hasFiles) await native.openUrl(url);
+    else if (!native) openInNewTab(url);
+    else throw new Error('this launcher cannot open links');
+  },
+  // The system's dialogs for imports and exports (the launcher's; null in the browser).
+  dialogs: platform.dialogs(dialogError),
   async licenceText(path) {
     // Only the licence texts shipped with the build (tools/licences.mjs, tools/vendor.mjs).
     if (!/^(licences\/[A-Za-z0-9._-]+|vendor\/occt-import-js\/license\.[a-z-]+\.txt)$/.test(path)) return null;
@@ -565,6 +600,11 @@ void loadResults(app.ctx);
 // model chooser. In the browser this resolves at once to null: OPFS models, no Desktop section.
 void nativeReady.then(async (native) => {
   if (!native) return;
+  // The desktop window: Ctrl/⌘ W asks our own question, links open in the system's browser.
+  guards.setDesktop(true, {
+    onClose: () => requestCloseWindow(app.ctx),
+    openExternal: (url) => void services.openExternal(url).catch((err: unknown) => console.warn(`open ${url}: ${err instanceof Error ? err.message : String(err)}`)),
+  });
   const i = native.info;
   // The manager has read what the installer chose (if anything) once it has started.
   await modelsService.started;

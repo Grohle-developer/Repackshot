@@ -112,14 +112,18 @@ instalar**:
   4 GB por modelo). WebGPU está en Chrome y Edge (Windows, macOS,
   ChromeOS, Android; Linux solo con ciertas GPU), Safari 26 y Firefox en
   Windows y macOS; donde no hay WebGPU, no hay post-procesado.
-- **Escritorio (P2)**: **ONNX Runtime** nativo con los mismos ficheros
-  (CUDA, DirectML, CoreML, etc.) si pasa la prueba de X1; si no,
-  **stable-diffusion.cpp** (MIT, ggml: CUDA, Vulkan, Metal, CPU) como
-  proceso auxiliar, que además lee los GGUF que importe el usuario.
-- **Separado del motor de render.** El post-procesado vive en `src/ai/`
-  (y en un proceso aparte en escritorio). El motor en Rust sigue sin
-  dependencias y no sabe que la IA existe; su única aportación son los
-  **pases** (§3.1).
+- **Escritorio (P2)**: **decidido (2026-10-13, §7.1)**: todo en nativo.
+  La inferencia la hace **stable-diffusion.cpp** (MIT, ggml: Vulkan y
+  CPU) como **proceso auxiliar** que gobierna el lanzador y que lee los
+  GGUF fijados en `ai-models.json` y los que importe el usuario; la
+  guarda y todo el trabajo con píxeles, el *crate* `rt-post` (§7.2).
+  ONNX Runtime nativo queda descartado en escritorio: los ficheros
+  fijados son GGUF.
+- **Separado del motor de render.** El post-procesado vive en
+  `engine/crates/rt-post` (la guarda, Rust sin dependencias), en el
+  lanzador (la tubería de escritorio y el proceso auxiliar) y en
+  `src/ai/` (el conductor web y el *prompt*). `rt-core` sigue sin saber
+  que la IA existe; su única aportación son los **pases** (§3.1).
 - **Lo que no es posible y se dice**: un modelo de 12–20 B en una pestaña
   del navegador (supera los límites de memoria), ni el post-procesado sin
   WebGPU en un tiempo razonable. Mensaje: *"El post-procesado IA necesita
@@ -325,8 +329,137 @@ con sus apartados *Modelo activo*, *Modelos* y *Equipo*:
 
 | Fase | Responsable | Qué |
 | --- | --- | --- |
-| **X1** | **Fable** (Sonnet prepara) | **Parte A, adelantada** (la necesita U6): ficheros exactos, URL, tamaños y `sha256` de cada clave de §2.4 en `src/data/ai-models.json` y licencias releídas al pie de la letra. **Parte B**, tras X3: confirmar el modelo y calibrar la tabla de §2.4 (pico de memoria y tiempo por entrada en GPU y CPU); comparación visual propia Z-Image-Turbo frente a FLUX.2 klein 4B sobre 8 renders × 3 intervenciones con las métricas de la guarda; prueba de ONNX Runtime nativo frente a stable-diffusion.cpp para escritorio |
-| **X2** | Opus | Pases del motor para la IA: albedo, normal, profundidad, id de pieza y de material, mapa de desenfoque, en `rt-core`, el RSB, el wasm y el lado TypeScript |
-| **X3** | Opus | La tubería: `src/ai/` con ONNX Runtime Web en workers, **exportar el codificador del VAE a ONNX** para que exista `ZIMAGE_WEB`, descarga y caché con `sha256`, mosaicos, *prompt* de la escena, condicionamiento, **guarda determinista** con comprobación y retroceso, integración en la cola con las dos imágenes |
-| **X4** | Sonnet | La interfaz de §4 en la ventana de render, la vista previa en modo Rápido, el informe de la guarda y el divisor en el visor de resultados |
+| **X1** | **Fable** (Sonnet prepara) | **Parte A, hecha** (la necesitaba U6): ficheros exactos, URL, tamaños y `sha256` de cada clave de §2.4 en `src/data/ai-models.json` y licencias releídas al pie de la letra. **Parte B**, tras X3c: confirmar el modelo y calibrar la tabla de §2.4 (pico de memoria y tiempo por entrada en GPU y CPU) con una comparación propia Z-Image-Turbo frente a FLUX.2 klein 4B (8 renders × 3 intervenciones, métricas de la guarda) que genera una herramienta y se ejecuta **en el equipo del usuario** (aquí no hay GPU); Vulkan frente a CPU en stable-diffusion.cpp |
+| **X2** | Opus | Pases del motor (§7.4): albedo, normal, profundidad, id de pieza y de material, mapa de desenfoque, en `rt-core`, el RSB, el wasm, el lanzador y el lado TypeScript. **Tras fusionar E5** (los dos tocan el integrador) |
+| **X3a** | Opus | `engine/crates/rt-post` y `post.wasm` (§7.2): condicionamiento, mosaicos, relleno y recorte, **guarda determinista** con comprobaciones y la máquina de pasos con retroceso; envoltura TypeScript y el *prompt* de la escena (`src/ai/`). Probado con el "modelo" sintético |
+| **X3b** | Opus | stable-diffusion.cpp en escritorio (§7.1): `src/data/ai-runtimes.json` fijado, descarga e instalación desde *Ajustes*, proceso auxiliar en `rt-app`, `/api/ai/runtime` y `/api/ai/run` (una inferencia sin guarda), con un proceso auxiliar falso en los tests |
+| **X3c** | Opus | La tubería completa de escritorio (§7.3), tras X2, X3a y X3b: `/api/ai/post` en el lanzador (mosaicos → stable-diffusion.cpp → `rt-post` → retroceso), el servicio de escritorio en `src/io/`, integración en la cola con las dos imágenes y el informe, `AI_AVAILABLE` real |
+| **X3d** | Opus | La web, tras X3c: ONNX Runtime Web con WebGPU en workers, **exportar el codificador del VAE a ONNX** para que exista `ZIMAGE_WEB`, conductor en worker con `post.wasm`, caché OPFS con `sha256` y fragmentos de ≤ 1 GiB |
+| **X4** | Sonnet | La interfaz de §4 contra `AiPostService` (`src/core/ai.ts`), con un servicio sintético hasta X3c: sección de la ventana de render, configurador, fichas, vista previa en modo Rápido con los pases dibujados por three.js y divisor, informe de la guarda y divisor en el visor de resultados, dos miniaturas en la cola, ajustes en el *store* |
 | ~~X5~~ | — | **Absorbida en U6** (ventana de Ajustes, `ROADMAP.md`): el gestor de modelos de §5 y el selector de §2.2–§2.4 no necesitan la tubería, así que llegan antes. Lo que queda para después de X3 (comprobar en vivo que el modelo activo cabe y una prueba de una imagen) entra en X4 |
+
+---
+
+## 7 · Construcción: decisiones y contratos (líder, 2026-10-13)
+
+Lo que fija el líder para que X2, X3a, X3b y X4 avancen en paralelo sin
+pisarse. Los contratos de código están en `src/core/ai.ts` y
+`src/core/passes.ts`: las fases **añaden**, no cambian lo que hay; si algo
+no encaja, se anota en el PR y se sigue (regla 12).
+
+### 7.1 · En escritorio todo es nativo
+
+La interfaz es lo único HTML. En escritorio, la inferencia, la guarda y
+todo el trabajo con píxeles se ejecutan fuera de la página, en código
+nativo que gobierna el lanzador.
+
+- **Inferencia: stable-diffusion.cpp** (MIT, sobre ggml, MIT) como
+  **proceso auxiliar**: un ejecutable aparte, nunca enlazado, nunca
+  copiado a `engine/`, que el lanzador arranca, alimenta y para. Lee
+  directamente los GGUF que ya fija `ai-models.json`.
+- Sus compilaciones se fijan como los modelos, en
+  **`src/data/ai-runtimes.json`**: versión de la *release* oficial, URL,
+  tamaño, `sha256`, licencia citada y qué claves de §2.4 carga de verdad
+  (`supports`, comprobado en X3b; lo no comprobado no se marca). Dos por
+  sistema (Windows y Linux x86_64): **Vulkan** (NVIDIA, AMD e Intel, con
+  el controlador de la tarjeta) y **CPU** (AVX2). La regla elige Vulkan
+  cuando hay GPU y CPU si no; el usuario puede forzar una en *Ajustes*.
+- **No van en el instalador ni en los portables**: se descargan desde
+  *Ajustes ▸ Post-procesado IA* la primera vez que se activa la IA (o
+  junto al modelo elegido en el instalador), con progreso, reanudación y
+  `sha256`, a `<datos>/ai/runtimes/<sha256>/`, igual que los modelos.
+  El paquete sigue pequeño y la compilación depende del equipo. **CUDA**
+  queda anotado como mejora (sus bibliotecas pesan cientos de MB).
+- Una clave que la compilación instalada no carga aparece en *Ajustes*
+  como *No disponible con este motor de ejecución*, con el motivo.
+
+### 7.2 · La guarda y los píxeles: el *crate* `rt-post`
+
+Todo el trabajo determinista con imágenes de §3.2 vive en
+**`engine/crates/rt-post`**: condicionamiento (bordes calculados de los
+cambios de id y de normal, profundidad normalizada), plan de mosaicos con
+solape y fusión suave, relleno a múltiplo de 16 y recorte, la **guarda**
+(transferencia de sombreado, separación de frecuencias, regiones por id
+con ΔE₀₀), las comprobaciones y la decisión de retroceso. Rust desde
+cero, solo `std`, `f32`, sin `unsafe`, determinista, con las mismas
+reglas y puertas que el motor. `rt-core` no lo usa ni sabe que existe.
+En escritorio lo enlaza `rt-app`; en la web es un **módulo wasm aparte**
+(`rt-post-wasm` → `public/engine/post.wasm`, generado como `rt.wasm` y
+sin subirse al repositorio), para que el wasm del motor no crezca.
+
+Es una **máquina de pasos**, no un bucle con *callbacks*:
+
+1. `plan(trabajo) → Plan`: mosaicos, tamaño con relleno, fuerza del
+   intento (Intervención × `MAX_STRENGTH`, por `RETRY_FACTOR` en cada
+   reintento).
+2. `conditioning(plan, pases) → imágenes de control` por mosaico.
+3. `accept(plan, original, pases, salidas de los mosaicos, intento) →
+   Aceptado{imagen, informe} | Repetir{fuerza} | Rechazado{informe}`.
+
+El conductor que llama al modelo entre pasos es trivial y existe dos
+veces: en Rust en `rt-app` (escritorio) y en TypeScript en un worker
+(web). Todo lo que decide está en `rt-post` y se prueba una vez.
+Máximo `MAX_ATTEMPTS` = 4 intentos; si ninguno pasa, se entrega la
+imagen del motor **sin cambios** con el informe `REJECTED` y el motivo.
+Con Intervención 0 la salida es la entrada bit a bit, sin llamar al
+modelo.
+
+### 7.3 · La tubería de escritorio vive en el lanzador
+
+Los píxeles no hacen viajes de ida y vuelta. El lanzador guarda la imagen
+lineal y los pases del render final de cada trabajo (por id del render,
+en memoria y en `<datos>/cache/ai/`), y **`POST /api/ai/post`** recibe
+solo `{renderId, ajustes, prompt, negativo, modelo}`; para la vista
+previa del modo Rápido, la imagen y los pases van en línea (≤
+`PREVIEW_MAX_SIDE` = 512 px de lado). Mosaicos → stable-diffusion.cpp →
+`rt-post` → reintentos ocurren en nativo, y el progreso y el resultado se
+publican como los trabajos de render (`GET /api/ai/post/<id>`,
+cancelar con `DELETE`). La página construye el *prompt* con los
+materiales y las luces del *store* (`src/ai/prompt.ts`), lo envía con
+los ajustes y recibe las dos imágenes y el informe. El modelo se carga
+una vez y queda cargado mientras se use (vista previa tras vista previa);
+se descarga al cerrar *Post-procesado IA* o tras un rato sin uso, para
+devolver la memoria.
+
+### 7.4 · Pases (X2)
+
+Formato único para el motor, el wasm, el lanzador y la vista previa de
+three.js (`src/core/passes.ts`): un plano por pase, `ancho × alto`, por
+filas desde arriba a la izquierda, como la imagen.
+
+| Pase | Tipo | Contenido | Fondo |
+| --- | --- | --- | --- |
+| `albedo` | 3 × f32 lineal | Color base del primer impacto no especular (un difuso: su color), promediado sobre las muestras del píxel | 0 |
+| `normal` | 3 × f32 | Normal de sombreado unitaria del primer impacto, en el espacio del mundo (Z arriba) | 0 |
+| `depth` | f32 | Distancia a lo largo del eje de la cámara, en unidades de escena | +∞ |
+| `partId` | u32 | Índice de instancia del RSB + 1: `io/rsb.ts` lo traduce a la pieza, como `pick` | 0 |
+| `materialId` | u32 | Índice de material del RSB + 1 | 0 |
+| `coc` | f32 | Diámetro del círculo de confusión en píxeles de salida, de la lente fina | 0 (también sin DoF) |
+
+`normal`, `depth`, `partId` y `materialId` salen de **un rayo por el
+centro del píxel, sin *jitter***: son exactos y nunca mezclan dos lados de
+una arista, que es lo que necesita la guarda. Los pases se piden con una
+máscara en `RNDR` (bit *i* = `PASS_KEYS[i]`), se acumulan como la imagen,
+no cambian ni un píxel de la imagen (la paridad y el *hash* de
+determinismo siguen iguales) y salen por `rt-wasm` y por el lanzador
+(`/api/render` con `passes=…` en los trabajos finales, que los guarda
+para §7.3, y `GET /api/render/<id>/passes` en binario con cabecera).
+
+### 7.5 · Ajustes en el *store* (X4)
+
+`RenderSettings.ai` (`src/core/render.ts`) pasa de `{ enabled }` a
+`{ enabled, previewFullEngine } & AiPipelineSettings`, con los valores
+por defecto de `DEFAULT_AI_PIPELINE`; los proyectos antiguos se abren con
+esos valores. Cambiar un control es una acción del *store* y se deshace;
+cada trabajo copia sus ajustes. `AI_AVAILABLE` deja de ser una
+constante en X3c: lo dice `AiPostService.status()`.
+
+### 7.6 · Orden
+
+**Ya**: X3a, X3b y X4 en paralelo (cada uno en sus ficheros nuevos; donde
+tocan ficheros comunes —`server.rs`, `ports.ts`, `strings.ts`, la
+ventana de render— lo mínimo, para que la fusión sea mecánica). **X2**
+en cuanto se fusione E5. **X3c** cuando estén X2, X3a y X3b; **X3d** y
+**X1 parte B** detrás. Dependencias nuevas, en `ARCHITECTURE.md` §1:
+stable-diffusion.cpp (escritorio, proceso aparte, X3b) y ONNX Runtime
+Web (web, X3d).

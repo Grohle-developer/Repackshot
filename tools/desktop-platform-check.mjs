@@ -26,6 +26,9 @@
 //       is not there; Window drawn by says "Microsoft Edge app window";
 //   (f) Storage shows the data folder as the launcher measured it, and Free up of the thumbnails deletes
 //       through the launcher;
+//   (h) outputs and projects go through the launcher's dialogs (P3b; a stand-in `zenity` answers): Choose
+//       folder… asks POST /api/dialog/folder and the folder is remembered in <data>/state/desktop.folders.json,
+//       Save project writes the file the save dialog named; the browser's pickers are never called;
 //   (g) label, auxiliary text, value and control of every row never overlap, and nothing leaves its row or
 //       makes the content scroll sideways, in every section at 1600, 1280 (UI.md's minimum) and 960 px wide
 //       (half a screen), interface size 90, 100, 125 and 150 %, English and Spanish, dark, light and high
@@ -68,9 +71,24 @@ const rowSel = (id) => `.sw [data-row="${id}"]`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The launcher; `stub`: open the window through the stand-in `msedge` instead of serving only. Resolves with the URL. */
+/** A stand-in `zenity` for the launcher's dialogs (P3b): a folder dialog picks Renders, a save dialog a project file. */
+const RENDERS = join(BASE, 'Renders');
+const PROJECT = join(BASE, 'Shot.repack.json');
+const DOWNLOADS = join(BASE, 'Downloads-out');
+function fakeDialogs() {
+  const dir = join(BASE, 'fake-dialogs');
+  mkdirSync(dir, { recursive: true });
+  mkdirSync(RENDERS, { recursive: true });
+  writeFileSync(join(dir, 'zenity'), `#!/bin/sh\necho "$*" >> '${join(dir, 'calls.txt')}'\ncase " $* " in\n  *" --save "*) echo '${PROJECT}' ;;\n  *" --directory "*) echo '${RENDERS}' ;;\n  *) exit 1 ;;\nesac\n`);
+  chmodSync(join(dir, 'zenity'), 0o755);
+  return dir;
+}
+
 function startLauncher({ stub = false } = {}) {
   const exe = join(DIR, 'repackshot');
-  const env = { ...process.env, REPACKSHOT_TEST_GPUS: GPUS };
+  // The launcher writes Downloads itself (P3b): here, into the check's folder.
+  mkdirSync(DOWNLOADS, { recursive: true });
+  const env = { ...process.env, REPACKSHOT_TEST_GPUS: GPUS, PATH: `${fakeDialogs()}:${process.env.PATH}`, XDG_DOWNLOAD_DIR: DOWNLOADS };
   const argsOut = join(BASE, 'browser-args.txt');
   let launchArgs = ['--serve-only', '--app-dir', join(ROOT, 'dist')];
   if (stub) {
@@ -225,14 +243,28 @@ try {
   browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', headless: true, args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const errors = [];
   const refused = [];
+  const apiLog = [];
   /** A browser profile of its own (nothing of another launch's window). */
   const newPage = async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, acceptDownloads: true });
+    // The browser's own pickers, spied: the desktop must never call them.
+    await context.addInitScript(() => {
+      for (const n of ['showDirectoryPicker', 'showSaveFilePicker', 'showOpenFilePicker']) {
+        const orig = window[n];
+        window[n] = (...a) => {
+          window.__pickers = [...(window.__pickers ?? []), n];
+          return orig?.apply(window, a);
+        };
+      }
+    });
     const p = await context.newPage();
+    // A question of the page (beforeunload) is answered yes: the check reloads it many times.
+    p.on('dialog', (d) => void d.accept().catch(() => undefined));
     p.on('pageerror', (e) => errors.push(String(e)));
     p.on('console', (m) => m.type() === 'error' && !m.text().startsWith('Failed to load resource') && errors.push(m.text()));
     p.on('response', (r) => {
       const u = new URL(r.url());
+      if (u.pathname.startsWith('/api/')) apiLog.push(`${r.request().method()} ${u.pathname} ${r.status()}`);
       if (u.pathname.startsWith('/api/') && r.status() >= 400) refused.push(`${r.request().method()} ${u.pathname} ${r.status()}`);
     });
     return { context, page: p };
@@ -276,9 +308,10 @@ try {
   };
   await setNumber('.rw [data-section="rw.size"] .num[aria-label="Width"]', 320);
   await setNumber('.rw .num[aria-label="Samples"]', 4);
-  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.locator('.rw-foot .btn-primary').click()]);
-  await dl.path();
-  await page.waitForSelector('.rv[data-ready="1"]', { timeout: 30000 });
+  // Downloads is written by the launcher (P3b): no browser download, the results viewer opens on it.
+  await page.locator('.rw-foot .btn-primary').click();
+  await page.waitForSelector('.rv[data-ready="1"]', { timeout: 120000 });
+  const downloaded = readdirSync(DOWNLOADS);
   await page.keyboard.press('Escape');
   await sleep(500);
   const resultsDir = join(DATA, 'results');
@@ -312,7 +345,7 @@ try {
   const storage2 = await browserStorage(page);
   const clean = (s) => s.localStorage.length === 0 && (s.indexedDB === null || !s.indexedDB.includes('repackshot')) && s.opfs.length === 0;
   check('b_no_browser_storage', clean(storage1) && clean(storage2), { first: storage1, second: storage2 });
-  check('c_result_in_the_data_folder', !!first && files.includes(first.file) && files.includes('index.json') && listed.includes(first.id), { files, index: first ? { id: first.id, file: first.file, type: first.type } : null, listedAfterRestart: listed });
+  check('c_result_in_the_data_folder', !!first && files.includes(first.file) && files.includes('index.json') && listed.includes(first.id) && downloaded.some((f) => f.endsWith('.png')), { files, index: first ? { id: first.id, file: first.file, type: first.type } : null, listedAfterRestart: listed, downloaded });
 
   // ------------------------------------------------------------------ the sections, in English then Spanish
   const writeSettings = async (patch) => {
@@ -367,6 +400,27 @@ try {
   await page.mouse.move(5, 795);
   await sleep(300);
   await page.screenshot({ path: join(SHOTS, 'settings-desktop-paths.png') });
+
+  // (h) Outputs and projects: the launcher's dialogs, never the browser's pickers.
+  await openSettings(page, 'preferences');
+  apiLog.length = 0;
+  await page.locator(`${rowSel('render.destination')} button`, { hasText: 'Choose folder' }).click();
+  await page.waitForFunction((dir) => document.querySelector('.sw [data-row="render.destination"]')?.textContent?.includes(dir), RENDERS, { timeout: 20000 });
+  await sleep(500);
+  const folders = existsSync(join(DATA, 'state', 'desktop.folders.json')) ? JSON.parse(readFileSync(join(DATA, 'state', 'desktop.folders.json'), 'utf8')) : null;
+  await closeSettings(page);
+  await page.locator('canvas[aria-label="viewport"]').focus();
+  await page.keyboard.press('Control+s');
+  for (let i = 0; i < 40 && !existsSync(PROJECT); i++) await sleep(250);
+  const project = existsSync(PROJECT) ? JSON.parse(readFileSync(PROJECT, 'utf8')) : null;
+  const pickers = await page.evaluate(() => window.__pickers ?? []);
+  const dialogCalls = apiLog.filter((a) => a.includes('/api/dialog/'));
+  check('h_files_through_the_launcher', pickers.length === 0 && dialogCalls.some((a) => a.startsWith('POST /api/dialog/folder 200')) && dialogCalls.some((a) => a.startsWith('POST /api/dialog/save 200')) && folders && Object.values(folders).includes(RENDERS) && project?.format !== undefined, {
+    pickers,
+    dialogCalls,
+    remembered: folders,
+    projectWritten: !!project,
+  });
 
   // (f) Storage: the data folder as the launcher measured it; Free up of the thumbnails goes through it.
   await openSettings(page, 'storage');

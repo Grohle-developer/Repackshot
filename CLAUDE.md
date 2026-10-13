@@ -96,6 +96,11 @@ Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
 - En este entorno crates.io está bloqueado (403). No importa: el motor no
   tiene dependencias. `rustup target add wasm32-unknown-unknown` sí
   funciona.
+- Con varios agentes trabajando a la vez la máquina va muy cargada y
+  algún test lento (`io-rhino`) puede pasar del tiempo límite: repite con
+  `npx vitest run --maxWorkers=2` antes de dar nada por roto. Y `pgrep -f`
+  también encuentra tu propia shell si el patrón aparece en la orden: usa
+  `pgrep -x`.
 - `rt.wasm` no se sube al repositorio: `npm run engine:build` lo genera en
   `public/engine/`; la interfaz tiene que arrancar sin él (solo con la
   vista previa) y decirlo en el medidor.

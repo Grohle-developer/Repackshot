@@ -380,9 +380,36 @@ export function cancelImport(ctx: Ctx): void {
   closeSheet(ctx);
 }
 
+/** "All files" in the system's dialogs. */
+const allFiles = () => ({ name: t('dialog.allFiles'), extensions: ['*'] });
+
 export async function importDialog(ctx: Ctx): Promise<void> {
-  const files = await pickFiles(MODEL_ACCEPT);
+  // The desktop: the system's open dialog through the launcher; the browser: its file input.
+  const dialogs = ctx.services.dialogs;
+  const files = dialogs ? ((await dialogs.openFiles({ title: t('dialog.importModel'), filters: [{ name: t('dialog.models'), extensions: [...READ_FORMATS] }, allFiles()] })) ?? []) : await pickFiles(MODEL_ACCEPT);
   if (files.length) await importFiles(ctx, files);
+}
+
+/**
+ * Writes an export (a scene, the viewport's image, the library): where the person says in the system's save dialog on
+ * the desktop, a download in the browser. Returns the name written, or null when nothing was.
+ */
+async function saveExport(ctx: Ctx, blob: Blob, name: string, title: string, filter: { name: string; extensions: string[] }): Promise<string | null> {
+  const dialogs = ctx.services.dialogs;
+  if (!dialogs) {
+    // Repackshot's own window (P3c) never downloads: WebView2 cancels it, and the dialogs come with the launcher.
+    if (ctx.services.windowHost) {
+      ctx.ui.toast(t('dialog.err.notReady'));
+      return null;
+    }
+    downloadBlob(blob, name);
+    return name;
+  }
+  const r = await dialogs.saveFile(blob, name, { title, filters: [filter] });
+  if (r.kind === 'SAVED') return r.name;
+  // A dialog that did not open has said why already (the launcher's error, in a toast).
+  if (r.kind === 'FAILED' && r.reason !== 'dialog') ctx.ui.toast(t('dialog.saveFailed', { name, reason: r.reason }));
+  return null;
 }
 
 /** The state of a new project, or of one just opened: nothing of the old one lingers in the interface. */
@@ -591,18 +618,16 @@ export function dropFiles(ctx: Ctx, files: readonly File[], handles: readonly Pr
 }
 
 /** The engine's scene for the output image, as the RSB file `rt` renders on the command line. */
-export function exportScene(ctx: Ctx): void {
-  const name = `${projectFileBase(ctx)}.rsb`;
-  downloadBlob(ctx.services.exportScene(ctx.store.get()), name);
-  ctx.ui.toast(t('toast.saved', { name }));
+export async function exportScene(ctx: Ctx): Promise<void> {
+  const saved = await saveExport(ctx, ctx.services.exportScene(ctx.store.get()), `${projectFileBase(ctx)}.rsb`, t('dialog.exportScene'), { name: t('dialog.scene'), extensions: ['rsb'] });
+  if (saved) ctx.ui.toast(t('toast.saved', { name: saved }));
 }
 
 export async function exportViewport(ctx: Ctx): Promise<void> {
   const blob = await ctx.services.captureViewport();
   if (!blob) return;
-  const name = `${projectFileBase(ctx)}-viewport.png`;
-  downloadBlob(blob, name);
-  ctx.ui.toast(t('toast.saved', { name }));
+  const saved = await saveExport(ctx, blob, `${projectFileBase(ctx)}-viewport.png`, t('dialog.exportImage'), { name: t('dialog.pngImage'), extensions: ['png'] });
+  if (saved) ctx.ui.toast(t('toast.saved', { name: saved }));
 }
 
 export function renameProject(ctx: Ctx, name: string): void {
@@ -699,9 +724,46 @@ export function maybeShowModelChooser(ctx: Ctx, o: { portable: boolean; pending:
   return show;
 }
 
+/** The person already answered our own question about closing (Ctrl/⌘ W on the desktop): the page closes without another. */
+let closeAnswered = false;
+
 /** Whether closing the page should ask first (General ▸ Confirm before closing; the page's beforeunload asks it). */
 export function shouldConfirmClose(ctx: Ctx): boolean {
-  return ctx.ui.get().settings['general.confirmClose'] && ctx.store.get().meta.dirty;
+  return !closeAnswered && ctx.ui.get().settings['general.confirmClose'] && ctx.store.get().meta.dirty;
+}
+
+/** The close questions on screen (closing again while one is asked does not stack another). */
+const closeQuestions = new WeakSet<ConfirmSpec>();
+
+/**
+ * Closing the desktop window, the one flow for every way to ask it: Ctrl/⌘ W and Ctrl/⌘ Q (guards.ts) and, in
+ * Repackshot's own window (P3c), the window's own close (its close button, Alt F4, the taskbar, the system menu, which
+ * the window turns into `close-requested`). Our unsaved-changes question (UI.md §4.3, when General ▸ Confirm before
+ * closing is on: Save · Don't save · Cancel), then the window closes: `close-ok` to our own window, `window.close()` in
+ * the browser's app window. Never the browser's own "Leave?" dialog.
+ */
+export function requestCloseWindow(ctx: Ctx): void {
+  const host = ctx.services.windowHost;
+  const close = ctx.services.desktop?.closeWindow;
+  if (!host && !close) return;
+  const go = () => {
+    // Our own window has no beforeunload to quieten: it closes when told.
+    if (host) return host.closeOk();
+    if (!close) return;
+    closeAnswered = true;
+    close();
+    // A window that did not close (the browser refused): the next close asks again.
+    setTimeout(() => (closeAnswered = false), 1500);
+  };
+  if (!ctx.ui.get().settings['general.confirmClose']) return go();
+  const asking = ctx.ui.get().prompt;
+  if (asking && closeQuestions.has(asking)) return;
+  afterUnsavedCheck(ctx, t('project.unsavedClose', { name: ctx.store.get().meta.name || t('app.untitled') }), go);
+  const spec = ctx.ui.get().prompt;
+  if (!spec || spec === asking) return;
+  closeQuestions.add(spec);
+  // The question sits under the project name, in the header: the Settings window, which is modal, makes way.
+  if (ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
 }
 
 /** Settings ▸ Render engine ▸ Measure performance: a real run of the example scene with the engine in use. */
@@ -1388,16 +1450,15 @@ export function deleteLibraryItem(ctx: Ctx, kind: LibraryKind, id: string): void
   if (kind === 'material') ctx.store.dispatch({ type: 'material/unlinkLibrary', library: id, label: L('undo.libraryRemoved', { name: { en: item.name, es: item.name } }) });
 }
 
-/** Export library: downloads the JSON file. */
-export function exportLibraryFile(ctx: Ctx): void {
+/** Export library: the JSON file, downloaded (the browser) or where the save dialog says (the desktop). */
+export async function exportLibraryFile(ctx: Ctx): Promise<void> {
   const lib = ctx.ui.get().library;
   if (libraryIsEmpty(lib)) {
     ctx.ui.toast(t('library.exportEmpty'));
     return;
   }
-  const name = 'repackshot-library.json';
-  downloadBlob(ctx.services.library.export(lib), name);
-  ctx.ui.toast(t('library.exported', { n: allItems(lib).length, name }));
+  const name = await saveExport(ctx, ctx.services.library.export(lib), 'repackshot-library.json', t('dialog.exportLibrary'), { name: t('dialog.library'), extensions: ['json'] });
+  if (name) ctx.ui.toast(t('library.exported', { n: allItems(lib).length, name }));
 }
 
 /** Merges the text of a library file into the library and says what happened. */
@@ -1424,7 +1485,8 @@ export async function importLibraryFile(ctx: Ctx, file: File): Promise<void> {
 
 /** Import library: the system file picker, then the merge. */
 export async function importLibraryDialog(ctx: Ctx): Promise<void> {
-  const [file] = await pickFiles('.json,application/json');
+  const dialogs = ctx.services.dialogs;
+  const [file] = dialogs ? ((await dialogs.openFiles({ title: t('dialog.importLibrary'), filters: [{ name: t('dialog.library'), extensions: ['json'] }, allFiles()] })) ?? []) : await pickFiles('.json,application/json');
   if (file) await importLibraryFile(ctx, file);
 }
 
@@ -1486,7 +1548,7 @@ export function setRenderSettings(ctx: Ctx, patch: Partial<RenderSettings>, gest
 /** Asks again for the folder's permission while the click still counts as a user gesture. */
 async function folderAccess(ctx: Ctx, s: RenderSettings): Promise<void> {
   if (s.destination.kind !== 'FOLDER') return;
-  if (!(await ctx.services.files.ensureAccess(s.destination.id))) ctx.ui.toast(t('rw.folderDenied'));
+  if (!(await ctx.services.files.ensureAccess(s.destination.id))) ctx.ui.toast(t(ctx.services.files.desktop ? 'rw.folderDeniedDesktop' : 'rw.folderDenied'));
 }
 
 /** Adds jobs made from settings (first or last); returns the new jobs' ids. */

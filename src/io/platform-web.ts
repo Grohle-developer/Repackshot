@@ -4,10 +4,12 @@
 // origin's private file system through the model worker; the computer as WebGPU and the browser
 // report it. Every access is wrapped: a private window or blocked storage starts the same.
 
+import { createFiles } from './files';
 import { detectWebHardware } from './hardware';
 import { LIBRARY_STORAGE_KEY, loadLibrary, saveLibrary } from './library';
 import { browserKeyValue, loadSettingsDoc, saveSettingsDoc, type KeyValue } from './prefs';
 import type { Platform, StorageService, ThumbCache } from './platform';
+import { createProjectFiles } from './project-file';
 import { openResultsStore } from './results';
 
 /** localStorage with what the thumbnail cache needs to count and clear its entries. */
@@ -163,6 +165,9 @@ export function webPlatform(over: BrowserApis = {}): Platform {
     },
     openResults: (limits) => openResultsStore(limits),
     modelStore: async (local) => (hasOpfs ? local : null),
+    files: (o) => createFiles(o.handles, o.download, globalThis as unknown as { showDirectoryPicker?: unknown; isSecureContext?: boolean }),
+    projectFiles: (o) => createProjectFiles(globalThis as never, o.download, { description: o.description, remember: o.remember }),
+    dialogs: () => null,
     pendingModels: async () => null,
     requestPersistence: async () => (await storage.persist()) ?? false,
     hardware: () => detectWebHardware(),

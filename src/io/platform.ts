@@ -8,7 +8,9 @@
 // * **Desktop** (io/platform-desktop.ts): in the launcher's window the page is only the
 //   interface. Every service and every byte of state is the launcher's (engine/crates/rt-app):
 //   `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` and `models/` in the data
-//   folder, `/api/hardware`, `/api/storage/usage`. The browser's storage is never touched, except
+//   folder, `/api/hardware`, `/api/storage/usage`, and its dialogs and file API for outputs,
+//   projects, imports and exports (P3b: never the browser's pickers, downloads or file handles).
+//   The browser's storage is never touched, except
 //   once: what an older version left there is copied to the launcher, and a mark in the data folder
 //   says it was done.
 //
@@ -18,11 +20,14 @@ import type { Library } from '../core/library';
 import type { HardwareInfo } from '../core/models';
 import type { HistoryLimits } from '../core/results';
 import type { SettingsDoc } from '../core/settings';
+import type { DesktopDialogs } from './desktop-files';
+import type { FilesService, HandleStore } from './files';
 import type { LoadResult, SaveStatus } from './library';
 import type { ModelStore } from './model-store';
 import { connectNative, type NativeClient, type PendingModels } from './native';
 import type { StorageUsage } from './native-store';
 import type { KeyValue } from './prefs';
+import type { ProjectFilesService } from './project-file';
 import { desktopPlatform } from './platform-desktop';
 import { webPlatform, type BrowserApis } from './platform-web';
 import type { ResultsStore } from './results';
@@ -62,6 +67,29 @@ export interface LibraryStore {
   reload(): LoadResult;
 }
 
+/** What the file services need from the interface: the words of the dialogs, and how a failed one is said. */
+export interface FilesOptions {
+  /** Where the web version keeps the handles of the folders chosen (the results store). */
+  handles: HandleStore;
+  /** A download (the web version; the own window of P3c refuses every one). */
+  download: (blob: Blob, name: string) => void;
+  folderTitle: () => string;
+  confirmTitle: (path: string) => string;
+  folderItem: () => string;
+  onDialogError: (code: string) => void;
+}
+
+export interface ProjectFilesOptions {
+  download: (blob: Blob, name: string) => void;
+  description: () => string;
+  openTitle: () => string;
+  saveTitle: () => string;
+  allFiles: () => string;
+  onDialogError: (code: string) => void;
+  /** Where the web version keeps the last project's file handle (General ▸ On start ▸ Last project). */
+  remember: { put(handle: unknown): Promise<void>; get(): Promise<unknown> };
+}
+
 export interface Platform {
   readonly kind: 'web' | 'desktop';
   /** The launcher's client in its window; null on the web. */
@@ -77,8 +105,17 @@ export interface Platform {
   readonly library: LibraryStore;
   /** The results history: IndexedDB (or memory) on the web, the launcher's results folder on the desktop. */
   openResults(limits: HistoryLimits): Promise<ResultsStore>;
-  /** The AI model store: `local` (OPFS through the model worker) on the web when the browser has it, the launcher's on the desktop. */
+  /**
+   * The AI model store: `local` (OPFS through the model worker) on the web when the browser has it, the launcher's
+   * on the desktop (a file chosen in its dialog is hashed by the launcher, never read into the page).
+   */
   modelStore(local: ModelStore): Promise<ModelStore | null>;
+  /** Where render outputs go: downloads or a folder of the browser's file system access; the launcher's folders. */
+  files(opts: FilesOptions): FilesService;
+  /** Where projects are opened and saved: the browser's pickers or downloads; the launcher's dialogs and the file it remembers. */
+  projectFiles(opts: ProjectFilesOptions): ProjectFilesService;
+  /** The system's dialogs for imports and exports: the launcher's on the desktop, null on the web (inputs and downloads). */
+  dialogs(onDialogError: (code: string) => void): DesktopDialogs | null;
   /** What the desktop installer chose to download; null on the web. */
   pendingModels(): Promise<PendingModels | null>;
   /** Asks to keep the model store at the first download (the browser's persistence; the launcher's folder is kept). */

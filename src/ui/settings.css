@@ -303,6 +303,9 @@ summary.sw-block-title {
 }
 .sw-ctrl .seg button {
   flex: 1 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   box-shadow: 0 -1px 0 var(--line);
 }
 .sw-section .note {

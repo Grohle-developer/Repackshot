@@ -101,6 +101,17 @@ describe('the platform seam picks the launcher when it answers', () => {
         addEventListener: () => touched.push('window.addEventListener'),
       },
     });
+    // The browser's pickers: the desktop never reaches for them (P3b's dialogs go through the launcher).
+    for (const picker of ['showDirectoryPicker', 'showSaveFilePicker', 'showOpenFilePicker']) {
+      saved[picker] = Object.getOwnPropertyDescriptor(g, picker);
+      Object.defineProperty(g, picker, {
+        configurable: true,
+        get() {
+          touched.push(picker);
+          return async () => ({});
+        },
+      });
+    }
     Object.defineProperty(g, 'indexedDB', {
       configurable: true,
       get() {
@@ -159,6 +170,14 @@ describe('the platform seam picks the launcher when it answers', () => {
     expect(await p.thumbs.get('preset:gold')).toBe('data:image/png;base64,AA');
     expect(await p.storage.clearCache()).toBeGreaterThan(0);
     expect(await p.modelStore({ hash: async () => '0'.repeat(64) } as never)).not.toBeNull();
+    // Outputs, projects, imports and exports: the launcher's dialogs and paths (P3b), never the browser's pickers.
+    const fileOpts = { handles: { putHandle: async () => undefined, getHandle: async () => null }, download: () => touched.push('download'), folderTitle: () => 'Folder', confirmTitle: () => 'Again', folderItem: () => 'Item', onDialogError: () => undefined };
+    const files = p.files(fileOpts);
+    expect((files as { desktop?: boolean }).desktop).toBe(true);
+    expect(await files.chooseFolder()).toEqual({ id: 'd-renders', name: '/home/a/Renders' });
+    const projects = p.projectFiles({ ...fileOpts, description: () => 'Project', openTitle: () => 'Open', saveTitle: () => 'Save', allFiles: () => 'All', remember: { put: async () => undefined, get: async () => null } });
+    expect(projects.canSaveInPlace).toBe(true);
+    expect(p.dialogs(() => undefined)).not.toBeNull();
     p.onLibraryChange(() => undefined);
     p.flush();
     await settled();
@@ -169,12 +188,17 @@ describe('the platform seam picks the launcher when it answers', () => {
     expect(JSON.parse(l.docs.get('models.downloads')!)).toEqual({ keys: ['A'] });
     expect(JSON.parse(l.library!).format).toBe('repackshot-library');
     expect([...l.cache.keys()]).toEqual([]);
+    // The folder chosen is remembered by the launcher (state/desktop.folders.json), for the next launch's confirmation.
+    expect(JSON.parse(l.docs.get('desktop.folders')!)).toEqual({ 'd-renders': '/home/a/Renders' });
   });
 
   it('without the launcher it is the web platform, on the browser storage', async () => {
     const p = await choosePlatform({ native: null });
     expect(p.kind).toBe('web');
     expect(p.native).toBeNull();
+    expect(p.dialogs(() => undefined)).toBeNull();
+    expect(p.files({ handles: { putHandle: async () => undefined, getHandle: async () => null }, download: () => undefined, folderTitle: () => '', confirmTitle: () => '', folderItem: () => '', onDialogError: () => undefined }).canChooseFolder).toBe(true);
+    expect(touched).toContain('showDirectoryPicker');
     expect(p.settings.initial.doc.settings['general.lang']).toBe('es');
     expect(p.storage.kind).toBe('browser');
     expect(touched).toContain('window.localStorage');

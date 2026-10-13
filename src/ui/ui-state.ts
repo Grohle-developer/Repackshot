@@ -146,6 +146,17 @@ export interface EngineInfo {
   native?: { threads: number; isa: string; simd: string[]; os: string; arch: string; engineVersion: string };
 }
 
+/**
+ * What draws the desktop window (the launcher's `/api/info` `window`, P3c): Repackshot's own window
+ * (`webview2`, detail = its version), a browser's app window (`browser`, detail = the browser), the default
+ * browser, or nothing; and why it is not our own window when it is not.
+ */
+export interface DesktopWindow {
+  kind: 'webview2' | 'browser' | 'default' | 'none' | string;
+  detail: string | null;
+  reason: 'forced' | 'not-windows' | 'loader-missing' | 'runtime-missing' | 'failed' | string | null;
+}
+
 /** The desktop launcher, when the page runs in its window (Settings ▸ Desktop, Storage). */
 export interface DesktopInfo {
   portable: boolean;
@@ -158,10 +169,11 @@ export interface DesktopInfo {
   os?: string;
   arch?: string;
   /**
-   * What draws the window, when the launcher says (`/api/info` `window`, phase P3c): `webview2` (its own window,
-   * `detail` the runtime's version), `browser` (an app window, `detail` the browser), `default` or `none`.
+   * What draws the window (`/api/info` `window`, phase P3c): `webview2` (its own window, `detail` the runtime's
+   * version), `browser` (an app window, `detail` the browser), `default` or `none`. Null from a launcher before P3c
+   * or with --serve-only.
    */
-  window?: { kind: string; detail: string | null } | null;
+  window?: DesktopWindow | null;
 }
 
 /** The update check in this session (Settings ▸ Updates, the notice in the status bar); not remembered. */

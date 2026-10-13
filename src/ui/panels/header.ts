@@ -5,14 +5,35 @@ import * as cmd from '../commands';
 import { segmented } from '../components/controls';
 import { confirmBox, openFloating, openMenu, type ConfirmSpec, type MenuEntry } from '../components/widgets';
 import { h, icon } from '../dom';
+import { LOGO_MARK } from '../icons';
 import type { Ctx, Scope } from '../reactive';
 import { kbdFor } from '../shortcuts';
 import { t } from '../strings';
 import { effectiveMode, type ViewportMode } from '../ui-state';
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** The app's mark (icons.ts LOGO_MARK, docs/media/logo.svg) at `size` pixels. */
+function logoMark(size: number): SVGSVGElement {
+  const m = LOGO_MARK;
+  const el = (tag: string, attrs: Record<string, string | number>) => {
+    const e = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+    return e;
+  };
+  const svg = el('svg', { viewBox: m.viewBox, width: size, height: size, class: 'brand-mark', 'aria-hidden': 'true' }) as SVGSVGElement;
+  svg.append(
+    el('rect', { width: 256, height: 256, rx: m.tile.rx, fill: m.tile.fill }),
+    ...m.strokes.map((d) => el('path', { d, fill: 'none', stroke: m.stroke, 'stroke-width': m.strokeWidth, 'stroke-linecap': 'round' })),
+    el('ellipse', { cx: m.shadow.cx, cy: m.shadow.cy, rx: m.shadow.rx, ry: m.shadow.ry, fill: m.shadow.fill, opacity: m.shadow.opacity }),
+  );
+  return svg;
+}
+
 export function header(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui } = ctx;
-  const menuBtn = h('button', { type: 'button', class: 'btn', style: 'border-color:transparent;background:transparent', 'aria-label': t('menu.open'), 'aria-haspopup': 'menu' }, icon('menu'), h('span', { class: 'brand' }, t('app.name')));
+  // The application menu behind the app's mark, with a caret (the desktop window's title bar names the app).
+  const menuBtn = h('button', { type: 'button', class: 'brand-btn', 'aria-label': t('menu.main'), 'data-tip': t('menu.main'), 'aria-haspopup': 'menu' }, logoMark(22), icon('chevronDown', 12));
 
   const openAppMenu = () => {
     const s = store.get();

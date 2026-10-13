@@ -14,6 +14,10 @@
 # The engine also promises zero external dependencies. That rule is checked by requiring that
 # Cargo.lock contains only workspace members: a `[[package]]` with a `source =` line is a crate
 # from a registry or from git, and the "Zero external dependencies" step fails on it.
+#
+# The toolchain is pinned (RUST_VERSION, the same as the development machines): a new stable
+# brings new clippy lints, and `-D warnings` would turn every release of Rust into a red CI that
+# no change caused. Moving to a newer Rust is a deliberate change that fixes its new lints.
 name: Engine
 
 on:
@@ -24,6 +28,11 @@ on:
 
 permissions:
   contents: read
+
+env:
+  RUST_VERSION: 1.97.0
+  # Wins over engine/rust-toolchain.toml (channel "stable"), so every cargo call uses the pin.
+  RUSTUP_TOOLCHAIN: 1.97.0
 
 concurrency:
   group: engine-${{ github.ref }}
@@ -38,8 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown, wasm32-wasip1, aarch64-unknown-linux-gnu, riscv64gc-unknown-linux-gnu, x86_64-pc-windows-gnu
 

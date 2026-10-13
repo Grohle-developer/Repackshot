@@ -1280,72 +1280,144 @@ tamaño exacto y `sha256`, la licencia con su texto citado y su URL, y la
 regla de recomendación como tabla de datos. Sin medidas todavía: los
 umbrales son los de la tabla, marcados *provisionales*.
 
-**Parte B, tras X3.** `AI-POST.md` §2: releer y citar al pie de la letra las licencias
+**Parte B, tras X3c.** `AI-POST.md` §2: releer y citar al pie de la letra las licencias
 de Z-Image-Turbo, su codificador, su VAE y su ControlNet, y de FLUX.2
-klein 4B; fijar los `sha256` de los ficheros cuantizados (web q4f16 y
-GGUF de escritorio); Sonnet prepara una hoja comparativa (8 renders del
-motor —producto e interior—, 3 intervenciones, los dos modelos, con las
-métricas de la guarda de §3.2 y el tiempo) y **Fable elige** y fija las
-tolerancias iniciales (ΔE₀₀, bordes, nitidez). Prueba de ONNX Runtime
-nativo frente a stable-diffusion.cpp para escritorio.
+klein 4B, y la de stable-diffusion.cpp y ggml; Sonnet prepara una
+**herramienta** que genera la hoja comparativa (8 renders del motor
+—producto e interior—, 3 intervenciones, los dos modelos, con las
+métricas de la guarda de §3.2, el tiempo y el pico de memoria, en Vulkan
+y en CPU) y que el usuario ejecuta **en su equipo** (aquí no hay GPU); con
+esa hoja **Fable elige** el modelo y fija las tolerancias iniciales
+(ΔE₀₀, bordes, nitidez) y los umbrales de la regla de §2.4. Los `sha256`
+de la web (q4f16) los fija X3d.
 
-**Depende de.** X2, X3 (la guarda tiene que existir para medir).
+**Depende de.** X3c (la tubería tiene que existir para medir).
 
 ## X2 · Pases del motor para la IA — **Opus**
 
-**Qué.** En `rt-core`: pases de albedo (primer rebote no especular),
-normal, profundidad, id de pieza, id de material y mapa de desenfoque
-(círculo de confusión de la cámara de lente fina), con máscara de pases
-en `RNDR`, exportación en `rt-wasm`, acumulación en el pool de E4 y
-lectura en TypeScript. Coincide con la parte de pases de N2 y la
-adelanta.
+**Qué.** Contrato en `AI-POST.md` §7.4 y `src/core/passes.ts`. En
+`rt-core`: pases de albedo (primer rebote no especular), normal,
+profundidad, id de pieza, id de material y mapa de desenfoque (círculo de
+confusión de la lente fina), con máscara de pases en `RNDR`; exportación
+en `rt-wasm`, acumulación en el pool de E4 y lectura en TypeScript; en el
+lanzador, `passes=…` en `/api/render` para los trabajos finales, que los
+guarda por id para la tubería, y `GET /api/render/<id>/passes`. Coincide
+con la parte de pases de N2 y la adelanta.
 
-**Depende de.** E4.
+**Depende de.** E4, y **E5 fusionada** (los dos tocan el integrador).
 
 **Criterio.** Tests: el id de pieza de cada píxel coincide con el `pick`
 del centro del píxel; el albedo de un material difuso es su color; el
 mapa de desenfoque es cero en el plano de enfoque y crece con la
-distancia según la fórmula de lente fina (±1 %); determinismo y paridad
-nativo/wasm intactos.
+distancia según la fórmula de lente fina (±1 %); pedir pases no cambia
+ni un píxel de la imagen; determinismo y paridad nativo/wasm intactos.
 
-## X3 · Tubería de post-procesado y guarda — **Opus**
+## X3 · Tubería de post-procesado y guarda — partida en X3a–X3d
 
-**Qué.** `AI-POST.md` §2.3 y §3: `src/ai/` con ONNX Runtime Web (MIT) en
-workers por etapa, descarga con progreso y `sha256`, caché en OPFS con
-`persist()`, fragmentos de ≤ 1 GiB, mosaicos con solape, relleno y
-recorte a resolución exacta, *prompt* desde materiales y luces,
-condicionamiento con profundidad y bordes de id cuando el motor de
-ejecución lo soporte, y la **guarda determinista** completa
-(transferencia de sombreado, separación de frecuencias, regiones por id
-con ΔE₀₀, nitidez frente al mapa de desenfoque, comprobación y retroceso)
-como funciones puras probadas sin modelo. Integración en la cola: el
-trabajo guarda las dos imágenes y el informe de la guarda. Dependencia
-nueva anotada en `ARCHITECTURE.md` §1.
+Decisión del líder (`AI-POST.md` §7): en escritorio todo nativo (la
+página solo envía ajustes y recibe resultados), la guarda en un *crate*
+propio sin dependencias, y la web detrás.
 
-**Depende de.** X2, U5.
+### X3a · `rt-post`: la guarda y los píxeles — **Opus**
+
+**Qué.** `AI-POST.md` §3.2 y §7.2: `engine/crates/rt-post` (solo `std`,
+`f32`, determinista, sin `unsafe`) con condicionamiento (bordes de los
+cambios de id y normal, profundidad normalizada), plan de mosaicos con
+solape y fusión, relleno a múltiplo de 16 y recorte, la **guarda**
+completa (transferencia de sombreado, separación de frecuencias, regiones
+por id con ΔE₀₀, nitidez frente al mapa de desenfoque), las
+comprobaciones y la máquina de pasos con retroceso; `rt-post-wasm` →
+`public/engine/post.wasm`; en `src/ai/`, la envoltura TypeScript de ese
+wasm y el *prompt* desde materiales y luces (`prompt.ts`). Informe con la
+forma de `GuardReport` (`src/core/ai.ts`).
+
+**Depende de.** Nada (los pases se sintetizan en los tests).
 
 **Criterio.** La guarda, probada con un "modelo" sintético que hace
 cosas prohibidas (mueve una arista, cambia el color de un material,
-emborrona lo enfocado, cambia el tamaño): cada una se detecta y se
-corrige o se rechaza; con intervención 0 la salida es idéntica bit a bit
-a la entrada; la resolución de salida es siempre la del trabajo. En el
-navegador con WebGPU, una imagen de 1024² sale con el modelo real (se
-anota el tiempo); sin WebGPU, el interruptor queda deshabilitado con el
-motivo.
+emborrona lo enfocado, enfoca lo desenfocado, cambia el tamaño, toca
+fuera de las regiones): cada una se detecta y se corrige o se rechaza;
+con intervención 0 la salida es idéntica bit a bit a la entrada sin
+llamar al modelo; la resolución de salida es siempre la del trabajo;
+mismo resultado en nativo y en wasm, bit a bit; puertas del motor
+(`fmt`, `clippy`, sin dependencias en `Cargo.lock`).
+
+### X3b · stable-diffusion.cpp en escritorio — **Opus**
+
+**Qué.** `AI-POST.md` §7.1: `src/data/ai-runtimes.json` con las
+compilaciones oficiales fijadas (Vulkan y CPU, Windows y Linux x86_64:
+URL, tamaño, `sha256`, licencia citada, versión, `supports` comprobado),
+la regla de elección (Vulkan con GPU, CPU sin ella) evaluada igual por la
+interfaz y el lanzador, descarga e instalación desde *Ajustes ▸
+Post-procesado IA* (fila *Motor de ejecución*, con progreso, reanudación
+y `sha256`, a `<datos>/ai/runtimes/<sha256>/`), el proceso auxiliar en
+`rt-app` (arranque, argumentos por clave de modelo, progreso,
+cancelación, tiempo límite, cierre con la aplicación, sin ventana de
+consola en Windows) y la API `/api/ai/runtime` (estado como
+`AiRuntimeStatus`) y `/api/ai/run` (una inferencia *img2img* sin guarda:
+imagen, control, *prompt*, fuerza, semilla).
+
+**Depende de.** P2.
+
+**Criterio.** Tests con un proceso auxiliar **falso** (un binario de
+prueba que habla el mismo protocolo): argumentos exactos por clave,
+progreso, cancelación, tiempo límite, proceso colgado, salida de tamaño
+distinto rechazada; un `sha256` que no coincide no se instala. Con la
+compilación real de Linux CPU, `--help`/versión se leen y la fila de
+*Ajustes* lo muestra. Sin descargar pesos de varios GB en este entorno: la
+primera imagen real se hace en el equipo del usuario.
+
+### X3c · La tubería completa de escritorio — **Opus**
+
+**Qué.** `AI-POST.md` §7.3: `/api/ai/post` en el lanzador (pases
+guardados del render → `rt-post` → stable-diffusion.cpp por mosaico →
+`rt-post` → reintentos), progreso y cancelación; el `AiPostService` de
+escritorio en `src/io/`; integración en la cola (el trabajo guarda las
+dos imágenes y el informe; el historial las conserva); `AI_AVAILABLE`
+pasa a ser lo que diga `status()`.
+
+**Depende de.** X2, X3a, X3b; X4 para verlo de punta a punta.
+
+**Criterio.** De punta a punta con el proceso auxiliar falso: un render
+final con IA deja dos imágenes y el informe en el historial; con
+intervención 0, la imagen de la IA es la del motor bit a bit; cancelar a
+mitad deja la del motor; un modelo que la compilación no carga sale con
+el motivo. Lista corta de comprobación para el equipo del usuario (Vulkan,
+una imagen de 1024², tiempo anotado).
+
+### X3d · La web — **Opus**
+
+**Qué.** `AI-POST.md` §2.3: ONNX Runtime Web (MIT) con WebGPU en
+workers por etapa, **exportar el codificador del VAE a ONNX** desde el
+`ae.safetensors` Apache-2.0 para que exista `ZIMAGE_WEB` (con sus
+`sha256`), caché en OPFS con `persist()`, fragmentos de ≤ 1 GiB, el
+conductor de la máquina de pasos en un worker con `post.wasm`.
+Dependencia nueva anotada en `ARCHITECTURE.md` §1.
+
+**Depende de.** X3c.
+
+**Criterio.** El mismo de X3c con el servicio web; sin WebGPU, el
+interruptor queda deshabilitado con el motivo.
 
 ## X4 · Interfaz del post-procesado — **Sonnet**
 
-**Qué.** `AI-POST.md` §4: interruptor, configurador de seis controles,
-fichas de protecciones, *Otra variación*, vista previa en modo Rápido con
-divisor, actualización al soltar con el tiempo medido, opción de vista
-previa con el motor completo, informe de la guarda en el visor de
-resultados con el divisor de U5, y las dos miniaturas en la cola.
+**Qué.** `AI-POST.md` §4 y §7.5: interruptor, configurador de seis
+controles, fichas de protecciones, *Otra variación*, vista previa en modo
+Rápido con divisor (los pases de §7.4 dibujados con three.js al tamaño de
+la vista previa), actualización al soltar con el tiempo medido, opción
+de vista previa con el motor completo, informe de la guarda en el visor
+de resultados con el divisor de U5, y las dos miniaturas en la cola; los
+ajustes en el *store* (§7.5). Todo contra `AiPostService`
+(`src/core/ai.ts`) con un **servicio sintético** (determinista, sin
+modelo) hasta que X3c conecte el real; mientras, el interruptor dice
+*próximamente* fuera de los tests.
 
-**Depende de.** X3.
+**Depende de.** U5, U6; el contrato de `src/core/ai.ts`.
 
-**Criterio.** Cada control a 0 no cambia su aspecto (test con el modelo
-sintético); la vista previa no se recalcula durante un arrastre; capturas
-de la sección y del visor con el divisor.
+**Criterio.** Cada control a 0 no cambia su aspecto (test con el servicio
+sintético); la vista previa no se recalcula durante un arrastre; los
+pases de three.js coinciden con los del motor en ids y profundidad en una
+escena de prueba; capturas de la sección y del visor con el divisor.
 
 ## X5 · Ajustes y modelos — absorbida en U6
 
@@ -1481,9 +1553,10 @@ variantes.
 
 **Qué.** Habitación de ejemplo procedural con sofá y lámpara (K2) y, como
 activos descargables bajo demanda y nunca en el paquete base, una
-selección de Poly Haven (modelos de mobiliario y HDRI de interior, CC0) y
-ambientCG (HDRI y texturas, CC0) con **licencia y origen registrados por
-archivo** en un `assets.json`; nada de Quaternius ni 3D Warehouse;
+selección de Poly Haven (modelos de mobiliario, CC0) y ambientCG
+(texturas, CC0) con **licencia y origen registrados por archivo** en un
+`assets.json`; **ningún HDRI de terceros** (decisión del usuario,
+`STUDIO-TOOLS.md` §2: los entornos son recetas propias); nada de Quaternius ni 3D Warehouse;
 atribución para Khronos si se usa. Hoja de contactos de interiores en CI
 con `rt`.
 
@@ -1706,13 +1779,78 @@ integra todo lo que la interfaz marca *próximamente***.
 | **P3e** | Opus | **Escritorio: todo sobre el lanzador** (decisión del líder tras «se pisa el texto» y «dice no pillar la GPU por ser browser»: *en escritorio la página es solo interfaz*): una costura de plataforma con implementación web y de lanzador; ajustes, biblioteca, historial, miniaturas, equipo y espacio usado en la carpeta de datos por el lanzador; puerto estable por carpeta de datos; ni una fila que hable del navegador; filas de Ajustes que no se pisan |
 | **U7** | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*) |
 | **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
-| **E5b** | Opus | Profundidad de campo (lente fina), reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
+| **E5b** | Opus | Reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
 | **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie, anisotropía; desgaste visible en motor y visor |
 | **L4**, **L5** | Opus, Sonnet | Ya descritas: focos propios (área, punto, foco, sol) con todas sus operaciones; IES |
 | **M2** | Opus | Ya descrita: texturas de imagen y etiquetas |
 | **N1**, **N2** | Opus, Sonnet | Vídeo codificado (WebCodecs y muxers MP4 y WebM propios) y lo que quede de pases y lotes |
 | **U8** | Sonnet | Lo pequeño de la interfaz: copia automática y recuperación, letras de acceso en menús, cambiar atajos, *Buscar actualizaciones*, los chequeos del Doctor que faltan y sus *Arreglar* (**D1**) |
-| **X1b–X4** | Fable, Opus, Sonnet | Ya descritas: el post-procesado IA completo |
+| **X1b–X4** | Fable, Opus, Sonnet | Ya descritas: el post-procesado IA completo (X3 partida en X3a–X3d, `AI-POST.md` §7) |
+
+**P3b hecha.** Diálogos del sistema (carpeta, abrir, guardar) desde el
+lanzador con PowerShell en Windows y `zenity`/`kdialog` en Linux, y API
+de archivos que solo toca lo que la persona eligió en un diálogo durante
+ese arranque (carpetas de salida solo para archivos nuevos, nunca se
+sobrescribe; extensiones permitidas; *Descargas* y el último proyecto
+como únicas excepciones del lanzador); renders, proyectos, importaciones,
+exportaciones y modelos pasan por ahí y la burbuja de descargas no
+aparece. Interruptores de endurecimiento y preferencias de perfil para
+Edge/Chromium en una sola constante que reutiliza P3c; la página bloquea
+el menú contextual, la selección del cromo, la traducción, el zoom, la
+recarga, la impresión, la búsqueda y la navegación del navegador
+(`src/ui/guards.ts`), sin romper ningún atajo propio; `Ctrl W`/`Ctrl Q`
+pasan por nuestra pregunta; los enlaces externos salen por un único
+`openExternal` (lanzador en escritorio) y un test impide `alert`,
+`confirm`, `prompt`, `print` y `window.open`; favicon, iconos y
+manifiesto propios. Sin probar en Windows real: que los diálogos salgan
+delante de la ventana y que el minimenú de Edge desaparezca del todo (lo
+garantiza P3c).
+
+**P3c hecha.** Ventana Win32 propia con WebView2 en Windows
+(`engine/crates/rt-app/src/platform/`, el único sitio del lanzador con
+`unsafe`, cada bloque con su porqué): COM escrito a mano (tablas virtuales
+transcritas del IDL del SDK, con su número de métodos y la posición de
+cada método usado comprobados en los tests), el cargador
+`WebView2Loader.dll` de Microsoft junto al ejecutable (NuGet
+`Microsoft.Web.WebView2` 1.0.4258.31, licencia de estilo BSD que permite
+redistribuirlo con su aviso; SHA-256 del paquete y de la DLL fijados en
+`packaging/lib/webview2.mjs`) y el *runtime* Evergreen del sistema; perfil
+en `webview2/` de la carpeta de datos (portable incluido). Todo lo que no
+es nuestra interfaz, apagado por la API: menús contextuales, diálogos de
+script, atajos del navegador, barra de estado, zoom, pellizco, deslizar
+para volver, autorrelleno, contraseñas, SmartScreen, página de error y,
+en *release*, herramientas de desarrollo; navegación solo a nuestro
+origen, enlaces `https` pulsados al navegador del sistema, ninguna
+ventana nueva, descargas canceladas sin su panel (y la página no descarga
+nunca en esa ventana: lo comprueba un test), permisos denegados salvo los
+archivos que la persona eligió y el almacenamiento persistente. Cerrar
+(botón, `Alt F4`, barra de tareas, menú del sistema) llega a la página
+como `close-requested` y pasa por la misma pregunta que `Ctrl W`
+(`requestCloseWindow`, *Guardar · No guardar · Cancelar*), sin
+`beforeunload`. Icono propio, título `Repackshot — <proyecto>`, barra de
+título oscura con el tema oscuro, AppUserModelID `Repackshot.App` (y el
+mismo en los accesos directos del instalador, con `repackshot
+--shortcut-id`), tamaño, posición y tema recordados en `window.json`, y
+los diálogos de archivo de P3b con la ventana como dueña. Si falta el
+cargador o el *runtime*, o falla cualquier paso, se apunta en el registro
+y se abre la ventana `--app` de Edge; *Ajustes ▸ Escritorio* dice qué
+ventana es y por qué, y `--window=webview2|browser` la fuerza. En la
+cabecera, el logotipo con una flecha hacia abajo en lugar de las tres
+rayas (web y escritorio). Linux sin cambios.
+
+Lo que no encajó con el plan: por decisión del líder, tras compararlo con
+NesTube, la ventana usa la barra de título **del sistema** y no una
+dibujada por la página (la versión sin marco, con el borde superior y
+*Snap Layouts* sobre nuestro botón de maximizar, se hizo, se probó bajo
+Wine y se quitó). A WebView2 se le pasan las `DISABLED_FEATURES` y los
+interruptores contra la ralentización de `browser.rs` (una sola fuente),
+pero no los `HARDENING_SWITCHES`: son de la interfaz del propio navegador,
+que WebView2 no tiene o que su API ya apaga, y no están documentados para
+WebView2. Bajo Wine no se puede leer de vuelta el AppUserModelID de un
+acceso directo (su almacén de propiedades es un esbozo), así que eso, y
+todo lo de WebView2, queda por probar en Windows real. El puerto
+aleatorio por arranque, que hace perder `localStorage` entre arranques
+(en la ventana de Edge y en la propia), queda para P3e.
 
 **P3e hecha.** En escritorio la página es solo la interfaz. Una costura
 `Platform` (`src/io/platform.ts`), elegida una vez al arrancar, con dos
@@ -1761,14 +1899,29 @@ del lanzador, ninguna mención del navegador en los dos idiomas, *Liberar*
 por el lanzador, y ningún solape en todas las secciones a 1600, 1280 y
 960 px, 90–150 %, dos idiomas, oscuro, claro y contraste alto); capturas
 `settings-desktop-paths.png`, `settings-storage-desktop.png`,
-`settings-ai-desktop.png`. 997 tests web y 262 del motor.
+`settings-ai-desktop.png`. Con P3b y P3c unidas, 1044 tests web y 309 del
+motor.
 
-No encajó con el plan: las carpetas de salida y el último proyecto siguen
-con los *handles* del navegador en esta rama (en escritorio duran la
-sesión) porque los sustituyen los diálogos y rutas del lanzador de P3b; al
-unir, el `memory: localStorage` de las carpetas de P3b pasa a ser
-`platform.memory` (la migración ya copia `repackshot.desktop.folders`). El
-*token* sigue en `sessionStorage` (es el secreto del arranque, no estado).
+Unida con P3b y P3c: las carpetas de salida, los proyectos (con el último
+que recuerda el lanzador) y los diálogos de importar y exportar salen
+también de la plataforma (en escritorio, los de P3b; nunca los selectores
+ni los *handles* del navegador), las carpetas elegidas se recuerdan en
+`state/desktop.folders.json` y no en `localStorage`, y *Ventana dibujada
+por* es una sola función (la de P3c, con sus motivos) que dice *La ventana
+propia de Repackshot (WebView2 x.y)* y nunca el nombre de un ejecutable
+(sin ventana del lanzador, `--serve-only`, ya no dice *El navegador por
+defecto*). La comprobación del lanzador real suma que *Elegir carpeta…* y
+*Guardar proyecto* pasan por los diálogos del lanzador (un `zenity` de
+prueba) sin tocar los selectores del navegador, que la carpeta queda en
+los datos y que *Descargas* lo escribe el lanzador. Al unir: la carpeta
+de salida elegida, que P3b muestra por su ruta, se salía de su fila; el
+botón dice su nombre y la ruta entera va debajo. Arreglado de paso un
+fallo intermitente del test de paridad (`tests/parity.rs`: si la última
+pasada llegaba entre dos consultas, el marco devuelto no venía marcado
+como terminado).
+
+No encajó con el plan: el *token* sigue en `sessionStorage` (es el secreto
+del arranque, no estado).
 La copia automática no existe todavía (U8): cuando llegue, a la carpeta de
 datos por la plataforma. `REPACKSHOT_TEST_GPUS` (tarjetas falsas, solo para
 pruebas) la lee también el binario de *release*. En Windows, si el puerto
@@ -1779,8 +1932,32 @@ probar en un Windows real.
 
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
-**N2**; oleada 4 **X1b**, **X2**, **X3**, **X4**. Cada fase quita sus
+**N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b** y **X4** ya; **X2** al fusionarse E5; **X3c**, **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
 *próximamente* y no deja ninguno nuevo sin anotarlo aquí.
+
+## Herramientas de estudio (óptica, entorno, luz, cámara, partículas)
+
+Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
+2 (la DoF de E5b pasa a O1):
+
+| Fase | Responsable | Qué |
+| --- | --- | --- |
+| **A6** | Sonnet | Assets sin motor nuevo: `lenses.json` (16 prescripciones con test paraxial), `bokeh.json` (20 tipos), máscaras de diafragma y gobos generados, `camera-moves.json` |
+| **O1** | Opus | Lente fina mejorada: diafragma poligonal y por máscara, perfiles de pupila, obstrucción, ojo de gato aproximado, anamórfico, *tilt-shift*, *split diopter*, CA por canal; selector de bokeh |
+| **O2** | Opus | Lente trazada: prescripciones, intersección estable, límites de pupila, autoenfoque, respiración; las 16 lentes |
+| **O3** | Opus | CA por tres bandas, coatings (transmisión, tinte, T-stop), velo |
+| **O4** | Opus | Flare con fantasmas, estrella de difracción, bloom y halación, polvo y rayas |
+| **O5** | Sonnet | Editor de lentes: carácter, corte en SVG, ajustes no físicos marcados, *Guardar lente como…* |
+| **W1** | Opus | Evaluador de pines en el motor con muestreo por importancia; editor de pines; *Colocar brillo* |
+| **W2** | Sonnet | Biblioteca de 39 entornos (recetas, miniaturas, *hash*), exportar HDR/EXR, interiores horneados |
+| **L6** | Sonnet | Colocación *Reflejo · Directo · Órbita*, normal suavizada, obstáculos, potencia automática |
+| **L7** | Opus | Emisores con perfil procedural, gobos, banderas, reflectores |
+| **L8** | Opus | Difuso/especular por luz, enlazado de luz y sombra, solo, parpadeo |
+| **L9** | Sonnet | Falso color por zonas, fotómetro, hornear el montaje a entorno |
+| **N4** | Sonnet | Biblioteca de movimientos de cámara, cámara en mano, rampas, proporciones |
+| **N5** | Opus | Dibujar y grabar recorridos, bloqueo de objetivo, desenfoque de movimiento |
+| **S0** | Fable | Decisiones de partículas: dónde vive el simulador, formato de caché, secciones RSB |
+| **S1**–**S10** | Opus, Sonnet | Dispersión e instancias; caída y reposo; gotas y condensación; emisores sin estado; volúmenes; humo; líquidos; pelo y césped; telas; mejoras (detalle en `docs/research/particles.md` §6) |
 
 ## Orden sugerido
 

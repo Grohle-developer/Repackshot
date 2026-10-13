@@ -57,6 +57,9 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
     portable: false,
     browser: 'msedge',
     pid: 1,
+    // The dialogs and file API of P3b, and the window report of P3c.
+    filesApi: 1,
+    window: { kind: 'browser', detail: 'msedge', reason: 'not-windows' },
   };
   const gpus = opts.gpus ?? [{ name: 'Test GPU', vendor: 'NVIDIA', vramBytes: 12 * 2 ** 30, vramGiB: 12 }];
   const handle = async (input: string, init: RequestInit = {}): Promise<Response> => {
@@ -88,6 +91,11 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
         return json(200, { cpu: 'Test CPU', cores: 4, threads: 8, ramBytes: 16 * 2 ** 30, ramGiB: 16, ramUsableBytes: null, gpus, device: 'gpu', gpuFound: gpus.length > 0, detected: true, input: null, recommendation: null });
       case 'GET pending-models':
         return json(200, null);
+      case 'POST dialog/folder': {
+        // The person picks this folder in the system's dialog.
+        const file = { id: 'd-renders', name: 'Renders', path: '/home/a/Renders', folder: true, read: false, write: true, size: null };
+        return json(200, { cancelled: false, file, files: [file] });
+      }
       case 'GET models':
         return json(200, { dir: '/data/models', installed: [], models: [] });
       case 'GET store/settings':

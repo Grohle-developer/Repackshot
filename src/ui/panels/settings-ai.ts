@@ -441,25 +441,37 @@ function modelsBlock(ctx: Ctx, scope: Scope): HTMLElement {
   const rows = new Map<string, ReturnType<typeof modelRow>>();
   const importStatus = h('div', { class: 'note', role: 'status', 'aria-live': 'polite' });
   const importPanel = h('div', { class: 'sw-import-panel' });
+  const imported = async (files: File[]) => {
+    if (!files.length || !svc) return;
+    importPanel.replaceChildren();
+    const handle = (r: ImportOutcome) => {
+      if (r.kind === 'needsManifest') importPanel.replaceChildren(manifestForm(ctx, files, r.files, handle));
+      else {
+        importPanel.replaceChildren();
+        if (r.kind === 'done') {
+          const m = findModel(svc.snapshot(), r.key);
+          importStatus.textContent = t('set.ai.importDone', { name: m ? modelName(m) : r.key });
+        } else importStatus.textContent = outcomeText(r);
+      }
+    };
+    handle(await svc.importFiles(files, null));
+  };
   const pick = (folder: boolean) => {
+    // The desktop: the system's dialogs, and the files stay in the launcher (read in ranges, hashed there: tens of GB).
+    const dialogs = ctx.services.dialogs;
+    if (dialogs) {
+      const chosen = folder
+        ? dialogs.openFolderFiles({ title: t('dialog.importAiFolder'), folderItem: t('dialog.folderItem') })
+        : dialogs.openFiles({ title: t('dialog.importAiFiles'), multiple: true, lazy: true, filters: [{ name: t('dialog.aiFiles'), extensions: ['safetensors', 'gguf', 'onnx', 'onnx_data', 'json', 'txt'] }, { name: t('dialog.allFiles'), extensions: ['*'] }] });
+      void chosen.then((files) => imported(files ?? []));
+      return;
+    }
     const input = h('input', { type: 'file', multiple: true, style: 'display:none' }) as HTMLInputElement;
     if (folder) input.setAttribute('webkitdirectory', '');
-    input.addEventListener('change', async () => {
+    input.addEventListener('change', () => {
       const files = input.files ? [...input.files] : [];
       input.remove();
-      if (!files.length || !svc) return;
-      importPanel.replaceChildren();
-      const handle = (r: ImportOutcome) => {
-        if (r.kind === 'needsManifest') importPanel.replaceChildren(manifestForm(ctx, files, r.files, handle));
-        else {
-          importPanel.replaceChildren();
-          if (r.kind === 'done') {
-            const m = findModel(svc.snapshot(), r.key);
-            importStatus.textContent = t('set.ai.importDone', { name: m ? modelName(m) : r.key });
-          } else importStatus.textContent = outcomeText(r);
-        }
-      };
-      handle(await svc.importFiles(files, null));
+      void imported(files);
     });
     document.body.appendChild(input);
     input.click();

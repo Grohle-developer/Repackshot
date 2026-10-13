@@ -12,6 +12,7 @@ const TABLE = {
   'app.unsaved': ['Unsaved changes', 'Cambios sin guardar'],
   'app.renameProject': ['Rename the project', 'Renombrar el proyecto'],
   'menu.open': ['Menu', 'Menú'],
+  'menu.main': ['Main menu', 'Menú principal'],
   'menu.new': ['New', 'Nuevo'],
   'menu.openProject': ['Open project…', 'Abrir proyecto…'],
   'menu.save': ['Save project', 'Guardar proyecto'],
@@ -1373,13 +1374,16 @@ const TABLE = {
   // What draws the window, by name (never an executable's name). The default browser is said as it is: then
   // the application really is in a browser tab.
   'set.dk.defaultBrowser': ['The default browser', 'El navegador por defecto'],
-  'set.dk.window.edge': ['Microsoft Edge app window', 'Ventana de aplicación de Microsoft Edge'],
-  'set.dk.window.chromium': ['Chromium app window', 'Ventana de aplicación de Chromium'],
-  'set.dk.window.chrome': ['Google Chrome app window', 'Ventana de aplicación de Google Chrome'],
-  'set.dk.window.brave': ['Brave app window', 'Ventana de aplicación de Brave'],
+  'set.dk.window.webview2': ['Repackshot’s own window (WebView2 {version})', 'La ventana propia de Repackshot (WebView2 {version})'],
+  'set.dk.window.app': ['{browser} app window', 'Ventana de aplicación de {browser}'],
+  'set.dk.window.none': ['No window could be opened', 'No se pudo abrir ninguna ventana'],
+  'set.dk.window.because': ['{window} ({reason})', '{window} ({reason})'],
+  'set.dk.reason.forced': ['chosen with --window=browser', 'elegida con --window=browser'],
+  'set.dk.reason.loader-missing': ['WebView2Loader.dll is missing next to the program', 'falta WebView2Loader.dll junto al programa'],
+  'set.dk.reason.runtime-missing': ['WebView2 runtime not found', 'no se encontró el runtime de WebView2'],
+  'set.dk.reason.failed': ['WebView2 failed: see the logs', 'WebView2 falló: mira los registros'],
+  'set.dk.window.webview2Plain': ['Repackshot’s own window (WebView2)', 'La ventana propia de Repackshot (WebView2)'],
   'set.dk.window.other': ['App window', 'Ventana de aplicación'],
-  'set.dk.window.webview2': ['Native window (WebView2 {version})', 'Ventana nativa (WebView2 {version})'],
-  'set.dk.window.webview2Plain': ['Native window (WebView2)', 'Ventana nativa (WebView2)'],
   'set.dk.window.unknown': ['A window the application did not open', 'Una ventana que no abrió la aplicación'],
   'up.checking': ['Checking…', 'Comprobando…'],
   'up.neverChecked': ['Not checked yet', 'Aún no se ha comprobado'],
@@ -1677,6 +1681,34 @@ const TABLE = {
   'toast.copied': ['Copied {material}', 'Copiado {material}'],
   'toast.nothingToPaste': ['Copy a material first', 'Copia antes un material'],
   'toast.oneMaterial': ['The selection carries more than one material', 'La selección lleva más de un material'],
+
+  // The system's dialogs on the desktop (P3b): titles, file types and why one did not open.
+  'dialog.chooseFolder': ['Choose the output folder', 'Elegir la carpeta de salida'],
+  'dialog.confirmFolder': ['Choose the output folder again', 'Vuelve a elegir la carpeta de salida'],
+  'dialog.folderItem': ['Folder selection', 'Selección de carpeta'],
+  'dialog.openProject': ['Open project', 'Abrir proyecto'],
+  'dialog.saveProject': ['Save project', 'Guardar proyecto'],
+  'dialog.allFiles': ['All files', 'Todos los archivos'],
+  'dialog.importModel': ['Import model', 'Importar modelo'],
+  'dialog.models': ['3D models', 'Modelos 3D'],
+  'dialog.importLibrary': ['Import library', 'Importar biblioteca'],
+  'dialog.exportLibrary': ['Export library', 'Exportar biblioteca'],
+  'dialog.library': ['Repackshot library', 'Biblioteca de Repackshot'],
+  'dialog.exportScene': ['Export scene', 'Exportar escena'],
+  'dialog.scene': ['Repackshot scene (RSB)', 'Escena de Repackshot (RSB)'],
+  'dialog.exportImage': ['Export image', 'Exportar imagen'],
+  'dialog.pngImage': ['PNG image', 'Imagen PNG'],
+  'dialog.importAiFiles': ['Import AI model files', 'Importar archivos de un modelo de IA'],
+  'dialog.importAiFolder': ['Import an AI model folder', 'Importar la carpeta de un modelo de IA'],
+  'dialog.aiFiles': ['AI model files', 'Archivos de modelo de IA'],
+  'dialog.err.noDialog': ['Files cannot be chosen: install zenity (GNOME) or kdialog (KDE)', 'No se pueden elegir archivos: instala zenity (GNOME) o kdialog (KDE)'],
+  'dialog.err.busy': ['A file dialog is already open', 'Ya hay un diálogo de archivos abierto'],
+  'dialog.err.failed': ['The file dialog could not open', 'No se ha podido abrir el diálogo de archivos'],
+  'dialog.err.notReady': ['The save dialog is not ready yet: try again in a moment', 'El diálogo de guardar aún no está listo: inténtalo de nuevo en un momento'],
+  'dialog.saveFailed': ['Could not save {name}: {reason}', 'No se ha podido guardar {name}: {reason}'],
+  'rw.folderNoteDesktop': ['Written into {name}', 'Se escribe en {name}'],
+  'rw.folderDeniedDesktop': ['The folder was not chosen again: the images go to Downloads', 'No se ha vuelto a elegir la carpeta: las imágenes van a Descargas'],
+  'project.unsavedClose': ['Save changes to “{name}” before closing?', '¿Guardar los cambios de «{name}» antes de cerrar?'],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type StringKey = keyof typeof TABLE;
@@ -1730,8 +1762,12 @@ export const WEB_ONLY_STRINGS: readonly StringKey[] = [
   'set.hw.webCannot',
 ];
 
-/** Strings of the desktop that name a browser because one really draws the window then (no app window could open). */
-export const DESKTOP_BROWSER_FACTS: readonly StringKey[] = ['set.dk.defaultBrowser'];
+/**
+ * Strings of the desktop that name a browser because one really draws the window then: the default browser (no app
+ * window could open), the app window of the browser named in `{browser}` (Microsoft Edge…: a product's name, never an
+ * executable's), and the `--window=browser` the person chose on the command line (P3c).
+ */
+export const DESKTOP_BROWSER_FACTS: readonly StringKey[] = ['set.dk.defaultBrowser', 'set.dk.window.app', 'set.dk.reason.forced'];
 
 /** The desktop wording, for the tests. */
 export const DESKTOP_STRINGS: Readonly<Partial<Record<StringKey, readonly [string, string]>>> = DESKTOP_TABLE;

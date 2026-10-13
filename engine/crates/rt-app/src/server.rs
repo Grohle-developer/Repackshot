@@ -71,6 +71,10 @@ pub struct App {
     pub models: Store,
     /// The browser drawing the window (for `/api/info`).
     pub browser: Mutex<Option<String>>,
+    /// The system's dialogs (`/api/dialog/*`).
+    pub dialogs: crate::dialogs::Dialogs,
+    /// What the person chose in them (`/api/files*`).
+    pub files: crate::files::Files,
     last_alive: Mutex<Instant>,
     hardware: Mutex<Option<Hardware>>,
     connections: AtomicUsize,
@@ -148,6 +152,10 @@ impl App {
             .any(|p| p.is_empty() || *p == "." || *p == "..")
         {
             return api(Response::error(400, "bad-path", "empty, . or .. segment"));
+        }
+        // Dialogs and the files chosen in them (files.rs).
+        if let Some(r) = crate::files::route(self, req, &parts, body) {
+            return api(r);
         }
         // The page's state in the data folder (appdata.rs, phase P3e): /api/store/*, /api/storage/*.
         if let Some(r) = crate::appdata::route(&self.paths, req, &parts, body) {
@@ -301,7 +309,10 @@ impl App {
                 .str("resultsDir", &p.results().to_string_lossy())
                 .bool("portable", p.portable)
                 .opt_str("browser", lock(&self.browser).as_deref())
+                .raw("window", &crate::platform::report_json())
                 .num("pid", f64::from(std::process::id()))
+                // The dialogs and file API of files.rs (version 1).
+                .num("filesApi", 1.0)
                 .build(),
         )
     }
@@ -448,7 +459,8 @@ fn read_text(req: &Request, body: &mut dyn Read, limit: u64) -> Result<String, R
     Ok(text)
 }
 
-fn read_json(req: &Request, body: &mut dyn Read) -> Result<Value, Response> {
+/// A JSON request body (at most [`MAX_JSON`] bytes).
+pub(crate) fn read_json(req: &Request, body: &mut dyn Read) -> Result<Value, Response> {
     let text = read_text(req, body, MAX_JSON)?;
     json::parse(&text).map_err(|e| Response::error(400, "bad-json", &e.to_string()))
 }
@@ -575,6 +587,7 @@ impl Server {
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         let port = listener.local_addr()?.port();
         let models = Store::new(paths.models(), crate::recommend::catalogue().clone());
+        let paths_data = paths.data_dir.clone();
         let app = Arc::new(App {
             paths,
             token,
@@ -582,11 +595,14 @@ impl Server {
             engine: Engine::new(threads),
             models,
             browser: Mutex::new(None),
+            dialogs: crate::dialogs::Dialogs::new(),
+            files: crate::files::Files::new(&paths_data),
             last_alive: Mutex::new(Instant::now()),
             hardware: Mutex::new(None),
             connections: AtomicUsize::new(0),
             stopping: AtomicBool::new(false),
         });
+        app.dialogs.set_cache_dir(app.paths.data_dir.join("cache"));
         let shared = Arc::clone(&app);
         let handle = std::thread::spawn(move || {
             for stream in listener.incoming() {
@@ -631,6 +647,7 @@ impl Server {
     /// Stops accepting connections and every render job.
     pub fn stop(&mut self) {
         self.app.stopping.store(true, Ordering::Relaxed);
+        self.app.dialogs.close_all();
         // Wake the accept loop.
         let _ = TcpStream::connect(("127.0.0.1", self.app.port));
         if let Some(h) = self.listener.take() {

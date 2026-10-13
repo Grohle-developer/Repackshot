@@ -18,10 +18,13 @@
 // already), and the mark is written. The browser's copy is left as it was.
 
 import { sha256Hex } from '../core/sha256';
+import { createDesktopDialogs, createDesktopFiles, createDesktopProjectFiles, hashNativeFile, NativeFile } from './desktop-files';
+import { createFiles } from './files';
 import { LEGACY_PREF_KEYS } from '../core/settings';
 import { fromNativeHardware } from './hardware';
 import { LIBRARY_STORAGE_KEY, loadLibrary, saveLibrary } from './library';
 import { nativeModelStore } from './model-store';
+import { createProjectFiles } from './project-file';
 import type { NativeClient } from './native';
 import { NativeStore, STORE_NAME_RE } from './native-store';
 import type { Platform, StorageService, ThumbCache } from './platform';
@@ -315,7 +318,19 @@ export async function desktopPlatform(native: NativeClient, over: BrowserApis = 
       await migration;
       return launcherResultsStore(store, limits);
     },
-    modelStore: async (local) => nativeModelStore(native, local.hash),
+    // A file chosen in the launcher's dialog stays there (tens of GB): the launcher hashes it.
+    modelStore: async (local) => nativeModelStore(native, (blob, onProgress) => (blob instanceof NativeFile ? hashNativeFile(native, blob, onProgress) : local.hash(blob, onProgress))),
+    // The launcher's dialogs and file API (P3b). A launcher without them (older than P3b) keeps the browser's
+    // pickers, with handles for the session only: they cannot be written into the data folder.
+    files: (o) =>
+      native.hasFiles
+        ? createDesktopFiles(native, { folderTitle: o.folderTitle, confirmTitle: o.confirmTitle, folderItem: o.folderItem, onDialogError: o.onDialogError, memory: kv })
+        : createFiles(o.handles, o.download, globalThis as unknown as { showDirectoryPicker?: unknown; isSecureContext?: boolean }),
+    projectFiles: (o) =>
+      native.hasFiles
+        ? createDesktopProjectFiles(native, { description: o.description, openTitle: o.openTitle, saveTitle: o.saveTitle, allFiles: o.allFiles, onDialogError: o.onDialogError })
+        : createProjectFiles(globalThis as never, o.download, { description: o.description, remember: o.remember }),
+    dialogs: (onDialogError) => (native.hasFiles ? createDesktopDialogs(native, onDialogError) : null),
     pendingModels: () => native.pendingModels().catch(() => null),
     requestPersistence: async () => true,
     hardware: async (again) => fromNativeHardware(await native.hardware(undefined, again === true)),

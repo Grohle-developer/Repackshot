@@ -1,30 +1,39 @@
 # rt-app — el lanzador de escritorio `repackshot`
 
-Binario de Rust **solo con `std`** y **sin `unsafe`** (`#![forbid(unsafe_code)]`), en el
-mismo *workspace* y con las mismas puertas que el motor (`cargo fmt`, `clippy -D warnings`,
-ningún *crate* externo). Es la aplicación de escritorio (`docs/ARCHITECTURE.md` §5.5):
+Binario de Rust **solo con `std`**, en el mismo *workspace* y con las mismas puertas que el motor
+(`cargo fmt`, `clippy -D warnings`, ningún *crate* externo). **Sin `unsafe` salvo en
+`src/platform/`** (`#![deny(unsafe_code)]` en el *crate*, `#[allow(unsafe_code)]` solo en ese
+módulo; cada bloque dice por qué es correcto): la ventana propia de Windows llama a Win32 y a la
+interfaz COM de WebView2 por FFI. Es la aplicación de escritorio (`docs/ARCHITECTURE.md` §5.5):
 
 1. sirve la interfaz (el `dist/` de Vite, que se distribuye como `app/` junto al ejecutable) en
    `127.0.0.1`;
-2. la abre en una ventana de aplicación de Edge (Windows) o de un navegador de la familia
-   Chromium (Linux), con perfil propio en la carpeta de datos;
+2. la abre en **su propia ventana** en Windows (Win32 con la barra de título del sistema y
+   WebView2 dentro, `src/platform/`), o, si no puede, en una ventana de aplicación de Edge
+   (Windows) o de un navegador de la familia Chromium (Linux), con perfil propio en la carpeta de
+   datos;
 3. renderiza con `rt-core` **en nativo**, con todos los hilos, los mismos píxeles que `rt` y que
    el pool de wasm;
 4. guarda los modelos de IA en la carpeta de datos, por contenido, comprobados con un SHA-256
    propio, y **todo el estado de la página** (ajustes, biblioteca, historial de resultados, caché
    de miniaturas, lo que queda por descargar): en escritorio la página es solo la interfaz (P3e);
 5. detecta el equipo y aplica la regla de recomendación de `src/data/ai-models.json`
-   (`repackshot --hardware`, que lee el instalador).
+   (`repackshot --hardware`, que lee el instalador);
+6. muestra los **diálogos del sistema** (carpeta, abrir, guardar) y lee y escribe **solo** lo que la
+   persona eligió en ellos (P3b): la ventana no usa nunca los selectores de archivos, las descargas
+   ni los permisos del navegador.
 
 Lo que necesita del sistema lo pide a programas del sistema (`reg`, `powershell`, `wmic`,
-`nvidia-smi`, `explorer`, `xdg-open`, el navegador), nunca por FFI.
+`nvidia-smi`, `explorer`, `rundll32`, `xdg-open`, `zenity`, `kdialog`, el navegador); por FFI,
+solo la ventana propia (`src/platform/`).
 
 ## Línea de órdenes
 
 ```text
-repackshot [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N]
+repackshot [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N] [--window webview2|browser|auto]
 repackshot --serve-only [...]           sin ventana: escribe la URL con el token y sirve hasta que se pare
 repackshot --hardware <f.ini> [--device gpu|cpu]   escribe el INI del instalador y sale
+repackshot --shortcut-id <f.lnk>        Windows: escribe el AppUserModelID en un acceso directo a repackshot.exe y sale
 repackshot --version | --help
 ```
 
@@ -38,8 +47,8 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
 | --- | --- |
 | Interfaz | `<carpeta del ejecutable>/app/` (`--app-dir` la cambia) |
 | Datos, instalado | `%LOCALAPPDATA%\Repackshot` (Windows); `$XDG_DATA_HOME/repackshot` o `~/.local/share/repackshot` (Linux) |
-| Datos, **portable** | `data/` junto al ejecutable cuando existe `portable.txt` a su lado; todo va dentro (ajustes, biblioteca, resultados, modelos, perfil de la ventana), así que viaja con la carpeta |
-| Dentro de los datos | `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/`, `models/`, `logs/`, `browser-profile/`, `launcher.json`, `instance.json`, `pending-models.json` |
+| Datos, **portable** | `data/` junto al ejecutable cuando existe `portable.txt` a su lado; todo va dentro (ajustes, biblioteca, resultados, modelos, perfiles de la ventana), así que viaja con la carpeta |
+| Dentro de los datos | `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` (estado de la página), `models/`, `logs/`, `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `launcher.json` (el puerto), `instance.json`, `pending-models.json` |
 
 `--data-dir` manda sobre todo lo anterior.
 
@@ -53,18 +62,103 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
 - **Instancia única**: `<datos>/instance.json` (`{port, token, pid}`, legible solo por su dueño
   en Unix). Un segundo arranque que encuentra una instancia viva (responde `/api/info` con su
   token) abre otra ventana contra ella y termina.
-- **Ventana**: `REPACKSHOT_BROWSER`, si está; si no, en Windows Edge (`App Paths` de `msedge.exe`
+- **Ventana propia** (Windows, `src/platform/`): si junto al ejecutable está `WebView2Loader.dll`
+  (de Microsoft, del paquete NuGet `Microsoft.Web.WebView2` fijado con su SHA-256 en
+  `packaging/lib/webview2.mjs`) y `GetAvailableCoreWebView2BrowserVersionString` encuentra el
+  *runtime* de WebView2, una ventana Win32 `WS_OVERLAPPEDWINDOW` con la barra de título del sistema,
+  nuestro icono (`WM_SETICON` a los DPI del monitor), título `Repackshot — <proyecto>`, barra oscura
+  con el tema oscuro (`DWMWA_USE_IMMERSIVE_DARK_MODE`, 20 y si no 19), AppUserModelID
+  `Repackshot.App`, DPI por monitor v2, tamaño mínimo de 500 × 400 a 100 % y su sitio en
+  `window.json` (no se usa si su barra de título ya no cae en ninguna pantalla). El instalador da
+  a sus accesos directos el mismo AppUserModelID con `repackshot --shortcut-id <lnk>`
+  (`IShellLinkW`, `IPropertyStore` con `PKEY_AppUserModel_ID`, `IPersistFile::Save`; solo
+  accesos directos a `repackshot.exe`), para que el anclado y la ventana sean un solo botón de la
+  barra de tareas. Los diálogos de archivo (`src/dialogs.rs`) se abren con esta ventana como
+  dueña. Dentro, WebView2 con perfil en `webview2/` (con las `PROFILE_PREFERENCES` de abajo) y,
+  como argumentos, las mismas `DISABLED_FEATURES` y `NO_THROTTLING_SWITCHES` de `src/browser.rs`
+  que la ventana de aplicación (`src/platform/flags.rs`); todo lo que no es nuestra
+  interfaz, apagado por la API (`src/platform/policy.rs`): menús contextuales, diálogos de script,
+  atajos del navegador, barra de estado, zoom, pellizco, deslizar para volver, autorrelleno,
+  contraseñas, SmartScreen, página de error propia y, en *release*, las herramientas de desarrollo.
+  Navegación solo a nuestro origen (un enlace `https` pulsado se abre en el navegador por defecto
+  con `ShellExecuteW`; nada abre otra ventana), descargas canceladas sin su panel, permisos
+  denegados salvo escribir un archivo o carpeta que la persona eligió y el almacenamiento
+  persistente, diálogos `alert`/`confirm`/`prompt` descartados. **Cerrar** (botón, `Alt F4`, barra
+  de tareas, menú del sistema: todo acaba en `WM_CLOSE`) no cierra: manda `close-requested` a la
+  página, que pregunta con su propia interfaz (la misma pregunta que Ctrl/⌘ W:
+  `requestCloseWindow`) y contesta `close-ok`; si la página no está, no ha
+  cargado o no late desde hace 20 s, se cierra sin preguntar. Si cualquier paso falla antes (o el
+  proceso del navegador muere), se apunta en el registro y se abre la ventana de aplicación de
+  abajo; `--window=browser` la fuerza y `--window=webview2` prohíbe el respaldo (falla). El
+  protocolo con la página está en `src/platform/protocol.rs` y `tests/fixtures/host-protocol.json`.
+- **Ventana de aplicación** (respaldo, y siempre en Linux): `REPACKSHOT_BROWSER`, si está; si no, en Windows Edge (`App Paths` de `msedge.exe`
   en HKCU y HKLM, después las rutas de instalación habituales) y luego Chrome; en Linux el primero
   de `chromium`, `chromium-browser`, `google-chrome`, `google-chrome-stable`, `microsoft-edge`,
   `microsoft-edge-stable`, `brave-browser` en el `PATH`. Argumentos: `--app=<url>
-  --user-data-dir=<datos>/browser-profile --no-first-run --no-default-browser-check
-  --window-size=1600,1000` (y `--class=Repackshot` en Linux), más los tres
-  `--disable-*-throttling/backgrounding` para que el latido no se frene con la ventana
-  minimizada. Sin ninguno, el navegador por defecto (`cmd /C start "" "<url>"`, `xdg-open`).
-- **Fin**: cuando termina el proceso del navegador (si vivió más de 5 s: uno que sale antes ha
+  --user-data-dir=<datos>/browser-profile`, los de *Ventana sin navegador* (abajo),
+  `--window-size=1600,1000` (y `--class=Repackshot`, `--password-store=basic`, `--noerrdialogs`
+  en Linux), más los tres `--disable-*-throttling/backgrounding` para que el latido no se frene
+  con la ventana minimizada. Sin ninguno, el navegador por defecto (`cmd /C start "" "<url>"`,
+  `xdg-open`).
+- **Fin**: con la ventana propia, cuando se destruye. Con la de aplicación: cuando termina el proceso del navegador (si vivió más de 5 s: uno que sale antes ha
   pasado la ventana a un navegador ya abierto con el mismo perfil), o cuando el latido de la
   página (`POST /api/alive` cada 5 s, desde un *worker* para que no lo frene una pestaña oculta)
   calla 20 s (60 s de gracia al arrancar). Si el equipo se suspende, el plazo vuelve a empezar.
+
+## Ventana sin navegador
+
+Decisión del usuario tras probar v0.1.0: en escritorio no aparece nada que no sea la interfaz
+propia. Tres capas, todas en `src/browser.rs` como constantes que un anfitrión WebView2 (P3c)
+puede reutilizar tal cual (`AdditionalBrowserArguments`):
+
+1. **`HARDENING_SWITCHES`**, interruptores documentados en las listas de Chromium
+   (`chrome/common/chrome_switches.cc`, `content/public/common/content_switches.cc`; índice en
+   <https://peter.sh/experiments/chromium-command-line-switches/>) y presentes en las cadenas de
+   Chromium 141.0.7390.37: `--no-first-run`, `--no-default-browser-check`,
+   `--hide-crash-restore-bubble` (sin *¿restaurar páginas?*), `--disable-sync`,
+   `--disable-extensions`, `--disable-default-apps`, `--disable-component-update`,
+   `--disable-background-networking`, `--disable-domain-reliability`, `--no-pings`,
+   `--deny-permission-prompts` (los permisos se deniegan sin preguntar), `--disable-notifications`,
+   `--disable-search-engine-choice-screen`, `--disable-infobars`, `--disable-pinch` (sin zoom con
+   los dedos) y `--overscroll-history-navigation=0` (sin deslizar para ir atrás).
+2. **`DISABLED_FEATURES`**, en un solo `--disable-features=` (un segundo sustituiría al primero):
+   `Translate` (la burbuja de traducir; el interruptor `--disable-translate` ya no existe y Chromium
+   remite a la directiva `TranslateEnabled`, <https://codereview.chromium.org/2819813002>),
+   `TFLiteLanguageDetectionEnabled`, `AutofillServerCommunication`, `HardwareMediaKeyHandling`,
+   `PrivacySandboxSettings4`, `LensOverlay`, `OptimizationHints` (nombres comprobados en las cadenas
+   de Chromium 141) y, de Edge, `msWebOOUI` y `msPdfOOUI` (el minimenú al seleccionar texto,
+   descrito para el modo quiosco en
+   <https://learn.microsoft.com/en-us/answers/questions/1194213/how-to-hide-all-context-menu-running-edge-in-kiosk>).
+   Un nombre desconocido se ignora, así que los de Edge no hacen nada en Chromium y al revés.
+3. **`PROFILE_PREFERENCES`**, escritas en `<perfil>/Default/Preferences` antes de cada arranque
+   (mezcladas con lo que haya; un fichero que no sea un objeto JSON no se toca):
+   `translate.enabled`, `browser.enable_spellchecking`, `autofill.profile_enabled`,
+   `autofill.credit_card_enabled`, `credentials_enable_service`, `credentials_enable_autosignin`,
+   `signin.allowed`, `alternate_error_pages.enabled` a `false`, `profile.exit_type = "Normal"`,
+   `browser.has_seen_welcome_page = true`, y de Edge `edge_quick_search.show_mini_menu`,
+   `PDF_show_mini_menu` y `show_smart_actions` a `false` (el ajuste *Mostrar minimenú al
+   seleccionar texto*; la clave, en
+   <https://learn.microsoft.com/en-us/answers/questions/449c6c04-a6be-420c-a31d-ded8658decc6/prevent-context-menu-in-edge-when-text-is-selected>;
+   la directiva equivalente es `QuickSearchShowMiniMenu`,
+   <https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/quicksearchshowminimenu>,
+   que no se usa porque las directivas son de todo el equipo y no se escriben sin administrador).
+
+Además, en Linux, **`QUIET_ENV`**: `GOOGLE_API_KEY`, `GOOGLE_DEFAULT_CLIENT_ID` y
+`GOOGLE_DEFAULT_CLIENT_SECRET` a `no` si no están, porque un Chromium sin claves (el de Arch, el de
+Playwright) pone en cada ventana la barra *Google API keys are missing*; comprobado bajo Xvfb con
+Chromium 141. Las directivas (`TranslateEnabled`, `QuickSearchShowMiniMenu`...) no se usan: en
+Windows viven en `HKLM`/`HKCU\Software\Policies`, protegidas, y afectarían al Edge de la persona.
+
+La página pone el resto (`src/ui/guards.ts`, en web y escritorio): `translate="no"` y `<meta
+name="google" content="notranslate">`, favicon y manifiesto propios, sin menú contextual del
+navegador fuera de los campos de texto, sin selección del cromo, sin los atajos del navegador
+(imprimir, recargar, zoom, buscar, código fuente, descargas, historial, marcadores, ventanas,
+pestañas, navegación con Alt + flechas y los botones laterales del ratón, F7, F11, F12 y Ctrl ⇧ I en
+producción) y, en escritorio, Ctrl/⌘ W con la pregunta propia y los enlaces en el navegador del
+sistema (`/api/open-url`).
+
+Lo que solo quita una ventana propia (P3c, WebView2): el menú *⋯* de la barra de título de una
+ventana `--app` de Edge o Chromium, y el diálogo *¿Salir?* de `beforeunload` al cerrar con la X.
 
 ## Seguridad
 
@@ -83,6 +177,26 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
   (`http://127.0.0.1:<puerto>/#token=<hex>`), que el navegador nunca manda al servidor ni pone en
   `Referer`; la página lo guarda en `sessionStorage` y lo quita de la barra de direcciones
   (`src/io/native.ts`). No aparece en ningún registro.
+- **Ficheros elegidos** (`src/files.rs`): la página nunca nombra una ruta que el lanzador lea o
+  escriba. Cada ruta que toca la API de ficheros la eligió la persona en un diálogo del sistema
+  **en este arranque**, y queda como una *concesión*: un id (`d…` carpeta, `f…` fichero: 24
+  hexadecimales del SHA-256 de la ruta, así la misma carpeta elegida otra vez tiene el mismo id) y
+  lo que permite. Una carpeta de `dialog/folder`: crear ficheros **nuevos** dentro (nunca
+  sobrescribe: `nombre (2).png`) y, si se pidió `read` (una importación), listar y leer lo que
+  cuelga de ella (sin seguir enlaces simbólicos). Un fichero de `dialog/open`: leerlo; escribirlo
+  solo si se pidió `writable` (un proyecto que se vuelve a guardar). Un fichero de `dialog/save`:
+  escribirlo entero (a un temporal al lado y renombrado encima: un guardado fallido no deja medio
+  fichero). Solo se escriben extensiones que produce la aplicación (`png`, `jpg`, `jpeg`, `exr`,
+  `json`, `rsb`, `mp4`, `webm`): nada ejecutable cae en ninguna parte; los nombres se hacen válidos
+  en todos los sistemas (`\ / : * ? " < > |` y controles a `_`, sin puntos ni espacios finales, los
+  nombres de dispositivo de Windows con `_` delante, 200 bytes como mucho). Dos entradas son del
+  propio lanzador, no de la página: `downloads` (la carpeta Descargas del sistema, solo ficheros
+  nuevos: el *Descargas* de la ventana de render) y el último proyecto, que el lanzador recuerda
+  en `<datos>/last-project.json` cuando la página se lo pide para un `.repack.json` concedido
+  (*General ▸ Al iniciar ▸ Último proyecto*). Lo que la página manda a un diálogo (título, nombre,
+  filtros, carpeta inicial) es solo texto para el diálogo: no concede nada. `/api/open-url` abre
+  solo direcciones `https://` sin comillas, espacios ni metacaracteres, con `rundll32
+  url.dll,FileProtocolHandler` (sin `cmd`) o `xdg-open`.
 - Ficheros estáticos: la ruta tiene que ser absoluta, sin NUL, `\`, `:`, segmentos vacíos, `.` ni
   `..`, y la ruta canónica del fichero tiene que seguir dentro de la carpeta canónica (también
   frena enlaces simbólicos que salgan). En `/api/*` cualquier segmento vacío, `.` o `..` es 400.
@@ -91,6 +205,28 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
   en la API y `no-cache` en el HTML (los `assets/` de Vite, con *hash*, son inmutables).
 - HTTP/1.1 con *keep-alive*, un hilo por conexión (máximo 64), cuerpos con `Content-Length`
   (los `chunked` de petición dan 501), cabeceras hasta 32 KiB, `Expect: 100-continue` atendido.
+
+## Diálogos
+
+Uno abierto a la vez (otro da 409 `dialog-open`); se cierran con la aplicación. Lo que la página
+manda (título, nombre propuesto, filtros, carpeta inicial) llega al programa del diálogo como
+datos, nunca como código.
+
+- **Windows**: Windows PowerShell (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`)
+  con `-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -STA -EncodedCommand <guion>` y sin
+  ventana de consola (`CREATE_NO_WINDOW`). El guion (`POWERSHELL_SCRIPT` en `src/dialogs.rs`) lee
+  las entradas de variables `RPX_*` y usa `System.Windows.Forms`: `OpenFileDialog` y
+  `SaveFileDialog` (que .NET muestra con el diálogo moderno de Vista), y para carpetas el
+  `IFileOpenDialog` de Vista en modo `FOS_PICKFOLDERS`, compilado una vez por `Add-Type` y guardado
+  en `<datos>/cache/folder-picker-<v>.dll`; si eso no se puede (un equipo en modo de lenguaje
+  restringido), el truco de la carpeta del `OpenFileDialog`. El dueño del diálogo es la ventana de
+  la aplicación cuando el lanzador conoce su `HWND` (`Dialogs::set_owner_window`, para el
+  anfitrión propio de P3c) o un formulario oculto *siempre encima*, así sale delante de la
+  ventana. Las rutas vuelven como `PATH <base64 de UTF-8>`, sea cual sea la página de códigos de
+  la consola.
+- **Linux**: `zenity` (`--file-selection`, `--directory`, `--save --confirm-overwrite`,
+  `--multiple`, `--file-filter`), si no `kdialog` (`--getexistingdirectory`, `--getopenfilename`,
+  `--getsavefilename`), si no 501 `no-dialog` y la interfaz pide instalar uno de los dos.
 
 ## API
 
@@ -101,12 +237,35 @@ Todas las rutas `/api/*` llevan `X-Repackshot-Token`. Errores en JSON:
 
 | Petición | Respuesta |
 | --- | --- |
-| `GET /api/info` | `{app:"repackshot", version, engineVersion, threads, isa, simd[], os, arch, dataDir, modelsDir, logsDir, resultsDir, portable, browser, pid}` |
+| `GET /api/info` | `{app:"repackshot", version, engineVersion, threads, isa, simd[], os, arch, dataDir, modelsDir, logsDir, resultsDir, portable, browser, window, pid}`. `window`: `{kind: "webview2"\|"browser"\|"default"\|"none", detail, reason}` (`detail`: la versión de WebView2 o el navegador; `reason`, por qué no es la ventana propia: `forced`, `not-windows`, `loader-missing`, `runtime-missing`, `failed`), `null` con `--serve-only` |
 | `POST /api/alive` | 204. El latido. |
 | `GET /api/hardware[?device=gpu\|cpu][&refresh=1]` | `{cpu, cores, threads, ramBytes, ramGiB, ramUsableBytes, gpus[{name, vendor, vramBytes, vramGiB}], device, gpuFound, detected, input, recommendation{rowId, recommended, offered[], skipped[]} \| null}` |
 | `POST /api/open-folder` | Cuerpo `{"folder":"data\|models\|logs\|results"}` o `{"path":"<dentro de la carpeta de datos>"}`; 204, 403 fuera de los datos |
 | `GET /api/pending-models` | Lo que eligió el instalador, normalizado: `{"device":"gpu\|cpu","keys":[...]}`, o `null` |
 | `DELETE /api/pending-models` | 204: consumido |
+
+### Diálogos y ficheros elegidos
+
+Cada concesión es `{id, name, path, folder, read, write, size}`. Una respuesta de diálogo es
+`{"cancelled": true}` o `{"cancelled": false, "file": <la primera>, "files": [...]}`.
+
+| Petición | Respuesta |
+| --- | --- |
+| `POST /api/dialog/folder` | Cuerpo `{title, start?, read?, write?, folderItem?}`: una carpeta; `write` (por defecto) permite crear ficheros nuevos, `read` listarla y leerla. `start` es un id o una carpeta que exista (solo una pista) |
+| `POST /api/dialog/open` | Cuerpo `{title, multiple?, filters?, start?, writable?}`; `filters` es `[{name, extensions:["png","repack.json","*"]}]` (extensiones validadas, 400 si no) |
+| `POST /api/dialog/save` | Cuerpo `{title, defaultName, filters?, start?}`; el diálogo pregunta antes de sustituir. 422 `extension` si la persona escribe una extensión que la aplicación no escribe |
+| `PUT /api/files?dir=<id>&name=<nombre>` | Cuerpo: los bytes. Un fichero **nuevo** en la carpeta `<id>` (o `downloads`): `nombre`, o `nombre (2)`...; 201 con su concesión (que se puede mostrar, no leer ni escribir). 404 `not-granted`, 403 sin permiso o extensión no admitida, 400 `bad-name`, 507 sin espacio |
+| `PUT /api/files/<id>` | Escribe el fichero entero (temporal y renombrado); 403 si no es escribible |
+| `GET` / `HEAD /api/files/<id>` | El fichero, con `Range` (para importaciones de muchos GB) |
+| `GET /api/files/<id>/info` | La concesión, más `hashing{done,total}` mientras se calcula su SHA-256 |
+| `POST /api/files/<id>/sha256` | `{sha256, bytes}`, calculado en *streaming* con el SHA-256 propio (modelos de IA importados) |
+| `GET /api/files/<id>/list` | `{files:[{id, name, rel, size}]}`: lo que cuelga de una carpeta legible (8 niveles, 4096 ficheros, sin enlaces) |
+| `POST /api/files/<id>/reveal` | 204: la carpeta, o el fichero seleccionado (`explorer /select,`), en el gestor de archivos; 410 si ya no está |
+| `GET /api/projects/last` | La concesión del último proyecto (lectura y escritura) o `null` |
+| `PUT /api/projects/last` | Cuerpo `{id}` de un `.repack.json` concedido; 204 |
+| `POST /api/open-url` | Cuerpo `{url}`, solo `https://`; 204 |
+
+`GET /api/info` lleva `filesApi: 1` cuando el lanzador tiene esta API.
 
 ### Motor nativo
 
@@ -312,8 +471,30 @@ petición, cabeceras, peticiones malas); `Range`; rutas de ficheros; el almacén
 borrar uno de dos modelos, manifiestos importados); la regla con el fichero de casos; los
 analizadores de `reg`, `/proc`, `nvidia-smi`; el INI; el estado de la página (nombres, tipos,
 escritura atómica que deja el archivo viejo si el cuerpo se corta, documento dañado apartado,
-enlaces dentro de la carpeta de datos, medidas). En `tests/`: el servidor por sockets reales
+enlaces dentro de la carpeta de datos, medidas) y el puerto recordado. `src/dialogs.rs`: los argumentos de `zenity` y `kdialog`, la lectura de sus salidas y de la del
+guion de PowerShell, que las palabras de la página van como datos, base64, un diálogo a la vez y
+el cierre con la aplicación (con un `zenity` falso). `src/files.rs`: nombres seguros y numerados,
+ids estables, lo que cada concesión deja hacer, Descargas, el último proyecto entre arranques.
+`src/browser.rs`: los interruptores y la mezcla de preferencias del perfil. `tests/files.rs`: la
+API de ficheros por HTTP con un `zenity` falso. Fuera del motor: `packaging/wine-dialogs.mjs`
+(el `.exe` bajo Wine con un `powershell.exe` falso), `tools/desktop-window-check.mjs` (el lanzador
+real bajo Xvfb) y el guion de PowerShell analizado y su C# compilado con `pwsh` 7.
+En `tests/`: el servidor por sockets reales
 (`Host` ajeno, token, `Origin`, sin CORS, *keep-alive*, ficheros, modelos por HTTP, *pending
 models*), el estado de la página por HTTP (`tests/appdata.rs`: seguridad, nombres que no salen de
 su carpeta, enlaces no seguidos, límites, una petición cortada, resultados con índice, caché y
-espacio usado, y que todo sigue ahí para otro arranque en otro puerto) y la paridad con `rt`.
+espacio usado, y que todo sigue ahí para otro arranque), el puerto estable (`tests/port.rs`: el
+mismo si está libre, otro recordado si está ocupado, `--port` sin recordar) y la paridad con `rt`.
+
+La ventana propia (`src/platform/`): en todas las plataformas, los GUID, nuestros objetos COM
+(recuento de referencias, `QueryInterface`, `Invoke`), el tamaño de cada vtable de WebView2 contra
+el número de métodos del IDL y la posición de cada método que se llama, el protocolo con la página
+contra `tests/fixtures/host-protocol.json` (el mismo que pasa `src/core/host-protocol.ts`), el
+título, el sitio de la ventana, la política (ajustes, navegación, ventanas nuevas, permisos,
+diálogos) y los argumentos. Solo para Windows, y en Linux bajo Wine con una pantalla virtual
+(`CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=wine xvfb-run -a cargo test -p rt-app --target
+x86_64-pc-windows-gnu --lib platform`): nuestras opciones del entorno de WebView2 como las lee el
+cargador, el cargador que falta o no es una DLL, y la ventana Win32 de verdad (barra de título del
+sistema, título, tamaño mínimo, cerrar preguntado y luego permitido, `window.json` guardado y
+restaurado, un sitio fuera de las pantallas olvidado). WebView2 no corre aquí: lo que queda se
+prueba en Windows.

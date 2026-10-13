@@ -1,0 +1,15 @@
+{
+  "about": "The messages between the page and Repackshot's native window (P3c). engine/crates/rt-app/src/platform/protocol.rs and src/core/host-protocol.ts both pass this file: the page builds every pageToHost message with the command named and the window reads it; the window writes every hostToPage message and the page reads it.",
+  "pageToHost": [
+    { "command": "ready", "message": { "type": "ready", "protocol": 1 } },
+    { "command": "title", "args": { "project": "Perfume bottle" }, "message": { "type": "title", "project": "Perfume bottle" } },
+    { "command": "theme", "args": { "dark": true, "background": "#0e0e0e" }, "message": { "type": "theme", "dark": true, "background": "#0e0e0e" } },
+    { "command": "theme", "args": { "dark": false, "background": "#ffffff" }, "message": { "type": "theme", "dark": false, "background": "#ffffff" } },
+    { "command": "close", "message": { "type": "close" } },
+    { "command": "close-ok", "message": { "type": "close-ok" } }
+  ],
+  "hostToPage": [
+    { "event": "host", "message": { "type": "host", "protocol": 1, "runtime": "129.0.2792.65" } },
+    { "event": "close-requested", "message": { "type": "close-requested" } }
+  ]
+}

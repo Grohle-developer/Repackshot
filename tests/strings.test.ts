@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { defaultInstance } from '../src/core/materials';
 import { materialName, studioLabel } from '../src/ui/names';
 import { rowShownHere, searchSettings, SETTING_ROWS } from '../src/core/settings';
-import { windowDrawnBy } from '../src/ui/panels/settings-sections';
+import { folderLabel } from '../src/ui/panels/settings-sections';
+import { browserName, desktopWindowText } from '../src/ui/window-host';
 import { DESKTOP_BROWSER_FACTS, DESKTOP_STRINGS, L, STRINGS, setLang, setStringsPlatform, t, tIn, WEB_ONLY_STRINGS, type StringKey } from '../src/ui/strings';
 
 describe('interface strings', () => {
@@ -92,25 +93,34 @@ describe('the desktop never speaks of a browser (P3e)', () => {
   });
 
   it('what draws the window has a name, never an executable', () => {
-    const name = (browser: string | null, window?: { kind: string; detail: string | null } | null) => windowDrawnBy({ browser, window });
+    const name = (browser: string | null, window?: { kind: string; detail: string | null; reason?: string | null } | null) => desktopWindowText(window ? { reason: null, ...window } : window, browser);
     expect(name('msedge')).toBe('Microsoft Edge app window');
     expect(name('C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe')).toBe('Microsoft Edge app window');
     expect(name('microsoft-edge-stable')).toBe('Microsoft Edge app window');
     expect(name('chromium-browser')).toBe('Chromium app window');
-    expect(name('chromium')).toBe('Chromium app window');
+    expect(name('/snap/bin/chromium')).toBe('Chromium app window');
     expect(name('google-chrome-stable')).toBe('Google Chrome app window');
     expect(name('brave-browser')).toBe('Brave app window');
     expect(name('vivaldi')).toBe('App window');
+    expect(browserName('vivaldi')).toBeNull();
+    // --serve-only: the launcher opened no window, and does not pretend one.
     expect(name(null)).toBe('A window the application did not open');
-    // P3c's report of its own window, when there is one.
-    expect(name('msedge', { kind: 'webview2', detail: '131.0.2903.70' })).toBe('Native window (WebView2 131.0.2903.70)');
-    expect(name(null, { kind: 'webview2', detail: null })).toBe('Native window (WebView2)');
+    // P3c's report of its own window.
+    expect(name('msedge', { kind: 'webview2', detail: '131.0.2903.70' })).toBe('Repackshot’s own window (WebView2 131.0.2903.70)');
+    expect(name(null, { kind: 'webview2', detail: null })).toBe('Repackshot’s own window (WebView2)');
     expect(name(null, { kind: 'browser', detail: 'chromium' })).toBe('Chromium app window');
+    expect(name(null, { kind: 'browser', detail: 'msedge', reason: 'runtime-missing' })).toBe('Microsoft Edge app window (WebView2 runtime not found)');
     expect(name('default')).toBe('The default browser');
     setLang('es');
     expect(name('msedge')).toBe('Ventana de aplicación de Microsoft Edge');
     setLang('en');
-    for (const raw of ['msedge', 'chromium-browser', 'google-chrome', 'brave-browser']) expect(name(raw)).not.toMatch(/msedge|chromium-browser|google-chrome|brave-browser/);
+    for (const raw of ['msedge', 'chromium-browser', 'google-chrome', 'brave-browser', 'C:\\x\\chrome.exe']) expect(name(raw)).not.toMatch(/msedge|chromium-browser|google-chrome|brave-browser|\.exe/);
+  });
+
+  it('an output folder of the desktop is named by its last part (its path goes on the line below)', () => {
+    expect(folderLabel('/home/a/Renders')).toBe('Renders');
+    expect(folderLabel('C:\\Users\\a\\Downloads\\Repackshot renders\\')).toBe('Repackshot renders');
+    expect(folderLabel('Renders')).toBe('Renders');
   });
 
   it('rows about what the browser keeps do not exist in the desktop, nor can they be found', () => {

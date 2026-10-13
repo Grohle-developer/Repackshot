@@ -17,7 +17,7 @@ no una iniciativa dentro de un PR.
 | Vista previa | **three.js** (`WebGLRenderer`) | Rasterizado rápido para orbitar, seleccionar y colocar mientras la cámara se mueve. **No es el motor**: es la vista interactiva |
 | Motor de render | **Rust, desde cero, sin dependencias externas** (`engine/`): trazador de caminos en CPU que compila a **WebAssembly** para el navegador y a **binario nativo** para la línea de comandos y el escritorio | Corre en cualquier sistema y arquitectura (x86_64, ARM64, RISC-V, wasm32) sin GPU ni drivers; el mismo código renderiza en el navegador, en el runner de CI y en el escritorio; determinista; eficiente por diseño (BVH ancho con SIMD, muestreo de baja discrepancia, colas de baldosas) |
 | Importación | En `src/io/`, cargada bajo demanda: `GLTFLoader`, `FBXLoader`, `3MFLoader`, `PLYLoader`, `ColladaLoader`, `USDZLoader` y `3DMLoader` de three (MIT); **rhino3dm** (openNURBS, MIT) para `.3dm`; **occt-import-js** (LGPL-2.1, OpenCascade compilado a wasm) para STEP e IGES, como **única excepción LGPL** y aislada (ver abajo); OBJ y STL propios. **Decidido**: estas bibliotecas se aceptan en la capa `io/`, se cargan solo al importar y nunca entran en el motor | La importación es el tronco del producto: lo que la gente exporta desde Rhino, SolidWorks, Fusion, Maya, ZBrush y KeyShot tiene que entrar con un arrastre. Los formatos nativos propietarios de esos programas no se leen (`SPEC.md` §5) |
-| Post-procesado IA (opcional) | **ONNX Runtime Web** (MIT) con WebGPU en workers, en `src/ai/`; en escritorio ONNX Runtime nativo o **stable-diffusion.cpp** (MIT) como proceso aparte. Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado en el primer uso con `sha256`, nunca en el repositorio. **Decidido** en `AI-POST.md`; la dependencia entra en X3 | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor, que sigue sin dependencias |
+| Post-procesado IA (opcional) | **Decidido** en `AI-POST.md` §7. Escritorio, todo nativo: **stable-diffusion.cpp** (MIT, sobre ggml, MIT) como **proceso aparte** que gobierna el lanzador, nunca enlazado ni dentro de `engine/`, en compilaciones oficiales fijadas con `sha256` en `src/data/ai-runtimes.json` y descargadas bajo demanda como los modelos (X3b); la guarda y el trabajo con píxeles en `engine/crates/rt-post`, Rust sin dependencias (X3a). Web: **ONNX Runtime Web** (MIT) con WebGPU en workers y `rt-post` como `post.wasm` aparte (X3d). Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado con `sha256`, nunca en el repositorio | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor (`rt-core` no sabe que existe) |
 | Tests | **vitest** (modelo e interfaz), **cargo test** (motor: escenas analíticas, determinismo, paridad wasm/nativo), **playwright-core** con el Chromium local para capturas | La suite de la interfaz corre sin GPU; la del motor corre en cualquier CPU |
 | Empaquetado de escritorio | **Lanzador propio en Rust, solo `std`** (`engine/crates/rt-app`, binario `repackshot`), decidido para la primera release (P2). Sirve la interfaz en `127.0.0.1`, la abre en una ventana de aplicación de Edge (Windows) o Chromium/Chrome (Linux) y renderiza con `rt-core` **en nativo** con todos los hilos. Windows x86_64 compilado en cruzado con mingw-w64; Linux x86_64 estático con musl; instalador de Windows con **NSIS** (herramienta de construcción, no dependencia) | **Tauri queda descartado**: arrastra cientos de *crates* de crates.io (bloqueado en este entorno) y necesita compilar en Windows (sin minutos de Actions). El lanzador propio mantiene el proyecto sin dependencias en Rust, la interfaz web no cambia y Edge viene con Windows. Ver §5.5 |
 
@@ -58,7 +58,7 @@ propio (`io/step-worker.ts`) que descarga `occt-import-js.js` y `.wasm`
 sin modificar de `public/vendor/occt-import-js/`, copiados por
 `tools/vendor.mjs` con `license.occt-import-js.txt`, `license.occt.txt` y
 un `README.txt` con la versión y los enlaces al fuente;
-`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable (1.97 al arrancar),
+`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable, **fijado a 1.97.0 en CI** (`RUST_VERSION` y `RUSTUP_TOOLCHAIN` en `engine.yml` y `release.yml`, la misma versión que las máquinas de desarrollo: cada Rust nuevo trae *lints* nuevos de clippy y con `-D warnings` pondría el CI en rojo sin que nada cambie; subir de versión es un cambio a propósito que arregla sus *lints*),
 objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 `riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
 
@@ -408,13 +408,18 @@ externos). **Sin `unsafe` salvo en `src/platform/`** (decidido en P3c):
 la ventana propia de Windows necesita llamar a Win32 y a la interfaz COM
 de WebView2, y eso solo se hace con FFI; cada bloque `unsafe` lleva su
 comentario de por qué es correcto, el resto del *crate* mantiene
-`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace cinco cosas:
+`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace estas cosas:
 
-1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1` y
-   un puerto libre, con la carpeta `app/` (el `dist/` de Vite) junto al
-   ejecutable. Comprueba la cabecera `Host` (contra el *DNS rebinding*) y
-   exige en la API un *token* aleatorio por arranque que solo conoce la
-   página que abrió.
+1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1`,
+   con la carpeta `app/` (el `dist/` de Vite) junto al ejecutable.
+   Comprueba la cabecera `Host` (contra el *DNS rebinding*) y exige en la
+   API un *token* aleatorio por arranque que solo conoce la página que
+   abrió. **Puerto estable por carpeta de datos** (P3e, `src/port.rs`):
+   se apunta en `<datos>/launcher.json` y se vuelve a usar en el siguiente
+   arranque si está libre; solo si está ocupado se toma otro libre, que
+   pasa a ser el apuntado (`--port N` usa N y no apunta nada). Así el
+   origen de la ventana (`http://127.0.0.1:<puerto>`) no cambia de un
+   arranque a otro.
 2. **Abrir la ventana**: Edge en Windows (viene con el sistema) o el
    primer Chromium, Chrome, Edge o Brave en Linux, con `--app=<url>` y un
    perfil propio en la carpeta de datos; si no hay ninguno, el
@@ -433,11 +438,53 @@ comentario de por qué es correcto, el resto del *crate* mantiene
 4. **Datos y modelos**: carpeta de datos en `%LOCALAPPDATA%\Repackshot`
    (Windows) o `$XDG_DATA_HOME/repackshot` (Linux); en las versiones
    **portables** (un fichero `portable.txt` junto al ejecutable), en
-   `data/` al lado, perfil del navegador incluido. Los modelos de IA se
-   guardan ahí: la página los descarga con `fetch` y los entrega al
-   lanzador por trozos, que los escribe, reanuda y comprueba con un
-   SHA-256 propio.
-5. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
+   `data/` al lado, con todo dentro. Los modelos de IA se guardan ahí: la
+   página los descarga con `fetch` y los entrega al lanzador por trozos,
+   que los escribe, reanuda y comprueba con un SHA-256 propio.
+5. **El estado de la página** (P3e, `src/appdata.rs`): en escritorio la
+   página es **solo la interfaz** y todo lo que guarda lo escribe el
+   lanzador en la carpeta de datos, nunca el almacenamiento del navegador
+   de la ventana. `/api/store/*` y `/api/storage/usage`, con el mismo
+   *token*, `Host` y `Origin`, nombres en minúscula confinados a la
+   carpeta de datos (ni enlaces ni nombres de dispositivo de Windows) y
+   escrituras atómicas (temporal, `sync_all`, `rename`). La carpeta:
+
+   ```text
+   settings.json        el documento de ajustes (src/core/settings.ts)
+   state/<nombre>.json  cosas pequeñas de la página: descargas por reanudar, carpetas elegidas,
+                        la marca de la migración desde el navegador
+   library/             la biblioteca propia (U4)
+   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json
+   cache/thumbs/        las esferas de materiales (caché)
+   models/              los modelos de IA, por sha256
+   logs/                el registro del lanzador
+   browser-profile/     el perfil de la ventana de Edge o Chromium
+   webview2/            el perfil de la ventana propia (P3c); window.json, su sitio
+   launcher.json        el puerto; instance.json, la instancia en marcha
+   pending-models.json  lo que eligió el instalador
+   ```
+
+   En la página, **la costura de plataforma** (`src/io/platform.ts`): una
+   interfaz `Platform` con todo servicio que guarda algo o pregunta al
+   equipo (ajustes, cosas pequeñas recordadas, biblioteca, historial de
+   resultados, almacén de modelos, equipo, espacio usado, miniaturas,
+   archivos de salida, proyectos, diálogos de importar y exportar),
+   elegida una vez al arrancar (`choosePlatform()`, antes de pintar nada)
+   con dos implementaciones: la web (`platform-web.ts`: localStorage,
+   IndexedDB, OPFS, WebGPU, los selectores y descargas del navegador) y
+   la del lanzador (`platform-desktop.ts`: lo anterior, más `/api/hardware`
+   y los diálogos y la API de archivos de P3b). `main.ts` construye con
+   ella los servicios de la interfaz, que no sabe cuál es. En escritorio
+   la página no toca el almacenamiento del navegador salvo una vez por
+   carpeta de datos, para copiar al lanzador lo que una versión anterior
+   dejó en el origen actual (marca `state/migration.json`).
+6. **Diálogos y archivos** (P3b): `POST /api/dialog/{folder,open,save}`
+   abre los diálogos del sistema y devuelve un permiso por ruta; la API de
+   archivos (`/api/files…`) solo lee o escribe rutas concedidas así en el
+   arranque actual, con escritura atómica y sin sobrescribir en las
+   carpetas de salida. La página nunca nombra una ruta que no le diera un
+   diálogo.
+7. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
    VRAM, la RAM y la recomendación de `src/data/ai-models.json`
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
    procesos del sistema y sin `unsafe`); lo usan el instalador y
