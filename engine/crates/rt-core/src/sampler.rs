@@ -122,6 +122,18 @@ pub const fn bounce_dim(bounce: u32) -> u32 {
     DIM_FIRST_BOUNCE + bounce * DIMS_PER_BOUNCE
 }
 
+/// First logical dimension of the cut-out decisions (E5): far beyond the Sobol table, so they
+/// are independent hashed random numbers that never share a dimension with a path vertex.
+pub const DIM_CUTOUT: u32 = 1 << 20;
+
+/// The dimension deciding whether the ray of vertex `bounce` passes through the `crossing`-th
+/// cut-out (opacity below one) it meets.
+#[inline]
+pub const fn cutout_dim(bounce: u32, crossing: u32) -> u32 {
+    let c = if crossing < 63 { crossing } else { 63 };
+    DIM_CUTOUT + bounce * 64 + c
+}
+
 /// Degree `s`, coefficients `a` and initial direction numbers `m_1..m_s` of dimensions 2 to 64
 /// (Joe and Kuo, `new-joe-kuo-6.21201`, rows `d = 2..=64`). Unused `m` entries are zero.
 const JOE_KUO: [(u32, u32, [u32; 9]); 63] = [

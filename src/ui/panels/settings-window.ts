@@ -8,14 +8,14 @@
 // content add renderers through settings-sections.ts and settings-ai.ts).
 // Changes are saved at once: there is no OK or Cancel.
 
-import { rowsOf, searchSettings, SECTION_GROUPS, SECTIONS, type RowMeta, type SectionId } from '../../core/settings';
+import { rowShownHere, rowsOf, searchSettings, SECTION_GROUPS, SECTIONS, type RowMeta, type SectionId } from '../../core/settings';
 import type { Lang } from '../../data/types';
 import * as cmd from '../commands';
 import { h, icon, isTyping, placeAt } from '../dom';
 import { dyn } from '../names';
 import { dynamic, type Ctx, type Scope } from '../reactive';
 import { kbdText } from '../shortcuts';
-import { getLang, STRINGS, t, type StringKey } from '../strings';
+import { getLang, STRINGS, stringIn, t, type StringKey } from '../strings';
 import { AI_HOOKS } from './settings-ai';
 import { blockEl, rowLabel, settingRow } from './settings-rows';
 import { SECTION_HOOKS, type SettingsHooks } from './settings-sections';
@@ -33,7 +33,7 @@ export const CUSTOM_ROW_IDS: readonly string[] = Object.keys(HOOKS.rows ?? {});
 export const CUSTOM_BLOCK_IDS: readonly string[] = Object.keys(HOOKS.blocks ?? {});
 
 const sectionTitle = (id: SectionId) => t(dyn(`set.sec.${id}`));
-const searchLabel = (row: RowMeta, lang: Lang) => STRINGS[lang][`set.${row.id}` as StringKey] ?? '';
+const searchLabel = (row: RowMeta, lang: Lang) => (`set.${row.id}` in STRINGS[lang] ? stringIn(lang, `set.${row.id}` as StringKey) : '');
 
 function visibleSections(ctx: Ctx): SectionId[] {
   const desktop = ctx.ui.get().desktop !== null;
@@ -45,7 +45,7 @@ function sectionContent(ctx: Ctx, scope: Scope, id: SectionId): HTMLElement {
   const desktop = ctx.ui.get().desktop !== null;
   const titleId = `sw-sec-${id}`;
   const blocks: HTMLElement[] = [];
-  const rows = rowsOf(id).filter((r) => !r.desktopOnly || desktop);
+  const rows = rowsOf(id).filter((r) => rowShownHere(r, desktop));
   const byBlock = new Map<string, RowMeta[]>();
   for (const r of rows) byBlock.set(r.block, [...(byBlock.get(r.block) ?? []), r]);
   for (const [block, list] of byBlock) {

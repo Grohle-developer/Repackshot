@@ -8,7 +8,9 @@
 // everything else works. Every size comes from the data, every speed and
 // time left from the bytes that arrived (io/downloads.ts).
 
-import { recommend, type Recommendation } from '../../core/ai-recommend';
+import type { Recommendation } from '../../core/ai-recommend';
+import type { AiRuntimeEntryState, AiRuntimeReport } from '../../core/ai-runtimes';
+import { aiRuntime, AI_RUNTIMES } from '../../data/ai-runtimes';
 import type { AiRecommendRow } from '../../data/ai-models';
 import {
   activeModel,
@@ -24,7 +26,6 @@ import {
   MANIFEST_FORMAT,
   modelState,
   recommendationView,
-  recommendInput,
   rowBadges,
   runsHere,
   type ImportOutcome,
@@ -34,6 +35,7 @@ import {
   type ModelView,
 } from '../../core/models';
 import type { RowMeta, SettingMeta } from '../../core/settings';
+import { aiRuntimeQuery, recommendationOf } from '../ai-query';
 import * as cmd from '../commands';
 import { select, textField, toggle } from '../components/controls';
 import { showConfirmIn } from '../components/widgets';
@@ -41,6 +43,7 @@ import { h, icon } from '../dom';
 import { dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
 import { formatNumber, getLang, lbl, t } from '../strings';
+import type { UiState } from '../ui-state';
 import { formatDuration } from './render-window';
 import { infoRow, rowLabel, rowShell, settingRow } from './settings-rows';
 import { licenceDetails, MODEL_LICENCE_PATHS, type SettingsHooks } from './settings-sections';
@@ -50,13 +53,14 @@ const size = (bytes: number) => formatBytes(bytes, getLang());
 const storeReason = (code: string) => (code === 'opfs' ? t('set.ai.noOpfs') : code);
 const pct = (done: number, total: number) => (total > 0 ? Math.floor((100 * done) / total) : 0);
 
+/** Microsoft's page with the official downloads of the Visual C++ runtime (the launcher sends the same). */
+export const VC_RUNTIME_URL = 'https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist';
+
 /** The recommendation for what was detected, by the rule of the catalogue (P2's core/ai-recommend.ts). */
 export function currentRecommendation(ctx: Ctx): Recommendation | null {
-  const u = ctx.ui.get();
-  const snap = u.models;
-  if (!snap || u.hardware.state !== 'DONE') return null;
-  return recommend(recommendInput(u.hardware.info, u.settings['ai.device'], u.settings['ai.gpu']), snap.catalogue);
+  return recommendationOf(ctx.ui.get());
 }
+
 
 const modelName = (m: ModelView) => lbl(m.label);
 
@@ -177,18 +181,45 @@ function activeRow(ctx: Ctx, scope: Scope): HTMLElement {
   return parts.el;
 }
 
+/**
+ * What stands for the graphics card when none is listed: still detecting, the whole detection failed, the launcher
+ * could not ask for the graphics cards at all (desktop), or it asked and there is none. Only the last one is "no
+ * graphics card"; the others are not facts about the computer.
+ */
+export function noGpuText(hw: UiState['hardware']): string {
+  if (hw.state !== 'DONE') return t('set.hw.detecting');
+  const info = hw.info;
+  if (!info || !info.detected) return t('set.hw.notDetected');
+  if (info.where === 'desktop') return info.gpuDetectionFailed ? t('set.hw.gpuFailed') : t('set.hw.noGpu');
+  return t('set.hw.notReported');
+}
+
+/**
+ * Which GPU (desktop only): the graphics cards the launcher detected (`/api/hardware`, names and VRAM), kept in
+ * step with the detection, which may answer after the section is drawn ("Detecting…" until then).
+ */
 function gpuRow(ctx: Ctx, scope: Scope, row: RowMeta): HTMLElement | null {
-  const hw = ctx.ui.get().hardware.info;
   if (!ctx.ui.get().desktop) return null;
-  const gpus = hw?.gpus ?? [];
-  const sel = select(
-    gpus.length ? gpus.map((g, i) => ({ value: String(i), label: g.vramGiB !== null ? `${g.name} · ${t('set.hw.gib', { n: formatNumber(g.vramGiB, getLang(), 1) })}` : g.name })) : [{ value: '0', label: t('set.hw.notReported'), disabled: true }],
-    String(ctx.ui.get().settings['ai.gpu']),
-    (v) => cmd.setSetting(ctx, 'ai.gpu', Number(v)),
-    rowLabel('ai.gpu'),
+  const host = h('div', { class: 'sw-gpu' });
+  scope.watch(
+    (_s, u) => [u.hardware, u.settings['ai.gpu']] as const,
+    ([hw, chosen]) => {
+      const gpus = hw.info?.gpus ?? [];
+      const sel = select(
+        gpus.length
+          ? gpus.map((g, i) => ({ value: String(i), label: g.vramGiB !== null ? `${g.name} · ${t('set.hw.gib', { n: formatNumber(g.vramGiB, getLang(), 1) })}` : g.name }))
+          : [{ value: '0', label: noGpuText(hw), disabled: true }],
+        String(Math.min(chosen, Math.max(0, gpus.length - 1))),
+        (v) => cmd.setSetting(ctx, 'ai.gpu', Number(v)),
+        rowLabel('ai.gpu'),
+      );
+      (sel.el as HTMLSelectElement).disabled = gpus.length < 2;
+      host.dataset.gpus = String(gpus.length);
+      host.replaceChildren(sel.el);
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
   );
-  (sel.el as HTMLSelectElement).disabled = gpus.length < 2;
-  return settingRow(ctx, scope, row as SettingMeta, { control: sel.el, visible: (s) => s['ai.device'] === 'GPU' });
+  return settingRow(ctx, scope, row as SettingMeta, { control: host, visible: (s) => s['ai.device'] === 'GPU' });
 }
 
 // ------------------------------------------------------------------ Models
@@ -427,25 +458,37 @@ function modelsBlock(ctx: Ctx, scope: Scope): HTMLElement {
   const rows = new Map<string, ReturnType<typeof modelRow>>();
   const importStatus = h('div', { class: 'note', role: 'status', 'aria-live': 'polite' });
   const importPanel = h('div', { class: 'sw-import-panel' });
+  const imported = async (files: File[]) => {
+    if (!files.length || !svc) return;
+    importPanel.replaceChildren();
+    const handle = (r: ImportOutcome) => {
+      if (r.kind === 'needsManifest') importPanel.replaceChildren(manifestForm(ctx, files, r.files, handle));
+      else {
+        importPanel.replaceChildren();
+        if (r.kind === 'done') {
+          const m = findModel(svc.snapshot(), r.key);
+          importStatus.textContent = t('set.ai.importDone', { name: m ? modelName(m) : r.key });
+        } else importStatus.textContent = outcomeText(r);
+      }
+    };
+    handle(await svc.importFiles(files, null));
+  };
   const pick = (folder: boolean) => {
+    // The desktop: the system's dialogs, and the files stay in the launcher (read in ranges, hashed there: tens of GB).
+    const dialogs = ctx.services.dialogs;
+    if (dialogs) {
+      const chosen = folder
+        ? dialogs.openFolderFiles({ title: t('dialog.importAiFolder'), folderItem: t('dialog.folderItem') })
+        : dialogs.openFiles({ title: t('dialog.importAiFiles'), multiple: true, lazy: true, filters: [{ name: t('dialog.aiFiles'), extensions: ['safetensors', 'gguf', 'onnx', 'onnx_data', 'json', 'txt'] }, { name: t('dialog.allFiles'), extensions: ['*'] }] });
+      void chosen.then((files) => imported(files ?? []));
+      return;
+    }
     const input = h('input', { type: 'file', multiple: true, style: 'display:none' }) as HTMLInputElement;
     if (folder) input.setAttribute('webkitdirectory', '');
-    input.addEventListener('change', async () => {
+    input.addEventListener('change', () => {
       const files = input.files ? [...input.files] : [];
       input.remove();
-      if (!files.length || !svc) return;
-      importPanel.replaceChildren();
-      const handle = (r: ImportOutcome) => {
-        if (r.kind === 'needsManifest') importPanel.replaceChildren(manifestForm(ctx, files, r.files, handle));
-        else {
-          importPanel.replaceChildren();
-          if (r.kind === 'done') {
-            const m = findModel(svc.snapshot(), r.key);
-            importStatus.textContent = t('set.ai.importDone', { name: m ? modelName(m) : r.key });
-          } else importStatus.textContent = outcomeText(r);
-        }
-      };
-      handle(await svc.importFiles(files, null));
+      void imported(files);
     });
     document.body.appendChild(input);
     input.click();
@@ -464,7 +507,11 @@ function modelsBlock(ctx: Ctx, scope: Scope): HTMLElement {
         return;
       }
       where.textContent = snap.error ? t('set.ai.noStore', { reason: storeReason(snap.error) }) : !snap.ready ? t('set.ai.loading') : snap.kind === 'native' ? t('set.ai.whereDesktop', { dir: snap.location ?? '' }) : snap.kind === 'memory' ? t('set.ai.whereMemory') : t('set.ai.whereWeb');
-      const keys = allModels(snap).map((m) => m.key);
+      // The desktop lists what can run there: a model made only for the browser (the web build) is not one.
+      const here: 'web' | 'desktop' = u.desktop ? 'desktop' : 'web';
+      const keys = allModels(snap)
+        .filter((m) => here === 'web' || runsHere(m, 'desktop') || snap.installed.includes(m.key))
+        .map((m) => m.key);
       if (keys.join('|') !== [...rows.keys()].join('|')) {
         for (const k of [...rows.keys()]) if (!keys.includes(k)) rows.delete(k);
         for (const k of keys) if (!rows.has(k)) rows.set(k, modelRow(ctx, k));
@@ -502,7 +549,7 @@ function hardwareBlock(ctx: Ctx, scope: Scope): HTMLElement {
       if (info) {
         const g = info.gpus[Math.min(u.settings['ai.gpu'], Math.max(0, info.gpus.length - 1))];
         if (info.cpu) rows.push(infoRow('hw.cpu', t('set.hw.cpu'), info.cpu));
-        rows.push(infoRow('hw.gpu', t('set.hw.gpu'), g?.name ?? missing));
+        rows.push(infoRow('hw.gpu', t('set.hw.gpu'), g?.name ?? (info.detected ? noGpuText(hw) : missing)));
         if (info.where === 'desktop' && info.device === 'cpu' && u.settings['ai.device'] === 'GPU') rows.push(h('p', { class: 'note' }, t('set.hw.noUsableGpu')));
         rows.push(infoRow('hw.vram', t('set.hw.vram'), gib(g?.vramGiB ?? null)));
         rows.push(infoRow('hw.ram', t('set.hw.ram'), info.ramGiB === null ? missing : info.ramCapped ? t('set.hw.ramCapped', { n: formatNumber(info.ramGiB, getLang(), 0) }) : gib(info.ramGiB)));
@@ -534,9 +581,19 @@ function guardBlock(ctx: Ctx, scope: Scope, rows: RowMeta[]): HTMLElement {
   return det;
 }
 
+/** "Post-processing arrives in a coming version", where the pipeline is not built (the web before X3d): the service says. */
 function aiTop(ctx: Ctx): HTMLElement {
   void cmd.detectHardware(ctx);
-  return h('p', { class: 'note sw-ai-soon' }, t('set.ai.soon'));
+  const note = h('p', { class: 'note sw-ai-soon' }, t('set.ai.soon'));
+  const service = ctx.services.ai?.service;
+  if (service) {
+    note.style.display = 'none';
+    void service
+      .status()
+      .then((st) => (note.style.display = st.reason === 'NOT_BUILT' ? '' : 'none'))
+      .catch(() => (note.style.display = ''));
+  }
+  return note;
 }
 
 /** The desktop portable's first start (AI-POST.md §2.2): at the top of the list, which is where the deep link lands. */
@@ -560,8 +617,193 @@ function chooserBanner(ctx: Ctx, scope: Scope): HTMLElement {
   return chooser;
 }
 
+// ------------------------------------------------------------------ Runtime (desktop: stable-diffusion.cpp, X3b)
+
+const RUNTIME_BUSY = ['downloading', 'verifying', 'installing'];
+
+/** What the Runtime row offers for a build in a state. */
+export type RuntimeAction = 'download' | 'fromFile' | 'pause' | 'resume' | 'remove' | 'vcRuntime' | 'probe';
+
+/**
+ * The Runtime row's buttons, in order: download it (or install the archive the person downloaded), pause, resume,
+ * remove; and for an installed Windows build that does not start for want of Microsoft's Visual C++ runtime (X3c),
+ * *Install Microsoft Visual C++ runtime…* (Microsoft's own page: we do not redistribute it) and *Check again*.
+ */
+export function runtimeActions(rt: Pick<AiRuntimeEntryState, 'state' | 'vcRuntime'>): RuntimeAction[] {
+  switch (rt.state) {
+    case 'missing':
+      return ['download', 'fromFile'];
+    case 'downloading':
+      return ['pause'];
+    case 'paused':
+      return ['resume', 'remove'];
+    case 'installed':
+      return rt.vcRuntime === 'missing' ? ['vcRuntime', 'probe', 'remove'] : ['remove'];
+    default:
+      return [];
+  }
+}
+
+/** Opens Microsoft's download page of the Visual C++ runtime in the system's browser (the launcher's link, else ours). */
+export function openVcRuntime(ctx: Ctx, rt: Pick<AiRuntimeEntryState, 'vcRuntimeUrl'>): Promise<void> {
+  return ctx.services.openExternal(rt.vcRuntimeUrl ?? VC_RUNTIME_URL);
+}
+
+/**
+ * The inference runtime the rule chose (AI-POST.md §7.1): which build and why, its state (downloading with
+ * progress, paused, checking, installed with the version it reported), the device it runs on, and Download,
+ * Pause, Resume, Remove and Install from a file. Everything shown is what the launcher said.
+ */
+function runtimeRow(ctx: Ctx, scope: Scope): HTMLElement | null {
+  if (!ctx.ui.get().desktop) return null;
+  const port = ctx.services.aiRuntime ?? null;
+  const name = h('div', { class: 'sw-model-name' });
+  const line = h('div', { class: 'sw-model-state note tabular', 'aria-live': 'polite' });
+  const why = h('div', { class: 'note' });
+  const meta = h('div', { class: 'note tabular' });
+  const warn = h('div', { class: 'sw-warn', role: 'status' });
+  const bar = h('div', { class: 'sw-bar', 'aria-hidden': 'true' }, h('span'));
+  const actions = h('div', { class: 'sw-model-actions' });
+  const hint = h('p', { class: 'note' });
+  const panel = h('div', { class: 'sw-model-panel' });
+  const parts = rowShell('ai.runtime', { control: null, wide: true });
+  parts.el.append(h('div', { class: 'sw-model', 'data-runtime': '' }, h('div', { class: 'sw-model-main' }, name, line, why, meta, warn, bar, hint), actions, panel));
+  if (!port) {
+    line.textContent = t('set.rt.notInLauncher');
+    return parts.el;
+  }
+  const svc = port;
+  let report: AiRuntimeReport | null = null;
+  let failure: string | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
+  let lastActions = '';
+  const query = () => aiRuntimeQuery(ctx.ui.get());
+  const refresh = async () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    try {
+      report = await svc.status(query());
+      failure = null;
+    } catch (e) {
+      failure = e instanceof Error ? e.message : String(e);
+    }
+    if (disposed) return;
+    draw();
+    // Quick while something moves, slowly otherwise (the loaded model, an idle release).
+    const busy = report?.runtime ? RUNTIME_BUSY.includes(report.runtime.state) : false;
+    timer = setTimeout(() => void refresh(), busy ? 400 : 3000);
+  };
+  const act = (run: () => Promise<unknown>) => () =>
+    void run()
+      .catch((e: unknown) => {
+        failure = e instanceof Error ? e.message : String(e);
+      })
+      .then(refresh);
+  const button = (label: string, run: () => Promise<unknown>, primary = false, iconName?: Parameters<typeof icon>[0]) => h('button', { type: 'button', class: `btn btn-sm${primary ? ' btn-primary' : ''}`, 'aria-label': `${label}: ${t('set.ai.runtime')}`, onclick: act(run) }, iconName ? icon(iconName, 14) : null, label);
+  function draw(): void {
+    const r = report;
+    const rt = r?.runtime ?? null;
+    const entry = rt ? aiRuntime(rt.key) : undefined;
+    warn.replaceChildren();
+    hint.textContent = '';
+    bar.style.display = 'none';
+    if (!r) {
+      name.textContent = 'stable-diffusion.cpp';
+      line.textContent = failure ? t('set.rt.unreachable', { error: failure }) : t('set.rt.loading');
+      return;
+    }
+    if (!rt || !r.choice?.key) {
+      name.textContent = 'stable-diffusion.cpp';
+      line.textContent = t('set.rt.noBuild', { os: r.platform.os, arch: r.platform.arch });
+      why.textContent = '';
+      meta.textContent = '';
+      actions.replaceChildren();
+      lastActions = '';
+      return;
+    }
+    name.replaceChildren(h('span', null, entry ? lbl(entry.label) : rt.key), ...(rt.verified.length === 0 ? [h('span', { class: 'sw-badge aux' }, t('set.rt.unverified'))] : []));
+    const pctDone = pct(rt.done, rt.total);
+    switch (rt.state) {
+      case 'missing':
+        line.textContent = t('set.rt.state.missing', { size: size(rt.bytes) });
+        break;
+      case 'downloading':
+        line.textContent = t('set.rt.state.downloading', { pct: pctDone, done: size(rt.done), total: size(rt.total) });
+        break;
+      case 'paused':
+        line.textContent = t('set.rt.state.paused', { pct: pctDone });
+        break;
+      case 'verifying':
+        line.textContent = t('set.rt.state.verifying');
+        break;
+      case 'installing':
+        line.textContent = t('set.rt.state.installing');
+        break;
+      case 'installed': {
+        const loaded = r.sidecar.state !== 'stopped' && r.sidecar.label ? ` · ${t('set.rt.loaded', { label: r.sidecar.label })}` : '';
+        line.textContent = t('set.rt.state.installed', { version: rt.version ?? '–' }) + loaded;
+        break;
+      }
+    }
+    if (rt.state === 'downloading' || rt.state === 'paused' || rt.state === 'verifying') {
+      bar.style.display = '';
+      (bar.firstElementChild as HTMLElement).style.width = `${pctDone}%`;
+    }
+    why.textContent = [t(dyn(`set.rt.choice.${r.choice.rowId}`)), r.device ? t('set.rt.device', { device: r.device }) : null].filter((x): x is string => !!x).join(' · ');
+    const licence = AI_RUNTIMES.release.licences.map((l) => l.spdx).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+    meta.textContent = [t('set.rt.release', { spdx: licence, tag: r.release.tag }), entry ? t('set.rt.requires', { text: lbl(entry.requires) }) : null].filter((x): x is string => !!x).join(' · ');
+    const warnings = [
+      rt.error ? t('set.rt.failed', { error: rt.error }) : null,
+      rt.probeError ? t('set.rt.probeError', { error: rt.probeError }) : null,
+      rt.vcRuntime === 'missing' ? t('set.rt.vcRuntime') : null,
+      !r.downloader && rt.state !== 'installed' ? t('set.rt.noCurl') : null,
+      // AI-POST.md §7.1: a model the installed build does not load says so, with the reason.
+      r.reason === 'MODEL_UNSUPPORTED' && r.activeModel ? t('set.rt.modelUnsupported', { name: r.activeModel, reason: r.detail ?? '–' }) : null,
+      failure ? t('set.rt.unreachable', { error: failure }) : null,
+    ].filter((x): x is string => x !== null);
+    warn.replaceChildren(...warnings.flatMap((w) => [h('span', { class: 'sw-warn-dot', 'aria-hidden': 'true' }), w, h('br')]));
+    if (rt.state === 'missing' || rt.state === 'paused') hint.textContent = t('set.rt.fromFileHint', { name: rt.name });
+    const key = rt.key;
+    const actionKey = `${key}|${rt.state}|${rt.vcRuntime === 'missing'}|${getLang()}`;
+    if (actionKey === lastActions) return;
+    lastActions = actionKey;
+    const fromFile = () => button(t('set.rt.fromFile'), () => svc.installFromFile(key, { title: t('dialog.aiRuntime'), filterName: t('dialog.zipFiles') }), false, 'folder');
+    const remove = () =>
+      h('button', {
+        type: 'button',
+        class: 'btn btn-sm',
+        'aria-label': `${t('set.ai.delete')}: ${t('set.ai.runtime')}`,
+        onclick: () => showConfirmIn(panel, { message: t('set.rt.removeConfirm', { size: size(rt.state === 'installed' ? rt.bytes : rt.done) }), options: [{ label: t('set.ai.delete'), primary: true, run: act(() => svc.remove(key)) }] }),
+      }, icon('trash', 14), t('set.ai.delete'));
+    const make: Record<RuntimeAction, () => HTMLElement> = {
+      download: () => button(t('set.ai.download'), () => svc.download(key), true, 'download'),
+      fromFile,
+      pause: () => button(t('set.ai.pause'), () => svc.pause(key), false, 'pause'),
+      resume: () => button(t('set.ai.resume'), () => svc.download(key), true, 'play'),
+      remove,
+      // The Windows builds need Microsoft's Visual C++ runtime: its official page, in the system's browser.
+      vcRuntime: () =>
+        h('button', { type: 'button', class: 'btn btn-sm btn-primary', 'data-vc-runtime': '', 'data-tip': t('set.rt.vcRuntimeTip'), onclick: () => void openVcRuntime(ctx, rt).catch(() => undefined) }, icon('download', 14), t('set.rt.vcRuntimeInstall')),
+      probe: () => button(t('set.rt.probe'), () => svc.probe(key)),
+    };
+    const list = runtimeActions(rt).map((a) => make[a]());
+    actions.replaceChildren(...list);
+  }
+  scope.onDispose(() => {
+    disposed = true;
+    if (timer) clearTimeout(timer);
+  });
+  scope.watch(
+    (_s, u) => [u.settings['ai.backend'], u.settings['ai.device'], u.settings['ai.active'], u.models, u.hardware, getLang()] as const,
+    () => void refresh(),
+    (a, b) => a.every((x, i) => x === b[i]),
+  );
+  return parts.el;
+}
+
 export const AI_HOOKS: SettingsHooks = {
-  rows: { 'ai.active': (ctx, scope) => activeRow(ctx, scope), 'ai.gpu': gpuRow },
+  rows: { 'ai.active': (ctx, scope) => activeRow(ctx, scope), 'ai.gpu': gpuRow, 'ai.runtime': (ctx, scope) => runtimeRow(ctx, scope) },
   blocks: { models: (ctx, scope) => modelsBlock(ctx, scope), hardware: (ctx, scope) => hardwareBlock(ctx, scope), guard: guardBlock },
   rowOptions: {},
   top: { ai: aiTop },

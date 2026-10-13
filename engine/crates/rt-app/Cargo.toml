@@ -15,8 +15,18 @@ path = "src/lib.rs"
 name = "repackshot"
 path = "src/main.rs"
 
+# A stand-in for stable-diffusion.cpp's sd-cli and sd-server in the tests (tests/ai.rs); never
+# shipped (packaging/release.mjs copies `repackshot` only).
+[[bin]]
+name = "rt-fake-sd"
+path = "src/bin/rt-fake-sd.rs"
+test = false
+doc = false
+
 [dependencies]
 rt-core = { path = "../rt-core" }
+# The AI guard and its pixel work (X3a): the desktop pipeline drives its step machine (ai/post.rs).
+rt-post = { path = "../rt-post" }
 
 [dev-dependencies]
 # Parity: the launcher's native renderer must give exactly the film of `rt`.

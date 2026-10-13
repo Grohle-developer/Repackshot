@@ -8,6 +8,7 @@ version = "0.3.0"
 dependencies = [
  "rt-cli",
  "rt-core",
+ "rt-post",
 ]
 
 [[package]]
@@ -20,6 +21,27 @@ dependencies = [
 [[package]]
 name = "rt-core"
 version = "0.3.0"
+
+[[package]]
+name = "rt-post"
+version = "0.3.0"
+dependencies = [
+ "rt-core",
+]
+
+[[package]]
+name = "rt-post-wasm"
+version = "0.3.0"
+dependencies = [
+ "rt-post",
+]
+
+[[package]]
+name = "rt-sky"
+version = "0.3.0"
+dependencies = [
+ "rt-core",
+]
 
 [[package]]
 name = "rt-wasm"

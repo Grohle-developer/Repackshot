@@ -10,16 +10,32 @@
 # The Windows launcher is cross-compiled with mingw-w64 and the installer is built with NSIS, so
 # one Linux runner builds everything. The archives use the time of the tagged commit, so the
 # files are the same as a local `npm run release` of that commit. Run by hand
-# (workflow_dispatch) it builds and uploads the packages as an artifact without releasing.
+# (workflow_dispatch) it builds and uploads the packages as an artifact without releasing; with
+# the `tag` and `commit` inputs it also publishes that release: the tag is created on GitHub
+# (pointing at `commit`) by the release itself, so publishing never needs a tag push.
 name: Release
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Publish this release (vX.Y.Z, the version in package.json of `commit`); empty: artifact only'
+        required: false
+        default: ''
+      commit:
+        description: 'The commit to build and tag (full SHA); empty: the selected ref'
+        required: false
+        default: ''
 
 permissions:
   contents: write
+
+env:
+  # The same pinned toolchain as engine.yml; wins over engine/rust-toolchain.toml.
+  RUST_VERSION: 1.97.0
+  RUSTUP_TOOLCHAIN: 1.97.0
 
 concurrency:
   group: release-${{ github.ref }}
@@ -31,6 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.commit || github.sha }}
           fetch-depth: 1
 
       - uses: actions/setup-node@v4
@@ -38,8 +55,9 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           targets: wasm32-unknown-unknown, x86_64-pc-windows-gnu, x86_64-unknown-linux-musl
 
       - name: Packaging tools (mingw-w64 with windres, NSIS 3, musl)
@@ -50,11 +68,13 @@ jobs:
           x86_64-w64-mingw32-windres --version | head -1
 
       - name: The tag is the version in package.json
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           version="v$(node -p "require('./package.json').version")"
-          if [ "$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME but package.json says $version"
+          if [ "$version" != "$TAG" ]; then
+            echo "::error::tag $TAG but package.json says $version"
             exit 1
           fi
 
@@ -84,17 +104,25 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to the GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          tag="$GITHUB_REF_NAME"
+          tag="$TAG"
+          sha="$(git rev-parse HEAD)"
           notes="docs/release-notes/$tag.md"
+          # A pushed tag already exists; a hand-run release creates it here, at the built commit.
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            target=(--verify-tag)
+          else
+            target=(--target "$sha")
+          fi
           if ! gh release view "$tag" >/dev/null 2>&1; then
             if [ -f "$notes" ]; then
-              gh release create "$tag" --verify-tag --title "Repackshot ${tag#v}" --notes-file "$notes"
+              gh release create "$tag" "${target[@]}" --title "Repackshot ${tag#v}" --notes-file "$notes"
             else
-              gh release create "$tag" --verify-tag --title "Repackshot ${tag#v}" --generate-notes
+              gh release create "$tag" "${target[@]}" --title "Repackshot ${tag#v}" --generate-notes
             fi
           fi
           gh release upload "$tag" --clobber \

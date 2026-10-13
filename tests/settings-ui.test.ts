@@ -12,7 +12,7 @@ import { showFirstRunChooser } from '../src/core/models';
 import type { RenderJob } from '../src/core/render';
 import * as cmd from '../src/ui/commands';
 import { CUSTOM_BLOCK_IDS, CUSTOM_ROW_IDS } from '../src/ui/panels/settings-window';
-import { loadSettingsDoc, saveSettingsDoc, SETTINGS_STORAGE_KEY, type KeyValue } from '../src/ui/prefs';
+import { loadSettingsDoc, saveSettingsDoc, SETTINGS_STORAGE_KEY, type KeyValue } from '../src/io/prefs';
 import type { AppServices } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
 import { announcement } from '../src/ui/settings-effects';

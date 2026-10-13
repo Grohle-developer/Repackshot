@@ -2,16 +2,22 @@
 // imports from `render` or `io` (ARCHITECTURE §2): main.ts builds these
 // services from the engine and the importers and hands them in.
 
+import type { AiGuardMaterial, AiPipelineSettings, AiPostService, LinearImage } from '../core/ai';
+import type { Projection, Rect } from '../core/box-select';
 import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
 import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
+import type { RenderPasses } from '../core/passes';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
+import type { ImageRef } from '../core/images';
+import type { AiRuntimePort } from '../core/ai-runtimes';
+import type { HostEvent, HostInfo } from '../core/host-protocol';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
 import type { UpdateOutcome } from '../core/updates';
@@ -40,8 +46,20 @@ export interface EngineStatus {
   frames?: number;
   /** Path tracer: milliseconds the last reduced-resolution frame took. */
   frameMs?: number;
-  /** Path tracer: a Render has the pool, the viewport waits. */
+  /** Path tracer: a Render is running (the viewport shares the engine with it, or waits). */
   rendering?: boolean;
+  /** Path tracer, while a Render runs: the viewport goes on with `share` of the engine, or waits for it. */
+  renderShare?: 'SHARED' | 'PAUSED';
+  /** Threads (native) or workers (pool) the viewport renders on while it shares, of how many. */
+  share?: { n: number; of: number };
+  /** Path tracer: why the view is not simply converging (render/watchdog.ts `ViewportIssue`). */
+  issue?: { kind: 'WAITING' | 'FAILED' | 'RESTARTED'; detail: string; seconds?: number };
+  /** Path tracer: passes received since it started, and times its watchdog restarted the view (for checks). */
+  passes?: number;
+  watchdog?: number;
+  /** Path tracer: the scene of the image on the canvas and the scene of the project now (equal: up to date). */
+  shownKey?: string;
+  wantKey?: string;
   /** Path tracer: pixels the samples above are counted on (the render window's estimate). */
   pixels?: number;
   /** The desktop launcher's native engine renders (threads and SIMD path below). */
@@ -64,9 +82,21 @@ export interface ViewportPort {
   pick(x: number, y: number): PickResult | null;
   /** Parts to outline as hovered (the ones under the cursor, or under a dragged material). */
   setHover(ids: readonly NodeId[]): void;
+  /** How the parts are projected as they are drawn now: selection by box tests them on the screen (core/box-select.ts). */
+  projection(): Projection | null;
+  /**
+   * The triangles of a part that show in a rectangle (CSS pixels of the canvas), found by drawing them with an id
+   * each: what other parts and the part itself hide does not count. Null when the viewport cannot tell.
+   */
+  visibleTriangles(part: NodeId, rect: Rect): Set<number> | null;
+  /** The faces of a part a dragged material would reach, tinted (null clears them). */
+  setHoverFaces(spec: { part: NodeId; indices: readonly number[] } | null): void;
   setTool(tool: Tool): void;
-  /** The gizmo of the move tool for these nodes in these axes (UI.md §2.3); null hides it. */
-  setGizmo(spec: { ids: readonly NodeId[]; space: Space } | null): void;
+  /**
+   * The gizmo of the move tool for these nodes in these axes (UI.md §2.3); null hides it. `handles` SCALE: only the
+   * scale handles (the scale tool, phase U9).
+   */
+  setGizmo(spec: { ids: readonly NodeId[]; space: Space; handles?: 'ALL' | 'SCALE' } | null): void;
   /** The gizmo handle under a point (and highlights it), or null. */
   gizmoHover(x: number, y: number): GizmoHandle | null;
   /** Starts dragging the handle under a point; null when there is none. */
@@ -93,6 +123,8 @@ export interface EngineConfig {
   simd: 'AUTO' | 'OFF';
   gestureResolution: 'AUTO' | 'HALF' | 'QUARTER';
   viewportLimit: ViewportLimit;
+  /** While a render runs: the viewport keeps a quarter of the engine, or waits. */
+  whileRender: 'SHARE' | 'PAUSE';
 }
 
 export interface EnginePort {
@@ -102,25 +134,64 @@ export interface EnginePort {
   measure(opts: { seconds: number; signal: AbortSignal; onProgress?: (elapsed: number) => void }): Promise<PerfResult>;
 }
 
-/** The browser's storage as Settings ▸ Storage shows it. */
+/** One part of the desktop's data folder, measured by the launcher (`models`, `results`, `library`, `thumbs`, `logs`, `window`, `other`). */
+export interface FolderPart {
+  id: string;
+  path: string | null;
+  bytes: number;
+  files: number;
+}
+
+/**
+ * Where the application's data is, as Settings ▸ Storage shows it (io/platform.ts): the browser's site storage in
+ * the web version, the data folder of the desktop application.
+ */
 export interface StoragePort {
-  /** What the browser reports (navigator.storage.estimate), or null when it does not. */
+  /** `browser`: the site's storage, which the browser may evict; `folder`: the desktop's data folder. Absent: `browser`. */
+  readonly kind?: 'browser' | 'folder';
+  /** What the browser reports (navigator.storage.estimate), or null when it does not (and on the desktop). */
   estimate(): Promise<{ usage: number; quota: number } | null>;
-  /** Whether the browser keeps the data (navigator.storage.persisted), null when it cannot say. */
+  /** Whether the browser keeps the data (navigator.storage.persisted), null when it cannot say (and on the desktop). */
   persisted(): Promise<boolean | null>;
   /** Asks the browser to keep the data; null when it cannot be asked. */
   persist(): Promise<boolean | null>;
-  /** Bytes of the library's entry. */
-  libraryBytes(): number;
+  /** Bytes of the library. */
+  libraryBytes(): number | Promise<number>;
   /** Bytes of the thumbnail cache. */
-  cacheBytes(): number;
+  cacheBytes(): number | Promise<number>;
   /** Deletes the thumbnail cache; the bytes freed. */
-  clearCache(): number;
+  clearCache(): number | Promise<number>;
+  /** The desktop's data folder by part, as the launcher measured it; null (or absent) in the web version. */
+  usage?(): Promise<{ dataDir: string; total: number; folders: FolderPart[] } | null>;
+}
+
+/**
+ * Repackshot's own window on the desktop (P3c, WebView2 on Windows, with the system's title bar): the page
+ * names its title, gives its colours and answers its close with our own question. Null in a browser and in
+ * the browser's app window.
+ */
+export interface WindowHostPort {
+  readonly kind: 'webview2';
+  /** The window's answer to `ready` (its WebView2 version), or null before it. */
+  info(): HostInfo | null;
+  /** Listens to the window's events; returns the function that stops. */
+  on(listener: (event: HostEvent) => void): () => void;
+  /** The page listens. */
+  ready(): void;
+  /** The project's name: the title becomes `Repackshot — <project>`. */
+  setTitle(project: string): void;
+  setTheme(dark: boolean, background: string): void;
+  /** Close as the system would: the window asks back (`close-requested`). */
+  close(): void;
+  /** The page agreed to close. */
+  closeOk(): void;
 }
 
 /** The desktop launcher's folders (P2), when the page runs in its window. */
 export interface DesktopPort {
   openFolder(target: 'data' | 'models' | 'logs' | 'results'): Promise<void>;
+  /** Closes the app window (Ctrl/⌘ W and Ctrl Q after the unsaved-changes question). */
+  closeWindow?(): void;
 }
 
 /** The release feed (src/io/updates.ts): the latest published release, or why it could not be had. Never throws. */
@@ -165,6 +236,17 @@ export interface FrameRequest {
   signal?: AbortSignal;
   /** 0..1, the samples every pixel has so far, and seconds. */
   onProgress?: (progress: number, samples: number, seconds: number) => void;
+  /**
+   * The AI step follows (X3c): render the guard's passes too and let the desktop launcher keep them with the linear
+   * image by the render's id (AI-POST.md §7.3), for the `RENDER` source. Ignored where there is no launcher.
+   */
+  aiPasses?: boolean;
+}
+
+/** The exposure and tone curve a render's file was written with (RSB codes): the AI image is written the same way. */
+export interface FrameTone {
+  exposureEv: number;
+  tonemap: number;
 }
 
 /** What a frame request gives back. */
@@ -177,6 +259,66 @@ export interface FrameResult {
   height: number;
   samples: number;
   seconds: number;
+  /** The desktop launcher's id of the render, by which it keeps the linear image and the passes (`aiPasses`). */
+  renderId?: string;
+  /** How its file was converted from the render's light. */
+  tone?: FrameTone;
+}
+
+// --- AI post-processing (phase X4, AI-POST.md §4, §7.3) ---------------------------------------------------------
+
+/** The inputs of an AI request for a camera: a picture and the passes of §7.4 drawn at the same size. */
+export interface AiFrameRequest {
+  width: number;
+  height: number;
+  /** The job's camera; null: the active one. */
+  camera: CameraId | null;
+  /** Start from the path tracer instead of Fast mode (the preview's "full engine" option), with the job's budget. */
+  fullEngine: { finishBy: FinishBy; maxSamples: number; maxSeconds: number } | null;
+  signal?: AbortSignal;
+}
+
+export interface AiFrame {
+  image: LinearImage;
+  passes: RenderPasses;
+}
+
+/** How a finished AI image is written (the job's format). */
+export interface AiEncodeOptions {
+  format: OutputFormat;
+  bitDepth: BitDepth;
+  /** 1..100 */
+  jpegQuality: number;
+  dpi: number;
+  transparent: boolean;
+  /**
+   * The image is the render's own scene light (the `RENDER` source, X3c): written with this exposure and curve,
+   * exactly as the engine's file was. Absent: the image is display light (an `INLINE` source decoded from 8 bits).
+   */
+  tone?: FrameTone;
+}
+
+/**
+ * Everything the interface needs for the AI post-processing step. `service` is the pipeline (the desktop
+ * launcher's, the web's, or the synthetic one of tests and screenshots); the rest builds its inputs from the
+ * engine on screen and turns its output into files. `ui` never imports from `ai`, `render` or `io`.
+ */
+export interface AiPort {
+  readonly service: AiPostService;
+  /** The preview's inputs: the picture of a camera at a size (Fast mode, or the full engine) and its passes. */
+  frame(req: AiFrameRequest): Promise<AiFrame>;
+  /** The passes of §7.4 for a camera at a size, to go with a render that was already made. */
+  passes(req: { width: number; height: number; camera: CameraId | null }): Promise<RenderPasses>;
+  /** A finished render's picture as a linear image. */
+  decode(image: Blob): Promise<LinearImage>;
+  /** An image from the service as a file, in the job's format. */
+  encode(image: LinearImage, opts: AiEncodeOptions): Promise<Blob>;
+  /** The prompt and the negative for a scene and a job's settings (src/ai/prompt.ts; default: the window's). */
+  scenePrompt(state: ProjectState, settings?: AiPipelineSettings): { prompt: string; negative: string };
+  /** The guard's material table for a job's camera: the engine scene's material order (io/rsb.ts), named (src/ai/prompt.ts). */
+  materials(state: ProjectState, camera: CameraId | null): AiGuardMaterial[];
+  /** The service takes the `RENDER` source: the desktop launcher kept the final render with its passes (X3c). */
+  renderSource(): Promise<boolean>;
 }
 
 /** The results history in the browser (src/io/results.ts). */
@@ -185,9 +327,9 @@ export interface ResultsPort {
   persistent(): Promise<boolean>;
   /** Newest first. */
   list(): Promise<ResultMeta[]>;
-  /** Stores a result; returns the ids evicted to stay within the limits (oldest first). */
-  add(meta: ResultMeta, file: Blob, display: Blob | null): Promise<string[]>;
-  get(id: string): Promise<{ file: Blob; display: Blob | null } | null>;
+  /** Stores a result (`ai`: the image the AI post-processing made, when there is one); returns the ids evicted to stay within the limits (oldest first). */
+  add(meta: ResultMeta, file: Blob, display: Blob | null, ai?: Blob | null): Promise<string[]>;
+  get(id: string): Promise<{ file: Blob; display: Blob | null; ai?: Blob | null } | null>;
   remove(id: string): Promise<void>;
   clear(): Promise<void>;
   /** New limits (Settings ▸ Storage); the ids evicted at once to fit them, oldest first. */
@@ -200,13 +342,39 @@ export interface FilesPort {
   readonly canChooseFolder: boolean;
   /** The folder can be shown in the system's file manager (the desktop build); never in a browser. */
   readonly canOpenFolder: boolean;
+  /** The desktop launcher writes the files: a folder is a path, Downloads the system's folder. */
+  readonly desktop?: boolean;
+  /** Results saved to Downloads can be shown in the file manager too (the desktop). */
+  readonly canOpenDownloads?: boolean;
   /** Asks for a folder (a user gesture); null when the person cancels. */
   chooseFolder(): Promise<{ id: string; name: string } | null>;
   /** Write permission for a remembered folder, asked again when needed (call it from a user gesture). */
   ensureAccess(id: string): Promise<boolean>;
   /** Saves under the destination; a download when the folder is gone or not writable. */
   save(dest: Destination, name: string, blob: Blob): Promise<'FOLDER' | 'DOWNLOAD'>;
-  openFolder(id: string): Promise<void>;
+  /** Shows the folder (`downloads`: the Downloads folder) in the file manager, with the file `name` saved there selected when known. */
+  openFolder(id: string, name?: string): Promise<void>;
+}
+
+/** A file type of the system's dialogs: `extensions` without the dot; `*` is every file. */
+export interface DialogFilter {
+  name: string;
+  extensions: string[];
+}
+
+/**
+ * The system's own dialogs for imports and exports (the desktop launcher, io/desktop-files.ts); null in the browser,
+ * which uses `<input type="file">` and downloads.
+ */
+export interface DialogsPort {
+  /** Files to read; null when cancelled. `lazy`: read in ranges through the launcher (AI model files of many GB). */
+  openFiles(req: { title: string; filters: DialogFilter[]; multiple?: boolean; lazy?: boolean }): Promise<File[] | null>;
+  /** Every file under a folder (an AI model's folder), each with its `webkitRelativePath`; null when cancelled. */
+  openFolderFiles(req: { title: string; folderItem: string }): Promise<File[] | null>;
+  /** Writes `blob` where the person says in the save dialog. */
+  saveFile(blob: Blob, suggestedName: string, req: { title: string; filters: DialogFilter[] }): Promise<{ kind: 'SAVED'; name: string; path: string } | { kind: 'CANCELLED' } | { kind: 'FAILED'; reason: string }>;
+  /** Opens an https:// address in the system's browser, not in the app window. */
+  openExternal(url: string): Promise<void>;
 }
 
 export type { ImportMessage };
@@ -227,7 +395,7 @@ export interface ProjectFault {
 /** Something a load noticed that the person should hear about. */
 export interface ProjectWarning {
   /** This many parts have no geometry in the file (a project from before meshes were embedded). */
-  code: 'MISSING_MESHES';
+  code: 'MISSING_MESHES' | 'MISSING_IMAGES';
   count: number;
 }
 
@@ -286,6 +454,17 @@ export interface LibraryServices {
   import(text: string, lib: Library): ImportResult;
 }
 
+/** The environment's image files (src/io/hdri.ts, which the interface cannot import). */
+export interface ImagesPort {
+  /**
+   * Reads an HDRI (.hdr or .exr) into the image registry; rejects with an error whose `code` is FORMAT,
+   * DAMAGED, UNSUPPORTED or TOO_LARGE (and a message naming what is not supported).
+   */
+  loadHdri(file: File): Promise<ImageRef>;
+  /** Reads a background image (.png, .jpg, .webp) into the image registry; rejects like `loadHdri`. */
+  loadBackplate(file: File): Promise<ImageRef>;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -314,8 +493,12 @@ export interface AppServices {
   library: LibraryServices;
   /** The render engine's settings and Measure performance. */
   engine: EnginePort;
+  /** AI post-processing (phase X4); null or absent when this build has no way to draw its inputs. */
+  ai?: AiPort | null;
   /** The AI model manager; null when this build has none. */
   models: ModelsService | null;
+  /** The desktop launcher's inference runtime (X3b, src/io/ai-runtime.ts); absent or null elsewhere. */
+  aiRuntime?: AiRuntimePort | null;
   /** What this computer has, for the AI models (WebGPU limits in the browser, the launcher's detection on the desktop). */
   hardware(again?: boolean): Promise<HardwareInfo>;
   storage: StoragePort;
@@ -323,6 +506,17 @@ export interface AppServices {
   desktop: DesktopPort | null;
   /** Where new versions are published (Settings ▸ Updates). */
   updates: UpdatesPort;
+  /**
+   * Opens an https:// address outside the application, never in its window: the system's browser on the desktop (the
+   * launcher's /api/open-url), a new tab in the browser version. Anything else than https:// is ignored.
+   */
+  openExternal(url: string): Promise<void>;
+  /** The system's dialogs for imports and exports; absent or null in the browser. */
+  dialogs?: DialogsPort | null;
+  /** Repackshot's own window (P3c); null or absent in a browser and in the browser's app window. */
+  windowHost?: WindowHostPort | null;
   /** A licence text shipped with the build (`licences/<file>`, copied by tools/licences.mjs); null when missing. */
   licenceText(file: string): Promise<string | null>;
+  /** The environment's HDRI and background image files. */
+  images: ImagesPort;
 }

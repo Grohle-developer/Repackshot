@@ -20,11 +20,11 @@ use crate::http::{read_request, write_response, Body, ReadError, Request, Respon
 use crate::json::{self, Value};
 use crate::models::{Store, StoreError};
 use crate::paths::Paths;
-use crate::render::{has_meshes, Engine, Finish, Kind, SubmitError};
+use crate::render::{has_meshes, Engine, Finish, Kind, Options as JobOptions, SubmitError};
 use crate::static_files;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -38,6 +38,12 @@ pub const MAX_JSON: u64 = 1 << 20;
 pub const IDLE: Duration = Duration::from_secs(30);
 /// Longest wait of `GET /api/render/<id>?after=<n>`.
 pub const LONG_POLL: Duration = Duration::from_secs(1);
+/// How long a write of a long-polled render frame may block: a page that stopped reading one (it
+/// went on to a newer view) frees the connection and its thread instead of holding them for
+/// minutes.
+pub const FRAME_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long any other write may block.
+pub const WRITE_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -71,13 +77,26 @@ pub struct App {
     pub models: Store,
     /// The browser drawing the window (for `/api/info`).
     pub browser: Mutex<Option<String>>,
+    /// The system's dialogs (`/api/dialog/*`).
+    pub dialogs: crate::dialogs::Dialogs,
+    /// What the person chose in them (`/api/files*`).
+    pub files: crate::files::Files,
+    /// The AI runtime, its downloads and its server (`/api/ai/*`, `src/ai/`).
+    pub ai: Arc<crate::ai::Ai>,
     last_alive: Mutex<Instant>,
     hardware: Mutex<Option<Hardware>>,
     connections: AtomicUsize,
     stopping: AtomicBool,
+    /// [`FRAME_WRITE_TIMEOUT`], in milliseconds (tests shorten it).
+    pub frame_write_timeout_ms: AtomicU64,
 }
 
 impl App {
+    /// Connections being served now.
+    pub fn connections(&self) -> usize {
+        self.connections.load(Ordering::Acquire)
+    }
+
     /// The page's heartbeat arrived.
     pub fn alive(&self) {
         *lock(&self.last_alive) = Instant::now();
@@ -93,7 +112,7 @@ impl App {
         format!("http://127.0.0.1:{}/#token={}", self.port, self.token)
     }
 
-    fn hardware(&self, refresh: bool) -> Hardware {
+    pub(crate) fn hardware(&self, refresh: bool) -> Hardware {
         let mut cached = lock(&self.hardware);
         if refresh || cached.is_none() {
             *cached = Some(hardware::detect());
@@ -149,6 +168,18 @@ impl App {
         {
             return api(Response::error(400, "bad-path", "empty, . or .. segment"));
         }
+        // Dialogs and the files chosen in them (files.rs).
+        if let Some(r) = crate::files::route(self, req, &parts, body) {
+            return api(r);
+        }
+        // The page's state in the data folder (appdata.rs, phase P3e): /api/store/*, /api/storage/*.
+        if let Some(r) = crate::appdata::route(&self.paths, req, &parts, body) {
+            return api(r);
+        }
+        // The AI runtime (ai/mod.rs).
+        if let Some(r) = crate::ai::route(self, req, &parts, body) {
+            return api(r);
+        }
         let m = req.method.as_str();
         api(match (m, parts.as_slice()) {
             ("GET", ["info"]) => self.info(),
@@ -163,7 +194,9 @@ impl App {
                 Response::json(200, hardware::to_json(&hw, &a))
             }
             ("POST", ["render"]) => self.post_render(req, body),
+            ("GET", ["render", "state"]) => self.render_state(req),
             ("GET", ["render", id]) => self.get_render(req, id),
+            ("GET", ["render", id, "passes"]) => self.get_passes(id),
             ("DELETE", ["render", id]) => match id.parse::<u32>() {
                 Ok(id) if self.engine.cancel(id) => Response::empty(204),
                 _ => Response::error(404, "not-found", "no such job"),
@@ -297,7 +330,14 @@ impl App {
                 .str("resultsDir", &p.results().to_string_lossy())
                 .bool("portable", p.portable)
                 .opt_str("browser", lock(&self.browser).as_deref())
+                .raw("window", &crate::platform::report_json())
                 .num("pid", f64::from(std::process::id()))
+                // The dialogs and file API of files.rs (version 1).
+                .num("filesApi", 1.0)
+                // The AI runtime API of ai/mod.rs (version 1).
+                .num("aiApi", 1.0)
+                // The AI post-processing pipeline of ai/post.rs (`/api/ai/post`, version 1).
+                .num("aiPost", 1.0)
                 .build(),
         )
     }
@@ -320,13 +360,48 @@ impl App {
                 None => return Response::error(400, "bad-query", "finish=samples|time|first"),
             },
         };
+        // The exact passes a final job keeps for the AI post-processing (X2): `passes=albedo,depth`.
+        let passes = match rt_core::passes::mask_of_keys(req.query("passes").unwrap_or("")) {
+            Ok(mask) => mask,
+            Err(key) => {
+                return Response::error(
+                    400,
+                    "bad-query",
+                    &format!(
+                        "unknown pass {key:?}: passes={}",
+                        rt_core::passes::PASS_KEYS.join(",")
+                    ),
+                )
+            }
+        };
+        if passes != 0 && kind == Kind::Viewport {
+            return Response::error(400, "bad-query", "passes are rendered by final jobs only");
+        }
         let mesh = req.query("mesh").unwrap_or("");
         let client = req.query("client").unwrap_or("");
+        // `share=<n>`: a viewport job that keeps n threads while a final runs (0: it pauses).
+        let share = match req.query("share").map(str::parse::<usize>) {
+            None => 0,
+            Some(Ok(n)) => n,
+            Some(Err(_)) => return Response::error(400, "bad-query", "share=<threads>"),
+        };
+        // `seq=<n>`: the view's number in the client's order; an older one arriving late is refused.
+        let seq = match req.query("seq").map(str::parse::<u64>) {
+            None => None,
+            Some(Ok(n)) => Some(n),
+            Some(Err(_)) => return Response::error(400, "bad-query", "seq=<n>"),
+        };
         // `full=1`: the body is the complete scene even without `MESH` sections (an empty project).
         let whole = req.query("full") == Some("1") || has_meshes(&rsb);
+        let opts = JobOptions {
+            finish,
+            share,
+            seq,
+            passes,
+        };
         match self
             .engine
-            .submit_scene(kind, &rsb, whole, mesh, client, finish)
+            .submit_with(kind, &rsb, whole, mesh, client, opts)
         {
             Ok(job) => Response::json(
                 200,
@@ -337,6 +412,14 @@ impl App {
                     .num("maxSamples", f64::from(job.max_samples))
                     .num("threads", self.engine.threads() as f64)
                     .str("isa", self.engine.isa().name())
+                    .raw(
+                        "passes",
+                        &json::array(
+                            rt_core::passes::keys_of_mask(job.passes)
+                                .into_iter()
+                                .map(json::string),
+                        ),
+                    )
                     .build(),
             ),
             Err(SubmitError::NeedMeshes) => Response::error(
@@ -346,13 +429,40 @@ impl App {
             ),
             Err(SubmitError::BadScene(e)) => Response::error(400, "bad-scene", &e),
             Err(SubmitError::Busy) => Response::error(503, "busy", "too many windows rendering"),
+            Err(SubmitError::Stale) => {
+                Response::error(409, "stale", "a newer view of this window came first")
+            }
         }
+    }
+
+    /// The renderer's diagnostics: the gate, the jobs, the windows' viewports and the connections.
+    /// With `log=1` they also go to the log, with the page's `reason` (the viewport watchdog asks
+    /// for this when it fires, so the log says what the launcher was doing).
+    fn render_state(&self, req: &Request) -> Response {
+        let state = json::Object::new()
+            .num("connections", self.connections() as f64)
+            .num("heartbeatSilenceMs", self.silence().as_millis() as f64)
+            .raw("engine", &self.engine.state_json())
+            .build();
+        if req.query("log") == Some("1") {
+            let reason: String = req
+                .query("reason")
+                .unwrap_or("")
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || " .,:;_-()".contains(*c))
+                .take(200)
+                .collect();
+            crate::log!("render state ({reason}): {state}");
+        }
+        Response::json(200, state)
     }
 
     fn get_render(&self, req: &Request, id: &str) -> Response {
         let Some(job) = id.parse::<u32>().ok().and_then(|id| self.engine.job(id)) else {
             return Response::error(404, "not-found", "no such job");
         };
+        // Asked about: its page still wants it.
+        job.touch();
         let after = req.query("after").and_then(|a| a.parse::<u32>().ok());
         let frame = match after {
             Some(n) => job.wait_newer(n, LONG_POLL),
@@ -368,6 +478,32 @@ impl App {
                 len: frame.len(data),
                 write: Box::new(move |w| frame.write(data, w)),
             },
+        }
+    }
+
+    /// `GET /api/render/<id>/passes`: the kept passes of a final render (`kept.rs`, `RPP1`).
+    fn get_passes(&self, id: &str) -> Response {
+        let Ok(id) = id.parse::<u32>() else {
+            return Response::error(404, "not-found", "no such render");
+        };
+        // The job first: one that finishes in between has kept its passes before it ended.
+        let rendering = self
+            .engine
+            .job(id)
+            .is_some_and(|job| job.passes != 0 && !job.frame().finished());
+        if rendering {
+            return Response::error(409, "not-ready", "the render is not finished");
+        }
+        match self.engine.kept_passes(id) {
+            Some(body) => Response {
+                status: 200,
+                headers: vec![("Content-Type".into(), "application/octet-stream".into())],
+                body: Body::Stream {
+                    len: body.len,
+                    write: body.write,
+                },
+            },
+            None => Response::error(404, "not-found", "no passes kept for this render"),
         }
     }
 
@@ -444,7 +580,8 @@ fn read_text(req: &Request, body: &mut dyn Read, limit: u64) -> Result<String, R
     Ok(text)
 }
 
-fn read_json(req: &Request, body: &mut dyn Read) -> Result<Value, Response> {
+/// A JSON request body (at most [`MAX_JSON`] bytes).
+pub(crate) fn read_json(req: &Request, body: &mut dyn Read) -> Result<Value, Response> {
     let text = read_text(req, body, MAX_JSON)?;
     json::parse(&text).map_err(|e| Response::error(400, "bad-json", &e.to_string()))
 }
@@ -510,7 +647,7 @@ pub fn store_error(e: StoreError, sha: Option<&str>) -> Response {
 fn serve_connection(app: &App, stream: TcpStream) {
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(IDLE));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(120)));
+    let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
     let Ok(read_half) = stream.try_clone() else {
         return;
     };
@@ -552,10 +689,47 @@ fn serve_connection(app: &App, stream: TcpStream) {
         if left > 0 && (left > (1 << 20) || io::copy(&mut body, &mut io::sink()).is_err()) {
             keep = false;
         }
-        if write_response(&mut writer, response, head, keep).is_err() || !keep {
+        // A long-polled frame nobody reads any more (its page went on to a newer view) gives the
+        // connection up soon: a short timeout cuts it and the connection closes. (The final image,
+        // fetched without `after`, keeps the long timeout.)
+        let frame = req.method == "GET"
+            && req.path.starts_with("/api/render/")
+            && req.query("after").is_some();
+        if frame {
+            let ms = app.frame_write_timeout_ms.load(Ordering::Relaxed).max(1);
+            let _ = writer
+                .get_ref()
+                .set_write_timeout(Some(Duration::from_millis(ms)));
+        }
+        if write_response(&mut writer, response, head, keep).is_err() {
+            // What is left in the buffer is dropped with the connection, not flushed with the
+            // long timeout (a reader that stopped would keep the thread for minutes).
+            let _ = writer.get_ref().shutdown(Shutdown::Both);
+            return;
+        }
+        if frame {
+            let _ = writer.get_ref().set_write_timeout(Some(WRITE_TIMEOUT));
+        }
+        if !keep {
             return;
         }
     }
+}
+
+/// What a server is built with besides its folders, port, token and threads. The application
+/// (`port.rs`) always takes the default; only the tests set a field, so a shipped binary never
+/// takes any of this from its data folder or its environment.
+#[derive(Default)]
+pub struct Options {
+    /// The AI runtimes' catalogue and downloader in place of the embedded catalogue and the
+    /// system's `curl` over https (`Ai::with`; the tests: a fake runtime, a local http server).
+    pub ai_runtimes: Option<(
+        crate::ai::catalogue::RuntimeCatalogue,
+        crate::ai::download::Downloader,
+    )>,
+    /// How many final renders with passes are kept, and the largest kept in memory, in place of
+    /// [`crate::kept::KeepLimits::default`] (the tests: a small store that spills to the disk).
+    pub keep: Option<crate::kept::KeepLimits>,
 }
 
 /// A running server.
@@ -568,21 +742,48 @@ pub struct Server {
 impl Server {
     /// Binds `127.0.0.1:port` (0: any free port) and serves in the background.
     pub fn start(paths: Paths, port: u16, token: String, threads: usize) -> io::Result<Server> {
+        Server::start_with(paths, port, token, threads, Options::default())
+    }
+
+    /// The same, built with `options`.
+    pub fn start_with(
+        paths: Paths,
+        port: u16,
+        token: String,
+        threads: usize,
+        options: Options,
+    ) -> io::Result<Server> {
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         let port = listener.local_addr()?.port();
         let models = Store::new(paths.models(), crate::recommend::catalogue().clone());
+        let paths_data = paths.data_dir.clone();
         let app = Arc::new(App {
             paths,
             token,
             port,
-            engine: Engine::new(threads),
+            engine: Engine::with_store(
+                threads,
+                crate::render::Limits::default(),
+                options.keep.unwrap_or_default(),
+                Some(paths_data.join("cache").join("ai")),
+            ),
             models,
             browser: Mutex::new(None),
+            dialogs: crate::dialogs::Dialogs::new(),
+            files: crate::files::Files::new(&paths_data),
+            ai: match options.ai_runtimes {
+                Some((cat, downloader)) => {
+                    crate::ai::Ai::with(paths_data.join("ai"), cat, downloader)
+                }
+                None => crate::ai::Ai::new(&paths_data),
+            },
             last_alive: Mutex::new(Instant::now()),
             hardware: Mutex::new(None),
             connections: AtomicUsize::new(0),
             stopping: AtomicBool::new(false),
+            frame_write_timeout_ms: AtomicU64::new(FRAME_WRITE_TIMEOUT.as_millis() as u64),
         });
+        app.dialogs.set_cache_dir(app.paths.data_dir.join("cache"));
         let shared = Arc::clone(&app);
         let handle = std::thread::spawn(move || {
             for stream in listener.incoming() {
@@ -627,12 +828,14 @@ impl Server {
     /// Stops accepting connections and every render job.
     pub fn stop(&mut self) {
         self.app.stopping.store(true, Ordering::Relaxed);
+        self.app.dialogs.close_all();
         // Wake the accept loop.
         let _ = TcpStream::connect(("127.0.0.1", self.app.port));
         if let Some(h) = self.listener.take() {
             let _ = h.join();
         }
         self.app.engine.shutdown();
+        self.app.ai.shutdown();
     }
 }
 

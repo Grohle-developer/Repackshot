@@ -64,7 +64,37 @@ export const ICONS = {
   arrowDown: ['M12 5v14', 'M6 13l6 6 6-6'],
   keyboard: ['M3 7h18v10H3z', 'M7 11h.01', 'M11 11h.01', 'M15 11h.01', 'M8 14h8'],
   info: ['c:12,12,9', 'M12 11v6', 'M12 7.5v.1'],
+  refresh: ['M20 12a8 8 0 0 0-14.3-4.9', 'M5 3.5v4h4', 'M4 12a8 8 0 0 0 14.3 4.9', 'M19 20.5v-4h-4'],
   settings: ['c:12,12,3', 'M12 3v3', 'M12 18v3', 'M3 12h3', 'M18 12h3', 'M5.6 5.6l2.1 2.1', 'M16.3 16.3l2.1 2.1', 'M5.6 18.4l2.1-2.1', 'M16.3 7.7l2.1-2.1'],
+  // The scale tool (U9): a small square grown into a large one along the diagonal.
+  scale: ['M4 14h6v6H4z', 'M4 10V4h16v16h-6', 'M12 12l7-7', 'M14.5 5H19v4.5'],
+  // The primitives of Add ▸ Primitive (U9).
+  primBox: ['M5 9h10v11H5z', 'M5 9l4-4h10l-4 4', 'M15 20l4-4V5'],
+  primPlane: ['M3 16l5-6h13l-5 6z'],
+  primDisc: ['M3 13a9 4 0 1 0 18 0a9 4 0 1 0-18 0'],
+  primCylinder: ['M5 6.5a7 2.5 0 1 0 14 0a7 2.5 0 1 0-14 0', 'M5 6.5v11', 'M19 6.5v11', 'M5 17.5a7 2.5 0 0 0 14 0'],
+  primPedestal: ['M3.5 10a8.5 3 0 1 0 17 0a8.5 3 0 1 0-17 0', 'M3.5 10v5', 'M20.5 10v5', 'M3.5 15a8.5 3 0 0 0 17 0'],
+  primSphere: ['c:12,12,8', 'M4 12a8 2.8 0 0 0 16 0'],
+  primCone: ['M12 3.5 19 17', 'M12 3.5 5 17', 'M5 17a7 2.5 0 0 0 14 0'],
+  primTorus: ['M2.5 12a9.5 5 0 1 0 19 0a9.5 5 0 1 0-19 0', 'M8.5 11.5a3.5 1.4 0 1 0 7 0a3.5 1.4 0 1 0-7 0'],
+  primCapsule: ['M8 8a4 4 0 0 1 8 0v8a4 4 0 0 1-8 0z'],
+  primTube: ['M5 6.5a7 2.5 0 1 0 14 0a7 2.5 0 1 0-14 0', 'M9.5 6.5a2.5 0.9 0 1 0 5 0a2.5 0.9 0 1 0-5 0', 'M5 6.5v11', 'M19 6.5v11', 'M5 17.5a7 2.5 0 0 0 14 0'],
+  primSteps: ['M3 20v-4h5v-4h5V8h5V4h3v16z'],
+  primSweep: ['M3 19h8a7 7 0 0 0 7-7V4', 'M3 21h18'],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;
+
+/**
+ * The app's mark, as docs/media/logo.svg draws it (a black tile with the material sphere on the studio floor,
+ * its highlight and contact shadow in white), on the logo's 256 × 256 grid: achromatic in both themes. The
+ * header's application-menu button shows it (UI.md §2.1).
+ */
+export const LOGO_MARK = {
+  viewBox: '0 0 256 256',
+  tile: { rx: 51.2, fill: '#141414' },
+  strokes: ['M62 112a66 66 0 1 0 132 0a66 66 0 1 0 -132 0', 'M44 208h168', 'M98 78a40 40 0 0 1 38-22'],
+  strokeWidth: 14,
+  stroke: '#ffffff',
+  shadow: { cx: 128, cy: 208, rx: 52, ry: 7, fill: '#ffffff', opacity: 0.35 },
+} as const;

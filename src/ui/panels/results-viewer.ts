@@ -2,10 +2,12 @@
 // a finished image fitted or at 100 %, zoom (wheel, + -, 0 fit, 1 100 %) and
 // pan, its name and data, *Save again*, *Open folder* (only where the
 // platform can), *Delete* and *Close* (Esc). *Compare with…* puts an earlier
-// result next to it with the split-compare divider (the component X3 reuses
-// for Render against AI).
+// result next to it with the split-compare divider. A result that went through
+// the AI post-processing (X4) opens as Render against AI under the same divider,
+// with the guard's report in one line, and both images can be saved.
 
 import { compareCandidates, type ResultMeta } from '../../core/results';
+import { reportDetails, reportText } from '../ai-report';
 import * as cmd from '../commands';
 import { splitCompare, type SplitCompare, type SplitImage } from '../components/split-compare';
 import { openMenu } from '../components/widgets';
@@ -13,15 +15,20 @@ import { h, icon, isTyping } from '../dom';
 import type { Ctx, Scope } from '../reactive';
 import { formatClock, formatNumber, getLang, t } from '../strings';
 
-async function decode(ctx: Ctx, id: string): Promise<SplitImage | null> {
-  const blobs = await ctx.services.results.get(id);
-  if (!blobs) return null;
-  const blob = blobs.display ?? blobs.file;
+async function bitmap(blob: Blob | null | undefined): Promise<SplitImage | null> {
+  if (!blob) return null;
   try {
     return await createImageBitmap(blob);
   } catch {
     return null;
   }
+}
+
+/** The images of a result: the engine's (what the browser can show), and the AI's when it has one. */
+async function decode(ctx: Ctx, id: string): Promise<{ render: SplitImage | null; ai: SplitImage | null }> {
+  const blobs = await ctx.services.results.get(id);
+  if (!blobs) return { render: null, ai: null };
+  return { render: await bitmap(blobs.display ?? blobs.file), ai: await bitmap(blobs.ai) };
 }
 
 /** "1920 × 1080 · 300 DPI · 256 samples · 1:24 · Camera 1" */
@@ -64,13 +71,44 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
   });
   const fitBtn = h('button', { type: 'button', class: 'btn btn-sm', 'data-kbd': '0', onclick: () => split?.fit() }, t('rv.fit'));
   const actualBtn = h('button', { type: 'button', class: 'btn btn-sm', 'data-kbd': '1', onclick: () => split?.actual() }, '100 %');
-  const saveBtn = h('button', { type: 'button', class: 'btn', onclick: () => meta && void cmd.saveResultAgain(ctx, meta.id) }, icon('download', 14), t('rv.saveAgain'));
+  // The AI image exists when the guard let one through (bytes): a REJECTED result keeps its report and the engine's image only.
+  const hasAi = !!meta?.ai && meta.ai.bytes > 0;
+  const saveBtn = h('button', { type: 'button', class: 'btn', onclick: () => meta && void cmd.saveResultAgain(ctx, meta.id) }, icon('download', 14), hasAi ? t('rv.saveRender') : t('rv.saveAgain'));
+  const saveAiBtn = hasAi ? h('button', { type: 'button', class: 'btn', 'data-save': 'ai', onclick: () => meta && void cmd.saveResultAgain(ctx, meta.id, 'AI') }, icon('download', 14), t('rv.saveAi')) : null;
+  // The guard's report (AI-POST.md §4): what was checked, and what the guard did. Its own line under the title and
+  // the toolbar, the whole width, one line; where it does not fit it ends in an ellipsis and the tooltip has it all,
+  // with what ran.
+  const report = meta?.ai ? reportText(meta.ai.report) : null;
+  const reportEl = report
+    ? h(
+        'div',
+        { class: 'rv-report', 'data-verdict': meta!.ai!.report.verdict, title: `${[report.checked, report.note].filter(Boolean).join(' · ')}\n${reportDetails(meta!.ai!.report, meta!.ai!.report.modelKey)}` },
+        report.checked ? h('span', { class: 'rv-report-checked tabular' }, report.checked) : null,
+        report.note ? h('span', { class: `rv-report-note${meta!.ai!.report.verdict === 'REJECTED' ? ' is-rejected' : ''}` }, report.note) : null,
+      )
+    : null;
+  // Where the image went, in the file manager (the desktop: with the file selected; Downloads too).
+  const files = ctx.services.files;
+  const folderId = meta?.savedTo.kind === 'FOLDER' ? meta.savedTo.id : meta && files.canOpenDownloads ? 'downloads' : null;
   const folderBtn =
-    ctx.services.files.canOpenFolder && meta?.savedTo.kind === 'FOLDER'
-      ? h('button', { type: 'button', class: 'btn', onclick: () => meta.savedTo.kind === 'FOLDER' && void ctx.services.files.openFolder(meta.savedTo.id) }, icon('folder', 14), t('rv.openFolder'))
+    files.canOpenFolder && meta && folderId
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn',
+            onclick: () =>
+              void files.openFolder(folderId, meta.name).catch((err: unknown) => {
+                console.warn(`open folder: ${err instanceof Error ? err.message : String(err)}`);
+                ctx.ui.toast(t('set.st.openFolderFailed'));
+              }),
+          },
+          icon('folder', 14),
+          t('rv.openFolder'),
+        )
       : null;
   const deleteBtn = h('button', { type: 'button', class: 'btn', 'data-tip': t('rv.deleteTip'), onclick: () => meta && void cmd.deleteResult(ctx, meta.id) }, icon('trash', 14), t('common.delete'));
-  const closeBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('common.close'), 'data-tip': t('common.close'), 'data-kbd': t('key.escape'), onclick: () => cmd.closeResult(ctx) }, icon('close'));
+  const closeBtn = h('button', { type: 'button', class: 'icon-btn rv-close', 'aria-label': t('common.close'), 'data-tip': t('common.close'), 'data-kbd': t('key.escape'), onclick: () => cmd.closeResult(ctx) }, icon('close'));
   const memory = h('div', { class: 'note rv-memory' }, t('queue.storageMemory'));
   scope.watch((_s, u) => u.resultsStorage, (st) => (memory.style.display = st === 'MEMORY' ? '' : 'none'));
 
@@ -80,8 +118,16 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
     h(
       'div',
       { class: 'rv-head' },
-      h('div', { class: 'rv-info' }, title, data, memory),
-      h('div', { class: 'rv-actions' }, compareBtn, h('span', { class: 'rv-sep' }), fitBtn, actualBtn, zoomText, h('span', { class: 'rv-sep' }), saveBtn, folderBtn, deleteBtn, closeBtn),
+      // The title block and the toolbar share a line while both fit; otherwise the toolbar goes under the title.
+      // Close stays in the corner.
+      h(
+        'div',
+        { class: 'rv-top' },
+        h('div', { class: 'rv-info' }, title, data, memory),
+        h('div', { class: 'rv-actions' }, compareBtn, h('span', { class: 'rv-sep' }), fitBtn, actualBtn, zoomText, h('span', { class: 'rv-sep' }), saveBtn, saveAiBtn, folderBtn, deleteBtn),
+      ),
+      reportEl,
+      closeBtn,
     ),
     frame,
   );
@@ -92,16 +138,21 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
       frame.replaceChildren(h('div', { class: 'note rv-loading' }, t('rv.missing')));
       return;
     }
-    const [a, b] = await Promise.all([decode(ctx, meta.id), other ? decode(ctx, other.id) : Promise.resolve(null)]);
+    const [mine, theirs] = await Promise.all([decode(ctx, meta.id), other ? decode(ctx, other.id) : Promise.resolve(null)]);
+    const a = mine.render;
     if (!a) {
       frame.replaceChildren(h('div', { class: 'note rv-loading' }, t('rv.missing')));
       return;
     }
+    // Render against AI by default; another result chosen to compare with takes the AI's place.
+    const versusAi = !theirs && mine.ai !== null;
+    const b = theirs ? theirs.render : mine.ai;
     const v = ui.get().resultView;
     split = splitCompare({
       a,
       b,
-      labels: { a: meta.name, b: other?.name ?? '' },
+      labels: versusAi ? { a: t('rv.labelRender'), b: t('rv.labelAi') } : { a: meta.name, b: other?.name ?? '' },
+      ...(versusAi ? { modeLabels: { a: t('rv.onlyRender'), b: t('rv.onlyAi'), split: t('split.split') } } : {}),
       mode: v?.split ?? 'SPLIT',
       position: v?.position ?? 0.5,
       onPosition: (position) => {

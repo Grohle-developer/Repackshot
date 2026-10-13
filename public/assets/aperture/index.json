@@ -1,0 +1,769 @@
+{
+  "generator": "tools/assets/aperture-masks.mjs",
+  "version": 1,
+  "size": 512,
+  "bitDepth": 8,
+  "convention": "Covers [-1, 1]^2, v up, unit circle inscribed; grey = transmission of the pupil (255 open); shapes have circumradius 1; textures are 0 outside the unit disc. sha256 is of the PNG file; pixelsSha256 of the raw 8-bit pixels (canonical).",
+  "masks": [
+    {
+      "id": "polygon_03",
+      "file": "polygon-03.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 3,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "3 straight blades",
+      "size": 512,
+      "bytes": 4276,
+      "sha256": "f53095c16326b5a4a83cd9b88d358441dc247295f7bc70a350074677e9cb1c7b",
+      "pixelsSha256": "460f14f982e9439aaae731b203c9c61f1ae1874b45b2b5b7fc3c98da90e9043f"
+    },
+    {
+      "id": "polygon_04",
+      "file": "polygon-04.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 4,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "4 straight blades",
+      "size": 512,
+      "bytes": 2498,
+      "sha256": "741b7c3e974da8a1e2333f6e32c9e4cf4e0fbd22bedd8d50c2e3a03244977c66",
+      "pixelsSha256": "a74b7458b1aa6f955dc6a2719a3f017ca5330faf9794f129c4b12184d8bac5a4"
+    },
+    {
+      "id": "polygon_05",
+      "file": "polygon-05.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 5,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "5 straight blades",
+      "size": 512,
+      "bytes": 4860,
+      "sha256": "bd2851cfdc58ee7f728492ea1390594aafcde5c279f993a3da819bb559cc11db",
+      "pixelsSha256": "bc0eb8d5029659756af782a1746a821dc417c00b81ac34b3dcb8377a3580f195"
+    },
+    {
+      "id": "polygon_06",
+      "file": "polygon-06.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 6,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "6 straight blades",
+      "size": 512,
+      "bytes": 3896,
+      "sha256": "802d01642177fee3bd14c894ca80f0fa9bc80986fd6069cd46e12570b89e6edb",
+      "pixelsSha256": "e02ca6ad80cbdd8177c1fca1315bfadcc268047503ac87d29ac3086a577248cf"
+    },
+    {
+      "id": "polygon_07",
+      "file": "polygon-07.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 7,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "7 straight blades",
+      "size": 512,
+      "bytes": 5200,
+      "sha256": "5a53d294fbfa12e37b27846cab124e97a730c13c489c260adeac93d966c325fd",
+      "pixelsSha256": "e025bee45f792950fe19b929bfe649ead055606a684594bc5a1114553439d361"
+    },
+    {
+      "id": "polygon_08",
+      "file": "polygon-08.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 8,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "8 straight blades",
+      "size": 512,
+      "bytes": 5471,
+      "sha256": "e7dff362ff73d8df6d3b74846dfbe65f31d7d8e9139cb362bc1d0e3fdc48bb04",
+      "pixelsSha256": "0f0c8c0e9375309544570d772b68e0ef40a389f678df6ba8e4a7668259d81b08"
+    },
+    {
+      "id": "polygon_09",
+      "file": "polygon-09.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 9,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "9 straight blades",
+      "size": 512,
+      "bytes": 5392,
+      "sha256": "308025563cedb92258b633c4620cdd45110ee674f744b931a96010fbaa4fa120",
+      "pixelsSha256": "976a10d3252f8d58abc7768966325a1a4c9ed3bb8c2f07909f0dcd77172cf945"
+    },
+    {
+      "id": "polygon_10",
+      "file": "polygon-10.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 10,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "10 straight blades",
+      "size": 512,
+      "bytes": 5127,
+      "sha256": "5fbf705dd0393686b5383b538b6b4402b49e35223c4ae347b10bb7fbdfacaeae",
+      "pixelsSha256": "11642ba5dbf9bcdf7baa17636bd5685db2e6ed7e84e077cd34a27ac411175795"
+    },
+    {
+      "id": "polygon_11",
+      "file": "polygon-11.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 11,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "11 straight blades",
+      "size": 512,
+      "bytes": 5167,
+      "sha256": "a3670ae424336198f380fe21b1c371544d0dfb61a81b6444264ddf284e2f8e82",
+      "pixelsSha256": "07750403da78641f9dd130ee79f88241425ce9d62adf8c7f61ba810be1111774"
+    },
+    {
+      "id": "polygon_12",
+      "file": "polygon-12.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 12,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "12 straight blades",
+      "size": 512,
+      "bytes": 3978,
+      "sha256": "13076cd5b863eb8789141d9f0f70c8a6cdcb4aa9306d97525da090a44dafc977",
+      "pixelsSha256": "4ee53f949df5f3f6208d675b3000844be596de83f681c70b6a2ec024a2ea4f1c"
+    },
+    {
+      "id": "polygon_13",
+      "file": "polygon-13.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 13,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "13 straight blades",
+      "size": 512,
+      "bytes": 5417,
+      "sha256": "b3bfaafac24d42c67b0748938a9ad10e8398cb38afc1654fa4cf93ff0ae14214",
+      "pixelsSha256": "3a2a2c5108764fb5506ebe911b0edee2a11c62a602db6ed30e1199e23fdad062"
+    },
+    {
+      "id": "polygon_14",
+      "file": "polygon-14.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 14,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "14 straight blades",
+      "size": 512,
+      "bytes": 5212,
+      "sha256": "84158bb9ddef88fd95cfe4129f4587a1faac8de4b2d5b6817d5fcc5d1cc5b441",
+      "pixelsSha256": "400047b9500dae1182ba639812858f630a6837643360ba91b0c99f9d4d311115"
+    },
+    {
+      "id": "polygon_15",
+      "file": "polygon-15.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 15,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "15 straight blades",
+      "size": 512,
+      "bytes": 5459,
+      "sha256": "bb6e0e82338422c4cee1b09d551b561b0acd682fb412c4eef625332c760a97fb",
+      "pixelsSha256": "33e5d7a335e6c5446451e6116b16a5ff97480ddf89048fb3f60c09b6dc15d63f"
+    },
+    {
+      "id": "polygon_16",
+      "file": "polygon-16.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 16,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "16 straight blades",
+      "size": 512,
+      "bytes": 5664,
+      "sha256": "fb33982a503481f1f4462578475d444963bb142d2168ccf997f63aa9e0974981",
+      "pixelsSha256": "d254a1f1555528891ed7a2ad2d564ec71f821dacca1d7c6bd10f9d25b366287a"
+    },
+    {
+      "id": "polygon_17",
+      "file": "polygon-17.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 17,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "17 straight blades",
+      "size": 512,
+      "bytes": 5654,
+      "sha256": "5db1ae4de248addbfa7c6b4e188a69ad50781ad690f0915d7b29c6b4dc4747de",
+      "pixelsSha256": "53134e9626b496d16f2011b002e1e87a799336285eefee11cd6586ed97656578"
+    },
+    {
+      "id": "polygon_18",
+      "file": "polygon-18.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 18,
+        "roundness": 0,
+        "rotationDeg": 0
+      },
+      "description": "18 straight blades",
+      "size": 512,
+      "bytes": 5352,
+      "sha256": "f30669567c6352d15462ca027b347d14943226dce1145e9f66517f5c8eec92db",
+      "pixelsSha256": "755438335e2bd03d2ecdb5d30916bdebf94300ee40619f37be737702d082fe00"
+    },
+    {
+      "id": "polygon_03_curved",
+      "file": "polygon-03-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 3,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "3 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 3445,
+      "sha256": "d090fc127ad6ebf12762be2a581bc0f5c2821d57ed8c56109f5297ce5d169549",
+      "pixelsSha256": "56eba7e1dd78f7258efcb6a01b999cd35d7692ab60b2f9775a4d02807aefef71"
+    },
+    {
+      "id": "polygon_04_curved",
+      "file": "polygon-04-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 4,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "4 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 4904,
+      "sha256": "0eb13169e92d2c45fe5d8eab0259679a2eee3786b05ea19e7edc02e16ac087e3",
+      "pixelsSha256": "5f64efccb02535999d647820d808962927463aca47276f5422585ba9097de592"
+    },
+    {
+      "id": "polygon_05_curved",
+      "file": "polygon-05-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 5,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "5 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5091,
+      "sha256": "88b1ad4fa9c290bd62ba0ab1e0eb2173a955ee9ddb25e2583afad8260aa101f6",
+      "pixelsSha256": "6a7dfeecd1cb85bed46b757fbb38490b982d1a8c801536073f81d0a1f42fd84e"
+    },
+    {
+      "id": "polygon_06_curved",
+      "file": "polygon-06-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 6,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "6 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 4925,
+      "sha256": "2a9b7a0d18f6132d2fb813c553ac9947638baf98dcbe2ff9738e77a3d3c77663",
+      "pixelsSha256": "c086cb697145d07aa62300c65b1f023ed53c17bd25293b7c157154559fbc931a"
+    },
+    {
+      "id": "polygon_07_curved",
+      "file": "polygon-07-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 7,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "7 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5538,
+      "sha256": "1aa5bf6e880e0a4ad2db83a6df24697bf4c5a6c929bb65d62d2f2f8a1d422455",
+      "pixelsSha256": "2bc0726bb3e514518f79ace530dffa1f39a40f74fe4b28c5045b29f937814add"
+    },
+    {
+      "id": "polygon_08_curved",
+      "file": "polygon-08-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 8,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "8 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5811,
+      "sha256": "98c91bd2104cf0b840595554d05835f0a00ae3806240224b98aa79385db05250",
+      "pixelsSha256": "735ea06c182bcc0361c6bb0f19a35232a9fdd5d08fde765a42cc1046eed0f3a9"
+    },
+    {
+      "id": "polygon_09_curved",
+      "file": "polygon-09-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 9,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "9 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5663,
+      "sha256": "8457e83747b5f128ceb9f3091e6d4236ab535f0b94ebbb47dfd85a7c7476938d",
+      "pixelsSha256": "2548c03ecb3d3284113c2242ecc04cc51c1900ae47074ec5fc67083db1d99c2b"
+    },
+    {
+      "id": "polygon_10_curved",
+      "file": "polygon-10-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 10,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "10 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5809,
+      "sha256": "40562a00f6a1e7516f2a1b52957b04050e9caab970b6d5cc6776aac14f201a9a",
+      "pixelsSha256": "6a7eb14e519c7f1fb8c5625a0d2f23b76101b8ef0ed804a0ac1f95757ac4cf76"
+    },
+    {
+      "id": "polygon_11_curved",
+      "file": "polygon-11-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 11,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "11 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5705,
+      "sha256": "0002211223805764e43f940a4fffee5fc46b1ed9a8b60dbec058205839de03a4",
+      "pixelsSha256": "c7f4e2f225bed129442d03d7e144b36c8ba8c5619763ba7ce35a0a4ff55bd34a"
+    },
+    {
+      "id": "polygon_12_curved",
+      "file": "polygon-12-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 12,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "12 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5907,
+      "sha256": "6c98da9ae7b239bd931f9a3a4f1e882d19c120a9275b5ef31223da76e66ef24c",
+      "pixelsSha256": "341804eb813700c19e576733a1c76a5fb867a380759d6966a3b17de4656a72ec"
+    },
+    {
+      "id": "polygon_13_curved",
+      "file": "polygon-13-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 13,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "13 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5830,
+      "sha256": "53f95de80dd140c89f7404c89a4e2613f515a03b2ee67b12b79e6537f97eb9c1",
+      "pixelsSha256": "c78088de94af069153d3b20ad161f96818bdc3e40217fdf2a039f8d5415f412c"
+    },
+    {
+      "id": "polygon_14_curved",
+      "file": "polygon-14-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 14,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "14 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5917,
+      "sha256": "2dced786f3ff6373ff0371de6788541fff275c6500fd423727fb7f399c19eb16",
+      "pixelsSha256": "b9e8c77eba89ef6169845a985e28686aecb46a6f167e7a7736439e3610b2a3cc"
+    },
+    {
+      "id": "polygon_15_curved",
+      "file": "polygon-15-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 15,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "15 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5876,
+      "sha256": "1edfb834af0e9977fdc74d438a46f7d93f7e25f5c22fe5df9943c5fec927037f",
+      "pixelsSha256": "2bcf7a23e611f320ac36804b3a1561b1dcaa3364294fbd148140cd2081bdf8a3"
+    },
+    {
+      "id": "polygon_16_curved",
+      "file": "polygon-16-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 16,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "16 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5968,
+      "sha256": "14e802c313569dce4724060bc278183f6e049606e8f166f72d9dfb98874a9595",
+      "pixelsSha256": "6b1e033e509d053e833893449b994f5c013890a1d21455e603fca83ae4a07436"
+    },
+    {
+      "id": "polygon_17_curved",
+      "file": "polygon-17-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 17,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "17 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5949,
+      "sha256": "df83cdd4e797734aa216b8f41365141f2328f8dce05e9b03de20518bbcc918a2",
+      "pixelsSha256": "b7d45ad209632512f002bf15efe15adddc48299e5fe006ece13a466141d54838"
+    },
+    {
+      "id": "polygon_18_curved",
+      "file": "polygon-18-curved.png",
+      "group": "polygon",
+      "seed": 0,
+      "recipe": {
+        "kind": "polygon",
+        "blades": 18,
+        "roundness": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "18 curved blades, roundness 0.5",
+      "size": 512,
+      "bytes": 5783,
+      "sha256": "f287570c221248013a91b49f8de83ec2e30ebc784b665c353fb0386ce5a6fb30",
+      "pixelsSha256": "e5ddf16f20c9f3468d34c5a96e0ef857ee68ac7a97d982a1f220def6631b80a5"
+    },
+    {
+      "id": "star_4",
+      "file": "star-4.png",
+      "group": "star",
+      "seed": 0,
+      "recipe": {
+        "kind": "star",
+        "points": 4,
+        "innerRatio": 0.38,
+        "rotationDeg": 0
+      },
+      "description": "4-point star",
+      "size": 512,
+      "bytes": 4870,
+      "sha256": "9e01c43421f1cae0fc20e7e009cf0fff0e3781a26d48aea5c9c13a48b3ce66d7",
+      "pixelsSha256": "c209557bdab7bf01eb60fabd3d4ae1bf056ae195b031db32ef27f8fe9e29a7ab"
+    },
+    {
+      "id": "star_5",
+      "file": "star-5.png",
+      "group": "star",
+      "seed": 0,
+      "recipe": {
+        "kind": "star",
+        "points": 5,
+        "innerRatio": 0.42,
+        "rotationDeg": 0
+      },
+      "description": "5-point star",
+      "size": 512,
+      "bytes": 5469,
+      "sha256": "a1e759ffc60ad480349d321a0e71f24b0a2a1cb46feb5d5e46b4a65a216d1c80",
+      "pixelsSha256": "12a020af45f73d33b2fa7ab1ae354b9e3a8a4300fae99fe7734cde7a1def8fd0"
+    },
+    {
+      "id": "star_6",
+      "file": "star-6.png",
+      "group": "star",
+      "seed": 0,
+      "recipe": {
+        "kind": "star",
+        "points": 6,
+        "innerRatio": 0.5,
+        "rotationDeg": 0
+      },
+      "description": "6-point star",
+      "size": 512,
+      "bytes": 6288,
+      "sha256": "d3b3c9637fe654c25a5b0526d39bfd977becb4b3257ae25cf3235e0e6f3d03d9",
+      "pixelsSha256": "6ab0954e6bd3a71e0f9e214c43f9f804fd1a680cc19d028813eb9375a5f452f3"
+    },
+    {
+      "id": "star_8",
+      "file": "star-8.png",
+      "group": "star",
+      "seed": 0,
+      "recipe": {
+        "kind": "star",
+        "points": 8,
+        "innerRatio": 0.6,
+        "rotationDeg": 0
+      },
+      "description": "8-point star",
+      "size": 512,
+      "bytes": 5902,
+      "sha256": "afd5933355fb893176db40fa001ab05f830fe419f9fb0cfa4d565c3b9ee55981",
+      "pixelsSha256": "0922da06aeb99f09880e6717c1bb1bafda96ee55623c58cc7ddb911e006788bd"
+    },
+    {
+      "id": "heart",
+      "file": "heart.png",
+      "group": "heart",
+      "seed": 0,
+      "recipe": {
+        "kind": "heart",
+        "samples": 160,
+        "fitRadius": 0.96
+      },
+      "description": "heart",
+      "size": 512,
+      "bytes": 5004,
+      "sha256": "4c5882fcc5f7226da73acdd58710b57872cccd3cf10dec0e4ff0fb57996280d2",
+      "pixelsSha256": "10114f4ce2160ae305d4bbf9f84378c1b9a049e94063e2acaaa1b83977fd6e54"
+    },
+    {
+      "id": "holes_7",
+      "file": "holes-7.png",
+      "group": "holes",
+      "seed": 0,
+      "recipe": {
+        "kind": "holes",
+        "count": 7,
+        "pitch": 0.6,
+        "holeRadius": 0.27,
+        "rotationDeg": 0
+      },
+      "description": "7 holes (centre and a ring of 6)",
+      "size": 512,
+      "bytes": 8462,
+      "sha256": "cf7d9734ecd69373590f830e2b600638ab1ea651504aa930a1bbfe1507eeaa46",
+      "pixelsSha256": "2593248f3f39c0649c1d24291951e9a3db6a05a308cfcabc3dcd38ac10b0817e"
+    },
+    {
+      "id": "holes_19",
+      "file": "holes-19.png",
+      "group": "holes",
+      "seed": 0,
+      "recipe": {
+        "kind": "holes",
+        "count": 19,
+        "pitch": 0.36,
+        "holeRadius": 0.15,
+        "rotationDeg": 0
+      },
+      "description": "19 holes (hexagonal packing)",
+      "size": 512,
+      "bytes": 10950,
+      "sha256": "e2ae974826f6c2e3a7767a0ab51ec806b66b7ed3a58058734bcddce59ca43d26",
+      "pixelsSha256": "d583218459d773b1722bc9a6bd42a4520a4e5e690d015c8ffb6cad3a26fda5c1"
+    },
+    {
+      "id": "annulus_30",
+      "file": "annulus-30.png",
+      "group": "annulus",
+      "seed": 0,
+      "recipe": {
+        "kind": "annulus",
+        "obstruction": 0.3
+      },
+      "description": "ring with a central obstruction of 0.3",
+      "size": 512,
+      "bytes": 7313,
+      "sha256": "58b53ec081f70b14f72e524b9aeb895e74fab861db7dca20c4d6c3d57ed04dc4",
+      "pixelsSha256": "b222ea1a62350bb1609eaf5bacd25a95a4e2cb6799aeaac4c7afab15efec795b"
+    },
+    {
+      "id": "annulus_50",
+      "file": "annulus-50.png",
+      "group": "annulus",
+      "seed": 0,
+      "recipe": {
+        "kind": "annulus",
+        "obstruction": 0.5
+      },
+      "description": "ring with a central obstruction of 0.5",
+      "size": 512,
+      "bytes": 8143,
+      "sha256": "b07046394ca2c94064f1796516733bb3d724e5542f48d27f0ef327e3e3b258d5",
+      "pixelsSha256": "e104ad65f82997046e50e35d73563a086bd6c7b6fd62cb09023c6f9864f7477b"
+    },
+    {
+      "id": "onion_rings",
+      "file": "onion-rings.png",
+      "group": "texture",
+      "seed": 1003,
+      "recipe": {
+        "kind": "onionRings",
+        "period": 0.09,
+        "jitter": 0.45
+      },
+      "description": "concentric ring modulation of a pupil (unit amplitude: the engine scales it)",
+      "size": 512,
+      "bytes": 89349,
+      "sha256": "d981284c63fdd45857ef066767875ba6d453622a7dc142949bb916a5189d0ef9",
+      "pixelsSha256": "46706509733ac9283898063c2ae8e19d2d6f9224c9844a09eaa3ca399fde90c1"
+    },
+    {
+      "id": "dust",
+      "file": "dust.png",
+      "group": "texture",
+      "seed": 1001,
+      "recipe": {
+        "kind": "dust",
+        "specks": 150,
+        "fibres": 7,
+        "smudges": 5
+      },
+      "description": "dust specks, fibres and haze on a lens",
+      "size": 512,
+      "bytes": 28920,
+      "sha256": "e9f9b8604f216d02e7678c809ad0dc063d3078c296db5cc240544251cdd9c0f3",
+      "pixelsSha256": "fb4d40d99b91c4dfc47b7a5b3b5286249a4c32775b0261167819e626aba7a5e4"
+    },
+    {
+      "id": "scratches",
+      "file": "scratches.png",
+      "group": "texture",
+      "seed": 1002,
+      "recipe": {
+        "kind": "scratches",
+        "lines": 38,
+        "arcs": 9
+      },
+      "description": "fine scratches and arcs",
+      "size": 512,
+      "bytes": 34906,
+      "sha256": "b05a04f06ba3d176b55924bd68c58be11f7ae09884a0b855275c2049dc0e4daa",
+      "pixelsSha256": "5bdcd94f2fd164ebc273e582d806df60ee08e50a4c9d2bfe17a84a872b4bede6"
+    },
+    {
+      "id": "filter_mesh",
+      "file": "filter-mesh.png",
+      "group": "texture",
+      "seed": 0,
+      "recipe": {
+        "kind": "mesh",
+        "period": 0.0625,
+        "width": 0.012,
+        "depth": 0.6
+      },
+      "description": "fine diamond mesh of a diffusion filter",
+      "size": 512,
+      "bytes": 55351,
+      "sha256": "113e9d9dd2a4130b4f444c56911f97779eb01907445afb6e898b21ce72675c78",
+      "pixelsSha256": "a083575ea99f8bd19cd177a69aee456cf25eff8e3288f45bf9e148d049218c9d"
+    }
+  ]
+}

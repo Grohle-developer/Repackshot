@@ -3,7 +3,8 @@
 // the documented order; what does not apply to the selection is disabled.
 
 import { allParts, effectiveVisible, partsUnder, type NodeId } from '../../core/scene';
-import { groupTargets, hasFaceMaterials, movableTargets, pivotModeOf, PIVOT_MODES, sharesMaterial } from '../../core/transform';
+import { groupTargets, hasCadFaces, hasFaceMaterials, movableTargets, pivotModeOf, PIVOT_MODES, sharesMaterial } from '../../core/transform';
+import { primitivesUnder } from '../../core/primitive-ops';
 import * as cmd from '../commands';
 import type { MenuEntry, MenuItems } from '../components/widgets';
 import { dyn } from '../names';
@@ -14,6 +15,8 @@ import { t } from '../strings';
 export interface PartMenuOptions {
   /** Starts renaming in place (the tree row); the viewport focuses the inspector's name field instead. */
   rename?: () => void;
+  /** Opens the Scale… panel where the menu was opened (the tree row, the clicked point); without it, the Scale tool. */
+  scale?: () => void;
 }
 
 /** The entries of the context menu for `ids` (scene nodes). */
@@ -62,14 +65,20 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
         cmd.focusInspectorField(ctx, 'smoothAngle');
       },
     },
-    // CAD faces come with the STEP / IGES importer (phase M1): disabled, and the tooltip says so.
-    { label: t('ops.separateCad'), disabled: true, note: t('ops.separateCadSoon') },
+    // Parts read from STEP or IGES carry their CAD faces (phase I2); the others have none to cut.
+    { label: t('ops.separateCad'), disabled: !hasCadFaces(s, nodes), run: () => cmd.separateByCadFaces(ctx, nodes) },
     { label: t('ops.separateMaterial'), disabled: !hasFaceMaterials(s, nodes), run: () => cmd.separateByMaterial(ctx, nodes) },
+    // Primitives (phase U9): freeze the measures.
+    // (A note on a disabled entry would read "coming soon": only the enabled one explains itself.)
+    primitivesUnder(s, nodes).length > 0
+      ? { label: t('primitive.convert'), note: t('primitive.convertAux'), run: () => cmd.convertToMesh(ctx, nodes) }
+      : { label: t('primitive.convert'), disabled: true },
   ];
 
   return [
     { label: t('ops.frame'), kbd: kbdFor('frame'), disabled: none, run: () => cmd.frameSelection(ctx, nodes) },
     { label: t('ops.move'), kbd: kbdFor('tool.move'), disabled: fixed, run: () => cmd.startMove(ctx, nodes) },
+    { label: t('ops.scale'), disabled: fixed, run: () => (opts.scale ? opts.scale() : cmd.startScale(ctx, nodes)) },
     { label: t('tree.rest'), disabled: fixed, run: () => cmd.restOnFloor(ctx, moving) },
     { label: t('tree.center'), disabled: fixed, run: () => cmd.centerSelection(ctx, moving) },
     { label: t('ops.centerRest'), disabled: fixed, run: () => cmd.centerAndRest(ctx, nodes) },

@@ -3,6 +3,175 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Correcciones
+
+- *Enfocar con clic* enfoca justo en el punto clicado: medía la distancia en línea recta y el motor enfoca un plano perpendicular a la vista, así que cualquier punto fuera del centro quedaba detrás del plano de foco (aviso del usuario).
+- La nota de la cámara ya no dice que la profundidad de campo está *próximamente*: se ve en *Completo* y en el render; *Rápido* no la dibuja.
+
+## v0.1.4 — 2026-10-13
+
+Versión de prueba con el post-procesado con IA funcionando de punta a punta
+en el escritorio, el cielo físico propio, las primitivas y la herramienta
+de escalar. Lo de v0.1.2 y v0.1.3 sigue igual.
+
+### Motor
+
+- **Cielo físico propio** (E5c): el cielo de día por defecto tiene la forma funcional de Hošek y Wilkie (2012) con coeficientes ajustados por nosotros a nuestra propia simulación espectral de la atmósfera (capas esféricas, moléculas, bruma, ozono, suelo), en sala limpia. El de Preetham sigue como *Clásico*. La vista previa del modo Rápido dibuja el mismo cielo que el motor, bit a bit (E5c).
+
+### Interfaz
+
+- *Entorno* ▸ *Cielo* estrena **Modelo**: *Físico* (por defecto) o *Clásico*; la bruma baja ahora hasta 1 (aire limpio) en el físico. Los proyectos guardados antes se abren con el físico (E5c).
+- **Primitivas** paramétricas en *Añadir ▸ Primitiva* (menú de la cabecera, el `+` del panel *Escena*, la paleta de comandos y el clic derecho del visor en vacío): *Caja* (con radio de bisel), *Plano*, *Disco*, *Cilindro*, *Pedestal* (cilindro con bisel), *Esfera*, *Cono*, *Toro*, *Cápsula*, *Tubo*, *Escalones* y *Fondo infinito* (el suelo que sube en curva hasta una pared). Nacen con criterio de estudio: la *Caja* y el *Pedestal* como base bajo el producto, con 1,4 veces su huella y el producto apoyado encima (una sola entrada de deshacer); el plano y el disco bajo él; el fondo infinito con su pared detrás; el resto en el suelo, junto al producto. Material neutro *Blanco estudio* (U9).
+- El **fondo infinito** nace de cara a la cámara activa y llenando todo su encuadre con margen (la óptica y el formato de salida cuentan), con la pared detrás del producto (y detrás del contraluz y los focos traseros del montaje, que siguen iluminando) y una curva suave; *Ajustar a la cámara* lo rehace tras mover la cámara (U9).
+- Sección **Primitiva** del inspector: las medidas en mm (ancho, fondo, alto, radios, bisel, segmentos, escalones), en vivo: cambiar una regenera la pieza, un arrastre es una entrada de deshacer y la pieza no se despega del suelo. *Convertir en malla* congela las medidas (también en el menú *Geometría ▸*) (U9).
+- Las primitivas tienen caras CAD por cara lógica (la tapa, el lateral, el bisel, cada escalón), así que el nivel *Caras*, los materiales por cara y *Separar por caras CAD* funcionan con ellas; UV en [0, 1] y normales correctas (U9).
+- Herramienta **Escalar** (`S`) en la barra de vista, junto a *Desplazar*: el *gizmo* de *Mover* con solo sus asas de escala (un cubo por eje y el punto central para las tres), alrededor del pivote, en ejes locales o globales, incrementos del 10 % con `Shift`; un arrastre es una entrada de deshacer (U9).
+- **Clic derecho ▸ Escalar…** en una pieza del visor o del árbol: un panel en línea con *Uniforme* (%), *Por eje* (X, Y, Z en %) y *A medida* (mm de ancho, fondo y alto con la proporción bloqueada), *Aplicar* y *Restablecer escala*; actúa sobre la selección al nivel vigente, alrededor de su pivote (U9).
+- Las luces, *Crear estudio*, el tamaño de pieza y el Doctor miran al producto y no al decorado: un fondo infinito seis veces mayor no mueve los focos ni cambia la escala (U9).
+
+### Proyecto
+
+- Un proyecto guarda las primitivas como medidas en un campo opcional del nodo, no como malla, y las vuelve a generar al abrir; se guarda, abre y vuelve a guardar en los mismos bytes. El esquema sigue en 2 y los proyectos anteriores abren igual (U9).
+
+### Post-procesado IA
+
+- En escritorio el interruptor de *Post-procesado IA* de la ventana de render **ya funciona** y deja de decir *próximamente*; también *Ajustes ▸ Post-procesado IA*. En la web sigue diciéndolo (X3c).
+- **La tubería de escritorio, de punta a punta**: un render final con *Post-procesado IA* encendido lo hace el lanzador sin que los píxeles vayan a la página y vuelvan: mosaicos, stable-diffusion.cpp con el modelo activo (cargado una vez, también entre vistas previas), la guarda determinista y los reintentos a menos intervención si una protección no pasa. El historial guarda las dos imágenes y el informe de la guarda (X3c).
+- La imagen de la IA se escribe desde la luz lineal del render, con su exposición y su curva: un PNG de 16 bits o un EXR siguen siéndolo, y con Intervención 0 es el mismo fichero que el del motor, byte a byte. Con Intervención 0 ni siquiera se arranca el motor de ejecución (X3c).
+- La cola enseña dónde está la IA: *IA · cargando el modelo*, *IA · mosaico 2 de 4*, *· intento 2*, *IA · comprobando*. Detener o pausar en ese momento conserva la imagen del motor en el historial (X3c).
+- La vista previa de la ventana de render usa en escritorio la misma tubería, con el fotograma del modo Rápido (X3c).
+- El suelo del estudio cuenta como superficie que la IA puede reiluminar (sus sombras de contacto y su luz rebotada), con su propia comprobación de color; antes un suelo visto antes que cualquier pieza se trataba como fondo. Los pases de la vista previa lo dibujan igual que el motor (X3c).
+- El *prompt* sale de los materiales, las luces y el estilo de la escena, con el negativo fijo; la guarda recibe la tabla de materiales con sus nombres (X3c).
+- En Windows, si al motor de ejecución le falta el entorno de Microsoft Visual C++ 2015–2022, *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* lo dice y ofrece *Instalar el entorno de Microsoft Visual C++…* (la página oficial de Microsoft) y *Comprobar de nuevo* (X3c).
+- *Acerca de* lista stable-diffusion.cpp y ggml con sus licencias MIT (X3c).
+- El visor de resultados da al informe de la guarda su propia línea, a todo lo ancho bajo el título y los botones, en vez de apretarlo en una columna estrecha junto al título; los botones pasan bajo el título cuando no caben a su lado, y *Cerrar* se queda en la esquina (X3c).
+- Un post-procesado por el que nadie pregunta (su ventana se cerró) se para solo a los dos minutos, y apagar el interruptor libera el modelo de la memoria (X3c).
+
+### Correcciones
+
+- Solo de pruebas, sin efecto en la aplicación: la prueba de «respuestas sin leer» del visor, que fallaba de vez en cuando con la máquina muy cargada, espera ahora por condiciones y no por tiempos (P3a).
+
+### Limitaciones conocidas
+
+- **La primera imagen real de la IA en una tarjeta gráfica no se ha probado.** Aquí no hay GPU: la tubería se probó de punta a punta con un motor de ejecución falso y una sola vez con SD 1.5 de verdad en CPU (un ejemplo de 256 × 192, 53 s). Los tiempos con Z-Image, los modelos de edición (FLUX.2 klein y Qwen-Image-Edit, que van como *img2img* más imagen de referencia) y las tolerancias de la guarda son provisionales hasta la fase X1 parte B (X3c).
+- Solo SD 1.5 lleva ControlNet (profundidad); con los demás modelos, y con los bordes en todos, la protección de las formas la da la guarda (X3c).
+- **En Windows el motor de ejecución necesita el entorno de Microsoft Visual C++ 2015–2022 (x64)**, que no viene con Repackshot ni con el instalador. *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* lo dice y su botón abre la página de descarga de Microsoft (X3c). En Linux hace falta glibc 2.38 o posterior (X3b).
+- **La web sigue sin IA** (fase X3d): allí el interruptor dice *próximamente*. Las animaciones tampoco pasan por la IA (X4).
+- Con un trabajo EXR, el historial guarda la imagen de la IA como EXR y el visor no compara *Render | IA*, porque los navegadores no muestran EXR. Si se pausa un trabajo durante la IA, *Reanudar* deja un segundo resultado del mismo trabajo (X3c).
+- **Cielo físico con el sol bajo.** Con el sol a 20° o más el error frente a nuestro simulador es de 1 a 8 %; a 10° sube al 5–15 % y por debajo de 3° al 9–17 %, y se nota: al amanecer, un patrón acimutal de ±20 %, y en la hora dorada con bruma un resplandor un 20 % más oscuro junto al sol. Es el límite de la forma funcional. El albedo del suelo es fijo (0,2) y el sol es un cuerpo negro de 5772 K. Los proyectos anteriores se abren con el cielo físico y pueden cambiar de aspecto: *Clásico* devuelve el de antes (E5c).
+- **Primitivas.** Mover la cámara no reajusta el fondo infinito (*Ajustar a la cámara* lo rehace); cambiar las medidas de una base no vuelve a subir el producto; *Invertir normales*, *Suavizado* y *Separar* convierten la primitiva en malla; una pieza escalada con *Escalar* sigue mostrando sus medidas sin escala en la sección *Primitiva*; y las versiones anteriores a esta no ven las primitivas de un proyecto nuevo (U9).
+- Las luces, *Crear estudio* y el Doctor miran al producto y no al decorado (las piezas que no son primitivas); *Encuadrar todo* sigue encuadrando todo (U9).
+- Siguen las de v0.1.2 y v0.1.3, sobre todo que **nada de lo nuevo de escritorio se ha probado en un Windows real**.
+
+## v0.1.3 — 2026-10-13
+
+Versión de prueba que arregla la detección de tarjetas gráficas en Windows,
+hallada al probar v0.1.2. Todo lo demás es como en v0.1.2.
+
+### Escritorio
+
+- En Windows se ven por fin las tarjetas gráficas: v0.1.2 no encontraba ninguna en ningún equipo (solo la CPU), porque `reg` sale con error al llegar a una subclave protegida del registro y el lanzador tiraba toda su respuesta. Ahora las pregunta a DXGI, con la memoria de vídeo exacta, y además al registro (clave a clave), a `Win32_VideoController` y a `wmic`; el registro del lanzador (`logs/repackshot.log`, líneas `hardware:`) dice qué contestó cada uno, y si ninguno puede contestar *Ajustes* dice que no se pudieron leer las tarjetas en lugar de que no hay (P3e).
+- De esa detección dependen *Ajustes ▸ Post-procesado IA ▸ Equipo*, la fila *GPU*, la elección Vulkan o CPU del motor de IA y el paso de modelos del instalador, que lee el mismo `--hardware` y ya ve las tarjetas (P3e).
+- Los programas del sistema (`reg.exe`, `powershell.exe`, `WMIC.exe`) se lanzan por su ruta absoluta en `System32` (P3e).
+
+### Motor
+
+- Interno, sin cambios visibles: pases exactos del motor para el post-procesado con IA (albedo, normal, profundidad, id de pieza, id de material y círculo de confusión de la lente). Pedirlos no cambia ni un píxel de la imagen. En escritorio, el lanzador guarda los de los cuatro últimos renders finales. Todavía no los usa nada: los consumirá la tubería de IA (X2).
+
+### Correcciones
+
+- Una prueba del analizador de tarjetas le pasaba el texto sin el código de salida de `reg`, y por eso se escapó el fallo: era más permisiva que la realidad. Ahora la prueba lee programas que imprimen y salen con error, como el `reg` de verdad (P3e).
+- Una prueba del lanzador de IA daba por hecho que el equipo no tiene tarjeta gráfica y fallaba en cualquiera que la tuviera; ahora pide la CPU explícitamente (P3e).
+
+### Limitaciones conocidas
+
+- Siguen todas las de v0.1.2, incluida la principal: el post-procesado con IA no genera ninguna imagen todavía (tubería X3c).
+- La detección de tarjetas sigue sin probarse en un Windows real más que a través de Wine. Si aun así falla, `logs/repackshot.log` dice qué contestó cada fuente.
+- La página de modelos del instalador no distingue «no se pudo leer» de «no hay tarjeta».
+
+## v0.1.2 — 2026-10-13
+
+Versión de prueba con los arreglos de escritorio que pediste tras probar
+v0.1.0, más el post-procesado con IA a medias (la interfaz y el motor de
+ejecución, no la tubería) y varias mejoras de motor e interfaz.
+
+### Escritorio
+
+- Ventana propia en Windows, dibujada por Edge WebView2 (el que trae Windows 10 y 11) y no por una pestaña de navegador. Usa la barra de título del sistema, oscura con el tema oscuro, con el título *Repackshot — proyecto* y el icono propio (P3c).
+- Cerrar la ventana (botón, `Alt F4`, barra de tareas, menú del sistema) pregunta con nuestra propia ventana *Guardar · No guardar · Cancelar* si hay cambios sin guardar; nunca el aviso de Edge (P3c).
+- Icono de la barra de tareas con identidad propia (`Repackshot.App`), también en los accesos directos del instalador, para que se agrupen al anclarlos. La ventana recuerda tamaño, posición y tema (P3c).
+- Si falta el cargador o el *runtime* de WebView2, se abre la ventana de aplicación de Edge como respaldo, y *Ajustes ▸ Escritorio* dice cuál de las dos es y por qué. `--window=webview2|browser` fuerza una (P3c).
+- La cabecera enseña el logotipo con una flecha hacia abajo en lugar de las tres rayas (P3c).
+- Nada del navegador: sin menú contextual, minimenú de selección de texto, oferta de traducir, `Ctrl F`, `Ctrl P`, `Ctrl R`, zoom con el teclado ni navegación; los enlaces externos se abren en el navegador del sistema (P3b, P3c).
+- Los diálogos de carpeta, abrir y guardar son los del sistema, los abre el lanzador (PowerShell en Windows; `zenity` o `kdialog` en Linux) y salen delante de la ventana (P3b).
+- Renders, proyectos, importaciones, exportaciones y modelos los escribe el lanzador, solo donde la persona eligió en un diálogo; no sale la burbuja de descargas del navegador (P3b).
+- En escritorio la página es solo la interfaz: ajustes, biblioteca, historial de resultados, miniaturas y modelos viven en la carpeta de datos del lanzador y no en el almacenamiento del navegador (P3e).
+- El origen de la ventana ya no cambia en cada arranque (puerto estable por carpeta de datos), con lo que ajustes, biblioteca e historial **sobreviven a reiniciar**; antes se perdían (P3e).
+- *Ajustes ▸ Almacenamiento* mide el espacio usado y la carpeta de datos con el lanzador, y *Liberar* pasa por él (P3e).
+- La lista de tarjetas gráficas de *Ajustes* sale del lanzador, con las tarjetas reales del equipo (P3e).
+- Ninguna fila de *Ajustes* habla del navegador en escritorio, y las filas ya no se pisan a ningún ancho ni tamaño de interfaz (P3e).
+- El servidor de escritorio ya no manda como «inmutables» los ficheros de `assets/` que no llevan *hash*, así que un recurso regenerado no se ve viejo para siempre (A6).
+
+### Visor y cola
+
+- El modo Completo ya no se queda parado tras un rato de cambios. Causa: el visor retenía las seis conexiones que el navegador abre al lanzador y las peticiones esperaban sin fin (P3a).
+- Nunca más «0 muestras» en silencio: un *watchdog* vuelve a arrancar el visor si se para y el medidor dice el motivo (P3a).
+- El visor sigue vivo mientras se renderiza, compartiendo el equipo (*Completo · compartido con el render*). *Ajustes ▸ Motor de render ▸ Mientras se renderiza* elige entre mantenerlo vivo o pausarlo para renderizar más rápido (P3a).
+- La cola se pausa y se reanuda: el botón dice *Pausar* mientras corre, *Reanudar* tras una pausa e *Iniciar cola* si no. *Pausar* libera el motor y *Reanudar* sigue donde estaba (P3a).
+
+### Interfaz
+
+- Arrastrar un material (una miniatura del catálogo o de *Míos*, o la esfera del material de la selección) sobre una pieza del visor o una fila del árbol lo asigna, con fantasma, resaltado y `Esc` para cancelar; una sola entrada de deshacer. En el visor llega a lo que seleccionaría un clic al nivel vigente (pieza, ensamblaje, modelo o cara). `Alt` al soltar da una copia propia. Si el destino lleva materiales distintos, se sigue preguntando en línea (U7).
+- Selección por caja con *Seleccionar* y *Mover*: `Ctrl/⌘` + arrastrar sustituye la selección, con `Shift` añade y con `Alt` quita. De izquierda a derecha es una ventana (lo que queda entero dentro, contorno continuo) y de derecha a izquierda un cruce (lo que toca, contorno discontinuo), a nivel *Modelo*, *Grupo*, *Pieza* o *Caras*; el botón *Rayos X* coge también las caras ocultas. Con los esquemas del ratón que dejan libre el botón izquierdo, un arrastre sin más dibuja la caja. Sin `Ctrl/⌘`, el botón izquierdo sigue orbitando; `Ctrl/⌘` + arrastrar ya no desplaza con esas herramientas (U7).
+- A nivel *Caras*, un clic coge la cara entera (la cara CAD en STEP e IGES; en el resto de mallas, la superficie que continúa). `Shift` clic añade un triángulo suelto, `Ctrl/⌘` clic mete o saca la cara y `Alt` clic la quita (M1).
+- *Separar por caras CAD* deja de ser *próximamente*: está en el menú de pieza y parte una pieza de STEP o IGES en una por cara CAD, cada una con su color (M1).
+- Los clics en el visor combinan con la selección que había: `Shift` añade, `Ctrl/⌘` mete o saca, `Alt` quita (U7).
+- Ajustes ▸ Preferencias ▸ Visor y navegación ▸ Ratón y el tooltip de *Seleccionar* cuentan cómo se dibuja la caja, en español y en inglés (U7).
+
+### Motor y entorno
+
+- Vidrio de verdad: transmisión con IOR y rugosidad, absorción de color dentro del sólido (*Distancia de absorción*), paredes finas y recortes por opacidad (E5).
+- Barniz sobre cualquier material, anisotropía y emisores que alumbran la escena (E5).
+- Entorno nuevo: *Cielo* procedural con el sol del montaje, *Plano*, y *Archivo HDRI* con lectores propios de `.hdr` y `.exr`, con rotación e intensidad y muestreo por importancia (E5).
+- *Imagen de fondo* (llenar, encajar, estirar), guardada dentro del proyecto (E5).
+
+### Post-procesado con IA (a medias)
+
+- Motor de la guarda: una biblioteca de Rust y su versión wasm que, a partir de los pases del render, comprueban que la IA no mueva aristas, no cambie los colores de los materiales ni emborrone lo enfocado, y limitan o rechazan lo que se pase (X3a).
+- Descarga e instalación del motor de ejecución (stable-diffusion.cpp, compilaciones Vulkan y CPU para Windows y Linux) desde *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución*, con progreso, pausa, reanudación y comprobación de `sha256`, y *Ejecutar con* (Automático, Vulkan o CPU) (X3b).
+- El lanzador sabe arrancar el motor de ejecución como proceso auxiliar con progreso, cancelación y tiempo límite, y lo para al cerrar (X3b).
+- La ventana de render estrena la sección **Post-procesado IA** (plegada y apagada): interruptor con el modelo en uso o el motivo por el que no puede, seis controles de 0 a 100 con su frase (*Intervención*, *Luz*, *Rebotes*, *Desgaste y microdetalle*, *Estilo*, *Fuerza del estilo*), las protecciones como fichas fijas con candado, *Otra variación* y una vista previa del modo Rápido con divisor antes y después que se actualiza al soltar un control y dice el tiempo medido. Hasta que llegue la tubería real (X3c) el interruptor dice *próximamente*; con `?ai=synthetic` corre un servicio sintético, sin modelo (X4).
+- Un resultado con IA conserva las dos imágenes y el informe de la guarda: el visor las abre con el divisor (*Render | IA*) y una línea *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) · resolución ✓ · enfoque ✓*, y la cola y el historial enseñan las dos miniaturas; en el escritorio la imagen de la IA es un fichero más del resultado (`<id>.ai.<ext>`) (X4).
+
+### Recursos de estudio
+
+- Datos preparados para las herramientas de estudio que vendrán: 16 prescripciones de lentes, 20 tipos de bokeh, 45 máscaras de diafragma, 12 gobos y 14 movimientos de cámara, todos generados por código del repositorio. Todavía sin interfaz (A6).
+
+### Correcciones
+
+- El inspector no se reconstruía al coger la primera cara de una pieza (M1).
+- Asignar un material que el destino ya llevaba creaba una entrada de deshacer vacía (U7).
+- El deslizador no seguía al valor al deshacer mientras tenía el foco: el campo cambiaba y la perilla se quedaba donde estaba (X4).
+- Una vista del motor que el lanzador olvidaba o rechazaba no se volvía a pedir, y el bucle de animación se paraba para siempre con cualquier excepción (P3a).
+- Un trabajo de render que entraba en pánico no terminaba nunca y bloqueaba al siguiente; ahora termina como fallido (P3a).
+- Un servidor de IA que dejó un arranque anterior se paraba mal si la carpeta de datos está detrás de un enlace simbólico (X3b).
+- Al reabrir en Windows con el puerto recordado aún en `TIME_WAIT`, se toma otro una vez en lugar de fallar (P3e).
+- Arreglos solo de CI y pruebas, sin efecto en la aplicación (CI, X3b, P3e): la cadena de herramientas de Rust fijada a 1.97.0; el catálogo de pruebas del motor de IA entra por las opciones del servidor y no por un fichero que solo leía la compilación de depuración; la prueba del servidor huérfano esperaba mal el arranque del proceso (carrera con `vfork`); y la prueba de paridad del motor tenía una carrera al devolver el último marco.
+
+### Limitaciones conocidas
+
+- **El post-procesado con IA aún no genera ninguna imagen.** La interfaz está en la ventana de render, pero el interruptor dice *próximamente*: la tubería real es la fase X3c. Los modelos y el motor de ejecución (stable-diffusion.cpp) se pueden descargar e instalar, y nada más.
+- Las compilaciones de Windows del motor de ejecución necesitan el entorno de **Visual C++ 2015–2022 (x64)**; no lo traen y el instalador todavía no lo instala. Si falta, *Ajustes* lo dice. Las de Linux necesitan glibc 2.38 o posterior. Descargarlo usa el `curl` del sistema (Windows 10 1803 o posterior); sin él, *Instalar desde un archivo…*.
+- La comprobación de actualizaciones lee las releases públicas de GitHub: mientras el repositorio sea privado dirá que no encuentra versiones publicadas.
+- **Nada de lo nuevo de escritorio se ha probado en un Windows real** (solo bajo Wine y con Chromium en Linux): la ventana de WebView2 y su cierre; que los diálogos salgan delante de la ventana; que el minimenú de Edge desaparezca del todo; la agrupación de la barra de tareas y el identificador de los accesos directos (Wine no deja leerlo); Edge hallado por *App Paths*; la memoria de vídeo con controladores reales; el instalador pulsado a mano; Vulkan con una tarjeta real; los ajustes que sobreviven a reiniciar; el modo Completo durante largo rato; y SmartScreen, porque el `.exe` no está firmado.
+- En Windows, `repackshot --version` solo se ve con la salida redirigida (subsistema gráfico).
+- En Linux la ventana sigue siendo la de Chromium en modo aplicación, con el endurecimiento de P3b; la ventana propia llega con P3d.
+- El cielo es el de Preetham; el cielo físico propio es la fase E5c. En *Rápido* la imagen de fondo se pinta tal cual, y en *Completo* y en el render pasa por la exposición y la curva de tono. El vidrio muy rugoso pierde algo de energía y el macizo da cáusticas ruidosas con emisores pequeños. Los `.exr` con compresión PIZ, PXR24, B44 o DWA, en mosaico o profundos, se rechazan.
+- A nivel *Caras*: el contador dice *caras* pero cuenta triángulos; la caja coge las caras de una sola pieza; el catálogo solo aparece con una cara seleccionada; y una cara plana junto a un redondeo muy suave puede seguir el redondeo en mallas que no son STEP ni IGES (M1, U7).
+- Siguen las de v0.1.0: sin codificación de vídeo (las animaciones salen como secuencias de fotogramas), en STEP e IGES se supone Z arriba y no hay versión para macOS.
+
 ## v0.1.1 — 2026-10-13
 
 ### Ajustes

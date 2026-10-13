@@ -1,6 +1,9 @@
 //! `rt --sheet <dir>`: the first contact sheet. The built-in example part (three instances)
 //! rendered under six light recipes written here in Rust, with exposure statistics per image:
-//! `<key>.png` per recipe, `index.html` (a grid) and `stats.json`.
+//! `<key>.png` per recipe, `index.html` (a grid) and `stats.json`; then the E5 scenes of
+//! [`crate::scenes`] (glass, coat, anisotropy, an emitter, the sky and an HDRI), `e5-*.png`, at a
+//! multiple of the samples, and the E5c skies (the physical sky against the classic one at
+//! sunrise, golden hour, noon and in haze), `e5c-*.png`.
 //!
 //! These six recipes are engine test fixtures, not the catalogue's: the 16 x 12 sheet over the
 //! studios and setups of `src/data/` comes in E4, when the TypeScript RSB writer exists. Their
@@ -256,6 +259,24 @@ pub fn run(
             seconds: out.elapsed.as_secs_f64(),
         });
     }
+    for e5 in crate::scenes::e5_scenes(size) {
+        let spp = samples.saturating_mul(e5.sample_factor.max(1));
+        let out = render_progressive(&e5.scene, spp, threads, None);
+        let rgb8 = out.to_rgb8(&e5.scene);
+        let file = format!("{}.png", e5.key);
+        let path = dir.join(&file);
+        crate::write_png(&path, size.0, size.1, &rgb8)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        entries.push(SheetEntry {
+            key: e5.key,
+            label: e5.label,
+            file,
+            stats: image_stats(&rgb8),
+            samples: out.samples,
+            rays: out.rays,
+            seconds: out.elapsed.as_secs_f64(),
+        });
+    }
     let html_path = dir.join("index.html");
     std::fs::write(&html_path, html(&entries, size))
         .map_err(|e| format!("{}: {e}", html_path.display()))?;
@@ -290,9 +311,10 @@ pub fn html(entries: &[SheetEntry], size: (u32, u32)) -> String {
     let _ = writeln!(
         s,
         "<p class=\"meta\">The example part under six built-in recipes, {}x{}, {} spp, \
-         {:.1} W/m² per recipe. Mean is the mean luma of the encoded image; clipped is the \
-         share of pixels with a channel at 255; crushed the share with every channel at 2 or \
-         below.</p>\n<div class=\"grid\">",
+         {:.1} W/m² per recipe, then the E5 scenes (glass, coat, emitter, sky, HDRI) at more \
+         samples and the E5c skies (physical against classic). Mean is the mean luma of the encoded image; clipped is the share of pixels \
+         with a channel at 255; crushed the share with every channel at 2 or below.</p>\n\
+         <div class=\"grid\">",
         size.0, size.1, samples, TOTAL_IRRADIANCE
     );
     for e in entries {

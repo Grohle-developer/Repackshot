@@ -4,6 +4,13 @@
 // value differs from the factory one with an inline Reset on hover, and what
 // is not built yet visible, disabled, marked coming soon. Every change goes
 // through cmd.setSetting: saved at once, never undone.
+//
+// Label, auxiliary line, value and control never overlap, at any width and
+// interface size (settings.css): the label column keeps a minimum and wraps,
+// the control wraps under itself, and a narrow window stacks the row. A long
+// value (a folder, a sentence) is a stacked row (`valueRow`): the value on its
+// own line under the label, a path in the monospace style broken anywhere, the
+// buttons under it, and the full text as the hover title.
 
 import { defaultSettings, isFactory, type ControlSpec, type SettingKey, type SettingMeta, type Settings } from '../../core/settings';
 import * as cmd from '../commands';
@@ -32,7 +39,7 @@ export interface RowParts {
  * The frame of a row: `id` names it for deep links and the search (`data-row`). `soon` disables it visibly with
  * "coming soon"; `badges` are small auxiliary words after the label (for new projects, desktop only).
  */
-export function rowShell(id: string, o: { label?: string; aux?: string | null; control?: Node | null; soon?: boolean; badges?: string[]; wide?: boolean; hideLabel?: boolean } = {}): RowParts {
+export function rowShell(id: string, o: { label?: string; aux?: string | null; control?: Node | null; soon?: boolean; badges?: string[]; wide?: boolean; stacked?: boolean; hideLabel?: boolean } = {}): RowParts {
   const labelId = `sw-l${++rowSeq}`;
   // A row that is the whole of its block keeps its label for screen readers only (the block's title says it).
   const labelEl = h('div', { class: `sw-label${o.hideLabel ? ' sr-only' : ''}`, id: labelId }, o.label ?? rowLabel(id), ...(o.badges ?? []).map((b) => h('span', { class: 'sw-badge aux' }, b)), o.soon ? h('span', { class: 'sw-badge aux' }, t('common.comingSoon')) : null);
@@ -41,7 +48,7 @@ export function rowShell(id: string, o: { label?: string; aux?: string | null; c
   const ctrlEl = h('div', { class: 'sw-ctrl' }, o.control ?? null);
   const el = h(
     'div',
-    { class: `sw-row${o.wide ? ' is-wide' : ''}${o.soon ? ' is-soon' : ''}`, 'data-row': id, role: 'group', 'aria-labelledby': labelId },
+    { class: `sw-row${o.wide ? ' is-wide' : ''}${o.stacked ? ' is-stacked' : ''}${o.soon ? ' is-soon' : ''}`, 'data-row': id, role: 'group', 'aria-labelledby': labelId },
     h('div', { class: 'sw-text' }, h('span', { class: 'sw-dot', 'aria-hidden': 'true' }), labelEl, auxEl),
     ctrlEl,
   );
@@ -137,7 +144,8 @@ export function settingRow(ctx: Ctx, scope: Scope, meta: SettingMeta, o: Setting
   const key: SettingKey = meta.id;
   const s0 = ctx.ui.get().settings;
   const handle = o.control ? null : controlFor(meta, s0[key], (v) => cmd.setSetting(ctx, key, v as Settings[typeof key]), { disabledOptions: o.disabledOptions, optionTip: o.optionTip });
-  const badges = [meta.newProjects ? t('set.newProjects') : null, meta.desktopOnly ? t('set.desktopOnly') : null].filter((x): x is string => x !== null);
+  // "Only in the desktop application" is never said inside it.
+  const badges = [meta.newProjects ? t('set.newProjects') : null, meta.desktopOnly && !ctx.ui.get().desktop ? t('set.desktopOnly') : null].filter((x): x is string => x !== null);
   const parts = rowShell(key, { aux: meta.aux ? t(dyn(`set.${key}.aux`)) : null, control: o.control ?? handle?.el ?? null, soon: meta.comingSoon, badges });
   const reset = h('button', { type: 'button', class: 'btn-link sw-reset', 'data-tip': `${t('set.resetTip')}: ${factoryText(meta)}`, 'aria-label': `${t('set.reset')}: ${rowLabel(key)}`, onclick: () => cmd.resetOneSetting(ctx, key) }, t('set.reset'));
   parts.ctrlEl.prepend(reset);
@@ -171,9 +179,21 @@ export function blockEl(id: string, title: string, ...rows: (Node | null)[]): HT
   return h('section', { class: 'sw-block', 'data-block': id, 'aria-labelledby': titleId }, h('h4', { class: 'sw-block-title aux', id: titleId }, title), ...rows);
 }
 
-/** A row that only shows information (label on the left, text on the right). */
+/** A row that only shows information (label on the left, a short text on the right, its full text as the title). */
 export function infoRow(id: string, label: string, value: Node | string, aux?: string): HTMLElement {
-  const parts = rowShell(id, { label, aux: aux ?? null, control: typeof value === 'string' ? h('span', { class: 'sw-value tabular' }, value) : value });
+  const parts = rowShell(id, { label, aux: aux ?? null, control: typeof value === 'string' ? h('span', { class: 'sw-value tabular', title: value }, value) : value });
+  return parts.el;
+}
+
+/**
+ * A row whose value is long (a folder, a sentence): stacked, the value on its own line under the label (`text`,
+ * then `path` in the monospace style, broken anywhere), the buttons under it, the full text as the hover title.
+ */
+export function valueRow(id: string, label: string, o: { text?: string; path?: string; actions?: (Node | null)[]; aux?: string }): HTMLElement {
+  const lines = [o.text ? h('span', { class: 'sw-value-text', title: o.text }, o.text) : null, o.path ? h('code', { class: 'sw-path', title: o.path, translate: 'no' }, o.path) : null].filter((x) => x !== null);
+  const actions = (o.actions ?? []).filter((x): x is Node => x !== null);
+  const parts = rowShell(id, { label, aux: o.aux ?? null, control: actions.length ? h('div', { class: 'sw-inline' }, ...actions) : null, stacked: true });
+  parts.el.insertBefore(h('div', { class: 'sw-value-block', 'data-value': id }, ...lines), parts.ctrlEl);
   return parts.el;
 }
 

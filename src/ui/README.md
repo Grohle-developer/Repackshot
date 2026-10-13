@@ -7,21 +7,20 @@ importa de `render/` ni de `io/` (eso lo conecta `src/main.ts` mediante
 
 | Fichero | Qué |
 | --- | --- |
-| `strings.ts` | Todas las cadenas, en `en` y `es` lado a lado; `t()`, `L()` (las dos lenguas, para etiquetas de deshacer) |
+| `strings.ts` | Todas las cadenas, en `en` y `es` lado a lado; `t()`, `L()` (las dos lenguas, para etiquetas de deshacer). En escritorio (`setStringsPlatform('desktop')`, P3e) las que hablan del navegador dicen lo suyo (`DESKTOP_TABLE`); las de filas que el escritorio no muestra están en `WEB_ONLY_STRINGS` |
 | `theme.css` | *Tokens* de color (acromáticos, test `ui-achromatic`), tipografía y medidas |
 | `layout.css`, `components.css`, `panels.css` | Regiones, controles y paneles |
 | `reactive.ts` | `Scope.watch(selector, fn)`: actualizaciones finas por referencia, sin DOM virtual |
-| `prefs.ts` | El documento de ajustes (U6, `core/settings.ts`) en `localStorage` bajo `repackshot.settings` (`{schema, settings, layout}`): migra las claves sueltas de antes (`repackshot.lang`, `.theme`, `.ui.*`) y las borra; uno dañado se aparta en `.corrupt` |
 | `settings-effects.ts` | Lo que un ajuste cambia fuera de la ventana (U6): tamaño de interfaz y de texto, contraste, movimiento, foco, retardo de *tooltips*, navegación y rejilla del visor, motor, límites del historial, anuncios para lector de pantalla |
 | `settings.css` | La ventana de Ajustes |
 | `ui-state.ts` | Estado de interfaz (pestañas, cajones, anchos…); la parte que se recuerda (`Layout`) va al documento de ajustes con `try/catch`. Incluye `library`, la biblioteca propia (U4): estado de usuario, fuera del proyecto y de deshacer; `main.ts` la guarda con `io/library.ts` |
 | `commands.ts` | Lo que hacen botones, paleta y teclado; devuelve una confirmación en línea cuando hace falta. Proyecto (U2): `saveProject` (con `saveAs`), `openProject`, `openProjectFile`, `requestNewProject`, `dropFiles`; preguntan por los cambios sin guardar con `ui.prompt`, que la cabecera pinta bajo el nombre del proyecto |
 | `shortcuts.ts` | El único mapa de atajos: teclado, paleta y *tooltips* |
 | `render-queue.ts` | La cola en marcha (U5): *Render* solo sus trabajos, *Iniciar cola* todos en orden, *Pausar*, detener, fotogramas de una animación, guardado y historial; siempre con el trazador (`renderFrame`) |
-| `components/` | `NumberField`, `Slider`, `Segmented`, `Toggle`, `Select`, `Section`, miniaturas, confirmación en línea, menús, *tooltip*, paleta; `library.ts`: campo de nombre en línea, tarjetas y filas de *Míos* con renombrar y eliminar, pie Exportar / Importar; `split-compare.ts`: dos imágenes cualesquiera con un divisor deslizable (U5; X3 lo reutiliza) |
+| `components/` | `NumberField`, `Slider`, `Segmented`, `Toggle`, `Select`, `Section`, miniaturas, confirmación en línea, menús, *tooltip*, paleta; `library.ts`: campo de nombre en línea, tarjetas y filas de *Míos* con renombrar y eliminar, pie Exportar / Importar; `split-compare.ts`: dos imágenes cualesquiera con un divisor deslizable (U5; X3 lo reutiliza); `material-drag.ts`: arrastrar un material con eventos de puntero (U7: fantasma, zonas donde soltar, `Esc`, `Alt` = copia) |
 | `updates.ts` | Las actualizaciones tal como las corre la interfaz: pedir la última versión publicada a `services.updates`, guardar la respuesta (`updateCheckedAt`, `updateLatest`, en el `layout` de los ajustes), anunciar una versión nueva una sola vez (aviso discreto en la barra de estado, nunca una ventana) y abrir la descarga o las notas |
 | `panels/settings-*.ts` | La ventana de Ajustes (U6, UI.md §2.9): `settings-window.ts` (ventana, búsqueda, enlaces profundos, teclado), `settings-rows.ts` (filas desde los metadatos), `settings-sections.ts` (filas propias: medir rendimiento, almacenamiento, escritorio, Acerca de con las licencias), `settings-ai.ts` (modelo activo, gestor de modelos, licencias, importar, equipo y recomendación), `settings-updates.ts` (Actualizaciones: versión, *Buscar actualizaciones* con su resultado, *Comprobar al iniciar*, última comprobación) |
-| `panels/` | Cabecera, escena, visor, inspector, barra inferior (cajones Animación y Cola, último resultado, *Render…*), ventana de render (`render-window.ts`), visor de resultados (`results-viewer.ts`), estado, guía |
+| `panels/` | Cabecera, escena, visor, inspector, barra inferior (cajones Animación y Cola, último resultado, *Render…*), ventana de render (`render-window.ts`), visor de resultados (`results-viewer.ts`), estado, guía; `add-menu.ts` (*Añadir ▸ Primitiva*, U9) y `scale-panel.ts` (*Clic derecho ▸ Escalar…*, U9) |
 
 ## Parámetros de URL (demos y capturas)
 
@@ -43,10 +42,11 @@ resultado es un estado normal y deshacible.
 | `sequence=HERO` | Aplica ese preset de animación (`SEQUENCE_PRESETS`) |
 | `t=2` | Pone el cursor de animación en ese segundo |
 | `guide=1..6` | Abre la guía en ese paso |
-| `tool=select\|orbit\|pan\|zoom\|move` | Activa esa herramienta del visor (`move`: la herramienta de mover, con el *gizmo* sobre la selección) |
+| `tool=select\|orbit\|pan\|zoom\|move\|scale` | Activa esa herramienta del visor (`move`: la herramienta de mover, con el *gizmo* sobre la selección; `scale`: la de escalar, U9, con solo las asas de escala) |
 | `mode=fast\|full` | Modo del visor (*Rápido* o *Completo*); *Completo* entra en cuanto el motor ha cargado |
 | `render=image\|animation` | Abre la ventana de render (U5) en *Imagen* o en *Animación* |
 | `settings=general\|ai.models\|…` | Abre Ajustes en esa sección o en esa fila o parte (enlace profundo: `openSettings`) |
+| `ai=synthetic` | El post-procesado IA corre con el servicio **sintético** (X4: sin modelo, determinista) en lugar de decir *próximamente*; para las capturas, las demos y las comprobaciones del navegador (`tools/ai-post-check.mjs`). Sin él, el interruptor está deshabilitado hasta que X3c conecte la tubería real |
 
 Ejemplos usados para las capturas de `docs/ui/`:
 

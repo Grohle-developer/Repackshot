@@ -4,6 +4,7 @@
 import type { ActionBase, ProjectState } from './store';
 import type { MaterialId, MaterialInstance } from './materials';
 import { getMesh, transformedMeshBounds, type MeshId, type MeshRef, type TriangleRange } from './meshes';
+import type { PrimitiveSpec } from './primitives';
 import { nextId } from './ids';
 import {
   add,
@@ -133,6 +134,12 @@ export interface SceneNode {
   smoothAngle?: number;
   /** LIGHT: the world point it aims at, mm. */
   target?: Vec3;
+  /**
+   * PART made by Add ▸ Primitive (phase U9): its shape and measures. The mesh is generated from it (core/primitives.ts)
+   * and a project file keeps only this, not the mesh. It describes the mesh for as long as it is there: an operation
+   * that changes the geometry otherwise (flip, smoothing angle, separate) drops it, like Convert to mesh.
+   */
+  primitive?: PrimitiveSpec;
 }
 
 /** Ids of the meshes the parts of a state refer to, in order of first use. */
@@ -157,12 +164,14 @@ export interface ModelPayload {
 }
 
 export type SelectMode = 'set' | 'add' | 'toggle';
+/** Faces also leave the selection as a block (Ctrl on a face that is already selected). */
+export type FaceSelectMode = SelectMode | 'remove';
 
 export type SceneAction =
   | ({ type: 'scene/addModel'; payload: ModelPayload; replace: boolean } & ActionBase)
   | ({ type: 'scene/select'; ids: NodeId[]; mode: SelectMode; level?: SelectionLevel } & ActionBase)
   | ({ type: 'scene/setLevel'; level: SelectionLevel } & ActionBase)
-  | ({ type: 'scene/selectFaces'; part: NodeId; indices: number[]; mode: SelectMode } & ActionBase)
+  | ({ type: 'scene/selectFaces'; part: NodeId; indices: number[]; mode: FaceSelectMode } & ActionBase)
   | ({ type: 'scene/setVisible'; ids: NodeId[]; visible: boolean } & ActionBase)
   | ({ type: 'scene/isolate'; ids: NodeId[] } & ActionBase)
   | ({ type: 'scene/showAll' } & ActionBase)
@@ -338,9 +347,35 @@ export function sceneBounds(state: ProjectState, visibleOnly = false): Box {
   return boundsOf(state, state.scene.roots, visibleOnly);
 }
 
-/** Measured size of the model: largest dimension of the scene bounds, mm (0 when empty). */
+/**
+ * The parts that are the product: every part that is not a primitive (phase U9: a base, a backdrop, a pedestal is
+ * the set, not the subject). A scene made only of primitives is its own product: then every part.
+ */
+export function productParts(state: ProjectState, visibleOnly = false): NodeId[] {
+  const parts = allParts(state).filter((p) => !visibleOnly || effectiveVisible(state, p));
+  const product = parts.filter((p) => !state.scene.nodes[p].primitive);
+  return product.length > 0 ? product : parts;
+}
+
+/** Some part of the scene is not a primitive: there is a product to stage. */
+export function hasProduct(state: ProjectState, visibleOnly = false): boolean {
+  return allParts(state).some((p) => !state.scene.nodes[p].primitive && (!visibleOnly || effectiveVisible(state, p)));
+}
+
+/**
+ * World bounds of the product (`productParts`): what the rig is placed around, what Create studio frames and what the
+ * part size measures, so an infinity sweep six times the product does not move the lights or change the scale.
+ */
+export function productBounds(state: ProjectState, visibleOnly = false): Box {
+  const cache = new Map<NodeId, Mat4>();
+  let b = emptyBox();
+  for (const p of productParts(state, visibleOnly)) b = unionBox(b, partWorldBounds(state, p, cache));
+  return b;
+}
+
+/** Measured size of the model: largest dimension of the bounds of the product, mm (0 when empty). */
 export function measuredSizeMm(state: ProjectState): number {
-  const b = sceneBounds(state);
+  const b = productBounds(state);
   return isEmptyBox(b) ? 0 : boxMaxDim(b);
 }
 
@@ -477,8 +512,9 @@ export function addModel(state: ProjectState, payload: ModelPayload, replace: bo
     materials,
   };
   if (replace) next = { ...next, selection: { level: state.selection.level, ids: [] } };
-  // The part size is detected on import when this is the first (or only) model.
-  if (replace || state.scene.roots.length === 0) {
+  // The part size is detected on import when this is the first (or only) model: the first product, also when the
+  // scene held only primitives (a base or a backdrop set up before the product came in).
+  if (replace || !hasProduct(state)) {
     const size = measuredSizeMm(next);
     if (size > 0) next = { ...next, scene: { ...next.scene, partSizeMm: Math.round(size * 100) / 100 } };
   }
@@ -563,12 +599,15 @@ function applySelect(state: ProjectState, ids: readonly NodeId[], mode: SelectMo
   return { ...state, selection: sel };
 }
 
-function applySelectFaces(state: ProjectState, part: NodeId, indices: readonly number[], mode: SelectMode): ProjectState {
+function applySelectFaces(state: ProjectState, part: NodeId, indices: readonly number[], mode: FaceSelectMode): ProjectState {
   const cur = state.selection.faces && state.selection.faces.part === part ? state.selection.faces.indices : [];
   let next: number[];
   if (mode === 'set') next = [...indices];
   else if (mode === 'add') next = [...new Set([...cur, ...indices])];
-  else {
+  else if (mode === 'remove') {
+    const gone = new Set(indices);
+    next = cur.filter((i) => !gone.has(i));
+  } else {
     const s = new Set(cur);
     for (const i of indices) {
       if (s.has(i)) s.delete(i);

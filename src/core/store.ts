@@ -4,6 +4,8 @@
 // download) live outside and subscribe.
 
 import type { Label, Lang, RGBA, StudioPreset } from '../data/types';
+import type { ImageRef } from './images';
+import type { SkyModel } from './sky';
 import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
@@ -13,6 +15,7 @@ import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialIns
 import { carryRuntime, defaultRenderState, reduceRender, type RenderAction, type RenderState } from './render';
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
 import { reduceTransform, type TransformAction } from './transform';
+import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
 export type ActionLabel = string | Label;
@@ -42,6 +45,18 @@ export interface EnvironmentState {
   groundShadow: number;
   /** Strength of the floor reflection, 0..1. */
   groundReflection: number;
+  /** The HDRI file of kind HDRI (the image registry, core/images.ts); null: none loaded (the studio dome lights). */
+  hdri: ImageRef | null;
+  /** The background image of background BACKPLATE; null: none loaded (the colour shows). */
+  backplate: ImageRef | null;
+  /** How the background image fits the output frame. */
+  backplateFit: 'FILL' | 'FIT' | 'STRETCH';
+  /** Haze of the sky (kind SKY): 2 very clear, 3 clear, 6 hazy. */
+  skyTurbidity: number;
+  /** The sky's daylight model (E5c): PHYSICAL (ours, the default; projects saved before it open with it too) or CLASSIC (Preetham, E5's). */
+  skyModel: SkyModel;
+  /** Where the sky's sun is when the rig has no sun light: degrees, camera-relative like a light's. */
+  skySun: { az: number; el: number };
 }
 
 /** Image settings applied after the render (SPEC §3.6). All zero = unchanged. */
@@ -104,6 +119,7 @@ export type HistoryAction = { type: 'history/undo' | 'history/redo' | 'history/r
 export type Action =
   | SceneAction
   | TransformAction
+  | PrimitiveAction
   | MaterialAction
   | StudioAction
   | CameraAction
@@ -176,6 +192,12 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
       color: [0.05, 0.05, 0.05, 1],
       groundShadow: 0.6,
       groundReflection: 0,
+      hdri: null,
+      backplate: null,
+      backplateFit: 'FILL',
+      skyTurbidity: 3,
+      skyModel: 'PHYSICAL',
+      skySun: { az: -55, el: 55 },
     },
     camera: { active: 'cam1', cameras: { cam1: makeCamera('cam1', '', partSizeMm) } },
     image: { exposureEv: 0, viewTransform: 'FILMIC', bloom: 0, sharpen: 0, saturation: 0, contrast: 0, vignette: 0 },
@@ -214,9 +236,12 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
   const prefix = action.type.slice(0, action.type.indexOf('/'));
   switch (prefix) {
     case 'scene': {
-      // The tree and selection (scene.ts) and the part operations (transform.ts) share the prefix.
+      // The tree and selection (scene.ts), the part operations (transform.ts) and the primitives (primitive-ops.ts)
+      // share the prefix.
       const next = reduceScene(state, action as SceneAction);
-      return next !== state ? next : reduceTransform(state, action as TransformAction);
+      if (next !== state) return next;
+      const moved = reduceTransform(state, action as TransformAction);
+      return moved !== state ? moved : reducePrimitive(state, action as PrimitiveAction);
     }
     case 'material':
       return reduceMaterials(state, action as MaterialAction);

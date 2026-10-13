@@ -111,6 +111,10 @@ export interface TileResult {
   count: number;
   /** `count` consecutive samples of the tile, each `w * h * 4` floats, RGBA premultiplied. */
   data: Float32Array;
+  /** With passes (Render, phase X2): the albedo of the same samples, each `w * h * 3` floats. */
+  albedo?: Float32Array;
+  /** With passes, once per tile (the job whose `first` is 0): its exact planes (render/pass-planes.ts). */
+  exact?: Uint32Array;
 }
 
 /** Opaque coverage, give or take the rounding of `n * (1 / n)`. */
@@ -321,6 +325,79 @@ export function linearRgba(sum: Float32Array, samples: number, ev: number, out: 
     out[i + 1] = f(f(sum[i + 1] * inv) * gain);
     out[i + 2] = f(f(sum[i + 2] * inv) * gain);
     const a = f(sum[i + 3] * inv);
+    out[i + 3] = a >= OPAQUE ? 1 : a;
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ straight linear images (X3c)
+
+/**
+ * The exact conversions of a straight-alpha linear image: the render's average with its colour already divided by
+ * its coverage (what the desktop launcher hands the AI and gets back from it, `linear_of` of
+ * engine/crates/rt-app/src/ai/post.rs). Every pixel takes the same steps as in `exactBytes`, `exactWords16` and
+ * `linearRgba` after their division, so an image nothing changed is the engine's own file: bit for bit at 8 and 16
+ * bits, and in EXR for every opaque pixel (a partly transparent one is premultiplied again, within an f32 rounding).
+ */
+export function straightBytes(rgba: Float32Array, ev: number, tonemap: number, out: Uint8ClampedArray = new Uint8ClampedArray(rgba.length)): Uint8ClampedArray {
+  const gain = exposureGain(ev);
+  const curve = toneCurve(tonemap);
+  const tmp = [0, 0, 0];
+  for (let i = 0; i < rgba.length; i += 4) {
+    exactPixel(rgba[i], rgba[i + 1], rgba[i + 2], gain, curve, out, i, tmp);
+    out[i + 3] = alphaByte(rgba[i + 3]);
+  }
+  return out;
+}
+
+/** 16-bit PNG words of a straight-alpha linear image, as `exactWords16`. */
+export function straightWords16(rgba: Float32Array, ev: number, tonemap: number, out: Uint16Array = new Uint16Array(rgba.length)): Uint16Array {
+  const gain = exposureGain(ev);
+  const curve = toneCurve(tonemap);
+  const tmp = [0, 0, 0];
+  const f = Math.fround;
+  for (let i = 0; i < rgba.length; i += 4) {
+    applyCurve(curve, f(rgba[i] * gain), f(rgba[i + 1] * gain), f(rgba[i + 2] * gain), tmp);
+    out[i] = toWord(tmp[0]);
+    out[i + 1] = toWord(tmp[1]);
+    out[i + 2] = toWord(tmp[2]);
+    out[i + 3] = alphaWord(rgba[i + 3]);
+  }
+  return out;
+}
+
+/** EXR data (premultiplied, with the exposure) of a straight-alpha linear image, as `linearRgba`. */
+export function straightExr(rgba: Float32Array, ev: number, out: Float32Array = new Float32Array(rgba.length)): Float32Array {
+  const gain = Math.fround(exposureGain(ev));
+  const f = Math.fround;
+  for (let i = 0; i < rgba.length; i += 4) {
+    const a = rgba[i + 3];
+    const opaque = a >= OPAQUE;
+    for (let c = 0; c < 3; c++) out[i + c] = f((opaque ? rgba[i + c] : f(rgba[i + c] * a)) * gain);
+    out[i + 3] = opaque ? 1 : a;
+  }
+  return out;
+}
+
+/** The straight-alpha linear image of accumulated sums, as the launcher's `linear_of` gives it (tests). */
+export function straightOf(sum: Float32Array, samples: number, out: Float32Array = new Float32Array(sum.length)): Float32Array {
+  const inv = Math.fround(1 / Math.max(1, samples));
+  const f = Math.fround;
+  for (let i = 0; i < sum.length; i += 4) {
+    const a = f(sum[i + 3] * inv);
+    let r = f(sum[i] * inv);
+    let g = f(sum[i + 1] * inv);
+    let b = f(sum[i + 2] * inv);
+    if (a < OPAQUE) {
+      if (a > 0) {
+        r = f(r / a);
+        g = f(g / a);
+        b = f(b / a);
+      } else r = g = b = 0;
+    }
+    out[i] = r;
+    out[i + 1] = g;
+    out[i + 2] = b;
     out[i + 3] = a >= OPAQUE ? 1 : a;
   }
   return out;

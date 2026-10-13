@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Smoke test of a built launcher: starts it with --serve-only (under wine for
-// the .exe), checks that it serves the interface and the API only with its
-// token and its own Host, renders the engine's example scene at 4 samples per
+// the .exe), checks that it serves the interface (with its favicon and web app
+// manifest) and the API only with its token and its own Host, that the file API
+// of P3b answers and refuses every path not chosen in a dialog, renders the engine's example scene at 4 samples per
 // pixel through /api/render and checks the film against the hash rt-core pins
 // (PINNED_EXAMPLE_4SPP: the same as `rt` and the wasm pool). Then stops it.
 //
@@ -90,6 +91,19 @@ async function main() {
     const noToken = (await fetch(`${base}/api/info`)).status;
     if (noToken !== 401) fail(`no token -> ${noToken}`);
     console.log('GET /api/info without the token -> 401');
+    for (const [path, type] of [['/favicon.ico', 'image/x-icon'], ['/manifest.webmanifest', 'application/manifest+json'], ['/icon-192.png', 'image/png']]) {
+      const r = await fetch(base + path);
+      if (r.status !== 200 || !(r.headers.get('content-type') ?? '').startsWith(type)) fail(`GET ${path} -> ${r.status} ${r.headers.get('content-type')}`);
+    }
+    console.log('GET /favicon.ico, /manifest.webmanifest, /icon-192.png -> 200 with their types');
+    if (info.filesApi !== 1) fail(`/api/info filesApi: ${info.filesApi}`);
+    const refused = [
+      await api('/api/files?dir=d0123456789abcdef01234567&name=a.png', { method: 'PUT', body: 'x' }),
+      await api('/api/files/f0123456789abcdef01234567'),
+      await api('/api/open-url', { method: 'POST', body: JSON.stringify({ url: 'file:///etc/passwd' }) }),
+    ].map((r) => r.status);
+    if (refused.join() !== '404,404,400') fail(`the file API took an ungranted path: ${refused}`);
+    console.log(`file API: ungranted write, ungranted read, a non-https URL -> ${refused.join(', ')}`);
     const rsb = exampleScene();
     const posted = await api('/api/render?kind=final', { method: 'POST', body: rsb });
     if (!posted.ok) fail(`POST /api/render -> ${posted.status} ${await posted.text()}`);

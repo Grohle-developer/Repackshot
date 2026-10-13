@@ -30,7 +30,7 @@ import type { AppServices } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
 import { STRINGS, formatDate, formatDateTime, type StringKey } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
-import { availableText, checkForUpdates, dismissUpdateNotice, downloadChoice, faultText, startupUpdateCheck, updateSummary } from '../src/ui/updates';
+import { availableText, checkForUpdates, dismissUpdateNotice, downloadChoice, downloadUpdate, faultText, openReleaseNotes, startupUpdateCheck, updateSummary } from '../src/ui/updates';
 
 // ------------------------------------------------------------------ fixtures
 
@@ -245,6 +245,20 @@ describe('the package for this computer', () => {
     ctx.ui.set({ desktop: { portable: true, dataDir: 'd', modelsDir: 'm', logsDir: 'l', browser: null, version: '0.1.0', os: 'windows', arch: 'x86_64' } });
     expect(downloadChoice(ctx, RELEASE_020).asset?.name).toBe(ZIP);
     expect(downloadChoice(ctx, { ...RELEASE_020, assets: [] })).toEqual({ asset: null, url: RELEASE_020.pageUrl });
+  });
+
+  it('Download and Release notes go out through services.openExternal (https only), never window.open', async () => {
+    const opened: string[] = [];
+    const ctx = makeCtx(async () => ({ ok: true, release: RELEASE_020 }));
+    (ctx.services as { openExternal: (u: string) => Promise<void> }).openExternal = async (u) => void opened.push(u);
+    ctx.ui.set({ desktop: { portable: true, dataDir: 'd', modelsDir: 'm', logsDir: 'l', browser: null, version: '0.1.0', os: 'windows', arch: 'x86_64' } });
+    downloadUpdate(ctx, RELEASE_020);
+    openReleaseNotes(ctx, RELEASE_020);
+    // A feed that names something else than https:// opens nothing.
+    openReleaseNotes(ctx, { ...RELEASE_020, pageUrl: 'javascript:alert(1)' });
+    downloadUpdate(ctx, { ...RELEASE_020, assets: [], pageUrl: 'http://example.org/' });
+    await Promise.resolve();
+    expect(opened).toEqual([RELEASE_020.assets[1].url, RELEASE_020.pageUrl]);
   });
 });
 

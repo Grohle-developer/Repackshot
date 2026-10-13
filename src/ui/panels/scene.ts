@@ -5,11 +5,15 @@ import type { StudioItem } from '../../core/library';
 import type { NodeId, SceneNode, SelectionLevel } from '../../core/scene';
 import { ancestors, effectiveVisible, levelForKind, SELECTION_LEVELS } from '../../core/scene';
 import { lightShares } from '../../core/lighting';
+import { treeDropTarget } from '../../core/material-drop';
 import * as cmd from '../commands';
 import { segmented, textField, toggle } from '../components/controls';
 import { libraryFoot, mineEmpty, mineRows, namePrompt, type MineSpec } from '../components/library';
+import { registerDropZone } from '../components/material-drag';
 import { confirmBox, openMenu, tabs } from '../components/widgets';
 import { partMenu } from './part-menu';
+import { primitiveMenuItems } from './add-menu';
+import { openScalePanel } from './scale-panel';
 import { h, icon } from '../dom';
 import type { IconName } from '../icons';
 import { cameraName, dyn, lightName, materialName, studioLabel } from '../names';
@@ -58,7 +62,7 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
   const contextMenu = (node: SceneNode, row: HTMLElement) => {
     const s = store.get();
     const ids = s.selection.ids.includes(node.id) ? s.selection.ids.filter((id) => s.scene.nodes[id]) : [node.id];
-    openMenu(row, partMenu(ctx, ids, { rename: () => startRename(node.id) }));
+    openMenu(row, partMenu(ctx, ids, { rename: () => startRename(node.id), scale: () => openScalePanel(ctx, ids, row) }));
   };
 
   const startRename = (id: NodeId) => {
@@ -119,25 +123,6 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
     });
     el.addEventListener('mouseenter', () => ui.set({ hover: node.id }));
     el.addEventListener('mouseleave', () => ui.get().hover === node.id && ui.set({ hover: null }));
-    // Drop a material from the catalogue onto the row.
-    el.addEventListener('dragover', (e) => {
-      if (!e.dataTransfer?.types.includes('application/x-repackshot-material')) return;
-      e.preventDefault();
-      el.classList.add('is-drop');
-    });
-    el.addEventListener('dragleave', () => el.classList.remove('is-drop'));
-    el.addEventListener('drop', (e) => {
-      el.classList.remove('is-drop');
-      const src = cmd.parseMaterialDrag(e.dataTransfer?.getData('application/x-repackshot-material') ?? '');
-      if (!src) return;
-      e.preventDefault();
-      const spec = cmd.requestAssign(ctx, src, [node.id]);
-      if (spec) {
-        const host = h('div', { class: 'tree-confirm' });
-        el.after(host);
-        host.appendChild(confirmBox(spec, () => host.remove()));
-      }
-    });
     return el;
   };
 
@@ -186,6 +171,47 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
 
   scope.watch((s, u) => [s.scene.nodes, s.scene.roots, s.materials, u.treeFilter, u.folded], rebuild, shallowEq);
   scope.watch((s, u) => [s.selection, u.hover], paint, shallowEq);
+
+  // A material dragged onto a row (a part, a group or the model) goes to everything under it, in one action.
+  // The row lights up, and so do the parts in the viewport (the same outline as the pointer over them).
+  const rowAt = (el: Element): HTMLElement | null => el.closest<HTMLElement>('.tree-row');
+  let marked: HTMLElement | null = null;
+  const mark = (row: HTMLElement | null) => {
+    if (row === marked) return;
+    marked?.classList.remove('is-drop');
+    row?.classList.add('is-drop');
+    marked = row;
+  };
+  scope.onDispose(
+    registerDropZone(list, {
+      over: (p) => {
+        const row = rowAt(p.el);
+        const id = row?.dataset.id;
+        const target = id ? treeDropTarget(store.get(), id) : null;
+        mark(target ? row : null);
+        const hover = target ? (id ?? null) : null;
+        if (ui.get().hover !== hover) ui.set({ hover });
+        return target !== null;
+      },
+      leave: () => {
+        mark(null);
+        if (ui.get().hover) ui.set({ hover: null });
+      },
+      drop: (p, payload) => {
+        const row = rowAt(p.el);
+        const id = row?.dataset.id;
+        const target = id ? treeDropTarget(store.get(), id) : null;
+        const src = cmd.parseMaterialDrag(payload);
+        if (!row || !target || !src) return;
+        const spec = cmd.requestDrop(ctx, src, target, p.alt);
+        if (spec) {
+          const host = h('div', { class: 'tree-confirm' });
+          row.after(host);
+          host.appendChild(confirmBox(spec, () => host.remove()));
+        }
+      },
+    }),
+  );
   return list;
 }
 
@@ -193,10 +219,13 @@ function partsTab(ctx: Ctx, scope: Scope): HTMLElement {
   const filter = h('input', { type: 'search', class: 'text-input', placeholder: t('tree.filter'), 'aria-label': t('tree.filter'), value: ctx.ui.get().treeFilter }) as HTMLInputElement;
   filter.addEventListener('input', () => ctx.ui.set({ treeFilter: filter.value }));
   filter.addEventListener('keydown', (e) => e.stopPropagation());
+  // + : Add ▸ Primitive (phase U9).
+  const add = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('menu.add'), 'aria-haspopup': 'menu', 'data-tip': t('add.aux'), 'data-add': 'primitive' }, icon('plus', 16));
+  add.addEventListener('click', () => openMenu(add, primitiveMenuItems(ctx), 'end'));
   return h(
     'div',
     { class: 'tab-body' },
-    h('div', { class: 'stack', style: 'padding:8px var(--pad);border-bottom:1px solid var(--line)' }, filter, levelSelector(ctx, scope)),
+    h('div', { class: 'stack', style: 'padding:8px var(--pad);border-bottom:1px solid var(--line)' }, h('div', { class: 'row', style: 'gap:6px;align-items:center' }, h('div', { style: 'flex:1;min-width:0;display:flex' }, filter), add), levelSelector(ctx, scope)),
     h('div', { class: 'side-scroll' }, treeRows(ctx, scope)),
   );
 }

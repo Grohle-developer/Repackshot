@@ -7,10 +7,16 @@
 //! [`PixelSampler`] of (scene seed, pixel, sample index) only, so a tile can be rendered by any
 //! thread, in any order, cut in any way, on any platform: the film is the same. Accumulating
 //! samples `0..n` into a film in that order is progressive rendering; the hosts do it per tile.
+//!
+//! The exact passes of [`crate::passes`] are rendered next to the image, by rays of their own:
+//! [`render_tile_exact`] once per tile (one ray through each pixel's centre, [`centre_ray`]) and
+//! [`render_tile_albedo`] for every sample the image gets (the sample's own camera ray). Neither
+//! touches the image's film or its random numbers.
 
 use crate::image::Film;
-use crate::integrator::{radiance, BvhTracer, Prepared, Tracer};
+use crate::integrator::{first_hit, radiance_at, BvhTracer, Prepared, Tracer};
 use crate::math::Ray;
+use crate::passes::{albedo_of, Exact, PassFilm, PASS_ALBEDO, PASS_EXACT};
 use crate::sampler::{PixelSampler, DIM_CAMERA, DIM_LENS};
 use crate::scene::Scene;
 use crate::simd::Isa;
@@ -51,6 +57,12 @@ pub fn tile_grid(width: u32, height: u32, size: u32) -> Vec<TileRect> {
 /// The camera ray of image-space pixel `(x, y)` for the samples of `sampler`: a uniform position
 /// inside the pixel (box filter) and, for a thin lens, a point on the aperture.
 pub fn camera_ray(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> Ray {
+    camera_sample(scene, sampler, x, y).0
+}
+
+/// [`camera_ray`] and the position it passes through on the screen, `(u, v)` in `[0, 1]²` from
+/// the top left (where a background image is looked up).
+pub fn camera_sample(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> (Ray, (f32, f32)) {
     let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
     let aspect = width as f32 / height as f32;
     let (du, dv) = sampler.get2(DIM_CAMERA);
@@ -61,7 +73,7 @@ pub fn camera_ray(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> Ray 
     } else {
         (0.0, 0.0)
     };
-    scene.camera.generate_ray(aspect, u, v, lens)
+    (scene.camera.generate_ray(aspect, u, v, lens), (u, v))
 }
 
 /// Renders one sample of every pixel of `tile` into `film` and returns the number of rays cast
@@ -124,9 +136,100 @@ fn render_tile_traced<T: Tracer>(
     for y in tile.y..y_end {
         for x in tile.x..x_end {
             let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
-            let ray = camera_ray(scene, &sampler, x, y);
-            let (c, alpha) = radiance(scene, prepared, tracer, &sampler, ray, &mut rays);
+            let (ray, screen) = camera_sample(scene, &sampler, x, y);
+            let (c, alpha) = radiance_at(scene, prepared, tracer, &sampler, ray, screen, &mut rays);
             film.splat_alpha(x, y, c, alpha);
+        }
+    }
+    rays
+}
+
+/// The ray of the exact passes through image-space pixel `(x, y)`: through the centre of the
+/// pixel, without jitter, and through the centre of the lens (AI-POST.md §7.4). For a thin lens it
+/// is the pinhole ray of the same point, so it meets the focus plane where every sample of the
+/// pixel's centre does.
+pub fn centre_ray(scene: &Scene, x: u32, y: u32) -> Ray {
+    let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
+    let aspect = width as f32 / height as f32;
+    let u = (x as f32 + 0.5) / width as f32;
+    let v = (y as f32 + 0.5) / height as f32;
+    scene.camera.generate_ray(aspect, u, v, (0.0, 0.0))
+}
+
+/// Writes the exact passes of `film` (normal, depth, the ids, the circle of confusion: those in
+/// its mask) of every pixel of `tile`, clipped to the image, from [`centre_ray`]. They do not
+/// depend on the sample, so a host renders them once per tile. Returns the rays cast (one per
+/// pixel, none when the film holds no exact pass).
+pub fn render_tile_exact(
+    scene: &Scene,
+    prepared: &Prepared,
+    tile: TileRect,
+    film: &mut PassFilm,
+    isa: Isa,
+) -> u64 {
+    let tracer = BvhTracer {
+        geometry: &scene.geometry,
+        isa,
+    };
+    render_tile_exact_traced(scene, prepared, tile, film, &tracer)
+}
+
+fn render_tile_exact_traced<T: Tracer>(
+    scene: &Scene,
+    prepared: &Prepared,
+    tile: TileRect,
+    film: &mut PassFilm,
+    tracer: &T,
+) -> u64 {
+    if film.mask & PASS_EXACT == 0 {
+        return 0;
+    }
+    let x_end = tile.x.saturating_add(tile.w).min(scene.render.width);
+    let y_end = tile.y.saturating_add(tile.h).min(scene.render.height);
+    let mut rays = 0u64;
+    for y in tile.y..y_end {
+        for x in tile.x..x_end {
+            let ray = centre_ray(scene, x, y);
+            rays += 1;
+            let exact = Exact::of(scene, &ray, first_hit(scene, prepared, tracer, &ray));
+            film.set_exact(x, y, &exact);
+        }
+    }
+    rays
+}
+
+/// Adds to `film` the albedo of sample `sample_index` of every pixel of `tile`, clipped to the
+/// image: the base colour of what the sample's camera ray (the same position in the pixel and
+/// point on the lens as the image's sample) meets first ([`albedo_of`]). Returns the rays cast
+/// (one per pixel, none when the film has no albedo pass).
+pub fn render_tile_albedo(
+    scene: &Scene,
+    prepared: &Prepared,
+    tile: TileRect,
+    sample_index: u32,
+    film: &mut PassFilm,
+    isa: Isa,
+) -> u64 {
+    if film.mask & PASS_ALBEDO == 0 {
+        return 0;
+    }
+    let tracer = BvhTracer {
+        geometry: &scene.geometry,
+        isa,
+    };
+    let x_end = tile.x.saturating_add(tile.w).min(scene.render.width);
+    let y_end = tile.y.saturating_add(tile.h).min(scene.render.height);
+    let mut rays = 0u64;
+    for y in tile.y..y_end {
+        for x in tile.x..x_end {
+            let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
+            let ray = camera_ray(scene, &sampler, x, y);
+            rays += 1;
+            film.add_albedo(
+                x,
+                y,
+                albedo_of(scene, first_hit(scene, prepared, &tracer, &ray)),
+            );
         }
     }
     rays
@@ -166,6 +269,9 @@ pub(crate) fn render_tile_brute_force(
         &BruteForce(&scene.geometry),
     )
 }
+
+#[cfg(test)]
+mod passes_tests;
 
 #[cfg(test)]
 mod tests {
@@ -517,6 +623,69 @@ mod tests {
 
     /// Pinned hash of the whole example image at 4 samples per pixel.
     pub(crate) const PINNED_EXAMPLE_4SPP: u32 = 0x2235_15c3;
+
+    /// Renders the whole E5 example (`sky` or HDRI), 32-pixel tiles, samples `0..4`, and hashes
+    /// the resolved film.
+    pub(crate) fn e5_4spp_hash(sky: bool, isa: Isa) -> u32 {
+        scene_4spp_hash(&crate::example::e5_scene(sky), isa)
+    }
+
+    /// Renders all of `scene`, 32-pixel tiles, samples `0..4`, and hashes the resolved film.
+    pub(crate) fn scene_4spp_hash(scene: &Scene, isa: Isa) -> u32 {
+        let prepared = Prepared::new(scene);
+        let (w, h) = (scene.render.width, scene.render.height);
+        let mut film = Film::new(w, h);
+        for tile in tile_grid(w, h, 32) {
+            for sample in 0..4 {
+                render_tile_prepared(scene, &prepared, tile, sample, &mut film, isa);
+            }
+        }
+        fnv1a(&film.resolve())
+    }
+
+    #[test]
+    fn the_e5_example_has_pinned_hashes_on_every_platform() {
+        // E5 added clear glass with absorption, thin walls, cut-outs, anisotropy, HDRI and sky
+        // environments and background images, all outside the original example (whose hashes
+        // did not change). This scene goes through all of them, through the RGBE reader and an
+        // RSB round trip; `tools/wasm-parity.mjs` checks the real module against the HDRI hash
+        // (`rt --write-e5-example`).
+        let scene = crate::example::e5_scene(false);
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let (hdri, sky) = (e5_4spp_hash(false, isa), e5_4spp_hash(true, isa));
+            eprintln!(
+                "E5 example at 4 spp on {}: {hdri:#010x}, sky {sky:#010x}",
+                isa.name()
+            );
+            assert_eq!(hdri, PINNED_E5_HDRI_4SPP, "HDRI on {}", isa.name());
+            assert_eq!(sky, PINNED_E5_SKY_4SPP, "sky on {}", isa.name());
+        }
+    }
+
+    /// Pinned hash of the E5 example (HDRI) at 4 samples per pixel.
+    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0xbf8a_bd5b;
+    /// Pinned hash of the E5 example (sky) at 4 samples per pixel.
+    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x2fcb_098a;
+
+    #[test]
+    fn the_e5c_physical_sky_has_a_pinned_hash_on_every_platform() {
+        // E5c added the physical sky (the default model). The E5 sky scene above keeps the
+        // classic model, so its hash did not move; this one is the same scene under the physical
+        // sky at a low sun and a turbidity between two knots of the table, through an RSB round
+        // trip; `tools/wasm-parity.mjs` checks the real module against it
+        // (`rt --write-e5c-example`).
+        let scene = crate::example::e5c_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("E5c example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_E5C_SKY_4SPP, "physical sky on {}", isa.name());
+        }
+    }
+
+    /// Pinned hash of the E5c example (physical sky) at 4 samples per pixel.
+    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x8bb0_9f6b;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

@@ -3,7 +3,22 @@
 // This file is the pure part: the record and what to evict when the history
 // is over its limits (oldest first).
 
+import type { GuardReport } from './ai';
 import type { BitDepth, OutputFormat } from './render';
+
+/**
+ * The AI post-processing of a result (AI-POST.md §4): the image it made is stored next to the engine's, and
+ * the guard's report says what was checked. The engine's image is always the result's own `file`.
+ */
+export interface AiResultInfo {
+  /** The file name the AI image was saved under. */
+  name: string;
+  /** A small JPEG (data URL) of the AI image, for the queue and the history. */
+  thumb: string;
+  /** Bytes the AI image takes in the history (also counted in the result's `bytes`). */
+  bytes: number;
+  report: GuardReport;
+}
 
 /** One result: an image a job wrote, and its data. */
 export interface ResultMeta {
@@ -34,6 +49,8 @@ export interface ResultMeta {
   thumb: string;
   /** Bytes the stored blobs take. */
   bytes: number;
+  /** The AI post-processing this result went through, when it did (added in X4; older results have none). */
+  ai?: AiResultInfo;
 }
 
 export interface HistoryLimits {

@@ -9,7 +9,7 @@ import type { CameraState } from '../core/camera';
 import type { MaterialInstance } from '../core/materials';
 import { partsUnder, type NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
-import { L, getLang, tIn, type StringKey } from './strings';
+import { L, STRINGS, getLang, tIn, type StringKey } from './strings';
 import { lightName } from './sentence';
 
 export { lightName };
@@ -80,6 +80,12 @@ export function targetName(state: ProjectState, ids: readonly NodeId[]): string 
 /** A string key built at run time (role.KEY, level.PART...), typed loosely on purpose. */
 export function dyn(key: string): StringKey {
   return key as StringKey;
+}
+
+/** The label of a primitive's measure: the shape's own word when it has one ("Curve radius"), else the measure's. */
+export function primitiveParamKey(kind: string, key: string): StringKey {
+  const own = `primParam.${kind}.${key}`;
+  return (own in STRINGS.en ? own : `primParam.${key}`) as StringKey;
 }
 
 /** Cache key of a material sphere: presets by key, everything else by content (family and parameters). */

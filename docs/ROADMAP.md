@@ -708,7 +708,7 @@ salía como un disco de 31°, cuando en EZ Packshot está en **grados**
 *Render* **ya no cae a la vista previa** cuando falta `rt.wasm`: lo dice
 y no renderiza, como decidió el usuario.
 
-## E5 · Dieléctricos, emisores, barniz, cielo, HDRI — **Opus**
+## E5 · Dieléctricos, emisores, barniz, cielo, HDRI — **Opus** — hecha
 
 **Qué.** En `rt-core`: transmisión con IOR y absorción (vidrio, acrílico,
 policarbonato, tintado), rugosidad en transmisión; barniz como capa
@@ -729,6 +729,327 @@ produce el campo claro del montaje BACKLIT; test de cielo: cenit frente a
 horizonte en el orden esperado y color del sol de 5200 K; el lector HDR
 reproduce un fichero de prueba generado por el propio escritor; hoja de
 contactos con los tres montajes SKY y los de campo claro.
+
+**Hecho.** En `rt-core`: la parte `transmission` del material principal es
+vidrio de verdad, transmisión GGX lisa o rugosa (Walter et al. 2007) con el
+Fresnel dieléctrico exacto, reflexión total interna y el 1/η² del
+transporte de radiancia; absorción de Beer–Lambert dentro de los sólidos
+(`absorption_mm`: el color es lo que conserva la luz blanca tras esos
+milímetros), pared fina (refleja 2R/(1+R) y deja pasar el resto sin
+refractar), recortes por `opacity`, anisotropía GGX (Burley 2012, adelantada
+de E6) y barniz que atenúa las capas de debajo. El integrador sigue el
+sólido en el que va el camino; las paredes finas y los recortes son
+sucesos rectos que conservan la densidad del último vértice para que la MIS
+siga siendo correcta, y los rayos de sombra los atraviesan. Los emisores se
+eligen como luces por su flujo y respetan `emitKind`; radiancia = color ×
+emitPower × `EMIT_RADIANCE_PER_WATT` (0,06, `src/core/photometry.ts`).
+Cielo de Preetham, Shirley y Smits (1999), con el sol del rig, escalado a
+la irradiancia horizontal de la cúpula con los mismos valores. Lectores
+propios de RGBE (`.hdr`), OpenEXR de líneas (sin compresión, RLE, ZIPS y
+ZIP) e *inflate* (RFC 1950/1951); HDRI equirectangular en la convención de
+three.js, con rotación, intensidad y muestreo por importancia 2-D con su
+densidad exacta; imagen de fondo (llenar, encajar, estirar) en el marco de
+salida. RSB: `MATL` de 72 B, `ENVR` de 80 B y la sección nueva `BMAP`; un
+RSB sin `BMAP` conserva los mapas cargados. El camino opaco de E3 da los
+mismos bits que antes (sus hashes fijados no cambian); dos hashes nuevos
+fijan una escena E5 con vidrio, paredes finas, recortes, anisotropía, HDRI
+leído de sus bytes, imagen de fondo y cielo en nativo (escalar, SSE2,
+AVX2), en WASI (escalar y `simd128`) y con el `rt_wasm.wasm` real. En la
+interfaz: *Entorno* con *Cúpula de estudio*, *Cielo*, *Plano* y *Archivo
+HDRI*, *Cargar HDRI…*, bruma y sol propio del cielo, *Imagen de fondo* con
+*Cargar imagen…* y encaje; la vista previa usa los mismos píxeles del HDRI,
+el mismo cielo (portado a TypeScript, igual al del motor a 7·10⁻⁷) y la
+misma colocación del fondo; el proyecto guarda las imágenes (bloque
+`images`). Vidrio con *Distancia de absorción* y *Paredes*. Se quitan
+`env.kindSoon`, `env.backplateSoon` y `light.skyNote`. Hoja de contactos
+con la botella de vidrio ante el panel de BACKLIT (campo claro, también
+con test), el tablero de materiales, el filamento en una bombilla de
+pared fina, los tres montajes SKY y el HDRI de estudio procedural
+(`tests/fixtures/studio.hdr`): `docs/ui/engine-e5-*.png`. Los tests
+nuevos se comprobaron reintroduciendo catorce errores (sin el 1/η², otro
+Fresnel, media absorción, sin el desplazamiento de la MIS, sombras
+tapadas por paredes finas, `u` reflejado, encaje al revés, RGBE redondeado
+al centro, predictor de EXR sin deshacer, cielo mal escalado y cuatro del
+lado TypeScript): todos fallan. Rendimiento del ejemplo opaco: misma
+imagen y mismos rayos; sin diferencia medible por encima del ruido de una
+máquina compartida (mediana de un hilo +6 %, mejor −2 %).
+
+Lo que no encajó con el plan:
+
+- **Hošek–Wilkie no se portó.** El lead lo decidió (implementación de
+  referencia v1.4a, BSD de 3 cláusulas), pero el clasificador de permisos
+  de la sesión bloqueó usar la implementación descargada; queda pendiente
+  de la aprobación explícita del usuario (el usuario pidió después un
+  cielo propio en sala limpia: fase **E5c**). Preetham, el respaldo previsto,
+  está detrás de la misma interfaz (`Preetham::new`, `radiance`) y el
+  puerto TypeScript lo sigue con un test píxel a píxel, así que el cambio
+  será local. Crepúsculo y noche, fuera de E5.
+- **Imagen de fondo en *Rápido* frente a *Completo*: decisión para el
+  lead.** En *Completo* y en el render pasa por la exposición y la curva
+  de tono como el resto de la película, de modo que no sale idéntica a la
+  foto; en *Rápido* se pinta tal cual. Lo correcto parece componerla en
+  espacio de pantalla después de la curva (afecta al contrato de la
+  película y a la salida); se deja anotado. Los rayos refractados por un
+  sólido o reflejados ven el entorno, no la imagen de fondo.
+- **El vidrio rugoso pierde energía** (dispersión simple): a rugosidad 1 y
+  desde dentro conserva solo el 42 % en el peor caso. Un término de
+  dispersión múltiple (Kulla y Conty 2017, Heitz et al. 2016) lo
+  devolvería.
+- **Memoria del HDRI por worker**: cada worker decodifica su copia (hasta
+  4096 × 2048 en `f32`, unos 100 MB cada uno); los HDRI más anchos se
+  reducen a la mitad al leerlos.
+- **El vidrio macizo tapa los rayos de sombra**: sus cáusticas salen solo
+  del muestreo de la BSDF, con luciérnagas visibles cuando un emisor
+  pequeño se ve por reflexión especular (la bombilla de la hoja). El
+  control de cáusticas y el *denoise* pasan a **E5b**, como dice el plan
+  de oleadas.
+- **Subsuperficie, madera, tela y bisel**, a **E6**. PIZ, PXR24, B44, DWA
+  y los EXR en mosaico o profundos se rechazan con un mensaje que los
+  nombra. Las paredes finas no se difuminan con la rugosidad. El cielo
+  ignora la rotación (lo coloca su sol) y sujeta el sol a 1° como mínimo.
+
+## E5c · Cielo físico propio, en sala limpia — **Opus** — hecha
+
+**Decisión del líder (2026-10-13, a petición del usuario: «haz un port del
+cielo desde una clean room»).** Ni se lee ni se usa la implementación de
+referencia de Hošek–Wilkie ni sus tablas de coeficientes (la copia
+descargada en E5 se borró sin abrirse). De la literatura pública se toma
+solo la **forma funcional** del modelo (Hošek y Wilkie, «An Analytic Model
+for Full Spectral Sky-Dome Radiance», ACM TOG 31(4), 2012): Perez
+extendido con nueve coeficientes y el término de halo χ(H, γ), con
+interpolación en la elevación del sol por Bézier de grado 5 sobre
+elevación^(1/3), lineal en el albedo del suelo y en la turbidez. **Los
+coeficientes los ajustamos nosotros** contra **nuestro propio simulador de
+atmósfera**, como hicieron los autores con el suyo. Todo es nuestro y se
+licencia con el proyecto.
+
+**Qué.**
+1. **Simulador** (herramienta fuera de línea, Rust solo `std`, sin tocar
+   `rt-core`): atmósfera esférica estratificada; Rayleigh desde el índice
+   de refracción del aire con el factor de King; aerosoles con espesor
+   óptico desde la turbidez (Linke/Ångström) y fase de Cornette–Shanks o
+   Henyey–Greenstein doble; absorción de ozono por capa; albedo del suelo;
+   dispersión múltiple por Monte Carlo **determinista** (semilla fija,
+   igual con cualquier número de hilos); espectral (≥ 32 bandas de 380 a
+   720 nm) a XYZ con el ajuste analítico de las funciones CIE de Wyman,
+   Sloan y Shirley (2013), y a Rec.709 lineal. Datos físicos solo de
+   fuentes de dominio público o de fórmulas publicadas, citadas.
+2. **Ajuste**: Levenberg–Marquardt propio por canal y por nudo (turbidez
+   1–10, albedo 0 y 1, elevaciones), con la radiancia de escala aparte. La
+   tabla resultante entra como datos con **receta, semilla y *hash***
+   (como los recursos de A6) y se regenera con una orden de `rt`.
+3. **Motor y vista previa**: el modelo nuevo en `sky.rs` detrás de la
+   interfaz de Preetham, con la misma normalización a la irradiancia de la
+   cúpula; Preetham queda como alternativa (*Clásico*) con un campo de
+   modelo en `ENVR` (clave estable); el modelo nuevo es el de por defecto;
+   puerto TypeScript para *Rápido* que coincide con el motor (≤ 1e-6
+   relativo); *hashes* fijados para el cielo nuevo.
+4. **Validación**: error del ajuste frente al simulador por elevación y
+   turbidez (objetivo: < 5 % RMS relativo fuera de la corona solar), forma
+   de la distribución frente al cielo despejado estándar de la CIE (ISO
+   15469/CIE S 011, tipos 12 y 13, fórmula publicada) y frente a Preetham.
+5. **Capturas para el usuario en cada hito** (lo pidió): cielos del
+   simulador en ojo de pez a varias elevaciones; ajuste frente a simulador
+   con mapa de diferencias; la escena de producto con el cielo nuevo frente
+   a Preetham (amanecer, hora dorada, mediodía, turbio).
+
+**Depende de.** E5.
+
+**Criterio.** Lo de arriba medido y en tests (determinismo del simulador
+y del ajuste, coincidencia motor/vista previa, *hashes* nuevos sin mover
+los de antes), y el visto bueno visual del líder sobre las capturas.
+
+**Hecho.** Un *crate* nuevo, `engine/crates/rt-sky` (herramienta fuera de
+línea, Rust solo con `std`; `rt-core` no lo conoce), con el binario
+`rt-sky`:
+
+- **Simulador** (`atmosphere.rs`, `trace.rs`, `simulate.rs`): Tierra de
+  6371 km y atmósfera hasta 86 km en 64 capas esféricas (la primera de
+  50 m, el grosor creciendo en progresión geométrica), cada una con la
+  densidad media de su tramo; aire de la U.S. Standard Atmosphere 1976;
+  sección eficaz de Rayleigh de Bodhaine et al. (1999) con el índice de
+  Peck y Reeder (1972) a 360 ppm de CO₂ y el factor de King de Bates
+  (1984) (τ_R(550 nm) = 0,097 a nivel del mar, como su tabla), fase de
+  Rayleigh con la anisotropía molecular de Chandrasekhar; aerosoles con
+  τ_a(550) = (T − 1) τ_R(550) (Linke; equivale a la relación de Preetham
+  entre su turbidez y la β de Ångström) y λ^−1,3, altura de escala
+  1,2 km, albedo simple 0,95, fase de Cornette y Shanks con **asimetría
+  0,7** (su parámetro no es la asimetría: se despeja, 0,638; el primer
+  hito usó 0,7 como parámetro, es decir 0,757 de asimetría, y el visto
+  del líder lo cazó: test del coseno medio); ozono de 300 DU en una capa
+  gaussiana a 22 km con los coeficientes de Leckner (1978) tabulados por
+  Bird y Riordan (1986); sol de cuerpo negro a 5772 K con el radio
+  nominal de la IAU 2015 (1361 W/m²); 34 bandas de 10 nm de 380 a
+  720 nm → XYZ con el ajuste de Wyman, Sloan y Shirley (2013) → Rec. 709
+  lineal. La dispersión simple, por cuadratura a lo largo del rayo (pasos
+  de 2 km y 0,05 de profundidad óptica, la transmitancia hacia el
+  observador integrada exacta en cada paso; un test la compara con Monte
+  Carlo al 1 %); la múltiple, por Monte Carlo con estimación del sol en
+  cada suceso, todas las bandas a la vez con MIS de una muestra entre
+  bandas (heurística de balance), colisión forzada hacia arriba,
+  direcciones de la mezcla de las dos fases y un lóbulo hacia el sol,
+  suelo lambertiano y los dos albedos (0 y 1, y 0,2 para validar) de los
+  mismos caminos. Determinista: funciones elementales `f64` propias
+  (`dmath`), un flujo xoshiro256** por (semilla, cielo, dirección),
+  resultados en casillas fijas.
+- **Ajuste** (`model.rs`, `fit.rs`): la forma funcional de Hošek y Wilkie,
+  por canal, turbidez 1–10 y albedo 0 y 1 (60 nudos); `L_M` por mínimos
+  cuadrados lineales (Bézier de 6 puntos en (elevación/90°)^(1/3)), cada
+  elevación sola (rejilla de los cuatro coeficientes no lineales con los
+  cinco lineales resueltos exactos, Levenberg–Marquardt desde los ocho
+  mejores y desde la elevación anterior con un tirón débil hacia ella, y
+  otra pasada dividiendo por su propio modelo y no por el dato ruidoso),
+  curvas de Bézier por los no lineales, los 30 puntos lineales resueltos
+  exactos para ellas, y Levenberg–Marquardt propio sobre los 54 puntos
+  contra todas las elevaciones. Cotas: |H| < 0,95 y E ≤ −0,5 (sin ella
+  aparecían pares C ≈ −100, D ≈ +100 que imitaban una recta en γ y
+  arruinaban el arranque conjunto).
+- **Receta** (`dataset.rs`, en la cabecera de `sky_table.rs`): semilla
+  `0x0e5c5c1e`, 272 caminos de dispersión múltiple por dirección, 16
+  elevaciones del sol (90° (i/15)³), 768 direcciones (anillos de 3° hasta
+  84° y de 1,5° hasta el horizonte por 24 acimuts) y 34 bandas. Tabla:
+  3240 coeficientes y 360 radiancias `f32`, **SHA-256
+  `2329ac7376204749a317d5b31e23e17fa27950515be0f0d50018cd9c16e8a721`**.
+  `cargo run --release -p rt-sky -- table` simula (unos 10 min con 3
+  hilos en la máquina compartida) y ajusta (unos 12 min). Regenerada desde
+  cero con 2 hilos en lugar de 3: la simulación y la tabla salen idénticas
+  byte a byte.
+- **Motor**: `PhysicalSky` en `rt-core/src/sky.rs` detrás de la interfaz
+  de Preetham (`new`, `radiance`), mezclando radiancias (no
+  coeficientes) entre turbideces y albedos, albedo del suelo 0,2, sol de 0
+  a 90°; `sky_image` lo normaliza a la irradiancia de la cúpula como antes,
+  con sumas compensadas (Neumaier) solo en el físico: el clásico da los
+  mismos bits que en E5. `ENVR.sky_model` (84 B): 0 físico (también un RSB
+  sin el campo y cualquier valor desconocido), 1 clásico; es el último
+  campo. *Hashes*: los de antes no se mueven (ejemplo `0x223515c3`, E5 HDRI
+  `0xbf8abd5b`, E5 cielo `0x2fcb098a`, que pasa a pedir *Clásico*
+  explícitamente); nuevo **`0x8bb09f6b`**, la escena de E5 con el cielo
+  físico a 12° y turbidez 2,5 (`rt --write-e5c-example`), igual en
+  escalar, SSE2, AVX2, WASI escalar y `simd128` y con el `rt_wasm.wasm`
+  real (paso nuevo de `engine.yml`). La hoja de contactos añade cuatro
+  pares físico/clásico (amanecer, hora dorada, mediodía, bruma).
+- **Vista previa e interfaz**: `src/core/sky.ts` porta el cielo físico
+  sobre `src/core/f32math.ts`, que emula en `f32` el `fmath` del motor;
+  `tests/fixtures/sky-physical.json` (6 cielos, 354 píxeles, escrito por
+  `rt-sky fixture` y comprobado al día por un test de `rt-sky`) coincide
+  **bit a bit** (6372 valores). `skyModel` (`PHYSICAL` · `CLASSIC`) en el
+  estado, el proyecto (sin el campo: `PHYSICAL`) y la biblioteca;
+  *Entorno* ▸ *Cielo* ▸ *Modelo* (*Físico · Clásico*, con ayuda), en es y en;
+  la bruma baja a 1.
+- **Validación** (`rt-sky validate`, `validation.json`): 40 cielos de bajo
+  ruido (4352 caminos; turbidez 2, 2,5, 4, 6,5 y 9, sol a 0,5, 3, 10, 20,
+  35, 50, 70 y 85°, ninguno en una elevación del ajuste y la mitad entre
+  dos turbideces), 143 direcciones. Error RMS relativo de la luminancia
+  fuera de la aureola (10°), suelo negro / blanco / gris 0,2 interpolado:
+  **sol ≥ 20°: 1,0–7,9 % (media 3,8) / 1,4–5,3 % (2,3) / 2,8–7,3 % (4,1)**;
+  sol a 10°: 5,2–14,6 % (8,5) / 3,5–10,0 % / 4,6–13,7 %; **sol ≤ 3°:
+  9,2–16,7 % (12,9)** / 6,4–11,1 % / 8,7–15,6 %. El ruido de los datos del
+  ajuste es 1,8 % por cielo a T 1, 3–5 % a T 2 y 5–9 % a T 6–9 (otra
+  semilla): el 9,5 % medio de `table.json` frente a esos datos es sobre
+  todo ruido. Forma frente al cielo despejado de la CIE (ISO 15469, L/L_z
+  fuera de la aureola, sol ≥ 10°): tipo 12 frente a turbidez ≤ 2,5,
+  23 % de media (Preetham 44 %); tipo 13 frente a 4–6,5, 22 % (Preetham
+  43 %). En el almucantar, a 65° el físico sigue al tipo 12 a menos de un
+  10 % de 3 a 30° del sol; a 30°, la aureola de turbidez 2,5 sale 1,45–1,7
+  veces la del tipo 12, cerca del 13 (informativo). Ozono comprobado: a
+  1° el cénit pasa de xy (0,300, 0,318) sin ozono a (0,265, 0,279) con él
+  (Preetham: 0,281, 0,301).
+- **Tests nuevos**: 22 en `rt-sky` (funciones elementales frente a `std`,
+  atmósfera estándar y Rayleigh frente a sus tablas, fases normalizadas y
+  coseno medio, turbidez de Linke, geometría de capas, simulación igual
+  con 1 y 3 hilos, cuadratura frente a Monte Carlo, gradiente analítico,
+  ajuste de un cielo sintético y su determinismo, SHA-256, caché, rejillas,
+  la tabla frente a su *hash* y a las dos fuentes generadas, el *fixture*
+  al día), 4 en `rt-core` (cielo físico, linealidad y entradas, clásico
+  intacto, `sky_model` del RSB) más el *hash* de E5c, el par físico/clásico
+  de la hoja en `rt-cli` y 6 en `tests/sky-physical.test.ts`; se
+  comprobó que fallan reintroduciendo seis errores (parámetro de
+  Cornette–Shanks = asimetría, pesos de turbidez cambiados en motor y
+  vista previa, RSB viejo leído como clásico, sumas sin compensar, el
+  modelo sin escribir en el RSB).
+
+Capturas de cada hito (para el visto bueno, que el líder dio): cielos del
+simulador en ojo de pez, ajuste frente a simulador con mapa de errores a
+exposición automática y fija, la escena de producto con los dos modelos y
+la vista *Rápida* con el *Inspector*.
+
+Lo que no encajó con el plan:
+
+- **Límite de la forma funcional con el sol bajo (aceptado por el
+  líder).** El objetivo de < 5 % se cumple con el sol a 20° o más (salvo
+  turbidez 9 a 20°, 7,9 %); a 10° el error es del 5–15 % y por debajo de
+  3° del 9–17 %, y ajustando cada elevación por separado ya queda en el
+  12–18 %: es la forma, no el ajuste ni la interpolación (ni aflojando las
+  cotas mejora). Se ve como un patrón acimutal de ±20 % al amanecer y un
+  resplandor de la hora dorada con bruma un ~20 % oscuro junto al sol, a
+  lo largo del horizonte. **Propuesta de continuación** (no construida):
+  una tabla pequeña de corrección residual para el sol por debajo de
+  ~10°, ajustada con el mismo simulador (nuestra, con receta, semilla y
+  *hash*) y aplicada como factor después del modelo analítico.
+- **La orden de regeneración es `rt-sky table`**, un binario aparte, no
+  una opción de `rt`: el simulador no debe ir en el `rt` que se distribuye.
+- **El ozono** usa los coeficientes de Leckner tal como los tabula Bird y
+  Riordan, escritos con dos o tres cifras y, en el pico de Chappuis
+  (0,12 (atm·cm)⁻¹), un ~10 % por debajo de las secciones eficaces de
+  laboratorio modernas; conviene cotejarlos con la tabla original. **El
+  sol** es un cuerpo negro de 5772 K, no el espectro medido (le faltan las
+  rayas de Fraunhofer y anda un ~10 % bajo entre 450 y 550 nm); solo
+  afecta al color, y poco, porque el cielo se escala a la cúpula.
+- **Albedo del suelo fijo en 0,2** (el habitual en ingeniería solar): el
+  modelo admite 0–1 (`PhysicalSky::new` lo recibe) pero `ENVR` no tiene
+  campo ni la interfaz control; decisión de producto para el líder. Mezclar
+  linealmente entre los albedos 0 y 1 cuesta lo que se ve en la columna
+  gris de la validación (2,8–7,3 % con el sol alto).
+- **Proyectos y RSB antiguos se abren con el cielo físico** (el valor por
+  defecto, como decía el plan): un proyecto de E5 con *Cielo* cambia de
+  aspecto al abrirlo; si se prefiere que conserve el clásico, es un paso
+  de esquema de una línea. La escena fijada de E5 pide *Clásico* para que
+  su *hash* no se mueva.
+- **La vista previa no es `f64`**: en el primer factor (1 + A e^(B/(cos θ
+  + 0,01))) A ≈ −1,1 y el resultado se cancela hasta ~0,12 cerca del cénit,
+  y el `f32` del motor difería del `f64` en 1,5·10⁻⁶; emular el `f32` da
+  los mismos bits. La bruma va de 1 a 10 en los dos modelos; el clásico la
+  sujeta a 1,7.
+- **Las capturas del hito (a)** se hicieron antes de corregir la asimetría
+  de los aerosoles; las de (b) a (d), con la tabla final.
+
+## E5b-1 · Cáusticas y *denoise* propio — **Opus**
+
+**Petición del usuario (2026-10-13):** «integra también cáusticas,
+*denoise*…». Se adelanta esta parte de E5b; el reflejo del suelo, los
+efectos de imagen y la región de render quedan en **E5b-2**.
+
+**Decisiones del líder.**
+- ***Denoise* propio**, en Rust sin dependencias (en `rt-post` o en un
+  *crate* propio, nativo y wasm), escrito desde la literatura pública
+  (medias no locales guiadas por rasgos, Rousselle, Knaus y Zwicker 2012;
+  à-trous con aristas, Dammertz et al. 2010): guiado por los pases exactos
+  de X2 (albedo, normal, profundidad, ids) y por la **varianza por píxel**
+  (la película acumula también la suma de cuadrados). Determinista: la
+  misma entrada da los mismos bits en nativo y en wasm. Nada de redes ni de
+  pesos de terceros.
+- Dónde: *Ajustes de render ▸ Avanzado ▸ Denoise* (*Apagado · Visor ·
+  Render · Los dos*, por defecto **Los dos**) y un interruptor en el visor
+  *Completo*; en el render se guardan la imagen limpia y, si se pide, la
+  original (*Guardar también sin denoise*). Nunca toca la imagen de la IA
+  más que como entrada.
+- **Cáusticas**: mapa de fotones progresivo (SPPM, Hachisuka y Jensen
+  2009) para los caminos luz → especular → difuso, determinista, sin
+  contar dos veces lo que ya trae el trazador; interruptor *Cáusticas* en
+  la ventana de render (por defecto **automático**: encendido cuando la
+  escena tiene vidrio o metal pulido y luces pequeñas), con su calidad en
+  *Avanzado*. El vidrio macizo sigue tapando la sombra directa; la luz que
+  lo atraviesa llega por las cáusticas.
+
+**Criterio.** *Denoise*: error frente a una referencia de muchas muestras
+menor que la imagen sin filtrar a igual número de muestras (escenas del
+`--sheet`), aristas de id intactas (ninguna mezcla entre piezas),
+paridad nativo/wasm bit a bit, *hashes* de la imagen sin *denoise* sin
+mover. Cáusticas: una esfera de vidrio sobre el suelo con una luz pequeña
+da su foco de luz con la energía esperada (test analítico o frente a una
+referencia larga del trazador), sin luciérnagas en la imagen con
+*denoise*; determinismo con cualquier número de hilos. Capturas antes y
+después.
 
 ## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
 
@@ -903,6 +1224,22 @@ otro tipo de producto mantiene la irradiancia total del tipo (test);
 captura con un foco direccional apuntado a una pieza; paridad nativo /
 wasm sigue en verde.
 
+### L4 · Ampliación: luces y cámaras en el visor, «mirar a través» (petición del usuario, 2026-10-13)
+
+«Integra… luces, y la posibilidad de poder mover una cámara y luces a
+gusto, también con el paneo.» Decisiones del líder, dentro de L4:
+- Las luces y las **cámaras guardadas** (no la activa) se dibujan en el
+  visor como glifos acromáticos (contorno del panel, cono del foco, punto,
+  flecha del sol; pirámide de la cámara), con un botón *Luces y cámaras*
+  en la barra de vista, junto a *Desplazar*, para mostrarlas u ocultarlas.
+- Se seleccionan con un clic en el visor o en sus pestañas, y se **mueven y
+  giran con el *gizmo*** de *Mover* (la luz con su asa de apuntar; la
+  cámara, con su objetivo); un gesto, una entrada de deshacer.
+- ***Mirar a través*** de la luz o la cámara seleccionada (botón y `Ctrl/⌘
+  ⇧ L`): el visor mira desde ella y **Orbitar, Desplazar y Zoom mueven ese
+  objeto** (la luz apunta a donde mira el visor); `Esc` o el botón vuelven a
+  la cámara activa. Respeta *Bloquear cámara*.
+
 ## L5 · Luces IES — **Sonnet**
 
 **Qué.** Lector propio del formato IES LM-63 (texto público) en
@@ -970,7 +1307,132 @@ focos y cúpula por tipo de producto lo decide Fable aquí;
 
 **Depende de.** E5, L2.
 
-## M1 · Cara CAD entera — **Sonnet**
+## U7 · Arrastrar un material y selección por caja — **Sonnet** — hecha
+
+**Qué.** Arrastrar un material (una miniatura del catálogo, de *Míos* o
+la esfera del material de la selección) sobre una pieza del visor o
+sobre una fila del árbol, con resaltado (`UI.md` §2.2 y §2.3). Con la
+herramienta *Seleccionar*, selección por caja (ventana y cruce) a cada
+nivel (`UI.md` §4.1), que se añadió a la fase con ella empezada.
+
+**Depende de.** U1, U4.
+
+**Criterio.** Reglas de la asignación por arrastre como acción pura con
+números; la selección por caja probada sobre geometría proyectada;
+comprobación en el navegador con ratón, lápiz y dedo en *Rápido* y
+*Completo*.
+
+**Hecho.**
+
+*Arrastrar un material.* Con eventos de puntero, no con el arrastrar y
+soltar del navegador (un *webview* de escritorio no siempre da la sesión
+nativa, y no deja decidir el fantasma, el lápiz ni `Esc`):
+`src/ui/components/material-drag.ts` es el controlador (umbral de 5 px,
+miniatura fantasma sobre y a la derecha del puntero, zonas de suelta
+registradas por elemento, `Esc` en fase de captura, clic tragado tras
+arrastrar; un dedo no arrastra y conserva su gesto de siempre). Las
+reglas viven en `src/core/material-drop.ts` y se prueban con números: en
+el visor, una suelta alcanza lo que seleccionaría un clic al nivel
+vigente (pieza, ensamblaje, modelo o, a nivel *Caras*, la cara entera
+bajo el cursor); en una fila del árbol, el nodo y todo lo que cuelga de
+él. Un preset del catálogo o un elemento de la biblioteca entran con
+**la instancia que la escena ya tiene de él** (la misma que un clic en
+la miniatura, así que soltar y hacer clic dejan el mismo proyecto); la
+esfera de la selección enlaza con **esa instancia**; con **`Alt`** la
+suelta da **una copia propia** (`material/assign` con `copy`, etiqueta
+*asignar una copia*). Siempre es **una sola acción** `material/assign` y
+una entrada de deshacer, con el nombre del material y del destino.
+Resaltado: contorno (el del visor) en las piezas, tinte en las caras y
+borde discontinuo en la fila del árbol, que además contornea en el visor
+lo que alcanzaría; el fantasma pone *Copia* mientras se pulsa `Alt`.
+`src/core/materials.ts` gana `copy` y `material/assign` ya no crea
+entrada cuando no cambia nada.
+
+*Selección por caja.* `src/core/box-select.ts` (puro, en píxeles de
+pantalla) y `src/ui/panels/viewport-box.ts` (el gesto). **`Ctrl/⌘` +
+arrastrar** dibuja la caja con *Seleccionar* y con *Mover* (donde no hay
+un asa bajo el puntero), en los tres esquemas del ratón; sin `Shift` ni
+`Alt` **sustituye** la selección, con `Shift` **añade** y con `Alt`
+**quita**. De izquierda a derecha es una **ventana** (lo que queda
+entero dentro; contorno continuo), de derecha a izquierda es **cruce**
+(lo que toca; contorno discontinuo), ambos acromáticos. Al nivel
+*Pieza*, *Grupo* o *Modelo* se prueba la geometría proyectada (primero
+la caja envolvente, luego los triángulos; sin mirar qué tapa a qué, como
+en un CAD: una pieza detrás de otra también se coge, y las ocultas no
+cuentan); a nivel *Caras* coge las caras enteras (CAD o por continuidad,
+ver **M1**) de una pieza, con el botón *Rayos X* en la barra de vista
+para coger también las ocultas. Un arrastre de unos pocos píxeles es un
+clic, `Esc` cancela, el lápiz hace lo que el ratón y un dedo no dibuja
+caja (sigue orbitando); la selección no se deshace (una caja no es una
+entrada de historial). Con los esquemas que dejan libre el botón
+izquierdo (*Alt + botón izquierdo orbita* y *Botón central orbita*), un
+arrastre sin más ya dibuja la caja y `Shift` añade sin `Ctrl`; con
+*Botón central*, `Alt` quita sin `Ctrl`; con *Alt + botón izquierdo*,
+`Alt` es la órbita y quitar es `Ctrl/⌘ + Alt`. Los clics no cambian:
+clic selecciona, `Shift` clic añade, `Ctrl/⌘` clic mete o saca, `Alt`
+clic quita (salvo con *Alt + botón izquierdo orbita*, donde `Alt` es de
+la cámara). En *Completo* se usa la geometría de la vista previa, igual
+que `pick`. Nuevos métodos de `ViewportPort`: `projection`,
+`visibleTriangles` y `setHoverFaces`.
+
+*Decisión del usuario sobre el gesto (2026-10-13).* El botón izquierdo
+sigue orbitando por defecto, y **`Ctrl/⌘` + arrastrar** es la caja; la
+primera versión armaba la caja con `Shift`, `Ctrl` o `Alt`. Lo que
+cambia respecto al visor anterior: con *Seleccionar* y *Mover*, `Ctrl/⌘`
++ arrastrar con el botón izquierdo ya no desplaza (era el atajo oculto
+de los controles de órbita; quedan el botón derecho, la rueda y la
+herramienta *Desplazar*). `Shift` + arrastrar y `Alt` + arrastrar no
+arman nada y hacen lo que hacía la cámara antes. El texto de *Ajustes ▸
+Preferencias ▸ Visor y navegación ▸ Ratón* y el tooltip de *Seleccionar*
+lo dicen en los dos idiomas, y se comprobó en el navegador que no
+desbordan (la fila de Ajustes pasa a cuatro líneas y el tooltip cabe en
+sus 280 px).
+
+*Pruebas.* 89 tests nuevos (25 de `material-drop.test.ts`, 35 de
+`box-select.test.ts` y los 29 de M1 en `faces.test.ts`; 1031 en total);
+63 mutaciones de los tests unitarios, todas detectadas salvo dos
+equivalentes (F9, y la de que `Ctrl` no arme en *Alt + botón izquierdo
+orbita*, que ya arma antes por otra rama), y 16 en el navegador, todas
+salvo una guarda de orden entre el resaltado de la suelta y el contorno
+al pasar que el navegador no puede observar.
+`tools/material-drag-check.mjs` y `tools/box-select-check.mjs`
+(Playwright con el Chromium local, en *Rápido* y *Completo*, con ratón,
+lápiz y dedo); capturas `docs/ui/material-drag.png`,
+`material-drag-tree.png`, `material-drag-faces.png`, `box-window.png`,
+`box-crossing.png` y `box-faces.png`. Las de *Completo*, que pesan
+mucho, se escriben en `out/` y no entran en el repositorio.
+
+No encajó con el plan:
+
+- **La suelta sobre un destino con materiales distintos conserva la
+  pregunta en línea de `UI.md` §4.1** (*Sustituir todos · Mantener los
+  existentes · Cancelar*, con inventario): es el caso de soltar sobre
+  un grupo o un modelo cuyas piezas llevan materiales distintos. La
+  fase pedía "una sola acción" y lo es (una entrada de deshacer una
+  vez respondida), pero no se aplica a ciegas. Si se prefiere que una
+  suelta sustituya sin preguntar, es una decisión de interfaz (Fable);
+  mientras tanto vale lo que dice §4.1.
+- **A nivel *Caras* el catálogo solo aparece cuando hay una cara
+  seleccionada**, así que no hay miniatura que arrastrar antes de
+  coger la primera; la suelta cae en **la cara bajo el cursor**, no en
+  las seleccionadas.
+- **El resaltado del arrastre ignora el ajuste *Contorno al pasar*:**
+  sin él, soltar no tendría ninguna señal de a dónde va.
+- **Un dedo no arrastra ni dibuja caja** (conserva lo que hacía:
+  desplazar los paneles y orbitar); el lápiz es un ratón.
+- **La caja no enseña una vista previa de lo que cogerá:** solo el
+  rectángulo; la selección cambia al soltar.
+- **En el esquema por defecto la caja no se dibuja con un arrastre sin
+  más**, sino con `Ctrl/⌘` + arrastrar (decisión del usuario): el
+  botón izquierdo orbita y una caja con un arrastre sin más le
+  quitaría la órbita. Quien la quiera sin tecla puede elegir el
+  esquema *Alt + botón izquierdo orbita* o *Botón central orbita*.
+- Dos cosas de estructura: los clics de `Alt` sobre el visor pasan por
+  `clickMods` para respetar el esquema *Alt + botón izquierdo orbita*,
+  y `ViewportPort` se amplió con tres métodos (`ARCHITECTURE.md`
+  §6.1).
+
+## M1 · Cara CAD entera — **Sonnet** — hecha
 
 **Qué.** Selección de caras por continuidad de superficie, portando el
 algoritmo E2 de EZ Packshot: adyacencia por **posición** de vértice
@@ -986,6 +1448,308 @@ los rangos de cara originales ganan.
 con tapas (la pared entera, se para en las tapas), perfil
 plano-redondeo-pared, arista marcada. Verificar que cada uno falla si se
 quita su condición.
+
+**Hecho.** `src/core/faces.ts` (modelo puro): `cadFaceRegion` hace
+crecer la cara desde el triángulo picado con las reglas de arriba y, en
+una pieza de STEP o IGES, devuelve el rango CAD que lo contiene (los
+rangos ganan); la topología se calcula una vez por malla y se guarda en
+un `WeakMap`. En el visor, a nivel *Caras* un clic coge **la cara
+entera**: clic sin más sustituye, `Shift` añade **un triángulo suelto**,
+`Ctrl/⌘` mete o saca la cara entera y `Alt` la quita; al arrastrar un
+material se tiñe la cara que recibiría (`ViewportPort.setHoverFaces`).
+*Separar por caras CAD* (`scene/separateByCadFaces`) deja de ser
+*próximamente*: está en el menú de pieza y en la hoja de importación
+(que ahora usa el mismo `facePieces`), cada pieza nueva conserva el
+color de su cara, la selección sigue a las piezas y el nivel pasa de
+*Caras* a *Pieza*. La acción comparte `replaceByPieces` con *Separar por
+material*. Además la selección por caja (ver **U7**) coge caras enteras.
+29 tests nuevos (`tests/faces.test.ts`: placa, placa con vértices
+duplicados, cilindro con tapas, perfil plano-redondeo-pared, arista
+marcada, rangos CAD, piezas separadas; las mutaciones se cuentan en
+**U7**); capturas `docs/ui/box-faces.png` y
+`docs/ui/material-drag-faces.png`; comprobado en el navegador con
+`tests/fixtures/box.step` (seis caras CAD).
+
+No encajó con el plan:
+
+- **Límite del borde con curvatura suave (decisión pendiente de
+  Fable).** Se cambió una cosa del algoritmo de EZ Packshot: su
+  estimación de la curvatura contaba también las aristas que son
+  frontera (marcadas o más agudas que 30°), y un triángulo en el borde
+  de una cara plana, junto a una pared, medía la curvatura de la
+  esquina y la cara se escapaba por un chaflán; aquí solo cuentan las
+  aristas que se podrían cruzar (test *a flat face is flat to its
+  rim*). Queda el caso que un clic sobre una malla no puede
+  distinguir: un triángulo en el borde de una cara plana cuya única
+  arista que gira es un redondeo suave (unos pocos grados por paso)
+  parece una faceta de una cara curva, y la cara sigue el redondeo; el
+  interior de la misma cara plana no. No afecta a STEP ni IGES (los
+  rangos no dudan) y la cabecera de `faces.ts` lo cuenta. Datos para
+  decidir si basta o si hace falta un criterio de malla (por ejemplo,
+  medir la curvatura en el interior de la región ya cogida): no se ha
+  cambiado nada por cuenta propia.
+- **`Shift` suelto y `Shift` añade.** M1 pedía "`Shift` da el
+  triángulo suelto" y `UI.md` §4.1 "`Shift` añade": a nivel *Caras*,
+  `Shift` hace las dos cosas, `Shift` clic **añade el triángulo
+  suelto**. Como `Shift` solo vuelve suelto el triángulo y el resto de
+  teclas conservan su sentido, `Ctrl/⌘ ⇧` clic lo mete o saca y `Alt
+  ⇧` clic lo quita (con *Alt + botón izquierdo orbita*, donde `Alt` es
+  de la cámara, no hay `Alt ⇧`); `Ctrl/⌘` y `Alt` sin `Shift` actúan
+  sobre la cara entera.
+- **La caja de caras trabaja sobre una sola pieza** (`Selection.faces`
+  es `{part, indices}`): la seleccionada y, si no hay, la que está en
+  el centro de la caja. Sin *Rayos X* solo coge lo que se ve, medido
+  con un pase de identificadores del visor (un id por triángulo, con
+  una erosión de un píxel para que no cuenten las siluetas de lo
+  oculto), así que una cara más estrecha que unos 3 px no se coge; con
+  *Rayos X* coge también las ocultas, por geometría.
+- ***Separar por caras CAD* solo existe para piezas con rangos** que
+  cubren la malla (`canSeparateByFaces`); en una malla sin ellos sigue
+  deshabilitado en lugar de partir por continuidad.
+- **El contador dice *caras* y cuenta triángulos** (`inspector.faces`:
+  un cubo de seis caras CAD entero dice *12 caras de* su pieza): el
+  modelo de datos guarda triángulos. Contar caras CAD pide guardar
+  también qué rangos se han cogido; se deja anotado.
+- **Un clic no tiñe la cara antes de cogerla**: al pasar el ratón sin
+  arrastrar nada, a nivel *Caras* solo se contornea la pieza; la cara
+  se ve al cogerla. El tinte previo es solo el del material
+  arrastrado.
+- La ayuda que `UI.md` llamaba `faceSel.help` no existe con ese
+  nombre: era `level.tip.FACES`, que ya no dice "próximamente" (se
+  reescribió), y se quitó `ops.separateCadSoon`.
+- Arreglos de fallos que ya estaban: el inspector no se reconstruía al
+  coger la primera cara (`contextKey` no distinguía si había caras;
+  con test), y `material/assign` sin cambios creaba una entrada de
+  deshacer vacía (ahora devuelve el mismo estado; con test).
+
+## U9 · Primitivas y herramienta de escalar — **Opus** — hecha
+
+**Petición del usuario (2026-10-13):** «quiero poder añadir geometrías
+sencillas, algo así como rectángulos de base, cilindros, esferas… y con el
+paneo, el típico apartado de escalar, aparte de poder escalar cada pieza
+con clic derecho».
+
+**Decisiones del líder.**
+- **Añadir ▸ Primitiva** (menú *Añadir* de la cabecera, el botón `+` del
+  panel *Escena*, la paleta de comandos y el menú contextual del visor en
+  vacío): *Caja* (con radio de bisel), *Plano*, *Disco*, *Cilindro*,
+  *Pedestal* (cilindro con bisel), *Esfera*, *Cono*, *Toro*, *Cápsula*,
+  *Tubo*, *Escalones* y *Fondo infinito* (la curva de estudio: suelo que
+  sube en curva hasta una pared). Claves estables en un catálogo de datos.
+- **Paramétricas y vivas**: cada primitiva guarda su tipo y sus medidas en
+  mm (ancho, fondo, alto, radio, bisel, segmentos…), editables en el
+  inspector (sección *Primitiva*); cambiar una medida regenera la malla con
+  **una acción del *store*** y una entrada de deshacer (un arrastre, una
+  sola). *Convertir en malla* la congela.
+- **Tamaño y sitio por defecto con criterio de estudio**: se crea apoyada
+  en el suelo, junto al producto o debajo si es una base (la *Caja* y el
+  *Pedestal* nacen como base: 1,4 × la huella del producto y el producto
+  apoyado encima), escalada a la escena; sin producto, a un tamaño
+  razonable. Material neutro del catálogo.
+- **Geometría limpia**: generación pura y determinista en `src/core/`,
+  normales y UV correctas (para M2), suavizado por ángulo, y **caras CAD**
+  (`faceRanges`) por cara lógica (la tapa, el lateral, el bisel…), para
+  que el nivel *Caras* y M1 funcionen con ellas.
+- **Proyecto**: la primitiva se guarda como parámetros (no como malla) en
+  un campo opcional del nodo; *schema* 2 sigue valiendo y un proyecto
+  antiguo abre igual. El motor la recibe como una malla más (RSB sin
+  cambios).
+- **Herramienta *Escalar*** (`S`) en la barra de vista, junto a
+  *Desplazar*: el mismo *gizmo* de *Mover* pero solo con las asas de
+  escala (por eje y uniforme en el centro), alrededor del pivote, en ejes
+  locales o globales, con incrementos con `Shift`; el inspector muestra
+  la escala en vivo. Un arrastre, una entrada de deshacer.
+- **Clic derecho ▸ Escalar…** en una pieza (visor y árbol): un panel en
+  línea con *Uniforme* (%), por eje (X, Y, Z en %) o **a medida** (mm del
+  ancho, fondo o alto con proporción bloqueada), *Aplicar* y *Restablecer
+  escala*; actúa sobre la selección al nivel vigente.
+
+**Criterio.** Tests de cada primitiva (cerrada donde debe, normales hacia
+fuera, UV en [0, 1], `faceRanges` que cubren la malla, determinismo,
+medidas exactas en mm), de la regeneración deshacible, del guardado y la
+apertura, de la escala por eje, uniforme y a medida (alrededor del
+pivote, a cada nivel); capturas del menú, del inspector y de la
+herramienta; cadenas en `es` y `en`; cromo acromático.
+
+**Hecho.** `src/data/primitives.json` (+ `primitives.ts`): las doce formas
+con claves estables (`BOX`, `PLANE`, `DISC`, `CYLINDER`, `PEDESTAL`,
+`SPHERE`, `CONE`, `TORUS`, `CAPSULE`, `TUBE`, `STEPS`, `SWEEP`), su papel
+(`BASE`, `FLOOR`, `BACKDROP`, `OBJECT`), sus medidas (claves, mínimos,
+pasos, factor del tamaño de la escena o valor fijo) y el material neutro
+`WHITE_STUDIO`; los nombres y las etiquetas de las medidas son cadenas de
+la interfaz. `src/core/primitives.ts`: generadores puros y deterministas,
+en mm, Z arriba, **centrados en su caja** (que es exactamente sus medidas:
+senos y cosenos exactos en los múltiplos de 90°, ningún `h − b + b`), con
+un constructor que orienta cada triángulo hacia sus normales y quita las
+astillas; superficies de revolución con polos por segmento (la punta del
+cono tiene la normal de su faceta), caja redondeada con aristas y esquinas
+que se encuentran bit a bit (tabla de cuarto de vuelta simétrica),
+escalones en rejilla sin uniones en T, fondo infinito desenrollado;
+estancas salvo plano, disco y fondo; normales de la superficie dentro de
+cada cara lógica; UV en [0, 1] por cara y sin estirar; cada cara lógica es
+un rango de `faceRanges` (y su borde, arista viva), así que *Caras*, M1 y
+*Separar por caras CAD* funcionan; medidas acotadas a lo que da una forma;
+el id de malla `prim:<dueño>:<FORMA>:<medidas>` nombra contenido y dueño.
+`src/core/primitive-ops.ts`: `placePrimitive` (base 1,4 × la huella bajo
+el producto, con el producto encima; planos bajo él, una milésima sobre el
+suelo; el resto junto a lo que está de pie; sin producto, en el origen y
+encuadrado), `fitSweep` (decisión del líder durante la fase, tras ver las
+primeras capturas: el fondo infinito de cara a la cámara activa, girado en
+Z a su acimut, la pared a 1,75 fondos del producto detrás de él y detrás
+de los focos del montaje que quedan detrás del producto
+(`wallBehindLights`), ancho 1,3 veces el encuadre donde lo toca, por
+encima de lo más alto del encuadre, curva de 0,3 veces el alto;
+*Ajustar a la cámara* lo rehace con `scene/fitPrimitive`), y las acciones `scene/addPrimitive` (una entrada de
+deshacer con el levantamiento), `scene/setPrimitive` (regenera, conserva el
+apoyo, arrastra las copias enlazadas, los materiales por cara y las caras
+seleccionadas siguen a sus caras por nombre) y `scene/convertPrimitive`.
+`SceneNode.primitive` es el campo opcional del proyecto: `io/project.ts`
+no escribe esas mallas y las regenera al abrir (esquema 2, byte a byte).
+Herramienta *Escalar* (`S`, junto a *Desplazar*): el *gizmo* con solo
+asas de escala (`Gizmo.setMode('SCALE')`, cubos al final de ejes enteros
+que se cogen y el punto central; una longitud de cubo más duplica);
+*Clic derecho ▸ Escalar…* con `ui/panels/scale-panel.ts` (uniforme, por
+eje, a medida con candado, *Aplicar* y *Restablecer escala* =
+`scene/resetScale`) en el visor y en el árbol; `selectionExtents` mide la
+selección en los ejes en vigor. *Añadir ▸ Primitiva* en el menú de la
+cabecera, el `+` del panel *Escena*, la paleta (*Añadir caja*…) y el menú
+del visor en vacío; sección *Primitiva* del inspector con *Convertir en
+malla*, que también está en *Geometría ▸*. Pruebas: `tests/primitives.test.ts`
+(cada forma: mismos bytes, caja exacta y centrada, UV, normales, caras que
+cubren la malla, estanqueidad, aristas vivas, volúmenes analíticos, medidas
+acotadas, id) y `tests/primitive-ops.test.ts` (colocación, base y huella,
+producto encima, una entrada de deshacer, producto bloqueado, planos y
+fondo, el pivote de luces y la escala que no ven el decorado, edición viva y
+deshacer, copias enlazadas e independientes, caras pintadas y
+seleccionadas, convertir, guardar y abrir byte a byte, forma desconocida y
+medidas fuera de rango en un archivo, escala uniforme, por eje (también en
+ejes locales) y a medida alrededor del pivote a nivel *Modelo*, *Grupo* y
+*Pieza*, *Restablecer escala*, las asas de *Escalar*, el atajo y las
+cadenas). `tools/primitives-check.mjs` lo comprueba en el navegador en
+*Rápido* y *Completo* y hace las capturas `docs/ui/primitives-add-menu.png`,
+`primitives-base-box.png`, `primitives-pedestal.png`,
+`primitives-pedestal-full.png`, `primitive-inspector.png`,
+`scale-tool.png` y `scale-panel.png`, y además comprueba con los píxeles
+que el fondo infinito llena el encuadre (esquinas y centro del borde de
+arriba claros, no la cúpula oscura) y que *Ajustar a la cámara* lo
+rellena tras orbitar. 133 tests nuevos (91 de `primitives.test.ts` y 42
+de `primitive-ops.test.ts`; 1627 en total); 42 mutaciones del código
+nuevo, todas detectadas (cinco no lo eran a la primera: el recorte de las
+UV ocultaba un mapeo malo y se quitó, y la normal de la punta del cono, los
+materiales por cara que se desplazan, lo que está de pie junto a un fondo
+y un fondo que se aleja por su curva no tenían test o lo tenían demasiado
+permisivo; se arreglaron los tests).
+
+No encajó con el plan:
+
+- **El producto, no el decorado.** Un fondo infinito seis veces mayor que
+  el producto movía el pivote de las luces (`rigPivot` era el centro de la
+  escena), el encuadre de *Crear estudio*, el tamaño medido (y el chequeo
+  de escala del Doctor, cuyo arreglo reescalaría todo) y el mapa de
+  sombras. Ahora todos miden `productBounds`: las piezas que no son
+  primitivas (si solo hay primitivas, todas). Es un criterio de
+  arquitectura que no estaba en el plan; *Encuadrar todo* sigue
+  encuadrando todo. Si Fable prefiere marcar el decorado de otro modo (por
+  ejemplo, solo bases y fondos, no cualquier primitiva), es un cambio de
+  una función.
+- **El tamaño de pieza** se detecta ahora también cuando entra el primer
+  producto en una escena que solo tenía primitivas (antes, solo en una
+  escena vacía).
+- **Mallas centradas, no apoyadas en su origen**: el Doctor avisaba de un
+  origen descentrado en cada primitiva y su arreglo la desplazaba. La
+  pieza conserva su apoyo al cambiar medidas por el centro de la base de
+  su caja, en sus propios ejes.
+- **Planos, disco y fondo infinito una milésima sobre el suelo**: su cara
+  de arriba está donde el suelo del estudio, que en el motor es un *shadow
+  catcher*, y un empate de distancias entre los dos parpadea. Por encima
+  gana la geometría, que recibe sombras de verdad en *Completo*; en
+  *Rápido* la sombra de contacto queda bajo el fondo (la vista previa solo
+  la dibuja en el suelo). No se apaga el suelo del estudio al añadir un
+  fondo: es una decisión fotográfica (Fable).
+- **Una versión anterior a U9 no ve las primitivas** de un proyecto nuevo
+  (no hay malla en el archivo; abre con el aviso de geometría que falta):
+  la compatibilidad es hacia atrás, como se pidió.
+- **Cambiar las medidas de una base no vuelve a subir el producto**, y
+  una base nueva bajo un producto que ya está sobre otra va al suelo (el
+  producto se apoya en la nueva). Una pieza escalada con *Escalar* sigue
+  mostrando sus medidas sin escala en la sección *Primitiva* (la nota lo
+  dice).
+- **Invertir normales, Suavizado y Separar congelan la primitiva** (dejan
+  de ser paramétricas), porque su malla ya no es la de sus medidas.
+- **El fondo infinito se ajusta a la cámara**, no a los ejes del mundo
+  (petición del líder a mitad de fase): las primeras capturas dejaban ver
+  el entorno oscuro en una esquina del encuadre. Si la curva llegaría bajo
+  el producto (un producto muy plano de fondo), la pared se aleja más de
+  los 1,75 fondos. Mover la cámara después no lo reajusta solo: para eso
+  está *Ajustar a la cámara*. El test lanza rayos por una rejilla de 7 × 7
+  del encuadre en ocho cámaras (de frente, cenital, ortográfica, tele en
+  vertical, gran angular cuadrada, un producto delgado) y todos dan en el
+  fondo.
+- **Un fondo infinito tapaba los focos que quedan detrás de su pared
+  (decidido por Fable a mitad de fase).** Con el montaje *Estándar* y la
+  cámara de referencia, el contraluz (*RIM*, 70 W, a unos 290 mm detrás
+  del producto) quedaba detrás de la pared, que estaba a 154 mm: en
+  *Completo* la pared lo tapaba y la imagen salía más plana y gris que en
+  *Rápido* (la vista previa no hace sombras de los focos). **Decisión:** un
+  fotógrafo pone el papel lo bastante atrás para que el contraluz y los
+  focos traseros quepan entre el producto y el fondo, así que la luz que
+  eligió el usuario sigue funcionando. `fitSweep` (al añadir y en
+  *Ajustar a la cámara*) lleva la pared detrás de cada foco encendido del
+  montaje que está detrás del producto según la dirección de la cámara, a
+  1,25 veces lo que ese foco está detrás del centro del producto más la
+  mitad de su panel (`SWEEP_FIT.lights`, `wallBehindLights`; un sol no
+  cuenta), y luego calcula ancho, alto y curva para cubrir el encuadre a
+  esa distancia como antes. En la vista de referencia la pared pasa de
+  154 mm a unos 480 mm. Los focos traseros que acaben dentro del encuadre
+  quedan fuera de esta decisión. Test: con el montaje *Estándar* y la
+  cámara de referencia ningún foco queda detrás de la pared (falla con la
+  distancia antigua), y sin focos detrás la pared vuelve a estar a 1,75
+  fondos.
+- **El nombre de *Añadir*.** No hay un menú *Añadir* propio en la cabecera
+  (UI.md §2.1 es *nada más*): es una entrada *Añadir ▸* del menú de
+  aplicación, con el rótulo *Primitiva* y las doce formas debajo.
+- *Escalar…* del menú contextual no muestra atajo (`S` enciende la
+  herramienta, no abre el panel). Los modificadores de la caja de
+  selección y los clics son los de *Mover*.
+
+## U10 · Recorrido guiado y avisos de la IA — **Sonnet**
+
+**Petición del usuario (2026-10-13):** «avisar si no se tiene instalado el
+*inference runtime*; la primera vez que se inicie la app, un tutorial que
+se pueda saltar pero que te guíe por todas las opciones; al instalar, si
+se selecciona la IA, que pida instalar también el *inference runtime*».
+
+**Decisiones del líder.**
+- **Recorrido guiado** al primer arranque (y desde *Ayuda ▸ Recorrido
+  guiado*): una capa propia (nunca ventanas del navegador) que resalta
+  cada zona en orden — cabecera y menú, árbol y niveles de selección,
+  herramientas de vista (Seleccionar, Mover, Escalar, Orbitar, Desplazar,
+  Zoom, caja con `Ctrl`), *Rápido/Completo*, inspector (producto, luz y
+  montajes, entorno y cielo, cámara y enfoque con clic, materiales y
+  arrastre), pestañas de luces, cámaras y estudios, *Añadir ▸ Primitiva*,
+  ventana de render (cola, IA), visor de resultados y *Ajustes* por
+  secciones — con un texto corto por paso, *Siguiente · Atrás · Saltar*,
+  puntos de progreso y teclado (`→`, `←`, `Esc`); en `es` y `en`;
+  acromático; usa los `data-guide` que ya existen. Se recuerda en el estado
+  de la plataforma (carpeta de datos en escritorio) que ya se vio; *Saltar*
+  cuenta como visto.
+- **Aviso del motor de ejecución**: si hay un modelo de IA y no está el
+  motor de ejecución (o le falta Visual C++), la sección de IA de la
+  ventana de render y *Ajustes ▸ Post-procesado IA* lo dicen con un botón
+  *Instalar*; al arrancar, una nota discreta en la barra de estado, una
+  sola vez por sesión.
+- **Instalador**: si en el paso *Modelos de IA* se elige algún modelo, se
+  marca también el **motor de ejecución** recomendado para el equipo
+  (Vulkan con GPU, CPU sin ella), se puede desmarcar, y la app lo
+  descarga en el primer arranque como los modelos (la regla de P2: el
+  instalador elige, la app descarga). Lo mismo en el selector del primer
+  arranque de los portables.
+
+**Criterio.** Tests del orden del recorrido (todos los pasos apuntan a algo
+que existe; ningún paso apunta a un elemento oculto), de *Saltar* y del
+recuerdo (no vuelve a salir; sí desde *Ayuda*), del aviso con y sin motor
+de ejecución, del archivo de elección del instalador con el motor
+incluido (y del NSIS que lo escribe); capturas de tres pasos y del aviso.
 
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 
@@ -1280,72 +2044,663 @@ tamaño exacto y `sha256`, la licencia con su texto citado y su URL, y la
 regla de recomendación como tabla de datos. Sin medidas todavía: los
 umbrales son los de la tabla, marcados *provisionales*.
 
-**Parte B, tras X3.** `AI-POST.md` §2: releer y citar al pie de la letra las licencias
+**Parte B, tras X3c.** `AI-POST.md` §2: releer y citar al pie de la letra las licencias
 de Z-Image-Turbo, su codificador, su VAE y su ControlNet, y de FLUX.2
-klein 4B; fijar los `sha256` de los ficheros cuantizados (web q4f16 y
-GGUF de escritorio); Sonnet prepara una hoja comparativa (8 renders del
-motor —producto e interior—, 3 intervenciones, los dos modelos, con las
-métricas de la guarda de §3.2 y el tiempo) y **Fable elige** y fija las
-tolerancias iniciales (ΔE₀₀, bordes, nitidez). Prueba de ONNX Runtime
-nativo frente a stable-diffusion.cpp para escritorio.
+klein 4B, y la de stable-diffusion.cpp y ggml; Sonnet prepara una
+**herramienta** que genera la hoja comparativa (8 renders del motor
+—producto e interior—, 3 intervenciones, los dos modelos, con las
+métricas de la guarda de §3.2, el tiempo y el pico de memoria, en Vulkan
+y en CPU) y que el usuario ejecuta **en su equipo** (aquí no hay GPU); con
+esa hoja **Fable elige** el modelo y fija las tolerancias iniciales
+(ΔE₀₀, bordes, nitidez) y los umbrales de la regla de §2.4. Los `sha256`
+de la web (q4f16) los fija X3d.
 
-**Depende de.** X2, X3 (la guarda tiene que existir para medir).
+**Depende de.** X3c (la tubería tiene que existir para medir).
 
-## X2 · Pases del motor para la IA — **Opus**
+## X2 · Pases del motor para la IA — **Opus** — hecha
 
-**Qué.** En `rt-core`: pases de albedo (primer rebote no especular),
-normal, profundidad, id de pieza, id de material y mapa de desenfoque
-(círculo de confusión de la cámara de lente fina), con máscara de pases
-en `RNDR`, exportación en `rt-wasm`, acumulación en el pool de E4 y
-lectura en TypeScript. Coincide con la parte de pases de N2 y la
-adelanta.
+**Qué.** Contrato en `AI-POST.md` §7.4 y `src/core/passes.ts`. En
+`rt-core`: pases de albedo (primer rebote no especular), normal,
+profundidad, id de pieza, id de material y mapa de desenfoque (círculo de
+confusión de la lente fina), con máscara de pases en `RNDR`; exportación
+en `rt-wasm`, acumulación en el pool de E4 y lectura en TypeScript; en el
+lanzador, `passes=…` en `/api/render` para los trabajos finales, que los
+guarda por id para la tubería, y `GET /api/render/<id>/passes`. Coincide
+con la parte de pases de N2 y la adelanta.
 
-**Depende de.** E4.
+**Depende de.** E4, y **E5 fusionada** (los dos tocan el integrador).
 
 **Criterio.** Tests: el id de pieza de cada píxel coincide con el `pick`
 del centro del píxel; el albedo de un material difuso es su color; el
 mapa de desenfoque es cero en el plano de enfoque y crece con la
-distancia según la fórmula de lente fina (±1 %); determinismo y paridad
-nativo/wasm intactos.
+distancia según la fórmula de lente fina (±1 %); pedir pases no cambia
+ni un píxel de la imagen; determinismo y paridad nativo/wasm intactos.
 
-## X3 · Tubería de post-procesado y guarda — **Opus**
+**Hecho** (2026-10-13). `rt_core::passes` con el contrato de §7.4:
+`RNDR.passes` (40 B; los RSB anteriores no piden ninguno, los bits
+desconocidos se conservan), `render_tile_exact` (normal, profundidad,
+ids y círculo de confusión de **un rayo por el centro del píxel y de la
+lente**, `render::centre_ray`, una vez por baldosa) y `render_tile_albedo`
+(el rayo de cámara de cada muestra de la imagen, sumado en `f32` en orden
+de muestra y dividido como `Film::resolve`), sobre `integrator::first_hit`
+(lo más cercano entre geometría y suelo; un panel de luz visible a cámara
+cruzado antes es fondo) y `PassFilm`/`Passes`. El suelo del estudio
+(visible o atrapasombras) es `FLOOR_ID` en los dos ids; el fondo, 0 y
++∞. Los pases tienen rayos propios: la imagen conserva sus *hash*
+(`0x223515c3`, `0xbf8abd5b`, `0x2fcb098a`) con todos los pases
+intercalados. *Hash* fijados de los seis planos del ejemplo (albedo
+`0x43571da9`, normal `0x0aabfd24`, profundidad `0x25f8dd11`, ids
+`0xccd3d6c7` los dos, `coc` `0xdf87494c`) y del ejemplo de E5 (`0xace93461`,
+`0x714253d6`, `0x9b1b61c8`, `0x2c21fa55` ×2, `0x73bf76f1`), iguales en
+escalar, SSE2 y AVX2, en las dos pasadas de WASI, en el `rt.wasm` real
+(escalar y `simd128`, `tools/wasm-parity.mjs --expect-passes`, en CI),
+por la API del lanzador con 1 y 4 hilos y por el código de la página
+(`tests/passes-engine.test.ts`). `rt-wasm`: `rt_render_tile_passes` y
+`rt_render_tile_albedo`; el pool los pide con la máscara del trabajo y los
+junta con `PassAccumulator` (`src/render/pass-planes.ts`), y
+`renderPixels` devuelve `RenderPasses`. Lanzador: `passes=` en los
+finales (400 si nombra un pase que no existe o en el visor), almacén de
+los **cuatro últimos** renders con pases por id (imagen lineal y pases;
+los de más de 64 MiB en `<datos>/cache/ai/<id>.rpx` y `.rpp`, que se
+limpia al arrancar; `DELETE` del trabajo no los borra), servido como
+`RPP1` en `GET /api/render/<id>/passes` (404 si no existe o se desalojó,
+409 mientras se renderiza), `Engine::kept` para X3c; `native.ts` lo pide
+y lo lee con `parsePasses` y devuelve también `renderId`. El círculo de
+confusión es el de `lens-coc.ts` (los dos lados leen
+`tests/fixtures/lens-coc.json`) y coincide dentro de 1 % (en la práctica,
+1e-5) con el desenfoque medido de la lente de `Camera::generate_ray`.
+Los pases de three.js de X4 coinciden con los del motor en ids y
+profundidad en su escena de prueba (comparados en
+`tests/ai-passes-browser.test.ts` con el `rt.wasm` real), salvo el
+suelo. Tests: 22 nuevos en Rust (15 de `rt-core`, 1 de `rt-wasm` y 6 del
+lanzador: almacén, formato `RPP1`, trabajos y API) y 12 de vitest; 19
+mutaciones comprobadas (cada test falla si se rompe lo que guarda).
 
-**Qué.** `AI-POST.md` §2.3 y §3: `src/ai/` con ONNX Runtime Web (MIT) en
-workers por etapa, descarga con progreso y `sha256`, caché en OPFS con
-`persist()`, fragmentos de ≤ 1 GiB, mosaicos con solape, relleno y
-recorte a resolución exacta, *prompt* desde materiales y luces,
-condicionamiento con profundidad y bordes de id cuando el motor de
-ejecución lo soporte, y la **guarda determinista** completa
-(transferencia de sombreado, separación de frecuencias, regiones por id
-con ΔE₀₀, nitidez frente al mapa de desenfoque, comprobación y retroceso)
-como funciones puras probadas sin modelo. Integración en la cola: el
-trabajo guarda las dos imágenes y el informe de la guarda. Dependencia
-nueva anotada en `ARCHITECTURE.md` §1.
+**No encajó con el plan.** (1) **El suelo en los pases de three.js**: el
+contrato corregido (suelo = `FLOOR_ID`) lo cumple el motor; la vista
+previa de X4 todavía lo dibuja como fondo (0, +∞). No se toca aquí:
+§7.4 se lo da a X3c, y el test del navegador acepta hoy 0 en los píxeles
+del suelo y lo anota. (2) Decisiones donde el contrato no decía nada,
+anotadas en §7.4: el albedo de un emisor es su `base_color`; el del
+suelo, `FLOR.color` también en el atrapasombras (que no lo usa para
+pintar); con profundidad de campo el albedo sigue cada muestra por la
+lente y se emborrona como la imagen (la comparación de X2 con la
+referencia de X4 solo exige el color exacto donde `coc` < 0,25 px); un
+recorte o un vidrio paran el rayo de los pases, como `pick`; una
+instancia con índice de material fuera de rango lleva `materialId` 0.
+(3) En el ejemplo y en el de E5 la instancia *i* lleva el material *i*, así
+que sus planos de ids tienen el mismo *hash*: el orden de los dos planos
+lo vigilan el fichero `tests/fixtures/passes-3x2.rpp` (lo escribe el
+lanzador y lo lee la página) y la escena de X4, donde no coinciden.
+(4) La máscara viaja por dos sitios en el lanzador (`RNDR.passes` y
+`passes=`): un final renderiza la unión. (5) Los rayos de los pases
+cuentan en los rayos del trabajo (`rays` de la trama): uno por píxel para
+los exactos y uno por muestra para el albedo. (6) `engine/README.md` está
+entero en inglés; su sección de pases también, para no partir el
+fichero. (7) **Con P3a** (fusionada después): los pases se renderizan con
+los hilos o los workers que tenga el render, también cuando el visor
+sigue vivo en su parte (`share=`, los carriles del pool), y salen los
+mismos bits (lo prueban el lanzador y el pool); un final cancelado, huérfano
+(su página dejó de preguntar) o fallido no guarda nada; `native.ts` lee los
+pases con la señal de cancelación del render y antes de soltar el
+trabajo (`DELETE`, `pagehide`), y `GET /api/render/state` da la máscara de
+cada trabajo.
 
-**Depende de.** X2, U5.
+## X3 · Tubería de post-procesado y guarda — partida en X3a–X3d
+
+Decisión del líder (`AI-POST.md` §7): en escritorio todo nativo (la
+página solo envía ajustes y recibe resultados), la guarda en un *crate*
+propio sin dependencias, y la web detrás.
+
+### X3a · `rt-post`: la guarda y los píxeles — **Opus** — hecha
+
+**Qué.** `AI-POST.md` §3.2 y §7.2: `engine/crates/rt-post` (solo `std`,
+`f32`, determinista, sin `unsafe`) con condicionamiento (bordes de los
+cambios de id y normal, profundidad normalizada), plan de mosaicos con
+solape y fusión, relleno a múltiplo de 16 y recorte, la **guarda**
+completa (transferencia de sombreado, separación de frecuencias, regiones
+por id con ΔE₀₀, nitidez frente al mapa de desenfoque), las
+comprobaciones y la máquina de pasos con retroceso; `rt-post-wasm` →
+`public/engine/post.wasm`; en `src/ai/`, la envoltura TypeScript de ese
+wasm y el *prompt* desde materiales y luces (`prompt.ts`). Informe con la
+forma de `GuardReport` (`src/core/ai.ts`).
+
+**Depende de.** Nada (los pases se sintetizan en los tests).
 
 **Criterio.** La guarda, probada con un "modelo" sintético que hace
 cosas prohibidas (mueve una arista, cambia el color de un material,
-emborrona lo enfocado, cambia el tamaño): cada una se detecta y se
-corrige o se rechaza; con intervención 0 la salida es idéntica bit a bit
-a la entrada; la resolución de salida es siempre la del trabajo. En el
-navegador con WebGPU, una imagen de 1024² sale con el modelo real (se
-anota el tiempo); sin WebGPU, el interruptor queda deshabilitado con el
-motivo.
+emborrona lo enfocado, enfoca lo desenfocado, cambia el tamaño, toca
+fuera de las regiones): cada una se detecta y se corrige o se rechaza;
+con intervención 0 la salida es idéntica bit a bit a la entrada sin
+llamar al modelo; la resolución de salida es siempre la del trabajo;
+mismo resultado en nativo y en wasm, bit a bit; puertas del motor
+(`fmt`, `clippy`, sin dependencias en `Cargo.lock`).
 
-## X4 · Interfaz del post-procesado — **Sonnet**
+**Hecho.** `engine/crates/rt-post` (`#![forbid(unsafe_code)]`, solo
+`std` y `rt-core` para `fmath` y las curvas de tono) con la máquina de
+pasos `plan(&job) → Plan` (mosaicos de ≤ 1024² con solape ≥ 128 px y
+mismo tamaño, relleno a múltiplo de 16 repitiendo el borde; sin mosaicos
+si Intervención es 0 o todos los aspectos están a 0, y entonces la salida
+es la entrada bit a bit sin llamar al modelo), `tile_input` (la imagen del
+motor con su exposición y su curva, sRGB de 8 bits), `conditioning`
+(bordes 255 a los dos lados de cada cambio de `partId`, `materialId` o
+normal de más de 30°; profundidad normalizada sobre toda la imagen, cerca
+255, la superficie más lejana 16, fondo 0) y `accept(&plan, &original,
+&passes, &salidas, intento) → Accepted{image, report} | Retry{strength,
+attempt, reason} | Rejected{report}`; `run` es el conductor para un
+modelo dado como función. La guarda multiplica siempre la imagen del
+motor por una ganancia: (a) transferencia `ln blur(modelo) − ln
+blur(motor)` (gaussiana normalizada sobre las regiones abiertas,
+σ = 16·√MP entre 8 y 32, calculada en una rejilla hasta 8 veces más
+gruesa y devuelta con B-spline cúbica), llevada a luz de escena por la
+pendiente local de la curva de tono y partida en cambio común (Fuerza
+del estilo), luminancia local (Luz, ganancia gris) y color local
+(Rebotes), cada parte por su control y topada por control × fuerza del
+intento; (b) banda media del modelo (σ 3 px a σ baja) solo en materiales
+con desgaste, enfocados (cdc ≤ 1 px, nada a ≥ 3 px) y a más de 8 px de
+una arista; (c) fondo y materiales bloqueados intactos y el cambio de
+color de cada material rebajado hasta que su ΔE₀₀ medio y p95 queden en
+el 80 % de la tolerancia. Comprobaciones independientes de cómo se hizo
+el resultado: tamaño, píxeles cambiados fuera de lo permitido (bit a
+bit), desplazamiento de aristas (pico del gradiente con refinamiento
+parabólico, en el canal de mayor salto), SSIM de la banda alta, nitidez
+por bloque de 32² frente al mapa de desenfoque y ΔE₀₀ por material
+(CIEDE2000 de Sharma, Wu y Dalal 2005, probado con sus 34 pares).
+Tolerancias **provisionales** en un solo `struct` (`Tolerances`, claves
+estables, se pueden pasar en el trabajo para calibrar): ΔE medio ≤ 2,
+p95 ≤ 3, aristas ≤ 1,5 px, SSIM alta ≥ 0,98, enfoque ≤ 15 %, topes de
+Luz 0,3, Rebotes 0,15, Estilo 0,2 y Desgaste 0,15 (logaritmo natural, a
+control e intervención 100). Informe JSON escrito a mano con la forma
+exacta de `GuardReport`. `rt-post-wasm` → `public/engine/post.wasm`
+(189 KB, sin importaciones) desde `npm run engine:build`; `src/ai/post-wasm.ts`
+(`PostGuard`, `PostSession`, `runGuarded`, `encodeJob`; worker y Node,
+comprueba los tamaños antes de pasar punteros) y `src/ai/prompt.ts`
+(`buildPrompt`, negativo fijo, `guardMaterials`); `AiGuardMaterial`
+añadido a `src/core/ai.ts`. 50 tests de Rust (47 de `rt-post`, 3 del ABI)
+y 16 de vitest; el "modelo" sintético mueve aristas, cambia el color de
+un material, emborrona lo enfocado, enfoca lo desenfocado, toca el fondo,
+mete desgaste en todas partes y devuelve otro tamaño, y cada test falla
+si se apaga el paso que lo cubre (comprobado apagándolos uno a uno en el
+código). Paridad: `tests/fixtures/ai-guard.json` (cinco escenarios:
+intacto, prohibido, fuerte, limitado, rechazado) lo fija el test nativo y
+el `post.wasm` real lo reproduce bit a bit (imagen, entradas del modelo y
+JSON), también en CI. Rendimiento nativo de un hilo: ≈ 2,3 s por intento
+a 1 MP y 7 s a 4 MP.
 
-**Qué.** `AI-POST.md` §4: interruptor, configurador de seis controles,
-fichas de protecciones, *Otra variación*, vista previa en modo Rápido con
-divisor, actualización al soltar con el tiempo medido, opción de vista
-previa con el motor completo, informe de la guarda en el visor de
-resultados con el divisor de U5, y las dos miniaturas en la cola.
+Lo que no encajaba con el plan: (1) "Transferencia en dominio
+logarítmico" se hizo como logaritmo de la razón de los desenfoques (de
+luz, no de logaritmos: desenfocar logaritmos convierte un texto
+emborronado en un cambio de luz, por la desigualdad de Jensen), como dice
+§3.2. (2) La guarda trabaja en luz de escena: el cambio que el modelo
+hace en pantalla se pasa a escena por la pendiente de la curva, y la Luz
+es una ganancia gris de escena (como más luz en el motor); en el hombro
+de la curva eso desatura un poco, así que el ΔE₀₀ por material se mide
+contra la imagen del motor **con el cambio permitido** (estilo y
+luminancia dentro de los topes) vista por la misma curva: mide el cambio
+del color del material, no el de la luz. **Fable debe confirmar ese
+criterio** en X1b. (3) Nitidez, detalle y aristas se miden en luz de
+escena (la curva comprime el contraste de las altas luces como lo haría
+un render más claro, y eso no es desenfoque), y detalle y enfoque miran
+el interior de las regiones (a 4 px de una arista, el salto de una
+silueta cambia al reiluminar un solo lado; las aristas tienen su propia
+comprobación). El SSIM de la banda alta excluye además los píxeles donde
+Desgaste puede añadir detalle. (4) Comprobación de aristas por canal
+(máximo de los tres): con solo luminancia, reiluminar una pieza hasta la
+luminancia del fondo "borraba" una arista que sigue viéndose por el
+color. (5) Un mosaico de otro tamaño rechaza a la primera (una fuerza
+menor no lo arreglaría) y entrega la imagen del motor. (6) Reglas
+provisionales que deja anotadas para X1b: admite desgaste toda familia
+con tipos de desgaste en el catálogo (todas menos la emisiva; quizá el
+vidrio no debería), los emisores quedan bloqueados, profundidad de
+superficie más lejana 16. (7) `AiPostRequest` no lleva la tabla de
+materiales de la guarda ni el orden de materiales del RSB: X3c tendrá
+que añadir `materials?: AiGuardMaterial[]` (o derivarla en el lanzador)
+y `io/rsb.ts` exportar el orden (`guardMaterials(state, orden)` ya lo
+espera); el código de la curva de tono (`tonemapFor`) también vive en
+`io/`, así que el trabajo lo recibe como número. (8) La razón de un
+LIMITED dice cuánto se rebajó, no por qué falló el primer intento; el
+motivo de cada reintento sale en `Retry.reason` para el registro. (9)
+Las alineaciones: el ABI de `post.wasm` recibe bytes *little-endian*, no
+`f32` alineados, para no exigir alineación de punteros.
 
-**Depende de.** X3.
+### X3b · stable-diffusion.cpp en escritorio — **Opus** — hecha
 
-**Criterio.** Cada control a 0 no cambia su aspecto (test con el modelo
-sintético); la vista previa no se recalcula durante un arrastre; capturas
-de la sección y del visor con el divisor.
+**Qué.** `AI-POST.md` §7.1: `src/data/ai-runtimes.json` con las
+compilaciones oficiales fijadas (Vulkan y CPU, Windows y Linux x86_64:
+URL, tamaño, `sha256`, licencia citada, versión, `supports` comprobado),
+la regla de elección (Vulkan con GPU, CPU sin ella) evaluada igual por la
+interfaz y el lanzador, descarga e instalación desde *Ajustes ▸
+Post-procesado IA* (fila *Motor de ejecución*, con progreso, reanudación
+y `sha256`, a `<datos>/ai/runtimes/<sha256>/`), el proceso auxiliar en
+`rt-app` (arranque, argumentos por clave de modelo, progreso,
+cancelación, tiempo límite, cierre con la aplicación, sin ventana de
+consola en Windows) y la API `/api/ai/runtime` (estado como
+`AiRuntimeStatus`) y `/api/ai/run` (una inferencia *img2img* sin guarda:
+imagen, control, *prompt*, fuerza, semilla).
+
+**Depende de.** P2.
+
+**Criterio.** Tests con un proceso auxiliar **falso** (un binario de
+prueba que habla el mismo protocolo): argumentos exactos por clave,
+progreso, cancelación, tiempo límite, proceso colgado, salida de tamaño
+distinto rechazada; un `sha256` que no coincide no se instala. Con la
+compilación real de Linux CPU, `--help`/versión se leen y la fila de
+*Ajustes* lo muestra. Sin descargar pesos de varios GB en este entorno: la
+primera imagen real se hace en el equipo del usuario.
+
+**Hecho.** `src/data/ai-runtimes.json` fija la *release* oficial
+**`master-959-d637cfb`** de stable-diffusion.cpp (*commit* `d637cfb9…`,
+2026-10-12; ggml `d25b121c…`): `SDCPP_WIN_VULKAN` (30 139 117 B),
+`SDCPP_WIN_CPU` (17 558 769 B), `SDCPP_LINUX_VULKAN` (37 009 067 B) y
+`SDCPP_LINUX_CPU` (26 143 940 B), cada zip descargado una vez para medirlo
+y calcular su `sha256`; licencias MIT citadas en `docs/ai-licences.md` §7.
+`supports`: las seis claves de escritorio según la documentación del *tag*
+y los argumentos que construimos; `verified: []`. En el mismo JSON, como
+datos que X1 puede corregir sin tocar código: la **regla de elección**
+(filas `choice`, evaluadas igual por `src/core/ai-runtimes.ts` y
+`rt-app/src/ai/catalogue.rs`, las dos contra
+`tests/fixtures/ai-runtime-cases.json`) y los **perfiles por familia**
+(argumentos de carga con `@rol`, pasos, cfg, muestreador, *flow shift*,
+imagen como `init` o `init+ref`, ControlNets). En `rt-app/src/ai/`, solo
+`std`: *inflate* (RFC 1951) y zip (APPNOTE, Zip64) propios, lector PNG
+completo (todos los tipos, filtros, Adam7), base64; el almacén de motores
+(`<datos>/ai/runtimes/<sha256>/`, `sha256` antes de instalar, descompresión
+segura, `--version` y `--list-devices`); el **modo servidor** (`sd-server`,
+API nativa `/sdcpp/v1/img_gen`, el modelo queda cargado) en una dirección
+de bucle local aleatoria, con progreso leído de la salida estándar,
+cancelación, tiempo límite, detección de cuelgue, caída, rechazo de
+tamaño distinto, liberación por inactividad y al cerrar, y limpieza del
+que dejara un arranque anterior; la API `/api/ai/runtime`,
+`/api/ai/runtimes/<clave>/…` y `/api/ai/run`. Interfaz: `src/io/ai-runtime.ts`
+y la fila *Motor de ejecución* de *Ajustes* con *Ejecutar con*
+(`ai.backend`). Pruebas con `rt-fake-sd`, un binario de prueba que habla
+el mismo protocolo, y con el `curl` real contra un servidor local. **De
+verdad**, aquí: los cuatro zips descomprimidos por nuestro lector salen
+idénticos fichero a fichero a los de `zipfile` de Python; la compilación
+real de Linux CPU se instala por el lanzador y responde `--version`
+(*stable-diffusion.cpp version unknown, commit d637cfb*), `--list-devices`
+y `--help`, y la fila lo muestra; la descarga real desde GitHub con pausa a
+4,7 MB y reanudación tarda 4,3 s; y un *img2img* real con `SD15_LIGHT` en
+CPU (512², 8 pasos × fuerza 0,5 = 5 pasos de muestreo, pesos fijados
+comprobados por `sha256` y borrados después) dio una imagen correcta en
+**1307 s** de punta a punta (la máquina compartida con otros agentes, con
+carga media de 10 a 15 en 4 vCPU: 1 s en arrancar el servidor, 3,5 min
+leyendo pesos en el primer uso, 6 min hasta el primer paso (codificar la
+imagen), de 2,5 a 3 min por paso y 3,5 min en decodificar; no es una
+medida de rendimiento, que es de X1 parte B).
+
+**No encajó con el plan.** (1) La descarga no puede hacerla la página
+como la de los modelos: las descargas de *releases* de GitHub no mandan
+cabeceras CORS. La hace el lanzador con el `curl` del sistema (en Windows
+desde 10 1803), con el mismo progreso, pausa, reanudación y `sha256`; sin
+`curl`, *Instalar desde un archivo…*. (2) No hay compilación «AVX2»
+oficial: la de CPU lleva todas las variantes x86-64 de ggml y elige en
+tiempo de ejecución. (3) Las de Windows necesitan el entorno de Visual C++
+2015–2022 (no lo traen): si falta, la fila dice qué DLL; el instalador
+(P2) debería instalarlo. Las de Linux necesitan glibc 2.38 (Ubuntu 24.04
+o posterior). (4) `sd-server` refleja cualquier `Origin` y numera sus
+trabajos: por eso la dirección aleatoria `127.a.b.c`. (5) Carga los pesos
+en el primer uso: el primer trabajo enseña *Cargando*. (6) Las de edición
+(klein, Qwen-Edit) van como *img2img* más imagen de referencia
+(`init+ref`): construcción nuestra, sin probar. (7) `ai.gpu` (qué GPU) no
+se pasa: no hay correspondencia fiable con los índices de Vulkan; elige
+stable-diffusion.cpp. (8) Los límites (carga 30 min, imagen 60 min,
+silencio 10 min, inactividad 5 min) son de partida, para X1. (9) El
+catálogo de compilaciones es siempre el incluido; las pruebas ponen el
+suyo con `server::Options` al construir el servidor, campo que la
+aplicación no rellena nunca. (10) *Acerca de* no lista aún
+stable-diffusion.cpp y ggml: sus textos van en la carpeta del motor y en
+`docs/ai-licences.md`.
+
+**Corrección tras fusionar (CI en *release*).** La primera versión leía
+`<datos>/ai/runtimes-override.json` solo en depuración, y las pruebas
+entraban por ahí. El trabajo del motor en CI también corre
+`cargo test --workspace --release`, y allí 9 de las 11 pruebas de
+`tests/ai.rs` fallaban: las pruebas eran más permisivas que el binario
+de verdad. Ahora el catálogo y el descargador de prueba entran por
+`server::Options { ai_runtimes }` (`Server::start_with`). `Ai::new` ya no
+lee nada de la carpeta de datos en ninguna compilación, y lo comprueba
+`a_catalogue_in_the_data_folder_is_never_read`, que falla si vuelve la
+lectura. Había un segundo supuesto de depuración: la prueba de pausa y
+reanudación esperaba más de 1 MB descargado, y en *release* el falso
+ocupa menos de 600 kB. El archivo lleva ahora 8 MiB de relleno y la
+pausa se pide a 1/8 del total. Se pasan las dos: `cargo test --workspace`
+y `cargo test --workspace --release`.
+
+**Segunda corrección (CI, el servidor huérfano).** En el ejecutor de
+GitHub, `a_server_left_by_a_previous_launch_is_stopped_at_start` fallaba
+una de cada dos veces con «the orphan still runs». La causa estaba en la
+prueba. Arrancaba el servidor falso un instante antes de la limpieza.
+`posix_spawn` es un *vfork*, y Linux deja seguir al padre antes de que
+termine el `execve` del hijo, cuando el hijo aún usa la memoria del
+padre. En ese momento `/proc/<pid>/exe` todavía nombra el ejecutable de
+la prueba, así que la limpieza acertaba al no matarlo. Se reprodujo en
+local reteniendo el `exec_update_lock` del hijo (`/proc/<pid>/syscall`):
+el `exe` leído era el binario de la prueba. Ahora la prueba espera, por
+condición y con un plazo de 60 s, a que el falso haya creado `args.log`
+(eso lo hace su propio código), y lo mata al terminar aunque falle. Con
+el bloqueo retenido pasa 20 de 20 veces; la forma anterior fallaba 2 de
+20. Al revisar cómo se reconoce el proceso apareció un huérfano real:
+la limpieza comparaba la ruta tal cual estaba escrita, y si la carpeta de
+datos está detrás de un enlace simbólico, el núcleo da la ruta con el
+enlace resuelto. Un servidor dejado ahí no se paraba nunca. Ahora se
+compara el archivo (dispositivo e inodo, `proc::runs_server`), o la ruta
+con los enlaces resueltos cuando el archivo ya no existe. Lo comprueban
+`a_server_left_in_a_data_folder_behind_a_link_is_stopped_too` y la
+prueba unitaria `a_server_is_recognised_through_a_link`; las dos fallan
+con la comparación anterior.
+
+### X3c · La tubería completa de escritorio — **Opus** — hecha
+
+**Qué.** `AI-POST.md` §7.3: `/api/ai/post` en el lanzador (pases
+guardados del render → `rt-post` → stable-diffusion.cpp por mosaico →
+`rt-post` → reintentos), progreso y cancelación; el `AiPostService` de
+escritorio en `src/io/`; integración en la cola (el trabajo guarda las
+dos imágenes y el informe; el historial las conserva); `AI_AVAILABLE`
+pasa a ser lo que diga `status()`. Además, lo que dejaron anotado X3a y X4: el suelo con `FLOOR_ID`
+(`AI-POST.md` §7.4) en la guarda, el servicio sintético y los pases de
+three.js; la tabla de materiales de la guarda en `AiPostRequest` y el
+orden de materiales exportado por `io/rsb.ts`; el *prompt* real de
+`src/ai/prompt.ts`; la fuente `RENDER` en la cola; las bibliotecas de
+Visual C++ que necesita stable-diffusion.cpp en Windows (junto al
+ejecutable o en el instalador); stable-diffusion.cpp y ggml en *Acerca de*.
+
+**Depende de.** X2, X3a, X3b; X4 para verlo de punta a punta.
+
+**Criterio.** De punta a punta con el proceso auxiliar falso: un render
+final con IA deja dos imágenes y el informe en el historial; con
+intervención 0, la imagen de la IA es la del motor bit a bit; cancelar a
+mitad deja la del motor; un modelo que la compilación no carga sale con
+el motivo. Lista corta de comprobación para el equipo del usuario (Vulkan,
+una imagen de 1024², tiempo anotado).
+
+**Hecho** (2026-10-13). **Lanzador** (`rt-app/src/ai/post.rs`, que enlaza ahora `rt-post`):
+`POST /api/ai/post` con `{source: {kind: RENDER, renderId}, settings, prompt, negative, modelKey,
+materials}` o, para la vista previa, el cuerpo binario `RPI1` (JSON, imagen `RPL1`, pases `RPP1`,
+≤ 512 px); `GET /api/ai/post/<id>?after=n` (estado, `stage`, mosaico y intento desde 1, fracción
+que no retrocede, `calls`, el `GuardReport` al terminar), `GET …/image` (`RPL1`, lineal con alfa
+recto) y `DELETE`; `aiPost: 1` en `/api/info`. El conductor nativo es la máquina de pasos de X3a
+(`plan` → `tile_input` y `control_planes` por mosaico → el `sd-server` de X3b, cargado entre
+llamadas → `accept` → reintentos a `RETRY_FACTOR` hasta `MAX_ATTEMPTS`); con Intervención 0 el plan
+no tiene mosaicos, no se prepara ni se arranca el motor de ejecución (funciona sin él instalado) y
+la imagen es la del motor bit a bit; un mosaico de otro tamaño llega a la guarda como tal (la
+comprobación `size`) y rechaza a la primera; un post por el que nadie pregunta en 2 min se para.
+El almacén de X2 guarda con cada render su exposición y su curva (`Look`, también en disco), y la
+imagen lineal es la conversión de la página (`linear_of`: las sumas por `fround(1/n)`, el color entre
+la cobertura donde no es opaca, el umbral `1 − 1e-6` en `f64` como el número de JavaScript; un
+umbral `f32` habría llamado opaco al `f32` justo por debajo, y la prueba lo vigila). El falso
+`rt-fake-sd` gana un modo `gain` (aclara con suavidad, como un modelo que obedece) y `acceptMs` (un motor que tarda en tomar el trabajo, para ver el estado de inicio de cada mosaico). **Visual C++**:
+`proc::missing_dll`, `Probe.dllMissing` y `needs_vc_runtime` (Windows, una DLL que falta y alguna del
+entorno de Visual C++ ausente de la carpeta del motor y de `System32`) → `vcRuntime: "missing"` y
+`vcRuntimeUrl` en la fila; la interfaz enseña *Instalar el entorno de Microsoft Visual C++…* (la página
+oficial de Microsoft con `openExternal`: no redistribuimos sus DLL) y *Comprobar de nuevo*.
+*Acerca de* lista stable-diffusion.cpp y ggml con sus textos MIT, copiados byte a byte de los *commits*
+fijados (`tools/third-party/`, `tools/licences.mjs`). **Página**: `src/io/ai-post.ts`
+(`DesktopAiService`: `status()` es `/api/ai/runtime` con los ajustes de la persona y el modelo activo,
+`aiRuntimeQuery` de `src/ui/ai-query.ts`; `post()` manda, sigue, lee la imagen y olvida; un aborto manda `DELETE`); `main.ts` lo
+usa cuando el lanzador dice `aiPost`, la web sigue con `notBuiltService` y `?ai=synthetic` con el
+sintético; **`AI_AVAILABLE` ya no existe**. La cola pide al render que deje los pases de la guarda en el
+lanzador (`aiPasses`, `passesInLauncher`: ni siquiera vuelven a la página; sin albedo, que la guarda no
+usa y cuesta un rayo por muestra), manda la fuente `RENDER` con la tabla de materiales
+(`guardMaterials` sobre `ProjectScene.materialOrder`) y el *prompt* de `src/ai/prompt.ts`, enseña el
+progreso por mosaico en la fila (*IA · mosaico 2 de 4 · intento 2*, `RenderProgress.ai`) y escribe la
+imagen de la IA desde la luz lineal con la exposición y la curva del render (`straightBytes`,
+`straightWords16`, `straightExr`: PNG de 8 y 16 bits bit a bit con el del motor, EXR en cada píxel opaco);
+detener o pausar durante la IA conserva la imagen del motor en el historial y, con *Pausar*, el trabajo
+vuelve a esperar como en P3a. **El suelo, `FLOOR_ID`**: en la guarda era casi una región, pero
+`FLOOR_ID` es `u32::MAX`, el mismo valor con el que empezaba la caché de regiones, así que un suelo visto
+antes que cualquier pieza se quedaba como fondo; ahora es una región de verdad, que se reilumina y tiene
+su comprobación de color (*Floor*, sin desgaste); la profundidad del control se normaliza sobre las piezas
+y el suelo se dibuja a esa escala, recortado (su plano llega al horizonte); el servicio sintético lo nombra;
+los pases de three.js lo encuentran con los rayos centrales del motor (`floorHits`, perspectiva y
+ortográfica, también desde debajo del suelo) y coinciden con los del motor en cada píxel del suelo,
+horizonte incluido. **De verdad aquí**: el lanzador real con todo el código de la página (motor nativo,
+cola, servicio de escritorio) contra el falso instalado donde iría la compilación fijada de Linux
+(`tests/ai-desktop.test.ts`); y una vez la tubería entera con stable-diffusion.cpp real y SD 1.5 con su
+ControlNet de profundidad en CPU (`real_post_with_sd15_and_its_depth_controlnet_on_the_cpu`, ignorada sin los pesos): el ejemplo de 256 × 192 con el suelo, Intervención 100 y 10 pasos (5 de muestreo a fuerza 0,4), **53 s** en 4 núcleos (13 s de carga de pesos, ~6,5 s por paso), aceptada al primer intento: detalle 0,998, bordes 0,02, ΔE₉₅ 1,9 en el coral y 1,6 en el azul; el suelo llegó a 2,2 y la guarda dejó su cambio de color al 71 %. Los pesos se borraron después. **Con el falso**: todo lo demás. Pruebas: 13 nuevas en
+Rust (3 de `rt-post`, 3 unitarias de `rt-app` y 9 de `tests/ai_post.rs`, una más ignorada con los pesos
+reales) y 29 de vitest (14 del servicio y de lo que se le pregunta, 4 contra el lanzador real, 4 de la cola, 3 de los pases, 1 del
+sintético, 3 de la fila del motor y *Acerca de*), más las de X2 y X4 que cambian con el suelo; 26
+mutaciones comprobadas, cada prueba falla si se rompe lo que guarda.
+
+**No encajó con el plan.** (1) **El control**: §3.2 pide bordes y profundidad al ControlNet, y *tile*
+para salidas grandes; `sd-server` lleva un solo ControlNet cargado y solo SD 1.5 tiene alguno en los
+perfiles (*tile* y *depth*), así que se manda la profundidad de los pases (la primera de `depth`, `tile`
+que tenga la familia) en vista previa y en final por igual, para no reiniciar el servidor entre una y
+otra; los bordes no tienen ControlNet en los perfiles. Decisión provisional para X1b. (2) **La profundidad
+con suelo**: §7.2 dice «normalizada sobre toda la imagen»; con el suelo como superficie, su plano hasta
+el horizonte dejaba el producto en unos pocos niveles, así que la escala es la de las piezas y el suelo se
+recorta a ella (sin piezas, el suelo marca la escala). Pendiente de Fable en X1b. (3) **EXR en el
+visor**: el historial guarda la imagen de la IA de un trabajo EXR tal cual (EXR) y los navegadores no la
+muestran: la miniatura sale de una copia de 8 bits, pero el visor no compara *Render | IA* en EXR (haría
+falta una segunda imagen de vista en el historial, como el `display` del motor; queda anotado). (4)
+**Pausar durante la IA**: el trabajo vuelve a esperar (P3a: un render no se reanuda a medias) y la imagen
+del motor ya está en el historial, así que *Reanudar* deja un segundo resultado del mismo trabajo. (5)
+**`AiPostRequest`** gana `materials?` (añadido); el resto del contrato añadido va fuera de `core/ai.ts`:
+`FrameRequest.aiPasses`, `FrameResult.renderId` y `tone`, `AiEncodeOptions.tone`, `AiPort.materials` y
+`renderSource`, `AiPort.scenePrompt(state, settings?)`, `RenderProgress.ai`, `PassIds.floor`,
+`RenderOptions.passesInLauncher`, `AI_GUARD_PASSES` (`core/ai-post.ts`). (6) La fracción de la IA ocupa la
+barra del trabajo en su lugar (el render ya terminó): la fila dice qué mide. (7) Las Visual C++ no van
+junto al ejecutable ni en el instalador: no se redistribuyen; el botón lleva a Microsoft. (8) *Ajustes ▸
+Post-procesado IA* ya no dice *llega en una próxima versión* donde el servicio no dice `NOT_BUILT`.
+(9) Apagar el interruptor libera el modelo (`DELETE /api/ai/sidecar`, que no hace nada si un trabajo lo
+usa). (10) La tolerancia `detailSsim` (y las demás) se puede pasar en la petición (`tolerances`) para
+calibrar en X1b; las pruebas lo usan para forzar reintentos. (11) Con el motor real, la primera
+llamada dice *inferencia* medio segundo antes de que `sd-server` pinte su barra de carga (el trabajo ya
+está `generating` y aún no hay barra); la fracción no retrocede y luego dice *cargando*: cosmético,
+anotado para X3b. (12) **El modelo activo en la ventana de render**: sin un modelo elegido a mano, el activo
+es la recomendación para el equipo, y la detección del equipo solo la lanzaba *Ajustes*; con el servicio de
+escritorio, el interruptor decía *No hay ningún modelo descargado* y llevaba a *Ajustes* aunque el modelo
+estuviera instalado (lo enseñaron las capturas contra el lanzador real). Ahora el escritorio con `aiPost`
+detecta el equipo al arrancar, la sección también la lanza, y la sección vuelve a preguntar cuando cambia lo
+que pregunta (`aiStatusKey`: el dispositivo, el *backend*, el modelo activo, los modelos instalados), con su
+prueba. (13) **La cabecera del visor de resultados** apretaba el informe de la guarda en una columna estrecha
+junto al título, una o dos palabras por línea (la barra de botones no cedía sitio): ahora el informe tiene su
+línea propia a todo lo ancho (una sola, con puntos suspensivos y el texto entero en el aviso), la barra pasa bajo
+el título cuando no caben juntos y *Cerrar* se queda en la esquina. `tools/ai-post-check.mjs` (j) lo mide a
+1600, 1280 y 960 px en inglés y en español (solapes, salidas de la cabecera, una línea, a todo lo ancho, el
+título entero) y falla con la cabecera de antes; capturas `docs/ui/ai-results-viewer.png` y
+`ai-results-light.png` rehechas.
+
+### X3d · La web — **Opus**
+
+**Qué.** `AI-POST.md` §2.3: ONNX Runtime Web (MIT) con WebGPU en
+workers por etapa, **exportar el codificador del VAE a ONNX** desde el
+`ae.safetensors` Apache-2.0 para que exista `ZIMAGE_WEB` (con sus
+`sha256`), caché en OPFS con `persist()`, fragmentos de ≤ 1 GiB, el
+conductor de la máquina de pasos en un worker con `post.wasm`.
+Dependencia nueva anotada en `ARCHITECTURE.md` §1.
+
+**Depende de.** X3c.
+
+**Criterio.** El mismo de X3c con el servicio web; sin WebGPU, el
+interruptor queda deshabilitado con el motivo.
+
+## X4 · Interfaz del post-procesado — **Sonnet** — hecha
+
+**Qué.** `AI-POST.md` §4 y §7.5: interruptor, configurador de seis
+controles, fichas de protecciones, *Otra variación*, vista previa en modo
+Rápido con divisor (los pases de §7.4 dibujados con three.js al tamaño de
+la vista previa), actualización al soltar con el tiempo medido, opción
+de vista previa con el motor completo, informe de la guarda en el visor
+de resultados con el divisor de U5, y las dos miniaturas en la cola; los
+ajustes en el *store* (§7.5). Todo contra `AiPostService`
+(`src/core/ai.ts`) con un **servicio sintético** (determinista, sin
+modelo) hasta que X3c conecte el real; mientras, el interruptor dice
+*próximamente* fuera de los tests.
+
+**Depende de.** U5, U6; el contrato de `src/core/ai.ts`.
+
+**Criterio.** Cada control a 0 no cambia su aspecto (test con el servicio
+sintético); la vista previa no se recalcula durante un arrastre; los
+pases de three.js coinciden con los del motor en ids y profundidad en una
+escena de prueba; capturas de la sección y del visor con el divisor.
+
+**Hecho.** *Store* (§7.5): `RenderSettings.ai` es `{ enabled, previewFullEngine }
+& AiPipelineSettings` con `DEFAULT_AI`; `normaliseAi` deja los controles en
+enteros 0..100, un estilo desconocido en `NATURAL` y la semilla en u32, y
+devuelve el mismo objeto cuando nada cambia; un proyecto antiguo (`{ enabled }`)
+se abre con los valores por defecto; cada control es una acción de `render/set`
+deshacible (arrastrar un control, un paso), *Otra variación* cambia la semilla
+(`nextSeed`, congruencial sin repetición), los trabajos copian los ajustes y
+la intervención por defecto de Ajustes llega a los proyectos nuevos. **Ventana
+de render** (`ui/panels/ai-post.ts`): interruptor con la línea del modelo en
+uso (datos del gestor de Ajustes), motivo de `AiUnavailableReason` cuando no
+puede, y abrir Ajustes cuando falta modelo o motor; los seis controles con su
+frase, las seis fichas con candado sin interruptor y *Otra variación*; vista
+previa del modo Rápido a 384–512 px con el divisor de U5, **al soltar** (el
+cerebro está en `ui/ai-preview.ts`, sin DOM: `hold`/`touch`/`release`, el
+fotograma se reutiliza mientras solo cambian los controles, una vista previa
+vieja se abandona), tiempo **medido** alrededor de la llamada a la tubería,
+la nota del modo Rápido y la opción del motor completo. **Pases con three.js**
+(`render/preview-passes.ts`, `PreviewEngine.aiFrame`): albedo, normal en el
+mundo con Z arriba, profundidad a lo largo del eje, ids de pieza y de material
+(índice RSB + 1, que `projectScene` entrega ahora en `ids`) empaquetados en
+bytes en un blanco de 8 bits sin filtro ni *multisample*, y el círculo de
+confusión de la lente fina (`core/lens-coc.ts`). **Servicio sintético**
+(`ai/synthetic.ts`): una ganancia suave sobre la imagen del motor (la luz sube
+las sombras, los rebotes calientan las bajas frecuencias, el estilo tiñe, el
+desgaste no añade nada, la semilla solo ondula), todo a 0 devuelve la entrada
+bit a bit, informe de la guarda **medido** (tamaño, píxeles fuera, desplazamiento
+de bordes, SSIM de la banda alta, nitidez por mosaico, ΔE₀₀ por material con
+CIEDE2000) y la regla de reintentos de §7.2 (`LIMITED`, `REJECTED`). Solo corre
+con `?ai=synthetic`; sin él el interruptor dice *próximamente*. **Visor y
+cola**: el trabajo guarda la imagen del motor y, al lado, la de la IA
+(`…_AI.png`); el resultado conserva las dos y el informe (`ResultMeta.ai`,
+solo campos añadidos); el visor abre *Render | IA* con el divisor, la línea
+*Comprobado: …*, *La IA se limitó al N %* o la frase del rechazo, y guarda
+cada imagen por separado; la cola y el historial enseñan las dos miniaturas.
+**Almacenamiento de la segunda imagen**: un cuarto parámetro opcional `ai` de
+`ResultsStore.add` y `ai?` en lo que devuelve `get`; IndexedDB la guarda en el
+mismo registro de blobs y el escritorio, por el asiento de P3e, como
+`<datos>/results/<id>.ai.<ext>` con `PUT`/`GET /api/store/results/<id>/ai`
+(cambio pequeño en `rt-app/src/appdata.rs`, su prueba y el README del
+*crate*); ningún acceso nuevo al almacenamiento del navegador en el
+escritorio. Tests: 1.390 de vitest (98 de X4, 6 de ellos en un Chromium con SwiftShader
+que se salta donde no hay navegador: tres.js contra el rayo de la CPU con las
+reglas del motor) y una prueba nueva del lanzador (`rt-app`, 9 de `appdata`);
+8 mutaciones comprobadas; 25 comprobaciones del navegador en
+`tools/ai-post-check.mjs` (y siguen verdes las de U5 y U6).
+Capturas: `docs/ui/ai-section-dark.png`, `ai-section-light.png`,
+`ai-results-viewer.png`, `ai-results-light.png` y `ai-queue.png`.
+
+**No encajó con el plan.** (1) `AI_AVAILABLE` ya no lo lee el *store*:
+`patchSettings` dejaba `enabled` en falso mientras la constante lo fuera, y
+con un servicio que dice `available` eso no se sostiene; el interruptor y la
+cola miran `AiPostService.status()` (el test de U5 *«video and AI stay off»*
+cambió a *«video stays off…»*). (2) Hasta X3c la entrada de la IA en la cola
+es **INLINE**: se decodifica la imagen de 8 bits que ya se ha guardado
+(`display ?? file`) y los pases se dibujan con three.js al tamaño del
+trabajo, en lugar de la fuente `RENDER` que guardará el lanzador con la
+imagen lineal; por eso la imagen de la IA sale con la calidad de 8 bits, aun
+en un trabajo EXR o PNG de 16 bits. La vista previa trata la imagen del modo
+Rápido (con su curva de tono) como luz lineal decodificada con sRGB; qué curva
+ve el modelo real lo decide X3c. (3) El `coc` sigue `Camera::generate_ray`
+(sensor a la distancia focal, apertura `focal/fstop`, plano de enfoque a
+`focusDist`): la huella de un píxel en el plano de enfoque es
+`sensor/ladoLargo × focusDist/focal`; la lente fina exacta cambia `focusDist`
+por `focusDist − focal`. **X2 debe emitir la misma fórmula.** (4) Los pases de
+three.js son una aproximación del contrato: el albedo es el color base del
+primer impacto (no sigue los rebotes especulares), el suelo y los paneles de
+luz no cuentan (fondo 0 / +∞), las dos caras de un triángulo cuentan y la
+normal se da orientada hacia quien mira; X2 tiene que decidir lo mismo o se
+anota la diferencia. (5) *ΔE máx* es el mayor ΔE₀₀ **medio** de un material, y
+*geometría ✓* reúne bordes, píxeles fuera y detalle de banda alta; si la guarda
+real reparte las comprobaciones de otro modo, cambia `reportItems`. (6) El
+servicio sintético usa como límites los valores de fábrica de Ajustes ▸
+Avanzado, no los de X1. (7) Las animaciones no pasan por la IA (el interruptor
+queda deshabilitado en *Animación*, con *próximamente*); la imagen de la IA se
+guarda sola junto a la del motor, con el sufijo `_AI`, para que un lote la
+tenga sin abrir cada resultado. (8) `numberField` y `slider` ganan `onHold` y
+`onRelease`, y el deslizador **sigue ahora al valor al deshacer** aunque tenga
+el foco (antes la perilla se quedaba donde estaba mientras el campo cambiaba:
+lo encontró la comprobación del navegador, que ahora lo vigila). (9) El
+*prompt* es un hueco (`AiPort.scenePrompt`: vacío y el negativo fijo de §3.2)
+hasta que X3a traiga `src/ai/prompt.ts`; `rw.aiWhy.NO_WEBGPU` entra en
+`WEB_ONLY_STRINGS` (nombra el navegador y solo puede darse en la web).
+
+**Espera a X3c.** Conectar el servicio real (hoy `main.ts` elige entre el
+sintético y `notBuiltService`), cambiar la entrada de la cola a la fuente
+`RENDER` con los pases que guarda el lanzador, el progreso por mosaico en el
+trabajo (hoy se ignora `onProgress` en la cola), el *prompt* de X3a, quitar
+`AI_AVAILABLE`, y que las dos imágenes del historial salgan de la imagen
+lineal del motor. Y X2: los mismos ids, la misma profundidad y el mismo `coc`
+que dibuja la vista previa (el test del navegador es la vara de medir).
+
+## X4b · Prompt propio y variantes — **Opus**
+
+**Petición del usuario (2026-10-13):** «si lo soporta el modelo, que deje
+un prompt de texto en la configuración del render en cuestión, y que se
+puedan hacer unas cuantas variantes; por defecto, una sola».
+
+**Decisiones del líder.**
+- **Prompt propio** en la sección *Post-procesado IA* de la ventana de
+  render (es del trabajo: se guarda en el proyecto, se deshace y cada
+  trabajo de la cola lleva el suyo): un campo de varias líneas, vacío por
+  defecto, de hasta 400 caracteres, con la nota *Describe la luz o el
+  ambiente; la geometría, los materiales y el enfoque siguen protegidos*.
+  Se **añade** al *prompt* que se genera de la escena (`src/ai/prompt.ts`),
+  nunca lo sustituye, y el negativo fijo sigue. Solo aparece si el modelo
+  activo lo admite: una capacidad nueva `textPrompt` en
+  `src/data/ai-models.json` (se añade, no se renombra nada; los modelos de
+  origen la tienen; un importado la declara en su `model.repackshot.json`);
+  si no, el campo se ve deshabilitado con el motivo.
+- **Variantes**: un número de 1 a 8, **1 por defecto**, junto a *Otra
+  variación*. Un trabajo con N variantes hace **un solo render del motor**
+  y N pasadas de IA con semillas consecutivas (semilla, semilla + 1…),
+  con el modelo cargado una vez; la cola dice *IA · variante 2 de 4 ·
+  mosaico 3 de 4*; cada variante lleva su informe de la guarda. La vista
+  previa sigue siendo de una sola variante. Se avisa del tiempo estimado
+  (N × lo medido) cuando hay medida.
+- **Resultados**: un resultado guarda el render y sus N imágenes de IA
+  (en escritorio, `<id>.ai.<n>.<ext>` en la carpeta de resultados; el
+  `ai` de antes se lee como la variante 1); el visor muestra una tira de
+  miniaturas para elegir variante, el divisor compara la elegida con el
+  render y se puede *Guardar esta variante* o *Guardar todas*; el
+  historial y la cola muestran cuántas hay. Nombres de archivo con el
+  sufijo `_AI`, `_AI_2`, `_AI_3`…
+
+- **Prompt del sistema** (petición del usuario, 2026-10-13): en *Ajustes ▸
+  Post-procesado IA* un apartado *Prompt del sistema*, general para todas
+  las imágenes (es un ajuste de la aplicación, no del proyecto), con un
+  campo de varias líneas, *Restablecer el predeterminado* y la nota de que
+  las protecciones de la guarda no dependen de él. Orden al componer:
+  **sistema → escena → propio del trabajo**; el negativo fijo, aparte. El
+  predeterminado lo fija el líder, en inglés (los codificadores de texto
+  de los modelos rinden mejor en inglés):
+
+  > Photorealistic product photograph. Keep the image exactly as rendered:
+  > the same composition, framing, geometry, proportions, edges,
+  > materials, colours, labels, text and logos. Respect the existing
+  > lighting: the direction, size, softness and colour of every light,
+  > and the shadows and reflections they cast. Respect the existing depth
+  > of field: what is in focus stays sharp, what is out of focus stays
+  > soft. Improve only realism and naturalness: subtle light falloff,
+  > soft contact shadows, natural bounce light and colour bleeding,
+  > believable highlight roll-off, fine surface micro-detail and gentle,
+  > plausible imperfections. True-to-life tones, as if shot with a
+  > high-end camera and lens. No stylisation, no added objects or props,
+  > no change of background.
+
+  Para modelos con límite de longitud del *prompt* (SD 1.5: 77 *tokens*
+  de CLIP; una capacidad `maxPromptTokens` en `ai-models.json`), se usa
+  la versión corta, también del líder, y el resto se recorta en este
+  orden (lo propio del trabajo primero, luego la escena, luego el
+  sistema), avisando de lo recortado:
+
+  > photorealistic product photo, same composition, geometry, materials
+  > and labels, same lighting and depth of field, natural soft shadows,
+  > subtle bounce light, realistic highlights, fine micro-detail,
+  > true-to-life colours, nothing added
+
+**Criterio.** Tests: el prompt propio llega al modelo tras el de la escena
+y el negativo fijo intacto; sin capacidad `textPrompt`, no se envía y el
+campo lo dice; N variantes = un render del motor y N llamadas con
+semillas consecutivas, y cancelar a mitad deja el render y las variantes
+terminadas; guardar y abrir (proyecto y resultados, también los de una
+sola `ai` de antes); deshacer del prompt (un cambio de texto es una
+entrada al salir del campo) y del número; cadenas en `es` y `en`; cromo
+acromático; capturas de la sección y del visor con varias variantes.
 
 ## X5 · Ajustes y modelos — absorbida en U6
 
@@ -1422,8 +2777,8 @@ sigue iluminada por él (comparación de medias); capturas.
 **Qué.** `INTERIORS.md` §4, puntos 1 a 7, en `rt-core`: desplazamiento
 de origen por ULP (Wächter y Binder) y BVH de dos niveles con instancias;
 sol como disco con muestreo de cono y excluido del entorno; cielo
-Hošek–Wilkie (tras confirmar la licencia de las tablas; si no,
-Preetham) e HDRI con CDF 2D; rectángulos y discos por ángulo sólido;
+físico (hecho en E5c: la forma de Hošek–Wilkie con coeficientes propios,
+sin sus tablas) e HDRI con CDF 2D; rectángulos y discos por ángulo sólido;
 vidrio fino; **portales** (sección `PORT`) con tabla de área sumada por
 portal y MIS; **árbol de luces** (Conty y Kulla, nodo compacto como
 pbrt-v4; todas las luces si ≤ 8); *clamping* de directo e indirecto en
@@ -1481,9 +2836,10 @@ variantes.
 
 **Qué.** Habitación de ejemplo procedural con sofá y lámpara (K2) y, como
 activos descargables bajo demanda y nunca en el paquete base, una
-selección de Poly Haven (modelos de mobiliario y HDRI de interior, CC0) y
-ambientCG (HDRI y texturas, CC0) con **licencia y origen registrados por
-archivo** en un `assets.json`; nada de Quaternius ni 3D Warehouse;
+selección de Poly Haven (modelos de mobiliario, CC0) y ambientCG
+(texturas, CC0) con **licencia y origen registrados por archivo** en un
+`assets.json`; **ningún HDRI de terceros** (decisión del usuario,
+`STUDIO-TOOLS.md` §2: los entornos son recetas propias); nada de Quaternius ni 3D Warehouse;
 atribución para Khronos si se usa. Hoja de contactos de interiores en CI
 con `rt`.
 
@@ -1661,8 +3017,9 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 - **Post-procesado IA** (`AI-POST.md`): el modelo por defecto
   (provisional: Z-Image-Turbo) y las tolerancias de la guarda, tras la
   comparación de X1.
-- **Interiores** (`INTERIORS.md`): licencia exacta de las tablas de
-  Hošek–Wilkie (si no se confirma, Preetham); si se activa el aislamiento
+- **Interiores** (`INTERIORS.md`): ~~licencia exacta de las tablas de
+  Hošek–Wilkie~~ (resuelto en E5c: no se usan; cielo propio con la forma
+  publicada y coeficientes ajustados a nuestro simulador); si se activa el aislamiento
   de origen cruzado para compartir la escena entre workers; número de
   luces a partir del cual entra el árbol.
 - **Formatos nativos** (`.bip`, `.ksp`, `.sldprt`, `.ma`, `.ztl`, `.f3d`):
@@ -1700,23 +3057,413 @@ integra todo lo que la interfaz marca *próximamente***.
 
 | Fase | Responsable | Qué |
 | --- | --- | --- |
-| **P3a** | Opus | Modo Completo que no se para (reproducir con una sesión larga de cambios contra el lanzador y arreglar la causa), *Pausar* / *Reanudar* / *Iniciar cola* que funcionan en web y escritorio |
+| **P3a** (hecha) | Opus | Modo Completo que no se para (reproducir con una sesión larga de cambios contra el lanzador y arreglar la causa), *Pausar* / *Reanudar* / *Iniciar cola* que funcionan en web y escritorio |
 | **P3b** | Opus | Escritorio sin rastro de navegador: diálogos nativos de carpeta y archivo desde el lanzador (PowerShell en Windows, `zenity`/`kdialog` en Linux, sin `unsafe`), escritura de renders, proyectos y modelos por el lanzador, menú contextual, selección, traducción, zoom, recarga, impresión, búsqueda y navegación del navegador desactivados, icono y título propios; estudio de WebView2 para Windows |
 | **P3c** | Opus | **Ventana propia en Windows** (decisión del líder tras la captura del aviso «¿Desea salir de la aplicación?» de Edge: *todos los avisos y ventanas con nuestra interfaz, nada de avisos web; producto cerrado y profesional*): ventana Win32 sin marco con **WebView2** (el motor de Edge que trae Windows 10/11) y barra de título dibujada por nosotros (título, minimizar, maximizar, cerrar, arrastre), menús contextuales, atajos, barra de estado, zoom, autorrelleno, traducción, descargas y diálogos de script del navegador **desactivados por la API**, y el cierre (botón, `Alt F4`, barra de tareas) **interceptado** para preguntar con nuestra propia ventana si hay cambios sin guardar; Edge `--app` solo como respaldo automático si falta el *runtime*. En Linux sigue Chromium en modo aplicación con el endurecimiento de P3b hasta P3d (ventana propia con WebKitGTK, que exige un binario glibc y no el musl estático) |
-| **U7** | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*) |
+| **P3e** | Opus | **Escritorio: todo sobre el lanzador** (decisión del líder tras «se pisa el texto» y «dice no pillar la GPU por ser browser»: *en escritorio la página es solo interfaz*): una costura de plataforma con implementación web y de lanzador; ajustes, biblioteca, historial, miniaturas, equipo y espacio usado en la carpeta de datos por el lanzador; puerto estable por carpeta de datos; ni una fila que hable del navegador; filas de Ajustes que no se pisan |
+| **U7** (hecha) | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*), más selección por caja con `Ctrl/⌘` + arrastrar. Ver U7 y M1 más arriba |
 | **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
-| **E5b** | Opus | Profundidad de campo (lente fina), reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
-| **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie, anisotropía; desgaste visible en motor y visor |
+| **E5b** | Opus | Reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
+| **E5c** (hecha) | Opus | Cielo físico propio en sala limpia: la forma de Hošek–Wilkie con coeficientes ajustados a nuestro simulador de atmósfera (`rt-sky`), *Físico · Clásico* en *Entorno*. Ver E5c más arriba |
+| **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie (la anisotropía llegó con E5); desgaste visible en motor y visor |
 | **L4**, **L5** | Opus, Sonnet | Ya descritas: focos propios (área, punto, foco, sol) con todas sus operaciones; IES |
 | **M2** | Opus | Ya descrita: texturas de imagen y etiquetas |
 | **N1**, **N2** | Opus, Sonnet | Vídeo codificado (WebCodecs y muxers MP4 y WebM propios) y lo que quede de pases y lotes |
 | **U8** | Sonnet | Lo pequeño de la interfaz: copia automática y recuperación, letras de acceso en menús, cambiar atajos, *Buscar actualizaciones*, los chequeos del Doctor que faltan y sus *Arreglar* (**D1**) |
-| **X1b–X4** | Fable, Opus, Sonnet | Ya descritas: el post-procesado IA completo |
+| **X1b–X4** | Fable, Opus, Sonnet | Ya descritas: el post-procesado IA completo (X3 partida en X3a–X3d, `AI-POST.md` §7) |
+
+**P3a hecha.** Reproducido de verdad con una sesión larga de cambios
+contra el lanzador (`tools/viewport-stress.mjs`, nuevo): en la v0.1.0, a
+los 90–300 s ninguna petición a `/api/render` volvía a contestarse, y
+`gdb` mostraba los hilos HTTP del lanzador bloqueados escribiendo tramas
+que nadie leía. **Causa principal (solo nativo)**: al sustituir una vista,
+la página abandonaba el sondeo de la anterior sin leer ni cancelar su
+respuesta; cada respuesta sin leer retiene una de las seis conexiones
+HTTP/1.1 que Chromium (y WebView2) abre al lanzador, y con las seis
+retenidas todas las peticiones esperan para siempre. Eso explica los tres
+síntomas que vio el usuario (la imagen vieja con el contorno nuevo encima;
+*Rápido → Completo* en gris con «0 muestras»; un render que no acaba nunca,
+con *Completo · en pausa mientras se renderiza*) y la mitad nativa de la
+cola que no se pausa (*Pausar* no llegaba al lanzador). Otras causas, cada
+una con su test: las peticiones de *Render* no llevaban la señal de
+cancelación; una vista que el lanzador olvidaba (404) o rechazaba (503) no
+se volvía a pedir, y a resolución reducida su «fotograma en vuelo» quedaba
+marcado para siempre; dos vistas podían salir a la vez y llegar al revés;
+en el pool, pasar a *Rápido* durante un fotograma reducido dejaba esa misma
+marca puesta y *Completo* no volvía a arrancar; en el lanzador, una
+escritura fallida se vaciaba otra vez con el plazo de 120 s, los trabajos
+de páginas que se fueron seguían renderizando, las recargas llenaban los 8
+sitios de ventana (`503 busy`, lo que encontró P3e), un render que entrase
+en pánico no terminaba nunca y un trabajo atascado bloqueaba al siguiente;
+y el bucle de animación de `main.ts` se paraba para siempre con cualquier
+excepción.
+
+Arreglos: en `render/native.ts`, toda respuesta se lee, se cancela o se
+aborta; una vista cada vez, numerada (`seq`); las rechazadas o perdidas se
+piden otra vez con espera creciente y el medidor dice por qué; todas las
+peticiones llevan la señal; la página cancela sus trabajos en `pagehide`.
+En el lanzador: `409 stale` para una vista que llega tarde, la escritura de
+una trama sin leer se corta a los 10 s, los trabajos por los que nadie
+pregunta se paran solos (visor 10 s, final 20 s), con los 8 sitios
+ocupados una ventana que lleva 3 s callada cede el suyo, un pánico termina
+el trabajo como fallido y suelta la puerta, y `GET /api/render/state` da el
+diagnóstico (con `log=1`, también al registro). Un *watchdog* en los dos
+motores (`render/watchdog.ts`) vuelve a arrancar la vista si el lanzador
+deja de contestar, si no llegan pasadas o si llegan y no se pintan, lo
+dice en la consola y en el registro del lanzador, y el medidor dice el
+motivo: nunca «0 muestras» en silencio.
+
+**Decisión del líder** (con la captura del usuario: el visor estaba *en
+pausa mientras se renderiza*): **el visor sigue vivo mientras se
+renderiza**, compartiendo el equipo. En nativo se queda con la cuarta
+parte de los hilos (al menos uno) y el render con el resto, o con todos
+cuando el visor ha convergido; en el pool, con la cuarta parte de los
+workers. El medidor lo dice (*Completo · compartido con el render · 4 de 16
+hilos*) y *Ajustes ▸ Motor de render ▸ Mientras se renderiza* lo elige
+(*Mantener el visor vivo (compartido)*, por defecto, · *Pausar el visor
+(render más rápido)*). El render da los mismos bits con o sin visor (tests
+en Rust, también contra el *hash* fijado con 16 hilos, y en el navegador
+el mismo archivo `4e3aa886…` en los dos motores).
+
+**La cola**: el botón de la v0.1.0 pasaba a *Iniciar cola* en cuanto se
+pulsaba *Pausar*, con el trabajo aún terminándose, y un *Reanudar* pulsado
+entonces se perdía. Ahora hay un estado *En pausa*: el botón dice *Pausar*
+mientras corre, *Reanudar* tras una pausa e *Iniciar cola* si no
+(desactivado sin nada en espera); *Pausar* para el trabajo y libera el
+motor (473 ms hasta que el lanzador no tiene ningún final; 167 ms en el
+pool) y *Reanudar* sigue con lo pausado (solo el trabajo de *Render* si era
+eso; el trabajo pausado vuelve a empezar).
+
+Tests: 23 nuevos en la web, con un lanzador simulado que modela las seis
+conexiones (los simulados de antes contestaban todo al momento, y por eso
+se escapó), y 13 nuevos o rehechos en Rust (4, 16 y 32 hilos); cada
+arreglo, quitado de uno en uno, hace fallar su test (18 mutaciones en
+TypeScript y 15 en Rust). El test de tiempos de un final en cola mide el
+reloj del propio trabajo y no lo que tarda la máquina (10 de 10 con otra
+compilación en marcha). Sesiones de 10 minutos de
+`tools/viewport-stress.mjs` (determinismo, cola y sesión larga con ráfagas
+de órbita, soltar y mover una pieza, comprobando que el lienzo muestra la
+escena actual):
+
+| Motor, 10 min | Acciones | Renders | Paradas | Imagen vieja | *Watchdog* | Cola |
+| --- | --- | --- | --- | --- | --- | --- |
+| Nativo, 16 hilos, 1.ª | 171 | 1 (cancelado por deshacer) | 0 | 0 de 15 | 0 | 10 de 10 |
+| Nativo, 16 hilos, 2.ª | 163 | 6 (5 terminados, 1 cancelado por deshacer) | 0 | 0 de 16 | 0 | — |
+| Pool, 3 workers | 143 | 5 (3 terminados, 2 cancelados por deshacer) | 0 | 0 de 6 | 0 | 10 de 10 |
+
+Lo que no encajó con el plan: con la máquina muy cargada por otros agentes
+(carga de 10 a 47 en 4 núcleos), unas 16 acciones por minuto y no
+*docenas*; la sesión de 5 minutos del pool contra la v0.1.0 no concluye
+(un clic perdido la dejó en *Rápido*), así que el fallo propio del pool lo
+prueba su test y no la sesión; un *deshacer* que se lleva el trabajo de la
+cola sigue cancelando su render (lo decidido en U5); en el pool, al
+terminar un render el visor vuelve a empezar para recuperar todos los
+workers (pierde las muestras de esa vista); y como en escritorio los
+renders los escribe el lanzador (P3b), la comprobación espera el archivo
+en su carpeta de *Descargas* (`XDG_DOWNLOAD_DIR`) y no una descarga del
+navegador. Sin probar en un Windows real.
+
+**P3b hecha.** Diálogos del sistema (carpeta, abrir, guardar) desde el
+lanzador con PowerShell en Windows y `zenity`/`kdialog` en Linux, y API
+de archivos que solo toca lo que la persona eligió en un diálogo durante
+ese arranque (carpetas de salida solo para archivos nuevos, nunca se
+sobrescribe; extensiones permitidas; *Descargas* y el último proyecto
+como únicas excepciones del lanzador); renders, proyectos, importaciones,
+exportaciones y modelos pasan por ahí y la burbuja de descargas no
+aparece. Interruptores de endurecimiento y preferencias de perfil para
+Edge/Chromium en una sola constante que reutiliza P3c; la página bloquea
+el menú contextual, la selección del cromo, la traducción, el zoom, la
+recarga, la impresión, la búsqueda y la navegación del navegador
+(`src/ui/guards.ts`), sin romper ningún atajo propio; `Ctrl W`/`Ctrl Q`
+pasan por nuestra pregunta; los enlaces externos salen por un único
+`openExternal` (lanzador en escritorio) y un test impide `alert`,
+`confirm`, `prompt`, `print` y `window.open`; favicon, iconos y
+manifiesto propios. Sin probar en Windows real: que los diálogos salgan
+delante de la ventana y que el minimenú de Edge desaparezca del todo (lo
+garantiza P3c).
+
+**P3c hecha.** Ventana Win32 propia con WebView2 en Windows
+(`engine/crates/rt-app/src/platform/`, el único sitio del lanzador con
+`unsafe`, cada bloque con su porqué): COM escrito a mano (tablas virtuales
+transcritas del IDL del SDK, con su número de métodos y la posición de
+cada método usado comprobados en los tests), el cargador
+`WebView2Loader.dll` de Microsoft junto al ejecutable (NuGet
+`Microsoft.Web.WebView2` 1.0.4258.31, licencia de estilo BSD que permite
+redistribuirlo con su aviso; SHA-256 del paquete y de la DLL fijados en
+`packaging/lib/webview2.mjs`) y el *runtime* Evergreen del sistema; perfil
+en `webview2/` de la carpeta de datos (portable incluido). Todo lo que no
+es nuestra interfaz, apagado por la API: menús contextuales, diálogos de
+script, atajos del navegador, barra de estado, zoom, pellizco, deslizar
+para volver, autorrelleno, contraseñas, SmartScreen, página de error y,
+en *release*, herramientas de desarrollo; navegación solo a nuestro
+origen, enlaces `https` pulsados al navegador del sistema, ninguna
+ventana nueva, descargas canceladas sin su panel (y la página no descarga
+nunca en esa ventana: lo comprueba un test), permisos denegados salvo los
+archivos que la persona eligió y el almacenamiento persistente. Cerrar
+(botón, `Alt F4`, barra de tareas, menú del sistema) llega a la página
+como `close-requested` y pasa por la misma pregunta que `Ctrl W`
+(`requestCloseWindow`, *Guardar · No guardar · Cancelar*), sin
+`beforeunload`. Icono propio, título `Repackshot — <proyecto>`, barra de
+título oscura con el tema oscuro, AppUserModelID `Repackshot.App` (y el
+mismo en los accesos directos del instalador, con `repackshot
+--shortcut-id`), tamaño, posición y tema recordados en `window.json`, y
+los diálogos de archivo de P3b con la ventana como dueña. Si falta el
+cargador o el *runtime*, o falla cualquier paso, se apunta en el registro
+y se abre la ventana `--app` de Edge; *Ajustes ▸ Escritorio* dice qué
+ventana es y por qué, y `--window=webview2|browser` la fuerza. En la
+cabecera, el logotipo con una flecha hacia abajo en lugar de las tres
+rayas (web y escritorio). Linux sin cambios.
+
+Lo que no encajó con el plan: por decisión del líder, tras compararlo con
+NesTube, la ventana usa la barra de título **del sistema** y no una
+dibujada por la página (la versión sin marco, con el borde superior y
+*Snap Layouts* sobre nuestro botón de maximizar, se hizo, se probó bajo
+Wine y se quitó). A WebView2 se le pasan las `DISABLED_FEATURES` y los
+interruptores contra la ralentización de `browser.rs` (una sola fuente),
+pero no los `HARDENING_SWITCHES`: son de la interfaz del propio navegador,
+que WebView2 no tiene o que su API ya apaga, y no están documentados para
+WebView2. Bajo Wine no se puede leer de vuelta el AppUserModelID de un
+acceso directo (su almacén de propiedades es un esbozo), así que eso, y
+todo lo de WebView2, queda por probar en Windows real. El puerto
+aleatorio por arranque, que hace perder `localStorage` entre arranques
+(en la ventana de Edge y en la propia), queda para P3e.
+
+**P3e hecha.** En escritorio la página es solo la interfaz. Una costura
+`Platform` (`src/io/platform.ts`), elegida una vez al arrancar, con dos
+implementaciones detrás de la misma interfaz: la web (`platform-web.ts`:
+localStorage, IndexedDB, OPFS, WebGPU, como hasta ahora) y la del lanzador
+(`platform-desktop.ts`), donde cada servicio y cada byte de estado son del
+lanzador: ajustes en `settings.json` de la carpeta de datos, cosas pequeñas
+recordadas en `state/`, biblioteca en `library/`, historial de resultados
+como archivos en `results/` con su índice, miniaturas en `cache/thumbs/`,
+modelos (ya lo eran), equipo siempre por `/api/hardware` y espacio usado
+medido por el lanzador (`/api/storage/usage`), con *Liberar* a través de
+él. Rutas nuevas `/api/store/*` y `/api/storage/usage`
+(`rt-app/src/appdata.rs`) con el *token*, `Host` y `Origin` de siempre,
+nombres en minúscula confinados a la carpeta de datos (ni enlaces ni
+nombres de dispositivo de Windows), escrituras atómicas, y un documento
+que no se pudo leer al arrancar nunca se sobrescribe. **Puerto estable por
+carpeta de datos** (`launcher.json`, `rt-app/src/port.rs`): el origen de la
+ventana ya no cambia en cada arranque, que era por lo que en v0.1.x se
+perdían ajustes, biblioteca e historial al cerrar. Migración, una sola vez
+por carpeta de datos (marca `state/migration.json`), de lo que quede en el
+almacenamiento del navegador del origen actual; para quien venga de v0.1.x
+suele estar vacío (cada arranque tenía otro puerto) y solo deja la marca.
+Ninguna fila habla del navegador en escritorio: las cadenas que lo
+nombraban tienen su versión de escritorio (`DESKTOP_TABLE` de
+`strings.ts`) o su fila oculta (`webOnly`: *Almacenamiento persistente*;
+WebGPU, cuota y memoria del navegador solo en la web), *Ventana dibujada
+por* dice un nombre (*Ventana de aplicación de Microsoft Edge*, y ya lee el
+`window` de P3c para *Ventana nativa (WebView2 x.y)*), la fila GPU lista
+las tarjetas del lanzador y sigue a la detección aunque llegue después, el
+distintivo *Solo en la aplicación de escritorio* no sale dentro de ella y
+el modelo solo para navegador no se lista. Filas de Ajustes que no se pisan
+a ningún ancho ni tamaño de interfaz: columna de etiqueta con mínimo,
+controles y distintivos que se parten, filas apiladas para valores largos
+(rutas en monoespaciado partidas donde haga falta, botón debajo, título con
+el texto entero) y consultas de contenedor que lo apilan todo en ventanas
+estrechas. Tests: la costura elige el lanzador y entonces no toca
+`localStorage`, `indexedDB` ni `navigator.storage` (espías), la migración
+una vez y con el origen vacío, escrituras en orden, resultados con sus
+límites, las cadenas del navegador cubiertas; en Rust, `tests/appdata.rs`
+(seguridad, confinamiento, enlaces, límites, petición cortada, resultados,
+caché, espacio, otro arranque) y `tests/port.rs`. Comprobación
+`tools/desktop-platform-check.mjs` contra el lanzador real (ajustes que
+sobreviven a reiniciar en un perfil de navegador nuevo, el mismo puerto,
+nada en el almacenamiento del navegador, un render en `results/`, las GPU
+del lanzador, ninguna mención del navegador en los dos idiomas, *Liberar*
+por el lanzador, y ningún solape en todas las secciones a 1600, 1280 y
+960 px, 90–150 %, dos idiomas, oscuro, claro y contraste alto); capturas
+`settings-desktop-paths.png`, `settings-storage-desktop.png`,
+`settings-ai-desktop.png`. Con P3b y P3c unidas, 1044 tests web y 309 del
+motor.
+
+Unida con P3b y P3c: las carpetas de salida, los proyectos (con el último
+que recuerda el lanzador) y los diálogos de importar y exportar salen
+también de la plataforma (en escritorio, los de P3b; nunca los selectores
+ni los *handles* del navegador), las carpetas elegidas se recuerdan en
+`state/desktop.folders.json` y no en `localStorage`, y *Ventana dibujada
+por* es una sola función (la de P3c, con sus motivos) que dice *La ventana
+propia de Repackshot (WebView2 x.y)* y nunca el nombre de un ejecutable
+(sin ventana del lanzador, `--serve-only`, ya no dice *El navegador por
+defecto*). La comprobación del lanzador real suma que *Elegir carpeta…* y
+*Guardar proyecto* pasan por los diálogos del lanzador (un `zenity` de
+prueba) sin tocar los selectores del navegador, que la carpeta queda en
+los datos y que *Descargas* lo escribe el lanzador. Al unir: la carpeta
+de salida elegida, que P3b muestra por su ruta, se salía de su fila; el
+botón dice su nombre y la ruta entera va debajo. Arreglado de paso un
+fallo intermitente del test de paridad (`tests/parity.rs`: si la última
+pasada llegaba entre dos consultas, el marco devuelto no venía marcado
+como terminado).
+
+No encajó con el plan: el *token* sigue en `sessionStorage` (es el secreto
+del arranque, no estado).
+La copia automática no existe todavía (U8): cuando llegue, a la carpeta de
+datos por la plataforma. `REPACKSHOT_TEST_GPUS` (tarjetas falsas, solo para
+pruebas) la lee también el binario de *release*. En Windows, si el puerto
+recordado está aún en `TIME_WAIT` al reabrir, se toma otro una vez y se
+recuerda. Encontrado de paso (de P3a): un trabajo de visor nativo de una
+página que se recarga sigue vivo hasta el tope de 8 (`503 busy`). Sin
+probar en un Windows real.
+
+**Corrección tras probar v0.1.2.** En Windows de verdad el lanzador no
+encontraba ninguna tarjeta gráfica en ningún equipo, solo la CPU, y de eso
+dependen *Ajustes ▸ Post-procesado IA ▸ Equipo*, la fila *GPU* y la elección
+Vulkan/CPU del motor de IA. Causa: `reg query <clase de pantalla> /s` llega a
+la subclave `Properties`, que da «Acceso denegado» («ERROR: Acceso
+denegado.» en español), y `reg` sale con 1; `process::output` tiraba la
+salida de cualquier programa que no saliera con 0, con los adaptadores
+dentro. El test del analizador le pasaba el texto directamente, sin código
+de salida: era más permisivo que la realidad, y se ha arreglado con él.
+Ahora `process::output_any` devuelve lo impreso junto con el código (y
+`output` sigue estricto para las consultas de una sola clave de
+`browser.rs` y `files.rs`, donde salir con 1 es «no está»), y las tarjetas
+salen de cuatro fuentes: **DXGI** (`rt-app/src/platform/dxgi.rs`, COM a mano
+como el de P3c: `CreateDXGIFactory1`, `EnumAdapters1`, `GetDesc1`; VRAM
+dedicada exacta de 64 bits, sin el adaptador de software ni los de
+Microsoft, `dxgi.dll` solo de `System32`), **el registro** (una consulta
+para listar las subclaves y otra por adaptador, nunca `/s` ni `Properties`,
+leídas sea cual sea su código), **CIM** (`Win32_VideoController` en la misma
+ejecución de PowerShell que la RAM) y **wmic** si PowerShell no contesta.
+Se mezclan por adaptador: manda la primera que lista solo lo que hay ahora
+(DXGI, si no CIM, si no wmic), porque el registro guarda la clave de una
+tarjeta que ya se quitó, y gana la VRAM exacta sobre la de 32 bits, que se
+queda en 4 GiB. Cada fuente deja en `logs/repackshot.log` qué encontró o por
+qué falló, `/api/hardware` lo da en `gpuSources` y `gpuDetection`, y la
+interfaz distingue «No se han podido leer las tarjetas gráficas: mira los
+registros» de «No se ha encontrado ninguna tarjeta gráfica». Los programas
+del sistema van por su ruta absoluta en `System32` (`reg.exe`,
+`powershell.exe`, `WMIC.exe`, también en `browser.rs`, `files.rs` y
+`dialogs.rs`). Tests, cada uno comprobado fallando sin su arreglo: un
+programa que imprime y sale con 1 se lee (`sh` en Linux, `cmd` bajo Wine),
+la fuente del registro con un `reg` falso y con programas de verdad que
+salen con 1, el analizador con «Access is denied» y «Acceso denegado.»
+entre claves, CIM y `wmic`, la mezcla (la tarjeta quitada, dos tarjetas
+iguales, «sin tarjeta» frente a «no se pudo preguntar»), las vtables y
+`DXGI_ADAPTER_DESC1` contra el IDL, y la interfaz. Bajo Wine con `xvfb-run`
+DXGI lista su adaptador (*NVIDIA GeForce GTX 470*, 15,7 GiB, lo que Wine
+inventa), el registro de Wine lo llama *Wine Adapter* sin VRAM, el
+PowerShell de Wine no contesta y `wmic` da el mismo nombre que DXGI: queda
+una tarjeta, la de DXGI. Encontrado al pasarlo todo bajo Wine: un test de
+`rt-app/tests/ai.rs` daba por hecho que el equipo no tiene GPU (una petición
+sin `"device":"cpu"` pedía la compilación Vulkan, que no está instalada, y se
+rechazaba por eso antes de leer la imagen); fallaba igual en Linux con una
+GPU (`REPACKSHOT_TEST_GPUS`) y ya pide la CPU como las demás. No encajó: sigue sin probarse en un Windows real
+(si aún falla, `logs/repackshot.log` dice qué contestó cada fuente); que
+`reg /s` se pare en el primer error no está comprobado, por eso se consulta
+clave a clave; el instalador lee el mismo `--hardware` y ya ve las tarjetas,
+pero su página de modelos no distingue «no se pudo leer» de «no hay» (el
+INI no cambia).
 
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
-**N2**; oleada 4 **X1b**, **X2**, **X3**, **X4**. Cada fase quita sus
+**N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b**, **X4**, **X2** y **X3c** ya; **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
 *próximamente* y no deja ninguno nuevo sin anotarlo aquí.
+
+## Herramientas de estudio (óptica, entorno, luz, cámara, partículas)
+
+Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
+2 (la DoF de E5b pasa a O1):
+
+| Fase | Responsable | Qué |
+| --- | --- | --- |
+| **A6** — hecha | Sonnet | Assets sin motor nuevo: `lenses.json` (16 prescripciones con test paraxial), `bokeh.json` (20 tipos), máscaras de diafragma y gobos generados, `camera-moves.json` |
+| **O1** | Opus | Lente fina mejorada: diafragma poligonal y por máscara, perfiles de pupila, obstrucción, ojo de gato aproximado, anamórfico, *tilt-shift*, *split diopter*, CA por canal; selector de bokeh |
+| **O2** | Opus | Lente trazada: prescripciones, intersección estable, límites de pupila, autoenfoque, respiración; las 16 lentes |
+| **O3** | Opus | CA por tres bandas, coatings (transmisión, tinte, T-stop), velo |
+| **O4** | Opus | Flare con fantasmas, estrella de difracción, bloom y halación, polvo y rayas |
+| **O5** | Sonnet | Editor de lentes: carácter, corte en SVG, ajustes no físicos marcados, *Guardar lente como…* |
+| **W1** | Opus | Evaluador de pines en el motor con muestreo por importancia; editor de pines; *Colocar brillo* |
+| **W2** | Sonnet | Biblioteca de 39 entornos (recetas, miniaturas, *hash*), exportar HDR/EXR, interiores horneados |
+| **L6** | Sonnet | Colocación *Reflejo · Directo · Órbita*, normal suavizada, obstáculos, potencia automática |
+| **L7** | Opus | Emisores con perfil procedural, gobos, banderas, reflectores |
+| **L8** | Opus | Difuso/especular por luz, enlazado de luz y sombra, solo, parpadeo |
+| **L9** | Sonnet | Falso color por zonas, fotómetro, hornear el montaje a entorno |
+| **N4** | Sonnet | Biblioteca de movimientos de cámara, cámara en mano, rampas, proporciones |
+| **N5** | Opus | Dibujar y grabar recorridos, bloqueo de objetivo, desenfoque de movimiento |
+| **S0** | Fable | Decisiones de partículas: dónde vive el simulador, formato de caché, secciones RSB |
+| **S1**–**S10** | Opus, Sonnet | Dispersión e instancias; caída y reposo; gotas y condensación; emisores sin estado; volúmenes; humo; líquidos; pelo y césped; telas; mejoras (detalle en `docs/research/particles.md` §6) |
+
+### A6 · Assets sin motor nuevo — **Sonnet** — hecha
+
+**Hecho.** Todos los assets de las herramientas de estudio que no necesitan
+motor nuevo, sin marcas ni nombres de fabricante y generados por código del
+repositorio (nada sale de modelos de imagen por IA):
+
+- `src/data/lenses.json` (+ cargador tipado en `lenses.ts`, que conserva
+  `LENS_PRESETS`): las 16 prescripciones de `docs/research/optics.md` §2.3 en
+  el registro de §5 (superficies con radio, espesor, vidrio `nd`/`vd`,
+  semiapertura, tipo, diafragma y *coating*; focal de referencia, número f,
+  campo, círculo de imagen, foco y gaps móviles, iris), con la patente o el
+  libro en `source`. `tests/lenses.test.ts` traza un rayo paraxial propio y
+  reproduce focal y tiraje de cada lente dentro del 0,05 % de lo que trazó el
+  informe y del 1 % de lo que dice la patente (también la respiración del
+  teleobjetivo, el elemento flotante del macro, el recorrido del hueco del
+  blando, el aumento 1/2 del adaptador y la imagen detrás del espejo del
+  catadióptrico); el diafragma existe una sola vez en cada lente, las claves
+  son únicas y estables, ninguna marca ni vidrio de catálogo aparece, y todo
+  vidrio tiene `nd` en [1,4; 2,1] y `vd` en [15; 100]. Una relectura
+  independiente de la tabla del informe no encontró diferencias con lo
+  transcrito (salvo el hueco simbólico `dB0` y los `vd` estimados).
+- `src/data/bokeh.json` (+ `bokeh.ts`): los 20 tipos de `optics.md` §1 con
+  claves estables, nombres y descripciones en es/en y los parámetros del
+  modo de lente fina (láminas, redondez, giro, máscara, perfil de pupila,
+  obstrucción, ojo de gato, compresión anamórfica, CA, remolino, anillos,
+  textura), o la lente trazada que los da (`requires: "traced"`), o `requires:
+  "wave"` para el anillo de difracción (próximamente). Un test comprueba que
+  todo resuelve a máscaras y lentes que existen.
+- `tools/assets/` (`common.mjs`, `aperture-masks.mjs`, `gobos.mjs`) y
+  `public/assets/aperture/` (45 máscaras de 512²: polígonos de 3 a 18 láminas
+  rectos y curvos, estrellas, corazón, varios agujeros, anillos con
+  obstrucción 0,3 y 0,5, anillos de cebolla, polvo, rayas, malla) y
+  `public/assets/gobo/` (12 patrones de 1024²: ventanas, persianas, hojas,
+  luz moteada, puntos, líneas, ráfaga radial, rotura suave), cada uno con
+  receta, semilla y *hash* en su `index.json`. El *hash* canónico es el de los
+  píxeles (los bytes de un flujo de zlib pueden cambiar entre versiones);
+  `tests/assets.test.ts` regenera todo con las funciones puras del generador y
+  compara. El generador usa solo `+ − × ÷` y `sqrt` y funciones propias.
+- `src/data/camera-moves.json` (+ `camera-moves.ts` y `src/core/camera-moves.ts`):
+  14 movimientos (los 13 de STUDIO-TOOLS §4 con la espiral en dos) como listas
+  de los tipos de animación que ya existen, en unidades relativas al producto
+  (grados, % de la distancia de encuadre, tamaños de pieza, factores de focal y
+  de foco), y 3 presets de cámara en mano. `tests/camera-moves.test.ts` expande
+  cada uno en barras, las evalúa con `evaluate` en t = 0 y t = fin (finitas y
+  deterministas, y a t = 0 nada se ha movido), y comprueba que el contra-zoom
+  conserva focal / distancia, que el plato giratorio da una vuelta, etc.
+- **Servidor de escritorio** (`engine/crates/rt-app/src/static_files.rs`): hasta
+  ahora todo `/assets/` salía con `Cache-Control: immutable` de un año porque
+  Vite nombra ahí todo por *hash*; los assets nuevos no llevan *hash* y un
+  fichero regenerado con el mismo nombre se habría visto viejo para siempre. Ahora
+  solo es inmutable lo que está directamente en `/assets/` y se llama
+  `nombre-XXXXXXXX.ext` (el patrón de 8 caracteres base64url que emite Vite 8);
+  lo demás sale con `no-cache` y un ETag del SHA-256 de sus bytes (los ficheros
+  de hasta 8 MiB; responde 304 si no cambió, y un fichero regenerado con el mismo
+  tamaño y la misma hora ya no se confunde con el anterior). Tests de Rust que
+  fallan si algo sin *hash* se sirve inmutable (con los nombres que emitió esta
+  misma build y los de `aperture/` y `gobo/`). `tests/chunks.test.ts` ya no lee las
+  carpetas de `dist/assets/` como si fueran ficheros.
+
+**Valores provisionales, a la espera de O1 (regla 11, criterio visual de
+Fable).** Los *coatings* por época de las lentes (antes de 1935 sin tratar,
+hasta 1969 monocapa, después multicapa), los valores por defecto del
+diafragma (círculo, f/22 como máximo), los valores de partida de los tipos de
+bokeh (remolino 0,7, fuerza de los perfiles de pupila, obstrucción 0,49 del
+catadióptrico…), el significado de `profileParam` en cada perfil y las
+amplitudes de la cámara en mano (sutil, medio, fuerte) son puntos de partida
+con las claves como contrato; O1 los juzgará con renders. También quedan para
+O1 las miniaturas de bokeh renderizadas por el motor.
+
+**No encajó con el plan:** el tipo de animación `PAN` no existe todavía (SPEC
+§3.7), así que el barrido rápido es una órbita rápida con curva fuerte y el plato
+giratorio es `SPIN` sobre el modelo; el nombre «retrofoco» fue una marca y la
+lente se llama *gran angular de telefoto invertido*; `CAMERA_MOVES` ya existía en
+`animation.ts` (el conjunto de tipos solo de cámara) y la biblioteca es
+`CAMERA_MOVE_LIBRARY`; hizo falta un expansor en `src/core/camera-moves.ts` que
+el plan no nombraba (N4 lo amplía); la posición del diafragma solo la dan la
+fuente para 6 de las 16 lentes (`stopBasis`) y para 9 se supone en el medio del
+hueco que el informe nombra; el informe no da número f ni semiaperturas del macro,
+ni semiaperturas de casi ninguna lente, así que esos campos quedan vacíos o
+derivados y marcados.
 
 ## Orden sugerido
 

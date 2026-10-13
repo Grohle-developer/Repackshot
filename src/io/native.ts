@@ -1,6 +1,7 @@
 // The desktop launcher (engine/crates/rt-app, ARCHITECTURE §5.5), seen from
 // the page: detection, and a client for its API (info, hardware, the model
-// store by blob, the installer's pending choice, folders, heartbeat).
+// store by blob, the installer's pending choice, folders, heartbeat, and the
+// system's dialogs with the files chosen in them).
 //
 // The launcher opens the window at http://127.0.0.1:<port>/#token=<hex>. The
 // token is taken from the fragment at once, kept in sessionStorage (a reload
@@ -68,7 +69,15 @@ export interface NativeInfo {
   portable: boolean;
   /** The browser drawing the window (`msedge`, `chromium`, `default`), or null. */
   browser: string | null;
+  /** What draws the window and why (P3c): `{kind: webview2|browser|default|none, detail, reason}`; null with --serve-only. */
+  window?: { kind: string; detail: string | null; reason: string | null } | null;
   pid: number;
+  /** The dialogs and file API (files.rs), version 1; absent in a launcher without them. */
+  filesApi?: number;
+  /** The AI runtime API (ai/mod.rs, X3b), version 1; absent in a launcher without it. */
+  aiApi?: number;
+  /** The AI post-processing pipeline of rt-app/src/ai/post.rs (`/api/ai/post`, X3c): its version, when there is one. */
+  aiPost?: number;
 }
 
 export interface NativeRecommendation {
@@ -88,6 +97,13 @@ export interface NativeHardware {
   gpus: { name: string; vendor: string; vramBytes: number | null; vramGiB: number | null }[];
   device: 'gpu' | 'cpu';
   gpuFound: boolean;
+  /**
+   * Whether any source of the graphics cards answered (`failed`: none could be asked, so an empty `gpus` is not
+   * "no graphics card"). Absent from the launchers up to v0.1.2.
+   */
+  gpuDetection?: 'ok' | 'failed';
+  /** What each source of the graphics cards said (DXGI, the registry, CIM, wmic; nvidia-smi, DRM). */
+  gpuSources?: { source: string; ok: boolean; found: number; detail: string | null }[];
   detected: boolean;
   input: { device: 'gpu'; vramGiB: number } | { device: 'cpu'; ramGiB: number } | null;
   recommendation: NativeRecommendation | null;
@@ -139,6 +155,56 @@ export interface StoreList {
 export interface PendingModels {
   device: 'gpu' | 'cpu';
   keys: string[];
+}
+
+/** A path the person chose in one of the launcher's dialogs (engine/crates/rt-app/src/files.rs). */
+export interface NativeGrant {
+  id: string;
+  /** The last part of the path. */
+  name: string;
+  /** The whole path, as the person reads it. */
+  path: string;
+  folder: boolean;
+  read: boolean;
+  write: boolean;
+  /** Bytes of a file (null for a folder, or a file not written yet). */
+  size: number | null;
+}
+
+/** A file type of a dialog: `extensions` without the dot (`png`, `repack.json`); `*` is every file. */
+export interface DialogFilter {
+  name: string;
+  extensions: string[];
+}
+
+export type DialogResult = { cancelled: true } | { cancelled: false; file: NativeGrant; files: NativeGrant[] };
+
+export interface FolderDialogOptions {
+  title: string;
+  /** Where it starts: a grant id or a folder path (only a hint). */
+  start?: string;
+  /** The files under it can be listed and read (an import). */
+  read?: boolean;
+  /** New files can be created in it (default true). */
+  write?: boolean;
+  /** Windows' fallback folder dialog: the text of its file name box. */
+  folderItem?: string;
+}
+
+export interface OpenDialogOptions {
+  title: string;
+  multiple?: boolean;
+  filters?: DialogFilter[];
+  start?: string;
+  /** The chosen file can be written back (a project saved again). */
+  writable?: boolean;
+}
+
+export interface SaveDialogOptions {
+  title: string;
+  defaultName: string;
+  filters?: DialogFilter[];
+  start?: string;
 }
 
 export type FinishResult =
@@ -267,6 +333,74 @@ export class NativeClient {
 
   async openFolder(target: 'data' | 'models' | 'logs' | 'results' | { path: string }): Promise<void> {
     await this.json('/api/open-folder', { method: 'POST', body: JSON.stringify(typeof target === 'string' ? { folder: target } : target) });
+  }
+
+  /** The launcher answers the dialogs and the file API (`/api/info` filesApi ≥ 1). */
+  get hasFiles(): boolean {
+    return (this.info.filesApi ?? 0) >= 1;
+  }
+
+  /** The system's folder dialog. Throws a NativeError (`no-dialog`, `dialog-open`) when none can be shown. */
+  dialogFolder(opts: FolderDialogOptions): Promise<DialogResult> {
+    return this.json('/api/dialog/folder', { method: 'POST', body: JSON.stringify(opts) });
+  }
+
+  /** The system's open dialog. */
+  dialogOpen(opts: OpenDialogOptions): Promise<DialogResult> {
+    return this.json('/api/dialog/open', { method: 'POST', body: JSON.stringify(opts) });
+  }
+
+  /** The system's save dialog (it asks before replacing a file). */
+  dialogSave(opts: SaveDialogOptions): Promise<DialogResult> {
+    return this.json('/api/dialog/save', { method: 'POST', body: JSON.stringify(opts) });
+  }
+
+  /** A new file in a chosen folder (or `downloads`): `name`, or `name (2)`… when taken; never an overwrite. */
+  writeNew(dir: string, name: string, body: Blob): Promise<NativeGrant> {
+    return this.json(`/api/files?${new URLSearchParams({ dir, name })}`, { method: 'PUT', body });
+  }
+
+  /** Writes a chosen file whole (a temporary file renamed over it). */
+  writeFile(id: string, body: Blob): Promise<NativeGrant> {
+    return this.json(`/api/files/${encodeURIComponent(id)}`, { method: 'PUT', body });
+  }
+
+  /** A chosen file's bytes, whole or a range `[start, end]` (inclusive). */
+  readFile(id: string, range?: [number, number]): Promise<Response> {
+    return this.request(`/api/files/${encodeURIComponent(id)}`, range ? { headers: { Range: `bytes=${range[0]}-${range[1]}` } } : {});
+  }
+
+  fileInfo(id: string): Promise<NativeGrant & { hashing: { done: number; total: number } | null }> {
+    return this.json(`/api/files/${encodeURIComponent(id)}/info`);
+  }
+
+  /** The SHA-256 of a chosen file, computed by the launcher. */
+  hashFile(id: string): Promise<{ sha256: string; bytes: number }> {
+    return this.json(`/api/files/${encodeURIComponent(id)}/sha256`, { method: 'POST' });
+  }
+
+  /** The files under a folder chosen for reading, with their paths relative to it. */
+  listFolder(id: string): Promise<{ files: { id: string; name: string; rel: string; size: number }[] }> {
+    return this.json(`/api/files/${encodeURIComponent(id)}/list`);
+  }
+
+  /** Shows a chosen file (selected) or folder in the system's file manager. */
+  async reveal(id: string): Promise<void> {
+    await this.json(`/api/files/${encodeURIComponent(id)}/reveal`, { method: 'POST' });
+  }
+
+  /** The project file opened or saved last (the launcher remembers it), granted again; null when there is none. */
+  lastProject(): Promise<NativeGrant | null> {
+    return this.json('/api/projects/last');
+  }
+
+  async setLastProject(id: string): Promise<void> {
+    await this.json('/api/projects/last', { method: 'PUT', body: JSON.stringify({ id }) });
+  }
+
+  /** Opens an https:// address in the system's browser. */
+  async openUrl(url: string): Promise<void> {
+    await this.json('/api/open-url', { method: 'POST', body: JSON.stringify({ url }) });
   }
 
   /**

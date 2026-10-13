@@ -735,3 +735,13 @@
 .import-keys {
   margin-left: auto;
 }
+
+/* Right click ▸ Scale… (phase U9): an inline panel, like a confirmation with fields. */
+.scale-panel {
+  width: 300px;
+  gap: 8px;
+  padding: 10px;
+}
+.scale-panel .field-label {
+  width: 72px;
+}

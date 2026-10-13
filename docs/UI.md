@@ -120,7 +120,11 @@ De izquierda a derecha:
 1. **Menú de aplicación** (icono de tres líneas + "Repackshot"): Nuevo,
    Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack.json`,
    `Ctrl/⌘ S`, en el mismo archivo si ya se guardó), Guardar proyecto
-   como… (`Ctrl/⌘ ⇧ S`), Importar modelo,
+   como… (`Ctrl/⌘ ⇧ S`), Importar modelo, **Añadir ▸** (fase U9: bajo el
+   rótulo *Primitiva*, las doce formas del catálogo —*Caja*, *Plano*,
+   *Disco*, *Cilindro*, *Pedestal*, *Esfera*, *Cono*, *Toro*, *Cápsula*,
+   *Tubo*, *Escalones*, *Fondo infinito*—, cada una con su icono y un
+   *tooltip* que dice dónde nace),
    Exportar imagen, separador, Idioma (Inglés / Español), Tema (Oscuro /
    Claro / Sistema), **Ajustes…** (`Ctrl/⌘ ,`), separador, Guía, Atajos
    de teclado, Acerca de.
@@ -156,16 +160,24 @@ de nivel (modelo / grupo / pieza), nombre, y a la derecha, al pasar el
 ratón, tres acciones en icono: ojo (ocultar), diana (encuadrar), candado
 (bloquear). Clic selecciona; `Ctrl` clic añade; `Shift` clic extiende;
 doble clic encuadra la pieza en el visor. Cada pieza muestra bajo su
-nombre, en texto auxiliar, el material que lleva. Arrastrar una miniatura
-de material del inspector sobre una fila la asigna. Menú contextual
+nombre, en texto auxiliar, el material que lleva. Arrastrar un material
+(una miniatura del catálogo o de *Míos*, o la esfera de la tarjeta del
+material, §2.4) sobre una fila lo asigna a esa fila y a todo lo que
+cuelga de ella (una pieza, un grupo, el modelo): la fila se marca con un
+borde discontinuo y el visor contornea lo que alcanzaría la suelta. Es una
+sola entrada de deshacer (*Deshacer: asignar Oro a Cuerpo*), `Alt` al
+soltar da una copia propia del material, `Esc` cancela y, si el destino
+lleva materiales distintos, antes se pregunta en línea (§4.1). Menú contextual
 (botón derecho): Aislar, Ocultar, Mostrar todo, Renombrar, Apoyar en el
 suelo, Centrar, Eliminar.
 
-Encima del árbol, un campo de **filtro** por nombre y, al lado, el
-**selector de nivel** de la selección (ver §4.1).
+Encima del árbol, un campo de **filtro** por nombre con un botón **`+`** a
+su derecha (fase U9: abre el mismo *Añadir ▸ Primitiva* de la cabecera) y,
+debajo, el **selector de nivel** de la selección (ver §4.1).
 
 El **menú contextual** completo de una fila (fase U3, con las acciones de
-`SPEC.md` §3.1): Encuadrar · Mover (activa el *gizmo*) · Apoyar en el
+`SPEC.md` §3.1): Encuadrar · Mover (activa el *gizmo*) · **Escalar…**
+(fase U9: el panel en línea de §2.3, junto a la fila) · Apoyar en el
 suelo · Centrar · Centrar y apoyar · Restablecer transformación ·
 Establecer pivote ▸ (centro, base, origen, punto picado) · Fijar como
 objetivo de cámara · separador · Ocultar · Aislar · Mostrar todo ·
@@ -173,7 +185,8 @@ Bloquear · separador · Duplicar · Duplicar enlazado · Patrón ▸ (lineal,
 circular) · Agrupar · Desagrupar · Mover a grupo ▸ · separador ·
 Material ▸ (Desenlazar, Enlazar con…, Copiar, Pegar, Seleccionar por
 material) · Geometría ▸ (Invertir normales, Suavizado…, Separar por
-caras CAD, Separar por material) · separador · Renombrar · Eliminar.
+caras CAD, Separar por material, **Convertir en malla**, fase U9: activo
+solo si la selección tiene primitivas) · separador · Renombrar · Eliminar.
 En U1 existen las que ya están en §2.2 y el resto se añade en U3 sin
 cambiar la estructura del menú.
 
@@ -205,9 +218,14 @@ Capas sobre el visor, siempre con fondo semitransparente del tema y sin
 tapar la pieza:
 
 - **Arriba a la izquierda, barra de vista**: Seleccionar (`V`), Orbitar
-  (`O`), Desplazar (`P`), Zoom (`Z`), separador, Encuadrar todo (`F`),
+  (`O`), Desplazar (`P`), **Escalar (`S`)** (fase U9, junto a
+  *Desplazar*), Zoom (`Z`), Mover (`M`), separador, Encuadrar todo (`F`),
   Vistas (menú: tres cuartos, frontal, lateral, cenital, trasera),
-  Perspectiva / Ortográfica, separador, Bloquear cámara.
+  Perspectiva / Ortográfica, separador, Bloquear cámara. Con *Mover* o
+  *Escalar* aparece el conmutador de ejes *Global · Local* (`G`/`L`). Con
+  *Seleccionar*, *Mover* o *Escalar* y el nivel *Caras*, junto a las
+  herramientas aparece el botón de texto **Rayos X** (la caja de selección
+  coge también las caras ocultas).
 - **Arriba a la derecha**: nombre de la cámara activa (clic: lista) y
   resolución de salida actual (clic: abre la barra de render).
 - **Abajo a la izquierda, medidor de calidad**: modo y motor activos,
@@ -215,8 +233,17 @@ tapar la pieza:
   *Rápido* dice literalmente *Rápido · vista previa rasterizada*; en
   *Completo* dice *Completo · 128 muestras · 00:12* y, durante un gesto
   de cámara, *Completo · ¼ de resolución*. Una segunda línea dice *3
-  workers · SIMD* en *Completo* y *x ms por fotograma* en *Rápido*.
-  **Nunca se inventa un número.**
+  workers · SIMD* en *Completo* (*Nativo · 16 hilos · AVX2* en
+  escritorio) y *x ms por fotograma* en *Rápido*. Mientras corre un
+  *Render*, el visor sigue vivo y lo dice con lo que usa: *Completo ·
+  compartido con el render · 4 de 16 hilos* (o *1 de 3 workers*); si en
+  *Ajustes* se eligió pausarlo, *Completo · en pausa mientras se
+  renderiza*. Si el motor no contesta, rechaza la vista o el *watchdog*
+  tuvo que volver a arrancarla, una nota bajo la barra lo dice (*Esperando
+  al motor · 5 s*; *El motor rechazó la vista: <su motivo> · se vuelve a
+  intentar en 2 s*; *La vista se había parado y se ha vuelto a arrancar*),
+  con las palabras del motor en el *tooltip*: nunca «0 muestras» en
+  silencio. **Nunca se inventa un número.**
 - **Abajo a la derecha**: ejes de orientación (tres trazos finos X Y Z,
   monocromos) y el tamaño de la pieza en mm.
 - **Al pasar por una pieza**: su contorno se ilumina (silueta de 1 px en
@@ -245,8 +272,108 @@ incrementos con `Shift`, y los campos del inspector actualizándose en
 vivo. Arrastrar es una sola entrada de deshacer. Las luces se mueven y
 apuntan con el mismo *gizmo* (la asa de apuntar es una línea al objetivo).
 
-**Arrastrar un material** del inspector sobre una pieza del visor la
-asigna; mientras se arrastra, la pieza bajo el cursor se resalta.
+**Herramienta de escalar** (fase U9, `S`): el mismo *gizmo* sobre el
+pivote, pero **solo con las asas de escala**: un eje fino por dirección con
+un cubo más grande en su extremo (escala en ese eje; el eje entero se
+puede coger, y llevar el puntero una longitud de cubo más allá duplica la
+escala) y un punto en el centro (escala uniforme, hacia la derecha o arriba
+crece). Sin flechas, anillos ni planos. Ejes locales o globales como
+*Mover*, incrementos del 10 % con `Shift`, los campos de escala del
+inspector en vivo, un arrastre es una entrada de deshacer (*Deshacer:
+Escalar Caja*), un clic donde no hay asa selecciona y `Ctrl/⌘` + arrastrar
+dibuja la caja de selección como con *Mover*; `Esc` vuelve a *Seleccionar*.
+El *tooltip* del botón lo cuenta.
+
+**Clic derecho ▸ Escalar…** (fase U9, en una pieza del visor o en una fila
+del árbol): un **panel en línea** propio junto al punto o a la fila (nunca
+un diálogo del navegador; `Esc` o un clic fuera lo cierran) con un
+segmento *Uniforme · Por eje · A medida*: *Uniforme* un campo en %, *Por
+eje* X, Y y Z en %, *A medida* el ancho, el fondo y el alto en mm (las
+unidades de la interfaz) con un candado de **proporción**, cerrado por
+defecto (cambiar uno arrastra los otros dos; un eje sin espesor, como el
+alto de un plano, no se toca). Debajo, en auxiliar, el pivote y los ejes
+con que actúa (*Alrededor del pivote (Centro) · ejes Global*), y los
+botones **Aplicar** (una entrada de deshacer), **Restablecer escala** (cada
+nodo vuelve a la escala con que entró en la escena, alrededor de su propio
+pivote) y *Cancelar*. Actúa sobre la selección al nivel vigente (la pieza,
+el grupo o el modelo sobre el que se abrió el menú), alrededor de su
+pivote, en los ejes de *Mover* y *Escalar*.
+
+**Menú contextual en vacío** (fase U9): un clic derecho sobre el visor
+donde no hay pieza abre *Añadir ▸ (Primitiva)*, *Encuadrar selección o
+todo* y *Mostrar todo*.
+
+**Dónde nace una primitiva** (fase U9, `SPEC.md` §3.1): con un producto en
+la escena, la *Caja* y el *Pedestal* nacen **como base**: bajo el
+producto, apoyados en el suelo, con 1,4 veces su huella (los lados de la
+caja; el radio del pedestal sobre el punto del producto más lejano a su
+eje), y el producto sube a apoyarse encima, todo en una sola entrada de
+deshacer (*Deshacer: Añadir Caja bajo Frasco de ejemplo*). El *Plano* y el
+*Disco* se tienden en el suelo bajo el producto; el *Fondo infinito* se
+**ajusta a la cámara activa**: girado en Z hacia ella, con la pared detrás
+del producto a 1,75 veces su fondo (o más atrás, para que el contraluz y
+los focos traseros del montaje queden entre el producto y el papel), tan ancho como 1,3 veces lo que abarca
+el encuadre donde lo toca, más alto que lo más alto que el encuadre
+alcanza en la pared, con el suelo hasta delante de lo que el encuadre ve
+de él y una curva de 0,3 veces su alto (todo el encuadre de salida, con
+la óptica y el formato de la cámara, cae sobre el fondo); y el resto
+de formas se apoya en el suelo **junto** a lo que hay (a +X), a las
+proporciones del catálogo respecto al producto. Sin producto, la primera
+nace en el origen al tamaño de pieza declarado (200 mm en un proyecto
+nuevo) y encuadrada; las siguientes, al lado. Llevan el material neutro
+*Blanco estudio* del catálogo, compartido. Los planos y el fondo infinito
+se quedan una milésima del tamaño por encima del suelo del estudio para no
+parpadear contra él.
+
+**Arrastrar un material** (la misma fuente que en §2.2) sobre una pieza
+del visor lo asigna **al nivel de selección vigente**, igual que lo
+seleccionaría un clic en ese punto: con *Pieza*, la pieza; con *Grupo*,
+su ensamblaje (la pieza si no tiene); con *Modelo*, el modelo entero; con
+*Caras*, la cara entera bajo el cursor (la cara CAD, o la superficie que
+continúa, §4.1). Mientras se arrastra, una miniatura fantasma, arriba y a
+la derecha del puntero, lleva el nombre del material y dice *Copia* si se
+pulsa `Alt`; lo que alcanzaría la suelta se resalta (contorno en las
+piezas, tinte en las caras; se ve aunque *Contorno al pasar* esté
+apagado) y el cursor dice si se puede soltar. Soltar asigna con **una sola
+acción** y una entrada de deshacer; `Esc`, soltar fuera o salir de la
+ventana cancelan, y un clic sin mover en la miniatura sigue asignando a la
+selección. Un preset del catálogo o un elemento de *Míos* entra con la
+instancia que la escena ya tiene (la misma que un clic); la esfera de la
+selección **enlaza** el destino con su instancia (las piezas que la llevan
+comparten los cambios); con `Alt`, cualquiera de las tres da una **copia
+propia**. Si el destino lleva materiales distintos, se pregunta en línea
+antes de sobrescribir (§4.1). Un dedo no arrastra; el lápiz hace lo que el
+ratón.
+
+**Selección por caja** (herramientas *Seleccionar* y *Mover*, esta
+última donde no hay un asa del *gizmo* bajo el puntero): **`Ctrl/⌘` +
+arrastrar** con el botón izquierdo dibuja un rectángulo que **sustituye**
+la selección; con `Shift` además (`Ctrl/⌘ ⇧` + arrastrar) **añade**, y con
+`Alt` (`Ctrl/⌘ Alt` + arrastrar) **quita**. De izquierda a derecha es una
+**ventana** (coge lo que queda entero dentro; contorno continuo), de
+derecha a izquierda es un **cruce** (coge lo que toca; contorno
+discontinuo); los dos en tinta, sin color. Actúa al nivel vigente (§4.1):
+*Modelo*, *Grupo* y *Pieza* prueban la geometría proyectada de cada
+nodo (las piezas ocultas no cuentan, y no se mira qué tapa a qué: una
+pieza detrás de otra también se coge); *Caras* coge las caras enteras de **una pieza** (la seleccionada o,
+si no hay, la que está en el centro de la caja) que **se ven** dentro del
+rectángulo, y el botón **Rayos X** de la barra de vista (solo a ese nivel)
+las coge también aunque otras las tapen. Un arrastre de pocos píxeles es
+un clic (con sus teclas), `Esc` cancela, la caja solo dibuja el
+rectángulo (la selección cambia al soltar) y, como toda selección, no deja
+entrada de deshacer. La cámara no pierde nada: sin tecla, el botón
+izquierdo sigue orbitando, y `Shift` o `Alt` + arrastrar sin `Ctrl/⌘`
+son de la cámara como siempre; con *Seleccionar* y *Mover*, `Ctrl/⌘` +
+arrastrar ya no desplaza (quedan el botón derecho, la rueda y la
+herramienta *Desplazar*). Con el esquema *Alt + botón izquierdo orbita*
+o *Botón central orbita* (§2.9) el botón izquierdo está libre y **un
+arrastre sin más** dibuja la caja: `Shift` añade, con el central `Alt`
+quita y con *Alt + izquierdo* quitar es `Ctrl/⌘ Alt`. El lápiz es un
+ratón; un dedo sigue orbitando. El tooltip de *Seleccionar* lo cuenta, y
+funciona igual en *Rápido* y en *Completo*. Los **clics** no cambian: sin
+tecla sustituye, `Shift` añade, `Ctrl/⌘` mete o saca, `Alt` quita (salvo
+con *Alt + botón izquierdo orbita*, donde `Alt` es de la cámara), y un
+clic en vacío limpia.
 
 ### 2.4 · Inspector (derecha)
 
@@ -284,9 +411,24 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    fase del motor).
 3. **Entorno** — Tipo: *Cúpula de estudio* (procedural, por defecto),
    *Cielo* (sol y cielo procedurales), *Plano* (color liso), *Archivo
-   HDRI*. Intensidad, rotación. Fondo: *El mismo entorno*, *Color*
-   (muestra), *Transparente*, *Imagen de fondo*. Sombra en el suelo y
-   reflejo en el suelo (intensidad).
+   HDRI*. Con *Archivo HDRI*, botón *Cargar HDRI…* (`.hdr`, `.exr`) y
+   debajo el nombre y el tamaño del archivo, o *Sin HDRI cargado: ilumina
+   la cúpula de estudio*; soltar un `.hdr` o `.exr` en la ventana hace lo
+   mismo. Con *Cielo*, *Modelo* (*Físico · Clásico*, segmentado, con una
+   ayuda en cada opción: *Físico* es el cielo propio de E5c, ajustado a
+   nuestra simulación de la atmósfera, y el de por defecto; *Clásico*, el de
+   Preetham de E5), *Bruma* (turbidez, de 1 a 10; el clásico la sujeta a 1,7
+   como mínimo) y, si el montaje no tiene foco de sol, *Azimut del sol* y
+   *Altura del sol*; si lo tiene, una nota dice que el sol del montaje
+   coloca el del cielo. Intensidad, rotación (se
+   oculta con *Cielo*: lo coloca su sol). Fondo: *El mismo entorno*,
+   *Color* (muestra), *Transparente*, *Imagen de fondo*; con esta última,
+   *Cargar imagen…* (PNG, JPEG, WebP), su nombre y tamaño, *Encaje*
+   (*Llenar · Encajar · Estirar*, dentro del marco de salida) y el color,
+   que se ve alrededor de la imagen encajada o en su lugar mientras no hay
+   ninguna. Un archivo que no se puede leer se avisa en un *toast* que
+   dice qué le pasa. Sombra en el suelo y reflejo en el suelo
+   (intensidad).
 4. **Cámara** — Preset de óptica (8 `LENS_PRESETS`), focal en mm (campo
    arrastrable), diafragma (f/), distancia de enfoque + botón *Enfocar
    con clic*, interruptor Perspectiva / Ortográfica, *Encuadrar*, y
@@ -301,9 +443,18 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    nombre, categoría, y botón *Cambiar…* que despliega el **catálogo**:
    pestañas de categoría (`MATERIAL_CATEGORIES`), rejilla de esferas de
    4 columnas con el nombre debajo, filtro por texto. Clic asigna a la
-   selección al nivel elegido (§4.1); arrastrar también vale. Debajo, los
+   selección al nivel elegido (§4.1); **arrastrar también vale**: la
+   miniatura se suelta sobre una pieza del visor (§2.3) o una fila del
+   árbol (§2.2), y `Alt` al soltar da una copia propia. La esfera de la
+   tarjeta del material se arrastra igual (salvo la del material neutro
+   por defecto, que no es nada que repartir) y **enlaza** el destino con
+   esa instancia. A nivel *Caras* el catálogo aparece cuando hay una cara
+   seleccionada (mientras no, el inspector dice *Haz clic en una cara…*) y
+   la suelta cae en la cara bajo el cursor. Debajo, los
    **parámetros** de la familia del material: color, metal, rugosidad,
-   barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; madera
+   barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; vidrio
+   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm y
+   *Paredes*: *Macizo · Pared fina*); madera
    (dos colores, densidad de anillos…); tela (dos colores de hilo, tipo de
    tejido, hilos por cm, pelusa); emisor (tipo, temperatura, potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material
@@ -317,6 +468,26 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
 3. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
    radio de bisel de aristas (mm), suavizado.
+
+**Con una primitiva seleccionada** (fase U9), antes de *Material*, la
+sección **Primitiva**: *Forma* (el nombre, en texto), y un campo por
+medida del catálogo, arrastrable, en mm (las unidades de la interfaz) o en
+número entero: ancho, fondo, alto, radio, radio de bisel y sus segmentos,
+segmentos, radio del tubo, radio interior, escalones; con las palabras de
+cada forma donde las tiene (*Radio del anillo* del toro, *Radio exterior*
+del tubo, *Alto total* de la cápsula, *Radio de la curva* y *Segmentos de
+la curva* del fondo infinito). Cambiar una medida regenera la malla al
+momento con una acción del *store*; un arrastre es una sola entrada de
+deshacer (*Deshacer: Cambiar Alto de Caja*) y la pieza conserva su apoyo
+(el centro de la base de su caja no se mueve: una base que crece, crece
+hacia arriba). Las medidas fuera de lo que da una forma se acotan (un
+bisel no pasa de la mitad del lado menor). Una nota dice que las medidas
+van en los ejes de la pieza y que su escala las multiplica, otra cuántas
+copias enlazadas cambian con ella, y el botón **Convertir en malla** la
+congela (la sección desaparece; deshacer la devuelve). En el *Fondo
+infinito*, además, **Ajustar a la cámara** lo vuelve a girar y dimensionar
+para la cámara activa y el formato de salida de ahora, en una entrada de
+deshacer (*Deshacer: Ajustar Fondo infinito a la cámara*).
 
 **Con un foco seleccionado:** nombre, rol (si viene de un montaje), tipo
 (área / punto / foco direccional / sol), forma, tamaño, **posición**
@@ -395,9 +566,15 @@ versión de U1 con planos y tarjetas se sustituye en N1 por esto):
 **Cajón Cola**: lista de trabajos en orden (miniatura, nombre, cámara,
 tamaño, *Terminar por*, IA sí o no, estado y progreso), arrastrables para
 reordenar; por trabajo: *Editar* (reabre la ventana de render con sus
-ajustes), *Duplicar*, *Quitar*; arriba *Iniciar cola* / *Pausar* y
-*Vaciar terminados*. Los terminados quedan en la lista con su miniatura;
-clic abre el visor de resultados.
+ajustes), *Duplicar*, *Quitar*; arriba *Vaciar terminados* y un botón
+que sigue el estado de la cola: **Pausar** mientras corre (para el trabajo
+en curso y libera el motor al momento; el trabajo vuelve a *En espera*),
+**Reanudar** tras una pausa (sigue con lo pausado, y el trabajo pausado
+vuelve a empezar: un render no se reanuda a medias) e **Iniciar cola** si
+no, desactivado cuando no hay nada en espera. Un *Reanudar* pulsado
+mientras el trabajo pausado aún se está parando no se pierde. Los
+terminados quedan en la lista con su miniatura; clic abre el visor de
+resultados.
 
 ### 2.6 · Barra de estado
 
@@ -476,8 +653,53 @@ fotogramas o segundos), **fps** (24, 25, 30, 60), duración resultante,
 **a cada fotograma**, y la estimación del total. La cámara es la pista de
 cámara de la línea de tiempo.
 
-**3 · Post-procesado IA**: el interruptor, su configurador y su vista
-previa, descritos en `AI-POST.md` §4. Plegado y apagado por defecto.
+**3 · Post-procesado IA** (X4; `AI-POST.md` §4): plegada y apagada por
+defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
+
+- **Interruptor** con su línea auxiliar: el modelo en uso, con los datos
+  del gestor de Ajustes (*Z-Image-Turbo · Q4 · Apache-2.0 · descargado*).
+  Si no hay ningún modelo (o falta el motor de inferencia), activarlo
+  abre *Ajustes ▸ Post-procesado IA ▸ Modelos*; si el servicio dice que no
+  puede (`AiUnavailableReason`), queda deshabilitado con el motivo en una
+  nota (sin WebGPU, poca memoria, modelo que el motor instalado no carga,
+  *próximamente* mientras la versión no tenga tubería). En *Animación* queda
+  deshabilitado (*para animaciones llega más adelante*). Gestionar modelos…
+  y la intervención por defecto de Ajustes, debajo.
+- **Configurador** (solo con el interruptor encendido), a la izquierda: seis
+  controles de 0 a 100 con su frase —*Intervención*, *Luz*, *Rebotes*,
+  *Desgaste y microdetalle*, la lista de *Estilo* (`AI_STYLES`) y *Fuerza del
+  estilo*—, las **protecciones** como seis fichas fijas con candado (sin
+  interruptor ni botón: *Geometría · Materiales · Resolución · Profundidad
+  de campo · Encuadre · Texto y logotipos*) y **Otra variación**, que cambia
+  la semilla. Cada cambio es una acción del *store*, deshacible; arrastrar un
+  control es **un** paso de deshacer. En un trabajo de la cola que se edita,
+  los controles cambian el borrador del trabajo.
+- **Vista previa**, a la derecha (debajo en una ventana estrecha; queda a la
+  vista mientras se recorren los controles): un fotograma del **modo Rápido**
+  desde la cámara del trabajo a 384–512 px, con la IA aplicada y el **divisor
+  deslizable** de U5 (*Antes · Después*). Se actualiza **al soltar** un
+  control, nunca mientras se arrastra (los cambios de una tecla o de una
+  lista esperan una pausa corta), y abandona la vista previa en curso si
+  llega otro cambio. Debajo: el tamaño, **la línea del informe de la guarda**
+  (la misma del visor), *≈ 0,4 s por cambio en este equipo* —**medido**
+  alrededor de la llamada a la tubería, sin cifra hasta la primera vista
+  previa—, la nota *La vista previa parte del modo Rápido; el resultado final
+  parte del render completo* y la opción *Usar el motor completo para la
+  vista previa (más lento)*, que parte del trazador con el presupuesto del
+  trabajo. El fotograma y sus pases de `AI-POST.md` §7.4 (dibujados con
+  three.js: ids de pieza y de material del propio RSB, profundidad, normales
+  en el mundo con Z arriba, albedo, círculo de confusión de la lente fina) se
+  calculan una vez y se reutilizan mientras cambian solo los controles.
+- **De dónde sale** (X3c): en la aplicación de escritorio, de la tubería del
+  lanzador (`src/io/ai-post.ts`): el interruptor puede encenderse cuando
+  `/api/ai/runtime` dice que el motor de ejecución y el modelo activo están
+  listos (si no, el motivo: sin motor, sin modelo, modelo que este motor no
+  carga), y la vista previa manda su fotograma y sus pases al lanzador. En la
+  web, hasta X3d, el interruptor dice *próximamente*; con `?ai=synthetic`
+  corre el servicio sintético de `src/ai/synthetic.ts` (sin modelo,
+  determinista) para capturas, demos y pruebas. Apagar el interruptor
+  devuelve la memoria del modelo (si ningún trabajo lo usa). Capturas:
+  `docs/ui/ai-section-dark.png` y `docs/ui/ai-section-light.png`.
 
 **Pie de la ventana**: a la izquierda, el resumen en una línea
 (*1920 × 1080 · 300 ppp · 256 muestras · PNG → Descargas · IA
@@ -504,6 +726,47 @@ teclas ← →), etiquetas *Render* · *IA* en las esquinas y los botones
 resultados quedan en el historial del proyecto (cajón *Cola*,
 terminados) y en el almacenamiento del navegador hasta que se borran.
 
+**Con IA (X4).** Un trabajo de imagen con el post-procesado encendido guarda
+primero la imagen del motor (siempre) y después la de la IA al lado
+(`…_AI.png`, en el formato del trabajo); el resultado conserva las dos y el
+**informe de la guarda**. El visor abre *Render* contra *IA* con el divisor
+(etiquetas *Render · IA*, botones *Solo render · Solo IA · Dividir*) y una
+línea propia bajo el título y la barra de botones, a todo lo ancho de la
+cabecera: *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) · resolución ✓ ·
+enfoque ✓* (la geometría reúne bordes, píxeles fuera de las regiones
+permitidas y detalle de banda alta; ΔE máx es el mayor ΔE₀₀ medio de un
+material) y, en la misma línea, *La IA se limitó al 23 % para respetar las
+protecciones* si la guarda tuvo que bajar la intervención. Es siempre una sola
+línea: si no cabe acaba en puntos suspensivos y el aviso al pasar el ratón la
+tiene entera, con lo que se ejecutó. La barra de botones comparte línea con el
+título mientras caben los dos; si no, pasa debajo (y sus botones saltan de
+línea), sin estrechar nunca el título; *Cerrar* se queda en la esquina (X3c;
+`tools/ai-post-check.mjs` lo mide a 1600, 1280 y 960 px en los dos idiomas). Si la guarda la **rechaza**, el
+resultado queda con la imagen del motor sin cambios, el informe dice qué
+protección se rompió y no hay segunda imagen. Se guardan las dos por separado
+(*Guardar el render de nuevo*, *Guardar la imagen IA*); *Comparar con…* pone
+otro resultado en lugar de la IA. La cola y el historial muestran las **dos
+miniaturas**. El historial guarda la imagen de la IA como segundo fichero del
+resultado: IndexedDB en la web y `<datos>/results/<id>.ai.<ext>` en el
+escritorio (`PUT/GET /api/store/results/<id>/ai` del lanzador). Capturas:
+`docs/ui/ai-results-viewer.png`, `docs/ui/ai-results-light.png` y
+`docs/ui/ai-queue.png`.
+
+**En el escritorio (X3c).** El render final con IA deja su imagen lineal y sus
+pases en el lanzador, que hace la IA sin que los píxeles vayan y vuelvan; la
+imagen de la IA llega como luz lineal y se escribe **con la exposición y la curva
+del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG o EXR),
+así que con Intervención 0 es el mismo fichero byte a byte. Mientras la IA
+trabaja, la fila de la cola dice dónde está —*IA · cargando el modelo*, *IA ·
+mosaico 2 de 4*, *· intento 2* tras un reintento, *IA · comprobando*— y la barra
+mide la tubería, no ya el render. *Detener* o *Pausar* en ese momento paran la
+IA al instante y **la imagen del motor se queda en el historial** (aviso *Post-procesado
+IA detenido: la imagen del motor se conserva en el historial*); con *Pausar*, el
+trabajo vuelve a esperar y *Reanudar* lo hace entero. Los navegadores no
+muestran EXR: la miniatura de la IA de un trabajo EXR sale de una copia de 8
+bits, pero el visor solo compara *Render | IA* cuando la IA es PNG o JPEG (el
+historial guarda el EXR tal cual; una copia para la vista queda pendiente).
+
 ### 2.9 · Ventana de Ajustes
 
 Se abre con **Ajustes…** del menú de aplicación o `Ctrl/⌘ ,`. Es la
@@ -527,15 +790,15 @@ título del grupo en versalitas auxiliares:
 | Grupo | Sección | Qué hay |
 | --- | --- | --- |
 | **Aplicación** | **General** | Idioma; tema (Oscuro · Claro · Sistema); al arrancar (*Modo estándar con el ejemplo* · *Proyecto vacío* · *Último proyecto*); unidades de la interfaz (mm, cm, m, pulgadas); recuperación automática (copia cada N minutos en el almacenamiento, *próximamente* hasta U2); confirmar al cerrar con cambios sin guardar |
-| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
+| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
-| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
-| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo). Mientras la tubería de X3 no exista, arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
+| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
+| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
 | | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con **Descargar**, el paquete de esta plataforma, y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con *Descargar · Notas · Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`) |
-| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
+| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
 
 **Columna derecha**: título de la sección, una frase de qué se ajusta
 ahí y las filas en bloques con un subtítulo y una línea fina entre
@@ -545,6 +808,16 @@ desplegable). Una fila con un valor distinto del de fábrica lleva un
 punto y, al pasar, *Restablecer* en línea; al pie de cada sección,
 *Restablecer esta sección*. Lo que no existe todavía se ve,
 deshabilitado, con *próximamente*.
+
+**Ratón y caja de selección.** La fila *Ratón* (Preferencias ▸ Visor y
+navegación) dice en su línea auxiliar qué botón orbita (el derecho
+desplaza y la rueda hace zoom) y cómo se dibuja la caja de selección
+(§2.3): *con la herramienta Seleccionar, `Ctrl/⌘` + arrastrar dibuja una
+caja de selección en cualquier caso (añade `Shift` para añadir, `Alt` para
+quitar); donde el botón izquierdo está libre, un arrastre sin más
+también*. La frase ocupa tres o cuatro líneas auxiliares según el
+idioma, sin desbordar la fila, y el tooltip de *Seleccionar* cabe en sus
+280 px.
 
 **Post-procesado IA ▸ Modelo activo**: el modelo en uso (nombre,
 cuantización, licencia, tamaño) y su configuración: dispositivo
@@ -570,11 +843,35 @@ de marcarse *Listo*. **Importar modelo…** como describe `AI-POST.md` §5.
 Si el instalador dejó modelos elegidos para descargar, aparecen aquí
 descargándose desde el primer arranque.
 
+**Post-procesado IA ▸ Motor de ejecución** (solo escritorio, X3b): la compilación de
+stable-diffusion.cpp que toca (`src/data/ai-runtimes.json`) con su nombre y la marca *Aún sin
+probar en un equipo real* mientras `verified` esté vacío; por qué es esa (*Vulkan, porque se ha
+encontrado una tarjeta gráfica que usar* · *CPU, porque no…* · *como dice Ejecutar con*) y en qué
+dispositivo se ejecuta, tal como lo dijo el propio motor (`--list-devices`); su estado (*No
+descargado · 26 MB* · *Descargando 42 % · 11 MB de 26 MB* con barra · *En pausa* · *Comprobando el
+sha256* · *Descomprimiendo* · *Instalado · stable-diffusion.cpp version unknown, commit d637cfb*,
+y *cargado: <motor>/<modelo>* mientras el modelo está en memoria); licencia y versión de la
+*release* y lo que necesita el equipo (en Windows, el entorno de Visual C++; en Linux, glibc 2.38);
+acciones *Descargar*, *Pausar*, *Reanudar*, *Eliminar* (con confirmación) e *Instalar desde un
+archivo…* (un zip descargado con el navegador, que solo se instala si su `sha256` es el fijado);
+avisos en línea si el último intento falló, si no arranca en este equipo (con el motivo, p. ej. la
+DLL que falta) o si no hay `curl` para descargar. Si una compilación de Windows no arranca porque
+falta el entorno de **Microsoft Visual C++ 2015–2022** (X3c: lo comprueba el lanzador, sus DLL ni en
+la carpeta del motor ni en `System32`), el aviso lo dice y salen **Instalar el entorno de Microsoft
+Visual C++…**, que abre la página oficial de Microsoft en el navegador del sistema (no
+redistribuimos sus DLL), y **Comprobar de nuevo**. Debajo, **Ejecutar con**: *Automático* (Vulkan
+con tarjeta gráfica, la CPU sin ella) · *Vulkan (tarjeta gráfica)* · *CPU*. Nada de esta fila se
+estima: todo lo dice el lanzador.
+
 **Post-procesado IA ▸ Equipo**: lo detectado (GPU y su VRAM dedicada,
 RAM, núcleos, WebGPU sí o no y el tamaño máximo de búfer) y la
 recomendación que sale de la regla de `AI-POST.md` §2.4, con la fila de
 la tabla que la decide. Si la detección falla, se dice y no se
-recomienda nada.
+recomienda nada. En escritorio, sin tarjetas en la lista, *Tarjeta
+gráfica* y la fila *GPU* distinguen *No se ha encontrado ninguna tarjeta
+gráfica* (el lanzador preguntó y no hay) de *No se han podido leer las
+tarjetas gráficas: mira los registros* (ninguna fuente contestó,
+`gpuDetection: failed`).
 
 **Último proyecto** (*General ▸ Al arrancar*): el encabezado pregunta
 *¿Abrir el último proyecto, «X»?* con *Abrir* y *Ahora no*; si el archivo
@@ -614,6 +911,9 @@ de teclado* del menú):
 | `Ctrl/⌘ ⇧ ⏎` | Render con los últimos ajustes, sin abrir la ventana |
 | `F` | Encuadrar selección (o todo) |
 | `V` `O` `P` `Z` | Herramientas de vista |
+| `M` | Herramienta de mover |
+| `S` | Herramienta de escalar (fase U9) |
+| `L` / `G` | Ejes locales / globales de mover y escalar |
 | `H` / `⇧ H` / `Alt H` | Ocultar selección / Aislar / Mostrar todo |
 | `1` `2` `3` `4` | Nivel de selección: Modelo · Grupo · Pieza · Caras |
 | `Tab` | Plegar y desplegar los paneles laterales |
@@ -640,9 +940,26 @@ pieza). El selector aparece en la cabecera del inspector y encima del
   sobrescribir se pregunta en línea, con inventario: "Cuerpo contiene 3
   materiales (Oro, Vidrio, Goma). · Sustituir todos · Mantener los
   existentes y aplicar solo donde no hay · Cancelar".
-- En *Caras*, en U1 basta con el modo y la mecánica de selección por clic
-  sobre triángulos; la expansión a cara CAD entera es de una fase
-  posterior y lo dice el tooltip.
+- En *Caras* un clic coge **la cara entera** bajo el cursor: la cara CAD
+  si la pieza viene de STEP o IGES y, si no, la superficie que continúa
+  (crece desde el triángulo picado por continuidad, `SPEC.md` §3.2). Clic
+  sin más sustituye la selección de caras; `Ctrl/⌘` clic mete o saca la
+  cara entera; `Alt` clic la quita; `Shift` vuelve **suelto** el
+  triángulo picado: `Shift` clic lo añade, `Ctrl/⌘ ⇧` clic lo mete o saca
+  y `Alt ⇧` clic lo quita. El tooltip del nivel lo dice. *Separar por caras CAD* (menú de pieza) parte
+  la pieza en una nueva por cara CAD.
+- Con *Seleccionar* (o *Mover* o *Escalar*), un clic en el visor, a cualquier nivel:
+  sin tecla sustituye la selección, `Shift` añade, `Ctrl/⌘` mete o saca,
+  `Alt` quita; un clic en vacío la limpia.
+- **Caja** (§2.3): `Ctrl/⌘` + arrastrar (con `Shift` añade, con `Alt`
+  quita), de izquierda a derecha una ventana y de derecha a izquierda un
+  cruce, al nivel vigente: modelos, grupos o piezas por su geometría
+  proyectada; caras enteras de una pieza, las que se ven (o todas con
+  *Rayos X*).
+- Soltar un material sobre algo (§2.2, §2.3) alcanza lo mismo que
+  alcanzaría un clic al nivel vigente, y la regla de los materiales
+  distintos de arriba vale igual: se pregunta en línea antes de
+  sobrescribir.
 
 ### 4.2 · Lenguaje de fotógrafo
 
@@ -719,7 +1036,8 @@ Lo que **sí** debe funcionar de verdad en U1:
 - Entorno: cúpula procedural (gradiente suelo → horizonte → cenit con los
   valores de `src/data/environment.ts`), color plano, transparente;
   intensidad y rotación. *Cielo* y *Archivo HDRI* pueden quedar como
-  opciones presentes pero marcadas *próximamente* en auxiliar.
+  opciones presentes pero marcadas *próximamente* en auxiliar (U1; desde
+  E5 funcionan, con la imagen de fondo).
 - Imagen: exposición y transformada de vista aplicadas al visor; el resto
   guardado en el estado.
 - Animación: en U1, planos, movimientos con frase, presets, asistente y

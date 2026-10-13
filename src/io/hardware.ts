@@ -75,7 +75,7 @@ export async function detectWebHardware(nav: Navigator = navigator, timeoutMs = 
 
 /** The launcher's detection (P2's `NativeHardware`, `GET /api/hardware`): the fields used here. */
 /** What the launcher measured (`GET /api/hardware`), in the model manager's terms. */
-export type NativeHardwareLike = Pick<NativeHardware, 'cpu' | 'cores' | 'threads' | 'ramGiB' | 'gpus' | 'device' | 'detected'>;
+export type NativeHardwareLike = Pick<NativeHardware, 'cpu' | 'cores' | 'threads' | 'ramGiB' | 'gpus' | 'device' | 'detected' | 'gpuDetection'>;
 
 export function fromNativeHardware(hw: NativeHardwareLike): HardwareInfo {
   return {
@@ -84,6 +84,7 @@ export function fromNativeHardware(hw: NativeHardwareLike): HardwareInfo {
     cores: hw.threads || hw.cores || null,
     ramGiB: hw.ramGiB,
     gpus: hw.gpus.map((g) => ({ name: g.name, vramGiB: g.vramGiB })),
+    ...(hw.gpuDetection === 'failed' ? { gpuDetectionFailed: true } : {}),
     webgpu: null,
     maxBufferBytes: null,
     cpu: hw.cpu,

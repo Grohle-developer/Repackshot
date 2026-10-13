@@ -27,14 +27,14 @@ export function downloadChoice(ctx: Ctx, release: ReleaseInfo): { url: string; a
   return { asset, url: asset?.url ?? release.pageUrl };
 }
 
-/** An external link, in a new window without access to this one (for now: the desktop application has no other way). */
-export function openLink(url: string): void {
+/** An external link (https only), through `services.openExternal`: the system's browser on the desktop, a new tab on the web. */
+export function openLink(ctx: Ctx, url: string): void {
   const safe = httpsUrl(url);
-  if (safe) window.open(safe, '_blank', 'noopener');
+  if (safe) void ctx.services.openExternal(safe).catch((err: unknown) => console.warn(`open ${safe}: ${err instanceof Error ? err.message : String(err)}`));
 }
 
-export const downloadUpdate = (ctx: Ctx, release: ReleaseInfo): void => openLink(downloadChoice(ctx, release).url);
-export const openReleaseNotes = (release: ReleaseInfo): void => openLink(release.pageUrl);
+export const downloadUpdate = (ctx: Ctx, release: ReleaseInfo): void => openLink(ctx, downloadChoice(ctx, release).url);
+export const openReleaseNotes = (ctx: Ctx, release: ReleaseInfo): void => openLink(ctx, release.pageUrl);
 
 /** Shows the notice for a newer version, unless this session has announced it already. */
 function announce(ctx: Ctx, release: ReleaseInfo): void {

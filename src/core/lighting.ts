@@ -13,7 +13,7 @@ import { activeCamera, cameraPosition, frameBox, outputAspect, type CameraState 
 import { nextId } from './ids';
 import { add, boxCenter, dot, isEmptyBox, length, normalize, scale, sub, type Vec3 } from './math';
 import { partMaterials, pruneMaterials, type MaterialId, type MaterialInstance } from './materials';
-import { sceneBounds, type FaceRange, type NodeId } from './scene';
+import { productBounds, type FaceRange, type NodeId } from './scene';
 
 /** One light of the active rig (SPEC §3.4). Sizes and distance in part sizes. */
 export interface LightInstance {
@@ -161,11 +161,21 @@ export function lightShares(lights: readonly LightInstance[]): number[] {
   return each.map((e) => (total > 0 ? e / total : 0));
 }
 
-/** The point the rig is placed around and aimed at: centre of the visible scene. */
+/** The point the rig is placed around and aimed at: centre of the visible product (not of its base or backdrop). */
 export function rigPivot(state: ProjectState): Vec3 {
-  const b = sceneBounds(state, true);
+  const b = productBounds(state, true);
   if (isEmptyBox(b)) return [0, 0, state.scene.partSizeMm / 2];
   return boxCenter(b);
+}
+
+/**
+ * Unit direction towards the sky's sun (environment kind SKY): the rig's first enabled sun light, else the
+ * environment's own sun, camera-relative like a light (SPEC §3.4: sky and sun from the sun light).
+ */
+export function skySunDirection(state: ProjectState, lights: readonly Pick<LightInstance, 'type' | 'enabled' | 'power' | 'az' | 'el'>[] = state.studio.lights): Vec3 {
+  const sun = lights.find((l) => l.type === 'SUN' && l.enabled && l.power > 0);
+  const { az, el } = sun ?? state.environment.skySun;
+  return normalize(polar(toWorldAzimuth(az), el, 1));
 }
 
 /** World position of a light, millimetres. */
@@ -304,7 +314,8 @@ export function buildStudio(state: ProjectState): ProjectState {
       elevation: CAMERA_ELEVATION_DEG,
       projection: 'PERSPECTIVE',
     };
-    const box = sceneBounds(state, true);
+    // The product, not the set around it (a sweep would frame the backdrop).
+    const box = productBounds(state, true);
     if (!isEmptyBox(box)) next = frameBox(next, box, outputAspect(state));
     camera = { ...state.camera, cameras: { ...state.camera.cameras, [cam.id]: next } };
   }

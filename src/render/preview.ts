@@ -10,18 +10,25 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, type Pose } from '../core/animation';
+import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
-import { lightPosition, rigPivot, type LightInstance } from '../core/lighting';
+import { fitImageRect, getImage, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
+import { lightPosition, rigPivot, skySunDirection, type LightInstance } from '../core/lighting';
 import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
+import { lensOf } from '../core/lens-coc';
 import { getMesh } from '../core/meshes';
+import type { PassIds } from '../core/pass-ids';
+import type { PassKey, RenderPasses } from '../core/passes';
+import { SKY_HEIGHT, SKY_WIDTH, skyImage } from '../core/sky';
 import { areaLightRadiance, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
-import { partsUnder, sceneBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
+import { partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
 import type { ProjectState } from '../core/store';
 import type { DisplayPrefs, EngineStatus, NavigationPrefs, PickHit, RenderEngine, RenderOptions } from './engine';
-import { Gizmo, GizmoDrag, modelRay } from './gizmo';
+import { Gizmo, GizmoDrag, modelRay, SCALE_CUBE_AT, type GizmoMode } from './gizmo';
 import { applyMaterial, makeMaterial } from './materials';
+import { drawPasses, type PassMesh } from './preview-passes';
 
 /** Model space (Z up, mm) to three.js space (Y up): (x, y, z) -> (x, z, -y). */
 export function toThree(p: readonly number[]): THREE.Vector3 {
@@ -41,6 +48,9 @@ function fromThree(v: THREE.Vector3): Vec3 {
 const LAYER_SELECTED = 1;
 const LAYER_HOVER = 2;
 
+/** Linear to sRGB-encoded 0..255 (the canvas's encoding). */
+const encodeSrgb8 = (v: number) => Math.round(255 * Math.min(1, Math.max(0, v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)));
+
 /** The procedural studio dome as an equirectangular canvas (data/environment.ts). */
 function domeCanvas(kind: string, flat: readonly number[]): HTMLCanvasElement {
   const w = 512;
@@ -49,7 +59,7 @@ function domeCanvas(kind: string, flat: readonly number[]): HTMLCanvasElement {
   c.width = w;
   c.height = h;
   const ctx = c.getContext('2d')!;
-  const enc = (v: number) => Math.round(255 * Math.min(1, Math.max(0, v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)));
+  const enc = encodeSrgb8;
   if (kind === 'FLAT') {
     ctx.fillStyle = `rgb(${enc(flat[0])}, ${enc(flat[1])}, ${enc(flat[2])})`;
     ctx.fillRect(0, 0, w, h);
@@ -70,6 +80,71 @@ function domeCanvas(kind: string, flat: readonly number[]): HTMLCanvasElement {
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(strip, 0, 0, w, h);
   return c;
+}
+
+/**
+ * A linear equirectangular panorama (RGB floats, rows from the top: the HDRI's preview copy, the sky) as
+ * a half-float texture. A DataTexture's first row is the bottom one (v = 0), so the rows are turned over.
+ */
+function equirectTexture(rgb: Float32Array, w: number, h: number): THREE.DataTexture {
+  const data = new Uint16Array(4 * w * h);
+  const one = THREE.DataUtils.toHalfFloat(1);
+  for (let y = 0; y < h; y++) {
+    const src = 3 * (h - 1 - y) * w;
+    const dst = 4 * y * w;
+    for (let x = 0; x < w; x++) {
+      for (let k = 0; k < 3; k++) data[dst + 4 * x + k] = THREE.DataUtils.toHalfFloat(Math.max(0, rgb[src + 3 * x + k]));
+      data[dst + 4 * x + 3] = one;
+    }
+  }
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.HalfFloatType);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.LinearSRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** The background image's pixels on a canvas of their own (drawn from many times). */
+function imageCanvas(img: RegistryImage): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(img.rgba8!), img.width, img.height), 0, 0);
+  return c;
+}
+
+/**
+ * The background of BACKPLATE for a `w x h` picture: the background colour, and over it the image placed
+ * in `frame` by `fit` (core/images.ts `fitImageRect`, as the engine places it), clipped to the frame.
+ */
+function plateCanvas(src: HTMLCanvasElement, fit: 'FILL' | 'FIT' | 'STRETCH', color: readonly number[], w: number, h: number, frame: FrameRect): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = `rgb(${encodeSrgb8(color[0])}, ${encodeSrgb8(color[1])}, ${encodeSrgb8(color[2])})`;
+  ctx.fillRect(0, 0, w, h);
+  const r = fitImageRect(fit, src.width, src.height, frame);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(frame.x, frame.y, frame.width, frame.height);
+  ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, r.x, r.y, r.width, r.height);
+  ctx.restore();
+  return c;
+}
+
+/** A canvas as the scene's flat background (sRGB, drawn as it is, not tone mapped). */
+function backgroundTexture(c: HTMLCanvasElement): THREE.CanvasTexture {
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 /** Soft disc for bright-field panels (never a rectangle with edges, SPEC §3.4). */
@@ -126,15 +201,17 @@ export interface ViewChange {
   orthoWidth?: number;
 }
 
-export type PreviewTool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move';
+export type PreviewTool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move' | 'scale';
 
 /** A camera gesture as it happens: start, every move (with the live view), end. */
 export type GesturePhase = 'start' | 'move' | 'end';
 
-/** What the move tool shows: the gizmo of these nodes, in these axes. */
+/** What the move tool shows: the gizmo of these nodes, in these axes; the scale tool shows only its scale handles. */
 export interface GizmoSpec {
   ids: readonly NodeId[];
   space: Space;
+  /** Default ALL (the move tool). */
+  handles?: GizmoMode;
 }
 
 export class PreviewEngine implements RenderEngine {
@@ -157,8 +234,14 @@ export class PreviewEngine implements RenderEngine {
   private envKey = '';
   private envTexture: THREE.Texture | null = null;
   private envMap: THREE.Texture | null = null;
+  /** The background image (BACKPLATE) for the viewport, and the canvas of its pixels, by image id. */
+  private plateKey = '';
+  private plateTexture: THREE.CanvasTexture | null = null;
+  private plateSource: { id: string; canvas: HTMLCanvasElement } | null = null;
   private readonly disc = softDisc();
   private faceOverlay: THREE.Mesh | null = null;
+  /** The faces a dragged material would reach (a lighter tint over the same depth rules as the selected faces). */
+  private dropOverlay: THREE.Mesh | null = null;
   private hover: readonly NodeId[] = [];
   private width = 1;
   private height = 1;
@@ -422,7 +505,10 @@ export class PreviewEngine implements RenderEngine {
     const poseLights = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'LIGHT'));
     const poseEnv = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'SCENE'));
     if (full || nodesChanged || poseLights || state.studio !== prev.studio || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncLights(state, pose);
-    if (full || state.environment !== prev.environment || poseEnv) this.syncEnvironment(state, pose);
+    // The sky follows the sun light; the background image the frame (output size).
+    const skyFollows = state.environment.kind === 'SKY' && !full && (state.studio !== prev.studio || poseLights);
+    const plateFollows = state.environment.background === 'BACKPLATE' && !full && (state.render.width !== prev.render.width || state.render.height !== prev.render.height);
+    if (full || state.environment !== prev.environment || poseEnv || skyFollows || plateFollows) this.syncEnvironment(state, pose);
     if (full || state.image !== prev.image) this.syncImage(state);
     if (full || nodesChanged || state.studio !== prev.studio || state.environment !== prev.environment) this.syncFloor(state);
     if (full || nodesChanged || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncGrid(state);
@@ -433,6 +519,8 @@ export class PreviewEngine implements RenderEngine {
       this.updateLayers();
       this.syncFaceOverlay(state);
     }
+    // The parts may have been rebuilt: the tint of a drag in progress would hang from one that is gone.
+    if (nodesChanged) this.dropOverlay = PreviewEngine.dropTint(this.dropOverlay);
     // The interface may hand the gizmo new ids before this sync: place it again with the state that has them.
     if (this.gizmoSpec && (full || nodesChanged || state.selection !== prev.selection)) this.placeGizmo();
     this.needsRender = true;
@@ -620,7 +708,8 @@ export class PreviewEngine implements RenderEngine {
     // The shadow caster: a zero-intensity sun from above, leaning toward the key light.
     const keyDir = key ? polar(toWorldAzimuth(key.az), Math.max(55, key.el), 1) : [0, 0, 1];
     const d = toThree(keyDir).normalize();
-    const b = sceneBounds(state, true);
+    // Around the product: the contact shadow is what the shadow catcher shows, and a backdrop would spread the map thin.
+    const b = productBounds(state, true);
     const radius = isEmptyBox(b) ? size : boxMaxDim(b) * 0.9;
     this.shadowLight.position.copy(target).addScaledVector(d, radius * 6);
     this.shadowLight.target.position.copy(isEmptyBox(b) ? target : toThree(boxCenter(b)));
@@ -638,32 +727,101 @@ export class PreviewEngine implements RenderEngine {
 
   private syncEnvironment(state: ProjectState, pose: Pose | null): void {
     const env = state.environment;
-    // Sky and HDRI files are later phases: the studio dome stands in for them.
-    const kind = env.kind === 'FLAT' ? 'FLAT' : 'STUDIO';
-    const key = kind === 'FLAT' ? `FLAT:${env.color.join(',')}` : 'STUDIO';
+    // What lights: the studio dome, a flat colour, the sky, or the HDRI (the dome while none is loaded).
+    const hdri = env.kind === 'HDRI' && env.hdri ? getImage(env.hdri.id) : undefined;
+    const kind = env.kind === 'FLAT' ? 'FLAT' : env.kind === 'SKY' ? 'SKY' : hdri?.linear ? 'HDRI' : 'STUDIO';
+    let sun: Vec3 = [0, 0, 1];
+    if (kind === 'SKY') {
+      // The sky's sun is the rig's sun light, posed like syncLights poses it (or the environment's own).
+      const lights = state.studio.lights.map((l0) => {
+        const lp = pose?.lights[l0.id];
+        return lp ? { ...l0, power: lp.power, az: lp.az, el: lp.el, enabled: lp.enabled } : l0;
+      });
+      sun = skySunDirection(state, lights);
+    }
+    const key =
+      kind === 'FLAT'
+        ? `FLAT:${env.color.join(',')}`
+        : kind === 'SKY'
+          ? `SKY:${env.skyModel}:${env.skyTurbidity}:${sun.map((v) => v.toFixed(4)).join(',')}`
+          : kind === 'HDRI'
+            ? `HDRI:${env.hdri!.id}`
+            : 'STUDIO';
     if (key !== this.envKey) {
       this.envKey = key;
       this.envTexture?.dispose();
       this.envMap?.dispose();
-      const tex = new THREE.CanvasTexture(domeCanvas(kind, env.color));
-      tex.mapping = THREE.EquirectangularReflectionMapping;
-      tex.colorSpace = THREE.SRGBColorSpace;
+      let tex: THREE.Texture;
+      if (kind === 'HDRI') {
+        tex = equirectTexture(hdri!.linear!, hdri!.previewWidth ?? hdri!.width, hdri!.previewHeight ?? hdri!.height);
+      } else if (kind === 'SKY') {
+        // The engine's sky (core/sky.ts), unscaled by strength: environmentIntensity applies it.
+        const deg = 180 / Math.PI;
+        const rgb = skyImage({
+          model: env.skyModel,
+          sunAzimuthDeg: Math.atan2(sun[1], sun[0]) * deg,
+          sunElevationDeg: Math.asin(Math.max(-1, Math.min(1, sun[2]))) * deg,
+          turbidity: env.skyTurbidity,
+          floor: DOME_FLOOR,
+          horizon: DOME_HORIZON,
+          zenith: DOME_ZENITH,
+          strength: 1,
+        });
+        tex = equirectTexture(rgb, SKY_WIDTH, SKY_HEIGHT);
+      } else {
+        tex = new THREE.CanvasTexture(domeCanvas(kind, env.color));
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+      }
       this.envTexture = tex;
       this.envMap = this.pmrem.fromEquirectangular(tex).texture;
     }
-    const rot = THREE.MathUtils.degToRad(pose ? pose.envRotationDeg : env.rotationDeg);
+    // The sky is placed by its sun, not turned (as in the engine).
+    const rot = kind === 'SKY' ? 0 : THREE.MathUtils.degToRad(pose ? pose.envRotationDeg : env.rotationDeg);
     this.scene.environment = this.envMap;
     this.scene.environmentIntensity = env.strength;
     this.scene.environmentRotation.set(0, rot, 0);
     this.scene.backgroundRotation.set(0, rot, 0);
     this.scene.backgroundIntensity = env.strength;
+    const color = () => new THREE.Color().setRGB(env.color[0], env.color[1], env.color[2], THREE.LinearSRGBColorSpace);
     if (env.background === 'COLOR') {
-      this.scene.background = new THREE.Color().setRGB(env.color[0], env.color[1], env.color[2], THREE.LinearSRGBColorSpace);
+      this.scene.background = color();
     } else if (env.background === 'TRANSPARENT') {
       this.scene.background = null;
+    } else if (env.background === 'BACKPLATE') {
+      // The image fitted to the output frame of the viewport, the colour while none is loaded.
+      const frame = outputFrameRect(this.width, this.height, state.render.width, state.render.height);
+      this.scene.background = this.viewportPlate(state, this.width, this.height, frame) ?? color();
     } else {
       this.scene.background = this.envTexture;
     }
+  }
+
+  /** The canvas of the background image's pixels, or null when none is loaded. */
+  private plateImage(state: ProjectState): HTMLCanvasElement | null {
+    const ref = state.environment.backplate;
+    const img = ref ? getImage(ref.id) : undefined;
+    if (!ref || !img?.rgba8) return null;
+    if (this.plateSource?.id !== ref.id) this.plateSource = { id: ref.id, canvas: imageCanvas(img) };
+    return this.plateSource.canvas;
+  }
+
+  /** The viewport's background image texture (`w x h` CSS pixels, at most 2048 on the longer side), cached. */
+  private viewportPlate(state: ProjectState, w: number, h: number, frame: FrameRect): THREE.Texture | null {
+    const src = this.plateImage(state);
+    if (!src) return null;
+    const env = state.environment;
+    const k = Math.min(Math.max(1, this.dpr), 2048 / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * k));
+    const ch = Math.max(1, Math.round(h * k));
+    const f = { x: frame.x * k, y: frame.y * k, width: frame.width * k, height: frame.height * k };
+    const key = `${this.plateSource!.id}|${env.backplateFit}|${env.color.join(',')}|${cw}x${ch}|${f.x},${f.y},${f.width},${f.height}`;
+    if (key !== this.plateKey || !this.plateTexture) {
+      this.plateKey = key;
+      this.plateTexture?.dispose();
+      this.plateTexture = backgroundTexture(plateCanvas(src, env.backplateFit, env.color, cw, ch, f));
+    }
+    return this.plateTexture;
   }
 
   private syncImage(state: ProjectState): void {
@@ -756,18 +914,15 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
-  private syncFaceOverlay(state: ProjectState): void {
-    this.faceOverlay?.removeFromParent();
-    this.faceOverlay?.geometry.dispose();
-    this.faceOverlay = null;
-    const f = state.selection.level === 'FACES' ? state.selection.faces : undefined;
-    if (!f || f.indices.length === 0) return;
-    const node = state.scene.nodes[f.part];
-    const obj = this.objects.get(f.part);
+  /** A tinted copy of some triangles of a part, a child of the part (so it moves with it); null without geometry. */
+  private faceTint(state: ProjectState, part: NodeId, indices: readonly number[], opacity: number): THREE.Mesh | null {
+    if (indices.length === 0) return null;
+    const node = state.scene.nodes[part];
+    const obj = this.objects.get(part);
     const data = node?.mesh ? getMesh(node.mesh.id) : undefined;
-    if (!obj || !data) return;
-    const pos = new Float32Array(f.indices.length * 9);
-    f.indices.forEach((tri, i) => {
+    if (!obj || !data) return null;
+    const pos = new Float32Array(indices.length * 9);
+    indices.forEach((tri, i) => {
       for (let k = 0; k < 3; k++) {
         const v = data.indices[tri * 3 + k];
         pos.set(data.positions.subarray(v * 3, v * 3 + 3), i * 9 + k * 3);
@@ -776,9 +931,30 @@ export class PreviewEngine implements RenderEngine {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const ink = this.outlineMaterial.uniforms.ink.value as THREE.Vector3;
-    const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(ink.x, ink.y, ink.z), transparent: true, opacity: 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false, side: THREE.DoubleSide });
-    this.faceOverlay = new THREE.Mesh(g, m);
-    obj.add(this.faceOverlay);
+    const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(ink.x, ink.y, ink.z), transparent: true, opacity, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(g, m);
+    obj.add(mesh);
+    return mesh;
+  }
+
+  private static dropTint(mesh: THREE.Mesh | null): null {
+    mesh?.removeFromParent();
+    mesh?.geometry.dispose();
+    (mesh?.material as THREE.Material | undefined)?.dispose();
+    return null;
+  }
+
+  private syncFaceOverlay(state: ProjectState): void {
+    this.faceOverlay = PreviewEngine.dropTint(this.faceOverlay);
+    const f = state.selection.level === 'FACES' ? state.selection.faces : undefined;
+    if (f) this.faceOverlay = this.faceTint(state, f.part, f.indices, 0.45);
+  }
+
+  /** The faces a dragged material would reach, tinted until the drag moves on (null clears them). */
+  setHoverFaces(spec: { part: NodeId; indices: readonly number[] } | null): void {
+    this.dropOverlay = PreviewEngine.dropTint(this.dropOverlay);
+    if (spec && this.state) this.dropOverlay = this.faceTint(this.state, spec.part, spec.indices, 0.3);
+    this.needsRender = true;
   }
 
   // ------------------------------------------------------------------ frame
@@ -791,6 +967,8 @@ export class PreviewEngine implements RenderEngine {
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.setSize(width, height, false);
     if (this.state) this.syncCamera(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
+    // The background image follows the output frame inside the viewport.
+    if (this.state?.environment.background === 'BACKPLATE') this.syncEnvironment(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
     this.needsRender = true;
   }
 
@@ -801,7 +979,7 @@ export class PreviewEngine implements RenderEngine {
 
   /** Something to draw over the path tracer: an outline, selected faces, the gizmo. */
   private hasOverlay(): boolean {
-    if (this.faceOverlay || (this.gizmo.visible && !this.poseActive)) return true;
+    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive)) return true;
     for (const o of this.objects.values()) if (o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER)) return true;
     return false;
   }
@@ -842,8 +1020,8 @@ export class PreviewEngine implements RenderEngine {
    */
   private drawOverlayBase(cam: THREE.Camera): void {
     this.renderer.clear();
-    const faces = this.faceOverlay;
-    if (!faces) return;
+    const tints = [this.faceOverlay, this.dropOverlay].filter((m): m is THREE.Mesh => m !== null);
+    if (tints.length === 0) return;
     const bg = this.scene.background;
     const floorVisible = this.floor.visible;
     const lightsVisible = this.lightRoot.visible;
@@ -852,13 +1030,15 @@ export class PreviewEngine implements RenderEngine {
     this.floor.visible = false;
     this.lightRoot.visible = false;
     if (this.grid) this.grid.visible = false;
-    faces.visible = false;
+    for (const m of tints) m.visible = false;
     this.scene.overrideMaterial = this.depthOnly;
     this.renderer.render(this.scene, cam);
     this.scene.overrideMaterial = null;
-    faces.visible = true;
     this.renderer.autoClear = false;
-    this.renderer.render(faces, cam);
+    for (const m of tints) {
+      m.visible = true;
+      this.renderer.render(m, cam);
+    }
     this.renderer.autoClear = true;
     this.scene.background = bg;
     this.floor.visible = floorVisible;
@@ -912,11 +1092,19 @@ export class PreviewEngine implements RenderEngine {
 
   /** Shows the gizmo of the move tool for some nodes (null hides it). */
   setGizmo(spec: GizmoSpec | null): void {
-    const same = spec && this.gizmoSpec && spec.space === this.gizmoSpec.space && spec.ids.length === this.gizmoSpec.ids.length && spec.ids.every((id, i) => id === this.gizmoSpec!.ids[i]);
+    const handles = spec?.handles ?? 'ALL';
+    const same =
+      spec &&
+      this.gizmoSpec &&
+      spec.space === this.gizmoSpec.space &&
+      handles === (this.gizmoSpec.handles ?? 'ALL') &&
+      spec.ids.length === this.gizmoSpec.ids.length &&
+      spec.ids.every((id, i) => id === this.gizmoSpec!.ids[i]);
     if (same || (!spec && !this.gizmoSpec)) return;
-    this.gizmoSpec = spec ? { ids: [...spec.ids], space: spec.space } : null;
+    this.gizmoSpec = spec ? { ids: [...spec.ids], space: spec.space, handles } : null;
     this.gizmoDragging = null;
     this.gizmo.setActive(null);
+    this.gizmo.setMode(handles);
     this.placeGizmo();
   }
 
@@ -983,7 +1171,7 @@ export class PreviewEngine implements RenderEngine {
     if (!id || !frame) return null;
     const rc = this.rayAt(x, y);
     const view = normalize(fromThree(this.camera.getWorldDirection(new THREE.Vector3())));
-    this.gizmoDragging = new GizmoDrag(id, frame, this.gizmo.baseWorldSize, modelRay(rc, fromThree), { x, y }, view, this.gizmo.aimTarget);
+    this.gizmoDragging = new GizmoDrag(id, frame, this.gizmo.baseWorldSize, modelRay(rc, fromThree), { x, y }, view, this.gizmo.aimTarget, this.gizmo.handleMode === 'SCALE' ? SCALE_CUBE_AT : null);
     this.gizmo.setActive(id);
     this.needsRender = true;
     return id;
@@ -1024,6 +1212,146 @@ export class PreviewEngine implements RenderEngine {
     return { node: hit.object.userData.nodeId as NodeId, face: hit.faceIndex ?? 0, point: fromThree(hit.point), normal: [n[0], n[1], n[2]] };
   }
 
+  // ------------------------------------------------------------------ box selection
+
+  /** How the parts are projected as they are drawn now (core/box-select.ts): the viewport's size and a matrix for each part. */
+  projection(): Projection | null {
+    if (!this.state || this.width <= 0) return null;
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const viewProj = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    return {
+      width: this.width,
+      height: this.height,
+      mvp: (id) => {
+        const obj = this.objects.get(id);
+        if (!(obj instanceof THREE.Mesh)) return null;
+        obj.updateWorldMatrix(true, false);
+        return new THREE.Matrix4().multiplyMatrices(viewProj, obj.matrixWorld).elements.slice();
+      },
+    };
+  }
+
+  private idTarget: THREE.WebGLRenderTarget | null = null;
+  private readonly idBlack = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, toneMapped: false });
+  private readonly idColours = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false });
+
+  /**
+   * The triangles of a part that show in a rectangle (CSS pixels), found by drawing the scene into an offscreen
+   * target with a flat colour for each: the other parts in black (they hide what is behind them), the part with the
+   * number of each triangle in its colour (and its own triangles hiding each other, as they do on the screen).
+   * A pixel counts when the four around it show the same triangle: the one-pixel lines along a silhouette, where
+   * the faces behind a ridge peep out by the rasterizer's rounding, are not what the person sees.
+   * Null when it cannot be drawn (too many triangles to number, no geometry).
+   */
+  visibleTriangles(part: NodeId, rect: Rect): Set<number> | null {
+    const state = this.state;
+    const obj = this.objects.get(part);
+    const node = state?.scene.nodes[part];
+    const data = node?.mesh ? getMesh(node.mesh.id) : undefined;
+    if (!state || !(obj instanceof THREE.Mesh) || !data || this.width <= 0 || this.height <= 0) return null;
+    const T = Math.floor(data.indices.length / 3);
+    if (T === 0 || T >= 0xffffff) return null;
+    const W = Math.max(1, Math.round(this.width));
+    const H = Math.max(1, Math.round(this.height));
+    if (!this.idTarget || this.idTarget.width !== W || this.idTarget.height !== H) {
+      this.idTarget?.dispose();
+      this.idTarget = new THREE.WebGLRenderTarget(W, H, { magFilter: THREE.NearestFilter, minFilter: THREE.NearestFilter, depthBuffer: true });
+    }
+    // The rectangle in target pixels, and a ring of one more around it for the pixels at its border.
+    const x0 = Math.min(W - 1, Math.max(0, Math.floor(rect.x0)));
+    const x1 = Math.min(W, Math.max(x0 + 1, Math.ceil(rect.x1)));
+    const y0 = Math.min(H - 1, Math.max(0, Math.floor(rect.y0)));
+    const y1 = Math.min(H, Math.max(y0 + 1, Math.ceil(rect.y1)));
+    const rx0 = Math.max(0, x0 - 1);
+    const rx1 = Math.min(W, x1 + 1);
+    const ry0 = Math.max(0, y0 - 1);
+    const ry1 = Math.min(H, y1 + 1);
+    // The part with an id in the colour of each triangle (not indexed: a colour for each corner).
+    const pos = new Float32Array(T * 9);
+    const col = new Uint8Array(T * 9);
+    for (let t = 0; t < T; t++) {
+      const id = t + 1;
+      for (let k = 0; k < 3; k++) {
+        const v = data.indices[3 * t + k];
+        pos.set(data.positions.subarray(3 * v, 3 * v + 3), 9 * t + 3 * k);
+        col[9 * t + 3 * k] = id & 255;
+        col[9 * t + 3 * k + 1] = (id >> 8) & 255;
+        col[9 * t + 3 * k + 2] = (id >> 16) & 255;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3, true));
+    const ids = new THREE.Mesh(g, this.idColours);
+    ids.frustumCulled = false;
+    obj.add(ids);
+    const r = this.renderer;
+    const cam = this.camera;
+    const was = { bg: this.scene.background, floor: this.floor.visible, lights: this.lightRoot.visible, grid: this.grid?.visible ?? false, part: obj.visible, faces: this.faceOverlay?.visible ?? false, drop: this.dropOverlay?.visible ?? false };
+    const found = new Set<number>();
+    try {
+      this.scene.background = null;
+      this.floor.visible = false;
+      this.lightRoot.visible = false;
+      if (this.grid) this.grid.visible = false;
+      if (this.faceOverlay) this.faceOverlay.visible = false;
+      if (this.dropOverlay) this.dropOverlay.visible = false;
+      r.setRenderTarget(this.idTarget);
+      r.setClearColor(0x000000, 1);
+      r.clear();
+      // Everything else is the occluder; the part is drawn after it, with its ids.
+      ids.visible = false;
+      obj.visible = false;
+      this.scene.overrideMaterial = this.idBlack;
+      r.autoClear = false;
+      r.render(this.scene, cam);
+      this.scene.overrideMaterial = null;
+      // Only `ids` (the part's child) is drawn now, as the root, over the depth of the rest.
+      ids.visible = true;
+      obj.visible = true;
+      r.render(ids, cam);
+      const pw = rx1 - rx0;
+      const ph = ry1 - ry0;
+      const buf = new Uint8Array(pw * ph * 4);
+      r.readRenderTargetPixels(this.idTarget, rx0, H - ry1, pw, ph, buf);
+      // Rows of the buffer run bottom up; `at` reads the id of a pixel by its screen coordinates (-1 outside the target).
+      const at = (x: number, y: number): number => {
+        if (x < 0 || y < 0 || x >= W || y >= H) return -1;
+        const i = ((ry1 - 1 - y) * pw + (x - rx0)) * 4;
+        return buf[i] | (buf[i + 1] << 8) | (buf[i + 2] << 16);
+      };
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const id = at(x, y);
+          if (id <= 0 || id > T || found.has(id - 1)) continue;
+          // A neighbour outside the target does not count against the pixel (the face runs off the screen).
+          const same = (nx: number, ny: number) => {
+            const n = at(nx, ny);
+            return n === id || n === -1;
+          };
+          if (same(x - 1, y) && same(x + 1, y) && same(x, y - 1) && same(x, y + 1)) found.add(id - 1);
+        }
+      }
+    } finally {
+      this.scene.overrideMaterial = null;
+      r.setRenderTarget(null);
+      r.autoClear = true;
+      r.setClearColor(0x000000, 0);
+      this.scene.background = was.bg;
+      this.floor.visible = was.floor;
+      this.lightRoot.visible = was.lights;
+      if (this.grid) this.grid.visible = was.grid;
+      obj.visible = was.part;
+      if (this.faceOverlay) this.faceOverlay.visible = was.faces;
+      if (this.dropOverlay) this.dropOverlay.visible = was.drop;
+      ids.removeFromParent();
+      g.dispose();
+      this.needsRender = true;
+    }
+    return found;
+  }
+
   // ------------------------------------------------------------------ render
 
   async render(opts: RenderOptions): Promise<ImageBitmap> {
@@ -1046,6 +1374,7 @@ export class PreviewEngine implements RenderEngine {
     const out = document.createElement('canvas');
     out.width = opts.width;
     out.height = opts.height;
+    let stillPlate: THREE.Texture | null = null;
     try {
       this.renderer.setPixelRatio(1);
       this.renderer.setSize(opts.width, opts.height, false);
@@ -1053,6 +1382,12 @@ export class PreviewEngine implements RenderEngine {
         throw new Error(`${opts.width} × ${opts.height}`);
       }
       this.placeCamera(cam, opts.width, opts.height, opts.width, opts.height, false);
+      // A picture's background image fills the whole picture (it is the output frame).
+      const plate = !opts.transparent && s.environment.background === 'BACKPLATE' ? this.plateImage(s) : null;
+      if (plate) {
+        stillPlate = backgroundTexture(plateCanvas(plate, s.environment.backplateFit, s.environment.color, opts.width, opts.height, { x: 0, y: 0, width: opts.width, height: opts.height }));
+        this.scene.background = stillPlate;
+      }
       if (opts.transparent) this.scene.background = null;
       this.renderer.setClearColor(0x000000, 0);
       const three = cam.projection === 'ORTHOGRAPHIC' ? this.ortho : this.persp;
@@ -1060,6 +1395,7 @@ export class PreviewEngine implements RenderEngine {
       out.getContext('2d')!.drawImage(this.renderer.domElement, 0, 0);
     } finally {
       this.scene.background = bg;
+      stillPlate?.dispose();
       if (this.grid) this.grid.visible = gridVisible;
       this.renderer.setPixelRatio(this.dpr);
       this.renderer.setSize(this.width, this.height, false);
@@ -1069,6 +1405,86 @@ export class PreviewEngine implements RenderEngine {
     const seconds = (performance.now() - t0) / 1000;
     opts.onProgress?.({ jobId: null, progress: 1, samples: 1, seconds });
     return createImageBitmap(out);
+  }
+
+  // ------------------------------------------------------------------ AI frame (phase X4)
+
+  /** The visible parts as the passes draw them: mesh, node and the material key of every group (see PassMesh). */
+  private passMeshes(): PassMesh[] {
+    const s = this.state;
+    if (!s) return [];
+    this.scene.updateMatrixWorld(true);
+    const visible = (o: THREE.Object3D): boolean => {
+      for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+      return true;
+    };
+    const out: PassMesh[] = [];
+    for (const [id, obj] of this.objects) {
+      const node = s.scene.nodes[id];
+      if (!node || !(obj instanceof THREE.Mesh) || !node.mesh || !visible(obj)) continue;
+      const ids = obj.geometry.userData.materialIds as (string | null)[] | undefined;
+      // Group 0 is the part's own material (assignMaterials); the others are the face materials, as they appeared.
+      const keys = ids ? ids.map((m, i) => (i === 0 ? (node.material ?? null) : m)) : [node.material ?? null];
+      out.push({ mesh: obj, node: id, keys });
+    }
+    return out;
+  }
+
+  /**
+   * A frame for the AI step (AI-POST.md §4): the picture of a camera at `width × height` as the Fast mode
+   * draws it (8-bit sRGB, straight RGBA, rows from the top; null when `colour` is off, for a picture the
+   * path tracer draws) and the passes of §7.4 drawn at the same size from the same camera. `ids` come from
+   * the engine's scene (`projectScene(...).ids`), so the part and material ids are the engine's.
+   */
+  aiFrame(opts: { width: number; height: number; camera?: string; ids: PassIds; colour: boolean; passes?: readonly PassKey[] }): { rgba: Uint8ClampedArray | null; passes: RenderPasses } {
+    const s = this.state;
+    if (!s || !this.renderer) throw new Error('engine not ready');
+    const gl = this.renderer.getContext();
+    const max = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number;
+    if (opts.width > max || opts.height > max) throw new Error(`${opts.width} × ${opts.height} > ${max}`);
+    const cam = (opts.camera && s.camera.cameras[opts.camera]) || activeCamera(s);
+    const bg = this.scene.background;
+    const gridVisible = this.grid?.visible ?? false;
+    if (this.grid) this.grid.visible = false;
+    try {
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(opts.width, opts.height, false);
+      this.placeCamera(cam, opts.width, opts.height, opts.width, opts.height, false);
+      const three = cam.projection === 'ORTHOGRAPHIC' ? this.ortho : this.persp;
+      let rgba: Uint8ClampedArray | null = null;
+      if (opts.colour) {
+        if (gl.drawingBufferWidth !== opts.width || gl.drawingBufferHeight !== opts.height) throw new Error(`${opts.width} × ${opts.height}`);
+        this.renderer.setClearColor(0x000000, 0);
+        this.renderer.render(this.scene, three);
+        const out = document.createElement('canvas');
+        out.width = opts.width;
+        out.height = opts.height;
+        const g = out.getContext('2d', { willReadFrequently: true })!;
+        g.drawImage(this.renderer.domElement, 0, 0);
+        rgba = g.getImageData(0, 0, opts.width, opts.height).data;
+      }
+      // The images of three.js's axes in model space: the one place the Y-up is undone (toThree's inverse).
+      const axes = [fromThree(new THREE.Vector3(1, 0, 0)), fromThree(new THREE.Vector3(0, 1, 0)), fromThree(new THREE.Vector3(0, 0, 1))] as const;
+      const passes = drawPasses({
+        renderer: this.renderer,
+        camera: three,
+        meshes: this.passMeshes(),
+        ids: opts.ids,
+        width: opts.width,
+        height: opts.height,
+        lens: lensOf(cam),
+        axes,
+        passes: opts.passes ?? [],
+      });
+      return { rgba, passes };
+    } finally {
+      this.scene.background = bg;
+      if (this.grid) this.grid.visible = gridVisible;
+      this.renderer.setPixelRatio(this.dpr);
+      this.renderer.setSize(this.width, this.height, false);
+      this.syncCamera(s, this.poseActive ? evaluate(s, s.animation.playhead) : null);
+      this.needsRender = true;
+    }
   }
 
   /** The viewport as it is now (one fresh frame), PNG. */
@@ -1087,6 +1503,7 @@ export class PreviewEngine implements RenderEngine {
     this.envMap?.dispose();
     this.maskTarget?.dispose();
     this.pmrem?.dispose();
+    this.plateTexture?.dispose();
     this.renderer?.dispose();
   }
 }

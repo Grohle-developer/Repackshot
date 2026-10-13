@@ -2,6 +2,8 @@
 // planes), rotate (rings) and scale (cubes on the arrows, a dot in the middle
 // for all three axes) a selection about its pivot, in local or global axes,
 // and for a light the aim (a line to its target, with a handle at the end).
+// The scale tool (phase U9) shows the same gizmo with only its scale handles:
+// a shaft per axis with a larger cube at its end, and the dot in the middle.
 // The preview draws it as an overlay over the render, at a constant size on
 // screen, in the ink of the theme: the chrome stays achromatic, so the axes
 // are told apart by their letters. Nothing here writes to the store: the drag
@@ -21,6 +23,11 @@ export const GIZMO_PX = 92;
 const RING_R = 1.3;
 /** Where the scale cubes sit on the arrows. */
 const CUBE_AT = 0.62;
+/** Where the scale tool's cubes sit on their shafts (the end of the axis), in arrow lengths. */
+export const SCALE_CUBE_AT = 0.9;
+
+/** Which handles the gizmo shows: all of the move tool's, or only the scale tool's. */
+export type GizmoMode = 'ALL' | 'SCALE';
 /** Inner and outer edge of the plane squares. */
 const PLANE_LO = 0.22;
 const PLANE_HI = 0.4;
@@ -82,6 +89,8 @@ export class GizmoDrag {
    * @param size world length of an arrow when the drag began (mm)
    * @param view direction the camera looks along, model space
    * @param aimTarget the light's target, for the aim handle
+   * @param scaleReach the scale tool: how far along an axis (in arrow lengths) the pointer goes to double the scale,
+   *   wherever the shaft was grabbed; without it, the factor is the ratio of the distances from the pivot
    */
   constructor(
     readonly handle: GizmoHandle,
@@ -91,6 +100,7 @@ export class GizmoDrag {
     private readonly startPx: { x: number; y: number },
     private readonly view: Vec3,
     private readonly aimTarget: Vec3 | null = null,
+    private readonly scaleReach: number | null = null,
   ) {
     const { origin, axes } = frame;
     const k = this.axis();
@@ -164,7 +174,8 @@ export class GizmoDrag {
     if (h === 'su') return { kind: 'scale', factors: [screen, screen, screen] };
     const t = this.t0 === null ? null : axisParam(origin, axes[k], ray);
     const factors: Vec3 = [1, 1, 1];
-    factors[k] = this.t0 !== null && t !== null && Math.abs(this.t0) > this.size * 0.05 ? clampFactor(t / this.t0) : screen;
+    const along = this.t0 !== null && t !== null && Math.abs(this.t0) > this.size * 0.05;
+    factors[k] = !along ? screen : this.scaleReach ? clampFactor(1 + ((t! - this.t0!) * Math.sign(this.t0!)) / (this.scaleReach * this.size)) : clampFactor(t! / this.t0!);
     return { kind: 'scale', factors };
   }
 }
@@ -235,6 +246,9 @@ function letterTexture(letter: string): THREE.Texture | null {
 }
 
 interface HandleParts {
+  id: GizmoHandle;
+  /** The tool whose gizmo has this handle. */
+  mode: GizmoMode | 'AIM';
   /** Drawn in ink. */
   solid: THREE.MeshBasicMaterial;
   /** Translucent fill (plane squares). */
@@ -254,7 +268,9 @@ export class Gizmo {
   private readonly aimGroup = new THREE.Group();
   private readonly aimHandle = new THREE.Group();
   private readonly aimLine: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
-  private readonly handles = new Map<GizmoHandle, HandleParts>();
+  private readonly handles: HandleParts[] = [];
+  private readonly groups: Record<GizmoMode, THREE.Group> = { ALL: new THREE.Group(), SCALE: new THREE.Group() };
+  private mode: GizmoMode = 'ALL';
   private readonly halo = overlayMaterial(0.4);
   private readonly hitMaterial = new THREE.MeshBasicMaterial({ visible: false });
   private readonly labels: THREE.Sprite[] = [];
@@ -271,13 +287,18 @@ export class Gizmo {
     this.body.matrixAutoUpdate = false;
     this.aimHandle.matrixAutoUpdate = true;
     this.root.add(this.body, this.aimGroup);
+    this.body.add(this.groups.ALL, this.groups.SCALE);
+    this.groups.SCALE.visible = false;
     for (let k = 0; k < 3; k++) {
       this.add(TRANSLATE[k], [cylinder(0.014, k, 0.14, 0.84), cone(0.055, k, 0.82, 1)], [cylinder(0.075, k, 0.1, 1.05)], [cylinder(0.032, k, 0.14, 0.84)]);
       this.add(SCALE[k], [cube(0.085, k, CUBE_AT)], [cube(0.15, k, CUBE_AT)], [cube(0.115, k, CUBE_AT)]);
       this.add(ROTATE[k], [ring(RING_R, 0.011, k)], [ring(RING_R, 0.07, k)], [ring(RING_R, 0.028, k)]);
+      // The scale tool: a shaft to a larger cube at the end of the axis; the whole shaft grabs.
+      this.add(SCALE[k], [cylinder(0.014, k, 0.12, SCALE_CUBE_AT - 0.05), cube(0.11, k, SCALE_CUBE_AT)], [cylinder(0.06, k, 0.12, SCALE_CUBE_AT), cube(0.19, k, SCALE_CUBE_AT)], [cylinder(0.032, k, 0.12, SCALE_CUBE_AT - 0.05), cube(0.145, k, SCALE_CUBE_AT)], false, 'SCALE');
     }
     for (const [id, i, j] of PLANES) this.add(id, [square(i, j, PLANE_LO, PLANE_HI)], [square(i, j, PLANE_LO - 0.02, PLANE_HI + 0.02)], [], true);
     this.add('su', [new THREE.SphereGeometry(0.05, 16, 12)], [new THREE.SphereGeometry(0.1, 8, 6)], [new THREE.SphereGeometry(0.075, 16, 12)]);
+    this.add('su', [new THREE.SphereGeometry(0.075, 20, 14)], [new THREE.SphereGeometry(0.14, 10, 8)], [new THREE.SphereGeometry(0.105, 20, 14)], false, 'SCALE');
     for (let k = 0; k < 3; k++) {
       const map = letterTexture(LETTERS[k]);
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
@@ -301,11 +322,11 @@ export class Gizmo {
     aimHalo.renderOrder = 1;
     this.aimHandle.add(aimHalo, aimVisual, aimHit);
     this.aimGroup.add(this.aimLine, this.aimHandle);
-    this.handles.set('aim', { solid: aimSolid, fill: false, hit: [aimHit], objects: [aimHalo, aimVisual] });
+    this.handles.push({ id: 'aim', mode: 'AIM', solid: aimSolid, fill: false, hit: [aimHit], objects: [aimHalo, aimVisual] });
     this.look();
   }
 
-  private add(id: GizmoHandle, visual: THREE.BufferGeometry[], hit: THREE.BufferGeometry[], halo: THREE.BufferGeometry[], fill = false): void {
+  private add(id: GizmoHandle, visual: THREE.BufferGeometry[], hit: THREE.BufferGeometry[], halo: THREE.BufferGeometry[], fill = false, mode: GizmoMode = 'ALL'): void {
     const solid = overlayMaterial(fill ? 0.3 : 0.8);
     const objects: THREE.Object3D[] = [];
     for (const g of halo) {
@@ -323,14 +344,29 @@ export class Gizmo {
       m.userData.handle = id;
       return m;
     });
-    this.body.add(...objects, ...hits);
-    this.handles.set(id, { solid, fill, hit: hits, objects });
+    this.groups[mode].add(...objects, ...hits);
+    this.handles.push({ id, mode, solid, fill, hit: hits, objects });
+  }
+
+  /** The handles the gizmo shows and picks: the move tool's (ALL) or the scale tool's (SCALE). */
+  setMode(mode: GizmoMode): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.groups.ALL.visible = mode === 'ALL';
+    this.groups.SCALE.visible = mode === 'SCALE';
+    this.hover = null;
+    this.active = null;
+    this.look();
+  }
+
+  get handleMode(): GizmoMode {
+    return this.mode;
   }
 
   /** Ink of the handles (the theme's --ink-0, linear); the halo is the opposite grey. */
   setInk(rgb: readonly number[]): void {
     const halo = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] > 0.5 ? 0 : 1;
-    for (const h of this.handles.values()) h.solid.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
+    for (const h of this.handles) h.solid.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
     for (const l of this.labels) l.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
     this.aimLine.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
     this.halo.color.setRGB(halo, halo, halo, THREE.LinearSRGBColorSpace);
@@ -400,7 +436,7 @@ export class Gizmo {
     if (!this.root.visible) return null;
     this.root.updateMatrixWorld(true);
     const targets: THREE.Object3D[] = [];
-    for (const [id, h] of this.handles) if (id !== 'aim' || this.aim) targets.push(...h.hit);
+    for (const h of this.handles) if (h.mode === this.mode || (h.mode === 'AIM' && this.aim)) targets.push(...h.hit);
     let best: { id: GizmoHandle; d: number } | null = null;
     for (const hit of raycaster.intersectObjects(targets, false)) {
       const id = hit.object.userData.handle as GizmoHandle;
@@ -424,7 +460,8 @@ export class Gizmo {
   }
 
   private look(): void {
-    for (const [id, h] of this.handles) {
+    for (const h of this.handles) {
+      const id = h.id;
       const on = this.active ? id === this.active : id === this.hover;
       const dim = this.active !== null && id !== this.active;
       h.solid.opacity = h.fill ? (on ? 0.6 : dim ? 0.06 : 0.3) : on ? 1 : dim ? 0.16 : 0.62;
@@ -438,7 +475,7 @@ export class Gizmo {
     this.root.traverse((o) => {
       if (o instanceof THREE.Mesh || o instanceof THREE.Line) o.geometry.dispose();
     });
-    for (const h of this.handles.values()) h.solid.dispose();
+    for (const h of this.handles) h.solid.dispose();
     this.halo.dispose();
     this.hitMaterial.dispose();
     for (const l of this.labels) {

@@ -42,7 +42,7 @@ function checkRow(ctx: Ctx, scope: Scope): HTMLElement {
           'div',
           { class: 'sw-update-actions' },
           h('button', { type: 'button', class: 'btn btn-primary sw-update-download', 'data-tip': tip, onclick: () => downloadUpdate(ctx, release) }, t('up.download')),
-          h('button', { type: 'button', class: 'btn sw-update-notes', onclick: () => openReleaseNotes(release) }, t('up.notes')),
+          h('button', { type: 'button', class: 'btn sw-update-notes', onclick: () => openReleaseNotes(ctx, release) }, t('up.notes')),
         ),
       );
     }

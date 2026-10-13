@@ -116,6 +116,8 @@ export interface Settings {
   'engine.viewportLimit': 'OUTPUT' | 'SAMPLES' | 'TIME';
   'engine.viewportSamples': number;
   'engine.viewportSeconds': number;
+  /** While a render runs, the viewport keeps a quarter of the engine (live) or waits for it (fastest render). */
+  'engine.whileRender': 'SHARE' | 'PAUSE';
 
   /** Key of the model in use, '' for none. */
   'ai.active': string;
@@ -133,6 +135,8 @@ export interface Settings {
   'ai.guardDeltaE': number;
   'ai.guardDeltaE95': number;
   'ai.guardEdgePx': number;
+  /** Desktop: the inference runtime build, Automatic (Vulkan with a GPU, the CPU without one) or forced (AI-POST.md §7.1). */
+  'ai.backend': 'AUTO' | 'VULKAN' | 'CPU';
 
   'storage.historyCount': number;
   'storage.historyMB': number;
@@ -224,6 +228,7 @@ export function defaultSettings(): Settings {
     'engine.viewportLimit': 'OUTPUT',
     'engine.viewportSamples': 1024,
     'engine.viewportSeconds': 120,
+    'engine.whileRender': 'SHARE',
 
     'ai.active': '',
     'ai.device': 'GPU',
@@ -238,6 +243,7 @@ export function defaultSettings(): Settings {
     'ai.guardDeltaE': 2,
     'ai.guardDeltaE95': 3,
     'ai.guardEdgePx': 2,
+    'ai.backend': 'AUTO',
 
     'storage.historyCount': 50,
     'storage.historyMB': 500,
@@ -301,6 +307,13 @@ interface RowBase {
   comingSoon?: boolean;
   /** Only in the desktop application. */
   desktopOnly?: boolean;
+  /** Only in the web version: about what the browser keeps or allows (hidden in the desktop application, P3e). */
+  webOnly?: boolean;
+}
+
+/** Whether a row exists where the interface runs (`desktop`: the launcher's window). */
+export function rowShownHere(row: Pick<RowBase, 'desktopOnly' | 'webOnly'>, desktop: boolean): boolean {
+  return desktop ? !row.webOnly : !row.desktopOnly;
 }
 
 export interface SettingMeta extends RowBase {
@@ -327,7 +340,7 @@ const num = (min: number, max: number, step: number, unit?: string, zero?: boole
 function setting(id: SettingKey, section: SectionId, block: string, control: ControlSpec, keywords: Keywords, extra: Partial<Pick<SettingMeta, 'aux' | 'comingSoon' | 'desktopOnly' | 'newProjects'>> = {}): SettingMeta {
   return { kind: 'setting', id, section, block, control, keywords, ...extra };
 }
-function row(id: string, section: SectionId, block: string, keywords: Keywords, extra: Partial<Pick<ExtraRow, 'aux' | 'comingSoon' | 'desktopOnly'>> = {}): ExtraRow {
+function row(id: string, section: SectionId, block: string, keywords: Keywords, extra: Partial<Pick<ExtraRow, 'aux' | 'comingSoon' | 'desktopOnly' | 'webOnly'>> = {}): ExtraRow {
   return { kind: 'extra', id, section, block, keywords, ...extra };
 }
 
@@ -389,6 +402,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   setting('engine.viewportLimit', 'engine', 'fullViewport', choice(['OUTPUT', 'SAMPLES', 'TIME']), kw('viewport limit, battery, stop, samples, seconds', 'límite del visor, batería, parar, muestras, segundos'), { aux: true }),
   setting('engine.viewportSamples', 'engine', 'fullViewport', num(16, 100000, 16), kw('viewport, samples, limit', 'visor, muestras, límite')),
   setting('engine.viewportSeconds', 'engine', 'fullViewport', num(5, 3600, 5, 's'), kw('viewport, seconds, limit', 'visor, segundos, límite')),
+  setting('engine.whileRender', 'engine', 'fullViewport', choice(['SHARE', 'PAUSE']), kw('while rendering, render, queue, share, pause, live viewport, threads', 'mientras se renderiza, render, cola, compartir, pausar, visor vivo, hilos'), { aux: true }),
   row('engine.measure', 'engine', 'measure', kw('measure performance, benchmark, speed, samples per second', 'medir rendimiento, prueba, velocidad, muestras por segundo'), { aux: true }),
   row('engine.info', 'engine', 'info', kw('engine version, build, cpu features, simd, threads', 'versión del motor, compilación, cpu, simd, hilos')),
 
@@ -407,13 +421,16 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   // AI post-processing ▸ Models and Hardware
   row('ai.models', 'ai', 'models', kw('models, download, z-image, flux, qwen, stable diffusion, licence', 'modelos, descargar, z-image, flux, qwen, stable diffusion, licencia')),
   row('ai.import', 'ai', 'models', kw('import model, safetensors, gguf, onnx, manifest', 'importar modelo, safetensors, gguf, onnx, manifiesto')),
+  // AI post-processing ▸ Runtime (desktop: stable-diffusion.cpp, X3b)
+  row('ai.runtime', 'ai', 'runtime', kw('runtime, stable-diffusion.cpp, sd.cpp, vulkan, cpu, download, inference', 'motor de ejecución, stable-diffusion.cpp, sd.cpp, vulkan, cpu, descargar, inferencia'), { desktopOnly: true }),
+  setting('ai.backend', 'ai', 'runtime', choice(['AUTO', 'VULKAN', 'CPU']), kw('run on, backend, vulkan, cpu, graphics card, force', 'ejecutar con, vulkan, cpu, tarjeta gráfica, forzar'), { aux: true, desktopOnly: true }),
   row('ai.hardware', 'ai', 'hardware', kw('hardware, gpu, vram, ram, webgpu, recommendation', 'equipo, gpu, vram, ram, webgpu, recomendación')),
 
   // Storage
   row('storage.usage', 'storage', 'usage', kw('storage, space, disk, free up, delete, cache', 'almacenamiento, espacio, disco, liberar, borrar, caché')),
   setting('storage.historyCount', 'storage', 'history', num(1, 1000, 1), kw('history, results, limit, count', 'historial, resultados, límite, número')),
   setting('storage.historyMB', 'storage', 'history', num(50, 20000, 50, 'MB'), kw('history, results, limit, size, megabytes', 'historial, resultados, límite, tamaño, megas')),
-  row('storage.persist', 'storage', 'browser', kw('persistent storage, keep data, evict', 'almacenamiento persistente, conservar datos'), { aux: true }),
+  row('storage.persist', 'storage', 'browser', kw('persistent storage, keep data, evict', 'almacenamiento persistente, conservar datos'), { aux: true, webOnly: true }),
   row('storage.folder', 'storage', 'browser', kw('data folder, open folder', 'carpeta de datos, abrir carpeta'), { desktopOnly: true }),
 
   // Desktop
@@ -657,7 +674,7 @@ export interface SearchHit {
 
 /**
  * Rows whose label (in either language, through `label`) or keywords (either language) contain every word of
- * the query. `desktop` says whether desktop-only rows exist here. Ranked: label in the current language, then
+ * the query. `desktop` says whether desktop-only rows exist here (and web-only ones do not). Ranked: label in the current language, then
  * the other language, then keywords; ties keep the window's order.
  */
 export function searchSettings(query: string, opts: { lang: Lang; label: (row: RowMeta, lang: Lang) => string; desktop: boolean; rows?: readonly RowMeta[] }): SearchHit[] {
@@ -666,7 +683,7 @@ export function searchSettings(query: string, opts: { lang: Lang; label: (row: R
   const other: Lang = opts.lang === 'en' ? 'es' : 'en';
   const hits: SearchHit[] = [];
   for (const row of opts.rows ?? SETTING_ROWS) {
-    if (row.desktopOnly && !opts.desktop) continue;
+    if (!rowShownHere(row, opts.desktop)) continue;
     const mine = fold(opts.label(row, opts.lang));
     const theirs = fold(opts.label(row, other));
     const keys = [...row.keywords.en, ...row.keywords.es].map(fold).join(' | ');
@@ -756,6 +773,8 @@ export function withProjectDefaults(state: ProjectState, s: Settings): ProjectSt
     maxSamples: samples,
     maxSeconds: s['render.seconds'],
     quality: tier ?? 'CUSTOM',
+    // Settings ▸ AI post-processing ▸ Default intervention is also where a new project's window starts (UI.md §2.9).
+    ai: { ...state.render.ai, intervention: s['ai.intervention'] },
   });
   return {
     ...state,

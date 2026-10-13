@@ -13,8 +13,9 @@
 //! extra trailing bytes (newer writers append fields), so old readers keep working.
 //!
 //! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
-//! fields after a `|` were appended in E3 and are optional: a shorter payload, as written before
-//! E3, reads them as their defaults, and the writer always writes them):
+//! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c) and are
+//! optional: a shorter payload, as older writers wrote it, reads them as their defaults, and the
+//! writer always writes them):
 //!
 //! ```text
 //! CAMR  60 B  f32 position[3] target[3] up[3]; f32 focal_mm sensor_mm fstop focus_dist;
@@ -23,21 +24,35 @@
 //!             u32 material_id                      (n = vertex_count, m = index_count)
 //! MATL  56 B  u32 kind; f32 base_color[3] metallic roughness ior transmission coat
 //!             coat_roughness emission[3] emission_power | u32 flags (default 0)       (60 B)
+//!             || f32 opacity (1) anisotropy (0) absorption_mm (0)                     (72 B)
 //! LGHT  76 B  u32 kind; f32 position[3] direction[3] up[3] size_x size_y color[3] power
 //!             spread_deg angle_deg; u32 flags
 //! ENVR  40 B  u32 kind; f32 floor horizon zenith strength rotation_deg background_color[3];
 //!             u32 background_mode
+//!             || u32 hdri_map (none) backplate_map (none) backplate_fit (0);
+//!             f32 sky_turbidity (3) sun_azimuth_deg (0) sun_elevation_deg (45)
+//!             backplate_rect[4] (0 0 1 1)                                          (80 B)
+//!             |||| u32 sky_model (0 physical)                                      (84 B)
+//! BMAP  16 B  u32 format width height byte_len; u8 data[byte_len]; zero padding to 4 (E5, new)
 //! FLOR  20 B  u32 mode; f32 z; f32 color[3]                                        (E3, new)
 //! RNDR  28 B  u32 width height max_samples seed; f32 max_seconds exposure_ev; u32 tonemap
 //!             | u32 max_depth (default 8); f32 clamp_indirect (default 0)            (36 B)
+//!             ||| u32 passes (default 0)                                            (40 B)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
 //! ```
 //!
 //! `CAMR`, `ENVR`, `FLOR` and `RNDR` may appear at most once (a missing one means "defaults");
-//! `MESH`, `MATL`, `LGHT` and `INST` repeat. A mesh refers to a material by its position among the
-//! `MATL` sections, an instance to a mesh by its position among the `MESH` sections, wherever they
-//! are in the file. All floats must be finite.
+//! `MESH`, `MATL`, `LGHT`, `INST` and `BMAP` repeat. A mesh refers to a material by its position
+//! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
+//! environment to a bitmap by its position among the `BMAP` sections (`0xffffffff`: none),
+//! wherever they are in the file. All floats must be finite.
+//!
+//! **Bitmaps** (E5). `BMAP.format` is 0 (8-bit sRGB RGB), 1 (8-bit sRGB RGBA, alpha ignored), 2
+//! (little-endian linear `f32` RGB), 16 (a whole Radiance `.hdr` file) or 17 (a whole OpenEXR
+//! file: scanline, uncompressed, RLE, ZIPS or ZIP); `width` and `height` are the size of the raw
+//! formats and 0 (or the file's own size) for the files. Rows run top to bottom. See
+//! [`crate::bitmap`]; a bitmap that cannot be decoded makes the file invalid.
 //!
 //! **Instances.** A file without `INST` sections draws every mesh once, untransformed, with the
 //! mesh's own `material_id` (one implicit instance per mesh: what files written before `INST`
@@ -48,7 +63,8 @@
 //! **Updates** (E4). [`Scene::update_from_rsb`] reads a file into an already loaded scene: a file
 //! without `MESH` sections keeps the loaded meshes and their BVHs (its `INST` sections, or the
 //! implicit instances, refer to them), so a host that changes the camera, the image size, the
-//! instances, the materials or the lights sends everything but the geometry.
+//! instances, the materials or the lights sends everything but the geometry. In the same way a
+//! file without `BMAP` sections keeps the loaded bitmaps (E5), which can be large.
 //!
 //! # Meaning of the values (fixed in E3)
 //!
@@ -60,14 +76,21 @@
 //!   otherwise a thin lens of `focal_mm` on a sensor `sensor_mm` wide along the longer image
 //!   side, aperture `focal_mm / fstop` (`fstop` 0: pinhole), focused at `focus_dist`. Box pixel
 //!   filter.
-//! * `MATL.kind`: **0 principled** (Lambert diffuse of `base_color * (1 - metallic)`; GGX
-//!   specular with height-correlated Smith masking, roughness² as the GGX width, Schlick Fresnel
-//!   with `F0 = ((ior - 1) / (ior + 1))²` for the dielectric and `base_color` for the metal,
-//!   blended by `metallic`; `coat` adds a second GGX lobe of `coat_roughness`, ior 1.5, on top;
-//!   `transmission` is ignored until E5), **1 glass** (E5; rendered as kind 0, so an opaque
-//!   tinted dielectric, until then), **2 emissive** (radiance `emission * emission_power`, no
-//!   reflection). Unknown kinds render as 0. `MATL.flags` bit 0 (`1`): an emissive material is
-//!   also sampled as an area light by next-event estimation.
+//! * `MATL.kind`: **0 principled** (Lambert diffuse of `base_color * (1 - metallic) *
+//!   (1 - transmission)`; GGX specular with height-correlated Smith masking, roughness² as the GGX
+//!   width, Schlick Fresnel with `F0 = ((ior - 1) / (ior + 1))²` for the dielectric and
+//!   `base_color` for the metal, blended by `metallic`; the `transmission` share of the
+//!   dielectric is clear: GGX reflection and refraction with the exact dielectric Fresnel of
+//!   `ior`, tinted by `base_color` (see [`crate::bsdf`]); `coat` adds a second GGX lobe of
+//!   `coat_roughness`, ior 1.5, on top; `anisotropy` stretches the GGX lobes along a tangent
+//!   around the instance's local Z axis), **1 glass** (kind 0 without metal), **2 emissive**
+//!   (radiance `emission * emission_power`, no reflection). Unknown kinds render as 0.
+//!   `MATL.flags` bit 0 (`1`): an emissive material is also sampled as an area light by
+//!   next-event estimation; bit 1 (`2`) **thin wall**: the clear part has no inside, light goes
+//!   straight through it (no refraction, the colour once) and so do shadow rays. `opacity` below
+//!   one makes the surface a stochastic cut-out (emitters ignore it); `absorption_mm` above zero
+//!   makes `base_color` the colour white light keeps after that many millimetres inside a solid
+//!   (Beer–Lambert) instead of a surface tint.
 //! * `LGHT.kind`: **0 rect** (`size_x` × `size_y`, its local Y axis along `up`), **1 disk**
 //!   (diameter `size_x`), **2 sun** (a disc of angular diameter `angle_deg`, 0 for a delta
 //!   direction), **3 point** and **4 spot** (reserved for L4: parsed, kept, not rendered). Rect
@@ -82,12 +105,21 @@
 //!   reflections. Bit 1 (`2`) **camera**: visible to camera rays.
 //! * `ENVR.kind`: **0 studio dome** (radiance ramps linearly with the z of the direction from
 //!   `floor` at z = -1 through `horizon` at 0 to `zenith` at +1), **1 flat** (`horizon`
-//!   everywhere), **2 sky** and **3 HDRI** (reserved for E5, rendered as the dome until then).
-//!   Everything is scaled by `strength`; `rotation_deg` turns it about Z (no effect on these
-//!   rotationally symmetric kinds). `background_mode`: **0** the environment is visible,
-//!   **1** camera rays that escape see `background_color`, **2** transparent (they see black and
-//!   the film's alpha is 0 there), **3** backplate image (reserved for M2, rendered as 1).
-//!   The environment lights the scene in every mode.
+//!   everywhere), **2 sky** (daylight for `sky_turbidity` and the sun at `sun_azimuth_deg`
+//!   from +X towards +Y and `sun_elevation_deg`, scaled to give a horizontal surface the
+//!   irradiance of the dome with these values; the ground below the horizon is `floor`;
+//!   `sky_model` **0** the physical sky, fitted to our own atmosphere simulation (also what a
+//!   file without the field means, and any unknown value), **1** the classic Preetham sky; see
+//!   [`crate::sky`]), **3 HDRI** (the equirectangular bitmap `hdri_map`, in the
+//!   convention of [`crate::environment`]; the dome without it). Everything is scaled by
+//!   `strength`; `rotation_deg` turns the HDRI about Z (counter-clockwise from above; no effect on
+//!   the other kinds, the sky follows its sun). `background_mode`: **0** the environment is
+//!   visible, **1** camera rays that escape see `background_color`, **2** transparent (they see
+//!   black and the film's alpha is 0 there), **3** the background image `backplate_map`, seen by
+//!   camera rays only, `backplate_fit` **0** cover the frame (cropped), **1** fit inside it (the
+//!   rest is `background_color`), **2** stretched, the frame being `backplate_rect` of the image
+//!   (a viewport renders more than the output frame); without the bitmap, mode 3 is mode 1. The
+//!   environment lights the scene in every mode.
 //! * `FLOR.mode`: **0** no floor, **1** an infinite Lambertian plane at height `z` of albedo
 //!   `color`, **2** shadow catcher: the plane is invisible to everything except camera rays,
 //!   where it shows the background darkened by the fraction of light the scene blocks (with a
@@ -97,11 +129,14 @@
 //!   values mean ACES. `exposure_ev` multiplies by `2^ev` before the curve. `max_depth` is the
 //!   most surface interactions per path (0: 8); `clamp_indirect` caps each channel of every
 //!   indirect contribution (0: off). `max_seconds` is honoured by the host between sample
-//!   passes.
+//!   passes. `passes` (X2) is the mask of the exact passes the host writes next to the image:
+//!   bit `i` is [`crate::passes::PASS_KEYS`]`[i]` (albedo, normal, depth, partId, materialId,
+//!   coc); 0, or a file written before X2, asks for none, and unknown bits are kept and ignored.
+//!   Asking for passes never changes a pixel of the image.
 
 use super::{
-    Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Light, LightKind, Material,
-    Mesh, RenderSettings, Scene, Transform,
+    Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Light, LightKind,
+    Material, Mesh, RenderSettings, Scene, SkyModel, Transform, NO_BITMAP,
 };
 use crate::color::Rgb;
 use crate::math::Vec3;
@@ -126,6 +161,8 @@ pub const TAG_RNDR: [u8; 4] = *b"RNDR";
 pub const TAG_INST: [u8; 4] = *b"INST";
 /// Floor section tag.
 pub const TAG_FLOR: [u8; 4] = *b"FLOR";
+/// Bitmap section tag.
+pub const TAG_BMAP: [u8; 4] = *b"BMAP";
 
 /// Why an RSB file could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -342,6 +379,9 @@ fn parse_material(r: &mut Reader) -> Result<Material, RsbError> {
         emission: r.rgb()?,
         emission_power: r.f32()?,
         flags: r.opt_u32(0)?,
+        opacity: r.opt_f32(1.0)?,
+        anisotropy: r.opt_f32(0.0)?,
+        absorption_mm: r.opt_f32(0.0)?,
     })
 }
 
@@ -373,7 +413,33 @@ fn parse_environment(r: &mut Reader) -> Result<Environment, RsbError> {
         rotation_deg: r.f32()?,
         background_color: r.rgb()?,
         background_mode: r.u32()?,
+        hdri_map: r.opt_u32(NO_BITMAP)?,
+        backplate_map: r.opt_u32(NO_BITMAP)?,
+        backplate_fit: r.opt_u32(super::BACKPLATE_FILL)?,
+        sky_turbidity: r.opt_f32(crate::sky::DEFAULT_TURBIDITY)?,
+        sun_azimuth_deg: r.opt_f32(0.0)?,
+        sun_elevation_deg: r.opt_f32(45.0)?,
+        backplate_rect: [
+            r.opt_f32(0.0)?,
+            r.opt_f32(0.0)?,
+            r.opt_f32(1.0)?,
+            r.opt_f32(1.0)?,
+        ],
+        sky_model: SkyModel::from_u32(r.opt_u32(SkyModel::Physical.to_u32())?),
     })
+}
+
+fn parse_bitmap(r: &mut Reader) -> Result<Bitmap, RsbError> {
+    let format = r.u32()?;
+    let width = r.u32()?;
+    let height = r.u32()?;
+    let len = r.u32()? as usize;
+    if len > r.remaining() {
+        return Err(RsbError::SectionTooShort { tag: r.tag });
+    }
+    let data = r.data[r.pos..r.pos + len].to_vec();
+    r.pos += len;
+    Bitmap::decode(format, width, height, data).map_err(|e| r.invalid(e.reason()))
 }
 
 fn parse_floor(r: &mut Reader) -> Result<Floor, RsbError> {
@@ -396,6 +462,7 @@ fn parse_render(r: &mut Reader) -> Result<RenderSettings, RsbError> {
         tonemap: r.u32()?,
         max_depth: r.opt_u32(RenderSettings::DEFAULT_MAX_DEPTH)?,
         clamp_indirect: r.opt_f32(0.0)?,
+        passes: r.opt_u32(0)?,
     };
     let range = 1..=RenderSettings::MAX_DIMENSION;
     if !range.contains(&settings.width) || !range.contains(&settings.height) {
@@ -416,9 +483,16 @@ fn set_once<T>(slot: &mut Option<T>, tag: [u8; 4], value: T) -> Result<(), RsbEr
     }
 }
 
+/// What an update may keep of the loaded scene.
+struct Kept<'a> {
+    geometry: &'a mut Geometry,
+    bitmaps: &'a mut Vec<Bitmap>,
+}
+
 /// Parses an RSB file. With `kept`, a file without `MESH` sections uses the meshes of `kept`
-/// instead (moved out of it only once nothing can fail any more, so `kept` is untouched on error).
-fn read_scene(bytes: &[u8], kept: Option<&mut Geometry>) -> Result<Scene, RsbError> {
+/// instead, and one without `BMAP` sections its bitmaps (moved out of it only once nothing can
+/// fail any more, so `kept` is untouched on error).
+fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     if bytes.len() < 4 || bytes[..4] != MAGIC {
         return Err(RsbError::BadMagic);
     }
@@ -437,6 +511,7 @@ fn read_scene(bytes: &[u8], kept: Option<&mut Geometry>) -> Result<Scene, RsbErr
     let mut render = None;
     let mut meshes = Vec::new();
     let mut instances = Vec::new();
+    let mut bitmaps = Vec::new();
     let mut scene = Scene::default();
 
     while pos < bytes.len() {
@@ -463,12 +538,37 @@ fn read_scene(bytes: &[u8], kept: Option<&mut Geometry>) -> Result<Scene, RsbErr
             TAG_INST => instances.push(parse_instance(&mut r)?),
             TAG_MATL => scene.materials.push(parse_material(&mut r)?),
             TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
+            TAG_BMAP => bitmaps.push(parse_bitmap(&mut r)?),
             _ => {} // Unknown section: skipped for forward compatibility.
         }
     }
 
-    // The meshes the instances refer to: the file's own, or the kept ones when it has none.
-    let reuse = if meshes.is_empty() { kept } else { None };
+    // The meshes the instances refer to: the file's own, or the kept ones when it has none; the
+    // same for the bitmaps.
+    let (kept_geometry, kept_bitmaps) = match kept {
+        Some(k) => (Some(k.geometry), Some(k.bitmaps)),
+        None => (None, None),
+    };
+    let reuse = if meshes.is_empty() {
+        kept_geometry
+    } else {
+        None
+    };
+    let reuse_bitmaps = if bitmaps.is_empty() {
+        kept_bitmaps
+    } else {
+        None
+    };
+    let bitmap_count = reuse_bitmaps.as_ref().map_or(bitmaps.len(), |b| b.len());
+    let environment = environment.unwrap_or_default();
+    for map in [environment.hdri_map, environment.backplate_map] {
+        if map != NO_BITMAP && map as usize >= bitmap_count {
+            return Err(RsbError::Invalid {
+                tag: TAG_ENVR,
+                reason: "bitmap index does not refer to a BMAP section",
+            });
+        }
+    }
     let available: &[Mesh] = match &reuse {
         Some(geometry) => geometry.meshes(),
         None => &meshes,
@@ -504,14 +604,18 @@ fn read_scene(bytes: &[u8], kept: Option<&mut Geometry>) -> Result<Scene, RsbErr
     if instances.len() > crate::geometry::MAX_INSTANCES {
         return Err(invalid_instance("too many instances"));
     }
-    // Nothing below can fail: only now are the kept meshes taken.
+    // Nothing below can fail: only now are the kept meshes and bitmaps taken.
     if let Some(geometry) = reuse {
         meshes = std::mem::take(geometry).into_meshes();
     }
+    if let Some(kept) = reuse_bitmaps {
+        bitmaps = std::mem::take(kept);
+    }
     scene.geometry =
         Geometry::new(meshes, instances).map_err(|_| invalid_instance("too many instances"))?;
+    scene.bitmaps = bitmaps;
     scene.camera = camera.unwrap_or_default();
-    scene.environment = environment.unwrap_or_default();
+    scene.environment = environment;
     scene.floor = floor.unwrap_or_default();
     scene.render = render.unwrap_or_default();
     Ok(scene)
@@ -527,11 +631,16 @@ impl Scene {
     /// file **without `MESH` sections keeps the meshes of this scene** (and their BVHs, which are
     /// not built again): its `INST` sections, or the implicit instances of the kept meshes, refer
     /// to them. This is how a host changes the camera, the image size, the instances, the
-    /// materials or the lights of a loaded scene without sending its geometry again. A file with
-    /// `MESH` sections replaces everything, exactly like [`Scene::from_rsb`]. On error the scene
-    /// is unchanged.
+    /// materials or the lights of a loaded scene without sending its geometry again. Likewise a
+    /// file without `BMAP` sections keeps the bitmaps of this scene. A file with `MESH` sections
+    /// replaces the geometry, one with `BMAP` sections the bitmaps, exactly like
+    /// [`Scene::from_rsb`]. On error the scene is unchanged.
     pub fn update_from_rsb(&mut self, bytes: &[u8]) -> Result<(), RsbError> {
-        let scene = read_scene(bytes, Some(&mut self.geometry))?;
+        let kept = Kept {
+            geometry: &mut self.geometry,
+            bitmaps: &mut self.bitmaps,
+        };
+        let scene = read_scene(bytes, Some(kept))?;
         *self = scene;
         Ok(())
     }
@@ -571,6 +680,9 @@ impl Scene {
                 w.rgb(m.emission);
                 w.f32(m.emission_power);
                 w.u32(m.flags);
+                w.f32(m.opacity);
+                w.f32(m.anisotropy);
+                w.f32(m.absorption_mm);
             });
         }
         for mesh in self.geometry.meshes() {
@@ -617,6 +729,17 @@ impl Scene {
                 w.u32(l.flags);
             });
         }
+        for b in &self.bitmaps {
+            w.section(TAG_BMAP, |w| {
+                w.u32(b.format);
+                w.u32(b.width);
+                w.u32(b.height);
+                w.u32(b.data.len() as u32);
+                w.buf.extend_from_slice(&b.data);
+                let pad = (4 - b.data.len() % 4) % 4;
+                w.buf.extend(std::iter::repeat_n(0u8, pad));
+            });
+        }
         w.section(TAG_ENVR, |w| {
             let e = &self.environment;
             w.u32(e.kind.to_u32());
@@ -625,6 +748,16 @@ impl Scene {
             }
             w.rgb(e.background_color);
             w.u32(e.background_mode);
+            w.u32(e.hdri_map);
+            w.u32(e.backplate_map);
+            w.u32(e.backplate_fit);
+            w.f32(e.sky_turbidity);
+            w.f32(e.sun_azimuth_deg);
+            w.f32(e.sun_elevation_deg);
+            for v in e.backplate_rect {
+                w.f32(v);
+            }
+            w.u32(e.sky_model.to_u32());
         });
         w.section(TAG_FLOR, |w| {
             let f = &self.floor;
@@ -643,6 +776,7 @@ impl Scene {
             w.u32(r.tonemap);
             w.u32(r.max_depth);
             w.f32(r.clamp_indirect);
+            w.u32(r.passes);
         });
         w.buf
     }
@@ -719,6 +853,9 @@ mod tests {
                     emission: Rgb::new(1.0, 0.9, 0.8),
                     emission_power: 12.0,
                     flags: 1,
+                    opacity: 0.75,
+                    anisotropy: 0.4,
+                    absorption_mm: 25.0,
                 },
             ],
             geometry: Geometry::from_meshes(vec![
@@ -777,6 +914,14 @@ mod tests {
                 rotation_deg: 90.0,
                 background_color: Rgb::new(0.1, 0.2, 0.3),
                 background_mode: 1,
+                hdri_map: 1,
+                backplate_map: 0,
+                backplate_fit: crate::scene::BACKPLATE_FIT,
+                sky_turbidity: 4.5,
+                sky_model: SkyModel::Classic,
+                sun_azimuth_deg: -30.0,
+                sun_elevation_deg: 12.0,
+                backplate_rect: [0.1, 0.05, 0.9, 0.95],
             },
             floor: Floor {
                 mode: FloorMode::ShadowCatcher,
@@ -793,8 +938,25 @@ mod tests {
                 tonemap: 3,
                 max_depth: 12,
                 clamp_indirect: 10.0,
+                passes: 0b10_1101,
             },
+            bitmaps: test_bitmaps(),
         }
+    }
+
+    /// A raw sRGB plate (odd byte length: padded in the file) and a little Radiance HDR file.
+    fn test_bitmaps() -> Vec<Bitmap> {
+        let plate = Bitmap::decode(
+            crate::bitmap::FORMAT_RGB8,
+            3,
+            1,
+            vec![10, 20, 30, 40, 50, 60, 70, 80, 90],
+        )
+        .unwrap();
+        let rgb: Vec<f32> = (0..3 * 8 * 2).map(|i| i as f32 * 0.25).collect();
+        let file = crate::hdr::encode(8, 2, &rgb);
+        let hdr = Bitmap::decode(crate::bitmap::FORMAT_HDR, 0, 0, file).unwrap();
+        vec![plate, hdr]
     }
 
     /// Splits a serialised file into its sections `(tag, payload)`.
@@ -828,7 +990,7 @@ mod tests {
             tags,
             [
                 *b"CAMR", *b"MATL", *b"MATL", *b"MESH", *b"MESH", *b"LGHT", *b"LGHT", *b"LGHT",
-                *b"LGHT", *b"ENVR", *b"FLOR", *b"RNDR"
+                *b"LGHT", *b"BMAP", *b"BMAP", *b"ENVR", *b"FLOR", *b"RNDR"
             ]
         );
         assert_eq!(Scene::from_rsb(&bytes), Ok(scene));
@@ -844,11 +1006,13 @@ mod tests {
                 .map(|(_, p)| p.len())
         };
         assert_eq!(size(b"CAMR"), Some(15 * 4));
-        assert_eq!(size(b"MATL"), Some(15 * 4));
+        assert_eq!(size(b"MATL"), Some(18 * 4));
         assert_eq!(size(b"LGHT"), Some(19 * 4));
-        assert_eq!(size(b"ENVR"), Some(10 * 4));
+        assert_eq!(size(b"ENVR"), Some(21 * 4));
+        // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
+        assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
-        assert_eq!(size(b"RNDR"), Some(9 * 4));
+        assert_eq!(size(b"RNDR"), Some(10 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
         assert_eq!(sections(&bytes)[3].1.len(), (2 + 24 + 6 + 1) * 4);
     }
@@ -910,11 +1074,198 @@ mod tests {
         }
         let read = Scene::from_rsb(&old).expect("old layout reads");
         assert!(read.materials.iter().all(|m| m.flags == 0));
+        assert!(read
+            .materials
+            .iter()
+            .all(|m| m.opacity == 1.0 && m.anisotropy == 0.0));
         assert_eq!(read.render.max_depth, RenderSettings::DEFAULT_MAX_DEPTH);
         assert_eq!(read.render.clamp_indirect, 0.0);
         assert_eq!(read.floor, Floor::default());
         assert_eq!(read.render.tonemap, scene.render.tonemap);
         assert_eq!(read.lights, scene.lights);
+    }
+
+    #[test]
+    fn sections_written_before_e5_read_with_defaults() {
+        // MATL of 60 B (no opacity, anisotropy, absorption), ENVR of 40 B, no BMAP.
+        let scene = full_scene();
+        let bytes = scene.to_rsb();
+        let mut old = bytes[..8].to_vec();
+        for (tag, mut payload) in sections(&bytes) {
+            match tag {
+                TAG_MATL => payload.truncate(60),
+                TAG_ENVR => payload.truncate(40),
+                TAG_BMAP => continue,
+                _ => {}
+            }
+            old.extend(unknown_section(&tag, &payload));
+        }
+        let read = Scene::from_rsb(&old).expect("E4 layout reads");
+        assert!(read.bitmaps.is_empty());
+        let m = &read.materials[1];
+        assert_eq!((m.opacity, m.anisotropy, m.absorption_mm), (1.0, 0.0, 0.0));
+        assert_eq!(m.flags, 1);
+        let e = &read.environment;
+        assert_eq!(
+            (e.hdri_map, e.backplate_map, e.backplate_fit),
+            (NO_BITMAP, NO_BITMAP, 0)
+        );
+        assert_eq!(e.sky_turbidity, crate::sky::DEFAULT_TURBIDITY);
+        assert_eq!((e.sun_azimuth_deg, e.sun_elevation_deg), (0.0, 45.0));
+        assert_eq!(e.backplate_rect, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(e.background_mode, scene.environment.background_mode);
+        assert_eq!(e.sky_model, SkyModel::Physical);
+    }
+
+    #[test]
+    fn the_sky_model_is_physical_unless_the_file_says_classic() {
+        // An E5 file (ENVR of 80 B) has no sky model: it reads as the default, the physical sky.
+        let scene = full_scene();
+        assert_eq!(scene.environment.sky_model, SkyModel::Classic);
+        let bytes = scene.to_rsb();
+        let with_envr = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_ENVR {
+                    edit(&mut payload);
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            Scene::from_rsb(&out).expect("reads")
+        };
+        let e5 = with_envr(&|p| p.truncate(80));
+        assert_eq!(e5.environment.sky_model, SkyModel::Physical);
+        assert_eq!(
+            Environment {
+                sky_model: SkyModel::Classic,
+                ..e5.environment.clone()
+            },
+            scene.environment
+        );
+        // The field itself: 1 is classic, 0 and unknown values the physical sky.
+        for (value, model) in [
+            (0u32, SkyModel::Physical),
+            (1, SkyModel::Classic),
+            (7, SkyModel::Physical),
+        ] {
+            let read = with_envr(&|p| p[80..84].copy_from_slice(&value.to_le_bytes()));
+            assert_eq!(read.environment.sky_model, model, "{value}");
+        }
+        assert_eq!(Environment::default().sky_model, SkyModel::Physical);
+    }
+
+    #[test]
+    fn a_render_section_written_before_x2_asks_for_no_passes() {
+        // RNDR of 36 B (no pass mask), as E3 to E5 wrote it.
+        let scene = full_scene();
+        assert_ne!(scene.render.passes, 0);
+        let bytes = scene.to_rsb();
+        let mut old = bytes[..8].to_vec();
+        for (tag, mut payload) in sections(&bytes) {
+            if tag == TAG_RNDR {
+                assert_eq!(payload.len(), 40);
+                assert_eq!(payload[36..40], scene.render.passes.to_le_bytes());
+                payload.truncate(36);
+            }
+            old.extend(unknown_section(&tag, &payload));
+        }
+        let read = Scene::from_rsb(&old).expect("E5 layout reads");
+        assert_eq!(read.render.passes, 0);
+        assert_eq!(read.render.clamp_indirect, scene.render.clamp_indirect);
+        // Bits nobody knows yet are kept as they are (a newer writer's passes).
+        let mut newer = scene.clone();
+        newer.render.passes = 0xffff_ffff;
+        assert_eq!(Scene::from_rsb(&newer.to_rsb()), Ok(newer));
+    }
+
+    #[test]
+    fn bitmaps_must_decode_and_be_referred_to_correctly() {
+        let good = full_scene().to_rsb();
+        let rebuild = |edit: &dyn Fn(&[u8; 4], &mut Vec<u8>)| {
+            let mut out = good[..8].to_vec();
+            for (tag, mut payload) in sections(&good) {
+                edit(&tag, &mut payload);
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        // A raw plate whose size does not match its bytes.
+        let bad_size = rebuild(&|tag, p| {
+            if *tag == TAG_BMAP && p[0] == 0 {
+                p[4..8].copy_from_slice(&7u32.to_le_bytes());
+            }
+        });
+        assert!(matches!(
+            Scene::from_rsb(&bad_size),
+            Err(RsbError::Invalid { tag: TAG_BMAP, .. })
+        ));
+        // A byte length beyond the section.
+        let long = rebuild(&|tag, p| {
+            if *tag == TAG_BMAP && p[0] == 0 {
+                p[12..16].copy_from_slice(&1000u32.to_le_bytes());
+            }
+        });
+        assert_eq!(
+            Scene::from_rsb(&long),
+            Err(RsbError::SectionTooShort { tag: TAG_BMAP })
+        );
+        // A broken HDR file.
+        let broken = rebuild(&|tag, p| {
+            if *tag == TAG_BMAP && p[0] == 16 {
+                p[16] = b'X';
+            }
+        });
+        assert!(matches!(
+            Scene::from_rsb(&broken),
+            Err(RsbError::Invalid { tag: TAG_BMAP, .. })
+        ));
+        // The environment refers to a bitmap that is not there.
+        let dangling = rebuild(&|tag, p| {
+            if *tag == TAG_ENVR {
+                p[40..44].copy_from_slice(&2u32.to_le_bytes());
+            }
+        });
+        assert!(matches!(
+            Scene::from_rsb(&dangling),
+            Err(RsbError::Invalid { tag: TAG_ENVR, .. })
+        ));
+    }
+
+    #[test]
+    fn updates_without_bitmaps_keep_the_loaded_ones() {
+        let mut scene = full_scene();
+        let mut next = full_scene();
+        next.environment.strength = 3.0;
+        next.environment.rotation_deg = 45.0;
+        let update: Vec<u8> = {
+            let bytes = next.to_rsb();
+            let mut out = bytes[..8].to_vec();
+            for (tag, payload) in sections(&bytes) {
+                if tag != TAG_BMAP && tag != TAG_MESH {
+                    out.extend(unknown_section(&tag, &payload));
+                }
+            }
+            out
+        };
+        assert!(Scene::from_rsb(&update).is_err(), "alone its maps dangle");
+        scene.update_from_rsb(&update).expect("update");
+        assert_eq!(scene, next);
+        // New bitmaps replace the loaded ones, the meshes stay.
+        let mut other = full_scene();
+        other.bitmaps.swap(0, 1);
+        other.environment.hdri_map = 0;
+        other.environment.backplate_map = 1;
+        let bytes = other.to_rsb();
+        let mut no_mesh = bytes[..8].to_vec();
+        for (tag, payload) in sections(&bytes) {
+            if tag != TAG_MESH {
+                no_mesh.extend(unknown_section(&tag, &payload));
+            }
+        }
+        scene
+            .update_from_rsb(&no_mesh)
+            .expect("update with bitmaps");
+        assert_eq!(scene, other);
     }
 
     #[test]

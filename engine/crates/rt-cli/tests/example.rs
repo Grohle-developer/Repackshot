@@ -163,19 +163,23 @@ fn the_sheet_writes_every_image_with_its_statistics() {
     let dir = scratch("sheet");
     let _ = std::fs::remove_dir_all(&dir);
     let entries = rt_cli::sheet::run(&dir, (40, 30), 2, 2).expect("sheet renders");
-    assert_eq!(entries.len(), 6);
-    for e in &entries {
+    // The six recipes, then the E5 scenes at a multiple of the samples.
+    let e5 = rt_cli::scenes::e5_scenes((40, 30));
+    assert_eq!(entries.len(), 6 + e5.len());
+    let factors = std::iter::repeat_n(1, 6).chain(e5.iter().map(|s| s.sample_factor));
+    for (e, factor) in entries.iter().zip(factors) {
         let png = std::fs::read(dir.join(&e.file)).expect("PNG written");
         assert_eq!(&png[..8], &rt_core::png::SIGNATURE);
         assert!(
             e.stats.mean_luminance > 0.02 && e.stats.mean_luminance < 0.98,
             "{e:?}"
         );
-        assert_eq!(e.samples, 2);
+        assert_eq!(e.samples, 2 * factor, "{}", e.key);
     }
     let html = std::fs::read_to_string(dir.join("index.html")).expect("index.html");
     let json = std::fs::read_to_string(dir.join("stats.json")).expect("stats.json");
     assert!(html.contains("key-only.png") && html.contains("sun.png"));
+    assert!(html.contains("e5-glass-bottle.png") && html.contains("e5-sky-dawn.png"));
     assert!(json.contains("\"recipe\": \"backlit-panel\""));
 }
 

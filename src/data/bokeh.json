@@ -1,0 +1,224 @@
+{
+  "version": 1,
+  "types": [
+    {
+      "key": "disc",
+      "n": 1,
+      "name": { "en": "Disc", "es": "Disco" },
+      "description": { "en": "A clean, even disc: a round pupil on a well-corrected lens.", "es": "Un disco limpio y uniforme: pupila redonda en una lente bien corregida." },
+      "requires": null,
+      "lens": "split_rear_4",
+      "thin": {},
+      "variants": []
+    },
+    {
+      "key": "polygon",
+      "n": 2,
+      "name": { "en": "Polygon", "es": "Polígono" },
+      "description": { "en": "A polygon with one corner per iris blade, straight or curved, turning with the rotation.", "es": "Un polígono con una esquina por lámina del diafragma, recto o curvo, que gira con la rotación." },
+      "requires": null,
+      "lens": null,
+      "thin": { "blades": 7, "roundness": 0 },
+      "variants": [
+        { "key": "straight", "name": { "en": "Straight blades", "es": "Láminas rectas" }, "thin": { "roundness": 0 } },
+        { "key": "curved", "name": { "en": "Curved blades", "es": "Láminas curvas" }, "thin": { "roundness": 0.5 } }
+      ]
+    },
+    {
+      "key": "cats_eye",
+      "n": 3,
+      "name": { "en": "Cat's eye", "es": "Ojo de gato" },
+      "description": { "en": "Discs squeezed into lemon shapes toward the frame edge by the lens rims; gone when stopped down.", "es": "Discos aplastados en forma de limón hacia el borde del encuadre por los bordes de la lente; desaparecen al cerrar." },
+      "requires": null,
+      "lens": "double_gauss_normal",
+      "thin": { "catsEye": 0.7 },
+      "variants": []
+    },
+    {
+      "key": "swirl",
+      "n": 4,
+      "name": { "en": "Swirl", "es": "Remolino" },
+      "description": { "en": "Highlights stretched sideways and arranged in rings around the centre, as in old portrait designs.", "es": "Brillos estirados de lado y dispuestos en anillos alrededor del centro, como en los retratos de diseño antiguo." },
+      "requires": null,
+      "lens": "petzval_portrait",
+      "thin": { "swirl": 0.7, "catsEye": 0.45 },
+      "variants": []
+    },
+    {
+      "key": "bubble",
+      "n": 5,
+      "name": { "en": "Soap bubble", "es": "Pompa de jabón" },
+      "description": { "en": "A bright rim around a hollow centre, like a soap bubble.", "es": "Un borde brillante alrededor de un centro hueco, como una pompa de jabón." },
+      "requires": null,
+      "lens": "triplet",
+      "thin": { "profile": "ringBright", "profileParam": 0.75 },
+      "variants": []
+    },
+    {
+      "key": "creamy",
+      "n": 6,
+      "name": { "en": "Creamy", "es": "Cremoso" },
+      "description": { "en": "A bright centre fading to a soft edge: smooth, creamy blur.", "es": "Un centro brillante que se funde en un borde suave: desenfoque suave y cremoso." },
+      "requires": null,
+      "lens": "symmetric_5",
+      "thin": { "profile": "centreBright", "profileParam": 0.8 },
+      "variants": []
+    },
+    {
+      "key": "onion_rings",
+      "n": 7,
+      "name": { "en": "Onion rings", "es": "Anillos de cebolla" },
+      "description": { "en": "Concentric rings inside every disc, from the turning marks of moulded lens surfaces.", "es": "Anillos concéntricos dentro de cada disco, por las marcas de torno de las superficies moldeadas." },
+      "requires": null,
+      "lens": null,
+      "thin": { "onionAmplitude": 0.45, "texture": "onion_rings" },
+      "variants": []
+    },
+    {
+      "key": "donut",
+      "n": 8,
+      "name": { "en": "Donut ring", "es": "Anillo donut" },
+      "description": { "en": "Ring-shaped discs with a dark centre, from the secondary mirror of a mirror lens.", "es": "Discos en forma de anillo con el centro oscuro, por el espejo secundario de un objetivo de espejos." },
+      "requires": null,
+      "lens": "catadioptric_mirror",
+      "thin": { "obstruction": 0.49 },
+      "variants": [
+        { "key": "obstruction_30", "name": { "en": "Small obstruction", "es": "Obstrucción pequeña" }, "thin": { "obstruction": 0.3, "mask": "annulus_30" } },
+        { "key": "obstruction_50", "name": { "en": "Large obstruction", "es": "Obstrucción grande" }, "thin": { "obstruction": 0.5, "mask": "annulus_50" } }
+      ]
+    },
+    {
+      "key": "anamorphic_oval",
+      "n": 9,
+      "name": { "en": "Anamorphic oval", "es": "Óvalo anamórfico" },
+      "description": { "en": "Tall ovals from the squeeze of the lens, with horizontal streaks across the highlights.", "es": "Óvalos altos por la compresión de la lente, con rayas horizontales atravesando los brillos." },
+      "requires": null,
+      "lens": "anamorphic_adapter_2x",
+      "thin": { "squeeze": 2, "streaks": 0.6 },
+      "variants": []
+    },
+    {
+      "key": "apodized",
+      "n": 10,
+      "name": { "en": "Apodized", "es": "Apodizado" },
+      "description": { "en": "Edgeless, Gaussian discs from a graded filter: the smoothest blur, at a cost in light.", "es": "Discos gaussianos sin borde por un filtro graduado: el desenfoque más suave, con pérdida de luz." },
+      "requires": null,
+      "lens": null,
+      "thin": { "profile": "apodized", "profileParam": 0.4 },
+      "variants": []
+    },
+    {
+      "key": "coma_comet",
+      "n": 11,
+      "name": { "en": "Coma comet", "es": "Cometa de coma" },
+      "description": { "en": "Highlights away from the centre become comets pointing outward: coma. Needs the traced lens.", "es": "Los brillos lejos del centro se vuelven cometas que apuntan hacia fuera: coma. Necesita la lente trazada." },
+      "requires": "traced",
+      "lens": "double_gauss_fast",
+      "thin": null,
+      "variants": []
+    },
+    {
+      "key": "double_line",
+      "n": 12,
+      "name": { "en": "Double line", "es": "Doble línea" },
+      "description": { "en": "Bright-rimmed discs that double the fine lines of the blur: a nervous, busy background.", "es": "Discos de borde brillante que duplican las líneas finas del desenfoque: un fondo nervioso." },
+      "requires": null,
+      "lens": null,
+      "thin": { "profile": "ringBright", "profileParam": 0.95 },
+      "variants": []
+    },
+    {
+      "key": "chromatic_fringes",
+      "n": 13,
+      "name": { "en": "Chromatic fringes", "es": "Flecos cromáticos" },
+      "description": { "en": "Colour fringes on the discs: a green rim and a purple core behind the focus, reversed in front of it.", "es": "Flecos de color en los discos: borde verde y núcleo púrpura detrás del foco, al revés delante." },
+      "requires": null,
+      "lens": "meniscus_single",
+      "thin": { "caAmount": 0.6 },
+      "variants": []
+    },
+    {
+      "key": "custom_density",
+      "n": 14,
+      "name": { "en": "Custom density", "es": "Densidad a medida" },
+      "description": { "en": "Dial the pupil profile by hand, from creamy (bright centre) to busy (bright rim).", "es": "Ajusta a mano el perfil de la pupila, de cremoso (centro brillante) a nervioso (borde brillante)." },
+      "requires": null,
+      "lens": null,
+      "thin": {},
+      "variants": []
+    },
+    {
+      "key": "textured",
+      "n": 15,
+      "name": { "en": "Textured", "es": "Texturizado" },
+      "description": { "en": "Specks, scratches or a fine mesh on the pupil: speckled discs and orbs.", "es": "Motas, rayas o una malla fina sobre la pupila: discos moteados y orbes." },
+      "requires": null,
+      "lens": null,
+      "thin": { "texture": "dust" },
+      "variants": [
+        { "key": "dust", "name": { "en": "Dust", "es": "Polvo" }, "thin": { "texture": "dust" } },
+        { "key": "scratches", "name": { "en": "Scratches", "es": "Rayas" }, "thin": { "texture": "scratches" } },
+        { "key": "filter", "name": { "en": "Filter mesh", "es": "Malla de filtro" }, "thin": { "texture": "filter_mesh" } }
+      ]
+    },
+    {
+      "key": "custom_shape",
+      "n": 16,
+      "name": { "en": "Custom shape", "es": "Forma propia" },
+      "description": { "en": "Highlights take the shape of a mask: stars, hearts and your own image.", "es": "Los brillos toman la forma de una máscara: estrellas, corazones y tu propia imagen." },
+      "requires": null,
+      "lens": null,
+      "thin": { "mask": "star_5" },
+      "variants": [
+        { "key": "star_4", "name": { "en": "Star, 4 points", "es": "Estrella de 4 puntas" }, "thin": { "mask": "star_4" } },
+        { "key": "star_5", "name": { "en": "Star, 5 points", "es": "Estrella de 5 puntas" }, "thin": { "mask": "star_5" } },
+        { "key": "star_6", "name": { "en": "Star, 6 points", "es": "Estrella de 6 puntas" }, "thin": { "mask": "star_6" } },
+        { "key": "star_8", "name": { "en": "Star, 8 points", "es": "Estrella de 8 puntas" }, "thin": { "mask": "star_8" } },
+        { "key": "heart", "name": { "en": "Heart", "es": "Corazón" }, "thin": { "mask": "heart" } }
+      ]
+    },
+    {
+      "key": "multi_hole",
+      "n": 17,
+      "name": { "en": "Multi-hole", "es": "Varios agujeros" },
+      "description": { "en": "A stop with many holes: spots that stretch into radial streaks.", "es": "Un diafragma con muchos agujeros: puntos que se estiran en rayas radiales." },
+      "requires": null,
+      "lens": null,
+      "thin": { "mask": "holes_19" },
+      "variants": [
+        { "key": "holes_7", "name": { "en": "7 holes", "es": "7 agujeros" }, "thin": { "mask": "holes_7" } },
+        { "key": "holes_19", "name": { "en": "19 holes", "es": "19 agujeros" }, "thin": { "mask": "holes_19" } }
+      ]
+    },
+    {
+      "key": "diffraction_ring",
+      "n": 18,
+      "name": { "en": "Diffraction ring", "es": "Anillo de difracción" },
+      "description": { "en": "A bright fringe at the edge of small discs, from wave optics. Coming soon.", "es": "Un borde brillante en los discos pequeños, por óptica de ondas. Próximamente." },
+      "requires": "wave",
+      "lens": null,
+      "thin": null,
+      "variants": []
+    },
+    {
+      "key": "focus_breathing",
+      "n": 19,
+      "name": { "en": "Focus breathing", "es": "Respiración de foco" },
+      "description": { "en": "The field of view and the blur change as the focus moves. Needs a lens with moving groups.", "es": "El encuadre y el desenfoque cambian al mover el foco. Necesita una lente con grupos móviles." },
+      "requires": "traced",
+      "lens": "telephoto_internal_focus",
+      "thin": null,
+      "variants": []
+    },
+    {
+      "key": "variable_sa",
+      "n": 20,
+      "name": { "en": "Variable spherical aberration", "es": "Aberración esférica variable" },
+      "description": { "en": "Dial spherical aberration from under- to over-corrected, from creamy to doughnut blur. Needs the traced lens.", "es": "Aberración esférica ajustable, de subcorregida a sobrecorregida, de desenfoque cremoso a en donut. Necesita la lente trazada." },
+      "requires": "traced",
+      "lens": "soft_focus_variable",
+      "thin": { "profile": "centreBright", "profileParam": 0.6 },
+      "variants": []
+    }
+  ]
+}

@@ -2,28 +2,45 @@
 // another, always with the path tracer (`services.renderFrame`, never the
 // preview), each image saved where its settings say and kept in the results
 // history. *Render* runs only the jobs it just put first ("render just this
-// one"); *Start queue* runs every waiting job in order; *Pause* stops now and
-// the job in progress waits again (a render cannot resume halfway).
+// one"); *Start queue* runs every waiting job in order; *Pause* stops now (the
+// engine is free at once) and the job in progress waits again (a render cannot
+// resume halfway); *Resume* goes on with what was paused. Pausing and resuming
+// are taken at once, even while the stopped job is still winding down: a
+// Resume pressed then is not lost, it carries on in the same loop.
 //
 // Status and progress go through volatile store actions (`render/job`,
 // `render/running`), throttled, so they never reach the undo history. If the
 // running job leaves the queue (removed, or an undo took it away) its render
 // is stopped.
+//
+// AI post-processing (X3c): after the engine's image is saved, a job with the
+// AI on posts it to the pipeline. On the desktop the source is the render the
+// launcher kept with its linear image and passes (`RENDER`), and the AI's image
+// comes back as the render's light and is written with the render's own
+// exposure and curve, so a PNG of 16 bits or an EXR stays one; elsewhere the
+// saved picture and three.js passes go along (`INLINE`). While it runs, the
+// job's progress is the pipeline's, tile by tile. Stopping or pausing it then
+// keeps the engine's image in the history: only the AI's is lost.
 
 import { totalDuration } from '../core/animation';
+import type { AiPostProgress, AiPostRequest } from '../core/ai';
+import { aiFileName, pipelineOf } from '../core/ai-post';
 import { outputFileName, type NameValues } from '../core/name-template';
 import { formatExtension, frameRange, frameTime, jobCamera, type JobRuntime, type JobStatus, type RenderJob, type RenderSettings } from '../core/render';
-import type { ResultMeta } from '../core/results';
+import type { AiResultInfo, ResultMeta } from '../core/results';
 import type { ProjectState } from '../core/store';
-import { cameraName, studioLabel } from './names';
+import { cameraName, dyn, studioLabel } from './names';
 import type { FrameRequest, FrameResult } from './ports';
 import type { Ctx } from './reactive';
 import { t, tIn } from './strings';
 
 interface Runner {
-  mode: 'IDLE' | 'ALL' | 'ONLY';
+  /** IDLE: not started; ALL: every waiting job; ONLY: Render's jobs; PAUSED: stopped by Pause, waiting for Resume. */
+  mode: 'IDLE' | 'ALL' | 'ONLY' | 'PAUSED';
   /** Jobs Render asked for, in ONLY mode. */
   only: Set<string>;
+  /** What Resume goes on with after a Pause. */
+  resume: { mode: 'ALL' | 'ONLY'; only: string[] } | null;
   current: { id: string; abort: AbortController; why: 'PAUSE' | 'STOP' | 'GONE' | null } | null;
   loop: Promise<void> | null;
   unsubscribe: (() => void) | null;
@@ -34,7 +51,7 @@ const runners = new WeakMap<object, Runner>();
 function runnerOf(ctx: Ctx): Runner {
   let r = runners.get(ctx.store);
   if (!r) {
-    r = { mode: 'IDLE', only: new Set(), current: null, loop: null, unsubscribe: null };
+    r = { mode: 'IDLE', only: new Set(), resume: null, current: null, loop: null, unsubscribe: null };
     runners.set(ctx.store, r);
   }
   return r;
@@ -112,11 +129,69 @@ function patchJob(ctx: Ctx, id: string, patch: Partial<JobRuntime>): void {
   ctx.store.dispatch({ type: 'render/job', id, patch });
 }
 
-/** Stores a result in the history and in the interface's list (evicted ones leave both). */
-export async function recordResult(ctx: Ctx, meta: ResultMeta, out: FrameResult): Promise<void> {
+const abortError = (): DOMException => new DOMException('aborted', 'AbortError');
+
+/**
+ * The AI post-processing of a finished image (AI-POST.md §4, §7): the engine's image has been saved already and
+ * stays the result's own; the service gets the render the launcher kept (`RENDER`, desktop) or a copy of the
+ * picture with the passes of its camera (`INLINE`), and what it makes is saved next to it (`…_AI.png`) and kept in
+ * the history with the guard's report. Never throws but for an abort: when the AI cannot run, or fails, the person
+ * is told and the engine's image is all there is. A REJECTED report keeps the report (the viewer words it) and no
+ * second image: the delivered image is the engine's, unchanged.
+ */
+export async function aiStep(
+  ctx: Ctx,
+  s: RenderSettings,
+  out: FrameResult,
+  cam: string | null,
+  fileName: string,
+  signal: AbortSignal,
+  onProgress: (p: AiPostProgress) => void = () => undefined,
+): Promise<{ blob: Blob | null; info: AiResultInfo } | null> {
+  const port = ctx.services.ai;
+  if (!port) return null;
+  const skipped = (reason: string) => {
+    ctx.ui.toast(t('render.aiSkipped', { reason }));
+    return null;
+  };
+  try {
+    const status = await port.service.status();
+    if (!status.available) return skipped(t(dyn(`rw.aiWhy.${status.reason ?? 'NOT_BUILT'}`)));
+    const st = ctx.store.get();
+    const text = port.scenePrompt(st, pipelineOf(s.ai));
+    const materials = port.materials(st, cam);
+    const kept = out.renderId !== undefined && (await port.renderSource());
+    let source: AiPostRequest['source'];
+    if (kept) source = { kind: 'RENDER', renderId: out.renderId! };
+    else {
+      const [image, passes] = await Promise.all([port.decode(out.display ?? out.file), port.passes({ width: out.width, height: out.height, camera: cam })]);
+      source = { kind: 'INLINE', image, passes };
+    }
+    if (signal.aborted) throw abortError();
+    const result = await port.service.post({ source, settings: pipelineOf(s.ai), prompt: text.prompt, negative: text.negative, modelKey: status.activeModel ?? '', materials }, onProgress, signal);
+    if (signal.aborted) throw abortError();
+    const name = aiFileName(fileName);
+    if (result.report.verdict === 'REJECTED') {
+      ctx.ui.toast(t('render.aiRejected'));
+      return { blob: null, info: { name, thumb: '', bytes: 0, report: result.report } };
+    }
+    const opts = { format: s.format, bitDepth: s.bitDepth, jpegQuality: s.jpegQuality, dpi: s.dpi, transparent: s.transparent, ...(kept && out.tone ? { tone: out.tone } : {}) };
+    const blob = await port.encode(result.image, opts);
+    await ctx.services.files.save(s.destination, name, blob);
+    // Browsers do not show EXR: the thumbnail comes from an 8-bit picture of the same image (as the engine's does).
+    const shown = s.format === 'EXR' ? await port.encode(result.image, { ...opts, format: 'PNG', bitDepth: 8 }) : blob;
+    return { blob, info: { name, thumb: await thumbnailOf(shown), bytes: blob.size, report: result.report } };
+  } catch (err) {
+    if (signal.aborted || (err instanceof Error && err.name === 'AbortError')) throw err;
+    return skipped(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** Stores a result in the history and in the interface's list (evicted ones leave both). `ai`: the image the AI post-processing made. */
+export async function recordResult(ctx: Ctx, meta: ResultMeta, out: FrameResult, ai: Blob | null = null): Promise<void> {
   let evicted: string[] = [];
   try {
-    evicted = await ctx.services.results.add(meta, out.file, out.display);
+    evicted = await ctx.services.results.add(meta, out.file, out.display, ai);
   } catch (err) {
     console.warn(`results history: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -141,6 +216,15 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
   const resultIds: string[] = [];
   const saved: string[] = [];
   let lastTick = 0;
+  // AI post-processing: single images only (animations arrive later), after the engine's image is safe.
+  const withAi = s.ai.enabled && !anim && !!ctx.services.ai;
+  const renderSource = async () => {
+    try {
+      return (await ctx.services.ai?.renderSource()) ?? false;
+    } catch {
+      return false;
+    }
+  };
   for (let k = 0; k < total; k++) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError');
     const f = frames[k];
@@ -169,6 +253,8 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
       onProgress: (p, samples, seconds) => tick(p, samples, seconds),
       ...(cam ? { camera: cam } : {}),
       ...(f.time !== undefined ? { time: f.time } : {}),
+      // The AI step works from the render the launcher keeps with its passes (desktop).
+      ...(withAi && k === 0 && (await renderSource()) ? { aiPasses: true } : {}),
     };
     const out = await ctx.services.renderFrame(req);
     if (signal.aborted) throw new DOMException('aborted', 'AbortError');
@@ -178,6 +264,27 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
     if (out.seconds > 0 && out.samples > 0) ctx.ui.set({ throughput: (out.samples * out.width * out.height) / out.seconds });
     // The history keeps the image of a job (the first frame of an animation).
     if (k === 0) {
+      // The pipeline's progress, tile by tile, in place of the render's (the render is done).
+      let lastAi = '';
+      const aiTick = (p: AiPostProgress) => {
+        const t = now();
+        const key = `${p.stage}|${p.tile}|${p.attempt}`;
+        if (key === lastAi && t - lastTick < 200) return;
+        lastAi = key;
+        lastTick = t;
+        ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress: Math.min(1, p.fraction), samples: out.samples, seconds: out.seconds, ai: { stage: p.stage, tile: p.tile, tiles: p.tiles, attempt: p.attempt } } });
+        patchJob(ctx, job.id, { progress: Math.min(1, p.fraction) });
+      };
+      // Stopped or paused during the AI step: the engine's image is kept in the history all the same.
+      let interrupted: unknown = null;
+      let ai: Awaited<ReturnType<typeof aiStep>> = null;
+      if (withAi) {
+        try {
+          ai = await aiStep(ctx, s, out, cam, names[k], signal, aiTick);
+        } catch (err) {
+          interrupted = err;
+        }
+      }
       const st = ctx.store.get();
       const camId = cam ?? st.camera.active;
       const meta: ResultMeta = {
@@ -196,12 +303,17 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
         bitDepth: s.bitDepth,
         savedTo: where === 'FOLDER' && s.destination.kind === 'FOLDER' ? s.destination : { kind: 'DOWNLOADS' },
         thumb: await thumbnailOf(out.display ?? out.file),
-        bytes: out.file.size + (out.display?.size ?? 0),
+        bytes: out.file.size + (out.display?.size ?? 0) + (ai?.blob?.size ?? 0),
         ...(anim ? { frame: frames[0].n ?? 1, frames: total } : {}),
+        ...(ai ? { ai: ai.info } : {}),
       };
-      await recordResult(ctx, meta, out);
+      await recordResult(ctx, meta, out, ai?.blob ?? null);
       resultIds.push(meta.id);
       patchJob(ctx, job.id, { resultIds: [...resultIds] });
+      if (interrupted) {
+        ctx.ui.toast(t('render.aiStopped'));
+        throw interrupted;
+      }
     }
     tick(1, out.samples, out.seconds, true);
   }
@@ -230,11 +342,14 @@ function watchQueue(ctx: Ctx, r: Runner): void {
   });
 }
 
+const running = (r: Runner) => r.mode === 'ALL' || r.mode === 'ONLY';
+
 async function loop(ctx: Ctx, r: Runner): Promise<void> {
   watchQueue(ctx, r);
   try {
     for (;;) {
-      if (r.mode === 'IDLE') break;
+      // Paused (or never started): the loop ends here; resumed meanwhile, it goes on.
+      if (!running(r)) break;
       const job = nextJob(ctx, r);
       if (!job) break;
       const abort = new AbortController();
@@ -273,14 +388,17 @@ async function loop(ctx: Ctx, r: Runner): Promise<void> {
         }
         ctx.store.dispatch({ type: 'render/running', running: null });
       }
-      if (status === 'QUEUED') break; // paused
     }
   } finally {
     r.loop = null;
-    r.only.clear();
-    setMode(ctx, r, 'IDLE');
     r.unsubscribe?.();
     r.unsubscribe = null;
+    // A Start or Resume that came while the loop was ending is not lost.
+    if (running(r) && nextJob(ctx, r)) ensureLoop(ctx, r);
+    else if (r.mode !== 'PAUSED') {
+      r.only.clear();
+      setMode(ctx, r, 'IDLE');
+    }
   }
 }
 
@@ -288,10 +406,17 @@ function ensureLoop(ctx: Ctx, r: Runner): void {
   if (!r.loop) r.loop = loop(ctx, r);
 }
 
-/** Start queue: every waiting job, in order. */
+/** Start queue: every waiting job, in order. After a Pause (Resume): what was paused goes on. */
 export function startQueue(ctx: Ctx): void {
   const r = runnerOf(ctx);
-  setMode(ctx, r, 'ALL');
+  const resume = r.mode === 'PAUSED' ? r.resume : null;
+  r.resume = null;
+  const queued = new Set(ctx.store.get().render.queue.filter((j) => j.status === 'QUEUED' || j.status === 'RUNNING').map((j) => j.id));
+  const only = resume?.mode === 'ONLY' ? resume.only.filter((id) => queued.has(id)) : [];
+  if (only.length > 0) {
+    r.only = new Set(only);
+    setMode(ctx, r, 'ONLY');
+  } else setMode(ctx, r, 'ALL');
   ensureLoop(ctx, r);
 }
 
@@ -301,8 +426,12 @@ export function startQueue(ctx: Ctx): void {
  */
 export function runOnly(ctx: Ctx, ids: readonly string[]): 'NOW' | 'NEXT' {
   const r = runnerOf(ctx);
-  const busy = r.current !== null;
+  // A job still winding down after a Pause does not count: Render starts now.
+  const busy = r.current !== null && running(r);
   if (r.mode !== 'ALL') {
+    // Render after a Pause renders just its job; what was paused stays waiting.
+    if (r.mode !== 'ONLY') r.only.clear();
+    r.resume = null;
     for (const id of ids) r.only.add(id);
     setMode(ctx, r, 'ONLY');
   }
@@ -310,10 +439,12 @@ export function runOnly(ctx: Ctx, ids: readonly string[]): 'NOW' | 'NEXT' {
   return busy ? 'NEXT' : 'NOW';
 }
 
-/** Pause: stops now; the job in progress waits again and the queue stays where it is. */
+/** Pause: stops now (the engine is free at once); the job in progress waits again and Resume goes on from there. */
 export function pauseQueue(ctx: Ctx): void {
   const r = runnerOf(ctx);
-  setMode(ctx, r, 'IDLE');
+  if (!running(r)) return;
+  r.resume = { mode: r.mode === 'ONLY' ? 'ONLY' : 'ALL', only: [...r.only] };
+  setMode(ctx, r, 'PAUSED');
   if (r.current) {
     r.current.why = 'PAUSE';
     r.current.abort.abort();

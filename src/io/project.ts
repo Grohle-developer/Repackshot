@@ -4,7 +4,8 @@
 //    "format": "repackshot-project",
 //    "schema": 2,
 //    "state": { ...ProjectState, as the store has it },
-//    "meshes": [ { "id": "stl:1:n3", "glb": "<base64>", "sharpEdges": "<base64>", "triangleSource": "<base64>" }, ... ]
+//    "meshes": [ { "id": "stl:1:n3", "glb": "<base64>", "sharpEdges": "<base64>", "triangleSource": "<base64>" }, ... ],
+//    "images": [ { "id": "hdri:1", "name": "studio.hdr", "file": "<base64>" }, ... ]
 //   }
 //
 // The state keeps only a `MeshRef` per part (id, counts, bounds: core/meshes.ts), so each mesh that a part uses
@@ -18,10 +19,22 @@
 // the schema-2 files written before this block) do not have: they load without geometry (the example's is
 // regenerated, anything else is reported as missing) so they keep opening in every version.
 //
+// `images` (E5) holds the environment's HDRI and background image as the files they were read from (the state
+// keeps an `ImageRef`: core/images.ts). It is written only when the environment has one. Its images are decoded
+// again on open; one that is missing or does not decode is dropped from the environment (the studio dome lights,
+// the colour shows) and reported, never a reason not to open the project.
+//
 // Schema history (each step a pure function over the state, applied in order on load):
 //   1 (U1) — the state as it was.
 //   2 (U5) — `render` is the render window's settings and a queue of full `RenderJob`s (core/render.ts
 //            `migrateRender`).
+//
+// Primitives (U9): a part made by Add ▸ Primitive keeps its shape and measures in an optional field of its node
+// (`primitive`: `{ kind, params }`, core/primitives.ts), and its mesh is not written: on open it is made again from
+// the measures, under the id it had (the id names the content), so a project with primitives saves, opens and
+// saves again to the same bytes. A file from before U9 has no such field and opens as it always did; a shape this
+// version does not know (a newer file) leaves its part without geometry, reported like any missing mesh. The
+// schema stays at 2.
 //
 // Opening is all or nothing: the text is read and checked (envelope, schema, state, meshes) before the registry
 // or the store are touched, so a damaged file leaves the open project as it was.
@@ -37,13 +50,17 @@ import {
   type MeshData,
   type MeshId,
 } from '../core/meshes';
+import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
 import { migrateRender } from '../core/render';
+import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
+import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
 import { emptyBox } from '../core/math';
 import { createInitialState, type ProjectState } from '../core/store';
 import { baseMeshId } from '../core/transform';
 import { base64ToBytes, bytesToBase64 } from './base64';
 import { glbToMesh, meshToGlb, packUint32, unpackUint32 } from './glb';
+import type { PixelDecoder } from './hdri';
 
 export const PROJECT_FORMAT = 'repackshot-project';
 export const PROJECT_SCHEMA = 2;
@@ -88,6 +105,20 @@ function meshEntry(id: MeshId, data: MeshData): string {
   return JSON.stringify(entry);
 }
 
+/** The environment's image slots that hold an image. */
+function environmentImages(state: ProjectState): ['hdri' | 'backplate', ImageRef][] {
+  const env = state.environment;
+  const out: ['hdri' | 'backplate', ImageRef][] = [];
+  if (env.hdri) out.push(['hdri', env.hdri]);
+  if (env.backplate) out.push(['backplate', env.backplate]);
+  return out;
+}
+
+/** One entry of the `images` block, as a line of JSON. */
+function imageEntry(ref: ImageRef, data: ImageData): string {
+  return JSON.stringify({ id: ref.id, name: ref.name, file: bytesToBase64(data.bytes) });
+}
+
 /**
  * The project as a file: the state and every mesh its parts use. The file is built from pieces (one per mesh),
  * never one big string, so a model of millions of triangles costs time and memory linear in its size. A part
@@ -96,6 +127,7 @@ function meshEntry(id: MeshId, data: MeshData): string {
 export function serializeProject(state: ProjectState): Blob {
   // A file on disk is by definition the saved state: the flag is written clean.
   const clean: ProjectState = state.meta.dirty ? { ...state, meta: { ...state.meta, dirty: false } } : state;
+  const made = madeFromMeasures(state);
   const parts: string[] = [
     `{\n "format": ${JSON.stringify(PROJECT_FORMAT)},\n "schema": ${PROJECT_SCHEMA},\n "state": `,
     stateJson(clean).replace(/\n/g, '\n '),
@@ -103,6 +135,8 @@ export function serializeProject(state: ProjectState): Blob {
   ];
   let first = true;
   for (const id of meshIdsInUse(state)) {
+    // A primitive's mesh is its measures: it is made again on open (U9).
+    if (made.has(id)) continue;
     const data = getMesh(id);
     if (!data) continue;
     try {
@@ -114,8 +148,36 @@ export function serializeProject(state: ProjectState): Blob {
     }
     first = false;
   }
-  parts.push(first ? ']\n}\n' : '\n ]\n}\n');
+  parts.push(first ? ']' : '\n ]');
+  // The environment's images, as their files.
+  const images = environmentImages(state).filter(([, ref]) => getImage(ref.id));
+  if (images.length > 0) {
+    parts.push(',\n "images": [');
+    images.forEach(([, ref], i) => {
+      try {
+        parts.push(`${i === 0 ? '' : ','}\n  ${imageEntry(ref, getImage(ref.id)!)}`);
+      } catch (err) {
+        if (err instanceof RangeError) throw new ProjectError('TOO_LARGE', `image ${ref.name} is too large to save in a project file`);
+        throw err;
+      }
+    });
+    parts.push('\n ]');
+  }
+  parts.push('\n}\n');
   return new Blob(parts, { type: 'application/json' });
+}
+
+/** Meshes every part of which is a primitive: the file keeps their measures, not the mesh. */
+function madeFromMeasures(state: Pick<ProjectState, 'scene'>): Set<MeshId> {
+  const out = new Set<MeshId>();
+  const other = new Set<MeshId>();
+  for (const n of Object.values(state.scene.nodes)) {
+    if (!n.mesh) continue;
+    if (n.primitive) out.add(n.mesh.id);
+    else other.add(n.mesh.id);
+  }
+  for (const id of other) out.delete(id);
+  return out;
 }
 
 // --- Migration and checks ----------------------------------------------------------------------------------
@@ -201,6 +263,16 @@ function checkState(raw: RawState): ProjectState {
       if (!Array.isArray(n.faceMaterials)) throw damaged(`${at}.faceMaterials is not a list`);
       for (const f of n.faceMaterials) if (!isObject(f) || !Number.isInteger(f.start) || !Number.isInteger(f.count) || !isObject(s.materials[f.material])) throw damaged(`${at}.faceMaterials is damaged`);
     }
+    if (n.primitive !== undefined) {
+      // A primitive (U9): its shape and measures. A shape this version does not know is dropped (the part has no
+      // geometry then, reported as missing); the measures are normalised like the inspector's.
+      const prim = n.primitive as unknown;
+      if (!isObject(prim) || !isObject(prim.params) || typeof prim.kind !== 'string') throw damaged(`${at}.primitive is damaged`);
+      const fixed: SceneNode = { ...(emptied[id] ?? n) };
+      if (n.kind !== 'PART' || !isPrimitiveKind(prim.kind)) delete fixed.primitive;
+      else fixed.primitive = { kind: prim.kind, params: normalizeParams(prim.kind, prim.params) };
+      emptied[id] = fixed;
+    }
   }
   for (const r of s.scene.roots) if (!nodes[r] || nodes[r].parent !== null) throw damaged(`scene.roots names ${r}, which is not a top-level node`);
   // No cycles: walking up from any node ends at a root within as many steps as there are nodes.
@@ -219,11 +291,19 @@ function checkState(raw: RawState): ProjectState {
   for (const [id, c] of Object.entries(s.camera.cameras)) if (!isObject(c) || c.id !== id) throw damaged(`camera.cameras.${id} is not a camera`);
   if (!Array.isArray(s.studio.lights) || s.studio.lights.some((l) => !isObject(l) || typeof l.id !== 'string')) throw damaged('studio.lights is damaged');
   if (!Array.isArray(s.selection.ids)) throw damaged('selection.ids is not a list');
+  const env = s.environment;
+  for (const slot of ['hdri', 'backplate'] as const) {
+    const r = env[slot] as unknown;
+    if (r !== null && !(isObject(r) && typeof r.id === 'string' && typeof r.name === 'string' && Number.isInteger(r.width) && Number.isInteger(r.height))) throw damaged(`environment.${slot} is damaged`);
+  }
+  if (!isObject(env.skySun) || !Number.isFinite(env.skySun.az) || !Number.isFinite(env.skySun.el)) throw damaged('environment.skySun is damaged');
+  // E5c: a project saved before the physical sky has no skyModel and opens with the default (filled in above).
+  if (env.skyModel !== 'PHYSICAL' && env.skyModel !== 'CLASSIC') throw damaged('environment.skyModel is damaged');
   return s;
 }
 
 /** The envelope of a parsed file and the state it holds, migrated to the current schema and checked. */
-function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown } {
+function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; images: unknown } {
   if (!isObject(body) || body.format !== PROJECT_FORMAT) throw new ProjectError('NOT_A_PROJECT', 'not a Repackshot project');
   // A file without `schema` is a hand-made one; the first schema is the oldest there is.
   const schema = body.schema === undefined ? 1 : body.schema;
@@ -239,7 +319,7 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown } {
     meta: { ...checked.meta, dirty: false },
     animation: { ...checked.animation, playing: false },
   };
-  return { state: loaded, meshes: body.meshes };
+  return { state: loaded, meshes: body.meshes, images: body.images };
 }
 
 /**
@@ -343,8 +423,23 @@ let loads = 0;
  * prefix, which no importer makes. Returns the state with its mesh refs updated; `registered` collects the ids it
  * registered, so the caller can take them back if the load fails after this.
  */
-function placeMeshes(state: ProjectState, decoded: Map<MeshId, DecodedMesh>, registered: MeshId[]): { state: ProjectState; missing: number } {
+function placeMeshes(loaded: ProjectState, decoded: Map<MeshId, DecodedMesh>, registered: MeshId[]): { state: ProjectState; missing: number } {
+  // Primitives first: their meshes are made from their measures under the id they had (it names the content and its
+  // owner), whatever the file holds.
+  const made = new Set<MeshId>();
+  const withPrimitives: Record<string, SceneNode> = { ...loaded.scene.nodes };
+  for (const [key, n] of Object.entries(loaded.scene.nodes)) {
+    if (!n.primitive) continue;
+    const id = primitiveMeshId((n.mesh && primitiveOwner(n.mesh.id)) ?? n.id, n.primitive);
+    const had = getMesh(id) !== undefined;
+    const m = ensurePrimitiveMeshAt(id, n.primitive);
+    if (!had) registered.push(id);
+    made.add(id);
+    withPrimitives[key] = { ...n, mesh: m.ref, faceRanges: m.faceRanges };
+  }
+  const state: ProjectState = made.size > 0 ? { ...loaded, scene: { ...loaded.scene, nodes: withPrimitives } } : loaded;
   const wanted = meshIdsInUse(state);
+  for (const id of made) wanted.delete(id);
   // Files from before the meshes block: the example's geometry is code, the rest is gone.
   let regenerated = false;
   for (const id of wanted) {
@@ -354,7 +449,7 @@ function placeMeshes(state: ProjectState, decoded: Map<MeshId, DecodedMesh>, reg
   }
   // The counts in the state must be the counts of the geometry in the file.
   for (const n of Object.values(state.scene.nodes)) {
-    const d = n.mesh ? decoded.get(n.mesh.id) : undefined;
+    const d = n.mesh && !made.has(n.mesh.id) ? decoded.get(n.mesh.id) : undefined;
     if (n.mesh && d && (d.data.positions.length / 3 !== n.mesh.vertices || d.data.indices.length / 3 !== n.mesh.triangles)) {
       throw damaged(`mesh ${n.mesh.id} does not have the vertices and triangles that ${n.name} says`);
     }
@@ -392,7 +487,7 @@ function placeMeshes(state: ProjectState, decoded: Map<MeshId, DecodedMesh>, reg
   const nodes: Record<string, SceneNode> = { ...state.scene.nodes };
   let missing = 0;
   for (const [key, n] of Object.entries(state.scene.nodes)) {
-    if (!n.mesh) continue;
+    if (!n.mesh || made.has(n.mesh.id)) continue;
     const target = rename.get(n.mesh.id);
     if (target !== undefined) nodes[key] = { ...n, mesh: { ...n.mesh, id: target } };
     // A part whose geometry no file or code can give stays in the scene without it (the preview skips it).
@@ -403,14 +498,75 @@ function placeMeshes(state: ProjectState, decoded: Map<MeshId, DecodedMesh>, reg
 
 /** What a load noticed and the person should hear about. */
 export interface ProjectWarning {
-  /** Parts whose geometry is not in the file (a project from before the meshes block, other than the example). */
-  code: 'MISSING_MESHES';
+  /**
+   * MISSING_MESHES: parts whose geometry is not in the file (a project from before the meshes block, other than
+   * the example). MISSING_IMAGES: environment images that are not in the file or do not decode (dropped).
+   */
+  code: 'MISSING_MESHES' | 'MISSING_IMAGES';
   count: number;
+}
+
+/** An image of the file's `images` block, still to be decoded. */
+export interface SavedImage {
+  id: ImageId;
+  name: string;
+  bytes: Uint8Array;
 }
 
 export interface LoadedProject {
   state: ProjectState;
   warnings: ProjectWarning[];
+  /** The `images` block (entries that are not images are left out): `placeImages` decodes them. */
+  images: SavedImage[];
+}
+
+/** The well-formed entries of an `images` block. */
+function savedImages(block: unknown): SavedImage[] {
+  if (!Array.isArray(block)) return [];
+  const out: SavedImage[] = [];
+  for (const e of block) {
+    if (!isObject(e) || typeof e.id !== 'string' || typeof e.name !== 'string' || typeof e.file !== 'string') continue;
+    try {
+      out.push({ id: e.id, name: e.name, bytes: base64ToBytes(e.file) });
+    } catch {
+      // Not base64: as if it were not there.
+    }
+  }
+  return out;
+}
+
+/**
+ * Decodes the environment's images of a loaded project into the registry. An image keeps its id unless the id
+ * names another image in this session (ids are numbered per session, like the meshes'); one that is missing or
+ * does not decode is dropped from the environment. Returns the state with its refs updated and how many were
+ * dropped.
+ */
+export async function placeImages(state: ProjectState, saved: readonly SavedImage[], decode?: PixelDecoder): Promise<{ state: ProjectState; missing: number }> {
+  const env = { ...state.environment };
+  if (!env.hdri && !env.backplate) return { state, missing: 0 };
+  // The readers load with the first project that has images (they stay out of the main chunk).
+  const { restoreImage } = await import('./hdri');
+  let missing = 0;
+  for (const slot of ['hdri', 'backplate'] as const) {
+    const ref = env[slot];
+    if (!ref) continue;
+    const entry = saved.find((e) => e.id === ref.id);
+    const have = getImage(ref.id);
+    let placed: ImageRef | null = null;
+    if (entry) {
+      const id = have && !sameBytes(have.bytes, entry.bytes) ? nextImageId(slot === 'hdri' ? 'hdri' : 'plate') : ref.id;
+      try {
+        await restoreImage({ ...ref, id }, entry.bytes, decode);
+        const data = getImage(id)!;
+        placed = { id, name: ref.name, width: data.width, height: data.height };
+      } catch {
+        placed = null;
+      }
+    }
+    if (!placed) missing++;
+    env[slot] = placed;
+  }
+  return { state: missing > 0 || env.hdri !== state.environment.hdri || env.backplate !== state.environment.backplate ? { ...state, environment: env } : state, missing };
 }
 
 /**
@@ -420,12 +576,12 @@ export interface LoadedProject {
 export function loadProject(text: string): LoadedProject {
   const registered: MeshId[] = [];
   try {
-    const { state, meshes } = readEnvelope(parseText(text));
+    const { state, meshes, images } = readEnvelope(parseText(text));
     const placed = placeMeshes(state, decodeMeshes(meshes), registered);
     const checked = cleanSelection(placed.state);
     // The Doctor's findings follow the model and the catalogue of this version, not the file's.
     const withDoctor: ProjectState = { ...checked, doctor: { results: runDoctor(checked), stamp: checked.doctor.stamp } };
-    return { state: withDoctor, warnings: placed.missing > 0 ? [{ code: 'MISSING_MESHES', count: placed.missing }] : [] };
+    return { state: withDoctor, warnings: placed.missing > 0 ? [{ code: 'MISSING_MESHES', count: placed.missing }] : [], images: savedImages(images) };
   } catch (err) {
     for (const id of registered) unregisterMesh(id);
     if (err instanceof ProjectError) throw err;
@@ -441,8 +597,11 @@ export type ProjectOpenResult =
   | { ok: true; state: ProjectState; warnings: ProjectWarning[] }
   | { ok: false; fault: { code: ProjectErrorCode; detail: string; schema?: number } };
 
-/** Reads a project file (see `loadProject`); on failure the registry and everything else are as they were. */
-export async function readProjectFile(file: Blob): Promise<ProjectOpenResult> {
+/**
+ * Reads a project file (see `loadProject`) and decodes its environment images (`placeImages`, with `decode` for
+ * background images: the browser's by default); on failure the registry and everything else are as they were.
+ */
+export async function readProjectFile(file: Blob, decode?: PixelDecoder): Promise<ProjectOpenResult> {
   let text: string;
   try {
     text = await file.text();
@@ -452,7 +611,9 @@ export async function readProjectFile(file: Blob): Promise<ProjectOpenResult> {
     return { ok: false, fault: { code: 'DAMAGED', detail: `the file could not be read (${err instanceof Error ? err.message : String(err)})` } };
   }
   try {
-    const { state, warnings } = loadProject(text);
+    const loaded = loadProject(text);
+    const { state, missing } = await placeImages(loaded.state, loaded.images, decode);
+    const warnings: ProjectWarning[] = missing > 0 ? [...loaded.warnings, { code: 'MISSING_IMAGES', count: missing }] : loaded.warnings;
     return { ok: true, state, warnings };
   } catch (err) {
     if (err instanceof ProjectError) return { ok: false, fault: { code: err.code, detail: err.message, ...(err.schema !== undefined ? { schema: err.schema } : {}) } };

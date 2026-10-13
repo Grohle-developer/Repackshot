@@ -1,18 +1,19 @@
 // Queue drawer (UI.md §2.5): the jobs in order (thumbnail, name, camera,
 // size, finish by, AI, status and progress), dragged to reorder (or Alt ↑ ↓),
 // each with Edit (the render window with its settings and Save changes),
-// Duplicate and Remove (Stop while it runs); Start queue / Pause and Clear
-// finished at the top. Finished jobs keep their thumbnail and open the
+// Duplicate and Remove (Stop while it runs); Start queue / Pause / Resume and
+// Clear finished at the top. Finished jobs keep their thumbnail and open the
 // results viewer. On the right, the results history (newest first) with
 // Clear history; when the browser keeps no storage, it says so.
 
-import type { RenderJob, RenderSettings } from '../../core/render';
+import type { RenderJob, RenderProgress, RenderSettings } from '../../core/render';
 import type { ResultMeta } from '../../core/results';
 import * as cmd from '../commands';
 import { h, icon } from '../dom';
 import { cameraName, dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
 import { jobFileNames, jobFrames } from '../render-queue';
+import type { QueueRun } from '../ui-state';
 import { formatClock, formatNumber, framesText, getLang, t } from '../strings';
 
 function finishByText(s: RenderSettings): string {
@@ -23,6 +24,29 @@ function finishByText(s: RenderSettings): string {
 function sizeText(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   return mb >= 1 ? `${formatNumber(mb, getLang(), 1)} MB` : `${formatNumber(bytes / 1024, getLang(), 0)} kB`;
+}
+
+/** The drawer's Start queue / Pause / Resume button for the queue's state. */
+export function queueButton(run: QueueRun, waiting: boolean): { state: 'START' | 'PAUSE' | 'RESUME'; label: 'queue.start' | 'queue.pause' | 'queue.resume'; tip: 'queue.startTip' | 'queue.pauseTip' | 'queue.resumeTip'; icon: 'play' | 'pause'; disabled: boolean } {
+  if (run === 'ALL' || run === 'ONLY') return { state: 'PAUSE', label: 'queue.pause', tip: 'queue.pauseTip', icon: 'pause', disabled: false };
+  if (run === 'PAUSED' && waiting) return { state: 'RESUME', label: 'queue.resume', tip: 'queue.resumeTip', icon: 'play', disabled: false };
+  return { state: 'START', label: 'queue.start', tip: 'queue.startTip', icon: 'play', disabled: !waiting };
+}
+
+/** Where the AI post-processing of the job in flight is (X3c): "AI · tile 2 of 4", "· attempt 2" after a retry. */
+export function aiStatusText(ai: NonNullable<RenderProgress['ai']>): string {
+  if (ai.stage === 'LOADING') return t('queue.aiLoading');
+  if (ai.stage === 'GUARD') return t('queue.aiGuard');
+  const i = Math.max(1, ai.tile);
+  const n = Math.max(1, ai.tiles);
+  return ai.attempt > 1 ? t('queue.aiTileRetry', { i, n, a: ai.attempt }) : t('queue.aiTile', { i, n });
+}
+
+/** The status line of a job: its frame while an animation renders, where the AI is while it runs, else the status. */
+function statusTextOf(j: RenderJob, running: RenderProgress | null): string {
+  if (j.status === 'RUNNING' && running?.jobId === j.id && running.ai) return aiStatusText(running.ai);
+  if (j.status === 'RUNNING' && j.settings.mode === 'ANIMATION' && j.frames > 0) return t('queue.frameOf', { i: j.frame || 1, n: j.frames });
+  return t(dyn(`queue.status.${j.status}`));
 }
 
 export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
@@ -45,8 +69,13 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
     const name = `${jobFileNames(s, j)[0] ?? ''}${anim ? '…' : ''}`;
     const frameCount = j.frames || jobFrames(s, j.settings).length;
     const cam = j.settings.camera.kind === 'ONE' ? s.camera.cameras[j.settings.camera.id] : undefined;
-    const pic = result?.thumb ? h('img', { src: result.thumb, alt: '', class: 'queue-pic' }) : h('span', { class: 'queue-pic queue-pic-empty' }, icon(anim ? 'film' : 'camera', 14));
-    const statusText = running && anim && j.frames > 0 ? t('queue.frameOf', { i: j.frame || 1, n: j.frames }) : t(dyn(`queue.status.${j.status}`));
+    // A result that went through the AI shows both pictures: the engine's and the AI's, side by side.
+    const pic = result?.thumb
+      ? result.ai?.thumb
+        ? h('span', { class: 'queue-pics', 'data-tip': t('queue.aiPair') }, h('img', { src: result.thumb, alt: '', class: 'queue-pic' }), h('img', { src: result.ai.thumb, alt: '', class: 'queue-pic queue-pic-ai' }))
+        : h('img', { src: result.thumb, alt: '', class: 'queue-pic' })
+      : h('span', { class: 'queue-pic queue-pic-empty' }, icon(anim ? 'film' : 'camera', 14));
+    const statusText = statusTextOf(j, s.render.running);
     const act = (label: string, iconName: 'edit' | 'duplicate' | 'close' | 'stop', fn: () => void, disabled = false) =>
       h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label, 'data-tip': label, disabled, onclick: (e: MouseEvent) => (e.stopPropagation(), fn()) }, icon(iconName, 14));
     const el = h(
@@ -128,9 +157,13 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
   scope.watch(
     (s, u) => [s.render.queue, u.results, u.queueRun] as const,
     ([queue, results, run]) => {
-      startBtn.replaceChildren(icon(run === 'IDLE' ? 'play' : 'pause', 14), run === 'IDLE' ? t('queue.start') : t('queue.pause'));
-      startBtn.setAttribute('data-tip', run === 'IDLE' ? t('queue.startTip') : t('queue.pauseTip'));
-      startBtn.disabled = run === 'IDLE' && !queue.some((j) => j.status === 'QUEUED');
+      // One button: Pause while it runs, Resume after a Pause, Start queue otherwise; nothing to start, disabled.
+      const waiting = queue.some((j) => j.status === 'QUEUED');
+      const state = queueButton(run, waiting);
+      startBtn.replaceChildren(icon(state.icon, 14), t(state.label));
+      startBtn.setAttribute('data-tip', t(state.tip));
+      startBtn.setAttribute('data-queue-state', state.state);
+      startBtn.disabled = state.disabled;
       clearBtn.disabled = !queue.some((j) => j.status === 'DONE' || j.status === 'FAILED' || j.status === 'CANCELLED');
       const next = shapeOf(queue, results, run);
       const same = next.length === shape.length && next.every((v, i) => v === shape[i]);
@@ -141,7 +174,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
           const bar = el?.querySelector('.bar-meter > div') as HTMLElement | null;
           if (bar) bar.style.width = `${Math.round(j.progress * 100)}%`;
           const st = el?.querySelector('.queue-status')?.firstChild;
-          if (st && j.status === 'RUNNING' && j.settings.mode === 'ANIMATION' && j.frames > 0) st.textContent = t('queue.frameOf', { i: j.frame || 1, n: j.frames });
+          if (st && j.status === 'RUNNING') st.textContent = statusTextOf(j, store.get().render.running);
         }
         return;
       }
@@ -169,8 +202,9 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
           : results.map((r) =>
               h(
                 'button',
-                { type: 'button', class: 'history-item', 'data-result': r.id, 'data-tip': `${r.name} · ${r.width} × ${r.height}`, onclick: () => cmd.openResult(ctx, r.id) },
+                { type: 'button', class: `history-item${r.ai?.thumb ? ' history-pair' : ''}`, 'data-result': r.id, 'data-tip': `${r.name} · ${r.width} × ${r.height}`, onclick: () => cmd.openResult(ctx, r.id) },
                 r.thumb ? h('img', { src: r.thumb, alt: r.name }) : h('span', { class: 'queue-pic-empty' }, icon('camera', 14)),
+                r.ai?.thumb ? h('img', { src: r.ai.thumb, alt: r.ai.name }) : null,
               ),
             )),
       );

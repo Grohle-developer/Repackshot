@@ -41,6 +41,7 @@ fn main() -> ExitCode {
             std::fs::write(&out, hardware::utf16le(&ini))
                 .map_err(|e| format!("{}: {e}", out.display()))
         }
+        Command::ShortcutId(lnk) => rt_app::platform::shortcut::set_app_user_model_id(&lnk),
         Command::Run(opts) => launcher::run(opts),
     };
     match result {
