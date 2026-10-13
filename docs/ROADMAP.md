@@ -1129,8 +1129,10 @@ licencia mostrada y aceptada antes de la primera descarga; la
 de WebGPU en la web; `/api/hardware` del lanzador en escritorio) y la
 **regla de recomendación** evaluada sobre la tabla del JSON. Si el
 instalador dejó una elección, sus descargas arrancan en el primer
-arranque. En las versiones portables y en la web, el selector aparece una
-vez en el primer arranque. Mientras no exista X3 el post-procesado no
+arranque. En las versiones portables de escritorio el selector aparece
+una vez en el primer arranque; en la web, la primera vez que se activa el
+post-procesado (`AI-POST.md` §2.2) y siempre en *Ajustes*, porque hoy no
+hay modelo para navegador. Mientras no exista X3 el post-procesado no
 corre: la sección lo dice en una línea y lo demás funciona.
 
 **Depende de.** U5 (la ventana de render enlaza con *Gestionar
