@@ -32,7 +32,8 @@ import {
 } from '../core/library';
 import { LIBRARY_PREFIX, isLibraryKey } from '../core/lighting';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
-import { resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
+import { retainMeshes } from '../core/meshes';
+import { meshIdsInUse, resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
 import {
   cameraLookAt,
   defaultPatternParams,
@@ -42,7 +43,7 @@ import {
   type PivotMode,
   type Space,
 } from '../core/transform';
-import { createInitialState, type ThemeSetting } from '../core/store';
+import { createInitialState, type ProjectState, type ThemeSetting } from '../core/store';
 import { patchSettings, settingsOf, type RenderSettings } from '../core/render';
 import { doctorCheck } from '../data/doctor';
 import type { ConfirmSpec } from './components/widgets';
@@ -129,6 +130,12 @@ let sheetCounter = 0;
  * Several files are shown one after the other.
  */
 export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<void> {
+  // A project is opened, never imported: the drop zone and the Import dialog both end up here.
+  const project = files.find(isProjectFile);
+  if (project) {
+    if (files.length > 1) ctx.ui.toast(t('project.dropIgnored'));
+    return openProjectFile(ctx, project);
+  }
   const q = queueOf(ctx);
   q.waiting.push(...files);
   const sheet = ctx.ui.get().importSheet;
@@ -228,11 +235,20 @@ export async function importDialog(ctx: Ctx): Promise<void> {
   if (files.length) await importFiles(ctx, files);
 }
 
-export function newProject(ctx: Ctx): void {
+/** The state of a new project, or of one just opened: nothing of the old one lingers in the interface. */
+function replaceProject(ctx: Ctx, state: ProjectState): void {
   cancelImport(ctx);
+  ctx.store.reset(state);
+  // History is gone with the old project, and so is the geometry only it used.
+  retainMeshes(meshIdsInUse(state));
+  ctx.ui.set({ catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null });
+}
+
+export function newProject(ctx: Ctx): void {
   const s = ctx.store.get();
-  ctx.store.reset(createInitialState({ lang: s.meta.lang, theme: s.meta.theme }));
-  ctx.ui.set({ catalogOpen: false, pickMode: null, wizard: null, importMessage: null });
+  replaceProject(ctx, createInitialState({ lang: s.meta.lang, theme: s.meta.theme }));
+  // The next Save asks where: it is not the file of the project that was open.
+  ctx.services.projectFiles.adopt(null);
 }
 
 function slug(s: string): string {
@@ -250,11 +266,148 @@ export function projectFileBase(ctx: Ctx): string {
   return slug(ctx.store.get().meta.name || t('app.untitled'));
 }
 
-export function saveProject(ctx: Ctx): void {
-  const name = `${projectFileBase(ctx)}.repack.json`;
-  downloadBlob(ctx.services.serializeProject(ctx.store.get()), name);
-  ctx.store.dispatch({ type: 'meta/saved' });
-  ctx.ui.toast(t('toast.saved', { name }));
+/** The extension of a project file (it is JSON, so `.json` alone is not enough to tell it from other files). */
+export const PROJECT_EXTENSION = '.repack.json';
+
+export function isProjectFile(file: { name: string }): boolean {
+  return file.name.toLowerCase().endsWith(PROJECT_EXTENSION);
+}
+
+/**
+ * Saves the project. Without `saveAs`, to the file it came from or was last saved to when the browser lets it
+ * (no dialog), otherwise it asks where, or downloads. Returns whether the file was written; the project is
+ * clean only if nothing changed while it was being written.
+ */
+export async function saveProject(ctx: Ctx, opts: { saveAs?: boolean } = {}): Promise<boolean> {
+  const { store, services } = ctx;
+  const suggested = `${projectFileBase(ctx)}${PROJECT_EXTENSION}`;
+  let revision = store.revision();
+  const make = (): Blob => {
+    revision = store.revision();
+    return services.project.serialize(store.get());
+  };
+  let result;
+  try {
+    result = await services.projectFiles.save(make, suggested, { saveAs: opts.saveAs === true });
+  } catch (err) {
+    result = { kind: 'FAILED' as const, reason: err instanceof Error ? err.message : String(err) };
+  }
+  if (result.kind === 'CANCELLED') return false;
+  if (result.kind === 'FAILED') {
+    ctx.ui.toast(t('project.saveFailed', { name: suggested, reason: result.reason }));
+    return false;
+  }
+  store.dispatch({ type: 'meta/saved', revision });
+  ctx.ui.toast(t('toast.saved', { name: result.name }));
+  return true;
+}
+
+/**
+ * Runs `proceed` now, or after asking when the project has unsaved changes (UI.md §4.3: in place, three buttons,
+ * Esc cancels). Save writes the project first and proceeds only if it was written.
+ */
+function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void): void {
+  if (!ctx.store.get().meta.dirty) return proceed();
+  ctx.ui.set({
+    prompt: {
+      message,
+      options: [
+        { label: t('project.save'), primary: true, run: () => void saveProject(ctx).then((saved) => saved && proceed()) },
+        { label: t('project.dontSave'), run: proceed },
+      ],
+    },
+  });
+}
+
+/** New (menu): a fresh project, after asking when there are unsaved changes. */
+export function requestNewProject(ctx: Ctx): void {
+  afterUnsavedCheck(ctx, t('project.unsavedNew', { name: ctx.store.get().meta.name || t('app.untitled') }), () => newProject(ctx));
+}
+
+/** The sentence for a file that did not open (the technical reason is in the console, in English). */
+export function projectFaultText(name: string, fault: { code: string; detail: string; schema?: number }): string {
+  switch (fault.code) {
+    case 'NOT_A_PROJECT':
+      return t('project.err.notProject', { name });
+    case 'NEWER_VERSION':
+      return t('project.err.newer', { name, schema: fault.schema ?? 0 });
+    case 'TOO_LARGE':
+      return t('project.err.tooLarge', { name });
+    default:
+      return t('project.err.damaged', { name });
+  }
+}
+
+/**
+ * Opens a project file (the Open dialog, a dropped file): it is read and checked first, so a file that is not a
+ * project, is from a newer version or is damaged says so and leaves the open project untouched; then, if there
+ * are unsaved changes, the person is asked. The project replaces the open one and the history starts over:
+ * the old states belong to another project (and their geometry is released), so undo stops at the opening.
+ * `handle` is the file's place for Save (a dropped file's handle, when the browser gives one).
+ */
+export async function openProjectFile(ctx: Ctx, file: File, handle?: Promise<unknown> | unknown): Promise<void> {
+  ctx.ui.set({ importMessage: t('project.opening', { name: file.name }) });
+  let outcome;
+  try {
+    outcome = await ctx.services.project.open(file);
+  } catch (err) {
+    outcome = { ok: false as const, fault: { code: 'DAMAGED' as const, detail: err instanceof Error ? err.message : String(err) } };
+  }
+  ctx.ui.set({ importMessage: null });
+  if (!outcome.ok) {
+    console.warn(`project ${file.name}: ${outcome.fault.detail}`);
+    ctx.ui.toast(projectFaultText(file.name, outcome.fault));
+    return;
+  }
+  const { state, warnings } = outcome;
+  const place: Promise<unknown> = Promise.resolve(handle).catch(() => null);
+  afterUnsavedCheck(ctx, t('project.unsavedOpen', { name: ctx.store.get().meta.name || t('app.untitled'), file: file.name }), () => {
+    const cur = ctx.store.get();
+    // Language and theme are the person's, not the project's.
+    replaceProject(ctx, { ...state, meta: { ...state.meta, lang: cur.meta.lang, theme: cur.meta.theme } });
+    ctx.ui.toast(t('project.opened', { name: file.name }));
+    for (const w of warnings) ctx.ui.toast(t('project.warn.missingMeshes', { n: w.count }));
+    void place.then((h) => ctx.services.projectFiles.adopt(h ?? null));
+  });
+}
+
+/** Open (menu, Ctrl/⌘ O): the dialog, then `openProjectFile`. */
+export async function openProject(ctx: Ctx): Promise<void> {
+  const picked = await ctx.services.projectFiles.pick();
+  if (picked) await openProjectFile(ctx, picked.file, picked.handle);
+}
+
+/**
+ * The files of a drop and, for each, the promise of its file handle when the browser gives one (Chromium: Save
+ * then writes back to the dropped project). Call it inside the drop event: the handles are only there then.
+ */
+export function readDrop(dt: DataTransfer | null): { files: File[]; handles: Promise<unknown>[] } {
+  const files: File[] = [];
+  const handles: Promise<unknown>[] = [];
+  for (const item of dt ? [...dt.items] : []) {
+    const file = item.kind === 'file' ? item.getAsFile() : null;
+    if (!file) continue;
+    files.push(file);
+    const get = (item as { getAsFileSystemHandle?: () => Promise<unknown> }).getAsFileSystemHandle;
+    handles.push(get ? get.call(item).catch(() => null) : Promise.resolve(null));
+  }
+  // Browsers that list the files but not the items.
+  if (files.length === 0 && dt) {
+    for (const f of dt.files) {
+      files.push(f);
+      handles.push(Promise.resolve(null));
+    }
+  }
+  return { files, handles };
+}
+
+/** Files dropped on the window: a project opens, models go to the import sheet. */
+export function dropFiles(ctx: Ctx, files: readonly File[], handles: readonly Promise<unknown>[] = []): void {
+  const i = files.findIndex(isProjectFile);
+  if (i >= 0) {
+    if (files.length > 1) ctx.ui.toast(t('project.dropIgnored'));
+    void openProjectFile(ctx, files[i], handles[i]);
+  } else if (files.length > 0) void importFiles(ctx, files);
 }
 
 /** The engine's scene for the output image, as the RSB file `rt` renders on the command line. */

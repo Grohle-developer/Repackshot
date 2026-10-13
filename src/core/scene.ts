@@ -3,7 +3,7 @@
 
 import type { ActionBase, ProjectState } from './store';
 import type { MaterialId, MaterialInstance } from './materials';
-import { getMesh, transformedMeshBounds, type MeshRef } from './meshes';
+import { getMesh, transformedMeshBounds, type MeshId, type MeshRef } from './meshes';
 import { nextId } from './ids';
 import {
   add,
@@ -127,6 +127,13 @@ export interface SceneNode {
   smoothAngle?: number;
   /** LIGHT: the world point it aims at, mm. */
   target?: Vec3;
+}
+
+/** Ids of the meshes the parts of a state refer to, in order of first use. */
+export function meshIdsInUse(state: Pick<ProjectState, 'scene'>): Set<MeshId> {
+  const ids = new Set<MeshId>();
+  for (const n of Object.values(state.scene.nodes)) if (n.mesh) ids.add(n.mesh.id);
+  return ids;
 }
 
 /** Current selection (SPEC §3.2). `ids` may also hold one light or camera id. */

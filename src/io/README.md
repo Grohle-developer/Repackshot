@@ -21,5 +21,15 @@ out: PNG/JPEG/EXR and the project file.
   draws it), one MESH per distinct geometry and one INST per visible part, the materials with the E3 semantics,
   the resolved rig in the engine's units (`core/photometry.ts`), the studio dome, the floor and the render settings.
   `writeRsb(scene, { meshes: false })` is the update that keeps the meshes the workers already have.
+- `project.ts`: el archivo de proyecto `.repack.json` (U2): `{ format, schema, state, meshes }`. El estado va tal cual
+  (con `-0` conservado y `meta.dirty` a falso); cada malla que usa una pieza va una vez en `meshes` como GLB en base64
+  (`glb.ts`, bit a bit), con sus aristas vivas (`sharpEdges`) y el mapa de triángulos (`triangleSource`) al lado.
+  `loadProject` lee, migra (`STEPS`), comprueba la estructura y registra las mallas con identificadores que nadie más
+  usa (`prjN:`); un archivo dañado, de una versión más nueva o que no es un proyecto lanza `ProjectError` sin tocar el
+  registro. `readProjectFile` es lo mismo para la interfaz, sin lanzar.
+- `glb.ts`, `base64.ts`: el GLB de una malla (escritor y lector del subconjunto que escribimos, no un importador glTF)
+  y base64 por trozos para búferes de decenas de megas.
+- `project-file.ts`: dónde se escribe y de dónde se lee el proyecto: File System Access (Guardar escribe otra vez en el
+  mismo archivo; Guardar como… pregunta) o descarga y `<input type="file">`; si un diálogo falla, se descarga.
 - `image.ts`: PNG written here from the path tracer's 8-bit pixels (RGB, or RGBA when transparent; deflate by the
   browser's `CompressionStream`, stored blocks without it), JPEG through a canvas.

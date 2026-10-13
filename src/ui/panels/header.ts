@@ -4,7 +4,7 @@
 import { VERSION } from '../../core/version';
 import * as cmd from '../commands';
 import { segmented } from '../components/controls';
-import { confirmBox, openFloating, openMenu, type MenuEntry } from '../components/widgets';
+import { confirmBox, openFloating, openMenu, type ConfirmSpec, type MenuEntry } from '../components/widgets';
 import { h, icon } from '../dom';
 import type { Ctx, Scope } from '../reactive';
 import { ACTIONS, kbdFor, kbdText } from '../shortcuts';
@@ -31,17 +31,10 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
   const openAppMenu = () => {
     const s = store.get();
     const entries: (MenuEntry | null | { heading: string })[] = [
-      {
-        label: t('menu.new'),
-        icon: 'file',
-        run: () => {
-          if (!store.get().meta.dirty) return cmd.newProject(ctx);
-          let close = () => {};
-          close = openFloating(menuBtn, confirmBox({ message: t('menu.newConfirm'), options: [{ label: t('common.yes'), primary: true, run: () => cmd.newProject(ctx) }], cancelLabel: t('common.no') }, () => close()));
-        },
-      },
-      { label: t('menu.openProject'), icon: 'folder', disabled: true, note: t('menu.openSoon') },
-      { label: t('menu.save'), icon: 'save', kbd: kbdFor('save'), run: () => cmd.saveProject(ctx) },
+      { label: t('menu.new'), icon: 'file', run: () => cmd.requestNewProject(ctx) },
+      { label: t('menu.openProject'), icon: 'folder', kbd: kbdFor('open'), run: () => void cmd.openProject(ctx) },
+      { label: t('menu.save'), icon: 'save', kbd: kbdFor('save'), run: () => void cmd.saveProject(ctx) },
+      { label: t('menu.saveAs'), icon: 'save', kbd: kbdFor('saveAs'), run: () => void cmd.saveProject(ctx, { saveAs: true }) },
       { label: t('menu.import'), icon: 'upload', kbd: kbdFor('import'), run: () => void cmd.importDialog(ctx) },
       { label: t('menu.exportImage'), icon: 'download', run: () => void cmd.exportViewport(ctx) },
       { label: t('menu.exportLibrary'), icon: 'download', run: () => cmd.exportLibraryFile(ctx) },
@@ -100,6 +93,23 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
       dirtyDot.style.display = m.dirty ? '' : 'none';
     },
   );
+
+  // The inline question of New and Open when there are unsaved changes: under the project name, Esc cancels.
+  let closePrompt: (() => void) | null = null;
+  scope.watch(
+    (_s, u) => u.prompt,
+    (spec: ConfirmSpec | null) => {
+      closePrompt?.();
+      closePrompt = null;
+      if (!spec) return;
+      const done = () => {
+        if (ui.get().prompt === spec) ui.set({ prompt: null });
+        closePrompt?.();
+      };
+      closePrompt = openFloating(nameEl, confirmBox(spec, done), { onClose: () => ui.get().prompt === spec && ui.set({ prompt: null }) });
+    },
+  );
+  scope.onDispose(() => closePrompt?.());
 
   // Undo / redo with the label in the tooltip.
   const undoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('header.undo'), 'data-kbd': kbdFor('undo'), onclick: () => store.undo() }, icon('undo'));

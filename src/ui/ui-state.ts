@@ -11,6 +11,7 @@ import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { Space } from '../core/transform';
 import type { ClipTarget } from '../core/animation';
+import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import { readPref, writePref } from './prefs';
 
@@ -151,6 +152,11 @@ export interface UiState {
   /** Pixel-samples per second the engine reached on this machine (measured, never assumed); null until measured. */
   throughput: number | null;
   queueRun: QueueRun;
+  /**
+   * An inline confirmation the header shows under the project name (New and Open ask before they discard unsaved
+   * changes, whichever way they were asked for: menu, shortcut or a dropped file). Esc cancels.
+   */
+  prompt: ConfirmSpec | null;
 }
 
 /** The mode the viewport is in: Full only when chosen and the engine is ready. */
@@ -230,6 +236,7 @@ export function defaultUiState(): UiState {
     resultsStorage: 'LOADING',
     throughput: null,
     queueRun: 'IDLE',
+    prompt: null,
   };
 }
 
