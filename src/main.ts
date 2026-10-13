@@ -365,6 +365,9 @@ const viewport: ViewportPort | null = preview
       // Picking is geometry: the preview's, in both modes.
       pick: (x, y) => preview!.pick(x, y),
       setHover: (ids) => preview!.setHover(ids),
+      setHoverFaces: (spec) => preview!.setHoverFaces(spec),
+      projection: () => preview!.projection(),
+      visibleTriangles: (part, rect) => preview!.visibleTriangles(part, rect),
       setTool: (tool) => preview!.setTool(tool),
       setGizmo: (spec) => preview!.setGizmo(spec),
       gizmoHover: (x, y) => preview!.gizmoHover(x, y),

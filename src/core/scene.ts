@@ -157,12 +157,14 @@ export interface ModelPayload {
 }
 
 export type SelectMode = 'set' | 'add' | 'toggle';
+/** Faces also leave the selection as a block (Ctrl on a face that is already selected). */
+export type FaceSelectMode = SelectMode | 'remove';
 
 export type SceneAction =
   | ({ type: 'scene/addModel'; payload: ModelPayload; replace: boolean } & ActionBase)
   | ({ type: 'scene/select'; ids: NodeId[]; mode: SelectMode; level?: SelectionLevel } & ActionBase)
   | ({ type: 'scene/setLevel'; level: SelectionLevel } & ActionBase)
-  | ({ type: 'scene/selectFaces'; part: NodeId; indices: number[]; mode: SelectMode } & ActionBase)
+  | ({ type: 'scene/selectFaces'; part: NodeId; indices: number[]; mode: FaceSelectMode } & ActionBase)
   | ({ type: 'scene/setVisible'; ids: NodeId[]; visible: boolean } & ActionBase)
   | ({ type: 'scene/isolate'; ids: NodeId[] } & ActionBase)
   | ({ type: 'scene/showAll' } & ActionBase)
@@ -563,12 +565,15 @@ function applySelect(state: ProjectState, ids: readonly NodeId[], mode: SelectMo
   return { ...state, selection: sel };
 }
 
-function applySelectFaces(state: ProjectState, part: NodeId, indices: readonly number[], mode: SelectMode): ProjectState {
+function applySelectFaces(state: ProjectState, part: NodeId, indices: readonly number[], mode: FaceSelectMode): ProjectState {
   const cur = state.selection.faces && state.selection.faces.part === part ? state.selection.faces.indices : [];
   let next: number[];
   if (mode === 'set') next = [...indices];
   else if (mode === 'add') next = [...new Set([...cur, ...indices])];
-  else {
+  else if (mode === 'remove') {
+    const gone = new Set(indices);
+    next = cur.filter((i) => !gone.has(i));
+  } else {
     const s = new Set(cur);
     for (const i of indices) {
       if (s.has(i)) s.delete(i);

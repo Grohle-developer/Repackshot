@@ -334,6 +334,11 @@ export type MaterialAction =
       targets: NodeId[];
       faces?: { part: NodeId; indices: number[] };
       mode: AssignMode;
+      /**
+       * A new instance for this assignment alone (a copy of what the source names, shared by the targets of this
+       * one action but by no other part), instead of the instance the scene already has. Dropping with Alt.
+       */
+      copy?: boolean;
     } & ActionBase)
   | ({ type: 'material/setParam'; id: MaterialId; key: string; value: unknown } & ActionBase)
   | ({ type: 'material/set'; id: MaterialId; patch: Partial<Pick<MaterialInstance, 'name' | 'bevelRadiusMm'>> } & ActionBase)
@@ -367,10 +372,25 @@ function ensureLibraryInstance(state: ProjectState, source: LibrarySource): { st
   return { state: { ...state, materials: { ...state.materials, [id]: inst } }, id };
 }
 
+/** A new instance, shared with no part, that is what the source of an assignment names. */
+function copyInstance(state: ProjectState, action: Extract<MaterialAction, { type: 'material/assign' }>): { state: ProjectState; id: MaterialId | null } {
+  const id = nextId('m', Object.keys(state.materials));
+  let inst: MaterialInstance | null = null;
+  if (action.material && state.materials[action.material]) inst = cloneInstance(state.materials[action.material], id);
+  else if (action.library) inst = { ...cloneInstance(action.library.instance, id), library: action.library.id };
+  else if (action.preset) inst = instanceFromPreset(id, action.preset, state.scene.partSizeMm);
+  if (!inst) return { state, id: null };
+  return { state: { ...state, materials: { ...state.materials, [id]: inst } }, id };
+}
+
 function assign(state: ProjectState, action: Extract<MaterialAction, { type: 'material/assign' }>): ProjectState {
   let next = state;
   let matId: MaterialId | null = null;
-  if (action.material && state.materials[action.material]) matId = action.material;
+  if (action.copy) {
+    const r = copyInstance(state, action);
+    next = r.state;
+    matId = r.id;
+  } else if (action.material && state.materials[action.material]) matId = action.material;
   else if (action.library) {
     const r = ensureLibraryInstance(state, action.library);
     next = r.state;
@@ -382,10 +402,15 @@ function assign(state: ProjectState, action: Extract<MaterialAction, { type: 'ma
   }
   if (!matId) return state;
   const nodes = { ...next.scene.nodes };
+  let changed = false;
   if (action.faces) {
     const node = nodes[action.faces.part];
     if (!node || node.kind !== 'PART' || action.faces.indices.length === 0) return state;
+    // Faces that already carry it do not make a change (an assignment that changes nothing leaves no undo entry).
+    const per = triangleMaterials(node);
+    if (action.faces.indices.every((i) => i < 0 || i >= per.length || per[i] === matId)) return state;
     nodes[node.id] = withFaceMaterial(node, action.faces.indices, matId);
+    changed = true;
   } else {
     const parts = partsUnder(next, action.targets);
     if (parts.length === 0) return state;
@@ -397,8 +422,10 @@ function assign(state: ProjectState, action: Extract<MaterialAction, { type: 'ma
       const updated: SceneNode = { ...node, material: matId };
       delete updated.faceMaterials;
       nodes[p] = updated;
+      changed = true;
     }
   }
+  if (!changed) return state;
   next = { ...next, scene: { ...next.scene, nodes } };
   return pruneMaterials(next);
 }

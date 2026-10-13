@@ -2,6 +2,7 @@
 // imports from `render` or `io` (ARCHITECTURE §2): main.ts builds these
 // services from the engine and the importers and hands them in.
 
+import type { Projection, Rect } from '../core/box-select';
 import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
 import type { ImportResult, Library } from '../core/library';
@@ -65,6 +66,15 @@ export interface ViewportPort {
   pick(x: number, y: number): PickResult | null;
   /** Parts to outline as hovered (the ones under the cursor, or under a dragged material). */
   setHover(ids: readonly NodeId[]): void;
+  /** How the parts are projected as they are drawn now: selection by box tests them on the screen (core/box-select.ts). */
+  projection(): Projection | null;
+  /**
+   * The triangles of a part that show in a rectangle (CSS pixels of the canvas), found by drawing them with an id
+   * each: what other parts and the part itself hide does not count. Null when the viewport cannot tell.
+   */
+  visibleTriangles(part: NodeId, rect: Rect): Set<number> | null;
+  /** The faces of a part a dragged material would reach, tinted (null clears them). */
+  setHoverFaces(spec: { part: NodeId; indices: readonly number[] } | null): void;
   setTool(tool: Tool): void;
   /** The gizmo of the move tool for these nodes in these axes (UI.md §2.3); null hides it. */
   setGizmo(spec: { ids: readonly NodeId[]; space: Space } | null): void;

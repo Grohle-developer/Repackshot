@@ -235,6 +235,8 @@ export interface UiState {
   space: Space;
   /** Scale fields keep their proportions. */
   scaleLock: boolean;
+  /** Selection by box at the Faces level also takes the faces hidden behind others (X-ray). */
+  boxXray: boolean;
   /** Copy material / Paste material: a snapshot of the copied instance. */
   materialClipboard: MaterialInstance | null;
   /**
@@ -356,6 +358,7 @@ export function defaultUiState(): UiState {
     importSheet: null,
     space: 'GLOBAL',
     scaleLock: true,
+    boxXray: false,
     materialClipboard: null,
     library: emptyLibrary(),
     viewportMode: 'FULL',
