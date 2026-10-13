@@ -8,11 +8,15 @@
 # the WebAssembly `simd128` path is executed too, by running the rt-core tests as a
 # `wasm32-wasip1` binary under Node's WASI (tools/wasi-run.mjs). NEON is compile-checked only.
 # The real `rt_wasm.wasm` renders the example scene in Node and must give the film hash the native
-# tests pin (tools/wasm-parity.mjs), and so must the E5 scene; with every exact pass of X2 rendered
-# next to the image, the image keeps its hash and each pass gives the hash the native tests pin. The AI guard's `post.wasm`
-# (rt-post-wasm) runs the scenarios of tests/fixtures/ai-guard.json, which the native rt-post tests
+# tests pin (tools/wasm-parity.mjs), and so must the E5 scene and the E5c physical sky; with every
+# exact pass of X2 rendered next to the image, the image keeps its hash and each pass gives the hash
+# the native tests pin. The AI guard's `post.wasm` (rt-post-wasm) runs the scenarios of
+# tests/fixtures/ai-guard.json, which the native rt-post tests
 # pin, and must give the same image bits and report JSON (tests/ai-post-wasm.test.ts). The contact
-# sheet (six light recipes, then the E5 scenes) is rendered and uploaded on every run.
+# sheet (six light recipes, then the E5 scenes and the E5c skies) is rendered and uploaded on every
+# run. The sky simulator and fit (rt-sky) are tested here too; regenerating the sky table itself
+# takes minutes (`cargo run --release -p rt-sky -- table`) and is not part of CI: a test checks that
+# the committed table, its hash and the preview's copy agree.
 #
 # The engine also promises zero external dependencies. That rule is checked by requiring that
 # Cargo.lock contains only workspace members: a `[[package]]` with a `source =` line is a crate
@@ -126,6 +130,13 @@ jobs:
           passes=$(pinned_passes "E5_")
           test "$(echo "$passes" | tr , '\n' | grep -c .)" = 6
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5.rsb" --expect "$expected" --expect-passes "$passes"
+          # E5c: the E5 sky scene under the physical sky (the table of rt-core/src/sky_table.rs),
+          # alone and with the passes interleaved (the image keeps its hash).
+          cargo run --release -p rt-cli -- --write-e5c-example "$RUNNER_TEMP/e5c.rsb"
+          expected=$(sed -n 's/.*PINNED_E5C_SKY_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5c.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5c.rsb" --expect "$expected" --passes
 
       - name: Passes through the page's own code (the real rt.wasm in Node)
         working-directory: .
@@ -167,7 +178,7 @@ jobs:
           path: out/engine-example.png
           if-no-files-found: error
 
-      - name: Contact sheet (six built-in light recipes and the E5 scenes)
+      - name: Contact sheet (six built-in light recipes, the E5 scenes and the E5c skies)
         run: cargo run --release -p rt-cli -- --sheet ../out/sheet
 
       - name: Upload the contact sheet

@@ -740,7 +740,7 @@ export class PreviewEngine implements RenderEngine {
       kind === 'FLAT'
         ? `FLAT:${env.color.join(',')}`
         : kind === 'SKY'
-          ? `SKY:${env.skyTurbidity}:${sun.map((v) => v.toFixed(4)).join(',')}`
+          ? `SKY:${env.skyModel}:${env.skyTurbidity}:${sun.map((v) => v.toFixed(4)).join(',')}`
           : kind === 'HDRI'
             ? `HDRI:${env.hdri!.id}`
             : 'STUDIO';
@@ -755,6 +755,7 @@ export class PreviewEngine implements RenderEngine {
         // The engine's sky (core/sky.ts), unscaled by strength: environmentIntensity applies it.
         const deg = 180 / Math.PI;
         const rgb = skyImage({
+          model: env.skyModel,
           sunAzimuthDeg: Math.atan2(sun[1], sun[0]) * deg,
           sunElevationDeg: Math.asin(Math.max(-1, Math.min(1, sun[2]))) * deg,
           turbidity: env.skyTurbidity,

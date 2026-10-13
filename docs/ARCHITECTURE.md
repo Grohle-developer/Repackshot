@@ -64,7 +64,11 @@ objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 Los HDRI (`.hdr` y `.exr`) se leen con lectores propios, en la interfaz
 (`src/io/hdri.ts`) y en el motor (`rt-core`: RGBE, OpenEXR e *inflate*);
 `HDRLoader` y `EXRLoader` de three solo aparecen en los tests, como lector
-independiente con el que comparar (E5). E5 no añade dependencias.
+independiente con el que comparar (E5). E5 no añade dependencias. E5c
+tampoco: el simulador de atmósfera y el ajuste del cielo físico
+(`engine/crates/rt-sky`) son Rust propio solo con `std`, y lo que producen
+entra en el repositorio como datos (`rt-core/src/sky_table.rs` y
+`src/core/sky-table.ts`, con su receta y su *hash*).
 
 ---
 
@@ -84,7 +88,8 @@ src/
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
     images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5)
-    sky.ts                  el cielo de Preetham del motor, portado para la vista previa (E5)
+    sky.ts                  el cielo del motor portado para la vista previa: el físico de E5c (por defecto) y el de Preetham (E5)
+    sky-table.ts            los coeficientes del cielo físico, generados por `rt-sky table` (los mismos f32 y el mismo hash que rt-core)
     faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
     material-drop.ts        a qué llega una suelta de material y qué asigna (U7)
     box-select.ts           selección por caja: geometría en pantalla, ventana y cruce, qué gesto la arma (U7)
@@ -131,13 +136,16 @@ docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
   crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG;
-                            imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5)
+                            imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c)
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG con hilos; hojas de contacto
                             (las escenas de E5 en scenes.rs)
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
   crates/rt-post/           la guarda del post-procesado IA y todo su trabajo con píxeles (AI-POST.md §7.2); rt-core no la conoce
   crates/rt-post-wasm/      exportaciones extern "C" de rt-post → public/engine/post.wasm
+  crates/rt-sky/            herramienta fuera de línea `rt-sky` (E5c): simulador espectral de la atmósfera, ajuste
+                            Levenberg–Marquardt del cielo físico y su tabla; escribe rt-core/src/sky_table.rs,
+                            src/core/sky-table.ts y tests/fixtures/sky-physical.json
 packaging/                  guiones de empaquetado: portables de Windows y Linux, instalador NSIS (P2)
 public/engine/rt.wasm       el motor compilado para el navegador (generado por npm run engine:build; no se sube)
 public/engine/post.wasm     la guarda IA compilada (rt-post-wasm), generada por el mismo guion; tampoco se sube
@@ -149,7 +157,9 @@ public/engine/post.wasm     la guarda IA compilada (rt-post-wasm), generada por 
 de la suite (`tests/boundaries.test.ts`, U2) recorre los `import` y
 falla si se viola; hoy no hay ninguna infracción. El motor (`engine/`) no conoce nada de `src/`: su
 única interfaz con el resto es el formato RSB (§5.2) y las exportaciones
-de `rt-wasm` (§5.3).
+de `rt-wasm` (§5.3). La excepción es de herramienta, no del motor: `rt-sky`
+(fuera de línea) escribe la copia TypeScript de la tabla del cielo y un
+test suyo comprueba que coincide con la de `rt-core`.
 
 ---
 
@@ -322,7 +332,7 @@ export interface RenderEngine {
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 
-Vive en `engine/`, un workspace de Cargo con seis *crates*:
+Vive en `engine/`, un workspace de Cargo con siete *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
@@ -331,11 +341,12 @@ Vive en `engine/`, un workspace de Cargo con seis *crates*:
 | `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlazará `rt-app` (X3c) |
+| `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
 | `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
 **Sin dependencias externas** quiere decir exactamente eso: ningún
 *crate* de crates.io en ningún *crate* del workspace. `Cargo.lock` solo
-lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post` y `rt-post-wasm`,
+lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post`, `rt-post-wasm` y `rt-sky`,
 y CI falla si aparece un `source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
 baja discrepancia, zlib/PNG, lectores HDR, hilos) se escribe aquí.
 Fórmulas y tablas de la literatura pública (PCG, Sobol con números de
@@ -405,11 +416,13 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   = irradiancia en W/m², disco de `angle_deg`. `flags` bit 0 *glossy*
   (ilumina todos los lóbulos y se ve en reflejos; sin él solo difuso por
   NEE), bit 1 visible a cámara.
-- **`ENVR`** (80 B desde E5) `kind`: 0 cúpula (lineal en z: suelo −1,
-  horizonte 0, cénit +1, × `strength`), 1 plano, 2 cielo (Preetham, con
+- **`ENVR`** (84 B desde E5c; 80 B en E5) `kind`: 0 cúpula (lineal en z: suelo −1,
+  horizonte 0, cénit +1, × `strength`), 1 plano, 2 cielo (con
   `sky_turbidity` y el sol en `sun_azimuth_deg` / `sun_elevation_deg`,
   escalado a la irradiancia horizontal de la cúpula de los mismos valores;
-  suelo neutro bajo el horizonte), 3 HDRI (el mapa `hdri_map`,
+  suelo neutro bajo el horizonte; `sky_model`, el último campo, E5c: **0**
+  el cielo físico propio, también lo que significa un fichero sin el campo
+  y cualquier valor desconocido, **1** el clásico de Preetham), 3 HDRI (el mapa `hdri_map`,
   equirectangular en la convención de three.js, girado `rotation_deg` en
   torno a Z; sin mapa, la cúpula); `background_mode`: 0 entorno, 1 color,
   2 transparente (alfa 0), 3 imagen de fondo (`backplate_map`, solo para

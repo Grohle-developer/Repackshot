@@ -192,6 +192,7 @@ function fullScene(): RsbScene {
       sunAzimuthDeg: -30,
       sunElevationDeg: 12,
       backplateRect: [0.1, 0.05, 0.9, 0.95],
+      skyModel: 1,
     },
     floor: { mode: 2, z: -12.5, color: [0.4, 0.5, 0.6] },
     render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10, passes: 0b101101 },
@@ -225,7 +226,7 @@ describe('RSB writer: byte parity with rt-core', () => {
     const s = sections(bytes);
     expect(s.map((x) => x.tag)).toEqual(['CAMR', 'MATL', 'MATL', 'MESH', 'MESH', 'INST', 'INST', 'INST', 'LGHT', 'LGHT', 'LGHT', 'BMAP', 'BMAP', 'ENVR', 'FLOR', 'RNDR']);
     const size = (tag: string) => s.find((x) => x.tag === tag)!.payload.byteLength;
-    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 72, 76, 80, 20, 40, 60]);
+    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 72, 76, 84, 20, 40, 60]);
     // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
     expect(size('BMAP')).toBe(16 + 12);
     // 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.

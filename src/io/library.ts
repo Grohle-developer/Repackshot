@@ -283,6 +283,8 @@ function environment(v: unknown, path: string): EnvironmentState {
     backplate: null,
     backplateFit: o.backplateFit === undefined ? 'FILL' : oneOf(o.backplateFit, `${path}.backplateFit`, ['FILL', 'FIT', 'STRETCH'] as const),
     skyTurbidity: o.skyTurbidity === undefined ? 3 : num(o.skyTurbidity, `${path}.skyTurbidity`, 1, 10),
+    // E5c: studios saved before the physical sky have no model and take the default.
+    skyModel: o.skyModel === undefined ? 'PHYSICAL' : oneOf(o.skyModel, `${path}.skyModel`, ['PHYSICAL', 'CLASSIC'] as const),
     skySun: o.skySun === undefined ? { az: -55, el: 55 } : { az: num(obj(o.skySun, `${path}.skySun`).az, `${path}.skySun.az`, -3600, 3600), el: num(obj(o.skySun, `${path}.skySun`).el, `${path}.skySun.el`, -90, 90) },
   };
 }

@@ -1,6 +1,6 @@
 //! The environment as a light: the procedural studio dome (`ENVR.kind` 0), the flat colour
-//! (kind 1), the procedural sky (kind 2, [`crate::sky`]) and an HDRI image (kind 3, a bitmap of
-//! the scene).
+//! (kind 1), the procedural sky (kind 2, [`crate::sky`]: physical or classic) and an HDRI image
+//! (kind 3, a bitmap of the scene).
 //!
 //! **Dome and flat.** The dome's radiance depends only on the `z` of the direction (the world is
 //! Z-up): it ramps linearly from `floor` at `z = -1` to `horizon` at `z = 0` and on to `zenith` at
@@ -28,8 +28,8 @@ use crate::bitmap::{Bitmap, Distribution2D, Image, Pixels};
 use crate::color::Rgb;
 use crate::fmath;
 use crate::math::Vec3;
-use crate::scene::{EnvKind, Environment, NO_BITMAP};
-use crate::sky::{Preetham, SKY_HEIGHT, SKY_WIDTH};
+use crate::scene::{EnvKind, Environment, SkyModel, NO_BITMAP};
+use crate::sky::{PhysicalSky, Preetham, GROUND_ALBEDO, SKY_HEIGHT, SKY_WIDTH};
 use std::sync::Arc;
 
 /// Most columns of an image's sampling distribution (rows: half as many).
@@ -174,32 +174,81 @@ impl Map {
 }
 
 /// The sky of `env` tabulated as an equirectangular image, scaled to the dome's horizontal
-/// irradiance (see [`crate::sky`]), with the ground below the horizon.
+/// irradiance (see [`crate::sky`]), with the ground below the horizon; and the scale.
 pub fn sky_image(env: &Environment) -> (Image, f32) {
-    let sky = Preetham::new(
-        env.sun_azimuth_deg,
-        env.sun_elevation_deg,
-        env.sky_turbidity,
-    );
+    match env.sky_model {
+        SkyModel::Classic => {
+            let sky = Preetham::new(
+                env.sun_azimuth_deg,
+                env.sun_elevation_deg,
+                env.sky_turbidity,
+            );
+            tabulate_sky(env, |d| sky.radiance(d), false)
+        }
+        SkyModel::Physical => {
+            let sky = PhysicalSky::new(
+                env.sun_azimuth_deg,
+                env.sun_elevation_deg,
+                env.sky_turbidity,
+                GROUND_ALBEDO,
+            );
+            tabulate_sky(env, |d| sky.radiance(d), true)
+        }
+    }
+}
+
+/// `sum += x` with Neumaier's compensation `c` (A. Neumaier, ZAMM 54, 1974): the total is
+/// `sum + c`, nearly as accurate as a sum in double precision.
+#[inline]
+fn add_compensated(sum: &mut f32, c: &mut f32, x: f32) {
+    let t = *sum + x;
+    if sum.abs() >= x.abs() {
+        *c += (*sum - t) + x;
+    } else {
+        *c += (x - t) + *sum;
+    }
+    *sum = t;
+}
+
+/// Tabulates `radiance` (the unscaled sky) and scales it. The physical sky sums the irradiance
+/// with compensation, so the preview's port (in double precision) agrees with it to about 1e-7;
+/// the classic sky keeps the plain sums of E5, whose renders are pinned.
+fn tabulate_sky(
+    env: &Environment,
+    radiance: impl Fn(Vec3) -> Rgb,
+    compensated: bool,
+) -> (Image, f32) {
     let (w, h) = (SKY_WIDTH as usize, SKY_HEIGHT as usize);
     let mut rgb = vec![0.0f32; 3 * w * h];
     // Horizontal irradiance of the unscaled sky: Σ L cos θ sin θ Δθ Δφ over the upper rows.
     let mut irradiance = 0.0f32;
+    let mut irradiance_c = 0.0f32;
     let cell = (fmath::PI / h as f32) * (fmath::TAU / w as f32);
     for y in 0..h / 2 {
         let v = (y as f32 + 0.5) / h as f32;
         let mut row = 0.0f32;
+        let mut row_c = 0.0f32;
         for x in 0..w {
             let u = (x as f32 + 0.5) / w as f32;
             let (d, sin_theta) = uv_to_direction(u, v);
-            let c = sky.radiance(d);
+            let c = radiance(d);
             rgb[3 * (y * w + x)] = c.r;
             rgb[3 * (y * w + x) + 1] = c.g;
             rgb[3 * (y * w + x) + 2] = c.b;
-            row += c.luminance() * d.z * sin_theta;
+            let term = c.luminance() * d.z * sin_theta;
+            if compensated {
+                add_compensated(&mut row, &mut row_c, term);
+            } else {
+                row += term;
+            }
         }
-        irradiance += row * cell;
+        if compensated {
+            add_compensated(&mut irradiance, &mut irradiance_c, (row + row_c) * cell);
+        } else {
+            irradiance += row * cell;
+        }
     }
+    let irradiance = irradiance + irradiance_c;
     let strength = env.strength.max(0.0);
     let target = strength * fmath::TAU * (env.horizon.max(0.0) / 6.0 + env.zenith.max(0.0) / 3.0);
     let scale = if irradiance > 0.0 {
@@ -611,8 +660,38 @@ mod tests {
 
     #[test]
     fn the_sky_lights_like_the_dome_and_has_the_sun_where_the_sun_is() {
+        for model in [SkyModel::Physical, SkyModel::Classic] {
+            sky_lights_like_the_dome(model);
+        }
+    }
+
+    #[test]
+    fn the_classic_sky_is_still_preetham_and_the_physical_one_differs() {
+        // The parameters of the preview's test (tests/environment-e5.test.ts): the interface's dome.
+        let env = |sky_model| Environment {
+            kind: EnvKind::Sky,
+            sky_model,
+            floor: 0.12,
+            horizon: 0.45,
+            zenith: 0.85,
+            strength: 1.0,
+            sun_azimuth_deg: -40.0,
+            sun_elevation_deg: 35.0,
+            ..Environment::default()
+        };
+        let (classic, _) = sky_image(&env(SkyModel::Classic));
+        let (physical, _) = sky_image(&env(SkyModel::Physical));
+        // The classic one is E5's, value for value (the TypeScript port pins the same pixels).
+        let c = classic.texel(0, 0);
+        assert!((c.r / 0.304_936_3 - 1.0).abs() < 1.0e-5, "{c:?}");
+        let p = physical.texel(0, 0);
+        assert!((p.r / c.r - 1.0).abs() > 0.02 || (p.b / c.b - 1.0).abs() > 0.02);
+    }
+
+    fn sky_lights_like_the_dome(sky_model: SkyModel) {
         let env = Environment {
             kind: EnvKind::Sky,
+            sky_model,
             strength: 0.6,
             sun_azimuth_deg: 30.0,
             sun_elevation_deg: 40.0,

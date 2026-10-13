@@ -352,9 +352,13 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    HDRI*. Con *Archivo HDRI*, botón *Cargar HDRI…* (`.hdr`, `.exr`) y
    debajo el nombre y el tamaño del archivo, o *Sin HDRI cargado: ilumina
    la cúpula de estudio*; soltar un `.hdr` o `.exr` en la ventana hace lo
-   mismo. Con *Cielo*, *Bruma* (turbidez) y, si el montaje no tiene foco
-   de sol, *Azimut del sol* y *Altura del sol*; si lo tiene, una nota dice
-   que el sol del montaje coloca el del cielo. Intensidad, rotación (se
+   mismo. Con *Cielo*, *Modelo* (*Físico · Clásico*, segmentado, con una
+   ayuda en cada opción: *Físico* es el cielo propio de E5c, ajustado a
+   nuestra simulación de la atmósfera, y el de por defecto; *Clásico*, el de
+   Preetham de E5), *Bruma* (turbidez, de 1 a 10; el clásico la sujeta a 1,7
+   como mínimo) y, si el montaje no tiene foco de sol, *Azimut del sol* y
+   *Altura del sol*; si lo tiene, una nota dice que el sol del montaje
+   coloca el del cielo. Intensidad, rotación (se
    oculta con *Cielo*: lo coloca su sol). Fondo: *El mismo entorno*,
    *Color* (muestra), *Transparente*, *Imagen de fondo*; con esta última,
    *Cargar imagen…* (PNG, JPEG, WebP), su nombre y tamaño, *Encaje*

@@ -627,13 +627,17 @@ mod tests {
     /// Renders the whole E5 example (`sky` or HDRI), 32-pixel tiles, samples `0..4`, and hashes
     /// the resolved film.
     pub(crate) fn e5_4spp_hash(sky: bool, isa: Isa) -> u32 {
-        let scene = crate::example::e5_scene(sky);
-        let prepared = Prepared::new(&scene);
+        scene_4spp_hash(&crate::example::e5_scene(sky), isa)
+    }
+
+    /// Renders all of `scene`, 32-pixel tiles, samples `0..4`, and hashes the resolved film.
+    pub(crate) fn scene_4spp_hash(scene: &Scene, isa: Isa) -> u32 {
+        let prepared = Prepared::new(scene);
         let (w, h) = (scene.render.width, scene.render.height);
         let mut film = Film::new(w, h);
         for tile in tile_grid(w, h, 32) {
             for sample in 0..4 {
-                render_tile_prepared(&scene, &prepared, tile, sample, &mut film, isa);
+                render_tile_prepared(scene, &prepared, tile, sample, &mut film, isa);
             }
         }
         fnv1a(&film.resolve())
@@ -663,6 +667,25 @@ mod tests {
     pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0xbf8a_bd5b;
     /// Pinned hash of the E5 example (sky) at 4 samples per pixel.
     pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x2fcb_098a;
+
+    #[test]
+    fn the_e5c_physical_sky_has_a_pinned_hash_on_every_platform() {
+        // E5c added the physical sky (the default model). The E5 sky scene above keeps the
+        // classic model, so its hash did not move; this one is the same scene under the physical
+        // sky at a low sun and a turbidity between two knots of the table, through an RSB round
+        // trip; `tools/wasm-parity.mjs` checks the real module against it
+        // (`rt --write-e5c-example`).
+        let scene = crate::example::e5c_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("E5c example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_E5C_SKY_4SPP, "physical sky on {}", isa.name());
+        }
+    }
+
+    /// Pinned hash of the E5c example (physical sky) at 4 samples per pixel.
+    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x8bb0_9f6b;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

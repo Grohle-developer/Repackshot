@@ -808,7 +808,7 @@ Lo que no encajó con el plan:
   nombra. Las paredes finas no se difuminan con la rugosidad. El cielo
   ignora la rotación (lo coloca su sol) y sujeta el sol a 1° como mínimo.
 
-## E5c · Cielo físico propio, en sala limpia — **Opus**
+## E5c · Cielo físico propio, en sala limpia — **Opus** — hecha
 
 **Decisión del líder (2026-10-13, a petición del usuario: «haz un port del
 cielo desde una clean room»).** Ni se lee ni se usa la implementación de
@@ -858,6 +858,160 @@ licencia con el proyecto.
 **Criterio.** Lo de arriba medido y en tests (determinismo del simulador
 y del ajuste, coincidencia motor/vista previa, *hashes* nuevos sin mover
 los de antes), y el visto bueno visual del líder sobre las capturas.
+
+**Hecho.** Un *crate* nuevo, `engine/crates/rt-sky` (herramienta fuera de
+línea, Rust solo con `std`; `rt-core` no lo conoce), con el binario
+`rt-sky`:
+
+- **Simulador** (`atmosphere.rs`, `trace.rs`, `simulate.rs`): Tierra de
+  6371 km y atmósfera hasta 86 km en 64 capas esféricas (la primera de
+  50 m, el grosor creciendo en progresión geométrica), cada una con la
+  densidad media de su tramo; aire de la U.S. Standard Atmosphere 1976;
+  sección eficaz de Rayleigh de Bodhaine et al. (1999) con el índice de
+  Peck y Reeder (1972) a 360 ppm de CO₂ y el factor de King de Bates
+  (1984) (τ_R(550 nm) = 0,097 a nivel del mar, como su tabla), fase de
+  Rayleigh con la anisotropía molecular de Chandrasekhar; aerosoles con
+  τ_a(550) = (T − 1) τ_R(550) (Linke; equivale a la relación de Preetham
+  entre su turbidez y la β de Ångström) y λ^−1,3, altura de escala
+  1,2 km, albedo simple 0,95, fase de Cornette y Shanks con **asimetría
+  0,7** (su parámetro no es la asimetría: se despeja, 0,638; el primer
+  hito usó 0,7 como parámetro, es decir 0,757 de asimetría, y el visto
+  del líder lo cazó: test del coseno medio); ozono de 300 DU en una capa
+  gaussiana a 22 km con los coeficientes de Leckner (1978) tabulados por
+  Bird y Riordan (1986); sol de cuerpo negro a 5772 K con el radio
+  nominal de la IAU 2015 (1361 W/m²); 34 bandas de 10 nm de 380 a
+  720 nm → XYZ con el ajuste de Wyman, Sloan y Shirley (2013) → Rec. 709
+  lineal. La dispersión simple, por cuadratura a lo largo del rayo (pasos
+  de 2 km y 0,05 de profundidad óptica, la transmitancia hacia el
+  observador integrada exacta en cada paso; un test la compara con Monte
+  Carlo al 1 %); la múltiple, por Monte Carlo con estimación del sol en
+  cada suceso, todas las bandas a la vez con MIS de una muestra entre
+  bandas (heurística de balance), colisión forzada hacia arriba,
+  direcciones de la mezcla de las dos fases y un lóbulo hacia el sol,
+  suelo lambertiano y los dos albedos (0 y 1, y 0,2 para validar) de los
+  mismos caminos. Determinista: funciones elementales `f64` propias
+  (`dmath`), un flujo xoshiro256** por (semilla, cielo, dirección),
+  resultados en casillas fijas.
+- **Ajuste** (`model.rs`, `fit.rs`): la forma funcional de Hošek y Wilkie,
+  por canal, turbidez 1–10 y albedo 0 y 1 (60 nudos); `L_M` por mínimos
+  cuadrados lineales (Bézier de 6 puntos en (elevación/90°)^(1/3)), cada
+  elevación sola (rejilla de los cuatro coeficientes no lineales con los
+  cinco lineales resueltos exactos, Levenberg–Marquardt desde los ocho
+  mejores y desde la elevación anterior con un tirón débil hacia ella, y
+  otra pasada dividiendo por su propio modelo y no por el dato ruidoso),
+  curvas de Bézier por los no lineales, los 30 puntos lineales resueltos
+  exactos para ellas, y Levenberg–Marquardt propio sobre los 54 puntos
+  contra todas las elevaciones. Cotas: |H| < 0,95 y E ≤ −0,5 (sin ella
+  aparecían pares C ≈ −100, D ≈ +100 que imitaban una recta en γ y
+  arruinaban el arranque conjunto).
+- **Receta** (`dataset.rs`, en la cabecera de `sky_table.rs`): semilla
+  `0x0e5c5c1e`, 272 caminos de dispersión múltiple por dirección, 16
+  elevaciones del sol (90° (i/15)³), 768 direcciones (anillos de 3° hasta
+  84° y de 1,5° hasta el horizonte por 24 acimuts) y 34 bandas. Tabla:
+  3240 coeficientes y 360 radiancias `f32`, **SHA-256
+  `2329ac7376204749a317d5b31e23e17fa27950515be0f0d50018cd9c16e8a721`**.
+  `cargo run --release -p rt-sky -- table` simula (unos 10 min con 3
+  hilos en la máquina compartida) y ajusta (unos 12 min). Regenerada desde
+  cero con 2 hilos en lugar de 3: la simulación y la tabla salen idénticas
+  byte a byte.
+- **Motor**: `PhysicalSky` en `rt-core/src/sky.rs` detrás de la interfaz
+  de Preetham (`new`, `radiance`), mezclando radiancias (no
+  coeficientes) entre turbideces y albedos, albedo del suelo 0,2, sol de 0
+  a 90°; `sky_image` lo normaliza a la irradiancia de la cúpula como antes,
+  con sumas compensadas (Neumaier) solo en el físico: el clásico da los
+  mismos bits que en E5. `ENVR.sky_model` (84 B): 0 físico (también un RSB
+  sin el campo y cualquier valor desconocido), 1 clásico; es el último
+  campo. *Hashes*: los de antes no se mueven (ejemplo `0x223515c3`, E5 HDRI
+  `0xbf8abd5b`, E5 cielo `0x2fcb098a`, que pasa a pedir *Clásico*
+  explícitamente); nuevo **`0x8bb09f6b`**, la escena de E5 con el cielo
+  físico a 12° y turbidez 2,5 (`rt --write-e5c-example`), igual en
+  escalar, SSE2, AVX2, WASI escalar y `simd128` y con el `rt_wasm.wasm`
+  real (paso nuevo de `engine.yml`). La hoja de contactos añade cuatro
+  pares físico/clásico (amanecer, hora dorada, mediodía, bruma).
+- **Vista previa e interfaz**: `src/core/sky.ts` porta el cielo físico
+  sobre `src/core/f32math.ts`, que emula en `f32` el `fmath` del motor;
+  `tests/fixtures/sky-physical.json` (6 cielos, 354 píxeles, escrito por
+  `rt-sky fixture` y comprobado al día por un test de `rt-sky`) coincide
+  **bit a bit** (6372 valores). `skyModel` (`PHYSICAL` · `CLASSIC`) en el
+  estado, el proyecto (sin el campo: `PHYSICAL`) y la biblioteca;
+  *Entorno* ▸ *Cielo* ▸ *Modelo* (*Físico · Clásico*, con ayuda), en es y en;
+  la bruma baja a 1.
+- **Validación** (`rt-sky validate`, `validation.json`): 40 cielos de bajo
+  ruido (4352 caminos; turbidez 2, 2,5, 4, 6,5 y 9, sol a 0,5, 3, 10, 20,
+  35, 50, 70 y 85°, ninguno en una elevación del ajuste y la mitad entre
+  dos turbideces), 143 direcciones. Error RMS relativo de la luminancia
+  fuera de la aureola (10°), suelo negro / blanco / gris 0,2 interpolado:
+  **sol ≥ 20°: 1,0–7,9 % (media 3,8) / 1,4–5,3 % (2,3) / 2,8–7,3 % (4,1)**;
+  sol a 10°: 5,2–14,6 % (8,5) / 3,5–10,0 % / 4,6–13,7 %; **sol ≤ 3°:
+  9,2–16,7 % (12,9)** / 6,4–11,1 % / 8,7–15,6 %. El ruido de los datos del
+  ajuste es 1,8 % por cielo a T 1, 3–5 % a T 2 y 5–9 % a T 6–9 (otra
+  semilla): el 9,5 % medio de `table.json` frente a esos datos es sobre
+  todo ruido. Forma frente al cielo despejado de la CIE (ISO 15469, L/L_z
+  fuera de la aureola, sol ≥ 10°): tipo 12 frente a turbidez ≤ 2,5,
+  23 % de media (Preetham 44 %); tipo 13 frente a 4–6,5, 22 % (Preetham
+  43 %). En el almucantar, a 65° el físico sigue al tipo 12 a menos de un
+  10 % de 3 a 30° del sol; a 30°, la aureola de turbidez 2,5 sale 1,45–1,7
+  veces la del tipo 12, cerca del 13 (informativo). Ozono comprobado: a
+  1° el cénit pasa de xy (0,300, 0,318) sin ozono a (0,265, 0,279) con él
+  (Preetham: 0,281, 0,301).
+- **Tests nuevos**: 22 en `rt-sky` (funciones elementales frente a `std`,
+  atmósfera estándar y Rayleigh frente a sus tablas, fases normalizadas y
+  coseno medio, turbidez de Linke, geometría de capas, simulación igual
+  con 1 y 3 hilos, cuadratura frente a Monte Carlo, gradiente analítico,
+  ajuste de un cielo sintético y su determinismo, SHA-256, caché, rejillas,
+  la tabla frente a su *hash* y a las dos fuentes generadas, el *fixture*
+  al día), 4 en `rt-core` (cielo físico, linealidad y entradas, clásico
+  intacto, `sky_model` del RSB) más el *hash* de E5c, el par físico/clásico
+  de la hoja en `rt-cli` y 6 en `tests/sky-physical.test.ts`; se
+  comprobó que fallan reintroduciendo seis errores (parámetro de
+  Cornette–Shanks = asimetría, pesos de turbidez cambiados en motor y
+  vista previa, RSB viejo leído como clásico, sumas sin compensar, el
+  modelo sin escribir en el RSB).
+
+Capturas de cada hito (para el visto bueno, que el líder dio): cielos del
+simulador en ojo de pez, ajuste frente a simulador con mapa de errores a
+exposición automática y fija, la escena de producto con los dos modelos y
+la vista *Rápida* con el *Inspector*.
+
+Lo que no encajó con el plan:
+
+- **Límite de la forma funcional con el sol bajo (aceptado por el
+  líder).** El objetivo de < 5 % se cumple con el sol a 20° o más (salvo
+  turbidez 9 a 20°, 7,9 %); a 10° el error es del 5–15 % y por debajo de
+  3° del 9–17 %, y ajustando cada elevación por separado ya queda en el
+  12–18 %: es la forma, no el ajuste ni la interpolación (ni aflojando las
+  cotas mejora). Se ve como un patrón acimutal de ±20 % al amanecer y un
+  resplandor de la hora dorada con bruma un ~20 % oscuro junto al sol, a
+  lo largo del horizonte. **Propuesta de continuación** (no construida):
+  una tabla pequeña de corrección residual para el sol por debajo de
+  ~10°, ajustada con el mismo simulador (nuestra, con receta, semilla y
+  *hash*) y aplicada como factor después del modelo analítico.
+- **La orden de regeneración es `rt-sky table`**, un binario aparte, no
+  una opción de `rt`: el simulador no debe ir en el `rt` que se distribuye.
+- **El ozono** usa los coeficientes de Leckner tal como los tabula Bird y
+  Riordan, escritos con dos o tres cifras y, en el pico de Chappuis
+  (0,12 (atm·cm)⁻¹), un ~10 % por debajo de las secciones eficaces de
+  laboratorio modernas; conviene cotejarlos con la tabla original. **El
+  sol** es un cuerpo negro de 5772 K, no el espectro medido (le faltan las
+  rayas de Fraunhofer y anda un ~10 % bajo entre 450 y 550 nm); solo
+  afecta al color, y poco, porque el cielo se escala a la cúpula.
+- **Albedo del suelo fijo en 0,2** (el habitual en ingeniería solar): el
+  modelo admite 0–1 (`PhysicalSky::new` lo recibe) pero `ENVR` no tiene
+  campo ni la interfaz control; decisión de producto para el líder. Mezclar
+  linealmente entre los albedos 0 y 1 cuesta lo que se ve en la columna
+  gris de la validación (2,8–7,3 % con el sol alto).
+- **Proyectos y RSB antiguos se abren con el cielo físico** (el valor por
+  defecto, como decía el plan): un proyecto de E5 con *Cielo* cambia de
+  aspecto al abrirlo; si se prefiere que conserve el clásico, es un paso
+  de esquema de una línea. La escena fijada de E5 pide *Clásico* para que
+  su *hash* no se mueva.
+- **La vista previa no es `f64`**: en el primer factor (1 + A e^(B/(cos θ
+  + 0,01))) A ≈ −1,1 y el resultado se cancela hasta ~0,12 cerca del cénit,
+  y el `f32` del motor difería del `f64` en 1,5·10⁻⁶; emular el `f32` da
+  los mismos bits. La bruma va de 1 a 10 en los dos modelos; el clásico la
+  sujeta a 1,7.
+- **Las capturas del hito (a)** se hicieron antes de corregir la asimetría
+  de los aerosoles; las de (b) a (d), con la tabla final.
 
 ## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
 
@@ -2226,8 +2380,8 @@ sigue iluminada por él (comparación de medias); capturas.
 **Qué.** `INTERIORS.md` §4, puntos 1 a 7, en `rt-core`: desplazamiento
 de origen por ULP (Wächter y Binder) y BVH de dos niveles con instancias;
 sol como disco con muestreo de cono y excluido del entorno; cielo
-Hošek–Wilkie (tras confirmar la licencia de las tablas; si no,
-Preetham) e HDRI con CDF 2D; rectángulos y discos por ángulo sólido;
+físico (hecho en E5c: la forma de Hošek–Wilkie con coeficientes propios,
+sin sus tablas) e HDRI con CDF 2D; rectángulos y discos por ángulo sólido;
 vidrio fino; **portales** (sección `PORT`) con tabla de área sumada por
 portal y MIS; **árbol de luces** (Conty y Kulla, nodo compacto como
 pbrt-v4; todas las luces si ≤ 8); *clamping* de directo e indirecto en
@@ -2466,8 +2620,9 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 - **Post-procesado IA** (`AI-POST.md`): el modelo por defecto
   (provisional: Z-Image-Turbo) y las tolerancias de la guarda, tras la
   comparación de X1.
-- **Interiores** (`INTERIORS.md`): licencia exacta de las tablas de
-  Hošek–Wilkie (si no se confirma, Preetham); si se activa el aislamiento
+- **Interiores** (`INTERIORS.md`): ~~licencia exacta de las tablas de
+  Hošek–Wilkie~~ (resuelto en E5c: no se usan; cielo propio con la forma
+  publicada y coeficientes ajustados a nuestro simulador); si se activa el aislamiento
   de origen cruzado para compartir la escena entre workers; número de
   luces a partir del cual entra el árbol.
 - **Formatos nativos** (`.bip`, `.ksp`, `.sldprt`, `.ma`, `.ztl`, `.f3d`):
@@ -2512,6 +2667,7 @@ integra todo lo que la interfaz marca *próximamente***.
 | **U7** (hecha) | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*), más selección por caja con `Ctrl/⌘` + arrastrar. Ver U7 y M1 más arriba |
 | **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
 | **E5b** | Opus | Reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
+| **E5c** (hecha) | Opus | Cielo físico propio en sala limpia: la forma de Hošek–Wilkie con coeficientes ajustados a nuestro simulador de atmósfera (`rt-sky`), *Físico · Clásico* en *Entorno*. Ver E5c más arriba |
 | **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie (la anisotropía llegó con E5); desgaste visible en motor y visor |
 | **L4**, **L5** | Opus, Sonnet | Ya descritas: focos propios (área, punto, foco, sol) con todas sus operaciones; IES |
 | **M2** | Opus | Ya descrita: texturas de imagen y etiquetas |
