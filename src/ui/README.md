@@ -11,10 +11,10 @@ importa de `render/` ni de `io/` (eso lo conecta `src/main.ts` mediante
 | `theme.css` | *Tokens* de color (acromáticos, test `ui-achromatic`), tipografía y medidas |
 | `layout.css`, `components.css`, `panels.css` | Regiones, controles y paneles |
 | `reactive.ts` | `Scope.watch(selector, fn)`: actualizaciones finas por referencia, sin DOM virtual |
-| `ui-state.ts` | Estado de interfaz (pestañas, cajones, anchos…); lo que se recuerda va a `localStorage` con `try/catch` |
+| `ui-state.ts` | Estado de interfaz (pestañas, cajones, anchos…); lo que se recuerda va a `localStorage` con `try/catch`. Incluye `library`, la biblioteca propia (U4): estado de usuario, fuera del proyecto y de deshacer; `main.ts` la guarda con `io/library.ts` |
 | `commands.ts` | Lo que hacen botones, paleta y teclado; devuelve una confirmación en línea cuando hace falta |
 | `shortcuts.ts` | El único mapa de atajos: teclado, paleta y *tooltips* |
-| `components/` | `NumberField`, `Slider`, `Segmented`, `Toggle`, `Select`, `Section`, miniaturas, confirmación en línea, menús, *tooltip*, paleta |
+| `components/` | `NumberField`, `Slider`, `Segmented`, `Toggle`, `Select`, `Section`, miniaturas, confirmación en línea, menús, *tooltip*, paleta; `library.ts`: campo de nombre en línea, tarjetas y filas de *Míos* con renombrar y eliminar, pie Exportar / Importar |
 | `panels/` | Cabecera, escena, visor, inspector, barra de render (cajones Animación y Cola), estado, guía |
 
 ## Parámetros de URL (demos y capturas)

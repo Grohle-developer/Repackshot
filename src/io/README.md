@@ -12,3 +12,6 @@ out: PNG/JPEG/EXR and the project file.
   texture blobs kept for M2).
 - `gltf.ts`, `fbx.ts` (GlobalSettings scan for units and up axis), `rhino.ts` (rhino3dm in a worker, files in
   `public/vendor/rhino3dm/` copied by `tools/vendor.mjs`), `threemf.ts`, `ply.ts`, `collada.ts`, `usd.ts`.
+- `library.ts`: la biblioteca propia (U4) como archivo y en el navegador. `{ format: 'repackshot-library', schema: 1, items }`
+  es a la vez el JSON exportado y lo que `localStorage` guarda bajo una sola clave (`repackshot.library`). Todo lo que
+  entra se valida elemento a elemento y se reconstruye con los campos conocidos; el inválido se omite con su motivo.

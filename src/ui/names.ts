@@ -4,7 +4,7 @@
 import { materialPreset } from '../data/materials';
 import { studioPreset } from '../data/studios';
 import { lightSetup } from '../data/light-setups';
-import type { Label, Lang } from '../data/types';
+import type { Label, Lang, StudioPreset } from '../data/types';
 import type { CameraState } from '../core/camera';
 import type { MaterialInstance } from '../core/materials';
 import { partsUnder, type NodeId } from '../core/scene';
@@ -31,8 +31,12 @@ export function presetLabel(key: string): Label {
   return materialPreset(key)?.label ?? { en: key, es: key };
 }
 
-/** Product type label; GENERIC shows as "Standard" (the boot mode). */
-export function studioLabel(key: string): Label {
+/**
+ * Product type label; GENERIC shows as "Standard" (the boot mode). An own type (`custom`, the definition the
+ * project holds) is called what the person called it.
+ */
+export function studioLabel(key: string, custom?: StudioPreset | null): Label {
+  if (custom && custom.key === key) return custom.label;
   if (key === 'GENERIC') return { en: tIn('en', 'product.standard'), es: tIn('es', 'product.standard') };
   return studioPreset(key)?.label ?? { en: key, es: key };
 }
@@ -76,4 +80,13 @@ export function targetName(state: ProjectState, ids: readonly NodeId[]): string 
 /** A string key built at run time (role.KEY, level.PART...), typed loosely on purpose. */
 export function dyn(key: string): StringKey {
   return key as StringKey;
+}
+
+/** Cache key of a material sphere: presets by key, everything else by content (family and parameters). */
+export function thumbKey(mat: MaterialInstance): string {
+  if (mat.preset && !mat.edited && mat.role !== 'DEFAULT') return `preset:${mat.preset}`;
+  const text = JSON.stringify([mat.family, mat.params]);
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
+  return `inst:${(hash >>> 0).toString(36)}`;
 }

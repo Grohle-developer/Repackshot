@@ -1,11 +1,13 @@
 // Scene panel (UI.md §2.2): tabs Parts · Cameras · Lights · Studios.
 
 import { lightSetup } from '../../data/light-setups';
+import type { StudioItem } from '../../core/library';
 import type { NodeId, SceneNode, SelectionLevel } from '../../core/scene';
 import { ancestors, effectiveVisible, levelForKind, SELECTION_LEVELS } from '../../core/scene';
 import { lightShares } from '../../core/lighting';
 import * as cmd from '../commands';
 import { segmented, textField, toggle } from '../components/controls';
+import { libraryFoot, mineEmpty, mineRows, namePrompt, type MineSpec } from '../components/library';
 import { confirmBox, openMenu, tabs } from '../components/widgets';
 import { partMenu } from './part-menu';
 import { h, icon } from '../dom';
@@ -255,7 +257,7 @@ function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
     () => {
       const s = store.get();
       const shares = lightShares(s.studio.lights);
-      note.textContent = s.studio.built ? '' : t('lights.notBuilt', { preset: lbl(studioLabel(s.studio.preset)) });
+      note.textContent = s.studio.built ? '' : t('lights.notBuilt', { preset: lbl(studioLabel(s.studio.preset, s.studio.customPreset)) });
       note.style.display = s.studio.built ? 'none' : '';
       if (s.studio.lights.length === 0) {
         list.replaceChildren(h('p', { class: 'note', style: 'padding:12px' }, t('lights.empty')));
@@ -286,6 +288,14 @@ function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
   );
   const reset = h('button', { type: 'button', class: 'btn', style: 'flex:1', onclick: () => store.dispatch({ type: 'studio/resetLights', label: L('undo.resetLights') }) }, t('lights.reset'));
   scope.watch((s) => s.studio.modified, (m) => (reset.disabled = !m));
+  // Save setup as…: the lights as they are now go to the Mine tab of the light catalogue.
+  const saveHost = h('div');
+  const saveSetup = h(
+    'button',
+    { type: 'button', class: 'btn', style: 'flex:1', 'data-tip': t('light.saveSetupAux'), onclick: () => namePrompt(saveHost, { label: t('light.saveSetup'), initial: cmd.suggestSetupName(ctx), onSave: (name) => void cmd.saveSetupToLibrary(ctx, name) }) },
+    t('lights.saveSetup'),
+  ) as HTMLButtonElement;
+  scope.watch((s) => s.studio.lights.some((l) => l.enabled), (on) => (saveSetup.disabled = !on));
   return h(
     'div',
     { class: 'tab-body' },
@@ -295,7 +305,8 @@ function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
       'div',
       { class: 'side-foot' },
       h('button', { type: 'button', class: 'btn btn-block', disabled: true, 'data-tip': t('lights.addSoon') }, icon('plus', 14), t('lights.add'), h('span', { class: 'aux' }, t('common.comingSoon'))),
-      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', style: 'flex:1', disabled: true, 'data-tip': t('lights.saveSetupSoon') }, t('lights.saveSetup')), reset),
+      h('div', { class: 'row' }, saveSetup, reset),
+      saveHost,
     ),
   );
 }
@@ -303,39 +314,63 @@ function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
 function studiosTab(ctx: Ctx, scope: Scope): HTMLElement {
   const { store } = ctx;
   const list = h('div', { class: 'list' });
+  const confirm = h('div', { style: 'padding:0 var(--pad) 8px' });
+  const promptHost = h('div', { style: 'padding:0 var(--pad) 8px' });
+  const aux = (s: { preset: string; lightSetup: string; customPreset?: Parameters<typeof studioLabel>[1]; customSetup?: { key: string; name: string } | null }) => {
+    const setup = s.lightSetup === 'PRESET' ? null : s.customSetup && s.customSetup.key === s.lightSetup ? s.customSetup.name : lbl(lightSetup(s.lightSetup)?.label ?? { en: s.lightSetup, es: s.lightSetup });
+    return `${lbl(studioLabel(s.preset, s.customPreset))}${setup ? ` · ${setup}` : ''}`;
+  };
+  const spec: MineSpec<StudioItem> & { aux(item: StudioItem): string } = {
+    icon: 'studio',
+    active: () => false,
+    choose: (item) => void cmd.restoreStudio(ctx, item.id),
+    title: () => t('studios.restore'),
+    aux: (item) => aux(item.studio),
+  };
+  const foot = libraryFoot(ctx, scope);
   scope.watch(
-    (s) => s.studio.saved,
-    (saved) => {
-      if (saved.length === 0) {
-        list.replaceChildren(h('p', { class: 'note', style: 'padding:12px' }, t('studios.empty')));
-        return;
+    (s, u) => [u.library.studios, s.studio.saved] as const,
+    ([own, legacy]) => {
+      const rows: HTMLElement[] = own.length === 0 ? [mineEmpty(t('catalog.mineEmptyStudios'))] : mineRows(ctx, own, spec, confirm);
+      if (own.length === 0) rows[0].style.padding = '12px';
+      // Studios saved inside the project (files from before the library): still restorable, and movable to it.
+      if (legacy.length > 0) {
+        rows.push(h('div', { class: 'subhead', style: 'padding:8px var(--pad) 2px' }, t('studios.project')));
+        rows.push(
+          ...legacy.map((st) => {
+            const del = h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': t('common.delete'), 'data-tip': t('common.delete'), onclick: (e: MouseEvent) => {
+              e.stopPropagation();
+              store.dispatch({ type: 'studio/deleteSaved', id: st.id, label: L('undo.deleteStudio', { name: st.name }) });
+            } }, icon('trash', 14));
+            const move = h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': t('studios.moveToLibrary'), 'data-tip': t('studios.moveToLibrary'), onclick: (e: MouseEvent) => {
+              e.stopPropagation();
+              cmd.moveStudioToLibrary(ctx, st.id);
+            } }, icon('save', 14));
+            const el = h(
+              'div',
+              { class: 'list-row', role: 'button', tabindex: 0, 'data-tip': t('studios.restore') },
+              icon('studio', 14),
+              h('span', { class: 'list-main' }, h('div', null, st.name), h('div', { class: 'aux' }, aux(st))),
+              move,
+              del,
+            );
+            el.addEventListener('click', () => cmd.restoreStudio(ctx, st.id));
+            el.addEventListener('keydown', (e) => e.key === 'Enter' && cmd.restoreStudio(ctx, st.id));
+            return el;
+          }),
+        );
       }
-      list.replaceChildren(
-        ...saved.map((st) => {
-          const setup = st.lightSetup === 'PRESET' ? null : lightSetup(st.lightSetup);
-          const del = h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': t('common.delete'), 'data-tip': t('common.delete'), onclick: (e: MouseEvent) => {
-            e.stopPropagation();
-            store.dispatch({ type: 'studio/deleteSaved', id: st.id, label: L('undo.deleteStudio', { name: st.name }) });
-          } }, icon('trash', 14));
-          const el = h(
-            'div',
-            { class: 'list-row', role: 'button', tabindex: 0, 'data-tip': t('studios.restore') },
-            icon('studio', 14),
-            h('span', { class: 'list-main' }, h('div', null, st.name), h('div', { class: 'aux' }, `${lbl(studioLabel(st.preset))}${setup ? ` · ${lbl(setup.label)}` : ''}`)),
-            del,
-          );
-          el.addEventListener('click', () => cmd.restoreStudio(ctx, st.id));
-          el.addEventListener('keydown', (e) => e.key === 'Enter' && cmd.restoreStudio(ctx, st.id));
-          return el;
-        }),
-      );
+      list.replaceChildren(...rows);
     },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
   );
+  const save = h('button', { type: 'button', class: 'btn btn-block', onclick: () => namePrompt(promptHost, { label: t('studios.savePrompt'), initial: cmd.suggestStudioName(ctx), onSave: (name) => void cmd.saveStudio(ctx, name) }) }, icon('plus', 14), t('studios.save'));
   return h(
     'div',
     { class: 'tab-body' },
-    h('div', { class: 'side-foot', style: 'border-top:0;border-bottom:1px solid var(--line)' }, h('button', { type: 'button', class: 'btn btn-block', onclick: () => cmd.saveStudio(ctx) }, icon('plus', 14), t('studios.save'))),
-    h('div', { class: 'side-scroll' }, list),
+    h('div', { class: 'side-foot', style: 'border-top:0;border-bottom:1px solid var(--line)' }, save, promptHost),
+    h('div', { class: 'side-scroll' }, list, confirm),
+    h('div', { class: 'side-foot' }, foot),
   );
 }
 

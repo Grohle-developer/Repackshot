@@ -41,6 +41,8 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
       { label: t('menu.save'), icon: 'save', kbd: kbdFor('save'), run: () => cmd.saveProject(ctx) },
       { label: t('menu.import'), icon: 'upload', kbd: kbdFor('import'), run: () => void cmd.importDialog(ctx) },
       { label: t('menu.exportImage'), icon: 'download', run: () => void cmd.exportViewport(ctx) },
+      { label: t('menu.exportLibrary'), icon: 'download', run: () => cmd.exportLibraryFile(ctx) },
+      { label: t('menu.importLibrary'), icon: 'upload', run: () => void cmd.importLibraryDialog(ctx) },
       null,
       { heading: t('menu.language') },
       { label: t('lang.en'), checked: s.meta.lang === 'en', run: () => cmd.setLanguage(ctx, 'en') },

@@ -4,6 +4,7 @@
 
 import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload } from '../core/import-options';
+import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -79,6 +80,14 @@ export interface ImportRead extends ImportPayload {
   notes: ImportMessage[];
 }
 
+/** The library as a file (src/io/library.ts, which the interface cannot import). */
+export interface LibraryServices {
+  /** The export file: `{ format, schema, items }` as JSON. */
+  export(lib: Library): Blob;
+  /** Merges the text of a library file into `lib`; what could not be read is reported, never thrown. */
+  import(text: string, lib: Library): ImportResult;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -90,4 +99,6 @@ export interface AppServices {
   importFile(file: File): Promise<ImportRead>;
   /** The project as a .repack.json blob. */
   serializeProject(state: ProjectState): Blob;
+  /** The user's library as a file (Export library / Import library). */
+  library: LibraryServices;
 }

@@ -4,10 +4,33 @@
 // where the user acted (UI.md §4.3).
 
 import { STUDIO_PRESETS, studioPreset } from '../data/studios';
-import type { DoctorCheckKey, Lang } from '../data/types';
+import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
 import { activeCamera } from '../core/camera';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
 import { applyImportOptions, centrePivot, defaultImportOptions, releaseImport, type ImportMessage, type ImportOptions } from '../core/import-options';
+import {
+  addItem,
+  cleanName,
+  customSetupOf,
+  findItem,
+  fromCurrentProductType,
+  fromCurrentRig,
+  fromCurrentStudio,
+  fromMaterialInstance,
+  instanceFromItem,
+  libraryIsEmpty,
+  migrateSavedStudios,
+  presetOfItem,
+  removeItem,
+  renameItem,
+  savedStudioOf,
+  allItems,
+  type ImportResult,
+  type Library,
+  type LibraryItem,
+  type LibraryKind,
+} from '../core/library';
+import { LIBRARY_PREFIX, isLibraryKey } from '../core/lighting';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
 import { resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
 import {
@@ -24,7 +47,7 @@ import { supportsAlpha } from '../core/render';
 import { doctorCheck } from '../data/doctor';
 import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
-import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, setupLabel, studioLabel, targetLabel } from './names';
+import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
 import { writePref } from './prefs';
 import type { Ctx } from './reactive';
 import type { Tool } from './ui-state';
@@ -602,6 +625,14 @@ export function focusInspectorField(ctx: Ctx, field: string, section = 'part'): 
 // --- Studio, light and materials ----------------------------------------------------
 
 export function setProductType(ctx: Ctx, key: string): void {
+  if (isLibraryKey(key)) {
+    // An own type: its definition goes into the project, which keeps it if the library item is deleted later.
+    const item = findItem(ctx.ui.get().library, 'productType', key.slice(LIBRARY_PREFIX.length));
+    const custom: StudioPreset | undefined = item ? presetOfItem(item) : (ctx.store.get().studio.customPreset ?? undefined);
+    if (!custom || custom.key !== key) return;
+    ctx.store.dispatch({ type: 'studio/setPreset', key, custom, label: L('undo.productType', { name: custom.label }) });
+    return;
+  }
   if (!studioPreset(key)) return;
   ctx.store.dispatch({ type: 'studio/setPreset', key, label: L('undo.productType', { name: studioLabel(key) }) });
 }
@@ -623,7 +654,20 @@ export function requestBuildStudio(ctx: Ctx): ConfirmSpec | null {
   };
 }
 
+/** What a setup is called: the catalogue label, or the name of the library item behind a `LIB:` key. */
+function setupName(ctx: Ctx, key: string): Label {
+  if (!isLibraryKey(key)) return setupLabel(key);
+  const name = findItem(ctx.ui.get().library, 'lightSetup', key.slice(LIBRARY_PREFIX.length))?.name ?? ctx.store.get().studio.customSetup?.name ?? key;
+  return { en: name, es: name };
+}
+
 export function chooseSetup(ctx: Ctx, key: string): void {
+  if (isLibraryKey(key)) {
+    // An own setup is applied like a catalogue one: normalised to the exposure of the product type in force.
+    const item = findItem(ctx.ui.get().library, 'lightSetup', key.slice(LIBRARY_PREFIX.length));
+    if (item) ctx.store.dispatch({ type: 'studio/applySetup', setup: customSetupOf(item), label: L('undo.setup', { name: setupName(ctx, key) }) });
+    return;
+  }
   ctx.store.dispatch({ type: 'studio/setSetup', key, label: L('undo.setup', { name: setupLabel(key) }) });
 }
 
@@ -635,7 +679,7 @@ export function requestSetup(ctx: Ctx, key: string): ConfirmSpec | null {
     return null;
   }
   return {
-    message: t('light.replaceModified', { setup: setupLabel(key)[getLang()] }),
+    message: t('light.replaceModified', { setup: setupName(ctx, key)[getLang()] }),
     options: [{ label: t('common.yes'), primary: true, run: () => chooseSetup(ctx, key) }],
     cancelLabel: t('common.no'),
   };
@@ -645,10 +689,13 @@ export function requestSetup(ctx: Ctx, key: string): ConfirmSpec | null {
  * Assigns a material to the selection at its level (UI §4.1). When the
  * target holds different materials, returns the inventory to confirm.
  */
-export function requestAssign(ctx: Ctx, src: { preset?: string; material?: MaterialId }, ids?: NodeId[]): ConfirmSpec | null {
+export function requestAssign(ctx: Ctx, src: { preset?: string; material?: MaterialId; library?: string }, ids?: NodeId[]): ConfirmSpec | null {
   const s = ctx.store.get();
-  const base = assignAction(s, src, 'REPLACE', ids);
-  const matLabel = src.material ? materialLabel(s.materials[src.material]) : presetLabel(src.preset ?? '');
+  // A material of the library (by item id) is offered to the store as the instance the item describes.
+  const item = src.library ? findItem(ctx.ui.get().library, 'material', src.library) : undefined;
+  if (src.library && !item) return null;
+  const base = assignAction(s, item ? { library: { id: item.id, instance: instanceFromItem(item) } } : { preset: src.preset, material: src.material }, 'REPLACE', ids);
+  const matLabel = item ? { en: item.name, es: item.name } : src.material ? materialLabel(s.materials[src.material]) : presetLabel(src.preset ?? '');
   const tgt = base.faces
     ? base.faces.indices.length === 1
       ? L('inspector.face', { part: s.scene.nodes[base.faces.part]?.name ?? '' })
@@ -672,10 +719,11 @@ export function requestAssign(ctx: Ctx, src: { preset?: string; material?: Mater
   };
 }
 
-/** Parses a drag payload: "preset:GOLD" or "material:m3". */
-export function parseMaterialDrag(data: string): { preset?: string; material?: MaterialId } | null {
+/** Parses a drag payload: "preset:GOLD", "material:m3" or "library:<id>" (a material of the user's library). */
+export function parseMaterialDrag(data: string): { preset?: string; material?: MaterialId; library?: string } | null {
   if (data.startsWith('preset:')) return { preset: data.slice(7) };
   if (data.startsWith('material:')) return { material: data.slice(9) };
+  if (data.startsWith('library:')) return { library: data.slice(8) };
   return null;
 }
 
@@ -719,16 +767,183 @@ export function toggleProjection(ctx: Ctx): void {
 
 // --- Studios --------------------------------------------------------------------
 
-export function saveStudio(ctx: Ctx): void {
-  const n = ctx.store.get().studio.saved.length + 1;
-  const name = t('studios.default', { n });
-  ctx.store.dispatch({ type: 'studio/save', name, label: L('undo.saveStudio', { name }) });
+/**
+ * Saves the scene as a studio of the library (the Studios tab). Without a name (the palette, the shortcut) it
+ * gets "Studio N" and can be renamed in the tab.
+ */
+export async function saveStudio(ctx: Ctx, name?: string): Promise<void> {
+  const lib = ctx.ui.get().library;
+  const given = name === undefined ? '' : cleanName(name);
+  const chosen = given || t('studios.default', { n: lib.studios.length + 1 });
+  const state = ctx.store.get();
+  const thumb = await captureThumb(ctx);
+  commitItem(ctx, (l) => fromCurrentStudio(state, l, chosen, { thumb }));
 }
 
+/** Restores a studio of the library or, failing that, one saved inside the project (older files). One undo entry. */
 export function restoreStudio(ctx: Ctx, id: string): void {
+  const item = findItem(ctx.ui.get().library, 'studio', id);
+  if (item) {
+    ctx.store.dispatch({ type: 'studio/restore', id, snapshot: savedStudioOf(item), label: L('undo.restoreStudio', { name: item.name }) });
+    return;
+  }
   const st = ctx.store.get().studio.saved.find((x) => x.id === id);
   if (!st) return;
   ctx.store.dispatch({ type: 'studio/restore', id, label: L('undo.restoreStudio', { name: st.name }) });
+}
+
+/** A studio saved inside the project (an older file) moves to the library; it leaves the project (undoable). */
+export function moveStudioToLibrary(ctx: Ctx, id: string): void {
+  const st = ctx.store.get().studio.saved.find((x) => x.id === id);
+  if (!st) return;
+  ctx.ui.set({ library: migrateSavedStudios(ctx.ui.get().library, [st]) });
+  ctx.store.dispatch({ type: 'studio/deleteSaved', id, label: L('undo.deleteStudio', { name: st.name }) });
+  ctx.ui.toast(t('library.saved', { name: st.name }));
+}
+
+// --- The user's library (U4) --------------------------------------------------------
+
+/** Size of the pictures of setups, product types and studios. */
+const THUMB_W = 160;
+const THUMB_H = 120;
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:${blob.type || 'image/jpeg'};base64,${btoa(bin)}`;
+}
+
+/**
+ * A 160 × 120 picture of the viewport as the engine draws it now: the preview engine renders one rasterised
+ * frame at that size (a few milliseconds), so the picture is the product's own render, not a drawing. Undefined
+ * when there is no engine or a render is running; the item then shows a generic icon.
+ */
+export async function captureThumb(ctx: Ctx): Promise<string | undefined> {
+  if (!ctx.services.viewport || isRendering() || ctx.store.get().render.running) return undefined;
+  try {
+    const blob = await ctx.services.renderImage({ width: THUMB_W, height: THUMB_H, maxSamples: 1, maxSeconds: 1, transparent: false, format: 'JPEG' });
+    return await blobToDataUrl(blob);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Adds an item made from the library as it is right now (it may have changed while a picture was rendered). */
+function commitItem(ctx: Ctx, make: (lib: Library) => LibraryItem | null): void {
+  const lib = ctx.ui.get().library;
+  const item = make(lib);
+  if (!item) return;
+  const next = addItem(lib, item);
+  if (next === lib) return;
+  ctx.ui.set({ library: next });
+  const saved = allItems(next).find((i) => i.id === item.id);
+  ctx.ui.toast(t('library.saved', { name: saved?.name ?? item.name }));
+}
+
+/** The name the inline field starts with. */
+export function suggestMaterialName(ctx: Ctx, id: MaterialId): string {
+  const m = ctx.store.get().materials[id];
+  if (!m) return '';
+  return m.name || (m.origin ? presetLabel(m.origin)[getLang()] : materialName(m));
+}
+
+export function suggestSetupName(ctx: Ctx): string {
+  const s = ctx.store.get();
+  return s.studio.lightSetup === 'PRESET' ? studioLabel(s.studio.preset, s.studio.customPreset)[getLang()] : setupName(ctx, s.studio.lightSetup)[getLang()];
+}
+
+export function suggestTypeName(ctx: Ctx): string {
+  const s = ctx.store.get();
+  return studioLabel(s.studio.preset, s.studio.customPreset)[getLang()];
+}
+
+export function suggestStudioName(ctx: Ctx): string {
+  return t('studios.default', { n: ctx.ui.get().library.studios.length + 1 });
+}
+
+/** Save material as…: the sphere is rendered by the product, like the catalogue's. */
+export async function saveMaterialToLibrary(ctx: Ctx, id: MaterialId, name: string): Promise<void> {
+  const mat = ctx.store.get().materials[id];
+  if (!mat || !cleanName(name)) return;
+  const thumb = (await ctx.services.viewport?.materialThumbnail(mat, thumbKey(mat)).catch(() => null)) ?? undefined;
+  commitItem(ctx, (lib) => fromMaterialInstance(lib, mat, name, { thumb }));
+}
+
+/** Save light setup as…: the lights as they are, with a picture of the viewport. */
+export async function saveSetupToLibrary(ctx: Ctx, name: string): Promise<void> {
+  const state = ctx.store.get();
+  if (!cleanName(name)) return;
+  if (!fromCurrentRig(state, ctx.ui.get().library, name)) {
+    ctx.ui.toast(t('library.noRig'));
+    return;
+  }
+  const thumb = await captureThumb(ctx);
+  commitItem(ctx, (lib) => fromCurrentRig(state, lib, name, { thumb }));
+}
+
+/** Save as product type…: the studio on screen as a type of your own. */
+export async function saveProductTypeToLibrary(ctx: Ctx, name: string): Promise<void> {
+  const state = ctx.store.get();
+  if (!cleanName(name)) return;
+  const thumb = await captureThumb(ctx);
+  commitItem(ctx, (lib) => fromCurrentProductType(state, lib, name, { thumb }));
+}
+
+export function renameLibraryItem(ctx: Ctx, kind: LibraryKind, id: string, name: string): void {
+  ctx.ui.set({ library: renameItem(ctx.ui.get().library, kind, id, name) });
+}
+
+/**
+ * Deletes an item of the library. The project does not depend on the library: a material in use stays as the
+ * instance it is (no longer linked to the item), a setup or a product type in use stays as the values it set.
+ */
+export function deleteLibraryItem(ctx: Ctx, kind: LibraryKind, id: string): void {
+  const lib = ctx.ui.get().library;
+  const item = allItems(lib).find((i) => i.kind === kind && i.id === id);
+  if (!item) return;
+  ctx.ui.set({ library: removeItem(lib, kind, id) });
+  if (kind === 'material') ctx.store.dispatch({ type: 'material/unlinkLibrary', library: id, label: L('undo.libraryRemoved', { name: { en: item.name, es: item.name } }) });
+}
+
+/** Export library: downloads the JSON file. */
+export function exportLibraryFile(ctx: Ctx): void {
+  const lib = ctx.ui.get().library;
+  if (libraryIsEmpty(lib)) {
+    ctx.ui.toast(t('library.exportEmpty'));
+    return;
+  }
+  const name = 'repackshot-library.json';
+  downloadBlob(ctx.services.library.export(lib), name);
+  ctx.ui.toast(t('library.exported', { n: allItems(lib).length, name }));
+}
+
+/** Merges the text of a library file into the library and says what happened. */
+export function importLibraryText(ctx: Ctx, text: string): ImportResult {
+  const r = ctx.services.library.import(text, ctx.ui.get().library);
+  if (r.error) {
+    ctx.ui.toast(t('library.importFailed', { reason: r.error }));
+    return r;
+  }
+  if (r.lib !== ctx.ui.get().library) ctx.ui.set({ library: r.lib });
+  if (r.skipped.length === 0) {
+    ctx.ui.toast(t('library.imported', { added: r.added }));
+  } else {
+    const first = r.skipped[0];
+    const reason = first.code === 'duplicate' ? t('library.skip.duplicate') : `${t('library.skip.invalid')} (${first.reason})`;
+    ctx.ui.toast(t('library.importedSkipped', { added: r.added, skipped: r.skipped.length, reason }));
+  }
+  return r;
+}
+
+export async function importLibraryFile(ctx: Ctx, file: File): Promise<void> {
+  importLibraryText(ctx, await file.text());
+}
+
+/** Import library: the system file picker, then the merge. */
+export async function importLibraryDialog(ctx: Ctx): Promise<void> {
+  const [file] = await pickFiles('.json,application/json');
+  if (file) await importLibraryFile(ctx, file);
 }
 
 // --- Doctor ---------------------------------------------------------------------

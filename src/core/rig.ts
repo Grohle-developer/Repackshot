@@ -7,24 +7,42 @@
 
 import { LIGHT_ROLES, SPEC_DEFAULTS, lightSetup } from '../data/light-setups';
 import { studioPreset } from '../data/studios';
-import type { LightRole, LightSpec, RGB, ResolvedLight } from '../data/types';
+import type { LightRole, LightSpec, ResolvedLight, RGB, StudioPreset, WorldKind } from '../data/types';
 import { specColor, specIrradiance, toWorldAzimuth } from './light-math';
 
 export type { ResolvedLight } from '../data/types';
+
+/**
+ * A product type: a catalogue key, or the preset itself when it is not in the
+ * catalogue (a product type of the user's library, which travels with the project).
+ */
+export type PresetRef = string | StudioPreset;
+
+/** A light setup: a catalogue key, or the recipe itself (a setup of the user's library). */
+export type SetupRef = string | { key: string; world: WorldKind; lights: readonly LightSpec[] | null };
+
+/** The preset a reference names; undefined for an unknown key. */
+export function resolvePreset(ref: PresetRef): StudioPreset | undefined {
+  return typeof ref === 'string' ? studioPreset(ref) : ref;
+}
+
+function resolveSetup(ref: SetupRef): { lights: readonly LightSpec[] | null } | undefined {
+  return typeof ref === 'string' ? lightSetup(ref) : ref;
+}
 
 /** Irradiance used when a preset is unknown or has no lights. */
 const FALLBACK_IRRADIANCE = 1.6;
 
 /** The lights of a product preset, as authored (camera-relative azimuth). */
-export function presetLights(presetKey: string): readonly LightSpec[] {
-  return studioPreset(presetKey)?.lights ?? [];
+export function presetLights(preset: PresetRef): readonly LightSpec[] {
+  return resolvePreset(preset)?.lights ?? [];
 }
 
 /** Total irradiance of the rig of a product preset: the sum over its lights. */
-export function presetIrradiance(presetKey: string): number {
-  if (studioPreset(presetKey) === undefined) return FALLBACK_IRRADIANCE;
+export function presetIrradiance(preset: PresetRef): number {
+  if (resolvePreset(preset) === undefined) return FALLBACK_IRRADIANCE;
   let total = 0;
-  for (const spec of presetLights(presetKey)) total += specIrradiance(spec);
+  for (const spec of presetLights(preset)) total += specIrradiance(spec);
   return total || FALLBACK_IRRADIANCE;
 }
 
@@ -53,8 +71,8 @@ export function specToRig(spec: LightSpec, energy: number, color: RGB): Resolved
 }
 
 /** The rig of a product preset, in resolved form. Unknown preset gives []. */
-export function studioRig(presetKey: string): ResolvedLight[] {
-  return presetLights(presetKey).map((spec) => specToRig(spec, spec.energy ?? 0, specColor(spec)));
+export function studioRig(preset: PresetRef): ResolvedLight[] {
+  return presetLights(preset).map((spec) => specToRig(spec, spec.energy ?? 0, specColor(spec)));
 }
 
 /**
@@ -63,13 +81,13 @@ export function studioRig(presetKey: string): ResolvedLight[] {
  * `colorFromPreset` takes the colour of the FIRST light of the preset's rig
  * (the same light upstream inherits from, which is the key in most presets).
  */
-export function rigFromRecipe(presetKey: string, recipe: readonly LightSpec[]): ResolvedLight[] {
-  const target = presetIrradiance(presetKey);
+export function rigFromRecipe(preset: PresetRef, recipe: readonly LightSpec[]): ResolvedLight[] {
+  const target = presetIrradiance(preset);
   let sum = 0;
   for (const spec of recipe) sum += specIrradiance(spec);
   const k = sum > 1e-9 ? target / sum : 1;
 
-  const base = studioRig(presetKey);
+  const base = studioRig(preset);
   const inherited: RGB = base.length > 0 ? base[0].color : [1, 1, 1];
 
   return recipe.map((spec) => specToRig(spec, k * (spec.share ?? 0), specColor(spec, inherited)));
@@ -81,12 +99,12 @@ export function rigFromRecipe(presetKey: string, recipe: readonly LightSpec[]): 
  * irradiance is normalised to the preset's. `PRESET`, an unknown setup or one
  * without lights gives the preset's own rig.
  */
-export function setupRig(presetKey: string, setupKey: string): ResolvedLight[] {
-  const setup = lightSetup(setupKey);
-  if (setupKey === 'PRESET' || setup === undefined || !setup.lights || setup.lights.length === 0) {
-    return studioRig(presetKey);
+export function setupRig(preset: PresetRef, setupRef: SetupRef): ResolvedLight[] {
+  const setup = resolveSetup(setupRef);
+  if (setupRef === 'PRESET' || setup === undefined || !setup.lights || setup.lights.length === 0) {
+    return studioRig(preset);
   }
-  return rigFromRecipe(presetKey, setup.lights);
+  return rigFromRecipe(preset, setup.lights);
 }
 
 /** Total irradiance of a resolved rig, in the same unit as presetIrradiance. */
@@ -110,8 +128,8 @@ function fallbackRig(): ResolvedLight[] {
  * and position should come from; LIGHT_ROLES is just a generic fallback for a
  * role the rig does not cover.
  */
-export function activeRig(presetKey: string, setupKey: string | 'PRESET'): ResolvedLight[] {
-  const rig = setupRig(presetKey, setupKey);
+export function activeRig(preset: PresetRef, setupRef: SetupRef): ResolvedLight[] {
+  const rig = setupRig(preset, setupRef);
   return rig.length > 0 ? rig : fallbackRig();
 }
 

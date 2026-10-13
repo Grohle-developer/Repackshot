@@ -4,6 +4,7 @@
 
 import type { LightStyle, MaterialCategory } from '../data/types';
 import type { ImportMessage, ImportOptions, ImportPayload } from '../core/import-options';
+import { emptyLibrary, type Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
 import type { NodeId } from '../core/scene';
 import type { Space } from '../core/transform';
@@ -68,9 +69,11 @@ export interface UiState {
   /** Current guide step (0..5) or null when the guide is closed. */
   guideStep: number | null;
   catalogOpen: boolean;
-  materialCategory: MaterialCategory;
+  /** A category of the catalogue, or 'MINE': the user's own materials. */
+  materialCategory: MaterialCategory | 'MINE';
   materialFilter: string;
-  lightStyle: LightStyle | 'ALL';
+  /** A style of the catalogue, 'ALL', or 'MINE': the user's own setups. */
+  lightStyle: LightStyle | 'ALL' | 'MINE';
   treeFilter: string;
   /** Tree rows folded by the user (rows are unfolded by default). */
   folded: Record<NodeId, true>;
@@ -102,6 +105,12 @@ export interface UiState {
   scaleLock: boolean;
   /** Copy material / Paste material: a snapshot of the copied instance. */
   materialClipboard: MaterialInstance | null;
+  /**
+   * The user's library (U4): user state like the theme, not part of the project and not undone. It lives here so
+   * the catalogues, the palette and the commands read it like any other interface state; main.ts keeps it in
+   * `localStorage` (io/library.ts) and the commands change it with the pure functions of core/library.ts.
+   */
+  library: Library;
 }
 
 export type UiListener = (ui: UiState, prev: UiState) => void;
@@ -165,6 +174,7 @@ export function defaultUiState(): UiState {
     space: 'GLOBAL',
     scaleLock: true,
     materialClipboard: null,
+    library: emptyLibrary(),
   };
 }
 

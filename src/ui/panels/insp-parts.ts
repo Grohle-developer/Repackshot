@@ -5,6 +5,7 @@ import { MATERIAL_CATEGORIES, MATERIAL_PRESETS } from '../../data/materials';
 import { WEAR_LEVELS, WEAR_PRESETS, WEAR_TYPES } from '../../data/wear';
 import { LIGHT_SHAPES } from '../../data/light-setups';
 import type { LightRole, MaterialCategory, WearProps, WearType } from '../../data/types';
+import { instanceFromItem, itemsOf, type MaterialItem } from '../../core/library';
 import { instanceFromPreset, partMaterials, triangleMaterials, visibleParams, wearTypesFor, type MaterialId, type MaterialInstance, type ParamSpec } from '../../core/materials';
 import { SMOOTH_ANGLE_DEG } from '../../core/meshes';
 import { partsUnder, type NodeId } from '../../core/scene';
@@ -13,10 +14,11 @@ import type { ProjectState } from '../../core/store';
 import type { LightInstance } from '../../core/lighting';
 import * as cmd from '../commands';
 import { colorField, field, numberField, segmented, select, slider, textField, toggle, type Control } from '../components/controls';
+import { libraryFoot, mineCards, mineEmpty, namePrompt, type MineSpec } from '../components/library';
 import { section } from '../components/section';
 import { setThumbImage, showConfirmIn, thumb } from '../components/widgets';
 import { h, icon } from '../dom';
-import { cameraName, dyn, lightName, materialLabel, materialName, targetLabel } from '../names';
+import { cameraName, dyn, lightName, materialLabel, materialName, targetLabel, thumbKey } from '../names';
 import { dynamic, shallowEq, type Ctx, type Scope } from '../reactive';
 import { L, lbl, t } from '../strings';
 import { normalize } from '../components/palette';
@@ -40,15 +42,6 @@ function targetMaterials(s: ProjectState, ids: readonly NodeId[], faces: boolean
   }
   for (const p of partsUnder(s, ids)) for (const m of partMaterials(s.scene.nodes[p])) if (!out.includes(m)) out.push(m);
   return out;
-}
-
-/** Cache key of a material sphere: presets by key, edited instances by content. */
-export function thumbKey(mat: MaterialInstance): string {
-  if (mat.preset && !mat.edited && mat.role !== 'DEFAULT') return `preset:${mat.preset}`;
-  const text = JSON.stringify([mat.family, mat.params]);
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
-  return `inst:${(hash >>> 0).toString(36)}`;
 }
 
 function sphere(ctx: Ctx, mat: MaterialInstance, size = 64): HTMLElement {
@@ -76,47 +69,66 @@ function catalog(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean, confirmH
     (cat) =>
       chips.replaceChildren(
         ...MATERIAL_CATEGORIES.map((c) => h('button', { type: 'button', class: 'chip', role: 'tab', 'aria-pressed': String(c.key === cat), onclick: () => ui.set({ materialCategory: c.key as MaterialCategory }) }, lbl(c.label))),
-        h('button', { type: 'button', class: 'chip', disabled: true, 'data-tip': t('catalog.mineSoon') }, t('catalog.mine')),
+        h('button', { type: 'button', class: 'chip', role: 'tab', 'aria-pressed': String(cat === 'MINE'), onclick: () => ui.set({ materialCategory: 'MINE' }) }, t('catalog.mine')),
       ),
   );
+  const foot = libraryFoot(ctx, scope);
+  foot.style.display = 'none';
+  // The user's own materials: the picture saved with them, or a sphere rendered now for one that came without.
+  const mine: MineSpec<MaterialItem> = {
+    icon: 'sphere',
+    active: (item) => {
+      const s = store.get();
+      return targetMaterials(s, ids, faces).some((m) => s.materials[m]?.library === item.id && !s.materials[m].edited);
+    },
+    choose: (item) => cmd.requestAssign(ctx, { library: item.id }),
+    title: () => t('material.dragHint'),
+    drag: (item) => `library:${item.id}`,
+    fallback: (item, set) => {
+      const inst = instanceFromItem(item);
+      void ctx.services.viewport?.materialThumbnail(inst, thumbKey(inst)).then((url) => url && set(url));
+    },
+  };
   scope.watch(
-    (s, u) => [u.materialCategory, u.materialFilter, s.materials, s.scene.nodes, s.selection],
+    (s, u) => [u.materialCategory, u.materialFilter, s.materials, s.scene.nodes, s.selection, u.library.materials],
     () => {
       const s = store.get();
       const u = ui.get();
       const mats = targetMaterials(s, ids, faces);
       const activeKeys = new Set(mats.map((m) => s.materials[m]).filter((m) => m && !m.edited && m.role !== 'DEFAULT').map((m) => m!.preset));
       const q = normalize(u.materialFilter);
+      const own = itemsOf(u.library, 'material');
+      const ownShown = u.materialCategory === 'MINE' || q ? own.filter((i) => !q || normalize(i.name).includes(q)) : [];
       const list = q
         ? MATERIAL_PRESETS.filter((p) => normalize(p.label.en).includes(q) || normalize(p.label.es).includes(q))
-        : MATERIAL_PRESETS.filter((p) => p.category === u.materialCategory);
-      if (list.length === 0) {
-        grid.replaceChildren(h('p', { class: 'note', style: 'grid-column:1/-1' }, t('material.noMatch')));
-        return;
-      }
-      grid.replaceChildren(
-        ...list.map((p) => {
-          const el = thumb({
-            src: null,
-            sphere: true,
-            caption: lbl(p.label),
-            active: activeKeys.has(p.key),
-            title: t('material.dragHint'),
-            drag: `preset:${p.key}`,
-            onClick: () => {
-              const spec = cmd.requestAssign(ctx, { preset: p.key });
-              if (spec) showConfirmIn(confirmHost, spec);
-            },
-          });
-          const inst = instanceFromPreset('thumb', p.key, 100)!;
-          void ctx.services.viewport?.materialThumbnail(inst, `preset:${p.key}`).then((url) => url && setThumbImage(el, url));
-          return el;
-        }),
-      );
+        : u.materialCategory === 'MINE'
+          ? []
+          : MATERIAL_PRESETS.filter((p) => p.category === u.materialCategory);
+      const cards: HTMLElement[] = list.map((p) => {
+        const el = thumb({
+          src: null,
+          sphere: true,
+          caption: lbl(p.label),
+          active: activeKeys.has(p.key),
+          title: t('material.dragHint'),
+          drag: `preset:${p.key}`,
+          onClick: () => {
+            const spec = cmd.requestAssign(ctx, { preset: p.key });
+            if (spec) showConfirmIn(confirmHost, spec);
+          },
+        });
+        const inst = instanceFromPreset('thumb', p.key, 100)!;
+        void ctx.services.viewport?.materialThumbnail(inst, `preset:${p.key}`).then((url) => url && setThumbImage(el, url));
+        return el;
+      });
+      cards.push(...mineCards(ctx, ownShown, mine, confirmHost, true));
+      if (cards.length === 0) cards.push(u.materialCategory === 'MINE' && !q ? mineEmpty() : h('p', { class: 'note', style: 'grid-column:1/-1' }, t('material.noMatch')));
+      grid.replaceChildren(...cards);
+      foot.style.display = u.materialCategory === 'MINE' ? '' : 'none';
     },
     shallowEq,
   );
-  return h('div', { class: 'catalog', 'data-guide': 'material' }, chips, filter, grid);
+  return h('div', { class: 'catalog', 'data-guide': 'material' }, chips, filter, grid, foot);
 }
 
 function paramControl(ctx: Ctx, scope: Scope, matId: MaterialId, spec: ParamSpec): HTMLElement {
@@ -213,6 +225,10 @@ function materialSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean):
           (a, b) => a[0] === b[0] && a[1] === b[1],
         );
         parts.push(own);
+        // Save material as…: the values it has now go to the library (Mine), with a sphere rendered by the viewport.
+        const saveHost = h('div');
+        const saveBtn = h('button', { type: 'button', class: 'btn', 'data-tip': t('material.saveAux'), onclick: () => namePrompt(saveHost, { label: t('material.save'), initial: cmd.suggestMaterialName(ctx, mat.id), onSave: (name) => void cmd.saveMaterialToLibrary(ctx, mat.id, name) }) }, icon('plus', 14), t('material.save'));
+        parts.push(saveBtn, saveHost);
       }
       return h('div', { class: 'stack' }, ...parts);
     },

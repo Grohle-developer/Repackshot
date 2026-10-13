@@ -4,12 +4,13 @@
 // unless asked: `fixDoctor` is only called from an explicit action.
 
 import { DOCTOR_CHECKS } from '../data/doctor';
-import { studioPreset } from '../data/studios';
 import type { DoctorCheckKey } from '../data/types';
 import type { ActionBase, ProjectState } from './store';
 import { clipEndFor, clipStartFor } from './camera';
 import { add, boxCenter, boxRadius, isEmptyBox, length, sub, transformPoint, type Mat4, type Vec3 } from './math';
 import { defaultBevelMm, partMaterials } from './materials';
+import { presetRefOf } from './lighting';
+import { resolvePreset } from './rig';
 import { allParts, boundsOf, measuredSizeMm, reduceScene, worldMatrix, worldToLocalDelta, type NodeId, type SceneNode } from './scene';
 
 export type DoctorStatus = 'OK' | 'WARN' | 'UNAVAILABLE';
@@ -78,7 +79,7 @@ function checkScale(state: ProjectState): DoctorResult {
   if (declared > 0 && (r1 > SCALE_RATIO || r1 < 1 / SCALE_RATIO)) {
     return warn('scale', { reason: 'declared', actual: roundSize(actual), expected: roundSize(declared) });
   }
-  const preset = studioPreset(state.studio.preset);
+  const preset = resolvePreset(presetRefOf(state.studio));
   if (preset) {
     const r2 = actual / preset.sizeMm;
     if (r2 > SCALE_RATIO || r2 < 1 / SCALE_RATIO) {

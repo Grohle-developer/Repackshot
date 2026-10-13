@@ -5,9 +5,9 @@
 import { CAMERA_AZIMUTH_DEG, CAMERA_ELEVATION_DEG, SPEC_DEFAULTS, lightSetup } from '../data/light-setups';
 import { QUALITY_PRESETS } from '../data/quality';
 import { studioPreset } from '../data/studios';
-import type { LightRole, LightShape, LightSpec, LightType, RGB } from '../data/types';
+import type { LightRole, LightShape, LightSpec, LightType, RGB, StudioPreset, WorldKind } from '../data/types';
 import { kelvinToRgb, polar, specIrradiance, toWorldAzimuth } from './light-math';
-import { activeRig } from './rig';
+import { activeRig, resolvePreset, type PresetRef, type SetupRef } from './rig';
 import type { ActionBase, EnvironmentState, ImageState, ProjectState } from './store';
 import { activeCamera, cameraPosition, frameBox, outputAspect, type CameraState } from './camera';
 import { nextId } from './ids';
@@ -49,12 +49,55 @@ export interface LightInstance {
   enabled: boolean;
 }
 
+/** Prefix of the keys that name something of the user's library instead of a catalogue entry. */
+export const LIBRARY_PREFIX = 'LIB:';
+
+/** The key under which a library item is the current product type or light setup. */
+export const libraryKey = (id: string): string => `${LIBRARY_PREFIX}${id}`;
+
+export const isLibraryKey = (key: string): boolean => key.startsWith(LIBRARY_PREFIX);
+
+/**
+ * A light setup of the user's library as the project holds it (U4). The recipe travels with the project, so
+ * deleting the library item, or opening the project on another machine, leaves the rig as it was: Create studio
+ * and Reset to setup keep working.
+ */
+export interface CustomSetup {
+  /** `libraryKey(id)`: what `studio.lightSetup` holds while it is active. */
+  key: string;
+  name: string;
+  world: WorldKind;
+  /** Camera-relative recipe lights; `share` is the weight of each, normalised when applied. */
+  lights: LightSpec[];
+}
+
+/** The part of `ProjectState.studio` that names the product type and the setup in force. */
+export interface StudioRefs {
+  preset: string;
+  lightSetup: string;
+  customPreset?: StudioPreset | null;
+  customSetup?: CustomSetup | null;
+}
+
+/** The product type in force: its library definition when it is an own one, its catalogue key otherwise. */
+export function presetRefOf(studio: StudioRefs): PresetRef {
+  return studio.customPreset && studio.customPreset.key === studio.preset ? studio.customPreset : studio.preset;
+}
+
+/** The light setup in force: its library recipe when it is an own one, its catalogue key otherwise. */
+export function setupRefOf(studio: StudioRefs): SetupRef {
+  return studio.customSetup && studio.customSetup.key === studio.lightSetup ? studio.customSetup : studio.lightSetup;
+}
+
 /** A saved studio: camera, light, environment, image and the material set (UI §2.2). */
 export interface SavedStudio {
   id: string;
   name: string;
   preset: string;
   lightSetup: string;
+  /** The own product type / light setup in force when it was saved (their definitions travel with the studio). */
+  customPreset?: StudioPreset | null;
+  customSetup?: CustomSetup | null;
   lights: LightInstance[];
   modified: boolean;
   floor: boolean;
@@ -68,16 +111,16 @@ export interface SavedStudio {
 }
 
 /** The recipe a rig was resolved from, in the same order as `setupRig` returns it. */
-function rigSpecs(presetKey: string, setupKey: string): readonly LightSpec[] {
-  const setup = lightSetup(setupKey);
-  if (setupKey !== 'PRESET' && setup?.lights && setup.lights.length > 0) return setup.lights;
-  return studioPreset(presetKey)?.lights ?? [];
+function rigSpecs(preset: PresetRef, setupRef: SetupRef): readonly LightSpec[] {
+  const setup = typeof setupRef === 'string' ? lightSetup(setupRef) : setupRef;
+  if (setupRef !== 'PRESET' && setup?.lights && setup.lights.length > 0) return setup.lights;
+  return resolvePreset(preset)?.lights ?? [];
 }
 
-/** Light instances for a preset and a setup ('PRESET' = the preset's own rig). */
-export function lightsFromRig(presetKey: string, setupKey: string): LightInstance[] {
-  const rig = activeRig(presetKey, setupKey);
-  const specs = rigSpecs(presetKey, setupKey);
+/** Light instances for a product type and a setup ('PRESET' = the product type's own rig). */
+export function lightsFromRig(preset: PresetRef, setupRef: SetupRef): LightInstance[] {
+  const rig = activeRig(preset, setupRef);
+  const specs = rigSpecs(preset, setupRef);
   return rig.map((r, i) => {
     const spec: LightSpec | undefined = specs[i];
     const kelvin = spec && spec.color === undefined && !spec.colorFromPreset ? (spec.kelvin ?? SPEC_DEFAULTS.kelvin) : null;
@@ -185,6 +228,8 @@ export function snapshotStudio(state: ProjectState, id: string, name: string): S
     name,
     preset: state.studio.preset,
     lightSetup: state.studio.lightSetup,
+    customPreset: state.studio.customPreset ?? null,
+    customSetup: state.studio.customSetup ?? null,
     lights: state.studio.lights,
     modified: state.studio.modified,
     floor: state.studio.floor,
@@ -220,6 +265,8 @@ function restoreStudio(state: ProjectState, saved: SavedStudio): ProjectState {
       ...state.studio,
       preset: saved.preset,
       lightSetup: saved.lightSetup,
+      customPreset: saved.customPreset ?? null,
+      customSetup: saved.customSetup ?? null,
       lights: saved.lights,
       modified: saved.modified,
       floor: saved.floor,
@@ -236,14 +283,14 @@ function restoreStudio(state: ProjectState, saved: SavedStudio): ProjectState {
 }
 
 /** Environment kind a setup asks for, unless the user loaded an HDRI (which wins). */
-function worldFor(state: ProjectState, setupKey: string): EnvironmentState['kind'] {
+function worldFor(state: ProjectState, setup: SetupRef): EnvironmentState['kind'] {
   if (state.environment.kind === 'HDRI') return 'HDRI';
-  return lightSetup(setupKey)?.world ?? 'STUDIO';
+  return typeof setup === 'string' ? (lightSetup(setup)?.world ?? 'STUDIO') : setup.world;
 }
 
 /** "Create studio": lights, floor, camera and engine settings of the product preset (UI §2.4). */
 export function buildStudio(state: ProjectState): ProjectState {
-  const p = studioPreset(state.studio.preset);
+  const p = resolvePreset(presetRefOf(state.studio));
   if (!p) return state;
   const cam = activeCamera(state);
   let camera = state.camera;
@@ -269,12 +316,12 @@ export function buildStudio(state: ProjectState): ProjectState {
       built: true,
       floor: p.floor,
       shadow: p.shadow,
-      lights: lightsFromRig(p.key, state.studio.lightSetup),
+      lights: lightsFromRig(p, setupRefOf(state.studio)),
       modified: false,
     },
     environment: {
       ...state.environment,
-      kind: worldFor(state, state.studio.lightSetup),
+      kind: worldFor(state, setupRefOf(state.studio)),
       strength: p.envStrength,
       background,
       color: [p.backgroundColor[0], p.backgroundColor[1], p.backgroundColor[2], p.backgroundColor[3]],
@@ -286,15 +333,19 @@ export function buildStudio(state: ProjectState): ProjectState {
 }
 
 export type StudioAction =
-  | ({ type: 'studio/setPreset'; key: string } & ActionBase)
+  /** A catalogue product type by `key`, or an own one (`custom`, whose key is `libraryKey(id)`). */
+  | ({ type: 'studio/setPreset'; key: string; custom?: StudioPreset } & ActionBase)
   | ({ type: 'studio/build' } & ActionBase)
   | ({ type: 'studio/setSetup'; key: string } & ActionBase)
+  /** An own light setup (library): normalised to the product type in force, like a catalogue one. */
+  | ({ type: 'studio/applySetup'; setup: CustomSetup } & ActionBase)
   | ({ type: 'studio/setLight'; id: string; patch: Partial<Omit<LightInstance, 'id'>> } & ActionBase)
   | ({ type: 'studio/placeLight'; id: string; point: Vec3; normal: Vec3 } & ActionBase)
   | ({ type: 'studio/resetLights' } & ActionBase)
   | ({ type: 'studio/set'; patch: Partial<{ floor: boolean; shadow: boolean }> } & ActionBase)
   | ({ type: 'studio/save'; name: string } & ActionBase)
-  | ({ type: 'studio/restore'; id: string } & ActionBase)
+  /** Restores a saved studio of the project (`id`), or the given one (`snapshot`, from the library). */
+  | ({ type: 'studio/restore'; id: string; snapshot?: SavedStudio } & ActionBase)
   | ({ type: 'studio/deleteSaved'; id: string } & ActionBase);
 
 function patchLight(l: LightInstance, patch: Partial<Omit<LightInstance, 'id'>>): LightInstance {
@@ -307,9 +358,15 @@ function patchLight(l: LightInstance, patch: Partial<Omit<LightInstance, 'id'>>)
 
 export function reduceStudio(state: ProjectState, action: StudioAction): ProjectState {
   switch (action.type) {
-    case 'studio/setPreset':
-      if (!studioPreset(action.key) || state.studio.preset === action.key) return state;
-      return { ...state, studio: { ...state.studio, preset: action.key } };
+    case 'studio/setPreset': {
+      const custom = action.custom;
+      if (custom) {
+        const same = state.studio.preset === custom.key && JSON.stringify(state.studio.customPreset) === JSON.stringify(custom);
+        return same ? state : { ...state, studio: { ...state.studio, preset: custom.key, customPreset: custom } };
+      }
+      if (!studioPreset(action.key) || (state.studio.preset === action.key && !state.studio.customPreset)) return state;
+      return { ...state, studio: { ...state.studio, preset: action.key, customPreset: null } };
+    }
     case 'studio/build':
       return buildStudio(state);
     case 'studio/setSetup': {
@@ -319,10 +376,26 @@ export function reduceStudio(state: ProjectState, action: StudioAction): Project
         studio: {
           ...state.studio,
           lightSetup: action.key,
-          lights: lightsFromRig(state.studio.preset, action.key),
+          customSetup: null,
+          lights: lightsFromRig(presetRefOf(state.studio), action.key),
           modified: false,
         },
         environment: { ...state.environment, kind: worldFor(state, action.key) },
+      };
+    }
+    case 'studio/applySetup': {
+      const setup = action.setup;
+      if (setup.lights.length === 0 || !isLibraryKey(setup.key)) return state;
+      return {
+        ...state,
+        studio: {
+          ...state.studio,
+          lightSetup: setup.key,
+          customSetup: setup,
+          lights: lightsFromRig(presetRefOf(state.studio), setup),
+          modified: false,
+        },
+        environment: { ...state.environment, kind: worldFor(state, setup) },
       };
     }
     case 'studio/setLight': {
@@ -344,7 +417,7 @@ export function reduceStudio(state: ProjectState, action: StudioAction): Project
     case 'studio/resetLights':
       return {
         ...state,
-        studio: { ...state.studio, lights: lightsFromRig(state.studio.preset, state.studio.lightSetup), modified: false },
+        studio: { ...state.studio, lights: lightsFromRig(presetRefOf(state.studio), setupRefOf(state.studio)), modified: false },
       };
     case 'studio/set':
       return { ...state, studio: { ...state.studio, ...action.patch } };
@@ -353,7 +426,7 @@ export function reduceStudio(state: ProjectState, action: StudioAction): Project
       return { ...state, studio: { ...state.studio, saved: [...state.studio.saved, snapshotStudio(state, id, action.name)] } };
     }
     case 'studio/restore': {
-      const saved = state.studio.saved.find((s) => s.id === action.id);
+      const saved = action.snapshot ?? state.studio.saved.find((s) => s.id === action.id);
       return saved ? restoreStudio(state, saved) : state;
     }
     case 'studio/deleteSaved':

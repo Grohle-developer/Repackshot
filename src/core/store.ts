@@ -3,13 +3,13 @@
 // Reducers are pure functions in the core modules; effects (render,
 // download) live outside and subscribe.
 
-import type { Label, Lang, RGBA } from '../data/types';
+import type { Label, Lang, RGBA, StudioPreset } from '../data/types';
 import { QUALITY_PRESETS } from '../data/quality';
 import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
-import { buildStudio, lightsFromRig, reduceStudio, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
+import { buildStudio, lightsFromRig, reduceStudio, type CustomSetup, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
 import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialInstance } from './materials';
 import { reduceRender, type OutputFormat, type RenderAction, type RenderJob, type RenderProgress, type RenderQuality } from './render';
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
@@ -69,8 +69,12 @@ export interface ProjectState {
     shadow: boolean;
     lights: LightInstance[];
     modified: boolean;
-    /** Saved studios (Studios tab). */
+    /** Saved studios of this project. Legacy: the interface saves studios to the library now (U4). */
     saved: SavedStudio[];
+    /** The product type in force, when it is one of the user's library (`preset` is then `libraryKey(id)`). */
+    customPreset?: StudioPreset | null;
+    /** The light setup in force, when it is one of the user's library (`lightSetup` is then `libraryKey(id)`). */
+    customSetup?: CustomSetup | null;
   };
   environment: EnvironmentState;
   camera: { active: CameraId; cameras: Record<CameraId, CameraState> };

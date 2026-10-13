@@ -5,6 +5,7 @@
 
 import { SEQUENCE_PRESETS } from '../../data/animation';
 import { LIGHT_SETUPS } from '../../data/light-setups';
+import { libraryKey } from '../../core/lighting';
 import { MATERIAL_PRESETS } from '../../data/materials';
 import { STUDIO_PRESETS } from '../../data/studios';
 import type { Label } from '../../data/types';
@@ -46,6 +47,15 @@ export function paletteItems(ctx: Ctx): Item[] {
   for (const st of LIGHT_SETUPS) out.push({ id: `setup:${st.key}`, category: 'palette.cat.setup', label: st.label, run: () => cmd.requestSetup(ctx, st.key) });
   for (const cam of Object.values(s.camera.cameras)) out.push({ id: `camera:${cam.id}`, category: 'palette.cat.camera', label: cameraLabel(s, cam), run: () => cmd.activateCamera(ctx, cam.id) });
   for (const st of s.studio.saved) out.push({ id: `studio:${st.id}`, category: 'palette.cat.studio', label: { en: st.name, es: st.name }, run: () => cmd.restoreStudio(ctx, st.id) });
+  // What the person saved (Mine): materials, light setups, product types and studios, found by their names.
+  const lib = ctx.ui.get().library;
+  const mine = (id: string, name: string, run: () => void | ConfirmSpec | null): Item => ({ id: `mine:${id}`, category: 'palette.cat.mine', label: { en: name, es: name }, run });
+  for (const m of lib.materials) out.push(mine(`material:${m.id}`, m.name, () => cmd.requestAssign(ctx, { library: m.id })));
+  for (const x of lib.lightSetups) out.push(mine(`setup:${x.id}`, x.name, () => cmd.requestSetup(ctx, libraryKey(x.id))));
+  for (const x of lib.productTypes) out.push(mine(`product:${x.id}`, x.name, () => cmd.setProductType(ctx, libraryKey(x.id))));
+  for (const x of lib.studios) out.push(mine(`studio:${x.id}`, x.name, () => cmd.restoreStudio(ctx, x.id)));
+  out.push({ id: 'action:exportLibrary', category: 'palette.cat.action', label: L('menu.exportLibrary'), run: () => cmd.exportLibraryFile(ctx) });
+  out.push({ id: 'action:importLibrary', category: 'palette.cat.action', label: L('menu.importLibrary'), run: () => cmd.importLibraryDialog(ctx) });
   for (const q of SEQUENCE_PRESETS)
     out.push({
       id: `sequence:${q.key}`,

@@ -11,6 +11,7 @@ import { totalDuration } from './core/animation';
 import { activeCamera, sameView } from './core/camera';
 import { createInitialState, createStore } from './core/store';
 import { encodeImage } from './io/image';
+import { LIBRARY_STORAGE_KEY, exportLibrary, importLibrary, loadLibrary, saveLibrary } from './io/library';
 import { serializeProject } from './io/project';
 import type { RenderEngine } from './render/engine';
 import { PreviewEngine } from './render/preview';
@@ -18,7 +19,7 @@ import { ThumbnailRenderer } from './render/thumbs';
 import { mountApp } from './ui/app';
 import type { AppServices, ViewportPort } from './ui/ports';
 import { readPref } from './ui/prefs';
-import { L } from './ui/strings';
+import { L, t } from './ui/strings';
 import { createUiStore } from './ui/ui-state';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
 
@@ -28,7 +29,9 @@ const lang = params.lang ?? (readPref<string>('lang', 'en') === 'es' ? 'es' : 'e
 const savedTheme = readPref<string>('theme', 'system');
 const theme = params.theme ?? (savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'system');
 const store = createStore(createInitialState({ lang, theme }));
-const ui = createUiStore();
+// The user's library (U4) lives in the interface state and in one localStorage entry.
+const loadedLibrary = loadLibrary();
+const ui = createUiStore({ library: loadedLibrary.lib });
 
 // The engine lives in a variable: the path tracer phase adds a second
 // implementation behind the same RenderEngine interface.
@@ -92,9 +95,34 @@ const services: AppServices = {
     return importFile(file);
   },
   serializeProject,
+  library: {
+    export: (lib) => new Blob([exportLibrary(lib)], { type: 'application/json' }),
+    import: importLibrary,
+  },
 };
 
 const app = mountApp(appEl, store, ui, services);
+
+// Whatever changes the library is kept at once; if the browser cannot keep it, the person is told.
+{
+  let warned = false;
+  ui.subscribe((u, prev) => {
+    if (u.library === prev.library) return;
+    const status = saveLibrary(u.library);
+    if (status !== 'ok' && !warned) {
+      warned = true;
+      ui.toast(t(status === 'failed' ? 'library.saveFailed' : 'library.saveNoThumbs'));
+    }
+    if (status === 'ok') warned = false;
+  });
+  // Another tab changed it: follow.
+  window.addEventListener('storage', (e) => {
+    if (e.key !== LIBRARY_STORAGE_KEY) return;
+    const r = loadLibrary();
+    if ((r.status === 'ok' || r.status === 'empty') && exportLibrary(r.lib) !== exportLibrary(ui.get().library)) ui.set({ library: r.lib });
+  });
+  if (loadedLibrary.status === 'corrupt' || loadedLibrary.skipped.length > 0) ui.toast(t('library.loadDamaged'));
+}
 
 if (engine && preview) {
   engine.sync(store.get(), null);

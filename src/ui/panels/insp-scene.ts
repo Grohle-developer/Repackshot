@@ -3,13 +3,17 @@
 
 import { LENS_PRESETS } from '../../data/lenses';
 import { LIGHT_STYLES, lightSetup, setupsInStyle } from '../../data/light-setups';
-import { STUDIO_PRESETS, studioPreset } from '../../data/studios';
+import { STUDIO_PRESETS } from '../../data/studios';
 import type { LightStyle } from '../../data/types';
+import type { UiState } from '../ui-state';
 import { activeCamera, type CameraId, type CameraState } from '../../core/camera';
-import { lightShares, lightIrradiance } from '../../core/lighting';
-import type { EnvironmentState, ImageState } from '../../core/store';
+import { itemsOf, type LightSetupItem, type ProductTypeItem } from '../../core/library';
+import { libraryKey, lightShares, lightIrradiance, presetRefOf } from '../../core/lighting';
+import { resolvePreset } from '../../core/rig';
+import type { EnvironmentState, ImageState, ProjectState } from '../../core/store';
 import * as cmd from '../commands';
 import { colorField, field, numberField, segmented, select, slider, toggle, type Control } from '../components/controls';
+import { libraryFoot, mineCards, mineEmpty, mineRows, namePrompt, type MineSpec } from '../components/library';
 import { section } from '../components/section';
 import { confirmBox, showConfirmIn, thumb } from '../components/widgets';
 import { h, icon } from '../dom';
@@ -28,13 +32,36 @@ function productSection(ctx: Ctx, scope: Scope): HTMLElement {
   const { store } = ctx;
   const s0 = store.get();
   const typeSel = select(
-    [
-      ...STUDIO_PRESETS.map((p) => ({ value: p.key, label: lbl(studioLabel(p.key)) })),
-      { value: '__mine', label: `${t('catalog.mine')} · ${t('common.comingSoon')}`, disabled: true },
-    ],
+    STUDIO_PRESETS.map((p) => ({ value: p.key, label: lbl(studioLabel(p.key)) })),
     s0.studio.preset,
     (v) => cmd.setProductType(ctx, v),
     t('product.type'),
+  );
+  // The own types are a group of the same dropdown. The one in force is listed even if its library item is gone:
+  // the project holds its definition.
+  const fillMine = (s: ProjectState, u: UiState) => {
+    typeSel.el.querySelector('optgroup')?.remove();
+    const own = itemsOf(u.library, 'productType').map((i) => ({ key: libraryKey(i.id), name: i.name }));
+    const cur = s.studio.customPreset;
+    if (cur && !own.some((o) => o.key === cur.key)) own.push({ key: cur.key, name: lbl(cur.label) });
+    if (own.length === 0) return;
+    typeSel.el.appendChild(h('optgroup', { label: t('catalog.mine') }, ...own.map((o) => h('option', { value: o.key }, o.name))));
+  };
+  const mineHost = h('div', { class: 'stack', style: 'gap:6px' });
+  const mineConfirm = h('div');
+  const mineSpec: MineSpec<ProductTypeItem> & { aux(item: ProductTypeItem): string } = {
+    icon: 'studio',
+    active: (item) => store.get().studio.preset === libraryKey(item.id),
+    choose: (item) => void cmd.setProductType(ctx, libraryKey(item.id)),
+    title: (item) => t('product.typeAux', { focal: item.preset.focalMm, fstop: item.preset.fstop, size: item.preset.sizeMm }),
+    aux: (item) => t('product.typeAux', { focal: item.preset.focalMm, fstop: item.preset.fstop, size: item.preset.sizeMm }),
+  };
+  const saveHost = h('div');
+  const saveType = h(
+    'button',
+    { type: 'button', class: 'btn btn-block', 'data-tip': t('product.saveTypeAux'), onclick: () => namePrompt(saveHost, { label: t('product.saveType'), initial: cmd.suggestTypeName(ctx), onSave: (name) => void cmd.saveProductTypeToLibrary(ctx, name) }) },
+    icon('plus', 14),
+    t('product.saveType'),
   );
   const typeAux = h('div', { class: 'aux' });
   const size = numberField({
@@ -56,15 +83,28 @@ function productSection(ctx: Ctx, scope: Scope): HTMLElement {
   } }, t('product.create'));
   const status = h('div', { class: 'note' });
   scope.watch(
-    (s) => s.studio,
-    (st) => {
+    (s, u) => [s.studio, u.library.productTypes] as const,
+    ([st]) => {
+      fillMine(store.get(), ctx.ui.get());
       typeSel.set(st.preset);
-      const p = studioPreset(st.preset);
+      const p = resolvePreset(presetRefOf(st));
       typeAux.textContent = p ? t('product.typeAux', { focal: p.focalMm, fstop: p.fstop, size: p.sizeMm }) : '';
       floor.set(st.floor);
       shadow.set(st.shadow);
-      status.textContent = st.built ? t('product.built', { preset: lbl(studioLabel(st.preset)) }) : t('product.notBuilt');
+      status.textContent = st.built ? t('product.built', { preset: lbl(studioLabel(st.preset, st.customPreset)) }) : t('product.notBuilt');
     },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
+  const mineFoot = libraryFoot(ctx, scope);
+  scope.watch(
+    (s, u) => [u.library.productTypes, s.studio.preset] as const,
+    ([types]) => {
+      const rows = mineRows(ctx, types, mineSpec, mineConfirm);
+      // The list of own types is there once there is one: until then the button and the dropdown say it all.
+      mineHost.style.display = types.length === 0 ? 'none' : '';
+      mineHost.replaceChildren(h('div', { class: 'subhead' }, t('catalog.mine')), h('div', { class: 'list', style: 'padding:0' }, ...rows), mineConfirm, mineFoot);
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
   );
   scope.watch((s) => s.scene.partSizeMm, (v) => size.set(v));
   const body = h(
@@ -78,6 +118,9 @@ function productSection(ctx: Ctx, scope: Scope): HTMLElement {
     create,
     confirmHost,
     status,
+    saveType,
+    saveHost,
+    mineHost,
   );
   return section(ctx, 'product', t('section.product'), body);
 }
@@ -148,6 +191,16 @@ function tuneLights(ctx: Ctx, scope: Scope): HTMLElement {
 function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui } = ctx;
   const styles: (LightStyle | 'ALL')[] = ['ALL', ...LIGHT_STYLES.map((x) => x.key)];
+  // The own setups of the library, as the cards of the Mine tab.
+  const mineConfirm = h('div');
+  const mineFoot = libraryFoot(ctx, scope);
+  mineFoot.style.display = 'none';
+  const mineSpec: MineSpec<LightSetupItem> = {
+    icon: 'light',
+    active: (item) => store.get().studio.lightSetup === libraryKey(item.id),
+    choose: (item) => cmd.requestSetup(ctx, libraryKey(item.id)),
+    title: (item) => t('library.ownSetup', { n: item.lights.length }),
+  };
   const chips = h('div', { class: 'chips', role: 'tablist', 'aria-label': t('light.style') });
   const grid = h('div', { class: 'thumbs cols-3', 'data-guide': 'setups' });
   const intent = h('p', { class: 'note', style: 'margin:0' });
@@ -159,7 +212,8 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
     if (spec) showConfirmIn(confirmHost, spec);
   };
   const step = (dir: 1 | -1) => {
-    const list = setupsInStyle(ui.get().lightStyle);
+    const style = ui.get().lightStyle;
+    const list = style === 'MINE' ? itemsOf(ui.get().library, 'lightSetup').map((i) => ({ key: libraryKey(i.id) })) : setupsInStyle(style);
     const cur = list.findIndex((x) => x.key === store.get().studio.lightSetup);
     const next = list[(cur + dir + list.length) % list.length];
     if (next) choose(next.key);
@@ -172,21 +226,30 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
         ...styles.map((st) =>
           h('button', { type: 'button', class: 'chip', role: 'tab', 'aria-pressed': String(st === style), onclick: () => ui.set({ lightStyle: st }) }, st === 'ALL' ? t('light.all') : lbl(LIGHT_STYLES.find((x) => x.key === st)!.label)),
         ),
-        h('button', { type: 'button', class: 'chip', disabled: true, 'data-tip': t('catalog.mineSoon') }, t('catalog.mine')),
+        h('button', { type: 'button', class: 'chip', role: 'tab', 'aria-pressed': String(style === 'MINE'), onclick: () => ui.set({ lightStyle: 'MINE' }) }, t('catalog.mine')),
       );
     },
   );
   scope.watch(
-    (s, u) => [u.lightStyle, s.studio.lightSetup],
+    (s, u) => [u.lightStyle, s.studio.lightSetup, u.library.lightSetups],
     () => {
-      const active = store.get().studio.lightSetup;
-      grid.replaceChildren(
-        ...setupsInStyle(ui.get().lightStyle).map((st) =>
-          thumb({ src: setupThumb(st.key), caption: lbl(st.label), active: st.key === active, title: lbl(st.intent), onClick: () => choose(st.key) }),
-        ),
-      );
+      const s = store.get();
+      const style = ui.get().lightStyle;
+      const active = s.studio.lightSetup;
+      if (style === 'MINE') {
+        const own = itemsOf(ui.get().library, 'lightSetup');
+        grid.replaceChildren(...(own.length === 0 ? [mineEmpty()] : mineCards(ctx, own, mineSpec, mineConfirm)));
+      } else {
+        grid.replaceChildren(
+          ...setupsInStyle(style).map((st) =>
+            thumb({ src: setupThumb(st.key), caption: lbl(st.label), active: st.key === active, title: lbl(st.intent), onClick: () => choose(st.key) }),
+          ),
+        );
+      }
+      mineFoot.style.display = style === 'MINE' ? '' : 'none';
       const setup = lightSetup(active);
-      intent.replaceChildren(h('span', { class: 'aux' }, `${t('light.intent')} · `), setup ? lbl(setup.intent) : '');
+      const own = s.studio.customSetup && s.studio.customSetup.key === active ? s.studio.customSetup : null;
+      intent.replaceChildren(h('span', { class: 'aux' }, `${t('light.intent')} · `), setup ? lbl(setup.intent) : own ? t('library.ownSetup', { n: own.lights.length }) : '');
     },
     shallowEq,
   );
@@ -224,7 +287,16 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
     modified,
     h('button', { type: 'button', class: 'btn', onclick: () => step(1), 'aria-label': t('common.next') }, t('common.next'), icon('chevronRight', 14)),
   );
-  const body = h('div', { class: 'stack' }, chips, grid, intent, skyNote, nav, confirmHost, tuneHead, tuneBody);
+  // Save light setup as…: the rig as it is now goes to Mine; on another product type it keeps that type's exposure.
+  const saveHost = h('div');
+  const saveSetup = h(
+    'button',
+    { type: 'button', class: 'btn btn-block', 'data-tip': t('light.saveSetupAux'), onclick: () => namePrompt(saveHost, { label: t('light.saveSetup'), initial: cmd.suggestSetupName(ctx), onSave: (name) => void cmd.saveSetupToLibrary(ctx, name) }) },
+    icon('plus', 14),
+    t('light.saveSetup'),
+  ) as HTMLButtonElement;
+  scope.watch((s) => s.studio.lights.some((l) => l.enabled), (on) => (saveSetup.disabled = !on));
+  const body = h('div', { class: 'stack' }, chips, grid, mineConfirm, mineFoot, intent, skyNote, nav, confirmHost, saveSetup, saveHost, tuneHead, tuneBody);
   return section(ctx, 'light', t('section.light'), body);
 }
 

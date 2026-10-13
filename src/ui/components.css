@@ -798,3 +798,101 @@ kbd,
   height: 100%;
   background: var(--ink-1);
 }
+
+/* The user's library: Mine tabs (U4) ---------------------------------- */
+.mine-card {
+  position: relative;
+  min-width: 0;
+}
+.mine-card .thumb {
+  width: 100%;
+}
+.mine-actions {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: none;
+  gap: 2px;
+}
+.mine-card:hover .mine-actions,
+.mine-card:focus-within .mine-actions {
+  display: flex;
+}
+.mine-actions .icon-btn,
+.mine-actions-row .icon-btn {
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+}
+.mine-rename {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  width: auto;
+  height: 22px;
+  z-index: 2;
+}
+.thumb-ph.thumb-icon,
+.mine-pic-icon {
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+.thumb.sphere .thumb-ph.thumb-icon {
+  border-radius: 50%;
+}
+.mine-row {
+  position: relative;
+  padding: 3px var(--pad);
+}
+.mine-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mine-pic {
+  flex: none;
+  width: 40px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 2px;
+  background: var(--bg-2);
+}
+.mine-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mine-actions-row {
+  display: flex;
+  gap: 2px;
+  visibility: hidden;
+}
+.mine-row:hover .mine-actions-row,
+.mine-row:focus-within .mine-actions-row {
+  visibility: visible;
+}
+.mine-rename-row {
+  position: absolute;
+  left: 52px;
+  right: 60px;
+  top: 50%;
+  width: auto;
+  height: 24px;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+.name-prompt .text-input {
+  width: 100%;
+}
+.library-foot {
+  margin-top: 4px;
+}

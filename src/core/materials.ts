@@ -36,6 +36,12 @@ export interface MaterialInstance {
   origin: string | null;
   /** Edited away from its preset. */
   edited: boolean;
+  /**
+   * Id of the library item (U4) it was assigned from, while it is unedited; absent otherwise. It lets the
+   * library mark the active material and lets two parts that took the same item share one instance. Deleting
+   * the item clears it (`material/unlinkLibrary`): the instance keeps working as the user's own.
+   */
+  library?: string | null;
   family: MaterialFamily;
   category: MaterialCategory;
   params: MaterialParams;
@@ -196,6 +202,7 @@ function structuredCloneParams(p: MaterialParams): MaterialParams {
 /** Identity used to decide whether two parts carry "the same" material. */
 export function materialIdentity(mat: MaterialInstance): string {
   if (mat.role === 'DEFAULT' && !mat.edited) return 'default';
+  if (mat.library && !mat.edited) return `library:${mat.library}`;
   return mat.preset && !mat.edited ? `preset:${mat.preset}` : `instance:${mat.id}`;
 }
 
@@ -307,11 +314,20 @@ export function pruneMaterials(state: ProjectState): ProjectState {
   return { ...state, materials };
 }
 
+/** A material of the user's library offered to an assignment: the item's id and the instance it describes. */
+export interface LibrarySource {
+  id: string;
+  /** What the item describes; its `id` is a placeholder, the reducer gives the new instance its own. */
+  instance: MaterialInstance;
+}
+
 export type MaterialAction =
   | ({
       type: 'material/assign';
       /** Catalogue key to instance, or... */
       preset?: string;
+      /** ...a material of the library to instance (reusing the unedited one the scene already has), or... */
+      library?: LibrarySource;
       /** ...an existing instance to reuse. */
       material?: MaterialId;
       /** Nodes at any level; expanded to their parts. Ignored when `faces` is set. */
@@ -321,6 +337,8 @@ export type MaterialAction =
     } & ActionBase)
   | ({ type: 'material/setParam'; id: MaterialId; key: string; value: unknown } & ActionBase)
   | ({ type: 'material/set'; id: MaterialId; patch: Partial<Pick<MaterialInstance, 'name' | 'bevelRadiusMm'>> } & ActionBase)
+  /** A library item was deleted: the instances that came from it stay, no longer linked to it. */
+  | ({ type: 'material/unlinkLibrary'; library: string } & ActionBase)
   | ({ type: 'material/detach'; id: MaterialId; parts: NodeId[] } & ActionBase)
   | ({ type: 'material/setWear'; id: MaterialId; patch: Partial<WearProps> } & ActionBase)
   | ({ type: 'material/wearPreset'; id: MaterialId; key: string } & ActionBase)
@@ -340,11 +358,24 @@ function ensureInstance(state: ProjectState, presetKey: string): { state: Projec
   return { state: { ...state, materials: { ...state.materials, [id]: inst } }, id };
 }
 
+/** Instance for a library material: reuses the unedited one of the same item. */
+function ensureLibraryInstance(state: ProjectState, source: LibrarySource): { state: ProjectState; id: MaterialId } {
+  const existing = Object.values(state.materials).find((m) => m.library === source.id && !m.edited && m.role !== 'DEFAULT');
+  if (existing) return { state, id: existing.id };
+  const id = nextId('m', Object.keys(state.materials));
+  const inst: MaterialInstance = { ...cloneInstance(source.instance, id), library: source.id };
+  return { state: { ...state, materials: { ...state.materials, [id]: inst } }, id };
+}
+
 function assign(state: ProjectState, action: Extract<MaterialAction, { type: 'material/assign' }>): ProjectState {
   let next = state;
   let matId: MaterialId | null = null;
   if (action.material && state.materials[action.material]) matId = action.material;
-  else if (action.preset) {
+  else if (action.library) {
+    const r = ensureLibraryInstance(state, action.library);
+    next = r.state;
+    matId = r.id;
+  } else if (action.preset) {
     const r = ensureInstance(state, action.preset);
     next = r.state;
     matId = r.id;
@@ -482,6 +513,12 @@ export function reduceMaterials(state: ProjectState, action: MaterialAction): Pr
         if (next.name !== null && next.name.trim() === '') next.name = null;
         return next.name === m.name && next.bevelRadiusMm === m.bevelRadiusMm ? m : next;
       });
+    case 'material/unlinkLibrary': {
+      if (!Object.values(state.materials).some((m) => m.library === action.library)) return state;
+      const materials: Record<MaterialId, MaterialInstance> = {};
+      for (const [id, m] of Object.entries(state.materials)) materials[id] = m.library === action.library ? { ...m, library: null } : m;
+      return { ...state, materials };
+    }
     case 'material/detach':
       return detach(state, action.id, action.parts);
     case 'material/setWear':
@@ -528,7 +565,7 @@ export function reduceMaterials(state: ProjectState, action: MaterialAction): Pr
  */
 export function assignAction(
   state: ProjectState,
-  src: { preset?: string; material?: MaterialId },
+  src: { preset?: string; material?: MaterialId; library?: LibrarySource },
   mode: AssignMode = 'REPLACE',
   ids?: readonly NodeId[],
 ): Extract<MaterialAction, { type: 'material/assign' }> {
