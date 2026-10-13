@@ -19,12 +19,13 @@ import { getLang, STRINGS, t, type StringKey } from '../strings';
 import { AI_HOOKS } from './settings-ai';
 import { blockEl, rowLabel, settingRow } from './settings-rows';
 import { SECTION_HOOKS, type SettingsHooks } from './settings-sections';
+import { UPDATES_HOOKS } from './settings-updates';
 
 const HOOKS: SettingsHooks = {
-  rows: { ...SECTION_HOOKS.rows, ...AI_HOOKS.rows },
-  blocks: { ...SECTION_HOOKS.blocks, ...AI_HOOKS.blocks },
-  rowOptions: { ...SECTION_HOOKS.rowOptions, ...AI_HOOKS.rowOptions },
-  top: { ...SECTION_HOOKS.top, ...AI_HOOKS.top },
+  rows: { ...SECTION_HOOKS.rows, ...AI_HOOKS.rows, ...UPDATES_HOOKS.rows },
+  blocks: { ...SECTION_HOOKS.blocks, ...AI_HOOKS.blocks, ...UPDATES_HOOKS.blocks },
+  rowOptions: { ...SECTION_HOOKS.rowOptions, ...AI_HOOKS.rowOptions, ...UPDATES_HOOKS.rowOptions },
+  top: { ...SECTION_HOOKS.top, ...AI_HOOKS.top, ...UPDATES_HOOKS.top },
 };
 
 /** Ids of rows drawn by their own code (tests check every such row has a renderer). */

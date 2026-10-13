@@ -962,6 +962,8 @@ const TABLE = {
   'set.sec.storage.desc': ['What Repackshot keeps on this computer, and how to free space.', 'Lo que Repackshot guarda en este equipo y cómo liberar espacio.'],
   'set.sec.desktop': ['Desktop', 'Escritorio'],
   'set.sec.desktop.desc': ['The desktop application: where its data is and which browser draws its window.', 'La aplicación de escritorio: dónde están sus datos y qué navegador dibuja su ventana.'],
+  'set.sec.updates': ['Updates', 'Actualizaciones'],
+  'set.sec.updates.desc': ['Which version you are running, and whether a newer one has been published.', 'Qué versión usas y si hay otra más reciente publicada.'],
   'set.sec.about': ['About', 'Acerca de'],
   'set.sec.about.desc': ['Version, licence, and the components of others with their licences.', 'Versión, licencia y los componentes de terceros con sus licencias.'],
   'set.block.language': ['Language and theme', 'Idioma y tema'],
@@ -987,6 +989,7 @@ const TABLE = {
   'set.block.history': ['Results history', 'Historial de resultados'],
   'set.block.browser': ['Keeping the data', 'Conservar los datos'],
   'set.block.desktop': ['Desktop application', 'Aplicación de escritorio'],
+  'set.block.updates': ['Version and updates', 'Versión y actualizaciones'],
   'set.block.version': ['Version', 'Versión'],
   'set.block.licence': ['Licence', 'Licencia'],
   'set.block.thirdParty': ['Third-party licences', 'Licencias de terceros'],
@@ -1149,7 +1152,11 @@ const TABLE = {
   'set.desktop.portable': ['Portable mode', 'Modo portable'],
   'set.desktop.browser': ['Window drawn by', 'Ventana dibujada por'],
   'set.desktop.logs': ['Logs', 'Registros'],
-  'set.desktop.updates': ['Check for updates', 'Buscar actualizaciones'],
+  'set.updates.current': ['Installed version', 'Versión instalada'],
+  'set.updates.check': ['Check for updates', 'Buscar actualizaciones'],
+  'set.updates.atStartup': ['Check at startup', 'Comprobar al iniciar'],
+  'set.updates.atStartup.aux': ['Asks GitHub once, in the background, for the latest published release. Nothing from your projects is sent.', 'Pregunta una vez a GitHub, en segundo plano, cuál es la última versión publicada. No se envía nada de tus proyectos.'],
+  'set.updates.last': ['Last checked', 'Última comprobación'],
   'set.about.version': ['Version', 'Versión'],
   'set.about.licence': ['Licence', 'Licencia'],
   'set.about.thirdParty': ['Third-party licences', 'Licencias de terceros'],
@@ -1356,6 +1363,24 @@ const TABLE = {
   'set.dk.portableYes': ['Yes: the data is next to the program, in {dir}', 'Sí: los datos están junto al programa, en {dir}'],
   'set.dk.portableNo': ['No: the data is in {dir}', 'No: los datos están en {dir}'],
   'set.dk.defaultBrowser': ['The default browser', 'El navegador por defecto'],
+  'up.checking': ['Checking…', 'Comprobando…'],
+  'up.neverChecked': ['Not checked yet', 'Aún no se ha comprobado'],
+  'up.never': ['Never', 'Nunca'],
+  'up.latest': ['You have the latest version ({version})', 'Tienes la última versión ({version})'],
+  'up.available': ['Repackshot {version} is available', 'Repackshot {version} está disponible'],
+  'up.availableOn': ['Repackshot {version} is available, published {date}', 'Repackshot {version} está disponible, publicada el {date}'],
+  'up.failed': ['Couldn’t check: {reason}', 'No se pudo comprobar: {reason}'],
+  'up.err.notFound': ['No published releases found (the repository may be private or have no releases yet)', 'No se encontró ninguna versión publicada (el repositorio puede ser privado o no tener versiones todavía)'],
+  'up.err.rateLimit': ['GitHub’s request limit was reached; try again later', 'Se alcanzó el límite de peticiones de GitHub; inténtalo más tarde'],
+  'up.err.offline': ['No connection', 'Sin conexión'],
+  'up.err.timeout': ['GitHub did not answer in time', 'GitHub no respondió a tiempo'],
+  'up.err.badFeed': ['The release feed could not be read', 'No se pudo leer la lista de versiones'],
+  'up.err.http': ['GitHub answered with an error ({status})', 'GitHub respondió con un error ({status})'],
+  'up.download': ['Download', 'Descargar'],
+  'up.openRelease': ['Open the release page', 'Abrir la página de la versión'],
+  'up.notes': ['Release notes', 'Notas de la versión'],
+  'up.later': ['Later', 'Más tarde'],
+  'up.noticeLabel': ['Update available', 'Actualización disponible'],
   'set.ab.version': ['Repackshot {version}', 'Repackshot {version}'],
   'set.ab.licenceName': ['PolyForm Noncommercial License 1.0.0', 'Licencia PolyForm Noncommercial 1.0.0'],
   'set.ab.licenceSummary': [
@@ -1718,6 +1743,19 @@ export function framesText(n: number): string {
 /** A SIMD path of the native engine as the status bar shows it (`avx2` -> `AVX2`, scalar translated). */
 export function isaLabel(isa: string | undefined): string {
   return !isa || isa === 'scalar' ? t('status.isaScalar') : isa.toUpperCase();
+}
+
+/** A date as "14 Oct 2026" / "14 oct 2026" (the reader's time zone); the text unchanged when it is not a date. */
+export function formatDate(iso: string, lang: Lang = current): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  return new Intl.DateTimeFormat(lang === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(ms);
+}
+
+/** A moment as "14 Oct 2026, 09:30" / "14 oct 2026, 9:30" (the reader's time zone). */
+export function formatDateTime(ms: number, lang: Lang = current): string {
+  if (!Number.isFinite(ms)) return '–';
+  return new Intl.DateTimeFormat(lang === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(ms);
 }
 
 export function formatClock(seconds: number): string {
