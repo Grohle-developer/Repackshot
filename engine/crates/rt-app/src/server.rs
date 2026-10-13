@@ -20,7 +20,7 @@ use crate::http::{read_request, write_response, Body, ReadError, Request, Respon
 use crate::json::{self, Value};
 use crate::models::{Store, StoreError};
 use crate::paths::Paths;
-use crate::render::{has_meshes, Engine, Finish, Kind, Options, SubmitError};
+use crate::render::{has_meshes, Engine, Finish, Kind, Options as JobOptions, SubmitError};
 use crate::static_files;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -81,6 +81,8 @@ pub struct App {
     pub dialogs: crate::dialogs::Dialogs,
     /// What the person chose in them (`/api/files*`).
     pub files: crate::files::Files,
+    /// The AI runtime, its downloads and its server (`/api/ai/*`, `src/ai/`).
+    pub ai: Arc<crate::ai::Ai>,
     last_alive: Mutex<Instant>,
     hardware: Mutex<Option<Hardware>>,
     connections: AtomicUsize,
@@ -110,7 +112,7 @@ impl App {
         format!("http://127.0.0.1:{}/#token={}", self.port, self.token)
     }
 
-    fn hardware(&self, refresh: bool) -> Hardware {
+    pub(crate) fn hardware(&self, refresh: bool) -> Hardware {
         let mut cached = lock(&self.hardware);
         if refresh || cached.is_none() {
             *cached = Some(hardware::detect());
@@ -172,6 +174,10 @@ impl App {
         }
         // The page's state in the data folder (appdata.rs, phase P3e): /api/store/*, /api/storage/*.
         if let Some(r) = crate::appdata::route(&self.paths, req, &parts, body) {
+            return api(r);
+        }
+        // The AI runtime (ai/mod.rs).
+        if let Some(r) = crate::ai::route(self, req, &parts, body) {
             return api(r);
         }
         let m = req.method.as_str();
@@ -327,6 +333,8 @@ impl App {
                 .num("pid", f64::from(std::process::id()))
                 // The dialogs and file API of files.rs (version 1).
                 .num("filesApi", 1.0)
+                // The AI runtime API of ai/mod.rs (version 1).
+                .num("aiApi", 1.0)
                 .build(),
         )
     }
@@ -365,7 +373,7 @@ impl App {
         };
         // `full=1`: the body is the complete scene even without `MESH` sections (an empty project).
         let whole = req.query("full") == Some("1") || has_meshes(&rsb);
-        let opts = Options { finish, share, seq };
+        let opts = JobOptions { finish, share, seq };
         match self
             .engine
             .submit_with(kind, &rsb, whole, mesh, client, opts)
@@ -649,6 +657,19 @@ fn serve_connection(app: &App, stream: TcpStream) {
     }
 }
 
+/// What a server is built with besides its folders, port, token and threads. The application
+/// (`port.rs`) always takes the default; only the tests set a field, so a shipped binary never
+/// takes any of this from its data folder or its environment.
+#[derive(Default)]
+pub struct Options {
+    /// The AI runtimes' catalogue and downloader in place of the embedded catalogue and the
+    /// system's `curl` over https (`Ai::with`; the tests: a fake runtime, a local http server).
+    pub ai_runtimes: Option<(
+        crate::ai::catalogue::RuntimeCatalogue,
+        crate::ai::download::Downloader,
+    )>,
+}
+
 /// A running server.
 pub struct Server {
     /// The shared state.
@@ -659,6 +680,17 @@ pub struct Server {
 impl Server {
     /// Binds `127.0.0.1:port` (0: any free port) and serves in the background.
     pub fn start(paths: Paths, port: u16, token: String, threads: usize) -> io::Result<Server> {
+        Server::start_with(paths, port, token, threads, Options::default())
+    }
+
+    /// The same, built with `options`.
+    pub fn start_with(
+        paths: Paths,
+        port: u16,
+        token: String,
+        threads: usize,
+        options: Options,
+    ) -> io::Result<Server> {
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         let port = listener.local_addr()?.port();
         let models = Store::new(paths.models(), crate::recommend::catalogue().clone());
@@ -672,6 +704,12 @@ impl Server {
             browser: Mutex::new(None),
             dialogs: crate::dialogs::Dialogs::new(),
             files: crate::files::Files::new(&paths_data),
+            ai: match options.ai_runtimes {
+                Some((cat, downloader)) => {
+                    crate::ai::Ai::with(paths_data.join("ai"), cat, downloader)
+                }
+                None => crate::ai::Ai::new(&paths_data),
+            },
             last_alive: Mutex::new(Instant::now()),
             hardware: Mutex::new(None),
             connections: AtomicUsize::new(0),
@@ -730,6 +768,7 @@ impl Server {
             let _ = h.join();
         }
         self.app.engine.shutdown();
+        self.app.ai.shutdown();
     }
 }
 

@@ -46,6 +46,7 @@ resultado es un estado normal y deshacible.
 | `mode=fast\|full` | Modo del visor (*Rápido* o *Completo*); *Completo* entra en cuanto el motor ha cargado |
 | `render=image\|animation` | Abre la ventana de render (U5) en *Imagen* o en *Animación* |
 | `settings=general\|ai.models\|…` | Abre Ajustes en esa sección o en esa fila o parte (enlace profundo: `openSettings`) |
+| `ai=synthetic` | El post-procesado IA corre con el servicio **sintético** (X4: sin modelo, determinista) en lugar de decir *próximamente*; para las capturas, las demos y las comprobaciones del navegador (`tools/ai-post-check.mjs`). Sin él, el interruptor está deshabilitado hasta que X3c conecte la tubería real |
 
 Ejemplos usados para las capturas de `docs/ui/`:
 

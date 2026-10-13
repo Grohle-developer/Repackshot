@@ -11,6 +11,7 @@
 
 import { QUALITY_PRESETS, RESOLUTION_PRESETS } from '../data/quality';
 import type { QualityKey, ResolutionKey } from '../data/types';
+import { AI_STYLES, DEFAULT_AI_PIPELINE, type AiPipelineSettings, type AiStyle } from './ai';
 import type { ActionBase, ProjectState } from './store';
 import type { CameraId } from './camera';
 import { nextId } from './ids';
@@ -55,9 +56,44 @@ export interface AnimationOutput {
   video: VideoCodec;
 }
 
-/** AI post-processing (AI-POST.md §4): a placeholder until X3/X4. */
-export interface AiSettings {
-  enabled: boolean;
+/**
+ * AI post-processing (AI-POST.md §4, §7.5): the switch, whether the preview starts from the full engine
+ * instead of Fast mode, and the pipeline's controls and seed (core/ai.ts). Each job copies it.
+ */
+export type AiSettings = { enabled: boolean; previewFullEngine: boolean } & AiPipelineSettings;
+
+/** The AI settings of a new project: off, the preview from Fast mode, the configurator's defaults. */
+export const DEFAULT_AI: Readonly<AiSettings> = Object.freeze({ enabled: false, previewFullEngine: false, ...DEFAULT_AI_PIPELINE });
+
+/** The numeric controls of the configurator (0..100 each), in the order the window lists them. */
+export const AI_PERCENT_KEYS = ['intervention', 'light', 'bounce', 'wear', 'styleStrength'] as const;
+export type AiPercentKey = (typeof AI_PERCENT_KEYS)[number];
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * AI settings from anything that looks like them: an old project's `{ enabled: false }` (the rest takes
+ * `base`'s values), a hand-edited file. Controls become integers 0..100, an unknown style becomes
+ * NATURAL, the seed an unsigned 32-bit integer. Pure, idempotent, and it returns `base` itself when
+ * nothing differs (so watchers comparing by reference do not wake for an unrelated edit).
+ */
+export function normaliseAi(raw: unknown, base: AiSettings = DEFAULT_AI): AiSettings {
+  if (!isRecord(raw)) return base;
+  const pct = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : fallback);
+  const style: AiStyle = raw.style === undefined ? base.style : (AI_STYLES as readonly unknown[]).includes(raw.style) ? (raw.style as AiStyle) : 'NATURAL';
+  const seed = typeof raw.seed === 'number' && Number.isFinite(raw.seed) ? Math.max(0, Math.min(0xffffffff, Math.round(raw.seed))) : base.seed;
+  const next: AiSettings = {
+    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : base.enabled,
+    previewFullEngine: typeof raw.previewFullEngine === 'boolean' ? raw.previewFullEngine : base.previewFullEngine,
+    intervention: pct(raw.intervention, base.intervention),
+    light: pct(raw.light, base.light),
+    bounce: pct(raw.bounce, base.bounce),
+    wear: pct(raw.wear, base.wear),
+    style,
+    styleStrength: pct(raw.styleStrength, base.styleStrength),
+    seed,
+  };
+  return (Object.keys(next) as (keyof AiSettings)[]).every((k) => next[k] === base[k]) ? base : next;
 }
 
 /** Everything the render window sets (SPEC §3.8). */
@@ -146,7 +182,11 @@ export const WRITABLE_FORMATS: ReadonlySet<OutputFormat> = new Set<OutputFormat>
 export const FPS_CHOICES: readonly number[] = [24, 25, 30, 60];
 /** Encoded video arrives with N1; until then the output is a frame sequence. */
 export const VIDEO_AVAILABLE = false;
-/** AI post-processing arrives with X3; until then it is always off. */
+/**
+ * The build ships the AI pipeline. False until X3c. Since X4 nothing in the store reads it: whether the
+ * switch can be turned on is what `AiPostService.status()` says (core/ai.ts), and a project may hold
+ * `ai.enabled` whatever this build can run.
+ */
 export const AI_AVAILABLE = false;
 
 /** Formats that carry an alpha channel. */
@@ -202,7 +242,7 @@ export function defaultRenderSettings(): RenderSettings {
     maxSeconds: 120,
     advanced: { maxBounces: null, clampIndirect: 0, seed: 0 },
     animation: { range: 'ALL', rangeUnit: 'FRAMES', from: 1, to: 1, fps: 24, output: 'FRAMES', video: 'MP4' },
-    ai: { enabled: false },
+    ai: DEFAULT_AI,
   };
 }
 
@@ -245,7 +285,7 @@ const clampSize = (v: number): number => clampInt(v, MIN_OUTPUT_SIDE, MAX_OUTPUT
  * Applies a patch of settings with every rule of the window: sizes clamped, the aspect lock (one
  * side typed: the other follows the locked ratio; both given, as a preset does: that becomes the
  * ratio), formats without alpha switch transparency off, 16 bits only in PNG, the samples away
- * from the tier make the quality custom, video and AI stay off until they exist. Pure.
+ * from the tier make the quality custom, video stays off until it exists, the AI controls stay 0..100. Pure.
  */
 export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>): RenderSettings {
   const p: Partial<RenderSettings> = { ...patch };
@@ -307,7 +347,8 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
       video: a.video === 'WEBM' ? 'WEBM' : 'MP4',
     };
   }
-  if (!AI_AVAILABLE) next.ai = { enabled: false };
+  // AI post-processing: merged into the current settings, then every control clamped (a slider drag is many patches).
+  next.ai = normaliseAi(p.ai !== undefined ? { ...s.ai, ...p.ai } : s.ai, s.ai);
   if (next.mode !== 'ANIMATION') next.mode = 'IMAGE';
   return next;
 }
@@ -557,6 +598,8 @@ function migrateSettings(raw: Record<string, unknown>, base: RenderSettings): Re
     aspectLock: bool(raw.aspectLock),
     dpi: num(raw.dpi),
     printUnit: oneOf<PrintUnit>(raw.printUnit, PRINT_UNITS),
+    // Before X4 the block was `{ enabled }` only: the patch merges it into the defaults and clamps every control.
+    ai: isObj(raw.ai) ? (raw.ai as unknown as AiSettings) : undefined,
     // U1 had no finishBy: its budget was the samples or the time, whichever came first (0 s: no time limit).
     finishBy: oneOf<FinishBy>(raw.finishBy, ['SAMPLES', 'TIME', 'FIRST']) ?? (raw.finishBy === undefined && maxSeconds !== undefined ? (maxSeconds > 0 ? 'FIRST' : 'SAMPLES') : undefined),
     quality: oneOf(raw.quality, QUALITIES),

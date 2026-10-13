@@ -22,7 +22,7 @@ export interface FakeLauncher {
   settings: string | null;
   library: string | null;
   docs: Map<string, string>;
-  results: Map<string, { meta: string; file?: Blob; display?: Blob }>;
+  results: Map<string, { meta: string; file?: Blob; display?: Blob; ai?: Blob }>;
   cache: Map<string, string>;
   /** Paths whose writes fail (500), or `METHOD /path` that fails, to test error reporting. */
   failing: Set<string>;
@@ -151,6 +151,13 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
         state.results.set(name, { ...(r ?? { meta: '' }), display });
         return new Response(null, { status: 204 });
       }
+      case 'PUT store/results/*/ai': {
+        const type = url.searchParams.get('type') ?? '';
+        if (!RESULT_TYPES[type]) return error(415, 'bad-type');
+        const ai = new Blob([await new Response(init.body ?? null).arrayBuffer()], { type });
+        state.results.set(name, { ...(state.results.get(name) ?? { meta: '' }), ai });
+        return new Response(null, { status: 204 });
+      }
       case 'PUT store/results/*/meta': {
         const r = state.results.get(name);
         if (!r?.file) return error(409, 'no-file');
@@ -161,9 +168,10 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
         return new Response(null, { status: 204 });
       }
       case 'GET store/results/*':
+      case 'GET store/results/*/ai':
       case 'GET store/results/*/display': {
         const r = state.results.get(name);
-        const blob = key.endsWith('display') ? r?.display : r?.file;
+        const blob = key.endsWith('display') ? r?.display : key.endsWith('/ai') ? r?.ai : r?.file;
         if (!r?.meta || !blob) return error(404, 'not-found');
         return new Response(blob, { status: 200, headers: { 'Content-Type': blob.type } });
       }
@@ -184,7 +192,7 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
       }
       case 'GET storage/usage': {
         const lib = state.library?.length ?? 0;
-        const res = [...state.results.values()].reduce((a, r) => a + (r.file?.size ?? 0) + (r.display?.size ?? 0), 0);
+        const res = [...state.results.values()].reduce((a, r) => a + (r.file?.size ?? 0) + (r.display?.size ?? 0) + (r.ai?.size ?? 0), 0);
         const thumbs = [...state.cache.values()].reduce((a, v) => a + v.length, 0);
         const folders = [
           { id: 'models', path: '/data/models', bytes: 0, files: 0 },

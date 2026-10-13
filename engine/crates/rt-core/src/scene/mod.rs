@@ -4,6 +4,7 @@
 
 pub mod rsb;
 
+pub use crate::bitmap::Bitmap;
 use crate::color::Rgb;
 use crate::math::{Aabb, Ray, Vec3};
 
@@ -114,16 +115,20 @@ impl Camera {
     }
 }
 
-/// `MATL.kind` 0: the principled surface (Lambert diffuse, GGX specular, metal, clear coat).
+/// `MATL.kind` 0: the principled surface (Lambert diffuse, GGX specular, metal, transmission,
+/// clear coat).
 pub const MATERIAL_PRINCIPLED: u32 = 0;
-/// `MATL.kind` 1: glass. Transmission arrives in E5; until then it renders as a principled
-/// surface tinted by `base_color`.
+/// `MATL.kind` 1: glass: the principled surface without its metal (a dielectric whose
+/// `transmission` says how much of it is clear).
 pub const MATERIAL_GLASS: u32 = 1;
 /// `MATL.kind` 2: an emitter of radiance `emission * emission_power` that reflects nothing.
 pub const MATERIAL_EMISSIVE: u32 = 2;
 /// `MATL.flags` bit 0: an emissive material is also sampled explicitly (next-event estimation)
 /// as an area light. Without it the emitter is only found by rays that happen to hit it.
 pub const MATERIAL_FLAG_LIGHT: u32 = 1;
+/// `MATL.flags` bit 1: the transmissive part is a thin wall (a sheet with no inside): light goes
+/// straight through it without refraction, so it also lets shadow rays through.
+pub const MATERIAL_FLAG_THIN: u32 = 2;
 
 /// A surface material. See the [`rsb`] module documentation for the meaning of every field.
 #[derive(Clone, Debug, PartialEq)]
@@ -139,7 +144,7 @@ pub struct Material {
     pub roughness: f32,
     /// Index of refraction of the dielectric (sets the specular reflectance at normal incidence).
     pub ior: f32,
-    /// Fraction of light transmitted instead of reflected, in `[0, 1]` (ignored until E5).
+    /// Share of the dielectric that is clear (refracting) instead of diffuse, in `[0, 1]`.
     pub transmission: f32,
     /// Clear coat strength in `[0, 1]`.
     pub coat: f32,
@@ -151,6 +156,16 @@ pub struct Material {
     pub emission_power: f32,
     /// Bit set of `MATERIAL_FLAG_*` values.
     pub flags: u32,
+    /// Coverage in `[0, 1]`: below one the surface is a stochastic cut-out, rays pass through it
+    /// with probability `1 - opacity` (and shadow rays are attenuated by that).
+    pub opacity: f32,
+    /// Anisotropy of the GGX lobes in `[0, 1]` (0: isotropic), along a tangent running around
+    /// the instance's local Z axis.
+    pub anisotropy: f32,
+    /// Absorption distance of the clear part, in millimetres: `base_color` is what is left of
+    /// white light after travelling this far inside (Beer–Lambert). 0: no absorption, the colour
+    /// tints the surface instead (once per pass through a solid, or through a thin wall).
+    pub absorption_mm: f32,
 }
 
 impl Default for Material {
@@ -167,6 +182,9 @@ impl Default for Material {
             emission: Rgb::BLACK,
             emission_power: 0.0,
             flags: 0,
+            opacity: 1.0,
+            anisotropy: 0.0,
+            absorption_mm: 0.0,
         }
     }
 }
@@ -290,9 +308,11 @@ pub enum EnvKind {
     Studio,
     /// 1: a single flat colour of brightness `horizon`.
     Flat,
-    /// 2: procedural sky. Reserved for E5: rendered as the studio dome until then.
+    /// 2: the procedural daylight sky of [`crate::sky`], its sun at `sun_azimuth_deg` and
+    /// `sun_elevation_deg`, scaled to light like the dome of the same values.
     Sky,
-    /// 3: HDRI image. Reserved for E5: rendered as the studio dome until then.
+    /// 3: the equirectangular HDRI image `hdri_map`, turned by `rotation_deg`, times `strength`
+    /// (the dome when the bitmap is missing).
     Hdri,
 }
 
@@ -325,9 +345,18 @@ pub const BACKGROUND_ENVIRONMENT: u32 = 0;
 pub const BACKGROUND_COLOR: u32 = 1;
 /// `ENVR.background_mode` 2: camera rays that escape see nothing; the film's alpha is 0 there.
 pub const BACKGROUND_TRANSPARENT: u32 = 2;
-/// `ENVR.background_mode` 3: backplate image, reserved for M2 (rendered as
-/// [`BACKGROUND_COLOR`] until then).
+/// `ENVR.background_mode` 3: a background image (`backplate_map`), seen by camera rays only and
+/// fitted to the frame by `backplate_fit`; without the bitmap it is [`BACKGROUND_COLOR`].
 pub const BACKGROUND_BACKPLATE: u32 = 3;
+
+/// `ENVR.hdri_map` and `ENVR.backplate_map` when there is no bitmap.
+pub const NO_BITMAP: u32 = u32::MAX;
+/// `ENVR.backplate_fit` 0: the image covers the frame, cropped to keep its proportions.
+pub const BACKPLATE_FILL: u32 = 0;
+/// `ENVR.backplate_fit` 1: the whole image inside the frame, the rest `background_color`.
+pub const BACKPLATE_FIT: u32 = 1;
+/// `ENVR.backplate_fit` 2: the image stretched to the frame.
+pub const BACKPLATE_STRETCH: u32 = 2;
 
 /// What camera rays that escape the scene see. Decoded from `ENVR.background_mode`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -338,6 +367,8 @@ pub enum Background {
     Color,
     /// Nothing: black with alpha 0.
     Transparent,
+    /// The background image.
+    Backplate,
 }
 
 /// The environment surrounding the scene.
@@ -359,14 +390,31 @@ pub struct Environment {
     pub background_color: Rgb,
     /// What escaping camera rays see: `BACKGROUND_*` (unknown values mean the environment).
     pub background_mode: u32,
+    /// Bitmap of the HDRI (kind [`EnvKind::Hdri`]), or [`NO_BITMAP`].
+    pub hdri_map: u32,
+    /// Bitmap of the background image ([`BACKGROUND_BACKPLATE`]), or [`NO_BITMAP`].
+    pub backplate_map: u32,
+    /// How the background image fits the frame: `BACKPLATE_*`.
+    pub backplate_fit: u32,
+    /// Turbidity of the sky (kind [`EnvKind::Sky`]): 2 very clear, 3 clear, 6 hazy.
+    pub sky_turbidity: f32,
+    /// Azimuth of the sky's sun in degrees, from +X towards +Y.
+    pub sun_azimuth_deg: f32,
+    /// Elevation of the sky's sun above the horizon in degrees.
+    pub sun_elevation_deg: f32,
+    /// Where the output frame lies in the rendered image, `[u0, v0, u1, v1]` (`u` left to
+    /// right, `v` top to bottom): the background image is fitted to it. `[0, 0, 1, 1]` unless
+    /// the image is a viewport larger than the frame.
+    pub backplate_rect: [f32; 4],
 }
 
 impl Environment {
-    /// The background mode, decoded (the reserved backplate falls back to the colour; unknown
-    /// values mean the environment).
+    /// The background mode, decoded (unknown values mean the environment). A backplate whose
+    /// bitmap is missing is decided by the renderer, which falls back to the colour.
     pub fn background(&self) -> Background {
         match self.background_mode {
-            BACKGROUND_COLOR | BACKGROUND_BACKPLATE => Background::Color,
+            BACKGROUND_COLOR => Background::Color,
+            BACKGROUND_BACKPLATE => Background::Backplate,
             BACKGROUND_TRANSPARENT => Background::Transparent,
             _ => Background::Environment,
         }
@@ -384,6 +432,13 @@ impl Default for Environment {
             rotation_deg: 0.0,
             background_color: Rgb::splat(0.05),
             background_mode: 0,
+            hdri_map: NO_BITMAP,
+            backplate_map: NO_BITMAP,
+            backplate_fit: BACKPLATE_FILL,
+            sky_turbidity: crate::sky::DEFAULT_TURBIDITY,
+            sun_azimuth_deg: 0.0,
+            sun_elevation_deg: 45.0,
+            backplate_rect: [0.0, 0.0, 1.0, 1.0],
         }
     }
 }
@@ -519,6 +574,8 @@ pub struct Scene {
     pub floor: Floor,
     /// Image size and sampling settings.
     pub render: RenderSettings,
+    /// Images the environment refers to (HDRI, background plate), by index.
+    pub bitmaps: Vec<Bitmap>,
 }
 
 impl Scene {
@@ -706,7 +763,7 @@ mod tests {
             (0, Background::Environment),
             (1, Background::Color),
             (2, Background::Transparent),
-            (3, Background::Color),
+            (3, Background::Backplate),
             (77, Background::Environment),
         ] {
             env.background_mode = mode;

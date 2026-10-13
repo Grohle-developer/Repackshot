@@ -2,7 +2,12 @@
 // render outputs into a chosen folder (and Downloads when it is gone), a folder of an earlier launch confirmed again,
 // projects saved in place and opened, Last project, imports read in ranges and hashed by the launcher.
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { getImage, retainImages } from '../src/core/images';
+import { createInitialState } from '../src/core/store';
+import { loadBackplate, loadHdri, type PixelDecoder } from '../src/io/hdri';
+import { readProjectFile, serializeProject } from '../src/io/project';
 import { createDesktopDialogs, createDesktopFiles, createDesktopProjectFiles, hashNativeFile, NativeFile, whenReady, type DesktopApi } from '../src/io/desktop-files';
 import { NativeError, NativeClient, type DialogResult, type NativeGrant, type NativeInfo } from '../src/io/native';
 
@@ -197,6 +202,36 @@ describe('project files on the desktop', () => {
     pf.adopt({ kind: 'file', name: 'x' });
     disk.answers.push({ cancelled: true });
     expect((await pf.save(() => new Blob(['x']), 'a.repack.json', { saveAs: false })).kind).toBe('CANCELLED');
+  });
+});
+
+describe('a project with environment images on the desktop (E5)', () => {
+  const opts = { description: () => 'Repackshot project', openTitle: () => 'Open project', saveTitle: () => 'Save project', allFiles: () => 'All files' };
+  const decode: PixelDecoder = async () => ({ width: 2, height: 1, rgba: new Uint8Array([9, 8, 7, 255, 6, 5, 4, 255]) });
+
+  it('saves through the launcher’s dialog with its HDRI and background image, and opens with them', async () => {
+    retainImages([]);
+    const hdrBytes = new Uint8Array(readFileSync('tests/fixtures/studio.hdr'));
+    const s = createInitialState();
+    const hdri = await loadHdri('studio.hdr', hdrBytes, 'hdri:1');
+    const backplate = await loadBackplate('plate.png', new Uint8Array([0x89, 0x50, 0x4e, 0x47]), decode, 'plate:1');
+    const state = { ...s, environment: { ...s.environment, kind: 'HDRI' as const, hdri, background: 'BACKPLATE' as const, backplate } };
+    const { api, disk } = fakeLauncher();
+    const pf = createDesktopProjectFiles(api, opts);
+    disk.answers.push(chosen(grant('p9', '/work/lit.repack.json')));
+    expect(await pf.save(() => serializeProject(state), 'lit.repack.json', { saveAs: false })).toEqual({ kind: 'SAVED', name: 'lit.repack.json', inPlace: true });
+    // A new session opens it with the launcher's Open dialog: the images come back from the file.
+    retainImages([]);
+    disk.answers.push(chosen(grant('p9', '/work/lit.repack.json')));
+    const picked = await pf.pick();
+    const out = await readProjectFile(picked!.file, decode);
+    if (!out.ok) throw new Error(out.fault.detail);
+    expect(out.warnings).toEqual([]);
+    expect(out.state.environment.hdri).toEqual(hdri);
+    expect(out.state.environment.backplate).toEqual(backplate);
+    expect(getImage('hdri:1')!.bytes).toEqual(hdrBytes);
+    expect(Array.from(getImage('plate:1')!.rgba8!)).toEqual([9, 8, 7, 255, 6, 5, 4, 255]);
+    retainImages([]);
   });
 });
 

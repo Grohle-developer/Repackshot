@@ -349,9 +349,20 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    fase del motor).
 3. **Entorno** — Tipo: *Cúpula de estudio* (procedural, por defecto),
    *Cielo* (sol y cielo procedurales), *Plano* (color liso), *Archivo
-   HDRI*. Intensidad, rotación. Fondo: *El mismo entorno*, *Color*
-   (muestra), *Transparente*, *Imagen de fondo*. Sombra en el suelo y
-   reflejo en el suelo (intensidad).
+   HDRI*. Con *Archivo HDRI*, botón *Cargar HDRI…* (`.hdr`, `.exr`) y
+   debajo el nombre y el tamaño del archivo, o *Sin HDRI cargado: ilumina
+   la cúpula de estudio*; soltar un `.hdr` o `.exr` en la ventana hace lo
+   mismo. Con *Cielo*, *Bruma* (turbidez) y, si el montaje no tiene foco
+   de sol, *Azimut del sol* y *Altura del sol*; si lo tiene, una nota dice
+   que el sol del montaje coloca el del cielo. Intensidad, rotación (se
+   oculta con *Cielo*: lo coloca su sol). Fondo: *El mismo entorno*,
+   *Color* (muestra), *Transparente*, *Imagen de fondo*; con esta última,
+   *Cargar imagen…* (PNG, JPEG, WebP), su nombre y tamaño, *Encaje*
+   (*Llenar · Encajar · Estirar*, dentro del marco de salida) y el color,
+   que se ve alrededor de la imagen encajada o en su lugar mientras no hay
+   ninguna. Un archivo que no se puede leer se avisa en un *toast* que
+   dice qué le pasa. Sombra en el suelo y reflejo en el suelo
+   (intensidad).
 4. **Cámara** — Preset de óptica (8 `LENS_PRESETS`), focal en mm (campo
    arrastrable), diafragma (f/), distancia de enfoque + botón *Enfocar
    con clic*, interruptor Perspectiva / Ortográfica, *Encuadrar*, y
@@ -375,7 +386,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    seleccionada (mientras no, el inspector dice *Haz clic en una cara…*) y
    la suelta cae en la cara bajo el cursor. Debajo, los
    **parámetros** de la familia del material: color, metal, rugosidad,
-   barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; madera
+   barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; vidrio
+   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm y
+   *Paredes*: *Macizo · Pared fina*); madera
    (dos colores, densidad de anillos…); tela (dos colores de hilo, tipo de
    tejido, hilos por cm, pelusa); emisor (tipo, temperatura, potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material
@@ -554,8 +567,47 @@ fotogramas o segundos), **fps** (24, 25, 30, 60), duración resultante,
 **a cada fotograma**, y la estimación del total. La cámara es la pista de
 cámara de la línea de tiempo.
 
-**3 · Post-procesado IA**: el interruptor, su configurador y su vista
-previa, descritos en `AI-POST.md` §4. Plegado y apagado por defecto.
+**3 · Post-procesado IA** (X4; `AI-POST.md` §4): plegada y apagada por
+defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
+
+- **Interruptor** con su línea auxiliar: el modelo en uso, con los datos
+  del gestor de Ajustes (*Z-Image-Turbo · Q4 · Apache-2.0 · descargado*).
+  Si no hay ningún modelo (o falta el motor de inferencia), activarlo
+  abre *Ajustes ▸ Post-procesado IA ▸ Modelos*; si el servicio dice que no
+  puede (`AiUnavailableReason`), queda deshabilitado con el motivo en una
+  nota (sin WebGPU, poca memoria, modelo que el motor instalado no carga,
+  *próximamente* mientras la versión no tenga tubería). En *Animación* queda
+  deshabilitado (*para animaciones llega más adelante*). Gestionar modelos…
+  y la intervención por defecto de Ajustes, debajo.
+- **Configurador** (solo con el interruptor encendido), a la izquierda: seis
+  controles de 0 a 100 con su frase —*Intervención*, *Luz*, *Rebotes*,
+  *Desgaste y microdetalle*, la lista de *Estilo* (`AI_STYLES`) y *Fuerza del
+  estilo*—, las **protecciones** como seis fichas fijas con candado (sin
+  interruptor ni botón: *Geometría · Materiales · Resolución · Profundidad
+  de campo · Encuadre · Texto y logotipos*) y **Otra variación**, que cambia
+  la semilla. Cada cambio es una acción del *store*, deshacible; arrastrar un
+  control es **un** paso de deshacer. En un trabajo de la cola que se edita,
+  los controles cambian el borrador del trabajo.
+- **Vista previa**, a la derecha (debajo en una ventana estrecha; queda a la
+  vista mientras se recorren los controles): un fotograma del **modo Rápido**
+  desde la cámara del trabajo a 384–512 px, con la IA aplicada y el **divisor
+  deslizable** de U5 (*Antes · Después*). Se actualiza **al soltar** un
+  control, nunca mientras se arrastra (los cambios de una tecla o de una
+  lista esperan una pausa corta), y abandona la vista previa en curso si
+  llega otro cambio. Debajo: el tamaño, **la línea del informe de la guarda**
+  (la misma del visor), *≈ 0,4 s por cambio en este equipo* —**medido**
+  alrededor de la llamada a la tubería, sin cifra hasta la primera vista
+  previa—, la nota *La vista previa parte del modo Rápido; el resultado final
+  parte del render completo* y la opción *Usar el motor completo para la
+  vista previa (más lento)*, que parte del trazador con el presupuesto del
+  trabajo. El fotograma y sus pases de `AI-POST.md` §7.4 (dibujados con
+  three.js: ids de pieza y de material del propio RSB, profundidad, normales
+  en el mundo con Z arriba, albedo, círculo de confusión de la lente fina) se
+  calculan una vez y se reutilizan mientras cambian solo los controles.
+- Sin la tubería (hasta X3c) el interruptor dice *próximamente*; con
+  `?ai=synthetic` corre el servicio sintético de `src/ai/synthetic.ts` (sin
+  modelo, determinista) para capturas, demos y pruebas. Capturas:
+  `docs/ui/ai-section-dark.png` y `docs/ui/ai-section-light.png`.
 
 **Pie de la ventana**: a la izquierda, el resumen en una línea
 (*1920 × 1080 · 300 ppp · 256 muestras · PNG → Descargas · IA
@@ -581,6 +633,26 @@ teclas ← →), etiquetas *Render* · *IA* en las esquinas y los botones
 *Solo render*, *Solo IA*, *Dividir*; se pueden guardar las dos. Los
 resultados quedan en el historial del proyecto (cajón *Cola*,
 terminados) y en el almacenamiento del navegador hasta que se borran.
+
+**Con IA (X4).** Un trabajo de imagen con el post-procesado encendido guarda
+primero la imagen del motor (siempre) y después la de la IA al lado
+(`…_AI.png`, en el formato del trabajo); el resultado conserva las dos y el
+**informe de la guarda**. El visor abre *Render* contra *IA* con el divisor
+(etiquetas *Render · IA*, botones *Solo render · Solo IA · Dividir*) y, bajo
+los datos, una línea: *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) ·
+resolución ✓ · enfoque ✓* (la geometría reúne bordes, píxeles fuera de las
+regiones permitidas y detalle de banda alta; ΔE máx es el mayor ΔE₀₀ medio de
+un material), y *La IA se limitó al 23 % para respetar las protecciones* si
+la guarda tuvo que bajar la intervención. Si la guarda la **rechaza**, el
+resultado queda con la imagen del motor sin cambios, el informe dice qué
+protección se rompió y no hay segunda imagen. Se guardan las dos por separado
+(*Guardar el render de nuevo*, *Guardar la imagen IA*); *Comparar con…* pone
+otro resultado en lugar de la IA. La cola y el historial muestran las **dos
+miniaturas**. El historial guarda la imagen de la IA como segundo fichero del
+resultado: IndexedDB en la web y `<datos>/results/<id>.ai.<ext>` en el
+escritorio (`PUT/GET /api/store/results/<id>/ai` del lanzador). Capturas:
+`docs/ui/ai-results-viewer.png`, `docs/ui/ai-results-light.png` y
+`docs/ui/ai-queue.png`.
 
 ### 2.9 · Ventana de Ajustes
 
@@ -609,7 +681,7 @@ título del grupo en versalitas auxiliares:
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
 | **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
-| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo). Mientras la tubería de X3 no exista, arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
+| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Mientras la tubería de X3 no exista, arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
 | | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con **Descargar**, el paquete de esta plataforma, y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con *Descargar · Notas · Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`) |
@@ -657,6 +729,22 @@ cerrar la aplicación) y cada fichero se comprueba con su `sha256` antes
 de marcarse *Listo*. **Importar modelo…** como describe `AI-POST.md` §5.
 Si el instalador dejó modelos elegidos para descargar, aparecen aquí
 descargándose desde el primer arranque.
+
+**Post-procesado IA ▸ Motor de ejecución** (solo escritorio, X3b): la compilación de
+stable-diffusion.cpp que toca (`src/data/ai-runtimes.json`) con su nombre y la marca *Aún sin
+probar en un equipo real* mientras `verified` esté vacío; por qué es esa (*Vulkan, porque se ha
+encontrado una tarjeta gráfica que usar* · *CPU, porque no…* · *como dice Ejecutar con*) y en qué
+dispositivo se ejecuta, tal como lo dijo el propio motor (`--list-devices`); su estado (*No
+descargado · 26 MB* · *Descargando 42 % · 11 MB de 26 MB* con barra · *En pausa* · *Comprobando el
+sha256* · *Descomprimiendo* · *Instalado · stable-diffusion.cpp version unknown, commit d637cfb*,
+y *cargado: <motor>/<modelo>* mientras el modelo está en memoria); licencia y versión de la
+*release* y lo que necesita el equipo (en Windows, el entorno de Visual C++; en Linux, glibc 2.38);
+acciones *Descargar*, *Pausar*, *Reanudar*, *Eliminar* (con confirmación) e *Instalar desde un
+archivo…* (un zip descargado con el navegador, que solo se instala si su `sha256` es el fijado);
+avisos en línea si el último intento falló, si no arranca en este equipo (con el motivo, p. ej. la
+DLL que falta) o si no hay `curl` para descargar. Debajo, **Ejecutar con**: *Automático* (Vulkan
+con tarjeta gráfica, la CPU sin ella) · *Vulkan (tarjeta gráfica)* · *CPU*. Nada de esta fila se
+estima: todo lo dice el lanzador.
 
 **Post-procesado IA ▸ Equipo**: lo detectado (GPU y su VRAM dedicada,
 RAM, núcleos, WebGPU sí o no y el tamaño máximo de búfer) y la
@@ -824,7 +912,8 @@ Lo que **sí** debe funcionar de verdad en U1:
 - Entorno: cúpula procedural (gradiente suelo → horizonte → cenit con los
   valores de `src/data/environment.ts`), color plano, transparente;
   intensidad y rotación. *Cielo* y *Archivo HDRI* pueden quedar como
-  opciones presentes pero marcadas *próximamente* en auxiliar.
+  opciones presentes pero marcadas *próximamente* en auxiliar (U1; desde
+  E5 funcionan, con la imagen de fondo).
 - Imagen: exposición y transformada de vista aplicadas al visor; el resto
   guardado en el estado.
 - Animación: en U1, planos, movimientos con frase, presets, asistente y

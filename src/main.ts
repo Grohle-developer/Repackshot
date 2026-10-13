@@ -20,6 +20,10 @@ import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
 import './ui/guards.css';
+import { createSyntheticService } from './ai/synthetic';
+import { notBuiltService } from './ai/not-built';
+import type { LinearImage } from './core/ai';
+import { linearToRgba8, linearToSrgb, rgba8ToLinear } from './core/ai-image';
 import { evaluate, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
 import { activeCamera, sameView } from './core/camera';
@@ -31,6 +35,7 @@ import { buildExample } from './core/example';
 import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { exportLibrary, importLibrary } from './io/library';
 import { connectHost, downloadsFor } from './io/host';
+import { AiRuntimeClient } from './io/ai-runtime';
 import type { PendingModels } from './io/native';
 import { choosePlatform } from './io/platform';
 import { readPref, writePref } from './io/prefs';
@@ -47,7 +52,7 @@ import { exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLas
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
 import { startupUpdateCheck } from './ui/updates';
-import type { AppServices, EngineConfig, ViewportPort } from './ui/ports';
+import type { AiPort, AppServices, EngineConfig, ViewportPort } from './ui/ports';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
 import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
@@ -445,6 +450,86 @@ const files = platform.files({
   onDialogError: dialogError,
 });
 
+// AI post-processing (phase X4, AI-POST.md §4): the pipeline the interface talks to, and what it needs around it. The
+// synthetic service (no model, deterministic) runs only when the page is opened with ?ai=synthetic, for screenshots
+// and demos; every other build says the pipeline is not built yet (X3c connects the desktop one, X3d the web one).
+const aiService = params.ai === 'synthetic' ? createSyntheticService() : notBuiltService;
+
+/** A picture file as linear light (8-bit display values decoded with the sRGB curve). */
+async function decodeLinear(blob: Blob): Promise<LinearImage> {
+  const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const g = canvas.getContext('2d', { willReadFrequently: true })!;
+  g.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return rgba8ToLinear(g.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+}
+
+/** A linear image as a file in the job's format. */
+async function encodeLinear(img: LinearImage, o: Parameters<AiPort['encode']>[1]): Promise<Blob> {
+  const { width, height, rgba } = img;
+  if (o.format === 'EXR') {
+    // EXR holds premultiplied alpha.
+    const data = new Float32Array(rgba.length);
+    for (let i = 0; i < rgba.length; i += 4) {
+      const a = rgba[i + 3];
+      data[i] = rgba[i] * a;
+      data[i + 1] = rgba[i + 1] * a;
+      data[i + 2] = rgba[i + 2] * a;
+      data[i + 3] = a;
+    }
+    return new Blob([encodeExr({ width, height, data }, { alpha: o.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
+  }
+  if (o.format === 'PNG' && o.bitDepth === 16) {
+    const words = new Uint16Array(rgba.length);
+    for (let i = 0; i < rgba.length; i += 4) {
+      for (let c = 0; c < 3; c++) words[i + c] = Math.round(Math.min(1, linearToSrgb(rgba[i + c])) * 65535);
+      words[i + 3] = Math.round(Math.max(0, Math.min(1, rgba[i + 3])) * 65535);
+    }
+    return new Blob([(await encodePng16({ width, height, data: words }, { dpi: o.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
+  }
+  return encodePixels({ width, height, data: linearToRgba8(img) }, o.format === 'JPEG' ? 'JPEG' : 'PNG', o.jpegQuality / 100, { dpi: o.dpi });
+}
+
+const aiPort: AiPort | null = preview
+  ? {
+      service: aiService,
+      async frame(req) {
+        const view = { width: req.width, height: req.height, maxSamples: 1, maxSeconds: 0, ...(req.camera ? { camera: req.camera } : {}) };
+        // The ids are the engine's own (io/rsb.ts); the passes and, in Fast mode, the picture come from three.js.
+        const out = preview!.aiFrame({ width: req.width, height: req.height, ...(req.camera ? { camera: req.camera } : {}), ids: projectScene(store.get(), view).ids, colour: req.fullEngine === null });
+        if (out.rgba) return { image: rgba8ToLinear(out.rgba, req.width, req.height), passes: out.passes };
+        // "Use the full engine for the preview": the path tracer's picture at preview size, the job's budget.
+        const fe = req.fullEngine!;
+        const done = await services.renderFrame({
+          width: req.width,
+          height: req.height,
+          finishBy: fe.finishBy,
+          maxSamples: fe.maxSamples,
+          maxSeconds: fe.maxSeconds,
+          transparent: false,
+          format: 'PNG',
+          bitDepth: 8,
+          jpegQuality: 92,
+          dpi: 72,
+          ...(req.camera ? { camera: req.camera } : {}),
+          ...(req.signal ? { signal: req.signal } : {}),
+        });
+        return { image: await decodeLinear(done.file), passes: out.passes };
+      },
+      async passes(req) {
+        const view = { width: req.width, height: req.height, maxSamples: 1, maxSeconds: 0, ...(req.camera ? { camera: req.camera } : {}) };
+        return preview!.aiFrame({ width: req.width, height: req.height, ...(req.camera ? { camera: req.camera } : {}), ids: projectScene(store.get(), view).ids, colour: false }).passes;
+      },
+      decode: decodeLinear,
+      encode: encodeLinear,
+      // The prompt from the scene's materials and lights arrives with X3a (src/ai/prompt.ts); the negative is fixed (AI-POST.md §3.2).
+      scenePrompt: () => ({ prompt: '', negative: 'do not change shapes, text or logos' }),
+    }
+  : null;
+
 const LAST_PROJECT_HANDLE = 'project:last';
 const services: AppServices = {
   viewport,
@@ -483,7 +568,7 @@ const services: AppServices = {
   results: {
     persistent: async () => (await resultsReady).persistent,
     list: async () => (await resultsReady).list(),
-    add: async (meta, file, display) => (await resultsReady).add(meta, file, display),
+    add: async (meta, file, display, ai) => (await resultsReady).add(meta, file, display, ai),
     get: async (id) => (await resultsReady).get(id),
     remove: async (id) => (await resultsReady).remove(id),
     clear: async () => (await resultsReady).clear(),
@@ -533,6 +618,7 @@ const services: AppServices = {
     // The web version: the last project file's handle, next to the output folders' handles (General ▸ On start).
     remember: { put: async (h) => (await resultsReady).putHandle(LAST_PROJECT_HANDLE, h), get: async () => (await resultsReady).getHandle(LAST_PROJECT_HANDLE) },
   }),
+  ai: aiPort,
   library: {
     export: (lib) => new Blob([exportLibrary(lib)], { type: 'application/json' }),
     import: importLibrary,
@@ -599,6 +685,16 @@ const services: AppServices = {
       return null;
     }
   },
+  images: {
+    async loadHdri(file) {
+      const { loadHdri } = await import('./io/hdri');
+      return loadHdri(file.name, new Uint8Array(await file.arrayBuffer()));
+    },
+    async loadBackplate(file) {
+      const { loadBackplate } = await import('./io/hdri');
+      return loadBackplate(file.name, new Uint8Array(await file.arrayBuffer()));
+    },
+  },
 };
 
 const app = mountApp(appEl, store, ui, services);
@@ -613,6 +709,8 @@ void nativeReady.then(async (native) => {
     onClose: () => requestCloseWindow(app.ctx),
     openExternal: (url) => void services.openExternal(url).catch((err: unknown) => console.warn(`open ${url}: ${err instanceof Error ? err.message : String(err)}`)),
   });
+  // The inference runtime of the AI post-processing (X3b): Settings ▸ AI post-processing ▸ Runtime.
+  if ((native.info.aiApi ?? 0) >= 1) services.aiRuntime = new AiRuntimeClient(native);
   const i = native.info;
   // The manager has read what the installer chose (if anything) once it has started.
   await modelsService.started;

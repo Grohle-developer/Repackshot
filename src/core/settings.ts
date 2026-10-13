@@ -135,6 +135,8 @@ export interface Settings {
   'ai.guardDeltaE': number;
   'ai.guardDeltaE95': number;
   'ai.guardEdgePx': number;
+  /** Desktop: the inference runtime build, Automatic (Vulkan with a GPU, the CPU without one) or forced (AI-POST.md §7.1). */
+  'ai.backend': 'AUTO' | 'VULKAN' | 'CPU';
 
   'storage.historyCount': number;
   'storage.historyMB': number;
@@ -241,6 +243,7 @@ export function defaultSettings(): Settings {
     'ai.guardDeltaE': 2,
     'ai.guardDeltaE95': 3,
     'ai.guardEdgePx': 2,
+    'ai.backend': 'AUTO',
 
     'storage.historyCount': 50,
     'storage.historyMB': 500,
@@ -418,6 +421,9 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   // AI post-processing ▸ Models and Hardware
   row('ai.models', 'ai', 'models', kw('models, download, z-image, flux, qwen, stable diffusion, licence', 'modelos, descargar, z-image, flux, qwen, stable diffusion, licencia')),
   row('ai.import', 'ai', 'models', kw('import model, safetensors, gguf, onnx, manifest', 'importar modelo, safetensors, gguf, onnx, manifiesto')),
+  // AI post-processing ▸ Runtime (desktop: stable-diffusion.cpp, X3b)
+  row('ai.runtime', 'ai', 'runtime', kw('runtime, stable-diffusion.cpp, sd.cpp, vulkan, cpu, download, inference', 'motor de ejecución, stable-diffusion.cpp, sd.cpp, vulkan, cpu, descargar, inferencia'), { desktopOnly: true }),
+  setting('ai.backend', 'ai', 'runtime', choice(['AUTO', 'VULKAN', 'CPU']), kw('run on, backend, vulkan, cpu, graphics card, force', 'ejecutar con, vulkan, cpu, tarjeta gráfica, forzar'), { aux: true, desktopOnly: true }),
   row('ai.hardware', 'ai', 'hardware', kw('hardware, gpu, vram, ram, webgpu, recommendation', 'equipo, gpu, vram, ram, webgpu, recomendación')),
 
   // Storage
@@ -767,6 +773,8 @@ export function withProjectDefaults(state: ProjectState, s: Settings): ProjectSt
     maxSamples: samples,
     maxSeconds: s['render.seconds'],
     quality: tier ?? 'CUSTOM',
+    // Settings ▸ AI post-processing ▸ Default intervention is also where a new project's window starts (UI.md §2.9).
+    ai: { ...state.render.ai, intervention: s['ai.intervention'] },
   });
   return {
     ...state,

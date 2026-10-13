@@ -377,4 +377,27 @@ describe('the results history on the desktop', () => {
     expect(await store.list()).toEqual([]);
     expect(vi.isMockFunction(store.add)).toBe(false);
   });
+
+  it('keeps the image the AI made next to the engine’s, through the launcher’s endpoints and nowhere else (X4)', async () => {
+    const l = fakeLauncher();
+    const store = launcherResultsStore(new (await import('../src/io/native-store')).NativeStore(l.client), { count: 10, bytes: 1e9 });
+    const aiMeta = (id: string, at: number, bytes: number): ResultMeta => ({ ...meta(id, at), ai: { name: `${id}_AI.png`, thumb: '', bytes, report: { verdict: 'ACCEPTED', usedFraction: 1, attempts: 1, size: { ok: true, value: 1, limit: 1 }, outside: { ok: true, value: 0, limit: 0 }, edges: { ok: true, value: 0, limit: 2 }, detail: { ok: true, value: 1, limit: 0.9 }, focus: { ok: true, value: 0, limit: 0.25 }, materials: [], modelKey: 'SYNTHETIC', runtime: 'synthetic', seed: 0, seconds: 0 } } });
+    // With an AI image: three files go to the launcher, in this order (the record last).
+    await store.add(aiMeta('r1', 1, 3), new Blob(['engine'], { type: 'image/png' }), null, new Blob(['ai!'], { type: 'image/png' }));
+    expect(l.calls.filter((c) => c.includes('store/results/r1'))).toEqual(['PUT /api/store/results/r1', 'PUT /api/store/results/r1/ai', 'PUT /api/store/results/r1/meta']);
+    const back = await store.get('r1');
+    expect(await back?.file.text()).toBe('engine');
+    expect(await back?.ai?.text()).toBe('ai!');
+    expect((await store.list())[0].bytes).toBe(9);
+    // Without one, no AI file is asked for or sent; a REJECTED report (bytes 0) has the record and no image.
+    await store.add(meta('r2', 2), new Blob(['engine'], { type: 'image/png' }), null);
+    await store.add(aiMeta('r3', 3, 0), new Blob(['engine'], { type: 'image/png' }), null);
+    expect(l.calls.some((c) => c.endsWith('r2/ai') || c.endsWith('r3/ai'))).toBe(false);
+    expect((await store.get('r2'))?.ai).toBeUndefined();
+    expect((await store.get('r3'))?.ai).toBeUndefined();
+    expect(l.calls.some((c) => c.includes('r2/ai') || c.includes('r3/ai'))).toBe(false);
+    // Eviction by size counts both images and deletes them with the result.
+    expect(await store.setLimits!({ count: 10, bytes: 12 })).toEqual(['r1']);
+    expect(l.results.has('r1')).toBe(false);
+  });
 });

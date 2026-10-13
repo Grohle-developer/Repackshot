@@ -17,7 +17,7 @@ no una iniciativa dentro de un PR.
 | Vista previa | **three.js** (`WebGLRenderer`) | Rasterizado rápido para orbitar, seleccionar y colocar mientras la cámara se mueve. **No es el motor**: es la vista interactiva |
 | Motor de render | **Rust, desde cero, sin dependencias externas** (`engine/`): trazador de caminos en CPU que compila a **WebAssembly** para el navegador y a **binario nativo** para la línea de comandos y el escritorio | Corre en cualquier sistema y arquitectura (x86_64, ARM64, RISC-V, wasm32) sin GPU ni drivers; el mismo código renderiza en el navegador, en el runner de CI y en el escritorio; determinista; eficiente por diseño (BVH ancho con SIMD, muestreo de baja discrepancia, colas de baldosas) |
 | Importación | En `src/io/`, cargada bajo demanda: `GLTFLoader`, `FBXLoader`, `3MFLoader`, `PLYLoader`, `ColladaLoader`, `USDZLoader` y `3DMLoader` de three (MIT); **rhino3dm** (openNURBS, MIT) para `.3dm`; **occt-import-js** (LGPL-2.1, OpenCascade compilado a wasm) para STEP e IGES, como **única excepción LGPL** y aislada (ver abajo); OBJ y STL propios. **Decidido**: estas bibliotecas se aceptan en la capa `io/`, se cargan solo al importar y nunca entran en el motor | La importación es el tronco del producto: lo que la gente exporta desde Rhino, SolidWorks, Fusion, Maya, ZBrush y KeyShot tiene que entrar con un arrastre. Los formatos nativos propietarios de esos programas no se leen (`SPEC.md` §5) |
-| Post-procesado IA (opcional) | **Decidido** en `AI-POST.md` §7. Escritorio, todo nativo: **stable-diffusion.cpp** (MIT, sobre ggml, MIT) como **proceso aparte** que gobierna el lanzador, nunca enlazado ni dentro de `engine/`, en compilaciones oficiales fijadas con `sha256` en `src/data/ai-runtimes.json` y descargadas bajo demanda como los modelos (X3b); la guarda y el trabajo con píxeles en `engine/crates/rt-post`, Rust sin dependencias (X3a). Web: **ONNX Runtime Web** (MIT) con WebGPU en workers y `rt-post` como `post.wasm` aparte (X3d). Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado con `sha256`, nunca en el repositorio | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor (`rt-core` no sabe que existe) |
+| Post-procesado IA (opcional) | **Decidido** en `AI-POST.md` §7. Escritorio, todo nativo: **stable-diffusion.cpp** (MIT, sobre ggml, MIT) como **proceso aparte** que gobierna el lanzador, nunca enlazado ni dentro de `engine/`, en compilaciones oficiales fijadas con tamaño y `sha256` en `src/data/ai-runtimes.json` (*release* `master-959-d637cfb`: Vulkan y CPU para Windows y Linux x86_64, X3b), que el lanzador descarga bajo demanda desde *Ajustes* con el `curl` del sistema, descomprime con su propio lector de zip y arranca como `sd-server` en una dirección de bucle local aleatoria; no van en el instalador ni en los portables, y no se redistribuyen; la guarda y el trabajo con píxeles en `engine/crates/rt-post`, Rust sin dependencias (X3a). Web: **ONNX Runtime Web** (MIT) con WebGPU en workers y `rt-post` como `post.wasm` aparte (X3d). Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado con `sha256`, nunca en el repositorio | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor (`rt-core` no sabe que existe) |
 | Tests | **vitest** (modelo e interfaz), **cargo test** (motor: escenas analíticas, determinismo, paridad wasm/nativo), **playwright-core** con el Chromium local para capturas | La suite de la interfaz corre sin GPU; la del motor corre en cualquier CPU |
 | Empaquetado de escritorio | **Lanzador propio en Rust, solo `std`** (`engine/crates/rt-app`, binario `repackshot`), decidido para la primera release (P2). Sirve la interfaz en `127.0.0.1`, la abre en una ventana de aplicación de Edge (Windows) o Chromium/Chrome (Linux) y renderiza con `rt-core` **en nativo** con todos los hilos. Windows x86_64 compilado en cruzado con mingw-w64; Linux x86_64 estático con musl; instalador de Windows con **NSIS** (herramienta de construcción, no dependencia) | **Tauri queda descartado**: arrastra cientos de *crates* de crates.io (bloqueado en este entorno) y necesita compilar en Windows (sin minutos de Actions). El lanzador propio mantiene el proyecto sin dependencias en Rust, la interfaz web no cambia y Edge viene con Windows. Ver §5.5 |
 
@@ -61,6 +61,10 @@ un `README.txt` con la versión y los enlaces al fuente;
 `tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable, **fijado a 1.97.0 en CI** (`RUST_VERSION` y `RUSTUP_TOOLCHAIN` en `engine.yml` y `release.yml`, la misma versión que las máquinas de desarrollo: cada Rust nuevo trae *lints* nuevos de clippy y con `-D warnings` pondría el CI en rojo sin que nada cambie; subir de versión es un cambio a propósito que arregla sus *lints*),
 objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 `riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
+Los HDRI (`.hdr` y `.exr`) se leen con lectores propios, en la interfaz
+(`src/io/hdri.ts`) y en el motor (`rt-core`: RGBE, OpenEXR e *inflate*);
+`HDRLoader` y `EXRLoader` de three solo aparecen en los tests, como lector
+independiente con el que comparar (E5). E5 no añade dependencias.
 
 ---
 
@@ -79,6 +83,8 @@ src/
     animation.ts            planos, movimientos, evaluación en el tiempo
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
+    images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5)
+    sky.ts                  el cielo de Preetham del motor, portado para la vista previa (E5)
     faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
     material-drop.ts        a qué llega una suelta de material y qué asigna (U7)
     box-select.ts           selección por caja: geometría en pantalla, ventana y cruce, qué gesto la arma (U7)
@@ -89,15 +95,20 @@ src/
   data/                     CATÁLOGOS. Solo datos y tipos (§3)
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
-    preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara
+    preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
+    preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4)
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
-  ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core; workers con ONNX Runtime Web; la guarda es TypeScript puro
+  ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core (y data), nunca al revés; la guarda NO es TypeScript: es rt-post
+    post-wasm.ts            envoltura tipada de public/engine/post.wasm (plan, condicionamiento, aceptar) y el conductor runGuarded; worker y Node
+    prompt.ts               el prompt de la escena (materiales, luces, estilo) y el negativo fijo; la tabla de materiales de la guarda
+    synthetic.ts            el servicio sintético de X4 (sin modelo, determinista, informe medido); not-built.ts, el de una versión sin tubería
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
     project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2)
+    hdri.ts                 lectores propios de RGBE y OpenEXR, imagen de fondo, copia para la vista previa (E5)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
     ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
@@ -118,12 +129,17 @@ tools/                      scripts de desarrollo: capturas, generadores, hojas 
 docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
-  crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG
+  crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG;
+                            imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5)
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG con hilos; hojas de contacto
+                            (las escenas de E5 en scenes.rs)
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
+  crates/rt-post/           la guarda del post-procesado IA y todo su trabajo con píxeles (AI-POST.md §7.2); rt-core no la conoce
+  crates/rt-post-wasm/      exportaciones extern "C" de rt-post → public/engine/post.wasm
 packaging/                  guiones de empaquetado: portables de Windows y Linux, instalador NSIS (P2)
 public/engine/rt.wasm       el motor compilado para el navegador (generado por npm run engine:build; no se sube)
+public/engine/post.wasm     la guarda IA compilada (rt-post-wasm), generada por el mismo guion; tampoco se sube
 ```
 
 **Regla de dependencias**: `ui → core`, `render → core`, `io → core`,
@@ -305,7 +321,7 @@ export interface RenderEngine {
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 
-Vive en `engine/`, un workspace de Cargo con cuatro *crates*:
+Vive en `engine/`, un workspace de Cargo con seis *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
@@ -313,11 +329,13 @@ Vive en `engine/`, un workspace de Cargo con cuatro *crates*:
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
 | `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
+| `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlazará `rt-app` (X3c) |
+| `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
 **Sin dependencias externas** quiere decir exactamente eso: ningún
 *crate* de crates.io en ningún *crate* del workspace. `Cargo.lock` solo
-lista `rt-core`, `rt-cli`, `rt-wasm` y `rt-app`, y CI falla si aparece un
-`source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
+lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post` y `rt-post-wasm`,
+y CI falla si aparece un `source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
 baja discrepancia, zlib/PNG, lectores HDR, hilos) se escribe aquí.
 Fórmulas y tablas de la literatura pública (PCG, Sobol con números de
 dirección de Joe y Kuo, el ajuste ACES, el modelo de cielo) se citan en
@@ -340,7 +358,11 @@ con cualquier número de hilos o workers: el muestreador se siembra por
 (baldosa, píxel, muestra), nunca por hilo, y la acumulación es por
 baldosa en orden fijo. Un test compara el hash de una imagen de
 referencia entre el binario nativo y el wasm (paridad), y entre 1 y N
-hilos.
+hilos. La guarda IA tiene la misma garantía: `cargo test -p rt-post`
+fija en `tests/fixtures/ai-guard.json` el *hash* de la imagen entregada,
+el de lo que recibe el modelo y el JSON del informe de cinco escenarios,
+y `tests/ai-post-wasm.test.ts` los repite con el `post.wasm` real (en CI,
+el trabajo del motor) y exige lo mismo bit a bit.
 
 **Eficiencia, por diseño** (los números son objetivos medidos, no
 puertas de CI): BVH con construcción SAH por *binning* y nodos anchos
@@ -364,11 +386,17 @@ banderas) es opcional: sin ella, cada malla es una instancia identidad.
 Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 `rt-core`):
 
-- **`MATL`** (60 B; los de 56 B se leen con `flags = 0`): `kind` 0
-  principal (Lambert + GGX con barniz; `transmission` se ignora hasta E5),
-  1 vidrio (E5; hasta entonces se pinta como 0), 2 emisivo (radiancia
-  `emission × emission_power`); desconocido = 0. `flags` bit 0: el emisor
-  se muestrea también como luz.
+- **`MATL`** (72 B desde E5; los de 56 y 60 B se leen con los valores por
+  defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
+  barniz; la parte `transmission` es vidrio claro: reflexión y refracción
+  GGX con el Fresnel dieléctrico exacto), 1 vidrio (el principal sin
+  metal), 2 emisivo (radiancia `emission × emission_power`); desconocido =
+  0. `flags` bit 0: el emisor se muestrea también como luz (por su flujo);
+  bit 1: pared fina (sin interior: la luz y los rayos de sombra pasan
+  rectos). E5 añade `opacity` (1; por debajo, recorte estocástico),
+  `anisotropy` (0) y `absorption_mm` (0; por encima, Beer–Lambert dentro
+  del sólido: `base_color` es lo que conserva la luz blanca tras esos
+  milímetros).
 - **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
   (L4; se leen y se ignoran); ≥ 5 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
@@ -376,10 +404,23 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   = irradiancia en W/m², disco de `angle_deg`. `flags` bit 0 *glossy*
   (ilumina todos los lóbulos y se ve en reflejos; sin él solo difuso por
   NEE), bit 1 visible a cámara.
-- **`ENVR`** `kind`: 0 cúpula (lineal en z: suelo −1, horizonte 0, cénit
-  +1, × `strength`), 1 plano, 2 cielo y 3 HDRI (E5; hasta entonces
-  cúpula); `background_mode`: 0 entorno, 1 color, 2 transparente (alfa
-  0), 3 imagen de fondo (M2; hasta entonces 1).
+- **`ENVR`** (80 B desde E5) `kind`: 0 cúpula (lineal en z: suelo −1,
+  horizonte 0, cénit +1, × `strength`), 1 plano, 2 cielo (Preetham, con
+  `sky_turbidity` y el sol en `sun_azimuth_deg` / `sun_elevation_deg`,
+  escalado a la irradiancia horizontal de la cúpula de los mismos valores;
+  suelo neutro bajo el horizonte), 3 HDRI (el mapa `hdri_map`,
+  equirectangular en la convención de three.js, girado `rotation_deg` en
+  torno a Z; sin mapa, la cúpula); `background_mode`: 0 entorno, 1 color,
+  2 transparente (alfa 0), 3 imagen de fondo (`backplate_map`, solo para
+  los rayos de cámara, colocada en el marco `backplate_rect` según
+  `backplate_fit`: 0 llenar, 1 encajar, 2 estirar; sin mapa, como 1).
+- **`BMAP`** (E5, nueva, repetible): `u32 format width height byte_len`,
+  los datos y relleno a 4 bytes. `format` 0 RGB de 8 bits sRGB, 1 RGBA de
+  8 bits, 2 RGB `f32` lineal, 16 un `.hdr` entero, 17 un `.exr` entero
+  (de líneas: sin compresión, RLE, ZIPS o ZIP). El entorno nombra un mapa
+  por su posición entre las `BMAP` (`0xffffffff`: ninguno). Un RSB sin
+  `BMAP` conserva los mapas cargados, como uno sin `MESH` conserva las
+  mallas.
 - **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
   lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
 - **`RNDR`** (36 B): además `max_depth` (0 = 8, tope 1024) y
@@ -399,8 +440,10 @@ las mallas declaran siempre material 0 y el material real va en `INST`,
 que se escribe siempre. Unidades: milímetros, Z arriba, sensor de 36 mm
 en el lado largo; flujo de un panel = π/4 × potencia del rig × tamaño²
 (convención de las luces de área de Blender Cycles, L = P / (4 A), con la
-que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits (texturas, HDRI) viajan como secciones
-propias cuando lleguen (E5, M2).
+que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits viajan en secciones `BMAP`
+(E5: el HDRI y la imagen de fondo; las texturas de M2 irán igual); la
+clave de mallas del escritor TypeScript incluye los ids de las imágenes,
+de modo que un cambio de imagen manda la escena entera.
 
 ### 5.3 · En el navegador: workers
 
@@ -567,6 +610,23 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
    procesos del sistema y sin `unsafe`); lo usan el instalador y
    *Ajustes ▸ Post-procesado IA ▸ Equipo*.
+7. **Post-procesado IA, el motor de ejecución** (X3b, `src/ai/`): la compilación de
+   stable-diffusion.cpp que elige la regla de `src/data/ai-runtimes.json` (Vulkan si el equipo
+   tiene GPU que usar, CPU si no, o la que se fuerce) se descarga con el `curl` del sistema
+   (solo `https`, reanudable, a `<datos>/ai/runtimes/<sha256>.zip.part`), se comprueba con el
+   SHA-256 propio (si no coincide, no se instala nada), se descomprime con un lector de zip e
+   *inflate* propios (RFC 1951) en `<datos>/ai/runtimes/<sha256>/` y se le pregunta
+   `--version` y `--list-devices`. Para inferir, el lanzador arranca `sd-server` con los
+   argumentos de la familia del modelo (rutas del almacén de modelos), sin ventana de consola,
+   en `127.a.b.c` aleatoria y puerto libre, lo mantiene cargado entre llamadas, sigue su
+   progreso en la salida estándar, lo para si calla o tarda más de la cuenta, si se cancela, a
+   los 5 min sin uso y al cerrar, y limpia el que dejara un arranque anterior. API:
+   `GET /api/ai/runtime` (un `AiRuntimeStatus` de `src/core/ai.ts` y más),
+   `/api/ai/runtimes/<clave>[/download|/pause|/import|/probe]`, y **`POST /api/ai/run`**: una
+   inferencia *img2img* en crudo, sin guarda (imagen y control en PNG), con progreso por
+   `GET /api/ai/run/<id>?after=n`, imagen en `/image` y cancelación con `DELETE`, como los
+   trabajos de render. La guarda, los mosaicos y la tubería son X3a y X3c. Contrato completo en
+   `engine/crates/rt-app/README.md`.
 
 ## 6 · Interfaz (`src/ui/`)
 
@@ -663,4 +723,12 @@ para después. El esquema versiona solo `state`; las migraciones viven en
 `io/project.ts` y se prueban con un fichero fijo por versión
 (`tests/fixtures/project-v1.json`, `project-v2.json`). Al abrir, los ids
 de malla que chocarían con otra geometría pasan a un prefijo `prjN:`,
-porque la vista previa y los workers cachean por id.
+porque la vista previa y los workers cachean por id. **Imágenes del
+entorno** (E5): un bloque opcional `"images": [{ "id", "name", "file" }]`
+con el HDRI y la imagen de fondo como los archivos que eran (`file` en
+base64); se escribe solo cuando el entorno tiene alguna. Al abrir se
+decodifican otra vez (`placeImages`): una imagen cuyo id ya nombra otra en
+la sesión recibe un id nuevo, y una que falta o no se lee se quita del
+entorno (ilumina la cúpula, se ve el color) con el aviso `MISSING_IMAGES`,
+sin impedir abrir. El esquema sigue en 2: los campos nuevos del entorno
+tienen valor por defecto.

@@ -112,18 +112,22 @@ export class NativeStore {
     return (await this.getJson<{ results: unknown[] }>('/api/store/results')).results;
   }
 
-  /** A result: its file, its picture (when the file is one a page cannot show), then its record. */
-  async putResult(id: string, meta: unknown, file: Blob, display: Blob | null): Promise<void> {
+  /** A result: its file, its picture (when the file is one a page cannot show), the image the AI made (X4), then its record. */
+  async putResult(id: string, meta: unknown, file: Blob, display: Blob | null, ai: Blob | null = null): Promise<void> {
     const name = checkStoreName(id);
     const type = file.type || 'image/png';
     await this.put(`/api/store/results/${name}?type=${encodeURIComponent(type)}`, file, type);
     if (display) await this.put(`/api/store/results/${name}/display`, display, 'image/png');
+    if (ai) {
+      const aiType = ai.type || type;
+      await this.put(`/api/store/results/${name}/ai?type=${encodeURIComponent(aiType)}`, ai, aiType);
+    }
     await this.put(`/api/store/results/${name}/meta`, JSON.stringify(meta), 'application/json');
   }
 
-  /** A result's file (`display`: its picture), or null when it is not there. */
-  async resultFile(id: string, display = false): Promise<Blob | null> {
-    const res = await this.client.request(`/api/store/results/${checkStoreName(id)}${display ? '/display' : ''}`);
+  /** A result's file (`true`: its picture; `'ai'`: the image the AI made), or null when it is not there. */
+  async resultFile(id: string, part: boolean | 'ai' = false): Promise<Blob | null> {
+    const res = await this.client.request(`/api/store/results/${checkStoreName(id)}${part === 'ai' ? '/ai' : part ? '/display' : ''}`);
     if (res.status === 404) return null;
     if (!res.ok) throw new NativeError(res.status, 'http', `${res.status}`);
     const blob = await res.blob();

@@ -8,6 +8,13 @@
 export const PASS_KEYS = ['albedo', 'normal', 'depth', 'partId', 'materialId', 'coc'] as const;
 export type PassKey = (typeof PASS_KEYS)[number];
 
+/**
+ * `partId` and `materialId` of the studio floor (the RSB floor, not an instance). The floor is a surface
+ * the AI may relight (its contact shadows are what Light and Bounce improve), unlike the background (0:
+ * environment, backplate, transparency, light panels), which never changes.
+ */
+export const FLOOR_ID = 0xffff_ffff;
+
 /** Floats (or u32 for the ids) per pixel of each pass. */
 export const PASS_CHANNELS: Readonly<Record<PassKey, 1 | 3>> = { albedo: 3, normal: 3, depth: 1, partId: 1, materialId: 1, coc: 1 };
 
@@ -32,15 +39,15 @@ export function passMask(keys: readonly PassKey[]): number {
 export interface RenderPasses {
   width: number;
   height: number;
-  /** Linear RGB, 3 floats a pixel: the base colour at the first non-specular hit (a diffuse material: its colour). */
+  /** Linear RGB, 3 floats a pixel: the base colour of the material at the first hit (no specular bounce is followed; glass gives its own tint). */
   albedo?: Float32Array;
-  /** World-space (Z up) unit shading normal at the first hit, 3 floats a pixel. */
+  /** World-space (Z up) unit shading normal at the first hit, turned to face the camera (both sides of a triangle count), 3 floats a pixel. */
   normal?: Float32Array;
   /** Distance along the camera's view axis to the first hit, in scene units. */
   depth?: Float32Array;
-  /** RSB instance index + 1 of the first hit: io/rsb.ts maps it to the part, as `pick` does. 0 is background. */
+  /** RSB instance index + 1 of the first hit: io/rsb.ts maps it to the part, as `pick` does. 0 is background; the studio floor is FLOOR_ID. */
   partId?: Uint32Array;
-  /** RSB material index + 1 of the first hit. 0 is background. */
+  /** RSB material index + 1 of the first hit. 0 is background; the studio floor is FLOOR_ID. */
   materialId?: Uint32Array;
   /** Circle-of-confusion diameter in output pixels from the thin-lens camera: 0 on the focus plane and with depth of field off. */
   coc?: Float32Array;

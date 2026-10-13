@@ -64,6 +64,7 @@ export const ICONS = {
   arrowDown: ['M12 5v14', 'M6 13l6 6 6-6'],
   keyboard: ['M3 7h18v10H3z', 'M7 11h.01', 'M11 11h.01', 'M15 11h.01', 'M8 14h8'],
   info: ['c:12,12,9', 'M12 11v6', 'M12 7.5v.1'],
+  refresh: ['M20 12a8 8 0 0 0-14.3-4.9', 'M5 3.5v4h4', 'M4 12a8 8 0 0 0 14.3 4.9', 'M19 20.5v-4h-4'],
   settings: ['c:12,12,3', 'M12 3v3', 'M12 18v3', 'M3 12h3', 'M18 12h3', 'M5.6 5.6l2.1 2.1', 'M16.3 16.3l2.1 2.1', 'M5.6 18.4l2.1-2.1', 'M16.3 7.7l2.1-2.1'],
 } as const satisfies Record<string, readonly string[]>;
 

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   carryRuntime,
+  DEFAULT_AI,
   defaultRenderSettings,
   estimateSamples,
   estimateSeconds,
@@ -75,10 +76,10 @@ describe('render settings', () => {
     expect([s.width, s.height]).toEqual([2160, 2700]);
   });
 
-  it('video and AI stay off until they exist', () => {
-    const s = patchSettings(defaultRenderSettings(), { animation: { ...defaultRenderSettings().animation, output: 'VIDEO' }, ai: { enabled: true } });
+  it('video stays off until it exists; the AI switch is the interface\'s to gate (AiPostService.status), not the store\'s', () => {
+    const s = patchSettings(defaultRenderSettings(), { animation: { ...defaultRenderSettings().animation, output: 'VIDEO' }, ai: { ...defaultRenderSettings().ai, enabled: true } });
     expect(s.animation.output).toBe('FRAMES');
-    expect(s.ai.enabled).toBe(false);
+    expect(s.ai.enabled).toBe(true);
   });
 
   it('a new frame rate keeps the range where it was in time', () => {
@@ -215,7 +216,7 @@ describe('migration of a U1 project', () => {
     expect([r.width, r.height, r.aspect, r.quality, r.maxSamples, r.maxSeconds, r.finishBy, r.format, r.transparent, r.bitDepth, r.dpi]).toEqual([
       1080, 1350, 0.8, 'FINAL', 1024, 300, 'FIRST', 'JPEG', false, 8, 300,
     ]);
-    expect([r.mode, r.name, r.destination, r.camera, r.ai]).toEqual(['IMAGE', '{project}_{camera}_{n}', { kind: 'DOWNLOADS' }, { kind: 'ACTIVE' }, { enabled: false }]);
+    expect([r.mode, r.name, r.destination, r.camera, r.ai]).toEqual(['IMAGE', '{project}_{camera}_{n}', { kind: 'DOWNLOADS' }, { kind: 'ACTIVE' }, { ...DEFAULT_AI }]);
     // Nothing runs after a load.
     expect(r.running).toBeNull();
     const [a, b, c] = r.queue as RenderJob[];

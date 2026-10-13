@@ -1,0 +1,11 @@
+[package]
+name = "rt-post"
+description = "Repackshot AI post-processing guard: conditioning, tiles, the deterministic guard, its checks and the step machine with retries. std only, no unsafe."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Deterministic maths (fmath) and the tone curves, so the guard computes the same bits everywhere.
+rt-core = { path = "../rt-core" }

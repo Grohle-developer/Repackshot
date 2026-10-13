@@ -146,7 +146,7 @@ function paramControl(ctx: Ctx, scope: Scope, matId: MaterialId, spec: ParamSpec
     }, t(dyn(`param.${spec.key}`)));
     ctrl = c as Control<never>;
   } else if (spec.kind === 'select') {
-    const opts = (spec.options ?? []).map((o) => ({ value: o, label: t(dyn(`${spec.key === 'weave' ? 'weave' : 'emitKind'}.${o}`)) }));
+    const opts = (spec.options ?? []).map((o) => ({ value: o, label: t(dyn(`${spec.key}.${o}`)) }));
     ctrl = select(opts, String(cur(mat0)), (v) => setv(v), t(dyn(`param.${spec.key}`))) as Control<never>;
   } else if (spec.min !== undefined && spec.max !== undefined && spec.max <= 2.5) {
     ctrl = slider({ value: Number(cur(mat0)), min: spec.min, max: spec.max, step: spec.step ?? 0.01, unit: spec.unit, ariaLabel: t(dyn(`param.${spec.key}`)), onChange: (v, g) => setv(v, g) }) as Control<never>;

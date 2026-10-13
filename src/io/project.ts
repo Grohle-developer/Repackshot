@@ -4,7 +4,8 @@
 //    "format": "repackshot-project",
 //    "schema": 2,
 //    "state": { ...ProjectState, as the store has it },
-//    "meshes": [ { "id": "stl:1:n3", "glb": "<base64>", "sharpEdges": "<base64>", "triangleSource": "<base64>" }, ... ]
+//    "meshes": [ { "id": "stl:1:n3", "glb": "<base64>", "sharpEdges": "<base64>", "triangleSource": "<base64>" }, ... ],
+//    "images": [ { "id": "hdri:1", "name": "studio.hdr", "file": "<base64>" }, ... ]
 //   }
 //
 // The state keeps only a `MeshRef` per part (id, counts, bounds: core/meshes.ts), so each mesh that a part uses
@@ -17,6 +18,11 @@
 // `schema` versions the state. The meshes block is an addition of the envelope that older files (schema 1, and
 // the schema-2 files written before this block) do not have: they load without geometry (the example's is
 // regenerated, anything else is reported as missing) so they keep opening in every version.
+//
+// `images` (E5) holds the environment's HDRI and background image as the files they were read from (the state
+// keeps an `ImageRef`: core/images.ts). It is written only when the environment has one. Its images are decoded
+// again on open; one that is missing or does not decode is dropped from the environment (the studio dome lights,
+// the colour shows) and reported, never a reason not to open the project.
 //
 // Schema history (each step a pure function over the state, applied in order on load):
 //   1 (U1) — the state as it was.
@@ -37,6 +43,7 @@ import {
   type MeshData,
   type MeshId,
 } from '../core/meshes';
+import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
 import { migrateRender } from '../core/render';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
 import { emptyBox } from '../core/math';
@@ -44,6 +51,7 @@ import { createInitialState, type ProjectState } from '../core/store';
 import { baseMeshId } from '../core/transform';
 import { base64ToBytes, bytesToBase64 } from './base64';
 import { glbToMesh, meshToGlb, packUint32, unpackUint32 } from './glb';
+import type { PixelDecoder } from './hdri';
 
 export const PROJECT_FORMAT = 'repackshot-project';
 export const PROJECT_SCHEMA = 2;
@@ -88,6 +96,20 @@ function meshEntry(id: MeshId, data: MeshData): string {
   return JSON.stringify(entry);
 }
 
+/** The environment's image slots that hold an image. */
+function environmentImages(state: ProjectState): ['hdri' | 'backplate', ImageRef][] {
+  const env = state.environment;
+  const out: ['hdri' | 'backplate', ImageRef][] = [];
+  if (env.hdri) out.push(['hdri', env.hdri]);
+  if (env.backplate) out.push(['backplate', env.backplate]);
+  return out;
+}
+
+/** One entry of the `images` block, as a line of JSON. */
+function imageEntry(ref: ImageRef, data: ImageData): string {
+  return JSON.stringify({ id: ref.id, name: ref.name, file: bytesToBase64(data.bytes) });
+}
+
 /**
  * The project as a file: the state and every mesh its parts use. The file is built from pieces (one per mesh),
  * never one big string, so a model of millions of triangles costs time and memory linear in its size. A part
@@ -114,7 +136,22 @@ export function serializeProject(state: ProjectState): Blob {
     }
     first = false;
   }
-  parts.push(first ? ']\n}\n' : '\n ]\n}\n');
+  parts.push(first ? ']' : '\n ]');
+  // The environment's images, as their files.
+  const images = environmentImages(state).filter(([, ref]) => getImage(ref.id));
+  if (images.length > 0) {
+    parts.push(',\n "images": [');
+    images.forEach(([, ref], i) => {
+      try {
+        parts.push(`${i === 0 ? '' : ','}\n  ${imageEntry(ref, getImage(ref.id)!)}`);
+      } catch (err) {
+        if (err instanceof RangeError) throw new ProjectError('TOO_LARGE', `image ${ref.name} is too large to save in a project file`);
+        throw err;
+      }
+    });
+    parts.push('\n ]');
+  }
+  parts.push('\n}\n');
   return new Blob(parts, { type: 'application/json' });
 }
 
@@ -219,11 +256,17 @@ function checkState(raw: RawState): ProjectState {
   for (const [id, c] of Object.entries(s.camera.cameras)) if (!isObject(c) || c.id !== id) throw damaged(`camera.cameras.${id} is not a camera`);
   if (!Array.isArray(s.studio.lights) || s.studio.lights.some((l) => !isObject(l) || typeof l.id !== 'string')) throw damaged('studio.lights is damaged');
   if (!Array.isArray(s.selection.ids)) throw damaged('selection.ids is not a list');
+  const env = s.environment;
+  for (const slot of ['hdri', 'backplate'] as const) {
+    const r = env[slot] as unknown;
+    if (r !== null && !(isObject(r) && typeof r.id === 'string' && typeof r.name === 'string' && Number.isInteger(r.width) && Number.isInteger(r.height))) throw damaged(`environment.${slot} is damaged`);
+  }
+  if (!isObject(env.skySun) || !Number.isFinite(env.skySun.az) || !Number.isFinite(env.skySun.el)) throw damaged('environment.skySun is damaged');
   return s;
 }
 
 /** The envelope of a parsed file and the state it holds, migrated to the current schema and checked. */
-function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown } {
+function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; images: unknown } {
   if (!isObject(body) || body.format !== PROJECT_FORMAT) throw new ProjectError('NOT_A_PROJECT', 'not a Repackshot project');
   // A file without `schema` is a hand-made one; the first schema is the oldest there is.
   const schema = body.schema === undefined ? 1 : body.schema;
@@ -239,7 +282,7 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown } {
     meta: { ...checked.meta, dirty: false },
     animation: { ...checked.animation, playing: false },
   };
-  return { state: loaded, meshes: body.meshes };
+  return { state: loaded, meshes: body.meshes, images: body.images };
 }
 
 /**
@@ -403,14 +446,75 @@ function placeMeshes(state: ProjectState, decoded: Map<MeshId, DecodedMesh>, reg
 
 /** What a load noticed and the person should hear about. */
 export interface ProjectWarning {
-  /** Parts whose geometry is not in the file (a project from before the meshes block, other than the example). */
-  code: 'MISSING_MESHES';
+  /**
+   * MISSING_MESHES: parts whose geometry is not in the file (a project from before the meshes block, other than
+   * the example). MISSING_IMAGES: environment images that are not in the file or do not decode (dropped).
+   */
+  code: 'MISSING_MESHES' | 'MISSING_IMAGES';
   count: number;
+}
+
+/** An image of the file's `images` block, still to be decoded. */
+export interface SavedImage {
+  id: ImageId;
+  name: string;
+  bytes: Uint8Array;
 }
 
 export interface LoadedProject {
   state: ProjectState;
   warnings: ProjectWarning[];
+  /** The `images` block (entries that are not images are left out): `placeImages` decodes them. */
+  images: SavedImage[];
+}
+
+/** The well-formed entries of an `images` block. */
+function savedImages(block: unknown): SavedImage[] {
+  if (!Array.isArray(block)) return [];
+  const out: SavedImage[] = [];
+  for (const e of block) {
+    if (!isObject(e) || typeof e.id !== 'string' || typeof e.name !== 'string' || typeof e.file !== 'string') continue;
+    try {
+      out.push({ id: e.id, name: e.name, bytes: base64ToBytes(e.file) });
+    } catch {
+      // Not base64: as if it were not there.
+    }
+  }
+  return out;
+}
+
+/**
+ * Decodes the environment's images of a loaded project into the registry. An image keeps its id unless the id
+ * names another image in this session (ids are numbered per session, like the meshes'); one that is missing or
+ * does not decode is dropped from the environment. Returns the state with its refs updated and how many were
+ * dropped.
+ */
+export async function placeImages(state: ProjectState, saved: readonly SavedImage[], decode?: PixelDecoder): Promise<{ state: ProjectState; missing: number }> {
+  const env = { ...state.environment };
+  if (!env.hdri && !env.backplate) return { state, missing: 0 };
+  // The readers load with the first project that has images (they stay out of the main chunk).
+  const { restoreImage } = await import('./hdri');
+  let missing = 0;
+  for (const slot of ['hdri', 'backplate'] as const) {
+    const ref = env[slot];
+    if (!ref) continue;
+    const entry = saved.find((e) => e.id === ref.id);
+    const have = getImage(ref.id);
+    let placed: ImageRef | null = null;
+    if (entry) {
+      const id = have && !sameBytes(have.bytes, entry.bytes) ? nextImageId(slot === 'hdri' ? 'hdri' : 'plate') : ref.id;
+      try {
+        await restoreImage({ ...ref, id }, entry.bytes, decode);
+        const data = getImage(id)!;
+        placed = { id, name: ref.name, width: data.width, height: data.height };
+      } catch {
+        placed = null;
+      }
+    }
+    if (!placed) missing++;
+    env[slot] = placed;
+  }
+  return { state: missing > 0 || env.hdri !== state.environment.hdri || env.backplate !== state.environment.backplate ? { ...state, environment: env } : state, missing };
 }
 
 /**
@@ -420,12 +524,12 @@ export interface LoadedProject {
 export function loadProject(text: string): LoadedProject {
   const registered: MeshId[] = [];
   try {
-    const { state, meshes } = readEnvelope(parseText(text));
+    const { state, meshes, images } = readEnvelope(parseText(text));
     const placed = placeMeshes(state, decodeMeshes(meshes), registered);
     const checked = cleanSelection(placed.state);
     // The Doctor's findings follow the model and the catalogue of this version, not the file's.
     const withDoctor: ProjectState = { ...checked, doctor: { results: runDoctor(checked), stamp: checked.doctor.stamp } };
-    return { state: withDoctor, warnings: placed.missing > 0 ? [{ code: 'MISSING_MESHES', count: placed.missing }] : [] };
+    return { state: withDoctor, warnings: placed.missing > 0 ? [{ code: 'MISSING_MESHES', count: placed.missing }] : [], images: savedImages(images) };
   } catch (err) {
     for (const id of registered) unregisterMesh(id);
     if (err instanceof ProjectError) throw err;
@@ -441,8 +545,11 @@ export type ProjectOpenResult =
   | { ok: true; state: ProjectState; warnings: ProjectWarning[] }
   | { ok: false; fault: { code: ProjectErrorCode; detail: string; schema?: number } };
 
-/** Reads a project file (see `loadProject`); on failure the registry and everything else are as they were. */
-export async function readProjectFile(file: Blob): Promise<ProjectOpenResult> {
+/**
+ * Reads a project file (see `loadProject`) and decodes its environment images (`placeImages`, with `decode` for
+ * background images: the browser's by default); on failure the registry and everything else are as they were.
+ */
+export async function readProjectFile(file: Blob, decode?: PixelDecoder): Promise<ProjectOpenResult> {
   let text: string;
   try {
     text = await file.text();
@@ -452,7 +559,9 @@ export async function readProjectFile(file: Blob): Promise<ProjectOpenResult> {
     return { ok: false, fault: { code: 'DAMAGED', detail: `the file could not be read (${err instanceof Error ? err.message : String(err)})` } };
   }
   try {
-    const { state, warnings } = loadProject(text);
+    const loaded = loadProject(text);
+    const { state, missing } = await placeImages(loaded.state, loaded.images, decode);
+    const warnings: ProjectWarning[] = missing > 0 ? [...loaded.warnings, { code: 'MISSING_IMAGES', count: missing }] : loaded.warnings;
     return { ok: true, state, warnings };
   } catch (err) {
     if (err instanceof ProjectError) return { ok: false, fault: { code: err.code, detail: err.message, ...(err.schema !== undefined ? { schema: err.schema } : {}) } };

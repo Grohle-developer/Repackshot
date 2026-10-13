@@ -468,6 +468,104 @@ fn results_are_files_in_the_results_folder_with_an_index() {
 }
 
 #[test]
+fn a_result_keeps_the_image_the_ai_made_next_to_its_own() {
+    let t = TestServer::start("appdata-ai-image", 1);
+    let png = b"\x89PNG\r\n\x1a\nengine-image".to_vec();
+    let ai = b"\xff\xd8\xffai-image".to_vec();
+    let meta = |id: &str, at: u64| {
+        format!(
+            r#"{{"id":"{id}","jobId":"j1","name":"Shot {id}.png","createdAt":{at},"width":64,"height":32,"bytes":40,"thumb":""}}"#
+        )
+    };
+    let put = |id: &str, ai: Option<&[u8]>| {
+        assert_eq!(
+            t.api(
+                "PUT",
+                &format!("/api/store/results/{id}?type=image/png"),
+                &png
+            )
+            .status,
+            204
+        );
+        if let Some(bytes) = ai {
+            assert_eq!(
+                t.api(
+                    "PUT",
+                    &format!("/api/store/results/{id}/ai?type=image/jpeg"),
+                    bytes
+                )
+                .status,
+                204
+            );
+        }
+        assert_eq!(
+            t.api(
+                "PUT",
+                &format!("/api/store/results/{id}/meta"),
+                meta(id, 1).as_bytes()
+            )
+            .status,
+            204
+        );
+    };
+    put("r1", Some(&ai));
+    put("r2", None);
+    let dir = t.dir.join("data/results");
+    assert_eq!(std::fs::read(dir.join("r1.png")).unwrap(), png);
+    assert_eq!(std::fs::read(dir.join("r1.ai.jpg")).unwrap(), ai);
+
+    // The AI image comes back as it went in, with its own type, and Range as for every file.
+    let got = t.api("GET", "/api/store/results/r1/ai", b"");
+    assert_eq!(got.status, 200);
+    assert_eq!(got.header("content-type"), Some("image/jpeg"));
+    assert_eq!(got.body, ai);
+    let part = t.raw(
+        "GET",
+        "/api/store/results/r1/ai",
+        &[("X-Repackshot-Token", TOKEN), ("Range", "bytes=0-2")],
+        b"",
+    );
+    assert_eq!((part.status, part.body), (206, ai[..3].to_vec()));
+    // The engine's file is untouched, and a result without one says so.
+    assert_eq!(t.api("GET", "/api/store/results/r1", b"").body, png);
+    assert_eq!(t.api("GET", "/api/store/results/r2/ai", b"").status, 404);
+    assert_eq!(t.api("GET", "/api/store/results/r9/ai", b"").status, 404);
+
+    // Only the types of images, and only a PUT.
+    assert_eq!(
+        t.api("PUT", "/api/store/results/r1/ai?type=text/html", b"x")
+            .status,
+        415
+    );
+    assert_eq!(t.api("DELETE", "/api/store/results/r1/ai", b"").status, 405);
+
+    // The same image sent again in another type leaves one file.
+    assert_eq!(
+        t.api("PUT", "/api/store/results/r1/ai?type=image/png", &png)
+            .status,
+        204
+    );
+    assert!(dir.join("r1.ai.png").is_file() && !dir.join("r1.ai.jpg").exists());
+
+    // Deleting a result removes its AI image; clearing removes every one.
+    assert_eq!(
+        t.api(
+            "PUT",
+            "/api/store/results/r2/ai?type=image/webp",
+            b"RIFFxxxxWEBP"
+        )
+        .status,
+        204
+    );
+    assert_eq!(t.api("DELETE", "/api/store/results/r1", b"").status, 204);
+    assert!(!dir.join("r1.png").exists() && !dir.join("r1.ai.png").exists());
+    assert!(dir.join("r2.ai.webp").is_file());
+    t.json("DELETE", "/api/store/results", b"");
+    assert!(!dir.join("r2.png").exists() && !dir.join("r2.ai.webp").exists());
+    assert!(temporaries(&t.dir.join("data")).is_empty());
+}
+
+#[test]
 fn the_thumbnail_cache_and_the_space_used() {
     let t = TestServer::start("appdata-usage", 1);
     let url = b"data:image/png;base64,AAAA";

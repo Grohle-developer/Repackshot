@@ -91,6 +91,8 @@ pub struct Mesh {
     bounds: Aabb,
     bvh: Bvh,
     packets: Vec<TriPacket>,
+    /// The vertex normals point, on the whole, against the winding order's normals.
+    inside_out: bool,
 }
 
 impl Mesh {
@@ -146,9 +148,38 @@ impl Mesh {
             bounds: positions.iter().fold(Aabb::EMPTY, |b, &p| b.extend(p)),
             bvh: Bvh::default(),
             packets: Vec::new(),
+            inside_out: false,
         };
+        mesh.inside_out = mesh.normals_oppose_winding();
         mesh.build_bvh(width);
         Ok(mesh)
+    }
+
+    /// True when the vertex normals, summed over the triangles, point against the winding
+    /// normals: the outside of the surface is then the side the winding calls the back.
+    fn normals_oppose_winding(&self) -> bool {
+        let Some(normals) = &self.normals else {
+            return false;
+        };
+        let mut agreement = 0.0f32;
+        for t in 0..self.triangle_count() {
+            let (Some([a, b, c]), Some(ids)) = (self.triangle(t), self.triangle_indices(t)) else {
+                continue;
+            };
+            let winding = (b - a).cross(c - a);
+            let mut n = Vec3::ZERO;
+            for i in ids {
+                n += normals.get(i as usize).unwrap_or(Vec3::ZERO);
+            }
+            agreement += winding.normalize().dot(n);
+        }
+        agreement < 0.0
+    }
+
+    /// True when the vertex normals say the outside is the back of the winding order (a mesh
+    /// whose triangles are wound clockwise seen from outside, with outward normals).
+    pub fn inside_out(&self) -> bool {
+        self.inside_out
     }
 
     fn build_bvh(&mut self, width: BvhWidth) {

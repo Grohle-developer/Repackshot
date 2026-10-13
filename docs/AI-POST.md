@@ -335,7 +335,7 @@ con sus apartados *Modelo activo*, *Modelos* y *Equipo*:
 | **X3b** | Opus | stable-diffusion.cpp en escritorio (§7.1): `src/data/ai-runtimes.json` fijado, descarga e instalación desde *Ajustes*, proceso auxiliar en `rt-app`, `/api/ai/runtime` y `/api/ai/run` (una inferencia sin guarda), con un proceso auxiliar falso en los tests |
 | **X3c** | Opus | La tubería completa de escritorio (§7.3), tras X2, X3a y X3b: `/api/ai/post` en el lanzador (mosaicos → stable-diffusion.cpp → `rt-post` → retroceso), el servicio de escritorio en `src/io/`, integración en la cola con las dos imágenes y el informe, `AI_AVAILABLE` real |
 | **X3d** | Opus | La web, tras X3c: ONNX Runtime Web con WebGPU en workers, **exportar el codificador del VAE a ONNX** para que exista `ZIMAGE_WEB`, conductor en worker con `post.wasm`, caché OPFS con `sha256` y fragmentos de ≤ 1 GiB |
-| **X4** | Sonnet | La interfaz de §4 contra `AiPostService` (`src/core/ai.ts`), con un servicio sintético hasta X3c: sección de la ventana de render, configurador, fichas, vista previa en modo Rápido con los pases dibujados por three.js y divisor, informe de la guarda y divisor en el visor de resultados, dos miniaturas en la cola, ajustes en el *store* |
+| **X4** | Sonnet | **Hecha.** La interfaz de §4 contra `AiPostService` (`src/core/ai.ts`), con un servicio sintético hasta X3c: sección de la ventana de render, configurador, fichas, vista previa en modo Rápido con los pases dibujados por three.js y divisor, informe de la guarda y divisor en el visor de resultados, dos miniaturas en la cola, ajustes en el *store* (`ROADMAP.md` X4) |
 | ~~X5~~ | — | **Absorbida en U6** (ventana de Ajustes, `ROADMAP.md`): el gestor de modelos de §5 y el selector de §2.2–§2.4 no necesitan la tubería, así que llegan antes. Lo que queda para después de X3 (comprobar en vivo que el modelo activo cabe y una prueba de una imagen) entra en X4 |
 
 ---
@@ -372,6 +372,15 @@ nativo que gobierna el lanzador.
   queda anotado como mejora (sus bibliotecas pesan cientos de MB).
 - Una clave que la compilación instalada no carga aparece en *Ajustes*
   como *No disponible con este motor de ejecución*, con el motivo.
+- **Hecho en X3b** (2026-10-13): *release* `master-959-d637cfb`, el modo
+  servidor (`sd-server`, el modelo queda cargado), la API `/api/ai/runtime`
+  y `/api/ai/run` (`engine/crates/rt-app/README.md`). **No encajó**: la
+  descarga no la puede hacer la página como la de los modelos, porque las
+  descargas de *releases* de GitHub no mandan cabeceras CORS; la hace el
+  lanzador con el `curl` del sistema (mismo progreso, pausa, reanudación y
+  `sha256`, misma carpeta), con *Instalar desde un archivo…* de respaldo.
+  Las compilaciones de Windows necesitan el entorno de Visual C++
+  2015–2022, que no traen.
 
 ### 7.2 · La guarda y los píxeles: el *crate* `rt-post`
 
@@ -429,12 +438,24 @@ filas desde arriba a la izquierda, como la imagen.
 
 | Pase | Tipo | Contenido | Fondo |
 | --- | --- | --- | --- |
-| `albedo` | 3 × f32 lineal | Color base del primer impacto no especular (un difuso: su color), promediado sobre las muestras del píxel | 0 |
-| `normal` | 3 × f32 | Normal de sombreado unitaria del primer impacto, en el espacio del mundo (Z arriba) | 0 |
+| `albedo` | 3 × f32 lineal | Color base del material del primer impacto, sin seguir rebotes especulares (un difuso: su color; un vidrio: su tinte), promediado sobre las muestras del píxel | 0 |
+| `normal` | 3 × f32 | Normal de sombreado unitaria del primer impacto, en el espacio del mundo (Z arriba), vuelta hacia la cámara (cuentan las dos caras del triángulo) | 0 |
 | `depth` | f32 | Distancia a lo largo del eje de la cámara, en unidades de escena | +∞ |
-| `partId` | u32 | Índice de instancia del RSB + 1: `io/rsb.ts` lo traduce a la pieza, como `pick` | 0 |
-| `materialId` | u32 | Índice de material del RSB + 1 | 0 |
+| `partId` | u32 | Índice de instancia del RSB + 1: `io/rsb.ts` lo traduce a la pieza, como `pick`; el suelo del estudio, `FLOOR_ID` | 0 |
+| `materialId` | u32 | Índice de material del RSB + 1; el suelo, `FLOOR_ID` | 0 |
 | `coc` | f32 | Diámetro del círculo de confusión en píxeles de salida, de la lente fina | 0 (también sin DoF) |
+
+**Corrección del líder (tras X4, 2026-10-13).** El albedo es el del
+primer impacto, sin seguir rebotes especulares (como lo dibuja la vista
+previa de three.js y más simple de igualar), y la normal se vuelve hacia
+la cámara. **El suelo del estudio no es fondo**: lleva `FLOOR_ID`
+(`0xFFFFFFFF`) en los dos ids, porque sus sombras de contacto y su luz
+rebotada son justo lo que mejoran *Luz* y *Rebotes*; el fondo (0) es el
+entorno, la imagen de fondo, la transparencia y los paneles de luz vistos
+por la cámara, y no cambia nunca. El círculo de confusión sigue la misma
+fórmula que `src/core/lens-coc.ts` (X4), que reproduce
+`Camera::generate_ray`. X2 lo emite así en el motor; X3c ajusta la guarda
+(`rt-post`), el servicio sintético y los pases de three.js a `FLOOR_ID`.
 
 `normal`, `depth`, `partId` y `materialId` salen de **un rayo por el
 centro del píxel, sin *jitter***: son exactos y nunca mezclan dos lados de

@@ -240,3 +240,85 @@ download (matches `AI-POST.md` §2.4 "restricciones de uso que se muestran y se 
 - `black-forest-labs/FLUX.2-dev` (non-commercial, gated), `FLUX.1-schnell` (Apache-2.0, gated=auto): only used as
   originals of the two VAEs; the app downloads from the ungated Comfy-Org copies.
 - `CompVis/stable-diffusion-safety-checker`: no licence stated on HF; excluded (see section 2).
+
+---
+
+## 7. El motor de ejecución de escritorio: stable-diffusion.cpp y ggml (X3b)
+
+Fijado en `src/data/ai-runtimes.json`: la *release* oficial **`master-959-d637cfb`** de
+stable-diffusion.cpp (*commit* `d637cfb935feb2254898a8f1524046c958f3df80`, 2026-10-12), con
+ggml como submódulo en `d25b121ce1d6ae0c7e62ad080460d9fc1e46dd93` (repositorio
+`leejet/ggml`). Leídas el **2026-10-13** en el *tag* y en los propios archivos de la
+*release*: cada zip lleva `stable-diffusion.cpp.txt` y `ggml.txt` con estos mismos textos
+(los de Windows, con finales de línea CRLF). Repackshot **no redistribuye** estos
+binarios: el usuario los descarga desde GitHub, desde *Ajustes*, comprobados por su `sha256`;
+nunca entran en el repositorio, el instalador ni los portables, ni se enlazan (son un proceso
+aparte).
+
+| Componente | Licencia | Fuente |
+| --- | --- | --- |
+| stable-diffusion.cpp | MIT | https://github.com/leejet/stable-diffusion.cpp/blob/d637cfb935feb2254898a8f1524046c958f3df80/LICENSE |
+| ggml | MIT | https://github.com/leejet/ggml/blob/d25b121ce1d6ae0c7e62ad080460d9fc1e46dd93/LICENSE |
+
+**stable-diffusion.cpp** (`LICENSE`, y `stable-diffusion.cpp.txt` dentro de cada zip):
+
+> MIT License
+>
+> Copyright (c) 2023 leejet
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
+**ggml** (`ggml.txt` dentro de cada zip):
+
+> MIT License
+>
+> Copyright (c) 2023-2026 The ggml authors
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
+**Lo que además va compilado dentro de los binarios** (según `thirdparty/README.md` y
+`.gitmodules` del *tag*; los zips no traen sus textos, solo los dos de arriba), todo permisivo:
+libwebp y libwebm (submódulos `0c9546f7…` y `5bf12267…`, BSD-3-Clause, WebM Project),
+cpp-httplib (MIT, el servidor), nlohmann/json (MIT), stb_image, stb_image_write y
+stb_image_resize (MIT o dominio público, a elegir), miniz (MIT/Unlicense), kuba--/zip
+(Unlicense), darts_clone (BSD-2-Clause), Oniguruma (BSD-2-Clause) y utf8proc (MIT y licencia
+de datos Unicode). Ninguno es copyleft ni no comercial.
+
+**Lo que no va en el zip y el equipo tiene que tener**: en Windows, el entorno de **Microsoft
+Visual C++ 2015–2022 (x64)** (`MSVCP140.dll`, `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`,
+`VCOMP140.DLL`, `MSVCP140_CODECVT_IDS.dll`: las compilaciones enlazan el CRT dinámicamente),
+licenciado por Microsoft para redistribución con su propio acuerdo; para Vulkan, `vulkan-1.dll`
+o `libvulkan.so.1`, que instala el controlador de la tarjeta. En Linux, glibc ≥ 2.38 y
+libstdc++ de GCC 13 (`GLIBCXX_3.4.32`): las compilaciones se hacen en Ubuntu 24.04.

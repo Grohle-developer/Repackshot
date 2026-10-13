@@ -69,6 +69,8 @@ export interface SplitCompareProps {
   onMode?(mode: SplitMode): void;
   /** Called when the zoom changes (the viewer shows it). */
   onView?(v: SplitView, fitted: boolean): void;
+  /** The wheel zooms and a drag pans (default). Off: a small fixed picture inside a scrolling window (the AI preview). */
+  zoomable?: boolean;
 }
 
 export interface SplitCompare {
@@ -220,17 +222,20 @@ export function splitCompare(p: SplitCompareProps): SplitCompare {
   });
 
   // Zoom with the wheel about the cursor; pan by dragging the image.
-  el.addEventListener(
-    'wheel',
-    (e) => {
-      e.preventDefault();
-      const r = el.getBoundingClientRect();
-      setView(zoomAt(view, Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top), false);
-    },
-    { passive: false },
-  );
+  const zoomable = p.zoomable !== false;
+  if (zoomable) {
+    el.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const r = el.getBoundingClientRect();
+        setView(zoomAt(view, Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top), false);
+      },
+      { passive: false },
+    );
+  }
   stage.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
+    if (!zoomable || e.button !== 0) return;
     e.preventDefault();
     const start = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
     try {

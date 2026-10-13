@@ -4,7 +4,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { activeCamera, cameraPosition, outputFrameRect, type CameraState } from '../src/core/camera';
-import { polar, toWorldAzimuth } from '../src/core/light-math';
+import { registerImage } from '../src/core/images';
+import { kelvinToRgb, polar, toWorldAzimuth } from '../src/core/light-math';
+import { instanceFromPreset } from '../src/core/materials';
 import { lightPosition, rigPivot } from '../src/core/lighting';
 import { getMesh } from '../src/core/meshes';
 import { areaLightFlux, areaLightRadiance, EMIT_RADIANCE_PER_WATT } from '../src/core/photometry';
@@ -12,8 +14,18 @@ import { allParts, worldMatrix } from '../src/core/scene';
 import { createInitialState, type ProjectState } from '../src/core/store';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../src/data/environment';
 import {
+  BACKGROUND_BACKPLATE,
   BACKGROUND_COLOR,
   BACKGROUND_ENVIRONMENT,
+  BACKPLATE_FIT,
+  BITMAP_HDR,
+  BITMAP_RGBA8,
+  ENV_HDRI,
+  ENV_SKY,
+  GLASS_ABSORPTION_MM,
+  MATERIAL_FLAG_THIN,
+  materialToRsb,
+  NO_BITMAP,
   BACKGROUND_TRANSPARENT,
   cameraToRsb,
   defaultCamera,
@@ -134,9 +146,10 @@ function engineExample(): RsbScene {
     lights: [
       { kind: LIGHT_RECT, position: lightPos, direction: vnorm(vsub(target, lightPos)), up: [0, 0, 1], sizeX: 400, sizeY: 400, color: [1, 1, 1], power: 5, spreadDeg: 180, angleDeg: 0, flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA },
     ],
-    environment: { kind: ENV_STUDIO, floor: 0.05, horizon: 0.12, zenith: 0.3, strength: 1, rotationDeg: 0, backgroundColor: [0.05, 0.05, 0.05], backgroundMode: 0 },
+    environment: { ...defaultEnvironment(), kind: ENV_STUDIO, floor: 0.05, horizon: 0.12, zenith: 0.3, strength: 1, rotationDeg: 0, backgroundColor: [0.05, 0.05, 0.05], backgroundMode: 0 },
     floor: defaultFloor(),
     render: { width: 512, height: 384, maxSamples: 16, seed: 1, maxSeconds: 0, exposureEv: 0, tonemap: 1, maxDepth: 8, clampIndirect: 0 },
+    bitmaps: [],
   };
 }
 
@@ -146,7 +159,7 @@ function fullScene(): RsbScene {
     camera: { position: [10, -200, 50], target: [1, 2, 3], up: [0, 0, 1], focalMm: 85, sensorMm: 36, fstop: 5.6, focusDist: 212.5, ortho: true, orthoWidth: 320 },
     materials: [
       defaultMaterial(),
-      { kind: 2, baseColor: [0.9, 0.5, 0.1], metallic: 1, roughness: 0.2, ior: 1.33, transmission: 0.25, coat: 0.5, coatRoughness: 0.05, emission: [1, 0.9, 0.8], emissionPower: 12, flags: 1 },
+      { kind: 2, baseColor: [0.9, 0.5, 0.1], metallic: 1, roughness: 0.2, ior: 1.33, transmission: 0.25, coat: 0.5, coatRoughness: 0.05, emission: [1, 0.9, 0.8], emissionPower: 12, flags: 3, opacity: 0.75, anisotropy: 0.4, absorptionMm: 25 },
     ],
     meshes: [
       { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2, 2, 1, 3], materialId: 1 },
@@ -162,9 +175,30 @@ function fullScene(): RsbScene {
       { kind: 2, position: [1, 2, 3], direction: [0.3, 0.2, -0.9], up: [0, 1, 0], sizeX: 10, sizeY: 20, color: [1, 0.95, 0.9], power: 3.5, spreadDeg: 45, angleDeg: 0.53, flags: 3 },
       { ...defaultLight(), kind: 1, flags: 0 },
     ],
-    environment: { kind: 1, floor: 0.2, horizon: 0.4, zenith: 0.8, strength: 1.5, rotationDeg: 90, backgroundColor: [0.1, 0.2, 0.3], backgroundMode: 1 },
+    environment: {
+      kind: 1,
+      floor: 0.2,
+      horizon: 0.4,
+      zenith: 0.8,
+      strength: 1.5,
+      rotationDeg: 90,
+      backgroundColor: [0.1, 0.2, 0.3],
+      backgroundMode: 1,
+      hdriMap: 1,
+      backplateMap: 0,
+      backplateFit: 1,
+      skyTurbidity: 4.5,
+      sunAzimuthDeg: -30,
+      sunElevationDeg: 12,
+      backplateRect: [0.1, 0.05, 0.9, 0.95],
+    },
     floor: { mode: 2, z: -12.5, color: [0.4, 0.5, 0.6] },
     render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10 },
+    // A raw plate (an odd number of bytes: padded) and the bytes of a file.
+    bitmaps: [
+      { format: 0, width: 3, height: 1, data: new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80, 90]) },
+      { format: 16, width: 0, height: 0, data: new TextEncoder().encode('#?RADIANCE\n\n-Y 1 +X 1\n\u0080\u0080\u0080\u0081') },
+    ],
   };
 }
 
@@ -188,9 +222,11 @@ describe('RSB writer: byte parity with rt-core', () => {
     expect(String.fromCharCode(...bytes.subarray(0, 4))).toBe('RSB1');
     expect([...bytes.subarray(4, 8)]).toEqual([0, 0, 0, 0]);
     const s = sections(bytes);
-    expect(s.map((x) => x.tag)).toEqual(['CAMR', 'MATL', 'MATL', 'MESH', 'MESH', 'INST', 'INST', 'INST', 'LGHT', 'LGHT', 'LGHT', 'ENVR', 'FLOR', 'RNDR']);
+    expect(s.map((x) => x.tag)).toEqual(['CAMR', 'MATL', 'MATL', 'MESH', 'MESH', 'INST', 'INST', 'INST', 'LGHT', 'LGHT', 'LGHT', 'BMAP', 'BMAP', 'ENVR', 'FLOR', 'RNDR']);
     const size = (tag: string) => s.find((x) => x.tag === tag)!.payload.byteLength;
-    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 60, 76, 40, 20, 36, 60]);
+    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 72, 76, 80, 20, 36, 60]);
+    // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
+    expect(size('BMAP')).toBe(16 + 12);
     // 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
     expect(s[3].payload.byteLength).toBe((2 + 24 + 6 + 1) * 4);
   });
@@ -209,6 +245,8 @@ describe('RSB writer: byte parity with rt-core', () => {
     const update = writeRsb(scene, { meshes: false });
     const tags = sections(update).map((x) => x.tag);
     expect(tags.includes('MESH')).toBe(false);
+    // The bitmaps stay with the meshes: an update keeps the loaded ones.
+    expect(tags.includes('BMAP')).toBe(false);
     expect(tags.filter((t) => t === 'INST')).toHaveLength(2);
     expect(update.length).toBeLessThan(writeRsb(scene).length);
   });
@@ -229,6 +267,7 @@ describe('RSB writer: round trip of every section', () => {
       expect(back.floor).toEqual(asF32(scene.floor));
       expect(back.render).toEqual(asF32(scene.render));
       expect(back.instances).toEqual(asF32(scene.instances));
+      expect(back.bitmaps).toEqual(scene.bitmaps);
       expect(back.meshes.length).toBe(scene.meshes.length);
       back.meshes.forEach((m, i) => {
         const src = scene.meshes[i];
@@ -242,7 +281,7 @@ describe('RSB writer: round trip of every section', () => {
   }
 
   it('reads back the defaults of rt-core', () => {
-    const scene: RsbScene = { camera: defaultCamera(), materials: [], meshes: [], instances: null, lights: [], environment: defaultEnvironment(), floor: defaultFloor(), render: defaultRender() };
+    const scene: RsbScene = { camera: defaultCamera(), materials: [], meshes: [], instances: null, lights: [], environment: defaultEnvironment(), floor: defaultFloor(), render: defaultRender(), bitmaps: [] };
     const back = readRsb(writeRsb(scene));
     expect(back.tags).toEqual(['CAMR', 'ENVR', 'FLOR', 'RNDR']);
     expect(back.render).toEqual(asF32(defaultRender()));
@@ -584,5 +623,122 @@ describe('project to RSB: environment, floor and render settings', () => {
     const update = readRsb(writeRsb(scene, { meshes: false }));
     expect(update.meshes).toHaveLength(0);
     expect(update.instances).toEqual(asF32(scene.instances));
+  });
+});
+
+// ------------------------------------------------------------------ E5: glass, cut-outs, images
+
+describe('RSB writer: the E5 sections, byte for byte with rt-core', () => {
+  // `rt --write-e5-example`: clear glass with absorption, a thin wall, a cut-out, anisotropy, an
+  // HDRI as the bytes of a Radiance file, a background image of raw sRGB pixels.
+  const e5 = new Uint8Array(readFileSync('tests/fixtures/e5.rsb'));
+
+  it('reads the fixture into the shapes of src/io/rsb.ts and writes it back to the same bytes', () => {
+    const r = readRsb(e5);
+    expect(r.tags.filter((t) => t === 'BMAP')).toHaveLength(2);
+    expect(r.bitmaps.map((b) => [b.format, b.width, b.height])).toEqual([[16, 0, 0], [0, 16, 8]]);
+    expect(String.fromCharCode(...r.bitmaps[0].data.subarray(0, 10))).toBe('#?RADIANCE');
+    const env = r.environment!;
+    expect([env.kind, env.hdriMap, env.backplateMap, env.backgroundMode]).toEqual([ENV_HDRI, 0, 1, BACKGROUND_BACKPLATE]);
+    expect(r.materials[0].absorptionMm).toBe(80);
+    expect(r.materials[2].anisotropy).toBeCloseTo(0.8, 6);
+    expect(r.materials[3].flags & MATERIAL_FLAG_THIN).toBe(MATERIAL_FLAG_THIN);
+    expect(r.materials[4].opacity).toBeCloseTo(0.4, 6);
+    const scene: RsbScene = {
+      camera: r.camera!,
+      materials: r.materials,
+      meshes: r.meshes,
+      instances: r.instances,
+      lights: r.lights,
+      environment: env,
+      floor: r.floor!,
+      render: r.render!,
+      bitmaps: r.bitmaps,
+    };
+    const bytes = writeRsb(scene);
+    expect(bytes.length).toBe(e5.length);
+    expect(firstDiff(bytes, e5)).toBe(-1);
+  });
+});
+
+describe('project to RSB: E5 materials and environments', () => {
+  const s = exampleState();
+  const ids = keyIds(s);
+
+  it('glass gets its absorption distance and thin walls; standard materials their cut-out and anisotropy', () => {
+    const glass = materialToRsb(instanceFromPreset('g', 'GLASS_TINT', 200));
+    expect(glass.kind).toBe(MATERIAL_GLASS);
+    expect(glass.absorptionMm).toBe(GLASS_ABSORPTION_MM);
+    expect(glass.flags & MATERIAL_FLAG_THIN).toBe(0);
+    const inst = instanceFromPreset('g', 'GLASS_CLEAR', 200)!;
+    const thin = materialToRsb({ ...inst, params: { ...inst.params, walls: 'THIN', absorptionMm: 0 } });
+    expect(thin.flags & MATERIAL_FLAG_THIN).toBe(MATERIAL_FLAG_THIN);
+    expect(thin.absorptionMm).toBe(0);
+    const brushed = materialToRsb(instanceFromPreset('b', 'ALU_BRUSH', 200));
+    expect(brushed.anisotropy).toBeGreaterThan(0.5);
+    const plain = instanceFromPreset('p', 'WHITE_STUDIO', 200)!;
+    const cut = materialToRsb({ ...plain, params: { ...plain.params, opacity: 0.3, anisotropic: 2 } });
+    expect([cut.opacity, cut.anisotropy]).toEqual([0.3, 1]);
+    expect(materialToRsb(plain).opacity).toBe(1);
+  });
+
+  it("a SKY setup puts the sky's sun where the rig's sun light is", () => {
+    const sky = apply(s, { type: 'studio/setSetup', key: 'SUN' });
+    expect(sky.environment.kind).toBe('SKY');
+    const { scene } = projectScene(sky, view(sky));
+    expect(scene.environment.kind).toBe(ENV_SKY);
+    const sun = scene.lights.find((l) => l.kind === LIGHT_SUN)!;
+    const toSun = [-sun.direction[0], -sun.direction[1], -sun.direction[2]];
+    const az = (scene.environment.sunAzimuthDeg * Math.PI) / 180;
+    const el = (scene.environment.sunElevationDeg * Math.PI) / 180;
+    const dir = [Math.cos(el) * Math.cos(az), Math.cos(el) * Math.sin(az), Math.sin(el)];
+    for (let k = 0; k < 3; k++) expect(dir[k]).toBeCloseTo(toSun[k], 5);
+    expect(scene.environment.sunElevationDeg).toBeCloseTo(55, 0);
+    expect(scene.environment.skyTurbidity).toBe(3);
+    // The sun light keeps the setup's 5200 K colour: what the sky's disc is.
+    expect(sun.color).toEqual(kelvinToRgb(5200));
+    // Without a sun light, the environment's own sun (camera-relative) takes its place.
+    const lamp = apply(sky, { type: 'studio/setLight', id: sky.studio.lights[0].id, patch: { enabled: false } }, { type: 'env/set', patch: { skySun: { az: 0, el: 30 } } });
+    const own = projectScene(lamp, view(lamp)).scene.environment;
+    const want = polar(toWorldAzimuth(0), 30, 1);
+    expect(own.sunElevationDeg).toBeCloseTo(30, 4);
+    expect(Math.cos((own.sunAzimuthDeg * Math.PI) / 180)).toBeCloseTo(want[0] / Math.hypot(want[0], want[1]), 4);
+  });
+
+  it('an HDRI and a background image travel as bitmaps, and change the mesh key', () => {
+    const hdr = new Uint8Array(readFileSync('tests/fixtures/studio.hdr'));
+    registerImage('hdri:test', 'studio.hdr', { format: 'HDR', bytes: hdr, width: 1024, height: 512 });
+    registerImage('plate:test', 'plate.png', { format: 'PNG', bytes: new Uint8Array(4), width: 2, height: 1, rgba8: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]) });
+    const before = projectScene(s, view(s));
+    const lit = apply(
+      s,
+      { type: 'env/set', patch: { kind: 'HDRI', hdri: { id: 'hdri:test', name: 'studio.hdr', width: 1024, height: 512 }, rotationDeg: 30 } },
+      { type: 'env/set', patch: { background: 'BACKPLATE', backplate: { id: 'plate:test', name: 'plate.png', width: 2, height: 1 }, backplateFit: 'FIT' } },
+    );
+    const { scene, meshKey } = projectScene(lit, view(lit, { viewport: { viewW: 1000, viewH: 800 } }));
+    expect(scene.bitmaps.map((b) => [b.format, b.width, b.height, b.data.length])).toEqual([
+      [BITMAP_HDR, 0, 0, hdr.length],
+      [BITMAP_RGBA8, 2, 1, 8],
+    ]);
+    expect([scene.environment.kind, scene.environment.hdriMap, scene.environment.backplateMap, scene.environment.backplateFit]).toEqual([ENV_HDRI, 0, 1, BACKPLATE_FIT]);
+    expect(scene.environment.rotationDeg).toBe(30);
+    // The output frame sits inside the viewport where the preview draws it.
+    const f = outputFrameRect(1000, 800, lit.render.width, lit.render.height);
+    expect(scene.environment.backplateRect).toEqual([f.x / 1000, f.y / 800, (f.x + f.width) / 1000, (f.y + f.height) / 800]);
+    expect(meshKey).not.toBe(before.meshKey);
+    expect(meshKey.startsWith(before.meshKey)).toBe(true);
+    // An update leaves them out (the engine keeps them), the full scene has them.
+    expect(readRsb(writeRsb(scene, { meshes: false })).bitmaps).toHaveLength(0);
+    expect(readRsb(writeRsb(scene)).bitmaps).toHaveLength(2);
+    // A transparent render does not send the background image; another kind does not send the HDRI.
+    const transparent = projectScene(lit, view(lit, { transparent: true })).scene;
+    expect(transparent.bitmaps).toHaveLength(1);
+    expect(transparent.environment.backplateMap).toBe(NO_BITMAP);
+    const studio = apply(lit, { type: 'env/set', patch: { kind: 'STUDIO' } });
+    expect(projectScene(studio, view(studio)).scene.environment.hdriMap).toBe(NO_BITMAP);
+    // An image the registry no longer has is left out: the dome and the colour stand in.
+    const gone = apply(s, { type: 'env/set', patch: { kind: 'HDRI', hdri: { id: 'hdri:missing', name: 'x.hdr', width: 1, height: 1 } } });
+    expect(projectScene(gone, view(gone)).scene.bitmaps).toHaveLength(0);
+    void ids;
   });
 });
