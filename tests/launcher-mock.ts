@@ -72,7 +72,15 @@ export class LauncherMock {
    * job ends): the frame of the last pass has no DONE, the next one has DONE and no new data.
    */
   doneApart = false;
+  /** The newest viewport job posted. */
+  lastViewport = 0;
   private lastSeq = new Map<string, number>();
+  private polls = new Map<number, number>();
+
+  /** Whether job `id` has a long-poll waiting for its next pass. */
+  polling(id: number): boolean {
+    return (this.polls.get(id) ?? 0) > 0;
+  }
 
   /** The fetch of the page (io/native.ts NativeClient.request). */
   readonly request = async (path: string, init: RequestInit = {}): Promise<Response> => {
@@ -174,6 +182,7 @@ export class LauncherMock {
         threads: 8,
       };
       this.jobs.set(job.id, job);
+      if (kind === 'viewport') this.lastViewport = job.id;
       return this.json(200, { id: job.id });
     }
     if (method === 'DELETE' && m) {
@@ -191,8 +200,13 @@ export class LauncherMock {
       if (!job) return this.json(404, { error: 'not-found', message: 'no such job' });
       const after = url.searchParams.has('after') ? Number(url.searchParams.get('after')) : null;
       if (after !== null) {
-        if (this.hangPolls) await new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
-        await new Promise((r) => setTimeout(r, this.pollMs));
+        this.polls.set(id, (this.polls.get(id) ?? 0) + 1);
+        try {
+          if (this.hangPolls) await new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+          await new Promise((r) => setTimeout(r, this.pollMs));
+        } finally {
+          this.polls.set(id, this.polls.get(id)! - 1);
+        }
         if (job.cancelled) return { status: 200, body: frameBytes({ ...job, flags: FLAG_CANCELLED }) };
         if (job.samples < job.maxSamples) {
           job.pass++;
