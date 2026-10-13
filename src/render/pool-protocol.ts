@@ -11,7 +11,7 @@ export type WorkerRequest =
    * the exact planes of every tile (phase X2).
    */
   | { type: 'job'; generation: number; tiles: Int32Array; first: number; count: number; passes?: number }
-  /** Stop the job of this generation (or an older one). */
+  /** Stop the job of this generation (only that one). */
   | { type: 'cancel'; generation: number }
   /** Convert accumulated RGBA sums of `samples` samples to 8-bit pixels, exactly. */
   | { type: 'tonemap'; id: number; sum: ArrayBuffer; samples: number; ev: number; tonemap: number };

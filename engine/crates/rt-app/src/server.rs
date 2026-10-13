@@ -20,11 +20,11 @@ use crate::http::{read_request, write_response, Body, ReadError, Request, Respon
 use crate::json::{self, Value};
 use crate::models::{Store, StoreError};
 use crate::paths::Paths;
-use crate::render::{has_meshes, Engine, Finish, Kind, SubmitError};
+use crate::render::{has_meshes, Engine, Finish, Kind, Options as JobOptions, SubmitError};
 use crate::static_files;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -38,6 +38,12 @@ pub const MAX_JSON: u64 = 1 << 20;
 pub const IDLE: Duration = Duration::from_secs(30);
 /// Longest wait of `GET /api/render/<id>?after=<n>`.
 pub const LONG_POLL: Duration = Duration::from_secs(1);
+/// How long a write of a long-polled render frame may block: a page that stopped reading one (it
+/// went on to a newer view) frees the connection and its thread instead of holding them for
+/// minutes.
+pub const FRAME_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long any other write may block.
+pub const WRITE_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -81,9 +87,16 @@ pub struct App {
     hardware: Mutex<Option<Hardware>>,
     connections: AtomicUsize,
     stopping: AtomicBool,
+    /// [`FRAME_WRITE_TIMEOUT`], in milliseconds (tests shorten it).
+    pub frame_write_timeout_ms: AtomicU64,
 }
 
 impl App {
+    /// Connections being served now.
+    pub fn connections(&self) -> usize {
+        self.connections.load(Ordering::Acquire)
+    }
+
     /// The page's heartbeat arrived.
     pub fn alive(&self) {
         *lock(&self.last_alive) = Instant::now();
@@ -181,6 +194,7 @@ impl App {
                 Response::json(200, hardware::to_json(&hw, &a))
             }
             ("POST", ["render"]) => self.post_render(req, body),
+            ("GET", ["render", "state"]) => self.render_state(req),
             ("GET", ["render", id]) => self.get_render(req, id),
             ("GET", ["render", id, "passes"]) => self.get_passes(id),
             ("DELETE", ["render", id]) => match id.parse::<u32>() {
@@ -363,11 +377,29 @@ impl App {
         }
         let mesh = req.query("mesh").unwrap_or("");
         let client = req.query("client").unwrap_or("");
+        // `share=<n>`: a viewport job that keeps n threads while a final runs (0: it pauses).
+        let share = match req.query("share").map(str::parse::<usize>) {
+            None => 0,
+            Some(Ok(n)) => n,
+            Some(Err(_)) => return Response::error(400, "bad-query", "share=<threads>"),
+        };
+        // `seq=<n>`: the view's number in the client's order; an older one arriving late is refused.
+        let seq = match req.query("seq").map(str::parse::<u64>) {
+            None => None,
+            Some(Ok(n)) => Some(n),
+            Some(Err(_)) => return Response::error(400, "bad-query", "seq=<n>"),
+        };
         // `full=1`: the body is the complete scene even without `MESH` sections (an empty project).
         let whole = req.query("full") == Some("1") || has_meshes(&rsb);
+        let opts = JobOptions {
+            finish,
+            share,
+            seq,
+            passes,
+        };
         match self
             .engine
-            .submit_scene(kind, &rsb, whole, mesh, client, finish, passes)
+            .submit_with(kind, &rsb, whole, mesh, client, opts)
         {
             Ok(job) => Response::json(
                 200,
@@ -395,13 +427,40 @@ impl App {
             ),
             Err(SubmitError::BadScene(e)) => Response::error(400, "bad-scene", &e),
             Err(SubmitError::Busy) => Response::error(503, "busy", "too many windows rendering"),
+            Err(SubmitError::Stale) => {
+                Response::error(409, "stale", "a newer view of this window came first")
+            }
         }
+    }
+
+    /// The renderer's diagnostics: the gate, the jobs, the windows' viewports and the connections.
+    /// With `log=1` they also go to the log, with the page's `reason` (the viewport watchdog asks
+    /// for this when it fires, so the log says what the launcher was doing).
+    fn render_state(&self, req: &Request) -> Response {
+        let state = json::Object::new()
+            .num("connections", self.connections() as f64)
+            .num("heartbeatSilenceMs", self.silence().as_millis() as f64)
+            .raw("engine", &self.engine.state_json())
+            .build();
+        if req.query("log") == Some("1") {
+            let reason: String = req
+                .query("reason")
+                .unwrap_or("")
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || " .,:;_-()".contains(*c))
+                .take(200)
+                .collect();
+            crate::log!("render state ({reason}): {state}");
+        }
+        Response::json(200, state)
     }
 
     fn get_render(&self, req: &Request, id: &str) -> Response {
         let Some(job) = id.parse::<u32>().ok().and_then(|id| self.engine.job(id)) else {
             return Response::error(404, "not-found", "no such job");
         };
+        // Asked about: its page still wants it.
+        job.touch();
         let after = req.query("after").and_then(|a| a.parse::<u32>().ok());
         let frame = match after {
             Some(n) => job.wait_newer(n, LONG_POLL),
@@ -586,7 +645,7 @@ pub fn store_error(e: StoreError, sha: Option<&str>) -> Response {
 fn serve_connection(app: &App, stream: TcpStream) {
     let _ = stream.set_nodelay(true);
     let _ = stream.set_read_timeout(Some(IDLE));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(120)));
+    let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
     let Ok(read_half) = stream.try_clone() else {
         return;
     };
@@ -628,7 +687,28 @@ fn serve_connection(app: &App, stream: TcpStream) {
         if left > 0 && (left > (1 << 20) || io::copy(&mut body, &mut io::sink()).is_err()) {
             keep = false;
         }
-        if write_response(&mut writer, response, head, keep).is_err() || !keep {
+        // A long-polled frame nobody reads any more (its page went on to a newer view) gives the
+        // connection up soon: a short timeout cuts it and the connection closes. (The final image,
+        // fetched without `after`, keeps the long timeout.)
+        let frame = req.method == "GET"
+            && req.path.starts_with("/api/render/")
+            && req.query("after").is_some();
+        if frame {
+            let ms = app.frame_write_timeout_ms.load(Ordering::Relaxed).max(1);
+            let _ = writer
+                .get_ref()
+                .set_write_timeout(Some(Duration::from_millis(ms)));
+        }
+        if write_response(&mut writer, response, head, keep).is_err() {
+            // What is left in the buffer is dropped with the connection, not flushed with the
+            // long timeout (a reader that stopped would keep the thread for minutes).
+            let _ = writer.get_ref().shutdown(Shutdown::Both);
+            return;
+        }
+        if frame {
+            let _ = writer.get_ref().set_write_timeout(Some(WRITE_TIMEOUT));
+        }
+        if !keep {
             return;
         }
     }
@@ -681,6 +761,7 @@ impl Server {
             port,
             engine: Engine::with_store(
                 threads,
+                crate::render::Limits::default(),
                 options.keep.unwrap_or_default(),
                 Some(paths_data.join("cache").join("ai")),
             ),
@@ -698,6 +779,7 @@ impl Server {
             hardware: Mutex::new(None),
             connections: AtomicUsize::new(0),
             stopping: AtomicBool::new(false),
+            frame_write_timeout_ms: AtomicU64::new(FRAME_WRITE_TIMEOUT.as_millis() as u64),
         });
         app.dialogs.set_cache_dir(app.paths.data_dir.join("cache"));
         let shared = Arc::clone(&app);

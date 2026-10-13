@@ -507,6 +507,30 @@ en el trabajo que empieza en la muestra 0, sus planos exactos
 `PassAccumulator` (`src/render/pass-planes.ts`) igual que la imagen: el
 resultado es el del motor nativo bit a bit y vuelve como `RenderPasses`.
 
+**Mientras corre un *Render*, el visor sigue vivo** (P3a): se queda con la
+cuarta parte de los workers (al menos uno; en un pool de uno, espera) y el
+render usa los demás en cada pasada, o todos si el visor está en
+*Rápido*; con *Ajustes ▸ Motor de render ▸ Mientras se renderiza ▸ Pausar
+el visor*, el visor espera y el render los usa todos. Qué worker renderiza
+una baldosa no cambia un píxel, así que el render da los mismos bits con o
+sin visor. Cada worker tiene una sola escena: el pool recuerda la última
+que mandó a cada uno, y un worker que cambia de manos recibe la otra como
+actualización (las mallas se quedan). Como el render y el visor van a la
+vez, una cancelación es de una generación exacta, y un worker que pasa a
+otra generación para la que tenía. Al terminar el render, el visor vuelve
+a empezar en todos los workers.
+
+**Nunca parado en silencio** (P3a, `src/render/watchdog.ts`, el mismo en
+los dos motores): en cada fotograma se comprueba que la vista en curso
+recibe baldosas (en nativo, que el lanzador contesta y que llegan
+pasadas, con el plazo según lo que tardó la anterior) y que lo que llega
+se pinta; si no, la vista vuelve a arrancar, la consola lo dice y el
+medidor también (una nota bajo la barra). Los plazos se doblan cada vez
+que salta sin progreso entre medias, para no reiniciar una escena que solo
+es lenta, y una ventana oculta no cuenta. Un temporizador pinta si el
+bucle de animación de la página dejara de llamar, y ese bucle (`main.ts`)
+ya no se para por una excepción en un fotograma.
+
 ### 5.4 · En nativo
 
 `rt` renderiza un `.rsb` con todos los hilos de la máquina y escribe PNG
@@ -549,10 +573,38 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    acumuladas; mismo RSB, misma semilla, mismos píxeles que el wasm
    (regla de determinismo), así que la interfaz no distingue más que en
    la velocidad. `src/render/native.ts` implementa `RenderEngine` contra
-   esa API y se elige cuando `/api/info` responde. **Pases** (X2): un
-   trabajo final con `passes=albedo,normal,…` (y los de `RNDR.passes`)
-   los renderiza junto a la imagen, y al terminar con todas sus muestras
-   el lanzador **guarda la imagen lineal y sus pases por id del trabajo**
+   esa API y se elige cuando `/api/info` responde.
+
+   Con lo aprendido en P3a: la página manda **una vista de visor cada
+   vez**, numerada (`seq`; una que llega tarde recibe 409 `stale` y no
+   sustituye a una más nueva), y **lee o cancela siempre el cuerpo de cada
+   respuesta**: una sin leer retiene una de las seis conexiones HTTP/1.1
+   que el navegador abre al lanzador, y con las seis retenidas todo
+   esperaba para siempre (el visor, el render y *Pausar* de la v0.1.0).
+   Con `share=<hilos>` el trabajo de visor **sigue vivo mientras corre un
+   final**, en esos hilos (la página pide la cuarta parte, al menos uno),
+   y el final se queda con el resto, o con todos cuando no queda un visor
+   vivo; sin `share` (*Pausar el visor*), el visor se para entre baldosas.
+   Bandera 32 de la trama: comparte, y la cabecera dice con cuántos hilos.
+   El lanzador corta a los 10 s la escritura de una trama que nadie lee;
+   un trabajo por el que nadie pregunta se para solo (visor a los 10 s,
+   final a los 20 s: su página se fue); con las 8 ventanas ocupadas, una
+   que lleva 3 s sin preguntar (una página recargada) cede su sitio, así
+   que las recargas solas nunca llegan a 503 `busy`; un render que entra
+   en pánico termina como fallido y suelta la puerta, y un trabajo que no
+   se para en 5 s se deja atrás sin su escena. `GET /api/render/state` da
+   el diagnóstico (la puerta, los trabajos, las ventanas, las conexiones)
+   y con `log=1` lo apunta en el registro: lo pide el *watchdog* de la
+   página cuando salta. Las peticiones de *Render* llevan la señal de
+   cancelación, así que *Pausar* y *Detener* responden al momento aunque
+   el lanzador no conteste. El contrato completo, en
+   `engine/crates/rt-app/README.md`.
+
+   **Pases** (X2): un trabajo final con `passes=albedo,normal,…` (y los
+   de `RNDR.passes`) los renderiza junto a la imagen con los hilos que
+   tenga (también con los que le deja un visor que comparte), y al
+   terminar con todas sus muestras (no si se cancela, queda huérfano o
+   falla) el lanzador **guarda la imagen lineal y sus pases por id del trabajo**
    (`src/kept.rs`) antes de decir que ha terminado, para la tubería de la
    IA (`AI-POST.md` §7.3); borrar el trabajo (`DELETE`) no los borra.
    Guarda los cuatro últimos; uno de más de 64 MiB entre imagen y pases

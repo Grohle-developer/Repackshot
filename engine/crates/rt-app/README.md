@@ -274,10 +274,11 @@ Cada concesión es `{id, name, path, folder, read, write, size}`. Una respuesta 
 
 | Petición | Respuesta |
 | --- | --- |
-| `POST /api/render?kind=viewport\|final[&finish=samples\|time\|first][&passes=<pases>][&mesh=<clave>][&client=<id>]` | Cuerpo: el RSB. `{id, width, height, maxSamples, threads, isa, passes}` (`passes`: los nombres de los pases que renderiza). 400 `bad-scene` si el RSB no vale; 400 `bad-query` si `passes` nombra un pase que no existe o se pide en un trabajo de visor; 409 `need-meshes` si es una actualización sin `MESH` y esas mallas no están cargadas (la página manda entonces la escena entera); 503 `busy` con más de 8 ventanas |
-| `GET /api/render/<id>[?after=<n>][&data=0]` | Una **trama**: cabecera binaria y, si hay una pasada nueva, las sumas. Con `after=n` espera hasta 1 s a una pasada posterior a `n` (o al final). `data=0`: solo la cabecera (progreso). 404 si el trabajo no existe o fue sustituido o cancelado |
+| `POST /api/render?kind=viewport\|final[&finish=samples\|time\|first][&passes=<pases>][&mesh=<clave>][&client=<id>][&seq=<n>][&share=<hilos>]` | Cuerpo: el RSB. `{id, width, height, maxSamples, threads, isa, passes}` (`passes`: los nombres de los pases que renderiza, X2). 400 `bad-scene` si el RSB no vale; 400 `bad-query` si `passes` nombra un pase que no existe o se pide en un trabajo de visor; 409 `need-meshes` si es una actualización sin `MESH` y esas mallas no están cargadas (la página manda entonces la escena entera, con el mismo `seq`); 409 `stale` si un trabajo de visor de ese `client` con un `seq` mayor o igual ya llegó (dos peticiones que se adelantan: la vieja no sustituye a la nueva); 503 `busy` con 8 ventanas en uso (que han preguntado en los últimos 3 s) |
+| `GET /api/render/<id>[?after=<n>][&data=0]` | Una **trama**: cabecera binaria y, si hay una pasada nueva, las sumas. Con `after=n` espera hasta 1 s a una pasada posterior a `n` (o al final, o a un cambio de cómo comparte con los renders: empieza o deja de compartir, o espera). `data=0`: solo la cabecera (progreso). 404 si el trabajo no existe o fue sustituido o cancelado |
 | `DELETE /api/render/<id>` | 204: cancelado (o, si ya terminó, olvidado; los pases guardados siguen) |
-| `GET /api/render/<id>/passes` | Los **pases** guardados del render final `<id>` (X2), en binario (`RPP1`, abajo). 404 `not-found` si el id no existe, ya se desalojó o el trabajo no pidió pases (o se canceló); 409 `not-ready` mientras se renderiza |
+| `GET /api/render/<id>/passes` | Los **pases** guardados del render final `<id>` (X2), en binario (`RPP1`, abajo). 404 `not-found` si el id no existe, ya se desalojó o el trabajo no pidió pases (o se canceló, quedó huérfano o falló); 409 `not-ready` mientras se renderiza |
+| `GET /api/render/state[?log=1&reason=<texto>]` | Diagnóstico: `{connections, heartbeatSilenceMs, engine: {threads, isa, gate: {finalsRunning, finalsWaiting[], liveViewportThreads}, jobs: [{id, kind, width, height, maxSamples, share, passes, threads, pass, samples, seconds, flags[], cancelRequested, unaskedMs, error?}], viewports: [{client, lastSeq, sceneKept, running: {id, threadDone} \| null}]}}` (`passes`: la máscara de pases del trabajo). Con `log=1` también va al registro, con el motivo que da la página (el *watchdog* del visor lo pide al saltar) |
 
 Trabajos: muestras y tiempo máximos del `RNDR` del RSB (0 muestras = 16, como `rt`). `finish` dice
 cuándo para, como *Terminar por* de la ventana de render (`src/render/schedule.ts`): `samples` (las
@@ -286,18 +287,35 @@ antes); sin él, `first` si hay tiempo y `samples` si no. La regla de parada es 
 solo entre pasadas, así que todos los píxeles tienen las mismas muestras, y con tiempo no empieza
 una pasada de la que no quepa la mitad (acaba a menos de media pasada del límite). El reloj de un
 trabajo empieza cuando empieza a renderizar: un final que espera en la cola no gasta su tiempo. Un trabajo
-`final` tiene prioridad: los de visor se paran entre baldosas mientras uno corre (bandera
-*en pausa*), y los finales van de uno en uno por orden de llegada. Un trabajo de visor nuevo de
-un `client` sustituye al anterior de ese `client`; si el RSB no trae `MESH` y `mesh` coincide con
-el del trabajo anterior, se conservan sus mallas y sus BVH (`Scene::update_from_rsb`). Un `final`
-siempre lleva sus mallas. Los dos últimos finales terminados se guardan para recogerlos; la
-página los borra al leerlos.
+`final` tiene prioridad y los finales van de uno en uno por orden de llegada. Un trabajo de visor
+con `share=n` (la página pide la cuarta parte de los hilos, al menos uno, salvo que *Ajustes ▸ Motor
+de render ▸ Mientras se renderiza* diga *Pausar*) sigue renderizando en `n` hilos mientras corre un
+final, que se queda con el resto (y con todos otra vez cuando no queda ningún visor vivo: uno que ha
+convergido no cuenta); sin `share`, se para entre baldosas (bandera *en pausa*). Qué hilo renderiza
+cada baldosa no cambia ningún píxel: el final da los mismos bits con o sin visor vivo
+(`tests/parity.rs`). Un trabajo de visor nuevo de un `client` sustituye al anterior de ese
+`client` (salvo que llegue tarde: `seq`); si el RSB no trae `MESH` y `mesh` coincide con el del
+trabajo anterior, se conservan sus mallas y sus BVH (`Scene::update_from_rsb`); un trabajo anterior
+que no se para en 5 s (una baldosa eterna) se deja atrás sin su escena, y la siguiente
+actualización pide la escena entera. Un `final` siempre lleva sus mallas. Los dos últimos finales
+terminados se guardan para recogerlos; la página los borra al leerlos. Un trabajo por el que nadie
+pregunta (la página consulta cada segundo) se para solo: el de visor a los 10 s y el final a los
+20 s (su página se fue). Con las 8 ventanas ocupadas, la que lleva más de 3 s sin preguntar (una
+página recargada, cuyo yo anterior no vuelve) deja su sitio a la nueva: las recargas solas nunca
+llegan al límite, y la página, además, cancela sus trabajos al irse (`pagehide`). Un render que entra en pánico termina como fallido y suelta su turno. La
+escritura de una trama de `after=` que la página ya no lee se corta a los 10 s y la conexión se
+cierra (antes retenía su hilo 120 s). La página lee o cancela siempre el cuerpo de cada respuesta:
+una respuesta sin leer retiene una de las seis conexiones que el navegador abre al lanzador, y con
+las seis retenidas todas las peticiones esperan para siempre (lo que paraba el visor, el render y
+*Pausar* en la v0.1.0).
 
 **Pases** (X2, `src/kept.rs`; contrato en `docs/AI-POST.md` §7.4). `passes` es una lista separada
 por comas de `albedo`, `normal`, `depth`, `partId`, `materialId` y `coc` (los nombres de
 `PASS_KEYS`, sensibles a mayúsculas); el trabajo final renderiza esos y los de `RNDR.passes` de su
-RSB, junto a la imagen y sin cambiarle un píxel. Un trabajo de visor no renderiza nunca pases (los
-de su RSB se ignoran). Cuando un final termina con todas sus muestras (no si se cancela), la imagen
+RSB, junto a la imagen y sin cambiarle un píxel, con los hilos que tenga (también los que le deja un
+visor que comparte, `share`: qué hilo hace una baldosa no cambia ni un píxel ni un pase). Un trabajo
+de visor no renderiza nunca pases (los de su RSB se ignoran). Cuando un final termina con todas sus
+muestras (no si se cancela, queda huérfano porque su página dejó de preguntar o falla), la imagen
 lineal (su última trama) y los pases se **guardan por id**, antes de que el trabajo diga que ha
 terminado, para el post-procesado IA (X3c los toma de ahí con el id del render; en Rust,
 `Engine::kept`); olvidar el trabajo no los borra. Se guardan los **cuatro últimos**: uno nuevo
@@ -318,9 +336,9 @@ arrancar.
 | 12 | `u32` muestras por píxel en las sumas |
 | 16, 20 | `u32` ancho, alto |
 | 24 | `f32` segundos desde que empezó (hasta que terminó) |
-| 28 | `u32` banderas: 1 terminado, 2 cancelado, 4 fallido, 8 en pausa por un final, 16 lleva datos |
+| 28 | `u32` banderas: 1 terminado, 2 cancelado, 4 fallido, 8 en pausa por un final, 16 lleva datos, 32 comparte los hilos (un visor en su parte mientras corre un final, o un final que deja esa parte a un visor vivo) |
 | 32 | `u32` muestras pedidas (0: las que quepan en el tiempo) |
-| 36 | `u32` hilos |
+| 36 | `u32` hilos que lo renderizan ahora (todos, su parte mientras comparte, 0 mientras espera) |
 | 40 | `u64` rayos lanzados |
 | 48 | con la bandera 16: `ancho × alto × 4` `f32`, por píxel la **suma** de radiancia premultiplicada (RGB) y de cobertura (A) de todas las muestras |
 
@@ -618,7 +636,12 @@ inválido, escapes Unicode y sustitutos, números, profundidad); el lector HTTP 
 petición, cabeceras, peticiones malas); `Range`; rutas de ficheros; el almacén de modelos
 (trozos desordenados y reanudados, *hash* erróneo → dañado, *blob* compartido conservado al
 borrar uno de dos modelos, manifiestos importados); la regla con el fichero de casos; los
-analizadores de `reg`, `/proc`, `nvidia-smi`; el INI; el estado de la página (nombres, tipos,
+analizadores de `reg`, `/proc`, `nvidia-smi`; el INI; los trabajos (P3a): un visor vivo comparte
+los hilos con un final y sigue sacando pasadas, el final da los mismos bits con o sin él, una vista
+que llega tarde no sustituye a una nueva, un trabajo por el que nadie pregunta se para, un render
+que entra en pánico termina fallido y suelta el turno, un trabajo que no se para se deja atrás, la
+puerta se abre otra vez tras un final cancelado o terminado con 4, 16 y 32 hilos, las ventanas que
+se fueron no dejan fuera a una nueva y una página recargada 24 veces sigue renderizando; el estado de la página (nombres, tipos,
 escritura atómica que deja el archivo viejo si el cuerpo se corta, documento dañado apartado,
 enlaces dentro de la carpeta de datos, medidas) y el puerto recordado. `src/dialogs.rs`: los argumentos de `zenity` y `kdialog`, la lectura de sus salidas y de la del
 guion de PowerShell, que las palabras de la página van como datos, base64, un diálogo a la vez y
@@ -649,10 +672,11 @@ archivo elegido. Ignoradas salvo que se pidan: el zip real de cada compilación 
 (`RPX_REAL_DOWNLOAD=1`) y un *img2img* real con SD 1.5 en CPU (`RPX_SD15_WEIGHTS`).
 En `tests/`: el servidor por sockets reales
 (`Host` ajeno, token, `Origin`, sin CORS, *keep-alive*, ficheros, modelos por HTTP, *pending
-models*), el estado de la página por HTTP (`tests/appdata.rs`: seguridad, nombres que no salen de
+models*, `seq` y `share`, el diagnóstico, una trama sin leer que suelta su conexión), el estado de la página por HTTP (`tests/appdata.rs`: seguridad, nombres que no salen de
 su carpeta, enlaces no seguidos, límites, una petición cortada, resultados con índice, caché y
 espacio usado, y que todo sigue ahí para otro arranque), el puerto estable (`tests/port.rs`: el
-mismo si está libre, otro recordado si está ocupado, `--port` sin recordar) y la paridad con `rt`.
+mismo si está libre, otro recordado si está ocupado, `--port` sin recordar) y la paridad con `rt`,
+también con un visor vivo en 16 hilos.
 
 La ventana propia (`src/platform/`): en todas las plataformas, los GUID, nuestros objetos COM
 (recuento de referencias, `QueryInterface`, `Invoke`), el tamaño de cada vtable de WebView2 contra
