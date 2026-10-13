@@ -37,6 +37,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rt-sky"
+version = "0.3.0"
+dependencies = [
+ "rt-core",
+]
+
+[[package]]
 name = "rt-wasm"
 version = "0.3.0"
 dependencies = [

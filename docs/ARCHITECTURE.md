@@ -64,7 +64,11 @@ objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 Los HDRI (`.hdr` y `.exr`) se leen con lectores propios, en la interfaz
 (`src/io/hdri.ts`) y en el motor (`rt-core`: RGBE, OpenEXR e *inflate*);
 `HDRLoader` y `EXRLoader` de three solo aparecen en los tests, como lector
-independiente con el que comparar (E5). E5 no añade dependencias.
+independiente con el que comparar (E5). E5 no añade dependencias. E5c
+tampoco: el simulador de atmósfera y el ajuste del cielo físico
+(`engine/crates/rt-sky`) son Rust propio solo con `std`, y lo que producen
+entra en el repositorio como datos (`rt-core/src/sky_table.rs` y
+`src/core/sky-table.ts`, con su receta y su *hash*).
 
 ---
 
@@ -84,15 +88,18 @@ src/
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
     images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5)
-    sky.ts                  el cielo de Preetham del motor, portado para la vista previa (E5)
+    sky.ts                  el cielo del motor portado para la vista previa: el físico de E5c (por defecto) y el de Preetham (E5)
+    sky-table.ts            los coeficientes del cielo físico, generados por `rt-sky table` (los mismos f32 y el mismo hash que rt-core)
     faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
     material-drop.ts        a qué llega una suelta de material y qué asigna (U7)
     box-select.ts           selección por caja: geometría en pantalla, ventana y cruce, qué gesto la arma (U7)
+    primitives.ts           primitivas paramétricas: generadores puros y deterministas (caras lógicas, UV, normales), medidas válidas, id de malla `prim:<dueño>:<FORMA>:<medidas>` (U9)
+    primitive-ops.ts        las primitivas en la escena: dónde nacen (base bajo el producto, junto a él, bajo él), añadir, editar en vivo, convertir en malla; `fitSweep` ajusta el fondo infinito a la cámara y a los focos traseros (U9)
     light-math.ts           kelvin → rgb, irradiancia, polar, ease   (portado)
     rig.ts                  studioRig / setupRig normalizados           (portado)
     wear.ts                 valores por defecto del desgaste            (portado)
     version.ts
-  data/                     CATÁLOGOS. Solo datos y tipos (§3)
+  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9)
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
@@ -119,6 +126,8 @@ src/
       material-drag.ts      arrastrar un material con eventos de puntero: fantasma, zonas de suelta, Esc (U7)
     panels/                 header, scene, viewport, inspector, renderbar, status
       viewport-box.ts       el gesto de la caja de selección sobre el visor (U7)
+      add-menu.ts           Añadir ▸ Primitiva: las mismas entradas en la cabecera, el + de Escena y el menú del visor en vacío (U9)
+      scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
 public/
   thumbs/setups/            72 miniaturas de montaje de luz (PNG)
   assets/aperture/          45 máscaras de diafragma y texturas de pupila (PNG 512², gris de 8 bits) + index.json (A6)
@@ -132,13 +141,16 @@ docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
   crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG;
-                            imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5)
+                            imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c)
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG con hilos; hojas de contacto
                             (las escenas de E5 en scenes.rs)
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
   crates/rt-post/           la guarda del post-procesado IA y todo su trabajo con píxeles (AI-POST.md §7.2); rt-core no la conoce
   crates/rt-post-wasm/      exportaciones extern "C" de rt-post → public/engine/post.wasm
+  crates/rt-sky/            herramienta fuera de línea `rt-sky` (E5c): simulador espectral de la atmósfera, ajuste
+                            Levenberg–Marquardt del cielo físico y su tabla; escribe rt-core/src/sky_table.rs,
+                            src/core/sky-table.ts y tests/fixtures/sky-physical.json
 packaging/                  guiones de empaquetado: portables de Windows y Linux, instalador NSIS (P2)
 public/engine/rt.wasm       el motor compilado para el navegador (generado por npm run engine:build; no se sube)
 public/engine/post.wasm     la guarda IA compilada (rt-post-wasm), generada por el mismo guion; tampoco se sube
@@ -150,7 +162,9 @@ public/engine/post.wasm     la guarda IA compilada (rt-post-wasm), generada por 
 de la suite (`tests/boundaries.test.ts`, U2) recorre los `import` y
 falla si se viola; hoy no hay ninguna infracción. El motor (`engine/`) no conoce nada de `src/`: su
 única interfaz con el resto es el formato RSB (§5.2) y las exportaciones
-de `rt-wasm` (§5.3).
+de `rt-wasm` (§5.3). La excepción es de herramienta, no del motor: `rt-sky`
+(fuera de línea) escribe la copia TypeScript de la tabla del cielo y un
+test suyo comprueba que coincide con la de `rt-core`.
 
 ---
 
@@ -323,7 +337,7 @@ export interface RenderEngine {
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 
-Vive en `engine/`, un workspace de Cargo con seis *crates*:
+Vive en `engine/`, un workspace de Cargo con siete *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
@@ -332,11 +346,12 @@ Vive en `engine/`, un workspace de Cargo con seis *crates*:
 | `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
+| `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
 | `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
 **Sin dependencias externas** quiere decir exactamente eso: ningún
 *crate* de crates.io en ningún *crate* del workspace. `Cargo.lock` solo
-lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post` y `rt-post-wasm`,
+lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post`, `rt-post-wasm` y `rt-sky`,
 y CI falla si aparece un `source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
 baja discrepancia, zlib/PNG, lectores HDR, hilos) se escribe aquí.
 Fórmulas y tablas de la literatura pública (PCG, Sobol con números de
@@ -406,11 +421,13 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   = irradiancia en W/m², disco de `angle_deg`. `flags` bit 0 *glossy*
   (ilumina todos los lóbulos y se ve en reflejos; sin él solo difuso por
   NEE), bit 1 visible a cámara.
-- **`ENVR`** (80 B desde E5) `kind`: 0 cúpula (lineal en z: suelo −1,
-  horizonte 0, cénit +1, × `strength`), 1 plano, 2 cielo (Preetham, con
+- **`ENVR`** (84 B desde E5c; 80 B en E5) `kind`: 0 cúpula (lineal en z: suelo −1,
+  horizonte 0, cénit +1, × `strength`), 1 plano, 2 cielo (con
   `sky_turbidity` y el sol en `sun_azimuth_deg` / `sun_elevation_deg`,
   escalado a la irradiancia horizontal de la cúpula de los mismos valores;
-  suelo neutro bajo el horizonte), 3 HDRI (el mapa `hdri_map`,
+  suelo neutro bajo el horizonte; `sky_model`, el último campo, E5c: **0**
+  el cielo físico propio, también lo que significa un fichero sin el campo
+  y cualquier valor desconocido, **1** el clásico de Preetham), 3 HDRI (el mapa `hdri_map`,
   equirectangular en la convención de three.js, girado `rotation_deg` en
   torno a Z; sin mapa, la cúpula); `background_mode`: 0 entorno, 1 color,
   2 transparente (alfa 0), 3 imagen de fondo (`backplate_map`, solo para
@@ -753,7 +770,9 @@ interfaz sabe del visor:
   tinte sobre la pieza, en una capa aparte de la de las caras
   seleccionadas).
 - **Herramientas y *gizmo***: `setTool`, `setGizmo`, `gizmoHover`,
-  `gizmoBegin`, `gizmoDrag`, `gizmoEnd`.
+  `gizmoBegin`, `gizmoDrag`, `gizmoEnd`. `setGizmo` lleva `handles`
+  opcional (U9): `ALL` (Mover) o `SCALE` (Escalar: solo los cubos al final
+  de cada eje y el punto central, que es lo único que se dibuja y se coge).
 - **Estado y miniaturas**: `status`, `onFrame`, `materialThumbnail`,
   `thumbnailsPending`; **ajustes**: `setNavigation`, `setDisplay`.
 
@@ -774,7 +793,8 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Modelo | `tests/store.test.ts`, `scene`, `materials`, `doctor`… | Acciones puras: dado un estado, la acción produce el esperado; deshacer lo devuelve |
 | Interfaz | `tests/strings.test.ts`, `ui-achromatic.test.ts` | Invariantes estáticas sobre fuentes |
 | Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
-| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs` | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
+| Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
+| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |
@@ -811,4 +831,17 @@ decodifican otra vez (`placeImages`): una imagen cuyo id ya nombra otra en
 la sesión recibe un id nuevo, y una que falta o no se lee se quita del
 entorno (ilumina la cúpula, se ve el color) con el aviso `MISSING_IMAGES`,
 sin impedir abrir. El esquema sigue en 2: los campos nuevos del entorno
-tienen valor por defecto.
+tienen valor por defecto. **Primitivas** (U9): una pieza hecha con
+*Añadir ▸ Primitiva* guarda su forma y sus medidas en el campo opcional
+`primitive` (`{ "kind": "BOX", "params": { "width": 88.5, … } }`) de su nodo,
+y su malla **no** va en `meshes`: al abrir se genera otra vez de las medidas
+(normalizadas), bajo el id que tenía (`prim:<dueño>:<FORMA>:<medidas>`, que
+nombra el contenido), con su `MeshRef` y sus `faceRanges`; un proyecto con
+primitivas se guarda, se abre y se vuelve a guardar en los mismos bytes.
+Un archivo sin el campo abre como siempre; una forma que esta versión no
+conoce (un archivo más nuevo) se queda sin el campo y su pieza sin
+geometría, con el aviso `MISSING_MESHES`; un `primitive` que no es un
+objeto es daño. El esquema sigue en 2. Una versión anterior a U9 que abra
+un proyecto con primitivas no las verá (sin malla en el archivo): solo
+compatibilidad hacia atrás, como se decidió. El motor recibe la malla como
+una más: el RSB no cambia.

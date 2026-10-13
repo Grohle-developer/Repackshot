@@ -97,6 +97,13 @@ export interface NativeHardware {
   gpus: { name: string; vendor: string; vramBytes: number | null; vramGiB: number | null }[];
   device: 'gpu' | 'cpu';
   gpuFound: boolean;
+  /**
+   * Whether any source of the graphics cards answered (`failed`: none could be asked, so an empty `gpus` is not
+   * "no graphics card"). Absent from the launchers up to v0.1.2.
+   */
+  gpuDetection?: 'ok' | 'failed';
+  /** What each source of the graphics cards said (DXGI, the registry, CIM, wmic; nvidia-smi, DRM). */
+  gpuSources?: { source: string; ok: boolean; found: number; detail: string | null }[];
   detected: boolean;
   input: { device: 'gpu'; vramGiB: number } | { device: 'cpu'; ramGiB: number } | null;
   recommendation: NativeRecommendation | null;

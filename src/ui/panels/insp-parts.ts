@@ -19,7 +19,8 @@ import { dragSource } from '../components/material-drag';
 import { section } from '../components/section';
 import { setThumbImage, showConfirmIn, thumb } from '../components/widgets';
 import { h, icon } from '../dom';
-import { cameraName, dyn, lightName, materialLabel, materialName, targetLabel, thumbKey } from '../names';
+import { cameraName, dyn, lightName, materialLabel, materialName, primitiveParamKey, targetLabel, thumbKey } from '../names';
+import { primitiveEntry } from '../../data/primitives';
 import { dynamic, shallowEq, type Ctx, type Scope } from '../reactive';
 import { L, lbl, t } from '../strings';
 import { normalize } from '../components/palette';
@@ -575,6 +576,55 @@ function patternSection(ctx: Ctx, scope: Scope, id: NodeId): HTMLElement {
   return section(ctx, 'pattern', t('section.pattern'), body);
 }
 
+/**
+ * The Primitive editor (phase U9; a primitive part is selected): its measures, live. A change regenerates the mesh
+ * through one action of the store, and a drag of a field is one undo step; Convert to mesh freezes them.
+ */
+function primitiveSection(ctx: Ctx, scope: Scope, id: NodeId): HTMLElement | null {
+  const { store } = ctx;
+  const spec0 = store.get().scene.nodes[id]?.primitive;
+  const entry = spec0 ? primitiveEntry(spec0.kind) : undefined;
+  if (!spec0 || !entry) return null;
+  const rows = entry.params.map((p) => {
+    const label = t(primitiveParamKey(spec0.kind, p.key));
+    const value = spec0.params[p.key];
+    const onChange = (v: number, g: string) => cmd.setPrimitiveParam(ctx, id, p.key, p.kind === 'COUNT' ? Math.round(v) : v, g);
+    const ctrl =
+      p.kind === 'LENGTH'
+        ? lengthField({ value, min: p.min, step: p.step ?? 1, digits: (p.step ?? 1) < 1 ? 2 : 1, ariaLabel: label, onChange })
+        : numberField({ value, min: p.min, max: p.max, step: 1, digits: 0, ariaLabel: label, onChange });
+    scope.watch((s) => s.scene.nodes[id]?.primitive?.params[p.key], (v) => v !== undefined && ctrl.set(v));
+    const row = field(label, ctrl.el);
+    row.setAttribute('data-param', p.key);
+    return row;
+  });
+  // Linked copies (Duplicate linked, a pattern) share the mesh: they change with it.
+  const linked = h('p', { class: 'note', style: 'margin:0' });
+  scope.watch(
+    (s) => s.scene.nodes,
+    (nodes) => {
+      const mesh = nodes[id]?.mesh?.id;
+      const n = mesh ? Object.values(nodes).filter((m) => m.id !== id && m.mesh?.id === mesh).length : 0;
+      linked.textContent = n > 0 ? t('primitive.linked', { n }) : '';
+      linked.style.display = n > 0 ? '' : 'none';
+    },
+  );
+  const convert = h('button', { type: 'button', class: 'btn', 'data-tip': t('primitive.convertAux'), 'data-action': 'primitive.convert', onclick: () => cmd.convertToMesh(ctx, [id]) }, t('primitive.convert'));
+  // The infinity sweep: fitted to the active camera again (it faces it and covers its frame).
+  const fit = spec0.kind === 'SWEEP' ? h('button', { type: 'button', class: 'btn', 'data-tip': t('primitive.fitAux'), 'data-action': 'primitive.fit', onclick: () => cmd.fitToCamera(ctx, id) }, icon('camera', 14), t('primitive.fit')) : null;
+  const body = h(
+    'div',
+    { class: 'stack', 'data-field': 'primitive', 'data-kind': spec0.kind },
+    field(t('primitive.kind'), h('span', { class: 'prim-kind' }, t(dyn(`prim.${spec0.kind}`)))),
+    ...rows,
+    h('p', { class: 'note', style: 'margin:0' }, t('primitive.note')),
+    linked,
+    fit,
+    convert,
+  );
+  return section(ctx, 'primitive', t('section.primitive'), body);
+}
+
 export function partsInspector(ctx: Ctx, scope: Scope, ids: string[], faces: boolean): HTMLElement {
   const s = ctx.store.get();
   if (faces && (!s.selection.faces || s.selection.faces.indices.length === 0)) {
@@ -582,7 +632,9 @@ export function partsInspector(ctx: Ctx, scope: Scope, ids: string[], faces: boo
     return h('div', null, h('p', { class: 'note', style: 'padding:12px var(--pad)' }, t('inspector.noFaces', { part })), partSection(ctx, scope, ids, false));
   }
   const pattern = !faces && ids.length === 1 && s.scene.nodes[ids[0]]?.pattern ? patternSection(ctx, scope, ids[0]) : null;
-  return h('div', null, pattern, materialSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces));
+  // A primitive's measures, until it is converted to a mesh (keyed on its shape: editing a measure does not rebuild).
+  const primitive = !faces && ids.length === 1 ? dynamic(scope, (st) => st.scene.nodes[ids[0]]?.primitive?.kind ?? '', (sc, kind) => (kind ? primitiveSection(ctx, sc, ids[0]) : null)) : null;
+  return h('div', null, pattern, primitive, materialSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces));
 }
 
 // --- Light -----------------------------------------------------------------------------

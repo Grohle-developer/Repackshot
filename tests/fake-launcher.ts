@@ -43,7 +43,7 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
   };
   const info: NativeInfo = {
     app: 'repackshot',
-    version: '0.1.1',
+    version: '0.1.3',
     engineVersion: '0.3.0',
     threads: 4,
     isa: 'avx2',
@@ -88,7 +88,7 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
       case 'GET info':
         return json(200, info);
       case 'GET hardware':
-        return json(200, { cpu: 'Test CPU', cores: 4, threads: 8, ramBytes: 16 * 2 ** 30, ramGiB: 16, ramUsableBytes: null, gpus, device: 'gpu', gpuFound: gpus.length > 0, detected: true, input: null, recommendation: null });
+        return json(200, { cpu: 'Test CPU', cores: 4, threads: 8, ramBytes: 16 * 2 ** 30, ramGiB: 16, ramUsableBytes: null, gpus, device: 'gpu', gpuFound: gpus.length > 0, gpuDetection: 'ok', gpuSources: [{ source: 'dxgi', ok: true, found: gpus.length, detail: null }], detected: true, input: null, recommendation: null });
       case 'GET pending-models':
         return json(200, null);
       case 'POST dialog/folder': {

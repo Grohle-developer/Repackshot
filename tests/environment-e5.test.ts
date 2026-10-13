@@ -21,7 +21,8 @@ const fixture = (name: string) => new Uint8Array(readFileSync(`tests/fixtures/${
 const lum = (c: readonly number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
 describe('the sky of the preview', () => {
-  const params = { sunAzimuthDeg: -40, sunElevationDeg: 35, turbidity: 3, floor: DOME_FLOOR, horizon: DOME_HORIZON, zenith: DOME_ZENITH, strength: 1 };
+  // The classic sky of E5 (the physical one of E5c has its own test: tests/sky-physical.test.ts).
+  const params = { model: 'CLASSIC' as const, sunAzimuthDeg: -40, sunElevationDeg: 35, turbidity: 3, floor: DOME_FLOOR, horizon: DOME_HORIZON, zenith: DOME_ZENITH, strength: 1 };
 
   it('is the engine’s, pixel for pixel (rt-core environment.rs `sky_image`, same parameters)', () => {
     const rgb = skyImage(params);
@@ -42,8 +43,8 @@ describe('the sky of the preview', () => {
   });
 
   it('lights a horizontal surface like the studio dome of the same values, over a ground of floor x strength', () => {
-    for (const strength of [1, 0.4]) {
-      const rgb = skyImage({ ...params, strength });
+    for (const [strength, model] of [[1, 'CLASSIC'], [0.4, 'CLASSIC'], [1, 'PHYSICAL'], [0.4, 'PHYSICAL']] as const) {
+      const rgb = skyImage({ ...params, model, strength });
       let e = 0;
       const cell = (Math.PI / SKY_HEIGHT) * ((2 * Math.PI) / SKY_WIDTH);
       for (let y = 0; y < SKY_HEIGHT / 2; y++) {

@@ -65,6 +65,9 @@ import {
   type PivotMode,
   type Space,
 } from '../core/transform';
+import { fitSweep, placePrimitive, primitivesUnder } from '../core/primitive-ops';
+import type { PrimitiveKind } from '../data/primitives';
+import type { Vec3 } from '../core/math';
 import { createInitialState, type ProjectState, type ThemeSetting } from '../core/store';
 import {
   importIsSure,
@@ -84,7 +87,7 @@ import { doctorCheck } from '../data/doctor';
 import { showFirstRunChooser } from '../core/models';
 import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
-import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
+import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, primitiveParamKey, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
 import type { Ctx } from './reactive';
 import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob } from './render-queue';
 import { effectiveMode, type CadReadState, type PendingImport, type Tool, type ViewportMode } from './ui-state';
@@ -1088,6 +1091,73 @@ function movable(ctx: Ctx, ids?: NodeId[]): NodeId[] {
 export function startMove(ctx: Ctx, ids?: NodeId[]): void {
   if (ids) ctx.store.dispatch({ type: 'scene/select', ids, mode: 'set' });
   setTool(ctx, 'move');
+}
+
+// --- Primitives and scale (phase U9) ---------------------------------------------------------
+
+/**
+ * Add ▸ Primitive: a new shape where a studio would put it (core/primitive-ops.ts): a box or a pedestal under the
+ * product, which is lifted onto it, a flat or a sweep under it, anything else beside it. One action, one undo step.
+ */
+export function addPrimitive(ctx: Ctx, kind: PrimitiveKind): void {
+  const s = ctx.store.get();
+  const place = placePrimitive(s, kind);
+  const name = L(dyn(`prim.${kind}`));
+  const label = place.role === 'BASE' && place.lift ? L('undo.addBase', { name, target: targetLabel(s, place.lift.ids) }) : L('undo.addPrimitive', { name });
+  ctx.store.dispatch({
+    type: 'scene/addPrimitive',
+    kind,
+    params: place.params,
+    position: place.position,
+    ...(place.rotation ? { rotation: place.rotation } : {}),
+    name: t(dyn(`prim.${kind}`)),
+    ...(place.lift ? { lift: place.lift } : {}),
+    label,
+  });
+}
+
+/** Fit to camera (an infinity sweep): it faces the active camera again and covers its frame; one undo step. */
+export function fitToCamera(ctx: Ctx, id: NodeId): void {
+  const s = ctx.store.get();
+  if (s.scene.nodes[id]?.primitive?.kind !== 'SWEEP') return;
+  const fit = fitSweep(s);
+  ctx.store.dispatch({ type: 'scene/fitPrimitive', id, params: fit.params, position: fit.position, rotation: fit.rotation, label: L('undo.fitSweep', { target: targetLabel(s, [id]) }) });
+}
+
+/** A measure of a primitive (the inspector): the mesh is made again, a drag of the field is one undo step. */
+export function setPrimitiveParam(ctx: Ctx, id: NodeId, key: string, value: number, gesture?: string): void {
+  const s = ctx.store.get();
+  const node = s.scene.nodes[id];
+  if (!node?.primitive) return;
+  ctx.store.dispatch({ type: 'scene/setPrimitive', id, params: { [key]: value }, gesture, label: L('undo.primitive', { param: L(primitiveParamKey(node.primitive.kind, key)), target: targetLabel(s, [id]) }) });
+}
+
+/** Convert to mesh: the primitives under the nodes keep their geometry and stop being parametric. */
+export function convertToMesh(ctx: Ctx, ids?: NodeId[]): void {
+  const s = ctx.store.get();
+  const target = primitivesUnder(s, targetsOf(ctx, ids));
+  if (!target.length) return;
+  ctx.store.dispatch({ type: 'scene/convertPrimitive', ids: target, label: L('undo.convertMesh', { target: targetLabel(s, target) }) });
+}
+
+/** The Scale tool (S): the gizmo with only its scale handles. */
+export function startScale(ctx: Ctx, ids?: NodeId[]): void {
+  if (ids) ctx.store.dispatch({ type: 'scene/select', ids, mode: 'set' });
+  setTool(ctx, 'scale');
+}
+
+/** Scale… ▸ Apply: the selection scaled by `factors` about its pivot, along the axes in force; one undo step. */
+export function scaleSelection(ctx: Ctx, factors: Vec3, ids?: NodeId[], space: Space = ctx.ui.get().space): void {
+  const target = movable(ctx, ids);
+  if (!target.length || factors.every((f) => f === 1) || factors.some((f) => !(f > 0) || !Number.isFinite(f))) return;
+  ctx.store.dispatch({ type: 'scene/scale', ids: target, factors: [factors[0], factors[1], factors[2]], space, label: L('undo.scale', { target: targetLabel(ctx.store.get(), target) }) });
+}
+
+/** Scale… ▸ Reset scale: each node back to the scale it entered the scene with, about its own pivot. */
+export function resetScale(ctx: Ctx, ids?: NodeId[]): void {
+  const target = movable(ctx, ids);
+  if (!target.length) return;
+  ctx.store.dispatch({ type: 'scene/resetScale', ids: target, label: L('undo.resetScale', { target: targetLabel(ctx.store.get(), target) }) });
 }
 
 export function centerAndRest(ctx: Ctx, ids?: NodeId[]): void {

@@ -2,6 +2,7 @@
 // it drives the keyboard, the command palette and the tooltips.
 
 import type { SelectionLevel } from '../core/scene';
+import { PRIMITIVE_KINDS } from '../data/primitives';
 import * as cmd from './commands';
 import type { ConfirmSpec } from './components/widgets';
 import type { Ctx } from './reactive';
@@ -42,6 +43,7 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'tool.pan', label: 'tool.pan', keys: 'p', run: setTool('pan') },
   { id: 'tool.zoom', label: 'tool.zoom', keys: 'z', run: setTool('zoom') },
   { id: 'tool.move', label: 'action.move', keys: 'm', run: setTool('move') },
+  { id: 'tool.scale', label: 'action.scale', keys: 's', run: setTool('scale') },
   { id: 'space.local', label: 'action.spaceLocal', keys: 'l', run: (ctx) => cmd.setSpace(ctx, 'LOCAL') },
   { id: 'space.global', label: 'action.spaceGlobal', keys: 'g', run: (ctx) => cmd.setSpace(ctx, 'GLOBAL') },
   { id: 'duplicate', label: 'action.duplicate', keys: 'mod+d', run: (ctx) => cmd.duplicate(ctx, false) },
@@ -58,8 +60,8 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'level.PART', label: 'action.levelPart', keys: '3', run: level('PART') },
   { id: 'level.FACES', label: 'action.levelFaces', keys: '4', run: level('FACES') },
   { id: 'panels', label: 'action.panels', keys: 'tab', run: (ctx) => cmd.togglePanels(ctx) },
-  // Esc leaves the move tool first, then deselects.
-  { id: 'deselect', label: 'action.deselect', keys: 'escape', palette: false, run: (ctx) => (ctx.ui.get().tool === 'move' ? cmd.setTool(ctx, 'select') : cmd.deselect(ctx)) },
+  // Esc leaves the move or the scale tool first, then deselects.
+  { id: 'deselect', label: 'action.deselect', keys: 'escape', palette: false, run: (ctx) => (ctx.ui.get().tool === 'move' || ctx.ui.get().tool === 'scale' ? cmd.setTool(ctx, 'select') : cmd.deselect(ctx)) },
   { id: 'delete', label: 'action.delete', keys: 'delete', altKeys: ['backspace'], run: (ctx) => cmd.deleteSelection(ctx) },
   // Palette only.
   { id: 'example', label: 'action.example', run: (ctx) => cmd.loadExample(ctx) },
@@ -91,6 +93,9 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'themeLight', label: 'action.themeLight', run: (ctx) => cmd.setTheme(ctx, 'light') },
   { id: 'langEn', label: 'action.langEn', run: (ctx) => cmd.setLanguage(ctx, 'en') },
   { id: 'langEs', label: 'action.langEs', run: (ctx) => cmd.setLanguage(ctx, 'es') },
+  // Add ▸ Primitive (phase U9), one entry per shape of the catalogue.
+  ...PRIMITIVE_KINDS.map((k): AppAction => ({ id: `add.${k}`, label: `prim.add.${k}` as StringKey, run: (ctx) => cmd.addPrimitive(ctx, k) })),
+  { id: 'convertMesh', label: 'primitive.convert', run: (ctx) => cmd.convertToMesh(ctx) },
 ];
 
 /** Where Settings ▸ Keyboard shortcuts lists an action. */
@@ -99,7 +104,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['general', 'view', 'se
 
 export function shortcutGroup(id: string): ShortcutGroup {
   if (id.startsWith('level.') || ['hide', 'isolate', 'showAll', 'deselect', 'delete', 'selectAll'].includes(id)) return 'selection';
-  if (id === 'tool.move' || id.startsWith('space.') || ['duplicate', 'duplicateLinked', 'group', 'ungroup', 'copyMaterial', 'pasteMaterial'].includes(id)) return 'edit';
+  if (id === 'tool.move' || id === 'tool.scale' || id.startsWith('space.') || ['duplicate', 'duplicateLinked', 'group', 'ungroup', 'copyMaterial', 'pasteMaterial'].includes(id)) return 'edit';
   if (id.startsWith('tool.') || id === 'frame' || id === 'panels' || id === 'viewportMode') return 'view';
   return 'general';
 }

@@ -23,6 +23,7 @@ Do not add a dependency. If something is missing, write it.
 | `crates/rt-app` | binary `repackshot` + library | The desktop launcher (P2): serves the interface on 127.0.0.1 with a per-launch token, opens it in an Edge or Chromium app window, renders natively on every thread through `/api/render` (the same film as `rt`), stores AI models by SHA-256 and detects the hardware for the model recommendation. `std` only, `#![forbid(unsafe_code)]`. Its API contract (in Spanish) is [`crates/rt-app/README.md`](crates/rt-app/README.md). |
 | `crates/rt-post` | library | The AI post-processing guard (AI-POST.md §3.2, §7.2) and all its pixel work: conditioning (edges from id and normal discontinuities, normalised depth), tiles of about 1024² with ≥ 128 px overlap and raised-cosine blending, padding to multiples of 16 and cropping back, the guard (shading transfer, frequency separation, regions by id with CIEDE2000), its checks and the step machine `plan` → `tile_input` / `conditioning` → `accept` (accepted, retry at a lower strength, rejected), with a `GuardReport`-shaped JSON report. Same rules as `rt-core` (no OS APIs, `#![forbid(unsafe_code)]`, `f32`, `fmath` only); `rt-core` does not know it exists. |
 | `crates/rt-post-wasm` | `cdylib` + `rlib` | `rt-post` for the browser with a hand-written C ABI (`public/engine/post.wasm`, a module of its own so `rt.wasm` does not grow). Its `unsafe` is confined to `src/ffi.rs`; data crosses as little-endian bytes, so no pointer needs alignment. |
+| `crates/rt-sky` | binary `rt-sky` + library | Offline, not shipped (E5c): the spectral simulator of the atmosphere (spherical shells of the U.S. Standard Atmosphere 1976, Rayleigh with the King factor, aerosols by Linke turbidity and Ångström, Cornette–Shanks phase, ozone, a Lambertian ground; single scattering by quadrature, multiple scattering by deterministic Monte Carlo; 34 bands → CIE XYZ → Rec. 709), the Levenberg–Marquardt fit of the physical sky and the table it writes (`rt-sky table`), the validation (`rt-sky validate`), the preview's fixture (`rt-sky fixture`). `std` and `f64`, reproducible: its own elementary functions (`dmath`), one random stream per work item, the same result with any number of threads. `#![forbid(unsafe_code)]`. |
 | `tools/wasi-run.mjs` | script | Cargo runner that executes `wasm32-wasip1` test binaries under Node's WASI (see below). |
 | `tools/wasm-parity.mjs` | script | Renders an RSB scene with the real `rt_wasm.wasm` in Node and checks its film hash against the native one. |
 
@@ -52,6 +53,22 @@ of what the model is given, the report JSON) in `../tests/fixtures/ai-guard.json
 `npx vitest run tests/ai-post-wasm.test.ts` from the repository root runs them through the real
 `post.wasm` and must give the same bits (`REPACK_REQUIRE_POST_WASM=1` makes a missing module an
 error instead of a skip).
+
+The physical sky (E5c) is data made offline by `rt-sky`, so CI never runs the simulation:
+
+```sh
+cargo run --release -p rt-sky -- table      # simulate (about 10 min on 3 threads) and fit (about 12 min);
+                                            # writes crates/rt-core/src/sky_table.rs,
+                                            # ../src/core/sky-table.ts and crates/rt-sky/table.json
+cargo run --release -p rt-sky -- validate   # low-noise skies between the knots, CIE, classic sky:
+                                            # crates/rt-sky/validation.json (about 5 min)
+cargo run --release -p rt-sky -- fixture    # ../tests/fixtures/sky-physical.json for the preview
+```
+
+The simulated skies are cached in `target/rt-sky/` (`--cache` names another file). Tests of
+`rt-sky` check that the committed table matches its SHA-256 and that both generated sources and the
+fixture are exactly what the generators write now; the same recipe gives the same table on any
+machine and with any number of threads.
 
 The `test` profile uses `opt-level = 1`: the BVH tests compare against a brute-force loop over
 every triangle (tens of millions of triangle tests), which is ten times faster that way. Debug
@@ -188,12 +205,18 @@ twice (0: off).
 * **Environment** (`environment`), `ENVR.kind`: **0 studio dome**: radiance linear in the `z`
   of the direction, `floor` at -1, `horizon` at 0, `zenith` at +1, importance sampled by the
   closed-form inverse of that piecewise-linear density in `z` times a uniform azimuth (exact
-  pdf). **1 flat**: `horizon` everywhere. **2 sky** (E5, `sky`): A. J. Preetham, P. Shirley and
-  B. Smits, "A Practical Analytic Model for Daylight" (SIGGRAPH 1999), the Perez distribution
-  with the paper's coefficients, for `sky_turbidity` and the sun at `sun_azimuth_deg` /
-  `sun_elevation_deg` (clamped to 1–90 degrees: no twilight), scaled so that a horizontal surface
-  gets the irradiance of the dome of the same values (`2π (horizon / 6 + zenith / 3)`), with a
-  neutral ground of `floor` below the horizon; tabulated into a 256 x 128 panorama. The sun disc
+  pdf). **1 flat**: `horizon` everywhere. **2 sky** (`sky`), for `sky_turbidity` and the sun at
+  `sun_azimuth_deg` / `sun_elevation_deg`, in the model `sky_model` (E5c): **0 physical** (the
+  default): the functional form of L. Hošek and A. Wilkie (ACM TOG 31(4), 2012), nine
+  coefficients and a radiance per Rec. 709 channel as quintic Béziers over `(elevation / 90°)^(1/3)`,
+  blended linearly between integer turbidities 1–10 and ground albedos 0 and 1 (albedo 0.2), with
+  our own coefficients (`sky_table.rs`, fitted by `rt-sky` to our own atmosphere simulation; sun
+  0–90 degrees); **1 classic**: A. J. Preetham, P. Shirley and B. Smits, "A Practical Analytic
+  Model for Daylight" (SIGGRAPH 1999), the Perez distribution with the paper's coefficients (sun
+  clamped to 1–90 degrees, turbidity to 1.7–10), the sky of E5. Either is scaled so that a
+  horizontal surface gets the irradiance of the dome of the same values (`2π (horizon / 6 +
+  zenith / 3)`), with a neutral ground of `floor` below the horizon; tabulated into a 256 x 128
+  panorama. The sun disc
   is the scene's sun light. **3 HDRI** (E5): an equirectangular bitmap (`hdri_map`), `u = ½ +
   atan2(-y, x) / 2π`, `v = acos(z) / π` from the top (three.js's layout, so the preview shows the
   same), bilinear, turned by `rotation_deg` counter-clockwise about Z; sampled through a 2-D
@@ -420,8 +443,22 @@ byte for byte.
   anisotropy, emitters as lights by flux, the Preetham sky, HDRIs (own RGBE, OpenEXR and inflate
   readers, 2-D importance sampling), background images, `BMAP`; the E5 scenes of the contact
   sheet. Next: subsurface, wood, fabric and bevel (E6), caustic control and denoising.
+* **E5c**: the physical sky, ours in a clean room: `rt-sky` simulates the atmosphere and fits the
+  Hošek–Wilkie form to it (table with recipe, seed and SHA-256), `ENVR.sky_model` (0 physical, the
+  default; 1 classic), the E5c parity scene (`rt --write-e5c-example`) and the physical-against-
+  classic pairs of the contact sheet.
 
 ## Third-party data
+
+`crates/rt-core/src/sky_table.rs` (and its copy `src/core/sky-table.ts`) is ours: the coefficients
+of the physical sky, fitted by `rt-sky` to our own simulation (regenerate with `cargo run
+--release -p rt-sky -- table`; the recipe, seed and SHA-256 are in the file's header). The
+simulator uses published physical data, cited in `crates/rt-sky/src/atmosphere.rs` and
+`spectrum.rs`: the U.S. Standard Atmosphere 1976 (public domain), the refractive index of Peck and
+Reeder (1972) and the King factors of Bates (1984) as given by Bodhaine et al. (1999), Leckner's
+ozone absorption coefficients (1978) as tabulated by Bird and Riordan (1986, public domain), the
+IAU 2015 nominal solar values and the CIE colour-matching fit of Wyman, Sloan and Shirley (2013).
+No other sky model's code or coefficient tables were used.
 
 `crates/rt-core/src/sampler.rs` reproduces the first 64 dimensions of the Sobol direction numbers
 `new-joe-kuo-6.21201` of S. Joe and F. Y. Kuo (<https://web.maths.unsw.edu.au/~fkuo/sobol/>),

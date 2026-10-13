@@ -42,8 +42,8 @@ import { showConfirmIn } from '../components/widgets';
 import { h, icon } from '../dom';
 import { dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
-import type { UiState } from '../ui-state';
 import { formatNumber, getLang, lbl, t } from '../strings';
+import type { UiState } from '../ui-state';
 import { formatDuration } from './render-window';
 import { infoRow, rowLabel, rowShell, settingRow } from './settings-rows';
 import { licenceDetails, MODEL_LICENCE_PATHS, type SettingsHooks } from './settings-sections';
@@ -197,6 +197,19 @@ function activeRow(ctx: Ctx, scope: Scope): HTMLElement {
 }
 
 /**
+ * What stands for the graphics card when none is listed: still detecting, the whole detection failed, the launcher
+ * could not ask for the graphics cards at all (desktop), or it asked and there is none. Only the last one is "no
+ * graphics card"; the others are not facts about the computer.
+ */
+export function noGpuText(hw: UiState['hardware']): string {
+  if (hw.state !== 'DONE') return t('set.hw.detecting');
+  const info = hw.info;
+  if (!info || !info.detected) return t('set.hw.notDetected');
+  if (info.where === 'desktop') return info.gpuDetectionFailed ? t('set.hw.gpuFailed') : t('set.hw.noGpu');
+  return t('set.hw.notReported');
+}
+
+/**
  * Which GPU (desktop only): the graphics cards the launcher detected (`/api/hardware`, names and VRAM), kept in
  * step with the detection, which may answer after the section is drawn ("Detecting…" until then).
  */
@@ -210,7 +223,7 @@ function gpuRow(ctx: Ctx, scope: Scope, row: RowMeta): HTMLElement | null {
       const sel = select(
         gpus.length
           ? gpus.map((g, i) => ({ value: String(i), label: g.vramGiB !== null ? `${g.name} · ${t('set.hw.gib', { n: formatNumber(g.vramGiB, getLang(), 1) })}` : g.name }))
-          : [{ value: '0', label: hw.state === 'DONE' ? (hw.info?.detected === false ? t('set.hw.notDetected') : t('set.hw.noGpu')) : t('set.hw.detecting'), disabled: true }],
+          : [{ value: '0', label: noGpuText(hw), disabled: true }],
         String(Math.min(chosen, Math.max(0, gpus.length - 1))),
         (v) => cmd.setSetting(ctx, 'ai.gpu', Number(v)),
         rowLabel('ai.gpu'),
@@ -551,7 +564,7 @@ function hardwareBlock(ctx: Ctx, scope: Scope): HTMLElement {
       if (info) {
         const g = info.gpus[Math.min(u.settings['ai.gpu'], Math.max(0, info.gpus.length - 1))];
         if (info.cpu) rows.push(infoRow('hw.cpu', t('set.hw.cpu'), info.cpu));
-        rows.push(infoRow('hw.gpu', t('set.hw.gpu'), g?.name ?? missing));
+        rows.push(infoRow('hw.gpu', t('set.hw.gpu'), g?.name ?? (info.detected ? noGpuText(hw) : missing)));
         if (info.where === 'desktop' && info.device === 'cpu' && u.settings['ai.device'] === 'GPU') rows.push(h('p', { class: 'note' }, t('set.hw.noUsableGpu')));
         rows.push(infoRow('hw.vram', t('set.hw.vram'), gib(g?.vramGiB ?? null)));
         rows.push(infoRow('hw.ram', t('set.hw.ram'), info.ramGiB === null ? missing : info.ramCapped ? t('set.hw.ramCapped', { n: formatNumber(info.ramGiB, getLang(), 0) }) : gib(info.ramGiB)));

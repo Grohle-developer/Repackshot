@@ -5,6 +5,25 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Motor
+
+- **Cielo físico propio** (E5c): el cielo de día por defecto tiene la forma funcional de Hošek y Wilkie (2012) con coeficientes ajustados por nosotros a nuestra propia simulación espectral de la atmósfera (capas esféricas, moléculas, bruma, ozono, suelo), en sala limpia. El de Preetham sigue como *Clásico*. La vista previa del modo Rápido dibuja el mismo cielo que el motor, bit a bit (E5c).
+
+### Interfaz
+
+- *Entorno* ▸ *Cielo* estrena **Modelo**: *Físico* (por defecto) o *Clásico*; la bruma baja ahora hasta 1 (aire limpio) en el físico. Los proyectos guardados antes se abren con el físico (E5c).
+- **Primitivas** paramétricas en *Añadir ▸ Primitiva* (menú de la cabecera, el `+` del panel *Escena*, la paleta de comandos y el clic derecho del visor en vacío): *Caja* (con radio de bisel), *Plano*, *Disco*, *Cilindro*, *Pedestal* (cilindro con bisel), *Esfera*, *Cono*, *Toro*, *Cápsula*, *Tubo*, *Escalones* y *Fondo infinito* (el suelo que sube en curva hasta una pared). Nacen con criterio de estudio: la *Caja* y el *Pedestal* como base bajo el producto, con 1,4 veces su huella y el producto apoyado encima (una sola entrada de deshacer); el plano y el disco bajo él; el fondo infinito con su pared detrás; el resto en el suelo, junto al producto. Material neutro *Blanco estudio* (U9).
+- El **fondo infinito** nace de cara a la cámara activa y llenando todo su encuadre con margen (la óptica y el formato de salida cuentan), con la pared detrás del producto (y detrás del contraluz y los focos traseros del montaje, que siguen iluminando) y una curva suave; *Ajustar a la cámara* lo rehace tras mover la cámara (U9).
+- Sección **Primitiva** del inspector: las medidas en mm (ancho, fondo, alto, radios, bisel, segmentos, escalones), en vivo: cambiar una regenera la pieza, un arrastre es una entrada de deshacer y la pieza no se despega del suelo. *Convertir en malla* congela las medidas (también en el menú *Geometría ▸*) (U9).
+- Las primitivas tienen caras CAD por cara lógica (la tapa, el lateral, el bisel, cada escalón), así que el nivel *Caras*, los materiales por cara y *Separar por caras CAD* funcionan con ellas; UV en [0, 1] y normales correctas (U9).
+- Herramienta **Escalar** (`S`) en la barra de vista, junto a *Desplazar*: el *gizmo* de *Mover* con solo sus asas de escala (un cubo por eje y el punto central para las tres), alrededor del pivote, en ejes locales o globales, incrementos del 10 % con `Shift`; un arrastre es una entrada de deshacer (U9).
+- **Clic derecho ▸ Escalar…** en una pieza del visor o del árbol: un panel en línea con *Uniforme* (%), *Por eje* (X, Y, Z en %) y *A medida* (mm de ancho, fondo y alto con la proporción bloqueada), *Aplicar* y *Restablecer escala*; actúa sobre la selección al nivel vigente, alrededor de su pivote (U9).
+- Las luces, *Crear estudio*, el tamaño de pieza y el Doctor miran al producto y no al decorado: un fondo infinito seis veces mayor no mueve los focos ni cambia la escala (U9).
+
+### Proyecto
+
+- Un proyecto guarda las primitivas como medidas en un campo opcional del nodo, no como malla, y las vuelve a generar al abrir; se guarda, abre y vuelve a guardar en los mismos bytes. El esquema sigue en 2 y los proyectos anteriores abren igual (U9).
+
 ### Post-procesado IA
 
 - **La tubería de escritorio, de punta a punta**: un render final con *Post-procesado IA* encendido lo hace el lanzador sin que los píxeles vayan a la página y vuelvan: mosaicos, stable-diffusion.cpp con el modelo activo (cargado una vez, también entre vistas previas), la guarda determinista y los reintentos a menos intervención si una protección no pasa. El historial guarda las dos imágenes y el informe de la guarda (X3c).
@@ -16,6 +35,32 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - En Windows, si al motor de ejecución le falta el entorno de Microsoft Visual C++ 2015–2022, *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* lo dice y ofrece *Instalar el entorno de Microsoft Visual C++…* (la página oficial de Microsoft) y *Comprobar de nuevo* (X3c).
 - *Acerca de* lista stable-diffusion.cpp y ggml con sus licencias MIT (X3c).
 - Un post-procesado por el que nadie pregunta (su ventana se cerró) se para solo a los dos minutos (X3c).
+
+## v0.1.3 — 2026-10-13
+
+Versión de prueba que arregla la detección de tarjetas gráficas en Windows,
+hallada al probar v0.1.2. Todo lo demás es como en v0.1.2.
+
+### Escritorio
+
+- En Windows se ven por fin las tarjetas gráficas: v0.1.2 no encontraba ninguna en ningún equipo (solo la CPU), porque `reg` sale con error al llegar a una subclave protegida del registro y el lanzador tiraba toda su respuesta. Ahora las pregunta a DXGI, con la memoria de vídeo exacta, y además al registro (clave a clave), a `Win32_VideoController` y a `wmic`; el registro del lanzador (`logs/repackshot.log`, líneas `hardware:`) dice qué contestó cada uno, y si ninguno puede contestar *Ajustes* dice que no se pudieron leer las tarjetas en lugar de que no hay (P3e).
+- De esa detección dependen *Ajustes ▸ Post-procesado IA ▸ Equipo*, la fila *GPU*, la elección Vulkan o CPU del motor de IA y el paso de modelos del instalador, que lee el mismo `--hardware` y ya ve las tarjetas (P3e).
+- Los programas del sistema (`reg.exe`, `powershell.exe`, `WMIC.exe`) se lanzan por su ruta absoluta en `System32` (P3e).
+
+### Motor
+
+- Interno, sin cambios visibles: pases exactos del motor para el post-procesado con IA (albedo, normal, profundidad, id de pieza, id de material y círculo de confusión de la lente). Pedirlos no cambia ni un píxel de la imagen. En escritorio, el lanzador guarda los de los cuatro últimos renders finales. Todavía no los usa nada: los consumirá la tubería de IA (X2).
+
+### Correcciones
+
+- Una prueba del analizador de tarjetas le pasaba el texto sin el código de salida de `reg`, y por eso se escapó el fallo: era más permisiva que la realidad. Ahora la prueba lee programas que imprimen y salen con error, como el `reg` de verdad (P3e).
+- Una prueba del lanzador de IA daba por hecho que el equipo no tiene tarjeta gráfica y fallaba en cualquiera que la tuviera; ahora pide la CPU explícitamente (P3e).
+
+### Limitaciones conocidas
+
+- Siguen todas las de v0.1.2, incluida la principal: el post-procesado con IA no genera ninguna imagen todavía (tubería X3c).
+- La detección de tarjetas sigue sin probarse en un Windows real más que a través de Wine. Si aun así falla, `logs/repackshot.log` dice qué contestó cada fuente.
+- La página de modelos del instalador no distingue «no se pudo leer» de «no hay tarjeta».
 
 ## v0.1.2 — 2026-10-13
 

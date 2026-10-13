@@ -10,6 +10,7 @@ import type { Ctx, Scope } from '../reactive';
 import { kbdFor } from '../shortcuts';
 import { t } from '../strings';
 import { effectiveMode, type ViewportMode } from '../ui-state';
+import { primitiveMenuItems } from './add-menu';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -43,6 +44,8 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
       { label: t('menu.save'), icon: 'save', kbd: kbdFor('save'), run: () => void cmd.saveProject(ctx) },
       { label: t('menu.saveAs'), icon: 'save', kbd: kbdFor('saveAs'), run: () => void cmd.saveProject(ctx, { saveAs: true }) },
       { label: t('menu.import'), icon: 'upload', kbd: kbdFor('import'), run: () => void cmd.importDialog(ctx) },
+      // Add ▸ Primitive (phase U9).
+      { label: t('menu.add'), icon: 'plus', submenu: primitiveMenuItems(ctx) },
       { label: t('menu.exportImage'), icon: 'download', run: () => void cmd.exportViewport(ctx) },
       { label: t('menu.exportLibrary'), icon: 'download', run: () => cmd.exportLibraryFile(ctx) },
       { label: t('menu.importLibrary'), icon: 'upload', run: () => void cmd.importLibraryDialog(ctx) },

@@ -2,7 +2,8 @@
 //! rendered under six light recipes written here in Rust, with exposure statistics per image:
 //! `<key>.png` per recipe, `index.html` (a grid) and `stats.json`; then the E5 scenes of
 //! [`crate::scenes`] (glass, coat, anisotropy, an emitter, the sky and an HDRI), `e5-*.png`, at a
-//! multiple of the samples.
+//! multiple of the samples, and the E5c skies (the physical sky against the classic one at
+//! sunrise, golden hour, noon and in haze), `e5c-*.png`.
 //!
 //! These six recipes are engine test fixtures, not the catalogue's: the 16 x 12 sheet over the
 //! studios and setups of `src/data/` comes in E4, when the TypeScript RSB writer exists. Their
@@ -311,7 +312,7 @@ pub fn html(entries: &[SheetEntry], size: (u32, u32)) -> String {
         s,
         "<p class=\"meta\">The example part under six built-in recipes, {}x{}, {} spp, \
          {:.1} W/m² per recipe, then the E5 scenes (glass, coat, emitter, sky, HDRI) at more \
-         samples. Mean is the mean luma of the encoded image; clipped is the share of pixels \
+         samples and the E5c skies (physical against classic). Mean is the mean luma of the encoded image; clipped is the share of pixels \
          with a channel at 255; crushed the share with every channel at 2 or below.</p>\n\
          <div class=\"grid\">",
         size.0, size.1, samples, TOTAL_IRRADIANCE

@@ -29,6 +29,13 @@
 //   2 (U5) — `render` is the render window's settings and a queue of full `RenderJob`s (core/render.ts
 //            `migrateRender`).
 //
+// Primitives (U9): a part made by Add ▸ Primitive keeps its shape and measures in an optional field of its node
+// (`primitive`: `{ kind, params }`, core/primitives.ts), and its mesh is not written: on open it is made again from
+// the measures, under the id it had (the id names the content), so a project with primitives saves, opens and
+// saves again to the same bytes. A file from before U9 has no such field and opens as it always did; a shape this
+// version does not know (a newer file) leaves its part without geometry, reported like any missing mesh. The
+// schema stays at 2.
+//
 // Opening is all or nothing: the text is read and checked (envelope, schema, state, meshes) before the registry
 // or the store are touched, so a damaged file leaves the open project as it was.
 
@@ -45,6 +52,8 @@ import {
 } from '../core/meshes';
 import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
 import { migrateRender } from '../core/render';
+import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
+import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
 import { emptyBox } from '../core/math';
 import { createInitialState, type ProjectState } from '../core/store';
@@ -118,6 +127,7 @@ function imageEntry(ref: ImageRef, data: ImageData): string {
 export function serializeProject(state: ProjectState): Blob {
   // A file on disk is by definition the saved state: the flag is written clean.
   const clean: ProjectState = state.meta.dirty ? { ...state, meta: { ...state.meta, dirty: false } } : state;
+  const made = madeFromMeasures(state);
   const parts: string[] = [
     `{\n "format": ${JSON.stringify(PROJECT_FORMAT)},\n "schema": ${PROJECT_SCHEMA},\n "state": `,
     stateJson(clean).replace(/\n/g, '\n '),
@@ -125,6 +135,8 @@ export function serializeProject(state: ProjectState): Blob {
   ];
   let first = true;
   for (const id of meshIdsInUse(state)) {
+    // A primitive's mesh is its measures: it is made again on open (U9).
+    if (made.has(id)) continue;
     const data = getMesh(id);
     if (!data) continue;
     try {
@@ -153,6 +165,19 @@ export function serializeProject(state: ProjectState): Blob {
   }
   parts.push('\n}\n');
   return new Blob(parts, { type: 'application/json' });
+}
+
+/** Meshes every part of which is a primitive: the file keeps their measures, not the mesh. */
+function madeFromMeasures(state: Pick<ProjectState, 'scene'>): Set<MeshId> {
+  const out = new Set<MeshId>();
+  const other = new Set<MeshId>();
+  for (const n of Object.values(state.scene.nodes)) {
+    if (!n.mesh) continue;
+    if (n.primitive) out.add(n.mesh.id);
+    else other.add(n.mesh.id);
+  }
+  for (const id of other) out.delete(id);
+  return out;
 }
 
 // --- Migration and checks ----------------------------------------------------------------------------------
@@ -238,6 +263,16 @@ function checkState(raw: RawState): ProjectState {
       if (!Array.isArray(n.faceMaterials)) throw damaged(`${at}.faceMaterials is not a list`);
       for (const f of n.faceMaterials) if (!isObject(f) || !Number.isInteger(f.start) || !Number.isInteger(f.count) || !isObject(s.materials[f.material])) throw damaged(`${at}.faceMaterials is damaged`);
     }
+    if (n.primitive !== undefined) {
+      // A primitive (U9): its shape and measures. A shape this version does not know is dropped (the part has no
+      // geometry then, reported as missing); the measures are normalised like the inspector's.
+      const prim = n.primitive as unknown;
+      if (!isObject(prim) || !isObject(prim.params) || typeof prim.kind !== 'string') throw damaged(`${at}.primitive is damaged`);
+      const fixed: SceneNode = { ...(emptied[id] ?? n) };
+      if (n.kind !== 'PART' || !isPrimitiveKind(prim.kind)) delete fixed.primitive;
+      else fixed.primitive = { kind: prim.kind, params: normalizeParams(prim.kind, prim.params) };
+      emptied[id] = fixed;
+    }
   }
   for (const r of s.scene.roots) if (!nodes[r] || nodes[r].parent !== null) throw damaged(`scene.roots names ${r}, which is not a top-level node`);
   // No cycles: walking up from any node ends at a root within as many steps as there are nodes.
@@ -262,6 +297,8 @@ function checkState(raw: RawState): ProjectState {
     if (r !== null && !(isObject(r) && typeof r.id === 'string' && typeof r.name === 'string' && Number.isInteger(r.width) && Number.isInteger(r.height))) throw damaged(`environment.${slot} is damaged`);
   }
   if (!isObject(env.skySun) || !Number.isFinite(env.skySun.az) || !Number.isFinite(env.skySun.el)) throw damaged('environment.skySun is damaged');
+  // E5c: a project saved before the physical sky has no skyModel and opens with the default (filled in above).
+  if (env.skyModel !== 'PHYSICAL' && env.skyModel !== 'CLASSIC') throw damaged('environment.skyModel is damaged');
   return s;
 }
 
@@ -386,8 +423,23 @@ let loads = 0;
  * prefix, which no importer makes. Returns the state with its mesh refs updated; `registered` collects the ids it
  * registered, so the caller can take them back if the load fails after this.
  */
-function placeMeshes(state: ProjectState, decoded: Map<MeshId, DecodedMesh>, registered: MeshId[]): { state: ProjectState; missing: number } {
+function placeMeshes(loaded: ProjectState, decoded: Map<MeshId, DecodedMesh>, registered: MeshId[]): { state: ProjectState; missing: number } {
+  // Primitives first: their meshes are made from their measures under the id they had (it names the content and its
+  // owner), whatever the file holds.
+  const made = new Set<MeshId>();
+  const withPrimitives: Record<string, SceneNode> = { ...loaded.scene.nodes };
+  for (const [key, n] of Object.entries(loaded.scene.nodes)) {
+    if (!n.primitive) continue;
+    const id = primitiveMeshId((n.mesh && primitiveOwner(n.mesh.id)) ?? n.id, n.primitive);
+    const had = getMesh(id) !== undefined;
+    const m = ensurePrimitiveMeshAt(id, n.primitive);
+    if (!had) registered.push(id);
+    made.add(id);
+    withPrimitives[key] = { ...n, mesh: m.ref, faceRanges: m.faceRanges };
+  }
+  const state: ProjectState = made.size > 0 ? { ...loaded, scene: { ...loaded.scene, nodes: withPrimitives } } : loaded;
   const wanted = meshIdsInUse(state);
+  for (const id of made) wanted.delete(id);
   // Files from before the meshes block: the example's geometry is code, the rest is gone.
   let regenerated = false;
   for (const id of wanted) {
@@ -397,7 +449,7 @@ function placeMeshes(state: ProjectState, decoded: Map<MeshId, DecodedMesh>, reg
   }
   // The counts in the state must be the counts of the geometry in the file.
   for (const n of Object.values(state.scene.nodes)) {
-    const d = n.mesh ? decoded.get(n.mesh.id) : undefined;
+    const d = n.mesh && !made.has(n.mesh.id) ? decoded.get(n.mesh.id) : undefined;
     if (n.mesh && d && (d.data.positions.length / 3 !== n.mesh.vertices || d.data.indices.length / 3 !== n.mesh.triangles)) {
       throw damaged(`mesh ${n.mesh.id} does not have the vertices and triangles that ${n.name} says`);
     }
@@ -435,7 +487,7 @@ function placeMeshes(state: ProjectState, decoded: Map<MeshId, DecodedMesh>, reg
   const nodes: Record<string, SceneNode> = { ...state.scene.nodes };
   let missing = 0;
   for (const [key, n] of Object.entries(state.scene.nodes)) {
-    if (!n.mesh) continue;
+    if (!n.mesh || made.has(n.mesh.id)) continue;
     const target = rename.get(n.mesh.id);
     if (target !== undefined) nodes[key] = { ...n, mesh: { ...n.mesh, id: target } };
     // A part whose geometry no file or code can give stays in the scene without it (the preview skips it).

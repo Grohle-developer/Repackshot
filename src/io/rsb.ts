@@ -79,6 +79,9 @@ export const BITMAP_HDR = 16;
 export const BITMAP_EXR = 17;
 /** `ENVR.sky_turbidity` when nothing says otherwise. */
 export const DEFAULT_TURBIDITY = 3;
+/** `ENVR.sky_model` (E5c): 0 the physical sky (and what a file without the field means), 1 the classic one. */
+export const SKY_MODEL_PHYSICAL = 0;
+export const SKY_MODEL_CLASSIC = 1;
 /** `FLOR.mode`. */
 export const FLOOR_NONE = 0;
 export const FLOOR_VISIBLE = 1;
@@ -179,6 +182,8 @@ export interface RsbEnvironment {
   sunElevationDeg: number;
   /** E5: the output frame inside the image, `[u0, v0, u1, v1]` from the top left. */
   backplateRect: [number, number, number, number];
+  /** E5c: SKY_MODEL_PHYSICAL or SKY_MODEL_CLASSIC. */
+  skyModel: number;
 }
 
 /** E5: an image the environment refers to (RSB `BMAP`). */
@@ -257,6 +262,7 @@ export function defaultEnvironment(): RsbEnvironment {
     sunAzimuthDeg: 0,
     sunElevationDeg: 45,
     backplateRect: [0, 0, 1, 1],
+    skyModel: SKY_MODEL_PHYSICAL,
   };
 }
 
@@ -299,7 +305,7 @@ export interface WriteOptions {
 const CAMR_BYTES = 60;
 const MATL_BYTES = 72;
 const LGHT_BYTES = 76;
-const ENVR_BYTES = 80;
+const ENVR_BYTES = 84;
 const FLOR_BYTES = 20;
 const RNDR_BYTES = 40;
 const INST_BYTES = 60;
@@ -466,6 +472,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.f32(e.sunAzimuthDeg);
     w.f32(e.sunElevationDeg);
     for (const v of e.backplateRect) w.f32(v);
+    w.u32(e.skyModel);
   });
   const f = scene.floor;
   w.section(TAG_FLOR, FLOR_BYTES, () => {
@@ -914,7 +921,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     hdriMap,
     backplateMap,
     backplateFit: env.backplateFit === 'FIT' ? BACKPLATE_FIT : env.backplateFit === 'STRETCH' ? BACKPLATE_STRETCH : BACKPLATE_FILL,
-    skyTurbidity: Number.isFinite(env.skyTurbidity) ? Math.min(10, Math.max(1.7, env.skyTurbidity)) : DEFAULT_TURBIDITY,
+    // Each model clamps the turbidity to its own range (the physical sky 1 to 10, the classic one 1.7 to 10).
+    skyTurbidity: Number.isFinite(env.skyTurbidity) ? Math.min(10, Math.max(1, env.skyTurbidity)) : DEFAULT_TURBIDITY,
+    skyModel: env.skyModel === 'CLASSIC' ? SKY_MODEL_CLASSIC : SKY_MODEL_PHYSICAL,
     sunAzimuthDeg: (Math.atan2(sun[1], sun[0]) * 180) / Math.PI,
     sunElevationDeg: (Math.asin(Math.max(-1, Math.min(1, sun[2] / sunLength))) * 180) / Math.PI,
     backplateRect,

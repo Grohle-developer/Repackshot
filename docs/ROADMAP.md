@@ -808,7 +808,7 @@ Lo que no encajó con el plan:
   nombra. Las paredes finas no se difuminan con la rugosidad. El cielo
   ignora la rotación (lo coloca su sol) y sujeta el sol a 1° como mínimo.
 
-## E5c · Cielo físico propio, en sala limpia — **Opus**
+## E5c · Cielo físico propio, en sala limpia — **Opus** — hecha
 
 **Decisión del líder (2026-10-13, a petición del usuario: «haz un port del
 cielo desde una clean room»).** Ni se lee ni se usa la implementación de
@@ -858,6 +858,160 @@ licencia con el proyecto.
 **Criterio.** Lo de arriba medido y en tests (determinismo del simulador
 y del ajuste, coincidencia motor/vista previa, *hashes* nuevos sin mover
 los de antes), y el visto bueno visual del líder sobre las capturas.
+
+**Hecho.** Un *crate* nuevo, `engine/crates/rt-sky` (herramienta fuera de
+línea, Rust solo con `std`; `rt-core` no lo conoce), con el binario
+`rt-sky`:
+
+- **Simulador** (`atmosphere.rs`, `trace.rs`, `simulate.rs`): Tierra de
+  6371 km y atmósfera hasta 86 km en 64 capas esféricas (la primera de
+  50 m, el grosor creciendo en progresión geométrica), cada una con la
+  densidad media de su tramo; aire de la U.S. Standard Atmosphere 1976;
+  sección eficaz de Rayleigh de Bodhaine et al. (1999) con el índice de
+  Peck y Reeder (1972) a 360 ppm de CO₂ y el factor de King de Bates
+  (1984) (τ_R(550 nm) = 0,097 a nivel del mar, como su tabla), fase de
+  Rayleigh con la anisotropía molecular de Chandrasekhar; aerosoles con
+  τ_a(550) = (T − 1) τ_R(550) (Linke; equivale a la relación de Preetham
+  entre su turbidez y la β de Ångström) y λ^−1,3, altura de escala
+  1,2 km, albedo simple 0,95, fase de Cornette y Shanks con **asimetría
+  0,7** (su parámetro no es la asimetría: se despeja, 0,638; el primer
+  hito usó 0,7 como parámetro, es decir 0,757 de asimetría, y el visto
+  del líder lo cazó: test del coseno medio); ozono de 300 DU en una capa
+  gaussiana a 22 km con los coeficientes de Leckner (1978) tabulados por
+  Bird y Riordan (1986); sol de cuerpo negro a 5772 K con el radio
+  nominal de la IAU 2015 (1361 W/m²); 34 bandas de 10 nm de 380 a
+  720 nm → XYZ con el ajuste de Wyman, Sloan y Shirley (2013) → Rec. 709
+  lineal. La dispersión simple, por cuadratura a lo largo del rayo (pasos
+  de 2 km y 0,05 de profundidad óptica, la transmitancia hacia el
+  observador integrada exacta en cada paso; un test la compara con Monte
+  Carlo al 1 %); la múltiple, por Monte Carlo con estimación del sol en
+  cada suceso, todas las bandas a la vez con MIS de una muestra entre
+  bandas (heurística de balance), colisión forzada hacia arriba,
+  direcciones de la mezcla de las dos fases y un lóbulo hacia el sol,
+  suelo lambertiano y los dos albedos (0 y 1, y 0,2 para validar) de los
+  mismos caminos. Determinista: funciones elementales `f64` propias
+  (`dmath`), un flujo xoshiro256** por (semilla, cielo, dirección),
+  resultados en casillas fijas.
+- **Ajuste** (`model.rs`, `fit.rs`): la forma funcional de Hošek y Wilkie,
+  por canal, turbidez 1–10 y albedo 0 y 1 (60 nudos); `L_M` por mínimos
+  cuadrados lineales (Bézier de 6 puntos en (elevación/90°)^(1/3)), cada
+  elevación sola (rejilla de los cuatro coeficientes no lineales con los
+  cinco lineales resueltos exactos, Levenberg–Marquardt desde los ocho
+  mejores y desde la elevación anterior con un tirón débil hacia ella, y
+  otra pasada dividiendo por su propio modelo y no por el dato ruidoso),
+  curvas de Bézier por los no lineales, los 30 puntos lineales resueltos
+  exactos para ellas, y Levenberg–Marquardt propio sobre los 54 puntos
+  contra todas las elevaciones. Cotas: |H| < 0,95 y E ≤ −0,5 (sin ella
+  aparecían pares C ≈ −100, D ≈ +100 que imitaban una recta en γ y
+  arruinaban el arranque conjunto).
+- **Receta** (`dataset.rs`, en la cabecera de `sky_table.rs`): semilla
+  `0x0e5c5c1e`, 272 caminos de dispersión múltiple por dirección, 16
+  elevaciones del sol (90° (i/15)³), 768 direcciones (anillos de 3° hasta
+  84° y de 1,5° hasta el horizonte por 24 acimuts) y 34 bandas. Tabla:
+  3240 coeficientes y 360 radiancias `f32`, **SHA-256
+  `2329ac7376204749a317d5b31e23e17fa27950515be0f0d50018cd9c16e8a721`**.
+  `cargo run --release -p rt-sky -- table` simula (unos 10 min con 3
+  hilos en la máquina compartida) y ajusta (unos 12 min). Regenerada desde
+  cero con 2 hilos en lugar de 3: la simulación y la tabla salen idénticas
+  byte a byte.
+- **Motor**: `PhysicalSky` en `rt-core/src/sky.rs` detrás de la interfaz
+  de Preetham (`new`, `radiance`), mezclando radiancias (no
+  coeficientes) entre turbideces y albedos, albedo del suelo 0,2, sol de 0
+  a 90°; `sky_image` lo normaliza a la irradiancia de la cúpula como antes,
+  con sumas compensadas (Neumaier) solo en el físico: el clásico da los
+  mismos bits que en E5. `ENVR.sky_model` (84 B): 0 físico (también un RSB
+  sin el campo y cualquier valor desconocido), 1 clásico; es el último
+  campo. *Hashes*: los de antes no se mueven (ejemplo `0x223515c3`, E5 HDRI
+  `0xbf8abd5b`, E5 cielo `0x2fcb098a`, que pasa a pedir *Clásico*
+  explícitamente); nuevo **`0x8bb09f6b`**, la escena de E5 con el cielo
+  físico a 12° y turbidez 2,5 (`rt --write-e5c-example`), igual en
+  escalar, SSE2, AVX2, WASI escalar y `simd128` y con el `rt_wasm.wasm`
+  real (paso nuevo de `engine.yml`). La hoja de contactos añade cuatro
+  pares físico/clásico (amanecer, hora dorada, mediodía, bruma).
+- **Vista previa e interfaz**: `src/core/sky.ts` porta el cielo físico
+  sobre `src/core/f32math.ts`, que emula en `f32` el `fmath` del motor;
+  `tests/fixtures/sky-physical.json` (6 cielos, 354 píxeles, escrito por
+  `rt-sky fixture` y comprobado al día por un test de `rt-sky`) coincide
+  **bit a bit** (6372 valores). `skyModel` (`PHYSICAL` · `CLASSIC`) en el
+  estado, el proyecto (sin el campo: `PHYSICAL`) y la biblioteca;
+  *Entorno* ▸ *Cielo* ▸ *Modelo* (*Físico · Clásico*, con ayuda), en es y en;
+  la bruma baja a 1.
+- **Validación** (`rt-sky validate`, `validation.json`): 40 cielos de bajo
+  ruido (4352 caminos; turbidez 2, 2,5, 4, 6,5 y 9, sol a 0,5, 3, 10, 20,
+  35, 50, 70 y 85°, ninguno en una elevación del ajuste y la mitad entre
+  dos turbideces), 143 direcciones. Error RMS relativo de la luminancia
+  fuera de la aureola (10°), suelo negro / blanco / gris 0,2 interpolado:
+  **sol ≥ 20°: 1,0–7,9 % (media 3,8) / 1,4–5,3 % (2,3) / 2,8–7,3 % (4,1)**;
+  sol a 10°: 5,2–14,6 % (8,5) / 3,5–10,0 % / 4,6–13,7 %; **sol ≤ 3°:
+  9,2–16,7 % (12,9)** / 6,4–11,1 % / 8,7–15,6 %. El ruido de los datos del
+  ajuste es 1,8 % por cielo a T 1, 3–5 % a T 2 y 5–9 % a T 6–9 (otra
+  semilla): el 9,5 % medio de `table.json` frente a esos datos es sobre
+  todo ruido. Forma frente al cielo despejado de la CIE (ISO 15469, L/L_z
+  fuera de la aureola, sol ≥ 10°): tipo 12 frente a turbidez ≤ 2,5,
+  23 % de media (Preetham 44 %); tipo 13 frente a 4–6,5, 22 % (Preetham
+  43 %). En el almucantar, a 65° el físico sigue al tipo 12 a menos de un
+  10 % de 3 a 30° del sol; a 30°, la aureola de turbidez 2,5 sale 1,45–1,7
+  veces la del tipo 12, cerca del 13 (informativo). Ozono comprobado: a
+  1° el cénit pasa de xy (0,300, 0,318) sin ozono a (0,265, 0,279) con él
+  (Preetham: 0,281, 0,301).
+- **Tests nuevos**: 22 en `rt-sky` (funciones elementales frente a `std`,
+  atmósfera estándar y Rayleigh frente a sus tablas, fases normalizadas y
+  coseno medio, turbidez de Linke, geometría de capas, simulación igual
+  con 1 y 3 hilos, cuadratura frente a Monte Carlo, gradiente analítico,
+  ajuste de un cielo sintético y su determinismo, SHA-256, caché, rejillas,
+  la tabla frente a su *hash* y a las dos fuentes generadas, el *fixture*
+  al día), 4 en `rt-core` (cielo físico, linealidad y entradas, clásico
+  intacto, `sky_model` del RSB) más el *hash* de E5c, el par físico/clásico
+  de la hoja en `rt-cli` y 6 en `tests/sky-physical.test.ts`; se
+  comprobó que fallan reintroduciendo seis errores (parámetro de
+  Cornette–Shanks = asimetría, pesos de turbidez cambiados en motor y
+  vista previa, RSB viejo leído como clásico, sumas sin compensar, el
+  modelo sin escribir en el RSB).
+
+Capturas de cada hito (para el visto bueno, que el líder dio): cielos del
+simulador en ojo de pez, ajuste frente a simulador con mapa de errores a
+exposición automática y fija, la escena de producto con los dos modelos y
+la vista *Rápida* con el *Inspector*.
+
+Lo que no encajó con el plan:
+
+- **Límite de la forma funcional con el sol bajo (aceptado por el
+  líder).** El objetivo de < 5 % se cumple con el sol a 20° o más (salvo
+  turbidez 9 a 20°, 7,9 %); a 10° el error es del 5–15 % y por debajo de
+  3° del 9–17 %, y ajustando cada elevación por separado ya queda en el
+  12–18 %: es la forma, no el ajuste ni la interpolación (ni aflojando las
+  cotas mejora). Se ve como un patrón acimutal de ±20 % al amanecer y un
+  resplandor de la hora dorada con bruma un ~20 % oscuro junto al sol, a
+  lo largo del horizonte. **Propuesta de continuación** (no construida):
+  una tabla pequeña de corrección residual para el sol por debajo de
+  ~10°, ajustada con el mismo simulador (nuestra, con receta, semilla y
+  *hash*) y aplicada como factor después del modelo analítico.
+- **La orden de regeneración es `rt-sky table`**, un binario aparte, no
+  una opción de `rt`: el simulador no debe ir en el `rt` que se distribuye.
+- **El ozono** usa los coeficientes de Leckner tal como los tabula Bird y
+  Riordan, escritos con dos o tres cifras y, en el pico de Chappuis
+  (0,12 (atm·cm)⁻¹), un ~10 % por debajo de las secciones eficaces de
+  laboratorio modernas; conviene cotejarlos con la tabla original. **El
+  sol** es un cuerpo negro de 5772 K, no el espectro medido (le faltan las
+  rayas de Fraunhofer y anda un ~10 % bajo entre 450 y 550 nm); solo
+  afecta al color, y poco, porque el cielo se escala a la cúpula.
+- **Albedo del suelo fijo en 0,2** (el habitual en ingeniería solar): el
+  modelo admite 0–1 (`PhysicalSky::new` lo recibe) pero `ENVR` no tiene
+  campo ni la interfaz control; decisión de producto para el líder. Mezclar
+  linealmente entre los albedos 0 y 1 cuesta lo que se ve en la columna
+  gris de la validación (2,8–7,3 % con el sol alto).
+- **Proyectos y RSB antiguos se abren con el cielo físico** (el valor por
+  defecto, como decía el plan): un proyecto de E5 con *Cielo* cambia de
+  aspecto al abrirlo; si se prefiere que conserve el clásico, es un paso
+  de esquema de una línea. La escena fijada de E5 pide *Clásico* para que
+  su *hash* no se mueva.
+- **La vista previa no es `f64`**: en el primer factor (1 + A e^(B/(cos θ
+  + 0,01))) A ≈ −1,1 y el resultado se cancela hasta ~0,12 cerca del cénit,
+  y el `f32` del motor difería del `f64` en 1,5·10⁻⁶; emular el `f32` da
+  los mismos bits. La bruma va de 1 a 10 en los dos modelos; el clásico la
+  sujeta a 1,7.
+- **Las capturas del hito (a)** se hicieron antes de corregir la asimetría
+  de los aerosoles; las de (b) a (d), con la tabla final.
 
 ## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
 
@@ -1314,7 +1468,7 @@ No encajó con el plan:
   con test), y `material/assign` sin cambios creaba una entrada de
   deshacer vacía (ahora devuelve el mismo estado; con test).
 
-## U9 · Primitivas y herramienta de escalar — **Opus**
+## U9 · Primitivas y herramienta de escalar — **Opus** — hecha
 
 **Petición del usuario (2026-10-13):** «quiero poder añadir geometrías
 sencillas, algo así como rectángulos de base, cilindros, esferas… y con el
@@ -1362,6 +1516,147 @@ medidas exactas en mm), de la regeneración deshacible, del guardado y la
 apertura, de la escala por eje, uniforme y a medida (alrededor del
 pivote, a cada nivel); capturas del menú, del inspector y de la
 herramienta; cadenas en `es` y `en`; cromo acromático.
+
+**Hecho.** `src/data/primitives.json` (+ `primitives.ts`): las doce formas
+con claves estables (`BOX`, `PLANE`, `DISC`, `CYLINDER`, `PEDESTAL`,
+`SPHERE`, `CONE`, `TORUS`, `CAPSULE`, `TUBE`, `STEPS`, `SWEEP`), su papel
+(`BASE`, `FLOOR`, `BACKDROP`, `OBJECT`), sus medidas (claves, mínimos,
+pasos, factor del tamaño de la escena o valor fijo) y el material neutro
+`WHITE_STUDIO`; los nombres y las etiquetas de las medidas son cadenas de
+la interfaz. `src/core/primitives.ts`: generadores puros y deterministas,
+en mm, Z arriba, **centrados en su caja** (que es exactamente sus medidas:
+senos y cosenos exactos en los múltiplos de 90°, ningún `h − b + b`), con
+un constructor que orienta cada triángulo hacia sus normales y quita las
+astillas; superficies de revolución con polos por segmento (la punta del
+cono tiene la normal de su faceta), caja redondeada con aristas y esquinas
+que se encuentran bit a bit (tabla de cuarto de vuelta simétrica),
+escalones en rejilla sin uniones en T, fondo infinito desenrollado;
+estancas salvo plano, disco y fondo; normales de la superficie dentro de
+cada cara lógica; UV en [0, 1] por cara y sin estirar; cada cara lógica es
+un rango de `faceRanges` (y su borde, arista viva), así que *Caras*, M1 y
+*Separar por caras CAD* funcionan; medidas acotadas a lo que da una forma;
+el id de malla `prim:<dueño>:<FORMA>:<medidas>` nombra contenido y dueño.
+`src/core/primitive-ops.ts`: `placePrimitive` (base 1,4 × la huella bajo
+el producto, con el producto encima; planos bajo él, una milésima sobre el
+suelo; el resto junto a lo que está de pie; sin producto, en el origen y
+encuadrado), `fitSweep` (decisión del líder durante la fase, tras ver las
+primeras capturas: el fondo infinito de cara a la cámara activa, girado en
+Z a su acimut, la pared a 1,75 fondos del producto detrás de él y detrás
+de los focos del montaje que quedan detrás del producto
+(`wallBehindLights`), ancho 1,3 veces el encuadre donde lo toca, por
+encima de lo más alto del encuadre, curva de 0,3 veces el alto;
+*Ajustar a la cámara* lo rehace con `scene/fitPrimitive`), y las acciones `scene/addPrimitive` (una entrada de
+deshacer con el levantamiento), `scene/setPrimitive` (regenera, conserva el
+apoyo, arrastra las copias enlazadas, los materiales por cara y las caras
+seleccionadas siguen a sus caras por nombre) y `scene/convertPrimitive`.
+`SceneNode.primitive` es el campo opcional del proyecto: `io/project.ts`
+no escribe esas mallas y las regenera al abrir (esquema 2, byte a byte).
+Herramienta *Escalar* (`S`, junto a *Desplazar*): el *gizmo* con solo
+asas de escala (`Gizmo.setMode('SCALE')`, cubos al final de ejes enteros
+que se cogen y el punto central; una longitud de cubo más duplica);
+*Clic derecho ▸ Escalar…* con `ui/panels/scale-panel.ts` (uniforme, por
+eje, a medida con candado, *Aplicar* y *Restablecer escala* =
+`scene/resetScale`) en el visor y en el árbol; `selectionExtents` mide la
+selección en los ejes en vigor. *Añadir ▸ Primitiva* en el menú de la
+cabecera, el `+` del panel *Escena*, la paleta (*Añadir caja*…) y el menú
+del visor en vacío; sección *Primitiva* del inspector con *Convertir en
+malla*, que también está en *Geometría ▸*. Pruebas: `tests/primitives.test.ts`
+(cada forma: mismos bytes, caja exacta y centrada, UV, normales, caras que
+cubren la malla, estanqueidad, aristas vivas, volúmenes analíticos, medidas
+acotadas, id) y `tests/primitive-ops.test.ts` (colocación, base y huella,
+producto encima, una entrada de deshacer, producto bloqueado, planos y
+fondo, el pivote de luces y la escala que no ven el decorado, edición viva y
+deshacer, copias enlazadas e independientes, caras pintadas y
+seleccionadas, convertir, guardar y abrir byte a byte, forma desconocida y
+medidas fuera de rango en un archivo, escala uniforme, por eje (también en
+ejes locales) y a medida alrededor del pivote a nivel *Modelo*, *Grupo* y
+*Pieza*, *Restablecer escala*, las asas de *Escalar*, el atajo y las
+cadenas). `tools/primitives-check.mjs` lo comprueba en el navegador en
+*Rápido* y *Completo* y hace las capturas `docs/ui/primitives-add-menu.png`,
+`primitives-base-box.png`, `primitives-pedestal.png`,
+`primitives-pedestal-full.png`, `primitive-inspector.png`,
+`scale-tool.png` y `scale-panel.png`, y además comprueba con los píxeles
+que el fondo infinito llena el encuadre (esquinas y centro del borde de
+arriba claros, no la cúpula oscura) y que *Ajustar a la cámara* lo
+rellena tras orbitar. 133 tests nuevos (91 de `primitives.test.ts` y 42
+de `primitive-ops.test.ts`; 1627 en total); 42 mutaciones del código
+nuevo, todas detectadas (cinco no lo eran a la primera: el recorte de las
+UV ocultaba un mapeo malo y se quitó, y la normal de la punta del cono, los
+materiales por cara que se desplazan, lo que está de pie junto a un fondo
+y un fondo que se aleja por su curva no tenían test o lo tenían demasiado
+permisivo; se arreglaron los tests).
+
+No encajó con el plan:
+
+- **El producto, no el decorado.** Un fondo infinito seis veces mayor que
+  el producto movía el pivote de las luces (`rigPivot` era el centro de la
+  escena), el encuadre de *Crear estudio*, el tamaño medido (y el chequeo
+  de escala del Doctor, cuyo arreglo reescalaría todo) y el mapa de
+  sombras. Ahora todos miden `productBounds`: las piezas que no son
+  primitivas (si solo hay primitivas, todas). Es un criterio de
+  arquitectura que no estaba en el plan; *Encuadrar todo* sigue
+  encuadrando todo. Si Fable prefiere marcar el decorado de otro modo (por
+  ejemplo, solo bases y fondos, no cualquier primitiva), es un cambio de
+  una función.
+- **El tamaño de pieza** se detecta ahora también cuando entra el primer
+  producto en una escena que solo tenía primitivas (antes, solo en una
+  escena vacía).
+- **Mallas centradas, no apoyadas en su origen**: el Doctor avisaba de un
+  origen descentrado en cada primitiva y su arreglo la desplazaba. La
+  pieza conserva su apoyo al cambiar medidas por el centro de la base de
+  su caja, en sus propios ejes.
+- **Planos, disco y fondo infinito una milésima sobre el suelo**: su cara
+  de arriba está donde el suelo del estudio, que en el motor es un *shadow
+  catcher*, y un empate de distancias entre los dos parpadea. Por encima
+  gana la geometría, que recibe sombras de verdad en *Completo*; en
+  *Rápido* la sombra de contacto queda bajo el fondo (la vista previa solo
+  la dibuja en el suelo). No se apaga el suelo del estudio al añadir un
+  fondo: es una decisión fotográfica (Fable).
+- **Una versión anterior a U9 no ve las primitivas** de un proyecto nuevo
+  (no hay malla en el archivo; abre con el aviso de geometría que falta):
+  la compatibilidad es hacia atrás, como se pidió.
+- **Cambiar las medidas de una base no vuelve a subir el producto**, y
+  una base nueva bajo un producto que ya está sobre otra va al suelo (el
+  producto se apoya en la nueva). Una pieza escalada con *Escalar* sigue
+  mostrando sus medidas sin escala en la sección *Primitiva* (la nota lo
+  dice).
+- **Invertir normales, Suavizado y Separar congelan la primitiva** (dejan
+  de ser paramétricas), porque su malla ya no es la de sus medidas.
+- **El fondo infinito se ajusta a la cámara**, no a los ejes del mundo
+  (petición del líder a mitad de fase): las primeras capturas dejaban ver
+  el entorno oscuro en una esquina del encuadre. Si la curva llegaría bajo
+  el producto (un producto muy plano de fondo), la pared se aleja más de
+  los 1,75 fondos. Mover la cámara después no lo reajusta solo: para eso
+  está *Ajustar a la cámara*. El test lanza rayos por una rejilla de 7 × 7
+  del encuadre en ocho cámaras (de frente, cenital, ortográfica, tele en
+  vertical, gran angular cuadrada, un producto delgado) y todos dan en el
+  fondo.
+- **Un fondo infinito tapaba los focos que quedan detrás de su pared
+  (decidido por Fable a mitad de fase).** Con el montaje *Estándar* y la
+  cámara de referencia, el contraluz (*RIM*, 70 W, a unos 290 mm detrás
+  del producto) quedaba detrás de la pared, que estaba a 154 mm: en
+  *Completo* la pared lo tapaba y la imagen salía más plana y gris que en
+  *Rápido* (la vista previa no hace sombras de los focos). **Decisión:** un
+  fotógrafo pone el papel lo bastante atrás para que el contraluz y los
+  focos traseros quepan entre el producto y el fondo, así que la luz que
+  eligió el usuario sigue funcionando. `fitSweep` (al añadir y en
+  *Ajustar a la cámara*) lleva la pared detrás de cada foco encendido del
+  montaje que está detrás del producto según la dirección de la cámara, a
+  1,25 veces lo que ese foco está detrás del centro del producto más la
+  mitad de su panel (`SWEEP_FIT.lights`, `wallBehindLights`; un sol no
+  cuenta), y luego calcula ancho, alto y curva para cubrir el encuadre a
+  esa distancia como antes. En la vista de referencia la pared pasa de
+  154 mm a unos 480 mm. Los focos traseros que acaben dentro del encuadre
+  quedan fuera de esta decisión. Test: con el montaje *Estándar* y la
+  cámara de referencia ningún foco queda detrás de la pared (falla con la
+  distancia antigua), y sin focos detrás la pared vuelve a estar a 1,75
+  fondos.
+- **El nombre de *Añadir*.** No hay un menú *Añadir* propio en la cabecera
+  (UI.md §2.1 es *nada más*): es una entrada *Añadir ▸* del menú de
+  aplicación, con el rótulo *Primitiva* y las doce formas debajo.
+- *Escalar…* del menú contextual no muestra atajo (`S` enciende la
+  herramienta, no abre el panel). Los modificadores de la caja de
+  selección y los clics son los de *Mover*.
 
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 
@@ -2302,8 +2597,8 @@ sigue iluminada por él (comparación de medias); capturas.
 **Qué.** `INTERIORS.md` §4, puntos 1 a 7, en `rt-core`: desplazamiento
 de origen por ULP (Wächter y Binder) y BVH de dos niveles con instancias;
 sol como disco con muestreo de cono y excluido del entorno; cielo
-Hošek–Wilkie (tras confirmar la licencia de las tablas; si no,
-Preetham) e HDRI con CDF 2D; rectángulos y discos por ángulo sólido;
+físico (hecho en E5c: la forma de Hošek–Wilkie con coeficientes propios,
+sin sus tablas) e HDRI con CDF 2D; rectángulos y discos por ángulo sólido;
 vidrio fino; **portales** (sección `PORT`) con tabla de área sumada por
 portal y MIS; **árbol de luces** (Conty y Kulla, nodo compacto como
 pbrt-v4; todas las luces si ≤ 8); *clamping* de directo e indirecto en
@@ -2542,8 +2837,9 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 - **Post-procesado IA** (`AI-POST.md`): el modelo por defecto
   (provisional: Z-Image-Turbo) y las tolerancias de la guarda, tras la
   comparación de X1.
-- **Interiores** (`INTERIORS.md`): licencia exacta de las tablas de
-  Hošek–Wilkie (si no se confirma, Preetham); si se activa el aislamiento
+- **Interiores** (`INTERIORS.md`): ~~licencia exacta de las tablas de
+  Hošek–Wilkie~~ (resuelto en E5c: no se usan; cielo propio con la forma
+  publicada y coeficientes ajustados a nuestro simulador); si se activa el aislamiento
   de origen cruzado para compartir la escena entre workers; número de
   luces a partir del cual entra el árbol.
 - **Formatos nativos** (`.bip`, `.ksp`, `.sldprt`, `.ma`, `.ztl`, `.f3d`):
@@ -2588,6 +2884,7 @@ integra todo lo que la interfaz marca *próximamente***.
 | **U7** (hecha) | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*), más selección por caja con `Ctrl/⌘` + arrastrar. Ver U7 y M1 más arriba |
 | **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
 | **E5b** | Opus | Reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
+| **E5c** (hecha) | Opus | Cielo físico propio en sala limpia: la forma de Hošek–Wilkie con coeficientes ajustados a nuestro simulador de atmósfera (`rt-sky`), *Físico · Clásico* en *Entorno*. Ver E5c más arriba |
 | **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie (la anisotropía llegó con E5); desgaste visible en motor y visor |
 | **L4**, **L5** | Opus, Sonnet | Ya descritas: focos propios (área, punto, foco, sol) con todas sus operaciones; IES |
 | **M2** | Opus | Ya descrita: texturas de imagen y etiquetas |
@@ -2828,6 +3125,55 @@ recordado está aún en `TIME_WAIT` al reabrir, se toma otro una vez y se
 recuerda. Encontrado de paso (de P3a): un trabajo de visor nativo de una
 página que se recarga sigue vivo hasta el tope de 8 (`503 busy`). Sin
 probar en un Windows real.
+
+**Corrección tras probar v0.1.2.** En Windows de verdad el lanzador no
+encontraba ninguna tarjeta gráfica en ningún equipo, solo la CPU, y de eso
+dependen *Ajustes ▸ Post-procesado IA ▸ Equipo*, la fila *GPU* y la elección
+Vulkan/CPU del motor de IA. Causa: `reg query <clase de pantalla> /s` llega a
+la subclave `Properties`, que da «Acceso denegado» («ERROR: Acceso
+denegado.» en español), y `reg` sale con 1; `process::output` tiraba la
+salida de cualquier programa que no saliera con 0, con los adaptadores
+dentro. El test del analizador le pasaba el texto directamente, sin código
+de salida: era más permisivo que la realidad, y se ha arreglado con él.
+Ahora `process::output_any` devuelve lo impreso junto con el código (y
+`output` sigue estricto para las consultas de una sola clave de
+`browser.rs` y `files.rs`, donde salir con 1 es «no está»), y las tarjetas
+salen de cuatro fuentes: **DXGI** (`rt-app/src/platform/dxgi.rs`, COM a mano
+como el de P3c: `CreateDXGIFactory1`, `EnumAdapters1`, `GetDesc1`; VRAM
+dedicada exacta de 64 bits, sin el adaptador de software ni los de
+Microsoft, `dxgi.dll` solo de `System32`), **el registro** (una consulta
+para listar las subclaves y otra por adaptador, nunca `/s` ni `Properties`,
+leídas sea cual sea su código), **CIM** (`Win32_VideoController` en la misma
+ejecución de PowerShell que la RAM) y **wmic** si PowerShell no contesta.
+Se mezclan por adaptador: manda la primera que lista solo lo que hay ahora
+(DXGI, si no CIM, si no wmic), porque el registro guarda la clave de una
+tarjeta que ya se quitó, y gana la VRAM exacta sobre la de 32 bits, que se
+queda en 4 GiB. Cada fuente deja en `logs/repackshot.log` qué encontró o por
+qué falló, `/api/hardware` lo da en `gpuSources` y `gpuDetection`, y la
+interfaz distingue «No se han podido leer las tarjetas gráficas: mira los
+registros» de «No se ha encontrado ninguna tarjeta gráfica». Los programas
+del sistema van por su ruta absoluta en `System32` (`reg.exe`,
+`powershell.exe`, `WMIC.exe`, también en `browser.rs`, `files.rs` y
+`dialogs.rs`). Tests, cada uno comprobado fallando sin su arreglo: un
+programa que imprime y sale con 1 se lee (`sh` en Linux, `cmd` bajo Wine),
+la fuente del registro con un `reg` falso y con programas de verdad que
+salen con 1, el analizador con «Access is denied» y «Acceso denegado.»
+entre claves, CIM y `wmic`, la mezcla (la tarjeta quitada, dos tarjetas
+iguales, «sin tarjeta» frente a «no se pudo preguntar»), las vtables y
+`DXGI_ADAPTER_DESC1` contra el IDL, y la interfaz. Bajo Wine con `xvfb-run`
+DXGI lista su adaptador (*NVIDIA GeForce GTX 470*, 15,7 GiB, lo que Wine
+inventa), el registro de Wine lo llama *Wine Adapter* sin VRAM, el
+PowerShell de Wine no contesta y `wmic` da el mismo nombre que DXGI: queda
+una tarjeta, la de DXGI. Encontrado al pasarlo todo bajo Wine: un test de
+`rt-app/tests/ai.rs` daba por hecho que el equipo no tiene GPU (una petición
+sin `"device":"cpu"` pedía la compilación Vulkan, que no está instalada, y se
+rechazaba por eso antes de leer la imagen); fallaba igual en Linux con una
+GPU (`REPACKSHOT_TEST_GPUS`) y ya pide la CPU como las demás. No encajó: sigue sin probarse en un Windows real
+(si aún falla, `logs/repackshot.log` dice qué contestó cada fuente); que
+`reg /s` se pare en el primer error no está comprobado, por eso se consulta
+clave a clave; el instalador lee el mismo `--hardware` y ya ve las tarjetas,
+pero su página de modelos no distingue «no se pudo leer» de «no hay» (el
+INI no cambia).
 
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,

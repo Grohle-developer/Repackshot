@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "material": "WHITE_STUDIO",
+  "primitives": [
+    {
+      "key": "BOX",
+      "role": "BASE",
+      "params": [
+        { "key": "width", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.5 },
+        { "key": "depth", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.5 },
+        { "key": "height", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.5 },
+        { "key": "bevel", "kind": "LENGTH", "min": 0, "step": 0.1, "scale": 0.015 },
+        { "key": "bevelSegments", "kind": "COUNT", "min": 1, "max": 16, "default": 4 }
+      ]
+    },
+    {
+      "key": "PLANE",
+      "role": "FLOOR",
+      "params": [
+        { "key": "width", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 3 },
+        { "key": "depth", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 3 }
+      ]
+    },
+    {
+      "key": "DISC",
+      "role": "FLOOR",
+      "params": [
+        { "key": "radius", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.5 },
+        { "key": "segments", "kind": "COUNT", "min": 3, "max": 256, "default": 64 }
+      ]
+    },
+    {
+      "key": "CYLINDER",
+      "role": "OBJECT",
+      "params": [
+        { "key": "radius", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.25 },
+        { "key": "height", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.5 },
+        { "key": "segments", "kind": "COUNT", "min": 3, "max": 256, "default": 64 }
+      ]
+    },
+    {
+      "key": "PEDESTAL",
+      "role": "BASE",
+      "params": [
+        { "key": "radius", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.35 },
+        { "key": "height", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.3 },
+        { "key": "bevel", "kind": "LENGTH", "min": 0, "step": 0.1, "scale": 0.012 },
+        { "key": "segments", "kind": "COUNT", "min": 3, "max": 256, "default": 64 },
+        { "key": "bevelSegments", "kind": "COUNT", "min": 1, "max": 16, "default": 4 }
+      ]
+    },
+    {
+      "key": "SPHERE",
+      "role": "OBJECT",
+      "params": [
+        { "key": "radius", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.25 },
+        { "key": "segments", "kind": "COUNT", "min": 4, "max": 256, "default": 64 }
+      ]
+    },
+    {
+      "key": "CONE",
+      "role": "OBJECT",
+      "params": [
+        { "key": "radius", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.25 },
+        { "key": "height", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.5 },
+        { "key": "segments", "kind": "COUNT", "min": 3, "max": 256, "default": 64 }
+      ]
+    },
+    {
+      "key": "TORUS",
+      "role": "OBJECT",
+      "params": [
+        { "key": "radius", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.25 },
+        { "key": "tube", "kind": "LENGTH", "min": 0.01, "step": 0.5, "scale": 0.08 },
+        { "key": "segments", "kind": "COUNT", "min": 3, "max": 256, "default": 64 },
+        { "key": "tubeSegments", "kind": "COUNT", "min": 3, "max": 128, "default": 24 }
+      ]
+    },
+    {
+      "key": "CAPSULE",
+      "role": "OBJECT",
+      "params": [
+        { "key": "radius", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.15 },
+        { "key": "height", "kind": "LENGTH", "min": 0.02, "step": 1, "scale": 0.6 },
+        { "key": "segments", "kind": "COUNT", "min": 4, "max": 256, "default": 64 }
+      ]
+    },
+    {
+      "key": "TUBE",
+      "role": "OBJECT",
+      "params": [
+        { "key": "radius", "kind": "LENGTH", "min": 0.02, "step": 1, "scale": 0.25 },
+        { "key": "inner", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.2 },
+        { "key": "height", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.5 },
+        { "key": "segments", "kind": "COUNT", "min": 3, "max": 256, "default": 64 }
+      ]
+    },
+    {
+      "key": "STEPS",
+      "role": "OBJECT",
+      "params": [
+        { "key": "width", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.8 },
+        { "key": "depth", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.6 },
+        { "key": "height", "kind": "LENGTH", "min": 0.01, "step": 1, "scale": 0.45 },
+        { "key": "steps", "kind": "COUNT", "min": 1, "max": 24, "default": 3 }
+      ]
+    },
+    {
+      "key": "SWEEP",
+      "role": "BACKDROP",
+      "params": [
+        { "key": "width", "kind": "LENGTH", "min": 0.01, "step": 10, "scale": 6 },
+        { "key": "depth", "kind": "LENGTH", "min": 0.01, "step": 10, "scale": 4 },
+        { "key": "height", "kind": "LENGTH", "min": 0.01, "step": 10, "scale": 3 },
+        { "key": "radius", "kind": "LENGTH", "min": 0, "step": 5, "scale": 1 },
+        { "key": "segments", "kind": "COUNT", "min": 1, "max": 128, "default": 24 }
+      ]
+    }
+  ]
+}

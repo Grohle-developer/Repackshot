@@ -213,7 +213,17 @@ those internals.
 - **Public literature** the engine cites in its modules: PCG random
   numbers (O'Neill), Sobol direction numbers (Joe and Kuo), the ACES
   tone-mapping fit, the GGX microfacet model, the sky models. Formulas and
-  tables, never code.
+  tables, never code. The physical sky (E5c) takes only the *functional
+  form* of Hošek and Wilkie (ACM TOG 31(4), 2012); its coefficients are
+  fitted by `engine/crates/rt-sky` to our own atmosphere simulation, built
+  from textbook physics and public data: the U.S. Standard Atmosphere
+  1976, Rayleigh scattering after Bodhaine et al. (1999) with the
+  refractive index of Peck and Reeder (1972) and the King factors of Bates
+  (1984), Linke's turbidity and Ångström's exponent, the Cornette–Shanks
+  phase function (1992), Leckner's ozone absorption (1978) as tabulated by
+  Bird and Riordan (1986), the IAU 2015 nominal Sun, the CIE colour-matching
+  fit of Wyman, Sloan and Shirley (2013) and, for validation, the CIE
+  standard general sky (ISO 15469 / CIE S 011).
 
 ## License
 

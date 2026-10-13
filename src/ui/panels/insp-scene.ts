@@ -323,13 +323,20 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
     hdriInfo,
   );
 
-  // Sky: haze, and the sun when the setup has no sun light.
-  const turbidity = slider({ value: e0.skyTurbidity, min: 1.7, max: 10, step: 0.1, digits: 1, ariaLabel: t('env.turbidity'), onChange: (v, g) => set({ skyTurbidity: v }, 'env.turbidity', g) });
+  // Sky: its model, haze, and the sun when the setup has no sun light.
+  const skyModel = segmented(
+    (['PHYSICAL', 'CLASSIC'] as const).map((m) => ({ value: m, label: t(dyn(`env.skyModel.${m}`)), title: t(dyn(`env.skyModel.tip.${m}`)) })),
+    e0.skyModel,
+    (v) => set({ skyModel: v }, 'env.skyModel'),
+    { full: true, ariaLabel: t('env.skyModel') },
+  );
+  // The physical sky covers turbidity 1 to 10; the classic one starts at 1.7 (it clamps lower values there).
+  const turbidity = slider({ value: e0.skyTurbidity, min: 1, max: 10, step: 0.1, digits: 1, ariaLabel: t('env.turbidity'), onChange: (v, g) => set({ skyTurbidity: v }, 'env.turbidity', g) });
   const sunAz = slider({ value: e0.skySun.az, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('env.sunAz'), onChange: (v, g) => set({ skySun: { ...store.get().environment.skySun, az: v } }, 'env.sunAz', g) });
   const sunEl = slider({ value: e0.skySun.el, min: 1, max: 90, step: 1, unit: '°', ariaLabel: t('env.sunEl'), onChange: (v, g) => set({ skySun: { ...store.get().environment.skySun, el: v } }, 'env.sunEl', g) });
   const sunOwn = h('div', { class: 'stack' }, field(t('env.sunAz'), sunAz.el), field(t('env.sunEl'), sunEl.el));
   const sunNote = h('p', { class: 'note', style: 'margin:0' }, t('env.sunFromLight'));
-  const skyBox = h('div', { class: 'stack' }, field(t('env.turbidity'), turbidity.el), sunOwn, sunNote);
+  const skyBox = h('div', { class: 'stack' }, field(t('env.skyModel'), skyModel.el), field(t('env.turbidity'), turbidity.el), sunOwn, sunNote);
 
   const bg = segmented(
     (['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE'] as const).map((b) => ({ value: b, label: t(dyn(`env.bg.${b}`)) })),
@@ -374,6 +381,7 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
       hdriInfo.textContent = imageInfo(e.hdri, 'env.noHdri');
       hdriInfo.title = e.hdri?.name ?? '';
       show(skyBox, e.kind === 'SKY');
+      skyModel.set(e.skyModel);
       turbidity.set(e.skyTurbidity);
       sunAz.set(e.skySun.az);
       sunEl.set(e.skySun.el);

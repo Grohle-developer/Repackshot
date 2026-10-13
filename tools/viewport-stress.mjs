@@ -4,7 +4,7 @@
 //
 //   npm run engine:build && npm run build && (cd engine && cargo build --release -p rt-app)
 //   node tools/viewport-stress.mjs [--engine native|wasm|both] [--minutes 10] [--stall 20] [--seed 1]
-//        [--threads N] [--width 1280 --height 800] [--phases determinism,queue,session] [--debug]
+//        [--threads N (default: every thread)] [--width 1280 --height 800] [--phases determinism,queue,session] [--debug]
 //        [--out out/viewport-stress]
 //
 // Phases, for each engine:
@@ -75,12 +75,14 @@ function startLauncher(port) {
   const data = join(OUT, 'launcher-data');
   rmSync(data, { recursive: true, force: true });
   mkdirSync(data, { recursive: true });
-  const threads = opt('threads', '0');
+  // The launcher's own default is every thread; it refuses 0, so --threads goes only when asked for.
+  const threads = opt('threads', null);
+  if (threads !== null && !/^[1-9]\d*$/.test(threads)) fail(`--threads expects a positive number, got '${threads}'`);
   // The launcher saves renders itself, to the system's Downloads folder: one of our own here.
   const downloads = join(OUT, 'downloads');
   rmSync(downloads, { recursive: true, force: true });
   mkdirSync(downloads, { recursive: true });
-  const child = spawn(bin, ['--serve-only', '--app-dir', join(ROOT, 'dist'), '--port', String(port), '--data-dir', data, '--threads', threads], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, XDG_DOWNLOAD_DIR: downloads } });
+  const child = spawn(bin, ['--serve-only', '--app-dir', join(ROOT, 'dist'), '--port', String(port), '--data-dir', data, ...(threads ? ['--threads', threads] : [])], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, XDG_DOWNLOAD_DIR: downloads } });
   return new Promise((resolveUrl, reject) => {
     let text = '';
     const timer = setTimeout(() => reject(new Error(`the launcher printed no URL: ${text}`)), 20000);
