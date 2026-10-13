@@ -1314,6 +1314,55 @@ No encajó con el plan:
   con test), y `material/assign` sin cambios creaba una entrada de
   deshacer vacía (ahora devuelve el mismo estado; con test).
 
+## U9 · Primitivas y herramienta de escalar — **Opus**
+
+**Petición del usuario (2026-10-13):** «quiero poder añadir geometrías
+sencillas, algo así como rectángulos de base, cilindros, esferas… y con el
+paneo, el típico apartado de escalar, aparte de poder escalar cada pieza
+con clic derecho».
+
+**Decisiones del líder.**
+- **Añadir ▸ Primitiva** (menú *Añadir* de la cabecera, el botón `+` del
+  panel *Escena*, la paleta de comandos y el menú contextual del visor en
+  vacío): *Caja* (con radio de bisel), *Plano*, *Disco*, *Cilindro*,
+  *Pedestal* (cilindro con bisel), *Esfera*, *Cono*, *Toro*, *Cápsula*,
+  *Tubo*, *Escalones* y *Fondo infinito* (la curva de estudio: suelo que
+  sube en curva hasta una pared). Claves estables en un catálogo de datos.
+- **Paramétricas y vivas**: cada primitiva guarda su tipo y sus medidas en
+  mm (ancho, fondo, alto, radio, bisel, segmentos…), editables en el
+  inspector (sección *Primitiva*); cambiar una medida regenera la malla con
+  **una acción del *store*** y una entrada de deshacer (un arrastre, una
+  sola). *Convertir en malla* la congela.
+- **Tamaño y sitio por defecto con criterio de estudio**: se crea apoyada
+  en el suelo, junto al producto o debajo si es una base (la *Caja* y el
+  *Pedestal* nacen como base: 1,4 × la huella del producto y el producto
+  apoyado encima), escalada a la escena; sin producto, a un tamaño
+  razonable. Material neutro del catálogo.
+- **Geometría limpia**: generación pura y determinista en `src/core/`,
+  normales y UV correctas (para M2), suavizado por ángulo, y **caras CAD**
+  (`faceRanges`) por cara lógica (la tapa, el lateral, el bisel…), para
+  que el nivel *Caras* y M1 funcionen con ellas.
+- **Proyecto**: la primitiva se guarda como parámetros (no como malla) en
+  un campo opcional del nodo; *schema* 2 sigue valiendo y un proyecto
+  antiguo abre igual. El motor la recibe como una malla más (RSB sin
+  cambios).
+- **Herramienta *Escalar*** (`S`) en la barra de vista, junto a
+  *Desplazar*: el mismo *gizmo* de *Mover* pero solo con las asas de
+  escala (por eje y uniforme en el centro), alrededor del pivote, en ejes
+  locales o globales, con incrementos con `Shift`; el inspector muestra
+  la escala en vivo. Un arrastre, una entrada de deshacer.
+- **Clic derecho ▸ Escalar…** en una pieza (visor y árbol): un panel en
+  línea con *Uniforme* (%), por eje (X, Y, Z en %) o **a medida** (mm del
+  ancho, fondo o alto con proporción bloqueada), *Aplicar* y *Restablecer
+  escala*; actúa sobre la selección al nivel vigente.
+
+**Criterio.** Tests de cada primitiva (cerrada donde debe, normales hacia
+fuera, UV en [0, 1], `faceRanges` que cubren la malla, determinismo,
+medidas exactas en mm), de la regeneración deshacible, del guardado y la
+apertura, de la escala por eje, uniforme y a medida (alrededor del
+pivote, a cada nivel); capturas del menú, del inspector y de la
+herramienta; cadenas en `es` y `en`; cromo acromático.
+
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 
 **Qué.** Texturas de color, rugosidad, metal, normal y alfa con proyección
