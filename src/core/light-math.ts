@@ -73,6 +73,11 @@ export function specColor(spec: ColorSpec, inherited?: RGB): RGB {
  * An area light spreads with distance: energy / (4 pi d^2). A sun is already
  * an irradiance and does not depend on where the object is placed. The
  * energy is `energy` when present, otherwise `share`.
+ *
+ * This is the measure the recipes are normalised with (`rig.ts`), the same
+ * one EZ Packshot's `setup_rig` uses, so it only fixes the ratios between
+ * lights and setups. It is not what the renderers deliver: they follow
+ * Blender Cycles' area light, pi times brighter on axis (`photometry.ts`).
  */
 export function specIrradiance(spec: IrradianceSpec): number {
   const energy = spec.energy ?? spec.share ?? 0;

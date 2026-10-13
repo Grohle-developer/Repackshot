@@ -350,24 +350,31 @@ describe('project to RSB: lights', () => {
         expect(r.kind).toBe(LIGHT_SUN);
         expect(r.power).toBe(l.power);
       } else {
-        expect(r.power).toBeCloseTo((l.power * (s.scene.partSizeMm / 1000) ** 2) / 4, 12);
+        expect(r.power).toBeCloseTo((Math.PI / 4) * l.power * (s.scene.partSizeMm / 1000) ** 2, 12);
         expect(r.sizeX).toBeCloseTo(l.size * s.scene.partSizeMm, 9);
       }
     });
   });
 
-  it('the flux gives the irradiance the rig promises, on axis and far away', () => {
-    // A 1 cm panel 2 m away, part size 200 mm: E = F / (pi d^2) must equal power / (4 pi dist^2).
+  it('the flux gives the irradiance Cycles gives the recipe, on axis and far away', () => {
+    // A small panel 2 m away, part size 200 mm. In Blender Cycles the recipe's power P over an area A
+    // is the radiance L = P / (4 A), so on axis and far away E = P / (4 dist^2): pi times the
+    // isotropic-source P / (4 pi dist^2) the add-on's comment speaks of. The engine's one-sided
+    // Lambertian panel of flux F has the intensity F / pi, so E = F / (pi d^2).
     const power = 30;
     const partMm = 200;
     const dist = 10; // part sizes = 2 m
     const flux = areaLightFlux(power, partMm);
     const d = (dist * partMm) / 1000;
-    expect(flux / (Math.PI * d * d)).toBeCloseTo(power / (4 * Math.PI * dist * dist), 12);
-    // The radiance the preview uses is the engine's F / (pi A), independent of the part size.
+    expect(flux / (Math.PI * d * d)).toBeCloseTo(power / (4 * dist * dist), 12);
+    // The radiance the preview uses is the engine's F / (pi A), independent of the part size, and
+    // Cycles' P / (4 A) with A in square part sizes.
     const areaPs = 0.3 * 0.2;
     const areaM2 = areaPs * (partMm / 1000) ** 2;
     expect(areaLightRadiance(power, areaPs)).toBeCloseTo(flux / (Math.PI * areaM2), 9);
+    expect(areaLightRadiance(power, areaPs)).toBeCloseTo(power / (4 * areaPs), 12);
+    // Part size 1 m: the watts of the recipe are the watts of the engine, times pi / 4.
+    expect(areaLightFlux(power, 1000)).toBeCloseTo((Math.PI / 4) * power, 12);
   });
 
   it('leaves out lights that are off, and maps disks, ellipses and suns', () => {
