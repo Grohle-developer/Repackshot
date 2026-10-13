@@ -1516,7 +1516,7 @@ Decisión del líder (`AI-POST.md` §7): en escritorio todo nativo (la
 página solo envía ajustes y recibe resultados), la guarda en un *crate*
 propio sin dependencias, y la web detrás.
 
-### X3a · `rt-post`: la guarda y los píxeles — **Opus**
+### X3a · `rt-post`: la guarda y los píxeles — **Opus** — hecha
 
 **Qué.** `AI-POST.md` §3.2 y §7.2: `engine/crates/rt-post` (solo `std`,
 `f32`, determinista, sin `unsafe`) con condicionamiento (bordes de los
@@ -1539,6 +1539,93 @@ con intervención 0 la salida es idéntica bit a bit a la entrada sin
 llamar al modelo; la resolución de salida es siempre la del trabajo;
 mismo resultado en nativo y en wasm, bit a bit; puertas del motor
 (`fmt`, `clippy`, sin dependencias en `Cargo.lock`).
+
+**Hecho.** `engine/crates/rt-post` (`#![forbid(unsafe_code)]`, solo
+`std` y `rt-core` para `fmath` y las curvas de tono) con la máquina de
+pasos `plan(&job) → Plan` (mosaicos de ≤ 1024² con solape ≥ 128 px y
+mismo tamaño, relleno a múltiplo de 16 repitiendo el borde; sin mosaicos
+si Intervención es 0 o todos los aspectos están a 0, y entonces la salida
+es la entrada bit a bit sin llamar al modelo), `tile_input` (la imagen del
+motor con su exposición y su curva, sRGB de 8 bits), `conditioning`
+(bordes 255 a los dos lados de cada cambio de `partId`, `materialId` o
+normal de más de 30°; profundidad normalizada sobre toda la imagen, cerca
+255, la superficie más lejana 16, fondo 0) y `accept(&plan, &original,
+&passes, &salidas, intento) → Accepted{image, report} | Retry{strength,
+attempt, reason} | Rejected{report}`; `run` es el conductor para un
+modelo dado como función. La guarda multiplica siempre la imagen del
+motor por una ganancia: (a) transferencia `ln blur(modelo) − ln
+blur(motor)` (gaussiana normalizada sobre las regiones abiertas,
+σ = 16·√MP entre 8 y 32, calculada en una rejilla hasta 8 veces más
+gruesa y devuelta con B-spline cúbica), llevada a luz de escena por la
+pendiente local de la curva de tono y partida en cambio común (Fuerza
+del estilo), luminancia local (Luz, ganancia gris) y color local
+(Rebotes), cada parte por su control y topada por control × fuerza del
+intento; (b) banda media del modelo (σ 3 px a σ baja) solo en materiales
+con desgaste, enfocados (cdc ≤ 1 px, nada a ≥ 3 px) y a más de 8 px de
+una arista; (c) fondo y materiales bloqueados intactos y el cambio de
+color de cada material rebajado hasta que su ΔE₀₀ medio y p95 queden en
+el 80 % de la tolerancia. Comprobaciones independientes de cómo se hizo
+el resultado: tamaño, píxeles cambiados fuera de lo permitido (bit a
+bit), desplazamiento de aristas (pico del gradiente con refinamiento
+parabólico, en el canal de mayor salto), SSIM de la banda alta, nitidez
+por bloque de 32² frente al mapa de desenfoque y ΔE₀₀ por material
+(CIEDE2000 de Sharma, Wu y Dalal 2005, probado con sus 34 pares).
+Tolerancias **provisionales** en un solo `struct` (`Tolerances`, claves
+estables, se pueden pasar en el trabajo para calibrar): ΔE medio ≤ 2,
+p95 ≤ 3, aristas ≤ 1,5 px, SSIM alta ≥ 0,98, enfoque ≤ 15 %, topes de
+Luz 0,3, Rebotes 0,15, Estilo 0,2 y Desgaste 0,15 (logaritmo natural, a
+control e intervención 100). Informe JSON escrito a mano con la forma
+exacta de `GuardReport`. `rt-post-wasm` → `public/engine/post.wasm`
+(189 KB, sin importaciones) desde `npm run engine:build`; `src/ai/post-wasm.ts`
+(`PostGuard`, `PostSession`, `runGuarded`, `encodeJob`; worker y Node,
+comprueba los tamaños antes de pasar punteros) y `src/ai/prompt.ts`
+(`buildPrompt`, negativo fijo, `guardMaterials`); `AiGuardMaterial`
+añadido a `src/core/ai.ts`. 50 tests de Rust (47 de `rt-post`, 3 del ABI)
+y 16 de vitest; el "modelo" sintético mueve aristas, cambia el color de
+un material, emborrona lo enfocado, enfoca lo desenfocado, toca el fondo,
+mete desgaste en todas partes y devuelve otro tamaño, y cada test falla
+si se apaga el paso que lo cubre (comprobado apagándolos uno a uno en el
+código). Paridad: `tests/fixtures/ai-guard.json` (cinco escenarios:
+intacto, prohibido, fuerte, limitado, rechazado) lo fija el test nativo y
+el `post.wasm` real lo reproduce bit a bit (imagen, entradas del modelo y
+JSON), también en CI. Rendimiento nativo de un hilo: ≈ 2,3 s por intento
+a 1 MP y 7 s a 4 MP.
+
+Lo que no encajaba con el plan: (1) "Transferencia en dominio
+logarítmico" se hizo como logaritmo de la razón de los desenfoques (de
+luz, no de logaritmos: desenfocar logaritmos convierte un texto
+emborronado en un cambio de luz, por la desigualdad de Jensen), como dice
+§3.2. (2) La guarda trabaja en luz de escena: el cambio que el modelo
+hace en pantalla se pasa a escena por la pendiente de la curva, y la Luz
+es una ganancia gris de escena (como más luz en el motor); en el hombro
+de la curva eso desatura un poco, así que el ΔE₀₀ por material se mide
+contra la imagen del motor **con el cambio permitido** (estilo y
+luminancia dentro de los topes) vista por la misma curva: mide el cambio
+del color del material, no el de la luz. **Fable debe confirmar ese
+criterio** en X1b. (3) Nitidez, detalle y aristas se miden en luz de
+escena (la curva comprime el contraste de las altas luces como lo haría
+un render más claro, y eso no es desenfoque), y detalle y enfoque miran
+el interior de las regiones (a 4 px de una arista, el salto de una
+silueta cambia al reiluminar un solo lado; las aristas tienen su propia
+comprobación). El SSIM de la banda alta excluye además los píxeles donde
+Desgaste puede añadir detalle. (4) Comprobación de aristas por canal
+(máximo de los tres): con solo luminancia, reiluminar una pieza hasta la
+luminancia del fondo "borraba" una arista que sigue viéndose por el
+color. (5) Un mosaico de otro tamaño rechaza a la primera (una fuerza
+menor no lo arreglaría) y entrega la imagen del motor. (6) Reglas
+provisionales que deja anotadas para X1b: admite desgaste toda familia
+con tipos de desgaste en el catálogo (todas menos la emisiva; quizá el
+vidrio no debería), los emisores quedan bloqueados, profundidad de
+superficie más lejana 16. (7) `AiPostRequest` no lleva la tabla de
+materiales de la guarda ni el orden de materiales del RSB: X3c tendrá
+que añadir `materials?: AiGuardMaterial[]` (o derivarla en el lanzador)
+y `io/rsb.ts` exportar el orden (`guardMaterials(state, orden)` ya lo
+espera); el código de la curva de tono (`tonemapFor`) también vive en
+`io/`, así que el trabajo lo recibe como número. (8) La razón de un
+LIMITED dice cuánto se rebajó, no por qué falló el primer intento; el
+motivo de cada reintento sale en `Retry.reason` para el registro. (9)
+Las alineaciones: el ABI de `post.wasm` recibe bytes *little-endian*, no
+`f32` alineados, para no exigir alineación de punteros.
 
 ### X3b · stable-diffusion.cpp en escritorio — **Opus** — hecha
 

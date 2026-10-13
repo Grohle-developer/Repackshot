@@ -50,6 +50,18 @@ export const RETRY_FACTOR = 0.6;
 /** Largest side of the Fast-mode preview the pipeline is sent inline (§4, §7.3). */
 export const PREVIEW_MAX_SIDE = 512;
 
+/**
+ * One material region as the guard sees it (X3a): the passes' `materialId` (RSB material index + 1), its name for
+ * the report, whether the model's mid band (wear, micro-detail) may enter it, and whether it is locked (nothing may
+ * change there, like the background). Built from the store by `src/ai/prompt.ts` (`guardMaterials`).
+ */
+export interface AiGuardMaterial {
+  materialId: number;
+  name: string;
+  allowsWear: boolean;
+  locked: boolean;
+}
+
 /** Linear RGBA, 4 floats a pixel, row-major from the top-left: the render's average (sums / samples), straight alpha. */
 export interface LinearImage {
   width: number;

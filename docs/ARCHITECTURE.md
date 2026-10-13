@@ -92,7 +92,9 @@ src/
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
-  ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core; workers con ONNX Runtime Web; la guarda es TypeScript puro
+  ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core (y data), nunca al revés; la guarda NO es TypeScript: es rt-post
+    post-wasm.ts            envoltura tipada de public/engine/post.wasm (plan, condicionamiento, aceptar) y el conductor runGuarded; worker y Node
+    prompt.ts               el prompt de la escena (materiales, luces, estilo) y el negativo fijo; la tabla de materiales de la guarda
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
@@ -122,8 +124,11 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG con hilos; hojas de contacto
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
+  crates/rt-post/           la guarda del post-procesado IA y todo su trabajo con píxeles (AI-POST.md §7.2); rt-core no la conoce
+  crates/rt-post-wasm/      exportaciones extern "C" de rt-post → public/engine/post.wasm
 packaging/                  guiones de empaquetado: portables de Windows y Linux, instalador NSIS (P2)
 public/engine/rt.wasm       el motor compilado para el navegador (generado por npm run engine:build; no se sube)
+public/engine/post.wasm     la guarda IA compilada (rt-post-wasm), generada por el mismo guion; tampoco se sube
 ```
 
 **Regla de dependencias**: `ui → core`, `render → core`, `io → core`,
@@ -305,7 +310,7 @@ export interface RenderEngine {
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 
-Vive en `engine/`, un workspace de Cargo con cuatro *crates*:
+Vive en `engine/`, un workspace de Cargo con seis *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
@@ -313,11 +318,13 @@ Vive en `engine/`, un workspace de Cargo con cuatro *crates*:
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
 | `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
+| `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlazará `rt-app` (X3c) |
+| `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
 **Sin dependencias externas** quiere decir exactamente eso: ningún
 *crate* de crates.io en ningún *crate* del workspace. `Cargo.lock` solo
-lista `rt-core`, `rt-cli`, `rt-wasm` y `rt-app`, y CI falla si aparece un
-`source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
+lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post` y `rt-post-wasm`,
+y CI falla si aparece un `source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
 baja discrepancia, zlib/PNG, lectores HDR, hilos) se escribe aquí.
 Fórmulas y tablas de la literatura pública (PCG, Sobol con números de
 dirección de Joe y Kuo, el ajuste ACES, el modelo de cielo) se citan en
@@ -340,7 +347,11 @@ con cualquier número de hilos o workers: el muestreador se siembra por
 (baldosa, píxel, muestra), nunca por hilo, y la acumulación es por
 baldosa en orden fijo. Un test compara el hash de una imagen de
 referencia entre el binario nativo y el wasm (paridad), y entre 1 y N
-hilos.
+hilos. La guarda IA tiene la misma garantía: `cargo test -p rt-post`
+fija en `tests/fixtures/ai-guard.json` el *hash* de la imagen entregada,
+el de lo que recibe el modelo y el JSON del informe de cinco escenarios,
+y `tests/ai-post-wasm.test.ts` los repite con el `post.wasm` real (en CI,
+el trabajo del motor) y exige lo mismo bit a bit.
 
 **Eficiencia, por diseño** (los números son objetivos medidos, no
 puertas de CI): BVH con construcción SAH por *binning* y nodos anchos
