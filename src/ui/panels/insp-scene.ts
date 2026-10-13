@@ -473,7 +473,7 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     field(t('camera.focal'), focal.el),
     field(t('camera.fstop'), fstop.el),
     field(t('camera.focus'), focus.el, focusBtn),
-    h('div', { class: 'note' }, t('camera.dofSoon')),
+    h('div', { class: 'note' }, t('camera.dofNote')),
     field(t('camera.projection'), proj.el),
     h(
       'div',

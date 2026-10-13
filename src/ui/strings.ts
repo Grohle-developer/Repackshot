@@ -458,7 +458,7 @@ const TABLE = {
   'camera.fstop': ['Aperture', 'Diafragma'],
   'camera.focus': ['Focus distance', 'Distancia de enfoque'],
   'camera.focusClick': ['Focus with a click', 'Enfocar con clic'],
-  'camera.dofSoon': ['Depth of field shows with the path tracer: coming soon', 'La profundidad de campo se ve con el trazador: próximamente'],
+  'camera.dofNote': ['Depth of field shows in Full mode and in the render; Fast mode does not draw it', 'La profundidad de campo se ve en el modo Completo y en el render; el modo Rápido no la dibuja'],
   'camera.projection': ['Projection', 'Proyección'],
   'camera.frame': ['Frame', 'Encuadrar'],
   'camera.saveAs': ['Save as camera', 'Guardar como cámara'],

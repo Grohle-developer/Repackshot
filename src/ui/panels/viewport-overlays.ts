@@ -2,8 +2,8 @@
 // size (top right), quality meter (bottom left), axes and part size (bottom
 // right), hover label, pick modes and drag and drop of materials (pointer events) and files.
 
-import { activeCamera, cameraBasis, cameraPosition, VIEW_KEYS, type ViewKey } from '../../core/camera';
-import { boxSize, isEmptyBox, length, sub } from '../../core/math';
+import { activeCamera, cameraBasis, focusDistanceTo, VIEW_KEYS, type ViewKey } from '../../core/camera';
+import { boxSize, isEmptyBox } from '../../core/math';
 import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
 import { dropNodes, viewportDropTarget, type DropTarget } from '../../core/material-drop';
 import { allParts, effectiveVisible, partsUnder, resolvePick, sceneBounds, selectedNodes, type NodeId } from '../../core/scene';
@@ -462,7 +462,8 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       if (!tg) return;
       if (pm.kind === 'focus') {
         const cam = activeCamera(s);
-        const d = length(sub(tg.hit.point, cameraPosition(cam)));
+        // Along the view axis: the engine focuses a plane, not a sphere around the camera.
+        const d = focusDistanceTo(cam, tg.hit.point);
         store.dispatch({ type: 'camera/set', id: cam.id, patch: { focusDistance: d }, label: L('undo.focusClick') });
       } else if (pm.kind === 'pivot') {
         cmd.setPivot(ctx, 'CUSTOM', pm.ids, tg.hit.point);

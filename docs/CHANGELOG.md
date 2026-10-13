@@ -3,6 +3,13 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Correcciones
+
+- *Enfocar con clic* enfoca justo en el punto clicado: medía la distancia en línea recta y el motor enfoca un plano perpendicular a la vista, así que cualquier punto fuera del centro quedaba detrás del plano de foco (aviso del usuario).
+- La nota de la cámara ya no dice que la profundidad de campo está *próximamente*: se ve en *Completo* y en el render; *Rápido* no la dibuja.
+
 ## v0.1.4 — 2026-10-13
 
 Versión de prueba con el post-procesado con IA funcionando de punta a punta
