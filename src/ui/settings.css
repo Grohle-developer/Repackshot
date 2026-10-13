@@ -1,7 +1,13 @@
 /* Phase U6: the Settings window (UI.md §2.9). Achromatic like every other
    piece of chrome (tests/ui-achromatic.test.ts): contrast, weight and space,
    never colour. The window is zoomed by the interface size (theme.css), so its
-   box is written in its own pixels. */
+   box is written in its own pixels.
+   Label, auxiliary text, value and control never overlap (P3e): the label
+   column keeps a minimum and wraps, the control wraps under itself, a long
+   value is a stacked row (`.is-stacked`: the value under the label, paths
+   broken anywhere, the buttons under the value), and container queries stack
+   every row, the usage bars and the model rows when the content is narrow
+   (a window snapped to half a screen at 150 %). */
 
 .sw-mount:empty {
   display: none;
@@ -28,6 +34,7 @@
   border-radius: 6px;
   box-shadow: var(--shadow);
   outline: none;
+  container: sw / inline-size;
 }
 .sw-titlebar {
   display: flex;
@@ -53,6 +60,11 @@
   grid-template-columns: 232px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+}
+@container sw (max-width: 760px) {
+  .sw-main {
+    grid-template-columns: 184px minmax(0, 1fr);
+  }
 }
 .sw-foot {
   flex: none;
@@ -130,9 +142,11 @@
 /* Right column: section, blocks and rows ----------------------------------------- */
 .sw-content {
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   background: var(--bg-0);
   scrollbar-width: thin;
+  container: swc / inline-size;
 }
 .sw-section {
   display: flex;
@@ -170,7 +184,8 @@ summary.sw-block-title {
 }
 .sw-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The label keeps 11em (never squeezed under the control); the control takes what it needs and wraps. */
+  grid-template-columns: minmax(min(11em, 100%), 1fr) auto;
   align-items: center;
   gap: 4px 16px;
   min-height: 36px;
@@ -178,8 +193,33 @@ summary.sw-block-title {
   margin: 0 -8px;
   border-radius: var(--radius);
 }
-.sw-row.is-wide {
+.sw-row.is-wide,
+.sw-row.is-stacked {
   grid-template-columns: minmax(0, 1fr);
+}
+/* A long value: on its own line under the label, the buttons under it. */
+.sw-row.is-stacked {
+  align-items: start;
+}
+.sw-row.is-stacked > :not(.sw-text) {
+  margin-left: 12px;
+}
+.sw-row.is-stacked > .sw-ctrl {
+  justify-content: flex-start;
+}
+.sw-row.is-stacked > .sw-ctrl:empty {
+  display: none;
+}
+.sw-value-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--ink-1);
+  overflow-wrap: break-word;
+}
+.sw-value-block .sw-path {
+  color: var(--ink-0);
 }
 /* What a wide row shows under its label lines up with the label. */
 .sw-row.is-wide > :not(.sw-text) {
@@ -220,15 +260,19 @@ summary.sw-block-title {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 6px;
+  min-width: 0;
   color: var(--ink-0);
+  overflow-wrap: break-word;
 }
 .sw-badge {
+  max-width: 100%;
   padding: 0 5px;
   border: 1px solid var(--line);
   border-radius: 3px;
   font-weight: 500;
   line-height: 1.5;
-  white-space: nowrap;
+  /* A long badge wraps inside its box rather than push the label out of its column. */
+  overflow-wrap: break-word;
 }
 .sw-badge.is-strong {
   border-color: var(--line-strong);
@@ -237,29 +281,46 @@ summary.sw-block-title {
 }
 .sw-aux {
   max-width: 520px;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 .sw-ctrl {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 6px 10px;
   min-width: 0;
 }
 .sw-row.is-wide > .sw-ctrl {
   justify-content: flex-start;
+}
+/* A segmented control wider than its row wraps its buttons (a separator line above the next line). */
+.sw-ctrl .seg {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.sw-ctrl .seg button {
+  flex: 1 0 auto;
+  box-shadow: 0 -1px 0 var(--line);
+}
+.sw-section .note {
+  overflow-wrap: break-word;
 }
 .sw-row.is-wide > .sw-ctrl:empty {
   display: none;
 }
 .sw-ctrl .select {
   width: auto;
-  min-width: 180px;
+  min-width: min(180px, 100%);
+  max-width: 100%;
 }
 .sw-num {
   min-width: 110px;
 }
 .sw-text-input {
-  width: 260px;
+  width: min(260px, 100%);
 }
 .sw-reset {
   visibility: hidden;
@@ -290,10 +351,13 @@ summary.sw-block-title {
   font-weight: 600;
 }
 .sw-value {
+  min-width: 0;
   color: var(--ink-1);
   text-align: right;
+  overflow-wrap: break-word;
 }
 .sw-path {
+  min-width: 0;
   font-family: var(--mono);
   font-size: var(--fs-label);
   overflow-wrap: anywhere;
@@ -383,7 +447,9 @@ summary.sw-block-title {
   color: var(--ink-2);
 }
 .sw-info dd {
+  min-width: 0;
   margin: 0;
+  overflow-wrap: break-word;
 }
 
 /* Shortcuts ------------------------------------------------------------------------ */
@@ -392,7 +458,7 @@ summary.sw-block-title {
 }
 .sw-sc-body {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: 16px 28px;
   margin-top: 8px;
 }
@@ -445,7 +511,7 @@ summary.sw-block-title {
 }
 .sw-model {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(min(14em, 100%), 1fr) auto;
   gap: 4px 16px;
   padding: 10px 0;
   border-top: 1px solid var(--line);
@@ -482,7 +548,9 @@ summary.sw-block-title {
 }
 .sw-model-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
+  justify-content: flex-end;
   gap: 6px;
 }
 .sw-model-panel {
@@ -555,15 +623,57 @@ summary.sw-block-title {
 }
 .sw-usage-row {
   display: grid;
-  grid-template-columns: 180px minmax(80px, 1fr) 90px auto;
+  grid-template-columns: minmax(7em, 180px) minmax(60px, 1fr) minmax(4.5em, max-content) auto;
   align-items: center;
   gap: 12px;
+}
+.sw-usage-label {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.sw-usage-bytes {
+  white-space: nowrap;
 }
 .sw-usage-bytes {
   text-align: right;
 }
 .sw-confirm:empty {
   display: none;
+}
+
+/* Narrow content (a window snapped to half a screen, a large interface size): every row stacks. */
+@container swc (max-width: 540px) {
+  .sw-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+  .sw-row > .sw-ctrl {
+    justify-content: flex-start;
+    margin-left: 12px;
+  }
+  .sw-row > .sw-ctrl:empty {
+    display: none;
+  }
+  .sw-value {
+    text-align: left;
+  }
+  .sw-usage-row {
+    grid-template-columns: minmax(0, 1fr) max-content auto;
+    row-gap: 4px;
+  }
+  .sw-usage-row > .sw-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .sw-model {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sw-model-actions {
+    justify-content: flex-start;
+  }
+  .sw-form-field {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Viewport meter: the way to the engine's settings when it is missing. */

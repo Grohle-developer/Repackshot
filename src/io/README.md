@@ -21,8 +21,9 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
   named groups, every CAD face as a run of triangles (`SceneNode.faceRanges`) with its own vertices and normals,
   sharp edges where two faces meet, colours as SIMPLE instances. The library is never bundled
   (`tests/chunks.test.ts`).
-- `library.ts`: la biblioteca propia (U4) como archivo y en el navegador. `{ format: 'repackshot-library', schema: 1, items }`
-  es a la vez el JSON exportado y lo que `localStorage` guarda bajo una sola clave (`repackshot.library`). Todo lo que
+- `library.ts`: la biblioteca propia (U4) como archivo y guardada. `{ format: 'repackshot-library', schema: 1, items }`
+  es a la vez el JSON exportado y lo que se guarda bajo una sola clave (`repackshot.library`: `localStorage` en la web,
+  `library/library.json` en escritorio). Todo lo que
   entra se valida elemento a elemento y se reconstruye con los campos conocidos; el inválido se omite con su motivo.
 - `rsb.ts`: the engine's scene file (RSB v1, `engine/crates/rt-core/src/scene/rsb.rs`). `writeRsb` writes exactly
   the bytes of rt-core's writer (`tests/rsb.test.ts` compares with `rt --write-example`); `projectScene` maps a
@@ -30,6 +31,14 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
   draws it), one MESH per distinct geometry and one INST per visible part, the materials with the E3 semantics,
   the resolved rig in the engine's units (`core/photometry.ts`), the studio dome, the floor and the render settings.
   `writeRsb(scene, { meshes: false })` is the update that keeps the meshes the workers already have.
+- **La costura de plataforma** (P3e): `platform.ts` define `Platform`, todo servicio que guarda algo o pregunta al
+  equipo (ajustes, cosas pequeñas recordadas, biblioteca, historial de resultados, almacén de modelos, equipo,
+  espacio usado, miniaturas), elegida una vez al arrancar con `choosePlatform()`. `platform-web.ts`: el navegador
+  (localStorage, IndexedDB, OPFS, WebGPU). `platform-desktop.ts`: en la ventana del lanzador la página es solo la
+  interfaz y todo es del lanzador (`settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` en la carpeta de
+  datos, por `native-store.ts`), con una migración, una sola vez por carpeta de datos, de lo que una versión anterior
+  dejó en el almacenamiento del navegador. `prefs.ts`: el documento de ajustes sobre un `KeyValue` cualquiera (migra
+  las claves sueltas de antes, `repackshot.lang`, `.theme`, `.ui.*`; uno dañado se aparta en `.corrupt`).
 - `native.ts`: the desktop launcher seen from the page (`engine/crates/rt-app`): the token taken from the window
   URL's fragment into `sessionStorage`, `connectNative()` (null in the web version), and `NativeClient` for its API
   (info, hardware and recommendation, the model store by blob, the installer's pending choice, open folder, the

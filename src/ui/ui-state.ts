@@ -157,6 +157,11 @@ export interface DesktopInfo {
   /** The launcher's `os` (`windows`, `linux`, `macos`) and `arch` (`x86_64`): which package updates this one. */
   os?: string;
   arch?: string;
+  /**
+   * What draws the window, when the launcher says (`/api/info` `window`, phase P3c): `webview2` (its own window,
+   * `detail` the runtime's version), `browser` (an app window, `detail` the browser), `default` or `none`.
+   */
+  window?: { kind: string; detail: string | null } | null;
 }
 
 /** The update check in this session (Settings ▸ Updates, the notice in the status bar); not remembered. */

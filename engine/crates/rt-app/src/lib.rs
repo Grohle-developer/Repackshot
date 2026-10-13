@@ -4,12 +4,15 @@
 //! shipped as `app/`) on `127.0.0.1`, opens it in an app window of Edge or Chromium, renders with
 //! `rt-core` natively on every thread (`/api/render`), stores AI models in the data folder
 //! (`/api/models`, checked with its own SHA-256), detects the hardware for the model
-//! recommendation (`/api/hardware`, `repackshot --hardware`) and quits when the window closes.
+//! recommendation (`/api/hardware`, `repackshot --hardware`), keeps the page's state in the data
+//! folder (`/api/store`, `/api/storage`: the page is only the interface) and quits when the window
+//! closes.
 //! The API contract is in this crate's `README.md`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod appdata;
 pub mod browser;
 pub mod cli;
 pub mod client;
@@ -21,6 +24,7 @@ pub mod launcher;
 pub mod log;
 pub mod models;
 pub mod paths;
+pub mod port;
 pub mod process;
 pub mod recommend;
 pub mod render;

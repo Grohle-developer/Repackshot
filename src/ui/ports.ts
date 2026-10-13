@@ -102,20 +102,35 @@ export interface EnginePort {
   measure(opts: { seconds: number; signal: AbortSignal; onProgress?: (elapsed: number) => void }): Promise<PerfResult>;
 }
 
-/** The browser's storage as Settings ▸ Storage shows it. */
+/** One part of the desktop's data folder, measured by the launcher (`models`, `results`, `library`, `thumbs`, `logs`, `window`, `other`). */
+export interface FolderPart {
+  id: string;
+  path: string | null;
+  bytes: number;
+  files: number;
+}
+
+/**
+ * Where the application's data is, as Settings ▸ Storage shows it (io/platform.ts): the browser's site storage in
+ * the web version, the data folder of the desktop application.
+ */
 export interface StoragePort {
-  /** What the browser reports (navigator.storage.estimate), or null when it does not. */
+  /** `browser`: the site's storage, which the browser may evict; `folder`: the desktop's data folder. Absent: `browser`. */
+  readonly kind?: 'browser' | 'folder';
+  /** What the browser reports (navigator.storage.estimate), or null when it does not (and on the desktop). */
   estimate(): Promise<{ usage: number; quota: number } | null>;
-  /** Whether the browser keeps the data (navigator.storage.persisted), null when it cannot say. */
+  /** Whether the browser keeps the data (navigator.storage.persisted), null when it cannot say (and on the desktop). */
   persisted(): Promise<boolean | null>;
   /** Asks the browser to keep the data; null when it cannot be asked. */
   persist(): Promise<boolean | null>;
-  /** Bytes of the library's entry. */
-  libraryBytes(): number;
+  /** Bytes of the library. */
+  libraryBytes(): number | Promise<number>;
   /** Bytes of the thumbnail cache. */
-  cacheBytes(): number;
+  cacheBytes(): number | Promise<number>;
   /** Deletes the thumbnail cache; the bytes freed. */
-  clearCache(): number;
+  clearCache(): number | Promise<number>;
+  /** The desktop's data folder by part, as the launcher measured it; null (or absent) in the web version. */
+  usage?(): Promise<{ dataDir: string; total: number; folders: FolderPart[] } | null>;
 }
 
 /** The desktop launcher's folders (P2), when the page runs in its window. */

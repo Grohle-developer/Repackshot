@@ -6,7 +6,7 @@ use crate::cli::RunOptions;
 use crate::instance::{self, Instance};
 use crate::log;
 use crate::paths::{self, Env, Paths};
-use crate::server::{app_version, engine_version, App, Server};
+use crate::server::{app_version, engine_version, App};
 use std::io::Write;
 use std::process::Child;
 use std::time::{Duration, Instant};
@@ -67,7 +67,8 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
     }
 
     let token = crate::token::generate();
-    let mut server = Server::start(paths.clone(), opts.port, token.clone(), opts.threads)
+    // The data folder's own port (port.rs): the window's origin stays the same from launch to launch.
+    let mut server = crate::port::start(&paths, opts.port, token.clone(), opts.threads)
         .map_err(|e| format!("cannot listen on 127.0.0.1:{}: {e}", opts.port))?;
     let port = server.port();
     crate::log!(

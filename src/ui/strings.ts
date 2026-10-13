@@ -961,7 +961,7 @@ const TABLE = {
   'set.sec.storage': ['Storage', 'Almacenamiento'],
   'set.sec.storage.desc': ['What Repackshot keeps on this computer, and how to free space.', 'Lo que Repackshot guarda en este equipo y cómo liberar espacio.'],
   'set.sec.desktop': ['Desktop', 'Escritorio'],
-  'set.sec.desktop.desc': ['The desktop application: where its data is and which browser draws its window.', 'La aplicación de escritorio: dónde están sus datos y qué navegador dibuja su ventana.'],
+  'set.sec.desktop.desc': ['The desktop application: where its data is and what draws its window.', 'La aplicación de escritorio: dónde están sus datos y qué dibuja su ventana.'],
   'set.sec.updates': ['Updates', 'Actualizaciones'],
   'set.sec.updates.desc': ['Which version you are running, and whether a newer one has been published.', 'Qué versión usas y si hay otra más reciente publicada.'],
   'set.sec.about': ['About', 'Acerca de'],
@@ -1311,6 +1311,7 @@ const TABLE = {
   'set.hw.maxBuffer': ['Largest WebGPU buffer', 'Búfer WebGPU más grande'],
   'set.hw.notReported': ['Not reported by the browser', 'El navegador no lo dice'],
   'set.hw.notDetected': ['Not detected', 'No detectado'],
+  'set.hw.noGpu': ['No graphics card found', 'No se ha encontrado ninguna tarjeta gráfica'],
   'set.hw.again': ['Detect again', 'Detectar de nuevo'],
   'set.hw.cpu': ['Processor', 'Procesador'],
   'set.hw.noUsableGpu': ['No graphics card with 4 GB of video memory or more: the recommendation is for the processor', 'Ninguna tarjeta gráfica con 4 GB de memoria de vídeo o más: la recomendación es para el procesador'],
@@ -1360,9 +1361,26 @@ const TABLE = {
   'set.st.persistNone': ['This browser cannot be asked', 'A este navegador no se le puede pedir'],
   'set.st.openFolder': ['Open folder', 'Abrir carpeta'],
   'set.st.openFolderFailed': ['The system could not open the folder', 'El sistema no ha podido abrir la carpeta'],
-  'set.dk.portableYes': ['Yes: the data is next to the program, in {dir}', 'Sí: los datos están junto al programa, en {dir}'],
-  'set.dk.portableNo': ['No: the data is in {dir}', 'No: los datos están en {dir}'],
+  // Storage on the desktop (P3e): the data folder, measured by the application.
+  'set.st.totalFolder': ['{used} in the data folder', '{used} en la carpeta de datos'],
+  'set.st.logs': ['Logs', 'Registros'],
+  'set.st.window': ['Window data', 'Datos de la ventana'],
+  'set.st.other': ['Settings and the rest', 'Ajustes y lo demás'],
+  'set.st.notFreed': ['Kept while the application runs', 'Se conserva mientras la aplicación está abierta'],
+  'store.saveFailed': ['Could not save to the data folder: the change lasts until Repackshot closes', 'No se ha podido guardar en la carpeta de datos: el cambio dura hasta cerrar Repackshot'],
+  'set.dk.portableYes': ['Yes: the data is next to the program, in this folder:', 'Sí: los datos están junto al programa, en esta carpeta:'],
+  'set.dk.portableNo': ['No: the data is in this folder:', 'No: los datos están en esta carpeta:'],
+  // What draws the window, by name (never an executable's name). The default browser is said as it is: then
+  // the application really is in a browser tab.
   'set.dk.defaultBrowser': ['The default browser', 'El navegador por defecto'],
+  'set.dk.window.edge': ['Microsoft Edge app window', 'Ventana de aplicación de Microsoft Edge'],
+  'set.dk.window.chromium': ['Chromium app window', 'Ventana de aplicación de Chromium'],
+  'set.dk.window.chrome': ['Google Chrome app window', 'Ventana de aplicación de Google Chrome'],
+  'set.dk.window.brave': ['Brave app window', 'Ventana de aplicación de Brave'],
+  'set.dk.window.other': ['App window', 'Ventana de aplicación'],
+  'set.dk.window.webview2': ['Native window (WebView2 {version})', 'Ventana nativa (WebView2 {version})'],
+  'set.dk.window.webview2Plain': ['Native window (WebView2)', 'Ventana nativa (WebView2)'],
+  'set.dk.window.unknown': ['A window the application did not open', 'Una ventana que no abrió la aplicación'],
   'up.checking': ['Checking…', 'Comprobando…'],
   'up.neverChecked': ['Not checked yet', 'Aún no se ha comprobado'],
   'up.never': ['Never', 'Nunca'],
@@ -1663,6 +1681,61 @@ const TABLE = {
 
 export type StringKey = keyof typeof TABLE;
 
+/**
+ * The desktop application's wording (phase P3e). In the launcher's window there is no browser for the
+ * person: the page is the application's interface, and what it keeps is in the data folder. So the strings
+ * that speak of "the browser" say it the desktop's way there, and the web version keeps the table above.
+ * Strings of rows the desktop never shows (persistent storage, WebGPU, the browser's quota) are in
+ * `WEB_ONLY_STRINGS` instead. tests/strings.test.ts checks that every string mentioning the browser is in
+ * one of the two.
+ */
+const DESKTOP_TABLE: Partial<Record<StringKey, readonly [string, string]>> = {
+  'header.fullNoWorkers': ['Full: the WebAssembly engine cannot start its workers here', 'Completo: el motor WebAssembly no puede arrancar sus workers aquí'],
+  'library.saveFailed': ['Your library could not be saved in the data folder', 'No se ha podido guardar tu biblioteca en la carpeta de datos'],
+  'rw.folderNote': ['Written into “{name}”', 'Se escribe en «{name}»'],
+  'rw.onlyDownload': ['The images go to the Downloads folder', 'Las imágenes van a la carpeta Descargas'],
+  'queue.storageMemory': ['Results are kept in memory only: the data folder could not be written', 'Los resultados solo se guardan en memoria: no se ha podido escribir en la carpeta de datos'],
+  'set.general.onStart.aux': ['What the window shows when Repackshot opens. Last project offers the file opened or saved last', 'Lo que muestra la ventana al abrir Repackshot. Último proyecto ofrece el archivo abierto o guardado por última vez'],
+  'set.general.autosave.aux': ['A copy of the project in the data folder every few minutes', 'Una copia del proyecto en la carpeta de datos cada pocos minutos'],
+  'set.general.confirmClose.aux': ['Asks before the window closes with unsaved changes', 'Pregunta antes de cerrar la ventana si hay cambios sin guardar'],
+  'set.engine.backend.WASM': ['WebAssembly', 'WebAssembly'],
+  'set.engine.threads.aux': ['Workers of the WebAssembly engine; a change restarts it', 'Workers del motor WebAssembly; cambiarlo lo reinicia'],
+  'set.eng.simdYes': ['WebAssembly has simd128 here', 'WebAssembly tiene simd128 aquí'],
+  'set.eng.simdNo': ['WebAssembly has no simd128 here: the scalar build runs', 'WebAssembly no tiene simd128 aquí: se usa la versión escalar'],
+  'set.ai.noStore': ['Models cannot be kept: {reason}', 'No se pueden guardar modelos: {reason}'],
+  'set.hw.notReported': ['Not detected', 'No detectado'],
+  'set.st.totalUnknown': ['The data folder could not be measured', 'No se ha podido medir la carpeta de datos'],
+  'set.block.browser': ['Where the data is', 'Dónde están los datos'],
+  'project.reopenFailed': ['Could not open “{name}”: the file moved or cannot be read', 'No se ha podido abrir «{name}»: el archivo se ha movido o no se puede leer'],
+  'project.err.tooLarge': ['{name} is too large to open. The current project was not touched.', '{name} es demasiado grande para abrirlo. El proyecto actual no se ha tocado.'],
+};
+
+/**
+ * Strings that mention the browser and never show in the desktop application: their rows are hidden there
+ * (`webOnly` in core/settings.ts) or their code only runs in the web version (WebGPU, the browser's quota and
+ * memory figures, the browser's own model store).
+ */
+export const WEB_ONLY_STRINGS: readonly StringKey[] = [
+  'set.storage.persist.aux',
+  'set.st.persisted',
+  'set.st.notPersisted',
+  'set.st.persistDenied',
+  'set.st.persistNone',
+  'set.st.total',
+  'set.ai.whereWeb',
+  'set.ai.whereMemory',
+  'set.hw.ramCapped',
+  'set.hw.rowWebGpu',
+  'set.hw.rowWebNone',
+  'set.hw.webCannot',
+];
+
+/** Strings of the desktop that name a browser because one really draws the window then (no app window could open). */
+export const DESKTOP_BROWSER_FACTS: readonly StringKey[] = ['set.dk.defaultBrowser'];
+
+/** The desktop wording, for the tests. */
+export const DESKTOP_STRINGS: Readonly<Partial<Record<StringKey, readonly [string, string]>>> = DESKTOP_TABLE;
+
 function column(i: 0 | 1): Record<StringKey, string> {
   const out = {} as Record<StringKey, string>;
   for (const k of Object.keys(TABLE) as StringKey[]) out[k] = TABLE[k][i];
@@ -1679,6 +1752,25 @@ export const LANGS: readonly Lang[] = ['en', 'es'];
 
 let current: Lang = 'en';
 const listeners = new Set<(lang: Lang) => void>();
+let platform: 'web' | 'desktop' = 'web';
+
+/** Where the interface runs (io/platform.ts): the desktop's wording replaces the browser's. Set once, before anything is drawn. */
+export function setStringsPlatform(p: 'web' | 'desktop'): void {
+  platform = p;
+}
+
+export function getStringsPlatform(): 'web' | 'desktop' {
+  return platform;
+}
+
+/** The text of a key in a language, in the platform's wording. */
+export function stringIn(lang: Lang, key: StringKey): string {
+  if (platform === 'desktop') {
+    const d = DESKTOP_TABLE[key];
+    if (d) return d[lang === 'en' ? 0 : 1];
+  }
+  return STRINGS[lang][key];
+}
 
 export function getLang(): Lang {
   return current;
@@ -1710,12 +1802,12 @@ function interpolate(template: string, params: Record<string, Param> | undefined
 
 /** A string in the current language, with {params} filled in. */
 export function t(key: StringKey, params?: Record<string, Param>): string {
-  return interpolate(STRINGS[current][key], params, current);
+  return interpolate(stringIn(current, key), params, current);
 }
 
 /** A string in a given language. */
 export function tIn(lang: Lang, key: StringKey, params?: Record<string, Param>): string {
-  return interpolate(STRINGS[lang][key], params, lang);
+  return interpolate(stringIn(lang, key), params, lang);
 }
 
 /** The same string in both languages, e.g. for undo labels that survive a language switch. */
