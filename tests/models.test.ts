@@ -281,4 +281,31 @@ describe('the desktop launcher’s detection', () => {
     expect(hw.error).toBe('launcher');
     expect(recommend(recommendInput(hw, 'GPU'), AI_MODELS)).toBeNull();
   });
+
+  it('"no graphics card" and "the graphics cards could not be read" are not the same answer', async () => {
+    const { noGpuText } = await import('../src/ui/panels/settings-ai');
+    const { setLang, setStringsPlatform } = await import('../src/ui/strings');
+    // v0.1.2 on Windows: no source answered, and the interface said there was no graphics card.
+    const failed = fromNativeHardware({ ...measured, gpus: [], device: 'cpu', gpuDetection: 'failed' });
+    expect(failed.gpuDetectionFailed).toBe(true);
+    const none = fromNativeHardware({ ...measured, gpus: [], device: 'cpu', gpuDetection: 'ok' });
+    expect(none.gpuDetectionFailed).toBeUndefined();
+    // A launcher from before the field: as before, no graphics card.
+    expect(fromNativeHardware({ ...measured, gpus: [], device: 'cpu' }).gpuDetectionFailed).toBeUndefined();
+    setStringsPlatform('desktop');
+    try {
+      expect(noGpuText({ state: 'DONE', info: failed })).toBe('The graphics cards could not be read: see the logs');
+      expect(noGpuText({ state: 'DONE', info: none })).toBe('No graphics card found');
+      expect(noGpuText({ state: 'DETECTING', info: null })).toBe('Detecting…');
+      expect(noGpuText({ state: 'DONE', info: { ...none, detected: false } })).toBe('Not detected');
+      setLang('es');
+      expect(noGpuText({ state: 'DONE', info: failed })).toBe('No se han podido leer las tarjetas gráficas: mira los registros');
+      expect(noGpuText({ state: 'DONE', info: none })).toBe('No se ha encontrado ninguna tarjeta gráfica');
+    } finally {
+      setLang('en');
+      setStringsPlatform('web');
+    }
+    // Either way the CPU rows decide, as the launcher does.
+    expect(recommendInput(failed, 'GPU')).toEqual({ device: 'cpu', ramGiB: 15.6 });
+  });
 });

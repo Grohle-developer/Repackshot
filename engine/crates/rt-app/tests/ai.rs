@@ -682,8 +682,11 @@ fn requests_that_cannot_run_are_refused_with_the_reason() {
         400,
         "size",
     );
+    // On the CPU like the others: without it, a computer with a usable graphics card asks for the
+    // Vulkan build, which is not installed here, and is refused for that before the image is read.
     refuse(
-        "{\"model\":\"ZIMAGE_Q4\",\"image\":\"bm90IGEgcG5n\",\"strength\":0.3}".into(),
+        "{\"model\":\"ZIMAGE_Q4\",\"image\":\"bm90IGEgcG5n\",\"strength\":0.3,\"device\":\"cpu\"}"
+            .into(),
         400,
         "bad-body",
     );

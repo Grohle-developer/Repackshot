@@ -282,18 +282,11 @@ impl Dialogs {
 /// The program for dialogs on this system.
 pub fn find_backend() -> Result<Backend, DialogError> {
     if cfg!(windows) {
-        let system = std::env::var_os("SystemRoot")
-            .map(PathBuf::from)
-            .map(|r| {
-                r.join("System32")
-                    .join("WindowsPowerShell")
-                    .join("v1.0")
-                    .join("powershell.exe")
-            })
-            .filter(|p| p.is_file());
-        return Ok(Backend::PowerShell(
-            system.unwrap_or_else(|| PathBuf::from("powershell.exe")),
-        ));
+        return Ok(Backend::PowerShell(crate::process::system32(&[
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe",
+        ])));
     }
     if let Some(p) = on_path("zenity") {
         return Ok(Backend::Zenity(p));

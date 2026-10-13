@@ -2634,6 +2634,55 @@ recuerda. Encontrado de paso (de P3a): un trabajo de visor nativo de una
 página que se recarga sigue vivo hasta el tope de 8 (`503 busy`). Sin
 probar en un Windows real.
 
+**Corrección tras probar v0.1.2.** En Windows de verdad el lanzador no
+encontraba ninguna tarjeta gráfica en ningún equipo, solo la CPU, y de eso
+dependen *Ajustes ▸ Post-procesado IA ▸ Equipo*, la fila *GPU* y la elección
+Vulkan/CPU del motor de IA. Causa: `reg query <clase de pantalla> /s` llega a
+la subclave `Properties`, que da «Acceso denegado» («ERROR: Acceso
+denegado.» en español), y `reg` sale con 1; `process::output` tiraba la
+salida de cualquier programa que no saliera con 0, con los adaptadores
+dentro. El test del analizador le pasaba el texto directamente, sin código
+de salida: era más permisivo que la realidad, y se ha arreglado con él.
+Ahora `process::output_any` devuelve lo impreso junto con el código (y
+`output` sigue estricto para las consultas de una sola clave de
+`browser.rs` y `files.rs`, donde salir con 1 es «no está»), y las tarjetas
+salen de cuatro fuentes: **DXGI** (`rt-app/src/platform/dxgi.rs`, COM a mano
+como el de P3c: `CreateDXGIFactory1`, `EnumAdapters1`, `GetDesc1`; VRAM
+dedicada exacta de 64 bits, sin el adaptador de software ni los de
+Microsoft, `dxgi.dll` solo de `System32`), **el registro** (una consulta
+para listar las subclaves y otra por adaptador, nunca `/s` ni `Properties`,
+leídas sea cual sea su código), **CIM** (`Win32_VideoController` en la misma
+ejecución de PowerShell que la RAM) y **wmic** si PowerShell no contesta.
+Se mezclan por adaptador: manda la primera que lista solo lo que hay ahora
+(DXGI, si no CIM, si no wmic), porque el registro guarda la clave de una
+tarjeta que ya se quitó, y gana la VRAM exacta sobre la de 32 bits, que se
+queda en 4 GiB. Cada fuente deja en `logs/repackshot.log` qué encontró o por
+qué falló, `/api/hardware` lo da en `gpuSources` y `gpuDetection`, y la
+interfaz distingue «No se han podido leer las tarjetas gráficas: mira los
+registros» de «No se ha encontrado ninguna tarjeta gráfica». Los programas
+del sistema van por su ruta absoluta en `System32` (`reg.exe`,
+`powershell.exe`, `WMIC.exe`, también en `browser.rs`, `files.rs` y
+`dialogs.rs`). Tests, cada uno comprobado fallando sin su arreglo: un
+programa que imprime y sale con 1 se lee (`sh` en Linux, `cmd` bajo Wine),
+la fuente del registro con un `reg` falso y con programas de verdad que
+salen con 1, el analizador con «Access is denied» y «Acceso denegado.»
+entre claves, CIM y `wmic`, la mezcla (la tarjeta quitada, dos tarjetas
+iguales, «sin tarjeta» frente a «no se pudo preguntar»), las vtables y
+`DXGI_ADAPTER_DESC1` contra el IDL, y la interfaz. Bajo Wine con `xvfb-run`
+DXGI lista su adaptador (*NVIDIA GeForce GTX 470*, 15,7 GiB, lo que Wine
+inventa), el registro de Wine lo llama *Wine Adapter* sin VRAM, el
+PowerShell de Wine no contesta y `wmic` da el mismo nombre que DXGI: queda
+una tarjeta, la de DXGI. Encontrado al pasarlo todo bajo Wine: un test de
+`rt-app/tests/ai.rs` daba por hecho que el equipo no tiene GPU (una petición
+sin `"device":"cpu"` pedía la compilación Vulkan, que no está instalada, y se
+rechazaba por eso antes de leer la imagen); fallaba igual en Linux con una
+GPU (`REPACKSHOT_TEST_GPUS`) y ya pide la CPU como las demás. No encajó: sigue sin probarse en un Windows real
+(si aún falla, `logs/repackshot.log` dice qué contestó cada fuente); que
+`reg /s` se pare en el primer error no está comprobado, por eso se consulta
+clave a clave; el instalador lee el mismo `--hardware` y ya ve las tarjetas,
+pero su página de modelos no distingue «no se pudo leer» de «no hay» (el
+INI no cambia).
+
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
 **N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b** y **X4** ya; **X2** al fusionarse E5; **X3c**, **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
