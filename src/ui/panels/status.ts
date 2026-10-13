@@ -88,7 +88,7 @@ function updateNotice(ctx: Ctx, scope: Scope): HTMLElement {
       el.replaceChildren(
         h('span', { class: 'update-text' }, t('up.available', { version: release.version })),
         h('button', { type: 'button', class: 'btn-link update-download', onclick: () => downloadUpdate(ctx, release) }, t('up.download')),
-        h('button', { type: 'button', class: 'btn-link update-notes', onclick: () => openReleaseNotes(release) }, t('up.notes')),
+        h('button', { type: 'button', class: 'btn-link update-notes', onclick: () => openReleaseNotes(ctx, release) }, t('up.notes')),
         h('button', { type: 'button', class: 'btn-link update-later', onclick: () => dismissUpdateNotice(ctx) }, t('up.later')),
         h('span', { class: 'sep' }),
       );

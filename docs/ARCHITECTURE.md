@@ -437,6 +437,12 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    guardan ahí: la página los descarga con `fetch` y los entrega al
    lanzador por trozos, que los escribe, reanuda y comprueba con un
    SHA-256 propio.
+6. **Diálogos y archivos** (P3b): `POST /api/dialog/{folder,open,save}`
+   abre los diálogos del sistema y devuelve un permiso por ruta; la API de
+   archivos (`/api/files…`) solo lee o escribe rutas concedidas así en el
+   arranque actual, con escritura atómica y sin sobrescribir en las
+   carpetas de salida. La página nunca nombra una ruta que no le diera un
+   diálogo.
 5. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
    VRAM, la RAM y la recomendación de `src/data/ai-models.json`
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por

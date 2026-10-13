@@ -36,6 +36,13 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Attrs |
       else el.setAttribute(k, String(v));
     }
   }
+  // Our fields: no autofill suggestions, no spelling underline; images and links are not dragged out of the window
+  // unless a component says so (the browser's own interface; ui/guards.ts).
+  if ((tag === 'input' || tag === 'textarea') && el instanceof HTMLElement) {
+    if (!el.hasAttribute('autocomplete')) el.setAttribute('autocomplete', 'off');
+    if (!el.hasAttribute('spellcheck')) el.setAttribute('spellcheck', 'false');
+  }
+  if ((tag === 'img' || tag === 'a') && el instanceof HTMLElement && !el.hasAttribute('draggable')) el.setAttribute('draggable', 'false');
   for (const c of children) append(el, c);
   return el;
 }
@@ -105,6 +112,14 @@ export function downloadBlob(blob: Blob, name: string): void {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/** Opens an address in a new tab of the browser through a temporary link (no window.open, no access to this page). */
+export function openInNewTab(url: string): void {
+  const a = h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', style: 'display:none' });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 /** Linear 0..1 colour channel to an sRGB hex string (for colour inputs). */

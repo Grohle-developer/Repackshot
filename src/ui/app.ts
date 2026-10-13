@@ -17,6 +17,7 @@ import { statusBar } from './panels/status';
 import { viewportPanel } from './panels/viewport';
 import type { AppServices } from './ports';
 import { dynamic, Root, Scope, type Ctx } from './reactive';
+import { preventedByGuard } from './guards';
 import { ACTIONS, matches } from './shortcuts';
 import { setLengthUnit } from './components/controls';
 import { cssZoom } from './dom';
@@ -217,7 +218,9 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
   window.addEventListener('resize', checkNarrow);
 
   document.addEventListener('keydown', (e) => {
-    if (e.defaultPrevented) return;
+    // The guards (guards.ts) prevent the browser's own action of keys such as Ctrl/⌘ S or D; the application's
+    // shortcut for the key still runs.
+    if (e.defaultPrevented && !preventedByGuard(e)) return;
     onKey(ctx, e);
   });
 
