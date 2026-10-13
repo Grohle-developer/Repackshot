@@ -1,20 +1,20 @@
-//! The renderer.
+//! The renderer: tiles of pixels, one sample at a time.
 //!
-//! [`render_tile`] is a real ray caster: thin lens camera, deterministic per-pixel random streams,
-//! and since E2 the two-level BVH of [`crate::geometry`] with the watertight triangle test,
-//! dispatched to the best SIMD path of the machine (every path gives the same bits).
-//!
-//! The shading is still the E1 placeholder (`n.l` of the first light plus a flat ambient): E3
-//! replaces it with the path tracer (materials, lights, environment). The function signature, the
-//! tile/film contract and the determinism guarantees are the parts that stay.
+//! [`render_tile`] renders one sample of every pixel of a tile with the path tracer of
+//! [`crate::integrator`]: a camera ray per pixel (box filter: the position inside the pixel is
+//! uniform; a Gaussian or Blackman–Harris filter can replace it by weighting splats later), the
+//! point on the lens of a thin-lens camera, then the path. The random numbers come from the
+//! [`PixelSampler`] of (scene seed, pixel, sample index) only, so a tile can be rendered by any
+//! thread, in any order, cut in any way, on any platform: the film is the same. Accumulating
+//! samples `0..n` into a film in that order is progressive rendering; the hosts do it per tile.
 
-use crate::color::Rgb;
-use crate::geometry::RayHit;
 use crate::image::Film;
+use crate::integrator::{radiance, BvhTracer, Prepared, Tracer};
 use crate::math::Ray;
-use crate::rng::{mix64, Pcg32};
+use crate::sampler::{PixelSampler, DIM_CAMERA, DIM_LENS};
 use crate::scene::Scene;
 use crate::simd::Isa;
+use crate::warp;
 
 /// A rectangle of pixels in image space.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,64 +48,34 @@ pub fn tile_grid(width: u32, height: u32, size: u32) -> Vec<TileRect> {
     tiles
 }
 
-/// Random stream for one pixel and one sample. It depends only on the scene seed, the image
-/// space pixel and the sample index, never on how the image is cut into tiles or on the order the
-/// tiles are rendered, so every schedule and every platform produces the same film.
-fn pixel_rng(seed: u32, x: u32, y: u32, sample_index: u32) -> Pcg32 {
-    let pixel = (u64::from(y) << 32) | u64::from(x);
-    let sample = (u64::from(seed) << 32) | u64::from(sample_index);
-    let key = mix64(pixel ^ mix64(sample));
-    Pcg32::seeded(key, mix64(key))
-}
-
-/// A point uniformly distributed in the unit disk, by rejection sampling. Unlike the polar or
-/// concentric mappings it needs no `sin`/`cos`, so the result is bit-identical on every platform.
-fn sample_unit_disk(rng: &mut Pcg32) -> (f32, f32) {
-    for _ in 0..16 {
-        let x = rng.next_f32() * 2.0 - 1.0;
-        let y = rng.next_f32() * 2.0 - 1.0;
-        if x * x + y * y <= 1.0 {
-            return (x, y);
-        }
-    }
-    (0.0, 0.0)
-}
-
-/// Placeholder shading: albedo times (`n.l` of the first light plus a flat ambient taken from
-/// the environment `horizon`). Misses are black. No shadows, no bounces: E3 replaces all of it.
-fn shade(scene: &Scene, ray: &Ray, hit: Option<RayHit>) -> Rgb {
-    let Some(hit) = hit.and_then(|h| scene.geometry.hit_details(ray, h)) else {
-        return Rgb::BLACK;
+/// The camera ray of image-space pixel `(x, y)` for the samples of `sampler`: a uniform position
+/// inside the pixel (box filter) and, for a thin lens, a point on the aperture.
+pub fn camera_ray(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> Ray {
+    let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
+    let aspect = width as f32 / height as f32;
+    let (du, dv) = sampler.get2(DIM_CAMERA);
+    let u = (x as f32 + du) / width as f32;
+    let v = (y as f32 + dv) / height as f32;
+    let lens = if scene.camera.lens_radius() > 0.0 {
+        warp::concentric_disk(sampler.get2(DIM_LENS))
+    } else {
+        (0.0, 0.0)
     };
-    // `hit.normal` is the smooth normal when the mesh has usable ones, the geometric normal
-    // otherwise, already turned to face the viewer (two-sided shading).
-    let normal = hit.normal;
-    let albedo = scene
-        .geometry
-        .instances()
-        .get(hit.instance as usize)
-        .and_then(|instance| scene.materials.get(instance.material_id as usize))
-        .map_or(Rgb::splat(0.8), |m| m.base_color);
-    let ambient = Rgb::splat(scene.environment.horizon * scene.environment.strength);
-    let direct = scene.lights.first().map_or(Rgb::BLACK, |light| {
-        let to_light = -light.direction.normalize();
-        light.color * normal.dot(to_light).max(0.0)
-    });
-    albedo * (direct + ambient)
+    scene.camera.generate_ray(aspect, u, v, lens)
 }
 
-/// Renders one sample of every pixel of `tile` into `film` and returns the number of rays cast.
+/// Renders one sample of every pixel of `tile` into `film` and returns the number of rays cast
+/// (camera, extension and shadow rays).
 ///
 /// * The tile is clipped to the image (`scene.render.width x height`); `film` receives splats in
 ///   image space and silently ignores pixels outside of itself, so it may be the whole image or
 ///   just the tile (see [`Film::region`]).
-/// * Each pixel gets one jittered camera ray (and one lens sample for a thin lens camera) drawn
-///   from a [`Pcg32`] stream determined only by (scene seed, pixel, `sample_index`). Rendering
-///   the same samples in any tile order, with any tile size, on any platform, gives identical
-///   films.
+/// * Every random number is drawn from the [`PixelSampler`] of (scene seed, pixel,
+///   `sample_index`). Rendering the same samples in any tile order, with any tile size, on any
+///   platform, gives identical films.
 ///
-/// Intersection goes through the scene's BVH; shading is the E1 placeholder (see the module
-/// documentation).
+/// This prepares the scene's lights on every call; hosts that render many tiles of one scene
+/// call [`render_tile_prepared`] with one [`Prepared`] instead.
 pub fn render_tile(scene: &Scene, tile: TileRect, sample_index: u32, film: &mut Film) -> u64 {
     render_tile_with(scene, tile, sample_index, film, Isa::detect())
 }
@@ -118,71 +88,94 @@ pub fn render_tile_with(
     film: &mut Film,
     isa: Isa,
 ) -> u64 {
-    render_tile_traced(scene, tile, sample_index, film, |rays, hits| {
-        scene.geometry.trace_batch_with(rays, hits, isa);
-    })
+    let prepared = Prepared::new(scene);
+    render_tile_prepared(scene, &prepared, tile, sample_index, film, isa)
 }
 
-/// [`render_tile`] with every triangle of every instance tested against every ray, without the
-/// BVH: the reference the accelerated renderer is checked against. Tests only.
-#[cfg(test)]
-fn render_tile_brute_force(scene: &Scene, tile: TileRect, sample_index: u32, film: &mut Film) {
-    render_tile_traced(scene, tile, sample_index, film, |rays, hits| {
-        for (ray, hit) in rays.iter().zip(hits.iter_mut()) {
-            *hit = scene.geometry.brute_force(ray).0;
+/// [`render_tile`] with the scene already prepared (`prepared` must come from `scene`).
+pub fn render_tile_prepared(
+    scene: &Scene,
+    prepared: &Prepared,
+    tile: TileRect,
+    sample_index: u32,
+    film: &mut Film,
+    isa: Isa,
+) -> u64 {
+    let tracer = BvhTracer {
+        geometry: &scene.geometry,
+        isa,
+    };
+    render_tile_traced(scene, prepared, tile, sample_index, film, &tracer)
+}
+
+/// The body of the tile renderers, generic over how rays are traced.
+fn render_tile_traced<T: Tracer>(
+    scene: &Scene,
+    prepared: &Prepared,
+    tile: TileRect,
+    sample_index: u32,
+    film: &mut Film,
+    tracer: &T,
+) -> u64 {
+    let (width, height) = (scene.render.width, scene.render.height);
+    let x_end = tile.x.saturating_add(tile.w).min(width);
+    let y_end = tile.y.saturating_add(tile.h).min(height);
+    let mut rays = 0u64;
+    for y in tile.y..y_end {
+        for x in tile.x..x_end {
+            let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
+            let ray = camera_ray(scene, &sampler, x, y);
+            let (c, alpha) = radiance(scene, prepared, tracer, &sampler, ray, &mut rays);
+            film.splat_alpha(x, y, c, alpha);
         }
-    });
+    }
+    rays
 }
 
-/// The body of the tile renderers: camera rays, `trace` to find their nearest hits, shading.
-fn render_tile_traced(
+/// Every triangle of every instance tested against every ray, without the BVH: the reference
+/// the accelerated renderer is checked against. Tests only.
+#[cfg(test)]
+pub(crate) struct BruteForce<'a>(pub &'a crate::geometry::Geometry);
+
+#[cfg(test)]
+impl Tracer for BruteForce<'_> {
+    fn trace(&self, ray: &Ray) -> Option<crate::geometry::RayHit> {
+        self.0.brute_force(ray).0
+    }
+
+    fn occluded(&self, ray: &Ray) -> bool {
+        self.0.brute_force(ray).1
+    }
+}
+
+/// [`render_tile`] through [`BruteForce`]. Tests only.
+#[cfg(test)]
+pub(crate) fn render_tile_brute_force(
     scene: &Scene,
     tile: TileRect,
     sample_index: u32,
     film: &mut Film,
-    trace: impl FnOnce(&[Ray], &mut [Option<RayHit>]),
 ) -> u64 {
-    let (width, height) = (scene.render.width, scene.render.height);
-    let aspect = width as f32 / height as f32;
-    let x_end = tile.x.saturating_add(tile.w).min(width);
-    let y_end = tile.y.saturating_add(tile.h).min(height);
-    let thin_lens = scene.camera.lens_radius() > 0.0;
-    let pixels = (x_end.saturating_sub(tile.x) as usize) * (y_end.saturating_sub(tile.y) as usize);
-
-    // Camera rays of the whole tile first, then one SIMD dispatch to trace them all.
-    let mut rays = Vec::with_capacity(pixels);
-    for y in tile.y..y_end {
-        for x in tile.x..x_end {
-            let mut rng = pixel_rng(scene.render.seed, x, y, sample_index);
-            let u = (x as f32 + rng.next_f32()) / width as f32;
-            let v = (y as f32 + rng.next_f32()) / height as f32;
-            let lens = if thin_lens {
-                sample_unit_disk(&mut rng)
-            } else {
-                (0.0, 0.0)
-            };
-            rays.push(scene.camera.generate_ray(aspect, u, v, lens));
-        }
-    }
-    let mut hits = vec![None; rays.len()];
-    trace(&rays, &mut hits);
-
-    let mut i = 0;
-    for y in tile.y..y_end {
-        for x in tile.x..x_end {
-            film.splat(x, y, shade(scene, &rays[i], hits[i]));
-            i += 1;
-        }
-    }
-    rays.len() as u64
+    let prepared = Prepared::new(scene);
+    render_tile_traced(
+        scene,
+        &prepared,
+        tile,
+        sample_index,
+        film,
+        &BruteForce(&scene.geometry),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::Rgb;
+    use crate::fmath;
     use crate::math::Vec3;
     use crate::scene::{
         Camera, Environment, Geometry, Light, LightKind, Material, Mesh, RenderSettings,
+        BACKGROUND_COLOR,
     };
 
     /// The triangle of `triangle_scene`, with or without its vertex normals.
@@ -201,7 +194,18 @@ mod tests {
         .expect("valid")
     }
 
-    /// One big triangle facing the camera, which looks along +Y from y = -100 at the origin.
+    /// A Lambertian material (an index-matched dielectric has no specular lobe).
+    fn lambert(albedo: f32) -> Material {
+        Material {
+            base_color: Rgb::splat(albedo),
+            ior: 1.0,
+            ..Material::default()
+        }
+    }
+
+    /// One big Lambertian triangle (albedo 0.8) facing the camera, which looks along +Y from
+    /// y = -100 at the origin, lit by a delta sun shining along +Y with irradiance π, in a black
+    /// world with a black background.
     fn triangle_scene() -> Scene {
         Scene {
             camera: Camera {
@@ -211,19 +215,27 @@ mod tests {
                 sensor_mm: 36.0,
                 ..Camera::default()
             },
-            materials: vec![Material::default()],
+            materials: vec![lambert(0.8)],
             geometry: Geometry::from_meshes(vec![facing_triangle(true)]),
             lights: vec![Light {
                 kind: LightKind::Sun,
                 direction: Vec3::new(0.0, 1.0, 0.0),
+                power: fmath::PI,
+                angle_deg: 0.0,
                 ..Light::default()
             }],
-            environment: Environment::default(),
+            environment: Environment {
+                strength: 0.0,
+                background_color: Rgb::BLACK,
+                background_mode: BACKGROUND_COLOR,
+                ..Environment::default()
+            },
             render: RenderSettings {
                 width: 16,
                 height: 16,
                 ..RenderSettings::default()
             },
+            ..Scene::default()
         }
     }
 
@@ -241,17 +253,14 @@ mod tests {
         let scene = triangle_scene();
         let mut film = Film::new(16, 16);
         let rays = render_tile(&scene, whole(&scene), 0, &mut film);
-        assert_eq!(rays, 256);
+        assert!(rays >= 256, "at least one camera ray per pixel, got {rays}");
         let pixels = film.resolve();
         let at = |x: usize, y: usize| &pixels[(y * 16 + x) * 3..(y * 16 + x) * 3 + 3];
 
-        // The centre pixel looks straight at the triangle: albedo 0.8 * (n.l 1 + ambient 0.3).
+        // The centre pixel looks straight at the triangle, which faces the sun: radiance
+        // albedo * E / π = 0.8 (the bounce leaves into a black world).
         for c in at(8, 8) {
-            assert!(
-                (c - 0.8 * 1.3).abs() < 1.0e-4,
-                "centre pixel {:?}",
-                at(8, 8)
-            );
+            assert!((c - 0.8).abs() < 1.0e-5, "centre pixel {:?}", at(8, 8));
         }
         // The triangle spans +-10 mm at 100 mm, i.e. +-0.139 of the 36 mm / 50 mm frame:
         // pixels 5..=10 in each direction. Everything outside is exactly zero.
@@ -273,15 +282,22 @@ mod tests {
 
     #[test]
     fn shading_without_normals_or_materials_uses_defaults() {
+        let render = |scene: &Scene| {
+            let mut film = Film::new(16, 16);
+            render_tile(scene, whole(scene), 0, &mut film);
+            film
+        };
+        // Without vertex normals the geometric normal shades, which is the same here.
         let mut scene = triangle_scene();
+        let with_normals = render(&scene);
         scene.geometry = Geometry::from_meshes(vec![facing_triangle(false)]);
+        assert_eq!(render(&scene), with_normals);
+        // A missing material renders as the default one.
+        scene.materials = vec![Material::default()];
+        let explicit = render(&scene);
         scene.materials.clear();
-        scene.lights.clear();
-        let mut film = Film::new(16, 16);
-        render_tile(&scene, whole(&scene), 0, &mut film);
-        // Grey 0.8 albedo, ambient only (0.3).
-        let centre = film.resolve()[(8 * 16 + 8) * 3];
-        assert!((centre - 0.8 * 0.3).abs() < 1.0e-5, "{centre}");
+        assert_eq!(render(&scene), explicit);
+        assert!(explicit.resolve()[(8 * 16 + 8) * 3] > 0.0);
     }
 
     #[test]
@@ -299,7 +315,7 @@ mod tests {
             0,
             &mut film,
         );
-        assert_eq!(rays, 16);
+        assert!(rays >= 16);
         assert_eq!(film.weight.iter().filter(|&&w| w > 0.0).count(), 16);
         assert_eq!(
             render_tile(
@@ -428,15 +444,16 @@ mod tests {
 
     #[test]
     fn a_tile_of_the_example_has_a_pinned_hash_on_every_platform() {
-        // The render path uses only IEEE add/mul/div/sqrt and integer maths, and every SIMD path
-        // gives the same bits, so the hashes are identical on x86-64 (scalar, SSE2, AVX2),
-        // aarch64, riscv64 and wasm32 (with and without simd128). The same tiles rendered by the
-        // wasm build under Node give the same hashes.
+        // The render path uses only IEEE add/mul/div/sqrt, the deterministic `fmath` functions
+        // and integer maths, and every SIMD path gives the same bits, so the hashes are identical
+        // on x86-64 (scalar, SSE2, AVX2), aarch64, riscv64 and wasm32 (with and without
+        // simd128). The same tiles rendered by the wasm build under Node give the same hashes.
         //
-        // E2 changed both values on purpose: the watertight triangle test replaced
-        // Moeller-Trumbore (same image, different last bits), and the example gained a second,
-        // smaller instance of the sphere. The first tile is the centre of the big sphere; the
-        // second one covers the small sphere.
+        // E2 changed both values on purpose (watertight triangles, a second sphere instance).
+        // E3 changed them again on purpose: the placeholder `n.l` shading became the path tracer
+        // (Owen-scrambled Sobol samples, principled BSDF, area light with MIS, studio dome) and
+        // the example's light power is now a flux in watts. The first tile is the centre of the
+        // big sphere; the second one covers the small sphere.
         let scene = crate::example::scene();
         let tiles = [
             (
@@ -470,21 +487,50 @@ mod tests {
     }
 
     /// Pinned hash of the tile at the centre of the example (sample 3).
-    const PINNED_CENTRE: u32 = 0xfcde_1072;
+    const PINNED_CENTRE: u32 = 0x7a5a_e28b;
     /// Pinned hash of the tile over the small sphere of the example (sample 3).
-    const PINNED_SMALL_SPHERE: u32 = 0x68f4_65fb;
+    const PINNED_SMALL_SPHERE: u32 = 0xb43b_da52;
+
+    /// Renders the whole example, 32-pixel tiles, samples `0..4`, and hashes the resolved film.
+    pub(crate) fn example_4spp_hash() -> u32 {
+        let scene = crate::example::scene();
+        let prepared = Prepared::new(&scene);
+        let (w, h) = (scene.render.width, scene.render.height);
+        let mut film = Film::new(w, h);
+        for tile in tile_grid(w, h, 32) {
+            for sample in 0..4 {
+                render_tile_prepared(&scene, &prepared, tile, sample, &mut film, Isa::detect());
+            }
+        }
+        fnv1a(&film.resolve())
+    }
+
+    #[test]
+    fn the_whole_example_at_four_samples_has_a_pinned_hash() {
+        // The WebAssembly parity hash: `engine/tools/wasm-parity.mjs` renders the same image with
+        // the real `rt_wasm.wasm` through `rt_render_tile` (samples 0..4 of every 32-pixel tile,
+        // accumulated in that order in f32) and must print this value.
+        let hash = example_4spp_hash();
+        eprintln!("example at 4 spp: {hash:#010x}");
+        assert_eq!(hash, PINNED_EXAMPLE_4SPP);
+    }
+
+    /// Pinned hash of the whole example image at 4 samples per pixel.
+    pub(crate) const PINNED_EXAMPLE_4SPP: u32 = 0x2235_15c3;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {
+        // The whole path (camera, shadow and bounce rays) through brute force and through the
+        // BVH gives the same film.
         let mut scene = crate::example::scene();
-        scene.render.width = 96;
-        scene.render.height = 72;
+        scene.render.width = 64;
+        scene.render.height = 48;
         scene.camera.fstop = 2.8; // thin lens: rays from many origins
         for sample in 0..2 {
             let tile = whole(&scene);
-            let mut accelerated = Film::new(96, 72);
+            let mut accelerated = Film::new(64, 48);
             render_tile(&scene, tile, sample, &mut accelerated);
-            let mut reference = Film::new(96, 72);
+            let mut reference = Film::new(64, 48);
             render_tile_brute_force(&scene, tile, sample, &mut reference);
             assert_eq!(accelerated, reference);
         }
@@ -511,11 +557,8 @@ mod tests {
     #[test]
     fn the_nearer_surface_wins() {
         let mut scene = triangle_scene();
-        // A second, nearer triangle with a different colour covering the first.
-        scene.materials.push(Material {
-            base_color: Rgb::new(0.0, 0.0, 0.0),
-            ..Material::default()
-        });
+        // A second, nearer triangle, black and without a specular lobe, covering the first.
+        scene.materials.push(lambert(0.0));
         let nearer = Mesh::new(
             &[
                 Vec3::new(-20.0, -50.0, -20.0),

@@ -12,7 +12,9 @@
 //! fields. Tags are four ASCII bytes. **Unknown tags are skipped**, and a known section may carry
 //! extra trailing bytes (newer writers append fields), so old readers keep working.
 //!
-//! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length):
+//! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
+//! fields after a `|` were appended in E3 and are optional: a shorter payload, as written before
+//! E3, reads them as their defaults, and the writer always writes them):
 //!
 //! ```text
 //! CAMR  60 B  f32 position[3] target[3] up[3]; f32 focal_mm sensor_mm fstop focus_dist;
@@ -20,17 +22,19 @@
 //! MESH  var.  u32 vertex_count index_count; f32 positions[3n] normals[3n]; u32 indices[m];
 //!             u32 material_id                      (n = vertex_count, m = index_count)
 //! MATL  56 B  u32 kind; f32 base_color[3] metallic roughness ior transmission coat
-//!             coat_roughness emission[3] emission_power
-//! LGHT  76 B  u32 kind (0 rect, 1 disk, 2 sun); f32 position[3] direction[3] up[3] size_x size_y
-//!             color[3] power spread_deg angle_deg; u32 flags (1 glossy, 2 camera)
-//! ENVR  40 B  u32 kind (0 studio, 1 flat); f32 floor horizon zenith strength rotation_deg
-//!             background_color[3]; u32 background_mode
+//!             coat_roughness emission[3] emission_power | u32 flags (default 0)       (60 B)
+//! LGHT  76 B  u32 kind; f32 position[3] direction[3] up[3] size_x size_y color[3] power
+//!             spread_deg angle_deg; u32 flags
+//! ENVR  40 B  u32 kind; f32 floor horizon zenith strength rotation_deg background_color[3];
+//!             u32 background_mode
+//! FLOR  20 B  u32 mode; f32 z; f32 color[3]                                        (E3, new)
 //! RNDR  28 B  u32 width height max_samples seed; f32 max_seconds exposure_ev; u32 tonemap
+//!             | u32 max_depth (default 8); f32 clamp_indirect (default 0)            (36 B)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
 //! ```
 //!
-//! `CAMR`, `ENVR` and `RNDR` may appear at most once (a missing one means "defaults");
+//! `CAMR`, `ENVR`, `FLOR` and `RNDR` may appear at most once (a missing one means "defaults");
 //! `MESH`, `MATL`, `LGHT` and `INST` repeat. A mesh refers to a material by its position among the
 //! `MATL` sections, an instance to a mesh by its position among the `MESH` sections, wherever they
 //! are in the file. All floats must be finite.
@@ -40,10 +44,59 @@
 //! existed mean). A file with `INST` sections draws exactly the instances listed, in that order;
 //! a mesh no instance refers to is not drawn. The writer emits `INST` only when the instances
 //! differ from the implicit ones, so scenes without instancing keep their exact bytes.
+//!
+//! # Meaning of the values (fixed in E3)
+//!
+//! Units: millimetres for positions and sizes, degrees for angles. Radiance is in
+//! W / (sr m^2) and is what the film stores (exposure 0 shows radiance 1 as white before the tone
+//! curve); for photometric quantities a scene millimetre is 1e-3 m.
+//!
+//! * `CAMR.ortho_flag` non-zero: orthographic camera `ortho_width` wide (no depth of field);
+//!   otherwise a thin lens of `focal_mm` on a sensor `sensor_mm` wide along the longer image
+//!   side, aperture `focal_mm / fstop` (`fstop` 0: pinhole), focused at `focus_dist`. Box pixel
+//!   filter.
+//! * `MATL.kind`: **0 principled** (Lambert diffuse of `base_color * (1 - metallic)`; GGX
+//!   specular with height-correlated Smith masking, roughness² as the GGX width, Schlick Fresnel
+//!   with `F0 = ((ior - 1) / (ior + 1))²` for the dielectric and `base_color` for the metal,
+//!   blended by `metallic`; `coat` adds a second GGX lobe of `coat_roughness`, ior 1.5, on top;
+//!   `transmission` is ignored until E5), **1 glass** (E5; rendered as kind 0, so an opaque
+//!   tinted dielectric, until then), **2 emissive** (radiance `emission * emission_power`, no
+//!   reflection). Unknown kinds render as 0. `MATL.flags` bit 0 (`1`): an emissive material is
+//!   also sampled as an area light by next-event estimation.
+//! * `LGHT.kind`: **0 rect** (`size_x` × `size_y`, its local Y axis along `up`), **1 disk**
+//!   (diameter `size_x`), **2 sun** (a disc of angular diameter `angle_deg`, 0 for a delta
+//!   direction), **3 point** and **4 spot** (reserved for L4: parsed, kept, not rendered). Rect
+//!   and disk emit from the face `direction` points to, `power` watts of flux without falloff
+//!   (radiance `color * power / (π · area in m²)`), with a `cos^n` falloff from the normal whose
+//!   intensity halves at `spread_deg / 2` (180: none; on-axis radiance does not change with
+//!   spread, like a grid on a softbox). The sun's `power` is the irradiance (W/m²) it gives a
+//!   surface facing it; light travels along `direction`. Lights are transparent: they never
+//!   occlude. `LGHT.flags`: bit 0 (`1`) **glossy**, the light is seen by BSDF-sampled rays and
+//!   lights every lobe (multiple importance sampling with next-event estimation); without it,
+//!   it lights only the diffuse lobe, by next-event estimation alone, and is invisible in
+//!   reflections. Bit 1 (`2`) **camera**: visible to camera rays.
+//! * `ENVR.kind`: **0 studio dome** (radiance ramps linearly with the z of the direction from
+//!   `floor` at z = -1 through `horizon` at 0 to `zenith` at +1), **1 flat** (`horizon`
+//!   everywhere), **2 sky** and **3 HDRI** (reserved for E5, rendered as the dome until then).
+//!   Everything is scaled by `strength`; `rotation_deg` turns it about Z (no effect on these
+//!   rotationally symmetric kinds). `background_mode`: **0** the environment is visible,
+//!   **1** camera rays that escape see `background_color`, **2** transparent (they see black and
+//!   the film's alpha is 0 there), **3** backplate image (reserved for M2, rendered as 1).
+//!   The environment lights the scene in every mode.
+//! * `FLOR.mode`: **0** no floor, **1** an infinite Lambertian plane at height `z` of albedo
+//!   `color`, **2** shadow catcher: the plane is invisible to everything except camera rays,
+//!   where it shows the background darkened by the fraction of light the scene blocks (with a
+//!   transparent background: black with that fraction as alpha).
+//! * `RNDR.tonemap`: **0** linear (no curve, clipped), **1** ACES (Narkowicz fit), **2** filmic
+//!   (log2 shaper and S-curve, Blender-like), **3** AgX, **4** standard (sRGB, clipped); unknown
+//!   values mean ACES. `exposure_ev` multiplies by `2^ev` before the curve. `max_depth` is the
+//!   most surface interactions per path (0: 8); `clamp_indirect` caps each channel of every
+//!   indirect contribution (0: off). `max_seconds` is honoured by the host between sample
+//!   passes.
 
 use super::{
-    Camera, EnvKind, Environment, Geometry, Instance, Light, LightKind, Material, Mesh,
-    RenderSettings, Scene, Transform,
+    Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Light, LightKind, Material,
+    Mesh, RenderSettings, Scene, Transform,
 };
 use crate::color::Rgb;
 use crate::math::Vec3;
@@ -66,6 +119,8 @@ pub const TAG_ENVR: [u8; 4] = *b"ENVR";
 pub const TAG_RNDR: [u8; 4] = *b"RNDR";
 /// Instance section tag.
 pub const TAG_INST: [u8; 4] = *b"INST";
+/// Floor section tag.
+pub const TAG_FLOR: [u8; 4] = *b"FLOR";
 
 /// Why an RSB file could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,6 +234,24 @@ impl<'a> Reader<'a> {
     fn rgb(&mut self) -> Result<Rgb, RsbError> {
         Ok(Rgb::new(self.f32()?, self.f32()?, self.f32()?))
     }
+
+    /// An optional trailing `u32`: `default` when the payload ends here.
+    fn opt_u32(&mut self, default: u32) -> Result<u32, RsbError> {
+        if self.remaining() >= 4 {
+            self.u32()
+        } else {
+            Ok(default)
+        }
+    }
+
+    /// An optional trailing `f32`: `default` when the payload ends here.
+    fn opt_f32(&mut self, default: f32) -> Result<f32, RsbError> {
+        if self.remaining() >= 4 {
+            self.f32()
+        } else {
+            Ok(default)
+        }
+    }
 }
 
 fn parse_camera(r: &mut Reader) -> Result<Camera, RsbError> {
@@ -263,6 +336,7 @@ fn parse_material(r: &mut Reader) -> Result<Material, RsbError> {
         coat_roughness: r.f32()?,
         emission: r.rgb()?,
         emission_power: r.f32()?,
+        flags: r.opt_u32(0)?,
     })
 }
 
@@ -297,6 +371,15 @@ fn parse_environment(r: &mut Reader) -> Result<Environment, RsbError> {
     })
 }
 
+fn parse_floor(r: &mut Reader) -> Result<Floor, RsbError> {
+    let mode = FloorMode::from_u32(r.u32()?).ok_or_else(|| r.invalid("unknown floor mode"))?;
+    Ok(Floor {
+        mode,
+        z: r.f32()?,
+        color: r.rgb()?,
+    })
+}
+
 fn parse_render(r: &mut Reader) -> Result<RenderSettings, RsbError> {
     let settings = RenderSettings {
         width: r.u32()?,
@@ -306,13 +389,15 @@ fn parse_render(r: &mut Reader) -> Result<RenderSettings, RsbError> {
         max_seconds: r.f32()?,
         exposure_ev: r.f32()?,
         tonemap: r.u32()?,
+        max_depth: r.opt_u32(RenderSettings::DEFAULT_MAX_DEPTH)?,
+        clamp_indirect: r.opt_f32(0.0)?,
     };
     let range = 1..=RenderSettings::MAX_DIMENSION;
     if !range.contains(&settings.width) || !range.contains(&settings.height) {
         return Err(r.invalid("width and height must be between 1 and 16384"));
     }
-    if settings.max_seconds < 0.0 {
-        return Err(r.invalid("max_seconds must not be negative"));
+    if settings.max_seconds < 0.0 || settings.clamp_indirect < 0.0 {
+        return Err(r.invalid("max_seconds and clamp_indirect must not be negative"));
     }
     Ok(settings)
 }
@@ -343,6 +428,7 @@ impl Scene {
 
         let mut camera = None;
         let mut environment = None;
+        let mut floor = None;
         let mut render = None;
         let mut meshes = Vec::new();
         let mut instances = Vec::new();
@@ -366,6 +452,7 @@ impl Scene {
             match tag {
                 TAG_CAMR => set_once(&mut camera, tag, parse_camera(&mut r)?)?,
                 TAG_ENVR => set_once(&mut environment, tag, parse_environment(&mut r)?)?,
+                TAG_FLOR => set_once(&mut floor, tag, parse_floor(&mut r)?)?,
                 TAG_RNDR => set_once(&mut render, tag, parse_render(&mut r)?)?,
                 TAG_MESH => meshes.push(parse_mesh(&mut r)?),
                 TAG_INST => instances.push(parse_instance(&mut r)?),
@@ -404,6 +491,7 @@ impl Scene {
             Geometry::new(meshes, instances).map_err(|_| invalid_instance("too many instances"))?;
         scene.camera = camera.unwrap_or_default();
         scene.environment = environment.unwrap_or_default();
+        scene.floor = floor.unwrap_or_default();
         scene.render = render.unwrap_or_default();
         Ok(scene)
     }
@@ -442,6 +530,7 @@ impl Scene {
                 }
                 w.rgb(m.emission);
                 w.f32(m.emission_power);
+                w.u32(m.flags);
             });
         }
         for mesh in self.geometry.meshes() {
@@ -497,6 +586,12 @@ impl Scene {
             w.rgb(e.background_color);
             w.u32(e.background_mode);
         });
+        w.section(TAG_FLOR, |w| {
+            let f = &self.floor;
+            w.u32(f.mode.to_u32());
+            w.f32(f.z);
+            w.rgb(f.color);
+        });
         w.section(TAG_RNDR, |w| {
             let r = &self.render;
             w.u32(r.width);
@@ -506,6 +601,8 @@ impl Scene {
             w.f32(r.max_seconds);
             w.f32(r.exposure_ev);
             w.u32(r.tonemap);
+            w.u32(r.max_depth);
+            w.f32(r.clamp_indirect);
         });
         w.buf
     }
@@ -581,6 +678,7 @@ mod tests {
                     coat_roughness: 0.05,
                     emission: Rgb::new(1.0, 0.9, 0.8),
                     emission_power: 12.0,
+                    flags: 1,
                 },
             ],
             geometry: Geometry::from_meshes(vec![
@@ -624,6 +722,11 @@ mod tests {
                     flags: 0,
                     ..Light::default()
                 },
+                Light {
+                    kind: LightKind::Spot,
+                    spread_deg: 30.0,
+                    ..Light::default()
+                },
             ],
             environment: Environment {
                 kind: EnvKind::Flat,
@@ -635,6 +738,11 @@ mod tests {
                 background_color: Rgb::new(0.1, 0.2, 0.3),
                 background_mode: 1,
             },
+            floor: Floor {
+                mode: FloorMode::ShadowCatcher,
+                z: -12.5,
+                color: Rgb::new(0.4, 0.5, 0.6),
+            },
             render: RenderSettings {
                 width: 1920,
                 height: 1080,
@@ -642,7 +750,9 @@ mod tests {
                 seed: 77,
                 max_seconds: 12.5,
                 exposure_ev: -0.5,
-                tonemap: 1,
+                tonemap: 3,
+                max_depth: 12,
+                clamp_indirect: 10.0,
             },
         }
     }
@@ -678,7 +788,7 @@ mod tests {
             tags,
             [
                 *b"CAMR", *b"MATL", *b"MATL", *b"MESH", *b"MESH", *b"LGHT", *b"LGHT", *b"LGHT",
-                *b"ENVR", *b"RNDR"
+                *b"LGHT", *b"ENVR", *b"FLOR", *b"RNDR"
             ]
         );
         assert_eq!(Scene::from_rsb(&bytes), Ok(scene));
@@ -694,10 +804,11 @@ mod tests {
                 .map(|(_, p)| p.len())
         };
         assert_eq!(size(b"CAMR"), Some(15 * 4));
-        assert_eq!(size(b"MATL"), Some(14 * 4));
+        assert_eq!(size(b"MATL"), Some(15 * 4));
         assert_eq!(size(b"LGHT"), Some(19 * 4));
         assert_eq!(size(b"ENVR"), Some(10 * 4));
-        assert_eq!(size(b"RNDR"), Some(7 * 4));
+        assert_eq!(size(b"FLOR"), Some(5 * 4));
+        assert_eq!(size(b"RNDR"), Some(9 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
         assert_eq!(sections(&bytes)[3].1.len(), (2 + 24 + 6 + 1) * 4);
     }
@@ -739,6 +850,77 @@ mod tests {
             extended.extend(unknown_section(&tag, &payload));
         }
         assert_eq!(Scene::from_rsb(&extended), Ok(scene));
+    }
+
+    #[test]
+    fn sections_written_before_e3_read_with_defaults() {
+        // MATL without flags (56 B) and RNDR without max_depth and clamp_indirect (28 B), as E1
+        // and E2 wrote them; no FLOR section.
+        let scene = full_scene();
+        let bytes = scene.to_rsb();
+        let mut old = bytes[..8].to_vec();
+        for (tag, mut payload) in sections(&bytes) {
+            match tag {
+                TAG_MATL => payload.truncate(56),
+                TAG_RNDR => payload.truncate(28),
+                TAG_FLOR => continue,
+                _ => {}
+            }
+            old.extend(unknown_section(&tag, &payload));
+        }
+        let read = Scene::from_rsb(&old).expect("old layout reads");
+        assert!(read.materials.iter().all(|m| m.flags == 0));
+        assert_eq!(read.render.max_depth, RenderSettings::DEFAULT_MAX_DEPTH);
+        assert_eq!(read.render.clamp_indirect, 0.0);
+        assert_eq!(read.floor, Floor::default());
+        assert_eq!(read.render.tonemap, scene.render.tonemap);
+        assert_eq!(read.lights, scene.lights);
+    }
+
+    #[test]
+    fn reserved_kinds_round_trip_and_bad_floors_fail() {
+        // Point and spot lights (L4), sky and HDRI environments (E5) are kept verbatim.
+        let mut scene = full_scene();
+        scene.lights.push(Light {
+            kind: LightKind::Point,
+            ..Light::default()
+        });
+        scene.environment.kind = EnvKind::Hdri;
+        scene.environment.background_mode = 3;
+        scene.materials[0].kind = 1;
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()), Ok(scene.clone()));
+        scene.environment.kind = EnvKind::Sky;
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()), Ok(scene.clone()));
+
+        let good = scene.to_rsb();
+        let rebuild = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = good[..8].to_vec();
+            for (tag, mut payload) in sections(&good) {
+                if tag == TAG_FLOR {
+                    edit(&mut payload);
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        assert!(matches!(
+            Scene::from_rsb(&rebuild(&|p| p[0..4].copy_from_slice(&3u32.to_le_bytes()))),
+            Err(RsbError::Invalid { tag: TAG_FLOR, .. })
+        ));
+        assert_eq!(
+            Scene::from_rsb(&rebuild(&|p| p.truncate(12))),
+            Err(RsbError::SectionTooShort { tag: TAG_FLOR })
+        );
+        let mut doubled = good.clone();
+        let flor = sections(&good)
+            .into_iter()
+            .find(|(t, _)| *t == TAG_FLOR)
+            .unwrap();
+        doubled.extend(unknown_section(&flor.0, &flor.1));
+        assert_eq!(
+            Scene::from_rsb(&doubled),
+            Err(RsbError::DuplicateSection { tag: TAG_FLOR })
+        );
     }
 
     #[test]
@@ -829,6 +1011,16 @@ mod tests {
         assert!(matches!(
             Scene::from_rsb(&nan),
             Err(RsbError::Invalid { tag: TAG_MATL, .. })
+        ));
+
+        let negative_clamp = rebuild(&|tag, p| {
+            if *tag == TAG_RNDR {
+                p[32..36].copy_from_slice(&(-1.0f32).to_le_bytes());
+            }
+        });
+        assert!(matches!(
+            Scene::from_rsb(&negative_clamp),
+            Err(RsbError::Invalid { tag: TAG_RNDR, .. })
         ));
 
         let zero_width = rebuild(&|tag, p| {

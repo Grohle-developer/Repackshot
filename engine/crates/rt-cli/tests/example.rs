@@ -22,14 +22,23 @@ fn example_scene_renders_a_bright_centre_and_a_darker_corner() {
         samples: Some(2),
         threads: Some(2),
         size: Some((96, 72)),
+        max_seconds: None,
     };
     let (samples, threads) = options.apply(&mut scene);
     let output = rt_cli::render(&scene, samples, threads);
 
-    assert_eq!(output.rays, (width * height) as u64 * u64::from(samples));
+    // At least a camera ray per pixel and sample; shadow and bounce rays on top.
+    assert!(output.rays > (width * height) as u64 * u64::from(samples));
+    assert_eq!(output.samples, samples);
     let rgb8 = output.to_rgb8(&scene);
     assert_eq!(rgb8.len(), width * height * 3);
-    let centre = luma(&rgb8, width, width / 2, height / 2);
+    // The lit sphere fills the middle of the frame: its brightest pixel (the highlight side)
+    // outshines every corner, which shows the dome or the floor and is not black either.
+    let centre = (width / 3..2 * width / 3)
+        .flat_map(|x| (height / 3..2 * height / 3).map(move |y| (x, y)))
+        .map(|(x, y)| luma(&rgb8, width, x, y))
+        .max()
+        .unwrap_or(0);
     for (x, y) in [
         (0, 0),
         (width - 1, 0),
@@ -41,9 +50,10 @@ fn example_scene_renders_a_bright_centre_and_a_darker_corner() {
             centre > corner,
             "centre {centre} should be brighter than the corner ({x}, {y}) {corner}"
         );
+        assert!(corner > 30, "corner ({x}, {y}) is black: {corner}");
     }
     assert!(
-        centre > 100,
+        centre > 400,
         "centre {centre} is too dark to be the lit sphere"
     );
 }
@@ -105,7 +115,68 @@ fn the_result_does_not_depend_on_the_thread_count() {
     let many = rt_cli::render(&scene, 2, 5);
     assert_eq!(one.film, many.film);
     assert_eq!(one.rays, many.rays);
-    assert_eq!(one.rays, 70 * 50 * 2);
+    assert!(one.rays > 70 * 50 * 2);
+}
+
+#[test]
+fn progressive_passes_give_the_film_of_one_tile_at_a_time() {
+    // 7 samples are rendered in passes of 1, 2 and 4 sample indices over every tile; rendering
+    // each tile's seven samples in one go (as E1 and E2 did) gives the same bits.
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 40;
+    scene.render.height = 36;
+    let progressive = rt_cli::render(&scene, 7, 3);
+    let mut reference = rt_core::image::Film::new(40, 36);
+    for tile in rt_core::render::tile_grid(40, 36, rt_cli::TILE_SIZE) {
+        for sample in 0..7 {
+            rt_core::render::render_tile(&scene, tile, sample, &mut reference);
+        }
+    }
+    assert_eq!(progressive.film, reference);
+    assert!(progressive.film.alpha.iter().all(|&a| a == 7.0));
+}
+
+#[test]
+fn the_time_budget_stops_between_passes() {
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 32;
+    scene.render.height = 32;
+    // A budget already spent after the first pass: exactly one sample everywhere.
+    let out = rt_cli::render_progressive(&scene, 64, 2, Some(std::time::Duration::from_nanos(1)));
+    assert_eq!(out.samples, 1);
+    assert!(out.film.weight.iter().all(|&w| w == 1.0));
+    // And through the CLI, from the scene's own RNDR.max_seconds.
+    let path = scratch("scene-with-budget.rsb");
+    scene.render.max_seconds = 1.0e-6;
+    std::fs::write(&path, scene.to_rsb()).unwrap();
+    let png = scratch("budget.png");
+    let args: Vec<String> = [path.to_str().unwrap(), "-o", png.to_str().unwrap()]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    run(parse_args(&args).expect("valid")).expect("render succeeds");
+    assert!(std::fs::read(&png).is_ok());
+}
+
+#[test]
+fn the_sheet_writes_every_image_with_its_statistics() {
+    let dir = scratch("sheet");
+    let _ = std::fs::remove_dir_all(&dir);
+    let entries = rt_cli::sheet::run(&dir, (40, 30), 2, 2).expect("sheet renders");
+    assert_eq!(entries.len(), 6);
+    for e in &entries {
+        let png = std::fs::read(dir.join(&e.file)).expect("PNG written");
+        assert_eq!(&png[..8], &rt_core::png::SIGNATURE);
+        assert!(
+            e.stats.mean_luminance > 0.02 && e.stats.mean_luminance < 0.98,
+            "{e:?}"
+        );
+        assert_eq!(e.samples, 2);
+    }
+    let html = std::fs::read_to_string(dir.join("index.html")).expect("index.html");
+    let json = std::fs::read_to_string(dir.join("stats.json")).expect("stats.json");
+    assert!(html.contains("key-only.png") && html.contains("sun.png"));
+    assert!(json.contains("\"recipe\": \"backlit-panel\""));
 }
 
 #[test]

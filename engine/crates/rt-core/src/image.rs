@@ -1,11 +1,13 @@
-//! The film: a floating point accumulation buffer for (a region of) the image.
+//! The film: a floating point accumulation buffer for (a region of) the image, with coverage
+//! (alpha).
 
 use crate::color::{srgb_encode, Rgb, Tonemap};
 
 /// A rectangular region of the image, accumulating linear radiance.
 ///
 /// Every [`Film::splat`] adds one sample to a pixel; [`Film::resolve`] divides by the number of
-/// samples. Coordinates given to `splat` are in *image* space, so a film can cover only part of
+/// samples. Radiance is premultiplied by coverage: a sample that sees a transparent background
+/// adds black with alpha 0. Coordinates given to `splat` are in *image* space, so a film can cover only part of
 /// the image (see [`Film::region`]) and still be fed by [`crate::render::render_tile`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct Film {
@@ -21,6 +23,10 @@ pub struct Film {
     pub rgb: Vec<f32>,
     /// Number of samples summed into each pixel, `width * height` values.
     pub weight: Vec<f32>,
+    /// Summed coverage per pixel, `width * height` values: 1 per sample that saw something
+    /// opaque (always, unless the background is transparent), between 0 and 1 for a shadow on
+    /// a shadow catcher.
+    pub alpha: Vec<f32>,
 }
 
 impl Film {
@@ -40,6 +46,7 @@ impl Film {
             origin_y,
             rgb: vec![0.0; pixels * 3],
             weight: vec![0.0; pixels],
+            alpha: vec![0.0; pixels],
         }
     }
 
@@ -55,14 +62,23 @@ impl Film {
         }
     }
 
-    /// Adds one sample `c` to the image-space pixel `(x, y)`. Pixels outside the film are ignored.
+    /// Adds one opaque sample `c` to the image-space pixel `(x, y)`. Pixels outside the film are
+    /// ignored.
     #[inline]
     pub fn splat(&mut self, x: u32, y: u32, c: Rgb) {
+        self.splat_alpha(x, y, c, 1.0);
+    }
+
+    /// Adds one sample of (premultiplied) radiance `c` and coverage `alpha` to the image-space
+    /// pixel `(x, y)`. Pixels outside the film are ignored.
+    #[inline]
+    pub fn splat_alpha(&mut self, x: u32, y: u32, c: Rgb, alpha: f32) {
         if let Some(i) = self.index(x, y) {
             self.rgb[i * 3] += c.r;
             self.rgb[i * 3 + 1] += c.g;
             self.rgb[i * 3 + 2] += c.b;
             self.weight[i] += 1.0;
+            self.alpha[i] += alpha;
         }
     }
 
@@ -82,7 +98,26 @@ impl Film {
         for (a, b) in self.weight.iter_mut().zip(&other.weight) {
             *a += *b;
         }
+        for (a, b) in self.alpha.iter_mut().zip(&other.alpha) {
+            *a += *b;
+        }
         true
+    }
+
+    /// Copies the pixels of `region` (a film covering part of this one) into this film,
+    /// replacing what was there. Pixels of `region` outside this film are ignored.
+    pub fn copy_region(&mut self, region: &Film) {
+        for ly in 0..region.height {
+            for lx in 0..region.width {
+                let (x, y) = (region.origin_x + lx, region.origin_y + ly);
+                if let Some(i) = self.index(x, y) {
+                    let j = (ly * region.width + lx) as usize;
+                    self.rgb[i * 3..i * 3 + 3].copy_from_slice(&region.rgb[j * 3..j * 3 + 3]);
+                    self.weight[i] = region.weight[j];
+                    self.alpha[i] = region.alpha[j];
+                }
+            }
+        }
     }
 
     /// Average linear radiance per pixel: `3 * width * height` floats. Pixels that received no
@@ -98,6 +133,16 @@ impl Film {
             }
         }
         out
+    }
+
+    /// Average coverage per pixel: `width * height` floats in `[0, 1]`. Pixels that received no
+    /// sample are 0.
+    pub fn resolve_alpha(&self) -> Vec<f32> {
+        self.alpha
+            .iter()
+            .zip(&self.weight)
+            .map(|(&a, &w)| if w > 0.0 { a * (1.0 / w) } else { 0.0 })
+            .collect()
     }
 
     /// Resolves and converts to 8-bit sRGB (no exposure, no tone curve, values clamped).
@@ -165,6 +210,30 @@ mod tests {
         assert!(a.merge(&b));
         assert_eq!(a.resolve(), vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0]);
         assert!(!a.merge(&Film::new(1, 1)));
+    }
+
+    #[test]
+    fn alpha_averages_coverage_and_merges() {
+        let mut film = Film::new(2, 1);
+        film.splat_alpha(0, 0, Rgb::BLACK, 0.0);
+        film.splat_alpha(0, 0, Rgb::WHITE, 1.0);
+        film.splat_alpha(0, 0, Rgb::splat(0.5), 0.5);
+        film.splat(1, 0, Rgb::WHITE);
+        assert_eq!(film.resolve_alpha(), vec![0.5, 1.0]);
+        let mut other = Film::new(2, 1);
+        other.splat_alpha(1, 0, Rgb::BLACK, 0.0);
+        assert!(film.merge(&other));
+        assert_eq!(film.resolve_alpha(), vec![0.5, 0.5]);
+        assert_eq!(Film::new(1, 1).resolve_alpha(), vec![0.0]);
+
+        // A region copied into a full film lands at its own pixels, alpha included.
+        let mut region = Film::region(1, 0, 1, 1);
+        region.splat_alpha(1, 0, Rgb::splat(2.0), 0.25);
+        let mut full = Film::new(2, 1);
+        full.splat(0, 0, Rgb::WHITE);
+        full.copy_region(&region);
+        assert_eq!(full.resolve(), vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
+        assert_eq!(full.resolve_alpha(), vec![1.0, 0.25]);
     }
 
     #[test]

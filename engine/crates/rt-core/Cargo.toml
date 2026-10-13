@@ -1,6 +1,6 @@
 [package]
 name = "rt-core"
-description = "Repackshot render engine: maths, RNG, film, PNG writer, RSB scene format and the ray caster. No OS APIs."
+description = "Repackshot render engine: maths, sampling, BSDF, lights, the path tracer, film, PNG writer and the RSB scene format. No OS APIs."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

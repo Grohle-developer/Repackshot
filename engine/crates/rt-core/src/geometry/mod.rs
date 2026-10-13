@@ -417,6 +417,61 @@ impl Geometry {
         self.hit_details(ray, hit)
     }
 
+    /// The point rays leaving a smooth-shaded hit should start from: the hit point lifted onto
+    /// the curved surface the vertex normals describe (J. Hanika, "Hacking the Shadow
+    /// Terminator", *Ray Tracing Gems II*, 2021). Each corner's tangent plane is a local
+    /// approximation of that surface; the point is projected onto the planes it lies below and
+    /// the projections are blended with the barycentrics. Without it, a coarse mesh with smooth
+    /// normals shades its facets into a jagged shadow terminator. Meshes without vertex normals
+    /// (and hits that cannot be resolved) return `hit.point`.
+    pub fn terminator_point(&self, hit: &Hit) -> Vec3 {
+        let Some((mesh, prepared)) = self.instance_parts(hit.instance) else {
+            return hit.point;
+        };
+        let (Some(corners), Some([p0, p1, p2])) = (
+            mesh.triangle_indices(hit.triangle as usize),
+            mesh.triangle(hit.triangle as usize),
+        ) else {
+            return hit.point;
+        };
+        let [Some(n0), Some(n1), Some(n2)] = corners.map(|c| mesh.normal(c as usize)) else {
+            return hit.point;
+        };
+        let [b0, b1, b2] = hit.barycentrics;
+        let p = p0 * b0 + p1 * b1 + p2 * b2;
+        // Orient the vertex normals towards the side the ray came from.
+        let interpolated = n0 * b0 + n1 * b1 + n2 * b2;
+        let world_normal = if prepared.identity {
+            interpolated
+        } else {
+            prepared.to_local.transpose_vector(interpolated)
+        };
+        let side = if world_normal.dot(hit.geometric_normal) < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        let mut lifted = p;
+        for (corner, normal, weight) in [(p0, n0, b0), (p1, n1, b1), (p2, n2, b2)] {
+            let n = normal.normalize() * side;
+            let below = (p - corner).dot(n);
+            if below < 0.0 {
+                lifted -= n * (below * weight);
+            }
+        }
+        if !lifted.is_finite() {
+            return hit.point;
+        }
+        if prepared.identity {
+            lifted
+        } else {
+            match self.instances.get(hit.instance as usize) {
+                Some(instance) => instance.transform.point(lifted),
+                None => hit.point,
+            }
+        }
+    }
+
     /// Surface details of a hit returned by [`Geometry::trace`] for the same `ray`.
     pub fn hit_details(&self, ray: &Ray, hit: RayHit) -> Option<Hit> {
         let (mesh, prepared) = self.instance_parts(hit.instance)?;

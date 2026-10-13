@@ -114,35 +114,49 @@ impl Camera {
     }
 }
 
-/// A surface material. E1 stores the parameters; the path tracer (E3) interprets them.
+/// `MATL.kind` 0: the principled surface (Lambert diffuse, GGX specular, metal, clear coat).
+pub const MATERIAL_PRINCIPLED: u32 = 0;
+/// `MATL.kind` 1: glass. Transmission arrives in E5; until then it renders as a principled
+/// surface tinted by `base_color`.
+pub const MATERIAL_GLASS: u32 = 1;
+/// `MATL.kind` 2: an emitter of radiance `emission * emission_power` that reflects nothing.
+pub const MATERIAL_EMISSIVE: u32 = 2;
+/// `MATL.flags` bit 0: an emissive material is also sampled explicitly (next-event estimation)
+/// as an area light. Without it the emitter is only found by rays that happen to hit it.
+pub const MATERIAL_FLAG_LIGHT: u32 = 1;
+
+/// A surface material. See the [`rsb`] module documentation for the meaning of every field.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Material {
-    /// Material model identifier (reserved: stored verbatim, 0 is the default PBR model).
+    /// Material model: [`MATERIAL_PRINCIPLED`], [`MATERIAL_GLASS`] or [`MATERIAL_EMISSIVE`].
+    /// Unknown values render as principled (newer files keep working).
     pub kind: u32,
-    /// Diffuse or metal colour in linear RGB.
+    /// Diffuse or metal colour in linear RGB (the tint of glass).
     pub base_color: Rgb,
     /// 0 = dielectric, 1 = metal.
     pub metallic: f32,
-    /// Microfacet roughness in `[0, 1]`.
+    /// Perceptual roughness in `[0, 1]`; the GGX width is its square.
     pub roughness: f32,
-    /// Index of refraction.
+    /// Index of refraction of the dielectric (sets the specular reflectance at normal incidence).
     pub ior: f32,
-    /// Fraction of light transmitted instead of reflected, in `[0, 1]`.
+    /// Fraction of light transmitted instead of reflected, in `[0, 1]` (ignored until E5).
     pub transmission: f32,
     /// Clear coat strength in `[0, 1]`.
     pub coat: f32,
     /// Clear coat roughness in `[0, 1]`.
     pub coat_roughness: f32,
-    /// Emitted colour in linear RGB.
+    /// Emitted colour in linear RGB (kind [`MATERIAL_EMISSIVE`]).
     pub emission: Rgb,
-    /// Emission multiplier.
+    /// Emission multiplier: the radiance is `emission * emission_power`, in W / (sr m^2).
     pub emission_power: f32,
+    /// Bit set of `MATERIAL_FLAG_*` values.
+    pub flags: u32,
 }
 
 impl Default for Material {
     fn default() -> Material {
         Material {
-            kind: 0,
+            kind: MATERIAL_PRINCIPLED,
             base_color: Rgb::splat(0.8),
             metallic: 0.0,
             roughness: 0.5,
@@ -152,28 +166,51 @@ impl Default for Material {
             coat_roughness: 0.0,
             emission: Rgb::BLACK,
             emission_power: 0.0,
+            flags: 0,
         }
     }
 }
 
-/// Shape of a light source.
+impl Material {
+    /// True for an emitter (kind [`MATERIAL_EMISSIVE`]).
+    pub fn is_emissive(&self) -> bool {
+        self.kind == MATERIAL_EMISSIVE
+    }
+
+    /// Emitted radiance (zero unless the material is an emitter).
+    pub fn radiance(&self) -> Rgb {
+        if self.is_emissive() {
+            (self.emission * self.emission_power).map(|v| v.max(0.0))
+        } else {
+            Rgb::BLACK
+        }
+    }
+}
+
+/// Shape of a light source (`LGHT.kind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LightKind {
-    /// A rectangle of `size_x x size_y`, emitting along `direction`.
+    /// 0: a rectangle of `size_x x size_y`, emitting along `direction`.
     Rect,
-    /// A disk of diameter `size_x`, emitting along `direction`.
+    /// 1: a disk of diameter `size_x`, emitting along `direction`.
     Disk,
-    /// A distant sun; light travels along `direction`.
+    /// 2: a distant sun of angular diameter `angle_deg`; light travels along `direction`.
     Sun,
+    /// 3: a point light. Reserved for phase L4: parsed and kept, not rendered yet.
+    Point,
+    /// 4: a spot light. Reserved for phase L4: parsed and kept, not rendered yet.
+    Spot,
 }
 
 impl LightKind {
-    /// Decodes the RSB value (0 = rect, 1 = disk, 2 = sun).
+    /// Decodes the RSB value (0 rect, 1 disk, 2 sun, 3 point, 4 spot).
     pub fn from_u32(value: u32) -> Option<LightKind> {
         match value {
             0 => Some(LightKind::Rect),
             1 => Some(LightKind::Disk),
             2 => Some(LightKind::Sun),
+            3 => Some(LightKind::Point),
+            4 => Some(LightKind::Spot),
             _ => None,
         }
     }
@@ -184,13 +221,17 @@ impl LightKind {
             LightKind::Rect => 0,
             LightKind::Disk => 1,
             LightKind::Sun => 2,
+            LightKind::Point => 3,
+            LightKind::Spot => 4,
         }
     }
 }
 
-/// Light flag: the light is visible in glossy reflections.
+/// Light flag (bit 0): the light is seen by BSDF-sampled rays (reflections) and lights every
+/// lobe. Without it the light only lights the diffuse lobe, through explicit sampling, and is
+/// invisible in reflections (Blender's "glossy" ray visibility, where the recipes come from).
 pub const LIGHT_FLAG_GLOSSY: u32 = 1;
-/// Light flag: the light is directly visible to the camera.
+/// Light flag (bit 1): the light is directly visible to camera rays.
 pub const LIGHT_FLAG_CAMERA: u32 = 2;
 
 /// A light source.
@@ -210,9 +251,12 @@ pub struct Light {
     pub size_y: f32,
     /// Emitted colour in linear RGB.
     pub color: Rgb,
-    /// Power of the light (units are defined by the path tracer in E3).
+    /// Rect and disk: radiant flux in watts leaving the front face without spread falloff
+    /// (scene millimetres are read as 1e-3 m, so the radiance is `power / (π · area_m2)`). Sun:
+    /// irradiance in W/m^2 on a surface facing it.
     pub power: f32,
-    /// Beam spread in degrees.
+    /// Beam spread in degrees: 180 is a bare diffuser (Lambertian); smaller values add a
+    /// `cos^n` falloff whose intensity halves at `spread_deg / 2` from the normal.
     pub spread_deg: f32,
     /// Angular diameter in degrees (sun).
     pub angle_deg: f32,
@@ -238,21 +282,28 @@ impl Default for Light {
     }
 }
 
-/// Kind of environment lighting.
+/// Kind of environment lighting (`ENVR.kind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EnvKind {
-    /// Procedural studio: floor, horizon and zenith brightness.
+    /// 0: procedural studio dome, a grey ramp over the elevation of the viewing direction from
+    /// `floor` (straight down) through `horizon` to `zenith` (straight up).
     Studio,
-    /// A single flat colour of brightness `horizon`.
+    /// 1: a single flat colour of brightness `horizon`.
     Flat,
+    /// 2: procedural sky. Reserved for E5: rendered as the studio dome until then.
+    Sky,
+    /// 3: HDRI image. Reserved for E5: rendered as the studio dome until then.
+    Hdri,
 }
 
 impl EnvKind {
-    /// Decodes the RSB value (0 = studio, 1 = flat).
+    /// Decodes the RSB value (0 studio, 1 flat, 2 sky, 3 HDRI).
     pub fn from_u32(value: u32) -> Option<EnvKind> {
         match value {
             0 => Some(EnvKind::Studio),
             1 => Some(EnvKind::Flat),
+            2 => Some(EnvKind::Sky),
+            3 => Some(EnvKind::Hdri),
             _ => None,
         }
     }
@@ -262,8 +313,31 @@ impl EnvKind {
         match self {
             EnvKind::Studio => 0,
             EnvKind::Flat => 1,
+            EnvKind::Sky => 2,
+            EnvKind::Hdri => 3,
         }
     }
+}
+
+/// `ENVR.background_mode` 0: camera rays that escape see the environment.
+pub const BACKGROUND_ENVIRONMENT: u32 = 0;
+/// `ENVR.background_mode` 1: camera rays that escape see `background_color`.
+pub const BACKGROUND_COLOR: u32 = 1;
+/// `ENVR.background_mode` 2: camera rays that escape see nothing; the film's alpha is 0 there.
+pub const BACKGROUND_TRANSPARENT: u32 = 2;
+/// `ENVR.background_mode` 3: backplate image, reserved for M2 (rendered as
+/// [`BACKGROUND_COLOR`] until then).
+pub const BACKGROUND_BACKPLATE: u32 = 3;
+
+/// What camera rays that escape the scene see. Decoded from `ENVR.background_mode`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Background {
+    /// The environment itself (and a sun disc marked visible to the camera).
+    Environment,
+    /// A flat colour.
+    Color,
+    /// Nothing: black with alpha 0.
+    Transparent,
 }
 
 /// The environment surrounding the scene.
@@ -283,8 +357,20 @@ pub struct Environment {
     pub rotation_deg: f32,
     /// Colour of the backdrop when it is not the environment itself.
     pub background_color: Rgb,
-    /// Backdrop mode (reserved: stored verbatim, interpreted by the path tracer in E3).
+    /// What escaping camera rays see: `BACKGROUND_*` (unknown values mean the environment).
     pub background_mode: u32,
+}
+
+impl Environment {
+    /// The background mode, decoded (the reserved backplate falls back to the colour; unknown
+    /// values mean the environment).
+    pub fn background(&self) -> Background {
+        match self.background_mode {
+            BACKGROUND_COLOR | BACKGROUND_BACKPLATE => Background::Color,
+            BACKGROUND_TRANSPARENT => Background::Transparent,
+            _ => Background::Environment,
+        }
+    }
 }
 
 impl Default for Environment {
@@ -298,6 +384,60 @@ impl Default for Environment {
             rotation_deg: 0.0,
             background_color: Rgb::splat(0.05),
             background_mode: 0,
+        }
+    }
+}
+
+/// What the optional ground plane does (`FLOR.mode`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloorMode {
+    /// 0: no floor.
+    None,
+    /// 1: an infinite diffuse plane at `z`, seen by every ray and casting shadows.
+    Visible,
+    /// 2: shadow catcher: invisible except for the shadows and occlusion it receives, which
+    /// darken the background behind it (or, with a transparent background, become alpha).
+    ShadowCatcher,
+}
+
+impl FloorMode {
+    /// Decodes the RSB value (0 none, 1 visible, 2 shadow catcher).
+    pub fn from_u32(value: u32) -> Option<FloorMode> {
+        match value {
+            0 => Some(FloorMode::None),
+            1 => Some(FloorMode::Visible),
+            2 => Some(FloorMode::ShadowCatcher),
+            _ => None,
+        }
+    }
+
+    /// The RSB value of this mode.
+    pub fn to_u32(self) -> u32 {
+        match self {
+            FloorMode::None => 0,
+            FloorMode::Visible => 1,
+            FloorMode::ShadowCatcher => 2,
+        }
+    }
+}
+
+/// The ground plane of the studio: an infinite horizontal plane, Lambertian.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Floor {
+    /// What the floor does.
+    pub mode: FloorMode,
+    /// Height of the plane.
+    pub z: f32,
+    /// Diffuse albedo in linear RGB.
+    pub color: Rgb,
+}
+
+impl Default for Floor {
+    fn default() -> Floor {
+        Floor {
+            mode: FloorMode::None,
+            z: 0.0,
+            color: Rgb::splat(0.5),
         }
     }
 }
@@ -317,13 +457,33 @@ pub struct RenderSettings {
     pub max_seconds: f32,
     /// Exposure compensation in stops, applied when converting to 8 bit.
     pub exposure_ev: f32,
-    /// Tone mapping operator: 0 = linear, 1 = ACES (see [`crate::color::Tonemap`]).
+    /// Tone mapping operator: 0 linear, 1 ACES, 2 filmic, 3 AgX, 4 standard (see
+    /// [`crate::color::Tonemap`]).
     pub tonemap: u32,
+    /// Largest number of surface interactions of a path (0 means the default, 8).
+    pub max_depth: u32,
+    /// Largest value of any colour channel of one indirect contribution (light that bounced
+    /// at least twice before reaching the camera); 0 disables the clamp.
+    pub clamp_indirect: f32,
 }
 
 impl RenderSettings {
     /// Largest accepted image width or height.
     pub const MAX_DIMENSION: u32 = 16_384;
+    /// Path depth used when `max_depth` is 0.
+    pub const DEFAULT_MAX_DEPTH: u32 = 8;
+    /// Largest path depth the renderer honours.
+    pub const MAX_DEPTH_LIMIT: u32 = 1024;
+
+    /// The path depth to render with: `max_depth`, or the default for 0, at most
+    /// [`RenderSettings::MAX_DEPTH_LIMIT`].
+    pub fn depth(&self) -> u32 {
+        if self.max_depth == 0 {
+            RenderSettings::DEFAULT_MAX_DEPTH
+        } else {
+            self.max_depth.min(RenderSettings::MAX_DEPTH_LIMIT)
+        }
+    }
 }
 
 impl Default for RenderSettings {
@@ -336,6 +496,8 @@ impl Default for RenderSettings {
             max_seconds: 0.0,
             exposure_ev: 0.0,
             tonemap: 1,
+            max_depth: RenderSettings::DEFAULT_MAX_DEPTH,
+            clamp_indirect: 0.0,
         }
     }
 }
@@ -353,6 +515,8 @@ pub struct Scene {
     pub lights: Vec<Light>,
     /// Environment lighting.
     pub environment: Environment,
+    /// The ground plane.
+    pub floor: Floor,
     /// Image size and sampling settings.
     pub render: RenderSettings,
 }
@@ -511,13 +675,58 @@ mod tests {
 
     #[test]
     fn enum_codes_round_trip() {
-        for k in [LightKind::Rect, LightKind::Disk, LightKind::Sun] {
+        for k in [
+            LightKind::Rect,
+            LightKind::Disk,
+            LightKind::Sun,
+            LightKind::Point,
+            LightKind::Spot,
+        ] {
             assert_eq!(LightKind::from_u32(k.to_u32()), Some(k));
         }
-        for k in [EnvKind::Studio, EnvKind::Flat] {
+        for k in [EnvKind::Studio, EnvKind::Flat, EnvKind::Sky, EnvKind::Hdri] {
             assert_eq!(EnvKind::from_u32(k.to_u32()), Some(k));
         }
-        assert_eq!(LightKind::from_u32(3), None);
-        assert_eq!(EnvKind::from_u32(2), None);
+        for m in [
+            FloorMode::None,
+            FloorMode::Visible,
+            FloorMode::ShadowCatcher,
+        ] {
+            assert_eq!(FloorMode::from_u32(m.to_u32()), Some(m));
+        }
+        assert_eq!(LightKind::from_u32(5), None);
+        assert_eq!(EnvKind::from_u32(4), None);
+        assert_eq!(FloorMode::from_u32(3), None);
+    }
+
+    #[test]
+    fn background_modes_and_depth_decode() {
+        let mut env = Environment::default();
+        for (mode, want) in [
+            (0, Background::Environment),
+            (1, Background::Color),
+            (2, Background::Transparent),
+            (3, Background::Color),
+            (77, Background::Environment),
+        ] {
+            env.background_mode = mode;
+            assert_eq!(env.background(), want);
+        }
+        let mut render = RenderSettings::default();
+        assert_eq!(render.depth(), 8);
+        render.max_depth = 0;
+        assert_eq!(render.depth(), 8);
+        render.max_depth = 3;
+        assert_eq!(render.depth(), 3);
+        render.max_depth = u32::MAX;
+        assert_eq!(render.depth(), RenderSettings::MAX_DEPTH_LIMIT);
+        let emitter = Material {
+            kind: MATERIAL_EMISSIVE,
+            emission: Rgb::new(1.0, 0.5, -1.0),
+            emission_power: 4.0,
+            ..Material::default()
+        };
+        assert_eq!(emitter.radiance(), Rgb::new(4.0, 2.0, 0.0));
+        assert_eq!(Material::default().radiance(), Rgb::BLACK);
     }
 }

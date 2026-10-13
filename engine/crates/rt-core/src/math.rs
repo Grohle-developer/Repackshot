@@ -246,6 +246,70 @@ impl Ray {
     }
 }
 
+/// A right-handed orthonormal basis `(x, y, z)` around a unit vector `z`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Frame {
+    /// First tangent.
+    pub x: Vec3,
+    /// Second tangent.
+    pub y: Vec3,
+    /// The vector the frame was built around (a normal).
+    pub z: Vec3,
+}
+
+impl Frame {
+    /// The basis around the unit vector `n`, by the branch-free construction of T. Duff et al.,
+    /// "Building an Orthonormal Basis, Revisited", *JCGT* 6(1), 2017. Continuous everywhere
+    /// except across `n.z = 0`'s sign flip, and uses only `+ - * /`.
+    pub fn from_normal(n: Vec3) -> Frame {
+        let sign = 1.0f32.copysign(n.z);
+        let a = -1.0 / (sign + n.z);
+        let b = n.x * n.y * a;
+        Frame {
+            x: Vec3::new(1.0 + sign * n.x * n.x * a, sign * b, -sign * n.x),
+            y: Vec3::new(b, sign + n.y * n.y * a, -n.y),
+            z: n,
+        }
+    }
+
+    /// `v` in frame coordinates.
+    #[inline]
+    pub fn to_local(&self, v: Vec3) -> Vec3 {
+        Vec3::new(v.dot(self.x), v.dot(self.y), v.dot(self.z))
+    }
+
+    /// Frame coordinates `v` back in world space.
+    #[inline]
+    pub fn to_world(&self, v: Vec3) -> Vec3 {
+        self.x * v.x + self.y * v.y + self.z * v.z
+    }
+}
+
+/// Moves a surface point `p` off its surface, along the unit geometric normal `n` (pointing to
+/// the side a new ray leaves on), by a distance that scales with the magnitude of `p`: a fixed
+/// number of units in the last place, or a tiny absolute step near the origin. The method of
+/// C. Wächter and N. Binder, "A Fast and Robust Method for Avoiding Self-Intersection", *Ray
+/// Tracing Gems*, 2019; integer arithmetic on the float bits, so it is exact and portable.
+pub fn offset_origin(p: Vec3, n: Vec3) -> Vec3 {
+    const ORIGIN: f32 = 1.0 / 32.0;
+    const FLOAT_SCALE: f32 = 1.0 / 65_536.0;
+    const INT_SCALE: f32 = 256.0;
+    let axis = |p: f32, n: f32| -> f32 {
+        if p.abs() < ORIGIN {
+            return p + FLOAT_SCALE * n;
+        }
+        let of = (INT_SCALE * n) as i32;
+        let moved = (p.to_bits() as i32).wrapping_add(if p < 0.0 { -of } else { of });
+        let q = f32::from_bits(moved as u32);
+        if q.is_finite() {
+            q
+        } else {
+            p
+        }
+    };
+    Vec3::new(axis(p.x, n.x), axis(p.y, n.y), axis(p.z, n.z))
+}
+
 /// An axis-aligned bounding box.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Aabb {
@@ -467,6 +531,54 @@ mod tests {
         let mut short = hit;
         short.t_max = 3.0;
         assert!(b.intersect(&short, short.dir.recip()).is_none());
+    }
+
+    #[test]
+    fn frames_are_orthonormal_and_right_handed() {
+        let normals = [
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.3, -0.4, 0.866_025_4).normalize(),
+            Vec3::new(-0.6, 0.0, -0.8),
+            Vec3::new(1.0e-7, 1.0, -1.0e-7).normalize(),
+        ];
+        for n in normals {
+            let f = Frame::from_normal(n);
+            for v in [f.x, f.y, f.z] {
+                assert!(close(v.length(), 1.0), "{n:?}");
+            }
+            assert!(f.x.dot(f.y).abs() < 1.0e-6 && f.x.dot(f.z).abs() < 1.0e-6);
+            assert!(f.y.dot(f.z).abs() < 1.0e-6);
+            assert!(
+                (f.x.cross(f.y) - f.z).length() < 1.0e-5,
+                "right handed for {n:?}"
+            );
+            let v = Vec3::new(0.2, -0.7, 0.4);
+            assert!((f.to_world(f.to_local(v)) - v).length() < 1.0e-6);
+            assert!((f.to_local(n) - Vec3::new(0.0, 0.0, 1.0)).length() < 1.0e-6);
+        }
+    }
+
+    #[test]
+    fn offset_origins_leave_the_surface_on_the_right_side() {
+        let n = Vec3::new(0.0, 0.0, 1.0);
+        for p in [
+            Vec3::new(10.0, -20.0, 0.0),
+            Vec3::new(1000.0, 1000.0, 1000.0),
+            Vec3::new(-500.0, 3.0, -250.0),
+            Vec3::new(0.001, 0.0, 0.0),
+        ] {
+            let up = offset_origin(p, n);
+            let down = offset_origin(p, -n);
+            assert!(up.z > p.z && down.z < p.z, "{p:?}");
+            assert_eq!((up.x, up.y), (p.x, p.y));
+            // A few hundred ulps at most: well under a micrometre at product scale.
+            assert!(
+                (up.z - p.z).abs() <= 1.0e-4 * p.z.abs().max(1.0),
+                "{p:?} -> {up:?}"
+            );
+        }
     }
 
     #[test]

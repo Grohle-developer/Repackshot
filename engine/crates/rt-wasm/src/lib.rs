@@ -14,8 +14,10 @@
 #![deny(unsafe_code)]
 
 use rt_core::image::Film;
-use rt_core::render::{render_tile as render_core_tile, TileRect};
+use rt_core::integrator::Prepared;
+use rt_core::render::{render_tile_prepared, TileRect};
 use rt_core::scene::Scene;
+use rt_core::simd::Isa;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
@@ -32,10 +34,16 @@ pub const STATUS_NULL_POINTER: u32 = 3;
 /// Largest tile (in pixels) `rt_render_tile` accepts: 2048 x 2048.
 pub const MAX_TILE_PIXELS: u64 = 1 << 22;
 
+/// A loaded scene with its lights prepared once for every tile rendered from it.
+struct Loaded {
+    scene: Scene,
+    prepared: Prepared,
+}
+
 /// Loaded scenes and the last load error.
 struct Registry {
     /// Slot `i` holds the scene with handle `i + 1`; freed slots are reused.
-    scenes: Vec<Option<Scene>>,
+    scenes: Vec<Option<Loaded>>,
     /// Message of the last failed `rt_scene_load`; empty after a successful load.
     error: String,
 }
@@ -64,7 +72,8 @@ pub fn scene_load(bytes: &[u8]) -> u32 {
                     reg.scenes.len() - 1
                 }
             };
-            reg.scenes[slot] = Some(scene);
+            let prepared = Prepared::new(&scene);
+            reg.scenes[slot] = Some(Loaded { scene, prepared });
             slot as u32 + 1
         }
         Err(error) => {
@@ -99,6 +108,37 @@ pub fn scene_free(handle: u32) -> u32 {
     }
 }
 
+/// Renders sample `sample_index` of the pixel rectangle `(x, y, w, h)` into a film covering
+/// exactly that rectangle.
+fn render_region(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sample_index: u32,
+) -> Result<Film, u32> {
+    if w == 0 || h == 0 || u64::from(w) * u64::from(h) > MAX_TILE_PIXELS {
+        return Err(STATUS_BAD_TILE);
+    }
+    let reg = registry();
+    let loaded = handle
+        .checked_sub(1)
+        .and_then(|i| reg.scenes.get(i as usize))
+        .and_then(Option::as_ref)
+        .ok_or(STATUS_BAD_HANDLE)?;
+    let mut film = Film::region(x, y, w, h);
+    render_tile_prepared(
+        &loaded.scene,
+        &loaded.prepared,
+        TileRect { x, y, w, h },
+        sample_index,
+        &mut film,
+        Isa::detect(),
+    );
+    Ok(film)
+}
+
 /// Renders sample `sample_index` of the pixel rectangle `(x, y, w, h)` and returns the linear
 /// radiance as `w * h * 3` floats (row major, RGB). Pixels outside the image stay zero.
 pub fn render_tile(
@@ -109,18 +149,29 @@ pub fn render_tile(
     h: u32,
     sample_index: u32,
 ) -> Result<Vec<f32>, u32> {
-    if w == 0 || h == 0 || u64::from(w) * u64::from(h) > MAX_TILE_PIXELS {
-        return Err(STATUS_BAD_TILE);
+    render_region(handle, x, y, w, h, sample_index).map(|film| film.resolve())
+}
+
+/// Like [`render_tile`], with coverage: `w * h * 4` floats (row major, RGBA). Radiance is
+/// premultiplied by alpha; alpha is 0 where a transparent background shows (and outside the
+/// image), between 0 and 1 for a shadow on a shadow catcher.
+pub fn render_tile_rgba(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sample_index: u32,
+) -> Result<Vec<f32>, u32> {
+    let film = render_region(handle, x, y, w, h, sample_index)?;
+    let rgb = film.resolve();
+    let alpha = film.resolve_alpha();
+    let mut out = Vec::with_capacity(alpha.len() * 4);
+    for (px, a) in rgb.chunks_exact(3).zip(alpha) {
+        out.extend_from_slice(px);
+        out.push(a);
     }
-    let reg = registry();
-    let scene = handle
-        .checked_sub(1)
-        .and_then(|i| reg.scenes.get(i as usize))
-        .and_then(Option::as_ref)
-        .ok_or(STATUS_BAD_HANDLE)?;
-    let mut film = Film::region(x, y, w, h);
-    render_core_tile(scene, TileRect { x, y, w, h }, sample_index, &mut film);
-    Ok(film.resolve())
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -191,8 +242,21 @@ mod tests {
         // Same pixels as rendering with the engine directly.
         let scene = rt_core::example::scene();
         let mut film = Film::region(x, y, w, h);
-        render_core_tile(&scene, TileRect { x, y, w, h }, 0, &mut film);
+        rt_core::render::render_tile(&scene, TileRect { x, y, w, h }, 0, &mut film);
         assert_eq!(pixels, film.resolve());
+
+        // The RGBA variant: the same colour, alpha 1 everywhere (the background is opaque).
+        let out4 = rt_alloc(w * h * 4 * 4);
+        // SAFETY: `out4` has room for `w * h * 4` floats, and `handle` is a loaded scene.
+        let status = unsafe { rt_render_tile_rgba(handle, x, y, w, h, 0, out4.cast::<f32>()) };
+        assert_eq!(status, STATUS_OK);
+        let rgba = read_floats(out4, (w * h * 4) as usize);
+        for (i, px) in rgba.chunks_exact(4).enumerate() {
+            assert_eq!(px[..3], pixels[i * 3..i * 3 + 3]);
+            assert_eq!(px[3], 1.0);
+        }
+        // SAFETY: `out4` came from `rt_alloc(w * h * 16)`.
+        unsafe { rt_free(out4, w * h * 4 * 4) };
         assert!(
             pixels.iter().any(|&v| v > 0.1),
             "the centre of the example image is lit"
@@ -297,6 +361,29 @@ mod tests {
         );
         assert_eq!(rt_scene_free(0), STATUS_BAD_HANDLE);
         assert_eq!(render_tile(handle, 0, 0, 8, 8, 0), Err(STATUS_BAD_HANDLE));
+    }
+
+    #[test]
+    fn transparent_backgrounds_come_back_as_alpha() {
+        let _guard = serial();
+        let mut scene = rt_core::example::scene();
+        scene.environment.background_mode = rt_core::scene::BACKGROUND_TRANSPARENT;
+        let handle = scene_load(&scene.to_rsb());
+        assert_ne!(handle, 0);
+        // The top rows of the example look over the floor's far edge into the background.
+        let rgba = render_tile_rgba(handle, 0, 0, 16, 4, 0).expect("render");
+        let alpha: Vec<f32> = rgba.chunks_exact(4).map(|p| p[3]).collect();
+        assert!(alpha.iter().all(|&a| a == 0.0), "{alpha:?}");
+        assert!(rgba.chunks_exact(4).all(|p| p[..3] == [0.0, 0.0, 0.0]));
+        // Beyond the image edge: zero alpha too.
+        let edge = render_tile_rgba(handle, 508, 300, 8, 1, 0).expect("render");
+        assert_eq!(edge[4 * 4 + 3], 0.0);
+        assert_eq!(edge[3], 1.0, "the floor inside the image is opaque");
+        assert_eq!(
+            render_tile_rgba(handle, 0, 0, 0, 1, 0),
+            Err(STATUS_BAD_TILE)
+        );
+        scene_free(handle);
     }
 
     #[test]

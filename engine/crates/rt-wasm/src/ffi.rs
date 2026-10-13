@@ -124,3 +124,41 @@ pub unsafe extern "C" fn rt_render_tile(
         Err(status) => status,
     }
 }
+
+/// Like [`rt_render_tile`] with coverage: writes `w * h * 4` floats, RGBA, radiance premultiplied
+/// by alpha (alpha is 0 where a transparent background shows). Same status codes.
+///
+/// # Safety
+///
+/// `out_ptr` must be null or point to at least `w * h * 4 * 4` writable bytes (alignment is not
+/// required).
+#[no_mangle]
+pub unsafe extern "C" fn rt_render_tile_rgba(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sample_index: u32,
+    out_ptr: *mut f32,
+) -> u32 {
+    if out_ptr.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    match crate::render_tile_rgba(handle, x, y, w, h, sample_index) {
+        Ok(pixels) => {
+            // SAFETY: the caller promises `w * h * 4 * 4` writable bytes and `pixels` holds
+            // exactly `w * h * 4` floats; byte-wise copy needs no alignment, and `pixels` is a
+            // fresh allocation so the regions do not overlap.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    pixels.as_ptr().cast::<u8>(),
+                    out_ptr.cast::<u8>(),
+                    pixels.len() * std::mem::size_of::<f32>(),
+                );
+            }
+            STATUS_OK
+        }
+        Err(status) => status,
+    }
+}

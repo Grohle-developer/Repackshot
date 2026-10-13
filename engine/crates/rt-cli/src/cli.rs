@@ -1,24 +1,30 @@
 //! Command line parsing and the `rt` command itself.
 
-use crate::{render, write_png};
+use crate::{render_progressive, sheet, write_png};
 use rt_core::scene::{RenderSettings, Scene};
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// Text printed by `rt --help` and after a usage error.
 pub const USAGE: &str = "\
 rt: Repackshot command line renderer
 
 USAGE:
-    rt <scene.rsb> -o <out.png> [--samples N] [--threads N] [--size WxH]
-    rt --example -o <out.png> [--samples N] [--threads N] [--size WxH]
+    rt <scene.rsb> -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
+    rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
+    rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
 
 OPTIONS:
     -o, --output <file>     PNG file to write
-        --samples <N>       samples per pixel (default: the scene's, else 16)
+        --samples <N>       samples per pixel (default: the scene's, else 16; sheet: 64)
         --threads <N>       worker threads (default: all cores)
-        --size <WxH>        image size in pixels, overriding the scene
+        --size <WxH>        image size in pixels, overriding the scene (sheet: 480x360)
+        --max-seconds <S>   time budget, overriding the scene's RNDR.max_seconds; rendering
+                            stops between sample passes once it is spent (0: no limit)
         --example           render the built-in example scene instead of a file
+        --sheet <dir>       render the example part under six built-in light recipes into
+                            <dir>: one PNG each, index.html and stats.json
         --write-example <f> write the built-in example scene as an RSB file
     -h, --help              show this help
 ";
@@ -33,7 +39,7 @@ pub enum Input {
 }
 
 /// Overrides of the scene's render settings.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Options {
     /// Samples per pixel.
     pub samples: Option<u32>,
@@ -41,6 +47,8 @@ pub struct Options {
     pub threads: Option<usize>,
     /// Image size `(width, height)`.
     pub size: Option<(u32, u32)>,
+    /// Time budget in seconds (0: none), overriding the scene's.
+    pub max_seconds: Option<f32>,
 }
 
 impl Options {
@@ -60,10 +68,21 @@ impl Options {
             .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
         (samples, threads)
     }
+
+    /// The time budget: `--max-seconds`, else the scene's `max_seconds`; `None` for no limit
+    /// (zero, or more seconds than a `Duration` holds).
+    pub fn budget(&self, scene: &Scene) -> Option<Duration> {
+        let seconds = self.max_seconds.unwrap_or(scene.render.max_seconds);
+        if seconds > 0.0 {
+            Duration::try_from_secs_f32(seconds).ok()
+        } else {
+            None
+        }
+    }
 }
 
 /// A parsed command line.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Command {
     /// Render a scene to a PNG.
     Render {
@@ -72,6 +91,13 @@ pub enum Command {
         /// PNG to write.
         output: PathBuf,
         /// Overrides.
+        options: Options,
+    },
+    /// Render the contact sheet into a directory.
+    Sheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// Overrides (samples, threads, size).
         options: Options,
     },
     /// Write the example scene as an RSB file.
@@ -94,6 +120,15 @@ fn positive(text: &str, flag: &str) -> Result<u32, String> {
     match text.parse::<u32>() {
         Ok(n) if n > 0 => Ok(n),
         _ => Err(format!("{flag} expects a positive integer, got '{text}'")),
+    }
+}
+
+fn seconds(text: &str, flag: &str) -> Result<f32, String> {
+    match text.parse::<f32>() {
+        Ok(s) if s >= 0.0 && s.is_finite() => Ok(s),
+        _ => Err(format!(
+            "{flag} expects a non-negative number of seconds, got '{text}'"
+        )),
     }
 }
 
@@ -120,6 +155,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut input = None;
     let mut output = None;
     let mut write_example = None;
+    let mut sheet_dir = None;
     let mut options = Options::default();
     let mut it = args.iter();
 
@@ -130,6 +166,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--samples" => options.samples = Some(positive(value(&mut it, arg)?, arg)?),
             "--threads" => options.threads = Some(positive(value(&mut it, arg)?, arg)? as usize),
             "--size" => options.size = Some(parse_size(value(&mut it, arg)?)?),
+            "--max-seconds" => options.max_seconds = Some(seconds(value(&mut it, arg)?, arg)?),
+            "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--example" => {
                 if input.replace(Input::Example).is_some() {
                     return Err("only one scene can be rendered at a time".into());
@@ -153,6 +191,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         }
         return Ok(Command::WriteExample { path });
     }
+    if let Some(dir) = sheet_dir {
+        if input.is_some() || output.is_some() || options.max_seconds.is_some() {
+            return Err("--sheet renders its own scenes: no scene, -o or --max-seconds".into());
+        }
+        return Ok(Command::Sheet { dir, options });
+    }
     let input = input.ok_or("no scene given: pass a .rsb file or --example")?;
     let output = output.ok_or("no output given: pass -o <out.png>")?;
     Ok(Command::Render {
@@ -175,6 +219,31 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::Sheet { dir, options } => {
+            let size = options.size.unwrap_or(sheet::SHEET_SIZE);
+            let samples = options.samples.unwrap_or(sheet::SHEET_SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            println!(
+                "sheet: {} recipes, {}x{}, {samples} spp, {threads} threads",
+                sheet::recipes().len(),
+                size.0,
+                size.1
+            );
+            for e in sheet::run(&dir, size, samples, threads)? {
+                println!(
+                    "  {:<14} mean {:.3}  clipped {:5.2} %  crushed {:5.2} %  {:.1} s",
+                    e.key,
+                    e.stats.mean_luminance,
+                    100.0 * e.stats.clipped_white,
+                    100.0 * e.stats.crushed_black,
+                    e.seconds
+                );
+            }
+            println!("wrote {}", dir.join("index.html").display());
+            Ok(())
+        }
         Command::Render {
             input,
             output,
@@ -189,6 +258,7 @@ pub fn run(command: Command) -> Result<(), String> {
                 }
             };
             let (samples, threads) = options.apply(&mut scene);
+            let budget = options.budget(&scene);
             let (width, height) = (scene.render.width, scene.render.height);
             println!(
                 "scene: {} triangles in {} meshes, {} instances, {} lights; image {width}x{height}, \
@@ -201,9 +271,10 @@ pub fn run(command: Command) -> Result<(), String> {
                 scene.geometry.bvh_stats().width.lanes()
             );
 
-            let result = render(&scene, samples, threads);
+            let result = render_progressive(&scene, samples, threads, budget);
             println!(
-                "rendered {} rays in {:.3} s ({:.2} Mrays/s)",
+                "rendered {} spp, {} rays in {:.3} s ({:.2} Mrays/s)",
+                result.samples,
                 result.rays,
                 result.elapsed.as_secs_f64(),
                 result.rays_per_second() / 1.0e6
@@ -245,7 +316,8 @@ mod tests {
                 options: Options {
                     samples: Some(8),
                     threads: Some(2),
-                    size: Some((320, 200))
+                    size: Some((320, 200)),
+                    max_seconds: None,
                 },
             })
         );
@@ -260,6 +332,45 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn parses_the_sheet_and_the_time_budget() {
+        assert_eq!(
+            parse(&["--sheet", "out/sheet", "--samples", "4"]),
+            Ok(Command::Sheet {
+                dir: "out/sheet".into(),
+                options: Options {
+                    samples: Some(4),
+                    ..Options::default()
+                },
+            })
+        );
+        let Ok(Command::Render { options, .. }) =
+            parse(&["--example", "-o", "x.png", "--max-seconds", "2.5"])
+        else {
+            panic!("render command expected");
+        };
+        assert_eq!(options.max_seconds, Some(2.5));
+        let mut scene = rt_core::example::scene();
+        assert_eq!(options.budget(&scene), Some(Duration::from_secs_f32(2.5)));
+        assert_eq!(Options::default().budget(&scene), None);
+        scene.render.max_seconds = 3.0;
+        assert_eq!(
+            Options::default().budget(&scene),
+            Some(Duration::from_secs(3))
+        );
+        let zero = Options {
+            max_seconds: Some(0.0),
+            ..Options::default()
+        };
+        assert_eq!(
+            zero.budget(&scene),
+            None,
+            "an explicit 0 lifts the scene's limit"
+        );
+        scene.render.max_seconds = 1.0e30; // finite, valid RSB, beyond any Duration
+        assert_eq!(Options::default().budget(&scene), None);
     }
 
     #[test]
@@ -291,6 +402,11 @@ mod tests {
             &["scene.rsb", "-o", "o.png", "--bogus"],
             &["--write-example", "s.rsb", "-o", "o.png"],
             &["--write-example"],
+            &["--sheet"],
+            &["--sheet", "d", "--example"],
+            &["--sheet", "d", "-o", "o.png"],
+            &["--example", "-o", "o.png", "--max-seconds", "-1"],
+            &["--example", "-o", "o.png", "--max-seconds", "soon"],
         ] {
             assert!(parse(bad).is_err(), "{bad:?} should be rejected");
         }
@@ -306,6 +422,7 @@ mod tests {
             samples: Some(3),
             threads: Some(5),
             size: Some((10, 20)),
+            max_seconds: None,
         }
         .apply(&mut scene);
         assert_eq!((samples, threads), (3, 5));

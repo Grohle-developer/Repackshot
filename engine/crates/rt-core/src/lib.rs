@@ -1,9 +1,11 @@
 //! `rt-core`: the Repackshot render engine.
 //!
 //! A CPU path tracer written from scratch with zero external dependencies. This crate holds
-//! everything that is independent of the host: vector maths, the random number generator,
-//! colour handling, the film, the PNG writer, the RSB scene format, SIMD, geometry (meshes,
-//! instances, BVHs, ray queries) and the renderer itself.
+//! everything that is independent of the host: vector maths and deterministic elementary
+//! functions (`fmath`), the random number generator and the Owen-scrambled Sobol sampler,
+//! colour handling and tone curves, the film, the PNG writer, the RSB scene format, SIMD,
+//! geometry (meshes, instances, BVHs, ray queries), the BSDF, lights and environment, the path
+//! tracer (`integrator`) and the tile renderer.
 //!
 //! It deliberately avoids every OS API (`std::fs`, `std::net`, `std::time`, `std::thread`) so
 //! that it compiles unchanged to `wasm32-unknown-unknown` and to any native target. Threading,
@@ -14,17 +16,24 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod bsdf;
 pub mod color;
+pub mod environment;
 pub mod example;
+pub mod fmath;
 pub mod geometry;
 pub mod image;
+pub mod integrator;
+pub mod light;
 pub mod math;
 pub mod png;
 pub mod render;
 pub mod rng;
+pub mod sampler;
 pub mod scene;
 #[allow(unsafe_code)]
 pub mod simd;
+pub mod warp;
 
 /// Parses a decimal component of the crate version at compile time.
 const fn version_part(text: &str) -> u32 {

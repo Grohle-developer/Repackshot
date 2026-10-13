@@ -6,7 +6,7 @@
 use crate::color::Rgb;
 use crate::math::Vec3;
 use crate::scene::{
-    Camera, EnvKind, Environment, Geometry, Instance, Light, LightKind, Material, Mesh,
+    Camera, EnvKind, Environment, Floor, Geometry, Instance, Light, LightKind, Material, Mesh,
     RenderSettings, Scene, Transform, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY,
 };
 use std::collections::BTreeMap;
@@ -105,7 +105,8 @@ pub const SMALL_SPHERE: Transform = Transform::from_rows([
 
 /// The example scene (millimetres): a 100 mm radius icosphere of 320 triangles resting on a
 /// floor quad, a second instance of the same sphere mesh at half size ([`SMALL_SPHERE`], its own
-/// material), one rectangular light above and beside the camera, an 85 mm camera at f/11.
+/// material), one rectangular 5 W light above and beside the camera, the studio dome, an 85 mm
+/// camera at f/11.
 ///
 /// Instances: 0 is the sphere, 1 the floor, 2 the small sphere.
 pub fn scene() -> Scene {
@@ -160,7 +161,8 @@ pub fn scene() -> Scene {
             size_x: 400.0,
             size_y: 400.0,
             color: Rgb::WHITE,
-            power: 1000.0,
+            // Watts of flux: about 3 W/m² on the sphere, 0.76 m away.
+            power: 5.0,
             spread_deg: 180.0,
             angle_deg: 0.0,
             flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA,
@@ -175,6 +177,7 @@ pub fn scene() -> Scene {
             background_color: Rgb::splat(0.05),
             background_mode: 0,
         },
+        floor: Floor::default(),
         render: RenderSettings {
             width: 512,
             height: 384,
@@ -183,6 +186,8 @@ pub fn scene() -> Scene {
             max_seconds: 0.0,
             exposure_ev: 0.0,
             tonemap: 1,
+            max_depth: RenderSettings::DEFAULT_MAX_DEPTH,
+            clamp_indirect: 0.0,
         },
     }
 }
