@@ -10,7 +10,7 @@
 // times the f32 reciprocal of the sample count, which is what
 // `Film::resolve` computes. So the pool's image equals `rt`'s bit for bit.
 
-import { exactPixel, exposureGain, toneCurve, type DisplayCurve } from './tonemap';
+import { applyCurve, exactPixel, exposureGain, srgbEncode, toneCurve, type DisplayCurve } from './tonemap';
 
 /** Edge of the square tiles (rt-cli's TILE_SIZE). */
 export const TILE = 32;
@@ -261,6 +261,67 @@ export function exactBytes(sum: Float32Array, samples: number, ev: number, tonem
     }
     exactPixel(r, g, b, gain, curve, out, i, tmp);
     out[i + 3] = alphaByte(a);
+  }
+  return out;
+}
+
+/** `(srgb_encode(v) × 65535 + 0.5)` as a 16-bit word: the 8-bit rule of the engine, at 16 bits. */
+export function toWord(display: number): number {
+  const v = Math.fround(Math.fround(srgbEncode(display) * 65535) + 0.5);
+  if (!(v > 0)) return 0;
+  return v >= 65535 ? 65535 : Math.floor(v);
+}
+
+/** Coverage to a 16-bit alpha. */
+export function alphaWord(a: number): number {
+  return a >= OPAQUE ? 65535 : a > 0 ? Math.round(a * 65535) : 0;
+}
+
+/**
+ * The 16-bit conversion of accumulated sums (a 16-bit PNG): the same exposure, curve and encoding
+ * as `exactBytes`, quantised to 16 bits instead of 8. Straight RGBA words out.
+ */
+export function exactWords16(sum: Float32Array, samples: number, ev: number, tonemap: number, out: Uint16Array = new Uint16Array(sum.length)): Uint16Array {
+  const gain = exposureGain(ev);
+  const curve = toneCurve(tonemap);
+  const inv = Math.fround(1 / Math.max(1, samples));
+  const tmp = [0, 0, 0];
+  const f = Math.fround;
+  for (let i = 0; i < sum.length; i += 4) {
+    const a = f(sum[i + 3] * inv);
+    let r = f(sum[i] * inv);
+    let g = f(sum[i + 1] * inv);
+    let b = f(sum[i + 2] * inv);
+    if (a < OPAQUE) {
+      if (a > 0) {
+        r = f(r / a);
+        g = f(g / a);
+        b = f(b / a);
+      } else r = g = b = 0;
+    }
+    applyCurve(curve, f(r * gain), f(g * gain), f(b * gain), tmp);
+    out[i] = toWord(tmp[0]);
+    out[i + 1] = toWord(tmp[1]);
+    out[i + 2] = toWord(tmp[2]);
+    out[i + 3] = alphaWord(a);
+  }
+  return out;
+}
+
+/**
+ * Scene-linear RGBA for an EXR: the mean of the samples times the exposure gain, no curve, no
+ * encoding, alpha premultiplied (the convention of OpenEXR).
+ */
+export function linearRgba(sum: Float32Array, samples: number, ev: number, out: Float32Array = new Float32Array(sum.length)): Float32Array {
+  const gain = Math.fround(exposureGain(ev));
+  const inv = Math.fround(1 / Math.max(1, samples));
+  const f = Math.fround;
+  for (let i = 0; i < sum.length; i += 4) {
+    out[i] = f(f(sum[i] * inv) * gain);
+    out[i + 1] = f(f(sum[i + 1] * inv) * gain);
+    out[i + 2] = f(f(sum[i + 2] * inv) * gain);
+    const a = f(sum[i + 3] * inv);
+    out[i + 3] = a >= OPAQUE ? 1 : a;
   }
   return out;
 }

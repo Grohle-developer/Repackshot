@@ -408,6 +408,12 @@ export interface SceneView {
   viewport?: { viewW: number; viewH: number };
   /** The animation pose to render (default: the playhead's, when clips move anything). */
   pose?: Pose | null;
+  /** `RNDR.max_depth` (default: the quality tier's bounces). */
+  maxDepth?: number;
+  /** `RNDR.clamp_indirect` (default 0: off). */
+  clampIndirect?: number;
+  /** `RNDR.seed` (default 0). */
+  seed?: number;
 }
 
 /** A scene and the identity of its geometry: an equal `meshKey` means the same MESH sections. */
@@ -765,7 +771,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     maxSeconds: Math.max(0, view.maxSeconds),
     exposureEv: state.image.exposureEv,
     tonemap: tonemapFor(state.image.viewTransform),
-    maxDepth: quality === 'CUSTOM' ? DEFAULT_MAX_DEPTH : (QUALITY_PRESETS[quality]?.bounces ?? DEFAULT_MAX_DEPTH),
+    maxDepth: view.maxDepth !== undefined && view.maxDepth > 0 ? Math.round(view.maxDepth) : quality === 'CUSTOM' ? DEFAULT_MAX_DEPTH : (QUALITY_PRESETS[quality]?.bounces ?? DEFAULT_MAX_DEPTH),
+    clampIndirect: Math.max(0, view.clampIndirect ?? 0),
+    seed: Math.max(0, Math.round(view.seed ?? 0)) >>> 0,
   };
 
   return {

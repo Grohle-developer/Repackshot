@@ -5,7 +5,8 @@
 //
 // Rule: the rows are tried top to bottom and the first one that matches
 // wins. A gpu row matches the dedicated VRAM of the chosen GPU, a cpu row the
-// RAM, both with an inclusive minimum and an exclusive maximum (null: none).
+// RAM, both as effective GiB (measured / MEMORY_REPORTING_FACTOR) with an
+// inclusive minimum and an exclusive maximum (null: none).
 // A web row matches whether the browser has WebGPU and, with WebGPU, a
 // maximum buffer of at least `minBufferGiB`. A recommended or offered model
 // that is not available is skipped (the recommendation passes to the first
@@ -14,6 +15,20 @@
 // no recommendation at all, never a guess.
 
 import { AI_MODELS, type AiModelsCatalogue, type AiRecommendRow } from '../data/ai-models';
+
+/**
+ * Memory is reported below its marketing size: a "16 GB" computer shows 15.6 to 15.9 GiB usable
+ * and a "12 GB" card can read 11.99 GiB. The table's GiB are marketing sizes, so the rule is
+ * evaluated on the effective amount, measured GiB / this factor, for RAM and VRAM alike (not for
+ * browser buffers). The same constant, with the same name, is in
+ * engine/crates/rt-app/src/recommend.rs. A lead decision of P2.
+ */
+export const MEMORY_REPORTING_FACTOR = 0.94;
+
+/** The amount the rule compares with the table. */
+export function effectiveGiB(measured: number): number {
+  return measured / MEMORY_REPORTING_FACTOR;
+}
 
 export type RecommendInput =
   | { device: 'gpu'; vramGiB: number | null }
@@ -39,9 +54,10 @@ function matches(row: AiRecommendRow, input: NonNullable<RecommendInput>, value:
     return !input.webgpu || (value !== null && value >= (row.minBufferGiB ?? 0));
   }
   if (value === null) return false;
+  const v = effectiveGiB(value);
   const min = row.minGiB ?? 0;
   const max = row.maxGiB ?? null;
-  return value >= min && (max === null || value < max);
+  return v >= min && (max === null || v < max);
 }
 
 /**

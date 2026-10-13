@@ -1,11 +1,26 @@
-// Image output: encodes a rendered image as PNG or JPEG. EXR comes later.
+// Image output: encodes a rendered image as PNG (8 or 16 bits), JPEG or EXR.
 //
 // The path tracer hands over its tone-mapped 8-bit pixels (`encodePixels`):
 // PNG is written here, byte for byte what the engine produced (a canvas would
 // premultiply the alpha and round the colour of every translucent pixel),
 // RGB when the image is opaque and RGBA otherwise. JPEG goes through a canvas.
+// A 16-bit PNG and an EXR come from the engine's float sums (render/tiles.ts
+// converts them; this file only writes bytes).
+//
+// The DPI of the render window is written into the file so a print shop
+// reads the right print size: the PNG `pHYs` chunk (pixels per metre, unit 1)
+// and the JPEG JFIF header (units 1: dots per inch). EXR has no standard
+// density attribute.
+
+import { pixelsPerMetre } from '../core/print-size';
 
 export type ImageFormat = 'PNG' | 'JPEG';
+
+/** What every encoder may write besides the pixels. */
+export interface EncodeOptions {
+  /** Dots per inch, written as the file's density. */
+  dpi?: number;
+}
 
 /** 8-bit pixels, straight (not premultiplied) RGBA, row major from the top. */
 export interface Pixels {
@@ -29,9 +44,9 @@ export async function encodeImage(bitmap: ImageBitmap, format: ImageFormat, qual
   return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), type, quality));
 }
 
-/** Encodes pixels: PNG exactly, JPEG over white through a canvas. */
-export async function encodePixels(px: Pixels, format: ImageFormat, quality = 0.92): Promise<Blob> {
-  if (format === 'PNG') return new Blob([(await encodePng(px)) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
+/** Encodes pixels: PNG exactly, JPEG over white through a canvas; both with the DPI written in. */
+export async function encodePixels(px: Pixels, format: ImageFormat, quality = 0.92, opts: EncodeOptions = {}): Promise<Blob> {
+  if (format === 'PNG') return new Blob([(await encodePng(px, opts)) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
   const canvas = document.createElement('canvas');
   canvas.width = px.width;
   canvas.height = px.height;
@@ -44,7 +59,10 @@ export async function encodePixels(px: Pixels, format: ImageFormat, quality = 0.
     rgba[i + 3] = 255;
   }
   ctx.putImageData(new ImageData(rgba, px.width, px.height), 0, 0);
-  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), 'image/jpeg', quality));
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), 'image/jpeg', quality));
+  if (opts.dpi === undefined) return blob;
+  const bytes = setJpegDpi(new Uint8Array(await blob.arrayBuffer()), opts.dpi);
+  return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' });
 }
 
 // ------------------------------------------------------------------ PNG
@@ -117,8 +135,54 @@ export async function zlib(data: Uint8Array): Promise<Uint8Array> {
   return zlibStored(data);
 }
 
-/** A PNG of 8-bit pixels: RGB when every alpha is 255, RGBA otherwise; filter 0 on every row. */
-export async function encodePng(px: Pixels): Promise<Uint8Array> {
+/** 16-bit pixels, straight RGBA words, row major from the top. */
+export interface Pixels16 {
+  width: number;
+  height: number;
+  data: Uint16Array;
+}
+
+/** The `pHYs` chunk's data: the same density across and down, in pixels per metre (unit 1). */
+export function physData(dpi: number): Uint8Array {
+  const d = new Uint8Array(9);
+  const v = new DataView(d.buffer);
+  const ppm = pixelsPerMetre(dpi);
+  v.setUint32(0, ppm);
+  v.setUint32(4, ppm);
+  d[8] = 1;
+  return d;
+}
+
+/** A PNG file from its chunks (IHDR first, IEND added), each with its length and CRC. */
+function pngFile(chunks: [string, Uint8Array][]): Uint8Array {
+  const all: [string, Uint8Array][] = [...chunks, ['IEND', new Uint8Array(0)]];
+  const size = 8 + all.reduce((n, [, d]) => n + 12 + d.length, 0);
+  const out = new Uint8Array(size);
+  out.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const dv = new DataView(out.buffer);
+  let o = 8;
+  for (const [type, d] of all) {
+    dv.setUint32(o, d.length);
+    for (let i = 0; i < 4; i++) out[o + 4 + i] = type.charCodeAt(i);
+    out.set(d, o + 8);
+    dv.setUint32(o + 8 + d.length, crc32(out, o + 4, o + 8 + d.length));
+    o += 12 + d.length;
+  }
+  return out;
+}
+
+function ihdr(width: number, height: number, depth: 8 | 16, opaque: boolean): Uint8Array {
+  const d = new Uint8Array(13);
+  const v = new DataView(d.buffer);
+  v.setUint32(0, width);
+  v.setUint32(4, height);
+  d[8] = depth;
+  d[9] = opaque ? 2 : 6; // colour type: RGB or RGBA
+  return d;
+}
+
+/** A PNG of 8-bit pixels: RGB when every alpha is 255, RGBA otherwise; filter 0 on every row; `pHYs` with the DPI. */
+export async function encodePng(px: Pixels, opts: EncodeOptions = {}): Promise<Uint8Array> {
   const { width, height, data } = px;
   let opaque = true;
   for (let i = 3; i < data.length; i += 4) {
@@ -142,26 +206,166 @@ export async function encodePng(px: Pixels): Promise<Uint8Array> {
       }
     } else raw.set(data.subarray(y * width * 4, (y + 1) * width * 4), o);
   }
-  const idat = await zlib(raw);
-  const chunks: [string, Uint8Array][] = [];
-  const ihdr = new Uint8Array(13);
-  const v = new DataView(ihdr.buffer);
-  v.setUint32(0, width);
-  v.setUint32(4, height);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = opaque ? 2 : 6; // colour type: RGB or RGBA
-  chunks.push(['IHDR', ihdr], ['IDAT', idat], ['IEND', new Uint8Array(0)]);
-  const size = 8 + chunks.reduce((n, [, d]) => n + 12 + d.length, 0);
-  const out = new Uint8Array(size);
-  out.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const chunks: [string, Uint8Array][] = [['IHDR', ihdr(width, height, 8, opaque)]];
+  if (opts.dpi !== undefined) chunks.push(['pHYs', physData(opts.dpi)]);
+  chunks.push(['IDAT', await zlib(raw)]);
+  return pngFile(chunks);
+}
+
+/** A PNG of 16-bit pixels (bit depth 16, samples big-endian): RGB when opaque, RGBA otherwise; `pHYs` with the DPI. */
+export async function encodePng16(px: Pixels16, opts: EncodeOptions = {}): Promise<Uint8Array> {
+  const { width, height, data } = px;
+  let opaque = true;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] !== 65535) {
+      opaque = false;
+      break;
+    }
+  }
+  const channels = opaque ? 3 : 4;
+  const row = width * channels * 2;
+  const raw = new Uint8Array((row + 1) * height);
+  for (let y = 0; y < height; y++) {
+    let o = y * (row + 1);
+    raw[o++] = 0;
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      for (let c = 0; c < channels; c++) {
+        const w = data[i + c];
+        raw[o++] = w >>> 8;
+        raw[o++] = w & 0xff;
+      }
+    }
+  }
+  const chunks: [string, Uint8Array][] = [['IHDR', ihdr(width, height, 16, opaque)]];
+  if (opts.dpi !== undefined) chunks.push(['pHYs', physData(opts.dpi)]);
+  chunks.push(['IDAT', await zlib(raw)]);
+  return pngFile(chunks);
+}
+
+// ------------------------------------------------------------------ JPEG density
+
+const JFIF_ID = [0x4a, 0x46, 0x49, 0x46, 0x00];
+
+/**
+ * A JPEG with its JFIF density set to `dpi` dots per inch (units 1): the APP0 JFIF segment right
+ * after SOI is patched in place, or inserted when the file has none. Everything else is copied.
+ */
+export function setJpegDpi(jpeg: Uint8Array, dpi: number): Uint8Array {
+  if (jpeg.length < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new Error('not a JPEG');
+  const density = Math.max(1, Math.min(65535, Math.round(dpi)));
+  const hasJfif = jpeg[2] === 0xff && jpeg[3] === 0xe0 && jpeg.length >= 18 && JFIF_ID.every((b, i) => jpeg[6 + i] === b);
+  let out: Uint8Array;
+  if (hasJfif) out = jpeg.slice();
+  else {
+    // SOI, then APP0: length 16, "JFIF\0", version 1.01, units, densities, no thumbnail.
+    const app0 = [0xff, 0xe0, 0x00, 0x10, ...JFIF_ID, 0x01, 0x01, 0, 0, 0, 0, 0, 0, 0];
+    out = new Uint8Array(jpeg.length + app0.length);
+    out.set(jpeg.subarray(0, 2), 0);
+    out.set(app0, 2);
+    out.set(jpeg.subarray(2), 2 + app0.length);
+  }
+  out[13] = 1; // units: dots per inch
+  out[14] = density >>> 8;
+  out[15] = density & 0xff;
+  out[16] = density >>> 8;
+  out[17] = density & 0xff;
+  return out;
+}
+
+/** The density a JPEG's JFIF header declares, or null (no JFIF, or units that are not per inch / cm). */
+export function jpegDpi(jpeg: Uint8Array): number | null {
+  if (!(jpeg[2] === 0xff && jpeg[3] === 0xe0 && JFIF_ID.every((b, i) => jpeg[6 + i] === b))) return null;
+  const x = (jpeg[14] << 8) | jpeg[15];
+  return jpeg[13] === 1 ? x : jpeg[13] === 2 ? Math.round(x * 2.54) : null;
+}
+
+// ------------------------------------------------------------------ EXR
+
+/** Linear float pixels, RGBA (premultiplied), row major from the top. */
+export interface FloatPixels {
+  width: number;
+  height: number;
+  data: Float32Array;
+}
+
+/**
+ * A minimal OpenEXR file: single part, scan lines, no compression, 32-bit float channels (A, B,
+ * G, R, or B, G, R without alpha: channels go in alphabetical order), one line per block, the
+ * required header attributes and the line offset table.
+ */
+export function encodeExr(px: FloatPixels, opts: { alpha: boolean }): Uint8Array {
+  const { width, height, data } = px;
+  const names = opts.alpha ? ['A', 'B', 'G', 'R'] : ['B', 'G', 'R'];
+  const offsetOf: Record<string, number> = { R: 0, G: 1, B: 2, A: 3 };
+  const enc = new TextEncoder();
+  const parts: number[] = [];
+  const push = (...b: number[]) => {
+    for (const x of b) parts.push(x);
+  };
+  const i32 = (v: number) => push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff);
+  const f32 = (v: number) => {
+    const b = new Uint8Array(new Float32Array([v]).buffer);
+    push(b[0], b[1], b[2], b[3]);
+  };
+  const cstr = (s: string) => push(...enc.encode(s), 0);
+  const attr = (name: string, type: string, value: number[]) => {
+    cstr(name);
+    cstr(type);
+    i32(value.length);
+    push(...value);
+  };
+  const bytesOf = (fn: () => void): number[] => {
+    const start = parts.length;
+    fn();
+    return parts.splice(start);
+  };
+  push(0x76, 0x2f, 0x31, 0x01); // magic
+  i32(2); // version 2, single-part scan line
+  const chlist = bytesOf(() => {
+    for (const n of names) {
+      cstr(n);
+      i32(2); // FLOAT
+      push(0, 0, 0, 0); // pLinear, reserved
+      i32(1);
+      i32(1);
+    }
+    push(0);
+  });
+  attr('channels', 'chlist', chlist);
+  attr('compression', 'compression', [0]);
+  const box = bytesOf(() => {
+    i32(0);
+    i32(0);
+    i32(width - 1);
+    i32(height - 1);
+  });
+  attr('dataWindow', 'box2i', box);
+  attr('displayWindow', 'box2i', box);
+  attr('lineOrder', 'lineOrder', [0]);
+  attr('pixelAspectRatio', 'float', bytesOf(() => f32(1)));
+  attr('screenWindowCenter', 'v2f', bytesOf(() => (f32(0), f32(0))));
+  attr('screenWindowWidth', 'float', bytesOf(() => f32(1)));
+  push(0); // end of header
+  const header = Uint8Array.from(parts);
+  const lineBytes = width * names.length * 4;
+  const tableBytes = height * 8;
+  const out = new Uint8Array(header.length + tableBytes + height * (8 + lineBytes));
+  out.set(header, 0);
   const dv = new DataView(out.buffer);
-  let o = 8;
-  for (const [type, d] of chunks) {
-    dv.setUint32(o, d.length);
-    for (let i = 0; i < 4; i++) out[o + 4 + i] = type.charCodeAt(i);
-    out.set(d, o + 8);
-    dv.setUint32(o + 8 + d.length, crc32(out, o + 4, o + 8 + d.length));
-    o += 12 + d.length;
+  let o = header.length + tableBytes;
+  for (let y = 0; y < height; y++) {
+    dv.setBigUint64(header.length + y * 8, BigInt(o), true);
+    dv.setInt32(o, y, true);
+    dv.setInt32(o + 4, lineBytes, true);
+    o += 8;
+    for (const n of names) {
+      const c = offsetOf[n];
+      for (let x = 0; x < width; x++) {
+        dv.setFloat32(o, data[(y * width + x) * 4 + c], true);
+        o += 4;
+      }
+    }
   }
   return out;
 }

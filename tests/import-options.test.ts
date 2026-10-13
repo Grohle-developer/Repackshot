@@ -4,8 +4,13 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  ANGLE_DEG_RANGE,
   applyImportOptions,
+  CHORD_PERCENT_RANGE,
   defaultImportOptions,
+  TESSELLATION_PRESETS,
+  tessellationOf,
+  tessellationPreset,
   describePayload,
   LARGE_MODEL_MM,
   payloadSize,
@@ -397,9 +402,18 @@ describe('defaults and notes', () => {
       materials: 'keep',
       separate: 'none',
       tessellation: 'MEDIUM',
+      chordPercent: 0.05,
+      angleDeg: 12,
       importHidden: false,
       flipNormals: false,
     });
+  });
+
+  it('keeps the tessellation fields inside what they accept, and names the preset their values are', () => {
+    expect(tessellationOf({ chordPercent: 0, angleDeg: 900 })).toEqual({ chordPercent: CHORD_PERCENT_RANGE[0], angleDeg: ANGLE_DEG_RANGE[1] });
+    expect(tessellationOf({ chordPercent: Number.NaN, angleDeg: 7 })).toEqual({ chordPercent: TESSELLATION_PRESETS.MEDIUM.chordPercent, angleDeg: 7 });
+    expect(tessellationPreset(TESSELLATION_PRESETS.HIGH)).toBe('HIGH');
+    expect(tessellationPreset({ chordPercent: 0.05, angleDeg: 13 })).toBe('CUSTOM');
   });
 
   it('a file without units is millimetres, or metres when it measures under a millimetre', () => {

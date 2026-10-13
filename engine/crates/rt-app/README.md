@@ -106,12 +106,17 @@ Todas las rutas `/api/*` llevan `X-Repackshot-Token`. Errores en JSON:
 
 | Petición | Respuesta |
 | --- | --- |
-| `POST /api/render?kind=viewport\|final[&mesh=<clave>][&client=<id>]` | Cuerpo: el RSB. `{id, width, height, maxSamples, threads, isa}`. 400 `bad-scene` si el RSB no vale; 409 `need-meshes` si es una actualización sin `MESH` y esas mallas no están cargadas (la página manda entonces la escena entera); 503 `busy` con más de 8 ventanas |
+| `POST /api/render?kind=viewport\|final[&finish=samples\|time\|first][&mesh=<clave>][&client=<id>]` | Cuerpo: el RSB. `{id, width, height, maxSamples, threads, isa}`. 400 `bad-scene` si el RSB no vale; 409 `need-meshes` si es una actualización sin `MESH` y esas mallas no están cargadas (la página manda entonces la escena entera); 503 `busy` con más de 8 ventanas |
 | `GET /api/render/<id>[?after=<n>][&data=0]` | Una **trama**: cabecera binaria y, si hay una pasada nueva, las sumas. Con `after=n` espera hasta 1 s a una pasada posterior a `n` (o al final). `data=0`: solo la cabecera (progreso). 404 si el trabajo no existe o fue sustituido o cancelado |
 | `DELETE /api/render/<id>` | 204: cancelado |
 
-Trabajos: muestras y tiempo máximos del `RNDR` del RSB (0 muestras = 16, como `rt`; el tiempo se
-comprueba entre pasadas, así que todos los píxeles tienen las mismas muestras). Un trabajo
+Trabajos: muestras y tiempo máximos del `RNDR` del RSB (0 muestras = 16, como `rt`). `finish` dice
+cuándo para, como *Terminar por* de la ventana de render (`src/render/schedule.ts`): `samples` (las
+muestras; el tiempo no cuenta), `time` (el tiempo, sin límite de muestras) o `first` (lo que llegue
+antes); sin él, `first` si hay tiempo y `samples` si no. La regla de parada es la de `runPasses`:
+solo entre pasadas, así que todos los píxeles tienen las mismas muestras, y con tiempo no empieza
+una pasada de la que no quepa la mitad (acaba a menos de media pasada del límite). El reloj de un
+trabajo empieza cuando empieza a renderizar: un final que espera en la cola no gasta su tiempo. Un trabajo
 `final` tiene prioridad: los de visor se paran entre baldosas mientras uno corre (bandera
 *en pausa*), y los finales van de uno en uno por orden de llegada. Un trabajo de visor nuevo de
 un `client` sustituye al anterior de ese `client`; si el RSB no trae `MESH` y `mesh` coincide con
@@ -130,7 +135,7 @@ página los borra al leerlos.
 | 16, 20 | `u32` ancho, alto |
 | 24 | `f32` segundos desde que empezó (hasta que terminó) |
 | 28 | `u32` banderas: 1 terminado, 2 cancelado, 4 fallido, 8 en pausa por un final, 16 lleva datos |
-| 32 | `u32` muestras pedidas |
+| 32 | `u32` muestras pedidas (0: las que quepan en el tiempo) |
 | 36 | `u32` hilos |
 | 40 | `u64` rayos lanzados |
 | 48 | con la bandera 16: `ancho × alto × 4` `f32`, por píxel la **suma** de radiancia premultiplicada (RGB) y de cobertura (A) de todas las muestras |
@@ -192,7 +197,15 @@ Validación: `<sha256>` exactamente 64 hexadecimales en minúscula; claves y nom
 - **Linux**: `/proc/cpuinfo`, `/proc/meminfo`, bloques de `/sys/devices/system/memory` (la RAM
   instalada: un equipo de "16 GB" muestra unos 15,6 GiB utilizables), `nvidia-smi` si está,
   `mem_info_vram_total` de las tarjetas DRM (AMD).
-- **Dispositivo**: GPU si hay una con ≥ 4 GiB de VRAM dedicada; si no, CPU; `--device` manda.
+- **Memoria efectiva**: la memoria se informa por debajo de su tamaño comercial (un equipo de
+  "16 GB" muestra de 15,6 a 15,9 GiB utilizables; una tarjeta de "12 GB" puede leer 11,99 GiB), y la
+  tabla habla en tamaños comerciales. Por eso la regla compara con la tabla los **GiB efectivos =
+  GiB medidos / 0,94**, en RAM y en VRAM (no en los búferes del navegador): constante
+  `MEMORY_REPORTING_FACTOR`, con el mismo nombre en `recommend.rs` y en
+  `src/core/ai-recommend.ts`. Se sigue prefiriendo la RAM instalada cuando se puede leer. El INI y
+  `/api/hardware` dan lo medido; la regla aplica el factor.
+- **Dispositivo**: GPU si hay una con ≥ 4 GiB efectivos de VRAM dedicada; si no, CPU; `--device`
+  manda.
 - **Regla**: la de `docs/AI-POST.md` §2.4 sobre la tabla de `src/data/ai-models.json`, incluido en
   el binario al compilar: primera fila que encaja, mínimo incluido y máximo excluido, modelos no
   disponibles saltados (la recomendación pasa al primer ofrecido disponible), detección fallida →

@@ -11,7 +11,8 @@
 // here, once, the same way for every format:
 //
 //   1. hidden parts are dropped unless `importHidden`;
-//   2. "separate by material" splits a part with face materials into parts;
+//   2. "separate by material" splits a part with face materials into parts, and
+//      "separate by CAD face" a part with CAD faces (STEP, IGES) into one part per face;
 //   3. the geometry is turned into the model's axes (Y up -> Z up: +Y goes to
 //      +Z, the old +Z to -Y, a rotation, so winding is kept) and scaled to
 //      millimetres; "flip normals" negates the normals and reverses the winding;
@@ -22,8 +23,8 @@
 // interface dispatches after the model is added (src/ui/commands.ts).
 
 import { defaultInstance, triangleMaterials, type MaterialId, type MaterialInstance } from './materials';
-import { getMesh, meshRef, registerMesh, sliceMesh, unregisterMesh, type MeshData } from './meshes';
-import type { ModelPayload, NodeId, SceneNode } from './scene';
+import { getMesh, meshRef, registerMesh, remapTriangleRanges, sliceMesh, unregisterMesh, type MeshData } from './meshes';
+import type { FaceRange, ModelPayload, NodeId, SceneNode } from './scene';
 
 // --- Vocabulary -------------------------------------------------------------------------
 
@@ -35,12 +36,33 @@ export const UNIT_TO_MM: Readonly<Record<ImportUnit, number>> = { mm: 1, cm: 10,
 
 export type UpAxis = 'Y' | 'Z';
 export type GroupBy = 'object' | 'material' | 'layer';
-/** `face` (by CAD face) needs STEP/IGES topology (phase I2); until then it changes nothing. */
+/** `face` splits the parts that carry CAD faces (STEP, IGES); parts without them stay whole. */
 export type SeparateBy = 'none' | 'material' | 'face';
 export type MaterialPolicy = 'keep' | 'default';
 export type ImportMode = 'add' | 'replace';
-/** Reserved for STEP/IGES (phase I2); mesh formats ignore it. */
-export type Tessellation = 'LOW' | 'MEDIUM' | 'HIGH';
+/** Tessellation quality of STEP and IGES (a preset, or CUSTOM when the fields were edited); mesh formats ignore it. */
+export type Tessellation = 'LOW' | 'MEDIUM' | 'HIGH' | 'CUSTOM';
+
+/**
+ * How finely a CAD surface becomes triangles. `chordPercent`: the largest distance between a triangle and the
+ * surface it stands for (the chord tolerance, or linear deflection), as a percentage of the model's size (the
+ * mean of the three sides of its bounding box). `angleDeg`: the largest angle between the normals of two
+ * neighbouring triangles of a curved face (the angular deflection). Whichever is stricter wins.
+ */
+export interface TessellationParams {
+  chordPercent: number;
+  angleDeg: number;
+}
+
+/** The presets of the sheet. Medium is a smooth silhouette at full-screen size; High is for close-ups. */
+export const TESSELLATION_PRESETS: Readonly<Record<Exclude<Tessellation, 'CUSTOM'>, Readonly<TessellationParams>>> = {
+  LOW: { chordPercent: 0.2, angleDeg: 20 },
+  MEDIUM: { chordPercent: 0.05, angleDeg: 12 },
+  HIGH: { chordPercent: 0.01, angleDeg: 5 },
+};
+/** What the fields accept. */
+export const CHORD_PERCENT_RANGE: readonly [number, number] = [0.001, 5];
+export const ANGLE_DEG_RANGE: readonly [number, number] = [1, 60];
 
 export interface ImportOptions {
   units: ImportUnit;
@@ -53,6 +75,10 @@ export interface ImportOptions {
   materials: MaterialPolicy;
   separate: SeparateBy;
   tessellation: Tessellation;
+  /** Chord tolerance, percent of the model's size (STEP, IGES; see TessellationParams). */
+  chordPercent: number;
+  /** Angular deflection, degrees (STEP, IGES). */
+  angleDeg: number;
   importHidden: boolean;
   flipNormals: boolean;
 }
@@ -102,10 +128,43 @@ export type ImportMessageCode =
   | 'axisUnsupported'
   | 'vertexColors'
   | 'usdUnsupported'
-  | 'texturesKept';
+  | 'texturesKept'
+  | 'unitsConverted'
+  | 'cadEmptyFaces';
 export interface ImportMessage {
   code: ImportMessageCode;
   params: Record<string, string | number>;
+}
+
+/** Why a file could not be read, for the readers that know (STEP, IGES): `import.error.<code>` says it to the person. */
+export type ImportErrorCode = 'unreadable' | 'empty' | 'timeout' | 'loadFailed' | 'crashed' | 'aborted';
+
+/** An import that failed for a known reason. `detail` is technical (for the console), the code is what is shown. */
+export class ImportError extends Error {
+  constructor(
+    readonly code: ImportErrorCode,
+    readonly detail = '',
+  ) {
+    super(detail ? `${code}: ${detail}` : code);
+    this.name = 'ImportError';
+  }
+}
+
+/**
+ * Where a slow read is (STEP and IGES): downloading the reader (`loaded` of `total` bytes, total 0 when the
+ * server does not say), starting it, reading and tessellating the file, and turning the result into parts.
+ */
+export interface ImportProgress {
+  stage: 'download' | 'start' | 'read' | 'convert';
+  loaded?: number;
+  total?: number;
+}
+
+/** What a read can be told: the tessellation of CAD formats, a cancel signal, and where a slow read is. Mesh formats ignore it. */
+export interface ImportReadOptions {
+  tessellation?: TessellationParams;
+  signal?: AbortSignal;
+  onProgress?(p: ImportProgress): void;
 }
 
 /** What a reader returns: a model in the file's units and axes, plus what the sheet needs. */
@@ -141,9 +200,22 @@ export function defaultImportOptions(detected: ImportDetected, sceneHasParts: bo
     materials: 'keep',
     separate: 'none',
     tessellation: 'MEDIUM',
+    ...TESSELLATION_PRESETS.MEDIUM,
     importHidden: false,
     flipNormals: false,
   };
+}
+
+/** The tessellation the options ask for, with the fields kept inside what they accept. */
+export function tessellationOf(o: Pick<ImportOptions, 'chordPercent' | 'angleDeg'>): TessellationParams {
+  const clamp = (v: number, [lo, hi]: readonly [number, number], fallback: number) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
+  return { chordPercent: clamp(o.chordPercent, CHORD_PERCENT_RANGE, TESSELLATION_PRESETS.MEDIUM.chordPercent), angleDeg: clamp(o.angleDeg, ANGLE_DEG_RANGE, TESSELLATION_PRESETS.MEDIUM.angleDeg) };
+}
+
+/** The preset whose values these are, or CUSTOM. */
+export function tessellationPreset(p: TessellationParams): Tessellation {
+  for (const [k, v] of Object.entries(TESSELLATION_PRESETS)) if (v.chordPercent === p.chordPercent && v.angleDeg === p.angleDeg) return k as Tessellation;
+  return 'CUSTOM';
 }
 
 /** The unit a declared scale to millimetres stands for, or null when the sheet does not offer it. */
@@ -264,6 +336,7 @@ function cloneNode(n: SceneNode): SceneNode {
     children: [...n.children],
     transform: { position: [...n.transform.position], rotation: [...n.transform.rotation], scale: [...n.transform.scale] },
     ...(n.faceMaterials ? { faceMaterials: n.faceMaterials.map((f) => ({ ...f })) } : {}),
+    ...(n.faceRanges ? { faceRanges: n.faceRanges.map((f) => ({ ...f })) } : {}),
     ...(n.source ? { source: { ...n.source } } : {}),
   };
 }
@@ -312,7 +385,7 @@ export function applyImportOptions(input: ImportPayload, options: ImportOptions)
     for (const id of Object.keys(nodes)) if (!reach.has(id)) delete nodes[id];
   }
 
-  // 2 + 3. Separate by material, then the geometry into the model's axes and millimetres.
+  // 2 + 3. Separate by material or by CAD face, then the geometry into the model's axes and millimetres.
   const k = UNIT_TO_MM[options.units];
   const swap = options.upAxis === 'Y';
   const move = (p: readonly number[]): [number, number, number] => (swap ? [p[0] * k, -p[2] * k, p[1] * k] : [p[0] * k, p[1] * k, p[2] * k]);
@@ -326,25 +399,27 @@ export function applyImportOptions(input: ImportPayload, options: ImportOptions)
   for (const id of partIdsOf(nodes, roots)) {
     const node = nodes[id];
     const data = node.mesh ? getMesh(node.mesh.id) : undefined;
-    const per = options.separate === 'material' && data && node.mesh ? triangleMaterials(node) : null;
-    const groups = new Map<MaterialId | '', number[]>();
-    if (per) per.forEach((m, t) => (groups.get(m ?? '') ?? groups.set(m ?? '', []).get(m ?? '')!).push(t));
-    if (!per || !data || groups.size < 2) {
+    const pieces = data && node.mesh ? piecesOf(node, options.separate, materials) : [];
+    if (!data || pieces.length < 2) {
       place(id, node, data, false);
       continue;
     }
-    // Replace the part by one part per material, in order of first appearance.
+    // Replace the part by its pieces, in order of first appearance.
     const parent = nodes[node.parent ?? ''];
     const created: NodeId[] = [];
     let i = 0;
-    for (const [mat, tris] of groups) {
-      const slice = sliceMesh(data, tris);
+    for (const piece of pieces) {
+      const slice = sliceMesh(data, piece.tris);
       const sid = `${id}.${++i}`;
       const sub = cloneNode(node);
       sub.id = sid;
-      sub.name = mat === '' ? node.name : `${node.name} (${materialLabel(materials[mat])})`;
-      sub.material = mat === '' ? null : mat;
+      sub.name = piece.name;
+      sub.material = piece.material;
       delete sub.faceMaterials;
+      if (piece.faceMaterials.length > 0) sub.faceMaterials = piece.faceMaterials;
+      delete sub.faceRanges;
+      // The CAD faces of the piece, numbered in the slice (a slice keeps the order of the triangles).
+      if (node.faceRanges?.length) sub.faceRanges = remapTriangleRanges(node.faceRanges, piece.tris);
       sub.transform.position = [node.transform.position[0] + slice.centre[0], node.transform.position[1] + slice.centre[1], node.transform.position[2] + slice.centre[2]];
       sub.mesh = meshRef(sid, slice.mesh);
       nodes[sid] = sub;
@@ -404,6 +479,55 @@ export function applyImportOptions(input: ImportPayload, options: ImportOptions)
   const used = new Set(Object.keys(materials));
   const textures = options.materials === 'default' ? [] : (input.textures ?? []).filter((t) => used.has(t.material));
   return { nodes, roots, materials, textures, notes };
+}
+
+/** A part of a part: its triangles (ascending), its name and its materials. */
+interface Piece {
+  tris: number[];
+  name: string;
+  material: MaterialId | null;
+  faceMaterials: FaceRange[];
+}
+
+/**
+ * How "separate parts" cuts a part: one piece per material (`material`), or one per CAD face (`face`, for parts
+ * that carry them). Fewer than two pieces means the part stays whole.
+ */
+function piecesOf(node: SceneNode, by: SeparateBy, materials: Record<MaterialId, MaterialInstance>): Piece[] {
+  if (by === 'none' || !node.mesh) return [];
+  const per = triangleMaterials(node);
+  if (by === 'material') {
+    const groups = new Map<MaterialId | '', number[]>();
+    per.forEach((m, t) => (groups.get(m ?? '') ?? groups.set(m ?? '', []).get(m ?? '')!).push(t));
+    return [...groups].map(([mat, tris]) => ({
+      tris,
+      name: mat === '' ? node.name : `${node.name} (${materialLabel(materials[mat])})`,
+      material: mat === '' ? null : mat,
+      faceMaterials: [],
+    }));
+  }
+  const faces = node.faceRanges ?? [];
+  // Only ranges that cover every triangle once, in order, cut the part (anything else would lose triangles).
+  let next = 0;
+  for (const f of faces) {
+    if (f.start !== next || f.count < 1) return [];
+    next += f.count;
+  }
+  if (next !== node.mesh.triangles) return [];
+  return faces.map((f, i) => {
+    const tris = Array.from({ length: f.count }, (_, k) => f.start + k);
+    // A CAD face has one colour; should it have more, the first is the part's and the rest stay as face materials.
+    const material = per[tris[0]] ?? null;
+    const faceMaterials: FaceRange[] = [];
+    tris.forEach((t, k) => {
+      const m = per[t];
+      if (m === material || !m) return;
+      const last = faceMaterials[faceMaterials.length - 1];
+      if (last && last.material === m && last.start + last.count === k) last.count++;
+      else faceMaterials.push({ start: k, count: 1, material: m });
+    });
+    return { tris, name: `${node.name} ${i + 1}`, material, faceMaterials };
+  });
 }
 
 /** Rebuilds the hierarchy under a MODEL as one group per material or per layer, in order of first appearance. */

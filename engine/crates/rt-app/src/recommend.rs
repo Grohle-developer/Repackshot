@@ -6,14 +6,26 @@
 //! settings always recommend the same thing.
 //!
 //! Rule: the rows are tried top to bottom and the first that matches wins. A `gpu` row matches
-//! the dedicated VRAM of the chosen GPU, a `cpu` row the RAM, both with an inclusive minimum and
-//! an exclusive maximum (`null`: none); a `web` row matches whether the browser has WebGPU and,
+//! the dedicated VRAM of the chosen GPU, a `cpu` row the RAM, both as effective GiB (measured /
+//! [`MEMORY_REPORTING_FACTOR`]) with an inclusive minimum and an exclusive maximum (`null`: none); a `web` row matches whether the browser has WebGPU and,
 //! with it, a largest buffer of at least `minBufferGiB`. A recommended or offered model that is
 //! not available is skipped (the recommendation passes to the first available offered model,
 //! else none) and listed in `skipped`. A failed detection gives no recommendation at all.
 
 use crate::json::{self, Value};
 use std::sync::OnceLock;
+
+/// Memory is reported below its marketing size: a "16 GB" computer shows 15.6 to 15.9 GiB usable
+/// and a "12 GB" card can read 11.99 GiB. The table's GiB are marketing sizes, so the rule is
+/// evaluated on the **effective** amount, measured GiB / this factor, for RAM and VRAM alike
+/// (not for browser buffers). The same constant, with the same name, is in
+/// `src/core/ai-recommend.ts`. A lead decision of P2.
+pub const MEMORY_REPORTING_FACTOR: f64 = 0.94;
+
+/// The amount the rule compares with the table: `measured / MEMORY_REPORTING_FACTOR`.
+pub fn effective_gib(measured: f64) -> f64 {
+    measured / MEMORY_REPORTING_FACTOR
+}
 
 /// The catalogue as shipped (`src/data/ai-models.json`).
 pub const CATALOGUE_JSON: &str = include_str!("../../../../src/data/ai-models.json");
@@ -328,7 +340,10 @@ pub struct Recommendation {
 }
 
 fn matches(row: &Row, input: &Input) -> bool {
-    let within = |v: f64| v >= row.min_gib && row.max_gib.is_none_or(|max| v < max);
+    let within = |measured: f64| {
+        let v = effective_gib(measured);
+        v >= row.min_gib && row.max_gib.is_none_or(|max| v < max)
+    };
     match *input {
         Input::Gpu { vram_gib } => row.device == "gpu" && within(vram_gib),
         Input::Cpu { ram_gib } => row.device == "cpu" && within(ram_gib),

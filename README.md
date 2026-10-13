@@ -50,9 +50,11 @@ today.
 
 - **Three columns and one button.** Left, what is in the scene (parts,
   cameras, lights, studios). Centre, the image. Right, an inspector that
-  edits whatever is selected, and the scene when nothing is. Below, the
-  render bar with quality, resolution, budget, format and *Render*. No
-  ribbon, no modal dialogs, no separate render window.
+  edits whatever is selected, and the scene when nothing is. Below,
+  *Animation*, *Queue* and **Render…**, which opens a KeyShot-style render
+  window: output name and folder, pixels or print size with DPI, finish by
+  samples or time, *Render* or *+ Add to queue*. No ribbon, and only two
+  windows in the whole app: Render and Settings.
 - **16 product types** (jewellery, watches, fragrance, cosmetics,
   electronics, appliances, indoor and outdoor furniture, footwear, textile,
   packaging, automotive, tools, eyewear, medical, generic). *Build studio*

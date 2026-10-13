@@ -9,12 +9,13 @@ import { installTooltips, closeFloating } from './components/widgets';
 import { h, isTyping } from './dom';
 import { header } from './panels/header';
 import { inspectorPanel } from './panels/inspector';
+import { renderWindow } from './panels/render-window';
 import { renderBar } from './panels/renderbar';
 import { scenePanel } from './panels/scene';
 import { statusBar } from './panels/status';
 import { viewportPanel } from './panels/viewport';
 import type { AppServices } from './ports';
-import { Root, Scope, type Ctx } from './reactive';
+import { dynamic, Root, Scope, type Ctx } from './reactive';
 import { ACTIONS, matches } from './shortcuts';
 import { setLang } from './strings';
 import { PANEL_MAX, PANEL_MIN, type UiStore } from './ui-state';
@@ -82,11 +83,15 @@ function onKey(ctx: Ctx, e: KeyboardEvent): boolean {
       return true;
     }
   }
+  // The render window and the results viewer own the plain keys while they are open (their own
+  // listeners handle ⏎, Esc, + - 0 1); shortcuts with Ctrl/⌘ still work.
+  const overlay = u.renderWindow !== null || u.resultView !== null;
   for (const a of ACTIONS) {
     if (!a.keys) continue;
     const specs = [a.keys, ...(a.altKeys ?? [])];
     if (!specs.some((k) => matches(e, k))) continue;
     if (typing && !a.global) return false;
+    if (overlay && !a.global && !a.keys.startsWith('mod+')) return false;
     // Tab folds the panels only when focus is not on a control (keyboard navigation keeps working).
     if (a.id === 'panels') {
       const f = document.activeElement;
@@ -115,7 +120,16 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
     left.appendChild(resizer(ctx, 'left'));
     const right = inspectorPanel(ctx, sc);
     right.appendChild(resizer(ctx, 'right'));
-    const next = h('div', { class: 'app' }, header(ctx, sc), left, viewportPanel(ctx, sc), right, renderBar(ctx, sc), statusBar(ctx, sc), toasts(sc));
+    // The render window floats over everything but menus and toasts; it is DOM, never part of a canvas.
+    const windowHost = dynamic(
+      sc,
+      (_s, u) => (u.renderWindow ? (u.renderWindow.kind === 'EDIT' ? `edit:${u.renderWindow.jobId}` : 'new') : null),
+      (wsc, key) => (key ? renderWindow(ctx, wsc) : null),
+      undefined,
+      'div',
+      'rw-mount',
+    );
+    const next = h('div', { class: 'app' }, header(ctx, sc), left, viewportPanel(ctx, sc), right, renderBar(ctx, sc), statusBar(ctx, sc), toasts(sc), windowHost);
     sc.watch(
       (_s, u) => [u.leftCollapsed, u.rightCollapsed, u.leftWidth, u.rightWidth, u.narrow, u.drawer] as const,
       ([lc, rc, lw, rw, narrow, drawer]) => {
@@ -176,6 +190,26 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
   document.addEventListener('keydown', (e) => {
     if (e.defaultPrevented) return;
     onKey(ctx, e);
+  });
+
+  // Files dropped anywhere in the window that the viewport did not take: a browser would navigate to them (and
+  // leave the project behind); a project opens and models go to the import sheet.
+  const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false;
+  document.addEventListener('dragover', (e) => {
+    if (!e.defaultPrevented && hasFiles(e)) e.preventDefault();
+  });
+  document.addEventListener('drop', (e) => {
+    if (e.defaultPrevented || !hasFiles(e)) return;
+    e.preventDefault();
+    const { files, handles } = cmd.readDrop(e.dataTransfer);
+    cmd.dropFiles(ctx, files, handles);
+  });
+
+  // Closing the window or the tab with unsaved changes: the browser asks (the text is the browser's own).
+  window.addEventListener('beforeunload', (e) => {
+    if (!store.get().meta.dirty) return;
+    e.preventDefault();
+    e.returnValue = '';
   });
   installTooltips();
 

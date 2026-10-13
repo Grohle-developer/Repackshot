@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const LICENCE_FILES = /^(licen[cs]e|copying|notice)(\.(md|txt))?$/i;
+const LICENCE_FILES = /^(licen[cs]e|copying|notice)([._-][\w.-]*)?$/i;
 
 /** The MIT terms, for a package that declares MIT but ships no licence file. */
 const MIT_TERMS = `Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -50,8 +50,15 @@ export function thirdPartyNotices(root, version) {
     'Repackshot itself is under the PolyForm Noncommercial License 1.0.0 (LICENSE).',
     'The packages also contain the following, under their own licences.\n',
   ];
+  const vendor = join(root, 'public', 'vendor');
   for (const path of runtime) {
     const meta = JSON.parse(readFileSync(join(root, path, 'package.json'), 'utf8'));
+    if (existsSync(join(vendor, meta.name))) {
+      // Shipped as its own files in app/vendor/: its notice, licences and sources are there and below.
+      out.push(rule(`${meta.name} ${meta.version} (${meta.license}), in app/vendor/${meta.name}/`));
+      out.push(`${meta.homepage ?? meta.repository?.url ?? ''}\nSee app/vendor/${meta.name}/ below.\n`);
+      continue;
+    }
     const author = typeof meta.author === 'string' ? meta.author : (meta.author?.name ?? '');
     const home = meta.homepage ?? meta.repository?.url ?? '';
     out.push(rule(`${meta.name} ${meta.version} (${meta.license}), in app/`));
@@ -61,14 +68,23 @@ export function thirdPartyNotices(root, version) {
     else if (meta.license === 'MIT') out.push(`The npm package declares the MIT licence and ships no licence file.\nCopyright (c) ${author}\n\n${MIT_TERMS}\n`);
     else throw new Error(`${meta.name}: no licence text found for ${meta.license}`);
   }
-  const vendor = join(root, 'public', 'vendor');
   if (existsSync(vendor)) {
     for (const lib of readdirSync(vendor).sort()) {
       const dir = join(vendor, lib);
       const readme = join(dir, 'README.txt');
-      out.push(rule(`app/vendor/${lib}/ (loaded on demand)`));
+      out.push(rule(`app/vendor/${lib}/ (loaded on demand; the files below are next to it there)`));
       if (existsSync(readme)) out.push(`${readFileSync(readme, 'utf8').trim()}\n`);
-      for (const t of licenceTexts(dir)) out.push(`${t}\n`);
+      let texts = licenceTexts(dir);
+      const pkg = join(root, 'node_modules', lib);
+      if (!texts.length) texts = licenceTexts(pkg);
+      if (!texts.length && existsSync(join(pkg, 'package.json'))) {
+        const meta = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'));
+        const author = typeof meta.author === 'string' ? meta.author : (meta.author?.name ?? '');
+        if (meta.license !== 'MIT') throw new Error(`${lib}: no licence text found for ${meta.license}`);
+        texts = [`The npm package declares the MIT licence and ships no licence file.\nCopyright (c) ${author}\n\n${MIT_TERMS}`];
+      }
+      if (!texts.length) throw new Error(`app/vendor/${lib}: no licence text found`);
+      for (const t of texts) out.push(`${t}\n`);
     }
   }
   const engine = readFileSync(join(root, 'engine', 'README.md'), 'utf8');

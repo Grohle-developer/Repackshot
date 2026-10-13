@@ -3,12 +3,15 @@
 // parts worth remembering between sessions go to localStorage.
 
 import type { LightStyle, MaterialCategory } from '../data/types';
-import type { ImportMessage, ImportOptions, ImportPayload } from '../core/import-options';
+import type { ImportMessage, ImportOptions, ImportPayload, ImportProgress } from '../core/import-options';
 import { emptyLibrary, type Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
+import type { RenderSettings } from '../core/render';
+import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { Space } from '../core/transform';
 import type { ClipTarget } from '../core/animation';
+import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import { readPref, writePref } from './prefs';
 
@@ -47,19 +50,57 @@ export interface WizardState {
   shot: number | null;
 }
 
+/**
+ * Where the read of a CAD file (STEP, IGES) is. The sheet opens at once for them and says it: the reader
+ * downloading (`loaded` of `total` bytes), starting, reading and tessellating, building parts, done (`ready`),
+ * or `error` with the reason. `confirm` remembers an Import pressed before the file was read.
+ */
+export interface CadReadState {
+  stage: ImportProgress['stage'] | 'ready' | 'error';
+  loaded?: number;
+  total?: number;
+  /** The reason, in the interface language, when `stage` is `error`. */
+  error?: string;
+  confirm?: boolean;
+}
+
 /** A file that was read and waits for the import sheet (UI.md §2.3). The options are the sheet's current values. */
 export interface PendingImport {
   /** Changes with every file, so the sheet is rebuilt for the next one and only then. */
   id: number;
+  /** Changes when the payload is replaced (a CAD file read again at another quality), so the sheet is rebuilt. */
+  rev?: number;
   name: string;
   format: string;
+  /** The model as read; empty while a CAD file is still being read. */
   payload: ImportPayload;
+  /** CAD files only: the read in progress. */
+  cad?: CadReadState;
   warnings: ImportMessage[];
   notes: ImportMessage[];
   options: ImportOptions;
   /** Files dropped together with this one that are waiting for their turn. */
   queued: number;
 }
+
+/** The render window (UI.md §2.7): the project's settings, or a draft of one queued job's ("Edit"). */
+export type RenderWindowState = { kind: 'NEW' } | { kind: 'EDIT'; jobId: string; draft: RenderSettings };
+
+/** How the split-compare component shows its two images. */
+export type SplitMode = 'A' | 'B' | 'SPLIT';
+
+/** The results viewer over the viewport (UI.md §2.8). */
+export interface ResultViewState {
+  id: string;
+  /** A second result shown with the split divider, or null. */
+  compare: string | null;
+  split: SplitMode;
+  /** Divider position, 0..1 of the width. */
+  position: number;
+}
+
+/** What the queue runner is doing: nothing, the whole queue, or only the jobs Render started. */
+export type QueueRun = 'IDLE' | 'ALL' | 'ONLY';
 
 export interface UiState {
   sceneTab: SceneTab;
@@ -119,6 +160,22 @@ export interface UiState {
   viewportMode: ViewportMode;
   /** Whether Full can run. */
   engine: EngineState;
+  renderWindow: RenderWindowState | null;
+  /** Where the render window was dragged to (top left, CSS pixels); null: centred. */
+  renderWindowPos: { x: number; y: number } | null;
+  resultView: ResultViewState | null;
+  /** The results history, newest first (main.ts loads it from the browser's storage). */
+  results: ResultMeta[];
+  /** Whether the history survives the session. */
+  resultsStorage: 'LOADING' | 'PERSISTENT' | 'MEMORY';
+  /** Pixel-samples per second the engine reached on this machine (measured, never assumed); null until measured. */
+  throughput: number | null;
+  queueRun: QueueRun;
+  /**
+   * An inline confirmation the header shows under the project name (New and Open ask before they discard unsaved
+   * changes, whichever way they were asked for: menu, shortcut or a dropped file). Esc cancels.
+   */
+  prompt: ConfirmSpec | null;
 }
 
 /** The mode the viewport is in: Full only when chosen and the engine is ready. */
@@ -191,6 +248,14 @@ export function defaultUiState(): UiState {
     library: emptyLibrary(),
     viewportMode: 'FULL',
     engine: 'LOADING',
+    renderWindow: null,
+    renderWindowPos: null,
+    resultView: null,
+    results: [],
+    resultsStorage: 'LOADING',
+    throughput: null,
+    queueRun: 'IDLE',
+    prompt: null,
   };
 }
 

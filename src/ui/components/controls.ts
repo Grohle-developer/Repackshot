@@ -349,3 +349,54 @@ export function textField(value: string, onCommit: (v: string) => void, ariaLabe
 export function field(label: string, ...controls: (Node | null)[]): HTMLElement {
   return h('div', { class: 'field' }, h('label', { class: 'field-label', title: label }, label), h('div', { class: 'field-control' }, ...controls));
 }
+
+/** Seconds as `hh:mm:ss` (the render window's time field). */
+export function formatHms(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const p2 = (n: number) => String(n).padStart(2, '0');
+  return `${p2(Math.floor(s / 3600))}:${p2(Math.floor((s % 3600) / 60))}:${p2(s % 60)}`;
+}
+
+/** `hh:mm:ss`, `mm:ss` or plain seconds to seconds; null when it is not a time. */
+export function parseHms(text: string): number | null {
+  const parts = text.trim().split(':');
+  if (parts.length === 0 || parts.length > 3 || parts.some((p) => !/^\d+(\.\d+)?$/.test(p.trim()))) return null;
+  const nums = parts.map((p) => Number(p.trim()));
+  let s = 0;
+  for (const n of nums) s = s * 60 + n;
+  return Number.isFinite(s) ? Math.round(s) : null;
+}
+
+/** A time field in `hh:mm:ss`: commits on Enter or blur, Esc restores, anything else that is not a time is refused. */
+export function timeField(seconds: number, onCommit: (seconds: number) => void, ariaLabel: string): Control<number> {
+  let value = seconds;
+  const el = h('input', { type: 'text', class: 'text-input time-input tabular', value: formatHms(seconds), 'aria-label': ariaLabel, inputmode: 'numeric', spellcheck: 'false' }) as HTMLInputElement;
+  const commit = () => {
+    const v = parseHms(el.value);
+    if (v === null || v <= 0) {
+      el.value = formatHms(value);
+      return;
+    }
+    el.value = formatHms(v);
+    if (v !== value) {
+      value = v;
+      onCommit(v);
+    }
+  };
+  el.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') el.blur();
+    else if (e.key === 'Escape') {
+      el.value = formatHms(value);
+      el.blur();
+    }
+  });
+  el.addEventListener('blur', commit);
+  return {
+    el,
+    set(v) {
+      value = v;
+      if (document.activeElement !== el) el.value = formatHms(v);
+    },
+  };
+}

@@ -19,9 +19,17 @@ export interface MeshData {
    * is hard when the angle between its two faces exceeds the smoothing angle.
    * Each edge appears once; the other face of the edge has the same positions
    * but may use other vertex indices (the vertices are split along hard edges).
-   * Importers that cannot tell leave it out.
+   * Importers that cannot tell leave it out. The CAD readers (STEP, IGES) mark
+   * every edge between two CAD faces instead, whatever the angle: the topology
+   * of the file says where the faces meet.
    */
   sharpEdges?: Uint32Array;
+}
+
+/** A run of consecutive triangles of a mesh: `count` triangles from triangle `start`. */
+export interface TriangleRange {
+  start: number;
+  count: number;
 }
 
 /** What the state keeps about a mesh: enough for bounds, counts and the Doctor. */
@@ -50,7 +58,11 @@ export function positionsBounds(positions: ArrayLike<number>): Box {
   return { min, max };
 }
 
-/** Stores a mesh under `id` (replacing any previous one) and returns its ref. */
+/**
+ * Stores a mesh under `id` (replacing any previous one) and returns its ref. An id names one geometry for as
+ * long as it is registered: the preview and the render workers cache by id, so never register different data
+ * under an id that a state may still refer to.
+ */
 export function registerMesh(id: MeshId, data: MeshData): MeshRef {
   registry.set(id, data);
   return meshRef(id, data);
@@ -79,6 +91,34 @@ export function hasMesh(id: MeshId): boolean {
 }
 
 // --- Slices --------------------------------------------------------------------------------
+
+/**
+ * Triangle ranges after the triangles of their mesh were picked or renumbered: `source[t]` is the old triangle
+ * of new triangle `t` (a slice lists the kept triangles, a re-smoothed mesh the survivors). Each range keeps the
+ * new triangles that came from it, as runs; a range none of whose triangles survive is dropped. While `source`
+ * keeps the old order (slices and re-smoothing do), every range stays one run.
+ */
+export function remapTriangleRanges(ranges: readonly TriangleRange[], source: ArrayLike<number>): TriangleRange[] {
+  let end = 0;
+  for (const r of ranges) end = Math.max(end, r.start + r.count);
+  const owner = new Int32Array(end).fill(-1);
+  ranges.forEach((r, i) => owner.fill(i, r.start, r.start + r.count));
+  const out: TriangleRange[] = [];
+  let lastOwner = -1;
+  for (let t = 0; t < source.length; t++) {
+    const s = source[t];
+    const o = s < end ? owner[s] : -1;
+    if (o < 0) {
+      lastOwner = -1;
+      continue;
+    }
+    const last = out[out.length - 1];
+    if (o === lastOwner && last && last.start + last.count === t) last.count++;
+    else out.push({ start: t, count: 1 });
+    lastOwner = o;
+  }
+  return out;
+}
 
 /**
  * The triangles `tris` of a mesh as a mesh of their own, re-centred on its bounds. Vertices are renumbered in
@@ -659,6 +699,90 @@ export function buildMesh(raw: RawMesh, options: BuildOptions = {}): BuiltMesh |
   return { data: { positions, normals, indices: rvOf, uvs, sharpEdges }, dropped, source };
 }
 
+// --- Welding by position -------------------------------------------------------------------------
+
+/**
+ * The same id for vertices closer than `tol` (ids 0, 1, 2... in order of first appearance), as `buildMesh`
+ * welds a soup: what is adjacent by position, whatever the vertex indices say. `count` is the number of ids.
+ */
+export function weldIds(positions: ArrayLike<number>, tol: number): { ids: Int32Array; count: number } {
+  const V = Math.floor(positions.length / 3);
+  const ids = new Int32Array(V);
+  if (V === 0) return { ids, count: 0 };
+  const min = [Infinity, Infinity, Infinity];
+  for (let v = 0; v < V; v++) for (let k = 0; k < 3; k++) min[k] = Math.min(min[k], positions[3 * v + k]);
+  // A match is within tol = half a cell: only the nearer neighbour on each axis can hold one.
+  const cell = tol > 0 ? 2 * tol : 1;
+  const inv = 1 / cell;
+  const tol2 = tol * tol;
+  // Cells that hold a representative, by open addressing on their integer coordinates (at most V of them).
+  let size = 16;
+  while (size < 2 * V) size *= 2;
+  const mask = size - 1;
+  const cellX = new Int32Array(size);
+  const cellY = new Int32Array(size);
+  const cellZ = new Int32Array(size);
+  const head = new Int32Array(size).fill(-1);
+  const next = new Int32Array(V).fill(-1);
+  /** The slot of a cell; with `insert`, a new one when it has none (else -1). */
+  const slot = (ix: number, iy: number, iz: number, insert: boolean): number => {
+    let h = (Math.imul(ix, 73856093) ^ Math.imul(iy, 19349663) ^ Math.imul(iz, 83492791)) & mask;
+    while (head[h] >= 0) {
+      if (cellX[h] === ix && cellY[h] === iy && cellZ[h] === iz) return h;
+      h = (h + 1) & mask;
+    }
+    if (!insert) return -1;
+    cellX[h] = ix;
+    cellY[h] = iy;
+    cellZ[h] = iz;
+    return h;
+  };
+  let count = 0;
+  for (let v = 0; v < V; v++) {
+    const x = positions[3 * v];
+    const y = positions[3 * v + 1];
+    const z = positions[3 * v + 2];
+    const fx = (x - min[0]) * inv;
+    const fy = (y - min[1]) * inv;
+    const fz = (z - min[2]) * inv;
+    // `| 0` keeps the coordinates integers; two far cells that alias still compare their true distances.
+    const ix = Math.floor(fx) | 0;
+    const iy = Math.floor(fy) | 0;
+    const iz = Math.floor(fz) | 0;
+    const dx = fx - Math.floor(fx) < 0.5 ? -1 : 1;
+    const dy = fy - Math.floor(fy) < 0.5 ? -1 : 1;
+    const dz = fz - Math.floor(fz) < 0.5 ? -1 : 1;
+    let found = -1;
+    search: for (let a = 0; a < 2; a++) {
+      for (let b = 0; b < 2; b++) {
+        for (let c = 0; c < 2; c++) {
+          const h = slot(ix + (a ? dx : 0), iy + (b ? dy : 0), iz + (c ? dz : 0), false);
+          let r = h < 0 ? -1 : head[h];
+          while (r >= 0) {
+            const ex = positions[3 * r] - x;
+            const ey = positions[3 * r + 1] - y;
+            const ez = positions[3 * r + 2] - z;
+            if (ex * ex + ey * ey + ez * ez <= tol2) {
+              found = r;
+              break search;
+            }
+            r = next[r];
+          }
+        }
+      }
+    }
+    if (found >= 0) {
+      ids[v] = ids[found];
+    } else {
+      ids[v] = count++;
+      const h = slot(ix, iy, iz, true);
+      next[v] = head[h];
+      head[h] = v;
+    }
+  }
+  return { ids, count };
+}
+
 // --- Geometry operations of the scene (phase U3) --------------------------------------------------
 
 /** The same mesh with every triangle wound the other way and every normal reversed. Shares positions and uvs. */
@@ -715,6 +839,29 @@ export function ensureMesh(id: MeshId, make: () => { data: MeshData; source?: Ui
 /** Input triangle of each triangle of a derived mesh, or null when they are the same triangles in the same order. */
 export function triangleSource(id: MeshId): Uint32Array | null {
   return triangleSources.get(id) ?? null;
+}
+
+/** Gives a mesh its triangle map back (a project file keeps it, `triangleSource`). A map of the identity is not kept. */
+export function setTriangleSource(id: MeshId, source: Uint32Array | null): void {
+  if (source && source.some((s, i) => s !== i)) triangleSources.set(id, source);
+  else triangleSources.delete(id);
+}
+
+/** Ids of every registered mesh. */
+export function meshIds(): MeshId[] {
+  return [...registry.keys()];
+}
+
+/**
+ * Forgets every mesh that is not in `keep` (and the triangle maps with them). Opening or starting a project
+ * replaces the state and clears the history, so the meshes of the old one are unreachable.
+ */
+export function retainMeshes(keep: ReadonlySet<MeshId>): void {
+  for (const id of [...registry.keys()]) {
+    if (keep.has(id)) continue;
+    registry.delete(id);
+    triangleSources.delete(id);
+  }
 }
 
 /** A short, stable hash of a list of indices (FNV-1a, 32 bits) for naming derived meshes. */

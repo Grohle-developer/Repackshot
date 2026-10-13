@@ -60,6 +60,89 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// When a job stops (`src/render/schedule.ts`, UI.md §2.7 "Finish by"): after its samples,
+/// at its time limit, or whichever comes first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Finish {
+    /// `RNDR.max_samples` samples (0 means [`DEFAULT_SAMPLES`]); the time does not count.
+    Samples,
+    /// `RNDR.max_seconds`, however many samples that is.
+    Time,
+    /// The samples or the time, whichever comes first.
+    First,
+}
+
+impl Finish {
+    /// `samples`, `time` or `first`.
+    pub fn parse(text: &str) -> Option<Finish> {
+        match text {
+            "samples" => Some(Finish::Samples),
+            "time" => Some(Finish::Time),
+            "first" => Some(Finish::First),
+            _ => None,
+        }
+    }
+
+    /// Without a choice: whichever comes first when there is a time limit, else the samples
+    /// (as `renderPixels` of the page).
+    pub fn default_for(max_seconds: f32) -> Finish {
+        if max_seconds > 0.0 {
+            Finish::First
+        } else {
+            Finish::Samples
+        }
+    }
+}
+
+/// The limits of a budget (`budgetLimits` of `schedule.ts`): samples (0: none) and milliseconds
+/// (`None`: none).
+pub fn limits(finish: Finish, max_samples: u32, max_seconds: f32) -> (u32, Option<f64>) {
+    let samples = match finish {
+        Finish::Time => 0,
+        _ if max_samples == 0 => DEFAULT_SAMPLES,
+        _ => max_samples,
+    };
+    let ms = match finish {
+        Finish::Samples => None,
+        _ => Some(f64::from(max_seconds.max(0.0)) * 1000.0),
+    };
+    (samples, ms)
+}
+
+/// The size of the next pass after `done` samples, the last pass being `previous` (`nextPass` of
+/// `tiles.ts`): 1, 2, 4, 8, then 16, cut at `limit` (0: none). `None` when the samples are done.
+pub fn next_pass(done: u32, previous: u32, limit: u32) -> Option<u32> {
+    let size = if previous == 0 {
+        1
+    } else {
+        (previous * 2).min(MAX_PASS_SAMPLES)
+    };
+    let count = if limit > 0 {
+        size.min(limit.saturating_sub(done))
+    } else {
+        size
+    };
+    (count > 0).then_some(count)
+}
+
+/// Whether a time-limited job stops before a pass of `count` samples (`runPasses` of
+/// `schedule.ts`): at the limit, or when that pass would end further from it than stopping now
+/// (less than half of it fits). The first pass always runs.
+pub fn stop_for_time(
+    done: u32,
+    elapsed_ms: f64,
+    limit_ms: Option<f64>,
+    ms_per_sample: Option<f64>,
+    count: u32,
+) -> bool {
+    let Some(limit) = limit_ms else {
+        return false;
+    };
+    done > 0
+        && (elapsed_ms >= limit
+            || ms_per_sample.is_some_and(|m| elapsed_ms + m * f64::from(count) / 2.0 > limit))
+}
+
 /// What a job is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -91,7 +174,7 @@ pub struct Frame {
     pub width: u32,
     /// Image height.
     pub height: u32,
-    /// Seconds since the job started (until it ended).
+    /// Seconds since the job began rendering (until it ended).
     pub seconds: f32,
     /// `FLAG_*` bits (without `FLAG_DATA`).
     pub flags: u32,
@@ -164,6 +247,8 @@ impl Frame {
 }
 
 struct Progress {
+    /// When rendering began (a final job may wait for another first): the clock of the job.
+    started: Option<Instant>,
     pass: u32,
     samples: u32,
     rays: u64,
@@ -183,12 +268,12 @@ pub struct Job {
     pub width: u32,
     /// Image height.
     pub height: u32,
-    /// Samples to render.
+    /// Samples to render (0: as many as the time allows).
     pub max_samples: u32,
-    budget: Option<Duration>,
+    /// The time limit in milliseconds, if any.
+    limit_ms: Option<f64>,
     threads: usize,
     cancel: AtomicBool,
-    started: Instant,
     progress: Mutex<Progress>,
     changed: Condvar,
 }
@@ -206,27 +291,21 @@ impl std::fmt::Debug for Job {
 }
 
 impl Job {
-    fn new(id: u32, kind: Kind, scene: &Scene, threads: usize) -> Job {
+    fn new(id: u32, kind: Kind, scene: &Scene, threads: usize, finish: Option<Finish>) -> Job {
         let r = &scene.render;
+        let finish = finish.unwrap_or(Finish::default_for(r.max_seconds));
+        let (max_samples, limit_ms) = limits(finish, r.max_samples, r.max_seconds);
         Job {
             id,
             kind,
             width: r.width,
             height: r.height,
-            max_samples: if r.max_samples > 0 {
-                r.max_samples
-            } else {
-                DEFAULT_SAMPLES
-            },
-            budget: if r.max_seconds > 0.0 {
-                Duration::try_from_secs_f32(r.max_seconds).ok()
-            } else {
-                None
-            },
+            max_samples,
+            limit_ms,
             threads,
             cancel: AtomicBool::new(false),
-            started: Instant::now(),
             progress: Mutex::new(Progress {
+                started: None,
                 pass: 0,
                 samples: 0,
                 rays: 0,
@@ -253,7 +332,7 @@ impl Job {
     fn frame_of(&self, p: &Progress) -> Frame {
         let (mut flags, seconds) = match p.ended {
             Some((flags, s)) => (flags, s),
-            None => (0, self.started.elapsed().as_secs_f32()),
+            None => (0, p.started.map_or(0.0, |t| t.elapsed().as_secs_f32())),
         };
         if p.paused && p.ended.is_none() {
             flags |= FLAG_PAUSED;
@@ -313,7 +392,8 @@ impl Job {
 
     fn end(&self, flags: u32, error: Option<String>) {
         let mut p = lock(&self.progress);
-        p.ended = Some((flags, self.started.elapsed().as_secs_f32()));
+        let seconds = p.started.map_or(0.0, |t| t.elapsed().as_secs_f32());
+        p.ended = Some((flags, seconds));
         p.paused = false;
         p.error = error;
         drop(p);
@@ -405,7 +485,9 @@ fn sums_of(films: &[Mutex<Film>], width: u32, height: u32) -> Vec<f32> {
     out
 }
 
-/// Renders `job` (the progressive loop of `rt`), publishing the sums after every pass.
+/// Renders `job` (the progressive loop of `rt`: the same tiles, passes and sample order), publishing
+/// the sums after every pass. It stops as the page's `runPasses` does (`src/render/schedule.ts`):
+/// after the samples, or between passes near the time limit; never inside a pass.
 fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) {
     let (width, height) = (job.width, job.height);
     let prepared = Prepared::new(scene);
@@ -415,10 +497,22 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) {
         .iter()
         .map(|t| Mutex::new(Film::region(t.x, t.y, t.w, t.h)))
         .collect();
-    let samples = job.max_samples;
-    let (mut done, mut pass, mut passes, mut rays) = (0u32, 1u32, 0u32, 0u64);
-    while done < samples && !job.cancelled() {
-        let count = pass.min(samples - done);
+    let t0 = Instant::now();
+    lock(&job.progress).started = Some(t0);
+    let ms = |t: Instant| t.duration_since(t0).as_secs_f64() * 1000.0;
+    let (mut done, mut previous, mut passes, mut rays) = (0u32, 0u32, 0u32, 0u64);
+    let mut ms_per_sample: Option<f64> = None;
+    while !job.cancelled() {
+        let Some(count) = next_pass(done, previous, job.max_samples) else {
+            break;
+        };
+        let now = Instant::now();
+        if stop_for_time(done, ms(now), job.limit_ms, ms_per_sample, count)
+            || done > u32::MAX - 2 * MAX_PASS_SAMPLES
+        {
+            break;
+        }
+        let pass_start = Instant::now();
         let first = done;
         let next_tile = AtomicUsize::new(0);
         let pass_rays: u64 = std::thread::scope(|scope| {
@@ -455,8 +549,12 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) {
             // Some tiles may have this pass and others not: it is never published.
             break;
         }
+        ms_per_sample = Some(
+            Instant::now().duration_since(pass_start).as_secs_f64() * 1000.0 / f64::from(count),
+        );
         rays += pass_rays;
         done += count;
+        previous = count;
         passes += 1;
         let sums = Arc::new(sums_of(&films, width, height));
         {
@@ -467,10 +565,6 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) {
             p.sums = sums;
         }
         job.changed.notify_all();
-        if job.budget.is_some_and(|b| job.started.elapsed() >= b) {
-            break;
-        }
-        pass = (pass * 2).min(MAX_PASS_SAMPLES);
     }
     job.end(
         if job.cancelled() {
@@ -608,13 +702,14 @@ impl Engine {
 
     /// Starts a job from RSB bytes. `mesh_key` names the geometry (a viewport update without
     /// meshes must name the meshes it expects); `client` tells viewport jobs of different
-    /// windows apart.
+    /// windows apart; `finish` is when it stops (`None`: [`Finish::default_for`] its time limit).
     pub fn submit(
         &self,
         kind: Kind,
         rsb: &[u8],
         mesh_key: &str,
         client: &str,
+        finish: Option<Finish>,
     ) -> Result<Arc<Job>, SubmitError> {
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
         match kind {
@@ -624,7 +719,7 @@ impl Engine {
                 }
                 let scene =
                     Scene::from_rsb(rsb).map_err(|e| SubmitError::BadScene(e.to_string()))?;
-                let job = Arc::new(Job::new(id, kind, &scene, self.inner.threads));
+                let job = Arc::new(Job::new(id, kind, &scene, self.inner.threads, finish));
                 self.register(&job);
                 let (engine, run) = (self.clone(), Arc::clone(&job));
                 std::thread::spawn(move || {
@@ -685,7 +780,7 @@ impl Engine {
                         }
                     }
                 };
-                let job = Arc::new(Job::new(id, kind, &scene, self.inner.threads));
+                let job = Arc::new(Job::new(id, kind, &scene, self.inner.threads, finish));
                 self.register(&job);
                 let (engine, run) = (self.clone(), Arc::clone(&job));
                 let handle = std::thread::spawn(move || {
@@ -752,7 +847,9 @@ mod tests {
     fn a_final_job_renders_every_sample_and_publishes_passes() {
         let engine = Engine::new(3);
         let scene = small_example(5, 40, 30);
-        let job = engine.submit(Kind::Final, &scene.to_rsb(), "", "").unwrap();
+        let job = engine
+            .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+            .unwrap();
         let first = job.wait_newer(0, Duration::from_secs(60));
         assert!(first.pass >= 1);
         let f = wait_done(&job);
@@ -779,7 +876,9 @@ mod tests {
         let engine = Engine::new(2);
         let scene = small_example(4096, 64, 48);
         let full = scene.to_rsb();
-        let a = engine.submit(Kind::Viewport, &full, "m1", "w").unwrap();
+        let a = engine
+            .submit(Kind::Viewport, &full, "m1", "w", None)
+            .unwrap();
         a.wait_newer(0, Duration::from_secs(60));
         // An update without meshes for the same key: camera moved.
         let mut moved = scene.clone();
@@ -788,40 +887,46 @@ mod tests {
         let mut update = moved.to_rsb();
         update = strip_meshes(&update);
         assert!(!has_meshes(&update));
-        let b = engine.submit(Kind::Viewport, &update, "m1", "w").unwrap();
+        let b = engine
+            .submit(Kind::Viewport, &update, "m1", "w", None)
+            .unwrap();
         assert!(a.frame().flags & FLAG_CANCELLED != 0, "replaced");
         assert!(engine.job(a.id).is_none());
         let fb = wait_done(&b);
         assert_eq!(fb.samples, 2);
         // The same pixels as a full render of the moved scene.
         let c = engine
-            .submit(Kind::Viewport, &moved.to_rsb(), "m1", "w")
+            .submit(Kind::Viewport, &moved.to_rsb(), "m1", "w", None)
             .unwrap();
         let fc = wait_done(&c);
         assert_eq!(fb.sums, fc.sums);
         // Another mesh key, or another window that has nothing loaded: send the meshes.
         assert_eq!(
             engine
-                .submit(Kind::Viewport, &update, "m2", "w")
+                .submit(Kind::Viewport, &update, "m2", "w", None)
                 .unwrap_err(),
             SubmitError::NeedMeshes
         );
         assert_eq!(
             engine
-                .submit(Kind::Viewport, &update, "m1", "other")
+                .submit(Kind::Viewport, &update, "m1", "other", None)
                 .unwrap_err(),
             SubmitError::NeedMeshes
         );
         // The refused update did not lose the loaded meshes.
-        assert!(engine.submit(Kind::Viewport, &update, "m1", "w").is_ok());
+        assert!(engine
+            .submit(Kind::Viewport, &update, "m1", "w", None)
+            .is_ok());
         // A broken update is refused and keeps the meshes too.
         assert!(matches!(
-            engine.submit(Kind::Viewport, b"nope", "m1", "w"),
+            engine.submit(Kind::Viewport, b"nope", "m1", "w", None),
             Err(SubmitError::BadScene(_))
         ));
-        assert!(engine.submit(Kind::Viewport, &update, "m1", "w").is_ok());
+        assert!(engine
+            .submit(Kind::Viewport, &update, "m1", "w", None)
+            .is_ok());
         assert!(matches!(
-            engine.submit(Kind::Final, b"RSB1\0\0\0\0MESH\x01\0\0\0x", "", ""),
+            engine.submit(Kind::Final, b"RSB1\0\0\0\0MESH\x01\0\0\0x", "", "", None),
             Err(SubmitError::BadScene(_))
         ));
         engine.shutdown();
@@ -836,11 +941,18 @@ mod tests {
                 &small_example(100_000, 96, 64).to_rsb(),
                 "k",
                 "w",
+                None,
             )
             .unwrap();
         view.wait_newer(0, Duration::from_secs(60));
         let render = engine
-            .submit(Kind::Final, &small_example(64, 96, 64).to_rsb(), "", "")
+            .submit(
+                Kind::Final,
+                &small_example(64, 96, 64).to_rsb(),
+                "",
+                "",
+                None,
+            )
             .unwrap();
         // While the final job runs, the viewport stops taking tiles.
         let deadline = Instant::now() + Duration::from_secs(60);
@@ -868,10 +980,18 @@ mod tests {
                 &small_example(100_000, 96, 64).to_rsb(),
                 "",
                 "",
+                None,
             )
             .unwrap();
+        long.wait_newer(0, Duration::from_secs(60)); // it has the gate
         let queued = engine
-            .submit(Kind::Final, &small_example(4, 96, 64).to_rsb(), "", "")
+            .submit(
+                Kind::Final,
+                &small_example(4, 96, 64).to_rsb(),
+                "",
+                "",
+                None,
+            )
             .unwrap();
         engine.cancel(queued.id);
         let q = wait_done(&queued);
@@ -886,11 +1006,107 @@ mod tests {
         let engine = Engine::new(2);
         let mut scene = small_example(1_000_000, 64, 48);
         scene.render.max_seconds = 0.3;
-        let job = engine.submit(Kind::Final, &scene.to_rsb(), "", "").unwrap();
+        let job = engine
+            .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+            .unwrap();
         let f = wait_done(&job);
         assert_eq!(f.flags & FLAG_DONE, FLAG_DONE);
         assert!(f.samples > 0 && f.samples < 1_000_000);
         assert!(f.sums.chunks_exact(4).all(|px| px[3] == f.samples as f32));
+    }
+
+    #[test]
+    fn finish_by_samples_time_or_first() {
+        // The pass schedule and the stop rule are the page's (`tiles.ts`, `schedule.ts`).
+        assert_eq!(next_pass(0, 0, 5), Some(1));
+        assert_eq!(next_pass(1, 1, 5), Some(2));
+        assert_eq!(next_pass(3, 2, 5), Some(2));
+        assert_eq!(next_pass(5, 2, 5), None);
+        assert_eq!(next_pass(31, 16, 0), Some(16), "no sample limit");
+        assert_eq!(limits(Finish::Time, 64, 2.0), (0, Some(2000.0)));
+        assert_eq!(limits(Finish::Samples, 64, 2.0), (64, None));
+        assert_eq!(
+            limits(Finish::First, 0, 1.5),
+            (DEFAULT_SAMPLES, Some(1500.0))
+        );
+        assert_eq!(Finish::default_for(0.0), Finish::Samples);
+        assert_eq!(Finish::default_for(3.0), Finish::First);
+        assert!(
+            !stop_for_time(0, 5000.0, Some(1000.0), Some(1.0), 1),
+            "the first pass always runs"
+        );
+        assert!(
+            stop_for_time(3, 1000.0, Some(1000.0), None, 4),
+            "at the limit"
+        );
+        assert!(
+            !stop_for_time(3, 900.0, Some(1000.0), Some(40.0), 4),
+            "half the pass fits"
+        );
+        assert!(
+            stop_for_time(3, 900.0, Some(1000.0), Some(60.0), 4),
+            "less than half fits"
+        );
+        assert!(!stop_for_time(3, 1e9, None, Some(1.0), 4), "no time limit");
+
+        let engine = Engine::new(2);
+        // By samples: the time limit does not count.
+        let mut scene = small_example(6, 32, 24);
+        scene.render.max_seconds = 0.000_001;
+        let f = wait_done(
+            &engine
+                .submit(Kind::Final, &scene.to_rsb(), "", "", Some(Finish::Samples))
+                .unwrap(),
+        );
+        assert_eq!(f.samples, 6);
+        // By time: the sample count does not count (a few samples would be over at once).
+        scene.render.max_seconds = 0.4;
+        let job = engine
+            .submit(Kind::Final, &scene.to_rsb(), "", "", Some(Finish::Time))
+            .unwrap();
+        assert_eq!(job.max_samples, 0);
+        let f = wait_done(&job);
+        assert!(f.samples > 6, "{} samples in 0.4 s", f.samples);
+        assert!(f.seconds >= 0.2 && f.seconds < 5.0, "{} s", f.seconds);
+        // Whichever first: here the samples.
+        let f = wait_done(
+            &engine
+                .submit(Kind::Final, &scene.to_rsb(), "", "", Some(Finish::First))
+                .unwrap(),
+        );
+        assert_eq!(f.samples, 6);
+    }
+
+    #[test]
+    fn a_queued_final_does_not_spend_its_time_waiting() {
+        let engine = Engine::new(2);
+        let long = engine
+            .submit(
+                Kind::Final,
+                &small_example(100_000, 64, 48).to_rsb(),
+                "",
+                "",
+                None,
+            )
+            .unwrap();
+        long.wait_newer(0, Duration::from_secs(60)); // it has the gate
+        let mut scene = small_example(1_000_000, 32, 24);
+        scene.render.max_seconds = 0.3;
+        let timed = engine
+            .submit(Kind::Final, &scene.to_rsb(), "", "", Some(Finish::Time))
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(600));
+        assert_eq!(timed.frame().pass, 0, "still waiting for the first final");
+        assert_eq!(timed.frame().seconds, 0.0, "its clock has not started");
+        engine.cancel(long.id);
+        let f = wait_done(&timed);
+        // With the wait on its clock it would stop after the first pass (one sample).
+        assert!(
+            f.samples >= 16,
+            "{} samples: it rendered for its own 0.3 s after the wait",
+            f.samples
+        );
+        assert!(f.seconds < 2.0, "{} s", f.seconds);
     }
 
     /// Drops the MESH sections of an RSB file.

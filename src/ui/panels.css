@@ -556,34 +556,6 @@
 }
 
 /* Queue drawer ---------------------------------------------------------------------- */
-.queue {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-.queue-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 var(--pad);
-  border-bottom: 1px solid var(--line);
-}
-.queue-list {
-  flex: 1;
-  overflow-y: auto;
-}
-.queue-row {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 0.8fr 0.9fr 1.2fr 28px;
-  gap: 8px;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 var(--pad);
-  border-bottom: 1px solid var(--line);
-  font-variant-numeric: tabular-nums;
-}
-
 /* Doctor ------------------------------------------------------------------------------ */
 .doctor-btn {
   display: inline-flex;

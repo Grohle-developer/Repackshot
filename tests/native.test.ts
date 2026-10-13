@@ -196,7 +196,7 @@ describe('NativeEngine render', () => {
     engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
     const progress: number[] = [];
     const px = await engine.renderPixels({ width, height, maxSamples: 2, maxSeconds: 0, transparent: false, onProgress: (p) => progress.push(p.progress) });
-    expect(posted[0]).toMatch(/^\/api\/render\?kind=final&mesh=[0-9a-f]+&client=[0-9a-f]+$/);
+    expect(posted[0]).toMatch(/^\/api\/render\?kind=final&finish=samples&mesh=[0-9a-f]+&client=[0-9a-f]+$/);
     expect(px.samples).toBe(2);
     expect(Array.from(px.data)).toEqual(Array.from(exactBytes(sums, 2, 0, 1)));
     expect(progress[0]).toBe(0);
@@ -204,6 +204,50 @@ describe('NativeEngine render', () => {
     const st = engine.status();
     expect(st).toMatchObject({ native: true, threads: 8, isa: 'avx2', workers: 8, simd: true });
     expect(st.device).toBe('native · 8 threads · avx2');
+  });
+
+  it('finishes by time natively, keeps the linear sums and cancels through the signal', async () => {
+    const width = 2;
+    const height = 2;
+    const sums = new Float32Array(width * height * 4).fill(3);
+    const calls: string[] = [];
+    let polls = 0;
+    const abort = new AbortController();
+    const transport = {
+      async request(path: string, init: RequestInit = {}) {
+        calls.push(`${init.method ?? 'GET'} ${path}`);
+        if (init.method === 'POST') return new Response(JSON.stringify({ id: 9 }));
+        if (init.method === 'DELETE') return new Response(null, { status: 204 });
+        if (path.includes('data=0') && polls < 0) {
+          // A long-poll with nothing new yet: the page aborts meanwhile.
+          await new Promise((r) => setTimeout(r, 20));
+          return new Response(frame({ pass: 0, samples: 0, width, height, flags: 0 }));
+        }
+        if (path.includes('data=0')) {
+          polls++;
+          // 1.5 s of a 3 s budget: half way by time, whatever the samples.
+          return new Response(frame({ pass: polls, samples: polls * 2, width, height, seconds: 1.5 * polls, flags: polls >= 2 ? FLAG_DONE : 0 }));
+        }
+        return new Response(frame({ pass: 2, samples: 4, width, height, seconds: 3, flags: FLAG_DONE | FLAG_DATA, sums }));
+      },
+    };
+    const source = { build: () => ({ meshKey: 'm', bytes: () => new Uint8Array([1]) }), tone: () => ({ exposureEv: 0.5, tonemap: 2 }) };
+    const engine = new NativeEngine(transport, source, { threads: 4, isa: 'sse2' });
+    engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+    const progress: number[] = [];
+    const px = await engine.renderPixels({ width, height, maxSamples: 1000, maxSeconds: 3, finishBy: 'TIME', transparent: false, keepLinear: true, onProgress: (p) => progress.push(p.progress) });
+    expect(calls[0]).toMatch(/^POST \/api\/render\?kind=final&finish=time&mesh=/);
+    expect(progress[1]).toBeCloseTo(0.5);
+    expect(px).toMatchObject({ samples: 4, exposureEv: 0.5, tonemap: 2 });
+    expect(Array.from(px.sum!)).toEqual(Array.from(sums));
+    expect(Array.from(px.data)).toEqual(Array.from(exactBytes(sums, 4, 0.5, 2)));
+    // Abort while it runs: the launcher is told to stop the job.
+    polls = -100;
+    const pending = engine.renderPixels({ width, height, maxSamples: 8, maxSeconds: 0, transparent: false, signal: abort.signal });
+    await new Promise((r) => setTimeout(r, 0));
+    abort.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(calls).toContain('DELETE /api/render/9');
   });
 
   it('turns a refused render into an error', async () => {

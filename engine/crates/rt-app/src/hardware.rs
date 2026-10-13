@@ -22,7 +22,7 @@ use std::time::Duration;
 
 /// Bytes in a GiB.
 pub const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
-/// Dedicated VRAM from which the GPU is the default device.
+/// Dedicated VRAM (effective GiB, as the rule reads it) from which the GPU is the default device.
 pub const GPU_MIN_GIB: f64 = 4.0;
 
 /// A graphics adapter.
@@ -99,8 +99,8 @@ impl Device {
 /// The hardware, the device and what the rule says for it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Assessment {
-    /// Where the AI would run: the GPU if one has at least [`GPU_MIN_GIB`] of dedicated VRAM,
-    /// else the CPU, unless forced.
+    /// Where the AI would run: the GPU if one has at least [`GPU_MIN_GIB`] of dedicated VRAM
+    /// (effective GiB), else the CPU, unless forced.
     pub device: Device,
     /// A GPU with known VRAM was found (so the choice GPU / CPU makes sense).
     pub gpu_found: bool,
@@ -114,11 +114,13 @@ pub struct Assessment {
 pub fn assess(hw: &Hardware, forced: Option<Device>, catalogue: &Catalogue) -> Assessment {
     let best = hw.best_gpu();
     let gpu_gib = best.and_then(|g| g.vram_bytes).map(|b| b as f64 / GIB);
-    let device = forced.unwrap_or(if gpu_gib.is_some_and(|v| v >= GPU_MIN_GIB) {
-        Device::Gpu
-    } else {
-        Device::Cpu
-    });
+    let device = forced.unwrap_or(
+        if gpu_gib.is_some_and(|v| recommend::effective_gib(v) >= GPU_MIN_GIB) {
+            Device::Gpu
+        } else {
+            Device::Cpu
+        },
+    );
     let input = match device {
         Device::Gpu => gpu_gib.map(|vram_gib| Input::Gpu { vram_gib }),
         Device::Cpu => hw.ram().map(|b| Input::Cpu {

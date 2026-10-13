@@ -4,14 +4,13 @@
 // download) live outside and subscribe.
 
 import type { Label, Lang, RGBA, StudioPreset } from '../data/types';
-import { QUALITY_PRESETS } from '../data/quality';
 import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
 import { buildStudio, lightsFromRig, reduceStudio, type CustomSetup, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
 import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialInstance } from './materials';
-import { reduceRender, type OutputFormat, type RenderAction, type RenderJob, type RenderProgress, type RenderQuality } from './render';
+import { carryRuntime, defaultRenderState, reduceRender, type RenderAction, type RenderState } from './render';
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
 import { reduceTransform, type TransformAction } from './transform';
 
@@ -80,17 +79,8 @@ export interface ProjectState {
   camera: { active: CameraId; cameras: Record<CameraId, CameraState> };
   image: ImageState;
   animation: { shots: Shot[]; clips: MotionClip[]; fps: number; playhead: number; playing: boolean };
-  render: {
-    quality: RenderQuality;
-    width: number;
-    height: number;
-    maxSamples: number;
-    maxSeconds: number;
-    format: OutputFormat;
-    transparent: boolean;
-    queue: RenderJob[];
-    running: RenderProgress | null;
-  };
+  /** The render window's settings, the queue and the job in flight (core/render.ts). */
+  render: RenderState;
   doctor: { results: DoctorResult[]; stamp: number };
 }
 
@@ -98,7 +88,11 @@ export type MetaAction =
   | ({ type: 'meta/rename'; name: string } & ActionBase)
   | ({ type: 'meta/lang'; lang: Lang } & ActionBase)
   | ({ type: 'meta/theme'; theme: ThemeSetting } & ActionBase)
-  | ({ type: 'meta/saved' } & ActionBase);
+  /**
+   * The project was written to a file. `revision` is the store's revision when the file's content was taken
+   * (default: now): changes made while the file was being written leave the project dirty.
+   */
+  | ({ type: 'meta/saved'; revision?: number } & ActionBase);
 
 export type EnvironmentAction = { type: 'env/set'; patch: Partial<EnvironmentState> } & ActionBase;
 export type ImageAction = { type: 'image/set'; patch: Partial<ImageState> } & ActionBase;
@@ -126,7 +120,8 @@ export type ActionType = Action['type'];
 /**
  * Actions that change interface state, not the project: they are not undone,
  * do not mark the project dirty and do not enter the history
- * (ARCHITECTURE §4: language, theme, playhead; also selection and the queue).
+ * (ARCHITECTURE §4: language, theme, playhead; also selection, and what a
+ * running render job reports). Queue edits are project state (U5): undoable.
  */
 export const VOLATILE_ACTIONS: ReadonlySet<ActionType> = new Set<ActionType>([
   'scene/select',
@@ -137,10 +132,7 @@ export const VOLATILE_ACTIONS: ReadonlySet<ActionType> = new Set<ActionType>([
   'meta/saved',
   'anim/playhead',
   'anim/play',
-  'render/enqueue',
   'render/job',
-  'render/removeJob',
-  'render/clearQueue',
   'render/running',
   'history/undo',
   'history/redo',
@@ -188,17 +180,7 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
     camera: { active: 'cam1', cameras: { cam1: makeCamera('cam1', '', partSizeMm) } },
     image: { exposureEv: 0, viewTransform: 'FILMIC', bloom: 0, sharpen: 0, saturation: 0, contrast: 0, vignette: 0 },
     animation: { shots: [], clips: [], fps: 24, playhead: 0, playing: false },
-    render: {
-      quality: 'PREVIEW',
-      width: 1920,
-      height: 1080,
-      maxSamples: QUALITY_PRESETS.PREVIEW.samples,
-      maxSeconds: 120,
-      format: 'PNG',
-      transparent: false,
-      queue: [],
-      running: null,
-    },
+    render: defaultRenderState(),
     doctor: { results: [], stamp: 0 },
   };
   const built = buildStudio(base);
@@ -300,34 +282,48 @@ export interface Store {
   history(): { undo: string[]; redo: string[] };
   /** Groups several dispatches into one undo entry. */
   transaction(label: ActionLabel, fn: () => void): void;
-  /** Replaces the whole state (New, Open) and clears the history. */
+  /**
+   * Replaces the whole state (New, Open) and clears the history. The state is the new saved baseline: the
+   * project is clean (`meta.dirty` false) and its revision is a new one.
+   */
   reset(state: ProjectState): void;
+  /**
+   * The revision of the project: a number that changes with every undoable change and that comes back to an
+   * earlier value when undo or redo returns to that state. `meta.dirty` is `revision() !== the revision of the
+   * last save or load` (a counter, never a comparison of states).
+   */
+  revision(): number;
 }
 
 interface HistoryEntry {
   state: ProjectState;
   label: ActionLabel;
   gesture?: string;
+  /** The revision of `state`. */
+  rev: number;
 }
 
 /** How many undo steps are kept. */
 export const HISTORY_LIMIT = 200;
 
-/** Keeps the interface-only parts of `current` when jumping to a snapshot. */
-function carryVolatile(snapshot: ProjectState, current: ProjectState): ProjectState {
+/** Keeps the interface-only parts of `current` when jumping to a snapshot; `dirty` is the jump's own. */
+function carryVolatile(snapshot: ProjectState, current: ProjectState, dirty: boolean): ProjectState {
   const meta =
-    snapshot.meta.lang === current.meta.lang && snapshot.meta.theme === current.meta.theme && snapshot.meta.dirty
+    snapshot.meta.lang === current.meta.lang && snapshot.meta.theme === current.meta.theme && snapshot.meta.dirty === dirty
       ? snapshot.meta
-      : { ...snapshot.meta, lang: current.meta.lang, theme: current.meta.theme, dirty: true };
+      : { ...snapshot.meta, lang: current.meta.lang, theme: current.meta.theme, dirty };
   const anim =
     snapshot.animation.playhead === current.animation.playhead && snapshot.animation.playing === current.animation.playing
       ? snapshot.animation
       : { ...snapshot.animation, playhead: current.animation.playhead, playing: current.animation.playing };
-  const render =
-    snapshot.render.queue === current.render.queue && snapshot.render.running === current.render.running
-      ? snapshot.render
-      : { ...snapshot.render, queue: current.render.queue, running: current.render.running };
+  // The queue's edits come back with the snapshot; what running jobs reported stays (core/render.ts).
+  const render = carryRuntime(snapshot.render, current.render);
   return cleanSelection({ ...snapshot, meta, animation: anim, render, selection: current.selection });
+}
+
+/** The same state with `meta.dirty` set (the same object when it already is). */
+function withDirty(state: ProjectState, dirty: boolean): ProjectState {
+  return state.meta.dirty === dirty ? state : { ...state, meta: { ...state.meta, dirty } };
 }
 
 export function createStore(initial: ProjectState = createInitialState()): Store {
@@ -337,7 +333,15 @@ export function createStore(initial: ProjectState = createInitialState()): Store
   let lastGesture: string | null = null;
   let txDepth = 0;
   let txBefore: ProjectState | null = null;
+  let txBeforeRev = 0;
   let txHistoric = false;
+  // Revisions (never a deep comparison): every undoable change gets a number nobody had, history entries
+  // remember the revision of their snapshot, and the project is clean exactly when the current revision is
+  // the one of the last save or load. Undoing back to the saved state makes it clean again.
+  let lastRev = 0;
+  let rev = 0;
+  let savedRev = 0;
+  state = withDirty(state, false);
   const listeners = new Set<Listener>();
   const queue: Action[] = [];
   let notifying = false;
@@ -359,20 +363,30 @@ export function createStore(initial: ProjectState = createInitialState()): Store
 
   const apply = (action: Action): void => {
     const prev = state;
+    if (action.type === 'meta/saved') {
+      // The file holds the project as it was at `revision`; anything changed since is not in it.
+      savedRev = action.revision ?? rev;
+      const dirty = rev !== savedRev;
+      if (prev.meta.dirty === dirty) return;
+      state = withDirty(prev, dirty);
+      notify(state, prev, action);
+      return;
+    }
     let next = reduce(prev, action);
     if (next === prev) return;
     const volatile = isVolatile(action);
     if (!volatile) {
-      if (!next.meta.dirty) next = { ...next, meta: { ...next.meta, dirty: true } };
       const label = action.label ?? action.type;
       if (txDepth > 0) {
         txHistoric = true;
       } else if (action.gesture && lastGesture === action.gesture && past.length > 0) {
         future = [];
       } else {
-        push({ state: prev, label, gesture: action.gesture });
+        push({ state: prev, label, gesture: action.gesture, rev });
       }
       lastGesture = txDepth > 0 ? null : (action.gesture ?? null);
+      rev = ++lastRev;
+      next = withDirty(next, true);
     }
     state = next;
     notify(next, prev, action);
@@ -396,8 +410,9 @@ export function createStore(initial: ProjectState = createInitialState()): Store
       const entry = past.pop();
       if (!entry) return;
       const prev = state;
-      future.push({ state: prev, label: entry.label });
-      state = carryVolatile(entry.state, prev);
+      future.push({ state: prev, label: entry.label, rev });
+      rev = entry.rev;
+      state = carryVolatile(entry.state, prev, rev !== savedRev);
       lastGesture = null;
       notify(state, prev, { type: 'history/undo', label: entry.label });
     },
@@ -405,8 +420,9 @@ export function createStore(initial: ProjectState = createInitialState()): Store
       const entry = future.pop();
       if (!entry) return;
       const prev = state;
-      past.push({ state: prev, label: entry.label });
-      state = carryVolatile(entry.state, prev);
+      past.push({ state: prev, label: entry.label, rev });
+      rev = entry.rev;
+      state = carryVolatile(entry.state, prev, rev !== savedRev);
       lastGesture = null;
       notify(state, prev, { type: 'history/redo', label: entry.label });
     },
@@ -420,6 +436,7 @@ export function createStore(initial: ProjectState = createInitialState()): Store
     transaction(label, fn) {
       if (txDepth === 0) {
         txBefore = state;
+        txBeforeRev = rev;
         txHistoric = false;
       }
       txDepth++;
@@ -429,7 +446,7 @@ export function createStore(initial: ProjectState = createInitialState()): Store
         txDepth--;
         if (txDepth === 0) {
           const committed = txHistoric && txBefore !== null && txBefore !== state;
-          if (committed) push({ state: txBefore!, label });
+          if (committed) push({ state: txBefore!, label, rev: txBeforeRev });
           txBefore = null;
           txHistoric = false;
           lastGesture = null;
@@ -440,12 +457,15 @@ export function createStore(initial: ProjectState = createInitialState()): Store
     },
     reset(next) {
       const prev = state;
-      state = next;
+      rev = ++lastRev;
+      savedRev = rev;
+      state = withDirty(next, false);
       past = [];
       future = [];
       lastGesture = null;
       notify(state, prev, { type: 'history/reset' });
     },
+    revision: () => rev,
   };
   return store;
 }

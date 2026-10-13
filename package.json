@@ -25,6 +25,7 @@
     "release": "node packaging/release.mjs"
   },
   "dependencies": {
+    "occt-import-js": "0.0.23",
     "rhino3dm": "8.35.0",
     "three": "^0.186.1"
   },

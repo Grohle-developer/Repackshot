@@ -20,7 +20,7 @@ use crate::http::{read_request, write_response, Body, ReadError, Request, Respon
 use crate::json::{self, Value};
 use crate::models::{Store, StoreError};
 use crate::paths::Paths;
-use crate::render::{Engine, Kind, SubmitError};
+use crate::render::{Engine, Finish, Kind, SubmitError};
 use crate::static_files;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -313,9 +313,16 @@ impl App {
         if body.read_to_end(&mut rsb).is_err() || rsb.len() as u64 != req.content_length {
             return Response::error(400, "bad-body", "short body");
         }
+        let finish = match req.query("finish") {
+            None => None,
+            Some(f) => match Finish::parse(f) {
+                Some(f) => Some(f),
+                None => return Response::error(400, "bad-query", "finish=samples|time|first"),
+            },
+        };
         let mesh = req.query("mesh").unwrap_or("");
         let client = req.query("client").unwrap_or("");
-        match self.engine.submit(kind, &rsb, mesh, client) {
+        match self.engine.submit(kind, &rsb, mesh, client, finish) {
             Ok(job) => Response::json(
                 200,
                 json::Object::new()

@@ -14,14 +14,19 @@
 // geometry is the same: the launcher keeps it), which replaces the previous
 // one, and long-polls its passes. During camera gestures it renders at ½ or ¼
 // of the viewport, as the pool does. Render: a final job, which pauses the
-// viewport's while it runs; progress from headers only, the sums once at the
-// end, converted to 8 bits exactly in slices.
+// viewport's while it runs. It finishes by samples, by time or whichever comes
+// first (`finish=`): the launcher stops between passes with the rule of
+// schedule.ts `runPasses`, so the end lands as the pool's does. Progress comes
+// from headers (schedule.ts `budgetProgress`), the sums once at the end; they
+// are converted to 8 bits exactly in slices and, with `keepLinear`, handed
+// back for 16-bit PNG and EXR. Aborting the signal cancels the job.
 
 import type { CameraState } from '../core/camera';
-import type { RenderProgress } from '../core/render';
+import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { EngineStatus, PickHit, RenderOptions } from './engine';
 import { QUIET_MS, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
+import { abortError, budgetProgress, type PassBudget } from './schedule';
 import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
 import { DisplayCurve } from './tonemap';
 
@@ -296,8 +301,9 @@ export class NativeEngine {
   }
 
   /** Posts a job; a viewport update the launcher cannot apply (409) is sent again whole. */
-  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, meshKey: string, whole?: () => Uint8Array): Promise<number> {
-    const path = `/api/render?kind=${kind}&mesh=${meshKeyHash(meshKey)}&client=${this.client}`;
+  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, meshKey: string, whole?: () => Uint8Array, finishBy?: FinishBy): Promise<number> {
+    const finish = finishBy ? `&finish=${finishBy.toLowerCase()}` : '';
+    const path = `/api/render?kind=${kind}${finish}&mesh=${meshKeyHash(meshKey)}&client=${this.client}`;
     const send = (body: Uint8Array) => this.api.request(path, { method: 'POST', body: body as Uint8Array<ArrayBuffer>, headers: { 'Content-Type': 'application/octet-stream' } });
     let res = await send(bytes);
     if (res.status === 409 && whole) res = await send(whole());
@@ -455,6 +461,7 @@ export class NativeEngine {
       frames: this.frames,
       ...(this.lastFrameMs !== null ? { frameMs: this.lastFrameMs } : {}),
       rendering: this.rendering > 0 || (job?.paused ?? false),
+      ...(full ? { pixels: job.acc.width * job.acc.height } : {}),
     };
   }
 
@@ -474,35 +481,43 @@ export class NativeEngine {
     const state = this.state;
     if (!state) throw new Error('engine not ready');
     const signal = opts.signal;
-    const aborted = () => new DOMException('aborted', 'AbortError');
-    if (signal?.aborted) throw aborted();
+    if (signal?.aborted) throw abortError();
     this.rendering++;
     let id: number | null = null;
-    const onAbort = () => {
+    const cancel = () => {
       if (id !== null) void this.api.request(`/api/render/${id}`, { method: 'DELETE' }).catch(() => undefined);
     };
-    signal?.addEventListener('abort', onAbort);
+    signal?.addEventListener('abort', cancel);
     try {
-      const view: TracerView = { width: opts.width, height: opts.height, maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds, transparent: opts.transparent, ...(opts.camera ? { camera: opts.camera } : {}) };
+      const view: TracerView = {
+        width: opts.width,
+        height: opts.height,
+        maxSamples: opts.maxSamples,
+        maxSeconds: opts.maxSeconds,
+        transparent: opts.transparent,
+        ...(opts.camera ? { camera: opts.camera } : {}),
+        ...(opts.time !== undefined ? { time: opts.time } : {}),
+        ...(opts.advanced ? { advanced: opts.advanced } : {}),
+      };
       const built = this.source.build(state, view);
+      // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
+      const budget: PassBudget = { finishBy: opts.finishBy ?? (opts.maxSeconds > 0 ? 'FIRST' : 'SAMPLES'), maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds };
       opts.onProgress?.({ jobId: null, progress: 0, samples: 0, seconds: 0 });
-      id = await this.post('final', built.bytes(true), built.meshKey);
+      id = await this.post('final', built.bytes(true), built.meshKey, undefined, budget.finishBy);
       if (signal?.aborted) {
-        onAbort();
-        throw aborted();
+        cancel();
+        throw abortError();
       }
-      const max = Math.max(1, Math.round(opts.maxSamples));
       let pass = 0;
       for (;;) {
         const res = await this.api.request(`/api/render/${id}?after=${pass}&data=0`);
-        if (signal?.aborted) throw aborted();
+        if (signal?.aborted) throw abortError();
         if (!res.ok) throw new Error(res.status === 404 ? 'the render was interrupted' : await failureText(res));
         const f = parseFrame(await res.arrayBuffer());
         pass = f.pass;
-        const byTime = opts.maxSeconds > 0 ? f.seconds / opts.maxSeconds : 0;
-        const progress: RenderProgress = { jobId: null, progress: Math.min(0.99, Math.max(f.samples / max, byTime)), samples: f.samples, seconds: f.seconds };
+        const progress: RenderProgress = { jobId: null, progress: budgetProgress(budget, f.samples, f.seconds * 1000), samples: f.samples, seconds: f.seconds };
         opts.onProgress?.(progress);
-        if (f.flags & FLAG_CANCELLED) throw signal?.aborted ? aborted() : new Error('the render was interrupted');
+        if (f.flags & FLAG_CANCELLED) throw signal?.aborted ? abortError() : new Error('the render was interrupted');
         if (f.flags & FLAG_FAILED) throw new Error('the render failed');
         if (f.flags & FLAG_DONE) break;
       }
@@ -514,9 +529,19 @@ export class NativeEngine {
       const tone = this.source.tone(state);
       const data = await exactBytesSliced(f.sums, f.width, f.height, f.samples, tone.exposureEv, tone.tonemap);
       opts.onProgress?.({ jobId: null, progress: 1, samples: f.samples, seconds: f.seconds });
-      return { width: f.width, height: f.height, data, samples: f.samples, seconds: f.seconds };
+      return {
+        width: f.width,
+        height: f.height,
+        data,
+        samples: f.samples,
+        seconds: f.seconds,
+        exposureEv: tone.exposureEv,
+        tonemap: tone.tonemap,
+        // The same f32 sums the pool keeps: 16-bit PNG and EXR are written from them.
+        ...(opts.keepLinear ? { sum: f.sums } : {}),
+      };
     } finally {
-      signal?.removeEventListener('abort', onAbort);
+      signal?.removeEventListener('abort', cancel);
       this.rendering--;
     }
   }

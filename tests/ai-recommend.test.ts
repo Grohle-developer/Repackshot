@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { recommend, type RecommendInput } from '../src/core/ai-recommend';
+import { effectiveGiB, MEMORY_REPORTING_FACTOR, recommend, type RecommendInput } from '../src/core/ai-recommend';
 import { AI_MODELS, aiModel } from '../src/data/ai-models';
 import CASES_JSON from './fixtures/ai-recommend-cases.json';
 
@@ -14,11 +14,20 @@ interface Case {
 const CASES = CASES_JSON as unknown as Case[];
 
 describe('AI model recommendation (AI-POST §2.4)', () => {
-  it('has cases on both sides of every boundary of the table', () => {
-    const values = new Set(CASES.map((c) => (c.input && 'vramGiB' in c.input ? `gpu:${c.input.vramGiB}` : c.input && 'ramGiB' in c.input ? `cpu:${c.input.ramGiB}` : '')));
-    for (const b of [24, 12, 6, 4]) expect(values.has(`gpu:${b}`) && values.has(`gpu:${b - 0.01}`)).toBe(true);
-    for (const b of [32, 16, 8]) expect(values.has(`cpu:${b}`) && values.has(`cpu:${b - 0.01}`)).toBe(true);
+  it('has cases on both sides of every boundary of the table, in effective GiB', () => {
+    const effective = (dev: 'gpu' | 'cpu') =>
+      CASES.flatMap((c) => (c.input && c.input.device === dev ? [effectiveGiB((dev === 'gpu' ? (c.input as { vramGiB: number }).vramGiB : (c.input as { ramGiB: number }).ramGiB) as number)] : [])).filter((v) => Number.isFinite(v));
+    const around = (values: number[], b: number) => values.some((v) => v < b && v > b - 0.05) && values.some((v) => v >= b && v < b + 0.05);
+    for (const b of [24, 12, 6, 4]) expect(around(effective('gpu'), b), `gpu ${b}`).toBe(true);
+    for (const b of [32, 16, 8]) expect(around(effective('cpu'), b), `cpu ${b}`).toBe(true);
     expect(CASES.some((c) => c.input === null && c.expect === null)).toBe(true);
+  });
+
+  it('reads memory as effective GiB: measured / 0.94', () => {
+    expect(MEMORY_REPORTING_FACTOR).toBe(0.94);
+    expect(recommend({ device: 'cpu', ramGiB: 15.6 })?.rowId).toBe('cpu-16');
+    expect(recommend({ device: 'gpu', vramGiB: 11.99 })?.rowId).toBe('gpu-12');
+    expect(recommend({ device: 'gpu', vramGiB: 5.5 })?.rowId).toBe('gpu-4');
   });
 
   for (const c of CASES) {
