@@ -20,7 +20,7 @@ use crate::http::{read_request, write_response, Body, ReadError, Request, Respon
 use crate::json::{self, Value};
 use crate::models::{Store, StoreError};
 use crate::paths::Paths;
-use crate::render::{Engine, Finish, Kind, SubmitError};
+use crate::render::{has_meshes, Engine, Finish, Kind, SubmitError};
 use crate::static_files;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -322,7 +322,12 @@ impl App {
         };
         let mesh = req.query("mesh").unwrap_or("");
         let client = req.query("client").unwrap_or("");
-        match self.engine.submit(kind, &rsb, mesh, client, finish) {
+        // `full=1`: the body is the complete scene even without `MESH` sections (an empty project).
+        let whole = req.query("full") == Some("1") || has_meshes(&rsb);
+        match self
+            .engine
+            .submit_scene(kind, &rsb, whole, mesh, client, finish)
+        {
             Ok(job) => Response::json(
                 200,
                 json::Object::new()

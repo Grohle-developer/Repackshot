@@ -196,7 +196,7 @@ describe('NativeEngine render', () => {
     engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
     const progress: number[] = [];
     const px = await engine.renderPixels({ width, height, maxSamples: 2, maxSeconds: 0, transparent: false, onProgress: (p) => progress.push(p.progress) });
-    expect(posted[0]).toMatch(/^\/api\/render\?kind=final&finish=samples&mesh=[0-9a-f]+&client=[0-9a-f]+$/);
+    expect(posted[0]).toMatch(/^\/api\/render\?kind=final&finish=samples&mesh=[0-9a-f]+&client=[0-9a-f]+&full=1$/);
     expect(px.samples).toBe(2);
     expect(Array.from(px.data)).toEqual(Array.from(exactBytes(sums, 2, 0, 1)));
     expect(progress[0]).toBe(0);
@@ -300,6 +300,69 @@ describe('NativeEngine render', () => {
       const other = createInitialState({ lang: 'en', theme: 'light' });
       await engine.renderPixels({ state: other, width: 4, height: 3, maxSamples: 1, maxSeconds: 0, transparent: false }).catch(() => undefined);
       expect(states.at(-1)).toBe(other);
+    } finally {
+      if (hadDocument) g.document = saved;
+      else delete g.document;
+    }
+  });
+
+  it('marks every whole scene full=1, so a project without meshes is not taken for an update', async () => {
+    const g = globalThis as { document?: unknown };
+    const hadDocument = 'document' in g;
+    const saved = g.document;
+    g.document = { createElement: () => ({ getContext: () => null }) };
+    try {
+      const posted: { path: string; bytes: number }[] = [];
+      let refuseUpdates = false;
+      const transport = {
+        async request(path: string, init: RequestInit = {}) {
+          if (init.method === 'POST') {
+            const bytes = (init.body as Uint8Array).length;
+            posted.push({ path, bytes });
+            // The launcher: an update (no full=1) of a scene it did not load is refused.
+            if (refuseUpdates && !path.includes('full=1')) return new Response(JSON.stringify({ error: 'need-meshes', message: 'send the whole scene' }), { status: 409 });
+            return new Response(JSON.stringify({ id: posted.length }));
+          }
+          return new Response(frame({ pass: 1, samples: 1, width: 4, height: 3, flags: FLAG_DONE }));
+        },
+      };
+      // An empty project: no meshes, so the key is empty and the whole scene has no MESH section.
+      let camera = 1;
+      const source = {
+        build: () => ({ meshKey: '', bytes: (meshes: boolean) => new Uint8Array(meshes ? 10 : 5).fill(camera) }),
+        tone: () => ({ exposureEv: 0, tonemap: 1 }),
+      };
+      const engine = new NativeEngine(transport, source, { threads: 8, isa: 'avx2' });
+      engine.mount({ getContext: () => null, width: 0, height: 0 } as unknown as HTMLCanvasElement);
+      engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+      engine.resize(4, 3, 1);
+      engine.setActive(true);
+      engine.frame();
+      await vi.waitFor(() => expect(posted).toHaveLength(1));
+      // The first viewport job is the whole scene, even though the key (the meshes) is empty.
+      expect(posted[0].path).toMatch(/^\/api\/render\?kind=viewport&mesh=[0-9a-f]+&client=[0-9a-f]+&full=1$/);
+      expect(posted[0].bytes).toBe(10);
+      // The camera moves: an update, not marked.
+      camera = 2;
+      engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+      await new Promise((r) => setTimeout(r, 0));
+      engine.frame();
+      await vi.waitFor(() => expect(posted).toHaveLength(2));
+      expect(posted[1].path).not.toContain('full=1');
+      expect(posted[1].bytes).toBe(5);
+      // A launcher that lost the scene refuses the update: it is sent again whole, marked.
+      refuseUpdates = true;
+      camera = 3;
+      engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+      await new Promise((r) => setTimeout(r, 0));
+      engine.frame();
+      await vi.waitFor(() => expect(posted).toHaveLength(4));
+      expect(posted[2].path).not.toContain('full=1');
+      expect(posted[3].path).toContain('full=1');
+      expect(posted[3].bytes).toBe(10);
+      // Render of the empty project: a final job is always the whole scene.
+      await engine.renderPixels({ width: 4, height: 3, maxSamples: 1, maxSeconds: 0, transparent: false }).catch(() => undefined);
+      expect(posted.at(-1)?.path).toMatch(/kind=final&.*&full=1$/);
     } finally {
       if (hadDocument) g.document = saved;
       else delete g.document;

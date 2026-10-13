@@ -185,6 +185,58 @@ fn a_viewport_update_without_meshes_renders_the_same_film() {
     );
 }
 
+/// The scene of an empty project (no model): the studio's lights and dome, no `MESH`, no `INST`.
+fn empty_studio() -> rt_core::scene::Scene {
+    let mut scene = rt_core::example::scene();
+    scene.geometry = rt_core::scene::Geometry::default();
+    scene.render.width = 96;
+    scene.render.height = 64;
+    scene.render.max_samples = 3;
+    scene
+}
+
+#[test]
+fn an_empty_scene_renders_through_the_api_and_equals_rt_bit_for_bit() {
+    let scene = empty_studio();
+    let rsb = scene.to_rsb();
+    assert!(
+        !rt_app::render::has_meshes(&rsb),
+        "the page writes no MESH for an empty project"
+    );
+    let reference = fnv1a(&rt_cli::render(&scene, 3, 2).film.resolve());
+    let t = TestServer::start("parity-empty", 2);
+    // Without the flag it is an update of a scene nobody loaded: refused, as before.
+    for kind in ["viewport", "final"] {
+        let r = t.api(
+            "POST",
+            &format!("/api/render?kind={kind}&mesh=e&client=w"),
+            &rsb,
+        );
+        assert_eq!((r.status, kind), (409, kind));
+        assert!(r.text().contains("need-meshes"));
+    }
+    // Marked as the whole scene, both kinds render it, to the same film as `rt`.
+    for kind in ["viewport", "final"] {
+        let f = render(&t, kind, &rsb, "&full=1&mesh=e&client=w");
+        assert_eq!((f.width, f.height, f.samples), (96, 64, 3), "{kind}");
+        assert_ne!(f.flags & FLAG_DONE, 0, "{kind} finished");
+        assert_eq!(fnv1a(&resolve(&f)), reference, "{kind}");
+        assert!(
+            resolve(&f).iter().any(|v| *v > 0.0),
+            "{kind}: the dome is lit"
+        );
+    }
+    // The camera moves in the empty project: an update without the flag, same key, is applied.
+    let mut moved = scene.clone();
+    moved.camera.position.x += 25.0;
+    let update = moved.to_rsb();
+    let f = render(&t, "viewport", &update, "&mesh=e&client=w");
+    assert_eq!(
+        fnv1a(&resolve(&f)),
+        fnv1a(&rt_cli::render(&moved, 3, 2).film.resolve())
+    );
+}
+
 #[test]
 fn cancel_and_progress_without_data() {
     let t = TestServer::start("cancel", 2);

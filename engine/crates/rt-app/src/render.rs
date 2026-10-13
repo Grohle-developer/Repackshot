@@ -581,8 +581,8 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) {
 pub enum SubmitError {
     /// The RSB is not valid.
     BadScene(String),
-    /// An update without `MESH` sections, but this client's meshes are not loaded (or are other
-    /// meshes): send the whole scene.
+    /// An update (not marked as a whole scene, and without `MESH` sections), but this client's
+    /// meshes are not loaded (or are other meshes): send the whole scene.
     NeedMeshes,
     /// Too many viewport clients.
     Busy,
@@ -700,9 +700,9 @@ impl Engine {
         lock(&self.inner.jobs).insert(job.id, Arc::clone(job));
     }
 
-    /// Starts a job from RSB bytes. `mesh_key` names the geometry (a viewport update without
-    /// meshes must name the meshes it expects); `client` tells viewport jobs of different
-    /// windows apart; `finish` is when it stops (`None`: [`Finish::default_for`] its time limit).
+    /// Starts a job from RSB bytes, taking them for a whole scene when they have a `MESH`
+    /// section and for an update otherwise (see [`Engine::submit_scene`]; a scene without meshes
+    /// has to say that it is whole).
     pub fn submit(
         &self,
         kind: Kind,
@@ -711,10 +711,28 @@ impl Engine {
         client: &str,
         finish: Option<Finish>,
     ) -> Result<Arc<Job>, SubmitError> {
+        self.submit_scene(kind, rsb, has_meshes(rsb), mesh_key, client, finish)
+    }
+
+    /// Starts a job from RSB bytes. `whole` says the bytes are the complete scene, so it is read
+    /// with `Scene::from_rsb` even when it has no `MESH` section (an empty project: a studio with
+    /// no model); otherwise they are an update of the scene this client loaded before, which a
+    /// final job never takes. `mesh_key` names the geometry (an update must name the meshes it
+    /// expects); `client` tells viewport jobs of different windows apart; `finish` is when it
+    /// stops (`None`: [`Finish::default_for`] its time limit).
+    pub fn submit_scene(
+        &self,
+        kind: Kind,
+        rsb: &[u8],
+        whole: bool,
+        mesh_key: &str,
+        client: &str,
+        finish: Option<Finish>,
+    ) -> Result<Arc<Job>, SubmitError> {
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
         match kind {
             Kind::Final => {
-                if !has_meshes(rsb) {
+                if !whole {
                     return Err(SubmitError::NeedMeshes);
                 }
                 let scene =
@@ -760,7 +778,7 @@ impl Engine {
                     lock(&self.inner.jobs).remove(&old.id);
                 }
                 slot.stop();
-                let scene = if has_meshes(rsb) {
+                let scene = if whole {
                     let scene =
                         Scene::from_rsb(rsb).map_err(|e| SubmitError::BadScene(e.to_string()))?;
                     slot.mesh_key = mesh_key.to_string();
@@ -841,6 +859,33 @@ mod tests {
         };
         no_mesh.lights.clear();
         assert!(!has_meshes(&no_mesh.to_rsb()));
+    }
+
+    #[test]
+    fn a_scene_without_meshes_renders_when_it_is_marked_whole() {
+        let mut scene = small_example(3, 24, 16);
+        scene.geometry = rt_core::scene::Geometry::default();
+        let rsb = scene.to_rsb();
+        assert!(!has_meshes(&rsb));
+        let engine = Engine::new(2);
+        // Not marked: an update of a scene nobody loaded, for both kinds.
+        for kind in [Kind::Viewport, Kind::Final] {
+            assert_eq!(
+                engine.submit(kind, &rsb, "e", "w", None).err(),
+                Some(SubmitError::NeedMeshes)
+            );
+        }
+        for kind in [Kind::Viewport, Kind::Final] {
+            let job = engine
+                .submit_scene(kind, &rsb, true, "e", "w", None)
+                .unwrap();
+            let f = wait_done(&job);
+            assert_eq!((f.samples, f.sums.len()), (3, 24 * 16 * 4));
+            assert_eq!(f.flags & FLAG_DONE, FLAG_DONE);
+        }
+        // The viewport now holds the empty scene: an update for the same key is applied.
+        let job = engine.submit(Kind::Viewport, &rsb, "e", "w", None).unwrap();
+        assert_eq!(wait_done(&job).samples, 3);
     }
 
     #[test]

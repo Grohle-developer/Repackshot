@@ -9,7 +9,7 @@ import { lightPosition, rigPivot } from '../src/core/lighting';
 import { getMesh } from '../src/core/meshes';
 import { areaLightFlux, areaLightRadiance, EMIT_RADIANCE_PER_WATT } from '../src/core/photometry';
 import { allParts, worldMatrix } from '../src/core/scene';
-import type { ProjectState } from '../src/core/store';
+import { createInitialState, type ProjectState } from '../src/core/store';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../src/data/environment';
 import {
   BACKGROUND_COLOR,
@@ -406,6 +406,23 @@ describe('project to RSB: lights', () => {
       expect(l.angleDeg).toBeGreaterThan(0.4);
       expect(l.angleDeg).toBeLessThan(1);
     }
+  });
+});
+
+describe('project to RSB: an empty project', () => {
+  it('is a whole scene with lights and a dome but no MESH and no INST, and an empty mesh key', () => {
+    const s = createInitialState({ lang: 'en', theme: 'dark' });
+    const { scene, meshKey } = projectScene(s, view(s));
+    expect(meshKey).toBe('');
+    expect(scene.meshes).toHaveLength(0);
+    const tags = sections(writeRsb(scene, { meshes: true })).map((x) => x.tag);
+    // What the native launcher cannot tell from an update unless the request says it is whole
+    // (`full=1`, tests/native.test.ts).
+    expect(tags).not.toContain('MESH');
+    expect(tags).not.toContain('INST');
+    expect(tags).toContain('CAMR');
+    expect(tags).toContain('ENVR');
+    expect(tags).toContain('RNDR');
   });
 });
 

@@ -336,13 +336,17 @@ export class NativeEngine {
     for (const fn of this.frameListeners) fn();
   }
 
-  /** Posts a job; a viewport update the launcher cannot apply (409) is sent again whole. */
-  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, meshKey: string, whole?: () => Uint8Array, finishBy?: FinishBy): Promise<number> {
+  /**
+   * Posts a job. `whole` says the bytes are the complete scene (`full=1`): the launcher then reads
+   * them as such even without a MESH section, which is what an empty project writes; otherwise a
+   * viewport update the launcher cannot apply (409) is sent again whole.
+   */
+  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, whole: boolean, meshKey: string, again?: () => Uint8Array, finishBy?: FinishBy): Promise<number> {
     const finish = finishBy ? `&finish=${finishBy.toLowerCase()}` : '';
     const path = `/api/render?kind=${kind}${finish}&mesh=${meshKeyHash(meshKey)}&client=${this.client}`;
-    const send = (body: Uint8Array) => this.api.request(path, { method: 'POST', body: body as Uint8Array<ArrayBuffer>, headers: { 'Content-Type': 'application/octet-stream' } });
-    let res = await send(bytes);
-    if (res.status === 409 && whole) res = await send(whole());
+    const send = (body: Uint8Array, full: boolean) => this.api.request(full ? `${path}&full=1` : path, { method: 'POST', body: body as Uint8Array<ArrayBuffer>, headers: { 'Content-Type': 'application/octet-stream' } });
+    let res = await send(bytes, whole);
+    if (res.status === 409 && again) res = await send(again(), true);
     if (!res.ok) throw new Error(await failureText(res));
     return ((await res.json()) as { id: number }).id;
   }
@@ -374,7 +378,7 @@ export class NativeEngine {
     this.frameInFlight = scale > 1;
     let id: number;
     try {
-      id = await this.post('viewport', meshes ? built.bytes(true) : update, built.meshKey, () => built.bytes(true), timed ? 'FIRST' : undefined);
+      id = await this.post('viewport', meshes ? built.bytes(true) : update, meshes, built.meshKey, () => built.bytes(true), timed ? 'FIRST' : undefined);
     } catch (err) {
       if (gen === this.gen) {
         this.failure = err instanceof Error ? err.message : String(err);
@@ -542,7 +546,7 @@ export class NativeEngine {
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
       const budget: PassBudget = { finishBy: opts.finishBy ?? (opts.maxSeconds > 0 ? 'FIRST' : 'SAMPLES'), maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds };
       opts.onProgress?.({ jobId: null, progress: 0, samples: 0, seconds: 0 });
-      id = await this.post('final', built.bytes(true), built.meshKey, undefined, budget.finishBy);
+      id = await this.post('final', built.bytes(true), true, built.meshKey, undefined, budget.finishBy);
       if (signal?.aborted) {
         cancel();
         throw abortError();

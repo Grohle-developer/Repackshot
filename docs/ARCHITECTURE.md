@@ -417,7 +417,10 @@ externos, sin `unsafe`). Hace cinco cosas:
    navegador por defecto. Se cierra cuando se cierra la ventana (proceso
    hijo y latido de la página). Un segundo arranque abre otra ventana del
    mismo servidor.
-3. **Motor nativo**: `POST /api/render` con el RSB renderiza con
+3. **Motor nativo**: `POST /api/render` con el RSB (y `full=1` cuando el
+   cuerpo es la escena entera aunque no traiga `MESH`, como la de un
+   proyecto vacío; sin él, un RSB sin mallas es una actualización y, si no
+   hay escena cargada, la respuesta es 409 `need-meshes`) renderiza con
    `rt-core` en todos los hilos y la página recoge las pasadas
    acumuladas; mismo RSB, misma semilla, mismos píxeles que el wasm
    (regla de determinismo), así que la interfaz no distingue más que en
