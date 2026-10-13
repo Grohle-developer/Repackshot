@@ -582,6 +582,19 @@ fn serve_connection(app: &App, stream: TcpStream) {
     }
 }
 
+/// What a server is built with besides its folders, port, token and threads. The application
+/// (`port.rs`) always takes the default; only the tests set a field, so a shipped binary never
+/// takes any of this from its data folder or its environment.
+#[derive(Default)]
+pub struct Options {
+    /// The AI runtimes' catalogue and downloader in place of the embedded catalogue and the
+    /// system's `curl` over https (`Ai::with`; the tests: a fake runtime, a local http server).
+    pub ai_runtimes: Option<(
+        crate::ai::catalogue::RuntimeCatalogue,
+        crate::ai::download::Downloader,
+    )>,
+}
+
 /// A running server.
 pub struct Server {
     /// The shared state.
@@ -592,6 +605,17 @@ pub struct Server {
 impl Server {
     /// Binds `127.0.0.1:port` (0: any free port) and serves in the background.
     pub fn start(paths: Paths, port: u16, token: String, threads: usize) -> io::Result<Server> {
+        Server::start_with(paths, port, token, threads, Options::default())
+    }
+
+    /// The same, built with `options`.
+    pub fn start_with(
+        paths: Paths,
+        port: u16,
+        token: String,
+        threads: usize,
+        options: Options,
+    ) -> io::Result<Server> {
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         let port = listener.local_addr()?.port();
         let models = Store::new(paths.models(), crate::recommend::catalogue().clone());
@@ -605,7 +629,12 @@ impl Server {
             browser: Mutex::new(None),
             dialogs: crate::dialogs::Dialogs::new(),
             files: crate::files::Files::new(&paths_data),
-            ai: crate::ai::Ai::new(&paths_data),
+            ai: match options.ai_runtimes {
+                Some((cat, downloader)) => {
+                    crate::ai::Ai::with(paths_data.join("ai"), cat, downloader)
+                }
+                None => crate::ai::Ai::new(&paths_data),
+            },
             last_alive: Mutex::new(Instant::now()),
             hardware: Mutex::new(None),
             connections: AtomicUsize::new(0),

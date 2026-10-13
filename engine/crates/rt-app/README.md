@@ -561,8 +561,11 @@ X1 parte B lo pruebe en un equipo de verdad. Un modelo importado se ejecuta con 
 | `DELETE /api/ai/run/<id>` | Cancela uno en marcha u olvida uno terminado (se guardan los 8 últimos, 10 min) |
 | `DELETE /api/ai/sidecar` | Para el servidor si nadie lo usa (204; 409 si sí) |
 
-`GET /api/info` lleva `aiApi: 1`. Solo en compilaciones de depuración (las pruebas),
-`<datos>/ai/runtimes-override.json` sustituye al catálogo incluido y admite `http://`.
+`GET /api/info` lleva `aiApi: 1`. El catálogo de compilaciones es siempre el incluido:
+nada de la carpeta de datos ni del entorno lo sustituye, en ninguna compilación. Las pruebas
+ponen el suyo (la compilación falsa, direcciones `http://` de un servidor local) con
+`server::Options { ai_runtimes }` al construir el servidor (`Server::start_with`); la
+aplicación arranca siempre con `Server::start`, que usa las opciones por defecto.
 
 ## Icono y versión del `.exe`
 

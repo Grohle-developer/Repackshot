@@ -2,16 +2,21 @@
 //! this crate that speaks stable-diffusion.cpp's command line and server protocol) and, for the
 //! downloads, the system's real `curl` against a local server.
 //!
-//! The server's data folder gets `ai/runtimes-override.json` (read by debug builds only): a
-//! catalogue whose build for this system is the fake, so nothing here touches the network.
+//! The test server is built with `server::Options` holding a catalogue whose build for this
+//! system is the fake, so nothing here touches the network. That is the only way in: nothing in
+//! the data folder replaces the embedded catalogue, in a debug or a release build (an earlier
+//! override file, read by debug builds only, let these tests pass where the shipped binary
+//! would not have run them).
 
 mod common;
 
 use common::{temp_dir, TestServer};
+use rt_app::ai::download::Downloader;
 use rt_app::ai::runtimes::{Runtimes, Source, State};
 use rt_app::ai::sidecar::Limits;
 use rt_app::ai::{b64, catalogue, png, zip};
 use rt_app::json::{self, Value};
+use rt_app::server::Options;
 use rt_app::sha256::{hex, Sha256};
 use std::io::{BufReader, BufWriter, Write};
 use std::net::TcpListener;
@@ -93,6 +98,20 @@ fn override_json(url: &str, bytes: u64, sha256: &str) -> String {
         .build()
 }
 
+/// Server options that put the catalogue `override_json` in place of the embedded one, with a
+/// downloader that may use `http://` (the local `FileServer`).
+fn with_catalogue(text: &str) -> Options {
+    Options {
+        ai_runtimes: Some((
+            catalogue::parse_runtimes_allowing_http(text).unwrap(),
+            Downloader {
+                allow_http: true,
+                ..Downloader::system()
+            },
+        )),
+    }
+}
+
 fn link_or_copy(from: &str, to: &Path) {
     if std::fs::hard_link(from, to).is_err() {
         std::fs::copy(from, to).unwrap();
@@ -140,13 +159,8 @@ fn blob(data: &Path, key: &str, role: &str, hint: &str) -> String {
 /// A server whose runtime is the fake, already installed, with these models downloaded.
 fn ready(name: &str, models: &[&str]) -> (TestServer, PathBuf, PathBuf) {
     let models: Vec<String> = models.iter().map(|s| s.to_string()).collect();
-    let t = TestServer::start_with(name, 1, |data| {
-        std::fs::create_dir_all(data.join("ai")).unwrap();
-        std::fs::write(
-            data.join("ai/runtimes-override.json"),
-            override_json("http://127.0.0.1:9/fake.zip", 1, PLACED),
-        )
-        .unwrap();
+    let options = with_catalogue(&override_json("http://127.0.0.1:9/fake.zip", 1, PLACED));
+    let t = TestServer::start_with_options(name, 1, options, |data| {
         place_fake(data);
         for m in &models {
             place_model(data, m);
@@ -812,6 +826,55 @@ fn the_status_is_an_ai_runtime_status() {
     cleanup(t);
 }
 
+/// A shipped binary takes its runtime catalogue from nowhere but itself: a catalogue file in the
+/// data folder (the name the debug-only override used to read, which let these tests pass where a
+/// release build would not have run them) changes nothing, in a debug or a release build.
+#[test]
+fn a_catalogue_in_the_data_folder_is_never_read() {
+    let t = TestServer::start_with("ai-no-override", 1, |data| {
+        std::fs::create_dir_all(data.join("ai")).unwrap();
+        std::fs::write(
+            data.join("ai/runtimes-override.json"),
+            override_json("http://127.0.0.1:9/fake.zip", 1, PLACED),
+        )
+        .unwrap();
+        place_fake(data);
+        place_model(data, "ZIMAGE_Q4");
+    });
+    let rt = t.dir.join("data/ai/runtimes").join(PLACED);
+    let st = t.json("GET", "/api/ai/runtime?device=cpu&model=ZIMAGE_Q4", b"");
+    assert_eq!(
+        st.get("available").unwrap().as_bool(),
+        Some(false),
+        "{}",
+        st.to_json()
+    );
+    let keys: Vec<String> = st
+        .get("runtimes")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r.get("key").unwrap().as_str().unwrap().to_string())
+        .collect();
+    let embedded: Vec<String> = catalogue::runtime_catalogue()
+        .runtimes
+        .iter()
+        .map(|r| r.key.clone())
+        .collect();
+    assert_eq!(keys, embedded, "{}", st.to_json());
+    assert_eq!(t.api("GET", "/api/ai/runtimes/TEST_CPU", b"").status, 404);
+    // The fake put where the override's build would be installed is never started.
+    let r = t.api(
+        "POST",
+        "/api/ai/run",
+        run_body("ZIMAGE_Q4", "p", 0.3, "").as_bytes(),
+    );
+    assert_eq!(r.status, 409, "{}", r.text());
+    assert!(!rt.join("args.log").exists());
+    cleanup(t);
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn the_server_is_stopped_when_idle_when_released_and_when_the_application_ends() {
@@ -982,9 +1045,14 @@ fn have_curl() -> bool {
     found
 }
 
-/// The fake as a release archive (one executable: the catalogue names it as server and cli).
+/// The fake as a release archive (one executable: the catalogue names it as server and cli),
+/// padded with 8 MiB of filler: the fake is several times smaller in a release build than in a
+/// debug one, and the download tests need an archive that takes a while at any build profile.
 fn fake_zip() -> Vec<u8> {
     let bin = std::fs::read(FAKE).unwrap();
+    let filler: Vec<u8> = (0..8u32 << 20)
+        .map(|i| (i.wrapping_mul(2_654_435_761) >> 24) as u8)
+        .collect();
     zip::write_stored(
         &[
             (server_name().as_str(), &bin, 0o100755),
@@ -993,6 +1061,7 @@ fn fake_zip() -> Vec<u8> {
                 b"MIT License (fake)\n",
                 0o100644,
             ),
+            ("filler.bin", &filler, 0o100644),
         ],
         false,
     )
@@ -1023,14 +1092,8 @@ fn download_pause_resume_check_unpack_and_remove() {
     let (len, digest) = (zip_bytes.len() as u64, sha(&zip_bytes));
     let files = FileServer::start(zip_bytes, Duration::from_millis(30));
     let url = files.url();
-    let t = TestServer::start_with("ai-download", 1, |data| {
-        std::fs::create_dir_all(data.join("ai")).unwrap();
-        std::fs::write(
-            data.join("ai/runtimes-override.json"),
-            override_json(&url, len, &digest),
-        )
-        .unwrap();
-    });
+    let options = with_catalogue(&override_json(&url, len, &digest));
+    let t = TestServer::start_with_options("ai-download", 1, options, |_| {});
     let root = t.dir.join("data/ai/runtimes");
     let v = t.json("GET", "/api/ai/runtimes/TEST_CPU", b"");
     assert_eq!(entry_state(&v), "missing");
@@ -1050,7 +1113,7 @@ fn download_pause_resume_check_unpack_and_remove() {
         202
     );
     let v = wait_entry(&t, "TEST_CPU", |v| {
-        v.get("done").unwrap().as_f64().unwrap() > 1e6
+        v.get("done").unwrap().as_f64().unwrap() > len as f64 / 8.0
     });
     assert_eq!(entry_state(&v), "downloading");
     assert_eq!(v.get("total").unwrap().as_f64(), Some(len as f64));
@@ -1133,14 +1196,8 @@ fn a_sha256_mismatch_never_installs() {
     let (len, digest) = (good.len() as u64, sha(&good));
     let files = FileServer::start(bad, Duration::ZERO);
     let url = files.url();
-    let t = TestServer::start_with("ai-mismatch", 1, |data| {
-        std::fs::create_dir_all(data.join("ai")).unwrap();
-        std::fs::write(
-            data.join("ai/runtimes-override.json"),
-            override_json(&url, len, &digest),
-        )
-        .unwrap();
-    });
+    let options = with_catalogue(&override_json(&url, len, &digest));
+    let t = TestServer::start_with_options("ai-mismatch", 1, options, |_| {});
     assert_eq!(
         t.api("POST", "/api/ai/runtimes/TEST_CPU/download", b"")
             .status,

@@ -1786,10 +1786,27 @@ en el primer uso: el primer trabajo enseña *Cargando*. (6) Las de edición
 (`init+ref`): construcción nuestra, sin probar. (7) `ai.gpu` (qué GPU) no
 se pasa: no hay correspondencia fiable con los índices de Vulkan; elige
 stable-diffusion.cpp. (8) Los límites (carga 30 min, imagen 60 min,
-silencio 10 min, inactividad 5 min) son de partida, para X1. (9) Solo en
-depuración, `<datos>/ai/runtimes-override.json` sustituye el catálogo
-(las pruebas). (10) *Acerca de* no lista aún stable-diffusion.cpp y ggml:
-sus textos van en la carpeta del motor y en `docs/ai-licences.md`.
+silencio 10 min, inactividad 5 min) son de partida, para X1. (9) El
+catálogo de compilaciones es siempre el incluido; las pruebas ponen el
+suyo con `server::Options` al construir el servidor, campo que la
+aplicación no rellena nunca. (10) *Acerca de* no lista aún
+stable-diffusion.cpp y ggml: sus textos van en la carpeta del motor y en
+`docs/ai-licences.md`.
+
+**Corrección tras fusionar (CI en *release*).** La primera versión leía
+`<datos>/ai/runtimes-override.json` solo en depuración, y las pruebas
+entraban por ahí. El trabajo del motor en CI también corre
+`cargo test --workspace --release`, y allí 9 de las 11 pruebas de
+`tests/ai.rs` fallaban: las pruebas eran más permisivas que el binario
+de verdad. Ahora el catálogo y el descargador de prueba entran por
+`server::Options { ai_runtimes }` (`Server::start_with`). `Ai::new` ya no
+lee nada de la carpeta de datos en ninguna compilación, y lo comprueba
+`a_catalogue_in_the_data_folder_is_never_read`, que falla si vuelve la
+lectura. Había un segundo supuesto de depuración: la prueba de pausa y
+reanudación esperaba más de 1 MB descargado, y en *release* el falso
+ocupa menos de 600 kB. El archivo lleva ahora 8 MiB de relleno y la
+pausa se pide a 1/8 del total. Se pasan las dos: `cargo test --workspace`
+y `cargo test --workspace --release`.
 
 ### X3c · La tubería completa de escritorio — **Opus**
 
