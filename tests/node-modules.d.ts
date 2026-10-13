@@ -7,7 +7,12 @@ declare module 'node:fs' {
   export function writeFileSync(path: string, data: Uint8Array | string): void;
   export function existsSync(path: string): boolean;
   export function readdirSync(path: string): string[];
+  export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
 }
+declare module 'node:path' {
+  export function join(...parts: string[]): string;
+}
+declare const process: { env: Record<string, string | undefined> };
 declare module 'node:buffer' {
   export function resolveObjectURL(url: string): Blob | undefined;
 }
