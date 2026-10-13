@@ -17,7 +17,8 @@ import { createInitialState, createStore } from './core/store';
 import { createFiles } from './io/files';
 import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { LIBRARY_STORAGE_KEY, exportLibrary, importLibrary, loadLibrary, saveLibrary } from './io/library';
-import { serializeProject } from './io/project';
+import { readProjectFile, serializeProject } from './io/project';
+import { createProjectFiles } from './io/project-file';
 import { openResultsStore } from './io/results';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { loadEngineModule, PathTracerEngine, Pool, type SceneSource } from './render/pathtracer';
@@ -246,7 +247,8 @@ const services: AppServices = {
     const { importFile } = await import('./io/import');
     return importFile(file, options);
   },
-  serializeProject,
+  project: { serialize: serializeProject, open: readProjectFile },
+  projectFiles: createProjectFiles(window as never, downloadBlob, { description: () => t('project.fileType') }),
   library: {
     export: (lib) => new Blob([exportLibrary(lib)], { type: 'application/json' }),
     import: importLibrary,

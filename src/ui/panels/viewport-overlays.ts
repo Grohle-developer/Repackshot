@@ -490,8 +490,9 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     vp.classList.remove('is-drop-target');
     if (isFile(e)) {
       e.preventDefault();
-      const files = [...(e.dataTransfer?.files ?? [])];
-      if (files.length) void cmd.importFiles(ctx, files);
+      // A project opens; models go to the import sheet.
+      const { files, handles } = cmd.readDrop(e.dataTransfer);
+      cmd.dropFiles(ctx, files, handles);
       return;
     }
     if (!isMaterial(e)) return;

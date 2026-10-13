@@ -12,7 +12,7 @@ importa de `render/` ni de `io/` (eso lo conecta `src/main.ts` mediante
 | `layout.css`, `components.css`, `panels.css` | Regiones, controles y paneles |
 | `reactive.ts` | `Scope.watch(selector, fn)`: actualizaciones finas por referencia, sin DOM virtual |
 | `ui-state.ts` | Estado de interfaz (pestañas, cajones, anchos…); lo que se recuerda va a `localStorage` con `try/catch`. Incluye `library`, la biblioteca propia (U4): estado de usuario, fuera del proyecto y de deshacer; `main.ts` la guarda con `io/library.ts` |
-| `commands.ts` | Lo que hacen botones, paleta y teclado; devuelve una confirmación en línea cuando hace falta |
+| `commands.ts` | Lo que hacen botones, paleta y teclado; devuelve una confirmación en línea cuando hace falta. Proyecto (U2): `saveProject` (con `saveAs`), `openProject`, `openProjectFile`, `requestNewProject`, `dropFiles`; preguntan por los cambios sin guardar con `ui.prompt`, que la cabecera pinta bajo el nombre del proyecto |
 | `shortcuts.ts` | El único mapa de atajos: teclado, paleta y *tooltips* |
 | `render-queue.ts` | La cola en marcha (U5): *Render* solo sus trabajos, *Iniciar cola* todos en orden, *Pausar*, detener, fotogramas de una animación, guardado y historial; siempre con el trazador (`renderFrame`) |
 | `components/` | `NumberField`, `Slider`, `Segmented`, `Toggle`, `Select`, `Section`, miniaturas, confirmación en línea, menús, *tooltip*, paleta; `library.ts`: campo de nombre en línea, tarjetas y filas de *Míos* con renombrar y eliminar, pie Exportar / Importar; `split-compare.ts`: dos imágenes cualesquiera con un divisor deslizable (U5; X3 lo reutiliza) |

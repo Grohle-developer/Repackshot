@@ -147,6 +147,9 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **I2** · STEP e IGES con occt-import-js aislado, caras CAD como rangos
   de triángulos con aristas vivas topológicas, ensamblaje, colores,
   unidades y calidad de teselado; 682 tests — **Opus**.
+- **U2** · Guardar y abrir `.repack.json` con las mallas dentro, archivo
+  recordado con File System Access, cambios sin guardar con pregunta en
+  línea, test de límites entre capas; 792 tests — **Sonnet**.
 - **U5** · Ventana de render al estilo de KeyShot con *Imagen · Animación*,
   salida por plantilla, carpeta, ppp escritos en PNG y JPEG, PNG de 16
   bits y EXR, *Terminar por* muestras o tiempo, cola deshacible, visor de
@@ -266,7 +269,7 @@ contraste y viñeta se guardan pero no se pintan (todos marcados
 `CameraState`, `Shot`, `MotionClip`, `RenderJob` en `src/core/*.ts`,
 exportados y documentados con una línea cada uno.
 
-## U2 · Proyecto en archivo y límites — **Sonnet**
+## U2 · Proyecto en archivo y límites — **Sonnet** — hecha
 
 **Qué.** `src/io/project.ts`: guardar y cargar `.repack.json` con las
 mallas embebidas (GLB en base64), `schema: 1`, y una tabla de migraciones
@@ -281,6 +284,28 @@ tiene que seguir cargando en cada versión.
 
 **Criterio.** Los tres tests en verde; *Guardar* y *Abrir* del menú
 funcionan en el navegador con descarga y `<input type="file">`.
+
+**Hecho.** `src/io/project.ts` guarda y abre `.repack.json` (`schema` 2:
+`state` y un bloque `meshes` con un GLB en base64 por malla usada, con
+`sharpEdges` y `triangleSource` al lado; `-0` conservado), con
+`glb.ts`/`base64.ts` (por trozos) y `project-file.ts` (File System Access
+con el archivo recordado: `Ctrl/⌘ S` escribe en él, `Ctrl/⌘ ⇧ S`
+pregunta, `Ctrl/⌘ O` abre; descarga e `<input>` donde no hay API; soltar
+un proyecto lo abre). Abrir valida todo antes de tocar nada, renombra los
+ids de malla que chocarían (`prjN:`), regenera la geometría del ejemplo en
+archivos antiguos y hace `store.reset` (el historial empieza de nuevo).
+El punto de cambios sin guardar sale de un contador de revisiones del
+*store* (`revision()`; deshacer hasta lo guardado lo limpia); *Nuevo* y
+*Abrir* preguntan en línea (*Guardar · No guardar · Cancelar*) y
+`beforeunload` avisa. `tests/boundaries.test.ts` (sin infracciones),
+`project.test.ts` (incluido un ensamblaje STEP de I2 guardado y reabierto
+idéntico, caras CAD y aristas vivas incluidas), `project-files.test.ts`,
+`fixtures/project-v1.json` (generado por el propio código de U1) y
+`project-v2.json`; 102 tests nuevos, unas 110 mutaciones comprobadas.
+
+No encajó con el plan: el esquema ya era 2 (U5) y no se sube; no hay
+referencia externa por ruta, solo mallas dentro; abrir no se deshace
+(como *Nuevo*); deshacer hasta el punto guardado deja el proyecto limpio.
 
 ## I1 · Importadores OBJ y STL — **Sonnet** — hecha
 
