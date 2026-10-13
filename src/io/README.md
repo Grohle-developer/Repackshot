@@ -15,3 +15,11 @@ out: PNG/JPEG/EXR and the project file.
 - `library.ts`: la biblioteca propia (U4) como archivo y en el navegador. `{ format: 'repackshot-library', schema: 1, items }`
   es a la vez el JSON exportado y lo que `localStorage` guarda bajo una sola clave (`repackshot.library`). Todo lo que
   entra se valida elemento a elemento y se reconstruye con los campos conocidos; el inválido se omite con su motivo.
+- `rsb.ts`: the engine's scene file (RSB v1, `engine/crates/rt-core/src/scene/rsb.rs`). `writeRsb` writes exactly
+  the bytes of rt-core's writer (`tests/rsb.test.ts` compares with `rt --write-example`); `projectScene` maps a
+  project onto it: active camera (36 mm on the longer side; in the viewport, the output frame inset as the preview
+  draws it), one MESH per distinct geometry and one INST per visible part, the materials with the E3 semantics,
+  the resolved rig in the engine's units (`core/photometry.ts`), the studio dome, the floor and the render settings.
+  `writeRsb(scene, { meshes: false })` is the update that keeps the meshes the workers already have.
+- `image.ts`: PNG written here from the path tracer's 8-bit pixels (RGB, or RGBA when transparent; deflate by the
+  browser's `CompressionStream`, stored blocks without it), JPEG through a canvas.

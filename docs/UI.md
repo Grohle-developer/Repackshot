@@ -134,7 +134,9 @@ De izquierda a derecha:
    cámara (baja la resolución durante el gesto y vuelve a converger al
    soltar). El tooltip lo dice en una frase. Mientras el motor no está
    cargado (sin `rt.wasm`), *Completo* se ve deshabilitado con el motivo
-   en auxiliar. **Render usa siempre el motor completo**, esté el visor
+   en auxiliar (*Completo: el motor no está construido*), y *Render* lo
+   dice también y no renderiza: la vista previa nunca se hace pasar por
+   un render. **Render usa siempre el motor completo**, esté el visor
    en el modo que esté: el conmutador solo decide qué se ve mientras se
    trabaja.
 5. Derecha: **Buscar o ejecutar…** (`Ctrl/⌘ K`), campo de 240 px que abre
@@ -210,8 +212,9 @@ tapar la pieza:
   muestras acumuladas, tiempo, y un pequeño indicador de progreso. En
   *Rápido* dice literalmente *Rápido · vista previa rasterizada*; en
   *Completo* dice *Completo · 128 muestras · 00:12* y, durante un gesto
-  de cámara, *Completo · ¼ de resolución*. **Nunca se inventa un
-  número.**
+  de cámara, *Completo · ¼ de resolución*. Una segunda línea dice *3
+  workers · SIMD* en *Completo* y *x ms por fotograma* en *Rápido*.
+  **Nunca se inventa un número.**
 - **Abajo a la derecha**: ejes de orientación (tres trazos finos X Y Z,
   monocromos) y el tamaño de la pieza en mm.
 - **Al pasar por una pieza**: su contorno se ilumina (silueta de 1 px en

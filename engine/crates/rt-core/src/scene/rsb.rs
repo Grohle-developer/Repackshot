@@ -45,6 +45,11 @@
 //! a mesh no instance refers to is not drawn. The writer emits `INST` only when the instances
 //! differ from the implicit ones, so scenes without instancing keep their exact bytes.
 //!
+//! **Updates** (E4). [`Scene::update_from_rsb`] reads a file into an already loaded scene: a file
+//! without `MESH` sections keeps the loaded meshes and their BVHs (its `INST` sections, or the
+//! implicit instances, refer to them), so a host that changes the camera, the image size, the
+//! instances, the materials or the lights sends everything but the geometry.
+//!
 //! # Meaning of the values (fixed in E3)
 //!
 //! Units: millimetres for positions and sizes, degrees for angles. Radiance is in
@@ -411,89 +416,124 @@ fn set_once<T>(slot: &mut Option<T>, tag: [u8; 4], value: T) -> Result<(), RsbEr
     }
 }
 
+/// Parses an RSB file. With `kept`, a file without `MESH` sections uses the meshes of `kept`
+/// instead (moved out of it only once nothing can fail any more, so `kept` is untouched on error).
+fn read_scene(bytes: &[u8], kept: Option<&mut Geometry>) -> Result<Scene, RsbError> {
+    if bytes.len() < 4 || bytes[..4] != MAGIC {
+        return Err(RsbError::BadMagic);
+    }
+    let header_len = bytes
+        .get(4..8)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .ok_or(RsbError::Truncated { what: "header" })?;
+    let mut pos = 8usize
+        .checked_add(header_len as usize)
+        .filter(|&p| p <= bytes.len())
+        .ok_or(RsbError::Truncated { what: "header" })?;
+
+    let mut camera = None;
+    let mut environment = None;
+    let mut floor = None;
+    let mut render = None;
+    let mut meshes = Vec::new();
+    let mut instances = Vec::new();
+    let mut scene = Scene::default();
+
+    while pos < bytes.len() {
+        let head = bytes.get(pos..pos + 8).ok_or(RsbError::Truncated {
+            what: "section header",
+        })?;
+        let tag = [head[0], head[1], head[2], head[3]];
+        let len = u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as usize;
+        let payload = (pos + 8)
+            .checked_add(len)
+            .and_then(|end| bytes.get(pos + 8..end))
+            .ok_or(RsbError::Truncated {
+                what: "section payload",
+            })?;
+        pos += 8 + len;
+
+        let mut r = Reader::new(tag, payload);
+        match tag {
+            TAG_CAMR => set_once(&mut camera, tag, parse_camera(&mut r)?)?,
+            TAG_ENVR => set_once(&mut environment, tag, parse_environment(&mut r)?)?,
+            TAG_FLOR => set_once(&mut floor, tag, parse_floor(&mut r)?)?,
+            TAG_RNDR => set_once(&mut render, tag, parse_render(&mut r)?)?,
+            TAG_MESH => meshes.push(parse_mesh(&mut r)?),
+            TAG_INST => instances.push(parse_instance(&mut r)?),
+            TAG_MATL => scene.materials.push(parse_material(&mut r)?),
+            TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
+            _ => {} // Unknown section: skipped for forward compatibility.
+        }
+    }
+
+    // The meshes the instances refer to: the file's own, or the kept ones when it has none.
+    let reuse = if meshes.is_empty() { kept } else { None };
+    let available: &[Mesh] = match &reuse {
+        Some(geometry) => geometry.meshes(),
+        None => &meshes,
+    };
+    let materials = scene.materials.len();
+    if available
+        .iter()
+        .any(|m| m.material_id() as usize >= materials)
+    {
+        return Err(RsbError::Invalid {
+            tag: TAG_MESH,
+            reason: "material_id does not refer to a MATL section",
+        });
+    }
+    if instances.is_empty() {
+        instances = Geometry::implicit_instances(available);
+    }
+    let invalid_instance = |reason| RsbError::Invalid {
+        tag: TAG_INST,
+        reason,
+    };
+    if instances.iter().any(|i| i.mesh as usize >= available.len()) {
+        return Err(invalid_instance("mesh_id does not refer to a MESH section"));
+    }
+    if instances
+        .iter()
+        .any(|i| i.material_id as usize >= materials)
+    {
+        return Err(invalid_instance(
+            "material_id does not refer to a MATL section",
+        ));
+    }
+    if instances.len() > crate::geometry::MAX_INSTANCES {
+        return Err(invalid_instance("too many instances"));
+    }
+    // Nothing below can fail: only now are the kept meshes taken.
+    if let Some(geometry) = reuse {
+        meshes = std::mem::take(geometry).into_meshes();
+    }
+    scene.geometry =
+        Geometry::new(meshes, instances).map_err(|_| invalid_instance("too many instances"))?;
+    scene.camera = camera.unwrap_or_default();
+    scene.environment = environment.unwrap_or_default();
+    scene.floor = floor.unwrap_or_default();
+    scene.render = render.unwrap_or_default();
+    Ok(scene)
+}
+
 impl Scene {
     /// Parses an RSB file. See the [module documentation](self) for the format.
     pub fn from_rsb(bytes: &[u8]) -> Result<Scene, RsbError> {
-        if bytes.len() < 4 || bytes[..4] != MAGIC {
-            return Err(RsbError::BadMagic);
-        }
-        let header_len = bytes
-            .get(4..8)
-            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-            .ok_or(RsbError::Truncated { what: "header" })?;
-        let mut pos = 8usize
-            .checked_add(header_len as usize)
-            .filter(|&p| p <= bytes.len())
-            .ok_or(RsbError::Truncated { what: "header" })?;
+        read_scene(bytes, None)
+    }
 
-        let mut camera = None;
-        let mut environment = None;
-        let mut floor = None;
-        let mut render = None;
-        let mut meshes = Vec::new();
-        let mut instances = Vec::new();
-        let mut scene = Scene::default();
-
-        while pos < bytes.len() {
-            let head = bytes.get(pos..pos + 8).ok_or(RsbError::Truncated {
-                what: "section header",
-            })?;
-            let tag = [head[0], head[1], head[2], head[3]];
-            let len = u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as usize;
-            let payload = (pos + 8)
-                .checked_add(len)
-                .and_then(|end| bytes.get(pos + 8..end))
-                .ok_or(RsbError::Truncated {
-                    what: "section payload",
-                })?;
-            pos += 8 + len;
-
-            let mut r = Reader::new(tag, payload);
-            match tag {
-                TAG_CAMR => set_once(&mut camera, tag, parse_camera(&mut r)?)?,
-                TAG_ENVR => set_once(&mut environment, tag, parse_environment(&mut r)?)?,
-                TAG_FLOR => set_once(&mut floor, tag, parse_floor(&mut r)?)?,
-                TAG_RNDR => set_once(&mut render, tag, parse_render(&mut r)?)?,
-                TAG_MESH => meshes.push(parse_mesh(&mut r)?),
-                TAG_INST => instances.push(parse_instance(&mut r)?),
-                TAG_MATL => scene.materials.push(parse_material(&mut r)?),
-                TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
-                _ => {} // Unknown section: skipped for forward compatibility.
-            }
-        }
-
-        let materials = scene.materials.len();
-        if meshes.iter().any(|m| m.material_id() as usize >= materials) {
-            return Err(RsbError::Invalid {
-                tag: TAG_MESH,
-                reason: "material_id does not refer to a MATL section",
-            });
-        }
-        if instances.is_empty() {
-            instances = Geometry::implicit_instances(&meshes);
-        }
-        let invalid_instance = |reason| RsbError::Invalid {
-            tag: TAG_INST,
-            reason,
-        };
-        if instances.iter().any(|i| i.mesh as usize >= meshes.len()) {
-            return Err(invalid_instance("mesh_id does not refer to a MESH section"));
-        }
-        if instances
-            .iter()
-            .any(|i| i.material_id as usize >= materials)
-        {
-            return Err(invalid_instance(
-                "material_id does not refer to a MATL section",
-            ));
-        }
-        scene.geometry =
-            Geometry::new(meshes, instances).map_err(|_| invalid_instance("too many instances"))?;
-        scene.camera = camera.unwrap_or_default();
-        scene.environment = environment.unwrap_or_default();
-        scene.floor = floor.unwrap_or_default();
-        scene.render = render.unwrap_or_default();
-        Ok(scene)
+    /// Replaces this scene with the RSB file `bytes`, like [`Scene::from_rsb`], except that a
+    /// file **without `MESH` sections keeps the meshes of this scene** (and their BVHs, which are
+    /// not built again): its `INST` sections, or the implicit instances of the kept meshes, refer
+    /// to them. This is how a host changes the camera, the image size, the instances, the
+    /// materials or the lights of a loaded scene without sending its geometry again. A file with
+    /// `MESH` sections replaces everything, exactly like [`Scene::from_rsb`]. On error the scene
+    /// is unchanged.
+    pub fn update_from_rsb(&mut self, bytes: &[u8]) -> Result<(), RsbError> {
+        let scene = read_scene(bytes, Some(&mut self.geometry))?;
+        *self = scene;
+        Ok(())
     }
 
     /// Serialises the scene as an RSB file (the reference writer for the TypeScript side).
@@ -1185,6 +1225,114 @@ mod tests {
             Scene::from_rsb(&short),
             Err(RsbError::SectionTooShort { tag: TAG_INST })
         );
+    }
+
+    /// `bytes` without its `MESH` sections.
+    fn without_meshes(bytes: &[u8]) -> Vec<u8> {
+        let mut out = bytes[..8].to_vec();
+        for (tag, payload) in sections(bytes) {
+            if tag != TAG_MESH {
+                out.extend(unknown_section(&tag, &payload));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn updates_without_meshes_keep_the_loaded_meshes() {
+        let mut scene = instanced_scene();
+        // The next state: another camera and image size, one more material, other instances.
+        let mut next = instanced_scene();
+        next.camera.focal_mm = 35.0;
+        next.render.width = 320;
+        next.render.height = 180;
+        next.materials.push(Material {
+            roughness: 0.9,
+            ..Material::default()
+        });
+        let instances = vec![
+            Instance::new(1, Transform::translation(Vec3::new(0.0, 0.0, 7.0)), 2),
+            Instance::new(0, Transform::IDENTITY, 0),
+        ];
+        next.geometry = Geometry::new(next.geometry.meshes().to_vec(), instances).unwrap();
+        let update = without_meshes(&next.to_rsb());
+        assert!(sections(&update).iter().all(|(t, _)| *t != TAG_MESH));
+        assert!(Scene::from_rsb(&update).is_err(), "alone it lacks meshes");
+        scene.update_from_rsb(&update).expect("update");
+        assert_eq!(scene, next);
+
+        // Without INST sections either: the implicit instances of the kept meshes.
+        let plain = full_scene();
+        scene
+            .update_from_rsb(&without_meshes(&plain.to_rsb()))
+            .expect("update");
+        assert_eq!(scene, plain);
+        assert!(scene.geometry.has_implicit_instances());
+
+        // A file with meshes replaces everything, like from_rsb.
+        let mut other = full_scene();
+        other.geometry = Geometry::from_meshes(vec![Mesh::new(
+            &[
+                Vec3::ZERO,
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ],
+            &[],
+            &[0, 1, 2],
+            0,
+        )
+        .unwrap()]);
+        scene.update_from_rsb(&other.to_rsb()).expect("full update");
+        assert_eq!(scene, other);
+    }
+
+    #[test]
+    fn failed_updates_leave_the_scene_unchanged() {
+        let mut scene = instanced_scene();
+        let before = scene.clone();
+        let good = without_meshes(&instanced_scene().to_rsb());
+        let rebuild = |edit: &dyn Fn(&[u8; 4], &mut Vec<u8>)| {
+            let mut out = good[..8].to_vec();
+            for (tag, mut payload) in sections(&good) {
+                edit(&tag, &mut payload);
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        // An instance of a mesh the scene does not have.
+        let bad_mesh = rebuild(&|tag, p| {
+            if *tag == TAG_INST {
+                p[0..4].copy_from_slice(&7u32.to_le_bytes());
+            }
+        });
+        assert!(matches!(
+            scene.update_from_rsb(&bad_mesh),
+            Err(RsbError::Invalid { tag: TAG_INST, .. })
+        ));
+        assert_eq!(scene, before);
+        // Fewer materials than the kept meshes refer to (the second mesh uses material 1).
+        let mut one_material = good[..8].to_vec();
+        let mut first = true;
+        for (tag, payload) in sections(&good) {
+            if tag == TAG_INST {
+                continue;
+            }
+            if tag == TAG_MATL {
+                if !first {
+                    continue;
+                }
+                first = false;
+            }
+            one_material.extend(unknown_section(&tag, &payload));
+        }
+        assert!(matches!(
+            scene.update_from_rsb(&one_material),
+            Err(RsbError::Invalid { tag: TAG_MESH, .. })
+        ));
+        assert_eq!(scene, before);
+        // Garbage.
+        assert_eq!(scene.update_from_rsb(b"nope"), Err(RsbError::BadMagic));
+        assert_eq!(scene, before);
     }
 
     #[test]

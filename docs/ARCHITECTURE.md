@@ -249,7 +249,12 @@ export interface RenderEngine {
   hay cambio automático de motor; *Completo* queda deshabilitado con su
   motivo cuando `rt.wasm` no está cargado o el navegador no da workers.
 - **`render()` usa siempre `pathtracer`**, esté el visor en el modo que
-  esté: el conmutador es solo lo que se ve mientras se trabaja.
+  esté: el conmutador es solo lo que se ve mientras se trabaja. Sin
+  `rt.wasm` no hay render (se dice el motivo); la vista previa solo se
+  usa para miniaturas (`quick`).
+- `status()` del trazador incluye, además de muestras y tiempo, los
+  workers, si hay SIMD, la escala de resolución, los fotogramas por
+  segundo, el tiempo por fotograma y si está renderizando.
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 
@@ -339,7 +344,13 @@ tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
 TypeScript, y un test de paridad escribe la misma escena por los dos
 lados y compara los bytes. El `.repack.json` sigue siendo el formato de
 proyecto; el RSB es lo que viaja al motor (y lo que `rt` lee en la línea
-de comandos). Los mapas de bits (texturas, HDRI) viajan como secciones
+de comandos). **Actualizaciones** (E4): `rt_scene_update` acepta un RSB
+sin `MESH` que conserva las mallas cargadas y sus BVH (cámara, luces,
+materiales, entorno, render cambian sin reconstruir geometría); por eso
+las mallas declaran siempre material 0 y el material real va en `INST`,
+que se escribe siempre. Unidades: milímetros, Z arriba, sensor de 36 mm
+en el lado largo; flujo de un panel = potencia del rig × tamaño² / 4
+(`src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits (texturas, HDRI) viajan como secciones
 propias cuando lleguen (E5, M2).
 
 ### 5.3 · En el navegador: workers
@@ -350,8 +361,13 @@ worker instancia su propia copia de `rt.wasm` y recibe el RSB entero
 (sin `SharedArrayBuffer`, para que funcione en cualquier servidor sin
 cabeceras COOP/COEP, GitHub Pages incluido); las baldosas se reparten
 intercaladas, cada worker devuelve `Float32Array` lineales por baldosa,
-y el hilo principal acumula, aplica exposición y transformada, y pinta
-en el canvas. El *preview* de three.js sigue activo mientras la cámara se
+y el hilo principal acumula (en `f32` y en orden de muestra, que es lo
+que da paridad exacta con `rt`), aplica exposición y transformada con
+un camino rápido por tabla, y pinta en el canvas; la conversión final
+exacta a 8 bits de *Render* la hacen los workers por franjas. Durante
+gestos de cámara, arrastres del *gizmo* y de controles, el visor renderiza
+a ½ o ¼ de resolución; nunca por encima de un píxel de imagen por píxel
+del dispositivo. El *preview* de three.js sigue activo mientras la cámara se
 mueve; al pararse, el trazador arranca desde la muestra 0 y la imagen
 converge en el propio visor. *Render* usa el mismo pool a la resolución
 de salida y con el presupuesto de la barra de render.

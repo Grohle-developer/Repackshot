@@ -5,9 +5,10 @@
 import * as THREE from 'three';
 import { kelvinToRgb } from '../core/light-math';
 import type { MaterialInstance } from '../core/materials';
+import { EMIT_RADIANCE_PER_WATT } from '../core/photometry';
 
-/** Emissive intensity per watt of an emitter material. */
-export const EMIT_K = 0.06;
+/** Emissive radiance per watt of an emitter material: the one the path tracer uses too. */
+export const EMIT_K = EMIT_RADIANCE_PER_WATT;
 
 function rgbOf(v: unknown, fallback: readonly number[]): readonly number[] {
   return Array.isArray(v) && v.length >= 3 ? (v as number[]) : fallback;

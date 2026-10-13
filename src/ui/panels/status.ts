@@ -12,7 +12,7 @@ import { openFloating } from '../components/widgets';
 import { h } from '../dom';
 import { dyn } from '../names';
 import { Scope, type Ctx } from '../reactive';
-import { formatNumber, getLang, lbl, t } from '../strings';
+import { formatClock, formatNumber, getLang, lbl, t } from '../strings';
 
 function sentence(r: DoctorResult): string {
   const d = r.detail;
@@ -115,15 +115,25 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
   const port = services.viewport;
   if (port) {
     let last = 0;
+    let trailing = 0;
     const update = () => {
       const now = performance.now();
-      if (now - last < 500) return;
+      if (now - last < 500) {
+        if (!trailing) trailing = window.setTimeout(() => ((trailing = 0), (last = 0), update()), 500 - (now - last));
+        return;
+      }
       last = now;
       const st = port.status();
-      engine.textContent = t('status.engine', { device: st.device });
-      samples.textContent = `${st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: st.samples })} · ${formatNumber(st.seconds * 1000, getLang(), 1)} ms`;
+      engine.textContent =
+        port.kind === 'pathtracer'
+          ? t('status.engineFull', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') })
+          : t('status.engineFast', { device: st.device });
+      const n = st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: formatNumber(st.samples, getLang(), 0) });
+      // The path tracer reports the time it has been converging; the preview, the time of its last frame.
+      samples.textContent = port.kind === 'pathtracer' ? `${n} · ${formatClock(st.seconds)}` : `${n} · ${formatNumber(st.seconds * 1000, getLang(), 1)} ms`;
     };
     scope.onDispose(port.onFrame(update));
+    scope.onDispose(() => window.clearTimeout(trailing));
     update();
   } else engine.textContent = t('status.noEngine');
   const langBtn = h('button', { type: 'button', class: 'doctor-btn', onclick: () => cmd.setLanguage(ctx, store.get().meta.lang === 'en' ? 'es' : 'en'), 'data-tip': t('menu.language') }, t(dyn(`lang.${store.get().meta.lang}`)));

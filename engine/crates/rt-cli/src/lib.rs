@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 pub mod bench;
 pub mod cli;
 pub mod sheet;
+pub mod tone;
 
 /// Edge length of the square tiles handed to the worker threads.
 pub const TILE_SIZE: u32 = 32;

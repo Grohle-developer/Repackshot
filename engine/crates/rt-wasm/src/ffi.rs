@@ -56,6 +56,27 @@ pub unsafe extern "C" fn rt_scene_load(ptr: *const u8, len: u32) -> u32 {
     crate::scene_load(bytes)
 }
 
+/// Replaces the loaded scene `handle` with the `len` bytes of RSB data at `ptr`. A file without
+/// `MESH` sections keeps the scene's meshes and BVHs, so a host sends only what changed besides
+/// the geometry (camera, image size, instances, materials, lights...). Returns 0 on success, 1
+/// for a bad handle, 3 for a null `ptr`, 4 when the bytes are not a valid scene (then see
+/// [`rt_scene_error_len`]; the scene is unchanged). The bytes are copied.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rt_scene_update(handle: u32, ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() {
+        crate::set_error("rt_scene_update: null pointer");
+        return STATUS_NULL_POINTER;
+    }
+    // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
+    // this call.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    crate::scene_update(handle, bytes)
+}
+
 /// Length in bytes of the last load error message (0 if the last load succeeded).
 #[no_mangle]
 pub extern "C" fn rt_scene_error_len() -> u32 {

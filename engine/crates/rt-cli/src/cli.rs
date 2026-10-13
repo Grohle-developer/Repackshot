@@ -14,6 +14,7 @@ USAGE:
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
+    rt --tone-table
 
 OPTIONS:
     -o, --output <file>     PNG file to write
@@ -26,6 +27,8 @@ OPTIONS:
         --sheet <dir>       render the example part under six built-in light recipes into
                             <dir>: one PNG each, index.html and stats.json
         --write-example <f> write the built-in example scene as an RSB file
+        --tone-table        print reference values of the tone curves as JSON (for the
+                            interface's tests)
     -h, --help              show this help
 ";
 
@@ -105,6 +108,8 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Print the reference values of the tone curves (`tone::table_json`).
+    ToneTable,
     /// Print the usage text.
     Help,
 }
@@ -156,6 +161,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut output = None;
     let mut write_example = None;
     let mut sheet_dir = None;
+    let mut tone_table = false;
     let mut options = Options::default();
     let mut it = args.iter();
 
@@ -174,6 +180,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                 }
             }
             "--write-example" => write_example = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
             }
@@ -185,6 +192,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         }
     }
 
+    if tone_table {
+        if args.len() != 1 {
+            return Err("--tone-table takes no other option".into());
+        }
+        return Ok(Command::ToneTable);
+    }
     if let Some(path) = write_example {
         if input.is_some() || output.is_some() || options != Options::default() {
             return Err("--write-example cannot be combined with rendering options".into());
@@ -211,6 +224,10 @@ pub fn run(command: Command) -> Result<(), String> {
     match command {
         Command::Help => {
             print!("{USAGE}");
+            Ok(())
+        }
+        Command::ToneTable => {
+            print!("{}", crate::tone::table_json());
             Ok(())
         }
         Command::WriteExample { path } => {
@@ -381,6 +398,8 @@ mod tests {
                 path: "s.rsb".into()
             })
         );
+        assert_eq!(parse(&["--tone-table"]), Ok(Command::ToneTable));
+        assert!(parse(&["--tone-table", "--example"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Command::Help));
         assert_eq!(parse(&["-h"]), Ok(Command::Help));
     }

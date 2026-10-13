@@ -92,6 +92,18 @@ textarea {
 .hdr-center {
   flex: 0 0 auto;
 }
+.hdr-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--line);
+}
+.mode-reason {
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .hdr-right {
   flex: 1 1 0;
   justify-content: flex-end;
@@ -271,6 +283,15 @@ textarea {
   height: 100%;
   outline: none;
   touch-action: none;
+}
+/* Full mode: the path tracer's image under the preview's canvas, which draws only the overlays. */
+.vp-canvas-host canvas.vp-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.vp-canvas-host canvas:not(.vp-backdrop) {
+  position: relative;
 }
 .vp[data-tool='orbit'] canvas {
   cursor: grab;

@@ -50,7 +50,7 @@ import { downloadBlob } from './dom';
 import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
 import { writePref } from './prefs';
 import type { Ctx } from './reactive';
-import type { Tool } from './ui-state';
+import { effectiveMode, type Tool, type ViewportMode } from './ui-state';
 import { L, formatClock, formatNumber, getLang, t, type StringKey } from './strings';
 
 export type { ConfirmSpec };
@@ -256,6 +256,13 @@ export function saveProject(ctx: Ctx): void {
   ctx.ui.toast(t('toast.saved', { name }));
 }
 
+/** The engine's scene for the output image, as the RSB file `rt` renders on the command line. */
+export function exportScene(ctx: Ctx): void {
+  const name = `${projectFileBase(ctx)}.rsb`;
+  downloadBlob(ctx.services.exportScene(ctx.store.get()), name);
+  ctx.ui.toast(t('toast.saved', { name }));
+}
+
 export async function exportViewport(ctx: Ctx): Promise<void> {
   const blob = await ctx.services.captureViewport();
   if (!blob) return;
@@ -388,6 +395,43 @@ export function renameNode(ctx: Ctx, id: NodeId, name: string): void {
 export function setTool(ctx: Ctx, tool: Tool): void {
   ctx.ui.set({ tool });
   ctx.services.viewport?.setTool(tool);
+}
+
+// --- Viewport mode (UI.md §2.1) -------------------------------------------------------
+
+/** The reason Full cannot run now, or null when it can. */
+export function fullModeReason(ctx: Ctx): StringKey | null {
+  switch (ctx.ui.get().engine) {
+    case 'READY':
+      return null;
+    case 'LOADING':
+      return 'header.fullLoading';
+    case 'NO_WASM':
+      return 'header.fullNoWasm';
+    case 'NO_WORKERS':
+      return 'header.fullNoWorkers';
+    case 'OUTDATED':
+      return 'header.fullOutdated';
+    default:
+      return 'header.fullFailed';
+  }
+}
+
+/** Fast (rasterised preview) or Full (the path tracer) in the viewport: interface state, remembered, not undone. */
+export function setViewportMode(ctx: Ctx, mode: ViewportMode): void {
+  if (mode === 'FULL') {
+    const reason = fullModeReason(ctx);
+    if (reason) {
+      ctx.ui.toast(t(reason));
+      return;
+    }
+  }
+  ctx.ui.set({ viewportMode: mode });
+}
+
+/** Ctrl/⌘ ⇧ R. */
+export function toggleViewportMode(ctx: Ctx): void {
+  setViewportMode(ctx, effectiveMode(ctx.ui.get()) === 'FULL' ? 'FAST' : 'FULL');
 }
 
 export function setSpace(ctx: Ctx, space: Space): void {
@@ -822,7 +866,7 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
 export async function captureThumb(ctx: Ctx): Promise<string | undefined> {
   if (!ctx.services.viewport || isRendering() || ctx.store.get().render.running) return undefined;
   try {
-    const blob = await ctx.services.renderImage({ width: THUMB_W, height: THUMB_H, maxSamples: 1, maxSeconds: 1, transparent: false, format: 'JPEG' });
+    const blob = await ctx.services.renderImage({ width: THUMB_W, height: THUMB_H, maxSamples: 1, maxSeconds: 1, transparent: false, format: 'JPEG', quick: true });
     return await blobToDataUrl(blob);
   } catch {
     return undefined;
@@ -1004,8 +1048,8 @@ export async function render(ctx: Ctx): Promise<void> {
       transparent: r.transparent && supportsAlpha(format),
       format,
       signal: renderAbort.signal,
-      onProgress: (p) =>
-        ctx.store.dispatch({ type: 'render/running', running: { jobId: null, progress: p, samples: p >= 1 ? 1 : 0, seconds: (performance.now() - started) / 1000 } }),
+      onProgress: (p, samples) =>
+        ctx.store.dispatch({ type: 'render/running', running: { jobId: null, progress: p, samples: samples ?? 0, seconds: (performance.now() - started) / 1000 } }),
     });
     const name = outputName(ctx, s.camera.active, r.width, r.height, format === 'JPEG' ? 'jpg' : 'png');
     downloadBlob(blob, name);

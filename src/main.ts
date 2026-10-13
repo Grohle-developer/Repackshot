@@ -1,7 +1,10 @@
-// Entry point: creates the store, mounts the interface, starts the viewport
-// engine and applies the optional demo / screenshot URL parameters (see
-// src/ui/README.md). Sets #app[data-ready="1"] once the interface has
-// painted and the viewport has drawn its first frame.
+// Entry point: creates the store, mounts the interface, starts the two
+// viewport engines (the three.js preview, and the path tracer in a pool of
+// workers once rt.wasm has loaded) and applies the optional demo / screenshot
+// URL parameters (see src/ui/README.md). The header's Fast · Full switch
+// picks which one the viewport shows; Render always uses the path tracer.
+// Sets #app[data-ready="1"] once the interface has painted and the viewport
+// has drawn its first frame.
 
 import './ui/theme.css';
 import './ui/layout.css';
@@ -10,17 +13,19 @@ import './ui/panels.css';
 import { totalDuration } from './core/animation';
 import { activeCamera, sameView } from './core/camera';
 import { createInitialState, createStore } from './core/store';
-import { encodeImage } from './io/image';
+import { encodeImage, encodePixels } from './io/image';
 import { LIBRARY_STORAGE_KEY, exportLibrary, importLibrary, loadLibrary, saveLibrary } from './io/library';
 import { serializeProject } from './io/project';
-import type { RenderEngine } from './render/engine';
+import { projectScene, tonemapFor, writeRsb } from './io/rsb';
+import { loadEngineModule, PathTracerEngine, Pool, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
+import { poolSize } from './render/tiles';
 import { mountApp } from './ui/app';
 import type { AppServices, ViewportPort } from './ui/ports';
 import { readPref } from './ui/prefs';
 import { L, t } from './ui/strings';
-import { createUiStore } from './ui/ui-state';
+import { createUiStore, effectiveMode } from './ui/ui-state';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
 
 const appEl = document.getElementById('app')!;
@@ -33,51 +38,124 @@ const store = createStore(createInitialState({ lang, theme }));
 const loadedLibrary = loadLibrary();
 const ui = createUiStore({ library: loadedLibrary.lib });
 
-// The engine lives in a variable: the path tracer phase adds a second
-// implementation behind the same RenderEngine interface.
+// The preview always exists (it draws the overlays, picks and moves the camera); the path tracer
+// joins when its engine has loaded.
 const canvas = document.createElement('canvas');
 canvas.tabIndex = 0;
 canvas.setAttribute('aria-label', 'viewport');
+const backdrop = document.createElement('canvas');
+backdrop.setAttribute('aria-hidden', 'true');
+backdrop.style.visibility = 'hidden';
 let preview: PreviewEngine | null = null;
-let engine: RenderEngine | null = null;
 try {
   preview = new PreviewEngine();
   preview.mount(canvas);
-  engine = preview;
 } catch (err) {
   console.error(err);
   preview = null;
-  engine = null;
 }
 const thumbs = new ThumbnailRenderer();
 
+// The project to the engine's scene (io/rsb.ts); the path tracer only sees this interface.
+const sceneSource: SceneSource = {
+  build(state, view) {
+    const { scene, meshKey } = projectScene(state, view);
+    return { meshKey, bytes: (meshes) => writeRsb(scene, { meshes }) };
+  },
+  tone: (state) => ({ exposureEv: state.image.exposureEv, tonemap: tonemapFor(state.image.viewTransform) }),
+};
+
+let tracer: PathTracerEngine | null = null;
+/** The viewport shows the path tracer now. */
+let full = false;
+/** The viewport's last size (the path tracer may arrive after it). */
+const lastSize: { w: number; h: number; dpr: number } = { w: 0, h: 0, dpr: 1 };
+const tracerFrames = new Set<() => void>();
+
+const applyMode = () => {
+  const next = tracer !== null && preview !== null && effectiveMode(ui.get()) === 'FULL';
+  if (next === full) return;
+  full = next;
+  preview?.setOverlayOnly(full);
+  tracer?.setActive(full);
+  backdrop.style.visibility = full ? 'visible' : 'hidden';
+};
+ui.subscribe(applyMode);
+
+if (preview) {
+  void (async () => {
+    const base = new URL(import.meta.env.BASE_URL, window.location.href).href;
+    const loaded = await loadEngineModule(base);
+    if ('error' in loaded) {
+      console.warn(`path tracer: ${loaded.detail}`);
+      ui.set({ engine: loaded.error });
+      return;
+    }
+    try {
+      const pool = await Pool.create(loaded.module, poolSize(navigator.hardwareConcurrency), () => new Worker(new URL('./render/worker.ts', import.meta.url), { type: 'module' }));
+      const t = new PathTracerEngine(pool, sceneSource, loaded.simd);
+      t.mount(backdrop);
+      if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
+      t.sync(store.get(), null);
+      t.onFrame(() => tracerFrames.forEach((fn) => fn()));
+      tracer = t;
+      ui.set({ engine: 'READY' });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.warn(`path tracer: ${reason}`);
+      ui.set({ engine: reason === 'outdated' ? 'OUTDATED' : 'FAILED' });
+    }
+  })();
+} else ui.set({ engine: 'FAILED' });
+
 let firstFrame = false;
-const viewport: ViewportPort | null =
-  preview && engine
-    ? {
-        kind: engine.kind,
-        canvas,
-        resize: (w, h, dpr) => engine!.resize(w, h, dpr),
-        pick: (x, y) => engine!.pick(x, y),
-        setHover: (ids) => preview!.setHover(ids),
-        setTool: (tool) => preview!.setTool(tool),
-        setGizmo: (spec) => preview!.setGizmo(spec),
-        gizmoHover: (x, y) => preview!.gizmoHover(x, y),
-        gizmoBegin: (x, y) => preview!.gizmoBegin(x, y),
-        gizmoDrag: (x, y) => preview!.gizmoDrag(x, y),
-        gizmoEnd: () => preview!.gizmoEnd(),
-        status: () => engine!.status(),
-        onFrame: (fn) => preview!.onFrame(fn),
-        materialThumbnail: (mat, key) => thumbs.get(mat, key),
-        thumbnailsPending: () => thumbs.pendingCount(),
-      }
-    : null;
+const viewport: ViewportPort | null = preview
+  ? {
+      get kind() {
+        return full ? ('pathtracer' as const) : ('preview' as const);
+      },
+      canvas,
+      backdrop,
+      resize: (w, h, dpr) => {
+        Object.assign(lastSize, { w, h, dpr });
+        preview!.resize(w, h, dpr);
+        tracer?.resize(w, h, dpr);
+      },
+      // Picking is geometry: the preview's, in both modes.
+      pick: (x, y) => preview!.pick(x, y),
+      setHover: (ids) => preview!.setHover(ids),
+      setTool: (tool) => preview!.setTool(tool),
+      setGizmo: (spec) => preview!.setGizmo(spec),
+      gizmoHover: (x, y) => preview!.gizmoHover(x, y),
+      gizmoBegin: (x, y) => {
+        const handle = preview!.gizmoBegin(x, y);
+        // Dragging a handle is a gesture for the path tracer too: reduced resolution until it ends.
+        if (handle && full) tracer?.beginGesture();
+        return handle;
+      },
+      gizmoDrag: (x, y) => preview!.gizmoDrag(x, y),
+      gizmoEnd: () => {
+        preview!.gizmoEnd();
+        tracer?.endGesture();
+      },
+      status: () => (full && tracer ? tracer.status() : preview!.status()),
+      onFrame: (fn) => {
+        const off = preview!.onFrame(fn);
+        tracerFrames.add(fn);
+        return () => {
+          off();
+          tracerFrames.delete(fn);
+        };
+      },
+      materialThumbnail: (mat, key) => thumbs.get(mat, key),
+      thumbnailsPending: () => thumbs.pendingCount(),
+    }
+  : null;
 
 const services: AppServices = {
   viewport,
   async renderImage(req) {
-    if (!engine) throw new Error('WebGL');
-    const bitmap = await engine.render({
+    const opts = {
       width: req.width,
       height: req.height,
       maxSamples: req.maxSamples,
@@ -85,11 +163,23 @@ const services: AppServices = {
       transparent: req.transparent,
       camera: req.camera,
       signal: req.signal,
-      onProgress: (p) => req.onProgress?.(p.progress),
-    });
-    return encodeImage(bitmap, req.format);
+      onProgress: (p: { progress: number; samples: number }) => req.onProgress?.(p.progress, p.samples),
+    };
+    // Render and every queue job use the path tracer, whatever the viewport shows. Without the
+    // engine there is no render: the preview is never passed off as one (only `quick` thumbnails
+    // use it).
+    if (!req.quick) {
+      if (!tracer) throw new Error(t('render.noEngine'));
+      return encodePixels(await tracer.renderPixels(opts), req.format);
+    }
+    if (!preview) throw new Error('WebGL');
+    return encodeImage(await preview.render(opts), req.format);
   },
-  captureViewport: () => (preview ? preview.capture() : Promise.resolve(null)),
+  captureViewport: () => (full && tracer ? tracer.capture() : preview ? preview.capture() : Promise.resolve(null)),
+  exportScene(state) {
+    const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG' });
+    return new Blob([writeRsb(scene) as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
+  },
   async importFile(file) {
     const { importFile } = await import('./io/import');
     return importFile(file);
@@ -124,9 +214,12 @@ const app = mountApp(appEl, store, ui, services);
   if (loadedLibrary.status === 'corrupt' || loadedLibrary.skipped.length > 0) ui.toast(t('library.loadDamaged'));
 }
 
-if (engine && preview) {
-  engine.sync(store.get(), null);
-  store.subscribe((s, prev) => engine!.sync(s, prev));
+if (preview) {
+  preview.sync(store.get(), null);
+  store.subscribe((s, prev) => {
+    preview!.sync(s, prev);
+    tracer?.sync(s, prev);
+  });
 
   // The outline ink follows the theme (--ink-0).
   const updateInk = () => {
@@ -160,6 +253,13 @@ if (engine && preview) {
     store.dispatch({ type: 'camera/set', id: cam.id, patch, gesture: `orbit${gesture}`, label: L('undo.orbit') });
   });
   preview.onFrame(() => (firstFrame = true));
+  // While a camera gesture lasts the store hears nothing; the path tracer follows the live view.
+  preview.onGesture((phase, v) => {
+    if (!full || !tracer) return;
+    if (phase === 'start') tracer.beginGesture();
+    else if (phase === 'end') tracer.endGesture();
+    else if (v) tracer.gestureView({ azimuth: v.azimuth, elevation: v.elevation, distance: v.distance, target: v.target, focusDistance: v.distance, ...(v.orthoWidth ? { orthoWidth: v.orthoWidth } : {}) });
+  });
 
   // One loop: animation playback, then a frame when something changed.
   let last = performance.now();
@@ -175,7 +275,8 @@ if (engine && preview) {
         store.dispatch({ type: 'anim/playhead', t: t > total ? t - total : t });
       }
     }
-    engine!.frame();
+    preview!.frame();
+    if (full) tracer?.frame();
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
@@ -190,7 +291,7 @@ void app.painted.then(() => {
   const check = () => {
     const spheresDone = thumbs.pendingCount() === 0;
     const elapsed = performance.now() - started;
-    if (((firstFrame || !engine) && spheresDone && elapsed > 300) || elapsed > 9000) {
+    if (((firstFrame || !preview) && spheresDone && elapsed > 300) || elapsed > 9000) {
       requestAnimationFrame(() => (appEl.dataset.ready = '1'));
       return;
     }

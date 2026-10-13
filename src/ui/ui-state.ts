@@ -13,6 +13,10 @@ import type { MoveKind, EasingKind } from '../data/types';
 import { readPref, writePref } from './prefs';
 
 export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
+/** What the viewport shows (UI.md §2.1): the rasterised preview or the path tracer. */
+export type ViewportMode = 'FAST' | 'FULL';
+/** Whether the path tracer can run, and why not (main.ts finds out). */
+export type EngineState = 'LOADING' | 'READY' | 'NO_WASM' | 'NO_WORKERS' | 'OUTDATED' | 'FAILED';
 export type Tool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move';
 export const TOOLS: readonly Tool[] = ['select', 'orbit', 'pan', 'zoom', 'move'];
 export type Drawer = 'animation' | 'queue' | null;
@@ -111,6 +115,15 @@ export interface UiState {
    * `localStorage` (io/library.ts) and the commands change it with the pure functions of core/library.ts.
    */
   library: Library;
+  /** The mode the user chose (remembered); the viewport is in it when the engine allows. */
+  viewportMode: ViewportMode;
+  /** Whether Full can run. */
+  engine: EngineState;
+}
+
+/** The mode the viewport is in: Full only when chosen and the engine is ready. */
+export function effectiveMode(u: Pick<UiState, 'viewportMode' | 'engine'>): ViewportMode {
+  return u.viewportMode === 'FULL' && u.engine === 'READY' ? 'FULL' : 'FAST';
 }
 
 export type UiListener = (ui: UiState, prev: UiState) => void;
@@ -134,6 +147,7 @@ const PERSISTED: readonly (keyof UiState)[] = [
   'tuneOpen',
   'space',
   'scaleLock',
+  'viewportMode',
 ];
 
 export const PANEL_MIN = 220;
@@ -175,6 +189,8 @@ export function defaultUiState(): UiState {
     scaleLock: true,
     materialClipboard: null,
     library: emptyLibrary(),
+    viewportMode: 'FULL',
+    engine: 'LOADING',
   };
 }
 
@@ -185,6 +201,7 @@ export function createUiStore(initial: Partial<UiState> = {}): UiStore {
   let state: UiState = { ...base, ...restored, ...initial };
   state.leftWidth = Math.min(PANEL_MAX, Math.max(PANEL_MIN, state.leftWidth));
   state.rightWidth = Math.min(PANEL_MAX, Math.max(PANEL_MIN, state.rightWidth));
+  if (state.viewportMode !== 'FAST' && state.viewportMode !== 'FULL') state.viewportMode = 'FULL';
   const listeners = new Set<UiListener>();
   let toastId = 0;
   const store: UiStore = {

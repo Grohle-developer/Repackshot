@@ -18,18 +18,33 @@ export interface PickResult {
   normal: [number, number, number];
 }
 
-/** What the engine reports; the meter prints exactly this. */
+/** What the engine on screen reports; the meter prints exactly this. */
 export interface EngineStatus {
   samples: number;
   seconds: number;
   converged: boolean;
   device: string;
+  /** Path tracer: workers in the pool. */
+  workers?: number;
+  /** Path tracer: the simd128 build of the engine. */
+  simd?: boolean;
+  /** Path tracer: resolution divisor on screen (2 or 4 during a camera gesture). */
+  scale?: number;
+  /** Path tracer: frames presented during camera gestures so far. */
+  frames?: number;
+  /** Path tracer: milliseconds the last reduced-resolution frame took. */
+  frameMs?: number;
+  /** Path tracer: a Render has the pool, the viewport waits. */
+  rendering?: boolean;
 }
 
 /** The viewport as the interface sees it. */
 export interface ViewportPort {
+  /** The engine on screen now: the preview in Fast mode, the path tracer in Full. */
   readonly kind: 'preview' | 'pathtracer';
   readonly canvas: HTMLCanvasElement;
+  /** Full mode's image, placed under `canvas` (which then draws only the overlays); null without a path tracer. */
+  readonly backdrop: HTMLCanvasElement | null;
   resize(width: number, height: number, dpr: number): void;
   /** Coordinates in CSS pixels relative to the canvas. */
   pick(x: number, y: number): PickResult | null;
@@ -63,7 +78,10 @@ export interface RenderRequest {
   format: 'PNG' | 'JPEG';
   camera?: CameraId;
   signal?: AbortSignal;
-  onProgress?: (progress: number) => void;
+  /** 0..1, with the samples every pixel has so far when the engine says. */
+  onProgress?: (progress: number, samples?: number) => void;
+  /** A quick rasterised picture from the preview instead of the path tracer (the library's thumbnails). */
+  quick?: boolean;
 }
 
 export type { ImportMessage };
@@ -95,6 +113,8 @@ export interface AppServices {
   renderImage(req: RenderRequest): Promise<Blob>;
   /** The viewport as it is now, PNG. */
   captureViewport(): Promise<Blob | null>;
+  /** The engine's scene file (RSB, what `rt` renders on the command line) for the output image. */
+  exportScene(state: ProjectState): Blob;
   /** Reads a model file; throws with a readable reason. Names come from the file. */
   importFile(file: File): Promise<ImportRead>;
   /** The project as a .repack.json blob. */

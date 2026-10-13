@@ -10,7 +10,7 @@ import type { Lang } from '../data/types';
 import type { ThemeSetting } from '../core/store';
 import * as cmd from './commands';
 import type { Ctx } from './reactive';
-import { TOOLS, type Drawer, type Tool } from './ui-state';
+import { TOOLS, type Drawer, type Tool, type ViewportMode } from './ui-state';
 
 export interface UrlParams {
   example: boolean;
@@ -27,6 +27,8 @@ export interface UrlParams {
   t?: number;
   guide?: number;
   tool?: Tool;
+  /** The viewport mode (Fast or Full), for screenshots. */
+  mode?: ViewportMode;
 }
 
 export function readUrlParams(search: string): UrlParams {
@@ -56,6 +58,8 @@ export function readUrlParams(search: string): UrlParams {
   if (q.get('guide') !== null && Number.isInteger(guide) && guide >= 1 && guide <= 6) out.guide = guide - 1;
   const tool = q.get('tool')?.toLowerCase();
   if (tool && (TOOLS as readonly string[]).includes(tool)) out.tool = tool as Tool;
+  const mode = q.get('mode')?.toLowerCase();
+  if (mode === 'fast' || mode === 'full') out.mode = mode === 'fast' ? 'FAST' : 'FULL';
   return out;
 }
 
@@ -89,4 +93,6 @@ export function applyUrlParams(ctx: Ctx, p: UrlParams): void {
   if (p.panels === 'collapsed') ctx.ui.set({ leftCollapsed: true, rightCollapsed: true });
   if (p.guide !== undefined) ctx.ui.set({ guideStep: p.guide });
   if (p.tool) cmd.setTool(ctx, p.tool);
+  // The chosen mode, applied as soon as the engine allows (Full waits for it to load).
+  if (p.mode) ctx.ui.set({ viewportMode: p.mode });
 }

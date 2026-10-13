@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A clean-room, MIT-licensed, browser-based 3D product renderer.",
-  "license": "MIT",
+  "description": "A clean-room, browser-based 3D product renderer, free for noncommercial use.",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "engines": {
     "node": ">=22"
   },
@@ -20,7 +20,7 @@
     "test:watch": "vitest",
     "screenshot": "node tools/screenshot.mjs",
     "qa": "npm run check && npm run build && npm run test",
-    "engine:build": "cargo build --manifest-path engine/Cargo.toml -p rt-wasm --target wasm32-unknown-unknown --release && mkdir -p public/engine && cp engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm public/engine/rt.wasm",
+    "engine:build": "node tools/engine-build.mjs",
     "engine:test": "cargo test --manifest-path engine/Cargo.toml --workspace"
   },
   "dependencies": {

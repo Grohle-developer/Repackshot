@@ -117,22 +117,66 @@ function topRight(ctx: Ctx, scope: Scope): HTMLElement {
   return h('div', { class: 'ov ov-tr' }, camBtn, h('span', { class: 'ov-sep' }), resBtn);
 }
 
+/** Seconds as MM:SS (the meter's clock). */
+function clock(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function meter(ctx: Ctx, scope: Scope): HTMLElement {
   const port = ctx.services.viewport!;
+  const title = h('div', { style: 'font-weight:600;font-size:12px' });
   const line = h('div', { class: 'aux tabular' });
   const bar = h('div', { class: 'bar-meter' }, h('div', { style: 'width:0%' }));
-  const el = h('div', { class: 'ov ov-bl', role: 'status', 'aria-live': 'off' }, h('div', { style: 'font-weight:600;font-size:12px' }, t('viewport.meterPreview')), line, bar, h('div', { class: 'note', style: 'font-size:11px' }, t('viewport.meterTracer')));
+  const note = h('div', { class: 'note', style: 'font-size:11px' });
+  const el = h('div', { class: 'ov ov-bl', role: 'status', 'aria-live': 'off', 'data-guide': 'meter' }, title, line, bar, note);
   let last = 0;
-  const update = () => {
+  let trailing = 0;
+  const update = (force = false) => {
     const now = performance.now();
-    if (now - last < 250) return;
+    if (!force && now - last < 250) {
+      // Throttled: the last frame of a burst is still shown, a moment later.
+      if (!trailing) trailing = window.setTimeout(() => ((trailing = 0), update(true)), 250 - (now - last));
+      return;
+    }
     last = now;
-    // The meter prints what the engine reports, nothing else.
+    // The meter prints what the engine on screen reports, nothing else.
     const st = port.status();
-    line.textContent = `${st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: st.samples })} · ${formatNumber(st.seconds * 1000, getLang(), 1)} ms`;
-    (bar.firstElementChild as HTMLElement).style.width = st.converged ? '100%' : '30%';
+    const lang = getLang();
+    const samples = st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: formatNumber(st.samples, lang, 0) });
+    if (port.kind === 'pathtracer') {
+      const scale = st.scale ?? 1;
+      title.textContent = st.rendering
+        ? t('viewport.meterRendering')
+        : scale >= 4
+          ? t('viewport.meterQuarter')
+          : scale >= 2
+            ? t('viewport.meterHalf')
+            : t('viewport.meterFull', { samples, time: clock(st.seconds) });
+      line.textContent = t('viewport.pool', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') });
+      const max = Math.max(1, ctx.store.get().render.maxSamples);
+      (bar.firstElementChild as HTMLElement).style.width = `${Math.min(100, Math.round((st.samples / max) * 100))}%`;
+      note.textContent = '';
+      note.style.display = 'none';
+    } else {
+      title.textContent = t('viewport.meterFast');
+      line.textContent = t('viewport.frameMs', { ms: formatNumber(st.seconds * 1000, lang, 1) });
+      (bar.firstElementChild as HTMLElement).style.width = st.converged ? '100%' : '30%';
+      note.textContent = t('viewport.renderNote');
+      note.style.display = '';
+    }
+    // Machine-readable copies of the same numbers (screenshots and browser checks read them).
+    el.dataset.mode = port.kind === 'pathtracer' ? 'full' : 'fast';
+    el.dataset.samples = String(st.samples);
+    el.dataset.seconds = st.seconds.toFixed(3);
+    el.dataset.scale = String(st.scale ?? 1);
+    el.dataset.frames = String(st.frames ?? 0);
+    el.dataset.frameMs = st.frameMs !== undefined ? st.frameMs.toFixed(1) : '';
   };
-  scope.onDispose(port.onFrame(update));
+  scope.onDispose(port.onFrame(() => update()));
+  scope.onDispose(() => window.clearTimeout(trailing));
+  scope.watch((_s, u) => [u.viewportMode, u.engine].join(), () => update(true));
+  update(true);
   return el;
 }
 
@@ -237,7 +281,9 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       raf = 0;
       const ev = lastMove!;
       if (ev.buttons !== 0) {
+        // Orbiting, panning or dragging a handle: no hover outline (it would follow the camera on every frame).
         label.style.display = 'none';
+        if (ui.get().hover && !drag) ui.set({ hover: null });
         return;
       }
       const p = local(ev);

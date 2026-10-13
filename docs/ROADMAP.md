@@ -139,6 +139,11 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **U4** · Biblioteca propia: materiales, montajes de luz, tipos de
   producto y estudios con miniatura, pestañas *Míos*, persistencia,
   exportación e importación JSON; 504 tests — **Sonnet**.
+- **E4** · El motor en el navegador: escritor RSB en TypeScript idéntico
+  byte a byte al de `rt-core`, pool de workers con `rt.wasm` escalar y
+  `simd128`, conmutador **Rápido · Completo**, *Render* siempre con el
+  trazador, paridad exacta navegador / nativo; 561 tests web y 182 del
+  motor — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -555,7 +560,7 @@ describen las normales (Hanika 2021), lo que quita el terminador dentado
 y deja un borde oscuro en siluetas de mallas gruesas; la luz del ejemplo
 pasa de 1000 a 5 W; `rt_version` 0.2.0 y `.wasm` de 180 KB.
 
-## E4 · El motor en el navegador — **Opus**
+## E4 · El motor en el navegador — **Opus** — hecha
 
 **Qué.** `src/io/rsb.ts`: escritor RSB en TypeScript desde el
 `ProjectState` (mallas, instancias, materiales con la semántica fijada
@@ -589,6 +594,46 @@ fotogramas por segundo a resolución reducida en el Chromium local con
 swiftshader (o lo que dé, anotado); el botón *Render* en modo *Rápido*
 produce la imagen del trazador, no la de la vista previa (test de
 píxeles: la imagen descargada tiene ruido de muestreo y sombras suaves).
+
+**Hecho.** `src/io/rsb.ts` escribe el RSB desde el estado y reproduce
+`rt --write-example` byte a byte; `src/render/{pathtracer,worker,
+pool-protocol,tiles,tonemap}.ts` con un pool de workers (escalar o
+`simd128` según el navegador), baldosas intercaladas, generación para
+descartar baldosas viejas, acumulación en `f32` y en orden de muestra, y
+las curvas de tono del motor portadas a TypeScript **bit a bit**
+(comparadas con `rt --tone-table`). Conmutador *Rápido · Completo* en la
+cabecera con `Ctrl ⇧ R`, recordado, y deshabilitado con su motivo cuando
+no hay `rt.wasm`. **Paridad**: la escena de joyería con Rembrandt y
+atrapasombras, renderizada en la página a 4 muestras y con `rt` nativo,
+da el mismo hash a 1920 × 1080 (0 bytes distintos). En la VM de pruebas
+con swiftshader: el visor *Completo* converge a 3,6 muestras/s en
+1000 × 875 (3,15 M caminos/s con 3 workers y SIMD) y orbita a 13 fps a ¼
+de resolución; *Render* de 1920 × 1080 a 128 muestras, 84–111 s. El
+render en modo *Rápido* sale del trazador (ruido de muestreo y sombra de
+contacto medidos). Brillo *Completo* frente a *Rápido*: 0,95, dentro de
+la tolerancia de ±10 %. Fotometría común en `src/core/photometry.ts`:
+flujo de un panel = potencia × tamaño² / 4 para igualar la irradiancia
+del rig; sensor de 36 mm en el lado largo. Capturas
+`docs/ui/viewport-full.png`, `viewport-fast.png`, `render-output.png`.
+
+Lo que no encajaba: nueva exportación `rt_scene_update`
+(`Scene::update_from_rsb`): un RSB sin `MESH` conserva las mallas y sus
+BVH, para no reconstruir la geometría en cada movimiento de cámara; la
+conversión final a 8 bits de *Render* corre en los workers y el visor usa
+un camino rápido por tabla (exacto salvo donde la curva fílmica del motor
+oscila a nivel de ulp); arrastres del *gizmo* y de controles también
+renderizan a resolución reducida; el visor renderiza a píxeles CSS, sin
+supermuestreo HiDPI; con swiftshader, el contorno de selección y el
+lienzo WebGL superpuesto se apagan durante los gestos para no leer el
+lienzo en cada fotograma; acción de la paleta *Exportar escena del motor
+(.rsb)*; `groundShadow`, `groundReflection` y el color del entorno plano
+no tienen equivalente en el motor todavía; el ACES del motor da NaN por
+encima de ~1e19 de radiancia. Dos correcciones del responsable al
+recibir la fase: el **ángulo del sol** estaba documentado en radianes y
+salía como un disco de 31°, cuando en EZ Packshot está en **grados**
+(0,545° es el sol real; ahora se pasa tal cual, con test de regresión); y
+*Render* **ya no cae a la vista previa** cuando falta `rt.wasm`: lo dice
+y no renderiza, como decidió el usuario.
 
 ## E5 · Dieléctricos, emisores, barniz, cielo, HDRI — **Opus**
 

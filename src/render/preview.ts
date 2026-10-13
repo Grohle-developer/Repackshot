@@ -15,6 +15,7 @@ import { polar, toWorldAzimuth } from '../core/light-math';
 import { lightPosition, rigPivot, type LightInstance } from '../core/lighting';
 import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
 import { getMesh } from '../core/meshes';
+import { areaLightRadiance, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { partsUnder, sceneBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
 import type { ProjectState } from '../core/store';
@@ -36,10 +37,6 @@ function fromThree(v: THREE.Vector3): Vec3 {
   return [m.x, m.y, m.z];
 }
 
-/** Luminance of an area light per watt over its area in part sizes (calibrated by eye). */
-const AREA_K = 0.2;
-/** Sun intensity per W/m2, consistent with AREA_K for the same irradiance. */
-const SUN_K = AREA_K * 4 * Math.PI;
 
 const LAYER_SELECTED = 1;
 const LAYER_HOVER = 2;
@@ -131,6 +128,9 @@ export interface ViewChange {
 
 export type PreviewTool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move';
 
+/** A camera gesture as it happens: start, every move (with the live view), end. */
+export type GesturePhase = 'start' | 'move' | 'end';
+
 /** What the move tool shows: the gizmo of these nodes, in these axes. */
 export interface GizmoSpec {
   ids: readonly NodeId[];
@@ -170,6 +170,12 @@ export class PreviewEngine implements RenderEngine {
   private device = 'WebGL';
   private readonly frameListeners = new Set<() => void>();
   private viewListener: ((v: ViewChange) => void) | null = null;
+  private gestureListener: ((phase: GesturePhase, v: ViewChange | null) => void) | null = null;
+  /** Full mode: the path tracer paints the image under this canvas; only overlays are drawn here. */
+  private overlayOnly = false;
+  /** Full mode: the canvas is clear and nothing on it needs drawing. */
+  private overlayClear = false;
+  private readonly depthOnly = new THREE.MeshBasicMaterial({ colorWrite: false });
   private maskTarget: THREE.WebGLRenderTarget | null = null;
   private readonly maskSelected = new THREE.MeshBasicMaterial({ toneMapped: false });
   private readonly maskHover = new THREE.MeshBasicMaterial({ toneMapped: false, blending: THREE.AdditiveBlending, transparent: true });
@@ -225,11 +231,18 @@ export class PreviewEngine implements RenderEngine {
     this.controls = new OrbitControls(this.persp, canvas);
     this.controls.enableDamping = false;
     this.controls.zoomSpeed = 0.8;
-    this.controls.addEventListener('start', () => (this.interacting = true));
-    this.controls.addEventListener('change', () => (this.needsRender = true));
+    this.controls.addEventListener('start', () => {
+      this.interacting = true;
+      this.gestureListener?.('start', null);
+    });
+    this.controls.addEventListener('change', () => {
+      this.needsRender = true;
+      if (this.interacting && this.gestureListener) this.gestureListener('move', this.currentView());
+    });
     this.controls.addEventListener('end', () => {
       this.interacting = false;
       this.emitView();
+      this.gestureListener?.('end', null);
     });
   }
 
@@ -258,6 +271,19 @@ export class PreviewEngine implements RenderEngine {
   /** main.ts turns camera gestures into store actions. */
   onViewChange(fn: (v: ViewChange) => void): void {
     this.viewListener = fn;
+  }
+
+  /** The live view while a gesture lasts (the store hears of it only at the end): the path tracer follows it. */
+  onGesture(fn: (phase: GesturePhase, v: ViewChange | null) => void): void {
+    this.gestureListener = fn;
+  }
+
+  /** Full mode: draw only the overlays (outline, selected faces, gizmo) over a transparent canvas. */
+  setOverlayOnly(on: boolean): void {
+    if (on === this.overlayOnly) return;
+    this.overlayOnly = on;
+    this.overlayClear = false;
+    this.needsRender = true;
   }
 
   onFrame(fn: () => void): () => void {
@@ -478,7 +504,8 @@ export class PreviewEngine implements RenderEngine {
       const pos = toThree(lightPosition(state, l));
       const color = new THREE.Color().setRGB(l.color[0], l.color[1], l.color[2], THREE.LinearSRGBColorSpace);
       if (l.type === 'SUN') {
-        const sun = new THREE.DirectionalLight(color, l.power * SUN_K);
+        // The same irradiance the path tracer gets (core/photometry.ts).
+        const sun = new THREE.DirectionalLight(color, l.power * SUN_IRRADIANCE_PER_POWER);
         sun.position.copy(pos);
         sun.target.position.copy(target);
         this.lightRoot.add(sun, sun.target);
@@ -486,7 +513,8 @@ export class PreviewEngine implements RenderEngine {
         const w = Math.max(1e-3, l.size) * size;
         const hgt = Math.max(1e-3, l.shape === 'SQUARE' || l.shape === 'DISK' ? l.size : l.sizeY) * size;
         const area = Math.max(1e-6, (w / size) * (hgt / size) * (l.shape === 'DISK' || l.shape === 'ELLIPSE' ? Math.PI / 4 : 1));
-        const rect = new THREE.RectAreaLight(color, (AREA_K * l.power) / area, w, hgt);
+        // RectAreaLight takes radiance: the path tracer's for this flux and area (core/photometry.ts).
+        const rect = new THREE.RectAreaLight(color, areaLightRadiance(l.power, area), w, hgt);
         rect.position.copy(pos);
         rect.lookAt(target);
         this.lightRoot.add(rect);
@@ -608,9 +636,10 @@ export class PreviewEngine implements RenderEngine {
     }
   }
 
-  private emitView(): void {
+  /** The view the controls have now. */
+  private currentView(): ViewChange | null {
     const s = this.state;
-    if (!s || !this.viewListener) return;
+    if (!s) return null;
     const cam = activeCamera(s);
     const c = this.camera;
     const pos = fromThree(c.position);
@@ -618,7 +647,12 @@ export class PreviewEngine implements RenderEngine {
     const orbit = orbitFromPosition(pos, target);
     const change: ViewChange = { ...orbit, target };
     if (c === this.ortho && this.ortho.zoom !== 1) change.orthoWidth = cam.orthoWidth / this.ortho.zoom;
-    this.viewListener(change);
+    return change;
+  }
+
+  private emitView(): void {
+    const change = this.viewListener ? this.currentView() : null;
+    if (change) this.viewListener!(change);
   }
 
   private updateLayers(): void {
@@ -678,17 +712,68 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
+  /** Something to draw over the path tracer: an outline, selected faces, the gizmo. */
+  private hasOverlay(): boolean {
+    if (this.faceOverlay || (this.gizmo.visible && !this.poseActive)) return true;
+    for (const o of this.objects.values()) if (o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER)) return true;
+    return false;
+  }
+
   frame(): void {
     if (!this.renderer || !this.needsRender || !this.state) return;
     this.needsRender = false;
     const t0 = performance.now();
     const cam = this.camera;
     this.renderer.setClearColor(0x000000, 0);
-    this.renderer.render(this.scene, cam);
+    // Full mode with nothing to draw over the image: one clear, then no GL work at all (camera
+    // gestures stay cheap on a software GL).
+    if (this.overlayOnly && !this.hasOverlay()) {
+      if (!this.overlayClear) {
+        this.renderer.clear();
+        // An invisible canvas is left out of compositing: a software compositor would otherwise read
+        // the WebGL canvas back on every frame the image under it changes. It still gets the pointer.
+        this.renderer.domElement.style.opacity = '0';
+      }
+      this.overlayClear = true;
+      this.lastFrameMs = performance.now() - t0;
+      for (const fn of this.frameListeners) fn();
+      return;
+    }
+    if (this.overlayClear || !this.overlayOnly) this.renderer.domElement.style.opacity = '';
+    this.overlayClear = false;
+    if (this.overlayOnly) this.drawOverlayBase(cam);
+    else this.renderer.render(this.scene, cam);
     this.drawOutline(cam);
     this.drawGizmo(cam);
     this.lastFrameMs = performance.now() - t0;
     for (const fn of this.frameListeners) fn();
+  }
+
+  /**
+   * Full mode: a transparent canvas, and the selected faces drawn over the model's depth (which
+   * writes no colour), so they hide behind the part like they do in Fast mode.
+   */
+  private drawOverlayBase(cam: THREE.Camera): void {
+    this.renderer.clear();
+    const faces = this.faceOverlay;
+    if (!faces) return;
+    const bg = this.scene.background;
+    const floorVisible = this.floor.visible;
+    const lightsVisible = this.lightRoot.visible;
+    this.scene.background = null;
+    this.floor.visible = false;
+    this.lightRoot.visible = false;
+    faces.visible = false;
+    this.scene.overrideMaterial = this.depthOnly;
+    this.renderer.render(this.scene, cam);
+    this.scene.overrideMaterial = null;
+    faces.visible = true;
+    this.renderer.autoClear = false;
+    this.renderer.render(faces, cam);
+    this.renderer.autoClear = true;
+    this.scene.background = bg;
+    this.floor.visible = floorVisible;
+    this.lightRoot.visible = lightsVisible;
   }
 
   private drawOutline(cam: THREE.Camera): void {

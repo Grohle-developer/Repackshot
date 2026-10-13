@@ -155,11 +155,16 @@ exists in only one language.
   comments in English; the interface in both.
 - The catalogues (studios, setups, materials, wear, lenses, animation
   presets, Doctor checks) with their photometry and 99 tests.
-- The engine skeleton: scene format, PNG writer, deterministic ray caster,
-  native CLI and wasm exports, 79 tests, cross-compiled in CI. The real path
-  tracer (BVH, integrator, materials) is phases E2 to E5 of the roadmap.
-- The interface (phase U1) with a three.js preview viewport, being
-  finished; screenshots above are from it.
+- The render engine in Rust: SIMD wide BVH, a Sobol / Owen path tracer
+  with physically based materials, area lights and sun with MIS, studio
+  dome, floor and shadow catcher, tone curves; deterministic across
+  platforms; 182 tests, cross-compiled to ARM64, RISC-V and wasm.
+- **The engine runs in the browser**: a pool of Web Workers renders the
+  viewport in **Full** mode and every Render, with byte-exact parity with
+  the native `rt` command line; **Fast** mode keeps a rasterised preview
+  for editing.
+- The interface: importers for glTF, OBJ, STL, FBX, 3DM, 3MF, PLY, DAE
+  and USD, the move tool and part operations, the user library; 561 tests.
 
 See the milestones in `docs/ROADMAP.md`: **v0.1** import, product types,
 materials, light setups and the Rust path tracer rendering in the viewport

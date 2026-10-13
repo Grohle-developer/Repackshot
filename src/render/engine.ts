@@ -1,7 +1,8 @@
 // The web-side engine interface (ARCHITECTURE §5.0). Two implementations
-// coexist: `preview` (three.js, this phase) and `pathtracer` (the Rust engine
-// over wasm workers, later phases). main.ts holds the engine in a variable,
-// so adding the second one does not touch the interface.
+// coexist: `preview` (three.js, render/preview.ts) and `pathtracer` (the Rust
+// engine over a pool of wasm workers, render/pathtracer.ts). The user picks
+// which one the viewport shows (Fast / Full); Render always uses the path
+// tracer. main.ts wires both.
 
 import type { CameraId } from '../core/camera';
 import type { RenderProgress } from '../core/render';
@@ -13,6 +14,18 @@ export interface EngineStatus {
   seconds: number;
   converged: boolean;
   device: string;
+  /** Path tracer: workers in the pool. */
+  workers?: number;
+  /** Path tracer: the simd128 build of the engine is running. */
+  simd?: boolean;
+  /** Path tracer: resolution divisor of what is on screen (1, or 2 and 4 during a camera gesture). */
+  scale?: number;
+  /** Path tracer: frames presented during camera gestures since it started (for measuring). */
+  frames?: number;
+  /** Path tracer: milliseconds the last reduced-resolution frame took, from the change to the image. */
+  frameMs?: number;
+  /** Path tracer: a Render is using the pool, the viewport waits. */
+  rendering?: boolean;
 }
 
 export interface RenderOptions {

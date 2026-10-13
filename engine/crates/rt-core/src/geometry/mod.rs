@@ -290,6 +290,13 @@ impl Geometry {
         &self.meshes
     }
 
+    /// Gives the meshes (with their BVHs) back, dropping the instances: a host that changes only
+    /// the instances, materials or lights of a scene rebuilds the geometry from them without
+    /// building any mesh BVH again.
+    pub fn into_meshes(self) -> Vec<Mesh> {
+        self.meshes
+    }
+
     /// The instances.
     pub fn instances(&self) -> &[Instance] {
         &self.instances

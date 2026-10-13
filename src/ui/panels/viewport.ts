@@ -35,7 +35,13 @@ export function viewportPanel(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui, services } = ctx;
   const host = h('div', { class: 'vp-canvas-host' });
   const port = services.viewport;
-  if (port) host.appendChild(port.canvas);
+  if (port) {
+    if (port.backdrop) {
+      port.backdrop.classList.add('vp-backdrop');
+      host.appendChild(port.backdrop);
+    }
+    host.appendChild(port.canvas);
+  }
   else host.appendChild(h('div', { class: 'empty' }, h('div', { class: 'empty-zone' }, h('div', { class: 'note' }, t('viewport.noEngine')))));
 
   // Darken what falls outside the output frame: the viewport is the render.

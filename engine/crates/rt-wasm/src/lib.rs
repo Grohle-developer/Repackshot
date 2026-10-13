@@ -28,8 +28,11 @@ pub const STATUS_OK: u32 = 0;
 pub const STATUS_BAD_HANDLE: u32 = 1;
 /// Status returned by `rt_render_tile`: empty tile or more than [`MAX_TILE_PIXELS`] pixels.
 pub const STATUS_BAD_TILE: u32 = 2;
-/// Status returned by `rt_render_tile`: the output pointer is null.
+/// Status returned by `rt_render_tile` and `rt_scene_update`: a pointer is null.
 pub const STATUS_NULL_POINTER: u32 = 3;
+/// Status returned by `rt_scene_update`: the bytes are not a valid RSB update (the message is
+/// the last load error); the scene is unchanged.
+pub const STATUS_BAD_SCENE: u32 = 4;
 
 /// Largest tile (in pixels) `rt_render_tile` accepts: 2048 x 2048.
 pub const MAX_TILE_PIXELS: u64 = 1 << 22;
@@ -79,6 +82,32 @@ pub fn scene_load(bytes: &[u8]) -> u32 {
         Err(error) => {
             reg.error = error.to_string();
             0
+        }
+    }
+}
+
+/// Replaces the loaded scene `handle` with the RSB file `bytes`; a file without `MESH` sections
+/// keeps the scene's meshes and their BVHs (see `Scene::update_from_rsb`). The lights are prepared
+/// again. Returns [`STATUS_OK`], [`STATUS_BAD_HANDLE`] or [`STATUS_BAD_SCENE`] after recording the
+/// error (the scene is then unchanged).
+pub fn scene_update(handle: u32, bytes: &[u8]) -> u32 {
+    let mut reg = registry();
+    let Some(loaded) = handle
+        .checked_sub(1)
+        .and_then(|i| reg.scenes.get_mut(i as usize))
+        .and_then(Option::as_mut)
+    else {
+        return STATUS_BAD_HANDLE;
+    };
+    match loaded.scene.update_from_rsb(bytes) {
+        Ok(()) => {
+            loaded.prepared = Prepared::new(&loaded.scene);
+            reg.error.clear();
+            STATUS_OK
+        }
+        Err(error) => {
+            reg.error = error.to_string();
+            STATUS_BAD_SCENE
         }
     }
 }
@@ -179,6 +208,7 @@ pub fn render_tile_rgba(
 mod tests {
     use super::*;
     use crate::ffi::*;
+    use rt_core::math::Vec3;
     use std::sync::Mutex;
 
     /// The registry is process-wide state: tests that touch it run one at a time.
@@ -384,6 +414,71 @@ mod tests {
             Err(STATUS_BAD_TILE)
         );
         scene_free(handle);
+    }
+
+    #[test]
+    fn updates_keep_the_meshes_and_render_like_a_fresh_load() {
+        let _guard = serial();
+        let handle = load_example();
+        // The example seen through another camera at another size, sent without its meshes.
+        let mut moved = rt_core::example::scene();
+        moved.camera.position = Vec3::new(-300.0, -800.0, 500.0);
+        moved.render.width = 96;
+        moved.render.height = 64;
+        moved.materials[0].base_color = rt_core::color::Rgb::new(0.1, 0.8, 0.3);
+        // What the prepared lights hold changes too: the update must prepare them again.
+        moved.environment.background_mode = rt_core::scene::BACKGROUND_COLOR;
+        moved.environment.background_color = rt_core::color::Rgb::new(0.9, 0.1, 0.1);
+        moved.lights[0].power = 20.0;
+        let full = moved.to_rsb();
+        let mut update = full[..8].to_vec();
+        let mut pos = 8;
+        while pos < full.len() {
+            let len = u32::from_le_bytes(full[pos + 4..pos + 8].try_into().unwrap()) as usize;
+            if &full[pos..pos + 4] != b"MESH" {
+                update.extend_from_slice(&full[pos..pos + 8 + len]);
+            }
+            pos += 8 + len;
+        }
+        assert!(
+            update.len() < full.len() / 4,
+            "the update carries no geometry"
+        );
+        let ptr = upload(&update);
+        // SAFETY: `ptr` holds `update.len()` initialised bytes from `rt_alloc`.
+        let status = unsafe { rt_scene_update(handle, ptr, update.len() as u32) };
+        // SAFETY: `ptr` came from `rt_alloc(update.len())` and is freed once.
+        unsafe { rt_free(ptr, update.len() as u32) };
+        assert_eq!(status, STATUS_OK);
+        let fresh = scene_load(&full);
+        for sample in 0..2 {
+            assert_eq!(
+                render_tile_rgba(handle, 0, 0, 96, 64, sample),
+                render_tile_rgba(fresh, 0, 0, 96, 64, sample)
+            );
+        }
+        // Pixels beyond the new size are outside the image now.
+        let edge = render_tile_rgba(handle, 90, 0, 8, 1, 0).expect("render");
+        assert_eq!(edge[6 * 4 + 3], 0.0);
+
+        // A bad update is reported and changes nothing.
+        assert_eq!(scene_update(handle, b"garbage"), STATUS_BAD_SCENE);
+        assert!(rt_scene_error_len() > 0);
+        assert_eq!(
+            render_tile_rgba(handle, 0, 0, 96, 64, 0),
+            render_tile_rgba(fresh, 0, 0, 96, 64, 0)
+        );
+        assert_eq!(scene_update(handle, &update), STATUS_OK);
+        assert_eq!(rt_scene_error_len(), 0, "a good update clears the error");
+        assert_eq!(scene_update(0, &update), STATUS_BAD_HANDLE);
+        assert_eq!(scene_update(handle + 40, &update), STATUS_BAD_HANDLE);
+        // SAFETY: a null pointer is explicitly handled.
+        assert_eq!(
+            unsafe { rt_scene_update(handle, std::ptr::null(), 4) },
+            STATUS_NULL_POINTER
+        );
+        scene_free(handle);
+        scene_free(fresh);
     }
 
     #[test]

@@ -83,7 +83,7 @@ export interface LightSpec {
   dist: number;
   /** Beam spread in degrees: 180 is a fabric diffuser, 60 a honeycomb grid. */
   spread?: number;
-  /** Angular diameter of a SUN, in radians. */
+  /** Angular diameter of a SUN, in degrees (0.545 is the real sun; EZ Packshot converted to radians only for Blender). */
   angle?: number;
   /** Colour temperature of a white source. Ignored when `color` is set. */
   kelvin?: number;

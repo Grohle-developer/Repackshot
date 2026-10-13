@@ -4,6 +4,7 @@
 declare module 'node:fs' {
   export function readFileSync(path: string): Uint8Array<ArrayBuffer>;
   export function readFileSync(path: string, encoding: 'utf8'): string;
+  export function writeFileSync(path: string, data: Uint8Array | string): void;
   export function existsSync(path: string): boolean;
   export function readdirSync(path: string): string[];
 }
@@ -21,4 +22,7 @@ declare module 'node:worker_threads' {
     postMessage(value: unknown, transfer?: unknown[]): void;
     terminate(): Promise<number>;
   }
+}
+declare module 'node:zlib' {
+  export function inflateSync(data: Uint8Array): Uint8Array;
 }

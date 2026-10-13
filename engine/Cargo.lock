@@ -4,18 +4,18 @@ version = 4
 
 [[package]]
 name = "rt-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rt-core",
 ]
 
 [[package]]
 name = "rt-core"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "rt-wasm"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rt-core",
 ]

@@ -1,12 +1,15 @@
-// Header (UI.md §2.1): app menu, project name, undo / redo, search, guide, theme.
+// Header (UI.md §2.1): app menu, project name, undo / redo, the viewport
+// mode (Fast · Full), search, guide, theme.
 
 import { VERSION } from '../../core/version';
 import * as cmd from '../commands';
+import { segmented } from '../components/controls';
 import { confirmBox, openFloating, openMenu, type MenuEntry } from '../components/widgets';
 import { h, icon } from '../dom';
 import type { Ctx, Scope } from '../reactive';
 import { ACTIONS, kbdFor, kbdText } from '../shortcuts';
 import { t } from '../strings';
+import { effectiveMode, type ViewportMode } from '../ui-state';
 
 function shortcutSheet(): HTMLElement {
   const rows = ACTIONS.filter((a) => a.keys && !a.id.startsWith('tool.')).map((a) =>
@@ -112,6 +115,35 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
   refresh();
   scope.onDispose(store.subscribe(refresh));
 
+  // The viewport mode: what the viewport shows while working. Render always uses the path tracer.
+  const mode = segmented<ViewportMode>(
+    [
+      { value: 'FAST', label: t('header.modeFast') },
+      { value: 'FULL', label: t('header.modeFull') },
+    ],
+    effectiveMode(ui.get()),
+    (v) => cmd.setViewportMode(ctx, v),
+    { ariaLabel: t('header.mode') },
+  );
+  mode.el.setAttribute('data-tip', t('header.modeTip'));
+  mode.el.setAttribute('data-kbd', kbdFor('viewportMode'));
+  mode.el.setAttribute('data-guide', 'viewport-mode');
+  const fullBtn = mode.el.querySelectorAll('button')[1] as HTMLButtonElement;
+  const reason = h('span', { class: 'aux mode-reason' });
+  scope.watch(
+    (_s, u) => [u.viewportMode, u.engine] as const,
+    () => {
+      const u = ui.get();
+      mode.set(effectiveMode(u));
+      const why = cmd.fullModeReason(ctx);
+      fullBtn.disabled = why !== null;
+      fullBtn.setAttribute('data-tip', why ? t(why) : t('header.modeTip'));
+      reason.textContent = why ? t(why) : '';
+      reason.style.display = why ? '' : 'none';
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
+
   const search = h(
     'button',
     { type: 'button', class: 'search-trigger', 'aria-label': t('header.search'), 'data-kbd': kbdFor('palette'), onclick: () => ui.set({ paletteOpen: true }) },
@@ -126,7 +158,7 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
     'header',
     { class: 'hdr' },
     h('div', { class: 'hdr-left' }, menuBtn, nameEl),
-    h('div', { class: 'hdr-center' }, undoBtn, redoBtn),
+    h('div', { class: 'hdr-center' }, undoBtn, redoBtn, h('span', { class: 'hdr-sep' }), mode.el, reason),
     h('div', { class: 'hdr-right' }, search, guideBtn, themeBtn),
   );
 }

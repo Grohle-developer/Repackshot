@@ -38,7 +38,9 @@ cargo build --release -p rt-cli                 # target/release/rt
 ```
 
 From the repository root, `npm run engine:test` runs the tests and `npm run engine:build` builds
-the WebAssembly module and copies it to `public/engine/rt.wasm` (git-ignored).
+the WebAssembly module twice (`tools/engine-build.mjs`): `public/engine/rt.wasm`, scalar, and
+`public/engine/rt-simd.wasm`, built with `-C target-feature=+simd128` into its own target directory
+(`target/simd128`); the browser takes the second when it validates simd128. Both are git-ignored.
 
 The `test` profile uses `opt-level = 1`: the BVH tests compare against a brute-force loop over
 every triangle (tens of millions of triangle tests), which is ten times faster that way. Debug
@@ -61,6 +63,7 @@ every test passes on its own.)
 ```sh
 cargo run --release -p rt-cli -- --example -o out.png        # built-in scene, no input file
 cargo run --release -p rt-cli -- --write-example scene.rsb   # the same scene as an RSB file
+cargo run --release -p rt-cli -- --tone-table > tones.json   # the tone curves' reference values
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 64 --threads 4 --size 1280x720
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 4096 --max-seconds 30
 cargo run --release -p rt-cli -- --sheet ../out/sheet          # the contact sheet (below)
@@ -250,12 +253,14 @@ The module imports nothing (no WASI, no JavaScript glue). Exports:
 | `rt_alloc(len) -> ptr` / `rt_free(ptr, len)` | Buffers in linear memory for the host to fill or read |
 | `rt_scene_load(ptr, len) -> handle` | Parses RSB bytes; 0 on error |
 | `rt_scene_error_len() -> u32` / `rt_scene_error_copy(ptr)` | The last load error as UTF-8 |
+| `rt_scene_update(handle, ptr, len) -> status` | Replaces a loaded scene with RSB bytes; a file **without `MESH` sections keeps the scene's meshes and their BVHs** (camera, size, instances, materials, lights change without sending or rebuilding the geometry) |
 | `rt_scene_free(handle) -> status` | Forgets a scene |
 | `rt_render_tile(handle, x, y, w, h, sample_index, out_ptr) -> status` | Writes `w * h * 3` linear RGB floats for one sample of a tile |
 | `rt_render_tile_rgba(handle, x, y, w, h, sample_index, out_ptr) -> status` | The same with coverage: `w * h * 4` floats, RGB premultiplied by alpha (0 where a transparent background shows) |
 
-Status: 0 ok, 1 bad handle, 2 empty or oversized tile, 3 null output pointer. The scene's lights
-are prepared once, when it is loaded. `rt_version` is 0.2.0 since E3.
+Status: 0 ok, 1 bad handle, 2 empty or oversized tile, 3 null pointer, 4 invalid scene update (the
+message is the last load error; the scene is unchanged). The scene's lights are prepared once, when
+it is loaded or updated. `rt_version` is 0.3.0 since E4 (`rt_scene_update`).
 A wasm instance is single threaded; the host runs one instance per Web Worker.
 
 ## The RSB scene format
@@ -270,8 +275,9 @@ exactly as before. E3 appended optional fields (`MATL.flags`; `RNDR.max_depth`,
 meaning of every value (see "The path tracer" above). The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
-reader (`Scene::from_rsb`) and the reference writer (`Scene::to_rsb`) that the TypeScript side
-is tested against.
+reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the
+reference writer (`Scene::to_rsb`) that the TypeScript side (`src/io/rsb.ts`) is tested against
+byte for byte.
 
 ## Roadmap of the engine
 
@@ -281,6 +287,8 @@ is tested against.
 * **E3**: the path tracer: Owen-scrambled Sobol, principled BSDF, area lights, sun, studio dome,
   MIS, floor and shadow catcher, alpha, tone curves, progressive CLI with a time budget, the
   contact sheet, wasm parity of the whole example.
+* **E4**: the engine in the browser: `rt_scene_update` (updates without geometry), the simd128
+  build, `rt --tone-table` for the TypeScript port of the tone curves.
 
 ## Third-party data
 
