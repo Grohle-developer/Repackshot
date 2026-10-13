@@ -11,6 +11,12 @@ derived from another program's files or binaries.
 | `cube.ply` | ASCII PLY: a cube of 20 units, 8 vertices, 6 quads | Written by hand |
 | `two-parts.dae` | Collada 1.4.1: group Assembly with nodes Body and Cap, one Phong effect, `unit` inch, `up_axis` Z_UP | Written by hand |
 | `two-parts.usda` | USD text layer: Xform Bottle with two meshes and one UsdPreviewSurface material, `metersPerUnit` 0.01, `upAxis` Y | Written by hand |
+| `box.step` | STEP AP214 (ISO 10303-21): product Box, a 40 x 30 x 20 mm B-rep with six planar faces, colour `COLOUR_RGB` (0.8, 0.2, 0.1), millimetres (phase I2) | Written for the tests entity by entity from the public AP214 schema (contexts, product, `MANIFOLD_SOLID_BREP`, styled item); no CAD program or exporter was used |
+| `box-inch.step` | The same structure: product Inch box, 2 x 1.5 x 1, no colour, length unit `CONVERSION_BASED_UNIT('INCH')` | Same |
+| `cylinder.step` | STEP AP214: product Cylinder, radius 10, height 30 mm, two planar caps and a cylindrical wall with a seam edge, no colour | Same |
+| `assembly.step` | STEP AP214 assembly Bottle (`NEXT_ASSEMBLY_USAGE_OCCURRENCE`, `ITEM_DEFINED_TRANSFORMATION`) of Body (a 40 x 40 x 60 box, blue) and Cap (a cylinder of radius 12 and height 15, red) placed at (20, 20, 60) | Same |
+| `quarter.igs` | IGES 5.3, 80 columns: one rational B-spline surface (entity 128) that is a quarter of a cylinder of radius 10 and height 20, a name property (406 form 15) "Quarter shell", colour number 2 (red), unit flag 2 (mm) | Written for the tests record by record from the public IGES 5.3 layout |
+| `quarter-inch.igs` | The same surface with unit flag 1 (inches) | Same |
 | `example.rsb` | The engine's example scene as RSB v1 (8576 bytes): the byte-parity reference of `src/io/rsb.ts` (phase E4) | `cargo run --manifest-path engine/Cargo.toml --release -p rt-cli -- --write-example tests/fixtures/example.rsb` |
 | `tonemap.json` | What the engine computes for 20 inputs: every tone curve, the sRGB encoding, the exposure gain and the 8-bit pixels of `Film::to_srgb8_tonemapped`; and `fmath`'s exp2, log2 and pow on 48 inputs (phase E4) | `cargo run --manifest-path engine/Cargo.toml --release -p rt-cli -- --tone-table > tests/fixtures/tonemap.json` |
 

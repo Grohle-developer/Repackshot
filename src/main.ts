@@ -180,9 +180,9 @@ const services: AppServices = {
     const { scene } = projectScene(state, { width: state.render.width, height: state.render.height, maxSamples: state.render.maxSamples, maxSeconds: state.render.maxSeconds, transparent: state.render.transparent && state.render.format === 'PNG' });
     return new Blob([writeRsb(scene) as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
   },
-  async importFile(file) {
+  async importFile(file, options) {
     const { importFile } = await import('./io/import');
-    return importFile(file);
+    return importFile(file, options);
   },
   serializeProject,
   library: {

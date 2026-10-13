@@ -12,7 +12,7 @@ declare module 'node:buffer' {
   export function resolveObjectURL(url: string): Blob | undefined;
 }
 declare module 'node:module' {
-  export function createRequire(url: string): { resolve(id: string): string };
+  export function createRequire(url: string): { (id: string): unknown; resolve(id: string): string };
 }
 declare module 'node:worker_threads' {
   export class Worker {

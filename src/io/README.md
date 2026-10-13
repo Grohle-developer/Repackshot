@@ -1,5 +1,5 @@
-Importers and exporters. Depends on core. In: glTF/GLB, OBJ, STL, FBX, 3DM, 3MF, PLY, DAE, USD/USDA/USDC/USDZ;
-out: PNG/JPEG/EXR and the project file.
+Importers and exporters. Depends on core. In: glTF/GLB, OBJ, STL, FBX, 3DM, STEP/STP, IGES/IGS, 3MF, PLY, DAE,
+USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
 
 - `import.ts` detects the format (extension, then header) and loads the right reader on demand with `import()`;
   nothing here is in the first chunk (`tests/chunks.test.ts` reads `dist/` to prove it).
@@ -12,6 +12,15 @@ out: PNG/JPEG/EXR and the project file.
   texture blobs kept for M2).
 - `gltf.ts`, `fbx.ts` (GlobalSettings scan for units and up axis), `rhino.ts` (rhino3dm in a worker, files in
   `public/vendor/rhino3dm/` copied by `tools/vendor.mjs`), `threemf.ts`, `ply.ts`, `collada.ts`, `usd.ts`.
+- STEP and IGES (phase I2): occt-import-js 0.0.23 (OpenCascade in wasm, **LGPL-2.1**, the one LGPL exception,
+  isolated: ARCHITECTURE §1). `step.ts` reads the unit the file declares from its text, maps the sheet's
+  tessellation to the library's deflections and drives the worker (timeouts, cancel, idle); `step-worker.ts` is
+  the thin worker that fetches the unmodified `occt-import-js.js` and `.wasm` from `public/vendor/occt-import-js/`
+  (copied with their LGPL texts and a README by `tools/vendor.mjs`) and runs `ReadFile`; `occt-protocol.ts` holds
+  the messages and the packing of the result; `occt-convert.ts` is the pure conversion to nodes: the assembly as
+  named groups, every CAD face as a run of triangles (`SceneNode.faceRanges`) with its own vertices and normals,
+  sharp edges where two faces meet, colours as SIMPLE instances. The library is never bundled
+  (`tests/chunks.test.ts`).
 - `library.ts`: la biblioteca propia (U4) como archivo y en el navegador. `{ format: 'repackshot-library', schema: 1, items }`
   es a la vez el JSON exportado y lo que `localStorage` guarda bajo una sola clave (`repackshot.library`). Todo lo que
   entra se valida elemento a elemento y se reconstruye con los campos conocidos; el inválido se omite con su motivo.

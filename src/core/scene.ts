@@ -3,7 +3,7 @@
 
 import type { ActionBase, ProjectState } from './store';
 import type { MaterialId, MaterialInstance } from './materials';
-import { getMesh, transformedMeshBounds, type MeshRef } from './meshes';
+import { getMesh, transformedMeshBounds, type MeshRef, type TriangleRange } from './meshes';
 import { nextId } from './ids';
 import {
   add,
@@ -113,6 +113,12 @@ export interface SceneNode {
   material?: MaterialId | null;
   /** PART: triangle ranges with their own material (level FACES). */
   faceMaterials?: FaceRange[];
+  /**
+   * PART: the faces of the CAD model the mesh was tessellated from (STEP, IGES), one run of triangles per face
+   * in mesh order; every triangle is in exactly one. Selecting a whole CAD face (M1) and "separate by CAD
+   * face" use them; the rest of the program ignores them.
+   */
+  faceRanges?: TriangleRange[];
   /** PART: smooth shading (false draws flat facets). */
   smooth?: boolean;
   /** MODEL: origin of the import. */

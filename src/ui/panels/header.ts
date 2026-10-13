@@ -60,7 +60,16 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
       {
         label: t('menu.about'),
         icon: 'info',
-        run: () => openFloating(menuBtn, h('div', { class: 'menu' }, h('div', { class: 'menu-note note', style: 'padding:10px 12px' }, t('menu.aboutText', { version: VERSION })))),
+        run: () =>
+          openFloating(
+            menuBtn,
+            h(
+              'div',
+              { class: 'menu' },
+              h('div', { class: 'menu-note note', style: 'padding:10px 12px 4px' }, t('menu.aboutText', { version: VERSION })),
+              h('div', { class: 'menu-note note', style: 'padding:4px 12px 10px' }, t('menu.aboutCad')),
+            ),
+          ),
       },
     ];
     openMenu(menuBtn, entries);
