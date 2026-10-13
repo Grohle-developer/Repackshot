@@ -17,14 +17,16 @@ if (!hasDist) console.warn('chunks.test: dist/ is missing, so the bundle checks 
 /** What each library leaves in a minified chunk: its error messages and format keywords survive, class names do not. */
 const FINGERPRINTS: Record<string, string[]> = {
   FBX: ['FBXLoader'],
-  '3DM': ['rhino3dm', 'Rhino3dmLoader'],
+  // The library's file name as the loader fetches it (the bare name is in the entry chunk since U6: Settings ▸
+  // About names rhino3dm and links its licence).
+  '3DM': ['rhino3dm.js', 'Rhino3dmLoader'],
   DAE: ['ColladaLoader'],
   PLY: ['binary_little_endian'],
   '3MF': ['3MFLoader'],
   USD: ['USDLoader'],
 };
 /** Names the task lists even when a minifier removes them: they must not be in the first chunk either. */
-const NAMES = ['FBXLoader', 'rhino3dm', 'ColladaLoader', 'PLYLoader', '3MFLoader', 'USDZLoader', 'USDLoader', 'Rhino3dmLoader', 'PXR-USDC', 'binary_little_endian', 'ISO-10303-21', 'step-worker'];
+const NAMES = ['FBXLoader', 'rhino3dm.js', 'ColladaLoader', 'PLYLoader', '3MFLoader', 'USDZLoader', 'USDLoader', 'Rhino3dmLoader', 'PXR-USDC', 'binary_little_endian', 'ISO-10303-21', 'step-worker'];
 /**
  * Strings of occt-import-js.js (the emscripten glue) that survive minification (property names and messages)
  * and that our own code never writes: if the glue were bundled, they would be in a chunk.

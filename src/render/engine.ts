@@ -9,6 +9,8 @@ import type { AdvancedSettings, FinishBy, RenderProgress } from '../core/render'
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 
+export type { DisplayPrefs, NavigationPrefs } from '../core/settings';
+
 export interface EngineStatus {
   samples: number;
   seconds: number;
@@ -51,6 +53,8 @@ export interface RenderOptions {
   advanced?: AdvancedSettings;
   /** Path tracer: also hand back the accumulated linear sums (16-bit PNG, EXR). */
   keepLinear?: boolean;
+  /** Render this project instead of the one on screen (Settings ▸ Measure performance renders the example). */
+  state?: ProjectState;
 }
 
 export interface PickHit {

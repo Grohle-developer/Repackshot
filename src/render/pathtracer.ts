@@ -25,6 +25,7 @@ import type { EngineStatus, PickHit, RenderEngine, RenderOptions } from './engin
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 import { abortError, budgetProgress, runPasses, type PassBudget } from './schedule';
 import { Accumulator, assignTiles, chooseScale, Generations, nextPass, scaledSize, type Tile, type TileResult } from './tiles';
+import type { ViewportLimit } from '../core/settings';
 import { DisplayCurve } from './tonemap';
 
 /** How an image is framed and sampled (io/rsb.ts `SceneView`; main.ts connects the two). */
@@ -88,7 +89,7 @@ function isWasm(bytes: Uint8Array): boolean {
  * back to the scalar build when that file is not there), else `engine/rt.wasm`. A missing file
  * (a 404, or a server that answers with its index page) is NO_WASM.
  */
-export async function loadEngineModule(base: string): Promise<{ module: WebAssembly.Module; simd: boolean } | { error: EngineAvailability; detail: string }> {
+export async function loadEngineModule(base: string, opts: { simd?: boolean } = {}): Promise<{ module: WebAssembly.Module; simd: boolean } | { error: EngineAvailability; detail: string }> {
   if (typeof Worker === 'undefined' || typeof WebAssembly !== 'object') return { error: 'NO_WORKERS', detail: 'Web Workers or WebAssembly are not available' };
   const get = async (name: string): Promise<Uint8Array | null> => {
     try {
@@ -100,7 +101,8 @@ export async function loadEngineModule(base: string): Promise<{ module: WebAssem
       return null;
     }
   };
-  const simd = simdSupported();
+  // Settings ▸ Render engine ▸ SIMD Off: the scalar build, even where simd128 exists.
+  const simd = simdSupported() && opts.simd !== false;
   let bytes = simd ? await get('rt-simd.wasm') : null;
   const usedSimd = bytes !== null;
   bytes ??= await get('rt.wasm');
@@ -123,6 +125,8 @@ interface JobState {
 /** The workers and their messages. */
 export class Pool {
   readonly size: number;
+  /** The engine's version as its workers report it (`rt_version`: major << 16 | minor << 8 | patch). */
+  version = 0;
   private readonly workers: Worker[];
   private sceneSeq = 0;
   private readonly scenes = new Map<number, { left: number; error: string | null; done: (error: string | null) => void }>();
@@ -139,13 +143,17 @@ export class Pool {
   /** Starts `size` workers on a compiled engine; fails with the first worker's reason. */
   static async create(module: WebAssembly.Module, size: number, spawn: () => Worker): Promise<Pool> {
     const workers = Array.from({ length: size }, spawn);
+    let version = 0;
     try {
       await Promise.all(
         workers.map(
           (w) =>
             new Promise<void>((resolve, reject) => {
               w.onmessage = (e: MessageEvent<WorkerReply>) => {
-                if (e.data.type === 'ready') resolve();
+                if (e.data.type === 'ready') {
+                  version = e.data.version;
+                  resolve();
+                }
                 else if (e.data.type === 'failed') reject(new Error(e.data.reason));
               };
               w.onerror = (e) => reject(new Error(e.message || 'worker failed to start'));
@@ -157,7 +165,9 @@ export class Pool {
       workers.forEach((w) => w.terminate());
       throw err;
     }
-    return new Pool(workers);
+    const pool = new Pool(workers);
+    pool.version = version;
+    return pool;
   }
 
   private receive(msg: WorkerReply): void {
@@ -355,6 +365,12 @@ export class PathTracerEngine implements RenderEngine {
   private failure: string | null = null;
   private readonly frameListeners = new Set<() => void>();
   private tileImage: ImageData | null = null;
+  /** Settings ▸ Preferences: ½ or ¼ during gestures, or chosen from the last frame's time. */
+  private gestureScale: 'AUTO' | 'HALF' | 'QUARTER' = 'AUTO';
+  /** Settings ▸ Render engine: when Full mode stops in the viewport. */
+  private limit: ViewportLimit = { by: 'OUTPUT', samples: 1024, seconds: 120 };
+  /** The viewport stopped because of its time limit. */
+  private timedOut = false;
 
   constructor(
     private readonly pool: Pool,
@@ -364,6 +380,39 @@ export class PathTracerEngine implements RenderEngine {
 
   get workers(): number {
     return this.pool.size;
+  }
+
+  /** The engine's version, "major.minor.patch". */
+  get version(): string {
+    const v = this.pool.version;
+    return `${v >> 16}.${(v >> 8) & 255}.${v & 255}`;
+  }
+
+  setGestureResolution(mode: 'AUTO' | 'HALF' | 'QUARTER'): void {
+    this.gestureScale = mode;
+  }
+
+  /** Full mode's limit in the viewport; a change starts the image over at the new budget. */
+  setViewportLimit(limit: ViewportLimit): void {
+    const same = limit.by === this.limit.by && limit.samples === this.limit.samples && limit.seconds === this.limit.seconds;
+    this.limit = { ...limit };
+    if (!same) {
+      // Start over even when the scene is the same (an image stopped by time continues under a new limit).
+      this.lastUpdate = null;
+      this.restartWanted = true;
+    }
+  }
+
+  /** Samples the viewport converges to: the output's, or the limit's. */
+  private viewportSamples(state: ProjectState): number {
+    const output = Math.max(1, state.render.maxSamples);
+    return this.limit.by === 'SAMPLES' ? Math.max(1, this.limit.samples) : output;
+  }
+
+  private chooseGestureScale(): 2 | 4 {
+    if (this.gestureScale === 'HALF') return 2;
+    if (this.gestureScale === 'QUARTER') return 4;
+    return chooseScale(this.lastFrameMs, this.lastScale);
   }
 
   /** The 2D canvas the image is painted into (under the preview's canvas). */
@@ -470,13 +519,13 @@ export class PathTracerEngine implements RenderEngine {
     if (!state || this.viewW <= 0) return;
     const t0 = performance.now();
     const gesture = this.gesture;
-    const scale = this.interactive(t0) ? chooseScale(this.lastFrameMs, this.lastScale) : 1;
+    const scale = this.interactive(t0) ? this.chooseGestureScale() : 1;
     const px = this.pixelSize();
     const size = scaledSize(px.width, px.height, scale);
     const view: TracerView = {
       width: size.width,
       height: size.height,
-      maxSamples: Math.max(1, state.render.maxSamples),
+      maxSamples: this.viewportSamples(state),
       maxSeconds: 0,
       viewport: { viewW: this.viewW, viewH: this.viewH },
       ...(gesture?.patch ? { cameraPatch: gesture.patch } : {}),
@@ -519,6 +568,7 @@ export class PathTracerEngine implements RenderEngine {
     if (scale === 1) {
       this.genStart = performance.now();
       this.stoppedAt = 0;
+      this.timedOut = false;
     }
     const max = view.maxSamples;
     let done = 0;
@@ -546,6 +596,11 @@ export class PathTracerEngine implements RenderEngine {
       pass = p.count;
       // The next view of a gesture, or the next step of a drag: this frame is shown, start over.
       if (this.restartWanted) return;
+      // "After N seconds": stop between passes, so every pixel has the same samples.
+      if (scale === 1 && this.limit.by === 'TIME' && performance.now() - this.genStart >= this.limit.seconds * 1000) {
+        this.timedOut = true;
+        break;
+      }
     }
     if (scale === 1) this.stoppedAt = performance.now();
   }
@@ -606,12 +661,12 @@ export class PathTracerEngine implements RenderEngine {
     const acc = this.acc;
     const full = acc !== null && this.accScale === 1;
     const samples = full ? acc.minSamples : 0;
-    const max = Math.max(1, this.state?.render.maxSamples ?? 1);
+    const max = this.state ? this.viewportSamples(this.state) : 1;
     const end = this.stoppedAt || performance.now();
     return {
       samples,
       seconds: full && this.genStart ? (end - this.genStart) / 1000 : 0,
-      converged: full && samples >= max,
+      converged: full && (samples >= max || this.timedOut),
       device: this.failure ? `error: ${this.failure}` : `${this.pool.size} workers${this.simd ? ' · SIMD' : ''}`,
       workers: this.pool.size,
       simd: this.simd,
@@ -644,7 +699,7 @@ export class PathTracerEngine implements RenderEngine {
   private renderChain: Promise<unknown> = Promise.resolve();
 
   private async renderNow(opts: RenderOptions): Promise<RenderedPixels> {
-    const state = this.state;
+    const state = opts.state ?? this.state;
     if (!state) throw new Error('engine not ready');
     const signal = opts.signal;
     if (signal?.aborted) throw abortError();

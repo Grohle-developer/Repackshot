@@ -25,6 +25,7 @@ import {
 import {
   addItem,
   cleanName,
+  emptyLibrary,
   customSetupOf,
   findItem,
   fromCurrentProductType,
@@ -57,12 +58,25 @@ import {
   type Space,
 } from '../core/transform';
 import { createInitialState, type ThemeSetting } from '../core/store';
+import {
+  importIsSure,
+  isSection,
+  resetSection,
+  resetSetting,
+  SETTING_ROWS,
+  withImportDefaults,
+  withProjectDefaults,
+  withSetting,
+  type SectionId,
+  type SettingKey,
+  type Settings,
+} from '../core/settings';
 import { patchSettings, settingsOf, type RenderSettings } from '../core/render';
 import { doctorCheck } from '../data/doctor';
+import { showFirstRunChooser } from '../core/models';
 import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
 import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
-import { writePref } from './prefs';
 import type { Ctx } from './reactive';
 import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob } from './render-queue';
 import { effectiveMode, type CadReadState, type PendingImport, type Tool, type ViewportMode } from './ui-state';
@@ -172,12 +186,16 @@ async function readNext(ctx: Ctx, q: ImportQueue): Promise<void> {
   ctx.ui.set({ importMessage: t('import.busy', { name: file.name }) });
   try {
     const read = await ctx.services.importFile(file);
-    const options = defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0);
+    const settings = ctx.ui.get().settings;
+    const options = withImportDefaults(defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0), read.detected, settings);
+    const sure = settings['import.sheet'] === 'UNSURE' && importIsSure(read.detected, read.warnings);
     ctx.ui.set({
       importMessage: t('import.sheetHint', { name: file.name }),
-      rightCollapsed: false,
+      rightCollapsed: sure ? ctx.ui.get().rightCollapsed : false,
       importSheet: { id: ++sheetCounter, name: file.name, format: read.format, payload: read, warnings: read.warnings, notes: read.notes, options, queued: q.waiting.length },
     });
+    // Preferences ▸ Import defaults ▸ Only when unsure: a file that leaves no doubt imports with its values at once.
+    if (sure) confirmImport(ctx);
   } catch (err) {
     const msg = t('import.failed', { name: file.name, reason: importErrorText(err) });
     ctx.ui.set({ importMessage: msg });
@@ -216,7 +234,8 @@ export function importErrorText(err: unknown): string {
 }
 
 function openCadSheet(ctx: Ctx, file: File, format: 'STEP' | 'IGES', queued: number): void {
-  const options = defaultImportOptions(EMPTY_DETECTED, ctx.store.get().scene.roots.length > 0);
+  // The first read is at the CAD quality of Preferences ▸ Import defaults.
+  const options = withImportDefaults(defaultImportOptions(EMPTY_DETECTED, ctx.store.get().scene.roots.length > 0), EMPTY_DETECTED, ctx.ui.get().settings);
   const id = ++sheetCounter;
   ctx.ui.set({
     importMessage: t('import.sheetHint', { name: file.name }),
@@ -254,9 +273,11 @@ async function readCad(ctx: Ctx): Promise<void> {
     releaseImport(now.payload);
     // The first read says the units the file declares: the sheet takes them, as it does for the other formats.
     const first = (now.rev ?? 0) === 0;
-    const detected = defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0);
+    const settings = ctx.ui.get().settings;
+    const detected = withImportDefaults(defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0), read.detected, settings);
     const options = first ? { ...now.options, units: detected.units, upAxis: detected.upAxis } : now.options;
-    const confirm = now.cad?.confirm === true;
+    // Only when unsure: a CAD file that declares its units imports at once after its first read.
+    const confirm = now.cad?.confirm === true || (first && settings['import.sheet'] === 'UNSURE' && importIsSure(read.detected, read.warnings));
     ctx.ui.set({ importSheet: { ...now, rev: (now.rev ?? 0) + 1, format: read.format, payload: read, warnings: read.warnings, notes: read.notes, options, cad: { stage: 'ready' } } });
     if (confirm) confirmImport(ctx);
   } catch (err) {
@@ -360,7 +381,8 @@ export async function importDialog(ctx: Ctx): Promise<void> {
 export function newProject(ctx: Ctx): void {
   cancelImport(ctx);
   const s = ctx.store.get();
-  ctx.store.reset(createInitialState({ lang: s.meta.lang, theme: s.meta.theme }));
+  // A new project takes the defaults of Preferences (render, selection level); the open one never did.
+  ctx.store.reset(withProjectDefaults(createInitialState({ lang: s.meta.lang, theme: s.meta.theme }), ctx.ui.get().settings));
   ctx.ui.set({ catalogOpen: false, pickMode: null, wizard: null, importMessage: null });
 }
 
@@ -408,8 +430,7 @@ export function renameProject(ctx: Ctx, name: string): void {
 // --- Preferences ---------------------------------------------------------------
 
 export function setTheme(ctx: Ctx, theme: ThemeSetting): void {
-  ctx.store.dispatch({ type: 'meta/theme', theme });
-  writePref('theme', theme);
+  setSetting(ctx, 'general.theme', theme);
 }
 
 /** The theme actually shown for a setting ('system' follows the OS, dark unless it asks for light). */
@@ -427,8 +448,113 @@ export function toggleTheme(ctx: Ctx): void {
 }
 
 export function setLanguage(ctx: Ctx, lang: Lang): void {
-  ctx.store.dispatch({ type: 'meta/lang', lang });
-  writePref('lang', lang);
+  setSetting(ctx, 'general.lang', lang);
+}
+
+// --- Settings (UI.md §2.9): application state, saved at once, never undone ------------------------------
+
+/** Replaces the settings; the theme and the language also reach the project's meta, which the interface follows. */
+export function applySettings(ctx: Ctx, next: Settings): void {
+  if (next !== ctx.ui.get().settings) ctx.ui.set({ settings: next });
+  const meta = ctx.store.get().meta;
+  if (meta.theme !== next['general.theme']) ctx.store.dispatch({ type: 'meta/theme', theme: next['general.theme'] });
+  if (meta.lang !== next['general.lang']) ctx.store.dispatch({ type: 'meta/lang', lang: next['general.lang'] });
+}
+
+export function setSetting<K extends SettingKey>(ctx: Ctx, key: K, value: Settings[K]): void {
+  applySettings(ctx, withSetting(ctx.ui.get().settings, key, value));
+}
+
+export function resetOneSetting(ctx: Ctx, key: SettingKey): void {
+  applySettings(ctx, resetSetting(ctx.ui.get().settings, key));
+}
+
+/** Reset this section; the number of settings that changed back. */
+export function resetSettingsSection(ctx: Ctx, section: SectionId): number {
+  const before = ctx.ui.get().settings;
+  const after = resetSection(before, section);
+  const n = (Object.keys(before) as SettingKey[]).filter((k) => before[k] !== after[k]).length;
+  applySettings(ctx, after);
+  return n;
+}
+
+/**
+ * Opens the Settings window: at the section last opened, at a section (`engine`), at a part of one
+ * (`ai.models`), or at a row (`engine.threads`), which is brought into view and highlighted.
+ */
+export function openSettings(ctx: Ctx, target?: string, opts: { chooser?: boolean } = {}): void {
+  let section: SectionId = ctx.ui.get().settingsSection;
+  let focus: string | null = null;
+  if (target) {
+    if (isSection(target)) section = target;
+    else {
+      const row = SETTING_ROWS.find((r) => r.id === target);
+      const head = target.split('.')[0];
+      if (row) section = row.section;
+      else if (isSection(head)) section = head;
+      focus = target;
+    }
+  }
+  if (section === 'desktop' && !ctx.ui.get().desktop) section = 'general';
+  const nonce = (ctx.ui.get().settingsWindow?.nonce ?? 0) + 1;
+  ctx.ui.set({ settingsWindow: { section, focus, nonce, ...(opts.chooser ? { chooser: true } : {}) }, settingsSection: section, paletteOpen: false, renderWindow: null });
+}
+
+export function closeSettings(ctx: Ctx): void {
+  if (ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
+}
+
+/**
+ * The desktop portable's first start (AI-POST.md §2.2): the Settings window opens at AI ▸ Models as a chooser
+ * (one, several or none), once. main.ts calls it when the launcher answers.
+ */
+export function maybeShowModelChooser(ctx: Ctx, o: { portable: boolean; pending: boolean }): boolean {
+  const show = showFirstRunChooser({ desktop: ctx.ui.get().desktop !== null, portable: o.portable, pending: o.pending, shown: ctx.ui.get().chooserShown });
+  if (show) {
+    openSettings(ctx, 'ai.models', { chooser: true });
+    ctx.ui.set({ chooserShown: true });
+  }
+  return show;
+}
+
+/** Whether closing the page should ask first (General ▸ Confirm before closing; the page's beforeunload asks it). */
+export function shouldConfirmClose(ctx: Ctx): boolean {
+  return ctx.ui.get().settings['general.confirmClose'] && ctx.store.get().meta.dirty;
+}
+
+/** Settings ▸ Render engine ▸ Measure performance: a real run of the example scene with the engine in use. */
+let measuring: AbortController | null = null;
+export async function measurePerformance(ctx: Ctx, seconds = 10): Promise<void> {
+  if (measuring) return;
+  const controller = new AbortController();
+  measuring = controller;
+  const startedAt = performance.now();
+  ctx.ui.set({ perf: { state: 'RUNNING', startedAt, elapsed: 0 } });
+  try {
+    const result = await ctx.services.engine.measure({ seconds, signal: controller.signal, onProgress: (elapsed) => ctx.ui.set({ perf: { state: 'RUNNING', startedAt, elapsed } }) });
+    ctx.ui.set({ perf: { state: 'DONE', result }, throughput: result.pixelSamplesPerSecond });
+  } catch (err) {
+    if (controller.signal.aborted) ctx.ui.set({ perf: { state: 'STOPPED' } });
+    else ctx.ui.set({ perf: { state: 'FAILED', reason: err instanceof Error ? err.message : String(err) } });
+  } finally {
+    measuring = null;
+  }
+}
+
+export function stopMeasuring(): void {
+  measuring?.abort();
+}
+
+/** What this computer has, for the AI models (once per session unless asked again). */
+export async function detectHardware(ctx: Ctx, again = false): Promise<void> {
+  const h = ctx.ui.get().hardware;
+  if (h.state === 'DETECTING' || (h.state === 'DONE' && !again)) return;
+  ctx.ui.set({ hardware: { state: 'DETECTING', info: h.info } });
+  try {
+    ctx.ui.set({ hardware: { state: 'DONE', info: await ctx.services.hardware() } });
+  } catch (err) {
+    ctx.ui.set({ hardware: { state: 'DONE', info: { detected: false, where: ctx.ui.get().desktop ? 'desktop' : 'web', error: err instanceof Error ? err.message : String(err), cores: null, ramGiB: null, gpus: [], webgpu: null, maxBufferBytes: null } } });
+  }
 }
 
 // --- Selection -------------------------------------------------------------------
@@ -1338,6 +1464,11 @@ export async function deleteResult(ctx: Ctx, id: string): Promise<void> {
     results: ctx.ui.get().results.filter((r) => r.id !== id),
     ...(v && v.id === id ? { resultView: null } : v && v.compare === id ? { resultView: { ...v, compare: null } } : {}),
   });
+}
+
+/** Settings ▸ Storage ▸ Library ▸ Free up: the library emptied (main.ts saves it like any other change). */
+export function clearLibrary(ctx: Ctx): void {
+  ctx.ui.set({ library: emptyLibrary() });
 }
 
 export async function clearHistory(ctx: Ctx): Promise<void> {

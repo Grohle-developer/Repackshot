@@ -26,12 +26,15 @@ export interface ResultsStore {
   /** Folder handles (FileSystemDirectoryHandle), structured-cloned as they are. */
   putHandle(id: string, handle: unknown): Promise<void>;
   getHandle(id: string): Promise<unknown>;
+  /** New limits (Settings ▸ Storage): what no longer fits is evicted now, oldest first; returns those ids. */
+  setLimits(limits: HistoryLimits): Promise<string[]>;
 }
 
 const blobBytes = (file: Blob, display: Blob | null): number => file.size + (display?.size ?? 0);
 
 /** The history in memory only: same behaviour and limits, gone with the page. */
-export function memoryResultsStore(limits: HistoryLimits = HISTORY_LIMITS): ResultsStore {
+export function memoryResultsStore(initialLimits: HistoryLimits = HISTORY_LIMITS): ResultsStore {
+  let limits = initialLimits;
   const metas = new Map<string, ResultMeta>();
   const blobs = new Map<string, StoredBlobs>();
   const handles = new Map<string, unknown>();
@@ -62,6 +65,15 @@ export function memoryResultsStore(limits: HistoryLimits = HISTORY_LIMITS): Resu
       handles.set(id, handle);
     },
     getHandle: async (id) => handles.get(id) ?? null,
+    async setLimits(next) {
+      limits = next;
+      const evict = evictionPlan([...metas.values()], limits);
+      for (const id of evict) {
+        metas.delete(id);
+        blobs.delete(id);
+      }
+      return evict;
+    },
   };
 }
 
@@ -103,7 +115,8 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-function idbResultsStore(db: IDBDatabase, limits: HistoryLimits): ResultsStore {
+function idbResultsStore(db: IDBDatabase, initialLimits: HistoryLimits): ResultsStore {
+  let limits = initialLimits;
   const metas = async (): Promise<ResultMeta[]> => {
     const tx = db.transaction('meta', 'readonly');
     return request(tx.objectStore('meta').getAll() as IDBRequest<ResultMeta[]>);
@@ -150,6 +163,12 @@ function idbResultsStore(db: IDBDatabase, limits: HistoryLimits): ResultsStore {
     async getHandle(id) {
       const tx = db.transaction('handles', 'readonly');
       return (await request(tx.objectStore('handles').get(id))) ?? null;
+    },
+    async setLimits(next) {
+      limits = next;
+      const evict = evictionPlan(await metas(), limits);
+      await drop(evict);
+      return evict;
     },
   };
 }

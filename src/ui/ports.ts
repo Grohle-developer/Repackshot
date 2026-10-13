@@ -11,7 +11,10 @@ import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
-import type { Tool } from './ui-state';
+import type { HardwareInfo, ModelsService } from '../core/models';
+import type { HistoryLimits } from '../core/results';
+import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
+import type { PerfResult, Tool } from './ui-state';
 
 export interface PickResult {
   node: NodeId;
@@ -42,6 +45,8 @@ export interface EngineStatus {
   pixels?: number;
 }
 
+export type { DisplayPrefs, NavigationPrefs } from '../core/settings';
+
 /** The viewport as the interface sees it. */
 export interface ViewportPort {
   /** The engine on screen now: the preview in Fast mode, the path tracer in Full. */
@@ -71,6 +76,46 @@ export interface ViewportPort {
   materialThumbnail(mat: MaterialInstance, key: string): Promise<string | null>;
   /** Number of thumbnails waiting to be rendered. */
   thumbnailsPending(): number;
+  setNavigation(nav: NavigationPrefs): void;
+  setDisplay(display: DisplayPrefs): void;
+}
+
+/** The engine settings of Settings ▸ Render engine, as main.ts applies them. */
+export interface EngineConfig {
+  backend: 'AUTO' | 'NATIVE' | 'WASM';
+  /** 0: automatic. */
+  threads: number;
+  simd: 'AUTO' | 'OFF';
+  gestureResolution: 'AUTO' | 'HALF' | 'QUARTER';
+  viewportLimit: ViewportLimit;
+}
+
+export interface EnginePort {
+  /** Applies the settings: the pool restarts when its size, its SIMD build or the backend changes. */
+  configure(cfg: EngineConfig): void;
+  /** Renders the example scene for `seconds` with the engine in use and reports what it measured. */
+  measure(opts: { seconds: number; signal: AbortSignal; onProgress?: (elapsed: number) => void }): Promise<PerfResult>;
+}
+
+/** The browser's storage as Settings ▸ Storage shows it. */
+export interface StoragePort {
+  /** What the browser reports (navigator.storage.estimate), or null when it does not. */
+  estimate(): Promise<{ usage: number; quota: number } | null>;
+  /** Whether the browser keeps the data (navigator.storage.persisted), null when it cannot say. */
+  persisted(): Promise<boolean | null>;
+  /** Asks the browser to keep the data; null when it cannot be asked. */
+  persist(): Promise<boolean | null>;
+  /** Bytes of the library's entry. */
+  libraryBytes(): number;
+  /** Bytes of the thumbnail cache. */
+  cacheBytes(): number;
+  /** Deletes the thumbnail cache; the bytes freed. */
+  clearCache(): number;
+}
+
+/** The desktop launcher's folders (P2), when the page runs in its window. */
+export interface DesktopPort {
+  openFolder(target: 'data' | 'models' | 'logs'): Promise<void>;
 }
 
 export interface RenderRequest {
@@ -135,6 +180,8 @@ export interface ResultsPort {
   get(id: string): Promise<{ file: Blob; display: Blob | null } | null>;
   remove(id: string): Promise<void>;
   clear(): Promise<void>;
+  /** New limits (Settings ▸ Storage); the ids evicted at once to fit them, oldest first. */
+  setLimits?(limits: HistoryLimits): Promise<string[]>;
 }
 
 /** Where outputs go (src/io/files.ts): the downloads, or a folder of the File System Access API. */
@@ -198,4 +245,15 @@ export interface AppServices {
   serializeProject(state: ProjectState): Blob;
   /** The user's library as a file (Export library / Import library). */
   library: LibraryServices;
+  /** The render engine's settings and Measure performance. */
+  engine: EnginePort;
+  /** The AI model manager; null when this build has none. */
+  models: ModelsService | null;
+  /** What this computer has, for the AI models (WebGPU limits in the browser, the launcher's detection on the desktop). */
+  hardware(): Promise<HardwareInfo>;
+  storage: StoragePort;
+  /** Null outside the desktop application. */
+  desktop: DesktopPort | null;
+  /** A licence text shipped with the build (`licences/<file>`, copied by tools/licences.mjs); null when missing. */
+  licenceText(file: string): Promise<string | null>;
 }

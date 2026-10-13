@@ -12,7 +12,7 @@ import { libraryKey, lightShares, lightIrradiance, presetRefOf } from '../../cor
 import { resolvePreset } from '../../core/rig';
 import type { EnvironmentState, ImageState, ProjectState } from '../../core/store';
 import * as cmd from '../commands';
-import { colorField, field, numberField, segmented, select, slider, toggle, type Control } from '../components/controls';
+import { colorField, field, lengthField, numberField, segmented, select, slider, toggle, type Control } from '../components/controls';
 import { libraryFoot, mineCards, mineEmpty, mineRows, namePrompt, type MineSpec } from '../components/library';
 import { section } from '../components/section';
 import { confirmBox, showConfirmIn, thumb } from '../components/widgets';
@@ -64,13 +64,12 @@ function productSection(ctx: Ctx, scope: Scope): HTMLElement {
     t('product.saveType'),
   );
   const typeAux = h('div', { class: 'aux' });
-  const size = numberField({
+  const size = lengthField({
     value: s0.scene.partSizeMm,
     min: 0.1,
     max: 100000,
     step: 1,
     digits: 1,
-    unit: 'mm',
     ariaLabel: t('product.partSize'),
     onChange: (mm, gesture) => store.dispatch({ type: 'scene/setPartSize', mm, gesture, label: L('undo.partSize') }),
   });
@@ -382,7 +381,7 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
   );
   const focal = numberField({ value: cam0.focalMm, min: 8, max: 600, step: 1, unit: 'mm', ariaLabel: t('camera.focal'), onChange: (v, g) => set({ focalMm: v }, 'camera.focal', g) });
   const fstop = numberField({ value: cam0.fstop, min: 0.95, max: 32, step: 0.1, digits: 1, prefix: 'f/', ariaLabel: t('camera.fstop'), onChange: (v, g) => set({ fstop: v }, 'camera.fstop', g) });
-  const focus = numberField({ value: cam0.focusDistance, min: 1, max: 1e6, step: 1, unit: 'mm', ariaLabel: t('camera.focus'), onChange: (v, g) => set({ focusDistance: v }, 'camera.focus', g) });
+  const focus = lengthField({ value: cam0.focusDistance, min: 1, max: 1e6, step: 1, ariaLabel: t('camera.focus'), onChange: (v, g) => set({ focusDistance: v }, 'camera.focus', g) });
   const focusBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('camera.focusClick'), 'data-tip': t('camera.focusClick'), onclick: () => ui.set({ pickMode: ui.get().pickMode?.kind === 'focus' ? null : { kind: 'focus' } }) }, icon('focus'));
   scope.watch((_s, u) => u.pickMode?.kind === 'focus', (on) => focusBtn.setAttribute('aria-pressed', String(on)));
   const proj = segmented(

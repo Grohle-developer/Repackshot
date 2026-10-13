@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "vendor": "node tools/vendor.mjs",
+    "vendor": "node tools/vendor.mjs && node tools/licences.mjs",
     "predev": "npm run vendor",
     "dev": "vite",
     "build": "vite build",

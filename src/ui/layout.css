@@ -39,8 +39,9 @@ textarea {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  grid-template-columns: var(--left-w) minmax(0, 1fr) var(--right-w);
-  grid-template-rows: var(--header-h) minmax(0, 1fr) auto var(--status-h);
+  /* Widths and heights in the chrome's own pixels, times the interface size. */
+  grid-template-columns: calc(var(--left-w) * var(--ui-zoom)) minmax(0, 1fr) calc(var(--right-w) * var(--ui-zoom));
+  grid-template-rows: calc(var(--header-h) * var(--ui-zoom)) minmax(0, 1fr) auto calc(var(--status-h) * var(--ui-zoom));
   grid-template-areas:
     'hdr hdr hdr'
     'left vp right'

@@ -34,7 +34,7 @@ import { NAME_TOKENS, type NameToken } from '../../core/name-template';
 import * as cmd from '../commands';
 import { numberField, segmented, select, timeField, toggle } from '../components/controls';
 import { section } from '../components/section';
-import { h, icon, isTyping } from '../dom';
+import { h, icon, isTyping, placeAt } from '../dom';
 import { cameraName, dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
 import { nameValues } from '../render-queue';
@@ -410,11 +410,14 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
 
   // ------------------------------------------------------------------ AI (X3/X4 mount here)
   const aiMount = h('div', { class: 'rw-ai-mount', 'data-mount': 'ai-post' });
+  const aiDefault = h('span', { class: 'note' });
+  scope.watch((_s, u) => u.settings['ai.intervention'], (n) => (aiDefault.textContent = t('rw.aiDefault', { n })));
   const aiBody = h(
     'div',
     { class: 'rw-section' },
     row(t('rw.ai'), h('div', { class: 'rw-inline' }, toggle(false, () => {}, t('rw.ai'), !AI_AVAILABLE).el, h('span', { class: 'aux' }, t('common.comingSoon')))),
     h('p', { class: 'note rw-ai-note' }, t('rw.aiSoon')),
+    row(t('set.block.models'), h('div', { class: 'rw-inline' }, h('button', { type: 'button', class: 'btn', 'data-settings-link': 'ai.models', onclick: () => cmd.openSettings(ctx, 'ai.models') }, t('rw.aiManage')), aiDefault)),
     aiMount,
   );
 
@@ -545,9 +548,9 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     const r = win.getBoundingClientRect();
     const nx = Math.max(8 - r.width + 120, Math.min(window.innerWidth - 120, x));
     const ny = Math.max(8, Math.min(window.innerHeight - 48, y));
-    win.style.left = `${nx}px`;
-    win.style.top = `${ny}px`;
     win.style.transform = 'none';
+    // Screen pixels; the window may be zoomed by Settings ▸ Accessibility ▸ Interface size.
+    placeAt(win, nx, ny);
     return { x: nx, y: ny };
   };
   const pos0 = ui.get().renderWindowPos;

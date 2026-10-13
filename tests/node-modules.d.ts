@@ -31,3 +31,6 @@ declare module 'node:worker_threads' {
 declare module 'node:zlib' {
   export function inflateSync(data: Uint8Array): Uint8Array;
 }
+declare module 'node:crypto' {
+  export function createHash(algorithm: 'sha256'): { update(data: Uint8Array): { digest(encoding: 'hex'): string } };
+}

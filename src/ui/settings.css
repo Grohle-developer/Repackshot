@@ -1,0 +1,551 @@
+/* Phase U6: the Settings window (UI.md §2.9). Achromatic like every other
+   piece of chrome (tests/ui-achromatic.test.ts): contrast, weight and space,
+   never colour. The window is zoomed by the interface size (theme.css), so its
+   box is written in its own pixels. */
+
+.sw-mount:empty {
+  display: none;
+}
+.sw-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  /* The application stays visible behind, dimmed 40 %. */
+  background: rgba(0, 0, 0, 0.4);
+}
+.sw {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 81;
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc((100vw - 32px) / var(--ui-zoom)));
+  height: min(680px, calc((100vh - 32px) / var(--ui-zoom)));
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  outline: none;
+}
+.sw-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  flex: none;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--line);
+  cursor: move;
+  user-select: none;
+}
+.sw.is-moving .sw-titlebar {
+  cursor: grabbing;
+}
+.sw-window-title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+.sw-main {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.sw-foot {
+  flex: none;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+  text-align: right;
+}
+
+/* Left column: search and sections ----------------------------------------------- */
+.sw-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 12px 8px 12px 12px;
+  border-right: 1px solid var(--line);
+  background: var(--bg-1);
+}
+.sw-search {
+  height: 30px;
+  flex: none;
+}
+.sw-count:empty {
+  display: none;
+}
+.sw-count {
+  padding: 0 4px;
+}
+.sw-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.sw-group + .sw-group {
+  margin-top: 10px;
+}
+.sw-group-title {
+  padding: 6px 8px 4px;
+  font-size: var(--fs-aux);
+  font-variant: small-caps;
+  text-transform: lowercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+}
+.sw-option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  color: var(--ink-1);
+  cursor: pointer;
+  outline: none;
+}
+.sw-option:hover {
+  background: var(--hover);
+}
+.sw-option[aria-selected='true'] {
+  background: var(--inv-bg);
+  color: var(--inv-ink);
+  font-weight: 600;
+}
+.sw-option:focus-visible {
+  outline: var(--focus-ring) solid var(--line-strong);
+  outline-offset: -1px;
+}
+.sw-hit-label {
+  color: var(--ink-0);
+}
+.sw-hit-path {
+  font-size: var(--fs-aux);
+}
+
+/* Right column: section, blocks and rows ----------------------------------------- */
+.sw-content {
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-0);
+  scrollbar-width: thin;
+}
+.sw-section {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px 20px;
+}
+.sw-head {
+  padding-bottom: 8px;
+}
+.sw-title {
+  margin: 0 0 4px;
+  font-size: calc(18px * var(--text-scale));
+  font-weight: 600;
+}
+.sw-desc {
+  margin: 0;
+}
+.sw-block {
+  padding: 12px 0 8px;
+  border-top: 1px solid var(--line);
+}
+.sw-head + .sw-block,
+.sw-head + div + .sw-block {
+  border-top: 0;
+}
+.sw-block-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+summary.sw-block-title {
+  cursor: pointer;
+}
+.sw-advanced:not([open]) {
+  padding-bottom: 12px;
+}
+.sw-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+  min-height: 36px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: var(--radius);
+}
+.sw-row.is-wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* What a wide row shows under its label lines up with the label. */
+.sw-row.is-wide > :not(.sw-text) {
+  margin-left: 12px;
+}
+.sw-row.is-wide > .sw-text:has(> .sw-label.sr-only):has(> .sw-aux[style*='none']) {
+  display: none;
+}
+.sw-row:hover {
+  background: var(--soft);
+}
+.sw-row.is-flash {
+  outline: var(--focus-ring) solid var(--line-strong);
+  outline-offset: -1px;
+}
+.sw-text {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-left: 12px;
+}
+.sw-dot {
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+.sw-row.is-changed .sw-dot {
+  background: var(--ink-0);
+}
+.sw-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ink-0);
+}
+.sw-badge {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.sw-badge.is-strong {
+  border-color: var(--line-strong);
+  color: var(--ink-0);
+  font-weight: 700;
+}
+.sw-aux {
+  max-width: 520px;
+}
+.sw-ctrl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+.sw-row.is-wide > .sw-ctrl {
+  justify-content: flex-start;
+}
+.sw-row.is-wide > .sw-ctrl:empty {
+  display: none;
+}
+.sw-ctrl .select {
+  width: auto;
+  min-width: 180px;
+}
+.sw-num {
+  min-width: 110px;
+}
+.sw-text-input {
+  width: 260px;
+}
+.sw-reset {
+  visibility: hidden;
+  font-size: var(--fs-label);
+}
+.sw-row:hover .sw-reset,
+.sw-row:focus-within .sw-reset {
+  visibility: visible;
+}
+.sw-row.is-soon .sw-ctrl {
+  opacity: 0.55;
+}
+.sw-section-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.sw-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sw-strong {
+  font-weight: 600;
+}
+.sw-value {
+  color: var(--ink-1);
+  text-align: right;
+}
+.sw-path {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  overflow-wrap: anywhere;
+}
+.sw-link {
+  color: var(--ink-0);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.sw-warn {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 600;
+  font-size: var(--fs-label);
+}
+.sw-warn:empty {
+  display: none;
+}
+.sw-warn-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-0);
+}
+
+/* Bars (progress, space used) ------------------------------------------------------ */
+.sw-bar {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.sw-bar > * {
+  display: block;
+  height: 100%;
+  background: var(--ink-0);
+}
+
+/* Engine --------------------------------------------------------------------------- */
+.sw-measure-out {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 560px;
+}
+.sw-measure-rate {
+  color: var(--ink-1);
+}
+.sw-measure-rate.is-result {
+  color: var(--ink-0);
+  font-size: calc(16px * var(--text-scale));
+  font-weight: 600;
+}
+.sw-info {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+}
+.sw-info dt {
+  color: var(--ink-2);
+}
+.sw-info dd {
+  margin: 0;
+}
+
+/* Shortcuts ------------------------------------------------------------------------ */
+.sw-sc-filter {
+  max-width: 320px;
+}
+.sw-sc-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px 28px;
+  margin-top: 8px;
+}
+.sw-sc-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+.sw-sc-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  margin: 0;
+}
+.sw-sc-list dt {
+  color: var(--ink-1);
+}
+.sw-sc-list dd {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  margin: 0;
+}
+
+/* AI models ------------------------------------------------------------------------- */
+.sw-ai-soon {
+  margin: 0 0 8px;
+}
+.sw-chooser {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+.sw-rec-line {
+  margin: 0 0 4px;
+  color: var(--ink-1);
+}
+.sw-active {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sw-models {
+  display: flex;
+  flex-direction: column;
+}
+.sw-model {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.sw-model:first-child {
+  border-top: 0;
+}
+.sw-model[data-recommended] .sw-model-name > span:first-child {
+  font-weight: 700;
+}
+.sw-model-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.sw-model-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 600;
+}
+.sw-model-state {
+  color: var(--ink-1);
+}
+.sw-model[data-state='DOWNLOADING'] .sw-model-state,
+.sw-model[data-state='IN_USE'] .sw-model-state,
+.sw-model[data-state='DAMAGED'] .sw-model-state {
+  font-weight: 600;
+}
+.sw-model .sw-bar {
+  max-width: 420px;
+}
+.sw-model-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.sw-model-panel {
+  grid-column: 1 / -1;
+}
+.sw-model-panel:empty {
+  display: none;
+}
+.sw-licence-panel,
+.sw-form,
+.sw-import-panel > * {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.sw-licence-panel p,
+.sw-form p {
+  margin: 0;
+}
+.sw-licence-text {
+  max-height: 220px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.sw-licence > summary {
+  cursor: pointer;
+  padding: 3px 0;
+}
+.sw-licence[open] > summary {
+  margin-bottom: 6px;
+}
+.sw-tp {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+}
+.sw-tp p {
+  margin: 0;
+}
+.sw-form-field {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.sw-form-field .text-input,
+.sw-form-field .select {
+  max-width: 360px;
+}
+
+/* Storage ---------------------------------------------------------------------------- */
+.sw-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sw-usage-row {
+  display: grid;
+  grid-template-columns: 180px minmax(80px, 1fr) 90px auto;
+  align-items: center;
+  gap: 12px;
+}
+.sw-usage-bytes {
+  text-align: right;
+}
+.sw-confirm:empty {
+  display: none;
+}
+
+/* Viewport meter: the way to the engine's settings when it is missing. */
+.ov-engine-link {
+  margin-top: 4px;
+  font-size: var(--fs-label);
+}

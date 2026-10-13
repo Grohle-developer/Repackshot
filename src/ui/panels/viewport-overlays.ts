@@ -125,11 +125,13 @@ function clock(seconds: number): string {
 
 function meter(ctx: Ctx, scope: Scope): HTMLElement {
   const port = ctx.services.viewport!;
-  const title = h('div', { style: 'font-weight:600;font-size:12px' });
+  const title = h('div', { style: 'font-weight:600;font-size:var(--fs-label)' });
   const line = h('div', { class: 'aux tabular' });
   const bar = h('div', { class: 'bar-meter' }, h('div', { style: 'width:0%' }));
-  const note = h('div', { class: 'note', style: 'font-size:11px' });
-  const el = h('div', { class: 'ov ov-bl', role: 'status', 'aria-live': 'off', 'data-guide': 'meter' }, title, line, bar, note);
+  const note = h('div', { class: 'note', style: 'font-size:var(--fs-aux)' });
+  // Without the engine, a way to its settings (UI.md §2.9: deep links).
+  const engineLink = h('button', { type: 'button', class: 'btn-link ov-engine-link', 'data-settings-link': 'engine', onclick: () => cmd.openSettings(ctx, 'engine') }, t('viewport.engineSettings'));
+  const el = h('div', { class: 'ov ov-bl', role: 'status', 'aria-live': 'off', 'data-guide': 'meter' }, title, line, bar, note, engineLink);
   let last = 0;
   let trailing = 0;
   const update = (force = false) => {
@@ -160,8 +162,10 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
         const prev = ctx.ui.get().throughput;
         if (prev === null || Math.abs(tp - prev) > prev * 0.1) ctx.ui.set({ throughput: tp });
       }
-      const max = Math.max(1, ctx.store.get().render.maxSamples);
-      (bar.firstElementChild as HTMLElement).style.width = `${Math.min(100, Math.round((st.samples / max) * 100))}%`;
+      // Full mode stops where Settings ▸ Render engine says: the output's samples, N samples, or a time.
+      const set = ctx.ui.get().settings;
+      const max = set['engine.viewportLimit'] === 'SAMPLES' ? Math.max(1, set['engine.viewportSamples']) : Math.max(1, ctx.store.get().render.maxSamples);
+      (bar.firstElementChild as HTMLElement).style.width = `${st.converged ? 100 : Math.min(100, Math.round((st.samples / max) * 100))}%`;
       note.textContent = '';
       note.style.display = 'none';
     } else {
@@ -171,6 +175,8 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
       note.textContent = t('viewport.renderNote');
       note.style.display = '';
     }
+    const engine = ctx.ui.get().engine;
+    engineLink.style.display = engine === 'READY' || engine === 'LOADING' ? 'none' : '';
     // Machine-readable copies of the same numbers (screenshots and browser checks read them).
     el.dataset.mode = port.kind === 'pathtracer' ? 'full' : 'fast';
     el.dataset.samples = String(st.samples);
@@ -307,7 +313,8 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
         vp.removeAttribute('data-gizmo-handle');
       }
       const tg = targetAt(p.x, p.y);
-      const id = tg?.id ?? null;
+      // Settings ▸ Preferences ▸ Outline on hover: off, the part under the cursor is not outlined (its name still shows).
+      const id = ui.get().settings['selection.hoverOutline'] ? (tg?.id ?? null) : null;
       if (ui.get().hover !== id) ui.set({ hover: id });
       if (tg) {
         label.textContent = store.get().scene.nodes[tg.id]?.name ?? '';

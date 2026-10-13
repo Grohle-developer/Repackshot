@@ -1,7 +1,9 @@
 // Form controls: NumberField (scrubbable, units, keyboard, one undo entry
 // per drag), Slider, Segmented, Toggle, Select, ColorField, TextField.
 
-import { formatNumber, getLang } from '../strings';
+import { UNIT_TO_MM } from '../../core/import-options';
+import type { LengthUnit } from '../../core/settings';
+import { formatNumber, getLang, t, type StringKey } from '../strings';
 import { h, hexToLinear, linearToHex } from '../dom';
 
 let gestureCounter = 0;
@@ -183,6 +185,43 @@ export function numberField(p: NumberFieldProps): Control<number> {
       render();
     },
   };
+}
+
+let lengthUnit: LengthUnit = 'mm';
+/** Settings ▸ General ▸ Interface units (app.ts sets it before building the interface). */
+export function setLengthUnit(u: LengthUnit): void {
+  lengthUnit = u;
+}
+export function getLengthUnit(): LengthUnit {
+  return lengthUnit;
+}
+
+/** A length in the interface units, from millimetres. */
+export function lengthIn(mm: number, unit: LengthUnit = lengthUnit): number {
+  return mm / UNIT_TO_MM[unit];
+}
+
+/**
+ * A NumberField for a length the model keeps in millimetres, shown and typed in the interface units (mm, cm, m,
+ * in). Steps become the power of ten nearest to the same length; the decimals grow with the unit.
+ */
+export function lengthField(p: NumberFieldProps): Control<number> {
+  const unit = lengthUnit;
+  if (unit === 'mm') return numberField({ ...p, unit: p.unit ?? 'mm' });
+  const k = UNIT_TO_MM[unit];
+  const step = 10 ** Math.round(Math.log10((p.step ?? 1) / k));
+  const digits = (p.digits ?? (p.step !== undefined && p.step < 1 ? 2 : 0)) + Math.ceil(Math.log10(k));
+  const field = numberField({
+    ...p,
+    value: p.value / k,
+    min: p.min === undefined ? undefined : p.min / k,
+    max: p.max === undefined ? undefined : p.max / k,
+    step,
+    digits,
+    unit: t(`set.general.units.${unit}` as StringKey),
+    onChange: (v, g) => p.onChange(v * k, g),
+  });
+  return { el: field.el, set: (mm) => field.set(mm / k) };
 }
 
 export interface SliderProps extends NumberFieldProps {
