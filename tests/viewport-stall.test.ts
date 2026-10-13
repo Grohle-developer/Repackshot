@@ -97,6 +97,17 @@ function rig(threads = 8, width = 8, height = 6): Rig {
   };
 }
 
+/** The page's animation loop until `cond` holds, or `ms` of wall time (a generous deadline): whether it held. */
+async function until(r: Rig, cond: () => boolean, ms: number): Promise<boolean> {
+  const end = performance.now() + ms;
+  while (!cond()) {
+    if (performance.now() > end) return false;
+    r.engine.frame();
+    await tick(3);
+  }
+  return true;
+}
+
 /** A clock the engine reads (performance.now), moved by hand. */
 function manualClock(): { now: number; advance(ms: number): void } {
   const c = { now: performance.now(), advance: (ms: number) => void (c.now += ms) };
@@ -114,25 +125,30 @@ async function frames(engine: NativeEngine, clock: { advance(ms: number): void }
 }
 
 describe('the viewport and the browser connections to the launcher', () => {
-  it('never leaves a response unread: forty fast changes later the viewport still gets passes', { timeout: 15000 }, async () => {
+  it('never leaves a response unread: forty fast changes later the viewport still gets passes', { timeout: 60000 }, async () => {
     const r = rig();
     r.launcher.pollMs = 25;
-    // Changes come faster than the long-polls answer: each one replaces a view whose poll is in flight.
-    let frames = 0;
-    await r.run(1500, 3, () => {
-      if (++frames % 10 === 0 && frames <= 400) r.change();
-    });
-    // Quiet again: the last view converges, and nothing waits for a connection.
+    // Every change replaces a view whose long-poll is in flight: its answer comes for a view nobody shows.
+    // Conditions, not wall time, so a loaded machine only makes it slower. With responses left unread, six
+    // changes take the six connections and the next view never gets one.
+    let shown = 0;
+    for (let i = 0; i < 40; i++) {
+      const polled = await until(r, () => r.launcher.lastViewport > shown && r.launcher.polling(r.launcher.lastViewport), 10000);
+      expect(polled, `change ${i}: no new view got a long-poll (${r.launcher.inUse} of ${r.launcher.connections} connections in use, ${r.launcher.queued} requests waiting)`).toBe(true);
+      shown = r.launcher.lastViewport;
+      r.change();
+    }
+    // Quiet again: the last view comes at full resolution and gets passes, and nothing waits for a connection.
     const before = r.engine.status().passes ?? 0;
-    for (let i = 0; i < 10 && (r.engine.status().passes ?? 0) <= before + 2; i++) await r.run(300);
-    expect(r.engine.status().passes ?? 0).toBeGreaterThan(before + 2);
-    expect(r.engine.status().samples).toBeGreaterThan(0);
+    const converging = await until(r, () => r.engine.status().samples > 0 && (r.engine.status().passes ?? 0) > before + 2, 20000);
+    expect(converging, `no passes of the full view (${r.launcher.inUse} connections in use, ${r.launcher.queued} waiting)`).toBe(true);
+    expect(r.engine.status().scale).toBe(1);
     expect(r.launcher.queued).toBe(0);
     // The poll of the view on screen (and a POST or a DELETE on the way) hold a connection; never all six.
     expect(r.launcher.maxInUse).toBeLessThan(r.launcher.connections);
-    expect(r.launcher.inUse).toBeLessThanOrEqual(2);
+    expect(await until(r, () => r.launcher.inUse <= 2, 5000)).toBe(true);
     const posts = r.launcher.log.filter((l) => l.startsWith('POST'));
-    expect(posts.length).toBeGreaterThan(10);
+    expect(posts.length).toBeGreaterThanOrEqual(41);
   });
 
   it('posts one view at a time, numbered, so an older one cannot replace a newer one', { timeout: 15000 }, async () => {
