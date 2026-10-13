@@ -30,6 +30,7 @@ import { buildExample } from './core/example';
 import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { LIBRARY_STORAGE_KEY, exportLibrary, importLibrary, loadLibrary, saveLibrary } from './io/library';
 import { connectHost, downloadsFor } from './io/host';
+import { AiRuntimeClient } from './io/ai-runtime';
 import { connectNative, type PendingModels } from './io/native';
 import { readProjectFile, serializeProject } from './io/project';
 import { createProjectFiles } from './io/project-file';
@@ -619,6 +620,8 @@ void nativeReady.then(async (native) => {
     openExternal: (url) => void services.openExternal(url).catch((err: unknown) => console.warn(`open ${url}: ${err instanceof Error ? err.message : String(err)}`)),
   });
   if (native.hasFiles) services.dialogs = createDesktopDialogs(native, dialogError);
+  // The inference runtime of the AI post-processing (X3b): Settings ▸ AI post-processing ▸ Runtime.
+  if ((native.info.aiApi ?? 0) >= 1) services.aiRuntime = new AiRuntimeClient(native);
   const i = native.info;
   ui.set({ desktop: { portable: i.portable, dataDir: i.dataDir, modelsDir: i.modelsDir, logsDir: i.logsDir, browser: i.browser, version: i.version, os: i.os, arch: i.arch, window: i.window ?? null } });
   // The manager has read what the installer chose (if anything) once it has started.

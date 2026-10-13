@@ -74,6 +74,8 @@ export interface NativeInfo {
   pid: number;
   /** The dialogs and file API (files.rs), version 1; absent in a launcher without them. */
   filesApi?: number;
+  /** The AI runtime API (ai/mod.rs, X3b), version 1; absent in a launcher without it. */
+  aiApi?: number;
 }
 
 export interface NativeRecommendation {

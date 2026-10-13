@@ -20,11 +20,14 @@ interfaz COM de WebView2 por FFI. Es la aplicación de escritorio (`docs/ARCHITE
    (`repackshot --hardware`, que lee el instalador);
 6. muestra los **diálogos del sistema** (carpeta, abrir, guardar) y lee y escribe **solo** lo que la
    persona eligió en ellos (P3b): la ventana no usa nunca los selectores de archivos, las descargas
-   ni los permisos del navegador.
+   ni los permisos del navegador;
+7. descarga, comprueba, instala y **gobierna el motor de ejecución de la IA** (X3b,
+   `src/ai/`): stable-diffusion.cpp como proceso aparte, nunca enlazado (abajo, *IA: el motor de
+   ejecución*).
 
 Lo que necesita del sistema lo pide a programas del sistema (`reg`, `powershell`, `wmic`,
-`nvidia-smi`, `explorer`, `rundll32`, `xdg-open`, `zenity`, `kdialog`, el navegador); por FFI,
-solo la ventana propia (`src/platform/`).
+`nvidia-smi`, `explorer`, `rundll32`, `xdg-open`, `zenity`, `kdialog`, `curl`, `tasklist`,
+`taskkill`, `kill`, el navegador); por FFI, solo la ventana propia (`src/platform/`).
 
 ## Línea de órdenes
 
@@ -47,7 +50,7 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
 | Interfaz | `<carpeta del ejecutable>/app/` (`--app-dir` la cambia) |
 | Datos, instalado | `%LOCALAPPDATA%\Repackshot` (Windows); `$XDG_DATA_HOME/repackshot` o `~/.local/share/repackshot` (Linux) |
 | Datos, **portable** | `data/` junto al ejecutable cuando existe `portable.txt` a su lado; el perfil del navegador va dentro, así que los ajustes en `localStorage` viajan con la carpeta |
-| Dentro de los datos | `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `models/`, `logs/`, `results/`, `instance.json`, `pending-models.json` |
+| Dentro de los datos | `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `models/`, `ai/` (motores de ejecución y `sidecar.json`), `logs/`, `results/`, `instance.json`, `pending-models.json` |
 
 `--data-dir` manda sobre todo lo anterior.
 
@@ -389,6 +392,111 @@ licence=Apache-2.0  commercial=1  restrictions=0  available=1  desktop=1  recomm
 (una clave por línea; aquí agrupadas para leerlas). `size_gib` son GiB con un decimal (lo que
 Windows muestra como "GB").
 
+## IA: el motor de ejecución (X3b)
+
+`docs/AI-POST.md` §7.1. **stable-diffusion.cpp** (MIT, sobre ggml, MIT) en sus compilaciones
+oficiales, fijadas en `src/data/ai-runtimes.json` (incluido en el binario al compilar, como
+`ai-models.json`): *release* `master-959-d637cfb`, una **Vulkan** y una **CPU** para Windows y
+para Linux x86_64 (la CPU trae todas las variantes de x86-64 de ggml y carga la mejor, AVX2 o
+superior si la hay). Un proceso aparte que el lanzador descarga, arranca, alimenta y para; nada
+de él se enlaza ni se copia en `engine/`.
+
+```text
+<datos>/ai/runtimes/<sha256>.zip.part     el archivo bajando (se reanuda desde su longitud)
+<datos>/ai/runtimes/<sha256>.tmp/         descomprimiéndose (un arranque que lo encuentra lo borra)
+<datos>/ai/runtimes/<sha256>/             instalado: lo del zip, repackshot-runtime.json, repackshot-probe.json
+<datos>/ai/sidecar.json                   {pid, server} del sd-server en marcha
+```
+
+- **Regla de elección** (la misma que `src/core/ai-runtimes.ts`; las dos pasan
+  `tests/fixtures/ai-runtime-cases.json`): filas `choice` de arriba abajo, gana la primera cuya
+  `force` sea la forzada (`null`: nada forzado) y, si tiene `gpu`, cuyo valor sea si el informe
+  del equipo tiene GPU que usar (el `device` de `/api/hardware`: una GPU con ≥ 4 GiB efectivos;
+  una detección fallida es «sin GPU»; `device=cpu` en la petición, la CPU elegida en *Ajustes*,
+  también). Con la fila y el sistema (`os`, `arch`) sale la compilación; sin compilación para el
+  sistema, la fila y ninguna clave.
+- **Descarga**: la página no puede: las descargas de *releases* de GitHub (y
+  `release-assets.githubusercontent.com`, adonde redirigen) no mandan
+  `Access-Control-Allow-Origin`, así que un `fetch` desde `http://127.0.0.1:<puerto>` no puede
+  leerlas. La hace el lanzador con el `curl` del sistema (`%SystemRoot%\System32\curl.exe`
+  desde Windows 10 1803, nunca uno del `PATH` en Windows; el primero del `PATH` en Linux):
+  `--fail --location --max-redirs 5 --proto =https --proto-redir =https --connect-timeout 30
+  --speed-limit 1024 --speed-time 60 [--continue-at <bytes>] --url <url>`, con la salida por su
+  salida estándar, que el lanzador añade al `.part` (ninguna ruta pasa a `curl`). Pausar es parar
+  `curl`; reanudar, `--continue-at` con lo que haya (un servidor que no reanuda, código 33, hace
+  empezar de 0 una vez). Cortes, conexiones fallidas y lentitud (códigos 7, 18, 28, 52, 55, 56,
+  92) se reintentan dos veces, a los 2 y 5 s, desde donde se quedó. Sin `curl`, la fila lo dice e
+  **Instalar desde un archivo…** instala uno descargado con un navegador. La URL sale siempre del
+  catálogo incluido en el binario, nunca de la página.
+- **Instalación**: SHA-256 propio del archivo entero; si no es el fijado, se borra y **no se
+  instala nada** (el error lo dice con los dos valores). Se descomprime con `src/ai/zip.rs` e
+  `src/ai/inflate.rs` (APPNOTE 6.3 y RFC 1951 desde las especificaciones; CRC-32 de cada entrada,
+  límites de entradas y tamaños, nombres solo `[A-Za-z0-9._+-]` por componente, sin `..`,
+  absolutas, barras invertidas, letras de unidad ni enlaces simbólicos, ficheros que no existían),
+  los ejecutables con `0755` en Unix, en `<sha256>.tmp/`, que se renombra entero; se exige que
+  estén `sd-server` y `sd-cli`, y se les pregunta `--version` y `--list-devices` (60 s como
+  mucho; un Windows sin el entorno de Visual C++ sale con `0xC0000135` y la fila lo nombra).
+- **El servidor**: `sd-server <argumentos de la familia> --listen-ip 127.a.b.c --listen-port
+  <libre>` con el directorio del motor como directorio de trabajo, la entrada cerrada, las dos
+  salidas leídas y `CREATE_NO_WINDOW`. `sd-server` refleja cualquier `Origin` en
+  `Access-Control-Allow-Origin` y numera sus trabajos en orden, así que escucha en una dirección
+  de bucle local **aleatoria** (todo `127/8` es bucle local en Linux y en Windows; nunca
+  `127.0.0.1`) y un puerto libre: unas 2^40 combinaciones que una página ajena tendría que
+  probar, además del permiso de acceso a la red local de los navegadores. Listo cuando
+  `GET /sdcpp/v1/capabilities` responde (escucha solo tras cargar el modelo). Se mantiene
+  cargado entre llamadas con los mismos argumentos; otro modelo, otra compilación u otro
+  ControlNet lo reinician. Se para: si termina solo (el error dice cómo y sus últimas líneas), si
+  no dice nada ni cambia de estado durante `silence` (10 min), si cargar pasa de `load` (30 min)
+  o una imagen de `run` (60 min), si se cancela y no obedece en 15 s, a los `idle` (5 min) sin
+  uso, con `DELETE /api/ai/sidecar` y al cerrar la aplicación; un arranque que encuentra en
+  `sidecar.json` un proceso vivo que es nuestro `sd-server` (`/proc/<pid>/exe`, `tasklist`) lo
+  para (`kill -9`, `taskkill /F`). Límites de partida: los mide X1 parte B.
+- **Protocolo** (`examples/server/api.md` de la *release*): `POST /sdcpp/v1/img_gen` con
+  `{prompt, negative_prompt, width, height, strength, seed, batch_count: 1, init_image,
+  ref_images, control_image, control_strength, sample_params: {sample_steps, guidance:
+  {txt_cfg}, sample_method?, flow_shift?}, embed_image_metadata: false, output_format: "png",
+  preview: "none"}` (imágenes en base64) → `202 {id}`; `GET /sdcpp/v1/jobs/<id>` cada 150 ms
+  hasta `completed` (la imagen en `result.images[0].b64_json`), `failed` o `cancelled`;
+  `POST /sdcpp/v1/jobs/<id>/cancel`. **Progreso**: lo que los dos programas escriben en la
+  salida estándar, `|=====>   | 3/8 - 1.23s/it` por paso de muestreo y la misma barra de `#` al
+  leer pesos (stable-diffusion.cpp los carga en el primer uso, así que el primer trabajo
+  también muestra *Cargando*). La imagen vuelta se decodifica (`src/ai/png.rs`) y **se rechaza
+  si su tamaño no es el pedido**.
+
+**Argumentos por familia** (`profiles` del JSON; `@rol` es la ruta del fichero del modelo con ese
+papel en el almacén, `@rol~texto` el que además lo lleva en el nombre):
+
+| Clave | Familia | Carga (`sd-server …`) | Por trabajo |
+| --- | --- | --- | --- |
+| `ZIMAGE_Q8`, `ZIMAGE_Q4`, `ZIMAGE_Q2` | `z-image` | `--diffusion-model @transformer --llm @text-encoder --vae @vae --diffusion-fa` | 8 pasos, cfg 1, `init_image` + `strength` |
+| `KLEIN4B_Q4` | `flux2-klein` | `--diffusion-model @transformer --llm @text-encoder --vae @vae --diffusion-fa` | 4 pasos, cfg 1, `euler`, `init_image` + `strength` y la misma imagen en `ref_images` |
+| `QWENEDIT_Q4` | `qwen-image-edit` | `--diffusion-model @transformer --llm @text-encoder --llm_vision @mmproj --vae @vae --diffusion-fa --model-args qwen_image_zero_cond_t=true` | 20 pasos, cfg 2,5, `euler`, `flow_shift` 3, `init_image` + `strength` + `ref_images` |
+| `SD15_LIGHT` | `sd15` | `-m @transformer` [`--control-net @controlnet~tile` o `@controlnet~depth`] | 20 pasos, cfg 7, `init_image` + `strength` [+ `control_image`, `control_strength` 0,9] |
+
+Sacados de `docs/z_image.md`, `docs/flux2.md`, `docs/qwen_image_edit.md`, `docs/sd.md` y el
+`README` del *tag*; `init+ref` en las de edición es nuestro (el *img2img* genérico más su
+referencia). `supports` dice qué claves carga cada compilación según eso; `verified: []` hasta que
+X1 parte B lo pruebe en un equipo de verdad. Un modelo importado se ejecuta con el perfil de la
+`family` de su manifiesto.
+
+| Petición | Respuesta |
+| --- | --- |
+| `GET /api/ai/runtime[?force=VULKAN\|CPU][&device=cpu][&model=<clave>]` | Un `AiRuntimeStatus` (`src/core/ai.ts`): `{available, reason?, backend, device, supports[], activeModel}` (`backend` y `device`: lo que dijo `--list-devices`, el primer Vulkan si lo hay; `reason`: `NO_RUNTIME`, `NO_MODEL`, `MODEL_UNSUPPORTED`), y además `detail`, `choice{rowId, backend, key}`, `release{tag, commit}`, `platform{os, arch}`, `gpu`, `force`, `runtime` (la elegida), `runtimes[]`, `sidecar{state, label, pid, idleSeconds}`, `downloader` |
+| `GET /api/ai/runtimes/<clave>` | `{key, os, arch, backend, here, name, url, sha256, bytes, state: missing\|paused\|downloading\|verifying\|installing\|installed, done, total, error, version, devices[{name, description}], probeError, supports[], verified[]}` |
+| `POST /api/ai/runtimes/<clave>/download` | 202: empieza o reanuda. 409 `other-system` para otra plataforma, 404 clave desconocida |
+| `POST /api/ai/runtimes/<clave>/pause` | Para la descarga; el `.part` se queda |
+| `POST /api/ai/runtimes/<clave>/import` | Cuerpo `{"file": <id de concesión>}` de un `dialog/open`: instala ese archivo si su tamaño y su SHA-256 son los fijados |
+| `POST /api/ai/runtimes/<clave>/probe` | Vuelve a preguntar `--version` y `--list-devices` |
+| `DELETE /api/ai/runtimes/<clave>` | 204: para lo que haga (y el servidor si es suyo) y lo borra todo |
+| `POST /api/ai/run` | Cuerpo (≤ 96 MiB) `{model, image, control?{kind: tile\|depth, image}, prompt, negative, strength (0, 1], seed, steps?, width?, height?, force?, device?}`, imágenes en PNG base64 (o `data:`), lados de 64 a 4096 múltiplos de 16, iguales a `width`/`height` si se dan. 202 con el estado; 400 `bad-body` o `size`, 409 `unavailable` con `reason`, 409 `control-unsupported`, 503 `busy` con 4 esperando |
+| `GET /api/ai/run/<id>[?after=<versión>]` | `{id, state: QUEUED\|STARTING\|LOADING\|INFERENCE\|FINISHING\|DONE\|FAILED\|CANCELLED, step, steps, fraction, seconds, version, model, runtime, width, height, error, message}`; con `after` espera hasta 1 s a una versión posterior. `error`: `crashed`, `hung`, `timeout`, `failed`, `wrong-size`, `bad-image`, `start`, `protocol` |
+| `GET /api/ai/run/<id>/image` | `image/png` cuando `DONE`; 409 si no |
+| `DELETE /api/ai/run/<id>` | Cancela uno en marcha u olvida uno terminado (se guardan los 8 últimos, 10 min) |
+| `DELETE /api/ai/sidecar` | Para el servidor si nadie lo usa (204; 409 si sí) |
+
+`GET /api/info` lleva `aiApi: 1`. Solo en compilaciones de depuración (las pruebas),
+`<datos>/ai/runtimes-override.json` sustituye al catálogo incluido y admite `http://`.
+
 ## Icono y versión del `.exe`
 
 `build.rs`, solo al compilar para Windows con mingw-w64: escribe un `.rc` con `VERSIONINFO`
@@ -412,6 +520,25 @@ ids estables, lo que cada concesión deja hacer, Descargas, el último proyecto 
 API de ficheros por HTTP con un `zenity` falso. Fuera del motor: `packaging/wine-dialogs.mjs`
 (el `.exe` bajo Wine con un `powershell.exe` falso), `tools/desktop-window-check.mjs` (el lanzador
 real bajo Xvfb) y el guion de PowerShell analizado y su C# compilado con `pwsh` 7.
+`src/ai/`: *inflate* con bloques almacenados, fijos y dinámicos (hechos a mano según la RFC y de
+zlib), errores y límites; zip de Info-ZIP y de un flujo con descriptores de datos (fijos en
+`tests/fixtures/`), Zip64, nombres hostiles y enlaces; PNG de ImageMagick de cada tipo de color,
+profundidad, filtro y Adam7 contra los píxeles de PIL, CRC, cortes; base64 (RFC 4648); la regla
+con el fichero de casos; las líneas de progreso tal como las imprime la *release*; el cuerpo del
+trabajo; capturar con tiempo límite (también con un nieto que retiene las salidas).
+`tests/ai.rs`, con **`rt-fake-sd`** (un binario de este *crate*, nunca distribuido, que habla la
+misma línea de órdenes y el mismo protocolo que `sd-cli`/`sd-server`, apunta sus argumentos y sus
+trabajos y, por etiquetas en el *prompt* o `fake-sd.json`, se cuelga, se cae, va lento, falla,
+calla o devuelve otro tamaño): argumentos exactos y trabajo por clave y por ControlNet, servidor
+reutilizado, imagen de vuelta comprobada, progreso y cancelación con el modelo aún cargado,
+colgado, tiempo límite, caída al cargar y al generar, fallo, tamaño distinto rechazado,
+rechazos con su motivo, el estado, liberar por petición, por inactividad y al cerrar, el que
+dejó un arranque anterior; y con el `curl` real contra un servidor local: descarga, pausa,
+reanudación desde el byte, instalación, borrado, un `sha256` distinto que no instala nada y un
+archivo elegido. Ignoradas salvo que se pidan: el zip real de cada compilación descomprimido
+(`RPX_SDCPP_ZIP`), la compilación real de Linux CPU instalada y respondiendo `--version`,
+`--list-devices` y `--help` (`RPX_SDCPP_LINUX_CPU_ZIP`), la descarga real desde GitHub con pausa
+(`RPX_REAL_DOWNLOAD=1`) y un *img2img* real con SD 1.5 en CPU (`RPX_SD15_WEIGHTS`).
 En `tests/`: el servidor por sockets reales
 (`Host` ajeno, token, `Origin`, sin CORS, *keep-alive*, ficheros, modelos por HTTP, *pending
 models*) y la paridad con `rt`.

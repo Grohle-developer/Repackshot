@@ -1342,7 +1342,7 @@ llamar al modelo; la resolución de salida es siempre la del trabajo;
 mismo resultado en nativo y en wasm, bit a bit; puertas del motor
 (`fmt`, `clippy`, sin dependencias en `Cargo.lock`).
 
-### X3b · stable-diffusion.cpp en escritorio — **Opus**
+### X3b · stable-diffusion.cpp en escritorio — **Opus** — hecha
 
 **Qué.** `AI-POST.md` §7.1: `src/data/ai-runtimes.json` con las
 compilaciones oficiales fijadas (Vulkan y CPU, Windows y Linux x86_64:
@@ -1366,6 +1366,68 @@ distinto rechazada; un `sha256` que no coincide no se instala. Con la
 compilación real de Linux CPU, `--help`/versión se leen y la fila de
 *Ajustes* lo muestra. Sin descargar pesos de varios GB en este entorno: la
 primera imagen real se hace en el equipo del usuario.
+
+**Hecho.** `src/data/ai-runtimes.json` fija la *release* oficial
+**`master-959-d637cfb`** de stable-diffusion.cpp (*commit* `d637cfb9…`,
+2026-10-12; ggml `d25b121c…`): `SDCPP_WIN_VULKAN` (30 139 117 B),
+`SDCPP_WIN_CPU` (17 558 769 B), `SDCPP_LINUX_VULKAN` (37 009 067 B) y
+`SDCPP_LINUX_CPU` (26 143 940 B), cada zip descargado una vez para medirlo
+y calcular su `sha256`; licencias MIT citadas en `docs/ai-licences.md` §7.
+`supports`: las seis claves de escritorio según la documentación del *tag*
+y los argumentos que construimos; `verified: []`. En el mismo JSON, como
+datos que X1 puede corregir sin tocar código: la **regla de elección**
+(filas `choice`, evaluadas igual por `src/core/ai-runtimes.ts` y
+`rt-app/src/ai/catalogue.rs`, las dos contra
+`tests/fixtures/ai-runtime-cases.json`) y los **perfiles por familia**
+(argumentos de carga con `@rol`, pasos, cfg, muestreador, *flow shift*,
+imagen como `init` o `init+ref`, ControlNets). En `rt-app/src/ai/`, solo
+`std`: *inflate* (RFC 1951) y zip (APPNOTE, Zip64) propios, lector PNG
+completo (todos los tipos, filtros, Adam7), base64; el almacén de motores
+(`<datos>/ai/runtimes/<sha256>/`, `sha256` antes de instalar, descompresión
+segura, `--version` y `--list-devices`); el **modo servidor** (`sd-server`,
+API nativa `/sdcpp/v1/img_gen`, el modelo queda cargado) en una dirección
+de bucle local aleatoria, con progreso leído de la salida estándar,
+cancelación, tiempo límite, detección de cuelgue, caída, rechazo de
+tamaño distinto, liberación por inactividad y al cerrar, y limpieza del
+que dejara un arranque anterior; la API `/api/ai/runtime`,
+`/api/ai/runtimes/<clave>/…` y `/api/ai/run`. Interfaz: `src/io/ai-runtime.ts`
+y la fila *Motor de ejecución* de *Ajustes* con *Ejecutar con*
+(`ai.backend`). Pruebas con `rt-fake-sd`, un binario de prueba que habla
+el mismo protocolo, y con el `curl` real contra un servidor local. **De
+verdad**, aquí: los cuatro zips descomprimidos por nuestro lector salen
+idénticos fichero a fichero a los de `zipfile` de Python; la compilación
+real de Linux CPU se instala por el lanzador y responde `--version`
+(*stable-diffusion.cpp version unknown, commit d637cfb*), `--list-devices`
+y `--help`, y la fila lo muestra; la descarga real desde GitHub con pausa a
+4,7 MB y reanudación tarda 4,3 s; y un *img2img* real con `SD15_LIGHT` en
+CPU (512², 8 pasos × fuerza 0,5 = 5 pasos de muestreo, pesos fijados
+comprobados por `sha256` y borrados después) dio una imagen correcta en
+**1307 s** de punta a punta (la máquina compartida con otros agentes, con
+carga media de 10 a 15 en 4 vCPU: 1 s en arrancar el servidor, 3,5 min
+leyendo pesos en el primer uso, 6 min hasta el primer paso (codificar la
+imagen), de 2,5 a 3 min por paso y 3,5 min en decodificar; no es una
+medida de rendimiento, que es de X1 parte B).
+
+**No encajó con el plan.** (1) La descarga no puede hacerla la página
+como la de los modelos: las descargas de *releases* de GitHub no mandan
+cabeceras CORS. La hace el lanzador con el `curl` del sistema (en Windows
+desde 10 1803), con el mismo progreso, pausa, reanudación y `sha256`; sin
+`curl`, *Instalar desde un archivo…*. (2) No hay compilación «AVX2»
+oficial: la de CPU lleva todas las variantes x86-64 de ggml y elige en
+tiempo de ejecución. (3) Las de Windows necesitan el entorno de Visual C++
+2015–2022 (no lo traen): si falta, la fila dice qué DLL; el instalador
+(P2) debería instalarlo. Las de Linux necesitan glibc 2.38 (Ubuntu 24.04
+o posterior). (4) `sd-server` refleja cualquier `Origin` y numera sus
+trabajos: por eso la dirección aleatoria `127.a.b.c`. (5) Carga los pesos
+en el primer uso: el primer trabajo enseña *Cargando*. (6) Las de edición
+(klein, Qwen-Edit) van como *img2img* más imagen de referencia
+(`init+ref`): construcción nuestra, sin probar. (7) `ai.gpu` (qué GPU) no
+se pasa: no hay correspondencia fiable con los índices de Vulkan; elige
+stable-diffusion.cpp. (8) Los límites (carga 30 min, imagen 60 min,
+silencio 10 min, inactividad 5 min) son de partida, para X1. (9) Solo en
+depuración, `<datos>/ai/runtimes-override.json` sustituye el catálogo
+(las pruebas). (10) *Acerca de* no lista aún stable-diffusion.cpp y ggml:
+sus textos van en la carpeta del motor y en `docs/ai-licences.md`.
 
 ### X3c · La tubería completa de escritorio — **Opus**
 

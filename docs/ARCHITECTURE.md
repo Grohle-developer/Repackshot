@@ -17,7 +17,7 @@ no una iniciativa dentro de un PR.
 | Vista previa | **three.js** (`WebGLRenderer`) | Rasterizado rápido para orbitar, seleccionar y colocar mientras la cámara se mueve. **No es el motor**: es la vista interactiva |
 | Motor de render | **Rust, desde cero, sin dependencias externas** (`engine/`): trazador de caminos en CPU que compila a **WebAssembly** para el navegador y a **binario nativo** para la línea de comandos y el escritorio | Corre en cualquier sistema y arquitectura (x86_64, ARM64, RISC-V, wasm32) sin GPU ni drivers; el mismo código renderiza en el navegador, en el runner de CI y en el escritorio; determinista; eficiente por diseño (BVH ancho con SIMD, muestreo de baja discrepancia, colas de baldosas) |
 | Importación | En `src/io/`, cargada bajo demanda: `GLTFLoader`, `FBXLoader`, `3MFLoader`, `PLYLoader`, `ColladaLoader`, `USDZLoader` y `3DMLoader` de three (MIT); **rhino3dm** (openNURBS, MIT) para `.3dm`; **occt-import-js** (LGPL-2.1, OpenCascade compilado a wasm) para STEP e IGES, como **única excepción LGPL** y aislada (ver abajo); OBJ y STL propios. **Decidido**: estas bibliotecas se aceptan en la capa `io/`, se cargan solo al importar y nunca entran en el motor | La importación es el tronco del producto: lo que la gente exporta desde Rhino, SolidWorks, Fusion, Maya, ZBrush y KeyShot tiene que entrar con un arrastre. Los formatos nativos propietarios de esos programas no se leen (`SPEC.md` §5) |
-| Post-procesado IA (opcional) | **Decidido** en `AI-POST.md` §7. Escritorio, todo nativo: **stable-diffusion.cpp** (MIT, sobre ggml, MIT) como **proceso aparte** que gobierna el lanzador, nunca enlazado ni dentro de `engine/`, en compilaciones oficiales fijadas con `sha256` en `src/data/ai-runtimes.json` y descargadas bajo demanda como los modelos (X3b); la guarda y el trabajo con píxeles en `engine/crates/rt-post`, Rust sin dependencias (X3a). Web: **ONNX Runtime Web** (MIT) con WebGPU en workers y `rt-post` como `post.wasm` aparte (X3d). Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado con `sha256`, nunca en el repositorio | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor (`rt-core` no sabe que existe) |
+| Post-procesado IA (opcional) | **Decidido** en `AI-POST.md` §7. Escritorio, todo nativo: **stable-diffusion.cpp** (MIT, sobre ggml, MIT) como **proceso aparte** que gobierna el lanzador, nunca enlazado ni dentro de `engine/`, en compilaciones oficiales fijadas con tamaño y `sha256` en `src/data/ai-runtimes.json` (*release* `master-959-d637cfb`: Vulkan y CPU para Windows y Linux x86_64, X3b), que el lanzador descarga bajo demanda desde *Ajustes* con el `curl` del sistema, descomprime con su propio lector de zip y arranca como `sd-server` en una dirección de bucle local aleatoria; no van en el instalador ni en los portables, y no se redistribuyen; la guarda y el trabajo con píxeles en `engine/crates/rt-post`, Rust sin dependencias (X3a). Web: **ONNX Runtime Web** (MIT) con WebGPU en workers y `rt-post` como `post.wasm` aparte (X3d). Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado con `sha256`, nunca en el repositorio | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor (`rt-core` no sabe que existe) |
 | Tests | **vitest** (modelo e interfaz), **cargo test** (motor: escenas analíticas, determinismo, paridad wasm/nativo), **playwright-core** con el Chromium local para capturas | La suite de la interfaz corre sin GPU; la del motor corre en cualquier CPU |
 | Empaquetado de escritorio | **Lanzador propio en Rust, solo `std`** (`engine/crates/rt-app`, binario `repackshot`), decidido para la primera release (P2). Sirve la interfaz en `127.0.0.1`, la abre en una ventana de aplicación de Edge (Windows) o Chromium/Chrome (Linux) y renderiza con `rt-core` **en nativo** con todos los hilos. Windows x86_64 compilado en cruzado con mingw-w64; Linux x86_64 estático con musl; instalador de Windows con **NSIS** (herramienta de construcción, no dependencia) | **Tauri queda descartado**: arrastra cientos de *crates* de crates.io (bloqueado en este entorno) y necesita compilar en Windows (sin minutos de Actions). El lanzador propio mantiene el proyecto sin dependencias en Rust, la interfaz web no cambia y Edge viene con Windows. Ver §5.5 |
 
@@ -408,7 +408,7 @@ externos). **Sin `unsafe` salvo en `src/platform/`** (decidido en P3c):
 la ventana propia de Windows necesita llamar a Win32 y a la interfaz COM
 de WebView2, y eso solo se hace con FFI; cada bloque `unsafe` lleva su
 comentario de por qué es correcto, el resto del *crate* mantiene
-`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace cinco cosas:
+`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace estas cosas:
 
 1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1` y
    un puerto libre, con la carpeta `app/` (el `dist/` de Vite) junto al
@@ -448,6 +448,23 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
    procesos del sistema y sin `unsafe`); lo usan el instalador y
    *Ajustes ▸ Post-procesado IA ▸ Equipo*.
+7. **Post-procesado IA, el motor de ejecución** (X3b, `src/ai/`): la compilación de
+   stable-diffusion.cpp que elige la regla de `src/data/ai-runtimes.json` (Vulkan si el equipo
+   tiene GPU que usar, CPU si no, o la que se fuerce) se descarga con el `curl` del sistema
+   (solo `https`, reanudable, a `<datos>/ai/runtimes/<sha256>.zip.part`), se comprueba con el
+   SHA-256 propio (si no coincide, no se instala nada), se descomprime con un lector de zip e
+   *inflate* propios (RFC 1951) en `<datos>/ai/runtimes/<sha256>/` y se le pregunta
+   `--version` y `--list-devices`. Para inferir, el lanzador arranca `sd-server` con los
+   argumentos de la familia del modelo (rutas del almacén de modelos), sin ventana de consola,
+   en `127.a.b.c` aleatoria y puerto libre, lo mantiene cargado entre llamadas, sigue su
+   progreso en la salida estándar, lo para si calla o tarda más de la cuenta, si se cancela, a
+   los 5 min sin uso y al cerrar, y limpia el que dejara un arranque anterior. API:
+   `GET /api/ai/runtime` (un `AiRuntimeStatus` de `src/core/ai.ts` y más),
+   `/api/ai/runtimes/<clave>[/download|/pause|/import|/probe]`, y **`POST /api/ai/run`**: una
+   inferencia *img2img* en crudo, sin guarda (imagen y control en PNG), con progreso por
+   `GET /api/ai/run/<id>?after=n`, imagen en `/image` y cancelación con `DELETE`, como los
+   trabajos de render. La guarda, los mosaicos y la tubería son X3a y X3c. Contrato completo en
+   `engine/crates/rt-app/README.md`.
 
 ## 6 · Interfaz (`src/ui/`)
 

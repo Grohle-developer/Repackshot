@@ -14,6 +14,7 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod ai;
 pub mod browser;
 pub mod cli;
 pub mod client;

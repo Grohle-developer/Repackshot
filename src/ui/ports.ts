@@ -12,6 +12,7 @@ import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
+import type { AiRuntimePort } from '../core/ai-runtimes';
 import type { HostEvent, HostInfo } from '../core/host-protocol';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
@@ -367,6 +368,8 @@ export interface AppServices {
   engine: EnginePort;
   /** The AI model manager; null when this build has none. */
   models: ModelsService | null;
+  /** The desktop launcher's inference runtime (X3b, src/io/ai-runtime.ts); absent or null elsewhere. */
+  aiRuntime?: AiRuntimePort | null;
   /** What this computer has, for the AI models (WebGPU limits in the browser, the launcher's detection on the desktop). */
   hardware(again?: boolean): Promise<HardwareInfo>;
   storage: StoragePort;
