@@ -112,22 +112,30 @@ export class NativeStore {
     return (await this.getJson<{ results: unknown[] }>('/api/store/results')).results;
   }
 
-  /** A result: its file, its picture (when the file is one a page cannot show), the image the AI made (X4), then its record. */
-  async putResult(id: string, meta: unknown, file: Blob, display: Blob | null, ai: Blob | null = null): Promise<void> {
+  /**
+   * A result: its file, its picture (when the file is one a page cannot show), the images the AI made (X4; X4b: each
+   * variant as `…/ai/<n>`, the launcher's `<id>.ai.<n>.<ext>`), then its record.
+   */
+  async putResult(id: string, meta: unknown, file: Blob, display: Blob | null, ai: Blob | null = null, aiMore: readonly (Blob | null)[] = []): Promise<void> {
     const name = checkStoreName(id);
     const type = file.type || 'image/png';
     await this.put(`/api/store/results/${name}?type=${encodeURIComponent(type)}`, file, type);
     if (display) await this.put(`/api/store/results/${name}/display`, display, 'image/png');
-    if (ai) {
-      const aiType = ai.type || type;
-      await this.put(`/api/store/results/${name}/ai?type=${encodeURIComponent(aiType)}`, ai, aiType);
+    const variants = [ai, ...aiMore];
+    for (const [i, blob] of variants.entries()) {
+      if (!blob) continue;
+      const aiType = blob.type || type;
+      await this.put(`/api/store/results/${name}/ai/${i + 1}?type=${encodeURIComponent(aiType)}`, blob, aiType);
     }
     await this.put(`/api/store/results/${name}/meta`, JSON.stringify(meta), 'application/json');
   }
 
-  /** A result's file (`true`: its picture; `'ai'`: the image the AI made), or null when it is not there. */
-  async resultFile(id: string, part: boolean | 'ai' = false): Promise<Blob | null> {
-    const res = await this.client.request(`/api/store/results/${checkStoreName(id)}${part === 'ai' ? '/ai' : part ? '/display' : ''}`);
+  /**
+   * A result's file (`true`: its picture; `'ai'`: an image the AI made, `variant` 1 by default; the launcher reads a
+   * result of before X4b's single AI image as variant 1), or null when it is not there.
+   */
+  async resultFile(id: string, part: boolean | 'ai' = false, variant = 1): Promise<Blob | null> {
+    const res = await this.client.request(`/api/store/results/${checkStoreName(id)}${part === 'ai' ? `/ai/${Math.max(1, Math.round(variant))}` : part ? '/display' : ''}`);
     if (res.status === 404) return null;
     if (!res.ok) throw new NativeError(res.status, 'http', `${res.status}`);
     const blob = await res.blob();

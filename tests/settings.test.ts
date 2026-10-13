@@ -45,6 +45,7 @@ function another(key: SettingKey): unknown {
   if (key === 'render.destination') return { kind: 'FOLDER', id: 'f1', name: 'Renders' };
   if (key === 'ai.active') return 'ZIMAGE_Q4';
   if (key === 'ai.gpu') return 1;
+  if (key === 'ai.systemPrompt') return 'Clean studio product photograph.';
   if (c.kind === 'choice') return c.options.find((o) => o !== d);
   if (c.kind === 'toggle') return !d;
   if (c.kind === 'number') return d === c.max ? c.min : c.max;

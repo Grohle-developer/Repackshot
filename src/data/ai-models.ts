@@ -45,6 +45,12 @@ export interface AiModelEntry {
   files: AiModelFile[];
   totalBytes: number;
   requirements: { minVramGiB: number | null; minRamGiB: number | null };
+  /**
+   * What the model does with words (X4b). `textPrompt`: it follows a free-text prompt, so the job's own prompt is sent;
+   * `maxPromptTokens`: the most tokens its text encoder reads, start and end included (SD 1.5's CLIP: 77), when the
+   * prompt has to be fitted. Absent: no text prompt, no known limit.
+   */
+  capabilities?: { textPrompt?: boolean; maxPromptTokens?: number };
 }
 
 /** One row of the recommendation table: evaluated top to bottom, the first match wins. */

@@ -67,7 +67,8 @@ function finishText(s: RenderSettings): string {
 export function summaryLine(s: RenderSettings, frames: number): string {
   const dest = s.destination.kind === 'FOLDER' ? s.destination.name : t('rw.downloads');
   const out = `${formatText(s)} → ${dest}`;
-  const ai = t(s.ai.enabled ? 'rw.summaryAiOn' : 'rw.summaryAiOff');
+  // X4b: with several variants, how many AI images the one render becomes (images only).
+  const ai = !s.ai.enabled ? t('rw.summaryAiOff') : s.ai.variants > 1 && s.mode !== 'ANIMATION' ? t('rw.summaryAiVariants', { n: s.ai.variants }) : t('rw.summaryAiOn');
   if (s.mode === 'ANIMATION') {
     return [t('rw.summaryFrames', { frames: framesText(frames), fps: s.animation.fps }), `${s.width} × ${s.height}`, t('rw.perFrameShort', { x: finishText(s) }), out, ai].join(' · ');
   }

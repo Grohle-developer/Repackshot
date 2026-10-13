@@ -22,9 +22,18 @@
 //   (j) the viewer's header holds at 1600, 1280 and 960 px wide, in English and in Spanish: the guard's report is
 //       one line of its own across the header (an ellipsis where it does not fit, the whole text in its tooltip),
 //       the title is not cut short nor squeezed by the toolbar (which wraps under it instead), and no text or button
-//       overlaps another or leaves the header (X3c).
+//       overlaps another or leaves the header (X3c); with several variants (X4b) the strip of their thumbnails is a line
+//       of its own between the header and the picture, its thumbnails side by side inside it;
+//   (k) X4b: the job's own prompt, a field with its note and counter (typing, a pause, more typing and leaving it is one
+//       undo entry, and the undo empties it), the number of variants next to Another variation with the seeds it takes
+//       (changing it makes no new preview), a job with four variants saves four AI files after one render, the viewer's
+//       strip chooses the one the divider compares (and its report), Save this variant and Save all, and the queue and
+//       the history show the count;
+//   (l) X4b: Settings ▸ AI post-processing ▸ System prompt, the default text, an edit kept on leaving the field and
+//       Restore default.
 //
-// Screenshots: ai-section-dark.png, ai-section-light.png, ai-results-viewer.png, ai-results-light.png, ai-queue.png.
+// Screenshots: ai-section-dark.png, ai-section-light.png, ai-results-viewer.png, ai-results-light.png, ai-queue.png,
+// ai-section-prompt.png, ai-results-variants.png, settings-ai-prompt.png.
 // Results: out/ai-post-check.json.
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -210,6 +219,22 @@ async function viewerHeadProblems(page) {
         for (const a of pieces[i].rects) for (const b of pieces[j].rects) if (meet(a, b)) out.push({ overlap: [pieces[i].name, pieces[j].name], a: r4(a), b: r4(b) });
     const box = head.getBoundingClientRect();
     for (const p of pieces) for (const r of p.rects) if (r.right > box.right + 1 || r.left < box.left - 1) out.push({ overflow: p.name, r: r4(r), head: r4(box) });
+    // X4b: the strip of variants, a line of its own under the header and over the picture; its thumbnails side by side.
+    const strip = document.querySelector('.rv-strip');
+    if (strip && shown(strip)) {
+      const sb = strip.getBoundingClientRect();
+      const fb = document.querySelector('.rv-frame').getBoundingClientRect();
+      if (sb.top < box.bottom - 0.5) out.push({ strip: 'over the header', strip: r4(sb), head: r4(box) });
+      if (fb.top < sb.bottom - 0.5) out.push({ strip: 'over the picture', strip: r4(sb), frame: r4(fb) });
+      if (sb.right > box.right + 1 || sb.left < box.left - 1) out.push({ strip: 'wider than the viewer', strip: r4(sb) });
+      const thumbs = [...strip.querySelectorAll('.rv-variant')].map((b) => b.getBoundingClientRect());
+      for (let i = 0; i < thumbs.length; i++) {
+        if (thumbs[i].top < sb.top - 0.5 || thumbs[i].bottom > sb.bottom + 0.5) out.push({ strip: 'a thumbnail leaves it', thumb: i + 1 });
+        for (let j = i + 1; j < thumbs.length; j++) if (meet(thumbs[i], thumbs[j])) out.push({ strip: 'thumbnails overlap', thumbs: [i + 1, j + 1] });
+      }
+      const label = strip.querySelector('.rv-strip-label')?.getBoundingClientRect();
+      if (label && thumbs[0] && meet(label, thumbs[0])) out.push({ strip: 'the label overlaps a thumbnail' });
+    }
     // The report: one line of its own across the header, its whole text in the tooltip.
     const report = head.querySelector('.rv-report');
     if (report) {
@@ -297,8 +322,8 @@ try {
     const aux = (await page.locator(`${section} .rw-ai-line`).textContent())?.trim().toLowerCase();
     check('b_section_default', foldedAtStart && offAtStart && gridHiddenOff && (await sw.getAttribute('aria-checked')) === 'true' && aux === 'synthetic test service · no model', { foldedAtStart, offAtStart, gridHiddenOff, aux });
 
-    const controls = await page.locator(`${section} [data-ai]`).evaluateAll((els) => els.map((e) => ({ key: e.dataset.ai, name: e.querySelector('.rw-ai-ctl-name')?.textContent, sentence: e.querySelector('.note')?.textContent, value: e.querySelector('input[type=range]')?.value ?? e.querySelector('select')?.value })));
     const expected = ['intervention', 'light', 'bounce', 'wear', 'style', 'styleStrength'];
+    const controls = (await page.locator(`${section} [data-ai]`).evaluateAll((els) => els.map((e) => ({ key: e.dataset.ai, name: e.querySelector('.rw-ai-ctl-name')?.textContent, sentence: e.querySelector('.note')?.textContent, value: e.querySelector('input[type=range]')?.value ?? e.querySelector('select')?.value })))).filter((c) => expected.includes(c.key));
     const styleOptions = await page.locator(`${section} [data-ai="style"] option`).allTextContents();
     check(
       'b_six_controls',
@@ -472,7 +497,120 @@ try {
     check('g_queue_two_thumbnails', queuePics === 2 && historyPair === 2, { queuePics, historyPair });
     await page.waitForFunction(() => document.querySelectorAll('.toast').length === 0, null, { timeout: 15000 });
     await page.screenshot({ path: join(SHOTS, 'ai-queue.png'), clip: { x: 0, y: 560, width: 1600, height: 440 } });
+
+    // (k) X4b: the job's own prompt and four variants.
+    await page.locator('.drawer-btn[data-drawer="queue"]').click();
+    await openWindow(page);
+    await expandAi(page);
+    await scrollToAi(page);
+    const promptField = page.locator(`${section} [data-ai="userPrompt"] textarea`);
+    const promptNote = (await page.locator(`${section} [data-ai="userPrompt"] > .note`).first().textContent())?.trim();
+    const emptyAtStart = (await promptField.inputValue()) === '';
+    const undoTipNow = () => page.evaluate(() => document.querySelector('.hdr button[aria-label="Undo"]').getAttribute('data-tip'));
+    await watchState(page);
+    await promptField.click();
+    await promptField.pressSequentially('Late afternoon', { delay: 20 });
+    // Typing stops: it is kept (and the preview follows); then more, then the field is left.
+    await page.waitForTimeout(1200);
+    await promptField.pressSequentially(' light, a calm mood', { delay: 20 });
+    await page.waitForTimeout(1200);
+    await page.locator(`${section} .rw-ai-ctl-name`, { hasText: 'Intervention' }).click();
+    await page.waitForTimeout(300);
+    const tipTyped = await undoTipNow();
+    const counter = (await page.locator(`${section} .rw-ai-count`).textContent())?.trim();
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(300);
+    const afterUndo = await promptField.inputValue();
+    const tipAfterUndo = await undoTipNow();
+    await page.keyboard.press('Control+Shift+z');
+    await page.waitForTimeout(300);
+    const afterRedo = await promptField.inputValue();
+    check('k_prompt_one_undo_entry', emptyAtStart && /AI post-processing: Your prompt/.test(tipTyped ?? '') && afterUndo === '' && !/Your prompt/.test(tipAfterUndo ?? '') && afterRedo === 'Late afternoon light, a calm mood' && counter === '33 / 400' && /stay protected/.test(promptNote ?? ''), { emptyAtStart, tipTyped, tipAfterUndo, afterUndo, afterRedo, counter, promptNote });
+    await waitReady(page);
+    // Four variants: the line says which seeds; the preview is not made again for it.
+    await watchState(page);
+    const variantsNum = page.locator(`${section} [data-ai="variants"] .num`);
+    await variantsNum.dblclick();
+    await page.locator(`${section} [data-ai="variants"] .num input`).fill('4');
+    await page.locator(`${section} [data-ai="variants"] .num input`).press('Enter');
+    await page.waitForTimeout(1200);
+    const variantsLine = (await page.locator(`${section} .rw-ai-variants-line`).textContent())?.trim();
+    const noNewPreview = (await stateLog(page)).every((x) => !/Updating/.test(x));
+    const variantsTip = await undoTipNow();
+    check('k_variants_line', /^One render, then 4 AI images with the seeds (\d+) to (\d+); the preview shows the first · ≈ .+ of AI on this computer$/.test(variantsLine ?? '') && noNewPreview && /AI post-processing: Variants/.test(variantsTip ?? ''), { variantsLine, noNewPreview, variantsTip });
+    await scrollToAi(page);
+    await shootSection(page, join(SHOTS, 'ai-section-prompt.png'));
+    const kDownloads = [];
+    page.on('download', (d) => kDownloads.push(d.suggestedFilename()));
+    await page.locator('.rw-foot .btn-primary').click();
+    await page.waitForSelector('.rv[data-ready="1"]', { timeout: 300000 });
+    await page.waitForTimeout(800);
+    const kNames = [...kDownloads];
+    const thumbs = await page.locator('.rv-strip .rv-variant').count();
+    const checkedFirst = await page.locator('.rv-strip .rv-variant[aria-checked="true"]').getAttribute('data-variant');
+    const bFirst = await page.evaluate(() => document.querySelector('.rv .split-b')?.toDataURL() ?? null);
+    const labelFirst = (await page.locator('.rv .split-label-b').textContent())?.trim();
+    await page.locator('.rv-strip .rv-variant[data-variant="3"]').click();
+    await page.waitForTimeout(600);
+    const bThird = await page.evaluate(() => document.querySelector('.rv .split-b')?.toDataURL() ?? null);
+    const labelThird = (await page.locator('.rv .split-label-b').textContent())?.trim();
+    const reportThird = (await page.locator('.rv-report-variant').textContent())?.trim();
+    check(
+      'k_four_variants_one_render',
+      kNames.length === 5 && /_0002\.png$/.test(kNames[0]) && /_0002_AI\.png$/.test(kNames[1]) && /_0002_AI_2\.png$/.test(kNames[2]) && /_0002_AI_3\.png$/.test(kNames[3]) && /_0002_AI_4\.png$/.test(kNames[4]) && thumbs === 4 && checkedFirst === '1' && labelFirst === 'AI 1' && labelThird === 'AI 3' && bThird !== null && bThird !== bFirst && reportThird === 'Variant 3',
+      { kNames, thumbs, checkedFirst, labelFirst, labelThird, reportThird, pictureChanged: bThird !== bFirst },
+    );
+    const kBefore = kDownloads.length;
+    await page.locator('.rv-actions .btn[data-save="ai"]').click();
+    await page.waitForTimeout(800);
+    const savedThis = kDownloads.slice(kBefore);
+    const saveLabels = await page.locator('.rv-actions .btn').allTextContents();
+    await page.locator('.rv-actions .btn[data-save="all"]').click();
+    await page.waitForTimeout(1500);
+    const savedAll = kDownloads.slice(kBefore + savedThis.length);
+    check('k_save_variant_and_all', savedThis.length === 1 && /_AI_3\.png$/.test(savedThis[0]) && savedAll.length === 4 && saveLabels.some((x) => /Save this variant/.test(x)) && saveLabels.some((x) => /Save all/.test(x)), { savedThis, savedAll, saveLabels });
+    await page.waitForFunction(() => document.querySelectorAll('.toast').length === 0, null, { timeout: 15000 });
+    await page.screenshot({ path: join(SHOTS, 'ai-results-variants.png') });
+    const stripColours = await chromatic(page, '.rv');
+    check('k_viewer_achromatic', stripColours.length === 0, { found: stripColours.slice(0, 6) });
+    await page.keyboard.press('Escape');
+    await page.locator('.drawer-btn[data-drawer="queue"]').click();
+    await page.waitForSelector('.queue-row[data-status="DONE"] .variant-count');
+    const queueCount = (await page.locator('.queue-row .variant-count').first().textContent())?.trim();
+    const historyCount = (await page.locator('.history-item .variant-count').first().textContent())?.trim();
+    const queueAi = await page.locator('.queue-row .aux', { hasText: 'AI × 4' }).count();
+    check('k_queue_history_count', queueCount === '×4' && historyCount === '×4' && queueAi === 1, { queueCount, historyCount, queueAi });
     check('b_no_errors_dark', errors.length === 0, { errors });
+    await context.close();
+  }
+
+  // ---------------------------------------------------------------- (l) Settings ▸ AI post-processing ▸ System prompt
+  {
+    const { page, context, errors } = await open(browser, `${STUDIO}&theme=dark&ai=synthetic&settings=ai.systemPrompt`);
+    await page.waitForSelector('.sw [data-row="ai.systemPrompt"] textarea', { timeout: 20000 });
+    const row = page.locator('.sw [data-row="ai.systemPrompt"]');
+    await row.scrollIntoViewIfNeeded();
+    const field = row.locator('textarea');
+    const text0 = await field.inputValue();
+    const restoreDisabled0 = await row.locator('[data-sp="restore"]').isDisabled();
+    const aux = (await row.locator('.sw-aux').textContent())?.trim();
+    await page.waitForTimeout(300);
+    await page.locator('.sw').screenshot({ path: join(SHOTS, 'settings-ai-prompt.png') });
+    await field.fill('Clean studio product photograph, soft and even light.');
+    await page.locator('.sw-title').click();
+    await page.waitForTimeout(300);
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('repackshot.settings') ?? '{}').settings?.['ai.systemPrompt'] ?? null);
+    const restoreEnabled = await row.locator('[data-sp="restore"]').isEnabled();
+    await row.locator('[data-sp="restore"]').click();
+    await page.waitForTimeout(300);
+    const restored = await field.inputValue();
+    const sectionColours = await chromatic(page, '.sw [data-row="ai.systemPrompt"]');
+    check(
+      'l_system_prompt',
+      text0.startsWith('Photorealistic product photograph. Keep the image exactly as rendered') && restoreDisabled0 && /protections do not depend on them/.test(aux ?? '') && stored === 'Clean studio product photograph, soft and even light.' && restoreEnabled && restored === text0 && sectionColours.length === 0,
+      { start: text0.slice(0, 40), restoreDisabled0, aux, stored, restoreEnabled, restoredIsDefault: restored === text0, colours: sectionColours.slice(0, 4) },
+    );
+    check('l_no_errors', errors.length === 0, { errors });
     await context.close();
   }
 
@@ -528,7 +666,14 @@ try {
     const missing = spanish.filter((w) => !text.includes(w));
     const english = ['Intervention', 'Another variation', 'Protected', 'Checked:', 'Preview', 'per change'].filter((w) => text.includes(w));
     check('h_spanish', missing.length === 0 && english.length === 0, { missing, english });
-    // A job with AI in Spanish, for the viewer's header (its words are longer).
+    // A job with AI in Spanish, for the viewer's header (its words are longer), with three variants (X4b: the strip).
+    await page.locator(`${section} [data-ai="variants"] .num`).scrollIntoViewIfNeeded();
+    await page.locator(`${section} [data-ai="variants"] .num`).dblclick();
+    await page.locator(`${section} [data-ai="variants"] .num input`).fill('3');
+    await page.locator(`${section} [data-ai="variants"] .num input`).press('Enter');
+    const spanishX4b = ['Prompt propio', 'Describe la luz o el ambiente', 'Variantes', 'Un render y después 3 imágenes de IA'];
+    const textX4b = (await page.locator(section).innerText()).replace(/\s+/g, ' ');
+    check('k_spanish', spanishX4b.every((w) => textX4b.includes(w)) && !/Your prompt|Variants/.test(textX4b), { missing: spanishX4b.filter((w) => !textX4b.includes(w)) });
     await page.locator('.rw .num[aria-label="Muestras"]').scrollIntoViewIfNeeded();
     await page.locator('.rw .num[aria-label="Muestras"]').dblclick();
     await page.locator('.rw .num[aria-label="Muestras"] input').fill('8');
@@ -536,6 +681,8 @@ try {
     await page.locator('.rw-foot .btn-primary').click();
     await page.waitForSelector('.rv[data-ready="1"]', { timeout: 240000 });
     await page.waitForTimeout(800);
+    const stripEs = await page.locator('.rv-strip .rv-variant').count();
+    check('j_strip_present', stripEs === 3, { stripEs });
     const headEs = await viewerHeadMatrix(page, 'es');
     const head = [...headEn.problems, ...headEs.problems];
     check('j_viewer_head_holds', head.length === 0 && headEn.measured + headEs.measured === 6, { measured: headEn.measured + headEs.measured, problems: head.slice(0, 12), count: head.length });

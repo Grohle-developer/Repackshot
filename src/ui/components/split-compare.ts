@@ -84,6 +84,8 @@ export interface SplitCompare {
   position(): number;
   /** Lays the images out again (after the frame changed size). */
   layout(): void;
+  /** Another image on the right (an AI variant, X4b), with its label: the zoom, the pan, the divider and the mode stay. */
+  setB(img: SplitImage, label?: string): void;
   destroy(): void;
 }
 
@@ -110,7 +112,7 @@ function layer(img: SplitImage, size?: { w: number; h: number }): HTMLCanvasElem
 
 export function splitCompare(p: SplitCompareProps): SplitCompare {
   const imgA = layer(p.a);
-  const imgB = p.b ? layer(p.b, { w: imgA.width, h: imgA.height }) : null;
+  let imgB = p.b ? layer(p.b, { w: imgA.width, h: imgA.height }) : null;
   imgA.className = 'split-img split-a';
   if (imgB) imgB.className = 'split-img split-b';
   const iw = imgA.width;
@@ -270,6 +272,15 @@ export function splitCompare(p: SplitCompareProps): SplitCompare {
     zoom,
     position: () => pos,
     layout: () => (fitted ? fit() : apply()),
+    setB(img, label) {
+      if (!imgB) return;
+      const next = layer(img, { w: iw, h: ih });
+      next.className = 'split-img split-b';
+      stage.replaceChild(next, imgB);
+      imgB = next;
+      if (label !== undefined) labelB.textContent = label;
+      apply();
+    },
     destroy: () => ro?.disconnect(),
   };
 }
