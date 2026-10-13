@@ -2534,6 +2534,48 @@ trabajo (hoy se ignora `onProgress` en la cola), el *prompt* de X3a, quitar
 lineal del motor. Y X2: los mismos ids, la misma profundidad y el mismo `coc`
 que dibuja la vista previa (el test del navegador es la vara de medir).
 
+## X4b · Prompt propio y variantes — **Opus**
+
+**Petición del usuario (2026-10-13):** «si lo soporta el modelo, que deje
+un prompt de texto en la configuración del render en cuestión, y que se
+puedan hacer unas cuantas variantes; por defecto, una sola».
+
+**Decisiones del líder.**
+- **Prompt propio** en la sección *Post-procesado IA* de la ventana de
+  render (es del trabajo: se guarda en el proyecto, se deshace y cada
+  trabajo de la cola lleva el suyo): un campo de varias líneas, vacío por
+  defecto, de hasta 400 caracteres, con la nota *Describe la luz o el
+  ambiente; la geometría, los materiales y el enfoque siguen protegidos*.
+  Se **añade** al *prompt* que se genera de la escena (`src/ai/prompt.ts`),
+  nunca lo sustituye, y el negativo fijo sigue. Solo aparece si el modelo
+  activo lo admite: una capacidad nueva `textPrompt` en
+  `src/data/ai-models.json` (se añade, no se renombra nada; los modelos de
+  origen la tienen; un importado la declara en su `model.repackshot.json`);
+  si no, el campo se ve deshabilitado con el motivo.
+- **Variantes**: un número de 1 a 8, **1 por defecto**, junto a *Otra
+  variación*. Un trabajo con N variantes hace **un solo render del motor**
+  y N pasadas de IA con semillas consecutivas (semilla, semilla + 1…),
+  con el modelo cargado una vez; la cola dice *IA · variante 2 de 4 ·
+  mosaico 3 de 4*; cada variante lleva su informe de la guarda. La vista
+  previa sigue siendo de una sola variante. Se avisa del tiempo estimado
+  (N × lo medido) cuando hay medida.
+- **Resultados**: un resultado guarda el render y sus N imágenes de IA
+  (en escritorio, `<id>.ai.<n>.<ext>` en la carpeta de resultados; el
+  `ai` de antes se lee como la variante 1); el visor muestra una tira de
+  miniaturas para elegir variante, el divisor compara la elegida con el
+  render y se puede *Guardar esta variante* o *Guardar todas*; el
+  historial y la cola muestran cuántas hay. Nombres de archivo con el
+  sufijo `_AI`, `_AI_2`, `_AI_3`…
+
+**Criterio.** Tests: el prompt propio llega al modelo tras el de la escena
+y el negativo fijo intacto; sin capacidad `textPrompt`, no se envía y el
+campo lo dice; N variantes = un render del motor y N llamadas con
+semillas consecutivas, y cancelar a mitad deja el render y las variantes
+terminadas; guardar y abrir (proyecto y resultados, también los de una
+sola `ai` de antes); deshacer del prompt (un cambio de texto es una
+entrada al salir del campo) y del número; cadenas en `es` y `en`; cromo
+acromático; capturas de la sección y del visor con varias variantes.
+
 ## X5 · Ajustes y modelos — absorbida en U6
 
 El gestor de modelos, el selector y la detección del equipo llegan en
