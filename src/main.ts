@@ -29,6 +29,7 @@ import { createDesktopDialogs, createDesktopFiles, createDesktopProjectFiles, ha
 import { buildExample } from './core/example';
 import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { LIBRARY_STORAGE_KEY, exportLibrary, importLibrary, loadLibrary, saveLibrary } from './io/library';
+import { connectHost, downloadsFor } from './io/host';
 import { connectNative, type PendingModels } from './io/native';
 import { readProjectFile, serializeProject } from './io/project';
 import { createProjectFiles } from './io/project-file';
@@ -63,6 +64,11 @@ const nativeReady = connectNative().then((client) => {
 // The launcher's dialogs and file API (P3b): files, projects, imports and exports go through it, never through the
 // browser's pickers, downloads or permission prompts.
 const desktopIo = nativeReady.then((n) => (n && n.hasFiles ? n : null));
+// Repackshot's own window (P3c, WebView2): known at once, before the interface decides on beforeunload.
+// Null in a browser and in the browser's app window.
+const windowHost = connectHost();
+// In that window nothing is ever downloaded: every file goes through the launcher's dialogs (P3b).
+const download = downloadsFor(windowHost, downloadBlob, () => ui.toast(t('dialog.err.notReady')));
 const params = readUrlParams(window.location.search);
 
 // The application settings (U6, core/settings.ts): one document in localStorage, migrated from the loose
@@ -407,7 +413,7 @@ const files = whenReady<FilesService>(
       putHandle: async (id, handle) => (await resultsReady).putHandle(id, handle),
       getHandle: async (id) => (await resultsReady).getHandle(id),
     },
-    downloadBlob,
+    download,
     window as unknown as { showDirectoryPicker?: unknown; isSecureContext?: boolean },
   ),
   desktopIo.then((n) => n && createDesktopFiles(n, { folderTitle: () => t('dialog.chooseFolder'), confirmTitle: () => t('dialog.confirmFolder'), folderItem: () => t('dialog.folderItem'), onDialogError: dialogError, memory: localMemory })),
@@ -490,7 +496,7 @@ const services: AppServices = {
   },
   project: { serialize: serializeProject, open: readProjectFile },
   projectFiles: whenReady(
-    createProjectFiles(window as never, downloadBlob, {
+    createProjectFiles(window as never, download, {
       description: () => t('project.fileType'),
       // The last project file's handle, next to the output folders' handles (General ▸ On start ▸ Last project).
       remember: { put: async (h) => (await resultsReady).putHandle(LAST_PROJECT_HANDLE, h), get: async () => (await resultsReady).getHandle(LAST_PROJECT_HANDLE) },
@@ -564,6 +570,7 @@ const services: AppServices = {
     cacheBytes: thumbCacheBytes,
     clearCache: clearThumbCache,
   },
+  windowHost,
   // Only reached where ui.desktop is set (the launcher answered).
   desktop: {
     async openFolder(target) {
@@ -613,7 +620,7 @@ void nativeReady.then(async (native) => {
   });
   if (native.hasFiles) services.dialogs = createDesktopDialogs(native, dialogError);
   const i = native.info;
-  ui.set({ desktop: { portable: i.portable, dataDir: i.dataDir, modelsDir: i.modelsDir, logsDir: i.logsDir, browser: i.browser, version: i.version, os: i.os, arch: i.arch } });
+  ui.set({ desktop: { portable: i.portable, dataDir: i.dataDir, modelsDir: i.modelsDir, logsDir: i.logsDir, browser: i.browser, version: i.version, os: i.os, arch: i.arch, window: i.window ?? null } });
   // The manager has read what the installer chose (if anything) once it has started.
   await modelsService.started;
   maybeShowModelChooser(app.ctx, { portable: i.portable, pending: !!pendingAtStart && pendingAtStart.keys.length > 0 });

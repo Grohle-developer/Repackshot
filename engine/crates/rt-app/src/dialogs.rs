@@ -880,6 +880,21 @@ try {
 mod tests {
     use super::*;
 
+    /// An absolute path of this system for a Unix-style one: `/home/a` itself, `C:\home\a` on
+    /// Windows (where `/home/a` is not absolute). The zenity and kdialog code runs on Linux only,
+    /// but its tests run on every target, so their paths must be absolute on each.
+    fn abs(unix: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!("C:{}", unix.replace('/', "\\")))
+        } else {
+            PathBuf::from(unix)
+        }
+    }
+
+    fn abs_s(unix: &str) -> String {
+        abs(unix).to_string_lossy().into_owned()
+    }
+
     fn req(kind: Kind) -> Request {
         Request {
             kind,
@@ -894,7 +909,7 @@ mod tests {
                     extensions: vec!["*".into()],
                 },
             ],
-            start: Some(PathBuf::from("/home/a/Renders")),
+            start: Some(abs("/home/a/Renders")),
             folder_item: "Folder selection".into(),
         }
     }
@@ -952,7 +967,9 @@ mod tests {
         assert_eq!(folder[0], "--file-selection");
         assert!(folder.contains(&"--directory".to_string()));
         assert!(folder.contains(&"--title=Choose the folder".to_string()));
-        assert!(folder.contains(&"--filename=/home/a/Renders/".to_string()));
+        // The folder with a trailing separator: zenity starts inside it.
+        let sep = std::path::MAIN_SEPARATOR;
+        assert!(folder.contains(&format!("--filename={}{sep}", abs_s("/home/a/Renders"))));
         assert!(!folder.iter().any(|a| a.starts_with("--file-filter")));
         let open = strings(zenity_args(&req(Kind::Open { multiple: true })));
         assert!(open.contains(&"--multiple".to_string()));
@@ -965,12 +982,15 @@ mod tests {
             default_name: "bottle.repack.json".into(),
         })));
         assert!(save.contains(&"--save".to_string()));
-        assert!(save.contains(&"--filename=/home/a/Renders/bottle.repack.json".to_string()));
+        assert!(save.contains(&format!(
+            "--filename={}",
+            abs_s("/home/a/Renders/bottle.repack.json")
+        )));
 
         let k = strings(kdialog_args(&req(Kind::Open { multiple: true })));
         assert_eq!(&k[..2], &["--title", "Choose the folder"]);
         assert_eq!(k[2], "--getopenfilename");
-        assert_eq!(k[3], "/home/a/Renders");
+        assert_eq!(k[3], abs_s("/home/a/Renders"));
         assert_eq!(
             k[4],
             "*.repack.json *.REPACK.JSON|Repackshot project x\n*|All files"
@@ -980,25 +1000,38 @@ mod tests {
             default_name: "a.png".into(),
         })));
         assert_eq!(k[2], "--getsavefilename");
-        assert_eq!(k[3], "/home/a/Renders/a.png");
+        assert_eq!(k[3], abs_s("/home/a/Renders/a.png"));
         let k = strings(kdialog_args(&req(Kind::Folder)));
-        assert_eq!(&k[2..], &["--getexistingdirectory", "/home/a/Renders"]);
+        assert_eq!(
+            &k[2..],
+            &[
+                "--getexistingdirectory".to_string(),
+                abs_s("/home/a/Renders")
+            ]
+        );
     }
 
     #[test]
     fn outputs_are_read() {
         let r = req(Kind::Open { multiple: true });
         assert_eq!(
-            parse_zenity(b"/a/b.glb\n/a/c d.obj\n", Some(0), "", &r),
-            Ok(Outcome::Chosen(vec![
-                PathBuf::from("/a/b.glb"),
-                PathBuf::from("/a/c d.obj")
-            ]))
+            parse_zenity(
+                format!("{}\n{}\n", abs_s("/a/b.glb"), abs_s("/a/c d.obj")).as_bytes(),
+                Some(0),
+                "",
+                &r
+            ),
+            Ok(Outcome::Chosen(vec![abs("/a/b.glb"), abs("/a/c d.obj")]))
         );
         let single = req(Kind::Folder);
         assert_eq!(
-            parse_zenity(b"/a\n/b\n", Some(0), "", &single),
-            Ok(Outcome::Chosen(vec![PathBuf::from("/a")]))
+            parse_zenity(
+                format!("{}\n{}\n", abs_s("/a"), abs_s("/b")).as_bytes(),
+                Some(0),
+                "",
+                &single
+            ),
+            Ok(Outcome::Chosen(vec![abs("/a")]))
         );
         assert_eq!(parse_zenity(b"", Some(1), "", &r), Ok(Outcome::Cancelled));
         // A relative answer is not a choice.

@@ -1,13 +1,17 @@
 # rt-app — el lanzador de escritorio `repackshot`
 
-Binario de Rust **solo con `std`** y **sin `unsafe`** (`#![forbid(unsafe_code)]`), en el
-mismo *workspace* y con las mismas puertas que el motor (`cargo fmt`, `clippy -D warnings`,
-ningún *crate* externo). Es la aplicación de escritorio (`docs/ARCHITECTURE.md` §5.5):
+Binario de Rust **solo con `std`**, en el mismo *workspace* y con las mismas puertas que el motor
+(`cargo fmt`, `clippy -D warnings`, ningún *crate* externo). **Sin `unsafe` salvo en
+`src/platform/`** (`#![deny(unsafe_code)]` en el *crate*, `#[allow(unsafe_code)]` solo en ese
+módulo; cada bloque dice por qué es correcto): la ventana propia de Windows llama a Win32 y a la
+interfaz COM de WebView2 por FFI. Es la aplicación de escritorio (`docs/ARCHITECTURE.md` §5.5):
 
 1. sirve la interfaz (el `dist/` de Vite, que se distribuye como `app/` junto al ejecutable) en
    `127.0.0.1`;
-2. la abre en una ventana de aplicación de Edge (Windows) o de un navegador de la familia
-   Chromium (Linux), con perfil propio en la carpeta de datos;
+2. la abre en **su propia ventana** en Windows (Win32 con la barra de título del sistema y
+   WebView2 dentro, `src/platform/`), o, si no puede, en una ventana de aplicación de Edge
+   (Windows) o de un navegador de la familia Chromium (Linux), con perfil propio en la carpeta de
+   datos;
 3. renderiza con `rt-core` **en nativo**, con todos los hilos, los mismos píxeles que `rt` y que
    el pool de wasm;
 4. guarda los modelos de IA en la carpeta de datos, por contenido, comprobados con un SHA-256
@@ -19,15 +23,16 @@ ningún *crate* externo). Es la aplicación de escritorio (`docs/ARCHITECTURE.md
    ni los permisos del navegador.
 
 Lo que necesita del sistema lo pide a programas del sistema (`reg`, `powershell`, `wmic`,
-`nvidia-smi`, `explorer`, `rundll32`, `xdg-open`, `zenity`, `kdialog`, el navegador), nunca por
-FFI.
+`nvidia-smi`, `explorer`, `rundll32`, `xdg-open`, `zenity`, `kdialog`, el navegador); por FFI,
+solo la ventana propia (`src/platform/`).
 
 ## Línea de órdenes
 
 ```text
-repackshot [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N]
+repackshot [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N] [--window webview2|browser|auto]
 repackshot --serve-only [...]           sin ventana: escribe la URL con el token y sirve hasta que se pare
 repackshot --hardware <f.ini> [--device gpu|cpu]   escribe el INI del instalador y sale
+repackshot --shortcut-id <f.lnk>        Windows: escribe el AppUserModelID en un acceso directo a repackshot.exe y sale
 repackshot --version | --help
 ```
 
@@ -42,7 +47,7 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
 | Interfaz | `<carpeta del ejecutable>/app/` (`--app-dir` la cambia) |
 | Datos, instalado | `%LOCALAPPDATA%\Repackshot` (Windows); `$XDG_DATA_HOME/repackshot` o `~/.local/share/repackshot` (Linux) |
 | Datos, **portable** | `data/` junto al ejecutable cuando existe `portable.txt` a su lado; el perfil del navegador va dentro, así que los ajustes en `localStorage` viajan con la carpeta |
-| Dentro de los datos | `browser-profile/`, `models/`, `logs/`, `results/`, `instance.json`, `pending-models.json` |
+| Dentro de los datos | `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `models/`, `logs/`, `results/`, `instance.json`, `pending-models.json` |
 
 `--data-dir` manda sobre todo lo anterior.
 
@@ -51,7 +56,36 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
 - **Instancia única**: `<datos>/instance.json` (`{port, token, pid}`, legible solo por su dueño
   en Unix). Un segundo arranque que encuentra una instancia viva (responde `/api/info` con su
   token) abre otra ventana contra ella y termina.
-- **Ventana**: `REPACKSHOT_BROWSER`, si está; si no, en Windows Edge (`App Paths` de `msedge.exe`
+- **Ventana propia** (Windows, `src/platform/`): si junto al ejecutable está `WebView2Loader.dll`
+  (de Microsoft, del paquete NuGet `Microsoft.Web.WebView2` fijado con su SHA-256 en
+  `packaging/lib/webview2.mjs`) y `GetAvailableCoreWebView2BrowserVersionString` encuentra el
+  *runtime* de WebView2, una ventana Win32 `WS_OVERLAPPEDWINDOW` con la barra de título del sistema,
+  nuestro icono (`WM_SETICON` a los DPI del monitor), título `Repackshot — <proyecto>`, barra oscura
+  con el tema oscuro (`DWMWA_USE_IMMERSIVE_DARK_MODE`, 20 y si no 19), AppUserModelID
+  `Repackshot.App`, DPI por monitor v2, tamaño mínimo de 500 × 400 a 100 % y su sitio en
+  `window.json` (no se usa si su barra de título ya no cae en ninguna pantalla). El instalador da
+  a sus accesos directos el mismo AppUserModelID con `repackshot --shortcut-id <lnk>`
+  (`IShellLinkW`, `IPropertyStore` con `PKEY_AppUserModel_ID`, `IPersistFile::Save`; solo
+  accesos directos a `repackshot.exe`), para que el anclado y la ventana sean un solo botón de la
+  barra de tareas. Los diálogos de archivo (`src/dialogs.rs`) se abren con esta ventana como
+  dueña. Dentro, WebView2 con perfil en `webview2/` (con las `PROFILE_PREFERENCES` de abajo) y,
+  como argumentos, las mismas `DISABLED_FEATURES` y `NO_THROTTLING_SWITCHES` de `src/browser.rs`
+  que la ventana de aplicación (`src/platform/flags.rs`); todo lo que no es nuestra
+  interfaz, apagado por la API (`src/platform/policy.rs`): menús contextuales, diálogos de script,
+  atajos del navegador, barra de estado, zoom, pellizco, deslizar para volver, autorrelleno,
+  contraseñas, SmartScreen, página de error propia y, en *release*, las herramientas de desarrollo.
+  Navegación solo a nuestro origen (un enlace `https` pulsado se abre en el navegador por defecto
+  con `ShellExecuteW`; nada abre otra ventana), descargas canceladas sin su panel, permisos
+  denegados salvo escribir un archivo o carpeta que la persona eligió y el almacenamiento
+  persistente, diálogos `alert`/`confirm`/`prompt` descartados. **Cerrar** (botón, `Alt F4`, barra
+  de tareas, menú del sistema: todo acaba en `WM_CLOSE`) no cierra: manda `close-requested` a la
+  página, que pregunta con su propia interfaz (la misma pregunta que Ctrl/⌘ W:
+  `requestCloseWindow`) y contesta `close-ok`; si la página no está, no ha
+  cargado o no late desde hace 20 s, se cierra sin preguntar. Si cualquier paso falla antes (o el
+  proceso del navegador muere), se apunta en el registro y se abre la ventana de aplicación de
+  abajo; `--window=browser` la fuerza y `--window=webview2` prohíbe el respaldo (falla). El
+  protocolo con la página está en `src/platform/protocol.rs` y `tests/fixtures/host-protocol.json`.
+- **Ventana de aplicación** (respaldo, y siempre en Linux): `REPACKSHOT_BROWSER`, si está; si no, en Windows Edge (`App Paths` de `msedge.exe`
   en HKCU y HKLM, después las rutas de instalación habituales) y luego Chrome; en Linux el primero
   de `chromium`, `chromium-browser`, `google-chrome`, `google-chrome-stable`, `microsoft-edge`,
   `microsoft-edge-stable`, `brave-browser` en el `PATH`. Argumentos: `--app=<url>
@@ -60,7 +94,7 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
   en Linux), más los tres `--disable-*-throttling/backgrounding` para que el latido no se frene
   con la ventana minimizada. Sin ninguno, el navegador por defecto (`cmd /C start "" "<url>"`,
   `xdg-open`).
-- **Fin**: cuando termina el proceso del navegador (si vivió más de 5 s: uno que sale antes ha
+- **Fin**: con la ventana propia, cuando se destruye. Con la de aplicación: cuando termina el proceso del navegador (si vivió más de 5 s: uno que sale antes ha
   pasado la ventana a un navegador ya abierto con el mismo perfil), o cuando el latido de la
   página (`POST /api/alive` cada 5 s, desde un *worker* para que no lo frene una pestaña oculta)
   calla 20 s (60 s de gracia al arrancar). Si el equipo se suspende, el plazo vuelve a empezar.
@@ -197,7 +231,7 @@ Todas las rutas `/api/*` llevan `X-Repackshot-Token`. Errores en JSON:
 
 | Petición | Respuesta |
 | --- | --- |
-| `GET /api/info` | `{app:"repackshot", version, engineVersion, threads, isa, simd[], os, arch, dataDir, modelsDir, logsDir, resultsDir, portable, browser, pid}` |
+| `GET /api/info` | `{app:"repackshot", version, engineVersion, threads, isa, simd[], os, arch, dataDir, modelsDir, logsDir, resultsDir, portable, browser, window, pid}`. `window`: `{kind: "webview2"\|"browser"\|"default"\|"none", detail, reason}` (`detail`: la versión de WebView2 o el navegador; `reason`, por qué no es la ventana propia: `forced`, `not-windows`, `loader-missing`, `runtime-missing`, `failed`), `null` con `--serve-only` |
 | `POST /api/alive` | 204. El latido. |
 | `GET /api/hardware[?device=gpu\|cpu][&refresh=1]` | `{cpu, cores, threads, ramBytes, ramGiB, ramUsableBytes, gpus[{name, vendor, vramBytes, vramGiB}], device, gpuFound, detected, input, recommendation{rowId, recommended, offered[], skipped[]} \| null}` |
 | `POST /api/open-folder` | Cuerpo `{"folder":"data\|models\|logs\|results"}` o `{"path":"<dentro de la carpeta de datos>"}`; 204, 403 fuera de los datos |
@@ -381,3 +415,16 @@ real bajo Xvfb) y el guion de PowerShell analizado y su C# compilado con `pwsh` 
 En `tests/`: el servidor por sockets reales
 (`Host` ajeno, token, `Origin`, sin CORS, *keep-alive*, ficheros, modelos por HTTP, *pending
 models*) y la paridad con `rt`.
+
+La ventana propia (`src/platform/`): en todas las plataformas, los GUID, nuestros objetos COM
+(recuento de referencias, `QueryInterface`, `Invoke`), el tamaño de cada vtable de WebView2 contra
+el número de métodos del IDL y la posición de cada método que se llama, el protocolo con la página
+contra `tests/fixtures/host-protocol.json` (el mismo que pasa `src/core/host-protocol.ts`), el
+título, el sitio de la ventana, la política (ajustes, navegación, ventanas nuevas, permisos,
+diálogos) y los argumentos. Solo para Windows, y en Linux bajo Wine con una pantalla virtual
+(`CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=wine xvfb-run -a cargo test -p rt-app --target
+x86_64-pc-windows-gnu --lib platform`): nuestras opciones del entorno de WebView2 como las lee el
+cargador, el cargador que falta o no es una DLL, y la ventana Win32 de verdad (barra de título del
+sistema, título, tamaño mínimo, cerrar preguntado y luego permitido, `window.json` guardado y
+restaurado, un sitio fuera de las pantallas olvidado). WebView2 no corre aquí: lo que queda se
+prueba en Windows.

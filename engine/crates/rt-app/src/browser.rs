@@ -85,6 +85,15 @@ pub const QUIET_ENV: [(&str, &str); 3] = [
     ("GOOGLE_DEFAULT_CLIENT_SECRET", "no"),
 ];
 
+/// The page polls the native renderer and keeps the launcher's heartbeat: a minimised or covered
+/// window must not slow its timers or its renderer. The app window passes these, and so does the
+/// WebView2 window of `platform` (its additional browser arguments, `platform::flags`).
+pub const NO_THROTTLING_SWITCHES: [&str; 3] = [
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+];
+
 /// `--disable-features=<DISABLED_FEATURES>`.
 pub fn disable_features_arg() -> String {
     format!("--disable-features={}", DISABLED_FEATURES.join(","))
@@ -97,14 +106,8 @@ pub fn app_args(url: &str, profile: &Path) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec![format!("--app={url}").into(), profile_arg];
     args.extend(HARDENING_SWITCHES.iter().map(OsString::from));
     args.push(disable_features_arg().into());
-    args.extend([
-        "--window-size=1600,1000".into(),
-        // The page's heartbeat keeps the launcher alive: timers must not be throttled when the
-        // window is minimised or covered.
-        "--disable-background-timer-throttling".into(),
-        "--disable-backgrounding-occluded-windows".into(),
-        "--disable-renderer-backgrounding".into(),
-    ]);
+    args.push("--window-size=1600,1000".into());
+    args.extend(NO_THROTTLING_SWITCHES.iter().map(OsString::from));
     if cfg!(target_os = "linux") {
         args.push("--class=Repackshot".into());
         // No keyring unlock dialog: the profile keeps no passwords anyway.

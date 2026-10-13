@@ -12,6 +12,7 @@ import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
+import type { HostEvent, HostInfo } from '../core/host-protocol';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
 import type { UpdateOutcome } from '../core/updates';
@@ -116,6 +117,28 @@ export interface StoragePort {
   cacheBytes(): number;
   /** Deletes the thumbnail cache; the bytes freed. */
   clearCache(): number;
+}
+
+/**
+ * Repackshot's own window on the desktop (P3c, WebView2 on Windows, with the system's title bar): the page
+ * names its title, gives its colours and answers its close with our own question. Null in a browser and in
+ * the browser's app window.
+ */
+export interface WindowHostPort {
+  readonly kind: 'webview2';
+  /** The window's answer to `ready` (its WebView2 version), or null before it. */
+  info(): HostInfo | null;
+  /** Listens to the window's events; returns the function that stops. */
+  on(listener: (event: HostEvent) => void): () => void;
+  /** The page listens. */
+  ready(): void;
+  /** The project's name: the title becomes `Repackshot — <project>`. */
+  setTitle(project: string): void;
+  setTheme(dark: boolean, background: string): void;
+  /** Close as the system would: the window asks back (`close-requested`). */
+  close(): void;
+  /** The page agreed to close. */
+  closeOk(): void;
 }
 
 /** The desktop launcher's folders (P2), when the page runs in its window. */
@@ -358,6 +381,8 @@ export interface AppServices {
   openExternal(url: string): Promise<void>;
   /** The system's dialogs for imports and exports; absent or null in the browser. */
   dialogs?: DialogsPort | null;
+  /** Repackshot's own window (P3c); null or absent in a browser and in the browser's app window. */
+  windowHost?: WindowHostPort | null;
   /** A licence text shipped with the build (`licences/<file>`, copied by tools/licences.mjs); null when missing. */
   licenceText(file: string): Promise<string | null>;
 }

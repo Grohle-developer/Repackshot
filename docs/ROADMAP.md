@@ -1732,6 +1732,52 @@ manifiesto propios. Sin probar en Windows real: que los diálogos salgan
 delante de la ventana y que el minimenú de Edge desaparezca del todo (lo
 garantiza P3c).
 
+**P3c hecha.** Ventana Win32 propia con WebView2 en Windows
+(`engine/crates/rt-app/src/platform/`, el único sitio del lanzador con
+`unsafe`, cada bloque con su porqué): COM escrito a mano (tablas virtuales
+transcritas del IDL del SDK, con su número de métodos y la posición de
+cada método usado comprobados en los tests), el cargador
+`WebView2Loader.dll` de Microsoft junto al ejecutable (NuGet
+`Microsoft.Web.WebView2` 1.0.4258.31, licencia de estilo BSD que permite
+redistribuirlo con su aviso; SHA-256 del paquete y de la DLL fijados en
+`packaging/lib/webview2.mjs`) y el *runtime* Evergreen del sistema; perfil
+en `webview2/` de la carpeta de datos (portable incluido). Todo lo que no
+es nuestra interfaz, apagado por la API: menús contextuales, diálogos de
+script, atajos del navegador, barra de estado, zoom, pellizco, deslizar
+para volver, autorrelleno, contraseñas, SmartScreen, página de error y,
+en *release*, herramientas de desarrollo; navegación solo a nuestro
+origen, enlaces `https` pulsados al navegador del sistema, ninguna
+ventana nueva, descargas canceladas sin su panel (y la página no descarga
+nunca en esa ventana: lo comprueba un test), permisos denegados salvo los
+archivos que la persona eligió y el almacenamiento persistente. Cerrar
+(botón, `Alt F4`, barra de tareas, menú del sistema) llega a la página
+como `close-requested` y pasa por la misma pregunta que `Ctrl W`
+(`requestCloseWindow`, *Guardar · No guardar · Cancelar*), sin
+`beforeunload`. Icono propio, título `Repackshot — <proyecto>`, barra de
+título oscura con el tema oscuro, AppUserModelID `Repackshot.App` (y el
+mismo en los accesos directos del instalador, con `repackshot
+--shortcut-id`), tamaño, posición y tema recordados en `window.json`, y
+los diálogos de archivo de P3b con la ventana como dueña. Si falta el
+cargador o el *runtime*, o falla cualquier paso, se apunta en el registro
+y se abre la ventana `--app` de Edge; *Ajustes ▸ Escritorio* dice qué
+ventana es y por qué, y `--window=webview2|browser` la fuerza. En la
+cabecera, el logotipo con una flecha hacia abajo en lugar de las tres
+rayas (web y escritorio). Linux sin cambios.
+
+Lo que no encajó con el plan: por decisión del líder, tras compararlo con
+NesTube, la ventana usa la barra de título **del sistema** y no una
+dibujada por la página (la versión sin marco, con el borde superior y
+*Snap Layouts* sobre nuestro botón de maximizar, se hizo, se probó bajo
+Wine y se quitó). A WebView2 se le pasan las `DISABLED_FEATURES` y los
+interruptores contra la ralentización de `browser.rs` (una sola fuente),
+pero no los `HARDENING_SWITCHES`: son de la interfaz del propio navegador,
+que WebView2 no tiene o que su API ya apaga, y no están documentados para
+WebView2. Bajo Wine no se puede leer de vuelta el AppUserModelID de un
+acceso directo (su almacén de propiedades es un esbozo), así que eso, y
+todo lo de WebView2, queda por probar en Windows real. El puerto
+aleatorio por arranque, que hace perder `localStorage` entre arranques
+(en la ventana de Edge y en la propia), queda para P3e.
+
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
 **N2**; oleada 4 **X1b**, **X2**, **X3**, **X4**. Cada fase quita sus
