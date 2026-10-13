@@ -2895,6 +2895,17 @@ con `packaging/smoke.mjs` (nativo y bajo Wine, *hash* fijado) y
 no haya minutos de Actions. El motor conserva su propia versión (0.3.0);
 la de la aplicación es la de `package.json`.
 
+**Cómo se publica ahora (desde la 0.1.4).** Con minutos de Actions, la
+release la publica `release.yml` lanzado a mano (*workflow_dispatch*)
+**en `main`**, con `tag` = `vX.Y.Z` (la versión de `package.json`) y
+`commit` vacío o un commit que ya esté en `main`: construye, crea la
+etiqueta y la release en ese commit y sube los cuatro archivos. La sesión
+no necesita subir etiquetas. Lanzado desde otra rama, GitHub rechazó crear
+la release con *Resource not accessible by integration* (dos veces, con la
+0.1.4); desde `main` salió a la primera. El workflow ahora se para en el
+primer paso si una publicación no se lanza en la rama por defecto. Sin
+`tag`, cualquier rama sirve para construir el artefacto de prueba.
+
 ## P2 · Escritorio: lanzador propio, portables e instalador — **Opus** — hecha
 
 **Decisión tomada (Fable), sustituye a la de Tauri.** El escritorio es
