@@ -12,15 +12,16 @@
 //!
 //! This module ties them together: the status the page shows (`GET /api/ai/runtime`, an
 //! `AiRuntimeStatus` of `src/core/ai.ts` and more), the install endpoints, and **one raw img2img
-//! inference** (`POST /api/ai/run`), with progress and cancel like the render jobs. The guard,
-//! the tiles and the pipeline are not here (X3a, X3c); [`Ai::prepare`] and [`Ai::infer`] are what
-//! the pipeline will call.
+//! inference** (`POST /api/ai/run`), with progress and cancel like the render jobs. The whole
+//! pipeline (tiles, the runtime, the guard of `rt-post`, the retries: `POST /api/ai/post`, X3c)
+//! is [`post`], on top of [`Ai::prepare_model`] and the same server.
 
 pub mod b64;
 pub mod catalogue;
 pub mod download;
 pub mod inflate;
 pub mod png;
+pub mod post;
 pub mod proc;
 pub mod runtimes;
 pub mod sidecar;
@@ -261,6 +262,38 @@ fn image_size(b64_text: &str, what: &str) -> Result<(u32, u32), Refusal> {
     Ok((w, h))
 }
 
+/// Which control image a model is run with.
+#[derive(Clone, Copy, Debug)]
+pub enum ControlWish<'a> {
+    /// None.
+    None,
+    /// This kind (`tile`, `depth`), or a refusal when the model's family has none.
+    Exactly(&'a str),
+    /// The first of these the family has, or none.
+    FirstOf(&'a [&'a str]),
+}
+
+/// How the runtime runs one model: the server to start and what every image is asked with.
+#[derive(Clone, Debug)]
+pub struct ModelRun {
+    /// The server and its load arguments.
+    pub spec: Spec,
+    /// The `ai-runtimes.json` key of the build.
+    pub runtime: String,
+    /// Sampling steps.
+    pub steps: u32,
+    /// Guidance scale.
+    pub cfg_scale: f64,
+    /// Sampling method.
+    pub sampler: Option<String>,
+    /// Flow shift.
+    pub flow_shift: Option<f64>,
+    /// The image is also the reference (the edit models).
+    pub as_reference: bool,
+    /// The control kind loaded and its strength.
+    pub control: Option<(String, f64)>,
+}
+
 /// The state of one run of `POST /api/ai/run`.
 #[derive(Debug)]
 struct RunState {
@@ -400,6 +433,9 @@ pub struct Ai {
     pub sidecar: Arc<Sidecar>,
     runs: Mutex<BTreeMap<u32, Arc<Run>>>,
     next_run: AtomicU32,
+    posts: post::Posts,
+    next_post: AtomicU32,
+    post_orphan: Mutex<Duration>,
     stop: Arc<AtomicBool>,
     watchdog: Mutex<Option<JoinHandle<()>>>,
 }
@@ -436,6 +472,9 @@ impl Ai {
             sidecar: Arc::clone(&sidecar),
             runs: Mutex::new(BTreeMap::new()),
             next_run: AtomicU32::new(1),
+            posts: Mutex::new(BTreeMap::new()),
+            next_post: AtomicU32::new(1),
+            post_orphan: Mutex::new(post::ORPHAN_AFTER),
             stop: Arc::clone(&stop),
             watchdog: Mutex::new(None),
         });
@@ -469,6 +508,7 @@ impl Ai {
         for r in lock(&self.runs).values() {
             r.cancel.store(true, Ordering::Release);
         }
+        self.cancel_posts();
         self.sidecar.stop();
         self.runtimes.shutdown();
         if let Some(h) = lock(&self.watchdog).take() {
@@ -534,6 +574,27 @@ impl Ai {
             .opt_str(
                 "probeError",
                 probe.as_ref().and_then(|p| p.error.as_deref()),
+            )
+            // The Windows builds need Microsoft's Visual C++ runtime, which we do not ship: when
+            // it is what is missing, the Settings row offers Microsoft's download page.
+            .opt_str(
+                "vcRuntime",
+                probe
+                    .as_ref()
+                    .filter(|p| {
+                        let mut dirs = vec![self
+                            .runtimes
+                            .installed(key)
+                            .map(|i| i.dir)
+                            .unwrap_or_default()];
+                        dirs.extend(runtimes::system_dll_dirs());
+                        runtimes::needs_vc_runtime(&rt.os, p, &dirs)
+                    })
+                    .map(|_| "missing"),
+            )
+            .opt_str(
+                "vcRuntimeUrl",
+                (rt.os == "windows").then_some(runtimes::VC_RUNTIME_URL),
             )
             .raw("supports", &strings(&rt.supports))
             .raw("verified", &strings(&rt.verified))
@@ -694,16 +755,21 @@ impl Ai {
         None
     }
 
-    /// Checks a request and turns it into what the server is started with and what it is asked.
-    pub fn prepare(
+    /// Checks that `model` can run here and how: the build the rule chose (installed and
+    /// starting), the model (known, one the build loads, downloaded), its family's profile and the
+    /// control image `wish` asks for. What the server is started with and every image asked with.
+    pub fn prepare_model(
         &self,
         models: &Store,
-        req: &RunRequest,
+        model: &str,
+        force: Option<&str>,
         gpu: Option<bool>,
-    ) -> Result<(Spec, Job, String), Refusal> {
+        wish: ControlWish<'_>,
+        steps: Option<u32>,
+    ) -> Result<ModelRun, Refusal> {
         let cat = self.runtimes.catalogue();
         let choice = self
-            .choice(gpu, req.force.as_deref())
+            .choice(gpu, force)
             .ok_or_else(|| Refusal::bad("'force' must be VULKAN or CPU"))?;
         let key = choice.key.clone().ok_or_else(|| {
             Refusal::unavailable("NO_RUNTIME", "no pinned runtime build for this system")
@@ -715,10 +781,10 @@ impl Ai {
         let rt = cat
             .runtime(&key)
             .ok_or_else(|| Refusal::bad("unknown runtime"))?;
-        if let Some(r) = self.model_problem(models, &req.model, &rt.supports) {
+        if let Some(r) = self.model_problem(models, model, &rt.supports) {
             return Err(r);
         }
-        let family = model_family(models, &req.model)
+        let family = model_family(models, model)
             .ok_or_else(|| Refusal::unavailable("MODEL_UNSUPPORTED", "the model has no family"))?;
         let profile = cat.profile(&family).ok_or_else(|| {
             Refusal::unavailable(
@@ -727,7 +793,7 @@ impl Ai {
             )
         })?;
         let known = models
-            .known(&req.model)
+            .known(model)
             .ok_or_else(|| Refusal::unavailable("NO_MODEL", "unknown model"))?;
         let files: Vec<(ModelFile, PathBuf)> = known
             .files
@@ -736,7 +802,68 @@ impl Ai {
             .collect();
         let unsupported = |e: String| Refusal::unavailable("MODEL_UNSUPPORTED", e);
         let mut args = resolve_args(&profile.load, &files).map_err(unsupported)?;
-        let mut label = format!("{key}/{}", req.model);
+        let mut label = format!("{key}/{model}");
+        let kind = match wish {
+            ControlWish::None => None,
+            ControlWish::Exactly(k) => {
+                if profile.control(k).is_none() {
+                    return Err(Refusal {
+                        status: 409,
+                        code: "control-unsupported",
+                        reason: None,
+                        message: format!("{model} takes no {k} control image"),
+                    });
+                }
+                Some(k)
+            }
+            ControlWish::FirstOf(kinds) => {
+                kinds.iter().copied().find(|k| profile.control(k).is_some())
+            }
+        };
+        let control = match kind.and_then(|k| profile.control(k).map(|c| (k, c))) {
+            Some((k, c)) => {
+                args.extend(resolve_args(&c.load, &files).map_err(unsupported)?);
+                label.push_str(&format!("+{k}"));
+                Some((k.to_string(), c.strength))
+            }
+            None => None,
+        };
+        Ok(ModelRun {
+            spec: Spec {
+                server: installed.server.clone(),
+                dir: installed.dir.clone(),
+                args,
+                label,
+            },
+            runtime: key,
+            steps: steps.unwrap_or(profile.steps),
+            cfg_scale: profile.cfg_scale,
+            sampler: profile.sampler.clone(),
+            flow_shift: profile.flow_shift,
+            as_reference: profile.image == ImageMode::InitRef,
+            control,
+        })
+    }
+
+    /// Checks a request and turns it into what the server is started with and what it is asked.
+    pub fn prepare(
+        &self,
+        models: &Store,
+        req: &RunRequest,
+        gpu: Option<bool>,
+    ) -> Result<(Spec, Job, String), Refusal> {
+        let wish = match &req.control {
+            None => ControlWish::None,
+            Some((kind, _)) => ControlWish::Exactly(kind),
+        };
+        let run = self.prepare_model(
+            models,
+            &req.model,
+            req.force.as_deref(),
+            gpu,
+            wish,
+            req.steps,
+        )?;
         let (w, h) = image_size(&req.image, "image")?;
         if req.size.is_some_and(|s| s != (w, h)) {
             return Err(Refusal {
@@ -746,30 +873,16 @@ impl Ai {
                 message: format!("the image is {w}×{h}, not the size asked"),
             });
         }
-        let control = match &req.control {
-            None => None,
-            Some((kind, img)) => {
-                let c = profile.control(kind).ok_or_else(|| Refusal {
-                    status: 409,
-                    code: "control-unsupported",
-                    reason: None,
-                    message: format!("{} takes no {kind} control image", req.model),
-                })?;
+        let control = match (&req.control, &run.control) {
+            (Some((_, img)), Some((_, strength))) => {
                 if image_size(img, "control.image")? != (w, h) {
                     return Err(Refusal::bad(
                         "the control image is not the size of the image",
                     ));
                 }
-                args.extend(resolve_args(&c.load, &files).map_err(unsupported)?);
-                label.push_str(&format!("+{kind}"));
-                Some((img.clone(), c.strength))
+                Some((img.clone(), *strength))
             }
-        };
-        let spec = Spec {
-            server: installed.server.clone(),
-            dir: installed.dir.clone(),
-            args,
-            label,
+            _ => None,
         };
         let job = Job {
             prompt: req.prompt.clone(),
@@ -778,15 +891,15 @@ impl Ai {
             height: h,
             strength: req.strength,
             seed: req.seed,
-            steps: req.steps.unwrap_or(profile.steps),
-            cfg_scale: profile.cfg_scale,
-            sampler: profile.sampler.clone(),
-            flow_shift: profile.flow_shift,
+            steps: run.steps,
+            cfg_scale: run.cfg_scale,
+            sampler: run.sampler.clone(),
+            flow_shift: run.flow_shift,
             image_b64: req.image.clone(),
-            as_reference: profile.image == ImageMode::InitRef,
+            as_reference: run.as_reference,
             control,
         };
-        Ok((spec, job, key))
+        Ok((run.spec, job, run.runtime))
     }
 
     /// One inference, blocking (what the pipeline of X3c calls between the guard's steps).
@@ -1039,6 +1152,70 @@ pub fn route(app: &App, req: &Request, parts: &[&str], body: &mut dyn Read) -> O
             }
             None => Response::error(404, "not-found", "no such run"),
         },
+        ("POST", ["post"]) => {
+            let parsed = if req.header("content-type").is_some_and(|t| {
+                t.split(';')
+                    .next()
+                    .is_some_and(|t| t.trim().eq_ignore_ascii_case("application/octet-stream"))
+            }) {
+                if req.content_length > post::MAX_POST_BODY {
+                    return Some(Response::error(413, "too-large", "body too large"));
+                }
+                let mut bytes = Vec::with_capacity(req.content_length as usize);
+                if body.read_to_end(&mut bytes).is_err() {
+                    return Some(Response::error(400, "bad-body", "the body did not arrive"));
+                }
+                post::PostRequest::from_inline(&bytes)
+            } else {
+                match read_json(req, body, crate::server::MAX_JSON) {
+                    Ok(v) => post::PostRequest::from_json(&v, None),
+                    Err(r) => return Some(r),
+                }
+            };
+            let r = match parsed {
+                Ok(r) => r,
+                Err(e) => return Some(e.response()),
+            };
+            let gpu = gpu_of(app, r.cpu);
+            match ai.submit_post(&app.engine, &app.models, r, gpu) {
+                Ok(p) => Response::json(202, p.to_json()),
+                Err(e) => e.response(),
+            }
+        }
+        ("GET", ["post", id]) => match id.parse().ok().and_then(|id| ai.post(id)) {
+            Some(p) => {
+                p.touch();
+                if let Some(after) = req.query("after").and_then(|a| a.parse::<u32>().ok()) {
+                    p.wait_newer(after, crate::server::LONG_POLL);
+                }
+                Response::json(200, p.to_json())
+            }
+            None => Response::error(404, "not-found", "no such post"),
+        },
+        ("GET", ["post", id, "image"]) => match id.parse().ok().and_then(|id| ai.post(id)) {
+            Some(p) => match p.image() {
+                Some(img) => {
+                    let len = (post::IMAGE_HEADER + img.rgba.len() * 4) as u64;
+                    Response {
+                        status: 200,
+                        headers: vec![("Content-Type".into(), "application/octet-stream".into())],
+                        body: Body::Stream {
+                            len,
+                            write: Box::new(move |w| w.write_all(&post::write_image(&img))),
+                        },
+                    }
+                }
+                None => Response::error(409, "not-done", "the post has no image"),
+            },
+            None => Response::error(404, "not-found", "no such post"),
+        },
+        ("DELETE", ["post", id]) => match id.parse().ok().and_then(|id| ai.post(id)) {
+            Some(p) => {
+                ai.forget_post(&p);
+                Response::empty(204)
+            }
+            None => Response::error(404, "not-found", "no such post"),
+        },
         ("DELETE", ["sidecar"]) => {
             if ai.sidecar.release() {
                 Response::empty(204)
@@ -1046,7 +1223,7 @@ pub fn route(app: &App, req: &Request, parts: &[&str], body: &mut dyn Read) -> O
                 Response::error(409, "busy", "a run is using the runtime")
             }
         }
-        (_, ["runtime" | "runtimes" | "run" | "sidecar", ..]) => {
+        (_, ["runtime" | "runtimes" | "run" | "post" | "sidecar", ..]) => {
             Response::error(405, "method", "method not allowed")
         }
         _ => Response::error(404, "not-found", "no such endpoint"),

@@ -336,6 +336,8 @@ impl App {
                 .num("filesApi", 1.0)
                 // The AI runtime API of ai/mod.rs (version 1).
                 .num("aiApi", 1.0)
+                // The AI post-processing pipeline of ai/post.rs (`/api/ai/post`, version 1).
+                .num("aiPost", 1.0)
                 .build(),
         )
     }

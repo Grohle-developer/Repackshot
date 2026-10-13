@@ -81,6 +81,11 @@ export interface RenderOptions {
    * phase X2); the image does not change. The launcher keeps them by the render's id for the AI.
    */
   passes?: readonly PassKey[];
+  /**
+   * With `passes`, the native engine: leave them in the launcher (it keeps them with the linear image by the
+   * render's id for the AI post-processing, X3c) instead of reading them back; `renderId` says which.
+   */
+  passesInLauncher?: boolean;
   /** Render this project instead of the one on screen (Settings ▸ Measure performance renders the example). */
   state?: ProjectState;
 }

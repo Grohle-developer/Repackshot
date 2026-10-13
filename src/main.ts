@@ -22,7 +22,9 @@ import './ui/settings.css';
 import './ui/guards.css';
 import { createSyntheticService } from './ai/synthetic';
 import { notBuiltService } from './ai/not-built';
-import type { LinearImage } from './core/ai';
+import { buildPrompt, guardMaterials } from './ai/prompt';
+import type { AiPostService, LinearImage } from './core/ai';
+import { AI_GUARD_PASSES, pipelineOf } from './core/ai-post';
 import { linearToRgba8, linearToSrgb, rgba8ToLinear } from './core/ai-image';
 import { evaluate, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
@@ -36,6 +38,7 @@ import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { exportLibrary, importLibrary } from './io/library';
 import { connectHost, downloadsFor } from './io/host';
 import { AiRuntimeClient } from './io/ai-runtime';
+import { DesktopAiService } from './io/ai-post';
 import type { PendingModels } from './io/native';
 import { choosePlatform } from './io/platform';
 import { readPref, writePref } from './io/prefs';
@@ -46,13 +49,14 @@ import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
-import { exactWords16, linearRgba, poolSize } from './render/tiles';
+import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
 import { exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
 import { startupUpdateCheck } from './ui/updates';
 import type { AiPort, AppServices, EngineConfig, ViewportPort } from './ui/ports';
+import { aiRuntimeQuery } from './ui/panels/settings-ai';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
 import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
@@ -450,10 +454,17 @@ const files = platform.files({
   onDialogError: dialogError,
 });
 
-// AI post-processing (phase X4, AI-POST.md §4): the pipeline the interface talks to, and what it needs around it. The
-// synthetic service (no model, deterministic) runs only when the page is opened with ?ai=synthetic, for screenshots
-// and demos; every other build says the pipeline is not built yet (X3c connects the desktop one, X3d the web one).
-const aiService = params.ai === 'synthetic' ? createSyntheticService() : notBuiltService;
+// AI post-processing (AI-POST.md §4, §7): the pipeline the interface talks to, and what it needs around it. In the
+// desktop launcher's window that reports the pipeline (`aiPost`, X3c) it is the launcher's (io/ai-post.ts: tiles,
+// stable-diffusion.cpp and the guard run natively); the web says it is not built yet (X3d). The synthetic service
+// (no model, deterministic) runs only when the page is opened with ?ai=synthetic, for tests and screenshots. Whether
+// the switch can be on is what `status()` says.
+const aiServiceReady: Promise<AiPostService> =
+  params.ai === 'synthetic' ? Promise.resolve(createSyntheticService()) : nativeReady.then((native) => (native && (native.info.aiPost ?? 0) >= 1 ? new DesktopAiService(native, () => aiRuntimeQuery(ui.get())) : notBuiltService));
+const aiService: AiPostService = {
+  status: async () => (await aiServiceReady).status(),
+  post: async (request, onProgress, signal) => (await aiServiceReady).post(request, onProgress, signal),
+};
 
 /** A picture file as linear light (8-bit display values decoded with the sRGB curve). */
 async function decodeLinear(blob: Blob): Promise<LinearImage> {
@@ -470,6 +481,13 @@ async function decodeLinear(blob: Blob): Promise<LinearImage> {
 /** A linear image as a file in the job's format. */
 async function encodeLinear(img: LinearImage, o: Parameters<AiPort['encode']>[1]): Promise<Blob> {
   const { width, height, rgba } = img;
+  if (o.tone) {
+    // The render's own light (the RENDER source): written exactly as the engine's file was (render/tiles.ts).
+    const { exposureEv, tonemap } = o.tone;
+    if (o.format === 'EXR') return new Blob([encodeExr({ width, height, data: straightExr(rgba, exposureEv) }, { alpha: o.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
+    if (o.format === 'PNG' && o.bitDepth === 16) return new Blob([(await encodePng16({ width, height, data: straightWords16(rgba, exposureEv, tonemap) }, { dpi: o.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
+    return encodePixels({ width, height, data: straightBytes(rgba, exposureEv, tonemap) }, o.format === 'JPEG' ? 'JPEG' : 'PNG', o.jpegQuality / 100, { dpi: o.dpi });
+  }
   if (o.format === 'EXR') {
     // EXR holds premultiplied alpha.
     const data = new Float32Array(rgba.length);
@@ -525,8 +543,11 @@ const aiPort: AiPort | null = preview
       },
       decode: decodeLinear,
       encode: encodeLinear,
-      // The prompt from the scene's materials and lights arrives with X3a (src/ai/prompt.ts); the negative is fixed (AI-POST.md §3.2).
-      scenePrompt: () => ({ prompt: '', negative: 'do not change shapes, text or logos' }),
+      // The prompt from the scene's materials and lights, and the fixed negative (AI-POST.md §3.2, src/ai/prompt.ts).
+      scenePrompt: (state, settings) => buildPrompt(state, settings ?? pipelineOf(state.render.ai)),
+      // The guard's table, numbered as the engine's scene numbers its materials (io/rsb.ts).
+      materials: (state, camera) => guardMaterials(state, projectScene(state, { width: 16, height: 16, maxSamples: 1, maxSeconds: 0, ...(camera ? { camera } : {}) }).materialOrder),
+      renderSource: async () => (await aiServiceReady) instanceof DesktopAiService,
     }
   : null;
 
@@ -538,6 +559,8 @@ const services: AppServices = {
     // no render (the preview is never passed off as one).
     if (!tracer) throw new Error(t('render.noEngine'));
     const linear = req.format === 'EXR' || (req.format === 'PNG' && req.bitDepth === 16);
+    // The AI step of a Render on the desktop: the launcher keeps the image with the guard's passes (X3c).
+    const kept = req.aiPasses === true && tracer instanceof NativeEngine;
     const px = await tracer.renderPixels({
       width: req.width,
       height: req.height,
@@ -550,6 +573,7 @@ const services: AppServices = {
       ...(req.camera ? { camera: req.camera } : {}),
       ...(req.time !== undefined ? { time: req.time } : {}),
       ...(req.advanced ? { advanced: req.advanced } : {}),
+      ...(kept ? { passes: AI_GUARD_PASSES, passesInLauncher: true } : {}),
       onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds),
     });
     let file: Blob;
@@ -563,7 +587,7 @@ const services: AppServices = {
       const words = exactWords16(px.sum!, px.samples, px.exposureEv, px.tonemap);
       file = new Blob([(await encodePng16({ width: px.width, height: px.height, data: words }, { dpi: req.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
     } else file = await encodePixels(px, req.format === 'JPEG' ? 'JPEG' : 'PNG', req.jpegQuality / 100, { dpi: req.dpi });
-    return { file, display, width: px.width, height: px.height, samples: px.samples, seconds: px.seconds };
+    return { file, display, width: px.width, height: px.height, samples: px.samples, seconds: px.seconds, tone: { exposureEv: px.exposureEv, tonemap: px.tonemap }, ...(kept && px.renderId !== undefined ? { renderId: String(px.renderId) } : {}) };
   },
   results: {
     persistent: async () => (await resultsReady).persistent,

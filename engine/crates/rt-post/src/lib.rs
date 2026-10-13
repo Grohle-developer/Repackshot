@@ -44,10 +44,14 @@ pub use job::{
     Job, MaterialInfo, PostError, Settings, Tolerances, MAX_ATTEMPTS, MAX_MATERIALS, MAX_PIXELS,
     MAX_SIDE, MAX_STRENGTH, RETRY_FACTOR,
 };
+pub use prepared::FLOOR_NAME;
 pub use report::{
     number as report_number, string as report_string, Check, MaterialCheck, Report, Verdict,
 };
 pub use rt_core::color::Tonemap;
+/// `partId` and `materialId` of the studio floor in the passes (`FLOOR_ID` of `src/core/passes.ts`): a
+/// surface the guard may relight and whose colour it checks, never background.
+pub use rt_core::passes::FLOOR_ID;
 pub use tiles::{Tile, PAD_MULTIPLE, TILE_OVERLAP, TILE_SIZE};
 
 use guard::Steps;

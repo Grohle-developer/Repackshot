@@ -6,7 +6,7 @@
 // results viewer. On the right, the results history (newest first) with
 // Clear history; when the browser keeps no storage, it says so.
 
-import type { RenderJob, RenderSettings } from '../../core/render';
+import type { RenderJob, RenderProgress, RenderSettings } from '../../core/render';
 import type { ResultMeta } from '../../core/results';
 import * as cmd from '../commands';
 import { h, icon } from '../dom';
@@ -31,6 +31,22 @@ export function queueButton(run: QueueRun, waiting: boolean): { state: 'START' |
   if (run === 'ALL' || run === 'ONLY') return { state: 'PAUSE', label: 'queue.pause', tip: 'queue.pauseTip', icon: 'pause', disabled: false };
   if (run === 'PAUSED' && waiting) return { state: 'RESUME', label: 'queue.resume', tip: 'queue.resumeTip', icon: 'play', disabled: false };
   return { state: 'START', label: 'queue.start', tip: 'queue.startTip', icon: 'play', disabled: !waiting };
+}
+
+/** Where the AI post-processing of the job in flight is (X3c): "AI · tile 2 of 4", "· attempt 2" after a retry. */
+export function aiStatusText(ai: NonNullable<RenderProgress['ai']>): string {
+  if (ai.stage === 'LOADING') return t('queue.aiLoading');
+  if (ai.stage === 'GUARD') return t('queue.aiGuard');
+  const i = Math.max(1, ai.tile);
+  const n = Math.max(1, ai.tiles);
+  return ai.attempt > 1 ? t('queue.aiTileRetry', { i, n, a: ai.attempt }) : t('queue.aiTile', { i, n });
+}
+
+/** The status line of a job: its frame while an animation renders, where the AI is while it runs, else the status. */
+function statusTextOf(j: RenderJob, running: RenderProgress | null): string {
+  if (j.status === 'RUNNING' && running?.jobId === j.id && running.ai) return aiStatusText(running.ai);
+  if (j.status === 'RUNNING' && j.settings.mode === 'ANIMATION' && j.frames > 0) return t('queue.frameOf', { i: j.frame || 1, n: j.frames });
+  return t(dyn(`queue.status.${j.status}`));
 }
 
 export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
@@ -59,7 +75,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
         ? h('span', { class: 'queue-pics', 'data-tip': t('queue.aiPair') }, h('img', { src: result.thumb, alt: '', class: 'queue-pic' }), h('img', { src: result.ai.thumb, alt: '', class: 'queue-pic queue-pic-ai' }))
         : h('img', { src: result.thumb, alt: '', class: 'queue-pic' })
       : h('span', { class: 'queue-pic queue-pic-empty' }, icon(anim ? 'film' : 'camera', 14));
-    const statusText = running && anim && j.frames > 0 ? t('queue.frameOf', { i: j.frame || 1, n: j.frames }) : t(dyn(`queue.status.${j.status}`));
+    const statusText = statusTextOf(j, s.render.running);
     const act = (label: string, iconName: 'edit' | 'duplicate' | 'close' | 'stop', fn: () => void, disabled = false) =>
       h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label, 'data-tip': label, disabled, onclick: (e: MouseEvent) => (e.stopPropagation(), fn()) }, icon(iconName, 14));
     const el = h(
@@ -158,7 +174,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
           const bar = el?.querySelector('.bar-meter > div') as HTMLElement | null;
           if (bar) bar.style.width = `${Math.round(j.progress * 100)}%`;
           const st = el?.querySelector('.queue-status')?.firstChild;
-          if (st && j.status === 'RUNNING' && j.settings.mode === 'ANIMATION' && j.frames > 0) st.textContent = t('queue.frameOf', { i: j.frame || 1, n: j.frames });
+          if (st && j.status === 'RUNNING') st.textContent = statusTextOf(j, store.get().render.running);
         }
         return;
       }

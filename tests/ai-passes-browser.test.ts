@@ -6,9 +6,9 @@
 // at an edge. Skipped where there is no Chromium (REPACKSHOT_CHROMIUM, /opt/pw-browsers).
 //
 // Phase X2: the same planes against the engine's own passes (the real rt.wasm in Node, tests/wasm-engine.ts),
-// on the ids and the depth. They agree everywhere but on the studio floor, which the engine's passes give as
-// FLOOR_ID (AI-POST.md §7.4, the lead's correction after X4) and the three.js passes still draw as background:
-// X3c moves them to FLOOR_ID, and then this test asks for it.
+// on the ids and the depth. X3c: the studio floor too, FLOOR_ID in both ids (AI-POST.md §7.4, the lead's
+// correction after X4): the three.js passes cast the engine's centre rays at the floor plane, and the floor's
+// pixels must agree like any other.
 
 import { existsSync, readdirSync } from 'node:fs';
 import { chromium, type Browser } from 'playwright-core';
@@ -111,9 +111,9 @@ describe.skipIf(!executablePath)('the three.js passes against the engine’s sce
     expect(instances.map((i) => i.materialId)).toEqual([1, 2, 3, 1]);
     const part = get('partId');
     const material = get('materialId');
-    // Only whole ids ever appear (a blended edge would show as a number between two ids).
-    expect([...new Set(part)].every((v) => Number.isInteger(v) && v >= 0 && v <= instances.length)).toBe(true);
-    expect([...new Set(material)].every((v) => Number.isInteger(v) && v >= 0 && v <= 3)).toBe(true);
+    // Only whole ids ever appear (a blended edge would show as a number between two ids); the floor is FLOOR_ID.
+    expect([...new Set(part)].every((v) => v === FLOOR_ID || (Number.isInteger(v) && v >= 0 && v <= instances.length))).toBe(true);
+    expect([...new Set(material)].every((v) => v === FLOOR_ID || (Number.isInteger(v) && v >= 0 && v <= 3))).toBe(true);
     let wrong = 0;
     let inner = 0;
     for (let i = 0; i < W * H; i++) {
@@ -125,12 +125,15 @@ describe.skipIf(!executablePath)('the three.js passes against the engine’s sce
     expect(inner).toBe(0);
     // Edge pixels may fall either side of a triangle edge, but only a few of them do.
     expect(wrong).toBeLessThan(W * H * 0.01);
-    // Every part is seen, the hidden one is not, and the background is 0.
+    // Every part is seen, the hidden one is not, the floor is there (from this camera it fills the frame up to
+    // the top: the horizon is out of view, so there is background only where the reference has some).
     for (const id of [1, 2, 3, 4]) expect(part.includes(id), `instance ${id}`).toBe(true);
-    expect(part.includes(0)).toBe(true);
-    // Each instance carries the material of its group.
+    expect(part.includes(0)).toBe(Array.from(ref.partId!).includes(0));
+    expect(part.filter((v) => v === FLOOR_ID).length).toBeGreaterThan(1000);
+    // Each instance carries the material of its group; the floor's material id is FLOOR_ID too.
     const byInstance = new Map<number, number>();
     for (let i = 0; i < W * H; i++) if (part[i] > 0) byInstance.set(part[i], material[i]);
+    expect(byInstance.get(FLOOR_ID)).toBe(FLOOR_ID);
     instances.forEach((inst, k) => expect(byInstance.get(k + 1)).toBe(inst.materialId));
   });
 
@@ -177,23 +180,17 @@ describe.skipIf(!executablePath)('the three.js passes against the engine’s sce
     }
   });
 
-  it.skipIf(!RT_WASM)('agrees with the engine’s passes on the ids and the depth (the floor aside, which X3c brings to FLOOR_ID)', async () => {
+  it.skipIf(!RT_WASM)('agrees with the engine’s passes on the ids and the depth, the studio floor included', async () => {
     const { scene } = projectScene(state, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: [...PASS_KEYS] });
     const engine = renderWithPasses(await loadRt(), writeRsb(scene), W, H, 1, passMask([...PASS_KEYS])).passes;
     const part = get('partId');
     const material = get('materialId');
     const depth = get('depth').map((d) => (d === null ? Infinity : d));
+    const normal = get('normal');
     let compared = 0;
     let floor = 0;
     let wrong = 0;
     for (let i = 0; i < W * H; i++) {
-      if (engine.partId![i] === FLOOR_ID) {
-        // The engine's floor: background in the three.js passes until X3c (or a part, at its silhouette).
-        expect(engine.materialId![i]).toBe(FLOOR_ID);
-        if (![0, FLOOR_ID].includes(part[i])) expect(nearEdge[i], `pixel ${i}: three.js ${part[i]} on the floor`).toBe(1);
-        floor++;
-        continue;
-      }
       if (part[i] !== engine.partId![i] || material[i] !== engine.materialId![i]) {
         wrong++;
         expect(nearEdge[i], `pixel ${i}: three.js ${part[i]}, engine ${engine.partId![i]}`).toBe(1);
@@ -203,6 +200,13 @@ describe.skipIf(!executablePath)('the three.js passes against the engine’s sce
       const e = engine.depth![i];
       if (Number.isFinite(e)) expect(Math.abs(depth[i] - e)).toBeLessThan(1e-3 * e + 1e-3);
       else expect(depth[i]).toBe(Infinity);
+      if (engine.partId![i] === FLOOR_ID) {
+        // The floor: both ids, its normal turned to the camera (above it: +Z).
+        expect(engine.materialId![i]).toBe(FLOOR_ID);
+        expect([normal[i * 3], normal[i * 3 + 1], normal[i * 3 + 2]]).toEqual([0, 0, 1]);
+        expect([engine.normal![i * 3], engine.normal![i * 3 + 1], engine.normal![i * 3 + 2]]).toEqual([0, 0, 1]);
+        floor++;
+      }
       compared++;
     }
     expect(compared).toBeGreaterThan(5000);

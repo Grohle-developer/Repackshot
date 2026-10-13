@@ -18,6 +18,13 @@
 //                               (Attachment A, shown in full before the download); tools/third-party/,
 //                               fetched 2026-10-13 from
 //                               https://huggingface.co/spaces/CompVis/stable-diffusion-license/raw/main/license.txt
+//   stable-diffusion.cpp.LICENSE.txt  stable-diffusion.cpp (MIT), the desktop's AI runtime (src/data/ai-runtimes.json):
+//                               tools/third-party/, fetched 2026-10-13 from https://raw.githubusercontent.com/
+//                               leejet/stable-diffusion.cpp/d637cfb935feb2254898a8f1524046c958f3df80/LICENSE (the
+//                               pinned release's commit; the same text as stable-diffusion.cpp.txt in its zips)
+//   ggml.LICENSE.txt            ggml (MIT), built into it: tools/third-party/, fetched 2026-10-13 from
+//                               https://raw.githubusercontent.com/leejet/ggml/d25b121ce1d6ae0c7e62ad080460d9fc1e46dd93/LICENSE
+//                               (the submodule's commit; the same text as ggml.txt in the zips)
 //
 // occt-import-js's two LGPL-2.1 texts are copied by tools/vendor.mjs to public/vendor/occt-import-js/.
 
@@ -41,6 +48,8 @@ const FILES = [
   [`tools/third-party/rhino3dm-${RHINO_TAG}.LICENSE`, 'rhino3dm.LICENSE.txt'],
   ['tools/third-party/Apache-2.0.txt', 'Apache-2.0.txt'],
   ['tools/third-party/CreativeML-OpenRAIL-M.txt', 'CreativeML-OpenRAIL-M.txt'],
+  ['tools/third-party/stable-diffusion.cpp-d637cfb.LICENSE', 'stable-diffusion.cpp.LICENSE.txt'],
+  ['tools/third-party/ggml-d25b121.LICENSE', 'ggml.LICENSE.txt'],
 ];
 
 mkdirSync(OUT, { recursive: true });

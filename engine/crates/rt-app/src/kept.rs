@@ -67,6 +67,26 @@ impl Default for KeepLimits {
     }
 }
 
+/// How a render is looked at: the exposure and tone curve of its scene (`RNDR`), which the AI
+/// post-processing needs to see the image as the person does (X3c).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Look {
+    /// `RNDR.tonemap` (`rt_core::color::Tonemap` codes).
+    pub tonemap: u32,
+    /// `RNDR.exposure_ev`.
+    pub exposure_ev: f32,
+}
+
+impl Default for Look {
+    /// ACES at 0 EV, the RSB's defaults.
+    fn default() -> Look {
+        Look {
+            tonemap: 1,
+            exposure_ev: 0.0,
+        }
+    }
+}
+
 /// A kept render: the image and its passes.
 #[derive(Clone, Debug)]
 pub struct KeptRender {
@@ -76,6 +96,8 @@ pub struct KeptRender {
     pub image: Frame,
     /// Its exact passes.
     pub passes: Arc<Passes>,
+    /// Its exposure and tone curve.
+    pub look: Look,
 }
 
 impl KeptRender {
@@ -88,10 +110,11 @@ impl KeptRender {
 /// Where a kept render is.
 enum Place {
     Memory(KeptRender),
-    /// In the cache folder: the image (`RPX1`) and the passes (`RPP1`).
+    /// In the cache folder: the image (`RPX1`) and the passes (`RPP1`); the look stays here.
     Disk {
         image: PathBuf,
         passes: PathBuf,
+        look: Look,
     },
 }
 
@@ -270,7 +293,11 @@ impl Kept {
         let place = match &self.dir {
             Some(dir) if render.bytes() > self.limits.in_memory => {
                 match Kept::spill(dir, &render) {
-                    Ok((image, passes)) => Place::Disk { image, passes },
+                    Ok((image, passes)) => Place::Disk {
+                        image,
+                        passes,
+                        look: render.look,
+                    },
                     Err(e) => {
                         crate::log::line(&format!("render {id}: cannot keep it on disk: {e}"));
                         Place::Memory(render)
@@ -287,7 +314,7 @@ impl Kept {
             entries.drain(..extra).map(|(_, p)| p).collect()
         };
         for place in evicted {
-            if let Place::Disk { image, passes } = place {
+            if let Place::Disk { image, passes, .. } = place {
                 let _ = fs::remove_file(image);
                 let _ = fs::remove_file(passes);
             }
@@ -322,11 +349,15 @@ impl Kept {
 
     /// Render `id`, read back from the cache folder when it is there.
     pub fn get(&self, id: u32) -> Option<KeptRender> {
-        let (image, passes) = {
+        let (image, passes, look) = {
             let entries = lock(&self.entries);
             match &entries.iter().find(|(i, _)| *i == id)?.1 {
                 Place::Memory(render) => return Some(render.clone()),
-                Place::Disk { image, passes } => (image.clone(), passes.clone()),
+                Place::Disk {
+                    image,
+                    passes,
+                    look,
+                } => (image.clone(), passes.clone(), *look),
             }
         };
         let frame = Frame::read(&fs::read(image).ok()?)?;
@@ -335,6 +366,7 @@ impl Kept {
             id,
             image: frame,
             passes: Arc::new(passes),
+            look,
         })
     }
 
@@ -399,6 +431,10 @@ mod tests {
                 sums: Arc::new((0..w * h * 4).map(|i| i as f32 + id as f32).collect()),
             },
             passes: Arc::new(passes),
+            look: Look {
+                tonemap: id % 5,
+                exposure_ev: id as f32 * 0.25,
+            },
         }
     }
 
@@ -524,6 +560,8 @@ mod tests {
             let got = kept.get(id).unwrap();
             assert_eq!(got.passes, want.passes);
             assert_eq!(got.image.sums, want.image.sums);
+            // The look stays with the render, on the disk too (the AI sees the image through it).
+            assert_eq!(got.look, want.look, "render {id}");
             assert_eq!(got.image.samples, 5);
             let file = body(kept.passes_body(id).unwrap());
             let mut expected = Vec::new();

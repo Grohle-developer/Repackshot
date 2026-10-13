@@ -24,6 +24,9 @@ describe.skipIf(!hasDist)('build: settings and models', () => {
       ['rhino3dm.LICENSE.txt', 'Robert McNeel'],
       ['Apache-2.0.txt', 'Apache License'],
       ['CreativeML-OpenRAIL-M.txt', 'Attachment A'],
+      // X3c: the desktop's AI runtime and its tensor library, as their pinned commits have them.
+      ['stable-diffusion.cpp.LICENSE.txt', 'Copyright (c) 2023 leejet'],
+      ['ggml.LICENSE.txt', 'Copyright (c) 2023-2026 The ggml authors'],
     ]) {
       expect(existsSync(`${DIST}/licences/${file}`), file).toBe(true);
       expect(readFileSync(`${DIST}/licences/${file}`, 'utf8')).toContain(marker);

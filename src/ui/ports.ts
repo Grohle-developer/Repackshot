@@ -2,7 +2,7 @@
 // imports from `render` or `io` (ARCHITECTURE §2): main.ts builds these
 // services from the engine and the importers and hands them in.
 
-import type { AiPostService, LinearImage } from '../core/ai';
+import type { AiGuardMaterial, AiPipelineSettings, AiPostService, LinearImage } from '../core/ai';
 import type { Projection, Rect } from '../core/box-select';
 import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
@@ -233,6 +233,17 @@ export interface FrameRequest {
   signal?: AbortSignal;
   /** 0..1, the samples every pixel has so far, and seconds. */
   onProgress?: (progress: number, samples: number, seconds: number) => void;
+  /**
+   * The AI step follows (X3c): render the guard's passes too and let the desktop launcher keep them with the linear
+   * image by the render's id (AI-POST.md §7.3), for the `RENDER` source. Ignored where there is no launcher.
+   */
+  aiPasses?: boolean;
+}
+
+/** The exposure and tone curve a render's file was written with (RSB codes): the AI image is written the same way. */
+export interface FrameTone {
+  exposureEv: number;
+  tonemap: number;
 }
 
 /** What a frame request gives back. */
@@ -245,6 +256,10 @@ export interface FrameResult {
   height: number;
   samples: number;
   seconds: number;
+  /** The desktop launcher's id of the render, by which it keeps the linear image and the passes (`aiPasses`). */
+  renderId?: string;
+  /** How its file was converted from the render's light. */
+  tone?: FrameTone;
 }
 
 // --- AI post-processing (phase X4, AI-POST.md §4, §7.3) ---------------------------------------------------------
@@ -273,6 +288,11 @@ export interface AiEncodeOptions {
   jpegQuality: number;
   dpi: number;
   transparent: boolean;
+  /**
+   * The image is the render's own scene light (the `RENDER` source, X3c): written with this exposure and curve,
+   * exactly as the engine's file was. Absent: the image is display light (an `INLINE` source decoded from 8 bits).
+   */
+  tone?: FrameTone;
 }
 
 /**
@@ -290,8 +310,12 @@ export interface AiPort {
   decode(image: Blob): Promise<LinearImage>;
   /** An image from the service as a file, in the job's format. */
   encode(image: LinearImage, opts: AiEncodeOptions): Promise<Blob>;
-  /** The prompt and the negative for a scene (src/ai/prompt.ts arrives with X3a). */
-  scenePrompt(state: ProjectState): { prompt: string; negative: string };
+  /** The prompt and the negative for a scene and a job's settings (src/ai/prompt.ts; default: the window's). */
+  scenePrompt(state: ProjectState, settings?: AiPipelineSettings): { prompt: string; negative: string };
+  /** The guard's material table for a job's camera: the engine scene's material order (io/rsb.ts), named (src/ai/prompt.ts). */
+  materials(state: ProjectState, camera: CameraId | null): AiGuardMaterial[];
+  /** The service takes the `RENDER` source: the desktop launcher kept the final render with its passes (X3c). */
+  renderSource(): Promise<boolean>;
 }
 
 /** The results history in the browser (src/io/results.ts). */

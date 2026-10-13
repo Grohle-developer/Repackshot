@@ -76,6 +76,8 @@ export interface NativeInfo {
   filesApi?: number;
   /** The AI runtime API (ai/mod.rs, X3b), version 1; absent in a launcher without it. */
   aiApi?: number;
+  /** The AI post-processing pipeline of rt-app/src/ai/post.rs (`/api/ai/post`, X3c): its version, when there is one. */
+  aiPost?: number;
 }
 
 export interface NativeRecommendation {

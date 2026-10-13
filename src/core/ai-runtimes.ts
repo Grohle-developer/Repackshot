@@ -83,6 +83,14 @@ export interface AiRuntimeEntryState {
   devices: { name: string; description: string }[];
   /** Why it does not start on this computer (a missing library or DLL). */
   probeError: string | null;
+  /**
+   * `missing`: a Windows build that does not start because the Microsoft Visual C++ 2015–2022 runtime is not
+   * installed (its DLLs are in neither the build's folder nor System32; X3c). We do not redistribute it: the row
+   * opens Microsoft's page (`vcRuntimeUrl`).
+   */
+  vcRuntime?: 'missing' | null;
+  /** Microsoft's download page of that runtime, for the Windows builds. */
+  vcRuntimeUrl?: string | null;
   supports: string[];
   verified: string[];
 }
@@ -166,4 +174,6 @@ export interface AiRuntimePort {
   installFromFile(key: string, dialog: { title: string; filterName: string }): Promise<boolean>;
   /** Stops the loaded model to give the memory back (closing the AI section). */
   release(): Promise<void>;
+  /** Asks the installed build its version and devices again (after the Visual C++ runtime was installed, X3c). */
+  probe(key: string): Promise<unknown>;
 }

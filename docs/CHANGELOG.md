@@ -3,6 +3,20 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Post-procesado IA
+
+- **La tubería de escritorio, de punta a punta**: un render final con *Post-procesado IA* encendido lo hace el lanzador sin que los píxeles vayan a la página y vuelvan: mosaicos, stable-diffusion.cpp con el modelo activo (cargado una vez, también entre vistas previas), la guarda determinista y los reintentos a menos intervención si una protección no pasa. El historial guarda las dos imágenes y el informe de la guarda (X3c).
+- La imagen de la IA se escribe desde la luz lineal del render, con su exposición y su curva: un PNG de 16 bits o un EXR siguen siéndolo, y con Intervención 0 es el mismo fichero que el del motor, byte a byte. Con Intervención 0 ni siquiera se arranca el motor de ejecución (X3c).
+- La cola enseña dónde está la IA: *IA · cargando el modelo*, *IA · mosaico 2 de 4*, *· intento 2*, *IA · comprobando*. Detener o pausar en ese momento conserva la imagen del motor en el historial (X3c).
+- La vista previa de la ventana de render usa en escritorio la misma tubería, con el fotograma del modo Rápido (X3c).
+- El suelo del estudio cuenta como superficie que la IA puede reiluminar (sus sombras de contacto y su luz rebotada), con su propia comprobación de color; antes un suelo visto antes que cualquier pieza se trataba como fondo. Los pases de la vista previa lo dibujan igual que el motor (X3c).
+- El *prompt* sale de los materiales, las luces y el estilo de la escena, con el negativo fijo; la guarda recibe la tabla de materiales con sus nombres (X3c).
+- En Windows, si al motor de ejecución le falta el entorno de Microsoft Visual C++ 2015–2022, *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* lo dice y ofrece *Instalar el entorno de Microsoft Visual C++…* (la página oficial de Microsoft) y *Comprobar de nuevo* (X3c).
+- *Acerca de* lista stable-diffusion.cpp y ggml con sus licencias MIT (X3c).
+- Un post-procesado por el que nadie pregunta (su ventana se cerró) se para solo a los dos minutos (X3c).
+
 ## v0.1.2 — 2026-10-13
 
 Versión de prueba con los arreglos de escritorio que pediste tras probar

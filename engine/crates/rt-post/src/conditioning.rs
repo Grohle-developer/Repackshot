@@ -4,6 +4,7 @@
 //! convention), background black. Both are 8-bit, one byte a pixel.
 
 use crate::image::Passes;
+use rt_core::passes::FLOOR_ID;
 
 /// Darkest depth value a surface gets (the farthest one): above the background's 0, so the
 /// farthest surface still separates from it.
@@ -50,28 +51,43 @@ pub(crate) fn edge_plane(passes: &Passes, crease_cos: f32) -> Vec<u8> {
 
 /// The depth image: the nearest surface 255, the farthest [`DEPTH_FAR`], linear in between;
 /// background (part 0 or a depth that is not finite) 0. Without a depth pass, all 0.
+///
+/// The range is the product's: the parts' depths. The studio floor ([`FLOOR_ID`]) is a surface,
+/// never background, but its plane runs to the horizon, so letting it set the far end would squeeze
+/// the product into a few levels: it is drawn with the parts' scale and clamped to their range
+/// (the floor under and in front of the product keeps its gradient; far behind it reads as far).
+/// With no part in view, the floor sets the range itself.
 pub(crate) fn depth_plane(passes: &Passes) -> Vec<u8> {
     let n = passes.width as usize * passes.height as usize;
     let Some(depth) = passes.depth else {
         return vec![0; n];
     };
     let surface = |p: usize| passes.part_id[p] != 0 && depth[p].is_finite();
-    let (mut near, mut far) = (f32::INFINITY, f32::NEG_INFINITY);
-    for (p, &d) in depth.iter().enumerate() {
-        if surface(p) {
-            near = near.min(d);
-            far = far.max(d);
+    let range = |of_part: &dyn Fn(usize) -> bool| {
+        let (mut near, mut far) = (f32::INFINITY, f32::NEG_INFINITY);
+        for (p, &d) in depth.iter().enumerate() {
+            if surface(p) && of_part(p) {
+                near = near.min(d);
+                far = far.max(d);
+            }
         }
+        (near, far)
+    };
+    let (mut near, mut far) = range(&|p| passes.part_id[p] != FLOOR_ID);
+    if near > far {
+        (near, far) = range(&|_| true);
     }
     let span = far - near;
-    let range = f32::from(255 - DEPTH_FAR);
+    let levels = f32::from(255 - DEPTH_FAR);
     (0..n)
         .map(|p| {
             if !surface(p) {
                 0
             } else if span > 0.0 {
                 let t = ((far - depth[p]) / span).clamp(0.0, 1.0);
-                (f32::from(DEPTH_FAR) + range * t + 0.5) as u8
+                (f32::from(DEPTH_FAR) + levels * t + 0.5) as u8
+            } else if depth[p] > far {
+                DEPTH_FAR
             } else {
                 255
             }
@@ -158,5 +174,52 @@ mod tests {
             ..passes
         };
         assert_eq!(depth_plane(&passes), vec![0; 4]);
+    }
+
+    #[test]
+    fn the_floor_is_a_surface_on_the_products_depth_scale() {
+        // Background | floor in front | part 100..200 | floor under it | floor to the horizon.
+        let part = [0, FLOOR_ID, 1, 1, 1, FLOOR_ID, FLOOR_ID];
+        let depth = [f32::INFINITY, 50.0, 100.0, 150.0, 200.0, 150.0, 1.0e7];
+        let passes = Passes {
+            width: 7,
+            height: 1,
+            part_id: &part,
+            material_id: &part,
+            normal: None,
+            depth: Some(&depth),
+            coc: None,
+        };
+        // The horizon does not squeeze the part: the same levels as without the floor.
+        assert_eq!(
+            depth_plane(&passes),
+            vec![0, 255, 255, 136, DEPTH_FAR, 136, DEPTH_FAR]
+        );
+        // Only floor in view: the floor sets the range, and stays a surface (never 0).
+        let floor = [FLOOR_ID; 3];
+        let d = [10.0, 20.0, 30.0];
+        let passes = Passes {
+            width: 3,
+            height: 1,
+            part_id: &floor,
+            material_id: &floor,
+            normal: None,
+            depth: Some(&d),
+            coc: None,
+        };
+        assert_eq!(depth_plane(&passes), vec![255, 136, DEPTH_FAR]);
+        // A part at one depth with the floor behind it.
+        let part = [1, FLOOR_ID];
+        let d = [10.0, 30.0];
+        let passes = Passes {
+            width: 2,
+            height: 1,
+            part_id: &part,
+            material_id: &part,
+            normal: None,
+            depth: Some(&d),
+            coc: None,
+        };
+        assert_eq!(depth_plane(&passes), vec![255, DEPTH_FAR]);
     }
 }

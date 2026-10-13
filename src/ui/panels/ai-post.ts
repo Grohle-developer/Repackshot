@@ -88,15 +88,17 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     const size = previewSize(s.width, s.height, status?.backend === 'CPU' ? 384 : 512);
     const camera = s.camera.kind === 'ONE' ? s.camera.id : null;
     const fullEngine = s.ai.previewFullEngine ? { finishBy: s.finishBy, maxSamples: s.maxSamples, maxSeconds: s.maxSeconds } : null;
-    const text = port.scenePrompt(st);
+    const settings = { intervention: s.ai.intervention, light: s.ai.light, bounce: s.ai.bounce, wear: s.ai.wear, style: s.ai.style, styleStrength: s.ai.styleStrength, seed: s.ai.seed };
+    const text = port.scenePrompt(st, settings);
     return {
       // The picture depends on the scene, the camera, the look and the size; not on the AI controls.
       frameKey: [st.scene.nodes, st.scene.roots, st.materials, st.studio, st.environment, st.camera, st.image, st.animation, size.width, size.height, camera, s.ai.previewFullEngine, fullEngine?.maxSamples, fullEngine?.maxSeconds, fullEngine?.finishBy],
       frame: (signal) => port.frame({ width: size.width, height: size.height, camera, fullEngine, signal }),
-      settings: { intervention: s.ai.intervention, light: s.ai.light, bounce: s.ai.bounce, wear: s.ai.wear, style: s.ai.style, styleStrength: s.ai.styleStrength, seed: s.ai.seed },
+      settings,
       prompt: text.prompt,
       negative: text.negative,
       modelKey: status?.activeModel ?? '',
+      materials: port.materials(st, camera),
     };
   };
   const preview = new AiPreviewController(
@@ -117,7 +119,12 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
       cmd.openSettings(ctx, 'ai.models');
       return;
     }
-    if (action.kind === 'SWITCH' && !animation()) patchAi({ enabled: !ai().enabled }, undefined, L('undo.aiSwitch'));
+    if (action.kind === 'SWITCH' && !animation()) {
+      const was = ai().enabled;
+      patchAi({ enabled: !was }, undefined, L('undo.aiSwitch'));
+      // Off: the model gives its memory back now (AI-POST.md §7.3), unless a job still uses it (the launcher says no).
+      if (was) void ctx.services.aiRuntime?.release().catch(() => undefined);
+    }
   }, t('rw.aiSwitch'), true);
   sw.el.setAttribute('data-ai-switch', '');
   const aux = h('span', { class: 'aux rw-ai-line' });

@@ -102,6 +102,15 @@ const STATUS_INVALID_IMAGE_FORMAT: u32 = 0xC000_007B;
 const STATUS_ENTRYPOINT_NOT_FOUND: u32 = 0xC000_0139;
 const STATUS_ILLEGAL_INSTRUCTION: u32 = 0xC000_001D;
 
+/// Whether a program could not start because a DLL it needs is missing (the Windows status codes
+/// of a DLL not found, or found without the entry point the program needs: an older one).
+pub fn missing_dll(code: Option<i32>) -> bool {
+    matches!(
+        code.map(|c| c as u32),
+        Some(STATUS_DLL_NOT_FOUND | STATUS_ENTRYPOINT_NOT_FOUND)
+    )
+}
+
 /// Why a program ended, in words for the log and the interface: the codes Windows uses when a
 /// DLL is missing (the Visual C++ runtime the Windows builds need) are named.
 pub fn describe_exit(code: Option<i32>) -> String {
@@ -242,6 +251,10 @@ mod tests {
     #[test]
     fn exits_are_described() {
         assert!(describe_exit(Some(0xC000_0135u32 as i32)).contains("Visual C++"));
+        assert!(missing_dll(Some(0xC000_0135u32 as i32)));
+        assert!(missing_dll(Some(0xC000_0139u32 as i32)));
+        assert!(!missing_dll(Some(0xC000_007Bu32 as i32)));
+        assert!(!missing_dll(Some(1)) && !missing_dll(None));
         assert!(describe_exit(Some(0xC000_001Du32 as i32)).contains("instruction"));
         assert_eq!(describe_exit(Some(2)), "it exited with code 2");
         assert!(describe_exit(None).contains("signal"));
