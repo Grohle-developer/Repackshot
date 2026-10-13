@@ -7,7 +7,7 @@ export type WorkerRequest =
   | { type: 'scene'; id: number; bytes: ArrayBuffer; full: boolean }
   /** Render samples first .. first + count - 1 of these tiles (x, y, w, h, index each). */
   | { type: 'job'; generation: number; tiles: Int32Array; first: number; count: number }
-  /** Stop the job of this generation (or an older one). */
+  /** Stop the job of this generation (only that one). */
   | { type: 'cancel'; generation: number }
   /** Convert accumulated RGBA sums of `samples` samples to 8-bit pixels, exactly. */
   | { type: 'tonemap'; id: number; sum: ArrayBuffer; samples: number; ev: number; tonemap: number };

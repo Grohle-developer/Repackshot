@@ -281,3 +281,33 @@ fn strip_meshes(rsb: &[u8]) -> Vec<u8> {
     }
     out
 }
+
+#[test]
+fn a_live_viewport_does_not_change_a_bit_of_the_render() {
+    // The user's 16 threads: the viewport keeps a quarter while the final renders.
+    let mut scene = rt_core::example::scene();
+    scene.render.max_samples = 4;
+    let rsb = scene.to_rsb();
+    let t = TestServer::start("parity-live", 16);
+    let mut view = rt_core::example::scene();
+    view.camera.position.x += 3.0;
+    view.render.width = 160;
+    view.render.height = 120;
+    view.render.max_samples = 100_000;
+    let r = t.api(
+        "POST",
+        &format!(
+            "/api/render?kind=viewport&mesh=v&client=w&seq=1&share={}",
+            rt_app::render::viewport_share(16)
+        ),
+        &view.to_rsb(),
+    );
+    assert_eq!(r.status, 200, "{}", r.text());
+    let f = render(&t, "final", &rsb, "");
+    assert_eq!(f.samples, 4);
+    assert_eq!(
+        fnv1a(&resolve(&f)),
+        pinned_example_hash(),
+        "with a live viewport"
+    );
+}

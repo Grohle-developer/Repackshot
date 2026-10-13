@@ -162,7 +162,10 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
     const samples = st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: formatNumber(st.samples, lang, 0) });
     if (port.kind === 'pathtracer') {
       const scale = st.scale ?? 1;
-      title.textContent = st.rendering
+      // While a Render runs the viewport shares the engine (and says with how much of it), or waits.
+      title.textContent = st.rendering && st.renderShare === 'SHARED' && st.share
+        ? t(st.native ? 'viewport.meterSharingThreads' : 'viewport.meterSharingWorkers', { n: st.share.n, total: st.share.of })
+        : st.rendering && st.renderShare === 'PAUSED'
         ? t('viewport.meterRendering')
         : scale >= 4
           ? t('viewport.meterQuarter')
@@ -182,8 +185,21 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
       const set = ctx.ui.get().settings;
       const max = set['engine.viewportLimit'] === 'SAMPLES' ? Math.max(1, set['engine.viewportSamples']) : Math.max(1, ctx.store.get().render.maxSamples);
       (bar.firstElementChild as HTMLElement).style.width = `${st.converged ? 100 : Math.min(100, Math.round((st.samples / max) * 100))}%`;
-      note.textContent = '';
-      note.style.display = 'none';
+      // Never "0 samples" in silence: when the engine does not answer, refuses the view or had to be restarted,
+      // the meter says so (the engine's own words in the tooltip).
+      const issue = st.issue;
+      note.textContent = !issue
+        ? ''
+        : issue.kind === 'WAITING'
+          ? t('viewport.issueWaiting', { s: issue.seconds ?? 0 })
+          : issue.kind === 'FAILED'
+            ? issue.seconds
+              ? t('viewport.issueFailed', { detail: issue.detail, s: issue.seconds })
+              : t('viewport.issueFailedNow', { detail: issue.detail })
+            : t('viewport.issueRestarted');
+      note.title = issue?.detail ?? '';
+      note.style.display = issue ? '' : 'none';
+      el.dataset.issue = issue ? issue.kind.toLowerCase() : '';
     } else {
       title.textContent = t('viewport.meterFast');
       line.textContent = t('viewport.frameMs', { ms: formatNumber(st.seconds * 1000, lang, 1) });
@@ -200,6 +216,14 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
     el.dataset.scale = String(st.scale ?? 1);
     el.dataset.frames = String(st.frames ?? 0);
     el.dataset.frameMs = st.frameMs !== undefined ? st.frameMs.toFixed(1) : '';
+    el.dataset.converged = st.converged ? '1' : '0';
+    el.dataset.passes = String(st.passes ?? '');
+    el.dataset.watchdog = String(st.watchdog ?? 0);
+    el.dataset.rendering = st.rendering ? '1' : '0';
+    el.dataset.share = st.rendering ? (st.renderShare ?? '').toLowerCase() : '';
+    el.dataset.shownKey = st.shownKey ?? '';
+    el.dataset.wantKey = st.wantKey ?? '';
+    if (port.kind !== 'pathtracer') el.dataset.issue = '';
   };
   scope.onDispose(port.onFrame(() => update()));
   scope.onDispose(() => window.clearTimeout(trailing));

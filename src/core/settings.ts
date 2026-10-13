@@ -116,6 +116,8 @@ export interface Settings {
   'engine.viewportLimit': 'OUTPUT' | 'SAMPLES' | 'TIME';
   'engine.viewportSamples': number;
   'engine.viewportSeconds': number;
+  /** While a render runs, the viewport keeps a quarter of the engine (live) or waits for it (fastest render). */
+  'engine.whileRender': 'SHARE' | 'PAUSE';
 
   /** Key of the model in use, '' for none. */
   'ai.active': string;
@@ -224,6 +226,7 @@ export function defaultSettings(): Settings {
     'engine.viewportLimit': 'OUTPUT',
     'engine.viewportSamples': 1024,
     'engine.viewportSeconds': 120,
+    'engine.whileRender': 'SHARE',
 
     'ai.active': '',
     'ai.device': 'GPU',
@@ -396,6 +399,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   setting('engine.viewportLimit', 'engine', 'fullViewport', choice(['OUTPUT', 'SAMPLES', 'TIME']), kw('viewport limit, battery, stop, samples, seconds', 'límite del visor, batería, parar, muestras, segundos'), { aux: true }),
   setting('engine.viewportSamples', 'engine', 'fullViewport', num(16, 100000, 16), kw('viewport, samples, limit', 'visor, muestras, límite')),
   setting('engine.viewportSeconds', 'engine', 'fullViewport', num(5, 3600, 5, 's'), kw('viewport, seconds, limit', 'visor, segundos, límite')),
+  setting('engine.whileRender', 'engine', 'fullViewport', choice(['SHARE', 'PAUSE']), kw('while rendering, render, queue, share, pause, live viewport, threads', 'mientras se renderiza, render, cola, compartir, pausar, visor vivo, hilos'), { aux: true }),
   row('engine.measure', 'engine', 'measure', kw('measure performance, benchmark, speed, samples per second', 'medir rendimiento, prueba, velocidad, muestras por segundo'), { aux: true }),
   row('engine.info', 'engine', 'info', kw('engine version, build, cpu features, simd, threads', 'versión del motor, compilación, cpu, simd, hilos')),
 

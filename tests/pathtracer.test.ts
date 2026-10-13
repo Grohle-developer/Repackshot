@@ -3,8 +3,10 @@
 // frames, and the pool itself driven by fake workers.
 
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { PathTracerEngine, Pool, SIMD_PROBE, simdSupported, type SceneSource, type TracerView } from '../src/render/pathtracer';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PathTracerEngine, Pool, SIMD_PROBE, simdSupported, viewportWorkers, type SceneSource, type TracerView } from '../src/render/pathtracer';
+import { WATCHDOG } from '../src/render/watchdog';
+import { installDom } from './launcher-mock';
 import { exampleState } from './helpers';
 import type { WorkerReply, WorkerRequest } from '../src/render/pool-protocol';
 import { Accumulator, alphaByte, assignTiles, chooseScale, exactBytes, Generations, nextPass, poolSize, scaledSize, TILE, tileGrid, type TileResult } from '../src/render/tiles';
@@ -191,10 +193,13 @@ class FakeWorker {
   /** With `held`: only replies of these types wait (the others go at once). */
   holdOnly: Set<WorkerReply['type']> | null = null;
   terminated = false;
+  /** Milliseconds a message takes (0: a microtask), so a viewport can render for a while. */
+  delay = 0;
   constructor(private readonly width: number) {}
   postMessage(msg: WorkerRequest): void {
     this.got.push(msg);
-    queueMicrotask(() => this.handle(msg));
+    if (this.delay > 0) setTimeout(() => this.handle(msg), this.delay);
+    else queueMicrotask(() => this.handle(msg));
   }
   private reply(m: WorkerReply): void {
     if (this.held && (!this.holdOnly || this.holdOnly.has(m.type))) this.held.push(m);
@@ -331,7 +336,8 @@ describe('Render with the path tracer', () => {
     return {
       build: (_s, view) => {
         views.push(view);
-        return { meshKey: 'k', bytes: (meshes) => new Uint8Array([meshes ? 2 : 1, 0, 0, 0]) };
+        // The bytes say what the scene is: another budget, another update (the meshes stay the same).
+        return { meshKey: 'k', bytes: (meshes) => new Uint8Array([meshes ? 2 : 1, view.maxSamples & 255, view.width & 255, 0]) };
       },
       tone: () => ({ exposureEv: 0.5, tonemap: 2 }),
     };
@@ -372,7 +378,9 @@ describe('Render with the path tracer', () => {
     const running = engine.renderPixels({ width: 64, height: 32, maxSamples: 3, maxSeconds: 0, transparent: false });
     await new Promise((r) => setTimeout(r, 0));
     expect(engine.status().rendering).toBe(true);
-    expect(workers.every((w) => w.got.some((m) => m.type === 'job'))).toBe(true);
+    // Full mode is on: the render leaves the viewport its share (worker 1 of 2) and takes the rest.
+    expect(workers[0].got.some((m) => m.type === 'job')).toBe(true);
+    expect(workers[1].got.some((m) => m.type === 'job')).toBe(false);
     engine.setActive(false);
     workers.forEach((w) => ((w.holdOnly = null), w.release()));
     const px = await running;
@@ -409,5 +417,186 @@ describe('simd128 detection', () => {
     const broken = SIMD_PROBE.slice();
     broken[broken.length - 2] = 0xff; // not an opcode of simd128
     expect(WebAssembly.validate(broken)).toBe(false);
+  });
+});
+
+// ------------------------------------------------------------------ phase P3a: the viewport never stuck, and live while rendering
+
+describe('the pool hands workers over exactly', () => {
+  it('a worker given to another generation stops the old one, and cancel stops only its own generation', async () => {
+    const { pool, workers } = await fakePool(3, 64);
+    const acc = new Accumulator(64, 64);
+    workers.forEach((w) => (w.held = []));
+    const a = pool.run(5, acc.tiles, 0, 1, () => undefined, [0, 1]);
+    // Worker 1 goes to generation 6: generation 5 cannot finish without it, so it stops (on every worker).
+    const b = pool.run(6, acc.tiles, 0, 1, () => undefined, [1]);
+    expect(await a).toBe(false);
+    const c = pool.run(7, acc.tiles, 0, 1, () => undefined, [0]);
+    const d = pool.run(8, acc.tiles, 0, 1, () => undefined, [2]);
+    // A Render and the viewport run side by side: cancelling one never touches the other.
+    pool.cancel(7);
+    expect(await c).toBe(false);
+    workers.forEach((w) => w.release());
+    expect(await b).toBe(true);
+    expect(await d).toBe(true);
+    // Only the workers that rendered generation 7 heard of its cancel.
+    expect(workers.map((w) => w.got.some((m) => m.type === 'cancel' && m.generation === 7))).toEqual([true, false, false]);
+  });
+
+  it('remembers which scene each worker holds: the whole scene once, then updates, then the whole again after an error', async () => {
+    const { pool, workers } = await fakePool(2, 64);
+    const tag = (n: number) => ({ meshKey: 'k', update: new Uint8Array([n]) });
+    await pool.scene(new Uint8Array([2]), true, [0, 1], tag(1));
+    expect(pool.tagOf(0)?.update[0]).toBe(1);
+    await pool.scene(new Uint8Array([1, 5]), false, [1], tag(5));
+    expect([pool.tagOf(0)?.update[0], pool.tagOf(1)?.update[0]]).toEqual([1, 5]);
+    // A worker that refuses its scene holds who knows what.
+    await expect(pool.scene(new Uint8Array([0]), false, [0], tag(9))).rejects.toThrow('bad scene');
+    expect(pool.tagOf(0)).toBeNull();
+    expect(workers[0].got.filter((m) => m.type === 'scene')).toHaveLength(2);
+  });
+});
+
+describe('the viewport of the pool', () => {
+  let restore: (() => void) | null = null;
+  afterEach(() => {
+    restore?.();
+    restore = null;
+    vi.restoreAllMocks();
+  });
+
+  function viewSource(): SceneSource {
+    return {
+      build: (_s, view) => ({ meshKey: 'k', bytes: (meshes) => new Uint8Array([meshes ? 2 : 1, view.width & 255, view.height & 255, view.maxSamples & 255, (view.cameraPatch?.azimuth ?? 0) & 255]) }),
+      tone: () => ({ exposureEv: 0.5, tonemap: 2 }),
+    };
+  }
+
+  async function viewport(n: number, width = 96, height = 64) {
+    const dom = installDom();
+    restore = dom.restore;
+    const { pool, workers } = await fakePool(n, width);
+    workers.forEach((w) => (w.delay = 1));
+    const engine = new PathTracerEngine(pool, viewSource(), true);
+    // A viewport that does not converge during the test.
+    engine.setViewportLimit({ by: 'SAMPLES', samples: 100000, seconds: 120 });
+    engine.mount(dom.canvas as unknown as HTMLCanvasElement);
+    engine.sync(exampleState(), null);
+    engine.resize(width, height, 1);
+    engine.setActive(true);
+    return { engine, workers, canvas: dom.canvas };
+  }
+
+  const settle = async (engine: PathTracerEngine, times = 20) => {
+    for (let i = 0; i < times; i++) {
+      engine.frame();
+      await new Promise((r) => setTimeout(r, 3));
+    }
+  };
+  const jobsOf = (w: FakeWorker) => w.got.filter((m): m is Extract<WorkerRequest, { type: 'job' }> => m.type === 'job');
+
+  it('Fast while a reduced-resolution frame is in flight does not keep Full from starting again', async () => {
+    const { engine, workers } = await viewport(2, 64, 32);
+    // A gesture: a reduced-resolution frame goes out and its tiles have not come back.
+    workers.forEach((w) => ((w.held = []), (w.holdOnly = new Set(['tile', 'done']))));
+    engine.beginGesture();
+    engine.gestureView({ azimuth: 1 });
+    await settle(engine, 3);
+    expect(jobsOf(workers[0])).toHaveLength(1);
+    // Fast, then Full again: the dropped frame no longer holds the next one back.
+    engine.setActive(false);
+    engine.endGesture();
+    workers.forEach((w) => ((w.holdOnly = null), w.release()));
+    engine.setActive(true);
+    await settle(engine, 5);
+    expect(jobsOf(workers[0]).length).toBeGreaterThan(1);
+    expect(engine.status().samples).toBeGreaterThan(0);
+  });
+
+  it('stays live while a Render runs on its quarter of the workers, and the Render is the same bits either way', async () => {
+    expect([viewportWorkers(1), viewportWorkers(2), viewportWorkers(4), viewportWorkers(8)]).toEqual([0, 1, 1, 2]);
+    const { engine, workers } = await viewport(4);
+    await settle(engine, 5);
+    const before = workers.map((w) => jobsOf(w).length);
+    // Five tiles: enough for every worker, so only the lanes keep the Render off the viewport's.
+    const opts = { width: 160, height: 24, maxSamples: 7, maxSeconds: 0, transparent: false };
+    const pending = engine.renderPixels(opts);
+    // Render's tiles are 24 px tall (its whole height), the viewport's 32: they tell the jobs apart.
+    const isRender = (m: Extract<WorkerRequest, { type: 'job' }>) => m.tiles[3] === 24;
+    let shared = false;
+    let rendering = true;
+    void pending.finally(() => (rendering = false));
+    while (rendering) {
+      engine.frame();
+      const st = engine.status();
+      if (st.rendering && st.renderShare === 'SHARED' && st.share?.n === 1 && st.share.of === 4) shared = true;
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const live = await pending;
+    expect(shared).toBe(true);
+    const during = workers.map((w, i) => jobsOf(w).slice(before[i]));
+    // The Render never used the viewport's worker; the viewport went on there meanwhile.
+    expect(during[3].some(isRender)).toBe(false);
+    expect(during.slice(0, 3).every((jobs) => jobs.some(isRender))).toBe(true);
+    expect(during[3].some((m) => !isRender(m))).toBe(true);
+    // The same Render with no viewport (Fast): every worker, the same bytes.
+    engine.setActive(false);
+    const alone = await engine.renderPixels(opts);
+    expect(Array.from(alone.data)).toEqual(Array.from(live.data));
+    const ref = new Accumulator(160, 24);
+    for (const t of ref.tiles) ref.add(t.index, 0, 7, sampleData(t, 0, 7, 96));
+    expect(Array.from(live.data)).toEqual(Array.from(exactBytes(ref.sum, 7, 0.5, 2)));
+  });
+
+  it('waits while a Render runs when the settings say Pause, and the Render takes every worker', async () => {
+    const { engine, workers } = await viewport(4);
+    engine.setWhileRender('PAUSE');
+    await settle(engine, 5);
+    const before = workers.map((w) => jobsOf(w).length);
+    workers.forEach((w) => ((w.held = []), (w.holdOnly = new Set(['tile', 'done']))));
+    const pending = engine.renderPixels({ width: 80, height: 24, maxSamples: 3, maxSeconds: 0, transparent: false });
+    await settle(engine, 5);
+    expect(engine.status()).toMatchObject({ rendering: true, renderShare: 'PAUSED' });
+    workers.forEach((w) => ((w.holdOnly = null), w.release()));
+    for (let i = 0; i < 10; i++) await settle(engine, 1);
+    await pending;
+    const during = workers.map((w, i) => jobsOf(w).slice(before[i]));
+    expect(during.every((jobs) => jobs.length > 0)).toBe(true);
+  });
+
+  it('the watchdog starts the view again when its tiles stop coming, and says so', async () => {
+    const { engine, workers } = await viewport(2, 64, 32);
+    await settle(engine, 5);
+    const sent = () => workers[0].got.filter((m) => m.type === 'job').length;
+    // A change; its tiles never come back.
+    workers.forEach((w) => ((w.held = []), (w.holdOnly = new Set(['tile', 'done']))));
+    const s = exampleState();
+    engine.sync({ ...s, camera: { ...s.camera } }, s);
+    await settle(engine, 3);
+    const before = sent();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const clock = { now: performance.now() };
+    vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
+    for (let t = 0; t < WATCHDOG.tileMs + 1000; t += 250) {
+      clock.now += 250;
+      engine.frame();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(warn.mock.calls.some((c) => /watchdog \(pool\): no tile/.test(String(c[0])))).toBe(true);
+    expect(engine.watchdogFires).toBe(1);
+    expect(sent()).toBeGreaterThan(before);
+    expect(engine.status().issue?.kind).toBe('RESTARTED');
+  }, 20000);
+
+  it('a worker handed from the viewport to a Render gets the Render scene as an update, and back', async () => {
+    const { engine, workers } = await viewport(4);
+    await settle(engine, 5);
+    const scenes = (w: FakeWorker) => w.got.filter((m): m is Extract<WorkerRequest, { type: 'scene' }> => m.type === 'scene').map((m) => m.full);
+    expect(workers.map(scenes)).toEqual([[true], [true], [true], [true]]);
+    await engine.renderPixels({ width: 80, height: 24, maxSamples: 1, maxSeconds: 0, transparent: false });
+    await settle(engine, 5);
+    // The render's three workers: an update to the render's scene and one back to the view; the viewport's
+    // worker kept its scene the whole time.
+    expect(workers.map(scenes)).toEqual([[true, false, false], [true, false, false], [true, false, false], [true]]);
   });
 });
