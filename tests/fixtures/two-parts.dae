@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hand-written for Repackshot's tests (phase I3), under the project licence. Two boxes in a group, one material.
+     Units: inches. Up axis: Z. -->
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <contributor><authoring_tool>Repackshot tests</authoring_tool></contributor>
+    <unit name="inch" meter="0.0254"/>
+    <up_axis>Z_UP</up_axis>
+  </asset>
+  <library_effects>
+    <effect id="steel-effect">
+      <profile_COMMON>
+        <technique sid="common">
+          <phong>
+            <diffuse><color sid="diffuse">0.8 0.2 0.1 1</color></diffuse>
+            <specular><color sid="specular">0.5 0.5 0.5 1</color></specular>
+            <shininess><float sid="shininess">50</float></shininess>
+          </phong>
+        </technique>
+      </profile_COMMON>
+    </effect>
+  </library_effects>
+  <library_materials>
+    <material id="steel" name="Steel"><instance_effect url="#steel-effect"/></material>
+  </library_materials>
+  <library_geometries>
+    <geometry id="body-mesh" name="BodyMesh">
+      <mesh>
+        <source id="body-pos">
+          <float_array id="body-pos-array" count="24">-0.5 -0.5 0 0.5 -0.5 0 0.5 0.5 0 -0.5 0.5 0 -0.5 -0.5 2 0.5 -0.5 2 0.5 0.5 2 -0.5 0.5 2</float_array>
+          <technique_common><accessor source="#body-pos-array" count="8" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common>
+        </source>
+        <vertices id="body-vertices"><input semantic="POSITION" source="#body-pos"/></vertices>
+        <triangles material="steel-slot" count="12">
+          <input semantic="VERTEX" source="#body-vertices" offset="0"/>
+          <p>0 2 1 0 3 2 4 5 6 4 6 7 0 1 5 0 5 4 1 2 6 1 6 5 2 3 7 2 7 6 3 0 4 3 4 7</p>
+        </triangles>
+      </mesh>
+    </geometry>
+    <geometry id="cap-mesh" name="CapMesh">
+      <mesh>
+        <source id="cap-pos">
+          <float_array id="cap-pos-array" count="24">-0.25 -0.25 0 0.25 -0.25 0 0.25 0.25 0 -0.25 0.25 0 -0.25 -0.25 0.25 0.25 -0.25 0.25 0.25 0.25 0.25 -0.25 0.25 0.25</float_array>
+          <technique_common><accessor source="#cap-pos-array" count="8" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common>
+        </source>
+        <vertices id="cap-vertices"><input semantic="POSITION" source="#cap-pos"/></vertices>
+        <triangles material="steel-slot" count="12">
+          <input semantic="VERTEX" source="#cap-vertices" offset="0"/>
+          <p>0 2 1 0 3 2 4 5 6 4 6 7 0 1 5 0 5 4 1 2 6 1 6 5 2 3 7 2 7 6 3 0 4 3 4 7</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="scene" name="Scene">
+      <node id="assembly" name="Assembly" type="NODE">
+        <node id="body" name="Body" type="NODE">
+          <instance_geometry url="#body-mesh">
+            <bind_material><technique_common><instance_material symbol="steel-slot" target="#steel"/></technique_common></bind_material>
+          </instance_geometry>
+        </node>
+        <node id="cap" name="Cap" type="NODE">
+          <translate>0 0 2</translate>
+          <instance_geometry url="#cap-mesh">
+            <bind_material><technique_common><instance_material symbol="steel-slot" target="#steel"/></technique_common></bind_material>
+          </instance_geometry>
+        </node>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene><instance_visual_scene url="#scene"/></scene>
+</COLLADA>

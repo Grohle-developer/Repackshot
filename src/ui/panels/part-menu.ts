@@ -1,0 +1,105 @@
+// The context menu of a part, group or model (UI.md §2.2, phase U3), shared
+// by the scene tree and the viewport: the whole structure is always there, in
+// the documented order; what does not apply to the selection is disabled.
+
+import { allParts, effectiveVisible, partsUnder, type NodeId } from '../../core/scene';
+import { groupTargets, hasFaceMaterials, movableTargets, pivotModeOf, PIVOT_MODES, sharesMaterial } from '../../core/transform';
+import * as cmd from '../commands';
+import type { MenuEntry, MenuItems } from '../components/widgets';
+import { dyn } from '../names';
+import type { Ctx } from '../reactive';
+import { kbdFor } from '../shortcuts';
+import { t } from '../strings';
+
+export interface PartMenuOptions {
+  /** Starts renaming in place (the tree row); the viewport focuses the inspector's name field instead. */
+  rename?: () => void;
+}
+
+/** The entries of the context menu for `ids` (scene nodes). */
+export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): MenuItems {
+  const s = ctx.store.get();
+  const nodes = ids.filter((id) => s.scene.nodes[id]);
+  const none = nodes.length === 0;
+  const moving = movableTargets(s, nodes);
+  const fixed = moving.length === 0;
+  const parts = partsUnder(s, nodes);
+  const noParts = parts.length === 0;
+  const mats = cmd.materialsOf(ctx, nodes);
+  const first = s.scene.nodes[nodes[0]];
+  const allHidden = !none && nodes.every((id) => s.scene.nodes[id].visible === false);
+  const allLocked = !none && nodes.every((id) => s.scene.nodes[id].locked);
+  const anyHidden = allParts(s).some((p) => !effectiveVisible(s, p));
+  const groups = groupTargets(s, nodes).filter((g) => !nodes.some((id) => s.scene.nodes[id].parent === g));
+  const atRoot = nodes.every((id) => s.scene.nodes[id].parent === null);
+  const clip = ctx.ui.get().materialClipboard;
+
+  const pivot: MenuItems = PIVOT_MODES.map((mode) => ({
+    label: t(dyn(`pivot.${mode}`)),
+    note: none ? undefined : t(dyn(`pivot.tip.${mode}`)),
+    checked: !none && pivotModeOf(first) === mode,
+    disabled: none,
+    run: () => (mode === 'CUSTOM' ? cmd.pickPivot(ctx, nodes) : cmd.setPivot(ctx, mode, nodes)),
+  }));
+  const moveTo: MenuEntry[] = [
+    ...groups.map((g) => ({ label: s.scene.nodes[g].name, run: () => cmd.moveToGroup(ctx, g, nodes) })),
+    { label: t('ops.topLevel'), disabled: atRoot, run: () => cmd.moveToGroup(ctx, null, nodes) },
+  ];
+  const material: MenuItems = [
+    { label: t('ops.unlink'), disabled: !sharesMaterial(s, nodes), run: () => cmd.unlinkMaterial(ctx, nodes) },
+    { label: t('ops.linkWith'), disabled: noParts || allParts(s).length < 2, run: () => cmd.pickLinkMaterial(ctx, nodes) },
+    { label: t('ops.copyMaterial'), kbd: kbdFor('copyMaterial'), disabled: mats.length !== 1, run: () => cmd.copyMaterial(ctx, nodes) },
+    { label: t('ops.pasteMaterial'), kbd: kbdFor('pasteMaterial'), disabled: noParts || !clip, run: () => cmd.pasteMaterial(ctx, nodes) },
+    { label: t('ops.selectByMaterial'), disabled: mats.length !== 1, run: () => cmd.selectByMaterial(ctx, nodes) },
+  ];
+  const geometry: MenuItems = [
+    { label: t('ops.flip'), disabled: noParts, run: () => cmd.flipNormals(ctx, nodes) },
+    {
+      label: t('ops.smoothing'),
+      disabled: noParts,
+      run: () => {
+        if (nodes.some((id) => !s.selection.ids.includes(id))) ctx.store.dispatch({ type: 'scene/select', ids: nodes, mode: 'set' });
+        cmd.focusInspectorField(ctx, 'smoothAngle');
+      },
+    },
+    // CAD faces come with the STEP / IGES importer (phase M1): disabled, and the tooltip says so.
+    { label: t('ops.separateCad'), disabled: true, note: t('ops.separateCadSoon') },
+    { label: t('ops.separateMaterial'), disabled: !hasFaceMaterials(s, nodes), run: () => cmd.separateByMaterial(ctx, nodes) },
+  ];
+
+  return [
+    { label: t('ops.frame'), kbd: kbdFor('frame'), disabled: none, run: () => cmd.frameSelection(ctx, nodes) },
+    { label: t('ops.move'), kbd: kbdFor('tool.move'), disabled: fixed, run: () => cmd.startMove(ctx, nodes) },
+    { label: t('tree.rest'), disabled: fixed, run: () => cmd.restOnFloor(ctx, moving) },
+    { label: t('tree.center'), disabled: fixed, run: () => cmd.centerSelection(ctx, moving) },
+    { label: t('ops.centerRest'), disabled: fixed, run: () => cmd.centerAndRest(ctx, nodes) },
+    { label: t('ops.reset'), disabled: fixed, run: () => cmd.resetTransform(ctx, nodes) },
+    { label: t('ops.pivot'), disabled: none, submenu: pivot },
+    { label: t('ops.cameraTarget'), disabled: none, run: () => cmd.setCameraTarget(ctx, nodes) },
+    null,
+    { label: allHidden ? t('tree.show') : t('tree.hide'), kbd: kbdFor('hide'), disabled: none, run: () => cmd.toggleHide(ctx, nodes) },
+    { label: t('tree.isolate'), kbd: kbdFor('isolate'), disabled: none, run: () => cmd.isolateSelection(ctx, nodes) },
+    { label: t('tree.showAll'), kbd: kbdFor('showAll'), disabled: !anyHidden, run: () => cmd.showAll(ctx) },
+    { label: allLocked ? t('tree.unlock') : t('tree.lock'), disabled: none, run: () => cmd.toggleLock(ctx, nodes) },
+    null,
+    { label: t('common.duplicate'), kbd: kbdFor('duplicate'), disabled: none, run: () => cmd.duplicate(ctx, false, nodes) },
+    { label: t('ops.duplicateLinked'), kbd: kbdFor('duplicateLinked'), disabled: none, run: () => cmd.duplicate(ctx, true, nodes) },
+    {
+      label: t('ops.pattern'),
+      disabled: fixed,
+      submenu: [
+        { label: t('pattern.LINEAR'), run: () => cmd.createPattern(ctx, 'LINEAR', nodes) },
+        { label: t('pattern.CIRCULAR'), run: () => cmd.createPattern(ctx, 'CIRCULAR', nodes) },
+      ],
+    },
+    { label: t('ops.group'), kbd: kbdFor('group'), disabled: fixed, run: () => cmd.groupSelection(ctx, nodes) },
+    { label: t('ops.ungroup'), kbd: kbdFor('ungroup'), disabled: !nodes.some((id) => s.scene.nodes[id].kind === 'GROUP'), run: () => cmd.ungroupSelection(ctx, nodes) },
+    { label: t('ops.moveToGroup'), disabled: fixed || moveTo.every((e) => e.disabled), submenu: moveTo },
+    null,
+    { label: t('ops.material'), disabled: noParts, submenu: material },
+    { label: t('ops.geometry'), disabled: noParts, submenu: geometry },
+    null,
+    { label: t('common.rename'), disabled: nodes.length !== 1, run: () => (opts.rename ? opts.rename() : cmd.focusInspectorField(ctx, 'name')) },
+    { label: t('common.delete'), kbd: kbdFor('delete'), disabled: none, run: () => cmd.deleteSelection(ctx, nodes) },
+  ];
+}

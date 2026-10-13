@@ -1,0 +1,37 @@
+{
+  "name": "repackshot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A clean-room, browser-based 3D product renderer, free for noncommercial use.",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "vendor": "node tools/vendor.mjs",
+    "predev": "npm run vendor",
+    "dev": "vite",
+    "build": "vite build",
+    "prebuild": "npm run vendor",
+    "preview": "vite preview --port 4173 --strictPort",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "screenshot": "node tools/screenshot.mjs",
+    "qa": "npm run check && npm run build && npm run test",
+    "engine:build": "node tools/engine-build.mjs",
+    "engine:test": "cargo test --manifest-path engine/Cargo.toml --workspace"
+  },
+  "dependencies": {
+    "rhino3dm": "8.35.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "playwright-core": "^1.64.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  }
+}

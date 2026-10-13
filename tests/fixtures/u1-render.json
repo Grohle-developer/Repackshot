@@ -1,0 +1,54 @@
+{
+  "quality": "FINAL",
+  "width": 1080,
+  "height": 1350,
+  "maxSamples": 1024,
+  "maxSeconds": 300,
+  "format": "JPEG",
+  "transparent": false,
+  "queue": [
+    {
+      "id": "j1",
+      "name": "Render 1",
+      "camera": "cam1",
+      "width": 1920,
+      "height": 1080,
+      "quality": "PREVIEW",
+      "maxSamples": 256,
+      "maxSeconds": 120,
+      "format": "PNG",
+      "transparent": true,
+      "status": "DONE",
+      "progress": 1
+    },
+    {
+      "id": "j2",
+      "name": "Render 2",
+      "camera": "cam2",
+      "width": 2048,
+      "height": 2048,
+      "quality": "CUSTOM",
+      "maxSamples": 300,
+      "maxSeconds": 0,
+      "format": "PNG",
+      "transparent": false,
+      "status": "RUNNING",
+      "progress": 0.4
+    },
+    {
+      "id": "j3",
+      "name": "Render 3",
+      "camera": "cam1",
+      "width": 1920,
+      "height": 1080,
+      "quality": "DRAFT",
+      "maxSamples": 64,
+      "maxSeconds": 120,
+      "format": "EXR",
+      "transparent": false,
+      "status": "QUEUED",
+      "progress": 0
+    }
+  ],
+  "running": { "jobId": "j2", "progress": 0.4, "samples": 16, "seconds": 12.5 }
+}

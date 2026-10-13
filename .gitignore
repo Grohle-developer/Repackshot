@@ -24,3 +24,14 @@ binary-ninja/
 *.exr
 *.hdr.bak
 render-output/
+
+# Build / tooling artifacts
+node_modules/
+dist/
+out/
+.vite/
+*.local
+.DS_Store
+engine/target/
+public/engine/
+public/vendor/

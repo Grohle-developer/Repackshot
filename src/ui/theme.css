@@ -1,0 +1,77 @@
+/* Design tokens (UI.md §1). Every colour of the chrome lives here and has
+   zero saturation; tests/ui-achromatic.test.ts enforces it. Light theme on
+   :root, dark theme on :root[data-theme="dark"] (the default). */
+
+:root {
+  --bg-0: #ffffff;
+  --bg-1: #f4f4f4;
+  --bg-2: #e9e9e9;
+  --bg-3: #d9d9d9;
+  --ink-0: #000000;
+  --ink-1: #333333;
+  --ink-2: #6b6b6b;
+  --ink-3: #9a9a9a;
+  --line: #d0d0d0;
+  --line-strong: #000000;
+  --viewport-bg: #8c8c8c;
+  --overlay: rgba(255, 255, 255, 0.82);
+  --overlay-line: rgba(0, 0, 0, 0.12);
+  /* Outside the output frame: the theme's neutral viewport grey over the render. */
+  --mask: rgba(140, 140, 140, 0.82);
+  --soft: rgba(0, 0, 0, 0.06);
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.12);
+  --inv-bg: #000000;
+  --inv-ink: #ffffff;
+  --hover: #ececec;
+
+  --font: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --fs-body: 13px;
+  --fs-label: 12px;
+  --fs-aux: 11px;
+  --fs-title: 15px;
+  --radius: 4px;
+  --pad: 12px;
+  --header-h: 44px;
+  --bar-h: 56px;
+  --status-h: 24px;
+  --rail: 36px;
+  --drawer-h: 240px;
+  --ease: 120ms ease;
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg-0: #0e0e0e;
+  --bg-1: #161616;
+  --bg-2: #1f1f1f;
+  --bg-3: #2a2a2a;
+  --ink-0: #ffffff;
+  --ink-1: #d6d6d6;
+  --ink-2: #9a9a9a;
+  --ink-3: #6b6b6b;
+  --line: #2e2e2e;
+  --line-strong: #ffffff;
+  --viewport-bg: #262626;
+  --overlay: rgba(14, 14, 14, 0.78);
+  --overlay-line: rgba(255, 255, 255, 0.1);
+  --mask: rgba(38, 38, 38, 0.8);
+  --soft: rgba(255, 255, 255, 0.07);
+  --shadow: 0 10px 32px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.5);
+  --inv-bg: #ffffff;
+  --inv-ink: #000000;
+  --hover: #242424;
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ease: 0ms linear;
+  }
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

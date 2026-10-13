@@ -1,0 +1,30 @@
+# Repackshot render engine workspace.
+#
+# Rule: ZERO external dependencies. Only `std` / `core` / `alloc`.
+# `Cargo.lock` must list the workspace crates and nothing else (CI checks it).
+
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+license = "PolyForm-Noncommercial-1.0.0"
+publish = false
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[profile.release.package."*"]
+opt-level = 3
+codegen-units = 1
+
+# Tests compare the BVH against a brute-force loop over every triangle (tens of millions of
+# triangle tests): a little optimisation makes `cargo test` ten times faster. Debug assertions
+# and overflow checks stay on.
+[profile.test]
+opt-level = 1

@@ -1,0 +1,43 @@
+#usda 1.0
+(
+    defaultPrim = "Bottle"
+    doc = "Hand-written for Repackshot's tests (phase I3), under the project licence. Two boxes under one Xform, one material."
+    metersPerUnit = 0.01
+    upAxis = "Y"
+)
+
+def Xform "Bottle"
+{
+    def Mesh "Body"
+    {
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [0, 3, 2, 1, 4, 5, 6, 7, 0, 1, 5, 4, 3, 7, 6, 2, 0, 4, 7, 3, 1, 2, 6, 5]
+        point3f[] points = [(-2, 0, -2), (2, 0, -2), (2, 6, -2), (-2, 6, -2), (-2, 0, 2), (2, 0, 2), (2, 6, 2), (-2, 6, 2)]
+        rel material:binding = </Bottle/Looks/Steel>
+    }
+
+    def Mesh "Cap"
+    {
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+        int[] faceVertexIndices = [0, 3, 2, 1, 4, 5, 6, 7, 0, 1, 5, 4, 3, 7, 6, 2, 0, 4, 7, 3, 1, 2, 6, 5]
+        point3f[] points = [(-1, 6, -1), (1, 6, -1), (1, 7, -1), (-1, 7, -1), (-1, 6, 1), (1, 6, 1), (1, 7, 1), (-1, 7, 1)]
+        rel material:binding = </Bottle/Looks/Steel>
+    }
+
+    def Scope "Looks"
+    {
+        def Material "Steel"
+        {
+            token outputs:surface.connect = </Bottle/Looks/Steel/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.1)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.4
+                token outputs:surface
+            }
+        }
+    }
+}
