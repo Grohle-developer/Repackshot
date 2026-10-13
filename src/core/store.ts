@@ -15,6 +15,7 @@ import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialIns
 import { carryRuntime, defaultRenderState, reduceRender, type RenderAction, type RenderState } from './render';
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
 import { reduceTransform, type TransformAction } from './transform';
+import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
 export type ActionLabel = string | Label;
@@ -118,6 +119,7 @@ export type HistoryAction = { type: 'history/undo' | 'history/redo' | 'history/r
 export type Action =
   | SceneAction
   | TransformAction
+  | PrimitiveAction
   | MaterialAction
   | StudioAction
   | CameraAction
@@ -234,9 +236,12 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
   const prefix = action.type.slice(0, action.type.indexOf('/'));
   switch (prefix) {
     case 'scene': {
-      // The tree and selection (scene.ts) and the part operations (transform.ts) share the prefix.
+      // The tree and selection (scene.ts), the part operations (transform.ts) and the primitives (primitive-ops.ts)
+      // share the prefix.
       const next = reduceScene(state, action as SceneAction);
-      return next !== state ? next : reduceTransform(state, action as TransformAction);
+      if (next !== state) return next;
+      const moved = reduceTransform(state, action as TransformAction);
+      return moved !== state ? moved : reducePrimitive(state, action as PrimitiveAction);
     }
     case 'material':
       return reduceMaterials(state, action as MaterialAction);

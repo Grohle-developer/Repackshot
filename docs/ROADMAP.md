@@ -1468,7 +1468,7 @@ No encajó con el plan:
   con test), y `material/assign` sin cambios creaba una entrada de
   deshacer vacía (ahora devuelve el mismo estado; con test).
 
-## U9 · Primitivas y herramienta de escalar — **Opus**
+## U9 · Primitivas y herramienta de escalar — **Opus** — hecha
 
 **Petición del usuario (2026-10-13):** «quiero poder añadir geometrías
 sencillas, algo así como rectángulos de base, cilindros, esferas… y con el
@@ -1516,6 +1516,147 @@ medidas exactas en mm), de la regeneración deshacible, del guardado y la
 apertura, de la escala por eje, uniforme y a medida (alrededor del
 pivote, a cada nivel); capturas del menú, del inspector y de la
 herramienta; cadenas en `es` y `en`; cromo acromático.
+
+**Hecho.** `src/data/primitives.json` (+ `primitives.ts`): las doce formas
+con claves estables (`BOX`, `PLANE`, `DISC`, `CYLINDER`, `PEDESTAL`,
+`SPHERE`, `CONE`, `TORUS`, `CAPSULE`, `TUBE`, `STEPS`, `SWEEP`), su papel
+(`BASE`, `FLOOR`, `BACKDROP`, `OBJECT`), sus medidas (claves, mínimos,
+pasos, factor del tamaño de la escena o valor fijo) y el material neutro
+`WHITE_STUDIO`; los nombres y las etiquetas de las medidas son cadenas de
+la interfaz. `src/core/primitives.ts`: generadores puros y deterministas,
+en mm, Z arriba, **centrados en su caja** (que es exactamente sus medidas:
+senos y cosenos exactos en los múltiplos de 90°, ningún `h − b + b`), con
+un constructor que orienta cada triángulo hacia sus normales y quita las
+astillas; superficies de revolución con polos por segmento (la punta del
+cono tiene la normal de su faceta), caja redondeada con aristas y esquinas
+que se encuentran bit a bit (tabla de cuarto de vuelta simétrica),
+escalones en rejilla sin uniones en T, fondo infinito desenrollado;
+estancas salvo plano, disco y fondo; normales de la superficie dentro de
+cada cara lógica; UV en [0, 1] por cara y sin estirar; cada cara lógica es
+un rango de `faceRanges` (y su borde, arista viva), así que *Caras*, M1 y
+*Separar por caras CAD* funcionan; medidas acotadas a lo que da una forma;
+el id de malla `prim:<dueño>:<FORMA>:<medidas>` nombra contenido y dueño.
+`src/core/primitive-ops.ts`: `placePrimitive` (base 1,4 × la huella bajo
+el producto, con el producto encima; planos bajo él, una milésima sobre el
+suelo; el resto junto a lo que está de pie; sin producto, en el origen y
+encuadrado), `fitSweep` (decisión del líder durante la fase, tras ver las
+primeras capturas: el fondo infinito de cara a la cámara activa, girado en
+Z a su acimut, la pared a 1,75 fondos del producto detrás de él y detrás
+de los focos del montaje que quedan detrás del producto
+(`wallBehindLights`), ancho 1,3 veces el encuadre donde lo toca, por
+encima de lo más alto del encuadre, curva de 0,3 veces el alto;
+*Ajustar a la cámara* lo rehace con `scene/fitPrimitive`), y las acciones `scene/addPrimitive` (una entrada de
+deshacer con el levantamiento), `scene/setPrimitive` (regenera, conserva el
+apoyo, arrastra las copias enlazadas, los materiales por cara y las caras
+seleccionadas siguen a sus caras por nombre) y `scene/convertPrimitive`.
+`SceneNode.primitive` es el campo opcional del proyecto: `io/project.ts`
+no escribe esas mallas y las regenera al abrir (esquema 2, byte a byte).
+Herramienta *Escalar* (`S`, junto a *Desplazar*): el *gizmo* con solo
+asas de escala (`Gizmo.setMode('SCALE')`, cubos al final de ejes enteros
+que se cogen y el punto central; una longitud de cubo más duplica);
+*Clic derecho ▸ Escalar…* con `ui/panels/scale-panel.ts` (uniforme, por
+eje, a medida con candado, *Aplicar* y *Restablecer escala* =
+`scene/resetScale`) en el visor y en el árbol; `selectionExtents` mide la
+selección en los ejes en vigor. *Añadir ▸ Primitiva* en el menú de la
+cabecera, el `+` del panel *Escena*, la paleta (*Añadir caja*…) y el menú
+del visor en vacío; sección *Primitiva* del inspector con *Convertir en
+malla*, que también está en *Geometría ▸*. Pruebas: `tests/primitives.test.ts`
+(cada forma: mismos bytes, caja exacta y centrada, UV, normales, caras que
+cubren la malla, estanqueidad, aristas vivas, volúmenes analíticos, medidas
+acotadas, id) y `tests/primitive-ops.test.ts` (colocación, base y huella,
+producto encima, una entrada de deshacer, producto bloqueado, planos y
+fondo, el pivote de luces y la escala que no ven el decorado, edición viva y
+deshacer, copias enlazadas e independientes, caras pintadas y
+seleccionadas, convertir, guardar y abrir byte a byte, forma desconocida y
+medidas fuera de rango en un archivo, escala uniforme, por eje (también en
+ejes locales) y a medida alrededor del pivote a nivel *Modelo*, *Grupo* y
+*Pieza*, *Restablecer escala*, las asas de *Escalar*, el atajo y las
+cadenas). `tools/primitives-check.mjs` lo comprueba en el navegador en
+*Rápido* y *Completo* y hace las capturas `docs/ui/primitives-add-menu.png`,
+`primitives-base-box.png`, `primitives-pedestal.png`,
+`primitives-pedestal-full.png`, `primitive-inspector.png`,
+`scale-tool.png` y `scale-panel.png`, y además comprueba con los píxeles
+que el fondo infinito llena el encuadre (esquinas y centro del borde de
+arriba claros, no la cúpula oscura) y que *Ajustar a la cámara* lo
+rellena tras orbitar. 133 tests nuevos (91 de `primitives.test.ts` y 42
+de `primitive-ops.test.ts`; 1627 en total); 42 mutaciones del código
+nuevo, todas detectadas (cinco no lo eran a la primera: el recorte de las
+UV ocultaba un mapeo malo y se quitó, y la normal de la punta del cono, los
+materiales por cara que se desplazan, lo que está de pie junto a un fondo
+y un fondo que se aleja por su curva no tenían test o lo tenían demasiado
+permisivo; se arreglaron los tests).
+
+No encajó con el plan:
+
+- **El producto, no el decorado.** Un fondo infinito seis veces mayor que
+  el producto movía el pivote de las luces (`rigPivot` era el centro de la
+  escena), el encuadre de *Crear estudio*, el tamaño medido (y el chequeo
+  de escala del Doctor, cuyo arreglo reescalaría todo) y el mapa de
+  sombras. Ahora todos miden `productBounds`: las piezas que no son
+  primitivas (si solo hay primitivas, todas). Es un criterio de
+  arquitectura que no estaba en el plan; *Encuadrar todo* sigue
+  encuadrando todo. Si Fable prefiere marcar el decorado de otro modo (por
+  ejemplo, solo bases y fondos, no cualquier primitiva), es un cambio de
+  una función.
+- **El tamaño de pieza** se detecta ahora también cuando entra el primer
+  producto en una escena que solo tenía primitivas (antes, solo en una
+  escena vacía).
+- **Mallas centradas, no apoyadas en su origen**: el Doctor avisaba de un
+  origen descentrado en cada primitiva y su arreglo la desplazaba. La
+  pieza conserva su apoyo al cambiar medidas por el centro de la base de
+  su caja, en sus propios ejes.
+- **Planos, disco y fondo infinito una milésima sobre el suelo**: su cara
+  de arriba está donde el suelo del estudio, que en el motor es un *shadow
+  catcher*, y un empate de distancias entre los dos parpadea. Por encima
+  gana la geometría, que recibe sombras de verdad en *Completo*; en
+  *Rápido* la sombra de contacto queda bajo el fondo (la vista previa solo
+  la dibuja en el suelo). No se apaga el suelo del estudio al añadir un
+  fondo: es una decisión fotográfica (Fable).
+- **Una versión anterior a U9 no ve las primitivas** de un proyecto nuevo
+  (no hay malla en el archivo; abre con el aviso de geometría que falta):
+  la compatibilidad es hacia atrás, como se pidió.
+- **Cambiar las medidas de una base no vuelve a subir el producto**, y
+  una base nueva bajo un producto que ya está sobre otra va al suelo (el
+  producto se apoya en la nueva). Una pieza escalada con *Escalar* sigue
+  mostrando sus medidas sin escala en la sección *Primitiva* (la nota lo
+  dice).
+- **Invertir normales, Suavizado y Separar congelan la primitiva** (dejan
+  de ser paramétricas), porque su malla ya no es la de sus medidas.
+- **El fondo infinito se ajusta a la cámara**, no a los ejes del mundo
+  (petición del líder a mitad de fase): las primeras capturas dejaban ver
+  el entorno oscuro en una esquina del encuadre. Si la curva llegaría bajo
+  el producto (un producto muy plano de fondo), la pared se aleja más de
+  los 1,75 fondos. Mover la cámara después no lo reajusta solo: para eso
+  está *Ajustar a la cámara*. El test lanza rayos por una rejilla de 7 × 7
+  del encuadre en ocho cámaras (de frente, cenital, ortográfica, tele en
+  vertical, gran angular cuadrada, un producto delgado) y todos dan en el
+  fondo.
+- **Un fondo infinito tapaba los focos que quedan detrás de su pared
+  (decidido por Fable a mitad de fase).** Con el montaje *Estándar* y la
+  cámara de referencia, el contraluz (*RIM*, 70 W, a unos 290 mm detrás
+  del producto) quedaba detrás de la pared, que estaba a 154 mm: en
+  *Completo* la pared lo tapaba y la imagen salía más plana y gris que en
+  *Rápido* (la vista previa no hace sombras de los focos). **Decisión:** un
+  fotógrafo pone el papel lo bastante atrás para que el contraluz y los
+  focos traseros quepan entre el producto y el fondo, así que la luz que
+  eligió el usuario sigue funcionando. `fitSweep` (al añadir y en
+  *Ajustar a la cámara*) lleva la pared detrás de cada foco encendido del
+  montaje que está detrás del producto según la dirección de la cámara, a
+  1,25 veces lo que ese foco está detrás del centro del producto más la
+  mitad de su panel (`SWEEP_FIT.lights`, `wallBehindLights`; un sol no
+  cuenta), y luego calcula ancho, alto y curva para cubrir el encuadre a
+  esa distancia como antes. En la vista de referencia la pared pasa de
+  154 mm a unos 480 mm. Los focos traseros que acaben dentro del encuadre
+  quedan fuera de esta decisión. Test: con el montaje *Estándar* y la
+  cámara de referencia ningún foco queda detrás de la pared (falla con la
+  distancia antigua), y sin focos detrás la pared vuelve a estar a 1,75
+  fondos.
+- **El nombre de *Añadir*.** No hay un menú *Añadir* propio en la cabecera
+  (UI.md §2.1 es *nada más*): es una entrada *Añadir ▸* del menú de
+  aplicación, con el rótulo *Primitiva* y las doce formas debajo.
+- *Escalar…* del menú contextual no muestra atajo (`S` enciende la
+  herramienta, no abre el panel). Los modificadores de la caja de
+  selección y los clics son los de *Mover*.
 
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 

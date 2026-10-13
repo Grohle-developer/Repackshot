@@ -91,7 +91,10 @@ grados, escala; local al padre), `visible`, `locked`. Una `PART` lleva
 además `mesh` (id de geometría: posiciones, normales, índices, uv
 opcional, y aristas vivas si el importador las trae), `material`
 (instancia) y `faceMaterials` opcional (rangos de triángulos → instancia,
-para el nivel *Caras*).
+para el nivel *Caras*). Una `PART` hecha con *Añadir ▸ Primitiva* (fase
+U9) lleva además `primitive`: `{ kind, params }`, la forma (clave estable
+del catálogo `src/data/primitives.json`) y sus medidas en mm; su malla se
+genera de ahí (ver *Primitivas*, abajo).
 
 **Tamaño de la pieza** (`partSizeMm`): la mayor dimensión de la caja
 envolvente del modelo, detectada al importar y editable. Todo lo que
@@ -131,8 +134,94 @@ selección (modelo, grupo o pieza):
   aristas* (radio en mm, solo sombreado), *Separar por caras CAD* y
   *Separar por material* (cada rango pasa a ser una pieza).
 
+- **Escalar** (fase U9): la herramienta *Escalar* (`S`), el mismo *gizmo*
+  con solo sus asas de escala, y *Clic derecho ▸ Escalar…*: uniforme (%),
+  por eje (X, Y, Z en %) o a medida (mm del ancho, fondo o alto, con la
+  proporción bloqueada), alrededor del pivote de la selección y en los
+  ejes de *Mover* (globales o locales); *Restablecer escala* devuelve a
+  cada nodo la escala con que entró en la escena, alrededor de su propio
+  pivote. A medida mide la selección por sus vértices proyectados sobre
+  esos ejes (`selectionExtents`).
+
 Todas son acciones del *store*, deshacibles, y las que tienen sentido en
 masa aplican a toda la selección.
+
+**Primitivas** (fase U9, `src/core/primitives.ts` y
+`src/core/primitive-ops.ts`). Doce formas paramétricas, con claves
+estables: `BOX` (ancho, fondo, alto, radio de bisel y sus segmentos),
+`PLANE`, `DISC`, `CYLINDER`, `PEDESTAL` (cilindro con bisel arriba),
+`SPHERE`, `CONE`, `TORUS`, `CAPSULE`, `TUBE` (radio exterior e
+interior), `STEPS` (número de escalones, subiendo hacia +Y) y `SWEEP`
+(fondo infinito: un suelo que sube en curva hasta una pared en +Y).
+
+- **Geometría**: generada pura y determinista (la misma especificación da
+  los mismos bytes), en mm, Z arriba, centrada en su caja (su caja *es*
+  sus medidas: los ángulos múltiplos de 90° usan senos y cosenos exactos);
+  cerrada y estanca salvo el plano, el disco y el fondo infinito; normales
+  de la superficie dentro de cada cara lógica (una esfera es lisa con
+  cualquier número de segmentos) y triángulos orientados hacia ellas, hacia
+  fuera; UV en [0, 1] por cara y sin estirar (el lado largo llena el
+  cuadrado; un lateral de revolución da una vuelta en u, las tapas se
+  proyectan desde arriba, el fondo infinito se desenrolla de un tirón).
+  Cada **cara lógica** (la tapa, el lateral, el bisel, cada escalón…) es
+  un rango consecutivo de triángulos, guardado en `faceRanges`: el nivel
+  *Caras*, M1 y *Separar por caras CAD* las usan como caras CAD, y toda
+  arista entre dos de ellas es arista viva (`sharpEdges`), como en STEP.
+- **Medidas**: se acotan a lo que da una forma (un bisel no pasa de la
+  mitad del lado menor, ni del radio o el alto del pedestal; el tubo del
+  toro no pasa del radio; una cápsula es al menos tan alta como ancha; el
+  hueco del tubo es menor que el tubo; la curva del fondo infinito cabe en
+  su suelo y su pared), las longitudes a la diezmilésima de mm y los
+  segmentos enteros.
+- **Dónde nace** (`placePrimitive`): con producto (cualquier pieza que no
+  sea primitiva), el tamaño de la escena es su mayor dimensión. *Caja* y
+  *Pedestal* nacen como **base**: bajo el producto, en el suelo, con 1,4
+  veces su huella (los lados de la caja; el radio del pedestal sobre el
+  punto del producto más alejado de su eje vertical), un alto de 0,15
+  (caja) o 0,3 (pedestal) tamaños de producto y un bisel del 3 % de su
+  menor medida, y el producto sube hasta apoyarse encima, en la misma
+  acción (una entrada de deshacer); un producto bloqueado no sube. *Plano*
+  (3 veces el lado mayor de la huella) y *Disco* (1,4 veces la huella) se
+  tienden bajo el producto. El *Fondo infinito* se **ajusta a la cámara
+  activa** (`fitSweep`): girado en Z al acimut de la cámara (la pared de
+  cara a ella), centrado de lado en el producto, la pared a 1,75 veces el
+  fondo del producto detrás de su centro (más atrás si la curva llegaría
+  bajo el producto, y siempre detrás de los focos encendidos del montaje
+  que están detrás del producto: a 1,25 veces lo que cada uno está detrás
+  del centro más la mitad de su panel, para que el contraluz quepa entre
+  el producto y el papel; un sol no cuenta), el ancho 1,3 veces lo que el encuadre de salida abarca
+  donde toca el fondo, el alto 1,15 veces lo más alto que el encuadre
+  alcanza en la pared (y al menos 1,25 veces el producto), el suelo hasta
+  delante de lo más cercano que el encuadre ve de él, y una curva de 0,3
+  veces el alto; los rayos por el encuadre (la óptica, el sensor de 36 mm
+  y el formato de salida de la cámara; también ortográfica) caen todos
+  sobre él. `scene/fitPrimitive` (*Ajustar a la cámara*) lo rehace en una
+  entrada de deshacer. Los tres, a una
+  milésima del tamaño sobre el suelo del estudio, porque una superficie
+  sobre el suelo que hace de *shadow catcher* parpadearía entre los dos. El
+  resto se apoya en el suelo junto a lo que está de pie (a +X, a una
+  décima del tamaño), sin contar planos ni fondos. Sin producto, el tamaño
+  es el de pieza declarado: la primera en el origen (y entonces es el
+  producto: fija el tamaño de pieza y la cámara la encuadra), las
+  siguientes al lado. Todas llevan la instancia sin editar de *Blanco
+  estudio* del catálogo, compartida.
+- **Viva**: `scene/setPrimitive` regenera la malla con las medidas nuevas,
+  una acción y, en un arrastre, una entrada de deshacer; la pieza conserva
+  su apoyo (el centro de la base de su caja, en sus ejes, no se mueve), las
+  copias enlazadas cambian con ella, los materiales por caras y las caras
+  seleccionadas siguen a sus caras lógicas por nombre. `scene/convertPrimitive`
+  (*Convertir en malla*) la congela; *Invertir normales*, *Suavizado* y
+  *Separar* también la congelan, porque su malla ya no es la de sus medidas.
+- **La malla de una primitiva se llama** `prim:<dueño>:<FORMA>:<medidas>`:
+  nombra su contenido y su dueño (el nodo que la tuvo primero), así que
+  las copias enlazadas la comparten y una copia independiente tiene la
+  suya, aunque sus medidas coincidan.
+- **El producto, no el decorado**: el pivote del montaje de luces, el
+  encuadre de *Crear estudio*, el tamaño medido de la pieza (y el chequeo
+  de escala del Doctor) y el mapa de sombras de la vista previa miden el
+  producto (`productBounds`: las piezas que no son primitivas; si solo hay
+  primitivas, todas), para que un fondo infinito seis veces mayor no mueva
+  las luces ni cambie la escala. *Encuadrar todo* sigue siendo todo.
 
 ### 3.2 · Selección por niveles
 

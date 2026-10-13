@@ -120,7 +120,11 @@ De izquierda a derecha:
 1. **Menú de aplicación** (icono de tres líneas + "Repackshot"): Nuevo,
    Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack.json`,
    `Ctrl/⌘ S`, en el mismo archivo si ya se guardó), Guardar proyecto
-   como… (`Ctrl/⌘ ⇧ S`), Importar modelo,
+   como… (`Ctrl/⌘ ⇧ S`), Importar modelo, **Añadir ▸** (fase U9: bajo el
+   rótulo *Primitiva*, las doce formas del catálogo —*Caja*, *Plano*,
+   *Disco*, *Cilindro*, *Pedestal*, *Esfera*, *Cono*, *Toro*, *Cápsula*,
+   *Tubo*, *Escalones*, *Fondo infinito*—, cada una con su icono y un
+   *tooltip* que dice dónde nace),
    Exportar imagen, separador, Idioma (Inglés / Español), Tema (Oscuro /
    Claro / Sistema), **Ajustes…** (`Ctrl/⌘ ,`), separador, Guía, Atajos
    de teclado, Acerca de.
@@ -167,11 +171,13 @@ lleva materiales distintos, antes se pregunta en línea (§4.1). Menú contextua
 (botón derecho): Aislar, Ocultar, Mostrar todo, Renombrar, Apoyar en el
 suelo, Centrar, Eliminar.
 
-Encima del árbol, un campo de **filtro** por nombre y, al lado, el
-**selector de nivel** de la selección (ver §4.1).
+Encima del árbol, un campo de **filtro** por nombre con un botón **`+`** a
+su derecha (fase U9: abre el mismo *Añadir ▸ Primitiva* de la cabecera) y,
+debajo, el **selector de nivel** de la selección (ver §4.1).
 
 El **menú contextual** completo de una fila (fase U3, con las acciones de
-`SPEC.md` §3.1): Encuadrar · Mover (activa el *gizmo*) · Apoyar en el
+`SPEC.md` §3.1): Encuadrar · Mover (activa el *gizmo*) · **Escalar…**
+(fase U9: el panel en línea de §2.3, junto a la fila) · Apoyar en el
 suelo · Centrar · Centrar y apoyar · Restablecer transformación ·
 Establecer pivote ▸ (centro, base, origen, punto picado) · Fijar como
 objetivo de cámara · separador · Ocultar · Aislar · Mostrar todo ·
@@ -179,7 +185,8 @@ Bloquear · separador · Duplicar · Duplicar enlazado · Patrón ▸ (lineal,
 circular) · Agrupar · Desagrupar · Mover a grupo ▸ · separador ·
 Material ▸ (Desenlazar, Enlazar con…, Copiar, Pegar, Seleccionar por
 material) · Geometría ▸ (Invertir normales, Suavizado…, Separar por
-caras CAD, Separar por material) · separador · Renombrar · Eliminar.
+caras CAD, Separar por material, **Convertir en malla**, fase U9: activo
+solo si la selección tiene primitivas) · separador · Renombrar · Eliminar.
 En U1 existen las que ya están en §2.2 y el resto se añade en U3 sin
 cambiar la estructura del menú.
 
@@ -211,12 +218,14 @@ Capas sobre el visor, siempre con fondo semitransparente del tema y sin
 tapar la pieza:
 
 - **Arriba a la izquierda, barra de vista**: Seleccionar (`V`), Orbitar
-  (`O`), Desplazar (`P`), Zoom (`Z`), separador, Encuadrar todo (`F`),
+  (`O`), Desplazar (`P`), **Escalar (`S`)** (fase U9, junto a
+  *Desplazar*), Zoom (`Z`), Mover (`M`), separador, Encuadrar todo (`F`),
   Vistas (menú: tres cuartos, frontal, lateral, cenital, trasera),
-  Perspectiva / Ortográfica, separador, Bloquear cámara. Con *Seleccionar*
-  o *Mover* y el nivel *Caras*, junto a las herramientas aparece el botón
-  de texto **Rayos X** (la caja de selección coge también las caras
-  ocultas).
+  Perspectiva / Ortográfica, separador, Bloquear cámara. Con *Mover* o
+  *Escalar* aparece el conmutador de ejes *Global · Local* (`G`/`L`). Con
+  *Seleccionar*, *Mover* o *Escalar* y el nivel *Caras*, junto a las
+  herramientas aparece el botón de texto **Rayos X** (la caja de selección
+  coge también las caras ocultas).
 - **Arriba a la derecha**: nombre de la cámara activa (clic: lista) y
   resolución de salida actual (clic: abre la barra de render).
 - **Abajo a la izquierda, medidor de calidad**: modo y motor activos,
@@ -262,6 +271,59 @@ locales o globales (`L`/`G` o el conmutador de la barra de vista),
 incrementos con `Shift`, y los campos del inspector actualizándose en
 vivo. Arrastrar es una sola entrada de deshacer. Las luces se mueven y
 apuntan con el mismo *gizmo* (la asa de apuntar es una línea al objetivo).
+
+**Herramienta de escalar** (fase U9, `S`): el mismo *gizmo* sobre el
+pivote, pero **solo con las asas de escala**: un eje fino por dirección con
+un cubo más grande en su extremo (escala en ese eje; el eje entero se
+puede coger, y llevar el puntero una longitud de cubo más allá duplica la
+escala) y un punto en el centro (escala uniforme, hacia la derecha o arriba
+crece). Sin flechas, anillos ni planos. Ejes locales o globales como
+*Mover*, incrementos del 10 % con `Shift`, los campos de escala del
+inspector en vivo, un arrastre es una entrada de deshacer (*Deshacer:
+Escalar Caja*), un clic donde no hay asa selecciona y `Ctrl/⌘` + arrastrar
+dibuja la caja de selección como con *Mover*; `Esc` vuelve a *Seleccionar*.
+El *tooltip* del botón lo cuenta.
+
+**Clic derecho ▸ Escalar…** (fase U9, en una pieza del visor o en una fila
+del árbol): un **panel en línea** propio junto al punto o a la fila (nunca
+un diálogo del navegador; `Esc` o un clic fuera lo cierran) con un
+segmento *Uniforme · Por eje · A medida*: *Uniforme* un campo en %, *Por
+eje* X, Y y Z en %, *A medida* el ancho, el fondo y el alto en mm (las
+unidades de la interfaz) con un candado de **proporción**, cerrado por
+defecto (cambiar uno arrastra los otros dos; un eje sin espesor, como el
+alto de un plano, no se toca). Debajo, en auxiliar, el pivote y los ejes
+con que actúa (*Alrededor del pivote (Centro) · ejes Global*), y los
+botones **Aplicar** (una entrada de deshacer), **Restablecer escala** (cada
+nodo vuelve a la escala con que entró en la escena, alrededor de su propio
+pivote) y *Cancelar*. Actúa sobre la selección al nivel vigente (la pieza,
+el grupo o el modelo sobre el que se abrió el menú), alrededor de su
+pivote, en los ejes de *Mover* y *Escalar*.
+
+**Menú contextual en vacío** (fase U9): un clic derecho sobre el visor
+donde no hay pieza abre *Añadir ▸ (Primitiva)*, *Encuadrar selección o
+todo* y *Mostrar todo*.
+
+**Dónde nace una primitiva** (fase U9, `SPEC.md` §3.1): con un producto en
+la escena, la *Caja* y el *Pedestal* nacen **como base**: bajo el
+producto, apoyados en el suelo, con 1,4 veces su huella (los lados de la
+caja; el radio del pedestal sobre el punto del producto más lejano a su
+eje), y el producto sube a apoyarse encima, todo en una sola entrada de
+deshacer (*Deshacer: Añadir Caja bajo Frasco de ejemplo*). El *Plano* y el
+*Disco* se tienden en el suelo bajo el producto; el *Fondo infinito* se
+**ajusta a la cámara activa**: girado en Z hacia ella, con la pared detrás
+del producto a 1,75 veces su fondo (o más atrás, para que el contraluz y
+los focos traseros del montaje queden entre el producto y el papel), tan ancho como 1,3 veces lo que abarca
+el encuadre donde lo toca, más alto que lo más alto que el encuadre
+alcanza en la pared, con el suelo hasta delante de lo que el encuadre ve
+de él y una curva de 0,3 veces su alto (todo el encuadre de salida, con
+la óptica y el formato de la cámara, cae sobre el fondo); y el resto
+de formas se apoya en el suelo **junto** a lo que hay (a +X), a las
+proporciones del catálogo respecto al producto. Sin producto, la primera
+nace en el origen al tamaño de pieza declarado (200 mm en un proyecto
+nuevo) y encuadrada; las siguientes, al lado. Llevan el material neutro
+*Blanco estudio* del catálogo, compartido. Los planos y el fondo infinito
+se quedan una milésima del tamaño por encima del suelo del estudio para no
+parpadear contra él.
 
 **Arrastrar un material** (la misma fuente que en §2.2) sobre una pieza
 del visor lo asigna **al nivel de selección vigente**, igual que lo
@@ -406,6 +468,26 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
 3. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
    radio de bisel de aristas (mm), suavizado.
+
+**Con una primitiva seleccionada** (fase U9), antes de *Material*, la
+sección **Primitiva**: *Forma* (el nombre, en texto), y un campo por
+medida del catálogo, arrastrable, en mm (las unidades de la interfaz) o en
+número entero: ancho, fondo, alto, radio, radio de bisel y sus segmentos,
+segmentos, radio del tubo, radio interior, escalones; con las palabras de
+cada forma donde las tiene (*Radio del anillo* del toro, *Radio exterior*
+del tubo, *Alto total* de la cápsula, *Radio de la curva* y *Segmentos de
+la curva* del fondo infinito). Cambiar una medida regenera la malla al
+momento con una acción del *store*; un arrastre es una sola entrada de
+deshacer (*Deshacer: Cambiar Alto de Caja*) y la pieza conserva su apoyo
+(el centro de la base de su caja no se mueve: una base que crece, crece
+hacia arriba). Las medidas fuera de lo que da una forma se acotan (un
+bisel no pasa de la mitad del lado menor). Una nota dice que las medidas
+van en los ejes de la pieza y que su escala las multiplica, otra cuántas
+copias enlazadas cambian con ella, y el botón **Convertir en malla** la
+congela (la sección desaparece; deshacer la devuelve). En el *Fondo
+infinito*, además, **Ajustar a la cámara** lo vuelve a girar y dimensionar
+para la cámara activa y el formato de salida de ahora, en una entrada de
+deshacer (*Deshacer: Ajustar Fondo infinito a la cámara*).
 
 **Con un foco seleccionado:** nombre, rol (si viene de un montaje), tipo
 (área / punto / foco direccional / sol), forma, tamaño, **posición**
@@ -798,6 +880,9 @@ de teclado* del menú):
 | `Ctrl/⌘ ⇧ ⏎` | Render con los últimos ajustes, sin abrir la ventana |
 | `F` | Encuadrar selección (o todo) |
 | `V` `O` `P` `Z` | Herramientas de vista |
+| `M` | Herramienta de mover |
+| `S` | Herramienta de escalar (fase U9) |
+| `L` / `G` | Ejes locales / globales de mover y escalar |
 | `H` / `⇧ H` / `Alt H` | Ocultar selección / Aislar / Mostrar todo |
 | `1` `2` `3` `4` | Nivel de selección: Modelo · Grupo · Pieza · Caras |
 | `Tab` | Plegar y desplegar los paneles laterales |
@@ -832,7 +917,7 @@ pieza). El selector aparece en la cabecera del inspector y encima del
   triángulo picado: `Shift` clic lo añade, `Ctrl/⌘ ⇧` clic lo mete o saca
   y `Alt ⇧` clic lo quita. El tooltip del nivel lo dice. *Separar por caras CAD* (menú de pieza) parte
   la pieza en una nueva por cara CAD.
-- Con *Seleccionar* (o *Mover*), un clic en el visor, a cualquier nivel:
+- Con *Seleccionar* (o *Mover* o *Escalar*), un clic en el visor, a cualquier nivel:
   sin tecla sustituye la selección, `Shift` añade, `Ctrl/⌘` mete o saca,
   `Alt` quita; un clic en vacío la limpia.
 - **Caja** (§2.3): `Ctrl/⌘` + arrastrar (con `Shift` añade, con `Alt`

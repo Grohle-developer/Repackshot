@@ -82,11 +82,11 @@ export type MouseScheme = 'LEFT' | 'ALT_LEFT' | 'MIDDLE';
  *     Select tool it draws the box instead, and the right button, the wheel and the Pan tool remain.
  *   - Alt + left button orbits: a plain drag, or with Shift, is a box too; Alt alone is the orbit.
  *   - Middle button orbits: the left button is free: every press is a box.
- * The Select tool and the Move tool (where no handle is under the pointer) have boxes; Orbit, Pan and Zoom own the
- * left button.
+ * The Select tool and the Move and Scale tools (where no handle is under the pointer) have boxes; Orbit, Pan and Zoom
+ * own the left button.
  */
 export function boxArmed(scheme: MouseScheme, tool: string, m: Mods): boolean {
-  if (tool !== 'select' && tool !== 'move') return false;
+  if (tool !== 'select' && tool !== 'move' && tool !== 'scale') return false;
   if (m.ctrl || m.meta) return true;
   if (scheme === 'MIDDLE') return true;
   return scheme === 'ALT_LEFT' && !m.alt;

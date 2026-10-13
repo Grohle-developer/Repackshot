@@ -93,11 +93,13 @@ src/
     faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
     material-drop.ts        a qué llega una suelta de material y qué asigna (U7)
     box-select.ts           selección por caja: geometría en pantalla, ventana y cruce, qué gesto la arma (U7)
+    primitives.ts           primitivas paramétricas: generadores puros y deterministas (caras lógicas, UV, normales), medidas válidas, id de malla `prim:<dueño>:<FORMA>:<medidas>` (U9)
+    primitive-ops.ts        las primitivas en la escena: dónde nacen (base bajo el producto, junto a él, bajo él), añadir, editar en vivo, convertir en malla; `fitSweep` ajusta el fondo infinito a la cámara y a los focos traseros (U9)
     light-math.ts           kelvin → rgb, irradiancia, polar, ease   (portado)
     rig.ts                  studioRig / setupRig normalizados           (portado)
     wear.ts                 valores por defecto del desgaste            (portado)
     version.ts
-  data/                     CATÁLOGOS. Solo datos y tipos (§3)
+  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9)
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
@@ -123,6 +125,8 @@ src/
       material-drag.ts      arrastrar un material con eventos de puntero: fantasma, zonas de suelta, Esc (U7)
     panels/                 header, scene, viewport, inspector, renderbar, status
       viewport-box.ts       el gesto de la caja de selección sobre el visor (U7)
+      add-menu.ts           Añadir ▸ Primitiva: las mismas entradas en la cabecera, el + de Escena y el menú del visor en vacío (U9)
+      scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
 public/
   thumbs/setups/            72 miniaturas de montaje de luz (PNG)
   assets/aperture/          45 máscaras de diafragma y texturas de pupila (PNG 512², gris de 8 bits) + index.json (A6)
@@ -750,7 +754,9 @@ interfaz sabe del visor:
   tinte sobre la pieza, en una capa aparte de la de las caras
   seleccionadas).
 - **Herramientas y *gizmo***: `setTool`, `setGizmo`, `gizmoHover`,
-  `gizmoBegin`, `gizmoDrag`, `gizmoEnd`.
+  `gizmoBegin`, `gizmoDrag`, `gizmoEnd`. `setGizmo` lleva `handles`
+  opcional (U9): `ALL` (Mover) o `SCALE` (Escalar: solo los cubos al final
+  de cada eje y el punto central, que es lo único que se dibuja y se coge).
 - **Estado y miniaturas**: `status`, `onFrame`, `materialThumbnail`,
   `thumbnailsPending`; **ajustes**: `setNavigation`, `setDisplay`.
 
@@ -771,7 +777,8 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Modelo | `tests/store.test.ts`, `scene`, `materials`, `doctor`… | Acciones puras: dado un estado, la acción produce el esperado; deshacer lo devuelve |
 | Interfaz | `tests/strings.test.ts`, `ui-achromatic.test.ts` | Invariantes estáticas sobre fuentes |
 | Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
-| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs` | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
+| Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
+| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |
@@ -808,4 +815,17 @@ decodifican otra vez (`placeImages`): una imagen cuyo id ya nombra otra en
 la sesión recibe un id nuevo, y una que falta o no se lee se quita del
 entorno (ilumina la cúpula, se ve el color) con el aviso `MISSING_IMAGES`,
 sin impedir abrir. El esquema sigue en 2: los campos nuevos del entorno
-tienen valor por defecto.
+tienen valor por defecto. **Primitivas** (U9): una pieza hecha con
+*Añadir ▸ Primitiva* guarda su forma y sus medidas en el campo opcional
+`primitive` (`{ "kind": "BOX", "params": { "width": 88.5, … } }`) de su nodo,
+y su malla **no** va en `meshes`: al abrir se genera otra vez de las medidas
+(normalizadas), bajo el id que tenía (`prim:<dueño>:<FORMA>:<medidas>`, que
+nombra el contenido), con su `MeshRef` y sus `faceRanges`; un proyecto con
+primitivas se guarda, se abre y se vuelve a guardar en los mismos bytes.
+Un archivo sin el campo abre como siempre; una forma que esta versión no
+conoce (un archivo más nuevo) se queda sin el campo y su pieza sin
+geometría, con el aviso `MISSING_MESHES`; un `primitive` que no es un
+objeto es daño. El esquema sigue en 2. Una versión anterior a U9 que abra
+un proyecto con primitivas no las verá (sin malla en el archivo): solo
+compatibilidad hacia atrás, como se decidió. El motor recibe la malla como
+una más: el RSB no cambia.

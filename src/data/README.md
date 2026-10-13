@@ -22,6 +22,7 @@ logic lives here beyond tiny lookups (`studioPreset(key)`, `materialPreset(key)`
 | `animation.ts` | `MOVE_KINDS` (15), `EASING_KINDS` (5), `TARGET_KINDS`, `EXPLODE_MODES`, move groups, `SEQUENCE_PRESETS` (16) |
 | `doctor.ts` | `DOCTOR_CHECKS` (14), descriptors only |
 | `environment.ts` | Studio dome grey levels and bright-field limits |
+| `primitives.json`, `primitives.ts` | `PRIMITIVES` (12, U9; no portado): las formas de *Añadir ▸ Primitiva* con clave estable, papel en el estudio (`BASE`, `FLOOR`, `BACKDROP`, `OBJECT`) y medidas (clave, longitud o número, mínimo, paso, factor del tamaño de la escena o valor por defecto), y el material neutro que llevan; los nombres y etiquetas son cadenas de la interfaz y la geometría es `src/core/primitives.ts` |
 | `update-feed.ts` | `UPDATE_FEED`: the GitHub repository (`owner`, `repo`) whose releases are the update feed; change it here only |
 | `ai-models.json`, `ai-models.ts` | AI post-processing models (files with pinned URLs, sizes and `sha256`, licences, requirements) and the recommendation table (AI-POST.md §2.4); JSON because the desktop launcher embeds it too. Types in `ai-models.ts` |
 

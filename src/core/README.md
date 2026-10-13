@@ -26,6 +26,12 @@ angle is under 30 degrees and under 2.5 times the curvature of the face; the pie
 `material-drop.ts` (what a material dropped on the viewport or on a row of the tree reaches at each selection level,
 and the one `material/assign` it makes; `copy` is Alt).
 
+Primitives (U9): `primitives.ts` (the twelve parametric shapes of `data/primitives.json` as pure, deterministic
+generators: millimetres, Z up, centred on their bounds, which are exactly their measures; logical faces as runs of
+triangles (`faceRanges`) with hard edges between them; normals of the surface, outward; uvs in [0, 1]; valid measures;
+the mesh id `prim:<owner>:<KIND>:<measures>`), `primitive-ops.ts` (where a new one goes, with the product lifted onto a
+base in the same action; live edits that keep the part's footing; Convert to mesh).
+
 Selection by box (U7): `box-select.ts` (the box a drag makes: left to right is a window, right to left crossing; which
 presses arm it for each mouse scheme; window and crossing tests of the projected parts, groups and models, and of the
 faces that show in the rectangle; all in screen pixels, from the matrices the viewport hands over).

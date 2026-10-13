@@ -22,11 +22,11 @@ import type { PassIds } from '../core/pass-ids';
 import type { PassKey, RenderPasses } from '../core/passes';
 import { SKY_HEIGHT, SKY_WIDTH, skyImage } from '../core/sky';
 import { areaLightRadiance, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
-import { partsUnder, sceneBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
+import { partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
 import type { ProjectState } from '../core/store';
 import type { DisplayPrefs, EngineStatus, NavigationPrefs, PickHit, RenderEngine, RenderOptions } from './engine';
-import { Gizmo, GizmoDrag, modelRay } from './gizmo';
+import { Gizmo, GizmoDrag, modelRay, SCALE_CUBE_AT, type GizmoMode } from './gizmo';
 import { applyMaterial, makeMaterial } from './materials';
 import { drawPasses, type PassMesh } from './preview-passes';
 
@@ -201,15 +201,17 @@ export interface ViewChange {
   orthoWidth?: number;
 }
 
-export type PreviewTool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move';
+export type PreviewTool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move' | 'scale';
 
 /** A camera gesture as it happens: start, every move (with the live view), end. */
 export type GesturePhase = 'start' | 'move' | 'end';
 
-/** What the move tool shows: the gizmo of these nodes, in these axes. */
+/** What the move tool shows: the gizmo of these nodes, in these axes; the scale tool shows only its scale handles. */
 export interface GizmoSpec {
   ids: readonly NodeId[];
   space: Space;
+  /** Default ALL (the move tool). */
+  handles?: GizmoMode;
 }
 
 export class PreviewEngine implements RenderEngine {
@@ -706,7 +708,8 @@ export class PreviewEngine implements RenderEngine {
     // The shadow caster: a zero-intensity sun from above, leaning toward the key light.
     const keyDir = key ? polar(toWorldAzimuth(key.az), Math.max(55, key.el), 1) : [0, 0, 1];
     const d = toThree(keyDir).normalize();
-    const b = sceneBounds(state, true);
+    // Around the product: the contact shadow is what the shadow catcher shows, and a backdrop would spread the map thin.
+    const b = productBounds(state, true);
     const radius = isEmptyBox(b) ? size : boxMaxDim(b) * 0.9;
     this.shadowLight.position.copy(target).addScaledVector(d, radius * 6);
     this.shadowLight.target.position.copy(isEmptyBox(b) ? target : toThree(boxCenter(b)));
@@ -1089,11 +1092,19 @@ export class PreviewEngine implements RenderEngine {
 
   /** Shows the gizmo of the move tool for some nodes (null hides it). */
   setGizmo(spec: GizmoSpec | null): void {
-    const same = spec && this.gizmoSpec && spec.space === this.gizmoSpec.space && spec.ids.length === this.gizmoSpec.ids.length && spec.ids.every((id, i) => id === this.gizmoSpec!.ids[i]);
+    const handles = spec?.handles ?? 'ALL';
+    const same =
+      spec &&
+      this.gizmoSpec &&
+      spec.space === this.gizmoSpec.space &&
+      handles === (this.gizmoSpec.handles ?? 'ALL') &&
+      spec.ids.length === this.gizmoSpec.ids.length &&
+      spec.ids.every((id, i) => id === this.gizmoSpec!.ids[i]);
     if (same || (!spec && !this.gizmoSpec)) return;
-    this.gizmoSpec = spec ? { ids: [...spec.ids], space: spec.space } : null;
+    this.gizmoSpec = spec ? { ids: [...spec.ids], space: spec.space, handles } : null;
     this.gizmoDragging = null;
     this.gizmo.setActive(null);
+    this.gizmo.setMode(handles);
     this.placeGizmo();
   }
 
@@ -1160,7 +1171,7 @@ export class PreviewEngine implements RenderEngine {
     if (!id || !frame) return null;
     const rc = this.rayAt(x, y);
     const view = normalize(fromThree(this.camera.getWorldDirection(new THREE.Vector3())));
-    this.gizmoDragging = new GizmoDrag(id, frame, this.gizmo.baseWorldSize, modelRay(rc, fromThree), { x, y }, view, this.gizmo.aimTarget);
+    this.gizmoDragging = new GizmoDrag(id, frame, this.gizmo.baseWorldSize, modelRay(rc, fromThree), { x, y }, view, this.gizmo.aimTarget, this.gizmo.handleMode === 'SCALE' ? SCALE_CUBE_AT : null);
     this.gizmo.setActive(id);
     this.needsRender = true;
     return id;

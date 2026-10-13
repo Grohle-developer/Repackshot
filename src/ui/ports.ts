@@ -92,8 +92,11 @@ export interface ViewportPort {
   /** The faces of a part a dragged material would reach, tinted (null clears them). */
   setHoverFaces(spec: { part: NodeId; indices: readonly number[] } | null): void;
   setTool(tool: Tool): void;
-  /** The gizmo of the move tool for these nodes in these axes (UI.md §2.3); null hides it. */
-  setGizmo(spec: { ids: readonly NodeId[]; space: Space } | null): void;
+  /**
+   * The gizmo of the move tool for these nodes in these axes (UI.md §2.3); null hides it. `handles` SCALE: only the
+   * scale handles (the scale tool, phase U9).
+   */
+  setGizmo(spec: { ids: readonly NodeId[]; space: Space; handles?: 'ALL' | 'SCALE' } | null): void;
   /** The gizmo handle under a point (and highlights it), or null. */
   gizmoHover(x: number, y: number): GizmoHandle | null;
   /** Starts dragging the handle under a point; null when there is none. */
