@@ -135,6 +135,9 @@ decisiones escritas (datos, contratos, revisión), no código.
   con NEE y MIS, cúpula con muestreo por importancia, suelo y
   atrapasombras, curvas de tono, hoja de contactos, paridad wasm; 178
   tests con furnace, factor de forma y conservación de energía — **Opus**.
+- **U4** · Biblioteca propia: materiales, montajes de luz, tipos de
+  producto y estudios con miniatura, pestañas *Míos*, persistencia,
+  exportación e importación JSON; 504 tests — **Sonnet**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -712,7 +715,7 @@ hijos que no son originales; `buildMesh` y `sliceMesh` viven ahora en
 `core/meshes.ts` y se reexportan desde `io`; la asa de apuntar de los
 focos está probada solo en el modelo porque L4 aún no crea focos.
 
-## U4 · Biblioteca propia — **Sonnet**
+## U4 · Biblioteca propia — **Sonnet** — hecha
 
 **Qué.** `src/core/library.ts` y `src/io/library.ts`: guardar materiales,
 montajes de luz, tipos de producto y estudios propios con nombre y
@@ -727,6 +730,37 @@ una copia propia.
 **Criterio.** Ida y vuelta del JSON; un material propio aparece en la
 paleta de comandos; eliminar uno en uso no rompe la escena (la instancia
 sigue, ya sin origen).
+
+**Hecho.** `src/core/library.ts` (modelo puro: cuatro colecciones con
+`id`, nombre, fecha, miniatura y origen; `fromMaterialInstance`,
+`fromCurrentRig` con `share` normalizado a 1, `fromCurrentProductType`,
+`fromCurrentStudio`, `applyLibrarySetup` con la normalización de
+exposición del catálogo, migración de `studio.saved`) y
+`src/io/library.ts` (envoltorio `repackshot-library` v1 que es a la vez
+el fichero exportado y la entrada única de `localStorage`; validación
+campo a campo, imágenes solo `data:image/png|jpeg|webp`, copia de
+seguridad si el almacenamiento está corrupto, reintento sin imágenes si
+está lleno). Guardar material, montaje, tipo de producto y estudio con
+un campo de nombre en línea; miniaturas: esfera del catálogo para
+materiales y una captura real de 160 × 120 de la vista previa para el
+resto (≈0,5 s con swiftshader, ≈3 KB). Pestañas *Míos* en materiales,
+estilos de luz, tipo de producto y estudios, con renombrar y eliminar en
+línea, y *Exportar / Importar biblioteca* al pie y en el menú; la paleta
+los lista como *Míos*. 504 tests (62 nuevos), 40 mutaciones; en el
+navegador, un montaje propio aplicado a Relojería da exactamente su
+irradiancia (diferencia 0). Capturas `docs/ui/library-*.png`.
+
+Lo que no encajaba: la biblioteca vive en `UiState` (estado de usuario,
+como el tema), fuera del historial; los montajes y tipos propios se
+aplican como claves `LIB:<id>` y su definición viaja en el proyecto
+(`studio.customSetup`, `studio.customPreset`), así que borrar el
+elemento no cambia la escena; borrar un material en uso emite
+`material/unlinkLibrary`, que sí es deshacible pero no devuelve el
+elemento a la biblioteca; las texturas de imagen no viajan en los
+materiales propios (M2); los estudios restauran materiales solo sobre
+nodos con el mismo id, como ya hacía `studio.saved`; la captura de
+160 × 120 usa el encuadre tal cual (la pieza sale pequeña); importar con
+un id existente conserva el que había aunque el contenido difiera.
 
 ## L4 · Focos propios — **Opus**
 
