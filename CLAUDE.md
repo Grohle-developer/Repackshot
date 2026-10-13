@@ -62,7 +62,9 @@ Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
    comerciales, ningún uso comercial sin licencia aparte del titular.
    Por eso las dependencias de la interfaz solo pueden ser permisivas
    (MIT/Apache/BSD/ISC/CC0), nunca copyleft (GPL, AGPL) ni no comerciales,
-   y llevan una línea en `docs/ARCHITECTURE.md` §1. **En el motor, ninguna**:
+   y llevan una línea en `docs/ARCHITECTURE.md` §1. Única excepción:
+   `occt-import-js` (LGPL-2.1) para STEP e IGES, aislada con las
+   condiciones de ese apartado. **En el motor, ninguna**:
    `engine/` es Rust desde cero, solo `std`; nada de crates.io, nada
    copiado de otros renderizadores. CI lo comprueba.
 8b. **El motor es portable y determinista**: sin APIs del sistema en

@@ -16,7 +16,7 @@ no una iniciativa dentro de un PR.
 | Interfaz | **HTML + CSS + TypeScript sin framework** | La interfaz es un conjunto de paneles con estado centralizado; un framework añadiría una dependencia y un estilo que luego hay que enseñar a cada agente. Componentes como funciones que devuelven elementos DOM y se suscriben al *store* |
 | Vista previa | **three.js** (`WebGLRenderer`) | Rasterizado rápido para orbitar, seleccionar y colocar mientras la cámara se mueve. **No es el motor**: es la vista interactiva |
 | Motor de render | **Rust, desde cero, sin dependencias externas** (`engine/`): trazador de caminos en CPU que compila a **WebAssembly** para el navegador y a **binario nativo** para la línea de comandos y el escritorio | Corre en cualquier sistema y arquitectura (x86_64, ARM64, RISC-V, wasm32) sin GPU ni drivers; el mismo código renderiza en el navegador, en el runner de CI y en el escritorio; determinista; eficiente por diseño (BVH ancho con SIMD, muestreo de baja discrepancia, colas de baldosas) |
-| Importación | En `src/io/`, cargada bajo demanda: `GLTFLoader`, `FBXLoader`, `3MFLoader`, `PLYLoader`, `ColladaLoader`, `USDZLoader` y `3DMLoader` de three (MIT); **rhino3dm** (openNURBS, MIT) para `.3dm`; **occt-import-js** (MIT) sobre **OpenCascade** (LGPL-2.1 con la excepción de Open CASCADE, que permite enlazarlo sin contagiar la licencia) para STEP e IGES; OBJ y STL propios. **Decidido**: estas bibliotecas se aceptan en la capa `io/` porque son MIT o LGPL con excepción, se cargan solo al importar y nunca entran en el motor | La importación es el tronco del producto: lo que la gente exporta desde Rhino, SolidWorks, Fusion, Maya, ZBrush y KeyShot tiene que entrar con un arrastre. Los formatos nativos propietarios de esos programas no se leen (`SPEC.md` §5) |
+| Importación | En `src/io/`, cargada bajo demanda: `GLTFLoader`, `FBXLoader`, `3MFLoader`, `PLYLoader`, `ColladaLoader`, `USDZLoader` y `3DMLoader` de three (MIT); **rhino3dm** (openNURBS, MIT) para `.3dm`; **occt-import-js** (LGPL-2.1, OpenCascade compilado a wasm) para STEP e IGES, como **única excepción LGPL** y aislada (ver abajo); OBJ y STL propios. **Decidido**: estas bibliotecas se aceptan en la capa `io/`, se cargan solo al importar y nunca entran en el motor | La importación es el tronco del producto: lo que la gente exporta desde Rhino, SolidWorks, Fusion, Maya, ZBrush y KeyShot tiene que entrar con un arrastre. Los formatos nativos propietarios de esos programas no se leen (`SPEC.md` §5) |
 | Post-procesado IA (opcional) | **ONNX Runtime Web** (MIT) con WebGPU en workers, en `src/ai/`; en escritorio ONNX Runtime nativo o **stable-diffusion.cpp** (MIT) como proceso aparte. Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado en el primer uso con `sha256`, nunca en el repositorio. **Decidido** en `AI-POST.md`; la dependencia entra en X3 | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor, que sigue sin dependencias |
 | Tests | **vitest** (modelo e interfaz), **cargo test** (motor: escenas analíticas, determinismo, paridad wasm/nativo), **playwright-core** con el Chromium local para capturas | La suite de la interfaz corre sin GPU; la del motor corre en cualquier CPU |
 | Empaquetado de escritorio | Fuera de alcance hasta v0.3; cuando llegue, **Tauri** | Es Rust: enlaza el motor nativo directamente, sin wasm ni IPC; la interfaz web no cambia |
@@ -32,8 +32,17 @@ con su licencia (solo MIT, Apache-2.0, BSD, ISC, CC0 o compatibles). El
 proyecto se distribuye con la **PolyForm Noncommercial 1.0.0**: una
 dependencia copyleft (GPL, AGPL) o no comercial no es compatible con eso
 ni con que el titular pueda licenciarlo comercialmente, y no se admite.
-Las LGPL con excepción de enlace (OpenCascade, para STEP en I2) se
-valoran caso a caso y se cargan bajo demanda, fuera del paquete base. El
+**Única excepción, decidida: `occt-import-js` (LGPL-2.1)** para STEP e
+IGES. Se admite porque la LGPL se aplica solo a esa biblioteca y no al
+programa que la usa, siempre que la biblioteca siga siendo un módulo
+aparte que el usuario puede sustituir (LGPL-2.1 §6). Condiciones, todas
+obligatorias: se copia **sin modificar** de `node_modules` a
+`public/vendor/occt-import-js/` con `tools/vendor.mjs` (como rhino3dm),
+**nunca se empaqueta** en los *chunks* de Vite, se carga por URL en un
+worker solo al importar un STEP o IGES, lleva al lado su texto de licencia
+LGPL-2.1 y el enlace a su código fuente, y *Acerca de* la nombra. Así no
+afecta a la licencia del proyecto ni a que el titular lo licencie
+comercialmente. Ninguna otra LGPL sin una decisión nueva. El
 **motor no admite dependencias**: `engine/Cargo.lock` solo contiene los
 *crates* del propio workspace, y CI lo comprueba.
 

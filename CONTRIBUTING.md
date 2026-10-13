@@ -56,4 +56,8 @@ who relicenses it for this project.
 
 Dependencies: only permissive licences (MIT, Apache-2.0, BSD, ISC, CC0)
 are compatible with this setup. Copyleft (GPL, AGPL) or noncommercial
-dependencies cannot be added to the code base.
+dependencies cannot be added to the code base. The one exception is
+`occt-import-js` (LGPL-2.1) for STEP and IGES import: it is shipped
+unmodified as a separate, replaceable module loaded at run time, never
+bundled, with its licence and a link to its source next to it
+(`docs/ARCHITECTURE.md` §1).

@@ -318,12 +318,15 @@ los planos de recorte al encuadrar.
 ## I2 · STEP e IGES — **Opus**
 
 **Decisión tomada (Fable).** Se lee STEP (AP203, AP214, AP242) e IGES con
-**OpenCascade** compilado a wasm a través de `occt-import-js` (envoltorio
-MIT; OCCT es LGPL-2.1 con la excepción de Open CASCADE, que permite
-enlazarlo sin contagiar la licencia del proyecto). Entra solo en la capa
-`io/` del lado web, se carga **bajo demanda** al soltar el primer archivo
-CAD (unos MB que no se pagan si no se usan), y el motor de render no lo
-conoce. Un teselador de B-rep propio en Rust queda como idea para
+**OpenCascade** compilado a wasm a través de `occt-import-js` 0.0.23. El
+paquete entero es **LGPL-2.1** (no MIT, como decía una versión anterior
+de este documento): es la única excepción LGPL del proyecto y va
+aislada con las condiciones de `ARCHITECTURE.md` §1 (copiado sin
+modificar a `public/vendor/occt-import-js/` por `tools/vendor.mjs`, nunca
+empaquetado, cargado por URL en un worker, licencia y enlace al fuente al
+lado, nombrado en *Acerca de*). Entra solo en la capa `io/` del lado web,
+se carga **bajo demanda** al soltar el primer archivo CAD (unos MB que no
+se pagan si no se usan), y el motor de render no lo conoce. Un teselador de B-rep propio en Rust queda como idea para
 después, no como requisito.
 
 **Qué.** `src/io/step.ts`: carga diferida del módulo, lectura con la
