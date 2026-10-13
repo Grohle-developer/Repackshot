@@ -19,6 +19,7 @@ logic lives here beyond tiny lookups (`studioPreset(key)`, `materialPreset(key)`
 | `animation.ts` | `MOVE_KINDS` (15), `EASING_KINDS` (5), `TARGET_KINDS`, `EXPLODE_MODES`, move groups, `SEQUENCE_PRESETS` (16) |
 | `doctor.ts` | `DOCTOR_CHECKS` (14), descriptors only |
 | `environment.ts` | Studio dome grey levels and bright-field limits |
+| `ai-models.json`, `ai-models.ts` | AI post-processing models (files with pinned URLs, sizes and `sha256`, licences, requirements) and the recommendation table (AI-POST.md §2.4); JSON because the desktop launcher embeds it too. Types in `ai-models.ts` |
 
 ## Conventions
 

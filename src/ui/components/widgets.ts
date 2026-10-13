@@ -1,7 +1,7 @@
 // Small building blocks: thumbnails, inline confirmations, tabs, floating
 // menus and popovers, and the global tooltip with shortcut.
 
-import { h, icon } from '../dom';
+import { h, icon, placeAt } from '../dom';
 import type { IconName } from '../icons';
 import { t } from '../strings';
 
@@ -144,16 +144,17 @@ export function openFloating(
   const el = h('div', { class: 'floating' }, content);
   document.body.appendChild(el);
   const place = () => {
+    // Screen pixels throughout (the floating box may be zoomed by the interface size).
     const r = anchor.getBoundingClientRect();
-    const w = el.offsetWidth;
-    const hgt = el.offsetHeight;
+    const box = el.getBoundingClientRect();
+    const w = box.width;
+    const hgt = box.height;
     let left = opts.align === 'end' ? r.right - w : r.left;
     left = Math.max(8, Math.min(window.innerWidth - w - 8, left));
     let top = opts.above ? r.top - hgt - 6 : r.bottom + 6;
     if (top + hgt > window.innerHeight - 8) top = Math.max(8, r.top - hgt - 6);
     if (top < 8) top = 8;
-    el.style.left = `${left}px`;
-    el.style.top = `${top}px`;
+    placeAt(el, left, top);
   };
   place();
   let closed = false;
@@ -211,14 +212,14 @@ export type MenuItems = readonly (MenuEntry | null | { heading: string })[];
 /** Places a submenu next to its item, on the left when there is no room on the right. */
 function placeSubmenu(sub: HTMLElement, item: HTMLElement): void {
   const r = item.getBoundingClientRect();
-  const w = sub.offsetWidth;
-  const hgt = sub.offsetHeight;
+  const box = sub.getBoundingClientRect();
+  const w = box.width;
+  const hgt = box.height;
   let left = r.right + 2;
   if (left + w > window.innerWidth - 8) left = Math.max(8, r.left - w - 2);
   let top = r.top - 5;
   if (top + hgt > window.innerHeight - 8) top = Math.max(8, window.innerHeight - hgt - 8);
-  sub.style.left = `${left}px`;
-  sub.style.top = `${top}px`;
+  placeAt(sub, left, top);
 }
 
 /** Builds menu content; `null` is a separator. Entries with `submenu` open it to the side. */
@@ -338,6 +339,12 @@ export function openMenuAt(x: number, y: number, entries: MenuItems): void {
 
 // --- Tooltip -----------------------------------------------------------------
 
+let tooltipDelay = 450;
+/** Settings ▸ Accessibility ▸ Tooltip delay. */
+export function setTooltipDelay(ms: number): void {
+  tooltipDelay = Math.max(0, ms);
+}
+
 /** Global tooltip for every [data-tip] element; [data-kbd] adds the shortcut. */
 export function installTooltips(): () => void {
   let tip: HTMLElement | null = null;
@@ -356,14 +363,14 @@ export function installTooltips(): () => void {
     tip = h('div', { class: 'tooltip', role: 'tooltip' }, h('span', null, text), kbd ? h('kbd', null, kbd) : null);
     document.body.appendChild(tip);
     const r = el.getBoundingClientRect();
-    const w = tip.offsetWidth;
-    const hh = tip.offsetHeight;
+    const box = tip.getBoundingClientRect();
+    const w = box.width;
+    const hh = box.height;
     let left = r.left + r.width / 2 - w / 2;
     left = Math.max(6, Math.min(window.innerWidth - w - 6, left));
     let top = r.bottom + 6;
     if (top + hh > window.innerHeight - 6) top = r.top - hh - 6;
-    tip.style.left = `${left}px`;
-    tip.style.top = `${top}px`;
+    placeAt(tip, left, top);
   };
   const over = (e: MouseEvent) => {
     const el = (e.target as HTMLElement | null)?.closest?.('[data-tip]') as HTMLElement | null;
@@ -371,7 +378,7 @@ export function installTooltips(): () => void {
     hide();
     if (!el) return;
     current = el;
-    timer = window.setTimeout(() => current === el && show(el), 450);
+    timer = window.setTimeout(() => current === el && show(el), tooltipDelay);
   };
   document.addEventListener('mouseover', over);
   document.addEventListener('pointerdown', hide, true);

@@ -261,6 +261,8 @@ export class Gizmo {
   private current: GizmoFrame | null = null;
   private aim: { from: Vec3; target: Vec3 } | null = null;
   private size = 1;
+  /** Settings ▸ Preferences ▸ Gizmo size: a factor of the on-screen size (the drag maths do not change). */
+  private scale = 1;
   private hover: GizmoHandle | null = null;
   private active: GizmoHandle | null = null;
 
@@ -351,6 +353,15 @@ export class Gizmo {
     return this.size;
   }
 
+  /** The arrow's world length at the factory size: what a drag measures against. */
+  get baseWorldSize(): number {
+    return this.size / this.scale;
+  }
+
+  setScale(k: number): void {
+    this.scale = Math.max(0.25, Math.min(4, k));
+  }
+
   /** Places the gizmo on a frame (null hides it); `aim` adds the aim handle of a light. */
   place(frame: GizmoFrame | null, aim: { from: Vec3; target: Vec3 } | null): void {
     this.current = frame;
@@ -367,8 +378,8 @@ export class Gizmo {
 
   /** Keeps the handles the same size on screen: world units per CSS pixel at the origin and at the aim target. */
   setPixelSize(atOrigin: number, atTarget: number): void {
-    this.size = Math.max(1e-9, atOrigin * GIZMO_PX);
-    const s = Math.max(1e-9, atTarget * GIZMO_PX);
+    this.size = Math.max(1e-9, atOrigin * GIZMO_PX * this.scale);
+    const s = Math.max(1e-9, atTarget * GIZMO_PX * this.scale);
     this.aimHandle.scale.set(s, s, s);
     this.compose();
   }

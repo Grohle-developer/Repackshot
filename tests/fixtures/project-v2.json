@@ -1,0 +1,971 @@
+{
+ "format": "repackshot-project",
+ "schema": 2,
+ "state": {
+  "meta": {
+   "name": "Box project",
+   "version": "0.1.0",
+   "dirty": false,
+   "lang": "en",
+   "theme": "system"
+  },
+  "scene": {
+   "nodes": {
+    "n1": {
+     "id": "n1",
+     "name": "box",
+     "kind": "MODEL",
+     "parent": null,
+     "children": [
+      "n2",
+      "n3",
+      "n4"
+     ],
+     "transform": {
+      "position": [
+       0,
+       -0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "source": {
+      "kind": "FILE",
+      "name": "box.obj",
+      "format": "OBJ"
+     },
+     "initial": {
+      "position": [
+       0,
+       -0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n2": {
+     "id": "n2",
+     "name": "Caps",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       -0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "import:1:t2~flip",
+      "vertices": 8,
+      "triangles": 4,
+      "bounds": {
+       "min": [
+        -10,
+        -10,
+        -10
+       ],
+       "max": [
+        10,
+        10,
+        10
+       ]
+      }
+     },
+     "material": "m4",
+     "smooth": true,
+     "initial": {
+      "position": [
+       0,
+       -0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n3": {
+     "id": "n3",
+     "name": "Body",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       -0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "import:2:t3",
+      "vertices": 16,
+      "triangles": 8,
+      "bounds": {
+       "min": [
+        -10,
+        -10,
+        -10
+       ],
+       "max": [
+        10,
+        10,
+        10
+       ]
+      }
+     },
+     "material": "m2",
+     "smooth": true,
+     "faceMaterials": [
+      {
+       "start": 4,
+       "count": 4,
+       "material": "m3"
+      }
+     ],
+     "initial": {
+      "position": [
+       0,
+       -0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    },
+    "n4": {
+     "id": "n4",
+     "name": "Body 2",
+     "kind": "PART",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       -0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "import:2:t3",
+      "vertices": 16,
+      "triangles": 8,
+      "bounds": {
+       "min": [
+        -10,
+        -10,
+        -10
+       ],
+       "max": [
+        10,
+        10,
+        10
+       ]
+      }
+     },
+     "material": "m2",
+     "smooth": true,
+     "faceMaterials": [
+      {
+       "start": 4,
+       "count": 4,
+       "material": "m3"
+      }
+     ],
+     "initial": {
+      "position": [
+       0,
+       -0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     }
+    }
+   },
+   "roots": [
+    "n1"
+   ],
+   "partSizeMm": 20
+  },
+  "selection": {
+   "level": "PART",
+   "ids": [
+    "n4"
+   ]
+  },
+  "materials": {
+   "m2": {
+    "id": "m2",
+    "name": "Steel",
+    "preset": null,
+    "origin": null,
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "OTHER",
+    "params": {
+     "baseColor": [
+      0.8,
+      0.8,
+      0.8,
+      1
+     ],
+     "metallic": 0,
+     "roughness": 0.5
+    },
+    "wear": {
+     "amount": 0,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 0.2,
+     "edges": 0,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.75,
+      0.75,
+      0.75,
+      1
+     ],
+     "edgeRough": 0.3,
+     "edgeMetal": 0,
+     "scratches": 0,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0,
+     "patinaColor": [
+      0.3,
+      0.14,
+      0.07,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.8,
+      0.8,
+      0.8,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "projection": "BOX",
+     "scale": 1,
+     "rotationDeg": 0,
+     "offset": [
+      0,
+      0
+     ]
+    },
+    "bevelRadiusMm": 0
+   },
+   "m3": {
+    "id": "m3",
+    "name": "Brass",
+    "preset": null,
+    "origin": null,
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "OTHER",
+    "params": {
+     "baseColor": [
+      0.8,
+      0.8,
+      0.8,
+      1
+     ],
+     "metallic": 0,
+     "roughness": 0.5
+    },
+    "wear": {
+     "amount": 0,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 0.2,
+     "edges": 0,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.75,
+      0.75,
+      0.75,
+      1
+     ],
+     "edgeRough": 0.3,
+     "edgeMetal": 0,
+     "scratches": 0,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0,
+     "patinaColor": [
+      0.3,
+      0.14,
+      0.07,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.8,
+      0.8,
+      0.8,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "projection": "BOX",
+     "scale": 1,
+     "rotationDeg": 0,
+     "offset": [
+      0,
+      0
+     ]
+    },
+    "bevelRadiusMm": 0
+   },
+   "m4": {
+    "id": "m4",
+    "name": null,
+    "preset": "GOLD",
+    "origin": "GOLD",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "METAL",
+    "params": {
+     "baseColor": [
+      0.94,
+      0.72,
+      0.25,
+      1
+     ],
+     "metallic": 1,
+     "roughness": 0.15
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 0.02,
+     "edges": 0.25,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.958,
+      0.8039999999999999,
+      0.475,
+      1
+     ],
+     "edgeRough": 0.18,
+     "edgeMetal": 1,
+     "scratches": 0.3,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.25,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.05,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0,
+     "patinaColor": [
+      0.3,
+      0.14,
+      0.07,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.35,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.967,
+      0.846,
+      0.5875,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "projection": "BOX",
+     "scale": 1,
+     "rotationDeg": 0,
+     "offset": [
+      0,
+      0
+     ]
+    },
+    "bevelRadiusMm": 0.05
+   }
+  },
+  "studio": {
+   "preset": "JEWELLERY",
+   "lightSetup": "REMBRANDT",
+   "built": true,
+   "floor": true,
+   "shadow": false,
+   "lights": [
+    {
+     "id": "l1",
+     "role": "KEY",
+     "type": "AREA",
+     "shape": "RECTANGLE",
+     "size": 2,
+     "sizeY": 2,
+     "az": -55,
+     "el": 45,
+     "dist": 2.8,
+     "spread": 110,
+     "angle": 0.545,
+     "kelvin": 5600,
+     "color": [
+      1,
+      0.9383740988338822,
+      0.8834899105012184
+     ],
+     "power": 132.4374539253599,
+     "glossy": true,
+     "camera": false,
+     "brightField": false,
+     "recipeGlossy": true,
+     "enabled": true
+    },
+    {
+     "id": "l2",
+     "role": "FILL",
+     "type": "AREA",
+     "shape": "RECTANGLE",
+     "size": 4,
+     "sizeY": 4,
+     "az": 60,
+     "el": 10,
+     "dist": 3.6,
+     "spread": 180,
+     "angle": 0.545,
+     "kelvin": 5600,
+     "color": [
+      1,
+      0.9383740988338822,
+      0.8834899105012184
+     ],
+     "power": 23.371315398592927,
+     "glossy": false,
+     "camera": false,
+     "brightField": false,
+     "recipeGlossy": false,
+     "enabled": true
+    }
+   ],
+   "modified": false,
+   "saved": [],
+   "customPreset": null,
+   "customSetup": null
+  },
+  "environment": {
+   "kind": "STUDIO",
+   "strength": 0.8,
+   "rotationDeg": 40,
+   "background": "COLOR",
+   "color": [
+    0.02,
+    0.02,
+    0.025,
+    1
+   ],
+   "groundShadow": 0.6,
+   "groundReflection": 0
+  },
+  "camera": {
+   "active": "cam2",
+   "cameras": {
+    "cam1": {
+     "id": "cam1",
+     "name": "",
+     "azimuth": -35,
+     "elevation": 22,
+     "distance": 166.57943719509734,
+     "target": [
+      0,
+      0,
+      0
+     ],
+     "focalMm": 100,
+     "fstop": 11,
+     "focusDistance": 166.57943719509734,
+     "projection": "PERSPECTIVE",
+     "orthoWidth": 56.668445826771126,
+     "clipStart": 0.16657943719509735,
+     "clipEnd": 173205.0807568877,
+     "locked": false,
+     "lens": null
+    },
+    "cam2": {
+     "id": "cam2",
+     "name": "Detail",
+     "azimuth": 20,
+     "elevation": 10,
+     "distance": 166.57943719509734,
+     "target": [
+      0,
+      0,
+      0
+     ],
+     "focalMm": 135,
+     "fstop": 11,
+     "focusDistance": 166.57943719509734,
+     "projection": "PERSPECTIVE",
+     "orthoWidth": 56.668445826771126,
+     "clipStart": 0.16657943719509735,
+     "clipEnd": 173205.0807568877,
+     "locked": false,
+     "lens": null
+    }
+   }
+  },
+  "image": {
+   "exposureEv": 0.5,
+   "viewTransform": "FILMIC",
+   "bloom": 0,
+   "sharpen": 0,
+   "saturation": 0,
+   "contrast": 0,
+   "vignette": 0.2
+  },
+  "animation": {
+   "shots": [
+    {
+     "id": "s1",
+     "duration": 4,
+     "camera": null
+    },
+    {
+     "id": "s2",
+     "duration": 3,
+     "camera": null
+    },
+    {
+     "id": "s3",
+     "duration": 4,
+     "camera": null
+    }
+   ],
+   "clips": [
+    {
+     "id": "c1",
+     "target": {
+      "kind": "CAMERA"
+     },
+     "move": "ORBIT",
+     "shot": 0,
+     "start": 0,
+     "duration": 4,
+     "amount": 90,
+     "easing": "EASE"
+    },
+    {
+     "id": "c2",
+     "target": {
+      "kind": "CAMERA"
+     },
+     "move": "RISE",
+     "shot": 0,
+     "start": 0,
+     "duration": 4,
+     "amount": 18,
+     "easing": "EASE"
+    },
+    {
+     "id": "c3",
+     "target": {
+      "kind": "CAMERA"
+     },
+     "move": "DOLLY",
+     "shot": 1,
+     "start": 4,
+     "duration": 3,
+     "amount": 40,
+     "easing": "EASE_OUT"
+    },
+    {
+     "id": "c4",
+     "target": {
+      "kind": "SUBJECT"
+     },
+     "move": "SPIN",
+     "shot": null,
+     "start": 7,
+     "duration": 4,
+     "amount": 360,
+     "easing": "LINEAR"
+    }
+   ],
+   "fps": 24,
+   "playhead": 0,
+   "playing": false
+  },
+  "render": {
+   "mode": "IMAGE",
+   "name": "{project}_{camera}_{n}",
+   "destination": {
+    "kind": "DOWNLOADS"
+   },
+   "showWhenDone": true,
+   "format": "JPEG",
+   "bitDepth": 8,
+   "jpegQuality": 92,
+   "transparent": false,
+   "camera": {
+    "kind": "ACTIVE"
+   },
+   "width": 1080,
+   "height": 1350,
+   "aspectLock": true,
+   "aspect": 0.8,
+   "dpi": 300,
+   "printUnit": "MM",
+   "finishBy": "SAMPLES",
+   "quality": "FINAL",
+   "maxSamples": 1024,
+   "maxSeconds": 120,
+   "advanced": {
+    "maxBounces": null,
+    "clampIndirect": 0,
+    "seed": 0
+   },
+   "animation": {
+    "range": "ALL",
+    "rangeUnit": "FRAMES",
+    "from": 1,
+    "to": 1,
+    "fps": 24,
+    "output": "FRAMES",
+    "video": "MP4"
+   },
+   "ai": {
+    "enabled": false
+   },
+   "queue": [
+    {
+     "id": "j1",
+     "seq": 1,
+     "settings": {
+      "mode": "IMAGE",
+      "name": "{project}_{camera}_{n}",
+      "destination": {
+       "kind": "DOWNLOADS"
+      },
+      "showWhenDone": true,
+      "format": "JPEG",
+      "bitDepth": 8,
+      "jpegQuality": 92,
+      "transparent": false,
+      "camera": {
+       "kind": "ONE",
+       "id": "cam2"
+      },
+      "width": 1080,
+      "height": 1350,
+      "aspectLock": true,
+      "aspect": 0.8,
+      "dpi": 300,
+      "printUnit": "MM",
+      "finishBy": "SAMPLES",
+      "quality": "FINAL",
+      "maxSamples": 1024,
+      "maxSeconds": 120,
+      "advanced": {
+       "maxBounces": null,
+       "clampIndirect": 0,
+       "seed": 0
+      },
+      "animation": {
+       "range": "ALL",
+       "rangeUnit": "FRAMES",
+       "from": 1,
+       "to": 1,
+       "fps": 24,
+       "output": "FRAMES",
+       "video": "MP4"
+      },
+      "ai": {
+       "enabled": false
+      }
+     },
+     "createdAt": 1,
+     "status": "QUEUED",
+     "progress": 0,
+     "startedAt": null,
+     "finishedAt": null,
+     "resultIds": [],
+     "error": null,
+     "frame": 0,
+     "frames": 0
+    }
+   ],
+   "running": null,
+   "seq": 1
+  },
+  "doctor": {
+   "results": [
+    {
+     "key": "engine",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "lighttree",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "denoise",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "color",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "scale",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "transform",
+     "status": "OK",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "origin",
+     "status": "WARN",
+     "fixable": true,
+     "detail": {
+      "offCentre": 0,
+      "floorGap": -10
+     }
+    },
+    {
+     "key": "shading",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "bevel",
+     "status": "WARN",
+     "fixable": true,
+     "detail": {
+      "count": 2
+     }
+    },
+    {
+     "key": "clip",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "lights",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "caustics",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "persist",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "output",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    }
+   ],
+   "stamp": 10
+  }
+ },
+ "meshes": [
+  {"id":"import:1:t2~flip","glb":"Z2xURgIAAAAYBQAAzAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6ImltcG9ydDoxOnQyfmZsaXAiLCJtZXNoIjowLCJyb3RhdGlvbiI6Wy0wLjcwNzEwNjc4MTE4NjU0NzYsMCwwLDAuNzA3MTA2NzgxMTg2NTQ3Nl0sInNjYWxlIjpbMC4wMDEsMC4wMDEsMC4wMDFdfV0sIm1lc2hlcyI6W3sibmFtZSI6ImltcG9ydDoxOnQyfmZsaXAiLCJwcmltaXRpdmVzIjpbeyJhdHRyaWJ1dGVzIjp7IlBPU0lUSU9OIjowLCJOT1JNQUwiOjEsIlRFWENPT1JEXzAiOjJ9LCJpbmRpY2VzIjozLCJtb2RlIjo0fV19XSwiYWNjZXNzb3JzIjpbeyJidWZmZXJWaWV3IjowLCJjb21wb25lbnRUeXBlIjo1MTI2LCJjb3VudCI6OCwidHlwZSI6IlZFQzMiLCJtaW4iOlstMTAsLTEwLC0xMF0sIm1heCI6WzEwLDEwLDEwXX0seyJidWZmZXJWaWV3IjoxLCJjb21wb25lbnRUeXBlIjo1MTI2LCJjb3VudCI6OCwidHlwZSI6IlZFQzMifSx7ImJ1ZmZlclZpZXciOjIsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50Ijo4LCJ0eXBlIjoiVkVDMiJ9LHsiYnVmZmVyVmlldyI6MywiY29tcG9uZW50VHlwZSI6NTEyNSwiY291bnQiOjEyLCJ0eXBlIjoiU0NBTEFSIn1dLCJidWZmZXJWaWV3cyI6W3siYnVmZmVyIjowLCJieXRlT2Zmc2V0IjowLCJieXRlTGVuZ3RoIjo5NiwidGFyZ2V0IjozNDk2Mn0seyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjk2LCJieXRlTGVuZ3RoIjo5NiwidGFyZ2V0IjozNDk2Mn0seyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjE5MiwiYnl0ZUxlbmd0aCI6NjQsInRhcmdldCI6MzQ5NjJ9LHsiYnVmZmVyIjowLCJieXRlT2Zmc2V0IjoyNTYsImJ5dGVMZW5ndGgiOjQ4LCJ0YXJnZXQiOjM0OTYzfV0sImJ1ZmZlcnMiOlt7ImJ5dGVMZW5ndGgiOjMwNH1dfSAwAQAAQklOAAAAIMEAACDBAAAgwQAAIEEAACDBAAAgwQAAIEEAACDBAAAgQQAAIMEAACDBAAAgQQAAIMEAACBBAAAgwQAAIMEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgwQAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAIC/AAAAAAAAAAAAAAAAAACAPwAAAAAAAIA/AACAPwAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAgD8AAIA/AACAPwAAAAAAAAAAAgAAAAEAAAAAAAAAAwAAAAIAAAAEAAAABgAAAAUAAAAEAAAABwAAAAYAAAA=","sharpEdges":""},
+  {"id":"import:2:t3","glb":"Z2xURgIAAAA4BQAAPAMAAEpTT057ImFzc2V0Ijp7InZlcnNpb24iOiIyLjAiLCJnZW5lcmF0b3IiOiJSZXBhY2tzaG90IiwiZXh0cmFzIjp7InVwIjoiWiIsInVuaXQiOiJtbSJ9fSwic2NlbmUiOjAsInNjZW5lcyI6W3sibm9kZXMiOlswXX1dLCJub2RlcyI6W3sibmFtZSI6ImltcG9ydDoyOnQzIiwibWVzaCI6MCwicm90YXRpb24iOlstMC43MDcxMDY3ODExODY1NDc2LDAsMCwwLjcwNzEwNjc4MTE4NjU0NzZdLCJzY2FsZSI6WzAuMDAxLDAuMDAxLDAuMDAxXX1dLCJtZXNoZXMiOlt7Im5hbWUiOiJpbXBvcnQ6Mjp0MyIsInByaW1pdGl2ZXMiOlt7ImF0dHJpYnV0ZXMiOnsiUE9TSVRJT04iOjAsIk5PUk1BTCI6MX0sImluZGljZXMiOjIsIm1vZGUiOjR9XX1dLCJhY2Nlc3NvcnMiOlt7ImJ1ZmZlclZpZXciOjAsImNvbXBvbmVudFR5cGUiOjUxMjYsImNvdW50IjoxNiwidHlwZSI6IlZFQzMiLCJtaW4iOlstMTAsLTEwLC0xMF0sIm1heCI6WzEwLDEwLDEwXX0seyJidWZmZXJWaWV3IjoxLCJjb21wb25lbnRUeXBlIjo1MTI2LCJjb3VudCI6MTYsInR5cGUiOiJWRUMzIn0seyJidWZmZXJWaWV3IjoyLCJjb21wb25lbnRUeXBlIjo1MTI1LCJjb3VudCI6MjQsInR5cGUiOiJTQ0FMQVIifV0sImJ1ZmZlclZpZXdzIjpbeyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjAsImJ5dGVMZW5ndGgiOjE5MiwidGFyZ2V0IjozNDk2Mn0seyJidWZmZXIiOjAsImJ5dGVPZmZzZXQiOjE5MiwiYnl0ZUxlbmd0aCI6MTkyLCJ0YXJnZXQiOjM0OTYyfSx7ImJ1ZmZlciI6MCwiYnl0ZU9mZnNldCI6Mzg0LCJieXRlTGVuZ3RoIjo5NiwidGFyZ2V0IjozNDk2M31dLCJidWZmZXJzIjpbeyJieXRlTGVuZ3RoIjo0ODB9XX3gAQAAQklOAAAAIMEAACBBAAAgwQAAIEEAACBBAAAgwQAAIEEAACDBAAAgwQAAIMEAACDBAAAgwQAAIEEAACBBAAAgQQAAIMEAACBBAAAgQQAAIMEAACDBAAAgQQAAIEEAACDBAAAgQQAAIMEAACBBAAAgwQAAIMEAACDBAAAgwQAAIMEAACDBAAAgQQAAIMEAACBBAAAgQQAAIEEAACBBAAAgwQAAIEEAACBBAAAgQQAAIEEAACDBAAAgQQAAIEEAACDBAAAgwQAAAAAAAACAAACAvwAAAAAAAACAAACAvwAAAAAAAACAAACAvwAAAAAAAACAAACAvwAAAAAAAACAAACAPwAAAAAAAACAAACAPwAAAAAAAACAAACAPwAAAAAAAACAAACAPwAAgL8AAACAAAAAAAAAgL8AAACAAAAAAAAAgL8AAACAAAAAAAAAgL8AAACAAAAAAAAAgD8AAACAAAAAAAAAgD8AAACAAAAAAAAAgD8AAACAAAAAAAAAgD8AAACAAAAAAAAAAAABAAAAAgAAAAAAAAACAAAAAwAAAAQAAAAFAAAABgAAAAQAAAAGAAAABwAAAAgAAAAJAAAACgAAAAgAAAAKAAAACwAAAAwAAAANAAAADgAAAAwAAAAOAAAADwAAAA==","sharpEdges":"AQAAAAIAAAAAAAAAAwAAAAUAAAAGAAAABAAAAAcAAAA="}
+ ]
+}

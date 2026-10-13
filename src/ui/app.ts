@@ -10,6 +10,7 @@ import { h, isTyping } from './dom';
 import { header } from './panels/header';
 import { inspectorPanel } from './panels/inspector';
 import { renderWindow } from './panels/render-window';
+import { settingsWindow } from './panels/settings-window';
 import { renderBar } from './panels/renderbar';
 import { scenePanel } from './panels/scene';
 import { statusBar } from './panels/status';
@@ -17,6 +18,9 @@ import { viewportPanel } from './panels/viewport';
 import type { AppServices } from './ports';
 import { dynamic, Root, Scope, type Ctx } from './reactive';
 import { ACTIONS, matches } from './shortcuts';
+import { setLengthUnit } from './components/controls';
+import { cssZoom } from './dom';
+import { installSettingsEffects } from './settings-effects';
 import { setLang } from './strings';
 import { PANEL_MAX, PANEL_MIN, type UiStore } from './ui-state';
 
@@ -34,8 +38,10 @@ function resizer(ctx: Ctx, side: 'left' | 'right'): HTMLElement {
     el.classList.add('is-dragging');
     const startX = e.clientX;
     const start = side === 'left' ? ctx.ui.get().leftWidth : ctx.ui.get().rightWidth;
+    // The widths are in the panels' own pixels; the pointer moves in screen pixels (Interface size zooms them).
+    const zoom = cssZoom(el);
     const move = (ev: PointerEvent) => {
-      const d = side === 'left' ? ev.clientX - startX : startX - ev.clientX;
+      const d = (side === 'left' ? ev.clientX - startX : startX - ev.clientX) / zoom;
       const w = Math.round(Math.max(PANEL_MIN, Math.min(PANEL_MAX, start + d)));
       ctx.ui.set(side === 'left' ? { leftWidth: w } : { rightWidth: w });
     };
@@ -83,6 +89,16 @@ function onKey(ctx: Ctx, e: KeyboardEvent): boolean {
       return true;
     }
   }
+  // The Settings window is modal: only its own shortcut (Ctrl/⌘ , closes it) reaches the application.
+  if (u.settingsWindow) {
+    const own = ACTIONS.find((a) => a.id === 'settings');
+    if (own?.keys && matches(e, own.keys)) {
+      e.preventDefault();
+      void own.run(ctx);
+      return true;
+    }
+    return false;
+  }
   // The render window and the results viewer own the plain keys while they are open (their own
   // listeners handle ⏎, Esc, + - 0 1); shortcuts with Ctrl/⌘ still work.
   const overlay = u.renderWindow !== null || u.resultView !== null;
@@ -115,6 +131,7 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
     scope = new Scope(reactive);
     const sc = scope;
     setLang(store.get().meta.lang);
+    setLengthUnit(ui.get().settings['general.units']);
     document.documentElement.lang = store.get().meta.lang;
     const left = scenePanel(ctx, sc);
     left.appendChild(resizer(ctx, 'left'));
@@ -129,7 +146,9 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
       'div',
       'rw-mount',
     );
-    const next = h('div', { class: 'app' }, header(ctx, sc), left, viewportPanel(ctx, sc), right, renderBar(ctx, sc), statusBar(ctx, sc), toasts(sc), windowHost);
+    // The Settings window (UI.md §2.9), the second and last window.
+    const settingsHost = dynamic(sc, (_s, u) => (u.settingsWindow ? 'open' : null), (wsc, key) => (key ? settingsWindow(ctx, wsc) : null), undefined, 'div', 'sw-mount');
+    const next = h('div', { class: 'app' }, header(ctx, sc), left, viewportPanel(ctx, sc), right, renderBar(ctx, sc), statusBar(ctx, sc), toasts(sc), windowHost, settingsHost);
     sc.watch(
       (_s, u) => [u.leftCollapsed, u.rightCollapsed, u.leftWidth, u.rightWidth, u.narrow, u.drawer] as const,
       ([lc, rc, lw, rw, narrow, drawer]) => {
@@ -157,6 +176,16 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
       build();
     }
   });
+  // The interface units change every length field: the interface is rebuilt, like for a language.
+  let units = ui.get().settings['general.units'];
+  ui.subscribe((u) => {
+    if (u.settings['general.units'] !== units) {
+      units = u.settings['general.units'];
+      closeFloating();
+      build();
+    }
+  });
+  installSettingsEffects(ctx);
 
   // Theme, live.
   let theme = store.get().meta.theme;
@@ -190,6 +219,27 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
   document.addEventListener('keydown', (e) => {
     if (e.defaultPrevented) return;
     onKey(ctx, e);
+  });
+
+  // Files dropped anywhere in the window that the viewport did not take: a browser would navigate to them (and
+  // leave the project behind); a project opens and models go to the import sheet.
+  const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false;
+  document.addEventListener('dragover', (e) => {
+    if (!e.defaultPrevented && hasFiles(e)) e.preventDefault();
+  });
+  document.addEventListener('drop', (e) => {
+    if (e.defaultPrevented || !hasFiles(e)) return;
+    e.preventDefault();
+    const { files, handles } = cmd.readDrop(e.dataTransfer);
+    cmd.dropFiles(ctx, files, handles);
+  });
+
+  // Closing the window or the tab with unsaved changes: the browser asks (the text is the browser's own), unless
+  // General ▸ Confirm before closing is off.
+  window.addEventListener('beforeunload', (e) => {
+    if (!cmd.shouldConfirmClose(ctx)) return;
+    e.preventDefault();
+    e.returnValue = '';
   });
   installTooltips();
 

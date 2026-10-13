@@ -19,7 +19,7 @@ import { areaLightRadiance, SUN_IRRADIANCE_PER_POWER } from '../core/photometry'
 import { partsUnder, sceneBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
 import type { ProjectState } from '../core/store';
-import type { EngineStatus, PickHit, RenderEngine, RenderOptions } from './engine';
+import type { DisplayPrefs, EngineStatus, NavigationPrefs, PickHit, RenderEngine, RenderOptions } from './engine';
 import { Gizmo, GizmoDrag, modelRay } from './gizmo';
 import { applyMaterial, makeMaterial } from './materials';
 
@@ -196,6 +196,12 @@ export class PreviewEngine implements RenderEngine {
   private readonly gizmo = new Gizmo();
   private gizmoSpec: GizmoSpec | null = null;
   private gizmoDragging: GizmoDrag | null = null;
+  /** Settings ▸ Preferences: how the mouse moves the camera, and the floor grid. */
+  private tool: PreviewTool = 'select';
+  private nav: NavigationPrefs = { mouse: 'LEFT', invertZoom: false, orbitSpeed: 1, zoomSpeed: 1 };
+  private gridOn = false;
+  private grid: THREE.GridHelper | null = null;
+  private gridCell = 0;
 
   constructor() {
     this.modelRoot.matrixAutoUpdate = false;
@@ -228,9 +234,17 @@ export class PreviewEngine implements RenderEngine {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.device = this.detectDevice();
+    // "Alt + left button orbits": the left button's action is decided as it goes down, before the controls see it.
+    canvas.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (e.button === 0 && this.nav.mouse === 'ALT_LEFT') this.applyButtons(e.altKey);
+      },
+      { capture: true },
+    );
     this.controls = new OrbitControls(this.persp, canvas);
     this.controls.enableDamping = false;
-    this.controls.zoomSpeed = 0.8;
+    this.applyNavigation();
     this.controls.addEventListener('start', () => {
       this.interacting = true;
       this.gestureListener?.('start', null);
@@ -292,9 +306,81 @@ export class PreviewEngine implements RenderEngine {
   }
 
   setTool(tool: PreviewTool): void {
-    // The move tool orbits with the left button where no handle is under it (the interface takes those).
-    const left = tool === 'pan' ? THREE.MOUSE.PAN : tool === 'zoom' ? THREE.MOUSE.DOLLY : THREE.MOUSE.ROTATE;
-    this.controls.mouseButtons = { LEFT: left, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    this.tool = tool;
+    this.applyButtons(false);
+  }
+
+  /** Settings ▸ Preferences ▸ Viewport and navigation: mouse scheme, zoom direction, speeds. */
+  setNavigation(nav: NavigationPrefs): void {
+    this.nav = { ...nav };
+    this.applyNavigation();
+  }
+
+  private applyNavigation(): void {
+    if (!this.controls) return;
+    // The factory speeds (0.8 for zoom) times the setting; a negative zoom speed inverts the wheel and the drag.
+    this.controls.zoomSpeed = 0.8 * this.nav.zoomSpeed * (this.nav.invertZoom ? -1 : 1);
+    this.controls.rotateSpeed = this.nav.orbitSpeed;
+    this.applyButtons(false);
+  }
+
+  /**
+   * The buttons' actions for the tool and the mouse scheme. The Pan and Zoom tools take the left button; the
+   * Orbit tool always orbits with it; otherwise the scheme decides which button orbits (the move tool orbits
+   * where no handle is under the pointer: the interface takes those). The right button pans, the wheel zooms.
+   */
+  private applyButtons(alt: boolean): void {
+    if (!this.controls) return;
+    const NONE = -1 as unknown as THREE.MOUSE;
+    const scheme = this.nav.mouse;
+    let left: THREE.MOUSE = THREE.MOUSE.ROTATE;
+    let middle: THREE.MOUSE = THREE.MOUSE.DOLLY;
+    if (this.tool === 'pan') left = THREE.MOUSE.PAN;
+    else if (this.tool === 'zoom') left = THREE.MOUSE.DOLLY;
+    else if (this.tool !== 'orbit') {
+      if (scheme === 'ALT_LEFT') left = alt ? THREE.MOUSE.ROTATE : NONE;
+      else if (scheme === 'MIDDLE') {
+        left = NONE;
+        middle = THREE.MOUSE.ROTATE;
+      }
+    } else if (scheme === 'MIDDLE') middle = THREE.MOUSE.ROTATE;
+    this.controls.mouseButtons = { LEFT: left, MIDDLE: middle, RIGHT: THREE.MOUSE.PAN };
+  }
+
+  /** Settings ▸ Preferences: the floor grid (Fast mode only, never in a render) and the gizmo's size. */
+  setDisplay(display: DisplayPrefs): void {
+    this.gridOn = display.floorGrid;
+    this.gizmo.setScale(display.gizmoScale);
+    this.sizeGizmo();
+    if (this.state) this.syncGrid(this.state);
+    this.needsRender = true;
+  }
+
+  /** A grid on the floor plane with cells of a round size near a tenth of the part. */
+  private syncGrid(state: ProjectState): void {
+    const size = state.scene.partSizeMm || 200;
+    const cell = 10 ** Math.round(Math.log10(size / 10));
+    if (this.grid && cell !== this.gridCell) {
+      this.modelRoot.remove(this.grid);
+      this.grid.geometry.dispose();
+      (this.grid.material as THREE.Material).dispose();
+      this.grid = null;
+    }
+    if (!this.grid && this.gridOn) {
+      const n = 40;
+      const g = new THREE.GridHelper(cell * n, n, 0x8a8a8a, 0x5c5c5c);
+      const m = g.material as THREE.LineBasicMaterial;
+      m.transparent = true;
+      m.opacity = 0.45;
+      m.depthWrite = false;
+      // GridHelper lies on its XZ plane; the model is Z-up, so the floor is XY.
+      g.rotation.x = Math.PI / 2;
+      g.renderOrder = -1;
+      this.grid = g;
+      this.gridCell = cell;
+      this.modelRoot.add(g);
+    }
+    if (this.grid) this.grid.visible = this.gridOn && state.scene.roots.length > 0;
   }
 
   /** Ink of the outline (the theme's --ink-0), linear 0..1. */
@@ -339,6 +425,7 @@ export class PreviewEngine implements RenderEngine {
     if (full || state.environment !== prev.environment || poseEnv) this.syncEnvironment(state, pose);
     if (full || state.image !== prev.image) this.syncImage(state);
     if (full || nodesChanged || state.studio !== prev.studio || state.environment !== prev.environment) this.syncFloor(state);
+    if (full || nodesChanged || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncGrid(state);
     if (full || state.camera !== prev.camera || state.render.width !== prev.render.width || state.render.height !== prev.render.height || poseChanged || nodesChanged) {
       if (!this.interacting) this.syncCamera(state, pose);
     }
@@ -760,9 +847,11 @@ export class PreviewEngine implements RenderEngine {
     const bg = this.scene.background;
     const floorVisible = this.floor.visible;
     const lightsVisible = this.lightRoot.visible;
+    const gridVisible = this.grid?.visible ?? false;
     this.scene.background = null;
     this.floor.visible = false;
     this.lightRoot.visible = false;
+    if (this.grid) this.grid.visible = false;
     faces.visible = false;
     this.scene.overrideMaterial = this.depthOnly;
     this.renderer.render(this.scene, cam);
@@ -774,6 +863,7 @@ export class PreviewEngine implements RenderEngine {
     this.scene.background = bg;
     this.floor.visible = floorVisible;
     this.lightRoot.visible = lightsVisible;
+    if (this.grid) this.grid.visible = gridVisible;
   }
 
   private drawOutline(cam: THREE.Camera): void {
@@ -787,9 +877,11 @@ export class PreviewEngine implements RenderEngine {
     const bg = this.scene.background;
     const floorVisible = this.floor.visible;
     const lightsVisible = this.lightRoot.visible;
+    const gridVisible = this.grid?.visible ?? false;
     this.scene.background = null;
     this.floor.visible = false;
     this.lightRoot.visible = false;
+    if (this.grid) this.grid.visible = false;
     this.renderer.setRenderTarget(this.maskTarget);
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.clear();
@@ -807,6 +899,7 @@ export class PreviewEngine implements RenderEngine {
     this.scene.background = bg;
     this.floor.visible = floorVisible;
     this.lightRoot.visible = lightsVisible;
+    if (this.grid) this.grid.visible = gridVisible;
     this.renderer.setRenderTarget(null);
     const px = Math.max(1, Math.round(this.dpr));
     this.outlineMaterial.uniforms.mask.value = this.maskTarget.texture;
@@ -890,7 +983,7 @@ export class PreviewEngine implements RenderEngine {
     if (!id || !frame) return null;
     const rc = this.rayAt(x, y);
     const view = normalize(fromThree(this.camera.getWorldDirection(new THREE.Vector3())));
-    this.gizmoDragging = new GizmoDrag(id, frame, this.gizmo.worldSize, modelRay(rc, fromThree), { x, y }, view, this.gizmo.aimTarget);
+    this.gizmoDragging = new GizmoDrag(id, frame, this.gizmo.baseWorldSize, modelRay(rc, fromThree), { x, y }, view, this.gizmo.aimTarget);
     this.gizmo.setActive(id);
     this.needsRender = true;
     return id;
@@ -947,6 +1040,9 @@ export class PreviewEngine implements RenderEngine {
     const t0 = performance.now();
     const cam = (opts.camera && s.camera.cameras[opts.camera]) || activeCamera(s);
     const bg = this.scene.background;
+    // The floor grid is a working aid: never in a picture.
+    const gridVisible = this.grid?.visible ?? false;
+    if (this.grid) this.grid.visible = false;
     const out = document.createElement('canvas');
     out.width = opts.width;
     out.height = opts.height;
@@ -964,6 +1060,7 @@ export class PreviewEngine implements RenderEngine {
       out.getContext('2d')!.drawImage(this.renderer.domElement, 0, 0);
     } finally {
       this.scene.background = bg;
+      if (this.grid) this.grid.visible = gridVisible;
       this.renderer.setPixelRatio(this.dpr);
       this.renderer.setSize(this.width, this.height, false);
       this.syncCamera(s, this.poseActive ? evaluate(s, s.animation.playhead) : null);

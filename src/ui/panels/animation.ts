@@ -20,8 +20,8 @@ import { activeCamera } from '../../core/camera';
 import { allParts } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
 import * as cmd from '../commands';
-import { field, numberField, segmented, select } from '../components/controls';
-import { h, icon } from '../dom';
+import { field, lengthField, numberField, segmented, select } from '../components/controls';
+import { cssZoom, h, icon } from '../dom';
 import { dyn, lightName } from '../names';
 import { dynamic, shallowEq, type Ctx, type Scope } from '../reactive';
 import { clipSentence } from '../sentence';
@@ -163,7 +163,8 @@ function timeline(ctx: Ctx, scope: Scope): HTMLElement {
     );
     ruler.addEventListener('pointerdown', (e) => {
       const r = ruler.getBoundingClientRect();
-      store.dispatch({ type: 'anim/playhead', t: Math.max(0, (e.clientX - r.left) / px) });
+      // Screen pixels to the drawer's own (Interface size zooms it).
+      store.dispatch({ type: 'anim/playhead', t: Math.max(0, (e.clientX - r.left) / cssZoom(ruler) / px) });
     });
     // One lane per target; overlapping moves of a lane stack in rows.
     const lanes = new Map<string, { target: ClipTarget; rows: MotionClip[][] }>();
@@ -203,7 +204,7 @@ function timeline(ctx: Ctx, scope: Scope): HTMLElement {
               const gesture = `clip${c.id}${Date.now()}`;
               block.setPointerCapture(e.pointerId);
               const move = (ev: PointerEvent) => {
-                const d = Math.round(((ev.clientX - x0) / px) * 20) / 20;
+                const d = Math.round(((ev.clientX - x0) / cssZoom(block) / px) * 20) / 20;
                 const patch = stretch ? { duration: Math.max(0.05, dur0 + d) } : { start: Math.max(0, start0 + d) };
                 store.dispatch({ type: 'anim/setClip', id: c.id, patch, gesture, label: L('undo.editClip') });
               };
@@ -309,7 +310,8 @@ function wizard(ctx: Ctx, scope: Scope): HTMLElement {
   if (w.move) {
     const unit = UNIT_TEXT[amountUnit(w.move)];
     parts.push(h('div', { class: 'field-label', style: 'font-weight:600' }, `3 · ${t('anim.wizardHowMuch')}`));
-    if (w.move !== 'TINT') parts.push(field(lbl(moveKind(w.move)?.amountLabel ?? { en: t('anim.amount'), es: t('anim.amount') }), numberField({ value: w.amount, step: w.move === 'SCALE' || w.move === 'FOCUS' || w.move === 'EXPLODE' || amountUnit(w.move) === 'parts' ? 0.05 : 1, digits: 2, unit, onChange: (v) => set({ amount: v }) }).el));
+    const amountField = amountUnit(w.move) === 'mm' ? lengthField : numberField;
+    if (w.move !== 'TINT') parts.push(field(lbl(moveKind(w.move)?.amountLabel ?? { en: t('anim.amount'), es: t('anim.amount') }), amountField({ value: w.amount, step: w.move === 'SCALE' || w.move === 'FOCUS' || w.move === 'EXPLODE' || amountUnit(w.move) === 'parts' ? 0.05 : 1, digits: 2, unit: amountUnit(w.move) === 'mm' ? undefined : unit, onChange: (v) => set({ amount: v }) }).el));
     parts.push(field(t('anim.start'), numberField({ value: w.start, min: 0, step: 0.1, digits: 1, unit: 's', onChange: (v) => set({ start: v }) }).el));
     parts.push(field(t('anim.duration'), numberField({ value: w.duration, min: 0.1, step: 0.1, digits: 1, unit: 's', onChange: (v) => set({ duration: v }) }).el));
     parts.push(field(t('anim.easing'), select(EASING_KINDS.map((e) => ({ value: e.key, label: lbl(e.label) })), w.easing, (v) => set({ easing: v as EasingKind }), t('anim.easing')).el));
@@ -339,7 +341,8 @@ function clipEditor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
   const patch = (p: Partial<MotionClip>, g?: string) => store.dispatch({ type: 'anim/setClip', id, patch: p, gesture: g, label });
   const sentence = h('div', { style: 'font-weight:600;line-height:1.35' });
   const unit = UNIT_TEXT[amountUnit(c.move)];
-  const amount = numberField({ value: c.amount, step: c.move === 'SCALE' || c.move === 'FOCUS' || amountUnit(c.move) === 'parts' ? 0.05 : 1, digits: 2, unit, onChange: (v, g) => patch({ amount: v }, g) });
+  const mmAmount = amountUnit(c.move) === 'mm';
+  const amount = (mmAmount ? lengthField : numberField)({ value: c.amount, step: c.move === 'SCALE' || c.move === 'FOCUS' || amountUnit(c.move) === 'parts' ? 0.05 : 1, digits: 2, unit: mmAmount ? undefined : unit, onChange: (v, g) => patch({ amount: v }, g) });
   const start = numberField({ value: c.start, min: 0, step: 0.1, digits: 2, unit: 's', onChange: (v, g) => patch({ start: v }, g) });
   const dur = numberField({ value: c.duration, min: 0.05, step: 0.1, digits: 2, unit: 's', onChange: (v, g) => patch({ duration: v }, g) });
   const easing = select(EASING_KINDS.map((e) => ({ value: e.key, label: lbl(e.label) })), c.easing, (v) => patch({ easing: v as EasingKind }), t('anim.easing'));

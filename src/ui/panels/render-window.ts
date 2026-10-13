@@ -34,12 +34,12 @@ import { NAME_TOKENS, type NameToken } from '../../core/name-template';
 import * as cmd from '../commands';
 import { numberField, segmented, select, timeField, toggle } from '../components/controls';
 import { section } from '../components/section';
-import { h, icon, isTyping } from '../dom';
+import { h, icon, isTyping, placeAt } from '../dom';
 import { cameraName, dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
 import { nameValues } from '../render-queue';
 import { kbdText } from '../shortcuts';
-import { formatClock, formatNumber, getLang, lbl, t } from '../strings';
+import { formatClock, formatNumber, framesText, getLang, lbl, t } from '../strings';
 
 /** Seconds in words for estimates: "45 s", "4 min", "1 h 20 min". */
 export function formatDuration(seconds: number): string {
@@ -69,7 +69,7 @@ export function summaryLine(s: RenderSettings, frames: number): string {
   const out = `${formatText(s)} → ${dest}`;
   const ai = t('rw.summaryAiOff');
   if (s.mode === 'ANIMATION') {
-    return [t('rw.summaryFrames', { n: frames, fps: s.animation.fps }), `${s.width} × ${s.height}`, t('rw.perFrameShort', { x: finishText(s) }), out, ai].join(' · ');
+    return [t('rw.summaryFrames', { frames: framesText(frames), fps: s.animation.fps }), `${s.width} × ${s.height}`, t('rw.perFrameShort', { x: finishText(s) }), out, ai].join(' · ');
   }
   return [`${s.width} × ${s.height}`, `${s.dpi} ${t('rw.dpiUnit')}`, finishText(s), out, ai].join(' · ');
 }
@@ -84,7 +84,7 @@ export function estimateLine(s: RenderSettings, tp: number | null, frames: numbe
   if (s.mode === 'ANIMATION') {
     const each = estimateSeconds(s, tp, 1);
     if (each === null) return t('rw.estimateNone');
-    return t('rw.estimateFrames', { each: formatDuration(each), total: formatDuration(each * frames), n: frames });
+    return t('rw.estimateFrames', { each: formatDuration(each), total: formatDuration(each * frames), frames: framesText(frames) });
   }
   if (s.finishBy === 'TIME') {
     const n = estimateSamples(s, tp);
@@ -312,8 +312,8 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     const a = get().animation;
     return a.rangeUnit === 'SECONDS' ? Math.round(v * a.fps) + 1 : Math.round(v);
   };
-  const from = numberField({ value: 1, min: 0, max: 1_000_000, step: 1, digits: 2, ariaLabel: t('rw.from'), onChange: (v, g) => set({ animation: { ...get().animation, from: fromUnit(v) } }, g) });
-  const to = numberField({ value: 1, min: 0, max: 1_000_000, step: 1, digits: 2, ariaLabel: t('rw.to'), onChange: (v, g) => set({ animation: { ...get().animation, to: fromUnit(v) } }, g) });
+  const from = numberField({ value: 1, min: 0, max: 1_000_000, step: 1, digits: 2, ariaLabel: t('rw.rangeStart'), onChange: (v, g) => set({ animation: { ...get().animation, from: fromUnit(v) } }, g) });
+  const to = numberField({ value: 1, min: 0, max: 1_000_000, step: 1, digits: 2, ariaLabel: t('rw.rangeEnd'), onChange: (v, g) => set({ animation: { ...get().animation, to: fromUnit(v) } }, g) });
   const rangeBox = h('span', { class: 'rw-inline' }, h('span', { class: 'aux' }, t('rw.from')), from.el, h('span', { class: 'aux' }, t('rw.to')), to.el, rangeUnit.el);
   const fps = segmented(
     FPS_CHOICES.map((f) => ({ value: String(f), label: String(f) })),
@@ -410,11 +410,14 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
 
   // ------------------------------------------------------------------ AI (X3/X4 mount here)
   const aiMount = h('div', { class: 'rw-ai-mount', 'data-mount': 'ai-post' });
+  const aiDefault = h('span', { class: 'note' });
+  scope.watch((_s, u) => u.settings['ai.intervention'], (n) => (aiDefault.textContent = t('rw.aiDefault', { n })));
   const aiBody = h(
     'div',
     { class: 'rw-section' },
     row(t('rw.ai'), h('div', { class: 'rw-inline' }, toggle(false, () => {}, t('rw.ai'), !AI_AVAILABLE).el, h('span', { class: 'aux' }, t('common.comingSoon')))),
     h('p', { class: 'note rw-ai-note' }, t('rw.aiSoon')),
+    row(t('set.block.models'), h('div', { class: 'rw-inline' }, h('button', { type: 'button', class: 'btn', 'data-settings-link': 'ai.models', onclick: () => cmd.openSettings(ctx, 'ai.models') }, t('rw.aiManage')), aiDefault)),
     aiMount,
   );
 
@@ -507,9 +510,10 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     from.set(Number(toUnit(a.from).toFixed(2)));
     to.set(Number(toUnit(a.to).toFixed(2)));
     fps.set(String(a.fps));
-    durationNote.textContent = t('rw.duration', { frames: fr.count, time: formatNumber(fr.count / a.fps, getLang(), 2) });
+    durationNote.textContent = t('rw.duration', { frames: framesText(fr.count), time: formatNumber(fr.count / a.fps, getLang(), 2) });
     animOut.set(a.output);
-    codec.set(a.video);
+    // A codec is chosen only for video (until N1 the output is always frames).
+    codec.set(a.output === 'VIDEO' ? a.video : null);
     codec.el.style.opacity = VIDEO_AVAILABLE ? '' : '0.6';
     framesNote.textContent = t('rw.framesNote', { name: outputFileName(s.name, nameValues(st, { seq: st.render.seq + 1, settings: s }, null, fr.first), formatExtension(s.format), true) });
     // Quality.
@@ -544,9 +548,9 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     const r = win.getBoundingClientRect();
     const nx = Math.max(8 - r.width + 120, Math.min(window.innerWidth - 120, x));
     const ny = Math.max(8, Math.min(window.innerHeight - 48, y));
-    win.style.left = `${nx}px`;
-    win.style.top = `${ny}px`;
     win.style.transform = 'none';
+    // Screen pixels; the window may be zoomed by Settings ▸ Accessibility ▸ Interface size.
+    placeAt(win, nx, ny);
     return { x: nx, y: ny };
   };
   const pos0 = ui.get().renderWindowPos;
@@ -590,7 +594,9 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     const u = ui.get();
     if (u.paletteOpen || document.querySelector('.floating')) return;
     const target = e.target as HTMLElement | null;
-    const typing = isTyping(e);
+    // Typing is text being entered (a field being edited); a focused number field that is not being
+    // edited lets ⏎ render, so "type a value, ⏎, ⏎" commits and renders.
+    const typing = isTyping(e) && target?.getAttribute?.('role') !== 'spinbutton';
     const act = (fn: () => void) => {
       e.preventDefault();
       e.stopPropagation();

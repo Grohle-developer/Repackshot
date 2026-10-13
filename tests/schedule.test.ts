@@ -67,6 +67,18 @@ describe('finish by', () => {
     expect(e.passes).toHaveLength(1);
   });
 
+  it('time: time spent between passes counts too, and the render stops at the limit itself', async () => {
+    // Passes that cost nothing measured, with a quarter of a second around each one (conversion, reports).
+    let clock = 0;
+    let passes = 0;
+    const r = await runPasses(budget({ finishBy: 'TIME', maxSeconds: 1 }), {
+      now: () => clock,
+      pass: async () => (passes++, true),
+      progress: () => (clock += 250),
+    });
+    expect([r.samples, passes, clock]).toEqual([15, 4, 1000]);
+  });
+
   it('whichever comes first: the samples when they are reached before the time, the time otherwise', async () => {
     const fast = fakeEngine(1);
     expect(await runPasses(budget({ finishBy: 'FIRST', maxSamples: 64, maxSeconds: 10 }), fast.hooks)).toMatchObject({ samples: 64, reason: 'SAMPLES' });

@@ -29,10 +29,13 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'undo', label: 'action.undo', keys: 'mod+z', run: (ctx) => ctx.store.undo() },
   { id: 'redo', label: 'action.redo', keys: 'mod+shift+z', altKeys: ['mod+y'], run: (ctx) => ctx.store.redo() },
   { id: 'import', label: 'action.import', keys: 'mod+i', global: true, run: (ctx) => cmd.importDialog(ctx) },
-  { id: 'save', label: 'action.save', keys: 'mod+s', global: true, run: (ctx) => cmd.saveProject(ctx) },
+  { id: 'open', label: 'action.open', keys: 'mod+o', global: true, run: (ctx) => void cmd.openProject(ctx) },
+  { id: 'save', label: 'action.save', keys: 'mod+s', global: true, run: (ctx) => void cmd.saveProject(ctx) },
+  { id: 'saveAs', label: 'action.saveAs', keys: 'mod+shift+s', global: true, run: (ctx) => void cmd.saveProject(ctx, { saveAs: true }) },
   { id: 'render', label: 'action.render', keys: 'mod+enter', global: true, run: (ctx) => cmd.openRenderWindow(ctx) },
   { id: 'renderNow', label: 'action.renderNow', keys: 'mod+shift+enter', global: true, run: (ctx) => cmd.renderNow(ctx) },
   { id: 'viewportMode', label: 'action.viewportMode', keys: 'mod+shift+r', global: true, run: (ctx) => cmd.toggleViewportMode(ctx) },
+  { id: 'settings', label: 'action.settings', keys: 'mod+,', global: true, run: (ctx) => (ctx.ui.get().settingsWindow ? cmd.closeSettings(ctx) : cmd.openSettings(ctx)) },
   { id: 'frame', label: 'action.frame', keys: 'f', run: (ctx) => cmd.frameSelection(ctx) },
   { id: 'tool.select', label: 'tool.select', keys: 'v', run: setTool('select') },
   { id: 'tool.orbit', label: 'tool.orbit', keys: 'o', run: setTool('orbit') },
@@ -89,6 +92,17 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'langEn', label: 'action.langEn', run: (ctx) => cmd.setLanguage(ctx, 'en') },
   { id: 'langEs', label: 'action.langEs', run: (ctx) => cmd.setLanguage(ctx, 'es') },
 ];
+
+/** Where Settings ▸ Keyboard shortcuts lists an action. */
+export type ShortcutGroup = 'general' | 'view' | 'selection' | 'edit';
+export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['general', 'view', 'selection', 'edit'];
+
+export function shortcutGroup(id: string): ShortcutGroup {
+  if (id.startsWith('level.') || ['hide', 'isolate', 'showAll', 'deselect', 'delete', 'selectAll'].includes(id)) return 'selection';
+  if (id === 'tool.move' || id.startsWith('space.') || ['duplicate', 'duplicateLinked', 'group', 'ungroup', 'copyMaterial', 'pasteMaterial'].includes(id)) return 'edit';
+  if (id.startsWith('tool.') || id === 'frame' || id === 'panels' || id === 'viewportMode') return 'view';
+  return 'general';
+}
 
 export function actionById(id: string): AppAction | undefined {
   return ACTIONS.find((a) => a.id === id);

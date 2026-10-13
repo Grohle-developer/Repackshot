@@ -28,6 +28,38 @@ function writeCache(key: string, url: string): void {
   }
 }
 
+/** Bytes the sphere cache takes in localStorage (characters of its entries, UTF-16). */
+export function thumbCacheBytes(): number {
+  try {
+    const ls = window.localStorage;
+    let n = 0;
+    for (let i = 0; i < ls.length; i++) {
+      const k = ls.key(i);
+      if (k?.startsWith('repackshot.thumb.')) n += (k.length + (ls.getItem(k)?.length ?? 0)) * 2;
+    }
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
+/** Deletes the sphere cache (every version of it); the bytes freed. They are rendered again when needed. */
+export function clearThumbCache(): number {
+  const before = thumbCacheBytes();
+  try {
+    const ls = window.localStorage;
+    const keys: string[] = [];
+    for (let i = 0; i < ls.length; i++) {
+      const k = ls.key(i);
+      if (k?.startsWith('repackshot.thumb.')) keys.push(k);
+    }
+    for (const k of keys) ls.removeItem(k);
+  } catch {
+    return 0;
+  }
+  return before - thumbCacheBytes();
+}
+
 function dome(): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = 256;

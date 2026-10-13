@@ -20,6 +20,7 @@ Do not add a dependency. If something is missing, write it.
 | `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `environment`, `integrator` (the path tracer), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
 | `crates/rt-cli` | binaries `rt`, `rt-bench` + library | Native front end: reads an `.rsb` file, renders progressively on all cores within the time budget, writes a PNG; `rt --sheet` renders the contact sheet; `rt-bench` measures ray throughput. Files, threads and timing live here. |
 | `crates/rt-wasm` | `cdylib` + `rlib` | WebAssembly build with a hand-written C ABI (no `wasm-bindgen`). Its `unsafe` is confined to `src/ffi.rs`. |
+| `crates/rt-app` | binary `repackshot` + library | The desktop launcher (P2): serves the interface on 127.0.0.1 with a per-launch token, opens it in an Edge or Chromium app window, renders natively on every thread through `/api/render` (the same film as `rt`), stores AI models by SHA-256 and detects the hardware for the model recommendation. `std` only, `#![forbid(unsafe_code)]`. Its API contract (in Spanish) is [`crates/rt-app/README.md`](crates/rt-app/README.md). |
 | `tools/wasi-run.mjs` | script | Cargo runner that executes `wasm32-wasip1` test binaries under Node's WASI (see below). |
 | `tools/wasm-parity.mjs` | script | Renders an RSB scene with the real `rt_wasm.wasm` in Node and checks its film hash against the native one. |
 
@@ -57,6 +58,20 @@ RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-core --release --target 
 
 (Use `--release`: Node 22 itself crashes running the whole debug-build test binary, although
 every test passes on its own.)
+
+## The desktop application
+
+```sh
+cargo run --release -p rt-app -- --app-dir ../dist          # serve ../dist and open the app window
+cargo run --release -p rt-app -- --serve-only --app-dir ../dist   # no window: prints the URL with its token
+cargo run --release -p rt-app -- --hardware hw.ini            # what the installer reads (UTF-16 INI)
+```
+
+From the repository root, `npm run release` builds `repackshot` for `x86_64-pc-windows-gnu`
+(mingw-w64; `build.rs` embeds the icon and the version) and `x86_64-unknown-linux-musl` (static),
+and packages the two portables and the NSIS installer (`packaging/release.mjs`);
+`node packaging/smoke.mjs <repackshot[.exe]>` checks a build (under Wine for the `.exe`): the
+interface, the token, and the example rendered through `/api/render` to the pinned hash.
 
 ## Render something
 

@@ -1,6 +1,9 @@
 /* Design tokens (UI.md §1). Every colour of the chrome lives here and has
    zero saturation; tests/ui-achromatic.test.ts enforces it. Light theme on
-   :root, dark theme on :root[data-theme="dark"] (the default). */
+   :root, dark theme on :root[data-theme="dark"] (the default), and for each a
+   high-contrast variant (Settings ▸ Accessibility): stronger borders and
+   auxiliary text, still achromatic. --ui-zoom (interface size) and
+   --text-scale (text size) come from the same section (ui/settings-effects.ts). */
 
 :root {
   --bg-0: #ffffff;
@@ -26,10 +29,13 @@
 
   --font: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-  --fs-body: 13px;
-  --fs-label: 12px;
-  --fs-aux: 11px;
-  --fs-title: 15px;
+  --ui-zoom: 1;
+  --text-scale: 1;
+  --fs-body: calc(13px * var(--text-scale));
+  --fs-label: calc(12px * var(--text-scale));
+  --fs-aux: calc(11px * var(--text-scale));
+  --fs-title: calc(15px * var(--text-scale));
+  --focus-ring: 1.5px;
   --radius: 4px;
   --pad: 12px;
   --header-h: 44px;
@@ -64,14 +70,91 @@
   color-scheme: dark;
 }
 
+/* High contrast (Settings ▸ Accessibility): the same greys, further apart. */
+:root[data-theme='light'][data-contrast='high'] {
+  --ink-1: #141414;
+  --ink-2: #383838;
+  --ink-3: #575757;
+  --line: #6e6e6e;
+  --line-strong: #000000;
+  --overlay-line: rgba(0, 0, 0, 0.4);
+  --hover: #dedede;
+  --focus-ring: 2.5px;
+}
+:root[data-theme='dark'][data-contrast='high'] {
+  --ink-1: #f2f2f2;
+  --ink-2: #d2d2d2;
+  --ink-3: #ababab;
+  --line: #8c8c8c;
+  --line-strong: #ffffff;
+  --overlay-line: rgba(255, 255, 255, 0.4);
+  --hover: #333333;
+  --focus-ring: 2.5px;
+}
+
+/* Reduce motion: System follows the system (and Off overrides it), On always. */
 @media (prefers-reduced-motion: reduce) {
-  :root {
+  :root:not([data-motion='full']) {
     --ease: 0ms linear;
   }
-  *,
-  *::before,
-  *::after {
+  :root:not([data-motion='full']) *,
+  :root:not([data-motion='full']) *::before,
+  :root:not([data-motion='full']) *::after {
     transition: none !important;
     animation: none !important;
   }
+}
+:root[data-motion='reduce'] {
+  --ease: 0ms linear;
+}
+:root[data-motion='reduce'] *,
+:root[data-motion='reduce'] *::before,
+:root[data-motion='reduce'] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Focus always visible: also after a click, not only with the keyboard. */
+:root[data-focus='always'] :is(button, a, input, select, textarea, summary, [tabindex], [role='spinbutton']):focus {
+  outline: var(--focus-ring) solid var(--line-strong);
+  outline-offset: 1px;
+}
+
+/* Screen-reader-only text (the render progress announcer). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Interface size: the chrome is zoomed; the viewport's image keeps one pixel per pixel. */
+.hdr,
+.side,
+.bar-wrap,
+.status,
+.toasts,
+.floating,
+.tooltip,
+.palette,
+.rw,
+.sw,
+.ov-tl,
+.ov-tr,
+.ov-bl,
+.ov-br,
+.ov-pick,
+.ov-confirm > *,
+.rv-head,
+.empty-zone {
+  zoom: var(--ui-zoom);
+}
+/* A submenu sits inside its menu, which is zoomed already. */
+.floating .floating {
+  zoom: 1;
 }

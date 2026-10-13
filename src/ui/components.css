@@ -31,7 +31,7 @@ kbd,
   border: 1px solid var(--line);
   border-radius: 3px;
   font-family: var(--font);
-  font-size: 10px;
+  font-size: calc(10px * var(--text-scale));
   color: var(--ink-2);
   background: var(--bg-0);
   white-space: nowrap;
@@ -84,7 +84,7 @@ kbd,
 .btn-big {
   height: 40px;
   padding: 0 26px;
-  font-size: 15px;
+  font-size: calc(15px * var(--text-scale));
   font-weight: 600;
   position: relative;
   overflow: hidden;
@@ -675,7 +675,7 @@ kbd,
   position: fixed;
   top: 12vh;
   left: 50%;
-  width: min(620px, calc(100vw - 32px));
+  width: min(620px, calc((100vw - 32px) / var(--ui-zoom)));
   transform: translateX(-50%);
   z-index: 201;
   display: flex;
@@ -688,7 +688,7 @@ kbd,
   border: 0;
   border-bottom: 1px solid var(--line);
   background: transparent;
-  font-size: 15px;
+  font-size: calc(15px * var(--text-scale));
   outline: none;
 }
 .palette-list {
@@ -757,6 +757,7 @@ kbd,
   left: 50%;
   bottom: calc(var(--bar-h) + var(--status-h) + 16px);
   transform: translateX(-50%);
+  max-width: calc((100vw - 32px) / var(--ui-zoom));
   display: flex;
   flex-direction: column;
   gap: 6px;

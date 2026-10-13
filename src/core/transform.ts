@@ -31,7 +31,7 @@ import {
   type Mat4,
   type Vec3,
 } from './math';
-import { ensureMesh, flipMesh, getMesh, hashIndices, resmoothMesh, sliceMesh, triangleSource, type MeshId, type MeshRef } from './meshes';
+import { ensureMesh, flipMesh, getMesh, hashIndices, remapTriangleRanges, resmoothMesh, sliceMesh, triangleSource, type MeshId, type MeshRef } from './meshes';
 import {
   boundsOf,
   centerXY,
@@ -867,6 +867,7 @@ function setSmoothAngle(state: ProjectState, ids: readonly NodeId[], deg: number
         const next: SceneNode = { ...n, mesh: ref, smoothAngle: angle, smooth: true };
         // Only a mesh made from the stem renumbers triangles relative to it.
         if (n.faceMaterials?.length && source && meshId === stem) next.faceMaterials = remapRanges(n.faceMaterials, source);
+        if (n.faceRanges?.length && source && meshId === stem) next.faceRanges = remapTriangleRanges(n.faceRanges, source);
         return next;
       };
     },
@@ -921,6 +922,8 @@ function separateByMaterial(state: ProjectState, ids: readonly NodeId[], names: 
         smooth: node.smooth,
       };
       if (node.smoothAngle !== undefined) part.smoothAngle = node.smoothAngle;
+      // The CAD faces (STEP, IGES) of the slice, numbered in it.
+      if (node.faceRanges?.length) part.faceRanges = remapTriangleRanges(node.faceRanges, tris);
       d.nodes[id] = part;
       made.push(id);
     }

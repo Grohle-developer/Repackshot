@@ -164,6 +164,11 @@ borra lo que ningún otro instalado usa. Que stable-diffusion.cpp cargue
 cada combinación está sin probar: lo prueba X1 parte B antes de quitar
 la marca *provisional*.
 
+La memoria se evalúa como **medida / 0,94**: los equipos muestran menos
+memoria útil que la nominal (un equipo de "16 GB" da 15,6 GiB) y sin el
+factor caerían una fila más abajo. Se prefiere la RAM instalada cuando se
+puede leer.
+
 **Regla de recomendación** (valores de partida, a calibrar en X1 con el
 pico real de memoria a 1024² y un margen del 20–30 % para activaciones):
 

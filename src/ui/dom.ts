@@ -132,3 +132,20 @@ export function hexToLinear(hex: string): [number, number, number] {
   const round = (x: number) => Math.round(x * 10000) / 10000;
   return [round(r), round(g), round(b)];
 }
+
+/**
+ * The effective CSS zoom of an element (Settings ▸ Accessibility ▸ Interface size zooms the chrome). A
+ * position written in `left` / `top` is multiplied by it, while pointer events and getBoundingClientRect are in
+ * screen pixels: positions computed from those are divided by it (`placeAt`).
+ */
+export function cssZoom(el: Element): number {
+  const z = (el as Element & { currentCSSZoom?: number }).currentCSSZoom;
+  return typeof z === 'number' && z > 0 ? z : 1;
+}
+
+/** Puts a fixed element at a point of the screen (CSS pixels of the window), whatever the interface size. */
+export function placeAt(el: HTMLElement, x: number, y: number): void {
+  const z = cssZoom(el);
+  el.style.left = `${x / z}px`;
+  el.style.top = `${y / z}px`;
+}

@@ -7,12 +7,17 @@ declare module 'node:fs' {
   export function writeFileSync(path: string, data: Uint8Array | string): void;
   export function existsSync(path: string): boolean;
   export function readdirSync(path: string): string[];
+  export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
 }
+declare module 'node:path' {
+  export function join(...parts: string[]): string;
+}
+declare const process: { env: Record<string, string | undefined> };
 declare module 'node:buffer' {
   export function resolveObjectURL(url: string): Blob | undefined;
 }
 declare module 'node:module' {
-  export function createRequire(url: string): { resolve(id: string): string };
+  export function createRequire(url: string): { (id: string): unknown; resolve(id: string): string };
 }
 declare module 'node:worker_threads' {
   export class Worker {
@@ -25,4 +30,7 @@ declare module 'node:worker_threads' {
 }
 declare module 'node:zlib' {
   export function inflateSync(data: Uint8Array): Uint8Array;
+}
+declare module 'node:crypto' {
+  export function createHash(algorithm: 'sha256'): { update(data: Uint8Array): { digest(encoding: 'hex'): string } };
 }

@@ -12,8 +12,8 @@ import * as cmd from '../commands';
 import { h, icon } from '../dom';
 import { cameraName, dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
-import { jobFileNames } from '../render-queue';
-import { formatClock, formatNumber, getLang, t } from '../strings';
+import { jobFileNames, jobFrames } from '../render-queue';
+import { formatClock, formatNumber, framesText, getLang, t } from '../strings';
 
 function finishByText(s: RenderSettings): string {
   const n = t('rw.summarySamples', { n: formatNumber(s.maxSamples, getLang(), 0) });
@@ -40,8 +40,10 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
     const running = j.status === 'RUNNING';
     const finished = j.status === 'DONE' || j.status === 'FAILED' || j.status === 'CANCELLED';
     const result = j.resultIds.map((id) => results.find((r) => r.id === id)).find(Boolean);
-    const name = jobFileNames(s, j)[0] ?? '';
     const anim = j.settings.mode === 'ANIMATION';
+    // An animation is named by its first frame, and counts the frames of its range.
+    const name = `${jobFileNames(s, j)[0] ?? ''}${anim ? '…' : ''}`;
+    const frameCount = j.frames || jobFrames(s, j.settings).length;
     const cam = j.settings.camera.kind === 'ONE' ? s.camera.cameras[j.settings.camera.id] : undefined;
     const pic = result?.thumb ? h('img', { src: result.thumb, alt: '', class: 'queue-pic' }) : h('span', { class: 'queue-pic queue-pic-empty' }, icon(anim ? 'film' : 'camera', 14));
     const statusText = running && anim && j.frames > 0 ? t('queue.frameOf', { i: j.frame || 1, n: j.frames }) : t(dyn(`queue.status.${j.status}`));
@@ -63,7 +65,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       pic,
       h('span', { class: 'queue-name', title: name }, name),
       h('span', { class: 'aux' }, anim ? t('queue.timeline') : cam ? cameraName(s, cam) : '—'),
-      h('span', { class: 'tabular' }, anim ? `${j.settings.width} × ${j.settings.height} · ${t('queue.frames', { n: j.frames || '–' })}` : `${j.settings.width} × ${j.settings.height}`),
+      h('span', { class: 'tabular' }, anim ? `${j.settings.width} × ${j.settings.height} · ${framesText(frameCount)}` : `${j.settings.width} × ${j.settings.height}`),
       h('span', { class: 'tabular' }, finishByText(j.settings)),
       h('span', { class: 'aux' }, j.settings.ai.enabled ? t('queue.aiYes') : t('queue.aiNo')),
       h('span', { class: `queue-status${j.status === 'FAILED' ? ' warn-text' : ''}`, title: j.error ?? '' }, statusText, h('div', { class: 'bar-meter' }, h('div', { style: `width:${Math.round(j.progress * 100)}%` }))),

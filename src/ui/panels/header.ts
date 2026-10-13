@@ -1,28 +1,14 @@
 // Header (UI.md §2.1): app menu, project name, undo / redo, the viewport
 // mode (Fast · Full), search, guide, theme.
 
-import { VERSION } from '../../core/version';
 import * as cmd from '../commands';
 import { segmented } from '../components/controls';
-import { confirmBox, openFloating, openMenu, type MenuEntry } from '../components/widgets';
+import { confirmBox, openFloating, openMenu, type ConfirmSpec, type MenuEntry } from '../components/widgets';
 import { h, icon } from '../dom';
 import type { Ctx, Scope } from '../reactive';
-import { ACTIONS, kbdFor, kbdText } from '../shortcuts';
+import { kbdFor } from '../shortcuts';
 import { t } from '../strings';
 import { effectiveMode, type ViewportMode } from '../ui-state';
-
-function shortcutSheet(): HTMLElement {
-  const rows = ACTIONS.filter((a) => a.keys && !a.id.startsWith('tool.')).map((a) =>
-    h('div', { class: 'menu-item', style: 'cursor:default' }, h('span', null, t(a.label)), h('span', { class: 'menu-right' }, h('kbd', null, kbdText(a.keys)), ...(a.altKeys ?? []).map((k) => h('kbd', null, kbdText(k))))),
-  );
-  return h(
-    'div',
-    { class: 'menu', style: 'max-height:70vh;overflow:auto;min-width:340px' },
-    h('div', { class: 'menu-label aux' }, t('shortcuts.title')),
-    ...rows,
-    h('div', { class: 'menu-item', style: 'cursor:default' }, h('span', null, t('shortcuts.tools')), h('span', { class: 'menu-right' }, ...['v', 'o', 'p', 'z', 'm'].map((k) => h('kbd', null, k.toUpperCase())))),
-  );
-}
 
 export function header(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui } = ctx;
@@ -31,17 +17,10 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
   const openAppMenu = () => {
     const s = store.get();
     const entries: (MenuEntry | null | { heading: string })[] = [
-      {
-        label: t('menu.new'),
-        icon: 'file',
-        run: () => {
-          if (!store.get().meta.dirty) return cmd.newProject(ctx);
-          let close = () => {};
-          close = openFloating(menuBtn, confirmBox({ message: t('menu.newConfirm'), options: [{ label: t('common.yes'), primary: true, run: () => cmd.newProject(ctx) }], cancelLabel: t('common.no') }, () => close()));
-        },
-      },
-      { label: t('menu.openProject'), icon: 'folder', disabled: true, note: t('menu.openSoon') },
-      { label: t('menu.save'), icon: 'save', kbd: kbdFor('save'), run: () => cmd.saveProject(ctx) },
+      { label: t('menu.new'), icon: 'file', run: () => cmd.requestNewProject(ctx) },
+      { label: t('menu.openProject'), icon: 'folder', kbd: kbdFor('open'), run: () => void cmd.openProject(ctx) },
+      { label: t('menu.save'), icon: 'save', kbd: kbdFor('save'), run: () => void cmd.saveProject(ctx) },
+      { label: t('menu.saveAs'), icon: 'save', kbd: kbdFor('saveAs'), run: () => void cmd.saveProject(ctx, { saveAs: true }) },
       { label: t('menu.import'), icon: 'upload', kbd: kbdFor('import'), run: () => void cmd.importDialog(ctx) },
       { label: t('menu.exportImage'), icon: 'download', run: () => void cmd.exportViewport(ctx) },
       { label: t('menu.exportLibrary'), icon: 'download', run: () => cmd.exportLibraryFile(ctx) },
@@ -54,14 +33,11 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
       { label: t('theme.dark'), checked: s.meta.theme === 'dark', run: () => cmd.setTheme(ctx, 'dark') },
       { label: t('theme.light'), checked: s.meta.theme === 'light', run: () => cmd.setTheme(ctx, 'light') },
       { label: t('theme.system'), checked: s.meta.theme === 'system', run: () => cmd.setTheme(ctx, 'system') },
+      { label: t('menu.settings'), icon: 'settings', kbd: kbdFor('settings'), run: () => cmd.openSettings(ctx) },
       null,
       { label: t('menu.guide'), icon: 'guide', run: () => cmd.openGuide(ctx) },
-      { label: t('menu.shortcuts'), icon: 'keyboard', run: () => openFloating(menuBtn, shortcutSheet()) },
-      {
-        label: t('menu.about'),
-        icon: 'info',
-        run: () => openFloating(menuBtn, h('div', { class: 'menu' }, h('div', { class: 'menu-note note', style: 'padding:10px 12px' }, t('menu.aboutText', { version: VERSION })))),
-      },
+      { label: t('menu.shortcuts'), icon: 'keyboard', run: () => cmd.openSettings(ctx, 'shortcuts') },
+      { label: t('menu.about'), icon: 'info', run: () => cmd.openSettings(ctx, 'about') },
     ];
     openMenu(menuBtn, entries);
   };
@@ -100,6 +76,23 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
       dirtyDot.style.display = m.dirty ? '' : 'none';
     },
   );
+
+  // The inline question of New and Open when there are unsaved changes: under the project name, Esc cancels.
+  let closePrompt: (() => void) | null = null;
+  scope.watch(
+    (_s, u) => u.prompt,
+    (spec: ConfirmSpec | null) => {
+      closePrompt?.();
+      closePrompt = null;
+      if (!spec) return;
+      const done = () => {
+        if (ui.get().prompt === spec) ui.set({ prompt: null });
+        closePrompt?.();
+      };
+      closePrompt = openFloating(nameEl, confirmBox(spec, done), { onClose: () => ui.get().prompt === spec && ui.set({ prompt: null }) });
+    },
+  );
+  scope.onDispose(() => closePrompt?.());
 
   // Undo / redo with the label in the tooltip.
   const undoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('header.undo'), 'data-kbd': kbdFor('undo'), onclick: () => store.undo() }, icon('undo'));

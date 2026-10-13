@@ -31,6 +31,8 @@ export interface UrlParams {
   mode?: ViewportMode;
   /** Opens the render window in Image or Animation mode. */
   render?: 'IMAGE' | 'ANIMATION';
+  /** Opens the Settings window at a section, a part of one or a row (`ai.models`, `engine.threads`). */
+  settings?: string;
 }
 
 export function readUrlParams(search: string): UrlParams {
@@ -64,6 +66,8 @@ export function readUrlParams(search: string): UrlParams {
   if (mode === 'fast' || mode === 'full') out.mode = mode === 'fast' ? 'FAST' : 'FULL';
   const render = q.get('render')?.toLowerCase();
   if (render === 'image' || render === 'animation') out.render = render === 'image' ? 'IMAGE' : 'ANIMATION';
+  const settings = q.get('settings');
+  if (settings !== null) out.settings = /^[A-Za-z0-9.]{0,64}$/.test(settings) ? settings : '';
   return out;
 }
 
@@ -103,4 +107,5 @@ export function applyUrlParams(ctx: Ctx, p: UrlParams): void {
     if (ctx.store.get().render.mode !== p.render) ctx.store.dispatch({ type: 'render/set', patch: { mode: p.render } });
     cmd.openRenderWindow(ctx);
   }
+  if (p.settings !== undefined) cmd.openSettings(ctx, p.settings || undefined);
 }

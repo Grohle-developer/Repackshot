@@ -52,7 +52,13 @@ la verdad; esta lista orienta). **rhino3dm 8.35.0** (openNURBS, MIT,
 Robert McNeel & Associates): lee `.3dm` en `io/rhino.ts`, cargado bajo
 demanda en un worker; `rhino3dm.js` y `.wasm` se copian de
 `node_modules` a `public/vendor/rhino3dm/` al construir
-(`tools/vendor.mjs`). Motor: Rust estable (1.97 al arrancar),
+(`tools/vendor.mjs`). **occt-import-js 0.0.23** (OpenCascade en wasm,
+LGPL-2.1, Viktor Kovács): lee STEP e IGES en `io/step.ts` con un worker
+propio (`io/step-worker.ts`) que descarga `occt-import-js.js` y `.wasm`
+sin modificar de `public/vendor/occt-import-js/`, copiados por
+`tools/vendor.mjs` con `license.occt-import-js.txt`, `license.occt.txt` y
+un `README.txt` con la versión y los enlaces al fuente;
+`tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable (1.97 al arrancar),
 objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 `riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
 
@@ -85,7 +91,7 @@ src/
   ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core; workers con ONNX Runtime Web; la guarda es TypeScript puro
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
-    gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts (I2, OCCT)
+    gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
     project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
@@ -112,8 +118,8 @@ public/engine/rt.wasm       el motor compilado para el navegador (generado por n
 **Regla de dependencias**: `ui → core`, `render → core`, `io → core`,
 `core → data`. Nunca al revés, nunca `ui → render` directamente (el
 *store* expone lo que el visor necesita y el visor se suscribe). Un test
-de la suite (`tests/boundaries.test.ts`, fase U2) recorre los `import` y
-falla si se viola. El motor (`engine/`) no conoce nada de `src/`: su
+de la suite (`tests/boundaries.test.ts`, U2) recorre los `import` y
+falla si se viola; hoy no hay ninguna infracción. El motor (`engine/`) no conoce nada de `src/`: su
 única interfaz con el resto es el formato RSB (§5.2) y las exportaciones
 de `rt-wasm` (§5.3).
 
@@ -133,7 +139,8 @@ Contratos (ver `src/data/types.ts`, que manda sobre este resumen):
   izquierda de cámara, `±90` laterales, `180` detrás de la pieza. `size`,
   `sizeY` y `dist` en **tamaños de pieza**: la misma receta vale para un
   anillo y para un sofá. `share` (montajes) es la fracción de la
-  irradiancia total; `energy` (estudios) vatios a tamaño 1. `kelvin` o
+  irradiancia total; `energy` (estudios) vatios a tamaño 1, en el sentido
+de Cycles: un panel de potencia P y área A tiene radiancia P / (4 A). `kelvin` o
   `color`; `color` gana. `camera = true` es un panel luminoso que la
   cámara ve (campo claro).
 - **`StudioPreset`** — tipo de producto: tamaño típico, focal, diafragma,
@@ -361,8 +368,9 @@ sin `MESH` que conserva las mallas cargadas y sus BVH (cámara, luces,
 materiales, entorno, render cambian sin reconstruir geometría); por eso
 las mallas declaran siempre material 0 y el material real va en `INST`,
 que se escribe siempre. Unidades: milímetros, Z arriba, sensor de 36 mm
-en el lado largo; flujo de un panel = potencia del rig × tamaño² / 4
-(`src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits (texturas, HDRI) viajan como secciones
+en el lado largo; flujo de un panel = π/4 × potencia del rig × tamaño²
+(convención de las luces de área de Blender Cycles, L = P / (4 A), con la
+que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits (texturas, HDRI) viajan como secciones
 propias cuando lleguen (E5, M2).
 
 ### 5.3 · En el navegador: workers
@@ -409,7 +417,10 @@ externos, sin `unsafe`). Hace cinco cosas:
    navegador por defecto. Se cierra cuando se cierra la ventana (proceso
    hijo y latido de la página). Un segundo arranque abre otra ventana del
    mismo servidor.
-3. **Motor nativo**: `POST /api/render` con el RSB renderiza con
+3. **Motor nativo**: `POST /api/render` con el RSB (y `full=1` cuando el
+   cuerpo es la escena entera aunque no traiga `MESH`, como la de un
+   proyecto vacío; sin él, un RSB sin mallas es una actualización y, si no
+   hay escena cargada, la respuesta es 409 `need-meshes`) renderiza con
    `rt-core` en todos los hilos y la página recoge las pasadas
    acumuladas; mismo RSB, misma semilla, mismos píxeles que el wasm
    (regla de determinismo), así que la interfaz no distingue más que en
@@ -470,8 +481,14 @@ Reglas, heredadas de EZ Packshot y no negociables:
 
 ## 8 · Formato de proyecto (`.repack.json`)
 
-`{ "format": "repackshot-project", "schema": 1, "state": ProjectState }`.
-Las mallas importadas se guardan **dentro** como GLB en base64 por defecto
-(un proyecto es un archivo), con opción de referencia externa por ruta.
-Las migraciones de esquema viven en `io/project.ts` y se prueban con un
-fichero fijo por versión.
+`{ "format": "repackshot-project", "schema": 2, "state": ProjectState,
+"meshes": [{ "id", "glb", "sharpEdges"?, "triangleSource"? }] }` (U2). Las
+mallas se guardan **dentro**, un GLB en base64 por malla usada (glTF 2.0
+válido, con la transformación Z arriba mm → Y arriba m para otros
+visores, que el lector ignora); al lado van las aristas vivas y el mapa
+de re-suavizado, que glTF no tiene. La referencia externa por ruta queda
+para después. El esquema versiona solo `state`; las migraciones viven en
+`io/project.ts` y se prueban con un fichero fijo por versión
+(`tests/fixtures/project-v1.json`, `project-v2.json`). Al abrir, los ids
+de malla que chocarían con otra geometría pasan a un prefijo `prjN:`,
+porque la vista previa y los workers cachean por id.

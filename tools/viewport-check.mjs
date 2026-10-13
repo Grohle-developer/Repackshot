@@ -9,7 +9,8 @@
 // (`cargo build --release -p rt-cli`).
 //
 //   (a) parity: the RSB the page exports, rendered by `rt` at 4 samples, and Render in the page at 4
-//       samples (the pool of workers) give the same image hash;
+//       samples (the pool of workers) give the same image hash; Render is driven through the render
+//       window (Ctrl ⏎, samples in Quality, the Render button);
 //   (b) Full mode converges in the viewport and the meter shows real sample counts;
 //   (c) orbiting in Full mode presents frames at reduced resolution (frames per second measured);
 //   (d) Render in Fast mode gives the path tracer's image: sampling noise and a soft contact shadow
@@ -181,13 +182,34 @@ async function open(browser, query, { block = false } = {}) {
   return { page, context, errors };
 }
 
-/** Types a value into a number field (Enter starts editing, Enter commits). */
-async function setNumber(page, label, value) {
-  const field = page.locator(`[role="spinbutton"][aria-label="${label}"]`).first();
-  await field.focus();
-  await page.keyboard.press('Enter');
+/** Opens the render window (Ctrl ⏎ with the viewport focused) unless it is open. */
+async function openRenderWindow(page) {
+  if (await page.locator('[data-render-window]').count()) return;
+  await page.locator('canvas[aria-label="viewport"]').focus();
+  await page.keyboard.press('Control+Enter');
+  await page.waitForSelector('[data-render-window]', { timeout: 10000 });
+}
+
+/**
+ * Sets the samples in the render window's Quality section and leaves the window open. The field is
+ * edited by a double click: ⏎ on a focused number field of the window means Render.
+ */
+async function setSamples(page, value) {
+  await openRenderWindow(page);
+  const field = page.locator('[data-render-window] [role="spinbutton"][aria-label="Samples"]').first();
+  await field.waitFor({ state: 'visible', timeout: 10000 });
+  await field.dblclick();
+  await page.keyboard.press('Control+a');
   await page.keyboard.type(String(value));
   await page.keyboard.press('Enter');
+  const shown = await field.evaluate((el) => el.getAttribute('aria-valuenow') ?? el.textContent);
+  if (Number(String(shown).replace(/\D/g, '')) !== value) fail(`the render window shows ${shown} samples, not ${value}`);
+}
+
+async function closeRenderWindow(page) {
+  if (!(await page.locator('[data-render-window]').count())) return;
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[data-render-window]', { state: 'detached', timeout: 10000 });
 }
 
 async function paletteRun(page, text) {
@@ -197,9 +219,11 @@ async function paletteRun(page, text) {
   await page.keyboard.press('Enter');
 }
 
+/** Render, from the render window (opened if it is not): waits for the PNG it downloads. */
 async function renderDownload(page, timeout = 600000) {
+  await openRenderWindow(page);
   const download = page.waitForEvent('download', { timeout });
-  await page.locator('[data-guide="render"]').click();
+  await page.locator('[data-render-window] .rw-foot .btn-primary').click();
   const d = await download;
   const path = join(OUT, d.suggestedFilename());
   await d.saveAs(path);
@@ -264,7 +288,14 @@ try {
     await page.keyboard.press('Control+Shift+R');
     await page.waitForTimeout(400);
     const afterShortcut2 = await modeOf();
-    const remembered = await page.evaluate(() => localStorage.getItem('repackshot.ui.viewportMode'));
+    // The mode is remembered in the layout of the one settings entry (it was a loose key before).
+    const remembered = await page.evaluate(() => {
+      try {
+        return JSON.parse(localStorage.getItem('repackshot.settings') ?? 'null')?.layout?.viewportMode ?? null;
+      } catch {
+        return null;
+      }
+    });
     await context.close();
     const blocked = await open(browser, `${STUDIO}&mode=full`, { block: true });
     await blocked.page.waitForFunction(() => document.querySelector('.mode-reason')?.textContent?.length > 0, null, { timeout: 30000 });
@@ -281,7 +312,7 @@ try {
     await blocked.page.screenshot({ path: join(OUT, 'header-full-disabled.png'), clip: hdr });
     await blocked.context.close();
     results.e = { before, afterClick, afterShortcut, afterShortcut2, remembered, disabled, errors: [...errors, ...blocked.errors] };
-    const ok = before === 'fast' && afterClick === 'full' && afterShortcut === 'fast' && afterShortcut2 === 'full' && remembered === '"FULL"' && disabled.fullDisabled && disabled.mode === 'fast' && disabled.modeAfterShortcut === 'fast' && /engine:build/.test(disabled.reason);
+    const ok = before === 'fast' && afterClick === 'full' && afterShortcut === 'fast' && afterShortcut2 === 'full' && remembered === 'FULL' && disabled.fullDisabled && disabled.mode === 'fast' && disabled.modeAfterShortcut === 'fast' && /engine:build/.test(disabled.reason);
     results.e.ok = ok;
     console.log(`(e) toggle ${before} -> click ${afterClick} -> Ctrl+Shift+R ${afterShortcut} -> ${afterShortcut2}; without rt.wasm: Full disabled=${disabled.fullDisabled}, "${disabled.reason}" ${ok ? 'OK' : 'FAILED'}`);
   }
@@ -362,7 +393,8 @@ try {
     const { page, context, errors } = await open(browser, `${STUDIO}&mode=fast`);
     await page.waitForFunction(() => !document.querySelectorAll('.hdr .seg button')[1]?.disabled, null, { timeout: 30000 });
     await page.locator('button[role="switch"][aria-label="Contact shadow"]').click();
-    await setNumber(page, 'samples', 4);
+    await setSamples(page, 4);
+    await closeRenderWindow(page);
     await page.waitForTimeout(300);
     const rsbWait = page.waitForEvent('download', { timeout: 30000 });
     await paletteRun(page, 'Export engine scene');
@@ -423,7 +455,7 @@ try {
 
     // The documentation's render: same studio, its own shadow setting, more samples.
     await page.locator('button[role="switch"][aria-label="Contact shadow"]').click();
-    await setNumber(page, 'samples', DOC_SAMPLES);
+    await setSamples(page, DOC_SAMPLES);
     await page.waitForTimeout(300);
     const t1 = Date.now();
     const docPath = await renderDownload(page);

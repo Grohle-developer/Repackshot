@@ -163,7 +163,8 @@ describe('16-bit PNG', () => {
     let finer = false;
     for (let i = 0; i < words.length; i++) {
       expect(Math.abs(words[i] / 257 - bytes[i])).toBeLessThanOrEqual(0.5 + 1e-9);
-      if (words[i] % 257 !== 0) finer = true;
+      // Colour channels only: a 16-bit alpha of 0.5 is not a multiple of 257 anyway.
+      if (i % 4 !== 3 && words[i] % 257 !== 0) finer = true;
     }
     expect(finer).toBe(true);
     // Opaque images are RGB.

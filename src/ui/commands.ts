@@ -7,10 +7,25 @@ import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
 import { activeCamera } from '../core/camera';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
-import { applyImportOptions, centrePivot, defaultImportOptions, releaseImport, type ImportMessage, type ImportOptions } from '../core/import-options';
+import {
+  applyImportOptions,
+  centrePivot,
+  defaultImportOptions,
+  ImportError,
+  releaseImport,
+  TESSELLATION_PRESETS,
+  tessellationOf,
+  tessellationPreset,
+  type ImportDetected,
+  type ImportMessage,
+  type ImportOptions,
+  type ImportPayload,
+  type ImportProgress,
+} from '../core/import-options';
 import {
   addItem,
   cleanName,
+  emptyLibrary,
   customSetupOf,
   findItem,
   fromCurrentProductType,
@@ -32,7 +47,8 @@ import {
 } from '../core/library';
 import { LIBRARY_PREFIX, isLibraryKey } from '../core/lighting';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
-import { resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
+import { retainMeshes } from '../core/meshes';
+import { meshIdsInUse, resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
 import {
   cameraLookAt,
   defaultPatternParams,
@@ -42,16 +58,29 @@ import {
   type PivotMode,
   type Space,
 } from '../core/transform';
-import { createInitialState, type ThemeSetting } from '../core/store';
+import { createInitialState, type ProjectState, type ThemeSetting } from '../core/store';
+import {
+  importIsSure,
+  isSection,
+  resetSection,
+  resetSetting,
+  SETTING_ROWS,
+  withImportDefaults,
+  withProjectDefaults,
+  withSetting,
+  type SectionId,
+  type SettingKey,
+  type Settings,
+} from '../core/settings';
 import { patchSettings, settingsOf, type RenderSettings } from '../core/render';
 import { doctorCheck } from '../data/doctor';
+import { showFirstRunChooser } from '../core/models';
 import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
 import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
-import { writePref } from './prefs';
 import type { Ctx } from './reactive';
 import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob } from './render-queue';
-import { effectiveMode, type Tool, type ViewportMode } from './ui-state';
+import { effectiveMode, type CadReadState, type PendingImport, type Tool, type ViewportMode } from './ui-state';
 import { L, formatClock, formatNumber, getLang, t, type StringKey } from './strings';
 
 export type { ConfirmSpec };
@@ -90,11 +119,11 @@ export function pickFiles(accept: string, multiple = false): Promise<File[]> {
   });
 }
 
+/** CAD formats (phase I2): tessellated on import, so the sheet opens at once and reads them in the background. */
+export const CAD_FORMATS = ['step', 'stp', 'iges', 'igs'];
 /** Extensions read in this version (the importers live in src/io/import.ts; ui cannot import them: a test keeps both lists equal). */
-export const READ_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', '3dm', '3mf', 'ply', 'dae', 'usd', 'usda', 'usdc', 'usdz'];
-/** Formats the empty state lists as coming soon (CAD, phase I2). */
-export const SOON_FORMATS = ['step', 'stp', 'iges', 'igs'];
-export const MODEL_ACCEPT = [...READ_FORMATS, ...SOON_FORMATS].map((f) => `.${f}`).join(',');
+export const READ_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', '3dm', '3mf', 'ply', 'dae', 'usd', 'usda', 'usdc', 'usdz', ...CAD_FORMATS];
+export const MODEL_ACCEPT = READ_FORMATS.map((f) => `.${f}`).join(',');
 
 /** The sentence for a note or warning an importer attached. */
 export function importMessageText(name: string, m: ImportMessage): string {
@@ -129,6 +158,12 @@ let sheetCounter = 0;
  * Several files are shown one after the other.
  */
 export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<void> {
+  // A project is opened, never imported: the drop zone and the Import dialog both end up here.
+  const project = files.find(isProjectFile);
+  if (project) {
+    if (files.length > 1) ctx.ui.toast(t('project.dropIgnored'));
+    return openProjectFile(ctx, project);
+  }
   const q = queueOf(ctx);
   q.waiting.push(...files);
   const sheet = ctx.ui.get().importSheet;
@@ -145,10 +180,8 @@ export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<voi
 async function readNext(ctx: Ctx, q: ImportQueue): Promise<void> {
   const file = q.waiting.shift()!;
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  if (SOON_FORMATS.includes(ext)) {
-    const msg = t('import.soon', { format: ext.toUpperCase() });
-    ctx.ui.set({ importMessage: msg });
-    ctx.ui.toast(msg);
+  if (CAD_FORMATS.includes(ext)) {
+    openCadSheet(ctx, file, ext === 'iges' || ext === 'igs' ? 'IGES' : 'STEP', q.waiting.length);
     return;
   }
   if (!READ_FORMATS.includes(ext)) {
@@ -160,26 +193,144 @@ async function readNext(ctx: Ctx, q: ImportQueue): Promise<void> {
   ctx.ui.set({ importMessage: t('import.busy', { name: file.name }) });
   try {
     const read = await ctx.services.importFile(file);
-    const options = defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0);
+    const settings = ctx.ui.get().settings;
+    const options = withImportDefaults(defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0), read.detected, settings);
+    const sure = settings['import.sheet'] === 'UNSURE' && importIsSure(read.detected, read.warnings);
     ctx.ui.set({
       importMessage: t('import.sheetHint', { name: file.name }),
-      rightCollapsed: false,
+      rightCollapsed: sure ? ctx.ui.get().rightCollapsed : false,
       importSheet: { id: ++sheetCounter, name: file.name, format: read.format, payload: read, warnings: read.warnings, notes: read.notes, options, queued: q.waiting.length },
     });
+    // Preferences ▸ Import defaults ▸ Only when unsure: a file that leaves no doubt imports with its values at once.
+    if (sure) confirmImport(ctx);
   } catch (err) {
-    const msg = t('import.failed', { name: file.name, reason: err instanceof Error ? err.message : String(err) });
+    const msg = t('import.failed', { name: file.name, reason: importErrorText(err) });
     ctx.ui.set({ importMessage: msg });
     ctx.ui.toast(msg);
   }
 }
 
-/** Changes some of the sheet's values. */
+// --- CAD files: the sheet opens at once and the file is read (again, at another quality) behind it ----------
+
+/** The CAD read of an interface: the file, its sheet, the read in flight and a re-read waiting for the fields to settle. */
+interface CadRead {
+  file: File;
+  sheet: number;
+  controller: AbortController | null;
+  timer: ReturnType<typeof setTimeout> | null;
+  /** The tessellation of the payload on the sheet (or being read), to know when the options ask for another. */
+  read: string;
+}
+const cadReads = new WeakMap<object, CadRead>();
+/** How long the tessellation fields must rest before the file is read again. */
+export const CAD_REREAD_DELAY_MS = 350;
+
+const EMPTY_DETECTED: ImportDetected = { units: null, upAxis: 'Z', upAxisDeclared: false, size: 0, hasLayers: false, hiddenParts: 0 };
+const emptyPayload = (): ImportPayload => ({ nodes: {}, roots: [], materials: {}, detected: { ...EMPTY_DETECTED } });
+const tessellationKey = (o: ImportOptions): string => JSON.stringify(tessellationOf(o));
+
+function setCad(ctx: Ctx, sheetId: number, patch: Partial<PendingImport> & { cad?: CadReadState }): void {
+  const sheet = ctx.ui.get().importSheet;
+  if (sheet && sheet.id === sheetId) ctx.ui.set({ importSheet: { ...sheet, ...patch } });
+}
+
+/** The sentence for an import that failed: the reason a CAD reader gave, or the reader's own message. */
+export function importErrorText(err: unknown): string {
+  if (err instanceof ImportError) return t(dyn(`import.error.${err.code}`));
+  return err instanceof Error ? err.message : String(err);
+}
+
+function openCadSheet(ctx: Ctx, file: File, format: 'STEP' | 'IGES', queued: number): void {
+  // The first read is at the CAD quality of Preferences ▸ Import defaults.
+  const options = withImportDefaults(defaultImportOptions(EMPTY_DETECTED, ctx.store.get().scene.roots.length > 0), EMPTY_DETECTED, ctx.ui.get().settings);
+  const id = ++sheetCounter;
+  ctx.ui.set({
+    importMessage: t('import.sheetHint', { name: file.name }),
+    rightCollapsed: false,
+    importSheet: { id, rev: 0, name: file.name, format, payload: emptyPayload(), warnings: [], notes: [], options, queued, cad: { stage: 'start' } },
+  });
+  cadReads.set(ctx.ui, { file, sheet: id, controller: null, timer: null, read: '' });
+  void readCad(ctx);
+}
+
+/** Reads the CAD file of the open sheet with the sheet's tessellation; the payload is replaced when it arrives. */
+async function readCad(ctx: Ctx): Promise<void> {
+  const r = cadReads.get(ctx.ui);
+  const sheet = ctx.ui.get().importSheet;
+  if (!r || !sheet || sheet.id !== r.sheet) return;
+  r.controller?.abort();
+  const controller = new AbortController();
+  r.controller = controller;
+  r.read = tessellationKey(sheet.options);
+  const sheetId = sheet.id;
+  const progress = (p: ImportProgress) => {
+    if (controller.signal.aborted) return;
+    const cad = ctx.ui.get().importSheet?.cad;
+    setCad(ctx, sheetId, { cad: { ...p, confirm: cad?.confirm } });
+  };
+  setCad(ctx, sheetId, { cad: { stage: 'start', confirm: sheet.cad?.confirm } });
+  try {
+    const read = await ctx.services.importFile(r.file, { tessellation: tessellationOf(sheet.options), signal: controller.signal, onProgress: progress });
+    const now = ctx.ui.get().importSheet;
+    if (controller.signal.aborted || !now || now.id !== sheetId) {
+      releaseImport(read);
+      return;
+    }
+    r.controller = null;
+    releaseImport(now.payload);
+    // The first read says the units the file declares: the sheet takes them, as it does for the other formats.
+    const first = (now.rev ?? 0) === 0;
+    const settings = ctx.ui.get().settings;
+    const detected = withImportDefaults(defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0), read.detected, settings);
+    const options = first ? { ...now.options, units: detected.units, upAxis: detected.upAxis } : now.options;
+    // Only when unsure: a CAD file that declares its units imports at once after its first read.
+    const confirm = now.cad?.confirm === true || (first && settings['import.sheet'] === 'UNSURE' && importIsSure(read.detected, read.warnings));
+    ctx.ui.set({ importSheet: { ...now, rev: (now.rev ?? 0) + 1, format: read.format, payload: read, warnings: read.warnings, notes: read.notes, options, cad: { stage: 'ready' } } });
+    if (confirm) confirmImport(ctx);
+  } catch (err) {
+    if (controller.signal.aborted || (err instanceof ImportError && err.code === 'aborted')) return;
+    r.controller = null;
+    const reason = importErrorText(err);
+    setCad(ctx, sheetId, { cad: { stage: 'error', error: reason } });
+    if (ctx.ui.get().importSheet?.id === sheetId) ctx.ui.set({ importMessage: t('import.failed', { name: r.file.name, reason }) });
+  }
+}
+
+/** Stops the CAD read of the sheet (if any) and forgets it. */
+function stopCad(ctx: Ctx): void {
+  const r = cadReads.get(ctx.ui);
+  if (!r) return;
+  if (r.timer) clearTimeout(r.timer);
+  r.controller?.abort();
+  cadReads.delete(ctx.ui);
+}
+
+/** Changes some of the sheet's values. A new tessellation reads a CAD file again once the fields rest. */
 export function setImportOptions(ctx: Ctx, patch: Partial<ImportOptions>): void {
   const sheet = ctx.ui.get().importSheet;
-  if (sheet) ctx.ui.set({ importSheet: { ...sheet, options: { ...sheet.options, ...patch } } });
+  if (!sheet) return;
+  const options = { ...sheet.options, ...patch };
+  if (patch.tessellation && patch.tessellation !== 'CUSTOM') Object.assign(options, TESSELLATION_PRESETS[patch.tessellation]);
+  else if (patch.chordPercent !== undefined || patch.angleDeg !== undefined) {
+    Object.assign(options, tessellationOf(options));
+    options.tessellation = tessellationPreset(options);
+  }
+  const r = cadReads.get(ctx.ui);
+  if (!r || r.sheet !== sheet.id || tessellationKey(options) === r.read) {
+    ctx.ui.set({ importSheet: { ...sheet, options } });
+    return;
+  }
+  // The counts on the sheet are of the old quality from now on: it says so, and Import waits for the new read.
+  ctx.ui.set({ importSheet: { ...sheet, options, cad: { stage: 'read', confirm: sheet.cad?.confirm } } });
+  if (r.timer) clearTimeout(r.timer);
+  r.timer = setTimeout(() => {
+    r.timer = null;
+    void readCad(ctx);
+  }, CAD_REREAD_DELAY_MS);
 }
 
 function closeSheet(ctx: Ctx): void {
+  stopCad(ctx);
   ctx.ui.set({ importSheet: null, importMessage: null });
   if (queueOf(ctx).waiting.length > 0) void importFiles(ctx, []);
 }
@@ -188,6 +339,12 @@ function closeSheet(ctx: Ctx): void {
 export function confirmImport(ctx: Ctx): void {
   const sheet = ctx.ui.get().importSheet;
   if (!sheet) return;
+  if (sheet.cad && sheet.cad.stage !== 'ready') {
+    // A CAD file still being read imports as soon as it is; one that failed cannot.
+    if (sheet.cad.stage === 'error') ctx.ui.toast(t('import.failed', { name: sheet.name, reason: sheet.cad.error ?? '' }));
+    else ctx.ui.set({ importSheet: { ...sheet, cad: { ...sheet.cad, confirm: true } } });
+    return;
+  }
   const { options, payload, name } = sheet;
   const applied = applyImportOptions(payload, options);
   if (applied.roots.length === 0) {
@@ -228,11 +385,21 @@ export async function importDialog(ctx: Ctx): Promise<void> {
   if (files.length) await importFiles(ctx, files);
 }
 
-export function newProject(ctx: Ctx): void {
+/** The state of a new project, or of one just opened: nothing of the old one lingers in the interface. */
+function replaceProject(ctx: Ctx, state: ProjectState): void {
   cancelImport(ctx);
+  ctx.store.reset(state);
+  // History is gone with the old project, and so is the geometry only it used.
+  retainMeshes(meshIdsInUse(state));
+  ctx.ui.set({ catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null });
+}
+
+export function newProject(ctx: Ctx): void {
   const s = ctx.store.get();
-  ctx.store.reset(createInitialState({ lang: s.meta.lang, theme: s.meta.theme }));
-  ctx.ui.set({ catalogOpen: false, pickMode: null, wizard: null, importMessage: null });
+  // A new project takes the defaults of Preferences (render, selection level); the open one never did.
+  replaceProject(ctx, withProjectDefaults(createInitialState({ lang: s.meta.lang, theme: s.meta.theme }), ctx.ui.get().settings));
+  // The next Save asks where: it is not the file of the project that was open.
+  ctx.services.projectFiles.adopt(null);
 }
 
 function slug(s: string): string {
@@ -250,11 +417,177 @@ export function projectFileBase(ctx: Ctx): string {
   return slug(ctx.store.get().meta.name || t('app.untitled'));
 }
 
-export function saveProject(ctx: Ctx): void {
-  const name = `${projectFileBase(ctx)}.repack.json`;
-  downloadBlob(ctx.services.serializeProject(ctx.store.get()), name);
-  ctx.store.dispatch({ type: 'meta/saved' });
-  ctx.ui.toast(t('toast.saved', { name }));
+/** The extension of a project file (it is JSON, so `.json` alone is not enough to tell it from other files). */
+export const PROJECT_EXTENSION = '.repack.json';
+
+export function isProjectFile(file: { name: string }): boolean {
+  return file.name.toLowerCase().endsWith(PROJECT_EXTENSION);
+}
+
+/**
+ * Saves the project. Without `saveAs`, to the file it came from or was last saved to when the browser lets it
+ * (no dialog), otherwise it asks where, or downloads. Returns whether the file was written; the project is
+ * clean only if nothing changed while it was being written.
+ */
+export async function saveProject(ctx: Ctx, opts: { saveAs?: boolean } = {}): Promise<boolean> {
+  const { store, services } = ctx;
+  const suggested = `${projectFileBase(ctx)}${PROJECT_EXTENSION}`;
+  let revision = store.revision();
+  const make = (): Blob => {
+    revision = store.revision();
+    return services.project.serialize(store.get());
+  };
+  let result;
+  try {
+    result = await services.projectFiles.save(make, suggested, { saveAs: opts.saveAs === true });
+  } catch (err) {
+    result = { kind: 'FAILED' as const, reason: err instanceof Error ? err.message : String(err) };
+  }
+  if (result.kind === 'CANCELLED') return false;
+  if (result.kind === 'FAILED') {
+    ctx.ui.toast(t('project.saveFailed', { name: suggested, reason: result.reason }));
+    return false;
+  }
+  store.dispatch({ type: 'meta/saved', revision });
+  ctx.ui.toast(t('toast.saved', { name: result.name }));
+  return true;
+}
+
+/**
+ * Runs `proceed` now, or after asking when the project has unsaved changes (UI.md §4.3: in place, three buttons,
+ * Esc cancels). Save writes the project first and proceeds only if it was written.
+ */
+function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void): void {
+  if (!ctx.store.get().meta.dirty) return proceed();
+  ctx.ui.set({
+    prompt: {
+      message,
+      options: [
+        { label: t('project.save'), primary: true, run: () => void saveProject(ctx).then((saved) => saved && proceed()) },
+        { label: t('project.dontSave'), run: proceed },
+      ],
+    },
+  });
+}
+
+/** New (menu): a fresh project, after asking when there are unsaved changes. */
+export function requestNewProject(ctx: Ctx): void {
+  afterUnsavedCheck(ctx, t('project.unsavedNew', { name: ctx.store.get().meta.name || t('app.untitled') }), () => newProject(ctx));
+}
+
+/** The sentence for a file that did not open (the technical reason is in the console, in English). */
+export function projectFaultText(name: string, fault: { code: string; detail: string; schema?: number }): string {
+  switch (fault.code) {
+    case 'NOT_A_PROJECT':
+      return t('project.err.notProject', { name });
+    case 'NEWER_VERSION':
+      return t('project.err.newer', { name, schema: fault.schema ?? 0 });
+    case 'TOO_LARGE':
+      return t('project.err.tooLarge', { name });
+    default:
+      return t('project.err.damaged', { name });
+  }
+}
+
+/**
+ * Opens a project file (the Open dialog, a dropped file): it is read and checked first, so a file that is not a
+ * project, is from a newer version or is damaged says so and leaves the open project untouched; then, if there
+ * are unsaved changes, the person is asked. The project replaces the open one and the history starts over:
+ * the old states belong to another project (and their geometry is released), so undo stops at the opening.
+ * `handle` is the file's place for Save (a dropped file's handle, when the browser gives one).
+ */
+export async function openProjectFile(ctx: Ctx, file: File, handle?: Promise<unknown> | unknown): Promise<void> {
+  ctx.ui.set({ importMessage: t('project.opening', { name: file.name }) });
+  let outcome;
+  try {
+    outcome = await ctx.services.project.open(file);
+  } catch (err) {
+    outcome = { ok: false as const, fault: { code: 'DAMAGED' as const, detail: err instanceof Error ? err.message : String(err) } };
+  }
+  ctx.ui.set({ importMessage: null });
+  if (!outcome.ok) {
+    console.warn(`project ${file.name}: ${outcome.fault.detail}`);
+    ctx.ui.toast(projectFaultText(file.name, outcome.fault));
+    return;
+  }
+  const { state, warnings } = outcome;
+  const place: Promise<unknown> = Promise.resolve(handle).catch(() => null);
+  afterUnsavedCheck(ctx, t('project.unsavedOpen', { name: ctx.store.get().meta.name || t('app.untitled'), file: file.name }), () => {
+    const cur = ctx.store.get();
+    // Language and theme are the person's, not the project's.
+    replaceProject(ctx, { ...state, meta: { ...state.meta, lang: cur.meta.lang, theme: cur.meta.theme } });
+    ctx.ui.toast(t('project.opened', { name: file.name }));
+    for (const w of warnings) ctx.ui.toast(t('project.warn.missingMeshes', { n: w.count }));
+    void place.then((h) => ctx.services.projectFiles.adopt(h ?? null));
+  });
+}
+
+/**
+ * General ▸ On start ▸ Last project: the file opened or saved last is offered in the header (reading it again needs
+ * a click, the browser's permission). True when there was one to offer; otherwise the start is an empty project.
+ */
+export async function offerLastProject(ctx: Ctx): Promise<boolean> {
+  const pf = ctx.services.projectFiles;
+  const last = pf.last ? await pf.last() : null;
+  if (!last || !pf.reopen) return false;
+  const reopen = pf.reopen.bind(pf);
+  ctx.ui.set({
+    prompt: {
+      message: t('project.reopenLast', { name: last.name }),
+      options: [
+        {
+          label: t('project.reopen'),
+          primary: true,
+          run: () =>
+            void reopen(last.handle).then((file) => {
+              if (file) void openProjectFile(ctx, file, last.handle);
+              else ctx.ui.toast(t('project.reopenFailed', { name: last.name }));
+            }),
+        },
+      ],
+      cancelLabel: t('project.notNow'),
+    },
+  });
+  return true;
+}
+
+/** Open (menu, Ctrl/⌘ O): the dialog, then `openProjectFile`. */
+export async function openProject(ctx: Ctx): Promise<void> {
+  const picked = await ctx.services.projectFiles.pick();
+  if (picked) await openProjectFile(ctx, picked.file, picked.handle);
+}
+
+/**
+ * The files of a drop and, for each, the promise of its file handle when the browser gives one (Chromium: Save
+ * then writes back to the dropped project). Call it inside the drop event: the handles are only there then.
+ */
+export function readDrop(dt: DataTransfer | null): { files: File[]; handles: Promise<unknown>[] } {
+  const files: File[] = [];
+  const handles: Promise<unknown>[] = [];
+  for (const item of dt ? [...dt.items] : []) {
+    const file = item.kind === 'file' ? item.getAsFile() : null;
+    if (!file) continue;
+    files.push(file);
+    const get = (item as { getAsFileSystemHandle?: () => Promise<unknown> }).getAsFileSystemHandle;
+    handles.push(get ? get.call(item).catch(() => null) : Promise.resolve(null));
+  }
+  // Browsers that list the files but not the items.
+  if (files.length === 0 && dt) {
+    for (const f of dt.files) {
+      files.push(f);
+      handles.push(Promise.resolve(null));
+    }
+  }
+  return { files, handles };
+}
+
+/** Files dropped on the window: a project opens, models go to the import sheet. */
+export function dropFiles(ctx: Ctx, files: readonly File[], handles: readonly Promise<unknown>[] = []): void {
+  const i = files.findIndex(isProjectFile);
+  if (i >= 0) {
+    if (files.length > 1) ctx.ui.toast(t('project.dropIgnored'));
+    void openProjectFile(ctx, files[i], handles[i]);
+  } else if (files.length > 0) void importFiles(ctx, files);
 }
 
 /** The engine's scene for the output image, as the RSB file `rt` renders on the command line. */
@@ -279,8 +612,7 @@ export function renameProject(ctx: Ctx, name: string): void {
 // --- Preferences ---------------------------------------------------------------
 
 export function setTheme(ctx: Ctx, theme: ThemeSetting): void {
-  ctx.store.dispatch({ type: 'meta/theme', theme });
-  writePref('theme', theme);
+  setSetting(ctx, 'general.theme', theme);
 }
 
 /** The theme actually shown for a setting ('system' follows the OS, dark unless it asks for light). */
@@ -298,8 +630,113 @@ export function toggleTheme(ctx: Ctx): void {
 }
 
 export function setLanguage(ctx: Ctx, lang: Lang): void {
-  ctx.store.dispatch({ type: 'meta/lang', lang });
-  writePref('lang', lang);
+  setSetting(ctx, 'general.lang', lang);
+}
+
+// --- Settings (UI.md §2.9): application state, saved at once, never undone ------------------------------
+
+/** Replaces the settings; the theme and the language also reach the project's meta, which the interface follows. */
+export function applySettings(ctx: Ctx, next: Settings): void {
+  if (next !== ctx.ui.get().settings) ctx.ui.set({ settings: next });
+  const meta = ctx.store.get().meta;
+  if (meta.theme !== next['general.theme']) ctx.store.dispatch({ type: 'meta/theme', theme: next['general.theme'] });
+  if (meta.lang !== next['general.lang']) ctx.store.dispatch({ type: 'meta/lang', lang: next['general.lang'] });
+}
+
+export function setSetting<K extends SettingKey>(ctx: Ctx, key: K, value: Settings[K]): void {
+  applySettings(ctx, withSetting(ctx.ui.get().settings, key, value));
+}
+
+export function resetOneSetting(ctx: Ctx, key: SettingKey): void {
+  applySettings(ctx, resetSetting(ctx.ui.get().settings, key));
+}
+
+/** Reset this section; the number of settings that changed back. */
+export function resetSettingsSection(ctx: Ctx, section: SectionId): number {
+  const before = ctx.ui.get().settings;
+  const after = resetSection(before, section);
+  const n = (Object.keys(before) as SettingKey[]).filter((k) => before[k] !== after[k]).length;
+  applySettings(ctx, after);
+  return n;
+}
+
+/**
+ * Opens the Settings window: at the section last opened, at a section (`engine`), at a part of one
+ * (`ai.models`), or at a row (`engine.threads`), which is brought into view and highlighted.
+ */
+export function openSettings(ctx: Ctx, target?: string, opts: { chooser?: boolean } = {}): void {
+  let section: SectionId = ctx.ui.get().settingsSection;
+  let focus: string | null = null;
+  if (target) {
+    if (isSection(target)) section = target;
+    else {
+      const row = SETTING_ROWS.find((r) => r.id === target);
+      const head = target.split('.')[0];
+      if (row) section = row.section;
+      else if (isSection(head)) section = head;
+      focus = target;
+    }
+  }
+  if (section === 'desktop' && !ctx.ui.get().desktop) section = 'general';
+  const nonce = (ctx.ui.get().settingsWindow?.nonce ?? 0) + 1;
+  ctx.ui.set({ settingsWindow: { section, focus, nonce, ...(opts.chooser ? { chooser: true } : {}) }, settingsSection: section, paletteOpen: false, renderWindow: null });
+}
+
+export function closeSettings(ctx: Ctx): void {
+  if (ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
+}
+
+/**
+ * The desktop portable's first start (AI-POST.md §2.2): the Settings window opens at AI ▸ Models as a chooser
+ * (one, several or none), once. main.ts calls it when the launcher answers.
+ */
+export function maybeShowModelChooser(ctx: Ctx, o: { portable: boolean; pending: boolean }): boolean {
+  const show = showFirstRunChooser({ desktop: ctx.ui.get().desktop !== null, portable: o.portable, pending: o.pending, shown: ctx.ui.get().chooserShown });
+  if (show) {
+    openSettings(ctx, 'ai.models', { chooser: true });
+    ctx.ui.set({ chooserShown: true });
+  }
+  return show;
+}
+
+/** Whether closing the page should ask first (General ▸ Confirm before closing; the page's beforeunload asks it). */
+export function shouldConfirmClose(ctx: Ctx): boolean {
+  return ctx.ui.get().settings['general.confirmClose'] && ctx.store.get().meta.dirty;
+}
+
+/** Settings ▸ Render engine ▸ Measure performance: a real run of the example scene with the engine in use. */
+let measuring: AbortController | null = null;
+export async function measurePerformance(ctx: Ctx, seconds = 10): Promise<void> {
+  if (measuring) return;
+  const controller = new AbortController();
+  measuring = controller;
+  const startedAt = performance.now();
+  ctx.ui.set({ perf: { state: 'RUNNING', startedAt, elapsed: 0 } });
+  try {
+    const result = await ctx.services.engine.measure({ seconds, signal: controller.signal, onProgress: (elapsed) => ctx.ui.set({ perf: { state: 'RUNNING', startedAt, elapsed } }) });
+    ctx.ui.set({ perf: { state: 'DONE', result }, throughput: result.pixelSamplesPerSecond });
+  } catch (err) {
+    if (controller.signal.aborted) ctx.ui.set({ perf: { state: 'STOPPED' } });
+    else ctx.ui.set({ perf: { state: 'FAILED', reason: err instanceof Error ? err.message : String(err) } });
+  } finally {
+    measuring = null;
+  }
+}
+
+export function stopMeasuring(): void {
+  measuring?.abort();
+}
+
+/** What this computer has, for the AI models (once per session unless asked again). */
+export async function detectHardware(ctx: Ctx, again = false): Promise<void> {
+  const h = ctx.ui.get().hardware;
+  if (h.state === 'DETECTING' || (h.state === 'DONE' && !again)) return;
+  ctx.ui.set({ hardware: { state: 'DETECTING', info: h.info } });
+  try {
+    ctx.ui.set({ hardware: { state: 'DONE', info: await ctx.services.hardware(again) } });
+  } catch (err) {
+    ctx.ui.set({ hardware: { state: 'DONE', info: { detected: false, where: ctx.ui.get().desktop ? 'desktop' : 'web', error: err instanceof Error ? err.message : String(err), cores: null, ramGiB: null, gpus: [], webgpu: null, maxBufferBytes: null } } });
+  }
 }
 
 // --- Selection -------------------------------------------------------------------
@@ -1209,6 +1646,11 @@ export async function deleteResult(ctx: Ctx, id: string): Promise<void> {
     results: ctx.ui.get().results.filter((r) => r.id !== id),
     ...(v && v.id === id ? { resultView: null } : v && v.compare === id ? { resultView: { ...v, compare: null } } : {}),
   });
+}
+
+/** Settings ▸ Storage ▸ Library ▸ Free up: the library emptied (main.ts saves it like any other change). */
+export function clearLibrary(ctx: Ctx): void {
+  ctx.ui.set({ library: emptyLibrary() });
 }
 
 export async function clearHistory(ctx: Ctx): Promise<void> {

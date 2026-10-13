@@ -187,7 +187,7 @@ try {
   browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', headless: true, args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 
   {
-    const { page, errors } = await open(browser, STUDIO);
+    const { page, errors } = await open(browser, `${STUDIO}&select=body`);
 
     // (a) Ctrl ⏎ and the button open it; Esc closes it; the settings stay.
     await page.locator('canvas[aria-label="viewport"]').focus();
@@ -276,7 +276,7 @@ try {
     await page.locator('.rw-name').fill('frames-{camera}');
     await page.locator('.rw-name').press('Enter');
     await page.locator('.rw .seg button', { hasText: 'From–to' }).click();
-    await setNumber(page, '.rw .num[aria-label="To"]', 3);
+    await setNumber(page, '.rw .num[aria-label="Range end"]', 3);
     await setNumber(page, '.rw [data-section="rw.anim"] .num[aria-label="Width"]', 160);
     const names = [];
     page.on('download', (d) => names.push(d.suggestedFilename()));
@@ -292,7 +292,7 @@ try {
     await page.locator('.rw-titlebar .seg button', { hasText: 'Image' }).click();
     await page.keyboard.press('Escape');
 
-    // (g) Two results compared with the divider: the same shot under two light setups, the divider
+    // (g) Two results compared with the divider: the same shot with two materials on the body, the divider
     // dragged to 40 %, then ← → and ⇧ →.
     await page.keyboard.press('Control+Enter');
     await page.waitForSelector('.rw');
@@ -301,14 +301,15 @@ try {
     await page.locator('.rw-name').fill('{project}_{camera}_{n}');
     await page.locator('.rw-name').press('Enter');
     await page.locator(`${sizeSel} select`).first().selectOption('RES:HD');
-    await setNumber(page, `${sizeSel} .num[aria-label="Width"]`, 960);
-    await setNumber(page, '.rw .num[aria-label="Samples"]', 32);
+    await setNumber(page, `${sizeSel} .num[aria-label="Width"]`, 1280);
+    await setNumber(page, `${sizeSel} .num[aria-label="Resolution"]`, 300);
+    await setNumber(page, '.rw .num[aria-label="Samples"]', 24);
     await page.keyboard.press('Enter');
     await page.waitForSelector('.rv[data-ready="1"]', { timeout: 240000 });
     const nameA = await page.locator('.rv-title').textContent();
     await page.keyboard.press('Escape');
     await page.keyboard.press('Control+k');
-    await page.keyboard.type('Butterfly');
+    await page.keyboard.type('Copper');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
     // Ctrl ⇧ ⏎: the same settings, at once.
@@ -331,21 +332,68 @@ try {
     await page.keyboard.press('Shift+ArrowLeft');
     const bigLeft = Number(await page.locator('.split-handle').getAttribute('aria-valuenow'));
     await page.keyboard.press('Shift+ArrowRight');
-    check('g_split_divider', Math.abs(dragged - 40) <= 1 && right === dragged + 1 && bigLeft === dragged - 9, { dragged, right, bigLeft });
+    // The two images are two different renders (the body's material changed between them).
+    const imagesDiffer = await page.evaluate(() => {
+      const [a, b] = [...document.querySelectorAll('.split-img')];
+      const da = a.getContext('2d').getImageData(0, 0, a.width, a.height).data;
+      const db = b.getContext('2d').getImageData(0, 0, b.width, b.height).data;
+      let n = 0;
+      for (let i = 0; i < da.length; i += 4) if (Math.abs(da[i] - db[i]) + Math.abs(da[i + 1] - db[i + 1]) + Math.abs(da[i + 2] - db[i + 2]) > 24) n++;
+      return n / (da.length / 4);
+    });
+    check('g_split_divider', Math.abs(dragged - 40) <= 1 && right === dragged + 1 && bigLeft === dragged - 9 && imagesDiffer > 0.01, { dragged, right, bigLeft, pixelsDiffering: Number(imagesDiffer.toFixed(3)) });
     const labels = await page.locator('.split-label').allTextContents();
-    await page.mouse.move(10, 10);
-    await page.waitForTimeout(300);
+    // Closer in (= zooms about the centre), so the divider at 40 % cuts through the bottle.
+    for (let i = 0; i < 4; i++) await page.keyboard.press('=');
+    results.zoom = await page.locator('.rv-zoom').textContent();
+    // The queue drawer (open since (d)) folds away and the toasts go, for the screenshot.
+    await page.locator('.drawer-btn[data-drawer="queue"]').click();
+    await page.mouse.move(10, 990);
+    await page.waitForTimeout(4600);
     await page.screenshot({ path: join(SHOTS, 'results-split.png') });
     results.labels = labels;
     results.errors_main = errors;
   }
 
+  // (h) No storage (a private window, blocked site data): the application starts, keeps results in memory and says so.
+  {
+    const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+    await context.addInitScript(() => {
+      Object.defineProperty(window, 'indexedDB', { get: () => { throw new DOMException('denied', 'SecurityError'); } });
+      Object.defineProperty(window, 'localStorage', { get: () => { throw new DOMException('denied', 'SecurityError'); } });
+    });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`${BASE_URL}/?${STUDIO}`);
+    await page.waitForSelector('#app[data-ready="1"]', { timeout: 90000 });
+    await page.waitForFunction(() => !document.querySelectorAll('.hdr .seg button')[1]?.disabled, null, { timeout: 60000 });
+    await page.locator('.drawer-btn[data-drawer="queue"]').click();
+    const note = (await page.locator('.queue-memory').isVisible()) ? await page.locator('.queue-memory').textContent() : null;
+    await page.keyboard.press('Control+Enter');
+    await page.waitForSelector('.rw');
+    await setNumber(page, `${sizeSel} .num[aria-label="Width"]`, 320);
+    await setNumber(page, '.rw .num[aria-label="Samples"]', 2);
+    const out = await download(page, () => page.keyboard.press('Enter'), 120000);
+    await page.waitForSelector('.rv[data-ready="1"]', { timeout: 60000 });
+    const kept = await page.locator('.history-item').count();
+    check('h_no_storage', note !== null && kept === 1 && errors.length === 0 && out.name.endsWith('.png'), { note, kept, file: out.name, errors });
+    await context.close();
+  }
+
   // Screenshots of the window in Image and in Animation mode, and of the queue drawer.
   {
-    const { page } = await open(browser, STUDIO);
+    // In Full mode for a few seconds first, so the estimate has a measurement of this machine.
+    const { page } = await open(browser, STUDIO.replace('mode=fast', 'mode=full'));
+    await page.waitForFunction(() => {
+      const m = document.querySelector('.ov-bl');
+      return m?.getAttribute('data-mode') === 'full' && Number(m.getAttribute('data-samples')) >= 2 && Number(m.getAttribute('data-seconds')) >= 3;
+    }, null, { timeout: 120000 });
+    await page.locator('canvas[aria-label="viewport"]').focus();
     await page.keyboard.press('Control+Enter');
     await page.waitForSelector('.rw');
     await page.waitForTimeout(400);
+    results.estimate = await page.locator('.rw-estimate').first().textContent();
     await page.screenshot({ path: join(SHOTS, 'render-window-image.png') });
   }
   {
@@ -357,7 +405,7 @@ try {
     await page.screenshot({ path: join(SHOTS, 'render-window-animation.png') });
   }
   {
-    const { page } = await open(browser, STUDIO);
+    const { page } = await open(browser, `${STUDIO}&sequence=HERO`);
     // One finished job, one running and one waiting.
     await page.keyboard.press('Control+Enter');
     await page.waitForSelector('.rw');
@@ -372,13 +420,13 @@ try {
     await setNumber(page, '.rw .num[aria-label="Samples"]', 512);
     await page.keyboard.press('Shift+Enter');
     await page.locator('.rw-titlebar .seg button', { hasText: 'Animation' }).click();
-    await page.keyboard.press('Shift+Enter');
+    await page.locator('.rw-foot .btn:not(.btn-primary)').click();
     await page.keyboard.press('Escape');
     await page.locator('.drawer-btn[data-drawer="queue"]').click();
     await page.locator('.queue-head .btn-primary').click();
     await page.waitForSelector('.queue-row[data-status="RUNNING"]', { timeout: 30000 });
-    await page.waitForTimeout(4000);
-    await page.mouse.move(800, 300);
+    await page.mouse.move(700, 880);
+    await page.waitForTimeout(4600);
     await page.screenshot({ path: join(SHOTS, 'queue-drawer.png') });
     const rows = await page.locator('.queue-row').evaluateAll((els) => els.map((e) => e.getAttribute('data-status')));
     results.queueShot = rows;

@@ -144,6 +144,24 @@ decisiones escritas (datos, contratos, revisión), no código.
   `simd128`, conmutador **Rápido · Completo**, *Render* siempre con el
   trazador, paridad exacta navegador / nativo; 561 tests web y 182 del
   motor — **Opus**.
+- **I2** · STEP e IGES con occt-import-js aislado, caras CAD como rangos
+  de triángulos con aristas vivas topológicas, ensamblaje, colores,
+  unidades y calidad de teselado; 682 tests — **Opus**.
+- **U2** · Guardar y abrir `.repack.json` con las mallas dentro, archivo
+  recordado con File System Access, cambios sin guardar con pregunta en
+  línea, test de límites entre capas; 792 tests — **Sonnet**.
+- **P2** · Lanzador de escritorio propio con motor nativo idéntico al
+  wasm, almacén de modelos por `sha256`, portables de Windows y Linux e
+  instalador NSIS; 846 tests web y 241 del motor — **Opus**.
+- **P1** · Primera release `v0.1.0`: portables de Windows y Linux e
+  instalador de Windows, CHANGELOG y notas — **Haiku**.
+- **U6** · Ventana de Ajustes con buscador y secciones agrupadas, gestor
+  de modelos de IA con descargas reanudables verificadas por `sha256`,
+  importación y recomendación por equipo; 939 tests — **Opus**.
+- **U5** · Ventana de render al estilo de KeyShot con *Imagen · Animación*,
+  salida por plantilla, carpeta, ppp escritos en PNG y JPEG, PNG de 16
+  bits y EXR, *Terminar por* muestras o tiempo, cola deshacible, visor de
+  resultados con divisor y historial en IndexedDB; 621 tests — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -243,7 +261,7 @@ documentados en `src/ui/README.md`.
 Lo que no encajaba con el plan, resuelto así: la geometría vive en un
 registro fuera del estado (`core/meshes.ts`) y el estado guarda solo
 id, recuentos y caja, para seguir siendo JSON plano; la selección y la
-cola de render no son deshacibles; los focos se colocan y apuntan al
+cola de render no son deshacibles (la cola sí lo es desde U5); los focos se colocan y apuntan al
 centro de la pieza visible, no al origen del mundo, porque la pieza
 apoya su base en el origen; el bisel se guarda en el material y se
 muestra en la sección Pieza; `render()` admite una cámara para que cada
@@ -259,7 +277,7 @@ contraste y viñeta se guardan pero no se pintan (todos marcados
 `CameraState`, `Shot`, `MotionClip`, `RenderJob` en `src/core/*.ts`,
 exportados y documentados con una línea cada uno.
 
-## U2 · Proyecto en archivo y límites — **Sonnet**
+## U2 · Proyecto en archivo y límites — **Sonnet** — hecha
 
 **Qué.** `src/io/project.ts`: guardar y cargar `.repack.json` con las
 mallas embebidas (GLB en base64), `schema: 1`, y una tabla de migraciones
@@ -274,6 +292,28 @@ tiene que seguir cargando en cada versión.
 
 **Criterio.** Los tres tests en verde; *Guardar* y *Abrir* del menú
 funcionan en el navegador con descarga y `<input type="file">`.
+
+**Hecho.** `src/io/project.ts` guarda y abre `.repack.json` (`schema` 2:
+`state` y un bloque `meshes` con un GLB en base64 por malla usada, con
+`sharpEdges` y `triangleSource` al lado; `-0` conservado), con
+`glb.ts`/`base64.ts` (por trozos) y `project-file.ts` (File System Access
+con el archivo recordado: `Ctrl/⌘ S` escribe en él, `Ctrl/⌘ ⇧ S`
+pregunta, `Ctrl/⌘ O` abre; descarga e `<input>` donde no hay API; soltar
+un proyecto lo abre). Abrir valida todo antes de tocar nada, renombra los
+ids de malla que chocarían (`prjN:`), regenera la geometría del ejemplo en
+archivos antiguos y hace `store.reset` (el historial empieza de nuevo).
+El punto de cambios sin guardar sale de un contador de revisiones del
+*store* (`revision()`; deshacer hasta lo guardado lo limpia); *Nuevo* y
+*Abrir* preguntan en línea (*Guardar · No guardar · Cancelar*) y
+`beforeunload` avisa. `tests/boundaries.test.ts` (sin infracciones),
+`project.test.ts` (incluido un ensamblaje STEP de I2 guardado y reabierto
+idéntico, caras CAD y aristas vivas incluidas), `project-files.test.ts`,
+`fixtures/project-v1.json` (generado por el propio código de U1) y
+`project-v2.json`; 102 tests nuevos, unas 110 mutaciones comprobadas.
+
+No encajó con el plan: el esquema ya era 2 (U5) y no se sube; no hay
+referencia externa por ruta, solo mallas dentro; abrir no se deshace
+(como *Nuevo*); deshacer hasta el punto guardado deja el proyecto limpio.
 
 ## I1 · Importadores OBJ y STL — **Sonnet** — hecha
 
@@ -315,7 +355,7 @@ tapa hasta aplicar el arreglo de escala: I3 lo resuelve aplicando las
 unidades de la hoja de importación antes de añadir el modelo y ajustando
 los planos de recorte al encuadrar.
 
-## I2 · STEP e IGES — **Opus**
+## I2 · STEP e IGES — **Opus** — hecha
 
 **Decisión tomada (Fable).** Se lee STEP (AP203, AP214, AP242) e IGES con
 **OpenCascade** compilado a wasm a través de `occt-import-js` 0.0.23. El
@@ -345,6 +385,33 @@ piezas): número de caras CAD, de piezas y de grupos exactos; cambiar la
 calidad cambia el número de triángulos; el módulo no se descarga hasta
 que se importa un STEP (test de que `import('…/occt')` no aparece en el
 chunk inicial de `vite build`).
+
+**Hecho.** STEP (AP203/214/242) e IGES con occt-import-js 0.0.23 en un
+worker de módulo, cargado al soltar el primer archivo CAD; la hoja se
+abre al instante con una línea de estado (descarga en MB, lectura,
+piezas) y la calidad de teselado en vivo (Baja · Media · Alta y
+*Personalizada* con cuerda en % del tamaño y ángulo), que vuelve a leer
+el archivo. Cada cara CAD es un rango de triángulos
+(`SceneNode.faceRanges`) con vértices y normales propios; aristas vivas =
+aristas entre caras; ensamblaje como grupos con nombre; colores como
+instancias SIMPLE; unidades declaradas leídas del texto del archivo;
+*Separar por cara CAD* en la hoja. La biblioteca va copiada sin
+modificar a `public/vendor/occt-import-js/` con sus dos textos LGPL-2.1
+y un README con el enlace al fuente, y un test tras `vite build`
+comprueba que no está en ningún *chunk*. 61 tests nuevos (682 en total),
+41 mutaciones comprobadas; captura `docs/ui/import-step.png`.
+
+No encajó con el plan: la biblioteca aplana los subensamblajes (un nivel
+de grupos como mucho) y no da nombres de colores (las instancias se
+llaman por su hexadecimal); STEP e IGES no declaran eje arriba y se toma
+**Z** (pendiente de Fable, ver *Decisiones*); el worker ejecuta el guion
+sin modificar con `new Function` (una CSP futura necesitaría
+`unsafe-eval` o un worker clásico); la conversión corre en el hilo
+principal (≈ 0,65 s por 230 k triángulos) y `ReadFile` no informa de
+progreso mientras tesela; en un ensamblaje con varias unidades manda la
+primera; las caras tangentes también quedan como aristas vivas, con
+normales iguales, así que el sombreado sigue suave; la primera lectura
+es siempre en calidad Media.
 
 ## I3 · Importadores y hoja de importación — **Sonnet** — hecha
 
@@ -613,10 +680,13 @@ con swiftshader: el visor *Completo* converge a 3,6 muestras/s en
 1000 × 875 (3,15 M caminos/s con 3 workers y SIMD) y orbita a 13 fps a ¼
 de resolución; *Render* de 1920 × 1080 a 128 muestras, 84–111 s. El
 render en modo *Rápido* sale del trazador (ruido de muestreo y sombra de
-contacto medidos). Brillo *Completo* frente a *Rápido*: 0,95, dentro de
-la tolerancia de ±10 %. Fotometría común en `src/core/photometry.ts`:
-flujo de un panel = potencia × tamaño² / 4 para igualar la irradiancia
-del rig; sensor de 36 mm en el lado largo. Capturas
+contacto medidos). Brillo *Completo* frente a *Rápido*: 0,95 (0,94 tras
+la corrección de abajo), dentro de la tolerancia de ±10 %. Fotometría
+común en `src/core/photometry.ts`: flujo de un panel = π/4 × potencia ×
+tamaño² (convención de Cycles; **corregido después de E4**: con `/ 4` los
+paneles daban π veces menos luz que en Blender y la cúpula los tapaba, de
+modo que cambiar de montaje apenas cambiaba el render; test de regresión
+en `tests/photometry.test.ts`); sensor de 36 mm en el lado largo. Capturas
 `docs/ui/viewport-full.png`, `viewport-fast.png`, `render-output.png`.
 
 Lo que no encajaba: nueva exportación `rt_scene_update`
@@ -888,6 +958,16 @@ dentro de ±0.3 EV entre montajes del mismo tipo de producto; nada de
 zonas negras por encima del 5 % en fondos claros; la miniatura tiene el
 brillo donde el render.
 
+**Datos de partida (corrección de la potencia de las luces, tras U5).**
+Las recetas se evalúan ya con la convención de Cycles. Con JEWELLERY, la
+irradiancia de los focos frente a la de la cúpula sobre una cara hacia
+arriba es 2,31× en campo lejano y 1,4–1,9× integrando el panel; la cúpula
+sigue dando cerca de la mitad del brillo de la pieza, igual que en
+Blender con los mismos valores. REMBRANDT frente a NEON_NOIR cambian el
+48 % de los píxeles de la pieza (77 % sin cúpula). El equilibrio entre
+focos y cúpula por tipo de producto lo decide Fable aquí;
+`tools/setup-contrast.mjs` lo mide.
+
 **Depende de.** E5, L2.
 
 ## M1 · Cara CAD entera — **Sonnet**
@@ -994,7 +1074,7 @@ clic.
 **Criterio.** `tests/doctor-engine.test.ts` con un motor falso que simula
 cada estado; cada chequeo se dispara y se limpia.
 
-## U5 · Ventana de render y visor de resultados — **Opus**
+## U5 · Ventana de render y visor de resultados — **Opus** — hecha
 
 **Qué.** `UI.md` §2.5, §2.7 y §2.8: la barra inferior pierde calidad,
 resolución, presupuesto y formato, y queda con *Animación*, *Cola* (con
@@ -1031,7 +1111,43 @@ ventana no aparece en la captura del visor. Capturas de la ventana en
 *Imagen* y en *Animación*, del cajón *Cola* con tres trabajos y del
 visor de resultados con el divisor.
 
-## U6 · Ventana de Ajustes y gestor de modelos — **Opus**
+**Hecho.** La barra inferior queda con *Animación*, *Cola* (contador y
+progreso), el último resultado y **Render…**; la ventana de render
+(`ui/panels/render-window.ts`) con *Salida* (plantilla con fichas,
+*Descargas* o carpeta elegida con el permiso recordado, PNG 8/16 bits,
+JPEG con calidad, EXR lineal sin comprimir, transparente, cámara activa,
+una o todas, píxeles ↔ impresión con candado y ppp), *Calidad* (*Terminar
+por* muestras, tiempo o lo primero, estimación con las muestras por
+segundo medidas, avanzado con rebotes, recorte y semilla), *Animación*
+(rango, fps, fotogramas funcionando ya, vídeo *próximamente*), el hueco
+plegado del post-procesado IA y el pie con **+ Añadir a la cola** y
+**Render**. Los ppp van en `pHYs` (PNG) y en la densidad JFIF (JPEG).
+*Terminar por tiempo* lo decide `render/schedule.ts` entre pasadas
+midiendo el tiempo por muestra, siempre dentro de una pasada del límite.
+`RenderJob` completo con migración pura del estado de U1 y
+`PROJECT_SCHEMA = 2`. Cola con reordenar, editar, duplicar, pausar y
+terminados; visor de resultados con zoom, datos y el componente genérico
+`ui/components/split-compare.ts`; historial en IndexedDB (50 resultados o
+500 MB) con memoria como respaldo. 621 tests; 31 mutaciones comprobadas;
+8 comprobaciones en el navegador (`tools/render-window-check.mjs`), entre
+ellas que la ventana nunca aparece en la imagen del visor. Capturas
+`render-window-image.png`, `render-window-animation.png`,
+`queue-drawer.png` y `results-split.png`.
+
+No encajó con el plan: la cola pasa a ser **deshacible** (U1 la hizo no
+deshacible; manda este brief); *Render* con la cola en marcha no
+interrumpe el trabajo en curso, va el primero y empieza después; en
+*Animación* hace falta una fila *Tamaño del fotograma* (solo píxeles) y
+las secciones van apiladas; el historial guarda solo el primer fotograma
+de una animación; *Pausar* reinicia el trabajo, porque un render no se
+reanuda a medias; `{n}` es el número de render en imagen y el de
+fotograma en animación; EXR también para secuencias, sin ppp; los ajustes
+avanzados solo se aplican al render, no al visor Completo; *Abrir
+carpeta* se oculta en el navegador. Observación para L3: con el estudio
+de joyería, REMBRANDT y NEON_NOIR solo cambian un 3 % de los píxeles; se
+revisa con las recetas sobre el motor propio.
+
+## U6 · Ventana de Ajustes y gestor de modelos — **Opus** — hecha
 
 **Qué.** Petición del usuario: unos Ajustes profesionales, todo lo
 configurable separado por módulos y agrupado en una columna a la
@@ -1059,8 +1175,10 @@ licencia mostrada y aceptada antes de la primera descarga; la
 de WebGPU en la web; `/api/hardware` del lanzador en escritorio) y la
 **regla de recomendación** evaluada sobre la tabla del JSON. Si el
 instalador dejó una elección, sus descargas arrancan en el primer
-arranque. En las versiones portables y en la web, el selector aparece una
-vez en el primer arranque. Mientras no exista X3 el post-procesado no
+arranque. En las versiones portables de escritorio el selector aparece
+una vez en el primer arranque; en la web, la primera vez que se activa el
+post-procesado (`AI-POST.md` §2.2) y siempre en *Ajustes*, porque hoy no
+hay modelo para navegador. Mientras no exista X3 el post-procesado no
 corre: la sección lo dice en una línea y lo demás funciona.
 
 **Depende de.** U5 (la ventana de render enlaza con *Gestionar
@@ -1081,6 +1199,42 @@ fichero *Dañado*; contraste alto y tamaño de interfaz cambian los
 *tokens* y siguen acromáticos. Capturas en inglés de *General*,
 *Accesibilidad*, *Motor de renderizado* y *Post-procesado IA ▸ Modelos*
 con una descarga en curso.
+
+**Hecho.** `src/core/settings.ts`: unos 57 ajustes tipados con versión,
+valores de fábrica, validación, migración de las preferencias sueltas y
+una tabla de metadatos (`SETTING_ROWS`) de la que salen la ventana, el
+buscador en los dos idiomas, los puntos de *cambiado* y *Restablecer*. La
+ventana (`ui/panels/settings-*.ts`) con los grupos *Aplicación*,
+*Render* y *Sistema*, enlaces directos y `?settings=`; cada sección
+conectada de verdad (navegación y botones del ratón, resolución durante
+gestos, tamaño de interfaz y de texto, contraste alto, reducir
+movimiento, anuncios para lectores de pantalla, motor *Automático ·
+Nativo · WebAssembly*, hilos y SIMD, límite del visor, *Medir
+rendimiento* con un render real de 10 s, límites del historial, carpeta
+de datos, licencias de terceros completas copiadas al construir).
+*Último proyecto* funciona: el encabezado pregunta al arrancar si abrir
+el último archivo. Gestor de modelos con una interfaz `ModelStore` y tres
+implementaciones (OPFS en un worker con la misma disposición por
+`sha256` que el lanzador, el lanzador y memoria), descargas por trozos de
+4 MiB con `Range`, reanudación tras recargar, SHA-256 propio en
+streaming (fichero *Dañado* si no cuadra), dos ficheros a la vez, lo
+compartido una sola vez, licencia aceptada antes de descargar, importación
+con manifiesto y rechazo de *pickle*, la elección del instalador al
+arrancar y el selector una vez en los portables. 939 tests; comprobaciones
+en navegador web (`tools/settings-check.mjs`) y de escritorio con el
+lanzador real (`tools/settings-desktop-check.mjs`). Capturas
+`settings-general.png`, `settings-accessibility.png`,
+`settings-engine.png`, `settings-ai-models.png` y `settings-desktop.png`.
+
+No encajó con el plan: *Próximamente* la copia automática, las letras de
+acceso, cambiar atajos, *Buscar actualizaciones* y la tubería de IA; las
+descargas del catálogo por el lanzador no se probaron con ficheros de
+varios GB (la importación cubre el almacén de punta a punta); el test de
+límites de U2 tenía un falso positivo y el test acromático leía cadenas
+vacías en vez del CSS (los dos corregidos, con su caso); *Al arrancar*
+vale *Proyecto vacío* por defecto, como hasta ahora, con el modo
+estándar ya montado. Encontró un fallo de P2: un proyecto vacío nunca se
+renderiza en nativo (el lanzador pide mallas que no hay).
 
 ## N3 · Paseo de cámara — **Sonnet**
 
@@ -1355,7 +1509,7 @@ los factores a las luces reales) y como variantes (*día*, *atardecer*,
 (±1e-4); una mezcla guardada y re-renderizada coincide con la mezcla
 (±2 %); captura del mezclador.
 
-## P1 · Releases y demo pública — **Haiku**
+## P1 · Releases y demo pública — **Haiku** — hecha (v0.1.0)
 
 **Qué.** Petición del usuario: la primera release con **Windows
 portable**, **Linux portable** e **instalador de Windows**. Mientras
@@ -1376,7 +1530,16 @@ GitHub Pages para la demo, para cuando vuelva a haber minutos.
 árbol limpio; `SHA256SUMS.txt` cuadra; la etiqueta apunta al commit de la
 release; el CHANGELOG lista las fases hechas.
 
-## P2 · Escritorio: lanzador propio, portables e instalador — **Opus**
+**Hecho.** `docs/CHANGELOG.md` con la v0.1.0 y sus limitaciones,
+notas en inglés en `docs/release-notes/v0.1.0.md` (la ruta que lee
+`release.yml`), y `npm run release` desde el commit etiquetado `v0.1.0`:
+Windows portable, Linux portable e instalador de Windows, comprobados
+con `packaging/smoke.mjs` (nativo y bajo Wine, *hash* fijado) y
+`sha256sum -c`. La release se publica a mano desde la etiqueta mientras
+no haya minutos de Actions. El motor conserva su propia versión (0.3.0);
+la de la aplicación es la de `package.json`.
+
+## P2 · Escritorio: lanzador propio, portables e instalador — **Opus** — hecha
 
 **Decisión tomada (Fable), sustituye a la de Tauri.** El escritorio es
 un **lanzador propio en Rust solo con `std`** (`engine/crates/rt-app`,
@@ -1437,6 +1600,33 @@ arranca, abre la ventana con el Chromium local y renderiza en nativo
 (captura `docs/ui/desktop-linux.png`). El instalador se construye con
 `makensis` sin avisos.
 
+**Hecho.** `engine/crates/rt-app` (binario `repackshot`, solo `std`, sin
+`unsafe`): servidor HTTP/1.1 en `127.0.0.1` con comprobación de `Host`
+(421), *token* de 128 bits por arranque en el fragmento de la URL (401) y
+`Origin` ajeno rechazado (403); ventana de Edge o Chromium con perfil
+propio, instancia única y fin al cerrar o al faltar el latido; **motor
+nativo** por `/api/render` que repite el bucle de `rt` y da el mismo
+*hash* que `rt` y el pool wasm (`0x223515c3` en el ejemplo, con 1 y 4
+hilos, también el `.exe` bajo Wine), con *Terminar por* muestras, tiempo
+o lo primero, cancelación y sumas `f32` para PNG de 16 bits y EXR;
+almacén de modelos **por `sha256`** con SHA-256 propio, escritura por
+trozos desordenados y reanudación; detección del equipo y la regla de
+recomendación en Rust y TypeScript sobre el mismo fichero de 36 casos,
+con la memoria leída como *medida / 0,94*. `packaging/release.mjs`
+(`npm run release`): Windows portable (zip), Linux portable (tar.gz,
+binario musl estático) e instalador NSIS (por usuario, inglés y español,
+paso de modelos de IA, desinstalador), con icono propio acromático,
+avisos de terceros (three, rhino3dm, occt-import-js con sus licencias y
+fuentes) y `SHA256SUMS.txt`; tres construcciones dan los mismos bytes.
+846 tests web y 241 del motor. Captura `docs/ui/desktop-linux.png`.
+
+No encajó con el plan: AppImage solo bajo demanda (su *runtime* enlaza
+libfuse LGPL); instalador solo de 64 bits; en las filas del instalador no
+caben resumen, calidad ni velocidad; en Windows `--version` solo se ve
+redirigido (subsistema gráfico); sin probar en un Windows real (Edge por
+App Paths, VRAM con drivers reales, el instalador pulsado a mano,
+SmartScreen: el `.exe` no está firmado).
+
 ## Q1 · Vista en sección — **Sonnet**
 
 **Qué.** Plano de corte por clic + eje, por dos puntos, o animado como un
@@ -1460,7 +1650,11 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 ## Decisiones pendientes de Fable (no adelantar)
 
 - **I2**: decidido: `occt-import-js` (LGPL-2.1) como única excepción
-  LGPL, aislada con las condiciones de `ARCHITECTURE.md` §1.
+  LGPL, aislada con las condiciones de `ARCHITECTURE.md` §1. Pendiente:
+  el **eje arriba** de STEP e IGES (hoy Z); SolidWorks y Creo exportan
+  con Y arriba, así que se valora leer `originating_system` de la
+  cabecera del STEP para elegirlo, y el **aspecto de catálogo** para los
+  colores CAD (hoy SIMPLE, rugosidad 0,5).
 - **Escritorio**: decidido: lanzador propio solo con `std` en lugar de
   Tauri (`ARCHITECTURE.md` §5.5); instalador NSIS; el instalador elige
   los modelos y la aplicación los descarga (`AI-POST.md` §2.2).

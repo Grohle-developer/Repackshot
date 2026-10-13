@@ -12,7 +12,7 @@ import { allParts, boundsOf, partsUnder } from '../src/core/scene';
 import { createInitialState, createStore } from '../src/core/store';
 import { buildExample } from '../src/core/example';
 import { importFile, READ_EXTENSIONS } from '../src/io/import';
-import { cancelImport, confirmImport, importFiles, MODEL_ACCEPT, READ_FORMATS, setImportOptions, SOON_FORMATS } from '../src/ui/commands';
+import { CAD_FORMATS, cancelImport, confirmImport, importFiles, MODEL_ACCEPT, READ_FORMATS, setImportOptions } from '../src/ui/commands';
 import type { AppServices } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
 import { setLang, STRINGS, t } from '../src/ui/strings';
@@ -54,7 +54,7 @@ describe('the sheet opens with what the file says and imports nothing yet', () =
     expect(describePayload(sheet.payload)).toEqual({ parts: 2, groups: 2, triangles: 24, materials: 1 });
     expect(sheet.options).toEqual({
       units: 'cm', upAxis: 'Y', center: true, restOnFloor: true, frameCamera: true, mode: 'replace', groupBy: 'object',
-      materials: 'keep', separate: 'none', tessellation: 'MEDIUM', importHidden: false, flipNormals: false,
+      materials: 'keep', separate: 'none', tessellation: 'MEDIUM', chordPercent: 0.05, angleDeg: 12, importHidden: false, flipNormals: false,
     });
     expect(ctx.store.get().scene.roots).toEqual([]);
     expect(ctx.store.history().undo).toEqual([]);
@@ -85,9 +85,6 @@ describe('the sheet opens with what the file says and imports nothing yet', () =
 
   it('says so for formats it cannot read, and for files that fail, without opening a sheet', async () => {
     const ctx = makeCtx();
-    await importFiles(ctx, [file('part.step', 'ISO-10303-21;')]);
-    expect(ctx.ui.get().importSheet).toBeNull();
-    expect(ctx.ui.get().importMessage).toBe(t('import.soon', { format: 'STEP' }));
     await importFiles(ctx, [file('notes.txt', 'hello')]);
     expect(ctx.ui.get().importMessage).toBe(t('import.unknown', { name: 'notes.txt' }));
     await importFiles(ctx, [file('broken.fbx', 'hello')]);
@@ -98,11 +95,13 @@ describe('the sheet opens with what the file says and imports nothing yet', () =
 
   it('lists the same formats as the importer', () => {
     expect([...READ_FORMATS].sort()).toEqual([...READ_EXTENSIONS].sort());
-    for (const ext of [...READ_FORMATS, ...SOON_FORMATS]) expect(MODEL_ACCEPT.split(',')).toContain(`.${ext}`);
-    expect(SOON_FORMATS).toEqual(['step', 'stp', 'iges', 'igs']);
-    // The empty state names every format that is read, and the two that are not yet.
+    for (const ext of READ_FORMATS) expect(MODEL_ACCEPT.split(',')).toContain(`.${ext}`);
+    expect(CAD_FORMATS).toEqual(['step', 'stp', 'iges', 'igs']);
+    for (const ext of CAD_FORMATS) expect(READ_FORMATS).toContain(ext);
+    // The empty state names every format that is read, and none as coming soon any more.
     for (const f of ['glTF/GLB', 'OBJ', 'STL', 'FBX', '3DM', '3MF', 'PLY', 'DAE', 'USD/USDZ', 'STEP', 'IGES']) expect(t('empty.formats')).toContain(f);
     expect(STRINGS.es['empty.formats']).toContain('USD/USDZ');
+    for (const lang of ['en', 'es'] as const) expect(STRINGS[lang]['empty.formats']).not.toMatch(/soon|próximamente/);
   });
 });
 

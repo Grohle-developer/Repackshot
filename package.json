@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "vendor": "node tools/vendor.mjs",
+    "vendor": "node tools/vendor.mjs && node tools/licences.mjs",
     "predev": "npm run vendor",
     "dev": "vite",
     "build": "vite build",
@@ -21,9 +21,11 @@
     "screenshot": "node tools/screenshot.mjs",
     "qa": "npm run check && npm run build && npm run test",
     "engine:build": "node tools/engine-build.mjs",
-    "engine:test": "cargo test --manifest-path engine/Cargo.toml --workspace"
+    "engine:test": "cargo test --manifest-path engine/Cargo.toml --workspace",
+    "release": "node packaging/release.mjs"
   },
   "dependencies": {
+    "occt-import-js": "0.0.23",
     "rhino3dm": "8.35.0",
     "three": "^0.186.1"
   },

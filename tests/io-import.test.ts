@@ -61,7 +61,10 @@ describe('detectFormat', () => {
     expect(detectFormat('part', encode(cubeTwoGroups))).toBe('OBJ');
     expect(detectFormat('part.json', encode('{ "asset": { "version": "2.0" } }'))).toBe('GLTF');
     expect(detectFormat('part.bin', encode('nothing to see here'))).toBeNull();
-    expect(detectFormat('part.step', encode('ISO-10303-21;'))).toBeNull();
+    // STEP and IGES (phase I2) by their first line too.
+    expect(detectFormat('part.dat', encode('ISO-10303-21;\nHEADER;'))).toBe('STEP');
+    expect(detectFormat('part.dat', encode(`${'Start'.padEnd(72)}S      1\n${'1H,,1H;;'.padEnd(72)}G      1\n`))).toBe('IGES');
+    expect(detectFormat('part.dat', encode(`${'Start'.padEnd(71)}S      1\n`))).toBeNull();
   });
 
   it('knows the extension of every format this version reads, case aside', () => {
@@ -69,10 +72,9 @@ describe('detectFormat', () => {
     const table: Record<string, string> = {
       'a.glb': 'GLTF', 'a.gltf': 'GLTF', 'a.obj': 'OBJ', 'a.stl': 'STL', 'a.fbx': 'FBX', 'a.3dm': '3DM', 'a.3mf': '3MF',
       'a.ply': 'PLY', 'a.dae': 'DAE', 'a.usd': 'USD', 'a.usda': 'USD', 'a.usdc': 'USD', 'a.usdz': 'USD', 'A.FBX': 'FBX', 'a.3DM': '3DM',
+      'a.step': 'STEP', 'a.stp': 'STEP', 'a.iges': 'IGES', 'a.igs': 'IGES', 'A.STEP': 'STEP', 'A.IGS': 'IGES',
     };
     for (const [name, format] of Object.entries(table)) expect(detectFormat(name, none), name).toBe(format);
-    // CAD is not read yet.
-    for (const name of ['a.step', 'a.stp', 'a.iges', 'a.igs']) expect(detectFormat(name, none), name).toBeNull();
   });
 
   it('sniffs the header of the new formats when the extension says nothing', () => {

@@ -13,7 +13,7 @@ import { isLocked, PATTERN_MAX, pivotModeOf, pivotPoint, PIVOT_MODES, type Patte
 import type { ProjectState } from '../../core/store';
 import type { LightInstance } from '../../core/lighting';
 import * as cmd from '../commands';
-import { colorField, field, numberField, segmented, select, slider, textField, toggle, type Control } from '../components/controls';
+import { colorField, field, lengthField, numberField, segmented, select, slider, textField, toggle, type Control } from '../components/controls';
 import { libraryFoot, mineCards, mineEmpty, namePrompt, type MineSpec } from '../components/library';
 import { section } from '../components/section';
 import { setThumbImage, showConfirmIn, thumb } from '../components/widgets';
@@ -356,8 +356,10 @@ function vec3(
   onChange: (i: number, v: number, g: string) => void,
   disabled = false,
 ): { el: HTMLElement; set(v: readonly number[]): void } {
+  // Lengths (mm in the model) show in the interface units.
+  const make = opts.unit === 'mm' ? lengthField : numberField;
   const fields = values.map((v, i) =>
-    numberField({ value: v, step: opts.step, unit: opts.unit, digits: opts.digits, min: opts.min, max: opts.max, label: labels[i], ariaLabel: labels[i], disabled, onChange: (x, g) => onChange(i, x, g) }),
+    make({ value: v, step: opts.step, unit: opts.unit === 'mm' ? undefined : opts.unit, digits: opts.digits, min: opts.min, max: opts.max, label: labels[i], ariaLabel: labels[i], disabled, onChange: (x, g) => onChange(i, x, g) }),
   );
   return { el: h('div', { class: 'field-row3' }, ...fields.map((f) => f.el)), set: (v) => fields.forEach((f, i) => f.set(v[i])) };
 }
@@ -456,7 +458,7 @@ function partSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean): HTM
   let bevelRow: HTMLElement | null = null;
   if (mats.length === 1 && s0.materials[mats[0]]) {
     const id = mats[0];
-    const bevel = numberField({ value: s0.materials[id].bevelRadiusMm, min: 0, max: 1000, step: 0.05, digits: 2, unit: 'mm', ariaLabel: t('material.bevel'), onChange: (v, g) => store.dispatch({ type: 'material/set', id, patch: { bevelRadiusMm: v }, gesture: g, label: L('undo.bevel', { material: materialLabel(store.get().materials[id]) }) }) });
+    const bevel = lengthField({ value: s0.materials[id].bevelRadiusMm, min: 0, max: 1000, step: 0.05, digits: 2, ariaLabel: t('material.bevel'), onChange: (v, g) => store.dispatch({ type: 'material/set', id, patch: { bevelRadiusMm: v }, gesture: g, label: L('undo.bevel', { material: materialLabel(store.get().materials[id]) }) }) });
     scope.watch((s) => s.materials[id]?.bevelRadiusMm ?? 0, (v) => bevel.set(v));
     bevelRow = h('div', { class: 'stack', style: 'gap:2px' }, field(t('material.bevel'), bevel.el), h('div', { class: 'note', style: 'padding-left:112px' }, t('material.bevelAux')));
   }
