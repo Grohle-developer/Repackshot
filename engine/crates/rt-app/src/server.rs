@@ -75,6 +75,8 @@ pub struct App {
     pub dialogs: crate::dialogs::Dialogs,
     /// What the person chose in them (`/api/files*`).
     pub files: crate::files::Files,
+    /// The AI runtime, its downloads and its server (`/api/ai/*`, `src/ai/`).
+    pub ai: Arc<crate::ai::Ai>,
     last_alive: Mutex<Instant>,
     hardware: Mutex<Option<Hardware>>,
     connections: AtomicUsize,
@@ -97,7 +99,7 @@ impl App {
         format!("http://127.0.0.1:{}/#token={}", self.port, self.token)
     }
 
-    fn hardware(&self, refresh: bool) -> Hardware {
+    pub(crate) fn hardware(&self, refresh: bool) -> Hardware {
         let mut cached = lock(&self.hardware);
         if refresh || cached.is_none() {
             *cached = Some(hardware::detect());
@@ -159,6 +161,10 @@ impl App {
         }
         // The page's state in the data folder (appdata.rs, phase P3e): /api/store/*, /api/storage/*.
         if let Some(r) = crate::appdata::route(&self.paths, req, &parts, body) {
+            return api(r);
+        }
+        // The AI runtime (ai/mod.rs).
+        if let Some(r) = crate::ai::route(self, req, &parts, body) {
             return api(r);
         }
         let m = req.method.as_str();
@@ -313,6 +319,8 @@ impl App {
                 .num("pid", f64::from(std::process::id()))
                 // The dialogs and file API of files.rs (version 1).
                 .num("filesApi", 1.0)
+                // The AI runtime API of ai/mod.rs (version 1).
+                .num("aiApi", 1.0)
                 .build(),
         )
     }
@@ -597,6 +605,7 @@ impl Server {
             browser: Mutex::new(None),
             dialogs: crate::dialogs::Dialogs::new(),
             files: crate::files::Files::new(&paths_data),
+            ai: crate::ai::Ai::new(&paths_data),
             last_alive: Mutex::new(Instant::now()),
             hardware: Mutex::new(None),
             connections: AtomicUsize::new(0),
@@ -654,6 +663,7 @@ impl Server {
             let _ = h.join();
         }
         self.app.engine.shutdown();
+        self.app.ai.shutdown();
     }
 }
 

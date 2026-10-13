@@ -1,0 +1,180 @@
+{
+  "schema": 1,
+  "provisional": true,
+  "researched": "2026-10-13",
+  "release": {
+    "project": "stable-diffusion.cpp",
+    "repository": "https://github.com/leejet/stable-diffusion.cpp",
+    "tag": "master-959-d637cfb",
+    "commit": "d637cfb935feb2254898a8f1524046c958f3df80",
+    "published": "2026-10-12",
+    "ggmlCommit": "d25b121ce1d6ae0c7e62ad080460d9fc1e46dd93",
+    "licences": [
+      {
+        "component": "stable-diffusion.cpp",
+        "spdx": "MIT",
+        "url": "https://github.com/leejet/stable-diffusion.cpp/blob/d637cfb935feb2254898a8f1524046c958f3df80/LICENSE",
+        "file": "stable-diffusion.cpp.txt"
+      },
+      {
+        "component": "ggml",
+        "spdx": "MIT",
+        "url": "https://github.com/leejet/ggml/blob/d25b121ce1d6ae0c7e62ad080460d9fc1e46dd93/LICENSE",
+        "file": "ggml.txt"
+      }
+    ]
+  },
+  "runtimes": [
+    {
+      "key": "SDCPP_WIN_VULKAN",
+      "os": "windows",
+      "arch": "x86_64",
+      "backend": "VULKAN",
+      "label": {
+        "en": "stable-diffusion.cpp · Vulkan · Windows",
+        "es": "stable-diffusion.cpp · Vulkan · Windows"
+      },
+      "name": "sd-master-d637cfb-bin-win-vulkan-x64.zip",
+      "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-959-d637cfb/sd-master-d637cfb-bin-win-vulkan-x64.zip",
+      "bytes": 30139117,
+      "sha256": "b28606d62b8b819bf9d91bd7224a04513aa33edac30f9487d5172af5a59785f2",
+      "archive": {
+        "format": "zip",
+        "server": "sd-server.exe",
+        "cli": "sd-cli.exe"
+      },
+      "requires": {
+        "en": "Windows 10 or 11 x64, the Microsoft Visual C++ 2015–2022 runtime (x64) and the graphics card's own driver with Vulkan",
+        "es": "Windows 10 u 11 x64, el entorno de Microsoft Visual C++ 2015–2022 (x64) y el controlador de la tarjeta gráfica con Vulkan"
+      },
+      "supports": ["ZIMAGE_Q8", "ZIMAGE_Q4", "ZIMAGE_Q2", "KLEIN4B_Q4", "QWENEDIT_Q4", "SD15_LIGHT"],
+      "verified": []
+    },
+    {
+      "key": "SDCPP_WIN_CPU",
+      "os": "windows",
+      "arch": "x86_64",
+      "backend": "CPU",
+      "label": {
+        "en": "stable-diffusion.cpp · CPU · Windows",
+        "es": "stable-diffusion.cpp · CPU · Windows"
+      },
+      "name": "sd-master-d637cfb-bin-win-cpu-x64.zip",
+      "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-959-d637cfb/sd-master-d637cfb-bin-win-cpu-x64.zip",
+      "bytes": 17558769,
+      "sha256": "024f5a59964c193856ab3d9bcbeff5713572a22d746126444b79ba1cd7b5bfb5",
+      "archive": {
+        "format": "zip",
+        "server": "sd-server.exe",
+        "cli": "sd-cli.exe"
+      },
+      "requires": {
+        "en": "Windows 10 or 11 x64 and the Microsoft Visual C++ 2015–2022 runtime (x64); every x86-64 processor (ggml picks the best variant, AVX2 and above when there is one)",
+        "es": "Windows 10 u 11 x64 y el entorno de Microsoft Visual C++ 2015–2022 (x64); cualquier procesador x86-64 (ggml elige la mejor variante, AVX2 o superior si la hay)"
+      },
+      "supports": ["ZIMAGE_Q8", "ZIMAGE_Q4", "ZIMAGE_Q2", "KLEIN4B_Q4", "QWENEDIT_Q4", "SD15_LIGHT"],
+      "verified": []
+    },
+    {
+      "key": "SDCPP_LINUX_VULKAN",
+      "os": "linux",
+      "arch": "x86_64",
+      "backend": "VULKAN",
+      "label": {
+        "en": "stable-diffusion.cpp · Vulkan · Linux",
+        "es": "stable-diffusion.cpp · Vulkan · Linux"
+      },
+      "name": "sd-master-d637cfb-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+      "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-959-d637cfb/sd-master-d637cfb-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+      "bytes": 37009067,
+      "sha256": "09057ce221787094cd91fe34e044544d5dc20b095099eb30b901a2da727f947a",
+      "archive": {
+        "format": "zip",
+        "server": "sd-server",
+        "cli": "sd-cli"
+      },
+      "requires": {
+        "en": "glibc 2.38 and libstdc++ of GCC 13 or newer (Ubuntu 24.04, Debian 13, Fedora 39), libvulkan.so.1 and a Vulkan driver (Mesa, NVIDIA)",
+        "es": "glibc 2.38 y libstdc++ de GCC 13 o posteriores (Ubuntu 24.04, Debian 13, Fedora 39), libvulkan.so.1 y un controlador Vulkan (Mesa, NVIDIA)"
+      },
+      "supports": ["ZIMAGE_Q8", "ZIMAGE_Q4", "ZIMAGE_Q2", "KLEIN4B_Q4", "QWENEDIT_Q4", "SD15_LIGHT"],
+      "verified": []
+    },
+    {
+      "key": "SDCPP_LINUX_CPU",
+      "os": "linux",
+      "arch": "x86_64",
+      "backend": "CPU",
+      "label": {
+        "en": "stable-diffusion.cpp · CPU · Linux",
+        "es": "stable-diffusion.cpp · CPU · Linux"
+      },
+      "name": "sd-master-d637cfb-bin-Linux-Ubuntu-24.04-x86_64.zip",
+      "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-959-d637cfb/sd-master-d637cfb-bin-Linux-Ubuntu-24.04-x86_64.zip",
+      "bytes": 26143940,
+      "sha256": "6e9533808ffe8f4288025741d8f0cdc9305124bff8a51449dc4bc22544c8eaad",
+      "archive": {
+        "format": "zip",
+        "server": "sd-server",
+        "cli": "sd-cli"
+      },
+      "requires": {
+        "en": "glibc 2.38 and libstdc++ of GCC 13 or newer (Ubuntu 24.04, Debian 13, Fedora 39); every x86-64 processor (ggml picks the best variant, AVX2 and above when there is one)",
+        "es": "glibc 2.38 y libstdc++ de GCC 13 o posteriores (Ubuntu 24.04, Debian 13, Fedora 39); cualquier procesador x86-64 (ggml elige la mejor variante, AVX2 o superior si la hay)"
+      },
+      "supports": ["ZIMAGE_Q8", "ZIMAGE_Q4", "ZIMAGE_Q2", "KLEIN4B_Q4", "QWENEDIT_Q4", "SD15_LIGHT"],
+      "verified": []
+    }
+  ],
+  "choice": [
+    { "id": "forced-vulkan", "force": "VULKAN", "backend": "VULKAN" },
+    { "id": "forced-cpu", "force": "CPU", "backend": "CPU" },
+    { "id": "gpu", "force": null, "gpu": true, "backend": "VULKAN" },
+    { "id": "no-gpu", "force": null, "gpu": false, "backend": "CPU" }
+  ],
+  "profiles": {
+    "z-image": {
+      "load": ["--diffusion-model", "@transformer", "--llm", "@text-encoder", "--vae", "@vae", "--diffusion-fa"],
+      "steps": 8,
+      "cfgScale": 1.0,
+      "sampler": null,
+      "flowShift": null,
+      "image": "init",
+      "controls": {},
+      "source": "docs/z_image.md (Z-Image-Turbo: --diffusion-model, --llm, --vae, --cfg-scale 1.0, --diffusion-fa, --steps 8) and docs/sd.md (img2img: -i, --strength)"
+    },
+    "flux2-klein": {
+      "load": ["--diffusion-model", "@transformer", "--llm", "@text-encoder", "--vae", "@vae", "--diffusion-fa"],
+      "steps": 4,
+      "cfgScale": 1.0,
+      "sampler": "euler",
+      "flowShift": null,
+      "image": "init+ref",
+      "controls": {},
+      "source": "docs/flux2.md (FLUX.2 klein 4B edit: -r, --cfg-scale 1.0, --sampling-method euler, --steps 4, --diffusion-fa) and docs/sd.md (img2img: -i, --strength)"
+    },
+    "qwen-image-edit": {
+      "load": ["--diffusion-model", "@transformer", "--llm", "@text-encoder", "--llm_vision", "@mmproj", "--vae", "@vae", "--diffusion-fa", "--model-args", "qwen_image_zero_cond_t=true"],
+      "steps": 20,
+      "cfgScale": 2.5,
+      "sampler": "euler",
+      "flowShift": 3.0,
+      "image": "init+ref",
+      "controls": {},
+      "source": "docs/qwen_image_edit.md (2509: --llm_vision; 2511: --model-args qwen_image_zero_cond_t=true; --cfg-scale 2.5, --sampling-method euler, --flow-shift 3, -r) and docs/sd.md (img2img: -i, --strength)"
+    },
+    "sd15": {
+      "load": ["-m", "@transformer"],
+      "steps": 20,
+      "cfgScale": 7.0,
+      "sampler": null,
+      "flowShift": null,
+      "image": "init",
+      "controls": {
+        "tile": { "load": ["--control-net", "@controlnet~tile"], "strength": 0.9 },
+        "depth": { "load": ["--control-net", "@controlnet~depth"], "strength": 0.9 }
+      },
+      "source": "docs/sd.md (-m, img2img -i --strength), README (ControlNet with SD 1.5: --control-net, --control-image, --control-strength 0.9 by default)"
+    }
+  }
+}

@@ -372,6 +372,15 @@ nativo que gobierna el lanzador.
   queda anotado como mejora (sus bibliotecas pesan cientos de MB).
 - Una clave que la compilación instalada no carga aparece en *Ajustes*
   como *No disponible con este motor de ejecución*, con el motivo.
+- **Hecho en X3b** (2026-10-13): *release* `master-959-d637cfb`, el modo
+  servidor (`sd-server`, el modelo queda cargado), la API `/api/ai/runtime`
+  y `/api/ai/run` (`engine/crates/rt-app/README.md`). **No encajó**: la
+  descarga no la puede hacer la página como la de los modelos, porque las
+  descargas de *releases* de GitHub no mandan cabeceras CORS; la hace el
+  lanzador con el `curl` del sistema (mismo progreso, pausa, reanudación y
+  `sha256`, misma carpeta), con *Instalar desde un archivo…* de respaldo.
+  Las compilaciones de Windows necesitan el entorno de Visual C++
+  2015–2022, que no traen.
 
 ### 7.2 · La guarda y los píxeles: el *crate* `rt-post`
 

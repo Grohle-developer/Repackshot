@@ -30,6 +30,16 @@ pub struct TestServer {
 
 impl TestServer {
     pub fn start(name: &str, threads: usize) -> TestServer {
+        TestServer::start_with(name, threads, |_| {})
+    }
+
+    /// Starts after `setup` has prepared the data folder (tests/ai.rs: a runtime catalogue
+    /// override, an installed runtime, model blobs).
+    pub fn start_with(
+        name: &str,
+        threads: usize,
+        setup: impl FnOnce(&std::path::Path),
+    ) -> TestServer {
         let dir = temp_dir(name);
         std::fs::create_dir_all(dir.join("app/engine")).unwrap();
         std::fs::write(
@@ -46,6 +56,7 @@ impl TestServer {
             portable: false,
         };
         std::fs::create_dir_all(&paths.data_dir).unwrap();
+        setup(&paths.data_dir);
         let server = Server::start(paths, 0, TOKEN.into(), threads).unwrap();
         TestServer { server, dir }
     }

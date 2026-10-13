@@ -31,6 +31,7 @@ import { buildExample } from './core/example';
 import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { exportLibrary, importLibrary } from './io/library';
 import { connectHost, downloadsFor } from './io/host';
+import { AiRuntimeClient } from './io/ai-runtime';
 import type { PendingModels } from './io/native';
 import { choosePlatform } from './io/platform';
 import { readPref, writePref } from './io/prefs';
@@ -608,6 +609,8 @@ void nativeReady.then(async (native) => {
     onClose: () => requestCloseWindow(app.ctx),
     openExternal: (url) => void services.openExternal(url).catch((err: unknown) => console.warn(`open ${url}: ${err instanceof Error ? err.message : String(err)}`)),
   });
+  // The inference runtime of the AI post-processing (X3b): Settings ▸ AI post-processing ▸ Runtime.
+  if ((native.info.aiApi ?? 0) >= 1) services.aiRuntime = new AiRuntimeClient(native);
   const i = native.info;
   // The manager has read what the installer chose (if anything) once it has started.
   await modelsService.started;
