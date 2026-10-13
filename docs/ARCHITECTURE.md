@@ -230,13 +230,19 @@ export interface RenderEngine {
   `converged: true`; el trazador, las muestras acumuladas. La interfaz
   pinta lo que el motor dice, nunca un contador propio.
 - `pick` sirve para seleccionar, enfocar con clic y colocar por reflejo.
-- Dos implementaciones conviven: **`preview`** (three.js) mientras la
-  cámara se mueve o se arrastra un control, y **`pathtracer`** (el motor
-  en Rust vía wasm) en cuanto la escena se queda quieta. El visor
-  muestra siempre el último fotograma del motor que esté activo; el
-  cambio es automático y no es una acción del *store*. Forzar uno u
-  otro sí lo es (`setEngine`), para máquinas donde el trazador no da
-  interactividad.
+- Dos implementaciones conviven y **el usuario elige cuál ve** con el
+  conmutador *Rápido · Completo* de la cabecera (`meta.viewportMode`,
+  `'FAST' | 'FULL'`, estado de interfaz persistido, no deshacible):
+  **`preview`** (three.js) en *Rápido*, para colocar luces, pintar
+  materiales y encuadrar con respuesta inmediata; **`pathtracer`** (el
+  motor en Rust vía wasm) en *Completo*, que simula todo en el propio
+  visor también mientras se mueve la cámara: durante un gesto renderiza
+  a resolución reducida (½ o ¼, elegida por el tiempo del último
+  fotograma) y al soltar vuelve a la resolución del visor y converge. No
+  hay cambio automático de motor; *Completo* queda deshabilitado con su
+  motivo cuando `rt.wasm` no está cargado o el navegador no da workers.
+- **`render()` usa siempre `pathtracer`**, esté el visor en el modo que
+  esté: el conmutador es solo lo que se ve mientras se trabaja.
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 

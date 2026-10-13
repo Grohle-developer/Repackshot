@@ -125,7 +125,18 @@ De izquierda a derecha:
    hasta que se edita). Un punto delante cuando hay cambios sin guardar.
 3. Centro: **Deshacer / Rehacer** con el nombre de la acción en el
    tooltip ("Deshacer: asignar Oro a Cuerpo").
-4. Derecha: **Buscar o ejecutar…** (`Ctrl/⌘ K`), campo de 240 px que abre
+4. A la derecha del centro: el **modo del visor**, un segmento de dos
+   posiciones **Rápido · Completo** (atajo `Ctrl/⌘ ⇧ R`). *Rápido* es la
+   vista previa rasterizada: responde al instante y sirve para colocar
+   luces, pintar materiales y encuadrar. *Completo* es el motor de verdad
+   simulándolo todo en el propio visor, también mientras se mueve la
+   cámara (baja la resolución durante el gesto y vuelve a converger al
+   soltar). El tooltip lo dice en una frase. Mientras el motor no está
+   cargado (sin `rt.wasm`), *Completo* se ve deshabilitado con el motivo
+   en auxiliar. **Render usa siempre el motor completo**, esté el visor
+   en el modo que esté: el conmutador solo decide qué se ve mientras se
+   trabaja.
+5. Derecha: **Buscar o ejecutar…** (`Ctrl/⌘ K`), campo de 240 px que abre
    la paleta de comandos; icono de **Guía**; icono de **Tema**.
 
 Nada más. Ni cinta de iconos ni pestañas de espacio de trabajo.
@@ -194,11 +205,12 @@ tapar la pieza:
   Perspectiva / Ortográfica, separador, Bloquear cámara.
 - **Arriba a la derecha**: nombre de la cámara activa (clic: lista) y
   resolución de salida actual (clic: abre la barra de render).
-- **Abajo a la izquierda, medidor de calidad**: motor activo,
-  muestras acumuladas, tiempo, y un pequeño indicador de progreso. Con el
-  motor de vista previa (fase U1) dice literalmente *Vista previa ·
-  rasterizada*; con el trazador de caminos (fases posteriores) dice
-  *128 muestras · 00:12*. **Nunca se inventa un número.**
+- **Abajo a la izquierda, medidor de calidad**: modo y motor activos,
+  muestras acumuladas, tiempo, y un pequeño indicador de progreso. En
+  *Rápido* dice literalmente *Rápido · vista previa rasterizada*; en
+  *Completo* dice *Completo · 128 muestras · 00:12* y, durante un gesto
+  de cámara, *Completo · ¼ de resolución*. **Nunca se inventa un
+  número.**
 - **Abajo a la derecha**: ejes de orientación (tres trazos finos X Y Z,
   monocromos) y el tamaño de la pieza en mm.
 - **Al pasar por una pieza**: su contorno se ilumina (silueta de 1 px en

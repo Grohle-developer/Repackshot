@@ -64,8 +64,13 @@ no un requisito.
    encuadre, perspectiva u ortográfica; exposición, transformada de vista,
    halo, viñeta. Guardar cámaras y estudios.
 6. **Render.** Calidad, resolución, presupuesto de muestras o tiempo,
-   formato; *Render* o *Añadir a la cola*. El visor ya es el render: el
-   botón solo lo lleva a resolución y calidad completas y lo guarda.
+   formato; *Render* o *Añadir a la cola*. El visor tiene dos modos,
+   elegidos con un conmutador en la cabecera: **Rápido** (vista previa
+   rasterizada, inmediata, para editar luces, materiales y encuadre) y
+   **Completo** (el motor simulándolo todo en el visor, también al mover
+   la cámara, a menos resolución durante el gesto). *Render* usa siempre
+   el motor completo, esté el visor como esté: lleva la imagen a
+   resolución y calidad completas y la guarda.
 7. **Animación** (opcional). Planos y movimientos en lenguaje llano,
    presets, línea de tiempo de bloques, vídeo.
 
@@ -404,8 +409,10 @@ web y se cargan bajo demanda; el motor de render no las conoce
 
 ## 6 · Lo que distingue este producto
 
-- **El visor es el render.** No hay dos modos: la imagen converge donde se
-  trabaja y *Render* solo la guarda a tamaño completo.
+- **El visor es el render.** En modo *Completo* la imagen converge donde
+  se trabaja y *Render* solo la guarda a tamaño completo; el modo *Rápido*
+  existe para que editar luces y materiales responda al instante, y el
+  conmutador está siempre a la vista en la cabecera.
 - **Lenguaje de fotógrafo** en todos los controles y una **intención**
   escrita para cada preset.
 - **Catálogos por el ojo**: montajes de luz y materiales se eligen por

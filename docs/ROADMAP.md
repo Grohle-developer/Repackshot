@@ -554,26 +554,37 @@ pasa de 1000 a 5 W; `rt_version` 0.2.0 y `.wasm` de 180 KB.
 ## E4 · El motor en el navegador — **Opus**
 
 **Qué.** `src/io/rsb.ts`: escritor RSB en TypeScript desde el
-`ProjectState` (mallas, materiales, rig resuelto por `setupRig`, cámara,
-entorno, render), con test de paridad byte a byte contra el escritor de
+`ProjectState` (mallas, instancias, materiales con la semántica fijada
+en E3, rig resuelto por `setupRig`, cámara, entorno, suelo `FLOR`,
+render), con test de paridad byte a byte contra el escritor de
 `rt-core` (fixture generado por `rt --write-example`). `src/render/worker.ts`
 y `src/render/pathtracer.ts`: pool de workers, cada uno con su `rt.wasm`
-y su copia de la escena, baldosas intercaladas, acumulación y
-transformada en el hilo principal, `status()` honesto (muestras, tiempo,
-workers, SIMD disponible). Cambio automático *preview mientras se mueve,
-trazador cuando se para*, con reinicio al cambiar cualquier cosa de la
-escena; `setEngine` para forzar. *Render* y la cola usan el pool a la
-resolución de salida y con el presupuesto. Si `rt.wasm` no está (no se
-ha ejecutado `npm run engine:build`), la interfaz arranca solo con la
-vista previa y el medidor lo dice.
+(variante `simd128` cuando el navegador la soporta, escalar si no) y su
+copia de la escena, baldosas intercaladas, acumulación, exposición y
+transformada en el hilo principal, `status()` honesto (modo, muestras,
+tiempo, workers, SIMD). **Conmutador *Rápido · Completo* en la cabecera**
+(`meta.viewportMode`, atajo `Ctrl ⇧ R`): *Rápido* = vista previa
+rasterizada siempre; *Completo* = trazador siempre, también durante los
+gestos de cámara, a resolución reducida (½ o ¼ según el tiempo del
+último fotograma) mientras dura el gesto y a resolución completa al
+soltar, con reinicio de la acumulación al cambiar cualquier cosa de la
+escena. **`render()` y la cola usan siempre el trazador** a la
+resolución de salida y con el presupuesto, en cualquier modo. Si
+`rt.wasm` no está (no se ha ejecutado `npm run engine:build`) o el
+navegador no da workers, *Completo* queda deshabilitado con el motivo y
+la interfaz funciona en *Rápido*.
 
 **Depende de.** U1, E3.
 
 **Criterio.** Paridad: la misma escena renderizada por `rt` y por el pool
-en Chromium local (vía `tools/screenshot.mjs` con `?engine=pathtracer`)
-da el mismo hash de imagen a 4 muestras; `tests/rsb.test.ts` en verde;
-captura del visor convergiendo con el medidor mostrando muestras reales;
-orbitar sigue siendo fluido.
+en Chromium local (vía `tools/screenshot.mjs` con `?mode=full`) da el
+mismo hash de imagen a 4 muestras; `tests/rsb.test.ts` en verde; captura
+del visor en *Completo* convergiendo con el medidor mostrando muestras
+reales y otra en *Rápido*; orbitar en *Completo* mantiene al menos 10
+fotogramas por segundo a resolución reducida en el Chromium local con
+swiftshader (o lo que dé, anotado); el botón *Render* en modo *Rápido*
+produce la imagen del trazador, no la de la vista previa (test de
+píxeles: la imagen descargada tiene ruido de muestreo y sombras suaves).
 
 ## E5 · Dieléctricos, emisores, barniz, cielo, HDRI — **Opus**
 
@@ -1111,9 +1122,10 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
   prohíben). La entrada es lo que cada programa exporta (`SPEC.md` §5).
   Se revisa solo si aparece una especificación pública o una biblioteca
   MIT/Apache que los lea.
-- **E4**: si el trazador en wasm no da interactividad suficiente en
-  portátiles, mantener three.js como vista previa (la decisión actual) o
-  pasar a trazado a baja resolución mientras se mueve y retirar three.
+- **E4**: decidido por el usuario: dos modos explícitos, *Rápido*
+  (three.js) y *Completo* (trazador siempre, a menos resolución durante
+  los gestos), con conmutador en la cabecera; *Render* siempre con el
+  trazador. Queda por decidir solo el umbral de resolución reducida.
 - **E8**: cómo renderiza `rt` una animación (portar `evaluate` a Rust o
   un RSB por fotograma).
 - **L3**: los números de las recetas sobre el motor propio.
