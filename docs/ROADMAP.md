@@ -779,7 +779,8 @@ Lo que no encajó con el plan:
 - **Hošek–Wilkie no se portó.** El lead lo decidió (implementación de
   referencia v1.4a, BSD de 3 cláusulas), pero el clasificador de permisos
   de la sesión bloqueó usar la implementación descargada; queda pendiente
-  de la aprobación explícita del usuario. Preetham, el respaldo previsto,
+  de la aprobación explícita del usuario (el usuario pidió después un
+  cielo propio en sala limpia: fase **E5c**). Preetham, el respaldo previsto,
   está detrás de la misma interfaz (`Preetham::new`, `radiance`) y el
   puerto TypeScript lo sigue con un test píxel a píxel, así que el cambio
   será local. Crepúsculo y noche, fuera de E5.
@@ -806,6 +807,57 @@ Lo que no encajó con el plan:
   y los EXR en mosaico o profundos se rechazan con un mensaje que los
   nombra. Las paredes finas no se difuminan con la rugosidad. El cielo
   ignora la rotación (lo coloca su sol) y sujeta el sol a 1° como mínimo.
+
+## E5c · Cielo físico propio, en sala limpia — **Opus**
+
+**Decisión del líder (2026-10-13, a petición del usuario: «haz un port del
+cielo desde una clean room»).** Ni se lee ni se usa la implementación de
+referencia de Hošek–Wilkie ni sus tablas de coeficientes (la copia
+descargada en E5 se borró sin abrirse). De la literatura pública se toma
+solo la **forma funcional** del modelo (Hošek y Wilkie, «An Analytic Model
+for Full Spectral Sky-Dome Radiance», ACM TOG 31(4), 2012): Perez
+extendido con nueve coeficientes y el término de halo χ(H, γ), con
+interpolación en la elevación del sol por Bézier de grado 5 sobre
+elevación^(1/3), lineal en el albedo del suelo y en la turbidez. **Los
+coeficientes los ajustamos nosotros** contra **nuestro propio simulador de
+atmósfera**, como hicieron los autores con el suyo. Todo es nuestro y se
+licencia con el proyecto.
+
+**Qué.**
+1. **Simulador** (herramienta fuera de línea, Rust solo `std`, sin tocar
+   `rt-core`): atmósfera esférica estratificada; Rayleigh desde el índice
+   de refracción del aire con el factor de King; aerosoles con espesor
+   óptico desde la turbidez (Linke/Ångström) y fase de Cornette–Shanks o
+   Henyey–Greenstein doble; absorción de ozono por capa; albedo del suelo;
+   dispersión múltiple por Monte Carlo **determinista** (semilla fija,
+   igual con cualquier número de hilos); espectral (≥ 32 bandas de 380 a
+   720 nm) a XYZ con el ajuste analítico de las funciones CIE de Wyman,
+   Sloan y Shirley (2013), y a Rec.709 lineal. Datos físicos solo de
+   fuentes de dominio público o de fórmulas publicadas, citadas.
+2. **Ajuste**: Levenberg–Marquardt propio por canal y por nudo (turbidez
+   1–10, albedo 0 y 1, elevaciones), con la radiancia de escala aparte. La
+   tabla resultante entra como datos con **receta, semilla y *hash***
+   (como los recursos de A6) y se regenera con una orden de `rt`.
+3. **Motor y vista previa**: el modelo nuevo en `sky.rs` detrás de la
+   interfaz de Preetham, con la misma normalización a la irradiancia de la
+   cúpula; Preetham queda como alternativa (*Clásico*) con un campo de
+   modelo en `ENVR` (clave estable); el modelo nuevo es el de por defecto;
+   puerto TypeScript para *Rápido* que coincide con el motor (≤ 1e-6
+   relativo); *hashes* fijados para el cielo nuevo.
+4. **Validación**: error del ajuste frente al simulador por elevación y
+   turbidez (objetivo: < 5 % RMS relativo fuera de la corona solar), forma
+   de la distribución frente al cielo despejado estándar de la CIE (ISO
+   15469/CIE S 011, tipos 12 y 13, fórmula publicada) y frente a Preetham.
+5. **Capturas para el usuario en cada hito** (lo pidió): cielos del
+   simulador en ojo de pez a varias elevaciones; ajuste frente a simulador
+   con mapa de diferencias; la escena de producto con el cielo nuevo frente
+   a Preetham (amanecer, hora dorada, mediodía, turbio).
+
+**Depende de.** E5.
+
+**Criterio.** Lo de arriba medido y en tests (determinismo del simulador
+y del ajuste, coincidencia motor/vista previa, *hashes* nuevos sin mover
+los de antes), y el visto bueno visual del líder sobre las capturas.
 
 ## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
 

@@ -151,7 +151,7 @@ importancia que se rehace al cambiarlos. *Colocar brillo*: clic en la
 pieza y el pin se mueve para que el reflejo caiga ahí. **Exportar HDR o
 EXR** (2k, 4k, 8k) solo cuando se pide.
 
-**Cielos.** Hošek–Wilkie (BSD-3, con atribución) para el día, de E5; la
+**Cielos.** Un cielo físico propio para el día (fase E5c: la forma de Hošek–Wilkie con coeficientes ajustados a nuestro simulador de atmósfera, en sala limpia; Preetham como alternativa); la
 hora azul y la noche con un integrador de atmósfera propio más adelante.
 
 **Biblioteca propia** (`src/data/environments.json`): las **39 recetas**
