@@ -8,7 +8,8 @@
 # the WebAssembly `simd128` path is executed too, by running the rt-core tests as a
 # `wasm32-wasip1` binary under Node's WASI (tools/wasi-run.mjs). NEON is compile-checked only.
 # The real `rt_wasm.wasm` renders the example scene in Node and must give the film hash the native
-# tests pin (tools/wasm-parity.mjs), and so must the E5 scene. The AI guard's `post.wasm`
+# tests pin (tools/wasm-parity.mjs), and so must the E5 scene; with every exact pass of X2 rendered
+# next to the image, the image keeps its hash and each pass gives the hash the native tests pin. The AI guard's `post.wasm`
 # (rt-post-wasm) runs the scenarios of tests/fixtures/ai-guard.json, which the native rt-post tests
 # pin, and must give the same image bits and report JSON (tests/ai-post-wasm.test.ts). The contact
 # sheet (six light recipes, then the E5 scenes) is rendered and uploaded on every run.
@@ -104,15 +105,34 @@ jobs:
 
       - name: WebAssembly parity with native (the real module in Node)
         run: |
+          # The pinned hashes of the six passes of a scene (X2), in the order of PASS_KEYS.
+          pinned_passes() {
+            for k in ALBEDO NORMAL DEPTH PART_ID MATERIAL_ID COC; do
+              sed -n "s/.*PINNED_${1}PASS_${k}: u32 = 0x\([0-9a-f_]*\);.*/\1/p" crates/rt-core/src/render/passes_tests.rs | tr -d _
+            done | paste -sd,
+          }
           cargo run --release -p rt-cli -- --write-example "$RUNNER_TEMP/example.rsb"
           expected=$(sed -n 's/.*PINNED_EXAMPLE_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
           test -n "$expected"
+          passes=$(pinned_passes "")
+          test "$(echo "$passes" | tr , '\n' | grep -c .)" = 6
+          # The image alone, then with every pass interleaved (it must keep its hash).
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/example.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/example.rsb" --expect "$expected" --expect-passes "$passes"
           # E5: glass, cut-outs, anisotropy, an HDRI read from its RGBE bytes, a background image.
           cargo run --release -p rt-cli -- --write-e5-example "$RUNNER_TEMP/e5.rsb"
           expected=$(sed -n 's/.*PINNED_E5_HDRI_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
           test -n "$expected"
-          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5.rsb" --expect "$expected"
+          passes=$(pinned_passes "E5_")
+          test "$(echo "$passes" | tr , '\n' | grep -c .)" = 6
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5.rsb" --expect "$expected" --expect-passes "$passes"
+
+      - name: Passes through the page's own code (the real rt.wasm in Node)
+        working-directory: .
+        env:
+          REPACK_REQUIRE_RT_WASM: '1'
+          REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
+        run: npx vitest run tests/passes-engine.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:

@@ -520,6 +520,10 @@ pub struct RenderSettings {
     /// Largest value of any colour channel of one indirect contribution (light that bounced
     /// at least twice before reaching the camera); 0 disables the clamp.
     pub clamp_indirect: f32,
+    /// The exact passes to write next to the image (AI-POST.md §7.4): bit `i` is pass `i` of
+    /// [`crate::passes::PASS_KEYS`]; 0 for none. Bits the engine does not know are kept and
+    /// ignored (a newer writer may ask for passes added later).
+    pub passes: u32,
 }
 
 impl RenderSettings {
@@ -553,6 +557,7 @@ impl Default for RenderSettings {
             tonemap: 1,
             max_depth: RenderSettings::DEFAULT_MAX_DEPTH,
             clamp_indirect: 0.0,
+            passes: 0,
         }
     }
 }

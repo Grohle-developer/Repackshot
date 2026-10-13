@@ -182,6 +182,7 @@ impl App {
             }
             ("POST", ["render"]) => self.post_render(req, body),
             ("GET", ["render", id]) => self.get_render(req, id),
+            ("GET", ["render", id, "passes"]) => self.get_passes(id),
             ("DELETE", ["render", id]) => match id.parse::<u32>() {
                 Ok(id) if self.engine.cancel(id) => Response::empty(204),
                 _ => Response::error(404, "not-found", "no such job"),
@@ -343,13 +344,30 @@ impl App {
                 None => return Response::error(400, "bad-query", "finish=samples|time|first"),
             },
         };
+        // The exact passes a final job keeps for the AI post-processing (X2): `passes=albedo,depth`.
+        let passes = match rt_core::passes::mask_of_keys(req.query("passes").unwrap_or("")) {
+            Ok(mask) => mask,
+            Err(key) => {
+                return Response::error(
+                    400,
+                    "bad-query",
+                    &format!(
+                        "unknown pass {key:?}: passes={}",
+                        rt_core::passes::PASS_KEYS.join(",")
+                    ),
+                )
+            }
+        };
+        if passes != 0 && kind == Kind::Viewport {
+            return Response::error(400, "bad-query", "passes are rendered by final jobs only");
+        }
         let mesh = req.query("mesh").unwrap_or("");
         let client = req.query("client").unwrap_or("");
         // `full=1`: the body is the complete scene even without `MESH` sections (an empty project).
         let whole = req.query("full") == Some("1") || has_meshes(&rsb);
         match self
             .engine
-            .submit_scene(kind, &rsb, whole, mesh, client, finish)
+            .submit_scene(kind, &rsb, whole, mesh, client, finish, passes)
         {
             Ok(job) => Response::json(
                 200,
@@ -360,6 +378,14 @@ impl App {
                     .num("maxSamples", f64::from(job.max_samples))
                     .num("threads", self.engine.threads() as f64)
                     .str("isa", self.engine.isa().name())
+                    .raw(
+                        "passes",
+                        &json::array(
+                            rt_core::passes::keys_of_mask(job.passes)
+                                .into_iter()
+                                .map(json::string),
+                        ),
+                    )
                     .build(),
             ),
             Err(SubmitError::NeedMeshes) => Response::error(
@@ -391,6 +417,32 @@ impl App {
                 len: frame.len(data),
                 write: Box::new(move |w| frame.write(data, w)),
             },
+        }
+    }
+
+    /// `GET /api/render/<id>/passes`: the kept passes of a final render (`kept.rs`, `RPP1`).
+    fn get_passes(&self, id: &str) -> Response {
+        let Ok(id) = id.parse::<u32>() else {
+            return Response::error(404, "not-found", "no such render");
+        };
+        // The job first: one that finishes in between has kept its passes before it ended.
+        let rendering = self
+            .engine
+            .job(id)
+            .is_some_and(|job| job.passes != 0 && !job.frame().finished());
+        if rendering {
+            return Response::error(409, "not-ready", "the render is not finished");
+        }
+        match self.engine.kept_passes(id) {
+            Some(body) => Response {
+                status: 200,
+                headers: vec![("Content-Type".into(), "application/octet-stream".into())],
+                body: Body::Stream {
+                    len: body.len,
+                    write: body.write,
+                },
+            },
+            None => Response::error(404, "not-found", "no passes kept for this render"),
         }
     }
 
@@ -593,6 +645,9 @@ pub struct Options {
         crate::ai::catalogue::RuntimeCatalogue,
         crate::ai::download::Downloader,
     )>,
+    /// How many final renders with passes are kept, and the largest kept in memory, in place of
+    /// [`crate::kept::KeepLimits::default`] (the tests: a small store that spills to the disk).
+    pub keep: Option<crate::kept::KeepLimits>,
 }
 
 /// A running server.
@@ -624,7 +679,11 @@ impl Server {
             paths,
             token,
             port,
-            engine: Engine::new(threads),
+            engine: Engine::with_store(
+                threads,
+                options.keep.unwrap_or_default(),
+                Some(paths_data.join("cache").join("ai")),
+            ),
             models,
             browser: Mutex::new(None),
             dialogs: crate::dialogs::Dialogs::new(),

@@ -1568,7 +1568,7 @@ de la web (q4f16) los fija X3d.
 
 **Depende de.** X3c (la tubería tiene que existir para medir).
 
-## X2 · Pases del motor para la IA — **Opus**
+## X2 · Pases del motor para la IA — **Opus** — hecha
 
 **Qué.** Contrato en `AI-POST.md` §7.4 y `src/core/passes.ts`. En
 `rt-core`: pases de albedo (primer rebote no especular), normal,
@@ -1586,6 +1586,69 @@ del centro del píxel; el albedo de un material difuso es su color; el
 mapa de desenfoque es cero en el plano de enfoque y crece con la
 distancia según la fórmula de lente fina (±1 %); pedir pases no cambia
 ni un píxel de la imagen; determinismo y paridad nativo/wasm intactos.
+
+**Hecho** (2026-10-13). `rt_core::passes` con el contrato de §7.4:
+`RNDR.passes` (40 B; los RSB anteriores no piden ninguno, los bits
+desconocidos se conservan), `render_tile_exact` (normal, profundidad,
+ids y círculo de confusión de **un rayo por el centro del píxel y de la
+lente**, `render::centre_ray`, una vez por baldosa) y `render_tile_albedo`
+(el rayo de cámara de cada muestra de la imagen, sumado en `f32` en orden
+de muestra y dividido como `Film::resolve`), sobre `integrator::first_hit`
+(lo más cercano entre geometría y suelo; un panel de luz visible a cámara
+cruzado antes es fondo) y `PassFilm`/`Passes`. El suelo del estudio
+(visible o atrapasombras) es `FLOOR_ID` en los dos ids; el fondo, 0 y
++∞. Los pases tienen rayos propios: la imagen conserva sus *hash*
+(`0x223515c3`, `0xbf8abd5b`, `0x2fcb098a`) con todos los pases
+intercalados. *Hash* fijados de los seis planos del ejemplo (albedo
+`0x43571da9`, normal `0x0aabfd24`, profundidad `0x25f8dd11`, ids
+`0xccd3d6c7` los dos, `coc` `0xdf87494c`) y del ejemplo de E5 (`0xace93461`,
+`0x714253d6`, `0x9b1b61c8`, `0x2c21fa55` ×2, `0x73bf76f1`), iguales en
+escalar, SSE2 y AVX2, en las dos pasadas de WASI, en el `rt.wasm` real
+(escalar y `simd128`, `tools/wasm-parity.mjs --expect-passes`, en CI),
+por la API del lanzador con 1 y 4 hilos y por el código de la página
+(`tests/passes-engine.test.ts`). `rt-wasm`: `rt_render_tile_passes` y
+`rt_render_tile_albedo`; el pool los pide con la máscara del trabajo y los
+junta con `PassAccumulator` (`src/render/pass-planes.ts`), y
+`renderPixels` devuelve `RenderPasses`. Lanzador: `passes=` en los
+finales (400 si nombra un pase que no existe o en el visor), almacén de
+los **cuatro últimos** renders con pases por id (imagen lineal y pases;
+los de más de 64 MiB en `<datos>/cache/ai/<id>.rpx` y `.rpp`, que se
+limpia al arrancar; `DELETE` del trabajo no los borra), servido como
+`RPP1` en `GET /api/render/<id>/passes` (404 si no existe o se desalojó,
+409 mientras se renderiza), `Engine::kept` para X3c; `native.ts` lo pide
+y lo lee con `parsePasses` y devuelve también `renderId`. El círculo de
+confusión es el de `lens-coc.ts` (los dos lados leen
+`tests/fixtures/lens-coc.json`) y coincide dentro de 1 % (en la práctica,
+1e-5) con el desenfoque medido de la lente de `Camera::generate_ray`.
+Los pases de three.js de X4 coinciden con los del motor en ids y
+profundidad en su escena de prueba (comparados en
+`tests/ai-passes-browser.test.ts` con el `rt.wasm` real), salvo el
+suelo. Tests: 22 nuevos en Rust (15 de `rt-core`, 1 de `rt-wasm` y 6 del
+lanzador: almacén, formato `RPP1`, trabajos y API) y 12 de vitest; 19
+mutaciones comprobadas (cada test falla si se rompe lo que guarda).
+
+**No encajó con el plan.** (1) **El suelo en los pases de three.js**: el
+contrato corregido (suelo = `FLOOR_ID`) lo cumple el motor; la vista
+previa de X4 todavía lo dibuja como fondo (0, +∞). No se toca aquí:
+§7.4 se lo da a X3c, y el test del navegador acepta hoy 0 en los píxeles
+del suelo y lo anota. (2) Decisiones donde el contrato no decía nada,
+anotadas en §7.4: el albedo de un emisor es su `base_color`; el del
+suelo, `FLOR.color` también en el atrapasombras (que no lo usa para
+pintar); con profundidad de campo el albedo sigue cada muestra por la
+lente y se emborrona como la imagen (la comparación de X2 con la
+referencia de X4 solo exige el color exacto donde `coc` < 0,25 px); un
+recorte o un vidrio paran el rayo de los pases, como `pick`; una
+instancia con índice de material fuera de rango lleva `materialId` 0.
+(3) En el ejemplo y en el de E5 la instancia *i* lleva el material *i*, así
+que sus planos de ids tienen el mismo *hash*: el orden de los dos planos
+lo vigilan el fichero `tests/fixtures/passes-3x2.rpp` (lo escribe el
+lanzador y lo lee la página) y la escena de X4, donde no coinciden.
+(4) La máscara viaja por dos sitios en el lanzador (`RNDR.passes` y
+`passes=`): un final renderiza la unión. (5) Los rayos de los pases
+cuentan en los rayos del trabajo (`rays` de la trama): uno por píxel para
+los exactos y uno por muestra para el albedo. (6) `engine/README.md` está
+entero en inglés; su sección de pases también, para no partir el
+fichero.
 
 ## X3 · Tubería de post-procesado y guarda — partida en X3a–X3d
 
@@ -2470,7 +2533,7 @@ probar en un Windows real.
 
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
-**N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b** y **X4** ya; **X2** al fusionarse E5; **X3c**, **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
+**N2**. El post-procesado IA, **adelantado a petición del usuario (2026-10-13)**: **X3a**, **X3b**, **X4** y **X2** ya; **X3c**, **X3d** y **X1b** detrás (`AI-POST.md` §7.6). Cada fase quita sus
 *próximamente* y no deja ninguno nuevo sin anotarlo aquí.
 
 ## Herramientas de estudio (óptica, entorno, luz, cámara, partículas)

@@ -3,6 +3,8 @@ import { connectNative, NativeClient, takeLaunchToken, TOKEN_KEY, type NativeInf
 import { exactBytesSliced, FLAG_DATA, FLAG_DONE, FRAME_HEADER, meshKeyHash, NativeEngine, parseFrame } from '../src/render/native';
 import { exactBytes } from '../src/render/tiles';
 import { createInitialState } from '../src/core/store';
+import { FLOOR_ID } from '../src/core/passes';
+import { readFileSync } from 'node:fs';
 
 const TOKEN = '0123456789abcdef0123456789abcdef';
 
@@ -204,6 +206,47 @@ describe('NativeEngine render', () => {
     const st = engine.status();
     expect(st).toMatchObject({ native: true, threads: 8, isa: 'avx2', workers: 8, simd: true });
     expect(st.device).toBe('native · 8 threads · avx2');
+  });
+
+  it('with passes: asks the launcher for them, reads them back by the render’s id, then forgets the job (X2)', async () => {
+    const fixture = readFileSync('tests/fixtures/passes-3x2.rpp');
+    const rpp = () => fixture.buffer.slice(fixture.byteOffset, fixture.byteOffset + fixture.byteLength);
+    const sums = new Float32Array(3 * 2 * 4).fill(1);
+    const calls: string[] = [];
+    let id = 42;
+    const transport = {
+      async request(path: string, init: RequestInit = {}) {
+        calls.push(`${init.method ?? 'GET'} ${path}`);
+        if (init.method === 'POST') return new Response(JSON.stringify({ id }));
+        if (init.method === 'DELETE') return new Response(null, { status: 204 });
+        if (path.endsWith('/passes')) return new Response(rpp());
+        if (path.includes('data=0')) return new Response(frame({ pass: 1, samples: 7, width: 3, height: 2, flags: FLAG_DONE }));
+        return new Response(frame({ pass: 1, samples: 7, width: 3, height: 2, flags: FLAG_DONE | FLAG_DATA, sums }));
+      },
+    };
+    const views: { passes?: readonly string[] }[] = [];
+    const source = { build: (_s: unknown, v: { passes?: readonly string[] }) => (views.push(v), { meshKey: 'm', bytes: () => new Uint8Array([1]) }), tone: () => ({ exposureEv: 0, tonemap: 1 }) };
+    const engine = new NativeEngine(transport, source, { threads: 4, isa: 'avx2' });
+    engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+    const px = await engine.renderPixels({ width: 3, height: 2, maxSamples: 7, maxSeconds: 0, transparent: false, passes: ['albedo', 'depth', 'partId'] });
+    expect(calls[0]).toMatch(/^POST \/api\/render\?kind=final&finish=samples&passes=albedo,depth,partId&mesh=/);
+    expect(views[0].passes).toEqual(['albedo', 'depth', 'partId']);
+    // The passes are read before the job is forgotten.
+    expect(calls.indexOf('GET /api/render/42/passes')).toBeLessThan(calls.indexOf('DELETE /api/render/42'));
+    expect(px.renderId).toBe(42);
+    expect([px.passes!.width, px.passes!.height, px.passes!.partId![4], px.passes!.depth![5]]).toEqual([3, 2, FLOOR_ID, Infinity]);
+    // A render without passes asks for none; passes of another render are not taken.
+    calls.length = 0;
+    const plain = await engine.renderPixels({ width: 3, height: 2, maxSamples: 7, maxSeconds: 0, transparent: false });
+    expect(plain.passes).toBeUndefined();
+    expect(calls.some((c) => c.includes('passes'))).toBe(false);
+    id = 43;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const other = await engine.renderPixels({ width: 3, height: 2, maxSamples: 7, maxSeconds: 0, transparent: false, passes: ['depth'] });
+    expect(other.passes).toBeUndefined();
+    expect(other.renderId).toBe(43);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('render 43: no passes'));
+    warn.mockRestore();
   });
 
   it('finishes by time natively, keeps the linear sums and cancels through the signal', async () => {

@@ -15,7 +15,8 @@
 
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
-use rt_core::render::{render_tile_prepared, TileRect};
+use rt_core::passes::{PassFilm, PASS_ALBEDO, PASS_EXACT};
+use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_prepared, TileRect};
 use rt_core::scene::Scene;
 use rt_core::simd::Isa;
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -137,6 +138,75 @@ pub fn scene_free(handle: u32) -> u32 {
     }
 }
 
+/// The loaded scene of `handle` after checking the tile, for `run`.
+fn with_tile<R>(handle: u32, w: u32, h: u32, run: impl FnOnce(&Loaded) -> R) -> Result<R, u32> {
+    if w == 0 || h == 0 || u64::from(w) * u64::from(h) > MAX_TILE_PIXELS {
+        return Err(STATUS_BAD_TILE);
+    }
+    let reg = registry();
+    let loaded = handle
+        .checked_sub(1)
+        .and_then(|i| reg.scenes.get(i as usize))
+        .and_then(Option::as_ref)
+        .ok_or(STATUS_BAD_HANDLE)?;
+    Ok(run(loaded))
+}
+
+/// The exact passes of `mask` (normal, depth, part id, material id, circle of confusion: the
+/// known bits of [`PASS_EXACT`]; the albedo bit and unknown bits are ignored) of the pixel
+/// rectangle `(x, y, w, h)`, from one ray through each pixel's centre (`rt_core::passes`). The
+/// planes follow each other in the order of `PASS_KEYS`, each `w * h * channels` little-endian
+/// words (`f32`, or `u32` for the ids), rows from the top; pixels outside the image are
+/// background (depth +inf, the rest 0). They do not depend on the sample: a host asks once per
+/// tile.
+pub fn render_tile_passes(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    mask: u32,
+) -> Result<Vec<u8>, u32> {
+    with_tile(handle, w, h, |loaded| {
+        let mut film = PassFilm::region(x, y, w, h, mask & PASS_EXACT);
+        render_tile_exact(
+            &loaded.scene,
+            &loaded.prepared,
+            TileRect { x, y, w, h },
+            &mut film,
+            Isa::detect(),
+        );
+        let mut out = Vec::new();
+        film.resolve().write_planes(&mut out);
+        out
+    })
+}
+
+/// The albedo of sample `sample_index` of the pixel rectangle `(x, y, w, h)`: `w * h * 3` floats,
+/// the base colour of what that sample's camera ray met first (0 for the background and outside
+/// the image). The host sums the samples in index order in `f32` and divides like the image.
+pub fn render_tile_albedo_sample(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sample_index: u32,
+) -> Result<Vec<f32>, u32> {
+    with_tile(handle, w, h, |loaded| {
+        let mut film = PassFilm::region(x, y, w, h, PASS_ALBEDO);
+        render_tile_albedo(
+            &loaded.scene,
+            &loaded.prepared,
+            TileRect { x, y, w, h },
+            sample_index,
+            &mut film,
+            Isa::detect(),
+        );
+        film.albedo
+    })
+}
+
 /// Renders sample `sample_index` of the pixel rectangle `(x, y, w, h)` into a film covering
 /// exactly that rectangle.
 fn render_region(
@@ -147,25 +217,18 @@ fn render_region(
     h: u32,
     sample_index: u32,
 ) -> Result<Film, u32> {
-    if w == 0 || h == 0 || u64::from(w) * u64::from(h) > MAX_TILE_PIXELS {
-        return Err(STATUS_BAD_TILE);
-    }
-    let reg = registry();
-    let loaded = handle
-        .checked_sub(1)
-        .and_then(|i| reg.scenes.get(i as usize))
-        .and_then(Option::as_ref)
-        .ok_or(STATUS_BAD_HANDLE)?;
-    let mut film = Film::region(x, y, w, h);
-    render_tile_prepared(
-        &loaded.scene,
-        &loaded.prepared,
-        TileRect { x, y, w, h },
-        sample_index,
-        &mut film,
-        Isa::detect(),
-    );
-    Ok(film)
+    with_tile(handle, w, h, |loaded| {
+        let mut film = Film::region(x, y, w, h);
+        render_tile_prepared(
+            &loaded.scene,
+            &loaded.prepared,
+            TileRect { x, y, w, h },
+            sample_index,
+            &mut film,
+            Isa::detect(),
+        );
+        film
+    })
 }
 
 /// Renders sample `sample_index` of the pixel rectangle `(x, y, w, h)` and returns the linear
@@ -493,6 +556,120 @@ mod tests {
         assert!(render_tile(b, 0, 0, 4, 4, 0).is_ok());
         scene_free(b);
         scene_free(c);
+    }
+
+    #[test]
+    fn passes_through_the_c_api_are_the_engines() {
+        use rt_core::passes::{Passes, PASS_ALL};
+        let _guard = serial();
+        let mut scene = rt_core::example::scene();
+        scene.render.width = 70;
+        scene.render.height = 45;
+        let handle = scene_load(&scene.to_rsb());
+        assert_ne!(handle, 0);
+        let prepared = Prepared::new(&scene);
+        // What a host does: per 32-pixel tile, the exact planes once and the albedo of samples
+        // 0..3, summed in f32 in sample order and divided like `Film::resolve`.
+        let samples = 3u32;
+        let mut reference = Passes::new(70, 45, PASS_ALL);
+        let mut planes: Vec<(TileRect, Vec<u8>, Vec<f32>)> = Vec::new();
+        for tile in rt_core::render::tile_grid(70, 45, 32) {
+            let TileRect { x, y, w, h } = tile;
+            let out = rt_alloc(w * h * 7 * 4);
+            // SAFETY: `out` has room for 7 words per pixel (normal 3, depth, two ids, coc).
+            let status = unsafe { rt_render_tile_passes(handle, x, y, w, h, PASS_ALL, out) };
+            assert_eq!(status, STATUS_OK);
+            let exact = read_floats_as_bytes(out, (w * h * 7 * 4) as usize);
+            // SAFETY: `out` came from `rt_alloc(w * h * 28)`.
+            unsafe { rt_free(out, w * h * 7 * 4) };
+            let mut sum = vec![0.0f32; (w * h * 3) as usize];
+            let one = rt_alloc(w * h * 3 * 4);
+            for s in 0..samples {
+                // SAFETY: `one` has room for `w * h * 3` floats.
+                let status = unsafe { rt_render_tile_albedo(handle, x, y, w, h, s, one.cast()) };
+                assert_eq!(status, STATUS_OK);
+                for (a, b) in sum.iter_mut().zip(read_floats(one, (w * h * 3) as usize)) {
+                    *a += b;
+                }
+            }
+            // SAFETY: `one` came from `rt_alloc(w * h * 12)`.
+            unsafe { rt_free(one, w * h * 3 * 4) };
+            let inv = 1.0 / samples as f32;
+            planes.push((tile, exact, sum.iter().map(|v| v * inv).collect()));
+            let mut film = PassFilm::region(x, y, w, h, PASS_ALL);
+            render_tile_exact(&scene, &prepared, tile, &mut film, Isa::detect());
+            for s in 0..samples {
+                render_tile_albedo(&scene, &prepared, tile, s, &mut film, Isa::detect());
+            }
+            reference.copy_region(x, y, &film.resolve());
+        }
+        // Assemble the host's planes the same way and compare bit for bit.
+        let mut got = Passes::new(70, 45, PASS_ALL);
+        for (tile, exact, albedo) in planes {
+            let n = (tile.w * tile.h) as usize;
+            let word = |i: usize| u32::from_le_bytes(exact[i * 4..i * 4 + 4].try_into().unwrap());
+            let floats = |from: usize, len: usize| {
+                (from..from + len)
+                    .map(|i| f32::from_bits(word(i)))
+                    .collect()
+            };
+            let ids = |from: usize| (from..from + n).map(word).collect();
+            let region = Passes {
+                width: tile.w,
+                height: tile.h,
+                mask: PASS_ALL,
+                albedo,
+                normal: floats(0, n * 3),
+                depth: floats(n * 3, n),
+                part_id: ids(n * 4),
+                material_id: ids(n * 5),
+                coc: floats(n * 6, n),
+            };
+            got.copy_region(tile.x, tile.y, &region);
+        }
+        assert_eq!(got, reference);
+        assert!(got.part_id.contains(&1) && got.part_id.contains(&0));
+
+        // A mask without exact passes writes nothing; bad arguments are the usual statuses.
+        assert_eq!(render_tile_passes(handle, 0, 0, 4, 4, 1), Ok(Vec::new()));
+        assert_eq!(
+            render_tile_passes(handle, 0, 0, 4, 4, 1 << 3).map(|b| b.len()),
+            Ok(64)
+        );
+        assert_eq!(
+            render_tile_passes(0, 0, 0, 4, 4, PASS_ALL),
+            Err(STATUS_BAD_HANDLE)
+        );
+        assert_eq!(
+            render_tile_passes(handle, 0, 0, 0, 4, PASS_ALL),
+            Err(STATUS_BAD_TILE)
+        );
+        assert_eq!(
+            render_tile_albedo_sample(handle, 0, 0, 4096, 4096, 0),
+            Err(STATUS_BAD_TILE)
+        );
+        // Beyond the image's edge: background.
+        let edge = render_tile_passes(handle, 68, 0, 4, 1, 1 << 2).unwrap();
+        assert_eq!(
+            f32::from_le_bytes(edge[12..16].try_into().unwrap()),
+            f32::INFINITY
+        );
+        assert_eq!(
+            render_tile_albedo_sample(handle, 68, 0, 4, 1, 0).unwrap()[6..],
+            [0.0; 6]
+        );
+        // SAFETY: null pointers are explicitly handled.
+        unsafe {
+            assert_eq!(
+                rt_render_tile_passes(handle, 0, 0, 4, 4, PASS_ALL, std::ptr::null_mut()),
+                STATUS_NULL_POINTER
+            );
+            assert_eq!(
+                rt_render_tile_albedo(handle, 0, 0, 4, 4, 0, std::ptr::null_mut()),
+                STATUS_NULL_POINTER
+            );
+        }
+        scene_free(handle);
     }
 
     #[test]

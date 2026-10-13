@@ -9,6 +9,9 @@ never on ui (the RSB writer of `io/` reaches the path tracer through `SceneSourc
   `rt` and the pool): viewport jobs that replace each other and keep the meshes, final jobs with priority, the
   launcher's RGBA sums into the same `Accumulator`. `main.ts` uses it instead of the pool in the launcher's window.
 - `worker.ts`: one worker, one `rt.wasm` (`rt-simd.wasm` when the browser has simd128), tiles in sample order.
+- `pass-planes.ts`: the engine's exact passes (X2, `core/passes.ts`): the planes of `rt_render_tile_passes` and
+  `rt_render_tile_albedo` put together like the image (`PassAccumulator`), and the reader of the launcher's
+  `RPP1` file (`parsePasses`). Render hands them back as `RenderPasses` when `RenderOptions.passes` asks.
 - `tiles.ts`: the pure parts (tiles, passes, generations, accumulation, resolution choice), and the 16-bit and
   linear conversions of the sums (16-bit PNG, EXR).
 - `schedule.ts`: when a render stops (U5): finish by samples, time, or whichever comes first, at the pass boundary

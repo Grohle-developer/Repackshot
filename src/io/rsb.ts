@@ -18,6 +18,7 @@ import type { MaterialInstance } from '../core/materials';
 import { mat4Compose, mat4Multiply, normalize, sub, type Mat4 } from '../core/math';
 import { getMesh, type MeshData } from '../core/meshes';
 import type { PassIds, PassInstance } from '../core/pass-ids';
+import { passMask, type PassKey } from '../core/passes';
 import { areaLightFlux, EMIT_RADIANCE_PER_WATT, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { getImage } from '../core/images';
 import { polar, toWorldAzimuth } from '../core/light-math';
@@ -205,6 +206,8 @@ export interface RsbRender {
   tonemap: number;
   maxDepth: number;
   clampIndirect: number;
+  /** X2: the exact passes to write next to the image, bit i = PASS_KEYS[i] of core/passes.ts (0: none). */
+  passes: number;
 }
 
 /** What the engine renders: `rt_core::scene::Scene`, field for field. */
@@ -262,7 +265,7 @@ export function defaultFloor(): RsbFloor {
 }
 
 export function defaultRender(): RsbRender {
-  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0 };
+  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0 };
 }
 
 export const IDENTITY_ROWS: readonly number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
@@ -298,7 +301,7 @@ const MATL_BYTES = 72;
 const LGHT_BYTES = 76;
 const ENVR_BYTES = 80;
 const FLOR_BYTES = 20;
-const RNDR_BYTES = 36;
+const RNDR_BYTES = 40;
 const INST_BYTES = 60;
 
 function meshBytes(m: RsbMesh): number {
@@ -481,6 +484,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.u32(r.tonemap);
     w.u32(r.maxDepth);
     w.f32(r.clampIndirect);
+    w.u32(r.passes);
   });
   if (w.length !== size) throw new Error(`RSB: wrote ${w.length} bytes, expected ${size}`);
   return w.bytes;
@@ -515,6 +519,8 @@ export interface SceneView {
   clampIndirect?: number;
   /** `RNDR.seed` (default 0). */
   seed?: number;
+  /** `RNDR.passes`: the exact passes the engine writes next to the image (AI-POST.md §7.4; default none). */
+  passes?: readonly PassKey[];
 }
 
 /** A scene and the identity of its geometry: an equal `meshKey` means the same MESH sections. */
@@ -922,6 +928,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     maxDepth: view.maxDepth !== undefined && view.maxDepth > 0 ? Math.round(view.maxDepth) : quality === 'CUSTOM' ? DEFAULT_MAX_DEPTH : (QUALITY_PRESETS[quality]?.bounces ?? DEFAULT_MAX_DEPTH),
     clampIndirect: Math.max(0, view.clampIndirect ?? 0),
     seed: Math.max(0, Math.round(view.seed ?? 0)) >>> 0,
+    passes: passMask(view.passes ?? []),
   };
 
   return {

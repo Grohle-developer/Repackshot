@@ -5,6 +5,7 @@
 // tracer. main.ts wires both.
 
 import type { CameraId } from '../core/camera';
+import type { PassKey } from '../core/passes';
 import type { AdvancedSettings, FinishBy, RenderProgress } from '../core/render';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -59,6 +60,11 @@ export interface RenderOptions {
   advanced?: AdvancedSettings;
   /** Path tracer: also hand back the accumulated linear sums (16-bit PNG, EXR). */
   keepLinear?: boolean;
+  /**
+   * Path tracer: also render these exact passes next to the image and hand them back (AI-POST.md §7.4,
+   * phase X2); the image does not change. The launcher keeps them by the render's id for the AI.
+   */
+  passes?: readonly PassKey[];
   /** Render this project instead of the one on screen (Settings ▸ Measure performance renders the example). */
   state?: ProjectState;
 }

@@ -5,11 +5,18 @@
 //   cargo build -p rt-wasm --target wasm32-unknown-unknown --release
 //   cargo run --release -p rt-cli -- --write-example /tmp/example.rsb
 //   node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm \
-//        /tmp/example.rsb [--samples 4] [--expect 0x12345678]
+//        /tmp/example.rsb [--samples 4] [--expect 0x12345678] \
+//        [--passes] [--expect-passes 0x...,0x...,0x...,0x...,0x...,0x...]
 //
 // The render mirrors the native test exactly: 32-pixel tiles row by row, samples 0..n of each
 // tile from `rt_render_tile`, accumulated per pixel in sample order in f32 (Math.fround), then
 // divided by n in f32, then FNV-1a over the little-endian bytes of every float.
+//
+// `--passes` (X2) also renders every exact pass, interleaved with the image as a host does it:
+// per tile `rt_render_tile_passes` once, then after every sample `rt_render_tile_albedo`, the
+// albedo summed like the image. The image's hash must not change, and each plane's FNV-1a (in the
+// order of PASS_KEYS) must equal `--expect-passes` (`PINNED_PASS_*` of
+// crates/rt-core/src/render/passes_tests.rs).
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
 
@@ -17,10 +24,16 @@ const args = process.argv.slice(2);
 const positional = [];
 let samples = 4;
 let expect = null;
+let passes = false;
+let expectPasses = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--samples') samples = Number(args[++i]);
   else if (args[i] === '--expect') expect = Number.parseInt(args[++i], 16) >>> 0;
-  else positional.push(args[i]);
+  else if (args[i] === '--passes') passes = true;
+  else if (args[i] === '--expect-passes') {
+    passes = true;
+    expectPasses = args[++i].split(',').map((h) => Number.parseInt(h, 16) >>> 0);
+  } else positional.push(args[i]);
 }
 const [wasmPath, rsbPath] = positional;
 if (!wasmPath || !rsbPath || !(samples > 0)) {
@@ -65,16 +78,58 @@ if (handle === 0) {
 const TILE = 32;
 const acc = new Float32Array(width * height * 3);
 const out = rt.rt_alloc(TILE * TILE * 3 * 4);
+// The passes (PASS_KEYS order): albedo sums, then the exact planes of every pixel.
+const KEYS = ['albedo', 'normal', 'depth', 'partId', 'materialId', 'coc'];
+const CHANNELS = [3, 3, 1, 1, 1, 1];
+const EXACT = 0b111110;
+if (passes && (typeof rt.rt_render_tile_passes !== 'function' || typeof rt.rt_render_tile_albedo !== 'function')) {
+  console.error('wasm-parity: this rt_wasm.wasm has no passes (rt_render_tile_passes)');
+  process.exit(1);
+}
+const albedoSum = passes ? new Float32Array(width * height * 3) : null;
+const planes = passes ? KEYS.map((_, k) => new Uint32Array(width * height * CHANNELS[k])) : null;
+const exactOut = passes ? rt.rt_alloc(TILE * TILE * 7 * 4) : 0;
+const albedoOut = passes ? rt.rt_alloc(TILE * TILE * 3 * 4) : 0;
 const start = performance.now();
 for (let ty = 0; ty < height; ty += TILE) {
   for (let tx = 0; tx < width; tx += TILE) {
     const w = Math.min(TILE, width - tx);
     const h = Math.min(TILE, height - ty);
+    if (passes) {
+      const status = rt.rt_render_tile_passes(handle, tx, ty, w, h, EXACT, exactOut);
+      if (status !== 0) {
+        console.error(`wasm-parity: rt_render_tile_passes returned ${status}`);
+        process.exit(1);
+      }
+      const words = new Uint32Array(rt.memory.buffer, exactOut, w * h * 7);
+      let o = 0;
+      for (let k = 1; k < KEYS.length; k++) {
+        const c = CHANNELS[k];
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w * c; x++) planes[k][((ty + y) * width + tx) * c + x] = words[o + y * w * c + x];
+        }
+        o += w * h * c;
+      }
+    }
     for (let s = 0; s < samples; s++) {
       const status = rt.rt_render_tile(handle, tx, ty, w, h, s, out);
       if (status !== 0) {
         console.error(`wasm-parity: rt_render_tile returned ${status}`);
         process.exit(1);
+      }
+      if (passes) {
+        const a = rt.rt_render_tile_albedo(handle, tx, ty, w, h, s, albedoOut);
+        if (a !== 0) {
+          console.error(`wasm-parity: rt_render_tile_albedo returned ${a}`);
+          process.exit(1);
+        }
+        const tile = new Float32Array(rt.memory.buffer, albedoOut, w * h * 3);
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w * 3; x++) {
+            const i = ((ty + y) * width + tx) * 3 + x;
+            albedoSum[i] = Math.fround(albedoSum[i] + tile[y * w * 3 + x]);
+          }
+        }
       }
       // Re-create the view each time: memory may have grown (and detached the old buffer).
       const tile = new Float32Array(rt.memory.buffer, out, w * h * 3);
@@ -94,16 +149,19 @@ const inv = Math.fround(1 / samples);
 const resolved = new Float32Array(acc.length);
 for (let i = 0; i < acc.length; i++) resolved[i] = Math.fround(acc[i] * inv);
 
-// FNV-1a over little-endian float bytes (DataView pins the byte order on any host).
-const bytes = new DataView(resolved.buffer);
-let hash = 0x811c9dc5;
-for (let i = 0; i < resolved.length * 4; i += 4) {
-  const word = bytes.getUint32(i, true);
-  for (let b = 0; b < 4; b++) {
-    hash = Math.imul(hash ^ ((word >>> (8 * b)) & 0xff), 0x01000193) >>> 0;
+// FNV-1a over little-endian 4-byte words (DataView pins the byte order on any host).
+function fnv1a(buffer) {
+  const bytes = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < buffer.byteLength; i += 4) {
+    const word = bytes.getUint32(i, true);
+    for (let b = 0; b < 4; b++) h = Math.imul(h ^ ((word >>> (8 * b)) & 0xff), 0x01000193) >>> 0;
   }
+  return h;
 }
-const hex = `0x${hash.toString(16).padStart(8, '0')}`;
+const hex32 = (h) => `0x${h.toString(16).padStart(8, '0')}`;
+const hash = fnv1a(resolved);
+const hex = hex32(hash);
 const version = rt.rt_version();
 console.log(
   `rt_wasm ${version >> 16}.${(version >> 8) & 0xff}.${version & 0xff}: ${width}x${height}, ${samples} spp in ${seconds.toFixed(2)} s, hash ${hex}`,
@@ -111,4 +169,23 @@ console.log(
 if (expect !== null && hash !== expect) {
   console.error(`wasm-parity: hash ${hex} differs from the native one 0x${expect.toString(16).padStart(8, '0')}`);
   process.exit(1);
+}
+if (passes) {
+  // The albedo divided like the image: the sum times the f32 reciprocal of the samples.
+  const albedo = new Float32Array(albedoSum.length);
+  for (let i = 0; i < albedo.length; i++) albedo[i] = Math.fround(albedoSum[i] * inv);
+  planes[0] = new Uint32Array(albedo.buffer);
+  const got = planes.map(fnv1a);
+  console.log(`passes: ${KEYS.map((k, i) => `${k} ${hex32(got[i])}`).join(', ')}`);
+  if (expectPasses) {
+    if (expectPasses.length !== KEYS.length) {
+      console.error(`wasm-parity: --expect-passes needs ${KEYS.length} hashes`);
+      process.exit(2);
+    }
+    const wrong = KEYS.filter((_, i) => got[i] !== expectPasses[i]);
+    if (wrong.length > 0) {
+      console.error(`wasm-parity: the passes ${wrong.join(', ')} differ from the native ones (${expectPasses.map(hex32).join(', ')})`);
+      process.exit(1);
+    }
+  }
 }

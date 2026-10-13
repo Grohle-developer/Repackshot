@@ -9,6 +9,7 @@ import { kelvinToRgb, polar, toWorldAzimuth } from '../src/core/light-math';
 import { instanceFromPreset } from '../src/core/materials';
 import { lightPosition, rigPivot } from '../src/core/lighting';
 import { getMesh } from '../src/core/meshes';
+import { PASS_KEYS } from '../src/core/passes';
 import { areaLightFlux, areaLightRadiance, EMIT_RADIANCE_PER_WATT } from '../src/core/photometry';
 import { allParts, worldMatrix } from '../src/core/scene';
 import { createInitialState, type ProjectState } from '../src/core/store';
@@ -148,7 +149,7 @@ function engineExample(): RsbScene {
     ],
     environment: { ...defaultEnvironment(), kind: ENV_STUDIO, floor: 0.05, horizon: 0.12, zenith: 0.3, strength: 1, rotationDeg: 0, backgroundColor: [0.05, 0.05, 0.05], backgroundMode: 0 },
     floor: defaultFloor(),
-    render: { width: 512, height: 384, maxSamples: 16, seed: 1, maxSeconds: 0, exposureEv: 0, tonemap: 1, maxDepth: 8, clampIndirect: 0 },
+    render: { width: 512, height: 384, maxSamples: 16, seed: 1, maxSeconds: 0, exposureEv: 0, tonemap: 1, maxDepth: 8, clampIndirect: 0, passes: 0 },
     bitmaps: [],
   };
 }
@@ -193,7 +194,7 @@ function fullScene(): RsbScene {
       backplateRect: [0.1, 0.05, 0.9, 0.95],
     },
     floor: { mode: 2, z: -12.5, color: [0.4, 0.5, 0.6] },
-    render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10 },
+    render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10, passes: 0b101101 },
     // A raw plate (an odd number of bytes: padded) and the bytes of a file.
     bitmaps: [
       { format: 0, width: 3, height: 1, data: new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80, 90]) },
@@ -224,7 +225,7 @@ describe('RSB writer: byte parity with rt-core', () => {
     const s = sections(bytes);
     expect(s.map((x) => x.tag)).toEqual(['CAMR', 'MATL', 'MATL', 'MESH', 'MESH', 'INST', 'INST', 'INST', 'LGHT', 'LGHT', 'LGHT', 'BMAP', 'BMAP', 'ENVR', 'FLOR', 'RNDR']);
     const size = (tag: string) => s.find((x) => x.tag === tag)!.payload.byteLength;
-    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 72, 76, 80, 20, 36, 60]);
+    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 72, 76, 80, 20, 40, 60]);
     // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
     expect(size('BMAP')).toBe(16 + 12);
     // 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
@@ -608,6 +609,20 @@ describe('project to RSB: environment, floor and render settings', () => {
     expect([ra.tonemap, ra.exposureEv, ra.maxDepth]).toEqual([TONEMAP_AGX, 1.5, 12]);
     const std = apply(s, { type: 'image/set', patch: { viewTransform: 'STANDARD' } });
     expect(projectScene(std, view(std)).scene.render.tonemap).toBe(TONEMAP_STANDARD);
+  });
+
+  it('the pass mask: none by default, bit i for PASS_KEYS[i] when the view asks (X2), and it reaches the RNDR bytes', () => {
+    expect(r0().passes).toBe(0);
+    const asked = projectScene(s, view(s, { passes: ['albedo', 'depth', 'coc'] })).scene;
+    expect(asked.render.passes).toBe(0b100101);
+    expect(projectScene(s, view(s, { passes: [...PASS_KEYS] })).scene.render.passes).toBe(0b111111);
+    const payload = sections(writeRsb(asked)).find((x) => x.tag === 'RNDR')!.payload;
+    expect(payload.byteLength).toBe(40);
+    expect(payload.getUint32(36, true)).toBe(0b100101);
+    expect(readRsb(writeRsb(asked)).render!.passes).toBe(0b100101);
+    function r0() {
+      return projectScene(s, view(s)).scene.render;
+    }
   });
 
   it('a whole project round-trips through the writer', () => {

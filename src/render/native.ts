@@ -20,13 +20,21 @@
 // from headers (schedule.ts `budgetProgress`), the sums once at the end; they
 // are converted to 8 bits exactly in slices and, with `keepLinear`, handed
 // back for 16-bit PNG and EXR. Aborting the signal cancels the job.
+//
+// Passes (phase X2): a Render with `passes` asks the launcher for them
+// (`passes=` and `RNDR.passes`); it keeps the image and the passes by the job's
+// id for the AI (AI-POST.md §7.3, even after the page forgets the job), and the
+// page reads them once (`GET /api/render/<id>/passes`, render/pass-planes.ts
+// `parsePasses`) and hands them back with the render's id.
 
 import type { CameraState } from '../core/camera';
+import type { PassKey, RenderPasses } from '../core/passes';
 import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
 import type { EngineStatus, PickHit, RenderOptions } from './engine';
 import { QUIET_MS, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
+import { parsePasses } from './pass-planes';
 import { abortError, budgetProgress, type PassBudget } from './schedule';
 import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
 import { DisplayCurve } from './tonemap';
@@ -341,9 +349,10 @@ export class NativeEngine {
    * them as such even without a MESH section, which is what an empty project writes; otherwise a
    * viewport update the launcher cannot apply (409) is sent again whole.
    */
-  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, whole: boolean, meshKey: string, again?: () => Uint8Array, finishBy?: FinishBy): Promise<number> {
+  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, whole: boolean, meshKey: string, again?: () => Uint8Array, finishBy?: FinishBy, passes?: readonly PassKey[]): Promise<number> {
     const finish = finishBy ? `&finish=${finishBy.toLowerCase()}` : '';
-    const path = `/api/render?kind=${kind}${finish}&mesh=${meshKeyHash(meshKey)}&client=${this.client}`;
+    const wanted = passes?.length ? `&passes=${passes.join(',')}` : '';
+    const path = `/api/render?kind=${kind}${finish}${wanted}&mesh=${meshKeyHash(meshKey)}&client=${this.client}`;
     const send = (body: Uint8Array, full: boolean) => this.api.request(full ? `${path}&full=1` : path, { method: 'POST', body: body as Uint8Array<ArrayBuffer>, headers: { 'Content-Type': 'application/octet-stream' } });
     let res = await send(bytes, whole);
     if (res.status === 409 && again) res = await send(again(), true);
@@ -541,12 +550,13 @@ export class NativeEngine {
         ...(opts.camera ? { camera: opts.camera } : {}),
         ...(opts.time !== undefined ? { time: opts.time } : {}),
         ...(opts.advanced ? { advanced: opts.advanced } : {}),
+        ...(opts.passes?.length ? { passes: opts.passes } : {}),
       };
       const built = this.source.build(state, view);
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
       const budget: PassBudget = { finishBy: opts.finishBy ?? (opts.maxSeconds > 0 ? 'FIRST' : 'SAMPLES'), maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds };
       opts.onProgress?.({ jobId: null, progress: 0, samples: 0, seconds: 0 });
-      id = await this.post('final', built.bytes(true), true, built.meshKey, undefined, budget.finishBy);
+      id = await this.post('final', built.bytes(true), true, built.meshKey, undefined, budget.finishBy, opts.passes);
       if (signal?.aborted) {
         cancel();
         throw abortError();
@@ -567,6 +577,8 @@ export class NativeEngine {
       const res = await this.api.request(`/api/render/${id}`);
       if (!res.ok) throw new Error(await failureText(res));
       const f = parseFrame(await res.arrayBuffer());
+      const passes = opts.passes?.length ? await this.passesOf(id, f.width, f.height) : undefined;
+      // Forgotten as a job; the launcher keeps its image and passes for the AI all the same.
       void this.api.request(`/api/render/${id}`, { method: 'DELETE' }).catch(() => undefined);
       if (!f.sums) throw new Error('the render has no image');
       const tone = this.source.tone(state);
@@ -582,10 +594,29 @@ export class NativeEngine {
         tonemap: tone.tonemap,
         // The same f32 sums the pool keeps: 16-bit PNG and EXR are written from them.
         ...(opts.keepLinear ? { sum: f.sums } : {}),
+        ...(passes ? { passes } : {}),
+        renderId: id,
       };
     } finally {
       signal?.removeEventListener('abort', cancel);
       this.rendering--;
+    }
+  }
+
+  /**
+   * The passes the launcher kept for final render `id`. A launcher that has none (one older than X2, or a
+   * failure) leaves the render without them, and says so in the console: the image is still the render.
+   */
+  private async passesOf(id: number, width: number, height: number): Promise<RenderPasses | undefined> {
+    try {
+      const res = await this.api.request(`/api/render/${id}/passes`);
+      if (!res.ok) throw new Error(await failureText(res));
+      const p = parsePasses(await res.arrayBuffer());
+      if (p.id !== id || p.passes.width !== width || p.passes.height !== height) throw new Error(`passes of render ${p.id}, ${p.passes.width} × ${p.passes.height}`);
+      return p.passes;
+    } catch (err) {
+      console.warn(`render ${id}: no passes (${err instanceof Error ? err.message : String(err)})`);
+      return undefined;
     }
   }
 

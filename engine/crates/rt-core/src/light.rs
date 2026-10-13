@@ -611,6 +611,15 @@ impl Lights {
         sum
     }
 
+    /// True when `ray` (unit direction) crosses the emitting face of an area light flagged
+    /// `camera` before `t_max`: a light panel the camera sees (the passes count it as background,
+    /// AI-POST.md §7.4).
+    pub fn camera_sees_panel(&self, ray: &Ray, t_max: f32) -> bool {
+        self.areas
+            .iter()
+            .any(|light| light.camera && light.intersect(ray, t_max).is_some())
+    }
+
     /// True when a camera ray could see any light directly (the alpha of a transparent
     /// background then needs [`Lights::crossed`]).
     pub fn any_camera_visible(&self) -> bool {

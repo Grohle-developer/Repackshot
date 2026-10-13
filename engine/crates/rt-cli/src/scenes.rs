@@ -197,6 +197,7 @@ fn settings(size: (u32, u32), max_depth: u32, exposure_ev: f32) -> RenderSetting
         tonemap: 2,
         max_depth,
         clamp_indirect: 0.0,
+        passes: 0,
     }
 }
 

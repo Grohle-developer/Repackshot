@@ -109,6 +109,7 @@ fn with_catalogue(text: &str) -> Options {
                 ..Downloader::system()
             },
         )),
+        ..Options::default()
     }
 }
 
