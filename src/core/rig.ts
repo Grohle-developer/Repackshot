@@ -1,4 +1,4 @@
-// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (MIT); values are data, the implementation is new.
+// Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
 
 // Lighting normalisation. A light setup defines the SHAPE and TONE of the
 // light; the product preset keeps defining the LEVEL. Changing setup changes

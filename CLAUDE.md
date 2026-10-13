@@ -1,6 +1,7 @@
 # Repackshot — punto de entrada para agentes y personas
 
-Repackshot es un renderizador de producto al estilo KeyShot, libre (MIT),
+Repackshot es un renderizador de producto al estilo KeyShot, de código
+disponible y gratuito para uso no comercial (PolyForm Noncommercial 1.0.0),
 escrito **desde cero en sala limpia**, que corre en el navegador: importa
 un modelo, asigna materiales, ilumina con un estudio y renderiza una
 imagen bonita, rápido. Toma sus ideas de EZ Packshot (addon de Blender del
@@ -56,8 +57,12 @@ Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
 6. **Toda mutación pasa por el *store*** (`src/core/store.ts`) y es
    deshacible. `ui → core`, `render → core`, `io → core`; nunca al revés.
 7. **Claves de catálogo estables** (`src/data/`): se añade, no se renombra.
-8. **Dependencias**: en la interfaz, solo con licencia MIT/Apache/BSD/ISC/
-   CC0 y una línea en `docs/ARCHITECTURE.md` §1. **En el motor, ninguna**:
+8. **Licencia y dependencias**: el proyecto es **PolyForm Noncommercial
+   1.0.0** (`LICENSE`; resumen en el `README`): gratis para fines no
+   comerciales, ningún uso comercial sin licencia aparte del titular.
+   Por eso las dependencias de la interfaz solo pueden ser permisivas
+   (MIT/Apache/BSD/ISC/CC0), nunca copyleft (GPL, AGPL) ni no comerciales,
+   y llevan una línea en `docs/ARCHITECTURE.md` §1. **En el motor, ninguna**:
    `engine/` es Rust desde cero, solo `std`; nada de crates.io, nada
    copiado de otros renderizadores. CI lo comprueba.
 8b. **El motor es portable y determinista**: sin APIs del sistema en

@@ -1,6 +1,6 @@
 ; FBX 7.4.0 project file
 ; Hand-written for Repackshot's tests (phase I3): two groups (Assembly, Fittings) with a box each, one material.
-; MIT licence, like the rest of the repository. Units: centimetres. Up axis: Y.
+; Under the project licence, like the rest of the repository. Units: centimetres. Up axis: Y.
 FBXHeaderExtension:  {
 	FBXHeaderVersion: 1003
 	FBXVersion: 7400

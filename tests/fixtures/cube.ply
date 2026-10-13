@@ -1,6 +1,6 @@
 ply
 format ascii 1.0
-comment Hand-written for Repackshot's tests (phase I3), MIT licence. A cube of 20 units, Z up.
+comment Hand-written for Repackshot's tests (phase I3), under the project licence. A cube of 20 units, Z up.
 element vertex 8
 property float x
 property float y

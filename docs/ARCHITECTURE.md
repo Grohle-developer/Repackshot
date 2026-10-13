@@ -29,6 +29,11 @@ Embree, ni OptiX, ni ports de pbrt, ni `three-gpu-pathtracer`), ningún
 
 Añadir una dependencia **a la interfaz** exige una línea en esta tabla
 con su licencia (solo MIT, Apache-2.0, BSD, ISC, CC0 o compatibles). El
+proyecto se distribuye con la **PolyForm Noncommercial 1.0.0**: una
+dependencia copyleft (GPL, AGPL) o no comercial no es compatible con eso
+ni con que el titular pueda licenciarlo comercialmente, y no se admite.
+Las LGPL con excepción de enlace (OpenCascade, para STEP en I2) se
+valoran caso a caso y se cargan bajo demanda, fuera del paquete base. El
 **motor no admite dependencias**: `engine/Cargo.lock` solo contiene los
 *crates* del propio workspace, y CI lo comprueba.
 

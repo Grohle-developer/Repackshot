@@ -1,6 +1,6 @@
 # Repackshot engine
 
-The render engine of Repackshot: a CPU path tracer written in Rust, 100 % from scratch, MIT
+The render engine of Repackshot: a CPU path tracer written in Rust, 100 % from scratch, PolyForm Noncommercial 1.0.0
 licensed. It is built to run on any OS and any CPU architecture:
 
 * compiled to **WebAssembly**, it runs in the browser inside Web Workers;

@@ -8,7 +8,8 @@ que enlaza (`SPEC.md`, `ARCHITECTURE.md`, `UI.md`) y el repositorio.
 
 ## Contexto (leer siempre primero)
 
-Repackshot es un renderizador de producto al estilo KeyShot, libre (MIT),
+Repackshot es un renderizador de producto al estilo KeyShot, de código
+disponible y gratuito para uso no comercial (PolyForm Noncommercial 1.0.0),
 escrito desde cero en **sala limpia** (reglas en `../README.md`,
 innegociables) y que corre en el navegador. Reutiliza las ideas y varias
 soluciones de **EZ Packshot**, un addon de Blender del mismo autor

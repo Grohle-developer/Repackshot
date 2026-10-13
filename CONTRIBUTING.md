@@ -1,6 +1,7 @@
 # Contributing to Repackshot
 
-Repackshot is a clean-room, MIT-licensed, browser-based 3D product renderer.
+Repackshot is a clean-room, browser-based 3D product renderer, source-available
+under the PolyForm Noncommercial License 1.0.0.
 Read this before you open a pull request.
 
 ## Clean-room rules
@@ -37,6 +38,22 @@ npm run screenshot  # render the UI to out/screenshot.png
 
 ## Licence
 
-Repackshot is released under the MIT licence. See [LICENSE](LICENSE).
+Repackshot is source-available under the PolyForm Noncommercial License
+1.0.0: free for any noncommercial purpose, no commercial use of any kind
+without a separate licence from the copyright holder. See [LICENSE](LICENSE)
+and the summary in the README.
 
-Catalogue data was ported from EZPackshot (GPL-3.0) by the project's author.
+**Your contributions.** By opening a pull request you confirm that the
+contribution is your own work (or comes from a source whose licence allows
+it, with its notices kept), and you agree that it is distributed under the
+project's licence **and** that the copyright holder may also license it
+under other terms, including commercial ones. Without that second part the
+author could not offer commercial licences of the project as a whole. If
+you cannot agree to it, do not contribute.
+
+Catalogue data was ported from EZPackshot (GPL-3.0) by the project's author,
+who relicenses it for this project.
+
+Dependencies: only permissive licences (MIT, Apache-2.0, BSD, ISC, CC0)
+are compatible with this setup. Copyleft (GPL, AGPL) or noncommercial
+dependencies cannot be added to the code base.

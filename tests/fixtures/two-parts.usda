@@ -1,7 +1,7 @@
 #usda 1.0
 (
     defaultPrim = "Bottle"
-    doc = "Hand-written for Repackshot's tests (phase I3), MIT licence. Two boxes under one Xform, one material."
+    doc = "Hand-written for Repackshot's tests (phase I3), under the project licence. Two boxes under one Xform, one material."
     metersPerUnit = 0.01
     upAxis = "Y"
 )

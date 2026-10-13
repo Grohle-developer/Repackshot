@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/Grohle-developer/Repackshot/releases/latest"><img src="https://img.shields.io/github/v/release/Grohle-developer/Repackshot?color=000000&label=release" alt="Latest release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-333333" alt="MIT licence"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-333333" alt="PolyForm Noncommercial 1.0.0 licence"></a>
   <img src="https://img.shields.io/badge/engine-Rust%20%C2%B7%20zero%20dependencies-000000" alt="Engine: Rust, zero dependencies">
   <img src="https://img.shields.io/badge/runs%20on-x86__64%20%C2%B7%20ARM64%20%C2%B7%20RISC--V%20%C2%B7%20wasm-000000" alt="Runs on x86_64, ARM64, RISC-V and wasm">
   <img src="https://img.shields.io/badge/interface-black%20%26%20white-555555" alt="Black and white interface">
@@ -23,7 +23,8 @@
 
 ---
 
-A free, open-source **KeyShot-style 3D product renderer** that runs in the
+A free, source-available **KeyShot-style 3D product renderer**, free for
+noncommercial use (see [License](#license)), that runs in the
 browser and, later, on the desktop: import a model, pick a product type,
 paint materials, pick a light setup, render. Written **from scratch as a
 clean-room implementation**: a TypeScript interface with no framework and a
@@ -183,8 +184,9 @@ This is what keeps the project lawful and shippable. Non-negotiable:
    behavioral observation (using the product normally and writing down
    what it does: ideas and workflows, never code).
 4. **All contributions must be original work** or from MIT/Apache-2.0/
-   BSD-compatible sources, with attribution preserved. The engine goes one
-   step further: no external code at all.
+   BSD-compatible sources, with attribution preserved, and are made under
+   the project's licence terms (see [`CONTRIBUTING.md`](CONTRIBUTING.md)).
+   The engine goes one step further: no external code at all.
 
 Anyone who has studied KeyShot's internals writes the *behavioral spec*
 (`docs/SPEC.md`); anyone who implements from the spec must not have seen
@@ -195,8 +197,8 @@ those internals.
 - **[EZ Packshot](https://github.com/Grohle/EZPackshot)** (GPL-3.0, same
   author): the product-type studios, the 72 light setups, the 77 materials,
   the wear tables and the photometric formulas were ported from it **by
-  its copyright holder**, who relicenses that data under MIT for this
-  project. The implementation is new; no Python code was copied. The
+  its copyright holder**, who relicenses that data for this project
+  under the project's licence. The implementation is new; no Python code was copied. The
   light-setup thumbnails under `public/thumbs/` come from the same source
   and are replaced by ones rendered with the own engine in phase L2.
 - **[three.js](https://threejs.org)** (MIT): the interactive preview
@@ -208,4 +210,30 @@ those internals.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Repackshot is **source-available** under the
+[PolyForm Noncommercial License 1.0.0](LICENSE). It is not open source in
+the OSI sense, on purpose:
+
+- **Allowed, for free:** any **noncommercial** purpose — education and
+  teaching, personal study, research and experiments for public knowledge,
+  hobby projects, and use by educational institutions, public research
+  organisations, charities and government bodies. You may study, change and
+  share the code for those purposes, keeping the licence and the
+  `Required Notice` line.
+- **Not allowed:** any **commercial** use of any kind, including inside a
+  company, in a paid product or service, or to produce commercial work,
+  without a separate licence.
+- **The author** keeps every right: distributing Repackshot, selling it, or
+  licensing it commercially to others is up to the copyright holder.
+  Commercial licences are available on request.
+
+Required Notice: Copyright 2026 Grohle (https://github.com/Grohle-developer/Repackshot)
+
+Third-party components keep their own licences and notices: three.js
+(MIT), rhino3dm (MIT), the AI models a user downloads (each with its own
+licence, shown before download; see `docs/AI-POST.md`), and the public
+literature the engine cites. The catalogue data comes from EZ Packshot,
+relicensed for this project by its author.
+
+This is a summary for convenience; the [LICENSE](LICENSE) text is what
+applies.

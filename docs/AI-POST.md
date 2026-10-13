@@ -48,7 +48,7 @@ cambiar su estructura"):
 | | |
 | --- | --- |
 | Modelo | **Z-Image-Turbo** (Tongyi-MAI), transformador de difusión de 6,15 B parámetros con codificador Qwen3-4B, noviembre de 2025 |
-| Licencia | **Apache-2.0** en modelo, codificador y ControlNet: uso comercial y redistribución permitidos, compatible con un producto MIT |
+| Licencia | **Apache-2.0** en modelo, codificador y ControlNet: uso comercial y redistribución permitidos, así que no limita cómo distribuye el autor el producto (ni siquiera si lo vende) |
 | Por qué | Entre los modelos pequeños con licencia permisiva es el único que tiene a la vez *img2img* nativo con `strength` (la intervención se controla con un número) y **ControlNet de la misma licencia** (profundidad, bordes, *tile* hasta 2048²); el mejor de los Apache en las clasificaciones públicas de texto a imagen; versión ONNX cuantizada publicada para el navegador |
 | Cuantización | Escritorio: GGUF Q8_0 (6,6 GB) con ≥ 12 GB de VRAM, Q4_0 (3,7 GB) con 6–8 GB; codificador Q4_K_M (2,5 GB). Navegador: ONNX q4f16 (≈ 6 GB en total) |
 | Velocidad orientativa | Segundos por imagen de 1024² en una GPU de gama media-alta; *img2img* a intervención baja ejecuta solo una fracción de los pasos. Cifras sin verificar: se miden en X1 |
@@ -70,7 +70,7 @@ suya.
 ### 2.2 · "Precargado", en la práctica
 
 Los pesos ocupan varios GB, así que **no van en el repositorio ni en la
-página web**: el repositorio MIT no contiene pesos. El modelo por defecto
+página web**: el repositorio no contiene pesos. El modelo por defecto
 viene **preseleccionado y listo para descargar**: la primera vez que se
 activa el post-procesado (o desde *Ajustes ▸ Modelos de IA ▸ Descargar
 ahora*), la aplicación muestra tamaño y licencia, descarga una sola vez
