@@ -1013,6 +1013,44 @@ Lo que no encajó con el plan:
 - **Las capturas del hito (a)** se hicieron antes de corregir la asimetría
   de los aerosoles; las de (b) a (d), con la tabla final.
 
+## E5b-1 · Cáusticas y *denoise* propio — **Opus**
+
+**Petición del usuario (2026-10-13):** «integra también cáusticas,
+*denoise*…». Se adelanta esta parte de E5b; el reflejo del suelo, los
+efectos de imagen y la región de render quedan en **E5b-2**.
+
+**Decisiones del líder.**
+- ***Denoise* propio**, en Rust sin dependencias (en `rt-post` o en un
+  *crate* propio, nativo y wasm), escrito desde la literatura pública
+  (medias no locales guiadas por rasgos, Rousselle, Knaus y Zwicker 2012;
+  à-trous con aristas, Dammertz et al. 2010): guiado por los pases exactos
+  de X2 (albedo, normal, profundidad, ids) y por la **varianza por píxel**
+  (la película acumula también la suma de cuadrados). Determinista: la
+  misma entrada da los mismos bits en nativo y en wasm. Nada de redes ni de
+  pesos de terceros.
+- Dónde: *Ajustes de render ▸ Avanzado ▸ Denoise* (*Apagado · Visor ·
+  Render · Los dos*, por defecto **Los dos**) y un interruptor en el visor
+  *Completo*; en el render se guardan la imagen limpia y, si se pide, la
+  original (*Guardar también sin denoise*). Nunca toca la imagen de la IA
+  más que como entrada.
+- **Cáusticas**: mapa de fotones progresivo (SPPM, Hachisuka y Jensen
+  2009) para los caminos luz → especular → difuso, determinista, sin
+  contar dos veces lo que ya trae el trazador; interruptor *Cáusticas* en
+  la ventana de render (por defecto **automático**: encendido cuando la
+  escena tiene vidrio o metal pulido y luces pequeñas), con su calidad en
+  *Avanzado*. El vidrio macizo sigue tapando la sombra directa; la luz que
+  lo atraviesa llega por las cáusticas.
+
+**Criterio.** *Denoise*: error frente a una referencia de muchas muestras
+menor que la imagen sin filtrar a igual número de muestras (escenas del
+`--sheet`), aristas de id intactas (ninguna mezcla entre piezas),
+paridad nativo/wasm bit a bit, *hashes* de la imagen sin *denoise* sin
+mover. Cáusticas: una esfera de vidrio sobre el suelo con una luz pequeña
+da su foco de luz con la energía esperada (test analítico o frente a una
+referencia larga del trazador), sin luciérnagas en la imagen con
+*denoise*; determinismo con cualquier número de hilos. Capturas antes y
+después.
+
 ## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
 
 **Qué.** Portar a `rt-core` las recetas procedurales de EZ Packshot (veta
@@ -1185,6 +1223,22 @@ aquí, con test de energía).
 otro tipo de producto mantiene la irradiancia total del tipo (test);
 captura con un foco direccional apuntado a una pieza; paridad nativo /
 wasm sigue en verde.
+
+### L4 · Ampliación: luces y cámaras en el visor, «mirar a través» (petición del usuario, 2026-10-13)
+
+«Integra… luces, y la posibilidad de poder mover una cámara y luces a
+gusto, también con el paneo.» Decisiones del líder, dentro de L4:
+- Las luces y las **cámaras guardadas** (no la activa) se dibujan en el
+  visor como glifos acromáticos (contorno del panel, cono del foco, punto,
+  flecha del sol; pirámide de la cámara), con un botón *Luces y cámaras*
+  en la barra de vista, junto a *Desplazar*, para mostrarlas u ocultarlas.
+- Se seleccionan con un clic en el visor o en sus pestañas, y se **mueven y
+  giran con el *gizmo*** de *Mover* (la luz con su asa de apuntar; la
+  cámara, con su objetivo); un gesto, una entrada de deshacer.
+- ***Mirar a través*** de la luz o la cámara seleccionada (botón y `Ctrl/⌘
+  ⇧ L`): el visor mira desde ella y **Orbitar, Desplazar y Zoom mueven ese
+  objeto** (la luz apunta a donde mira el visor); `Esc` o el botón vuelven a
+  la cámara activa. Respeta *Bloquear cámara*.
 
 ## L5 · Luces IES — **Sonnet**
 
@@ -1657,6 +1711,45 @@ No encajó con el plan:
 - *Escalar…* del menú contextual no muestra atajo (`S` enciende la
   herramienta, no abre el panel). Los modificadores de la caja de
   selección y los clics son los de *Mover*.
+
+## U10 · Recorrido guiado y avisos de la IA — **Sonnet**
+
+**Petición del usuario (2026-10-13):** «avisar si no se tiene instalado el
+*inference runtime*; la primera vez que se inicie la app, un tutorial que
+se pueda saltar pero que te guíe por todas las opciones; al instalar, si
+se selecciona la IA, que pida instalar también el *inference runtime*».
+
+**Decisiones del líder.**
+- **Recorrido guiado** al primer arranque (y desde *Ayuda ▸ Recorrido
+  guiado*): una capa propia (nunca ventanas del navegador) que resalta
+  cada zona en orden — cabecera y menú, árbol y niveles de selección,
+  herramientas de vista (Seleccionar, Mover, Escalar, Orbitar, Desplazar,
+  Zoom, caja con `Ctrl`), *Rápido/Completo*, inspector (producto, luz y
+  montajes, entorno y cielo, cámara y enfoque con clic, materiales y
+  arrastre), pestañas de luces, cámaras y estudios, *Añadir ▸ Primitiva*,
+  ventana de render (cola, IA), visor de resultados y *Ajustes* por
+  secciones — con un texto corto por paso, *Siguiente · Atrás · Saltar*,
+  puntos de progreso y teclado (`→`, `←`, `Esc`); en `es` y `en`;
+  acromático; usa los `data-guide` que ya existen. Se recuerda en el estado
+  de la plataforma (carpeta de datos en escritorio) que ya se vio; *Saltar*
+  cuenta como visto.
+- **Aviso del motor de ejecución**: si hay un modelo de IA y no está el
+  motor de ejecución (o le falta Visual C++), la sección de IA de la
+  ventana de render y *Ajustes ▸ Post-procesado IA* lo dicen con un botón
+  *Instalar*; al arrancar, una nota discreta en la barra de estado, una
+  sola vez por sesión.
+- **Instalador**: si en el paso *Modelos de IA* se elige algún modelo, se
+  marca también el **motor de ejecución** recomendado para el equipo
+  (Vulkan con GPU, CPU sin ella), se puede desmarcar, y la app lo
+  descarga en el primer arranque como los modelos (la regla de P2: el
+  instalador elige, la app descarga). Lo mismo en el selector del primer
+  arranque de los portables.
+
+**Criterio.** Tests del orden del recorrido (todos los pasos apuntan a algo
+que existe; ningún paso apunta a un elemento oculto), de *Saltar* y del
+recuerdo (no vuelve a salir; sí desde *Ayuda*), del aviso con y sin motor
+de ejecución, del archivo de elección del instalador con el motor
+incluido (y del NSIS que lo escribe); capturas de tres pasos y del aviso.
 
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 
