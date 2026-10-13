@@ -501,6 +501,82 @@ teclas ← →), etiquetas *Render* · *IA* en las esquinas y los botones
 resultados quedan en el historial del proyecto (cajón *Cola*,
 terminados) y en el almacenamiento del navegador hasta que se borran.
 
+### 2.9 · Ventana de Ajustes
+
+Se abre con **Ajustes…** del menú de aplicación o `Ctrl/⌘ ,`. Es la
+segunda y última ventana de la aplicación (§4.3): flotante, unos
+**960 × 680 px** centrada, el resto atenuado un 40 %, se mueve por su
+barra de título y se cierra con `Esc` o la ×. Acromática como todo el
+cromo. Se recuerda la última sección abierta.
+
+**Los cambios se aplican al momento.** No hay *Aceptar* ni *Cancelar*:
+el pie dice *Los cambios se guardan al momento*. Los ajustes son de la
+aplicación en este equipo (no del proyecto) y no entran en deshacer; los
+valores por defecto de proyecto que se fijan aquí (render, importación)
+se aplican a los proyectos **nuevos**, nunca cambian el abierto.
+
+**Columna izquierda** (232 px): arriba un campo **Buscar ajustes**
+(`Ctrl/⌘ F` dentro de la ventana) que filtra por nombre y palabras clave
+en los dos idiomas y muestra los resultados con su ruta
+(*Motor de renderizado ▸ Hilos*); debajo las secciones agrupadas, con el
+título del grupo en versalitas auxiliares:
+
+| Grupo | Sección | Qué hay |
+| --- | --- | --- |
+| **Aplicación** | **General** | Idioma; tema (Oscuro · Claro · Sistema); al arrancar (*Modo estándar con el ejemplo* · *Proyecto vacío* · *Último proyecto*); unidades de la interfaz (mm, cm, m, pulgadas); recuperación automática (copia cada N minutos en el almacenamiento, *próximamente* hasta U2); confirmar al cerrar con cambios sin guardar |
+| | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
+| | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
+| | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
+| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
+| | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo). Mientras la tubería de X3 no exista, arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
+| **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
+| | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros, *Buscar actualizaciones* (*próximamente*) |
+| | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
+
+**Columna derecha**: título de la sección, una frase de qué se ajusta
+ahí y las filas en bloques con un subtítulo y una línea fina entre
+bloques. Cada fila: nombre, una línea auxiliar si hace falta, y el
+control a la derecha (segmento, interruptor, campo numérico de §4.4,
+desplegable). Una fila con un valor distinto del de fábrica lleva un
+punto y, al pasar, *Restablecer* en línea; al pie de cada sección,
+*Restablecer esta sección*. Lo que no existe todavía se ve,
+deshabilitado, con *próximamente*.
+
+**Post-procesado IA ▸ Modelo activo**: el modelo en uso (nombre,
+cuantización, licencia, tamaño) y su configuración: dispositivo
+(*GPU* · *CPU*, y en escritorio qué GPU), precisión cuando haya varias,
+resolución de trabajo (lado largo 1024, 1536 o 2048, en mosaicos por
+encima), pasos, **intervención por defecto** (0–100, la de la ventana de
+render), semilla (*fija* o *nueva cada vez*), descargar el codificador de
+texto a RAM, y en *Avanzado* las tolerancias de la guarda
+(`AI-POST.md` §3.2; las de fábrica las fija X1). Un aviso en línea si el
+modelo no cabe en la memoria detectada.
+
+**Post-procesado IA ▸ Modelos**: la lista de `src/data/ai-models.json`
+(los mismos modelos que ofrece el instalador) y los importados. Por fila:
+nombre, arquitectura, cuantización, licencia (con *no apto para uso
+comercial* si lo es), tamaño, *Recomendado para tu equipo* cuando toca,
+estado (*No descargado* · *Descargando 42 % · 1,2 GB de 6,4 GB · 3 min*
+· *En pausa* · *Comprobando* · *Listo* · *En uso* · *Dañado*) y acciones
+*Descargar*, *Pausar* / *Reanudar*, *Cancelar*, *Usar*, *Eliminar*.
+La licencia del modelo se muestra y se acepta **antes** de la primera
+descarga. Las descargas se reanudan donde se quedaron (también tras
+cerrar la aplicación) y cada fichero se comprueba con su `sha256` antes
+de marcarse *Listo*. **Importar modelo…** como describe `AI-POST.md` §5.
+Si el instalador dejó modelos elegidos para descargar, aparecen aquí
+descargándose desde el primer arranque.
+
+**Post-procesado IA ▸ Equipo**: lo detectado (GPU y su VRAM dedicada,
+RAM, núcleos, WebGPU sí o no y el tamaño máximo de búfer) y la
+recomendación que sale de la regla de `AI-POST.md` §2.4, con la fila de
+la tabla que la decide. Si la detección falla, se dice y no se
+recomienda nada.
+
+**Enlaces directos**: cualquier parte de la interfaz puede abrir los
+Ajustes en una sección (*Gestionar modelos…* en la ventana de render,
+el medidor del visor cuando el motor no está), y `?settings=<sección>`
+en la URL lo hace para las capturas.
+
 ## 3 · Paleta de comandos y teclado
 
 `Ctrl/⌘ K` abre la **paleta**: un campo centrado con lista debajo.
@@ -569,8 +645,8 @@ tres botones y `Esc` para cancelar. Los elementos flotantes son los
 menús, la paleta, el popover del Doctor y **dos ventanas**, abiertas solo
 a petición: la **ventana de render** (§2.7), porque un render es una
 decisión con muchos parámetros que se toma de una vez, como en KeyShot,
-y la ventana de **Ajustes** (idioma, tema, motor, modelos de IA,
-almacenamiento; ver `AI-POST.md` §5). Ninguna otra ventana; nada se abre
+y la ventana de **Ajustes** (§2.9: secciones agrupadas en una columna a
+la izquierda, cambios al momento). Ninguna otra ventana; nada se abre
 solo.
 
 ### 4.4 · Campos numéricos

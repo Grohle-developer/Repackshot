@@ -94,9 +94,9 @@ decisiones escritas (datos, contratos, revisión), no código.
 
 | Versión | Qué se puede hacer | Fases |
 | --- | --- | --- |
-| **v0.1** — "parece el producto" | Abre en modo estándar; importa glTF, OBJ, STL, FBX, 3DM, 3MF, PLY, DAE y USD con la hoja de importación; tipo de producto, materiales del catálogo, montaje de luz; el motor en Rust renderizando progresivamente en el visor y a PNG, en el navegador y en la línea de comandos | F0, A1–A3, U1, U2, I1, I3, E1–E4 |
-| **v0.2** — "sirve para trabajar" | STEP e IGES con caras CAD; herramienta de mover y operaciones de pieza al estilo KeyShot; focos propios y montajes guardados; biblioteca propia; ventana de render al estilo KeyShot con cola y visor de resultados; vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, HDRI, miniaturas propias, recetas revisadas, cara CAD, pases | I2, U3, U4, U5, L4, E5, E6, L1, L2, L3, M1, N2, D1, P1 |
-| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo al estilo KeyShot con paseo de cámara, luces IES, lotes nativos, escritorio; tipo de escena *Interior* con sus valores por defecto, habitación paramétrica y cámara de interiores; post-procesado IA opcional | E7, E8, M2, N1, N3, L5, P2, Q1, K1, K2, K3, X1–X5 |
+| **v0.1** — "parece el producto" | Abre en modo estándar; importa glTF, OBJ, STL, FBX, 3DM, 3MF, PLY, DAE y USD con la hoja de importación; tipo de producto, materiales del catálogo, montaje de luz; el motor en Rust renderizando progresivamente en el visor y a PNG, en el navegador y en la línea de comandos. **Primera release `v0.1.0`** (petición del usuario): además lo ya hecho de v0.2 (U3, U4, U5, I2), los Ajustes con el gestor de modelos, y escritorio con Windows portable, Linux portable e instalador de Windows | F0, A1–A3, U1, U2, I1, I3, E1–E4; para la release también U6, X1 parte A, P2, P1 |
+| **v0.2** — "sirve para trabajar" | STEP e IGES con caras CAD; herramienta de mover y operaciones de pieza al estilo KeyShot; focos propios y montajes guardados; biblioteca propia; ventana de render al estilo KeyShot con cola y visor de resultados; vidrio y emisores reales, madera y tela, bisel, colocación por reflejo, campo claro, cielo, HDRI, miniaturas propias, recetas revisadas, cara CAD, pases | I2, U3, U4, U5, L4, E5, E6, L1, L2, L3, M1, N2, D1 |
+| **v0.3** — "sustituye al comercial" | Desgaste visible, texturas y etiquetas, animación y vídeo al estilo KeyShot con paseo de cámara, luces IES, lotes nativos, escritorio; tipo de escena *Interior* con sus valores por defecto, habitación paramétrica y cámara de interiores; post-procesado IA opcional | E7, E8, M2, N1, N3, L5, Q1, K1, K2, K3, X1–X4 |
 | **v0.4** — "interiores y mobiliario" | El motor renderiza habitaciones iluminadas por ventana con portales, árbol de luces, adaptativo y *denoise*; guiado de caminos; entregables de mobiliario; grupos de luz tras el render | K4, K5, K6, K7, K8 |
 
 ---
@@ -1031,6 +1031,57 @@ ventana no aparece en la captura del visor. Capturas de la ventana en
 *Imagen* y en *Animación*, del cajón *Cola* con tres trabajos y del
 visor de resultados con el divisor.
 
+## U6 · Ventana de Ajustes y gestor de modelos — **Opus**
+
+**Qué.** Petición del usuario: unos Ajustes profesionales, todo lo
+configurable separado por módulos y agrupado en una columna a la
+izquierda. `UI.md` §2.9 entero: la ventana (960 × 680, buscador,
+grupos *Aplicación* · *Render* · *Sistema*, cambios al momento, punto y
+*Restablecer* por fila y por sección, enlaces directos y
+`?settings=<sección>`), y sus secciones **General**, **Preferencias**,
+**Accesibilidad**, **Atajos de teclado**, **Motor de renderizado** (con
+*Medir rendimiento* de verdad), **Post-procesado IA**, **Almacenamiento**,
+**Escritorio** (solo en la aplicación de escritorio) y **Acerca de** (con
+las licencias de terceros completas). Los ajustes son un objeto tipado
+con versión, valores de fábrica y migración en `src/core/settings.ts`
+(puro), guardado por `src/ui/prefs.ts`; las preferencias sueltas de hoy
+(tema, idioma, anchos, modo del visor) migran a él.
+
+El **gestor de modelos** de `AI-POST.md` §5 (absorbe X5): la lista de
+`src/data/ai-models.json` (de X1 parte A) y los importados; descargas
+con progreso, pausa, reanudación tras cerrar (peticiones `Range`), y
+`sha256` por fichero; almacenamiento en OPFS en la web y en la carpeta
+de datos a través del lanzador en escritorio (P2), detrás de una sola
+interfaz `ModelStore`; *Usar*, *Eliminar*, *Importar modelo…* con el
+manifiesto `model.repackshot.json` validado y rechazo de *pickle*;
+licencia mostrada y aceptada antes de la primera descarga; la
+**configuración del modelo activo**; la **detección del equipo** (límites
+de WebGPU en la web; `/api/hardware` del lanzador en escritorio) y la
+**regla de recomendación** evaluada sobre la tabla del JSON. Si el
+instalador dejó una elección, sus descargas arrancan en el primer
+arranque. En las versiones portables y en la web, el selector aparece una
+vez en el primer arranque. Mientras no exista X3 el post-procesado no
+corre: la sección lo dice en una línea y lo demás funciona.
+
+**Depende de.** U5 (la ventana de render enlaza con *Gestionar
+modelos…*), X1 parte A (el JSON con ficheros y `sha256`). La parte de
+escritorio del almacenamiento se prueba con el lanzador de P2.
+
+**Criterio.** Tests: migración de las preferencias sueltas; cada ajuste
+tiene valor de fábrica y *Restablecer* lo devuelve; el buscador encuentra
+un ajuste por una palabra clave en `es` y en `en`; la regla de
+recomendación da la fila de `AI-POST.md` §2.4 en los bordes de cada tramo
+(fichero de casos `tests/fixtures/ai-recommend-cases.json`, el mismo que
+usa el test en Rust de P2); sin detección no recomienda; un manifiesto
+inválido se rechaza con el motivo; un `.ckpt` se rechaza; un modelo no
+comercial no puede ser el de por defecto; borrar el activo vuelve a la
+recomendación; una descarga cortada se reanuda desde el último byte
+escrito (servidor de prueba con `Range`) y un `sha256` erróneo deja el
+fichero *Dañado*; contraste alto y tamaño de interfaz cambian los
+*tokens* y siguen acromáticos. Capturas en inglés de *General*,
+*Accesibilidad*, *Motor de renderizado* y *Post-procesado IA ▸ Modelos*
+con una descarga en curso.
+
 ## N3 · Paseo de cámara — **Sonnet**
 
 **Qué.** El tipo de animación `WALK` de `SPEC.md` §3.7: herramienta
@@ -1056,7 +1107,14 @@ paseo alrededor de la botella, con y sin pasos.
 
 ## X1 · Confirmar el modelo de IA — **Fable**, con Sonnet preparando
 
-**Qué.** `AI-POST.md` §2: releer y citar al pie de la letra las licencias
+**Parte A, adelantada (la necesita U6).** Sonnet prepara y Fable
+confirma `src/data/ai-models.json`: para cada clave de `AI-POST.md` §2.4,
+el repositorio de origen, cada fichero con su URL de descarga directa,
+tamaño exacto y `sha256`, la licencia con su texto citado y su URL, y la
+regla de recomendación como tabla de datos. Sin medidas todavía: los
+umbrales son los de la tabla, marcados *provisionales*.
+
+**Parte B, tras X3.** `AI-POST.md` §2: releer y citar al pie de la letra las licencias
 de Z-Image-Turbo, su codificador, su VAE y su ControlNet, y de FLUX.2
 klein 4B; fijar los `sha256` de los ficheros cuantizados (web q4f16 y
 GGUF de escritorio); Sonnet prepara una hoja comparativa (8 renders del
@@ -1123,27 +1181,12 @@ resultados con el divisor de U5, y las dos miniaturas en la cola.
 sintético); la vista previa no se recalcula durante un arrastre; capturas
 de la sección y del visor con el divisor.
 
-## X5 · Ajustes y modelos — **Sonnet**
+## X5 · Ajustes y modelos — absorbida en U6
 
-**Qué.** `AI-POST.md` §5 y §2.2–§2.4: ventana de Ajustes (idioma, tema,
-motor, modelos, almacenamiento); el **selector de modelos** como
-componente único que usan la versión web (primera activación y Ajustes)
-y el instalador de escritorio de P2, con la lista de
-`src/data/ai-models.ts`, la detección del equipo (VRAM de la GPU, o RAM
-si se elige CPU, o límites WebGPU) y la regla de recomendación; lista de
-modelos instalados, importación de safetensors,
-GGUF y ONNX con el manifiesto `model.repackshot.json` validado, rechazo
-de *pickle*, descargas y borrado, marcas de licencia, detección del
-equipo.
-
-**Depende de.** X3.
-
-**Criterio.** La regla de recomendación da el modelo de la tabla de
-`AI-POST.md` §2.4 para cada fila (test con equipos simulados en los
-bordes de cada tramo); sin detección no se recomienda nada; un manifiesto
-inválido se rechaza con el motivo; un modelo no comercial no puede ser
-el de por defecto; un `.ckpt` se rechaza; borrar el modelo activo vuelve
-a la recomendación.
+El gestor de modelos, el selector y la detección del equipo llegan en
+**U6**, porque no necesitan la tubería. Lo que sí la necesita (comprobar
+en vivo que el modelo activo cabe y una prueba de una imagen desde
+*Ajustes*) pasa a X4.
 
 ## K1 · Tipo de escena, luz de interior y Doctor de interiores — **Sonnet**
 
@@ -1302,29 +1345,85 @@ los factores a las luces reales) y como variantes (*día*, *atardecer*,
 
 ## P1 · Releases y demo pública — **Haiku**
 
-**Qué.** Workflow de release: versión en `package.json`, etiqueta `vX.Y.Z`
-creada al publicar (no antes), changelog desde la etiqueta anterior,
-`dist/` adjunto; despliegue de `dist/` a GitHub Pages en cada push a
-`main` para que la demo esté siempre viva. `docs/CHANGELOG.md`.
+**Qué.** Petición del usuario: la primera release con **Windows
+portable**, **Linux portable** e **instalador de Windows**. Mientras
+GitHub Actions no tenga minutos, la release se construye **en local** con
+`npm run release` (de P2: `packaging/release.mjs`), que deja en
+`out/release/` los tres paquetes, sus `sha256` en `SHA256SUMS.txt` y las
+notas. Versión en `package.json` y en el workspace del motor, etiqueta
+`vX.Y.Z` creada al publicar, `docs/CHANGELOG.md` desde el principio,
+notas de la release en inglés (qué hay, qué no, requisitos: Windows 10/11
+x64 con Edge, Linux x86_64 con un navegador Chromium, aviso de
+SmartScreen por no estar firmado). Se deja escrito el workflow
+`release.yml` que hará lo mismo en CI al subir una etiqueta, y el de
+GitHub Pages para la demo, para cuando vuelva a haber minutos.
 
-**Depende de.** U1.
+**Depende de.** P2.
 
-**Criterio.** Una release de prueba `v0.1.0-alpha.1` publicada y retirada;
-la página de Pages carga la interfaz.
+**Criterio.** `npm run release` reproduce los tres paquetes desde un
+árbol limpio; `SHA256SUMS.txt` cuadra; la etiqueta apunta al commit de la
+release; el CHANGELOG lista las fases hechas.
 
-## P2 · Escritorio con Tauri — **Opus**
+## P2 · Escritorio: lanzador propio, portables e instalador — **Opus**
 
-**Qué.** Empaquetar la aplicación web con Tauri (Rust) para Windows,
-macOS y Linux, enlazando `rt-core` **en nativo** (todos los hilos, sin
-wasm) detrás de la misma interfaz `RenderEngine`, con diálogos nativos
-de archivo, carpeta de salida y lectura de HDRI/modelos grandes sin
-pasar por `<input>`. El **instalador** incluye el paso *Modelos de IA*
-con el selector de X5: lista recomendada, detección de VRAM o RAM,
-recomendación marcada, elegir uno, varios o ninguno, y descarga con
-`sha256`. Sin cambios en `src/` más allá de `io/native.ts` y
-`render/native.ts` detrás de las mismas interfaces que la web.
+**Decisión tomada (Fable), sustituye a la de Tauri.** El escritorio es
+un **lanzador propio en Rust solo con `std`** (`engine/crates/rt-app`,
+binario `repackshot`), descrito en `ARCHITECTURE.md` §5.5: servidor local
+de la interfaz con *token* y comprobación de `Host`, ventana de
+aplicación de Edge o Chromium con perfil propio, **motor nativo** con
+todos los hilos, carpeta de datos (o `data/` en modo portable), almacén
+de modelos con SHA-256 propio y detección del equipo. Tauri se descarta
+porque necesita crates.io (bloqueado aquí) y compilar en Windows (sin
+minutos de Actions), y el lanzador propio mantiene el proyecto sin
+dependencias en Rust.
 
-**Depende de.** v0.2 cerrada.
+**Qué.**
+- `rt-app`: servidor HTTP/1.1 mínimo (estáticos con tipos MIME, `Range`,
+  API con *token*), apertura de la ventana y fin de la aplicación al
+  cerrarla, instancia única, registro en la carpeta de datos; API:
+  `/api/info`, `/api/render` (RSB → pasadas acumuladas en `f32`, con
+  cancelación), `/api/models/*` (listar, escribir por trozos con
+  desplazamiento, reanudar, comprobar, borrar, servir con `Range`),
+  `/api/hardware`, `/api/open-folder`; línea de órdenes `--hardware
+  <fichero>` (INI que lee el instalador), `--serve-only` (sin ventana,
+  para pruebas) y `--version`. SHA-256 propio con los vectores del NIST.
+  La regla de recomendación evaluada sobre `src/data/ai-models.json` con
+  el mismo fichero de casos que el test de TypeScript.
+- En `src/`: `render/native.ts` (`RenderEngine` contra `/api/render`,
+  elegido cuando `/api/info` responde; el modo Completo y el Render lo
+  usan) y `io/native.ts` (almacén de modelos y carpeta de datos del
+  lanzador) detrás de las mismas interfaces que la web; sin más cambios.
+- `packaging/`: `release.mjs` (construye la interfaz y los dos wasm,
+  compila `repackshot` para `x86_64-pc-windows-gnu` con mingw-w64 y para
+  `x86_64-unknown-linux-musl` estático, y monta los paquetes), el
+  **portable de Windows** (`Repackshot-<v>-windows-x64-portable.zip`:
+  `repackshot.exe`, `app/`, `portable.txt`, licencias), el **portable de
+  Linux** (`Repackshot-<v>-linux-x64-portable.tar.gz`, igual, más un
+  `.desktop` de ejemplo; AppImage si la herramienta se puede obtener con
+  licencia permisiva) y el **instalador de Windows** con NSIS
+  (`Repackshot-<v>-windows-x64-setup.exe`): por usuario, sin permisos de
+  administrador, en `%LOCALAPPDATA%\Programs\Repackshot`, con licencia,
+  carpeta, accesos en Inicio y opcional en el escritorio, desinstalador
+  registrado, el paso **Modelos de IA** (`AI-POST.md` §2.2: lee el INI de
+  `repackshot --hardware`, marca el recomendado, uno, varios o ninguno,
+  licencia visible, y deja la elección para que la aplicación la
+  descargue) y *Abrir Repackshot* al terminar. Icono de la aplicación
+  acromático, generado desde `docs/media/logo.svg`.
+
+**Depende de.** U5, U6 para el paso de modelos y el almacén; puede
+empezar antes por el lanzador y el motor nativo.
+
+**Criterio.** Tests de `rt-app` (`cargo test`): SHA-256 con los vectores
+del NIST; el servidor rechaza un `Host` ajeno y una API sin *token*;
+`Range` devuelve los bytes pedidos; un modelo escrito por trozos
+desordenados y reanudado da el `sha256` esperado; la regla de
+recomendación con el fichero de casos. Paridad: la misma escena por
+`/api/render` y por el wasm da el mismo *hash*. El `.exe` arranca bajo
+Wine con `--serve-only` y sirve la interfaz (comprobación de humo; la
+ventana real se prueba en Windows por el usuario). El portable de Linux
+arranca, abre la ventana con el Chromium local y renderiza en nativo
+(captura `docs/ui/desktop-linux.png`). El instalador se construye con
+`makensis` sin avisos.
 
 ## Q1 · Vista en sección — **Sonnet**
 
@@ -1348,7 +1447,11 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 
 ## Decisiones pendientes de Fable (no adelantar)
 
-- **I2**: licencia y entrada de STEP, tras el informe.
+- **I2**: decidido: `occt-import-js` (LGPL-2.1) como única excepción
+  LGPL, aislada con las condiciones de `ARCHITECTURE.md` §1.
+- **Escritorio**: decidido: lanzador propio solo con `std` en lugar de
+  Tauri (`ARCHITECTURE.md` §5.5); instalador NSIS; el instalador elige
+  los modelos y la aplicación los descarga (`AI-POST.md` §2.2).
 - **Post-procesado IA** (`AI-POST.md`): el modelo por defecto
   (provisional: Z-Image-Turbo) y las tolerancias de la guarda, tras la
   comparación de X1.
@@ -1390,6 +1493,11 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 4. **U5** (ventana de render), **I2** (STEP e IGES), **L4** (focos
    propios): lo que hace que se comporte como KeyShot en el día a día
    (U3 y U4 ya están).
+4 bis. **Primera release `v0.1.0`**, petición del usuario: **U2**
+   (proyecto en archivo), **X1 parte A** (ficheros y `sha256` de los
+   modelos), **U6** (Ajustes y gestor de modelos), **P2** (lanzador,
+   portables e instalador; el lanzador y el motor nativo pueden empezar
+   en paralelo con U5) y **P1** (la release). L4 sigue después.
 5. **E5** → **E6** → **L1** → **L2** → **L3**: la luz y los materiales
    hasta que las 72 recetas estén revisadas sobre el motor propio.
 6. **M1**, **N2**, **D1**, **P1**: cierran v0.2.

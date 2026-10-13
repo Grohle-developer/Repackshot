@@ -79,15 +79,29 @@ instalar**:
   tu equipo***. El usuario puede elegir ese, otro, varios o **ninguno**
   (instalar sin IA). Cada fila dice tamaño de descarga, licencia, calidad
   esperada y velocidad orientativa; la licencia se muestra antes de
-  descargar. Se descarga solo lo elegido, una vez, con `sha256` fijado en
-  el código.
+  descargar. La detección y la recomendación las hace el propio lanzador
+  de la aplicación (`repackshot --hardware`), con los mismos datos y la
+  misma regla que la interfaz, así que el instalador y *Ajustes*
+  recomiendan siempre lo mismo.
+- **Decidido: el instalador elige, la aplicación descarga.** El
+  instalador deja la elección en la carpeta de datos y termina en
+  segundos; la aplicación empieza a descargar lo elegido desde el primer
+  arranque, en *Ajustes ▸ Post-procesado IA ▸ Modelos* (`UI.md` §2.9),
+  con progreso, pausa, reanudación tras cerrar y `sha256` por fichero
+  (fijado en `src/data/ai-models.json`). Varios GB dentro de un
+  instalador no se pueden pausar ni reanudar, lo bloquean, y un corte lo
+  deja a medias; así además la descarga es la misma en web y escritorio.
+- **Versiones portables** (escritorio sin instalar): no hay instalador,
+  así que el mismo selector aparece una vez en el primer arranque, como
+  en la web.
 - **Versión web**: no hay instalador, así que la misma lista y la misma
   recomendación aparecen la primera vez que se activa el post-procesado y
   en *Ajustes ▸ Modelos de IA*, filtradas a lo que puede ejecutarse en el
   navegador (WebGPU); se guarda en el almacenamiento privado del navegador
   (OPFS, con `navigator.storage.persist()` para que no lo borre).
-- Después, en ambos casos, *Ajustes ▸ Modelos de IA* permite descargar
-  otro de la lista, importar uno propio (§5) o borrar.
+- Después, en todos los casos, *Ajustes ▸ Post-procesado IA ▸ Modelos*
+  permite descargar **los mismos modelos que ofrecía el instalador**,
+  importar uno propio (§5), configurar el activo o borrar.
 
 ### 2.3 · Motores de ejecución
 
@@ -117,9 +131,12 @@ instalar**:
 ### 2.4 · Lista recomendada y regla de recomendación
 
 La lista sale de la investigación del 2026-10-13. Vive como datos en
-`src/data/ai-models.ts` (claves estables, tamaños, `sha256`, licencia,
-requisitos), para que X1 corrija umbrales y tiempos con medidas reales
-sin tocar código. Tamaños de descarga aproximados, sumando transformador,
+`src/data/ai-models.json` (claves estables, ficheros con URL, tamaño y
+`sha256`, licencia, requisitos, y la regla de recomendación como tabla),
+para que X1 corrija umbrales y tiempos con medidas reales sin tocar
+código. Es JSON y no TypeScript porque lo leen dos programas: la
+interfaz y el lanzador de escritorio que usa el instalador; los dos
+evalúan la tabla igual y lo prueba un mismo fichero de casos. Tamaños de descarga aproximados, sumando transformador,
 codificador de texto y VAE.
 
 | Clave | Modelo y cuantización | Descarga | Licencia | Para qué |
@@ -256,9 +273,10 @@ cola y el historial muestran las dos miniaturas.
 
 ---
 
-## 5 · Ajustes ▸ Modelos de IA
+## 5 · Ajustes ▸ Post-procesado IA
 
-En la ventana de **Ajustes** (`UI.md` §4.3), sección *Modelos de IA*:
+En la ventana de **Ajustes** (`UI.md` §2.9), sección *Post-procesado IA*,
+con sus apartados *Modelo activo*, *Modelos* y *Equipo*:
 
 - **Lista de modelos**: el de origen (*Z-Image-Turbo*, marcado *De
   origen*), las alternativas ofrecidas, y los importados; por fila
@@ -287,8 +305,8 @@ En la ventana de **Ajustes** (`UI.md` §4.3), sección *Modelos de IA*:
 
 | Fase | Responsable | Qué |
 | --- | --- | --- |
-| **X1** | **Fable** (Sonnet prepara) | Confirmar el modelo y calibrar la tabla de §2.4 (pico de memoria y tiempo por entrada en GPU y CPU): licencias releídas al pie de la letra y `sha256` fijados; comparación visual propia Z-Image-Turbo frente a FLUX.2 klein 4B sobre 8 renders × 3 intervenciones con las métricas de la guarda; prueba de ONNX Runtime nativo frente a stable-diffusion.cpp para escritorio |
+| **X1** | **Fable** (Sonnet prepara) | **Parte A, adelantada** (la necesita U6): ficheros exactos, URL, tamaños y `sha256` de cada clave de §2.4 en `src/data/ai-models.json` y licencias releídas al pie de la letra. **Parte B**, tras X3: confirmar el modelo y calibrar la tabla de §2.4 (pico de memoria y tiempo por entrada en GPU y CPU); comparación visual propia Z-Image-Turbo frente a FLUX.2 klein 4B sobre 8 renders × 3 intervenciones con las métricas de la guarda; prueba de ONNX Runtime nativo frente a stable-diffusion.cpp para escritorio |
 | **X2** | Opus | Pases del motor para la IA: albedo, normal, profundidad, id de pieza y de material, mapa de desenfoque, en `rt-core`, el RSB, el wasm y el lado TypeScript |
 | **X3** | Opus | La tubería: `src/ai/` con ONNX Runtime Web en workers, descarga y caché con `sha256`, mosaicos, *prompt* de la escena, condicionamiento, **guarda determinista** con comprobación y retroceso, integración en la cola con las dos imágenes |
 | **X4** | Sonnet | La interfaz de §4 en la ventana de render, la vista previa en modo Rápido, el informe de la guarda y el divisor en el visor de resultados |
-| **X5** | Sonnet | Ajustes ▸ Modelos de IA de §5 y el **selector de modelos** de §2.2–§2.4 (el mismo componente para el instalador de P2 y la versión web): lista, detección del equipo, recomendación, importación con validación del manifiesto, descargas, licencias |
+| ~~X5~~ | — | **Absorbida en U6** (ventana de Ajustes, `ROADMAP.md`): el gestor de modelos de §5 y el selector de §2.2–§2.4 no necesitan la tubería, así que llegan antes. Lo que queda para después de X3 (comprobar en vivo que el modelo activo cabe y una prueba de una imagen) entra en X4 |

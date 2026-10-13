@@ -19,7 +19,7 @@ no una iniciativa dentro de un PR.
 | Importación | En `src/io/`, cargada bajo demanda: `GLTFLoader`, `FBXLoader`, `3MFLoader`, `PLYLoader`, `ColladaLoader`, `USDZLoader` y `3DMLoader` de three (MIT); **rhino3dm** (openNURBS, MIT) para `.3dm`; **occt-import-js** (LGPL-2.1, OpenCascade compilado a wasm) para STEP e IGES, como **única excepción LGPL** y aislada (ver abajo); OBJ y STL propios. **Decidido**: estas bibliotecas se aceptan en la capa `io/`, se cargan solo al importar y nunca entran en el motor | La importación es el tronco del producto: lo que la gente exporta desde Rhino, SolidWorks, Fusion, Maya, ZBrush y KeyShot tiene que entrar con un arrastre. Los formatos nativos propietarios de esos programas no se leen (`SPEC.md` §5) |
 | Post-procesado IA (opcional) | **ONNX Runtime Web** (MIT) con WebGPU en workers, en `src/ai/`; en escritorio ONNX Runtime nativo o **stable-diffusion.cpp** (MIT) como proceso aparte. Modelo por defecto **Z-Image-Turbo** (Apache-2.0), descargado en el primer uso con `sha256`, nunca en el repositorio. **Decidido** en `AI-POST.md`; la dependencia entra en X3 | Mejora opcional y local de la imagen con una guarda determinista que impide cambiar geometría, materiales, resolución o enfoque; separada del motor, que sigue sin dependencias |
 | Tests | **vitest** (modelo e interfaz), **cargo test** (motor: escenas analíticas, determinismo, paridad wasm/nativo), **playwright-core** con el Chromium local para capturas | La suite de la interfaz corre sin GPU; la del motor corre en cualquier CPU |
-| Empaquetado de escritorio | Fuera de alcance hasta v0.3; cuando llegue, **Tauri** | Es Rust: enlaza el motor nativo directamente, sin wasm ni IPC; la interfaz web no cambia |
+| Empaquetado de escritorio | **Lanzador propio en Rust, solo `std`** (`engine/crates/rt-app`, binario `repackshot`), decidido para la primera release (P2). Sirve la interfaz en `127.0.0.1`, la abre en una ventana de aplicación de Edge (Windows) o Chromium/Chrome (Linux) y renderiza con `rt-core` **en nativo** con todos los hilos. Windows x86_64 compilado en cruzado con mingw-w64; Linux x86_64 estático con musl; instalador de Windows con **NSIS** (herramienta de construcción, no dependencia) | **Tauri queda descartado**: arrastra cientos de *crates* de crates.io (bloqueado en este entorno) y necesita compilar en Windows (sin minutos de Actions). El lanzador propio mantiene el proyecto sin dependencias en Rust, la interfaz web no cambia y Edge viene con Windows. Ver §5.5 |
 
 Lo que **no** se usa: React/Vue/Svelte, Tailwind, fuentes de iconos,
 fuentes de red, Electron, WebGPU, ningún renderizador existente (ni
@@ -104,6 +104,8 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
   crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG con hilos; hojas de contacto
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
+  crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
+packaging/                  guiones de empaquetado: portables de Windows y Linux, instalador NSIS (P2)
 public/engine/rt.wasm       el motor compilado para el navegador (generado por npm run engine:build; no se sube)
 ```
 
@@ -267,17 +269,18 @@ export interface RenderEngine {
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 
-Vive en `engine/`, un workspace de Cargo con tres *crates*:
+Vive en `engine/`, un workspace de Cargo con cuatro *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
 | `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 
 **Sin dependencias externas** quiere decir exactamente eso: ningún
 *crate* de crates.io en ningún *crate* del workspace. `Cargo.lock` solo
-lista `rt-core`, `rt-cli` y `rt-wasm`, y CI falla si aparece un
+lista `rt-core`, `rt-cli`, `rt-wasm` y `rt-app`, y CI falla si aparece un
 `source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
 baja discrepancia, zlib/PNG, lectores HDR, hilos) se escribe aquí.
 Fórmulas y tablas de la literatura pública (PCG, Sobol con números de
@@ -386,8 +389,44 @@ de salida y con el presupuesto de la barra de render.
 `rt` renderiza un `.rsb` con todos los hilos de la máquina y escribe PNG
 (8 o 16 bits) o EXR; sirve para lotes, para la hoja de contactos de CI y
 para generar las miniaturas de los catálogos sin navegador. La
-aplicación de escritorio (P2, Tauri) enlaza `rt-core` directamente y usa
-el mismo RSB que la web.
+aplicación de escritorio (P2) enlaza `rt-core` directamente en su
+lanzador y usa el mismo RSB que la web (§5.5).
+
+### 5.5 · Escritorio: el lanzador `repackshot`
+
+`engine/crates/rt-app` es un binario de Rust **solo con `std`** (mismo
+workspace, mismas puertas: `fmt`, `clippy -D warnings`, cero *crates*
+externos, sin `unsafe`). Hace cinco cosas:
+
+1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1` y
+   un puerto libre, con la carpeta `app/` (el `dist/` de Vite) junto al
+   ejecutable. Comprueba la cabecera `Host` (contra el *DNS rebinding*) y
+   exige en la API un *token* aleatorio por arranque que solo conoce la
+   página que abrió.
+2. **Abrir la ventana**: Edge en Windows (viene con el sistema) o el
+   primer Chromium, Chrome, Edge o Brave en Linux, con `--app=<url>` y un
+   perfil propio en la carpeta de datos; si no hay ninguno, el
+   navegador por defecto. Se cierra cuando se cierra la ventana (proceso
+   hijo y latido de la página). Un segundo arranque abre otra ventana del
+   mismo servidor.
+3. **Motor nativo**: `POST /api/render` con el RSB renderiza con
+   `rt-core` en todos los hilos y la página recoge las pasadas
+   acumuladas; mismo RSB, misma semilla, mismos píxeles que el wasm
+   (regla de determinismo), así que la interfaz no distingue más que en
+   la velocidad. `src/render/native.ts` implementa `RenderEngine` contra
+   esa API y se elige cuando `/api/info` responde.
+4. **Datos y modelos**: carpeta de datos en `%LOCALAPPDATA%\Repackshot`
+   (Windows) o `$XDG_DATA_HOME/repackshot` (Linux); en las versiones
+   **portables** (un fichero `portable.txt` junto al ejecutable), en
+   `data/` al lado, perfil del navegador incluido. Los modelos de IA se
+   guardan ahí: la página los descarga con `fetch` y los entrega al
+   lanzador por trozos, que los escribe, reanuda y comprueba con un
+   SHA-256 propio.
+5. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
+   VRAM, la RAM y la recomendación de `src/data/ai-models.json`
+   (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
+   procesos del sistema y sin `unsafe`); lo usan el instalador y
+   *Ajustes ▸ Post-procesado IA ▸ Equipo*.
 
 ## 6 · Interfaz (`src/ui/`)
 
