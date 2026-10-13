@@ -207,11 +207,12 @@ fn a_final_render_goes_through_every_tile_and_the_guard_with_progress_per_tile()
             ",\"steps\":20",
         ),
     );
-    // The post's thread starts as soon as it is queued, so on a busy machine the answer may
-    // already say LOADING (starting the runtime takes far longer than this answer, so not later).
+    // The post's thread starts as soon as it is queued (QUEUED, then CONDITIONING while it
+    // prepares the tiles, then LOADING while the runtime starts), so on a busy machine the answer
+    // may already be one of those; starting the runtime takes far longer, so never INFERENCE.
     assert_eq!(num(&v, "tiles"), 2.0);
     assert!(
-        matches!(text(&v, "state"), "QUEUED" | "LOADING"),
+        matches!(text(&v, "state"), "QUEUED" | "CONDITIONING" | "LOADING"),
         "{}",
         v.to_json()
     );
