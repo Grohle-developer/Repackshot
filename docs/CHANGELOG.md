@@ -3,7 +3,11 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
-## Sin publicar
+## v0.1.4 — 2026-10-13
+
+Versión de prueba con el post-procesado con IA funcionando de punta a punta
+en el escritorio, el cielo físico propio, las primitivas y la herramienta
+de escalar. Lo de v0.1.2 y v0.1.3 sigue igual.
 
 ### Motor
 
@@ -26,6 +30,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Post-procesado IA
 
+- En escritorio el interruptor de *Post-procesado IA* de la ventana de render **ya funciona** y deja de decir *próximamente*; también *Ajustes ▸ Post-procesado IA*. En la web sigue diciéndolo (X3c).
 - **La tubería de escritorio, de punta a punta**: un render final con *Post-procesado IA* encendido lo hace el lanzador sin que los píxeles vayan a la página y vuelvan: mosaicos, stable-diffusion.cpp con el modelo activo (cargado una vez, también entre vistas previas), la guarda determinista y los reintentos a menos intervención si una protección no pasa. El historial guarda las dos imágenes y el informe de la guarda (X3c).
 - La imagen de la IA se escribe desde la luz lineal del render, con su exposición y su curva: un PNG de 16 bits o un EXR siguen siéndolo, y con Intervención 0 es el mismo fichero que el del motor, byte a byte. Con Intervención 0 ni siquiera se arranca el motor de ejecución (X3c).
 - La cola enseña dónde está la IA: *IA · cargando el modelo*, *IA · mosaico 2 de 4*, *· intento 2*, *IA · comprobando*. Detener o pausar en ese momento conserva la imagen del motor en el historial (X3c).
@@ -35,7 +40,23 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - En Windows, si al motor de ejecución le falta el entorno de Microsoft Visual C++ 2015–2022, *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* lo dice y ofrece *Instalar el entorno de Microsoft Visual C++…* (la página oficial de Microsoft) y *Comprobar de nuevo* (X3c).
 - *Acerca de* lista stable-diffusion.cpp y ggml con sus licencias MIT (X3c).
 - El visor de resultados da al informe de la guarda su propia línea, a todo lo ancho bajo el título y los botones, en vez de apretarlo en una columna estrecha junto al título; los botones pasan bajo el título cuando no caben a su lado, y *Cerrar* se queda en la esquina (X3c).
-- Un post-procesado por el que nadie pregunta (su ventana se cerró) se para solo a los dos minutos (X3c).
+- Un post-procesado por el que nadie pregunta (su ventana se cerró) se para solo a los dos minutos, y apagar el interruptor libera el modelo de la memoria (X3c).
+
+### Correcciones
+
+- Solo de pruebas, sin efecto en la aplicación: la prueba de «respuestas sin leer» del visor, que fallaba de vez en cuando con la máquina muy cargada, espera ahora por condiciones y no por tiempos (P3a).
+
+### Limitaciones conocidas
+
+- **La primera imagen real de la IA en una tarjeta gráfica no se ha probado.** Aquí no hay GPU: la tubería se probó de punta a punta con un motor de ejecución falso y una sola vez con SD 1.5 de verdad en CPU (un ejemplo de 256 × 192, 53 s). Los tiempos con Z-Image, los modelos de edición (FLUX.2 klein y Qwen-Image-Edit, que van como *img2img* más imagen de referencia) y las tolerancias de la guarda son provisionales hasta la fase X1 parte B (X3c).
+- Solo SD 1.5 lleva ControlNet (profundidad); con los demás modelos, y con los bordes en todos, la protección de las formas la da la guarda (X3c).
+- **En Windows el motor de ejecución necesita el entorno de Microsoft Visual C++ 2015–2022 (x64)**, que no viene con Repackshot ni con el instalador. *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* lo dice y su botón abre la página de descarga de Microsoft (X3c). En Linux hace falta glibc 2.38 o posterior (X3b).
+- **La web sigue sin IA** (fase X3d): allí el interruptor dice *próximamente*. Las animaciones tampoco pasan por la IA (X4).
+- Con un trabajo EXR, el historial guarda la imagen de la IA como EXR y el visor no compara *Render | IA*, porque los navegadores no muestran EXR. Si se pausa un trabajo durante la IA, *Reanudar* deja un segundo resultado del mismo trabajo (X3c).
+- **Cielo físico con el sol bajo.** Con el sol a 20° o más el error frente a nuestro simulador es de 1 a 8 %; a 10° sube al 5–15 % y por debajo de 3° al 9–17 %, y se nota: al amanecer, un patrón acimutal de ±20 %, y en la hora dorada con bruma un resplandor un 20 % más oscuro junto al sol. Es el límite de la forma funcional. El albedo del suelo es fijo (0,2) y el sol es un cuerpo negro de 5772 K. Los proyectos anteriores se abren con el cielo físico y pueden cambiar de aspecto: *Clásico* devuelve el de antes (E5c).
+- **Primitivas.** Mover la cámara no reajusta el fondo infinito (*Ajustar a la cámara* lo rehace); cambiar las medidas de una base no vuelve a subir el producto; *Invertir normales*, *Suavizado* y *Separar* convierten la primitiva en malla; una pieza escalada con *Escalar* sigue mostrando sus medidas sin escala en la sección *Primitiva*; y las versiones anteriores a esta no ven las primitivas de un proyecto nuevo (U9).
+- Las luces, *Crear estudio* y el Doctor miran al producto y no al decorado (las piezas que no son primitivas); *Encuadrar todo* sigue encuadrando todo (U9).
+- Siguen las de v0.1.2 y v0.1.3, sobre todo que **nada de lo nuevo de escritorio se ha probado en un Windows real**.
 
 ## v0.1.3 — 2026-10-13
 
