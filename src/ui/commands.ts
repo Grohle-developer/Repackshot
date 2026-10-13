@@ -7,6 +7,7 @@ import { materialPreset } from '../data/materials';
 import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
 import { aiFileName } from '../core/ai-post';
+import { aiImagesOf, aiVariantsOf } from '../core/results';
 import { activeCamera } from '../core/camera';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
 import {
@@ -798,6 +799,19 @@ export function maybeShowModelChooser(ctx: Ctx, o: { portable: boolean; pending:
     ctx.ui.set({ chooserShown: true });
   }
   return show;
+}
+
+/**
+ * What the desktop installer chose (`pending-models.json`, read at the first start) that is the person's from then on
+ * (phase U10): the page of the installer asks *Run on the graphics card / the processor*, and the processor is the
+ * only answer that differs from what the application decides alone (AI-POST.md §2.4), so it becomes
+ * Settings ▸ AI post-processing ▸ Run on. The inference runtime the installer ticked is the launcher's to download
+ * (`Ai::start_pending_runtime`), and the models are the manager's. Returns what was set.
+ */
+export function applyInstallerChoice(ctx: Ctx, pending: { device: 'gpu' | 'cpu' }): boolean {
+  if (pending.device !== 'cpu' || ctx.ui.get().settings['ai.device'] === 'CPU') return false;
+  setSetting(ctx, 'ai.device', 'CPU');
+  return true;
 }
 
 /** The person already answered our own question about closing (Ctrl/⌘ W on the desktop): the page closes without another. */
@@ -2060,18 +2074,35 @@ export function closeResult(ctx: Ctx): void {
 }
 
 /** Saves a result again (to the folder it went to, or a download). `which`: the engine's image (default) or the one the AI made. */
-export async function saveResultAgain(ctx: Ctx, id: string, which: 'RENDER' | 'AI' = 'RENDER'): Promise<void> {
+/** Saves a result's file again where it went: the render, or an AI image (`variant`, 1-based: X4b) under its own name. */
+export async function saveResultAgain(ctx: Ctx, id: string, which: 'RENDER' | 'AI' = 'RENDER', variant = 1): Promise<void> {
   const meta = ctx.ui.get().results.find((r) => r.id === id);
   const blobs = meta ? await ctx.services.results.get(id) : null;
-  const blob = which === 'AI' ? blobs?.ai : blobs?.file;
+  const blob = which === 'AI' ? [blobs?.ai ?? null, ...(blobs?.aiMore ?? [])][variant - 1] : blobs?.file;
   if (!meta || !blobs || !blob) {
     ctx.ui.toast(t('rv.missing'));
     return;
   }
-  const name = which === 'AI' ? (meta.ai?.name ?? aiFileName(meta.name)) : meta.name;
+  const name = which === 'AI' ? (aiVariantsOf(meta)[variant - 1]?.name ?? aiFileName(meta.name, variant)) : meta.name;
   if (meta.savedTo.kind === 'FOLDER') await ctx.services.files.ensureAccess(meta.savedTo.id);
   const where = await ctx.services.files.save(meta.savedTo, name, blob);
   ctx.ui.toast(where === 'FOLDER' && meta.savedTo.kind === 'FOLDER' ? t('render.doneFolder', { name, folder: meta.savedTo.name }) : t('render.done', { name }));
+}
+
+/** Results viewer ▸ Save all (X4b): every AI image of a result again, each under its own name (`_AI`, `_AI_2`…). */
+export async function saveAllVariants(ctx: Ctx, id: string): Promise<void> {
+  const meta = ctx.ui.get().results.find((r) => r.id === id);
+  const blobs = meta ? await ctx.services.results.get(id) : null;
+  const list = [blobs?.ai ?? null, ...(blobs?.aiMore ?? [])];
+  const images = meta ? aiImagesOf(meta).filter((v) => list[v.variant - 1]) : [];
+  if (!meta || !blobs || images.length === 0) {
+    ctx.ui.toast(t('rv.missing'));
+    return;
+  }
+  if (meta.savedTo.kind === 'FOLDER') await ctx.services.files.ensureAccess(meta.savedTo.id);
+  let where: 'FOLDER' | 'DOWNLOAD' = 'DOWNLOAD';
+  for (const v of images) where = await ctx.services.files.save(meta.savedTo, v.info.name || aiFileName(meta.name, v.variant), list[v.variant - 1]!);
+  ctx.ui.toast(where === 'FOLDER' && meta.savedTo.kind === 'FOLDER' ? t('rv.savedAllFolder', { n: images.length, folder: meta.savedTo.name }) : t('rv.savedAll', { n: images.length }));
 }
 
 export async function deleteResult(ctx: Ctx, id: string): Promise<void> {

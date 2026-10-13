@@ -516,6 +516,31 @@ impl Ai {
         }
     }
 
+    /// The installer may have ticked the inference runtime beside the models (phase U10,
+    /// `pending-models.json`: `"runtime": "<key>"`). The launcher starts downloading it at its
+    /// first launch, as the page starts the models: with the progress, the pause and the
+    /// SHA-256 check of any other download, shown in *Settings ▸ AI post-processing*. Returns
+    /// the key it started. Nothing happens when there is no such choice, when the key is not a
+    /// build for this system, or when the build is installed or already on its way. The file is
+    /// the page's to delete (it holds the models too), so a launch that comes before the page
+    /// has taken them asks again, which `start` makes harmless.
+    pub fn start_pending_runtime(&self, pending: &Path) -> Option<String> {
+        let key = crate::models::load_pending(pending)?.runtime?;
+        if self.runtimes.installed(&key).is_some() {
+            return None;
+        }
+        match self.runtimes.start(&key, Source::Download) {
+            Ok(()) => {
+                crate::log!("downloading the AI runtime the installer chose: {key}");
+                Some(key)
+            }
+            Err(e) => {
+                crate::log!("the AI runtime the installer chose ({key}) was not started: {e:?}");
+                None
+            }
+        }
+    }
+
     /// The rule for this computer.
     pub fn choice(&self, gpu: Option<bool>, force: Option<&str>) -> Option<Choice> {
         choose(

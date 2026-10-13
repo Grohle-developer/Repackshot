@@ -37,7 +37,16 @@ fn main() -> ExitCode {
             let hw = hardware::detect();
             let catalogue = recommend::catalogue();
             let a = hardware::assess(&hw, device, catalogue);
-            let ini = hardware::to_ini(&hw, &a, catalogue);
+            // The inference runtime beside the models (phase U10): the same rule and file as the
+            // application's own.
+            let runtime = hardware::runtime_offer(
+                &hw,
+                device,
+                rt_app::ai::catalogue::runtime_catalogue(),
+                std::env::consts::OS,
+                std::env::consts::ARCH,
+            );
+            let ini = hardware::to_ini(&hw, &a, catalogue, runtime.as_ref());
             std::fs::write(&out, hardware::utf16le(&ini))
                 .map_err(|e| format!("{}: {e}", out.display()))
         }

@@ -1093,6 +1093,103 @@ fn download_pause_resume_check_unpack_and_remove() {
     cleanup(t);
 }
 
+/// `pending-models.json` as `packaging/windows/models-page.nsh` writes it.
+fn write_pending(data: &Path, runtime: Option<&str>) {
+    let tail = runtime.map_or(String::new(), |k| format!(", \"runtime\": \"{k}\""));
+    std::fs::write(
+        data.join("pending-models.json"),
+        format!("{{\"device\": \"cpu\", \"keys\": [\"ZIMAGE_Q4\"]{tail}}}\r\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn the_runtime_the_installer_chose_downloads_at_the_first_launch() {
+    if !have_curl() {
+        return;
+    }
+    let zip_bytes = fake_zip();
+    let (len, digest) = (zip_bytes.len() as u64, sha(&zip_bytes));
+    let files = FileServer::start(zip_bytes, Duration::from_millis(5));
+    let url = files.url();
+    let options = with_catalogue(&override_json(&url, len, &digest));
+    // The installer wrote its choice before the application ever ran; nobody asks for the download.
+    let t = TestServer::start_with_options("ai-pending", 1, options, |data| {
+        write_pending(data, Some("TEST_CPU"))
+    });
+    let v = wait_entry(&t, "TEST_CPU", |v| entry_state(v) != "missing");
+    assert!(
+        matches!(
+            entry_state(&v),
+            "downloading" | "verifying" | "installing" | "installed"
+        ),
+        "{}",
+        v.to_json()
+    );
+    let v = wait_entry(&t, "TEST_CPU", |v| entry_state(v) == "installed");
+    assert!(t
+        .dir
+        .join("data/ai/runtimes")
+        .join(&digest)
+        .join(server_name())
+        .is_file());
+    // Checked and unpacked like any download: the Settings row shows what the fake reported.
+    assert_eq!(
+        v.get("version").unwrap().as_str(),
+        Some("stable-diffusion.cpp version fake, commit fake000")
+    );
+    // The page still gets its choice (the models) with the runtime in it, and deletes the file.
+    let pending = t.json("GET", "/api/pending-models", b"");
+    assert_eq!(pending.get("runtime").unwrap().as_str(), Some("TEST_CPU"));
+    assert_eq!(strings(pending.get("keys").unwrap()), ["ZIMAGE_Q4"]);
+    // A second launch with the file still there (the page had not taken it) asks for nothing: it is installed.
+    let asked = files.ranges.lock().unwrap().len();
+    let path = t.dir.join("data/pending-models.json");
+    assert_eq!(t.server.app.ai.start_pending_runtime(&path), None);
+    assert_eq!(files.ranges.lock().unwrap().len(), asked);
+    drop(files);
+    cleanup(t);
+}
+
+#[test]
+fn nothing_downloads_for_a_choice_without_a_runtime_or_with_one_that_is_not_for_this_system() {
+    if !have_curl() {
+        return;
+    }
+    let zip_bytes = fake_zip();
+    let (len, digest) = (zip_bytes.len() as u64, sha(&zip_bytes));
+    let files = FileServer::start(zip_bytes, Duration::ZERO);
+    let url = files.url();
+    for (name, runtime) in [
+        ("ai-pending-none", None),
+        ("ai-pending-other", Some("TEST_OTHER")),
+        ("ai-pending-unknown", Some("NOPE")),
+        ("ai-pending-path", Some("../TEST_CPU")),
+    ] {
+        let options = with_catalogue(&override_json(&url, len, &digest));
+        let t =
+            TestServer::start_with_options(name, 1, options, |data| write_pending(data, runtime));
+        // Time for a download to have started, were one going to.
+        std::thread::sleep(Duration::from_millis(300));
+        let v = t.json("GET", "/api/ai/runtimes/TEST_CPU", b"");
+        assert_eq!(entry_state(&v), "missing", "{name}: {}", v.to_json());
+        assert!(!t.dir.join("data/ai/runtimes").exists(), "{name}");
+        // The models are still the page's.
+        let pending = t.json("GET", "/api/pending-models", b"");
+        assert_eq!(
+            strings(pending.get("keys").unwrap()),
+            ["ZIMAGE_Q4"],
+            "{name}"
+        );
+        cleanup(t);
+    }
+    assert!(
+        files.ranges.lock().unwrap().is_empty(),
+        "no request reached the file server"
+    );
+    drop(files);
+}
+
 #[test]
 fn a_sha256_mismatch_never_installs() {
     if !have_curl() {

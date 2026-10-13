@@ -3,7 +3,8 @@
 // guard's report as the lines the results viewer shows. No DOM and no pipeline here: the pipeline is
 // `AiPostService` (core/ai.ts), the settings live in `RenderSettings.ai` (core/render.ts).
 
-import { PREVIEW_MAX_SIDE, type AiPipelineSettings, type AiUnavailableReason, type GuardReport } from './ai';
+import { PREVIEW_MAX_SIDE, type AiPipelineSettings, type AiRuntimeStatus, type AiUnavailableReason, type GuardReport } from './ai';
+import { OPEN_PROMPT_CAPS, type PromptCaps } from './ai-prompt';
 import type { PassKey } from './passes';
 import type { AiSettings } from './render';
 
@@ -21,14 +22,39 @@ export const AI_PROTECTIONS = ['geometry', 'materials', 'resolution', 'dof', 'fr
 export type AiProtection = (typeof AI_PROTECTIONS)[number];
 
 /** The pipeline's part of a job's AI settings (what `AiPostRequest.settings` takes). */
-export function pipelineOf(ai: AiSettings): AiPipelineSettings {
-  return { intervention: ai.intervention, light: ai.light, bounce: ai.bounce, wear: ai.wear, style: ai.style, styleStrength: ai.styleStrength, seed: ai.seed };
+export function pipelineOf(ai: AiSettings): Required<AiPipelineSettings> {
+  return { intervention: ai.intervention, light: ai.light, bounce: ai.bounce, wear: ai.wear, style: ai.style, styleStrength: ai.styleStrength, seed: ai.seed, userPrompt: ai.userPrompt, variants: ai.variants };
 }
 
-/** A file name with `_AI` before its extension: the image the AI made next to the engine's (`Bottle_0001.png` → `Bottle_0001_AI.png`). */
-export function aiFileName(name: string): string {
+/** The seed of variant `n` (1-based) of a job: the job's seed for the first, then one more each (on 32 bits). */
+export function variantSeed(seed: number, n: number): number {
+  return ((seed >>> 0) + Math.max(0, Math.round(n) - 1)) >>> 0;
+}
+
+/** The settings of one request: variant `n` of the job (its seed), one image. */
+export function variantSettings(s: Required<AiPipelineSettings>, n: number): Required<AiPipelineSettings> {
+  return { ...s, seed: variantSeed(s.seed, n) };
+}
+
+/**
+ * A file name with `_AI` before its extension: the image the AI made next to the engine's (`Bottle_0001.png` →
+ * `Bottle_0001_AI.png`); variant 2 and on with their number (`Bottle_0001_AI_2.png`, X4b).
+ */
+export function aiFileName(name: string, variant = 1): string {
+  const tag = variant > 1 ? `_AI_${Math.round(variant)}` : '_AI';
   const dot = name.lastIndexOf('.');
-  return dot > 0 && !/[\\/]/.test(name.slice(dot)) ? `${name.slice(0, dot)}_AI${name.slice(dot)}` : `${name}_AI`;
+  return dot > 0 && !/[\\/]/.test(name.slice(dot)) ? `${name.slice(0, dot)}${tag}${name.slice(dot)}` : `${name}${tag}`;
+}
+
+/**
+ * What the model that will run does with words (X4b): the synthetic service takes any (it ignores them); a model of
+ * the catalogue or an imported one says so in its capabilities (`model`, the model manager's view of it); a model
+ * the interface does not know takes no text prompt (nothing of the job's own is sent) and has no known limit.
+ */
+export function promptCaps(status: Pick<AiRuntimeStatus, 'backend'> | null, model: { textPrompt: boolean; maxPromptTokens: number | null } | null | undefined): PromptCaps {
+  if (status?.backend === 'SYNTHETIC') return { ...OPEN_PROMPT_CAPS };
+  if (!model) return { textPrompt: false, maxPromptTokens: null };
+  return { textPrompt: model.textPrompt, maxPromptTokens: model.maxPromptTokens };
 }
 
 /**

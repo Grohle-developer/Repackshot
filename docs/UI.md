@@ -126,8 +126,9 @@ De izquierda a derecha:
    *Tubo*, *Escalones*, *Fondo infinito*—, cada una con su icono y un
    *tooltip* que dice dónde nace),
    Exportar imagen, separador, Idioma (Inglés / Español), Tema (Oscuro /
-   Claro / Sistema), **Ajustes…** (`Ctrl/⌘ ,`), separador, Guía, Atajos
-   de teclado, Acerca de.
+   Claro / Sistema), **Ajustes…** (`Ctrl/⌘ ,`), separador y **Ayuda ▸**
+   (fase U10): *Recorrido guiado*, *Guía* (la de seis pasos de §4.6),
+   *Atajos de teclado* y *Acerca de*.
 2. **Nombre del proyecto**, editable al hacer clic (texto plano, sin caja
    hasta que se edita). Un punto delante cuando hay cambios sin guardar.
 3. Centro: **Deshacer / Rehacer** con el nombre de la acción en el
@@ -636,6 +637,18 @@ resultados.
 Luego: piezas · triángulos · motor y dispositivo · muestras y tiempo del
 visor. A la derecha: idioma y versión.
 
+**Nota del motor de ejecución** (fase U10, solo escritorio): si al
+arrancar hay un modelo de IA instalado y el motor de ejecución no
+(`AI-POST.md` §7.1: no está, la descarga está en pausa, no arranca, o en
+Windows falta el entorno de Microsoft Visual C++), una línea discreta a
+la derecha, **una sola vez por sesión** y nunca una ventana: *IA: el motor
+de ejecución no está instalado* con *Instalar* (descarga la compilación que
+elige la regla, o abre la página de Microsoft si lo que falta es Visual
+C++), *Más tarde* (la quita hasta el próximo arranque) y, en el texto, un
+enlace a *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución*. Un motor que
+ya se está descargando (lo marcó el instalador) no es un aviso. Es la
+misma línea que la de las actualizaciones, en el mismo sitio.
+
 **Popover del Doctor**: la lista de `DOCTOR_CHECKS` con estado, una frase
 de qué pasa y un botón *Arreglar* por fila, más *Arreglar todo* arriba. Es
 la traducción del panel Doctor de EZ Packshot. En U1 los chequeos que
@@ -718,6 +731,19 @@ defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
   *próximamente* mientras la versión no tenga tubería). En *Animación* queda
   deshabilitado (*para animaciones llega más adelante*). Gestionar modelos…
   y la intervención por defecto de Ajustes, debajo.
+- **Aviso del motor de ejecución** (fase U10, `ui/panels/ai-runtime-notice.ts`):
+  con un modelo instalado y sin motor de ejecución (o con la descarga en
+  pausa, o sin que arranque, o sin Microsoft Visual C++ en Windows), un
+  recuadro bajo el interruptor lo dice con su título y su frase y los
+  botones que lo arreglan: **Instalar · 26 MB** (el mismo flujo que la fila
+  del motor de Ajustes: el lanzador descarga la compilación que eligió la
+  regla), *Reanudar*, *Pausar* mientras baja (con barra), **Instalar el
+  entorno de Microsoft Visual C++…** y *Comprobar de nuevo*, y *Ajustes…*.
+  Con la sección plegada, su título lleva la marca *Falta el motor* para
+  que se vea. Todo lo muestra el lanzador (se pregunta cada pocos segundos,
+  y cada 0,4 s mientras algo baja); si el lanzador rechaza un botón, lo dice
+  en el recuadro. Sin modelo no se dice nada del motor (lo primero es
+  elegir un modelo), y con un motor que arranca tampoco.
 - **Configurador** (solo con el interruptor encendido), a la izquierda: seis
   controles de 0 a 100 con su frase —*Intervención*, *Luz*, *Rebotes*,
   *Desgaste y microdetalle*, la lista de *Estilo* (`AI_STYLES`) y *Fuerza del
@@ -753,6 +779,30 @@ defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
   determinista) para capturas, demos y pruebas. Apagar el interruptor
   devuelve la memoria del modelo (si ningún trabajo lo usa). Capturas:
   `docs/ui/ai-section-dark.png` y `docs/ui/ai-section-light.png`.
+- **Prompt propio** (X4b), bajo los seis controles y sobre las protecciones: un
+  campo de varias líneas, vacío por defecto, de hasta 400 caracteres (contador
+  *n / 400*), con la nota *Describe la luz o el ambiente; la geometría, los
+  materiales y el enfoque siguen protegidos*. Es del trabajo: se guarda en el
+  proyecto, cada trabajo de la cola lleva el suyo y se deshace **de una vez por
+  visita al campo** (se guarda al dejar de escribir y al salir de él; todo lo de
+  una visita es una entrada de deshacer, nunca una por tecla). Se añade al final
+  del *prompt* que se genera de la escena, que va tras el *prompt del sistema*
+  de Ajustes; el negativo fijo sigue aparte. Si el modelo que va a ejecutarse no
+  admite un *prompt* de texto (`textPrompt` de `ai-models.json`, o el manifiesto
+  de un importado), el campo se ve deshabilitado y la línea de debajo lo dice
+  (*… no admite un prompt de texto: lo que se escriba aquí no se envía*). Con un
+  modelo que lee pocos *tokens* (SD 1.5: 77) la línea dice cuántos usa
+  (*≈ 64 de los 77 tokens que lee este modelo*) o qué se queda fuera
+  (*Demasiado largo para este modelo (77 tokens); no entra: tu prompt, el final de
+  la descripción de la escena*), con la estimación prudente de `AI-POST.md` §4.
+- **Variantes** (X4b), junto a *Otra variación*: un número de 1 a 8, **1 por
+  defecto**, deshacible (un arrastre, una entrada). Debajo, *Un render y después 4
+  imágenes de IA con las semillas 12 a 15; la vista previa enseña la primera ·
+  ≈ 2 min de IA en este equipo* (el tiempo es N × lo medido por píxel en el último
+  trabajo con IA de este equipo; sin medida, *el tiempo de la IA se mide con el
+  primer render con IA*). Cambiar el número no rehace la vista previa, que sigue
+  siendo de una sola imagen. El resumen del pie dice *IA activada · 4 variantes*.
+  Captura: `docs/ui/ai-section-prompt.png`.
 
 **Pie de la ventana**: a la izquierda, el resumen en una línea
 (*1920 × 1080 · 300 ppp · 256 muestras · PNG → Descargas · IA
@@ -820,6 +870,27 @@ muestran EXR: la miniatura de la IA de un trabajo EXR sale de una copia de 8
 bits, pero el visor solo compara *Render | IA* cuando la IA es PNG o JPEG (el
 historial guarda el EXR tal cual; una copia para la vista queda pendiente).
 
+**Variantes (X4b).** Un trabajo con varias variantes hace un solo render y una
+pasada de la IA por variante, con la semilla siguiente cada vez; se guardan como
+`…_AI.png`, `…_AI_2.png`, `…_AI_3.png`…, cada una con su informe. Mientras tanto
+la fila de la cola dice *IA · variante 2 de 4 · mosaico 3 de 4* y la barra mide las
+variantes juntas; *Detener* a mitad conserva el render y las variantes terminadas
+(*… el render y las 2 imágenes de IA terminadas se conservan en el historial*). Una
+variante que la guarda rechaza queda con su informe y sin imagen (aviso propio), y
+si una falla se conservan las anteriores. En el visor, **una tira de miniaturas**
+—una línea propia entre la cabecera y la imagen, *Variantes* y una miniatura por
+variante con su número, la elegida marcada, la rechazada sin imagen y deshabilitada—
+elige la que el divisor compara con el render (etiquetas *Render · IA 3*), sin
+perder el zum ni el divisor, y la línea del informe pasa a ser la suya (*Variante 3 ·
+Comprobado: …*). Botones *Guardar el render de nuevo*, *Guardar esta variante* y
+*Guardar todas* (cada una con su nombre). La cola y el historial ponen **×4** sobre
+las miniaturas y la columna IA de la cola dice *IA × 4*. En el historial, en la web
+van en el mismo registro de IndexedDB; en escritorio, `<datos>/results/<id>.ai.<n>.<ext>`
+(`PUT/GET /api/store/results/<id>/ai/<n>`; el `<id>.ai.<ext>` de un resultado de
+antes se lee como la variante 1). `tools/ai-post-check.mjs` (j) mide también la tira:
+una línea propia, sin solapes, a 1600, 1280 y 960 px. Captura:
+`docs/ui/ai-results-variants.png`.
+
 ### 2.9 · Ventana de Ajustes
 
 Se abre con **Ajustes…** del menú de aplicación o `Ctrl/⌘ ,`. Es la
@@ -882,6 +953,23 @@ texto a RAM, y en *Avanzado* las tolerancias de la guarda
 (`AI-POST.md` §3.2; las de fábrica las fija X1). Un aviso en línea si el
 modelo no cabe en la memoria detectada.
 
+**Post-procesado IA ▸ Prompt del sistema** (X4b): unas palabras generales para
+todas las imágenes (es un ajuste de la aplicación, no del proyecto: no se deshace
+ni va en el `.repack.json`), en un campo de varias líneas con el predeterminado del
+líder (*Photorealistic product photograph. Keep the image exactly as rendered…*, en
+inglés: los codificadores de texto de los modelos rinden mejor en él), contador
+*n / 2000*, **Restablecer el predeterminado** (deshabilitado mientras lo es) y la
+línea auxiliar *Palabras generales para todas las imágenes; van antes de la
+descripción de la escena y del prompt propio de cada trabajo. Las protecciones de la
+guarda no dependen de ellas.* Se guarda al dejar de escribir o al salir del campo;
+puede quedarse vacío (ninguno). Con un modelo activo que lee pocos *tokens*, una
+línea dice qué recibe: *SD 1.5 ligero lee como mucho 77 tokens: recibe la versión
+corta de este prompt* (mientras el texto sea el predeterminado; *La versión corta*
+se despliega debajo), *≈ 40 de los 77 tokens que lee …* o *Demasiado largo para …:
+el final de este prompt se queda fuera, después de la descripción de la escena y del
+prompt del trabajo*. En escritorio va en `settings.json` de la carpeta de datos, como
+todos los ajustes (P3e). Captura: `docs/ui/settings-ai-prompt.png`.
+
 **Post-procesado IA ▸ Modelos**: la lista de `src/data/ai-models.json`
 (los mismos modelos que ofrece el instalador) y los importados. Por fila:
 nombre, arquitectura, cuantización, licencia (con *no apto para uso
@@ -894,7 +982,17 @@ descarga. Las descargas se reanudan donde se quedaron (también tras
 cerrar la aplicación) y cada fichero se comprueba con su `sha256` antes
 de marcarse *Listo*. **Importar modelo…** como describe `AI-POST.md` §5.
 Si el instalador dejó modelos elegidos para descargar, aparecen aquí
-descargándose desde el primer arranque.
+descargándose desde el primer arranque. **Primer arranque de un portable**
+(fase U10): el selector (*Elige los modelos de IA que descargar*) ofrece
+también **el motor de ejecución** que elige la regla para este equipo
+(*Descargar también el motor de ejecución (Vulkan · 29 MB): es lo que
+ejecuta los modelos*), marcado y desmarcable; con la casilla marcada baja
+con el primer modelo cuyo botón *Descargar* se pulsa, como en el
+instalador.
+
+**Post-procesado IA ▸ aviso** (fase U10): arriba de la sección, el mismo
+recuadro del motor de ejecución que la ventana de render (sin el botón
+*Ajustes…*), antes del modelo activo.
 
 **Post-procesado IA ▸ Motor de ejecución** (solo escritorio, X3b): la compilación de
 stable-diffusion.cpp que toca (`src/data/ai-runtimes.json`) con su nombre y la marca *Aún sin
@@ -1056,6 +1154,66 @@ una **flecha** apuntando al control del que habla, sin ocultar ni mover
 nada. Seis pasos: importar o cargar el ejemplo → elegir tipo de producto y
 crear estudio → asignar un material → elegir un montaje de luz → encuadrar
 y enfocar → render. Tomado del tutorial con flechas de EZ Packshot.
+
+### 4.7 · Recorrido guiado
+
+Una capa propia —nunca ventanas del navegador— que recorre la pantalla
+zona por zona (fase U10, `ui/tour.ts` y `ui/panels/tour.ts`). Sale **sola
+en el primer arranque** y desde *Ayuda ▸ Recorrido guiado* (o la paleta:
+*Recorrido guiado*), y **se puede saltar siempre**. Oscurece todo menos la
+zona del paso, la rodea con un anillo (blanco por dentro, negro por fuera,
+visible sobre cualquier contenido) y pone al lado una tarjeta con el
+número del paso, un título, un texto corto, **puntos de progreso** (uno
+por paso), **Saltar recorrido · Atrás · Siguiente** (*Hecho* en el último)
+y la pista de teclas. Es modal: la capa se queda con el puntero y con todas
+las teclas, de modo que nada de debajo cambia (ni `Supr` borra, ni `F`
+encuadra): `→` y `Av Pág` avanzan, `←` y `Re Pág` retroceden, `Esc` salta,
+`Intro` y `Espacio` pulsan el botón con el foco y `Tab` solo da vueltas por
+los botones de la tarjeta. Acromática en los dos temas; `es` y `en`.
+
+Los pasos, en este orden: **bienvenida**; **menú de la aplicación**;
+**piezas** (el árbol) y **niveles de selección**; **herramientas de vista**
+(Seleccionar con la caja de `Ctrl`, Mover, Escalar, Orbitar, Desplazar,
+Zoom; en un proyecto vacío la barra se muestra igualmente mientras dura el
+recorrido) y **Rápido y Completo**; el inspector: **producto y estudio**,
+**luz y montajes**, **entorno y cielo**, **cámara y enfoque con clic**,
+**materiales** (con el catálogo abierto y la primera pieza seleccionada; sin
+pieza, el propio inspector); las pestañas **Luces**, **Cámaras** y
+**Estudios**; **Añadir ▸ Primitiva**; **Render…**, la **ventana de render**,
+la **cola** y el **post-procesado IA**; los **resultados** (el historial del
+cajón *Cola*, donde se abre el visor) y **Ajustes** una sección por paso
+(con el nombre y la descripción de la propia sección; *Escritorio* solo en
+la aplicación de escritorio); y el cierre. 30 pasos en la web, 31 en el
+escritorio. Las zonas se localizan por los `data-guide` del código (los de
+la guía y los nuevos: `app-menu`, `parts-tab`, `levels`, `tools`,
+`add-primitive`, `scene-panel`, `inspector`, `section-<id>` en cada sección
+del inspector y de la ventana de render, `render-window`, `rw-actions`,
+`history`, `settings-content`).
+
+Un paso cuya zona no está a la vista **la pone**: abre la pestaña, el panel
+lateral (en una ventana estrecha, solo el que hace falta), la ventana de
+render o la de Ajustes en su sección, el cajón *Cola*, el catálogo de
+materiales, y selecciona lo que el paso necesita (la selección no se
+deshace ni toca el proyecto); y **al terminar lo deja todo como estaba**
+(pestaña, paneles, cajón, ventanas, sección recordada de Ajustes,
+catálogo y selección). Un paso cuya zona no aparece en 0,7 s se salta en la
+dirección en que se iba (nunca se queda colgado). La tarjeta va **al lado
+de la zona** sin taparla (a la derecha de lo que está en la mitad
+izquierda, a la izquierda de lo que está en la derecha, debajo o encima de
+una barra), **fuera de la ventana** de render o de Ajustes cuando hay sitio
+y, si la zona es toda la ventana, **dentro de ella, donde no tape ningún
+control** (botón, campo o interruptor), lo más cerca posible de su
+esquina inferior derecha; si toda la sección es controles, en esa esquina.
+
+Qué se recuerda: *Saltar*, *Hecho* y `Esc` cuentan como visto, y entonces
+ya no sale solo (sí desde *Ayuda*). Se guarda en el documento de ajustes
+(`layout.tourSeen`: la carpeta de datos en escritorio, nunca el
+almacenamiento del navegador allí; el de la web en `localStorage` como lo
+demás). No sale solo bajo automatización (`navigator.webdriver`: las
+comprobaciones y capturas del navegador): `?tour=0` no lo lanza nunca,
+`?tour=1` lo lanza ahora y `?tour=auto` hace lo del primer arranque aunque
+haya automatización. En el primer arranque de un portable espera a que se
+cierre el selector de modelos.
 
 ---
 

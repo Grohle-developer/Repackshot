@@ -405,6 +405,86 @@ export function textField(value: string, onCommit: (v: string) => void, ariaLabe
   };
 }
 
+export interface TextAreaProps {
+  value: string;
+  /** Most characters (the field refuses more). */
+  maxLength: number;
+  ariaLabel: string;
+  placeholder?: string;
+  rows?: number;
+  disabled?: boolean;
+  /**
+   * The text, when typing stops (after `settleMs`) and when the field loses focus, with the gesture of this visit to
+   * the field: every commit of one visit carries the same one, so the visit is one undo entry, never one a keystroke.
+   */
+  onCommit(value: string, gesture: string): void;
+  /** Every keystroke (a counter, a live line): nothing is committed by it. */
+  onInput?(value: string): void;
+  /** The text as it is kept (trimmed…): a commit that keeps the same is no commit, and a kept value equal to it leaves the field alone. */
+  normalise?(value: string): string;
+  /** Pause after the last keystroke before committing (default 700 ms). */
+  settleMs?: number;
+}
+
+/**
+ * A multi-line text field (X4b): it commits when typing stops and when it loses focus (Esc leaves it), one undo
+ * entry a visit. While it has the focus, what it is given back is not written over what is being typed unless the
+ * kept value really changed (an undo from the menu), so a commit that trims a trailing space never eats it.
+ */
+export function textArea(p: TextAreaProps): Control<string> & { el: HTMLTextAreaElement; flush(): void; setDisabled(v: boolean): void } {
+  const norm = p.normalise ?? ((v: string) => v);
+  const el = h('textarea', { class: 'text-input text-area', rows: p.rows ?? 3, maxlength: p.maxLength, placeholder: p.placeholder ?? '', 'aria-label': p.ariaLabel }) as HTMLTextAreaElement;
+  el.value = p.value;
+  el.disabled = p.disabled === true;
+  let committed = norm(p.value);
+  let given = p.value;
+  let gesture: string | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const clear = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
+  const commit = () => {
+    clear();
+    const v = norm(el.value);
+    if (v === committed) return;
+    committed = v;
+    p.onCommit(v, gesture ?? (gesture = newGesture('text')));
+  };
+  el.addEventListener('focus', () => (gesture = newGesture('text')));
+  el.addEventListener('input', () => {
+    p.onInput?.(el.value);
+    clear();
+    timer = setTimeout(commit, p.settleMs ?? 700);
+  });
+  el.addEventListener('blur', () => {
+    commit();
+    gesture = null;
+  });
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      el.blur();
+    }
+  });
+  return {
+    el,
+    flush: commit,
+    setDisabled(v) {
+      el.disabled = v;
+    },
+    set(v) {
+      if (v === given) return;
+      given = v;
+      committed = norm(v);
+      // Typing: keep the person's text when it is what was kept (the kept one may be trimmed); an undo writes over it.
+      if (document.activeElement === el && norm(el.value) === committed) return;
+      clear();
+      el.value = v;
+    },
+  };
+}
+
 /** A labelled row: label on the left, control on the right. */
 export function field(label: string, ...controls: (Node | null)[]): HTMLElement {
   return h('div', { class: 'field' }, h('label', { class: 'field-label', title: label }, label), h('div', { class: 'field-control' }, ...controls));

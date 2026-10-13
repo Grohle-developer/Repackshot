@@ -13,7 +13,7 @@ export function section(ctx: Ctx, id: string, title: string, body: Node, extra?:
     h('span', null, title),
     extra ? h('span', { class: 'section-extra' }, extra) : null,
   );
-  const el = h('section', { class: 'section', 'data-section': id }, head, h('div', { class: 'section-body' }, body));
+  const el = h('section', { class: 'section', 'data-section': id, 'data-guide': `section-${id}` }, head, h('div', { class: 'section-body' }, body));
   if (collapsed) el.setAttribute('data-collapsed', '');
   head.addEventListener('click', (e) => {
     if ((e.target as HTMLElement).closest('.section-extra button')) return;

@@ -3,6 +3,7 @@
 // services from the engine and the importers and hands them in.
 
 import type { AiGuardMaterial, AiPipelineSettings, AiPostService, LinearImage } from '../core/ai';
+import type { ComposedPrompt, PromptCaps } from '../core/ai-prompt';
 import type { Projection, Rect } from '../core/box-select';
 import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
@@ -323,8 +324,12 @@ export interface AiPort {
   decode(image: Blob): Promise<LinearImage>;
   /** An image from the service as a file, in the job's format. */
   encode(image: LinearImage, opts: AiEncodeOptions): Promise<Blob>;
-  /** The prompt and the negative for a scene and a job's settings (src/ai/prompt.ts; default: the window's). */
-  scenePrompt(state: ProjectState, settings?: AiPipelineSettings): { prompt: string; negative: string };
+  /**
+   * The prompt and the negative for a scene and a job's settings (src/ai/prompt.ts; default: the window's). With a
+   * `context` (X4b): Settings' system prompt, the scene's and the job's own, in that order, fitted to the model whose
+   * capabilities it gives, and how that went (`composed`).
+   */
+  scenePrompt(state: ProjectState, settings?: AiPipelineSettings, context?: { system: string; caps: PromptCaps }): { prompt: string; negative: string; composed?: ComposedPrompt };
   /** The guard's material table for a job's camera: the engine scene's material order (io/rsb.ts), named (src/ai/prompt.ts). */
   materials(state: ProjectState, camera: CameraId | null): AiGuardMaterial[];
   /** The service takes the `RENDER` source: the desktop launcher kept the final render with its passes (X3c). */
@@ -337,9 +342,12 @@ export interface ResultsPort {
   persistent(): Promise<boolean>;
   /** Newest first. */
   list(): Promise<ResultMeta[]>;
-  /** Stores a result (`ai`: the image the AI post-processing made, when there is one); returns the ids evicted to stay within the limits (oldest first). */
-  add(meta: ResultMeta, file: Blob, display: Blob | null, ai?: Blob | null): Promise<string[]>;
-  get(id: string): Promise<{ file: Blob; display: Blob | null; ai?: Blob | null } | null>;
+  /**
+   * Stores a result (`ai`: the image the AI post-processing made, when there is one; `aiMore`: variants 2 and on, in
+   * order, null for one the guard rejected, X4b); returns the ids evicted to stay within the limits (oldest first).
+   */
+  add(meta: ResultMeta, file: Blob, display: Blob | null, ai?: Blob | null, aiMore?: readonly (Blob | null)[]): Promise<string[]>;
+  get(id: string): Promise<{ file: Blob; display: Blob | null; ai?: Blob | null; aiMore?: (Blob | null)[] } | null>;
   remove(id: string): Promise<void>;
   clear(): Promise<void>;
   /** New limits (Settings ▸ Storage); the ids evicted at once to fit them, oldest first. */

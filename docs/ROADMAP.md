@@ -1847,7 +1847,7 @@ No encajó con el plan:
   herramienta, no abre el panel). Los modificadores de la caja de
   selección y los clics son los de *Mover*.
 
-## U10 · Recorrido guiado y avisos de la IA — **Sonnet**
+## U10 · Recorrido guiado y avisos de la IA — **Sonnet** — hecha
 
 **Petición del usuario (2026-10-13):** «avisar si no se tiene instalado el
 *inference runtime*; la primera vez que se inicie la app, un tutorial que
@@ -1885,6 +1885,82 @@ que existe; ningún paso apunta a un elemento oculto), de *Saltar* y del
 recuerdo (no vuelve a salir; sí desde *Ayuda*), del aviso con y sin motor
 de ejecución, del archivo de elección del instalador con el motor
 incluido (y del NSIS que lo escribe); capturas de tres pasos y del aviso.
+
+**Hecho.** *Recorrido guiado* (`src/ui/tour.ts`, `src/ui/panels/tour.ts`,
+`src/ui/tour.css`; `UI.md` §4.7): 30 pasos en la web y 31 en el escritorio,
+en el orden de arriba (bienvenida, menú, piezas y niveles, herramientas,
+*Rápido/Completo*, producto, luz, entorno, cámara, materiales, las tres
+pestañas, *Añadir ▸ Primitiva*, *Render…*, ventana de render, cola, IA,
+resultados, una sección de Ajustes por paso y el cierre), con texto corto en
+`es` y `en`, *Siguiente · Atrás · Saltar*, un punto por paso y `→ ← Esc`. Es
+modal (se queda con el puntero y con todas las teclas: `Supr` no borra bajo
+él), acromático, y localiza las zonas por los `data-guide` (los de la guía y
+los nuevos). Un paso cuya zona no está a la vista la pone (pestaña, panel
+lateral —en una ventana estrecha solo el que hace falta—, ventana de render
+o de Ajustes, cajón *Cola*, catálogo de materiales, selección) y al terminar
+todo vuelve a como estaba; un paso cuya zona no aparece en 0,7 s se salta.
+La tarjeta va al lado de la zona, fuera de la ventana de render o de
+Ajustes cuando hay sitio y, si no, dentro, donde no tape ningún control.
+*Saltar*, *Hecho* y `Esc` cuentan como visto: `layout.tourSeen` en el
+documento de ajustes (la carpeta de datos en escritorio, nada en el
+almacenamiento del navegador allí). Sale solo en el primer arranque, tras el
+selector de modelos de un portable, y desde *Ayuda ▸ Recorrido guiado* (nuevo
+submenú del menú de la aplicación, y la paleta).
+
+*Aviso del motor de ejecución*: `runtimeWarning` (`core/ai-runtimes.ts`, puro)
+dice qué pasa con un modelo instalado —no está, en pausa, bajando, no
+arranca, falta Visual C++ en Windows, no hay compilación para el sistema—;
+`ui/ai-runtime-state.ts` tiene el único sondeo del lanzador; el recuadro con
+*Instalar · 26 MB* (el flujo de la fila del motor de Ajustes), *Reanudar*,
+*Pausar*, *Instalar el entorno de Microsoft Visual C++…* y *Comprobar de
+nuevo* sale en la sección de IA de la ventana de render (con una marca en su
+título plegado) y arriba de *Ajustes ▸ Post-procesado IA*, y la barra de estado
+lleva una nota discreta una sola vez por sesión. **Instalador**: `repackshot
+--hardware` escribe `[runtime]` (la compilación que elige la regla de
+`ai-runtimes.json` para el sistema; con `--device cpu`, la de CPU), el paso
+*Modelos de IA* marca la casilla al elegir el primer modelo, se puede
+desmarcar y anota `"runtime"` en `pending-models.json`; el lanzador la
+descarga en el primer arranque (`Ai::start_pending_runtime`); el selector del
+primer arranque de un portable la ofrece igual y la baja con el primer
+modelo. Tests: la regla, la tabla de avisos, el sondeo, la nota una vez por
+sesión y los botones (`tests/ai-runtime-warning.test.ts`); el orden del
+recorrido, que cada ancla existe en el código, que cada paso abre lo que
+necesita y lo devuelve, *Saltar* y lo recordado, cuándo arranca, las teclas, la
+tarjeta y los textos en los dos idiomas (`tests/tour.test.ts`); el NSIS leído
+como texto contra el lanzador (`engine/crates/rt-app/tests/installer.rs`,
+`tests/installer-page.test.ts`); el lanzador descargando lo que el instalador
+dejó, sobre sockets con el `curl` real y un servidor local, y sin descargar
+nada con una clave de otro sistema, desconocida o sin motor
+(`tests/ai.rs`). Comprobaciones del navegador: `tools/tour-check.mjs` (el
+recorrido entero, ancho, estrecho y en español, con sus capturas) y
+`tools/ai-runtime-check.mjs` (contra el lanzador real: selector, avisos, nota,
+Visual C++ y el estado en la carpeta de datos). Cada test falla si se
+rompe lo que guarda. Capturas en `docs/ui/`: `tour-tools.png`,
+`tour-camera.png`, `tour-render-ai.png`, `tour-settings-es.png`,
+`ai-runtime-warning-render.png`, `ai-runtime-warning-settings.png`,
+`ai-runtime-warning-vc.png`, `ai-runtime-chooser.png`, `ai-runtime-note.png`.
+
+**No encajó con el plan.** (1) El *Ejecutar en el procesador* del instalador
+no se aplicaba a nada: para que el motor que marca el instalador sea el que
+la aplicación espera, el primer arranque lo convierte en *Ajustes ▸
+Post-procesado IA ▸ Ejecutar en* (`applyInstallerChoice`); es una decisión
+que no estaba en el plan. (2) La página del instalador no se puede ver aquí
+(*makensis* la compila con `-WX`, pero Wine no ejecuta un instalador NSIS):
+su lógica está cubierta como texto, y falta mirar en un Windows real que la
+fila nueva cabe en la página con seis modelos de dos líneas. (3) La
+descarga del motor desde el instalador, de punta a punta, tampoco se puede
+probar aquí; sí el lanzador (sockets) y la página (lanzador real). (4) Falta
+Visual C++ no se puede producir en Linux: el navegador lo prueba con la
+respuesta del lanzador cambiada. (5) La tarjeta de un paso de Ajustes va
+dentro de la ventana, donde no tapa ningún control pero sí texto de
+descripción; una sección que sea toda controles la dejaría en la esquina
+inferior derecha. (6) Quien actualiza desde una versión anterior ve el
+recorrido una vez (no hay marca previa que lo distinga de un primer
+arranque). (7) *Ayuda ▸* agrupa lo que antes eran tres entradas sueltas
+(*Guía*, *Atajos*, *Acerca de*); la *Guía* de seis pasos sigue como estaba y
+el recorrido no la sustituye. (8) Con los modelos todavía bajando (el
+instalador los dejó pendientes) no hay aviso: «hay un modelo» es un modelo
+instalado.
 
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 
@@ -2762,7 +2838,7 @@ trabajo (hoy se ignora `onProgress` en la cola), el *prompt* de X3a, quitar
 lineal del motor. Y X2: los mismos ids, la misma profundidad y el mismo `coc`
 que dibuja la vista previa (el test del navegador es la vara de medir).
 
-## X4b · Prompt propio y variantes — **Opus**
+## X4b · Prompt propio y variantes — **Opus** — hecha
 
 **Petición del usuario (2026-10-13):** «si lo soporta el modelo, que deje
 un prompt de texto en la configuración del render en cuestión, y que se
@@ -2836,6 +2912,71 @@ terminadas; guardar y abrir (proyecto y resultados, también los de una
 sola `ai` de antes); deshacer del prompt (un cambio de texto es una
 entrada al salir del campo) y del número; cadenas en `es` y `en`; cromo
 acromático; capturas de la sección y del visor con varias variantes.
+
+**Hecho** (2026-10-13). **Prompt propio**: `AiPipelineSettings.userPrompt` (recortado, hasta
+`MAX_USER_PROMPT` = 400 caracteres) en la sección de la ventana de render, bajo los seis controles: un
+campo de varias líneas (`textArea` de `ui/components/controls.ts`) con contador y la nota del líder; se
+guarda al dejar de escribir (700 ms) y al salir del campo, y todo lo de una visita lleva el mismo gesto,
+así que es **una** entrada de deshacer (*Post-procesado IA: Prompt propio*); mientras tiene el foco, lo que
+vuelve del *store* no pisa lo que se escribe (el recorte de un espacio final no se lo come). Va en el
+proyecto y cada trabajo lleva el suyo; un proyecto anterior abre sin él. Se compone **sistema → escena →
+propio** (`composePrompt`, `src/core/ai-prompt.ts`; `buildPrompt(state, settings, context?)` en
+`src/ai/prompt.ts`, que sin contexto sigue dando solo el de la escena) y el negativo fijo va aparte, igual.
+**Capacidades**: `capabilities: { textPrompt, maxPromptTokens? }` en cada modelo de `ai-models.json` (todos
+con `textPrompt`; `SD15_LIGHT` con 77) y en el manifiesto de un importado (el formulario de importar lo
+pregunta); `ModelView.textPrompt`/`maxPromptTokens`; manda el modelo que el servicio dice activo
+(`promptCaps`; el sintético lo admite todo, uno desconocido nada). Sin `textPrompt` el campo se ve
+deshabilitado con el motivo y no se envía. **Prompt del sistema** (`ai.systemPrompt`, *Ajustes ▸
+Post-procesado IA ▸ Prompt del sistema*): el texto del líder por defecto, campo de varias líneas,
+contador, *Restablecer el predeterminado* y la nota de que la guarda no depende de él; puede quedarse
+vacío; en escritorio va en `settings.json` como todo ajuste (prueba con el espía de P3e). Con
+`maxPromptTokens` se usa la **versión corta** mientras el texto sea el predeterminado (los mismos
+espacios o no) y se recorta palabra a palabra desde el final, **el propio, luego la escena, luego el
+sistema**, con una estimación prudente documentada en `AI-POST.md` §4; la línea bajo el campo de la
+ventana dice qué se queda fuera, y la de Ajustes qué recibe el modelo en uso. **Variantes**:
+`AiPipelineSettings.variants` (1–8, 1 por defecto) junto a *Otra variación*, deshacible, con la línea
+de las semillas y el tiempo estimado; cambiarlo no rehace la vista previa (sigue siendo una imagen). En la
+cola, `aiStep` hace **un render** y N peticiones del mismo origen (el `renderId` guardado, o la imagen
+decodificada una sola vez) con `variantSettings` (semilla + n − 1), cada imagen con su informe y
+`aiFileName(nombre, n)` (`_AI`, `_AI_2`…); la fila dice *IA · variante 2 de 4 · mosaico 3 de 4* y la barra
+mide las variantes juntas; detener a mitad conserva el render y las terminadas; una rechazada queda con
+su informe y sin imagen; si una falla, se quedan las anteriores. **Resultados**: `ResultMeta.aiMore` (la
+primera sigue en `ai`), `aiVariantsOf`/`aiImagesOf`, `ResultsStore.add(…, ai, aiMore)` en memoria, en el
+registro de IndexedDB y en el lanzador como `<id>.ai.<n>.<ext>` con `PUT/GET /api/store/results/<id>/ai/<n>`
+(`appdata.rs`, aditivo: `aiVariants` en el índice; el `<id>.ai.<ext>` de antes se lee como la variante 1 y
+`…/ai` sigue); la migración desde el navegador las copia. El visor tiene la **tira de miniaturas** (una
+línea propia entre la cabecera y la imagen), el divisor compara la elegida sin perder el zum
+(`SplitCompare.setB`), su informe en la línea, *Guardar esta variante* y *Guardar todas*; la cola y el
+historial ponen *×4* y la cola *IA × 4*; el pie de la ventana, *IA activada · 4 variantes*. Pruebas: 39
+nuevas de vitest (22 del *prompt*, las capacidades, el sistema y el *store*; 15 de variantes contra el
+sintético, un servicio como el del lanzador y el `DesktopAiService` contra un lanzador de pega; 1 de
+persistencia del ajuste en escritorio; 1 de punta a punta con el lanzador real y el `rt-fake-sd`: tres
+variantes, un render, semillas 20, 21 y 22 en el registro del motor falso, que no vuelve a arrancar), más
+las que cambiaron (el doble del lanzador aprende `…/ai/<n>` tan estricto como el de verdad); 1 de Rust
+(`appdata`); 10 comprobaciones nuevas del navegador en `tools/ai-post-check.mjs` (k, l y la tira en j;
+36 en total, todas en verde);
+18 mutaciones comprobadas. Capturas: `docs/ui/ai-section-prompt.png`, `ai-results-variants.png` y
+`settings-ai-prompt.png`.
+
+**No encajó con el plan.** (1) `userPrompt` y `variants` son **opcionales** en el contrato
+(`AiPipelineSettings`, para no romper a quien construye uno sin ellos) y obligatorios en el *store*
+(`AiSettings` es `Required<…>`); el lanzador no los lee: cada petición es una imagen con su semilla y el
+*prompt* ya compuesto. (2) La composición y la cuenta viven en `src/core/ai-prompt.ts` (puras, para que
+Ajustes las use sin el puerto de la IA) y `src/ai/prompt.ts` las llama. (3) En escritorio la variante 1
+nueva se escribe `<id>.ai.1.<ext>`, como pide el plan; `<id>.ai.<ext>` queda para leer los de antes. (4) La
+estimación de *tokens* es prudente de verdad: la versión corta cuenta 65 de los 77 (con CLIP real, unos
+45), así que con SD 1.5 el *prompt* propio casi nunca entra; afinarla (o traer el vocabulario de CLIP,
+1,6 MB) queda para X1b. (5) El prompt del sistema y el de la escena se mandan también a un modelo sin
+`textPrompt` (como antes el de la escena); solo se retiene el propio del trabajo. Un importado `sd15` o
+`sdxl` sin `maxPromptTokens` lee 77. Z-Image, FLUX.2 klein y Qwen no llevan límite: sus codificadores
+leen cientos de *tokens* y lo compuesto más largo cabe; X1b lo confirma. (6) **El tiempo estimado** es N ×
+los píxeles del trabajo / la velocidad de la IA medida alrededor de cada petición del último trabajo con IA
+de este equipo (`UiState.aiThroughput`), no N × la medida de la vista previa (a 512 px no dice nada de los
+mosaicos de un final); sin medida, la línea dice que se mide con el primero; incluye la carga del modelo
+si la hubo, así que tira por arriba. (7) Al comparar con otro resultado (*Comparar con…*) la tira solo
+cambia la línea del informe: el divisor compara los dos resultados. (8) `src/main.ts` no pasaba la lista
+de variantes al historial (`results.add` con cuatro argumentos): lo encontró la lectura antes que una
+prueba; lo vigila la comprobación del navegador (k), que es la que pasa por `main.ts`.
 
 ## X5 · Ajustes y modelos — absorbida en U6
 
@@ -3029,6 +3170,17 @@ con `packaging/smoke.mjs` (nativo y bajo Wine, *hash* fijado) y
 `sha256sum -c`. La release se publica a mano desde la etiqueta mientras
 no haya minutos de Actions. El motor conserva su propia versión (0.3.0);
 la de la aplicación es la de `package.json`.
+
+**Cómo se publica ahora (desde la 0.1.4).** Con minutos de Actions, la
+release la publica `release.yml` lanzado a mano (*workflow_dispatch*)
+**en `main`**, con `tag` = `vX.Y.Z` (la versión de `package.json`) y
+`commit` vacío o un commit que ya esté en `main`: construye, crea la
+etiqueta y la release en ese commit y sube los cuatro archivos. La sesión
+no necesita subir etiquetas. Lanzado desde otra rama, GitHub rechazó crear
+la release con *Resource not accessible by integration* (dos veces, con la
+0.1.4); desde `main` salió a la primera. El workflow ahora se para en el
+primer paso si una publicación no se lanza en la rama por defecto. Sin
+`tag`, cualquier rama sirve para construir el artefacto de prueba.
 
 ## P2 · Escritorio: lanzador propio, portables e instalador — **Opus** — hecha
 

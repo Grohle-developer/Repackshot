@@ -11,7 +11,8 @@
 
 import { QUALITY_PRESETS, RESOLUTION_PRESETS } from '../data/quality';
 import type { QualityKey, ResolutionKey } from '../data/types';
-import { AI_STYLES, DEFAULT_AI_PIPELINE, type AiPipelineSettings, type AiPostStage, type AiStyle } from './ai';
+import { AI_STYLES, DEFAULT_AI_PIPELINE, MAX_VARIANTS, type AiPipelineSettings, type AiPostStage, type AiStyle } from './ai';
+import { normaliseUserPrompt } from './ai-prompt';
 import type { ActionBase, ProjectState } from './store';
 import type { CameraId } from './camera';
 import { nextId } from './ids';
@@ -58,9 +59,10 @@ export interface AnimationOutput {
 
 /**
  * AI post-processing (AI-POST.md §4, §7.5): the switch, whether the preview starts from the full engine
- * instead of Fast mode, and the pipeline's controls and seed (core/ai.ts). Each job copies it.
+ * instead of Fast mode, and the pipeline's controls and seed (core/ai.ts), with the job's own prompt and its
+ * number of variants (X4b: always present here). Each job copies it.
  */
-export type AiSettings = { enabled: boolean; previewFullEngine: boolean } & AiPipelineSettings;
+export type AiSettings = { enabled: boolean; previewFullEngine: boolean } & Required<AiPipelineSettings>;
 
 /** The AI settings of a new project: off, the preview from Fast mode, the configurator's defaults. */
 export const DEFAULT_AI: Readonly<AiSettings> = Object.freeze({ enabled: false, previewFullEngine: false, ...DEFAULT_AI_PIPELINE });
@@ -74,8 +76,10 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 /**
  * AI settings from anything that looks like them: an old project's `{ enabled: false }` (the rest takes
  * `base`'s values), a hand-edited file. Controls become integers 0..100, an unknown style becomes
- * NATURAL, the seed an unsigned 32-bit integer. Pure, idempotent, and it returns `base` itself when
- * nothing differs (so watchers comparing by reference do not wake for an unrelated edit).
+ * NATURAL, the seed an unsigned 32-bit integer, the job's own prompt a trimmed string of at most
+ * MAX_USER_PROMPT characters and the variants an integer 1..MAX_VARIANTS (X4b; a project of before has
+ * neither: no prompt, one variant). Pure, idempotent, and it returns `base` itself when nothing differs
+ * (so watchers comparing by reference do not wake for an unrelated edit).
  */
 export function normaliseAi(raw: unknown, base: AiSettings = DEFAULT_AI): AiSettings {
   if (!isRecord(raw)) return base;
@@ -92,6 +96,8 @@ export function normaliseAi(raw: unknown, base: AiSettings = DEFAULT_AI): AiSett
     style,
     styleStrength: pct(raw.styleStrength, base.styleStrength),
     seed,
+    userPrompt: raw.userPrompt === undefined ? base.userPrompt : normaliseUserPrompt(raw.userPrompt),
+    variants: typeof raw.variants === 'number' && Number.isFinite(raw.variants) ? Math.max(1, Math.min(MAX_VARIANTS, Math.round(raw.variants))) : base.variants,
   };
   return (Object.keys(next) as (keyof AiSettings)[]).every((k) => next[k] === base[k]) ? base : next;
 }
@@ -168,9 +174,9 @@ export interface RenderProgress {
   frames?: number;
   /**
    * The AI post-processing of the job's image is running (X3c): `progress` is then the pipeline's own, and this
-   * says where it is (the tile and the attempt, 1-based).
+   * says where it is (the tile and the attempt, 1-based; X4b: the variant, 1-based, of how many).
    */
-  ai?: { stage: AiPostStage; tile: number; tiles: number; attempt: number };
+  ai?: { stage: AiPostStage; tile: number; tiles: number; attempt: number; variant?: number; variants?: number };
 }
 
 /** `state.render`: the window's settings, the queue, the job in flight and the last render number. */

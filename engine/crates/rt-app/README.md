@@ -245,7 +245,7 @@ Todas las rutas `/api/*` llevan `X-Repackshot-Token`. Errores en JSON:
 | `POST /api/alive` | 204. El latido. |
 | `GET /api/hardware[?device=gpu\|cpu][&refresh=1]` | `{cpu, cores, threads, ramBytes, ramGiB, ramUsableBytes, gpus[{name, vendor, vramBytes, vramGiB}], gpuDetection, gpuSources[{source, ok, found, detail}], device, gpuFound, detected, input, recommendation{rowId, recommended, offered[], skipped[]} \| null}`. `gpuDetection`: `ok` si alguna fuente de tarjetas gráficas contestó, `failed` si ninguna (entonces `gpus` vacío no quiere decir «sin tarjeta»); `gpuSources`: qué dijo cada una (`dxgi`, `registry`, `cim`, `wmic`; `nvidia-smi`, `drm`; `test`), con `detail` el error o las notas |
 | `POST /api/open-folder` | Cuerpo `{"folder":"data\|models\|logs\|results"}` o `{"path":"<dentro de la carpeta de datos>"}`; 204, 403 fuera de los datos |
-| `GET /api/pending-models` | Lo que eligió el instalador, normalizado: `{"device":"gpu\|cpu","keys":[...]}`, o `null` |
+| `GET /api/pending-models` | Lo que eligió el instalador, normalizado: `{"device":"gpu\|cpu","keys":[...],"runtime":"SDCPP_WIN_VULKAN"}`, o `null`. `runtime` (U10) solo está si el instalador lo dejó marcado junto a los modelos (un nombre válido; si no lo es, se omite). El lanzador empieza a descargarlo él mismo en el arranque (`Ai::start_pending_runtime`: una clave desconocida, de otro sistema o ya instalada no hace nada); los modelos los empieza la página, que luego borra el fichero |
 | `DELETE /api/pending-models` | 204: consumido |
 
 ### Diálogos y ficheros elegidos
@@ -387,10 +387,11 @@ almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src
 <datos>/settings.json              el documento de ajustes ({schema, settings, layout} de src/core/settings.ts)
 <datos>/state/<nombre>.json        documentos pequeños (descargas por reanudar, la marca de la migración...)
 <datos>/library/library.json       la biblioteca propia (U4)
-<datos>/results/index.json         el historial: {"version": 1, "results": [{id, file, type, display, ai, aiType, meta}]}
+<datos>/results/index.json         el historial: {"version": 1, "results": [{id, file, type, display, ai, aiType, aiVariants, meta}]}
 <datos>/results/<id>.<ext>         el archivo de un resultado tal cual (png, jpg, exr, webp, tif)
 <datos>/results/<id>.display.png   su imagen para el visor, cuando la página no puede mostrar el archivo (EXR)
-<datos>/results/<id>.ai.<ext>      la imagen que hizo el post-procesado IA, cuando el resultado pasó por él (fase X4), en su tipo
+<datos>/results/<id>.ai.<n>.<ext>  la variante n (de 1 a 8) que hizo el post-procesado IA, cuando el resultado pasó por él (X4b), en su tipo
+<datos>/results/<id>.ai.<ext>      la única imagen de la IA de un resultado de antes de X4b (fase X4): se lee como su variante 1
 <datos>/cache/thumbs/<clave>.txt   las esferas de materiales (data URL): caché, se libera cuando se quiera
 ```
 
@@ -417,10 +418,11 @@ almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src
 | `GET /api/store/results` | `{"results": [meta...]}`, en el orden en que llegaron; un resultado cuyo archivo se borró a mano no aparece |
 | `PUT /api/store/results/<id>?type=<tipo>` | Cuerpo: el archivo (4 GiB como mucho, escrito por trozos al disco). `image/png`, `image/jpeg`, `image/x-exr`, `image/webp` o `image/tiff`; otro tipo, 415 |
 | `PUT /api/store/results/<id>/display` | Cuerpo: la imagen PNG para el visor (512 MiB como mucho) |
-| `PUT /api/store/results/<id>/ai?type=<tipo>` | Cuerpo: la imagen que hizo el post-procesado IA (X4), con los mismos tipos y límite que el archivo; otra vez en otro tipo deja un solo archivo. Entra en el registro con `PUT .../meta` si ya está |
+| `PUT /api/store/results/<id>/ai/<n>?type=<tipo>` | Cuerpo: la variante `n` (1 a 8, escrita sin ceros delante; si no, 400 `bad-variant`) que hizo el post-procesado IA (X4b), con los mismos tipos y límite que el archivo; otra vez en otro tipo deja un solo archivo. Entra en el registro (`aiVariants: [{n, file, type}]`) con `PUT .../meta` si ya está. Una variante que la guarda rechazó no tiene archivo: no se manda |
+| `PUT /api/store/results/<id>/ai?type=<tipo>` | La única imagen de la IA de antes de X4b (X4), `<id>.ai.<ext>`; sigue funcionando y se lee como la variante 1 |
 | `PUT /api/store/results/<id>/meta` | Cuerpo: el registro (`ResultMeta`, objeto con `id` igual al de la ruta, si no 400 `id-mismatch`). Entra en el índice solo si su archivo ya está (409 `no-file`) |
-| `GET` / `HEAD /api/store/results/<id>[/display\|/ai]` | El archivo, su imagen o la imagen de la IA, con su tipo y `Range`; 404 si no está |
-| `DELETE /api/store/results/<id>` | 204: el registro y sus archivos |
+| `GET` / `HEAD /api/store/results/<id>[/display\|/ai\|/ai/<n>]` | El archivo, su imagen o la variante `n` de la IA (`/ai` es la 1; la 1 de un resultado de antes de X4b es su `<id>.ai.<ext>`), con su tipo y `Range`; 404 si no está |
+| `DELETE /api/store/results/<id>` | 204: el registro y sus archivos, todas las variantes incluidas |
 | `DELETE /api/store/results` | `{"deleted": n}`: el índice y lo que escribió el almacén en `results/` (un archivo que puso la persona se queda) |
 | `GET /api/store/cache/<clave>` | La miniatura (`text/plain`), o 204 si no está (lo normal, no un error) |
 | `PUT /api/store/cache/<clave>` | Cuerpo: texto UTF-8 de 1 MiB como mucho. 204 |
@@ -534,6 +536,8 @@ El INI va en **UTF-16LE con BOM** (lo que leen como Unicode las funciones de INI
 cpu=…  cores=…  threads=…  ram_gib=16.0  gpu=…  vram_gib=12.0  gpu_found=1  detected=1
 [recommendation]
 device=gpu  row=gpu-12  key=ZIMAGE_Q8  offered=KLEIN4B_Q4
+[runtime]
+available=1  key=SDCPP_WIN_VULKAN  backend=VULKAN  file=sd-master-…-win-vulkan-x64.zip  size_mib=29  row=gpu
 [models]
 count=7
 [model0]
@@ -543,6 +547,16 @@ licence=Apache-2.0  commercial=1  restrictions=0  available=1  desktop=1  recomm
 
 (una clave por línea; aquí agrupadas para leerlas). `size_gib` son GiB con un decimal (lo que
 Windows muestra como "GB").
+
+`[runtime]` (fase U10) es **el motor de ejecución que el instalador ofrece junto a los modelos**: la
+compilación que elige la regla de `src/data/ai-runtimes.json` para este sistema (`std::env::consts`)
+con la misma entrada que usa `GET /api/ai/runtime`: GPU que usar si el lanzador mismo, sin forzar
+nada, elegiría la GPU (≥ 4 GiB efectivos), salvo que `--device cpu` pida el procesador. `--device
+gpu` no cambia nada, porque la aplicación solo sabe anular la regla hacia el procesador (`device=cpu`
+de la consulta). `available=0` con todo vacío cuando no hay compilación fijada para el sistema.
+`size_mib` son MiB redondeados (lo que Windows muestra como "MB"). `tests/installer.rs` lee
+`packaging/windows/models-page.nsh` como texto y comprueba que cada `ReadINIStr` tiene su clave en
+este INI y que la línea que escribe en `pending-models.json` es la que lee `read_pending`.
 
 ## IA: el motor de ejecución (X3b)
 

@@ -784,6 +784,8 @@ impl Server {
             frame_write_timeout_ms: AtomicU64::new(FRAME_WRITE_TIMEOUT.as_millis() as u64),
         });
         app.dialogs.set_cache_dir(app.paths.data_dir.join("cache"));
+        // What the installer chose to download with the models (phase U10).
+        app.ai.start_pending_runtime(&app.paths.pending_models());
         let shared = Arc::clone(&app);
         let handle = std::thread::spawn(move || {
             for stream in listener.incoming() {

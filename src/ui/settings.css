@@ -684,3 +684,103 @@ summary.sw-block-title {
   margin-top: 4px;
   font-size: var(--fs-label);
 }
+
+/* Inference runtime warning (phase U10) --------------------------------------------- */
+.rt-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+}
+.rt-notice[hidden] {
+  display: none;
+}
+.rt-notice .sw-warn-dot {
+  margin-top: 6px;
+}
+.rt-notice-main {
+  display: flex;
+  flex: 1 1 14em;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.rt-notice-title {
+  font-weight: 600;
+  font-size: var(--fs-label);
+}
+.rt-notice-line {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.rt-notice-bar {
+  margin-top: 4px;
+}
+.rt-notice-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+@media (max-width: 720px) {
+  .rt-notice {
+    flex-wrap: wrap;
+  }
+  .rt-notice-actions {
+    justify-content: flex-start;
+  }
+}
+.rt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-0);
+}
+.rt-badge[hidden] {
+  display: none;
+}
+.sw-chooser-runtime {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0;
+}
+.sw-chooser-runtime[hidden] {
+  display: none;
+}
+.sw-ai-top:empty {
+  display: none;
+}
+
+/* Settings ▸ AI post-processing ▸ System prompt (X4b): the field the row's width, its counter and Restore default under it. */
+.sw-sp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sw-sp-field {
+  width: 100%;
+}
+.sw-sp-foot {
+  align-items: center;
+}
+.sw-sp-line {
+  margin: 0;
+}
+.sw-sp-short summary {
+  cursor: pointer;
+}
+.sw-sp-short-text {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}

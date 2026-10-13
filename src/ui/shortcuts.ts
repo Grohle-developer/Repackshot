@@ -8,6 +8,7 @@ import * as cmd from './commands';
 import type { ConfirmSpec } from './components/widgets';
 import type { Ctx } from './reactive';
 import { t, type StringKey } from './strings';
+import { startTour } from './tour';
 import type { Tool } from './ui-state';
 
 export interface AppAction {
@@ -98,6 +99,7 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'doctor', label: 'action.doctor', run: (ctx) => ctx.ui.set({ doctorOpen: true }) },
   { id: 'fixAll', label: 'action.fixAll', run: (ctx) => cmd.doctorFixAll(ctx) },
   { id: 'guide', label: 'action.guide', run: (ctx) => cmd.openGuide(ctx) },
+  { id: 'tour', label: 'action.tour', run: (ctx) => void startTour(ctx, 'menu') },
   { id: 'themeDark', label: 'action.themeDark', run: (ctx) => cmd.setTheme(ctx, 'dark') },
   { id: 'themeLight', label: 'action.themeLight', run: (ctx) => cmd.setTheme(ctx, 'light') },
   { id: 'langEn', label: 'action.langEn', run: (ctx) => cmd.setLanguage(ctx, 'en') },
