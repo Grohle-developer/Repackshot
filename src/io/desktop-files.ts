@@ -23,7 +23,7 @@ import { NativeError, type DialogFilter, type DialogResult, type FolderDialogOpt
 /** The parts of the launcher's client used here (a test double implements just these). */
 export type DesktopApi = Pick<NativeClient, 'dialogFolder' | 'dialogOpen' | 'dialogSave' | 'writeNew' | 'writeFile' | 'readFile' | 'fileInfo' | 'hashFile' | 'listFolder' | 'reveal' | 'lastProject' | 'setLastProject' | 'openUrl'>;
 
-/** Where small things are remembered between launches (localStorage). */
+/** Where small things are remembered between launches: the platform's memory (io/platform.ts), on the desktop the launcher's data folder. */
 export interface KeyValue {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;

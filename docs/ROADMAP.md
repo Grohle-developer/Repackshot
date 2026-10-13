@@ -1974,6 +1974,7 @@ integra todo lo que la interfaz marca *próximamente***.
 | **P3a** | Opus | Modo Completo que no se para (reproducir con una sesión larga de cambios contra el lanzador y arreglar la causa), *Pausar* / *Reanudar* / *Iniciar cola* que funcionan en web y escritorio |
 | **P3b** | Opus | Escritorio sin rastro de navegador: diálogos nativos de carpeta y archivo desde el lanzador (PowerShell en Windows, `zenity`/`kdialog` en Linux, sin `unsafe`), escritura de renders, proyectos y modelos por el lanzador, menú contextual, selección, traducción, zoom, recarga, impresión, búsqueda y navegación del navegador desactivados, icono y título propios; estudio de WebView2 para Windows |
 | **P3c** | Opus | **Ventana propia en Windows** (decisión del líder tras la captura del aviso «¿Desea salir de la aplicación?» de Edge: *todos los avisos y ventanas con nuestra interfaz, nada de avisos web; producto cerrado y profesional*): ventana Win32 sin marco con **WebView2** (el motor de Edge que trae Windows 10/11) y barra de título dibujada por nosotros (título, minimizar, maximizar, cerrar, arrastre), menús contextuales, atajos, barra de estado, zoom, autorrelleno, traducción, descargas y diálogos de script del navegador **desactivados por la API**, y el cierre (botón, `Alt F4`, barra de tareas) **interceptado** para preguntar con nuestra propia ventana si hay cambios sin guardar; Edge `--app` solo como respaldo automático si falta el *runtime*. En Linux sigue Chromium en modo aplicación con el endurecimiento de P3b hasta P3d (ventana propia con WebKitGTK, que exige un binario glibc y no el musl estático) |
+| **P3e** | Opus | **Escritorio: todo sobre el lanzador** (decisión del líder tras «se pisa el texto» y «dice no pillar la GPU por ser browser»: *en escritorio la página es solo interfaz*): una costura de plataforma con implementación web y de lanzador; ajustes, biblioteca, historial, miniaturas, equipo y espacio usado en la carpeta de datos por el lanzador; puerto estable por carpeta de datos; ni una fila que hable del navegador; filas de Ajustes que no se pisan |
 | **U7** (hecha) | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*), más selección por caja con `Ctrl/⌘` + arrastrar. Ver U7 y M1 más arriba |
 | **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
 | **E5b** | Opus | Reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
@@ -2048,6 +2049,84 @@ acceso directo (su almacén de propiedades es un esbozo), así que eso, y
 todo lo de WebView2, queda por probar en Windows real. El puerto
 aleatorio por arranque, que hace perder `localStorage` entre arranques
 (en la ventana de Edge y en la propia), queda para P3e.
+
+**P3e hecha.** En escritorio la página es solo la interfaz. Una costura
+`Platform` (`src/io/platform.ts`), elegida una vez al arrancar, con dos
+implementaciones detrás de la misma interfaz: la web (`platform-web.ts`:
+localStorage, IndexedDB, OPFS, WebGPU, como hasta ahora) y la del lanzador
+(`platform-desktop.ts`), donde cada servicio y cada byte de estado son del
+lanzador: ajustes en `settings.json` de la carpeta de datos, cosas pequeñas
+recordadas en `state/`, biblioteca en `library/`, historial de resultados
+como archivos en `results/` con su índice, miniaturas en `cache/thumbs/`,
+modelos (ya lo eran), equipo siempre por `/api/hardware` y espacio usado
+medido por el lanzador (`/api/storage/usage`), con *Liberar* a través de
+él. Rutas nuevas `/api/store/*` y `/api/storage/usage`
+(`rt-app/src/appdata.rs`) con el *token*, `Host` y `Origin` de siempre,
+nombres en minúscula confinados a la carpeta de datos (ni enlaces ni
+nombres de dispositivo de Windows), escrituras atómicas, y un documento
+que no se pudo leer al arrancar nunca se sobrescribe. **Puerto estable por
+carpeta de datos** (`launcher.json`, `rt-app/src/port.rs`): el origen de la
+ventana ya no cambia en cada arranque, que era por lo que en v0.1.x se
+perdían ajustes, biblioteca e historial al cerrar. Migración, una sola vez
+por carpeta de datos (marca `state/migration.json`), de lo que quede en el
+almacenamiento del navegador del origen actual; para quien venga de v0.1.x
+suele estar vacío (cada arranque tenía otro puerto) y solo deja la marca.
+Ninguna fila habla del navegador en escritorio: las cadenas que lo
+nombraban tienen su versión de escritorio (`DESKTOP_TABLE` de
+`strings.ts`) o su fila oculta (`webOnly`: *Almacenamiento persistente*;
+WebGPU, cuota y memoria del navegador solo en la web), *Ventana dibujada
+por* dice un nombre (*Ventana de aplicación de Microsoft Edge*, y ya lee el
+`window` de P3c para *Ventana nativa (WebView2 x.y)*), la fila GPU lista
+las tarjetas del lanzador y sigue a la detección aunque llegue después, el
+distintivo *Solo en la aplicación de escritorio* no sale dentro de ella y
+el modelo solo para navegador no se lista. Filas de Ajustes que no se pisan
+a ningún ancho ni tamaño de interfaz: columna de etiqueta con mínimo,
+controles y distintivos que se parten, filas apiladas para valores largos
+(rutas en monoespaciado partidas donde haga falta, botón debajo, título con
+el texto entero) y consultas de contenedor que lo apilan todo en ventanas
+estrechas. Tests: la costura elige el lanzador y entonces no toca
+`localStorage`, `indexedDB` ni `navigator.storage` (espías), la migración
+una vez y con el origen vacío, escrituras en orden, resultados con sus
+límites, las cadenas del navegador cubiertas; en Rust, `tests/appdata.rs`
+(seguridad, confinamiento, enlaces, límites, petición cortada, resultados,
+caché, espacio, otro arranque) y `tests/port.rs`. Comprobación
+`tools/desktop-platform-check.mjs` contra el lanzador real (ajustes que
+sobreviven a reiniciar en un perfil de navegador nuevo, el mismo puerto,
+nada en el almacenamiento del navegador, un render en `results/`, las GPU
+del lanzador, ninguna mención del navegador en los dos idiomas, *Liberar*
+por el lanzador, y ningún solape en todas las secciones a 1600, 1280 y
+960 px, 90–150 %, dos idiomas, oscuro, claro y contraste alto); capturas
+`settings-desktop-paths.png`, `settings-storage-desktop.png`,
+`settings-ai-desktop.png`. Con P3b y P3c unidas, 1044 tests web y 309 del
+motor.
+
+Unida con P3b y P3c: las carpetas de salida, los proyectos (con el último
+que recuerda el lanzador) y los diálogos de importar y exportar salen
+también de la plataforma (en escritorio, los de P3b; nunca los selectores
+ni los *handles* del navegador), las carpetas elegidas se recuerdan en
+`state/desktop.folders.json` y no en `localStorage`, y *Ventana dibujada
+por* es una sola función (la de P3c, con sus motivos) que dice *La ventana
+propia de Repackshot (WebView2 x.y)* y nunca el nombre de un ejecutable
+(sin ventana del lanzador, `--serve-only`, ya no dice *El navegador por
+defecto*). La comprobación del lanzador real suma que *Elegir carpeta…* y
+*Guardar proyecto* pasan por los diálogos del lanzador (un `zenity` de
+prueba) sin tocar los selectores del navegador, que la carpeta queda en
+los datos y que *Descargas* lo escribe el lanzador. Al unir: la carpeta
+de salida elegida, que P3b muestra por su ruta, se salía de su fila; el
+botón dice su nombre y la ruta entera va debajo. Arreglado de paso un
+fallo intermitente del test de paridad (`tests/parity.rs`: si la última
+pasada llegaba entre dos consultas, el marco devuelto no venía marcado
+como terminado).
+
+No encajó con el plan: el *token* sigue en `sessionStorage` (es el secreto
+del arranque, no estado).
+La copia automática no existe todavía (U8): cuando llegue, a la carpeta de
+datos por la plataforma. `REPACKSHOT_TEST_GPUS` (tarjetas falsas, solo para
+pruebas) la lee también el binario de *release*. En Windows, si el puerto
+recordado está aún en `TIME_WAIT` al reabrir, se toma otro una vez y se
+recuerda. Encontrado de paso (de P3a): un trabajo de visor nativo de una
+página que se recarga sigue vivo hasta el tope de 8 (`503 busy`). Sin
+probar en un Windows real.
 
 Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
 **E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,

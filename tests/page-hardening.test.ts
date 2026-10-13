@@ -127,7 +127,9 @@ describe('the guards are part of the application', () => {
     const main = readFileSync('src/main.ts', 'utf8');
     expect(main).toContain("import './ui/guards.css';");
     expect(main.indexOf('installGuards(window')).toBeGreaterThan(0);
-    expect(main.indexOf('installGuards(window')).toBeLessThan(main.indexOf('connectNative()'));
+    // Before the page connects to the launcher (the platform seam does it, io/platform.ts, P3e).
+    expect(main.indexOf('choosePlatform()')).toBeGreaterThan(0);
+    expect(main.indexOf('installGuards(window')).toBeLessThan(main.indexOf('choosePlatform()'));
     const css = readFileSync('src/ui/guards.css', 'utf8');
     expect(css).toMatch(/html \{[^}]*user-select: none/);
     expect(css).toMatch(/-webkit-user-drag: none/);

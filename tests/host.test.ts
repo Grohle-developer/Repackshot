@@ -370,7 +370,9 @@ describe('Settings ▸ Desktop ▸ Window drawn by', () => {
     expect(desktopWindowText({ kind: 'none', detail: null, reason: 'failed' }, null)).toBe('No window could be opened (WebView2 failed: see the logs)');
     // A launcher before P3c: the browser it reported.
     expect(desktopWindowText(null, 'msedge')).toBe('Microsoft Edge app window');
-    expect(desktopWindowText(undefined, null)).toBe('The default browser');
+    // No window opened by the launcher (--serve-only): said so, not "the default browser" (P3e).
+    expect(desktopWindowText(undefined, null)).toBe('A window the application did not open');
+    expect(desktopWindowText(undefined, 'default')).toBe('The default browser');
     setLang('es');
     expect(desktopWindowText({ kind: 'browser', detail: 'msedge', reason: 'runtime-missing' }, 'msedge')).toBe('Ventana de aplicación de Microsoft Edge (no se encontró el runtime de WebView2)');
     expect(desktopWindowText({ kind: 'webview2', detail: '129.0.2792.65', reason: null }, null)).toBe('La ventana propia de Repackshot (WebView2 129.0.2792.65)');

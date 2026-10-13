@@ -109,17 +109,37 @@ const BROWSER_NAMES: Record<string, string> = {
   'brave-browser': 'Brave',
 };
 
+/** A browser's name from what the launcher reports (`msedge`, `chromium-browser`, a path, `chrome.exe`…), or null for one it does not know: an executable's name is never shown. */
+export function browserName(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const name = (raw.split(/[\\/]/).pop() ?? raw).toLowerCase().replace(/\.exe$/, '');
+  if (BROWSER_NAMES[name]) return BROWSER_NAMES[name];
+  if (/edge/.test(name)) return 'Microsoft Edge';
+  if (/chromium/.test(name)) return 'Chromium';
+  if (/chrome/.test(name)) return 'Google Chrome';
+  if (/brave/.test(name)) return 'Brave';
+  return null;
+}
+
+const appWindowText = (raw: string | null | undefined): string => {
+  const name = browserName(raw);
+  return name ? t('set.dk.window.app', { browser: name }) : t('set.dk.window.other');
+};
+
 /**
  * Settings ▸ Desktop ▸ Window drawn by: "Repackshot's own window (WebView2 129.0.2792.65)", or the browser's
- * window and why it is not ours ("Microsoft Edge app window (WebView2 runtime not found)").
+ * window and why it is not ours ("Microsoft Edge app window (WebView2 runtime not found)"). No window the launcher
+ * opened (--serve-only) says so, rather than naming a browser.
  */
 export function desktopWindowText(w: DesktopWindow | null | undefined, browser: string | null): string {
-  if (!w) return browser && browser !== 'default' ? t('set.dk.window.app', { browser: BROWSER_NAMES[browser] ?? browser }) : t('set.dk.defaultBrowser');
+  if (!w) return browser === 'default' ? t('set.dk.defaultBrowser') : browser ? appWindowText(browser) : t('set.dk.window.unknown');
   const what =
     w.kind === 'webview2'
-      ? t('set.dk.window.webview2', { version: w.detail ?? '?' })
+      ? w.detail
+        ? t('set.dk.window.webview2', { version: w.detail })
+        : t('set.dk.window.webview2Plain')
       : w.kind === 'browser'
-        ? t('set.dk.window.app', { browser: BROWSER_NAMES[w.detail ?? ''] ?? w.detail ?? '?' })
+        ? appWindowText(w.detail ?? browser)
         : w.kind === 'default'
           ? t('set.dk.defaultBrowser')
           : t('set.dk.window.none');

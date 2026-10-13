@@ -437,13 +437,18 @@ externos). **Sin `unsafe` salvo en `src/platform/`** (decidido en P3c):
 la ventana propia de Windows necesita llamar a Win32 y a la interfaz COM
 de WebView2, y eso solo se hace con FFI; cada bloque `unsafe` lleva su
 comentario de por qué es correcto, el resto del *crate* mantiene
-`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace cinco cosas:
+`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace estas cosas:
 
-1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1` y
-   un puerto libre, con la carpeta `app/` (el `dist/` de Vite) junto al
-   ejecutable. Comprueba la cabecera `Host` (contra el *DNS rebinding*) y
-   exige en la API un *token* aleatorio por arranque que solo conoce la
-   página que abrió.
+1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1`,
+   con la carpeta `app/` (el `dist/` de Vite) junto al ejecutable.
+   Comprueba la cabecera `Host` (contra el *DNS rebinding*) y exige en la
+   API un *token* aleatorio por arranque que solo conoce la página que
+   abrió. **Puerto estable por carpeta de datos** (P3e, `src/port.rs`):
+   se apunta en `<datos>/launcher.json` y se vuelve a usar en el siguiente
+   arranque si está libre; solo si está ocupado se toma otro libre, que
+   pasa a ser el apuntado (`--port N` usa N y no apunta nada). Así el
+   origen de la ventana (`http://127.0.0.1:<puerto>`) no cambia de un
+   arranque a otro.
 2. **Abrir la ventana**: Edge en Windows (viene con el sistema) o el
    primer Chromium, Chrome, Edge o Brave en Linux, con `--app=<url>` y un
    perfil propio en la carpeta de datos; si no hay ninguno, el
@@ -462,17 +467,53 @@ comentario de por qué es correcto, el resto del *crate* mantiene
 4. **Datos y modelos**: carpeta de datos en `%LOCALAPPDATA%\Repackshot`
    (Windows) o `$XDG_DATA_HOME/repackshot` (Linux); en las versiones
    **portables** (un fichero `portable.txt` junto al ejecutable), en
-   `data/` al lado, perfil del navegador incluido. Los modelos de IA se
-   guardan ahí: la página los descarga con `fetch` y los entrega al
-   lanzador por trozos, que los escribe, reanuda y comprueba con un
-   SHA-256 propio.
+   `data/` al lado, con todo dentro. Los modelos de IA se guardan ahí: la
+   página los descarga con `fetch` y los entrega al lanzador por trozos,
+   que los escribe, reanuda y comprueba con un SHA-256 propio.
+5. **El estado de la página** (P3e, `src/appdata.rs`): en escritorio la
+   página es **solo la interfaz** y todo lo que guarda lo escribe el
+   lanzador en la carpeta de datos, nunca el almacenamiento del navegador
+   de la ventana. `/api/store/*` y `/api/storage/usage`, con el mismo
+   *token*, `Host` y `Origin`, nombres en minúscula confinados a la
+   carpeta de datos (ni enlaces ni nombres de dispositivo de Windows) y
+   escrituras atómicas (temporal, `sync_all`, `rename`). La carpeta:
+
+   ```text
+   settings.json        el documento de ajustes (src/core/settings.ts)
+   state/<nombre>.json  cosas pequeñas de la página: descargas por reanudar, carpetas elegidas,
+                        la marca de la migración desde el navegador
+   library/             la biblioteca propia (U4)
+   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json
+   cache/thumbs/        las esferas de materiales (caché)
+   models/              los modelos de IA, por sha256
+   logs/                el registro del lanzador
+   browser-profile/     el perfil de la ventana de Edge o Chromium
+   webview2/            el perfil de la ventana propia (P3c); window.json, su sitio
+   launcher.json        el puerto; instance.json, la instancia en marcha
+   pending-models.json  lo que eligió el instalador
+   ```
+
+   En la página, **la costura de plataforma** (`src/io/platform.ts`): una
+   interfaz `Platform` con todo servicio que guarda algo o pregunta al
+   equipo (ajustes, cosas pequeñas recordadas, biblioteca, historial de
+   resultados, almacén de modelos, equipo, espacio usado, miniaturas,
+   archivos de salida, proyectos, diálogos de importar y exportar),
+   elegida una vez al arrancar (`choosePlatform()`, antes de pintar nada)
+   con dos implementaciones: la web (`platform-web.ts`: localStorage,
+   IndexedDB, OPFS, WebGPU, los selectores y descargas del navegador) y
+   la del lanzador (`platform-desktop.ts`: lo anterior, más `/api/hardware`
+   y los diálogos y la API de archivos de P3b). `main.ts` construye con
+   ella los servicios de la interfaz, que no sabe cuál es. En escritorio
+   la página no toca el almacenamiento del navegador salvo una vez por
+   carpeta de datos, para copiar al lanzador lo que una versión anterior
+   dejó en el origen actual (marca `state/migration.json`).
 6. **Diálogos y archivos** (P3b): `POST /api/dialog/{folder,open,save}`
    abre los diálogos del sistema y devuelve un permiso por ruta; la API de
    archivos (`/api/files…`) solo lee o escribe rutas concedidas así en el
    arranque actual, con escritura atómica y sin sobrescribir en las
    carpetas de salida. La página nunca nombra una ruta que no le diera un
    diálogo.
-5. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
+7. **Equipo**: `repackshot --hardware <fichero>` escribe la GPU con su
    VRAM, la RAM y la recomendación de `src/data/ai-models.json`
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
    procesos del sistema y sin `unsafe`); lo usan el instalador y

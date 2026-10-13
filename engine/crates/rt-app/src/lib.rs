@@ -5,7 +5,8 @@
 //! an app window of Edge or Chromium, renders with `rt-core` natively on every thread
 //! (`/api/render`), stores AI models in the data folder (`/api/models`, checked with its own
 //! SHA-256), detects the hardware for the model recommendation (`/api/hardware`, `repackshot
-//! --hardware`) and quits when the window closes.
+//! --hardware`), keeps the page's state in the data folder (`/api/store`, `/api/storage`: the
+//! page is only the interface) and quits when the window closes.
 //! The API contract is in this crate's `README.md`.
 //!
 //! No `unsafe` outside `platform` (CLAUDE.md rule 8b): the native window has to call Win32 and
@@ -14,6 +15,7 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod appdata;
 pub mod browser;
 pub mod cli;
 pub mod client;
@@ -29,6 +31,7 @@ pub mod models;
 pub mod paths;
 #[allow(unsafe_code)]
 pub mod platform;
+pub mod port;
 pub mod process;
 pub mod recommend;
 pub mod render;

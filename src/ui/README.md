@@ -7,11 +7,10 @@ importa de `render/` ni de `io/` (eso lo conecta `src/main.ts` mediante
 
 | Fichero | Qué |
 | --- | --- |
-| `strings.ts` | Todas las cadenas, en `en` y `es` lado a lado; `t()`, `L()` (las dos lenguas, para etiquetas de deshacer) |
+| `strings.ts` | Todas las cadenas, en `en` y `es` lado a lado; `t()`, `L()` (las dos lenguas, para etiquetas de deshacer). En escritorio (`setStringsPlatform('desktop')`, P3e) las que hablan del navegador dicen lo suyo (`DESKTOP_TABLE`); las de filas que el escritorio no muestra están en `WEB_ONLY_STRINGS` |
 | `theme.css` | *Tokens* de color (acromáticos, test `ui-achromatic`), tipografía y medidas |
 | `layout.css`, `components.css`, `panels.css` | Regiones, controles y paneles |
 | `reactive.ts` | `Scope.watch(selector, fn)`: actualizaciones finas por referencia, sin DOM virtual |
-| `prefs.ts` | El documento de ajustes (U6, `core/settings.ts`) en `localStorage` bajo `repackshot.settings` (`{schema, settings, layout}`): migra las claves sueltas de antes (`repackshot.lang`, `.theme`, `.ui.*`) y las borra; uno dañado se aparta en `.corrupt` |
 | `settings-effects.ts` | Lo que un ajuste cambia fuera de la ventana (U6): tamaño de interfaz y de texto, contraste, movimiento, foco, retardo de *tooltips*, navegación y rejilla del visor, motor, límites del historial, anuncios para lector de pantalla |
 | `settings.css` | La ventana de Ajustes |
 | `ui-state.ts` | Estado de interfaz (pestañas, cajones, anchos…); la parte que se recuerda (`Layout`) va al documento de ajustes con `try/catch`. Incluye `library`, la biblioteca propia (U4): estado de usuario, fuera del proyecto y de deshacer; `main.ts` la guarda con `io/library.ts` |

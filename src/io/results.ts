@@ -189,3 +189,93 @@ export async function openResultsStore(limits: HistoryLimits = HISTORY_LIMITS): 
     return memoryResultsStore(limits);
   }
 }
+
+// ------------------------------------------------------------------ the desktop launcher (phase P3e)
+
+/** The parts of the launcher's store (io/native-store.ts) the history uses. */
+export interface LauncherResultsApi {
+  results(): Promise<unknown[]>;
+  putResult(id: string, meta: unknown, file: Blob, display: Blob | null): Promise<void>;
+  resultFile(id: string, display?: boolean): Promise<Blob | null>;
+  deleteResult(id: string): Promise<void>;
+  clearResults(): Promise<void>;
+}
+
+/**
+ * The history on the desktop: each result is a file in `<data>/results/` with an index, written by the launcher
+ * (never IndexedDB). The limits are the same rule (core/results.ts), applied here and carried out by deleting
+ * through the launcher. Folder handles of the browser cannot be kept by the launcher: they last the session.
+ */
+export function launcherResultsStore(api: LauncherResultsApi, initialLimits: HistoryLimits = HISTORY_LIMITS): ResultsStore {
+  let limits = initialLimits;
+  const handles = new Map<string, unknown>();
+  const metas = async (): Promise<ResultMeta[]> => (await api.results()).filter((m): m is ResultMeta => !!m && typeof (m as ResultMeta).id === 'string');
+  const drop = async (ids: readonly string[]) => {
+    for (const id of ids) await api.deleteResult(id);
+  };
+  return {
+    persistent: true,
+    list: async () => sortResults(await metas()),
+    async add(meta, file, display) {
+      const m = { ...meta, bytes: blobBytes(file, display) };
+      await api.putResult(m.id, m, file, display);
+      const evict = evictionPlan(await metas(), limits, m.id);
+      await drop(evict);
+      return evict;
+    },
+    async get(id) {
+      const m = (await metas()).find((x) => x.id === id);
+      if (!m) return null;
+      const file = await api.resultFile(id);
+      if (!file) return null;
+      // Only a file a page cannot show (EXR) has a picture of it.
+      return { file, display: m.format === 'EXR' ? await api.resultFile(id, true) : null };
+    },
+    remove: (id) => api.deleteResult(id),
+    clear: () => api.clearResults(),
+    async putHandle(id, handle) {
+      handles.set(id, handle);
+    },
+    getHandle: async (id) => handles.get(id) ?? null,
+    async setLimits(next) {
+      limits = next;
+      const evict = evictionPlan(await metas(), limits);
+      await drop(evict);
+      return evict;
+    },
+  };
+}
+
+/**
+ * What an older version left in this origin's IndexedDB, for the desktop's one migration to the launcher
+ * (io/platform-desktop.ts): every record with its blobs. Never creates the database: where the browser can say
+ * which databases exist and `repackshot` is not one of them, nothing is opened. Null when there is nothing.
+ */
+export async function readBrowserResults(idb: IDBFactory | undefined = typeof indexedDB === 'undefined' ? undefined : indexedDB): Promise<{ meta: ResultMeta; blobs: StoredBlobs }[] | null> {
+  if (!idb) return null;
+  if (typeof idb.databases === 'function') {
+    const known = await idb.databases().catch(() => null);
+    if (known && !known.some((d) => d.name === DB_NAME)) return null;
+  }
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const r = idb.open(DB_NAME);
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error ?? new Error('IndexedDB unavailable'));
+    r.onblocked = () => reject(new Error('IndexedDB blocked'));
+    // A database that did not exist is not made here.
+    r.onupgradeneeded = () => r.transaction?.abort();
+  });
+  try {
+    if (!db.objectStoreNames.contains('meta') || !db.objectStoreNames.contains('blobs')) return null;
+    const tx = db.transaction(['meta', 'blobs'], 'readonly');
+    const list = (await request(tx.objectStore('meta').getAll() as IDBRequest<ResultMeta[]>)) ?? [];
+    const out: { meta: ResultMeta; blobs: StoredBlobs }[] = [];
+    for (const meta of list) {
+      const blobs = (await request(db.transaction('blobs', 'readonly').objectStore('blobs').get(meta.id))) as StoredBlobs | undefined;
+      if (blobs?.file) out.push({ meta, blobs });
+    }
+    return out;
+  } finally {
+    db.close();
+  }
+}
