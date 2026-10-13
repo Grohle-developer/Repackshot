@@ -144,10 +144,25 @@ codificador de texto y VAE.
 | `ZIMAGE_Q8` | Z-Image-Turbo GGUF Q8_0 + Qwen3-4B Q4_K_M | ≈ 9,3 GB | Apache-2.0 | **Calidad máxima del modelo por defecto** |
 | `ZIMAGE_Q4` | Z-Image-Turbo GGUF Q4_0 + Qwen3-4B Q4_K_M | ≈ 6,4 GB | Apache-2.0 | Equilibrio calidad / memoria |
 | `ZIMAGE_Q2` | Z-Image-Turbo GGUF Q2_K + Qwen3-4B Q4_K_M | ≈ 5,3 GB | Apache-2.0 | GPU pequeñas; algo menos de calidad |
-| `ZIMAGE_WEB` | Z-Image-Turbo ONNX q4f16 (navegador) | ≈ 6 GB | Apache-2.0 | La versión web |
+| `ZIMAGE_WEB` | Z-Image-Turbo ONNX q4f16 (navegador) | ≈ 6 GB | Apache-2.0 | La versión web. **No disponible todavía** (X1 parte A): la única exportación publicada no trae el codificador del VAE, así que no puede hacer imagen a imagen; X3 tiene que exportarlo desde el `ae.safetensors` Apache-2.0 |
 | `KLEIN4B_Q4` | FLUX.2 [klein] 4B GGUF Q4_K_M + Qwen3-4B Q4_K_M | ≈ 5,3 GB | Apache-2.0 | Alternativa: ediciones por instrucción ("más luz cálida") |
-| `QWENEDIT_Q4` | Qwen-Image-Edit-2511 GGUF Q4_K_M + Qwen2.5-VL-7B Q4_K_M | ≈ 18 GB | Apache-2.0 | *Pro*, solo escritorio: edición fuerte con LoRA de iluminación |
-| `SD15_LIGHT` | Stable Diffusion 1.5 + ControlNet 1.1 *tile* y *depth* (fp16) | ≈ 3,1 GB | CreativeML OpenRAIL-M (uso comercial con restricciones de uso que se muestran y se aceptan) | Equipos muy modestos |
+| `QWENEDIT_Q4` | Qwen-Image-Edit-2511 GGUF Q4_K_M + Qwen2.5-VL-7B Q4_K_M + proyector de visión Q8_0 | ≈ 19 GB | Apache-2.0 | *Pro*, solo escritorio: edición fuerte por instrucciones (una LoRA de iluminación, si se añade, será otra fila con su licencia) |
+| `SD15_LIGHT` | Stable Diffusion 1.5 + ControlNet 1.1 *tile* y *depth* (fp16) | ≈ 3,6 GB | CreativeML OpenRAIL-M (uso comercial con restricciones de uso que se muestran y se aceptan) | Equipos muy modestos |
+
+**Ficheros fijados (X1 parte A, 2026-10-13).** Cada clave lista en el
+JSON sus ficheros con URL fijada a un *commit* de Hugging Face, tamaño
+exacto y `sha256` (comprobados contra la API y contra la etiqueta del
+CDN, sin descargar los pesos); todos los repositorios son públicos y sin
+acceso restringido. Las licencias, citadas al pie de la letra, están en
+`docs/ai-licences.md`. Tamaños medidos: Q8 9,41 GB, Q4 6,52 GB, Q2
+5,43 GB, klein 5,44 GB, Qwen-Edit 19,03 GB, SD 1.5 3,58 GB. Ningún
+componente es no comercial; SD 1.5 lleva las restricciones de uso de
+OpenRAIL-M, que se muestran y se aceptan antes de descargar. **Los
+ficheros se guardan una sola vez por su `sha256`** (el codificador
+Qwen3-4B, 2,5 GB, lo comparten cuatro claves): borrar un modelo solo
+borra lo que ningún otro instalado usa. Que stable-diffusion.cpp cargue
+cada combinación está sin probar: lo prueba X1 parte B antes de quitar
+la marca *provisional*.
 
 **Regla de recomendación** (valores de partida, a calibrar en X1 con el
 pico real de memoria a 1024² y un margen del 20–30 % para activaciones):
@@ -163,7 +178,7 @@ pico real de memoria a 1024² y un margen del 20–30 % para activaciones):
 | **CPU** con **16–32 GB** | `ZIMAGE_Q4` | `SD15_LIGHT` |
 | **CPU** con **8–16 GB** | `SD15_LIGHT` | ninguno |
 | **CPU** con **< 8 GB** | ninguno (instalar sin IA) | — |
-| **Navegador** con WebGPU y búferes de ≥ 1 GiB | `ZIMAGE_WEB` | — |
+| **Navegador** con WebGPU y búferes de ≥ 1 GiB | `ZIMAGE_WEB` (hoy ninguno: no disponible todavía) | — |
 | Navegador sin WebGPU | ninguno, con el mensaje de §2.3 | — |
 
 En CPU el instalador avisa de que cada imagen tarda **minutos** (cifra
@@ -307,6 +322,6 @@ con sus apartados *Modelo activo*, *Modelos* y *Equipo*:
 | --- | --- | --- |
 | **X1** | **Fable** (Sonnet prepara) | **Parte A, adelantada** (la necesita U6): ficheros exactos, URL, tamaños y `sha256` de cada clave de §2.4 en `src/data/ai-models.json` y licencias releídas al pie de la letra. **Parte B**, tras X3: confirmar el modelo y calibrar la tabla de §2.4 (pico de memoria y tiempo por entrada en GPU y CPU); comparación visual propia Z-Image-Turbo frente a FLUX.2 klein 4B sobre 8 renders × 3 intervenciones con las métricas de la guarda; prueba de ONNX Runtime nativo frente a stable-diffusion.cpp para escritorio |
 | **X2** | Opus | Pases del motor para la IA: albedo, normal, profundidad, id de pieza y de material, mapa de desenfoque, en `rt-core`, el RSB, el wasm y el lado TypeScript |
-| **X3** | Opus | La tubería: `src/ai/` con ONNX Runtime Web en workers, descarga y caché con `sha256`, mosaicos, *prompt* de la escena, condicionamiento, **guarda determinista** con comprobación y retroceso, integración en la cola con las dos imágenes |
+| **X3** | Opus | La tubería: `src/ai/` con ONNX Runtime Web en workers, **exportar el codificador del VAE a ONNX** para que exista `ZIMAGE_WEB`, descarga y caché con `sha256`, mosaicos, *prompt* de la escena, condicionamiento, **guarda determinista** con comprobación y retroceso, integración en la cola con las dos imágenes |
 | **X4** | Sonnet | La interfaz de §4 en la ventana de render, la vista previa en modo Rápido, el informe de la guarda y el divisor en el visor de resultados |
 | ~~X5~~ | — | **Absorbida en U6** (ventana de Ajustes, `ROADMAP.md`): el gestor de modelos de §5 y el selector de §2.2–§2.4 no necesitan la tubería, así que llegan antes. Lo que queda para después de X3 (comprobar en vivo que el modelo activo cabe y una prueba de una imagen) entra en X4 |

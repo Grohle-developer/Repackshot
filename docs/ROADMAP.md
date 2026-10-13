@@ -1107,8 +1107,20 @@ paseo alrededor de la botella, con y sin pasos.
 
 ## X1 · Confirmar el modelo de IA — **Fable**, con Sonnet preparando
 
-**Parte A, adelantada (la necesita U6).** Sonnet prepara y Fable
-confirma `src/data/ai-models.json`: para cada clave de `AI-POST.md` §2.4,
+**Parte A, adelantada (la necesita U6) — hecha.** Sonnet preparó y el
+líder confirmó los datos (2026-10-13): las siete claves con sus ficheros
+fijados a *commit*, tamaños y `sha256` comprobados por dos fuentes, y las
+licencias citadas en `docs/ai-licences.md`. Decisiones del líder:
+`ZIMAGE_WEB` queda **no disponible** (la exportación ONNX publicada no
+trae codificador del VAE; lo exporta X3); codificador de texto oficial
+Qwen3-4B, Qwen2.5-VL de ggml-org y klein Q4_K_M de Unsloth, los tres a
+probar en la parte B; almacenamiento por `sha256` para no descargar dos
+veces lo compartido. No encajó con la tabla: SD 1.5 pesa 3,6 GB y no
+3,1 (faltaban codificador y VAE) y Qwen-Edit 19 GB (faltaba el proyector
+de visión); la "LoRA de iluminación" no tiene fichero elegido y sale de
+la descripción. El JSON entra en el repositorio con P2.
+
+Lo que se pidió: Sonnet prepara y Fable confirma `src/data/ai-models.json`: para cada clave de `AI-POST.md` §2.4,
 el repositorio de origen, cada fichero con su URL de descarga directa,
 tamaño exacto y `sha256`, la licencia con su texto citado y su URL, y la
 regla de recomendación como tabla de datos. Sin medidas todavía: los
