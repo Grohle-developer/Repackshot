@@ -14,14 +14,28 @@ import { evictionPlan, HISTORY_LIMITS, sortResults, type HistoryLimits, type Res
 export interface StoredBlobs {
   file: Blob;
   display: Blob | null;
-  /** The image the AI post-processing made (AI-POST.md §4); absent when the result has none. */
+  /** The image the AI post-processing made (AI-POST.md §4); absent when the result has none. The first variant (X4b). */
   ai?: Blob | null;
+  /** Variants 2 and on (X4b), in order; null for one the guard rejected. Absent: one variant at most (every result of before). */
+  aiMore?: (Blob | null)[];
+}
+
+/** Every AI image of a result, the first variant first (null for a variant without one). */
+export function blobVariants(b: Pick<StoredBlobs, 'ai' | 'aiMore'>): (Blob | null)[] {
+  return b.ai === undefined && !b.aiMore ? [] : [b.ai ?? null, ...(b.aiMore ?? [])];
+}
+
+/** The blobs of a result as they are kept: `ai` and `aiMore` only when there are any. */
+function stored(file: Blob, display: Blob | null, ai?: Blob | null, aiMore?: readonly (Blob | null)[]): StoredBlobs {
+  const more = aiMore && aiMore.length > 0 ? { aiMore: [...aiMore] } : {};
+  return ai || aiMore?.length ? { file, display, ai: ai ?? null, ...more } : { file, display };
 }
 
 export interface ResultsStore {
   readonly persistent: boolean;
   list(): Promise<ResultMeta[]>;
-  add(meta: ResultMeta, file: Blob, display: Blob | null, ai?: Blob | null): Promise<string[]>;
+  /** `ai`: the AI's image (its first variant); `aiMore`: variants 2 and on, null for one the guard rejected (X4b). */
+  add(meta: ResultMeta, file: Blob, display: Blob | null, ai?: Blob | null, aiMore?: readonly (Blob | null)[]): Promise<string[]>;
   get(id: string): Promise<StoredBlobs | null>;
   remove(id: string): Promise<void>;
   clear(): Promise<void>;
@@ -32,7 +46,8 @@ export interface ResultsStore {
   setLimits(limits: HistoryLimits): Promise<string[]>;
 }
 
-const blobBytes = (file: Blob, display: Blob | null, ai?: Blob | null): number => file.size + (display?.size ?? 0) + (ai?.size ?? 0);
+const blobBytes = (file: Blob, display: Blob | null, ai?: Blob | null, aiMore?: readonly (Blob | null)[]): number =>
+  file.size + (display?.size ?? 0) + (ai?.size ?? 0) + (aiMore ?? []).reduce((n, b) => n + (b?.size ?? 0), 0);
 
 /** The history in memory only: same behaviour and limits, gone with the page. */
 export function memoryResultsStore(initialLimits: HistoryLimits = HISTORY_LIMITS): ResultsStore {
@@ -43,10 +58,10 @@ export function memoryResultsStore(initialLimits: HistoryLimits = HISTORY_LIMITS
   return {
     persistent: false,
     list: async () => sortResults([...metas.values()]),
-    async add(meta, file, display, ai) {
-      const m = { ...meta, bytes: blobBytes(file, display, ai) };
+    async add(meta, file, display, ai, aiMore) {
+      const m = { ...meta, bytes: blobBytes(file, display, ai, aiMore) };
       metas.set(m.id, m);
-      blobs.set(m.id, ai ? { file, display, ai } : { file, display });
+      blobs.set(m.id, stored(file, display, ai, aiMore));
       const evict = evictionPlan([...metas.values()], limits, m.id);
       for (const id of evict) {
         metas.delete(id);
@@ -135,11 +150,12 @@ function idbResultsStore(db: IDBDatabase, initialLimits: HistoryLimits): Results
   return {
     persistent: true,
     list: async () => sortResults(await metas()),
-    async add(meta, file, display, ai) {
-      const m = { ...meta, bytes: blobBytes(file, display, ai) };
+    async add(meta, file, display, ai, aiMore) {
+      const m = { ...meta, bytes: blobBytes(file, display, ai, aiMore) };
       const tx = db.transaction(['meta', 'blobs'], 'readwrite');
       tx.objectStore('meta').put(m);
-      tx.objectStore('blobs').put((ai ? { file, display, ai } : { file, display }) satisfies StoredBlobs, m.id);
+      // The variants go in the same record as the first (X4b): one record of blobs per result, as before.
+      tx.objectStore('blobs').put(stored(file, display, ai, aiMore), m.id);
       await done(tx);
       const evict = evictionPlan(await metas(), limits, m.id);
       await drop(evict);
@@ -197,8 +213,10 @@ export async function openResultsStore(limits: HistoryLimits = HISTORY_LIMITS): 
 /** The parts of the launcher's store (io/native-store.ts) the history uses. */
 export interface LauncherResultsApi {
   results(): Promise<unknown[]>;
-  putResult(id: string, meta: unknown, file: Blob, display: Blob | null, ai?: Blob | null): Promise<void>;
-  resultFile(id: string, part?: boolean | 'ai'): Promise<Blob | null>;
+  /** `aiMore`: variants 2 and on (X4b), null for one without an image. */
+  putResult(id: string, meta: unknown, file: Blob, display: Blob | null, ai?: Blob | null, aiMore?: readonly (Blob | null)[]): Promise<void>;
+  /** `variant`: which AI image, 1-based (X4b), for `part` 'ai'. */
+  resultFile(id: string, part?: boolean | 'ai', variant?: number): Promise<Blob | null>;
   deleteResult(id: string): Promise<void>;
   clearResults(): Promise<void>;
 }
@@ -218,9 +236,9 @@ export function launcherResultsStore(api: LauncherResultsApi, initialLimits: His
   return {
     persistent: true,
     list: async () => sortResults(await metas()),
-    async add(meta, file, display, ai) {
-      const m = { ...meta, bytes: blobBytes(file, display, ai) };
-      await api.putResult(m.id, m, file, display, ai);
+    async add(meta, file, display, ai, aiMore) {
+      const m = { ...meta, bytes: blobBytes(file, display, ai, aiMore) };
+      await api.putResult(m.id, m, file, display, ai, aiMore);
       const evict = evictionPlan(await metas(), limits, m.id);
       await drop(evict);
       return evict;
@@ -230,10 +248,13 @@ export function launcherResultsStore(api: LauncherResultsApi, initialLimits: His
       if (!m) return null;
       const file = await api.resultFile(id);
       if (!file) return null;
-      // Only a file a page cannot show (EXR) has a picture of it. The AI's image is there when the guard let one through.
+      // Only a file a page cannot show (EXR) has a picture of it. An AI image is there when the guard let one through:
+      // the first variant (a result of before X4b has that one only), then the others (X4b).
       const display = m.format === 'EXR' ? await api.resultFile(id, true) : null;
-      const ai = m.ai && m.ai.bytes > 0 ? await api.resultFile(id, 'ai') : null;
-      return ai ? { file, display, ai } : { file, display };
+      const ai = m.ai && m.ai.bytes > 0 ? await api.resultFile(id, 'ai', 1) : null;
+      const more: (Blob | null)[] = [];
+      for (const [i, v] of (m.aiMore ?? []).entries()) more.push(v && v.bytes > 0 ? await api.resultFile(id, 'ai', i + 2) : null);
+      return m.ai || more.length > 0 ? stored(file, display, ai, more) : { file, display };
     },
     remove: (id) => api.deleteResult(id),
     clear: () => api.clearResults(),

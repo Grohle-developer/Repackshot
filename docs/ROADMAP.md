@@ -2534,7 +2534,7 @@ trabajo (hoy se ignora `onProgress` en la cola), el *prompt* de X3a, quitar
 lineal del motor. Y X2: los mismos ids, la misma profundidad y el mismo `coc`
 que dibuja la vista previa (el test del navegador es la vara de medir).
 
-## X4b · Prompt propio y variantes — **Opus**
+## X4b · Prompt propio y variantes — **Opus** — hecha
 
 **Petición del usuario (2026-10-13):** «si lo soporta el modelo, que deje
 un prompt de texto en la configuración del render en cuestión, y que se
@@ -2608,6 +2608,71 @@ terminadas; guardar y abrir (proyecto y resultados, también los de una
 sola `ai` de antes); deshacer del prompt (un cambio de texto es una
 entrada al salir del campo) y del número; cadenas en `es` y `en`; cromo
 acromático; capturas de la sección y del visor con varias variantes.
+
+**Hecho** (2026-10-13). **Prompt propio**: `AiPipelineSettings.userPrompt` (recortado, hasta
+`MAX_USER_PROMPT` = 400 caracteres) en la sección de la ventana de render, bajo los seis controles: un
+campo de varias líneas (`textArea` de `ui/components/controls.ts`) con contador y la nota del líder; se
+guarda al dejar de escribir (700 ms) y al salir del campo, y todo lo de una visita lleva el mismo gesto,
+así que es **una** entrada de deshacer (*Post-procesado IA: Prompt propio*); mientras tiene el foco, lo que
+vuelve del *store* no pisa lo que se escribe (el recorte de un espacio final no se lo come). Va en el
+proyecto y cada trabajo lleva el suyo; un proyecto anterior abre sin él. Se compone **sistema → escena →
+propio** (`composePrompt`, `src/core/ai-prompt.ts`; `buildPrompt(state, settings, context?)` en
+`src/ai/prompt.ts`, que sin contexto sigue dando solo el de la escena) y el negativo fijo va aparte, igual.
+**Capacidades**: `capabilities: { textPrompt, maxPromptTokens? }` en cada modelo de `ai-models.json` (todos
+con `textPrompt`; `SD15_LIGHT` con 77) y en el manifiesto de un importado (el formulario de importar lo
+pregunta); `ModelView.textPrompt`/`maxPromptTokens`; manda el modelo que el servicio dice activo
+(`promptCaps`; el sintético lo admite todo, uno desconocido nada). Sin `textPrompt` el campo se ve
+deshabilitado con el motivo y no se envía. **Prompt del sistema** (`ai.systemPrompt`, *Ajustes ▸
+Post-procesado IA ▸ Prompt del sistema*): el texto del líder por defecto, campo de varias líneas,
+contador, *Restablecer el predeterminado* y la nota de que la guarda no depende de él; puede quedarse
+vacío; en escritorio va en `settings.json` como todo ajuste (prueba con el espía de P3e). Con
+`maxPromptTokens` se usa la **versión corta** mientras el texto sea el predeterminado (los mismos
+espacios o no) y se recorta palabra a palabra desde el final, **el propio, luego la escena, luego el
+sistema**, con una estimación prudente documentada en `AI-POST.md` §4; la línea bajo el campo de la
+ventana dice qué se queda fuera, y la de Ajustes qué recibe el modelo en uso. **Variantes**:
+`AiPipelineSettings.variants` (1–8, 1 por defecto) junto a *Otra variación*, deshacible, con la línea
+de las semillas y el tiempo estimado; cambiarlo no rehace la vista previa (sigue siendo una imagen). En la
+cola, `aiStep` hace **un render** y N peticiones del mismo origen (el `renderId` guardado, o la imagen
+decodificada una sola vez) con `variantSettings` (semilla + n − 1), cada imagen con su informe y
+`aiFileName(nombre, n)` (`_AI`, `_AI_2`…); la fila dice *IA · variante 2 de 4 · mosaico 3 de 4* y la barra
+mide las variantes juntas; detener a mitad conserva el render y las terminadas; una rechazada queda con
+su informe y sin imagen; si una falla, se quedan las anteriores. **Resultados**: `ResultMeta.aiMore` (la
+primera sigue en `ai`), `aiVariantsOf`/`aiImagesOf`, `ResultsStore.add(…, ai, aiMore)` en memoria, en el
+registro de IndexedDB y en el lanzador como `<id>.ai.<n>.<ext>` con `PUT/GET /api/store/results/<id>/ai/<n>`
+(`appdata.rs`, aditivo: `aiVariants` en el índice; el `<id>.ai.<ext>` de antes se lee como la variante 1 y
+`…/ai` sigue); la migración desde el navegador las copia. El visor tiene la **tira de miniaturas** (una
+línea propia entre la cabecera y la imagen), el divisor compara la elegida sin perder el zum
+(`SplitCompare.setB`), su informe en la línea, *Guardar esta variante* y *Guardar todas*; la cola y el
+historial ponen *×4* y la cola *IA × 4*; el pie de la ventana, *IA activada · 4 variantes*. Pruebas: 39
+nuevas de vitest (22 del *prompt*, las capacidades, el sistema y el *store*; 15 de variantes contra el
+sintético, un servicio como el del lanzador y el `DesktopAiService` contra un lanzador de pega; 1 de
+persistencia del ajuste en escritorio; 1 de punta a punta con el lanzador real y el `rt-fake-sd`: tres
+variantes, un render, semillas 20, 21 y 22 en el registro del motor falso, que no vuelve a arrancar), más
+las que cambiaron (el doble del lanzador aprende `…/ai/<n>` tan estricto como el de verdad); 1 de Rust
+(`appdata`); 10 comprobaciones nuevas del navegador en `tools/ai-post-check.mjs` (k, l y la tira en j;
+36 en total, todas en verde);
+18 mutaciones comprobadas. Capturas: `docs/ui/ai-section-prompt.png`, `ai-results-variants.png` y
+`settings-ai-prompt.png`.
+
+**No encajó con el plan.** (1) `userPrompt` y `variants` son **opcionales** en el contrato
+(`AiPipelineSettings`, para no romper a quien construye uno sin ellos) y obligatorios en el *store*
+(`AiSettings` es `Required<…>`); el lanzador no los lee: cada petición es una imagen con su semilla y el
+*prompt* ya compuesto. (2) La composición y la cuenta viven en `src/core/ai-prompt.ts` (puras, para que
+Ajustes las use sin el puerto de la IA) y `src/ai/prompt.ts` las llama. (3) En escritorio la variante 1
+nueva se escribe `<id>.ai.1.<ext>`, como pide el plan; `<id>.ai.<ext>` queda para leer los de antes. (4) La
+estimación de *tokens* es prudente de verdad: la versión corta cuenta 65 de los 77 (con CLIP real, unos
+45), así que con SD 1.5 el *prompt* propio casi nunca entra; afinarla (o traer el vocabulario de CLIP,
+1,6 MB) queda para X1b. (5) El prompt del sistema y el de la escena se mandan también a un modelo sin
+`textPrompt` (como antes el de la escena); solo se retiene el propio del trabajo. Un importado `sd15` o
+`sdxl` sin `maxPromptTokens` lee 77. Z-Image, FLUX.2 klein y Qwen no llevan límite: sus codificadores
+leen cientos de *tokens* y lo compuesto más largo cabe; X1b lo confirma. (6) **El tiempo estimado** es N ×
+los píxeles del trabajo / la velocidad de la IA medida alrededor de cada petición del último trabajo con IA
+de este equipo (`UiState.aiThroughput`), no N × la medida de la vista previa (a 512 px no dice nada de los
+mosaicos de un final); sin medida, la línea dice que se mide con el primero; incluye la carga del modelo
+si la hubo, así que tira por arriba. (7) Al comparar con otro resultado (*Comparar con…*) la tira solo
+cambia la línea del informe: el divisor compara los dos resultados. (8) `src/main.ts` no pasaba la lista
+de variantes al historial (`results.add` con cuatro argumentos): lo encontró la lectura antes que una
+prueba; lo vigila la comprobación del navegador (k), que es la que pasa por `main.ts`.
 
 ## X5 · Ajustes y modelos — absorbida en U6
 

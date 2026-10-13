@@ -23,6 +23,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 ### Proyecto
 
 - Un proyecto guarda las primitivas como medidas en un campo opcional del nodo, no como malla, y las vuelve a generar al abrir; se guarda, abre y vuelve a guardar en los mismos bytes. El esquema sigue en 2 y los proyectos anteriores abren igual (U9).
+- Los ajustes de la IA de la ventana de render y de cada trabajo guardan también el *prompt* propio y el número de variantes; un proyecto anterior se abre sin *prompt* y con una variante (X4b).
 
 ### Post-procesado IA
 
@@ -36,6 +37,11 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - *Acerca de* lista stable-diffusion.cpp y ggml con sus licencias MIT (X3c).
 - El visor de resultados da al informe de la guarda su propia línea, a todo lo ancho bajo el título y los botones, en vez de apretarlo en una columna estrecha junto al título; los botones pasan bajo el título cuando no caben a su lado, y *Cerrar* se queda en la esquina (X3c).
 - Un post-procesado por el que nadie pregunta (su ventana se cerró) se para solo a los dos minutos (X3c).
+- **Prompt propio** en la sección *Post-procesado IA* de la ventana de render: un campo de varias líneas (hasta 400 caracteres) para describir la luz o el ambiente; va con el trabajo (se guarda en el proyecto, se deshace de una vez al salir del campo y cada trabajo de la cola lleva el suyo) y se añade al final del *prompt* de la escena, sin sustituirlo; el negativo fijo sigue igual. Si el modelo en uso no admite un *prompt* de texto, el campo se ve deshabilitado con el motivo y no se envía nada (X4b).
+- **Variantes**: un número de 1 a 8 (1 por defecto) junto a *Otra variación*. Un trabajo con N variantes hace un solo render del motor y N pasadas de la IA con semillas consecutivas, con el modelo cargado una vez; la cola dice *IA · variante 2 de 4 · mosaico 3 de 4*; cada variante lleva su informe de la guarda y su archivo (`_AI`, `_AI_2`, `_AI_3`…). Detener a mitad conserva el render y las variantes terminadas. La sección avisa del tiempo de IA estimado cuando ya se midió en este equipo (X4b).
+- El visor de resultados enseña una **tira de miniaturas** de las variantes bajo la cabecera: la elegida es la que el divisor compara con el render, con su informe; *Guardar esta variante* y *Guardar todas*. La cola y el historial dicen cuántas imágenes de IA tiene cada resultado (X4b).
+- **Prompt del sistema** en *Ajustes ▸ Post-procesado IA*: unas palabras generales para todas las imágenes, que van antes de las de la escena y del *prompt* propio del trabajo, con *Restablecer el predeterminado*. Las protecciones de la guarda no dependen de él. Para un modelo que lee pocos *tokens* (SD 1.5: 77) se usa su versión corta mientras no se cambie, y lo que no cabe se recorta empezando por el *prompt* propio, luego la escena y por último el del sistema, con una línea que dice qué se quedó fuera (X4b).
+- Un modelo importado declara en su `model.repackshot.json` si sigue un *prompt* de texto (`capabilities.textPrompt`) y cuántos *tokens* lee (`capabilities.maxPromptTokens`); el formulario de importar lo pregunta (X4b).
 
 ## v0.1.3 — 2026-10-13
 

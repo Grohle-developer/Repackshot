@@ -656,7 +656,9 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    state/<nombre>.json  cosas pequeñas de la página: descargas por reanudar, carpetas elegidas,
                         la marca de la migración desde el navegador
    library/             la biblioteca propia (U4)
-   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json
+   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json; con IA, las
+                        variantes de la IA como <id>.ai.<n>.<ext> (X4b; la única <id>.ai.<ext> de
+                        antes se lee como la variante 1)
    cache/thumbs/        las esferas de materiales (caché)
    cache/ai/            la imagen y los pases de los renders finales grandes que guarda el lanzador (X2)
    models/              los modelos de IA, por sha256
@@ -681,6 +683,16 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    la página no toca el almacenamiento del navegador salvo una vez por
    carpeta de datos, para copiar al lanzador lo que una versión anterior
    dejó en el origen actual (marca `state/migration.json`).
+
+   **El historial de resultados con variantes de IA** (X4b). `ResultMeta.ai` es la
+   primera variante (lo que era la única antes de X4b) y `ResultMeta.aiMore` las
+   demás, en orden, cada una con su nombre, su miniatura, sus bytes (0 si la guarda
+   la rechazó: no tiene imagen) y su informe; `aiVariantsOf` y `aiImagesOf`
+   (`src/core/results.ts`) las leen igual en un resultado nuevo que en uno viejo.
+   `ResultsStore.add(meta, file, display, ai, aiMore)` y `get` (`src/io/results.ts`)
+   las llevan como `ai` y `aiMore` (null para una variante sin imagen): en la web,
+   en el mismo registro de IndexedDB que el render; en escritorio, cada una por
+   `PUT /api/store/results/<id>/ai/<n>` y de vuelta con `GET …/ai/<n>`.
 6. **Diálogos y archivos** (P3b): `POST /api/dialog/{folder,open,save}`
    abre los diálogos del sistema y devuelve un permiso por ruta; la API de
    archivos (`/api/files…`) solo lee o escribe rutas concedidas así en el

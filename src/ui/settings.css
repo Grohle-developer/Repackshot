@@ -684,3 +684,27 @@ summary.sw-block-title {
   margin-top: 4px;
   font-size: var(--fs-label);
 }
+
+/* Settings ▸ AI post-processing ▸ System prompt (X4b): the field the row's width, its counter and Restore default under it. */
+.sw-sp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sw-sp-field {
+  width: 100%;
+}
+.sw-sp-foot {
+  align-items: center;
+}
+.sw-sp-line {
+  margin: 0;
+}
+.sw-sp-short summary {
+  cursor: pointer;
+}
+.sw-sp-short-text {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}

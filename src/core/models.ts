@@ -105,7 +105,11 @@ export interface ImportedModel {
   quantization: string;
   licence: { spdx: string; url: string; commercialUse: boolean };
   files: ImportedFile[];
-  capabilities: { strength: boolean; referenceEdit: boolean; control: string[] };
+  /**
+   * `textPrompt` and `maxPromptTokens` (X4b): the model follows a free-text prompt (the job's own is sent), and the
+   * most tokens its text encoder reads. Absent in a manifest: no text prompt, no known limit.
+   */
+  capabilities: { strength: boolean; referenceEdit: boolean; control: string[]; textPrompt?: boolean; maxPromptTokens?: number };
   source: string;
 }
 
@@ -281,6 +285,14 @@ export function validateManifest(raw: unknown, opts: { selected?: readonly strin
       const c = raw.capabilities;
       const control = Array.isArray(c.control) ? c.control.filter((x): x is string => typeof x === 'string' && x.length <= 40).slice(0, 16) : [];
       capabilities = { strength: c.strength === true, referenceEdit: c.referenceEdit === true, control };
+      if (c.textPrompt !== undefined) {
+        if (typeof c.textPrompt === 'boolean') capabilities.textPrompt = c.textPrompt;
+        else problems.push({ field: 'capabilities.textPrompt', code: 'invalid' });
+      }
+      if (c.maxPromptTokens !== undefined) {
+        if (typeof c.maxPromptTokens === 'number' && Number.isInteger(c.maxPromptTokens) && c.maxPromptTokens >= 8 && c.maxPromptTokens <= 100000) capabilities.maxPromptTokens = c.maxPromptTokens;
+        else problems.push({ field: 'capabilities.maxPromptTokens', code: 'invalid' });
+      }
     }
   }
   if (problems.length > 0 || !name || !family || !role || !quantization || !source || !licence) return { ok: false, problems: problems.length ? problems : [{ field: 'format', code: 'notManifest' }] };
@@ -339,6 +351,10 @@ export interface ModelView {
   isDefault: boolean;
   runtimes: readonly string[];
   requirements: { minVramGiB: number | null; minRamGiB: number | null };
+  /** It follows a free-text prompt (X4b): the job's own prompt is sent to it. */
+  textPrompt: boolean;
+  /** The most tokens its text encoder reads, start and end included; null: no limit to fit to (X4b). */
+  maxPromptTokens: number | null;
 }
 
 function catalogueView(m: AiModelEntry): ModelView {
@@ -358,6 +374,8 @@ function catalogueView(m: AiModelEntry): ModelView {
     isDefault: m.default,
     runtimes: m.runtimes,
     requirements: m.requirements,
+    textPrompt: m.capabilities?.textPrompt === true,
+    maxPromptTokens: m.capabilities?.maxPromptTokens ?? null,
   };
 }
 
@@ -379,8 +397,15 @@ function importedView(m: ImportedModel): ModelView {
     isDefault: false,
     runtimes: ['desktop', 'web'],
     requirements: { minVramGiB: null, minRamGiB: null },
+    textPrompt: m.capabilities?.textPrompt === true,
+    // SD 1.5 and SDXL read their prompt with CLIP, 77 tokens, whatever the manifest forgot to say.
+    maxPromptTokens: m.capabilities?.maxPromptTokens ?? (CLIP_FAMILIES.includes(m.family) ? CLIP_MAX_TOKENS : null),
   };
 }
+
+/** The families whose text encoder is CLIP, and what it reads (start and end tokens included). */
+const CLIP_FAMILIES: readonly ImportFamily[] = ['sd15', 'sdxl'];
+const CLIP_MAX_TOKENS = 77;
 
 /** Every model the list shows: the catalogue's, then the imported ones. */
 export function allModels(snap: Pick<ModelsSnapshot, 'catalogue' | 'imported'>): ModelView[] {
