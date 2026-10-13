@@ -3,7 +3,7 @@
 
 import type { ActionBase, ProjectState } from './store';
 import type { MaterialId, MaterialInstance } from './materials';
-import type { MeshRef } from './meshes';
+import { getMesh, transformedMeshBounds, type MeshRef } from './meshes';
 import { nextId } from './ids';
 import {
   add,
@@ -48,6 +48,40 @@ export interface FaceRange {
   material: MaterialId;
 }
 
+/** Where the move tool turns and scales a node (SPEC §3.1): its bounds centre, the base of its bounds, its origin, or a picked point. */
+export type PivotMode = 'CENTER' | 'BASE' | 'ORIGIN' | 'CUSTOM';
+
+export interface Pivot {
+  mode: PivotMode;
+  /** CUSTOM: the point, in the node's own (local) space, so it moves with the node. */
+  point?: Vec3;
+}
+
+/** Axes of an operation: the world's (GLOBAL) or the node's own (LOCAL). */
+export type Space = 'LOCAL' | 'GLOBAL';
+
+/** Index of an axis: 0 = X, 1 = Y, 2 = Z. */
+export type Axis = 0 | 1 | 2;
+
+/** A pattern of linked copies (SPEC §3.1 "Patrón"), kept on its group so editing it regenerates the copies. */
+export interface PatternSpec {
+  kind: 'LINEAR' | 'CIRCULAR';
+  /** Copies including the original (1 or more). */
+  count: number;
+  /** LINEAR: step from one copy to the next, mm. */
+  offset: Vec3;
+  /** Axes of `offset` and `axis`: the group's (GLOBAL) or those of the first original (LOCAL). */
+  space: Space;
+  /** CIRCULAR: the axis the copies turn about. */
+  axis: Axis;
+  /** CIRCULAR: a point of that axis, in the group's space, mm (the pivot of the originals when it was made). */
+  center: Vec3;
+  /** CIRCULAR: angle the copies span, degrees; 360 is a full turn (no copy lands on the original). */
+  angleDeg: number;
+  /** The original nodes (copy 0). Every other child of the group is generated. */
+  sources: NodeId[];
+}
+
 /** Where a MODEL came from. */
 export interface ModelSource {
   kind: 'EXAMPLE' | 'FILE';
@@ -83,6 +117,16 @@ export interface SceneNode {
   smooth?: boolean;
   /** MODEL: origin of the import. */
   source?: ModelSource;
+  /** Pivot of the move tool; absent means CENTER. */
+  pivot?: Pivot;
+  /** The transform the node had when it entered the scene: Reset transform returns to it (absent: identity). */
+  initial?: Transform;
+  /** GROUP made by Pattern: its parameters. */
+  pattern?: PatternSpec;
+  /** PART: smoothing angle its normals were last recomputed with, degrees. */
+  smoothAngle?: number;
+  /** LIGHT: the world point it aims at, mm. */
+  target?: Vec3;
 }
 
 /** Current selection (SPEC §3.2). `ids` may also hold one light or camera id. */
@@ -240,11 +284,29 @@ export function worldMatrix(state: ProjectState, id: NodeId, cache?: Map<NodeId,
   return m;
 }
 
-/** World bounds of one part. */
+/** True when a matrix maps the axes onto the axes (no rotation, or quarter turns): the box of a box is then exact. */
+export function isAxisAligned(m: Mat4): boolean {
+  for (let c = 0; c < 3; c++) {
+    const col = [m[4 * c], m[4 * c + 1], m[4 * c + 2]];
+    const len = Math.max(Math.abs(col[0]), Math.abs(col[1]), Math.abs(col[2]));
+    if (col.filter((v) => Math.abs(v) > len * 1e-9).length > 1) return false;
+  }
+  return true;
+}
+
+/**
+ * World bounds of one part. Rotated parts use their vertices (the lowest point of a turned part is not a corner
+ * of its turned box); without the mesh data, or without rotation, the box of the local box.
+ */
 export function partWorldBounds(state: ProjectState, id: NodeId, cache?: Map<NodeId, Mat4>): Box {
   const node = state.scene.nodes[id];
   if (!node || node.kind !== 'PART' || !node.mesh) return emptyBox();
-  return transformBox(worldMatrix(state, id, cache), node.mesh.bounds);
+  const m = worldMatrix(state, id, cache);
+  if (!isAxisAligned(m)) {
+    const data = getMesh(node.mesh.id);
+    if (data) return transformedMeshBounds(data, m);
+  }
+  return transformBox(m, node.mesh.bounds);
 }
 
 /** World bounds of every part under the given nodes. `visibleOnly` skips hidden parts. */
@@ -382,6 +444,8 @@ export function addModel(state: ProjectState, payload: ModelPayload, replace: bo
       id,
       parent: node.parent ? (nodeMap.get(node.parent) ?? null) : null,
       children: node.children.map((c) => nodeMap.get(c)!).filter(Boolean),
+      // Reset transform returns here (the import sheet refreshes it once the model is placed).
+      initial: { position: [...node.transform.position], rotation: [...node.transform.rotation], scale: [...node.transform.scale] },
     };
     if (node.kind === 'PART') {
       next.material = remapMat(node.material);

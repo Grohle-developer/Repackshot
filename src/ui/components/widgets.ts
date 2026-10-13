@@ -197,14 +197,60 @@ export interface MenuEntry {
   icon?: IconName;
   checked?: boolean;
   disabled?: boolean;
+  /** Tooltip; on a disabled entry it also says "coming soon". */
   note?: string;
   kbd?: string;
   run?(): void;
+  /** Entries of a submenu, opened to the side (hover, click or the right arrow). */
+  submenu?: MenuItems;
 }
 
-/** Builds menu content; `null` is a separator. */
-export function menuList(entries: readonly (MenuEntry | null | { heading: string })[], close: () => void): HTMLElement {
+/** Menu content: entries, `null` separators and headings. */
+export type MenuItems = readonly (MenuEntry | null | { heading: string })[];
+
+/** Places a submenu next to its item, on the left when there is no room on the right. */
+function placeSubmenu(sub: HTMLElement, item: HTMLElement): void {
+  const r = item.getBoundingClientRect();
+  const w = sub.offsetWidth;
+  const hgt = sub.offsetHeight;
+  let left = r.right + 2;
+  if (left + w > window.innerWidth - 8) left = Math.max(8, r.left - w - 2);
+  let top = r.top - 5;
+  if (top + hgt > window.innerHeight - 8) top = Math.max(8, window.innerHeight - hgt - 8);
+  sub.style.left = `${left}px`;
+  sub.style.top = `${top}px`;
+}
+
+/** Builds menu content; `null` is a separator. Entries with `submenu` open it to the side. */
+export function menuList(entries: MenuItems, close: () => void): HTMLElement {
   const el = h('div', { class: 'menu', role: 'menu' });
+  let openSub: { item: HTMLElement; el: HTMLElement } | null = null;
+  const closeSub = () => {
+    openSub?.el.remove();
+    openSub?.item.setAttribute('aria-expanded', 'false');
+    openSub = null;
+  };
+  const showSub = (item: HTMLElement, items: MenuItems, focus: boolean) => {
+    if (openSub?.item === item) {
+      if (focus) (openSub.el.querySelector('.menu-item:not(:disabled)') as HTMLElement | null)?.focus();
+      return;
+    }
+    closeSub();
+    const sub = h('div', { class: 'floating menu-sub' }, menuList(items, close));
+    // Inside the menu, so a click in it is not a click outside.
+    el.appendChild(sub);
+    placeSubmenu(sub, item);
+    item.setAttribute('aria-expanded', 'true');
+    openSub = { item, el: sub };
+    sub.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') {
+        e.stopPropagation();
+        closeSub();
+        item.focus();
+      }
+    });
+    if (focus) (sub.querySelector('.menu-item:not(:disabled)') as HTMLElement | null)?.focus();
+  };
   for (const e of entries) {
     if (e === null) {
       el.appendChild(h('div', { class: 'menu-sep', role: 'separator' }));
@@ -214,35 +260,79 @@ export function menuList(entries: readonly (MenuEntry | null | { heading: string
       el.appendChild(h('div', { class: 'menu-label aux' }, e.heading));
       continue;
     }
-    el.appendChild(
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'menu-item',
-          role: e.checked === undefined ? 'menuitem' : 'menuitemradio',
-          'aria-checked': e.checked === undefined ? undefined : String(e.checked),
-          disabled: e.disabled,
-          'data-tip': e.note,
-          onclick: () => {
-            close();
-            e.run?.();
-          },
-        },
-        e.checked !== undefined ? h('span', { class: 'check' }, e.checked ? icon('check', 14) : null) : e.icon ? icon(e.icon, 16) : null,
-        h('span', null, e.label),
-        e.kbd || e.disabled ? h('span', { class: 'menu-right' }, e.disabled && e.note ? h('span', { class: 'aux' }, t('common.comingSoon')) : null, e.kbd ? h('kbd', null, e.kbd) : null) : null,
-      ),
+    const sub = e.submenu;
+    const item = h(
+      'button',
+      {
+        type: 'button',
+        class: 'menu-item',
+        role: e.checked === undefined ? 'menuitem' : 'menuitemradio',
+        'aria-checked': e.checked === undefined ? undefined : String(e.checked),
+        'aria-haspopup': sub ? 'menu' : undefined,
+        'aria-expanded': sub ? 'false' : undefined,
+        disabled: e.disabled,
+        'data-tip': e.note,
+      },
+      e.checked !== undefined ? h('span', { class: 'check' }, e.checked ? icon('check', 14) : null) : e.icon ? icon(e.icon, 16) : null,
+      h('span', null, e.label),
+      sub
+        ? h('span', { class: 'menu-right' }, icon('chevronRight', 14))
+        : e.kbd || e.disabled
+          ? h('span', { class: 'menu-right' }, e.disabled && e.note ? h('span', { class: 'aux' }, t('common.comingSoon')) : null, e.kbd ? h('kbd', null, e.kbd) : null)
+          : null,
     );
+    if (sub) {
+      item.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        showSub(item, sub, true);
+      });
+      item.addEventListener('mouseenter', () => showSub(item, sub, false));
+      item.addEventListener('keydown', (ev) => {
+        if (ev.key === 'ArrowRight') {
+          ev.preventDefault();
+          showSub(item, sub, true);
+        }
+      });
+    } else {
+      item.addEventListener('mouseenter', () => {
+        // Hovering an item of this level closes the submenu of another one.
+        if (openSub && !openSub.el.contains(item)) closeSub();
+      });
+      item.addEventListener('click', () => {
+        close();
+        e.run?.();
+      });
+    }
+    el.appendChild(item);
   }
+  // Up and down move between the items of this level.
+  el.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+    const items = [...el.children].filter((c): c is HTMLButtonElement => c instanceof HTMLButtonElement && !c.disabled);
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    items[(i + (ev.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+  });
   return el;
 }
 
 /** Opens a menu of entries under an anchor. */
-export function openMenu(anchor: HTMLElement, entries: readonly (MenuEntry | null | { heading: string })[], align: 'start' | 'end' = 'start'): void {
+export function openMenu(anchor: HTMLElement, entries: MenuItems, align: 'start' | 'end' = 'start'): void {
   let close = () => {};
   const content = menuList(entries, () => close());
   close = openFloating(anchor, content, { align });
+  (content.querySelector('.menu-item:not(:disabled)') as HTMLElement | null)?.focus();
+}
+
+/** Opens a menu at a point of the window (a right click on the viewport). */
+export function openMenuAt(x: number, y: number, entries: MenuItems): void {
+  const anchor = h('div', { style: `position:fixed;left:${x}px;top:${y - 6}px;width:0;height:0` });
+  document.body.appendChild(anchor);
+  let close = () => {};
+  const content = menuList(entries, () => close());
+  close = openFloating(anchor, content, { onClose: () => anchor.remove() });
   (content.querySelector('.menu-item:not(:disabled)') as HTMLElement | null)?.focus();
 }
 

@@ -281,6 +281,12 @@ textarea {
 .vp[data-tool='zoom'] canvas {
   cursor: zoom-in;
 }
+.vp[data-gizmo='hover'] canvas {
+  cursor: grab;
+}
+.vp[data-gizmo='drag'] canvas {
+  cursor: grabbing;
+}
 .vp[data-picking] canvas {
   cursor: crosshair;
 }

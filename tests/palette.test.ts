@@ -63,5 +63,8 @@ describe('URL parameters', () => {
       guide: 2,
     });
     expect(readUrlParams('?preset=NOPE&theme=blue&lang=fr&setup=x')).toEqual({ example: false });
+    expect(readUrlParams('?tool=move').tool).toBe('move');
+    expect(readUrlParams('?tool=MOVE').tool).toBe('move');
+    expect(readUrlParams('?tool=lasso').tool).toBeUndefined();
   });
 });

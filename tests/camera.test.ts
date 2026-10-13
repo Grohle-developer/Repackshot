@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeCamera, cameraBasis, cameraPosition, clipPlanesFor, CLIP_NEAR_MIN_MM, fieldOfView, frameBox, orbitFromPosition, outputFrameRect, FRAME_MARGIN } from '../src/core/camera';
+import { activeCamera, cameraBasis, cameraPosition, clipPlanesFor, CLIP_NEAR_MIN_MM, fieldOfView, frameBox, orbitFromPosition, outputFrameRect, FRAME_MARGIN, sameView } from '../src/core/camera';
 import { boxCenter, dot, sub } from '../src/core/math';
 import { sceneBounds } from '../src/core/scene';
 import { apply, exampleState } from './helpers';
@@ -114,5 +114,18 @@ describe('clip planes follow the framing (phase I3)', () => {
     expect(stale.clipStart).toBeGreaterThan(stale.distance);
     s = apply(s, { type: 'camera/frame' });
     expect(activeCamera(s).clipStart).toBeLessThan(activeCamera(s).distance);
+  });
+});
+
+describe('orbit gestures that do not move (phase U3)', () => {
+  it('a click on the viewport reports the same view, which is no change', () => {
+    const cam = activeCamera(exampleState());
+    // What the preview reports after a press without a drag: the view recomputed from the camera position.
+    const o = orbitFromPosition(cameraPosition(cam), cam.target);
+    expect(sameView(cam, { ...o, target: [...cam.target], focusDistance: o.distance })).toBe(true);
+    expect(sameView(cam, { azimuth: cam.azimuth + 360 })).toBe(true);
+    expect(sameView(cam, { azimuth: cam.azimuth + 0.5 })).toBe(false);
+    expect(sameView(cam, { distance: cam.distance * 1.01 })).toBe(false);
+    expect(sameView(cam, { target: [cam.target[0] + 1, cam.target[1], cam.target[2]] })).toBe(false);
   });
 });

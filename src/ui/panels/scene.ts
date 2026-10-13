@@ -7,6 +7,7 @@ import { lightShares } from '../../core/lighting';
 import * as cmd from '../commands';
 import { segmented, textField, toggle } from '../components/controls';
 import { confirmBox, openMenu, tabs } from '../components/widgets';
+import { partMenu } from './part-menu';
 import { h, icon } from '../dom';
 import type { IconName } from '../icons';
 import { cameraName, dyn, lightName, materialName, studioLabel } from '../names';
@@ -17,7 +18,7 @@ import type { SceneTab } from '../ui-state';
 
 const TAB_ICONS: Record<SceneTab, IconName> = { parts: 'part', cameras: 'camera', lights: 'light', studios: 'studio' };
 const TABS: readonly SceneTab[] = ['parts', 'cameras', 'lights', 'studios'];
-const KIND_ICON: Record<string, IconName> = { MODEL: 'model', GROUP: 'group', PART: 'part' };
+const KIND_ICON: Record<string, IconName> = { MODEL: 'model', GROUP: 'group', PART: 'part', LIGHT: 'light' };
 
 /** Four-position level selector with shortcuts 1–4 (UI.md §4.1). */
 export function levelSelector(ctx: Ctx, scope: Scope): HTMLElement {
@@ -51,20 +52,11 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
     store.dispatch({ type: 'scene/select', ids: [node.id], mode: e.ctrlKey || e.metaKey ? 'toggle' : 'set', level });
   };
 
+  // The full menu of UI.md §2.2 (phase U3), shared with the viewport.
   const contextMenu = (node: SceneNode, row: HTMLElement) => {
     const s = store.get();
     const ids = s.selection.ids.includes(node.id) ? s.selection.ids.filter((id) => s.scene.nodes[id]) : [node.id];
-    openMenu(row, [
-      { label: t('tree.isolate'), kbd: kbdFor('isolate'), run: () => cmd.isolateSelection(ctx, ids) },
-      { label: t('tree.hide'), kbd: kbdFor('hide'), run: () => cmd.hideSelection(ctx, ids) },
-      { label: t('tree.showAll'), kbd: kbdFor('showAll'), run: () => cmd.showAll(ctx) },
-      { label: t('common.rename'), run: () => startRename(node.id) },
-      null,
-      { label: t('tree.rest'), run: () => cmd.restOnFloor(ctx, ids) },
-      { label: t('tree.center'), run: () => cmd.centerSelection(ctx, ids) },
-      null,
-      { label: t('common.delete'), kbd: kbdFor('delete'), run: () => cmd.deleteSelection(ctx, ids) },
-    ]);
+    openMenu(row, partMenu(ctx, ids, { rename: () => startRename(node.id) }));
   };
 
   const startRename = (id: NodeId) => {

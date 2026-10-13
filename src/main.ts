@@ -8,7 +8,7 @@ import './ui/layout.css';
 import './ui/components.css';
 import './ui/panels.css';
 import { totalDuration } from './core/animation';
-import { activeCamera } from './core/camera';
+import { activeCamera, sameView } from './core/camera';
 import { createInitialState, createStore } from './core/store';
 import { encodeImage } from './io/image';
 import { serializeProject } from './io/project';
@@ -58,6 +58,11 @@ const viewport: ViewportPort | null =
         pick: (x, y) => engine!.pick(x, y),
         setHover: (ids) => preview!.setHover(ids),
         setTool: (tool) => preview!.setTool(tool),
+        setGizmo: (spec) => preview!.setGizmo(spec),
+        gizmoHover: (x, y) => preview!.gizmoHover(x, y),
+        gizmoBegin: (x, y) => preview!.gizmoBegin(x, y),
+        gizmoDrag: (x, y) => preview!.gizmoDrag(x, y),
+        gizmoEnd: () => preview!.gizmoEnd(),
         status: () => engine!.status(),
         onFrame: (fn) => preview!.onFrame(fn),
         materialThumbnail: (mat, key) => thumbs.get(mat, key),
@@ -121,13 +126,10 @@ if (engine && preview) {
     lastEnd = now;
     const s = store.get();
     const cam = activeCamera(s);
-    store.dispatch({
-      type: 'camera/set',
-      id: cam.id,
-      patch: { azimuth: v.azimuth, elevation: v.elevation, distance: v.distance, target: v.target, focusDistance: v.distance, ...(v.orthoWidth ? { orthoWidth: v.orthoWidth } : {}) },
-      gesture: `orbit${gesture}`,
-      label: L('undo.orbit'),
-    });
+    const patch = { azimuth: v.azimuth, elevation: v.elevation, distance: v.distance, target: v.target, focusDistance: v.distance, ...(v.orthoWidth ? { orthoWidth: v.orthoWidth } : {}) };
+    // A click that did not move the camera (selecting a part, picking a point) leaves no undo entry.
+    if (sameView(cam, patch)) return;
+    store.dispatch({ type: 'camera/set', id: cam.id, patch, gesture: `orbit${gesture}`, label: L('undo.orbit') });
   });
   preview.onFrame(() => (firstFrame = true));
 

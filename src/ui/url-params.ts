@@ -10,7 +10,7 @@ import type { Lang } from '../data/types';
 import type { ThemeSetting } from '../core/store';
 import * as cmd from './commands';
 import type { Ctx } from './reactive';
-import type { Drawer } from './ui-state';
+import { TOOLS, type Drawer, type Tool } from './ui-state';
 
 export interface UrlParams {
   example: boolean;
@@ -26,6 +26,7 @@ export interface UrlParams {
   sequence?: string;
   t?: number;
   guide?: number;
+  tool?: Tool;
 }
 
 export function readUrlParams(search: string): UrlParams {
@@ -53,6 +54,8 @@ export function readUrlParams(search: string): UrlParams {
   if (q.get('t') !== null && Number.isFinite(t)) out.t = Math.max(0, t);
   const guide = Number(q.get('guide'));
   if (q.get('guide') !== null && Number.isInteger(guide) && guide >= 1 && guide <= 6) out.guide = guide - 1;
+  const tool = q.get('tool')?.toLowerCase();
+  if (tool && (TOOLS as readonly string[]).includes(tool)) out.tool = tool as Tool;
   return out;
 }
 
@@ -85,4 +88,5 @@ export function applyUrlParams(ctx: Ctx, p: UrlParams): void {
   if (p.drawer) ctx.ui.set({ drawer: p.drawer });
   if (p.panels === 'collapsed') ctx.ui.set({ leftCollapsed: true, rightCollapsed: true });
   if (p.guide !== undefined) ctx.ui.set({ guideStep: p.guide });
+  if (p.tool) cmd.setTool(ctx, p.tool);
 }

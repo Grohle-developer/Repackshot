@@ -22,7 +22,7 @@
 // interface dispatches after the model is added (src/ui/commands.ts).
 
 import { defaultInstance, triangleMaterials, type MaterialId, type MaterialInstance } from './materials';
-import { getMesh, meshRef, positionsBounds, registerMesh, unregisterMesh, type MeshData } from './meshes';
+import { getMesh, meshRef, registerMesh, sliceMesh, unregisterMesh, type MeshData } from './meshes';
 import type { ModelPayload, NodeId, SceneNode } from './scene';
 
 // --- Vocabulary -------------------------------------------------------------------------
@@ -254,59 +254,6 @@ function transformMesh(src: MeshData, k: number, swap: boolean, flip: boolean): 
     }
   }
   return { positions: p, normals: n, indices, uvs: src.uvs, sharpEdges: src.sharpEdges };
-}
-
-/**
- * The triangles `tris` of a mesh as a mesh of their own, re-centred on its bounds. Vertices are renumbered in
- * order of first use; a hard edge is kept when a kept triangle has both of its vertices.
- */
-function sliceMesh(src: MeshData, tris: readonly number[]): { mesh: MeshData; centre: [number, number, number] } {
-  const remap = new Map<number, number>();
-  const order: number[] = [];
-  const indices = new Uint32Array(tris.length * 3);
-  for (let t = 0; t < tris.length; t++) {
-    for (let j = 0; j < 3; j++) {
-      const v = src.indices[3 * tris[t] + j];
-      let r = remap.get(v);
-      if (r === undefined) {
-        r = order.length;
-        remap.set(v, r);
-        order.push(v);
-      }
-      indices[3 * t + j] = r;
-    }
-  }
-  const positions = new Float32Array(order.length * 3);
-  const normals = new Float32Array(order.length * 3);
-  const uvs = src.uvs ? new Float32Array(order.length * 2) : undefined;
-  order.forEach((v, r) => {
-    positions.set(src.positions.subarray(3 * v, 3 * v + 3), 3 * r);
-    normals.set(src.normals.subarray(3 * v, 3 * v + 3), 3 * r);
-    if (uvs && src.uvs) uvs.set(src.uvs.subarray(2 * v, 2 * v + 2), 2 * r);
-  });
-  const b = positionsBounds(positions);
-  const centre: [number, number, number] = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
-  for (let i = 0; i < positions.length; i += 3) {
-    positions[i] -= centre[0];
-    positions[i + 1] -= centre[1];
-    positions[i + 2] -= centre[2];
-  }
-  let sharp: Uint32Array | undefined;
-  if (src.sharpEdges && src.sharpEdges.length > 0) {
-    const edges = new Set<number>();
-    const key = (a: number, c: number) => (a < c ? a * order.length + c : c * order.length + a);
-    for (let t = 0; t < tris.length; t++) {
-      for (let j = 0; j < 3; j++) edges.add(key(indices[3 * t + j], indices[3 * t + ((j + 1) % 3)]));
-    }
-    const keep: number[] = [];
-    for (let e = 0; e < src.sharpEdges.length; e += 2) {
-      const a = remap.get(src.sharpEdges[e]);
-      const c = remap.get(src.sharpEdges[e + 1]);
-      if (a !== undefined && c !== undefined && edges.has(key(a, c))) keep.push(Math.min(a, c), Math.max(a, c));
-    }
-    sharp = Uint32Array.from(keep);
-  }
-  return { mesh: { positions, normals, indices, uvs, sharpEdges: sharp }, centre };
 }
 
 // --- The pipeline -------------------------------------------------------------------------------

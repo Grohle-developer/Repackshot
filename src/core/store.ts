@@ -13,6 +13,7 @@ import { buildStudio, lightsFromRig, reduceStudio, type LightInstance, type Save
 import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialInstance } from './materials';
 import { reduceRender, type OutputFormat, type RenderAction, type RenderJob, type RenderProgress, type RenderQuality } from './render';
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
+import { reduceTransform, type TransformAction } from './transform';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
 export type ActionLabel = string | Label;
@@ -104,6 +105,7 @@ export type HistoryAction = { type: 'history/undo' | 'history/redo' | 'history/r
 /** Every action the store understands. */
 export type Action =
   | SceneAction
+  | TransformAction
   | MaterialAction
   | StudioAction
   | CameraAction
@@ -225,8 +227,11 @@ function shallowPatch<T extends object>(obj: T, patch: Partial<T>): T {
 function reduceAny(state: ProjectState, action: Action): ProjectState {
   const prefix = action.type.slice(0, action.type.indexOf('/'));
   switch (prefix) {
-    case 'scene':
-      return reduceScene(state, action as SceneAction);
+    case 'scene': {
+      // The tree and selection (scene.ts) and the part operations (transform.ts) share the prefix.
+      const next = reduceScene(state, action as SceneAction);
+      return next !== state ? next : reduceTransform(state, action as TransformAction);
+    }
     case 'material':
       return reduceMaterials(state, action as MaterialAction);
     case 'studio':

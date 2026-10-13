@@ -4,15 +4,27 @@
 
 import type { LightStyle, MaterialCategory } from '../data/types';
 import type { ImportMessage, ImportOptions, ImportPayload } from '../core/import-options';
+import type { MaterialInstance } from '../core/materials';
 import type { NodeId } from '../core/scene';
+import type { Space } from '../core/transform';
 import type { ClipTarget } from '../core/animation';
 import type { MoveKind, EasingKind } from '../data/types';
 import { readPref, writePref } from './prefs';
 
 export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
-export type Tool = 'select' | 'orbit' | 'pan' | 'zoom';
+export type Tool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move';
+export const TOOLS: readonly Tool[] = ['select', 'orbit', 'pan', 'zoom', 'move'];
 export type Drawer = 'animation' | 'queue' | null;
-export type PickMode = { kind: 'focus' } | { kind: 'reflect'; light: string } | null;
+/**
+ * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of
+ * some nodes (phase U3), or the part whose material some parts link to.
+ */
+export type PickMode =
+  | { kind: 'focus' }
+  | { kind: 'reflect'; light: string }
+  | { kind: 'pivot'; ids: NodeId[] }
+  | { kind: 'link'; parts: NodeId[] }
+  | null;
 
 export interface Toast {
   id: number;
@@ -84,6 +96,12 @@ export interface UiState {
   importMessage: string | null;
   /** The import sheet, in the inspector, while a file waits for its options. */
   importSheet: PendingImport | null;
+  /** Axes of the move tool. */
+  space: Space;
+  /** Scale fields keep their proportions. */
+  scaleLock: boolean;
+  /** Copy material / Paste material: a snapshot of the copied instance. */
+  materialClipboard: MaterialInstance | null;
 }
 
 export type UiListener = (ui: UiState, prev: UiState) => void;
@@ -105,6 +123,8 @@ const PERSISTED: readonly (keyof UiState)[] = [
   'lightStyle',
   'materialCategory',
   'tuneOpen',
+  'space',
+  'scaleLock',
 ];
 
 export const PANEL_MIN = 220;
@@ -142,6 +162,9 @@ export function defaultUiState(): UiState {
     shortcutsOpen: false,
     importMessage: null,
     importSheet: null,
+    space: 'GLOBAL',
+    scaleLock: true,
+    materialClipboard: null,
   };
 }
 

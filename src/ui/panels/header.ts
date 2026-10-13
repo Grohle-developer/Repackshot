@@ -17,7 +17,7 @@ function shortcutSheet(): HTMLElement {
     { class: 'menu', style: 'max-height:70vh;overflow:auto;min-width:340px' },
     h('div', { class: 'menu-label aux' }, t('shortcuts.title')),
     ...rows,
-    h('div', { class: 'menu-item', style: 'cursor:default' }, h('span', null, t('shortcuts.tools')), h('span', { class: 'menu-right' }, ...['v', 'o', 'p', 'z'].map((k) => h('kbd', null, k.toUpperCase())))),
+    h('div', { class: 'menu-item', style: 'cursor:default' }, h('span', null, t('shortcuts.tools')), h('span', { class: 'menu-right' }, ...['v', 'o', 'p', 'z', 'm'].map((k) => h('kbd', null, k.toUpperCase())))),
   );
 }
 

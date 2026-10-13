@@ -37,6 +37,7 @@ resultado es un estado normal y deshacible.
 | `sequence=HERO` | Aplica ese preset de animación (`SEQUENCE_PRESETS`) |
 | `t=2` | Pone el cursor de animación en ese segundo |
 | `guide=1..6` | Abre la guía en ese paso |
+| `tool=select\|orbit\|pan\|zoom\|move` | Activa esa herramienta del visor (`move`: la herramienta de mover, con el *gizmo* sobre la selección) |
 
 Ejemplos usados para las capturas de `docs/ui/`:
 
@@ -44,6 +45,7 @@ Ejemplos usados para las capturas de `docs/ui/`:
 ?example=1&preset=JEWELLERY&setup=REMBRANDT&theme=dark
 ?example=1&theme=light&select=cap&catalog=1
 ?example=1&preset=JEWELLERY&setup=REMBRANDT&theme=dark&drawer=animation&sequence=HERO&t=2
+?example=1&preset=JEWELLERY&setup=REMBRANDT&theme=dark&select=cap&tool=move
 ```
 
 `#app[data-ready="1"]` aparece cuando la interfaz ha pintado, el visor ha

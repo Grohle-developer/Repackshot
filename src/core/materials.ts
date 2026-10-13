@@ -324,7 +324,11 @@ export type MaterialAction =
   | ({ type: 'material/detach'; id: MaterialId; parts: NodeId[] } & ActionBase)
   | ({ type: 'material/setWear'; id: MaterialId; patch: Partial<WearProps> } & ActionBase)
   | ({ type: 'material/wearPreset'; id: MaterialId; key: string } & ActionBase)
-  | ({ type: 'material/wearToModel'; id: MaterialId } & ActionBase);
+  | ({ type: 'material/wearToModel'; id: MaterialId } & ActionBase)
+  /** Unlink material: each of the parts gets its own copy of every instance it shares with another part. */
+  | ({ type: 'material/unlink'; parts: NodeId[] } & ActionBase)
+  /** Paste material: a new instance with the content of `instance` (the clipboard) for the parts of `targets`. */
+  | ({ type: 'material/paste'; instance: MaterialInstance; targets: NodeId[] } & ActionBase);
 
 /** Instance for a catalogue key: reuses an unedited one of the same preset. */
 function ensureInstance(state: ProjectState, presetKey: string): { state: ProjectState; id: MaterialId | null } {
@@ -404,6 +408,52 @@ function detach(state: ProjectState, id: MaterialId, parts: readonly NodeId[]): 
   return { ...state, scene: { ...state.scene, nodes }, materials: { ...state.materials, [copyId]: copy } };
 }
 
+/** A copy of an instance under another id that shares no arrays with it. */
+export function cloneInstance(m: MaterialInstance, id: MaterialId): MaterialInstance {
+  const wear = { ...m.wear };
+  for (const [k, v] of Object.entries(wear)) if (Array.isArray(v)) (wear as Record<string, unknown>)[k] = [...v];
+  return { ...m, id, params: structuredCloneParams(m.params), wear, textures: { ...m.textures, offset: [m.textures.offset[0], m.textures.offset[1]] } };
+}
+
+function unlink(state: ProjectState, parts: readonly NodeId[]): ProjectState {
+  const targets = partsUnder(state, parts);
+  if (targets.length === 0) return state;
+  const nodes = { ...state.scene.nodes };
+  const materials = { ...state.materials };
+  let changed = false;
+  for (const p of targets) {
+    const node = nodes[p];
+    const map = new Map<MaterialId, MaterialId>();
+    for (const m of partMaterials(node)) {
+      if (!materials[m]) continue;
+      const shared = Object.values(nodes).some((n) => n.id !== p && n.kind === 'PART' && partMaterials(n).includes(m));
+      if (!shared) continue;
+      const id = nextId('m', Object.keys(materials));
+      materials[id] = cloneInstance(materials[m], id);
+      map.set(m, id);
+    }
+    if (map.size === 0) continue;
+    changed = true;
+    const next: SceneNode = { ...node, material: node.material ? (map.get(node.material) ?? node.material) : node.material };
+    if (node.faceMaterials) next.faceMaterials = node.faceMaterials.map((f) => ({ ...f, material: map.get(f.material) ?? f.material }));
+    nodes[p] = next;
+  }
+  return changed ? { ...state, scene: { ...state.scene, nodes }, materials } : state;
+}
+
+function paste(state: ProjectState, instance: MaterialInstance, targets: readonly NodeId[]): ProjectState {
+  const parts = partsUnder(state, targets);
+  if (parts.length === 0) return state;
+  const id = nextId('m', Object.keys(state.materials));
+  const nodes = { ...state.scene.nodes };
+  for (const p of parts) {
+    const updated: SceneNode = { ...nodes[p], material: id };
+    delete updated.faceMaterials;
+    nodes[p] = updated;
+  }
+  return pruneMaterials({ ...state, scene: { ...state.scene, nodes }, materials: { ...state.materials, [id]: cloneInstance(instance, id) } });
+}
+
 /** Wear types a family supports (UI shows a slider for each). */
 export function wearTypesFor(family: MaterialFamily): WearType[] {
   return [...WEAR_FAMILY_TYPES[family]];
@@ -441,6 +491,10 @@ export function reduceMaterials(state: ProjectState, action: MaterialAction): Pr
       if (!p) return state;
       return patchMaterial(state, action.id, (m) => ({ ...m, wear: { ...m.wear, ...p.props, preset: p.key } }));
     }
+    case 'material/unlink':
+      return unlink(state, action.parts);
+    case 'material/paste':
+      return paste(state, action.instance, action.targets);
     case 'material/wearToModel': {
       const src = state.materials[action.id];
       const model = modelOfMaterial(state, action.id);

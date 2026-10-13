@@ -6,7 +6,9 @@ import { WEAR_LEVELS, WEAR_PRESETS, WEAR_TYPES } from '../../data/wear';
 import { LIGHT_SHAPES } from '../../data/light-setups';
 import type { LightRole, MaterialCategory, WearProps, WearType } from '../../data/types';
 import { instanceFromPreset, partMaterials, triangleMaterials, visibleParams, wearTypesFor, type MaterialId, type MaterialInstance, type ParamSpec } from '../../core/materials';
+import { SMOOTH_ANGLE_DEG } from '../../core/meshes';
 import { partsUnder, type NodeId } from '../../core/scene';
+import { isLocked, PATTERN_MAX, pivotModeOf, pivotPoint, PIVOT_MODES, type PatternSpec } from '../../core/transform';
 import type { ProjectState } from '../../core/store';
 import type { LightInstance } from '../../core/lighting';
 import * as cmd from '../commands';
@@ -331,24 +333,107 @@ function wearSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean): HTM
 
 // --- Part ------------------------------------------------------------------------------
 
-function vec3(values: readonly number[], labels: readonly string[], opts: { step: number; unit: string; digits: number }, onChange: (i: number, v: number, g: string) => void): { el: HTMLElement; set(v: readonly number[]): void } {
-  const fields = values.map((v, i) => numberField({ value: v, step: opts.step, unit: opts.unit, digits: opts.digits, label: labels[i], ariaLabel: labels[i], onChange: (x, g) => onChange(i, x, g) }));
+function vec3(
+  values: readonly number[],
+  labels: readonly string[],
+  opts: { step: number; unit: string; digits: number; min?: number; max?: number },
+  onChange: (i: number, v: number, g: string) => void,
+  disabled = false,
+): { el: HTMLElement; set(v: readonly number[]): void } {
+  const fields = values.map((v, i) =>
+    numberField({ value: v, step: opts.step, unit: opts.unit, digits: opts.digits, min: opts.min, max: opts.max, label: labels[i], ariaLabel: labels[i], disabled, onChange: (x, g) => onChange(i, x, g) }),
+  );
   return { el: h('div', { class: 'field-row3' }, ...fields.map((f) => f.el)), set: (v) => fields.forEach((f, i) => f.set(v[i])) };
+}
+
+const XYZ = ['X', 'Y', 'Z'];
+
+/** Position, rotation and scale of one node (scrubbable, mm and degrees; proportional scale lock). */
+function transformFields(ctx: Ctx, scope: Scope, id: NodeId, locked: boolean): HTMLElement {
+  const { store, ui } = ctx;
+  const node = store.get().scene.nodes[id];
+  const lab = (key: 'undo.transform' | 'undo.rotate' | 'undo.scale') => L(key, { target: targetLabel(store.get(), [id]) });
+  const setT = (key: 'position' | 'rotation' | 'scale', i: number, v: number, g: string) => {
+    const cur = store.get().scene.nodes[id]?.transform[key];
+    if (!cur) return;
+    let next: [number, number, number] = [cur[0], cur[1], cur[2]];
+    if (key === 'scale' && ui.get().scaleLock && cur[i] !== 0) {
+      const k = v / cur[i];
+      next = [cur[0] * k, cur[1] * k, cur[2] * k];
+    }
+    next[i] = v;
+    store.dispatch({ type: 'scene/setTransform', id, transform: { [key]: next }, gesture: g, label: lab(key === 'position' ? 'undo.transform' : key === 'rotation' ? 'undo.rotate' : 'undo.scale') });
+  };
+  const pos = vec3(node.transform.position, XYZ, { step: 1, unit: 'mm', digits: 2 }, (i, v, g) => setT('position', i, v, g), locked);
+  const rot = vec3(node.transform.rotation, XYZ, { step: 1, unit: '°', digits: 2 }, (i, v, g) => setT('rotation', i, v, g), locked);
+  const scl = vec3(node.transform.scale, XYZ, { step: 0.01, unit: '', digits: 3 }, (i, v, g) => setT('scale', i, v, g), locked);
+  const lockBtn = h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': t('part.scaleLock'), 'data-tip': t('part.scaleLock'), onclick: () => ui.set({ scaleLock: !ui.get().scaleLock }) });
+  scope.watch(
+    (_s, u) => u.scaleLock,
+    (on) => {
+      lockBtn.replaceChildren(icon(on ? 'lock' : 'unlock', 14));
+      lockBtn.setAttribute('aria-pressed', String(on));
+    },
+  );
+  // Live: the fields follow the gizmo while it is dragged.
+  scope.watch(
+    (s) => s.scene.nodes[id]?.transform,
+    (tr) => {
+      if (!tr) return;
+      pos.set(tr.position);
+      rot.set(tr.rotation);
+      scl.set(tr.scale);
+    },
+  );
+  return h(
+    'div',
+    { class: 'stack', 'data-field': 'transform' },
+    h('div', { class: 'field-label' }, t('part.position')),
+    pos.el,
+    h('div', { class: 'field-label' }, t('part.rotation')),
+    rot.el,
+    h('div', { class: 'row', style: 'justify-content:space-between;align-items:center' }, h('span', { class: 'field-label' }, t('part.scale')), lockBtn),
+    scl.el,
+  );
+}
+
+/** Pivot mode of the selection (segmented) and "Set from click". */
+function pivotControls(ctx: Ctx, scope: Scope, target: NodeId[]): HTMLElement {
+  const { store } = ctx;
+  const seg = segmented(
+    PIVOT_MODES.map((m) => ({ value: m, label: t(dyn(`pivot.${m}`)), title: t(dyn(`pivot.tip.${m}`)) })),
+    pivotModeOf(store.get().scene.nodes[target[0]]),
+    (m) => cmd.setPivot(ctx, m, target),
+    { full: true, ariaLabel: t('part.pivot') },
+  );
+  scope.watch((s) => pivotModeOf(s.scene.nodes[target[0]]), (m) => seg.set(m));
+  const pick = h('button', { type: 'button', class: 'btn', 'data-tip': t('part.pivotPickAux'), onclick: () => (ctx.ui.get().pickMode?.kind === 'pivot' ? ctx.ui.set({ pickMode: null }) : cmd.pickPivot(ctx, target)) }, icon('target', 14), t('part.pivotPick'));
+  scope.watch((_s, u) => u.pickMode?.kind === 'pivot', (on) => pick.setAttribute('aria-pressed', String(on)));
+  return h('div', { class: 'stack', style: 'gap:6px', 'data-field': 'pivot' }, h('div', { class: 'field-label' }, t('part.pivot')), seg.el, pick);
+}
+
+/** Rest, centre, centre and rest, reset, camera target. */
+function operationButtons(ctx: Ctx, target: NodeId[]): HTMLElement {
+  const btn = (label: string, run: () => void, tip?: string) => h('button', { type: 'button', class: 'btn', style: 'flex:1', 'data-tip': tip, onclick: run }, label);
+  return h(
+    'div',
+    { class: 'stack', style: 'gap:6px' },
+    h('div', { class: 'row' }, btn(t('tree.rest'), () => cmd.restOnFloor(ctx, target)), btn(t('tree.center'), () => cmd.centerSelection(ctx, target)), btn(t('ops.centerRest'), () => cmd.centerAndRest(ctx, target))),
+    h('div', { class: 'row' }, btn(t('ops.reset'), () => cmd.resetTransform(ctx, target)), btn(t('ops.cameraTarget'), () => cmd.setCameraTarget(ctx, target))),
+  );
 }
 
 function partSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean): HTMLElement {
   const { store } = ctx;
   const s0 = store.get();
   const target = faces && s0.selection.faces ? [s0.selection.faces.part] : ids;
-  const restCenter = h(
-    'div',
-    { class: 'row' },
-    h('button', { type: 'button', class: 'btn', style: 'flex:1', onclick: () => cmd.restOnFloor(ctx, target) }, t('tree.rest')),
-    h('button', { type: 'button', class: 'btn', style: 'flex:1', onclick: () => cmd.centerSelection(ctx, target) }, t('tree.center')),
-  );
   const parts = partsUnder(s0, target);
   const smoothAll = toggle(parts.every((p) => s0.scene.nodes[p].smooth !== false), (v) => store.dispatch({ type: 'scene/setSmooth', ids: target, smooth: v, label: L('undo.smooth', { target: targetLabel(store.get(), target) }) }), t('part.smooth'));
   scope.watch((s) => partsUnder(s, target).every((p) => s.scene.nodes[p]?.smooth !== false), (v) => smoothAll.set(v));
+  const angleOf = (s: ProjectState) => s.scene.nodes[partsUnder(s, target)[0]]?.smoothAngle ?? SMOOTH_ANGLE_DEG;
+  const angle = numberField({ value: angleOf(s0), min: 0, max: 180, step: 1, digits: 1, unit: '°', ariaLabel: t('part.smoothAngle'), disabled: parts.length === 0, onChange: (v, g) => cmd.setSmoothAngle(ctx, v, g, target) });
+  scope.watch(angleOf, (v) => angle.set(v));
+  const angleRow = h('div', { class: 'stack', style: 'gap:2px', 'data-field': 'smoothAngle' }, field(t('part.smoothAngle'), angle.el), h('div', { class: 'note', style: 'padding-left:112px' }, t('part.smoothAngleAux')));
 
   // Bevel lives on the material (SPEC §3.3); shown here as UI §2.4 asks.
   const mats = targetMaterials(s0, target, false);
@@ -359,25 +444,36 @@ function partSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean): HTM
     scope.watch((s) => s.materials[id]?.bevelRadiusMm ?? 0, (v) => bevel.set(v));
     bevelRow = h('div', { class: 'stack', style: 'gap:2px' }, field(t('material.bevel'), bevel.el), h('div', { class: 'note', style: 'padding-left:112px' }, t('material.bevelAux')));
   }
+  const geometry = [bevelRow, field(t('part.smooth'), smoothAll.el), angleRow];
 
   if (target.length !== 1) {
-    return section(ctx, 'part', t('section.part'), h('div', { class: 'stack' }, h('p', { class: 'note', style: 'margin:0' }, t('part.multi', { n: parts.length })), restCenter, bevelRow, field(t('part.smooth'), smoothAll.el)));
+    // Several nodes: the fields edit where their common pivot is; moving it moves them all.
+    const pivotOf = (s: ProjectState) => pivotPoint(s, target);
+    const at = vec3(pivotOf(s0), XYZ, { step: 1, unit: 'mm', digits: 2 }, (i, v, g) => {
+      const cur = pivotOf(store.get());
+      const delta: [number, number, number] = [0, 0, 0];
+      delta[i] = v - cur[i];
+      store.dispatch({ type: 'scene/move', ids: target, delta, space: 'GLOBAL', gesture: g, label: L('undo.transform', { target: targetLabel(store.get(), target) }) });
+    });
+    scope.watch((s) => pivotOf(s).join(','), () => at.set(pivotOf(store.get())));
+    const body = h(
+      'div',
+      { class: 'stack' },
+      h('p', { class: 'note', style: 'margin:0' }, t('part.multi', { n: parts.length })),
+      h('div', { class: 'field-label', 'data-tip': t('part.pivotAtAux') }, t('part.pivotAt')),
+      at.el,
+      pivotControls(ctx, scope, target),
+      operationButtons(ctx, target),
+      ...geometry,
+    );
+    return section(ctx, 'part', t('section.part'), body);
   }
   const id = target[0];
   const node = s0.scene.nodes[id];
-  const lab = () => L('undo.transform', { target: targetLabel(store.get(), [id]) });
   const name = textField(node.name, (v) => cmd.renameNode(ctx, id, v), t('part.name'));
+  name.el.setAttribute('data-field', 'name');
   const visible = toggle(node.visible, (v) => cmd.hideSelection(ctx, [id], v), t('part.visible'));
   const locked = toggle(node.locked, (v) => cmd.setLocked(ctx, [id], v), t('part.locked'));
-  const setT = (key: 'position' | 'rotation' | 'scale', i: number, v: number, g: string) => {
-    const cur = store.get().scene.nodes[id].transform[key];
-    const next: [number, number, number] = [cur[0], cur[1], cur[2]];
-    next[i] = v;
-    store.dispatch({ type: 'scene/setTransform', id, transform: { [key]: next }, gesture: g, label: lab() });
-  };
-  const pos = vec3(node.transform.position, ['X', 'Y', 'Z'], { step: 1, unit: 'mm', digits: 1 }, (i, v, g) => setT('position', i, v, g));
-  const rot = vec3(node.transform.rotation, ['X', 'Y', 'Z'], { step: 1, unit: '°', digits: 1 }, (i, v, g) => setT('rotation', i, v, g));
-  const scl = vec3(node.transform.scale, ['X', 'Y', 'Z'], { step: 0.01, unit: '', digits: 3 }, (i, v, g) => setT('scale', i, v, g));
   const tris = h('div', { class: 'aux' });
   scope.watch(
     (s) => s.scene.nodes[id],
@@ -386,30 +482,72 @@ function partSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean): HTM
       name.set(n.name);
       visible.set(n.visible);
       locked.set(n.locked);
-      pos.set(n.transform.position);
-      rot.set(n.transform.rotation);
-      scl.set(n.transform.scale);
       tris.textContent = n.mesh ? t('part.triangles', { n: n.mesh.triangles }) : '';
     },
   );
+  // A locked node (or one inside a locked group) shows its transform without letting it change.
+  const fields = dynamic(scope, (s) => isLocked(s, id), (sc, isOn) => transformFields(ctx, sc, id, isOn));
   const body = h(
     'div',
     { class: 'stack' },
     field(t('part.name'), name.el),
     field(t('part.visible'), visible.el),
     field(t('part.locked'), locked.el),
-    h('div', { class: 'field-label' }, t('part.position')),
-    pos.el,
-    h('div', { class: 'field-label' }, t('part.rotation')),
-    rot.el,
-    h('div', { class: 'field-label' }, t('part.scale')),
-    scl.el,
-    restCenter,
-    bevelRow,
-    field(t('part.smooth'), smoothAll.el),
+    fields,
+    pivotControls(ctx, scope, target),
+    operationButtons(ctx, target),
+    ...geometry,
     tris,
   );
   return section(ctx, 'part', t('section.part'), body);
+}
+
+/** The Pattern editor (a pattern group is selected): every change regenerates the copies, live. */
+function patternSection(ctx: Ctx, scope: Scope, id: NodeId): HTMLElement {
+  const { store } = ctx;
+  const spec = () => store.get().scene.nodes[id]?.pattern;
+  const spec0 = spec()!;
+  const edit = (patch: Partial<Omit<PatternSpec, 'sources'>>, g?: string) => cmd.editPattern(ctx, id, patch, g);
+  const kind = segmented((['LINEAR', 'CIRCULAR'] as const).map((k) => ({ value: k, label: t(dyn(`pattern.${k}`)) })), spec0.kind, (k) => edit({ kind: k }), { full: true, ariaLabel: t('pattern.kind') });
+  const count = numberField({ value: spec0.count, min: 1, max: PATTERN_MAX, step: 1, digits: 0, ariaLabel: t('pattern.count'), onChange: (v, g) => edit({ count: Math.round(v) }, g) });
+  const offset = vec3(spec0.offset, XYZ, { step: 1, unit: 'mm', digits: 2 }, (i, v, g) => {
+    const next: [number, number, number] = [...spec()!.offset];
+    next[i] = v;
+    edit({ offset: next }, g);
+  });
+  const space = segmented((['GLOBAL', 'LOCAL'] as const).map((k) => ({ value: k, label: t(dyn(`space.${k}`)) })), spec0.space, (k) => edit({ space: k }), { full: true, ariaLabel: t('pattern.space') });
+  const axis = segmented(XYZ.map((a, i) => ({ value: String(i) as '0' | '1' | '2', label: a })), String(spec0.axis) as '0', (a) => edit({ axis: Number(a) as 0 | 1 | 2 }), { full: true, ariaLabel: t('pattern.axis') });
+  const angle = numberField({ value: spec0.angleDeg, min: -360, max: 360, step: 1, digits: 1, unit: '°', ariaLabel: t('pattern.angle'), onChange: (v, g) => edit({ angleDeg: v }, g) });
+  const center = vec3(spec0.center, XYZ, { step: 1, unit: 'mm', digits: 2 }, (i, v, g) => {
+    const next: [number, number, number] = [...spec()!.center];
+    next[i] = v;
+    edit({ center: next }, g);
+  });
+  const linear = h('div', { class: 'stack' }, h('div', { class: 'field-label' }, t('pattern.offset')), offset.el);
+  const circular = h('div', { class: 'stack' }, field(t('pattern.axis'), axis.el), field(t('pattern.angle'), angle.el), h('div', { class: 'field-label' }, t('pattern.center')), center.el);
+  scope.watch(spec, (p) => {
+    if (!p) return;
+    kind.set(p.kind);
+    count.set(p.count);
+    offset.set(p.offset);
+    space.set(p.space);
+    axis.set(String(p.axis) as '0');
+    angle.set(p.angleDeg);
+    center.set(p.center);
+    linear.style.display = p.kind === 'LINEAR' ? '' : 'none';
+    circular.style.display = p.kind === 'CIRCULAR' ? '' : 'none';
+  });
+  const body = h(
+    'div',
+    { class: 'stack', 'data-field': 'pattern' },
+    field(t('pattern.kind'), kind.el),
+    field(t('pattern.count'), count.el),
+    linear,
+    circular,
+    field(t('pattern.space'), space.el),
+    h('p', { class: 'note', style: 'margin:0' }, t('pattern.note')),
+  );
+  return section(ctx, 'pattern', t('section.pattern'), body);
 }
 
 export function partsInspector(ctx: Ctx, scope: Scope, ids: string[], faces: boolean): HTMLElement {
@@ -418,7 +556,8 @@ export function partsInspector(ctx: Ctx, scope: Scope, ids: string[], faces: boo
     const part = ids[0] ? s.scene.nodes[ids[0]]?.name ?? '' : '';
     return h('div', null, h('p', { class: 'note', style: 'padding:12px var(--pad)' }, t('inspector.noFaces', { part })), partSection(ctx, scope, ids, false));
   }
-  return h('div', null, materialSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces));
+  const pattern = !faces && ids.length === 1 && s.scene.nodes[ids[0]]?.pattern ? patternSection(ctx, scope, ids[0]) : null;
+  return h('div', null, pattern, materialSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces));
 }
 
 // --- Light -----------------------------------------------------------------------------

@@ -128,6 +128,9 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **I3** · FBX, 3DM, 3MF, PLY, DAE y USD por cargadores MIT bajo demanda,
   hoja de importación en línea con unidades y eje detectados por formato,
   tubería de opciones pura; 405 tests — **Sonnet**.
+- **U3** · Herramienta de mover con *gizmo*, pivotes, apoyar y centrar,
+  duplicar y enlazado, grupos, patrones, operaciones de material y de
+  geometría, menú contextual completo y atajos; 442 tests — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -604,7 +607,7 @@ y mejoras de la BVH y del muestreo con cifras antes y después en el PR.
 plantilla; `--bench` en CI deja el número en el resumen del job (no es
 puerta); ninguna regresión de determinismo.
 
-## U3 · Herramienta de mover y operaciones de pieza — **Opus**
+## U3 · Herramienta de mover y operaciones de pieza — **Opus** — hecha
 
 **Qué.** Todo lo de `SPEC.md` §3.1 "Operaciones sobre piezas, al estilo
 KeyShot": *gizmo* de traslación, rotación y escala en el visor (ejes
@@ -624,6 +627,39 @@ con números (apoyar deja `minZ = 0` para un grupo de tres piezas; patrón
 circular de 6 deja ángulos de 60°; duplicar enlazado comparte `meshId` y
 `materialId`, desenlazar los separa; deshacer revierte cada una);
 captura con el *gizmo* sobre una pieza seleccionada.
+
+**Hecho.** `src/core/transform.ts` (composición y descomposición con
+Euler continuo, ejes locales y globales, pivotes CENTER, BASE, ORIGIN y
+CUSTOM en el espacio del nodo, pivote común en multiselección,
+incrementos con `Shift`), reductores de escena y material (duplicar,
+duplicar enlazado, agrupar, desagrupar, mover a grupo conservando la
+posición en el mundo, patrones lineal y circular como copias enlazadas
+bajo un grupo que recuerda sus parámetros y se regenera al editarlos,
+desenlazar, enlazar con, copiar y pegar, seleccionar por material,
+invertir normales como malla nueva, suavizado, separar por material,
+`scene/aim` para focos), `src/render/gizmo.ts` dibujado por la vista
+previa en tinta con letras de eje y de tamaño constante en pantalla, un
+gesto por arrastre (una entrada de deshacer), sección *Pieza* del
+inspector con campos arrastrables y bloqueo proporcional, menú contextual
+completo de `UI.md` §2.2 con submenús y entradas deshabilitadas, atajos
+`M`, `L`/`G`, `Ctrl D`, `Ctrl ⇧ D`, `Ctrl G`, `Ctrl ⇧ G`, `Ctrl ⇧ C/V`;
+parámetro de URL `tool`. 442 tests (37 nuevos), 22 mutaciones comprobadas;
+en el navegador: arrastre del *gizmo* con una sola entrada de deshacer,
+anillo y cubo con incrementos, patrón circular editado en vivo, pivote
+por clic, menús. Captura `docs/ui/move-tool.png`.
+
+Lo que no encajaba: `boundsOf` mide ahora los vértices de las piezas
+rotadas (afecta al Doctor y al encuadre, para bien); cada clic en el
+visor dejaba una entrada de deshacer "mover la cámara" y se corrigió con
+`sameView` y su test; los nodos guardan su transformación `initial` para
+*Restablecer* (la hoja de importación la fija tras colocar el modelo);
+una escala global no uniforme sobre un nodo rotado pierde la cizalla al
+volver a posición, rotación y escala; el patrón circular gira alrededor
+del pivote, así que con el pivote en el centro de la caja las copias se
+apilan hasta elegir *Origen* o un punto; regenerar un patrón elimina los
+hijos que no son originales; `buildMesh` y `sliceMesh` viven ahora en
+`core/meshes.ts` y se reexportan desde `io`; la asa de apuntar de los
+focos está probada solo en el modelo porque L4 aún no crea focos.
 
 ## U4 · Biblioteca propia — **Sonnet**
 

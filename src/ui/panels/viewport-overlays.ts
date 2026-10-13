@@ -4,26 +4,31 @@
 
 import { activeCamera, cameraBasis, cameraPosition, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox, length, sub } from '../../core/math';
-import { partsUnder, resolvePick, sceneBounds, type NodeId } from '../../core/scene';
+import { partsUnder, resolvePick, sceneBounds, selectedNodes, type NodeId } from '../../core/scene';
+import type { ProjectState } from '../../core/store';
+import { gizmoTransforms, movableTargets, selectionFrame, type GizmoFrame, type GizmoHandle } from '../../core/transform';
 import * as cmd from '../commands';
-import { confirmBox, openMenu } from '../components/widgets';
+import { newGesture } from '../components/controls';
+import { confirmBox, openMenu, openMenuAt } from '../components/widgets';
 import { h, icon } from '../dom';
 import type { IconName } from '../icons';
-import { cameraName, dyn, lightName } from '../names';
+import { cameraName, dyn, lightName, targetLabel } from '../names';
 import { shallowEq, type Ctx, type Scope } from '../reactive';
 import { kbdFor } from '../shortcuts';
 import { L, formatNumber, getLang, t } from '../strings';
 import type { Tool } from '../ui-state';
+import { partMenu } from './part-menu';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
-  const { store, ui, services } = ctx;
+  const { store, ui } = ctx;
   const tools: { id: Tool; icon: IconName; action: string }[] = [
     { id: 'select', icon: 'select', action: 'tool.select' },
     { id: 'orbit', icon: 'orbit', action: 'tool.orbit' },
     { id: 'pan', icon: 'pan', action: 'tool.pan' },
     { id: 'zoom', icon: 'zoom', action: 'tool.zoom' },
+    { id: 'move', icon: 'move', action: 'tool.move' },
   ];
   const buttons = tools.map((tl) =>
     h(
@@ -34,15 +39,26 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
         'aria-label': t(dyn(tl.action)),
         'data-tip': t(dyn(tl.action)),
         'data-kbd': kbdFor(tl.action),
-        onclick: () => {
-          ui.set({ tool: tl.id });
-          services.viewport?.setTool(tl.id);
-        },
+        'data-tool': tl.id,
+        onclick: () => cmd.setTool(ctx, tl.id),
       },
       icon(tl.icon, 20),
     ),
   );
   scope.watch((_s, u) => u.tool, (tool) => buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(tools[i].id === tool))));
+  // Axes of the move tool, shown while it is on (L / G).
+  const space = h('button', { type: 'button', class: 'ov-text-btn', 'data-tip': t('viewport.space'), 'data-kbd': `${kbdFor('space.local')} / ${kbdFor('space.global')}` });
+  space.addEventListener('click', () => cmd.setSpace(ctx, ui.get().space === 'LOCAL' ? 'GLOBAL' : 'LOCAL'));
+  scope.watch(
+    (_s, u) => [u.tool, u.space] as const,
+    ([tool, sp]) => {
+      space.style.display = tool === 'move' ? '' : 'none';
+      space.textContent = t(dyn(`space.${sp}`));
+      space.setAttribute('aria-pressed', String(sp === 'LOCAL'));
+      space.setAttribute('aria-label', `${t('viewport.space')}: ${t(dyn(`space.${sp}`))}`);
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
   const views = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('viewport.views'), 'data-tip': t('viewport.views'), 'aria-haspopup': 'menu' }, icon('views', 20));
   views.addEventListener('click', () =>
     openMenu(
@@ -71,7 +87,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
     },
   );
   const frame = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('viewport.frameAll'), 'data-tip': t('viewport.frameAll'), 'data-kbd': kbdFor('frame'), 'data-guide': 'frame', onclick: () => cmd.frameSelection(ctx) }, icon('frame', 20));
-  return h('div', { class: 'ov ov-tl', role: 'toolbar', 'aria-label': t('viewport.views') }, ...buttons, h('span', { class: 'ov-sep' }), frame, views, proj, h('span', { class: 'ov-sep' }), lock);
+  return h('div', { class: 'ov ov-tl', role: 'toolbar', 'aria-label': t('viewport.views') }, ...buttons, space, h('span', { class: 'ov-sep' }), frame, views, proj, h('span', { class: 'ov-sep' }), lock);
 }
 
 function topRight(ctx: Ctx, scope: Scope): HTMLElement {
@@ -185,6 +201,8 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       pickBanner.style.display = pm ? '' : 'none';
       if (pm?.kind === 'focus') pickBanner.textContent = t('viewport.pickFocus');
       else if (pm?.kind === 'reflect') pickBanner.textContent = t('viewport.pickReflect', { light: lightName(s, pm.light, getLang()) });
+      else if (pm?.kind === 'pivot') pickBanner.textContent = t('viewport.pickPivot');
+      else if (pm?.kind === 'link') pickBanner.textContent = t('viewport.pickLink');
     },
   );
   // Outline what the tree or the cursor hovers.
@@ -223,6 +241,19 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
         return;
       }
       const p = local(ev);
+      // Over a handle of the gizmo the handle lights up instead of the part.
+      const handle = gizmoOn() && !drag ? port.gizmoHover(p.x, p.y) : null;
+      if (handle) {
+        vp.setAttribute('data-gizmo', 'hover');
+        vp.setAttribute('data-gizmo-handle', handle);
+        label.style.display = 'none';
+        if (ui.get().hover) ui.set({ hover: null });
+        return;
+      }
+      if (!drag) {
+        vp.removeAttribute('data-gizmo');
+        vp.removeAttribute('data-gizmo-handle');
+      }
       const tg = targetAt(p.x, p.y);
       const id = tg?.id ?? null;
       if (ui.get().hover !== id) ui.set({ hover: id });
@@ -237,7 +268,81 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
   canvas.addEventListener('pointerleave', () => {
     label.style.display = 'none';
     if (ui.get().hover) ui.set({ hover: null });
+    if (!drag) {
+      port.gizmoHover(-1, -1);
+      vp.removeAttribute('data-gizmo');
+    }
   }, listen);
+
+  // The move tool (UI.md §2.3): the gizmo sits on the pivot of the selection, in the chosen axes.
+  const gizmoIds = (s: ProjectState) => movableTargets(s, selectedNodes(s));
+  const gizmoOn = () => ui.get().tool === 'move' && !ui.get().pickMode;
+  scope.watch(
+    (s, u) => [u.tool, u.space, u.pickMode === null, s.selection, s.scene.nodes] as const,
+    ([tool, space, free]) => {
+      const ids = gizmoIds(store.get());
+      port.setGizmo(tool === 'move' && free && ids.length > 0 ? { ids, space } : null);
+    },
+    shallowEq,
+  );
+  scope.onDispose(() => port.setGizmo(null));
+
+  // A drag of a handle: measured by the engine from where it began, applied here from the state at that
+  // moment, every step under one gesture token, so the whole drag is one undo entry.
+  let drag: { start: ProjectState; ids: NodeId[]; frame: GizmoFrame; handle: GizmoHandle; gesture: string; pointer: number } | null = null;
+  const dragLabel = (handle: GizmoHandle, ids: NodeId[]) => {
+    const target = targetLabel(store.get(), ids);
+    const key = handle === 'aim' ? 'undo.aim' : handle.startsWith('r') ? 'undo.rotate' : handle.startsWith('s') ? 'undo.scale' : 'undo.transform';
+    return L(key, { target });
+  };
+  vp.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target !== canvas || !gizmoOn()) return;
+    const p = local(e);
+    const s = store.get();
+    const ids = gizmoIds(s);
+    const frame = selectionFrame(s, ids, ui.get().space);
+    if (!frame) return;
+    const handle = port.gizmoBegin(p.x, p.y);
+    if (!handle) return;
+    // Taken before the camera controls see it: dragging a handle does not orbit.
+    e.stopPropagation();
+    e.preventDefault();
+    canvas.focus({ preventScroll: true });
+    drag = { start: s, ids, frame, handle, gesture: newGesture('gizmo'), pointer: e.pointerId };
+    vp.setAttribute('data-gizmo', 'drag');
+    label.style.display = 'none';
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic events have no active pointer to capture.
+    }
+  }, { capture: true, signal: off.signal });
+  window.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.pointer) return;
+    const p = local(e);
+    const delta = port.gizmoDrag(p.x, p.y);
+    if (!delta) return;
+    const label = dragLabel(drag.handle, drag.ids);
+    if (delta.kind === 'aim') {
+      store.dispatch({ type: 'scene/aim', id: drag.ids[0], target: delta.target, gesture: drag.gesture, label });
+      return;
+    }
+    // Shift: increments of 10 mm, 15 degrees, 0.1.
+    store.dispatch({ type: 'scene/setTransforms', transforms: gizmoTransforms(drag.start, drag.ids, drag.frame, delta, e.shiftKey), gesture: drag.gesture, label });
+  }, listen);
+  const endDrag = (e: PointerEvent) => {
+    if (!drag || e.pointerId !== drag.pointer) return;
+    drag = null;
+    port.gizmoEnd();
+    vp.removeAttribute('data-gizmo');
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      // Not captured.
+    }
+  };
+  window.addEventListener('pointerup', endDrag, listen);
+  window.addEventListener('pointercancel', endDrag, listen);
 
   // Click (a press without a drag): pick modes, then selection by level.
   let down: { x: number; y: number } | null = null;
@@ -260,13 +365,18 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
         const cam = activeCamera(s);
         const d = length(sub(tg.hit.point, cameraPosition(cam)));
         store.dispatch({ type: 'camera/set', id: cam.id, patch: { focusDistance: d }, label: L('undo.focusClick') });
+      } else if (pm.kind === 'pivot') {
+        cmd.setPivot(ctx, 'CUSTOM', pm.ids, tg.hit.point);
+      } else if (pm.kind === 'link') {
+        cmd.linkMaterial(ctx, pm.parts, tg.part);
       } else {
         store.dispatch({ type: 'studio/placeLight', id: pm.light, point: tg.hit.point, normal: tg.hit.normal, label: L('undo.placeLight', { name: { en: lightName(s, pm.light, 'en'), es: lightName(s, pm.light, 'es') } }) });
       }
       ui.set({ pickMode: null });
       return;
     }
-    if (ui.get().tool !== 'select') return;
+    // The move tool selects with a click too (a drag on a handle never gets here).
+    if (ui.get().tool !== 'select' && ui.get().tool !== 'move') return;
     const add = e.shiftKey;
     const toggle = e.ctrlKey || e.metaKey;
     if (!tg) {
@@ -278,6 +388,27 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       return;
     }
     store.dispatch({ type: 'scene/select', ids: [tg.id], mode: toggle ? 'toggle' : add ? 'add' : 'set' });
+  }, listen);
+  // Right click on a part (a press without a drag: a right drag pans): the context menu of UI.md §2.2.
+  let rightDown: { x: number; y: number } | null = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button === 2) rightDown = { x: e.clientX, y: e.clientY };
+  }, listen);
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const moved = rightDown ? Math.hypot(e.clientX - rightDown.x, e.clientY - rightDown.y) : 0;
+    rightDown = null;
+    if (moved > 4 || ui.get().pickMode) return;
+    const p = local(e);
+    const tg = targetAt(p.x, p.y);
+    if (!tg) return;
+    const s = store.get();
+    let ids = selectedNodes(s);
+    if (!ids.includes(tg.id)) {
+      store.dispatch({ type: 'scene/select', ids: [tg.id], mode: 'set' });
+      ids = [tg.id];
+    }
+    openMenuAt(e.clientX, e.clientY, partMenu(ctx, ids));
   }, listen);
   canvas.addEventListener('dblclick', (e) => {
     const p = local(e);

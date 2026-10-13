@@ -21,10 +21,7 @@ export interface AppAction {
   run(ctx: Ctx): void | ConfirmSpec | null | Promise<void>;
 }
 
-const setTool = (tool: Tool) => (ctx: Ctx) => {
-  ctx.ui.set({ tool });
-  ctx.services.viewport?.setTool(tool);
-};
+const setTool = (tool: Tool) => (ctx: Ctx) => cmd.setTool(ctx, tool);
 const level = (l: SelectionLevel) => (ctx: Ctx) => cmd.setLevel(ctx, l);
 
 export const ACTIONS: readonly AppAction[] = [
@@ -39,6 +36,15 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'tool.orbit', label: 'tool.orbit', keys: 'o', run: setTool('orbit') },
   { id: 'tool.pan', label: 'tool.pan', keys: 'p', run: setTool('pan') },
   { id: 'tool.zoom', label: 'tool.zoom', keys: 'z', run: setTool('zoom') },
+  { id: 'tool.move', label: 'action.move', keys: 'm', run: setTool('move') },
+  { id: 'space.local', label: 'action.spaceLocal', keys: 'l', run: (ctx) => cmd.setSpace(ctx, 'LOCAL') },
+  { id: 'space.global', label: 'action.spaceGlobal', keys: 'g', run: (ctx) => cmd.setSpace(ctx, 'GLOBAL') },
+  { id: 'duplicate', label: 'action.duplicate', keys: 'mod+d', run: (ctx) => cmd.duplicate(ctx, false) },
+  { id: 'duplicateLinked', label: 'action.duplicateLinked', keys: 'mod+shift+d', run: (ctx) => cmd.duplicate(ctx, true) },
+  { id: 'group', label: 'action.group', keys: 'mod+g', run: (ctx) => cmd.groupSelection(ctx) },
+  { id: 'ungroup', label: 'action.ungroup', keys: 'mod+shift+g', run: (ctx) => cmd.ungroupSelection(ctx) },
+  { id: 'copyMaterial', label: 'action.copyMaterial', keys: 'mod+shift+c', run: (ctx) => cmd.copyMaterial(ctx) },
+  { id: 'pasteMaterial', label: 'action.pasteMaterial', keys: 'mod+shift+v', run: (ctx) => cmd.pasteMaterial(ctx) },
   { id: 'hide', label: 'action.hide', keys: 'h', run: (ctx) => cmd.hideSelection(ctx) },
   { id: 'isolate', label: 'action.isolate', keys: 'shift+h', run: (ctx) => cmd.isolateSelection(ctx) },
   { id: 'showAll', label: 'action.showAll', keys: 'alt+h', run: (ctx) => cmd.showAll(ctx) },
@@ -47,13 +53,23 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'level.PART', label: 'action.levelPart', keys: '3', run: level('PART') },
   { id: 'level.FACES', label: 'action.levelFaces', keys: '4', run: level('FACES') },
   { id: 'panels', label: 'action.panels', keys: 'tab', run: (ctx) => cmd.togglePanels(ctx) },
-  { id: 'deselect', label: 'action.deselect', keys: 'escape', palette: false, run: (ctx) => cmd.deselect(ctx) },
+  // Esc leaves the move tool first, then deselects.
+  { id: 'deselect', label: 'action.deselect', keys: 'escape', palette: false, run: (ctx) => (ctx.ui.get().tool === 'move' ? cmd.setTool(ctx, 'select') : cmd.deselect(ctx)) },
   { id: 'delete', label: 'action.delete', keys: 'delete', altKeys: ['backspace'], run: (ctx) => cmd.deleteSelection(ctx) },
   // Palette only.
   { id: 'example', label: 'action.example', run: (ctx) => cmd.loadExample(ctx) },
   { id: 'createStudio', label: 'action.createStudio', run: (ctx) => cmd.requestBuildStudio(ctx) },
   { id: 'rest', label: 'action.rest', run: (ctx) => cmd.restOnFloor(ctx) },
   { id: 'center', label: 'action.center', run: (ctx) => cmd.centerSelection(ctx) },
+  { id: 'centerRest', label: 'action.centerRest', run: (ctx) => cmd.centerAndRest(ctx) },
+  { id: 'reset', label: 'action.reset', run: (ctx) => cmd.resetTransform(ctx) },
+  { id: 'cameraTarget', label: 'action.cameraTarget', run: (ctx) => cmd.setCameraTarget(ctx) },
+  { id: 'patternLinear', label: 'action.patternLinear', run: (ctx) => cmd.createPattern(ctx, 'LINEAR') },
+  { id: 'patternCircular', label: 'action.patternCircular', run: (ctx) => cmd.createPattern(ctx, 'CIRCULAR') },
+  { id: 'unlink', label: 'action.unlink', run: (ctx) => cmd.unlinkMaterial(ctx) },
+  { id: 'selectByMaterial', label: 'action.selectByMaterial', run: (ctx) => cmd.selectByMaterial(ctx) },
+  { id: 'flip', label: 'action.flip', run: (ctx) => cmd.flipNormals(ctx) },
+  { id: 'separateMaterial', label: 'action.separateMaterial', run: (ctx) => cmd.separateByMaterial(ctx) },
   { id: 'selectAll', label: 'action.selectAll', run: (ctx) => cmd.selectAllModel(ctx) },
   { id: 'queue', label: 'action.queue', run: (ctx) => cmd.enqueue(ctx) },
   { id: 'newCamera', label: 'action.newCamera', run: (ctx) => cmd.newCamera(ctx) },

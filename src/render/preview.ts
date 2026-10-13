@@ -13,11 +13,13 @@ import { evaluate, type Pose } from '../core/animation';
 import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { lightPosition, rigPivot, type LightInstance } from '../core/lighting';
-import { boxCenter, boxMaxDim, isEmptyBox, type Vec3 } from '../core/math';
+import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
 import { getMesh } from '../core/meshes';
-import { partsUnder, sceneBounds, type NodeId, type SceneNode } from '../core/scene';
+import { partsUnder, sceneBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
+import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
 import type { ProjectState } from '../core/store';
 import type { EngineStatus, PickHit, RenderEngine, RenderOptions } from './engine';
+import { Gizmo, GizmoDrag, modelRay } from './gizmo';
 import { applyMaterial, makeMaterial } from './materials';
 
 /** Model space (Z up, mm) to three.js space (Y up): (x, y, z) -> (x, z, -y). */
@@ -127,7 +129,13 @@ export interface ViewChange {
   orthoWidth?: number;
 }
 
-export type PreviewTool = 'select' | 'orbit' | 'pan' | 'zoom';
+export type PreviewTool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move';
+
+/** What the move tool shows: the gizmo of these nodes, in these axes. */
+export interface GizmoSpec {
+  ids: readonly NodeId[];
+  space: Space;
+}
 
 export class PreviewEngine implements RenderEngine {
   readonly kind = 'preview' as const;
@@ -176,6 +184,12 @@ export class PreviewEngine implements RenderEngine {
   private readonly quadScene = new THREE.Scene();
   private readonly quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly raycaster = new THREE.Raycaster();
+  /** The gizmo of the move tool, drawn over everything after the outline. */
+  private readonly overlayScene = new THREE.Scene();
+  private readonly overlayRoot = new THREE.Group();
+  private readonly gizmo = new Gizmo();
+  private gizmoSpec: GizmoSpec | null = null;
+  private gizmoDragging: GizmoDrag | null = null;
 
   constructor() {
     this.modelRoot.matrixAutoUpdate = false;
@@ -193,6 +207,10 @@ export class PreviewEngine implements RenderEngine {
     this.maskSelected.color.setRGB(1, 0, 0);
     this.maskHover.color.setRGB(0, 1, 0);
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.outlineMaterial));
+    this.overlayRoot.matrixAutoUpdate = false;
+    this.overlayRoot.matrix.copy(BASIS);
+    this.overlayRoot.add(this.gizmo.root);
+    this.overlayScene.add(this.overlayRoot);
   }
 
   mount(canvas: HTMLCanvasElement): void {
@@ -248,6 +266,7 @@ export class PreviewEngine implements RenderEngine {
   }
 
   setTool(tool: PreviewTool): void {
+    // The move tool orbits with the left button where no handle is under it (the interface takes those).
     const left = tool === 'pan' ? THREE.MOUSE.PAN : tool === 'zoom' ? THREE.MOUSE.DOLLY : THREE.MOUSE.ROTATE;
     this.controls.mouseButtons = { LEFT: left, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
   }
@@ -255,6 +274,7 @@ export class PreviewEngine implements RenderEngine {
   /** Ink of the outline (the theme's --ink-0), linear 0..1. */
   setInk(rgb: readonly number[]): void {
     this.outlineMaterial.uniforms.ink.value.set(rgb[0], rgb[1], rgb[2]);
+    this.gizmo.setInk(rgb);
     this.needsRender = true;
   }
 
@@ -300,6 +320,8 @@ export class PreviewEngine implements RenderEngine {
       this.updateLayers();
       this.syncFaceOverlay(state);
     }
+    // The interface may hand the gizmo new ids before this sync: place it again with the state that has them.
+    if (this.gizmoSpec && (full || nodesChanged || state.selection !== prev.selection)) this.placeGizmo();
     this.needsRender = true;
   }
 
@@ -664,6 +686,7 @@ export class PreviewEngine implements RenderEngine {
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.render(this.scene, cam);
     this.drawOutline(cam);
+    this.drawGizmo(cam);
     this.lastFrameMs = performance.now() - t0;
     for (const fn of this.frameListeners) fn();
   }
@@ -705,6 +728,99 @@ export class PreviewEngine implements RenderEngine {
     this.outlineMaterial.uniforms.texel.value.set(px / size.x, px / size.y);
     this.renderer.render(this.quadScene, this.quadCamera);
     this.renderer.autoClear = true;
+  }
+
+  // ------------------------------------------------------------------ gizmo
+
+  /** Shows the gizmo of the move tool for some nodes (null hides it). */
+  setGizmo(spec: GizmoSpec | null): void {
+    const same = spec && this.gizmoSpec && spec.space === this.gizmoSpec.space && spec.ids.length === this.gizmoSpec.ids.length && spec.ids.every((id, i) => id === this.gizmoSpec!.ids[i]);
+    if (same || (!spec && !this.gizmoSpec)) return;
+    this.gizmoSpec = spec ? { ids: [...spec.ids], space: spec.space } : null;
+    this.gizmoDragging = null;
+    this.gizmo.setActive(null);
+    this.placeGizmo();
+  }
+
+  private placeGizmo(): void {
+    const s = this.state;
+    const spec = this.gizmoSpec;
+    const ids = s && spec ? movableTargets(s, spec.ids) : [];
+    const frame = s && spec && ids.length > 0 ? selectionFrame(s, ids, spec.space) : null;
+    const first = s && ids[0] ? s.scene.nodes[ids[0]] : undefined;
+    // A light also gets the aim handle: a line from it to its target.
+    const aim = s && frame && first?.kind === 'LIGHT' && first.target ? { from: transformPoint(worldMatrix(s, first.id), [0, 0, 0]), target: first.target } : null;
+    this.gizmo.place(frame, aim);
+    if (!frame) this.gizmo.setHover(null);
+    this.needsRender = true;
+  }
+
+  /** World millimetres per CSS pixel at a model point, for handles of a constant size on screen. */
+  private worldPerPixel(p: Vec3): number {
+    const cam = this.camera;
+    const h = Math.max(1, this.height);
+    if (cam instanceof THREE.OrthographicCamera) return (cam.top - cam.bottom) / cam.zoom / h;
+    const dir = cam.getWorldDirection(new THREE.Vector3());
+    const d = Math.max(1e-6, toThree(p).sub(cam.position).dot(dir));
+    return (2 * d * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2)) / h;
+  }
+
+  private sizeGizmo(): void {
+    const f = this.gizmo.frame;
+    if (!f) return;
+    this.gizmo.setPixelSize(this.worldPerPixel(f.origin), this.worldPerPixel(this.gizmo.aimTarget ?? f.origin));
+  }
+
+  private drawGizmo(cam: THREE.Camera): void {
+    if (!this.gizmo.visible || this.poseActive) return;
+    this.sizeGizmo();
+    this.renderer.autoClear = false;
+    this.renderer.clearDepth();
+    this.renderer.render(this.overlayScene, cam);
+    this.renderer.autoClear = true;
+  }
+
+  private rayAt(x: number, y: number): THREE.Raycaster {
+    const ndc = new THREE.Vector2((x / this.width) * 2 - 1, -(y / this.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    return this.raycaster;
+  }
+
+  /** The handle under a point (CSS pixels on the canvas), highlighted; null when none. */
+  gizmoHover(x: number, y: number): GizmoHandle | null {
+    if (!this.gizmo.visible || this.poseActive || this.width <= 0) {
+      if (this.gizmo.setHover(null)) this.needsRender = true;
+      return null;
+    }
+    this.sizeGizmo();
+    const id = this.gizmo.pick(this.rayAt(x, y));
+    if (this.gizmo.setHover(id)) this.needsRender = true;
+    return id;
+  }
+
+  /** Starts a drag on the handle under a point; null when there is none. */
+  gizmoBegin(x: number, y: number): GizmoHandle | null {
+    const id = this.gizmoHover(x, y);
+    const frame = this.gizmo.frame;
+    if (!id || !frame) return null;
+    const rc = this.rayAt(x, y);
+    const view = normalize(fromThree(this.camera.getWorldDirection(new THREE.Vector3())));
+    this.gizmoDragging = new GizmoDrag(id, frame, this.gizmo.worldSize, modelRay(rc, fromThree), { x, y }, view, this.gizmo.aimTarget);
+    this.gizmo.setActive(id);
+    this.needsRender = true;
+    return id;
+  }
+
+  /** What the drag did so far, measured from where it began (not snapped). */
+  gizmoDrag(x: number, y: number): GizmoDelta | null {
+    if (!this.gizmoDragging) return null;
+    return this.gizmoDragging.update(modelRay(this.rayAt(x, y), fromThree), { x, y });
+  }
+
+  gizmoEnd(): void {
+    this.gizmoDragging = null;
+    this.gizmo.setActive(null);
+    this.needsRender = true;
   }
 
   status(): EngineStatus {
@@ -782,6 +898,7 @@ export class PreviewEngine implements RenderEngine {
 
   dispose(): void {
     this.controls?.dispose();
+    this.gizmo.dispose();
     for (const g of this.geometries.values()) g.dispose();
     for (const m of this.materials.values()) m.dispose();
     this.envTexture?.dispose();

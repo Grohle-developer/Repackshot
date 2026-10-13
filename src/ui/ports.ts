@@ -7,6 +7,7 @@ import type { ImportMessage, ImportPayload } from '../core/import-options';
 import type { MaterialInstance } from '../core/materials';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
+import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { Tool } from './ui-state';
 
 export interface PickResult {
@@ -34,6 +35,15 @@ export interface ViewportPort {
   /** Parts to outline as hovered (the ones under the cursor, or under a dragged material). */
   setHover(ids: readonly NodeId[]): void;
   setTool(tool: Tool): void;
+  /** The gizmo of the move tool for these nodes in these axes (UI.md §2.3); null hides it. */
+  setGizmo(spec: { ids: readonly NodeId[]; space: Space } | null): void;
+  /** The gizmo handle under a point (and highlights it), or null. */
+  gizmoHover(x: number, y: number): GizmoHandle | null;
+  /** Starts dragging the handle under a point; null when there is none. */
+  gizmoBegin(x: number, y: number): GizmoHandle | null;
+  /** What the drag did so far, measured from where it began, not snapped. */
+  gizmoDrag(x: number, y: number): GizmoDelta | null;
+  gizmoEnd(): void;
   status(): EngineStatus;
   /** Called after every drawn frame. */
   onFrame(fn: () => void): () => void;

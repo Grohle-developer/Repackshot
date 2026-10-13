@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { buildExample } from '../src/core/example';
-import { boxCenter } from '../src/core/math';
+import { boxCenter, mat4Compose, transformBox, transformPoint } from '../src/core/math';
+import { getMesh } from '../src/core/meshes';
 import {
   boundsOf,
+  isAxisAligned,
+  worldMatrix,
   effectiveVisible,
   measuredSizeMm,
   partsUnder,
@@ -126,5 +129,38 @@ describe('placement', () => {
     expect(Object.keys(t.scene.nodes)).toHaveLength(14);
     expect(Object.keys(t.materials).length).toBeGreaterThanOrEqual(5);
     expect(t.scene.partSizeMm).toBe(s.scene.partSizeMm);
+  });
+});
+
+describe('bounds and transforms for the move tool (phase U3)', () => {
+  it('a turned part measures its vertices, not the box of its turned box', () => {
+    const s = exampleState();
+    const ids = keyIds(s);
+    const t = apply(s, { type: 'scene/setTransform', id: ids.body, transform: { rotation: [40, 0, 0] } });
+    const data = getMesh(t.scene.nodes[ids.body].mesh!.id)!;
+    const m = worldMatrix(t, ids.body);
+    let minZ = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < data.positions.length; i += 3) {
+      const p = transformPoint(m, [data.positions[i], data.positions[i + 1], data.positions[i + 2]]);
+      minZ = Math.min(minZ, p[2]);
+      maxY = Math.max(maxY, p[1]);
+    }
+    const b = boundsOf(t, [ids.body]);
+    expect(b.min[2]).toBeCloseTo(minZ, 6);
+    expect(b.max[1]).toBeCloseTo(maxY, 6);
+    // The box of the turned box reaches lower: resting on it would leave the part floating.
+    expect(transformBox(m, t.scene.nodes[ids.body].mesh!.bounds).min[2]).toBeLessThan(minZ - 1);
+    expect(boundsOf(apply(t, { type: 'scene/restOnFloor', ids: [ids.body] }), [ids.body]).min[2]).toBeCloseTo(0, 6);
+  });
+
+  it('quarter turns keep the cheap box (it is exact)', () => {
+    expect(isAxisAligned(mat4Compose([1, 2, 3], [90, 0, -90], [2, 1, 1]))).toBe(true);
+    expect(isAxisAligned(mat4Compose([0, 0, 0], [0, 30, 0], [1, 1, 1]))).toBe(false);
+  });
+
+  it('a model entering the scene records the transform Reset returns to', () => {
+    const s = exampleState();
+    for (const n of Object.values(s.scene.nodes)) expect(n.initial).toEqual(n.transform);
   });
 });

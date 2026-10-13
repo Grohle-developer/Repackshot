@@ -645,6 +645,13 @@ kbd,
 .menu-item .check {
   width: 14px;
 }
+.menu-item[aria-expanded='true'] {
+  background: var(--hover);
+}
+/* A submenu: its own floating box next to the item that opened it. */
+.menu-sub {
+  z-index: 101;
+}
 .menu-sep {
   height: 1px;
   margin: 4px 2px;

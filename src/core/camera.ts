@@ -223,6 +223,26 @@ export function outputAspect(state: ProjectState): number {
   return width > 0 && height > 0 ? width / height : 16 / 9;
 }
 
+/**
+ * True when a patch leaves the camera where it is, within float noise (a millionth of the distance, a
+ * microdegree): a click on the viewport ends an orbit gesture that did not move, and must not leave an undo entry.
+ */
+export function sameView(cam: CameraState, patch: Partial<Omit<CameraState, 'id'>>): boolean {
+  const tol = Math.max(cam.distance, 1) * 1e-6;
+  for (const [k, v] of Object.entries(patch) as [keyof CameraState, unknown][]) {
+    const cur = cam[k];
+    if (typeof v === 'number' && typeof cur === 'number') {
+      const eps = k === 'azimuth' || k === 'elevation' ? 1e-6 : k === 'distance' || k === 'focusDistance' || k === 'orthoWidth' ? tol : 0;
+      // Azimuths a whole turn apart are the same view.
+      const d = k === 'azimuth' ? Math.abs(((((v - cur) % 360) + 540) % 360) - 180) : Math.abs(v - cur);
+      if (d > eps) return false;
+    } else if (Array.isArray(v) && Array.isArray(cur)) {
+      if (v.length !== cur.length || v.some((x, i) => Math.abs(x - (cur as number[])[i]) > tol)) return false;
+    } else if (v !== cur) return false;
+  }
+  return true;
+}
+
 export type CameraAction =
   | ({ type: 'camera/set'; id: CameraId; patch: Partial<Omit<CameraState, 'id'>> } & ActionBase)
   | ({ type: 'camera/activate'; id: CameraId } & ActionBase)

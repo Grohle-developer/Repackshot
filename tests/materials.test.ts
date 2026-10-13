@@ -12,6 +12,7 @@ import {
   visibleParams,
   wearTypesFor,
 } from '../src/core/materials';
+import { partsWithMaterial, sharesMaterial } from '../src/core/transform';
 import { apply, exampleState, keyIds } from './helpers';
 
 describe('material instances', () => {
@@ -143,5 +144,51 @@ describe('default material', () => {
     const t = apply(s, assignAction(s, { preset: 'BRASS' }, 'KEEP', [ids.model]));
     expect(t.materials[t.scene.nodes[ids.cap].material!].preset).toBe('BRASS');
     expect(t.materials[t.scene.nodes[ids.body].material!].preset).toBe('PAINT_MET');
+  });
+});
+
+describe('material operations on parts (phase U3)', () => {
+  it('link: parts share one instance; select by material finds them all', () => {
+    const s = exampleState();
+    const ids = keyIds(s);
+    const gold = s.scene.nodes[ids.cap].material!;
+    const t = apply(s, { type: 'material/assign', material: gold, targets: [ids.body, ids.base], mode: 'REPLACE' });
+    expect(t.scene.nodes[ids.body].material).toBe(gold);
+    expect(t.scene.nodes[ids.base].material).toBe(gold);
+    expect(partsWithMaterial(t, gold).sort()).toEqual([ids.base, ids.body, ids.cap].sort());
+    expect(sharesMaterial(t, [ids.cap])).toBe(true);
+    // The instances nobody uses any more are gone.
+    expect(t.materials[s.scene.nodes[ids.body].material!]).toBeUndefined();
+  });
+
+  it('unlink gives each part its own copy, also when the parts that share it are all selected', () => {
+    const s = exampleState();
+    const ids = keyIds(s);
+    const gold = s.scene.nodes[ids.cap].material!;
+    const linked = apply(s, { type: 'material/assign', material: gold, targets: [ids.body, ids.base], mode: 'REPLACE' });
+    const t = apply(linked, { type: 'material/unlink', parts: [ids.cap, ids.body, ids.base] });
+    const mats = [ids.cap, ids.body, ids.base].map((p) => t.scene.nodes[p].material!);
+    expect(new Set(mats).size).toBe(3);
+    for (const m of mats) expect(t.materials[m].params).toEqual(linked.materials[gold].params);
+    expect(sharesMaterial(t, [ids.cap])).toBe(false);
+    // Already its own: nothing to do.
+    expect(apply(t, { type: 'material/unlink', parts: [ids.cap] })).toBe(t);
+  });
+
+  it('paste puts a new instance with the copied content on the targets, whole-part', () => {
+    const s0 = exampleState();
+    const ids = keyIds(s0);
+    const s = apply(s0, { type: 'material/assign', preset: 'CHROME', targets: [ids.body], faces: { part: ids.body, indices: [0, 1, 2] }, mode: 'REPLACE' });
+    const clip = s.materials[s.scene.nodes[ids.cap].material!];
+    const t = apply(s, { type: 'material/paste', instance: clip, targets: [ids.body, ids.base] });
+    const pasted = t.scene.nodes[ids.body].material!;
+    expect(pasted).not.toBe(clip.id);
+    expect(t.scene.nodes[ids.base].material).toBe(pasted);
+    expect(t.scene.nodes[ids.body].faceMaterials).toBeUndefined();
+    expect(t.materials[pasted].params).toEqual(clip.params);
+    expect(t.materials[pasted].params).not.toBe(clip.params);
+    // Editing the pasted copy leaves the source alone.
+    const e = apply(t, { type: 'material/setParam', id: pasted, key: 'roughness', value: 0.77 });
+    expect(e.materials[clip.id].params.roughness).not.toBe(0.77);
   });
 });
