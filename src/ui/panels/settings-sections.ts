@@ -369,7 +369,6 @@ function desktopRows(): SettingsHooks['rows'] {
       const d = ctx.ui.get().desktop;
       return d ? infoRow('desktop.logs', rowLabel('desktop.logs'), h('div', { class: 'sw-inline' }, h('code', { class: 'sw-path' }, d.logsDir), folderButton(ctx, 'logs'))) : null;
     },
-    'desktop.updates': () => rowShell('desktop.updates', { soon: true, control: h('button', { type: 'button', class: 'btn', disabled: true }, rowLabel('desktop.updates')) }).el,
   };
 }
 

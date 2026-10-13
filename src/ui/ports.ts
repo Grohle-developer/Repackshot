@@ -14,6 +14,7 @@ import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
+import type { UpdateOutcome } from '../core/updates';
 import type { PerfResult, Tool } from './ui-state';
 
 export interface PickResult {
@@ -120,6 +121,11 @@ export interface StoragePort {
 /** The desktop launcher's folders (P2), when the page runs in its window. */
 export interface DesktopPort {
   openFolder(target: 'data' | 'models' | 'logs' | 'results'): Promise<void>;
+}
+
+/** The release feed (src/io/updates.ts): the latest published release, or why it could not be had. Never throws. */
+export interface UpdatesPort {
+  latest(): Promise<UpdateOutcome>;
 }
 
 export interface RenderRequest {
@@ -315,6 +321,8 @@ export interface AppServices {
   storage: StoragePort;
   /** Null outside the desktop application. */
   desktop: DesktopPort | null;
+  /** Where new versions are published (Settings ▸ Updates). */
+  updates: UpdatesPort;
   /** A licence text shipped with the build (`licences/<file>`, copied by tools/licences.mjs); null when missing. */
   licenceText(file: string): Promise<string | null>;
 }

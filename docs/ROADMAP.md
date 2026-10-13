@@ -1685,6 +1685,39 @@ sincronizada con lo hecho (README, SPEC) tras cada hito.
 
 ---
 
+## Tras probar v0.1.0: arreglos de escritorio y todo lo *próximamente*
+
+Petición del usuario (2026-10-13), tras probar el instalador en Windows:
+el modo Completo se queda parado al rato de hacer cambios; la cola no se
+pausa ni se reanuda; no se puede arrastrar un material a una pieza; elegir
+carpeta falla (*no se puede abrir esta carpeta porque contiene archivos del
+sistema*); y la ventana se comporta como una web (ofrece traducir, no sale
+el logo, el clic derecho y la selección de texto sacan menús del
+navegador). **Decisión: en escritorio no aparece nada que no sea nuestra
+interfaz**, la interfaz sigue en HTML y todo lo demás (diálogos de archivo,
+escritura de archivos, motor) lo hace el lanzador en Rust. Además: **se
+integra todo lo que la interfaz marca *próximamente***.
+
+| Fase | Responsable | Qué |
+| --- | --- | --- |
+| **P3a** | Opus | Modo Completo que no se para (reproducir con una sesión larga de cambios contra el lanzador y arreglar la causa), *Pausar* / *Reanudar* / *Iniciar cola* que funcionan en web y escritorio |
+| **P3b** | Opus | Escritorio sin rastro de navegador: diálogos nativos de carpeta y archivo desde el lanzador (PowerShell en Windows, `zenity`/`kdialog` en Linux, sin `unsafe`), escritura de renders, proyectos y modelos por el lanzador, menú contextual, selección, traducción, zoom, recarga, impresión, búsqueda y navegación del navegador desactivados, icono y título propios; estudio de WebView2 para Windows |
+| **P3c** | Opus | **Ventana propia en Windows** (decisión del líder tras la captura del aviso «¿Desea salir de la aplicación?» de Edge: *todos los avisos y ventanas con nuestra interfaz, nada de avisos web; producto cerrado y profesional*): ventana Win32 sin marco con **WebView2** (el motor de Edge que trae Windows 10/11) y barra de título dibujada por nosotros (título, minimizar, maximizar, cerrar, arrastre), menús contextuales, atajos, barra de estado, zoom, autorrelleno, traducción, descargas y diálogos de script del navegador **desactivados por la API**, y el cierre (botón, `Alt F4`, barra de tareas) **interceptado** para preguntar con nuestra propia ventana si hay cambios sin guardar; Edge `--app` solo como respaldo automático si falta el *runtime*. En Linux sigue Chromium en modo aplicación con el endurecimiento de P3b hasta P3d (ventana propia con WebKitGTK, que exige un binario glibc y no el musl estático) |
+| **U7** | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*) |
+| **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
+| **E5b** | Opus | Profundidad de campo (lente fina), reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
+| **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie, anisotropía; desgaste visible en motor y visor |
+| **L4**, **L5** | Opus, Sonnet | Ya descritas: focos propios (área, punto, foco, sol) con todas sus operaciones; IES |
+| **M2** | Opus | Ya descrita: texturas de imagen y etiquetas |
+| **N1**, **N2** | Opus, Sonnet | Vídeo codificado (WebCodecs y muxers MP4 y WebM propios) y lo que quede de pases y lotes |
+| **U8** | Sonnet | Lo pequeño de la interfaz: copia automática y recuperación, letras de acceso en menús, cambiar atajos, *Buscar actualizaciones*, los chequeos del Doctor que faltan y sus *Arreglar* (**D1**) |
+| **X1b–X4** | Fable, Opus, Sonnet | Ya descritas: el post-procesado IA completo |
+
+Orden: oleada 1 **P3a**, **P3b**, **U7**, **E5** en paralelo; oleada 2
+**E5b**, **E6**, **L4**, **N1**, **U8**; oleada 3 **E7**, **M2**, **L5**,
+**N2**; oleada 4 **X1b**, **X2**, **X3**, **X4**. Cada fase quita sus
+*próximamente* y no deja ninguno nuevo sin anotarlo aquí.
+
 ## Orden sugerido
 
 1. **U1** (Opus) y **E1** (Sonnet), en paralelo: la interfaz y el

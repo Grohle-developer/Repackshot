@@ -404,7 +404,11 @@ lanzador y usa el mismo RSB que la web (§5.5).
 
 `engine/crates/rt-app` es un binario de Rust **solo con `std`** (mismo
 workspace, mismas puertas: `fmt`, `clippy -D warnings`, cero *crates*
-externos, sin `unsafe`). Hace cinco cosas:
+externos). **Sin `unsafe` salvo en `src/platform/`** (decidido en P3c):
+la ventana propia de Windows necesita llamar a Win32 y a la interfaz COM
+de WebView2, y eso solo se hace con FFI; cada bloque `unsafe` lleva su
+comentario de por qué es correcto, el resto del *crate* mantiene
+`#![deny(unsafe_code)]` y nada de `platform/` entra en `rt-core`. Hace cinco cosas:
 
 1. **Servir la interfaz**: un servidor HTTP/1.1 mínimo en `127.0.0.1` y
    un puerto libre, con la carpeta `app/` (el `dist/` de Vite) junto al

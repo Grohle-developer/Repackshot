@@ -25,6 +25,7 @@ import { DEFAULT_DPI } from './print-size';
 import { patchSettings, type Destination, type OutputFormat } from './render';
 import type { SelectionLevel } from './scene';
 import type { ProjectState, ThemeSetting } from './store';
+import { validRelease, type ReleaseInfo } from './updates';
 
 /** Version of the stored document. 0 is the loose preferences of before (one localStorage entry each). */
 export const SETTINGS_SCHEMA = 1;
@@ -32,7 +33,7 @@ export const SETTINGS_SCHEMA = 1;
 export type LengthUnit = ImportUnit;
 export const LENGTH_UNITS: readonly LengthUnit[] = IMPORT_UNITS;
 
-export type SectionId = 'general' | 'preferences' | 'accessibility' | 'shortcuts' | 'engine' | 'ai' | 'storage' | 'desktop' | 'about';
+export type SectionId = 'general' | 'preferences' | 'accessibility' | 'shortcuts' | 'engine' | 'ai' | 'storage' | 'desktop' | 'updates' | 'about';
 export type SectionGroup = 'app' | 'render' | 'system';
 
 export interface SectionSpec {
@@ -52,6 +53,7 @@ export const SECTIONS: readonly SectionSpec[] = [
   { id: 'ai', group: 'render' },
   { id: 'storage', group: 'system' },
   { id: 'desktop', group: 'system', desktopOnly: true },
+  { id: 'updates', group: 'system' },
   { id: 'about', group: 'system' },
 ];
 export const SECTION_GROUPS: readonly SectionGroup[] = ['app', 'render', 'system'];
@@ -134,6 +136,9 @@ export interface Settings {
 
   'storage.historyCount': number;
   'storage.historyMB': number;
+
+  /** Look for a newer version once, in the background, when the application starts. */
+  'updates.atStartup': boolean;
 }
 
 export type SettingKey = keyof Settings;
@@ -158,6 +163,10 @@ export interface Layout {
   settingsSection: SectionId;
   /** The desktop portable's model chooser was shown (it is shown once). */
   chooserShown: boolean;
+  /** When the update feed last answered (ms since 1970), null: never. */
+  updateCheckedAt: number | null;
+  /** The latest release that answer named, so an offline start can still show it. */
+  updateLatest: ReleaseInfo | null;
 }
 
 export interface SettingsDoc {
@@ -232,6 +241,8 @@ export function defaultSettings(): Settings {
 
     'storage.historyCount': 50,
     'storage.historyMB': 500,
+
+    'updates.atStartup': true,
   };
 }
 
@@ -251,6 +262,8 @@ export function defaultLayout(): Layout {
     viewportMode: 'FULL',
     settingsSection: 'general',
     chooserShown: false,
+    updateCheckedAt: null,
+    updateLatest: null,
   };
 }
 
@@ -407,7 +420,12 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   row('desktop.portable', 'desktop', 'desktop', kw('portable, data folder, installed', 'portable, carpeta de datos, instalado'), { desktopOnly: true }),
   row('desktop.browser', 'desktop', 'desktop', kw('browser, window, edge, chromium', 'navegador, ventana, edge, chromium'), { desktopOnly: true }),
   row('desktop.logs', 'desktop', 'desktop', kw('logs, log folder, diagnostics', 'registros, carpeta de registros, diagnóstico'), { desktopOnly: true }),
-  row('desktop.updates', 'desktop', 'desktop', kw('updates, new version', 'actualizaciones, nueva versión'), { desktopOnly: true, comingSoon: true }),
+
+  // Updates
+  row('updates.current', 'updates', 'updates', kw('installed version, current version, version, release', 'versión instalada, versión actual, versión, publicación')),
+  row('updates.check', 'updates', 'updates', kw('check for updates, updates, update, upgrade, new version, latest version, release, github', 'buscar actualizaciones, actualizaciones, actualizar, nueva versión, última versión, publicación, github')),
+  setting('updates.atStartup', 'updates', 'updates', toggle, kw('check at startup, updates, update, startup, automatic, background, new version', 'comprobar al iniciar, actualizaciones, actualizar, arranque, automático, segundo plano, nueva versión'), { aux: true }),
+  row('updates.last', 'updates', 'updates', kw('last checked, last check, updates, when', 'última comprobación, actualizaciones, cuándo')),
 
   // About
   row('about.version', 'about', 'version', kw('version, about', 'versión, acerca de')),
@@ -524,6 +542,8 @@ export function validateLayout(raw: unknown): Layout {
   if (raw.space === 'GLOBAL' || raw.space === 'LOCAL') out.space = raw.space;
   if (raw.viewportMode === 'FAST' || raw.viewportMode === 'FULL') out.viewportMode = raw.viewportMode;
   if (isSection(raw.settingsSection)) out.settingsSection = raw.settingsSection;
+  if (typeof raw.updateCheckedAt === 'number' && Number.isFinite(raw.updateCheckedAt) && raw.updateCheckedAt > 0 && raw.updateCheckedAt < 8.64e15) out.updateCheckedAt = Math.round(raw.updateCheckedAt);
+  out.updateLatest = validRelease(raw.updateLatest);
   return out;
 }
 

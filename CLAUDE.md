@@ -68,7 +68,8 @@ Para tocar el motor (`engine/`), además: `cargo fmt --all -- --check`,
    `engine/` es Rust desde cero, solo `std`; nada de crates.io, nada
    copiado de otros renderizadores. CI lo comprueba.
 8b. **El motor es portable y determinista**: sin APIs del sistema en
-   `rt-core`, sin `unsafe` fuera del módulo `simd` y del *shim* de wasm,
+   `rt-core`, sin `unsafe` fuera del módulo `simd`, del *shim* de wasm y
+   de `rt-app/src/platform/` (la ventana nativa: Win32 y WebView2),
    `f32` en todo, y la misma escena con la misma semilla da los mismos
    píxeles en cualquier arquitectura y con cualquier número de hilos.
    `clippy -D warnings` y `cargo fmt` limpios.

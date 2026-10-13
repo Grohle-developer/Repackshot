@@ -6,7 +6,8 @@
 // the desktop launcher's window the native one (render/native.ts), else the
 // wasm pool.
 // Sets #app[data-ready="1"] once the interface has painted and the viewport
-// has drawn its first frame.
+// has drawn its first frame, and then starts the check for a newer version
+// (Settings ▸ Updates ▸ Check at startup) in the background.
 
 import './ui/theme.css';
 import './ui/layout.css';
@@ -30,6 +31,7 @@ import { connectNative, type PendingModels } from './io/native';
 import { readProjectFile, serializeProject } from './io/project';
 import { createProjectFiles } from './io/project-file';
 import { openResultsStore } from './io/results';
+import { fetchLatestRelease } from './io/updates';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
@@ -39,6 +41,7 @@ import { exactWords16, linearRgba, poolSize } from './render/tiles';
 import { mountApp } from './ui/app';
 import { exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject } from './ui/commands';
 import { downloadBlob } from './ui/dom';
+import { startupUpdateCheck } from './ui/updates';
 import type { AppServices, EngineConfig, ViewportPort } from './ui/ports';
 import { loadSettingsDoc, readPref, saveSettingsDoc, writePref } from './ui/prefs';
 import { isaLabel, L, t } from './ui/strings';
@@ -544,6 +547,7 @@ const services: AppServices = {
       await native.openFolder(target);
     },
   },
+  updates: { latest: () => fetchLatestRelease() },
   async licenceText(path) {
     // Only the licence texts shipped with the build (tools/licences.mjs, tools/vendor.mjs).
     if (!/^(licences\/[A-Za-z0-9._-]+|vendor\/occt-import-js\/license\.[a-z-]+\.txt)$/.test(path)) return null;
@@ -566,7 +570,7 @@ void loadResults(app.ctx);
 void nativeReady.then(async (native) => {
   if (!native) return;
   const i = native.info;
-  ui.set({ desktop: { portable: i.portable, dataDir: i.dataDir, modelsDir: i.modelsDir, logsDir: i.logsDir, browser: i.browser, version: i.version } });
+  ui.set({ desktop: { portable: i.portable, dataDir: i.dataDir, modelsDir: i.modelsDir, logsDir: i.logsDir, browser: i.browser, version: i.version, os: i.os, arch: i.arch } });
   // The manager has read what the installer chose (if anything) once it has started.
   await modelsService.started;
   maybeShowModelChooser(app.ctx, { portable: i.portable, pending: !!pendingAtStart && pendingAtStart.keys.length > 0 });
@@ -675,7 +679,11 @@ void app.painted.then(() => {
     const spheresDone = thumbs.pendingCount() === 0;
     const elapsed = performance.now() - started;
     if (((firstFrame || !preview) && spheresDone && elapsed > 300) || elapsed > 9000) {
-      requestAnimationFrame(() => (appEl.dataset.ready = '1'));
+      requestAnimationFrame(() => {
+        appEl.dataset.ready = '1';
+        // Updates ▸ Check at startup: once, in the background, now that the interface is there. Never waited for.
+        void startupUpdateCheck(app.ctx);
+      });
       return;
     }
     setTimeout(check, 100);
