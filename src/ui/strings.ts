@@ -1304,7 +1304,7 @@ const TABLE = {
   'set.rt.release': ['{spdx} · release {tag}', '{spdx} · versión {tag}'],
   'set.rt.requires': ['Needs {text}', 'Necesita {text}'],
   'set.rt.fromFile': ['Install from a file…', 'Instalar desde un archivo…'],
-  'set.rt.fromFileHint': ['Or download {name} with a browser and choose it here: it installs only if its sha256 is the pinned one.', 'O descarga {name} con un navegador y elígelo aquí: solo se instala si su sha256 es el fijado.'],
+  'set.rt.fromFileHint': ['Or download {name} from its release page yourself and choose it here: it installs only if its sha256 is the pinned one.', 'O descarga tú mismo {name} desde su página de publicación y elígelo aquí: solo se instala si su sha256 es el fijado.'],
   'set.rt.removeConfirm': ['Remove the runtime? {size} are freed; the models stay.', '¿Quitar el motor de ejecución? Se liberan {size}; los modelos se quedan.'],
   'dialog.aiRuntime': ['Choose the runtime archive', 'Elige el archivo del motor de ejecución'],
   'dialog.zipFiles': ['Zip archives', 'Archivos zip'],
