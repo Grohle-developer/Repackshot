@@ -5,6 +5,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Escritorio
+
+- En Windows se ven por fin las tarjetas gráficas: v0.1.2 no encontraba ninguna en ningún equipo (solo la CPU), porque `reg` sale con error al llegar a una subclave protegida del registro y el lanzador tiraba toda su respuesta. Ahora las pregunta a DXGI, con la memoria de vídeo exacta, y además al registro, a `Win32_VideoController` y a `wmic`; el registro del lanzador (`logs/repackshot.log`) dice qué contestó cada uno, y si ninguno puede contestar *Ajustes* dice que no se pudieron leer las tarjetas en lugar de que no hay (P3e).
+
 ### Motor
 
 - **Cielo físico propio** (E5c): el cielo de día por defecto tiene la forma funcional de Hošek y Wilkie (2012) con coeficientes ajustados por nosotros a nuestra propia simulación espectral de la atmósfera (capas esféricas, moléculas, bruma, ozono, suelo), en sala limpia. El de Preetham sigue como *Clásico*. La vista previa del modo Rápido dibuja el mismo cielo que el motor, bit a bit (E5c).

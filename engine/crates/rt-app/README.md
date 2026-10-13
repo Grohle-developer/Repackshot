@@ -28,7 +28,8 @@ interfaz COM de WebView2 por FFI. Es la aplicación de escritorio (`docs/ARCHITE
 
 Lo que necesita del sistema lo pide a programas del sistema (`reg`, `powershell`, `wmic`,
 `nvidia-smi`, `explorer`, `rundll32`, `xdg-open`, `zenity`, `kdialog`, `curl`, `tasklist`,
-`taskkill`, `kill`, el navegador); por FFI, solo la ventana propia (`src/platform/`).
+`taskkill`, `kill`, el navegador), en Windows por su ruta absoluta en `System32`; por FFI, solo
+la ventana propia y DXGI para las tarjetas gráficas (`src/platform/`).
 
 ## Línea de órdenes
 
@@ -242,7 +243,7 @@ Todas las rutas `/api/*` llevan `X-Repackshot-Token`. Errores en JSON:
 | --- | --- |
 | `GET /api/info` | `{app:"repackshot", version, engineVersion, threads, isa, simd[], os, arch, dataDir, modelsDir, logsDir, resultsDir, portable, browser, window, pid}`. `window`: `{kind: "webview2"\|"browser"\|"default"\|"none", detail, reason}` (`detail`: la versión de WebView2 o el navegador; `reason`, por qué no es la ventana propia: `forced`, `not-windows`, `loader-missing`, `runtime-missing`, `failed`), `null` con `--serve-only` |
 | `POST /api/alive` | 204. El latido. |
-| `GET /api/hardware[?device=gpu\|cpu][&refresh=1]` | `{cpu, cores, threads, ramBytes, ramGiB, ramUsableBytes, gpus[{name, vendor, vramBytes, vramGiB}], device, gpuFound, detected, input, recommendation{rowId, recommended, offered[], skipped[]} \| null}` |
+| `GET /api/hardware[?device=gpu\|cpu][&refresh=1]` | `{cpu, cores, threads, ramBytes, ramGiB, ramUsableBytes, gpus[{name, vendor, vramBytes, vramGiB}], gpuDetection, gpuSources[{source, ok, found, detail}], device, gpuFound, detected, input, recommendation{rowId, recommended, offered[], skipped[]} \| null}`. `gpuDetection`: `ok` si alguna fuente de tarjetas gráficas contestó, `failed` si ninguna (entonces `gpus` vacío no quiere decir «sin tarjeta»); `gpuSources`: qué dijo cada una (`dxgi`, `registry`, `cim`, `wmic`; `nvidia-smi`, `drm`; `test`), con `detail` el error o las notas |
 | `POST /api/open-folder` | Cuerpo `{"folder":"data\|models\|logs\|results"}` o `{"path":"<dentro de la carpeta de datos>"}`; 204, 403 fuera de los datos |
 | `GET /api/pending-models` | Lo que eligió el instalador, normalizado: `{"device":"gpu\|cpu","keys":[...]}`, o `null` |
 | `DELETE /api/pending-models` | 204: consumido |
@@ -471,12 +472,42 @@ Validación: `<sha256>` exactamente 64 hexadecimales en minúscula; claves y nom
 
 `repackshot --hardware <f.ini> [--device gpu|cpu]` y `GET /api/hardware`:
 
-- **Windows**: adaptadores de
-  `HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}` con
-  `reg query /s` (`DriverDesc`, `ProviderName`, VRAM dedicada de
-  `HardwareInformation.qwMemorySize`, si no `HardwareInformation.MemorySize`); RAM instalada y
-  utilizable y núcleos con PowerShell `Get-CimInstance` (20 s como mucho), si no `wmic`; nombre de
-  la CPU del registro. Todo sin ventana de consola (`CREATE_NO_WINDOW`).
+- **Windows, tarjetas gráficas**: hasta cuatro fuentes, en este orden, y cada una deja en el
+  registro del lanzador (`logs/repackshot.log`, líneas `hardware:`) qué encontró o por qué falló,
+  más una línea final con lo que quedó:
+  1. **DXGI** (`src/platform/dxgi.rs`, dentro del proceso: `CreateDXGIFactory1`,
+     `EnumAdapters1`, `GetDesc1`): cada adaptador presente con su VRAM dedicada exacta (64 bits).
+     Se saltan los adaptadores de software (`DXGI_ADAPTER_FLAG_SOFTWARE`, el *Microsoft Basic
+     Render Driver*) y los de Microsoft (fabricante `0x1414`). `dxgi.dll` se carga solo de
+     `System32` (`LOAD_LIBRARY_SEARCH_SYSTEM32`). No necesita procesos hijos ni permisos del
+     registro.
+  2. **El registro**: la clase de pantalla
+     `HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}`, con
+     un `reg query` para listar sus subclaves y otro por cada adaptador (`\0000`, `\0001`…):
+     `DriverDesc`, `ProviderName`, VRAM de `HardwareInformation.qwMemorySize` (64 bits, exacta), si
+     no `HardwareInformation.MemorySize` (32 bits). **Nunca `/s` sobre la clase**: su subclave
+     `Properties` da «Acceso denegado» (*Access is denied*) y `reg` sale con 1; con `/s` tampoco
+     se puede contar con lo que liste detrás de un error. La salida se lee aunque `reg` termine
+     con un código distinto de 0 (`process::output_any`): v0.1.2 la tiraba entera y no encontraba
+     ninguna tarjeta en ningún Windows.
+  3. **CIM**: `Get-CimInstance Win32_VideoController` (`Name`, `AdapterCompatibility`,
+     `AdapterRAM`, que es de 32 bits y se queda en 4 GiB), en la misma ejecución de PowerShell que
+     la RAM y los núcleos.
+  4. **wmic** (`path Win32_VideoController`), solo si PowerShell no contestó.
+
+  **Mezcla** (`merge_gpus`): los adaptadores son los de la primera fuente que contestó de las que
+  listan exactamente lo que hay ahora (DXGI, si no CIM, si no wmic), porque el registro guarda las
+  claves de controlador de una tarjeta que ya se quitó; las demás fuentes completan esos mismos
+  adaptadores, emparejados por nombre (minúsculas, sin `(R)` ni `(TM)`; dos tarjetas iguales siguen
+  siendo dos). Si ninguna de esas contestó, vale lo del registro. VRAM: la mayor de las exactas
+  (DXGI, `qwMemorySize`), si no la mayor de las de 32 bits. Si ninguna fuente contestó,
+  `gpuDetection` es `failed` y la interfaz dice que no se pudieron leer las tarjetas, no que no
+  haya.
+- **Windows, lo demás**: RAM instalada y utilizable y núcleos con PowerShell `Get-CimInstance`
+  (30 s como mucho), si no `wmic`; nombre de la CPU del registro. Todo sin ventana de consola
+  (`CREATE_NO_WINDOW`), los programas por su ruta absoluta (`%SystemRoot%\System32\reg.exe`,
+  `…\WindowsPowerShell\v1.0\powershell.exe`, `…\wbem\WMIC.exe`) y sus salidas leídas sea cual sea
+  su código de salida.
 - **Linux**: `/proc/cpuinfo`, `/proc/meminfo`, bloques de `/sys/devices/system/memory` (la RAM
   instalada: un equipo de "16 GB" muestra unos 15,6 GiB utilizables), `nvidia-smi` si está,
   `mem_info_vram_total` de las tarjetas DRM (AMD).
@@ -638,7 +669,13 @@ inválido, escapes Unicode y sustitutos, números, profundidad); el lector HTTP 
 petición, cabeceras, peticiones malas); `Range`; rutas de ficheros; el almacén de modelos
 (trozos desordenados y reanudados, *hash* erróneo → dañado, *blob* compartido conservado al
 borrar uno de dos modelos, manifiestos importados); la regla con el fichero de casos; los
-analizadores de `reg`, `/proc`, `nvidia-smi`; el INI; los trabajos (P3a): un visor vivo comparte
+analizadores de `reg` (con líneas de «Acceso denegado» en inglés y en español entre las claves),
+de `Win32_VideoController` por PowerShell y por `wmic`, `/proc` y `nvidia-smi`; la fuente del
+registro con un `reg` falso que sale con 1 y con programas de verdad que imprimen y salen con 1
+(nunca `/s`, nunca `Properties`); la mezcla de fuentes (la que manda, VRAM exacta frente a la de
+32 bits, la tarjeta quitada que recuerda el registro, dos tarjetas iguales, «sin tarjeta» frente a
+«no se pudo preguntar»); las líneas del registro del lanzador; leer la salida de un programa que
+sale con 1 (`process.rs`); el INI; los trabajos (P3a): un visor vivo comparte
 los hilos con un final y sigue sacando pasadas, el final da los mismos bits con o sin él, una vista
 que llega tarde no sustituye a una nueva, un trabajo por el que nadie pregunta se para, un render
 que entra en pánico termina fallido y suelta el turno, un trabajo que no se para se deja atrás, la
@@ -687,7 +724,8 @@ contra `tests/fixtures/host-protocol.json` (el mismo que pasa `src/core/host-pro
 título, el sitio de la ventana, la política (ajustes, navegación, ventanas nuevas, permisos,
 diálogos) y los argumentos. Solo para Windows, y en Linux bajo Wine con una pantalla virtual
 (`CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=wine xvfb-run -a cargo test -p rt-app --target
-x86_64-pc-windows-gnu --lib platform`): nuestras opciones del entorno de WebView2 como las lee el
+x86_64-pc-windows-gnu --lib platform`): DXGI de verdad (bajo Wine lista su adaptador, con
+nombre y VRAM), nuestras opciones del entorno de WebView2 como las lee el
 cargador, el cargador que falta o no es una DLL, y la ventana Win32 de verdad (barra de título del
 sistema, título, tamaño mínimo, cerrar preguntado y luego permitido, `window.json` guardado y
 restaurado, un sitio fuera de las pantallas olvidado). WebView2 no corre aquí: lo que queda se
