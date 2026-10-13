@@ -36,6 +36,10 @@ export interface EngineStatus {
   frameMs?: number;
   /** Path tracer: a Render has the pool, the viewport waits. */
   rendering?: boolean;
+  /** The desktop launcher's native engine renders (threads and SIMD path below). */
+  native?: boolean;
+  threads?: number;
+  isa?: string;
 }
 
 /** The viewport as the interface sees it. */

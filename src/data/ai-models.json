@@ -1,0 +1,593 @@
+{
+  "schema": 1,
+  "provisional": true,
+  "researched": "2026-10-13",
+  "models": [
+    {
+      "key": "ZIMAGE_Q8",
+      "label": {
+        "en": "Z-Image-Turbo · Q8",
+        "es": "Z-Image-Turbo · Q8"
+      },
+      "summary": {
+        "en": "Maximum quality of the default model",
+        "es": "Calidad máxima del modelo por defecto"
+      },
+      "family": "z-image",
+      "role": "img2img",
+      "quantization": "Q8_0",
+      "runtimes": [
+        "desktop"
+      ],
+      "default": true,
+      "available": true,
+      "licence": {
+        "spdx": "Apache-2.0",
+        "url": "https://raw.githubusercontent.com/Tongyi-MAI/Z-Image/main/LICENSE",
+        "commercialUse": true,
+        "useRestrictions": false
+      },
+      "files": [
+        {
+          "role": "transformer",
+          "name": "z_image_turbo-Q8_0.gguf",
+          "url": "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/c61c0e422dc8b541b7548cf33a4ef8302b0f8085/z_image_turbo-Q8_0.gguf",
+          "bytes": 6577440704,
+          "sha256": "df1c5baa86d1398c979495a6072dbcee79444fdb884a2445582ba0769c44e9a1",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "text-encoder",
+          "name": "Qwen3-4B-Q4_K_M.gguf",
+          "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+          "bytes": 2497280256,
+          "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "vae",
+          "name": "ae.safetensors",
+          "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/6fc90a3b1b653e935a0d175e260736de25b84df5/split_files/vae/ae.safetensors",
+          "bytes": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+          "licenceSpdx": "Apache-2.0"
+        }
+      ],
+      "totalBytes": 9410025348,
+      "requirements": {
+        "minVramGiB": 12,
+        "minRamGiB": 32
+      }
+    },
+    {
+      "key": "ZIMAGE_Q4",
+      "label": {
+        "en": "Z-Image-Turbo · Q4",
+        "es": "Z-Image-Turbo · Q4"
+      },
+      "summary": {
+        "en": "Balanced quality and memory",
+        "es": "Equilibrio calidad / memoria"
+      },
+      "family": "z-image",
+      "role": "img2img",
+      "quantization": "Q4_0",
+      "runtimes": [
+        "desktop"
+      ],
+      "default": false,
+      "available": true,
+      "licence": {
+        "spdx": "Apache-2.0",
+        "url": "https://raw.githubusercontent.com/Tongyi-MAI/Z-Image/main/LICENSE",
+        "commercialUse": true,
+        "useRestrictions": false
+      },
+      "files": [
+        {
+          "role": "transformer",
+          "name": "z_image_turbo-Q4_0.gguf",
+          "url": "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/c61c0e422dc8b541b7548cf33a4ef8302b0f8085/z_image_turbo-Q4_0.gguf",
+          "bytes": 3683370944,
+          "sha256": "2bc57986874c84f7ec6d02d9d7070a53b0029954a0e38a6e1342eb91095572f5",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "text-encoder",
+          "name": "Qwen3-4B-Q4_K_M.gguf",
+          "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+          "bytes": 2497280256,
+          "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "vae",
+          "name": "ae.safetensors",
+          "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/6fc90a3b1b653e935a0d175e260736de25b84df5/split_files/vae/ae.safetensors",
+          "bytes": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+          "licenceSpdx": "Apache-2.0"
+        }
+      ],
+      "totalBytes": 6515955588,
+      "requirements": {
+        "minVramGiB": 6,
+        "minRamGiB": 16
+      }
+    },
+    {
+      "key": "ZIMAGE_Q2",
+      "label": {
+        "en": "Z-Image-Turbo · Q2",
+        "es": "Z-Image-Turbo · Q2"
+      },
+      "summary": {
+        "en": "Small GPUs; slightly lower quality",
+        "es": "GPU pequeñas; algo menos de calidad"
+      },
+      "family": "z-image",
+      "role": "img2img",
+      "quantization": "Q2_K",
+      "runtimes": [
+        "desktop"
+      ],
+      "default": false,
+      "available": true,
+      "licence": {
+        "spdx": "Apache-2.0",
+        "url": "https://raw.githubusercontent.com/Tongyi-MAI/Z-Image/main/LICENSE",
+        "commercialUse": true,
+        "useRestrictions": false
+      },
+      "files": [
+        {
+          "role": "transformer",
+          "name": "z_image_turbo-Q2_K.gguf",
+          "url": "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/c61c0e422dc8b541b7548cf33a4ef8302b0f8085/z_image_turbo-Q2_K.gguf",
+          "bytes": 2592442304,
+          "sha256": "a9cf1b0368e24c2f9d542d2951c01f6f7fc85ed8c9ed39b5b37b15375508d58a",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "text-encoder",
+          "name": "Qwen3-4B-Q4_K_M.gguf",
+          "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+          "bytes": 2497280256,
+          "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "vae",
+          "name": "ae.safetensors",
+          "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/6fc90a3b1b653e935a0d175e260736de25b84df5/split_files/vae/ae.safetensors",
+          "bytes": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+          "licenceSpdx": "Apache-2.0"
+        }
+      ],
+      "totalBytes": 5425026948,
+      "requirements": {
+        "minVramGiB": 4,
+        "minRamGiB": null
+      }
+    },
+    {
+      "key": "ZIMAGE_WEB",
+      "label": {
+        "en": "Z-Image-Turbo · Web (ONNX q4f16)",
+        "es": "Z-Image-Turbo · Web (ONNX q4f16)"
+      },
+      "summary": {
+        "en": "The web version: runs in the browser with WebGPU",
+        "es": "La versión web: se ejecuta en el navegador con WebGPU"
+      },
+      "family": "z-image",
+      "role": "img2img",
+      "quantization": "q4f16",
+      "runtimes": [
+        "web"
+      ],
+      "default": false,
+      "available": false,
+      "licence": {
+        "spdx": "Apache-2.0",
+        "url": "https://raw.githubusercontent.com/Tongyi-MAI/Z-Image/main/LICENSE",
+        "commercialUse": true,
+        "useRestrictions": false
+      },
+      "files": [
+        {
+          "role": "transformer",
+          "name": "transformer_model_q4f16.onnx",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/onnx/transformer_model_q4f16.onnx",
+          "bytes": 129947430,
+          "sha256": "a19a13c20e040041dd5298bc57e24158fd4bae6ef1127beb26947c23b42ec7ff",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "transformer",
+          "name": "transformer_model_q4f16.onnx_data",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/onnx/transformer_model_q4f16.onnx_data",
+          "bytes": 2032271360,
+          "sha256": "19889aa5bce49b5b79b6c736d276797a6e826a7f3cb51f3e71b2d416cbbdebc7",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "transformer",
+          "name": "transformer_model_q4f16.onnx_data_1",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/onnx/transformer_model_q4f16.onnx_data_1",
+          "bytes": 1507590144,
+          "sha256": "562bfd080c3ebbb5aaf176e47b24a71003403a4e0f9c5344ac85f8e687da1e47",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "transformer",
+          "name": "scheduler_step_model_f16.onnx",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/onnx/scheduler_step_model_f16.onnx",
+          "bytes": 3902,
+          "sha256": "d3ddc54c5f2963c87d28b6e3956b7f2602a6f0ecc1b248653bd44f5d17f129cd",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "text-encoder",
+          "name": "text_encoder_model_q4f16.onnx",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/onnx/text_encoder_model_q4f16.onnx",
+          "bytes": 57983622,
+          "sha256": "97cb87b20147da5ba44c3666ec17b7d9a1c90cabbaee71649bcb1a374371fb66",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "text-encoder",
+          "name": "text_encoder_model_q4f16.onnx_data",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/onnx/text_encoder_model_q4f16.onnx_data",
+          "bytes": 2036236288,
+          "sha256": "5a23fd9188f4ac8eb5e0ae3cb9eae970005f869eac499c7048d951db30a04617",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "text-encoder",
+          "name": "text_encoder_model_q4f16.onnx_data_1",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/onnx/text_encoder_model_q4f16.onnx_data_1",
+          "bytes": 124387328,
+          "sha256": "5c10bbb8670f2605f3bbc11fd302b15c4fdf264a2ac132d4ebec17717196cf6e",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "vae",
+          "name": "vae_decoder_model_f16.onnx",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/onnx/vae_decoder_model_f16.onnx",
+          "bytes": 99209498,
+          "sha256": "7b194f594d893ebcdd9afc6cf06944105fc58493870eb810ee7d4d5c333d8544",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "vae",
+          "name": "vae_pre_process_model_f16.onnx",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/onnx/vae_pre_process_model_f16.onnx",
+          "bytes": 346,
+          "sha256": "42d77874d1322d2a9849982f3c449273e91cfd66f5e8b0e42e9defa5dccaba1e",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "config",
+          "name": "tokenizer.json",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/tokenizer/tokenizer.json",
+          "bytes": 11422654,
+          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "config",
+          "name": "tokenizer_config.json",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/tokenizer/tokenizer_config.json",
+          "bytes": 9732,
+          "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "config",
+          "name": "vocab.json",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/tokenizer/vocab.json",
+          "bytes": 2776833,
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "config",
+          "name": "merges.txt",
+          "url": "https://huggingface.co/webnn/Z-Image-Turbo/resolve/02e1d8cc5d10d9ff6c7ed1f54b173bd981381bc2/tokenizer/merges.txt",
+          "bytes": 1671853,
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+          "licenceSpdx": "Apache-2.0"
+        }
+      ],
+      "totalBytes": 6003510990,
+      "requirements": {
+        "minVramGiB": null,
+        "minRamGiB": null
+      },
+      "unavailableReason": {
+        "en": "No image-to-image browser build is published yet: the available ONNX export lacks the VAE encoder (and ControlNet).",
+        "es": "Todavía no hay una versión para navegador con imagen a imagen: la exportación ONNX disponible no incluye el codificador del VAE (ni ControlNet)."
+      }
+    },
+    {
+      "key": "KLEIN4B_Q4",
+      "label": {
+        "en": "FLUX.2 [klein] 4B · Q4",
+        "es": "FLUX.2 [klein] 4B · Q4"
+      },
+      "summary": {
+        "en": "Alternative: instruction edits (\"warmer light\")",
+        "es": "Alternativa: ediciones por instrucción (\"más luz cálida\")"
+      },
+      "family": "flux2-klein",
+      "role": "edit",
+      "quantization": "Q4_K_M",
+      "runtimes": [
+        "desktop"
+      ],
+      "default": false,
+      "available": true,
+      "licence": {
+        "spdx": "Apache-2.0",
+        "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/blob/e7b7dc27f91deacad38e78976d1f2b499d76a294/LICENSE.md",
+        "commercialUse": true,
+        "useRestrictions": false
+      },
+      "files": [
+        {
+          "role": "transformer",
+          "name": "flux-2-klein-4b-Q4_K_M.gguf",
+          "url": "https://huggingface.co/unsloth/FLUX.2-klein-4B-GGUF/resolve/0084d1df98e2e2137fe776d55170bc4792ec1d66/flux-2-klein-4b-Q4_K_M.gguf",
+          "bytes": 2604311104,
+          "sha256": "0b25d143c8469b342bc5af3bce92b783bf6b0636d285f7b2f75e38af63af9a15",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "text-encoder",
+          "name": "Qwen3-4B-Q4_K_M.gguf",
+          "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+          "bytes": 2497280256,
+          "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "vae",
+          "name": "flux2-vae.safetensors",
+          "url": "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/5f526678002e43af5551dadb73ce2e8c91b43afe/split_files/vae/flux2-vae.safetensors",
+          "bytes": 336211292,
+          "sha256": "868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3",
+          "licenceSpdx": "Apache-2.0"
+        }
+      ],
+      "totalBytes": 5437802652,
+      "requirements": {
+        "minVramGiB": 6,
+        "minRamGiB": null
+      }
+    },
+    {
+      "key": "QWENEDIT_Q4",
+      "label": {
+        "en": "Qwen-Image-Edit-2511 · Q4 (Pro)",
+        "es": "Qwen-Image-Edit-2511 · Q4 (Pro)"
+      },
+      "summary": {
+        "en": "Pro, desktop only: strong instruction-based editing",
+        "es": "Pro, solo escritorio: edición fuerte por instrucción"
+      },
+      "family": "qwen-image-edit",
+      "role": "edit",
+      "quantization": "Q4_K_M",
+      "runtimes": [
+        "desktop"
+      ],
+      "default": false,
+      "available": true,
+      "licence": {
+        "spdx": "Apache-2.0",
+        "url": "https://raw.githubusercontent.com/QwenLM/Qwen-Image/main/LICENSE",
+        "commercialUse": true,
+        "useRestrictions": false
+      },
+      "files": [
+        {
+          "role": "transformer",
+          "name": "qwen-image-edit-2511-Q4_K_M.gguf",
+          "url": "https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/resolve/0d33d9692b4b26212297240d87b0d4719aa4fd06/qwen-image-edit-2511-Q4_K_M.gguf",
+          "bytes": 13244758624,
+          "sha256": "8677bac90627adbbc11efab87b1870e701c4eb3689ee865a3de8ab81b705a723",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "text-encoder",
+          "name": "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+          "url": "https://huggingface.co/ggml-org/Qwen2.5-VL-7B-Instruct-GGUF/resolve/508edd0afaa66bb9e9f40587acc2184f02daf1f6/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+          "bytes": 4683072032,
+          "sha256": "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "mmproj",
+          "name": "mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf",
+          "url": "https://huggingface.co/ggml-org/Qwen2.5-VL-7B-Instruct-GGUF/resolve/508edd0afaa66bb9e9f40587acc2184f02daf1f6/mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf",
+          "bytes": 853119712,
+          "sha256": "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506",
+          "licenceSpdx": "Apache-2.0"
+        },
+        {
+          "role": "vae",
+          "name": "qwen_image_vae.safetensors",
+          "url": "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/1f12b17be14c89b026c51a91d67c32f84bb047bc/split_files/vae/qwen_image_vae.safetensors",
+          "bytes": 253806246,
+          "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+          "licenceSpdx": "Apache-2.0"
+        }
+      ],
+      "totalBytes": 19034756614,
+      "requirements": {
+        "minVramGiB": 24,
+        "minRamGiB": null
+      }
+    },
+    {
+      "key": "SD15_LIGHT",
+      "label": {
+        "en": "Stable Diffusion 1.5 + ControlNet tile/depth · fp16",
+        "es": "Stable Diffusion 1.5 + ControlNet tile/depth · fp16"
+      },
+      "summary": {
+        "en": "Very modest machines",
+        "es": "Equipos muy modestos"
+      },
+      "family": "sd15",
+      "role": "img2img",
+      "quantization": "fp16",
+      "runtimes": [
+        "desktop"
+      ],
+      "default": false,
+      "available": true,
+      "licence": {
+        "spdx": "LicenseRef-CreativeML-OpenRAIL-M",
+        "url": "https://huggingface.co/spaces/CompVis/stable-diffusion-license",
+        "commercialUse": true,
+        "useRestrictions": true
+      },
+      "files": [
+        {
+          "role": "transformer",
+          "name": "v1-5-pruned-emaonly-fp16.safetensors",
+          "url": "https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/9cfd069101959ca3828bf9c04a4419870832b74f/v1-5-pruned-emaonly-fp16.safetensors",
+          "bytes": 2132696762,
+          "sha256": "e9476a13728cd75d8279f6ec8bad753a66a1957ca375a1464dc63b37db6e3916",
+          "licenceSpdx": "LicenseRef-CreativeML-OpenRAIL-M"
+        },
+        {
+          "role": "controlnet",
+          "name": "control_v11f1e_sd15_tile_fp16.safetensors",
+          "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/ab830a51c5c573a5b85bfdbaa3ae0ab7e1baf5f7/control_v11f1e_sd15_tile_fp16.safetensors",
+          "bytes": 722601104,
+          "sha256": "2f31868eedb243a77932e3c63907a6ba0a2058b6d65b5c27b89ee1b7f618ea33",
+          "licenceSpdx": "LicenseRef-CreativeML-OpenRAIL-M"
+        },
+        {
+          "role": "controlnet",
+          "name": "control_v11f1p_sd15_depth_fp16.safetensors",
+          "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/ab830a51c5c573a5b85bfdbaa3ae0ab7e1baf5f7/control_v11f1p_sd15_depth_fp16.safetensors",
+          "bytes": 722601100,
+          "sha256": "1c4a79aa52fb63f607cb9ff479ea5aa1923b6ceb21267bd14b69bd05d7b617be",
+          "licenceSpdx": "LicenseRef-CreativeML-OpenRAIL-M"
+        }
+      ],
+      "totalBytes": 3577898966,
+      "requirements": {
+        "minVramGiB": 0,
+        "minRamGiB": 8
+      }
+    }
+  ],
+  "recommendation": [
+    {
+      "id": "gpu-24",
+      "device": "gpu",
+      "minGiB": 24,
+      "maxGiB": null,
+      "recommended": "ZIMAGE_Q8",
+      "offered": [
+        "QWENEDIT_Q4",
+        "KLEIN4B_Q4"
+      ]
+    },
+    {
+      "id": "gpu-12",
+      "device": "gpu",
+      "minGiB": 12,
+      "maxGiB": 24,
+      "recommended": "ZIMAGE_Q8",
+      "offered": [
+        "KLEIN4B_Q4"
+      ]
+    },
+    {
+      "id": "gpu-6",
+      "device": "gpu",
+      "minGiB": 6,
+      "maxGiB": 12,
+      "recommended": "ZIMAGE_Q4",
+      "offered": [
+        "KLEIN4B_Q4"
+      ]
+    },
+    {
+      "id": "gpu-4",
+      "device": "gpu",
+      "minGiB": 4,
+      "maxGiB": 6,
+      "recommended": "ZIMAGE_Q2",
+      "offered": [
+        "SD15_LIGHT"
+      ]
+    },
+    {
+      "id": "gpu-0",
+      "device": "gpu",
+      "minGiB": 0,
+      "maxGiB": 4,
+      "recommended": "SD15_LIGHT",
+      "offered": []
+    },
+    {
+      "id": "cpu-32",
+      "device": "cpu",
+      "minGiB": 32,
+      "maxGiB": null,
+      "recommended": "ZIMAGE_Q8",
+      "offered": [
+        "ZIMAGE_Q4"
+      ]
+    },
+    {
+      "id": "cpu-16",
+      "device": "cpu",
+      "minGiB": 16,
+      "maxGiB": 32,
+      "recommended": "ZIMAGE_Q4",
+      "offered": [
+        "SD15_LIGHT"
+      ]
+    },
+    {
+      "id": "cpu-8",
+      "device": "cpu",
+      "minGiB": 8,
+      "maxGiB": 16,
+      "recommended": "SD15_LIGHT",
+      "offered": []
+    },
+    {
+      "id": "cpu-0",
+      "device": "cpu",
+      "minGiB": 0,
+      "maxGiB": 8,
+      "recommended": null,
+      "offered": []
+    },
+    {
+      "id": "web-gpu",
+      "device": "web",
+      "webgpu": true,
+      "minBufferGiB": 1,
+      "recommended": "ZIMAGE_WEB",
+      "offered": []
+    },
+    {
+      "id": "web-none",
+      "device": "web",
+      "webgpu": false,
+      "recommended": null,
+      "offered": []
+    }
+  ]
+}

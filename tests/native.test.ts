@@ -1,0 +1,217 @@
+import { describe, expect, it } from 'vitest';
+import { connectNative, NativeClient, takeLaunchToken, TOKEN_KEY, type NativeInfo } from '../src/io/native';
+import { exactBytesSliced, FLAG_DATA, FLAG_DONE, FRAME_HEADER, meshKeyHash, NativeEngine, parseFrame } from '../src/render/native';
+import { exactBytes } from '../src/render/tiles';
+import { createInitialState } from '../src/core/store';
+
+const TOKEN = '0123456789abcdef0123456789abcdef';
+
+function memoryStorage(): { getItem(k: string): string | null; setItem(k: string, v: string): void; data: Map<string, string> } {
+  const data = new Map<string, string>();
+  return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
+}
+
+const INFO: NativeInfo = {
+  app: 'repackshot',
+  version: '0.1.0',
+  engineVersion: '0.3.0',
+  threads: 8,
+  isa: 'avx2',
+  simd: ['scalar', 'sse2', 'avx2'],
+  os: 'linux',
+  arch: 'x86_64',
+  dataDir: '/d',
+  modelsDir: '/d/models',
+  logsDir: '/d/logs',
+  resultsDir: '/d/results',
+  portable: true,
+  browser: 'chromium',
+  pid: 1,
+};
+
+describe('the launcher token', () => {
+  it('is taken from the fragment, kept for the session and removed from the address bar', () => {
+    const storage = memoryStorage();
+    const replaced: string[] = [];
+    const token = takeLaunchToken({ hash: `#token=${TOKEN}`, pathname: '/', search: '?mode=full' }, storage, { replaceState: (_d, _u, url) => replaced.push(url ?? '') });
+    expect(token).toBe(TOKEN);
+    expect(storage.data.get(TOKEN_KEY)).toBe(TOKEN);
+    expect(replaced).toEqual(['/?mode=full']);
+    // A reload: the fragment is gone, the session still has it.
+    expect(takeLaunchToken({ hash: '', pathname: '/', search: '' }, storage, null)).toBe(TOKEN);
+  });
+
+  it('is ignored when malformed, and absent in the web version', () => {
+    const storage = memoryStorage();
+    expect(takeLaunchToken({ hash: '#token=xyz', pathname: '/', search: '' }, storage, null)).toBeNull();
+    expect(takeLaunchToken({ hash: `#token=${TOKEN.toUpperCase()}`, pathname: '/', search: '' }, storage, null)).toBeNull();
+    storage.setItem(TOKEN_KEY, 'not-a-token');
+    expect(takeLaunchToken({ hash: '', pathname: '/', search: '' }, storage, null)).toBeNull();
+    const broken = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };
+    expect(takeLaunchToken({ hash: `#a=1&token=${TOKEN}`, pathname: '/', search: '' }, broken, null)).toBe(TOKEN);
+    expect(takeLaunchToken({ hash: '', pathname: '/', search: '' }, broken, null)).toBeNull();
+  });
+});
+
+describe('connectNative', () => {
+  const loc = { hash: `#token=${TOKEN}`, pathname: '/', search: '' };
+
+  it('needs the token and an answer from /api/info', async () => {
+    const calls: [string, Headers][] = [];
+    const ok = async (url: string, init?: RequestInit) => {
+      calls.push([url, new Headers(init?.headers)]);
+      return new Response(JSON.stringify(INFO), { status: 200 });
+    };
+    const client = await connectNative({ location: loc, storage: memoryStorage(), history: null, fetch: ok });
+    expect(client).toBeInstanceOf(NativeClient);
+    expect(client!.info.threads).toBe(8);
+    expect(calls[0][0]).toBe('/api/info');
+    expect(calls[0][1].get('X-Repackshot-Token')).toBe(TOKEN);
+    let called = false;
+    expect(await connectNative({ location: { hash: '', pathname: '/', search: '' }, storage: memoryStorage(), history: null, fetch: async () => ((called = true), new Response('{}')) })).toBeNull();
+    expect(called).toBe(false);
+    expect(await connectNative({ location: loc, storage: null, history: null, fetch: async () => new Response('{}', { status: 401 }) })).toBeNull();
+    expect(await connectNative({ location: loc, storage: null, history: null, fetch: async () => { throw new TypeError('offline'); } })).toBeNull();
+    expect(await connectNative({ location: loc, storage: null, history: null, fetch: async () => new Response('{"app":"other"}') })).toBeNull();
+  });
+});
+
+describe('the launcher client', () => {
+  function client(reply: (url: string, init: RequestInit) => Response) {
+    const seen: { url: string; init: RequestInit }[] = [];
+    const c = new NativeClient(TOKEN, INFO, async (url, init) => {
+      seen.push({ url, init: init ?? {} });
+      return reply(url, init ?? {});
+    });
+    return { c, seen };
+  }
+  const sha = 'ab'.repeat(32);
+
+  it('sends the token and the blob API as the launcher expects', async () => {
+    const { c, seen } = client(() => new Response(JSON.stringify({ sha256: sha, state: 'partial', contiguous: 10, written: 10 })));
+    const st = await c.putChunk(sha, 1024, new Uint8Array(4), 4096);
+    expect(st.contiguous).toBe(10);
+    expect(seen[0].url).toBe(`/api/models/blobs/${sha}?offset=1024&total=4096`);
+    expect(seen[0].init.method).toBe('PUT');
+    expect(new Headers(seen[0].init.headers).get('X-Repackshot-Token')).toBe(TOKEN);
+    await c.blobStatus(sha);
+    expect(seen[1].url).toBe(`/api/models/blobs/${sha}/status`);
+    await c.remove('ZIMAGE_Q4', ['ZIMAGE_Q8']);
+    expect(seen[2].url).toBe('/api/models/ZIMAGE_Q4?keep=ZIMAGE_Q8');
+    expect(seen[2].init.method).toBe('DELETE');
+    await c.readBlob(sha, [0, 99]);
+    expect(new Headers(seen[3].init.headers).get('Range')).toBe('bytes=0-99');
+    await c.openFolder('models');
+    expect(seen[4].init.body).toBe('{"folder":"models"}');
+    await expect(c.blobStatus('../x')).rejects.toThrow();
+    await expect(c.putChunk(sha.toUpperCase(), 0, new Uint8Array(1))).rejects.toThrow();
+    await expect(c.install('../KEY')).rejects.toThrow();
+  });
+
+  it('reports a damaged blob and API errors', async () => {
+    const { c } = client((url) =>
+      url.endsWith('/finish')
+        ? new Response(JSON.stringify({ error: 'sha256-mismatch', actual: 'cd'.repeat(32) }), { status: 422 })
+        : new Response(JSON.stringify({ error: 'missing', message: 'files of the model are not complete' }), { status: 409 }),
+    );
+    expect(await c.finishBlob(sha)).toEqual({ ok: false, status: 422, error: 'sha256-mismatch', actual: 'cd'.repeat(32) });
+    await expect(c.install('ZIMAGE_Q8')).rejects.toMatchObject({ status: 409, code: 'missing' });
+  });
+});
+
+/** A frame as the launcher writes it (render.rs `Frame::header`). */
+function frame(f: { pass: number; samples: number; width: number; height: number; seconds?: number; flags: number; sums?: Float32Array }): ArrayBuffer {
+  const data = f.sums && f.flags & FLAG_DATA ? f.sums.length * 4 : 0;
+  const buf = new ArrayBuffer(FRAME_HEADER + data);
+  const v = new DataView(buf);
+  'RPX1'.split('').forEach((c, i) => v.setUint8(i, c.charCodeAt(0)));
+  [FRAME_HEADER, f.pass, f.samples, f.width, f.height].forEach((x, i) => v.setUint32(4 + i * 4, x, true));
+  v.setFloat32(24, f.seconds ?? 0.5, true);
+  v.setUint32(28, f.flags, true);
+  v.setUint32(32, 64, true);
+  v.setUint32(36, 8, true);
+  v.setBigUint64(40, 12345n, true);
+  if (data) new Float32Array(buf, FRAME_HEADER).set(f.sums!);
+  return buf;
+}
+
+describe('native frames', () => {
+  it('parse the header and the sums', () => {
+    const sums = new Float32Array([1, 2, 3, 4, 0.5, 0.25, 0.125, 1]);
+    const f = parseFrame(frame({ pass: 3, samples: 4, width: 2, height: 1, flags: FLAG_DONE | FLAG_DATA, sums }));
+    expect(f).toMatchObject({ pass: 3, samples: 4, width: 2, height: 1, flags: FLAG_DONE | FLAG_DATA, maxSamples: 64, threads: 8, rays: 12345 });
+    expect(f.seconds).toBeCloseTo(0.5);
+    expect(Array.from(f.sums!)).toEqual(Array.from(sums));
+    expect(parseFrame(frame({ pass: 1, samples: 1, width: 2, height: 1, flags: 0 })).sums).toBeNull();
+    expect(() => parseFrame(new ArrayBuffer(10))).toThrow();
+    const bad = frame({ pass: 1, samples: 1, width: 2, height: 1, flags: 0 });
+    new DataView(bad).setUint8(0, 0);
+    expect(() => parseFrame(bad)).toThrow();
+    const short = frame({ pass: 1, samples: 1, width: 2, height: 1, flags: 0 });
+    new DataView(short).setUint32(28, FLAG_DATA, true);
+    expect(() => parseFrame(short)).toThrow();
+  });
+
+  it('mesh keys hash stably', () => {
+    expect(meshKeyHash('a;b')).toBe(meshKeyHash('a;b'));
+    expect(meshKeyHash('a;b')).not.toBe(meshKeyHash('b;a'));
+    expect(meshKeyHash('')).toMatch(/^[0-9a-f]+$/);
+  });
+
+  it('converts in slices exactly like the whole conversion', async () => {
+    const w = 7;
+    const h = 150;
+    const sum = new Float32Array(w * h * 4).map((_, i) => ((i * 37) % 101) / 25);
+    const whole = exactBytes(sum, 4, 0.5, 1);
+    expect(Array.from(await exactBytesSliced(sum, w, h, 4, 0.5, 1, 64))).toEqual(Array.from(whole));
+  });
+});
+
+describe('NativeEngine render', () => {
+  it('posts a final job, follows its progress and converts the sums exactly', async () => {
+    const width = 4;
+    const height = 3;
+    const sums = new Float32Array(width * height * 4).map((_, i) => (i % 4 === 3 ? 2 : (i % 7) / 3));
+    const posted: string[] = [];
+    let polls = 0;
+    const transport = {
+      async request(path: string, init: RequestInit = {}) {
+        if (init.method === 'POST') {
+          posted.push(path);
+          return new Response(JSON.stringify({ id: 7 }));
+        }
+        if (init.method === 'DELETE') return new Response(null, { status: 204 });
+        if (path.includes('data=0')) {
+          polls++;
+          return new Response(frame({ pass: polls, samples: polls, width, height, flags: polls >= 2 ? FLAG_DONE : 0 }));
+        }
+        return new Response(frame({ pass: 2, samples: 2, width, height, flags: FLAG_DONE | FLAG_DATA, sums }));
+      },
+    };
+    const source = {
+      build: () => ({ meshKey: 'm', bytes: () => new Uint8Array([1, 2, 3]) }),
+      tone: () => ({ exposureEv: 0, tonemap: 1 }),
+    };
+    const engine = new NativeEngine(transport, source, { threads: 8, isa: 'avx2' });
+    engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+    const progress: number[] = [];
+    const px = await engine.renderPixels({ width, height, maxSamples: 2, maxSeconds: 0, transparent: false, onProgress: (p) => progress.push(p.progress) });
+    expect(posted[0]).toMatch(/^\/api\/render\?kind=final&mesh=[0-9a-f]+&client=[0-9a-f]+$/);
+    expect(px.samples).toBe(2);
+    expect(Array.from(px.data)).toEqual(Array.from(exactBytes(sums, 2, 0, 1)));
+    expect(progress[0]).toBe(0);
+    expect(progress.at(-1)).toBe(1);
+    const st = engine.status();
+    expect(st).toMatchObject({ native: true, threads: 8, isa: 'avx2', workers: 8, simd: true });
+    expect(st.device).toBe('native · 8 threads · avx2');
+  });
+
+  it('turns a refused render into an error', async () => {
+    const transport = { request: async () => new Response(JSON.stringify({ error: 'bad-scene', message: 'MESH section too short' }), { status: 400 }) };
+    const source = { build: () => ({ meshKey: 'm', bytes: () => new Uint8Array(1) }), tone: () => ({ exposureEv: 0, tonemap: 1 }) };
+    const engine = new NativeEngine(transport, source, { threads: 2, isa: 'scalar' });
+    engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+    await expect(engine.renderPixels({ width: 2, height: 2, maxSamples: 1, maxSeconds: 0, transparent: false })).rejects.toThrow('MESH section too short');
+    expect(engine.status().simd).toBe(false);
+  });
+});

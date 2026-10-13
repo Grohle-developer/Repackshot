@@ -1,0 +1,519 @@
+//! The server over real sockets: security, files, ranges, the model store.
+
+mod common;
+
+use common::{TestServer, TOKEN};
+use rt_app::sha256::{hex, Sha256};
+use std::io::{BufReader, Read, Write};
+use std::net::TcpStream;
+use std::time::Duration;
+
+#[test]
+fn foreign_hosts_origins_and_missing_tokens_are_refused() {
+    let t = TestServer::start("security", 1);
+    let port = t.port();
+    let own = format!("127.0.0.1:{port}");
+    // The page itself needs no token, but its own host.
+    let page = t.raw("GET", "/", &[], b"");
+    assert_eq!(page.status, 200);
+    assert!(page.text().contains("Repackshot"));
+    assert_eq!(page.header("cache-control"), Some("no-cache"));
+    assert_eq!(
+        t.raw("GET", "/", &[("Host", &format!("localhost:{port}"))], b"")
+            .status,
+        200
+    );
+    // DNS rebinding: another name, or another port.
+    for host in [
+        "evil.example:80".to_string(),
+        format!("evil.example:{port}"),
+        "127.0.0.1".into(),
+        format!("127.0.0.1:{}", port.wrapping_add(1)),
+    ] {
+        assert_eq!(
+            t.raw("GET", "/", &[("Host", &host)], b"").status,
+            421,
+            "{host}"
+        );
+        assert_eq!(
+            t.raw(
+                "GET",
+                "/api/info",
+                &[("Host", &host), ("X-Repackshot-Token", TOKEN)],
+                b""
+            )
+            .status,
+            421,
+            "{host}"
+        );
+    }
+    // The API wants the token.
+    assert_eq!(t.raw("GET", "/api/info", &[], b"").status, 401);
+    assert_eq!(
+        t.raw(
+            "GET",
+            "/api/info",
+            &[("X-Repackshot-Token", "00112233445566778899aabbccddeefe")],
+            b""
+        )
+        .status,
+        401
+    );
+    assert_eq!(
+        t.raw("POST", "/api/render?kind=final", &[], b"RSB1").status,
+        401
+    );
+    assert_eq!(
+        t.raw(
+            "PUT",
+            &format!("/api/models/blobs/{}?offset=0", "0".repeat(64)),
+            &[],
+            b"x"
+        )
+        .status,
+        401
+    );
+    // A foreign Origin is refused even with the token; the app's own is fine.
+    assert_eq!(
+        t.raw(
+            "GET",
+            "/api/info",
+            &[
+                ("X-Repackshot-Token", TOKEN),
+                ("Origin", "https://evil.example")
+            ],
+            b""
+        )
+        .status,
+        403
+    );
+    assert_eq!(
+        t.raw(
+            "GET",
+            "/api/info",
+            &[("X-Repackshot-Token", TOKEN), ("Origin", "null")],
+            b""
+        )
+        .status,
+        403
+    );
+    let ok = t.raw(
+        "GET",
+        "/api/info",
+        &[
+            ("X-Repackshot-Token", TOKEN),
+            ("Origin", &format!("http://{own}")),
+        ],
+        b"",
+    );
+    assert_eq!(ok.status, 200);
+    // No CORS header ever, not even for a preflight.
+    let preflight = t.raw(
+        "OPTIONS",
+        "/api/info",
+        &[
+            ("Origin", "https://evil.example"),
+            ("Access-Control-Request-Method", "GET"),
+        ],
+        b"",
+    );
+    assert!(preflight.status >= 400);
+    for r in [&page, &ok, &preflight] {
+        assert!(r
+            .headers
+            .iter()
+            .all(|(n, _)| !n.starts_with("access-control")));
+        assert_eq!(r.header("x-content-type-options"), Some("nosniff"));
+    }
+    let info = rt_app::json::parse(&ok.text()).unwrap();
+    assert_eq!(info.get("app").unwrap().as_str(), Some("repackshot"));
+    assert!(info.get("threads").unwrap().as_f64().unwrap() >= 1.0);
+    assert_eq!(info.get("portable").unwrap().as_bool(), Some(false));
+    assert!(!ok.text().contains(TOKEN), "the token is never echoed");
+}
+
+#[test]
+fn static_files_ranges_and_paths() {
+    let t = TestServer::start("static", 1);
+    let wasm = t.raw("GET", "/engine/rt.wasm", &[], b"");
+    assert_eq!(wasm.status, 200);
+    assert_eq!(wasm.header("content-type"), Some("application/wasm"));
+    assert_eq!(wasm.body.len(), 16);
+    let part = t.raw("GET", "/engine/rt.wasm", &[("Range", "bytes=8-11")], b"");
+    assert_eq!(part.status, 206);
+    assert_eq!(part.body, b"abcd");
+    assert_eq!(part.header("content-range"), Some("bytes 8-11/16"));
+    let tail = t.raw("GET", "/engine/rt.wasm", &[("Range", "bytes=-3")], b"");
+    assert_eq!((tail.status, tail.body.as_slice()), (206, &b"fgh"[..]));
+    let past = t.raw("GET", "/engine/rt.wasm", &[("Range", "bytes=16-")], b"");
+    assert_eq!(past.status, 416);
+    assert_eq!(past.header("content-range"), Some("bytes */16"));
+    let head = t.raw("HEAD", "/engine/rt.wasm", &[], b"");
+    assert_eq!(
+        (head.status, head.header("content-length")),
+        (200, Some("16"))
+    );
+    for bad in [
+        "/../outside.txt",
+        "/engine/../../outside.txt",
+        "/%2e%2e/outside.txt",
+        "/engine%5c..%5c..%5coutside.txt",
+    ] {
+        let r = t.raw("GET", bad, &[], b"");
+        assert!(r.status == 400 || r.status == 404, "{bad}: {}", r.status);
+        assert!(!r.text().contains("secret"));
+    }
+    assert_eq!(t.raw("GET", "/%00", &[], b"").status, 400);
+    assert_eq!(t.raw("POST", "/", &[], b"x").status, 405);
+    assert_eq!(t.raw("GET", "/missing.js", &[], b"").status, 404);
+}
+
+#[test]
+fn keep_alive_and_bad_requests() {
+    let t = TestServer::start("keepalive", 1);
+    let mut s = TcpStream::connect(("127.0.0.1", t.port())).unwrap();
+    s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let host = format!("127.0.0.1:{}", t.port());
+    let mut r = BufReader::new(s.try_clone().unwrap());
+    for _ in 0..3 {
+        write!(
+            s,
+            "GET /api/info HTTP/1.1\r\nHost: {host}\r\nX-Repackshot-Token: {TOKEN}\r\n\r\n"
+        )
+        .unwrap();
+        let reply = rt_app::client::read_reply(&mut r, false).unwrap();
+        assert_eq!(reply.status, 200);
+        assert_eq!(reply.header("connection"), Some("keep-alive"));
+    }
+    // A body the handler does not read is drained; the connection goes on.
+    write!(s, "POST /api/alive HTTP/1.1\r\nHost: {host}\r\nX-Repackshot-Token: {TOKEN}\r\nContent-Length: 5\r\n\r\nhello").unwrap();
+    assert_eq!(
+        rt_app::client::read_reply(&mut r, false).unwrap().status,
+        204
+    );
+    write!(s, "GET / HTTP/1.1\r\nHost: {host}\r\n\r\n").unwrap();
+    assert_eq!(
+        rt_app::client::read_reply(&mut r, false).unwrap().status,
+        200
+    );
+    // A malformed request: 400 and the connection closes.
+    write!(s, "GET / HTTP/1.1\r\nHost {host}\r\n\r\n").unwrap();
+    let bad = rt_app::client::read_reply(&mut r, false).unwrap();
+    assert_eq!(bad.status, 400);
+    assert_eq!(bad.header("connection"), Some("close"));
+    let mut rest = Vec::new();
+    assert_eq!(r.read_to_end(&mut rest).unwrap_or(0), 0);
+    // Chunked bodies are not supported: 501.
+    let mut s = TcpStream::connect(("127.0.0.1", t.port())).unwrap();
+    write!(
+        s,
+        "POST /api/alive HTTP/1.1\r\nHost: {host}\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+    )
+    .unwrap();
+    let reply = rt_app::client::read_reply(&mut BufReader::new(s), false).unwrap();
+    assert_eq!(reply.status, 501);
+}
+
+fn sha(data: &[u8]) -> String {
+    hex(&Sha256::digest(data))
+}
+
+fn data(n: usize, seed: u32) -> Vec<u8> {
+    (0..n as u32)
+        .map(|i| (i.wrapping_mul(2654435761).rotate_left(seed) >> 24) as u8)
+        .collect()
+}
+
+#[test]
+fn models_by_blob_out_of_order_resumed_damaged_and_shared() {
+    let t = TestServer::start("models", 1);
+    let weights = data(3_000_017, 3);
+    let encoder = data(1_234_567, 7);
+    let other = data(400_000, 11);
+    let (w, e, o) = (sha(&weights), sha(&encoder), sha(&other));
+    // Two imported models sharing the encoder.
+    let manifest = |files: &[(&str, &[u8])]| {
+        let files: Vec<String> = files
+            .iter()
+            .map(|(name, d)| {
+                format!(
+                    r#"{{"name":"{name}","role":"transformer","bytes":{},"sha256":"{}"}}"#,
+                    d.len(),
+                    sha(d)
+                )
+            })
+            .collect();
+        format!(r#"{{"label":"test","files":[{}]}}"#, files.join(","))
+    };
+    assert_eq!(
+        t.api(
+            "PUT",
+            "/api/models/imported/ALPHA",
+            manifest(&[("w.gguf", &weights), ("enc.gguf", &encoder)]).as_bytes()
+        )
+        .status,
+        204
+    );
+    assert_eq!(
+        t.api(
+            "PUT",
+            "/api/models/imported/BETA",
+            manifest(&[("o.gguf", &other), ("enc.gguf", &encoder)]).as_bytes()
+        )
+        .status,
+        204
+    );
+    assert_eq!(
+        t.api("PUT", "/api/models/imported/ZIMAGE_Q8", b"{\"files\":[]}")
+            .status,
+        409,
+        "catalogue keys are not imported"
+    );
+    assert_eq!(
+        t.api("PUT", "/api/models/imported/..", b"{\"files\":[]}")
+            .status,
+        400
+    );
+
+    // The weights, in chunks out of order; the "download" stops halfway.
+    let total = weights.len();
+    let cuts = [0, 1_000_000, 1_500_001, 2_222_222, total];
+    for &i in &[2usize, 0] {
+        let r = t.api(
+            "PUT",
+            &format!("/api/models/blobs/{w}?offset={}&total={total}", cuts[i]),
+            &weights[cuts[i]..cuts[i + 1]],
+        );
+        assert_eq!(r.status, 200, "{}", r.text());
+    }
+    let status = t.json("GET", &format!("/api/models/blobs/{w}/status"), b"");
+    assert_eq!(status.get("state").unwrap().as_str(), Some("partial"));
+    assert_eq!(
+        status.get("contiguous").unwrap().as_f64(),
+        Some(1_000_000.0)
+    );
+    let early = t.api("POST", &format!("/api/models/blobs/{w}/finish"), b"");
+    assert_eq!(early.status, 409);
+    assert!(early.text().contains("\"contiguous\":1000000"));
+    // Resume from the contiguous bytes.
+    for i in [1usize, 3] {
+        assert_eq!(
+            t.api(
+                "PUT",
+                &format!("/api/models/blobs/{w}?offset={}&total={total}", cuts[i]),
+                &weights[cuts[i]..cuts[i + 1]]
+            )
+            .status,
+            200
+        );
+    }
+    let done = t.api(
+        "POST",
+        &format!("/api/models/blobs/{w}/finish?bytes={total}"),
+        b"",
+    );
+    assert_eq!(done.status, 200, "{}", done.text());
+    let back = t.api("GET", &format!("/api/models/blobs/{w}"), b"");
+    assert_eq!(sha(&back.body), w);
+    let range = t.raw(
+        "GET",
+        &format!("/api/models/blobs/{w}"),
+        &[("X-Repackshot-Token", TOKEN), ("Range", "bytes=10-19")],
+        b"",
+    );
+    assert_eq!(
+        (range.status, range.body.as_slice()),
+        (206, &weights[10..20])
+    );
+    assert_eq!(
+        t.api("GET", &format!("/api/models/blobs/{e}"), b"").status,
+        404,
+        "not downloaded"
+    );
+
+    // A wrong byte: 422, and the part stays damaged until deleted.
+    let mut bad = encoder.clone();
+    bad[777] ^= 0x40;
+    assert_eq!(
+        t.api(
+            "PUT",
+            &format!("/api/models/blobs/{e}?offset=0&total={}", bad.len()),
+            &bad
+        )
+        .status,
+        200
+    );
+    let mismatch = t.api("POST", &format!("/api/models/blobs/{e}/finish"), b"");
+    assert_eq!(mismatch.status, 422);
+    assert!(mismatch.text().contains(&sha(&bad)));
+    let st = t.json("GET", &format!("/api/models/blobs/{e}/status"), b"");
+    assert_eq!(st.get("damaged").unwrap().as_bool(), Some(true));
+    assert_eq!(
+        t.api(
+            "PUT",
+            &format!("/api/models/blobs/{e}?offset=0"),
+            &encoder[..10]
+        )
+        .status,
+        409
+    );
+    assert_eq!(
+        t.api("DELETE", &format!("/api/models/blobs/{e}"), b"")
+            .status,
+        204
+    );
+    assert_eq!(
+        t.api(
+            "PUT",
+            &format!("/api/models/blobs/{e}?offset=0&total={}", encoder.len()),
+            &encoder
+        )
+        .status,
+        200
+    );
+    assert_eq!(
+        t.api("POST", &format!("/api/models/blobs/{e}/finish"), b"")
+            .status,
+        200
+    );
+
+    // Installing needs every blob; then the shared one survives deleting one of two models.
+    assert_eq!(
+        t.api("POST", "/api/models/installed", br#"{"key":"BETA"}"#)
+            .status,
+        409
+    );
+    assert_eq!(
+        t.api("PUT", &format!("/api/models/blobs/{o}?offset=0"), &other)
+            .status,
+        200
+    );
+    assert_eq!(
+        t.api("POST", &format!("/api/models/blobs/{o}/finish"), b"")
+            .status,
+        200
+    );
+    assert_eq!(
+        t.api("POST", "/api/models/installed", br#"{"key":"ALPHA"}"#)
+            .status,
+        200
+    );
+    assert_eq!(
+        t.api("POST", "/api/models/installed", br#"{"key":"BETA"}"#)
+            .status,
+        200
+    );
+    let list = t.json("GET", "/api/models", b"");
+    let installed: Vec<&str> = list
+        .get("installed")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k.as_str().unwrap())
+        .collect();
+    assert_eq!(installed, ["ALPHA", "BETA"]);
+    assert_eq!(
+        t.api("DELETE", &format!("/api/models/blobs/{e}"), b"")
+            .status,
+        409,
+        "in use"
+    );
+    let gone = t.json("DELETE", "/api/models/ALPHA", b"");
+    let deleted: Vec<&str> = gone
+        .get("deleted")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k.as_str().unwrap())
+        .collect();
+    assert_eq!(deleted, [w.as_str()], "only the weights nobody else uses");
+    assert_eq!(
+        t.api("GET", &format!("/api/models/blobs/{e}"), b"").status,
+        200,
+        "the shared encoder stays"
+    );
+    assert_eq!(
+        t.api("GET", &format!("/api/models/blobs/{w}"), b"").status,
+        404
+    );
+    let list = t.json("GET", "/api/models", b"");
+    let models = list.get("models").unwrap().as_array().unwrap();
+    let beta = models
+        .iter()
+        .find(|m| m.get("key").unwrap().as_str() == Some("BETA"))
+        .unwrap();
+    assert_eq!(beta.get("state").unwrap().as_str(), Some("complete"));
+    // The catalogue's models are listed too, with their blobs missing.
+    let q8 = models
+        .iter()
+        .find(|m| m.get("key").unwrap().as_str() == Some("ZIMAGE_Q8"))
+        .unwrap();
+    assert_eq!(q8.get("state").unwrap().as_str(), Some("missing"));
+    assert_eq!(q8.get("source").unwrap().as_str(), Some("catalogue"));
+    // Names are validated.
+    assert_eq!(
+        t.api(
+            "PUT",
+            &format!("/api/models/blobs/{}?offset=0", w.to_uppercase()),
+            b"x"
+        )
+        .status,
+        400
+    );
+    assert_eq!(
+        t.api("PUT", "/api/models/blobs/..%2f..%2fx?offset=0", b"x")
+            .status,
+        400
+    );
+    assert_eq!(t.api("DELETE", "/api/models/a..b", b"").status, 400);
+    assert_eq!(
+        t.api("PUT", &format!("/api/models/blobs/{o}"), b"x").status,
+        400,
+        "offset is required"
+    );
+}
+
+#[test]
+fn pending_models_from_the_installer() {
+    let t = TestServer::start("pending", 1);
+    assert_eq!(t.api("GET", "/api/pending-models", b"").text(), "null");
+    std::fs::write(
+        t.dir.join("data/pending-models.json"),
+        "{\"device\":\"cpu\",\"keys\":[\"ZIMAGE_Q4\"]}\r\n",
+    )
+    .unwrap();
+    assert_eq!(
+        t.api("GET", "/api/pending-models", b"").text(),
+        r#"{"device":"cpu","keys":["ZIMAGE_Q4"]}"#
+    );
+    assert_eq!(t.api("DELETE", "/api/pending-models", b"").status, 204);
+    assert!(!t.dir.join("data/pending-models.json").exists());
+    assert_eq!(t.api("GET", "/api/pending-models", b"").text(), "null");
+    assert_eq!(t.api("DELETE", "/api/pending-models", b"").status, 204);
+}
+
+#[test]
+fn hardware_and_open_folder_validation() {
+    let t = TestServer::start("hardware", 1);
+    let hw = t.json("GET", "/api/hardware?device=cpu", b"");
+    assert_eq!(hw.get("device").unwrap().as_str(), Some("cpu"));
+    assert!(hw.get("threads").unwrap().as_f64().unwrap() >= 1.0);
+    assert!(hw.get("gpus").unwrap().as_array().is_some());
+    if hw.get("detected").unwrap().as_bool() == Some(true) {
+        assert!(hw.get("recommendation").unwrap().get("rowId").is_some());
+    }
+    assert_eq!(
+        t.api("POST", "/api/open-folder", br#"{"path":"/"}"#).status,
+        403
+    );
+    assert_eq!(
+        t.api("POST", "/api/open-folder", br#"{"folder":"nope"}"#)
+            .status,
+        400
+    );
+    assert_eq!(t.api("POST", "/api/open-folder", b"not json").status, 400);
+    assert_eq!(t.api("GET", "/api/nothing", b"").status, 404);
+    assert_eq!(t.api("PUT", "/api/info", b"").status, 405);
+}

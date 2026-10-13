@@ -169,6 +169,7 @@ const TABLE = {
   'viewport.frameMs': ['{ms} ms per frame', '{ms} ms por fotograma'],
   'viewport.renderNote': ['Render always uses the path tracer', 'Render usa siempre el trazador'],
   'viewport.pool': ['{workers} workers · {isa}', '{workers} workers · {isa}'],
+  'viewport.native': ['Native · {threads} threads · {isa}', 'Nativo · {threads} hilos · {isa}'],
   'viewport.samples': ['{n} samples', '{n} muestras'],
   'viewport.sample': ['1 sample', '1 muestra'],
   'viewport.size': ['{x} × {y} × {z} mm', '{x} × {y} × {z} mm'],
@@ -716,6 +717,7 @@ const TABLE = {
   'status.triangles': ['{n} triangles', '{n} triángulos'],
   'status.engineFast': ['Fast · {device}', 'Rápido · {device}'],
   'status.engineFull': ['Full · {workers} workers · {isa}', 'Completo · {workers} workers · {isa}'],
+  'status.engineNative': ['Full · Native · {threads} threads · {isa}', 'Completo · Nativo · {threads} hilos · {isa}'],
   'status.isaSimd': ['SIMD', 'SIMD'],
   'status.isaScalar': ['scalar', 'escalar'],
   'status.noEngine': ['No viewport engine', 'Sin motor de visor'],
@@ -997,6 +999,11 @@ export function formatNumber(n: number, lang: Lang = current, digits = 2): strin
 }
 
 /** Seconds as M:SS (or H:MM:SS). */
+/** A SIMD path of the native engine as the status bar shows it (`avx2` -> `AVX2`, scalar translated). */
+export function isaLabel(isa: string | undefined): string {
+  return !isa || isa === 'scalar' ? t('status.isaScalar') : isa.toUpperCase();
+}
+
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   const h = Math.floor(s / 3600);

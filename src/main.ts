@@ -2,7 +2,9 @@
 // viewport engines (the three.js preview, and the path tracer in a pool of
 // workers once rt.wasm has loaded) and applies the optional demo / screenshot
 // URL parameters (see src/ui/README.md). The header's Fast · Full switch
-// picks which one the viewport shows; Render always uses the path tracer.
+// picks which one the viewport shows; Render always uses the path tracer: in
+// the desktop launcher's window the native one (render/native.ts), else the
+// wasm pool.
 // Sets #app[data-ready="1"] once the interface has painted and the viewport
 // has drawn its first frame.
 
@@ -15,8 +17,10 @@ import { activeCamera, sameView } from './core/camera';
 import { createInitialState, createStore } from './core/store';
 import { encodeImage, encodePixels } from './io/image';
 import { LIBRARY_STORAGE_KEY, exportLibrary, importLibrary, loadLibrary, saveLibrary } from './io/library';
+import { connectNative } from './io/native';
 import { serializeProject } from './io/project';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
+import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
@@ -29,6 +33,12 @@ import { createUiStore, effectiveMode } from './ui/ui-state';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
 
 const appEl = document.getElementById('app')!;
+// In the desktop launcher's window: its token leaves the address bar now, and the heartbeat keeps
+// the launcher running while this page is open.
+const nativeReady = connectNative().then((client) => {
+  client?.startHeartbeat();
+  return client;
+});
 const params = readUrlParams(window.location.search);
 const lang = params.lang ?? (readPref<string>('lang', 'en') === 'es' ? 'es' : 'en');
 const savedTheme = readPref<string>('theme', 'system');
@@ -65,7 +75,7 @@ const sceneSource: SceneSource = {
   tone: (state) => ({ exposureEv: state.image.exposureEv, tonemap: tonemapFor(state.image.viewTransform) }),
 };
 
-let tracer: PathTracerEngine | null = null;
+let tracer: PathTracerEngine | NativeEngine | null = null;
 /** The viewport shows the path tracer now. */
 let full = false;
 /** The viewport's last size (the path tracer may arrive after it). */
@@ -82,8 +92,22 @@ const applyMode = () => {
 };
 ui.subscribe(applyMode);
 
+const useTracer = (t: PathTracerEngine | NativeEngine) => {
+  t.mount(backdrop);
+  if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
+  t.sync(store.get(), null);
+  t.onFrame(() => tracerFrames.forEach((fn) => fn()));
+  tracer = t;
+  ui.set({ engine: 'READY' });
+};
+
 if (preview) {
   void (async () => {
+    const native = await nativeReady;
+    if (native) {
+      useTracer(new NativeEngine(native, sceneSource, native.info));
+      return;
+    }
     const base = new URL(import.meta.env.BASE_URL, window.location.href).href;
     const loaded = await loadEngineModule(base);
     if ('error' in loaded) {
@@ -93,13 +117,7 @@ if (preview) {
     }
     try {
       const pool = await Pool.create(loaded.module, poolSize(navigator.hardwareConcurrency), () => new Worker(new URL('./render/worker.ts', import.meta.url), { type: 'module' }));
-      const t = new PathTracerEngine(pool, sceneSource, loaded.simd);
-      t.mount(backdrop);
-      if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
-      t.sync(store.get(), null);
-      t.onFrame(() => tracerFrames.forEach((fn) => fn()));
-      tracer = t;
-      ui.set({ engine: 'READY' });
+      useTracer(new PathTracerEngine(pool, sceneSource, loaded.simd));
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.warn(`path tracer: ${reason}`);

@@ -21,5 +21,9 @@ out: PNG/JPEG/EXR and the project file.
   draws it), one MESH per distinct geometry and one INST per visible part, the materials with the E3 semantics,
   the resolved rig in the engine's units (`core/photometry.ts`), the studio dome, the floor and the render settings.
   `writeRsb(scene, { meshes: false })` is the update that keeps the meshes the workers already have.
+- `native.ts`: the desktop launcher seen from the page (`engine/crates/rt-app`): the token taken from the window
+  URL's fragment into `sessionStorage`, `connectNative()` (null in the web version), and `NativeClient` for its API
+  (info, hardware and recommendation, the model store by blob, the installer's pending choice, open folder, the
+  heartbeat that keeps the launcher running). The contract is `engine/crates/rt-app/README.md`.
 - `image.ts`: PNG written here from the path tracer's 8-bit pixels (RGB, or RGBA when transparent; deflate by the
   browser's `CompressionStream`, stored blocks without it), JPEG through a canvas.

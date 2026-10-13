@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Repackshot
+GenericName=Product renderer
+GenericName[es]=Renderizador de producto
+Comment=Product rendering: product type, materials, light setup, render
+Comment[es]=Render de producto: tipo de producto, materiales, montaje de luz, render
+Exec=repackshot
+Icon=repackshot
+Terminal=false
+Categories=Graphics;3DGraphics;
+StartupWMClass=Repackshot

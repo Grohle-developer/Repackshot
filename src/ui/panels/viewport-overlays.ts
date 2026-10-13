@@ -15,7 +15,7 @@ import type { IconName } from '../icons';
 import { cameraName, dyn, lightName, targetLabel } from '../names';
 import { shallowEq, type Ctx, type Scope } from '../reactive';
 import { kbdFor } from '../shortcuts';
-import { L, formatNumber, getLang, t } from '../strings';
+import { L, formatNumber, getLang, isaLabel, t } from '../strings';
 import type { Tool } from '../ui-state';
 import { partMenu } from './part-menu';
 
@@ -153,7 +153,9 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
           : scale >= 2
             ? t('viewport.meterHalf')
             : t('viewport.meterFull', { samples, time: clock(st.seconds) });
-      line.textContent = t('viewport.pool', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') });
+      line.textContent = st.native
+        ? t('viewport.native', { threads: st.threads ?? 0, isa: isaLabel(st.isa) })
+        : t('viewport.pool', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') });
       const max = Math.max(1, ctx.store.get().render.maxSamples);
       (bar.firstElementChild as HTMLElement).style.width = `${Math.min(100, Math.round((st.samples / max) * 100))}%`;
       note.textContent = '';

@@ -12,7 +12,7 @@ import { openFloating } from '../components/widgets';
 import { h } from '../dom';
 import { dyn } from '../names';
 import { Scope, type Ctx } from '../reactive';
-import { formatClock, formatNumber, getLang, lbl, t } from '../strings';
+import { formatClock, formatNumber, getLang, isaLabel, lbl, t } from '../strings';
 
 function sentence(r: DoctorResult): string {
   const d = r.detail;
@@ -125,9 +125,11 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       last = now;
       const st = port.status();
       engine.textContent =
-        port.kind === 'pathtracer'
-          ? t('status.engineFull', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') })
-          : t('status.engineFast', { device: st.device });
+        port.kind !== 'pathtracer'
+          ? t('status.engineFast', { device: st.device })
+          : st.native
+            ? t('status.engineNative', { threads: st.threads ?? 0, isa: isaLabel(st.isa) })
+            : t('status.engineFull', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') });
       const n = st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: formatNumber(st.samples, getLang(), 0) });
       // The path tracer reports the time it has been converging; the preview, the time of its last frame.
       samples.textContent = port.kind === 'pathtracer' ? `${n} · ${formatClock(st.seconds)}` : `${n} · ${formatNumber(st.seconds * 1000, getLang(), 1)} ms`;

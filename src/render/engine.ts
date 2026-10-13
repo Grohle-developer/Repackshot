@@ -26,6 +26,12 @@ export interface EngineStatus {
   frameMs?: number;
   /** Path tracer: a Render is using the pool, the viewport waits. */
   rendering?: boolean;
+  /** The native engine of the desktop launcher (render/native.ts) is rendering. */
+  native?: boolean;
+  /** Native engine: its render threads. */
+  threads?: number;
+  /** Native engine: its SIMD path (`avx2`, `sse2`, `neon`, `scalar`). */
+  isa?: string;
 }
 
 export interface RenderOptions {
