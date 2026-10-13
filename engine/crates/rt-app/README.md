@@ -51,7 +51,7 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
 | Interfaz | `<carpeta del ejecutable>/app/` (`--app-dir` la cambia) |
 | Datos, instalado | `%LOCALAPPDATA%\Repackshot` (Windows); `$XDG_DATA_HOME/repackshot` o `~/.local/share/repackshot` (Linux) |
 | Datos, **portable** | `data/` junto al ejecutable cuando existe `portable.txt` a su lado; todo va dentro (ajustes, biblioteca, resultados, modelos, perfiles de la ventana), así que viaja con la carpeta |
-| Dentro de los datos | `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` (estado de la página), `models/`, `ai/` (motores de ejecución de la IA y `sidecar.json`), `logs/`, `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `launcher.json` (el puerto), `instance.json`, `pending-models.json` |
+| Dentro de los datos | `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` (estado de la página), `cache/ai/` (imagen y pases de los renders finales grandes, X2), `models/`, `ai/` (motores de ejecución de la IA y `sidecar.json`), `logs/`, `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `launcher.json` (el puerto), `instance.json`, `pending-models.json` |
 
 `--data-dir` manda sobre todo lo anterior.
 
@@ -274,10 +274,11 @@ Cada concesión es `{id, name, path, folder, read, write, size}`. Una respuesta 
 
 | Petición | Respuesta |
 | --- | --- |
-| `POST /api/render?kind=viewport\|final[&finish=samples\|time\|first][&mesh=<clave>][&client=<id>][&seq=<n>][&share=<hilos>]` | Cuerpo: el RSB. `{id, width, height, maxSamples, threads, isa}`. 400 `bad-scene` si el RSB no vale; 409 `need-meshes` si es una actualización sin `MESH` y esas mallas no están cargadas (la página manda entonces la escena entera, con el mismo `seq`); 409 `stale` si un trabajo de visor de ese `client` con un `seq` mayor o igual ya llegó (dos peticiones que se adelantan: la vieja no sustituye a la nueva); 503 `busy` con 8 ventanas en uso (que han preguntado en los últimos 3 s) |
+| `POST /api/render?kind=viewport\|final[&finish=samples\|time\|first][&passes=<pases>][&mesh=<clave>][&client=<id>][&seq=<n>][&share=<hilos>]` | Cuerpo: el RSB. `{id, width, height, maxSamples, threads, isa, passes}` (`passes`: los nombres de los pases que renderiza, X2). 400 `bad-scene` si el RSB no vale; 400 `bad-query` si `passes` nombra un pase que no existe o se pide en un trabajo de visor; 409 `need-meshes` si es una actualización sin `MESH` y esas mallas no están cargadas (la página manda entonces la escena entera, con el mismo `seq`); 409 `stale` si un trabajo de visor de ese `client` con un `seq` mayor o igual ya llegó (dos peticiones que se adelantan: la vieja no sustituye a la nueva); 503 `busy` con 8 ventanas en uso (que han preguntado en los últimos 3 s) |
 | `GET /api/render/<id>[?after=<n>][&data=0]` | Una **trama**: cabecera binaria y, si hay una pasada nueva, las sumas. Con `after=n` espera hasta 1 s a una pasada posterior a `n` (o al final, o a un cambio de cómo comparte con los renders: empieza o deja de compartir, o espera). `data=0`: solo la cabecera (progreso). 404 si el trabajo no existe o fue sustituido o cancelado |
-| `DELETE /api/render/<id>` | 204: cancelado |
-| `GET /api/render/state[?log=1&reason=<texto>]` | Diagnóstico: `{connections, heartbeatSilenceMs, engine: {threads, isa, gate: {finalsRunning, finalsWaiting[], liveViewportThreads}, jobs: [{id, kind, width, height, maxSamples, share, threads, pass, samples, seconds, flags[], cancelRequested, unaskedMs, error?}], viewports: [{client, lastSeq, sceneKept, running: {id, threadDone} \| null}]}}`. Con `log=1` también va al registro, con el motivo que da la página (el *watchdog* del visor lo pide al saltar) |
+| `DELETE /api/render/<id>` | 204: cancelado (o, si ya terminó, olvidado; los pases guardados siguen) |
+| `GET /api/render/<id>/passes` | Los **pases** guardados del render final `<id>` (X2), en binario (`RPP1`, abajo). 404 `not-found` si el id no existe, ya se desalojó o el trabajo no pidió pases (o se canceló, quedó huérfano o falló); 409 `not-ready` mientras se renderiza |
+| `GET /api/render/state[?log=1&reason=<texto>]` | Diagnóstico: `{connections, heartbeatSilenceMs, engine: {threads, isa, gate: {finalsRunning, finalsWaiting[], liveViewportThreads}, jobs: [{id, kind, width, height, maxSamples, share, passes, threads, pass, samples, seconds, flags[], cancelRequested, unaskedMs, error?}], viewports: [{client, lastSeq, sceneKept, running: {id, threadDone} \| null}]}}` (`passes`: la máscara de pases del trabajo). Con `log=1` también va al registro, con el motivo que da la página (el *watchdog* del visor lo pide al saltar) |
 
 Trabajos: muestras y tiempo máximos del `RNDR` del RSB (0 muestras = 16, como `rt`). `finish` dice
 cuándo para, como *Terminar por* de la ventana de render (`src/render/schedule.ts`): `samples` (las
@@ -308,6 +309,23 @@ una respuesta sin leer retiene una de las seis conexiones que el navegador abre 
 las seis retenidas todas las peticiones esperan para siempre (lo que paraba el visor, el render y
 *Pausar* en la v0.1.0).
 
+**Pases** (X2, `src/kept.rs`; contrato en `docs/AI-POST.md` §7.4). `passes` es una lista separada
+por comas de `albedo`, `normal`, `depth`, `partId`, `materialId` y `coc` (los nombres de
+`PASS_KEYS`, sensibles a mayúsculas); el trabajo final renderiza esos y los de `RNDR.passes` de su
+RSB, junto a la imagen y sin cambiarle un píxel, con los hilos que tenga (también los que le deja un
+visor que comparte, `share`: qué hilo hace una baldosa no cambia ni un píxel ni un pase). Un trabajo
+de visor no renderiza nunca pases (los de su RSB se ignoran). Cuando un final termina con todas sus
+muestras (no si se cancela, queda huérfano porque su página dejó de preguntar o falla), la imagen
+lineal (su última trama) y los pases se **guardan por id**, antes de que el trabajo diga que ha
+terminado, para el post-procesado IA (X3c los toma de ahí con el id del render; en Rust,
+`Engine::kept`); olvidar el trabajo no los borra. Se guardan los **cuatro últimos**: uno nuevo
+desaloja el más antiguo. Uno de más de **64 MiB** entre imagen y pases (unos 1,5 megapíxeles con
+todos los pases) no se queda en memoria: va a `<datos>/cache/ai/<id>.rpx` (la imagen, una trama
+`RPX1` con datos) y `<id>.rpp` (los pases, `RPP1`), escritos por un temporal y renombrados, y se
+sirve desde ahí; desalojarlo borra los dos ficheros. Los ids empiezan de nuevo en cada arranque, así
+que los `.rpx`, `.rpp` y `.tmp` de nombre numérico que dejó un arranque anterior se borran al
+arrancar.
+
 **Trama** (little-endian, 48 bytes de cabecera):
 
 | Byte | Campo |
@@ -327,6 +345,24 @@ las seis retenidas todas las peticiones esperan para siempre (lo que paraba el v
 Son las mismas sumas que acumula el `Accumulator` de `src/render/tiles.ts`, así que la página
 reutiliza tal cual su camino de visualización y su conversión exacta a 8 bits.
 
+**Pases** (`GET /api/render/<id>/passes` y `<datos>/cache/ai/<id>.rpp`; little-endian, 32 bytes de
+cabecera):
+
+| Byte | Campo |
+| --- | --- |
+| 0 | `"RPP1"` |
+| 4 | `u32` longitud de la cabecera (32; los planos empiezan ahí) |
+| 8, 12 | `u32` ancho, alto |
+| 16 | `u32` los pases presentes: bit *i* = `PASS_KEYS[i]` de `src/core/passes.ts` (1 albedo, 2 normal, 4 depth, 8 partId, 16 materialId, 32 coc) |
+| 20 | `u32` muestras de las que el albedo es la media |
+| 24 | `u32` id del trabajo |
+| 28 | `u32` 0 (reservado) |
+| 32 | por cada bit, en ese orden: `ancho × alto × canales` palabras por filas desde arriba (3 canales el albedo y la normal, 1 los demás); `f32`, salvo `partId` y `materialId`, `u32` |
+
+Fondo: albedo, normal, ids y `coc` 0, profundidad +∞; el suelo del estudio, `0xFFFFFFFF` en los dos
+ids. `src/render/pass-planes.ts` (`parsePasses`) lo lee en la página; `tests/fixtures/passes-3x2.rpp`
+lo escribe este *crate* y lo lee la página, para que los dos lados no se separen.
+
 **Paridad.** El renderizado es el de `rt` (`rt_cli::render_progressive`): baldosas de 32 píxeles
 de `tile_grid`, una película por baldosa, pasadas de 1, 2, 4, 8 y luego 16 índices de muestra,
 baldosas repartidas por un contador atómico y las muestras de cada baldosa sumadas en orden de
@@ -335,7 +371,9 @@ muestra), la película es la misma, bit a bit, que la de `rt` y la del pool de w
 cualquier número de hilos. `tests/parity.rs` lo comprueba: el ejemplo a 4 muestras por la API
 (con 1 y 4 hilos) da la película de `rt_cli::render` y el *hash* fijado `PINNED_EXAMPLE_4SPP`
 de `rt-core`, el mismo que reproduce el wasm (E4); una actualización de visor sin mallas da la
-película de la escena completa.
+película de la escena completa. Con todos los pases (X2) la película no cambia y los planos que
+sirve `/passes` son los `PINNED_PASS_*` de `rt-core`, también con 1 y 4 hilos; y el almacén guarda
+los últimos, los manda al disco, los desaloja y rechaza los ids que no conoce.
 
 ### Estado de la página
 

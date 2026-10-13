@@ -406,6 +406,59 @@ impl Prepared {
     }
 }
 
+/// What a ray from the camera meets first, for the passes of [`crate::passes`] (AI-POST.md §7.4):
+/// the surface the path tracer would shade at its first vertex, before any bounce.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FirstHit {
+    /// Nothing that may change: the environment, the background colour or image, transparency,
+    /// or a light panel the camera sees in front of everything else.
+    Background,
+    /// The studio floor (`FLOR`, visible or a shadow catcher): `t` along the ray, the plane's
+    /// normal turned towards the camera.
+    Floor {
+        /// Ray parameter of the hit.
+        t: f32,
+        /// `(0, 0, ±1)`, facing the ray.
+        normal: Vec3,
+    },
+    /// An instance: its index, `t` along the ray and the unit shading normal facing the ray
+    /// (both sides of a triangle count).
+    Surface {
+        /// Instance index (the RSB instance order).
+        instance: u32,
+        /// Ray parameter of the hit.
+        t: f32,
+        /// Unit shading normal, facing the ray.
+        normal: Vec3,
+    },
+}
+
+/// The first thing `ray` (a camera ray: the floor of a shadow catcher counts) meets. Every
+/// surface stops it, cut-outs and glass included (what [`crate::scene::Scene::pick`] finds), the
+/// nearer of the geometry and the floor wins as in [`radiance_at`], and an area light flagged
+/// `camera` crossed on the way makes it background. One ray is traced.
+pub fn first_hit<T: Tracer>(scene: &Scene, prepared: &Prepared, tracer: &T, ray: &Ray) -> FirstHit {
+    let hit = tracer.trace(ray);
+    let t_geometry = hit.map_or(f32::INFINITY, |h| h.t);
+    let t_floor = prepared.floor_t(ray, true);
+    let t_nearest = t_geometry.min(t_floor);
+    if t_nearest == f32::INFINITY || prepared.lights.camera_sees_panel(ray, t_nearest) {
+        return FirstHit::Background;
+    }
+    if t_floor < t_geometry {
+        let normal = Vec3::new(0.0, 0.0, if ray.dir.z < 0.0 { 1.0 } else { -1.0 });
+        return FirstHit::Floor { t: t_floor, normal };
+    }
+    match hit.and_then(|h| scene.geometry.hit_details(ray, h)) {
+        Some(details) => FirstHit::Surface {
+            instance: details.instance,
+            t: details.t,
+            normal: details.normal,
+        },
+        None => FirstHit::Background,
+    }
+}
+
 /// Largest channel.
 #[inline]
 fn peak(c: Rgb) -> f32 {

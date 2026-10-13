@@ -189,6 +189,7 @@ pub fn scene() -> Scene {
             tonemap: 1,
             max_depth: RenderSettings::DEFAULT_MAX_DEPTH,
             clamp_indirect: 0.0,
+            passes: 0,
         },
         bitmaps: Vec::new(),
     }

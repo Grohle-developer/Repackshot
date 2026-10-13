@@ -50,7 +50,11 @@ fn render(t: &TestServer, kind: &str, rsb: &[u8], extra: &str) -> Frame {
     let r = t.api("POST", &format!("/api/render?kind={kind}{extra}"), rsb);
     assert_eq!(r.status, 200, "{}", r.text());
     let job = rt_app::json::parse(&r.text()).unwrap();
-    let id = job.get("id").unwrap().as_f64().unwrap() as u32;
+    poll(t, job.get("id").unwrap().as_f64().unwrap() as u32)
+}
+
+/// Long-polls job `id` to the end and returns its last frame with data.
+fn poll(t: &TestServer, id: u32) -> Frame {
     let mut last = 0u32;
     let mut frame = None;
     let deadline = Instant::now() + Duration::from_secs(600);
@@ -87,12 +91,12 @@ fn resolve(f: &Frame) -> Vec<f32> {
         .collect()
 }
 
-fn pinned_example_hash() -> u32 {
-    let src = include_str!("../../rt-core/src/render.rs");
+/// The value of `const <name>: u32 = 0x...;` in `src`.
+fn pinned(src: &str, name: &str) -> u32 {
     let line = src
         .lines()
-        .find(|l| l.contains("PINNED_EXAMPLE_4SPP: u32 = 0x"))
-        .expect("the pinned hash in rt-core");
+        .find(|l| l.contains(&format!("{name}: u32 = 0x")))
+        .unwrap_or_else(|| panic!("the pinned {name} in rt-core"));
     let hex: String = line
         .split("0x")
         .nth(1)
@@ -101,6 +105,177 @@ fn pinned_example_hash() -> u32 {
         .filter(|c| c.is_ascii_hexdigit())
         .collect();
     u32::from_str_radix(&hex, 16).unwrap()
+}
+
+fn pinned_example_hash() -> u32 {
+    pinned(
+        include_str!("../../rt-core/src/render.rs"),
+        "PINNED_EXAMPLE_4SPP",
+    )
+}
+
+/// The pinned hashes of the example's passes, in the order of `PASS_KEYS`.
+fn pinned_pass_hashes() -> Vec<u32> {
+    let src = include_str!("../../rt-core/src/render/passes_tests.rs");
+    ["ALBEDO", "NORMAL", "DEPTH", "PART_ID", "MATERIAL_ID", "COC"]
+        .iter()
+        .map(|k| pinned(src, &format!("PINNED_PASS_{k}")))
+        .collect()
+}
+
+fn job_id(reply: &rt_app::client::Reply) -> u32 {
+    rt_app::json::parse(&reply.text())
+        .unwrap()
+        .get("id")
+        .unwrap()
+        .as_f64()
+        .unwrap() as u32
+}
+
+#[test]
+fn passes_through_the_api_are_the_pinned_ones_and_leave_the_image_alone() {
+    // The example at 4 samples with every pass (X2): the image is still the pinned film, the
+    // passes the launcher keeps are rt-core's pinned planes, with 1 and 4 threads.
+    let mut scene = rt_core::example::scene();
+    scene.render.max_samples = 4;
+    let rsb = scene.to_rsb();
+    let keys = rt_core::passes::PASS_KEYS.join(",");
+    for threads in [1usize, 4] {
+        let t = TestServer::start("parity-passes", threads);
+        let reply = t.api(
+            "POST",
+            &format!("/api/render?kind=final&passes={keys}"),
+            &rsb,
+        );
+        assert_eq!(reply.status, 200, "{}", reply.text());
+        assert!(
+            reply
+                .text()
+                .contains(r#""passes":["albedo","normal","depth","partId","materialId","coc"]"#),
+            "{}",
+            reply.text()
+        );
+        let id = job_id(&reply);
+        let f = poll(&t, id);
+        assert_eq!(
+            fnv1a(&resolve(&f)),
+            pinned_example_hash(),
+            "{threads} threads: the image"
+        );
+        let body = t.api("GET", &format!("/api/render/{id}/passes"), b"");
+        assert_eq!(body.status, 200, "{}", body.text());
+        let (kept_id, samples, passes) =
+            rt_app::kept::read_passes(&body.body).expect("an RPP1 file");
+        assert_eq!(
+            (kept_id, samples, passes.width, passes.height),
+            (id, 4, 512, 384)
+        );
+        let hashes: Vec<u32> = passes.planes().iter().map(|p| p.fnv1a()).collect();
+        assert_eq!(
+            hashes,
+            pinned_pass_hashes(),
+            "{threads} threads: the passes"
+        );
+        // The page forgets the job once it has the image: the passes stay for the AI.
+        assert_eq!(
+            t.api("DELETE", &format!("/api/render/{id}"), b"").status,
+            204
+        );
+        assert_eq!(t.api("GET", &format!("/api/render/{id}"), b"").status, 404);
+        let again = t.api("GET", &format!("/api/render/{id}/passes"), b"");
+        assert_eq!((again.status, again.body.len()), (200, body.body.len()));
+        let kept = t.server.app.engine.kept(id).expect("kept for X3c");
+        assert_eq!(*kept.image.sums, f.sums);
+    }
+}
+
+#[test]
+fn the_launcher_keeps_a_few_renders_refuses_unknown_ones_and_bad_requests() {
+    // A store of two renders, every one on the disk.
+    let options = rt_app::server::Options {
+        keep: Some(rt_app::kept::KeepLimits {
+            renders: 2,
+            in_memory: 0,
+        }),
+        ..rt_app::server::Options::default()
+    };
+    let t = TestServer::start_with_options("keep-passes", 2, options, |data| {
+        // A previous launch's leftovers in the cache.
+        std::fs::create_dir_all(data.join("cache/ai")).unwrap();
+        std::fs::write(data.join("cache/ai/1.rpp"), b"stale").unwrap();
+    });
+    let cache = t.dir.join("data/cache/ai");
+    assert!(
+        !cache.join("1.rpp").exists(),
+        "removed at start: ids start again"
+    );
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 48;
+    scene.render.height = 32;
+    scene.render.max_samples = 2;
+    let rsb = scene.to_rsb();
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        let reply = t.api("POST", "/api/render?kind=final&passes=depth,partId", &rsb);
+        assert_eq!(reply.status, 200, "{}", reply.text());
+        let id = job_id(&reply);
+        poll(&t, id);
+        ids.push(id);
+    }
+    // The oldest was evicted, with its files; the others are on the disk and served from it.
+    let status = |id: u32| {
+        t.api("GET", &format!("/api/render/{id}/passes"), b"")
+            .status
+    };
+    assert_eq!(status(ids[0]), 404);
+    assert!(!cache.join(format!("{}.rpp", ids[0])).exists());
+    for &id in &ids[1..] {
+        assert_eq!(status(id), 200);
+        assert!(
+            cache.join(format!("{id}.rpp")).exists() && cache.join(format!("{id}.rpx")).exists()
+        );
+        let body = t.api("GET", &format!("/api/render/{id}/passes"), b"").body;
+        let (_, _, p) = rt_app::kept::read_passes(&body).unwrap();
+        assert_eq!(
+            p.mask,
+            rt_core::passes::PASS_DEPTH | rt_core::passes::PASS_PART_ID
+        );
+        assert!(p.albedo.is_empty() && p.depth.len() == 48 * 32);
+    }
+    assert_eq!(t.server.app.engine.kept_ids(), ids[1..]);
+    // Unknown ids, ids that are not numbers, a render that asked for nothing.
+    assert_eq!(status(9999), 404);
+    assert_eq!(t.api("GET", "/api/render/abc/passes", b"").status, 404);
+    let plain = t.api("POST", "/api/render?kind=final", &rsb);
+    let plain = job_id(&plain);
+    poll(&t, plain);
+    assert_eq!(status(plain), 404);
+    // Still rendering: not yet.
+    scene.render.max_samples = 100_000;
+    let long = t.api(
+        "POST",
+        "/api/render?kind=final&passes=normal",
+        &scene.to_rsb(),
+    );
+    let long = job_id(&long);
+    let r = t.api("GET", &format!("/api/render/{long}/passes"), b"");
+    assert_eq!(r.status, 409, "{}", r.text());
+    assert!(r.text().contains("not-ready"));
+    assert_eq!(
+        t.api("DELETE", &format!("/api/render/{long}"), b"").status,
+        204
+    );
+    // A pass nobody knows, or passes for the viewport: refused.
+    let r = t.api("POST", "/api/render?kind=final&passes=depth,shadow", &rsb);
+    assert_eq!(r.status, 400);
+    assert!(r.text().contains("shadow"), "{}", r.text());
+    let r = t.api(
+        "POST",
+        "/api/render?kind=viewport&passes=depth&mesh=m&client=w",
+        &rsb,
+    );
+    assert_eq!(r.status, 400, "{}", r.text());
+    assert_eq!(t.api("POST", "/api/render/1/passes", b"").status, 405);
 }
 
 #[test]

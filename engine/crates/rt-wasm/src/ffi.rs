@@ -183,3 +183,78 @@ pub unsafe extern "C" fn rt_render_tile_rgba(
         Err(status) => status,
     }
 }
+
+/// Writes the exact passes of `mask` (normal 2, depth 4, part id 8, material id 16, circle of
+/// confusion 32; the albedo bit 1 and unknown bits are ignored) of the pixel rectangle
+/// `(x, y, w, h)` to `out_ptr`: the planes one after another in that order, each
+/// `w * h * channels` little-endian words (3 for the normal, 1 for the others; `f32`, `u32` for
+/// the ids), rows from the top. One ray through the centre of each pixel: the same for every
+/// sample. Same status codes as [`rt_render_tile`].
+///
+/// # Safety
+///
+/// `out_ptr` must be null or point to at least `w * h * 4 * (words per pixel of mask)` writable
+/// bytes (alignment is not required).
+#[no_mangle]
+pub unsafe extern "C" fn rt_render_tile_passes(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    mask: u32,
+    out_ptr: *mut u8,
+) -> u32 {
+    if out_ptr.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    match crate::render_tile_passes(handle, x, y, w, h, mask) {
+        Ok(bytes) => {
+            // SAFETY: the caller promises room for the planes of `mask`, which is exactly
+            // `bytes.len()`; byte-wise copy needs no alignment, and `bytes` is a fresh allocation
+            // so the regions do not overlap.
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_ptr, bytes.len()) };
+            STATUS_OK
+        }
+        Err(status) => status,
+    }
+}
+
+/// Writes the albedo of sample `sample_index` of the pixel rectangle `(x, y, w, h)`: `w * h * 3`
+/// linear floats, the base colour of what that sample's camera ray met first (0 for the
+/// background and outside the image). Same status codes as [`rt_render_tile`].
+///
+/// # Safety
+///
+/// `out_ptr` must be null or point to at least `w * h * 3 * 4` writable bytes (alignment is not
+/// required).
+#[no_mangle]
+pub unsafe extern "C" fn rt_render_tile_albedo(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sample_index: u32,
+    out_ptr: *mut f32,
+) -> u32 {
+    if out_ptr.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    match crate::render_tile_albedo_sample(handle, x, y, w, h, sample_index) {
+        Ok(albedo) => {
+            // SAFETY: the caller promises `w * h * 3 * 4` writable bytes and `albedo` holds
+            // exactly `w * h * 3` floats; byte-wise copy needs no alignment, and `albedo` is a
+            // fresh allocation so the regions do not overlap.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    albedo.as_ptr().cast::<u8>(),
+                    out_ptr.cast::<u8>(),
+                    albedo.len() * std::mem::size_of::<f32>(),
+                );
+            }
+            STATUS_OK
+        }
+        Err(status) => status,
+    }
+}

@@ -25,12 +25,18 @@
 // gets the other scene as an update (the meshes stay). A watchdog
 // (render/watchdog.ts) starts the view again when its tiles stop coming or
 // stop being drawn, and says so in the console.
+// With `passes` a Render also hands back the exact passes of AI-POST.md §7.4
+// (phase X2): its workers send each tile's exact planes with its first samples
+// and the albedo of every sample, and they are put together like the image
+// (render/pass-planes.ts); which worker renders a tile changes no pass either.
 
 import type { CameraState } from '../core/camera';
+import { passMask, type PassKey, type RenderPasses } from '../core/passes';
 import type { AdvancedSettings } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { EngineStatus, PickHit, RenderEngine, RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
+import { PassAccumulator } from './pass-planes';
 import { abortError, budgetProgress, runPasses, type PassBudget } from './schedule';
 import { Accumulator, assignTiles, chooseScale, Generations, nextPass, scaledSize, type Tile, type TileResult } from './tiles';
 import type { ViewportLimit } from '../core/settings';
@@ -51,6 +57,8 @@ export interface TracerView {
   time?: number;
   /** Advanced engine settings (bounces, indirect clamp, seed). */
   advanced?: AdvancedSettings;
+  /** The exact passes to render next to the image (`RNDR.passes`; Render only). */
+  passes?: readonly PassKey[];
 }
 
 export interface BuiltScene {
@@ -291,9 +299,10 @@ export class Pool {
   /**
    * Renders samples `first .. first + count - 1` of the tiles on `workers` (every worker by default), tile i
    * on workers[i mod n]. Resolves true when every worker is done, false when the generation was cancelled.
-   * A worker still rendering another generation stops it first.
+   * A worker still rendering another generation stops it first. With a `passes` mask the tiles come back
+   * with their passes (the exact planes when `first` is 0).
    */
-  run(generation: number, tiles: readonly Tile[], first: number, count: number, onTile: (r: TileResult) => void, workers: readonly number[] = this.all()): Promise<boolean> {
+  run(generation: number, tiles: readonly Tile[], first: number, count: number, onTile: (r: TileResult) => void, workers: readonly number[] = this.all(), passes = 0): Promise<boolean> {
     const parts = assignTiles(tiles, workers.length);
     const busy = parts.filter((p) => p.length > 0).length;
     if (busy === 0) return Promise.resolve(true);
@@ -306,7 +315,7 @@ export class Pool {
         this.busy[i] = generation;
         const packed = new Int32Array(list.length * 5);
         list.forEach((t, j) => packed.set([t.x, t.y, t.w, t.h, t.index], j * 5));
-        this.workers[i].postMessage({ type: 'job', generation, tiles: packed, first, count } satisfies WorkerRequest, [packed.buffer]);
+        this.workers[i].postMessage({ type: 'job', generation, tiles: packed, first, count, ...(passes ? { passes } : {}) } satisfies WorkerRequest, [packed.buffer]);
       });
     });
   }
@@ -367,6 +376,10 @@ export interface RenderedPixels {
   /** The exposure and curve the 8-bit image was converted with. */
   exposureEv: number;
   tonemap: number;
+  /** With `passes`: the exact passes of the image (AI-POST.md §7.4). */
+  passes?: RenderPasses;
+  /** The native engine: the launcher's id of this render, by which it keeps the image and its passes (AI-POST.md §7.3). */
+  renderId?: number;
 }
 
 /** What reaches the image, by reference: anything else (selection, names, the queue) does not restart it. */
@@ -979,11 +992,14 @@ export class PathTracerEngine implements RenderEngine {
         ...(opts.camera ? { camera: opts.camera } : {}),
         ...(opts.time !== undefined ? { time: opts.time } : {}),
         ...(opts.advanced ? { advanced: opts.advanced } : {}),
+        ...(opts.passes?.length ? { passes: opts.passes } : {}),
       };
+      const mask = passMask(opts.passes ?? []);
       const built = this.source.build(state, view);
       const update = built.bytes(false);
       opts.onProgress?.({ jobId: null, progress: 0, samples: 0, seconds: 0 });
       const acc = new Accumulator(opts.width, opts.height);
+      const passes = mask ? new PassAccumulator(opts.width, opts.height, mask, acc.tiles) : null;
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
       const budget: PassBudget = { finishBy: opts.finishBy ?? (opts.maxSeconds > 0 ? 'FIRST' : 'SAMPLES'), maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds };
       let done = 0;
@@ -995,7 +1011,7 @@ export class PathTracerEngine implements RenderEngine {
       const result = await runPasses(budget, {
         now: () => performance.now(),
         // Each pass on the workers the viewport leaves free now (all of them in Fast mode); the pool hands this
-        // job only its own generation's tiles, and which worker renders a tile does not change a pixel.
+        // job only its own generation's tiles, and which worker renders a tile does not change a pixel, nor a pass.
         pass: async (first, count) => {
           const lane = this.finalLane();
           this.finalPass = lane;
@@ -1009,6 +1025,8 @@ export class PathTracerEngine implements RenderEngine {
               count,
               (r) => {
                 acc.add(r.index, r.first, r.count, r.data);
+                if (passes && r.albedo) passes.addAlbedo(r.index, r.first, r.count, r.albedo);
+                if (passes && r.exact) passes.setExact(r.index, r.exact);
                 const now = performance.now();
                 if (now - lastReport > 100) {
                   lastReport = now;
@@ -1016,6 +1034,7 @@ export class PathTracerEngine implements RenderEngine {
                 }
               },
               lane,
+              mask,
             );
           } finally {
             this.finalPass = null;
@@ -1033,7 +1052,17 @@ export class PathTracerEngine implements RenderEngine {
       const data = await this.pool.tonemap(acc.sum, opts.width, opts.height, done, tone.exposureEv, tone.tonemap);
       const seconds = (performance.now() - t0) / 1000;
       opts.onProgress?.({ jobId: null, progress: 1, samples: done, seconds });
-      return { width: opts.width, height: opts.height, data, samples: done, seconds, exposureEv: tone.exposureEv, tonemap: tone.tonemap, ...(opts.keepLinear ? { sum: acc.sum } : {}) };
+      return {
+        width: opts.width,
+        height: opts.height,
+        data,
+        samples: done,
+        seconds,
+        exposureEv: tone.exposureEv,
+        tonemap: tone.tonemap,
+        ...(opts.keepLinear ? { sum: acc.sum } : {}),
+        ...(passes ? { passes: passes.resolve() } : {}),
+      };
     } finally {
       signal?.removeEventListener('abort', onAbort);
       this.pool.cancel(gen);

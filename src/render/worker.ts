@@ -7,8 +7,13 @@
 //
 // It also converts accumulated sums to 8-bit pixels exactly, for Render:
 // that is pure arithmetic, and the pool does it on slices in parallel.
+//
+// A Render that asks for the exact passes (phase X2) gets, with every tile, the
+// albedo of each sample and, in its first job, the tile's exact planes
+// (render/pass-planes.ts); the main thread puts them together.
 
 import { exactBytes } from './tiles';
+import { ALBEDO_BIT, EXACT_BITS, hasPassExports, Scratch, tileAlbedo, tileExact, type RtPassExports } from './pass-planes';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 
 interface RtExports {
@@ -22,6 +27,9 @@ interface RtExports {
   rt_scene_error_copy(ptr: number): void;
   rt_scene_free(handle: number): number;
   rt_render_tile_rgba(handle: number, x: number, y: number, w: number, h: number, sample: number, out: number): number;
+  /** X2 (absent in an older rt.wasm). */
+  rt_render_tile_passes?: RtPassExports['rt_render_tile_passes'];
+  rt_render_tile_albedo?: RtPassExports['rt_render_tile_albedo'];
 }
 
 /** The parts of a dedicated worker's global scope used here (the DOM lib has no worker types). */
@@ -35,6 +43,8 @@ let handle = 0;
 /** Output buffer in wasm memory for one sample of the largest tile. */
 let outPtr = 0;
 let outLen = 0;
+/** Wasm memory for the passes of one tile. */
+let passScratch: Scratch | null = null;
 
 interface Job {
   generation: number;
@@ -43,6 +53,7 @@ interface Job {
   first: number;
   count: number;
   next: number;
+  passes: number;
 }
 let job: Job | null = null;
 
@@ -112,17 +123,33 @@ function step(): void {
     outLen = need;
   }
   const data = new Float32Array(stride * j.count);
-  for (let s = 0; s < j.count; s++) {
-    const status = rt.rt_render_tile_rgba(handle, x, y, w, h, j.first + s, outPtr);
-    if (status !== 0) {
-      job = null;
-      post({ type: 'error', generation: j.generation, reason: `rt_render_tile_rgba returned ${status}` });
-      return;
-    }
-    // A fresh view every time: rendering may grow the memory and detach the old buffer.
-    data.set(new Float32Array(rt.memory.buffer, outPtr, stride), s * stride);
+  const passes = j.passes !== 0 && hasPassExports(rt) ? rt : null;
+  if (j.passes !== 0 && !passes) {
+    job = null;
+    post({ type: 'error', generation: j.generation, reason: 'this rt.wasm renders no passes (npm run engine:build)' });
+    return;
   }
-  post({ type: 'tile', generation: j.generation, index, first: j.first, count: j.count, data }, [data.buffer]);
+  const albedo = passes && j.passes & ALBEDO_BIT ? new Float32Array(w * h * 3 * j.count) : undefined;
+  let exact: Uint32Array | undefined;
+  try {
+    passScratch ??= passes ? new Scratch(passes) : null;
+    if (passes && j.first === 0 && j.passes & EXACT_BITS) exact = tileExact(passes, handle, { x, y, w, h }, j.passes, passScratch!);
+    for (let s = 0; s < j.count; s++) {
+      const status = rt.rt_render_tile_rgba(handle, x, y, w, h, j.first + s, outPtr);
+      if (status !== 0) throw new Error(`rt_render_tile_rgba returned ${status}`);
+      // A fresh view every time: rendering may grow the memory and detach the old buffer.
+      data.set(new Float32Array(rt.memory.buffer, outPtr, stride), s * stride);
+      if (albedo) tileAlbedo(passes!, handle, { x, y, w, h }, j.first + s, passScratch!, albedo, s * w * h * 3);
+    }
+  } catch (err) {
+    job = null;
+    post({ type: 'error', generation: j.generation, reason: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  const transfer: Transferable[] = [data.buffer];
+  if (albedo) transfer.push(albedo.buffer);
+  if (exact) transfer.push(exact.buffer);
+  post({ type: 'tile', generation: j.generation, index, first: j.first, count: j.count, data, ...(albedo ? { albedo } : {}), ...(exact ? { exact } : {}) }, transfer);
   schedule();
 }
 
@@ -151,7 +178,7 @@ scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       return;
     }
     case 'job':
-      job = { generation: msg.generation, tiles: msg.tiles, first: msg.first, count: msg.count, next: 0 };
+      job = { generation: msg.generation, tiles: msg.tiles, first: msg.first, count: msg.count, next: 0, passes: msg.passes ?? 0 };
       schedule();
       return;
     case 'cancel':

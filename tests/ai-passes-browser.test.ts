@@ -4,15 +4,22 @@
 // (tests/browser/reference-passes.ts). The ids must be the engine's, the depth the distance along the view axis,
 // the normals the world-space (Z up) shading normals, the albedo the material's colour, and nothing may be blended
 // at an edge. Skipped where there is no Chromium (REPACKSHOT_CHROMIUM, /opt/pw-browsers).
+//
+// Phase X2: the same planes against the engine's own passes (the real rt.wasm in Node, tests/wasm-engine.ts),
+// on the ids and the depth. They agree everywhere but on the studio floor, which the engine's passes give as
+// FLOOR_ID (AI-POST.md §7.4, the lead's correction after X4) and the three.js passes still draw as background:
+// X3c moves them to FLOOR_ID, and then this test asks for it.
 
 import { existsSync, readdirSync } from 'node:fs';
 import { chromium, type Browser } from 'playwright-core';
 import { createServer, type ViteDevServer } from 'vite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { cocPass, lensOf } from '../src/core/lens-coc';
-import { projectScene } from '../src/io/rsb';
+import { FLOOR_ID, PASS_KEYS, passMask } from '../src/core/passes';
+import { projectScene, writeRsb } from '../src/io/rsb';
 import { passScene } from './browser/pass-scene';
 import { referencePasses } from './browser/reference-passes';
+import { loadRt, renderWithPasses, RT_WASM } from './wasm-engine';
 
 function findChromium(): string | null {
   const fromEnv = process.env.REPACKSHOT_CHROMIUM;
@@ -169,6 +176,39 @@ describe.skipIf(!executablePath)('the three.js passes against the engine’s sce
       for (let c = 0; c < 3; c++) expect(Math.abs(albedo[i * 3 + c] - ref.albedo![i * 3 + c])).toBeLessThan(1e-4);
     }
   });
+
+  it.skipIf(!RT_WASM)('agrees with the engine’s passes on the ids and the depth (the floor aside, which X3c brings to FLOOR_ID)', async () => {
+    const { scene } = projectScene(state, { width: W, height: H, maxSamples: 1, maxSeconds: 0, passes: [...PASS_KEYS] });
+    const engine = renderWithPasses(await loadRt(), writeRsb(scene), W, H, 1, passMask([...PASS_KEYS])).passes;
+    const part = get('partId');
+    const material = get('materialId');
+    const depth = get('depth').map((d) => (d === null ? Infinity : d));
+    let compared = 0;
+    let floor = 0;
+    let wrong = 0;
+    for (let i = 0; i < W * H; i++) {
+      if (engine.partId![i] === FLOOR_ID) {
+        // The engine's floor: background in the three.js passes until X3c (or a part, at its silhouette).
+        expect(engine.materialId![i]).toBe(FLOOR_ID);
+        if (![0, FLOOR_ID].includes(part[i])) expect(nearEdge[i], `pixel ${i}: three.js ${part[i]} on the floor`).toBe(1);
+        floor++;
+        continue;
+      }
+      if (part[i] !== engine.partId![i] || material[i] !== engine.materialId![i]) {
+        wrong++;
+        expect(nearEdge[i], `pixel ${i}: three.js ${part[i]}, engine ${engine.partId![i]}`).toBe(1);
+        continue;
+      }
+      if (nearEdge[i]) continue;
+      const e = engine.depth![i];
+      if (Number.isFinite(e)) expect(Math.abs(depth[i] - e)).toBeLessThan(1e-3 * e + 1e-3);
+      else expect(depth[i]).toBe(Infinity);
+      compared++;
+    }
+    expect(compared).toBeGreaterThan(5000);
+    expect(floor).toBeGreaterThan(1000);
+    expect(wrong).toBeLessThan(W * H * 0.01);
+  }, 120000);
 
   it('the circle of confusion follows the thin lens from the depth, 0 at the focus distance', () => {
     const coc = get('coc');

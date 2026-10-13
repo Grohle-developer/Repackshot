@@ -22,14 +22,25 @@
 //! their BVHs (`Scene::update_from_rsb`), so moving the camera does not send or rebuild the
 //! geometry. A job nobody asks about for a while (its page went away) stops by itself, and a
 //! render that panics ends as failed instead of keeping its page waiting.
+//!
+//! **Passes** (X2, `rt_core::passes`): a final job may ask for the exact passes (`RNDR.passes`
+//! of its RSB, and `passes=` of `/api/render`). They are rendered next to the image, tile by
+//! tile (the exact planes in the first pass, an albedo ray after every sample) by whichever
+//! threads render the tile, never change a pixel of it, and when the job ends with all its
+//! samples (not cancelled, orphaned or failed) the image and the passes go to the store of
+//! [`crate::kept`] before the job says it is done, so they are there for whoever reads the end.
+//! Viewport jobs never render passes.
 
+use crate::kept::{KeepLimits, Kept, KeptRender, PassesBody};
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
-use rt_core::render::{render_tile_prepared, tile_grid};
+use rt_core::passes::{PassFilm, Passes, PASS_ALL};
+use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_prepared, tile_grid};
 use rt_core::scene::Scene;
 use rt_core::simd::Isa;
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
@@ -289,6 +300,42 @@ impl Frame {
         FRAME_HEADER as u64 + if data { self.sums.len() as u64 * 4 } else { 0 }
     }
 
+    /// Reads what [`Frame::write`] wrote (the sums only with [`FLAG_DATA`], which the frame then
+    /// does not keep among its flags), or `None` when it is not a whole frame.
+    pub fn read(bytes: &[u8]) -> Option<Frame> {
+        let u = |i: usize| -> Option<u32> {
+            Some(u32::from_le_bytes(bytes.get(i..i + 4)?.try_into().ok()?))
+        };
+        if bytes.get(..4)? != FRAME_MAGIC {
+            return None;
+        }
+        let header = u(4)? as usize;
+        let (width, height, flags) = (u(16)?, u(20)?, u(28)?);
+        let sums = if flags & FLAG_DATA != 0 {
+            let n = (width as usize)
+                .checked_mul(height as usize)?
+                .checked_mul(4)?;
+            let data = bytes.get(header..header.checked_add(n.checked_mul(4)?)?)?;
+            data.chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        Some(Frame {
+            pass: u(8)?,
+            samples: u(12)?,
+            width,
+            height,
+            seconds: f32::from_bits(u(24)?),
+            flags: flags & !FLAG_DATA,
+            max_samples: u(32)?,
+            threads: u(36)?,
+            rays: u64::from_le_bytes(bytes.get(40..48)?.try_into().ok()?),
+            sums: Arc::new(sums),
+        })
+    }
+
     /// True when there are no sums yet.
     pub fn is_empty(&self) -> bool {
         self.sums.is_empty()
@@ -324,6 +371,9 @@ pub struct Job {
     pub max_samples: u32,
     /// A viewport job: the threads it keeps while a final runs (0: it pauses).
     pub share: usize,
+    /// The exact passes it renders next to the image (`rt_core::passes` bits; 0 for none, and
+    /// always for a viewport job).
+    pub passes: u32,
     /// The time limit in milliseconds, if any.
     limit_ms: Option<f64>,
     threads: usize,
@@ -344,6 +394,7 @@ impl std::fmt::Debug for Job {
             .field("height", &self.height)
             .field("max_samples", &self.max_samples)
             .field("share", &self.share)
+            .field("passes", &self.passes)
             .finish_non_exhaustive()
     }
 }
@@ -369,6 +420,10 @@ impl Job {
             share: match kind {
                 Kind::Viewport => opts.share.min(threads),
                 Kind::Final => 0,
+            },
+            passes: match kind {
+                Kind::Final => (opts.passes | r.passes) & PASS_ALL,
+                Kind::Viewport => 0,
             },
             limit_ms,
             threads,
@@ -515,6 +570,7 @@ impl Job {
             .num("height", f64::from(self.height))
             .num("maxSamples", f64::from(self.max_samples))
             .num("share", self.share as f64)
+            .num("passes", f64::from(self.passes))
             .num("threads", f64::from(f.threads))
             .num("pass", f64::from(f.pass))
             .num("samples", f64::from(f.samples))
@@ -715,11 +771,23 @@ fn sums_of(films: &[Mutex<Film>], width: u32, height: u32) -> Vec<f32> {
     out
 }
 
+/// The flags a job ends with once [`render`] returns.
+fn end_flags(job: &Job) -> u32 {
+    if job.cancelled() {
+        FLAG_CANCELLED
+    } else {
+        FLAG_DONE
+    }
+}
+
 /// Renders `job` (the progressive loop of `rt`: the same tiles, passes and sample order), publishing
 /// the sums after every pass. It stops as the page's `runPasses` does (`src/render/schedule.ts`):
 /// after the samples, or between passes near the time limit; never inside a pass. Which thread
-/// renders which tile (all of them, or the share left by the gate) does not change a pixel.
-fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) {
+/// renders which tile (all of them, or the share left by the gate) does not change a pixel, nor
+/// a pass: with `job.passes`, the exact passes of every tile come with its first pass and the
+/// albedo of every sample after it, and they are returned, assembled, unless the job was
+/// cancelled. A viewport's share goes back before it returns; the caller ends the job.
+fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
     let (width, height) = (job.width, job.height);
     let live = (job.kind == Kind::Viewport && job.share > 0).then(|| gate.live(job.share));
     let prepared = Prepared::new(scene);
@@ -729,12 +797,20 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) {
         .iter()
         .map(|t| Mutex::new(Film::region(t.x, t.y, t.w, t.h)))
         .collect();
+    let pass_films: Vec<Mutex<PassFilm>> = if job.passes == 0 {
+        Vec::new()
+    } else {
+        tiles
+            .iter()
+            .map(|t| Mutex::new(PassFilm::region(t.x, t.y, t.w, t.h, job.passes)))
+            .collect()
+    };
     let t0 = Instant::now();
     lock(&job.progress).started = Some(t0);
     let ms = |t: Instant| t.duration_since(t0).as_secs_f64() * 1000.0;
     let (mut done, mut previous, mut passes, mut rays) = (0u32, 0u32, 0u32, 0u64);
     let mut ms_per_sample: Option<f64> = None;
-    let (tiles, films, prepared) = (&tiles, &films, &prepared);
+    let (tiles, films, prepared, pass_tiles) = (&tiles, &films, &prepared, &pass_films);
     while !job.cancelled() {
         let Some(count) = next_pass(done, previous, job.max_samples) else {
             break;
@@ -776,10 +852,19 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) {
                                 break;
                             };
                             let mut film = lock(film);
+                            let mut passes = pass_tiles.get(i).map(lock);
+                            if let (Some(passes), 0) = (passes.as_deref_mut(), first) {
+                                rays += render_tile_exact(scene, prepared, tile, passes, isa);
+                            }
                             for sample in first..first + count {
                                 rays += render_tile_prepared(
                                     scene, prepared, tile, sample, &mut film, isa,
                                 );
+                                if let Some(passes) = passes.as_deref_mut() {
+                                    rays += render_tile_albedo(
+                                        scene, prepared, tile, sample, passes, isa,
+                                    );
+                                }
                             }
                         }
                         rays
@@ -811,14 +896,16 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) {
     }
     // The share goes back before the job says it ended.
     drop(live);
-    job.end(
-        if job.cancelled() {
-            FLAG_CANCELLED
-        } else {
-            FLAG_DONE
-        },
-        None,
-    );
+    if job.cancelled() || pass_films.is_empty() {
+        return None;
+    }
+    // Each tile's film is dropped once copied, so a large image does not hold its passes twice.
+    let mut passes = Passes::new(width, height, job.passes);
+    for film in pass_films {
+        let f = film.into_inner().unwrap_or_else(PoisonError::into_inner);
+        passes.copy_region(f.origin_x, f.origin_y, &f.resolve());
+    }
+    Some(passes)
 }
 
 /// Why a job was not started.
@@ -846,6 +933,9 @@ pub struct Options {
     /// A viewport job: its number in the client's order of views; one not newer than the
     /// client's last is refused ([`SubmitError::Stale`]).
     pub seq: Option<u64>,
+    /// A final job: the exact passes to render next to the image besides its `RNDR.passes`
+    /// (`rt_core::passes` bits; X2). A viewport job renders none.
+    pub passes: u32,
 }
 
 /// True when the RSB has a `MESH` section.
@@ -924,6 +1014,7 @@ struct Inner {
     finished: Mutex<VecDeque<u32>>,
     viewports: Mutex<HashMap<String, Viewport>>,
     limits: Limits,
+    kept: Kept,
 }
 
 /// The renderer: jobs, their threads and their priority.
@@ -940,8 +1031,20 @@ impl Engine {
 
     /// [`Engine::new`] with other limits: how long a viewport or a final job may go unasked
     /// before it stops, how long a new viewport job waits for the previous one to stop, and how
-    /// long a window may go unasked before a new one takes its slot.
+    /// long a window may go unasked before a new one takes its slot. The passes of its final
+    /// renders are kept in memory only.
     pub fn with_limits(threads: usize, limits: Limits) -> Engine {
+        Engine::with_store(threads, limits, KeepLimits::default(), None)
+    }
+
+    /// [`Engine::with_limits`] keeping final renders with passes within `keep`, spilling large
+    /// ones into `cache` (`<data>/cache/ai`; its files of a previous launch are removed now).
+    pub fn with_store(
+        threads: usize,
+        limits: Limits,
+        keep: KeepLimits,
+        cache: Option<PathBuf>,
+    ) -> Engine {
         let threads = if threads == 0 {
             std::thread::available_parallelism().map_or(1, |n| n.get())
         } else {
@@ -957,8 +1060,30 @@ impl Engine {
                 finished: Mutex::new(VecDeque::new()),
                 viewports: Mutex::new(HashMap::new()),
                 limits,
+                kept: Kept::new(keep, cache),
             }),
         }
+    }
+
+    /// The kept image and passes of final render `id` (read back from the cache folder when they
+    /// are there), for the AI post-processing.
+    pub fn kept(&self, id: u32) -> Option<KeptRender> {
+        self.inner.kept.get(id)
+    }
+
+    /// The passes file of final render `id`, to serve.
+    pub fn kept_passes(&self, id: u32) -> Option<PassesBody> {
+        self.inner.kept.passes_body(id)
+    }
+
+    /// The ids of the kept renders, oldest first.
+    pub fn kept_ids(&self) -> Vec<u32> {
+        self.inner.kept.ids()
+    }
+
+    /// True when final render `id` is kept in the cache folder rather than in memory.
+    pub fn kept_on_disk(&self, id: u32) -> bool {
+        self.inner.kept.on_disk(id)
     }
 
     /// Threads rendering a job.
@@ -1062,7 +1187,24 @@ impl Engine {
                     let inner = &engine.inner;
                     match inner.gate.enter_final(&run) {
                         Some(turn) => {
-                            guarded(&run, || render(&run, &scene, &inner.gate, inner.isa));
+                            let mut turn = Some(turn);
+                            guarded(&run, || {
+                                let passes = render(&run, &scene, &inner.gate, inner.isa);
+                                // The next final may start while this one's passes are kept.
+                                drop(turn.take());
+                                // Kept before the job says it is done (whoever sees the end finds
+                                // them), and only for a final that rendered all it was to render.
+                                if let (Some(passes), false) = (passes, run.cancelled()) {
+                                    let mut image = run.frame();
+                                    image.flags = FLAG_DONE;
+                                    inner.kept.keep(KeptRender {
+                                        id: run.id,
+                                        image,
+                                        passes: Arc::new(passes),
+                                    });
+                                }
+                                run.end(end_flags(&run), None);
+                            });
                             drop(turn);
                         }
                         None => run.end(FLAG_CANCELLED, None),
@@ -1158,6 +1300,7 @@ impl Engine {
                 let handle = std::thread::spawn(move || {
                     guarded(&run, || {
                         render(&run, &scene, &engine.inner.gate, engine.inner.isa);
+                        run.end(end_flags(&run), None);
                     });
                     scene
                 });
@@ -1327,6 +1470,95 @@ mod tests {
         let mut out = Vec::new();
         f.write(true, &mut out).unwrap();
         assert_eq!(out.len() as u64, f.len(true));
+    }
+
+    #[test]
+    fn a_final_job_with_passes_keeps_them_with_its_image_before_it_ends() {
+        use rt_core::passes::{PASS_DEPTH, PASS_PART_ID};
+        let _serial = serial();
+        let engine = Engine::new(3);
+        let mut scene = small_example(5, 40, 30);
+        // Asked in the RSB and by the caller: the job renders both.
+        scene.render.passes = PASS_DEPTH;
+        let job = engine
+            .submit_with(
+                Kind::Final,
+                &scene.to_rsb(),
+                true,
+                "",
+                "",
+                Options {
+                    passes: PASS_ALL & !PASS_DEPTH,
+                    ..Options::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(job.passes, PASS_ALL);
+        let f = wait_done(&job);
+        assert_eq!(f.flags & FLAG_DONE, FLAG_DONE);
+        let kept = engine.kept(job.id).expect("kept as it ended");
+        assert_eq!(kept.image.sums, f.sums, "the image of the last frame");
+        assert_eq!((kept.image.samples, kept.image.flags), (5, FLAG_DONE));
+        // The passes rt-core renders on its own, for the same tiles and samples.
+        let prepared = Prepared::new(&scene);
+        let mut reference = Passes::new(40, 30, PASS_ALL);
+        for tile in tile_grid(40, 30, TILE_SIZE) {
+            let mut pf = PassFilm::region(tile.x, tile.y, tile.w, tile.h, PASS_ALL);
+            render_tile_exact(&scene, &prepared, tile, &mut pf, engine.isa());
+            for s in 0..5 {
+                render_tile_albedo(&scene, &prepared, tile, s, &mut pf, engine.isa());
+            }
+            reference.copy_region(tile.x, tile.y, &pf.resolve());
+        }
+        assert_eq!(*kept.passes, reference);
+        // And the image is the image of a job without passes, bit for bit.
+        let plain = engine
+            .submit(
+                Kind::Final,
+                &small_example(5, 40, 30).to_rsb(),
+                "",
+                "",
+                None,
+            )
+            .unwrap();
+        assert_eq!(wait_done(&plain).sums, f.sums);
+        assert!(
+            engine.kept(plain.id).is_none(),
+            "nothing asked, nothing kept"
+        );
+        // Forgetting the job keeps the passes.
+        engine.cancel(job.id);
+        assert!(engine.job(job.id).is_none());
+        assert!(engine.kept(job.id).is_some());
+
+        // A viewport job ignores the passes of its RSB; a cancelled final keeps none.
+        scene.render.passes = PASS_ALL;
+        let view = engine
+            .submit(Kind::Viewport, &scene.to_rsb(), "k", "w", None)
+            .unwrap();
+        assert_eq!(view.passes, 0);
+        wait_done(&view);
+        assert!(engine.kept(view.id).is_none());
+        scene.render.max_samples = 100_000;
+        let long = engine
+            .submit_with(
+                Kind::Final,
+                &scene.to_rsb(),
+                true,
+                "",
+                "",
+                Options {
+                    passes: PASS_PART_ID,
+                    ..Options::default()
+                },
+            )
+            .unwrap();
+        long.wait_newer(0, Duration::from_secs(60));
+        engine.cancel(long.id);
+        assert_ne!(wait_done(&long).flags & FLAG_CANCELLED, 0);
+        assert!(engine.kept(long.id).is_none());
+        assert_eq!(engine.kept_ids(), [job.id]);
+        engine.shutdown();
     }
 
     #[test]
@@ -1691,6 +1923,68 @@ mod tests {
             .all(|(a, b)| a.to_bits() == b.to_bits()));
         engine.shutdown();
         one.shutdown();
+    }
+
+    #[test]
+    fn passes_are_the_same_with_a_live_viewport_and_an_orphaned_final_keeps_none() {
+        let _serial = serial();
+        // Long enough for the final to be seen sharing.
+        let mut scene = small_example(48, 96, 64);
+        scene.render.passes = PASS_ALL;
+        let rsb = scene.to_rsb();
+        let alone = {
+            let engine = Engine::new(4);
+            let job = engine.submit(Kind::Final, &rsb, "", "", None).unwrap();
+            wait_done(&job);
+            let kept = engine.kept(job.id).expect("kept alone");
+            engine.shutdown();
+            kept
+        };
+        // The same final while a live viewport of another view keeps two of the four threads: which
+        // threads render a tile changes neither a pixel nor a pass.
+        let engine = Engine::new(4);
+        let mut other = small_example(100_000, 96, 64);
+        other.camera.position.x += 5.0;
+        other.render.passes = PASS_ALL;
+        let view = engine
+            .submit_with(Kind::Viewport, &other.to_rsb(), true, "k", "w", shared(2))
+            .unwrap();
+        assert_eq!(view.passes, 0, "a viewport renders no passes");
+        view.wait_newer(0, Duration::from_secs(60));
+        let render = engine.submit(Kind::Final, &rsb, "", "", None).unwrap();
+        let mut saw_shared = false;
+        while !render.frame().finished() {
+            saw_shared |= render.frame().flags & FLAG_SHARED != 0;
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let with = engine.kept(render.id).expect("kept while sharing");
+        assert!(saw_shared, "the final never left the viewport its share");
+        assert!(!view.frame().finished(), "the viewport stayed live");
+        assert_eq!(*with.passes, *alone.passes);
+        assert!(with
+            .image
+            .sums
+            .iter()
+            .zip(alone.image.sums.iter())
+            .all(|(a, b)| a.to_bits() == b.to_bits()));
+        assert!(engine.kept(view.id).is_none());
+        engine.shutdown();
+        // A final whose page went away (nobody asks about it) stops, and keeps nothing.
+        let lonely = Engine::with_limits(
+            2,
+            Limits {
+                orphan_final: Duration::from_millis(300),
+                ..Limits::default()
+            },
+        );
+        scene.render.max_samples = 100_000;
+        let job = lonely
+            .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+            .unwrap();
+        assert_ne!(wait_done(&job).flags & FLAG_CANCELLED, 0);
+        assert!(lonely.kept(job.id).is_none());
+        assert!(lonely.kept_ids().is_empty());
+        lonely.shutdown();
     }
 
     #[test]

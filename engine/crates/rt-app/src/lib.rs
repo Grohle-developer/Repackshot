@@ -26,6 +26,7 @@ pub mod hardware;
 pub mod http;
 pub mod instance;
 pub mod json;
+pub mod kept;
 pub mod launcher;
 pub mod log;
 pub mod models;

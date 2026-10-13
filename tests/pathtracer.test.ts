@@ -11,6 +11,8 @@ import { exampleState } from './helpers';
 import type { WorkerReply, WorkerRequest } from '../src/render/pool-protocol';
 import { Accumulator, alphaByte, assignTiles, chooseScale, exactBytes, Generations, nextPass, poolSize, scaledSize, TILE, tileGrid, type TileResult } from '../src/render/tiles';
 import { exactPixel, exposureGain } from '../src/render/tonemap';
+import { ALBEDO_BIT, EXACT_BITS, PassAccumulator, wordsPerPixel } from '../src/render/pass-planes';
+import { passMask } from '../src/core/passes';
 
 const f = Math.fround;
 
@@ -184,6 +186,29 @@ describe('generations', () => {
 
 // ------------------------------------------------------------------ the pool with fake workers
 
+/** A tile's albedo samples: deterministic per (pixel, sample). */
+function albedoData(t: { x: number; y: number; w: number; h: number }, first: number, count: number, width: number): Float32Array {
+  const out = new Float32Array(count * t.w * t.h * 3);
+  for (let s = 0; s < count; s++)
+    for (let y = 0; y < t.h; y++)
+      for (let x = 0; x < t.w; x++) {
+        const p = (t.y + y) * width + t.x + x;
+        out.set([f(((p * 3 + (first + s) * 5) % 11) / 10), 0.5, f((first + s) / 8)], (s * t.w * t.h + y * t.w + x) * 3);
+      }
+  return out;
+}
+
+/** A tile's exact planes (`mask` & EXACT_BITS, key order): every word the pixel index plus the plane's number. */
+function exactData(t: { x: number; y: number; w: number; h: number }, mask: number, width: number): Uint32Array {
+  const n = t.w * t.h;
+  const out = new Uint32Array(n * wordsPerPixel(mask & EXACT_BITS));
+  for (let i = 0; i < out.length; i++) {
+    const local = i % n;
+    out[i] = (t.y + Math.floor(local / t.w)) * width + t.x + (local % t.w) + Math.floor(i / n) * 100000;
+  }
+  return out;
+}
+
 /** A worker that renders `sampleData` tiles, and can hold its replies until told to send them. */
 class FakeWorker {
   onmessage: ((e: { data: WorkerReply }) => void) | null = null;
@@ -221,7 +246,18 @@ class FakeWorker {
       case 'job':
         for (let k = 0; k < msg.tiles.length; k += 5) {
           const [x, y, w, h, index] = msg.tiles.subarray(k, k + 5);
-          this.reply({ type: 'tile', generation: msg.generation, index, first: msg.first, count: msg.count, data: sampleData({ x, y, w, h }, msg.first, msg.count, this.width) });
+          const t = { x, y, w, h };
+          const passes = msg.passes ?? 0;
+          this.reply({
+            type: 'tile',
+            generation: msg.generation,
+            index,
+            first: msg.first,
+            count: msg.count,
+            data: sampleData(t, msg.first, msg.count, this.width),
+            ...(passes & ALBEDO_BIT ? { albedo: albedoData(t, msg.first, msg.count, this.width) } : {}),
+            ...(passes & EXACT_BITS && msg.first === 0 ? { exact: exactData(t, passes, this.width) } : {}),
+          });
         }
         this.reply({ type: 'done', generation: msg.generation });
         break;
@@ -366,6 +402,32 @@ describe('Render with the path tracer', () => {
     // A second render of the same geometry is an update, without the meshes.
     await engine.renderPixels({ width: 96, height: 40, maxSamples: 1, maxSeconds: 0, transparent: false });
     expect(workers[0].got.filter((m) => m.type === 'scene').map((m) => (m as { full: boolean }).full)).toEqual([true, false]);
+  });
+
+  it('with passes: the jobs ask for them, and the tiles’ passes come back put together like the image (X2)', async () => {
+    const { pool, workers } = await fakePool(3, 70);
+    const views: TracerView[] = [];
+    const engine = new PathTracerEngine(pool, source(views), true);
+    engine.sync(exampleState(), null);
+    const keys = ['albedo', 'normal', 'partId', 'coc'] as const;
+    const mask = passMask([...keys]);
+    const px = await engine.renderPixels({ width: 70, height: 40, maxSamples: 7, maxSeconds: 0, transparent: false, passes: keys });
+    // The view (and so RNDR.passes) and every job carry the passes.
+    expect(views[0].passes).toEqual(keys);
+    expect(workers.flatMap((w) => w.got.filter((m) => m.type === 'job').map((m) => (m as { passes?: number }).passes))).toEqual(Array(9).fill(mask));
+    const ref = new PassAccumulator(70, 40, mask, tileGrid(70, 40));
+    for (const t of ref.tiles) {
+      ref.setExact(t.index, exactData(t, mask, 70));
+      for (const [first, count] of [[0, 1], [1, 2], [3, 4]]) ref.addAlbedo(t.index, first, count, albedoData(t, first, count, 70));
+    }
+    const want = ref.resolve();
+    expect(Object.keys(px.passes!).sort()).toEqual(['albedo', 'coc', 'height', 'normal', 'partId', 'width']);
+    for (const k of keys) expect(Array.from(px.passes![k]!), k).toEqual(Array.from(want[k]!));
+    // The image is the one without passes.
+    const plain = await engine.renderPixels({ width: 70, height: 40, maxSamples: 7, maxSeconds: 0, transparent: false });
+    expect(plain.passes).toBeUndefined();
+    expect(Array.from(plain.data)).toEqual(Array.from(px.data));
+    expect(views[1].passes).toBeUndefined();
   });
 
   it('leaving Full mode during a Render does not stop it; the stop button does', async () => {
@@ -546,6 +608,41 @@ describe('the viewport of the pool', () => {
     const ref = new Accumulator(160, 24);
     for (const t of ref.tiles) ref.add(t.index, 0, 7, sampleData(t, 0, 7, 96));
     expect(Array.from(live.data)).toEqual(Array.from(exactBytes(ref.sum, 7, 0.5, 2)));
+  });
+
+  it('a Render with passes while the viewport stays live: only the Render’s jobs ask for them, and they are the same as alone (X2)', async () => {
+    const { engine, workers } = await viewport(4);
+    await settle(engine, 5);
+    const before = workers.map((w) => jobsOf(w).length);
+    const keys = ['albedo', 'depth', 'partId'] as const;
+    const mask = passMask([...keys]);
+    const opts = { width: 160, height: 24, maxSamples: 7, maxSeconds: 0, transparent: false, passes: keys };
+    const pending = engine.renderPixels(opts);
+    let rendering = true;
+    void pending.finally(() => (rendering = false));
+    while (rendering) {
+      engine.frame();
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const live = await pending;
+    const isRender = (m: Extract<WorkerRequest, { type: 'job' }>) => m.tiles[3] === 24;
+    const during = workers.map((w, i) => jobsOf(w).slice(before[i]));
+    // The viewport's worker rendered no part of the Render, and nothing of the viewport asks for passes.
+    expect(during[3].some(isRender)).toBe(false);
+    for (const jobs of during) for (const m of jobs) expect(m.passes ?? 0).toBe(isRender(m) ? mask : 0);
+    // Alone (Fast: every worker), the same passes, bit for bit, and what the tiles gave.
+    engine.setActive(false);
+    const alone = await engine.renderPixels(opts);
+    const ref = new PassAccumulator(160, 24, mask, tileGrid(160, 24));
+    for (const t of ref.tiles) {
+      ref.setExact(t.index, exactData(t, mask, 96));
+      for (const [first, count] of [[0, 1], [1, 2], [3, 4]]) ref.addAlbedo(t.index, first, count, albedoData(t, first, count, 96));
+    }
+    const want = ref.resolve();
+    for (const k of keys) {
+      expect(Array.from(live.passes![k]!), k).toEqual(Array.from(alone.passes![k]!));
+      expect(Array.from(live.passes![k]!), k).toEqual(Array.from(want[k]!));
+    }
   });
 
   it('waits while a Render runs when the settings say Pause, and the Render takes every worker', async () => {

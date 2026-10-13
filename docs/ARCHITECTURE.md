@@ -99,6 +99,7 @@ src/
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4)
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
+    pass-planes.ts          los pases exactos del motor en la página (X2): junta los de rt.wasm por baldosa y lee el RPP1 del lanzador
   ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core (y data), nunca al revés; la guarda NO es TypeScript: es rt-post
     post-wasm.ts            envoltura tipada de public/engine/post.wasm (plan, condicionamiento, aceptar) y el conductor runGuarded; worker y Node
     prompt.ts               el prompt de la escena (materiales, luces, estilo) y el negativo fijo; la tabla de materiales de la guarda
@@ -327,7 +328,7 @@ Vive en `engine/`, un workspace de Cargo con seis *crates*:
 | --- | --- | --- |
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlazará `rt-app` (X3c) |
 | `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
@@ -423,9 +424,15 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   mallas.
 - **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
   lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
-- **`RNDR`** (36 B): además `max_depth` (0 = 8, tope 1024) y
-  `clamp_indirect` (0 = desactivado). `tonemap`: 0 lineal, 1 ACES, 2
-  fílmica, 3 AgX, 4 estándar; desconocido = ACES. Exposición 2^ev antes
+- **`RNDR`** (40 B desde X2; los de 28 y 36 B se leen con los valores
+  por defecto de lo que les falta): además `max_depth` (0 = 8, tope 1024),
+  `clamp_indirect` (0 = desactivado) y, desde X2, `passes`: la **máscara
+  de pases** exactos que se escriben junto a la imagen, bit *i* =
+  `PASS_KEYS[i]` de `src/core/passes.ts` (1 albedo, 2 normal, 4
+  profundidad, 8 id de pieza, 16 id de material, 32 círculo de
+  confusión). 0, o un RSB anterior a X2, no pide ninguno; los bits que el
+  motor no conoce se conservan y se ignoran. `tonemap`: 0 lineal, 1 ACES,
+  2 fílmica, 3 AgX, 4 estándar; desconocido = ACES. Exposición 2^ev antes
   de la curva.
 - El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
   escritor TypeScript de E4 hace lo mismo. `rt-core`
@@ -445,6 +452,36 @@ que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en 
 clave de mallas del escritor TypeScript incluye los ids de las imágenes,
 de modo que un cambio de imagen manda la escena entera.
 
+**Pases exactos** (X2, `rt_core::passes`; contrato en `AI-POST.md` §7.4 y
+`src/core/passes.ts`). Un plano por pase, `ancho × alto`, por filas desde
+arriba a la izquierda como la imagen, en el orden de `PASS_KEYS`. La
+normal, la profundidad, los dos ids y el círculo de confusión salen de
+**un rayo por el centro del píxel, sin *jitter* y por el centro de la
+lente** (`render::centre_ray`), una vez por baldosa
+(`render_tile_exact`): son exactos y nunca mezclan los dos lados de una
+arista. El albedo sigue el rayo de cámara de cada muestra de la imagen
+(la misma posición en el píxel y el mismo punto de la lente) y se suma en
+orden de muestra en `f32` y se divide como `Film::resolve`
+(`render_tile_albedo`), así que con profundidad de campo se emborrona
+como la imagen. El primer impacto (`integrator::first_hit`) es el de la
+geometría o el suelo, el más cercano, como en el integrador; toda
+superficie lo para (recortes y vidrio incluidos: lo que encuentra
+`pick`). El **suelo del estudio** (`FLOR`, visible o atrapasombras) es
+`FLOOR_ID` (`0xFFFFFFFF`) en los dos ids, normal `(0, 0, ±1)` hacia la
+cámara y albedo `FLOR.color`; el **fondo** (0, profundidad +∞) es el
+entorno, la imagen de fondo, la transparencia y un panel de luz visible
+a cámara cruzado antes que nada. Los pases tienen sus propios rayos: no
+tocan la película ni sus números aleatorios, y la imagen conserva su
+*hash* (`render/passes_tests.rs` lo comprueba con los tres ejemplos
+fijados). Los *hash* de los seis planos del ejemplo y del ejemplo de E5
+están fijados (`PINNED_PASS_*`, `PINNED_E5_PASS_*`) y se repiten en cada
+ruta SIMD, en WASI (escalar y `simd128`), en el `rt_wasm.wasm` real
+(`tools/wasm-parity.mjs --expect-passes`, en CI) y por la API del
+lanzador con 1 y 4 hilos. El círculo de confusión es el de
+`src/core/lens-coc.ts` (los dos lados leen `tests/fixtures/lens-coc.json`)
+y coincide, dentro de 1 %, con el desenfoque medido de la propia lente
+de `Camera::generate_ray`.
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -462,7 +499,13 @@ a ½ o ¼ de resolución; nunca por encima de un píxel de imagen por píxel
 del dispositivo. El *preview* de three.js sigue activo mientras la cámara se
 mueve; al pararse, el trazador arranca desde la muestra 0 y la imagen
 converge en el propio visor. *Render* usa el mismo pool a la resolución
-de salida y con el presupuesto de la barra de render.
+de salida y con el presupuesto de la barra de render. Con `passes`
+(`RenderOptions`, X2) cada trabajo lleva la máscara; el worker devuelve,
+con cada baldosa, el albedo de cada muestra (`rt_render_tile_albedo`) y,
+en el trabajo que empieza en la muestra 0, sus planos exactos
+(`rt_render_tile_passes`), y el hilo principal los junta con
+`PassAccumulator` (`src/render/pass-planes.ts`) igual que la imagen: el
+resultado es el del motor nativo bit a bit y vuelve como `RenderPasses`.
 
 **Mientras corre un *Render*, el visor sigue vivo** (P3a): se queda con la
 cuarta parte de los workers (al menos uno; en un pool de uno, espera) y el
@@ -556,6 +599,26 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    cancelación, así que *Pausar* y *Detener* responden al momento aunque
    el lanzador no conteste. El contrato completo, en
    `engine/crates/rt-app/README.md`.
+
+   **Pases** (X2): un trabajo final con `passes=albedo,normal,…` (y los
+   de `RNDR.passes`) los renderiza junto a la imagen con los hilos que
+   tenga (también con los que le deja un visor que comparte), y al
+   terminar con todas sus muestras (no si se cancela, queda huérfano o
+   falla) el lanzador **guarda la imagen lineal y sus pases por id del trabajo**
+   (`src/kept.rs`) antes de decir que ha terminado, para la tubería de la
+   IA (`AI-POST.md` §7.3); borrar el trabajo (`DELETE`) no los borra.
+   Guarda los cuatro últimos; uno de más de 64 MiB entre imagen y pases
+   va a `<datos>/cache/ai/<id>.rpx` (la trama `RPX1`) y `<id>.rpp`
+   (los pases) en lugar de quedarse en memoria, y lo que dejó un arranque
+   anterior se borra al arrancar (los ids empiezan de nuevo).
+   `GET /api/render/<id>/passes` los devuelve en binario: cabecera
+   `RPP1` de 32 bytes (*magic*, longitud de la cabecera, ancho, alto,
+   máscara, muestras del albedo, id, 0) y los planos de la máscara en el
+   orden de `PASS_KEYS`, palabras *little-endian* (`f32`; `u32` los
+   ids); 404 si el id no existe, fue desalojado o no pidió pases, 409
+   `not-ready` mientras se renderiza. `native.ts` los lee con
+   `parsePasses` (`src/render/pass-planes.ts`) y los devuelve con el id
+   del render. Contrato en `engine/crates/rt-app/README.md`.
 4. **Datos y modelos**: carpeta de datos en `%LOCALAPPDATA%\Repackshot`
    (Windows) o `$XDG_DATA_HOME/repackshot` (Linux); en las versiones
    **portables** (un fichero `portable.txt` junto al ejecutable), en
@@ -577,6 +640,7 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    library/             la biblioteca propia (U4)
    results/             el historial: un archivo por resultado (png, jpg, exr) e index.json
    cache/thumbs/        las esferas de materiales (caché)
+   cache/ai/            la imagen y los pases de los renders finales grandes que guarda el lanzador (X2)
    models/              los modelos de IA, por sha256
    logs/                el registro del lanzador
    browser-profile/     el perfil de la ventana de Edge o Chromium
