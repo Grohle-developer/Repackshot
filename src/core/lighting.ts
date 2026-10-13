@@ -168,6 +168,16 @@ export function rigPivot(state: ProjectState): Vec3 {
   return boxCenter(b);
 }
 
+/**
+ * Unit direction towards the sky's sun (environment kind SKY): the rig's first enabled sun light, else the
+ * environment's own sun, camera-relative like a light (SPEC §3.4: sky and sun from the sun light).
+ */
+export function skySunDirection(state: ProjectState, lights: readonly Pick<LightInstance, 'type' | 'enabled' | 'power' | 'az' | 'el'>[] = state.studio.lights): Vec3 {
+  const sun = lights.find((l) => l.type === 'SUN' && l.enabled && l.power > 0);
+  const { az, el } = sun ?? state.environment.skySun;
+  return normalize(polar(toWorldAzimuth(az), el, 1));
+}
+
 /** World position of a light, millimetres. */
 export function lightPosition(state: ProjectState, l: Pick<LightInstance, 'az' | 'el' | 'dist'>): Vec3 {
   return add(rigPivot(state), polar(toWorldAzimuth(l.az), l.el, l.dist * state.scene.partSizeMm));

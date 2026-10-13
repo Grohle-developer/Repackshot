@@ -61,6 +61,10 @@ un `README.txt` con la versión y los enlaces al fuente;
 `tests/chunks.test.ts` comprueba que ningún *chunk* lo contiene. Motor: Rust estable, **fijado a 1.97.0 en CI** (`RUST_VERSION` y `RUSTUP_TOOLCHAIN` en `engine.yml` y `release.yml`, la misma versión que las máquinas de desarrollo: cada Rust nuevo trae *lints* nuevos de clippy y con `-D warnings` pondría el CI en rojo sin que nada cambie; subir de versión es un cambio a propósito que arregla sus *lints*),
 objetivos `wasm32-unknown-unknown`, `aarch64-unknown-linux-gnu` y
 `riscv64gc-unknown-linux-gnu` comprobados en CI además del nativo.
+Los HDRI (`.hdr` y `.exr`) se leen con lectores propios, en la interfaz
+(`src/io/hdri.ts`) y en el motor (`rt-core`: RGBE, OpenEXR e *inflate*);
+`HDRLoader` y `EXRLoader` de three solo aparecen en los tests, como lector
+independiente con el que comparar (E5). E5 no añade dependencias.
 
 ---
 
@@ -79,6 +83,8 @@ src/
     animation.ts            planos, movimientos, evaluación en el tiempo
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
+    images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5)
+    sky.ts                  el cielo de Preetham del motor, portado para la vista previa (E5)
     faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
     material-drop.ts        a qué llega una suelta de material y qué asigna (U7)
     box-select.ts           selección por caja: geometría en pantalla, ventana y cruce, qué gesto la arma (U7)
@@ -102,6 +108,7 @@ src/
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
     project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2)
+    hdri.ts                 lectores propios de RGBE y OpenEXR, imagen de fondo, copia para la vista previa (E5)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
     ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
@@ -122,8 +129,10 @@ tools/                      scripts de desarrollo: capturas, generadores, hojas 
 docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
-  crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG
+  crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG;
+                            imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5)
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG con hilos; hojas de contacto
+                            (las escenas de E5 en scenes.rs)
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
   crates/rt-post/           la guarda del post-procesado IA y todo su trabajo con píxeles (AI-POST.md §7.2); rt-core no la conoce
@@ -377,11 +386,17 @@ banderas) es opcional: sin ella, cada malla es una instancia identidad.
 Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 `rt-core`):
 
-- **`MATL`** (60 B; los de 56 B se leen con `flags = 0`): `kind` 0
-  principal (Lambert + GGX con barniz; `transmission` se ignora hasta E5),
-  1 vidrio (E5; hasta entonces se pinta como 0), 2 emisivo (radiancia
-  `emission × emission_power`); desconocido = 0. `flags` bit 0: el emisor
-  se muestrea también como luz.
+- **`MATL`** (72 B desde E5; los de 56 y 60 B se leen con los valores por
+  defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
+  barniz; la parte `transmission` es vidrio claro: reflexión y refracción
+  GGX con el Fresnel dieléctrico exacto), 1 vidrio (el principal sin
+  metal), 2 emisivo (radiancia `emission × emission_power`); desconocido =
+  0. `flags` bit 0: el emisor se muestrea también como luz (por su flujo);
+  bit 1: pared fina (sin interior: la luz y los rayos de sombra pasan
+  rectos). E5 añade `opacity` (1; por debajo, recorte estocástico),
+  `anisotropy` (0) y `absorption_mm` (0; por encima, Beer–Lambert dentro
+  del sólido: `base_color` es lo que conserva la luz blanca tras esos
+  milímetros).
 - **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
   (L4; se leen y se ignoran); ≥ 5 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
@@ -389,10 +404,23 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   = irradiancia en W/m², disco de `angle_deg`. `flags` bit 0 *glossy*
   (ilumina todos los lóbulos y se ve en reflejos; sin él solo difuso por
   NEE), bit 1 visible a cámara.
-- **`ENVR`** `kind`: 0 cúpula (lineal en z: suelo −1, horizonte 0, cénit
-  +1, × `strength`), 1 plano, 2 cielo y 3 HDRI (E5; hasta entonces
-  cúpula); `background_mode`: 0 entorno, 1 color, 2 transparente (alfa
-  0), 3 imagen de fondo (M2; hasta entonces 1).
+- **`ENVR`** (80 B desde E5) `kind`: 0 cúpula (lineal en z: suelo −1,
+  horizonte 0, cénit +1, × `strength`), 1 plano, 2 cielo (Preetham, con
+  `sky_turbidity` y el sol en `sun_azimuth_deg` / `sun_elevation_deg`,
+  escalado a la irradiancia horizontal de la cúpula de los mismos valores;
+  suelo neutro bajo el horizonte), 3 HDRI (el mapa `hdri_map`,
+  equirectangular en la convención de three.js, girado `rotation_deg` en
+  torno a Z; sin mapa, la cúpula); `background_mode`: 0 entorno, 1 color,
+  2 transparente (alfa 0), 3 imagen de fondo (`backplate_map`, solo para
+  los rayos de cámara, colocada en el marco `backplate_rect` según
+  `backplate_fit`: 0 llenar, 1 encajar, 2 estirar; sin mapa, como 1).
+- **`BMAP`** (E5, nueva, repetible): `u32 format width height byte_len`,
+  los datos y relleno a 4 bytes. `format` 0 RGB de 8 bits sRGB, 1 RGBA de
+  8 bits, 2 RGB `f32` lineal, 16 un `.hdr` entero, 17 un `.exr` entero
+  (de líneas: sin compresión, RLE, ZIPS o ZIP). El entorno nombra un mapa
+  por su posición entre las `BMAP` (`0xffffffff`: ninguno). Un RSB sin
+  `BMAP` conserva los mapas cargados, como uno sin `MESH` conserva las
+  mallas.
 - **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
   lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
 - **`RNDR`** (36 B): además `max_depth` (0 = 8, tope 1024) y
@@ -412,8 +440,10 @@ las mallas declaran siempre material 0 y el material real va en `INST`,
 que se escribe siempre. Unidades: milímetros, Z arriba, sensor de 36 mm
 en el lado largo; flujo de un panel = π/4 × potencia del rig × tamaño²
 (convención de las luces de área de Blender Cycles, L = P / (4 A), con la
-que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits (texturas, HDRI) viajan como secciones
-propias cuando lleguen (E5, M2).
+que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits viajan en secciones `BMAP`
+(E5: el HDRI y la imagen de fondo; las texturas de M2 irán igual); la
+clave de mallas del escritor TypeScript incluye los ids de las imágenes,
+de modo que un cambio de imagen manda la escena entera.
 
 ### 5.3 · En el navegador: workers
 
@@ -644,4 +674,12 @@ para después. El esquema versiona solo `state`; las migraciones viven en
 `io/project.ts` y se prueban con un fichero fijo por versión
 (`tests/fixtures/project-v1.json`, `project-v2.json`). Al abrir, los ids
 de malla que chocarían con otra geometría pasan a un prefijo `prjN:`,
-porque la vista previa y los workers cachean por id.
+porque la vista previa y los workers cachean por id. **Imágenes del
+entorno** (E5): un bloque opcional `"images": [{ "id", "name", "file" }]`
+con el HDRI y la imagen de fondo como los archivos que eran (`file` en
+base64); se escribe solo cuando el entorno tiene alguna. Al abrir se
+decodifican otra vez (`placeImages`): una imagen cuyo id ya nombra otra en
+la sesión recibe un id nuevo, y una que falta o no se lee se quita del
+entorno (ilumina la cúpula, se ve el color) con el aviso `MISSING_IMAGES`,
+sin impedir abrir. El esquema sigue en 2: los campos nuevos del entorno
+tienen valor por defecto.

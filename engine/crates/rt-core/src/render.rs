@@ -9,7 +9,7 @@
 //! samples `0..n` into a film in that order is progressive rendering; the hosts do it per tile.
 
 use crate::image::Film;
-use crate::integrator::{radiance, BvhTracer, Prepared, Tracer};
+use crate::integrator::{radiance_at, BvhTracer, Prepared, Tracer};
 use crate::math::Ray;
 use crate::sampler::{PixelSampler, DIM_CAMERA, DIM_LENS};
 use crate::scene::Scene;
@@ -51,6 +51,12 @@ pub fn tile_grid(width: u32, height: u32, size: u32) -> Vec<TileRect> {
 /// The camera ray of image-space pixel `(x, y)` for the samples of `sampler`: a uniform position
 /// inside the pixel (box filter) and, for a thin lens, a point on the aperture.
 pub fn camera_ray(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> Ray {
+    camera_sample(scene, sampler, x, y).0
+}
+
+/// [`camera_ray`] and the position it passes through on the screen, `(u, v)` in `[0, 1]²` from
+/// the top left (where a background image is looked up).
+pub fn camera_sample(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> (Ray, (f32, f32)) {
     let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
     let aspect = width as f32 / height as f32;
     let (du, dv) = sampler.get2(DIM_CAMERA);
@@ -61,7 +67,7 @@ pub fn camera_ray(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> Ray 
     } else {
         (0.0, 0.0)
     };
-    scene.camera.generate_ray(aspect, u, v, lens)
+    (scene.camera.generate_ray(aspect, u, v, lens), (u, v))
 }
 
 /// Renders one sample of every pixel of `tile` into `film` and returns the number of rays cast
@@ -124,8 +130,8 @@ fn render_tile_traced<T: Tracer>(
     for y in tile.y..y_end {
         for x in tile.x..x_end {
             let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
-            let ray = camera_ray(scene, &sampler, x, y);
-            let (c, alpha) = radiance(scene, prepared, tracer, &sampler, ray, &mut rays);
+            let (ray, screen) = camera_sample(scene, &sampler, x, y);
+            let (c, alpha) = radiance_at(scene, prepared, tracer, &sampler, ray, screen, &mut rays);
             film.splat_alpha(x, y, c, alpha);
         }
     }
@@ -517,6 +523,46 @@ mod tests {
 
     /// Pinned hash of the whole example image at 4 samples per pixel.
     pub(crate) const PINNED_EXAMPLE_4SPP: u32 = 0x2235_15c3;
+
+    /// Renders the whole E5 example (`sky` or HDRI), 32-pixel tiles, samples `0..4`, and hashes
+    /// the resolved film.
+    pub(crate) fn e5_4spp_hash(sky: bool, isa: Isa) -> u32 {
+        let scene = crate::example::e5_scene(sky);
+        let prepared = Prepared::new(&scene);
+        let (w, h) = (scene.render.width, scene.render.height);
+        let mut film = Film::new(w, h);
+        for tile in tile_grid(w, h, 32) {
+            for sample in 0..4 {
+                render_tile_prepared(&scene, &prepared, tile, sample, &mut film, isa);
+            }
+        }
+        fnv1a(&film.resolve())
+    }
+
+    #[test]
+    fn the_e5_example_has_pinned_hashes_on_every_platform() {
+        // E5 added clear glass with absorption, thin walls, cut-outs, anisotropy, HDRI and sky
+        // environments and background images, all outside the original example (whose hashes
+        // did not change). This scene goes through all of them, through the RGBE reader and an
+        // RSB round trip; `tools/wasm-parity.mjs` checks the real module against the HDRI hash
+        // (`rt --write-e5-example`).
+        let scene = crate::example::e5_scene(false);
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let (hdri, sky) = (e5_4spp_hash(false, isa), e5_4spp_hash(true, isa));
+            eprintln!(
+                "E5 example at 4 spp on {}: {hdri:#010x}, sky {sky:#010x}",
+                isa.name()
+            );
+            assert_eq!(hdri, PINNED_E5_HDRI_4SPP, "HDRI on {}", isa.name());
+            assert_eq!(sky, PINNED_E5_SKY_4SPP, "sky on {}", isa.name());
+        }
+    }
+
+    /// Pinned hash of the E5 example (HDRI) at 4 samples per pixel.
+    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0xbf8a_bd5b;
+    /// Pinned hash of the E5 example (sky) at 4 samples per pixel.
+    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x2fcb_098a;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

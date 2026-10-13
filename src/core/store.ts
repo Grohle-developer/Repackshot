@@ -4,6 +4,7 @@
 // download) live outside and subscribe.
 
 import type { Label, Lang, RGBA, StudioPreset } from '../data/types';
+import type { ImageRef } from './images';
 import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
@@ -42,6 +43,16 @@ export interface EnvironmentState {
   groundShadow: number;
   /** Strength of the floor reflection, 0..1. */
   groundReflection: number;
+  /** The HDRI file of kind HDRI (the image registry, core/images.ts); null: none loaded (the studio dome lights). */
+  hdri: ImageRef | null;
+  /** The background image of background BACKPLATE; null: none loaded (the colour shows). */
+  backplate: ImageRef | null;
+  /** How the background image fits the output frame. */
+  backplateFit: 'FILL' | 'FIT' | 'STRETCH';
+  /** Haze of the sky (kind SKY): 2 very clear, 3 clear, 6 hazy. */
+  skyTurbidity: number;
+  /** Where the sky's sun is when the rig has no sun light: degrees, camera-relative like a light's. */
+  skySun: { az: number; el: number };
 }
 
 /** Image settings applied after the render (SPEC §3.6). All zero = unchanged. */
@@ -176,6 +187,11 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
       color: [0.05, 0.05, 0.05, 1],
       groundShadow: 0.6,
       groundReflection: 0,
+      hdri: null,
+      backplate: null,
+      backplateFit: 'FILL',
+      skyTurbidity: 3,
+      skySun: { az: -55, el: 55 },
     },
     camera: { active: 'cam1', cameras: { cam1: makeCamera('cam1', '', partSizeMm) } },
     image: { exposureEv: 0, viewTransform: 'FILMIC', bloom: 0, sharpen: 0, saturation: 0, contrast: 0, vignette: 0 },

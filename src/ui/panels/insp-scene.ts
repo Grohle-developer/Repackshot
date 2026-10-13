@@ -204,7 +204,6 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
   const grid = h('div', { class: 'thumbs cols-3', 'data-guide': 'setups' });
   const intent = h('p', { class: 'note', style: 'margin:0' });
   const confirmHost = h('div');
-  const skyNote = h('p', { class: 'note', style: 'margin:0' }, t('light.skyNote'));
 
   const choose = (key: string) => {
     const spec = cmd.requestSetup(ctx, key);
@@ -252,7 +251,6 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
     },
     shallowEq,
   );
-  scope.watch((s) => s.environment.kind === 'SKY', (sky) => (skyNote.style.display = sky ? '' : 'none'));
 
   const modified = h('span', { class: 'aux' });
   scope.watch((s) => s.studio.modified, (m) => (modified.textContent = m ? t('light.modified') : ''));
@@ -295,7 +293,7 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
     t('light.saveSetup'),
   ) as HTMLButtonElement;
   scope.watch((s) => s.studio.lights.some((l) => l.enabled), (on) => (saveSetup.disabled = !on));
-  const body = h('div', { class: 'stack' }, chips, grid, mineConfirm, mineFoot, intent, skyNote, nav, confirmHost, saveSetup, saveHost, tuneHead, tuneBody);
+  const body = h('div', { class: 'stack' }, chips, grid, mineConfirm, mineFoot, intent, nav, confirmHost, saveSetup, saveHost, tuneHead, tuneBody);
   return section(ctx, 'light', t('section.light'), body);
 }
 
@@ -307,29 +305,61 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
   const set = (patch: Partial<EnvironmentState>, what: StringKey, gesture?: string) =>
     store.dispatch({ type: 'env/set', patch, gesture, label: cmd.editLabel('env', what) });
   const kind = select(
-    (['STUDIO', 'SKY', 'FLAT', 'HDRI'] as const).map((k) => ({ value: k, label: t(dyn(`env.kind.${k}`)) + (k === 'SKY' || k === 'HDRI' ? ` · ${t('common.comingSoon')}` : ''), disabled: k === 'SKY' || k === 'HDRI' })),
+    (['STUDIO', 'SKY', 'FLAT', 'HDRI'] as const).map((k) => ({ value: k, label: t(dyn(`env.kind.${k}`)) })),
     e0.kind,
     (v) => set({ kind: v as EnvironmentState['kind'] }, 'env.kind'),
     t('env.kind'),
   );
   const strength = slider({ value: e0.strength, min: 0, max: 3, step: 0.01, ariaLabel: t('env.strength'), onChange: (v, g) => set({ strength: v }, 'env.strength', g) });
   const rotation = slider({ value: e0.rotationDeg, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('env.rotation'), onChange: (v, g) => set({ rotationDeg: v }, 'env.rotation', g) });
+  const rotationRow = field(t('env.rotation'), rotation.el);
+
+  // HDRI: the file and its button.
+  const hdriInfo = h('p', { class: 'note', style: 'margin:0;overflow-wrap:anywhere' });
+  const hdriRow = h(
+    'div',
+    { class: 'stack' },
+    h('button', { type: 'button', class: 'btn btn-block', onclick: () => void cmd.loadEnvironmentHdri(ctx) }, icon('plus', 14), t('env.loadHdri')),
+    hdriInfo,
+  );
+
+  // Sky: haze, and the sun when the setup has no sun light.
+  const turbidity = slider({ value: e0.skyTurbidity, min: 1.7, max: 10, step: 0.1, digits: 1, ariaLabel: t('env.turbidity'), onChange: (v, g) => set({ skyTurbidity: v }, 'env.turbidity', g) });
+  const sunAz = slider({ value: e0.skySun.az, min: -180, max: 180, step: 1, unit: '°', ariaLabel: t('env.sunAz'), onChange: (v, g) => set({ skySun: { ...store.get().environment.skySun, az: v } }, 'env.sunAz', g) });
+  const sunEl = slider({ value: e0.skySun.el, min: 1, max: 90, step: 1, unit: '°', ariaLabel: t('env.sunEl'), onChange: (v, g) => set({ skySun: { ...store.get().environment.skySun, el: v } }, 'env.sunEl', g) });
+  const sunOwn = h('div', { class: 'stack' }, field(t('env.sunAz'), sunAz.el), field(t('env.sunEl'), sunEl.el));
+  const sunNote = h('p', { class: 'note', style: 'margin:0' }, t('env.sunFromLight'));
+  const skyBox = h('div', { class: 'stack' }, field(t('env.turbidity'), turbidity.el), sunOwn, sunNote);
+
   const bg = segmented(
-    (['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE'] as const).map((b) => ({
-      value: b,
-      label: t(dyn(`env.bg.${b}`)),
-      disabled: b === 'BACKPLATE',
-      title: b === 'BACKPLATE' ? t('env.backplateSoon') : undefined,
-    })),
+    (['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE'] as const).map((b) => ({ value: b, label: t(dyn(`env.bg.${b}`)) })),
     e0.background,
     (v) => set({ background: v }, 'env.background'),
     { ariaLabel: t('env.background') },
   );
   bg.el.style.flexWrap = 'wrap';
+  // Background image: the file, its button and how it fits the frame.
+  const plateInfo = h('p', { class: 'note', style: 'margin:0;overflow-wrap:anywhere' });
+  const fit = segmented(
+    (['FILL', 'FIT', 'STRETCH'] as const).map((f) => ({ value: f, label: t(dyn(`env.fit.${f}`)) })),
+    e0.backplateFit,
+    (v) => set({ backplateFit: v }, 'env.fit'),
+    { full: true, ariaLabel: t('env.fit') },
+  );
+  const plateBox = h(
+    'div',
+    { class: 'stack' },
+    h('button', { type: 'button', class: 'btn btn-block', onclick: () => void cmd.loadBackplateImage(ctx) }, icon('plus', 14), t('env.loadPlate')),
+    plateInfo,
+    field(t('env.fit'), fit.el),
+  );
   const color = colorField(e0.color, (rgb, g) => set({ color: [rgb[0], rgb[1], rgb[2], 1] }, 'env.color', g), t('env.color'));
   const colorRow = field(t('env.color'), color.el);
   const shadow = slider({ value: e0.groundShadow, min: 0, max: 1, step: 0.01, ariaLabel: t('env.groundShadow'), onChange: (v, g) => set({ groundShadow: v }, 'env.groundShadow', g) });
   const refl = slider({ value: e0.groundReflection, min: 0, max: 1, step: 0.01, ariaLabel: t('env.groundReflection'), onChange: (v, g) => set({ groundReflection: v }, 'env.groundReflection', g) });
+  const show = (el: HTMLElement, on: boolean) => (el.style.display = on ? '' : 'none');
+  const imageInfo = (ref: EnvironmentState['hdri'], none: StringKey) =>
+    ref ? t('env.imageInfo', { name: ref.name, width: ref.width, height: ref.height }) : t(none);
   scope.watch(
     (s) => s.environment,
     (e) => {
@@ -338,20 +368,44 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
       rotation.set(e.rotationDeg);
       bg.set(e.background);
       color.set(e.color);
-      colorRow.style.display = e.background === 'COLOR' || e.kind === 'FLAT' ? '' : 'none';
+      // The sky is placed by its sun, not turned.
+      show(rotationRow, e.kind !== 'SKY');
+      show(hdriRow, e.kind === 'HDRI');
+      hdriInfo.textContent = imageInfo(e.hdri, 'env.noHdri');
+      hdriInfo.title = e.hdri?.name ?? '';
+      show(skyBox, e.kind === 'SKY');
+      turbidity.set(e.skyTurbidity);
+      sunAz.set(e.skySun.az);
+      sunEl.set(e.skySun.el);
+      show(plateBox, e.background === 'BACKPLATE');
+      plateInfo.textContent = imageInfo(e.backplate, 'env.noPlate');
+      plateInfo.title = e.backplate?.name ?? '';
+      fit.set(e.backplateFit);
+      // The colour is the background's, FLAT's, and what shows around (or instead of) a background image.
+      show(colorRow, e.background === 'COLOR' || e.background === 'BACKPLATE' || e.kind === 'FLAT');
       shadow.set(e.groundShadow);
       refl.set(e.groundReflection);
+    },
+  );
+  // The sky's sun is the setup's sun light when there is one.
+  scope.watch(
+    (s) => s.studio.lights.some((l) => l.type === 'SUN' && l.enabled && l.power > 0),
+    (fromLight) => {
+      show(sunOwn, !fromLight);
+      show(sunNote, fromLight);
     },
   );
   const body = h(
     'div',
     { class: 'stack' },
     field(t('env.kind'), kind.el),
-    h('div', { class: 'note', style: 'padding-left:112px;margin-top:-4px' }, t('env.kindSoon')),
+    hdriRow,
+    skyBox,
     field(t('env.strength'), strength.el),
-    field(t('env.rotation'), rotation.el),
+    rotationRow,
     h('div', { class: 'field-label', style: 'margin-top:4px' }, t('env.background')),
     bg.el,
+    plateBox,
     colorRow,
     field(t('env.groundShadow'), shadow.el),
     field(t('env.groundReflection'), refl.el),

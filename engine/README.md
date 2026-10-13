@@ -17,7 +17,7 @@ Do not add a dependency. If something is missing, write it.
 
 | Crate | Kind | Role |
 |-------|------|------|
-| `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `environment`, `integrator` (the path tracer), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
+| `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `environment`, `sky` (daylight), `bitmap` (images, 2-D sampling), `hdr` (Radiance RGBE reader and writer), `exr` (OpenEXR reader), `inflate` (zlib/DEFLATE decoder), `integrator` (the path tracer), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
 | `crates/rt-cli` | binaries `rt`, `rt-bench` + library | Native front end: reads an `.rsb` file, renders progressively on all cores within the time budget, writes a PNG; `rt --sheet` renders the contact sheet; `rt-bench` measures ray throughput. Files, threads and timing live here. |
 | `crates/rt-wasm` | `cdylib` + `rlib` | WebAssembly build with a hand-written C ABI (no `wasm-bindgen`). Its `unsafe` is confined to `src/ffi.rs`. |
 | `crates/rt-app` | binary `repackshot` + library | The desktop launcher (P2): serves the interface on 127.0.0.1 with a per-launch token, opens it in an Edge or Chromium app window, renders natively on every thread through `/api/render` (the same film as `rt`), stores AI models by SHA-256 and detects the hardware for the model recommendation. `std` only, `#![forbid(unsafe_code)]`. Its API contract (in Spanish) is [`crates/rt-app/README.md`](crates/rt-app/README.md). |
@@ -88,6 +88,8 @@ interface, the token, and the example rendered through `/api/render` to the pinn
 ```sh
 cargo run --release -p rt-cli -- --example -o out.png        # built-in scene, no input file
 cargo run --release -p rt-cli -- --write-example scene.rsb   # the same scene as an RSB file
+cargo run --release -p rt-cli -- --write-e5-example e5.rsb   # the E5 parity scene (glass, HDRI, background image)
+cargo run --release -p rt-cli -- --write-studio-hdri studio.hdr   # the procedural studio HDRI (tests/fixtures/studio.hdr)
 cargo run --release -p rt-cli -- --tone-table > tones.json   # the tone curves' reference values
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 64 --threads 4 --size 1280x720
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 4096 --max-seconds 30
@@ -110,6 +112,15 @@ writes one PNG per recipe, `index.html` (a grid with the mean luma, the clipped-
 crushed-black fractions of every image) and `stats.json`. These recipes are engine fixtures; the
 16 x 12 sheet over the catalogue comes in E4 with the TypeScript RSB writer. `out/` is
 git-ignored.
+
+After the recipes the sheet renders the E5 scenes of `crates/rt-cli/src/scenes.rs` (`e5-*.png`, at
+a multiple of the samples): a glass bottle with absorption and a brushed gold cap in front of a
+camera-visible panel (the bright field of BACKLIT), a board of car paint, brushed aluminium,
+chrome, frosted and blue glass under the studio HDRI, an emissive filament in a thin glass bulb,
+the catalogue's three SKY setups (SUN, GOLDEN_HOUR, DAWN: their sun light over the daylight sky)
+and chrome and plastic lit by the studio HDRI alone. The studio HDRI is procedural (soft boxes and
+a strip on a cyclorama, written by `scenes::studio_hdri`); `--write-studio-hdri` writes it as the
+`.hdr` fixture the readers are tested with.
 
 ## The path tracer (E3)
 
@@ -137,12 +148,32 @@ twice (0: off).
   sampled by its visible normals (Heitz 2018), `α = roughness²`, Schlick Fresnel with
   `F0 = ((ior - 1)/(ior + 1))²` for the dielectric and `base_color` for the metal, blended by
   `metallic`, `F90 = min(1, 50 F0)` (Lagarde and de Rousiers 2014: an `ior` of 1 has no
-  specular lobe); a clear coat as a second GGX lobe (ior 1.5) weighted by `coat`.
-  `transmission` is ignored until E5. **1 glass**: rendered as kind 0 (an opaque tinted
-  dielectric) until E5. **2 emissive**: radiance `emission * emission_power`, reflects nothing;
-  with `MATL.flags` bit 0 it is also sampled as an area light (by triangle area).
-  Single-scattering GGX loses energy when rough (a white metal at roughness 1 reflects
-  `1 - ln 2` head on); it never gains any.
+  specular lobe); a clear coat as a second GGX lobe (ior 1.5) weighted by `coat`, the layers
+  below attenuated by what it reflects. Since E5 the `transmission` share of the dielectric is
+  **clear**: rough or smooth GGX reflection and refraction (Walter et al. 2007) with the exact
+  dielectric Fresnel, total internal reflection and the `1/η²` of radiance transport; tinted by
+  `√base_color` per crossing, or by Beer–Lambert absorption inside a solid when `absorption_mm`
+  is set (`σ = -ln(base_color) / absorption_mm`: white light keeps `base_color` after that many
+  millimetres). A **thin wall** (`MATL.flags` bit 1) reflects `2R / (1 + R)` and lets the rest
+  straight through, unrefracted. `anisotropy` stretches the GGX lobes (`αx = α / s`, `αy = α s`,
+  `s = √(1 - 0.9 a)`, Burley 2012) along tangents around the instance's local Z axis. `opacity`
+  below one is a stochastic cut-out. **1 glass**: the principled surface without metal (what the
+  interface's GLASS family writes). **2 emissive**: radiance `emission * emission_power`,
+  reflects nothing; with `MATL.flags` bit 0 it is also sampled as an area light, chosen among
+  the lights by its flux (`luminance · π · area · sides`) and inside the instance by triangle
+  area. The interface writes `emission_power = emitPower · EMIT_RADIANCE_PER_WATT` (0.06,
+  `src/core/photometry.ts`, the factor the preview has used since U1: the catalogue's watts are
+  a level, not a flux) and `emission` the black body's colour at its temperature (normalised to
+  its largest channel) or the colour given (`emitKind`). Single-scattering GGX loses energy when
+  rough (a white metal at roughness 1 reflects `1 - ln 2` head on; glass at roughness 1 keeps
+  as little as 42 % of the light from inside, at worst); it never gains any.
+* **Dielectrics in the integrator** (E5): a path keeps track of the solid it is in (the hit side
+  of a closed mesh) and attenuates by Beer–Lambert along each segment inside. Thin walls and
+  cut-outs are *passable*: their straight-through events keep the last vertex's BSDF density and
+  add their distance, so an emitter or the environment found through them is still weighted
+  against light sampling with the right MIS weight, and shadow rays go through them (at most 32
+  crossings, tinted by what they let through). A solid clear part still blocks shadow rays: its
+  caustics come from BSDF sampling alone (no caustic control yet).
 * **Lights** (`light`), `LGHT.kind`: **0 rect**, **1 disk**: one-sided, transparent, uniform
   area sampling; `power` is the flux in watts (radiance `color * power / (π area_m²)`, a scene
   millimetre being 1e-3 m); `spread_deg` adds a `cos^n` falloff whose intensity halves at
@@ -157,11 +188,33 @@ twice (0: off).
 * **Environment** (`environment`), `ENVR.kind`: **0 studio dome**: radiance linear in the `z`
   of the direction, `floor` at -1, `horizon` at 0, `zenith` at +1, importance sampled by the
   closed-form inverse of that piecewise-linear density in `z` times a uniform azimuth (exact
-  pdf). **1 flat**: `horizon` everywhere. **2 sky**, **3 HDRI**: reserved for E5, rendered as the
-  dome. All scaled by `strength`. `background_mode`: **0** the environment is visible to
-  camera rays, **1** they see `background_color`, **2** transparent (black, alpha 0 in the film's
-  new `alpha` channel), **3** backplate, reserved for M2 (rendered as 1). The environment lights
-  the scene in every mode.
+  pdf). **1 flat**: `horizon` everywhere. **2 sky** (E5, `sky`): A. J. Preetham, P. Shirley and
+  B. Smits, "A Practical Analytic Model for Daylight" (SIGGRAPH 1999), the Perez distribution
+  with the paper's coefficients, for `sky_turbidity` and the sun at `sun_azimuth_deg` /
+  `sun_elevation_deg` (clamped to 1–90 degrees: no twilight), scaled so that a horizontal surface
+  gets the irradiance of the dome of the same values (`2π (horizon / 6 + zenith / 3)`), with a
+  neutral ground of `floor` below the horizon; tabulated into a 256 x 128 panorama. The sun disc
+  is the scene's sun light. **3 HDRI** (E5): an equirectangular bitmap (`hdri_map`), `u = ½ +
+  atan2(-y, x) / 2π`, `v = acos(z) / π` from the top (three.js's layout, so the preview shows the
+  same), bilinear, turned by `rotation_deg` counter-clockwise about Z; sampled through a 2-D
+  piecewise-constant distribution (marginal and conditional CDFs) over luminance times `sin θ`
+  on at most 512 x 256 cells, with the exact density per steradian for MIS; the dome when the
+  bitmap is missing. All scaled by `strength`. `background_mode`: **0** the environment is
+  visible to camera rays, **1** they see `background_color`, **2** transparent (black, alpha 0 in
+  the film's `alpha` channel), **3** background image (E5): `backplate_map`, seen by camera rays
+  only (also through thin walls and cut-outs; rays refracted by a solid or reflected see the
+  environment), placed in the output frame `backplate_rect` by
+  `backplate_fit` (0 fill, 1 fit with `background_color` around it, 2 stretch). The environment
+  lights the scene in every mode. The background image goes through the exposure and the tone
+  curve like the rest of the film.
+* **Images** (`bitmap`, `hdr`, `exr`, `inflate`; `BMAP` sections): raw 8-bit sRGB RGB / RGBA,
+  linear `f32` RGB, or whole files: Radiance `.hdr` (RGBE `m · 2^(e - 136)`, flat, old and new
+  run-length scanlines, rows top down or bottom up; G. Ward, "Real Pixels", Graphics Gems II,
+  1991) and OpenEXR (scanline files, `NONE`, `RLE`, `ZIPS` and `ZIP` compression with the
+  predictor and the byte interleave, half, float and uint channels; `R`, `G`, `B` or `Y`; the
+  layout of the published OpenEXR file format documentation). DEFLATE and zlib (RFC 1950, 1951)
+  are decoded here; PIZ, PXR24, B44, DWA and tiled or deep files are refused with a message.
+  A linear image wider than 4096 pixels is halved (2 x 2 boxes) until it fits when it is loaded.
 * **Floor** (new `FLOR` section): `mode` **0** none, **1** an infinite Lambertian plane at `z`
   of albedo `color`, **2** shadow catcher: only camera rays see it, as the background darkened by
   the fraction of the light reaching it that the scene blocks (next-event estimation and one BSDF
@@ -254,20 +307,27 @@ scene seed, the pixel and the sample index (never on tiling, thread count or pla
 render path uses only IEEE add / mul / div / sqrt and the `fmath` functions built from them, and
 every SIMD path computes the same bits, so pinned tests (`render.rs`: two tiles, and the whole
 example at 4 spp) see the same bits on native (scalar, SSE2, AVX2) and WebAssembly (scalar,
-`simd128`) builds, whatever the BVH width. The real module is checked too:
+`simd128`) builds, whatever the BVH width. E5 pins two more hashes (`PINNED_E5_HDRI_4SPP`,
+`PINNED_E5_SKY_4SPP`) of a scene that goes through glass, thin walls, cut-outs, anisotropy, an
+HDRI read from its RGBE bytes, a background image and the sky; the opaque path of E3 computes
+exactly what it computed before, so the original pinned hashes did not change. The real module
+is checked too:
 
 ```sh
 cargo build -p rt-wasm --target wasm32-unknown-unknown --release
 cargo run --release -p rt-cli -- --write-example /tmp/example.rsb
 node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm /tmp/example.rsb \
      --expect "$(sed -n 's/.*PINNED_EXAMPLE_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)"
+cargo run --release -p rt-cli -- --write-e5-example /tmp/e5.rsb
+node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm /tmp/e5.rsb \
+     --expect "$(sed -n 's/.*PINNED_E5_HDRI_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)"
 ```
 
 ## Produce the WebAssembly module
 
 ```sh
 cargo build -p rt-wasm --target wasm32-unknown-unknown --release
-# -> target/wasm32-unknown-unknown/release/rt_wasm.wasm  (about 175 KB, no imports)
+# -> target/wasm32-unknown-unknown/release/rt_wasm.wasm  (about 290 KB, no imports)
 ```
 
 The module imports nothing (no WASI, no JavaScript glue). Exports:
@@ -278,7 +338,7 @@ The module imports nothing (no WASI, no JavaScript glue). Exports:
 | `rt_alloc(len) -> ptr` / `rt_free(ptr, len)` | Buffers in linear memory for the host to fill or read |
 | `rt_scene_load(ptr, len) -> handle` | Parses RSB bytes; 0 on error |
 | `rt_scene_error_len() -> u32` / `rt_scene_error_copy(ptr)` | The last load error as UTF-8 |
-| `rt_scene_update(handle, ptr, len) -> status` | Replaces a loaded scene with RSB bytes; a file **without `MESH` sections keeps the scene's meshes and their BVHs** (camera, size, instances, materials, lights change without sending or rebuilding the geometry) |
+| `rt_scene_update(handle, ptr, len) -> status` | Replaces a loaded scene with RSB bytes; a file **without `MESH` sections keeps the scene's meshes and their BVHs** (camera, size, instances, materials, lights change without sending or rebuilding the geometry), and one **without `BMAP` sections keeps its bitmaps** (E5) |
 | `rt_scene_free(handle) -> status` | Forgets a scene |
 | `rt_render_tile(handle, x, y, w, h, sample_index, out_ptr) -> status` | Writes `w * h * 3` linear RGB floats for one sample of a tile |
 | `rt_render_tile_rgba(handle, x, y, w, h, sample_index, out_ptr) -> status` | The same with coverage: `w * h * 4` floats, RGB premultiplied by alpha (0 where a transparent background shows) |
@@ -297,7 +357,12 @@ working with newer writers. `INST` (E2) places a mesh with a 3x4 transform, a ma
 a file without `INST` sections draws every mesh once, untransformed, with its own material,
 exactly as before. E3 appended optional fields (`MATL.flags`; `RNDR.max_depth`,
 `RNDR.clamp_indirect`: shorter, older sections read their defaults), added `FLOR` and fixed the
-meaning of every value (see "The path tracer" above). The exact field layout and the semantics
+meaning of every value (see "The path tracer" above). E5 appended `MATL.opacity`, `anisotropy`
+and `absorption_mm` (72 bytes), the environment's `hdri_map`, `backplate_map`, `backplate_fit`,
+`sky_turbidity`, `sun_azimuth_deg`, `sun_elevation_deg` and `backplate_rect` (80 bytes), and added
+`BMAP` (a 16-byte header `format width height byte_len`, the data, zero padding to 4 bytes; the
+environment names a bitmap by its position among the `BMAP` sections, `0xffffffff` for none).
+The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the
@@ -314,6 +379,10 @@ byte for byte.
   contact sheet, wasm parity of the whole example.
 * **E4**: the engine in the browser: `rt_scene_update` (updates without geometry), the simd128
   build, `rt --tone-table` for the TypeScript port of the tone curves.
+* **E5**: clear dielectrics (rough and smooth GGX transmission, absorption, thin walls), cut-outs,
+  anisotropy, emitters as lights by flux, the Preetham sky, HDRIs (own RGBE, OpenEXR and inflate
+  readers, 2-D importance sampling), background images, `BMAP`; the E5 scenes of the contact
+  sheet. Next: subsurface, wood, fabric and bevel (E6), caustic control and denoising.
 
 ## Third-party data
 

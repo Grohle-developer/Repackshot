@@ -176,6 +176,9 @@ pub struct Hit {
     pub barycentrics: [f32; 3],
     /// True when the ray hit the front face (counter-clockwise corners, as wound in the mesh).
     pub front_face: bool,
+    /// True when the ray arrives from the outside of the surface: the front face, unless the
+    /// mesh's vertex normals say its winding is reversed ([`Mesh::inside_out`]).
+    pub outside: bool,
 }
 
 /// Every mesh and instance of a scene, with the instance-level BVH. Immutable once built.
@@ -534,6 +537,7 @@ impl Geometry {
             geometric_normal: face(geometric),
             barycentrics,
             front_face,
+            outside: front_face != mesh.inside_out(),
         })
     }
 }

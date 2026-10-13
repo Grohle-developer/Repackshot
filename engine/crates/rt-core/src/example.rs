@@ -176,6 +176,7 @@ pub fn scene() -> Scene {
             rotation_deg: 0.0,
             background_color: Rgb::splat(0.05),
             background_mode: 0,
+            ..Environment::default()
         },
         floor: Floor::default(),
         render: RenderSettings {
@@ -189,7 +190,138 @@ pub fn scene() -> Scene {
             max_depth: RenderSettings::DEFAULT_MAX_DEPTH,
             clamp_indirect: 0.0,
         },
+        bitmaps: Vec::new(),
     }
+}
+
+/// The example made of the materials and environments of E5, for the parity tests (`render.rs`
+/// pins its hash; `rt --write-e5-example` writes it for `tools/wasm-parity.mjs`): the big sphere
+/// in blue glass coloured by absorption, the floor lacquered (a clear coat), the small sphere in
+/// brushed metal (anisotropic), a thin glass card and a cut-out card in front, lit by an HDRI (a
+/// small Radiance file, so its reader is part of the hash) and shown over a background image.
+/// `sky` lights it with the daylight sky and a sun instead.
+pub fn e5_scene(sky: bool) -> Scene {
+    use crate::bitmap::{Bitmap, FORMAT_HDR, FORMAT_RGB8};
+    use crate::scene::{BACKGROUND_BACKPLATE, MATERIAL_FLAG_THIN, MATERIAL_GLASS, NO_BITMAP};
+    let mut scene = scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    scene.render.max_depth = 12;
+    scene.materials = vec![
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::new(0.3, 0.5, 0.95),
+            roughness: 0.05,
+            ior: 1.5,
+            transmission: 1.0,
+            absorption_mm: 80.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.3, 0.3, 0.32),
+            roughness: 0.6,
+            coat: 1.0,
+            coat_roughness: 0.05,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.9, 0.85, 0.8),
+            metallic: 1.0,
+            roughness: 0.35,
+            anisotropy: 0.8,
+            ..Material::default()
+        },
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::new(0.9, 0.6, 0.6),
+            roughness: 0.0,
+            transmission: 1.0,
+            flags: MATERIAL_FLAG_THIN,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.9, 0.9, 0.2),
+            opacity: 0.4,
+            ..Material::default()
+        },
+    ];
+    let card = |x: f32| {
+        Mesh::new(
+            &[
+                Vec3::new(x - 60.0, -260.0, 0.0),
+                Vec3::new(x + 60.0, -260.0, 0.0),
+                Vec3::new(x + 60.0, -260.0, 160.0),
+                Vec3::new(x - 60.0, -260.0, 160.0),
+            ],
+            &[],
+            &[0, 1, 2, 0, 2, 3],
+            0,
+        )
+        .unwrap_or_default()
+    };
+    let mut meshes = scene.geometry.meshes().to_vec();
+    let mut instances = scene.geometry.instances().to_vec();
+    for (x, material) in [(150.0, 3), (-80.0, 4)] {
+        meshes.push(card(x));
+        instances.push(Instance::new(
+            meshes.len() as u32 - 1,
+            Transform::IDENTITY,
+            material,
+        ));
+    }
+    scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
+    // A 64 x 32 panorama: a grey gradient with two bright panels, as a Radiance file.
+    let (w, h) = (64u32, 32u32);
+    let mut rgb = Vec::new();
+    for y in 0..h {
+        for x in 0..w {
+            let up = 1.0 - y as f32 / h as f32;
+            let panel = if (20..28).contains(&x) && (8..14).contains(&y) {
+                8.0
+            } else if (44..47).contains(&x) && (6..18).contains(&y) {
+                12.0
+            } else {
+                0.0
+            };
+            rgb.extend_from_slice(&[
+                0.05 + 0.2 * up + panel,
+                0.06 + 0.2 * up + panel,
+                0.08 + 0.25 * up + panel,
+            ]);
+        }
+    }
+    let hdr = Bitmap::decode(FORMAT_HDR, 0, 0, crate::hdr::encode(w, h, &rgb)).ok();
+    let plate: Vec<u8> = (0..16 * 8)
+        .flat_map(|i| [(i * 13 % 256) as u8, 120, (255 - i * 7 % 256) as u8])
+        .collect();
+    let backplate = Bitmap::decode(FORMAT_RGB8, 16, 8, plate).ok();
+    scene.bitmaps = hdr.into_iter().chain(backplate).collect();
+    let maps = scene.bitmaps.len() == 2;
+    scene.environment = Environment {
+        kind: EnvKind::Hdri,
+        hdri_map: if maps { 0 } else { NO_BITMAP },
+        backplate_map: if maps { 1 } else { NO_BITMAP },
+        background_mode: BACKGROUND_BACKPLATE,
+        strength: 1.0,
+        rotation_deg: 30.0,
+        ..Environment::default()
+    };
+    if sky {
+        scene.environment.kind = EnvKind::Sky;
+        scene.environment.background_mode = 0;
+        scene.environment.sun_azimuth_deg = -60.0;
+        scene.environment.sun_elevation_deg = 35.0;
+        scene.lights = vec![Light {
+            kind: LightKind::Sun,
+            direction: -Vec3::new(0.41, -0.71, 0.574),
+            color: Rgb::new(1.0, 0.91, 0.83),
+            power: 3.0,
+            angle_deg: 0.545,
+            flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA,
+            ..Light::default()
+        }];
+    }
+    scene
 }
 
 #[cfg(test)]
