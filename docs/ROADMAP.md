@@ -144,6 +144,10 @@ decisiones escritas (datos, contratos, revisión), no código.
   `simd128`, conmutador **Rápido · Completo**, *Render* siempre con el
   trazador, paridad exacta navegador / nativo; 561 tests web y 182 del
   motor — **Opus**.
+- **U5** · Ventana de render al estilo de KeyShot con *Imagen · Animación*,
+  salida por plantilla, carpeta, ppp escritos en PNG y JPEG, PNG de 16
+  bits y EXR, *Terminar por* muestras o tiempo, cola deshacible, visor de
+  resultados con divisor y historial en IndexedDB; 621 tests — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -243,7 +247,7 @@ documentados en `src/ui/README.md`.
 Lo que no encajaba con el plan, resuelto así: la geometría vive en un
 registro fuera del estado (`core/meshes.ts`) y el estado guarda solo
 id, recuentos y caja, para seguir siendo JSON plano; la selección y la
-cola de render no son deshacibles; los focos se colocan y apuntan al
+cola de render no son deshacibles (la cola sí lo es desde U5); los focos se colocan y apuntan al
 centro de la pieza visible, no al origen del mundo, porque la pieza
 apoya su base en el origen; el bisel se guarda en el material y se
 muestra en la sección Pieza; `render()` admite una cámara para que cada
@@ -994,7 +998,7 @@ clic.
 **Criterio.** `tests/doctor-engine.test.ts` con un motor falso que simula
 cada estado; cada chequeo se dispara y se limpia.
 
-## U5 · Ventana de render y visor de resultados — **Opus**
+## U5 · Ventana de render y visor de resultados — **Opus** — hecha
 
 **Qué.** `UI.md` §2.5, §2.7 y §2.8: la barra inferior pierde calidad,
 resolución, presupuesto y formato, y queda con *Animación*, *Cola* (con
@@ -1030,6 +1034,42 @@ corta en el límite (±1 pasada); migración de un proyecto de U1; la
 ventana no aparece en la captura del visor. Capturas de la ventana en
 *Imagen* y en *Animación*, del cajón *Cola* con tres trabajos y del
 visor de resultados con el divisor.
+
+**Hecho.** La barra inferior queda con *Animación*, *Cola* (contador y
+progreso), el último resultado y **Render…**; la ventana de render
+(`ui/panels/render-window.ts`) con *Salida* (plantilla con fichas,
+*Descargas* o carpeta elegida con el permiso recordado, PNG 8/16 bits,
+JPEG con calidad, EXR lineal sin comprimir, transparente, cámara activa,
+una o todas, píxeles ↔ impresión con candado y ppp), *Calidad* (*Terminar
+por* muestras, tiempo o lo primero, estimación con las muestras por
+segundo medidas, avanzado con rebotes, recorte y semilla), *Animación*
+(rango, fps, fotogramas funcionando ya, vídeo *próximamente*), el hueco
+plegado del post-procesado IA y el pie con **+ Añadir a la cola** y
+**Render**. Los ppp van en `pHYs` (PNG) y en la densidad JFIF (JPEG).
+*Terminar por tiempo* lo decide `render/schedule.ts` entre pasadas
+midiendo el tiempo por muestra, siempre dentro de una pasada del límite.
+`RenderJob` completo con migración pura del estado de U1 y
+`PROJECT_SCHEMA = 2`. Cola con reordenar, editar, duplicar, pausar y
+terminados; visor de resultados con zoom, datos y el componente genérico
+`ui/components/split-compare.ts`; historial en IndexedDB (50 resultados o
+500 MB) con memoria como respaldo. 621 tests; 31 mutaciones comprobadas;
+8 comprobaciones en el navegador (`tools/render-window-check.mjs`), entre
+ellas que la ventana nunca aparece en la imagen del visor. Capturas
+`render-window-image.png`, `render-window-animation.png`,
+`queue-drawer.png` y `results-split.png`.
+
+No encajó con el plan: la cola pasa a ser **deshacible** (U1 la hizo no
+deshacible; manda este brief); *Render* con la cola en marcha no
+interrumpe el trabajo en curso, va el primero y empieza después; en
+*Animación* hace falta una fila *Tamaño del fotograma* (solo píxeles) y
+las secciones van apiladas; el historial guarda solo el primer fotograma
+de una animación; *Pausar* reinicia el trabajo, porque un render no se
+reanuda a medias; `{n}` es el número de render en imagen y el de
+fotograma en animación; EXR también para secuencias, sin ppp; los ajustes
+avanzados solo se aplican al render, no al visor Completo; *Abrir
+carpeta* se oculta en el navegador. Observación para L3: con el estudio
+de joyería, REMBRANDT y NEON_NOIR solo cambian un 3 % de los píxeles; se
+revisa con las recetas sobre el motor propio.
 
 ## U6 · Ventana de Ajustes y gestor de modelos — **Opus**
 

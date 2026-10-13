@@ -789,10 +789,12 @@ const TABLE = {
   'rw.rangeUnit': ['Range in', 'Rango en'],
   'rw.from': ['From', 'De'],
   'rw.to': ['to', 'a'],
+  'rw.rangeStart': ['Range start', 'Inicio del rango'],
+  'rw.rangeEnd': ['Range end', 'Fin del rango'],
   'rw.unitFrames': ['Frames', 'Fotogramas'],
   'rw.unitSeconds': ['Seconds', 'Segundos'],
   'rw.fps': ['Frame rate', 'Fotogramas por segundo'],
-  'rw.duration': ['{frames} frames · {time} s', '{frames} fotogramas · {time} s'],
+  'rw.duration': ['{frames} · {time} s', '{frames} · {time} s'],
   'rw.animOutput': ['Output', 'Salida'],
   'rw.video': ['Video', 'Vídeo'],
   'rw.videoSoon': ['Encoded video (MP4 H.264, WebM VP9): coming soon', 'Vídeo codificado (MP4 H.264, WebM VP9): próximamente'],
@@ -812,7 +814,7 @@ const TABLE = {
   'rw.estimateTime': ['Stops at {time} · ≈ {samples} samples on this machine', 'Para a los {time} · ≈ {samples} muestras en este equipo'],
   'rw.estimateTimeOnly': ['Stops at {time}', 'Para a los {time}'],
   'rw.estimateNone': ['Estimate after a few seconds in Full mode', 'Estimación al cabo de unos segundos en modo Completo'],
-  'rw.estimateFrames': ['≈ {each} per frame · ≈ {total} in total ({n} frames)', '≈ {each} por fotograma · ≈ {total} en total ({n} fotogramas)'],
+  'rw.estimateFrames': ['≈ {each} per frame · ≈ {total} in total ({frames})', '≈ {each} por fotograma · ≈ {total} en total ({frames})'],
   'rw.perFrame': ['Finish by applies to each frame', 'Terminar por se aplica a cada fotograma'],
   'rw.advanced': ['Advanced', 'Avanzado'],
   'rw.firstOf': ['Whichever comes first', 'Lo que llegue antes'],
@@ -831,7 +833,7 @@ const TABLE = {
   ],
   'rw.summarySamples': ['{n} samples', '{n} muestras'],
   'rw.summaryOr': ['{a} or {b}', '{a} o {b}'],
-  'rw.summaryFrames': ['{n} frames · {fps} fps', '{n} fotogramas · {fps} fps'],
+  'rw.summaryFrames': ['{frames} · {fps} fps', '{frames} · {fps} fps'],
   'rw.perFrameShort': ['{x} per frame', '{x} por fotograma'],
   'rw.summaryAiOff': ['AI off', 'IA apagada'],
   'rw.render': ['Render', 'Render'],
@@ -875,6 +877,7 @@ const TABLE = {
   'queue.openResult': ['Open the result', 'Abrir el resultado'],
   'queue.timeline': ['Camera track', 'Pista de cámara'],
   'queue.frames': ['{n} frames', '{n} fotogramas'],
+  'queue.frame1': ['1 frame', '1 fotograma'],
   'queue.frameOf': ['Frame {i} of {n}', 'Fotograma {i} de {n}'],
   'queue.aiYes': ['AI', 'IA'],
   'queue.aiNo': ['No AI', 'Sin IA'],
@@ -1182,6 +1185,11 @@ export function lbl(label: Label): string {
 export function formatNumber(n: number, lang: Lang = current, digits = 2): string {
   if (!Number.isFinite(n)) return '–';
   return new Intl.NumberFormat(lang === 'es' ? 'es-ES' : 'en-GB', { maximumFractionDigits: digits }).format(n);
+}
+
+/** "1 frame", "24 frames". */
+export function framesText(n: number): string {
+  return n === 1 ? t('queue.frame1') : t('queue.frames', { n: formatNumber(n, current, 0) });
 }
 
 /** Seconds as M:SS (or H:MM:SS). */

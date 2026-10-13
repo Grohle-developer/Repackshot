@@ -465,7 +465,8 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
 - **Avanzado** (plegado): rebotes máximos, recorte de indirecta,
   semilla, cáusticas, *denoise* cuando exista.
 
-**2 bis · Animación** (en lugar de *Tamaño* y junto a *Calidad*, cuando
+**2 bis · Animación** (en lugar de *Tamaño*, con una fila *Tamaño del
+fotograma* solo en píxeles, y encima de *Calidad*, cuando
 el segmento está en *Animación*): **rango** (*Todo* o de–a en
 fotogramas o segundos), **fps** (24, 25, 30, 60), duración resultante,
 **salida** *Vídeo* (MP4 H.264 o WebM VP9, con calidad) o *Fotogramas*

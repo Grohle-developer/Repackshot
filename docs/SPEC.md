@@ -342,7 +342,12 @@ en avanzado), ajustes avanzados del motor, en animación el rango, los fps
 y la salida (vídeo MP4/WebM o secuencia de fotogramas), y el
 **post-procesado IA** con sus ajustes (`AI-POST.md`). *Render* pone el
 trabajo el primero de la **cola** y lo arranca; *+ Añadir a la cola* lo
-pone al final. La cola ejecuta en serie, con progreso, pausa, reordenar y
+pone al final. En el estado, `render` guarda los ajustes de la ventana
+y la cola; cada trabajo lleva su copia de los ajustes, estado, progreso,
+fechas de creación, inicio y fin, los ids de sus resultados, el error si
+lo hubo y el fotograma en curso. *Todas las cámaras* se expande en un
+trabajo por cámara al entrar en la cola; una animación es un solo
+trabajo. Editar la cola es deshacible; el progreso no. La cola ejecuta en serie, con progreso, pausa, reordenar y
 cancelación, **siempre con el motor completo**. Cada resultado guarda la
 imagen del motor y, si hubo post-procesado, también la de la IA, para
 compararlas con un divisor deslizable.

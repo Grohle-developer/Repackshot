@@ -22,4 +22,12 @@ out: PNG/JPEG/EXR and the project file.
   the resolved rig in the engine's units (`core/photometry.ts`), the studio dome, the floor and the render settings.
   `writeRsb(scene, { meshes: false })` is the update that keeps the meshes the workers already have.
 - `image.ts`: PNG written here from the path tracer's 8-bit pixels (RGB, or RGBA when transparent; deflate by the
-  browser's `CompressionStream`, stored blocks without it), JPEG through a canvas.
+  browser's `CompressionStream`, stored blocks without it), JPEG through a canvas, 16-bit PNG from the float sums
+  and a minimal uncompressed scan-line EXR (32-bit float, linear). The DPI of the render window goes into the file
+  (U5): PNG `pHYs` (pixels per metre, unit 1) and the JPEG JFIF density (units 1, dots per inch).
+- `project.ts`: the `.repack.json` envelope, schema 2 (U5), and `migrateProject` / `parseProject` with one step per
+  schema (1 → 2: the render block through `core/render.ts` `migrateRender`).
+- `results.ts`: the results history (U5) in IndexedDB (`meta`, `blobs` and `handles` stores), 50 results or 500 MB,
+  oldest evicted first; in memory when the browser keeps nothing (a private window).
+- `files.ts`: where outputs go: the downloads, or a folder of the File System Access API (`showDirectoryPicker`;
+  the handle kept in IndexedDB, the permission asked again from a click, never overwriting: `name (2).png`).
