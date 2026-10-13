@@ -15,7 +15,7 @@ import type { IconName } from '../icons';
 import { cameraName, dyn, lightName, targetLabel } from '../names';
 import { shallowEq, type Ctx, type Scope } from '../reactive';
 import { kbdFor } from '../shortcuts';
-import { L, formatNumber, getLang, t } from '../strings';
+import { L, formatNumber, getLang, isaLabel, t } from '../strings';
 import type { Tool } from '../ui-state';
 import { partMenu } from './part-menu';
 
@@ -155,7 +155,9 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
           : scale >= 2
             ? t('viewport.meterHalf')
             : t('viewport.meterFull', { samples, time: clock(st.seconds) });
-      line.textContent = t('viewport.pool', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') });
+      line.textContent = st.native
+        ? t('viewport.native', { threads: st.threads ?? 0, isa: isaLabel(st.isa) })
+        : t('viewport.pool', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') });
       // What this machine does, measured here (the render window's estimate): pixel-samples per second.
       if (!st.rendering && scale === 1 && st.pixels && st.samples >= 2 && st.seconds >= 2) {
         const tp = (st.samples * st.pixels) / st.seconds;
@@ -497,8 +499,9 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     vp.classList.remove('is-drop-target');
     if (isFile(e)) {
       e.preventDefault();
-      const files = [...(e.dataTransfer?.files ?? [])];
-      if (files.length) void cmd.importFiles(ctx, files);
+      // A project opens; models go to the import sheet.
+      const { files, handles } = cmd.readDrop(e.dataTransfer);
+      cmd.dropFiles(ctx, files, handles);
       return;
     }
     if (!isMaterial(e)) return;

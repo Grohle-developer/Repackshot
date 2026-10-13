@@ -13,10 +13,9 @@ const TABLE = {
   'app.renameProject': ['Rename the project', 'Renombrar el proyecto'],
   'menu.open': ['Menu', 'Menú'],
   'menu.new': ['New', 'Nuevo'],
-  'menu.newConfirm': ['Discard unsaved changes?', '¿Descartar los cambios sin guardar?'],
   'menu.openProject': ['Open project…', 'Abrir proyecto…'],
-  'menu.openSoon': ['Opening projects comes with the next phase', 'Abrir proyectos llega en la próxima fase'],
   'menu.save': ['Save project', 'Guardar proyecto'],
+  'menu.saveAs': ['Save project as…', 'Guardar proyecto como…'],
   'menu.import': ['Import model…', 'Importar modelo…'],
   'menu.exportImage': ['Export viewport image', 'Exportar imagen del visor'],
   'menu.exportLibrary': ['Export library…', 'Exportar biblioteca…'],
@@ -165,6 +164,7 @@ const TABLE = {
   'viewport.frameMs': ['{ms} ms per frame', '{ms} ms por fotograma'],
   'viewport.renderNote': ['Render always uses the path tracer', 'Render usa siempre el trazador'],
   'viewport.pool': ['{workers} workers · {isa}', '{workers} workers · {isa}'],
+  'viewport.native': ['Native · {threads} threads · {isa}', 'Nativo · {threads} hilos · {isa}'],
   'viewport.samples': ['{n} samples', '{n} muestras'],
   'viewport.sample': ['1 sample', '1 muestra'],
   'viewport.size': ['{x} × {y} × {z} mm', '{x} × {y} × {z} mm'],
@@ -1001,11 +1001,10 @@ const TABLE = {
   'set.general.theme.light': ['Light', 'Claro'],
   'set.general.theme.system': ['System', 'Sistema'],
   'set.general.onStart': ['On start', 'Al arrancar'],
-  'set.general.onStart.aux': ['What the window shows when Repackshot opens', 'Lo que muestra la ventana al abrir Repackshot'],
+  'set.general.onStart.aux': ['What the window shows when Repackshot opens. Last project offers the file opened or saved last (an empty project where the browser cannot keep files)', 'Lo que muestra la ventana al abrir Repackshot. Último proyecto ofrece el archivo abierto o guardado por última vez (un proyecto vacío donde el navegador no puede recordar archivos)'],
   'set.general.onStart.EXAMPLE': ['Standard mode with the example', 'Modo estándar con el ejemplo'],
   'set.general.onStart.EMPTY': ['Empty project', 'Proyecto vacío'],
   'set.general.onStart.LAST': ['Last project', 'Último proyecto'],
-  'set.general.onStart.LASTsoon': ['Needs opening projects, which comes with the next phase', 'Necesita abrir proyectos, que llega con la próxima fase'],
   'set.general.units': ['Interface units', 'Unidades de la interfaz'],
   'set.general.units.aux': ['Lengths in the inspector and the animation drawer', 'Las longitudes del inspector y del cajón de animación'],
   'set.general.units.mm': ['mm', 'mm'],
@@ -1159,6 +1158,8 @@ const TABLE = {
   // Settings: render engine
   'set.eng.threadsAuto': ['Automatic: {n} on this computer', 'Automático: {n} en este equipo'],
   'set.eng.nativeOnly': ['Only in the desktop application', 'Solo en la aplicación de escritorio'],
+  'set.eng.nativeThreads': ['The native engine uses the {n} threads the application started with; this applies to the WebAssembly engine', 'El motor nativo usa los {n} hilos con los que arrancó la aplicación; esto se aplica al motor WebAssembly'],
+  'set.eng.nativeSimd': ['The native engine uses {isa}; this applies to the WebAssembly engine', 'El motor nativo usa {isa}; esto se aplica al motor WebAssembly'],
   'set.eng.simdYes': ['This browser has simd128', 'Este navegador tiene simd128'],
   'set.eng.simdNo': ['This browser has no simd128: the scalar build runs', 'Este navegador no tiene simd128: se usa la versión escalar'],
   'set.eng.restarting': ['The engine restarts with the new setting…', 'El motor se reinicia con el nuevo ajuste…'],
@@ -1181,6 +1182,7 @@ const TABLE = {
   'set.info.wasmSimd': ['WebAssembly, simd128 (rt-simd.wasm)', 'WebAssembly, simd128 (rt-simd.wasm)'],
   'set.info.wasmScalar': ['WebAssembly, scalar (rt.wasm)', 'WebAssembly, escalar (rt.wasm)'],
   'set.info.workers': ['{n} workers', '{n} workers'],
+  'set.info.native': ['Native, in the application ({isa})', 'Nativo, en la aplicación ({isa})'],
   'set.info.notLoaded': ['The engine is not loaded: {reason}', 'El motor no está cargado: {reason}'],
   'set.info.yes': ['Yes', 'Sí'],
   'set.info.no': ['No', 'No'],
@@ -1301,6 +1303,10 @@ const TABLE = {
   'set.hw.webgpu': ['WebGPU', 'WebGPU'],
   'set.hw.maxBuffer': ['Largest WebGPU buffer', 'Búfer WebGPU más grande'],
   'set.hw.notReported': ['Not reported by the browser', 'El navegador no lo dice'],
+  'set.hw.notDetected': ['Not detected', 'No detectado'],
+  'set.hw.again': ['Detect again', 'Detectar de nuevo'],
+  'set.hw.cpu': ['Processor', 'Procesador'],
+  'set.hw.noUsableGpu': ['No graphics card with 4 GB of video memory or more: the recommendation is for the processor', 'Ninguna tarjeta gráfica con 4 GB de memoria de vídeo o más: la recomendación es para el procesador'],
   'set.hw.ramCapped': ['{n} GB or more (the browser rounds this figure and stops at 8)', '{n} GB o más (el navegador redondea esta cifra y se para en 8)'],
   'set.hw.gib': ['{n} GB', '{n} GB'],
   'set.hw.detecting': ['Detecting…', 'Detectando…'],
@@ -1346,6 +1352,7 @@ const TABLE = {
   'set.st.persistDenied': ['The browser said no; it decides by how much the site is used', 'El navegador ha dicho que no; lo decide según cuánto se usa el sitio'],
   'set.st.persistNone': ['This browser cannot be asked', 'A este navegador no se le puede pedir'],
   'set.st.openFolder': ['Open folder', 'Abrir carpeta'],
+  'set.st.openFolderFailed': ['The system could not open the folder', 'El sistema no ha podido abrir la carpeta'],
   'set.dk.portableYes': ['Yes: the data is next to the program, in {dir}', 'Sí: los datos están junto al programa, en {dir}'],
   'set.dk.portableNo': ['No: the data is in {dir}', 'No: los datos están en {dir}'],
   'set.dk.defaultBrowser': ['The default browser', 'El navegador por defecto'],
@@ -1398,6 +1405,7 @@ const TABLE = {
   'status.triangles': ['{n} triangles', '{n} triángulos'],
   'status.engineFast': ['Fast · {device}', 'Rápido · {device}'],
   'status.engineFull': ['Full · {workers} workers · {isa}', 'Completo · {workers} workers · {isa}'],
+  'status.engineNative': ['Full · Native · {threads} threads · {isa}', 'Completo · Nativo · {threads} hilos · {isa}'],
   'status.isaSimd': ['SIMD', 'SIMD'],
   'status.isaScalar': ['scalar', 'escalar'],
   'status.noEngine': ['No viewport engine', 'Sin motor de visor'],
@@ -1442,7 +1450,9 @@ const TABLE = {
   'action.undo': ['Undo', 'Deshacer'],
   'action.redo': ['Redo', 'Rehacer'],
   'action.import': ['Import model', 'Importar modelo'],
+  'action.open': ['Open project', 'Abrir proyecto'],
   'action.save': ['Save project', 'Guardar proyecto'],
+  'action.saveAs': ['Save project as', 'Guardar proyecto como'],
   'action.render': ['Render…', 'Render…'],
   'action.viewportMode': ['Viewport: Fast or Full', 'Visor: Rápido o Completo'],
   'action.exportScene': ['Export engine scene (.rsb)', 'Exportar escena del motor (.rsb)'],
@@ -1595,6 +1605,29 @@ const TABLE = {
   'key.escape': ['Esc', 'Esc'],
   'key.tab': ['Tab', 'Tab'],
 
+  // Project files (U2)
+  'project.fileType': ['Repackshot project', 'Proyecto de Repackshot'],
+  'project.save': ['Save', 'Guardar'],
+  'project.dontSave': ['Don’t save', 'No guardar'],
+  'project.unsavedNew': ['Save changes to “{name}” before starting a new project?', '¿Guardar los cambios de «{name}» antes de empezar un proyecto nuevo?'],
+  'project.unsavedOpen': ['Save changes to “{name}” before opening {file}?', '¿Guardar los cambios de «{name}» antes de abrir {file}?'],
+  'project.opening': ['Opening {name}…', 'Abriendo {name}…'],
+  'project.opened': ['Opened {name}', 'Abierto {name}'],
+  'project.reopenLast': ['Open the last project, “{name}”?', '¿Abrir el último proyecto, «{name}»?'],
+  'project.reopen': ['Open', 'Abrir'],
+  'project.notNow': ['Not now', 'Ahora no'],
+  'project.reopenFailed': ['Could not open “{name}”: the file moved or the browser was not allowed to read it', 'No se ha podido abrir «{name}»: el archivo se ha movido o el navegador no tiene permiso para leerlo'],
+  'project.saveFailed': ['Could not save {name}: {reason}', 'No se pudo guardar {name}: {reason}'],
+  'project.dropIgnored': ['A project was opened; the other dropped files were ignored', 'Se abrió un proyecto; los demás archivos soltados se ignoraron'],
+  'project.warn.missingMeshes': ['The file has no geometry for {n} part(s); they stay in the scene without it', 'El archivo no trae la geometría de {n} pieza(s); siguen en la escena sin ella'],
+  'project.err.notProject': ['{name} is not a Repackshot project. The current project was not touched.', '{name} no es un proyecto de Repackshot. El proyecto actual no se ha tocado.'],
+  'project.err.newer': [
+    '{name} was saved by a newer version of Repackshot (project format {schema}). Update Repackshot to open it; the current project was not touched.',
+    '{name} se guardó con una versión más nueva de Repackshot (formato de proyecto {schema}). Actualiza Repackshot para abrirlo; el proyecto actual no se ha tocado.',
+  ],
+  'project.err.damaged': ['{name} is damaged and could not be opened. The current project was not touched.', '{name} está dañado y no se pudo abrir. El proyecto actual no se ha tocado.'],
+  'project.err.tooLarge': ['{name} is too large to open in the browser. The current project was not touched.', '{name} es demasiado grande para abrirlo en el navegador. El proyecto actual no se ha tocado.'],
+
   // Toasts
   'toast.saved': ['Saved {name}', 'Guardado {name}'],
   'toast.locked': ['{target} is locked', '{target} está bloqueado'],
@@ -1682,6 +1715,11 @@ export function framesText(n: number): string {
 }
 
 /** Seconds as M:SS (or H:MM:SS). */
+/** A SIMD path of the native engine as the status bar shows it (`avx2` -> `AVX2`, scalar translated). */
+export function isaLabel(isa: string | undefined): string {
+  return !isa || isa === 'scalar' ? t('status.isaScalar') : isa.toUpperCase();
+}
+
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   const h = Math.floor(s / 3600);

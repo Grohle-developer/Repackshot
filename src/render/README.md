@@ -5,6 +5,9 @@ never on ui (the RSB writer of `io/` reaches the path tracer through `SceneSourc
   the path tracer's image. Picking and the camera controls are always its own.
 - `pathtracer.ts`: the pool of workers (`navigator.hardwareConcurrency - 1`, 1 to 8), the viewport in *Full* mode
   (reduced resolution during gestures and drags, convergence after) and Render.
+- `native.ts`: the same engine run natively by the desktop launcher (`/api/render`, all threads, the same film as
+  `rt` and the pool): viewport jobs that replace each other and keep the meshes, final jobs with priority, the
+  launcher's RGBA sums into the same `Accumulator`. `main.ts` uses it instead of the pool in the launcher's window.
 - `worker.ts`: one worker, one `rt.wasm` (`rt-simd.wasm` when the browser has simd128), tiles in sample order.
 - `tiles.ts`: the pure parts (tiles, passes, generations, accumulation, resolution choice), and the 16-bit and
   linear conversions of the sums (16-bit PNG, EXR).

@@ -43,6 +43,10 @@ export interface EngineStatus {
   rendering?: boolean;
   /** Path tracer: pixels the samples above are counted on (the render window's estimate). */
   pixels?: number;
+  /** The desktop launcher's native engine renders (threads and SIMD path below). */
+  native?: boolean;
+  threads?: number;
+  isa?: string;
 }
 
 export type { DisplayPrefs, NavigationPrefs } from '../core/settings';
@@ -115,7 +119,7 @@ export interface StoragePort {
 
 /** The desktop launcher's folders (P2), when the page runs in its window. */
 export interface DesktopPort {
-  openFolder(target: 'data' | 'models' | 'logs'): Promise<void>;
+  openFolder(target: 'data' | 'models' | 'logs' | 'results'): Promise<void>;
 }
 
 export interface RenderRequest {
@@ -201,6 +205,61 @@ export interface FilesPort {
 
 export type { ImportMessage };
 
+// --- Project files (src/io/project.ts, src/io/project-file.ts) ---------------------------------------------
+
+/** Why a file did not open (the same codes as io/project.ts `ProjectErrorCode`; the interface words them). */
+export type ProjectFaultCode = 'NOT_A_PROJECT' | 'NEWER_VERSION' | 'DAMAGED' | 'TOO_LARGE';
+
+export interface ProjectFault {
+  code: ProjectFaultCode;
+  /** The reason in the program's own English: for the console and the tooltip, not for the sentence. */
+  detail: string;
+  /** NEWER_VERSION: the schema the file has. */
+  schema?: number;
+}
+
+/** Something a load noticed that the person should hear about. */
+export interface ProjectWarning {
+  /** This many parts have no geometry in the file (a project from before meshes were embedded). */
+  code: 'MISSING_MESHES';
+  count: number;
+}
+
+export type OpenOutcome = { ok: true; state: ProjectState; warnings: ProjectWarning[] } | { ok: false; fault: ProjectFault };
+
+/** The project as a file: its content (never throws for a bad file; `open` says why instead). */
+export interface ProjectPort {
+  /** The `.repack.json` blob: the state and the meshes its parts use. Throws only when a mesh is too big to embed. */
+  serialize(state: ProjectState): Blob;
+  /**
+   * Reads a project file. On success its meshes are registered and `state` is ready for `store.reset`; on
+   * failure nothing changed.
+   */
+  open(file: File): Promise<OpenOutcome>;
+}
+
+export type SaveResult = { kind: 'SAVED'; name: string; inPlace: boolean } | { kind: 'CANCELLED' } | { kind: 'FAILED'; reason: string };
+
+/** Where project files are written and read: the file system with a remembered file, or downloads and an input. */
+export interface ProjectFilesPort {
+  /** The browser writes back to the file it opened or saved (File System Access API); otherwise it downloads. */
+  readonly canSaveInPlace: boolean;
+  /**
+   * Writes the project. Without `saveAs`, to the remembered file when there is one (no dialog); otherwise it asks
+   * where (or downloads `suggestedName`). `make` is called when the destination is known, so a slow dialog does
+   * not lose the user gesture and the file holds the project as of that moment.
+   */
+  save(make: () => Blob, suggestedName: string, opts: { saveAs: boolean }): Promise<SaveResult>;
+  /** The Open dialog; null when the person cancels. `handle` goes to `adopt` once the project is open. */
+  pick(): Promise<{ file: File; handle: unknown } | null>;
+  /** The file the open project lives in (a handle from `pick` or a dropped file), or null for none. */
+  adopt(handle: unknown): void;
+  /** The project file opened or saved last, when the browser keeps file handles (General ▸ On start ▸ Last project). */
+  last?(): Promise<{ name: string; handle: unknown } | null>;
+  /** Reads that file again, asking for permission (call it from a click); null when it cannot be read. */
+  reopen?(handle: unknown): Promise<File | null>;
+}
+
 /**
  * A model as the file has it (the units and axes of the file) plus what the reader said and detected. The
  * import sheet chooses the options and `applyImportOptions` (core) turns it into what the store adds.
@@ -241,8 +300,10 @@ export interface AppServices {
    * come from the file. STEP and IGES take the tessellation, can be cancelled and report their progress.
    */
   importFile(file: File, options?: ImportReadOptions): Promise<ImportRead>;
-  /** The project as a .repack.json blob. */
-  serializeProject(state: ProjectState): Blob;
+  /** The project file's content, and reading one. */
+  project: ProjectPort;
+  /** Where project files go. */
+  projectFiles: ProjectFilesPort;
   /** The user's library as a file (Export library / Import library). */
   library: LibraryServices;
   /** The render engine's settings and Measure performance. */
@@ -250,7 +311,7 @@ export interface AppServices {
   /** The AI model manager; null when this build has none. */
   models: ModelsService | null;
   /** What this computer has, for the AI models (WebGPU limits in the browser, the launcher's detection on the desktop). */
-  hardware(): Promise<HardwareInfo>;
+  hardware(again?: boolean): Promise<HardwareInfo>;
   storage: StoragePort;
   /** Null outside the desktop application. */
   desktop: DesktopPort | null;

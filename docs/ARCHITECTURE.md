@@ -118,8 +118,8 @@ public/engine/rt.wasm       el motor compilado para el navegador (generado por n
 **Regla de dependencias**: `ui → core`, `render → core`, `io → core`,
 `core → data`. Nunca al revés, nunca `ui → render` directamente (el
 *store* expone lo que el visor necesita y el visor se suscribe). Un test
-de la suite (`tests/boundaries.test.ts`, fase U2) recorre los `import` y
-falla si se viola. El motor (`engine/`) no conoce nada de `src/`: su
+de la suite (`tests/boundaries.test.ts`, U2) recorre los `import` y
+falla si se viola; hoy no hay ninguna infracción. El motor (`engine/`) no conoce nada de `src/`: su
 única interfaz con el resto es el formato RSB (§5.2) y las exportaciones
 de `rt-wasm` (§5.3).
 
@@ -478,8 +478,14 @@ Reglas, heredadas de EZ Packshot y no negociables:
 
 ## 8 · Formato de proyecto (`.repack.json`)
 
-`{ "format": "repackshot-project", "schema": 1, "state": ProjectState }`.
-Las mallas importadas se guardan **dentro** como GLB en base64 por defecto
-(un proyecto es un archivo), con opción de referencia externa por ruta.
-Las migraciones de esquema viven en `io/project.ts` y se prueban con un
-fichero fijo por versión.
+`{ "format": "repackshot-project", "schema": 2, "state": ProjectState,
+"meshes": [{ "id", "glb", "sharpEdges"?, "triangleSource"? }] }` (U2). Las
+mallas se guardan **dentro**, un GLB en base64 por malla usada (glTF 2.0
+válido, con la transformación Z arriba mm → Y arriba m para otros
+visores, que el lector ignora); al lado van las aristas vivas y el mapa
+de re-suavizado, que glTF no tiene. La referencia externa por ruta queda
+para después. El esquema versiona solo `state`; las migraciones viven en
+`io/project.ts` y se prueban con un fichero fijo por versión
+(`tests/fixtures/project-v1.json`, `project-v2.json`). Al abrir, los ids
+de malla que chocarían con otra geometría pasan a un prefijo `prjN:`,
+porque la vista previa y los workers cachean por id.

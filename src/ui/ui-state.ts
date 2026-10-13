@@ -11,6 +11,7 @@ import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { Space } from '../core/transform';
 import type { ClipTarget } from '../core/animation';
+import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
 import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
@@ -242,6 +243,11 @@ export interface UiState {
   perf: PerfState;
   engineInfo: EngineInfo | null;
   desktop: DesktopInfo | null;
+  /**
+   * An inline confirmation the header shows under the project name (New and Open ask before they discard unsaved
+   * changes, whichever way they were asked for: menu, shortcut or a dropped file). Esc cancels.
+   */
+  prompt: ConfirmSpec | null;
 }
 
 /** The mode the viewport is in: Full only when chosen and the engine is ready. */
@@ -334,6 +340,7 @@ export function defaultUiState(): UiState {
     perf: { state: 'IDLE' },
     engineInfo: null,
     desktop: null,
+    prompt: null,
   };
 }
 

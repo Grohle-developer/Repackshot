@@ -236,7 +236,8 @@ export function settingsWindow(ctx: Ctx, scope: Scope): HTMLElement {
         }
         const el = content.querySelector<HTMLElement>(`[data-row="${CSS.escape(focus)}"], [data-part="${CSS.escape(focus)}"]`);
         if (!el) return;
-        el.scrollIntoView({ block: 'center' });
+        // A row is centred; a part taller than the window (the model list) starts at the top.
+        el.scrollIntoView({ block: el.offsetHeight > content.clientHeight * 0.8 ? 'start' : 'center' });
         el.classList.remove('is-flash');
         void el.offsetWidth;
         el.classList.add('is-flash');

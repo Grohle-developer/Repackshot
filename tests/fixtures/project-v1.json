@@ -1,0 +1,1235 @@
+{
+ "format": "repackshot-project",
+ "schema": 1,
+ "state": {
+  "meta": {
+   "name": "Fragrance bottle",
+   "version": "0.1.0",
+   "dirty": true,
+   "lang": "en",
+   "theme": "dark"
+  },
+  "scene": {
+   "nodes": {
+    "n1": {
+     "id": "n1",
+     "name": "model",
+     "kind": "MODEL",
+     "key": "model",
+     "parent": null,
+     "children": [
+      "n3",
+      "n4",
+      "n5",
+      "n2"
+     ],
+     "transform": {
+      "position": [
+       0,
+       0,
+       60.5
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "source": {
+      "kind": "EXAMPLE",
+      "name": "bottle"
+     }
+    },
+    "n2": {
+     "id": "n2",
+     "name": "closure",
+     "kind": "GROUP",
+     "key": "closure",
+     "parent": "n1",
+     "children": [
+      "n6",
+      "n7"
+     ],
+     "transform": {
+      "position": [
+       0,
+       0,
+       -60.5
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false
+    },
+    "n3": {
+     "id": "n3",
+     "name": "base",
+     "kind": "PART",
+     "key": "base",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       0,
+       -60.5
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "example:base",
+      "vertices": 1067,
+      "triangles": 1632,
+      "bounds": {
+       "min": [
+        -31.600000381469727,
+        -31.600000381469727,
+        0
+       ],
+       "max": [
+        31.600000381469727,
+        31.600000381469727,
+        9
+       ]
+      }
+     },
+     "material": "m1",
+     "smooth": true
+    },
+    "n4": {
+     "id": "n4",
+     "name": "body",
+     "kind": "PART",
+     "key": "body",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       0,
+       -60.5
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "example:body",
+      "vertices": 2813,
+      "triangles": 4800,
+      "bounds": {
+       "min": [
+        -31,
+        -31,
+        5
+       ],
+       "max": [
+        31,
+        31,
+        98
+       ]
+      }
+     },
+     "material": "m2",
+     "smooth": true,
+     "faceMaterials": [
+      {
+       "start": 4,
+       "count": 3,
+       "material": "m7"
+      },
+      {
+       "start": 10,
+       "count": 1,
+       "material": "m7"
+      }
+     ]
+    },
+    "n5": {
+     "id": "n5",
+     "name": "label",
+     "kind": "PART",
+     "key": "label",
+     "parent": "n1",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       0,
+       -60.5
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "example:label",
+      "vertices": 130,
+      "triangles": 128,
+      "bounds": {
+       "min": [
+        -31.349533081054688,
+        -31.350000381469727,
+        22
+       ],
+       "max": [
+        17.98162078857422,
+        8.113977432250977,
+        60
+       ]
+      }
+     },
+     "material": "m3",
+     "smooth": true
+    },
+    "n6": {
+     "id": "n6",
+     "name": "collar",
+     "kind": "PART",
+     "key": "collar",
+     "parent": "n2",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "example:collar",
+      "vertices": 776,
+      "triangles": 768,
+      "bounds": {
+       "min": [
+        -15.199999809265137,
+        -15.199999809265137,
+        90.5
+       ],
+       "max": [
+        15.199999809265137,
+        15.199999809265137,
+        97
+       ]
+      }
+     },
+     "material": "m4",
+     "smooth": true
+    },
+    "n7": {
+     "id": "n7",
+     "name": "cap",
+     "kind": "PART",
+     "key": "cap",
+     "parent": "n2",
+     "children": [],
+     "transform": {
+      "position": [
+       0,
+       0,
+       0
+      ],
+      "rotation": [
+       0,
+       0,
+       0
+      ],
+      "scale": [
+       1,
+       1,
+       1
+      ]
+     },
+     "visible": true,
+     "locked": false,
+     "mesh": {
+      "id": "example:cap",
+      "vertices": 1261,
+      "triangles": 1920,
+      "bounds": {
+       "min": [
+        -14,
+        -14,
+        97
+       ],
+       "max": [
+        14,
+        14,
+        121
+       ]
+      }
+     },
+     "material": "m6",
+     "smooth": true
+    }
+   },
+   "roots": [
+    "n1"
+   ],
+   "partSizeMm": 121
+  },
+  "selection": {
+   "level": "FACES",
+   "ids": [
+    "n4"
+   ],
+   "faces": {
+    "part": "n4",
+    "indices": [
+     4,
+     5,
+     6,
+     10
+    ]
+   }
+  },
+  "materials": {
+   "m1": {
+    "id": "m1",
+    "name": null,
+    "preset": "ABS_GLOSS",
+    "origin": "ABS_GLOSS",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "PLASTIC",
+    "params": {
+     "baseColor": [
+      0.045,
+      0.045,
+      0.05,
+      1
+     ],
+     "roughness": 0.13,
+     "coat": 1,
+     "coatRoughness": 0.05
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 0.121,
+     "edges": 0.25,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.37925,
+      0.37925,
+      0.38249999999999995,
+      1
+     ],
+     "edgeRough": 0.5,
+     "edgeMetal": 0,
+     "scratches": 0.2,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.3,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.1,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0.05,
+     "patinaColor": [
+      0.72,
+      0.62,
+      0.4,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.3,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.02475,
+      0.02475,
+      0.027500000000000004,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "projection": "BOX",
+     "scale": 1,
+     "rotationDeg": 0,
+     "offset": [
+      0,
+      0
+     ]
+    },
+    "bevelRadiusMm": 0.303
+   },
+   "m2": {
+    "id": "m2",
+    "name": null,
+    "preset": "PAINT_MET",
+    "origin": "PAINT_MET",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "OTHER",
+    "params": {
+     "baseColor": [
+      0.12,
+      0.14,
+      0.22,
+      1
+     ],
+     "metallic": 0.65,
+     "roughness": 0.3,
+     "coat": 1,
+     "coatRoughness": 0.03
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 0.121,
+     "edges": 0.15,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.6,
+      0.6,
+      0.62,
+      1
+     ],
+     "edgeRough": 0.3,
+     "edgeMetal": 1,
+     "scratches": 0.15,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.25,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.2,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0,
+     "patinaColor": [
+      0.25,
+      0.2,
+      0.15,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.3,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.6,
+      0.6,
+      0.62,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "projection": "BOX",
+     "scale": 1,
+     "rotationDeg": 0,
+     "offset": [
+      0,
+      0
+     ]
+    },
+    "bevelRadiusMm": 0.303
+   },
+   "m3": {
+    "id": "m3",
+    "name": null,
+    "preset": "PAPER",
+    "origin": "PAPER",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "OTHER",
+    "params": {
+     "baseColor": [
+      0.78,
+      0.77,
+      0.74,
+      1
+     ],
+     "roughness": 0.78
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 0.121,
+     "edges": 0.3,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.857,
+      0.8505,
+      0.831,
+      1
+     ],
+     "edgeRough": 0.5,
+     "edgeMetal": 0,
+     "scratches": 0,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.2,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.3,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0.2,
+     "patinaColor": [
+      0.55,
+      0.42,
+      0.25,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.4,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.42900000000000005,
+      0.42350000000000004,
+      0.40700000000000003,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "projection": "BOX",
+     "scale": 1,
+     "rotationDeg": 0,
+     "offset": [
+      0,
+      0
+     ]
+    },
+    "bevelRadiusMm": 0.303
+   },
+   "m4": {
+    "id": "m4",
+    "name": null,
+    "preset": "CHROME",
+    "origin": "CHROME",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "METAL",
+    "params": {
+     "baseColor": [
+      0.85,
+      0.86,
+      0.88,
+      1
+     ],
+     "metallic": 1,
+     "roughness": 0.03
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 0.121,
+     "edges": 0.05,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.895,
+      0.902,
+      0.916,
+      1
+     ],
+     "edgeRough": 0.18,
+     "edgeMetal": 1,
+     "scratches": 0.12,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.35,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.1,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0,
+     "patinaColor": [
+      0.55,
+      0.55,
+      0.57,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.1,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.9175,
+      0.923,
+      0.934,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "projection": "BOX",
+     "scale": 1,
+     "rotationDeg": 0,
+     "offset": [
+      0,
+      0
+     ]
+    },
+    "bevelRadiusMm": 0.303
+   },
+   "m6": {
+    "id": "m6",
+    "name": null,
+    "preset": "COPPER",
+    "origin": "COPPER",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "METAL",
+    "params": {
+     "baseColor": [
+      0.72,
+      0.32,
+      0.18,
+      1
+     ],
+     "metallic": 1,
+     "roughness": 0.22
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 0.121,
+     "edges": 0.35,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.8039999999999999,
+      0.524,
+      0.426,
+      1
+     ],
+     "edgeRough": 0.18,
+     "edgeMetal": 1,
+     "scratches": 0.3,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.25,
+     "smudgeScale": 1,
+     "dust": 0,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.1,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0.25,
+     "patinaColor": [
+      0.2,
+      0.46,
+      0.38,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.35,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.846,
+      0.626,
+      0.549,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "projection": "BOX",
+     "scale": 1,
+     "rotationDeg": 0,
+     "offset": [
+      0,
+      0
+     ]
+    },
+    "bevelRadiusMm": 0.303
+   },
+   "m7": {
+    "id": "m7",
+    "name": null,
+    "preset": "RUBBER",
+    "origin": "RUBBER",
+    "edited": false,
+    "family": "SIMPLE",
+    "category": "OTHER",
+    "params": {
+     "baseColor": [
+      0.02,
+      0.02,
+      0.02,
+      1
+     ],
+     "roughness": 0.88
+    },
+    "wear": {
+     "amount": 0.45,
+     "scale": 1,
+     "seed": 0,
+     "perObject": true,
+     "refSize": 0.121,
+     "edges": 0.15,
+     "edgeWidth": 0.008,
+     "edgeColor": [
+      0.363,
+      0.363,
+      0.363,
+      1
+     ],
+     "edgeRough": 0.5,
+     "edgeMetal": 0,
+     "scratches": 0.15,
+     "scratchScale": 1,
+     "scratchDepth": 0.5,
+     "smudges": 0.2,
+     "smudgeScale": 1,
+     "dust": 0.1,
+     "dustColor": [
+      0.55,
+      0.52,
+      0.48,
+      1
+     ],
+     "dirt": 0.2,
+     "dirtColor": [
+      0.28,
+      0.23,
+      0.18,
+      1
+     ],
+     "dirtDistance": 0.06,
+     "patina": 0.2,
+     "patinaColor": [
+      0.38,
+      0.38,
+      0.38,
+      1
+     ],
+     "patinaScale": 1,
+     "roughVar": 0.4,
+     "roughScale": 1,
+     "dents": 0,
+     "dentScale": 1,
+     "preset": "",
+     "accumInside": 0.5,
+     "accumOutside": 0.5,
+     "relief": 1,
+     "scratchColor": [
+      0.011000000000000001,
+      0.011000000000000001,
+      0.011000000000000001,
+      1
+     ],
+     "colorVar": 0.15,
+     "colorScale": 1
+    },
+    "textures": {
+     "color": null,
+     "roughness": null,
+     "metal": null,
+     "normal": null,
+     "alpha": null,
+     "projection": "BOX",
+     "scale": 1,
+     "rotationDeg": 0,
+     "offset": [
+      0,
+      0
+     ]
+    },
+    "bevelRadiusMm": 0.303
+   }
+  },
+  "studio": {
+   "preset": "JEWELLERY",
+   "lightSetup": "REMBRANDT",
+   "built": true,
+   "floor": true,
+   "shadow": false,
+   "lights": [
+    {
+     "id": "l1",
+     "role": "KEY",
+     "type": "AREA",
+     "shape": "RECTANGLE",
+     "size": 2,
+     "sizeY": 2,
+     "az": -55,
+     "el": 45,
+     "dist": 2.8,
+     "spread": 110,
+     "angle": 0.545,
+     "kelvin": 5600,
+     "color": [
+      1,
+      0.9383740988338822,
+      0.8834899105012184
+     ],
+     "power": 132.4374539253599,
+     "glossy": true,
+     "camera": false,
+     "brightField": false,
+     "recipeGlossy": true,
+     "enabled": true
+    },
+    {
+     "id": "l2",
+     "role": "FILL",
+     "type": "AREA",
+     "shape": "RECTANGLE",
+     "size": 4,
+     "sizeY": 4,
+     "az": 60,
+     "el": 10,
+     "dist": 3.6,
+     "spread": 180,
+     "angle": 0.545,
+     "kelvin": 5600,
+     "color": [
+      1,
+      0.9383740988338822,
+      0.8834899105012184
+     ],
+     "power": 23.371315398592927,
+     "glossy": false,
+     "camera": false,
+     "brightField": false,
+     "recipeGlossy": false,
+     "enabled": true
+    }
+   ],
+   "modified": false,
+   "saved": []
+  },
+  "environment": {
+   "kind": "STUDIO",
+   "strength": 0.8,
+   "rotationDeg": 40,
+   "background": "COLOR",
+   "color": [
+    0.02,
+    0.02,
+    0.025,
+    1
+   ],
+   "groundShadow": 0.6,
+   "groundReflection": 0
+  },
+  "camera": {
+   "active": "cam2",
+   "cameras": {
+    "cam1": {
+     "id": "cam1",
+     "name": "",
+     "azimuth": -35,
+     "elevation": 22,
+     "distance": 806.6777305470674,
+     "target": [
+      0,
+      0,
+      60.5
+     ],
+     "focalMm": 100,
+     "fstop": 11,
+     "focusDistance": 806.6777305470674,
+     "projection": "PERSPECTIVE",
+     "orthoWidth": 283.87291087696235,
+     "clipStart": 1,
+     "clipEnd": 1000000,
+     "locked": false,
+     "lens": null
+    },
+    "cam2": {
+     "id": "cam2",
+     "name": "Detail",
+     "azimuth": 20,
+     "elevation": 10,
+     "distance": 806.6777305470674,
+     "target": [
+      0,
+      0,
+      60.5
+     ],
+     "focalMm": 135,
+     "fstop": 11,
+     "focusDistance": 806.6777305470674,
+     "projection": "PERSPECTIVE",
+     "orthoWidth": 283.87291087696235,
+     "clipStart": 1,
+     "clipEnd": 1000000,
+     "locked": false,
+     "lens": null
+    }
+   }
+  },
+  "image": {
+   "exposureEv": 0.5,
+   "viewTransform": "FILMIC",
+   "bloom": 0,
+   "sharpen": 0,
+   "saturation": 0,
+   "contrast": 0,
+   "vignette": 0.2
+  },
+  "animation": {
+   "shots": [
+    {
+     "id": "s1",
+     "duration": 4,
+     "camera": null
+    },
+    {
+     "id": "s2",
+     "duration": 3,
+     "camera": null
+    },
+    {
+     "id": "s3",
+     "duration": 4,
+     "camera": null
+    }
+   ],
+   "clips": [
+    {
+     "id": "c1",
+     "target": {
+      "kind": "CAMERA"
+     },
+     "move": "ORBIT",
+     "shot": 0,
+     "start": 0,
+     "duration": 4,
+     "amount": 90,
+     "easing": "EASE"
+    },
+    {
+     "id": "c2",
+     "target": {
+      "kind": "CAMERA"
+     },
+     "move": "RISE",
+     "shot": 0,
+     "start": 0,
+     "duration": 4,
+     "amount": 18,
+     "easing": "EASE"
+    },
+    {
+     "id": "c3",
+     "target": {
+      "kind": "CAMERA"
+     },
+     "move": "DOLLY",
+     "shot": 1,
+     "start": 4,
+     "duration": 3,
+     "amount": 40,
+     "easing": "EASE_OUT"
+    },
+    {
+     "id": "c4",
+     "target": {
+      "kind": "SUBJECT"
+     },
+     "move": "SPIN",
+     "shot": null,
+     "start": 7,
+     "duration": 4,
+     "amount": 360,
+     "easing": "LINEAR"
+    }
+   ],
+   "fps": 24,
+   "playhead": 0,
+   "playing": false
+  },
+  "render": {
+   "quality": "FINAL",
+   "width": 1080,
+   "height": 1350,
+   "maxSamples": 1024,
+   "maxSeconds": 120,
+   "format": "JPEG",
+   "transparent": false,
+   "queue": [
+    {
+     "id": "j1",
+     "name": "Hero shot",
+     "camera": "cam2",
+     "width": 1080,
+     "height": 1350,
+     "quality": "FINAL",
+     "maxSamples": 1024,
+     "maxSeconds": 120,
+     "format": "JPEG",
+     "transparent": false,
+     "status": "QUEUED",
+     "progress": 0
+    }
+   ],
+   "running": null
+  },
+  "doctor": {
+   "results": [
+    {
+     "key": "engine",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "lighttree",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "denoise",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "color",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "scale",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "transform",
+     "status": "OK",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "origin",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "shading",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "bevel",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "clip",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "lights",
+     "status": "OK",
+     "fixable": true,
+     "detail": {}
+    },
+    {
+     "key": "caustics",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "persist",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    },
+    {
+     "key": "output",
+     "status": "UNAVAILABLE",
+     "fixable": false,
+     "detail": {}
+    }
+   ],
+   "stamp": 9
+  }
+ }
+}

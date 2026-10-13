@@ -24,7 +24,7 @@ function kv(initial: Record<string, string> = {}): KeyValue & { data: Map<string
 }
 
 function makeCtx(): Ctx {
-  return { store: createStore(createInitialState()), ui: createUiStore(), services: {} as unknown as AppServices };
+  return { store: createStore(createInitialState()), ui: createUiStore(), services: { projectFiles: { adopt: () => undefined } } as unknown as AppServices };
 }
 
 describe('settings window: every row has what draws it', () => {

@@ -1,6 +1,6 @@
 // The AI model manager's model (AI-POST.md §5, UI.md §2.9): what the
 // Settings window shows for every model, from the catalogue (src/data/
-// ai-models.json through ./ai-deps), the models the user imported, and what
+// ai-models.json, data/ai-models.ts), the models the user imported, and what
 // the model store holds. Pure: the store and the download manager live in
 // src/io (model-store.ts, downloads.ts) and report into a `ModelsSnapshot`;
 // everything here derives from it.
@@ -14,7 +14,8 @@
 // verified.
 
 import type { Label, Lang } from '../data/types';
-import type { AiModelEntry, AiModelsCatalogue, Recommendation, RecommendInput } from './ai-deps';
+import type { AiModelEntry, AiModelsCatalogue } from '../data/ai-models';
+import { effectiveGiB, type Recommendation, type RecommendInput } from './ai-recommend';
 import { SHA256_RE } from './sha256';
 
 // ------------------------------------------------------------------ the store's view
@@ -506,7 +507,10 @@ export function recommendInput(hw: HardwareInfo | null, device: 'GPU' | 'CPU', g
     if (hw.webgpu === null) return null;
     return { device: 'web', webgpu: hw.webgpu, maxBufferGiB: hw.maxBufferBytes === null ? null : hw.maxBufferBytes / 2 ** 30 };
   }
-  if (device === 'GPU' && hw.gpus.length > 0) return { device: 'gpu', vramGiB: hw.gpus[Math.min(gpu, hw.gpus.length - 1)].vramGiB };
+  // On the desktop the launcher decides whether there is a GPU to use (one with ≥ 4 GiB effective of VRAM): without
+  // one the rule reads the CPU rows, as the installer's does (engine/crates/rt-app/README.md).
+  const gpuUsable = hw.gpus.length > 0 && (hw.where !== 'desktop' || hw.device !== 'cpu');
+  if (device === 'GPU' && gpuUsable) return { device: 'gpu', vramGiB: hw.gpus[Math.min(gpu, hw.gpus.length - 1)].vramGiB };
   return { device: 'cpu', ramGiB: hw.ramGiB };
 }
 
@@ -534,18 +538,22 @@ export function rowBadges(model: ModelView, rec: Recommendation | null): { recom
   };
 }
 
-/** Whether the model fits the memory detected for the chosen device; null when it cannot be told. */
+/**
+ * Whether the model fits the memory detected for the chosen device; null when it cannot be told. Like the rule,
+ * the measured amount is compared as effective GiB (measured / MEMORY_REPORTING_FACTOR): the requirements are
+ * marketing sizes, and a "12 GB" card reads 11.99 GiB. `haveGiB` is what was measured.
+ */
 export function fitsMemory(model: ModelView, hw: HardwareInfo | null, device: 'GPU' | 'CPU', gpu = 0): { fits: boolean; needGiB: number; haveGiB: number } | null {
   if (!hw || !hw.detected) return null;
   if (device === 'GPU') {
     const need = model.requirements.minVramGiB;
     const have = hw.gpus[Math.min(gpu, hw.gpus.length - 1)]?.vramGiB ?? null;
     if (need === null || have === null) return null;
-    return { fits: have >= need, needGiB: need, haveGiB: have };
+    return { fits: effectiveGiB(have) >= need, needGiB: need, haveGiB: have };
   }
   const need = model.requirements.minRamGiB;
   if (need === null || hw.ramGiB === null || hw.ramCapped) return null;
-  return { fits: hw.ramGiB >= need, needGiB: need, haveGiB: hw.ramGiB };
+  return { fits: effectiveGiB(hw.ramGiB) >= need, needGiB: need, haveGiB: hw.ramGiB };
 }
 
 /** Whether a model can run where the application runs (the catalogue's runtimes). */

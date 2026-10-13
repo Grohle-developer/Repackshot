@@ -16,7 +16,7 @@ import { h, icon } from '../dom';
 import { dyn } from '../names';
 import type { Ctx, Scope } from '../reactive';
 import { ACTIONS, kbdText, SHORTCUT_GROUPS, shortcutGroup } from '../shortcuts';
-import { formatNumber, getLang, t } from '../strings';
+import { formatNumber, getLang, isaLabel, t } from '../strings';
 import { blockEl, infoRow, rowLabel, rowShell, settingRow, type SettingRowOptions } from './settings-rows';
 
 export interface SettingsHooks {
@@ -201,7 +201,7 @@ function engineInfoRow(ctx: Ctx, scope: Scope): HTMLElement {
         return;
       }
       rows.push([t('set.info.version'), info.native?.engineVersion ?? info.version ?? '–']);
-      rows.push([t('set.info.build'), info.backend === 'wasm' ? (info.build === 'rt-simd.wasm' ? t('set.info.wasmSimd') : t('set.info.wasmScalar')) : info.build]);
+      rows.push([t('set.info.build'), info.backend === 'wasm' ? (info.build === 'rt-simd.wasm' ? t('set.info.wasmSimd') : t('set.info.wasmScalar')) : t('set.info.native', { isa: isaLabel(info.native?.isa ?? info.build) })]);
       rows.push([t('set.info.threads'), info.native ? String(info.native.threads) : t('set.info.workers', { n: info.workers })]);
       rows.push([t('set.info.simd'), info.native ? [info.native.isa, ...info.native.simd.filter((x) => x !== info.native!.isa)].join(', ') : info.simd ? 'simd128' : info.simdSupported ? `${t('set.info.no')} (simd128: ${t('set.info.yes')})` : t('set.info.no')]);
       if (info.cores !== null) rows.push([t('set.info.cores'), String(info.cores)]);
@@ -332,12 +332,20 @@ function persistRow(ctx: Ctx, scope: Scope): HTMLElement {
   return parts.el;
 }
 
+/** Open folder: the launcher asks the system's file manager; when there is none it says so. */
+function openFolder(ctx: Ctx, port: NonNullable<Ctx['services']['desktop']>, target: 'data' | 'logs' | 'models'): void {
+  port.openFolder(target).catch((err: unknown) => {
+    console.warn(`open folder: ${err instanceof Error ? err.message : String(err)}`);
+    ctx.ui.toast(t('set.st.openFolderFailed'));
+  });
+}
+
 function dataFolderRow(ctx: Ctx, scope: Scope): HTMLElement | null {
   void scope;
   const d = ctx.ui.get().desktop;
   const port = ctx.services.desktop;
   if (!d || !port) return null;
-  return infoRow('storage.folder', rowLabel('storage.folder'), h('div', { class: 'sw-inline' }, h('code', { class: 'sw-path' }, d.dataDir), h('button', { type: 'button', class: 'btn btn-sm', onclick: () => void port.openFolder('data') }, icon('folder', 14), t('set.st.openFolder'))));
+  return infoRow('storage.folder', rowLabel('storage.folder'), h('div', { class: 'sw-inline' }, h('code', { class: 'sw-path' }, d.dataDir), h('button', { type: 'button', class: 'btn btn-sm', onclick: () => openFolder(ctx, port, 'data') }, icon('folder', 14), t('set.st.openFolder'))));
 }
 
 // ------------------------------------------------------------------ Desktop
@@ -345,7 +353,7 @@ function dataFolderRow(ctx: Ctx, scope: Scope): HTMLElement | null {
 function desktopRows(): SettingsHooks['rows'] {
   const folderButton = (ctx: Ctx, target: 'data' | 'logs') => {
     const port = ctx.services.desktop;
-    return port ? h('button', { type: 'button', class: 'btn btn-sm', onclick: () => void port.openFolder(target) }, icon('folder', 14), t('set.st.openFolder')) : null;
+    return port ? h('button', { type: 'button', class: 'btn btn-sm', onclick: () => openFolder(ctx, port, target) }, icon('folder', 14), t('set.st.openFolder')) : null;
   };
   return {
     'desktop.portable': (ctx) => {
@@ -456,13 +464,16 @@ export const SECTION_HOOKS: SettingsHooks = {
       aux: () => {
         const info = ctx.ui.get().engineInfo;
         if (!info && ctx.ui.get().engine === 'LOADING') return t('set.eng.restarting');
+        // The native engine runs on the threads the launcher started with (--threads); this is the browser's.
+        if (info?.backend === 'native') return t('set.eng.nativeThreads', { n: info.workers });
         return info ? `${t('set.eng.threadsAuto', { n: info.autoThreads })} · ${t('set.engine.threads.aux')}` : null;
       },
     }),
     'engine.simd': (ctx) => ({
       aux: () => {
         const info = ctx.ui.get().engineInfo;
-        if (!info || info.backend === 'native') return null;
+        if (!info) return null;
+        if (info.backend === 'native') return t('set.eng.nativeSimd', { isa: isaLabel(info.native?.isa) });
         return `${info.simdSupported ? t('set.eng.simdYes') : t('set.eng.simdNo')} · ${t('set.engine.simd.aux')}`;
       },
     }),

@@ -7,12 +7,13 @@
 // imports refuse pickle files and check their manifest.
 
 import { describe, expect, it } from 'vitest';
-import type { AiModelEntry, AiModelsCatalogue } from '../src/core/ai-deps';
+import type { AiModelEntry, AiModelsCatalogue } from '../src/data/ai-models';
 import { allModels, findModel, modelState, type ModelsSnapshot } from '../src/core/models';
 import { sha256Hex } from '../src/core/sha256';
 import { createBlobStore, memoryFs } from '../src/io/blob-store';
 import { DownloadManager, type DownloadMemory, type FetchLike } from '../src/io/downloads';
-import { localModelStore, type ModelStore } from '../src/io/model-store';
+import { localModelStore, nativeModelStore, type ModelStore, type NativeModelsApi } from '../src/io/model-store';
+import type { ImportedModel } from '../src/core/models';
 
 function bytes(n: number, seed: number): Uint8Array {
   const out = new Uint8Array(n);
@@ -378,5 +379,138 @@ describe('importing a model', () => {
     expect(r.kind).toBe('done');
     const view = allModels(m.snapshot()).find((x) => x.key === 'user-my-model')!;
     expect(view.commercial).toBe(false);
+  });
+});
+
+// --- On the desktop: the launcher's store (engine/crates/rt-app/README.md) through io/native.ts's client ------------
+
+/**
+ * A launcher's model API over the same content-addressed store: blobs by sha256, `installed.json`, imported
+ * manifests, the installer's pending choice, and DELETE that keeps the blobs other installed models (or `keep`) use.
+ */
+function fakeLauncher(cat: AiModelsCatalogue) {
+  const store = createBlobStore(memoryFs());
+  const imported = new Map<string, ImportedModel>();
+  let pending: { device: 'gpu' | 'cpu'; keys: string[] } | null = null;
+  const calls: string[] = [];
+  const filesOf = (key: string) => cat.models.find((m) => m.key === key)?.files ?? imported.get(key)?.files ?? [];
+  const status = async (sha: string) => {
+    const b = await store.status(sha);
+    return { sha256: sha, state: b.state, contiguous: b.contiguous, written: b.contiguous, total: b.total, damaged: b.damaged, actual: b.actual };
+  };
+  const api: NativeModelsApi = {
+    info: { modelsDir: '/data/models' },
+    async models() {
+      const installed = await store.installed();
+      const keys = [...cat.models.map((m) => m.key), ...imported.keys()];
+      const models = await Promise.all(
+        keys.map(async (key) => {
+          const files = await Promise.all(filesOf(key).map(async (f) => ({ name: f.name, role: f.role, bytes: f.bytes, ...(await status(f.sha256)) })));
+          const source = imported.has(key) ? ('imported' as const) : ('catalogue' as const);
+          return { key, source, installed: installed.includes(key), state: 'missing' as const, totalBytes: 0, presentBytes: 0, files, ...(source === 'imported' ? { manifest: imported.get(key) } : {}) };
+        }),
+      );
+      return { dir: '/data/models', installed, models };
+    },
+    blobStatus: status,
+    async putChunk(sha, offset, chunk, total) {
+      calls.push(`PUT ${sha.slice(0, 6)} ${offset}`);
+      await store.write(sha, offset, chunk as Uint8Array, total ?? 0);
+      return status(sha);
+    },
+    async finishBlob(sha, bytes) {
+      const r = await store.finish(sha, bytes ?? 0);
+      if (r.ok) return { ok: true, bytes: bytes ?? 0 };
+      return r.reason === 'mismatch' ? { ok: false, status: 422, error: 'sha256-mismatch', actual: r.actual } : { ok: false, status: 409, error: 'incomplete', contiguous: r.contiguous };
+    },
+    deleteBlob: (sha) => store.deleteBlob(sha),
+    async importModel(key, manifest) {
+      imported.set(key, manifest as ImportedModel);
+    },
+    async install(key) {
+      await store.install(key, filesOf(key).map((f) => f.sha256));
+      return { installed: await store.installed() };
+    },
+    async remove(key, keep = []) {
+      calls.push(`DELETE ${key} keep=${keep.join(',')}`);
+      const others = (await store.installed()).filter((k) => k !== key).concat(keep);
+      const used = new Set(others.flatMap((k) => filesOf(k).map((f) => f.sha256)));
+      const deleted = filesOf(key).map((f) => f.sha256).filter((sha) => !used.has(sha));
+      await store.uninstall(key, deleted);
+      imported.delete(key);
+      return { deleted };
+    },
+    pendingModels: async () => pending,
+    async consumePendingModels() {
+      pending = null;
+    },
+  };
+  return { api, store, calls, setPending: (p: typeof pending) => (pending = p), pending: () => pending };
+}
+
+describe('on the desktop, the launcher keeps the models', () => {
+  it('the installer’s choice downloads into the launcher by blob, verified there; deleting keeps what others use', async () => {
+    const enc = bytes(12_000, 21);
+    const t1 = bytes(6_000, 22);
+    const t2 = bytes(7_000, 23);
+    const srv = server({ 'https://h/enc': { data: enc }, 'https://h/t1': { data: t1 }, 'https://h/t2': { data: t2 } });
+    const cat = catalogue([
+      model('A', [file('t1.gguf', 'https://h/t1', t1), file('enc.gguf', 'https://h/enc', enc, 'text-encoder')]),
+      model('B', [file('t2.gguf', 'https://h/t2', t2), file('enc.gguf', 'https://h/enc', enc, 'text-encoder')]),
+    ]);
+    const launcher = fakeLauncher(cat);
+    launcher.setPending({ device: 'gpu', keys: ['A', 'B'] });
+    const store = nativeModelStore(launcher.api);
+    expect(store.kind).toBe('native');
+    expect(store.location).toBe('/data/models');
+    const m = manager(cat, srv.fetch, store);
+    await m.start();
+    await until(() => m.snapshot().installed.length === 2, 'both installed');
+    expect(launcher.pending()).toBeNull();
+    expect(srv.log.filter((r) => r.url === 'https://h/enc')).toHaveLength(1);
+    expect(launcher.calls.filter((c) => c.startsWith('PUT')).length).toBeGreaterThan(3);
+    expect(await launcher.store.installed()).toEqual(expect.arrayContaining(['A', 'B']));
+    await m.remove('A');
+    expect(launcher.calls.at(-1)).toBe('DELETE A keep=');
+    expect((await launcher.store.blobs()).map((b) => b.sha256).sort()).toEqual([sha256Hex(enc), sha256Hex(t2)].sort());
+    expect(m.snapshot().installed).toEqual(['B']);
+    m.dispose();
+  });
+
+  it('a store known only later (the launcher answering) reads loading first, never "nowhere"', async () => {
+    const a = bytes(3_000, 26);
+    const srv = server({ 'https://h/a': { data: a } });
+    const cat = catalogue([model('M', [file('a.gguf', 'https://h/a', a)])]);
+    let resolve!: (s: ModelStore | null) => void;
+    const m = manager(cat, srv.fetch, new Promise<ModelStore | null>((r) => (resolve = r)) as unknown as ModelStore);
+    expect(m.snapshot()).toMatchObject({ ready: false, error: null, kind: 'none' });
+    const started = m.start();
+    resolve(nativeModelStore(fakeLauncher(cat).api));
+    await started;
+    expect(m.snapshot()).toMatchObject({ ready: true, error: null, kind: 'native', location: '/data/models' });
+    m.acceptLicence('M');
+    expect(await m.download('M')).toBe('started');
+    await until(() => m.snapshot().installed.includes('M'), 'installed');
+    m.dispose();
+    // Nowhere to keep them (a browser without OPFS): says so once known.
+    const none = new DownloadManager({ store: Promise.resolve(null), storeError: 'opfs', catalogue: cat, fetch: srv.fetch });
+    await none.start();
+    expect(none.snapshot()).toMatchObject({ ready: false, error: 'opfs' });
+  });
+
+  it('a file the launcher finds to be another one is Damaged', async () => {
+    const a = bytes(9_000, 24);
+    const wrong = sha256Hex(bytes(9_000, 25));
+    const srv = server({ 'https://h/a': { data: a } });
+    const cat = catalogue([model('M', [file('a.gguf', 'https://h/a', a, 'transformer', wrong)])]);
+    const launcher = fakeLauncher(cat);
+    const m = manager(cat, srv.fetch, nativeModelStore(launcher.api));
+    await m.start();
+    m.acceptLicence('M');
+    await m.download('M');
+    await until(() => stateOf(m.snapshot(), 'M') === 'DAMAGED', 'damaged');
+    expect(m.snapshot().installed).toEqual([]);
+    expect(m.snapshot().blobs[wrong]).toMatchObject({ damaged: true });
+    m.dispose();
   });
 });

@@ -7,6 +7,7 @@
 // nothing is recommended.
 
 import type { HardwareInfo } from '../core/models';
+import type { NativeHardware } from './native';
 
 interface GpuAdapter {
   limits?: { maxBufferSize?: number };
@@ -73,15 +74,8 @@ export async function detectWebHardware(nav: Navigator = navigator, timeoutMs = 
 }
 
 /** The launcher's detection (P2's `NativeHardware`, `GET /api/hardware`): the fields used here. */
-export interface NativeHardwareLike {
-  cpu: string;
-  cores: number;
-  threads: number;
-  ramGiB: number | null;
-  gpus: { name: string; vramGiB: number | null }[];
-  device: 'gpu' | 'cpu';
-  detected: boolean;
-}
+/** What the launcher measured (`GET /api/hardware`), in the model manager's terms. */
+export type NativeHardwareLike = Pick<NativeHardware, 'cpu' | 'cores' | 'threads' | 'ramGiB' | 'gpus' | 'device' | 'detected'>;
 
 export function fromNativeHardware(hw: NativeHardwareLike): HardwareInfo {
   return {

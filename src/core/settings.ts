@@ -323,7 +323,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   // General
   setting('general.lang', 'general', 'language', choice(['en', 'es']), kw('language, english, spanish, idioma', 'idioma, inglés, español, language')),
   setting('general.theme', 'general', 'language', choice(['dark', 'light', 'system']), kw('theme, dark, light, system, appearance, colour', 'tema, oscuro, claro, sistema, apariencia')),
-  setting('general.onStart', 'general', 'start', choice(['EXAMPLE', 'EMPTY', 'LAST'], false, ['LAST']), kw('start, startup, open, example, empty, last project', 'arranque, inicio, abrir, ejemplo, vacío, último proyecto'), { aux: true }),
+  setting('general.onStart', 'general', 'start', choice(['EXAMPLE', 'EMPTY', 'LAST']), kw('start, startup, open, example, empty, last project', 'arranque, inicio, abrir, ejemplo, vacío, último proyecto'), { aux: true }),
   setting('general.units', 'general', 'start', choice(LENGTH_UNITS), kw('units, millimetres, centimetres, metres, inches, length', 'unidades, milímetros, centímetros, metros, pulgadas, longitud'), { aux: true }),
   setting('general.autosave', 'general', 'safety', toggle, kw('autosave, recovery, backup, crash', 'autoguardado, recuperación, copia, cierre'), { aux: true, comingSoon: true }),
   setting('general.autosaveMinutes', 'general', 'safety', num(1, 60, 1, 'min'), kw('autosave, minutes, interval', 'autoguardado, minutos, intervalo'), { comingSoon: true }),

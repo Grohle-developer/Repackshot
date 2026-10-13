@@ -14,7 +14,7 @@
 // installer of the desktop app chose (`pending-models.json`) starts at the
 // first one.
 
-import type { AiModelsCatalogue } from '../core/ai-deps';
+import type { AiModelsCatalogue } from '../data/ai-models';
 import {
   allModels,
   blobsToDelete,
@@ -47,7 +47,12 @@ export interface DownloadMemory {
 }
 
 export interface ManagerOptions {
-  store: ModelStore | null;
+  /**
+   * Where the models are kept; null when there is nowhere. A promise when it is not known yet (main.ts: the
+   * launcher's folder or OPFS, once it is known whether the page is in the launcher's window): the manager
+   * exists at once, reads "loading" and works once `start()` has it.
+   */
+  store: ModelStore | null | Promise<ModelStore | null>;
   /** Why there is no store, when `store` is null. */
   storeError?: string;
   catalogue: AiModelsCatalogue;
@@ -106,8 +111,19 @@ export class DownloadManager implements ModelsService {
   private started = false;
   private importBusy = false;
 
+  /** The store, once known (see ManagerOptions.store). */
+  private store: ModelStore | null = null;
+
   constructor(private readonly opts: ManagerOptions) {
-    this.snap = { ...emptySnapshot(opts.catalogue), kind: opts.store?.kind ?? 'none', location: opts.store?.location ?? null, error: opts.store ? null : (opts.storeError ?? 'none') };
+    const known = opts.store instanceof Promise ? undefined : opts.store;
+    this.store = known ?? null;
+    this.snap = {
+      ...emptySnapshot(opts.catalogue),
+      kind: known?.kind ?? 'none',
+      location: known?.location ?? null,
+      // Not known yet: "loading", not "nowhere".
+      error: known === undefined || known ? null : (opts.storeError ?? 'none'),
+    };
     this.now = opts.now ?? (() => performance.now() / 1000);
     this.chunkBytes = opts.chunkBytes ?? 4 * 1024 * 1024;
     this.concurrency = Math.max(1, opts.concurrency ?? 2);
@@ -134,7 +150,16 @@ export class DownloadManager implements ModelsService {
 
   /** Reads the store, takes the installer's choice, and resumes what was being downloaded. */
   async start(): Promise<void> {
-    const store = this.opts.store;
+    if (this.opts.store instanceof Promise) {
+      try {
+        this.store = await this.opts.store;
+      } catch {
+        this.store = null;
+      }
+      const st = this.store;
+      this.snap = { ...this.snap, kind: st?.kind ?? 'none', location: st?.location ?? null, error: st ? null : (this.opts.storeError ?? 'none') };
+    }
+    const store = this.store;
     if (!store) {
       this.emit(true);
       return;
@@ -169,7 +194,7 @@ export class DownloadManager implements ModelsService {
   }
 
   async refresh(): Promise<void> {
-    const store = this.opts.store;
+    const store = this.store;
     if (!store) return;
     const [blobs, installed, imported] = await Promise.all([store.blobs(), store.installed(), store.imported()]);
     const map: Record<string, BlobInfo> = {};
@@ -192,7 +217,7 @@ export class DownloadManager implements ModelsService {
   }
 
   async download(key: string): Promise<'started' | 'needsLicence' | 'unavailable' | 'noStore'> {
-    const store = this.opts.store;
+    const store = this.store;
     if (!store || !this.snap.ready) return 'noStore';
     const m = findModel(this.snap, key);
     if (!m || !m.available || m.source !== 'catalogue') return 'unavailable';
@@ -241,7 +266,7 @@ export class DownloadManager implements ModelsService {
     this.intents.delete(key);
     this.errors.delete(key);
     this.save();
-    const store = this.opts.store;
+    const store = this.store;
     const models = allModels(this.snap);
     const others = [...this.intents.keys()];
     // What only this model needed: no installed model and no other download uses it.
@@ -252,7 +277,7 @@ export class DownloadManager implements ModelsService {
   }
 
   async remove(key: string): Promise<void> {
-    const store = this.opts.store;
+    const store = this.store;
     if (!store) return;
     const models = allModels(this.snap);
     const keep = [...this.intents.keys()].filter((k) => k !== key);
@@ -266,7 +291,7 @@ export class DownloadManager implements ModelsService {
   // ------------------------------------------------------------------ imports
 
   async importFiles(files: readonly File[], manifestRaw: unknown | null): Promise<ImportOutcome> {
-    const store = this.opts.store;
+    const store = this.store;
     if (!store || !this.snap.ready) return { kind: 'failed', reason: 'store' };
     if (this.importBusy) return { kind: 'failed', reason: 'busy' };
     const nameOf = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath?.split('/').slice(1).join('/') || f.name;
@@ -363,7 +388,7 @@ export class DownloadManager implements ModelsService {
   }
 
   private schedule(): void {
-    if (!this.opts.store || !this.started) return;
+    if (!this.store || !this.started) return;
     for (const w of this.wanted()) {
       if (this.transfers.has(w.sha)) continue;
       if (this.transfers.size >= this.concurrency) break;
@@ -375,7 +400,7 @@ export class DownloadManager implements ModelsService {
 
   /** Models asked for whose every file is complete become installed. */
   private async installFinished(): Promise<void> {
-    const store = this.opts.store;
+    const store = this.store;
     if (!store) return;
     for (const [key] of [...this.intents]) {
       const m = findModel(this.snap, key);
@@ -401,7 +426,7 @@ export class DownloadManager implements ModelsService {
   }
 
   private async transfer(sha: string, url: string, bytes: number): Promise<void> {
-    const store = this.opts.store!;
+    const store = this.store!;
     const t: Transfer = { sha, controller: new AbortController(), meter: new SpeedMeter(), verifying: false, stored: 0, received: 0 };
     this.transfers.set(sha, t);
     this.recompute();

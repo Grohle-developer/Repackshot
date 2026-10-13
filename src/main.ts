@@ -2,7 +2,9 @@
 // viewport engines (the three.js preview, and the path tracer in a pool of
 // workers once rt.wasm has loaded) and applies the optional demo / screenshot
 // URL parameters (see src/ui/README.md). The header's Fast · Full switch
-// picks which one the viewport shows; Render always uses the path tracer.
+// picks which one the viewport shows; Render always uses the path tracer: in
+// the desktop launcher's window the native one (render/native.ts), else the
+// wasm pool.
 // Sets #app[data-ready="1"] once the interface has painted and the viewport
 // has drawn its first frame.
 
@@ -13,34 +15,43 @@ import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
 import { evaluate, totalDuration } from './core/animation';
-import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './core/ai-deps';
+import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
 import { activeCamera, sameView } from './core/camera';
 import { historyLimits, startViewportMode, withProjectDefaults, type Layout, type SettingKey, type Settings, type SettingsDoc } from './core/settings';
 import { createInitialState, createStore } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
-import { detectWebHardware } from './io/hardware';
-import { workerModelStore } from './io/model-store';
+import { detectWebHardware, fromNativeHardware } from './io/hardware';
+import { nativeModelStore, workerModelStore } from './io/model-store';
 import { createFiles } from './io/files';
 import { buildExample } from './core/example';
 import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
 import { LIBRARY_STORAGE_KEY, exportLibrary, importLibrary, loadLibrary, saveLibrary } from './io/library';
-import { serializeProject } from './io/project';
+import { connectNative, type PendingModels } from './io/native';
+import { readProjectFile, serializeProject } from './io/project';
+import { createProjectFiles } from './io/project-file';
 import { openResultsStore } from './io/results';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
+import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
 import { clearThumbCache, thumbCacheBytes, ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize } from './render/tiles';
 import { mountApp } from './ui/app';
-import { exampleNames, loadExample, loadResults } from './ui/commands';
+import { exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject } from './ui/commands';
 import { downloadBlob } from './ui/dom';
 import type { AppServices, EngineConfig, ViewportPort } from './ui/ports';
 import { loadSettingsDoc, readPref, saveSettingsDoc, writePref } from './ui/prefs';
-import { L, t } from './ui/strings';
-import { createUiStore, effectiveMode } from './ui/ui-state';
+import { isaLabel, L, t } from './ui/strings';
+import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
 
 const appEl = document.getElementById('app')!;
+// In the desktop launcher's window: its token leaves the address bar now, and the heartbeat keeps
+// the launcher running while this page is open.
+const nativeReady = connectNative().then((client) => {
+  client?.startHeartbeat();
+  return client;
+});
 const params = readUrlParams(window.location.search);
 
 // The application settings (U6, core/settings.ts): one document in localStorage, migrated from the loose
@@ -136,7 +147,7 @@ const sceneSource: SceneSource = {
   tone: (state) => ({ exposureEv: state.image.exposureEv, tonemap: tonemapFor(state.image.viewTransform) }),
 };
 
-let tracer: PathTracerEngine | null = null;
+let tracer: PathTracerEngine | NativeEngine | null = null;
 /** The viewport shows the path tracer now. */
 let full = false;
 /** The viewport's last size (the path tracer may arrive after it). */
@@ -155,18 +166,34 @@ ui.subscribe(applyMode);
 
 /** The engine settings in force (Settings ▸ Render engine); configure() changes them. */
 let engineCfg: EngineConfig | null = null;
-/** The configuration the running pool was made with (size, SIMD build). */
-let poolCfg: { threads: number; simd: EngineConfig['simd'] } | null = null;
+/** The configuration the running engine was made with (backend, pool size, SIMD build). */
+let poolCfg: { backend: 'native' | 'wasm'; threads: number; simd: EngineConfig['simd'] } | null = null;
 let engineGen = 0;
 let restartTimer = 0;
 const base = new URL(import.meta.env.BASE_URL, window.location.href).href;
 const cores = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : null;
 
-/** Starts (or starts again) the path tracer with the settings: the pool's size and the wasm build. */
+const useTracer = (t: PathTracerEngine | NativeEngine, cfg: EngineConfig, info: EngineInfo) => {
+  t.setGestureResolution(cfg.gestureResolution);
+  t.setViewportLimit(cfg.viewportLimit);
+  t.mount(backdrop);
+  if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
+  t.sync(store.get(), null);
+  t.onFrame(() => tracerFrames.forEach((fn) => fn()));
+  tracer = t;
+  ui.set({ engine: 'READY', engineInfo: info });
+  applyMode();
+};
+
+/**
+ * Starts (or starts again) the path tracer with the settings. In the desktop launcher's window the native engine
+ * (all the threads the launcher started with), unless Render engine ▸ Engine says WebAssembly; elsewhere the wasm
+ * pool, with its size and build.
+ */
 async function startEngine(cfg: EngineConfig): Promise<void> {
   const gen = ++engineGen;
   if (tracer) {
-    // The old pool goes; Full shows the preview until the new one is ready.
+    // The old engine goes; Full shows the preview until the new one is ready.
     const old = tracer;
     tracer = null;
     if (full) {
@@ -178,6 +205,26 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
     old.dispose();
   }
   ui.set({ engine: 'LOADING', engineInfo: null });
+  const native = await nativeReady;
+  if (gen !== engineGen) return;
+  const simdOk = simdSupported();
+  if (native && cfg.backend !== 'WASM') {
+    const i = native.info;
+    const t = new NativeEngine(native, sceneSource, i);
+    poolCfg = { backend: 'native', threads: cfg.threads, simd: cfg.simd };
+    useTracer(t, cfg, {
+      backend: 'native',
+      version: i.engineVersion,
+      build: i.isa,
+      workers: i.threads,
+      autoThreads: i.threads,
+      simd: t.simd,
+      simdSupported: simdOk,
+      cores,
+      native: { threads: i.threads, isa: i.isa, simd: i.simd, os: i.os, arch: i.arch, engineVersion: i.engineVersion },
+    });
+    return;
+  }
   const loaded = await loadEngineModule(base, { simd: cfg.simd !== 'OFF' });
   if (gen !== engineGen) return;
   if ('error' in loaded) {
@@ -194,19 +241,8 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
       return;
     }
     const t = new PathTracerEngine(pool, sceneSource, loaded.simd);
-    t.setGestureResolution(cfg.gestureResolution);
-    t.setViewportLimit(cfg.viewportLimit);
-    t.mount(backdrop);
-    if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
-    t.sync(store.get(), null);
-    t.onFrame(() => tracerFrames.forEach((fn) => fn()));
-    tracer = t;
-    poolCfg = { threads: cfg.threads, simd: cfg.simd };
-    ui.set({
-      engine: 'READY',
-      engineInfo: { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdSupported(), cores },
-    });
-    applyMode();
+    poolCfg = { backend: 'wasm', threads: cfg.threads, simd: cfg.simd };
+    useTracer(t, cfg, { backend: 'wasm', version: t.version, build: loaded.simd ? 'rt-simd.wasm' : 'rt.wasm', workers: pool.size, autoThreads: auto, simd: loaded.simd, simdSupported: simdOk, cores });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`path tracer: ${reason}`);
@@ -214,7 +250,7 @@ async function startEngine(cfg: EngineConfig): Promise<void> {
   }
 }
 
-/** Settings ▸ Render engine and ▸ Preferences: live where it can be, a restarted pool where it must. */
+/** Settings ▸ Render engine and ▸ Preferences: live where it can be, a restarted engine where it must. */
 function configureEngine(cfg: EngineConfig): void {
   const first = engineCfg === null;
   engineCfg = cfg;
@@ -228,12 +264,16 @@ function configureEngine(cfg: EngineConfig): void {
   }
   tracer?.setGestureResolution(cfg.gestureResolution);
   tracer?.setViewportLimit(cfg.viewportLimit);
-  const needsPool = !poolCfg || poolCfg.threads !== cfg.threads || poolCfg.simd !== cfg.simd;
-  if (needsPool && (tracer || ui.get().engine !== 'LOADING')) {
-    // A field being dragged restarts the pool once, when it settles.
-    window.clearTimeout(restartTimer);
-    restartTimer = window.setTimeout(() => void startEngine(engineCfg!), 400);
-  }
+  void nativeReady.then((native) => {
+    const backend = native && cfg.backend !== 'WASM' ? 'native' : 'wasm';
+    // The native engine's threads are the launcher's (--threads): only the backend restarts it.
+    const needs = !poolCfg || poolCfg.backend !== backend || (backend === 'wasm' && (poolCfg.threads !== cfg.threads || poolCfg.simd !== cfg.simd));
+    if (needs && (tracer || ui.get().engine !== 'LOADING')) {
+      // A field being dragged restarts the engine once, when it settles.
+      window.clearTimeout(restartTimer);
+      restartTimer = window.setTimeout(() => void startEngine(engineCfg!), 400);
+    }
+  });
 }
 
 /**
@@ -253,26 +293,42 @@ function modelCatalogue(): AiModelsCatalogue {
   }
 }
 
-/** The model manager: OPFS through the model worker; none where the browser has no private file system. */
+/** The model worker: the OPFS store in the browser, and the hashing of imported files in both. */
+const spawnModelWorker = () => new Worker(new URL('./io/model-worker.ts', import.meta.url), { type: 'module' });
 const MODELS_KEY = 'models.downloads';
 const hasOpfs = typeof (navigator as Navigator & { storage?: { getDirectory?: unknown } }).storage?.getDirectory === 'function';
+
+/** What the desktop installer chose to download, read before the manager takes it (then there is no chooser). */
+let pendingAtStart: PendingModels | null = null;
+
+/**
+ * The model manager: on the desktop the launcher's data folder (its API), in the browser OPFS through the model
+ * worker; none where the browser has no private file system. It exists at once and reads "loading" until it is
+ * known whether this page is in the launcher's window.
+ */
 const modelsService = (() => {
-  const catalogue = modelCatalogue();
+  // The worker is only started when something is asked of it.
+  const local = workerModelStore(spawnModelWorker);
+  const store = nativeReady.then(async (native) => {
+    if (!native) return hasOpfs ? local : null;
+    pendingAtStart = await native.pendingModels().catch(() => null);
+    return nativeModelStore(native, local.hash);
+  });
   const manager = new DownloadManager({
-    store: hasOpfs ? workerModelStore(() => new Worker(new URL('./io/model-worker.ts', import.meta.url), { type: 'module' })) : null,
+    store,
     storeError: 'opfs',
-    catalogue,
+    catalogue: modelCatalogue(),
     fetch: (url, init) => fetch(url, init),
     persist: {
       load: () => readPref<DownloadMemory | null>(MODELS_KEY, null as unknown as DownloadMemory) ?? null,
       save: (m) => writePref(MODELS_KEY, m),
     },
-    requestPersistence: async () => (await navigator.storage?.persist?.()) ?? false,
+    // Asks the browser to keep OPFS (the launcher's folder is not the browser's to evict).
+    requestPersistence: async () => ((await nativeReady) ? true : ((await navigator.storage?.persist?.()) ?? false)),
   });
   manager.subscribe((snap) => ui.set({ models: snap }));
   ui.set({ models: manager.snapshot() });
-  void manager.start();
-  return manager;
+  return { manager, started: manager.start() };
 })();
 
 let firstFrame = false;
@@ -332,6 +388,7 @@ const files = createFiles(
   window as unknown as { showDirectoryPicker?: unknown; isSecureContext?: boolean },
 );
 
+const LAST_PROJECT_HANDLE = 'project:last';
 const services: AppServices = {
   viewport,
   async renderFrame(req) {
@@ -406,7 +463,12 @@ const services: AppServices = {
     const { importFile } = await import('./io/import');
     return importFile(file, options);
   },
-  serializeProject,
+  project: { serialize: serializeProject, open: readProjectFile },
+  projectFiles: createProjectFiles(window as never, downloadBlob, {
+    description: () => t('project.fileType'),
+    // The last project file's handle, next to the output folders' handles (General ▸ On start ▸ Last project).
+    remember: { put: async (h) => (await resultsReady).putHandle(LAST_PROJECT_HANDLE, h), get: async () => (await resultsReady).getHandle(LAST_PROJECT_HANDLE) },
+  }),
   library: {
     export: (lib) => new Blob([exportLibrary(lib)], { type: 'application/json' }),
     import: importLibrary,
@@ -424,18 +486,23 @@ const services: AppServices = {
       const px = await tracer.renderPixels({ state: example.get(), width, height, finishBy: 'TIME', maxSamples: 100000, maxSeconds: seconds, transparent: false, signal, onProgress: (p) => onProgress?.(p.seconds) });
       if (px.samples <= 0 || px.seconds <= 0) throw new Error('no samples');
       const workers = tracer.workers;
+      const engine = tracer instanceof NativeEngine ? t('viewport.native', { threads: tracer.info.threads, isa: isaLabel(tracer.info.isa) }) : t('viewport.pool', { workers, isa: tracer.simd ? t('status.isaSimd') : t('status.isaScalar') });
       return {
         width,
         height,
         samples: px.samples,
         seconds: px.seconds,
         pixelSamplesPerSecond: (px.samples * width * height) / px.seconds,
-        engine: t('viewport.pool', { workers, isa: tracer.simd ? t('status.isaSimd') : t('status.isaScalar') }),
+        engine,
       };
     },
   },
-  models: modelsService,
-  hardware: () => detectWebHardware(),
+  models: modelsService.manager,
+  async hardware(again) {
+    const native = await nativeReady;
+    // The launcher keeps what it detected; "Detect again" asks it to look again.
+    return native ? fromNativeHardware(await native.hardware(undefined, again === true)) : detectWebHardware();
+  },
   storage: {
     async estimate() {
       try {
@@ -469,7 +536,14 @@ const services: AppServices = {
     cacheBytes: thumbCacheBytes,
     clearCache: clearThumbCache,
   },
-  desktop: null,
+  // Only reached where ui.desktop is set (the launcher answered).
+  desktop: {
+    async openFolder(target) {
+      const native = await nativeReady;
+      if (!native) throw new Error('not in the desktop application');
+      await native.openFolder(target);
+    },
+  },
   async licenceText(path) {
     // Only the licence texts shipped with the build (tools/licences.mjs, tools/vendor.mjs).
     if (!/^(licences\/[A-Za-z0-9._-]+|vendor\/occt-import-js\/license\.[a-z-]+\.txt)$/.test(path)) return null;
@@ -486,6 +560,17 @@ const services: AppServices = {
 
 const app = mountApp(appEl, store, ui, services);
 void loadResults(app.ctx);
+
+// The desktop launcher's window (P2): its folders, its model store and, in a portable folder's first start, the
+// model chooser. In the browser this resolves at once to null: OPFS models, no Desktop section.
+void nativeReady.then(async (native) => {
+  if (!native) return;
+  const i = native.info;
+  ui.set({ desktop: { portable: i.portable, dataDir: i.dataDir, modelsDir: i.modelsDir, logsDir: i.logsDir, browser: i.browser, version: i.version } });
+  // The manager has read what the installer chose (if anything) once it has started.
+  await modelsService.started;
+  maybeShowModelChooser(app.ctx, { portable: i.portable, pending: !!pendingAtStart && pendingAtStart.keys.length > 0 });
+});
 
 // Whatever changes the library is kept at once; if the browser cannot keep it, the person is told.
 {
@@ -577,8 +662,10 @@ if (preview) {
 }
 
 applyUrlParams(app.ctx, params);
-// General ▸ On start: the example in Standard mode, or an empty project (Last project comes with U2).
+// General ▸ On start: the example in Standard mode, an empty project, or the last project file offered in the
+// header (an empty project until it is opened, and where the browser keeps no file handles).
 if (!params.example && startSettings['general.onStart'] === 'EXAMPLE') loadExample(app.ctx);
+if (!params.example && startSettings['general.onStart'] === 'LAST') void offerLastProject(app.ctx);
 
 // Ready for screenshots: the interface painted, the viewport drew a frame and
 // the material spheres in view are rendered (bounded wait).

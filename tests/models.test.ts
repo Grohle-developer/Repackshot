@@ -4,7 +4,10 @@
 // tested there with tests/fixtures/ai-recommend-cases.json), and the memory check.
 
 import { describe, expect, it } from 'vitest';
-import type { AiModelEntry, Recommendation } from '../src/core/ai-deps';
+import type { AiModelEntry } from '../src/data/ai-models';
+import { recommend, type Recommendation } from '../src/core/ai-recommend';
+import { AI_MODELS } from '../src/data/ai-models';
+import { fromNativeHardware } from '../src/io/hardware';
 import {
   activeModel,
   allModels,
@@ -205,6 +208,9 @@ describe('what the list shows', () => {
     expect(fitsMemory(a(), desk, 'CPU')).toEqual({ fits: false, needGiB: 16, haveGiB: 12 });
     expect(fitsMemory(a(), { ...desk, ramGiB: 8, ramCapped: true }, 'CPU')).toBeNull();
     expect(fitsMemory(a(), null, 'GPU')).toBeNull();
+    // Measured memory is compared as effective GiB, like the rule: a "6 GB" card that reads 5.7 GiB fits a 6 GiB model.
+    expect(fitsMemory(a(), { ...desk, gpus: [{ name: 'G', vramGiB: 5.7 }] }, 'GPU')).toEqual({ fits: true, needGiB: 6, haveGiB: 5.7 });
+    expect(fitsMemory(a(), { ...desk, gpus: [{ name: 'G', vramGiB: 5.5 }] }, 'GPU')?.fits).toBe(false);
   });
 
   it('states: not downloaded, kept bytes, downloading with measured numbers, damaged, ready, in use, not available', () => {
@@ -232,5 +238,47 @@ describe('what the list shows', () => {
     expect(formatBytes(6_515_955_588, 'en')).toBe('6.5 GB');
     expect(formatBytes(6_515_955_588, 'es')).toBe('6,5 GB');
     expect(formatBytes(820_000_000, 'en')).toBe('820 MB');
+  });
+});
+
+describe('the desktop launcher’s detection', () => {
+  const measured = {
+    cpu: 'Some CPU',
+    cores: 8,
+    threads: 16,
+    ramBytes: null,
+    ramGiB: 15.6,
+    ramUsableBytes: null,
+    gpus: [{ name: 'Card', vendor: 'v', vramBytes: null, vramGiB: 11.99 }],
+    device: 'gpu' as const,
+    gpuFound: true,
+    detected: true,
+    input: { device: 'gpu' as const, vramGiB: 11.99 },
+    recommendation: { rowId: 'gpu-12', recommended: 'ZIMAGE_Q8', offered: ['KLEIN4B_Q4'], skipped: [] },
+  };
+
+  it('becomes what the Hardware part shows, and the same rule gives the launcher’s recommendation', () => {
+    const hw = fromNativeHardware(measured);
+    expect(hw).toMatchObject({ detected: true, where: 'desktop', cores: 16, ramGiB: 15.6, cpu: 'Some CPU', device: 'gpu', webgpu: null });
+    expect(hw.gpus).toEqual([{ name: 'Card', vramGiB: 11.99 }]);
+    // A "12 GB" card that reads 11.99 GiB is in the 12 GiB row (MEMORY_REPORTING_FACTOR), as in recommend.rs.
+    const rec = recommend(recommendInput(hw, 'GPU'), AI_MODELS);
+    expect(rec).toEqual(measured.recommendation);
+    // A "16 GB" computer reading 15.6 GiB is in the 16 GiB CPU row.
+    expect(recommend(recommendInput(hw, 'CPU'), AI_MODELS)?.rowId).toBe('cpu-16');
+  });
+
+  it('without a GPU the launcher can use (under 4 GiB), the CPU rows decide, as for the installer', () => {
+    const hw = fromNativeHardware({ ...measured, gpus: [{ name: 'Small', vendor: 'v', vramBytes: null, vramGiB: 2 }], device: 'cpu' });
+    expect(recommendInput(hw, 'GPU')).toEqual({ device: 'cpu', ramGiB: 15.6 });
+    expect(recommend(recommendInput(hw, 'GPU'), AI_MODELS)?.rowId).toBe('cpu-16');
+    // In the browser there is no such choice: the web rows.
+    expect(recommendInput({ ...hw, where: 'web', webgpu: false }, 'GPU')).toEqual({ device: 'web', webgpu: false, maxBufferGiB: null });
+  });
+
+  it('a failed detection recommends nothing', () => {
+    const hw = fromNativeHardware({ ...measured, detected: false });
+    expect(hw.error).toBe('launcher');
+    expect(recommend(recommendInput(hw, 'GPU'), AI_MODELS)).toBeNull();
   });
 });

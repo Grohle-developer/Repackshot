@@ -444,12 +444,12 @@ try {
     await page.locator(`${row} button`, { hasText: 'Accept and download' }).click();
     await page.waitForFunction((sel) => Number(document.querySelector(sel)?.dataset.done ?? 0) > 2 * 1024 * 1024, row, { timeout: 30000 });
     const stateMid = await page.locator(`${row} .sw-model-state`).innerText();
-    // The Models part at the top of the window: the recommendation line, then the list.
-    await page.evaluate(() => {
+    // The list with the model downloading at the bottom of the window (the catalogue's models above it).
+    await page.evaluate((sel) => {
       const c = document.querySelector('.sw-content');
-      const m = document.querySelector('.sw [data-part="ai.models"]');
-      if (c && m) c.scrollTop += m.getBoundingClientRect().top - c.getBoundingClientRect().top - 8;
-    });
+      const m = document.querySelector(sel);
+      if (c && m) c.scrollTop += m.getBoundingClientRect().bottom - c.getBoundingClientRect().bottom + 16;
+    }, row);
     await page.mouse.move(5, 995);
     await page.screenshot({ path: join(SHOTS, 'settings-ai-models.png') });
     // Reload once more than one chunk (4 MiB) is stored.

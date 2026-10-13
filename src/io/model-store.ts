@@ -9,13 +9,11 @@ import { validateManifest, type BlobInfo, type ImportedModel } from '../core/mod
 import { Sha256 } from '../core/sha256';
 import { createBlobStore, memoryFs, type FinishResult, type LocalBlobStore } from './blob-store';
 import type { ModelWorkerReply, ModelWorkerRequest } from './model-protocol';
+import type { BlobStatus, NativeClient, PendingModels } from './native';
 
 export type { FinishResult };
 
-export interface PendingModels {
-  device: 'gpu' | 'cpu';
-  keys: string[];
-}
+export type { PendingModels };
 
 export interface ModelStore {
   readonly kind: 'opfs' | 'native' | 'memory';
@@ -159,36 +157,12 @@ export function workerModelStore(spawn: () => Worker): ModelStore {
 
 // ------------------------------------------------------------------ the desktop launcher
 
-/** The blob status the launcher reports (`GET /api/models/blobs/<sha256>/status`). */
-export interface NativeBlobStatus {
-  sha256: string;
-  state: 'missing' | 'partial' | 'complete';
-  contiguous: number;
-  written?: number;
-  total?: number | null;
-  damaged?: boolean;
-  actual?: string | null;
-}
+/** The parts of the launcher's client (io/native.ts) the model store uses (a test double implements just these). */
+export type NativeModelsApi = Pick<NativeClient, 'models' | 'blobStatus' | 'putChunk' | 'finishBlob' | 'deleteBlob' | 'importModel' | 'install' | 'remove' | 'pendingModels' | 'consumePendingModels'> & {
+  readonly info: Pick<NativeClient['info'], 'modelsDir'>;
+};
 
-/**
- * The parts of the launcher's client (io/native.ts, phase P2: `NativeClient`) the model store uses; the real
- * client satisfies this as it is.
- */
-export interface NativeModelsApi {
-  readonly info: { modelsDir: string };
-  models(): Promise<{ dir: string; installed: string[]; models: { key: string; files: { sha256: string; bytes: number; state: 'missing' | 'partial' | 'complete'; contiguous?: number; damaged?: boolean }[]; manifest?: unknown; source: 'catalogue' | 'imported' }[] }>;
-  blobStatus(sha: string): Promise<NativeBlobStatus>;
-  putChunk(sha: string, offset: number, chunk: BodyInit, total?: number): Promise<NativeBlobStatus>;
-  finishBlob(sha: string, bytes?: number): Promise<{ ok: true; bytes: number } | { ok: false; status: number; error: string; actual?: string; contiguous?: number }>;
-  deleteBlob(sha: string): Promise<void>;
-  importModel(key: string, manifest: unknown): Promise<void>;
-  install(key: string): Promise<{ installed: string[] }>;
-  remove(key: string, keep?: string[]): Promise<{ deleted: string[] }>;
-  pendingModels(): Promise<PendingModels | null>;
-  consumePendingModels(): Promise<void>;
-}
-
-const fromNative = (s: NativeBlobStatus): BlobInfo => ({ sha256: s.sha256, state: s.state, contiguous: s.contiguous, total: s.total ?? null, damaged: s.damaged === true, actual: s.actual ?? null });
+const fromNative = (s: BlobStatus): BlobInfo => ({ sha256: s.sha256, state: s.state, contiguous: s.contiguous, total: s.total ?? null, damaged: s.damaged === true, actual: s.actual ?? null });
 
 /**
  * The desktop's store: the launcher writes the chunks into its data folder, checks each blob with its own

@@ -1,0 +1,101 @@
+# Release: on a `v*` tag, build the desktop release exactly as `npm run release` does locally
+# (packaging/release.mjs, phase P2) and attach the three packages and their checksums to the
+# GitHub release of that tag:
+#
+#   Repackshot-<v>-windows-x64-portable.zip
+#   Repackshot-<v>-linux-x64-portable.tar.gz
+#   Repackshot-<v>-windows-x64-setup.exe
+#   SHA256SUMS.txt
+#
+# The Windows launcher is cross-compiled with mingw-w64 and the installer is built with NSIS, so
+# one Linux runner builds everything. The archives use the time of the tagged commit, so the
+# files are the same as a local `npm run release` of that commit. Run by hand
+# (workflow_dispatch) it builds and uploads the packages as an artifact without releasing.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, x86_64-pc-windows-gnu, x86_64-unknown-linux-musl
+
+      - name: Packaging tools (mingw-w64 with windres, NSIS 3, musl)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mingw-w64 nsis musl-tools
+          makensis -VERSION
+          x86_64-w64-mingw32-windres --version | head -1
+
+      - name: The tag is the version in package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME but package.json says $version"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Build the release
+        env:
+          # The icon is rendered by a Chromium; the runner image has Google Chrome.
+          REPACKSHOT_CHROMIUM: /usr/bin/google-chrome
+        run: npm run release
+
+      - name: Smoke test (Linux portable; the .exe needs Windows or Wine)
+        run: node packaging/smoke.mjs out/release/build/linux/Repackshot-*/repackshot
+
+      - name: Checksums
+        working-directory: out/release
+        run: sha256sum -c SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repackshot-release
+          path: |
+            out/release/*.zip
+            out/release/*.tar.gz
+            out/release/*-setup.exe
+            out/release/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          notes="docs/release-notes/$tag.md"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            if [ -f "$notes" ]; then
+              gh release create "$tag" --verify-tag --title "Repackshot ${tag#v}" --notes-file "$notes"
+            else
+              gh release create "$tag" --verify-tag --title "Repackshot ${tag#v}" --generate-notes
+            fi
+          fi
+          gh release upload "$tag" --clobber \
+            out/release/*.zip out/release/*.tar.gz out/release/*-setup.exe out/release/SHA256SUMS.txt

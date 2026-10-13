@@ -1,0 +1,23 @@
+[package]
+name = "rt-app"
+description = "The Repackshot desktop launcher: serves the interface on 127.0.0.1, opens it in an app window, renders natively with rt-core, stores AI models and detects the hardware. std only."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[lib]
+name = "rt_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "repackshot"
+path = "src/main.rs"
+
+[dependencies]
+rt-core = { path = "../rt-core" }
+
+[dev-dependencies]
+# Parity: the launcher's native renderer must give exactly the film of `rt`.
+rt-cli = { path = "../rt-cli" }

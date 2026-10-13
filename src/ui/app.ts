@@ -220,6 +220,27 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
     if (e.defaultPrevented) return;
     onKey(ctx, e);
   });
+
+  // Files dropped anywhere in the window that the viewport did not take: a browser would navigate to them (and
+  // leave the project behind); a project opens and models go to the import sheet.
+  const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false;
+  document.addEventListener('dragover', (e) => {
+    if (!e.defaultPrevented && hasFiles(e)) e.preventDefault();
+  });
+  document.addEventListener('drop', (e) => {
+    if (e.defaultPrevented || !hasFiles(e)) return;
+    e.preventDefault();
+    const { files, handles } = cmd.readDrop(e.dataTransfer);
+    cmd.dropFiles(ctx, files, handles);
+  });
+
+  // Closing the window or the tab with unsaved changes: the browser asks (the text is the browser's own), unless
+  // General ▸ Confirm before closing is off.
+  window.addEventListener('beforeunload', (e) => {
+    if (!cmd.shouldConfirmClose(ctx)) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
   installTooltips();
 
   const painted = new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));

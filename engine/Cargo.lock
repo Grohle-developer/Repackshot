@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "rt-app"
+version = "0.3.0"
+dependencies = [
+ "rt-cli",
+ "rt-core",
+]
+
+[[package]]
 name = "rt-cli"
 version = "0.3.0"
 dependencies = [

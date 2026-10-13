@@ -203,6 +203,129 @@ describe('store', () => {
   });
 });
 
+describe('revision and the unsaved changes (phase U2)', () => {
+  const edit = (store: ReturnType<typeof createStore>, ev: number) => store.dispatch({ type: 'image/set', patch: { exposureEv: ev }, label: 'Exposure' });
+
+  it('a counter, not a comparison: a change moves it, volatile actions and no-ops do not', () => {
+    const store = createStore(createInitialState());
+    const r0 = store.revision();
+    store.dispatch({ type: 'meta/theme', theme: 'light' });
+    store.dispatch({ type: 'scene/select', ids: [], mode: 'set', level: 'PART' });
+    edit(store, 0); // already 0: nothing changes
+    expect(store.revision()).toBe(r0);
+    edit(store, 1);
+    const r1 = store.revision();
+    expect(r1).not.toBe(r0);
+    edit(store, 2);
+    expect(store.revision()).not.toBe(r1);
+  });
+
+  it('undoing back to the saved state leaves no dot; going past it, or editing after it, does', () => {
+    const store = createStore(createInitialState());
+    edit(store, 1);
+    edit(store, 2);
+    store.dispatch({ type: 'meta/saved' });
+    expect(store.get().meta.dirty).toBe(false);
+    edit(store, 3);
+    expect(store.get().meta.dirty).toBe(true);
+    store.undo(); // back to what was saved
+    expect(store.get().meta.dirty).toBe(false);
+    store.undo(); // before it
+    expect(store.get().meta.dirty).toBe(true);
+    store.redo(); // the saved state again
+    expect(store.get().meta.dirty).toBe(false);
+    store.redo();
+    expect(store.get().meta.dirty).toBe(true);
+    // A different change after undoing is not the saved state, even though the history has the same length.
+    store.undo();
+    expect(store.get().meta.dirty).toBe(false);
+    edit(store, 9);
+    expect(store.get().meta.dirty).toBe(true);
+    store.undo();
+    expect(store.get().meta.dirty).toBe(false);
+  });
+
+  it('a project that was never changed is clean, also after undo and redo of nothing', () => {
+    const store = createStore({ ...createInitialState(), meta: { ...createInitialState().meta, dirty: true } });
+    expect(store.get().meta.dirty).toBe(false);
+    edit(store, 1);
+    store.undo();
+    expect(store.get().meta.dirty).toBe(false);
+  });
+
+  it('a save names the revision it wrote: changes made while the file was being written stay unsaved', () => {
+    const store = createStore(createInitialState());
+    edit(store, 1);
+    const written = store.revision();
+    edit(store, 2); // the person kept working during the dialog
+    store.dispatch({ type: 'meta/saved', revision: written });
+    expect(store.get().meta.dirty).toBe(true);
+    store.undo(); // back to what the file holds
+    expect(store.get().meta.dirty).toBe(false);
+    store.redo();
+    expect(store.get().meta.dirty).toBe(true);
+    store.dispatch({ type: 'meta/saved' });
+    expect(store.get().meta.dirty).toBe(false);
+  });
+
+  it('a gesture and a transaction are one step for the revision too', () => {
+    const store = createStore(createInitialState());
+    store.dispatch({ type: 'meta/saved' });
+    for (let i = 1; i <= 5; i++) store.dispatch({ type: 'image/set', patch: { exposureEv: i }, gesture: 'drag', label: 'Exposure' });
+    expect(store.get().meta.dirty).toBe(true);
+    store.undo();
+    expect(store.get().meta.dirty).toBe(false);
+    store.transaction('Two edits', () => {
+      edit(store, 1);
+      store.dispatch({ type: 'image/set', patch: { bloom: 0.3 } });
+    });
+    expect(store.get().meta.dirty).toBe(true);
+    store.undo();
+    expect(store.get().meta.dirty).toBe(false);
+    expect(store.get().image.exposureEv).toBe(0);
+  });
+
+  it('a gesture that goes on after a save is a change after it, also when undone and redone', () => {
+    const store = createStore(createInitialState());
+    store.dispatch({ type: 'image/set', patch: { exposureEv: 1 }, gesture: 'drag', label: 'Exposure' });
+    store.dispatch({ type: 'meta/saved' }); // saved in the middle of the drag
+    expect(store.get().meta.dirty).toBe(false);
+    store.dispatch({ type: 'image/set', patch: { exposureEv: 2 }, gesture: 'drag', label: 'Exposure' });
+    expect(store.get().meta.dirty).toBe(true);
+    store.undo();
+    expect(store.get().image.exposureEv).toBe(0);
+    expect(store.get().meta.dirty).toBe(true);
+    store.redo();
+    expect(store.get().image.exposureEv).toBe(2);
+    expect(store.get().meta.dirty).toBe(true);
+  });
+
+  it('reset (New, Open) starts a clean baseline with a revision of its own and no history', () => {
+    const store = createStore(createInitialState());
+    edit(store, 1);
+    const before = store.revision();
+    store.reset({ ...createInitialState(), meta: { ...createInitialState().meta, dirty: true, name: 'Opened' } });
+    expect(store.get().meta).toMatchObject({ name: 'Opened', dirty: false });
+    expect(store.revision()).not.toBe(before);
+    expect(store.history()).toEqual({ undo: [], redo: [] });
+    edit(store, 2);
+    expect(store.get().meta.dirty).toBe(true);
+    store.undo();
+    expect(store.get().meta.dirty).toBe(false);
+  });
+
+  it('volatile state moving with an undo does not lose the dot: language and theme stay, dirty follows the revision', () => {
+    const store = createStore(createInitialState());
+    edit(store, 1);
+    store.dispatch({ type: 'meta/lang', lang: 'es' });
+    store.dispatch({ type: 'meta/saved' });
+    edit(store, 2);
+    store.dispatch({ type: 'meta/theme', theme: 'light' });
+    store.undo();
+    expect([store.get().meta.lang, store.get().meta.theme, store.get().meta.dirty]).toEqual(['es', 'light', false]);
+  });
+});
+
 describe('boot state (Standard mode)', () => {
   it('starts with the GENERIC studio already built', () => {
     const s = createInitialState();

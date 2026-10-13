@@ -58,7 +58,11 @@ export function positionsBounds(positions: ArrayLike<number>): Box {
   return { min, max };
 }
 
-/** Stores a mesh under `id` (replacing any previous one) and returns its ref. */
+/**
+ * Stores a mesh under `id` (replacing any previous one) and returns its ref. An id names one geometry for as
+ * long as it is registered: the preview and the render workers cache by id, so never register different data
+ * under an id that a state may still refer to.
+ */
 export function registerMesh(id: MeshId, data: MeshData): MeshRef {
   registry.set(id, data);
   return meshRef(id, data);
@@ -835,6 +839,29 @@ export function ensureMesh(id: MeshId, make: () => { data: MeshData; source?: Ui
 /** Input triangle of each triangle of a derived mesh, or null when they are the same triangles in the same order. */
 export function triangleSource(id: MeshId): Uint32Array | null {
   return triangleSources.get(id) ?? null;
+}
+
+/** Gives a mesh its triangle map back (a project file keeps it, `triangleSource`). A map of the identity is not kept. */
+export function setTriangleSource(id: MeshId, source: Uint32Array | null): void {
+  if (source && source.some((s, i) => s !== i)) triangleSources.set(id, source);
+  else triangleSources.delete(id);
+}
+
+/** Ids of every registered mesh. */
+export function meshIds(): MeshId[] {
+  return [...registry.keys()];
+}
+
+/**
+ * Forgets every mesh that is not in `keep` (and the triangle maps with them). Opening or starting a project
+ * replaces the state and clears the history, so the meshes of the old one are unreachable.
+ */
+export function retainMeshes(keep: ReadonlySet<MeshId>): void {
+  for (const id of [...registry.keys()]) {
+    if (keep.has(id)) continue;
+    registry.delete(id);
+    triangleSources.delete(id);
+  }
 }
 
 /** A short, stable hash of a list of indices (FNV-1a, 32 bits) for naming derived meshes. */

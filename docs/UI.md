@@ -118,7 +118,9 @@ Escritorio, mínimo 1280 px de ancho. Cinco regiones fijas:
 De izquierda a derecha:
 
 1. **Menú de aplicación** (icono de tres líneas + "Repackshot"): Nuevo,
-   Abrir proyecto, Guardar proyecto (`.repack.json`), Importar modelo,
+   Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack.json`,
+   `Ctrl/⌘ S`, en el mismo archivo si ya se guardó), Guardar proyecto
+   como… (`Ctrl/⌘ ⇧ S`), Importar modelo,
    Exportar imagen, separador, Idioma (Inglés / Español), Tema (Oscuro /
    Claro / Sistema), **Ajustes…** (`Ctrl/⌘ ,`), separador, Guía, Atajos
    de teclado, Acerca de.
@@ -596,7 +598,9 @@ de teclado* del menú):
 | `Ctrl/⌘ K` | Paleta de comandos |
 | `Ctrl/⌘ Z` / `Ctrl/⌘ ⇧ Z` | Deshacer / Rehacer |
 | `Ctrl/⌘ I` | Importar modelo |
-| `Ctrl/⌘ S` | Guardar proyecto |
+| `Ctrl/⌘ O` | Abrir proyecto |
+| `Ctrl/⌘ S` | Guardar proyecto (en el mismo archivo) |
+| `Ctrl/⌘ ⇧ S` | Guardar proyecto como… |
 | `Ctrl/⌘ ⏎` | Ventana de render |
 | `Ctrl/⌘ ⇧ ⏎` | Render con los últimos ajustes, sin abrir la ventana |
 | `F` | Encuadrar selección (o todo) |

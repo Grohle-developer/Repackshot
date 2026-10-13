@@ -8,7 +8,8 @@
 // everything else works. Every size comes from the data, every speed and
 // time left from the bytes that arrived (io/downloads.ts).
 
-import { recommend, type AiRecommendRow, type Recommendation } from '../../core/ai-deps';
+import { recommend, type Recommendation } from '../../core/ai-recommend';
+import type { AiRecommendRow } from '../../data/ai-models';
 import {
   activeModel,
   allModels,
@@ -477,7 +478,7 @@ function modelsBlock(ctx: Ctx, scope: Scope): HTMLElement {
     },
     (a, b) => a.every((x, i) => x === b[i]),
   );
-  return h('section', { class: 'sw-block', 'data-block': 'models', 'data-part': 'ai.models', 'aria-labelledby': 'sw-b-models' }, h('h4', { class: 'sw-block-title aux', id: 'sw-b-models' }, t('set.block.models')), where, recLine, h('div', { 'data-row': 'ai.models' }, list), importRow);
+  return h('section', { class: 'sw-block', 'data-block': 'models', 'data-part': 'ai.models', 'aria-labelledby': 'sw-b-models' }, h('h4', { class: 'sw-block-title aux', id: 'sw-b-models' }, t('set.block.models')), where, recLine, h('div', { 'data-row': 'ai.models' }, chooserBanner(ctx, scope), list), importRow);
 }
 
 // ------------------------------------------------------------------ Hardware
@@ -494,15 +495,18 @@ function hardwareBlock(ctx: Ctx, scope: Scope): HTMLElement {
         return;
       }
       const info = hw.info;
-      const gib = (v: number | null) => (v === null ? t('set.hw.notReported') : t('set.hw.gib', { n: formatNumber(v, getLang(), 1) }));
+      const missing = info?.where === 'desktop' ? t('set.hw.notDetected') : t('set.hw.notReported');
+      const gib = (v: number | null) => (v === null ? missing : t('set.hw.gib', { n: formatNumber(v, getLang(), 1) }));
       const rows: HTMLElement[] = [];
       if (!info || !info.detected) rows.push(h('p', { class: 'sw-warn', role: 'status' }, t('set.hw.failed', { reason: info?.error ?? '–' })));
       if (info) {
         const g = info.gpus[Math.min(u.settings['ai.gpu'], Math.max(0, info.gpus.length - 1))];
-        rows.push(infoRow('hw.gpu', t('set.hw.gpu'), g?.name ?? t('set.hw.notReported')));
+        if (info.cpu) rows.push(infoRow('hw.cpu', t('set.hw.cpu'), info.cpu));
+        rows.push(infoRow('hw.gpu', t('set.hw.gpu'), g?.name ?? missing));
+        if (info.where === 'desktop' && info.device === 'cpu' && u.settings['ai.device'] === 'GPU') rows.push(h('p', { class: 'note' }, t('set.hw.noUsableGpu')));
         rows.push(infoRow('hw.vram', t('set.hw.vram'), gib(g?.vramGiB ?? null)));
-        rows.push(infoRow('hw.ram', t('set.hw.ram'), info.ramGiB === null ? t('set.hw.notReported') : info.ramCapped ? t('set.hw.ramCapped', { n: formatNumber(info.ramGiB, getLang(), 0) }) : gib(info.ramGiB)));
-        rows.push(infoRow('hw.cores', t('set.hw.cores'), info.cores === null ? t('set.hw.notReported') : String(info.cores)));
+        rows.push(infoRow('hw.ram', t('set.hw.ram'), info.ramGiB === null ? missing : info.ramCapped ? t('set.hw.ramCapped', { n: formatNumber(info.ramGiB, getLang(), 0) }) : gib(info.ramGiB)));
+        rows.push(infoRow('hw.cores', t('set.hw.cores'), info.cores === null ? missing : String(info.cores)));
         if (info.where === 'web') {
           rows.push(infoRow('hw.webgpu', t('set.hw.webgpu'), info.webgpu === null ? t('set.hw.notReported') : info.webgpu ? t('common.yes') : t('common.no')));
           rows.push(infoRow('hw.maxBuffer', t('set.hw.maxBuffer'), info.maxBufferBytes === null ? t('set.hw.notReported') : size(info.maxBufferBytes)));
@@ -515,6 +519,7 @@ function hardwareBlock(ctx: Ctx, scope: Scope): HTMLElement {
       if (aux) aux.style.display = aux.textContent ? '' : 'none';
       rows.push(recRow);
       if (info?.where === 'web' && info.webgpu === false) rows.push(h('p', { class: 'note' }, t('set.hw.webCannot')));
+      rows.push(h('div', { class: 'sw-inline' }, h('button', { type: 'button', class: 'btn btn-sm', 'data-action': 'hw-again', onclick: () => void cmd.detectHardware(ctx, true) }, t('set.hw.again'))));
       body.replaceChildren(...rows);
     },
     (a, b) => a.every((x, i) => x === b[i]),
@@ -529,9 +534,13 @@ function guardBlock(ctx: Ctx, scope: Scope, rows: RowMeta[]): HTMLElement {
   return det;
 }
 
-function aiTop(ctx: Ctx, scope: Scope): HTMLElement {
+function aiTop(ctx: Ctx): HTMLElement {
   void cmd.detectHardware(ctx);
-  const note = h('p', { class: 'note sw-ai-soon' }, t('set.ai.soon'));
+  return h('p', { class: 'note sw-ai-soon' }, t('set.ai.soon'));
+}
+
+/** The desktop portable's first start (AI-POST.md §2.2): at the top of the list, which is where the deep link lands. */
+function chooserBanner(ctx: Ctx, scope: Scope): HTMLElement {
   const chooser = h('div', { class: 'sw-chooser', role: 'region', 'aria-label': t('set.ai.chooserTitle') });
   scope.watch(
     (_s, u) => u.settingsWindow?.chooser === true,
@@ -548,7 +557,7 @@ function aiTop(ctx: Ctx, scope: Scope): HTMLElement {
       );
     },
   );
-  return h('div', null, note, chooser);
+  return chooser;
 }
 
 export const AI_HOOKS: SettingsHooks = {
