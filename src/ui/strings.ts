@@ -1868,6 +1868,8 @@ export const WEB_ONLY_STRINGS: readonly StringKey[] = [
   'set.hw.rowWebGpu',
   'set.hw.rowWebNone',
   'set.hw.webCannot',
+  // The AI's reason for a browser without WebGPU: only the web build can have it (X4).
+  'rw.aiWhy.NO_WEBGPU',
 ];
 
 /**

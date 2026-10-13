@@ -1,5 +1,6 @@
-// A scene with known geometry for the AI passes (phase X4): three boxes (one turned and stretched, one with two
-// materials on its faces, one hidden) and a camera with depth of field. The browser page draws it with three.js;
+// A scene with known geometry for the AI passes (phase X4): four boxes (one turned and stretched, one with two
+// materials on its faces, one hidden, and a twin that shares the first one's material, so that a part id and a
+// material id are never the same number) and a camera with depth of field. The browser page draws it with three.js;
 // the test builds the same state in Node and ray-casts it with the engine's own camera rules.
 
 import { instanceFromPreset } from '../../src/core/materials';
@@ -51,7 +52,7 @@ const node = (id: string, kind: SceneNode['kind'], parent: string | null, childr
 });
 
 /** Ids of the parts, for the tests. */
-export const PASS_SCENE_PARTS = { turned: 'turned', faces: 'faces', hidden: 'hidden' } as const;
+export const PASS_SCENE_PARTS = { turned: 'turned', faces: 'faces', hidden: 'hidden', twin: 'twin' } as const;
 
 export function passScene(width = 192, height = 108): ProjectState {
   const materials: ProjectState['materials'] = {};
@@ -64,11 +65,13 @@ export function passScene(width = 192, height = 108): ProjectState {
   colour('mGreen', 'ABS_GLOSS', [0.1, 0.6, 0.2]);
   colour('mBlue', 'ABS_GLOSS', [0.1, 0.2, 0.7]);
   const nodes: Record<NodeId, SceneNode> = {
-    model: node('model', 'MODEL', null, ['turned', 'faces', 'hidden'], [0, 0, 0]),
+    model: node('model', 'MODEL', null, ['turned', 'faces', 'hidden', 'twin'], [0, 0, 0]),
     // A box turned 25° about Z and stretched along X.
     turned: { ...node('turned', 'PART', 'model', [], [-45, 0, 20], [0, 0, 25], [1.4, 1, 1]), mesh: registerMesh('x4:turned', boxMesh(50, 40, 40)), material: 'mRed', smooth: true },
     // Its +X and -X faces carry another material: two instances in the engine's scene.
     faces: { ...node('faces', 'PART', 'model', [], [35, 5, 25], [0, 0, -15]), mesh: registerMesh('x4:faces', boxMesh(40, 40, 50)), material: 'mGreen', faceMaterials: [{ start: 0, count: 4, material: 'mBlue' }], smooth: true },
+    // A small box in front that carries the same material as the first: instance 4, material 1.
+    twin: { ...node('twin', 'PART', 'model', [], [-5, -40, 10], [0, 0, 35]), mesh: registerMesh('x4:twin', boxMesh(22, 22, 20)), material: 'mRed', smooth: true },
     // Hidden: neither the engine nor the passes draw it.
     hidden: { ...node('hidden', 'PART', 'model', [], [0, -60, 15], [0, 0, 0], [1, 1, 1], false), mesh: registerMesh('x4:hidden', boxMesh(30, 30, 30)), material: 'mRed', smooth: true },
   };

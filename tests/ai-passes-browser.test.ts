@@ -99,8 +99,9 @@ describe.skipIf(!executablePath)('the three.js passes against the engine’s sce
 
   it('the ids are the engine’s: RSB instance index + 1 and material index + 1, and no pixel is blended', () => {
     const { instances } = projectScene(state, { width: W, height: H, maxSamples: 1, maxSeconds: 0 }).ids;
-    // Three parts in the project, one hidden; the second has two materials on its faces: three instances.
-    expect(instances.map((i) => state.scene.nodes[i.node].name)).toEqual(['turned', 'faces', 'faces']);
+    // Four parts in the project, one hidden; the second has two materials on its faces; the last shares the first's material.
+    expect(instances.map((i) => state.scene.nodes[i.node].name)).toEqual(['turned', 'faces', 'faces', 'twin']);
+    expect(instances.map((i) => i.materialId)).toEqual([1, 2, 3, 1]);
     const part = get('partId');
     const material = get('materialId');
     // Only whole ids ever appear (a blended edge would show as a number between two ids).
@@ -118,7 +119,7 @@ describe.skipIf(!executablePath)('the three.js passes against the engine’s sce
     // Edge pixels may fall either side of a triangle edge, but only a few of them do.
     expect(wrong).toBeLessThan(W * H * 0.01);
     // Every part is seen, the hidden one is not, and the background is 0.
-    for (const id of [1, 2, 3]) expect(part.includes(id), `instance ${id}`).toBe(true);
+    for (const id of [1, 2, 3, 4]) expect(part.includes(id), `instance ${id}`).toBe(true);
     expect(part.includes(0)).toBe(true);
     // Each instance carries the material of its group.
     const byInstance = new Map<number, number>();

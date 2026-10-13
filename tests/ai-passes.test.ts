@@ -137,10 +137,12 @@ describe('the ids of the passes against the engine’s scene', () => {
     expect(ids.instances).toHaveLength(scene.instances!.length);
     ids.instances.forEach((inst, i) => expect(inst.materialId).toBe(scene.instances![i].materialId + 1));
     // The hidden part is not an instance; the part with two materials on its faces is two.
-    expect(ids.instances.map((i) => state.scene.nodes[i.node].name)).toEqual(['turned', 'faces', 'faces']);
+    expect(ids.instances.map((i) => state.scene.nodes[i.node].name)).toEqual(['turned', 'faces', 'faces', 'twin']);
     // The first group of the part with face materials is the one with the face material (it holds the first triangles).
     const node = (name: string) => Object.values(state.scene.nodes).find((n) => n.name === name)!;
-    expect(ids.instances.map((i) => i.material)).toEqual([node('turned').material, node('faces').faceMaterials![0].material, node('faces').material]);
+    expect(ids.instances.map((i) => i.material)).toEqual([node('turned').material, node('faces').faceMaterials![0].material, node('faces').material, node('twin').material]);
+    // The twin is another instance of the first's material: part ids and material ids are two different numberings.
+    expect(ids.instances.map((i) => i.materialId)).toEqual([1, 2, 3, 1]);
   });
 
   it('are found by part and material key, 0 for what the engine does not draw', () => {
@@ -152,6 +154,8 @@ describe('the ids of the passes against the engine’s scene', () => {
     expect(index.partId(byName('turned'), red)).toBe(1);
     expect(index.partId(byName('faces'), blue)).toBe(2);
     expect(index.partId(byName('faces'), green)).toBe(3);
+    expect(index.partId(byName('twin'), red)).toBe(4);
+    expect(index.materialId(4)).toBe(1);
     expect(index.partId(byName('hidden'), red)).toBe(0);
     expect(index.partId(byName('turned'), green)).toBe(0);
     expect(index.materialId(3)).toBe(scene.instances![2].materialId + 1);
@@ -165,7 +169,7 @@ describe('the ids of the passes against the engine’s scene', () => {
     const turned = Object.values(state.scene.nodes).find((n) => n.name === 'turned')!.id;
     const hidden = { ...state, scene: { ...state.scene, nodes: { ...state.scene.nodes, [turned]: { ...state.scene.nodes[turned], visible: false } } } };
     const after = projectScene(hidden, { width: 192, height: 108, maxSamples: 1, maxSeconds: 0 });
-    expect(after.ids.instances.map((i) => state.scene.nodes[i.node].name)).toEqual(['faces', 'faces']);
+    expect(after.ids.instances.map((i) => state.scene.nodes[i.node].name)).toEqual(['faces', 'faces', 'twin']);
     expect(after.ids.instances).toHaveLength(after.scene.instances!.length);
   });
 });

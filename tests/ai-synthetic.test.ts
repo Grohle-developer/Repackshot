@@ -154,6 +154,16 @@ describe('the synthetic service', () => {
     }
   });
 
+  it('with Light at 0 the other aspects do not light the shadows, and with it on they do', async () => {
+    const { image } = scene();
+    // The dark box in the shadow (x 60..88, y 30..58): what Light lifts, a warm tint and a style hardly touch the green.
+    const green = (img: LinearImage) => img.rgba[(45 * W + 70) * 4 + 1] / image.rgba[(45 * W + 70) * 4 + 1];
+    const others = { ...OFF, bounce: 100, style: 'CINEMATIC' as const, styleStrength: 100 };
+    const without = green((await run({ ...others, light: 0 })).image);
+    expect(without).toBeLessThan(1.1);
+    expect(green((await run({ ...others, light: 100 })).image)).toBeGreaterThan(without + 0.08);
+  });
+
   it('changes more with a higher control and with a higher Intervention', async () => {
     const { image } = scene();
     const at = async (patch: Partial<AiPipelineSettings>) => change((await run({ ...OFF, ...patch })).image, image);

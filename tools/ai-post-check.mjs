@@ -110,6 +110,15 @@ async function scrollToAi(page) {
   await page.waitForTimeout(250);
 }
 
+/** A screenshot of the window with only this section in it, as tall as it is (the window itself scrolls). */
+async function shootSection(page, file) {
+  const style = await page.addStyleTag({ content: '.rw{height:auto!important;max-height:none!important}.rw-body{overflow:visible!important}.rw-body>.section:not([data-section="rw.ai"]){display:none!important}.rw-ai-preview{position:static!important}' });
+  await page.waitForTimeout(400);
+  await page.locator('.rw').screenshot({ path: file });
+  await style.evaluate((el) => el.remove());
+  await page.waitForTimeout(200);
+}
+
 /** Records the texts the preview's status line takes (every change, even within one task). */
 async function watchState(page) {
   await page.evaluate(() => {
@@ -234,6 +243,8 @@ try {
     // The size of the preview is the job's shape at 512 px.
     const sizeLine = (await page.locator(`${section} .rw-ai-state`).textContent())?.trim();
     check('b_preview_size', sizeLine === '512 × 288 px', { sizeLine });
+    // Screenshot (dark): the section as it opens, with the defaults.
+    await shootSection(page, join(SHOTS, 'ai-section-dark.png'));
 
     // (c) No preview while a slider is dragged; one when it is released.
     await watchState(page);
@@ -300,10 +311,6 @@ try {
     await page.waitForTimeout(1200);
     await waitReady(page);
 
-    // Screenshot (dark): the section as it is, the preview on the right.
-    await scrollToAi(page);
-    await page.waitForTimeout(400);
-    await page.locator('.rw').screenshot({ path: join(SHOTS, 'ai-section-dark.png') });
     const darkColours = await chromatic(page, '.rw');
     check('h_achromatic_dark', darkColours.length === 0, { found: darkColours.slice(0, 6) });
 
@@ -327,6 +334,15 @@ try {
     await page.waitForFunction(() => /\d+ × \d+ px/.test(document.querySelector('.rw-ai-state').textContent), null, { timeout: 60000 });
 
     // (g) A job with AI: two files, the viewer with the divider and the report, both thumbnails in the queue.
+    // A look that shows: warm, with more light and a stronger hand.
+    await scrollToAi(page);
+    await page.locator(`${section} [data-ai="style"] select`).selectOption('WARM');
+    for (const [key, value] of [['intervention', 80], ['light', 80], ['styleStrength', 70]]) {
+      await page.locator(`${section} [data-ai="${key}"] .num`).dblclick();
+      await page.locator(`${section} [data-ai="${key}"] .num input`).fill(String(value));
+      await page.locator(`${section} [data-ai="${key}"] .num input`).press('Enter');
+    }
+    await page.waitForTimeout(800);
     await page.locator('.rw .seg button', { hasText: 'PNG' }).click();
     await page.locator('.rw .num[aria-label="Samples"]').dblclick();
     await page.locator('.rw .num[aria-label="Samples"] input').fill('16');
@@ -361,7 +377,7 @@ try {
     await page.locator('.rv-actions .btn[data-save="ai"]').click();
     await page.waitForTimeout(800);
     check('g_save_ai_image', downloads.length === before + 1 && /_AI\.png$/.test(downloads.at(-1)), { downloads: downloads.slice(before) });
-    await page.waitForTimeout(300);
+    await page.waitForFunction(() => document.querySelectorAll('.toast').length === 0, null, { timeout: 15000 });
     await page.screenshot({ path: join(SHOTS, 'ai-results-viewer.png') });
     const viewerColours = await chromatic(page, '.rv');
     check('h_viewer_achromatic_dark', viewerColours.length === 0, { found: viewerColours.slice(0, 6) });
@@ -373,7 +389,7 @@ try {
     const queuePics = await page.locator('.queue-row .queue-pics img').count();
     const historyPair = await page.locator('.history-item.history-pair img').count();
     check('g_queue_two_thumbnails', queuePics === 2 && historyPair === 2, { queuePics, historyPair });
-    await page.waitForTimeout(300);
+    await page.waitForFunction(() => document.querySelectorAll('.toast').length === 0, null, { timeout: 15000 });
     await page.screenshot({ path: join(SHOTS, 'ai-queue.png'), clip: { x: 0, y: 560, width: 1600, height: 440 } });
     check('b_no_errors_dark', errors.length === 0, { errors });
     await context.close();
@@ -387,9 +403,7 @@ try {
     await page.locator('.rw [data-ai-switch]').click();
     await page.waitForSelector(`${section} .rw-ai-frame .split canvas`, { timeout: 60000 });
     await waitReady(page);
-    await scrollToAi(page);
-    await page.waitForTimeout(400);
-    await page.locator('.rw').screenshot({ path: join(SHOTS, 'ai-section-light.png') });
+    await shootSection(page, join(SHOTS, 'ai-section-light.png'));
     const lightColours = await chromatic(page, '.rw');
     check('h_achromatic_light', lightColours.length === 0, { found: lightColours.slice(0, 6) });
     // Everything asked for at once: the guard may have to step in; the viewer says how far.
@@ -412,6 +426,7 @@ try {
     await page.waitForSelector('.rv[data-ready="1"]', { timeout: 240000 });
     await page.waitForTimeout(800);
     const reportLight = (await page.locator('.rv-report').textContent())?.trim();
+    await page.waitForFunction(() => document.querySelectorAll('.toast').length === 0, null, { timeout: 15000 });
     await page.screenshot({ path: join(SHOTS, 'ai-results-light.png') });
     const viewerLight = await chromatic(page, '.rv');
     check('h_viewer_achromatic_light', viewerLight.length === 0, { found: viewerLight.slice(0, 6), reportLight });

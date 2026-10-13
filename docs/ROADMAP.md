@@ -1597,7 +1597,7 @@ Dependencia nueva anotada en `ARCHITECTURE.md` §1.
 **Criterio.** El mismo de X3c con el servicio web; sin WebGPU, el
 interruptor queda deshabilitado con el motivo.
 
-## X4 · Interfaz del post-procesado — **Sonnet**
+## X4 · Interfaz del post-procesado — **Sonnet** — hecha
 
 **Qué.** `AI-POST.md` §4 y §7.5: interruptor, configurador de seis
 controles, fichas de protecciones, *Otra variación*, vista previa en modo
@@ -1616,6 +1616,97 @@ modelo) hasta que X3c conecte el real; mientras, el interruptor dice
 sintético); la vista previa no se recalcula durante un arrastre; los
 pases de three.js coinciden con los del motor en ids y profundidad en una
 escena de prueba; capturas de la sección y del visor con el divisor.
+
+**Hecho.** *Store* (§7.5): `RenderSettings.ai` es `{ enabled, previewFullEngine }
+& AiPipelineSettings` con `DEFAULT_AI`; `normaliseAi` deja los controles en
+enteros 0..100, un estilo desconocido en `NATURAL` y la semilla en u32, y
+devuelve el mismo objeto cuando nada cambia; un proyecto antiguo (`{ enabled }`)
+se abre con los valores por defecto; cada control es una acción de `render/set`
+deshacible (arrastrar un control, un paso), *Otra variación* cambia la semilla
+(`nextSeed`, congruencial sin repetición), los trabajos copian los ajustes y
+la intervención por defecto de Ajustes llega a los proyectos nuevos. **Ventana
+de render** (`ui/panels/ai-post.ts`): interruptor con la línea del modelo en
+uso (datos del gestor de Ajustes), motivo de `AiUnavailableReason` cuando no
+puede, y abrir Ajustes cuando falta modelo o motor; los seis controles con su
+frase, las seis fichas con candado sin interruptor y *Otra variación*; vista
+previa del modo Rápido a 384–512 px con el divisor de U5, **al soltar** (el
+cerebro está en `ui/ai-preview.ts`, sin DOM: `hold`/`touch`/`release`, el
+fotograma se reutiliza mientras solo cambian los controles, una vista previa
+vieja se abandona), tiempo **medido** alrededor de la llamada a la tubería,
+la nota del modo Rápido y la opción del motor completo. **Pases con three.js**
+(`render/preview-passes.ts`, `PreviewEngine.aiFrame`): albedo, normal en el
+mundo con Z arriba, profundidad a lo largo del eje, ids de pieza y de material
+(índice RSB + 1, que `projectScene` entrega ahora en `ids`) empaquetados en
+bytes en un blanco de 8 bits sin filtro ni *multisample*, y el círculo de
+confusión de la lente fina (`core/lens-coc.ts`). **Servicio sintético**
+(`ai/synthetic.ts`): una ganancia suave sobre la imagen del motor (la luz sube
+las sombras, los rebotes calientan las bajas frecuencias, el estilo tiñe, el
+desgaste no añade nada, la semilla solo ondula), todo a 0 devuelve la entrada
+bit a bit, informe de la guarda **medido** (tamaño, píxeles fuera, desplazamiento
+de bordes, SSIM de la banda alta, nitidez por mosaico, ΔE₀₀ por material con
+CIEDE2000) y la regla de reintentos de §7.2 (`LIMITED`, `REJECTED`). Solo corre
+con `?ai=synthetic`; sin él el interruptor dice *próximamente*. **Visor y
+cola**: el trabajo guarda la imagen del motor y, al lado, la de la IA
+(`…_AI.png`); el resultado conserva las dos y el informe (`ResultMeta.ai`,
+solo campos añadidos); el visor abre *Render | IA* con el divisor, la línea
+*Comprobado: …*, *La IA se limitó al N %* o la frase del rechazo, y guarda
+cada imagen por separado; la cola y el historial enseñan las dos miniaturas.
+**Almacenamiento de la segunda imagen**: un cuarto parámetro opcional `ai` de
+`ResultsStore.add` y `ai?` en lo que devuelve `get`; IndexedDB la guarda en el
+mismo registro de blobs y el escritorio, por el asiento de P3e, como
+`<datos>/results/<id>.ai.<ext>` con `PUT`/`GET /api/store/results/<id>/ai`
+(cambio pequeño en `rt-app/src/appdata.rs`, su prueba y el README del
+*crate*); ningún acceso nuevo al almacenamiento del navegador en el
+escritorio. Tests: 1.390 de vitest (98 de X4, 6 de ellos en un Chromium con SwiftShader
+que se salta donde no hay navegador: tres.js contra el rayo de la CPU con las
+reglas del motor) y una prueba nueva del lanzador (`rt-app`, 9 de `appdata`);
+8 mutaciones comprobadas; 25 comprobaciones del navegador en
+`tools/ai-post-check.mjs` (y siguen verdes las de U5 y U6).
+Capturas: `docs/ui/ai-section-dark.png`, `ai-section-light.png`,
+`ai-results-viewer.png`, `ai-results-light.png` y `ai-queue.png`.
+
+**No encajó con el plan.** (1) `AI_AVAILABLE` ya no lo lee el *store*:
+`patchSettings` dejaba `enabled` en falso mientras la constante lo fuera, y
+con un servicio que dice `available` eso no se sostiene; el interruptor y la
+cola miran `AiPostService.status()` (el test de U5 *«video and AI stay off»*
+cambió a *«video stays off…»*). (2) Hasta X3c la entrada de la IA en la cola
+es **INLINE**: se decodifica la imagen de 8 bits que ya se ha guardado
+(`display ?? file`) y los pases se dibujan con three.js al tamaño del
+trabajo, en lugar de la fuente `RENDER` que guardará el lanzador con la
+imagen lineal; por eso la imagen de la IA sale con la calidad de 8 bits, aun
+en un trabajo EXR o PNG de 16 bits. La vista previa trata la imagen del modo
+Rápido (con su curva de tono) como luz lineal decodificada con sRGB; qué curva
+ve el modelo real lo decide X3c. (3) El `coc` sigue `Camera::generate_ray`
+(sensor a la distancia focal, apertura `focal/fstop`, plano de enfoque a
+`focusDist`): la huella de un píxel en el plano de enfoque es
+`sensor/ladoLargo × focusDist/focal`; la lente fina exacta cambia `focusDist`
+por `focusDist − focal`. **X2 debe emitir la misma fórmula.** (4) Los pases de
+three.js son una aproximación del contrato: el albedo es el color base del
+primer impacto (no sigue los rebotes especulares), el suelo y los paneles de
+luz no cuentan (fondo 0 / +∞), las dos caras de un triángulo cuentan y la
+normal se da orientada hacia quien mira; X2 tiene que decidir lo mismo o se
+anota la diferencia. (5) *ΔE máx* es el mayor ΔE₀₀ **medio** de un material, y
+*geometría ✓* reúne bordes, píxeles fuera y detalle de banda alta; si la guarda
+real reparte las comprobaciones de otro modo, cambia `reportItems`. (6) El
+servicio sintético usa como límites los valores de fábrica de Ajustes ▸
+Avanzado, no los de X1. (7) Las animaciones no pasan por la IA (el interruptor
+queda deshabilitado en *Animación*, con *próximamente*); la imagen de la IA se
+guarda sola junto a la del motor, con el sufijo `_AI`, para que un lote la
+tenga sin abrir cada resultado. (8) `numberField` y `slider` ganan `onHold` y
+`onRelease`, y el deslizador **sigue ahora al valor al deshacer** aunque tenga
+el foco (antes la perilla se quedaba donde estaba mientras el campo cambiaba:
+lo encontró la comprobación del navegador, que ahora lo vigila). (9) El
+*prompt* es un hueco (`AiPort.scenePrompt`: vacío y el negativo fijo de §3.2)
+hasta que X3a traiga `src/ai/prompt.ts`; `rw.aiWhy.NO_WEBGPU` entra en
+`WEB_ONLY_STRINGS` (nombra el navegador y solo puede darse en la web).
+
+**Espera a X3c.** Conectar el servicio real (hoy `main.ts` elige entre el
+sintético y `notBuiltService`), cambiar la entrada de la cola a la fuente
+`RENDER` con los pases que guarda el lanzador, el progreso por mosaico en el
+trabajo (hoy se ignora `onProgress` en la cola), el *prompt* de X3a, quitar
+`AI_AVAILABLE`, y que las dos imágenes del historial salgan de la imagen
+lineal del motor. Y X2: los mismos ids, la misma profundidad y el mismo `coc`
+que dibuja la vista previa (el test del navegador es la vara de medir).
 
 ## X5 · Ajustes y modelos — absorbida en U6
 
