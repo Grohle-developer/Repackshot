@@ -27,10 +27,15 @@ interface DirHandle {
 export interface FilesService {
   readonly canChooseFolder: boolean;
   readonly canOpenFolder: boolean;
+  /** The desktop launcher writes the files (io/desktop-files.ts); absent in the browser. */
+  readonly desktop?: boolean;
+  /** Results saved to Downloads can be shown in the file manager (the desktop). */
+  readonly canOpenDownloads?: boolean;
   chooseFolder(): Promise<{ id: string; name: string } | null>;
   ensureAccess(id: string): Promise<boolean>;
   save(dest: Destination, name: string, blob: Blob): Promise<'FOLDER' | 'DOWNLOAD'>;
-  openFolder(id: string): Promise<void>;
+  /** Shows the folder (`downloads`: the Downloads folder), with the file `name` saved there selected when known. */
+  openFolder(id: string, name?: string): Promise<void>;
 }
 
 type Picker = (opts?: { id?: string; mode?: 'read' | 'readwrite' }) => Promise<DirHandle>;

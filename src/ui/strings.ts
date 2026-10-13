@@ -1634,6 +1634,33 @@ const TABLE = {
   'toast.copied': ['Copied {material}', 'Copiado {material}'],
   'toast.nothingToPaste': ['Copy a material first', 'Copia antes un material'],
   'toast.oneMaterial': ['The selection carries more than one material', 'La selección lleva más de un material'],
+
+  // The system's dialogs on the desktop (P3b): titles, file types and why one did not open.
+  'dialog.chooseFolder': ['Choose the output folder', 'Elegir la carpeta de salida'],
+  'dialog.confirmFolder': ['Choose the output folder again', 'Vuelve a elegir la carpeta de salida'],
+  'dialog.folderItem': ['Folder selection', 'Selección de carpeta'],
+  'dialog.openProject': ['Open project', 'Abrir proyecto'],
+  'dialog.saveProject': ['Save project', 'Guardar proyecto'],
+  'dialog.allFiles': ['All files', 'Todos los archivos'],
+  'dialog.importModel': ['Import model', 'Importar modelo'],
+  'dialog.models': ['3D models', 'Modelos 3D'],
+  'dialog.importLibrary': ['Import library', 'Importar biblioteca'],
+  'dialog.exportLibrary': ['Export library', 'Exportar biblioteca'],
+  'dialog.library': ['Repackshot library', 'Biblioteca de Repackshot'],
+  'dialog.exportScene': ['Export scene', 'Exportar escena'],
+  'dialog.scene': ['Repackshot scene (RSB)', 'Escena de Repackshot (RSB)'],
+  'dialog.exportImage': ['Export image', 'Exportar imagen'],
+  'dialog.pngImage': ['PNG image', 'Imagen PNG'],
+  'dialog.importAiFiles': ['Import AI model files', 'Importar archivos de un modelo de IA'],
+  'dialog.importAiFolder': ['Import an AI model folder', 'Importar la carpeta de un modelo de IA'],
+  'dialog.aiFiles': ['AI model files', 'Archivos de modelo de IA'],
+  'dialog.err.noDialog': ['Files cannot be chosen: install zenity (GNOME) or kdialog (KDE)', 'No se pueden elegir archivos: instala zenity (GNOME) o kdialog (KDE)'],
+  'dialog.err.busy': ['A file dialog is already open', 'Ya hay un diálogo de archivos abierto'],
+  'dialog.err.failed': ['The file dialog could not open', 'No se ha podido abrir el diálogo de archivos'],
+  'dialog.saveFailed': ['Could not save {name}: {reason}', 'No se ha podido guardar {name}: {reason}'],
+  'rw.folderNoteDesktop': ['Written into {name}', 'Se escribe en {name}'],
+  'rw.folderDeniedDesktop': ['The folder was not chosen again: the images go to Downloads', 'No se ha vuelto a elegir la carpeta: las imágenes van a Descargas'],
+  'project.unsavedClose': ['Save changes to “{name}” before closing?', '¿Guardar los cambios de «{name}» antes de cerrar?'],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type StringKey = keyof typeof TABLE;

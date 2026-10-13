@@ -36,6 +36,13 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Attrs |
       else el.setAttribute(k, String(v));
     }
   }
+  // Our fields: no autofill suggestions, no spelling underline; images and links are not dragged out of the window
+  // unless a component says so (the browser's own interface; ui/guards.ts).
+  if ((tag === 'input' || tag === 'textarea') && el instanceof HTMLElement) {
+    if (!el.hasAttribute('autocomplete')) el.setAttribute('autocomplete', 'off');
+    if (!el.hasAttribute('spellcheck')) el.setAttribute('spellcheck', 'false');
+  }
+  if ((tag === 'img' || tag === 'a') && el instanceof HTMLElement && !el.hasAttribute('draggable')) el.setAttribute('draggable', 'false');
   for (const c of children) append(el, c);
   return el;
 }

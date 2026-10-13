@@ -367,6 +367,7 @@ pub fn reason(status: u16) -> &'static str {
         404 => "Not Found",
         405 => "Method Not Allowed",
         409 => "Conflict",
+        410 => "Gone",
         411 => "Length Required",
         413 => "Content Too Large",
         416 => "Range Not Satisfiable",
