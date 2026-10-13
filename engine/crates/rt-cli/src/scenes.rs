@@ -1,6 +1,7 @@
-//! The E5 scenes of the contact sheet: glass, coat, anisotropy, emitters, the daylight sky and an
-//! HDRI, built here in code (they are engine fixtures, not catalogue setups), and the procedural
-//! studio HDRI that `rt --write-studio-hdri` writes (`tests/fixtures/studio.hdr`).
+//! The E5 and E5c scenes of the contact sheet: glass, coat, anisotropy, emitters, the daylight
+//! sky (classic, then physical against classic) and an HDRI, built here in code (they are engine
+//! fixtures, not catalogue setups), and the procedural studio HDRI that `rt --write-studio-hdri`
+//! writes (`tests/fixtures/studio.hdr`).
 
 use crate::sheet::TOTAL_IRRADIANCE;
 use rt_core::bitmap::Bitmap;
@@ -9,8 +10,8 @@ use rt_core::fmath;
 use rt_core::math::Vec3;
 use rt_core::scene::{
     Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Light, LightKind, Material,
-    Mesh, RenderSettings, Scene, Transform, BACKGROUND_COLOR, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY,
-    MATERIAL_EMISSIVE, MATERIAL_FLAG_LIGHT, MATERIAL_FLAG_THIN, MATERIAL_GLASS,
+    Mesh, RenderSettings, Scene, SkyModel, Transform, BACKGROUND_COLOR, LIGHT_FLAG_CAMERA,
+    LIGHT_FLAG_GLOSSY, MATERIAL_EMISSIVE, MATERIAL_FLAG_LIGHT, MATERIAL_FLAG_THIN, MATERIAL_GLASS,
 };
 
 /// Size of the procedural studio HDRI.
@@ -513,12 +514,24 @@ pub fn lamp(size: (u32, u32)) -> Scene {
     }
 }
 
-/// One of the catalogue's three SKY setups (src/data/light-setups.ts): its sun at `azimuth` and
-/// `elevation` degrees (azimuth 0 behind the camera, negative to its left), 0.545 degrees wide, of
-/// colour temperature `kelvin`, over the daylight sky whose sun it is. The example part on a
-/// visible floor (the example's floor quad is left out: it would lie on the floor plane), seen low
-/// enough to show the sky.
+/// One of the catalogue's three SKY setups (src/data/light-setups.ts) as E5 rendered it, under the
+/// classic sky: [`sky_setup_with`] the classic model and turbidity 3.
 pub fn sky_setup(size: (u32, u32), azimuth: f32, elevation: f32, kelvin: f32) -> Scene {
+    sky_setup_with(size, azimuth, elevation, kelvin, SkyModel::Classic, 3.0)
+}
+
+/// A sun at `azimuth` and `elevation` degrees (azimuth 0 behind the camera, negative to its
+/// left), 0.545 degrees wide, of colour temperature `kelvin`, over the daylight sky `model` of
+/// turbidity `turbidity` whose sun it is. The example part on a visible floor (the example's floor
+/// quad is left out: it would lie on the floor plane), seen low enough to show the sky.
+pub fn sky_setup_with(
+    size: (u32, u32),
+    azimuth: f32,
+    elevation: f32,
+    kelvin: f32,
+    model: SkyModel,
+    turbidity: f32,
+) -> Scene {
     let mut scene = rt_core::example::scene();
     let meshes = scene.geometry.meshes().to_vec();
     let instances = scene
@@ -560,7 +573,8 @@ pub fn sky_setup(size: (u32, u32), azimuth: f32, elevation: f32, kelvin: f32) ->
         zenith: 0.85,
         strength: 0.6,
         background_mode: 0,
-        sky_turbidity: 3.0,
+        sky_turbidity: turbidity,
+        sky_model: model,
         sun_azimuth_deg: fmath::atan2(to_sun.y, to_sun.x) / fmath::DEG_TO_RAD,
         sun_elevation_deg: elevation,
         ..Environment::default()
@@ -659,6 +673,75 @@ pub fn e5_scenes(size: (u32, u32)) -> Vec<E5Scene> {
             sample_factor: 2,
         },
     ]
+    .into_iter()
+    .chain(e5c_scenes(size))
+    .collect()
+}
+
+/// The E5c comparison of the sheet: the same setups under the physical sky and the classic one.
+pub fn e5c_scenes(size: (u32, u32)) -> Vec<E5Scene> {
+    let pair = |key: [&'static str; 2],
+                label: [&'static str; 2],
+                azimuth: f32,
+                elevation: f32,
+                kelvin: f32,
+                turbidity: f32| {
+        [(SkyModel::Physical, 0), (SkyModel::Classic, 1)].map(|(model, i)| E5Scene {
+            key: key[i],
+            label: label[i],
+            scene: sky_setup_with(size, azimuth, elevation, kelvin, model, turbidity),
+            sample_factor: 1,
+        })
+    };
+    [
+        pair(
+            ["e5c-sunrise-physical", "e5c-sunrise-classic"],
+            [
+                "Sunrise (2 degrees, 2200 K, behind the part), physical sky, turbidity 3",
+                "Sunrise (2 degrees, 2200 K, behind the part), classic sky, turbidity 3",
+            ],
+            160.0,
+            2.0,
+            2200.0,
+            3.0,
+        ),
+        pair(
+            ["e5c-golden-physical", "e5c-golden-classic"],
+            [
+                "Golden hour (8 degrees, 2900 K, from behind), physical sky, turbidity 3",
+                "Golden hour (8 degrees, 2900 K, from behind), classic sky, turbidity 3",
+            ],
+            -120.0,
+            8.0,
+            2900.0,
+            3.0,
+        ),
+        pair(
+            ["e5c-noon-physical", "e5c-noon-classic"],
+            [
+                "Noon (65 degrees, 5500 K), physical sky, turbidity 3",
+                "Noon (65 degrees, 5500 K), classic sky, turbidity 3",
+            ],
+            -55.0,
+            65.0,
+            5500.0,
+            3.0,
+        ),
+        pair(
+            ["e5c-hazy-physical", "e5c-hazy-classic"],
+            [
+                "Hazy afternoon (25 degrees, 4500 K, behind the part), physical sky, turbidity 7",
+                "Hazy afternoon (25 degrees, 4500 K, behind the part), classic sky, turbidity 7",
+            ],
+            140.0,
+            25.0,
+            4500.0,
+            7.0,
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 #[cfg(test)]
@@ -704,7 +787,17 @@ mod tests {
             }
         }
         let scenes = e5_scenes((32, 24));
-        assert_eq!(scenes.len(), 7);
+        assert_eq!(scenes.len(), 7 + 8);
+        // The E5 sky setups keep the classic sky; the E5c pairs differ only in the model.
+        assert_eq!(sun_sky((32, 24)).environment.sky_model, SkyModel::Classic);
+        let e5c = e5c_scenes((32, 24));
+        for pair in e5c.chunks(2) {
+            assert_eq!(pair[0].scene.environment.sky_model, SkyModel::Physical);
+            assert_eq!(pair[1].scene.environment.sky_model, SkyModel::Classic);
+            let mut same = pair[1].scene.clone();
+            same.environment.sky_model = SkyModel::Physical;
+            assert_eq!(same, pair[0].scene);
+        }
         // The sky scenes leave the example's floor quad out: it would lie on the visible floor plane.
         let sky = sun_sky((32, 24));
         assert_eq!(sky.geometry.instances().len(), 2);

@@ -262,6 +262,8 @@ function checkState(raw: RawState): ProjectState {
     if (r !== null && !(isObject(r) && typeof r.id === 'string' && typeof r.name === 'string' && Number.isInteger(r.width) && Number.isInteger(r.height))) throw damaged(`environment.${slot} is damaged`);
   }
   if (!isObject(env.skySun) || !Number.isFinite(env.skySun.az) || !Number.isFinite(env.skySun.el)) throw damaged('environment.skySun is damaged');
+  // E5c: a project saved before the physical sky has no skyModel and opens with the default (filled in above).
+  if (env.skyModel !== 'PHYSICAL' && env.skyModel !== 'CLASSIC') throw damaged('environment.skyModel is damaged');
   return s;
 }
 

@@ -5,6 +5,7 @@
 
 import type { Label, Lang, RGBA, StudioPreset } from '../data/types';
 import type { ImageRef } from './images';
+import type { SkyModel } from './sky';
 import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
@@ -51,6 +52,8 @@ export interface EnvironmentState {
   backplateFit: 'FILL' | 'FIT' | 'STRETCH';
   /** Haze of the sky (kind SKY): 2 very clear, 3 clear, 6 hazy. */
   skyTurbidity: number;
+  /** The sky's daylight model (E5c): PHYSICAL (ours, the default; projects saved before it open with it too) or CLASSIC (Preetham, E5's). */
+  skyModel: SkyModel;
   /** Where the sky's sun is when the rig has no sun light: degrees, camera-relative like a light's. */
   skySun: { az: number; el: number };
 }
@@ -191,6 +194,7 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
       backplate: null,
       backplateFit: 'FILL',
       skyTurbidity: 3,
+      skyModel: 'PHYSICAL',
       skySun: { az: -55, el: 55 },
     },
     camera: { active: 'cam1', cameras: { cam1: makeCamera('cam1', '', partSizeMm) } },

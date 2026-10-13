@@ -107,6 +107,7 @@ export function readEnvironment(p: DataView): RsbEnvironment {
     sunAzimuthDeg: 0,
     sunElevationDeg: 45,
     backplateRect: [0, 0, 1, 1],
+    skyModel: 0,
   };
   // E5 fields.
   if (c.remaining >= 40) {
@@ -118,6 +119,8 @@ export function readEnvironment(p: DataView): RsbEnvironment {
     e.sunElevationDeg = c.f32();
     e.backplateRect = [c.f32(), c.f32(), c.f32(), c.f32()];
   }
+  // E5c: the sky model (absent: 0, the physical sky).
+  if (c.remaining >= 4) e.skyModel = c.u32();
   return e;
 }
 

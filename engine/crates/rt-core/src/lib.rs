@@ -39,6 +39,7 @@ pub mod scene;
 #[allow(unsafe_code)]
 pub mod simd;
 pub mod sky;
+pub mod sky_table;
 pub mod warp;
 
 /// Parses a decimal component of the crate version at compile time.

@@ -1,0 +1,19 @@
+[package]
+name = "rt-sky"
+description = "Repackshot's own daylight sky, offline: a spectral Monte Carlo simulator of a spherical stratified atmosphere and the Levenberg-Marquardt fit of the sky model's coefficients to it. std only."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "rt_sky"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rt-sky"
+path = "src/main.rs"
+
+[dependencies]
+# The engine's sky (the fitted model in f32, the table it reads) and its PNG writer.
+rt-core = { path = "../rt-core" }

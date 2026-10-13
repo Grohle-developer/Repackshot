@@ -199,7 +199,7 @@ pub fn scene() -> Scene {
 /// in blue glass coloured by absorption, the floor lacquered (a clear coat), the small sphere in
 /// brushed metal (anisotropic), a thin glass card and a cut-out card in front, lit by an HDRI (a
 /// small Radiance file, so its reader is part of the hash) and shown over a background image.
-/// `sky` lights it with the daylight sky and a sun instead.
+/// `sky` lights it with the daylight sky of E5 (the classic model) and a sun instead.
 pub fn e5_scene(sky: bool) -> Scene {
     use crate::bitmap::{Bitmap, FORMAT_HDR, FORMAT_RGB8};
     use crate::scene::{BACKGROUND_BACKPLATE, MATERIAL_FLAG_THIN, MATERIAL_GLASS, NO_BITMAP};
@@ -308,6 +308,7 @@ pub fn e5_scene(sky: bool) -> Scene {
     };
     if sky {
         scene.environment.kind = EnvKind::Sky;
+        scene.environment.sky_model = crate::scene::SkyModel::Classic;
         scene.environment.background_mode = 0;
         scene.environment.sun_azimuth_deg = -60.0;
         scene.environment.sun_elevation_deg = 35.0;
@@ -321,6 +322,24 @@ pub fn e5_scene(sky: bool) -> Scene {
             ..Light::default()
         }];
     }
+    scene
+}
+
+/// The E5 sky example under the physical sky of E5c (`render.rs` pins its hash; `rt
+/// --write-e5c-example` writes it for `tools/wasm-parity.mjs`): a low sun, 12 degrees up, and a
+/// turbidity between two of the table's knots, so the elevation curves and the blend are both in
+/// the hash.
+pub fn e5c_scene() -> Scene {
+    let mut scene = e5_scene(true);
+    let e = &mut scene.environment;
+    e.sky_model = crate::scene::SkyModel::Physical;
+    e.sky_turbidity = 2.5;
+    e.sun_azimuth_deg = -60.0;
+    e.sun_elevation_deg = 12.0;
+    let (se, ce) = crate::fmath::sin_cos(12.0 * crate::fmath::DEG_TO_RAD);
+    let (sa, ca) = crate::fmath::sin_cos(-60.0 * crate::fmath::DEG_TO_RAD);
+    scene.lights[0].direction = -Vec3::new(ce * ca, ce * sa, se);
+    scene.lights[0].color = Rgb::new(1.0, 0.78, 0.6);
     scene
 }
 

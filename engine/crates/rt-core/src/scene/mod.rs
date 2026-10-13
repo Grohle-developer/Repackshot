@@ -339,6 +339,36 @@ impl EnvKind {
     }
 }
 
+/// The daylight model of the sky (`ENVR.sky_model`, E5c).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum SkyModel {
+    /// 0, the default (and what a file without the field means): the physical sky of
+    /// [`crate::sky::PhysicalSky`], fitted to our own atmosphere simulation.
+    #[default]
+    Physical,
+    /// 1: the classic sky of Preetham, Shirley and Smits ([`crate::sky::Preetham`]).
+    Classic,
+}
+
+impl SkyModel {
+    /// Decodes the RSB value: 1 classic, anything else (0, and values a newer writer may add)
+    /// the physical sky.
+    pub fn from_u32(value: u32) -> SkyModel {
+        match value {
+            1 => SkyModel::Classic,
+            _ => SkyModel::Physical,
+        }
+    }
+
+    /// The RSB value of this model.
+    pub fn to_u32(self) -> u32 {
+        match self {
+            SkyModel::Physical => 0,
+            SkyModel::Classic => 1,
+        }
+    }
+}
+
 /// `ENVR.background_mode` 0: camera rays that escape see the environment.
 pub const BACKGROUND_ENVIRONMENT: u32 = 0;
 /// `ENVR.background_mode` 1: camera rays that escape see `background_color`.
@@ -398,6 +428,8 @@ pub struct Environment {
     pub backplate_fit: u32,
     /// Turbidity of the sky (kind [`EnvKind::Sky`]): 2 very clear, 3 clear, 6 hazy.
     pub sky_turbidity: f32,
+    /// The sky's daylight model (E5c).
+    pub sky_model: SkyModel,
     /// Azimuth of the sky's sun in degrees, from +X towards +Y.
     pub sun_azimuth_deg: f32,
     /// Elevation of the sky's sun above the horizon in degrees.
@@ -436,6 +468,7 @@ impl Default for Environment {
             backplate_map: NO_BITMAP,
             backplate_fit: BACKPLATE_FILL,
             sky_turbidity: crate::sky::DEFAULT_TURBIDITY,
+            sky_model: SkyModel::Physical,
             sun_azimuth_deg: 0.0,
             sun_elevation_deg: 45.0,
             backplate_rect: [0.0, 0.0, 1.0, 1.0],

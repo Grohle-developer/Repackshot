@@ -1,12 +1,33 @@
-//! The procedural daylight sky of `ENVR.kind` 2: the analytic model of A. J. Preetham, P. Shirley
-//! and B. Smits, "A Practical Analytic Model for Daylight", SIGGRAPH 1999 (formulas and the
-//! coefficient table of its Appendix A.2, public literature). The preferred model is L. Hošek and
-//! A. Wilkie's (SIGGRAPH 2012; reference implementation v1.4a, 3-clause BSD), whose coefficient
-//! tables were not ported in E5: this model is the fallback the phase allows, behind the same
-//! interface (`Preetham::new`, `radiance`), so the other one can replace it.
+//! The procedural daylight sky of `ENVR.kind` 2, in two models (`ENVR.sky_model`).
 //!
-//! The sky's luminance `Y` and chromaticity `x`, `y` in a direction at angle `θ` from the zenith
-//! and `γ` from the sun follow the distribution of R. Perez, R. Seals and J. Michalsky (1993),
+//! **Physical** (the default, E5c): [`PhysicalSky`], the functional form of L. Hošek and
+//! A. Wilkie, "An Analytic Model for Full Spectral Sky-Dome Radiance", ACM TOG 31(4), 2012, with
+//! coefficients of our own: they were fitted (`engine/crates/rt-sky`) to skies simulated by our
+//! own spectral radiative transfer through a spherical, stratified atmosphere (molecules, aerosols
+//! by turbidity, ozone, a Lambertian ground), not taken from the paper's reference implementation
+//! or its tables. The radiance in a direction at angle `θ` from the zenith and `γ` from the Sun
+//! is, per linear Rec. 709 channel,
+//!
+//! ```text
+//! L = F(θ, γ) · L_M
+//! F(θ, γ) = (1 + A e^(B / (cos θ + 0.01))) · (C + D e^(E γ) + F cos² γ + G χ(H, γ) + I √cos θ)
+//! χ(H, γ) = (1 + cos² γ) / (1 + H² - 2 H cos γ)^(3/2)
+//! ```
+//!
+//! where `A..I` and `L_M` are quintic Bézier curves (six control points, [`crate::sky_table`])
+//! over `x = (elevation / 90°)^(1/3)`, for each integer turbidity from 1 to 10 and ground albedo 0
+//! and 1; the sky is linear between them (the radiances are blended, not the coefficients). The
+//! ground albedo is [`GROUND_ALBEDO`]. `1 + H² - 2 H cos γ` is evaluated as `(1 - H)² + H |v - s|²`
+//! and `γ` as `atan2(|v × s|, v · s)` (`v`, `s` the unit vectors towards the view and the Sun),
+//! which stay accurate near the Sun. Sun elevations from 0 to 90 degrees.
+//!
+//! **Classic**: [`Preetham`], the analytic model of A. J. Preetham, P. Shirley and B. Smits, "A
+//! Practical Analytic Model for Daylight", SIGGRAPH 1999 (formulas and the coefficient table of
+//! its Appendix A.2, public literature), the sky of E5, which old scenes may ask for.
+//!
+//! The classic sky's luminance `Y` and chromaticity `x`, `y` in a direction at angle `θ` from the
+//! zenith and `γ` from the sun follow the distribution of R. Perez, R. Seals and J. Michalsky
+//! (1993),
 //!
 //! ```text
 //! F(θ, γ) = (1 + A e^(B / cos θ)) (1 + C e^(D γ) + E cos² γ)
@@ -17,21 +38,23 @@
 //! paper's fits in `T` and the sun's zenith angle `θs`. `xyY` goes to CIE XYZ and then to linear
 //! Rec. 709 RGB (the matrix of IEC 61966-2-1 for D65).
 //!
-//! **Scale.** The model's absolute level (kilocandela per square metre) has no meaning next to the
-//! recipes' lights, which were tuned against the studio dome. So the sky is scaled to give a
-//! horizontal surface the same irradiance as the dome of the same `ENVR` values would
-//! (`2π (horizon / 6 + zenith / 3)` times `strength`): switching a setup between the dome and
-//! the sky keeps its fill light, and only its colour and distribution change. The sun disc is the
-//! scene's `SUN` light, not part of the sky; the sky only puts the sun's glow where that light is.
+//! **Scale.** Neither model's absolute level means anything next to the recipes' lights, which
+//! were tuned against the studio dome. So the sky is scaled to give a horizontal surface the same
+//! irradiance as the dome of the same `ENVR` values would (`2π (horizon / 6 + zenith / 3)` times
+//! `strength`): switching a setup between the dome and the sky keeps its fill light, and only its
+//! colour and distribution change. The sun disc is the scene's `SUN` light, not part of the sky;
+//! the sky only puts the sun's glow where that light is.
 //!
 //! **Below the horizon** the sky is a neutral ground of radiance `floor · strength`, like the
-//! dome's floor. The sun's elevation is clamped to `[1°, 90°]` (the model does not describe
-//! twilight). The sky is tabulated once per scene into a [`SKY_WIDTH`] x [`SKY_HEIGHT`]
-//! equirectangular image ([`crate::environment`] looks it up and importance-samples it).
+//! dome's floor. The classic sky clamps the sun's elevation to `[1°, 90°]` (it does not describe
+//! twilight), the physical one to `[0°, 90°]`. The sky is tabulated once per scene into a
+//! [`SKY_WIDTH`] x [`SKY_HEIGHT`] equirectangular image ([`crate::environment`] looks it up and
+//! importance-samples it).
 
 use crate::color::Rgb;
 use crate::fmath;
 use crate::math::Vec3;
+use crate::sky_table::{COEFFICIENTS, RADIANCE};
 
 /// Columns of the tabulated sky.
 pub const SKY_WIDTH: u32 = 256;
@@ -39,6 +62,139 @@ pub const SKY_WIDTH: u32 = 256;
 pub const SKY_HEIGHT: u32 = 128;
 /// Turbidity used when the file gives none (a clear day).
 pub const DEFAULT_TURBIDITY: f32 = 3.0;
+/// Ground albedo of the physical sky (0.2, the usual default ground reflectance of daylight and
+/// solar engineering).
+pub const GROUND_ALBEDO: f32 = 0.2;
+
+/// Coefficients per Bézier control point of the physical sky (`A` to `I`).
+const PARAMS: usize = 9;
+/// Bézier control points per curve.
+const CONTROL: usize = 6;
+
+/// One knot of the physical sky's table at the sun's elevation, with its weight.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Knot {
+    weight: f32,
+    /// `A..I` per channel.
+    coefficients: [[f32; PARAMS]; 3],
+    /// `L_M` per channel.
+    radiance: [f32; 3],
+}
+
+/// The physical sky (E5c) for one sun position, turbidity and ground albedo, before scaling.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PhysicalSky {
+    /// Unit direction towards the sun.
+    pub sun: Vec3,
+    /// The (up to four) knots the sky blends: two turbidities times two albedos.
+    knots: Vec<Knot>,
+}
+
+/// The six quintic Bernstein polynomials at `x`.
+fn bernstein(x: f32) -> [f32; CONTROL] {
+    let y = 1.0 - x;
+    let (x2, y2) = (x * x, y * y);
+    let (x3, y3) = (x2 * x, y2 * y);
+    [
+        y3 * y2,
+        5.0 * x * y2 * y2,
+        10.0 * x2 * y3,
+        10.0 * x3 * y2,
+        5.0 * x2 * x2 * y,
+        x3 * x2,
+    ]
+}
+
+impl PhysicalSky {
+    /// The sky with the sun `elevation_deg` above the horizon (clamped to `[0, 90]`) at
+    /// `azimuth_deg` (measured from +X towards +Y, Z up), turbidity `turbidity` (clamped to
+    /// `[1, 10]`) and ground albedo `albedo` (clamped to `[0, 1]`).
+    pub fn new(azimuth_deg: f32, elevation_deg: f32, turbidity: f32, albedo: f32) -> PhysicalSky {
+        let t = if turbidity.is_finite() {
+            turbidity.clamp(1.0, 10.0)
+        } else {
+            DEFAULT_TURBIDITY
+        };
+        let elevation = if elevation_deg.is_finite() {
+            elevation_deg.clamp(0.0, 90.0)
+        } else {
+            45.0
+        };
+        let azimuth = if azimuth_deg.is_finite() {
+            azimuth_deg
+        } else {
+            0.0
+        };
+        let albedo = if albedo.is_finite() {
+            albedo.clamp(0.0, 1.0)
+        } else {
+            GROUND_ALBEDO
+        };
+        let (se, ce) = fmath::sin_cos(elevation * fmath::DEG_TO_RAD);
+        let (sa, ca) = fmath::sin_cos(azimuth * fmath::DEG_TO_RAD);
+        let sun = Vec3::new(ce * ca, ce * sa, se);
+        let x = fmath::powf(elevation / 90.0, 1.0 / 3.0);
+        let b = bernstein(x);
+        let tt = t - 1.0;
+        let i = (tt.floor() as usize).min(8);
+        let f = tt - i as f32;
+        let mut knots = Vec::with_capacity(4);
+        for (ti, wt) in [(i, 1.0 - f), (i + 1, f)] {
+            for (ai, wa) in [(0usize, 1.0 - albedo), (1, albedo)] {
+                let weight = wt * wa;
+                if weight <= 0.0 {
+                    continue;
+                }
+                let mut knot = Knot {
+                    weight,
+                    coefficients: [[0.0; PARAMS]; 3],
+                    radiance: [0.0; 3],
+                };
+                for c in 0..3 {
+                    let base = (ti * 2 + ai) * 3 + c;
+                    for (k, &bk) in b.iter().enumerate() {
+                        for j in 0..PARAMS {
+                            knot.coefficients[c][j] +=
+                                bk * COEFFICIENTS[(base * CONTROL + k) * PARAMS + j];
+                        }
+                        knot.radiance[c] += bk * RADIANCE[base * CONTROL + k];
+                    }
+                }
+                knots.push(knot);
+            }
+        }
+        PhysicalSky { sun, knots }
+    }
+
+    /// Linear Rec. 709 radiance of the sky in the unit direction `dir` (above the horizon), in the
+    /// model's units; zero below.
+    pub fn radiance(&self, dir: Vec3) -> Rgb {
+        if dir.z <= 0.0 {
+            return Rgb::BLACK;
+        }
+        let s = self.sun;
+        let cos_theta = dir.z;
+        let cos_gamma = dir.dot(s).clamp(-1.0, 1.0);
+        let gamma = fmath::atan2(dir.cross(s).length(), dir.dot(s));
+        let chord = dir - s;
+        let chord2 = chord.dot(chord);
+        let cg2 = cos_gamma * cos_gamma;
+        let horizon = 1.0 / (cos_theta + 0.01);
+        let sq = cos_theta.sqrt();
+        let mut out = [0.0f32; 3];
+        for knot in &self.knots {
+            for (c, o) in out.iter_mut().enumerate() {
+                let [a, b, cc, d, e, f, g, h, i] = knot.coefficients[c];
+                let den = (1.0 - h) * (1.0 - h) + h * chord2;
+                let chi = (1.0 + cg2) / (den * den.sqrt());
+                let value = (1.0 + a * exp(b * horizon))
+                    * (cc + d * exp(e * gamma) + f * cg2 + g * chi + i * sq);
+                *o += knot.weight * value * knot.radiance[c];
+            }
+        }
+        Rgb::new(out[0].max(0.0), out[1].max(0.0), out[2].max(0.0))
+    }
+}
 
 /// The Perez coefficients `[A, B, C, D, E]` as `(slope, intercept)` in the turbidity, for `Y`,
 /// `x` and `y` (Preetham et al. 1999, Appendix A.2).
@@ -232,6 +388,76 @@ mod tests {
         let clear = Preetham::new(0.0, 40.0, 2.0).radiance(dir(180.0, 50.0));
         let hazy = Preetham::new(0.0, 40.0, 8.0).radiance(dir(180.0, 50.0));
         assert!(saturation(clear) > saturation(hazy), "{clear:?} {hazy:?}");
+    }
+
+    #[test]
+    fn the_physical_sky_is_blue_brightest_near_the_sun_and_black_below_the_horizon() {
+        for (elevation, turbidity) in [(30.0, 2.5), (12.0, 3.0), (2.0, 4.0), (65.0, 2.0)] {
+            let sky = PhysicalSky::new(0.0, elevation, turbidity, GROUND_ALBEDO);
+            let zenith = sky.radiance(Vec3::new(0.0, 0.0, 1.0));
+            assert!(
+                zenith.b > zenith.r,
+                "{elevation}: the zenith is blue: {zenith:?}"
+            );
+            let near = sky.radiance(dir(0.0, elevation + 3.0));
+            let away = sky.radiance(dir(180.0, (90.0 - elevation).min(60.0)));
+            assert!(near.luminance() > 3.0 * away.luminance(), "{elevation}");
+            assert_eq!(sky.radiance(dir(40.0, -5.0)), Rgb::BLACK);
+            for d in [dir(10.0, 1.0), dir(200.0, 0.2), dir(90.0, 45.0)] {
+                let c = sky.radiance(d);
+                assert!(c.r > 0.0 && c.g > 0.0 && c.b > 0.0 && c.luminance().is_finite());
+            }
+        }
+        // Hazier is whiter; a lower sun is warmer at the horizon beside it.
+        let saturation = |c: Rgb| (c.b - c.r) / c.luminance();
+        let clear = PhysicalSky::new(0.0, 40.0, 2.0, GROUND_ALBEDO).radiance(dir(180.0, 50.0));
+        let hazy = PhysicalSky::new(0.0, 40.0, 8.0, GROUND_ALBEDO).radiance(dir(180.0, 50.0));
+        assert!(saturation(clear) > saturation(hazy), "{clear:?} {hazy:?}");
+        let warm = |el: f32| {
+            let c = PhysicalSky::new(0.0, el, 3.0, GROUND_ALBEDO).radiance(dir(20.0, 2.0));
+            c.r / c.b
+        };
+        assert!(warm(1.0) > warm(40.0));
+    }
+
+    #[test]
+    fn the_physical_sky_is_linear_between_knots_and_clamps_its_inputs() {
+        // A quarter of the way between two turbidities (and two albedos) is the weighted mean
+        // of their radiances.
+        for d in [Vec3::new(0.0, 0.0, 1.0), dir(30.0, 20.0), dir(200.0, 3.0)] {
+            let r = |t: f32, a: f32| PhysicalSky::new(10.0, 15.0, t, a).radiance(d);
+            let (mid, lo, hi) = (r(4.25, 0.0), r(4.0, 0.0), r(5.0, 0.0));
+            for (m, (a, b)) in [mid.r, mid.g, mid.b]
+                .into_iter()
+                .zip([lo.r, lo.g, lo.b].into_iter().zip([hi.r, hi.g, hi.b]))
+            {
+                let want = 0.75 * a + 0.25 * b;
+                assert!(
+                    (m - want).abs() <= 2.0e-6 * m.abs().max(1.0e-9),
+                    "{m} {a} {b}"
+                );
+            }
+            let (grey, black, white) = (r(4.0, 0.25), r(4.0, 0.0), r(4.0, 1.0));
+            let want = 0.75 * black.g + 0.25 * white.g;
+            assert!((grey.g - want).abs() <= 2.0e-6 * want, "{grey:?}");
+        }
+        // Out-of-range and non-finite inputs are clamped like the classic sky's.
+        let a = PhysicalSky::new(0.0, 30.0, 10.0, 0.2);
+        assert_eq!(PhysicalSky::new(0.0, 30.0, 25.0, 0.2), a);
+        assert_eq!(
+            PhysicalSky::new(0.0, -5.0, 3.0, 0.2),
+            PhysicalSky::new(0.0, 0.0, 3.0, 0.2)
+        );
+        assert_eq!(
+            PhysicalSky::new(0.0, 30.0, f32::NAN, 0.2),
+            PhysicalSky::new(0.0, 30.0, DEFAULT_TURBIDITY, 0.2)
+        );
+        assert_eq!(
+            PhysicalSky::new(0.0, 30.0, 3.0, 7.0),
+            PhysicalSky::new(0.0, 30.0, 3.0, 1.0)
+        );
+        // The table is the one rt-sky wrote (its own test checks the hash and the sources).
+        assert_eq!(crate::sky_table::SHA256.len(), 64);
     }
 
     #[test]

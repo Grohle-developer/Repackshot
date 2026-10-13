@@ -13,7 +13,7 @@
 //! extra trailing bytes (newer writers append fields), so old readers keep working.
 //!
 //! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
-//! fields after a `|` were appended later (E3, then `||` E5) and are optional: a shorter payload,
+//! fields after a `|` were appended later (E3, then `||` E5, `|||` E5c) and are optional: a shorter payload,
 //! as older writers wrote it, reads them as their defaults, and the writer always writes them):
 //!
 //! ```text
@@ -31,6 +31,7 @@
 //!             || u32 hdri_map (none) backplate_map (none) backplate_fit (0);
 //!             f32 sky_turbidity (3) sun_azimuth_deg (0) sun_elevation_deg (45)
 //!             backplate_rect[4] (0 0 1 1)                                          (80 B)
+//!             ||| u32 sky_model (0 physical)                                       (84 B)
 //! BMAP  16 B  u32 format width height byte_len; u8 data[byte_len]; zero padding to 4 (E5, new)
 //! FLOR  20 B  u32 mode; f32 z; f32 color[3]                                        (E3, new)
 //! RNDR  28 B  u32 width height max_samples seed; f32 max_seconds exposure_ev; u32 tonemap
@@ -102,10 +103,12 @@
 //!   reflections. Bit 1 (`2`) **camera**: visible to camera rays.
 //! * `ENVR.kind`: **0 studio dome** (radiance ramps linearly with the z of the direction from
 //!   `floor` at z = -1 through `horizon` at 0 to `zenith` at +1), **1 flat** (`horizon`
-//!   everywhere), **2 sky** (Preetham's daylight for `sky_turbidity` and the sun at
-//!   `sun_azimuth_deg` from +X towards +Y and `sun_elevation_deg`, scaled to give a horizontal
-//!   surface the irradiance of the dome with these values; the ground below the horizon is
-//!   `floor`; see [`crate::sky`]), **3 HDRI** (the equirectangular bitmap `hdri_map`, in the
+//!   everywhere), **2 sky** (daylight for `sky_turbidity` and the sun at `sun_azimuth_deg`
+//!   from +X towards +Y and `sun_elevation_deg`, scaled to give a horizontal surface the
+//!   irradiance of the dome with these values; the ground below the horizon is `floor`;
+//!   `sky_model` **0** the physical sky, fitted to our own atmosphere simulation (also what a
+//!   file without the field means, and any unknown value), **1** the classic Preetham sky; see
+//!   [`crate::sky`]), **3 HDRI** (the equirectangular bitmap `hdri_map`, in the
 //!   convention of [`crate::environment`]; the dome without it). Everything is scaled by
 //!   `strength`; `rotation_deg` turns the HDRI about Z (counter-clockwise from above; no effect on
 //!   the other kinds, the sky follows its sun). `background_mode`: **0** the environment is
@@ -128,7 +131,7 @@
 
 use super::{
     Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Light, LightKind,
-    Material, Mesh, RenderSettings, Scene, Transform, NO_BITMAP,
+    Material, Mesh, RenderSettings, Scene, SkyModel, Transform, NO_BITMAP,
 };
 use crate::color::Rgb;
 use crate::math::Vec3;
@@ -417,6 +420,7 @@ fn parse_environment(r: &mut Reader) -> Result<Environment, RsbError> {
             r.opt_f32(1.0)?,
             r.opt_f32(1.0)?,
         ],
+        sky_model: SkyModel::from_u32(r.opt_u32(SkyModel::Physical.to_u32())?),
     })
 }
 
@@ -747,6 +751,7 @@ impl Scene {
             for v in e.backplate_rect {
                 w.f32(v);
             }
+            w.u32(e.sky_model.to_u32());
         });
         w.section(TAG_FLOR, |w| {
             let f = &self.floor;
@@ -906,6 +911,7 @@ mod tests {
                 backplate_map: 0,
                 backplate_fit: crate::scene::BACKPLATE_FIT,
                 sky_turbidity: 4.5,
+                sky_model: SkyModel::Classic,
                 sun_azimuth_deg: -30.0,
                 sun_elevation_deg: 12.0,
                 backplate_rect: [0.1, 0.05, 0.9, 0.95],
@@ -994,7 +1000,7 @@ mod tests {
         assert_eq!(size(b"CAMR"), Some(15 * 4));
         assert_eq!(size(b"MATL"), Some(18 * 4));
         assert_eq!(size(b"LGHT"), Some(19 * 4));
-        assert_eq!(size(b"ENVR"), Some(20 * 4));
+        assert_eq!(size(b"ENVR"), Some(21 * 4));
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
         assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
@@ -1100,6 +1106,44 @@ mod tests {
         assert_eq!((e.sun_azimuth_deg, e.sun_elevation_deg), (0.0, 45.0));
         assert_eq!(e.backplate_rect, [0.0, 0.0, 1.0, 1.0]);
         assert_eq!(e.background_mode, scene.environment.background_mode);
+        assert_eq!(e.sky_model, SkyModel::Physical);
+    }
+
+    #[test]
+    fn the_sky_model_is_physical_unless_the_file_says_classic() {
+        // An E5 file (ENVR of 80 B) has no sky model: it reads as the default, the physical sky.
+        let scene = full_scene();
+        assert_eq!(scene.environment.sky_model, SkyModel::Classic);
+        let bytes = scene.to_rsb();
+        let with_envr = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_ENVR {
+                    edit(&mut payload);
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            Scene::from_rsb(&out).expect("reads")
+        };
+        let e5 = with_envr(&|p| p.truncate(80));
+        assert_eq!(e5.environment.sky_model, SkyModel::Physical);
+        assert_eq!(
+            Environment {
+                sky_model: SkyModel::Classic,
+                ..e5.environment.clone()
+            },
+            scene.environment
+        );
+        // The field itself: 1 is classic, 0 and unknown values the physical sky.
+        for (value, model) in [
+            (0u32, SkyModel::Physical),
+            (1, SkyModel::Classic),
+            (7, SkyModel::Physical),
+        ] {
+            let read = with_envr(&|p| p[80..84].copy_from_slice(&value.to_le_bytes()));
+            assert_eq!(read.environment.sky_model, model, "{value}");
+        }
+        assert_eq!(Environment::default().sky_model, SkyModel::Physical);
     }
 
     #[test]

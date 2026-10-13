@@ -254,8 +254,9 @@ un ingeniero fuerte, en este orden):
 2. **Fuentes de luz**: sol como disco propio (0,53°) con muestreo de cono
    y excluido del entorno; cielo **Hošek–Wilkie**
    ([proyecto](https://cgg.mff.cuni.cz/projects/SkylightModelling/); el
-   código de referencia circula con cabecera BSD-3, **licencia a
-   confirmar** antes de portar las tablas; Preetham como respaldo) o HDRI
+   código de referencia circula con cabecera BSD-3; E5c no lo usa: toma
+   solo la forma funcional y ajusta los coeficientes a un simulador
+   propio, en sala limpia; Preetham queda como *Clásico*) o HDRI
    con CDF 2D; rectángulos y discos por ángulo sólido (Ureña 2013); IES;
    vidrio fino.
 3. **Portales** declarados desde la habitación y por heurística de
@@ -357,7 +358,9 @@ appleseed (MIT). La guía práctica (`practical-path-guiding`) y Mitsuba
 | **K7** | Sonnet | Habitación de ejemplo procedural y activos CC0 con licencia registrada por archivo; hoja de contactos de interiores | K2 |
 | **K8** | Opus | Grupos de luz con intensidad y color tras el render (*LightMix*): pases por grupo en el motor y mezclador en la interfaz | K4 |
 
-**Decisiones pendientes de Fable**: licencia exacta de las tablas de
-Hošek–Wilkie (si no se confirma, Preetham); si se activa el aislamiento
+**Decisiones pendientes de Fable**: ~~licencia exacta de las tablas de
+Hošek–Wilkie~~ (resuelto en E5c: no se usan; el cielo es propio, con la
+forma funcional publicada y coeficientes ajustados a nuestro simulador de
+atmósfera); si se activa el aislamiento
 de origen cruzado para compartir la escena entre workers; a partir de
 qué número de luces entra el árbol.

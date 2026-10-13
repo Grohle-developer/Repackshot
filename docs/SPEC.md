@@ -296,10 +296,14 @@ cabe entera con el color alrededor, o se estira), `skyTurbidity` (bruma
 del cielo, 3 por defecto: 2 muy limpio, 6 brumoso) y `skySun` (`az`,
 `el`: el sol del cielo cuando el montaje no tiene foco de sol, relativo a
 la cámara como un foco; -55°, 55° por defecto). Con un foco de sol
-encendido en el montaje, ese foco coloca el sol del cielo. El cielo es el
-modelo de Preetham (1999), escalado para que una superficie horizontal
-reciba la misma luz que con la cúpula de los mismos valores; solo de día
-(el sol, a 1° como mínimo). Un `HDRI` sin archivo cargado ilumina con la
+encendido en el montaje, ese foco coloca el sol del cielo. `skyModel`
+(E5c) elige el modelo: `PHYSICAL` (por defecto, también para los
+proyectos guardados antes de que existiera), nuestro cielo físico: la
+forma funcional de Hošek y Wilkie (2012) con coeficientes ajustados por
+nosotros a nuestra propia simulación de la atmósfera; o `CLASSIC`, el de
+Preetham (1999) de E5. Los dos se escalan para que una superficie
+horizontal reciba la misma luz que con la cúpula de los mismos valores;
+solo de día (el sol, a 0° como mínimo en el físico y a 1° en el clásico). Un `HDRI` sin archivo cargado ilumina con la
 cúpula; una imagen de fondo sin archivo muestra el color. Un panel con `camera = true` se pinta como **campo claro en el
 fondo** (disco suave centrado en el encuadre), nunca como un rectángulo
 visible con bordes.
