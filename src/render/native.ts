@@ -262,6 +262,8 @@ export class NativeEngine {
   private pendingSince = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private want: { state: ProjectState; w: number; h: number; dpr: number; limit: ViewportLimit; key: string } | null = null;
+  /** Look through (L4): the camera the viewport renders from, for a state; null: the active one. */
+  private viewCamera: ((state: ProjectState) => CameraState | null) | null = null;
   private readonly frameListeners = new Set<() => void>();
   private tileImage: ImageData | null = null;
   private renderChain: Promise<unknown> = Promise.resolve();
@@ -424,6 +426,25 @@ export class NativeEngine {
     return { width: Math.max(1, Math.round(this.viewW * k)), height: Math.max(1, Math.round(this.viewH * k)) };
   }
 
+  /**
+   * Look through (L4): the viewport renders from a light's or a saved camera's view instead of the active camera's,
+   * worked out from each state (it moves with the light); null renders the active camera again.
+   */
+  setViewCamera(fn: ((state: ProjectState) => CameraState | null) | null): void {
+    if (fn === this.viewCamera) return;
+    this.viewCamera = fn;
+    this.want = null;
+    this.restartWanted = true;
+  }
+
+  /** The camera of a gesture in progress, over the camera looked through (if any). */
+  private cameraPatch(state: ProjectState, patch: Partial<Omit<CameraState, 'id'>> | null): Partial<Omit<CameraState, 'id'>> | null {
+    const through = this.viewCamera?.(state) ?? null;
+    if (!through) return patch;
+    const { id: _id, ...rest } = through;
+    return patch ? { ...rest, ...patch } : rest;
+  }
+
   beginGesture(): void {
     this.gesture = { patch: null };
   }
@@ -475,7 +496,7 @@ export class NativeEngine {
         maxSamples: this.viewportSamples(state),
         maxSeconds: timed ? this.limit.seconds : 0,
         viewport: { viewW: this.viewW, viewH: this.viewH },
-        ...(patch ? { cameraPatch: patch } : {}),
+        ...(this.cameraPatch(state, patch) ? { cameraPatch: this.cameraPatch(state, patch)! } : {}),
       },
     };
   }

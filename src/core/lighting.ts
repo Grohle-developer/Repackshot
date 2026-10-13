@@ -7,11 +7,12 @@ import { QUALITY_PRESETS } from '../data/quality';
 import { studioPreset } from '../data/studios';
 import type { LightRole, LightShape, LightSpec, LightType, RGB, StudioPreset, WorldKind } from '../data/types';
 import { kelvinToRgb, polar, specIrradiance, toWorldAzimuth } from './light-math';
-import { activeRig, resolvePreset, type PresetRef, type SetupRef } from './rig';
+import { areaLightFlux, luminance, LUMENS_PER_WATT, pointLightFlux, spotFraction } from './photometry';
+import { activeRig, presetIrradiance, resolvePreset, type PresetRef, type SetupRef } from './rig';
 import type { ActionBase, EnvironmentState, ImageState, ProjectState } from './store';
 import { activeCamera, cameraPosition, frameBox, outputAspect, type CameraState } from './camera';
 import { nextId } from './ids';
-import { add, boxCenter, dot, isEmptyBox, length, normalize, scale, sub, type Vec3 } from './math';
+import { add, boxCenter, cross, dot, isEmptyBox, length, normalize, rotateAbout, scale, sub, type Vec3 } from './math';
 import { partMaterials, pruneMaterials, type MaterialId, type MaterialInstance } from './materials';
 import { productBounds, type FaceRange, type NodeId } from './scene';
 
@@ -47,7 +48,42 @@ export interface LightInstance {
   /** What the recipe said for `glossy`, so the Doctor can restore it. */
   recipeGlossy: boolean;
   enabled: boolean;
+  /** L4: added with Add light, not by the setup (Reset to setup takes it away). */
+  own?: boolean;
+  /** L4: the name the person gave it; absent, its role (a setup's light) or its type (an own light), numbered. */
+  name?: string;
+  /** SPOT (L4): the soft edge, a fraction of the cone's half-angle (0 a hard edge); `spread` is the cone angle. */
+  blend?: number;
+  /** L4: casts shadows; absent means it does. */
+  shadow?: boolean;
+  /** L4: where it aims, in part sizes from the rig pivot; absent, at the pivot (where every setup light aims). */
+  aim?: Vec3;
+  /** L4: turned about its own axis, degrees; absent or 0, a panel's sides are level with the floor. */
+  roll?: number;
 }
+
+/** What Add light ▸ adds (UI.md §2.2): three area shapes, a point, a spot and a sun. Stable keys. */
+export type NewLightKind = 'RECTANGLE' | 'DISK' | 'SPHERE' | 'POINT' | 'SPOT' | 'SUN';
+export const NEW_LIGHT_KINDS: readonly NewLightKind[] = ['RECTANGLE', 'DISK', 'SPHERE', 'POINT', 'SPOT', 'SUN'];
+
+/** A spot's cone and soft edge when nothing says otherwise. */
+export const SPOT_DEFAULTS = { cone: 40, blend: 0.25 } as const;
+
+/** Where a new light goes (UI.md §2.2: in front of and above the part, from the active camera), its size and its share. */
+export const NEW_LIGHT = {
+  /** Degrees to the camera's right of its line of sight. */
+  side: 25,
+  /** Degrees above the horizon (a sun higher). */
+  el: 40,
+  sunEl: 50,
+  /** Part sizes from the pivot. */
+  dist: 2,
+  /** Sizes in part sizes: a panel, a disc, a glowing sphere (diameter) and the bulb of a point or a spot (diameter). */
+  rect: [0.8, 0.5] as const,
+  disk: 0.6,
+  sphere: 0.3,
+  bulb: 0.02,
+} as const;
 
 /** Prefix of the keys that name something of the user's library instead of a catalogue entry. */
 export const LIBRARY_PREFIX = 'LIB:';
@@ -144,14 +180,97 @@ export function lightsFromRig(preset: PresetRef, setupRef: SetupRef): LightInsta
       brightField: r.camera,
       recipeGlossy: r.glossy,
       enabled: true,
+      // What an own setup of the library carries for its lights (L4); no catalogue recipe has them.
+      ...(spec?.blend !== undefined ? { blend: spec.blend } : {}),
+      ...(spec?.shadow === false ? { shadow: false } : {}),
+      ...(spec?.aim ? { aim: [spec.aim[0], spec.aim[1], spec.aim[2]] as Vec3 } : {}),
+      ...(spec?.roll ? { roll: spec.roll } : {}),
     };
   });
+}
+
+/** The irradiance (same unit as `lightIrradiance`) a new light starts with: the mean of the lights on, or a third of the type's. */
+function newLightIrradiance(state: ProjectState): number {
+  const on = state.studio.lights.filter((l) => l.enabled && l.power > 0);
+  if (on.length > 0) return on.reduce((a, l) => a + lightIrradiance(l), 0) / on.length;
+  return presetIrradiance(presetRefOf(state.studio)) / 3;
+}
+
+/**
+ * A light of Add light ▸ (UI.md §2.2): in front of and above the part as the active camera sees it, switched on,
+ * as bright as the mean of the lights that are on (so the picture does not jump), white at 5600 K.
+ */
+export function newLight(state: ProjectState, kind: NewLightKind, id: string): LightInstance {
+  const cam = activeCamera(state);
+  const azWorld = (cam?.azimuth ?? CAMERA_AZIMUTH_DEG) + NEW_LIGHT.side;
+  const sun = kind === 'SUN';
+  const type: LightInstance['type'] = sun ? 'SUN' : kind === 'POINT' ? 'POINT' : kind === 'SPOT' ? 'SPOT' : 'AREA';
+  const shape: LightInstance['shape'] = kind === 'DISK' ? 'DISK' : kind === 'SPHERE' ? 'SPHERE' : 'RECTANGLE';
+  const [w, h] = kind === 'RECTANGLE' ? NEW_LIGHT.rect : kind === 'DISK' ? [NEW_LIGHT.disk, NEW_LIGHT.disk] : kind === 'SPHERE' ? [NEW_LIGHT.sphere, NEW_LIGHT.sphere] : [NEW_LIGHT.bulb, NEW_LIGHT.bulb];
+  const dist = NEW_LIGHT.dist;
+  const target = newLightIrradiance(state);
+  // specIrradiance backwards: the rest spread with the square of the distance. A sun's power is its irradiance, which
+  // the engine delivers as it is, while a panel, a point or a spot deliver pi times their measure on their axis
+  // (core/photometry.ts): the sun gets pi times the mean, so it looks as bright as the others.
+  const power = sun ? Math.PI * target : target * 4 * Math.PI * dist * dist;
+  const kelvin = SPEC_DEFAULTS.kelvin;
+  return {
+    id,
+    role: 'FILL',
+    type,
+    shape,
+    size: w,
+    sizeY: h,
+    az: wrapDeg(azWorld - CAMERA_AZIMUTH_DEG),
+    el: sun ? NEW_LIGHT.sunEl : NEW_LIGHT.el,
+    dist,
+    spread: kind === 'SPOT' ? SPOT_DEFAULTS.cone : 180,
+    angle: SPEC_DEFAULTS.angle,
+    kelvin,
+    color: kelvinToRgb(kelvin),
+    power: Math.round(power * 1000) / 1000,
+    glossy: true,
+    camera: false,
+    brightField: false,
+    recipeGlossy: true,
+    enabled: true,
+    own: true,
+    ...(kind === 'SPOT' ? { blend: SPOT_DEFAULTS.blend } : {}),
+  };
+}
+
+/** A fresh light id: never one of a light, a camera or a scene node. */
+export function nextLightId(state: ProjectState): string {
+  return nextId('l', [...state.studio.lights.map((l) => l.id), ...Object.keys(state.camera.cameras), ...Object.keys(state.scene.nodes)]);
 }
 
 /** Irradiance of one light (same unit as `presetIrradiance`); 0 when switched off. */
 export function lightIrradiance(l: LightInstance): number {
   if (!l.enabled) return 0;
   return specIrradiance({ type: l.type, energy: l.power, dist: l.dist });
+}
+
+/** The `cos^n` exponent of an area light's spread (the engine's `spread_exponent`): its intensity halves at spread / 2. */
+export function spreadExponent(spreadDeg: number): number {
+  if (spreadDeg >= 180) return 0;
+  const half = (Math.max(1, spreadDeg) * Math.PI) / 360;
+  return -1 / Math.log2(Math.cos(half));
+}
+
+/**
+ * The light's lumens (L4: the aid next to its watts), from the flux the engine is given for it (RSB `LGHT.power`)
+ * and the luminance of its colour (`LUMENS_PER_WATT`): a panel's flux narrowed by its spread, a point's or a
+ * sphere's whole flux, a spot's share of it in its cone. A sun has lux instead (its irradiance in lumens per m2).
+ */
+export function lightLumens(state: ProjectState, l: LightInstance): { value: number; unit: 'lm' | 'lx' } {
+  const y = luminance(l.color) * LUMENS_PER_WATT;
+  const p = Math.max(0, l.power);
+  if (l.type === 'SUN') return { value: p * y, unit: 'lx' };
+  const size = state.scene.partSizeMm;
+  if (l.type === 'SPOT') return { value: pointLightFlux(p, size) * spotFraction(l.spread, l.blend ?? SPOT_DEFAULTS.blend) * y, unit: 'lm' };
+  if (isSphereLike(l)) return { value: pointLightFlux(p, size) * y, unit: 'lm' };
+  const n = spreadExponent(l.spread);
+  return { value: areaLightFlux(p, size) * (2 / (n + 2)) * y, unit: 'lm' };
 }
 
 /** Share of each light in the total irradiance, 0..1 (what "power %" shows). */
@@ -172,8 +291,13 @@ export function rigPivot(state: ProjectState): Vec3 {
  * Unit direction towards the sky's sun (environment kind SKY): the rig's first enabled sun light, else the
  * environment's own sun, camera-relative like a light (SPEC §3.4: sky and sun from the sun light).
  */
-export function skySunDirection(state: ProjectState, lights: readonly Pick<LightInstance, 'type' | 'enabled' | 'power' | 'az' | 'el'>[] = state.studio.lights): Vec3 {
+export function skySunDirection(state: ProjectState, lights: readonly Pick<LightInstance, 'type' | 'enabled' | 'power' | 'az' | 'el' | 'dist' | 'aim'>[] = state.studio.lights): Vec3 {
   const sun = lights.find((l) => l.type === 'SUN' && l.enabled && l.power > 0);
+  // A sun aimed elsewhere (L4) shines from its position towards its aim, as the engine has it.
+  if (sun?.aim) {
+    const d = normalize(sub(lightPosition(state, sun), lightAimPoint(state, sun)));
+    if (length(d) > 0) return d;
+  }
   const { az, el } = sun ?? state.environment.skySun;
   return normalize(polar(toWorldAzimuth(az), el, 1));
 }
@@ -181,6 +305,86 @@ export function skySunDirection(state: ProjectState, lights: readonly Pick<Light
 /** World position of a light, millimetres. */
 export function lightPosition(state: ProjectState, l: Pick<LightInstance, 'az' | 'el' | 'dist'>): Vec3 {
   return add(rigPivot(state), polar(toWorldAzimuth(l.az), l.el, l.dist * state.scene.partSizeMm));
+}
+
+/** The world point a light aims at, millimetres: the rig pivot, or its own aim (L4) measured from there. */
+export function lightAimPoint(state: ProjectState, l: Pick<LightInstance, 'aim'>): Vec3 {
+  const pivot = rigPivot(state);
+  return l.aim ? add(pivot, scale(l.aim, state.scene.partSizeMm)) : pivot;
+}
+
+/**
+ * The up vector of something that looks along `forward` with no roll: the world's Z made square to it (its Y
+ * when it looks straight up or down). A panel's sides are then level with the floor.
+ */
+export function levelUp(forward: Vec3): Vec3 {
+  const z = sub([0, 0, 1], scale(forward, forward[2]));
+  if (length(z) > 1e-6) return normalize(z);
+  return normalize(sub([0, 1, 0], scale(forward, forward[1])));
+}
+
+/** Where a light is and how it is turned (L4): unit `forward` (where its light goes), `up` (rolled) and `right` = forward × up. */
+export interface LightFrame {
+  position: Vec3;
+  target: Vec3;
+  forward: Vec3;
+  up: Vec3;
+  right: Vec3;
+}
+
+export function lightFrame(state: ProjectState, l: Pick<LightInstance, 'az' | 'el' | 'dist' | 'aim' | 'roll'>): LightFrame {
+  const position = lightPosition(state, l);
+  const target = lightAimPoint(state, l);
+  let forward = normalize(sub(target, position));
+  if (length(forward) === 0) forward = normalize(sub(rigPivot(state), position));
+  if (length(forward) === 0) forward = [0, 0, -1];
+  const up = normalize(rotateAbout(levelUp(forward), forward, l.roll ?? 0));
+  return { position, target, forward, up, right: cross(forward, up) };
+}
+
+/** Signed angle (degrees) that turns `from` into `to` about `axis` (all square to it). */
+function angleAbout(from: Vec3, to: Vec3, axis: Vec3): number {
+  return (Math.atan2(dot(axis, cross(from, to)), dot(from, to)) * 180) / Math.PI;
+}
+
+/** Degrees in [-180, 180). */
+export const wrapDeg = (a: number): number => ((((a + 180) % 360) + 360) % 360) - 180;
+
+/** The az / el / dist (around the rig pivot, as a light has them) of a world position; null at the pivot itself. */
+export function polarAboutPivot(state: ProjectState, pos: Vec3): Pick<LightInstance, 'az' | 'el' | 'dist'> | null {
+  const rel = sub(pos, rigPivot(state));
+  const dist = length(rel);
+  const size = state.scene.partSizeMm || 1;
+  if (dist < size * 1e-6) return null;
+  const el = (Math.asin(Math.max(-1, Math.min(1, rel[2] / dist))) * 180) / Math.PI;
+  const az = wrapDeg((Math.atan2(rel[0], -rel[1]) * 180) / Math.PI - CAMERA_AZIMUTH_DEG);
+  return { az, el, dist: dist / size };
+}
+
+/** A world aim point as a light keeps it: part sizes from the pivot. */
+export function aimOffset(state: ProjectState, target: Vec3): Vec3 {
+  const size = state.scene.partSizeMm || 1;
+  const d = sub(target, rigPivot(state));
+  return [d[0] / size, d[1] / size, d[2] / size];
+}
+
+/**
+ * The placement (what `studio/setLight` takes) of a light at the world `position`, aiming at `target`, with `up`
+ * (null: keep its roll). Null when the position is the pivot itself or the light would aim at itself.
+ */
+export function placementOf(state: ProjectState, position: Vec3, target: Vec3, up: Vec3 | null, roll = 0): Partial<LightInstance> | null {
+  const polarPos = polarAboutPivot(state, position);
+  const forward = normalize(sub(target, position));
+  if (!polarPos || length(forward) === 0) return null;
+  const patch: Partial<LightInstance> = { ...polarPos, aim: aimOffset(state, target) };
+  patch.roll = up ? wrapDeg(angleAbout(levelUp(forward), normalize(sub(up, scale(forward, dot(up, forward)))), forward)) : roll;
+  if (Math.abs(patch.roll) < 1e-9) patch.roll = 0;
+  return patch;
+}
+
+/** A light the engine draws as a glowing sphere (or a point): a point, a spot, or an area light of shape SPHERE. */
+export function isSphereLike(l: Pick<LightInstance, 'type' | 'shape'>): boolean {
+  return l.type === 'POINT' || l.type === 'SPOT' || (l.type === 'AREA' && l.shape === 'SPHERE');
 }
 
 /**
@@ -209,13 +413,8 @@ export function placeByReflection(
   const disc = b * b - c;
   const t = disc >= 0 ? -b + Math.sqrt(disc) : radius;
   const pos = add(point, scale(r, Math.max(t, 0)));
-  const rel = sub(pos, pivot);
-  const dist = length(rel);
-  if (dist < 1e-9) return null;
-  const el = (Math.asin(Math.max(-1, Math.min(1, rel[2] / dist))) * 180) / Math.PI;
-  let az = (Math.atan2(rel[0], -rel[1]) * 180) / Math.PI - CAMERA_AZIMUTH_DEG;
-  az = ((((az + 180) % 360) + 360) % 360) - 180;
-  return { az, el, dist: dist / size };
+  if (length(sub(pos, pivot)) < 1e-9) return null;
+  return polarAboutPivot(state, pos);
 }
 
 /** Captures the current scene as a saved studio. */
@@ -352,6 +551,16 @@ export type StudioAction =
   | ({ type: 'studio/applySetup'; setup: CustomSetup } & ActionBase)
   | ({ type: 'studio/setLight'; id: string; patch: Partial<Omit<LightInstance, 'id'>> } & ActionBase)
   | ({ type: 'studio/placeLight'; id: string; point: Vec3; normal: Vec3 } & ActionBase)
+  /** L4: Add light ▸ — a new own light, selected. */
+  | ({ type: 'studio/addLight'; kind: NewLightKind } & ActionBase)
+  /** L4: a copy of a light (an own light, a little to the side), selected. */
+  | ({ type: 'studio/duplicateLight'; id: string } & ActionBase)
+  /** L4: a light of the setup or an own one goes. */
+  | ({ type: 'studio/deleteLight'; id: string } & ActionBase)
+  /** L4: Aim at… a world point; null aims it at the rig pivot again (the centre of the product). */
+  | ({ type: 'studio/aimLight'; id: string; target: Vec3 | null } & ActionBase)
+  /** L4: Place on surface — the light stands over `point` along `normal`, as far as it was from its aim, and aims there. */
+  | ({ type: 'studio/placeOnSurface'; id: string; point: Vec3; normal: Vec3 } & ActionBase)
   | ({ type: 'studio/resetLights' } & ActionBase)
   | ({ type: 'studio/set'; patch: Partial<{ floor: boolean; shadow: boolean }> } & ActionBase)
   | ({ type: 'studio/save'; name: string } & ActionBase)
@@ -423,6 +632,60 @@ export function reduceStudio(state: ProjectState, action: StudioAction): Project
       if (!placed) return state;
       const lights = [...state.studio.lights];
       lights[i] = { ...lights[i], ...placed };
+      return { ...state, studio: { ...state.studio, lights, modified: true } };
+    }
+    case 'studio/addLight': {
+      if (!NEW_LIGHT_KINDS.includes(action.kind)) return state;
+      const id = nextLightId(state);
+      const light = newLight(state, action.kind, id);
+      return { ...state, studio: { ...state.studio, lights: [...state.studio.lights, light], modified: true }, selection: { level: state.selection.level, ids: [id] } };
+    }
+    case 'studio/duplicateLight': {
+      const src = state.studio.lights.find((l) => l.id === action.id);
+      if (!src) return state;
+      const id = nextLightId(state);
+      const copy: LightInstance = { ...src, id, own: true, az: wrapDeg(src.az + 15), color: [src.color[0], src.color[1], src.color[2]] };
+      delete copy.name;
+      if (src.aim) copy.aim = [src.aim[0], src.aim[1], src.aim[2]];
+      const i = state.studio.lights.indexOf(src);
+      const lights = [...state.studio.lights.slice(0, i + 1), copy, ...state.studio.lights.slice(i + 1)];
+      return { ...state, studio: { ...state.studio, lights, modified: true }, selection: { level: state.selection.level, ids: [id] } };
+    }
+    case 'studio/deleteLight': {
+      if (!state.studio.lights.some((l) => l.id === action.id)) return state;
+      const lights = state.studio.lights.filter((l) => l.id !== action.id);
+      const ids = state.selection.ids.filter((x) => x !== action.id);
+      const selection = ids.length === state.selection.ids.length ? state.selection : { ...state.selection, ids };
+      return { ...state, studio: { ...state.studio, lights, modified: true }, selection };
+    }
+    case 'studio/aimLight': {
+      const i = state.studio.lights.findIndex((l) => l.id === action.id);
+      if (i < 0) return state;
+      const l = state.studio.lights[i];
+      const next: LightInstance = { ...l };
+      if (action.target === null) delete next.aim;
+      else {
+        const aim = aimOffset(state, action.target);
+        if (length(sub(action.target, lightPosition(state, l))) < 1e-9) return state;
+        next.aim = aim;
+      }
+      if (JSON.stringify(next.aim ?? null) === JSON.stringify(l.aim ?? null)) return state;
+      const lights = [...state.studio.lights];
+      lights[i] = next;
+      return { ...state, studio: { ...state.studio, lights, modified: true } };
+    }
+    case 'studio/placeOnSurface': {
+      const i = state.studio.lights.findIndex((l) => l.id === action.id);
+      if (i < 0) return state;
+      const l = state.studio.lights[i];
+      const n = normalize(action.normal);
+      if (length(n) === 0) return state;
+      const f = lightFrame(state, l);
+      const reach = Math.max(length(sub(f.position, f.target)), (state.scene.partSizeMm || 1) * 0.05);
+      const placed = placementOf(state, add(action.point, scale(n, reach)), action.point, null, l.roll ?? 0);
+      if (!placed) return state;
+      const lights = [...state.studio.lights];
+      lights[i] = { ...l, ...placed };
       return { ...state, studio: { ...state.studio, lights, modified: true } };
     }
     case 'studio/resetLights':

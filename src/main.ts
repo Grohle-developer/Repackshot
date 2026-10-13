@@ -28,7 +28,8 @@ import { AI_GUARD_PASSES, pipelineOf } from './core/ai-post';
 import { linearToRgba8, linearToSrgb, rgba8ToLinear } from './core/ai-image';
 import { evaluate, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
-import { activeCamera, sameView } from './core/camera';
+import { activeCamera, sameView, type CameraState } from './core/camera';
+import { lookThroughAction, lookThroughCamera, sameObject, type ViewObject } from './core/view-objects';
 import { historyLimits, startViewportMode, withProjectDefaults, type Layout, type SettingKey, type Settings, type SettingsDoc } from './core/settings';
 import { createInitialState, createStore } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
@@ -51,6 +52,7 @@ import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
+import { cameraLabel, lightName } from './ui/names';
 import { detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
@@ -209,6 +211,10 @@ let full = false;
 /** The viewport's last size (the path tracer may arrive after it). */
 const lastSize: { w: number; h: number; dpr: number } = { w: 0, h: 0, dpr: 1 };
 const tracerFrames = new Set<() => void>();
+/** Look through (L4): what the viewport looks through, and the camera the path tracer renders from for it. */
+let lookingThrough: ViewObject | null = null;
+let viewCameraFn: ((state: ProjectStateOf) => CameraState | null) | null = null;
+type ProjectStateOf = ReturnType<typeof store.get>;
 
 const applyMode = () => {
   const next = tracer !== null && preview !== null && effectiveMode(ui.get()) === 'FULL';
@@ -234,6 +240,7 @@ const useTracer = (t: PathTracerEngine | NativeEngine, cfg: EngineConfig, info: 
   t.setViewportLimit(cfg.viewportLimit);
   t.setWhileRender(cfg.whileRender);
   t.mount(backdrop);
+  t.setViewCamera(viewCameraFn);
   if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
   t.sync(store.get(), null);
   t.onFrame(() => tracerFrames.forEach((fn) => fn()));
@@ -408,6 +415,18 @@ const viewport: ViewportPort | null = preview
       visibleTriangles: (part, rect) => preview!.visibleTriangles(part, rect),
       setTool: (tool) => preview!.setTool(tool),
       setGizmo: (spec) => preview!.setGizmo(spec),
+      setGlyphs: (spec) => {
+        preview!.setGlyphs(spec);
+        // Full mode renders from the same view (worked out from each state: it moves with the light).
+        if (!sameObject(spec.lookThrough, lookingThrough)) {
+          const lt = spec.lookThrough;
+          lookingThrough = lt;
+          viewCameraFn = lt ? (state) => lookThroughCamera(state, lt) : null;
+          tracer?.setViewCamera(viewCameraFn);
+        }
+      },
+      glyphAt: (x, y) => preview!.glyphAt(x, y),
+      objectAt: (obj) => preview!.objectAt(obj),
       gizmoHover: (x, y) => preview!.gizmoHover(x, y),
       gizmoBegin: (x, y) => {
         const handle = preview!.gizmoBegin(x, y);
@@ -788,13 +807,30 @@ if (preview) {
   new MutationObserver(updateInk).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   updateInk();
 
-  // Camera gestures become one undoable action each (wheel ticks close in time join one gesture).
+  // Camera gestures become one undoable action each (wheel ticks close in time join one gesture). A gesture gets
+  // its token when it starts, so what it does while it lasts and where it ends are one entry.
   let gesture = 0;
   let lastEnd = 0;
-  preview.onViewChange((v) => {
+  const nextGesture = () => {
     const now = performance.now();
     if (now - lastEnd > 450) gesture++;
     lastEnd = now;
+  };
+  // Looking through a light or a saved camera (L4): the navigation moves that object, live and as one undo entry.
+  const lookName = (o: ViewObject) => {
+    const s = store.get();
+    return o.kind === 'LIGHT' ? { en: lightName(s, o.id, 'en'), es: lightName(s, o.id, 'es') } : cameraLabel(s, s.camera.cameras[o.id]);
+  };
+  const moveLookedThrough = (v: { azimuth: number; elevation: number; distance: number; target: [number, number, number]; orthoWidth?: number }): boolean => {
+    const lt = ui.get().lookThrough;
+    if (!lt) return false;
+    const action = lookThroughAction(store.get(), lt, v, { gesture: `orbit${gesture}`, label: L('undo.lookThrough', { name: lookName(lt) }) });
+    if (action) store.dispatch(action);
+    return true;
+  };
+  preview.onViewChange((v) => {
+    lastEnd = performance.now();
+    if (moveLookedThrough(v)) return;
     const s = store.get();
     const cam = activeCamera(s);
     const patch = { azimuth: v.azimuth, elevation: v.elevation, distance: v.distance, target: v.target, focusDistance: v.distance, ...(v.orthoWidth ? { orthoWidth: v.orthoWidth } : {}) };
@@ -805,6 +841,8 @@ if (preview) {
   preview.onFrame(() => (firstFrame = true));
   // While a camera gesture lasts the store hears nothing; the path tracer follows the live view.
   preview.onGesture((phase, v) => {
+    if (phase === 'start') nextGesture();
+    if (phase === 'move' && v) moveLookedThrough(v);
     if (!full || !tracer) return;
     if (phase === 'start') tracer.beginGesture();
     else if (phase === 'end') tracer.endGesture();

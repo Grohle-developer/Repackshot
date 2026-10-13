@@ -1202,7 +1202,7 @@ nodos con el mismo id, como ya hacía `studio.saved`; la captura de
 160 × 120 usa el encuadre tal cual (la pieza sale pequeña); importar con
 un id existente conserva el que había aunque el contenido difiera.
 
-## L4 · Focos propios — **Opus**
+## L4 · Focos propios — **Opus** — hecha
 
 **Qué.** Lo de `SPEC.md` §3.4 "Luces propias, al estilo KeyShot": añadir
 focos (área rectángulo, disco y esfera; punto; foco direccional con cono
@@ -1239,6 +1239,141 @@ gusto, también con el paneo.» Decisiones del líder, dentro de L4:
   ⇧ L`): el visor mira desde ella y **Orbitar, Desplazar y Zoom mueven ese
   objeto** (la luz apunta a donde mira el visor); `Esc` o el botón vuelven a
   la cámara activa. Respeta *Bloquear cámara*.
+
+**Hecho.** *Focos propios.* `LightType` gana `POINT` y `SPOT` y `LightShape`
+gana `SPHERE` (se añade, no se renombra). `core/lighting.ts`: los focos
+propios son `LightInstance` de `studio.lights` con `own: true`, en la misma
+lista que los del montaje, con campos opcionales nuevos (`name`, `blend`,
+`shadow`, `aim` en tamaños de pieza desde el pivote, `roll`), así que un
+proyecto, un estudio o una biblioteca de antes abren igual. `lightFrame`
+(posición, objetivo, *up* con su giro), `placementOf`, `polarAboutPivot`,
+`aimOffset`, `newLight` (delante y arriba de la pieza desde la cámara
+activa, con la irradiancia media de los encendidos; el sol, π veces) y las
+acciones `studio/addLight`, `duplicateLight`, `deleteLight`, `aimLight` y
+`placeOnSurface`; `studio/resetLights` ya quita los propios. Unidades de
+puntos y focos (`core/photometry.ts`): **un punto o un foco de P W es tan
+brillante en su eje como un panel de P W** (flujo `π P S²` para el motor,
+intensidad `P S² / 4` para three.js), lúmenes desde el flujo del motor
+(`lightLumens`, `spotFraction`). La biblioteca (`specOf`, los validadores de
+`io/library.ts`) lleva tipo, forma, objetivo, giro, transición y sombra.
+`io/rsb.ts` escribe `LGHT` 3 y 4, el bit 2 *sin sombra* y el *up* girado
+(sin giro, `[0, 0, 1]` como antes: los bytes de los proyectos sin focos
+propios no cambian). Vista previa: `PointLight` y `SpotLight` de three con la
+intensidad del motor, los paneles girados con su *up*. Motor (`rt-core`,
+`light.rs`): esferas de radiancia uniforme muestreadas en su cono, puntos
+por posición, la máscara del foco en *smoothstep* desde la dirección del
+centro (la de three), cámara y reflejos con MIS, `LightSample::shadow` y el
+integrador que no traza la sombra de una luz sin ella (tampoco en el
+*shadow catcher*). Interfaz: *+ Añadir luz* con su menú (y *Añadir ▸* de la
+cabecera, el visor en vacío y la paleta), la fila del foco seleccionado con
+duplicar, apuntar y eliminar, *Apuntar un foco aquí ▸* en el menú de una
+pieza, el inspector completo de `UI.md` §2.4 y los dos *próximamente*
+quitados (`lights.addSoon`, `lightEdit.moreSoon`).
+
+*Luces y cámaras en el visor, Mirar a través.* `core/view-objects.ts`:
+`objectFrame` y `objectGizmoAction` (el *gizmo* de *Mover* sobre una luz o
+una cámara guardada: mover sin cambiar a dónde apunta, girar su objetivo y
+el giro del panel, el asa de apuntar; una cámara bloqueada no tiene),
+`lookThroughCamera` y `lookThroughAction` (la vista desde el objeto y la
+navegación que lo mueve; un foco ajusta la focal a su cono), `glyphsOf`,
+`pickGlyph` y `viewProjector`. La vista previa dibuja los glifos en la capa
+del *gizmo* (discontinuos; el seleccionado, continuo), el modo `MOVE` del
+*gizmo* (sin cubos) y mira a través; el trazador (wasm y nativo) renderiza
+desde la misma cámara (`setViewCamera`). `main.ts` convierte la navegación
+en vivo, con un *token* de gesto que nace al empezar el gesto (una entrada
+de deshacer por órbita, desplazamiento o tirón de rueda). En la barra de
+vista, *Luces y cámaras* (recordado) y *Mirar a través*; `Ctrl/⌘ ⇧ L`, `Esc`
+vuelve antes que nada; un aviso bajo la barra; doble clic y clic derecho en
+un glifo.
+
+*Pruebas.* `tests/own-lights.test.ts` (20) y `tests/view-objects.test.ts`
+(16): el criterio (un montaje propio de un panel, un foco y un punto,
+guardado en Joyería y aplicado a Relojería, Mobiliario de interior y
+Estándar, da la irradiancia total de cada tipo con el mismo reparto, el
+mismo objetivo y la misma transición), añadir y deshacer, ids que no chocan,
+duplicar y eliminar, restablecer, apuntar, giro, colocar sobre superficie,
+RSB de ida y vuelta, el sol que coloca el cielo desde su objetivo,
+proyecto y biblioteca, glifos y su clic, el *gizmo* de luz y de cámara (una
+entrada de deshacer, la cámara activa quieta, la bloqueada sin *gizmo*),
+*Mirar a través* que mueve la luz y la cámara y respeta el bloqueo, la
+proyección. En `rt-core`, 7 tests de `light.rs` (`I / d²` del punto y de la
+esfera, su radiancia vista, el cono y su transición, el flujo del cono
+frente al cálculo de la interfaz, la esfera diminuta como punto, la
+selección de un foco estrecho, la marca sin sombra) y 4 del integrador (la
+irradiancia de puntos, esferas y focos sobre un suelo blanco, la esfera
+contada una vez con MIS, lo oscuro fuera del cono, la luz sin sombra que
+atraviesa una losa). Mutaciones: 9 en el motor y 21 en TypeScript, todas
+detectadas al final (la del proyector se escapaba y ganó un test).
+`tools/lights-check.mjs` (Playwright, *Rápido* y *Completo*) comprueba el
+menú, apuntar a una pieza con clic, el deshacer paso a paso, el clic en los
+glifos (y que no coge nada con el botón apagado o en *Piezas*), el *gizmo*
+de un foco y de una cámara guardada, *Mirar a través* con órbita, deshacer y
+`Esc`, y una cámara bloqueada que no se mueve; capturas
+`docs/ui/lights-add-menu.png`, `lights-spot-aimed.png`,
+`lights-spot-full.png` (convergida, solo el lienzo),
+`lights-glyphs-gizmo.png` y `lights-look-through.png`.
+
+No encajó con el plan:
+
+- **No son nodos `LIGHT` del árbol.** El plan (y `SPEC.md` §3.1) dice
+  nodos `LIGHT` con transformación propia, y U3 dejó `scene/aim` y el asa
+  de apuntar para ellos. Pero desde U1 las luces viven en `studio.lights` y
+  las cámaras en `camera.cameras`, y de esa lista tiran la vista previa, el
+  motor, la animación (los clips apuntan a un foco por su id), el Doctor,
+  los estudios, la biblioteca y las barras de reparto. Dos sistemas de luces
+  lo habrían duplicado todo y los focos del montaje no se habrían podido
+  mover con el *gizmo*. Los focos propios son `LightInstance` con su propia
+  colocación (posición, objetivo y giro en tamaños de pieza desde el pivote)
+  y los del montaje ganan la misma; el árbol de *Piezas* no los lista (los
+  lista *Luces*). `scene/aim` sigue como estaba, sin uso. Si Fable prefiere
+  nodos, es una migración de `studio.lights`.
+- **Los vatios de un punto y de un foco** no son los de Cycles (que serían π
+  veces más oscuros): ninguna receta los usa, y así un montaje que mezcla
+  paneles, puntos y focos conserva su equilibrio y un foco nuevo con la
+  irradiancia media se ve como los demás. Un sol nuevo nace con π veces la
+  media (su medida es la que llega; la de un panel, 1/π de la que llega en
+  su eje), así que su barra de reparto se ve mayor. Los lúmenes salen
+  pequeños en piezas pequeñas (son el flujo de verdad: los vatios se dan
+  para una pieza de 1 m), y la nota del inspector lo dice.
+- **Los glifos se dibujan solo mientras se trabaja con luces o cámaras**
+  (decisión del líder tras la primera captura): la pestaña *Luces* o
+  *Cámaras* abierta, una luz o una cámara seleccionada, o mirando a través;
+  con *Piezas* y una pieza, ninguno. El borde inferior del panel principal
+  del montaje *Estándar* cruzaba el hombro del frasco como una línea recta
+  (el foco está entre la cámara y la pieza, por encima): una segunda pasada
+  con profundidad no lo habría atenuado, porque está delante. Además, los
+  que no están seleccionados son **discontinuos**, como líneas de
+  construcción. *Luces y cámaras* está encendido por defecto y se recuerda.
+- **El botón *Luces y cámaras* está a la izquierda de *Desplazar***: U9
+  dejó *Escalar* a su derecha y las dos decisiones piden «junto a
+  *Desplazar*».
+- **Apuntar a la selección** pasó al menú contextual de la pieza (*Apuntar
+  un foco aquí ▸*): la selección es una cosa a la vez, y al seleccionar un
+  foco las piezas dejan de estarlo; las acciones de fila salen en la fila
+  del foco seleccionado (al pasar el ratón se movían bajo el clic que
+  selecciona la fila) y su *apuntar a…* es el mismo menú del inspector.
+- **Bloquear cámara** se aplica a lo que se mira a través cuando es una
+  cámara (su propio bloqueo; el botón de la barra sigue siendo el de la
+  activa). Una luz no tiene bloqueo: mirar a través de una luz la mueve
+  aunque la cámara activa esté bloqueada, y la cámara activa nunca se mueve
+  mirando a través. La cámara activa no tiene glifo ni se mira a través de
+  ella (es la vista); para elegir una cámara guardada sin activarla, su
+  glifo (la fila de *Cámaras* la activa, como dice §2.2).
+- **La caja de selección no coge glifos y *Escalar* no pone *gizmo* en una
+  luz o una cámara**: la caja selecciona piezas al nivel vigente, y el
+  tamaño de un foco es del inspector. El *gizmo* de *Mover* sobre ellas no
+  tiene cubos de escala.
+- **El motor elige un foco estrecho como su punto** cuando su cono abarca
+  el centro de la escena (y a un veinteavo si no): por su flujo, un foco de
+  9° salía casi nunca frente a la cúpula y su círculo de luz quedaba lleno
+  de ruido. Cambia solo el ruido, no la media; ninguna escena sin puntos ni
+  focos cambia (ningún *hash* ni test de imagen se ha movido). Test nuevo:
+  `a_narrow_spot_aimed_at_the_scene_is_chosen_like_its_point_light`.
+- **Coordenadas en lugar de un desplegable**: el inspector enseña X, Y, Z
+  siempre, como la posición de una pieza.
+- Para las comprobaciones, el visor copia el objeto seleccionado, dónde está
+  en el lienzo y lo que se mira a través en `data-object`, `data-object-at`
+  y `data-look-through`, como el medidor sus números.
 
 ## L5 · Luces IES — **Sonnet**
 

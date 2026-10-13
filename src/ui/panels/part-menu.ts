@@ -7,10 +7,10 @@ import { groupTargets, hasCadFaces, hasFaceMaterials, movableTargets, pivotModeO
 import { primitivesUnder } from '../../core/primitive-ops';
 import * as cmd from '../commands';
 import type { MenuEntry, MenuItems } from '../components/widgets';
-import { dyn } from '../names';
+import { dyn, lightName } from '../names';
 import type { Ctx } from '../reactive';
 import { kbdFor } from '../shortcuts';
-import { t } from '../strings';
+import { getLang, t } from '../strings';
 
 export interface PartMenuOptions {
   /** Starts renaming in place (the tree row); the viewport focuses the inspector's name field instead. */
@@ -85,6 +85,8 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
     { label: t('ops.reset'), disabled: fixed, run: () => cmd.resetTransform(ctx, nodes) },
     { label: t('ops.pivot'), disabled: none, submenu: pivot },
     { label: t('ops.cameraTarget'), disabled: none, run: () => cmd.setCameraTarget(ctx, nodes) },
+    // L4: a light of the rig aimed at the selection (the centre of its bounds).
+    { label: t('ops.aimLight'), icon: 'light', disabled: none || s.studio.lights.length === 0, submenu: s.studio.lights.map((l) => ({ label: lightName(s, l.id, getLang()), run: () => cmd.aimLightAtNodes(ctx, l.id, nodes) })) },
     null,
     { label: allHidden ? t('tree.show') : t('tree.hide'), kbd: kbdFor('hide'), disabled: none, run: () => cmd.toggleHide(ctx, nodes) },
     { label: t('tree.isolate'), kbd: kbdFor('isolate'), disabled: none, run: () => cmd.isolateSelection(ctx, nodes) },

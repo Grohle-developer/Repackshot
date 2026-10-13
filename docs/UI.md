@@ -195,15 +195,23 @@ cambiar la estructura del menú.
 cámara en el visor.
 
 **Luces**: la lista de focos del montaje activo (Principal, Relleno,
-Contra, Cenital…) más los **focos propios**, con su potencia relativa en
-una barra fina y un interruptor cada uno. Clic selecciona el foco y el
-inspector lo edita. Botón **+ Añadir luz** con menú: Área (rectángulo,
-disco, esfera), Punto, Foco direccional, Sol, IES (*próximamente*). Un
-foco nuevo aparece delante y arriba de la pieza, encendido y seleccionado.
-Acciones por fila: duplicar, apuntar a la selección, eliminar. Debajo,
-**Guardar montaje como…** (nombre; va a la pestaña *Míos* del catálogo
-con miniatura renderizada) y **Restablecer al montaje** cuando el rig
-está modificado.
+Contra, Cenital…) más los **focos propios** (con la marca *propio*), con su
+potencia relativa en una barra fina y un interruptor cada uno. Clic
+selecciona el foco y el inspector lo edita. Botón **+ Añadir luz** con menú:
+*Área · rectángulo*, *Área · disco*, *Área · esfera*, *Punto*, *Foco
+direccional*, *Sol* e *IES* (*próximamente*, fase L5), cada una con su icono
+y un *tooltip* de lo que da; el mismo menú está en *Añadir ▸* de la cabecera
+(bajo las primitivas) y en el clic derecho del visor en vacío, y cada tipo
+en la paleta (*Añadir luz: foco direccional*…). Un foco nuevo aparece
+delante y arriba de la pieza, encendido y seleccionado (fase L4). Acciones
+por fila, en la fila del foco seleccionado (al pasar el ratón se moverían
+bajo el clic que selecciona la fila): **duplicar**, **apuntar a…** (el centro
+del producto, un punto, una pieza) y **eliminar**. Como la selección es el
+foco, *apuntar a la selección* está del otro lado: el menú contextual de una
+pieza tiene **Apuntar un foco aquí ▸** con la lista de focos. Debajo,
+**Guardar montaje como…** (nombre; va a la pestaña *Míos* del catálogo con
+miniatura renderizada) y **Restablecer al montaje** cuando el rig está
+modificado (quita los focos propios).
 
 **Estudios**: combinaciones guardadas de cámara + montaje de luz + entorno
 + set de materiales, como en KeyShot pero sin pantalla aparte: *Guardar
@@ -218,14 +226,17 @@ Capas sobre el visor, siempre con fondo semitransparente del tema y sin
 tapar la pieza:
 
 - **Arriba a la izquierda, barra de vista**: Seleccionar (`V`), Orbitar
-  (`O`), Desplazar (`P`), **Escalar (`S`)** (fase U9, junto a
-  *Desplazar*), Zoom (`Z`), Mover (`M`), separador, Encuadrar todo (`F`),
-  Vistas (menú: tres cuartos, frontal, lateral, cenital, trasera),
-  Perspectiva / Ortográfica, separador, Bloquear cámara. Con *Mover* o
-  *Escalar* aparece el conmutador de ejes *Global · Local* (`G`/`L`). Con
-  *Seleccionar*, *Mover* o *Escalar* y el nivel *Caras*, junto a las
-  herramientas aparece el botón de texto **Rayos X** (la caja de selección
-  coge también las caras ocultas).
+  (`O`), **Luces y cámaras** (fase L4, a la izquierda de *Desplazar*: así
+  *Escalar* sigue a su derecha), Desplazar (`P`), **Escalar (`S`)** (fase
+  U9, junto a *Desplazar*), Zoom (`Z`), Mover (`M`), separador, Encuadrar
+  todo (`F`), Vistas (menú: tres cuartos, frontal, lateral, cenital,
+  trasera), Perspectiva / Ortográfica, separador, Bloquear cámara. Con
+  *Mover* o *Escalar* aparece el conmutador de ejes *Global · Local*
+  (`G`/`L`). Con *Seleccionar*, *Mover* o *Escalar* y el nivel *Caras*,
+  junto a las herramientas aparece el botón de texto **Rayos X** (la caja
+  de selección coge también las caras ocultas). Con una luz o una cámara
+  guardada seleccionada aparece el botón de texto **Mirar a través**
+  (`Ctrl/⌘ ⇧ L`), que mientras se mira dice *Volver a la cámara activa*.
 - **Arriba a la derecha**: nombre de la cámara activa (clic: lista) y
   resolución de salida actual (clic: abre la barra de render).
 - **Abajo a la izquierda, medidor de calidad**: modo y motor activos,
@@ -269,8 +280,42 @@ importa con los valores por defecto.
 (flechas por eje y planos), rotación (anillos) y escala (cubos), en ejes
 locales o globales (`L`/`G` o el conmutador de la barra de vista),
 incrementos con `Shift`, y los campos del inspector actualizándose en
-vivo. Arrastrar es una sola entrada de deshacer. Las luces se mueven y
-apuntan con el mismo *gizmo* (la asa de apuntar es una línea al objetivo).
+vivo. Arrastrar es una sola entrada de deshacer. Las luces y las cámaras
+guardadas se mueven y giran con el mismo *gizmo*, sin cubos de escala (fase
+L4): sobre su posición, en ejes globales o los suyos (derecha, arriba,
+atrás), con el **asa de apuntar** (una línea a su objetivo con un punto al
+final): mover una luz no cambia a dónde apunta, girarla gira a dónde apunta
+(y un panel alrededor de su eje), el asa mueve su objetivo; lo mismo una
+cámara con el suyo (*Deshacer: Mover foco Foco*, *Mover cámara Cámara 2*).
+Una cámara bloqueada no tiene *gizmo*.
+
+**Luces y cámaras en el visor** (fase L4): glifos acromáticos en la tinta
+del tema, sobre todo, discontinuos (el seleccionado, continuo): el contorno
+del panel con una marca hacia donde ilumina, la esfera, el punto con una
+estrella, el cono del foco (y su cono interior), la flecha del sol y la
+pirámide de cada cámara guardada (no la activa). El botón *Luces y cámaras*
+los muestra todos mientras se trabaja con ellos (la pestaña *Luces* o
+*Cámaras* abierta, una luz o una cámara seleccionada, o mirando a través de
+una); con *Piezas* y una pieza, ninguno, para que un panel del montaje que
+cruza el producto no parezca parte de él. Apagado (se recuerda), solo el
+seleccionado. Al pasar sobre un glifo, una etiqueta con su nombre y el
+cursor de mano; un clic lo selecciona por delante de la pieza que tenga
+detrás (`Ctrl/⌘` o `Alt` sobre el seleccionado lo quita), doble clic mira a
+través, clic derecho: *Mirar a través*, *Duplicar*, *Apuntar a… ▸* y
+*Eliminar* (en una cámara, *Activar* y *Eliminar*). La caja de selección no
+los coge y *Escalar* no les pone *gizmo*.
+
+**Mirar a través** (fase L4): el visor mira desde la luz o la cámara
+seleccionada (desde una luz, hacia su objetivo, con la óptica de la cámara
+activa; un foco direccional ajusta la focal a su cono), en *Rápido* y en
+*Completo*, con un aviso bajo la barra: *Mirando a través de Foco ·
+orbitar, desplazar y zoom la mueven · Esc vuelve* y el enlace *Volver a la
+cámara activa*. Orbitar, Desplazar y Zoom (las herramientas, el ratón y la
+rueda) mueven ese objeto (la luz apunta a donde mira el visor), en vivo y
+en una entrada de deshacer por gesto (*Deshacer: Mover Foco desde su
+vista*); la cámara activa no se mueve. Una cámara bloqueada no se mueve
+(*… bloqueada: desbloquéala para moverla*). `Esc`, el botón o el enlace
+vuelven a la cámara activa; borrar lo que se mira, también.
 
 **Herramienta de escalar** (fase U9, `S`): el mismo *gizmo* sobre el
 pivote, pero **solo con las asas de escala**: un eje fino por dirección con
@@ -489,14 +534,21 @@ infinito*, además, **Ajustar a la cámara** lo vuelve a girar y dimensionar
 para la cámara activa y el formato de salida de ahora, en una entrada de
 deshacer (*Deshacer: Ajustar Fondo infinito a la cámara*).
 
-**Con un foco seleccionado:** nombre, rol (si viene de un montaje), tipo
-(área / punto / foco direccional / sol), forma, tamaño, **posición**
-(acimut y elevación relativos a cámara, y distancia; o XYZ en el
-desplegable *Coordenadas*), **apuntar a** (origen, pieza, punto),
-dispersión o ángulo de cono, temperatura o color, potencia en vatios
-(con el equivalente en lúmenes en auxiliar), *visible en reflejos*,
-*visible a cámara*, *proyecta sombra*, encendido; botones *Colocar por
-reflejo*, *Colocar sobre superficie*, *Duplicar*, *Eliminar*.
+**Con un foco seleccionado:** nombre (vacío: el de por defecto, en gris),
+la nota *Foco propio* en los propios, rol (si viene de un montaje), tipo
+(*Área · Punto · Foco · Sol*), forma (área: rectángulo, cuadrado, disco,
+elipse, esfera), tamaño (ancho y alto; diámetro en la esfera) o radio
+(punto y foco), **posición** (acimut y elevación relativos a cámara, y
+distancia; y **Coordenadas** X, Y, Z en las unidades de la interfaz, que
+mueven el foco sin cambiar a dónde apunta), **apuntar a** (botón con menú:
+el centro del producto, un punto…, una pieza…; debajo, a qué apunta ahora),
+giro (paneles no redondos), dispersión (área) o ángulo de cono y
+**transición** en % (foco), disco del sol, temperatura o color, potencia en
+vatios (W/m² en el sol) con el equivalente en lúmenes (lux en el sol) en
+auxiliar y lo que significan los vatios, *visible en reflejos*, *visible a
+cámara*, *proyecta sombra*, encendido; botones *Colocar por reflejo*,
+*Colocar sobre superficie*, *Mirar a través*, *Duplicar*, *Eliminar* (fase
+L4).
 
 **Pestaña *Míos*** en cada catálogo (materiales, montajes de luz, tipos de
 producto, estudios): lo guardado por el usuario, con miniatura, renombrar
@@ -504,7 +556,8 @@ y eliminar al pasar el ratón, y los botones *Exportar biblioteca* e
 *Importar biblioteca* (JSON) al pie. Fase U4.
 
 **Con una cámara seleccionada:** lo mismo que la sección Cámara de la
-escena, más nombre y *Activar*.
+escena, más nombre, *Activar* y, si no es la activa, *Mirar a través* (fase
+L4).
 
 ### 2.5 · Barra inferior: Animación · Cola · Render
 
@@ -914,10 +967,11 @@ de teclado* del menú):
 | `M` | Herramienta de mover |
 | `S` | Herramienta de escalar (fase U9) |
 | `L` / `G` | Ejes locales / globales de mover y escalar |
+| `Ctrl/⌘ ⇧ L` | Mirar a través de la luz o la cámara seleccionada (fase L4); otra vez o `Esc`, volver |
 | `H` / `⇧ H` / `Alt H` | Ocultar selección / Aislar / Mostrar todo |
 | `1` `2` `3` `4` | Nivel de selección: Modelo · Grupo · Pieza · Caras |
 | `Tab` | Plegar y desplegar los paneles laterales |
-| `Esc` | Deseleccionar; cerrar paleta o menú |
+| `Esc` | Volver de *Mirar a través*; salir de *Mover* o *Escalar*; deseleccionar; cerrar paleta o menú |
 | `Supr` | Eliminar la selección |
 
 ---

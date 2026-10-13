@@ -3,7 +3,7 @@
 
 import { MATERIAL_CATEGORIES, MATERIAL_PRESETS } from '../../data/materials';
 import { WEAR_LEVELS, WEAR_PRESETS, WEAR_TYPES } from '../../data/wear';
-import { LIGHT_SHAPES } from '../../data/light-setups';
+import { LIGHT_SHAPES, LIGHT_TYPES } from '../../data/light-setups';
 import type { LightRole, MaterialCategory, WearProps, WearType } from '../../data/types';
 import { instanceFromItem, itemsOf, type MaterialItem } from '../../core/library';
 import { instanceFromPreset, partMaterials, triangleMaterials, visibleParams, wearTypesFor, type MaterialId, type MaterialInstance, type ParamSpec } from '../../core/materials';
@@ -11,20 +11,22 @@ import { SMOOTH_ANGLE_DEG } from '../../core/meshes';
 import { partsUnder, type NodeId } from '../../core/scene';
 import { isLocked, PATTERN_MAX, pivotModeOf, pivotPoint, PIVOT_MODES, type PatternSpec } from '../../core/transform';
 import type { ProjectState } from '../../core/store';
-import type { LightInstance } from '../../core/lighting';
+import { lightAimPoint, lightFrame, lightLumens, NEW_LIGHT, polarAboutPivot, SPOT_DEFAULTS, type LightInstance } from '../../core/lighting';
 import * as cmd from '../commands';
 import { colorField, field, lengthField, numberField, segmented, select, slider, textField, toggle, type Control } from '../components/controls';
 import { libraryFoot, mineCards, mineEmpty, namePrompt, type MineSpec } from '../components/library';
 import { dragSource } from '../components/material-drag';
 import { section } from '../components/section';
-import { setThumbImage, showConfirmIn, thumb } from '../components/widgets';
+import { openMenu, setThumbImage, showConfirmIn, thumb } from '../components/widgets';
 import { h, icon } from '../dom';
 import { cameraName, dyn, lightName, materialLabel, materialName, primitiveParamKey, targetLabel, thumbKey } from '../names';
 import { primitiveEntry } from '../../data/primitives';
 import { dynamic, shallowEq, type Ctx, type Scope } from '../reactive';
-import { L, lbl, t } from '../strings';
+import { L, formatNumber, getLang, lbl, t } from '../strings';
+import { kbdFor } from '../shortcuts';
 import { normalize } from '../components/palette';
 import { cameraFields } from './insp-scene';
+import { aimMenu } from './scene';
 
 // --- What the selection carries ---------------------------------------------------
 
@@ -643,91 +645,211 @@ export function lightInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement 
   const { store, ui } = ctx;
   const l0 = store.get().studio.lights.find((l) => l.id === id);
   if (!l0) return h('div');
-  const name = { en: lightName(store.get(), id, 'en'), es: lightName(store.get(), id, 'es') };
-  const set = (patch: Partial<LightInstance>, g?: string) => store.dispatch({ type: 'studio/setLight', id, patch, gesture: g, label: L('undo.editLight', { name }) });
+  const cur = () => store.get().studio.lights.find((l) => l.id === id);
+  const name = () => ({ en: lightName(store.get(), id, 'en'), es: lightName(store.get(), id, 'es') });
+  const set = (patch: Partial<LightInstance>, g?: string) => store.dispatch({ type: 'studio/setLight', id, patch, gesture: g, label: L('undo.editLight', { name: name() }) });
+  const nameField = textField(l0.name ?? '', (v) => set({ name: v.trim() || undefined }), t('lightEdit.name'), lightName(store.get(), id, getLang()));
+  const ownNote = h('p', { class: 'note', style: 'margin:0' }, t('lightEdit.own'));
   const role = select((['KEY', 'FILL', 'RIM', 'TOP'] as const).map((r) => ({ value: r, label: t(dyn(`role.${r}`)) })), l0.role, (v) => set({ role: v as LightRole }), t('lightEdit.role'));
-  const type = segmented((['AREA', 'SUN'] as const).map((x) => ({ value: x, label: t(dyn(`lightType.${x}`)) })), l0.type, (v) => set({ type: v }), { full: true, ariaLabel: t('lightEdit.type') });
+  const roleRow = field(t('lightEdit.role'), role.el);
+  // Area, point, spot, sun (L4). A spot starts with its default cone; a point and a spot with a small bulb.
+  const type = segmented(
+    LIGHT_TYPES.map((x) => ({ value: x, label: t(dyn(`lightType.${x}`)) })),
+    l0.type,
+    (v) => {
+      const l = cur();
+      if (!l || l.type === v) return;
+      const patch: Partial<LightInstance> = { type: v };
+      if (v === 'SPOT' && (l.type !== 'SPOT' || l.spread >= 180)) patch.spread = SPOT_DEFAULTS.cone;
+      if (v !== 'SPOT' && l.type === 'SPOT') patch.spread = 180;
+      if ((v === 'POINT' || v === 'SPOT') && l.type === 'AREA' && l.shape !== 'SPHERE') patch.size = NEW_LIGHT.bulb;
+      set(patch);
+    },
+    { full: true, ariaLabel: t('lightEdit.type') },
+  );
   const shape = select(LIGHT_SHAPES.map((x) => ({ value: x, label: t(dyn(`shape.${x}`)) })), l0.shape, (v) => set({ shape: v as LightInstance['shape'] }), t('lightEdit.shape'));
-  const num = (key: 'size' | 'sizeY' | 'az' | 'el' | 'dist' | 'spread' | 'power', min: number, max: number, step: number, unit: string, digits: number) =>
-    numberField({ value: l0[key], min, max, step, unit, digits, ariaLabel: t(dyn(`lightEdit.${key === 'az' ? 'azimuth' : key === 'el' ? 'elevation' : key === 'dist' ? 'distance' : key}`)), onChange: (v, g) => set({ [key]: v }, g) });
-  const size = num('size', 0.01, 50, 0.05, '', 2);
-  const sizeY = num('sizeY', 0.01, 50, 0.05, '', 2);
-  const az = num('az', -180, 180, 1, '°', 0);
-  const el = num('el', -89, 89, 1, '°', 0);
-  const dist = num('dist', 0.1, 100, 0.05, '', 2);
-  const spread = num('spread', 1, 180, 1, '°', 0);
-  const power = num('power', 0, 100000, 1, 'W', 1);
+  const shapeRow = field(t('lightEdit.shape'), shape.el);
+  const num = (key: 'size' | 'sizeY' | 'az' | 'el' | 'dist' | 'spread' | 'power' | 'angle' | 'roll', min: number, max: number, step: number, unit: string, digits: number, aria: string) =>
+    numberField({ value: (l0[key] as number | undefined) ?? 0, min, max, step, unit, digits, ariaLabel: aria, onChange: (v, g) => set({ [key]: v }, g) });
+  const size = num('size', 0.01, 50, 0.05, '', 2, t('lightEdit.size'));
+  const sizeY = num('sizeY', 0.01, 50, 0.05, '', 2, t('lightEdit.sizeY'));
+  const sizeRow = field(t('lightEdit.size'), size.el);
+  const sizeLabel = sizeRow.querySelector('.field-label') as HTMLElement;
+  const sizeYRow = field(t('lightEdit.sizeY'), sizeY.el);
+  // A point's or a spot's bulb, by its radius (the size is its diameter).
+  const radius = numberField({ value: l0.size / 2, min: 0, max: 25, step: 0.005, digits: 3, ariaLabel: t('lightEdit.radius'), onChange: (v, g) => set({ size: v * 2 }, g) });
+  const radiusRow = field(t('lightEdit.radius'), radius.el);
+  const az = num('az', -180, 180, 1, '°', 0, t('lightEdit.azimuth'));
+  const el = num('el', -89, 89, 1, '°', 0, t('lightEdit.elevation'));
+  const dist = num('dist', 0.1, 100, 0.05, '', 2, t('lightEdit.distance'));
+  const spread = num('spread', 1, 180, 1, '°', 0, t('lightEdit.spread'));
+  const spreadRow = field(t('lightEdit.spread'), spread.el);
+  const cone = num('spread', 1, 179, 1, '°', 0, t('lightEdit.cone'));
+  const coneRow = field(t('lightEdit.cone'), cone.el);
+  const blend = numberField({ value: Math.round((l0.blend ?? SPOT_DEFAULTS.blend) * 100), min: 0, max: 100, step: 1, unit: '%', ariaLabel: t('lightEdit.blend'), onChange: (v, g) => set({ blend: v / 100 }, g) });
+  const blendRow = field(t('lightEdit.blend'), blend.el);
+  const sunAngle = num('angle', 0, 5, 0.05, '°', 2, t('lightEdit.sunAngle'));
+  const sunRow = field(t('lightEdit.sunAngle'), sunAngle.el);
+  const roll = num('roll', -180, 180, 1, '°', 0, t('lightEdit.roll'));
+  const rollRow = field(t('lightEdit.roll'), roll.el);
+  // World coordinates (mm): moving keeps the light aimed where it was.
+  const xyz = ([0, 1, 2] as const).map((k) =>
+    lengthField({
+      value: lightFrame(store.get(), l0).position[k],
+      step: 1,
+      label: ['X', 'Y', 'Z'][k],
+      ariaLabel: `${t('lightEdit.coords')} ${['X', 'Y', 'Z'][k]}`,
+      onChange: (v, g) => {
+        const s = store.get();
+        const l = cur();
+        if (!l) return;
+        const pos = lightFrame(s, l).position;
+        pos[k] = v;
+        const placed = polarAboutPivot(s, pos);
+        if (placed) set(placed, g);
+      },
+    }),
+  );
   const mode = segmented(
     [
       { value: 'K' as const, label: t('lightEdit.byKelvin') },
       { value: 'C' as const, label: t('lightEdit.byColor') },
     ],
     l0.kelvin !== null ? 'K' : 'C',
-    (v) => (v === 'K' ? set({ kelvin: store.get().studio.lights.find((l) => l.id === id)?.kelvin ?? 5600 }) : set({ color: store.get().studio.lights.find((l) => l.id === id)!.color })),
+    (v) => (v === 'K' ? set({ kelvin: cur()?.kelvin ?? 5600 }) : set({ color: cur()!.color })),
     { full: true, ariaLabel: t('lightEdit.colorMode') },
   );
   const kelvin = numberField({ value: l0.kelvin ?? 5600, min: 1000, max: 12000, step: 50, unit: 'K', ariaLabel: t('lightEdit.kelvin'), onChange: (v, g) => set({ kelvin: v }, g) });
   const color = colorField(l0.color, (rgb, g) => set({ color: rgb }, g), t('lightEdit.color'));
   const kelvinRow = field(t('lightEdit.kelvin'), kelvin.el);
   const colorRow = field(t('lightEdit.color'), color.el);
+  const power = num('power', 0, 100000, 1, 'W', 1, t('lightEdit.power'));
+  const powerAux = h('div', { class: 'note', style: 'padding-left:112px;margin-top:-4px', 'data-field': 'lumens' });
   const glossy = toggle(l0.glossy, (v) => set({ glossy: v }), t('lightEdit.glossy'));
   const camera = toggle(l0.camera, (v) => set({ camera: v }), t('lightEdit.camera'));
+  const shadow = toggle(l0.shadow !== false, (v) => set({ shadow: v ? undefined : false }), t('lightEdit.shadow'));
   const enabled = toggle(l0.enabled, (v) => set({ enabled: v }), t('lightEdit.enabled'));
   const bright = h('p', { class: 'note', style: 'margin:0' }, t('lightEdit.brightField'));
-  const sizeYRow = field(t('lightEdit.sizeY'), sizeY.el);
+  // Aim at… (UI.md §2.4: the product's centre, the selected parts, a point, a part).
+  const aimNow = h('div', { class: 'note', style: 'padding-left:112px;margin-top:-4px', 'data-field': 'aim' });
+  const aimBtn = h('button', { type: 'button', class: 'btn', 'aria-haspopup': 'menu', 'data-action': 'light.aim' }, icon('target', 14), t('lightEdit.aim'));
+  aimBtn.addEventListener('click', () => openMenu(aimBtn, aimMenu(ctx, id)));
   scope.watch(
     (s) => s.studio.lights.find((l) => l.id === id),
     (l) => {
       if (!l) return;
+      const s = store.get();
+      const area = l.type === 'AREA';
+      const sphere = area && l.shape === 'SPHERE';
+      const bulb = l.type === 'POINT' || l.type === 'SPOT';
+      nameField.set(l.name ?? '');
+      (nameField.el as HTMLInputElement).placeholder = lightName(s, id, getLang());
+      ownNote.style.display = l.own ? '' : 'none';
+      roleRow.style.display = l.own ? 'none' : '';
       role.set(l.role);
       type.set(l.type);
+      shapeRow.style.display = area ? '' : 'none';
       shape.set(l.shape);
+      sizeRow.style.display = area ? '' : 'none';
+      sizeLabel.textContent = sphere ? t('lightEdit.diameter') : t('lightEdit.size');
       size.set(l.size);
       sizeY.set(l.sizeY);
+      sizeYRow.style.display = area && !sphere && l.shape !== 'SQUARE' && l.shape !== 'DISK' ? '' : 'none';
+      radiusRow.style.display = bulb ? '' : 'none';
+      radius.set(l.size / 2);
       az.set(l.az);
       el.set(l.el);
       dist.set(l.dist);
+      spreadRow.style.display = area && !sphere ? '' : 'none';
       spread.set(l.spread);
-      power.set(l.power);
+      coneRow.style.display = l.type === 'SPOT' ? '' : 'none';
+      blendRow.style.display = l.type === 'SPOT' ? '' : 'none';
+      cone.set(l.spread);
+      blend.set(Math.round((l.blend ?? SPOT_DEFAULTS.blend) * 100));
+      sunRow.style.display = l.type === 'SUN' ? '' : 'none';
+      sunAngle.set(l.angle);
+      rollRow.style.display = area && !sphere && l.shape !== 'DISK' ? '' : 'none';
+      roll.set(l.roll ?? 0);
+      const f = lightFrame(s, l);
+      xyz.forEach((c, k) => c.set(Math.round(f.position[k] * 100) / 100));
       mode.set(l.kelvin !== null ? 'K' : 'C');
       kelvin.set(l.kelvin ?? 5600);
       color.set(l.color);
       kelvinRow.style.display = l.kelvin !== null ? '' : 'none';
       colorRow.style.display = l.kelvin !== null ? 'none' : '';
-      sizeYRow.style.display = l.shape === 'SQUARE' || l.shape === 'DISK' ? 'none' : '';
+      power.set(l.power);
+      // Lumens (or lux for a sun) from the flux the engine is given: not a lamp's efficacy (core/photometry.ts).
+      const lm = lightLumens(s, l);
+      const aux = t(lm.unit === 'lx' ? 'lightEdit.lux' : 'lightEdit.lumens', { n: formatNumber(lm.value, getLang(), lm.value < 10 ? 1 : 0) });
+      powerAux.textContent = l.type === 'SUN' ? t('lightEdit.sunPowerAux', { aux }) : t('lightEdit.powerAux', { aux });
+      const at = l.aim ? lightAimPoint(s, l) : null;
+      const r = (v: number) => formatNumber(v, getLang(), 0);
+      aimNow.textContent = t('lightEdit.aimNow', { what: at ? t('lightEdit.aimHere', { x: r(at[0]), y: r(at[1]), z: r(at[2]) }) : t('lightEdit.aimCentre').toLowerCase() });
       glossy.set(l.glossy);
       camera.set(l.camera);
+      shadow.set(l.shadow !== false);
       enabled.set(l.enabled);
       bright.style.display = l.brightField ? '' : 'none';
     },
   );
-  const place = h('button', { type: 'button', class: 'btn', 'data-tip': t('light.placeReflectAux'), onclick: () => ui.set({ pickMode: ui.get().pickMode ? null : { kind: 'reflect', light: id } }) }, icon('reflect', 14), t('light.placeReflect'));
-  scope.watch((_s, u) => u.pickMode?.kind === 'reflect', (on) => place.setAttribute('aria-pressed', String(on)));
+  // Units of the coordinates follow Settings ▸ General ▸ Units: the scene moving the light updates them too.
+  scope.watch((s) => [s.scene.nodes, s.scene.partSizeMm] as const, () => {
+    const l = cur();
+    if (!l) return;
+    const f = lightFrame(store.get(), l);
+    xyz.forEach((c, k) => c.set(Math.round(f.position[k] * 100) / 100));
+  }, shallowEq);
+  const pickBtn = (kind: 'reflect' | 'surface', label: string, tip: string, ic: 'reflect' | 'target') => {
+    const b = h('button', { type: 'button', class: 'btn', 'data-tip': tip, 'data-action': `light.${kind}`, onclick: () => (kind === 'reflect' ? ui.set({ pickMode: ui.get().pickMode ? null : { kind: 'reflect', light: id } }) : cmd.pickSurface(ctx, id)) }, icon(ic, 14), label);
+    scope.watch((_s, u) => u.pickMode?.kind === kind, (on) => b.setAttribute('aria-pressed', String(on)));
+    return b;
+  };
+  const place = pickBtn('reflect', t('light.placeReflect'), t('light.placeReflectAux'), 'reflect');
+  const surface = pickBtn('surface', t('light.placeSurface'), t('light.placeSurfaceAux'), 'target');
+  const look = h('button', { type: 'button', class: 'btn', 'data-tip': t('viewport.lookThroughAux'), 'data-kbd': kbdFor('lookThrough'), 'data-action': 'light.look', onclick: () => cmd.toggleLookThrough(ctx, { kind: 'LIGHT', id }) }, icon('lookThrough', 14), t('viewport.lookThrough'));
+  scope.watch((_s, u) => u.lookThrough?.kind === 'LIGHT' && u.lookThrough.id === id, (on) => look.setAttribute('aria-pressed', String(on)));
+  const dup = h('button', { type: 'button', class: 'btn', style: 'flex:1', 'data-action': 'light.duplicate', onclick: () => cmd.duplicateLight(ctx, id) }, icon('duplicate', 14), t('common.duplicate'));
+  const del = h('button', { type: 'button', class: 'btn', style: 'flex:1', 'data-action': 'light.delete', onclick: () => cmd.deleteLight(ctx, id) }, icon('trash', 14), t('common.delete'));
+  const aux = (text: string) => h('div', { class: 'note', style: 'padding-left:112px;margin-top:-4px' }, text);
   const body = h(
     'div',
-    { class: 'stack' },
-    field(t('lightEdit.role'), role.el),
+    { class: 'stack', 'data-field': 'light', 'data-light': id },
+    field(t('lightEdit.name'), nameField.el),
+    ownNote,
+    roleRow,
     field(t('lightEdit.type'), type.el),
-    field(t('lightEdit.shape'), shape.el),
-    field(t('lightEdit.size'), size.el),
+    shapeRow,
+    sizeRow,
     sizeYRow,
-    h('div', { class: 'note', style: 'padding-left:112px;margin-top:-4px' }, t('lightEdit.sizeAux')),
+    radiusRow,
+    aux(t('lightEdit.sizeAux')),
     field(t('lightEdit.azimuth'), az.el),
-    h('div', { class: 'note', style: 'padding-left:112px;margin-top:-4px' }, t('lightEdit.azimuthAux')),
+    aux(t('lightEdit.azimuthAux')),
     field(t('lightEdit.elevation'), el.el),
     field(t('lightEdit.distance'), dist.el),
-    field(t('lightEdit.spread'), spread.el),
+    h('div', { class: 'field-label' }, t('lightEdit.coords')),
+    h('div', { class: 'field-row3', 'data-field': 'light-position' }, ...xyz.map((c) => c.el)),
+    h('div', { class: 'note', style: 'margin-top:-4px' }, t('lightEdit.coordsAux')),
+    field(t('lightEdit.aim'), aimBtn),
+    aimNow,
+    rollRow,
+    spreadRow,
+    coneRow,
+    blendRow,
+    sunRow,
     field(t('lightEdit.colorMode'), mode.el),
     kelvinRow,
     colorRow,
     field(t('lightEdit.power'), power.el),
+    powerAux,
     field(t('lightEdit.glossy'), glossy.el),
     field(t('lightEdit.camera'), camera.el),
     bright,
+    field(t('lightEdit.shadow'), shadow.el),
     field(t('lightEdit.enabled'), enabled.el),
-    place,
+    h('div', { class: 'row', style: 'flex-wrap:wrap' }, place, surface, look),
     h('p', { class: 'note', style: 'margin:0' }, t('light.placeReflectAux')),
-    h('p', { class: 'note', style: 'margin:0' }, t('lightEdit.moreSoon')),
+    h('div', { class: 'row' }, dup, del),
   );
   return section(ctx, 'lightEdit', t('section.lightEdit'), body);
 }
@@ -750,6 +872,16 @@ export function cameraInspector(ctx: Ctx, scope: Scope, id: string): HTMLElement
     },
     (a, b) => a[0] === b[0] && a[1] === b[1],
   );
-  const body = h('div', { class: 'stack' }, field(t('camera.name'), name.el), activate, cameraFields(ctx, scope, () => id));
+  // Look through (L4): a saved camera's view in the viewport, navigation moves it; not the active camera (it is the view).
+  const look = h('button', { type: 'button', class: 'btn', 'data-tip': t('viewport.lookThroughAux'), 'data-kbd': kbdFor('lookThrough'), 'data-action': 'camera.look', onclick: () => cmd.toggleLookThrough(ctx, { kind: 'CAMERA', id }) }, icon('lookThrough', 14), t('viewport.lookThrough'));
+  scope.watch(
+    (s, u) => [s.camera.active === id, u.lookThrough?.kind === 'CAMERA' && u.lookThrough.id === id] as const,
+    ([active, on]) => {
+      look.style.display = active ? 'none' : '';
+      look.setAttribute('aria-pressed', String(on));
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
+  const body = h('div', { class: 'stack' }, field(t('camera.name'), name.el), h('div', { class: 'row' }, activate, look), cameraFields(ctx, scope, () => id));
   return section(ctx, 'cameraEdit', t('section.camera'), body);
 }

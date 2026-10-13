@@ -81,6 +81,16 @@ export const ICONS = {
   primTube: ['M5 6.5a7 2.5 0 1 0 14 0a7 2.5 0 1 0-14 0', 'M9.5 6.5a2.5 0.9 0 1 0 5 0a2.5 0.9 0 1 0-5 0', 'M5 6.5v11', 'M19 6.5v11', 'M5 17.5a7 2.5 0 0 0 14 0'],
   primSteps: ['M3 20v-4h5v-4h5V8h5V4h3v16z'],
   primSweep: ['M3 19h8a7 7 0 0 0 7-7V4', 'M3 21h18'],
+  // Phase L4: the kinds of Add light ▸, the Lights and cameras button and Look through.
+  lightRect: ['M4 7h16v10H4z', 'M12 17v4'],
+  lightDisc: ['c:12,11,7', 'M12 18v3'],
+  lightSphere: ['c:12,12,7', 'M5 12a7 2.8 0 0 0 14 0'],
+  lightPoint: ['c:12,12,2.5,f', 'M12 3v3', 'M12 18v3', 'M3 12h3', 'M18 12h3', 'M5.6 5.6l2.1 2.1', 'M16.3 16.3l2.1 2.1', 'M5.6 18.4l2.1-2.1', 'M16.3 7.7l2.1-2.1'],
+  lightSpot: ['c:12,5,1.6,f', 'M12 5 5 19h14z', 'M8 15.5h8'],
+  lightSun: ['c:12,12,4', 'M12 2v3', 'M12 19v3', 'M2 12h3', 'M19 12h3', 'M4.9 4.9 7 7', 'M17 17l2.1 2.1', 'M4.9 19.1 7 17', 'M17 7l2.1-2.1'],
+  lightIes: ['M6 4h12', 'M12 4v4', 'M5 20c2-9 12-9 14 0', 'M8.5 20c1-5 6-5 7 0'],
+  glyphs: ['M3 5h7v5H3z', 'M10 6.5l3-1.5v5l-3-1.5', 'c:17,13.5,1.4,f', 'M17 13.5l-4 7h8z'],
+  lookThrough: ['M3 8V4h4', 'M21 8V4h-4', 'M3 16v4h4', 'M21 16v4h-4', 'M6 12s2.3-4 6-4 6 4 6 4-2.3 4-6 4-6-4-6-4Z', 'c:12,12,1.6,f'],
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof ICONS;

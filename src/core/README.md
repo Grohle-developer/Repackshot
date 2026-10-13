@@ -35,3 +35,11 @@ base in the same action; live edits that keep the part's footing; Convert to mes
 Selection by box (U7): `box-select.ts` (the box a drag makes: left to right is a window, right to left crossing; which
 presses arm it for each mouse scheme; window and crossing tests of the projected parts, groups and models, and of the
 faces that show in the rectangle; all in screen pixels, from the matrices the viewport hands over).
+
+Own lights and the viewport's lights and cameras (L4): `lighting.ts` keeps every light of the rig, the setup's and the
+own ones (`own`), each with its own placement (`az`, `el`, `dist` around the rig pivot, an `aim` and a `roll`;
+`lightFrame`), and the actions that add, duplicate, delete, aim and place them; `photometry.ts` says what a point's and a
+spot's watts are (as bright on their axis as a panel's) and where their lumens come from. `view-objects.ts` treats a
+light or a camera as an object of the viewport: the gizmo on it and what a drag of it does (`objectGizmoAction`), the
+view from it and what navigating that view does to it (`lookThroughCamera`, `lookThroughAction`), and the glyphs and the
+click that picks one (`glyphsOf`, `pickGlyph`, `viewProjector`).

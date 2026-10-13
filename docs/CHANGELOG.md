@@ -5,6 +5,18 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Interfaz
+
+- **Focos propios** (L4): *+ Añadir luz* en la pestaña *Luces* (y en *Añadir ▸* de la cabecera, el clic derecho del visor en vacío y la paleta) añade un **área** (rectángulo, disco o esfera), un **punto**, un **foco direccional** (cono y transición) o un **sol**, delante y arriba de la pieza, encendido, seleccionado y con el brillo medio de los focos encendidos; *IES* sigue *próximamente* (L5). Duplicar, eliminar y apuntar en la fila del foco seleccionado; *Apuntar un foco aquí ▸* en el menú contextual de una pieza.
+- El inspector de un foco tiene todo: nombre, tipo, forma, tamaño o radio, acimut, elevación y distancia, **coordenadas X, Y, Z**, **Apuntar a…** (el centro del producto, un punto, una pieza), giro, dispersión, cono y transición, disco del sol, temperatura o color, **potencia en vatios con sus lúmenes** (o lux), visible en reflejos y a cámara, **proyecta sombra**, encendido, *Colocar por reflejo*, **Colocar sobre superficie**, *Mirar a través*, *Duplicar* y *Eliminar*. Ya no dice *próximamente* (L4).
+- **Guardar montaje como…** guarda también los focos propios (tipo, objetivo, giro, transición, sombra); aplicado a otro tipo de producto conserva la irradiancia total de ese tipo y el reparto entre focos. **Restablecer al montaje** quita los focos propios (L4).
+- **Luces y cámaras en el visor**: glifos acromáticos (el contorno del panel, la esfera, el punto, el cono del foco, la flecha del sol, la pirámide de cada cámara guardada) mientras la pestaña *Luces* o *Cámaras* está abierta o hay una seleccionada; el botón **Luces y cámaras** de la barra de vista, a la izquierda de *Desplazar*, los muestra u oculta. Un clic en un glifo lo selecciona y **Mover** lo mueve y lo gira (la luz con su asa de apuntar, la cámara con su objetivo), una entrada de deshacer por arrastre (L4).
+- **Mirar a través** (`Ctrl/⌘ ⇧ L`, el botón de la barra de vista o del inspector, doble clic en el glifo): el visor mira desde la luz o la cámara seleccionada, en *Rápido* y en *Completo*, y Orbitar, Desplazar y Zoom la mueven (la luz apunta a donde mira el visor); una cámara bloqueada no se mueve; `Esc` vuelve a la cámara activa (L4).
+
+### Motor
+
+- **Puntos y focos direccionales** en el integrador (`LGHT` 3 y 4): una esfera de radiancia uniforme muestreada en su cono de direcciones (un punto, por posición), el cono con transición en *smoothstep* como en la vista previa, visibles a cámara y en reflejos con MIS; un foco estrecho apuntado a la escena se elige como su punto, así que su círculo de luz no sale con ruido. Bit 2 de `LGHT.flags`: **sin sombra** (L4).
+
 ### Correcciones
 
 - *Enfocar con clic* enfoca justo en el punto clicado: medía la distancia en línea recta y el motor enfoca un plano perpendicular a la vista, así que cualquier punto fuera del centro quedaba detrás del plano de foco (aviso del usuario).

@@ -10,9 +10,9 @@ import * as cmd from '../commands';
 import { segmented, textField, toggle } from '../components/controls';
 import { libraryFoot, mineEmpty, mineRows, namePrompt, type MineSpec } from '../components/library';
 import { registerDropZone } from '../components/material-drag';
-import { confirmBox, openMenu, tabs } from '../components/widgets';
+import { confirmBox, openMenu, tabs, type MenuItems } from '../components/widgets';
 import { partMenu } from './part-menu';
-import { primitiveMenuItems } from './add-menu';
+import { lightMenuItems, primitiveMenuItems } from './add-menu';
 import { openScalePanel } from './scale-panel';
 import { h, icon } from '../dom';
 import type { IconName } from '../icons';
@@ -277,10 +277,21 @@ function camerasTab(ctx: Ctx, scope: Scope): HTMLElement {
   );
 }
 
+/** Aim at… of a light (L4): the product's centre, a point picked on a part, the centre of a part picked. */
+export function aimMenu(ctx: Ctx, id: string): MenuItems {
+  return [
+    { label: t('lightEdit.aimCentre'), run: () => cmd.aimLight(ctx, id, null) },
+    { label: t('lightEdit.aimPoint'), run: () => cmd.pickAim(ctx, id, false) },
+    { label: t('lightEdit.aimPart'), run: () => cmd.pickAim(ctx, id, true) },
+  ];
+}
+
 function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
   const { store } = ctx;
   const list = h('div', { class: 'list' });
   const note = h('p', { class: 'note', style: 'padding:8px var(--pad) 0' });
+  const rowBtn = (ic: IconName, label: string, fn: () => void, action: string) =>
+    h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label, 'data-tip': label, 'data-light-action': action, onclick: (e: MouseEvent) => (e.stopPropagation(), fn()) }, icon(ic, 14));
   scope.watch(
     (s) => [s.studio, s.selection.ids],
     () => {
@@ -296,19 +307,31 @@ function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
         ...s.studio.lights.map((l, i) => {
           const tg = toggle(l.enabled, (v) => store.dispatch({ type: 'studio/setLight', id: l.id, patch: { enabled: v }, label: L('undo.editLight', { name: { en: lightName(s, l.id, 'en'), es: lightName(s, l.id, 'es') } }) }), t('lights.toggle'));
           tg.el.addEventListener('click', (e) => e.stopPropagation());
+          // Duplicate, aim (the product's centre, a point, a part), delete (UI.md §2.2), on the selected light's row: the
+          // selection is the light then, so aiming at the selected parts lives in the part's menu (Aim a light here ▸).
+          const actions = h(
+            'span',
+            { class: 'tree-actions light-actions' },
+            rowBtn('duplicate', t('common.duplicate'), () => cmd.duplicateLight(ctx, l.id), 'duplicate'),
+            rowBtn('target', t('lights.aimMenu'), () => openMenu(el.querySelector('[data-light-action="aim"]') as HTMLElement, aimMenu(ctx, l.id)), 'aim'),
+            rowBtn('trash', t('common.delete'), () => cmd.deleteLight(ctx, l.id), 'delete'),
+          );
           const el = h(
             'div',
-            { class: `list-row light-row${s.selection.ids.includes(l.id) ? ' is-selected' : ''}${l.enabled ? '' : ' is-off'}`, role: 'button', tabindex: 0 },
+            { class: `list-row light-row${s.selection.ids.includes(l.id) ? ' is-selected' : ''}${l.enabled ? '' : ' is-off'}`, role: 'button', tabindex: 0, 'data-light': l.id },
             h(
               'div',
               { class: 'list-main' },
-              h('div', null, lightName(s, l.id, getLang())),
+              h('div', null, lightName(s, l.id, getLang()), l.own ? h('span', { class: 'aux', style: 'margin-left:6px' }, t('lights.own')) : null),
               h('div', { class: 'bar-meter', 'data-tip': t('lights.share', { pct: formatNumber(shares[i] * 100, getLang(), 0) }) }, h('div', { style: `width:${Math.round(shares[i] * 100)}%` })),
             ),
+            actions,
             h('span', { class: 'aux tabular', style: 'width:36px;text-align:right' }, `${formatNumber(shares[i] * 100, getLang(), 0)} %`),
             tg.el,
           );
-          el.addEventListener('click', () => store.dispatch({ type: 'scene/select', ids: [l.id], mode: 'set' }));
+          const pick = () => store.dispatch({ type: 'scene/select', ids: [l.id], mode: 'set' });
+          el.addEventListener('click', pick);
+          el.addEventListener('keydown', (e) => e.key === 'Enter' && pick());
           return el;
         }),
       );
@@ -325,18 +348,15 @@ function lightsTab(ctx: Ctx, scope: Scope): HTMLElement {
     t('lights.saveSetup'),
   ) as HTMLButtonElement;
   scope.watch((s) => s.studio.lights.some((l) => l.enabled), (on) => (saveSetup.disabled = !on));
+  // + Add light ▸ (L4): area (rectangle, disc, sphere), point, spot, sun; IES is phase L5.
+  const add = h('button', { type: 'button', class: 'btn btn-block', 'aria-haspopup': 'menu', 'data-tip': t('lights.addAux'), 'data-add': 'light' }, icon('plus', 14), t('lights.add')) as HTMLButtonElement;
+  add.addEventListener('click', () => openMenu(add, lightMenuItems(ctx, { heading: false })));
   return h(
     'div',
     { class: 'tab-body' },
     note,
     h('div', { class: 'side-scroll' }, list),
-    h(
-      'div',
-      { class: 'side-foot' },
-      h('button', { type: 'button', class: 'btn btn-block', disabled: true, 'data-tip': t('lights.addSoon') }, icon('plus', 14), t('lights.add'), h('span', { class: 'aux' }, t('common.comingSoon'))),
-      h('div', { class: 'row' }, saveSetup, reset),
-      saveHost,
-    ),
+    h('div', { class: 'side-foot' }, add, h('div', { class: 'row' }, saveSetup, reset), saveHost),
   );
 }
 

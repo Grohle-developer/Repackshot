@@ -161,6 +161,8 @@ export interface Layout {
   tuneOpen: boolean;
   space: string;
   scaleLock: boolean;
+  /** The viewport draws the glyphs of every light and saved camera (L4's Lights and cameras button). */
+  showGlyphs: boolean;
   /** The viewport mode last chosen (`viewport.startMode` LAST starts in it). */
   viewportMode: 'FAST' | 'FULL';
   /** The section of the Settings window last opened. */
@@ -265,6 +267,7 @@ export function defaultLayout(): Layout {
     tuneOpen: false,
     space: 'GLOBAL',
     scaleLock: true,
+    showGlyphs: true,
     viewportMode: 'FULL',
     settingsSection: 'general',
     chooserShown: false,
@@ -548,7 +551,7 @@ export function validateLayout(raw: unknown): Layout {
     const v = raw[k];
     if (typeof v === 'number' && Number.isFinite(v)) out[k] = Math.round(Math.min(PANEL_MAX, Math.max(PANEL_MIN, v)));
   }
-  for (const k of ['leftCollapsed', 'rightCollapsed', 'tuneOpen', 'scaleLock', 'chooserShown'] as const) if (bool(k)) out[k] = raw[k] as boolean;
+  for (const k of ['leftCollapsed', 'rightCollapsed', 'tuneOpen', 'scaleLock', 'showGlyphs', 'chooserShown'] as const) if (bool(k)) out[k] = raw[k] as boolean;
   if (isRecord(raw.sections)) {
     const sections: Record<string, boolean> = {};
     for (const [k, v] of Object.entries(raw.sections)) if (typeof v === 'boolean' && k.length <= 64) sections[k] = v;

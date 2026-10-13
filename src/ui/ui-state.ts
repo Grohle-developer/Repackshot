@@ -11,6 +11,7 @@ import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { Space } from '../core/transform';
 import type { ClipTarget } from '../core/animation';
+import type { ViewObject } from '../core/view-objects';
 import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
@@ -32,6 +33,9 @@ export type Drawer = 'animation' | 'queue' | null;
 export type PickMode =
   | { kind: 'focus' }
   | { kind: 'reflect'; light: string }
+  /** L4: Place on surface (the light stands over the point along its normal) and Aim at… a point or a part. */
+  | { kind: 'surface'; light: string }
+  | { kind: 'aim'; light: string; part: boolean }
   | { kind: 'pivot'; ids: NodeId[] }
   | { kind: 'link'; parts: NodeId[] }
   | null;
@@ -242,6 +246,10 @@ export interface UiState {
   scaleLock: boolean;
   /** Selection by box at the Faces level also takes the faces hidden behind others (X-ray). */
   boxXray: boolean;
+  /** L4: the viewport draws every light's and saved camera's glyph (Lights and cameras in the view bar; remembered). */
+  showGlyphs: boolean;
+  /** L4: the light or saved camera the viewport looks through (Look through), or null: the active camera. */
+  lookThrough: ViewObject | null;
   /** Copy material / Paste material: a snapshot of the copied instance. */
   materialClipboard: MaterialInstance | null;
   /**
@@ -292,6 +300,16 @@ export interface UiState {
   prompt: ConfirmSpec | null;
 }
 
+/**
+ * Whether the viewport draws every light's and saved camera's glyph (L4), or only the selected one's: Lights and
+ * cameras is on, and the person is working with them (the Lights or the Cameras tab is open, a light or a camera
+ * is selected, or the view is through one). Otherwise the glyphs stay out of the picture: a setup panel's outline
+ * crossing the product (the key light is often between the camera and the part) must not read as part of it.
+ */
+export function drawAllGlyphs(u: Pick<UiState, 'showGlyphs' | 'sceneTab' | 'lookThrough'>, selected: unknown): boolean {
+  return u.showGlyphs && (u.sceneTab === 'lights' || u.sceneTab === 'cameras' || selected !== null || u.lookThrough !== null);
+}
+
 /** The mode the viewport is in: Full only when chosen and the engine is ready. */
 export function effectiveMode(u: Pick<UiState, 'viewportMode' | 'engine'>): ViewportMode {
   return u.viewportMode === 'FULL' && u.engine === 'READY' ? 'FULL' : 'FAST';
@@ -319,6 +337,7 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'tuneOpen',
   'space',
   'scaleLock',
+  'showGlyphs',
   'viewportMode',
   'settingsSection',
   'chooserShown',
@@ -364,6 +383,8 @@ export function defaultUiState(): UiState {
     space: 'GLOBAL',
     scaleLock: true,
     boxXray: false,
+    showGlyphs: true,
+    lookThrough: null,
     materialClipboard: null,
     library: emptyLibrary(),
     viewportMode: 'FULL',
