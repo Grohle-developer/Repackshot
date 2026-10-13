@@ -438,12 +438,24 @@ filas desde arriba a la izquierda, como la imagen.
 
 | Pase | Tipo | Contenido | Fondo |
 | --- | --- | --- | --- |
-| `albedo` | 3 × f32 lineal | Color base del primer impacto no especular (un difuso: su color), promediado sobre las muestras del píxel | 0 |
-| `normal` | 3 × f32 | Normal de sombreado unitaria del primer impacto, en el espacio del mundo (Z arriba) | 0 |
+| `albedo` | 3 × f32 lineal | Color base del material del primer impacto, sin seguir rebotes especulares (un difuso: su color; un vidrio: su tinte), promediado sobre las muestras del píxel | 0 |
+| `normal` | 3 × f32 | Normal de sombreado unitaria del primer impacto, en el espacio del mundo (Z arriba), vuelta hacia la cámara (cuentan las dos caras del triángulo) | 0 |
 | `depth` | f32 | Distancia a lo largo del eje de la cámara, en unidades de escena | +∞ |
-| `partId` | u32 | Índice de instancia del RSB + 1: `io/rsb.ts` lo traduce a la pieza, como `pick` | 0 |
-| `materialId` | u32 | Índice de material del RSB + 1 | 0 |
+| `partId` | u32 | Índice de instancia del RSB + 1: `io/rsb.ts` lo traduce a la pieza, como `pick`; el suelo del estudio, `FLOOR_ID` | 0 |
+| `materialId` | u32 | Índice de material del RSB + 1; el suelo, `FLOOR_ID` | 0 |
 | `coc` | f32 | Diámetro del círculo de confusión en píxeles de salida, de la lente fina | 0 (también sin DoF) |
+
+**Corrección del líder (tras X4, 2026-10-13).** El albedo es el del
+primer impacto, sin seguir rebotes especulares (como lo dibuja la vista
+previa de three.js y más simple de igualar), y la normal se vuelve hacia
+la cámara. **El suelo del estudio no es fondo**: lleva `FLOOR_ID`
+(`0xFFFFFFFF`) en los dos ids, porque sus sombras de contacto y su luz
+rebotada son justo lo que mejoran *Luz* y *Rebotes*; el fondo (0) es el
+entorno, la imagen de fondo, la transparencia y los paneles de luz vistos
+por la cámara, y no cambia nunca. El círculo de confusión sigue la misma
+fórmula que `src/core/lens-coc.ts` (X4), que reproduce
+`Camera::generate_ray`. X2 lo emite así en el motor; X3c ajusta la guarda
+(`rt-post`), el servicio sintético y los pases de three.js a `FLOOR_ID`.
 
 `normal`, `depth`, `partId` y `materialId` salen de **un rayo por el
 centro del píxel, sin *jitter***: son exactos y nunca mezclan dos lados de

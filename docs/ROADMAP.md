@@ -1815,7 +1815,13 @@ guardados del render → `rt-post` → stable-diffusion.cpp por mosaico →
 `rt-post` → reintentos), progreso y cancelación; el `AiPostService` de
 escritorio en `src/io/`; integración en la cola (el trabajo guarda las
 dos imágenes y el informe; el historial las conserva); `AI_AVAILABLE`
-pasa a ser lo que diga `status()`.
+pasa a ser lo que diga `status()`. Además, lo que dejaron anotado X3a y X4: el suelo con `FLOOR_ID`
+(`AI-POST.md` §7.4) en la guarda, el servicio sintético y los pases de
+three.js; la tabla de materiales de la guarda en `AiPostRequest` y el
+orden de materiales exportado por `io/rsb.ts`; el *prompt* real de
+`src/ai/prompt.ts`; la fuente `RENDER` en la cola; las bibliotecas de
+Visual C++ que necesita stable-diffusion.cpp en Windows (junto al
+ejecutable o en el instalador); stable-diffusion.cpp y ggml en *Acerca de*.
 
 **Depende de.** X2, X3a, X3b; X4 para verlo de punta a punta.
 
