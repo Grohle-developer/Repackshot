@@ -9,6 +9,10 @@ import { FLOOR_ID, type RenderPasses } from '../src/core/passes';
 import { AiPostError, decodeLinearImage, DesktopAiService, encodeLinearImage, encodePasses, inlineBody, type AiPostState } from '../src/io/ai-post';
 import { parsePasses } from '../src/render/pass-planes';
 import { straightBytes, straightExr, straightOf, straightWords16, exactBytes, exactWords16, linearRgba } from '../src/render/tiles';
+import { emptySnapshot, type HardwareInfo } from '../src/core/models';
+import { AI_MODELS } from '../src/data/ai-models';
+import { aiRuntimeQuery, aiStatusKey } from '../src/ui/ai-query';
+import { defaultUiState, type UiState } from '../src/ui/ui-state';
 
 const REPORT: GuardReport = {
   verdict: 'ACCEPTED',
@@ -215,5 +219,30 @@ describe('the AI image of a RENDER source is written as the engine’s file (X3c
     expect([...pp.passes.normal!]).toEqual([0, 0, 1, 1, 0, 0]);
     expect([...pp.passes.coc!]).toEqual([0, 3.5]);
     expect(() => encodePasses({ width: 3, height: 1, depth: new Float32Array(2) })).toThrow(/depth/);
+  });
+});
+
+describe('what the render window asks the launcher with (X3c)', () => {
+  // The model downloaded in Settings, none chosen by hand: the active one is the recommendation for this computer.
+  const models = { ...emptySnapshot(AI_MODELS), ready: true, kind: 'native' as const, installed: ['ZIMAGE_Q4'] };
+  const cpuOnly: HardwareInfo = { detected: true, where: 'desktop', cores: 8, ramGiB: 24, gpus: [], webgpu: null, maxBufferBytes: null, device: 'cpu' };
+  const detecting: UiState = { ...defaultUiState(), models, hardware: { state: 'DETECTING', info: null } };
+  const detected: UiState = { ...detecting, hardware: { state: 'DONE', info: cpuOnly } };
+
+  it('asks again when the hardware detection ends, which is when the active model is known', () => {
+    // Before, it said NO_MODEL and the switch led to Settings although the model was downloaded.
+    expect(aiRuntimeQuery(detecting).model).toBeNull();
+    expect(aiRuntimeQuery(detected).model).toBe('ZIMAGE_Q4');
+    expect(aiStatusKey(detected)).not.toBe(aiStatusKey(detecting));
+  });
+
+  it('and when the person changes what the runtime is asked: the device, the backend, the model store', () => {
+    const key = aiStatusKey(detected);
+    expect(aiStatusKey({ ...detected, settings: { ...detected.settings, 'ai.device': 'CPU' } })).not.toBe(key);
+    expect(aiStatusKey({ ...detected, settings: { ...detected.settings, 'ai.backend': 'VULKAN' } })).not.toBe(key);
+    expect(aiStatusKey({ ...detected, models: { ...models, installed: [] } })).not.toBe(key);
+    expect(aiStatusKey({ ...detected, models: { ...models, ready: false } })).not.toBe(key);
+    // Nothing it is asked with changed: no new question.
+    expect(aiStatusKey({ ...detected, toasts: [] })).toBe(key);
   });
 });

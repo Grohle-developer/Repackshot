@@ -730,12 +730,18 @@ terminados) y en el almacenamiento del navegador hasta que se borran.
 primero la imagen del motor (siempre) y después la de la IA al lado
 (`…_AI.png`, en el formato del trabajo); el resultado conserva las dos y el
 **informe de la guarda**. El visor abre *Render* contra *IA* con el divisor
-(etiquetas *Render · IA*, botones *Solo render · Solo IA · Dividir*) y, bajo
-los datos, una línea: *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) ·
-resolución ✓ · enfoque ✓* (la geometría reúne bordes, píxeles fuera de las
-regiones permitidas y detalle de banda alta; ΔE máx es el mayor ΔE₀₀ medio de
-un material), y *La IA se limitó al 23 % para respetar las protecciones* si
-la guarda tuvo que bajar la intervención. Si la guarda la **rechaza**, el
+(etiquetas *Render · IA*, botones *Solo render · Solo IA · Dividir*) y una
+línea propia bajo el título y la barra de botones, a todo lo ancho de la
+cabecera: *Comprobado: geometría ✓ · materiales ✓ (ΔE máx 1,8) · resolución ✓ ·
+enfoque ✓* (la geometría reúne bordes, píxeles fuera de las regiones
+permitidas y detalle de banda alta; ΔE máx es el mayor ΔE₀₀ medio de un
+material) y, en la misma línea, *La IA se limitó al 23 % para respetar las
+protecciones* si la guarda tuvo que bajar la intervención. Es siempre una sola
+línea: si no cabe acaba en puntos suspensivos y el aviso al pasar el ratón la
+tiene entera, con lo que se ejecutó. La barra de botones comparte línea con el
+título mientras caben los dos; si no, pasa debajo (y sus botones saltan de
+línea), sin estrechar nunca el título; *Cerrar* se queda en la esquina (X3c;
+`tools/ai-post-check.mjs` lo mide a 1600, 1280 y 960 px en los dos idiomas). Si la guarda la **rechaza**, el
 resultado queda con la imagen del motor sin cambios, el informe dice qué
 protección se rompió y no hay segunda imagen. Se guardan las dos por separado
 (*Guardar el render de nuevo*, *Guardar la imagen IA*); *Comparar con…* pone

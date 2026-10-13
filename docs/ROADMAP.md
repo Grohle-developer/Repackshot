@@ -2344,7 +2344,7 @@ oficial de Microsoft con `openExternal`: no redistribuimos sus DLL) y *Comprobar
 *Acerca de* lista stable-diffusion.cpp y ggml con sus textos MIT, copiados byte a byte de los *commits*
 fijados (`tools/third-party/`, `tools/licences.mjs`). **Página**: `src/io/ai-post.ts`
 (`DesktopAiService`: `status()` es `/api/ai/runtime` con los ajustes de la persona y el modelo activo,
-`aiRuntimeQuery`; `post()` manda, sigue, lee la imagen y olvida; un aborto manda `DELETE`); `main.ts` lo
+`aiRuntimeQuery` de `src/ui/ai-query.ts`; `post()` manda, sigue, lee la imagen y olvida; un aborto manda `DELETE`); `main.ts` lo
 usa cuando el lanzador dice `aiPost`, la web sigue con `notBuiltService` y `?ai=synthetic` con el
 sintético; **`AI_AVAILABLE` ya no existe**. La cola pide al render que deje los pases de la guarda en el
 lanzador (`aiPasses`, `passesInLauncher`: ni siquiera vuelven a la página; sin albedo, que la guarda no
@@ -2366,8 +2366,8 @@ cola, servicio de escritorio) contra el falso instalado donde iría la compilaci
 (`tests/ai-desktop.test.ts`); y una vez la tubería entera con stable-diffusion.cpp real y SD 1.5 con su
 ControlNet de profundidad en CPU (`real_post_with_sd15_and_its_depth_controlnet_on_the_cpu`, ignorada sin los pesos): el ejemplo de 256 × 192 con el suelo, Intervención 100 y 10 pasos (5 de muestreo a fuerza 0,4), **53 s** en 4 núcleos (13 s de carga de pesos, ~6,5 s por paso), aceptada al primer intento: detalle 0,998, bordes 0,02, ΔE₉₅ 1,9 en el coral y 1,6 en el azul; el suelo llegó a 2,2 y la guarda dejó su cambio de color al 71 %. Los pesos se borraron después. **Con el falso**: todo lo demás. Pruebas: 13 nuevas en
 Rust (3 de `rt-post`, 3 unitarias de `rt-app` y 9 de `tests/ai_post.rs`, una más ignorada con los pesos
-reales) y 27 de vitest (12 del servicio, 4 contra el lanzador real, 4 de la cola, 3 de los pases, 1 del
-sintético, 3 de la fila del motor y *Acerca de*), más las de X2 y X4 que cambian con el suelo; 25
+reales) y 29 de vitest (14 del servicio y de lo que se le pregunta, 4 contra el lanzador real, 4 de la cola, 3 de los pases, 1 del
+sintético, 3 de la fila del motor y *Acerca de*), más las de X2 y X4 que cambian con el suelo; 26
 mutaciones comprobadas, cada prueba falla si se rompe lo que guarda.
 
 **No encajó con el plan.** (1) **El control**: §3.2 pide bordes y profundidad al ControlNet, y *tile*
@@ -2395,7 +2395,19 @@ usa). (10) La tolerancia `detailSsim` (y las demás) se puede pasar en la petici
 calibrar en X1b; las pruebas lo usan para forzar reintentos. (11) Con el motor real, la primera
 llamada dice *inferencia* medio segundo antes de que `sd-server` pinte su barra de carga (el trabajo ya
 está `generating` y aún no hay barra); la fracción no retrocede y luego dice *cargando*: cosmético,
-anotado para X3b.
+anotado para X3b. (12) **El modelo activo en la ventana de render**: sin un modelo elegido a mano, el activo
+es la recomendación para el equipo, y la detección del equipo solo la lanzaba *Ajustes*; con el servicio de
+escritorio, el interruptor decía *No hay ningún modelo descargado* y llevaba a *Ajustes* aunque el modelo
+estuviera instalado (lo enseñaron las capturas contra el lanzador real). Ahora el escritorio con `aiPost`
+detecta el equipo al arrancar, la sección también la lanza, y la sección vuelve a preguntar cuando cambia lo
+que pregunta (`aiStatusKey`: el dispositivo, el *backend*, el modelo activo, los modelos instalados), con su
+prueba. (13) **La cabecera del visor de resultados** apretaba el informe de la guarda en una columna estrecha
+junto al título, una o dos palabras por línea (la barra de botones no cedía sitio): ahora el informe tiene su
+línea propia a todo lo ancho (una sola, con puntos suspensivos y el texto entero en el aviso), la barra pasa bajo
+el título cuando no caben juntos y *Cerrar* se queda en la esquina. `tools/ai-post-check.mjs` (j) lo mide a
+1600, 1280 y 960 px en inglés y en español (solapes, salidas de la cabecera, una línea, a todo lo ancho, el
+título entero) y falla con la cabecera de antes; capturas `docs/ui/ai-results-viewer.png` y
+`ai-results-light.png` rehechas.
 
 ### X3d · La web — **Opus**
 

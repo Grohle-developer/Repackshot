@@ -34,6 +34,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - El *prompt* sale de los materiales, las luces y el estilo de la escena, con el negativo fijo; la guarda recibe la tabla de materiales con sus nombres (X3c).
 - En Windows, si al motor de ejecución le falta el entorno de Microsoft Visual C++ 2015–2022, *Ajustes ▸ Post-procesado IA ▸ Motor de ejecución* lo dice y ofrece *Instalar el entorno de Microsoft Visual C++…* (la página oficial de Microsoft) y *Comprobar de nuevo* (X3c).
 - *Acerca de* lista stable-diffusion.cpp y ggml con sus licencias MIT (X3c).
+- El visor de resultados da al informe de la guarda su propia línea, a todo lo ancho bajo el título y los botones, en vez de apretarlo en una columna estrecha junto al título; los botones pasan bajo el título cuando no caben a su lado, y *Cerrar* se queda en la esquina (X3c).
 - Un post-procesado por el que nadie pregunta (su ventana se cerró) se para solo a los dos minutos (X3c).
 
 ## v0.1.3 — 2026-10-13

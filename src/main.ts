@@ -51,12 +51,12 @@ import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
-import { exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
+import { detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
 import { startupUpdateCheck } from './ui/updates';
 import type { AiPort, AppServices, EngineConfig, ViewportPort } from './ui/ports';
-import { aiRuntimeQuery } from './ui/panels/settings-ai';
+import { aiRuntimeQuery } from './ui/ai-query';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
 import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
 import { applyUrlParams, readUrlParams } from './ui/url-params';
@@ -736,6 +736,9 @@ void nativeReady.then(async (native) => {
   // The inference runtime of the AI post-processing (X3b): Settings ▸ AI post-processing ▸ Runtime.
   if ((native.info.aiApi ?? 0) >= 1) services.aiRuntime = new AiRuntimeClient(native);
   const i = native.info;
+  // The AI pipeline (X3c) asks the launcher with the active model, which, unless the person chose one, is the
+  // recommendation for this computer: the hardware is detected now, not only when Settings opens.
+  if ((i.aiPost ?? 0) >= 1) void detectHardware(app.ctx);
   // The manager has read what the installer chose (if anything) once it has started.
   await modelsService.started;
   maybeShowModelChooser(app.ctx, { portable: i.portable, pending: !!pendingAtStart && pendingAtStart.keys.length > 0 });

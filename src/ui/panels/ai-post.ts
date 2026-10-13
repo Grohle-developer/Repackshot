@@ -9,12 +9,12 @@
 // cannot draw the inputs) the section stays the placeholder it was: the switch says *coming soon*.
 
 import { AI_STYLES, type AiRuntimeStatus, type AiStyle } from '../../core/ai';
-import { recommend } from '../../core/ai-recommend';
 import { AI_PROTECTIONS, nextSeed, previewSize, switchAction, type SwitchAction } from '../../core/ai-post';
 import { linearToRgba8 } from '../../core/ai-image';
-import { activeModel, allModels, recommendInput } from '../../core/models';
+import { activeModel, allModels } from '../../core/models';
 import { AI_PERCENT_KEYS, type AiPercentKey, type AiSettings, type RenderSettings } from '../../core/render';
 import type { Label } from '../../data/types';
+import { aiStatusKey, recommendationOf } from '../ai-query';
 import { AiPreviewController, type AiPreviewInput, type AiPreviewState } from '../ai-preview';
 import { reportText } from '../ai-report';
 import * as cmd from '../commands';
@@ -59,8 +59,7 @@ function activeModelLine(ctx: Ctx): { key: string; line: string } | null {
   const snap = u.models;
   if (!snap || !snap.ready) return null;
   const models = allModels(snap);
-  const rec = u.hardware.state === 'DONE' ? recommend(recommendInput(u.hardware.info, u.settings['ai.device'], u.settings['ai.gpu']), snap.catalogue) : null;
-  const key = activeModel(u.settings['ai.active'], models, snap.installed, rec);
+  const key = activeModel(u.settings['ai.active'], models, snap.installed, recommendationOf(u));
   const m = key ? models.find((x) => x.key === key) : undefined;
   return m ? { key: m.key, line: t('rw.aiModelLine', { name: m.label[getLang()], licence: m.licence.spdx }) } : null;
 }
@@ -335,9 +334,11 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     (_s, u) => u.sections['rw.ai'] ?? true,
     (folded, prev) => prev !== undefined && !folded && preview.refresh(),
   );
-  // What the service can do changes with the models on this computer (a download finishing, another one chosen): ask again.
+  // What the service can do changes with what it is asked (the active model, which may be the recommendation for the
+  // hardware, so the detection is started here as Settings does) and the models on this computer: ask again.
+  void cmd.detectHardware(ctx);
   scope.watch(
-    (_s, u) => [u.models?.ready, u.models?.installed.join(','), u.settings['ai.active']].join('|'),
+    (_s, u) => aiStatusKey(u),
     () => void refreshStatus(),
   );
   return host;

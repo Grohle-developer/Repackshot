@@ -8,8 +8,8 @@
 // everything else works. Every size comes from the data, every speed and
 // time left from the bytes that arrived (io/downloads.ts).
 
-import { recommend, type Recommendation } from '../../core/ai-recommend';
-import { runtimeQuery, type AiRuntimeEntryState, type AiRuntimeQuery, type AiRuntimeReport } from '../../core/ai-runtimes';
+import type { Recommendation } from '../../core/ai-recommend';
+import type { AiRuntimeEntryState, AiRuntimeReport } from '../../core/ai-runtimes';
 import { aiRuntime, AI_RUNTIMES } from '../../data/ai-runtimes';
 import type { AiRecommendRow } from '../../data/ai-models';
 import {
@@ -26,7 +26,6 @@ import {
   MANIFEST_FORMAT,
   modelState,
   recommendationView,
-  recommendInput,
   rowBadges,
   runsHere,
   type ImportOutcome,
@@ -36,6 +35,7 @@ import {
   type ModelView,
 } from '../../core/models';
 import type { RowMeta, SettingMeta } from '../../core/settings';
+import { aiRuntimeQuery, recommendationOf } from '../ai-query';
 import * as cmd from '../commands';
 import { select, textField, toggle } from '../components/controls';
 import { showConfirmIn } from '../components/widgets';
@@ -61,21 +61,6 @@ export function currentRecommendation(ctx: Ctx): Recommendation | null {
   return recommendationOf(ctx.ui.get());
 }
 
-function recommendationOf(u: UiState): Recommendation | null {
-  const snap = u.models;
-  if (!snap || u.hardware.state !== 'DONE') return null;
-  return recommend(recommendInput(u.hardware.info, u.settings['ai.device'], u.settings['ai.gpu']), snap.catalogue);
-}
-
-/**
- * What the launcher's runtime is asked about (`/api/ai/runtime`, and every post of the desktop pipeline, X3c): the
- * person's backend and device, and the active model (the one chosen, else the fallback the manager would use).
- */
-export function aiRuntimeQuery(u: UiState): AiRuntimeQuery {
-  const snap = u.models;
-  const active = snap?.ready ? activeModel(u.settings['ai.active'], allModels(snap), snap.installed, recommendationOf(u)) : null;
-  return runtimeQuery(u.settings['ai.backend'], u.settings['ai.device'], active ?? null);
-}
 
 const modelName = (m: ModelView) => lbl(m.label);
 

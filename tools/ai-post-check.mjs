@@ -18,7 +18,11 @@
 //   (g) a job with AI saves the engine's PNG and the AI's, the results viewer opens Render against AI under the divider
 //       with the report line, and the queue and the history show both thumbnails;
 //   (h) the whole section and the viewer are achromatic in both themes (every computed colour has r = g = b, but the
-//       pictures), and the Spanish interface has no English left in them.
+//       pictures), and the Spanish interface has no English left in them;
+//   (j) the viewer's header holds at 1600, 1280 and 960 px wide, in English and in Spanish: the guard's report is
+//       one line of its own across the header (an ellipsis where it does not fit, the whole text in its tooltip),
+//       the title is not cut short nor squeezed by the toolbar (which wraps under it instead), and no text or button
+//       overlaps another or leaves the header (X3c).
 //
 // Screenshots: ai-section-dark.png, ai-section-light.png, ai-results-viewer.png, ai-results-light.png, ai-queue.png.
 // Results: out/ai-post-check.json.
@@ -168,8 +172,84 @@ async function chromatic(page, root) {
   }, root);
 }
 
+/** What is wrong with the results viewer's header as it is drawn (empty when it holds). */
+async function viewerHeadProblems(page) {
+  return page.evaluate(() => {
+    const out = [];
+    const head = document.querySelector('.rv-head');
+    if (!head) return [{ missing: '.rv-head' }];
+    const shown = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility === 'visible' && getComputedStyle(el).display !== 'none';
+    const textRects = (el) => {
+      const rs = [];
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!n.textContent.trim() || !shown(n.parentElement)) continue;
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        for (const r of range.getClientRects()) if (r.width > 0.5 && r.height > 0.5) rs.push(r);
+      }
+      return rs;
+    };
+    const r4 = (r) => [r.left, r.top, r.width, r.height].map((v) => Math.round(v));
+    const meet = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+    // Every piece of the header: the title, the data, the report, each button and the zoom read-out.
+    const pieces = [];
+    // A line that ends in an ellipsis draws only what is inside its box: its text is measured clipped to it.
+    const clipped = (el) => {
+      const b = el.getBoundingClientRect();
+      if (getComputedStyle(el).overflowX !== 'hidden') return textRects(el);
+      return textRects(el)
+        .map((r) => ({ left: Math.max(r.left, b.left), right: Math.min(r.right, b.right), top: Math.max(r.top, b.top), bottom: Math.min(r.bottom, b.bottom) }))
+        .filter((r) => r.right - r.left > 0.5 && r.bottom - r.top > 0.5)
+        .map((r) => ({ ...r, width: r.right - r.left, height: r.bottom - r.top }));
+    };
+    for (const el of head.querySelectorAll('.rv-title, .rv-data, .rv-memory, .rv-report, .rv-zoom')) if (shown(el)) pieces.push({ name: el.className, rects: clipped(el) });
+    for (const el of head.querySelectorAll('button')) if (shown(el)) pieces.push({ name: `button ${el.textContent.trim() || el.getAttribute('aria-label')}`, rects: [el.getBoundingClientRect()] });
+    for (let i = 0; i < pieces.length; i++)
+      for (let j = i + 1; j < pieces.length; j++)
+        for (const a of pieces[i].rects) for (const b of pieces[j].rects) if (meet(a, b)) out.push({ overlap: [pieces[i].name, pieces[j].name], a: r4(a), b: r4(b) });
+    const box = head.getBoundingClientRect();
+    for (const p of pieces) for (const r of p.rects) if (r.right > box.right + 1 || r.left < box.left - 1) out.push({ overflow: p.name, r: r4(r), head: r4(box) });
+    // The report: one line of its own across the header, its whole text in the tooltip.
+    const report = head.querySelector('.rv-report');
+    if (report) {
+      const tops = new Set(textRects(report).map((r) => Math.round(r.top)));
+      if (tops.size !== 1) out.push({ report: 'not one line', lines: tops.size });
+      const rb = report.getBoundingClientRect();
+      const cs = getComputedStyle(head);
+      const inner = box.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      if (rb.width < inner - 2) out.push({ report: 'not across the header', reportWidth: Math.round(rb.width), headerWidth: Math.round(inner) });
+      const full = [...report.children].map((c) => c.textContent.trim()).filter(Boolean).join(' · ');
+      if (!(report.getAttribute('title') ?? '').startsWith(full)) out.push({ report: 'tooltip without the whole text', title: report.getAttribute('title'), full });
+      for (const b of head.querySelectorAll('button')) if (shown(b) && b.getBoundingClientRect().top > rb.top) out.push({ report: 'not under the toolbar', button: b.textContent.trim() });
+    }
+    // The title: whole, and its block not squeezed by the toolbar.
+    const title = head.querySelector('.rv-title');
+    if (title && title.scrollWidth > title.clientWidth + 1) out.push({ title: 'cut short', shown: title.clientWidth, needs: title.scrollWidth });
+    const info = head.querySelector('.rv-info');
+    if (info && info.getBoundingClientRect().width < Math.min(240, box.width - 30)) out.push({ title: 'squeezed', infoWidth: Math.round(info.getBoundingClientRect().width) });
+    return out;
+  });
+}
+
+/** The viewer's header at the three widths of the Settings check (P3e), in the page's language. */
+async function viewerHeadMatrix(page, lang) {
+  const problems = [];
+  let measured = 0;
+  for (const width of [1600, 1280, 960]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.waitForTimeout(400);
+    measured++;
+    for (const p of await viewerHeadProblems(page)) problems.push({ lang, width, ...p });
+  }
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.waitForTimeout(300);
+  return { problems, measured };
+}
+
 let browser = null;
 let server = null;
+let headEn = { problems: [{ missing: 'the English viewer was not measured' }], measured: 0 };
 try {
   if (!existsSync(join(ROOT, 'public', 'engine', 'rt.wasm'))) fail('public/engine/rt.wasm is missing: npm run engine:build first');
   if (!existsSync(join(ROOT, 'dist', 'index.html'))) fail('dist/ is missing: npm run build first');
@@ -381,6 +461,7 @@ try {
     await page.screenshot({ path: join(SHOTS, 'ai-results-viewer.png') });
     const viewerColours = await chromatic(page, '.rv');
     check('h_viewer_achromatic_dark', viewerColours.length === 0, { found: viewerColours.slice(0, 6) });
+    headEn = await viewerHeadMatrix(page, 'en');
     await page.keyboard.press('Escape');
 
     // The queue and the history: both pictures.
@@ -447,6 +528,17 @@ try {
     const missing = spanish.filter((w) => !text.includes(w));
     const english = ['Intervention', 'Another variation', 'Protected', 'Checked:', 'Preview', 'per change'].filter((w) => text.includes(w));
     check('h_spanish', missing.length === 0 && english.length === 0, { missing, english });
+    // A job with AI in Spanish, for the viewer's header (its words are longer).
+    await page.locator('.rw .num[aria-label="Muestras"]').scrollIntoViewIfNeeded();
+    await page.locator('.rw .num[aria-label="Muestras"]').dblclick();
+    await page.locator('.rw .num[aria-label="Muestras"] input').fill('8');
+    await page.locator('.rw .num[aria-label="Muestras"] input').press('Enter');
+    await page.locator('.rw-foot .btn-primary').click();
+    await page.waitForSelector('.rv[data-ready="1"]', { timeout: 240000 });
+    await page.waitForTimeout(800);
+    const headEs = await viewerHeadMatrix(page, 'es');
+    const head = [...headEn.problems, ...headEs.problems];
+    check('j_viewer_head_holds', head.length === 0 && headEn.measured + headEs.measured === 6, { measured: headEn.measured + headEs.measured, problems: head.slice(0, 12), count: head.length });
     check('h_no_errors_es', errors.length === 0, { errors });
     await context.close();
   }
