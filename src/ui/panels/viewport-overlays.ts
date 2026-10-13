@@ -6,7 +6,7 @@ import { activeCamera, cameraBasis, cameraPosition, VIEW_KEYS, type ViewKey } fr
 import { boxSize, isEmptyBox, length, sub } from '../../core/math';
 import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
 import { dropNodes, viewportDropTarget, type DropTarget } from '../../core/material-drop';
-import { partsUnder, resolvePick, sceneBounds, selectedNodes, type NodeId } from '../../core/scene';
+import { allParts, effectiveVisible, partsUnder, resolvePick, sceneBounds, selectedNodes, type NodeId } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
 import { gizmoTransforms, movableTargets, selectionFrame, type GizmoFrame, type GizmoHandle } from '../../core/transform';
 import * as cmd from '../commands';
@@ -22,6 +22,8 @@ import { kbdFor } from '../shortcuts';
 import { L, formatNumber, getLang, isaLabel, t } from '../strings';
 import type { Tool } from '../ui-state';
 import { partMenu } from './part-menu';
+import { primitiveMenuItems } from './add-menu';
+import { openScalePanel } from './scale-panel';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -31,9 +33,13 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
     { id: 'select', icon: 'select', action: 'tool.select' },
     { id: 'orbit', icon: 'orbit', action: 'tool.orbit' },
     { id: 'pan', icon: 'pan', action: 'tool.pan' },
+    // The scale tool (phase U9), next to Pan as the roadmap asks.
+    { id: 'scale', icon: 'scale', action: 'tool.scale' },
     { id: 'zoom', icon: 'zoom', action: 'tool.zoom' },
     { id: 'move', icon: 'move', action: 'tool.move' },
   ];
+  const tip = (tl: { id: Tool; action: string }) =>
+    tl.id === 'select' ? `${t(dyn(tl.action))} · ${t('tool.selectBox')}` : tl.id === 'scale' ? `${t('tool.scale')} · ${t('tool.scaleAux')}` : t(dyn(tl.action));
   const buttons = tools.map((tl) =>
     h(
       'button',
@@ -41,7 +47,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
         type: 'button',
         class: 'icon-btn',
         'aria-label': t(dyn(tl.action)),
-        'data-tip': tl.id === 'select' ? `${t(dyn(tl.action))} · ${t('tool.selectBox')}` : t(dyn(tl.action)),
+        'data-tip': tip(tl),
         'data-kbd': kbdFor(tl.action),
         'data-tool': tl.id,
         onclick: () => cmd.setTool(ctx, tl.id),
@@ -56,7 +62,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
   scope.watch(
     (_s, u) => [u.tool, u.space] as const,
     ([tool, sp]) => {
-      space.style.display = tool === 'move' ? '' : 'none';
+      space.style.display = tool === 'move' || tool === 'scale' ? '' : 'none';
       space.textContent = t(dyn(`space.${sp}`));
       space.setAttribute('aria-pressed', String(sp === 'LOCAL'));
       space.setAttribute('aria-label', `${t('viewport.space')}: ${t(dyn(`space.${sp}`))}`);
@@ -66,7 +72,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
   // X-ray of the box selection at the Faces level: hidden faces count too.
   const xray = h('button', { type: 'button', class: 'ov-text-btn', 'data-tip': t('viewport.xrayAux'), onclick: () => ui.set({ boxXray: !ui.get().boxXray }) }, t('viewport.xray'));
   scope.watch(
-    (s, u) => [s.selection.level === 'FACES' && (u.tool === 'select' || u.tool === 'move'), u.boxXray] as const,
+    (s, u) => [s.selection.level === 'FACES' && (u.tool === 'select' || u.tool === 'move' || u.tool === 'scale'), u.boxXray] as const,
     ([show, on]) => {
       xray.style.display = show ? '' : 'none';
       xray.setAttribute('aria-pressed', String(on));
@@ -375,14 +381,15 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     }
   }, listen);
 
-  // The move tool (UI.md §2.3): the gizmo sits on the pivot of the selection, in the chosen axes.
+  // The move tool (UI.md §2.3): the gizmo sits on the pivot of the selection, in the chosen axes. The scale tool
+  // (phase U9) shows the same gizmo with only its scale handles.
   const gizmoIds = (s: ProjectState) => movableTargets(s, selectedNodes(s));
-  const gizmoOn = () => ui.get().tool === 'move' && !ui.get().pickMode;
+  const gizmoOn = () => (ui.get().tool === 'move' || ui.get().tool === 'scale') && !ui.get().pickMode;
   scope.watch(
     (s, u) => [u.tool, u.space, u.pickMode === null, s.selection, s.scene.nodes] as const,
     ([tool, space, free]) => {
       const ids = gizmoIds(store.get());
-      port.setGizmo(tool === 'move' && free && ids.length > 0 ? { ids, space } : null);
+      port.setGizmo((tool === 'move' || tool === 'scale') && free && ids.length > 0 ? { ids, space, handles: tool === 'scale' ? 'SCALE' : 'ALL' } : null);
     },
     shallowEq,
   );
@@ -467,8 +474,8 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       ui.set({ pickMode: null });
       return;
     }
-    // The move tool selects with a click too (a drag on a handle never gets here).
-    if (ui.get().tool !== 'select' && ui.get().tool !== 'move') return;
+    // The move and scale tools select with a click too (a drag on a handle never gets here).
+    if (ui.get().tool !== 'select' && ui.get().tool !== 'move' && ui.get().tool !== 'scale') return;
     // Plain: replace. Shift: add. Ctrl / Cmd: in or out. Alt: out (UI.md §4.1; the same for a face).
     const mode = clickModeOf(mods);
     if (!tg) {
@@ -513,14 +520,26 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     if (moved > 4 || ui.get().pickMode) return;
     const p = local(e);
     const tg = targetAt(p.x, p.y);
-    if (!tg) return;
+    if (!tg) {
+      // On empty space: Add ▸ Primitive (phase U9) and what acts on the whole scene.
+      const s = store.get();
+      const at = { x: e.clientX, y: e.clientY };
+      openMenuAt(at.x, at.y, [
+        { label: t('menu.add'), icon: 'plus', submenu: primitiveMenuItems(ctx) },
+        null,
+        { label: t('viewport.frameAll'), kbd: kbdFor('frame'), disabled: s.scene.roots.length === 0, run: () => cmd.frameSelection(ctx, []) },
+        { label: t('tree.showAll'), kbd: kbdFor('showAll'), disabled: !allParts(s).some((q) => !effectiveVisible(s, q)), run: () => cmd.showAll(ctx) },
+      ]);
+      return;
+    }
     const s = store.get();
     let ids = selectedNodes(s);
     if (!ids.includes(tg.id)) {
       store.dispatch({ type: 'scene/select', ids: [tg.id], mode: 'set' });
       ids = [tg.id];
     }
-    openMenuAt(e.clientX, e.clientY, partMenu(ctx, ids));
+    const at = { x: e.clientX, y: e.clientY };
+    openMenuAt(at.x, at.y, partMenu(ctx, ids, { scale: () => openScalePanel(ctx, ids, at) }));
   }, listen);
   canvas.addEventListener('dblclick', (e) => {
     const p = local(e);

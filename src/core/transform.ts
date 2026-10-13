@@ -27,17 +27,21 @@ import {
   round,
   scale as scaleVec,
   sub,
+  transformDirection,
   transformPoint,
+  type Box,
   type Mat4,
   type Vec3,
 } from './math';
 import { canSeparateByFaces, facePieces, type FacePiece } from './faces';
-import { ensureMesh, flipMesh, getMesh, hashIndices, remapTriangleRanges, resmoothMesh, sliceMesh, triangleSource, type MeshData, type MeshId, type MeshRef } from './meshes';
+import { ensureMesh, flipMesh, getMesh, hashIndices, remapTriangleRanges, resmoothMesh, sliceMesh, transformedMeshBounds, triangleSource, type MeshData, type MeshId, type MeshRef } from './meshes';
+import { ensurePrimitiveMesh } from './primitives';
 import {
   boundsOf,
   centerXY,
   cleanSelection,
   IDENTITY_TRANSFORM,
+  partWorldBounds,
   partsUnder,
   restOnFloor,
   subtree,
@@ -266,6 +270,34 @@ export function selectionFrame(state: ProjectState, ids: readonly NodeId[], spac
 }
 
 /**
+ * The size of a selection along three orthonormal axes (world vectors), mm: the extent of every vertex of its parts
+ * projected on each axis (with the world axes, the size of its bounding box). What Scale… "to size" measures.
+ */
+export function selectionExtents(state: ProjectState, ids: readonly NodeId[], axes: readonly Vec3[]): Vec3 {
+  // Rows of the change of basis: a world point p has coordinates (a0·p, a1·p, a2·p) in the axes.
+  const toAxes: Mat4 = mat4Identity();
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) toAxes[c * 4 + r] = axes[r][c];
+  const cache = new Map<NodeId, Mat4>();
+  let box: Box | null = null;
+  for (const p of partsUnder(state, topMost(state, ids))) {
+    const node = state.scene.nodes[p];
+    const data = node.mesh ? getMesh(node.mesh.id) : undefined;
+    let b: Box;
+    if (data) b = transformedMeshBounds(data, mat4Multiply(toAxes, worldMatrix(state, p, cache)));
+    else {
+      const w = partWorldBounds(state, p, cache);
+      if (isEmptyBox(w)) continue;
+      const corners: Vec3[] = [];
+      for (const x of [w.min[0], w.max[0]]) for (const y of [w.min[1], w.max[1]]) for (const z of [w.min[2], w.max[2]]) corners.push(transformPoint(toAxes, [x, y, z]));
+      b = { min: [Math.min(...corners.map((c) => c[0])), Math.min(...corners.map((c) => c[1])), Math.min(...corners.map((c) => c[2]))], max: [Math.max(...corners.map((c) => c[0])), Math.max(...corners.map((c) => c[1])), Math.max(...corners.map((c) => c[2]))] };
+    }
+    if (isEmptyBox(b)) continue;
+    box = box ? { min: b.min.map((v, k) => Math.min(v, box!.min[k])) as Vec3, max: b.max.map((v, k) => Math.max(v, box!.max[k])) as Vec3 } : b;
+  }
+  return box ? boxSize(box) : [0, 0, 0];
+}
+
+/**
  * New local transforms of the movable targets after a world-space matrix `d` is applied on top of their
  * world matrices: W' = d * W, L' = P^-1 * W'.
  */
@@ -408,6 +440,11 @@ export type TransformAction =
   | ({ type: 'scene/scale'; ids: NodeId[]; factors: Vec3; space: Space } & ActionBase)
   | ({ type: 'scene/centerAndRest'; ids: NodeId[] } & ActionBase)
   | ({ type: 'scene/resetTransform'; ids: NodeId[] } & ActionBase)
+  /**
+   * Reset scale (phase U9, right click ▸ Scale…): each node takes back the scale it had when it entered the scene,
+   * about its own pivot (which stays where it is); position and rotation are kept.
+   */
+  | ({ type: 'scene/resetScale'; ids: NodeId[] } & ActionBase)
   /** The current transforms become the ones Reset returns to (after the import sheet places a model). */
   | ({ type: 'scene/setInitial'; ids: NodeId[] } & ActionBase)
   /** `point` (world, mm) is needed for CUSTOM. */
@@ -554,7 +591,15 @@ class Draft {
       if (src.kind === 'PART') {
         node.material = mat(src.material);
         if (src.faceMaterials) node.faceMaterials = src.faceMaterials.map((f) => ({ ...f, material: mat(f.material) ?? f.material }));
-        if (src.mesh && !linked) node.mesh = aliasMesh(src.mesh, fresh);
+        if (src.mesh && !linked) {
+          // A primitive's own copy owns its own mesh (same measures, its own id): editing one never reaches the other.
+          if (src.primitive) {
+            const made = ensurePrimitiveMesh(fresh, src.primitive);
+            node.mesh = made.ref;
+            node.faceRanges = made.faceRanges;
+            node.primitive = { kind: src.primitive.kind, params: { ...src.primitive.params } };
+          } else node.mesh = aliasMesh(src.mesh, fresh);
+        }
       }
       if (src.pattern) node.pattern = { ...src.pattern, sources: src.pattern.sources.map((s) => idMap.get(s) ?? s) };
       this.nodes[fresh] = old === id && root ? { ...node, ...root, initial: root.transform ? cloneTransform(root.transform) : node.initial } : node;
@@ -614,6 +659,24 @@ function resetTransform(state: ProjectState, ids: readonly NodeId[]): ProjectSta
   const out: Record<NodeId, Transform> = {};
   for (const id of movableTargets(state, ids)) out[id] = cloneTransform(state.scene.nodes[id].initial ?? IDENTITY_TRANSFORM);
   return setTransforms(state, out);
+}
+
+function resetScale(state: ProjectState, ids: readonly NodeId[]): ProjectState {
+  let next = state;
+  for (const id of movableTargets(state, ids)) {
+    const node = next.scene.nodes[id];
+    const want = node.initial?.scale ?? IDENTITY_TRANSFORM.scale;
+    if (node.transform.scale.every((v, i) => v === want[i])) continue;
+    // Each node about its own pivot: the pivot is where it was before.
+    const before = pivotPoint(next, [id]);
+    const scaled: ProjectState = { ...next, scene: { ...next.scene, nodes: { ...next.scene.nodes, [id]: { ...node, transform: { ...node.transform, scale: [want[0], want[1], want[2]] } } } } };
+    const after = pivotPoint(scaled, [id]);
+    const delta = sub(before, after);
+    const n2 = scaled.scene.nodes[id];
+    const local = node.parent ? transformDirection(mat4Invert(worldMatrix(scaled, node.parent)), delta) : delta;
+    next = { ...scaled, scene: { ...scaled.scene, nodes: { ...scaled.scene.nodes, [id]: { ...n2, transform: { ...n2.transform, position: [round(n2.transform.position[0] + local[0], 6), round(n2.transform.position[1] + local[1], 6), round(n2.transform.position[2] + local[2], 6)] } } } } };
+  }
+  return next;
 }
 
 function setInitial(state: ProjectState, ids: readonly NodeId[]): ProjectState {
@@ -814,7 +877,12 @@ function withMeshes(state: ProjectState, fn: (meshId: MeshId) => ((node: SceneNo
     const f = fn(meshId);
     if (!f) continue;
     for (const p of parts) {
-      const next = f(nodes[p]);
+      let next = f(nodes[p]);
+      // Other geometry than the measures make: no longer a parametric primitive (phase U9).
+      if (next !== nodes[p] && next.primitive && next.mesh?.id !== nodes[p].mesh?.id) {
+        next = { ...next };
+        delete next.primitive;
+      }
       if (next !== nodes[p]) {
         nodes[p] = next;
         changed = true;
@@ -997,6 +1065,8 @@ export function reduceTransform(state: ProjectState, action: TransformAction): P
     }
     case 'scene/resetTransform':
       return resetTransform(state, action.ids);
+    case 'scene/resetScale':
+      return resetScale(state, action.ids);
     case 'scene/setInitial':
       return setInitial(state, action.ids);
     case 'scene/setPivot':

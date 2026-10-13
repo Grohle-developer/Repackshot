@@ -12,6 +12,8 @@ import { libraryFoot, mineEmpty, mineRows, namePrompt, type MineSpec } from '../
 import { registerDropZone } from '../components/material-drag';
 import { confirmBox, openMenu, tabs } from '../components/widgets';
 import { partMenu } from './part-menu';
+import { primitiveMenuItems } from './add-menu';
+import { openScalePanel } from './scale-panel';
 import { h, icon } from '../dom';
 import type { IconName } from '../icons';
 import { cameraName, dyn, lightName, materialName, studioLabel } from '../names';
@@ -60,7 +62,7 @@ function treeRows(ctx: Ctx, scope: Scope): HTMLElement {
   const contextMenu = (node: SceneNode, row: HTMLElement) => {
     const s = store.get();
     const ids = s.selection.ids.includes(node.id) ? s.selection.ids.filter((id) => s.scene.nodes[id]) : [node.id];
-    openMenu(row, partMenu(ctx, ids, { rename: () => startRename(node.id) }));
+    openMenu(row, partMenu(ctx, ids, { rename: () => startRename(node.id), scale: () => openScalePanel(ctx, ids, row) }));
   };
 
   const startRename = (id: NodeId) => {
@@ -217,10 +219,13 @@ function partsTab(ctx: Ctx, scope: Scope): HTMLElement {
   const filter = h('input', { type: 'search', class: 'text-input', placeholder: t('tree.filter'), 'aria-label': t('tree.filter'), value: ctx.ui.get().treeFilter }) as HTMLInputElement;
   filter.addEventListener('input', () => ctx.ui.set({ treeFilter: filter.value }));
   filter.addEventListener('keydown', (e) => e.stopPropagation());
+  // + : Add ▸ Primitive (phase U9).
+  const add = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('menu.add'), 'aria-haspopup': 'menu', 'data-tip': t('add.aux'), 'data-add': 'primitive' }, icon('plus', 16));
+  add.addEventListener('click', () => openMenu(add, primitiveMenuItems(ctx), 'end'));
   return h(
     'div',
     { class: 'tab-body' },
-    h('div', { class: 'stack', style: 'padding:8px var(--pad);border-bottom:1px solid var(--line)' }, filter, levelSelector(ctx, scope)),
+    h('div', { class: 'stack', style: 'padding:8px var(--pad);border-bottom:1px solid var(--line)' }, h('div', { class: 'row', style: 'gap:6px;align-items:center' }, h('div', { style: 'flex:1;min-width:0;display:flex' }, filter), add), levelSelector(ctx, scope)),
     h('div', { class: 'side-scroll' }, treeRows(ctx, scope)),
   );
 }

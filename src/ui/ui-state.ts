@@ -22,8 +22,8 @@ export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
 export type ViewportMode = 'FAST' | 'FULL';
 /** Whether the path tracer can run, and why not (main.ts finds out). */
 export type EngineState = 'LOADING' | 'READY' | 'NO_WASM' | 'NO_WORKERS' | 'OUTDATED' | 'FAILED';
-export type Tool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move';
-export const TOOLS: readonly Tool[] = ['select', 'orbit', 'pan', 'zoom', 'move'];
+export type Tool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move' | 'scale';
+export const TOOLS: readonly Tool[] = ['select', 'orbit', 'pan', 'zoom', 'move', 'scale'];
 export type Drawer = 'animation' | 'queue' | null;
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of
