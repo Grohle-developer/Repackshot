@@ -970,7 +970,132 @@ focos y cúpula por tipo de producto lo decide Fable aquí;
 
 **Depende de.** E5, L2.
 
-## M1 · Cara CAD entera — **Sonnet**
+## U7 · Arrastrar un material y selección por caja — **Sonnet** — hecha
+
+**Qué.** Arrastrar un material (una miniatura del catálogo, de *Míos* o
+la esfera del material de la selección) sobre una pieza del visor o
+sobre una fila del árbol, con resaltado (`UI.md` §2.2 y §2.3). Con la
+herramienta *Seleccionar*, selección por caja (ventana y cruce) a cada
+nivel (`UI.md` §4.1), que se añadió a la fase con ella empezada.
+
+**Depende de.** U1, U4.
+
+**Criterio.** Reglas de la asignación por arrastre como acción pura con
+números; la selección por caja probada sobre geometría proyectada;
+comprobación en el navegador con ratón, lápiz y dedo en *Rápido* y
+*Completo*.
+
+**Hecho.**
+
+*Arrastrar un material.* Con eventos de puntero, no con el arrastrar y
+soltar del navegador (un *webview* de escritorio no siempre da la sesión
+nativa, y no deja decidir el fantasma, el lápiz ni `Esc`):
+`src/ui/components/material-drag.ts` es el controlador (umbral de 5 px,
+miniatura fantasma sobre y a la derecha del puntero, zonas de suelta
+registradas por elemento, `Esc` en fase de captura, clic tragado tras
+arrastrar; un dedo no arrastra y conserva su gesto de siempre). Las
+reglas viven en `src/core/material-drop.ts` y se prueban con números: en
+el visor, una suelta alcanza lo que seleccionaría un clic al nivel
+vigente (pieza, ensamblaje, modelo o, a nivel *Caras*, la cara entera
+bajo el cursor); en una fila del árbol, el nodo y todo lo que cuelga de
+él. Un preset del catálogo o un elemento de la biblioteca entran con
+**la instancia que la escena ya tiene de él** (la misma que un clic en
+la miniatura, así que soltar y hacer clic dejan el mismo proyecto); la
+esfera de la selección enlaza con **esa instancia**; con **`Alt`** la
+suelta da **una copia propia** (`material/assign` con `copy`, etiqueta
+*asignar una copia*). Siempre es **una sola acción** `material/assign` y
+una entrada de deshacer, con el nombre del material y del destino.
+Resaltado: contorno (el del visor) en las piezas, tinte en las caras y
+borde discontinuo en la fila del árbol, que además contornea en el visor
+lo que alcanzaría; el fantasma pone *Copia* mientras se pulsa `Alt`.
+`src/core/materials.ts` gana `copy` y `material/assign` ya no crea
+entrada cuando no cambia nada.
+
+*Selección por caja.* `src/core/box-select.ts` (puro, en píxeles de
+pantalla) y `src/ui/panels/viewport-box.ts` (el gesto). **`Ctrl/⌘` +
+arrastrar** dibuja la caja con *Seleccionar* y con *Mover* (donde no hay
+un asa bajo el puntero), en los tres esquemas del ratón; sin `Shift` ni
+`Alt` **sustituye** la selección, con `Shift` **añade** y con `Alt`
+**quita**. De izquierda a derecha es una **ventana** (lo que queda
+entero dentro; contorno continuo), de derecha a izquierda es **cruce**
+(lo que toca; contorno discontinuo), ambos acromáticos. Al nivel
+*Pieza*, *Grupo* o *Modelo* se prueba la geometría proyectada (primero
+la caja envolvente, luego los triángulos; sin mirar qué tapa a qué, como
+en un CAD: una pieza detrás de otra también se coge, y las ocultas no
+cuentan); a nivel *Caras* coge las caras enteras (CAD o por continuidad,
+ver **M1**) de una pieza, con el botón *Rayos X* en la barra de vista
+para coger también las ocultas. Un arrastre de unos pocos píxeles es un
+clic, `Esc` cancela, el lápiz hace lo que el ratón y un dedo no dibuja
+caja (sigue orbitando); la selección no se deshace (una caja no es una
+entrada de historial). Con los esquemas que dejan libre el botón
+izquierdo (*Alt + botón izquierdo orbita* y *Botón central orbita*), un
+arrastre sin más ya dibuja la caja y `Shift` añade sin `Ctrl`; con
+*Botón central*, `Alt` quita sin `Ctrl`; con *Alt + botón izquierdo*,
+`Alt` es la órbita y quitar es `Ctrl/⌘ + Alt`. Los clics no cambian:
+clic selecciona, `Shift` clic añade, `Ctrl/⌘` clic mete o saca, `Alt`
+clic quita (salvo con *Alt + botón izquierdo orbita*, donde `Alt` es de
+la cámara). En *Completo* se usa la geometría de la vista previa, igual
+que `pick`. Nuevos métodos de `ViewportPort`: `projection`,
+`visibleTriangles` y `setHoverFaces`.
+
+*Decisión del usuario sobre el gesto (2026-10-13).* El botón izquierdo
+sigue orbitando por defecto, y **`Ctrl/⌘` + arrastrar** es la caja; la
+primera versión armaba la caja con `Shift`, `Ctrl` o `Alt`. Lo que
+cambia respecto al visor anterior: con *Seleccionar* y *Mover*, `Ctrl/⌘`
++ arrastrar con el botón izquierdo ya no desplaza (era el atajo oculto
+de los controles de órbita; quedan el botón derecho, la rueda y la
+herramienta *Desplazar*). `Shift` + arrastrar y `Alt` + arrastrar no
+arman nada y hacen lo que hacía la cámara antes. El texto de *Ajustes ▸
+Preferencias ▸ Visor y navegación ▸ Ratón* y el tooltip de *Seleccionar*
+lo dicen en los dos idiomas, y se comprobó en el navegador que no
+desbordan (la fila de Ajustes pasa a cuatro líneas y el tooltip cabe en
+sus 280 px).
+
+*Pruebas.* 89 tests nuevos (25 de `material-drop.test.ts`, 35 de
+`box-select.test.ts` y los 29 de M1 en `faces.test.ts`; 1031 en total);
+63 mutaciones de los tests unitarios, todas detectadas salvo dos
+equivalentes (F9, y la de que `Ctrl` no arme en *Alt + botón izquierdo
+orbita*, que ya arma antes por otra rama), y 16 en el navegador, todas
+salvo una guarda de orden entre el resaltado de la suelta y el contorno
+al pasar que el navegador no puede observar.
+`tools/material-drag-check.mjs` y `tools/box-select-check.mjs`
+(Playwright con el Chromium local, en *Rápido* y *Completo*, con ratón,
+lápiz y dedo); capturas `docs/ui/material-drag.png`,
+`material-drag-tree.png`, `material-drag-faces.png`, `box-window.png`,
+`box-crossing.png` y `box-faces.png`. Las de *Completo*, que pesan
+mucho, se escriben en `out/` y no entran en el repositorio.
+
+No encajó con el plan:
+
+- **La suelta sobre un destino con materiales distintos conserva la
+  pregunta en línea de `UI.md` §4.1** (*Sustituir todos · Mantener los
+  existentes · Cancelar*, con inventario): es el caso de soltar sobre
+  un grupo o un modelo cuyas piezas llevan materiales distintos. La
+  fase pedía "una sola acción" y lo es (una entrada de deshacer una
+  vez respondida), pero no se aplica a ciegas. Si se prefiere que una
+  suelta sustituya sin preguntar, es una decisión de interfaz (Fable);
+  mientras tanto vale lo que dice §4.1.
+- **A nivel *Caras* el catálogo solo aparece cuando hay una cara
+  seleccionada**, así que no hay miniatura que arrastrar antes de
+  coger la primera; la suelta cae en **la cara bajo el cursor**, no en
+  las seleccionadas.
+- **El resaltado del arrastre ignora el ajuste *Contorno al pasar*:**
+  sin él, soltar no tendría ninguna señal de a dónde va.
+- **Un dedo no arrastra ni dibuja caja** (conserva lo que hacía:
+  desplazar los paneles y orbitar); el lápiz es un ratón.
+- **La caja no enseña una vista previa de lo que cogerá:** solo el
+  rectángulo; la selección cambia al soltar.
+- **En el esquema por defecto la caja no se dibuja con un arrastre sin
+  más**, sino con `Ctrl/⌘` + arrastrar (decisión del usuario): el
+  botón izquierdo orbita y una caja con un arrastre sin más le
+  quitaría la órbita. Quien la quiera sin tecla puede elegir el
+  esquema *Alt + botón izquierdo orbita* o *Botón central orbita*.
+- Dos cosas de estructura: los clics de `Alt` sobre el visor pasan por
+  `clickMods` para respetar el esquema *Alt + botón izquierdo orbita*,
+  y `ViewportPort` se amplió con tres métodos (`ARCHITECTURE.md`
+  §6.1).
+
+## M1 · Cara CAD entera — **Sonnet** — hecha
 
 **Qué.** Selección de caras por continuidad de superficie, portando el
 algoritmo E2 de EZ Packshot: adyacencia por **posición** de vértice
@@ -986,6 +1111,79 @@ los rangos de cara originales ganan.
 con tapas (la pared entera, se para en las tapas), perfil
 plano-redondeo-pared, arista marcada. Verificar que cada uno falla si se
 quita su condición.
+
+**Hecho.** `src/core/faces.ts` (modelo puro): `cadFaceRegion` hace
+crecer la cara desde el triángulo picado con las reglas de arriba y, en
+una pieza de STEP o IGES, devuelve el rango CAD que lo contiene (los
+rangos ganan); la topología se calcula una vez por malla y se guarda en
+un `WeakMap`. En el visor, a nivel *Caras* un clic coge **la cara
+entera**: clic sin más sustituye, `Shift` añade **un triángulo suelto**,
+`Ctrl/⌘` mete o saca la cara entera y `Alt` la quita; al arrastrar un
+material se tiñe la cara que recibiría (`ViewportPort.setHoverFaces`).
+*Separar por caras CAD* (`scene/separateByCadFaces`) deja de ser
+*próximamente*: está en el menú de pieza y en la hoja de importación
+(que ahora usa el mismo `facePieces`), cada pieza nueva conserva el
+color de su cara, la selección sigue a las piezas y el nivel pasa de
+*Caras* a *Pieza*. La acción comparte `replaceByPieces` con *Separar por
+material*. Además la selección por caja (ver **U7**) coge caras enteras.
+29 tests nuevos (`tests/faces.test.ts`: placa, placa con vértices
+duplicados, cilindro con tapas, perfil plano-redondeo-pared, arista
+marcada, rangos CAD, piezas separadas; las mutaciones se cuentan en
+**U7**); capturas `docs/ui/box-faces.png` y
+`docs/ui/material-drag-faces.png`; comprobado en el navegador con
+`tests/fixtures/box.step` (seis caras CAD).
+
+No encajó con el plan:
+
+- **Límite del borde con curvatura suave (decisión pendiente de
+  Fable).** Se cambió una cosa del algoritmo de EZ Packshot: su
+  estimación de la curvatura contaba también las aristas que son
+  frontera (marcadas o más agudas que 30°), y un triángulo en el borde
+  de una cara plana, junto a una pared, medía la curvatura de la
+  esquina y la cara se escapaba por un chaflán; aquí solo cuentan las
+  aristas que se podrían cruzar (test *a flat face is flat to its
+  rim*). Queda el caso que un clic sobre una malla no puede
+  distinguir: un triángulo en el borde de una cara plana cuya única
+  arista que gira es un redondeo suave (unos pocos grados por paso)
+  parece una faceta de una cara curva, y la cara sigue el redondeo; el
+  interior de la misma cara plana no. No afecta a STEP ni IGES (los
+  rangos no dudan) y la cabecera de `faces.ts` lo cuenta. Datos para
+  decidir si basta o si hace falta un criterio de malla (por ejemplo,
+  medir la curvatura en el interior de la región ya cogida): no se ha
+  cambiado nada por cuenta propia.
+- **`Shift` suelto y `Shift` añade.** M1 pedía "`Shift` da el
+  triángulo suelto" y `UI.md` §4.1 "`Shift` añade": a nivel *Caras*,
+  `Shift` hace las dos cosas, `Shift` clic **añade el triángulo
+  suelto**. Como `Shift` solo vuelve suelto el triángulo y el resto de
+  teclas conservan su sentido, `Ctrl/⌘ ⇧` clic lo mete o saca y `Alt
+  ⇧` clic lo quita (con *Alt + botón izquierdo orbita*, donde `Alt` es
+  de la cámara, no hay `Alt ⇧`); `Ctrl/⌘` y `Alt` sin `Shift` actúan
+  sobre la cara entera.
+- **La caja de caras trabaja sobre una sola pieza** (`Selection.faces`
+  es `{part, indices}`): la seleccionada y, si no hay, la que está en
+  el centro de la caja. Sin *Rayos X* solo coge lo que se ve, medido
+  con un pase de identificadores del visor (un id por triángulo, con
+  una erosión de un píxel para que no cuenten las siluetas de lo
+  oculto), así que una cara más estrecha que unos 3 px no se coge; con
+  *Rayos X* coge también las ocultas, por geometría.
+- ***Separar por caras CAD* solo existe para piezas con rangos** que
+  cubren la malla (`canSeparateByFaces`); en una malla sin ellos sigue
+  deshabilitado en lugar de partir por continuidad.
+- **El contador dice *caras* y cuenta triángulos** (`inspector.faces`:
+  un cubo de seis caras CAD entero dice *12 caras de* su pieza): el
+  modelo de datos guarda triángulos. Contar caras CAD pide guardar
+  también qué rangos se han cogido; se deja anotado.
+- **Un clic no tiñe la cara antes de cogerla**: al pasar el ratón sin
+  arrastrar nada, a nivel *Caras* solo se contornea la pieza; la cara
+  se ve al cogerla. El tinte previo es solo el del material
+  arrastrado.
+- La ayuda que `UI.md` llamaba `faceSel.help` no existe con ese
+  nombre: era `level.tip.FACES`, que ya no dice "próximamente" (se
+  reescribió), y se quitó `ops.separateCadSoon`.
+- Arreglos de fallos que ya estaban: el inspector no se reconstruía al
+  coger la primera cara (`contextKey` no distinguía si había caras;
+  con test), y `material/assign` sin cambios creaba una entrada de
+  deshacer vacía (ahora devuelve el mismo estado; con test).
 
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 
@@ -1702,7 +1900,7 @@ integra todo lo que la interfaz marca *próximamente***.
 | --- | --- | --- |
 | **P3a** | Opus | Modo Completo que no se para (reproducir con una sesión larga de cambios contra el lanzador y arreglar la causa), *Pausar* / *Reanudar* / *Iniciar cola* que funcionan en web y escritorio |
 | **P3b** | Opus | Escritorio sin rastro de navegador: diálogos nativos de carpeta y archivo desde el lanzador (PowerShell en Windows, `zenity`/`kdialog` en Linux, sin `unsafe`), escritura de renders, proyectos y modelos por el lanzador, menú contextual, selección, traducción, zoom, recarga, impresión, búsqueda y navegación del navegador desactivados, icono y título propios; estudio de WebView2 para Windows |
-| **U7** | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*) |
+| **U7** (hecha) | Sonnet | Arrastrar un material (miniatura del catálogo o de *Míos*) sobre una pieza del visor o del árbol, con resaltado (`UI.md` §2.3), y **M1** (cara CAD entera y *Separar por caras CAD*), más selección por caja con `Ctrl/⌘` + arrastrar. Ver U7 y M1 más arriba |
 | **E5** | Opus | Ya descrita: vidrio y transmisión, barniz, emisores reales, cielo, HDRI, imagen de fondo |
 | **E5b** | Opus | Profundidad de campo (lente fina), reflejo del suelo, efectos de imagen (halo, nitidez, saturación, contraste, viñeta), región de render, pases (alfa, profundidad, normales, id de pieza), cáusticas y *denoise* propio |
 | **E6**, **E7** | Sonnet, Opus | Ya descritas: madera, tela, bisel, subsuperficie, anisotropía; desgaste visible en motor y visor |

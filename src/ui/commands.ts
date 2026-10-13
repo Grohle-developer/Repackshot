@@ -3,6 +3,7 @@
 // need an inline confirmation return a ConfirmSpec for the caller to show
 // where the user acted (UI.md §4.3).
 
+import { materialPreset } from '../data/materials';
 import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
 import { activeCamera } from '../core/camera';
@@ -47,11 +48,15 @@ import {
 } from '../core/library';
 import { LIBRARY_PREFIX, isLibraryKey } from '../core/lighting';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
-import { retainMeshes } from '../core/meshes';
+import { dropAction, type AssignAction, type DroppedMaterial, type DropTarget } from '../core/material-drop';
+import { applyBox, facesInBox, itemsInBox, type BoxCombine, type BoxMode, type Rect } from '../core/box-select';
+import { cadFaceRegion } from '../core/faces';
+import { getMesh, retainMeshes } from '../core/meshes';
 import { meshIdsInUse, resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
 import {
   cameraLookAt,
   defaultPatternParams,
+  hasCadFaces,
   movableTargets,
   partsWithMaterial,
   type PatternSpec,
@@ -755,6 +760,67 @@ export function setLevel(ctx: Ctx, level: SelectionLevel): void {
   ctx.store.dispatch({ type: 'scene/select', ids, mode: 'set', level });
 }
 
+/** What a click at the Faces level does with the faces already selected. */
+export type FaceClick = 'set' | 'add' | 'toggle' | 'remove';
+
+/**
+ * A click on a face at the Faces level (phase M1). The whole face under the pointer: a CAD face of a STEP or IGES
+ * part, otherwise the surface that continues from the triangle (core/faces.ts). `loose` (Shift) takes only the
+ * triangle that was hit. `mode`: replace the selection with it (plain click), add it (Shift), take it in or out
+ * (Ctrl: out when the triangle that was hit is already selected), take it out (Alt).
+ */
+export function selectFaceAt(ctx: Ctx, part: NodeId, tri: number, how: { loose?: boolean; mode?: FaceClick } = {}): void {
+  const s = ctx.store.get();
+  const node = s.scene.nodes[part];
+  if (!node || node.kind !== 'PART') return;
+  const data = node.mesh ? getMesh(node.mesh.id) : undefined;
+  const indices = how.loose || !data ? [tri] : cadFaceRegion(data, tri, { faceRanges: node.faceRanges });
+  if (indices.length === 0) return;
+  const held = s.selection.faces?.part === part && s.selection.faces.indices.includes(tri);
+  const mode = how.mode ?? 'set';
+  ctx.store.dispatch({ type: 'scene/selectFaces', part, indices, mode: mode === 'toggle' ? (held ? 'remove' : 'add') : mode });
+}
+
+/** The part that selection by box works on at the Faces level: the selected one, else the one at the middle of the box. */
+function facesTarget(ctx: Ctx, rect: Rect): NodeId | null {
+  const s = ctx.store.get();
+  const chosen = s.selection.faces?.part ?? partsUnder(s, selectedNodes(s))[0];
+  if (chosen && s.scene.nodes[chosen]?.kind === 'PART') return chosen;
+  const hit = ctx.services.viewport?.pick((rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2);
+  return hit && s.scene.nodes[hit.node]?.kind === 'PART' ? hit.node : null;
+}
+
+/**
+ * Selection by box with the Select tool (UI.md §4.1; core/box-select.ts has the rules): the models, groups or parts
+ * the rectangle reaches at the level in force, or at Faces the whole faces of the part being worked on that show in it
+ * (`xray`: also the hidden ones). `combine` replaces the selection, adds to it or takes from it. Returns how many items
+ * (faces' triangles) it reached; null when the viewport cannot project the parts. Selection is not undoable.
+ */
+export function selectInBox(ctx: Ctx, box: { rect: Rect; mode: BoxMode }, combine: BoxCombine, opts: { xray?: boolean } = {}): number | null {
+  const port = ctx.services.viewport;
+  const projection = port?.projection();
+  if (!port || !projection) return null;
+  const s = ctx.store.get();
+  if (s.selection.level !== 'FACES') {
+    const hit = itemsInBox(s, box.rect, box.mode, s.selection.level, projection);
+    ctx.store.dispatch({ type: 'scene/select', ids: applyBox(selectedNodes(s), hit, combine), mode: 'set', level: s.selection.level });
+    return hit.length;
+  }
+  const part = facesTarget(ctx, box.rect);
+  const node = part ? s.scene.nodes[part] : undefined;
+  const data = node?.mesh ? getMesh(node.mesh.id) : undefined;
+  const mvp = part ? projection.mvp(part) : null;
+  if (!part || !node || !data || !mvp) {
+    if (combine === 'replace') ctx.store.dispatch({ type: 'scene/select', ids: [], mode: 'set', level: 'FACES' });
+    return 0;
+  }
+  // What shows through the rectangle; a viewport that cannot tell leaves the geometry to decide, as X-ray does.
+  const visible = opts.xray ? null : port.visibleTriangles(part, box.rect);
+  const indices = facesInBox({ data, faceRanges: node.faceRanges, mvp, width: projection.width, height: projection.height, rect: box.rect, mode: box.mode, visible });
+  ctx.store.dispatch({ type: 'scene/selectFaces', part, indices, mode: combine === 'replace' ? 'set' : combine });
+  return indices.length;
+}
+
 export function deselect(ctx: Ctx): void {
   ctx.store.dispatch({ type: 'scene/select', ids: [], mode: 'set' });
 }
@@ -1092,6 +1158,14 @@ export function separateByMaterial(ctx: Ctx, ids?: NodeId[]): void {
   ctx.store.dispatch({ type: 'scene/separateByMaterial', ids: target, names, label: L('undo.separate', { target: targetLabel(s, target) }) });
 }
 
+/** Separate by CAD faces (STEP, IGES): each part under the targets with CAD faces becomes one part per face. */
+export function separateByCadFaces(ctx: Ctx, ids?: NodeId[]): void {
+  const s = ctx.store.get();
+  const target = targetsOf(ctx, ids);
+  if (!hasCadFaces(s, target)) return;
+  ctx.store.dispatch({ type: 'scene/separateByCadFaces', ids: target, label: L('undo.separateCad', { target: targetLabel(s, target) }) });
+}
+
 /** Opens the inspector on a field of the selection and focuses it (Smoothing…, Rename from the viewport). */
 export function focusInspectorField(ctx: Ctx, field: string, section = 'part'): void {
   ctx.ui.set({ rightCollapsed: false });
@@ -1167,23 +1241,33 @@ export function requestSetup(ctx: Ctx, key: string): ConfirmSpec | null {
   };
 }
 
+/** What a dragged or chosen material is, before it is resolved: a catalogue key, an instance, or a library item. */
+export interface MaterialRef {
+  preset?: string;
+  material?: MaterialId;
+  library?: string;
+}
+
 /**
- * Assigns a material to the selection at its level (UI §4.1). When the
- * target holds different materials, returns the inventory to confirm.
+ * The name of what an assignment reaches, in both languages: a node, "3 parts", "1 face of Body". `faces` is how
+ * many faces the triangles of the target are (a drop reaches one; the selection may hold several, or loose triangles).
  */
-export function requestAssign(ctx: Ctx, src: { preset?: string; material?: MaterialId; library?: string }, ids?: NodeId[]): ConfirmSpec | null {
+function assignTarget(s: ProjectState, base: AssignAction, whole: boolean, faces?: number): Label {
+  if (base.faces) {
+    const part = s.scene.nodes[base.faces.part]?.name ?? '';
+    const n = faces ?? base.faces.indices.length;
+    return n === 1 ? L('inspector.face', { part }) : L('inspector.faces', { n, part });
+  }
+  return targetLabel(s, whole ? [] : base.targets);
+}
+
+/**
+ * Does the assignment, or returns the inline confirmation when the target holds materials that differ among
+ * themselves (UI §4.1): replace all, or keep the ones there are. One undo entry either way.
+ */
+function submitAssign(ctx: Ctx, base: AssignAction, matLabel: Label, tgt: Label): ConfirmSpec | null {
   const s = ctx.store.get();
-  // A material of the library (by item id) is offered to the store as the instance the item describes.
-  const item = src.library ? findItem(ctx.ui.get().library, 'material', src.library) : undefined;
-  if (src.library && !item) return null;
-  const base = assignAction(s, item ? { library: { id: item.id, instance: instanceFromItem(item) } } : { preset: src.preset, material: src.material }, 'REPLACE', ids);
-  const matLabel = item ? { en: item.name, es: item.name } : src.material ? materialLabel(s.materials[src.material]) : presetLabel(src.preset ?? '');
-  const tgt = base.faces
-    ? base.faces.indices.length === 1
-      ? L('inspector.face', { part: s.scene.nodes[base.faces.part]?.name ?? '' })
-      : L('inspector.faces', { n: base.faces.indices.length, part: s.scene.nodes[base.faces.part]?.name ?? '' })
-    : targetLabel(s, base.targets.length === s.scene.roots.length && !ids && selectedNodes(s).length === 0 ? [] : base.targets);
-  const label = L('undo.assign', { material: matLabel, target: tgt });
+  const label = L(base.copy ? 'undo.assignCopy' : 'undo.assign', { material: matLabel, target: tgt });
   const inv = inventoryFor(s, base);
   if (actionParts(s, base).length === 0) return null;
   if (!inv.needsConfirm) {
@@ -1201,8 +1285,46 @@ export function requestAssign(ctx: Ctx, src: { preset?: string; material?: Mater
   };
 }
 
+/** The assignment source of a reference and its name, or null when what it names is gone (a deleted library item). */
+function resolveMaterialRef(ctx: Ctx, src: MaterialRef): { source: DroppedMaterial; name: Label } | null {
+  const s = ctx.store.get();
+  if (src.library) {
+    // A material of the library (by item id) is offered to the store as the instance the item describes.
+    const item = findItem(ctx.ui.get().library, 'material', src.library);
+    return item ? { source: { library: { id: item.id, instance: instanceFromItem(item) } }, name: { en: item.name, es: item.name } } : null;
+  }
+  if (src.material) return s.materials[src.material] ? { source: { material: src.material }, name: materialLabel(s.materials[src.material]) } : null;
+  if (src.preset) return materialPreset(src.preset) ? { source: { preset: src.preset }, name: presetLabel(src.preset) } : null;
+  return null;
+}
+
+/**
+ * Assigns a material to the selection at its level (UI §4.1). When the
+ * target holds different materials, returns the inventory to confirm.
+ */
+export function requestAssign(ctx: Ctx, src: MaterialRef, ids?: NodeId[]): ConfirmSpec | null {
+  const s = ctx.store.get();
+  const ref = resolveMaterialRef(ctx, src);
+  if (!ref) return null;
+  const base = assignAction(s, ref.source, 'REPLACE', ids);
+  return submitAssign(ctx, base, ref.name, assignTarget(s, base, !ids && selectedNodes(s).length === 0 && base.targets.length === s.scene.roots.length));
+}
+
+/**
+ * A material dropped on something (UI §2.2, §2.3; the rules are in core/material-drop.ts): one assignment, one
+ * undo entry ("Assign Gold to Body"). `copy` (Alt) gives the target an instance of its own. May return the
+ * inline confirmation, like `requestAssign`.
+ */
+export function requestDrop(ctx: Ctx, src: MaterialRef, target: DropTarget, copy = false): ConfirmSpec | null {
+  const s = ctx.store.get();
+  const ref = resolveMaterialRef(ctx, src);
+  if (!ref) return null;
+  const base = dropAction(ref.source, target, copy);
+  return submitAssign(ctx, base, ref.name, assignTarget(s, base, false, 1));
+}
+
 /** Parses a drag payload: "preset:GOLD", "material:m3" or "library:<id>" (a material of the user's library). */
-export function parseMaterialDrag(data: string): { preset?: string; material?: MaterialId; library?: string } | null {
+export function parseMaterialDrag(data: string): MaterialRef | null {
   if (data.startsWith('preset:')) return { preset: data.slice(7) };
   if (data.startsWith('material:')) return { material: data.slice(9) };
   if (data.startsWith('library:')) return { library: data.slice(8) };

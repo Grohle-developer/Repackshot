@@ -78,6 +78,9 @@ src/
     camera.ts               óptica, encuadre, cámaras guardadas
     animation.ts            planos, movimientos, evaluación en el tiempo
     doctor.ts               chequeos y arreglos sobre el modelo
+    faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
+    material-drop.ts        a qué llega una suelta de material y qué asigna (U7)
+    box-select.ts           selección por caja: geometría en pantalla, ventana y cruce, qué gesto la arma (U7)
     light-math.ts           kelvin → rgb, irradiancia, polar, ease   (portado)
     rig.ts                  studioRig / setupRig normalizados           (portado)
     wear.ts                 valores por defecto del desgaste            (portado)
@@ -96,9 +99,12 @@ src/
     rsb.ts                  escritor del formato de escena binario del motor (§5.2)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
+    ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
     theme.css  layout.css  components.css  …
     components/             NumberField, Section, Grid, Palette, …
+      material-drag.ts      arrastrar un material con eventos de puntero: fantasma, zonas de suelta, Esc (U7)
     panels/                 header, scene, viewport, inspector, renderbar, status
+      viewport-box.ts       el gesto de la caja de selección sobre el visor (U7)
 public/
   thumbs/setups/            72 miniaturas de montaje de luz (PNG)
   example/                  nada: la pieza de ejemplo es procedural
@@ -454,6 +460,47 @@ externos, sin `unsafe`). Hace cinco cosas:
   plegadas) en `localStorage`, siempre dentro de `try/catch` y con valor
   por defecto.
 
+### 6.1 · El puerto del visor (`src/ui/ports.ts`)
+
+La interfaz no importa `render`: `main.ts` construye un `ViewportPort`
+sobre el motor que está en pantalla y se lo entrega. Es lo único que la
+interfaz sabe del visor:
+
+- **Imagen y tamaño**: `kind` (`'preview'` o `'pathtracer'`), `canvas`,
+  `backdrop` (la imagen del modo Completo, bajo el lienzo) y `resize`.
+- **Geometría, que es siempre la de la vista previa en los dos modos**:
+  `pick(x, y)` (la pieza, el triángulo, el punto y la normal bajo un
+  punto del lienzo), `projection()` y `visibleTriangles(part, rect)`.
+  - `projection(): Projection | null` da cómo se proyectan las piezas
+    **tal como se dibujan ahora** (ancho y alto en píxeles CSS y
+    `mvp(part)`, la matriz modelo-vista-proyección de una pieza). La
+    selección por caja (`core/box-select.ts`) prueba con ella la
+    geometría en pantalla, sin tocar three.
+  - `visibleTriangles(part, rect): Set<number> | null` devuelve los
+    triángulos de una pieza que se **ven** dentro de un rectángulo (px
+    CSS del lienzo): la vista previa dibuja la escena con un id de color
+    por triángulo en un destino fuera de pantalla, lee el rectángulo y
+    solo cuenta un píxel cuyos cuatro vecinos llevan el mismo id (una
+    erosión que quita los de silueta que se escapan de lo oculto). Lo que
+    otras piezas o la propia pieza tapan no cuenta; `null` si el visor no
+    puede decirlo. *Rayos X* no lo usa: coge por geometría.
+- **Resaltados**: `setHover(ids)` (contorno de piezas: bajo el cursor o
+  bajo un material arrastrado) y `setHoverFaces({ part, indices } | null)`
+  (las caras que alcanzaría un material arrastrado a nivel *Caras*: un
+  tinte sobre la pieza, en una capa aparte de la de las caras
+  seleccionadas).
+- **Herramientas y *gizmo***: `setTool`, `setGizmo`, `gizmoHover`,
+  `gizmoBegin`, `gizmoDrag`, `gizmoEnd`.
+- **Estado y miniaturas**: `status`, `onFrame`, `materialThumbnail`,
+  `thumbnailsPending`; **ajustes**: `setNavigation`, `setDisplay`.
+
+Los tres métodos nuevos de U7 y M1 (`projection`, `visibleTriangles`,
+`setHoverFaces`) son, en `main.ts`, una línea cada uno hacia la vista
+previa. Un doble de pruebas del visor basta para probar la selección por
+caja sin navegador (`tests/box-select.test.ts`); el gesto y lo que se
+ve se comprueban con `tools/box-select-check.mjs` y
+`tools/material-drag-check.mjs`.
+
 ---
 
 ## 7 · Pruebas
@@ -463,6 +510,8 @@ externos, sin `unsafe`). Hace cinco cosas:
 | Catálogos y matemáticas de luz | `tests/data.test.ts`, `light-math`, `rig` | Recuentos fijados, fórmulas con números, normalización 16 × 71 |
 | Modelo | `tests/store.test.ts`, `scene`, `materials`, `doctor`… | Acciones puras: dado un estado, la acción produce el esperado; deshacer lo devuelve |
 | Interfaz | `tests/strings.test.ts`, `ui-achromatic.test.ts` | Invariantes estáticas sobre fuentes |
+| Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
+| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs` | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |

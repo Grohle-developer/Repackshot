@@ -897,3 +897,81 @@ kbd,
 .library-foot {
   margin-top: 4px;
 }
+
+/* Selection by box (ui/panels/viewport-box.ts): a window is solid, crossing is dashed; both achromatic. */
+.box-select {
+  position: absolute;
+  z-index: 12;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line-strong);
+  background: var(--soft);
+}
+.box-select.is-crossing {
+  border-style: dashed;
+}
+
+/* Dragging a material (ui/components/material-drag.ts) ----------------------- */
+[data-drag-source] {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+[data-drag-source] img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+body.is-material-drag,
+body.is-material-drag * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+body.is-material-drag[data-drop='yes'],
+body.is-material-drag[data-drop='yes'] * {
+  cursor: copy !important;
+}
+body.is-material-drag[data-drop='no'],
+body.is-material-drag[data-drop='no'] * {
+  cursor: no-drop !important;
+}
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 3px 8px 3px 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+  color: var(--ink-0);
+  box-shadow: var(--shadow);
+  font-size: var(--fs-label);
+  pointer-events: none;
+  will-change: transform;
+}
+.drag-ghost-pic {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-2);
+}
+.drag-ghost-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drag-ghost-copy {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+}
+.drag-ghost.is-copy .drag-ghost-copy {
+  display: inline-flex;
+}

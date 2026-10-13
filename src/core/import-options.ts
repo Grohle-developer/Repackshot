@@ -22,9 +22,10 @@
 // Centre, rest on floor, frame camera and add/replace are store actions the
 // interface dispatches after the model is added (src/ui/commands.ts).
 
+import { facePieces, type FacePiece } from './faces';
 import { defaultInstance, triangleMaterials, type MaterialId, type MaterialInstance } from './materials';
 import { getMesh, meshRef, registerMesh, remapTriangleRanges, sliceMesh, unregisterMesh, type MeshData } from './meshes';
-import type { FaceRange, ModelPayload, NodeId, SceneNode } from './scene';
+import type { ModelPayload, NodeId, SceneNode } from './scene';
 
 // --- Vocabulary -------------------------------------------------------------------------
 
@@ -482,12 +483,7 @@ export function applyImportOptions(input: ImportPayload, options: ImportOptions)
 }
 
 /** A part of a part: its triangles (ascending), its name and its materials. */
-interface Piece {
-  tris: number[];
-  name: string;
-  material: MaterialId | null;
-  faceMaterials: FaceRange[];
-}
+type Piece = FacePiece;
 
 /**
  * How "separate parts" cuts a part: one piece per material (`material`), or one per CAD face (`face`, for parts
@@ -495,8 +491,8 @@ interface Piece {
  */
 function piecesOf(node: SceneNode, by: SeparateBy, materials: Record<MaterialId, MaterialInstance>): Piece[] {
   if (by === 'none' || !node.mesh) return [];
-  const per = triangleMaterials(node);
   if (by === 'material') {
+    const per = triangleMaterials(node);
     const groups = new Map<MaterialId | '', number[]>();
     per.forEach((m, t) => (groups.get(m ?? '') ?? groups.set(m ?? '', []).get(m ?? '')!).push(t));
     return [...groups].map(([mat, tris]) => ({
@@ -506,28 +502,8 @@ function piecesOf(node: SceneNode, by: SeparateBy, materials: Record<MaterialId,
       faceMaterials: [],
     }));
   }
-  const faces = node.faceRanges ?? [];
-  // Only ranges that cover every triangle once, in order, cut the part (anything else would lose triangles).
-  let next = 0;
-  for (const f of faces) {
-    if (f.start !== next || f.count < 1) return [];
-    next += f.count;
-  }
-  if (next !== node.mesh.triangles) return [];
-  return faces.map((f, i) => {
-    const tris = Array.from({ length: f.count }, (_, k) => f.start + k);
-    // A CAD face has one colour; should it have more, the first is the part's and the rest stay as face materials.
-    const material = per[tris[0]] ?? null;
-    const faceMaterials: FaceRange[] = [];
-    tris.forEach((t, k) => {
-      const m = per[t];
-      if (m === material || !m) return;
-      const last = faceMaterials[faceMaterials.length - 1];
-      if (last && last.material === m && last.start + last.count === k) last.count++;
-      else faceMaterials.push({ start: k, count: 1, material: m });
-    });
-    return { tris, name: `${node.name} ${i + 1}`, material, faceMaterials };
-  });
+  // Only CAD faces that cover every triangle once, in order, cut the part (anything else would lose triangles).
+  return facePieces(node);
 }
 
 /** Rebuilds the hierarchy under a MODEL as one group per material or per layer, in order of first appearance. */

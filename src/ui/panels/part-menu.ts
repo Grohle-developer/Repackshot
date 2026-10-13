@@ -3,7 +3,7 @@
 // the documented order; what does not apply to the selection is disabled.
 
 import { allParts, effectiveVisible, partsUnder, type NodeId } from '../../core/scene';
-import { groupTargets, hasFaceMaterials, movableTargets, pivotModeOf, PIVOT_MODES, sharesMaterial } from '../../core/transform';
+import { groupTargets, hasCadFaces, hasFaceMaterials, movableTargets, pivotModeOf, PIVOT_MODES, sharesMaterial } from '../../core/transform';
 import * as cmd from '../commands';
 import type { MenuEntry, MenuItems } from '../components/widgets';
 import { dyn } from '../names';
@@ -62,8 +62,8 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
         cmd.focusInspectorField(ctx, 'smoothAngle');
       },
     },
-    // CAD faces come with the STEP / IGES importer (phase M1): disabled, and the tooltip says so.
-    { label: t('ops.separateCad'), disabled: true, note: t('ops.separateCadSoon') },
+    // Parts read from STEP or IGES carry their CAD faces (phase I2); the others have none to cut.
+    { label: t('ops.separateCad'), disabled: !hasCadFaces(s, nodes), run: () => cmd.separateByCadFaces(ctx, nodes) },
     { label: t('ops.separateMaterial'), disabled: !hasFaceMaterials(s, nodes), run: () => cmd.separateByMaterial(ctx, nodes) },
   ];
 

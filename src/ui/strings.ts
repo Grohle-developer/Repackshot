@@ -110,8 +110,8 @@ const TABLE = {
   'level.tip.GROUP': ['An assembly: a node with children', 'Un ensamblaje: un nodo con hijos'],
   'level.tip.PART': ['One mesh', 'Una malla'],
   'level.tip.FACES': [
-    'Triangles clicked in the viewport; whole CAD faces are coming soon',
-    'Triángulos pulsados en el visor; la cara CAD entera llega próximamente',
+    'A whole face per click (a CAD face, or the surface that continues); Shift adds one triangle, Ctrl adds or removes a face, Alt removes it; a Ctrl/⌘ + drag box takes the faces that show in it',
+    'Una cara entera por clic (una cara CAD, o la superficie que continúa); Shift añade un triángulo, Ctrl añade o quita una cara, Alt la quita; una caja con Ctrl/⌘ + arrastrar coge las caras que se ven en ella',
   ],
   'cameras.new': ['New from current view', 'Nueva desde la vista actual'],
   'cameras.active': ['Active', 'Activa'],
@@ -139,6 +139,10 @@ const TABLE = {
 
   // Viewport
   'tool.select': ['Select', 'Seleccionar'],
+  'tool.selectBox': [
+    'Box selection: hold Ctrl/⌘ and drag. Left to right is a window (what is entirely inside), right to left is crossing (what it touches). Add Shift to add, Alt to take out. Where the left button is free (the middle button or Alt + left orbits), a plain drag draws it',
+    'Selección por caja: mantén Ctrl/⌘ y arrastra. De izquierda a derecha es una ventana (lo que queda entero dentro), de derecha a izquierda es cruzar (lo que toca). Añade Shift para añadir, Alt para quitar. Donde el botón izquierdo está libre (orbita el central o Alt + izquierdo), arrastrar sin más la dibuja',
+  ],
   'tool.orbit': ['Orbit', 'Orbitar'],
   'tool.pan': ['Pan', 'Desplazar'],
   'tool.zoom': ['Zoom', 'Zoom'],
@@ -172,6 +176,11 @@ const TABLE = {
   'viewport.pickReflect': [
     'Click where you want the highlight of {light} · Esc cancels',
     'Haz clic donde quieres el brillo de {light} · Esc cancela',
+  ],
+  'viewport.xray': ['X-ray', 'Rayos X'],
+  'viewport.xrayAux': [
+    'Box selection at the Faces level also takes the faces hidden behind others',
+    'La selección por caja en el nivel Caras coge también las caras ocultas tras otras',
   ],
   'viewport.space': ['Axes of the move tool: global or local', 'Ejes de la herramienta de mover: globales o locales'],
   'viewport.pickPivot': ['Click on the part where the pivot goes · Esc cancels', 'Haz clic en la pieza donde va el pivote · Esc cancela'],
@@ -323,7 +332,7 @@ const TABLE = {
   'inspector.parts': ['{n} parts', '{n} piezas'],
   'inspector.faces': ['{n} faces of {part}', '{n} caras de {part}'],
   'inspector.face': ['1 face of {part}', '1 cara de {part}'],
-  'inspector.noFaces': ['Click triangles of {part} in the viewport', 'Haz clic en triángulos de {part} en el visor'],
+  'inspector.noFaces': ['Click a face of {part} in the viewport, or drag a box over faces (Shift: one triangle)', 'Haz clic en una cara de {part} en el visor, o arrastra una caja sobre caras (Shift: un triángulo)'],
   'section.product': ['Product', 'Producto'],
   'section.light': ['Light', 'Luz'],
   'section.environment': ['Environment', 'Entorno'],
@@ -458,7 +467,9 @@ const TABLE = {
   ],
   'material.notDrawn': ['stored, drawn by the engine (coming soon)', 'se guarda; lo pinta el motor (próximamente)'],
   'material.noMatch': ['No material matches.', 'Ningún material coincide.'],
-  'material.dragHint': ['Click to assign · drag onto a part', 'Clic para asignar · arrastra sobre una pieza'],
+  'material.dragHint': ['Click to assign · drag onto a part or a row of the tree (Alt: a copy)', 'Clic para asignar · arrastra sobre una pieza o una fila del árbol (Alt: una copia)'],
+  'material.sphereDrag': ['Drag onto a part to give it this material (Alt: a copy)', 'Arrastra sobre una pieza para darle este material (Alt: una copia)'],
+  'drag.copy': ['Copy', 'Copia'],
   'material.thumbBusy': ['Rendering spheres…', 'Renderizando esferas…'],
   'material.inventory': ['{target} contains {n} materials ({list}).', '{target} contiene {n} materiales ({list}).'],
   'material.replaceAll': ['Replace all', 'Sustituir todos'],
@@ -593,7 +604,6 @@ const TABLE = {
   'ops.flip': ['Flip normals', 'Invertir normales'],
   'ops.smoothing': ['Smoothing…', 'Suavizado…'],
   'ops.separateCad': ['Separate by CAD faces', 'Separar por caras CAD'],
-  'ops.separateCadSoon': ['Comes with whole CAD face selection · coming soon', 'Llega con la selección de cara CAD entera · próximamente'],
   'ops.separateMaterial': ['Separate by material', 'Separar por material'],
 
   // Light editor
@@ -1021,7 +1031,10 @@ const TABLE = {
   'set.viewport.startMode.FULL': ['Full', 'Completo'],
   'set.viewport.startMode.LAST': ['The last one', 'El último'],
   'set.viewport.mouse': ['Mouse', 'Ratón'],
-  'set.viewport.mouse.aux': ['Which button orbits; the right button pans and the wheel zooms', 'Qué botón orbita; el derecho desplaza y la rueda hace zoom'],
+  'set.viewport.mouse.aux': [
+    'Which button orbits; the right button pans and the wheel zooms. With the Select tool, Ctrl/⌘ + drag draws a selection box in every case (add Shift to add, Alt to take out); where the left button is free, a plain drag does too',
+    'Qué botón orbita; el derecho desplaza y la rueda hace zoom. Con la herramienta Seleccionar, Ctrl/⌘ + arrastrar dibuja una caja de selección en cualquier caso (añade Shift para añadir, Alt para quitar); donde el botón izquierdo está libre, arrastrar sin más también',
+  ],
   'set.viewport.mouse.LEFT': ['Left button orbits', 'Botón izquierdo orbita'],
   'set.viewport.mouse.ALT_LEFT': ['Alt + left button orbits', 'Alt + botón izquierdo orbita'],
   'set.viewport.mouse.MIDDLE': ['Middle button orbits', 'Botón central orbita'],
@@ -1518,6 +1531,7 @@ const TABLE = {
   'undo.import': ['Import {name}', 'Importar {name}'],
   'undo.new': ['New project', 'Nuevo proyecto'],
   'undo.assign': ['Assign {material} to {target}', 'Asignar {material} a {target}'],
+  'undo.assignCopy': ['Assign a copy of {material} to {target}', 'Asignar una copia de {material} a {target}'],
   'undo.libraryRemoved': ['Remove {name} from the library', 'Quitar {name} de la biblioteca'],
   'undo.productType': ['Product type: {name}', 'Tipo de producto: {name}'],
   'undo.createStudio': ['Create studio', 'Crear estudio'],
@@ -1572,6 +1586,7 @@ const TABLE = {
   'undo.flip': ['Flip the normals of {target}', 'Invertir las normales de {target}'],
   'undo.smoothAngle': ['Smoothing angle of {target}', 'Ángulo de suavizado de {target}'],
   'undo.separate': ['Separate {target} by material', 'Separar {target} por material'],
+  'undo.separateCad': ['Separate {target} by CAD faces', 'Separar {target} por caras CAD'],
   'undo.smooth': ['Smoothing of {target}', 'Suavizado de {target}'],
   'undo.param': ['{material}: {param}', '{material}: {param}'],
   'undo.makeOwn': ['Make {material} my own', 'Convertir {material} en propio'],
