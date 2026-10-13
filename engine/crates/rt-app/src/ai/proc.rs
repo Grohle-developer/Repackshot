@@ -162,8 +162,9 @@ pub fn kill_pid(pid: u32) -> bool {
     capture(cmd, Duration::from_secs(10)).is_ok_and(|c| c.ok())
 }
 
-/// True when `exe` (what [`exe_of`] said) is the server `server` a launch started: the same file
-/// on Linux, the same file name on Windows (all `tasklist` gives).
+/// True when `exe` (what [`exe_of`] said) is the server `server` a launch started: the same path
+/// on Linux (`server` as the kernel would write it: with its links resolved, see [`resolved`]),
+/// the same file name on Windows (all `tasklist` gives).
 pub fn is_our_server(exe: &Path, server: &Path) -> bool {
     if cfg!(windows) {
         exe.file_name()
@@ -174,6 +175,44 @@ pub fn is_our_server(exe: &Path, server: &Path) -> bool {
         let e = exe.to_string_lossy();
         let e = e.strip_suffix(" (deleted)").unwrap_or(&e);
         Path::new(e) == server
+    }
+}
+
+/// `path` with its symbolic links resolved, as the kernel writes the executable of a process
+/// (`/proc/<pid>/exe`): the whole path while it exists, its folder joined to its name once the
+/// file is gone (a removed runtime), and `path` itself when not even the folder is there.
+pub fn resolved(path: &Path) -> PathBuf {
+    if let Ok(p) = std::fs::canonicalize(path) {
+        return p;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(dir), Some(name)) => std::fs::canonicalize(dir)
+            .map(|d| d.join(name))
+            .unwrap_or_else(|_| path.to_path_buf()),
+        _ => path.to_path_buf(),
+    }
+}
+
+/// True when process `pid` runs the server `server` a launch started (the pid file of an
+/// earlier launch). Linux: the same file (the device and inode of `/proc/<pid>/exe` and of
+/// `server`), or, when the file has been replaced or removed since, the path the kernel gives
+/// against `server` with its links resolved. Comparing the path as written was wrong when the data
+/// folder is reached through a symbolic link: the kernel's path has the link resolved, so a server
+/// left running there was never recognised and never stopped. Windows: the image name.
+/// Elsewhere the process cannot be named, so it is never touched.
+pub fn runs_server(pid: u32, server: &Path) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let same_file = std::fs::metadata(format!("/proc/{pid}/exe"))
+            .ok()
+            .zip(std::fs::metadata(server).ok())
+            .is_some_and(|(a, b)| (a.dev(), a.ino()) == (b.dev(), b.ino()));
+        same_file || exe_of(pid).is_some_and(|exe| is_our_server(&exe, &resolved(server)))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        exe_of(pid).is_some_and(|exe| is_our_server(&exe, server))
     }
 }
 
@@ -224,6 +263,40 @@ mod tests {
             ));
             assert!(!is_our_server(Path::new("/usr/bin/sd-server"), server));
         }
+    }
+
+    /// The server of a pid file is recognised by its file, so a data folder reached through a
+    /// symbolic link (the kernel's path has the link resolved) still matches, and so does a path
+    /// whose file has gone (a removed runtime) once its folder is resolved.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_server_is_recognised_through_a_link() {
+        let dir = crate::test_dir("proc-link");
+        std::fs::create_dir_all(dir.join("real")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
+        let me = std::env::current_exe().unwrap();
+        let link = dir.join("link/me");
+        std::os::unix::fs::symlink(&me, &link).unwrap();
+        let pid = std::process::id();
+        assert!(runs_server(pid, &me));
+        assert!(runs_server(pid, &link));
+        assert!(
+            !is_our_server(&exe_of(pid).unwrap(), &link),
+            "the path as written differs"
+        );
+        assert!(!runs_server(pid, Path::new("/usr/bin/true")));
+        assert!(!runs_server(pid, &dir.join("link/gone")));
+        assert_eq!(
+            resolved(&dir.join("link/gone")),
+            std::fs::canonicalize(dir.join("real"))
+                .unwrap()
+                .join("gone")
+        );
+        assert_eq!(
+            resolved(Path::new("/no/such/dir/x")),
+            Path::new("/no/such/dir/x")
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[cfg(target_os = "linux")]

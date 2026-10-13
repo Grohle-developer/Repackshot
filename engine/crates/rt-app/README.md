@@ -532,8 +532,10 @@ de él se enlaza ni se copia en `engine/`.
   no dice nada ni cambia de estado durante `silence` (10 min), si cargar pasa de `load` (30 min)
   o una imagen de `run` (60 min), si se cancela y no obedece en 15 s, a los `idle` (5 min) sin
   uso, con `DELETE /api/ai/sidecar` y al cerrar la aplicación; un arranque que encuentra en
-  `sidecar.json` un proceso vivo que es nuestro `sd-server` (`/proc/<pid>/exe`, `tasklist`) lo
-  para (`kill -9`, `taskkill /F`). Límites de partida: los mide X1 parte B.
+  `sidecar.json` un proceso vivo que es nuestro `sd-server` lo para (`kill -9`, `taskkill /F`).
+  En Linux, «nuestro» quiere decir el mismo archivo: dispositivo e inodo de `/proc/<pid>/exe`,
+  o la ruta con los enlaces resueltos si el archivo ya no existe. Así vale también con la carpeta
+  de datos detrás de un enlace simbólico. En Windows, el nombre de la imagen (`tasklist`). Límites de partida: los mide X1 parte B.
 - **Protocolo** (`examples/server/api.md` de la *release*): `POST /sdcpp/v1/img_gen` con
   `{prompt, negative_prompt, width, height, strength, seed, batch_count: 1, init_image,
   ref_images, control_image, control_strength, sample_params: {sample_steps, guidance:

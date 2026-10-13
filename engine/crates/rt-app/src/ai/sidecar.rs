@@ -604,19 +604,17 @@ impl Sidecar {
     }
 
     /// A launch that ended badly may have left a server running: if `sidecar.json` names a
-    /// process that is still our server (an executable under `runtimes_root`), it is stopped.
-    /// Returns the process id it stopped.
+    /// process that is still our server (an executable under `runtimes_root`, and the very file
+    /// the process runs: [`proc::runs_server`]), it is stopped. Returns the process id it stopped.
     pub fn clean_stale(&self, runtimes_root: &Path) -> Option<u32> {
         let text = std::fs::read_to_string(&self.pid_file).ok();
         let _ = std::fs::remove_file(&self.pid_file);
         let v = json::parse(&text?).ok()?;
         let pid = v.get("pid")?.as_f64()? as u32;
         let server = PathBuf::from(v.get("server")?.as_str()?);
-        if !server.starts_with(runtimes_root) || pid == std::process::id() {
-            return None;
-        }
-        let exe = proc::exe_of(pid)?;
-        if !proc::is_our_server(&exe, &server) {
+        let inside = server.starts_with(runtimes_root)
+            || proc::resolved(&server).starts_with(proc::resolved(runtimes_root));
+        if !inside || pid == std::process::id() || !proc::runs_server(pid, &server) {
             return None;
         }
         crate::log!("stopping the AI runtime a previous launch left running (pid {pid})");
