@@ -153,6 +153,8 @@ decisiones escritas (datos, contratos, revisión), no código.
 - **P2** · Lanzador de escritorio propio con motor nativo idéntico al
   wasm, almacén de modelos por `sha256`, portables de Windows y Linux e
   instalador NSIS; 846 tests web y 241 del motor — **Opus**.
+- **P1** · Primera release `v0.1.0`: portables de Windows y Linux e
+  instalador de Windows, CHANGELOG y notas — **Haiku**.
 - **U6** · Ventana de Ajustes con buscador y secciones agrupadas, gestor
   de modelos de IA con descargas reanudables verificadas por `sha256`,
   importación y recomendación por equipo; 939 tests — **Opus**.
@@ -1507,7 +1509,7 @@ los factores a las luces reales) y como variantes (*día*, *atardecer*,
 (±1e-4); una mezcla guardada y re-renderizada coincide con la mezcla
 (±2 %); captura del mezclador.
 
-## P1 · Releases y demo pública — **Haiku**
+## P1 · Releases y demo pública — **Haiku** — hecha (v0.1.0)
 
 **Qué.** Petición del usuario: la primera release con **Windows
 portable**, **Linux portable** e **instalador de Windows**. Mientras
@@ -1527,6 +1529,15 @@ GitHub Pages para la demo, para cuando vuelva a haber minutos.
 **Criterio.** `npm run release` reproduce los tres paquetes desde un
 árbol limpio; `SHA256SUMS.txt` cuadra; la etiqueta apunta al commit de la
 release; el CHANGELOG lista las fases hechas.
+
+**Hecho.** `docs/CHANGELOG.md` con la v0.1.0 y sus limitaciones,
+notas en inglés en `docs/release-notes/v0.1.0.md` (la ruta que lee
+`release.yml`), y `npm run release` desde el commit etiquetado `v0.1.0`:
+Windows portable, Linux portable e instalador de Windows, comprobados
+con `packaging/smoke.mjs` (nativo y bajo Wine, *hash* fijado) y
+`sha256sum -c`. La release se publica a mano desde la etiqueta mientras
+no haya minutos de Actions. El motor conserva su propia versión (0.3.0);
+la de la aplicación es la de `package.json`.
 
 ## P2 · Escritorio: lanzador propio, portables e instalador — **Opus** — hecha
 
