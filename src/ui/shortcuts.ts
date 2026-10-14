@@ -1,14 +1,16 @@
 // The one map of application actions and their shortcuts (ARCHITECTURE §6):
 // it drives the keyboard, the command palette and the tooltips.
 
-import type { SelectionLevel } from '../core/scene';
+import { selectedNodes, type SelectionLevel } from '../core/scene';
 import { PRIMITIVE_KINDS } from '../data/primitives';
 import { NEW_LIGHT_KINDS } from '../core/lighting';
 import * as cmd from './commands';
+import * as phys from './physics';
 import type { ConfirmSpec } from './components/widgets';
 import type { Ctx } from './reactive';
 import { t, type StringKey } from './strings';
 import { startTour } from './tour';
+import { openMaterialEditor } from './graph-commands';
 import type { Tool } from './ui-state';
 
 export interface AppAction {
@@ -38,6 +40,8 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'render', label: 'action.render', keys: 'mod+enter', global: true, run: (ctx) => cmd.openRenderWindow(ctx) },
   { id: 'renderNow', label: 'action.renderNow', keys: 'mod+shift+enter', global: true, run: (ctx) => cmd.renderNow(ctx) },
   { id: 'viewportMode', label: 'action.viewportMode', keys: 'mod+shift+r', global: true, run: (ctx) => cmd.toggleViewportMode(ctx) },
+  // U11: the live denoise of the Full viewport (the top bar's Denoise, the meter's, Advanced ▸ Denoise ▸ Viewport).
+  { id: 'viewportDenoise', label: 'action.viewportDenoise', keys: 'd', run: (ctx) => cmd.toggleViewportDenoise(ctx) },
   { id: 'settings', label: 'action.settings', keys: 'mod+,', global: true, run: (ctx) => (ctx.ui.get().settingsWindow ? cmd.closeSettings(ctx) : cmd.openSettings(ctx)) },
   { id: 'frame', label: 'action.frame', keys: 'f', run: (ctx) => cmd.frameSelection(ctx) },
   { id: 'tool.select', label: 'tool.select', keys: 'v', run: setTool('select') },
@@ -79,6 +83,9 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'rest', label: 'action.rest', run: (ctx) => cmd.restOnFloor(ctx) },
   { id: 'center', label: 'action.center', run: (ctx) => cmd.centerSelection(ctx) },
   { id: 'centerRest', label: 'action.centerRest', run: (ctx) => cmd.centerAndRest(ctx) },
+  // Physics (S2): Drop the selection, and the physics bar.
+  { id: 'drop', label: 'action.drop', run: (ctx) => phys.drop(ctx, selectedNodes(ctx.store.get())) },
+  { id: 'physics', label: 'action.physics', run: (ctx) => ctx.ui.set({ drawer: 'physics' }) },
   { id: 'reset', label: 'action.reset', run: (ctx) => cmd.resetTransform(ctx) },
   { id: 'cameraTarget', label: 'action.cameraTarget', run: (ctx) => cmd.setCameraTarget(ctx) },
   { id: 'patternLinear', label: 'action.patternLinear', run: (ctx) => cmd.createPattern(ctx, 'LINEAR') },
@@ -110,6 +117,8 @@ export const ACTIONS: readonly AppAction[] = [
   // Add light ▸ (phase L4), one entry per kind, and the Lights and cameras button of the view bar.
   ...NEW_LIGHT_KINDS.map((k): AppAction => ({ id: `addLight.${k}`, label: `lights.addAction.${k}` as StringKey, run: (ctx) => cmd.addLight(ctx, k) })),
   { id: 'glyphs', label: 'action.glyphs', run: (ctx) => cmd.toggleGlyphs(ctx) },
+  // M3a: the material editor on the selection's material.
+  { id: 'materialEditor', label: 'action.materialEditor', run: (ctx) => void openMaterialEditor(ctx) },
 ];
 
 /** Where Settings ▸ Keyboard shortcuts lists an action. */
@@ -119,7 +128,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['general', 'view', 'se
 export function shortcutGroup(id: string): ShortcutGroup {
   if (id.startsWith('level.') || ['hide', 'isolate', 'showAll', 'deselect', 'delete', 'selectAll'].includes(id)) return 'selection';
   if (id === 'tool.move' || id === 'tool.scale' || id.startsWith('space.') || ['duplicate', 'duplicateLinked', 'group', 'ungroup', 'copyMaterial', 'pasteMaterial'].includes(id)) return 'edit';
-  if (id.startsWith('tool.') || id === 'frame' || id === 'panels' || id === 'viewportMode' || id === 'lookThrough' || id === 'glyphs') return 'view';
+  if (id.startsWith('tool.') || id === 'frame' || id === 'panels' || id === 'viewportMode' || id === 'viewportDenoise' || id === 'lookThrough' || id === 'glyphs') return 'view';
   return 'general';
 }
 

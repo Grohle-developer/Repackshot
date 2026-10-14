@@ -1,0 +1,84 @@
+{
+  "note": "EXPLODE poses of the example model as evaluated before N6 (commit 589654f); see tests/explode.test.ts",
+  "partSizeMm": 121,
+  "movedTransforms": {"model": {"position": [40, -25, 10], "rotation": [0, 0, 30], "scale": [1, 1, 1]}, "closure": {"position": [0, 0, 6], "rotation": [0, 0, 45], "scale": [1.2, 1.2, 1.2]}},
+  "cases": [
+    {
+      "name": "preset EXPLODE",
+      "moved": false,
+      "clips": [
+        {"target":{"kind":"SUBJECT"},"move":"EXPLODE","shot":null,"start":1,"duration":3,"amount":1.5,"easing":"EASE_OUT"}
+      ],
+      "poses": [
+        {"t":1,"nodes":{"base":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":2.5,"nodes":{"base":{"position":[0,0,-196.625],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-196.625],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-38.45164364401463,-66.83641054782231,-172.68012725593005],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,136.125],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,136.125],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":4,"nodes":{"base":{"position":[0,0,-242],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-242],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-51.2688581920195,-89.11521406376308,-210.07350300790674],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}}
+      ]
+    },
+    {
+      "name": "preset EXPLODE_ASSEMBLE",
+      "moved": false,
+      "clips": [
+        {"target":{"kind":"SUBJECT"},"move":"EXPLODE","shot":null,"start":0,"duration":3,"amount":1.5,"easing":"EASE_OUT"},
+        {"target":{"kind":"SUBJECT"},"move":"EXPLODE","shot":null,"start":4,"duration":3,"amount":-1.5,"easing":"EASE_IN"}
+      ],
+      "poses": [
+        {"t":0,"nodes":{"base":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":1.5,"nodes":{"base":{"position":[0,0,-196.625],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-196.625],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-38.45164364401463,-66.83641054782231,-172.68012725593005],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,136.125],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,136.125],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":3,"nodes":{"base":{"position":[0,0,-242],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-242],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-51.2688581920195,-89.11521406376308,-210.07350300790674],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":4,"nodes":{"base":{"position":[0,0,-242],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-242],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-51.2688581920195,-89.11521406376308,-210.07350300790674],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":5.5,"nodes":{"base":{"position":[0,0,-196.625],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-196.625],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-38.451643644014624,-66.83641054782231,-172.68012725593005],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,136.125],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,136.125],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":7,"nodes":{"base":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}}
+      ]
+    },
+    {
+      "name": "linear 0.8 over 2 s",
+      "moved": false,
+      "clips": [
+        {"target":{"kind":"SUBJECT"},"move":"EXPLODE","shot":null,"start":0,"duration":2,"amount":0.8,"easing":"LINEAR"}
+      ],
+      "poses": [
+        {"t":0,"nodes":{"base":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":1,"nodes":{"base":{"position":[0,0,-108.9],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-108.9],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-13.67169551787187,-23.764057083670156,-100.38626746877513],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,48.400000000000006],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,48.400000000000006],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":2,"nodes":{"base":{"position":[0,0,-157.3],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-157.3],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-27.34339103574374,-47.52811416734031,-140.27253493755026],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,96.80000000000001],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,96.80000000000001],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}}
+      ]
+    },
+    {
+      "name": "mode RADIAL, smooth",
+      "moved": false,
+      "clips": [
+        {"target":{"kind":"SUBJECT"},"move":"EXPLODE","shot":null,"start":0,"duration":1,"amount":1,"easing":"EASE","explode":"RADIAL"}
+      ],
+      "poses": [
+        {"t":0,"nodes":{"base":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":0.5,"nodes":{"base":{"position":[0,0,-121],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-121],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-17.089619397339835,-29.705071354587695,-110.3578343359689],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":1,"nodes":{"base":{"position":[0,0,-181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-34.17923879467967,-59.41014270917539,-160.2156686719378],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,121],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,121],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}}
+      ]
+    },
+    {
+      "name": "very smooth, model and closure moved",
+      "moved": true,
+      "clips": [
+        {"target":{"kind":"SUBJECT"},"move":"EXPLODE","shot":null,"start":0,"duration":1,"amount":2,"easing":"EASE_STRONG"}
+      ],
+      "poses": [
+        {"t":0,"nodes":{"base":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":0.5,"nodes":{"base":{"position":[0,0,-181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-181.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-19.053309272819977,-29.66531194703533,-176.24947374756982],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,100.83333333333334],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,100.83333333333334],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":1,"nodes":{"base":{"position":[0,0,-302.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-302.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-38.106618545639954,-59.33062389407066,-291.99894749513965],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,201.66666666666669],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,201.66666666666669],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}}
+      ]
+    },
+    {
+      "name": "with a turntable",
+      "moved": false,
+      "clips": [
+        {"target":{"kind":"SUBJECT"},"move":"EXPLODE","shot":null,"start":0,"duration":2,"amount":1.2,"easing":"EASE"},
+        {"target":{"kind":"SUBJECT"},"move":"SPIN","shot":null,"start":0,"duration":2,"amount":180,"easing":"LINEAR"}
+      ],
+      "poses": [
+        {"t":0,"nodes":{"base":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[0,0,-60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,0],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"model":{"position":[0,0,60.5],"rotation":[0,0,0],"scale":[1,1,1],"visible":true}}},
+        {"t":1,"nodes":{"base":{"position":[0,0,-133.1],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-133.1],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-20.507543276807798,-35.64608562550523,-120.32940120316269],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,72.6],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,72.6],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"model":{"position":[0,0,60.5],"rotation":[0,0,90],"scale":[1,1,1],"visible":true}}},
+        {"t":2,"nodes":{"base":{"position":[0,0,-205.7],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"body":{"position":[0,0,-205.7],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"label":{"position":[-41.015086553615596,-71.29217125101046,-180.15880240632538],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"collar":{"position":[0,0,145.2],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"cap":{"position":[0,0,145.2],"rotation":[0,0,0],"scale":[1,1,1],"visible":true},"model":{"position":[0,0,60.5],"rotation":[0,0,180],"scale":[1,1,1],"visible":true}}}
+      ]
+    }
+  ]
+}

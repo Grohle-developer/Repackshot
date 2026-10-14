@@ -19,8 +19,9 @@ Do not add a dependency. If something is missing, write it.
 |-------|------|------|
 | `crates/rt-core` | library | The engine: `math`, `fmath` (deterministic `sin`, `exp2`, `log2`, `pow`...), `rng` (PCG32), `sampler` (Owen-scrambled Sobol), `warp`, `color` (tone curves), `image` (film with alpha), `png` (writer), `simd`, `geometry` (meshes, instances, BVHs, ray queries), `bsdf`, `light`, `environment`, `sky` (daylight), `bitmap` (images, 2-D sampling), `hdr` (Radiance RGBE reader and writer), `exr` (OpenEXR reader), `inflate` (zlib/DEFLATE decoder), `integrator` (the path tracer), `scene` (+ `scene::rsb`, the scene format), `render` (tiles), `example`. No OS APIs (`fs`, `net`, `time`, `thread` are forbidden). `unsafe` only in `simd`, every block with a `// SAFETY:` comment. |
 | `crates/rt-cli` | binaries `rt`, `rt-bench` + library | Native front end: reads an `.rsb` file, renders progressively on all cores within the time budget, writes a PNG; `rt --sheet` renders the contact sheet; `rt-bench` measures ray throughput. Files, threads and timing live here. |
-| `crates/rt-wasm` | `cdylib` + `rlib` | WebAssembly build with a hand-written C ABI (no `wasm-bindgen`). Its `unsafe` is confined to `src/ffi.rs`. |
+| `crates/rt-wasm` | `cdylib` + `rlib` | WebAssembly build with a hand-written C ABI (no `wasm-bindgen`): the renderer (`rt_*`) and the rigid body simulator (`phys_*`, `src/phys.rs`). Its `unsafe` is confined to `src/ffi.rs`. |
 | `crates/rt-app` | binary `repackshot` + library | The desktop launcher (P2): serves the interface on 127.0.0.1 with a per-launch token, opens it in an Edge or Chromium app window, renders natively on every thread through `/api/render` (the same film as `rt`), stores AI models by SHA-256 and detects the hardware for the model recommendation. `std` only, `#![forbid(unsafe_code)]`. Its API contract (in Spanish) is [`crates/rt-app/README.md`](crates/rt-app/README.md). |
+| `crates/rt-phys` | library | The rigid body simulator (S2): extended position based dynamics after Müller, Macklin, Chentanez, Jeschke and Kim (SCA 2020), fixed step 1/240 s with 4 substeps, gravity −Z, millimetres. Dynamic bodies are the convex hull of their points (own quickhull, coplanar faces merged; the oriented box when flat or over 128 vertices) or a ball when the points are on a sphere; static parts and the floor are triangles in a box tree. Contacts by the separating axis test with Gauss-map pruning and face clipping (spheres exact), friction per contact patch with anchors kept between steps, restitution, rolling resistance, sleeping. The `PHY1` scene format the interface writes (`src/io/phys.ts`). Same rules as `rt-core` (no OS APIs, `#![forbid(unsafe_code)]`, `f32`); contacts are sorted by (body, body, feature), so the pose hash does not depend on how the narrow phase is split. |
 | `crates/rt-post` | library | The AI post-processing guard (AI-POST.md §3.2, §7.2) and all its pixel work: conditioning (edges from id and normal discontinuities, normalised depth), tiles of about 1024² with ≥ 128 px overlap and raised-cosine blending, padding to multiples of 16 and cropping back, the guard (shading transfer, frequency separation, regions by id with CIEDE2000), its checks and the step machine `plan` → `tile_input` / `conditioning` → `accept` (accepted, retry at a lower strength, rejected), with a `GuardReport`-shaped JSON report. Same rules as `rt-core` (no OS APIs, `#![forbid(unsafe_code)]`, `f32`, `fmath` only); `rt-core` does not know it exists. |
 | `crates/rt-post-wasm` | `cdylib` + `rlib` | `rt-post` for the browser with a hand-written C ABI (`public/engine/post.wasm`, a module of its own so `rt.wasm` does not grow). Its `unsafe` is confined to `src/ffi.rs`; data crosses as little-endian bytes, so no pointer needs alignment. |
 | `crates/rt-sky` | binary `rt-sky` + library | Offline, not shipped (E5c): the spectral simulator of the atmosphere (spherical shells of the U.S. Standard Atmosphere 1976, Rayleigh with the King factor, aerosols by Linke turbidity and Ångström, Cornette–Shanks phase, ozone, a Lambertian ground; single scattering by quadrature, multiple scattering by deterministic Monte Carlo; 34 bands → CIE XYZ → Rec. 709), the Levenberg–Marquardt fit of the physical sky and the table it writes (`rt-sky table`), the validation (`rt-sky validate`), the preview's fixture (`rt-sky fixture`). `std` and `f64`, reproducible: its own elementary functions (`dmath`), one random stream per work item, the same result with any number of threads. `#![forbid(unsafe_code)]`. |
@@ -86,6 +87,15 @@ RUSTFLAGS="-C target-feature=+simd128" cargo test -p rt-core --release --target 
 (Use `--release`: Node 22 itself crashes running the whole debug-build test binary, although
 every test passes on its own.)
 
+The simulator's native/wasm parity (S2): `cargo test -p rt-phys` pins the pose hash of the drop
+scene at four steps (`PINNED_DROP` in `crates/rt-phys/tests/rigid.rs`) and writes the scene's
+`PHY1` bytes and those hashes to `../tests/fixtures/phys-drop.json`
+(`REPACK_WRITE_FIXTURES=1 cargo test -p rt-phys` rewrites it). The same tests run as WebAssembly
+(`cargo test -p rt-phys --release --target wasm32-wasip1`, with the runner above) must pass with
+the same pins, and `npx vitest run tests/physics-engine.test.ts` from the repository root runs the
+fixture through the real `rt.wasm`'s `phys_*` exports and must give the same hashes
+(`REPACK_REQUIRE_RT_WASM=1` makes a missing module an error instead of a skip).
+
 ## The desktop application
 
 ```sh
@@ -107,6 +117,7 @@ cargo run --release -p rt-cli -- --example -o out.png        # built-in scene, n
 cargo run --release -p rt-cli -- --write-example scene.rsb   # the same scene as an RSB file
 cargo run --release -p rt-cli -- --write-e5-example e5.rsb   # the E5 parity scene (glass, HDRI, background image)
 cargo run --release -p rt-cli -- --write-e5b-example e5b.rsb # the E5b-1 parity scene (the E5 scene with caustic photons)
+cargo run --release -p rt-cli -- --write-film-thumb t.rsb    # the film plugin's recipe-card scene (bottle beside the lit lamp, 320x200)
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 16 --denoise --keep-noisy   # out.png denoised, out-noisy.png
 cargo run --release -p rt-cli -- scene.rsb -o out.png --caustics 16384 --caustic-radius 3   # photon-map caustics
 cargo run --release -p rt-cli -- --write-studio-hdri studio.hdr   # the procedural studio HDRI (tests/fixtures/studio.hdr)
@@ -188,8 +199,7 @@ twice (0: off).
   below one is a stochastic cut-out. **1 glass**: the principled surface without metal (what the
   interface's GLASS family writes). **2 emissive**: radiance `emission * emission_power`,
   reflects nothing; with `MATL.flags` bit 0 it is also sampled as an area light, chosen among
-  the lights by its flux (`luminance · π · area · sides`) and inside the instance by triangle
-  area. The interface writes `emission_power = emitPower · EMIT_RADIANCE_PER_WATT` (0.06,
+  the lights per shading point (below) and inside the instance by triangle area. The interface writes `emission_power = emitPower · EMIT_RADIANCE_PER_WATT` (0.06,
   `src/core/photometry.ts`, the factor the preview has used since U1: the catalogue's watts are
   a level, not a flux) and `emission` the black body's colour at its temperature (normalised to
   its largest channel) or the colour given (`emitKind`). Single-scattering GGX loses energy when
@@ -217,10 +227,18 @@ twice (0: off).
   the diffuse lobe, by light sampling alone, and is invisible in reflections (Blender's "glossy"
   visibility, which the recipes come from). Bit 1 **camera**: visible to camera rays (a point's
   sphere too). Bit 2 **no shadow** (L4): its shadow rays are not traced (the shadow catcher is
-  not darkened by it either). One light per vertex, chosen in proportion to an estimate of the
-  flux it sends into the scene's bounding sphere; a spot weighs as its point light would when
-  its cone takes in the scene's centre, a twentieth of that otherwise, so a narrow spot's pool is
-  not left to the rare samples its little flux would get (a light tree replaces it in K4).
+  not darkened by it either). **One light per vertex, chosen per point** (E12): in proportion to a
+  bound of the irradiance each light can give the shading point unoccluded, the flat case of the
+  light tree of Conty Estevez and Kulla (HPG 2018) with its orientation bound (§4.3): `lum(I) ·
+  mask / max(d², r²)` for points and spots, `lum(L) · A · cos θ' / max(d², A)` for panels and
+  (from the centroid, with the cone of their normals) emissive meshes, `lum(E)` for the sun, `π L̄`
+  for the environment. A `Selection` holds the vertex, the sum of the weights and the first eight
+  of them, and the pick rebuilds the cumulative distribution entry by entry; MIS takes the same
+  probability at the vertex the BSDF ray left (`Scattered`). From two to 64 entries (one is
+  certain either way and by flux costs nothing); beyond 64, and
+  always for the shadow catcher and the caustic photons, the static choice by the flux each light
+  sends into the scene's bounding sphere (a spot weighing as its point light when its cone takes
+  in the scene's centre).
 * **Environment** (`environment`), `ENVR.kind`: **0 studio dome**: radiance linear in the `z`
   of the direction, `floor` at -1, `horizon` at 0, `zenith` at +1, importance sampled by the
   closed-form inverse of that piecewise-linear density in `z` times a uniform azimuth (exact
@@ -300,7 +318,7 @@ exponentials. `f32` only, a fixed order: the same bits natively and in WebAssemb
 RGBA sums out (coverage as it was). `denoise_rows` computes a band of rows from the rows and
 `HALO` = 72 rows around them, exactly those rows of the whole image: `rt`, the launcher and the
 page cut the work in bands (of at least 192 rows) on their threads or workers.
-`PINNED_DENOISED_EXAMPLE_4SPP` (`crates/rt-post/src/denoise/tests.rs`, `0xab15f290`) is the
+`PINNED_DENOISED_EXAMPLE_4SPP` (`crates/rt-post/src/denoise/tests.rs`, `0x9ef7c8a0`) is the
 example at 4 spp denoised; `tools/wasm-parity.mjs --expect-denoised` checks the real module
 against it. On the sheet's scenes the relative MSE against a long render falls to 4–20 % of the
 noisy image's at 4 spp and to 10–40 % at 16 spp (`rt-cli/tests/example.rs` checks the bound).
@@ -335,7 +353,7 @@ stream per (seed, sample, photon): a map is the same bits however its photons ar
 all their threads and every web worker traces the maps of the samples it renders (keeping 16).
 The shadow catcher (the interface's floor) gets the caustics too: photons land on its plane, and a
 camera ray that sees it adds their light relative to the open floor's to the background it shows
-(not with a transparent background). `PINNED_E5B_CAUSTICS_4SPP` (`0x55d60f2f`, the E5 scene with
+(not with a transparent background). `PINNED_E5B_CAUSTICS_4SPP` (`0x5419866e`, the E5 scene with
 2048 photons per sample, `rt --write-e5b-example`) holds on every SIMD path, in WASI, through
 the real module and through the launcher with 1, 4 and 16 threads.
 

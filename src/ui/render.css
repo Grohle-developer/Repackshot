@@ -367,6 +367,275 @@
   font-size: var(--fs-label);
   color: var(--ink-1);
 }
+/* Plugins (phase P6): a block a plugin, drawn from its manifest; the controls on the left, the preview on the right. */
+.rw-plugins {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.rw-pl {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rw-pl + .rw-pl {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.rw-pl-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.rw-pl-logo {
+  flex: none;
+  width: 36px;
+  height: 36px;
+}
+.rw-pl-logo img {
+  width: 30px;
+  height: 30px;
+}
+.rw-pl-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.rw-pl-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.rw-pl-notice {
+  margin: 0;
+}
+.rw-pl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rw-pl-group-title {
+  margin: 6px 0 0;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+/* The recipe carousel (P6 decision 8): a strip of cards, sideways, snapping to cards; the end where there are more
+   fades out (a mask: it carries no colour). Achromatic chrome: the outline of the chosen card is the ink; colour is
+   only in the pictures. */
+.rw-pl-recipes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 14px;
+  min-width: 0;
+}
+.rw-pl-strip-wrap {
+  --fade: 32px;
+  min-width: 0;
+}
+.rw-pl-strip-wrap.fade-l {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--fade));
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--fade));
+}
+.rw-pl-strip-wrap.fade-r {
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 var(--fade));
+  mask-image: linear-gradient(to left, transparent 0, #000 var(--fade));
+}
+.rw-pl-strip-wrap.fade-l.fade-r {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade)), transparent 100%);
+}
+.rw-pl-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  /* The snapport starts where the cards do: the first card's snap position is the strip's own start. */
+  scroll-padding-inline: 3px;
+  scroll-behavior: smooth;
+  padding: 3px 3px 8px;
+  scrollbar-width: thin;
+  outline: none;
+}
+.rw-pl-strip:focus-visible {
+  box-shadow: inset 0 0 0 var(--focus-ring) var(--line-strong);
+  border-radius: var(--radius);
+}
+.rw-pl-card {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 152px;
+  padding: 4px;
+  border-radius: var(--radius);
+  scroll-snap-align: start;
+  cursor: pointer;
+  outline: 1px solid transparent;
+  user-select: none;
+}
+.rw-pl-card:hover {
+  background: var(--hover);
+}
+.rw-pl-card[aria-selected='true'] {
+  outline: 2px solid var(--line-strong);
+  outline-offset: -1px;
+}
+.rw-pl-thumb {
+  width: 144px;
+  height: 90px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--bg-3);
+}
+.rw-pl-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.rw-pl-thumb.is-empty {
+  background: repeating-linear-gradient(135deg, var(--bg-2) 0 6px, var(--bg-3) 6px 12px);
+}
+.rw-pl-card-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.rw-pl-card-cat {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+/* P6b: the recipe filters, a row of chips each (the chips of components.css), and the count of what they leave. */
+.rw-pl-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rw-pl-filters:empty {
+  display: none;
+}
+.rw-pl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.rw-pl-chips-name {
+  min-width: 64px;
+  color: var(--ink-2);
+}
+/* The chosen recipe the filters leave out: first, dimmed, its label saying so. */
+.rw-pl-card.is-outside .rw-pl-thumb,
+.rw-pl-card.is-outside .rw-pl-card-name {
+  opacity: 0.45;
+}
+.rw-pl-card.is-outside .rw-pl-card-cat {
+  font-style: italic;
+}
+/* The slider under the strip: a thin track as wide as the carousel, the chosen card's place a tick on it. */
+.rw-pl-scrub {
+  position: relative;
+  height: 16px;
+  margin: 0 3px;
+}
+.rw-pl-scrub.is-idle {
+  visibility: hidden;
+}
+.rw-pl-scrub-range {
+  display: block;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+.rw-pl-scrub-range::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--line);
+}
+.rw-pl-scrub-range::-moz-range-track {
+  height: 2px;
+  background: var(--line);
+}
+.rw-pl-scrub-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 28px;
+  height: 8px;
+  margin-top: -3px;
+  border-radius: 4px;
+  background: var(--ink-0);
+  border: 0;
+}
+.rw-pl-scrub-range::-moz-range-thumb {
+  width: 28px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ink-0);
+  border: 0;
+}
+.rw-pl-scrub-range:focus-visible {
+  outline: var(--focus-ring) solid var(--line-strong);
+  outline-offset: 2px;
+}
+.rw-pl-scrub-mark {
+  position: absolute;
+  top: 2px;
+  left: calc(var(--mark, 0) * (100% - 28px) + 14px);
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  background: var(--ink-2);
+  pointer-events: none;
+}
+.rw-pl-strip.is-scrubbing {
+  scroll-snap-type: none;
+  scroll-behavior: auto;
+}
+.rw-pl-recipe-aux,
+.rw-pl-thumbs,
+.rw-pl-count,
+.rw-pl-base-line {
+  margin: 0;
+}
+.rw-pl-count:empty {
+  display: none;
+}
+.rw-pl-thumbs:empty,
+.rw-pl-base-line:empty {
+  display: none;
+}
+.rw-pl-jobs {
+  margin-top: 10px;
+}
+.rw-pl-toggle {
+  align-items: center;
+  gap: 8px;
+}
+.rw-pl-ctl .slider .num {
+  width: 100%;
+}
+.rw-pl-meter,
+.rw-pl-apply-line {
+  margin: 0;
+}
+.rw-pl-meter:empty,
+.rw-pl-apply-line:empty {
+  display: none;
+}
+.rw-pl-frame.is-working .split {
+  opacity: 0.6;
+}
 .rw-foot {
   display: flex;
   align-items: center;

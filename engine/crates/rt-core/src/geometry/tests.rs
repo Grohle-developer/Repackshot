@@ -142,8 +142,10 @@ fn random_rays(geometry: &Geometry, count: usize, seed: u64) -> Vec<Ray> {
 /// Every available SIMD path, on BVH4 and BVH8, against brute force, for 10 000 rays.
 fn agrees_with_brute_force(geometry: &Geometry, seed: u64) {
     let rays = random_rays(geometry, 10_000, seed);
-    let reference: Vec<(Option<RayHit>, bool)> =
-        rays.iter().map(|r| brute_force(geometry, r)).collect();
+    let reference: Vec<(Option<RayHit>, bool)> = rays
+        .iter()
+        .map(|r| brute_force(geometry, r, super::RayClass::Secondary))
+        .collect();
     let hits = reference.iter().filter(|(h, _)| h.is_some()).count();
     assert!(
         hits > 2_000,
@@ -405,7 +407,10 @@ fn one_sided_instances_hide_their_back_faces() {
     assert_eq!(one_sided.trace(&back), None);
     assert!(!one_sided.occluded(&back));
     for isa in Isa::available() {
-        assert_eq!(brute_force(&one_sided, &back), (None, false));
+        assert_eq!(
+            brute_force(&one_sided, &back, super::RayClass::Secondary),
+            (None, false)
+        );
         assert_eq!(one_sided.trace_with(&back, isa), None);
     }
 }
@@ -470,4 +475,159 @@ fn geometry_validation_and_counts() {
     assert!(!empty.occluded(&ray));
     assert!(empty.bounds().is_empty());
     assert_eq!(g.bvh_stats().leaves, 3);
+}
+
+/// Three dense effects (spheres, discs, capsules) around the example's meshes, with a camera
+/// footprint that widens the smallest particles; the discs cast no shadow and the capsules are
+/// not seen by the camera.
+fn particle_geometry(width: BvhWidth) -> Geometry {
+    use rt_sim::{AmbientParams, Shape, FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW};
+    let base = AmbientParams {
+        count: 2_500,
+        region_centre: [0.0, 0.0, 150.0],
+        region_half: [220.0, 220.0, 150.0],
+        size_var: 0.9,
+        turbulence: [15.0, 60.0, 10.0],
+        flags: FLAG_CAMERA | FLAG_REFLECTIONS | FLAG_SHADOW,
+        ..AmbientParams::default()
+    };
+    let effects = [
+        AmbientParams {
+            seed: 1,
+            size_mm: 6.0,
+            ..base
+        },
+        AmbientParams {
+            seed: 2,
+            size_mm: 9.0,
+            shape: Shape::Disc,
+            spin: 0.5,
+            time: 0.7,
+            flags: FLAG_CAMERA | FLAG_REFLECTIONS,
+            ..base
+        },
+        AmbientParams {
+            seed: 3,
+            size_mm: 3.0,
+            shape: Shape::Capsule,
+            fall_speed: 3_000.0,
+            wind: [1_500.0, -400.0, 0.0],
+            streak: 0.01,
+            flags: FLAG_REFLECTIONS | FLAG_SHADOW,
+            ..base
+        },
+    ];
+    let camera = crate::scene::Camera {
+        position: Vec3::new(0.0, -900.0, 200.0),
+        target: Vec3::new(0.0, 0.0, 150.0),
+        ..crate::scene::Camera::default()
+    };
+    // A small image: wide pixels, so many particles are widened for the camera.
+    let footprint = PixelFootprint::of(&camera, 40, 30);
+    let sets = effects
+        .iter()
+        .map(|e| ParticleSet::evaluate(e, footprint, width))
+        .collect();
+    let example = example_geometry();
+    let meshes = example.meshes().iter().map(|m| rebuilt(m, width)).collect();
+    Geometry::with_particles(meshes, example.instances().to_vec(), sets, width).unwrap()
+}
+
+#[test]
+fn particles_match_brute_force_for_every_class_of_ray() {
+    let mut rng = Pcg32::seeded(17, 3);
+    let mut f = || rng.next_f32();
+    let mut rays = Vec::new();
+    for i in 0..6_000 {
+        let target = Vec3::new(440.0 * f() - 220.0, 440.0 * f() - 220.0, 300.0 * f());
+        let origin = if i % 3 == 0 {
+            // From inside the cloud of particles.
+            Vec3::new(400.0 * f() - 200.0, 400.0 * f() - 200.0, 280.0 * f())
+        } else {
+            Vec3::new(1_200.0 * f() - 600.0, -900.0, 600.0 * f())
+        };
+        let mut ray = Ray::new(origin, (target - origin).normalize());
+        if i % 5 == 1 {
+            ray.t_max = 400.0 * f();
+        }
+        rays.push(ray);
+    }
+    let classes = [
+        RayClass::Camera,
+        RayClass::Secondary,
+        RayClass::Shadow,
+        RayClass::Parts,
+    ];
+    let reference_geometry = particle_geometry(BvhWidth::Four);
+    let first_set = reference_geometry.instances().len() as u32;
+    let reference: Vec<Vec<(Option<RayHit>, bool)>> = classes
+        .iter()
+        .map(|&c| {
+            rays.iter()
+                .map(|r| brute_force(&reference_geometry, r, c))
+                .collect()
+        })
+        .collect();
+    // The particles of every set are hit, and the classes differ.
+    for set in 0..3 {
+        let hits = reference[1]
+            .iter()
+            .filter(|(h, _)| h.is_some_and(|h| h.instance == first_set + set))
+            .count();
+        assert!(hits > 200, "set {set}: {hits}");
+    }
+    assert_ne!(reference[0], reference[1]);
+    assert_ne!(reference[1], reference[2]);
+    assert!(reference[3]
+        .iter()
+        .all(|(h, _)| h.is_none_or(|h| h.instance < first_set)));
+    for width in [BvhWidth::Four, BvhWidth::Eight] {
+        let g = particle_geometry(width);
+        for isa in Isa::available() {
+            for (c, &class) in classes.iter().enumerate() {
+                for (i, ray) in rays.iter().enumerate() {
+                    let (expected, expected_any) = reference[c][i];
+                    let got = g.trace_class(ray, isa, class);
+                    assert_eq!(
+                        got.map(|h| (h.instance, h.triangle)),
+                        expected.map(|h| (h.instance, h.triangle)),
+                        "{class:?} {width:?} {} ray {i}",
+                        isa.name()
+                    );
+                    if let (Some(a), Some(b)) = (got, expected) {
+                        assert_eq!(a.t, b.t);
+                    }
+                    assert_eq!(
+                        g.occluded_class(ray, isa, class),
+                        expected_any,
+                        "{class:?} any, ray {i}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_particle_hit_has_its_details() {
+    let g = particle_geometry(BvhWidth::native());
+    let first_set = g.instances().len() as u32;
+    let set = &g.particle_sets()[0];
+    let (centre, radius, _) = set.particle(10).unwrap();
+    let ray = Ray::new(
+        centre - Vec3::new(0.0, 500.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+    );
+    let hit = g
+        .trace_class(&ray, Isa::detect(), RayClass::Secondary)
+        .unwrap();
+    if hit.instance == first_set && hit.triangle == 10 {
+        let d = g.hit_details(&ray, hit).unwrap();
+        assert!((d.point - centre).length() - radius < 1.0e-3);
+        assert!(d.front_face && d.outside);
+        assert!((d.normal - Vec3::new(0.0, -1.0, 0.0)).length() < 1.0e-3);
+        assert_eq!(g.material_of(hit.instance), Some(0));
+    }
+    assert!(g.particle_set(first_set + 3).is_none());
+    assert_eq!(g.particle_count(), 7_500);
 }

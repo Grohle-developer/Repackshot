@@ -5,6 +5,8 @@ Render (U5): `render.ts` (the render window's settings, `RenderJob`, the queue r
 `name-template.ts` (output names with `{project}`, `{camera}`, `{studio}`, `{date}`, `{n}`), `results.ts` (the
 results history's record and eviction).
 
+Aspect ratio (U13): `aspect.ts` (a camera's image ratio: a preset of `data/aspects.ts` or its own `w : h`, its reading and its text; the size of an image follows the active camera's: `sizeForWidth`, `aspectForSize` and `syncOutputSize` in `render.ts`).
+
 Settings (U6): `settings.ts` (the application settings: one typed record with a schema version, defaults,
 validation, migration from the loose preferences of before and from older versions, and the metadata of every row,
 which drives the Settings window and its search), `models.ts` (the AI model manager's model: the store's view by
@@ -48,3 +50,11 @@ Textures (M2a): `textures.ts` (the image slots, the mapping and the labels of a 
 and the maths of the projections and labels the preview's shader and the engine follow), `texture-images.ts`
 (texture images in the registry under ids that name their content, and their limits), `image-header.ts` (the size
 and channels of a PNG or JPEG from its header).
+
+Physics (S2): `physics.ts` (the Physics section of a node: role, density by the material's category or its own,
+friction, bounciness, as parts; what the simulator is given for a Drop or for the stored roles, `physicsSpec`; the
+simulator's poses back to the movers' local transforms, inside turned and scaled groups and keeping each mover's
+scale; the PHYSICS clip's baked track, base64 f32 written a frame at a time by `TrackWriter`, played between frames and
+carried by the node's moves since its anchor; the `physics/*` actions, where a run is one gesture and Reset another
+step; the Doctor's dynamic-part-below-the-floor test). `animation.ts` plays PHYSICS clips first and `playheadPose`
+says what the viewport and a still show at the playhead, at 0 too for what a recorded simulation holds.

@@ -26,12 +26,50 @@
 //!   points uniformly on them. Two-sided unless the instance is one-sided.
 //! * **The environment** ([`EnvLight`]), importance sampled.
 //!
-//! Next-event estimation picks **one** of them per vertex, with probability proportional to an
-//! estimate of the flux it sends into the scene's bounding sphere (flux and distance for area
-//! lights and emitters, `π E` for the sun, `4π² L̄` for the environment; a point light by its
-//! flux and distance, a spot as the point light it is when its cone takes in the scene's centre). A light tree (Conty and
-//! Kulla 2018) replaces this in phase K4. A light flagged `LIGHT_FLAG_NO_SHADOW` (L4) lights
-//! through everything: its samples say so ([`LightSample::shadow`]) and no shadow ray is traced.
+//! **Which light** (E12). Next-event estimation picks **one** of them per vertex, with a
+//! probability proportional to a cheap upper bound of the irradiance each one, unoccluded, can give
+//! the vertex `x` that is being shaded ([`Lights::select`]): the flat, one-level case of the light
+//! tree of C. Conty Estevez and C. Kulla, "Importance Sampling of Many Lights with Adaptive Tree
+//! Splitting" (HPG 2018), whose §4.3 gives the orientation bound (`orientation_bound`). The
+//! weight of each light at `x`, all in the same units (W/m², distances in metres):
+//!
+//! * a point light or a spot: `lum(I) · mask(x) / max(d², r²)`, its intensity over the squared
+//!   distance from its centre (never closer than its radius), times the spot's mask, which is
+//!   exact (the spot's model masks by the direction from its centre);
+//! * a rect or disk: `lum(L) · A · cos θ' / max(d², A)`, with the orientation bound of the
+//!   reference: `θ` the angle between the panel's normal and the direction from its centre to
+//!   `x`, `θu` the half angle of the panel's bounding sphere seen from `x` (`sin θu = r / d`;
+//!   every direction inside it), the spread of the panel's normals `θo = 0` and of its emission
+//!   `θe = π/2`, and `θ' = max(0, θ − θo − θu)`; zero only when `θ' ≥ θe`. So a panel that `x`
+//!   sees edge on from its centre but not from its rim keeps a chance: no light that can light
+//!   `x` from any of its points has probability zero there;
+//! * an emissive mesh: the same as a panel from its centroid, with the cone of its front faces'
+//!   normals as `θo` and the sphere around the centroid that holds it for `θu`; two-sided, or
+//!   closed, it may face `x` from anywhere (`cos θ' = 1`), and it counts once: one side faces `x`;
+//! * the sun: `lum(E)`; the environment: `π L̄`, what a uniform world of its mean radiance gives a
+//!   surface.
+//!
+//! Nothing of the size of the light list is stored per vertex: [`Lights::select`] sums the weights
+//! and keeps the first few ([`Selection`]), and the pick rebuilds their cumulative distribution
+//! entry by entry, with the operations of `build_cdf` and `pick`, up to the light it takes. The
+//! cost grows with the number of lights, so this is for two to [`MAX_LOCAL_LIGHTS`] entries (one is
+//! chosen for certain either way, with the same bits, and by flux costs nothing); a scene with more
+//! uses, everywhere, the static selection of before E12 ([`Lights::select_by_flux`]), by an
+//! estimate of the flux each light sends into the scene's bounding sphere (flux and distance for
+//! area lights and emitters, `π E` for the sun, `4π² L̄` for the environment; a point light by its
+//! flux and distance, a spot as the point light it is when its cone takes in the scene's centre).
+//! The shadow catcher keeps that static selection too: its shadow is a ratio of one sample's light
+//! (`crate::integrator`), whose value depends on the choice. Light trees (K4) will hang their
+//! hierarchy from the same per-point measure.
+//!
+//! **MIS** needs the probability with which next-event estimation would have chosen a light that
+//! a BSDF-sampled ray finds. It is the same function (`Lights::pmf`), evaluated at the same
+//! vertex: the one where the ray was sampled (its [`Selection`], carried by [`Scattered`]),
+//! also when the ray went on through thin walls and cut-outs before it found the light. Caustic
+//! photons ([`crate::caustics`]) are emitted from no vertex and keep choosing their light by flux.
+//!
+//! A light flagged `LIGHT_FLAG_NO_SHADOW` (L4) lights through everything: its samples say so
+//! ([`LightSample::shadow`]) and no shadow ray is traced.
 
 use crate::color::Rgb;
 use crate::environment::EnvLight;
@@ -47,6 +85,20 @@ use crate::warp;
 const MM2_TO_M2: f32 = 1.0e-6;
 /// Millimetres to metres.
 const MM_TO_M: f32 = 1.0e-3;
+
+/// Most lights (entries of the selection: lights, emissive meshes and the environment) chosen
+/// per shading point; a scene with more chooses by flux everywhere (the cost of the choice per
+/// point grows with the number of lights).
+pub const MAX_LOCAL_LIGHTS: usize = 64;
+
+/// Weights a [`Selection`] keeps, so that neither the pick nor the MIS weights of the ray that
+/// leaves the vertex compute them again; past them (scenes of more lights) they are computed
+/// again where needed, with the same operations.
+const KEPT_WEIGHTS: usize = 8;
+
+/// Closest a point light is taken to be for its selection weight, in m² (1 mm): the weight of a
+/// light at the shading point itself stays finite.
+const MIN_DISTANCE2_M2: f32 = 1.0e-6;
 
 /// The power heuristic with exponent 2 (E. Veach and L. Guibas, "Optimally Combining Sampling
 /// Techniques for Monte Carlo Rendering", SIGGRAPH 1995): the weight of a sample drawn with
@@ -65,6 +117,12 @@ pub fn power_heuristic(pa: f32, pb: f32) -> f32 {
 #[inline]
 fn positive(x: f32) -> bool {
     x > 0.0
+}
+
+/// A sum of selection weights that a probability can be divided by: positive and finite.
+#[inline]
+fn usable(total: f32) -> bool {
+    total > 0.0 && total.is_finite()
 }
 
 /// Shape of an area light in its own frame.
@@ -92,8 +150,13 @@ pub(crate) struct AreaLight {
     pub(crate) glossy: bool,
     camera: bool,
     shadow: bool,
-    /// Probability of being chosen for next-event estimation.
-    pmf: f32,
+    /// Its entry in the selection.
+    entry: u32,
+    /// Selection weight before distance and orientation: `lum(L) · A` (A in m²), its on-axis
+    /// intensity.
+    base: f32,
+    /// Radius of the sphere that bounds the panel, around its centre (mm).
+    bound: f32,
 }
 
 /// The `cos^n` exponent whose intensity halves at `spread_deg / 2` (0 for 180 degrees or more).
@@ -117,6 +180,38 @@ fn light_frame(normal: Vec3, up: Vec3) -> Frame {
         y,
         z,
     }
+}
+
+/// The orientation bound of Conty Estevez and Kulla (HPG 2018, §4.3) for an emitter whose normals
+/// lie within `θo` of `axis` (`cos_sin_o` = `(cos θo, sin θo)`), that emits within `θe = π/2` of
+/// its normals, inside a sphere of radius `bound` (mm) around its centre: an upper bound on the
+/// cosine between an emitting normal and the direction from its point to `x`, `cos θ'` with `θ' =
+/// max(0, θ − θo − θu)`, zero when `θ' ≥ θe`. `θ` is the angle between `axis` and the direction
+/// from the centre to `x`, `θu` the half angle of the bounding sphere seen from `x` (`sin θu = r /
+/// d`; inside it, any direction). `v` is `x` minus the centre and `d2` its squared length. Dot
+/// products and square roots only: the angles add and subtract through `cos(a ± b) = cos a cos b ∓
+/// sin a sin b`.
+#[inline]
+fn orientation_bound(v: Vec3, d2: f32, axis: Vec3, cos_sin_o: (f32, f32), bound: f32) -> f32 {
+    if d2 <= bound * bound {
+        return 1.0; // inside its bounding sphere: any direction
+    }
+    let (cos_o, sin_o) = cos_sin_o;
+    let inv_d = 1.0 / d2.sqrt();
+    let sin_u = bound * inv_d;
+    let cos_u = (1.0 - sin_u * sin_u).max(0.0).sqrt();
+    // θs = θo + θu, every direction when it reaches π.
+    let cos_s = cos_o * cos_u - sin_o * sin_u;
+    let sin_s = sin_o * cos_u + cos_o * sin_u;
+    if sin_s < 0.0 {
+        return 1.0;
+    }
+    let cos_t = v.dot(axis) * inv_d;
+    if cos_t >= cos_s {
+        return 1.0; // θ ≤ θo + θu: some normal may point straight at x
+    }
+    let sin_t = (1.0 - cos_t * cos_t).max(0.0).sqrt();
+    (cos_t * cos_s + sin_t * sin_s).max(0.0)
 }
 
 impl AreaLight {
@@ -162,6 +257,25 @@ impl AreaLight {
         };
         inside.then_some((t, -denom))
     }
+
+    /// [`orientation_bound`] of a flat emitter (`θo = 0`): `v` is `x` minus the centre, `d2` its
+    /// squared length (mm²).
+    #[inline]
+    fn orientation(&self, v: Vec3, d2: f32) -> f32 {
+        orientation_bound(v, d2, self.frame.z, (1.0, 0.0), self.bound)
+    }
+
+    /// Selection weight at `x`: `lum(L) · A · cos θ' / max(d², A)`.
+    #[inline]
+    fn weight(&self, x: Vec3) -> f32 {
+        let v = x - self.centre;
+        let d2 = v.length_squared();
+        let orientation = self.orientation(v, d2);
+        if orientation <= 0.0 {
+            return 0.0;
+        }
+        self.base * orientation / (d2.max(self.area) * MM2_TO_M2)
+    }
 }
 
 /// A sun.
@@ -178,7 +292,9 @@ pub(crate) struct SunLight {
     pub(crate) glossy: bool,
     camera: bool,
     shadow: bool,
-    pmf: f32,
+    entry: u32,
+    /// Selection weight, the same everywhere: `lum(E)`, the irradiance it gives a surface facing it.
+    base: f32,
 }
 
 impl SunLight {
@@ -210,7 +326,11 @@ struct SphereLight {
     glossy: bool,
     camera: bool,
     shadow: bool,
-    pmf: f32,
+    entry: u32,
+    /// Selection weight before the mask and the distance: `lum(I)`.
+    base: f32,
+    /// Squared radius in m², at least [`MIN_DISTANCE2_M2`]: the closest its weight takes it.
+    near2: f32,
 }
 
 impl SphereLight {
@@ -267,6 +387,17 @@ impl SphereLight {
         let t = -b - disc.sqrt();
         (t > ray.t_min && t < t_max).then_some(t)
     }
+
+    /// Selection weight at `x`: `lum(I) · mask(x) / max(d², r²)`.
+    #[inline]
+    fn weight(&self, x: Vec3) -> f32 {
+        let mask = self.mask(x);
+        if mask <= 0.0 {
+            return 0.0;
+        }
+        let d2 = (x - self.centre).length_squared() * MM2_TO_M2;
+        self.base * mask / d2.max(self.near2)
+    }
 }
 
 /// An emissive instance sampled as an area light.
@@ -282,7 +413,37 @@ pub(crate) struct MeshEmitter {
     pub(crate) area: f32,
     pub(crate) radiance: Rgb,
     pub(crate) two_sided: bool,
-    pmf: f32,
+    entry: u32,
+    /// Area-weighted centre of its triangles.
+    centroid: Vec3,
+    /// Radius of the sphere around the centroid that holds it (mm).
+    bound: f32,
+    /// The cone of its front faces' normals: axis and `(cos θo, sin θo)`; `cos θo = −1` (any
+    /// direction) for a two-sided emitter, or a closed one.
+    axis: Vec3,
+    cos_sin_o: (f32, f32),
+    /// Selection weight before distance and orientation: `lum(L) · A` (A in m²; one side faces x
+    /// at a time, so a two-sided emitter counts once).
+    base: f32,
+}
+
+impl MeshEmitter {
+    /// Selection weight at `x`: `lum(L) · A · cos θ' / max(d², A)` from its centroid, with the
+    /// cone of its normals for [`orientation_bound`].
+    #[inline]
+    fn weight(&self, x: Vec3) -> f32 {
+        let v = x - self.centroid;
+        let d2 = v.length_squared();
+        let orientation = if self.cos_sin_o.0 <= -1.0 {
+            1.0
+        } else {
+            orientation_bound(v, d2, self.axis, self.cos_sin_o, self.bound)
+        };
+        if orientation <= 0.0 {
+            return 0.0;
+        }
+        self.base * orientation / (d2.max(self.area) * MM2_TO_M2)
+    }
 }
 
 /// One entry of the light selection distribution.
@@ -320,6 +481,45 @@ pub struct LightSample {
     pub shadow: bool,
 }
 
+/// Light selection at one shading vertex ([`Lights::select`]): the vertex, the sum of the weights
+/// of every light seen from it and the first few of them, which is all a choice and its
+/// probabilities need (the cumulative distribution is rebuilt entry by entry when a light is
+/// picked, so nothing of the size of the light list is written per vertex). The BSDF-sampled ray that leaves the vertex
+/// carries it ([`Scattered`]), so the MIS weights of whatever it finds use the probabilities
+/// next-event estimation used there; only [`Lights::select`] and [`Lights::select_by_flux`] make
+/// one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Selection {
+    point: Vec3,
+    /// Sum of the weights at `point` (0 with the static selection).
+    total: f32,
+    /// Chosen by the static distribution (by flux), not per point.
+    by_flux: bool,
+    /// The weights of the first [`KEPT_WEIGHTS`] entries at `point`.
+    weights: [f32; KEPT_WEIGHTS],
+}
+
+/// A BSDF-sampled ray, for the MIS weights of the lights it finds: its density per steradian and
+/// the selection at the vertex it was sampled at (where it went on straight through thin walls
+/// and cut-outs, still that vertex).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Scattered<'a> {
+    /// Density per steradian of the BSDF sample.
+    pub pdf: f32,
+    /// The light selection at the vertex it left.
+    pub from: &'a Selection,
+}
+
+/// Which techniques may find a light (tests of the estimators): both, weighted by MIS, as
+/// rendering always does, or one of them alone.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Techniques {
+    Mis,
+    LightsOnly,
+    BsdfOnly,
+}
+
 /// Every light of a scene, ready for sampling.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lights {
@@ -328,15 +528,27 @@ pub struct Lights {
     spheres: Vec<SphereLight>,
     pub(crate) meshes: Vec<MeshEmitter>,
     env: EnvLight,
-    env_pmf: f32,
+    /// The environment's entry, when it is one.
+    env_entry: Option<u32>,
+    /// Selection weight of the environment, the same everywhere: `π L̄`, the irradiance a uniform
+    /// world of its mean radiance gives a surface.
+    env_base: f32,
     entries: Vec<LightRef>,
-    /// Cumulative selection probabilities of `entries` (the last one is exactly 1).
+    /// Cumulative selection probabilities of `entries` by flux (the last one is exactly 1): the
+    /// static selection, for scenes of more than [`MAX_LOCAL_LIGHTS`] entries.
     cdf: Vec<f32>,
+    /// The probability of each entry in `cdf`: its bucket's width.
+    flux_pmf: Vec<f32>,
+    /// Lights are chosen per shading point (from two to [`MAX_LOCAL_LIGHTS`] entries); otherwise
+    /// by the static `cdf`, everywhere.
+    pub(crate) per_point: bool,
     /// Emitter index of each instance, if it is one.
     instance_emitter: Vec<Option<u32>>,
     /// The lights a camera ray sees (O3a: the lens's filters connect to them), in the order of
     /// [`Lights::camera_lights`].
     camera: Vec<CameraLight>,
+    #[cfg(test)]
+    pub(crate) techniques: Techniques,
 }
 
 /// A light a camera ray can see: an area light or a sphere flagged `camera`, with the sphere
@@ -350,6 +562,37 @@ pub struct CameraLight {
     /// A sphere light (else an area light), and its index there.
     sphere: bool,
     index: u32,
+}
+
+/// The lights a camera ray can see, by their bounding spheres: the area lights flagged `camera`
+/// and the sphere lights flagged `camera` with a size (O3a).
+fn camera_lights_of(areas: &[AreaLight], spheres: &[SphereLight]) -> Vec<CameraLight> {
+    let mut camera = Vec::new();
+    for (i, a) in areas.iter().enumerate() {
+        if a.camera {
+            let radius = match a.shape {
+                AreaShape::Rect { half_x, half_y } => (half_x * half_x + half_y * half_y).sqrt(),
+                AreaShape::Disk { radius } => radius,
+            };
+            camera.push(CameraLight {
+                centre: a.centre,
+                radius,
+                sphere: false,
+                index: i as u32,
+            });
+        }
+    }
+    for (i, l) in spheres.iter().enumerate() {
+        if l.camera && positive(l.radius) {
+            camera.push(CameraLight {
+                centre: l.centre,
+                radius: l.radius,
+                sphere: true,
+                index: i as u32,
+            });
+        }
+    }
+    camera
 }
 
 /// Index of the bucket of a CDF that holds `u`, and `u` rescaled to `[0, 1)` inside it.
@@ -401,7 +644,8 @@ impl Lights {
             )
         };
         let radius_m = radius * MM_TO_M;
-        // Share of an emitter's flux that reaches the bounding sphere, over R².
+        // The static selection: share of an emitter's flux that reaches the bounding sphere,
+        // over R².
         let reach = |p: Vec3, normal: Option<Vec3>| -> f32 {
             let to_centre = centre - p;
             let d = to_centre.length() * MM_TO_M;
@@ -421,6 +665,7 @@ impl Lights {
             let camera = light.flags & LIGHT_FLAG_CAMERA != 0;
             let shadow = light.flags & LIGHT_FLAG_NO_SHADOW == 0;
             let power = light.power.max(0.0);
+            let entry = entries.len() as u32;
             match light.kind {
                 LightKind::Rect | LightKind::Disk => {
                     let shape = if light.kind == LightKind::Rect {
@@ -433,9 +678,12 @@ impl Lights {
                             radius: 0.5 * light.size_x.abs(),
                         }
                     };
-                    let area = match shape {
-                        AreaShape::Rect { half_x, half_y } => 4.0 * half_x * half_y,
-                        AreaShape::Disk { radius } => fmath::PI * radius * radius,
+                    let (area, bound) = match shape {
+                        AreaShape::Rect { half_x, half_y } => (
+                            4.0 * half_x * half_y,
+                            (half_x * half_x + half_y * half_y).sqrt(),
+                        ),
+                        AreaShape::Disk { radius } => (fmath::PI * radius * radius, radius),
                     };
                     let frame = light_frame(light.direction, light.up);
                     if !positive(area) || frame.z.length_squared() < 0.5 {
@@ -460,7 +708,9 @@ impl Lights {
                         glossy,
                         camera,
                         shadow,
-                        pmf: 0.0,
+                        entry,
+                        base: radiance.luminance() * area * MM2_TO_M2,
+                        bound,
                     });
                 }
                 LightKind::Sun => {
@@ -496,7 +746,8 @@ impl Lights {
                         glossy,
                         camera,
                         shadow,
-                        pmf: 0.0,
+                        entry,
+                        base: irradiance.luminance(),
                     });
                 }
                 LightKind::Point | LightKind::Spot => {
@@ -537,7 +788,9 @@ impl Lights {
                         glossy,
                         camera,
                         shadow,
-                        pmf: 0.0,
+                        entry,
+                        base: intensity.luminance(),
+                        near2: (r_m * r_m).max(MIN_DISTANCE2_M2),
                     };
                     // What matters is how bright it is where the scene is, not the little flux of a narrow cone: a
                     // spot aimed at the scene weighs as its point light would, one aimed away a twentieth of it.
@@ -592,7 +845,29 @@ impl Lights {
             let two_sided = instance.flags & INSTANCE_ONE_SIDED == 0;
             let sides = if two_sided { 2.0 } else { 1.0 };
             let flux = radiance.luminance() * fmath::PI * area * MM2_TO_M2 * sides;
-            weights.push(flux * reach(centroid / area, None));
+            let centroid = centroid / area;
+            let bound = corners
+                .iter()
+                .flatten()
+                .fold(0.0f32, |r, p| r.max((*p - centroid).length()));
+            // The cone of the front faces' normals, about their area-weighted mean.
+            let mut mean = Vec3::ZERO;
+            for (n, a) in normals.iter().zip(&tri_areas) {
+                mean += *n * *a;
+            }
+            let length = mean.length();
+            let (axis, cos_sin_o) = if two_sided || length <= 1.0e-3 * area {
+                (Vec3::new(0.0, 0.0, 1.0), (-1.0, 0.0))
+            } else {
+                let axis = mean / length;
+                let cos_o = normals
+                    .iter()
+                    .fold(1.0f32, |c, n| c.min(n.dot(axis)))
+                    .clamp(-1.0, 1.0);
+                (axis, (cos_o, (1.0 - cos_o * cos_o).max(0.0).sqrt()))
+            };
+            weights.push(flux * reach(centroid, None));
+            let entry = entries.len() as u32;
             entries.push(LightRef::Mesh(meshes.len() as u32));
             instance_emitter[i] = Some(meshes.len() as u32);
             meshes.push(MeshEmitter {
@@ -602,68 +877,49 @@ impl Lights {
                 area,
                 radiance,
                 two_sided,
-                pmf: 0.0,
+                entry,
+                centroid,
+                bound,
+                axis,
+                cos_sin_o,
+                base: radiance.luminance() * area * MM2_TO_M2,
             });
         }
 
         let env = EnvLight::new(&scene.environment, &scene.bitmaps);
+        let mut env_entry = None;
+        let env_base = fmath::PI * env.mean_radiance();
         if !env.is_black() {
             weights.push(4.0 * fmath::PI * fmath::PI * env.mean_radiance());
+            env_entry = Some(entries.len() as u32);
             entries.push(LightRef::Environment);
         }
 
         let cdf = build_cdf(&weights);
-        let mut lights = Lights {
+        let entries = if cdf.is_empty() { Vec::new() } else { entries };
+        let flux_pmf = (0..cdf.len())
+            .map(|e| cdf[e] - if e == 0 { 0.0 } else { cdf[e - 1] })
+            .collect();
+        let camera = camera_lights_of(&areas, &spheres);
+        Lights {
             areas,
             suns,
             spheres,
             meshes,
             env,
-            env_pmf: 0.0,
-            entries: if cdf.is_empty() { Vec::new() } else { entries },
+            env_entry: env_entry.filter(|_| !entries.is_empty()),
+            env_base,
+            // One entry is chosen for certain either way, with the same bits (a test renders it both
+            // ways): by flux it costs nothing.
+            per_point: (2..=MAX_LOCAL_LIGHTS).contains(&entries.len()),
+            entries,
             cdf,
+            flux_pmf,
             instance_emitter,
-            camera: Vec::new(),
-        };
-        let mut camera = Vec::new();
-        for (i, a) in lights.areas.iter().enumerate() {
-            if a.camera {
-                let radius = match a.shape {
-                    AreaShape::Rect { half_x, half_y } => {
-                        (half_x * half_x + half_y * half_y).sqrt()
-                    }
-                    AreaShape::Disk { radius } => radius,
-                };
-                camera.push(CameraLight {
-                    centre: a.centre,
-                    radius,
-                    sphere: false,
-                    index: i as u32,
-                });
-            }
+            camera,
+            #[cfg(test)]
+            techniques: Techniques::Mis,
         }
-        for (i, l) in lights.spheres.iter().enumerate() {
-            if l.camera && positive(l.radius) {
-                camera.push(CameraLight {
-                    centre: l.centre,
-                    radius: l.radius,
-                    sphere: true,
-                    index: i as u32,
-                });
-            }
-        }
-        lights.camera = camera;
-        for i in 0..lights.entries.len() {
-            let pmf = lights.cdf[i] - if i == 0 { 0.0 } else { lights.cdf[i - 1] };
-            match lights.entries[i] {
-                LightRef::Area(a) => lights.areas[a as usize].pmf = pmf,
-                LightRef::Sun(s) => lights.suns[s as usize].pmf = pmf,
-                LightRef::Sphere(s) => lights.spheres[s as usize].pmf = pmf,
-                LightRef::Mesh(m) => lights.meshes[m as usize].pmf = pmf,
-                LightRef::Environment => lights.env_pmf = pmf,
-            }
-        }
-        lights
     }
 
     /// The environment.
@@ -681,12 +937,169 @@ impl Lights {
         self.entries.is_empty()
     }
 
+    /// Selection weight of entry `entry` seen from `x`: the bound of its unoccluded light there
+    /// (the module's documentation).
+    #[inline(always)]
+    fn weight(&self, entry: usize, x: Vec3) -> f32 {
+        match self.entries[entry] {
+            LightRef::Area(a) => self.areas[a as usize].weight(x),
+            LightRef::Sun(s) => self.suns[s as usize].base,
+            LightRef::Sphere(s) => self.spheres[s as usize].weight(x),
+            LightRef::Mesh(m) => self.meshes[m as usize].weight(x),
+            LightRef::Environment => self.env_base,
+        }
+    }
+
+    /// The light selection at the shading point `x`: the sum of every light's weight there
+    /// (nothing to compute with the static selection).
+    pub fn select(&self, x: Vec3) -> Selection {
+        let n = self.entries.len();
+        if !self.per_point || n == 0 {
+            return self.select_by_flux(x);
+        }
+        // Summed in the order of the entries, as `build_cdf` sums.
+        let mut selection = Selection {
+            point: x,
+            total: 0.0,
+            by_flux: false,
+            weights: [0.0; KEPT_WEIGHTS],
+        };
+        for entry in 0..n {
+            let w = self.weight(entry, x);
+            if let Some(kept) = selection.weights.get_mut(entry) {
+                *kept = w;
+            }
+            selection.total += w;
+        }
+        selection
+    }
+
+    /// Weight of entry `entry` at the selection's vertex: kept, or computed again (the same
+    /// value).
+    #[inline(always)]
+    fn weight_at(&self, entry: usize, selection: &Selection) -> f32 {
+        match selection.weights.get(entry) {
+            Some(&w) => w,
+            None => self.weight(entry, selection.point),
+        }
+    }
+
+    /// The static selection (by flux, as before E12) at `x`: the same at every point.
+    pub fn select_by_flux(&self, x: Vec3) -> Selection {
+        Selection {
+            point: x,
+            total: 0.0,
+            by_flux: true,
+            weights: [0.0; KEPT_WEIGHTS],
+        }
+    }
+
+    /// Probability with which next-event estimation at `from` chooses entry `entry`: its weight
+    /// there over the sum of all of them, or (static selection) its share of the flux. The one
+    /// function behind every density of a light, for next-event estimation and for the MIS
+    /// weights of BSDF-sampled rays alike.
+    #[inline]
+    pub(crate) fn pmf(&self, entry: u32, from: &Selection) -> f32 {
+        let e = entry as usize;
+        if e >= self.entries.len() {
+            return 0.0;
+        }
+        if from.by_flux {
+            return self.flux_pmf[e];
+        }
+        if !usable(from.total) {
+            return 0.0;
+        }
+        self.weight_at(e, from) / from.total
+    }
+
+    /// The MIS weight of a light found by a BSDF-sampled ray of density `bsdf_pdf`, against
+    /// next-event estimation's density `light_pdf` for it.
+    #[inline]
+    fn found_weight(&self, bsdf_pdf: f32, light_pdf: f32) -> f32 {
+        #[cfg(test)]
+        match self.techniques {
+            Techniques::Mis => {}
+            Techniques::LightsOnly => return if positive(light_pdf) { 0.0 } else { 1.0 },
+            Techniques::BsdfOnly => return 1.0,
+        }
+        power_heuristic(bsdf_pdf, light_pdf)
+    }
+
+    /// The MIS weight of a light sample of density `light_pdf` that BSDF sampling would find
+    /// with density `bsdf_pdf` (a glossy light that is not a delta).
+    #[inline]
+    pub(crate) fn sampled_weight(&self, light_pdf: f32, bsdf_pdf: f32) -> f32 {
+        #[cfg(test)]
+        match self.techniques {
+            Techniques::Mis => {}
+            Techniques::LightsOnly => return 1.0,
+            Techniques::BsdfOnly => return 0.0,
+        }
+        power_heuristic(light_pdf, bsdf_pdf)
+    }
+
+    /// [`pick`] on the cumulative distribution [`build_cdf`] would make of the weights at the
+    /// selection's vertex, built entry by entry with the same operations up to the bucket that
+    /// holds `u`: the entry, `u` rescaled inside its bucket and its probability, `weight /
+    /// total`, the very value of [`Lights::pmf`] there.
+    #[inline]
+    fn pick_at(&self, selection: &Selection, u: f32) -> (usize, f32, f32) {
+        let total = selection.total;
+        let last = self.entries.len() - 1;
+        let mut acc = 0.0f32;
+        let mut lo = 0.0f32;
+        for entry in 0..=last {
+            let w = self.weight_at(entry, selection);
+            acc += w;
+            // The last bucket ends at exactly 1, as `build_cdf` makes it.
+            let hi = if entry == last { 1.0 } else { acc / total };
+            // The first bucket whose end passes `u` (or the last), as `pick` finds it.
+            if hi > u || entry == last {
+                let width = hi - lo;
+                let rest = if width > 0.0 {
+                    ((u - lo) / width).clamp(0.0, 0.999_999_94)
+                } else {
+                    0.0
+                };
+                return (entry, rest, w / total);
+            }
+            lo = hi;
+        }
+        (last, 0.0, 0.0)
+    }
+
     /// Picks a light with `u_select` and a point on it with `u`, as seen from `x`.
     pub fn sample(&self, x: Vec3, u_select: f32, u: (f32, f32)) -> Option<LightSample> {
-        if self.cdf.is_empty() {
+        self.sample_selected(&self.select(x), u_select, u)
+    }
+
+    /// Picks a light from `selection` (made at the shading point by [`Lights::select`]) with
+    /// `u_select`, and a point on it with `u`.
+    pub fn sample_selected(
+        &self,
+        selection: &Selection,
+        u_select: f32,
+        u: (f32, f32),
+    ) -> Option<LightSample> {
+        let n = self.entries.len();
+        if n == 0 {
             return None;
         }
-        let (index, rest) = pick(&self.cdf, u_select);
+        let from = selection;
+        let x = from.point;
+        let (index, rest, pmf) = if from.by_flux {
+            let (index, rest) = pick(&self.cdf, u_select);
+            (index, rest, self.pmf(index as u32, from))
+        } else {
+            if !usable(from.total) {
+                return None;
+            }
+            self.pick_at(from, u_select)
+        };
+        if !positive(pmf) {
+            return None;
+        }
         let sample = match self.entries[index] {
             LightRef::Area(a) => {
                 let light = &self.areas[a as usize];
@@ -703,7 +1116,7 @@ impl Lights {
                     wi,
                     distance,
                     radiance: light.radiance_at(cos),
-                    pdf: light.pmf * dist2 / (light.area * cos),
+                    pdf: pmf * dist2 / (light.area * cos),
                     delta: false,
                     glossy: light.glossy,
                     photon: light.glossy,
@@ -717,7 +1130,7 @@ impl Lights {
                         wi: sun.frame.z,
                         distance: f32::INFINITY,
                         radiance: sun.radiance,
-                        pdf: sun.pmf,
+                        pdf: pmf,
                         delta: true,
                         glossy: sun.glossy,
                         photon: sun.glossy,
@@ -729,7 +1142,7 @@ impl Lights {
                         wi: sun.frame.to_world(local).normalize(),
                         distance: f32::INFINITY,
                         radiance: sun.radiance,
-                        pdf: sun.pmf / sun.solid_angle,
+                        pdf: pmf / sun.solid_angle,
                         delta: false,
                         glossy: sun.glossy,
                         photon: sun.glossy,
@@ -758,7 +1171,7 @@ impl Lights {
                         wi: towards,
                         distance: dist,
                         radiance: light.intensity * (mask / (dist2 * MM2_TO_M2)),
-                        pdf: light.pmf,
+                        pdf: pmf,
                         delta: true,
                         glossy: light.glossy,
                         photon: false,
@@ -775,7 +1188,7 @@ impl Lights {
                         wi,
                         distance: near.max(0.0),
                         radiance: light.radiance * mask,
-                        pdf: light.pmf / (fmath::TAU * omc),
+                        pdf: pmf / (fmath::TAU * omc),
                         delta: false,
                         glossy: light.glossy,
                         photon: false,
@@ -805,7 +1218,7 @@ impl Lights {
                     wi,
                     distance,
                     radiance: emitter.radiance,
-                    pdf: emitter.pmf * dist2 / (emitter.area * cos),
+                    pdf: pmf * dist2 / (emitter.area * cos),
                     delta: false,
                     glossy: true,
                     photon: true,
@@ -818,7 +1231,7 @@ impl Lights {
                     wi,
                     distance: f32::INFINITY,
                     radiance: self.env.radiance(wi),
-                    pdf: self.env_pmf * pdf,
+                    pdf: pmf * pdf,
                     delta: false,
                     glossy: true,
                     photon: false,
@@ -831,20 +1244,27 @@ impl Lights {
     }
 
     /// Radiance of the area lights that `ray` (unit direction) crosses from the front before
-    /// `t_max`. A camera ray (`bsdf_pdf` `None`) sees the lights flagged `camera`, at full
-    /// weight; a BSDF-sampled ray sees the lights flagged `glossy`, weighted against
-    /// next-event estimation with the power heuristic.
-    pub fn crossed(&self, ray: &Ray, t_max: f32, bsdf_pdf: Option<f32>) -> Rgb {
-        self.crossed_from(ray, t_max, bsdf_pdf, 0.0)
+    /// `t_max`. A camera ray (`bsdf` `None`) sees the lights flagged `camera`, at full weight; a
+    /// BSDF-sampled ray sees the lights flagged `glossy`, weighted against next-event estimation
+    /// with the power heuristic.
+    pub fn crossed(&self, ray: &Ray, t_max: f32, bsdf: Option<Scattered<'_>>) -> Rgb {
+        self.crossed_from(ray, t_max, bsdf, 0.0)
     }
 
     /// [`Lights::crossed`] for a ray that continues, straight, one that left the last scattering
     /// vertex `offset` earlier (it went through thin walls or cut-outs): the MIS weights use the
-    /// distance from that vertex, as next-event estimation there did.
-    pub fn crossed_from(&self, ray: &Ray, t_max: f32, bsdf_pdf: Option<f32>, offset: f32) -> Rgb {
+    /// distance from that vertex, and the selection probabilities there, as next-event
+    /// estimation there did.
+    pub fn crossed_from(
+        &self,
+        ray: &Ray,
+        t_max: f32,
+        bsdf: Option<Scattered<'_>>,
+        offset: f32,
+    ) -> Rgb {
         // The spheres add to the areas' sum in the same order as ever (the same bits).
-        let areas = self.crossed_areas(ray, t_max, bsdf_pdf, offset);
-        self.crossed_spheres(areas, ray, t_max, bsdf_pdf, offset)
+        let areas = self.crossed_areas(ray, t_max, bsdf, offset);
+        self.crossed_spheres(areas, ray, t_max, bsdf, offset)
     }
 
     /// [`Lights::crossed_from`] of the lights that send no caustic photons only (the spheres of
@@ -854,16 +1274,22 @@ impl Lights {
         &self,
         ray: &Ray,
         t_max: f32,
-        bsdf_pdf: Option<f32>,
+        bsdf: Option<Scattered<'_>>,
         offset: f32,
     ) -> Rgb {
-        self.crossed_spheres(Rgb::BLACK, ray, t_max, bsdf_pdf, offset)
+        self.crossed_spheres(Rgb::BLACK, ray, t_max, bsdf, offset)
     }
 
-    fn crossed_areas(&self, ray: &Ray, t_max: f32, bsdf_pdf: Option<f32>, offset: f32) -> Rgb {
+    fn crossed_areas(
+        &self,
+        ray: &Ray,
+        t_max: f32,
+        bsdf: Option<Scattered<'_>>,
+        offset: f32,
+    ) -> Rgb {
         let mut sum = Rgb::BLACK;
         for light in &self.areas {
-            let visible = match bsdf_pdf {
+            let visible = match bsdf {
                 None => light.camera,
                 Some(_) => light.glossy,
             };
@@ -873,12 +1299,12 @@ impl Lights {
             let Some((t, cos)) = light.intersect(ray, t_max) else {
                 continue;
             };
-            let weight = match bsdf_pdf {
+            let weight = match bsdf {
                 None => 1.0,
-                Some(pdf) => {
+                Some(s) => {
                     let d = offset + t;
-                    let light_pdf = light.pmf * d * d / (light.area * cos);
-                    power_heuristic(pdf, light_pdf)
+                    let light_pdf = self.pmf(light.entry, s.from) * d * d / (light.area * cos);
+                    self.found_weight(s.pdf, light_pdf)
                 }
             };
             sum += light.radiance_at(cos) * weight;
@@ -892,11 +1318,11 @@ impl Lights {
         mut sum: Rgb,
         ray: &Ray,
         t_max: f32,
-        bsdf_pdf: Option<f32>,
+        bsdf: Option<Scattered<'_>>,
         offset: f32,
     ) -> Rgb {
         for light in &self.spheres {
-            let visible = match bsdf_pdf {
+            let visible = match bsdf {
                 None => light.camera,
                 Some(_) => light.glossy,
             };
@@ -912,11 +1338,13 @@ impl Lights {
             if !positive(mask) {
                 continue;
             }
-            let weight = match bsdf_pdf {
+            let weight = match bsdf {
                 None => 1.0,
-                Some(pdf) => match light.cone((light.centre - vertex).length_squared()) {
+                Some(s) => match light.cone((light.centre - vertex).length_squared()) {
                     // Next-event estimation takes it for a point there: only it counts it.
-                    Some(omc) if omc > 0.0 => power_heuristic(pdf, light.pmf / (fmath::TAU * omc)),
+                    Some(omc) if omc > 0.0 => {
+                        self.found_weight(s.pdf, self.pmf(light.entry, s.from) / (fmath::TAU * omc))
+                    }
                     _ => 0.0,
                 },
             };
@@ -997,25 +1425,23 @@ impl Lights {
     }
 
     /// Radiance from the sky along the unit direction `dir` of a ray that left the scene: the
-    /// environment and the sun discs. A camera ray (`bsdf_pdf` `None`) sees the environment and
-    /// the suns flagged `camera`; a BSDF-sampled ray sees the environment and the suns flagged
+    /// environment and the sun discs. A camera ray (`bsdf` `None`) sees the environment and the
+    /// suns flagged `camera`; a BSDF-sampled ray sees the environment and the suns flagged
     /// `glossy`, weighted against next-event estimation.
-    pub fn escaped(&self, dir: Vec3, bsdf_pdf: Option<f32>) -> Rgb {
-        let env = self.env.radiance(dir);
-        let mut sum = match bsdf_pdf {
-            Some(pdf) if self.env_pmf > 0.0 => {
-                env * power_heuristic(pdf, self.env_pmf * self.env.pdf(dir))
-            }
-            _ => env,
+    pub fn escaped(&self, dir: Vec3, bsdf: Option<Scattered<'_>>) -> Rgb {
+        let mut sum = match bsdf {
+            Some(s) => self.escaped_environment(dir, s),
+            None => self.env.radiance(dir),
         };
         for sun in &self.suns {
-            let visible = match bsdf_pdf {
+            let visible = match bsdf {
                 None => sun.camera,
                 Some(_) => sun.glossy,
             };
             if visible && sun.contains(dir) {
-                let weight =
-                    bsdf_pdf.map_or(1.0, |pdf| power_heuristic(pdf, sun.pmf / sun.solid_angle));
+                let weight = bsdf.map_or(1.0, |s| {
+                    self.found_weight(s.pdf, self.pmf(sun.entry, s.from) / sun.solid_angle)
+                });
                 sum += sun.radiance * weight;
             }
         }
@@ -1024,12 +1450,13 @@ impl Lights {
 
     /// [`Lights::escaped`] without the suns (they send caustic photons): what a BSDF-sampled ray
     /// whose light the photon map brings instead sees of the sky ([`crate::caustics`]).
-    pub fn escaped_environment(&self, dir: Vec3, bsdf_pdf: f32) -> Rgb {
+    pub fn escaped_environment(&self, dir: Vec3, bsdf: Scattered<'_>) -> Rgb {
         let env = self.env.radiance(dir);
-        if self.env_pmf > 0.0 {
-            env * power_heuristic(bsdf_pdf, self.env_pmf * self.env.pdf(dir))
-        } else {
-            env
+        match self.env_entry {
+            Some(e) => {
+                env * self.found_weight(bsdf.pdf, self.pmf(e, bsdf.from) * self.env.pdf(dir))
+            }
+            None => env,
         }
     }
 
@@ -1039,16 +1466,17 @@ impl Lights {
         matches!(self.instance_emitter.get(instance as usize), Some(Some(_)))
     }
 
-    /// For a BSDF-sampled ray that hit instance `instance` at distance `t` (unit direction) with
-    /// `cos` between the ray and the surface normal: the MIS weight of the emission found, or 1
-    /// when the instance is not sampled by next-event estimation.
-    pub fn emitter_weight(&self, instance: u32, bsdf_pdf: f32, t: f32, cos: f32) -> f32 {
+    /// For a BSDF-sampled ray that hit instance `instance` at distance `t` (unit direction, from
+    /// the vertex it left) with `cos` between the ray and the surface normal: the MIS weight of
+    /// the emission found, or 1 when the instance is not sampled by next-event estimation.
+    pub fn emitter_weight(&self, instance: u32, bsdf: Scattered<'_>, t: f32, cos: f32) -> f32 {
         let Some(Some(m)) = self.instance_emitter.get(instance as usize) else {
             return 1.0;
         };
         let emitter = &self.meshes[*m as usize];
-        let light_pdf = emitter.pmf * t * t / (emitter.area * cos.abs().max(1.0e-7));
-        power_heuristic(bsdf_pdf, light_pdf)
+        let light_pdf =
+            self.pmf(emitter.entry, bsdf.from) * t * t / (emitter.area * cos.abs().max(1.0e-7));
+        self.found_weight(bsdf.pdf, light_pdf)
     }
 }
 
@@ -1228,8 +1656,12 @@ mod tests {
         };
         let lights = Lights::new(&scene);
         assert_eq!(lights.len(), 2);
-        assert!((lights.areas[0].pmf - 0.75).abs() < 1.0e-6);
-        assert!((lights.areas[1].pmf - 0.25).abs() < 1.0e-6);
+        // By flux (the static selection) and, the two being in the same place, per point too.
+        assert!((lights.cdf[0] - 0.75).abs() < 1.0e-6);
+        assert!((lights.cdf[1] - lights.cdf[0] - 0.25).abs() < 1.0e-6);
+        let at = lights.select(Vec3::ZERO);
+        assert!((lights.pmf(0, &at) - 0.75).abs() < 1.0e-6);
+        assert!((lights.pmf(1, &at) - 0.25).abs() < 1.0e-6);
         assert_eq!(pick(&lights.cdf, 0.0).0, 0);
         assert_eq!(pick(&lights.cdf, 0.74).0, 0);
         assert_eq!(pick(&lights.cdf, 0.76).0, 1);
@@ -1329,7 +1761,12 @@ mod tests {
         let up = Ray::new(Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0));
         assert!((lights.crossed(&up, f32::INFINITY, None).g - radiance).abs() < radiance * 1.0e-4);
         assert!(lights.crossed(&up, 300.0, None) == Rgb::BLACK);
-        let w = lights.crossed(&up, f32::INFINITY, Some(1.0)).g;
+        let at = lights.select(Vec3::ZERO);
+        let bsdf = Scattered {
+            pdf: 1.0,
+            from: &at,
+        };
+        let w = lights.crossed(&up, f32::INFINITY, Some(bsdf)).g;
         assert!(w > 0.0 && w < radiance, "MIS weight of a BSDF ray: {w}");
         assert!(lights.camera_sees_panel(&up, f32::INFINITY));
         assert!(lights.any_camera_visible());
@@ -1471,7 +1908,8 @@ mod tests {
                 environment: env.clone(),
                 ..Scene::default()
             });
-            lights.spheres[0].pmf
+            // The static selection (by flux) of the sphere, entry 0.
+            lights.cdf[0]
         };
         let at = Vec3::new(0.0, 0.0, 600.0);
         let bare = pmf(point(at, 0.0, 5.0));
@@ -1572,7 +2010,458 @@ mod tests {
             "{} vs {want}",
             e / 4096.0
         );
-        assert_eq!(lights.emitter_weight(5, 1.0, 1.0, 1.0), 1.0);
-        assert!(lights.emitter_weight(0, 1.0, 100.0, 1.0) < 1.0);
+        let at = lights.select(Vec3::ZERO);
+        let s = Scattered {
+            pdf: 1.0,
+            from: &at,
+        };
+        assert_eq!(lights.emitter_weight(5, s, 1.0, 1.0), 1.0);
+        assert!(lights.emitter_weight(0, s, 100.0, 1.0) < 1.0);
+    }
+
+    #[test]
+    fn a_light_close_to_the_point_is_chosen_there() {
+        // Two equal point lights, one 100 mm above x and one 1000 mm away: per point the near
+        // one weighs (1000/100)² = 100 times the far one; by flux (the static selection, as
+        // before E12) they are chosen alike wherever the point is.
+        let mut lights = Lights::new(&Scene {
+            lights: vec![
+                point(Vec3::new(0.0, 0.0, 100.0), 0.0, 5.0),
+                point(Vec3::new(1000.0, 0.0, 0.0), 0.0, 5.0),
+            ],
+            environment: black_env(),
+            ..Scene::default()
+        });
+        assert!(lights.per_point);
+        let at = lights.select(Vec3::ZERO);
+        let (near, far) = (lights.pmf(0, &at), lights.pmf(1, &at));
+        assert!((near / far - 100.0).abs() < 1.0e-3, "{near} vs {far}");
+        assert!((near + far - 1.0).abs() < 1.0e-6);
+        // Next-event estimation's density is that probability (a point light: a delta).
+        let s = lights
+            .sample(Vec3::ZERO, 0.5, (0.5, 0.5))
+            .expect("near light");
+        assert!(s.delta && s.pdf == near && s.distance == 100.0);
+        lights.per_point = false;
+        let at = lights.select(Vec3::ZERO);
+        assert!((lights.pmf(0, &at) - 0.5).abs() < 1.0e-6);
+        assert!((lights.pmf(1, &at) - 0.5).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn a_spot_is_chosen_only_where_its_cone_reaches() {
+        // A spot aimed down at x and a panel above: inside the cone both may light x; outside it
+        // the spot has no chance, and the panel takes it all.
+        let spot = Light {
+            kind: LightKind::Spot,
+            spread_deg: 40.0,
+            angle_deg: 5.0,
+            ..point(Vec3::new(0.0, 0.0, 300.0), 20.0, 1.0)
+        };
+        let panel = rect(
+            Vec3::new(0.0, 0.0, 2500.0),
+            Vec3::new(0.0, 0.0, -1.0),
+            1000.0,
+            10.0,
+        );
+        let lights = Lights::new(&Scene {
+            lights: vec![spot, panel],
+            environment: black_env(),
+            ..Scene::default()
+        });
+        let under = lights.select(Vec3::ZERO);
+        assert!(lights.pmf(0, &under) > 0.5, "{}", lights.pmf(0, &under));
+        let aside = lights.select(Vec3::new(800.0, 0.0, 0.0));
+        assert_eq!(lights.pmf(0, &aside), 0.0);
+        assert_eq!(lights.pmf(1, &aside), 1.0);
+    }
+
+    #[test]
+    fn a_panel_seen_edge_on_keeps_a_chance() {
+        // A 1 m panel facing up at the origin, and a point light to make the choice a choice.
+        // A point in the panel's plane, beyond its rim, is edge on to its centre: a bound by the
+        // centre's cosine alone would give the panel no chance there, and 1 mm above the plane,
+        // where its rim lights the point at a grazing angle, next to none. The bound of the
+        // reference (θu, the cone of the panel's points seen from x) keeps it in the choice,
+        // and next-event estimation finds its light.
+        let lights = Lights::new(&Scene {
+            lights: vec![
+                rect(Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0), 1000.0, 10.0),
+                point(Vec3::new(1500.0, 0.0, 400.0), 0.0, 10.0),
+            ],
+            environment: black_env(),
+            ..Scene::default()
+        });
+        for x in [Vec3::new(1500.0, 0.0, 0.0), Vec3::new(1500.0, 0.0, 1.0)] {
+            let at = lights.select(x);
+            let pmf = lights.pmf(0, &at);
+            assert!(pmf > 0.05, "{x:?}: {pmf}");
+        }
+        let x = Vec3::new(1500.0, 0.0, 1.0);
+        let selection = lights.select(x);
+        let mut found = 0;
+        for i in 0..64 {
+            let u = ((i % 8) as f32 / 8.0 + 0.0625, (i / 8) as f32 / 8.0 + 0.0625);
+            if let Some(s) = lights.sample_selected(&selection, 0.01, u) {
+                assert!(!s.delta && s.pdf > 0.0 && s.wi.z < 0.0);
+                found += 1;
+            }
+        }
+        assert_eq!(
+            found, 64,
+            "every point of the panel lights x from above its plane"
+        );
+        // Behind the panel, away from it, nothing of it can arrive: no chance at all.
+        let behind = lights.select(Vec3::new(0.0, 0.0, -3000.0));
+        assert_eq!(lights.pmf(0, &behind), 0.0);
+        assert_eq!(lights.pmf(1, &behind), 1.0);
+    }
+
+    #[test]
+    fn the_orientation_bound_holds_for_every_point_of_the_panel() {
+        // Rects and disks in random orientations and points around them: the bound is never
+        // below the cosine between the normal and the direction from any point of the panel to
+        // x (checked on a grid of points over the panel), so the weight is not zero where the
+        // panel can light x.
+        let mut rng = crate::rng::Pcg32::seeded(12, 34);
+        let mut r = || 2.0 * rng.next_f32() - 1.0;
+        for case in 0..400 {
+            let kind = if case % 2 == 0 {
+                LightKind::Rect
+            } else {
+                LightKind::Disk
+            };
+            let light = Light {
+                kind,
+                position: Vec3::new(100.0 * r(), 100.0 * r(), 100.0 * r()),
+                direction: Vec3::new(r(), r(), r()),
+                up: Vec3::new(r(), r(), r()),
+                size_x: 50.0 + 400.0 * r().abs(),
+                size_y: 50.0 + 400.0 * r().abs(),
+                ..Light::default()
+            };
+            let lights = Lights::new(&Scene {
+                lights: vec![light],
+                environment: black_env(),
+                ..Scene::default()
+            });
+            let Some(panel) = lights.areas.first() else {
+                continue;
+            };
+            let scale = if case % 3 == 0 { 200.0 } else { 2000.0 };
+            let x = Vec3::new(scale * r(), scale * r(), scale * r());
+            let v = x - panel.centre;
+            let bound = panel.orientation(v, v.length_squared());
+            let mut most = 0.0f32;
+            for i in 0..=16 {
+                for j in 0..=16 {
+                    let p = panel.sample_point((i as f32 / 16.0, j as f32 / 16.0));
+                    most = most.max((x - p).normalize().dot(panel.frame.z));
+                }
+            }
+            assert!(bound >= most - 1.0e-5, "case {case}: {bound} < {most}");
+            if most > 1.0e-5 {
+                assert!(panel.weight(x) > 0.0, "case {case}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_orientation_bound_holds_for_every_face_of_a_one_sided_emitter() {
+        // A one-sided cap of a sphere (its front faces look up and out, within some 60 degrees
+        // of +Z) and points all around it: the bound from the cone of its normals is never below
+        // the cosine between a front face's normal and the direction from a point of that face
+        // to x. Two-sided, the same cap may face x from anywhere: the bound is 1.
+        let sphere = crate::example::icosphere(Vec3::new(30.0, -20.0, 50.0), 200.0, 2);
+        let positions: Vec<Vec3> = (0..sphere.vertex_count())
+            .filter_map(|i| sphere.position(i))
+            .collect();
+        let indices: Vec<u32> = sphere
+            .indices()
+            .chunks(3)
+            .filter(|t| {
+                let c = (positions[t[0] as usize]
+                    + positions[t[1] as usize]
+                    + positions[t[2] as usize])
+                    * (1.0 / 3.0);
+                c.z - 50.0 > 100.0
+            })
+            .flatten()
+            .copied()
+            .collect();
+        let cap = Mesh::new(&positions, &[], &indices, 0).expect("cap");
+        let lights = |flags: u32| {
+            Lights::new(&Scene {
+                materials: vec![Material {
+                    kind: MATERIAL_EMISSIVE,
+                    emission: Rgb::WHITE,
+                    emission_power: 1.0,
+                    flags: MATERIAL_FLAG_LIGHT,
+                    ..Material::default()
+                }],
+                geometry: crate::scene::Geometry::new(
+                    vec![cap.clone()],
+                    vec![crate::geometry::Instance {
+                        flags,
+                        ..crate::geometry::Instance::new(0, crate::geometry::Transform::IDENTITY, 0)
+                    }],
+                )
+                .expect("geometry"),
+                environment: black_env(),
+                ..Scene::default()
+            })
+        };
+        let one_sided = lights(INSTANCE_ONE_SIDED);
+        let two_sided = lights(0);
+        let emitter = &one_sided.meshes[0];
+        assert!(
+            emitter.cos_sin_o.0 > 0.3 && emitter.cos_sin_o.0 < 0.9,
+            "{:?}",
+            emitter.cos_sin_o
+        );
+        assert_eq!(two_sided.meshes[0].cos_sin_o.0, -1.0);
+        let mut rng = crate::rng::Pcg32::seeded(7, 8);
+        let mut r = || 2.0 * rng.next_f32() - 1.0;
+        let mut lit = 0;
+        for case in 0..300 {
+            let scale = if case % 3 == 0 { 300.0 } else { 3000.0 };
+            let x = emitter.centroid + Vec3::new(scale * r(), scale * r(), scale * r());
+            let v = x - emitter.centroid;
+            let bound = orientation_bound(
+                v,
+                v.length_squared(),
+                emitter.axis,
+                emitter.cos_sin_o,
+                emitter.bound,
+            );
+            let mut most = 0.0f32;
+            for (t, [a, b, c]) in emitter.corners.iter().enumerate() {
+                for w in [
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [1.0 / 3.0; 3],
+                ] {
+                    let p = *a * w[0] + *b * w[1] + *c * w[2];
+                    most = most.max((x - p).normalize().dot(emitter.normals[t]));
+                }
+            }
+            assert!(bound >= most - 1.0e-5, "case {case}: {bound} < {most}");
+            if most > 1.0e-5 {
+                assert!(emitter.weight(x) > 0.0, "case {case}");
+                lit += 1;
+            }
+            assert!(two_sided.meshes[0].weight(x) > 0.0);
+        }
+        assert!(lit > 50 && lit < 300, "{lit}");
+    }
+
+    /// A scene with one light of every kind next-event estimation samples by area or solid
+    /// angle, all found by BSDF rays too: two panels, a sphere light, a sun disc, an emissive
+    /// quad sampled as a light and the studio dome.
+    fn every_kind() -> Scene {
+        let quad = Mesh::new(
+            &[
+                Vec3::new(-400.0, 300.0, 100.0),
+                Vec3::new(-200.0, 300.0, 100.0),
+                Vec3::new(-200.0, 300.0, 300.0),
+                Vec3::new(-400.0, 300.0, 300.0),
+            ],
+            &[],
+            &[0, 1, 2, 0, 2, 3],
+            0,
+        )
+        .expect("quad");
+        Scene {
+            lights: vec![
+                rect(
+                    Vec3::new(0.0, 0.0, 800.0),
+                    Vec3::new(0.0, 0.0, -1.0),
+                    600.0,
+                    20.0,
+                ),
+                Light {
+                    kind: LightKind::Disk,
+                    ..rect(
+                        Vec3::new(700.0, 0.0, 300.0),
+                        Vec3::new(-1.0, 0.0, -0.2),
+                        300.0,
+                        8.0,
+                    )
+                },
+                Light {
+                    kind: LightKind::Spot,
+                    spread_deg: 120.0,
+                    angle_deg: 20.0,
+                    ..point(Vec3::new(-300.0, -300.0, 250.0), 80.0, 3.0)
+                },
+                Light {
+                    kind: LightKind::Sun,
+                    direction: Vec3::new(0.3, 0.2, -1.0),
+                    power: 2.0,
+                    angle_deg: 8.0,
+                    ..Light::default()
+                },
+            ],
+            materials: vec![Material {
+                kind: MATERIAL_EMISSIVE,
+                emission: Rgb::WHITE,
+                emission_power: 4.0,
+                flags: MATERIAL_FLAG_LIGHT,
+                ..Material::default()
+            }],
+            geometry: crate::scene::Geometry::from_meshes(vec![quad]),
+            ..Scene::default()
+        }
+    }
+
+    #[test]
+    fn next_event_estimation_and_bsdf_rays_agree_on_every_probability() {
+        // MIS needs one density per light and direction, whichever technique found it. Here a
+        // BSDF ray of the very density of a light sample, sent from the same vertex along the
+        // sample's direction, must get the power heuristic's 1/2 for what it finds: the light's
+        // density on the BSDF side (`crossed`, `escaped`, `emitter_weight`) is the sample's,
+        // selection included.
+        let lights = Lights::new(&every_kind());
+        assert_eq!(lights.len(), 6);
+        assert!(lights.per_point);
+        let mut rng = crate::rng::Pcg32::seeded(5, 6);
+        let mut checked = [0usize; 6];
+        for _ in 0..4000 {
+            let x = Vec3::new(
+                600.0 * (rng.next_f32() - 0.5),
+                400.0 * (rng.next_f32() - 0.5),
+                10.0 + 50.0 * rng.next_f32(),
+            );
+            let selection = lights.select(x);
+            let u_select = rng.next_f32();
+            let u = (rng.next_f32(), rng.next_f32());
+            let Some(s) = lights.sample_selected(&selection, u_select, u) else {
+                continue;
+            };
+            if s.delta {
+                continue;
+            }
+            // The entry chosen, by `pick` on what `build_cdf` makes of the weights at x (the
+            // selection rebuilds that distribution entry by entry).
+            let weights: Vec<f32> = (0..lights.len()).map(|e| lights.weight(e, x)).collect();
+            let entry = pick(&build_cdf(&weights), u_select).0;
+            let bsdf = Scattered {
+                pdf: s.pdf,
+                from: &selection,
+            };
+            let ray = Ray::new(x, s.wi);
+            // Only rays that cross the one light sampled (the sum would mix two weights).
+            let crossings = lights
+                .areas
+                .iter()
+                .filter(|l| l.intersect(&ray, f32::INFINITY).is_some())
+                .count()
+                + lights
+                    .spheres
+                    .iter()
+                    .filter(|l| l.intersect(&ray, f32::INFINITY).is_some())
+                    .count();
+            let crosses_one = crossings == 1;
+            let weight = match lights.entries[entry] {
+                LightRef::Area(_) | LightRef::Sphere(_) if !crosses_one => continue,
+                LightRef::Area(a) => {
+                    let light = &lights.areas[a as usize];
+                    let cos = -s.wi.dot(light.frame.z);
+                    lights.crossed(&ray, f32::INFINITY, Some(bsdf)).g / light.radiance_at(cos).g
+                }
+                LightRef::Sphere(i) => {
+                    let light = &lights.spheres[i as usize];
+                    lights.crossed(&ray, f32::INFINITY, Some(bsdf)).g
+                        / (light.radiance.g * light.mask(x))
+                }
+                LightRef::Sun(s0) => {
+                    // What the sky adds beyond the environment is the sun disc.
+                    let all = lights.escaped(s.wi, Some(bsdf)).g;
+                    let env = lights.escaped_environment(s.wi, bsdf).g;
+                    (all - env) / lights.suns[s0 as usize].radiance.g
+                }
+                LightRef::Environment => {
+                    lights.escaped_environment(s.wi, bsdf).g / lights.env.radiance(s.wi).g
+                }
+                LightRef::Mesh(_) => {
+                    let cos = s.wi.dot(Vec3::new(0.0, 1.0, 0.0));
+                    lights.emitter_weight(0, bsdf, s.distance, cos)
+                }
+            };
+            assert!(
+                (weight - 0.5).abs() < 2.0e-3,
+                "{:?} at {x:?}: {weight}",
+                lights.entries[entry]
+            );
+            checked[entry] += 1;
+        }
+        assert!(checked.iter().all(|&n| n > 10), "{checked:?}");
+    }
+
+    #[test]
+    fn beyond_sixty_four_lights_every_point_chooses_by_flux() {
+        // Up to MAX_LOCAL_LIGHTS entries the choice is per point; one more and it is the static
+        // one, for next-event estimation and for the MIS weights alike.
+        let row = |n: usize| -> Vec<Light> {
+            (0..n)
+                .map(|i| point(Vec3::new(100.0 * i as f32, 0.0, 200.0), 0.0, 1.0))
+                .collect()
+        };
+        for (n, per_point) in [(MAX_LOCAL_LIGHTS, true), (MAX_LOCAL_LIGHTS + 1, false)] {
+            let lights = Lights::new(&Scene {
+                lights: row(n),
+                environment: black_env(),
+                ..Scene::default()
+            });
+            assert_eq!((lights.len(), lights.per_point), (n, per_point));
+            let x = Vec3::new(0.0, 0.0, 0.0);
+            let s = lights.sample(x, 0.0, (0.5, 0.5)).expect("the first light");
+            let at = lights.select(x);
+            assert_eq!(s.pdf, lights.pmf(0, &at));
+            if per_point {
+                // The one straight above x weighs most.
+                assert!(s.pdf > 0.2, "{}", s.pdf);
+            } else {
+                assert_eq!(s.pdf, lights.cdf[0]);
+                assert!(s.pdf < 0.1, "{}", s.pdf);
+            }
+        }
+    }
+
+    #[test]
+    fn one_light_is_chosen_with_probability_one_wherever_it_can_light() {
+        // With a single entry the choice is certain, as it was by flux: the densities, and so
+        // the pixels, of a scene with one light are those of before E12 (the render tests
+        // compare whole films).
+        for scene in [
+            Scene {
+                lights: vec![rect(
+                    Vec3::new(0.0, 0.0, 800.0),
+                    Vec3::new(0.0, 0.0, -1.0),
+                    600.0,
+                    20.0,
+                )],
+                environment: black_env(),
+                ..Scene::default()
+            },
+            Scene {
+                lights: vec![point(Vec3::new(0.0, 0.0, 300.0), 40.0, 3.0)],
+                environment: black_env(),
+                ..Scene::default()
+            },
+            Scene::default(),
+        ] {
+            let mut lights = Lights::new(&scene);
+            assert_eq!(lights.len(), 1);
+            // By flux it costs nothing, so a single entry is chosen that way; per point (forced
+            // here) it is the same certainty.
+            assert!(!lights.per_point);
+            lights.per_point = true;
+            for x in [Vec3::ZERO, Vec3::new(123.0, -45.0, 6.0)] {
+                let at = lights.select(x);
+                assert_eq!(lights.pmf(0, &at), 1.0);
+            }
+        }
     }
 }

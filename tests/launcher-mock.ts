@@ -5,7 +5,7 @@
 // leaves responses unread runs out of connections and every later request waits for ever, which is what
 // stopped Full mode, Render and Pause on the desktop (v0.1.0).
 
-import { FLAG_CANCELLED, FLAG_DATA, FLAG_DONE, FLAG_PAUSED, FLAG_SHARED, FRAME_HEADER } from '../src/render/native';
+import { FLAG_CANCELLED, FLAG_DATA, FLAG_DENOISED, FLAG_DONE, FLAG_PAUSED, FLAG_SHARED, FRAME_HEADER } from '../src/render/native';
 
 export interface MockJob {
   id: number;
@@ -22,10 +22,14 @@ export interface MockJob {
   /** Extra frame flags (paused, shared) and the threads it renders on. */
   flags: number;
   threads: number;
+  /** U11: the live denoise switch of a viewport posted with `denoise=` (null: none), the number of its image, and whether that image is denoised. */
+  live: boolean | null;
+  version: number;
+  denoised: boolean;
 }
 
 /** A frame as the launcher writes it (render.rs `Frame::header`). */
-export function frameBytes(f: { pass: number; samples: number; width: number; height: number; seconds?: number; flags: number; threads?: number; sums?: Float32Array }): Uint8Array {
+export function frameBytes(f: { pass: number; samples: number; width: number; height: number; seconds?: number; flags: number; threads?: number; sums?: Float32Array; version?: number }): Uint8Array {
   const data = f.sums && f.flags & FLAG_DATA ? f.sums.length * 4 : 0;
   const buf = new ArrayBuffer(FRAME_HEADER + data);
   const v = new DataView(buf);
@@ -36,6 +40,7 @@ export function frameBytes(f: { pass: number; samples: number; width: number; he
   v.setUint32(32, 64, true);
   v.setUint32(36, f.threads ?? 8, true);
   v.setBigUint64(40, 1n, true);
+  v.setUint32(48, f.version ?? 0, true);
   if (data) new Float32Array(buf, FRAME_HEADER).set(f.sums!);
   return new Uint8Array(buf);
 }
@@ -180,6 +185,9 @@ export class LauncherMock {
         cancelled: false,
         flags: 0,
         threads: 8,
+        live: kind === 'viewport' && url.searchParams.has('denoise') ? url.searchParams.get('denoise') === '1' : null,
+        version: 0,
+        denoised: false,
       };
       this.jobs.set(job.id, job);
       if (kind === 'viewport') this.lastViewport = job.id;
@@ -193,13 +201,32 @@ export class LauncherMock {
       return { status: 204, body: null };
     }
     if (method === 'GET' && url.pathname === '/api/render/state') return this.json(200, { engine: { jobs: [...this.jobs.values()] } });
+    // U11: a viewport's live denoise switch. This launcher denoises at once: the next image is denoised (or not).
+    const d = /^\/api\/render\/(\d+)\/denoise$/.exec(url.pathname);
+    if (method === 'POST' && d) {
+      const job = this.jobs.get(Number(d[1]));
+      if (!job) return this.json(404, { error: 'not-found', message: 'no such job' });
+      if (job.live === null) return this.json(409, { error: 'not-live', message: 'this job has no live denoise' });
+      const on = url.searchParams.get('on') === '1';
+      if (on !== job.live) {
+        job.live = on;
+        if (job.pass > 0) {
+          job.version++;
+          job.denoised = on;
+        }
+      }
+      return this.json(200, { id: job.id, on, version: job.version });
+    }
     if (method === 'GET' && m) {
       const id = Number(m[1]);
       if (this.forget.delete(id)) this.jobs.delete(id);
       const job = this.jobs.get(id);
       if (!job) return this.json(404, { error: 'not-found', message: 'no such job' });
       const after = url.searchParams.has('after') ? Number(url.searchParams.get('after')) : null;
-      if (after !== null) {
+      const seen = url.searchParams.has('version') ? Number(url.searchParams.get('version')) : null;
+      // A follower of a job that is over, with an image it has not seen (the switch turned): answered at once.
+      const newer = seen !== null && job.version > seen && job.samples >= job.maxSamples;
+      if (after !== null && !newer) {
         this.polls.set(id, (this.polls.get(id) ?? 0) + 1);
         try {
           if (this.hangPolls) await new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
@@ -211,22 +238,27 @@ export class LauncherMock {
         if (job.samples < job.maxSamples) {
           job.pass++;
           job.samples = Math.min(job.maxSamples, job.samples + job.pass);
+          // A new image: the accumulation, or (with the switch on) its denoised image at once.
+          job.version++;
+          job.denoised = job.live === true;
           // The last pass, published before the job says it ended.
           if (this.doneApart && job.samples >= job.maxSamples) {
             const sums = new Float32Array(job.width * job.height * 4).fill(job.samples);
-            return { status: 200, body: frameBytes({ pass: job.pass, samples: job.samples, width: job.width, height: job.height, flags: FLAG_DATA, sums }) };
+            return { status: 200, body: frameBytes({ pass: job.pass, samples: job.samples, width: job.width, height: job.height, flags: FLAG_DATA | (job.denoised ? FLAG_DENOISED : 0), sums, version: job.version }) };
           }
         } else if (this.doneApart) {
           // Ended, nothing newer: the end alone.
-          return { status: 200, body: frameBytes({ pass: job.pass, samples: job.samples, width: job.width, height: job.height, flags: FLAG_DONE }) };
+          return { status: 200, body: frameBytes({ pass: job.pass, samples: job.samples, width: job.width, height: job.height, flags: FLAG_DONE | (job.denoised ? FLAG_DENOISED : 0), version: job.version }) };
         }
       }
       const done = job.samples >= job.maxSamples ? FLAG_DONE : 0;
       const extra = job.kind === 'viewport' ? this.viewportFlags & (FLAG_PAUSED | FLAG_SHARED) : 0;
       const threads = job.kind === 'viewport' && extra ? this.viewportThreads : 8;
-      const data = url.searchParams.get('data') !== '0';
+      // With `version` the sums come only for a newer image (render.rs, server.rs `get_render`).
+      const data = url.searchParams.get('data') !== '0' && (seen === null || job.version > seen);
       const sums = data ? new Float32Array(job.width * job.height * 4).fill(job.samples) : undefined;
-      return { status: 200, body: frameBytes({ pass: job.pass, samples: job.samples, width: job.width, height: job.height, flags: done | extra | (data ? FLAG_DATA : 0), threads, ...(sums ? { sums } : {}) }) };
+      const denoised = job.denoised ? FLAG_DENOISED : 0;
+      return { status: 200, body: frameBytes({ pass: job.pass, samples: job.samples, width: job.width, height: job.height, flags: done | extra | denoised | (data ? FLAG_DATA : 0), threads, version: job.version, ...(sums ? { sums } : {}) }) };
     }
     return this.json(404, { error: 'not-found', message: 'no such endpoint' });
   }

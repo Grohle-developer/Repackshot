@@ -5,7 +5,7 @@
 import type { LightStyle, MaterialCategory } from '../data/types';
 import type { ImportMessage, ImportOptions, ImportPayload, ImportProgress } from '../core/import-options';
 import { emptyLibrary, type Library } from '../core/library';
-import type { MaterialInstance } from '../core/materials';
+import type { MaterialId, MaterialInstance } from '../core/materials';
 import type { RenderSettings } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
@@ -16,8 +16,9 @@ import type { ViewObject } from '../core/view-objects';
 import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
+import type { PluginsSnapshot } from '../core/plugins';
 import type { RuntimeWarning } from '../core/ai-runtimes';
-import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
+import { defaultLayout, defaultSettings, type EditorRect, type Layout, type SectionId, type Settings } from '../core/settings';
 import { NO_INSTALL, type InstallRequest, type InstallStatus, type ReleaseInfo, type UpdateFault } from '../core/updates';
 
 export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
@@ -27,7 +28,23 @@ export type ViewportMode = 'FAST' | 'FULL';
 export type EngineState = 'LOADING' | 'READY' | 'NO_WASM' | 'NO_WORKERS' | 'OUTDATED' | 'FAILED';
 export type Tool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move' | 'scale';
 export const TOOLS: readonly Tool[] = ['select', 'orbit', 'pan', 'zoom', 'move', 'scale'];
-export type Drawer = 'animation' | 'queue' | null;
+export type Drawer = 'animation' | 'physics' | 'queue' | null;
+
+/**
+ * The physics bar (phase S2): what the simulation is doing, only as the simulator reports it (rule 10). STOPPED is
+ * the default: nothing runs until the person starts it or drops something.
+ */
+export interface PhysicsUi {
+  state: 'STOPPED' | 'STARTING' | 'RUNNING' | 'PAUSED';
+  /** Simulated seconds of the run in progress, or of the last one. */
+  time: number;
+  awake: number;
+  bodies: number;
+  /** How the last run ended (null: none yet), or why it could not start. */
+  ended: 'SETTLED' | 'STOPPED' | 'TIME' | 'NO_ENGINE' | 'FAILED' | 'NOTHING' | null;
+  /** Reset has something to undo: a run in progress, or the last one's clips and poses. */
+  canReset: boolean;
+}
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of
  * some nodes (phase U3), or the part whose material some parts link to.
@@ -283,8 +300,23 @@ export interface UiState {
   /** Window narrower than 1100 px: side panels become drawers. */
   narrow: boolean;
   wizard: WizardState | null;
-  /** Clip selected in the animation drawer. */
+  /** Clip selected in the animation drawer: the one the properties edit (the last one picked). */
   selectedClip: string | null;
+  /** S4a: the ambient effect being edited in the scene's Ambient section (its region is drawn), or null. */
+  effectSelected: string | null;
+  /** S4a: the gallery of effect presets is open (Ambient ▸ Add). */
+  effectGallery: boolean;
+  /**
+   * N6: every clip selected in the timeline (the multiple selection, `selectedClip` among them). Code that only knows
+   * `selectedClip` keeps working: the commands of ui/anim-commands.ts keep the two in step.
+   */
+  selectedClips: string[];
+  /** N6: targets of the timeline folded by the user (their clips hidden; the row shows their bars). */
+  animFolded: Record<string, true>;
+  /** N6: the timeline's zoom, 1 = the whole animation fits. */
+  animZoom: number;
+  /** N6: playing goes back to the start at the end (on), or stops there. */
+  animLoop: boolean;
   customResolution: boolean;
   /** A file is being dragged over the viewport. */
   fileDrag: boolean;
@@ -319,6 +351,10 @@ export interface UiState {
   renderWindow: RenderWindowState | null;
   /** Where the render window was dragged to (top left, CSS pixels); null: centred. */
   renderWindowPos: { x: number; y: number } | null;
+  /** The material editor (M3a), open on one material; null: closed. */
+  materialEditor: { material: MaterialId } | null;
+  /** Where it was moved to and its size (remembered); null: centred at its own size. */
+  materialEditorRect: EditorRect | null;
   resultView: ResultViewState | null;
   /** The results history, newest first (main.ts loads it from the browser's storage). */
   results: ResultMeta[];
@@ -352,16 +388,22 @@ export interface UiState {
   updates: UpdatesUi;
   /** The model manager's view (null: no manager in this build or not started). */
   models: ModelsSnapshot | null;
+  /** The plugin host's view (P6; null: no host in this build). */
+  plugins: PluginsSnapshot | null;
   /** What was detected of this computer for the AI models. */
   hardware: { state: 'IDLE' | 'DETECTING' | 'DONE'; info: HardwareInfo | null };
   perf: PerfState;
   engineInfo: EngineInfo | null;
+  /** E11: the preview's multisampling now and the most the device can do (Settings ▸ Edge smoothing says it); null before it starts. */
+  fastAa: { samples: number; max: number } | null;
   desktop: DesktopInfo | null;
   /**
    * An inline confirmation the header shows under the project name (New and Open ask before they discard unsaved
    * changes, whichever way they were asked for: menu, shortcut or a dropped file). Esc cancels.
    */
   prompt: ConfirmSpec | null;
+  /** The physics bar (phase S2). */
+  physics: PhysicsUi;
 }
 
 /**
@@ -408,6 +450,7 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'tourSeen',
   'updateCheckedAt',
   'updateLatest',
+  'materialEditorRect',
 ];
 
 export const PANEL_MIN = 220;
@@ -441,6 +484,12 @@ export function defaultUiState(): UiState {
     narrow: false,
     wizard: null,
     selectedClip: null,
+    effectSelected: null,
+    effectGallery: false,
+    selectedClips: [],
+    animFolded: {},
+    animZoom: 1,
+    animLoop: true,
     customResolution: false,
     fileDrag: false,
     shortcutsOpen: false,
@@ -457,6 +506,8 @@ export function defaultUiState(): UiState {
     engine: 'LOADING',
     renderWindow: null,
     renderWindowPos: null,
+    materialEditor: null,
+    materialEditorRect: null,
     resultView: null,
     results: [],
     resultsStorage: 'LOADING',
@@ -475,11 +526,14 @@ export function defaultUiState(): UiState {
     updateLatest: null,
     updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false, answeredAt: null } },
     models: null,
+    plugins: null,
     hardware: { state: 'IDLE', info: null },
     perf: { state: 'IDLE' },
     engineInfo: null,
+    fastAa: null,
     desktop: null,
     prompt: null,
+    physics: { state: 'STOPPED', time: 0, awake: 0, bodies: 0, ended: null, canReset: false },
   };
 }
 

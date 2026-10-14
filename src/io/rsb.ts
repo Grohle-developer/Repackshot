@@ -7,10 +7,15 @@
 // `projectScene` maps a ProjectState onto it: the active camera, a mesh per
 // distinct geometry, an instance per visible part, a material per material
 // instance, the resolved rig, the environment (dome, sky, flat or HDRI, and the
-// background image), the floor and the render settings. Model space only (Z up,
-// millimetres): no three.js here.
+// background image), the floor, the render settings and the ambient effects
+// (S4a: one FXAM section of parameters per effect, with a material of its own
+// after the parts' ones). Model space only (Z up, millimetres): no three.js here.
 
-import { evaluate, type Pose } from '../core/animation';
+import { playheadPose, type Pose } from '../core/animation';
+import { effectFxam, engineParticleCap, fxamPayload, FXAM_BYTES, type AmbientEffect, type FxamFields } from '../core/effects';
+import { instanceFromPreset } from '../core/materials';
+import type { EffectMaterial } from '../data/effects';
+import { flattenGraph } from '../core/material-preview';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
 import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
@@ -22,10 +27,10 @@ import { passMask, type PassKey } from '../core/passes';
 import { autoCaustics, causticsFields, isCaster, type CausticsMode, type CausticsQuality } from '../core/caustics';
 import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS } from '../core/images';
+import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type TextureSlotKey } from '../core/textures';
 import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
 import { filtersOf, isNeutralOptics, type CameraOptics, type LensFilter } from '../core/optics';
 import type { PupilProfile } from '../data/bokeh';
-import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type TextureSlotKey } from '../core/textures';
 import { lensFilterType } from '../data/lens-filters';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
@@ -45,10 +50,12 @@ export const TAG_FLOR = 'FLOR';
 export const TAG_RNDR = 'RNDR';
 export const TAG_INST = 'INST';
 export const TAG_BMAP = 'BMAP';
-/** O1: the camera's optics beyond the plain thin lens (optional, right after CAMR). */
-export const TAG_LENS = 'LENS';
 /** M2a (read by the engine from M2b): the texture images, decoded to 8-bit rows (ARCHITECTURE §5.2). */
 export const TAG_IMGS = 'IMGS';
+/** O1: the camera's optics beyond the plain thin lens (optional, right after CAMR). */
+export const TAG_LENS = 'LENS';
+/** S4a: an ambient effect's parameters (rt_sim::params; the engine evaluates the particles). */
+export const TAG_FXAM = 'FXAM';
 
 /** `MATL.kind`. */
 export const MATERIAL_PRINCIPLED = 0;
@@ -349,6 +356,12 @@ export interface RsbRender {
   causticPhotons: number;
   /** E5b-1: the caustics' first gather radius in pixels at the camera's target distance (0: the engine's 3). */
   causticRadius: number;
+  /** U11b: how much of the denoised image is handed out, 0..1 (noisy × (1 − s) + denoised × s; default 1). */
+  denoiseStrength: number;
+  /** E11: the pixel filter (core/antialias.ts: 0 the box of one pixel, 1 the centre, 2 a tent, 3 Blackman–Harris). */
+  pixelFilter: number;
+  /** E11: the samples an edge pixel takes per sample index (1: none more; at most 16). */
+  edgeSupersample: number;
 }
 
 /** What the engine renders: `rt_core::scene::Scene`, field for field. */
@@ -371,7 +384,12 @@ export interface RsbScene {
   textures?: boolean;
   /** M2a: the texture images (IMGS), referred to by index from the materials' slots and labels. */
   images?: RsbImage[];
+  /** S4a: the ambient effects (FXAM), each referring to its material by index. */
+  effects?: RsbEffect[];
 }
+
+/** S4a: an ambient effect, the fields of `FXAM` (core/effects.ts `effectFxam`). */
+export type RsbEffect = FxamFields;
 
 // The defaults of rt-core (`impl Default` of each struct): what a field the
 // interface does not have is written as.
@@ -414,7 +432,7 @@ export function defaultFloor(): RsbFloor {
 }
 
 export function defaultRender(): RsbRender {
-  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0 };
+  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1 };
 }
 
 export const IDENTITY_ROWS: readonly number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
@@ -488,7 +506,7 @@ function imagesBytes(images: readonly RsbImage[]): number {
 const LGHT_BYTES = 76;
 const ENVR_BYTES = 84;
 const FLOR_BYTES = 20;
-const RNDR_BYTES = 52;
+const RNDR_BYTES = 64;
 const INST_BYTES = 60;
 
 function meshBytes(m: RsbMesh, uvs = false): number {
@@ -611,7 +629,8 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
 
   const tex = scene.textures === true;
   const images = tex ? (scene.images ?? []) : [];
-  let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES);
+  const effects = scene.effects ?? [];
+  let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES) + effects.length * (8 + FXAM_BYTES);
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
   const lens = scene.camera.lens ?? null;
   if (lens) size += 8 + lensBytes(lens);
@@ -722,6 +741,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.u32(l.flags);
     });
   }
+  for (const e of effects) w.section(TAG_FXAM, FXAM_BYTES, () => w.raw(fxamPayload(e)));
   if (withMeshes && images.length > 0) {
     w.section(TAG_IMGS, imagesBytes(images), () => {
       w.u32(images.length);
@@ -783,6 +803,9 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.u32(r.denoise);
     w.u32(r.causticPhotons);
     w.f32(r.causticRadius);
+    w.f32(r.denoiseStrength);
+    w.u32(r.pixelFilter);
+    w.u32(r.edgeSupersample);
   });
   if (w.length !== size) throw new Error(`RSB: wrote ${w.length} bytes, expected ${size}`);
   return w.bytes;
@@ -821,6 +844,12 @@ export interface SceneView {
   passes?: readonly PassKey[];
   /** E5b-1, `RNDR.denoise` (core/caustics.ts `denoiseBits`; default 0). */
   denoise?: number;
+  /** U11b, `RNDR.denoise_strength`: 0..1 (core/render.ts `denoiseFraction`; default 1). */
+  denoiseStrength?: number;
+  /** E11, `RNDR.pixel_filter` (core/antialias.ts `pixelFilterFields`; default 0, the box). */
+  pixelFilter?: number;
+  /** E11, `RNDR.edge_supersample`: 1..16 (default 1). */
+  edgeSupersample?: number;
   /** E5b-1: the caustics switch and quality; Automatic is decided here, from the scene (core/caustics.ts). Default off. */
   caustics?: { mode: CausticsMode; quality: CausticsQuality };
   /**
@@ -828,6 +857,8 @@ export interface SceneView {
    * turns it on from the engine's own word). Off by default: the bytes are those of before M2a.
    */
   textures?: boolean;
+  /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
+  particleCap?: number;
 }
 
 /** A scene and the identity of its geometry: an equal `meshKey` means the same MESH sections. */
@@ -925,6 +956,8 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
     m.baseColor = [FALLBACK_GREY, FALLBACK_GREY, FALLBACK_GREY];
     return m;
   }
+  // M3a: until the engine evaluates graphs (M3b), a material of nodes is the means of its outputs.
+  if (inst.graph) inst = { ...inst, ...flattenGraph(inst.graph) };
   const p = inst.params;
   switch (inst.family) {
     case 'SIMPLE':
@@ -976,6 +1009,25 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
     }
   }
   return m;
+}
+
+/** S4a: an effect's own material (data/effects.ts) as the engine's. */
+export function effectMaterialToRsb(m: EffectMaterial): RsbMaterial {
+  const out = defaultMaterial();
+  out.kind = m.kind === 'GLASS' ? MATERIAL_GLASS : MATERIAL_PRINCIPLED;
+  out.baseColor = [m.baseColor[0], m.baseColor[1], m.baseColor[2]];
+  out.roughness = clamp01(m.roughness);
+  out.ior = Math.max(1, m.ior);
+  out.transmission = clamp01(m.transmission);
+  out.absorptionMm = Math.max(0, m.absorptionMm);
+  out.flags = m.thin ? MATERIAL_FLAG_THIN : 0;
+  return out;
+}
+
+/** S4a: the material an effect renders with: a catalogue material by key, or its own. */
+export function effectMaterial(state: ProjectState, e: AmbientEffect): RsbMaterial {
+  const inst = e.material ? instanceFromPreset(`fx:${e.id}`, e.material, state.scene.partSizeMm) : null;
+  return inst ? materialToRsb(inst) : effectMaterialToRsb(e.ownMaterial);
 }
 
 /**
@@ -1259,10 +1311,9 @@ export function texturesToRsb(t: MaterialTextures, imageFor: (id: string, colorS
   return { slots, emissionTint: [tint[0], tint[1], tint[2]], labels };
 }
 
-/** The pose the preview shows: the playhead's, when clips exist and the playhead moved. */
+/** The pose the preview shows (core/animation.ts playheadPose): the playhead's, when clips exist and it moved. */
 export function currentPose(state: ProjectState): Pose | null {
-  const anim = state.animation;
-  return anim.clips.length > 0 && (anim.playing || anim.playhead > 0) ? evaluate(state, anim.playhead) : null;
+  return playheadPose(state);
 }
 
 /** The engine's scene for a project state and a view. */
@@ -1279,7 +1330,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     cam = { ...base, ...pose.camera, id: base.id };
   }
   if (view.cameraPatch) cam = { ...cam, ...view.cameraPatch };
-  const camera = cameraToRsb(cam, state.render.width, state.render.height, width, height, view.viewport);
+  // The frame of a viewport image is the image of the camera on screen, with its ratio (U13).
+  const frame = chosen.aspect;
+  const camera = cameraToRsb(cam, frame.w, frame.h, width, height, view.viewport);
 
   // Geometry: a mesh per distinct (mesh, shading, face groups), an instance per visible part.
   const nodes = state.scene.nodes;
@@ -1382,6 +1435,16 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     lights.push(light);
   }
 
+  // S4a: the ambient effects, each with a material of its own after the parts' (its passes' materialId).
+  const cap = view.particleCap ?? engineParticleCap();
+  const effects: RsbEffect[] = [];
+  for (const e of state.effects) {
+    if (!e.enabled) continue;
+    const materialId = materials.push(effectMaterial(state, e)) - 1;
+    materialOrder.push(null);
+    effects.push(effectFxam(state, e, materialId, cap));
+  }
+
   const env = state.environment;
   const flat = env.kind === 'FLAT';
   // The engine's flat environment is grey: the colour's luminance.
@@ -1407,7 +1470,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   // The output frame inside a viewport image: the background image fits it.
   let backplateRect: [number, number, number, number] = [0, 0, 1, 1];
   if (view.viewport && view.viewport.viewW > 0 && view.viewport.viewH > 0) {
-    const f = outputFrameRect(view.viewport.viewW, view.viewport.viewH, state.render.width, state.render.height);
+    const f = outputFrameRect(view.viewport.viewW, view.viewport.viewH, frame.w, frame.h);
     backplateRect = [f.x / view.viewport.viewW, f.y / view.viewport.viewH, (f.x + f.width) / view.viewport.viewW, (f.y + f.height) / view.viewport.viewH];
   }
   const environment: RsbEnvironment = {
@@ -1455,6 +1518,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     seed: Math.max(0, Math.round(view.seed ?? 0)) >>> 0,
     passes: passMask(view.passes ?? []),
     denoise: Math.max(0, Math.round(view.denoise ?? 0)) >>> 0,
+    denoiseStrength: Number.isFinite(view.denoiseStrength) ? Math.max(0, Math.min(1, view.denoiseStrength!)) : 1,
+    pixelFilter: Math.max(0, Math.round(view.pixelFilter ?? 0)) >>> 0,
+    edgeSupersample: Math.max(1, Math.min(16, Math.round(Number.isFinite(view.edgeSupersample) ? view.edgeSupersample! : 1))),
   };
   if (view.caustics) {
     const centre: [number, number, number] | null = casterBounds
@@ -1473,7 +1539,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   }
 
   return {
-    scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}) },
+    scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}) },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key. With textures (M2a) the
     // meshes carry their UVs and IMGS travels with them too.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : '') + (view.textures ? `|textures:${imageIds.join(',')}` : ''),

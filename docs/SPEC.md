@@ -225,6 +225,112 @@ interior), `STEPS` (número de escalones, subiendo hacia +Y) y `SWEEP`
   primitivas, todas), para que un fondo infinito seis veces mayor no mueva
   las luces ni cambie la escala. *Encuadrar todo* sigue siendo todo.
 
+**Físicas** (fase S2, `src/core/physics.ts`; el simulador es el *crate*
+`rt-phys`, en un *worker*). Cada nodo puede llevar su sección *Físicas*
+(`physics`, opcional; sin ella valen los valores por defecto):
+
+- **Papel** (`role`): *Estático* (por defecto: está, no se mueve y se
+  choca contra él) o *Dinámico* (cae y choca). *Tela* (S9) y *Líquido*
+  (S7) aparecen en el inspector como *próximamente*. Un grupo o un modelo
+  dinámico cae **como un cuerpo** (una envolvente de todas sus piezas) salvo que
+  tenga **Como piezas** (`asParts`), y entonces cada pieza cae por su
+  cuenta.
+- **Masa por densidad** (`density`, kg/m³): sin densidad propia, la de la
+  familia del material de la pieza (`DENSITY_BY_CATEGORY` en
+  `src/data/physics.ts`: metal 7 800, plástico 1 100, madera 700, tela
+  400, vidrio 2 500, emisivo 2 500, otro 1 000) o 1 000 sin material.
+  La masa es la densidad por el volumen de la forma de colisión.
+- **Rozamiento** de Coulomb (`friction`, 0–2, 0,5 por defecto; el mismo
+  para el estático y el dinámico) y **rebote** (`bounciness`, 0–1, 0,2).
+  Entre dos superficies, la media geométrica de los rozamientos y el
+  mayor de los rebotes; el suelo tiene 0,6 y 0,2.
+
+**Qué se simula** (`physicsSpec`). Con *Dejar caer*, la selección (de
+cada rama, el nodo de más arriba); con *Iniciar*, los nodos cuyo papel es
+dinámico. Un nodo bloqueado no se mueve y una pieza
+oculta no está. Todo lo demás visible es estático, como malla de
+triángulos, y el suelo del estudio (`z = 0`) siempre está. Cada pieza
+dinámica choca con su **envolvente convexa** (*quickhull* propio, como
+mucho 128 vértices; si no se puede, su caja orientada) y una esfera
+reconocida como tal (todos sus vértices a la misma distancia del centro)
+choca como esfera exacta. La gravedad es −Z, 9,81 m/s², en mm. La
+simulación avanza a paso fijo de 1/240 s (4 subpasos), al ritmo del reloj
+como mucho y a unos pocos fotogramas (1/8 s) de lo que la interfaz ya ha
+recibido, así que en una máquina cargada va más despacio en vez de acabar
+sin que se vea; un cuerpo quieto durante
+0,5 s **duerme** y, con todos dormidos, la simulación se para sola; si no,
+a los 30 s simulados. La misma escena da las mismas poses en cualquier
+máquina (*hash* de las poses fijado en los tests, igual en nativo y en
+wasm y con cualquier número de hilos).
+
+**Lo que hace en el proyecto.** Mientras corre, los nodos no cambian:
+cada uno tiene su clip `PHYSICS` (§3.7) que crece fotograma a fotograma y
+el cabezal lo sigue, así que el visor enseña la caída a través de la
+línea de tiempo. *Pausar* congela lo que el visor enseña (lo que el
+simulador manda mientras tanto espera a *Reanudar*); *Parar* confirma la
+pose que se ve; dormirse o el límite de tiempo confirman el último
+fotograma. Confirmar pone cada nodo donde acaba su clip (su escala no
+cambia; dentro de un grupo, en los ejes del grupo). Los clips, los papeles
+que da *Dejar caer* y las poses finales son **una** entrada de deshacer;
+*Reiniciar* quita los clips de la última simulación y devuelve los nodos a
+donde estaban antes, como otra entrada; deshacer mientras corre la
+abandona sin confirmar nada.
+
+**Ambiente** (fase S4a, `src/core/effects.ts`, catálogo
+`src/data/effects.ts`). Partículas del aire **sin estado**: polvo en
+suspensión, polen, lluvia, nieve, polvareda, ceniza, burbujas que suben y
+confeti que cae. El proyecto guarda `effects: AmbientEffect[]` (0..n; un
+proyecto de antes de S4a abre con la lista vacía) y cada efecto es **un
+dato, no un montón de partículas**: sus parámetros, de los que el
+simulador del motor (`engine/crates/rt-sim`) saca cada partícula como
+función pura de (semilla, id, instante). Ni caché ni horneado.
+
+- **Campos**: `id` (`fx1`, `fx2`…), `preset` (clave estable del catálogo:
+  `DUST_MOTES`, `POLLEN`, `RAIN`, `SNOW`, `DUST_CLOUD`, `ASH`, `BUBBLES`,
+  `CONFETTI`; `HAZE`, `LIGHT_SHAFTS` y `GROUND_FOG` están en el catálogo
+  como *próximamente*, son volúmenes de S5), `name` (vacío: el del
+  preset), `enabled`; la cantidad (`amountMode` `DENSITY` con `density`
+  en partículas/m³ del volumen, o `COUNT` con `count`), `sizeMm` ±
+  `sizeVar`, `shape` (`SPHERE` punto/esfera, `DISC` copo, `CAPSULE`
+  estela), `energy` (m/s de nacimiento en dirección al azar, que se relaja
+  hacia la caída), `chaos` (fuerza de la turbulencia como fracción de su
+  escala), `turbulenceScaleMm`, `turbulenceSpeed` (m/s), `wind` (vector
+  en m/s, Z arriba), `fallSpeed` (velocidad terminal a 1 g, m/s) ±
+  `fallVar`, `gravity` (múltiplo de g; negativa sube), `spin` (vueltas/s
+  de un disco), `streak` (largo de la cápsula: lo recorrido en tantos
+  segundos), la región (`region`: `SCENE`, la caja del producto con
+  `marginMm`, o `BOX` con centro y tamaño; `band`: banda de alturas), la
+  nube (`cloud`: centro, radio en mm, suavidad 0..1; con ella, el volumen
+  es su esfera), el material (`material`: clave del catálogo de
+  materiales, o vacío y entonces `ownMaterial`, el del preset), `tintVar`
+  y `palette` (hasta 4 tintes), `time` (*Congelar en*, s), `camera`,
+  `reflections` y `shadows` (como en las luces), `cap` (tope propio; 0: el
+  del motor) y `seed`.
+- **Acciones del *store***, todas deshacibles: `effect/add` (un preset
+  disponible; nace con los valores del preset, la región alrededor de la
+  escena con un margen de 0,75 tamaños de pieza y la semilla de su
+  número), `effect/remove`, `effect/set` (un parche; un arrastre es una
+  entrada, y un valor que ya tiene no cambia nada) y `effect/preset`
+  (toma los valores del preset nuevo y conserva dónde está, su instante,
+  su semilla, su tope y su nombre). Los valores se acotan al aplicarse.
+- **Cuántas partículas**: la densidad por el volumen en m³ (la región o la
+  esfera de la nube) o la cuenta, y como mucho el tope: el del efecto, y
+  nunca más que el del motor (*Ajustes ▸ Motor de renderizado ▸
+  Partículas por efecto*; automático: 100 000 en el navegador, 1 000 000
+  en nativo). El Doctor avisa (`particles`) cuando un efecto pide más que
+  su tope, y *Arreglar* baja la cantidad hasta él.
+- **Qué viaja al motor**: una sección `FXAM` por efecto encendido, tras
+  las luces, con los parámetros en unidades del motor (mm, mm/s; la región
+  ya recortada por la banda y nunca bajo el suelo) y un material propio
+  detrás de los de las piezas (su `materialId`). Un efecto apagado no
+  viaja. El motor evalúa las partículas al cargar la escena y construye su
+  BVH; los pases dan a una partícula el `partId` de su efecto y el
+  `materialId` del suyo.
+- **Vista previa**: el visor *Rápido* pinta hasta 50 000 partículas de
+  cada efecto, las que evalúa `rt_particles_eval` de `rt.wasm` (el mismo
+  simulador, en el hilo de la página); sin `rt.wasm` pinta la caja de la
+  región y el medidor lo dice. *Completo* y *Render* las pintan todas.
+
 ### 3.2 · Selección por niveles
 
 `level ∈ {MODEL, GROUP, PART, FACES}`, excluyentes. Un clic en el visor
@@ -288,7 +394,8 @@ izquierda a derecha) o lo que **toca** (*cruce*, de derecha a izquierda)
 Una **instancia** de material: `id`, `name`, `preset` (clave de origen o
 `null` si es propio), `family`, `category`, `params` (los del catálogo,
 todos editables), `wear` (los campos de desgaste), `textures` (las
-texturas de imagen y las etiquetas: abajo), `bevelRadiusMm`.
+texturas de imagen y las etiquetas: abajo), `bevelRadiusMm` y, en modo
+*Nodos*, `graph` (un grafo de nodos: abajo).
 
 **Texturas de imagen** (fase M2a, `src/core/textures.ts`). `textures`
 tiene seis **ranuras**, cada una vacía o con una imagen: `color`,
@@ -369,6 +476,87 @@ texturas por proyecto. Toda edición de ranuras, mapeados y etiquetas es
 una acción del *store* (`texture/*`), deshacible (un arrastre, una
 entrada), y convierte el material en propio. La biblioteca guarda el
 mapeado, no las imágenes.
+
+**Grafos de material** (fase M3a, `src/core/material-graph.ts`; el
+contrato con el motor en `ARCHITECTURE.md` §5.2 quater). Un material puede
+ser **Simple** (los parámetros de su familia) o **Nodos**: lleva entonces
+`graph`, un **grafo dirigido sin ciclos** de nodos del catálogo
+(`src/data/material-nodes.ts`, claves estables) y conexiones de una toma
+de salida a una toma de entrada. Uno de ellos, la **Salida de material**,
+recibe en cada punto lo que es el material allí: *color base, metal,
+rugosidad, anisotropía, barniz, rugosidad del barniz, transmisión, IOR,
+dispersión interna, emisión* (color) *e intensidad de emisión, opacidad,
+normal, relieve* (una altura en mm que dobla la normal) y *bisel* (un peso
+0–1 del radio de bisel del material, que sigue siendo uno: lo mira el
+Doctor); y como parámetros del material, no del punto, la *distancia de
+absorción* y las *paredes finas* (las del vidrio). Los demás nodos:
+*Textura de imagen* (un PNG o JPEG del registro, sRGB o datos, repetir,
+estirar o espejo; colores y alfa), *Mapeado* (las proyecciones de M2a,
+UV, plana, caja, cilíndrica, esférica, y además *Objeto*, las coordenadas
+3D de la pieza; tamaño en mm, giro, desplazamiento, repetición), *Ruido*
+(Perlin o símplex con escala, octavas, lacunaridad, rugosidad y semilla:
+valor de 0 a 1 y color), *Degradado* (lineal, cuadrático, suavizado,
+diagonal, esférico, radial), *Cuadros*, *Rayas* (anchura y suavidad),
+*Rampa de color* (hasta ocho paradas, lineal, suavizada o constante),
+*Mezcla* (mezcla, suma, producto, resta, trama, diferencia, aclarar,
+oscurecer, superponer), *Matemática* (suma, resta, producto, división,
+producto y suma, potencia, mínimo, máximo, mínimo y máximo suavizados,
+escalón suavizado, valor absoluto, menor y mayor que, parte entera y
+fraccionaria, seno), *Fresnel / peso de capa* (el Fresnel dieléctrico de
+un IOR y una rampa *de cara*), *Curvatura* (aristas y cavidades, que mide
+el motor), *Valor*, *Color*, *Separar* y *Combinar RGB*, *Invertir*,
+*Mapa de normales* (tangente o de la pieza) y *Relieve*.
+
+Las **tomas** tienen tipo: número, color, vector o normal (se dibujan con
+una forma por tipo: círculo, rombo, cuadrado, triángulo). Una conexión
+convierte sola un número en color o vector (las tres componentes iguales),
+un color en número (su luminancia Rec. 709) o en vector, un vector en
+número (la media) o en color, y una normal en vector; **una normal solo
+sale de una normal** (un color se convierte en normal con *Mapa de
+normales*), y se rechaza la conexión que cerraría un ciclo o que va de un
+nodo a sí mismo, diciendo por qué. Una entrada sin conexión lee su valor
+propio; las que no tienen leen una fuente del punto: la normal, las UV de
+la malla (la imagen) o las coordenadas de la pieza por cada 100 mm (los
+procedurales). Lo que no llega a la salida no cuenta.
+
+**Simple ↔ Nodos**: pasar a *Nodos* da el **grafo mínimo**, la salida sola
+con los valores del material (lo que el motor y la vista previa leen de
+sus parámetros; madera y tela, su color plano, porque anillos y trama son
+del motor, E6), y deja los parámetros como estaban. Volver a *Simple* es
+inmediato cuando el grafo es mínimo: la salida sola, sin conexiones, con
+valores que una familia guarda exactamente (los del material, que vuelve
+tal cual, o los de un material simple, de vidrio o emisor); si no,
+pregunta, y al aceptar se queda con los valores propios de la salida. Las
+**texturas de M2a y las etiquetas** siguen siendo una capa sobre el
+material en los dos modos: en *Nodos* multiplican lo que da el grafo como
+multiplican los parámetros en *Simple*.
+
+El grafo se guarda dentro del material (`graph`, con su `version`, 1);
+las imágenes de sus nodos de imagen viajan en el bloque de imágenes del
+proyecto, y la biblioteca guarda el grafo sin ellas. Toda edición (nodo,
+conexión, parámetro, valor, mover, duplicar, eliminar, un ejemplo) es una
+acción del *store* (`graph/*`), deshacible, una entrada cada una (un
+arrastre, una), y hace propio el material. Límites: 256 nodos, 512
+conexiones, y los del programa (2048 instrucciones, 256 registros de cada
+tipo, 16 imágenes): un grafo que los pasa no se compila y el editor lo
+dice. **Diez ejemplos** (`src/data/material-graphs.ts`): plástico con
+etiqueta, metal cepillado con arañazos, mármol, cuero, madera con dos
+ruidos, vidrio con suciedad por Fresnel, cuadros, pintura metalizada con
+copos, cerámica con esmalte y rayas.
+
+**Cómo se ve.** En *Rápido*, el programa del grafo se evalúa en mapas de
+512 × 512 (color, rugosidad, metal, opacidad, normal, emisión) que la
+vista previa pinta por las ranuras de M2a: en el cuadrado UV si solo lee
+UV; en la superficie de su proyección (un plano, una cara de la caja, un
+cilindro, una esfera) si una sola proyección lo alimenta todo, y entonces
+es lo que da el grafo; si lee coordenadas 3D, en un corte por el frente de
+la pieza puesto como proyección de caja (un ruido 3D se ve como su corte).
+Lo que no cabe en mapas se aproxima o se omite, y el inspector y el editor
+lo dicen: Fresnel y *de cara* a 60° de la normal, la curvatura como 0, y
+las salidas sin ranura (barniz, transmisión, IOR…) con su valor medio. En
+*Completo* y en *Render*, hasta que el motor evalúe grafos (fase M3b,
+*próximamente*), el material es el valor medio de cada salida sobre una
+esfera de muestras; lo dicen el inspector y el editor.
 
 Familias y lo que significan para el motor:
 
@@ -663,6 +851,38 @@ ortográfico), clipping, `locked`. Cámara de referencia: acimut −35°,
 elevación 22° (tres cuartos), distancia derivada de la focal y el tamaño
 de pieza para que encaje con un margen del 10 %.
 
+**Proporción de la imagen** (U13). Cada cámara lleva la suya,
+`CameraState.aspect: { preset, w, h }`, con `preset` una clave estable de
+`src/data/aspects.ts` (`3:2`, `4:3`, `16:9`, `1:1`, `5:4`, `4:5`, `9:16`,
+`21:9`, `2:1`, `65:24` panorámica) o `CUSTOM` con `w : h` libres (la
+razón queda entre 1 : 512 y 512 : 1, la de los tamaños más extremos que
+admite la ventana de render, 16 × 8192 y 8192 × 16). Es el ancho sobre el alto de la imagen que esa cámara
+toma: una cámara nueva es 16:9; *Nueva desde la vista actual* y duplicar
+copian la de la origen; `camera/set` la cambia (deshacible) y la lee como
+cualquier campo (`normaliseAspect`: una clave conocida trae sus términos,
+algo que no puede serlo se descarta). La **fuente única** es la cámara:
+
+- el **marco del visor** es el de la cámara que se ve (la activa o la que se
+  mira a través), con su proporción;
+- el **tamaño en píxeles de una imagen** conserva el ancho y toma el alto
+  de la proporción de la cámara activa (`syncOutputSize`, en cada acción,
+  también al cambiar de cámara activa, al deshacer y al abrir un proyecto).
+  Si se teclea un tamaño que rompe esa proporción (los dos lados a la vez,
+  o uno con el candado abierto) es la cámara la que lo recibe, en la misma
+  acción: el preset de la lista si el tamaño es exactamente uno
+  (`aspectForSize`), si no `CUSTOM` con esos píxeles como `w : h`;
+- una **animación** tiene un solo tamaño de salida, el de la ventana de
+  render, que no sigue a la cámara; el Doctor avisa (`aspect`) cuando la
+  cámara de un plano tiene otra proporción;
+- un trabajo de la cola para una cámara con otra proporción que la de la
+  ventana sale con el mismo ancho y el alto de esa cámara.
+
+Un proyecto guardado antes no tiene `aspect` en sus cámaras: cada una toma
+la proporción del tamaño de render guardado (el preset que cuadra con una
+tolerancia del 0,5 %, si no `CUSTOM` con esos píxeles), y el tamaño guardado
+no se toca. Recolocar la cámara al cambiar la proporción no se hace
+solo: *Encuadrar* la ajusta a la imagen nueva.
+
 **Encuadrar**: ajusta la distancia (o el ancho ortográfico) para que la
 caja envolvente de la selección (o de todo) quepa con margen, sin mover
 la orientación. Las **cámaras guardadas** se ven en el visor como pirámides,
@@ -754,8 +974,9 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | | **Traslación** (`MOVE`, `TRACK`) | Se desplaza una distancia en un eje, local o global |
 | | **Escala** (`SCALE`) | Cambia de tamaño por un factor |
 | | **Fundido** (`FADE`, nuevo) | Opacidad de 0 a 1 o de 1 a 0 |
-| | **Despiece** (`EXPLODE`) | Las piezas marcadas se separan del centro |
+| | **Despiece** (`EXPLODE`) | Las piezas del modelo o de un grupo se separan: lineal, radial, esférico o por niveles, con excepciones (ver abajo) |
 | | **Visibilidad** (`VISIBILITY`) | Aparece o desaparece |
+| | **Simulación** (`PHYSICS`, S2) | La caída grabada de una simulación (§3.1, *Físicas*); no se crea desde el asistente: la crea cada simulación |
 | Cámara | **Órbita** (`ORBIT`) | Gira alrededor del objetivo, grados |
 | | **Inclinación** (`RISE`) | Sube o baja en arco, grados |
 | | **Zoom** (`ZOOM`) | Cambia la focal, mm |
@@ -788,12 +1009,86 @@ sincronizado con la distancia recorrida, que se apaga al pararse. Sin
 simulación, la cámara se desliza como en un *travelling* de cine. Todo es
 una función determinista del tiempo, como el resto de animaciones.
 
+**Despiece (`EXPLODE`)**, configurable (N6). Las herramientas CAD con
+vista explosionada coinciden en tres geometrías y en el orden por
+jerarquía (documentación pública de Onshape, Fusion 360, SolidWorks
+Composer e Inventor; observación de caja negra, ningún código); el
+despiece las toma así (`src/core/explode.ts`, claves de `EXPLODE_MODES`):
+
+| Geometría | Clave | Qué hace |
+| --- | --- | --- |
+| **Lineal** | `LINEAR` | A lo largo de un eje (Z vertical, X o Y horizontal, o una dirección propia). *Separar*: cada pieza se aleja del plano central por su lado. *Apilar*: todas en el mismo sentido, repartidas en su orden a lo largo del eje; la primera se queda y la última recorre toda la distancia (el despiece clásico de un envase: cuerpo, rosca, tapón) |
+| **Radial** | `CYLINDRICAL` | Alejándose de un **eje** que pasa por el centro, en perpendicular a él; lo que está en el eje no se mueve |
+| **Esférica** | `SPHERICAL` (y su sinónimo `RADIAL`) | Alejándose de un **punto**, el centro, en todas direcciones |
+
+y, combinable con cualquiera de las tres, la **jerarquía**: *piezas*
+(cada pieza por su cuenta), *un nivel* (los hijos del objetivo como
+bloques: un grupo se mueve entero) o *todos los niveles* (primero los
+bloques y luego, por etapas, las piezas dentro de cada grupo, que se
+separan del centro de su grupo y en proporción a su tamaño).
+
+Parámetros (`MotionClip.explode`): **distancia** (la cantidad de la
+animación: × tamaño del modelo o mm), **reparto** (*igual*: cada pieza
+recorre la distancia; *por distancia*: cuanto más lejos del centro más se
+aleja, y la más lejana recorre la distancia), **proporcional al tamaño de
+la pieza** (la mayor recorre toda la distancia, las demás en proporción),
+**centro** (el del conjunto, una pieza elegida, el pivote del objetivo o
+un punto propio), **eje o dirección**, **orden** (*a la vez*,
+*escalonado por distancia* —la más lejana primero— o *por profundidad*
+—lo que cuelga del modelo antes que lo que está dentro de grupos—, con un
+**solape** de 0 % —una tras otra— a 100 % —a la vez—, que también encadena
+las etapas de *todos los niveles*), **velocidad** (la duración),
+**suavidad** (un solo mando de 0 % a 100 % que va de *lineal* a *suave* y
+a *muy suave* de `EASING_KINDS`, mezclándolas en medio, y escribe en la
+curva la más cercana), **excepciones** (piezas fijas; se llenan desde la
+selección o con *Fijar en el despiece* del menú contextual; fijar un grupo
+fija sus piezas), **conservar la orientación** (apagado, cada pieza se
+inclina un poco —hasta 20°— al alejarse), **invertir** (montaje: empieza
+separado y acaba montado) y el **objetivo**, el modelo entero o un grupo.
+Las piezas de un set (L6) no se despiezan nunca.
+
+Las claves de antes siguen valiendo: `RADIAL` es la **esférica** (lo que
+siempre significó: «cada pieza sale hacia fuera desde el centro»),
+`AXIS_X/Y/Z` son lineal *separar* en ese eje y `CUSTOM` (una dirección
+por pieza, no construida) se lee como la esférica. Un despiece sin
+parámetros —todos los guardados antes de N6— es el de entonces: esférico,
+cada pieza la misma distancia, desde el centro del modelo, a la vez; se
+lee exactamente igual (`tests/fixtures/explode-legacy.json`). La radial
+nueva usa la clave `CYLINDRICAL`, que ya estaba en el catálogo con ese
+sentido («salen en abanico sin subir ni bajar»).
+**Simulación (`PHYSICS`, fase S2).** **Toda simulación se graba sola**:
+al empezar, cada cuerpo que cae recibe un clip `PHYSICS` sobre su nodo,
+que empieza en el cabezal (redondeado a un fotograma) y crece mientras
+corre; se queda donde la simulación se para y *Reiniciar* lo quita
+(deshacible). No hay un paso aparte de grabar: la foto fija usa el
+fotograma del cabezal y la animación ya tiene la simulación. El clip lleva
+una **pista horneada** (`track`: fps del proyecto, número de fotogramas y,
+por fotograma, la posición local en mm y la rotación como cuaternión,
+`f32` *little endian* en base64, 7 números por fotograma) y un **ancla**
+(`anchor`: la posición y la rotación del nodo a las que la pista se
+refiere; al confirmar, donde la simulación lo dejó). Al reproducir, la
+posición se interpola linealmente entre fotogramas y la rotación por el
+arco corto; antes de su inicio el nodo tiene el primer fotograma y
+después el último. Si el nodo se mueve o gira después, la caída entera va
+con él (la pista por el cambio desde el ancla); su escala es la suya.
+Estirar la barra la ralentiza; se repite y se invierte con el mismo
+tiempo que cualquier otra (invertida, la caída va hacia atrás: las piezas
+suben desde el reposo); no tiene cantidad ni curva de tiempo, no se parte
+y *Animar…* no la ofrece. Las demás animaciones del mismo nodo se suman
+encima. Con el cabezal en 0, sin reproducir y sin clips invertidos, la
+escena se enseña como se edita (N1, N6), **salvo los nodos
+que una simulación grabada sostiene**, que enseñan su fotograma también
+ahí (una caída desde 0 empieza en 0, y la pose editada ya es la final);
+mientras un nodo está así, el *gizmo* no aparece sobre él.
+
 **Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,
 cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,
-eje, pivote, local o global), inicio y duración en segundos, **curva de
-tiempo** (`EASING_KINDS`: lineal, suave, entrada, salida, fuerte, y
-*personalizada* con una curva de dos asas), **invertida** (sí/no) y
-**repetir** (n veces). Su frase en lenguaje llano ("La cámara orbita 90°
+eje, pivote, local o global; los del despiece, arriba), inicio y duración
+en segundos, **curva de tiempo** (`EASING_KINDS`: lineal, suave, entrada,
+salida, fuerte, y *personalizada* con una curva de dos asas; o la
+**suavidad**, un mando sobre las tres simétricas), **invertida** (sí/no:
+se reproduce al revés y, antes de empezar, guarda su estado final) y
+**repetir** (n veces seguidas: la barra dura n veces su duración). Su frase en lenguaje llano ("La cámara orbita 90°
 durante 4 s, suave") es su nombre por defecto y su representación en la
 interfaz; también aparece **bajo su objetivo en el árbol de la escena**,
 como hace KeyShot.
@@ -806,6 +1101,23 @@ reproducir y el motor para renderizar fotograma a fotograma. Dos
 animaciones del mismo tipo sobre el mismo objetivo y tiempo se suman si
 son traslaciones o rotaciones y se marcan en la interfaz si no pueden
 convivir; nunca se silencian.
+
+**La línea de tiempo** (N6) tiene **tres zonas** para que quede claro
+**qué** se anima y **cómo**: a la izquierda el **árbol de lo animado**
+(una fila por objetivo —la pista de cámara primero, luego el modelo, sus
+grupos y piezas, los focos y el entorno— con sus animaciones anidadas,
+cada una con su icono y su frase corta); en el centro **cuándo** (la
+regla en segundos y fotogramas, el cabezal y una barra por animación,
+que se arrastra y se estira con **imán** a los bordes de las otras
+barras, al cabezal y a los segundos enteros); a la derecha **cómo** (las
+propiedades de la animación elegida bajo una cabecera de una línea:
+«Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s»). Elegir una animación
+resalta su objetivo en el visor y dibuja su pista (el arco de la órbita,
+la flecha del desplazamiento, los vectores del despiece, el eje del
+giro); elegir una pieza en la escena marca las filas de lo que la mueve.
+El árbol y las barras no conocen los tipos: leen la frase y el objetivo,
+y un tipo nuevo (la simulación física que se graba en la línea de
+tiempo) se dibuja igual.
 
 **Reproducción**: la línea de tiempo tiene cabezal, fps (24, 25, 30, 60),
 duración total (la del último evento), reproducir, pausar, ir al
@@ -850,6 +1162,28 @@ cancelación, **siempre con el motor completo**. Cada resultado guarda la
 imagen del motor y, si hubo post-procesado, también la de la IA, para
 compararlas con un divisor deslizable.
 
+**Plugins** (P6; `ARCHITECTURE.md` §9). Herramientas de otros programas que
+trabajan sobre un **resultado terminado**: se instalan en *Ajustes ▸ Plugins*
+desde el registro de Repackshot o desde un archivo `.rpk`, con su clave de
+activación y bajo **su propia licencia** (cerrada en el de película, y se dice).
+Cada plugin instalado con el *slot* `render.plugins` tiene su bloque en la
+sección **Plugins** de la ventana de render, dibujado desde su manifiesto: sus
+recetas (con sus nombres públicos), sus mandos, una **vista previa** del
+resultado actual por el plugin con los números que el plugin da y **Aplicar**,
+que deja un **resultado nuevo** en el historial junto a su origen, con su
+procedencia (`provenance: { plugin, version, recipe, controls }`). La receta y
+los mandos de cada plugin son del proyecto (`render.plugins`): deshacibles y
+guardados con él; un proyecto anterior no tiene ninguno. Las recetas son un
+**carrusel** de tarjetas, cada una con la imagen base del plugin (su escena de
+prueba) por esa receta, hecha una vez por equipo y versión; sin resultado
+todavía, la vista previa es esa escena de prueba. Con **Aplicar a los trabajos
+de render**, cada imagen de un trabajo de la cola pasa también por el plugin y
+se guarda junto a la del motor; en una animación, cada fotograma con su
+semilla, `semilla + fotograma` (`provenance.seed` guarda la semilla y la
+regla). Un plugin no toca el proyecto: recibe píxeles y devuelve píxeles. El
+primero es la **simulación de película de aintfilm** (la app de edición de
+fotos y simulación de película del mismo desarrollador, en desarrollo).
+
 ### 3.9 · Estudios, biblioteca propia y proyecto
 
 Un **estudio** guarda una cámara, un montaje de luz y entorno, un set de
@@ -887,12 +1221,13 @@ cotas, variantes, 360). Las decisiones, las fuentes y las fases están en
 
 ## 4 · El Doctor
 
-Catorce chequeos, cada uno con detección y arreglo (`DOCTOR_CHECKS` en
+Quince chequeos, cada uno con detección y arreglo (`DOCTOR_CHECKS` en
 `src/data/doctor.ts`). Los de escena se evalúan sobre el modelo: escala
 plausible para el tipo de producto (una joya de 3 m está mal), origen y
 apoyo en el suelo, suavizado de normales, bisel de aristas (sin bisel, las
 aristas de un CAD no reflejan nada y delatan el render), clipping de
-cámara, luces visibles a cámara sin querer. Los de motor se evalúan sobre
+cámara, luces visibles a cámara sin querer, y una pieza dinámica que
+empieza atravesando el suelo (S2: el arreglo la sube hasta apoyarla). Los de motor se evalúan sobre
 el motor activo: dispositivo, denoise, transformada de vista, cáusticas
 (fireflies), datos persistentes, formato de salida de vídeo. El Doctor no
 cambia nada sin que se le pida y explica cada aviso en una frase.

@@ -1,7 +1,8 @@
 // Viewport (UI.md §2.3): the render itself, with overlays that never cover
 // the part. Talks to the engine only through the ViewportPort.
 
-import { outputFrameRect } from '../../core/camera';
+import { cameraFrameRect } from '../../core/camera';
+import { viewedCamera } from '../../core/view-objects';
 import * as cmd from '../commands';
 import { h, icon } from '../dom';
 import { dynamic, type Ctx, type Scope } from '../reactive';
@@ -53,8 +54,8 @@ export function viewportPanel(ctx: Ctx, scope: Scope): HTMLElement {
   const layoutMask = () => {
     const w = el.clientWidth;
     const hh = el.clientHeight;
-    const s = store.get();
-    const r = outputFrameRect(w, hh, s.render.width, s.render.height);
+    // The frame is the image of the camera on screen (the active one, or the one looked through): its own ratio (U13).
+    const r = cameraFrameRect(viewedCamera(store.get(), ui.get().lookThrough), w, hh);
     const [top, bottom, left, right, edge] = mask.children as unknown as HTMLElement[];
     Object.assign(top.style, { left: '0', top: '0', width: `${w}px`, height: `${r.y}px` });
     Object.assign(bottom.style, { left: '0', top: `${r.y + r.height}px`, width: `${w}px`, height: `${hh - r.y - r.height}px` });
@@ -69,7 +70,10 @@ export function viewportPanel(ctx: Ctx, scope: Scope): HTMLElement {
   });
   ro.observe(el);
   scope.onDispose(() => ro.disconnect());
-  scope.watch((s) => [s.render.width, s.render.height].join('x'), layoutMask);
+  scope.watch((s, u) => {
+    const a = viewedCamera(s, u.lookThrough).aspect;
+    return `${a.w}x${a.h}`;
+  }, layoutMask);
   scope.watch(
     (s) => s.scene.roots.length === 0,
     (empty) => {

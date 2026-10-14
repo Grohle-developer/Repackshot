@@ -528,12 +528,13 @@ describe('fuzz and lenses', () => {
 });
 
 describe('animation catalogues', () => {
-  it('has 15 move kinds, 5 easings, 3 targets and 6 explode modes', () => {
-    expect(MOVE_KINDS).toHaveLength(15);
+  it('has 16 move kinds (PHYSICS of S2 last), 5 easings, 3 targets and 8 explode modes (N6 appended LINEAR and SPHERICAL)', () => {
+    expect(MOVE_KINDS).toHaveLength(16);
+    expect(MOVE_KINDS.at(-1)?.key).toBe('PHYSICS');
     expect(EASING_KINDS.map((e) => e.key)).toEqual(['LINEAR', 'EASE', 'EASE_IN', 'EASE_OUT', 'EASE_STRONG']);
     expect(TARGET_KINDS.map((t) => t.key)).toEqual(['OBJECT', 'SUBJECT', 'SCENE']);
     expect(EXPLODE_MODES.map((m) => m.key)).toEqual([
-      'RADIAL', 'AXIS_X', 'AXIS_Y', 'AXIS_Z', 'CYLINDRICAL', 'CUSTOM',
+      'RADIAL', 'AXIS_X', 'AXIS_Y', 'AXIS_Z', 'CYLINDRICAL', 'CUSTOM', 'LINEAR', 'SPHERICAL',
     ]);
     expect(unique(MOVE_KINDS.map((m) => m.key))).toBe(true);
     expect(DEFAULT_AMOUNT_LABEL.en).toBe('Amount');
@@ -601,11 +602,13 @@ describe('animation catalogues', () => {
 });
 
 describe('doctor checks and environment', () => {
-  it('has 14 checks with unique keys in upstream order', () => {
-    expect(DOCTOR_CHECKS).toHaveLength(14);
+  it('has the 14 upstream checks in their order, with unique keys, and ours after them (U13: aspect, S2: physics, S4a: particles)', () => {
+    expect(DOCTOR_CHECKS).toHaveLength(17);
+    expect(DOCTOR_CHECKS.at(-1)?.key).toBe('particles');
     expect(DOCTOR_CHECKS.map((c) => c.key)).toEqual([
       'engine', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
-      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output',
+      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output', 'aspect', 'physics',
+      'particles',
     ]);
   });
 
@@ -659,7 +662,7 @@ describe('labels', () => {
       MOVE_KINDS: 30,
       EASING_KINDS: 10,
       TARGET_KINDS: 6,
-      EXPLODE_MODES: 12,
+      EXPLODE_MODES: 16,
       SEQUENCE_PRESETS: 16,
       DOCTOR_CHECKS: 42,
       DEFAULT_AMOUNT_LABEL: 1,

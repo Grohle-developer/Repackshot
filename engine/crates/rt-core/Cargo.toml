@@ -7,3 +7,5 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The stateless particle effects (S4a): evaluated when a scene is loaded, rendered here.
+rt-sim = { path = "../rt-sim" }

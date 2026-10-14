@@ -8,8 +8,8 @@
 //! | `albedo` | 3 × f32 | Base colour of the material at the first hit (no specular bounce is followed: glass gives its tint), averaged over the pixel's samples like the image | 0 |
 //! | `normal` | 3 × f32 | Unit shading normal at the first hit, world space (Z up), turned towards the camera (both sides of a triangle count) | 0 |
 //! | `depth` | f32 | Distance along the camera's view axis, scene units | +∞ |
-//! | `partId` | u32 | RSB instance index + 1 (what `Scene::pick` finds); the studio floor [`FLOOR_ID`] | 0 |
-//! | `materialId` | u32 | RSB material index + 1 of that instance; the floor [`FLOOR_ID`] | 0 |
+//! | `partId` | u32 | RSB instance index + 1 (what `Scene::pick` finds); the studio floor [`FLOOR_ID`]; a particle of an ambient effect (S4a) the number of instances + the effect's index + 1 | 0 |
+//! | `materialId` | u32 | RSB material index + 1 of that instance (of that effect for a particle); the floor [`FLOOR_ID`] | 0 |
 //! | `coc` | f32 | Circle-of-confusion diameter in output pixels, of the thin lens ([`coc_diameter`]) | 0 (also without depth of field) |
 //!
 //! `normal`, `depth`, the ids and `coc` come from **one ray through the centre of the pixel,
@@ -156,9 +156,7 @@ impl Exact {
             } => {
                 let material = scene
                     .geometry
-                    .instances()
-                    .get(instance as usize)
-                    .map(|i| i.material_id)
+                    .material_of(instance)
                     .filter(|&m| (m as usize) < scene.materials.len())
                     .map_or(0, |m| m + 1);
                 (t, normal, instance + 1, material)
@@ -188,9 +186,8 @@ pub fn albedo_of(scene: &Scene, hit: FirstHit) -> Rgb {
         FirstHit::Floor { .. } => scene.floor.color,
         FirstHit::Surface { instance, .. } => scene
             .geometry
-            .instances()
-            .get(instance as usize)
-            .and_then(|i| scene.materials.get(i.material_id as usize))
+            .material_of(instance)
+            .and_then(|m| scene.materials.get(m as usize))
             .map_or(Material::default().base_color, |m| m.base_color),
     }
 }

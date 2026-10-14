@@ -17,13 +17,16 @@ use rt_core::caustics::PhotonMap;
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, PASS_ALBEDO, PASS_EXACT};
-use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, TileRect};
+use rt_core::pixel_filter::EdgeMask;
+use rt_core::render::{render_tile_albedo_edges, render_tile_edges, render_tile_exact, TileRect};
 use rt_core::scene::Scene;
 use rt_core::simd::Isa;
-use rt_post::denoise::{denoise_rows, DenoiseInput};
+use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset};
+use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
+pub mod phys;
 
 /// Status returned by `rt_render_tile`: success.
 pub const STATUS_OK: u32 = 0;
@@ -48,12 +51,18 @@ pub const MAX_TILE_PIXELS: u64 = 1 << 22;
 /// map once.
 pub const KEPT_PHOTON_MAPS: usize = 16;
 
+/// Edge masks a scene keeps (E11), one per tile rectangle a host renders: more than the tiles of
+/// a 4K image in 32-pixel tiles; past it they are all dropped and found again.
+pub const KEPT_EDGE_MASKS: usize = 16_384;
+
 /// A loaded scene with its lights prepared once for every tile rendered from it, and the photon
 /// maps of its last samples when it has caustics.
 struct Loaded {
     scene: Scene,
     prepared: Prepared,
     maps: Vec<PhotonMap>,
+    /// E11: the edge pixels of every tile rectangle rendered (with edge samples), by rectangle.
+    edges: BTreeMap<(u32, u32, u32, u32), EdgeMask>,
 }
 
 impl Loaded {
@@ -63,7 +72,26 @@ impl Loaded {
             scene,
             prepared,
             maps: Vec::new(),
+            edges: BTreeMap::new(),
         }
+    }
+
+    /// The edge pixels of `tile` (found now from its centre rays if they are not kept): the same
+    /// whoever finds them, so every worker's tiles agree. Without edge samples, none.
+    fn edge_mask(&mut self, tile: TileRect) -> EdgeMask {
+        if self.scene.render.edge_factor() <= 1 {
+            return EdgeMask::none(tile);
+        }
+        let key = (tile.x, tile.y, tile.w, tile.h);
+        if let Some(mask) = self.edges.get(&key) {
+            return mask.clone();
+        }
+        if self.edges.len() >= KEPT_EDGE_MASKS {
+            self.edges.clear();
+        }
+        let mask = EdgeMask::of(&self.scene, &self.prepared, tile, Isa::detect());
+        self.edges.insert(key, mask.clone());
+        mask
     }
 
     /// The photon map of `sample` (traced now if it is not kept), or `None` without caustics.
@@ -147,6 +175,7 @@ pub fn scene_update(handle: u32, bytes: &[u8]) -> u32 {
         Ok(()) => {
             loaded.prepared = Prepared::new(&loaded.scene);
             loaded.maps.clear();
+            loaded.edges.clear();
             reg.error.clear();
             STATUS_OK
         }
@@ -211,16 +240,81 @@ pub fn scene_caustics(handle: u32) -> Option<u32> {
     })
 }
 
+/// Floats per particle written by [`particles_eval`]: centre `x y z`, radius, axis `x y z` (a
+/// disc's unit normal, half a capsule's segment, zero for a sphere), and the tint seed (its `u32`
+/// bits stored as the float's bits).
+pub const PARTICLE_FLOATS: usize = 8;
+
+/// The particles of the ambient effect whose `FXAM` payload is `params` (S4a), at most `max` of
+/// them, for the Fast preview: [`PARTICLE_FLOATS`] floats each, the same particles the renderer
+/// evaluates when it loads the scene. An invalid payload records the error (see
+/// [`error_message`]) and gives [`STATUS_BAD_SCENE`].
+pub fn particles_eval(params: &[u8], max: u32) -> Result<Vec<f32>, u32> {
+    let params = rt_sim::AmbientParams::decode(params).map_err(|e| {
+        set_error(&format!("FXAM: {e}"));
+        STATUS_BAD_SCENE
+    })?;
+    let particles = rt_sim::evaluate(&params, max);
+    let mut out = Vec::with_capacity(particles.len() * PARTICLE_FLOATS);
+    for p in &particles {
+        out.extend_from_slice(&p.centre);
+        out.push(p.radius);
+        out.extend_from_slice(&p.axis);
+        out.push(f32::from_bits(p.tint));
+    }
+    Ok(out)
+}
+
 /// Words per pixel of the input of [`denoise`]: the planes `sums` (4), `lum2` (1), `albedo` (3),
 /// `normal` (3), `depth` (1), `part_id` (1) and `material_id` (1), one after another.
 pub const DENOISE_WORDS: usize = 14;
 
-/// The denoiser (`rt_post::denoise`) on a band of `rows` image rows from `origin_y` of an image
-/// `width × height` of `samples` samples per pixel: `input` holds its planes (little-endian words,
-/// see [`DENOISE_WORDS`]); returns the denoised RGBA sums of image rows `y0 .. y1` (which the
-/// band must hold with `rt_post::denoise::HALO` rows around them, or up to the image's edge).
+/// The denoiser's presets by number (U11): 0 the full filter of a render, 1 the viewport's.
+pub fn denoise_preset(id: u32) -> Option<Preset> {
+    match id {
+        0 => Some(Preset::FULL),
+        1 => Some(Preset::VIEWPORT),
+        _ => None,
+    }
+}
+
+/// The denoiser (`rt_post::denoise`, the full filter) on a band of `rows` image rows from
+/// `origin_y` of an image `width × height` of `samples` samples per pixel: `input` holds its
+/// planes (little-endian words, see [`DENOISE_WORDS`]); returns the denoised RGBA sums of image
+/// rows `y0 .. y1` (which the band must hold with `rt_post::denoise::HALO` rows around them, or up
+/// to the image's edge).
 #[allow(clippy::too_many_arguments)]
 pub fn denoise(
+    width: u32,
+    height: u32,
+    origin_y: u32,
+    rows: u32,
+    samples: u32,
+    y0: u32,
+    y1: u32,
+    input: &[u8],
+) -> Result<Vec<f32>, u32> {
+    denoise_with(
+        Preset::FULL,
+        1.0,
+        width,
+        height,
+        origin_y,
+        rows,
+        samples,
+        y0,
+        y1,
+        input,
+    )
+}
+
+/// [`denoise`] with another preset (U11) and a strength (U11b, `0..=1`: the denoised image
+/// blended with the noisy one, `rt_post::denoise::denoise_rows_at`): the band holds the rows with
+/// that preset's [`Preset::halo`] around them.
+#[allow(clippy::too_many_arguments)]
+pub fn denoise_with(
+    preset: Preset,
+    strength: f32,
     width: u32,
     height: u32,
     origin_y: u32,
@@ -264,7 +358,7 @@ pub fn denoise(
         part_id: &part_id,
         material_id: &material_id,
     };
-    denoise_rows(&band, y0, y1).map_err(|_| STATUS_BAD_DENOISE)
+    denoise_rows_at(&band, y0, y1, preset, strength).map_err(|_| STATUS_BAD_DENOISE)
 }
 
 /// The exact passes of `mask` (normal, depth, part id, material id, circle of confusion: the
@@ -310,10 +404,11 @@ pub fn render_tile_albedo_sample(
 ) -> Result<Vec<f32>, u32> {
     with_tile(handle, w, h, |loaded| {
         let mut film = PassFilm::region(x, y, w, h, PASS_ALBEDO);
-        render_tile_albedo(
+        let edges = loaded.edge_mask(TileRect { x, y, w, h });
+        render_tile_albedo_edges(
             &loaded.scene,
             &loaded.prepared,
-            TileRect { x, y, w, h },
+            &edges,
             sample_index,
             &mut film,
             Isa::detect(),
@@ -335,11 +430,12 @@ fn render_region(
     with_tile(handle, w, h, |loaded| {
         let mut film = Film::region(x, y, w, h);
         let map = loaded.photon_map(sample_index);
-        render_tile_photons(
+        let edges = loaded.edge_mask(TileRect { x, y, w, h });
+        render_tile_edges(
             &loaded.scene,
             &loaded.prepared,
             map.map(|i| &loaded.maps[i]),
-            TileRect { x, y, w, h },
+            &edges,
             sample_index,
             &mut film,
             Isa::detect(),
@@ -389,6 +485,7 @@ mod tests {
     use super::*;
     use crate::ffi::*;
     use rt_core::math::Vec3;
+    use rt_core::render::{render_tile_albedo, render_tile_photons};
     use std::sync::Mutex;
 
     /// The registry is process-wide state: tests that touch it run one at a time.
@@ -790,6 +887,102 @@ mod tests {
     }
 
     #[test]
+    fn edge_samples_go_through_the_tiles_as_the_engine_renders_them_and_an_update_drops_the_edges()
+    {
+        // E11: the module finds each tile's edges once and renders its edge pixels with k samples
+        // per index, image and albedo, exactly as rt-core does; a scene update without edge
+        // samples renders the plain image again.
+        let _guard = serial();
+        let scene = rt_core::example::e11_scene();
+        let rsb = scene.to_rsb();
+        let handle = scene_load(&rsb);
+        assert_ne!(handle, 0);
+        let prepared = Prepared::new(&scene);
+        let isa = Isa::detect();
+        // Across the top of the parts, and a rectangle of odd size over a border.
+        let around = TileRect {
+            x: 180,
+            y: 60,
+            w: 64,
+            h: 48,
+        };
+        let odd = TileRect {
+            x: 330,
+            y: 200,
+            w: 33,
+            h: 17,
+        };
+        for (tile, sample) in [(around, 0u32), (around, 3), (odd, 1)] {
+            let edges = EdgeMask::of(&scene, &prepared, tile, isa);
+            assert!(edges.edges() > 0, "{tile:?} has edges");
+            let mut film = Film::region(tile.x, tile.y, tile.w, tile.h);
+            render_tile_edges(&scene, &prepared, None, &edges, sample, &mut film, isa);
+            assert_eq!(
+                render_tile(handle, tile.x, tile.y, tile.w, tile.h, sample),
+                Ok(film.resolve())
+            );
+            let mut albedo = PassFilm::region(tile.x, tile.y, tile.w, tile.h, PASS_ALBEDO);
+            rt_core::render::render_tile_albedo_edges(
+                &scene,
+                &prepared,
+                &edges,
+                sample,
+                &mut albedo,
+                isa,
+            );
+            assert_eq!(
+                render_tile_albedo_sample(handle, tile.x, tile.y, tile.w, tile.h, sample),
+                Ok(albedo.albedo)
+            );
+        }
+        // The camera moves (the edges with it): the module finds the tile's edges again.
+        let mut moved = scene.clone();
+        moved.camera.position += rt_core::math::Vec3::new(40.0, 0.0, 25.0);
+        assert_eq!(scene_update(handle, &moved.to_rsb()), STATUS_OK);
+        let prepared_moved = Prepared::new(&moved);
+        let edges_moved = EdgeMask::of(&moved, &prepared_moved, around, isa);
+        assert_ne!(edges_moved, EdgeMask::of(&scene, &prepared, around, isa));
+        let mut film = Film::region(around.x, around.y, around.w, around.h);
+        render_tile_edges(
+            &moved,
+            &prepared_moved,
+            None,
+            &edges_moved,
+            0,
+            &mut film,
+            isa,
+        );
+        assert_eq!(
+            render_tile(handle, around.x, around.y, around.w, around.h, 0),
+            Ok(film.resolve())
+        );
+        let mut plain = scene.clone();
+        plain.render.edge_supersample = 1;
+        assert_eq!(scene_update(handle, &plain.to_rsb()), STATUS_OK);
+        let tile = TileRect {
+            x: 96,
+            y: 64,
+            w: 64,
+            h: 48,
+        };
+        let mut film = Film::region(tile.x, tile.y, tile.w, tile.h);
+        render_tile_photons(
+            &plain,
+            &Prepared::new(&plain),
+            None,
+            tile,
+            0,
+            &mut film,
+            isa,
+        );
+        assert_eq!(
+            render_tile(handle, tile.x, tile.y, tile.w, tile.h, 0),
+            Ok(film.resolve())
+        );
+        assert_eq!(scene_free(handle), STATUS_OK);
+    }
+
+    #[test]
     fn caustic_tiles_trace_each_photon_map_once_and_match_the_engine() {
         let _guard = serial();
         let scene = rt_core::example::e5b_scene();
@@ -833,6 +1026,132 @@ mod tests {
             .is_empty());
         drop(reg);
         scene_free(handle);
+    }
+
+    #[test]
+    fn the_viewport_preset_through_the_c_api_is_rt_post_s() {
+        // U11: `rt_denoise_with(1, …)` is `rt_post::denoise::Preset::VIEWPORT` on a band with
+        // `rt_denoise_halo(1)` rows around it; preset 0 is `rt_denoise`; others are refused.
+        let _guard = serial();
+        use rt_core::passes::Passes;
+        use rt_post::denoise::{denoise_with as denoise_whole, rgba_sums, GUIDE_PASSES, HALO};
+        assert_eq!(rt_denoise_halo(0), HALO);
+        assert_eq!(rt_denoise_halo(1), Preset::VIEWPORT.halo());
+        assert_eq!(rt_denoise_halo(2), 0);
+        assert_eq!(
+            (denoise_preset(0), denoise_preset(1), denoise_preset(7)),
+            (Some(Preset::FULL), Some(Preset::VIEWPORT), None)
+        );
+        let mut scene = rt_core::example::scene();
+        scene.render.width = 40;
+        scene.render.height = 120;
+        let prepared = Prepared::new(&scene);
+        let mut film = Film::new(40, 120);
+        let mut passes = Passes::new(40, 120, GUIDE_PASSES);
+        for tile in rt_core::render::tile_grid(40, 120, 32) {
+            let mut pf = PassFilm::region(tile.x, tile.y, tile.w, tile.h, GUIDE_PASSES);
+            render_tile_exact(&scene, &prepared, tile, &mut pf, Isa::detect());
+            for sample in 0..3 {
+                render_tile_photons(
+                    &scene,
+                    &prepared,
+                    None,
+                    tile,
+                    sample,
+                    &mut film,
+                    Isa::detect(),
+                );
+                render_tile_albedo(&scene, &prepared, tile, sample, &mut pf, Isa::detect());
+            }
+            passes.copy_region(tile.x, tile.y, &pf.resolve());
+        }
+        let sums = rgba_sums(&film);
+        let whole = DenoiseInput::whole(3, &sums, &film.lum2, &passes).expect("input");
+        let expected = denoise_whole(&whole, Preset::VIEWPORT).expect("denoise");
+        let band = whole.with_halo_of(50, 70, Preset::VIEWPORT);
+        assert_eq!(band.origin_y, 50 - rt_denoise_halo(1));
+        let mut bytes = Vec::new();
+        for v in band
+            .sums
+            .iter()
+            .chain(band.lum2)
+            .chain(band.albedo)
+            .chain(band.normal)
+            .chain(band.depth)
+        {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in band.part_id.iter().chain(band.material_id) {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        let input = upload(&bytes);
+        let out = rt_alloc(40 * 20 * 16);
+        let call = |preset: u32| {
+            // SAFETY: `input` holds the band's planes and `out` room for 20 rows of RGBA floats.
+            unsafe {
+                rt_denoise_with(
+                    preset,
+                    1.0,
+                    40,
+                    120,
+                    band.origin_y,
+                    band.rows,
+                    3,
+                    50,
+                    70,
+                    input,
+                    out.cast::<f32>(),
+                )
+            }
+        };
+        assert_eq!(call(1), STATUS_OK);
+        assert_eq!(
+            read_floats(out, 40 * 20 * 4),
+            expected[50 * 40 * 4..70 * 40 * 4]
+        );
+        // The full filter needs a larger halo than this band has; an unknown preset is refused.
+        assert_eq!(call(0), STATUS_BAD_DENOISE);
+        assert_eq!(call(9), STATUS_BAD_DENOISE);
+        // U11b: at half strength, exactly the mean of the noisy and the denoised rows; at 0 the
+        // noisy rows themselves.
+        let noisy = &sums[50 * 40 * 4..70 * 40 * 4];
+        let clean = &expected[50 * 40 * 4..70 * 40 * 4];
+        for (strength, want) in [
+            (
+                0.5f32,
+                noisy
+                    .iter()
+                    .zip(clean)
+                    .enumerate()
+                    .map(|(i, (&n, &c))| if i % 4 == 3 { n } else { (n + c) * 0.5 })
+                    .collect::<Vec<f32>>(),
+            ),
+            (0.0, noisy.to_vec()),
+        ] {
+            // SAFETY: as above.
+            let status = unsafe {
+                rt_denoise_with(
+                    1,
+                    strength,
+                    40,
+                    120,
+                    band.origin_y,
+                    band.rows,
+                    3,
+                    50,
+                    70,
+                    input,
+                    out.cast::<f32>(),
+                )
+            };
+            assert_eq!(status, STATUS_OK);
+            assert_eq!(read_floats(out, 40 * 20 * 4), want, "strength {strength}");
+        }
+        // SAFETY: both came from `rt_alloc` with these lengths.
+        unsafe {
+            rt_free(input, bytes.len() as u32);
+            rt_free(out, 40 * 20 * 16);
+        }
     }
 
     #[test]
@@ -945,5 +1264,53 @@ mod tests {
         assert!(!ptr.is_null());
         // SAFETY: `ptr` came from `rt_alloc(0)`.
         unsafe { rt_free(ptr, 0) };
+    }
+
+    #[test]
+    fn particles_through_the_c_api_are_the_simulators() {
+        let scene = rt_core::example::ambient_scene();
+        let params = scene.effects[2]; // snow: discs from a palette
+        let payload = params.encode();
+        let input = upload(&payload);
+        let max = 500u32;
+        let out = rt_alloc(max * PARTICLE_FLOATS as u32 * 4);
+        // SAFETY: both buffers come from `rt_alloc` with the sizes the call reads and writes.
+        let n = unsafe { rt_particles_eval(input, payload.len() as u32, max, out.cast::<f32>()) };
+        assert_eq!(n, max);
+        let floats = read_floats(out, max as usize * PARTICLE_FLOATS);
+        let expected = rt_sim::evaluate(&params, max);
+        for (p, f) in expected.iter().zip(floats.chunks_exact(PARTICLE_FLOATS)) {
+            assert_eq!(&f[..3], &p.centre);
+            assert_eq!(f[3], p.radius);
+            assert_eq!(&f[4..7], &p.axis);
+            assert_eq!(f[7].to_bits(), p.tint);
+        }
+        // What the engine renders is the same particles.
+        assert_eq!(
+            scene.geometry.particle_sets()[2].particles()[..500],
+            expected[..]
+        );
+        // A count below the maximum gives the count; a bad payload an error.
+        let mut few = params;
+        few.count = 7;
+        assert_eq!(
+            particles_eval(&few.encode(), max).map(|v| v.len()),
+            Ok(7 * PARTICLE_FLOATS)
+        );
+        let _guard = serial();
+        // SAFETY: as above; 100 bytes are readable at `input`.
+        let bad = unsafe { rt_particles_eval(input, 100, max, out.cast::<f32>()) };
+        assert_eq!(bad, u32::MAX);
+        assert!(String::from_utf8(error_message()).unwrap().contains("FXAM"));
+        // SAFETY: null pointers are refused before any access.
+        assert_eq!(
+            unsafe { rt_particles_eval(std::ptr::null(), 0, 1, out.cast::<f32>()) },
+            u32::MAX
+        );
+        // SAFETY: the buffers came from `rt_alloc` with these sizes.
+        unsafe {
+            rt_free(input, payload.len() as u32);
+            rt_free(out, max * PARTICLE_FLOATS as u32 * 4);
+        }
     }
 }

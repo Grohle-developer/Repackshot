@@ -9,9 +9,13 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
-import { evaluate, type Pose } from '../core/animation';
+import { evaluate, playheadPose, poseActive, type Pose } from '../core/animation';
+import { effectFxam, effectRegion, engineParticleCap, fxamPayload, PREVIEW_PARTICLES, type AmbientEffect } from '../core/effects';
+import type { MotionHint } from '../core/motion-hint';
+import { materialPreset } from '../data/materials';
+import { evalParticles, PARTICLE_FLOATS, previewTint, tintSeed, type RtParticleExports } from './particles';
 import type { Projection, Rect } from '../core/box-select';
-import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, SENSOR_MM, type CameraState } from '../core/camera';
+import { activeCamera, aspectRatio, cameraFrameRect, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, SENSOR_MM, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { fitImageRect, getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
 import { isSphereLike, lightFrame, rigPivot, skySunDirection, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
@@ -22,7 +26,7 @@ import type { PassIds } from '../core/pass-ids';
 import type { PassKey, RenderPasses } from '../core/passes';
 import { SKY_HEIGHT, SKY_WIDTH, skyImage } from '../core/sky';
 import { areaLightRadiance, pointLightIntensity, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
-import { partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
+import { ancestors, partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
 import { glyphsOf, lookThroughCamera, objectFrame, pickGlyph, sameObject, type Glyph, type ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
@@ -34,6 +38,8 @@ import { TexturePreview } from './texture-preview';
 import { filterActive, filtersOf, opticsOf } from '../core/optics';
 import { filterKernel, type FilterKernel } from './lens-filter-image';
 import { LensFilterPass } from './lens-filter-pass';
+import { GraphBakes } from './graph-preview';
+import type { GraphWorkers } from './graph-client';
 
 /** Model space (Z up, mm) to three.js space (Y up): (x, y, z) -> (x, z, -y). */
 export function toThree(p: readonly number[]): THREE.Vector3 {
@@ -207,6 +213,37 @@ void main() {
 }
 `;
 
+// E11: the copy of the multisampled scene to the canvas, byte for byte (the target already holds what the canvas would).
+const COPY_VERT = /* glsl */ `
+precision highp float;
+attribute vec3 position;
+attribute vec2 uv;
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+`;
+
+const COPY_FRAG = /* glsl */ `
+precision highp float;
+uniform sampler2D image;
+varying vec2 vUv;
+void main() { gl_FragColor = texture2D(image, vUv); }
+`;
+
+/**
+ * E11: a render target three.js draws into as it draws to the canvas: the tone curve and the sRGB encoding applied by
+ * every material and the clear colour in sRGB (three.js does this for a target flagged as an XR one; to WebGLRenderer
+ * the flag means nothing else), stored in plain eight bits that are neither encoded when written nor decoded when
+ * sampled, so the copy to the canvas is byte for byte. `samples` 0 is a plain target.
+ */
+class ScreenTarget extends THREE.WebGLRenderTarget {
+  readonly isXRRenderTarget = true;
+  constructor(width: number, height: number, samples: number) {
+    super(width, height, { samples, colorSpace: THREE.SRGBColorSpace, depthBuffer: true, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    // Plain eight bits in the texture too (not sRGB8): the multisampled buffer is resolved into it and read back as it is.
+    this.texture.internalFormat = 'RGBA8';
+  }
+}
+
 export interface ViewChange {
   azimuth: number;
   elevation: number;
@@ -256,6 +293,13 @@ export class PreviewEngine implements RenderEngine {
   private readonly fallbackMaterial = new THREE.MeshPhysicalMaterial({ color: 0xb3b3b3, roughness: 0.5 });
   /** M2a: the image maps and labels of the materials (render/texture-preview.ts). */
   private textures: TexturePreview = new TexturePreview(() => (this.needsRender = true));
+  /** M3a: the materials made of nodes, baked into maps by the graph workers (render/graph-preview.ts). */
+  private readonly graphs = new GraphBakes(
+    () => this.textures,
+    () => (this.needsRender = true),
+    // The canvas says how many bakes are under way (the browser checks wait for 0).
+    (n) => this.renderer?.domElement && (this.renderer.domElement.dataset.graphBakes = String(n)),
+  );
   private readonly floor: THREE.Mesh<THREE.PlaneGeometry, THREE.ShadowMaterial>;
   private readonly shadowLight = new THREE.DirectionalLight(0xffffff, 0);
   private envKey = '';
@@ -276,6 +320,9 @@ export class PreviewEngine implements RenderEngine {
   private needsRender = true;
   private interacting = false;
   private poseActive = false;
+  /** Node poses are applied (the playhead's, or at 0 only those of recorded simulations: `held`). */
+  private nodesPosed = false;
+  private held: ReadonlySet<NodeId> | null = null;
   private lastFrameMs = 0;
   private device = 'WebGL';
   private readonly frameListeners = new Set<() => void>();
@@ -301,6 +348,24 @@ export class PreviewEngine implements RenderEngine {
   });
   private readonly quadScene = new THREE.Scene();
   private readonly quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  /**
+   * E11, Settings ▸ Render engine ▸ Fast mode: the multisampling the scene is drawn with (0 none, 2, 4, 8). When it is
+   * the canvas's own (`canvasSamples`) the scene is drawn on the canvas as always; otherwise into `aaTarget`, a target
+   * with that many samples (capped by the device) that three.js treats as the screen (tone curve and sRGB written in,
+   * like the canvas), copied as it is to the canvas before the overlays.
+   */
+  private msaaWanted = 4;
+  private canvasSamples = 0;
+  private aaTarget: ScreenTarget | null = null;
+  private readonly copyScene = new THREE.Scene();
+  private readonly copyMaterial = new THREE.RawShaderMaterial({
+    vertexShader: COPY_VERT,
+    fragmentShader: COPY_FRAG,
+    uniforms: { image: { value: null } },
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.NoBlending,
+  });
   private readonly raycaster = new THREE.Raycaster();
   /** The gizmo of the move tool, drawn over everything after the outline. */
   private readonly overlayScene = new THREE.Scene();
@@ -315,12 +380,26 @@ export class PreviewEngine implements RenderEngine {
   private readonly glyphLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, toneMapped: false, dashSize: 4, gapSize: 3 }));
   private readonly glyphSelected = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false }));
   private readonly glyphDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false }));
+  /** N6: the track of the animation selected in the timeline (overlay lines and dots, model space) and its target, outlined. */
+  private motionHighlight: readonly NodeId[] = [];
+  private readonly motionLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false }));
+  private readonly motionDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false }));
   /** Settings ▸ Preferences: how the mouse moves the camera, and the floor grid. */
   private tool: PreviewTool = 'select';
   private nav: NavigationPrefs = { mouse: 'LEFT', invertZoom: false, orbitSpeed: 1, zoomSpeed: 1 };
   private gridOn = false;
   private grid: THREE.GridHelper | null = null;
   private gridCell = 0;
+  /**
+   * S4a: the ambient effects. `particleEngine` is rt.wasm on the page's thread (`rt_particles_eval`): undefined while
+   * it loads, null when there is none (then only the region boxes are drawn and the meter says so).
+   */
+  private particleEngine: RtParticleExports | null | undefined = undefined;
+  private readonly effectsRoot = new THREE.Group();
+  /** Per effect id: the payload last evaluated and its particles (a drag of an unrelated knob evaluates nothing). */
+  private readonly particleCache = new Map<string, { key: string; data: Float32Array | null }>();
+  private selectedEffect: string | null = null;
+  private particleStats: { shown: number; total: number; boxesOnly: boolean } | null = null;
 
   constructor() {
     this.modelRoot.matrixAutoUpdate = false;
@@ -330,6 +409,7 @@ export class PreviewEngine implements RenderEngine {
     this.floor.receiveShadow = true;
     this.floor.renderOrder = -1;
     this.modelRoot.add(this.floor);
+    this.modelRoot.add(this.effectsRoot);
     this.shadowLight.castShadow = true;
     this.shadowLight.shadow.mapSize.set(2048, 2048);
     this.shadowLight.shadow.radius = 8;
@@ -338,14 +418,15 @@ export class PreviewEngine implements RenderEngine {
     this.maskSelected.color.setRGB(1, 0, 0);
     this.maskHover.color.setRGB(0, 1, 0);
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.outlineMaterial));
+    this.copyScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.copyMaterial));
     this.overlayRoot.matrixAutoUpdate = false;
     this.overlayRoot.matrix.copy(BASIS);
-    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots]) {
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) {
       g.frustumCulled = false;
       g.renderOrder = -1;
       g.visible = false;
     }
-    this.overlayRoot.add(this.glyphLines, this.glyphSelected, this.glyphDots, this.gizmo.root);
+    this.overlayRoot.add(this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots, this.gizmo.root);
     this.overlayScene.add(this.overlayRoot);
   }
 
@@ -361,6 +442,9 @@ export class PreviewEngine implements RenderEngine {
     // Every texture as sharp at a grazing angle as the device allows.
     this.textures = new TexturePreview(() => (this.needsRender = true), this.renderer.capabilities.getMaxAnisotropy());
     this.device = this.detectDevice();
+    // The samples of the canvas itself (antialias: the browser's choice, usually 4).
+    const gl = this.renderer.getContext();
+    this.canvasSamples = Number(gl.getParameter(gl.SAMPLES)) || 0;
     // "Alt + left button orbits": the left button's action is decided as it goes down, before the controls see it.
     canvas.addEventListener(
       'pointerdown',
@@ -417,6 +501,52 @@ export class PreviewEngine implements RenderEngine {
   /** The live view while a gesture lasts (the store hears of it only at the end): the path tracer follows it. */
   onGesture(fn: (phase: GesturePhase, v: ViewChange | null) => void): void {
     this.gestureListener = fn;
+  }
+
+  /** E11: the multisampling Fast mode draws the scene with (0: none); the device caps it (`msaa()` says at what). */
+  setMsaa(samples: number): void {
+    const n = Math.max(0, Math.round(samples));
+    if (n === this.msaaWanted) return;
+    this.msaaWanted = n;
+    this.needsRender = true;
+  }
+
+  /** E11: what the device can do (its maximum, 0 without multisampling) and the samples Fast mode draws with now. */
+  msaa(): { max: number; samples: number } | null {
+    if (!this.renderer) return null;
+    const max = this.renderer.capabilities.maxSamples;
+    return { max, samples: this.msaaPath() ?? this.canvasSamples };
+  }
+
+  /** The samples of the target the scene goes into, or null when it goes on the canvas (the canvas's own samples). */
+  private msaaPath(): number | null {
+    const n = Math.min(this.msaaWanted, this.renderer.capabilities.maxSamples);
+    return n === this.canvasSamples ? null : n;
+  }
+
+  /**
+   * The scene of Fast mode from `cam`, with the multisampling asked for (see `msaaWanted`), or through the effect
+   * filters of camera `c` when it has any (O3a, `drawFiltered`).
+   */
+  private drawScene(cam: THREE.Camera, c: CameraState): void {
+    if (this.drawFiltered(cam, c)) return;
+    const samples = this.msaaPath();
+    if (samples === null) {
+      this.aaTarget?.dispose();
+      this.aaTarget = null;
+      this.renderer.render(this.scene, cam);
+      return;
+    }
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    if (!this.aaTarget || this.aaTarget.width !== size.x || this.aaTarget.height !== size.y || this.aaTarget.samples !== samples) {
+      this.aaTarget?.dispose();
+      this.aaTarget = new ScreenTarget(size.x, size.y, samples);
+    }
+    this.renderer.setRenderTarget(this.aaTarget);
+    this.renderer.render(this.scene, cam);
+    this.renderer.setRenderTarget(null);
+    this.copyMaterial.uniforms.image.value = this.aaTarget.texture;
+    this.renderer.render(this.copyScene, this.quadCamera);
   }
 
   /** Full mode: draw only the overlays (outline, selected faces, gizmo) over a transparent canvas. */
@@ -514,7 +644,7 @@ export class PreviewEngine implements RenderEngine {
   setInk(rgb: readonly number[]): void {
     this.outlineMaterial.uniforms.ink.value.set(rgb[0], rgb[1], rgb[2]);
     this.gizmo.setInk(rgb);
-    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots]) g.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) g.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
     this.needsRender = true;
   }
 
@@ -530,7 +660,7 @@ export class PreviewEngine implements RenderEngine {
   }
 
   /** The camera the viewport looks through: a light's or a saved camera's view (Look through, L4), or the active one. */
-  private viewCamera(state: ProjectState): CameraState | undefined {
+  private viewCamera(state: ProjectState): CameraState {
     const lt = this.glyphSpec.lookThrough;
     return (lt ? lookThroughCamera(state, lt) : null) ?? activeCamera(state);
   }
@@ -546,11 +676,15 @@ export class PreviewEngine implements RenderEngine {
     if (nodesChanged) this.syncNodes(state, prev);
     if (nodesChanged || matsChanged) this.assignMaterials(state);
     const anim = state.animation;
-    const posed = anim.clips.length > 0 && (anim.playing || anim.playhead > 0);
+    // A reversed clip holds its end state from the first frame (an explode that assembles starts apart).
+    const posed = poseActive(state);
     const poseToggled = posed !== this.poseActive;
     const poseChanged = poseToggled || (posed && (full || anim !== prev.animation));
-    const pose = posed ? evaluate(state, anim.playhead) : null;
-    if (posed || this.poseActive) this.applyNodePose(state, pose);
+    // At 0 a recorded simulation still holds its nodes (S2): the frame of its clip, as a still render shows it.
+    const pose = playheadPose(state);
+    if (pose || this.nodesPosed) this.applyNodePose(state, pose);
+    this.nodesPosed = pose !== null;
+    this.held = !posed && pose ? new Set(Object.keys(pose.nodes)) : null;
     this.poseActive = posed;
     // Lights and environment follow the playhead only when a clip moves them.
     const poseLights = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'LIGHT'));
@@ -558,11 +692,13 @@ export class PreviewEngine implements RenderEngine {
     if (full || nodesChanged || poseLights || state.studio !== prev.studio || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncLights(state, pose);
     // The sky follows the sun light; the background image the frame (output size).
     const skyFollows = state.environment.kind === 'SKY' && !full && (state.studio !== prev.studio || poseLights);
-    const plateFollows = (state.environment.background === 'BACKPLATE' || state.environment.background === 'GRADIENT') && !full && (state.render.width !== prev.render.width || state.render.height !== prev.render.height);
+    // The frame is the image of the camera on screen (U13): its ratio moves the background image and the gradient.
+    const plateFollows = (state.environment.background === 'BACKPLATE' || state.environment.background === 'GRADIENT') && !full && aspectRatio(this.viewCamera(state)) !== aspectRatio(this.viewCamera(prev));
     if (full || state.environment !== prev.environment || poseEnv || skyFollows || plateFollows) this.syncEnvironment(state, pose);
     if (full || state.image !== prev.image) this.syncImage(state);
     if (full || nodesChanged || state.studio !== prev.studio || state.environment !== prev.environment) this.syncFloor(state);
     if (full || nodesChanged || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncGrid(state);
+    if (full || nodesChanged || state.effects !== prev.effects || state.scene.partSizeMm !== prev.scene.partSizeMm || state.materials !== prev.materials) this.syncEffects(state);
     // Looking through a light (L4), the view follows it wherever it is moved from (the inspector, undo).
     const throughLight = this.glyphSpec.lookThrough?.kind === 'LIGHT' && state.studio !== prev?.studio;
     if (full || state.camera !== prev.camera || state.render.width !== prev.render.width || state.render.height !== prev.render.height || poseChanged || nodesChanged || throughLight) {
@@ -582,18 +718,30 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
+  /** M3a: the workers that bake material graphs (main.ts gives them; without them a graph shows its means). */
+  setGraphWorkers(w: GraphWorkers | null): void {
+    this.graphs.setWorkers(w);
+  }
+
   private syncMaterials(state: ProjectState, prev: ProjectState | null): void {
     for (const [id, inst] of Object.entries(state.materials)) {
       const m = this.materials.get(id);
+      // A graph's maps are made for the parts that carry it: their meshes count too.
+      const graphParts = !!inst.graph && !!prev && prev.scene.nodes !== state.scene.nodes;
       if (!m) {
-        const made = makeMaterial(inst, state.scene.partSizeMm);
-        this.textures.apply(made, inst);
+        const made = makeMaterial(inst.graph ? null : inst, state.scene.partSizeMm);
+        if (inst.graph) this.graphs.apply(made, inst, state);
+        else this.textures.apply(made, inst);
         this.materials.set(id, made);
-      } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm) {
-        applyMaterial(m, inst, state.scene.partSizeMm);
-        this.textures.apply(m, inst);
+      } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm || graphParts) {
+        if (inst.graph) this.graphs.apply(m, inst, state);
+        else {
+          applyMaterial(m, inst, state.scene.partSizeMm);
+          this.textures.apply(m, inst);
+        }
       }
     }
+    this.graphs.prune(new Set(Object.keys(state.materials).filter((id) => state.materials[id].graph)));
     for (const [id, m] of this.materials) {
       if (!state.materials[id]) {
         m.dispose();
@@ -873,10 +1021,10 @@ export class PreviewEngine implements RenderEngine {
       this.scene.background = null;
     } else if (env.background === 'BACKPLATE') {
       // The image fitted to the output frame of the viewport, the colour while none is loaded.
-      const frame = outputFrameRect(this.width, this.height, state.render.width, state.render.height);
+      const frame = cameraFrameRect(this.viewCamera(state), this.width, this.height);
       this.scene.background = this.viewportPlate(state, this.width, this.height, frame) ?? color();
     } else if (env.background === 'GRADIENT') {
-      const frame = outputFrameRect(this.width, this.height, state.render.width, state.render.height);
+      const frame = cameraFrameRect(this.viewCamera(state), this.width, this.height);
       this.scene.background = this.viewportGradient(state, this.width, this.height, frame);
     } else {
       this.scene.background = this.envTexture;
@@ -944,14 +1092,17 @@ export class PreviewEngine implements RenderEngine {
     // Looking through a light or a saved camera (L4): its view, and the navigation moves it (main.ts).
     const through = this.glyphSpec.lookThrough ? lookThroughCamera(state, this.glyphSpec.lookThrough) : null;
     if (through) {
-      this.placeCamera(through, this.width, this.height, state.render.width, state.render.height, true);
+      this.placeCamera(through, this.width, this.height, through.aspect.w, through.aspect.h, true);
       this.controls.enabled = !through.locked;
       return;
     }
     const base = pose?.camera ? (state.camera.cameras[pose.camera.camera] ?? activeCamera(state)) : activeCamera(state);
     if (!base) return;
     const cam: CameraState = pose?.camera ? { ...base, ...pose.camera, id: base.id } : base;
-    this.placeCamera(cam, this.width, this.height, state.render.width, state.render.height, true);
+    // The frame is the active camera's even while a shot's camera plays: the output has one size (U13; the Doctor
+    // warns when a shot's camera has another ratio).
+    const frame = activeCamera(state).aspect;
+    this.placeCamera(cam, this.width, this.height, frame.w, frame.h, true);
     this.controls.enabled = !cam.locked && !pose?.camera;
   }
 
@@ -1025,7 +1176,8 @@ export class PreviewEngine implements RenderEngine {
     const s = this.state;
     if (!s) return;
     const selected = new Set(partsUnder(s, s.selection.ids.filter((id) => s.scene.nodes[id])));
-    const hovered = new Set(partsUnder(s, this.hover));
+    // The target of the animation selected in the timeline is outlined like a part under the pointer (N6).
+    const hovered = new Set([...partsUnder(s, this.hover), ...this.motionHighlight]);
     for (const [id, obj] of this.objects) {
       if (!(obj instanceof THREE.Mesh)) continue;
       obj.layers.set(0);
@@ -1098,9 +1250,22 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
+  /**
+   * No gizmo where the animation, not the edit, places the nodes: while it plays or past 0 (N1), and at 0 on a node a
+   * recorded simulation holds, or in or around one (S2).
+   */
+  private gizmoPosed(): boolean {
+    if (this.poseActive) return true;
+    const held = this.held;
+    const s = this.state;
+    const spec = this.gizmoSpec;
+    if (!held || !s || !spec || spec.object) return false;
+    return movableTargets(s, spec.ids).some((id) => held.has(id) || ancestors(s, id).some((a) => held.has(a)) || [...held].some((h) => ancestors(s, h).includes(id)));
+  }
+
   /** Something to draw over the path tracer: an outline, selected faces, the gizmo. */
   private hasOverlay(): boolean {
-    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive) || this.glyphs.length > 0) return true;
+    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.gizmoPosed()) || this.glyphs.length > 0 || this.motionLines.visible || this.motionDots.visible) return true;
     for (const o of this.objects.values()) if (o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER)) return true;
     return false;
   }
@@ -1136,13 +1301,15 @@ export class PreviewEngine implements RenderEngine {
   }
 
   /**
-   * The scene from `cam`, through the effect filters of camera `c` when it has any (O3a): an approximation in image
-   * space with the engine's kernels (render/lens-filter-pass.ts); an orthographic camera has none, as in the engine.
+   * The scene from `cam` through the effect filters of camera `c`, when it has any (O3a): an approximation in image
+   * space with the engine's kernels (render/lens-filter-pass.ts, into its own multisampled target); an orthographic
+   * camera has none, as in the engine. False, and nothing drawn, without filters.
    */
-  private drawScene(cam: THREE.Camera, c: CameraState): void {
+  private drawFiltered(cam: THREE.Camera, c: CameraState): boolean {
     const kernels = this.filterKernels(cam, c);
-    if (kernels.length > 0) this.filterPass.render(this.renderer!, this.scene, cam, kernels);
-    else this.renderer!.render(this.scene, cam);
+    if (kernels.length === 0) return false;
+    this.filterPass.render(this.renderer!, this.scene, cam, kernels);
+    return true;
   }
 
   /** The kernels of camera `c`'s filters in drawing-buffer pixels of `cam` (the projection's scale). */
@@ -1282,7 +1449,11 @@ export class PreviewEngine implements RenderEngine {
     this.glyphSpec = { all: spec.all, selected: spec.selected, lookThrough: spec.lookThrough };
     this.syncGlyphs();
     if (this.state && lookChanged) {
-      this.syncCamera(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
+      const pose = this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null;
+      this.syncCamera(this.state, pose);
+      // A background image or gradient fills the frame of the camera on screen, which may have another ratio (U13).
+      const bg = this.state.environment.background;
+      if (bg === 'BACKPLATE' || bg === 'GRADIENT') this.syncEnvironment(this.state, pose);
       if (this.gizmoSpec) this.placeGizmo();
     }
     this.needsRender = true;
@@ -1313,6 +1484,28 @@ export class PreviewEngine implements RenderEngine {
     this.glyphLines.material.dashSize = size / 40;
     this.glyphLines.material.gapSize = size / 60;
     if (lines.length > 0) this.glyphLines.computeLineDistances();
+    this.needsRender = true;
+  }
+
+  /**
+   * N6: the animation selected in the timeline: its target outlined (as the pointer outlines a part) and its track drawn
+   * over the image in the theme's ink (model space; the overlay's basis turns it Y up). Null clears both.
+   */
+  setMotionHint(hint: MotionHint | null): void {
+    const ids = hint?.highlight ?? [];
+    if (ids.length !== this.motionHighlight.length || ids.some((x, i) => x !== this.motionHighlight[i])) {
+      this.motionHighlight = [...ids];
+      this.updateLayers();
+    }
+    const put = (obj: THREE.LineSegments | THREE.Points, pts: readonly Vec3[]) => {
+      const data: number[] = [];
+      for (const p of pts) data.push(p[0], p[1], p[2]);
+      obj.geometry.setAttribute('position', new THREE.Float32BufferAttribute(data, 3));
+      obj.geometry.computeBoundingSphere();
+      obj.visible = data.length > 0;
+    };
+    put(this.motionLines, hint?.lines ?? []);
+    put(this.motionDots, hint?.dots ?? []);
     this.needsRender = true;
   }
 
@@ -1359,8 +1552,10 @@ export class PreviewEngine implements RenderEngine {
   }
 
   private drawGizmo(cam: THREE.Camera): void {
-    const gizmo = this.gizmo.visible && !this.poseActive;
-    if (!gizmo && this.glyphs.length === 0) return;
+    const gizmo = this.gizmo.visible && !this.gizmoPosed();
+    // N6: the track of the animation selected in the timeline goes over everything too, also while it plays.
+    const motion = this.motionLines.visible || this.motionDots.visible;
+    if (!gizmo && this.glyphs.length === 0 && !motion) return;
     // The glyphs of lights and cameras (L4) go with the gizmo, over everything; while the animation plays, not the gizmo.
     const shown = this.gizmo.root.visible;
     if (!gizmo) this.gizmo.root.visible = false;
@@ -1380,7 +1575,7 @@ export class PreviewEngine implements RenderEngine {
 
   /** The handle under a point (CSS pixels on the canvas), highlighted; null when none. */
   gizmoHover(x: number, y: number): GizmoHandle | null {
-    if (!this.gizmo.visible || this.poseActive || this.width <= 0) {
+    if (!this.gizmo.visible || this.gizmoPosed() || this.width <= 0) {
       if (this.gizmo.setHover(null)) this.needsRender = true;
       return null;
     }
@@ -1416,7 +1611,154 @@ export class PreviewEngine implements RenderEngine {
   }
 
   status(): EngineStatus {
-    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device };
+    const msaa = this.msaa();
+    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...(msaa ? { msaa } : {}), ...(this.particleStats ? { particles: { ...this.particleStats } } : {}) };
+  }
+
+  // ------------------------------------------------------------------ ambient effects (S4a)
+
+  /** rt.wasm for the particles (null: there is none; the region boxes are drawn instead). */
+  setParticleEngine(rt: RtParticleExports | null): void {
+    this.particleEngine = rt;
+    this.particleCache.clear();
+    if (this.state) this.syncEffects(this.state);
+    this.needsRender = true;
+  }
+
+  /** The effect whose region box is drawn (the one being edited), or null. */
+  setSelectedEffect(id: string | null): void {
+    if (this.selectedEffect === id) return;
+    this.selectedEffect = id;
+    if (this.state) this.syncEffects(this.state);
+    this.needsRender = true;
+  }
+
+  /** The particles an effect's material shows in the preview: its colour, and whether it is clear. */
+  private effectLook(e: AmbientEffect): { color: readonly number[]; clear: boolean } {
+    if (e.material) {
+      const p = materialPreset(e.material);
+      const c = p?.params.baseColor;
+      const color = Array.isArray(c) && c.length >= 3 ? (c as number[]) : [0.8, 0.8, 0.8];
+      return { color, clear: p?.family === 'GLASS' };
+    }
+    return { color: e.ownMaterial.baseColor, clear: e.ownMaterial.kind === 'GLASS' || e.ownMaterial.transmission > 0.6 };
+  }
+
+  private clearEffects(): void {
+    for (const child of [...this.effectsRoot.children]) {
+      this.effectsRoot.remove(child);
+      const o = child as THREE.Mesh;
+      o.geometry?.dispose();
+      const m = o.material;
+      if (Array.isArray(m)) m.forEach((x) => x.dispose());
+      else m?.dispose();
+    }
+  }
+
+  /** A region box as lines (model space): dashed for the boxes drawn instead of particles, solid for the selected one. */
+  private boxLines(min: readonly number[], max: readonly number[], dashed: boolean): THREE.LineSegments {
+    const box = new THREE.Box3(new THREE.Vector3(min[0], min[1], min[2]), new THREE.Vector3(max[0], max[1], max[2]));
+    const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(box.max.x - box.min.x || 1e-3, box.max.y - box.min.y || 1e-3, box.max.z - box.min.z || 1e-3));
+    const mat = dashed
+      ? new THREE.LineDashedMaterial({ color: 0x9a9a9a, transparent: true, opacity: 0.8, dashSize: 6, gapSize: 4, depthWrite: false, toneMapped: false })
+      : new THREE.LineBasicMaterial({ color: 0xd0d0d0, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false });
+    const lines = new THREE.LineSegments(geo, mat);
+    lines.position.copy(box.getCenter(new THREE.Vector3()));
+    if (dashed) lines.computeLineDistances();
+    lines.renderOrder = 2;
+    return lines;
+  }
+
+  /** The particles of every effect from the engine's own simulator, at most PREVIEW_PARTICLES of each. */
+  private syncEffects(state: ProjectState): void {
+    this.clearEffects();
+    const rt = this.particleEngine;
+    const enabled = state.effects.filter((e) => e.enabled);
+    if (enabled.length === 0) {
+      this.particleStats = null;
+      this.particleCache.clear();
+      return;
+    }
+    let shown = 0;
+    let total = 0;
+    const live = new Set<string>();
+    for (const e of enabled) {
+      live.add(e.id);
+      const fields = effectFxam(state, e, 0, engineParticleCap());
+      total += fields.count;
+      const region = effectRegion(state, e);
+      if (!rt) {
+        this.effectsRoot.add(this.boxLines(region.min, region.max, true));
+        continue;
+      }
+      const n = Math.min(fields.count, PREVIEW_PARTICLES);
+      const payload = fxamPayload(fields);
+      const key = `${n}|${Array.from(payload).join(',')}`;
+      let cached = this.particleCache.get(e.id);
+      if (!cached || cached.key !== key) {
+        cached = { key, data: evalParticles(rt, payload, n) };
+        this.particleCache.set(e.id, cached);
+      }
+      const data = cached.data;
+      if (!data || data.length === 0) continue;
+      const count = data.length / PARTICLE_FLOATS;
+      shown += count;
+      const look = this.effectLook(e);
+      const centre: Vec3 = [(region.min[0] + region.max[0]) / 2, (region.min[1] + region.max[1]) / 2, (region.min[2] + region.max[2]) / 2];
+      const perPixel = this.worldPerPixel(centre);
+      if (e.shape === 'CAPSULE') {
+        // Streaks: thin cylinders along each capsule's segment, at least a pixel wide.
+        const geo = new THREE.CylinderGeometry(1, 1, 1, 5, 1, true);
+        const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(look.color[0], look.color[1], look.color[2], THREE.LinearSRGBColorSpace), transparent: true, opacity: look.clear ? 0.35 : 0.9, depthWrite: false });
+        const mesh = new THREE.InstancedMesh(geo, mat, count);
+        const m = new THREE.Matrix4();
+        const q = new THREE.Quaternion();
+        const up = new THREE.Vector3(0, 1, 0);
+        const axis = new THREE.Vector3();
+        for (let i = 0; i < count; i++) {
+          const o = i * PARTICLE_FLOATS;
+          axis.set(data[o + 4], data[o + 5], data[o + 6]);
+          const length = 2 * axis.length();
+          if (length > 0) q.setFromUnitVectors(up, axis.normalize());
+          else q.identity();
+          const r = Math.max(data[o + 3], 0.5 * perPixel);
+          m.compose(new THREE.Vector3(data[o], data[o + 1], data[o + 2]), q, new THREE.Vector3(r, Math.max(length, 2 * r), r));
+          mesh.setMatrixAt(i, m);
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.frustumCulled = false;
+        this.effectsRoot.add(mesh);
+      } else {
+        // Dots: as wide as the particle at the region's centre, never under a pixel and a half.
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          const o = i * PARTICLE_FLOATS;
+          positions[i * 3] = data[o];
+          positions[i * 3 + 1] = data[o + 1];
+          positions[i * 3 + 2] = data[o + 2];
+          const tint = previewTint(tintSeed(data, i), e.palette, e.tintVar);
+          for (let c = 0; c < 3; c++) colors[i * 3 + c] = look.color[c] * tint[c];
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const px = Math.min(16, Math.max(1.5, e.sizeMm / Math.max(1e-6, perPixel)));
+        const mat = new THREE.PointsMaterial({ size: px * this.dpr, sizeAttenuation: false, vertexColors: true, map: this.disc, transparent: true, opacity: look.clear ? 0.5 : 1, depthWrite: false, alphaTest: 0.05 });
+        const points = new THREE.Points(geo, mat);
+        points.frustumCulled = false;
+        this.effectsRoot.add(points);
+      }
+    }
+    for (const id of [...this.particleCache.keys()]) if (!live.has(id)) this.particleCache.delete(id);
+    // The effect being edited shows its region.
+    const sel = enabled.find((e) => e.id === this.selectedEffect);
+    if (sel && rt) {
+      const r = effectRegion(state, sel);
+      this.effectsRoot.add(this.boxLines(r.min, r.max, false));
+    }
+    // While rt.wasm loads the boxes stand in for the particles and the meter waits.
+    this.particleStats = rt === undefined ? null : { shown, total, boxesOnly: rt === null };
   }
 
   // ------------------------------------------------------------------ pick
@@ -1622,7 +1964,7 @@ export class PreviewEngine implements RenderEngine {
       if (opts.transparent) this.scene.background = null;
       this.renderer.setClearColor(0x000000, 0);
       const three = cam.projection === 'ORTHOGRAPHIC' ? this.ortho : this.persp;
-      this.drawScene(three, cam);
+      if (!this.drawFiltered(three, cam)) this.renderer.render(this.scene, three);
       out.getContext('2d')!.drawImage(this.renderer.domElement, 0, 0);
     } finally {
       this.scene.background = bg;
@@ -1727,6 +2069,7 @@ export class PreviewEngine implements RenderEngine {
 
   dispose(): void {
     this.controls?.dispose();
+    this.clearEffects();
     this.gizmo.dispose();
     for (const g of this.geometries.values()) g.dispose();
     for (const m of this.materials.values()) m.dispose();

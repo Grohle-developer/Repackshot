@@ -504,14 +504,21 @@ export type MoveKind =
   | 'TINT'
   | 'HDRI'
   | 'EXPLODE'
-  | 'VISIBILITY';
+  | 'VISIBILITY'
+  /** A recorded simulation (S2): the clip carries the baked track and plays it. */
+  | 'PHYSICS';
 
 export type EasingKind = 'LINEAR' | 'EASE' | 'EASE_IN' | 'EASE_OUT' | 'EASE_STRONG';
 
 /** What a clip animates. */
 export type TargetKind = 'OBJECT' | 'SUBJECT' | 'SCENE';
 
-export type ExplodeMode = 'RADIAL' | 'AXIS_X' | 'AXIS_Y' | 'AXIS_Z' | 'CYLINDRICAL' | 'CUSTOM';
+/**
+ * How an EXPLODE separates the parts (core/explode.ts). LINEAR, CYLINDRICAL and SPHERICAL are the three geometries
+ * of N6; RADIAL is a synonym of SPHERICAL (its meaning since it was ported), AXIS_X/Y/Z are LINEAR (separate) along
+ * that axis, CUSTOM (a direction per part) is not built and reads as SPHERICAL.
+ */
+export type ExplodeMode = 'RADIAL' | 'AXIS_X' | 'AXIS_Y' | 'AXIS_Z' | 'CYLINDRICAL' | 'CUSTOM' | 'LINEAR' | 'SPHERICAL';
 
 export interface MoveItem {
   key: MoveKind;
@@ -586,7 +593,12 @@ export type DoctorCheckKey =
   | 'lights'
   | 'caustics'
   | 'persist'
-  | 'output';
+  | 'output'
+  | 'aspect'
+  /** S2: a dynamic part starts below the floor (not ported). */
+  | 'physics'
+  /** S4a: an ambient effect asks for more particles than its cap. */
+  | 'particles';
 
 /** Descriptor only: what the check looks for and what its one-click fix does. */
 export interface DoctorCheck {

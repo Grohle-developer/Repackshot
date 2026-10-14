@@ -7,6 +7,7 @@
 import { LIGHT_ROLES, LIGHT_SHAPES, LIGHT_TYPES } from '../data/light-setups';
 import type { LightSpec, RGB, RGBA, StudioPreset, WearProps, WorldKind } from '../data/types';
 import { WEAR_PROP_DEFAULTS } from '../data/wear';
+import { normaliseAspect } from '../core/aspect';
 import type { CameraState } from '../core/camera';
 import {
   COLLECTION,
@@ -29,6 +30,7 @@ import {
 import { isLibraryKey, type CustomSetup, type LightInstance } from '../core/lighting';
 import { defaultTextures, type MaterialInstance, type MaterialTextures } from '../core/materials';
 import { normalizeTextures } from '../core/textures';
+import { mapGraphImages, normalizeGraph, type MaterialGraph } from '../core/material-graph';
 import type { EnvironmentState, ImageState } from '../core/store';
 
 export { LIBRARY_FORMAT, LIBRARY_SCHEMA };
@@ -220,7 +222,15 @@ function materialPayload(v: unknown, path: string): MaterialPayload {
     wear: wear(o.wear, `${path}.wear`),
     textures: textures(o.textures, `${path}.textures`),
     bevelRadiusMm: o.bevelRadiusMm === undefined ? 0 : num(o.bevelRadiusMm, `${path}.bevelRadiusMm`, 0, 1e6),
+    ...graphOf(o.graph),
   };
+}
+
+/** A material's graph (M3a): read like a project's, without images (a library does not carry them); one that cannot be read is left out. */
+function graphOf(v: unknown): { graph?: MaterialGraph } {
+  if (v === undefined || v === null) return {};
+  const g = normalizeGraph(v);
+  return g ? { graph: mapGraphImages(g, () => null) } : {};
 }
 
 function productTypePayload(v: unknown, path: string): ProductTypePayload {
@@ -338,6 +348,8 @@ function camera(v: unknown, path: string): CameraState {
     clipEnd: num(o.clipEnd, `${path}.clipEnd`, 0, 1e9),
     locked: bool(o.locked, `${path}.locked`),
     lens: o.lens === null ? null : str(o.lens, `${path}.lens`, 64),
+    // U13: a studio saved before the camera carried its ratio has none (16:9, as every camera was).
+    aspect: normaliseAspect(o.aspect),
   };
 }
 

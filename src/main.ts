@@ -19,6 +19,7 @@ import './ui/components.css';
 import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
+import './ui/material-editor.css';
 import './ui/guards.css';
 import './ui/tour.css';
 import { createSyntheticService } from './ai/synthetic';
@@ -29,6 +30,10 @@ import { AI_GUARD_PASSES, pipelineOf } from './core/ai-post';
 import { linearToRgba8, linearToSrgb, rgba8ToLinear } from './core/ai-image';
 import { evaluate, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
+import { PLUGIN_REGISTRY, validEntries, type PluginRegistryEntry } from './data/plugins';
+import { PluginHost, type WorkerLike } from './plugins/host';
+import { PluginsService } from './plugins/service';
+import { openPluginStore } from './plugins/store';
 import { activeCamera, sameView, type CameraState } from './core/camera';
 import { lookThroughAction, lookThroughCamera, sameObject, type ViewObject } from './core/view-objects';
 import { historyLimits, startViewportMode, withProjectDefaults, type Layout, type SettingKey, type Settings, type SettingsDoc } from './core/settings';
@@ -53,10 +58,17 @@ import { loadCameraPictures } from './io/aperture';
 import { onAperturePicture } from './core/aperture';
 import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
+import { msaaSamples } from './core/antialias';
 import { PreviewEngine } from './render/preview';
+import { hasParticleExport } from './render/particles';
+import { engineParticleCap, particleCapFor, setEngineParticleCap } from './core/effects';
+import { PhysicsClient } from './render/physics';
+import { writePhysicsScene } from './io/phys';
+import { bakeLaneCount, GraphWorkers } from './render/graph-client';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightLinear, straightLinearRgba, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
+import { watchReset as watchPhysicsReset } from './ui/physics';
 import { cameraLabel, lightName } from './ui/names';
 import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
 import { startupRuntimeCheck } from './ui/ai-runtime-state';
@@ -64,7 +76,7 @@ import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
 import { startupUpdateCheck, syncInstall } from './ui/updates';
 import { maybeStartTour } from './ui/tour';
-import type { AiPort, AppServices, EngineConfig, ViewportPort } from './ui/ports';
+import type { AiPort, AppServices, EngineConfig, PluginsPort, ViewportPort } from './ui/ports';
 import { aiRuntimeQuery } from './ui/ai-query';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
 import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
@@ -190,8 +202,11 @@ const backdrop = document.createElement('canvas');
 backdrop.setAttribute('aria-hidden', 'true');
 backdrop.style.visibility = 'hidden';
 let preview: PreviewEngine | null = null;
+// M3a: the workers of the material graphs, for the editor's node previews and the Fast preview's bakes.
+const graphWorkers = typeof Worker === 'function' ? new GraphWorkers(() => new Worker(new URL('./render/graph-worker.ts', import.meta.url), { type: 'module' }), bakeLaneCount()) : null;
 try {
   preview = new PreviewEngine();
+  if (graphWorkers) preview.setGraphWorkers(graphWorkers);
   preview.mount(canvas);
 } catch (err) {
   console.error(err);
@@ -214,6 +229,14 @@ const sceneSource: SceneSource = {
 };
 
 let tracer: PathTracerEngine | NativeEngine | null = null;
+const physicsClient = new PhysicsClient(
+  async () => {
+    const loaded = await loadEngineModule(base, { simd: false });
+    if ('error' in loaded) throw new Error('NO_ENGINE');
+    return loaded.module;
+  },
+  () => new Worker(new URL('./render/physics-worker.ts', import.meta.url), { type: 'module' }),
+);
 /** The viewport shows the path tracer now. */
 let full = false;
 /** The viewport's last size (the path tracer may arrive after it). */
@@ -225,7 +248,8 @@ let viewCameraFn: ((state: ProjectStateOf) => CameraState | null) | null = null;
 type ProjectStateOf = ReturnType<typeof store.get>;
 
 const applyMode = () => {
-  const next = tracer !== null && preview !== null && effectiveMode(ui.get()) === 'FULL';
+  // While a simulation runs (S2) the viewport shows it in Fast: the path tracer would start again every frame.
+  const next = tracer !== null && preview !== null && effectiveMode(ui.get()) === 'FULL' && ui.get().physics.state === 'STOPPED';
   if (next === full) return;
   full = next;
   preview?.setOverlayOnly(full);
@@ -241,12 +265,44 @@ let poolCfg: { backend: 'native' | 'wasm'; threads: number; simd: EngineConfig['
 let engineGen = 0;
 let restartTimer = 0;
 const base = new URL(import.meta.env.BASE_URL, window.location.href).href;
+
+// S4a: the Fast preview's particles come from rt.wasm on this thread (the engine's own simulator; the scalar build is
+// enough). Without the module the preview draws the region boxes and the meter says so.
+if (preview) {
+  const p = preview;
+  void loadEngineModule(base, { simd: false }).then(async (loaded) => {
+    if ('error' in loaded) return p.setParticleEngine(null);
+    try {
+      const { exports } = await WebAssembly.instantiate(loaded.module, {});
+      p.setParticleEngine(hasParticleExport(exports) ? exports : null);
+    } catch {
+      p.setParticleEngine(null);
+    }
+  });
+}
+// The particle cap of the engine that renders here (Settings ▸ Render engine ▸ Particles per effect): the Doctor
+// warns about what goes over it and the scene sent to the engine holds at most that many.
+const applyParticleCap = () => {
+  const u = ui.get();
+  const cap = particleCapFor(u.settings['engine.particleCap'], u.engineInfo?.backend === 'native');
+  if (cap === engineParticleCap()) return;
+  setEngineParticleCap(cap);
+  store.dispatch({ type: 'doctor/refresh' });
+  // The scene the engine is sent holds at most that many: the Full viewport builds it again.
+  tracer?.sceneChanged();
+};
+applyParticleCap();
+ui.subscribe((u, prev) => {
+  if (u.settings['engine.particleCap'] !== prev.settings['engine.particleCap'] || u.engineInfo?.backend !== prev.engineInfo?.backend) applyParticleCap();
+});
+
 const cores = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : null;
 
 const useTracer = (t: PathTracerEngine | NativeEngine, cfg: EngineConfig, info: EngineInfo) => {
   t.setGestureResolution(cfg.gestureResolution);
   t.setViewportLimit(cfg.viewportLimit);
   t.setWhileRender(cfg.whileRender);
+  t.setPixelFilter(cfg.pixelFilter);
   t.mount(backdrop);
   t.setViewCamera(viewCameraFn);
   if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
@@ -330,6 +386,9 @@ function configureEngine(cfg: EngineConfig): void {
     ui.set({ engine: 'FAILED' });
     return;
   }
+  // E11: Fast mode's multisampling, at once; what the device draws is said in the settings.
+  preview.setMsaa(msaaSamples(cfg.fastAa));
+  ui.set({ fastAa: preview.msaa() });
   if (first) {
     void startEngine(cfg);
     return;
@@ -337,6 +396,7 @@ function configureEngine(cfg: EngineConfig): void {
   tracer?.setGestureResolution(cfg.gestureResolution);
   tracer?.setViewportLimit(cfg.viewportLimit);
   tracer?.setWhileRender(cfg.whileRender);
+  tracer?.setPixelFilter(cfg.pixelFilter);
   void nativeReady.then((native) => {
     const backend = native && cfg.backend !== 'WASM' ? 'native' : 'wasm';
     // The native engine's threads are the launcher's (--threads): only the backend restarts it.
@@ -418,6 +478,7 @@ const viewport: ViewportPort | null = preview
       // Picking is geometry: the preview's, in both modes.
       pick: (x, y) => preview!.pick(x, y),
       setHover: (ids) => preview!.setHover(ids),
+      setSelectedEffect: (id) => preview!.setSelectedEffect(id),
       setHoverFaces: (spec) => preview!.setHoverFaces(spec),
       projection: () => preview!.projection(),
       visibleTriangles: (part, rect) => preview!.visibleTriangles(part, rect),
@@ -434,6 +495,7 @@ const viewport: ViewportPort | null = preview
         }
       },
       glyphAt: (x, y) => preview!.glyphAt(x, y),
+      setMotionHint: (hint) => preview!.setMotionHint(hint),
       objectAt: (obj) => preview!.objectAt(obj),
       gizmoHover: (x, y) => preview!.gizmoHover(x, y),
       gizmoBegin: (x, y) => {
@@ -598,6 +660,84 @@ const aiPort: AiPort | null = preview
       renderSource: async () => (await aiServiceReady) instanceof DesktopAiService,
     }
   : null;
+
+/**
+ * The plugin registry: the data. Only a build made with `vite build --mode plugin-test` (the browser check of phase
+ * P6, tools/plugins-check.mjs) also reads `?testPlugins=<base64 JSON>`, entries served by a local test server; in
+ * every other build this branch is removed at build time (the mode is a constant), as `?testModels=` is.
+ */
+function pluginRegistry(): PluginRegistryEntry[] {
+  const base = validEntries(PLUGIN_REGISTRY);
+  if (import.meta.env.MODE !== 'plugin-test') return base;
+  const raw = new URLSearchParams(window.location.search).get('testPlugins');
+  if (!raw) return base;
+  try {
+    // base64 of the JSON's UTF-8 bytes (names have "·" and accents).
+    const text = new TextDecoder().decode(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
+    const extra = validEntries({ schema: 1, plugins: JSON.parse(text) as PluginRegistryEntry[] });
+    return [...base.filter((e) => !extra.some((x) => x.id === e.id)), ...extra];
+  } catch {
+    return base;
+  }
+}
+
+/** A picture file as 8-bit straight RGBA, as it was written (no colour management, no premultiplication). */
+async function decodeRgba(blob: Blob): Promise<{ width: number; height: number; rgba: Uint8ClampedArray }> {
+  const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const g = canvas.getContext('2d', { willReadFrequently: true })!;
+  g.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return { width: canvas.width, height: canvas.height, rgba: g.getImageData(0, 0, canvas.width, canvas.height).data };
+}
+
+// Plugins (P6, src/plugins/): the host with its store (IndexedDB, in the browser and in the desktop's WebView2 alike),
+// the module workers it starts from the packages' code, and the decoders a run over a result needs.
+const pluginEntries = pluginRegistry();
+const pluginStore = openPluginStore();
+const pluginHost = new PluginHost({
+  store: pluginStore,
+  registry: pluginEntries,
+  fetch: (url, init) => fetch(url, init),
+  spawn: (url) => new Worker(url, { type: 'module', name: 'plugin' }) as unknown as WorkerLike,
+  createObjectURL: (b) => URL.createObjectURL(b),
+  revokeObjectURL: (u) => URL.revokeObjectURL(u),
+  now: () => Date.now(),
+});
+const pluginsService = new PluginsService({
+  host: pluginHost,
+  registry: pluginEntries,
+  result: async (id) => (await resultsReady).get(id),
+  decode: decodeRgba,
+  decodeExr: async (bytes) => (await import('./io/hdri')).decodeExr(bytes),
+  encodePng: (img) => encodePixels({ width: img.width, height: img.height, data: img.rgba }, 'PNG'),
+  store: pluginStore,
+  now: () => performance.now(),
+});
+pluginHost.subscribe((snap) => ui.set({ plugins: snap }));
+ui.set({ plugins: pluginHost.snapshot() });
+void pluginHost.start().catch((err: unknown) => console.warn(`plugins: ${err instanceof Error ? err.message : String(err)}`));
+window.addEventListener('pagehide', () => pluginHost.dispose());
+const pluginsPort: PluginsPort = {
+  registry: pluginsService.registry,
+  snapshot: () => pluginsService.snapshot(),
+  subscribe: (fn) => pluginsService.subscribe(fn),
+  install: (id) => pluginsService.install(id),
+  provideKey: (id, key) => pluginsService.provideKey(id, key),
+  cancelInstall: (id) => pluginsService.cancelInstall(id),
+  installFile: (file, key) => pluginsService.installFile(file, key),
+  remove: (id) => pluginsService.remove(id),
+  text: (id, file) => pluginsService.text(id, file),
+  presets: (id) => pluginsService.presets(id),
+  stop: (id) => pluginsService.stop(id),
+  run: (req, signal) => pluginsService.run(req, signal),
+  hasBase: (id) => pluginsService.hasBase(id),
+  runImage: (req, signal) => pluginsService.runImage(req, signal),
+  thumbnails: (id, onThumb, signal) => pluginsService.thumbnails(id, onThumb, signal),
+  encode: (img, format, dpi) => encodePixels({ width: img.width, height: img.height, data: img.rgba }, format, 0.92, { dpi }),
+};
 
 const LAST_PROJECT_HANDLE = 'project:last';
 const services: AppServices = {
@@ -800,9 +940,19 @@ const services: AppServices = {
       return loadBackplate(file.name, new Uint8Array(await file.arrayBuffer()));
     },
   },
+  plugins: pluginsPort,
+  // The rigid body simulator (S2): rt-phys in a worker of its own, with the scalar rt.wasm (started on the first
+  // simulation). In the desktop window too: the page serves the same module.
+  physics: typeof Worker === 'undefined' ? null : {
+    run(spec, options, onUpdate) {
+      return physicsClient.run(writePhysicsScene(spec), spec.bodies.length, options, onUpdate);
+    },
+  },
+  graphPreview: graphWorkers ? { previews: (program, channel) => graphWorkers.previews(program, channel) } : null,
 };
 
 const app = mountApp(appEl, store, ui, services);
+watchPhysicsReset(app.ctx);
 void loadResults(app.ctx);
 
 // The desktop launcher's window (P2): its folders, its model store and, in a portable folder's first start, the
@@ -953,7 +1103,11 @@ if (preview) {
         if (total <= 0) store.dispatch({ type: 'anim/play', playing: false });
         else {
           const t = s.animation.playhead + dt;
-          store.dispatch({ type: 'anim/playhead', t: t > total ? t - total : t });
+          // N6: the timeline's Loop; off, playing stops at the end.
+          if (t > total && !ui.get().animLoop) {
+            store.dispatch({ type: 'anim/playhead', t: total });
+            store.dispatch({ type: 'anim/play', playing: false });
+          } else store.dispatch({ type: 'anim/playhead', t: t > total ? t - total : t });
         }
       }
     });
