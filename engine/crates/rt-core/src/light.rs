@@ -69,7 +69,7 @@ fn positive(x: f32) -> bool {
 
 /// Shape of an area light in its own frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum AreaShape {
+pub(crate) enum AreaShape {
     /// Half extents along the frame's x and y axes.
     Rect { half_x: f32, half_y: f32 },
     /// Radius in the frame's xy plane.
@@ -78,18 +78,18 @@ enum AreaShape {
 
 /// A rect or disk light.
 #[derive(Clone, Debug, PartialEq)]
-struct AreaLight {
-    shape: AreaShape,
-    centre: Vec3,
+pub(crate) struct AreaLight {
+    pub(crate) shape: AreaShape,
+    pub(crate) centre: Vec3,
     /// `z` is the emission normal, `x` and `y` the rectangle's axes.
-    frame: Frame,
+    pub(crate) frame: Frame,
     /// Area in scene units (mm²).
-    area: f32,
+    pub(crate) area: f32,
     /// Radiance along the normal.
-    radiance: Rgb,
+    pub(crate) radiance: Rgb,
     /// Spread falloff exponent (0: Lambertian).
-    exponent: f32,
-    glossy: bool,
+    pub(crate) exponent: f32,
+    pub(crate) glossy: bool,
     camera: bool,
     shadow: bool,
     /// Probability of being chosen for next-event estimation.
@@ -122,7 +122,7 @@ fn light_frame(normal: Vec3, up: Vec3) -> Frame {
 impl AreaLight {
     /// Radiance leaving at angle `cos` from the normal.
     #[inline]
-    fn radiance_at(&self, cos: f32) -> Rgb {
+    pub(crate) fn radiance_at(&self, cos: f32) -> Rgb {
         if self.exponent == 0.0 {
             self.radiance
         } else {
@@ -130,7 +130,7 @@ impl AreaLight {
         }
     }
 
-    fn sample_point(&self, u: (f32, f32)) -> Vec3 {
+    pub(crate) fn sample_point(&self, u: (f32, f32)) -> Vec3 {
         let (x, y) = match self.shape {
             AreaShape::Rect { half_x, half_y } => {
                 ((2.0 * u.0 - 1.0) * half_x, (2.0 * u.1 - 1.0) * half_y)
@@ -166,16 +166,16 @@ impl AreaLight {
 
 /// A sun.
 #[derive(Clone, Debug, PartialEq)]
-struct SunLight {
+pub(crate) struct SunLight {
     /// `z` points at the sun.
-    frame: Frame,
+    pub(crate) frame: Frame,
     cos_max: f32,
-    one_minus_cos_max: f32,
-    solid_angle: f32,
+    pub(crate) one_minus_cos_max: f32,
+    pub(crate) solid_angle: f32,
     /// Radiance of the disc; for a delta sun, the irradiance.
-    radiance: Rgb,
-    delta: bool,
-    glossy: bool,
+    pub(crate) radiance: Rgb,
+    pub(crate) delta: bool,
+    pub(crate) glossy: bool,
     camera: bool,
     shadow: bool,
     pmf: f32,
@@ -271,17 +271,17 @@ impl SphereLight {
 
 /// An emissive instance sampled as an area light.
 #[derive(Clone, Debug, PartialEq)]
-struct MeshEmitter {
+pub(crate) struct MeshEmitter {
     /// World-space corners of each triangle.
-    corners: Vec<[Vec3; 3]>,
+    pub(crate) corners: Vec<[Vec3; 3]>,
     /// Unit normal of each triangle (winding order: the front face).
-    normals: Vec<Vec3>,
+    pub(crate) normals: Vec<Vec3>,
     /// Cumulative area fractions.
-    cdf: Vec<f32>,
+    pub(crate) cdf: Vec<f32>,
     /// Total area (mm²).
-    area: f32,
-    radiance: Rgb,
-    two_sided: bool,
+    pub(crate) area: f32,
+    pub(crate) radiance: Rgb,
+    pub(crate) two_sided: bool,
     pmf: f32,
 }
 
@@ -312,6 +312,9 @@ pub struct LightSample {
     /// The light lights every lobe and BSDF sampling can find it (MIS applies); otherwise it
     /// lights the diffuse lobe only and its weight is one.
     pub glossy: bool,
+    /// The light also sends caustic photons ([`crate::caustics`]): a glossy area light or sun,
+    /// or an emissive mesh; not the environment, nor a point light or a spot (L4).
+    pub photon: bool,
     /// The light casts shadows: a shadow ray decides whether the sample arrives. Without it
     /// (`LIGHT_FLAG_NO_SHADOW`, L4) it always does.
     pub shadow: bool,
@@ -320,10 +323,10 @@ pub struct LightSample {
 /// Every light of a scene, ready for sampling.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lights {
-    areas: Vec<AreaLight>,
-    suns: Vec<SunLight>,
+    pub(crate) areas: Vec<AreaLight>,
+    pub(crate) suns: Vec<SunLight>,
     spheres: Vec<SphereLight>,
-    meshes: Vec<MeshEmitter>,
+    pub(crate) meshes: Vec<MeshEmitter>,
     env: EnvLight,
     env_pmf: f32,
     entries: Vec<LightRef>,
@@ -334,7 +337,7 @@ pub struct Lights {
 }
 
 /// Index of the bucket of a CDF that holds `u`, and `u` rescaled to `[0, 1)` inside it.
-fn pick(cdf: &[f32], u: f32) -> (usize, f32) {
+pub(crate) fn pick(cdf: &[f32], u: f32) -> (usize, f32) {
     let i = cdf
         .partition_point(|&c| c <= u)
         .min(cdf.len().saturating_sub(1));
@@ -350,7 +353,7 @@ fn pick(cdf: &[f32], u: f32) -> (usize, f32) {
 
 /// Cumulative, normalised version of `weights` (the last entry exactly 1), or empty when they
 /// sum to zero.
-fn build_cdf(weights: &[f32]) -> Vec<f32> {
+pub(crate) fn build_cdf(weights: &[f32]) -> Vec<f32> {
     let total: f32 = weights.iter().sum();
     if !(total > 0.0 && total.is_finite()) {
         return Vec::new();
@@ -658,6 +661,7 @@ impl Lights {
                     pdf: light.pmf * dist2 / (light.area * cos),
                     delta: false,
                     glossy: light.glossy,
+                    photon: light.glossy,
                     shadow: light.shadow,
                 }
             }
@@ -671,6 +675,7 @@ impl Lights {
                         pdf: sun.pmf,
                         delta: true,
                         glossy: sun.glossy,
+                        photon: sun.glossy,
                         shadow: sun.shadow,
                     }
                 } else {
@@ -682,6 +687,7 @@ impl Lights {
                         pdf: sun.pmf / sun.solid_angle,
                         delta: false,
                         glossy: sun.glossy,
+                        photon: sun.glossy,
                         shadow: sun.shadow,
                     }
                 }
@@ -710,6 +716,7 @@ impl Lights {
                         pdf: light.pmf,
                         delta: true,
                         glossy: light.glossy,
+                        photon: false,
                         shadow: light.shadow,
                     }
                 } else {
@@ -726,6 +733,7 @@ impl Lights {
                         pdf: light.pmf / (fmath::TAU * omc),
                         delta: false,
                         glossy: light.glossy,
+                        photon: false,
                         shadow: light.shadow,
                     }
                 }
@@ -755,6 +763,7 @@ impl Lights {
                     pdf: emitter.pmf * dist2 / (emitter.area * cos),
                     delta: false,
                     glossy: true,
+                    photon: true,
                     shadow: true,
                 }
             }
@@ -767,6 +776,7 @@ impl Lights {
                     pdf: self.env_pmf * pdf,
                     delta: false,
                     glossy: true,
+                    photon: false,
                     shadow: true,
                 }
             }
@@ -787,6 +797,25 @@ impl Lights {
     /// vertex `offset` earlier (it went through thin walls or cut-outs): the MIS weights use the
     /// distance from that vertex, as next-event estimation there did.
     pub fn crossed_from(&self, ray: &Ray, t_max: f32, bsdf_pdf: Option<f32>, offset: f32) -> Rgb {
+        // The spheres add to the areas' sum in the same order as ever (the same bits).
+        let areas = self.crossed_areas(ray, t_max, bsdf_pdf, offset);
+        self.crossed_spheres(areas, ray, t_max, bsdf_pdf, offset)
+    }
+
+    /// [`Lights::crossed_from`] of the lights that send no caustic photons only (the spheres of
+    /// point lights and spots): what a path adds where the photon map brings the rest
+    /// ([`crate::caustics`]). Every area light a BSDF-sampled ray can see sends photons.
+    pub(crate) fn crossed_without_photons(
+        &self,
+        ray: &Ray,
+        t_max: f32,
+        bsdf_pdf: Option<f32>,
+        offset: f32,
+    ) -> Rgb {
+        self.crossed_spheres(Rgb::BLACK, ray, t_max, bsdf_pdf, offset)
+    }
+
+    fn crossed_areas(&self, ray: &Ray, t_max: f32, bsdf_pdf: Option<f32>, offset: f32) -> Rgb {
         let mut sum = Rgb::BLACK;
         for light in &self.areas {
             let visible = match bsdf_pdf {
@@ -809,6 +838,18 @@ impl Lights {
             };
             sum += light.radiance_at(cos) * weight;
         }
+        sum
+    }
+
+    /// `sum` plus the light of the spheres `ray` crosses.
+    fn crossed_spheres(
+        &self,
+        mut sum: Rgb,
+        ray: &Ray,
+        t_max: f32,
+        bsdf_pdf: Option<f32>,
+        offset: f32,
+    ) -> Rgb {
         for light in &self.spheres {
             let visible = match bsdf_pdf {
                 None => light.camera,
@@ -885,6 +926,23 @@ impl Lights {
             }
         }
         sum
+    }
+
+    /// [`Lights::escaped`] without the suns (they send caustic photons): what a BSDF-sampled ray
+    /// whose light the photon map brings instead sees of the sky ([`crate::caustics`]).
+    pub fn escaped_environment(&self, dir: Vec3, bsdf_pdf: f32) -> Rgb {
+        let env = self.env.radiance(dir);
+        if self.env_pmf > 0.0 {
+            env * power_heuristic(bsdf_pdf, self.env_pmf * self.env.pdf(dir))
+        } else {
+            env
+        }
+    }
+
+    /// True when instance `instance` is an emissive mesh sampled as a light (it sends caustic
+    /// photons).
+    pub fn is_mesh_light(&self, instance: u32) -> bool {
+        matches!(self.instance_emitter.get(instance as usize), Some(Some(_)))
     }
 
     /// For a BSDF-sampled ray that hit instance `instance` at distance `t` (unit direction) with

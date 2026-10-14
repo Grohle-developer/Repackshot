@@ -277,6 +277,35 @@ pub fn run(
             seconds: out.elapsed.as_secs_f64(),
         });
     }
+    // E5b-1: caustics without and with photons, and the denoiser at few samples.
+    for e in crate::scenes::e5b_scenes(size) {
+        let spp = if e.low_samples {
+            4
+        } else {
+            samples.saturating_mul(e.sample_factor.max(1))
+        };
+        let out = render_progressive(&e.scene, spp, threads, None);
+        let rgb8 = match (e.denoise, out.denoised(threads)) {
+            (true, Some(clean)) => clean.to_srgb8_tonemapped(
+                e.scene.render.exposure_ev,
+                rt_core::color::Tonemap::from_u32(e.scene.render.tonemap),
+            ),
+            _ => out.to_rgb8(&e.scene),
+        };
+        let file = format!("{}.png", e.key);
+        let path = dir.join(&file);
+        crate::write_png(&path, size.0, size.1, &rgb8)
+            .map_err(|err| format!("{}: {err}", path.display()))?;
+        entries.push(SheetEntry {
+            key: e.key,
+            label: e.label,
+            file,
+            stats: image_stats(&rgb8),
+            samples: out.samples,
+            rays: out.rays,
+            seconds: out.elapsed.as_secs_f64(),
+        });
+    }
     let html_path = dir.join("index.html");
     std::fs::write(&html_path, html(&entries, size))
         .map_err(|e| format!("{}: {e}", html_path.display()))?;

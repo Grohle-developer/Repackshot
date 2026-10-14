@@ -33,13 +33,13 @@ export async function loadRt(path = RT_WASM): Promise<Rt> {
 }
 
 /** Renders `samples` samples of an RSB and the passes of `mask`, as the pool does; frees the scene. */
-export function renderWithPasses(rt: Rt, rsb: Uint8Array, width: number, height: number, samples: number, mask: number): { image: Accumulator; passes: RenderPasses } {
+export function renderWithPasses(rt: Rt, rsb: Uint8Array, width: number, height: number, samples: number, mask: number, opts: { lum2?: boolean } = {}): { image: Accumulator; passes: RenderPasses } {
   const ptr = rt.rt_alloc(rsb.length);
   new Uint8Array(rt.memory.buffer, ptr, rsb.length).set(rsb);
   const handle = rt.rt_scene_load(ptr, rsb.length);
   rt.rt_free(ptr, rsb.length);
   if (handle === 0) throw new Error('rt_scene_load failed');
-  const image = new Accumulator(width, height, tileGrid(width, height));
+  const image = new Accumulator(width, height, tileGrid(width, height), { lum2: opts.lum2 });
   const passes = new PassAccumulator(width, height, mask, image.tiles);
   const scratch = new Scratch(rt);
   const out = rt.rt_alloc(32 * 32 * 4 * 4);

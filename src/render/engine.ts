@@ -53,6 +53,10 @@ export interface EngineStatus {
   threads?: number;
   /** Native engine: its SIMD path (`avx2`, `sse2`, `neon`, `scalar`). */
   isa?: string;
+  /** Path tracer (E5b-1): the image on screen is the engine's denoised one. */
+  denoised?: boolean;
+  /** Path tracer (E5b-1): the view renders caustics with this many photons per sample (absent: none). */
+  caustics?: number;
 }
 
 export interface RenderOptions {

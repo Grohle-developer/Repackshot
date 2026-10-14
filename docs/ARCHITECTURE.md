@@ -344,9 +344,9 @@ Vive en `engine/`, un workspace de Cargo con siete *crates*:
 | --- | --- | --- |
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_version`…). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
-| `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
+| `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
 | `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
@@ -451,7 +451,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   mallas.
 - **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
   lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
-- **`RNDR`** (40 B desde X2; los de 28 y 36 B se leen con los valores
+- **`RNDR`** (52 B desde E5b-1; los de 28, 36 y 40 B se leen con los valores
   por defecto de lo que les falta): además `max_depth` (0 = 8, tope 1024),
   `clamp_indirect` (0 = desactivado) y, desde X2, `passes`: la **máscara
   de pases** exactos que se escriben junto a la imagen, bit *i* =
@@ -460,7 +460,13 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   confusión). 0, o un RSB anterior a X2, no pide ninguno; los bits que el
   motor no conoce se conservan y se ignoran. `tonemap`: 0 lineal, 1 ACES,
   2 fílmica, 3 AgX, 4 estándar; desconocido = ACES. Exposición 2^ev antes
-  de la curva.
+  de la curva. Desde E5b-1, al final: `denoise` (u32; bit 0, el anfitrión
+  entrega la imagen con *denoise*; bit 1, también la de antes; `rt-core` no
+  lo lee: renderizar es igual con o sin él), `caustic_photons` (u32,
+  fotones de cáusticas por muestra; 0 = sin cáusticas; tope 4 194 304) y
+  `caustic_radius` (f32, radio de reunión de la primera muestra en píxeles
+  a la distancia del objetivo de la cámara; 0 = 3). Un RSB anterior no pide
+  ni *denoise* ni cáusticas.
 - El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
@@ -509,6 +515,102 @@ lanzador con 1 y 4 hilos. El círculo de confusión es el de
 y coincide, dentro de 1 %, con el desenfoque medido de la propia lente
 de `Camera::generate_ray`.
 
+### 5.2 bis · Película, *denoise* y cáusticas (E5b-1)
+
+**Película.** `Film` acumula, además de la radiancia premultiplicada, el
+peso y la cobertura, la **suma de los cuadrados de la luminancia** de cada
+muestra (`Film::lum2`, `f32`, en orden de muestra). No toca `rgb`, `weight`
+ni `alpha`: ningún *hash* de imagen se mueve. Con la media da la varianza de
+cada píxel, `(E[l²] − E[l]²) / (n − 1)` de la media de `n` muestras. El pool
+la suma igual en TypeScript (`Accumulator.lum2`, `render/tiles.ts`:
+luminancia Rec. 709 en `f32` en el mismo orden, `l²` redondeado y sumado),
+y el lanzador la lee de sus películas por baldosa.
+
+***Denoise* propio** (`rt_post::denoise`, `crates/rt-post/src/denoise.rs`).
+Transformada à-trous con paradas en aristas (Dammertz, Sewtz, Hanika y
+Lensch, HPG 2010: núcleo B3 `(1, 4, 6, 4, 1)/16`, cinco pasadas con los
+saltos 1, 2, 4, 8 y 16) con la parada de luminancia guiada por la varianza
+de SVGF (Schied et al., HPG 2017: `exp(−|l_p − l_q| / (σ_l √g(Var_p)))`
+con la varianza filtrada por una gaussiana 3 × 3 y arrastrada de pasada en
+pasada como `Σ w² Var / (Σ w)²`, normal `max(0, n_p·n_q)^128`, profundidad
+`exp(−|z_p − z_q| / (σ_z |∇z·Δ|))`, σ_l = 4, σ_z = 1; el albedo se divide
+antes y se multiplica después, y con menos de cuatro muestras la varianza
+se estima con los vecinos 7 × 7). Guiado por los pases exactos de X2
+(`GUIDE_PASSES`: albedo, normal, profundidad, id de pieza, id de material),
+con **peso cero entre piezas o materiales distintos** (nunca mezcla dos
+piezas) y el fondo (id 0) intacto. Lo nuestro: la varianza de la película,
+los pases exactos como guías, las paradas por id, un recorte de
+luciérnagas antes de filtrar (un píxel más de cuatro veces más claro que
+todos sus vecinos de la misma superficie baja a ese límite) y las
+exponenciales de las paradas como `(1 − x/16)^16`. Todo `f32`, sin
+transcendentes de `std`, en orden fijo: los mismos bits en nativo y en
+wasm. Lee sumas RGBA de `n` muestras y devuelve sumas RGBA (la cobertura
+como estaba). **Por bandas de filas**: `denoise_rows` calcula unas filas
+con `HALO` = 72 filas alrededor (el alcance de todo el filtro) y da
+exactamente esas filas de la imagen entera, así que los anfitriones lo
+reparten entre hilos o *workers* sin cambiar un bit (bandas de 192 filas
+como mínimo). *Hash* fijado: el ejemplo a 4 muestras con *denoise*,
+`0xab15f290` (`PINNED_DENOISED_EXAMPLE_4SPP`), igual con el `rt.wasm` real
+(`tools/wasm-parity.mjs --expect-denoised`) y por el código de la página
+(`tests/denoise.test.ts`).
+
+**Cáusticas** (`rt_core::caustics`). Mapa de fotones progresivo estocástico
+(Hachisuka y Jensen, SIGGRAPH Asia 2009, tras Hachisuka, Ogaki y Jensen
+2008) en la forma probabilística de Knaus y Zwicker (ACM TOG 30(3), 2011):
+cada índice de muestra es una pasada con sus fotones y sus puntos visibles,
+y su estimación es un mapa de fotones con el radio
+`r_i² = r_1² Π_{k=1..i} (k + α)/(k + 1)`, α = 2/3 (r_1 = `caustic_radius`
+píxeles en la distancia del objetivo). Promediar las pasadas, que es lo que
+hace la película con sus muestras, converge como SPPM sin estado por píxel:
+una baldosa sigue pudiéndose renderizar en cualquier hilo y orden con los
+mismos bits. **Partición sin contar dos veces**: un *caster* es vidrio o
+metal cuya dirección más aguda tiene rugosidad ≤ 0,25 (el cepillado cuenta
+a lo largo de su cepillo); lo demás que dispersa es receptor (el suelo
+incluido); un suceso recto (recorte, transmisión recta de pared fina) no
+cuenta. El mapa lleva exactamente la luz de los tramos `L C+ R`: fotones
+de las luces que los mandan (paneles y discos *glossy*, soles *glossy*,
+mallas emisoras; nunca el entorno ni los puntos y focos de L4, cuyas
+cáusticas siguen en el trazador), solo por *casters*, guardados en el
+primer receptor que tocan; la cámara los reúne, con su BSDF, en **cada**
+receptor de su camino: el primero (la cáustica vista directamente o a
+través del vidrio) y los siguientes (una cáustica que ilumina la escena
+por un rebote difuso, con el recorte de la luz indirecta). El trazador
+deja fuera exactamente esa luz: después de cualquier receptor, lo que
+llega de una luz de fotones solo por *casters* (impacto por muestreo de
+BSDF o NEE en un *caster*). Dejada al trazador, la cáustica vista por un
+rebote difuso llegaba en muestras raras y muy brillantes: eran los
+destellos alrededor de la base del frasco a 1024 muestras. La
+profundidad máxima vale para los dos. Emisión dirigida a las esferas
+envolventes de los *casters* (hasta 16) con la densidad de la mezcla
+entera; refracción con flujo (sin el 1/η² de la radiancia) y corrección
+adjunta de normales de sombreado (Veach 1997); PCG por (semilla, muestra,
+fotón), así que un mapa da los mismos bits trazado en cualquier reparto
+(`PhotonMap::trace_range`). Rejilla *hash* de celda 2r, núcleo
+`2(1 − d²/r²)/(π r²)`. **Atrapasombras** (el suelo de la interfaz): los
+fotones caen también en su plano y el rayo de cámara que lo ve suma su luz,
+relativa a la del suelo abierto, al fondo que muestra; con fondo
+transparente no se muestran. Coste: `caustic_photons` fotones por muestra,
+trazados por cada anfitrión antes de las baldosas de esa muestra (en wasm,
+cada *worker* guarda los 16 mapas de la última pasada). *Hash* fijado: la
+escena de E5 con 2048 fotones por muestra, `0x55d60f2f`
+(`PINNED_E5B_CAUSTICS_4SPP`, `rt --write-e5b-example`), igual en todas las
+rutas SIMD, en el `rt.wasm` real, por el lanzador con 1, 4 y 16 hilos y por
+el código de la página.
+
+**Interfaz.** `core/caustics.ts`: *Cáusticas* (*Automático · Encendidas ·
+Apagadas*, en la sección de calidad de la ventana de render; *Automático*
+las enciende con un *caster* y una luz *glossy* que, vista desde los
+*casters*, no pase de 20°, un sol o un emisor encendido; lo decide
+`projectScene` desde la escena), *Calidad de cáusticas* (*Baja* 4096 fotones
+y 4 px, *Media* 16 384 y 3 px, *Alta* 65 536 y 2 px) y *Denoise* (*Apagado ·
+Visor · Render · Los dos*, por defecto *Los dos*) con *Guardar también sin
+denoise*; viven en `render.advanced` (deshacibles, guardados en el
+proyecto, copiados en cada trabajo) y llegan al motor como los campos de
+`RNDR` de arriba (`engineFieldsOf`). El medidor dice lo que el motor dice:
+*Ruido reducido* cuando la imagen en pantalla es la filtrada y *Cáusticas ·
+N fotones por muestra* cuando el motor las renderiza (`rt_scene_caustics`
+en el pool, `FLAG_CAUSTICS` en el lanzador).
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -533,6 +635,19 @@ en el trabajo que empieza en la muestra 0, sus planos exactos
 (`rt_render_tile_passes`), y el hilo principal los junta con
 `PassAccumulator` (`src/render/pass-planes.ts`) igual que la imagen: el
 resultado es el del motor nativo bit a bit y vuelve como `RenderPasses`.
+
+**Denoise y cáusticas en el pool** (E5b-1). Cada *worker* traza los mapas
+de fotones de las muestras que renderiza (los mismos bits que cualquier
+otro: no viajan) y dice en su respuesta a `scene` cuántos fotones por
+muestra renderiza esa escena. Con *denoise*, los trabajos piden los pases
+guía y el hilo principal suma `lum2`; al acabar una pasada el pool reparte
+el filtro en bandas de filas entre los *workers* del carril
+(`Pool.denoise`, mensaje `denoise`, `rt_denoise`); el visor muestra la
+imagen filtrada en cuanto vuelve (tras la primera pasada, tras la última y
+tras cualquier otra cuando ha pasado tres veces lo que tardó la anterior;
+mientras, la última filtrada) y el medidor cuenta sus muestras. A media y
+cuarta resolución (gestos) no se filtra. Un *Render* filtra al final con
+todos sus *workers* y, si se pide, devuelve también la imagen de antes.
 
 **Mientras corre un *Render*, el visor sigue vivo** (P3a): se queda con la
 cuarta parte de los workers (al menos uno; en un pool de uno, espera) y el
@@ -626,6 +741,19 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    cancelación, así que *Pausar* y *Detener* responden al momento aunque
    el lanzador no conteste. El contrato completo, en
    `engine/crates/rt-app/README.md`.
+
+   ***Denoise* y cáusticas** (E5b-1): con `RNDR.denoise` el trabajo
+   renderiza también los pases guía y filtra con `rt_post::denoise` en
+   bandas de filas en sus hilos (los mismos bits con cualquier número). Un
+   visor publica la imagen filtrada (bandera 64 de la trama) tras su primera
+   pasada, la última y cualquier otra cuando han pasado tres veces lo que
+   tardó el filtro anterior (entre medias, la última filtrada a las muestras
+   de ahora); un final publica al terminar una trama más, la última, con la
+   imagen filtrada y, con el bit 1, detrás la de antes (bandera 128: el
+   cuerpo lleva dos veces las sumas). La imagen que se guarda para la IA es
+   la filtrada. Con `RNDR.caustic_photons` cada pasada traza antes de sus
+   baldosas los mapas de fotones de sus muestras en todos sus hilos (por
+   rangos de fotones, juntados en orden) y la trama lleva la bandera 256.
 
    **Pases** (X2): un trabajo final con `passes=albedo,normal,…` (y los
    de `RNDR.passes`) los renderiza junto a la imagen con los hilos que

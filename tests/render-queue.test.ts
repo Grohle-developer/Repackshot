@@ -121,6 +121,20 @@ describe('Render and + Add to queue', () => {
     expect(ctx.store.history().undo).toEqual(['Add to queue', 'render/set', 'Add to queue', 'Add to queue', 'meta/rename']);
   });
 
+  it('saves the image before denoise next to the render when the engine hands it back (E5b-1)', async () => {
+    const f = makeCtx();
+    const { ctx } = f;
+    const plain = ctx.services.renderFrame;
+    ctx.services.renderFrame = async (req) => ({ ...(await plain(req)), denoised: true, noisyFile: new Blob([new Uint8Array(3)]) });
+    ctx.store.dispatch({ type: 'render/set', patch: { advanced: { ...ctx.store.get().render.advanced, saveNoisy: true } } });
+    await cmd.renderFromWindow(ctx);
+    await queueSettled(ctx);
+    expect(f.requests[0].advanced).toMatchObject({ denoise: 'BOTH', saveNoisy: true });
+    expect(f.saved).toEqual(['Bottle_Camera 1_0001.png', 'Bottle_Camera 1_0001-noisy.png']);
+    // The history keeps the render (the denoised image) only.
+    expect(ctx.ui.get().results.map((r) => r.name)).toEqual(['Bottle_Camera 1_0001.png']);
+  });
+
   it('Start queue renders every waiting job in order', async () => {
     const f = makeCtx();
     const { ctx } = f;

@@ -1,7 +1,7 @@
 //! Command line parsing and the `rt` command itself.
 
 use crate::{render_progressive, sheet, write_png};
-use rt_core::scene::{RenderSettings, Scene};
+use rt_core::scene::{RenderSettings, Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -11,11 +11,13 @@ rt: Repackshot command line renderer
 
 USAGE:
     rt <scene.rsb> -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
+       [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
+    rt --write-e5b-example <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
@@ -26,6 +28,13 @@ OPTIONS:
         --size <WxH>        image size in pixels, overriding the scene (sheet: 480x360)
         --max-seconds <S>   time budget, overriding the scene's RNDR.max_seconds; rendering
                             stops between sample passes once it is spent (0: no limit)
+        --denoise           write the denoised image (RNDR.denoise bit 0), guided by the
+                            albedo, normal, depth and id passes rendered with it
+        --keep-noisy        with --denoise, also write the image without denoise next to it
+                            (<out>-noisy.png)
+        --caustics <N>      trace N caustic photons per sample (RNDR.caustic_photons; 0: off)
+        --caustic-radius <R>
+                            first gather radius of the caustics in pixels (default 3)
         --example           render the built-in example scene instead of a file
         --sheet <dir>       render the example part under six built-in light recipes, the
                             E5 scenes (glass, coat, emitter, sky, HDRI) and the E5c skies
@@ -38,6 +47,9 @@ OPTIONS:
         --write-e5c-example <f>
                             write the E5c parity scene (the E5 scene under the physical sky,
                             low sun) as an RSB file
+        --write-e5b-example <f>
+                            write the E5b-1 parity scene (the E5 scene with caustic photons)
+                            as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -65,6 +77,14 @@ pub struct Options {
     pub size: Option<(u32, u32)>,
     /// Time budget in seconds (0: none), overriding the scene's.
     pub max_seconds: Option<f32>,
+    /// `--denoise`: hand out the denoised image.
+    pub denoise: bool,
+    /// `--keep-noisy`: also the image without denoise.
+    pub keep_noisy: bool,
+    /// Caustic photons per sample, overriding the scene's.
+    pub caustics: Option<u32>,
+    /// First caustic gather radius in pixels, overriding the scene's.
+    pub caustic_radius: Option<f32>,
 }
 
 impl Options {
@@ -73,6 +93,18 @@ impl Options {
         if let Some((width, height)) = self.size {
             scene.render.width = width;
             scene.render.height = height;
+        }
+        if self.denoise {
+            scene.render.denoise |= DENOISE_IMAGE;
+        }
+        if self.keep_noisy {
+            scene.render.denoise |= DENOISE_KEEP_NOISY;
+        }
+        if let Some(photons) = self.caustics {
+            scene.render.caustic_photons = photons;
+        }
+        if let Some(radius) = self.caustic_radius {
+            scene.render.caustic_radius = radius;
         }
         let samples = self.samples.unwrap_or(if scene.render.max_samples > 0 {
             scene.render.max_samples
@@ -128,6 +160,11 @@ pub enum Command {
     },
     /// Write the E5c parity scene (`rt_core::example::e5c_scene`) as an RSB file.
     WriteE5cExample {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the E5b-1 parity scene (`rt_core::example::e5b_scene`) as an RSB file.
+    WriteE5bExample {
         /// RSB file to write.
         path: PathBuf,
     },
@@ -191,6 +228,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_hdri = None;
     let mut write_e5 = None;
     let mut write_e5c = None;
+    let mut write_e5b = None;
     let mut sheet_dir = None;
     let mut tone_table = false;
     let mut options = Options::default();
@@ -204,6 +242,25 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--threads" => options.threads = Some(positive(value(&mut it, arg)?, arg)? as usize),
             "--size" => options.size = Some(parse_size(value(&mut it, arg)?)?),
             "--max-seconds" => options.max_seconds = Some(seconds(value(&mut it, arg)?, arg)?),
+            "--denoise" => options.denoise = true,
+            "--keep-noisy" => options.keep_noisy = true,
+            "--caustics" => {
+                let text = value(&mut it, arg)?;
+                match text.parse::<u32>() {
+                    Ok(n) if n <= RenderSettings::MAX_CAUSTIC_PHOTONS => options.caustics = Some(n),
+                    _ => {
+                        return Err(format!(
+                            "--caustics expects a number of photons up to {}, got '{text}'",
+                            RenderSettings::MAX_CAUSTIC_PHOTONS
+                        ))
+                    }
+                }
+            }
+            "--caustic-radius" => {
+                options.caustic_radius = Some(seconds(value(&mut it, arg)?, arg).map_err(|_| {
+                    "--caustic-radius expects a non-negative number of pixels".to_string()
+                })?)
+            }
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--example" => {
                 if input.replace(Input::Example).is_some() {
@@ -214,6 +271,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-studio-hdri" => write_hdri = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5-example" => write_e5 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5c-example" => write_e5c = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-e5b-example" => write_e5b = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -244,6 +302,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         }
         return Ok(Command::WriteE5cExample { path });
     }
+    if let Some(path) = write_e5b {
+        if args.len() != 2 {
+            return Err("--write-e5b-example takes no other option".into());
+        }
+        return Ok(Command::WriteE5bExample { path });
+    }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
             return Err("--write-studio-hdri takes no other option".into());
@@ -271,6 +335,18 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     })
 }
 
+/// `<out>-noisy.<ext>`: where `--keep-noisy` writes the image without denoise.
+pub fn noisy_path(output: &std::path::Path) -> PathBuf {
+    let stem = output
+        .file_stem()
+        .map_or_else(|| "out".into(), |s| s.to_string_lossy().into_owned());
+    let name = match output.extension() {
+        Some(ext) => format!("{stem}-noisy.{}", ext.to_string_lossy()),
+        None => format!("{stem}-noisy"),
+    };
+    output.with_file_name(name)
+}
+
 /// Runs a parsed command, printing progress to standard output.
 pub fn run(command: Command) -> Result<(), String> {
     match command {
@@ -296,6 +372,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteE5cExample { path } => {
             let bytes = rt_core::example::e5c_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteE5bExample { path } => {
+            let bytes = rt_core::example::e5b_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
@@ -367,9 +449,32 @@ pub fn run(command: Command) -> Result<(), String> {
                 result.rays_per_second() / 1.0e6
             );
 
-            write_png(&output, width, height, &result.to_rgb8(&scene))
-                .map_err(|e| format!("{}: {e}", output.display()))?;
-            println!("wrote {}", output.display());
+            let tone = |film: &rt_core::image::Film| {
+                film.to_srgb8_tonemapped(
+                    scene.render.exposure_ev,
+                    rt_core::color::Tonemap::from_u32(scene.render.tonemap),
+                )
+            };
+            if scene.render.denoise & DENOISE_IMAGE != 0 {
+                let t0 = std::time::Instant::now();
+                let clean = result
+                    .denoised(threads)
+                    .ok_or("the denoiser found no guide passes")?;
+                println!("denoised in {:.3} s", t0.elapsed().as_secs_f64());
+                write_png(&output, width, height, &tone(&clean))
+                    .map_err(|e| format!("{}: {e}", output.display()))?;
+                println!("wrote {}", output.display());
+                if scene.render.denoise & DENOISE_KEEP_NOISY != 0 {
+                    let noisy = noisy_path(&output);
+                    write_png(&noisy, width, height, &result.to_rgb8(&scene))
+                        .map_err(|e| format!("{}: {e}", noisy.display()))?;
+                    println!("wrote {}", noisy.display());
+                }
+            } else {
+                write_png(&output, width, height, &result.to_rgb8(&scene))
+                    .map_err(|e| format!("{}: {e}", output.display()))?;
+                println!("wrote {}", output.display());
+            }
             Ok(())
         }
     }
@@ -405,6 +510,7 @@ mod tests {
                     threads: Some(2),
                     size: Some((320, 200)),
                     max_seconds: None,
+                    ..Options::default()
                 },
             })
         );
@@ -533,10 +639,19 @@ mod tests {
             threads: Some(5),
             size: Some((10, 20)),
             max_seconds: None,
+            denoise: true,
+            keep_noisy: true,
+            caustics: Some(4096),
+            caustic_radius: Some(2.0),
         }
         .apply(&mut scene);
         assert_eq!((samples, threads), (3, 5));
         assert_eq!((scene.render.width, scene.render.height), (10, 20));
+        assert_eq!(scene.render.denoise, DENOISE_IMAGE | DENOISE_KEEP_NOISY);
+        assert_eq!(
+            (scene.render.caustic_photons, scene.render.caustic_radius),
+            (4096, 2.0)
+        );
         scene.render.max_samples = 0;
         assert_eq!(Options::default().apply(&mut scene).0, 16);
     }

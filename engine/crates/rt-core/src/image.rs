@@ -1,5 +1,6 @@
 //! The film: a floating point accumulation buffer for (a region of) the image, with coverage
-//! (alpha).
+//! (alpha) and the sum of the squared luminance of the samples (their variance, for the
+//! denoiser of `rt-post`).
 
 use crate::color::{srgb_encode, Rgb, Tonemap};
 
@@ -27,6 +28,11 @@ pub struct Film {
     /// opaque (always, unless the background is transparent), between 0 and 1 for a shadow on
     /// a shadow catcher.
     pub alpha: Vec<f32>,
+    /// Summed square of each sample's luminance ([`Rgb::luminance`] of the premultiplied
+    /// radiance), `width * height` values, in `f32` and in sample order like `rgb`. With the
+    /// mean it gives each pixel's sample variance (E5b-1, the denoiser's guide); it never
+    /// changes `rgb`, `weight` or `alpha`, so the image is the same bits with or without it.
+    pub lum2: Vec<f32>,
 }
 
 impl Film {
@@ -47,6 +53,7 @@ impl Film {
             rgb: vec![0.0; pixels * 3],
             weight: vec![0.0; pixels],
             alpha: vec![0.0; pixels],
+            lum2: vec![0.0; pixels],
         }
     }
 
@@ -79,6 +86,8 @@ impl Film {
             self.rgb[i * 3 + 2] += c.b;
             self.weight[i] += 1.0;
             self.alpha[i] += alpha;
+            let l = c.luminance();
+            self.lum2[i] += l * l;
         }
     }
 
@@ -101,6 +110,9 @@ impl Film {
         for (a, b) in self.alpha.iter_mut().zip(&other.alpha) {
             *a += *b;
         }
+        for (a, b) in self.lum2.iter_mut().zip(&other.lum2) {
+            *a += *b;
+        }
         true
     }
 
@@ -115,6 +127,7 @@ impl Film {
                     self.rgb[i * 3..i * 3 + 3].copy_from_slice(&region.rgb[j * 3..j * 3 + 3]);
                     self.weight[i] = region.weight[j];
                     self.alpha[i] = region.alpha[j];
+                    self.lum2[i] = region.lum2[j];
                 }
             }
         }
@@ -234,6 +247,32 @@ mod tests {
         full.copy_region(&region);
         assert_eq!(full.resolve(), vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
         assert_eq!(full.resolve_alpha(), vec![1.0, 0.25]);
+    }
+
+    #[test]
+    fn the_squared_luminance_is_summed_without_touching_the_image() {
+        let mut film = Film::new(2, 1);
+        film.splat(0, 0, Rgb::new(1.0, 0.0, 0.0));
+        film.splat(0, 0, Rgb::new(0.0, 1.0, 0.0));
+        film.splat_alpha(1, 0, Rgb::splat(2.0), 0.5);
+        let (r, g) = (
+            Rgb::new(1.0, 0.0, 0.0).luminance(),
+            Rgb::new(0.0, 1.0, 0.0).luminance(),
+        );
+        assert_eq!(film.lum2, vec![r * r + g * g, 4.0]);
+        // The radiance, weights and coverage are what they would be without it.
+        assert_eq!(film.rgb, vec![1.0, 1.0, 0.0, 2.0, 2.0, 2.0]);
+        assert_eq!(film.weight, vec![2.0, 1.0]);
+        assert_eq!(film.alpha, vec![2.0, 0.5]);
+        // Merges and region copies carry it.
+        let mut other = Film::new(2, 1);
+        other.splat(1, 0, Rgb::splat(1.0));
+        assert!(film.merge(&other));
+        assert_eq!(film.lum2[1], 5.0);
+        let mut region = Film::region(1, 0, 1, 1);
+        region.splat(1, 0, Rgb::splat(3.0));
+        film.copy_region(&region);
+        assert_eq!(film.lum2[1], 9.0);
     }
 
     #[test]

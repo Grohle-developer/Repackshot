@@ -599,18 +599,36 @@ const services: AppServices = {
       ...(kept ? { passes: AI_GUARD_PASSES, passesInLauncher: true } : {}),
       onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds),
     });
-    let file: Blob;
-    let display: Blob | null = null;
-    if (req.format === 'EXR') {
-      const data = linearRgba(px.sum!, px.samples, px.exposureEv);
-      file = new Blob([encodeExr({ width: px.width, height: px.height, data }, { alpha: req.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
-      // Browsers do not show EXR: the viewer and the thumbnails use the 8-bit image of the same render.
-      display = await encodePixels(px, 'PNG', 0.92, { dpi: req.dpi });
-    } else if (req.format === 'PNG' && req.bitDepth === 16) {
-      const words = exactWords16(px.sum!, px.samples, px.exposureEv, px.tonemap);
-      file = new Blob([(await encodePng16({ width: px.width, height: px.height, data: words }, { dpi: req.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
-    } else file = await encodePixels(px, req.format === 'JPEG' ? 'JPEG' : 'PNG', req.jpegQuality / 100, { dpi: req.dpi });
-    return { file, display, width: px.width, height: px.height, samples: px.samples, seconds: px.seconds, tone: { exposureEv: px.exposureEv, tonemap: px.tonemap }, ...(kept && px.renderId !== undefined ? { renderId: String(px.renderId) } : {}) };
+    // The file in the job's format from the 8-bit pixels and, for 16 bits and EXR, the linear sums.
+    const encode = async (data: Uint8ClampedArray, sum: Float32Array | undefined): Promise<{ file: Blob; display: Blob | null }> => {
+      const img = { ...px, data };
+      if (req.format === 'EXR') {
+        const linear = linearRgba(sum!, px.samples, px.exposureEv);
+        const file = new Blob([encodeExr({ width: px.width, height: px.height, data: linear }, { alpha: req.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
+        // Browsers do not show EXR: the viewer and the thumbnails use the 8-bit image of the same render.
+        return { file, display: await encodePixels(img, 'PNG', 0.92, { dpi: req.dpi }) };
+      }
+      if (req.format === 'PNG' && req.bitDepth === 16) {
+        const words = exactWords16(sum!, px.samples, px.exposureEv, px.tonemap);
+        return { file: new Blob([(await encodePng16({ width: px.width, height: px.height, data: words }, { dpi: req.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' }), display: null };
+      }
+      return { file: await encodePixels(img, req.format === 'JPEG' ? 'JPEG' : 'PNG', req.jpegQuality / 100, { dpi: req.dpi }), display: null };
+    };
+    const { file, display } = await encode(px.data, px.sum);
+    // E5b-1, Also save without denoise: the same render before the engine's denoiser, in the same format.
+    const noisyFile = px.noisy ? (await encode(px.noisy.data, px.noisy.sum)).file : undefined;
+    return {
+      file,
+      display,
+      width: px.width,
+      height: px.height,
+      samples: px.samples,
+      seconds: px.seconds,
+      tone: { exposureEv: px.exposureEv, tonemap: px.tonemap },
+      ...(kept && px.renderId !== undefined ? { renderId: String(px.renderId) } : {}),
+      ...(px.denoised ? { denoised: true } : {}),
+      ...(noisyFile ? { noisyFile } : {}),
+    };
   },
   results: {
     persistent: async () => (await resultsReady).persistent,

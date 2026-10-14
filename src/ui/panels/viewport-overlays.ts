@@ -2,6 +2,7 @@
 // size (top right), quality meter (bottom left), axes and part size (bottom
 // right), hover label, pick modes and drag and drop of materials (pointer events) and files.
 
+import { denoiseIn, toggledViewportDenoise } from '../../core/caustics';
 import { activeCamera, cameraBasis, focusDistanceTo, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox } from '../../core/math';
 import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
@@ -168,9 +169,21 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
   const line = h('div', { class: 'aux tabular' });
   const bar = h('div', { class: 'bar-meter' }, h('div', { style: 'width:0%' }));
   const note = h('div', { class: 'note', style: 'font-size:var(--fs-aux)' });
+  // E5b-1: what the engine says of the image on screen (denoised, caustics) and the Full viewport's denoise switch.
+  const extras = h('div', { class: 'aux tabular', 'data-meter-extras': '' });
+  const denoiseBtn = h('button', {
+    type: 'button',
+    class: 'btn-link ov-denoise',
+    'aria-pressed': 'false',
+    'data-tip': t('viewport.denoiseTip'),
+    onclick: () => {
+      const adv = ctx.store.get().render.advanced;
+      cmd.setRenderSettings(ctx, { advanced: { ...adv, denoise: toggledViewportDenoise(adv.denoise) } });
+    },
+  }, t('viewport.denoiseToggle'));
   // Without the engine, a way to its settings (UI.md §2.9: deep links).
   const engineLink = h('button', { type: 'button', class: 'btn-link ov-engine-link', 'data-settings-link': 'engine', onclick: () => cmd.openSettings(ctx, 'engine') }, t('viewport.engineSettings'));
-  const el = h('div', { class: 'ov ov-bl', role: 'status', 'aria-live': 'off', 'data-guide': 'meter' }, title, line, bar, note, engineLink);
+  const el = h('div', { class: 'ov ov-bl', role: 'status', 'aria-live': 'off', 'data-guide': 'meter' }, title, line, extras, bar, note, denoiseBtn, engineLink);
   let last = 0;
   let trailing = 0;
   const update = (force = false) => {
@@ -225,7 +238,18 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
       note.title = issue?.detail ?? '';
       note.style.display = issue ? '' : 'none';
       el.dataset.issue = issue ? issue.kind.toLowerCase() : '';
+      // What the engine reports of the image (E5b-1): denoised, and the caustics' photons per sample.
+      const parts = [st.denoised ? t('viewport.meterDenoised') : '', st.caustics ? t('viewport.meterCaustics', { n: formatNumber(st.caustics, lang, 0) }) : ''].filter(Boolean);
+      extras.textContent = parts.join(' · ');
+      extras.style.display = parts.length ? '' : 'none';
+      const on = denoiseIn(ctx.store.get().render.advanced.denoise, 'VIEWPORT');
+      denoiseBtn.setAttribute('aria-pressed', String(on));
+      denoiseBtn.style.display = '';
+      el.dataset.denoised = st.denoised ? '1' : '0';
+      el.dataset.caustics = String(st.caustics ?? 0);
     } else {
+      extras.style.display = 'none';
+      denoiseBtn.style.display = 'none';
       title.textContent = t('viewport.meterFast');
       line.textContent = t('viewport.frameMs', { ms: formatNumber(st.seconds * 1000, lang, 1) });
       (bar.firstElementChild as HTMLElement).style.width = st.converged ? '100%' : '30%';

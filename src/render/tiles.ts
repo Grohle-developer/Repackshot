@@ -120,6 +120,15 @@ export interface TileResult {
 /** Opaque coverage, give or take the rounding of `n * (1 / n)`. */
 const OPAQUE = 1 - 1e-6;
 
+/** Rec. 709 luminance in f32, as `rt_core::color::Rgb::luminance` computes it (the same order, the same constants). */
+const LUMA_R = Math.fround(0.2126);
+const LUMA_G = Math.fround(0.7152);
+const LUMA_B = Math.fround(0.0722);
+export function luminanceF32(r: number, g: number, b: number): number {
+  const f = Math.fround;
+  return f(f(f(LUMA_R * r) + f(LUMA_G * g)) + f(LUMA_B * b));
+}
+
 /** The accumulated image of one generation. */
 export class Accumulator {
   readonly width: number;
@@ -127,16 +136,36 @@ export class Accumulator {
   readonly tiles: readonly Tile[];
   /** Sum of radiance (premultiplied) and coverage per pixel, RGBA. */
   readonly sum: Float32Array;
+  /**
+   * E5b-1, with `lum2`: the sum of the squared luminance of every sample per pixel, in f32 and in sample order,
+   * as `Film::lum2` sums it (the denoiser's variance); empty otherwise.
+   */
+  readonly lum2: Float32Array;
   /** Samples summed into each tile. */
   readonly samples: Int32Array;
+  /** The image shown instead of the sums (the denoised one, E5b-1): its RGBA sums and their samples. */
+  private shownSums: Float32Array | null = null;
+  private shownCount = 0;
   private filled = 0;
 
-  constructor(width: number, height: number, tiles?: readonly Tile[]) {
+  constructor(width: number, height: number, tiles?: readonly Tile[], opts: { lum2?: boolean } = {}) {
     this.width = width;
     this.height = height;
     this.tiles = tiles ?? tileGrid(width, height);
     this.sum = new Float32Array(width * height * 4);
+    this.lum2 = new Float32Array(opts.lum2 ? width * height : 0);
     this.samples = new Int32Array(this.tiles.length);
+  }
+
+  /** Shows `sums` (RGBA sums of `samples` samples, the denoised image) in place of the accumulated ones. */
+  show(sums: Float32Array, samples: number): void {
+    this.shownSums = sums;
+    this.shownCount = samples;
+  }
+
+  /** Samples of the image shown instead of the sums (0: the sums are shown). */
+  get shownSamples(): number {
+    return this.shownSums ? this.shownCount : 0;
   }
 
   /**
@@ -148,6 +177,7 @@ export class Accumulator {
     if (!t || first !== this.samples[index] || count <= 0 || data.length < count * t.w * t.h * 4) return false;
     const stride = t.w * t.h * 4;
     const sum = this.sum;
+    const lum2 = this.lum2.length > 0 ? this.lum2 : null;
     for (let s = 0; s < count; s++) {
       const base = s * stride;
       for (let y = 0; y < t.h; y++) {
@@ -155,6 +185,14 @@ export class Accumulator {
         let i = base + y * t.w * 4;
         // A Float32Array store rounds the double sum to f32: f32 addition, as in Film::splat.
         for (let x = 0; x < t.w * 4; x++) sum[o++] += data[i++];
+        if (lum2) {
+          // The squared luminance of each sample, f32 all the way (Film::splat_alpha): l² rounded, then added.
+          let p = (t.y + y) * this.width + t.x;
+          for (let x = 0, j = base + y * t.w * 4; x < t.w; x++, j += 4, p++) {
+            const l = luminanceF32(data[j], data[j + 1], data[j + 2]);
+            lum2[p] += Math.fround(l * l);
+          }
+        }
       }
     }
     if (this.samples[index] === 0) this.filled++;
@@ -185,9 +223,8 @@ export class Accumulator {
    * The mean of pixel `p` (Film::resolve: sum times the f32 reciprocal of the count), its colour
    * un-premultiplied for a pixel the background partly shows through. Writes RGBA into `out`.
    */
-  meanAt(p: number, n: number, out: number[]): void {
+  meanAt(p: number, n: number, out: number[], s: Float32Array = this.sum): void {
     const inv = Math.fround(1 / n);
-    const s = this.sum;
     const a = Math.fround(s[p * 4 + 3] * inv);
     let r = Math.fround(s[p * 4] * inv);
     let g = Math.fround(s[p * 4 + 1] * inv);
@@ -208,7 +245,9 @@ export class Accumulator {
   /** Converts one tile to 8-bit RGBA (straight alpha) with a display curve, into `out` (w * h * 4). */
   tileBytes(index: number, curve: DisplayCurve, out: Uint8ClampedArray): void {
     const t = this.tiles[index];
-    const n = this.samples[index];
+    const shown = this.shownSums;
+    const n = shown ? this.shownCount : this.samples[index];
+    const src = shown ?? this.sum;
     const px = [0, 0, 0, 0];
     let o = 0;
     for (let y = 0; y < t.h; y++) {
@@ -217,7 +256,7 @@ export class Accumulator {
           out[o] = out[o + 1] = out[o + 2] = out[o + 3] = 0;
           continue;
         }
-        this.meanAt((t.y + y) * this.width + t.x + x, n, px);
+        this.meanAt((t.y + y) * this.width + t.x + x, n, px, src);
         curve.pixel(px[0], px[1], px[2], out, o);
         out[o + 3] = alphaByte(px[3]);
       }

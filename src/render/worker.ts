@@ -13,6 +13,7 @@
 // (render/pass-planes.ts); the main thread puts them together.
 
 import { exactBytes } from './tiles';
+import { denoiseBand, hasDenoiseExport } from './denoise';
 import { ALBEDO_BIT, EXACT_BITS, hasPassExports, Scratch, tileAlbedo, tileExact, type RtPassExports } from './pass-planes';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 
@@ -27,6 +28,8 @@ interface RtExports {
   rt_scene_error_copy(ptr: number): void;
   rt_scene_free(handle: number): number;
   rt_render_tile_rgba(handle: number, x: number, y: number, w: number, h: number, sample: number, out: number): number;
+  /** E5b-1 (absent in an older rt.wasm): caustic photons per sample of a loaded scene. */
+  rt_scene_caustics?: (handle: number) => number;
   /** X2 (absent in an older rt.wasm). */
   rt_render_tile_passes?: RtPassExports['rt_render_tile_passes'];
   rt_render_tile_albedo?: RtPassExports['rt_render_tile_albedo'];
@@ -174,7 +177,27 @@ scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     case 'scene': {
       job = null;
       const error = loadScene(new Uint8Array(msg.bytes), msg.full);
-      post({ type: 'scene', id: msg.id, error });
+      const caustics = !error && rt?.rt_scene_caustics ? rt.rt_scene_caustics(handle) >>> 0 : 0;
+      post({ type: 'scene', id: msg.id, error, caustics: caustics === 0xffffffff ? 0 : caustics });
+      return;
+    }
+    case 'denoise': {
+      if (!rt || !hasDenoiseExport(rt)) {
+        post({ type: 'denoised', id: msg.id, data: null, error: 'this rt.wasm has no denoiser (npm run engine:build)' });
+        return;
+      }
+      try {
+        const data = denoiseBand(rt, {
+          width: msg.width,
+          height: msg.height,
+          samples: msg.samples,
+          band: { y0: msg.y0, y1: msg.y1, lo: msg.lo, hi: msg.hi },
+          input: new Uint32Array(msg.input),
+        });
+        post({ type: 'denoised', id: msg.id, data }, [data.buffer]);
+      } catch (err) {
+        post({ type: 'denoised', id: msg.id, data: null, error: err instanceof Error ? err.message : String(err) });
+      }
       return;
     }
     case 'job':

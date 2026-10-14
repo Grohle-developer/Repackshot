@@ -19,6 +19,7 @@ import { mat4Compose, mat4Multiply, type Mat4 } from '../core/math';
 import { getMesh, type MeshData } from '../core/meshes';
 import type { PassIds, PassInstance } from '../core/pass-ids';
 import { passMask, type PassKey } from '../core/passes';
+import { autoCaustics, causticsFields, isCaster, type CausticsMode, type CausticsQuality } from '../core/caustics';
 import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { getImage } from '../core/images';
 import { polar, toWorldAzimuth } from '../core/light-math';
@@ -218,6 +219,12 @@ export interface RsbRender {
   clampIndirect: number;
   /** X2: the exact passes to write next to the image, bit i = PASS_KEYS[i] of core/passes.ts (0: none). */
   passes: number;
+  /** E5b-1: what the host hands out, bit 0 the denoised image, bit 1 also the one without denoise (core/caustics.ts). */
+  denoise: number;
+  /** E5b-1: caustic photons per sample (0: none). */
+  causticPhotons: number;
+  /** E5b-1: the caustics' first gather radius in pixels at the camera's target distance (0: the engine's 3). */
+  causticRadius: number;
 }
 
 /** What the engine renders: `rt_core::scene::Scene`, field for field. */
@@ -276,7 +283,7 @@ export function defaultFloor(): RsbFloor {
 }
 
 export function defaultRender(): RsbRender {
-  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0 };
+  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0 };
 }
 
 export const IDENTITY_ROWS: readonly number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
@@ -312,7 +319,7 @@ const MATL_BYTES = 72;
 const LGHT_BYTES = 76;
 const ENVR_BYTES = 84;
 const FLOR_BYTES = 20;
-const RNDR_BYTES = 40;
+const RNDR_BYTES = 52;
 const INST_BYTES = 60;
 
 function meshBytes(m: RsbMesh): number {
@@ -497,6 +504,9 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.u32(r.maxDepth);
     w.f32(r.clampIndirect);
     w.u32(r.passes);
+    w.u32(r.denoise);
+    w.u32(r.causticPhotons);
+    w.f32(r.causticRadius);
   });
   if (w.length !== size) throw new Error(`RSB: wrote ${w.length} bytes, expected ${size}`);
   return w.bytes;
@@ -533,6 +543,10 @@ export interface SceneView {
   seed?: number;
   /** `RNDR.passes`: the exact passes the engine writes next to the image (AI-POST.md §7.4; default none). */
   passes?: readonly PassKey[];
+  /** E5b-1, `RNDR.denoise` (core/caustics.ts `denoiseBits`; default 0). */
+  denoise?: number;
+  /** E5b-1: the caustics switch and quality; Automatic is decided here, from the scene (core/caustics.ts). Default off. */
+  caustics?: { mode: CausticsMode; quality: CausticsQuality };
 }
 
 /** A scene and the identity of its geometry: an equal `meshKey` means the same MESH sections. */
@@ -550,6 +564,48 @@ export interface ProjectScene {
    * the neutral material of a part without one). What the AI guard's table is made from (`guardMaterials`).
    */
   materialOrder: (string | null)[];
+}
+
+/** An axis-aligned box. */
+interface Bounds {
+  min: [number, number, number];
+  max: [number, number, number];
+}
+
+const localBounds = new WeakMap<RsbMesh, Bounds | null>();
+
+/** The box of a mesh's positions (cached per mesh). */
+function meshBounds(m: RsbMesh): Bounds | null {
+  if (localBounds.has(m)) return localBounds.get(m)!;
+  const p = m.positions;
+  let b: Bounds | null = null;
+  for (let i = 0; i + 2 < p.length; i += 3) {
+    if (!b) b = { min: [p[i], p[i + 1], p[i + 2]], max: [p[i], p[i + 1], p[i + 2]] };
+    for (let k = 0; k < 3; k++) {
+      b.min[k] = Math.min(b.min[k], p[i + k]);
+      b.max[k] = Math.max(b.max[k], p[i + k]);
+    }
+  }
+  localBounds.set(m, b);
+  return b;
+}
+
+/** `into` grown by the box `b` moved by the 3 × 4 rows of an instance (its eight corners). */
+function extendBounds(into: Bounds | null, b: Bounds | null, rows: readonly number[]): Bounds | null {
+  if (!b) return into;
+  let out = into;
+  for (let c = 0; c < 8; c++) {
+    const v = [c & 1 ? b.max[0] : b.min[0], c & 2 ? b.max[1] : b.min[1], c & 4 ? b.max[2] : b.min[2]];
+    const w: [number, number, number] = [0, 0, 0];
+    for (let r = 0; r < 3; r++) w[r] = rows[r * 4] * v[0] + rows[r * 4 + 1] * v[1] + rows[r * 4 + 2] * v[2] + rows[r * 4 + 3];
+    if (!out) out = { min: [...w], max: [...w] };
+    else
+      for (let k = 0; k < 3; k++) {
+        out.min[k] = Math.min(out.min[k], w[k]);
+        out.max[k] = Math.max(out.max[k], w[k]);
+      }
+  }
+  return out;
 }
 
 /** `image.viewTransform` to `RNDR.tonemap`. */
@@ -872,6 +928,8 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   const meshIndex = new Map<string, number>();
   const instances: RsbInstance[] = [];
   const passInstances: PassInstance[] = [];
+  let casterBounds: Bounds | null = null;
+  let litEmitter = false;
   for (const id of allParts(state)) {
     const node = nodes[id];
     if (!node.mesh || !visible(id)) continue;
@@ -890,6 +948,12 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
       }
       instances.push({ mesh: mi, transform: rows, materialId, flags: 0 });
       passInstances.push({ node: id, material: part.material, materialId: materialId + 1 });
+      // Automatic caustics: where the glass and polished metal are (E5b-1).
+      if (view.caustics?.mode === 'AUTO') {
+        const m = materials[materialId];
+        if (isCaster(m)) casterBounds = extendBounds(casterBounds, meshBounds(meshes[mi]), rows);
+        if (m.kind === MATERIAL_EMISSIVE && m.flags & MATERIAL_FLAG_LIGHT) litEmitter = true;
+      }
     }
   }
   // A scene without parts still needs no material; one with parts always has its materials.
@@ -973,7 +1037,23 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     clampIndirect: Math.max(0, view.clampIndirect ?? 0),
     seed: Math.max(0, Math.round(view.seed ?? 0)) >>> 0,
     passes: passMask(view.passes ?? []),
+    denoise: Math.max(0, Math.round(view.denoise ?? 0)) >>> 0,
   };
+  if (view.caustics) {
+    const centre: [number, number, number] | null = casterBounds
+      ? [(casterBounds.min[0] + casterBounds.max[0]) / 2, (casterBounds.min[1] + casterBounds.max[1]) / 2, (casterBounds.min[2] + casterBounds.max[2]) / 2]
+      : null;
+    const auto =
+      view.caustics.mode === 'AUTO' &&
+      autoCaustics(
+        centre,
+        lights.map((l) => ({ kind: l.kind, position: l.position, sizeX: l.sizeX, sizeY: l.sizeY, angleDeg: l.angleDeg, glossy: (l.flags & LIGHT_FLAG_GLOSSY) !== 0 })),
+        litEmitter,
+      );
+    const c = causticsFields(view.caustics.mode, view.caustics.quality, auto);
+    render.causticPhotons = c.photons;
+    render.causticRadius = c.radiusPx;
+  }
 
   return {
     scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps },

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { connectNative, NativeClient, takeLaunchToken, TOKEN_KEY, type NativeInfo } from '../src/io/native';
-import { exactBytesSliced, FLAG_DATA, FLAG_DONE, FRAME_HEADER, meshKeyHash, NativeEngine, parseFrame } from '../src/render/native';
+import { exactBytesSliced, FLAG_CAUSTICS, FLAG_DATA, FLAG_DENOISED, FLAG_DONE, FLAG_NOISY, FRAME_HEADER, meshKeyHash, NativeEngine, parseFrame } from '../src/render/native';
+import { DEFAULT_ADVANCED } from '../src/core/render';
 import { exactBytes } from '../src/render/tiles';
 import { createInitialState } from '../src/core/store';
 import { FLOOR_ID } from '../src/core/passes';
@@ -121,9 +122,9 @@ describe('the launcher client', () => {
   });
 });
 
-/** A frame as the launcher writes it (render.rs `Frame::header`). */
-function frame(f: { pass: number; samples: number; width: number; height: number; seconds?: number; flags: number; sums?: Float32Array }): ArrayBuffer {
-  const data = f.sums && f.flags & FLAG_DATA ? f.sums.length * 4 : 0;
+/** A frame as the launcher writes it (render.rs `Frame::header`; with FLAG_NOISY, the noisy sums after the sums). */
+function frame(f: { pass: number; samples: number; width: number; height: number; seconds?: number; flags: number; sums?: Float32Array; noisy?: Float32Array }): ArrayBuffer {
+  const data = f.sums && f.flags & FLAG_DATA ? (f.sums.length + (f.noisy?.length ?? 0)) * 4 : 0;
   const buf = new ArrayBuffer(FRAME_HEADER + data);
   const v = new DataView(buf);
   'RPX1'.split('').forEach((c, i) => v.setUint8(i, c.charCodeAt(0)));
@@ -134,6 +135,7 @@ function frame(f: { pass: number; samples: number; width: number; height: number
   v.setUint32(36, 8, true);
   v.setBigUint64(40, 12345n, true);
   if (data) new Float32Array(buf, FRAME_HEADER).set(f.sums!);
+  if (data && f.noisy) new Float32Array(buf, FRAME_HEADER + f.sums!.length * 4).set(f.noisy);
   return buf;
 }
 
@@ -152,6 +154,46 @@ describe('native frames', () => {
     const short = frame({ pass: 1, samples: 1, width: 2, height: 1, flags: 0 });
     new DataView(short).setUint32(28, FLAG_DATA, true);
     expect(() => parseFrame(short)).toThrow();
+  });
+
+  it('carry the image before denoise after the denoised one (E5b-1)', () => {
+    const sums = new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    const noisy = new Float32Array([9, 8, 7, 4, 6, 5, 4, 8]);
+    const f = parseFrame(frame({ pass: 4, samples: 4, width: 2, height: 1, flags: FLAG_DONE | FLAG_DATA | FLAG_DENOISED | FLAG_NOISY, sums, noisy }));
+    expect(Array.from(f.sums!)).toEqual(Array.from(sums));
+    expect(Array.from(f.noisy!)).toEqual(Array.from(noisy));
+    expect(parseFrame(frame({ pass: 4, samples: 4, width: 2, height: 1, flags: FLAG_DATA | FLAG_DENOISED, sums })).noisy).toBeNull();
+    // A frame that says it carries both but is short is refused.
+    expect(() => parseFrame(frame({ pass: 4, samples: 4, width: 2, height: 1, flags: FLAG_DATA | FLAG_NOISY, sums }))).toThrow();
+    expect([FLAG_DENOISED, FLAG_NOISY, FLAG_CAUSTICS]).toEqual([64, 128, 256]);
+  });
+
+  it('a denoised final gives the denoised image and, with Also save without denoise, the noisy one (E5b-1)', async () => {
+    const width = 2;
+    const height = 1;
+    const sums = new Float32Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    const noisy = new Float32Array([9, 8, 7, 4, 6, 5, 4, 8]);
+    const views: { denoise?: number; caustics?: unknown }[] = [];
+    const transport = {
+      async request(path: string, init: RequestInit = {}) {
+        if (init.method === 'POST') return new Response(JSON.stringify({ id: 5 }));
+        if (init.method === 'DELETE') return new Response(null, { status: 204 });
+        if (path.includes('data=0')) return new Response(frame({ pass: 3, samples: 4, width, height, flags: FLAG_DONE }));
+        return new Response(frame({ pass: 3, samples: 4, width, height, flags: FLAG_DONE | FLAG_DATA | FLAG_DENOISED | FLAG_NOISY, sums, noisy }));
+      },
+    };
+    const source = { build: (_s: unknown, v: { denoise?: number }) => (views.push(v), { meshKey: 'm', bytes: () => new Uint8Array([1]) }), tone: () => ({ exposureEv: 0, tonemap: 1 }) };
+    const engine = new NativeEngine(transport, source, { threads: 4, isa: 'avx2' });
+    engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+    const advanced = { ...DEFAULT_ADVANCED, saveNoisy: true };
+    const px = await engine.renderPixels({ width, height, maxSamples: 4, maxSeconds: 0, transparent: false, keepLinear: true, advanced });
+    // The RSB asked the launcher for both (RNDR.denoise 3) and the automatic caustics.
+    expect(views[0]).toMatchObject({ denoise: 3, caustics: { mode: 'AUTO', quality: 'MEDIUM' } });
+    expect(px.denoised).toBe(true);
+    expect(Array.from(px.data)).toEqual(Array.from(exactBytes(sums, 4, 0, 1)));
+    expect(Array.from(px.noisy!.data)).toEqual(Array.from(exactBytes(noisy, 4, 0, 1)));
+    expect(Array.from(px.sum!)).toEqual(Array.from(sums));
+    expect(Array.from(px.noisy!.sum!)).toEqual(Array.from(noisy));
   });
 
   it('mesh keys hash stably', () => {

@@ -5,8 +5,16 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Motor
+
+- ***Denoise* propio** (E5b-1): un filtro à-trous con paradas en aristas (Dammertz et al. 2010) con la parada de luminancia guiada por la varianza de SVGF (Schied et al. 2017), guiado por el albedo, las normales, la profundidad y los ids de cada píxel y por su varianza, que ahora acumula la película; nunca mezcla dos piezas. A 4 muestras por píxel el error frente a un render largo baja a entre el 4 y el 20 % del de la imagen sin filtrar en las escenas de la hoja de contactos. Los mismos bits en el escritorio y en el navegador (E5b-1).
+- **Cáusticas** con un mapa de fotones progresivo (SPPM, Hachisuka y Jensen 2009, en la forma de Knaus y Zwicker 2011): la luz que atraviesa el vidrio o rebota en el metal pulido hasta el suelo, el atrapasombras o una pieza mate llega por fotones y no por caminos ruidosos del trazador (también la que ilumina la escena después de un rebote difuso, que daba destellos), sin contarse dos veces; la sombra del vidrio macizo deja de ser negra. Deterministas con cualquier número de hilos (E5b-1).
+- **Puntos y focos direccionales** en el integrador (`LGHT` 3 y 4): una esfera de radiancia uniforme muestreada en su cono de direcciones (un punto, por posición), el cono con transición en *smoothstep* como en la vista previa, visibles a cámara y en reflejos con MIS; un foco estrecho apuntado a la escena se elige como su punto, así que su círculo de luz no sale con ruido. Bit 2 de `LGHT.flags`: **sin sombra** (L4).
+
 ### Interfaz
 
+- Ventana de render ▸ *Calidad* ▸ **Cáusticas**: *Automático* (por defecto: encendidas con vidrio o metal pulido y una luz pequeña) · *Encendidas* · *Apagadas*; en *Avanzado*, **Calidad de cáusticas** (*Baja · Media · Alta*), **Reducción de ruido** (*Apagada · Visor · Render · Los dos*, por defecto *Los dos*) y **Guardar también sin reducción de ruido** (E5b-1).
+- El medidor del visor *Completo* dice *Ruido reducido* y *Cáusticas · N fotones por muestra* cuando el motor lo hace, y su botón *Reducir ruido* enciende o apaga el filtro del visor (E5b-1).
 - **Focos propios** (L4): *+ Añadir luz* en la pestaña *Luces* (y en *Añadir ▸* de la cabecera, el clic derecho del visor en vacío y la paleta) añade un **área** (rectángulo, disco o esfera), un **punto**, un **foco direccional** (cono y transición) o un **sol**, delante y arriba de la pieza, encendido, seleccionado y con el brillo medio de los focos encendidos; *IES* sigue *próximamente* (L5). Duplicar, eliminar y apuntar en la fila del foco seleccionado; *Apuntar un foco aquí ▸* en el menú contextual de una pieza.
 - El inspector de un foco tiene todo: nombre, tipo, forma, tamaño o radio, acimut, elevación y distancia, **coordenadas X, Y, Z**, **Apuntar a…** (el centro del producto, un punto, una pieza), giro, dispersión, cono y transición, disco del sol, temperatura o color, **potencia en vatios con sus lúmenes** (o lux), visible en reflejos y a cámara, **proyecta sombra**, encendido, *Colocar por reflejo*, **Colocar sobre superficie**, *Mirar a través*, *Duplicar* y *Eliminar*. Ya no dice *próximamente* (L4).
 - **Guardar montaje como…** guarda también los focos propios (tipo, objetivo, giro, transición, sombra); aplicado a otro tipo de producto conserva la irradiancia total de ese tipo y el reparto entre focos. **Restablecer al montaje** quita los focos propios (L4).
@@ -14,10 +22,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **Mirar a través** (`Ctrl/⌘ ⇧ L`, el botón de la barra de vista o del inspector, doble clic en el glifo): el visor mira desde la luz o la cámara seleccionada, en *Rápido* y en *Completo*, y Orbitar, Desplazar y Zoom la mueven (la luz apunta a donde mira el visor); una cámara bloqueada no se mueve; `Esc` vuelve a la cámara activa (L4).
 - **Recorrido guiado** (U10): una capa propia que recorre la pantalla zona por zona —menú de la aplicación, árbol y niveles de selección, herramientas de vista, *Rápido* y *Completo*, el inspector (producto, luz y montajes, entorno y cielo, cámara y enfoque, materiales), las pestañas *Luces*, *Cámaras* y *Estudios*, *Añadir ▸ Primitiva*, la ventana de render (cola e IA), los resultados y *Ajustes* sección por sección— con un texto corto por paso, *Siguiente · Atrás · Saltar*, puntos de progreso y las teclas `→`, `←` y `Esc`; en español e inglés, acromática, y los pasos abren lo que necesitan (la ventana de render, Ajustes, la pestaña, el cajón) y lo dejan como estaba. Sale sola en el primer arranque y desde *Ayuda ▸ Recorrido guiado*; *Saltar* cuenta como visto, y se recuerda en el documento de ajustes (la carpeta de datos en escritorio).
 - El menú de la aplicación gana **Ayuda ▸** con *Recorrido guiado*, *Guía*, *Atajos de teclado* y *Acerca de*.
-
-### Motor
-
-- **Puntos y focos direccionales** en el integrador (`LGHT` 3 y 4): una esfera de radiancia uniforme muestreada en su cono de direcciones (un punto, por posición), el cono con transición en *smoothstep* como en la vista previa, visibles a cámara y en reflejos con MIS; un foco estrecho apuntado a la escena se elige como su punto, así que su círculo de luz no sale con ruido. Bit 2 de `LGHT.flags`: **sin sombra** (L4).
 
 ### Proyecto
 
