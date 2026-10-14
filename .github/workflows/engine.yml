@@ -161,13 +161,19 @@ jobs:
           particles=$(sed -n 's/.*PINNED_AMBIENT_PARTICLES: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render/ambient_tests.rs | tr -d _)
           test -n "$expected" && test -n "$particles"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/ambient.rsb" --expect "$expected" --particles --expect-particles "$particles"
+          # E11: the example with the fine filter and twice the samples on its edges (the module finds
+          # each tile's edges from its centre rays).
+          cargo run --release -p rt-cli -- --write-e11-example "$RUNNER_TEMP/e11.rsb"
+          expected=$(sed -n 's/.*PINNED_E11_EDGES_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e11.rsb" --expect "$expected"
 
       - name: Passes through the page's own code (the real rt.wasm in Node)
         working-directory: .
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:

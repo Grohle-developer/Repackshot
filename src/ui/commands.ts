@@ -93,6 +93,7 @@ import {
   type Settings,
 } from '../core/settings';
 import { patchSettings, settingsOf, type RenderSettings } from '../core/render';
+import { denoiseIn, toggledViewportDenoise } from '../core/caustics';
 import { doctorCheck } from '../data/doctor';
 import { showFirstRunChooser } from '../core/models';
 import type { ConfirmSpec } from './components/widgets';
@@ -1324,6 +1325,35 @@ export function setViewportMode(ctx: Ctx, mode: ViewportMode): void {
 /** Ctrl/⌘ ⇧ R. */
 export function toggleViewportMode(ctx: Ctx): void {
   setViewportMode(ctx, effectiveMode(ctx.ui.get()) === 'FULL' ? 'FAST' : 'FULL');
+}
+
+/**
+ * U11: the Full viewport's live denoise is on. There is one switch: the Viewport part of Render settings ▸ Advanced ▸
+ * Denoise (the project's, saved with it), which the top bar's Denoise, the meter's button and `D` all show and turn.
+ */
+export function viewportDenoiseOn(s: ProjectState): boolean {
+  return denoiseIn(s.render.advanced.denoise, 'VIEWPORT');
+}
+
+/** U11: why the live denoise switch cannot be used now (null: it can): it applies to Full mode. */
+export function viewportDenoiseReason(ctx: Ctx): StringKey | null {
+  return effectiveMode(ctx.ui.get()) === 'FULL' ? null : 'header.denoiseFastTip';
+}
+
+/**
+ * U11: turns the Full viewport's live denoise (the top bar, the meter, `D`): the Viewport part of Advanced ▸ Denoise,
+ * through the store, one undo step. It edits the project's settings even while the render window edits a job of the
+ * queue. In Fast mode it does nothing and says why.
+ */
+export function toggleViewportDenoise(ctx: Ctx): void {
+  const why = viewportDenoiseReason(ctx);
+  if (why) {
+    ctx.ui.toast(t(why));
+    return;
+  }
+  const advanced = ctx.store.get().render.advanced;
+  const denoise = toggledViewportDenoise(advanced.denoise);
+  ctx.store.dispatch({ type: 'render/set', patch: { advanced: { ...advanced, denoise } }, label: L(denoiseIn(denoise, 'VIEWPORT') ? 'undo.denoiseOn' : 'undo.denoiseOff') });
 }
 
 export function setSpace(ctx: Ctx, space: Space): void {

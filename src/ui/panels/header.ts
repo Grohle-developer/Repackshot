@@ -1,5 +1,5 @@
 // Header (UI.md §2.1): app menu, project name, undo / redo, the viewport
-// mode (Fast · Full), search, guide, theme.
+// mode (Fast · Full) and the live denoise of Full (U11), search, guide, theme.
 
 import * as cmd from '../commands';
 import { segmented } from '../components/controls';
@@ -153,7 +153,6 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
   );
   mode.el.setAttribute('data-tip', t('header.modeTip'));
   mode.el.setAttribute('data-kbd', kbdFor('viewportMode'));
-  mode.el.setAttribute('data-guide', 'viewport-mode');
   const fullBtn = mode.el.querySelectorAll('button')[1] as HTMLButtonElement;
   const reason = h('span', { class: 'aux mode-reason' });
   scope.watch(
@@ -170,6 +169,29 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
     (a, b) => a[0] === b[0] && a[1] === b[1],
   );
 
+  // U11: Denoise, to the right of Fast · Full: the live denoise of the Full viewport. The same switch as the meter's
+  // and as the Viewport part of Render settings ▸ Advanced ▸ Denoise (the project's, undoable); in Fast it is off
+  // to the hand, with the reason in its tooltip.
+  const denoiseBtn = h(
+    'button',
+    { type: 'button', 'aria-pressed': 'false', 'aria-label': t('header.denoise'), 'data-denoise-toggle': '', onclick: () => cmd.toggleViewportDenoise(ctx) },
+    t('header.denoise'),
+  ) as HTMLButtonElement;
+  const denoise = h('div', { class: 'seg hdr-denoise', role: 'group', 'aria-label': t('header.denoise'), 'data-kbd': kbdFor('viewportDenoise') }, denoiseBtn);
+  scope.watch(
+    (s, u) => [cmd.viewportDenoiseOn(s), effectiveMode(u)] as const,
+    ([on]) => {
+      const why = cmd.viewportDenoiseReason(ctx);
+      denoiseBtn.setAttribute('aria-pressed', String(on));
+      denoiseBtn.disabled = why !== null;
+      denoise.setAttribute('data-tip', why ? t(why) : t('header.denoiseTip'));
+      denoise.dataset.on = on ? '1' : '0';
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
+  // Fast · Full and Denoise are one area of the top bar (the guided tour's step rings both).
+  const modeArea = h('div', { class: 'hdr-mode', 'data-guide': 'viewport-mode' }, mode.el, denoise);
+
   const search = h(
     'button',
     { type: 'button', class: 'search-trigger', 'aria-label': t('header.search'), 'data-kbd': kbdFor('palette'), onclick: () => ui.set({ paletteOpen: true }) },
@@ -184,7 +206,7 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
     'header',
     { class: 'hdr' },
     h('div', { class: 'hdr-left' }, menuBtn, nameEl),
-    h('div', { class: 'hdr-center' }, undoBtn, redoBtn, h('span', { class: 'hdr-sep' }), mode.el, reason),
+    h('div', { class: 'hdr-center' }, undoBtn, redoBtn, h('span', { class: 'hdr-sep' }), modeArea, reason),
     h('div', { class: 'hdr-right' }, search, guideBtn, themeBtn),
   );
 }

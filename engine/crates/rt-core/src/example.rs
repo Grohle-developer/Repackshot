@@ -194,6 +194,9 @@ pub fn scene() -> Scene {
             denoise: 0,
             caustic_photons: 0,
             caustic_radius: 0.0,
+            denoise_strength: 1.0,
+            pixel_filter: 0,
+            edge_supersample: 1,
         },
         bitmaps: Vec::new(),
         effects: Vec::new(),
@@ -357,6 +360,16 @@ pub fn e5b_scene() -> Scene {
     let mut scene = e5_scene(false);
     scene.render.caustic_photons = 2048;
     scene.render.caustic_radius = 4.0;
+    scene
+}
+
+/// The E11 parity scene: the example with the Blackman–Harris filter and twice the samples on
+/// its edges (`rt --write-e11-example`; `tools/wasm-parity.mjs` checks the real module renders
+/// rt-core's pinned image of it).
+pub fn e11_scene() -> Scene {
+    let mut scene = scene();
+    scene.render.pixel_filter = crate::pixel_filter::FILTER_BLACKMAN_HARRIS;
+    scene.render.edge_supersample = 2;
     scene
 }
 

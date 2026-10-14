@@ -8,6 +8,7 @@
 // the data folder as the launcher measured it, and nothing speaks of what a
 // browser may keep or delete (P3e).
 
+import { msaaSamples, PIXEL_FILTERS, type FastAa } from '../../core/antialias';
 import { allItems } from '../../core/library';
 import { formatBytes } from '../../core/models';
 import type { RowMeta, SectionId, SettingMeta } from '../../core/settings';
@@ -227,6 +228,46 @@ function engineInfoRow(ctx: Ctx, scope: Scope): HTMLElement {
     (a, b) => a[0] === b[0] && a[1] === b[1],
   );
   return parts.el;
+}
+
+// ------------------------------------------------------------------ Render engine ▸ Edge smoothing
+
+/**
+ * E11: Full mode's and the render's pixel filter as the list it is, from the cheapest to the costliest: one radio per
+ * choice with its line of help (no cost in numbers), the chosen one pressed.
+ */
+function pixelFilterRow(ctx: Ctx, scope: Scope, row: RowMeta): HTMLElement {
+  const key = 'engine.pixelFilter' as const;
+  const items = PIXEL_FILTERS.map((o, i) => {
+    const btn = h(
+      'button',
+      { type: 'button', class: 'sw-aa-option', role: 'radio', 'aria-checked': 'false', 'data-value': o, onclick: () => cmd.setSetting(ctx, key, o) },
+      h('span', { class: 'sw-aa-rank tabular', 'aria-hidden': 'true' }, String(i + 1)),
+      h('span', { class: 'sw-aa-text' }, h('span', { class: 'sw-aa-name' }, t(dyn(`set.engine.pixelFilter.${o}`))), h('span', { class: 'note' }, t(dyn(`set.engine.pixelFilter.help.${o}`)))),
+    );
+    // Arrows move along the list, as in a radio group.
+    btn.addEventListener('keydown', (e) => {
+      const d = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      e.preventDefault();
+      const next = PIXEL_FILTERS[Math.max(0, Math.min(PIXEL_FILTERS.length - 1, i + d))];
+      cmd.setSetting(ctx, key, next);
+      (list.querySelector(`[data-value="${next}"]`) as HTMLElement | null)?.focus();
+    });
+    return btn;
+  });
+  const list = h('div', { class: 'sw-aa-list', role: 'radiogroup', 'aria-label': rowLabel(row.id) }, ...items);
+  scope.watch(
+    (_s, u) => u.settings[key],
+    (v) => {
+      for (const b of items) {
+        const on = b.dataset.value === v;
+        b.setAttribute('aria-checked', String(on));
+        b.tabIndex = on ? 0 : -1;
+      }
+    },
+  );
+  return settingRow(ctx, scope, row as SettingMeta, { control: list, stacked: true });
 }
 
 // ------------------------------------------------------------------ Storage
@@ -499,6 +540,7 @@ export const SECTION_HOOKS: SettingsHooks = {
     'render.destination': destinationRow,
     'engine.measure': measureRow,
     'engine.info': engineInfoRow,
+    'engine.pixelFilter': pixelFilterRow,
     'storage.usage': storageUsageRow,
     'storage.persist': persistRow,
     'storage.folder': dataFolderRow,
@@ -530,5 +572,18 @@ export const SECTION_HOOKS: SettingsHooks = {
     }),
     'engine.viewportSamples': () => ({ visible: (s) => s['engine.viewportLimit'] === 'SAMPLES' }),
     'engine.viewportSeconds': () => ({ visible: (s) => s['engine.viewportLimit'] === 'TIME' }),
+    // E11: what the device draws (the preview's own word), and a line of help for the filter chosen.
+    'engine.fastAa': (ctx) => ({
+      aux: () => {
+        const aa = ctx.ui.get().fastAa;
+        if (!aa) return null;
+        const device = aa.max <= 0 ? t('set.engine.fastAa.noDevice') : t('set.engine.fastAa.device', { max: aa.max, n: aa.samples > 0 ? `${aa.samples}×` : t('set.engine.fastAa.none') });
+        return `${t('set.engine.fastAa.aux')} · ${device}`;
+      },
+      optionTip: (o) => {
+        const aa = ctx.ui.get().fastAa;
+        return aa && msaaSamples(o as FastAa) > aa.max ? t('set.engine.fastAa.over', { max: aa.max }) : undefined;
+      },
+    }),
   },
 };

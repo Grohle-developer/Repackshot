@@ -1297,7 +1297,7 @@ E6 (bisel primero). Ola B: E10 (toca el bucle de render, después de U11)
 y M2. Cada fase, una PR; `npm run qa`, `engine:test` en *debug* y
 *release*, *hashes* fijados intactos salvo donde la fase diga.
 
-## U11 · Reducción de ruido en directo — **Opus**
+## U11 · Reducción de ruido en directo — **Opus** — hecha
 
 **Qué.** Un interruptor **Reducir ruido** en la barra superior, a la
 derecha de *Rápido · Completo*, con el mismo estado que el botón del
@@ -1330,7 +1330,199 @@ cambia de *hash* (`0xab15f290` del ejemplo con *denoise*); los gestos
 siguen a resolución reducida sin *denoise*; captura `docs/ui/
 denoise-live.png` con la barra superior.
 
-## U11b · Intensidad de la reducción de ruido — **Opus** (con U11)
+**Hecho.**
+
+- **Interruptor *Reducir ruido*** en la barra superior, a la derecha de
+  *Rápido · Completo* y en la misma zona (`data-guide="viewport-mode"`,
+  la que rodea el paso *Rápido y Completo* del recorrido guiado, cuyo
+  texto lo nombra con su atajo): un botón de una posición, acromático, en
+  negativo cuando está encendido, con su *tooltip* y el atajo **`D`**
+  (libre; en la tabla de UI.md §3). **Una sola verdad**: la parte *Visor*
+  de `render.advanced.denoise` (*Los dos* ↔ *Render*, *Visor* ↔
+  *Apagada*), que la barra, el botón del medidor y `D` leen y cambian con
+  el mismo comando (`toggleViewportDenoise`), por el *store*, deshacible
+  con su nombre (*Reducir el ruido del visor* / *Dejar de reducir el ruido
+  del visor*) y guardada en el proyecto. En *Rápido* se ve deshabilitado
+  con la ayuda *Se aplica al modo Completo* y `D` solo lo dice.
+- **Ajuste de visor del filtro** (`rt_post::denoise::Preset`): `FULL`
+  (el de E5b-1, para el render y `rt`, mismos bits: `0xab15f290`) y
+  `VIEWPORT`, **tres pasadas à-trous y la varianza espacial 3 × 3** por
+  debajo de cuatro muestras, con su halo propio de 24 filas
+  (`Preset::halo = 2^(pasadas+1) + 8`, que da los 72 del completo).
+  Bandas exactamente iguales a la imagen entera con los dos; *hashes*
+  fijados del ejemplo con el del visor a 2 y 4 muestras
+  (`PINNED_DENOISED_VIEWPORT_EXAMPLE_2SPP` = `0x04d4a08c` y `_4SPP` =
+  `0xc90ee509`; con la elección de luz de E12, `0x17514303` y
+  `0x6db6039b`), iguales en nativo, en el `rt.wasm` real
+  (`rt_denoise_with`, `rt_denoise_halo`) y por el código de la página con
+  1 y 3 *workers*. Lo elige el tipo de trabajo; el `RSB`/`RNDR` no cambia.
+  Medido (tabla abajo): de las ocho combinaciones probadas es la que da
+  mejor calidad por debajo de ~0,4 s en el tamaño del visor con cuatro
+  hilos.
+- **En directo, en el lanzador** (`rt-app/src/render.rs`): un visor a
+  resolución completa renderiza siempre las guías y tiene su interruptor
+  (`denoise=0|1` al publicarlo, `POST /api/render/<id>/denoise?on=0|1`
+  después). Cada pasada se entrega a un **carril** propio (un hilo por
+  trabajo de visor) que, encendido, reduce el ruido de la pasada más
+  nueva, la presenta en cuanto acaba y arranca el siguiente sobre la más
+  nueva entonces; mientras trabaja **toma uno de los hilos de render del
+  visor** (el último de los que renderizan, `Gate::viewport_turn`), así
+  que con un render final en marcha nunca le quita un hilo a este. Al
+  encenderlo reduce el ruido de lo acumulado al momento (si ya tenía la
+  limpia de esa pasada, la enseña sin más), también con el visor ya
+  terminado; al apagarlo, el fotograma siguiente es la acumulación
+  ruidosa, publicada en la misma llamada. Con el interruptor encendido las
+  pasadas duran lo que un *denoise* y al menos 250 ms (`live_pass_cap`):
+  como una muestra cae en la pasada que sea sin cambiar un píxel, la
+  imagen limpia llega como mucho una pasada y un *denoise* después de la
+  anterior. La regla de antes (primera, última y entre medias si habían
+  pasado tres veces lo que costó la anterior) desaparece en el visor; el
+  render final sigue con un *denoise* al final con el filtro completo.
+- **En la web** (`render/pathtracer.ts`): igual, con el carril en los
+  *workers* del visor por bandas entre sus baldosas (las pasadas siguen);
+  la página guarda las sumas de la última pasada para él. Las mismas
+  pasadas cortas (`livePassCap`).
+- **Fotogramas con número de imagen**: la cabecera `RPX1` pasa a 52 bytes
+  con `Frame::version`, que cambia cada vez que cambian las sumas (una
+  pasada, una imagen limpia, el interruptor). El *long-poll* de la página
+  la pide con `version=`; el lanzador manda las sumas solo con una imagen
+  más nueva, y con un visor ya terminado espera a la limpia que se pidió.
+  Un lector de antes lee la cabecera por su longitud, que va en ella.
+- **Los gestos** siguen a resolución reducida, sin guías ni *denoise*.
+- **Pruebas** (rt-post 4, rt-wasm 1, rt-app 6 unitarias y 1 por HTTP; la
+  interfaz: `tests/live-denoise.test.ts`, 12; `tests/pathtracer.test.ts`,
+  3 nuevas y 1 rehecha; `tests/denoise.test.ts`, 2 nuevas, una con el
+  `rt.wasm` real) y una comprobación en el navegador
+  (`tools/denoise-live-check.mjs`). Se comprobó que fallan
+  reintroduciendo cada error (lista abajo).
+
+**Medidas.** Máquina compartida de 4 núcleos; los tiempos «en calma» son
+de cuando los otros agentes apenas cargaban (carga 1–3), los «cargados» con
+carga 10–16.
+
+*Calidad* (relMSE frente a 1024 muestras con otra semilla, 480 × 280, solo
+píxeles de pieza; cinco pasadas y 7 × 7 es el filtro completo, `L3r1` el
+de visor elegido):
+
+| escena · spp | sin filtrar | completo | L4 7×7 | L4 5×5 | L3 7×7 | L3 5×5 | **L3 3×3** | L2 5×5 | L2 3×3 |
+|---|---|---|---|---|---|---|---|---|---|
+| ejemplo · 1 | 0,5123 | 0,0137 | 0,0147 | 0,0149 | 0,0195 | 0,0195 | **0,0215** | 0,0375 | 0,0393 |
+| ejemplo · 2 | 0,1646 | 0,0044 | 0,0046 | 0,0045 | 0,0058 | 0,0057 | **0,0060** | 0,0108 | 0,0111 |
+| ejemplo · 4 | 0,0634 | 0,0019 | 0,0019 | 0,0019 | 0,0021 | 0,0021 | **0,0021** | 0,0034 | 0,0034 |
+| ejemplo · 16 | 0,0077 | 0,0007 | 0,0007 | 0,0007 | 0,0007 | 0,0007 | **0,0007** | 0,0008 | 0,0008 |
+| frasco · 1 | 0,3279 | 0,0447 | 0,0457 | 0,0415 | 0,0453 | 0,0421 | **0,0371** | 0,0443 | 0,0439 |
+| frasco · 2 | 0,1612 | 0,0396 | 0,0401 | 0,0354 | 0,0389 | 0,0350 | **0,0266** | 0,0311 | 0,0269 |
+| frasco · 4 | 0,0739 | 0,0144 | 0,0145 | 0,0145 | 0,0151 | 0,0151 | **0,0151** | 0,0163 | 0,0163 |
+| frasco · 16 | 0,0223 | 0,0067 | 0,0067 | 0,0067 | 0,0068 | 0,0068 | **0,0068** | 0,0072 | 0,0072 |
+| tablero · 1 | 0,4434 | 0,0466 | 0,0482 | 0,0462 | 0,0530 | 0,0508 | **0,0468** | 0,0675 | 0,0634 |
+| tablero · 2 | 0,1622 | 0,0365 | 0,0370 | 0,0346 | 0,0386 | 0,0360 | **0,0304** | 0,0421 | 0,0365 |
+| tablero · 4 | 0,0812 | 0,0171 | 0,0172 | 0,0172 | 0,0176 | 0,0176 | **0,0176** | 0,0199 | 0,0199 |
+| tablero · 16 | 0,0352 | 0,0073 | 0,0072 | 0,0072 | 0,0073 | 0,0073 | **0,0073** | 0,0080 | 0,0080 |
+
+A 64 muestras los nueve quedan iguales (0,0002 / 0,0021 / 0,0033–0,0034).
+
+*Tiempo* a 1200 × 700 (el mejor de 3–5; «4 bandas» son cuatro hilos con el
+halo de cada ajuste):
+
+| | completo, 1 hilo | completo, 4 bandas | visor, 1 hilo | visor, 4 bandas |
+|---|---|---|---|---|
+| ejemplo (todo pieza), en calma, 2 / 4 / 16 spp | 1,92 / 1,77 / 1,54 s | 1,04 / 1,12 / 0,82 s | 1,16 / 0,94 / 0,91 s | 0,46 / 0,33–0,40 / 0,33 s |
+| frasco, en calma, 2 / 4 / 16 spp | 1,28 / 1,04 / 1,12 s | 1,06 / 0,65 / 0,82 s | 0,70 / 0,69 / 0,75 s | 0,35 / 0,31 / 0,31 s |
+| ejemplo, cargado, 2 / 4 / 16 spp | 1,90 / 1,67 / 1,68 s | 1,71 / 2,16 / 1,81 s | 1,05 / 0,99 / 1,07 s | 0,63 / 0,66 / 1,04 s |
+| ejemplo a 1920 × 1080, cargado, 2 / 4 spp | 6,46 / 6,39 s | 8,69 / 8,70 s | 4,56 / 3,46 s | 4,25 / 4,08 s |
+
+Con cuatro hilos libres el de visor queda por debajo de los ~0,4 s del plan
+a 1200 × 700 (0,31–0,46 s); L4 ya no (0,45–0,69 s). Las guías, cuando el
+interruptor está encendido, añaden un 30 % por muestra al ejemplo y un
+19 % a la escena de E5 (1200 × 700, 4 spp, 4 hilos).
+
+*El carril del lanzador*, tomando un hilo del visor o como hilo de más
+(el ejemplo a 1200 × 700, 4 hilos, filtro real, 15–20 s): en calma, 12 frente
+a 16 muestras renderizadas y 5 frente a 4 imágenes limpias (*denoise* de
+3,4 frente a 3,1 s, con el visor y el carril compitiendo); cargado, 8 frente a
+8–9 muestras y 3–4 frente a 2–3 limpias (*denoise* 3,5–5,1 frente a
+5,1–5,2 s). Indistinguibles con esta carga; se queda el que toma un hilo
+del visor, que no le quita nada a un render final. Refresco observado: la
+media de los huecos entre limpias es lo que cuesta un *denoise* (4,8–5,2 s
+con ese coste), el máximo 6,6 s, por debajo de `2 × denoise`.
+
+*En la web* (`tools/denoise-live-check.mjs`, swiftshader, 3 *workers*, visor
+de 840 × 775, cargado): 20 imágenes limpias en 24 s, huecos de 0,72 a
+1,77 s con *denoise* de 0,33 a 0,97 s; 16 de 19 dentro de
+`max(2 × denoise, 0,5 s)` y 3 acotados por la pasada (una muestra de toda
+la vista costaba ~1,2 s y llegó más de un *denoise* después de la limpia
+anterior); ninguna limpia de una pasada vieja.
+
+*Comprobado que fallan* reintroduciendo cada error: el lanzador con la
+regla de antes (esperar dos veces el coste después de cada limpia), con el
+carril sobre una entrada vieja (300 ms de retraso antes de filtrar), sin
+publicar la ruidosa al apagar, sin esperar la limpia de un trabajo
+terminado, sin arrancar el carril al encender, sin el albedo de las
+primeras muestras, sin tomar el hilo del visor, sin acortar las pasadas,
+con el filtro completo en el visor o el de visor en el final, con las
+sumas aunque la imagen no sea nueva; `rt-post` con un halo corto y con la
+7 × 7 en el visor; `rt_denoise_with` sin mirar el ajuste; la web sin
+arrancar el siguiente *denoise* al volver, parando las pasadas mientras
+filtra, sin filtrar al encender, sin quitar la limpia al apagar, sin
+acortar las pasadas, con el interruptor contando como cambio de imagen,
+con el albedo siempre; el lanzador de la página volviendo a publicar la
+vista, sin volver a seguirla terminada, sin `version`; el comando
+cambiando el borrador de la ventana de render y sin negarse en *Rápido*;
+un halo de la página distinto del del motor; las guías sin aceptar huecos.
+Captura: `docs/ui/denoise-live.png`.
+
+**No encajó.**
+
+- **Las guías se renderizan siempre a resolución completa**, también con
+  el interruptor apagado: es lo que deja reducir el ruido «de la
+  acumulación actual al momento» al encenderlo. Cuestan (el rayo de
+  albedo de cada muestra) entre un 19 y un 30 % más por muestra (el
+  ejemplo y la escena de E5 a 1200 × 700 en cuatro hilos), así que
+  apagado el albedo solo se renderiza para las primeras 8 muestras
+  (`LIVE_ALBEDO_SAMPLES`) y la imagen limpia de después lo hace con esas
+  guías (el test lo compara con una referencia así). El plan no lo decía.
+- **El refresco tiene un suelo: una muestra de todo el visor.** La pasada
+  más corta es de una muestra; si una muestra de toda la vista cuesta más
+  que `max(2 × denoise, 0,5 s)` − *denoise* (una vista muy grande, una
+  escena lenta, swiftshader en una máquina cargada: en la comprobación del
+  navegador de esta máquina, a 840 × 775, una muestra tardaba ~1,2–1,3 s y
+  el *denoise* 0,3–1,0 s), no hay nada más nuevo que filtrar y la limpia llega
+  una pasada después: el carril nunca espera teniendo trabajo (la
+  comprobación lo verifica y cuenta esos huecos aparte). Cumplirlo también
+  ahí pediría filtrar pasadas a medias (baldosas con `n` y `n + 1`
+  muestras, normalizadas): queda para el líder si hace falta.
+- **El carril del lanzador es un hilo** (lo que pedía el plan); el ajuste
+  de visor baja de ~0,4 s en cuatro hilos por bandas, pero en un hilo
+  cuesta ~0,7–1,2 s a 1200 × 700, y eso es lo que tarda en refrescarse la
+  limpia en el lanzador. Darle más hilos refrescaría antes a costa de
+  converger más despacio: decisión **Fable** (los datos, abajo).
+  *Veredicto del responsable*: el carril se queda en un hilo (el visor
+  comparte la máquina con el render, como se decidió en P3e).
+- **«Sin la varianza espacial 7 × 7 a partir de 4 muestras»**: la 7 × 7
+  solo se usa por debajo de 4 muestras; el ajuste de visor la deja en
+  3 × 3 ahí, que medido es igual o mejor en las escenas de producto y peor
+  en la superficie lisa del ejemplo a 1–2 muestras.
+- **La última limpia del visor convergido** usa también el ajuste de visor
+  (el contrato: lo elige el tipo de trabajo). Un *denoise* completo al
+  converger daría algo más de calidad en la imagen que se queda en
+  pantalla: queda anotado para el líder.
+- **El protocolo del lanzador cambia** (no el RSB): la cabecera `RPX1` pasa
+  de 48 a 52 bytes con el número de la imagen, `GET /api/render/<id>`
+  acepta `version=`, `POST /api/render` acepta `denoise=0|1` (solo para
+  vistas) y hay un `POST /api/render/<id>/denoise?on=0|1`. El RSB de una
+  vista a resolución completa dice siempre `denoise` bit 0 (las guías), sea
+  cual sea el modo; el interruptor va aparte.
+- **Arreglado de paso**: el botón del medidor cambiaba el borrador del
+  trabajo de la cola cuando la ventana de render lo estaba editando (usaba
+  `setRenderSettings`); el comando nuevo cambia siempre el proyecto (con su
+  test). Y cambiar *Guardar también sin reducción de ruido* o la parte
+  *Render* del *denoise* ya no vuelve a empezar la imagen del visor
+  (`advancedTouchesView`).
+- **El medidor del lanzador no sabe lo que cuesta su *denoise*** (está en
+  `GET /api/render/state`, `liveDenoise.costMs`); el de la web sí, en sus
+  atributos `data-*`. Ninguno lo pinta en texto.
+
+## U11b · Intensidad de la reducción de ruido — **Opus** (con U11) — hecha
 
 **Qué.** Petición del usuario: elegir cuánto *denoise* se aplica. En la
 ventana de render, *Avanzado ▸ Reducción de ruido* gana **Intensidad**
@@ -1347,7 +1539,74 @@ proyecto; proyectos anteriores abren al 100 %. Cadena `es`/`en`.
 (bits), 0 % la ruidosa y 100 % la limpia; el *hash* `0xab15f290` con 100 %
 no cambia; paridad wasm.
 
-## E11 · Suavizado de bordes, de menos a más coste — **Opus** (tras U11)
+**Hecho.**
+
+- **Motor** (`rt-post`): `blend(ruidosa, limpia, s)` hace en sitio
+  `n × (1 − s) + c × s` por canal de color en `f32` (el alfa no se toca;
+  con `s = 0,5` el producto por 0,5 es exacto y da `(n + c) / 2` bit a
+  bit) y `denoise_rows_at(entrada, y0, y1, ajuste, s)` es la banda ya
+  mezclada: con `s = 0` no ejecuta el filtro y devuelve las filas ruidosas
+  (comprobando igualmente que la banda trae su halo), con `s = 1` es
+  `denoise_rows_with`; fuera de `0..=1` se recorta y NaN es 1. Una banda a
+  cualquier intensidad son exactamente esas filas de la imagen entera.
+- **RSB**: `RNDR` gana `denoise_strength` (f32) al final, 56 B; sin él, 1;
+  fuera de `0..=1`, el RSB no es válido. Lo escriben `rt-core` y
+  `src/io/rsb.ts` byte a byte (fijaciones `example.rsb`, `e5.rsb` y
+  `e5b.rsb` regeneradas: 16 bytes más cada una).
+- **Un solo mando**: el lanzador lo usa en el render final (filtro
+  completo, en bandas) y en el carril del visor (ajuste de visor); `rt
+  --denoise-strength <S>`; wasm `rt_denoise_with(ajuste, s, …)`
+  (`rt_denoise` es `s = 1`); la web, en el render (`Pool.denoise`) y en su
+  carril. Con 0 % un final no se filtra (sin la bandera 64 ni la copia
+  ruidosa: la imagen es la ruidosa) y ningún carril trabaja.
+- **Interfaz**: *Avanzado ▸ Reducción de ruido ▸ Intensidad* en la ventana
+  de render (0–100 %, pasos de 5, oculta con la reducción *Apagada*), con
+  su nota; `render.advanced.denoiseStrength` en el proyecto, deshacible
+  (un arrastre, una entrada), los proyectos anteriores abren al 100 % y
+  `engineFieldsOf` la pasa al motor como fracción (`denoiseFraction`).
+  Cadenas `es`/`en`.
+- **Tests**: `rt-post` (50 % es la media bit a bit con los dos ajustes,
+  0 % la ruidosa, 100 % la limpia, bandas iguales a la imagen entera, la
+  mezcla a 25 % y el alfa intacto; el ejemplo con 100 % conserva
+  `0xab15f290`); `rt-core` (sin el campo, 1; fuera de rango, error;
+  ida y vuelta); `rt-app` (un final y un visor a 50 % son la mezcla de
+  `rt`, a 0 % la ruidosa sin bandera ni carril); `rt-cli` (la opción);
+  `rt-wasm` (50 % y 0 % por la exportación); y en la página: el `rt.wasm`
+  real a 50 % es exactamente la media y a 0 % la ruidosa (los dos
+  ajustes), los bytes del RSB, el *store* (por defecto, migración,
+  recorte), el render del *pool* y el carril del visor con la intensidad
+  del proyecto (y sin *denoise* a 0 %). En el navegador
+  (`tools/denoise-live-check.mjs`, paso *strength*): la fila *Intensidad*
+  bajo la reducción de ruido, 100 % de fábrica con su nota; a 50 % el
+  visor vuelve a empezar y se vuelve a filtrar. Captura
+  `docs/ui/denoise-strength.png`.
+
+*Comprobado que fallan* reintroduciendo cada error: la mezcla con los
+pesos cambiados o tocando el alfa, NaN como 0, la banda a 0 % sin
+comprobar su halo, `RNDR` leyendo 0 sin el campo o escribiendo siempre 1,
+el final filtrando a 0 %, el carril trabajando a 0 %, los dos ignorando la
+intensidad (lanzador y `rt`), `--denoise-strength` sin llegar a la escena,
+el wasm ignorándola; en la página, `engineFieldsOf` sin ella, la migración
+a 0, el escritor del RSB (campo y proyección), el render del *pool*
+filtrando a 0 %, el carril a 100 % siempre o trabajando a 0 %, y la
+banda usando `rt_denoise` (sin intensidad) con una intensidad.
+
+**No encajó.**
+
+- **Cambiar la intensidad vuelve a empezar la imagen del visor**: va en el
+  `RNDR` de la vista, como el resto de *Avanzado*, y el lanzador la lee de
+  ahí. Que no la reiniciara (como el interruptor de U11) pediría pasarla
+  aparte (`POST /api/render/<id>/denoise?strength=`); el carril de la web
+  ya sabe cambiarla sin reiniciar (descarta la limpia de otra intensidad y
+  filtra otra vez la última pasada). Queda para el líder si se quiere
+  ajustar mirando la imagen convergida. *Veredicto del responsable*:
+  aceptado, que vuelva a empezar.
+- **0 % no es «el filtro con peso 0»**: no se ejecuta, así que un render a
+  0 % no lleva la imagen filtrada ni la copia «-noisy» (sería la misma) y
+  el medidor no dice *Ruido reducido*, aunque el interruptor del visor siga
+  encendido. *Veredicto del responsable*: correcto así.
+
+## E11 · Suavizado de bordes, de menos a más coste — **Opus** (tras U11) — hecha
 
 **Qué.** Petición del usuario: elegir en *Ajustes ▸ Motor de renderizado*
 el tipo de suavizado de bordes, ordenado de menos a más costoso. Dos
@@ -1397,6 +1656,160 @@ ejemplo con *Estándar* conserva `0x223515c3`; paridad wasm; hoja
 `out/aa-sheet.html`: un recorte 4× del canto del frasco con los seis
 ajustes y el tiempo de cada uno (los tiempos van en el PR, no en la
 interfaz); captura `docs/ui/settings-aa.png`.
+
+**Hecho.**
+
+- **Motor** (`rt_core::pixel_filter`, §5.2 quinquies de `ARCHITECTURE.md`):
+  los cuatro filtros por muestreo de importancia (la muestra pesa 1 y se
+  queda en su píxel), *Estándar* con los bits de siempre; Blackman–Harris
+  de 3 px con su CDF inversa en una tabla `f32` de 256 puntos hecha y
+  comprobada por un test (bisección sobre la integral de la ventana en
+  `f64`); **muestras de borde** (`EdgeMask`, `render_tile_edges`,
+  `render_tile_albedo_edges`) desde los rayos centrales de la baldosa y de
+  su anillo de un píxel: pieza, material o profundidad a más del 2 % en el
+  vecino 3 × 3; un píxel de borde hace `k` muestras por índice, los
+  índices `s·k … s·k + k − 1` de su secuencia, y suma su media. `RNDR`
+  gana `pixel_filter` y `edge_supersample` (64 B; sin ellos, la imagen de
+  antes). Lo usan `rt` (`--pixel-filter`, `--edge-samples`,
+  `--write-e11-example`), el lanzador (finales y visor) y el wasm (máscara
+  por rectángulo de baldosa en la escena cargada).
+- **Interfaz**: *Ajustes ▸ Motor de renderizado ▸ Suavizado de bordes*
+  con las dos listas en su orden (`engine.fastAa`, segmento de cuatro;
+  `engine.pixelFilter`, lista vertical numerada con la frase de cada
+  opción), ajustes de la aplicación (en escritorio, en `settings.json`
+  con los demás), cadenas `es`/`en`. **De fábrica, *Fino*** (decisión del
+  líder al ver la hoja: cuesta los mismos rayos que *Estándar* y es el
+  filtro de producción); un ajuste ya guardado se conserva, y el motor,
+  ante un RSB sin el campo, sigue con la caja (los *hashes* intactos).
+  *Rápido* sigue a 4× de fábrica y dibuja con el multimuestreo pedido
+  hasta el máximo del dispositivo, que la línea dice
+  (`PreviewEngine.setMsaa`, `msaa()`); *Completo* y los renders llevan el
+  filtro (`setPixelFilter` de los dos motores; los gestos, sin muestras de
+  borde). El medidor dice *Filtro · …* cuando no es el de fábrica
+  (*Fino*; p. ej. *Filtro · Estándar*) y el
+  multimuestreo de *Rápido* cuando no es 4×.
+- **Tests**: la tabla frente a su referencia; *Estándar* es la posición
+  tal cual y *Ninguno* el centro (todas las muestras de un píxel, el
+  mismo rayo primario a través de un estenopo; con lente, el mismo punto
+  de la imagen); χ² sobre 10⁶ desplazamientos en bins de 0,1 px
+  (*Fino* 33,0 con 29 grados de libertad, cota 58,30; *Suave*
+  9,2 con 19, cota 43,82) y la varianza del filtro a menos de un
+  0,3 %; la regla de borde; la máscara igual con cualquier corte de
+  baldosas; un píxel de borde a ×2 y ×4 es la media de sus `k` muestras
+  (imagen y albedo) y los demás la muestra de siempre; *hash* fijado del
+  ejemplo con *Fino + bordes ×2* (`0xf3787fe7`; con la elección de luz de
+  E12, `0x3d8f85de`) en escalar, SSE2 y AVX2,
+  con baldosas de 32 y 23, igual por el `rt.wasm` real
+  (`wasm-parity.mjs`, también en CI) y por el código de la página; `rt` y
+  el lanzador (final y visor) con 1, 4 y 16 hilos, los mismos bits; el
+  ejemplo con *Estándar* conserva `0x223515c3` (el de entonces; con la
+  elección de luz de E12, `0x8206111f`, igual con y sin E11) y todos los
+  *hashes* fijados siguen; RSB (sin los campos, la caja y ninguna; más de 16, no
+  válido) en `rt-core` y en `src/io/rsb.ts`; los ajustes (de fábrica,
+  validación, bloque, cadenas sin cifras de coste); los dos motores de la
+  página (la vista vuelve a empezar con otro filtro y no con el mismo, los
+  gestos sin muestras de borde, los renders con el filtro, `status()`).
+  En el navegador (`tools/settings-aa-check.mjs`): el orden de las dos
+  listas, MSAA 8× limitado al máximo del dispositivo (4× con swiftshader)
+  y dicho, *Ninguno* y 2× cambian solo los bordes de la vista previa
+  (diferencia media 0,48 y 0,42 sobre 255, el 98,5 % y el 99,1 % de los
+  píxeles iguales a 4×), *Fino + bordes ×2* en *Completo* con su palabra
+  en el medidor, guardado al recargar y en español. Capturas
+  `docs/ui/settings-aa.png` (el bloque, con *Fino + bordes ×2* elegido) y
+  `docs/ui/meter-filter.png` (el medidor con *Filter · Standard*).
+
+*La hoja* (`tools/aa-sheet.mjs` → `out/aa-sheet.html`, el frasco de
+ejemplo a 960 × 540, 64 muestras, 4 hilos; recorte de 100 × 75 px
+ampliado 4×), en esta máquina cargada (otros agentes a la vez):
+
+| Ajuste | Rayos | Frente a *Estándar* | CPU | Reloj |
+| --- | --- | --- | --- | --- |
+| Ninguno | 92,79 M | 1,0000 × | 24,4 s (0,97 ×) | 83,3 s |
+| Estándar | 92,80 M | 1,0000 × | 25,2 s (1,00 ×) | 88,6 s |
+| Suave | 92,80 M | 1,0000 × | 26,2 s (1,04 ×) | 77,3 s |
+| Fino | 92,80 M | 1,0000 × | 25,3 s (1,00 ×) | 79,2 s |
+| Fino + bordes ×2 | 93,95 M | 1,0125 × | 26,5 s (1,05 ×) | 76,8 s |
+| Fino + bordes ×4 | 95,10 M | 1,0248 × | 27,5 s (1,09 ×) | 87,5 s |
+
+Las muestras extra son pocas porque los bordes lo son (en el frasco de la
+hoja, un 1,2 % de los rayos de más con ×2; en el ejemplo del motor,
+el 1,8 % de los píxeles son borde); el filtro no cuesta rayos, solo su
+cuenta.
+
+*Comprobado que fallan* reintroduciendo cada error: la tienda lineal, la
+tabla sin interpolar o sin su reparto de puntos, el umbral de
+profundidad al 20 %, la vecindad sin la columna de la derecha, *Ninguno*
+con *jitter*, las `k` muestras con el mismo índice, la suma sin dividir
+(imagen y albedo), la posición en pantalla sin recortar, el mismo número
+para los dos ejes, `RNDR` leyendo otro filtro sin el campo o sin escribir
+las muestras de borde, `rt`, el lanzador y el wasm sin máscara de bordes,
+el wasm sin olvidar las máscaras al actualizar la escena (este pasaba
+primero: el test solo actualizaba a una escena sin muestras de borde, que
+no mira la caché; ahora también mueve la cámara con ellas, y falla); en la página,
+la lista con otro número de muestras, otro filtro o multimuestreo de
+fábrica, los gestos con muestras de borde, los renders sin el filtro (las
+dos máquinas), un cambio de filtro que no vuelve a empezar la vista, el
+estado del lanzador sin el filtro, el RSB escribiendo siempre la caja o
+sin limitar las muestras de borde; y en el navegador, el destino de
+multimuestreo guardado en sRGB8 (con 2× la vista previa salía más clara:
+diferencia media 21/255).
+
+**No encajó.**
+
+- **Las muestras de borde se promedian en una sola aportación por
+  índice**, en vez de que «el *denoise* y los pases reciban el número de
+  muestras por píxel»: así el peso de la película, el contador de
+  muestras de los anfitriones, la trama del lanzador, el pool de la web
+  y la varianza que usa el *denoise* (la de la media de `k`) no cambian,
+  y un píxel de borde acaba igualmente con `k` veces las muestras. Nada
+  del protocolo tuvo que cambiar.
+- **La tabla de Blackman–Harris no está en `u = i/255`** (desviación
+  aceptada por el líder): con puntos
+  equiespaciados en `u` la primera y la última celda (1/255 de las
+  muestras cada una) se reparten uniformes por el medio píxel exterior,
+  donde la ventana es casi cero: la varianza salía un 1,6 % mayor y el χ²
+  con bins de 0,1 px no pasaba (sí con bins de igual probabilidad sobre
+  los puntos de la tabla, que no ven la forma dentro de una celda). Con
+  los puntos en `q(i/255)` (`2s²` y su simétrica; su inversa, dos raíces
+  cuadradas) se juntan hacia los extremos: varianza a un 0,2 % y χ² en
+  bins uniformes. Siguen siendo 256 valores `f32` sin trigonometría.
+- **El material casi nunca decide**: en el RSB cada instancia tiene un
+  material, así que donde cambia el material cambia la pieza. Se compara
+  igual (el contrato lo pide; un mallado con varios materiales lo
+  necesitará).
+- **Los fotogramas de gesto** usan el filtro pero no las muestras de
+  borde (se van antes de que se notara y cuestan rayos de su máscara).
+- **El mapa de fotones de las cáusticas** de la muestra `s` sirve a las
+  `k` muestras de un píxel de borde (no hay mapas de los índices `s·k + j`):
+  sus cáusticas no ganan muestras propias.
+- **El multimuestreo de *Rápido*** con otro número que el del lienzo
+  (`antialias: true`, el que elija el navegador, normalmente 4) dibuja en
+  un destino que three.js trata como la pantalla gracias a
+  `isXRRenderTarget` (curva de tono y sRGB en cada material): un detalle
+  interno de three.js 0.186 que la comprobación del navegador vigila (si
+  una versión lo cambia, los colores salen distintos y la comprobación
+  falla). Swiftshader llega a 4×: 8× no se ha visto dibujado aquí.
+- **El medidor dice el filtro que se pidió al motor** con la vista en
+  pantalla (el motor no lo devuelve en sus tramas); en *Rápido* dice el
+  multimuestreo que three.js da.
+- **Ningún byte fijado del RSB del ejemplo se movió con el nuevo valor de
+  fábrica**: las fijaciones de `tests/fixtures/*.rsb` son las escenas de
+  `rt-core` (sin ajustes de la interfaz) y las pruebas del proyecto al RSB
+  pasan su vista sin filtro, así que `projectScene` sigue escribiendo
+  `pixel_filter` 0 (`edge_supersample` 1) mientras nadie lo pida; el
+  filtro de fábrica lo ponen los dos motores de la página en cada vista y
+  cada render (`setPixelFilter`), y lo que cambió son las expectativas de
+  sus tests (la primera vista lleva `pixel_filter` 3 y `status()` dice
+  *Fino*; antes, 0 y nada).
+- **El medidor nombra el filtro cuando no es el de fábrica**, no «cuando
+  no es el estándar» como decía el plan: con *Fino* de fábrica, el plan
+  habría dicho *Filtro · Fino* casi siempre. Decisión del líder; así el
+  caso de siempre calla y *Filtro · Estándar* sale cuando alguien lo
+  elige. El `status()` de los dos motores dice siempre el filtro de la
+  vista a resolución completa; el medidor decide.
+- **Los tiempos de la hoja** son de una máquina con otros procesos (carga
+  media de unos 35): el reloj dice tanto de ellos como del ajuste; por
+  eso la hoja da también el tiempo de CPU del proceso y los rayos.
 
 ## E12 · Elección de luz por punto (árbol de luces plano) — **Opus**, decisión **Fable** — hecha
 

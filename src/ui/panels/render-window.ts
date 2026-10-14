@@ -452,6 +452,17 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     (v) => setAdvanced({ denoise: v }),
     { ariaLabel: t('rw.denoise') },
   );
+  // U11b: how much of the denoised image, for the render and the Full viewport alike (one knob).
+  const strength = numberField({
+    value: s0.advanced.denoiseStrength,
+    min: 0,
+    max: 100,
+    step: 5,
+    format: (v) => `${formatNumber(v, getLang(), 0)} %`,
+    ariaLabel: t('rw.denoiseStrength'),
+    onChange: (v, g) => set({ advanced: { ...get().advanced, denoiseStrength: v } }, g),
+  });
+  const strengthRow = row(t('rw.denoiseStrength'), h('div', { class: 'rw-stack' }, strength.el, h('div', { class: 'note' }, t('rw.denoiseStrengthNote'))));
   const saveNoisy = toggle(s0.advanced.saveNoisy, (v) => setAdvanced({ saveNoisy: v }), t('rw.saveNoisy'));
   const saveNoisyRow = row(t('rw.saveNoisy'), h('div', { class: 'rw-inline' }, saveNoisy.el, h('span', { class: 'note' }, t('rw.saveNoisyNote'))));
   const advancedBody = h(
@@ -463,6 +474,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     row(t('rw.seed'), seed.el),
     row(t('rw.causticsQuality'), h('div', { class: 'rw-stack' }, causticsQuality.el, causticsQualityNote)),
     row(t('rw.denoise'), h('div', { class: 'rw-stack' }, denoise.el, h('div', { class: 'note' }, t('rw.denoiseNote')))),
+    strengthRow,
     saveNoisyRow,
   );
   const qualityBody = h(
@@ -602,6 +614,8 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     const preset = CAUSTICS_PRESETS[s.advanced.causticsQuality];
     causticsQualityNote.textContent = t('rw.causticsQualityNote', { n: formatNumber(preset.photons, getLang(), 0), r: preset.radiusPx });
     denoise.set(s.advanced.denoise);
+    strength.set(s.advanced.denoiseStrength);
+    strengthRow.style.display = s.advanced.denoise === 'OFF' ? 'none' : '';
     saveNoisy.set(s.advanced.saveNoisy);
     // Only a render that is denoised has an image without denoise to save.
     saveNoisyRow.style.display = denoiseIn(s.advanced.denoise, 'RENDER') ? '' : 'none';

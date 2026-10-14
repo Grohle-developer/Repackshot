@@ -425,7 +425,8 @@ describe('NativeEngine render', () => {
       engine.frame();
       await vi.waitFor(() => expect(posted).toHaveLength(1));
       // The first viewport job is the whole scene, even though the key (the meshes) is empty.
-      expect(posted[0].path).toMatch(/^\/api\/render\?kind=viewport&mesh=[0-9a-f]+&client=[0-9a-f]+&seq=\d+&share=2&full=1$/);
+      // (U11: with its live denoise switch, on as the project says.)
+      expect(posted[0].path).toMatch(/^\/api\/render\?kind=viewport&mesh=[0-9a-f]+&client=[0-9a-f]+&seq=\d+&share=2&denoise=1&full=1$/);
       expect(posted[0].bytes).toBe(10);
       // The camera moves: an update, not marked.
       camera = 2;

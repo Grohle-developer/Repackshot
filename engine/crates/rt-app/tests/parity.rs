@@ -6,7 +6,7 @@
 mod common;
 
 use common::{fnv1a, TestServer};
-use rt_app::render::{FLAG_DATA, FLAG_DONE, FRAME_HEADER};
+use rt_app::render::{FLAG_DATA, FLAG_DENOISED, FLAG_DONE, FRAME_HEADER};
 use std::time::{Duration, Instant};
 
 struct Frame {
@@ -16,6 +16,8 @@ struct Frame {
     height: u32,
     flags: u32,
     sums: Vec<f32>,
+    /// U11: the number of the image.
+    version: u32,
 }
 
 fn u32_at(b: &[u8], i: usize) -> u32 {
@@ -42,6 +44,7 @@ fn parse(body: &[u8]) -> Frame {
         height: u32_at(body, 20),
         flags,
         sums,
+        version: u32_at(body, 48),
     }
 }
 
@@ -484,5 +487,116 @@ fn a_live_viewport_does_not_change_a_bit_of_the_render() {
         fnv1a(&resolve(&f)),
         pinned_example_hash(),
         "with a live viewport"
+    );
+}
+
+#[test]
+fn a_live_viewport_is_switched_through_the_api() {
+    // U11: `denoise=0` posts a view with its live denoise off; `POST /api/render/<id>/denoise`
+    // turns it; a follower that asks with `version` gets the sums only for a newer image, and
+    // waits for the one the switch asked for even once the job is over.
+    let t = TestServer::start("live-denoise", 2);
+    let mut scene = rt_core::example::scene();
+    scene.render.width = 64;
+    scene.render.height = 48;
+    scene.render.max_samples = 6;
+    scene.render.denoise = rt_core::scene::DENOISE_IMAGE;
+    let rsb = scene.to_rsb();
+    let r = t.api(
+        "POST",
+        "/api/render?kind=viewport&full=1&mesh=e&client=w&denoise=0",
+        &rsb,
+    );
+    assert_eq!(r.status, 200, "{}", r.text());
+    let id = job_id(&r);
+    let noisy = poll(&t, id);
+    assert_eq!((noisy.samples, noisy.flags & FLAG_DENOISED), (6, 0));
+    assert_eq!(
+        fnv1a(&resolve(&noisy)),
+        fnv1a(&rt_cli::render(&scene, 6, 2).film.resolve())
+    );
+    // Its image now: the header only for the same image.
+    let same = t.api(
+        "GET",
+        &format!(
+            "/api/render/{id}?after={}&version={}",
+            noisy.pass, noisy.version
+        ),
+        b"",
+    );
+    let f = parse(&same.body);
+    assert_eq!((f.version, f.flags & FLAG_DATA), (noisy.version, 0));
+    // On: the follower waits for the denoised image of the accumulation, which comes with data.
+    let on = t.api("POST", &format!("/api/render/{id}/denoise?on=1"), b"");
+    assert_eq!(on.status, 200, "{}", on.text());
+    assert_eq!(
+        rt_app::json::parse(&on.text())
+            .unwrap()
+            .get("on")
+            .and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    let reply = t.api(
+        "GET",
+        &format!(
+            "/api/render/{id}?after={}&version={}",
+            noisy.pass, noisy.version
+        ),
+        b"",
+    );
+    let clean = parse(&reply.body);
+    assert_eq!(
+        clean.flags & (FLAG_DATA | FLAG_DENOISED | FLAG_DONE),
+        FLAG_DATA | FLAG_DENOISED | FLAG_DONE
+    );
+    assert_eq!((clean.samples, clean.version), (6, noisy.version + 1));
+    assert_ne!(clean.sums, noisy.sums);
+    // Off: the noisy accumulation again, at once.
+    let off = t.api("POST", &format!("/api/render/{id}/denoise?on=0"), b"");
+    assert_eq!(off.status, 200);
+    let reply = t.api(
+        "GET",
+        &format!(
+            "/api/render/{id}?after={}&version={}",
+            clean.pass, clean.version
+        ),
+        b"",
+    );
+    let back = parse(&reply.body);
+    assert_eq!(
+        (back.flags & (FLAG_DATA | FLAG_DENOISED), back.version),
+        (FLAG_DATA, clean.version + 1)
+    );
+    assert_eq!(back.sums, noisy.sums);
+    // Bad requests: the query, a final (no switch), no such job, a final posted with the switch.
+    assert_eq!(
+        t.api("POST", &format!("/api/render/{id}/denoise?on=yes"), b"")
+            .status,
+        400
+    );
+    let fin = t.api("POST", "/api/render?kind=final", &rsb);
+    let fin = job_id(&fin);
+    assert_eq!(
+        t.api("POST", &format!("/api/render/{fin}/denoise?on=1"), b"")
+            .status,
+        409
+    );
+    assert_eq!(
+        t.api("POST", "/api/render/999999/denoise?on=1", b"").status,
+        404
+    );
+    assert_eq!(
+        t.api("POST", "/api/render?kind=final&denoise=1", &rsb)
+            .status,
+        400
+    );
+    assert_eq!(
+        t.api(
+            "POST",
+            "/api/render?kind=viewport&full=1&mesh=e&client=x&denoise=maybe",
+            &rsb
+        )
+        .status,
+        400
     );
 }

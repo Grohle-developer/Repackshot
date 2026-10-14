@@ -1,5 +1,7 @@
 // Messages between the path tracer (main thread) and its workers.
 
+import type { DenoisePreset } from './denoise';
+
 export type WorkerRequest =
   /** Instantiate this compiled rt.wasm. */
   | { type: 'init'; module: WebAssembly.Module }
@@ -17,9 +19,10 @@ export type WorkerRequest =
   | { type: 'tonemap'; id: number; sum: ArrayBuffer; samples: number; ev: number; tonemap: number }
   /**
    * E5b-1: denoise image rows `y0 .. y1` of a `width × height` image of `samples` samples, from rows `lo .. hi`
-   * (`input`: render/denoise.ts `packBand`) with `rt_denoise`.
+   * (`input`: render/denoise.ts `packBand`) with `rt_denoise`; U11: `preset` VIEWPORT, the viewport's lighter filter
+   * (`rt_denoise_with`); U11b: `strength` 0..1 blends the noisy image back in (absent: 1).
    */
-  | { type: 'denoise'; id: number; width: number; height: number; samples: number; y0: number; y1: number; lo: number; hi: number; input: ArrayBuffer };
+  | { type: 'denoise'; id: number; width: number; height: number; samples: number; y0: number; y1: number; lo: number; hi: number; input: ArrayBuffer; preset?: DenoisePreset; strength?: number };
 
 export type WorkerReply =
   | { type: 'ready'; version: number }

@@ -4,6 +4,7 @@
 // which one the viewport shows (Fast / Full); Render always uses the path
 // tracer. main.ts wires both.
 
+import type { PixelFilterFields } from '../core/antialias';
 import type { CameraId } from '../core/camera';
 import type { PassKey } from '../core/passes';
 import type { AdvancedSettings, FinishBy, RenderProgress } from '../core/render';
@@ -55,8 +56,22 @@ export interface EngineStatus {
   isa?: string;
   /** Path tracer (E5b-1): the image on screen is the engine's denoised one. */
   denoised?: boolean;
+  /**
+   * Path tracer (U11), the live denoise of the Full viewport: what it measured. `ms`, the last denoise's cost (the
+   * pool; the launcher's own is in its state); `images`, the denoised images put on screen for this view;
+   * `accumulated`, the samples of the newest pass (the pool: what the next denoise starts from); `at`, when the last
+   * denoised image was put on screen (performance.now(), the pool).
+   */
+  liveDenoise?: { ms?: number; images: number; accumulated?: number; at?: number };
   /** Path tracer (E5b-1): the view renders caustics with this many photons per sample (absent: none). */
   caustics?: number;
+  /**
+   * Path tracer (E11): the pixel filter and edge samples the image on screen was asked to render with
+   * (`RNDR.pixel_filter`, `RNDR.edge_supersample`), at full resolution.
+   */
+  pixelFilter?: PixelFilterFields;
+  /** Preview (E11): the multisampling it draws with now, and the most the device can do. */
+  msaa?: { samples: number; max: number };
   /**
    * Preview (S4a): the particles of the ambient effects it draws (evaluated by rt.wasm's own simulator), of how many
    * the engine renders; `boxesOnly` when there is no rt.wasm and only the region boxes are drawn. Absent: no effect.
