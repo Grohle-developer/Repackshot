@@ -5311,6 +5311,49 @@ adelanto) y la **licencia cerrada** dicha con claridad.
    responsable, nunca en el repositorio) y `keyUrl` queda vacío hasta
    que la aloje: mientras, se pide al instalar.
 
+Tres más del usuario (14-10, con la fase ya construida):
+
+7. **El logo es el de ahora**, no `assets/exported/marks/LOGO.svg` (ese es
+   el antiguo y no se usa en ningún sitio): el cartucho de 35 mm como
+   rejilla de 16×16 puntos a dos tintas de `src/data/marks.ts` (`LOGO`, con
+   las tres columnas de la lengüeta más cercanas al cartucho en la tinta
+   tenue, regla M32-02/D50), el que dibuja `src/components/DotGrid.tsx` y
+   rasteriza `scripts/build-icons.mjs` en `design/icon/itsnotfilm-1024.png`
+   y en la hoja de pruebas `design/icon/aintfilm-mark.png` (la referencia de
+   cómo tiene que verse, con el logotipo). `tools/plugins/build-film.mjs`
+   construye el `logo.svg` del paquete desde las filas de `LOGO`: un `rect`
+   por punto, las dos tintas como dos grises, celdas cuadradas (es vector:
+   sin preocuparse del suavizado), con exactamente la misma regla de la
+   tinta tenue que `DotGrid`.
+8. **Las recetas son un carrusel horizontal**, como la tira de película de
+   la app móvil: una tarjeta por receta (la miniatura arriba, el nombre
+   público debajo, la categoría como etiqueta pequeña), que se desplaza de
+   lado con la rueda o el *trackpad* y con las flechas, con la tarjeta
+   elegida contorneada, ajuste a tarjeta y fundidos en los dos extremos
+   cuando hay más; el cromo acromático, el color solo dentro de las
+   miniaturas. La miniatura de cada tarjeta es la receta aplicada a **una
+   sola escena de prueba**: una escena nueva de `rt-cli`, `film-thumb`, en
+   `engine/crates/rt-cli/src/scenes.rs` junto a `e5-lamp` y
+   `e5-glass-bottle` (el frasco de perfume de `glass_bottle` junto a la
+   lámpara de mesa de `lamp`, en el cuarto oscuro, lámpara encendida,
+   16:10, 320×200), renderizada una vez con `rt` a 512 muestras con
+   *denoise* y metida en el paquete como `thumb-base.png` (16 bits lineal u
+   8 bits sRGB, lo que prefiera la entrada del plugin). Al cargar el plugin,
+   el anfitrión le pide al *worker* la miniatura de cada receta desde esa
+   base (guardada en IndexedDB por versión del plugin e id de receta: se
+   hace una vez) y enseña un hueco hasta que llega cada una. Esa misma base
+   es lo que enseña la vista previa cuando todavía no hay resultado. Si
+   cada miniatura es lenta para ~70 recetas, a media resolución (160×100)
+   y ampliada por CSS; se dice el tiempo por miniatura.
+9. **Animación**: cuando el plugin se aplica a un trabajo de animación,
+   cada fotograma pasa por el motor con su propia semilla, `seed = seed0 +
+   índice del fotograma` (el campo `seed` del motor), para que el grano sea
+   el de una película de verdad fotograma a fotograma y no una capa fija;
+   la imagen fija usa `seed0`; la vista previa enseña el fotograma 0;
+   `provenance` guarda `seed0` y la regla. Test por fotograma con el plugin
+   de prueba (el fotograma 0 y el 1 difieren donde el de prueba usa la
+   semilla; el mismo `seed0` dos veces da los mismos bytes).
+
 **Depende de.** U5 (ventana de render, visor), X2 (resultado derivado),
 U6 (ventana de ajustes).
 
