@@ -563,8 +563,9 @@ describe('the infinity sweep fills the camera’s frame', () => {
     ['the reference three-quarter view, 16:9', (s) => s],
     ['a front view, low', (s) => withCamera(s, { azimuth: 0, elevation: 4 })],
     ['from above at 45 degrees with a 35 mm lens, behind and to the side', (s) => withCamera(s, { azimuth: 120, elevation: 45, focalMm: 35 })],
-    ['a 135 mm tele from the left, a portrait frame', (s) => ({ ...withCamera(s, { azimuth: -60, elevation: 10, focalMm: 135 }), render: { ...s.render, width: 1080, height: 1350 } })],
-    ['a 24 mm wide view, square', (s) => ({ ...withCamera(s, { azimuth: 20, elevation: 15, focalMm: 24 }), render: { ...s.render, width: 1000, height: 1000 } })],
+    // The frame is the camera's ratio: the size typed in the render window gives it (U13).
+    ['a 135 mm tele from the left, a portrait frame', (s) => apply(withCamera(s, { azimuth: -60, elevation: 10, focalMm: 135 }), { type: 'render/set', patch: { width: 1080, height: 1350 } })],
+    ['a 24 mm wide view, square', (s) => apply(withCamera(s, { azimuth: 20, elevation: 15, focalMm: 24 }), { type: 'render/set', patch: { width: 1000, height: 1000 } })],
     ['orthographic at 30 degrees', (s) => withCamera(s, { projection: 'ORTHOGRAPHIC', elevation: 30 })],
     ['straight down', (s) => withCamera(s, { elevation: 89 })],
     // A thin, tall product (a panel): the curve would reach under it at 1.75 depths; the wall goes further back.

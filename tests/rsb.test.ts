@@ -336,7 +336,8 @@ describe('project to RSB: camera', () => {
       [1000, 700, 1080, 1350],
       [640, 640, 2048, 2048],
     ]) {
-      const st: ProjectState = { ...s, render: { ...s.render, width: ow, height: oh } };
+      // The size typed in the render window: the active camera takes its ratio, which is the frame the viewport draws (U13).
+      const st: ProjectState = apply(s, { type: 'render/set', patch: { width: ow, height: oh } });
       const out = cameraToRsb(cam, ow, oh, ow, oh);
       // The viewport image at half the CSS size, as during a gesture.
       const w = Math.round(vw / 2);

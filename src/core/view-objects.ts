@@ -7,7 +7,7 @@
 // measures the drags (render/preview.ts, render/gizmo.ts); the interface turns the drags and the navigation into the
 // actions written here, one gesture token per drag, so a whole drag is one undo entry.
 
-import { activeCamera, cameraBasis, cameraPosition, clipPlanesFor, fieldOfView, orbitFromPosition, outputAspect, outputFrameRect, sameView, type CameraState } from './camera';
+import { activeCamera, aspectRatio, cameraBasis, cameraPosition, clipPlanesFor, fieldOfView, orbitFromPosition, outputAspect, outputFrameRect, sameView, type CameraState } from './camera';
 import { polar } from './light-math';
 import { aimOffset, isSphereLike, levelUp, lightFrame, polarAboutPivot, SPOT_DEFAULTS, wrapDeg, type LightInstance } from './lighting';
 import { add, boxRadius, cross, dot, isEmptyBox, length, normalize, rotateAbout, scale, sub, type Vec3 } from './math';
@@ -193,6 +193,14 @@ export function lookThroughCamera(state: ProjectState, obj: ViewObject): CameraS
   };
 }
 
+/**
+ * The camera whose view the viewport shows: the one looked through (a light's, or a saved camera's), else the active
+ * one. Its aspect ratio is the frame the viewport draws (U13).
+ */
+export function viewedCamera(state: ProjectState, lookThrough: ViewObject | null | undefined): CameraState {
+  return (lookThrough ? lookThroughCamera(state, lookThrough) : null) ?? activeCamera(state);
+}
+
 /** A view of the viewport's navigation: where it orbits, how far and from where (preview.ts ViewChange). */
 export interface ViewPose {
   azimuth: number;
@@ -336,7 +344,8 @@ function cameraGlyph(state: ProjectState, cam: CameraState): Glyph {
   const b = cameraBasis(cam.azimuth, cam.elevation);
   const pos = cameraPosition(cam);
   const depth = Math.min(GLYPH.frustum * size, cam.distance * 0.5);
-  const aspect = outputAspect(state);
+  // Each camera draws the frame of its own image ratio (U13).
+  const aspect = aspectRatio(cam);
   let hw: number;
   let hh: number;
   let near: [number, number];

@@ -487,8 +487,9 @@ function restoreStudio(state: ProjectState, saved: SavedStudio): ProjectState {
     },
     environment: saved.environment,
     image: saved.image,
+    // The camera's view and optics come back; the ratio of the image is the project's choice (U13), not the studio's.
     camera: cam
-      ? { ...state.camera, cameras: { ...state.camera.cameras, [cam.id]: { ...saved.camera, id: cam.id, name: cam.name } } }
+      ? { ...state.camera, cameras: { ...state.camera.cameras, [cam.id]: { ...saved.camera, id: cam.id, name: cam.name, aspect: cam.aspect } } }
       : state.camera,
   };
   return pruneMaterials(restored);

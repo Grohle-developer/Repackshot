@@ -1,4 +1,4 @@
-// The Doctor (SPEC §4): fourteen checks, each with a detection and a fix.
+// The Doctor (SPEC §4): fourteen checks of upstream and the animation's aspect ratio (U13), each with a detection and a fix.
 // Scene checks run on the model; engine checks report UNAVAILABLE until the
 // engine phases (D1) provide the data. The Doctor never changes anything
 // unless asked: `fixDoctor` is only called from an explicit action.
@@ -6,7 +6,9 @@
 import { DOCTOR_CHECKS } from '../data/doctor';
 import type { DoctorCheckKey } from '../data/types';
 import type { ActionBase, ProjectState } from './store';
-import { clipEndFor, clipStartFor } from './camera';
+import { activeCamera, aspectRatio, clipEndFor, clipStartFor } from './camera';
+import { aspectText } from './aspect';
+import { aspectForSize } from './render';
 import { add, boxCenter, boxRadius, isEmptyBox, length, sub, transformPoint, type Mat4, type Vec3 } from './math';
 import { defaultBevelMm, partMaterials } from './materials';
 import { presetRefOf } from './lighting';
@@ -33,6 +35,7 @@ export const SCENE_CHECKS: ReadonlySet<DoctorCheckKey> = new Set<DoctorCheckKey>
   'bevel',
   'clip',
   'lights',
+  'aspect',
 ]);
 
 /** A scale is off when the ratio leaves [1/20, 20]. */
@@ -171,7 +174,34 @@ function checkLights(state: ProjectState): DoctorResult {
   return seen.length > 0 ? warn('lights', { count: seen.length }) : ok('lights');
 }
 
-/** Runs the fourteen checks, in catalogue order. */
+/** Two image ratios are the same when they differ by less than this (0.5 %, as a size rounded to a preset). */
+const ASPECT_TOLERANCE = 0.005;
+
+/** The shots whose camera takes another ratio than the output size (the shot's camera, or the active one for a shot without). */
+function shotsOffRatio(state: ProjectState): { shot: number; camera: string }[] {
+  const out = state.render.width / state.render.height;
+  const off: { shot: number; camera: string }[] = [];
+  state.animation.shots.forEach((s, i) => {
+    const cam = (s.camera && state.camera.cameras[s.camera]) || activeCamera(state);
+    if (cam && Math.abs(aspectRatio(cam) / out - 1) > ASPECT_TOLERANCE) off.push({ shot: i + 1, camera: cam.id });
+  });
+  return off;
+}
+
+function checkAspect(state: ProjectState): DoctorResult {
+  const off = shotsOffRatio(state);
+  if (off.length === 0) return ok('aspect');
+  const cam = state.camera.cameras[off[0].camera];
+  return warn('aspect', {
+    count: off.length,
+    shot: off[0].shot,
+    camera: off[0].camera,
+    aspect: aspectText(cam.aspect),
+    output: `${state.render.width} × ${state.render.height}`,
+  });
+}
+
+/** Runs the checks, in catalogue order. */
 export function runDoctor(state: ProjectState): DoctorResult[] {
   return DOCTOR_CHECKS.map((c) => {
     switch (c.key) {
@@ -189,6 +219,8 @@ export function runDoctor(state: ProjectState): DoctorResult[] {
         return checkClip(state);
       case 'lights':
         return checkLights(state);
+      case 'aspect':
+        return checkAspect(state);
       default:
         return { key: c.key, status: 'UNAVAILABLE', fixable: false, detail: {} };
     }
@@ -268,6 +300,15 @@ export function fixDoctor(state: ProjectState, key: DoctorCheckKey): ProjectStat
       const end = clipEndFor(state.scene.partSizeMm);
       const cameras = { ...state.camera.cameras };
       for (const [id, c] of Object.entries(cameras)) cameras[id] = { ...c, clipStart: start, clipEnd: end };
+      return { ...state, camera: { ...state.camera, cameras } };
+    }
+    case 'aspect': {
+      // The cameras of the shots that discard the output's ratio take it (a preset when the size is exactly one).
+      const off = new Set(shotsOffRatio(state).map((o) => o.camera));
+      if (off.size === 0) return state;
+      const aspect = aspectForSize(state.render.width, state.render.height);
+      const cameras = { ...state.camera.cameras };
+      for (const id of off) cameras[id] = { ...cameras[id], aspect };
       return { ...state, camera: { ...state.camera, cameras } };
     }
     case 'lights': {

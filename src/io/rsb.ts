@@ -1119,7 +1119,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     cam = { ...base, ...pose.camera, id: base.id };
   }
   if (view.cameraPatch) cam = { ...cam, ...view.cameraPatch };
-  const camera = cameraToRsb(cam, state.render.width, state.render.height, width, height, view.viewport);
+  // The frame of a viewport image is the image of the camera on screen, with its ratio (U13).
+  const frame = chosen.aspect;
+  const camera = cameraToRsb(cam, frame.w, frame.h, width, height, view.viewport);
 
   // Geometry: a mesh per distinct (mesh, shading, face groups), an instance per visible part.
   const nodes = state.scene.nodes;
@@ -1247,7 +1249,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   // The output frame inside a viewport image: the background image fits it.
   let backplateRect: [number, number, number, number] = [0, 0, 1, 1];
   if (view.viewport && view.viewport.viewW > 0 && view.viewport.viewH > 0) {
-    const f = outputFrameRect(view.viewport.viewW, view.viewport.viewH, state.render.width, state.render.height);
+    const f = outputFrameRect(view.viewport.viewW, view.viewport.viewH, frame.w, frame.h);
     backplateRect = [f.x / view.viewport.viewW, f.y / view.viewport.viewH, (f.x + f.width) / view.viewport.viewW, (f.y + f.height) / view.viewport.viewH];
   }
   const environment: RsbEnvironment = {
