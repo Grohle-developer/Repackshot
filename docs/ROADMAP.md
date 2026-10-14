@@ -5490,7 +5490,7 @@ se copia) y se comprobó además con las funciones exportadas del propio script
 *checkout*): los dos dan lo mismo. Limpios: el manifiesto, `recipes.json`,
 `plugin.js`, el logo, la licencia y las cadenas de Repackshot. Quedan, dentro
 del paquete cifrado y sin enseñarse nunca, las etiquetas internas del motor: el
-módulo (16 coincidencias, su `--dist` está en rojo por lo mismo), los ajustes de
+módulo (15 coincidencias en el último *build*, su `--dist` está en rojo por lo mismo), los ajustes de
 los *presets* (490: el tipo de los filtros de difusión y la clave del papel del
 modelo espectral, que tiene cada *preset* completo), `engine.json` (3: dos ids de
 formato) y `NOTICES.txt` (9, lo que una licencia exige nombrar); son de su M38-07
