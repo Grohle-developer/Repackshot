@@ -2696,7 +2696,8 @@ normales (espacio tangente, con tangentes por UV o por proyección),
 relieve compuesto con el bisel de E6 y el terminador; alfa como recorte
 (ya existe la ruta); etiquetas como capa sobre el sustrato (alfa
 suaviza; acabado propio de la capa). Todo determinista en wasm y
-nativo. Cuesta lo que cuesta: medirlo.
+nativo. Cuesta lo que cuesta: medirlo. Con la opacidad por punto del alfa,
+la malla técnica de E6 (un tafetán abierto, sin agujeros) puede tenerlos.
 
 **Criterio.** Paridad wasm y *hashes* nuevos fijados; una esfera con
 textura de cuadros y una caja con proyección caja renderizadas por `rt`
@@ -2867,7 +2868,11 @@ defecto** (0,2–0,5 mm según material) en todo lo duro, medio dispersor
 (E9) en lo translúcido, **micro-variación** de rugosidad y de normal por
 ruido fino (E6) a una escala que no se ve como textura pero quita el
 «plástico de ordenador», y *imperfecciones sutiles* opcionales (E7
-cuando llegue). (3) Hoja `out/materials-sheet.html`: cada material
+cuando llegue). Pendiente de E6 (veredicto de la tela): **el barniz ignora
+el *bump* del dibujo** (hoy el relieve de la tela y de la madera inclina la
+normal de toda la BSDF, barniz incluido; el barniz de verdad es plano sobre
+el tejido o la veta): con eso el carbono puede volver a su relieve entero
+(ahora 0,05) y la madera barnizada gana un reflejo limpio sobre sus poros. (3) Hoja `out/materials-sheet.html`: cada material
 antes y después, sobre esfera y sobre el frasco, con el set `STRIP_EDGE`;
 **veredicto de Fable** material a material antes de cerrar (regla 11).
 
@@ -3713,7 +3718,20 @@ campos de 10 mm; E6 aceptada):
 
 Hecho tras el veredicto: el carbono del catálogo baja su `weaveDepth` de
 0,3 a 0,05 (el *fixture* de la hoja, al día) y la hoja ya no enseña esa
-alternativa.
+alternativa; anotados el barniz sin *bump* en M4 y los agujeros de la malla
+en M2b.
+
+**Fusión con la rama de la sesión** (M2a, O1, E12, M3a, S2, S4a, U11,
+U11b, E11…). La selección de luz por punto de E12 mueve los tres fijados
+de E6, como movió los demás: bisel **`0x2f228634`** (era `0xfccda027`),
+madera **`0x6fbc91f7`** (era `0x2a3a7416`) y tela **`0x5604ec69`** (era
+`0xbb26399f`), en `rt-core` (todas las ISA), `rt-cli` y `rt-app` (1, 4 y
+16 hilos) y en `engine.yml` (sus pasos, detrás de los de O1, S4a y E11).
+El `MATL` de E6 (76 B, `bevel_mm` en el byte 72) es el que reservaba el
+bloque de texturas de M2a, que sigue en el byte 100 detrás de los campos de
+E9. Un material de nodos (M3a) no lleva `PATN` ni nudos en la vista
+*Rápida*: hasta M3b es la media de sus salidas. Las secciones de E6 en
+ARCHITECTURE son ahora §5.2 sexies (bisel) y §5.2 septies (madera y tela).
 
 ## E7 · Desgaste visible — **Opus**, con visto bueno **Fable**
 
