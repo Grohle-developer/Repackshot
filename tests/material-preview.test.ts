@@ -51,6 +51,18 @@ describe('the surface of the Fast maps', () => {
       GLAZED_CERAMIC: ['TRIPLANAR', null, ['TRIPLANAR']],
       STRIPES: ['UV', null, []],
     });
+    // A projection and 3D coordinates together: the slice.
+    const mixed = normalizeGraph({
+      version: 1,
+      nodes: [{ ...newNode('MAPPING', 'm')!, params: { ...newNode('MAPPING', 'm')!.params, projection: 'PLANAR' } }, newNode('CHECKER', 'c')!, newNode('NOISE', 'n')!, newNode('MIX', 'x')!, newNode('OUTPUT', 'o')!],
+      links: [
+        { from: 'm', output: 'vector', to: 'c', input: 'vector' },
+        { from: 'c', output: 'color', to: 'x', input: 'a' },
+        { from: 'n', output: 'color', to: 'x', input: 'b' },
+        { from: 'x', output: 'color', to: 'o', input: 'baseColor' },
+      ],
+    })!;
+    expect(planBake(program(mixed), BOTTLE, 121).mode).toBe('TRIPLANAR');
   });
 
   it('a projection’s maps, read through the plan’s mapping on the part, are the program’s own values', () => {
@@ -60,6 +72,9 @@ describe('the surface of the Fast maps', () => {
     const size = 256;
     const r = bakeProgram(p, labelImages(p), plan, size);
     expect(r.varying).toEqual(expect.arrayContaining(['baseColor', 'roughness']));
+    // The graph gives the normal nothing: the cylinder's own normal is no map.
+    expect(r.varying).not.toContain('normal');
+    expect(r.maps.normal).toBeUndefined();
     const run = new ProgramRunner(p, labelImages(p));
     let err = 0;
     let n = 0;

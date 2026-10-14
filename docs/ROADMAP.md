@@ -2060,7 +2060,7 @@ coinciden con la vista previa Rápido en posición de la textura
 (comparación por regiones); la etiqueta del criterio de M2a renderiza
 en su sitio en Completo.
 
-## M3a · Editor de materiales por nodos: modelo, editor y vista previa — **Opus** (tras U11)
+## M3a · Editor de materiales por nodos: modelo, editor y vista previa — **Opus** (tras U11) — hecha
 
 **Qué.** Un **grafo de material** como el de KeyShot o Blender,
 reducido a lo que nuestro motor puede evaluar: nodos *Salida de
@@ -2106,6 +2106,80 @@ guardado abre idéntico; deshacer y rehacer de 50 ediciones devuelve el
 grafo original (test); el intérprete TS y el de referencia del contrato
 (un pequeño evaluador en Rust de prueba en M3b) dan los mismos valores
 en 1000 puntos aleatorios (test cruzado cuando M3b llegue).
+
+**Hecho.** **Modelo** en `src/core/material-graph.ts`: un material en modo
+*Nodos* lleva `graph` (versión 1), un DAG de nodos del catálogo
+`src/data/material-nodes.ts` (19 tipos, claves estables, `es`/`en`) con
+tomas de cuatro tipos y las conversiones implícitas de la tabla (una normal
+solo sale de una normal); acciones `graph/*` (añadir, quitar, mover,
+duplicar, conectar, desconectar, parámetro, valor, grafo entero, Simple ↔
+Nodos), deshacibles, una entrada cada una, ninguna si nada cambia o la
+conexión se rechaza; *Simple → Nodos* da el grafo mínimo (la salida con
+los valores del material) sin tocar sus parámetros, y *Nodos → Simple* es
+exacto si el grafo es mínimo con valores que una familia guarda, si no
+pregunta y se queda con los de la salida; el grafo en el proyecto
+(`normalizeGraph`) y en la biblioteca (sin imágenes), sus imágenes en el
+bloque `images`. **Ruido** en `src/core/noise.ts`: Perlin 2002 y símplex
+(Gustavson 2005) con un *hash* de esquina (primos de Teschner, Knuth,
+`lowbias32` de Wellons) en vez de la tabla, y suma en octavas, en f32.
+**Compilador** (`src/core/material-program.ts`): programa lineal de
+registros f32 y vec3 empaquetados por última lectura, instrucciones de seis
+palabras con códigos estables, constantes, tabla de imágenes, quince
+salidas, relieve por tres evaluaciones de la altura, límites con su
+motivo, forma en bytes; **intérprete de referencia**
+(`src/core/material-interp.ts`) en f32 sobre `core/f32math.ts` (las mismas
+funciones elementales que `rt_core::fmath`); todo escrito instrucción a
+instrucción en `ARCHITECTURE.md` §5.2 quater junto con el ruido, el
+muestreo de imagen y los puntos de la prueba cruzada. **Editor**
+(`src/ui/panels/material-editor.ts`, `graph-canvas.ts`,
+`src/ui/graph-commands.ts`; `UI.md` §2.10): ventana flotante sin atenuar el
+visor, movible, redimensionable, con sitio y tamaño recordados; lienzo con
+zoom y desplazamiento, tarjetas arrastrables con su esfera de 64 × 64
+(calculada en un *worker*, `render/graph-worker.ts`), tomas con forma por
+tipo, conexión por arrastre con validación y su motivo, mover una conexión
+de entrada, *Añadir nodo* con búsqueda, selección por clic y recuadro,
+menús contextuales, panel del nodo (parámetros, imagen, rampa, entradas),
+*Ejemplos*, atajos, `Simple · Nodos` y *Nodos…* en el inspector, *Editar
+con nodos…* en el menú de la pieza, la paleta y un paso del recorrido.
+**Rápido** (`src/core/material-preview.ts`, `render/graph-preview.ts`,
+`render/graph-client.ts`): mapas de 512² (antes 128²) evaluados por bandas
+en varios *workers*, sobre el cuadrado UV, la superficie de la proyección
+(exacto: test) o un corte frontal dibujado como caja, que entran por las
+ranuras de M2a como `DataTexture`; Fresnel a 60°, curvatura 0 y las salidas
+sin ranura con su media, dicho en el inspector y el editor. *Completo*
+recibe la media de cada salida (`flattenGraph`) y lo dice. **Diez
+ejemplos** en `src/data/material-graphs.ts`. Tests:
+`material-graph`, `material-program`, `material-preview`,
+`material-nodes-ui` (50 casos; 47 mutaciones reintroducidas, todas fallan);
+`tools/material-nodes-check.mjs` en Chromium (abrir, añadir con búsqueda,
+conexión rechazada y hecha, el visor cambia, deshacer, teclas, ejemplo,
+cromo acromático en los dos temas). Capturas `docs/ui/material-nodes.png`
+y `docs/ui/material-nodes-preview.png`.
+
+No encajó con el plan: (1) **la etiqueta** del plástico con etiqueta es un
+nodo *Textura de imagen* con una imagen dibujada por el código
+(`core/material-examples.ts`) y mapeado cilíndrico; las etiquetas de M2a
+siguen siendo del material (se colocan en el visor) y en los dos modos se
+ponen sobre lo que da el grafo, como las ranuras de M2a, que multiplican
+sus salidas. (2) **La caja** en un programa toma la cara a la que más mira
+la normal (un punto no puede mezclar tres evaluaciones); *Rápido* sí mezcla
+por |n|⁴ como M2a, y lo dice. (3) **Lo 3D en Rápido** es un corte por el
+frente de la pieza dibujado como caja (un mapa 2D no puede ser un ruido
+3D): las vetas en anillo de la madera se ven bien por los lados de una
+pieza vertical, no arriba; las tres caras con tres cortes quedan para
+cuando haga falta (más *samplers*). (4) La **absorción** de la salida es un
+parámetro del material (distancia, como el vidrio), no una entrada por
+punto; el **bisel** de la salida es un peso del radio de bisel del
+material, que sigue siendo uno (lo mira el Doctor). (5) **Curvatura**: la
+referencia da 0 (la mide el motor en M3b, de E7 o del bisel); el ruido de
+E6 aún no existía y se escribió aquí, de las fuentes públicas, como
+contrato para Rust. (6) Lo que lee los parámetros del material (el Doctor,
+las esferas del catálogo) ve en *Nodos* los de su familia o la media del
+grafo: las miniaturas usan la media; el Doctor, los parámetros. (7) Hay
+**tres ventanas** (render, Ajustes, editor de material): `UI.md` §4.3 se
+actualiza; el editor no es modal. (8) Los colores de este paso son los de
+`MATERIAL_GRAPHS`, de criterio propio: un vistazo **Fable** a los diez
+ejemplos (sobre todo mármol y madera) queda pendiente.
 
 ## M3b · El motor evalúa grafos — **Opus** (tras M2b y M3a)
 

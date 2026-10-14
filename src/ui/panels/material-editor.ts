@@ -1,4 +1,4 @@
-// The material editor (phase M3a, UI.md §2.11): a window of its own, like the render window, open on one material.
+// The material editor (phase M3a, UI.md §2.10): a window of its own, like the render window, open on one material.
 // It floats over the application without dimming it (the viewport keeps drawing what the graph does), is moved by
 // its title bar, made larger by its corner, and remembers where and how large it was; Esc or × closes it.
 //

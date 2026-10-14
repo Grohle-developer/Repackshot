@@ -1,4 +1,4 @@
-/* The material editor (phase M3a, UI.md §2.11): a floating window over the application, which stays live
+/* The material editor (phase M3a, UI.md §2.10): a floating window over the application, which stays live
    behind it (no dimming: the viewport shows what the graph does). Achromatic like the rest of the chrome: the
    only colour is the content (the node previews, the material's sphere, colour values and the ramp's bar). A
    socket's type is its shape: circle a number, diamond a colour, square a vector, triangle a normal. */

@@ -615,7 +615,7 @@ const TABLE = {
   'material.nodes': ['Nodes…', 'Nodos…'],
   'material.nodesTip': ['Edit this material as a graph of nodes in the material editor', 'Editar este material como un grafo de nodos en el editor de material'],
   'material.graphNote': ['A graph of {n} nodes: the material editor edits it.', 'Un grafo de {n} nodos: se edita en el editor de material.'],
-  // The material editor (M3a, UI.md §2.11)
+  // The material editor (M3a, UI.md §2.10)
   'ge.title': ['Material editor', 'Editor de material'],
   'ge.close': ['Close the material editor', 'Cerrar el editor de material'],
   'ge.canvas': ['Graph of the material', 'Grafo del material'],

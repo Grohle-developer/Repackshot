@@ -1,4 +1,4 @@
-// The canvas of the material editor (phase M3a, UI.md §2.11): the graph's nodes as cards on a plane that zooms
+// The canvas of the material editor (phase M3a, UI.md §2.10): the graph's nodes as cards on a plane that zooms
 // (the wheel, about the cursor) and pans (the middle button, or Space or Alt with the left one), their sockets on
 // the edges with a shape for each type (circle a number, diamond a colour, square a vector, triangle a normal:
 // shape, never colour), and the links as curves. A node is dragged by its body (the selection with it, one undo

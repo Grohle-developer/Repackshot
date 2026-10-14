@@ -154,7 +154,7 @@ export function mountApp(root: HTMLElement, store: Store, ui: UiStore, services:
     );
     // The Settings window (UI.md §2.9).
     const settingsHost = dynamic(sc, (_s, u) => (u.settingsWindow ? 'open' : null), (wsc, key) => (key ? settingsWindow(ctx, wsc) : null), undefined, 'div', 'sw-mount');
-    // The material editor (UI.md §2.11, M3a): over the application without dimming it, one material at a time.
+    // The material editor (UI.md §2.10, M3a): over the application without dimming it, one material at a time.
     const editorHost = dynamic(sc, (_s, u) => u.materialEditor?.material ?? null, (esc, key) => (key ? materialEditor(ctx, esc) : null), undefined, 'div', 'me-mount');
     // The guided tour (phase U10) is over everything, windows included, and owns the keys and the pointer while it is up.
     const tourHost = dynamic(sc, (_s, u) => (u.tour ? 'on' : null), (tsc, key) => (key ? tourOverlay(ctx, tsc) : null), undefined, 'div', 'tour-mount');

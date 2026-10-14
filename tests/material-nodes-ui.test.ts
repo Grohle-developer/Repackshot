@@ -125,6 +125,8 @@ describe('what the editor says', () => {
     expect(addNodeMatches('').flatMap((g) => g.types)).toHaveLength(18);
     expect(addNodeMatches('perlin').flatMap((g) => g.types)).toEqual(['NOISE']);
     expect(addNodeMatches('ruido').flatMap((g) => g.types)).toEqual(['NOISE']);
+    // A word of the node's keywords only.
+    expect(addNodeMatches('turbulence').flatMap((g) => g.types)).toEqual(['NOISE']);
     expect(addNodeMatches('normal').flatMap((g) => g.types)).toEqual(expect.arrayContaining(['NORMAL_MAP', 'BUMP']));
     expect(addNodeMatches('zzz')).toEqual([]);
   });
