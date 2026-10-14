@@ -52,6 +52,18 @@ export interface MotionClip {
    * holds the first and the last frame.
    */
   track?: PhysicsTrack;
+  /**
+   * PHYSICS: the node's position and rotation the recording is relative to (the node's own when the run began, then
+   * where the run left it). The clip plays the recorded frames carried by however the node has been moved since, so
+   * a part moved after a Drop takes its whole fall with it. Without it, the frames as they are.
+   */
+  anchor?: ClipAnchor;
+}
+
+/** A node's position (mm) and rotation (degrees, XYZ) without its scale. */
+export interface ClipAnchor {
+  position: Vec3;
+  rotation: Vec3;
 }
 
 /** Moves offered for each kind of target, in wizard order. */
@@ -190,6 +202,21 @@ function targetKey(t: ClipTarget): string {
 }
 
 /**
+ * The pose the viewport and a still render show: the playhead's once it has moved (or while playing); at 0 the scene
+ * as edited, except the nodes a recorded simulation (a PHYSICS clip) holds, which show its frame there too (a Drop at
+ * 0 starts its clip at 0, so the scene as edited is already where the run ended). Null when nothing is posed.
+ */
+export function playheadPose(state: ProjectState): Pose | null {
+  const anim = state.animation;
+  if (anim.clips.length === 0) return null;
+  if (anim.playing || anim.playhead > 0) return evaluate(state, anim.playhead);
+  const held = new Set(anim.clips.filter((c) => c.move === 'PHYSICS' && c.target.kind === 'NODE').map((c) => (c.target.kind === 'NODE' ? c.target.id : '')));
+  if (held.size === 0) return null;
+  const pose = evaluate(state, anim.playhead);
+  return { ...pose, camera: null, lights: {}, envRotationDeg: state.environment.rotationDeg, nodes: Object.fromEntries(Object.entries(pose.nodes).filter(([id]) => held.has(id))) };
+}
+
+/**
  * Pose at time `t` (SPEC §3.7): every clip contributes its eased amount;
  * contributions on the same target add up. Pure: the preview uses it to
  * play, the engines to render frame by frame.
@@ -269,7 +296,7 @@ export function evaluate(state: ProjectState, t: number): Pose {
       const np = ensure(c.target.id);
       if (!np) continue;
       const u = c.duration > 0 ? (t - c.start) / c.duration : 1;
-      const p = trackPose(c.track, u, state.scene.nodes[c.target.id].transform);
+      const p = trackPose(c.track, u, state.scene.nodes[c.target.id].transform, c.anchor);
       if (p) {
         np.position = p.position;
         np.rotation = p.rotation;

@@ -1,8 +1,10 @@
 // The physics worker (phase S2): its own instance of rt.wasm, one simulation at a time (render/phys-wasm.ts). A run
 // keeps to real time (the steps simulated follow the clock, never ahead of it) and records the poses at every frame
-// of the project's fps, which it reports as they come (the interface grows the run's PHYSICS clips with them). Pause
-// freezes it where it is; between slices of steps it lets messages in, so Pause and Stop take effect at once. A run
-// ends by itself when every body sleeps or when its simulated time is up.
+// of the project's fps, which it reports as they come (the interface grows the run's PHYSICS clips with them). It
+// never runs more than a few frames ahead of what the interface has taken in (each report is acknowledged), so on a
+// busy page the simulation slows down with it instead of finishing unseen, and Pause freezes it about where the
+// viewport shows it. Between slices of steps it lets messages in, so Pause and Stop take effect at once. A run ends
+// by itself when every body sleeps or when its simulated time is up.
 
 import { frameStep, STEPS_PER_SECOND, type PhysicsResult, type PhysicsRunOptions } from '../core/physics';
 import { hasPhysExports, PhysWorld, type PhysExports } from './phys-wasm';
@@ -10,7 +12,9 @@ import { hasPhysExports, PhysWorld, type PhysExports } from './phys-wasm';
 export type PhysicsRequest =
   | { type: 'init'; module: WebAssembly.Module }
   | { type: 'run'; id: number; scene: ArrayBuffer; dynamic: number; options: PhysicsRunOptions }
-  | { type: 'pause' | 'resume' | 'stop'; id: number };
+  | { type: 'pause' | 'resume' | 'stop'; id: number }
+  /** The interface has taken in `frames` more frames of run `id`. */
+  | { type: 'ack'; id: number; frames: number };
 
 export type PhysicsReply =
   | { type: 'ready' }
@@ -38,6 +42,8 @@ interface Run {
   fresh: Float32Array[];
   last: Float32Array;
   frame: number;
+  /** Frames the interface has acknowledged. */
+  acked: number;
 }
 let run: Run | null = null;
 
@@ -45,6 +51,13 @@ const post = (msg: PhysicsReply) => scope.postMessage(msg);
 
 /** At most this many steps in a slice: a slow machine falls behind the clock rather than freezing. */
 const SLICE_STEPS = 24;
+/** How far, in seconds, the simulation may run ahead of the frames the interface has acknowledged. */
+const AHEAD_SECONDS = 0.125;
+
+/** Frames a run may record beyond the acknowledged ones. */
+export function framesAhead(fps: number): number {
+  return Math.max(2, Math.ceil(fps * AHEAD_SECONDS));
+}
 
 function finish(r: Run, reason: PhysicsResult['reason']): void {
   post({ type: 'done', id: r.id, reason, steps: r.world.steps, awake: r.world.awake, bodies: r.world.bodies, settled: r.world.settled, frames: r.fresh, poses: r.last });
@@ -61,7 +74,8 @@ function slice(r: Run): void {
   }
   if (r.pausedAt !== null) return;
   const max = Math.round(r.options.maxSeconds * STEPS_PER_SECOND);
-  const due = Math.min(max, Math.floor(((performance.now() - r.begun) / 1000) * STEPS_PER_SECOND));
+  const clock = Math.floor(((performance.now() - r.begun) / 1000) * STEPS_PER_SECOND);
+  const due = Math.min(max, clock, frameStep(r.acked + framesAhead(r.options.fps), r.options.fps));
   let budget = SLICE_STEPS;
   // Step to every frame that is due, recording it; then to where the clock is.
   for (;;) {
@@ -114,7 +128,9 @@ scope.onmessage = (e) => {
   if (msg.type !== 'run') {
     const r = run;
     if (!r || r.id !== msg.id) return;
-    if (msg.type === 'stop') {
+    if (msg.type === 'ack') {
+      r.acked += msg.frames;
+    } else if (msg.type === 'stop') {
       r.stop = true;
       if (r.pausedAt !== null) finish(r, 'STOPPED');
     } else if (msg.type === 'pause') {
@@ -136,7 +152,7 @@ scope.onmessage = (e) => {
   try {
     const world = new PhysWorld(rt, new Uint8Array(msg.scene), msg.dynamic);
     const initial = world.poses();
-    const r: Run = { id: msg.id, world, options: msg.options, begun: performance.now(), pausedAt: null, stop: false, fresh: [], last: initial, frame: 0 };
+    const r: Run = { id: msg.id, world, options: msg.options, begun: performance.now(), pausedAt: null, stop: false, fresh: [], last: initial, frame: 0, acked: 0 };
     run = r;
     post({ type: 'started', id: msg.id, ids: world.ids, initial, bodies: world.bodies });
     setTimeout(() => slice(r), 0);

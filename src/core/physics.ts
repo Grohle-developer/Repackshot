@@ -4,7 +4,7 @@
 // **Bodies.** A body is a *mover*, the node whose transform the simulation changes, and the parts it is made of: a
 // part alone, or a group or model that falls as one body (its parts' points make one hull) unless its Physics
 // section says *as parts*, when each of its parts falls on its own. **Drop** makes movers of the selection; Start
-// and Record use the roles the inspector stored (`physics.role`, DYNAMIC on a node). Every other visible part, and
+// uses the roles the inspector stored (`physics.role`, DYNAMIC on a node). Every other visible part, and
 // the floor, is static. A locked node never moves.
 //
 // **Poses.** The simulator (engine/crates/rt-phys) frames every body with the world's axes at its centre of mass
@@ -18,10 +18,12 @@
 // clips away and puts the movers back, as a step of its own. A track holds the mover's local position and rotation
 // per frame as little-endian f32 (x, y, z, qx, qy, qz, qw) in base64, so the state stays plain JSON and the project
 // file carries it as is; `TrackWriter` appends to it without encoding it all again, and `trackPose` interpolates.
+// The clip's anchor is the node's position and rotation its frames refer to (where the run left it, once committed):
+// a node moved afterwards takes its whole recorded fall with it.
 
 import { DEFAULT_DENSITY, DENSITY_BY_CATEGORY, FLOOR_SURFACE, PHYSICS_DEFAULTS, PHYSICS_LIMITS } from '../data/physics';
-import type { MotionClip } from './animation';
-import { clamp, isEmptyBox, mat4Identity, mat4Invert, mat4Multiply, type Mat4, type Vec3 } from './math';
+import type { ClipAnchor, MotionClip } from './animation';
+import { clamp, isEmptyBox, mat4Compose, mat4Identity, mat4Invert, mat4Multiply, type Mat4, type Vec3 } from './math';
 import type { MeshId } from './meshes';
 import { boundsOf, effectiveVisible, partsUnder, topMost, treeOrder, worldMatrix, type NodeId, type SceneNode, type Transform } from './scene';
 import type { ActionBase, ProjectState } from './store';
@@ -459,7 +461,7 @@ export function isTrack(x: unknown): x is PhysicsTrack {
  * around it, the rotation by normalised linear interpolation of the quaternions (the shorter way). Euler angles
  * in degrees (XYZ, the convention of the scene), closest to `prev`.
  */
-export function trackPose(track: PhysicsTrack, u: number, prev?: Transform): { position: Vec3; rotation: Vec3 } | null {
+export function trackPose(track: PhysicsTrack, u: number, prev?: Transform, anchor?: ClipAnchor): { position: Vec3; rotation: Vec3 } | null {
   const f = trackFloats(track);
   if (!f) return null;
   const last = track.frames - 1;
@@ -475,8 +477,32 @@ export function trackPose(track: PhysicsTrack, u: number, prev?: Transform): { p
   const q = [0, 1, 2, 3].map((c) => f[a + 3 + c] + (s * f[b + 3 + c] - f[a + 3 + c]) * k);
   const l = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
   const m = quatMatrix([q[0] / l, q[1] / l, q[2] / l, q[3] / l]);
+  if (prev && anchor && !sameRigid(prev, anchor)) {
+    // The node has been moved since the recording: the frames go with it (B · A⁻¹ · frame, without scales).
+    m[12] = position[0];
+    m[13] = position[1];
+    m[14] = position[2];
+    const moved = mat4Multiply(mat4Multiply(mat4Compose(prev.position, prev.rotation, [1, 1, 1]), mat4Invert(mat4Compose(anchor.position, anchor.rotation, [1, 1, 1]))), m);
+    return { position: [moved[12], moved[13], moved[14]], rotation: decomposeMatrix(moved, prev).rotation };
+  }
   const t = decomposeMatrix(m, prev);
   return { position, rotation: t.rotation };
+}
+
+function sameRigid(a: ClipAnchor, b: ClipAnchor): boolean {
+  for (let k = 0; k < 3; k++) if (a.position[k] !== b.position[k] || a.rotation[k] !== b.rotation[k]) return false;
+  return true;
+}
+
+/** A node's position and rotation, the anchor of a PHYSICS clip. */
+export function anchorOf(t: Transform): ClipAnchor {
+  return { position: [t.position[0], t.position[1], t.position[2]], rotation: [t.rotation[0], t.rotation[1], t.rotation[2]] };
+}
+
+/** A well-formed anchor (two finite triples). */
+export function isAnchor(v: unknown): v is ClipAnchor {
+  const triple = (x: unknown) => Array.isArray(x) && x.length === 3 && x.every((n) => typeof n === 'number' && Number.isFinite(n));
+  return typeof v === 'object' && v !== null && triple((v as ClipAnchor).position) && triple((v as ClipAnchor).rotation);
 }
 
 /** The local pose (x, y, z, qx, qy, qz, qw) of body `i`'s mover for a pose of the world. */
@@ -537,7 +563,7 @@ export class TrackWriter {
 }
 
 /** A PHYSICS clip of a mover, starting at `start` seconds, with its track so far. */
-export function physicsClip(id: string, mover: NodeId, start: number, track: PhysicsTrack): MotionClip {
+export function physicsClip(id: string, mover: NodeId, start: number, track: PhysicsTrack, anchor?: ClipAnchor): MotionClip {
   return {
     id,
     target: { kind: 'NODE', id: mover },
@@ -548,6 +574,7 @@ export function physicsClip(id: string, mover: NodeId, start: number, track: Phy
     amount: 0,
     easing: 'LINEAR',
     track,
+    ...(anchor ? { anchor: { position: [...anchor.position] as Vec3, rotation: [...anchor.rotation] as Vec3 } } : {}),
   };
 }
 
@@ -562,8 +589,11 @@ export type PhysicsAction =
   | ({ type: 'physics/begin'; clips: MotionClip[]; roles?: Record<NodeId, PhysicsRole> } & ActionBase)
   /** It runs: the clips' tracks so far (their durations follow). Same gesture as `begin`. */
   | ({ type: 'physics/grow'; tracks: Record<string, PhysicsTrack> } & ActionBase)
-  /** It stopped (by itself or by Stop): the movers' final transforms. Same gesture: one undo step for all. */
-  | ({ type: 'physics/commit'; transforms: Record<NodeId, Transform> } & ActionBase)
+  /**
+   * It stopped (by itself or by Stop): the movers' final transforms, and the run's clips (`clips`) anchored to them.
+   * Same gesture: one undo step for all.
+   */
+  | ({ type: 'physics/commit'; transforms: Record<NodeId, Transform>; clips?: string[] } & ActionBase)
   /** Reset: the transforms the movers had before, and the simulation's clips taken away. A step of its own. */
   | ({ type: 'physics/reset'; transforms: Record<NodeId, Transform>; clips: string[] } & ActionBase);
 
@@ -626,8 +656,17 @@ export function reducePhysics(state: ProjectState, action: PhysicsAction): Proje
       });
       return changed ? { ...state, animation: { ...anim, clips } } : state;
     }
-    case 'physics/commit':
-      return withTransforms(state, action.transforms);
+    case 'physics/commit': {
+      const next = withTransforms(state, action.transforms);
+      const ids = new Set(action.clips ?? []);
+      if (ids.size === 0) return next;
+      const nodes = next.scene.nodes;
+      const clips = next.animation.clips.map((c) => {
+        const node = c.target.kind === 'NODE' ? nodes[c.target.id] : undefined;
+        return ids.has(c.id) && c.move === 'PHYSICS' && node ? { ...c, anchor: anchorOf(node.transform) } : c;
+      });
+      return { ...next, animation: { ...next.animation, clips } };
+    }
     case 'physics/reset': {
       const next = withTransforms(state, action.transforms);
       const gone = new Set(action.clips);

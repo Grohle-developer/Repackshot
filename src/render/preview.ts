@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
-import { evaluate, type Pose } from '../core/animation';
+import { evaluate, playheadPose, type Pose } from '../core/animation';
 import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
@@ -22,7 +22,7 @@ import type { PassIds } from '../core/pass-ids';
 import type { PassKey, RenderPasses } from '../core/passes';
 import { SKY_HEIGHT, SKY_WIDTH, skyImage } from '../core/sky';
 import { areaLightRadiance, pointLightIntensity, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
-import { partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
+import { ancestors, partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
 import { glyphsOf, lookThroughCamera, objectFrame, pickGlyph, sameObject, type Glyph, type ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
@@ -264,6 +264,9 @@ export class PreviewEngine implements RenderEngine {
   private needsRender = true;
   private interacting = false;
   private poseActive = false;
+  /** Node poses are applied (the playhead's, or at 0 only those of recorded simulations: `held`). */
+  private nodesPosed = false;
+  private held: ReadonlySet<NodeId> | null = null;
   private lastFrameMs = 0;
   private device = 'WebGL';
   private readonly frameListeners = new Set<() => void>();
@@ -535,8 +538,11 @@ export class PreviewEngine implements RenderEngine {
     const posed = anim.clips.length > 0 && (anim.playing || anim.playhead > 0);
     const poseToggled = posed !== this.poseActive;
     const poseChanged = poseToggled || (posed && (full || anim !== prev.animation));
-    const pose = posed ? evaluate(state, anim.playhead) : null;
-    if (posed || this.poseActive) this.applyNodePose(state, pose);
+    // At 0 a recorded simulation still holds its nodes (S2): the frame of its clip, as a still render shows it.
+    const pose = playheadPose(state);
+    if (pose || this.nodesPosed) this.applyNodePose(state, pose);
+    this.nodesPosed = pose !== null;
+    this.held = !posed && pose ? new Set(Object.keys(pose.nodes)) : null;
     this.poseActive = posed;
     // Lights and environment follow the playhead only when a clip moves them.
     const poseLights = poseToggled || (poseChanged && anim.clips.some((c) => c.target.kind === 'LIGHT'));
@@ -1053,9 +1059,22 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
+  /**
+   * No gizmo where the animation, not the edit, places the nodes: while it plays or past 0 (N1), and at 0 on a node a
+   * recorded simulation holds, or in or around one (S2).
+   */
+  private gizmoPosed(): boolean {
+    if (this.poseActive) return true;
+    const held = this.held;
+    const s = this.state;
+    const spec = this.gizmoSpec;
+    if (!held || !s || !spec || spec.object) return false;
+    return movableTargets(s, spec.ids).some((id) => held.has(id) || ancestors(s, id).some((a) => held.has(a)) || [...held].some((h) => ancestors(s, h).includes(id)));
+  }
+
   /** Something to draw over the path tracer: an outline, selected faces, the gizmo. */
   private hasOverlay(): boolean {
-    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive) || this.glyphs.length > 0) return true;
+    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.gizmoPosed()) || this.glyphs.length > 0) return true;
     for (const o of this.objects.values()) if (o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER)) return true;
     return false;
   }
@@ -1293,7 +1312,7 @@ export class PreviewEngine implements RenderEngine {
   }
 
   private drawGizmo(cam: THREE.Camera): void {
-    const gizmo = this.gizmo.visible && !this.poseActive;
+    const gizmo = this.gizmo.visible && !this.gizmoPosed();
     if (!gizmo && this.glyphs.length === 0) return;
     // The glyphs of lights and cameras (L4) go with the gizmo, over everything; while the animation plays, not the gizmo.
     const shown = this.gizmo.root.visible;
@@ -1314,7 +1333,7 @@ export class PreviewEngine implements RenderEngine {
 
   /** The handle under a point (CSS pixels on the canvas), highlighted; null when none. */
   gizmoHover(x: number, y: number): GizmoHandle | null {
-    if (!this.gizmo.visible || this.poseActive || this.width <= 0) {
+    if (!this.gizmo.visible || this.gizmoPosed() || this.width <= 0) {
       if (this.gizmo.setHover(null)) this.needsRender = true;
       return null;
     }

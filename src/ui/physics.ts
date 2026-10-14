@@ -1,14 +1,17 @@
 // The physics bar's commands and the simulation in progress (phase S2, UI.md §2.5). Drop simulates the selection;
 // Start, the parts whose role is Dynamic. Every run records itself (ROADMAP, physics decision 5): when the world is
 // built each mover gets a PHYSICS clip at the playhead, the clips grow a frame at a time (at the project's fps) while
-// it runs and the playhead follows them, so the viewport shows the simulation through the timeline; Pause freezes it,
-// Stop (or everything falling asleep, or the time limit) commits the movers' final poses. The clips, the roles Drop
+// it runs and the playhead follows them, so the viewport shows the simulation through the timeline. Pause freezes it
+// where the viewport shows it: what the simulator reports while paused waits for Resume. Stop commits the pose shown
+// (what comes after it is left out); everything falling asleep, or the time limit, commits the last frame. Either way
+// the movers end where their clips end. The clips, the roles Drop
 // gives and the final poses are one undo step (one gesture); Reset takes the clips away and puts the movers back, as
 // a step of its own. Anything else that takes the run's clips or movers away (an undo, a deletion) ends it without
 // committing anything.
 
 import { nextIds } from '../core/ids';
 import {
+  anchorOf,
   moverSample,
   moverTransforms,
   NO_BODY,
@@ -53,6 +56,14 @@ interface Session {
   clips: string[];
   writers: (TrackWriter | null)[];
   frames: number;
+  /** The poses of the last frame shown, and what the simulator said with it. */
+  last: Float32Array | null;
+  shown: { steps: number; awake: number; bodies: number };
+  /** Paused: reports wait in `held` (and the end in `heldEnd`) for Resume. Stopped: what comes is left out. */
+  paused: boolean;
+  stopped: boolean;
+  held: PhysicsUpdate[];
+  heldEnd: PhysicsResult | null;
   begun: boolean;
   over: boolean;
   unsubscribe: () => void;
@@ -105,6 +116,7 @@ function grow(session: Session, frames: readonly Float32Array[]): void {
   for (const frame of frames) {
     session.writers.forEach((w, i) => w?.push(moverSample(spec, i, initial, frame, ids[i])));
     session.frames++;
+    session.last = frame;
   }
   const tracks: Record<string, PhysicsTrack> = {};
   session.writers.forEach((w, i) => {
@@ -120,6 +132,8 @@ function begin(session: Session, started: PhysicsStarted): void {
   const { ctx, spec } = session;
   session.ids = started.ids;
   session.initial = started.initial;
+  session.last = started.initial;
+  session.shown = { steps: 0, awake: started.bodies, bodies: started.bodies };
   const state = ctx.store.get();
   const kept = spec.bodies.map((_, i) => started.ids[i] !== undefined && started.ids[i] !== NO_BODY);
   const fresh = nextIds('c', state.animation.clips.map((c) => c.id), kept.filter(Boolean).length);
@@ -133,7 +147,7 @@ function begin(session: Session, started: PhysicsStarted): void {
   });
   session.frames = 1;
   const clips = spec.bodies
-    .map((b, i) => (session.writers[i] ? physicsClip(session.clips[i], b.mover, session.start, session.writers[i]!.track()) : null))
+    .map((b, i) => (session.writers[i] ? physicsClip(session.clips[i], b.mover, session.start, session.writers[i]!.track(), anchorOf(session.pre[b.mover] ?? state.scene.nodes[b.mover].transform)) : null))
     .filter((c) => c !== null);
   ctx.store.dispatch({ type: 'anim/play', playing: false });
   ctx.store.dispatch({ type: 'physics/begin', clips, roles: session.roles, gesture: session.gesture, label: session.label });
@@ -152,25 +166,38 @@ function begin(session: Session, started: PhysicsStarted): void {
 }
 
 function update(session: Session, u: PhysicsUpdate): void {
-  if (session.over || !session.begun) return;
+  if (session.over || !session.begun || session.stopped) return;
+  if (session.paused) {
+    session.held.push(u);
+    return;
+  }
   grow(session, u.frames);
+  session.shown = { steps: u.steps, awake: u.awake, bodies: u.bodies };
   setUi(session.ctx, { time: u.steps / STEPS_PER_SECOND, awake: u.awake, bodies: u.bodies });
+}
+
+function ended(session: Session, r: PhysicsResult): void {
+  if (session.paused && !session.stopped) session.heldEnd = r;
+  else finish(session, r);
 }
 
 function finish(session: Session, r: PhysicsResult): void {
   if (session.over) return;
   const { ctx, spec } = session;
-  grow(session, r.frames);
+  // Stopped by the person: the pose shown, not what the simulator did after it.
+  const cut = session.stopped;
+  if (!cut) grow(session, r.frames);
   session.over = true;
   session.unsubscribe();
   forget(session);
-  if (session.ids && session.initial) {
-    const transforms = poseTransforms(ctx.store.get(), spec, session.ids, session.initial, r.poses);
-    ctx.store.dispatch({ type: 'physics/commit', transforms, gesture: session.gesture, label: session.label });
+  if (session.ids && session.initial && session.last) {
+    const transforms = poseTransforms(ctx.store.get(), spec, session.ids, session.initial, session.last);
+    ctx.store.dispatch({ type: 'physics/commit', transforms, clips: session.clips.filter(Boolean), gesture: session.gesture, label: session.label });
     lastRuns.set(ctx.store, { pre: session.pre, clips: session.clips.filter(Boolean), start: session.start });
   }
+  const said = cut ? session.shown : { steps: r.steps, awake: r.awake, bodies: r.bodies };
   // A run that replaced this one owns the bar now.
-  if (!simulating(ctx)) setUi(ctx, { state: 'STOPPED', ended: r.reason, time: r.steps / STEPS_PER_SECOND, awake: r.awake, bodies: r.bodies, canReset: true });
+  if (!simulating(ctx)) setUi(ctx, { state: 'STOPPED', ended: cut ? 'STOPPED' : r.reason, time: said.steps / STEPS_PER_SECOND, awake: said.awake, bodies: said.bodies, canReset: true });
 }
 
 function fail(session: Session, err: unknown): void {
@@ -225,6 +252,12 @@ function simulate(ctx: Ctx, drop: NodeId[] | null): void {
     clips: [],
     writers: [],
     frames: 0,
+    last: null,
+    shown: { steps: 0, awake: 0, bodies: 0 },
+    paused: false,
+    stopped: false,
+    held: [],
+    heldEnd: null,
     begun: false,
     over: false,
     unsubscribe: () => undefined,
@@ -238,7 +271,7 @@ function simulate(ctx: Ctx, drop: NodeId[] | null): void {
     (err: unknown) => fail(session, err),
   );
   session.run.done.then(
-    (r) => finish(session, r),
+    (r) => ended(session, r),
     (err: unknown) => fail(session, err),
   );
 }
@@ -261,7 +294,8 @@ export function start(ctx: Ctx): void {
 /** ⏸ Pause: the simulation freezes where it is. */
 export function pause(ctx: Ctx): void {
   const session = sessions.get(ctx.store);
-  if (!session) return;
+  if (!session || session.stopped) return;
+  session.paused = true;
   session.run.pause();
   setUi(ctx, { state: 'PAUSED' });
 }
@@ -269,9 +303,17 @@ export function pause(ctx: Ctx): void {
 /** ▶ Resume. */
 export function resume(ctx: Ctx): void {
   const session = sessions.get(ctx.store);
-  if (!session) return;
+  if (!session || session.stopped || !session.paused) return;
+  session.paused = false;
   session.run.resume();
   setUi(ctx, { state: session.begun ? 'RUNNING' : 'STARTING' });
+  // What came while paused, in order; then the end, if it came too.
+  const held = session.held;
+  session.held = [];
+  for (const u of held) update(session, u);
+  const end = session.heldEnd;
+  session.heldEnd = null;
+  if (end) finish(session, end);
 }
 
 /** ■ Stop: the movers keep the pose they have (committed when the simulator answers). */
@@ -283,8 +325,11 @@ export function stop(ctx: Ctx): void {
     setUi(ctx, { state: 'STOPPED', ended: 'STOPPED' });
     return;
   }
-  session.run.resume();
-  session.run.stop();
+  if (session.stopped) return;
+  session.stopped = true;
+  session.held = [];
+  if (session.heldEnd) finish(session, session.heldEnd);
+  else session.run.stop();
 }
 
 /** ↺ Reset: the run's clips go and the movers go back to where they were before it, as one undo step. */

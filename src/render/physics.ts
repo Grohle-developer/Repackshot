@@ -1,7 +1,9 @@
 // The physics worker's client (phase S2): starts the worker with the scalar rt.wasm the first time a simulation is
 // asked for, hands it PHY1 scenes (io/phys.ts writes them) and turns its messages into a run: started (where each
 // body is among the poses and the poses at step 0), the frames as they are recorded, done; pause, resume and stop.
-// One run at a time; a new one replaces the old.
+// Every report is acknowledged once the page has taken it in (the worker keeps only a few frames ahead of that), and
+// a pause or a stop asked for before the worker has the run reaches it right after the run. One run at a time; a new
+// one replaces the old.
 
 import type { PhysicsResult, PhysicsRunHandle, PhysicsRunOptions, PhysicsStarted, PhysicsUpdate } from '../core/physics';
 import type { PhysicsReply, PhysicsRequest } from './physics-worker';
@@ -10,6 +12,10 @@ interface Pending {
   started: { resolve: (s: PhysicsStarted) => void; reject: (e: Error) => void };
   done: { resolve: (r: PhysicsResult) => void; reject: (e: Error) => void };
   onUpdate: (u: PhysicsUpdate) => void;
+  /** The run has been posted to the worker; what was asked for before that. */
+  sent: boolean;
+  paused: boolean;
+  stopped: boolean;
 }
 
 /** The simulator in a worker. */
@@ -66,6 +72,7 @@ export class PhysicsClient {
         break;
       case 'progress':
         run.onUpdate({ steps: msg.steps, awake: msg.awake, bodies: msg.bodies, settled: msg.settled, frames: msg.frames });
+        this.worker?.postMessage({ type: 'ack', id, frames: msg.frames.length } satisfies PhysicsRequest);
         break;
       case 'done': {
         this.runs.delete(id);
@@ -88,22 +95,38 @@ export class PhysicsClient {
     const id = this.next++;
     let started!: Pending['started'];
     let done!: Pending['done'];
+    const post = (type: 'pause' | 'resume' | 'stop') => {
+      if (pending.sent) this.worker?.postMessage({ type, id } satisfies PhysicsRequest);
+    };
     const handle: PhysicsRunHandle = {
       started: new Promise<PhysicsStarted>((resolve, reject) => (started = { resolve, reject })),
       done: new Promise<PhysicsResult>((resolve, reject) => (done = { resolve, reject })),
-      pause: () => this.worker?.postMessage({ type: 'pause', id } satisfies PhysicsRequest),
-      resume: () => this.worker?.postMessage({ type: 'resume', id } satisfies PhysicsRequest),
-      stop: () => this.worker?.postMessage({ type: 'stop', id } satisfies PhysicsRequest),
+      pause: () => {
+        pending.paused = true;
+        post('pause');
+      },
+      resume: () => {
+        pending.paused = false;
+        post('resume');
+      },
+      stop: () => {
+        pending.stopped = true;
+        post('stop');
+      },
     };
-    const pending: Pending = { started, done, onUpdate };
+    const pending: Pending = { started, done, onUpdate, sent: false, paused: false, stopped: false };
     this.runs.set(id, pending);
     // Unhandled rejections of the one nobody awaits are not errors.
     handle.started.catch(() => undefined);
     handle.done.catch(() => undefined);
     void this.start().then(
       () => {
+        if (!this.runs.has(id)) return;
         const copy = scene.slice().buffer;
         this.worker!.postMessage({ type: 'run', id, scene: copy, dynamic, options } satisfies PhysicsRequest, [copy]);
+        pending.sent = true;
+        if (pending.paused) post('pause');
+        if (pending.stopped) post('stop');
       },
       (err: unknown) => {
         this.runs.delete(id);

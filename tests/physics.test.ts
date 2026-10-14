@@ -7,7 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { evaluate } from '../src/core/animation';
+import { evaluate, playheadPose } from '../src/core/animation';
 import { runDoctor } from '../src/core/doctor';
 import { mat4Invert, mat4Multiply, transformPoint, type Vec3 } from '../src/core/math';
 import {
@@ -34,8 +34,11 @@ import { boundsOf, worldMatrix, type NodeId } from '../src/core/scene';
 import { createInitialState, createStore, reduce, type ProjectState, type Store } from '../src/core/store';
 import type { PrimitiveKind } from '../src/data/primitives';
 import { writePhysicsScene } from '../src/io/phys';
+import { currentPose } from '../src/io/rsb';
 import { loadProject, migrateProject, serializeProject } from '../src/io/project';
 import { hasPhysExports, NO_BODY, PhysWorld } from '../src/render/phys-wasm';
+import { PhysicsClient } from '../src/render/physics';
+import type { PhysicsReply, PhysicsRequest } from '../src/render/physics-worker';
 import * as phys from '../src/ui/physics';
 import type { AppServices, PhysicsPort } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
@@ -74,6 +77,7 @@ describe('what the simulator is given', () => {
     expect(physicsSpec(reduce(state, { type: 'scene/setLocked', ids: [box], locked: true }), [box])).toBeNull();
     const hidden = reduce(state, { type: 'scene/setVisible', ids: [can], visible: false });
     expect(physicsSpec(hidden, [box])!.statics.map((s) => s.piece.part)).toEqual([ball]);
+    expect(physicsSpec(hidden, [can])).toBeNull();
   });
 
   it('a group falls as one body unless it falls as parts', () => {
@@ -200,7 +204,8 @@ describe('the PHYSICS clip', () => {
     const qz = [0, 0, Math.SQRT1_2, Math.SQRT1_2];
     w.push([0, 0, 0, 0, 0, 0, 1]);
     w.push([10, 0, 0, ...qz]);
-    w.push([10, 10, 0, ...qz]);
+    // The same turn with the other sign, as a simulator may give it: the frames in between must not unwind it.
+    w.push([10, 10, 0, ...qz.map((v) => -v)]);
     return { state: reduce(state, { type: 'physics/begin', clips: [physicsClip('c1', box, 1, w.track())] }), box };
   }
 
@@ -222,12 +227,58 @@ describe('the PHYSICS clip', () => {
     expect(close(evaluate(spun, 2).nodes[box].rotation, [0, 0, 120], 1e-4)).toBe(true);
   });
 
+  it('is anchored where the run left its node: moved afterwards, the node takes its whole fall with it', () => {
+    const { state, box } = clipState();
+    const t0 = state.scene.nodes[box].transform;
+    // As a run leaves it: the node at the last frame and the clip anchored there.
+    const end = { position: [10, 10, 0] as Vec3, rotation: [0, 0, 90] as Vec3 };
+    const s = reduce(state, { type: 'physics/commit', transforms: { [box]: { ...t0, ...end } }, clips: ['c1'] });
+    expect(s.animation.clips[0].anchor).toEqual(end);
+    const at = (st: ProjectState, t: number) => evaluate(st, t).nodes[box];
+    expect(at(s, 1.25).position).toEqual(at(state, 1.25).position); // the frames as recorded, exactly
+    // Moved 100 mm along x: the fall moves with it.
+    const slid = reduce(s, { type: 'scene/setTransform', id: box, transform: { position: [110, 10, 0] } });
+    expect(close(at(slid, 1.25).position, [105, 0, 0], 1e-4)).toBe(true);
+    expect(close(at(slid, 0.5).position, [100, 0, 0], 1e-4)).toBe(true);
+    expect(close(at(slid, 1.25).rotation, [0, 0, 45], 1e-3)).toBe(true);
+    // Turned a further 90° about z where it rests: the fall turns about that point.
+    const turned = reduce(s, { type: 'scene/setTransform', id: box, transform: { rotation: [0, 0, 180] } });
+    expect(close(at(turned, 1.25).position, [20, 5, 0], 1e-4)).toBe(true);
+    expect(close(at(turned, 1.25).rotation, [0, 0, 135], 1e-3)).toBe(true);
+    // The node keeps its scale.
+    const big = reduce(s, { type: 'scene/setTransform', id: box, transform: { scale: [2, 2, 2] } });
+    expect(at(big, 1.25).scale).toEqual([2, 2, 2]);
+    expect(close(at(big, 1.25).position, [5, 0, 0], 1e-4)).toBe(true);
+  });
+
+  it('at 0 the nodes a recorded simulation holds show its frame, the rest of the scene as edited', () => {
+    const { state, box } = clipState();
+    const at0: ProjectState = { ...state, animation: { ...state.animation, playhead: 0, playing: false } };
+    const pose = playheadPose(at0)!;
+    expect(Object.keys(pose.nodes)).toEqual([box]);
+    expect(pose.nodes[box].position).toEqual([0, 0, 0]); // before its start: the first frame
+    expect(pose.camera).toBeNull();
+    expect(currentPose(at0)).toEqual(pose); // a still render at 0 shows the same
+    // Without a recorded simulation, 0 is the scene as edited (N1); past 0, the playhead's pose.
+    const spin = reduce(threePrimitives().state, { type: 'anim/addClip', clip: { target: { kind: 'NODE', id: box }, move: 'SPIN', shot: null, start: 0, duration: 1, amount: 30, easing: 'LINEAR' } });
+    expect(playheadPose({ ...spin, animation: { ...spin.animation, playhead: 0 } })).toBeNull();
+    expect(playheadPose({ ...at0, animation: { ...at0.animation, playhead: 1.25 } })).toEqual(evaluate(at0, 1.25));
+  });
+
   it('saves with the project and opens again, bit for bit; a damaged track is left out', async () => {
-    const { state } = clipState();
+    const { state: s0, box } = clipState();
+    const state = reduce(s0, { type: 'physics/commit', transforms: { [box]: s0.scene.nodes[box].transform }, clips: ['c1'] });
     const text = await serializeProject(state).text();
     const loaded = loadProject(text);
     const c = loaded.state.animation.clips.find((x) => x.id === 'c1')!;
     expect(c.track).toEqual(state.animation.clips.find((x) => x.id === 'c1')!.track);
+    expect(c.anchor).toEqual(state.animation.clips[0].anchor);
+    // A damaged anchor is left out; the clip stays.
+    const bent = JSON.parse(text);
+    bent.state.animation.clips[0].anchor = { position: [0, 'x', 0], rotation: [0, 0, 0] };
+    const kept = migrateProject(bent).animation.clips;
+    expect(kept).toHaveLength(1);
+    expect('anchor' in kept[0]).toBe(false);
     expect([...trackFloats(c.track!)!]).toEqual([...trackFloats(state.animation.clips[0].track!)!]);
     const body = JSON.parse(text);
     body.state.animation.clips[0].track.data = 'not base64!';
@@ -279,7 +330,7 @@ describe('the Doctor', () => {
 });
 
 /** A simulator that answers like the worker: frame k of every body is k × 10 mm lower, no turn. */
-function fakePort(): { port: PhysicsPort; emit(frames: number): void; end(reason?: PhysicsResult['reason']): void; runs: number } {
+function fakePort(): { port: PhysicsPort; emit(frames: number): void; end(reason?: PhysicsResult['reason']): void; runs: number; calls: string[] } {
   let onUpdate: ((u: PhysicsUpdate) => void) | null = null;
   let resolveDone: ((r: PhysicsResult) => void) | null = null;
   let bodies = 0;
@@ -291,6 +342,7 @@ function fakePort(): { port: PhysicsPort; emit(frames: number): void; end(reason
   };
   const api = {
     runs: 0,
+    calls: [] as string[],
     port: {
       run(spec, _options, update): PhysicsRunHandle {
         api.runs++;
@@ -301,9 +353,14 @@ function fakePort(): { port: PhysicsPort; emit(frames: number): void; end(reason
         return {
           started: Promise.resolve(started),
           done: new Promise<PhysicsResult>((r) => (resolveDone = r)),
-          pause() {},
-          resume() {},
+          pause() {
+            api.calls.push('pause');
+          },
+          resume() {
+            api.calls.push('resume');
+          },
           stop() {
+            api.calls.push('stop');
             api.end('STOPPED');
           },
         };
@@ -342,6 +399,8 @@ describe('the physics bar with a simulator', () => {
     await tick();
     expect(ui.get().physics.state).toBe('RUNNING');
     expect(store.get().animation.clips).toHaveLength(1);
+    // Anchored where the node is while it runs, then where the run leaves it.
+    expect(store.get().animation.clips[0].anchor).toEqual({ position: before.position, rotation: before.rotation });
     sim.emit(3);
     const clip = store.get().animation.clips[0];
     expect(clip.track!.frames).toBe(4);
@@ -355,10 +414,62 @@ describe('the physics bar with a simulator', () => {
     await tick();
     expect(ui.get().physics).toMatchObject({ state: 'STOPPED', ended: 'STOPPED', canReset: true });
     expect(store.get().scene.nodes[box].transform.position[2]).toBeCloseTo(before.position[2] - 30, 3);
+    const after = store.get().scene.nodes[box].transform;
+    expect(store.get().animation.clips[0].anchor).toEqual({ position: after.position, rotation: after.rotation });
     expect(store.history().undo).toHaveLength(1);
     store.undo();
     expect(store.get().animation.clips).toHaveLength(0);
     expect(store.get().scene.nodes[box].transform).toEqual(before);
+  });
+
+  it('Pause freezes what the viewport shows; Stop keeps the pose shown, not what the simulator did after it', async () => {
+    const { ctx, store, ui, sim, box } = app();
+    const before = store.get().scene.nodes[box].transform;
+    const fps = store.get().animation.fps;
+    const frames = () => store.get().animation.clips[0].track!.frames;
+    phys.drop(ctx, [box]);
+    await tick();
+    sim.emit(2);
+    phys.pause(ctx);
+    expect(sim.calls).toEqual(['pause']);
+    const shown = { playhead: store.get().animation.playhead, time: ui.get().physics.time };
+    // What was on its way when the person paused waits.
+    sim.emit(2);
+    expect(frames()).toBe(3);
+    expect(store.get().animation.playhead).toBe(shown.playhead);
+    expect(ui.get().physics.time).toBe(shown.time);
+    phys.resume(ctx);
+    expect(frames()).toBe(5);
+    expect(store.get().animation.playhead).toBeCloseTo(4 / fps, 9);
+    expect(ui.get().physics).toMatchObject({ state: 'RUNNING', time: 40 / 240 });
+    phys.pause(ctx);
+    sim.emit(1);
+    phys.stop(ctx);
+    await tick();
+    // The simulator had a fifth frame; the person stopped at the fourth.
+    expect(ui.get().physics).toMatchObject({ state: 'STOPPED', ended: 'STOPPED', time: 40 / 240 });
+    expect(frames()).toBe(5);
+    expect(store.get().scene.nodes[box].transform.position[2]).toBeCloseTo(before.position[2] - 40, 3);
+    expect(store.history().undo).toHaveLength(1);
+  });
+
+  it('an end that comes while paused waits for Resume', async () => {
+    const { ctx, store, ui, sim, box } = app();
+    const before = store.get().scene.nodes[box].transform;
+    phys.drop(ctx, [box]);
+    await tick();
+    sim.emit(1);
+    phys.pause(ctx);
+    sim.emit(1);
+    sim.end('SETTLED');
+    await tick();
+    expect(ui.get().physics.state).toBe('PAUSED');
+    expect(store.get().scene.nodes[box].transform).toEqual(before);
+    expect(store.get().animation.clips[0].track!.frames).toBe(2);
+    phys.resume(ctx);
+    expect(ui.get().physics).toMatchObject({ state: 'STOPPED', ended: 'SETTLED' });
+    expect(store.get().animation.clips[0].track!.frames).toBe(3);
+    expect(store.get().scene.nodes[box].transform.position[2]).toBeCloseTo(before.position[2] - 20, 3);
   });
 
   it('it stops by itself when everything sleeps; Reset undoes it as a step of its own', async () => {
@@ -405,6 +516,85 @@ describe('the physics bar with a simulator', () => {
     const none = { ...ctx, services: {} as AppServices };
     phys.drop(none, [ball]);
     expect(ui.get().physics.ended).toBe('NO_ENGINE');
+  });
+});
+
+describe('the worker\'s client', () => {
+  it('a pause asked for before the worker has the run reaches it right after the run; every report is acknowledged', async () => {
+    const posted: PhysicsRequest[] = [];
+    const worker = {
+      onmessage: null as ((e: { data: PhysicsReply }) => void) | null,
+      onerror: null,
+      postMessage: (m: PhysicsRequest) => posted.push(m),
+      terminate() {},
+    };
+    const client = new PhysicsClient(async () => ({}) as WebAssembly.Module, () => worker as unknown as Worker);
+    const updates: PhysicsUpdate[] = [];
+    const handle = client.run(new Uint8Array([1, 2, 3]), 1, { fps: 24, maxSeconds: 30 }, (u) => updates.push(u));
+    handle.pause();
+    await tick();
+    expect(posted.map((m) => m.type)).toEqual(['init']);
+    worker.onmessage!({ data: { type: 'ready' } });
+    await tick();
+    expect(posted.map((m) => m.type)).toEqual(['init', 'run', 'pause']);
+    const id = (posted[1] as { id: number }).id;
+    worker.onmessage!({ data: { type: 'progress', id, steps: 20, awake: 1, bodies: 1, settled: false, frames: [new Float32Array(7), new Float32Array(7)] } });
+    expect(updates).toHaveLength(1);
+    expect(posted.at(-1)).toEqual({ type: 'ack', id, frames: 2 });
+    handle.resume();
+    handle.stop();
+    expect(posted.slice(-2).map((m) => m.type)).toEqual(['resume', 'stop']);
+    client.dispose();
+  });
+});
+
+const until = async (what: () => boolean, ms = 20000) => {
+  const end = performance.now() + ms;
+  while (!what()) {
+    if (performance.now() > end) throw new Error('timed out');
+    await new Promise((r) => setTimeout(r, 10));
+  }
+};
+
+describe.skipIf(!RT_WASM)('the physics worker (the real rt.wasm)', () => {
+  it('keeps a few frames ahead of what the page has taken in, never ahead of the clock, and Pause holds it', async () => {
+    const replies: PhysicsReply[] = [];
+    const scope = { postMessage: (m: PhysicsReply) => replies.push(m), onmessage: null as ((e: { data: PhysicsRequest }) => void) | null };
+    (globalThis as { self?: unknown }).self = scope;
+    const { framesAhead } = await import('../src/render/physics-worker');
+    const send = (data: PhysicsRequest) => scope.onmessage!({ data });
+    send({ type: 'init', module: await WebAssembly.compile(readFileSync(RT_WASM!)) });
+    await until(() => replies.some((r) => r.type === 'ready'));
+    const { state, box, ball, can } = threePrimitives();
+    const spec = physicsSpec(state, [box, ball, can])!;
+    const t0 = performance.now();
+    send({ type: 'run', id: 7, scene: writePhysicsScene(spec).slice().buffer, dynamic: 3, options: { fps: 24, maxSeconds: 30 } });
+    const reported = () => replies.reduce((n, r) => n + (r.type === 'progress' ? r.frames.length : 0), 0);
+    const ahead = framesAhead(24);
+    // Nothing acknowledged: it records `ahead` frames and waits.
+    await until(() => reported() >= ahead);
+    await new Promise((r) => setTimeout(r, 400));
+    expect(reported()).toBe(ahead);
+    // Paused, an acknowledgement lets nothing more through.
+    send({ type: 'pause', id: 7 });
+    send({ type: 'ack', id: 7, frames: ahead });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(reported()).toBe(ahead);
+    // Resumed and acknowledged as it goes, it runs to rest.
+    send({ type: 'resume', id: 7 });
+    let acked = ahead;
+    await until(() => {
+      const n = reported();
+      if (n > acked) {
+        send({ type: 'ack', id: 7, frames: n - acked });
+        acked = n;
+      }
+      return replies.some((r) => r.type === 'done');
+    });
+    const done = replies.find((r) => r.type === 'done') as Extract<PhysicsReply, { type: 'done' }>;
+    expect(done.reason).toBe('SETTLED');
+    // Real time at most: the simulated seconds fit in the wall clock's, less the 0.4 s paused.
+    expect(done.steps / 240).toBeLessThanOrEqual((performance.now() - t0) / 1000 - 0.4 + 0.05);
   });
 });
 

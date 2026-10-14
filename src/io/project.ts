@@ -45,9 +45,9 @@
 //
 // Physics (S2): a node may carry its Physics section (`physics`: role, density, friction, bounciness, as parts) and the
 // animation may hold PHYSICS clips with a recorded track (`track`: fps, frames and the local poses as base64 f32,
-// core/physics.ts), all plain JSON in the state. A file from before S2 has neither and opens as it always did; on
-// open the section keeps only what this version knows, and a clip whose track does not decode is left out. The
-// schema stays at 2.
+// core/physics.ts) and the node's position and rotation it is relative to (`anchor`), all plain JSON in the state. A
+// file from before S2 has neither and opens as it always did; on open the section keeps only what this version
+// knows, a clip whose track does not decode is left out and so is a damaged anchor. The schema stays at 2.
 //
 // Opening is all or nothing: the text is read and checked (envelope, schema, state, meshes) before the registry
 // or the store are touched, so a damaged file leaves the open project as it was.
@@ -68,7 +68,7 @@ import { checkTextureFile, registerTextureImage, textureImageId } from '../core/
 import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
 import type { MaterialInstance } from '../core/materials';
 import { migrateRender } from '../core/render';
-import { isTrack, type PhysicsProps } from '../core/physics';
+import { isAnchor, isTrack, type PhysicsProps } from '../core/physics';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
@@ -340,6 +340,10 @@ function checkState(raw: RawState): ProjectState {
   // S2: a recorded simulation (a PHYSICS clip) whose track does not decode is left out, not the project.
   if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && c.move === 'PHYSICS' && !isTrack(c.track))) {
     s.animation = { ...s.animation, clips: s.animation.clips.filter((c) => !(isObject(c) && c.move === 'PHYSICS' && !isTrack(c.track))) };
+  }
+  // A damaged anchor is left out: the clip then plays its frames as they are.
+  if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && 'anchor' in c && !isAnchor(c.anchor))) {
+    s.animation = { ...s.animation, clips: s.animation.clips.map((c) => (isObject(c) && 'anchor' in c && !isAnchor(c.anchor) ? (({ anchor: _a, ...rest }) => rest)(c) : c)) as typeof s.animation.clips };
   }
   return s;
 }
