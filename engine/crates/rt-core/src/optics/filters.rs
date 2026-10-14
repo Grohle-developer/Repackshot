@@ -124,9 +124,15 @@ impl Default for FilterParams {
     }
 }
 
+/// `x > 0`, false for NaN.
+#[inline]
+fn positive(x: f32) -> bool {
+    x > 0.0
+}
+
 /// The scattered fraction `s` of a grade (the diffusions' table).
 pub fn grade_s(grade: f32) -> f32 {
-    if !(grade > 0.0) {
+    if !positive(grade) {
         return 0.0;
     }
     if grade <= GRADES[0] {
@@ -210,7 +216,7 @@ impl Inverse {
     fn cdf(&self, x: f32) -> f32 {
         let t = &self.0;
         let n = t.len();
-        if !(x > t[0]) {
+        if !positive(x - t[0]) {
             return 0.0;
         }
         if x >= t[n - 1] {
@@ -283,12 +289,12 @@ pub fn light_disc(
     let h = d.dot(n);
     let v = centre - origin;
     let vn = v.dot(n);
-    if !(h.abs() > 1.0e-6) || !(vn * h > 0.0) {
+    if !positive(h.abs() - 1.0e-6) || !positive(vn * h) {
         return None;
     }
     let dist2 = v.dot(v);
     let r2 = radius * radius;
-    if !(dist2 > r2 * 1.0001) {
+    if !positive(dist2 - r2 * 1.0001) {
         return None;
     }
     let p = v * (h / vn) - d;
@@ -345,7 +351,7 @@ impl Filter {
         if !(0.0..=MAX_GRADE).contains(&p.grade) {
             return Err("a filter grade must be between 0 and 2");
         }
-        if p.tint.iter().any(|t| !(*t >= 0.0) || !t.is_finite()) {
+        if p.tint.iter().any(|&t| t < 0.0 || !t.is_finite()) {
             return Err("a filter tint must not be negative");
         }
         if !p.angle_deg.is_finite() {
@@ -374,7 +380,7 @@ impl Filter {
             own
         };
         let lum = LUMA[0] * tint[0] + LUMA[1] * tint[1] + LUMA[2] * tint[2];
-        if !(lum > 0.0) {
+        if !positive(lum) {
             return Err("a filter tint must not be black");
         }
         let a = if p.kind == FILTER_DIFFUSION_BLACK {
@@ -550,7 +556,7 @@ impl Filter {
                     return 1.0;
                 }
                 let r = (delta.0 * delta.0 + delta.1 * delta.1).sqrt();
-                if !(r > 0.0) {
+                if !positive(r) {
                     return 1.0;
                 }
                 let k = self.radial.density(r) / (std::f32::consts::TAU * r);
@@ -564,7 +570,7 @@ impl Filter {
             Lobe::Line { k, t } => {
                 let (spans, total) = self.line_spans(disc);
                 let (t1, t2, p) = spans[(k as usize).min(7)];
-                if !(p > 0.0) || t < t1 || t > t2 {
+                if !positive(p) || t < t1 || t > t2 {
                     return 1.0;
                 }
                 // Per line: K = p(t) / (n · width) and q = p(t) / (Σ P · width).
@@ -577,7 +583,7 @@ impl Filter {
                 let spread = deg(GLIMMER_SIGMA_DEG);
                 let inside = |x: f32, lo: f32, hi: f32| x >= lo && x <= hi;
                 let (r, (dx, dy)) = (disc.radius, disc.centre);
-                if !(area > 0.0)
+                if !positive(area)
                     || !inside(
                         delta.0,
                         (cx - spread).max(dx - r),
@@ -611,7 +617,7 @@ impl Filter {
         let second = u[0] < self.second;
         let (delta, lobe) = if second && self.line.is_some() {
             let (spans, total) = self.line_spans(disc);
-            if !(total > 0.0) {
+            if !positive(total) {
                 return None;
             }
             // A line by its probability inside the light, a distance by the line's density there.

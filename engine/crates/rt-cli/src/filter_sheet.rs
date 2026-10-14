@@ -181,7 +181,7 @@ pub fn run(
     let all = cells(size);
     let mut rendered = 0;
     for cell in &all {
-        if !only.is_empty() && !only.iter().any(|k| *k == cell.key) {
+        if !only.is_empty() && !only.contains(&cell.key) {
             if let Some(line) = line_of(&cell.key) {
                 json.push(line);
                 continue;

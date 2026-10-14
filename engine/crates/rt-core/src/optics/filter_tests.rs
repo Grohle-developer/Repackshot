@@ -69,17 +69,7 @@ fn mean_rgb(scene: &Scene, samples: u32) -> [f64; 3] {
     let (w, h) = (scene.render.width, scene.render.height);
     let mut film = Film::new(w, h);
     for s in 0..samples {
-        render_tile(
-            scene,
-            TileRect {
-                x: 0,
-                y: 0,
-                w: w,
-                h: h,
-            },
-            s,
-            &mut film,
-        );
+        render_tile(scene, TileRect { x: 0, y: 0, w, h }, s, &mut film);
     }
     let rgb = film.resolve();
     let mut sum = [0.0f64; 3];
@@ -330,12 +320,7 @@ fn a_stack_of_three_filters_of_grade_zero_renders_as_no_filter_bit_for_bit() {
     zeros.camera.lens = Some(Lens::new(params).unwrap());
     assert!(zeros.camera.lens.as_ref().unwrap().filters().is_empty());
     let (w, h) = (base.render.width, base.render.height);
-    let tile = TileRect {
-        x: 0,
-        y: 0,
-        w: w,
-        h: h,
-    };
+    let tile = TileRect { x: 0, y: 0, w, h };
     let (mut a, mut b) = (Film::new(w, h), Film::new(w, h));
     for s in 0..2 {
         render_tile(&base, tile, s, &mut a);
@@ -357,12 +342,7 @@ fn filters_change_the_image_and_keep_their_bits_on_every_simd_path() {
         s.render.width = w;
         s.render.height = h;
     }
-    let tile = TileRect {
-        x: 0,
-        y: 0,
-        w: w,
-        h: h,
-    };
+    let tile = TileRect { x: 0, y: 0, w, h };
     let mut a = Film::new(w, h);
     let mut b = Film::new(w, h);
     for s in 0..2 {
