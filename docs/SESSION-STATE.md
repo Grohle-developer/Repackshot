@@ -12,7 +12,8 @@ de cada agente (se empujan tras cada *commit* de su agente; un *commit*
 
 M2a texturas · P5 actualizar desde la app · L6 sets de estudio · U12
 TIFF/DNG · O1 lente fina y bokeh · U13 proporción en la cámara · P6
-plugins + plugin de película. Cada fase está marcada «hecha» en
+plugins + plugin de película · E12 elección de luz por punto · P6b
+carrusel con deslizador y filtros · N6 despieces y línea de tiempo. Cada fase está marcada «hecha» en
 `ROADMAP.md` con su párrafo *Hecho / Qué no encajó*.
 
 ## En curso (rama `wip/ccr-8df3f848/<fase>`; brief en `ROADMAP.md`)
@@ -23,12 +24,9 @@ plugins + plugin de película. Cada fase está marcada «hecha» en
 | E9 (a, a2, b, c) | `e9` | (a)+(a2) confirmados (`d736374`: horno 1,000; +13–16 % de luminancia difusa). (b) medios dispersores: estimador de salida (Chiang 2016) en verde; decididos: ruleta por el peso del camino desde la entrada, regla de **pared fina** para líquidos en vidrio (sesgo medido), test de leche por acuerdo con el camino exacto; falta la hoja a 64/256 spp, el *commit* de (b) y (c) dispersión. |
 | E6 (bisel, madera, tela) | `e6` | Bisel confirmado (`59656ed`, `977307e`). Madera con nudos: veredicto dado (desviación 1,5–3 radios, bulto 0,35 R, nudos solo con incidencia ≥ 30°, nota «6 pedidos · 3 caben»); falta el *commit* de madera y la tela (hilos/cm realistas: algodón 40, vaquero 26, lona 12, punto 5…). |
 | O3a → O2 | `o1` | O1 fusionado. O3a (filtros de lente) hecho en borrador del agente: motor, interfaz, previa WebGL; hoja renderizando; para estrella/rayas/brillo con fuentes pequeñas, medir MIS entre dispersión de pupila y NEE a través de la PSF. Después O2 (lente trazada). |
-| E12 elección de luz por punto | `e12` | Construido y medido (varianza ÷1000 bajo el foco, insesgo 0,06 %); decisiones: receptor de sombras sigue por flujo (E13-bis: receptor por cociente de sumas), pesos en unidades de irradiancia; faltan hoja, repinado de *hashes* y *commit*. **Atención**: su rama aún no tenía *commits* propios al escribir esto. |
 | S4a partículas de aire | `s4a` | Sección Ambiente, efectos en el *store*, proyecto, RSB `FXAM`; sigue con primitivas/BVH en el motor y la hoja. |
 | S2 cuerpos rígidos | `s2` | `rt-phys` XPBD, Dejar caer, barra con Pausar/Reanudar, clip `PHYSICS` automático; sigue con pruebas y la comprobación de navegador. |
-| N6 despiece + línea de tiempo | `n6` | Línea de tiempo de tres zonas hecha; sigue con los tipos de despiece, excepciones, hoja y veredicto. |
 | M3a editor por nodos | `m3a` | Programas de material, intérprete de referencia y vista previa; sigue con el editor (ventana, lienzo) y los diez grafos. |
-| P6b carrusel | `p6b` | Hecho (`89636e9`: slider bajo el carrusel, filtros ISO/estilo/color-B&N, tests, captura); QA final en marcha; fusionar. |
 
 ## Pendiente del responsable (orden)
 
