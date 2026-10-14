@@ -21,6 +21,7 @@ import { h, icon } from '../dom';
 import { cameraName, dyn, lightName, setupLabel, setupTip, studioLabel } from '../names';
 import { dynamic, shallowEq, type Ctx, type Scope } from '../reactive';
 import { L, formatNumber, getLang, lbl, t, type StringKey } from '../strings';
+import { aspectRows } from './insp-aspect';
 
 /** URL of a light-setup thumbnail in public/thumbs/setups. */
 export function setupThumb(key: string, small = false): string {
@@ -534,6 +535,7 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     field(t('camera.focus'), focus.el, focusBtn),
     h('div', { class: 'note' }, t('camera.dofNote')),
     field(t('camera.projection'), proj.el),
+    aspectRows(ctx, scope, camId),
     h(
       'div',
       { class: 'row' },

@@ -2,6 +2,7 @@
 // size (top right), quality meter (bottom left), axes and part size (bottom
 // right), hover label, pick modes and drag and drop of materials (pointer events) and files.
 
+import { aspectText } from '../../core/aspect';
 import { denoiseIn, toggledViewportDenoise } from '../../core/caustics';
 import { activeCamera, cameraBasis, focusDistanceTo, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox } from '../../core/math';
@@ -144,7 +145,8 @@ function topRight(ctx: Ctx, scope: Scope): HTMLElement {
       camBtn.style.display = 'inline-flex';
       camBtn.style.alignItems = 'center';
       camBtn.style.gap = '6px';
-      resBtn.textContent = `${s.render.width} × ${s.render.height}`;
+      // The camera's ratio with the size: the frame is the camera's, the size is what the render window says (U13).
+      resBtn.textContent = `${aspectText(activeCamera(s).aspect)} · ${s.render.width} × ${s.render.height}`;
     },
     shallowEq,
   );
