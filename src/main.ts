@@ -19,6 +19,7 @@ import './ui/components.css';
 import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
+import './ui/material-editor.css';
 import './ui/guards.css';
 import './ui/tour.css';
 import { createSyntheticService } from './ai/synthetic';
@@ -58,6 +59,7 @@ import { onAperturePicture } from './core/aperture';
 import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
+import { bakeLaneCount, GraphWorkers } from './render/graph-client';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightLinear, straightLinearRgba, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
@@ -194,8 +196,11 @@ const backdrop = document.createElement('canvas');
 backdrop.setAttribute('aria-hidden', 'true');
 backdrop.style.visibility = 'hidden';
 let preview: PreviewEngine | null = null;
+// M3a: the workers of the material graphs, for the editor's node previews and the Fast preview's bakes.
+const graphWorkers = typeof Worker === 'function' ? new GraphWorkers(() => new Worker(new URL('./render/graph-worker.ts', import.meta.url), { type: 'module' }), bakeLaneCount()) : null;
 try {
   preview = new PreviewEngine();
+  if (graphWorkers) preview.setGraphWorkers(graphWorkers);
   preview.mount(canvas);
 } catch (err) {
   console.error(err);
@@ -884,6 +889,7 @@ const services: AppServices = {
     },
   },
   plugins: pluginsPort,
+  graphPreview: graphWorkers ? { previews: (program, channel) => graphWorkers.previews(program, channel) } : null,
 };
 
 const app = mountApp(appEl, store, ui, services);

@@ -2,7 +2,7 @@
 // every operation is rounded to f32 with Math.fround, which gives exactly IEEE single precision for + - * / and
 // sqrt of f32 operands (double precision has more than twice the bits). The same algorithms in the same order
 // (Cody–Waite reduction and truncated Taylor series), so the preview's physical sky (core/sky.ts) computes the
-// very numbers the engine does. Only what the sky needs.
+// very numbers the engine does, and the material programs (core/material-interp.ts, M3a) too.
 
 export const f = Math.fround;
 
@@ -173,6 +173,31 @@ export function atan2(y: number, x: number): number {
     return y < 0 ? sub(r, PI) : add(r, PI);
   }
   return y > 0 ? sub(FRAC_PI_2, atan(div(x, y))) : sub(f(-FRAC_PI_2), atan(div(x, y)));
+}
+
+/** fmath::sin: sinCos's sine, without the pair (the same operations, so the same bits). */
+export function sin(x: number): number {
+  x = f(x);
+  if (!Number.isFinite(x)) return 0;
+  const k = Math.floor(add(mul(x, TWO_OVER_PI), 0.5));
+  const r = sub(sub(sub(x, mul(k, PIO2_1)), mul(k, PIO2_2)), mul(k, PIO2_3));
+  switch (((k % 4) + 4) % 4) {
+    case 0:
+      return sinPoly(r);
+    case 1:
+      return cosPoly(r);
+    case 2:
+      return f(-sinPoly(r));
+    default:
+      return f(-cosPoly(r));
+  }
+}
+
+/** fmath::asin: the argument clamped to [−1, 1], then atan2(x, √((1 − x)(1 + x))). */
+export function asin(x: number): number {
+  x = f(x);
+  x = x < -1 ? -1 : x > 1 ? 1 : x;
+  return atan2(x, sqrt(mul(sub(1, x), add(1, x))));
 }
 
 /** f32 vector helpers in the engine's order of operations (rt-core math.rs). */

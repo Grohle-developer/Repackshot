@@ -14,7 +14,8 @@ de cada agente (se empujan tras cada *commit* de su agente; un *commit*
 M2a texturas · P5 actualizar desde la app · L6 sets de estudio · U12
 TIFF/DNG · O1 lente fina y bokeh · U13 proporción en la cámara · P6
 plugins + plugin de película · E12 elección de luz por punto · P6b
-carrusel con deslizador y filtros · N6 despieces y línea de tiempo. Cada fase está marcada «hecha» en
+carrusel con deslizador y filtros · N6 despieces y línea de tiempo · M3a
+editor de materiales por nodos (modelo, compilador, editor, vista Rápido). Cada fase está marcada «hecha» en
 `ROADMAP.md` con su párrafo *Hecho / Qué no encajó*.
 
 ## En curso (rama `wip/ccr-8df3f848/<fase>`; brief en `ROADMAP.md`)
@@ -23,11 +24,11 @@ carrusel con deslizador y filtros · N6 despieces y línea de tiempo. Cada fase 
 | --- | --- | --- |
 | U11 + U11b + E11 | `u11` | U11 (denoise en directo) y U11b (intensidad) confirmados; E11 (suavizado de bordes) aceptado con **Fino** por defecto en proyectos nuevos; falta el *commit* de E11 y la entrega conjunta. Fusionar los tres de una vez. |
 | E9 (a, a2, b, c) | `e9` | (a)+(a2) confirmados (`d736374`: horno 1,000; +13–16 % de luminancia difusa). (b) medios dispersores: estimador de salida (Chiang 2016) en verde; decididos: ruleta por el peso del camino desde la entrada, regla de **pared fina** para líquidos en vidrio (sesgo medido), test de leche por acuerdo con el camino exacto; falta la hoja a 64/256 spp, el *commit* de (b) y (c) dispersión. |
-| E6 (bisel, madera, tela) | `e6` | Bisel confirmado (`59656ed`, `977307e`). Madera con nudos: veredicto dado (desviación 1,5–3 radios, bulto 0,35 R, nudos solo con incidencia ≥ 30°, nota «6 pedidos · 3 caben»); falta el *commit* de madera y la tela (hilos/cm realistas: algodón 40, vaquero 26, lona 12, punto 5…). |
+| E6 (bisel, madera, tela) | `e6` | Bisel confirmado (`59656ed`, `977307e`). **Madera con nudos a 45° en `0c4095f`** (razonamiento 30° → 60° → 45° en su párrafo del ROADMAP; 24 + 3 mutaciones cazadas); faltan las puertas completas del motor (workspace, wasm, paridad, WASI) que corre con la tela; está en la tela (hilos/cm realistas: algodón 40, vaquero 26, lona 12, punto 5…). |
 | O3a → O2 | `o1` | O1 fusionado. O3a (filtros de lente) hecho en borrador del agente: motor, interfaz, previa WebGL; hoja renderizando; para estrella/rayas/brillo con fuentes pequeñas, medir MIS entre dispersión de pupila y NEE a través de la PSF. Después O2 (lente trazada). |
 | S4a partículas de aire | `s4a` | **Entregada** (`6a7c096`; hoja `out/ambient-sheet.html`, capturas `docs/ui/ambient-*.png`). Veredictos dados (ver abajo); el agente está fusionando la cabeza de la rama de sesión en `s4a` (conflictos con E12 en la selección de luz desde partículas, `cli.rs`, inspector, `rsb.ts`, Doctor, docs) y re-fijando sus hashes (E12 los mueve). Al recibirla: fusionar, añadir a `.github/workflows/engine.yml` las líneas `--write-ambient-example` + `wasm-parity.mjs --particles --expect-particles <hash>` y `tests/effects-rsb.test.ts` en el paso del `rt.wasm` real. |
 | S2 cuerpos rígidos | `s2` | **Entregada** (`cb862bc`; capturas `docs/ui/physics-*.png`; puertas del motor en verde). Veredictos dados (ver abajo); el agente está fusionando la cabeza de la rama de sesión en `s2` (23 archivos: el panel de animación es el de N6 entero con el clip `PHYSICS` portado; `playheadPose` respeta `poseActive` de N6; Doctor: 14 + `aspect` + `physics`). Al recibirla: fusionar antes que S4a. |
-| M3a editor por nodos | `m3a` | Programas de material, intérprete de referencia y vista previa; sigue con el editor (ventana, lienzo) y los diez grafos. |
+| M3a editor por nodos | `m3a` | **Fusionada en la rama de sesión** (5e898cb, trailers reescritos al fusionar; veredicto en `ROADMAP.md` §M3a). Si una sesión nueva ve esta fila es que la fusión está ya en `origin`; el árbol `Repackshot-m3a` se puede borrar. |
 
 ## Veredictos dados a S2 y S4a (14-10, por si la sesión corta antes de que lleguen a `ROADMAP.md`)
 

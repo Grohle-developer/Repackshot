@@ -28,6 +28,7 @@ import { normalize } from '../components/palette';
 import { cameraFields } from './insp-scene';
 import { aimMenu } from './scene';
 import { texturesSection } from './insp-textures';
+import * as gc from '../graph-commands';
 
 // --- What the selection carries ---------------------------------------------------
 
@@ -172,8 +173,8 @@ function materialSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean):
       const mats = targetMaterials(s, ids, faces);
       const m = mats.length === 1 ? s.materials[mats[0]] : undefined;
       const p = m ? visibleParams(m).map((x) => x.key).join(',') : '';
-      // Not keyed on name / preset / edited: editing a value must not rebuild under the pointer.
-      return `${mats.join(',')}|${m?.family ?? ''}|${p}|${u.catalogOpen}`;
+      // Not keyed on name / preset / edited: editing a value must not rebuild under the pointer. Simple ↔ Nodes is.
+      return `${mats.join(',')}|${m?.family ?? ''}|${p}|${u.catalogOpen}|${m?.graph ? 'nodes' : 'simple'}`;
     },
     (sc) => {
       const s = store.get();
@@ -221,9 +222,44 @@ function materialSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean):
       );
       const parts: (HTMLElement | null)[] = [card, confirmHost, open ? catalog(ctx, sc, ids, faces, confirmHost) : null];
       if (mat) {
-        parts.push(h('div', { class: 'subhead' }, t('material.params')));
-        for (const spec of visibleParams(mat)) parts.push(paramControl(ctx, sc, mat.id, spec));
-        if (mat.family === 'WOOD' || mat.family === 'FABRIC') parts.push(h('div', { class: 'note' }, t('material.flatNote')));
+        // M3a: Simple (the family's parameters) or Nodes (a graph, edited in the material editor).
+        const mode = segmented(
+          [
+            { value: 'SIMPLE' as const, label: t('ge.simple') },
+            { value: 'NODES' as const, label: t('ge.nodes') },
+          ],
+          mat.graph ? 'NODES' : 'SIMPLE',
+          (v) => {
+            if (v === 'NODES') gc.toNodes(ctx, mat.id);
+            else {
+              const ask = gc.toSimple(ctx, mat.id);
+              if (ask) {
+                showConfirmIn(confirmHost, ask);
+                mode.set('NODES');
+              }
+            }
+          },
+          { ariaLabel: t('ge.modeTip') },
+        );
+        const nodesBtn = h('button', { type: 'button', class: 'btn', 'data-material-nodes': '', 'data-guide': 'material-nodes', 'data-tip': t('material.nodesTip'), onclick: () => gc.openMaterialEditor(ctx, mat.id) }, t('material.nodes'));
+        parts.push(h('div', { class: 'row', style: 'gap:8px;align-items:center;flex-wrap:wrap', role: 'group', 'aria-label': t('material.mode') }, mode.el, nodesBtn));
+        if (mat.graph) {
+          // What the graph is in Fast (and in Full until M3b): the same sentences as the editor's.
+          const note = h('div', { class: 'stack', style: 'gap:2px', 'data-material-graph-note': '' });
+          sc.watch(
+            (st) => [st.materials[mat.id]?.graph, st.scene.nodes, st.scene.partSizeMm] as const,
+            ([g]) => {
+              if (!g) return;
+              note.replaceChildren(h('p', { class: 'note' }, t('material.graphNote', { n: g.nodes.length })), ...gc.fastNoteLines(store.get(), mat.id, g).map((line) => h('p', { class: 'note' }, line)));
+            },
+            (a, b) => a.every((x, i) => x === b[i]),
+          );
+          parts.push(note);
+        } else {
+          parts.push(h('div', { class: 'subhead' }, t('material.params')));
+          for (const spec of visibleParams(mat)) parts.push(paramControl(ctx, sc, mat.id, spec));
+        }
+        if (!mat.graph && (mat.family === 'WOOD' || mat.family === 'FABRIC')) parts.push(h('div', { class: 'note' }, t('material.flatNote')));
         const mine = partsUnder(s, faces && s.selection.faces ? [s.selection.faces.part] : ids);
         const own = h('button', { type: 'button', class: 'btn', 'data-tip': t('material.makeOwnAux'), onclick: () => store.dispatch({ type: 'material/detach', id: mat.id, parts: mine, label: L('undo.makeOwn', { material: materialLabel(store.get().materials[mat.id]) }) }) }, t('material.makeOwn'));
         // Shown while the material is linked to the catalogue or shared beyond the selection.

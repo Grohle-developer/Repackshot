@@ -5,7 +5,7 @@
 import type { LightStyle, MaterialCategory } from '../data/types';
 import type { ImportMessage, ImportOptions, ImportPayload, ImportProgress } from '../core/import-options';
 import { emptyLibrary, type Library } from '../core/library';
-import type { MaterialInstance } from '../core/materials';
+import type { MaterialId, MaterialInstance } from '../core/materials';
 import type { RenderSettings } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
@@ -18,7 +18,7 @@ import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
 import type { PluginsSnapshot } from '../core/plugins';
 import type { RuntimeWarning } from '../core/ai-runtimes';
-import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
+import { defaultLayout, defaultSettings, type EditorRect, type Layout, type SectionId, type Settings } from '../core/settings';
 import { NO_INSTALL, type InstallRequest, type InstallStatus, type ReleaseInfo, type UpdateFault } from '../core/updates';
 
 export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
@@ -331,6 +331,10 @@ export interface UiState {
   renderWindow: RenderWindowState | null;
   /** Where the render window was dragged to (top left, CSS pixels); null: centred. */
   renderWindowPos: { x: number; y: number } | null;
+  /** The material editor (M3a), open on one material; null: closed. */
+  materialEditor: { material: MaterialId } | null;
+  /** Where it was moved to and its size (remembered); null: centred at its own size. */
+  materialEditorRect: EditorRect | null;
   resultView: ResultViewState | null;
   /** The results history, newest first (main.ts loads it from the browser's storage). */
   results: ResultMeta[];
@@ -422,6 +426,7 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'tourSeen',
   'updateCheckedAt',
   'updateLatest',
+  'materialEditorRect',
 ];
 
 export const PANEL_MIN = 220;
@@ -475,6 +480,8 @@ export function defaultUiState(): UiState {
     engine: 'LOADING',
     renderWindow: null,
     renderWindowPos: null,
+    materialEditor: null,
+    materialEditorRect: null,
     resultView: null,
     results: [],
     resultsStorage: 'LOADING',

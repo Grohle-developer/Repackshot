@@ -12,6 +12,7 @@ import { dyn, lightName } from '../names';
 import type { Ctx } from '../reactive';
 import { kbdFor } from '../shortcuts';
 import { getLang, t } from '../strings';
+import { openMaterialEditor } from '../graph-commands';
 
 export interface PartMenuOptions {
   /** Starts renaming in place (the tree row); the viewport focuses the inspector's name field instead. */
@@ -56,6 +57,9 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
     { label: t('ops.copyMaterial'), kbd: kbdFor('copyMaterial'), disabled: mats.length !== 1, run: () => cmd.copyMaterial(ctx, nodes) },
     { label: t('ops.pasteMaterial'), kbd: kbdFor('pasteMaterial'), disabled: noParts || !clip, run: () => cmd.pasteMaterial(ctx, nodes) },
     { label: t('ops.selectByMaterial'), disabled: mats.length !== 1, run: () => cmd.selectByMaterial(ctx, nodes) },
+    null,
+    // M3a: the material editor, on the one material of the selection (Simple goes to Nodes first).
+    { label: t('ops.editNodes'), disabled: mats.length !== 1, run: () => openMaterialEditor(ctx, mats[0]) },
   ];
   const geometry: MenuItems = [
     { label: t('ops.flip'), disabled: noParts, run: () => cmd.flipNormals(ctx, nodes) },

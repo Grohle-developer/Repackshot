@@ -11,6 +11,7 @@ import { WEAR_PROP_DEFAULTS } from '../data/wear';
 import { activeCamera } from './camera';
 import { isLibraryKey, libraryKey, presetRefOf, snapshotStudio, type CustomSetup, type LightInstance, type SavedStudio } from './lighting';
 import { cloneInstance, defaultTextures, type MaterialInstance, type MaterialTextures } from './materials';
+import { mapGraphImages, type MaterialGraph } from './material-graph';
 import { resolvePreset, rigFromRecipe, type PresetRef } from './rig';
 import type { ProjectState } from './store';
 
@@ -43,6 +44,8 @@ export interface MaterialPayload {
   wear: WearProps;
   textures: MaterialTextures;
   bevelRadiusMm: number;
+  /** Its graph (M3a), without the images of its image nodes (they are the project's). */
+  graph?: MaterialGraph;
 }
 
 /** A product type is a studio preset: everything but the key and the label, which the item provides. */
@@ -248,6 +251,7 @@ export function fromMaterialInstance(lib: Library, inst: MaterialInstance, name:
       wear: copy.wear,
       textures: { ...defaultTextures(), mapping: copy.textures.mapping },
       bevelRadiusMm: copy.bevelRadiusMm,
+      ...(copy.graph ? { graph: mapGraphImages(copy.graph, () => null) } : {}),
     },
   };
 }
@@ -268,6 +272,7 @@ export function instanceFromItem(item: MaterialItem): MaterialInstance {
     wear: { ...WEAR_PROP_DEFAULTS, ...m.wear },
     textures: { ...defaultTextures(), mapping: { ...defaultTextures().mapping, ...m.textures?.mapping } },
     bevelRadiusMm: m.bevelRadiusMm,
+    ...(m.graph ? { graph: m.graph } : {}),
   };
   return cloneInstance(inst, '');
 }

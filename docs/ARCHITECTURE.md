@@ -110,6 +110,12 @@ src/
     images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5), y de las texturas (M2a)
     textures.ts             texturas de imagen y etiquetas de un material (M2a): ranuras, mapeado, etiquetas, sus acciones `texture/*`, y la matemática de las proyecciones y de las etiquetas que siguen el shader y el motor
     texture-images.ts       las imágenes de textura en el registro: id por contenido, límites (M2a)
+    material-graph.ts       el grafo de un material (M3a): nodos, tomas con tipo y sus conversiones, conexiones, sus acciones `graph/*`, Simple ↔ Nodos (§5.2 quater)
+    material-program.ts     el compilador del grafo a un programa lineal de registros f32 y vec3, sus códigos, límites y bytes: el contrato de M3b (§5.2 quater)
+    material-interp.ts      el intérprete de referencia del programa, en f32, y los puntos de la prueba cruzada con el motor (M3a)
+    material-preview.ts     las esferas de los nodos, los mapas de Rápido (`planBake`, `bakeRows`, `finishBake`) y la media que hace de parámetros (M3a)
+    material-examples.ts    los diez grafos de ejemplo como grafos, y la etiqueta de su plástico dibujada sin archivo (M3a)
+    noise.ts                el ruido de gradiente (Perlin 2002 y símplex) y su suma en octavas, en f32: el contrato de M3b (M3a)
     image-header.ts         tamaño y canales de un PNG o un JPEG por su cabecera, sin decodificar (M2a)
     sky.ts                  el cielo del motor portado para la vista previa: el físico de E5c (por defecto) y el de Preetham (E5)
     sky-table.ts            los coeficientes del cielo físico, generados por `rt-sky table` (los mismos f32 y el mismo hash que rt-core)
@@ -129,6 +135,8 @@ src/
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
     texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
     texture-preview.ts      las texturas y etiquetas en Rápido: el shader en cada material y la caché de texturas por imagen, con mipmaps (M2a)
+    graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a)
+    graph-client.ts  graph-worker.ts  graph-protocol.ts  los workers de los grafos: las esferas del editor y las bandas de los mapas (M3a)
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
@@ -167,10 +175,13 @@ src/
       scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
       insp-lens.ts          Cámara ▸ Bokeh (miniaturas del motor) y Óptica avanzada (O1)
       insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
+      material-editor.ts    la ventana Editor de material: barra, panel del nodo, teclas, sitio y tamaño recordados (M3a, UI.md §2.10)
+      graph-canvas.ts       el lienzo del editor: tarjetas, tomas por forma, conexiones, zoom y desplazamiento (M3a)
       viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
       animation.ts          el cajón de animación (N6): transporte y las tres zonas; anim-tree.ts (qué se anima), anim-timeline.ts (regla, barras, imán, pista de cámara), anim-props.ts (propiedades, asistente, presets)
     texture-commands.ts     lo que hacen las ranuras y las etiquetas del inspector (M2a)
     anim-commands.ts        lo que hace la línea de tiempo (N6): selección de animaciones en paso con la escena y el visor, Animar…, duplicar, borrar, invertir, partir, fijar en el despiece, transporte y teclas
+    graph-commands.ts       lo que hacen el editor de material y el inspector con un grafo: abrir, Simple ↔ Nodos, ejemplos, ediciones (M3a)
 public/
   thumbs/setups/            88 miniaturas de montaje de luz renderizadas por el motor (PNG) y manifest.json (L6, tools/setup-thumbs.mjs)
   thumbs/bokeh/             30 miniaturas de bokeh renderizadas por rt (16 tipos del modo 1 y sus variantes) + index.json (O1, tools/bokeh-thumbs.mjs)
@@ -902,6 +913,269 @@ elige la luz; sigue con la elección estática (su muestra de luz y el MIS de
 su rayo BSDF) y conserva su aspecto bit a bit. Un atrapasombras que
 acumule las dos sumas por píxel y divida al resolver no dependería de la
 elección (E13).
+### 5.2 quater · Grafos de material: el programa, el intérprete y el ruido (M3a, contrato de M3b)
+
+**El modelo** (`core/material-graph.ts`, catálogo en `data/material-nodes.ts`).
+Un material en modo *Nodos* lleva `graph: { version: 1, nodes, links }`:
+cada nodo `{ id, type, x, y, params, inputs }` (los parámetros de su tipo y
+el valor propio de cada entrada que lo tiene) y cada conexión `{ from,
+output, to, input }`, una por entrada, sin ciclos. Las tomas son `float`,
+`color`, `vector` o `normal`; las conversiones implícitas: número → color
+o vector, las tres componentes iguales (`F2V`); color → número, luminancia
+Rec. 709 (`VLUM`); vector → número, la media (`VAVG`); color ↔ vector y
+normal → vector, las mismas tres cifras; nada → normal salvo una normal.
+Una entrada sin conexión ni valor lee una fuente del punto: `NORMAL` (N),
+`UV0`, u `OBJECT` (P · 0,01, las coordenadas de la pieza por cada 100 mm).
+
+**El compilador** (`core/material-program.ts`) recorre el grafo desde la
+salida, compila cada (nodo, salida) una vez, convierte entre tipos donde
+una conexión lo pide y da a cada valor un registro virtual; después los
+empaqueta: cada valor toma el registro libre más bajo de su archivo al
+escribirse y lo devuelve tras su última lectura (un destino nunca coincide
+con un operando de la misma instrucción). Lo que no llega a la salida no se
+compila (salvo las sondas de las vistas previas). Una entrada de la salida
+sin conexión es una **constante** del programa, no una instrucción. Un
+**relieve** evalúa su altura tres veces: en el punto y a `BUMP_STEP_MM` =
+0,01 mm por T y por B; el propio programa mueve P (`P + 0,01·T`) y las UV
+(`UV + 0,01·dUV/dT`, el mismo paso para los dos juegos). Un grafo de 30
+nodos compila en menos de 1 ms (test). Límites: **2048 instrucciones, 256
+registros f32, 256 vec3 (con los 9 del punto), 8192 constantes, 16
+imágenes**; un grafo que los pasa no da programa y sí el motivo
+(`TOO_MANY_…`).
+
+**Registros.** Dos archivos: `F` (f32) y `V` (vec3, tres f32). El motor
+llena antes de cada evaluación los nueve primeros vec3 con el punto, en el
+espacio de la pieza:
+
+| `V` | Nombre | Qué es |
+| --- | --- | --- |
+| 0 | `P` | posición, mm |
+| 1 | `N` | normal de sombreado, unitaria, hacia fuera |
+| 2 | `UV0` | primer juego de UV (u, v, 0); (0, 0, 0) sin UV |
+| 3 | `UV1` | segundo juego; el primero si la malla tiene uno |
+| 4 | `I` | dirección unitaria del punto al observador (al origen del rayo) |
+| 5 | `T` | tangente unitaria: la dirección en que crece la u de UV0, ortogonalizada contra N; sin UV, `onb(N)` |
+| 6 | `B` | N × T |
+| 7 | `DUV_T` | (du/dT, dv/dT, 0) de UV0 por mm a lo largo de T; 0 sin UV |
+| 8 | `DUV_B` | (du/dB, dv/dB, 0) |
+
+`onb(n)` (Frisvad revisado por Duff et al., *Building an orthonormal basis,
+revisited*, JCGT 2017): `s = n.z < 0 ? −1 : 1` (escrito así: −0 da 1),
+`a = −1/(s + n.z)`, `b = (n.x·n.y)·a`, `T = (1 + ((s·n.x)·n.x)·a, s·b,
+−(s·n.x))`.
+
+**Instrucción**: seis palabras de 32 bits, `op d a b c k`. `d a b c` son
+registros (de `F` o de `V` según el código) o `NONE` (−1, `0xFFFFFFFF` en
+bytes); `k` es un índice en las constantes (`#`), en la tabla de imágenes
+o un inmediato, según el código. Los códigos son **estables**: uno nuevo
+toma un número nuevo, ninguno cambia de significado.
+
+**Aritmética.** Todo en f32: **cada operación redondea a f32 en el orden
+escrito** (paréntesis explícitos; sin FMA). `sin`, `atan2`, `asin`, `powf`,
+`exp2`, `log2` son las de `rt_core::fmath` (las mismas en TS:
+`core/f32math.ts`, bit a bit); `floor` es la exacta; `min(a, b)` es `b < a
+? b : a`, `max(a, b)` es `b > a ? b : a` y `clamp01(x)` es `x < 0 ? 0 : x >
+1 ? 1 : x` (comparaciones, nunca `f32::min`: un NaN pasa igual en los dos
+lados). `lerp(a, b, t) = a + t·(b − a)`; `smoothstep(e0, e1, x)`: si `e1`
+ni es mayor ni menor que `e0`, `x < e0 ? 0 : 1`; si no, `t = clamp01((x −
+e0)/(e1 − e0))`, `(t·t)·(3 − 2·t)`.
+
+| Código | Nombre | d | a | b | c | k | Resultado |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | `NOP` | | | | | | nada |
+| 1 | `FCONST` | F | | | | # | `consts[k]` |
+| 2 | `VCONST` | V | | | | # | `(consts[k], consts[k+1], consts[k+2])` |
+| 3 | `FMOV` | F | F | | | | `a` |
+| 4 | `VMOV` | V | V | | | | `a` |
+| 5 | `F2V` | V | F | | | | `(a, a, a)` |
+| 6 | `VLUM` | F | V | | | | `((a.x·0,2126) + (a.y·0,7152)) + (a.z·0,0722)` |
+| 7 | `VAVG` | F | V | | | | `((a.x + a.y) + a.z)/3` |
+| 8–10 | `VX` `VY` `VZ` | F | V | | | | una componente |
+| 11 | `VCOMB` | V | F | F | F | | `(a, b, c)` |
+| 20 | `FADD` | F | F | F | | | `a + b` |
+| 21 | `FSUB` | F | F | F | | | `a − b` |
+| 22 | `FMUL` | F | F | F | | | `a·b` |
+| 23 | `FDIV` | F | F | F | | | `b = 0 ? 0 : a/b` |
+| 24 | `FPOW` | F | F | F | | | `a > 0`: `powf(a, b)`; `a = 0`: `b = 0 ? 1 : 0`; `a < 0` y `b` entero (`b = floor(b)`, \|b\| ≤ 2²⁴): `±powf(−a, b)`, negativo si `b % 2 ≠ 0`; NaN: NaN; si no 0 |
+| 25 | `FMIN` | F | F | F | | | `min(a, b)` |
+| 26 | `FMAX` | F | F | F | | | `max(a, b)` |
+| 27 | `FSMIN` | F | F | F | F | | `m = min(a, b)`; `c ≤ 0` (o NaN): `m`; si no `h = max(c − \|a − b\|, 0)/c`, `m − ((h·h)·c)·0,25` |
+| 28 | `FSMAX` | F | F | F | F | | `−FSMIN(−a, −b, c)` |
+| 29 | `FABS` | F | F | | | | `\|a\|` |
+| 30 | `FSSTEP` | F | F | F | F | | `smoothstep(b, c, a)` |
+| 31 | `FMADD` | F | F | F | F | | `(a·b) + c` |
+| 32 | `FLT` | F | F | F | | | `a < b ? 1 : 0` |
+| 33 | `FGT` | F | F | F | | | `a > b ? 1 : 0` |
+| 34 | `FFLOOR` | F | F | | | | `floor(a)` |
+| 35 | `FFRACT` | F | F | | | | `a − floor(a)` |
+| 36 | `FSIN` | F | F | | | | `sin(a)` |
+| 37 | `FCLAMP` | F | F | | | | `clamp01(a)` |
+| 38 | `FLERP` | F | F | F | F | | `lerp(a, b, c)` |
+| 39 | `FINV` | F | F | | | | `1 − a` |
+| 50–52 | `VADD` `VSUB` `VMUL` | V | V | V | | | por componente |
+| 53 | `VSCALE` | V | V | F | | | `a·b` por componente |
+| 54 | `VLERP` | V | V | V | F | | `lerp(a, b, c)` por componente |
+| 55 | `VCLAMP` | V | V | | | | `clamp01` por componente |
+| 56 | `VNORM` | V | V | V | | | `l = √((a.x·a.x + a.y·a.y) + a.z·a.z)`; `l > 0`: `a/l` por componente; si no `b` |
+| 57 | `VINV` | V | V | | | | `1 − a` por componente |
+| 58 | `VDOT` | F | V | V | | | `((a.x·b.x) + (a.y·b.y)) + (a.z·b.z)` |
+| 59 | `VLEN` | F | V | | | | `√` de `VDOT(a, a)` |
+| 70 | `BLEND` | V | V | V | F | modo | `t = clamp01(c)`; por componente `x = a`, `y = b`, `r` según el modo, resultado `lerp(x, r, t)`. Modos: 0 mezcla `y`; 1 suma `x + y`; 2 producto `x·y`; 3 resta `x − y`; 4 trama `1 − (1 − x)·(1 − y)`; 5 diferencia `\|x − y\|`; 6 aclarar `max(x, y)` (`y > x ? y : x`); 7 oscurecer `y < x ? y : x`; 8 superponer `x < 0,5 ? (2·x)·y : 1 − (2·(1 − x))·(1 − y)` |
+| 80 | `MAP` | V | V (P) | V (N) | V (UV) | # (9) | las coordenadas de una proyección: abajo |
+| 90 | `TEX` | V (rgb) | V (uv) | F (alfa, o `NONE`) | | imagen | la imagen `k` en `(a.x, a.y)`: abajo |
+| 100 | `NOISE` | F | V | F | | # (5) | `fbm` de `a·b` (por componente): abajo |
+| 101 | `NOISEC` | V | V | F | | # (5) | tres `fbm` con las semillas de cada canal |
+| 110 | `GRAD` | F | V | | | tipo | `clamp01` de: 0 `x`; 1 `x > 0 ? x·x : 0`; 2 `smoothstep(0, 1, x)` como `(t·t)·(3 − 2·t)` con `t = clamp01(x)`; 3 `(x + y)·0,5`; 4 `1 − √((x·x + y·y) + z·z)`; 5 `(atan2(y, x)/τ) + 0,5` |
+| 111 | `CHECK` | F | V | F | | | `s = ((floor(x·b) + floor(y·b)) + floor(z·b))`; `s − 2·floor(s·0,5)` (0 o 1) |
+| 112 | `STRIPE` | F | V | F | F | # (2) | `q = a[eje]·b` (eje `consts[k]`: 0 x, 1 y, 2 z); `t = q − floor(q)`; `w = clamp01(c)`; `h = w·0,5`; `d = \|t − h\|`, `d = min(d, 1 − d)`; `e = (clamp01(consts[k+1])·0,5)·min(w, 1 − w)` (como `1 − w < w ? 1 − w : w`); `1 − smoothstep(h − e, h + e, d)` |
+| 113 | `RAMP` | V | F | | | # | `x = clamp01(a)`; constantes: `n`, interpolación (0 lineal, 1 suavizada, 2 constante) y `n` paradas (posición, r, g, b) ordenadas por posición (el compilador las ordena, estable). `n ≤ 1` o `x ≤ pos₀`: la primera; `x ≥ posₙ₋₁`: la última; si no `i` la primera con `x < posᵢ₊₁` (`i ≤ n − 2`); constante: la `i`; si no `t = (x − posᵢ)/(posᵢ₊₁ − posᵢ)` (suavizada: `(t·t)·(3 − 2·t)`) y `lerp` por componente |
+| 120 | `FRESNEL` | F | F (IOR) | V (n) | V (I) | | Fresnel dieléctrico exacto, sin polarizar: `η = a`; `η ≤ 1` (o NaN): 0; `cos = clamp01(\|VDOT(c, b)\|)`, `g = √(((η·η) − 1) + cos·cos)`, `A = (g − cos)/(g + cos)`, `B = ((cos·(g + cos)) − 1)/((cos·(g − cos)) + 1)`, `clamp01((0,5·(A·A))·(1 + B·B))` |
+| 121 | `FACING` | F | F (mezcla) | V (n) | V (I) | | `f = 1 − clamp01(\|VDOT(c, b)\|)`; `m` = `a` llevada a [0,001, 0,999]; `f > 0 ? powf(f, (1 − m)/m) : 0` (mezcla 0,5: `f` tal cual) |
+| 122 | `EDGE` | F | | | | # (1) | la convexidad de la pieza en el punto, 0–1, dentro del radio `consts[k]` mm (la mide el motor, M3b; la referencia da 0) |
+| 123 | `CAVITY` | F | | | | # (1) | la concavidad, igual |
+| 124 | `NMAP` | V | V (color) | F (intensidad) | V (n₀) | espacio | `m = 2·color − 1` por componente. Tangente (0): marco en torno a `n₀`: `T' = T − (T·n₀)·n₀` (`T` de `V5`), si su longitud > 1e−6 `T'/\|T'\|`, si no `onb(n₀)`; `B' = n₀ × T'`; `VNORM(T'·(m.x·s) + B'·(m.y·s) + n₀·m.z, n₀)`, sumado como `((T'ᵢ·(m.x·s)) + (B'ᵢ·(m.y·s))) + (n₀ᵢ·m.z)`. Pieza (1): `t = VNORM(m, n₀)`, `VNORM(n₀ + s·(t − n₀), n₀)` |
+| 125 | `BUMP` | V | V (n₀) | F (dT) | F (dB) | | marco `T'`, `B'` en torno a `n₀` como en `NMAP`; `VNORM(n₀ − ((T'·dT) + (B'·dB)), n₀)` por componente |
+
+Un relieve se compila como `h₀`, `h_T` y `h_B` (la altura en el punto y en
+los dos pasos), `dT = (h_T − h₀)·k` y `dB = (h_B − h₀)·k` con `k =
+intensidad·distancia/0,01` (negativo si se invierte; el *relieve* de la
+salida usa `k = 1/0,01`: su altura ya está en mm), y `BUMP(n, dT, dB)`.
+
+**`MAP`.** Constantes: proyección (0 UV, 1 plana, 2 caja, 3 cilíndrica, 4
+esférica, 5 objeto), eje (0 X, 1 Y, 2 Z), tamaño (mm), cos y sen del giro
+(el compilador los calcula: `fmath::sin_cos(giro_f32 · DEG_TO_RAD)`),
+repetición u, v y desplazamiento u, v. Los ejes de sección (S, T, A) del
+eje: Z (x, y, z), X (y, z, x), Y (z, x, y). Las coordenadas antes del giro,
+`(cu, cv)`, y el centro `ce`:
+- UV: `(uv.x, uv.y)`, `ce = 0`.
+- Plana: Z `(p.x, p.y)`, Y `(p.x, p.z)`, X `(p.y, p.z)`, divididas por el
+  tamaño; `ce = 0,5`.
+- Caja: la cara a la que más mira la normal (`|n.x| ≥ |n.y|` y `≥ |n.z|`: X;
+  si no, `|n.y| ≥ |n.z|`: Y; si no Z), vista desde fuera sin espejos: X
+  `(n.x ≥ 0 ? p.y : −p.y, p.z)`, Y `(n.y ≤ 0 ? p.x : −p.x, p.z)`, Z `(n.z ≥ 0
+  ? p.x : −p.x, p.y)`, divididas por el tamaño; `ce = 0,5`. (Una cara, no
+  la mezcla por |n|⁴ de M2a: un programa es un punto; *Rápido* sí mezcla y
+  lo dice.)
+- Cilíndrica: `cu = vueltas(S, T)` con `vueltas = ((atan2(T, S) + π/2)/τ)`,
+  `cu − floor(cu + 0,5)` (−0,5…0,5, 0 delante, hacia −T); `cv = A/tamaño`;
+  `ce = 0,5`.
+- Esférica: `cu = vueltas(S, T)`; `r = √((x·x + y·y) + z·z)`; `cv = r > 0 ?
+  asin(A/r)/π : 0`; `ce = 0,5`.
+- Objeto: `(cu, cv) = (S, T)/tamaño` y la tercera `w = A/tamaño`; `ce = 0`.
+Después: `x = cu·ru`, `y = cv·rv`; resultado `((((cos·x) − (sen·y)) + ou) +
+ce, (((sen·x) + (cos·y)) + ov) + ce, w)` (`w = 0` salvo en objeto). Es la
+matemática de `core/textures.ts` (M2a) en f32 (test).
+
+**`TEX`.** La tabla de imágenes da, por entrada, la imagen (el índice en
+la sección `IMGS` de la escena en el motor; ninguna: falta), si es sRGB y
+el borde (0 repetir, 1 estirar, 2 espejo). Sin píxeles: color (1, 1, 1),
+alfa 0. Si no: cada coordenada se reduce antes de escalarla (no finita: 0;
+repetir: `u − floor(u)`; estirar: `clamp01(u)`; espejo: `u − 2·floor(u/2)`)
+y `v` se lee al revés (filas desde arriba): `ru = reducir(u)`, `rv =
+reducir(1 − v)`; `x = (ru·ancho) − 0,5`, `y = (rv·alto) − 0,5`; `x₀ =
+floor(x)`, `fx = x − x₀` (igual en y); los índices `x₀`, `x₀ + 1` (y los de
+y) se llevan dentro con el borde (repetir: módulo; estirar: al borde;
+espejo: período 2·n, `m < n ? m : 2n − 1 − m`). Cada téxel se decodifica
+antes de interpolar: el rgb de una imagen sRGB por la tabla `SRGB_TO_LINEAR`
+(`c = byte/255`; `c ≤ 0,04045 ? c/12,92 : powf((c + 0,055)/1,055, 2,4)`, en
+f32 con `fmath::powf`), el de una de datos y el alfa como `byte/255`; luego
+`lerp` en x de las dos filas y `lerp` en y. Es el nivel 0, bilineal: el
+motor filtrará con mipmaps (M2b), la prueba cruzada usa el nivel 0.
+
+**El ruido** (`core/noise.ts`; de K. Perlin, *Improving noise*, 2002, y de
+S. Gustavson, *Simplex noise demystified*, 2005; sin la tabla de
+permutaciones del artículo). Las constantes de `NOISE` son: tipo (0 Perlin,
+1 símplex), octavas (1–8), lacunaridad, ganancia y semilla (0–65535), todas
+f32 exactas.
+- *Hash* de una esquina entera `(i, j, k)` y una semilla (todo u32, con
+  productos y desplazamientos de 32 bits: `wrapping_mul`, `>>` lógico):
+  `h = (i·73856093) ^ (j·19349663) ^ (k·83492791) ^ (semilla·0x9E3779B1)`
+  (los primos de Teschner et al., 2003, y la constante de Knuth), y el
+  finalizador `lowbias32` de C. Wellons: `h ^= h >> 16; h ·= 0x7FEB352D;
+  h ^= h >> 15; h ·= 0x846CA68B; h ^= h >> 16`.
+- *Gradiente*: `g = h & 15`, `u = g < 8 ? x : y`, `v = g < 4 ? y : (g = 12 o
+  14 ? x : z)`, resultado `(g & 1 = 0 ? u : −u) + (g & 2 = 0 ? v : −v)`.
+- `fade(t) = ((t·t)·t)·((t·((t·6) − 15)) + 10)`; `lerp(t, a, b) = a + t·(b −
+  a)`.
+- **Perlin**: si alguna componente no cumple `|x| ≤ 1e9` (NaN incluido), 0.
+  `xf = floor(x)`, `i = xf` como entero; `x₀ = x − xf`, `x₁ = x₀ − 1` (igual
+  en y, z); `u, v, w = fade(x₀), fade(y₀), fade(z₀)`; las ocho esquinas
+  `gᵢⱼₖ = grad(hash(i + di, j + dj, k + dk), x_di, y_dj, z_dk)`; `a =
+  lerp(u, g000, g100)`, `b = lerp(u, g010, g110)`, `c = lerp(u, g001, g101)`,
+  `d = lerp(u, g011, g111)`; resultado `lerp(w, lerp(v, a, b), lerp(v, c,
+  d))`.
+- **Símplex**: el mismo límite. `F3 = f32(1/3)`, `G3 = f32(1/6)`; `s = ((x
+  + y) + z)·F3`; `i = floor(x + s)` (igual j, k); `t = ((i + j) + k)·G3`;
+  `x₀ = x − (i − t)` (igual y₀, z₀); el símplex por el orden de x₀, y₀, z₀
+  (x₀ ≥ y₀: y₀ ≥ z₀ → (1,0,0)(1,1,0); x₀ ≥ z₀ → (1,0,0)(1,0,1); si no
+  (0,0,1)(1,0,1); x₀ < y₀: y₀ < z₀ → (0,0,1)(0,1,1); x₀ < z₀ →
+  (0,1,0)(0,1,1); si no (0,1,0)(1,1,0)); `x₁ = (x₀ − i₁) + G3`, `x₂ = (x₀ −
+  i₂) + f32(2·G3)`, `x₃ = (x₀ − 1) + f32(3·G3)` (igual y, z); cada esquina:
+  `τ = ((0,6 − x·x) − y·y) − z·z`, `τ < 0 ? 0 : ((τ·τ)·(τ·τ))·grad(…)`;
+  resultado `32·(((n₀ + n₁) + n₂) + n₃)`.
+- **Suma en octavas**: `suma = 0, norma = 0, amp = 1, frec = 1`; por cada
+  octava `o` (desde 0): `n = base(x·frec, y·frec, z·frec, semilla + o)`,
+  `suma = suma + amp·n`, `norma = norma + amp`, `amp = amp·ganancia`, `frec
+  = frec·lacunaridad`; resultado `0,5 + 0,5·(suma/norma)` (unos 0…1, media
+  0,5). El color: tres sumas con las semillas `semilla + 7919·(canal + 1)`.
+
+**Las salidas.** El programa termina con quince referencias, en el orden
+de las entradas de la salida (`OUTPUT_KEYS`): color base, metal, rugosidad,
+anisotropía, barniz, rugosidad del barniz, transmisión, IOR, dispersión
+interna, emisión, intensidad de emisión, opacidad, normal, relieve (ya
+aplicado a la normal; su referencia es la altura) y bisel. Cada una es una
+constante f32 (`FC`), un registro f32 (`F`), una constante vec3 (`VC`) o un
+registro vec3 (`V`); la normal sin conexión es `V1`. Y dos campos del
+material, no del punto: la distancia de absorción y las paredes finas. El
+motor usará lo que necesita y llevará cada valor a su rango (M3b).
+
+**Bytes** (`encodeProgram`, `decodeProgram`; little-endian): una cabecera de
+diez u32 (`0x4D475052` «RPGM», versión 1, instrucciones, constantes,
+imágenes, registros f32, registros vec3 contando los 9 del punto, salidas,
+la distancia de absorción como f32, banderas: bit 0 paredes finas), las
+instrucciones (seis u32 cada una), las constantes (f32), la tabla de
+imágenes (tres u32: índice en `IMGS` o `0xFFFFFFFF`, 1 si sRGB, borde) y
+las salidas (dos u32: tipo 0 `FC`, 1 `F`, 2 `VC`, 3 `V`; índice).
+**Propuesta para M3b**, sin escribir aún: una sección `PROG` del RSB con
+los programas de la escena y, en `MATL`, tras el bloque de texturas, el
+índice de su programa (−1: ninguno); hasta entonces el escritor manda la
+**media de cada salida** sobre 64 puntos de una esfera
+(`core/material-preview.ts` `flattenGraph`) como los parámetros del
+material, y los bytes de una escena sin grafos son los de siempre.
+
+**La prueba cruzada** (`tests/material-program.test.ts`). `contractPoints(n,
+semilla = 0x2545F491)`: un generador xorshift32 (`x ^= x << 13; x ^= x >>
+17; x ^= x << 5`, todo u32; un número es `(x >> 8)/2²⁴`) da, por punto y en
+este orden: P (`200·r − 100` mm, tres veces), N (`2·r − 1` tres veces,
+normalizado en f32: cada componente entre la longitud f32; +Z si es cero),
+UV0 (`2·r − 0,5` dos veces), UV1 igual, I (como N; N si es cero), T =
+`onb(N)`, B = N × T, dUV/dT (`0,02·r` dos veces), dUV/dB igual; cada valor
+calculado en f64 y redondeado **una vez** a f32. Para cada ejemplo, el
+FNV-1a de 32 bits de los bits f32 de todas sus salidas en los 1000 puntos
+(salida a salida, componente a componente, punto a punto; el plástico con
+etiqueta con la etiqueta de `core/material-examples.ts`) está fijado; el
+intérprete de Rust (M3b) tiene que dar los mismos.
+
+**En Rápido** (`core/material-preview.ts`, `render/graph-preview.ts`,
+`render/graph-client.ts`, `render/graph-worker.ts`). El programa se evalúa
+en mapas de 512² (antes uno de 128², al momento) en *workers* que se reparten
+las filas (`bakeRows`, unidas con `finishBake`), sobre la superficie que
+elige `planBake`: el cuadrado UV si solo lee UV; la superficie propia de su
+proyección si una sola la alimenta (los puntos de un plano, de la cara
+frontal de la caja, de un cilindro de circunferencia el tamaño, de una
+esfera, cuyos `MAP` dan exactamente la u, v del téxel), dibujada con la
+misma proyección y la transformación ajustada al cuadrado que cubre la
+pieza (repetición/d, desplazamiento `(o + ½ − u₀)/d − ½`): es el programa,
+salvo resolución; si no, un corte por el plano frontal (y = 0) de la pieza
+dibujado como caja. Fresnel y *de cara* a 60° de la normal, la curvatura 0.
+Los mapas de color, rugosidad, metal, opacidad, normal (en el marco de la
+proyección, para el marco de derivadas del *shader* de M2a) y emisión (con
+su escala como intensidad) entran por las ranuras de M2a con ids
+`graph:<material>:<versión>:<ranura>` que `TexturePreview` sirve como
+`DataTexture`; las demás salidas, su media; una ranura de imagen propia del
+material gana a la del grafo. El editor pide sus esferas al primer *worker*
+(`GraphPreviewPort`); un pedido nuevo de un canal sustituye al que espera y
+solo corre uno por canal.
 
 ### 5.3 · En el navegador: workers
 
@@ -1296,8 +1570,10 @@ comentario de por qué es correcto, el resto del *crate* mantiene
 ### 6.1 · El puerto del visor (`src/ui/ports.ts`)
 
 La interfaz no importa `render`: `main.ts` construye un `ViewportPort`
-sobre el motor que está en pantalla y se lo entrega. Es lo único que la
-interfaz sabe del visor:
+sobre el motor que está en pantalla y se lo entrega (y, desde M3a, un
+`GraphPreviewPort` sobre los *workers* de los grafos, con el que el editor
+de material pide las esferas de sus nodos; sin él no las dibuja). Es lo
+único que la interfaz sabe del visor:
 
 - **Imagen y tamaño**: `kind` (`'preview'` o `'pathtracer'`), `canvas`,
   `backdrop` (la imagen del modo Completo, bajo el lienzo) y `resize`.
@@ -1432,6 +1708,18 @@ sigue en 2; una versión anterior abre un proyecto con texturas sin verlas.
 Las mallas guardan su segundo juego de UV como `TEXCOORD_1` del GLB, solo
 cuando lo tienen (una malla sin él escribe los bytes de siempre).
 
+**Grafos de material** (M3a). Un material en modo *Nodos* lleva `graph`
+(`{ "version": 1, "nodes": [...], "links": [...] }`, §5.2 quater); uno en
+modo *Simple* no tiene la clave (como antes de M3a). Al abrir se lee con
+`normalizeGraph`: nodos de tipos que esta versión no conoce y sus
+conexiones se quitan, una sola salida (se añade si falta), conexiones que
+encajan (tipos que convierten, una por entrada, sin ciclos), valores
+dentro de su rango; un grafo de una versión más nueva se quita y el
+material abre como *Simple*, con sus parámetros. Las imágenes de sus nodos
+de imagen van en el bloque `images` con las de las texturas, y una que
+falta deja su nodo sin imagen. Un grafo guardado y abierto es el mismo
+grafo y se guarda otra vez en el mismo texto (test). El esquema sigue en
+2.
 ---
 
 ## 9 · Plugins (P6)

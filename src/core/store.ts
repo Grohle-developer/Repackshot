@@ -18,6 +18,7 @@ import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
 import { reduceSet } from './sets';
 import { reduceTextures, type TextureAction } from './textures';
+import { reduceGraph, type GraphAction } from './material-graph';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
 export type ActionLabel = string | Label;
@@ -127,6 +128,7 @@ export type Action =
   | PrimitiveAction
   | MaterialAction
   | TextureAction
+  | GraphAction
   | StudioAction
   | CameraAction
   | AnimationAction
@@ -255,6 +257,9 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
     case 'texture':
       // The image maps and labels of a material (M2a).
       return reduceTextures(state, action as TextureAction);
+    case 'graph':
+      // A material as a graph of nodes (M3a).
+      return reduceGraph(state, action as GraphAction);
     case 'studio':
       // A set (L6) brings decoration and a look: core/sets.ts handles the actions it changes, the rest is the rig's.
       return reduceSet(state, action as StudioAction) ?? reduceStudio(state, action as StudioAction);

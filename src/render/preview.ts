@@ -32,6 +32,8 @@ import { Gizmo, GizmoDrag, modelRay, SCALE_CUBE_AT, type GizmoMode } from './giz
 import { applyMaterial, makeMaterial } from './materials';
 import { drawPasses, type PassMesh } from './preview-passes';
 import { TexturePreview } from './texture-preview';
+import { GraphBakes } from './graph-preview';
+import type { GraphWorkers } from './graph-client';
 
 /** Model space (Z up, mm) to three.js space (Y up): (x, y, z) -> (x, z, -y). */
 export function toThree(p: readonly number[]): THREE.Vector3 {
@@ -254,6 +256,13 @@ export class PreviewEngine implements RenderEngine {
   private readonly fallbackMaterial = new THREE.MeshPhysicalMaterial({ color: 0xb3b3b3, roughness: 0.5 });
   /** M2a: the image maps and labels of the materials (render/texture-preview.ts). */
   private textures: TexturePreview = new TexturePreview(() => (this.needsRender = true));
+  /** M3a: the materials made of nodes, baked into maps by the graph workers (render/graph-preview.ts). */
+  private readonly graphs = new GraphBakes(
+    () => this.textures,
+    () => (this.needsRender = true),
+    // The canvas says how many bakes are under way (the browser checks wait for 0).
+    (n) => this.renderer?.domElement && (this.renderer.domElement.dataset.graphBakes = String(n)),
+  );
   private readonly floor: THREE.Mesh<THREE.PlaneGeometry, THREE.ShadowMaterial>;
   private readonly shadowLight = new THREE.DirectionalLight(0xffffff, 0);
   private envKey = '';
@@ -584,18 +593,30 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
+  /** M3a: the workers that bake material graphs (main.ts gives them; without them a graph shows its means). */
+  setGraphWorkers(w: GraphWorkers | null): void {
+    this.graphs.setWorkers(w);
+  }
+
   private syncMaterials(state: ProjectState, prev: ProjectState | null): void {
     for (const [id, inst] of Object.entries(state.materials)) {
       const m = this.materials.get(id);
+      // A graph's maps are made for the parts that carry it: their meshes count too.
+      const graphParts = !!inst.graph && !!prev && prev.scene.nodes !== state.scene.nodes;
       if (!m) {
-        const made = makeMaterial(inst, state.scene.partSizeMm);
-        this.textures.apply(made, inst);
+        const made = makeMaterial(inst.graph ? null : inst, state.scene.partSizeMm);
+        if (inst.graph) this.graphs.apply(made, inst, state);
+        else this.textures.apply(made, inst);
         this.materials.set(id, made);
-      } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm) {
-        applyMaterial(m, inst, state.scene.partSizeMm);
-        this.textures.apply(m, inst);
+      } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm || graphParts) {
+        if (inst.graph) this.graphs.apply(m, inst, state);
+        else {
+          applyMaterial(m, inst, state.scene.partSizeMm);
+          this.textures.apply(m, inst);
+        }
       }
     }
+    this.graphs.prune(new Set(Object.keys(state.materials).filter((id) => state.materials[id].graph)));
     for (const [id, m] of this.materials) {
       if (!state.materials[id]) {
         m.dispose();
