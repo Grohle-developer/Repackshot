@@ -5366,10 +5366,11 @@ lo monta y lo empaqueta. **El paquete construido**: `film-0.1.0.rpk`, versión
 **`9f377b5c2f34a68d8d20e2b658ce760ca1d3f538ee0b327f0e0accd5484652da`**, 136
 archivos y 127 recetas (51 películas, su color solo, 8 granos, 13 filtros, 4
 objetivos), fijado en el registro con la `url` de la release v0.1.6 y `keyUrl`
-vacío; la clave la tiene el responsable (fuera del repositorio). Tests: 46
+vacío; la clave la tiene el responsable (fuera del repositorio). Tests: 47
 nuevos en cinco archivos (`plugins-rpk`, `plugins-host`, `plugins-settings`,
 `plugins-brands` y `plugins-film`, este y una parte del anterior solo donde hay
-un *checkout* de aintfilm), con 22 mutaciones comprobadas (cada una rompe lo que
+un *checkout* de aintfilm; y que `?testPlugins=` no esté en una versión de
+producción), con 23 mutaciones comprobadas (cada una rompe lo que
 un test guarda y ese test falla; una más sobrevive a propósito: quitar la
 comprobación de la longitud del cifrado, que su `sha256` ya cubre); `tools/plugins-check.mjs` en verde
 con el paquete de verdad (instalar del servidor local con la clave tecleada,

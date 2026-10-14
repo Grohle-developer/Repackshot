@@ -2,6 +2,7 @@
 // header, the activation key from `keyUrl` or typed), the store (the package kept encrypted, the key apart), the
 // install from a file, the WebAssembly module's imports, and the worker ABI end to end with the invert test plugin.
 
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { PLUGIN_REGISTRY, registryEntryProblems, validEntries } from '../src/data/plugins';
 import { PluginHost, type HostDeps } from '../src/plugins/host';
@@ -240,5 +241,11 @@ describe('running a plugin: the worker ABI end to end (the invert test plugin, n
     expect(text).not.toContain('self.addEventListener');
     expect(text).not.toContain('Full inversion');
     expect(readRpk(new Uint8Array(kept!.bytes)).header.id).toBe('test-invert');
+  });
+});
+
+describe.skipIf(!existsSync('dist/index.html'))('build: plugins', () => {
+  it('the test-only registry override (?testPlugins=, the plugin-test build of the browser check) is not in a production build', () => {
+    for (const f of readdirSync('dist/assets').filter((x) => x.endsWith('.js'))) expect(readFileSync(`dist/assets/${f}`, 'utf8').includes('testPlugins'), f).toBe(false);
   });
 });
