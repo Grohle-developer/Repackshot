@@ -2,8 +2,9 @@
 
 Este archivo lo escribe el responsable (Fable) para que cualquier sesión
 nueva pueda seguir donde se quedó esta. Lo que cuenta es lo que hay en
-`origin`: la rama de sesión `ccr-8df3f848-6ukiky` (PR #7, CI en verde en
-`7d0a071`) y las ramas `wip/ccr-8df3f848/<fase>` con el trabajo en curso
+`origin`: la rama de sesión `ccr-8df3f848-6ukiky` (PR #7; CI: `suite` en
+verde; `engine` con el hash de la lente O1 re-fijado tras E12 en el último
+*commit*: `PINNED_O1_LENS_4SPP = 0x1439a1a8`) y las ramas `wip/ccr-8df3f848/<fase>` con el trabajo en curso
 de cada agente (se empujan tras cada *commit* de su agente; un *commit*
 «WIP» puede tener tests en rojo). Los árboles de trabajo locales
 (`/home/user/Repackshot-<fase>`) y el *scratchpad* son efímeros.
@@ -24,12 +25,19 @@ carrusel con deslizador y filtros · N6 despieces y línea de tiempo. Cada fase 
 | E9 (a, a2, b, c) | `e9` | (a)+(a2) confirmados (`d736374`: horno 1,000; +13–16 % de luminancia difusa). (b) medios dispersores: estimador de salida (Chiang 2016) en verde; decididos: ruleta por el peso del camino desde la entrada, regla de **pared fina** para líquidos en vidrio (sesgo medido), test de leche por acuerdo con el camino exacto; falta la hoja a 64/256 spp, el *commit* de (b) y (c) dispersión. |
 | E6 (bisel, madera, tela) | `e6` | Bisel confirmado (`59656ed`, `977307e`). Madera con nudos: veredicto dado (desviación 1,5–3 radios, bulto 0,35 R, nudos solo con incidencia ≥ 30°, nota «6 pedidos · 3 caben»); falta el *commit* de madera y la tela (hilos/cm realistas: algodón 40, vaquero 26, lona 12, punto 5…). |
 | O3a → O2 | `o1` | O1 fusionado. O3a (filtros de lente) hecho en borrador del agente: motor, interfaz, previa WebGL; hoja renderizando; para estrella/rayas/brillo con fuentes pequeñas, medir MIS entre dispersión de pupila y NEE a través de la PSF. Después O2 (lente trazada). |
-| S4a partículas de aire | `s4a` | Sección Ambiente, efectos en el *store*, proyecto, RSB `FXAM`; sigue con primitivas/BVH en el motor y la hoja. |
-| S2 cuerpos rígidos | `s2` | `rt-phys` XPBD, Dejar caer, barra con Pausar/Reanudar, clip `PHYSICS` automático; sigue con pruebas y la comprobación de navegador. |
+| S4a partículas de aire | `s4a` | Sección Ambiente, efectos en el *store*, proyecto, RSB `FXAM`, primitivas en el motor, hoja de contacto hecha (`6a7c096`); está en las puertas finales del motor (`cargo test --release`) y la entrega. |
+| S2 cuerpos rígidos | `s2` | `rt-phys` XPBD, Dejar caer, barra con Pausar/Reanudar, clip `PHYSICS` automático, pruebas y comprobación de navegador hechas (`379c6c2`); está en las puertas finales del motor y la entrega. |
 | M3a editor por nodos | `m3a` | Programas de material, intérprete de referencia y vista previa; sigue con el editor (ventana, lienzo) y los diez grafos. |
 
 ## Pendiente del responsable (orden)
 
+0. **Re-fijar la miniatura de bokeh** tras E12: con el wasm nuevo
+   (`npm run engine:build`), `REPACK_REQUIRE_POST_WASM=1 npx vitest run
+   --maxWorkers=1 tests/optics.test.ts` da el hash nuevo de *la curva
+   poligonal a 4 spp*; escribirlo en `PINNED_BOKEH_THUMB`
+   (`tests/optics.test.ts`). Solo se comprueba en local y en quien tenga
+   el wasm: el trabajo `suite` de CI no lo compila. El hash de la escena
+   O1 (`render.rs`, `ARCHITECTURE.md`, `ROADMAP.md`) ya está re-fijado.
 1. Fusionar lo que entregue cada agente en la rama de sesión: resolver
    conflictos (CHANGELOG/ROADMAP/ARCHITECTURE por secciones añadidas;
    `MATL`: bisel E6, campos E9, bloque de texturas M2a), `npm run check`,
@@ -54,7 +62,9 @@ carrusel con deslizador y filtros · N6 despieces y línea de tiempo. Cada fase 
    (tras S8), O2.
 4. Release v0.1.6 desde `main` cuando el usuario fusione el PR #7
    (procedimiento en `ROADMAP.md` P1 y `release-notes/`): subir además
-   `film-0.1.0.rpk` (sha256 `e6b1e2c7…6b264`, 1 948 807 B) como *asset*
+   `film-0.1.0.rpk` reconstruido por P6b (sha256
+   `a60dd9edea828f4ed29acd3d29b9ab1ffde384284da8c6a6a6619cc1d6ba3d8a`,
+   1 956 072 B; entregado al usuario en el chat) como *asset*
    de la release; la clave de activación la tiene el usuario (no está en
    ningún repositorio). La primera actualización desde la app es de esta
    versión a la siguiente.

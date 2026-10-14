@@ -747,7 +747,7 @@ que la baldosa multiplica antes de acumular (`render::camera_sample_weighted`):
   ignora `LENS`; el muestreo de luces, BSDF y recortes no ve nada nuevo.
 - *Hash* fijado de la escena O1 (`example::o1_scene`, todas las
   perillas a la vez y una textura de anillos): `PINNED_O1_LENS_4SPP` =
-  `0xcfc57d4a` en cada ruta SIMD, en WASI, en el `rt_wasm.wasm` real
+  `0x1439a1a8` (tras E12: la selección de luz por punto mueve el hash) en cada ruta SIMD, en WASI, en el `rt_wasm.wasm` real
   (`rt --write-o1-example`, `tools/wasm-parity.mjs`, en CI) y con 1, 4 y
   16 hilos (`rt-cli/tests`).
 

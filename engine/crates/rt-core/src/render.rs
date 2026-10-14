@@ -780,7 +780,7 @@ mod tests {
     }
 
     /// Pinned hash of the O1 example (the busy lens) at 4 samples per pixel.
-    pub(crate) const PINNED_O1_LENS_4SPP: u32 = 0xcfc5_7d4a;
+    pub(crate) const PINNED_O1_LENS_4SPP: u32 = 0x1439_a1a8;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

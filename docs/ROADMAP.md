@@ -2488,7 +2488,7 @@ determinismo 1/4/16 hilos y wasm.
   `0x8bb09f6b`, cáusticas `0x55d60f2f` y *denoise* `0xab15f290` intactos.
   Escena de paridad `example::o1_scene` (todos los mandos a la vez y una
   textura de anillos de 48²; `rt --write-o1-example`, `tests/fixtures/o1.rsb`):
-  `PINNED_O1_LENS_4SPP = 0xcfc57d4a` en escalar, SSE2 y AVX2, en WASI
+  `PINNED_O1_LENS_4SPP = 0x1439a1a8 (re-fijado tras E12)` en escalar, SSE2 y AVX2, en WASI
   (escalar y `simd128`), en el `rt_wasm.wasm` real (también con los pases
   intercalados; en CI), por el código de la página (`tests/optics.test.ts`)
   y con 1, 4 y 16 hilos (`rt-cli/tests`). El pase `coc` sigue siendo el de la
