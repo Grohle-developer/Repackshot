@@ -112,7 +112,8 @@ export function graphCanvas(o: GraphCanvasOptions): GraphCanvas {
   world.appendChild(links);
   const band = h('div', { class: 'ge-band', hidden: true });
   const zoomLabel = h('div', { class: 'ge-zoom aux tabular', 'aria-hidden': 'true' });
-  const el = h('div', { class: 'ge-canvas', tabindex: '0', role: 'application', 'aria-label': t('ge.canvas'), 'data-tip': undefined }, world, band, zoomLabel);
+  zoomLabel.setAttribute('data-tip', t('ge.canvasTip'));
+  const el = h('div', { class: 'ge-canvas', tabindex: '0', role: 'application', 'aria-label': t('ge.canvas'), 'aria-description': t('ge.canvasTip') }, world, band, zoomLabel);
   const cards = new Map<string, { node: GraphNode; el: HTMLElement; key: string }>();
   const previews = new Map<string, { rgba: Uint8ClampedArray; size: number }>();
 

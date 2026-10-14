@@ -242,7 +242,7 @@ function materialSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean):
           { ariaLabel: t('ge.modeTip') },
         );
         const nodesBtn = h('button', { type: 'button', class: 'btn', 'data-material-nodes': '', 'data-guide': 'material-nodes', 'data-tip': t('material.nodesTip'), onclick: () => gc.openMaterialEditor(ctx, mat.id) }, t('material.nodes'));
-        parts.push(field(t('material.mode'), h('div', { class: 'row', style: 'gap:6px' }, mode.el, nodesBtn)));
+        parts.push(h('div', { class: 'row', style: 'gap:8px;align-items:center;flex-wrap:wrap', role: 'group', 'aria-label': t('material.mode') }, mode.el, nodesBtn));
         if (mat.graph) {
           // What the graph is in Fast (and in Full until M3b): the same sentences as the editor's.
           const note = h('div', { class: 'stack', style: 'gap:2px', 'data-material-graph-note': '' });
