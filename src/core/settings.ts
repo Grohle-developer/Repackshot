@@ -388,7 +388,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   // Preferences ▸ Render defaults for new projects
   setting('render.nameTemplate', 'preferences', 'render', { kind: 'text', maxLength: 200 }, kw('name, template, file name, output', 'nombre, plantilla, archivo, salida'), { newProjects: true }),
   setting('render.destination', 'preferences', 'render', { kind: 'custom' }, kw('folder, downloads, output, destination', 'carpeta, descargas, salida, destino'), { newProjects: true }),
-  setting('render.format', 'preferences', 'render', choice(['PNG', 'JPEG', 'EXR']), kw('format, png, jpeg, exr', 'formato, png, jpeg, exr'), { newProjects: true }),
+  setting('render.format', 'preferences', 'render', choice(['PNG', 'JPEG', 'EXR', 'TIFF', 'DNG']), kw('format, png, jpeg, exr, tiff, tif, raw, dng', 'formato, png, jpeg, exr, tiff, tif, raw, dng'), { newProjects: true }),
   setting('render.dpi', 'preferences', 'render', num(1, 9600, 1, 'DPI'), kw('dpi, print, resolution', 'ppp, dpi, impresión, resolución'), { newProjects: true }),
   setting('render.finishBy', 'preferences', 'render', choice(['SAMPLES', 'TIME']), kw('finish by, samples, time, quality', 'terminar por, muestras, tiempo, calidad'), { newProjects: true }),
   setting('render.samples', 'preferences', 'render', num(1, 100000, 16), kw('samples, quality', 'muestras, calidad'), { newProjects: true }),

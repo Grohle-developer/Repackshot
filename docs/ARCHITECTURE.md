@@ -90,7 +90,10 @@ src/
     animation.ts            planos, movimientos, evaluación en el tiempo
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
-    images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5)
+    images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5), y de las texturas (M2a)
+    textures.ts             texturas de imagen y etiquetas de un material (M2a): ranuras, mapeado, etiquetas, sus acciones `texture/*`, y la matemática de las proyecciones y de las etiquetas que siguen el shader y el motor
+    texture-images.ts       las imágenes de textura en el registro: id por contenido, límites (M2a)
+    image-header.ts         tamaño y canales de un PNG o un JPEG por su cabecera, sin decodificar (M2a)
     sky.ts                  el cielo del motor portado para la vista previa: el físico de E5c (por defecto) y el de Preetham (E5)
     sky-table.ts            los coeficientes del cielo físico, generados por `rt-sky table` (los mismos f32 y el mismo hash que rt-core)
     faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
@@ -99,13 +102,16 @@ src/
     primitives.ts           primitivas paramétricas: generadores puros y deterministas (caras lógicas, UV, normales), medidas válidas, id de malla `prim:<dueño>:<FORMA>:<medidas>` (U9)
     primitive-ops.ts        las primitivas en la escena: dónde nacen (base bajo el producto, junto a él, bajo él), añadir, editar en vivo, convertir en malla; `fitSweep` ajusta el fondo infinito a la cámara y a los focos traseros (U9)
     light-math.ts           kelvin → rgb, irradiancia, polar, ease   (portado)
-    rig.ts                  studioRig / setupRig normalizados           (portado)
+    rig.ts                  studioRig / setupRig normalizados           (portado); el reparto del charco de un set (L6)
+    sets.ts                 los sets (L6): aplicar, sustituir y quitar su decoración (tarjetas, barrido, suelo, charco), su aspecto, Usar la cámara del set
     wear.ts                 valores por defecto del desgaste            (portado)
     version.ts
   data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9)
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
+    texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
+    texture-preview.ts      las texturas y etiquetas en Rápido: el shader en cada material y la caché de texturas por imagen, con mipmaps (M2a)
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
@@ -117,11 +123,15 @@ src/
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
-    project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR)
+    project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c)
     ai-runtime.ts           el motor de ejecución de la IA del lanzador (X3b); ai-post.ts, la tubería de escritorio (`DesktopAiService`, X3c)
     hdri.ts                 lectores propios de RGBE y OpenEXR, imagen de fondo, copia para la vista previa (E5)
     aperture.ts             lee las imágenes de pupila de public/assets/aperture (PNG gris propio, sin canvas) y las promedia a 256² (O1)
+    gltf-materials.ts       los materiales y las imágenes de un glTF leídos de su JSON (M2a)
+    mtl.ts  obj-materials.ts  las bibliotecas .mtl de un OBJ y sus imágenes (M2a)
+    texture-notes.ts        lo que la hoja dice de las texturas de un archivo (M2a)
+    texture-pixels.ts       los píxeles de las texturas para la sección IMGS del RSB (M2a; la lee M2b)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
     ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
@@ -133,8 +143,11 @@ src/
       add-menu.ts           Añadir ▸ Primitiva: las mismas entradas en la cabecera, el + de Escena y el menú del visor en vacío (U9)
       scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
       insp-lens.ts          Cámara ▸ Bokeh (miniaturas del motor) y Óptica avanzada (O1)
+      insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
+      viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
+    texture-commands.ts     lo que hacen las ranuras y las etiquetas del inspector (M2a)
 public/
-  thumbs/setups/            72 miniaturas de montaje de luz (PNG)
+  thumbs/setups/            88 miniaturas de montaje de luz renderizadas por el motor (PNG) y manifest.json (L6, tools/setup-thumbs.mjs)
   thumbs/bokeh/             30 miniaturas de bokeh renderizadas por rt (16 tipos del modo 1 y sus variantes) + index.json (O1, tools/bokeh-thumbs.mjs)
   assets/aperture/          45 máscaras de diafragma y texturas de pupila (PNG 512², gris de 8 bits) + index.json (A6)
   assets/gobo/              12 patrones de gobo (PNG 1024², gris de 8 bits) + index.json (A6)
@@ -142,13 +155,16 @@ public/
   example/                  nada: la pieza de ejemplo es procedural
 tests/                      vitest; *.test.ts por módulo
 tools/                      scripts de desarrollo: capturas, generadores, hojas de contacto
+  setup-thumbs.mjs          las miniaturas de montaje (L6): escenas con el código de la app (tests/setup-thumbs-dump.test.ts, vitest) y `rt`
+  sets-sheet.mjs            la hoja de contactos de los sets (L6): out/sets-sheet.html; rt-batch.mjs, lo que comparten
+  sets-check.mjs            comprobación en el navegador de los sets (L6): catálogo, aplicar, En el set, Restablecer; docs/ui/sets-catalogue.png
   assets/                   generadores deterministas de public/assets/ (A6): common.mjs, aperture-masks.mjs, gobos.mjs; solo node:zlib y node:crypto
 docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
-  crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG;
+  crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG, TIFF y DNG (U12);
                             imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c)
-  crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG con hilos; hojas de contacto
+  crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG, TIFF o DNG con hilos; hojas de contacto
                             (las escenas de E5 en scenes.rs)
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
@@ -161,6 +177,26 @@ packaging/                  guiones de empaquetado: portables de Windows y Linux
 public/engine/rt.wasm       el motor compilado para el navegador (generado por npm run engine:build; no se sube)
 public/engine/post.wasm     la guarda IA compilada (rt-post-wasm), generada por el mismo guion; tampoco se sube
 ```
+
+**Cómo entran las texturas** (M2a). Cada lector deja los materiales del
+archivo como instancias con sus ranuras ya puestas (las imágenes por su id
+de contenido) y una lista de `ImportTexture` (`core/import-options.ts`):
+el archivo de cada imagen, sus materiales, y si se guarda o por qué no. glTF
+lee sus materiales e imágenes de su JSON (`io/gltf-materials.ts`) y pasa a
+`GLTFLoader` el mismo archivo sin texturas (no decodifica dos veces, y en
+Node no podría); OBJ lee sus `.mtl` (`io/mtl.ts`, `io/obj-materials.ts`);
+FBX, Collada, 3MF, USD y 3DM toman los mapas que su cargador de three
+carga (`collectTextures` de `io/three-scene.ts`: el archivo original cuando
+el cargador lo tiene en un *blob* o un *data URL*, si no un PNG dibujado,
+solo en el navegador), con un `LoadingManager` que encuentra entre los
+**archivos elegidos con el modelo** (`ImportReadOptions.companions`) las
+imágenes, los `.bin` y las bibliotecas que nombra. `applyImportOptions` se
+queda con las imágenes de los materiales que se quedan; al pulsar
+*Importar* (`ui/commands.ts`) se aplica el presupuesto del proyecto
+(`fitTextureBudget`, 64 MB), se registran las que caben y se quitan de los
+materiales las que no. La vista previa decodifica cada imagen una vez
+(`createImageBitmap`) y la sube con mipmaps; el RSB la recibe decodificada
+(arriba).
 
 **Regla de dependencias**: `ui → core`, `render → core`, `io → core`,
 `core → data`. Nunca al revés, nunca `ui → render` directamente (el
@@ -197,7 +233,22 @@ de Cycles: un panel de potencia P y área A tiene radiancia P / (4 A). `kelvin` 
   calidad, y su rig de focos.
 - **`LightSetup`** — montaje del catálogo: etiqueta, intención, estilo,
   `world` (`STUDIO` cúpula, `SKY` cielo, `FLAT` plano) y focos; `PRESET`
-  usa el rig del tipo de producto.
+  usa el rig del tipo de producto. **Set** (L6, todo opcional: los 72
+  montajes portados no tienen nada): `backdrop` (`SetBackdrop`: `FLAT`,
+  `GRADIENT` arriba y abajo, `SWEEP`), `pool` (`SetPool`: `az`, `el`,
+  `cone`, `share`, `kelvin` o `color`), `floor` (`SetFloor`: `CATCHER`,
+  `MATTE`, `GLOSSY`, `MIRROR`, con `material` y `color`), `cards`
+  (`SetCard`: `material`, `az`, `el`, `dist`, `size`, `sizeY`, `roll`),
+  `exposureEv`, `envStrength`, `camera` (`SetCamera`: `el`, `focalMm`),
+  `hero` (`SetHero`), `why` (`Label`) y `caustics`. Los 16 sets son el
+  estilo `SETS`, el primero; dos claves del plan ya existían
+  (`DARK_FIELD`, `TEAL_ORANGE`) y sus sets son `GLASS_DARK_FIELD` y
+  `WARM_COOL_CINEMA`. **`StudioPreset.set`** (L6): el set que es el rig
+  propio del tipo de producto (sus focos, al nivel del tipo; con `PRESET`,
+  su decoración y su aspecto; su desvío de exposición ya sumado a
+  `exposure`); `PRESET_SETS` lo resume. `tests/preset-rigs-sync.test.ts`
+  (con `REPACKSHOT_SYNC_PRESETS=1`) reescribe los focos y la exposición de
+  esos tipos desde sus sets tras afinar uno.
 - **`MaterialPreset`** — categoría, familia (`SIMPLE`, `GLASS`, `WOOD`,
   `FABRIC`, `EMISSIVE`) y parámetros.
 - Desgaste, pelusa, ópticas, movimientos, suavizados, secuencias,
@@ -226,7 +277,12 @@ montaje sobre un tipo de producto, la suma de irradiancias de sus focos
 se iguala a la del rig del tipo de producto (`presetIrradiance`), de modo
 que cambiar de montaje no cambia la exposición. Es la solución que en EZ
 Packshot permite recorrer 72 montajes sin tocar la exposición, y la suite
-la fija para las 16 × 71 combinaciones.
+la fija para las 16 × 71 combinaciones. El charco de un set (L6) entra en
+la suma como un foco a `POOL_THROW` = 2,5 tamaños de pieza
+(`poolWeight`): el set y su charco suman el nivel del tipo; sus focos, el
+resto. Los rigs de tipo de producto de L6 conservan el nivel de antes
+(`tests/fixtures/old-setup-rigs.json` guarda los niveles y la forma de los
+71 montajes anteriores, y `tests/sets.test.ts` los compara).
 
 **Sistema de coordenadas** del modelo y del visor: Z arriba, Y hacia el
 fondo, X a la derecha; cámara de referencia en `polar(CAMERA_AZIMUTH_DEG,
@@ -258,7 +314,7 @@ export interface ProjectState {
                saturation: number; contrast: number; vignette: number };
   animation: { shots: Shot[]; clips: MotionClip[]; fps: number; playhead: number; playing: boolean };
   render:    { quality: 'DRAFT' | 'PREVIEW' | 'FINAL' | 'CUSTOM'; width: number; height: number;
-               maxSamples: number; maxSeconds: number; format: 'PNG' | 'JPEG' | 'EXR'; transparent: boolean;
+               maxSamples: number; maxSeconds: number; format: 'PNG' | 'JPEG' | 'EXR' | 'TIFF' | 'DNG'; transparent: boolean;
                queue: RenderJob[]; running: RenderProgress | null };
   doctor:    { results: DoctorResult[]; stamp: number };
 }
@@ -454,6 +510,8 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   por su posición entre las `BMAP` (`0xffffffff`: ninguno). Un RSB sin
   `BMAP` conserva los mapas cargados, como uno sin `MESH` conserva las
   mallas.
+- **Texturas** (contrato de M2a, el motor lo lee desde M2b): ver
+  *Texturas en el RSB* al final de este apartado.
 - **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
   lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
 - **`RNDR`** (52 B desde E5b-1; los de 28, 36 y 40 B se leen con los valores
@@ -507,9 +565,78 @@ que se escribe siempre. Unidades: milímetros, Z arriba, sensor de 36 mm
 en el lado largo; flujo de un panel = π/4 × potencia del rig × tamaño²
 (convención de las luces de área de Blender Cycles, L = P / (4 A), con la
 que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits viajan en secciones `BMAP`
-(E5: el HDRI y la imagen de fondo; las texturas de M2 irán igual); la
+(E5: el HDRI y la imagen de fondo; las texturas, en `IMGS`, abajo); la
 clave de mallas del escritor TypeScript incluye los ids de las imágenes,
 de modo que un cambio de imagen manda la escena entera.
+
+**Texturas en el RSB** (contrato escrito en M2a; `rt-core` lo lee en M2b).
+El escritor TypeScript lo escribe **solo cuando la vista lo pide**
+(`SceneView.textures`, que M2b enciende cuando el motor dice que lo lee: una
+exportación `rt_features` de `rt.wasm` con el bit 0, y lo mismo en
+`/api/info` del lanzador); apagado, que es lo que hay hasta M2b, los bytes
+son los de antes de M2a para cualquier escena (test: la misma escena con
+sus texturas y sin ellas da los mismos bytes, y las escenas fijadas de
+`tests/rsb.test.ts` no cambian). Encendido escribe tres cosas:
+
+1. **`IMGS`** (nueva, una como máximo, viaja con las mallas: un RSB de
+   actualización sin `MESH` tampoco la lleva y el motor conserva las
+   imágenes cargadas). `u32 count`; por imagen `u32 width height channels
+   color_space` y `width × height × channels` bytes, filas desde arriba,
+   relleno a 4 bytes. `channels` 1 (gris), 3 (RGB) o 4 (RGBA, alfa recta);
+   `color_space` **0 sRGB** (lo que el motor decodifica a lineal: las
+   ranuras de color y emisión y las etiquetas) o **1 lineal** (datos:
+   rugosidad, metal, normal, alfa; el alfa es lineal siempre). Una imagen
+   usada de las dos maneras va dos veces. 8 bits; los **mipmaps los calcula
+   el motor**. Los píxeles los decodifica la interfaz
+   (`io/texture-pixels.ts`, con el decodificador del navegador): el motor no
+   lee PNG ni JPEG.
+2. **`MATL`**: los campos de antes (72 B), los de E6 (`f32 bevel_mm`, 76 B) y
+   E9 (`f32 scatter_mm scatter_color[3] scatter_g abbe`, 100 B) —ceros
+   mientras E6 y E9 no los escriban—, y desde el **byte 100** el bloque de
+   texturas:
+
+   ```text
+   u32 texture_block_version (1)
+   6 × ranura (color, rugosidad, metal, normal, alfa, emisión), 15 palabras:
+     i32 image          índice en IMGS, -1: ninguna
+     u32 projection     0 UV, 1 caja, 2 plana, 3 cilíndrica, 4 esférica
+     u32 axis           0 X, 1 Y, 2 Z
+     u32 uv_set         0 el primero, 1 el segundo
+     f32 size_mm        lo que ocupa una repetición a lo ancho (alto: por la imagen)
+     f32 rotation_deg   antihorario, v arriba
+     f32 offset[2]
+     f32 repeat[2]
+     u32 wrap           0 repetir, 1 estirar el borde, 2 espejo
+     u32 channel        0 R, 1 G, 2 B, 3 A, 4 luminancia (Rec. 709 de los valores)
+     u32 flags          bit 0 invertir, bit 1 recorte, bit 2 mapa de alturas
+     f32 strength       normal: intensidad (o mm de relieve del blanco); emisión: multiplicador
+     f32 cutoff         alfa con recorte: el umbral
+   f32 emission_tint[3]
+   u32 label_count
+   label_count × etiqueta, 19 palabras:
+     i32 image          índice en IMGS (sRGB), -1: ninguna
+     f32 origin[3] u[3] v[3] normal[3]   en el espacio de la pieza, u y v unitarias con el giro ya aplicado
+     f32 width_mm height_mm depth_mm      depth: alcance delante y detrás del plano
+     f32 roughness coat relief            el acabado donde cubre (relief: el borde del papel)
+   ```
+
+   Tamaño: `100 + 4·(1 + 90 + 3 + 1 + 19·n)` bytes. Cada ranura lleva ya
+   resuelto el mapeado que usa (el suyo o el común).
+3. **`MESH`**: tras `material_id`, `u32 uv_sets` (0, 1 o 2) y cada juego de
+   `2n` `f32`. Las posiciones de `MESH` son el espacio propio de la pieza (las
+   instancias llevan su transformación), que es el de las proyecciones y las
+   etiquetas.
+
+Semántica (la de `SPEC.md` §3.3 y `src/core/textures.ts`, cuyas funciones
+son la referencia que los tests fijan y el *shader* de Rápido sigue): las
+coordenadas de textura con v arriba, el téxel en la columna `u·ancho` y la
+fila `(1 − v)·alto`; caja con pesos |n|⁴ y sin espejos; cilíndrica y
+esférica con la imagen centrada delante (−T de la sección del eje); `uv =
+R(giro)·(c ⊙ repetición) + desplazamiento` (+½ en las proyecciones); la
+imagen multiplica el parámetro, la emisión suma `tinte × imagen ×
+intensidad` en radiancia; una etiqueta cubre `|s − ½| ≤ ½`, `|t − ½| ≤ ½`,
+a menos de `depth_mm` de su plano y en superficies con `n · normal > 0`, y
+se compone en orden sobre el sustrato por su alfa.
 
 **Pases exactos** (X2, `rt_core::passes`; contrato en `AI-POST.md` §7.4 y
 `src/core/passes.ts`). Un plano por pase, `ancho × alto`, por filas desde
@@ -756,10 +883,64 @@ ya no se para por una excepción en un fotograma.
 ### 5.4 · En nativo
 
 `rt` renderiza un `.rsb` con todos los hilos de la máquina y escribe PNG
-(8 o 16 bits) o EXR; sirve para lotes, para la hoja de contactos de CI y
+(8 bits), TIFF (`--format tiff`, con `--bits 8|16|32`) o DNG (`--format
+dng`); sin `--format`, manda la extensión de `-o` (`.tif`, `.tiff`, `.dng`;
+cualquier otra, PNG). Sirve para lotes, para la hoja de contactos de CI y
 para generar las miniaturas de los catálogos sin navegador. La
 aplicación de escritorio (P2) enlaza `rt-core` directamente en su
 lanzador y usa el mismo RSB que la web (§5.5).
+
+### 5.4 bis · Salida TIFF y DNG (U12)
+
+Dos codificadores propios, escritos de la especificación pública (TIFF 6.0
+de Adobe, 1992, §2, §6, §8, §19; DNG 1.4.0.0 de Adobe, 2012) y sin
+mirar ningún lector ni escritor ajeno, uno en cada lado, que **escriben
+los mismos bytes**: `rt_core::tiff` y `rt_core::dng` (solo `std`) para
+el CLI, y `encodeTiff` y `encodeDng` en `src/io/image.ts` para la
+interfaz (que es la que escribe el archivo de un render, también en
+escritorio: el lanzador solo lo guarda, `image/tiff` como `.tif` e
+`image/x-adobe-dng` como `.dng`, y deja escribir esas extensiones).
+
+- **TIFF.** Little-endian (`II`, 42), un solo directorio, sin compresión
+  (`Compression` 1), en *strips* de unos 8 KiB (§7), RGB (fotométrico 2)
+  o RGBA con alfa **no asociado** (`ExtraSamples` 2), a 8 o 16 bits, o a
+  32 bits `f32` (`SampleFormat` 3). `XResolution` y `YResolution` son los
+  DPI de la ventana (72 en el CLI), `ResolutionUnit` 2 (pulgadas), sin
+  perfil ICC: 8 y 16 bits son sRGB por convención y el flotante es luz
+  lineal con la exposición del render y sin curva, como el EXR (que sí
+  guarda el alfa premultiplicado; el TIFF, recto: el color dividido por la
+  cobertura, `straightLinearRgba` en `render/tiles.ts`). Las etiquetas van
+  ordenadas, y los valores que no caben en la entrada (>4 bytes) detrás
+  del directorio, en el orden de las entradas y cada uno en un
+  desplazamiento par; los *strips* siguen sin huecos. Desplazamientos de
+  32 bits: más de 4 GiB se rechaza.
+- **DNG.** Un TIFF más con las etiquetas de DNG 1.4: `NewSubFileType` 0,
+  `PhotometricInterpretation` 34892 (*LinearRaw*), tres muestras `f32`
+  (`SampleFormat` 3, sin alfa), `Make`, `Model` y `UniqueCameraModel`
+  «Repackshot», `DNGVersion` y `DNGBackwardVersion` 1.4.0.0 (los datos en
+  coma flotante piden 1.4), `ColorMatrix1` = CIE XYZ (D65) → sRGB lineal,
+  **la inversa de sRGB → XYZ** de los primarios (0,64 0,33; 0,30 0,60;
+  0,15 0,06) y el blanco (0,3127; 0,3290), calculada en aritmética exacta
+  y redondeada a siete decimales como racionales con signo de
+  denominador 10⁷ (`CalibrationIlluminant1` 21: D65), `AsShotNeutral` 1 1
+  1, `BaselineExposure` 0 y `WhiteLevel` 1 (el blanco del render es 1,0 y el
+  negro 0; los datos no se recortan a él, así que un revelador de raw abre
+  el archivo con **toda la latitud del render**; el mayor `f32` no sirve
+  de nivel de blanco, porque el revelador normalizaría por él y la imagen
+  saldría negra).
+- **Paridad.** `tests/fixtures/tiff/` guarda los siete archivos de una
+  imagen de 4×4 con valores conocidos (RGB y RGBA a 8, 16 y 32 bits, y el
+  DNG). `engine/crates/rt-cli/tests/tiff_golden.rs` comprueba que
+  `rt_core` escribe exactamente esos bytes (con `REPACK_WRITE_GOLDEN=1` los
+  reescribe) y `tests/tiff-dng.test.ts`, que la interfaz también; cada lado
+  se relee además con un lector mínimo de su propio test (cabecera,
+  etiquetas, desplazamientos, valores). Cambiar el formato a propósito es
+  cambiar los dos codificadores y reescribir esos archivos.
+- **En la interfaz.** `OutputFormat` gana `TIFF` y `DNG`; `BitDepth` gana
+  32 (solo TIFF; el normalizador de `render/set` lo pone a 8 en cualquier
+  otro formato, y el alfa a falso en JPEG y DNG). Chromium y Firefox no
+  muestran TIFF ni DNG: el render guarda, junto al archivo, la copia PNG
+  de 8 bits que ya guardaba para el EXR (`needsDisplayCopy`).
 
 ### 5.5 · Escritorio: el lanzador `repackshot`
 
@@ -873,7 +1054,7 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    state/<nombre>.json  cosas pequeñas de la página: descargas por reanudar, carpetas elegidas,
                         la marca de la migración desde el navegador
    library/             la biblioteca propia (U4)
-   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json; con IA, las
+   results/             el historial: un archivo por resultado (png, jpg, exr, tif, dng) e index.json; con IA, las
                         variantes de la IA como <id>.ai.<n>.<ext> (X4b; la única <id>.ai.<ext> de
                         antes se lee como la variante 1)
    cache/thumbs/        las esferas de materiales (caché)
@@ -962,6 +1143,41 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    dice `aiPost: 1`; entonces la página usa `src/io/ai-post.ts` (`DesktopAiService`), y la cola
    escribe la imagen de la IA desde esa luz lineal con la exposición y la curva del render, como el
    fichero del motor.
+9. **Actualizar desde la aplicación** (P5, `src/update/`): `POST /api/update/install` con `{tag,
+   assetUrl, sumsUrl}` (y `size`, solo para el progreso), `GET /api/update` y `POST /api/update/cancel`;
+   `/api/info` dice `updateApi: 1` y `afterUpdate`. El lanzador **decide qué se puede descargar**, no
+   la página: solo `https://github.com/<owner>/<repo>/releases/download/<versión>/<archivo>` del
+   repositorio de `src/data/update-feed.ts` (que el *crate* lee al compilarse, así que no pueden
+   diferir), el paquete que le toca a esta copia (instalada en Windows: `-setup.exe`; portable:
+   `.zip` en Windows y `.tar.gz` en Linux) y el `SHA256SUMS.txt` de la misma versión; una copia que
+   no es ni instalada (`uninstall.exe` junto al programa) ni portable (`portable.txt`), o un
+   procesador que no es x86-64, responde 409 `not-updatable`. El trabajo, en un hilo, con el `curl`
+   del sistema como el resto de descargas (`ai/download.rs`, que ahora admite un tamaño solo
+   acotado): **DOWNLOADING** (las sumas y el paquete a `<datos>/cache/update/`, con reanudación) →
+   **VERIFYING** (el SHA-256 propio contra la suma de la versión; si no cuadra, se borra y no se
+   instala nada) → **INSTALLING**: en una copia instalada el instalador verificado espera; en una
+   portable se extrae **todo** a `<carpeta del exe>/update-<tag>/` (el lector de zip propio de
+   `ai/zip.rs`; en Linux el `tar` del sistema, tras comprobar los nombres y que no haya enlaces) y
+   se **sustituye en el sitio** (`update/portable.rs`): cada archivo y carpeta del paquete, el
+   ejecutable el último, ocupa el lugar del que tenía su nombre, que pasa a `<nombre>.old`
+   (`repackshot.old.exe`, `app.old`; un ejecutable en uso se puede renombrar, no sobrescribir);
+   `data/` y `portable.txt` no se tocan; si un paso falla se deshacen los hechos y lo viejo queda
+   donde estaba (`FAILED`, con el motivo). Los nombres a borrar se apuntan antes en `update.json`.
+   `ready: true` dice que ya está todo en su sitio y el lanzador espera a que se cierre la
+   ventana: **la página la cierra** (con su pregunta sobre cambios sin guardar si el proyecto ha
+   cambiado desde que se contestó), y `--serve-only`, que no tiene ventana, sale solo. **Solo
+   cuando el lanzador ha parado** (`launcher::run`, tras el servidor, la ventana y `instance.json`)
+   arranca lo que toca, suelto del proceso (`DETACHED_PROCESS` en Windows, grupo propio en Unix):
+   `setup.exe /S /LAUNCH` o el ejecutable nuevo con los mismos argumentos y `--after-update`. Así
+   la versión nueva nunca arranca junto a una vieja que aún tiene el puerto, el perfil de la
+   ventana o `instance.json`; y como el nuevo toma el mismo puerto (el de `launcher.json`), el
+   origen no cambia. Al arrancar, el nuevo borra los `.old`, las carpetas `update-*` y la descarga
+   (`update::start_cleanup`; en Windows reintenta unos segundos, porque el ejecutable viejo puede
+   seguir cerrándose). El instalador (`packaging/windows/installer.nsi`) espera hasta 30 s a que
+   `repackshot.exe` quede libre cuando va en silencio, arranca la aplicación al acabar con
+   `/LAUNCH` y no cambia nada de lo que eligió la persona (ni la página de modelos ni un acceso
+   directo del escritorio que se borró). La interfaz (`ui/updates.ts`) pregunta, pide, sigue el
+   estado cada 400 ms y cierra la ventana; contrato completo en `engine/crates/rt-app/README.md`.
 
 ## 6 · Interfaz (`src/ui/`)
 
@@ -1061,7 +1277,8 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
-| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
+| Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
+| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |
@@ -1112,3 +1329,20 @@ objeto es daño. El esquema sigue en 2. Una versión anterior a U9 que abra
 un proyecto con primitivas no las verá (sin malla en el archivo): solo
 compatibilidad hacia atrás, como se decidió. El motor recibe la malla como
 una más: el RSB no cambia.
+
+**Texturas** (M2a). Las imágenes de las ranuras y de las etiquetas de los
+materiales van en el mismo bloque `images`, detrás de las del entorno, una
+vez cada una, como el archivo PNG o JPEG que eran, bajo el id que nombra su
+contenido (`tex:` y 16 cifras hexadecimales de su SHA-256,
+`core/texture-images.ts`): un proyecto guardado y abierto en otra sesión
+vuelve con los mismos bytes y los mismos ids, y se guarda otra vez en los
+mismos bytes (test). Al abrir se registran sin decodificar
+(`placeTextureImages`): una que falta o no es PNG ni JPEG quita sus ranuras
+y sus etiquetas y cuenta en `MISSING_IMAGES`. Los `textures` de cada
+material se leen con `normalizeTextures`, que también entiende la forma
+plana anterior a M2a (`projection`, `scale`, `rotationDeg`, `offset`, las
+ranuras como texto que nunca se llenaba): la proyección, el giro y el
+desplazamiento pasan al mapeado, la escala a la repetición. El esquema
+sigue en 2; una versión anterior abre un proyecto con texturas sin verlas.
+Las mallas guardan su segundo juego de UV como `TEXCOORD_1` del GLB, solo
+cuando lo tienen (una malla sin él escribe los bytes de siempre).

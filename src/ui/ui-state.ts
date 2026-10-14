@@ -9,6 +9,7 @@ import type { MaterialInstance } from '../core/materials';
 import type { RenderSettings } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
+import type { ImageRef } from '../core/images';
 import type { Space } from '../core/transform';
 import type { ClipTarget } from '../core/animation';
 import type { ViewObject } from '../core/view-objects';
@@ -17,7 +18,7 @@ import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
 import type { RuntimeWarning } from '../core/ai-runtimes';
 import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
-import type { ReleaseInfo, UpdateFault } from '../core/updates';
+import { NO_INSTALL, type InstallRequest, type InstallStatus, type ReleaseInfo, type UpdateFault } from '../core/updates';
 
 export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
 /** What the viewport shows (UI.md §2.1): the rasterised preview or the path tracer. */
@@ -39,6 +40,15 @@ export type PickMode =
   | { kind: 'aim'; light: string; part: boolean }
   | { kind: 'pivot'; ids: NodeId[] }
   | { kind: 'link'; parts: NodeId[] }
+  | null;
+
+/**
+ * The label tool (M2a): `place` lays a new label of `image` on a part that carries `material` with a press (its
+ * centre) and a drag (its width); `move` slides label `label` over the surface under the pointer. Esc leaves it.
+ */
+export type LabelTool =
+  | { kind: 'place'; material: string; image: ImageRef }
+  | { kind: 'move'; material: string; label: string }
   | null;
 
 export interface Toast {
@@ -201,6 +211,23 @@ export interface DesktopInfo {
    * or with --serve-only.
    */
   window?: DesktopWindow | null;
+  /** The launcher was started by an update (`--after-update`): the interface says so once (P5). */
+  afterUpdate?: boolean;
+}
+
+/** An update being installed from inside the application (P5), as the launcher reports it. */
+export interface InstallUi {
+  status: InstallStatus;
+  /** What was asked of the launcher: Try again sends it again. */
+  request: InstallRequest | null;
+  /** The new version is in place and the window did not close for it (the person said Cancel): Restart now offers it again. */
+  deferred: boolean;
+  /**
+   * The project’s revision when the person answered the question about unsaved changes: the window closes without
+   * asking again as long as the project is still as it was then, and asks when it is not. Null: never answered (a
+   * page that was reloaded in the middle of an update).
+   */
+  answeredAt: number | null;
 }
 
 /** The update check in this session (Settings ▸ Updates, the notice in the status bar); not remembered. */
@@ -215,6 +242,8 @@ export interface UpdatesUi {
   notice: ReleaseInfo | null;
   /** Versions announced in this session, dismissed or not: a version is announced once. */
   announced: string[];
+  /** Installing a new version from inside the application (desktop only). */
+  install: InstallUi;
 }
 
 /** What the queue runner is doing: nothing, the whole queue, or only the jobs Render started. */
@@ -243,6 +272,8 @@ export interface UiState {
   folded: Record<NodeId, true>;
   hover: NodeId | null;
   pickMode: PickMode;
+  /** M2a: placing or moving a label in the viewport. */
+  labelTool: LabelTool;
   doctorOpen: boolean;
   menuOpen: boolean;
   /** Collapsed inspector sections, by id. */
@@ -401,6 +432,7 @@ export function defaultUiState(): UiState {
     folded: {},
     hover: null,
     pickMode: null,
+    labelTool: null,
     doctorOpen: false,
     menuOpen: false,
     sections: {},
@@ -441,7 +473,7 @@ export function defaultUiState(): UiState {
     runtimeNote: { checked: false, warning: null },
     updateCheckedAt: null,
     updateLatest: null,
-    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [] },
+    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false, answeredAt: null } },
     models: null,
     hardware: { state: 'IDLE', info: null },
     perf: { state: 'IDLE' },

@@ -8,7 +8,7 @@ import { polar } from './light-math';
 import type { ActionBase, ProjectState } from './store';
 import { nextId } from './ids';
 import { add, boxCenter, boxRadius, clamp, cross, dot, isEmptyBox, normalize, sub, type Box, type Vec3 } from './math';
-import { boundsOf, sceneBounds, type NodeId } from './scene';
+import { boundsOf, isSetPiece, sceneBounds, type NodeId } from './scene';
 
 export type CameraId = string;
 
@@ -273,11 +273,12 @@ function setCamera(state: ProjectState, cam: CameraState): ProjectState {
   return { ...state, camera: { ...state.camera, cameras: { ...state.camera.cameras, [cam.id]: cam } } };
 }
 
-/** Frames the active camera on some nodes (or on the whole visible scene). */
+/** Frames the active camera on some nodes (or on the whole visible scene, but the decoration of a set: L6). */
 export function frameActive(state: ProjectState, ids?: readonly NodeId[]): ProjectState {
   const cam = activeCamera(state);
   if (!cam) return state;
-  const box = ids && ids.length > 0 ? boundsOf(state, ids) : sceneBounds(state, true);
+  const own = state.scene.roots.filter((r) => !isSetPiece(state.scene.nodes[r]));
+  const box = ids && ids.length > 0 ? boundsOf(state, ids) : own.length === state.scene.roots.length ? sceneBounds(state, true) : boundsOf(state, own, true);
   if (isEmptyBox(box)) return state;
   return setCamera(state, frameBox(cam, box, outputAspect(state)));
 }

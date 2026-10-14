@@ -37,8 +37,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 /// Extensions the file API writes: what the application produces (images, scenes, projects,
 /// libraries, videos).
-pub const WRITABLE_EXTENSIONS: [&str; 8] =
-    ["png", "jpg", "jpeg", "exr", "json", "rsb", "mp4", "webm"];
+pub const WRITABLE_EXTENSIONS: [&str; 11] = [
+    "png", "jpg", "jpeg", "exr", "tif", "tiff", "dng", "json", "rsb", "mp4", "webm",
+];
 
 /// The id of the system's Downloads folder.
 pub const DOWNLOADS: &str = "downloads";
@@ -992,6 +993,7 @@ mod tests {
         assert_eq!(extension("A.PNG").as_deref(), Some("png"));
         assert_eq!(extension(".png"), None);
         assert!(writable_name("x.repack.json") && writable_name("x.EXR"));
+        assert!(writable_name("x.tif") && writable_name("x.TIFF") && writable_name("x.dng"));
         for bad in [
             "x.exe",
             "x.bat",

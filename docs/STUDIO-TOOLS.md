@@ -229,6 +229,10 @@ Sobre la animación de N1 y el paseo de N3:
 
 ## 5 · Partículas de todo tipo
 
+> Decisiones S0 tomadas y la primera fase (S4a, partículas de aire sin
+> estado: polvo, polen, lluvia, nieve, polvareda, ceniza, burbujas,
+> confeti) en `ROADMAP.md`, sección «Herramientas de estudio».
+
 Un nodo de escena **Efecto** con emisor (punto, superficie de una pieza,
 volumen, curva o estallido en un fotograma), cantidad, vida, velocidad y
 dispersión, tamaño, giro, fuerzas (gravedad, viento, turbulencia de

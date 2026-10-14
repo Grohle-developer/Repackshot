@@ -17,8 +17,11 @@ never on ui (the RSB writer of `io/` reaches the path tracer through `SceneSourc
   `rt_render_tile_albedo` put together like the image (`PassAccumulator`), and the reader of the launcher's
   `RPP1` file (`parsePasses`). Render hands them back as `RenderPasses` when `RenderOptions.passes` asks.
 - `tiles.ts`: the pure parts (tiles, passes, generations, accumulation, resolution choice), and the 16-bit and
-  linear conversions of the sums (16-bit PNG, EXR).
+  linear conversions of the sums (16-bit PNG and TIFF, EXR with premultiplied alpha, 32-bit TIFF and DNG with straight alpha).
 - `schedule.ts`: when a render stops (U5): finish by samples, time, or whichever comes first, at the pass boundary
   nearest the time limit.
 - `tonemap.ts`: the engine's exposure, curves and sRGB encoding, ported bit for bit (`rt --tone-table`), and the
   fast path the viewport uses.
+- `texture-shader.ts` and `texture-preview.ts` (M2a): image textures and labels in *Fast* mode, the GLSL put into
+  three's physical material with `onBeforeCompile` (assembled and tested without a GPU) and a cache of textures by
+  image, with mipmaps.

@@ -36,7 +36,8 @@ import { createInitialState, createStore } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
 import { workerModelStore } from './io/model-store';
 import { buildExample } from './core/example';
-import { encodeExr, encodeImage, encodePixels, encodePng16 } from './io/image';
+import { needsLinearSums } from './core/render';
+import { encodeDng, encodeExr, encodeImage, encodePixels, encodePng16, encodeTiff } from './io/image';
 import { exportLibrary, importLibrary } from './io/library';
 import { connectHost, downloadsFor } from './io/host';
 import { AiRuntimeClient } from './io/ai-runtime';
@@ -45,6 +46,7 @@ import type { PendingModels } from './io/native';
 import { choosePlatform } from './io/platform';
 import { readPref, writePref } from './io/prefs';
 import { readProjectFile, serializeProject } from './io/project';
+import { NativeInstaller } from './io/update-install';
 import { fetchLatestRelease } from './io/updates';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { loadCameraPictures } from './io/aperture';
@@ -53,14 +55,14 @@ import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
-import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightWords16 } from './render/tiles';
+import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightLinear, straightLinearRgba, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
 import { cameraLabel, lightName } from './ui/names';
 import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
 import { startupRuntimeCheck } from './ui/ai-runtime-state';
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
-import { startupUpdateCheck } from './ui/updates';
+import { startupUpdateCheck, syncInstall } from './ui/updates';
 import { maybeStartTour } from './ui/tour';
 import type { AiPort, AppServices, EngineConfig, ViewportPort } from './ui/ports';
 import { aiRuntimeQuery } from './ui/ai-query';
@@ -143,6 +145,7 @@ const ui = createUiStore(
           os: nativeInfo.os,
           arch: nativeInfo.arch,
           window: nativeInfo.window ?? null,
+          afterUpdate: nativeInfo.afterUpdate === true,
         }
       : null,
   },
@@ -502,6 +505,10 @@ async function decodeLinear(blob: Blob): Promise<LinearImage> {
   return rgba8ToLinear(g.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
 }
 
+const TIFF_TYPE = 'image/tiff';
+const DNG_TYPE = 'image/x-adobe-dng';
+const blobOf = (bytes: Uint8Array, type: string): Blob => new Blob([bytes as Uint8Array<ArrayBuffer>], { type });
+
 /** A linear image as a file in the job's format. */
 async function encodeLinear(img: LinearImage, o: Parameters<AiPort['encode']>[1]): Promise<Blob> {
   const { width, height, rgba } = img;
@@ -509,6 +516,13 @@ async function encodeLinear(img: LinearImage, o: Parameters<AiPort['encode']>[1]
     // The render's own light (the RENDER source): written exactly as the engine's file was (render/tiles.ts).
     const { exposureEv, tonemap } = o.tone;
     if (o.format === 'EXR') return new Blob([encodeExr({ width, height, data: straightExr(rgba, exposureEv) }, { alpha: o.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
+    if (o.format === 'DNG') return blobOf(encodeDng({ width, height, data: straightLinear(rgba, exposureEv) }), DNG_TYPE);
+    if (o.format === 'TIFF') {
+      const tiff = { alpha: o.transparent, dpi: o.dpi };
+      if (o.bitDepth === 32) return blobOf(encodeTiff({ width, height, data: straightLinear(rgba, exposureEv) }, { bits: 32, ...tiff }), TIFF_TYPE);
+      if (o.bitDepth === 16) return blobOf(encodeTiff({ width, height, data: straightWords16(rgba, exposureEv, tonemap) }, { bits: 16, ...tiff }), TIFF_TYPE);
+      return blobOf(encodeTiff({ width, height, data: straightBytes(rgba, exposureEv, tonemap) }, { bits: 8, ...tiff }), TIFF_TYPE);
+    }
     if (o.format === 'PNG' && o.bitDepth === 16) return new Blob([(await encodePng16({ width, height, data: straightWords16(rgba, exposureEv, tonemap) }, { dpi: o.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
     return encodePixels({ width, height, data: straightBytes(rgba, exposureEv, tonemap) }, o.format === 'JPEG' ? 'JPEG' : 'PNG', o.jpegQuality / 100, { dpi: o.dpi });
   }
@@ -524,14 +538,23 @@ async function encodeLinear(img: LinearImage, o: Parameters<AiPort['encode']>[1]
     }
     return new Blob([encodeExr({ width, height, data }, { alpha: o.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
   }
-  if (o.format === 'PNG' && o.bitDepth === 16) {
+  // A picture in display light (decoded from 8 bits): the 16-bit words are its sRGB encoding.
+  const words16 = () => {
     const words = new Uint16Array(rgba.length);
     for (let i = 0; i < rgba.length; i += 4) {
       for (let c = 0; c < 3; c++) words[i + c] = Math.round(Math.min(1, linearToSrgb(rgba[i + c])) * 65535);
       words[i + 3] = Math.round(Math.max(0, Math.min(1, rgba[i + 3])) * 65535);
     }
-    return new Blob([(await encodePng16({ width, height, data: words }, { dpi: o.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
+    return words;
+  };
+  if (o.format === 'DNG') return blobOf(encodeDng({ width, height, data: rgba }), DNG_TYPE);
+  if (o.format === 'TIFF') {
+    const tiff = { alpha: o.transparent, dpi: o.dpi };
+    if (o.bitDepth === 32) return blobOf(encodeTiff({ width, height, data: rgba }, { bits: 32, ...tiff }), TIFF_TYPE);
+    if (o.bitDepth === 16) return blobOf(encodeTiff({ width, height, data: words16() }, { bits: 16, ...tiff }), TIFF_TYPE);
+    return blobOf(encodeTiff({ width, height, data: linearToRgba8(img) }, { bits: 8, ...tiff }), TIFF_TYPE);
   }
+  if (o.format === 'PNG' && o.bitDepth === 16) return new Blob([(await encodePng16({ width, height, data: words16() }, { dpi: o.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' });
   return encodePixels({ width, height, data: linearToRgba8(img) }, o.format === 'JPEG' ? 'JPEG' : 'PNG', o.jpegQuality / 100, { dpi: o.dpi });
 }
 
@@ -583,7 +606,7 @@ const services: AppServices = {
     // Render and every queue job use the path tracer, whatever the viewport shows; without the engine there is
     // no render (the preview is never passed off as one).
     if (!tracer) throw new Error(t('render.noEngine'));
-    const linear = req.format === 'EXR' || (req.format === 'PNG' && req.bitDepth === 16);
+    const linear = needsLinearSums(req.format, req.bitDepth);
     // The AI step of a Render on the desktop: the launcher keeps the image with the guard's passes (X3c).
     const kept = req.aiPasses === true && tracer instanceof NativeEngine;
     const px = await tracer.renderPixels({
@@ -601,18 +624,33 @@ const services: AppServices = {
       ...(kept ? { passes: AI_GUARD_PASSES, passesInLauncher: true } : {}),
       onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds),
     });
-    // The file in the job's format from the 8-bit pixels and, for 16 bits and EXR, the linear sums.
+    // The file in the job's format from the 8-bit pixels and, for 16 bits, EXR, the 32-bit TIFF and DNG, the linear sums.
     const encode = async (data: Uint8ClampedArray, sum: Float32Array | undefined): Promise<{ file: Blob; display: Blob | null }> => {
       const img = { ...px, data };
+      const { width, height } = px;
       if (req.format === 'EXR') {
         const linear = linearRgba(sum!, px.samples, px.exposureEv);
-        const file = new Blob([encodeExr({ width: px.width, height: px.height, data: linear }, { alpha: req.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
+        const file = new Blob([encodeExr({ width, height, data: linear }, { alpha: req.transparent }) as Uint8Array<ArrayBuffer>], { type: 'image/x-exr' });
         // Browsers do not show EXR: the viewer and the thumbnails use the 8-bit image of the same render.
+        return { file, display: await encodePixels(img, 'PNG', 0.92, { dpi: req.dpi }) };
+      }
+      if (req.format === 'DNG' || req.format === 'TIFF') {
+        // TIFF and DNG keep straight alpha, so the linear data is divided by its coverage (EXR keeps it premultiplied).
+        const tiff = { alpha: req.transparent, dpi: req.dpi };
+        const dng = req.format === 'DNG';
+        const file = dng
+          ? blobOf(encodeDng({ width, height, data: straightLinearRgba(sum!, px.samples, px.exposureEv) }), DNG_TYPE)
+          : req.bitDepth === 32
+            ? blobOf(encodeTiff({ width, height, data: straightLinearRgba(sum!, px.samples, px.exposureEv) }, { bits: 32, ...tiff }), TIFF_TYPE)
+            : req.bitDepth === 16
+              ? blobOf(encodeTiff({ width, height, data: exactWords16(sum!, px.samples, px.exposureEv, px.tonemap) }, { bits: 16, ...tiff }), TIFF_TYPE)
+              : blobOf(encodeTiff({ width, height, data }, { bits: 8, ...tiff }), TIFF_TYPE);
+        // A browser shows neither: the viewer and the thumbnails get the 8-bit picture of the same render.
         return { file, display: await encodePixels(img, 'PNG', 0.92, { dpi: req.dpi }) };
       }
       if (req.format === 'PNG' && req.bitDepth === 16) {
         const words = exactWords16(sum!, px.samples, px.exposureEv, px.tonemap);
-        return { file: new Blob([(await encodePng16({ width: px.width, height: px.height, data: words }, { dpi: req.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' }), display: null };
+        return { file: new Blob([(await encodePng16({ width, height, data: words }, { dpi: req.dpi })) as Uint8Array<ArrayBuffer>], { type: 'image/png' }), display: null };
       }
       return { file: await encodePixels(img, req.format === 'JPEG' ? 'JPEG' : 'PNG', req.jpegQuality / 100, { dpi: req.dpi }), display: null };
     };
@@ -779,6 +817,13 @@ const desktopStart = nativeReady.then(async (native) => {
   });
   // The inference runtime of the AI post-processing (X3b): Settings ▸ AI post-processing ▸ Runtime.
   if ((native.info.aiApi ?? 0) >= 1) services.aiRuntime = new AiRuntimeClient(native);
+  // Updating from inside the application (P5): the launcher downloads, checks and installs; one that was already at it
+  // (this page was reloaded) is followed again, and a launcher the previous version started to finish an update says so.
+  if ((native.info.updateApi ?? 0) >= 1) {
+    services.updates.installer = new NativeInstaller(native);
+    void syncInstall(app.ctx);
+  }
+  if (native.info.afterUpdate) ui.toast(t('up.updated', { version: native.info.version }));
   const i = native.info;
   // The AI pipeline (X3c) asks the launcher with the active model, which, unless the person chose one, is the
   // recommendation for this computer: the hardware is detected now, not only when Settings opens.

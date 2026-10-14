@@ -28,6 +28,7 @@ import {
 } from '../core/library';
 import { isLibraryKey, type CustomSetup, type LightInstance } from '../core/lighting';
 import { defaultTextures, type MaterialInstance, type MaterialTextures } from '../core/materials';
+import { normalizeTextures } from '../core/textures';
 import type { EnvironmentState, ImageState } from '../core/store';
 
 export { LIBRARY_FORMAT, LIBRARY_SCHEMA };
@@ -171,7 +172,6 @@ const FAMILIES = ['SIMPLE', 'GLASS', 'WOOD', 'FABRIC', 'EMISSIVE'] as const;
 const CATEGORIES = ['METAL', 'PLASTIC', 'WOOD', 'FABRIC', 'GLASS', 'EMISSIVE', 'OTHER'] as const;
 const WORLDS: readonly WorldKind[] = ['STUDIO', 'SKY', 'FLAT'];
 const QUALITIES = ['DRAFT', 'PREVIEW', 'FINAL'] as const;
-const PROJECTIONS = ['BOX', 'PLANAR', 'CYLINDRICAL', 'UV'] as const;
 
 /** Parameters of a material: any name made of letters and digits, with a number, text, flag or colour. */
 function params(v: unknown, path: string): MaterialInstance['params'] {
@@ -204,22 +204,11 @@ function wear(v: unknown, path: string): WearProps {
 }
 
 function textures(v: unknown, path: string): MaterialTextures {
-  const d = defaultTextures();
-  if (v === undefined) return d;
-  const o = obj(v, path);
-  const off = o.offset === undefined ? d.offset : arr(o.offset, `${path}.offset`, 2, 2).map((n, i) => num(n, `${path}.offset[${i}]`));
-  return {
-    // Image maps name files of a project: they do not travel in a library.
-    color: null,
-    roughness: null,
-    metal: null,
-    normal: null,
-    alpha: null,
-    projection: o.projection === undefined ? d.projection : oneOf(o.projection, `${path}.projection`, PROJECTIONS),
-    scale: o.scale === undefined ? d.scale : num(o.scale, `${path}.scale`, 0.0001, 1e6),
-    rotationDeg: o.rotationDeg === undefined ? d.rotationDeg : num(o.rotationDeg, `${path}.rotationDeg`, -3600, 3600),
-    offset: [off[0], off[1]],
-  };
+  if (v === undefined) return defaultTextures();
+  obj(v, path);
+  // Image maps and labels name images of a project: they do not travel in a library; the mapping does (M2a). A
+  // library written before M2a has the flat shape (projection, scale...), which normalizeTextures reads too.
+  return { ...defaultTextures(), mapping: normalizeTextures(v).mapping };
 }
 
 function materialPayload(v: unknown, path: string): MaterialPayload {
@@ -281,6 +270,8 @@ function lightInstance(v: unknown, path: string): LightInstance {
     ...(o.shadow === undefined ? {} : { shadow: bool(o.shadow, `${path}.shadow`) }),
     ...(o.aim === undefined ? {} : { aim: vec3(o.aim, `${path}.aim`) }),
     ...(o.roll === undefined ? {} : { roll: num(o.roll, `${path}.roll`, -720, 720) }),
+    // L6: the pool of a set.
+    ...(o.setPiece === undefined ? {} : { setPiece: oneOf(o.setPiece, `${path}.setPiece`, ['POOL'] as const) }),
   };
 }
 
@@ -290,8 +281,13 @@ function environment(v: unknown, path: string): EnvironmentState {
     kind: oneOf(o.kind, `${path}.kind`, ['STUDIO', 'SKY', 'FLAT', 'HDRI'] as const),
     strength: num(o.strength, `${path}.strength`, 0, 100),
     rotationDeg: num(o.rotationDeg, `${path}.rotationDeg`, -3600, 3600),
-    background: oneOf(o.background, `${path}.background`, ['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE'] as const),
+    background: oneOf(o.background, `${path}.background`, ['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE', 'GRADIENT'] as const),
     color: rgba(o.color, `${path}.color`),
+    // L6: studios saved before the gradient background have none and take the default.
+    gradient:
+      o.gradient === undefined
+        ? { top: [0.1, 0.1, 0.1], bottom: [0.02, 0.02, 0.02] }
+        : { top: rgb(obj(o.gradient, `${path}.gradient`).top, `${path}.gradient.top`), bottom: rgb(obj(o.gradient, `${path}.gradient`).bottom, `${path}.gradient.bottom`) },
     groundShadow: num(o.groundShadow, `${path}.groundShadow`, 0, 1),
     groundReflection: num(o.groundReflection, `${path}.groundReflection`, 0, 1),
     // E5: the library keeps no image files, so a studio comes back without its HDRI or background image

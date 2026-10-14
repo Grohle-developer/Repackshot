@@ -286,7 +286,31 @@ inspector muestra una hoja en línea con las opciones de `SPEC.md` §5
 (unidades, eje arriba, centrar, apoyar, encuadrar, añadir o sustituir,
 agrupar por, mantener materiales, separar piezas, calidad de teselado) con
 los valores detectados ya puestos y un botón primario *Importar*. `Enter`
-importa con los valores por defecto.
+importa con los valores por defecto. Desde M2a la hoja tiene una sección
+**Texturas**: *N imágenes guardadas · X MB*, una línea por cada imagen que
+no se guarda con el porqué (*pesa más de 16 MB*, *no es PNG ni JPEG*, *no
+estaba entre los archivos elegidos con el modelo*, *el proyecto ya lleva 64
+MB de texturas*) y por cada mapa sin ranura (*mapa de oclusión ambiental,
+sin ranura*), *El archivo no trae imágenes de textura* cuando no las hay, o
+*Con el material predeterminado no se importa ninguna textura*, y una nota
+con los límites. Un modelo se elige o se suelta **con sus archivos**
+(imágenes, `.mtl`, `.bin`): no se importan solos, el lector del modelo
+encuentra en ellos lo que nombra (*Importar modelo…* deja elegir varios).
+
+**Herramienta de etiqueta** (fase M2a): tras *Añadir etiqueta…* el visor
+dice *Pulsa en una pieza con Pintura donde va la etiqueta y arrastra su
+ancho · Esc cancela*: la pulsación sobre una pieza que lleva el material
+pone el centro de la etiqueta (plana desde la normal de la superficie,
+derecha, con el arriba del modelo donde la superficie lo deja), el
+arrastre fija su ancho (desde el centro, en su plano) y soltar termina; un
+clic sin arrastre le da un cuarto del lado mayor de la pieza. Toda la
+colocación es una entrada de deshacer (*Deshacer: Añadir la etiqueta
+logo.png a Pintura*). Sobre una pieza que no lleva el material, un aviso
+(*Esa pieza no lleva Pintura*). **Mover etiqueta**: arrastrar sobre la
+pieza desliza la etiqueta por la superficie bajo el cursor, conservando
+tamaño y giro (una entrada por arrastre), hasta `Esc` o el botón. Mientras
+la herramienta está activa, la pulsación es suya: ni orbita, ni el
+*gizmo*, ni selecciona.
 
 **Herramienta de mover** (fase U3): con una selección y la herramienta
 *Mover* (`M`) activa, un *gizmo* sobre el pivote con asas de traslación
@@ -453,13 +477,32 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    tipos propios de la pestaña *Míos* y *Guardar como tipo de producto*). Tamaño de la pieza en mm (detectado al importar,
    editable). Interruptores *Suelo* y *Sombra de contacto*. Botón
    primario **Crear estudio**: monta luces, suelo, cámara y ajustes de
-   motor del preset. Si ya hay estudio, pide confirmación en línea (no
+   motor del preset y, si el tipo es un set (L6: 15 de los 16), su
+   decoración y su aspecto (fondo, tarjetas, suelo, charco de luz); el
+   ejemplo y un modelo importado llegan ya vestidos con el set en vigor. Si ya hay estudio, pide confirmación en línea (no
    modal): "Sustituir el estudio actual · Sí / No".
 2. **Luz** — El **catálogo de montajes**: fila de pestañas de estilo
-   (*Todos* + los 8 `LIGHT_STYLES`), rejilla de miniaturas de 3 columnas
-   (`icons/thumb_<clave>.png`, 160×120, con la etiqueta debajo), la
-   activa con borde de selección. Debajo, la **intención** del montaje
-   activo en una frase. Flechas *anterior / siguiente* dentro del estilo.
+   (*Todos* + los 9 `LIGHT_STYLES`, **Sets** el primero, L6), rejilla de
+   miniaturas (`public/thumbs/setups/thumb_<clave>.png`, 256 × 256,
+   renderizadas por el motor: §6) con la etiqueta debajo, la activa con
+   borde de selección. Los **sets** van primero y en grande: dos columnas
+   y cuadradas (el doble de alto que las demás); los demás montajes, en
+   tres columnas y 4:3, como estaban; en *Todos*, la rejilla de los sets y
+   debajo la del resto. La **ayuda** de la miniatura de un set dice su
+   intención y su **razón fotográfica** (`why`, dos frases); la de un
+   montaje, su intención. Debajo, la **intención** del montaje activo en
+   una frase. Flechas *anterior / siguiente* dentro del estilo.
+   Con un **set** en vigor, debajo: **Usar la cámara del set** (solo si
+   sugiere una; la ayuda dice cuál, «8° de altura, 85 mm»; desactivado con
+   la cámara bloqueada; una entrada de deshacer) y **En el set**: una fila
+   por pieza de su decoración (cada tarjeta, el fondo del set, el suelo
+   del set) con su nombre y un interruptor que la oculta o la muestra
+   (`scene/setVisible`, deshacible); un fondo de color o degradado sin
+   barrido es una fila que pone el fondo del set o devuelve el del tipo de
+   producto (`env/set`). Un fondo que el set hace barrido (`SWEEP`, o
+   cualquier fondo con charco de luz) es una pieza, nunca esa fila: tras
+   *Restablecer montaje* no queda nada que encender (`setBackground`). El
+   charco de luz es un foco: aparece en *Afinar focos* con su nombre.
    Desplegable secundario **Afinar focos**: lista de focos con potencia
    (en % del total), tamaño, temperatura en K y ángulo; cambiar algo
    aquí no cambia de montaje, lo marca como *modificado*. Botón
@@ -480,7 +523,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    *Altura del sol*; si lo tiene, una nota dice que el sol del montaje
    coloca el del cielo. Intensidad, rotación (se
    oculta con *Cielo*: lo coloca su sol). Fondo: *El mismo entorno*,
-   *Color* (muestra), *Transparente*, *Imagen de fondo*; con esta última,
+   *Color* (muestra), *Degradado* (L6: *Arriba* y *Abajo*, dos muestras;
+   lo ponen los sets de fondo degradado), *Transparente*, *Imagen de
+   fondo*; con esta última,
    *Cargar imagen…* (PNG, JPEG, WebP), su nombre y tamaño, *Encaje*
    (*Llenar · Encajar · Estirar*, dentro del marco de salida) y el color,
    que se ve alrededor de la imagen encajada o en su lugar mientras no hay
@@ -549,12 +594,46 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    Solo se pintan los que la familia usa. Un botón *Convertir en material
    propio* separa la instancia del preset cuando se edita (el nombre pasa
    a "Oro (editado)").
-2. **Desgaste** — Tres botones rápidos (*Nuevo · Usado · Viejo*), los 9
+2. **Texturas** (fase M2a) — Una nota dice que *Rápido* muestra texturas y
+   etiquetas y que el motor las pinta en *Completo* y en *Render*
+   (*próximamente*, fase M2b). Una fila por **ranura**: *Color*,
+   *Rugosidad*, *Metal*, *Normal*, *Alfa*, *Emisión*, cada una con la
+   vista previa de su imagen (un cuadrado rayado sin imagen), su nombre y
+   debajo el archivo y su tamaño en píxeles (o *Sin imagen*), **Cargar…**
+   (*Cambiar…* con imagen; el diálogo del sistema en escritorio, el
+   selector de archivos en el navegador; PNG o JPEG) y la papelera
+   (*Quitar*). La ayuda de cada ranura dice qué hace la imagen (*multiplica
+   el color base*…). Con imagen, lo suyo: *Canal* (*R · G · B · A · Lum*) e
+   *Invertir* en rugosidad, metal y alfa (y en un mapa de alturas);
+   *Mapa de alturas* e *Intensidad* (con mapa de alturas, en mm del
+   blanco) en normal; *Como recorte* y su *Umbral* en alfa; *Tinte* e
+   *Intensidad* en emisión. Una ranura con mapeado propio (del archivo) lo
+   dice, con *Usar el común*. Con alguna imagen, el bloque **Mapeado**
+   (el común): *Proyección* (*UV · Caja · Plana · Cilíndrica · Esférica*),
+   *Eje* (plana, cilíndrica, esférica), *Juego UV* (*1 · 2*, en UV),
+   *Tamaño* en las unidades de la interfaz con *Ajustar a la pieza* (no
+   en UV ni en esférica; una nota dice qué es, y en la cilíndrica que es
+   la circunferencia), *Giro*, *Desplazamiento* y *Repetición* (U y V),
+   *Bordes* (*Repetir · Estirar el borde · Espejo*); si alguna pieza del
+   material no tiene UV, con *UV* una nota lo dice y propone *Caja*.
+   Después, **Etiquetas**: una fila por etiqueta, la de encima arriba, con
+   su imagen, su nombre y su tamaño en mm, *Traer delante* y *Enviar
+   atrás*, la papelera, **Mover etiqueta** (activa la herramienta del visor;
+   pulsado mientras lo está) y, desplegable, *Ancho*, *Giro*, *Alcance*
+   (con su nota), *Rugosidad*, *Barniz* y *Relieve del papel*; *Aún no hay
+   etiquetas* si no hay; una nota cuando el material lo comparten varias
+   piezas (*Sale en las 3 piezas que comparten este material*) y otra
+   cuando hay más de las que dibuja *Rápido* (seis). Al pie,
+   **Añadir etiqueta…**: elige la imagen y activa la herramienta. Todo es
+   una acción del *store*: un arrastre de un campo, una entrada de
+   deshacer (*Deshacer: Mapeado de Oro*, *Cargar tex.png en Color de
+   Pintura*, *Añadir la etiqueta logo.png a Pintura*).
+3. **Desgaste** — Tres botones rápidos (*Nuevo · Usado · Viejo*), los 9
    básicos de `WEAR_PRESETS` en una fila de chips, el mando maestro, y
    un deslizador por tipo (solo los de `WEAR_FAMILY_TYPES` para la familia
    actual) que despliega sus mandos al activarse. Escala, semilla, *variar
    por pieza*, y *Aplicar a toda la pieza*.
-3. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
+4. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
    radio de bisel de aristas (mm), suavizado.
 
@@ -724,10 +803,29 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   carpeta se muestra por su nombre); donde no exista, el selector dice
   *Este navegador solo permite descargar* y se usa *Descargas*. En el
   escritorio (P2), una ruta normal. Interruptor *Mostrar al terminar*.
-- **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR; *Fondo
-  transparente* cuando el formato lo admite; *Pases* (alfa, profundidad,
-  normales, id de pieza) cuando existan (N2), con *próximamente* hasta
-  entonces.
+- **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR, **TIFF** (8, 16
+  o 32 bits flotante) y **RAW (DNG)** (U12); *Fondo transparente* cuando
+  el formato lo admite (PNG, EXR y TIFF; JPEG y DNG no, y el interruptor
+  dice por qué); *Pases* (alfa, profundidad, normales, id de pieza)
+  cuando existan (N2), con *próximamente* hasta entonces. Cada formato
+  que necesita explicación lleva **una línea de ayuda** bajo el
+  selector, la misma que el texto emergente del botón: *EXR: lineal en
+  coma flotante de 32 bits, para composición*; *TIFF: sin compresión, 8/16
+  bits sRGB o 32 bits lineal*; *DNG lineal en coma flotante: se revela
+  como un raw de cámara*. La profundidad de bits sale a la derecha del
+  selector solo donde se elige: PNG ofrece *8 bits* y *16 bits*; TIFF,
+  *8 bits*, *16 bits* y *32 bits flotante* (lineal, con la exposición del
+  render y sin curva, como el EXR); RAW (DNG) no ofrece nada que elegir y
+  dice *32 bits flotante*. TIFF lleva los DPI de la ventana como
+  resolución; el TIFF de 8 y 16 bits y el DNG se leen como sRGB y como
+  primarios sRGB lineales, sin perfil ICC. El nombre del archivo acaba en
+  `.tif` o `.dng`. Al terminar, el visor de resultados y las miniaturas
+  usan una **copia PNG de 8 bits** del mismo render (Chromium y Firefox no
+  muestran TIFF ni DNG, como no muestran EXR), y *Guardar de nuevo* escribe
+  el archivo, no la copia. El resumen del pie lo dice: *TIFF 32 bits
+  flotante → Descargas*. Captura: `docs/ui/render-format-tiff.png`
+  (`tools/render-format-check.mjs`). Una configuración antigua o ajena con un formato
+  que esta versión no escribe se abre como PNG.
 - **Cámara**: desplegable con *La activa*, cada cámara guardada y
   **Todas las cámaras** (un trabajo por cámara).
 - **Tamaño**: desplegable de presets (`RESOLUTION_PRESETS` y
@@ -915,7 +1013,7 @@ escritorio (`PUT/GET /api/store/results/<id>/ai` del lanzador). Capturas:
 **En el escritorio (X3c).** El render final con IA deja su imagen lineal y sus
 pases en el lanzador, que hace la IA sin que los píxeles vayan y vuelvan; la
 imagen de la IA llega como luz lineal y se escribe **con la exposición y la curva
-del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG o EXR),
+del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG, EXR, TIFF o DNG),
 así que con Intervención 0 es el mismo fichero byte a byte. Mientras la IA
 trabaja, la fila de la cola dice dónde está —*IA · cargando el modelo*, *IA ·
 mosaico 2 de 4*, *· intento 2* tras un reintento, *IA · comprobando*— y la barra
@@ -923,9 +1021,10 @@ mide la tubería, no ya el render. *Detener* o *Pausar* en ese momento paran la
 IA al instante y **la imagen del motor se queda en el historial** (aviso *Post-procesado
 IA detenido: la imagen del motor se conserva en el historial*); con *Pausar*, el
 trabajo vuelve a esperar y *Reanudar* lo hace entero. Los navegadores no
-muestran EXR: la miniatura de la IA de un trabajo EXR sale de una copia de 8
-bits, pero el visor solo compara *Render | IA* cuando la IA es PNG o JPEG (el
-historial guarda el EXR tal cual; una copia para la vista queda pendiente).
+muestran EXR, TIFF ni DNG: la miniatura de la IA de un trabajo en uno de ellos
+sale de una copia de 8 bits, pero el visor solo compara *Render | IA* cuando la
+IA es PNG o JPEG (el historial guarda el archivo tal cual; una copia para la vista
+de la imagen de la IA queda pendiente).
 
 **Variantes (X4b).** Un trabajo con varias variantes hace un solo render y una
 pasada de la IA por variante, con la semilla siguiente cada vez; se guardan como
@@ -978,7 +1077,7 @@ título del grupo en versalitas auxiliares:
 | | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
-| | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con **Descargar**, el paquete de esta plataforma, y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con *Descargar · Notas · Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`) |
+| | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con el botón principal y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con el mismo botón principal, *Notas* y *Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`). **El botón principal** es **Instalar y reiniciar** en escritorio (P5): pregunta por los cambios sin guardar (§4.3), el lanzador descarga el paquete de esta copia y su `SHA256SUMS.txt`, comprueba la suma, lo instala y la aplicación se reinicia sola con la versión nueva (detalle en `ARCHITECTURE.md` §5.5). En la web sigue siendo **Descargar** (abre la página de la versión) y la fila lo dice: *Descargar abre la página de la versión. Para actualizar desde la propia aplicación, usa la versión de escritorio.* También es *Descargar* donde el lanzador no sabe actualizarse (uno anterior) o la release no trae el paquete o las sumas. **Mientras se instala**, la fila (y la línea de la barra de estado, con *Ajustes* cerrado) dice dónde va: *Descargando… 45 % · 3,2 de 7,1 MB* con una barra fina (gris, sin color), *Comprobando…*, *Instalando… la aplicación se reiniciará*, con **Cancelar la actualización** hasta que empieza a cambiar archivos; cerrar *Ajustes* no la para (el estado es del lanzador y se sigue al recargar la página). **Los fallos** salen en la fila con su motivo y **Reintentar**: la descarga, la suma que no cuadra (*no se instaló*), sin espacio en el disco, el paquete que no se pudo desempaquetar o poner en su sitio (*no se cambió nada*) y *esta copia no está instalada ni es portable* (entonces el botón es *Descargar*). Al volver a arrancar, un aviso dice *Repackshot se actualizó a la versión X* |
 | | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
 
 **Columna derecha**: título de la sección, una frase de qué se ajusta
@@ -1189,6 +1288,21 @@ y la ventana de **Ajustes** (§2.9: secciones agrupadas en una columna a
 la izquierda, cambios al momento). Ninguna otra ventana; nada se abre
 solo.
 
+**La pregunta por los cambios sin guardar** (solo si el proyecto los
+tiene) es la misma para todo lo que los descartaría —cerrar la ventana,
+*Nuevo*, *Abrir* y *Instalar y reiniciar*— y tiene tres botones más
+*Cancelar*: **Guardar** (donde está el proyecto, sin diálogo), **Guardar
+como…** (con el diálogo) y **No guardar** (en la actualización, **Salir sin
+guardar**). *Guardar* y *Guardar como…* siguen solo si el proyecto se
+escribió de verdad: un diálogo cancelado o un archivo que no se puede
+escribir se quedan donde estaban. `Esc` y *Cancelar* no hacen nada. Sale bajo el
+nombre del proyecto (cerrar, nuevo, abrir), en la fila de *Ajustes ▸
+Actualizaciones* o encima del botón de la barra de estado (actualizar), que
+es donde se pulsó; en *Ajustes* `Esc` cancela la pregunta, no la ventana.
+Si durante la descarga el proyecto cambió, al cerrar la ventana para
+reiniciar se pregunta otra vez (bajo el nombre del proyecto, con la
+misma pregunta); si no ha cambiado desde que se contestó, no.
+
 ### 4.4 · Campos numéricos
 
 Un único componente `NumberField`: valor con unidad (mm, °, K, f/, EV, s),
@@ -1348,10 +1462,17 @@ rendimiento importa: 60 fps con la pieza de ejemplo en un portátil.
 
 ## 6 · Miniaturas
 
-- **Montajes de luz**: copiar las 72 `thumb_<clave>.png` (160 × 120) y las
-  72 `setup_<clave>.png` (64 × 64) de `/home/user/EZPackshot/icons/` a
-  `public/thumbs/setups/`. Son del mismo autor; se generan con un script
-  propio en una fase posterior.
+- **Montajes de luz** (L6): las 88 `thumb_<clave>.png` (256 × 256) y
+  `setup_<clave>.png` (64 × 64, su promedio) de `public/thumbs/setups/`
+  las renderiza nuestro motor (`node tools/setup-thumbs.mjs`): cada set
+  sobre su héroe (`BOTTLE` el frasco de ejemplo de vidrio con líquido,
+  `BOX` una caja con una banda de aluminio, `RING` un toro de oro,
+  `CHROME` un toro cromado, `SHOE` una cápsula de cuero, `SPHERES` tres
+  esferas mate, brillante y metal) y cada montaje anterior sobre el héroe
+  de su estilo, con el tipo *Estándar*, la cámara de referencia (o la del
+  set), 96 muestras, *denoise* y semilla fija. Sustituyen a las de EZ
+  Packshot. `manifest.json` guarda el *hash* de cada escena y de cada PNG;
+  la suite comprueba que el código sigue construyendo esas escenas.
 - **Materiales**: no hay PNG upstream (se renderizan dentro de Blender).
   En U1 se generan **en el navegador** con el propio visor: una esfera
   con el material sobre el fondo del tema, renderizada a 96 × 96 en un
@@ -1400,7 +1521,8 @@ mover y el menú contextual completo de piezas (U3), focos propios y
 guardar montajes (L4), biblioteca *Míos* (U4), cara CAD entera, pelusa,
 desgaste visible, campo claro por entorno, cielo procedural, HDRI de
 archivo, colocación por reflejo exacta, vídeo, pases de render, etiquetas
-y texturas de imagen, vista en sección. Todo está en `ROADMAP.md` con su
+y texturas de imagen (fase M2a en la interfaz y la vista previa, M2b en el
+motor), vista en sección. Todo está en `ROADMAP.md` con su
 fase y su responsable. En la interfaz, cada uno de esos huecos se marca
 con la palabra *próximamente* en texto auxiliar, nunca con un control que
 parezca funcionar y no haga nada.

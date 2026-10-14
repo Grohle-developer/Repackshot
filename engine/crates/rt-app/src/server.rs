@@ -83,6 +83,8 @@ pub struct App {
     pub files: crate::files::Files,
     /// The AI runtime, its downloads and its server (`/api/ai/*`, `src/ai/`).
     pub ai: Arc<crate::ai::Ai>,
+    /// Updating the application from inside it (`/api/update/*`, `src/update/`).
+    pub update: Arc<crate::update::Updater>,
     last_alive: Mutex<Instant>,
     hardware: Mutex<Option<Hardware>>,
     connections: AtomicUsize,
@@ -178,6 +180,10 @@ impl App {
         }
         // The AI runtime (ai/mod.rs).
         if let Some(r) = crate::ai::route(self, req, &parts, body) {
+            return api(r);
+        }
+        // Updating the application (update/mod.rs).
+        if let Some(r) = crate::update::route(&self.update, req, &parts, body) {
             return api(r);
         }
         let m = req.method.as_str();
@@ -338,6 +344,10 @@ impl App {
                 .num("aiApi", 1.0)
                 // The AI post-processing pipeline of ai/post.rs (`/api/ai/post`, version 1).
                 .num("aiPost", 1.0)
+                // Updating from inside the application (`/api/update/*`, version 1), and whether this
+                // launcher was started by an update (`--after-update`).
+                .num("updateApi", 1.0)
+                .bool("afterUpdate", self.update.after_update())
                 .build(),
         )
     }
@@ -730,6 +740,9 @@ pub struct Options {
     /// How many final renders with passes are kept, and the largest kept in memory, in place of
     /// [`crate::kept::KeepLimits::default`] (the tests: a small store that spills to the disk).
     pub keep: Option<crate::kept::KeepLimits>,
+    /// The updater's feed, downloader and mode in place of the real ones (the tests: a local server
+    /// in place of GitHub, a kind of copy a Linux computer cannot be).
+    pub update: Option<crate::update::Config>,
 }
 
 /// A running server.
@@ -757,6 +770,11 @@ impl Server {
         let port = listener.local_addr()?.port();
         let models = Store::new(paths.models(), crate::recommend::catalogue().clone());
         let paths_data = paths.data_dir.clone();
+        let update = crate::update::Updater::new(
+            options
+                .update
+                .unwrap_or_else(|| crate::update::Config::of(&paths)),
+        );
         let app = Arc::new(App {
             paths,
             token,
@@ -777,6 +795,7 @@ impl Server {
                 }
                 None => crate::ai::Ai::new(&paths_data),
             },
+            update,
             last_alive: Mutex::new(Instant::now()),
             hardware: Mutex::new(None),
             connections: AtomicUsize::new(0),
@@ -838,6 +857,7 @@ impl Server {
         }
         self.app.engine.shutdown();
         self.app.ai.shutdown();
+        self.app.update.shutdown();
     }
 }
 

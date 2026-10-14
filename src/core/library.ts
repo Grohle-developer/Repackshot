@@ -240,13 +240,13 @@ export function fromMaterialInstance(lib: Library, inst: MaterialInstance, name:
   return {
     ...base('material', lib, name, inst.preset ?? inst.origin ?? undefined, o),
     kind: 'material',
-    // Image maps are not carried: they name files of the project (phase M2 decides how they travel).
+    // Image maps and labels are not carried: they name images of the project (M2a); the mapping is.
     material: {
       family: copy.family,
       category: copy.category,
       params: copy.params,
       wear: copy.wear,
-      textures: { ...copy.textures, color: null, roughness: null, metal: null, normal: null, alpha: null },
+      textures: { ...defaultTextures(), mapping: copy.textures.mapping },
       bevelRadiusMm: copy.bevelRadiusMm,
     },
   };
@@ -266,7 +266,7 @@ export function instanceFromItem(item: MaterialItem): MaterialInstance {
     category: m.category,
     params: m.params,
     wear: { ...WEAR_PROP_DEFAULTS, ...m.wear },
-    textures: { ...defaultTextures(), ...m.textures },
+    textures: { ...defaultTextures(), mapping: { ...defaultTextures().mapping, ...m.textures?.mapping } },
     bevelRadiusMm: m.bevelRadiusMm,
   };
   return cloneInstance(inst, '');
@@ -357,7 +357,8 @@ export function fromCurrentProductType(state: ProjectState, lib: Library, name: 
       fstop: cam.fstop,
       envStrength: state.environment.strength,
       exposure: state.image.exposureEv,
-      background: state.environment.background === 'COLOR' ? 'FLAT' : 'HDRI',
+      // A gradient (L6) is not a product type's background: its colour (the bottom of the gradient) is.
+      background: state.environment.background === 'COLOR' || state.environment.background === 'GRADIENT' ? 'FLAT' : 'HDRI',
       backgroundColor: [bg[0], bg[1], bg[2], bg[3]],
       floor: state.studio.floor,
       shadow: state.studio.shadow,

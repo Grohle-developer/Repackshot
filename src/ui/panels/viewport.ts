@@ -7,6 +7,7 @@ import { h, icon } from '../dom';
 import { dynamic, type Ctx, type Scope } from '../reactive';
 import { t } from '../strings';
 import { resultsViewer } from './results-viewer';
+import { viewportLabels } from './viewport-labels';
 import { viewportOverlays } from './viewport-overlays';
 
 function emptyState(ctx: Ctx, scope: Scope): HTMLElement {
@@ -80,6 +81,8 @@ export function viewportPanel(ctx: Ctx, scope: Scope): HTMLElement {
   scope.watch((_s, u) => u.tool, (tool) => el.setAttribute('data-tool', tool));
   scope.watch((_s, u) => u.pickMode, (p) => el.toggleAttribute('data-picking', p !== null));
 
+  // The label tool (M2a) listens first: while it is on, a press on a part is its own, not the camera's or the gizmo's.
+  if (port) el.append(viewportLabels(ctx, scope, el));
   if (port) el.append(...viewportOverlays(ctx, scope, el));
   // The results viewer: a layer over the viewport (UI.md §2.8), rebuilt when the result or the comparison changes.
   el.appendChild(

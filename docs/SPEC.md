@@ -287,9 +287,88 @@ izquierda a derecha) o lo que **toca** (*cruce*, de derecha a izquierda)
 
 Una **instancia** de material: `id`, `name`, `preset` (clave de origen o
 `null` si es propio), `family`, `category`, `params` (los del catálogo,
-todos editables), `wear` (los campos de desgaste), `textures` (color,
-rugosidad, metal, normal, alfa; proyección caja/plana/cilíndrica/UV;
-escala, rotación, desplazamiento), `bevelRadiusMm`.
+todos editables), `wear` (los campos de desgaste), `textures` (las
+texturas de imagen y las etiquetas: abajo), `bevelRadiusMm`.
+
+**Texturas de imagen** (fase M2a, `src/core/textures.ts`). `textures`
+tiene seis **ranuras**, cada una vacía o con una imagen: `color`,
+`roughness`, `metal`, `normal`, `alpha` y `emission`; un **mapeado
+común** (`mapping`) y las **etiquetas** (`labels`). Cada ranura lleva la
+imagen (`ImageRef`: id, nombre, ancho y alto), su mapeado propio o `null`
+(usa el común), y cómo lee la imagen: `channel` (R, G, B, A o L,
+luminancia; las escalares —rugosidad, metal, alfa— leen un canal: glTF
+empaqueta la rugosidad en G y el metal en B), `invert` (1 − valor: un mapa
+de brillo como rugosidad), `strength` (normal: cuánto dobla la normal, el
+`scale` de glTF; emisión: el multiplicador de la radiancia), `height`
+(normal: es un mapa de alturas, de relieve, con `strength` en mm de
+relieve del blanco, y no uno de normales en espacio tangente), `cutout` y
+`cutoff` (alfa: recorte duro en el umbral, el `MASK` de glTF; sin él, el
+valor es una cobertura que mezcla) y `tint` (emisión: el color lineal que
+multiplica la imagen, el `emissiveFactor` de glTF). La imagen
+**multiplica** el valor del parámetro (color × color base, rugosidad ×
+rugosidad, metal × metal, alfa × opacidad), la regla de glTF, para que un
+material importado sea el del archivo; la emisión se **suma**: tinte ×
+imagen × intensidad, en radiancia (1 es blanco a exposición 0, como la
+película del motor). En un emisor (familia `EMISSIVE`) la ranura de color
+tiñe lo que emite.
+
+El **mapeado**: `projection` (`UV`, `BOX` caja, `PLANAR` plana,
+`CYLINDRICAL` cilíndrica, `SPHERICAL` esférica), `axis` (X, Y, Z: el eje
+por el que mira la plana, el del cilindro, el de los polos), `uvSet` (UV:
+el primer juego de la malla o el segundo), `sizeMm`, `rotationDeg`,
+`offset`, `repeat` (en u y v) y `wrap` (fuera de la imagen: *repetir*,
+*estirar el borde* o *espejo*). Convenciones, que son el contrato con la
+vista previa y con el motor (M2b): las coordenadas de textura tienen **v
+hacia arriba** y (0, 0) es la esquina inferior izquierda de la imagen (el
+convenio de OBJ, FBX, Collada y USD; la v de glTF baja y su lector la da
+la vuelta); un téxel se lee en la columna `u·ancho` y la fila `(1 − v)·alto`
+de las filas desde arriba. Las proyecciones trabajan en el espacio propio
+de la pieza (sus coordenadas de malla, mm, Z arriba): la textura se mueve,
+gira y escala con la pieza, y un material compartido cae igual en cada
+pieza que lo lleva. *Plana* mira por su eje (Z desde arriba, Y desde
+delante, X desde +X); *Caja* mezcla las tres por |n|⁴ (una cara
+perpendicular a un eje toma solo ese eje, un bisel a 45° mitad y mitad) y
+vista desde fuera ninguna cara sale en espejo; *Cilíndrica* da una vuelta
+por repetición con el centro de la imagen delante (−Y para el eje Z);
+*Esférica* va de polo a polo. Después, el giro y la repetición:
+`uv = R(giro)·(c ⊙ repetición) + desplazamiento` (más ½ en las
+proyecciones, que centran la imagen en el origen de la pieza).
+
+**Por qué el tamaño va en mm y no en tamaños de pieza**: una textura de
+imagen es la foto de algo con tamaño propio (veta, tejido, carbono, una
+etiqueta) que no depende de la pieza; el material se comparte entre piezas
+de tamaños distintos y viaja en la biblioteca a otros productos, y debe
+caer igual en todos; el motor trabaja en mm. `sizeMm` es lo que ocupa una
+repetición de la imagen a lo ancho (su alto sigue a las proporciones de la
+imagen; en la cilíndrica es la circunferencia para la que está dibujada,
+que fija su alto). La primera imagen de un material sin ninguna pone
+`sizeMm` al tamaño de la pieza, para que se vea entera de una vez;
+*Ajustar a la pieza* lo vuelve a hacer con el lado mayor de las piezas que
+lo llevan. El procedural (desgaste, veta y trama de E6) sigue en tamaños
+de pieza, porque es una receta y no una foto.
+
+**Etiquetas**: imágenes con alfa puestas sobre la pieza con una
+proyección plana desde la normal del punto donde se colocan: `origin`,
+`normal` y `uAxis` (la derecha de la imagen sin giro) en el espacio propio
+de la pieza, `widthMm` (el alto sigue a la imagen), `rotationDeg` (en
+torno a la normal, antihorario visto desde fuera), `depthMm` (hasta dónde
+llega delante y detrás de su plano; 0, la mitad de su lado mayor) y su
+acabado donde cubre: `roughness`, `coat` (barniz) y `relief` (cuánto
+sobresale el borde del papel). Cubre su rectángulo, a menos de su alcance
+de su plano y solo en las superficies que miran a su lado. Varias por
+material, en orden (cada una sobre las anteriores); como las proyecciones,
+viven en el espacio de la pieza: un material compartido las lleva en cada
+pieza (lo de KeyShot; para una pieza sola, *Convertir en material
+propio*).
+
+Las **imágenes** viven en el registro (`core/images.ts`) como el archivo
+PNG o JPEG que eran, con un id que nombra su contenido (`tex:` y 16
+cifras de su SHA-256): la misma imagen en dos materiales, o importada dos
+veces, es una. Límites: 16 MB y 8192 píxeles de lado por imagen, 64 MB de
+texturas por proyecto. Toda edición de ranuras, mapeados y etiquetas es
+una acción del *store* (`texture/*`), deshacible (un arrastre, una
+entrada), y convierte el material en propio. La biblioteca guarda el
+mapeado, no las imágenes.
 
 Familias y lo que significan para el motor:
 
@@ -349,6 +428,94 @@ modificado).
 **Normalización**: la irradiancia total de un montaje aplicado se iguala a
 la del rig del tipo de producto. Cambiar de montaje no cambia la
 exposición.
+
+**Sets** (fase L6). Un montaje puede ser un **set**: luces más lo que el
+producto refleja y donde se apoya. `LightSetup` gana campos opcionales
+(los 72 montajes anteriores no tienen ninguno y resuelven exactamente al
+mismo rig que antes): `backdrop` (`FLAT` color de fondo; `GRADIENT` dos
+colores, arriba y abajo del encuadre, que el motor recibe como imagen de
+fondo generada y estirada; `SWEEP` el fondo infinito de U9 en papel mate
+del color, que recibe luz y sombra), `pool` (el charco de luz en el fondo
+detrás del producto: `az`, `el`, `cone`, `share`, kelvin o color), `floor`
+(`CATCHER` el atrapasombras; `MATTE` mate de un color; `GLOSSY` y `MIRROR`
+un material del catálogo bajo el producto, con su `roughness` si la
+lleva), `cards` (tarjetas: planos de *Tarjeta blanca*, *Tarjeta negra* o
+aluminio cepillado como tarjeta plateada, con `az`, `el`, `dist`, `size`,
+`sizeY` y giro, de cara al producto), `exposureEv` (desvío sobre la
+exposición base del tipo de producto), `envStrength` (la cúpula mientras
+el set manda), `camera` (`el`, `focalMm`: sugerida, no se aplica sola),
+`hero` (el objeto de su miniatura), `why` (la razón fotográfica, dos
+frases, en la ayuda de su miniatura) y `caustics`. Los 16 sets son el
+estilo `SETS`, el primero del catálogo.
+
+- **Aplicar un set** (`studio/setSetup` con su clave) es una sola entrada
+  de deshacer: sus focos (normalizados como los de cualquier montaje; el
+  charco se lleva su `share` del nivel y las luces se reparten el resto),
+  su aspecto (fondo, cúpula, exposición base del tipo más el desvío; suelo
+  y sombra encendidos) y su **decoración**: primero el barrido (si el
+  fondo es `SWEEP`, o si es `FLAT` o `GRADIENT` con charco, que necesita
+  una pared donde caer), ajustado a la cámara activa como el de U9; luego
+  el suelo; luego las tarjetas; luego el charco. Una escena sin nada del
+  usuario recibe los focos y el aspecto; la decoración llega con el
+  producto (`studio/fitSet`, que la interfaz pide al cargar el ejemplo y al
+  importar, en la misma entrada de deshacer).
+- **El suelo.** Mate sobre un barrido es el propio barrido. Brillante o
+  espejo sobre un barrido es la cara *suelo* del barrido en ese material
+  (sin costura); si además hay charco, una lámina sobre el barrido que se
+  para al 55 % del camino hasta donde cae el charco (el charco cae en papel
+  y la lámina lo refleja). Sin barrido, un plano del tamaño del suelo que
+  vería el barrido de esa cámara, con el fondo (color o degradado) detrás
+  de su borde, a través del atrapasombras. El suelo **brillante** es
+  acrílico con una ligera bruma (`roughness` 0,12: emborrona un poco lo que
+  refleja, no es un espejo); el **espejo** es un espejo. *Contraluz líquido*
+  lleva su lámina a 0,2: el reflejo del contraluz es un resplandor suave.
+- **Las tiras en un suelo brillante.** En los sets de suelo `GLOSSY` o
+  `MIRROR`, la imagen especular de cada tira (un panel que se refleja, al
+  menos cuatro veces más largo que ancho) en el plano del suelo, vista con
+  la cámara del set (o la de referencia a 85 mm), cae detrás de la huella
+  del producto o fuera del encuadre: un test lo comprueba con tres formas
+  de producto y dos proporciones; la regla de diseño, si no, es subir la
+  tira de 10° en 10° a distancia 3.
+- **El charco** cae donde la cámara ve el fondo justo por encima del
+  producto: su rayo por lo alto de la caja del producto, en su lado más
+  lejano, sobre el barrido. Así es un halo que asoma detrás del producto a
+  cualquier altura de cámara. El foco se apunta desde detrás del producto
+  (el `az` y `el` del set, a 0,75 tamaños de pieza del pivote) y se pone en
+  esa línea tan cerca del papel que su luz, que cae con el ángulo y la
+  distancia (a la mitad a 37,5° de su eje), dibuja un charco tan ancho como
+  el cono del set lo dibujaría a 2,5 tamaños de pieza (`POOL_THROW`). Su
+  cono es de 150° y suave desde el eje: el charco no tiene borde. Su
+  potencia hace que en su centro llegue su `share` del nivel medido a esa
+  distancia y de frente al papel (compensa hasta 72° de incidencia). No se
+  ve a cámara ni en reflejos.
+- **Las tarjetas** miran al pivote, con el ancho paralelo al suelo; una
+  que atravesaría el suelo se sube sin girarla hasta apoyarse en él. Por
+  construcción quedan **fuera del encuadre**: un test lo comprueba para
+  cada tarjeta con la focal de los 16 tipos de producto, tres formas de
+  producto, tres proporciones de salida y la cámara del set.
+- **Decoración del set.** Cada pieza lleva `setPiece` (`CARD`, `BACKDROP`,
+  `FLOOR`; el charco, en su foco) y es decoración: no cuenta para el
+  tamaño de pieza, el pivote del rig ni *Encuadrar* sin selección, y el
+  Doctor no la mira. Aplicar otro montaje la sustituye (las piezas del
+  usuario, primitivas incluidas, no se tocan); un montaje que no es un set
+  la quita y devuelve el fondo, la cúpula y la exposición del tipo de
+  producto; **Restablecer montaje** la quita y devuelve los focos del set
+  como eran; *Crear estudio* con un set en vigor lo vuelve a poner,
+  ajustado al nuevo encuadre. Elegir el set otra vez la devuelve.
+- **Usar la cámara del set** (`studio/useSetCamera`): la elevación y la
+  focal que sugiere, el producto encuadrado de nuevo y el barrido, el
+  suelo y el charco ajustados a la nueva vista (las tarjetas no se
+  mueven); una entrada de deshacer; no hace nada con la cámara bloqueada.
+- **Los tipos de producto son sets.** 15 de los 16 tipos de producto son un
+  set (`StudioPreset.set`, `PRESET_SETS`): sus focos son los del set, al
+  nivel de irradiancia que tenía el tipo (los montajes que se normalizan a
+  él no cambian), y con su rig propio (el montaje *El del tipo de
+  producto*, `PRESET`, que es el de *Crear estudio*) traen también la
+  decoración y el aspecto del set; el desvío de exposición del set está
+  sumado a la `exposure` del tipo, y cualquier otro montaje parte de la
+  exposición de antes (`baseExposure`, `setupExposure`). El suelo y la
+  sombra son los del tipo. *Mobiliario exterior* conserva su sol: no es un
+  set.
 
 **Luces propias, al estilo KeyShot** (fase L4). Además de los montajes, se
 pueden **añadir focos** desde la pestaña *Luces* (*+ Añadir luz ▸*), desde
@@ -464,8 +631,8 @@ el horizonte, 0.85 en el cenit; ilumina y se refleja, no necesita ningún
 archivo), `SKY` (sol y cielo procedurales a partir del foco de tipo sol),
 `FLAT` (color liso), `HDRI` (archivo del usuario, con rotación e
 intensidad). Lo que ilumina y lo que ve la cámara se separan: el fondo
-puede ser el entorno, un color, transparente o una imagen, sin cambiar la
-luz.
+puede ser el entorno, un color, un degradado de dos colores (L6),
+transparente o una imagen, sin cambiar la luz.
 
 `EnvironmentState` (E5) guarda además `hdri` y `backplate` (`ImageRef`:
 id, nombre, ancho y alto; los bytes viven en el registro de imágenes,
@@ -636,8 +803,9 @@ de KeyShot, y no en la barra inferior. Un **trabajo de render**
 (`RenderJob`) guarda: modo (*imagen* o *animación*), nombre como
 plantilla, carpeta de destino (en el navegador, *Descargas* o una
 carpeta elegida con el acceso al sistema de archivos donde exista),
-formato (PNG 8/16 bits, JPEG con calidad, EXR lineal), fondo
-transparente, pases (fase posterior: alfa, profundidad, normales, id de
+formato (PNG 8/16 bits, JPEG con calidad, EXR lineal, TIFF de 8/16 bits
+sRGB o 32 bits lineal, RAW DNG lineal), fondo
+transparente (no en JPEG ni en DNG), pases (fase posterior: alfa, profundidad, normales, id de
 pieza), cámara (una o todas), tamaño en píxeles con su tamaño de
 impresión y **ppp** (los píxeles mandan; los ppp se escriben en el
 archivo), **terminar por** muestras o por tiempo (o lo que llegue antes,
@@ -659,7 +827,11 @@ compararlas con un divisor deslizable.
 
 Un **estudio** guarda una cámara, un montaje de luz y entorno, un set de
 materiales por pieza y la visibilidad de piezas; restaurarlo es una sola
-acción deshacible. El **proyecto** es el estado completo en un archivo
+acción deshacible. Con un set de L6 (§3.4) en vigor, el estudio guarda sus
+focos (el charco incluido) y su fondo; sus tarjetas, barrido y suelo son
+piezas de la escena y se quedan en ella. Fondo `GRADIENT` (L6): el entorno
+guarda sus dos colores (`gradient`), en el proyecto y en los estudios de la
+biblioteca. El **proyecto** es el estado completo en un archivo
 `.repack.json`, con las mallas dentro.
 
 La **biblioteca propia** guarda lo que el usuario crea y quiere reutilizar
@@ -729,7 +901,34 @@ importar con calidad ajustable, conservando **cada cara CAD** como rango
 de triángulos (lo que hace que *Caras* seleccione una cara entera) y los
 **colores y nombres** del ensamblaje. FBX trae jerarquía, materiales,
 texturas incrustadas y unidades. Los formatos de malla traen lo que
-traen; el importador reconstruye normales y aristas vivas si faltan.
+traen; el importador reconstruye normales y aristas vivas si faltan, y
+conserva las normales por vértice del archivo cuando las trae.
+
+**Materiales y texturas del archivo** (fase M2a). glTF y GLB traen sus
+materiales leídos de su propio JSON: el PBR metálico-rugoso (color base,
+metal-rugosidad con G rugosidad y B metal, normal con su `scale`, emisión
+con su factor y `KHR_materials_emissive_strength`, `alphaMode` y
+`alphaCutoff`; la oclusión no tiene ranura y se avisa),
+`KHR_materials_transmission`, `_ior` y `_clearcoat`, y
+`KHR_texture_transform` y el muestreador de cada mapa como su mapeado. OBJ
+lee sus bibliotecas `.mtl` (`Kd`, `Ks`, `Ns`, `d`/`Tr`, `Ni`, `Ke` y la
+extensión PBR `Pr`, `Pm`, `Pc`; `map_Kd`, `map_Pr`, `map_Ns`/`map_Ks` como
+rugosidad invertida, `map_Pm`, `map_d`, `norm`, `map_Bump`/`bump` como
+mapa de alturas salvo que su nombre diga que es de normales, `map_Ke`, con
+`-s`, `-o`, `-bm`, `-clamp` e `-imfchan`). FBX, Collada, 3MF, USD y 3DM
+traen los mapas que su lector de three.js carga (color, rugosidad, metal,
+normal o relieve, alfa, emisión, con su transformación). Las imágenes y
+bibliotecas que un modelo nombra y no lleva dentro (las de un OBJ, un
+`.gltf` con sus `.bin`, un FBX o un `.dae` con sus imágenes) se buscan
+entre los archivos **elegidos o soltados con él**, por nombre. Las UV se
+guardan por vértice, y un segundo juego si lo hay (glTF `TEXCOORD_1`, FBX
+`uv1`). Las imágenes PNG y JPEG viajan en el proyecto tal cual; las demás
+se pasan a PNG en el navegador cuando el lector las ha decodificado, y las
+que no, se dejan fuera. La hoja dice cuántas imágenes se guardan y cuánto
+pesan, y cada una que no (más de 16 MB, más de 8192 píxeles de lado, no
+es PNG ni JPEG, no estaba entre los archivos elegidos, el proyecto ya
+lleva 64 MB) y por qué; con *material predeterminado* no se importa
+ninguna.
 
 **Hoja de importación** (en línea, no modal), con los valores por defecto
 ya puestos: **unidades** del archivo (mm, cm, m, pulgadas; detectadas

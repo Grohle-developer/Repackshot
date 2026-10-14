@@ -1,6 +1,7 @@
 //! Command line parsing and the `rt` command itself.
 
-use crate::{render_progressive, sheet, write_png};
+use crate::{encode_film, render_progressive, sheet, write_file, OutputFormat, OutputSpec};
+use rt_core::color::Tonemap;
 use rt_core::scene::{RenderSettings, Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -11,7 +12,7 @@ rt: Repackshot command line renderer
 
 USAGE:
     rt <scene.rsb> -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
-       [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R]
+       [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R] [--format F] [--bits N]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
@@ -23,7 +24,13 @@ USAGE:
     rt --tone-table
 
 OPTIONS:
-    -o, --output <file>     PNG file to write
+    -o, --output <file>     image file to write (PNG, or TIFF or DNG with --format or by extension)
+        --format <F>        png (the default), tiff or dng; without it, the output's extension
+                            decides: .tif and .tiff are TIFF, .dng is DNG, anything else PNG
+        --bits <N>          bits per channel: PNG 8; TIFF 8 (default), 16 (sRGB) or 32 (float,
+                            linear light, exposure applied, no tone curve); DNG 32. A DNG is a
+                            linear raw a photo developer opens with the whole latitude of the
+                            render
         --samples <N>       samples per pixel (default: the scene's, else 16; sheet: 64)
         --threads <N>       worker threads (default: all cores)
         --size <WxH>        image size in pixels, overriding the scene (sheet: 480x360)
@@ -89,6 +96,10 @@ pub struct Options {
     pub caustics: Option<u32>,
     /// First caustic gather radius in pixels, overriding the scene's.
     pub caustic_radius: Option<f32>,
+    /// `--format`: the file format (else the output's extension decides).
+    pub format: Option<OutputFormat>,
+    /// `--bits`: bits per channel.
+    pub bits: Option<u32>,
 }
 
 impl Options {
@@ -211,6 +222,15 @@ fn seconds(text: &str, flag: &str) -> Result<f32, String> {
     }
 }
 
+fn parse_format(text: &str) -> Result<OutputFormat, String> {
+    match text.to_ascii_lowercase().as_str() {
+        "png" => Ok(OutputFormat::Png),
+        "tiff" | "tif" => Ok(OutputFormat::Tiff),
+        "dng" => Ok(OutputFormat::Dng),
+        _ => Err(format!("--format expects png, tiff or dng, got '{text}'")),
+    }
+}
+
 fn parse_size(text: &str) -> Result<(u32, u32), String> {
     let bad = || format!("--size expects WxH such as 1280x720, got '{text}'");
     let (w, h) = text.split_once(['x', 'X']).ok_or_else(bad)?;
@@ -270,6 +290,14 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                 options.caustic_radius = Some(seconds(value(&mut it, arg)?, arg).map_err(|_| {
                     "--caustic-radius expects a non-negative number of pixels".to_string()
                 })?)
+            }
+            "--format" => options.format = Some(parse_format(value(&mut it, arg)?)?),
+            "--bits" => {
+                let text = value(&mut it, arg)?;
+                match text.parse::<u32>() {
+                    Ok(n @ (8 | 16 | 32)) => options.bits = Some(n),
+                    _ => return Err(format!("--bits expects 8, 16 or 32, got '{text}'")),
+                }
             }
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--example" => {
@@ -338,13 +366,23 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         return Ok(Command::WriteExample { path });
     }
     if let Some(dir) = sheet_dir {
-        if input.is_some() || output.is_some() || options.max_seconds.is_some() {
-            return Err("--sheet renders its own scenes: no scene, -o or --max-seconds".into());
+        if input.is_some()
+            || output.is_some()
+            || options.max_seconds.is_some()
+            || options.format.is_some()
+            || options.bits.is_some()
+        {
+            return Err(
+                "--sheet renders its own scenes: no scene, -o, --max-seconds, --format or --bits"
+                    .into(),
+            );
         }
         return Ok(Command::Sheet { dir, options });
     }
     let input = input.ok_or("no scene given: pass a .rsb file or --example")?;
     let output = output.ok_or("no output given: pass -o <out.png>")?;
+    // Refused here, with the usage, not after the render.
+    OutputSpec::resolve(options.format, options.bits, &output)?;
     Ok(Command::Render {
         input,
         output,
@@ -472,11 +510,14 @@ pub fn run(command: Command) -> Result<(), String> {
                 result.rays_per_second() / 1.0e6
             );
 
-            let tone = |film: &rt_core::image::Film| {
-                film.to_srgb8_tonemapped(
-                    scene.render.exposure_ev,
-                    rt_core::color::Tonemap::from_u32(scene.render.tonemap),
-                )
+            let spec = OutputSpec::resolve(options.format, options.bits, &output)?;
+            let (exposure_ev, tonemap) = (
+                scene.render.exposure_ev,
+                Tonemap::from_u32(scene.render.tonemap),
+            );
+            let write = |path: &std::path::Path, film: &rt_core::image::Film| {
+                write_file(path, &encode_film(film, exposure_ev, tonemap, spec))
+                    .map_err(|e| format!("{}: {e}", path.display()))
             };
             if scene.render.denoise & DENOISE_IMAGE != 0 {
                 let t0 = std::time::Instant::now();
@@ -484,18 +525,15 @@ pub fn run(command: Command) -> Result<(), String> {
                     .denoised(threads)
                     .ok_or("the denoiser found no guide passes")?;
                 println!("denoised in {:.3} s", t0.elapsed().as_secs_f64());
-                write_png(&output, width, height, &tone(&clean))
-                    .map_err(|e| format!("{}: {e}", output.display()))?;
+                write(&output, &clean)?;
                 println!("wrote {}", output.display());
                 if scene.render.denoise & DENOISE_KEEP_NOISY != 0 {
                     let noisy = noisy_path(&output);
-                    write_png(&noisy, width, height, &result.to_rgb8(&scene))
-                        .map_err(|e| format!("{}: {e}", noisy.display()))?;
+                    write(&noisy, &result.film)?;
                     println!("wrote {}", noisy.display());
                 }
             } else {
-                write_png(&output, width, height, &result.to_rgb8(&scene))
-                    .map_err(|e| format!("{}: {e}", output.display()))?;
+                write(&output, &result.film)?;
                 println!("wrote {}", output.display());
             }
             Ok(())
@@ -506,6 +544,7 @@ pub fn run(command: Command) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{OutputFormat, OutputSpec};
 
     fn parse(args: &[&str]) -> Result<Command, String> {
         parse_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
@@ -590,6 +629,59 @@ mod tests {
     }
 
     #[test]
+    fn the_output_format_comes_from_the_flags_or_the_extension() {
+        let spec = |args: &[&str]| {
+            let Ok(Command::Render {
+                output, options, ..
+            }) = parse(args)
+            else {
+                panic!("{args:?} should parse");
+            };
+            OutputSpec::resolve(options.format, options.bits, &output).unwrap()
+        };
+        let tiff = |bits| OutputSpec {
+            format: OutputFormat::Tiff,
+            bits,
+        };
+        assert_eq!(
+            spec(&["--example", "-o", "a.png"]),
+            OutputSpec {
+                format: OutputFormat::Png,
+                bits: 8
+            }
+        );
+        assert_eq!(spec(&["--example", "-o", "a.tif"]), tiff(8));
+        assert_eq!(
+            spec(&["--example", "-o", "a.TIFF", "--bits", "16"]),
+            tiff(16)
+        );
+        assert_eq!(
+            spec(&[
+                "--example",
+                "-o",
+                "a.out",
+                "--format",
+                "tiff",
+                "--bits",
+                "32"
+            ]),
+            tiff(32)
+        );
+        let dng = OutputSpec {
+            format: OutputFormat::Dng,
+            bits: 32,
+        };
+        assert_eq!(spec(&["--example", "-o", "a.dng"]), dng);
+        assert_eq!(spec(&["--example", "-o", "a.raw", "--format", "dng"]), dng);
+        assert_eq!(spec(&["--example", "-o", "a.dng", "--bits", "32"]), dng);
+        // The flag wins over the extension.
+        assert_eq!(
+            spec(&["--example", "-o", "a.tif", "--format", "png"]).format,
+            OutputFormat::Png
+        );
+    }
+
+    #[test]
     fn parses_write_example_and_help() {
         assert_eq!(
             parse(&["--write-example", "s.rsb"]),
@@ -653,6 +745,24 @@ mod tests {
             &["--sheet", "d", "-o", "o.png"],
             &["--example", "-o", "o.png", "--max-seconds", "-1"],
             &["--example", "-o", "o.png", "--max-seconds", "soon"],
+            &["--example", "-o", "o.png", "--format", "jpeg"],
+            &["--example", "-o", "o.png", "--format"],
+            &["--example", "-o", "o.tif", "--bits", "12"],
+            &["--example", "-o", "o.tif", "--bits", "many"],
+            // A PNG is 8-bit and a DNG is 32-bit float: the mismatch is refused before rendering.
+            &["--example", "-o", "o.png", "--bits", "16"],
+            &["--example", "-o", "o.dng", "--bits", "8"],
+            &[
+                "--example",
+                "-o",
+                "o.tif",
+                "--format",
+                "dng",
+                "--bits",
+                "16",
+            ],
+            &["--sheet", "d", "--format", "tiff"],
+            &["--sheet", "d", "--bits", "16"],
         ] {
             assert!(parse(bad).is_err(), "{bad:?} should be rejected");
         }
@@ -673,6 +783,7 @@ mod tests {
             keep_noisy: true,
             caustics: Some(4096),
             caustic_radius: Some(2.0),
+            ..Options::default()
         }
         .apply(&mut scene);
         assert_eq!((samples, threads), (3, 5));

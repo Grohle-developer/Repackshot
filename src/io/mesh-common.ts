@@ -34,6 +34,8 @@ export interface ParsedPart {
 
 export interface ParsedModel {
   parts: ParsedPart[];
+  /** OBJ: the material libraries the file names (`mtllib`), in order. */
+  libraries?: string[];
   /** Data that was repaired or dropped. */
   warnings: ImportMessage[];
   /** Informational. */
@@ -76,3 +78,35 @@ export function largestDimension(arrays: readonly ArrayLike<number>[]): number {
   if (!Number.isFinite(min[0])) return 0;
   return Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
 }
+
+// --- Materials and the files dropped with a model (M2a) ----------------------------------------------
+
+/** Roughness for a Blinn-Phong material: the GGX alpha that has the same lobe, as `r = alpha^(1/2)`. */
+export function roughnessFromShininess(shininess: number, specularLuma: number): number {
+  if (specularLuma < 0.02) return 1;
+  return Math.min(1, Math.max(0.05, (2 / (Math.max(shininess, 0) + 2)) ** 0.25));
+}
+
+/** Files dropped with a model (its textures, its material library), by name. */
+export type Companions = ReadonlyMap<string, Blob>;
+
+/** The last part of a path or URL, decoded, lower case: how a file the model names is found among its companions. */
+export function companionKey(path: string): string {
+  const last = path.split(/[\\/]/).pop() ?? path;
+  let name = last.split('?')[0];
+  try {
+    name = decodeURIComponent(name);
+  } catch {
+    // Not URI-encoded.
+  }
+  return name.toLowerCase();
+}
+
+/** A companion by the name a model gives it (any folder, any case), or undefined. */
+export function findCompanion(companions: Companions | undefined, path: string): Blob | undefined {
+  if (!companions) return undefined;
+  const key = companionKey(path);
+  for (const [name, blob] of companions) if (companionKey(name) === key) return blob;
+  return undefined;
+}
+

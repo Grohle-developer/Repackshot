@@ -325,6 +325,16 @@ export function settingsWindow(ctx: Ctx, scope: Scope): HTMLElement {
         renderNav();
         return;
       }
+      // A question in the window (UI.md §4.3: Free the cache, Install and restart) takes the Esc: it cancels the
+      // question, not the window.
+      const question = win.querySelector<HTMLElement>('.confirm');
+      if (question && target && question.contains(target)) return;
+      if (question) {
+        e.preventDefault();
+        e.stopPropagation();
+        question.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        return;
+      }
       // A field being typed in keeps its own Esc (it restores its value).
       if (isTyping(e) && target?.getAttribute?.('role') !== 'spinbutton' && target !== search) return;
       e.preventDefault();

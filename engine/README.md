@@ -113,8 +113,16 @@ cargo run --release -p rt-cli -- --write-studio-hdri studio.hdr   # the procedur
 cargo run --release -p rt-cli -- --tone-table > tones.json   # the tone curves' reference values
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 64 --threads 4 --size 1280x720
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 4096 --max-seconds 30
+cargo run --release -p rt-cli -- scene.rsb -o out.tif --bits 16   # TIFF: 8 (default), 16 (sRGB) or 32 (float, linear light)
+cargo run --release -p rt-cli -- scene.rsb -o out.dng              # a linear raw DNG: opens in a photo developer like a camera raw
 cargo run --release -p rt-cli -- --sheet ../out/sheet          # the contact sheet (below)
 ```
+
+`--format png|tiff|dng` chooses the file; without it the extension of `-o` does (`.tif`, `.tiff`, `.dng`; anything else is a PNG).
+A PNG is 8-bit; a TIFF is uncompressed RGB (`--bits 8`, the default, `16`, or `32`: floats in linear light with the exposure
+applied and no tone curve, like an EXR); a DNG is always 32-bit float. They are written by `rt_core::tiff` and `rt_core::dng`
+(std only, from the TIFF 6.0 and DNG 1.4 specifications); the interface writes the same bytes, and `tests/fixtures/tiff/` holds
+the files both sides are compared with (`REPACK_WRITE_GOLDEN=1 cargo test -p rt-cli --test tiff_golden` rewrites them).
 
 The CLI prints the scene and image size, the SIMD path and BVH width in use, the samples
 rendered, the number of rays (camera, bounce and shadow rays) and rays per second.

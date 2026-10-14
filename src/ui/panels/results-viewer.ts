@@ -28,6 +28,14 @@ async function bitmap(blob: Blob | null | undefined): Promise<SplitImage | null>
 }
 
 /**
+ * The blob the viewer decodes for a result's own image: the 8-bit picture the history keeps beside a file a browser
+ * cannot show (EXR, TIFF, DNG), else the file itself.
+ */
+export function previewOf(blobs: { file: Blob; display: Blob | null }): Blob {
+  return blobs.display ?? blobs.file;
+}
+
+/**
  * The images of a result: the engine's (what the browser can show), and the AI's when it has one: `variant` (1-based,
  * X4b), and a way to decode any other variant when it is chosen.
  */
@@ -40,7 +48,7 @@ async function decode(ctx: Ctx, id: string, variant = 1): Promise<{ render: Spli
     if (!cache.has(n)) cache.set(n, bitmap(list[n - 1]));
     return cache.get(n)!;
   };
-  return { render: await bitmap(blobs.display ?? blobs.file), ai: await of(variant), variant: of };
+  return { render: await bitmap(previewOf(blobs)), ai: await of(variant), variant: of };
 }
 
 /** "1920 × 1080 · 300 DPI · 256 samples · 1:24 · Camera 1" */

@@ -14,6 +14,8 @@ export interface MeshData {
   normals: Float32Array;
   indices: Uint32Array;
   uvs?: Float32Array;
+  /** A second set of texture coordinates (glTF TEXCOORD_1, FBX's second UV channel), kept for the slots that name it (M2a). */
+  uvs2?: Float32Array;
   /**
    * Hard edges, as pairs of vertex indices (`[a0, b0, a1, b1, ...]`). An edge
    * is hard when the angle between its two faces exceeds the smoothing angle.
@@ -143,10 +145,12 @@ export function sliceMesh(src: MeshData, tris: readonly number[]): { mesh: MeshD
   const positions = new Float32Array(order.length * 3);
   const normals = new Float32Array(order.length * 3);
   const uvs = src.uvs ? new Float32Array(order.length * 2) : undefined;
+  const uvs2 = src.uvs2 ? new Float32Array(order.length * 2) : undefined;
   order.forEach((v, r) => {
     positions.set(src.positions.subarray(3 * v, 3 * v + 3), 3 * r);
     normals.set(src.normals.subarray(3 * v, 3 * v + 3), 3 * r);
     if (uvs && src.uvs) uvs.set(src.uvs.subarray(2 * v, 2 * v + 2), 2 * r);
+    if (uvs2 && src.uvs2) uvs2.set(src.uvs2.subarray(2 * v, 2 * v + 2), 2 * r);
   });
   const b = positionsBounds(positions);
   const centre: [number, number, number] = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
@@ -170,7 +174,7 @@ export function sliceMesh(src: MeshData, tris: readonly number[]): { mesh: MeshD
     }
     sharp = Uint32Array.from(keep);
   }
-  return { mesh: { positions, normals, indices, uvs, sharpEdges: sharp }, centre };
+  return { mesh: { positions, normals, indices, uvs, ...(uvs2 ? { uvs2 } : {}), sharpEdges: sharp }, centre };
 }
 
 // --- Building a mesh from a triangle soup (moved from io/mesh-common.ts) -----------------
@@ -237,14 +241,14 @@ export class FloatBuffer {
 // --- Hash table of 32-bit word keys ------------------------------------------------------
 
 /**
- * Maps keys of up to six unsigned 32-bit words to consecutive ids (0, 1, 2...
+ * Maps keys of up to eight unsigned 32-bit words to consecutive ids (0, 1, 2...
  * in insertion order). Open addressing; no allocation per lookup.
  */
 export class KeyTable {
   private keys: Uint32Array;
   private slots: Int32Array;
   private mask: number;
-  private readonly scratch = new Uint32Array(6);
+  private readonly scratch = new Uint32Array(8);
   count = 0;
 
   constructor(
@@ -285,7 +289,7 @@ export class KeyTable {
   }
 
   /** The id of the key, adding it when it is new (`count` grows by one). */
-  getOrAdd(a: number, b = 0, c = 0, d = 0, e = 0, f = 0): number {
+  getOrAdd(a: number, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, k = 0): number {
     const s = this.scratch;
     s[0] = a;
     s[1] = b;
@@ -293,6 +297,8 @@ export class KeyTable {
     s[3] = d;
     s[4] = e;
     s[5] = f;
+    s[6] = g;
+    s[7] = k;
     const w = this.width;
     let slot = this.hash() & this.mask;
     for (;;) {
@@ -332,6 +338,8 @@ export interface RawMesh {
   normals?: Float32Array | null;
   /** 6 floats per triangle. */
   uvs?: Float32Array | null;
+  /** The second set, 6 floats per triangle (only with `uvs`). */
+  uvs2?: Float32Array | null;
   /** 3 floats per triangle: the normal a file stores for the facet (STL). Fallback only. */
   facetNormals?: Float32Array | null;
 }
@@ -588,6 +596,7 @@ export function buildMesh(raw: RawMesh, options: BuildOptions = {}): BuiltMesh |
   // Render vertices: one per (welded position, smoothing group), or per distinct file normal.
   const hasNormals = !!raw.normals;
   const hasUvs = !!raw.uvs;
+  const hasUvs2 = hasUvs && !!raw.uvs2;
   const cornerNormal = new Float32Array(hasNormals ? 9 * K : 0);
   if (hasNormals) {
     for (let k = 0; k < K; k++) {
@@ -614,7 +623,10 @@ export function buildMesh(raw: RawMesh, options: BuildOptions = {}): BuiltMesh |
   const nbits = new Uint32Array(cornerNormal.buffer);
   const uvBits = hasUvs ? new Uint32Array(raw.uvs!.buffer, raw.uvs!.byteOffset, raw.uvs!.length) : null;
   if (hasUvs) for (let i = 0; i < raw.uvs!.length; i++) if (raw.uvs![i] === 0) raw.uvs![i] = 0;
-  const rvTable = new KeyTable((hasNormals ? 4 : 2) + (hasUvs ? 2 : 0), Math.min(3 * K, 1 << 20));
+  if (hasUvs2) for (let i = 0; i < raw.uvs2!.length; i++) if (raw.uvs2![i] === 0) raw.uvs2![i] = 0;
+  // With a second set, a render vertex is one corner's whole tuple: the first set and the second are hashed together.
+  const uv2Bits = hasUvs2 ? new Uint32Array(raw.uvs2!.buffer, raw.uvs2!.byteOffset, raw.uvs2!.length) : null;
+  const rvTable = new KeyTable((hasNormals ? 4 : 2) + (hasUvs ? 2 : 0) + (hasUvs2 ? 2 : 0), Math.min(3 * K, 1 << 20));
   const rvOf = new Uint32Array(3 * K);
   const rvCorner: number[] = [];
   for (let k = 0; k < K; k++) {
@@ -623,7 +635,12 @@ export function buildMesh(raw: RawMesh, options: BuildOptions = {}): BuiltMesh |
       const sc = 3 * kept[k] + j;
       let id: number;
       const before = rvTable.count;
-      if (hasNormals) {
+      if (uv2Bits) {
+        const n0 = hasNormals ? nbits[3 * c] : find(c);
+        id = hasNormals
+          ? rvTable.getOrAdd(tri[c], n0, nbits[3 * c + 1], nbits[3 * c + 2], uvBits![2 * sc], uvBits![2 * sc + 1], uv2Bits[2 * sc], uv2Bits[2 * sc + 1])
+          : rvTable.getOrAdd(tri[c], n0, uvBits![2 * sc], uvBits![2 * sc + 1], uv2Bits[2 * sc], uv2Bits[2 * sc + 1]);
+      } else if (hasNormals) {
         const u0 = uvBits ? uvBits[2 * sc] : 0;
         const u1 = uvBits ? uvBits[2 * sc + 1] : 0;
         id = hasUvs
@@ -641,6 +658,7 @@ export function buildMesh(raw: RawMesh, options: BuildOptions = {}): BuiltMesh |
   const positions = new Float32Array(3 * R);
   const normals = new Float32Array(3 * R);
   const uvs = hasUvs ? new Float32Array(2 * R) : undefined;
+  const uvs2 = hasUvs2 ? new Float32Array(2 * R) : undefined;
   for (let v = 0; v < R; v++) {
     const c = rvCorner[v];
     const w = tri[c];
@@ -649,6 +667,10 @@ export function buildMesh(raw: RawMesh, options: BuildOptions = {}): BuiltMesh |
       const sc = 3 * kept[Math.floor(c / 3)] + (c % 3);
       uvs[2 * v] = raw.uvs![2 * sc];
       uvs[2 * v + 1] = raw.uvs![2 * sc + 1];
+      if (uvs2) {
+        uvs2[2 * v] = raw.uvs2![2 * sc];
+        uvs2[2 * v + 1] = raw.uvs2![2 * sc + 1];
+      }
     }
   }
   if (hasNormals) {
@@ -696,7 +718,7 @@ export function buildMesh(raw: RawMesh, options: BuildOptions = {}): BuiltMesh |
     sharpEdges[o++] = Math.max(a, b);
   }
 
-  return { data: { positions, normals, indices: rvOf, uvs, sharpEdges }, dropped, source };
+  return { data: { positions, normals, indices: rvOf, uvs, ...(uvs2 ? { uvs2 } : {}), sharpEdges }, dropped, source };
 }
 
 // --- Welding by position -------------------------------------------------------------------------
@@ -796,7 +818,7 @@ export function flipMesh(src: MeshData): MeshData {
     indices[i + 1] = indices[i + 2];
     indices[i + 2] = t;
   }
-  return { positions: src.positions, normals, indices, uvs: src.uvs, sharpEdges: src.sharpEdges };
+  return { positions: src.positions, normals, indices, uvs: src.uvs, ...(src.uvs2 ? { uvs2: src.uvs2 } : {}), sharpEdges: src.sharpEdges };
 }
 
 /**
@@ -809,14 +831,16 @@ export function resmoothMesh(src: MeshData, smoothDeg: number): { data: MeshData
   const T = Math.floor(src.indices.length / 3);
   const positions = new Float32Array(T * 9);
   const uvs = src.uvs ? new Float32Array(T * 6) : null;
+  const uvs2 = src.uvs && src.uvs2 ? new Float32Array(T * 6) : null;
   for (let t = 0; t < T; t++) {
     for (let j = 0; j < 3; j++) {
       const v = src.indices[3 * t + j];
       positions.set(src.positions.subarray(3 * v, 3 * v + 3), 9 * t + 3 * j);
       if (uvs && src.uvs) uvs.set(src.uvs.subarray(2 * v, 2 * v + 2), 6 * t + 2 * j);
+      if (uvs2 && src.uvs2) uvs2.set(src.uvs2.subarray(2 * v, 2 * v + 2), 6 * t + 2 * j);
     }
   }
-  const built = buildMesh({ positions, uvs }, { smoothDeg });
+  const built = buildMesh({ positions, uvs, uvs2 }, { smoothDeg });
   return built ? { data: built.data, source: built.source } : null;
 }
 

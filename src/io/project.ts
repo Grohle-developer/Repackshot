@@ -24,6 +24,13 @@
 // again on open; one that is missing or does not decode is dropped from the environment (the studio dome lights,
 // the colour shows) and reported, never a reason not to open the project.
 //
+// Texture images (M2a) travel in the same block, after the environment's: every PNG or JPEG a material's slots
+// or labels name, once, as its file's bytes (base64), under its content id (`tex:…`, core/texture-images.ts), so
+// a project saved and opened again gives back the same bytes under the same ids. On open they go back to the
+// registry without decoding; a slot or a label whose image is missing or is not a PNG or JPEG is dropped from its
+// material and counted with the missing images. The materials' `textures` are read through
+// `normalizeTextures` (core/textures.ts), which also takes the flat shape of files written before M2a.
+//
 // Schema history (each step a pure function over the state, applied in order on load):
 //   1 (U1) — the state as it was.
 //   2 (U5) — `render` is the render window's settings and a queue of full `RenderJob`s (core/render.ts
@@ -52,6 +59,9 @@ import {
 } from '../core/meshes';
 import { normalizeOptics } from '../core/optics';
 import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
+import { checkTextureFile, registerTextureImage, textureImageId } from '../core/texture-images';
+import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
+import type { MaterialInstance } from '../core/materials';
 import { migrateRender } from '../core/render';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
@@ -150,11 +160,12 @@ export function serializeProject(state: ProjectState): Blob {
     first = false;
   }
   parts.push(first ? ']' : '\n ]');
-  // The environment's images, as their files.
-  const images = environmentImages(state).filter(([, ref]) => getImage(ref.id));
+  // The environment's images and the texture images (M2a), as their files.
+  const images: ImageRef[] = environmentImages(state).filter(([, ref]) => getImage(ref.id)).map(([, ref]) => ref);
+  for (const ref of textureImages(state).values()) if (getImage(ref.id) && !images.some((r) => r.id === ref.id)) images.push(ref);
   if (images.length > 0) {
     parts.push(',\n "images": [');
-    images.forEach(([, ref], i) => {
+    images.forEach((ref, i) => {
       try {
         parts.push(`${i === 0 ? '' : ','}\n  ${imageEntry(ref, getImage(ref.id)!)}`);
       } catch (err) {
@@ -288,6 +299,10 @@ function checkState(raw: RawState): ProjectState {
   if (Object.keys(emptied).length > 0) s.scene = { ...s.scene, nodes: { ...nodes, ...emptied } };
   if (!isObject(s.materials)) throw damaged('materials is not a list of materials');
   for (const [id, m] of Object.entries(s.materials)) if (!isObject(m) || m.id !== id) throw damaged(`materials.${id} is not a material`);
+  // M2a: the image maps and labels, read whatever shape they were written in (core/textures.ts).
+  const materials: Record<string, MaterialInstance> = {};
+  for (const [id, m] of Object.entries(s.materials)) materials[id] = { ...m, textures: normalizeTextures(m.textures) };
+  s.materials = materials;
   if (!isObject(s.camera.cameras) || !isObject(s.camera.cameras[s.camera.active])) throw damaged('camera.active is not a camera');
   for (const [id, c] of Object.entries(s.camera.cameras)) if (!isObject(c) || c.id !== id) throw damaged(`camera.cameras.${id} is not a camera`);
   // O1: a camera's optics (absent on cameras saved before O1, which keep the plain thin lens) within the engine's limits.
@@ -375,9 +390,9 @@ function decodeMesh(entry: unknown, index: number): { id: MeshId; mesh: DecodedM
   } catch (err) {
     throw fail(err instanceof Error ? err.message : String(err));
   }
-  const { positions, normals, indices, uvs } = glb.mesh;
+  const { positions, normals, indices, uvs, uvs2 } = glb.mesh;
   const vertices = positions.length / 3;
-  if (!Number.isInteger(vertices) || normals.length !== positions.length || indices.length % 3 !== 0 || (uvs && uvs.length !== 2 * vertices)) throw fail('the arrays do not fit together');
+  if (!Number.isInteger(vertices) || normals.length !== positions.length || indices.length % 3 !== 0 || (uvs && uvs.length !== 2 * vertices) || (uvs2 && uvs2.length !== 2 * vertices)) throw fail('the arrays do not fit together');
   for (let i = 0; i < positions.length; i++) if (!Number.isFinite(positions[i]) || !Number.isFinite(normals[i])) throw fail('a position or normal is not a number');
   for (let i = 0; i < indices.length; i++) if (indices[i] >= vertices) throw fail('a triangle uses a vertex that does not exist');
   const optional = (field: 'sharpEdges' | 'triangleSource'): Uint32Array | undefined => {
@@ -394,7 +409,7 @@ function decodeMesh(entry: unknown, index: number): { id: MeshId; mesh: DecodedM
   if (sharpEdges && (sharpEdges.length % 2 !== 0 || sharpEdges.some((v) => v >= vertices))) throw fail('sharpEdges does not fit the mesh');
   const source = optional('triangleSource') ?? null;
   if (source && source.length !== indices.length / 3) throw fail('triangleSource does not fit the mesh');
-  return { id, mesh: { data: { positions, normals, indices, ...(uvs ? { uvs } : {}), ...(sharpEdges ? { sharpEdges } : {}) }, source } };
+  return { id, mesh: { data: { positions, normals, indices, ...(uvs ? { uvs } : {}), ...(uvs2 ? { uvs2 } : {}), ...(sharpEdges ? { sharpEdges } : {}) }, source } };
 }
 
 function decodeMeshes(block: unknown): Map<MeshId, DecodedMesh> {
@@ -420,7 +435,7 @@ const sameBytes = (a: ArrayBufferView | undefined, b: ArrayBufferView | undefine
 
 /** The same geometry, bit for bit. */
 export function sameMesh(a: MeshData, b: MeshData): boolean {
-  return sameBytes(a.positions, b.positions) && sameBytes(a.normals, b.normals) && sameBytes(a.indices, b.indices) && sameBytes(a.uvs, b.uvs) && sameBytes(a.sharpEdges, b.sharpEdges);
+  return sameBytes(a.positions, b.positions) && sameBytes(a.normals, b.normals) && sameBytes(a.indices, b.indices) && sameBytes(a.uvs, b.uvs) && sameBytes(a.uvs2, b.uvs2) && sameBytes(a.sharpEdges, b.sharpEdges);
 }
 
 /** Loads of this session: the prefix of the ids a file's meshes get when their own are taken. */
@@ -512,7 +527,8 @@ function placeMeshes(loaded: ProjectState, decoded: Map<MeshId, DecodedMesh>, re
 export interface ProjectWarning {
   /**
    * MISSING_MESHES: parts whose geometry is not in the file (a project from before the meshes block, other than
-   * the example). MISSING_IMAGES: environment images that are not in the file or do not decode (dropped).
+   * the example). MISSING_IMAGES: environment images that are not in the file or do not decode (dropped), and
+   * texture images that are not in the file (their slots and labels dropped, M2a).
    */
   code: 'MISSING_MESHES' | 'MISSING_IMAGES';
   count: number;
@@ -554,8 +570,10 @@ function savedImages(block: unknown): SavedImage[] {
  * dropped.
  */
 export async function placeImages(state: ProjectState, saved: readonly SavedImage[], decode?: PixelDecoder): Promise<{ state: ProjectState; missing: number }> {
+  const textured = placeTextureImages(state, saved);
+  state = textured.state;
   const env = { ...state.environment };
-  if (!env.hdri && !env.backplate) return { state, missing: 0 };
+  if (!env.hdri && !env.backplate) return { state, missing: textured.missing };
   // The readers load with the first project that has images (they stay out of the main chunk).
   const { restoreImage } = await import('./hdri');
   let missing = 0;
@@ -578,7 +596,52 @@ export async function placeImages(state: ProjectState, saved: readonly SavedImag
     if (!placed) missing++;
     env[slot] = placed;
   }
-  return { state: missing > 0 || env.hdri !== state.environment.hdri || env.backplate !== state.environment.backplate ? { ...state, environment: env } : state, missing };
+  return { state: missing > 0 || env.hdri !== state.environment.hdri || env.backplate !== state.environment.backplate ? { ...state, environment: env } : state, missing: missing + textured.missing };
+}
+
+/**
+ * The texture images of a loaded project into the registry (M2a), under the ids that name their content: one
+ * whose file is in `saved` is registered (an id the registry already holds is that content); one whose file is
+ * missing, or is not a PNG or JPEG, leaves its slots and labels, counted in `missing` once per image.
+ */
+export function placeTextureImages(state: ProjectState, saved: readonly SavedImage[]): { state: ProjectState; missing: number } {
+  const wanted = textureImages(state);
+  if (wanted.size === 0) return { state, missing: 0 };
+  const rename = new Map<string, ImageRef | null>();
+  for (const [id, ref] of wanted) {
+    if (getImage(id)) continue;
+    const entry = saved.find((e) => e.id === id);
+    if (!entry || 'reason' in checkTextureFile(entry.bytes)) {
+      rename.set(id, null);
+      continue;
+    }
+    // A file edited by hand may hold other bytes than its id names: the id follows the bytes.
+    const own = textureImageId(entry.bytes);
+    const placed = registerTextureImage(ref.name, entry.bytes, own);
+    if (own !== id) rename.set(id, placed);
+  }
+  if (rename.size === 0) return { state, missing: 0 };
+  const fix = (r: ImageRef): ImageRef | null => (rename.has(r.id) ? rename.get(r.id)! : r);
+  const materials: Record<string, MaterialInstance> = {};
+  for (const [id, m] of Object.entries(state.materials)) {
+    const t: MaterialTextures = { ...m.textures, labels: [] };
+    let changed = false;
+    for (const k of TEXTURE_SLOTS) {
+      const slot = m.textures[k];
+      if (!slot || !rename.has(slot.image.id)) continue;
+      const image = fix(slot.image);
+      t[k] = image ? { ...slot, image } : null;
+      changed = true;
+    }
+    for (const l of m.textures.labels) {
+      const image = fix(l.image);
+      if (image) t.labels.push(image === l.image ? l : { ...l, image });
+      if (image !== l.image) changed = true;
+    }
+    materials[id] = changed ? { ...m, textures: t } : m;
+  }
+  const missing = [...rename.values()].filter((r) => r === null).length;
+  return { state: { ...state, materials }, missing };
 }
 
 /**
