@@ -5621,7 +5621,7 @@ comprobada reintroduciendo el fallo que vigila; y en el navegador,
   sigue pendiente.
 - `rt` escribe color solo (sin alfa), como con PNG.
 
-## U13 · Proporción de la imagen en la cámara — **Sonnet**
+## U13 · Proporción de la imagen en la cámara — **Sonnet** — hecha
 
 Petición del usuario (14-10): editar la **proporción** (16:9, 4:3… o una
 propia) **en la propia cámara**, además de en la ventana de render.
@@ -5664,6 +5664,83 @@ Doctor cuando un plano discrepa. Comprobación de navegador
 `tools/aspect-check.mjs` con capturas `docs/ui/camera-aspect.png` (la
 sección con 4:3 y el marco del visor cambiado) y
 `docs/ui/render-size-from-camera.png`.
+
+
+**Hecho.** `src/data/aspects.ts` (los diez presets con clave estable y
+`CUSTOM`, con su etiqueta es/en) y `src/core/aspect.ts` (`CameraAspect`,
+`normaliseAspect`, `aspectNearPixels`, `aspectText`); `CameraState.aspect`
+con `aspectRatio(cam)` en `core/camera.ts`, 16:9 por omisión (1920 × 1080
+como antes), `camera/set` la lee y la deshace, y `camera/add` (*Nueva desde
+la vista*, duplicar) la copia. **Una sola fuente**: la cámara. El tamaño de
+una imagen se deriva de ella en `syncOutputSize`, que corre en cada acción
+del *store* (cambiar la proporción, cambiar de cámara activa, borrar la
+activa, deshacer, abrir un proyecto, volver de *Animación*): conserva el
+ancho y calcula el alto; `render/set` en modo imagen es `setSettings`, que
+con el candado cerrado deja que un lado siga a la proporción y, con él
+abierto o con los dos lados a la vez (un preset de tamaño), **escribe la
+proporción en la cámara en la misma acción** (una entrada de deshacer):
+el preset de la lista si el tamaño es exactamente uno (`aspectForSize`),
+si no `CUSTOM` con esos píxeles como `w : h`, y un tamaño casi de un preset
+se respeta tal cual (nada de 1081 que se vuelve 1080 a escondidas). Los
+trabajos de la cola para otra cámara con otra proporción salen con el ancho
+de la ventana y el alto de esa cámara (`sizedFor`). Visor: el marco (la
+máscara, el fondo de imagen y el degradado, el *rsb* de Completo) y el
+`placeCamera` de Rápido usan la proporción de la cámara que se ve (activa, o
+la que se mira a través: `viewedCamera`), cada pirámide del visor la suya, y
+el *chip* dice `16:9 · 1920 × 1080`. Inspector: la fila **Proporción**
+(`insp-aspect.ts`: lista y campos `w : h`, apagados con un preset) vive en
+`cameraFields`, de modo que sale en la sección de cámara y en la ficha de
+cada cámara con una sola línea añadida; la ventana de render dice en una
+línea discreta quién manda y qué ha pasado (*La proporción de Cámara 1 pasa
+a 4:3*); la lista de cámaras pone la proporción tras la óptica. Proyectos:
+una cámara sin `aspect` toma la del tamaño guardado (preset a ≤ 0,5 %, si
+no *Propia* con esos píxeles) y el tamaño guardado **no se toca**. El Doctor
+gana la comprobación `aspect` (**Proporción de la animación**, la 15.ª,
+añadida tras las 14 de origen, con arreglo). Pruebas: `tests/aspect.test.ts`
+(33) más las que ya existían y se ajustaron, cada una comprobada
+reintroduciendo el fallo que vigila; y en el navegador
+`tools/aspect-check.mjs`, con `docs/ui/camera-aspect.png` y
+`docs/ui/render-size-from-camera.png`.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es de criterio y se
+deja anotado para quien decide, la regla 11):
+- ◆ **El tamaño de la animación es el mismo par `width`/`height` que el de la
+  imagen**: «tamaño propio» se ha leído como «no sigue a la cámara mientras la
+  ventana está en *Animación*», y al volver a *Imagen* el ancho se conserva y el
+  alto sale de la cámara (se pierde el alto que se hubiera tecleado para el
+  vídeo). Guardar un tamaño de animación aparte (`animation.width/height`) es
+  un campo más si se quiere.
+- ◆ **En *Animación* el marco del visor sigue siendo el de la cámara activa**,
+  no el del tamaño del vídeo (la decisión dice que sigue a la cámara activa);
+  si el vídeo tiene otra proporción, el marco no lo enseña y quien avisa es el
+  Doctor.
+- ◆ **El arreglo del Doctor** pone a las cámaras de los planos la proporción
+  de la salida, no al revés (la salida cambiaría el tamaño de todo el vídeo).
+- ◆ **Los términos de una proporción propia son los píxeles tecleados** (1000
+  × 700 es *Propia* 1000 : 700, no 10 : 7) y, en el visor y la lista, se
+  escriben `1.43:1` cuando no son números pequeños; la razón de una cámara se
+  limita a 1 : 512 – 512 : 1 (la de 16 × 8192 y 8192 × 16, lo más extremo que
+  admite la ventana), que es un tope mío.
+- ◆ **Cambiar la proporción no recoloca la cámara**: el producto puede quedar
+  fuera del marco de un 9:16 hasta pulsar *Encuadrar*.
+- Restaurar un **estudio** guardado trae la óptica y la vista pero **no** la
+  proporción de la cámara en la que cae (la proporción es del proyecto, no del
+  estudio); los estudios de la biblioteca y los guardados antes se abren con
+  16:9 si no la traían.
+- Editar un **trabajo de la cola** (*Guardar cambios*) deja su tamaño tal cual
+  y no escribe en ninguna cámara: el borrador es del trabajo.
+- `migrateProject` (`parseProject`, el estado sin geometría) vuelve ahora a
+  calcular los resultados del Doctor como ya hacía `loadProject`: con el
+  catálogo ampliado, los del archivo habrían dejado a los dos distintos.
+- Los tests de `tests/primitive-ops.test.ts`, `tests/rsb.test.ts` y
+  `tests/render.test.ts` daban un tamaño de render sin la proporción de la
+  cámara (un *mock* más permisivo que el programa: allí tamaño y cámara son una
+  sola cosa): ahora usan `render/set`, y el proyecto de U1 va sin `aspect` en
+  las cámaras, como era de verdad.
+- En los extremos (3 : 700 a 1000 de ancho) el alto se queda en el límite de la
+  ventana y el par deja de tener la proporción, **sin perder el ancho**: la
+  proporción que venga después devuelve el alto (teclear los términos de una
+  proporción propia de uno en uno pasa por extremos).
 
 ## P6 · Plugins, y el plugin de película (aintfilm) — **Opus**, decisión **Fable**
 

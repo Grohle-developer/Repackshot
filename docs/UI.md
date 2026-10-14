@@ -243,8 +243,18 @@ tapar la pieza:
   · f/5.6*, y un **lápiz** al final de cada fila que abre la ficha de esa
   cámara en el inspector: nombre, *Activar*, *Mirar a través*, óptica y
   posición; la pestaña *Cámaras* se abre con ella marcada; `→` desde la
-  fila va al lápiz y `←` vuelve) y resolución de salida actual (clic:
-  abre la barra de render).
+  fila va al lápiz y `←` vuelve) y la proporción de la cámara activa con
+  la resolución de salida actual (*16:9 · 1920 × 1080*; clic: abre la
+  barra de render). En la lista, la proporción de cada cámara sigue a su
+  óptica (*85 mm · f/5.6 · 4:3*).
+- **El marco del visor** (la imagen que se renderiza, con lo de fuera
+  atenuado) es **de la cámara que se está viendo**: la activa, o la que se
+  mira a través (*Mirar a través*), con **su** proporción (U13). Cambiar la
+  proporción de la cámara activa cambia el marco al instante; cada cámara
+  guardada se dibuja en el visor con la pirámide de su propia proporción.
+  Con una animación en marcha el marco sigue siendo el de la cámara
+  activa: la salida tiene un solo tamaño y el Doctor avisa si un plano
+  usa una cámara con otra proporción.
 - **Abajo a la izquierda, medidor de calidad**: modo y motor activos,
   muestras acumuladas, tiempo, y un pequeño indicador de progreso. En
   *Rápido* dice literalmente *Rápido · vista previa rasterizada*; en
@@ -538,7 +548,16 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    cámara tiene su óptica y su posición. Preset de óptica (8
    `LENS_PRESETS`), focal en mm (campo arrastrable), diafragma (f/),
    distancia de enfoque + botón *Enfocar con clic*, interruptor
-   Perspectiva / Ortográfica, *Encuadrar*, y *Guardar como cámara*.
+   Perspectiva / Ortográfica, **Proporción** (U13), *Encuadrar*, y
+   *Guardar como cámara*. **Proporción** es una lista (*3:2 · Foto 35 mm*,
+   *4:3*, *16:9 · Vídeo*, *1:1 · Cuadrado*, *5:4*, *4:5 · Retrato*,
+   *9:16 · Vertical*, *21:9 · Ultra ancho*, *2:1*, *65:24 · Panorámica* y
+   *Propia*) y, debajo, los campos `w : h`, que se pueden editar con
+   *Propia* (con un preset enseñan sus términos, apagados; elegir *Propia*
+   parte de la proporción que había). Cada cambio es una entrada de
+   deshacer (*Cámara: Proporción*; arrastrar un término es un solo
+   gesto). Cambiarla no recoloca la cámara: *Encuadrar* la ajusta a la
+   nueva imagen.
 5. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.
@@ -651,8 +670,9 @@ y eliminar al pasar el ratón, y los botones *Exportar biblioteca* e
 *Importar biblioteca* (JSON) al pie. Fase U4.
 
 **Con una cámara seleccionada:** lo mismo que la sección Cámara de la
-escena, más nombre, *Activar* y, si no es la activa, *Mirar a través* (fase
-L4).
+escena, con su **Proporción** (la de *esa* cámara: editarla no toca el
+tamaño de la ventana de render mientras no sea la activa), más nombre,
+*Activar* y, si no es la activa, *Mirar a través* (fase L4).
 
 ### 2.5 · Barra inferior: Animación · Cola · Render
 
@@ -748,7 +768,12 @@ de qué pasa y un botón *Arreglar* por fila, más *Arreglar todo* arriba. Es
 la traducción del panel Doctor de EZ Packshot. En U1 los chequeos que
 dependen del motor pueden estar en estado *no disponible aún*; los de
 escena (escala, origen, suavizado, bisel, clipping) se implementan sobre
-el modelo de datos.
+el modelo de datos. Una comprobación nuestra, la última de la lista
+(U13), es **Proporción de la animación**: avisa de los planos cuya cámara
+tiene otra proporción que el tamaño de salida (*Planos con otra
+proporción que la animación (1920 × 1080): 1. El primero usa Cámara 2
+(4:3).*) y su arreglo pone a las cámaras de esos planos la proporción del
+tamaño de salida.
 
 ---
 
@@ -808,6 +833,25 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   recalcula el tamaño de impresión. Los ppp se escriben en el archivo
   (PNG y JPEG) para que la imprenta lea el tamaño correcto. Presets de
   impresión: A4, A3, carta, 10 × 15 cm a 300 ppp.
+
+  **La proporción es de la cámara** (U13). En una imagen, el tamaño sigue a
+  la proporción de la **cámara activa**: el ancho se conserva y el alto sale
+  de ella (con 4:3, 1920 de ancho dan 1440 de alto). Con el candado
+  cerrado, teclear un lado hace que el otro siga esa proporción; con el
+  candado abierto, un tamaño que la rompe la **reescribe en la cámara**
+  (*Propia*, con esos píxeles como `w : h`, o el preset de la lista si el
+  tamaño es exactamente uno), y teclear los dos lados a la vez, o elegir un
+  preset de tamaño con otra proporción, hace lo mismo con el candado que
+  sea. Una línea discreta bajo los píxeles dice cuál manda (*El alto sigue
+  la proporción de Cámara 1, 4:3*; con el candado abierto, *Un tamaño
+  tecleado pasa a ser la proporción de Cámara 1*) y, justo después de
+  cambiarla, qué ha pasado (*La proporción de Cámara 1 pasa a 4:3*). Todo
+  es una sola entrada de deshacer, la de la ventana (*Ajustes de render*),
+  que devuelve cámara y tamaño. Un trabajo para otra cámara con otra
+  proporción (*Cámara: una concreta*, o *Todas las cámaras*) sale con el
+  ancho de la ventana y el alto de **esa** cámara. Al editar un trabajo
+  de la cola la ventana enseña su tamaño tal cual y no toca ninguna
+  cámara.
 - **Región** (*próximamente*): un recuadro dibujado en el visor.
 
 **2 · Calidad**
@@ -839,7 +883,12 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
 
 **2 bis · Animación** (en lugar de *Tamaño*, con una fila *Tamaño del
 fotograma* solo en píxeles, y encima de *Calidad*, cuando
-el segmento está en *Animación*): **rango** (*Todo* o de–a en
+el segmento está en *Animación*; el tamaño de una animación es **suyo**:
+no sigue a la cámara, un vídeo tiene un solo tamaño, y al volver a
+*Imagen* el ancho se conserva y el alto sale de la cámara activa. El
+Doctor avisa —*Proporción de la animación*— cuando la cámara de un plano
+tiene otra proporción que ese tamaño, y su arreglo da a esas cámaras la
+proporción de la salida): **rango** (*Todo* o de–a en
 fotogramas o segundos), **fps** (24, 25, 30, 60), duración resultante,
 **salida** *Vídeo* (MP4 H.264 o WebM VP9, con calidad) o *Fotogramas*
 (secuencia PNG o JPEG con numeración `0001`), *Terminar por* aplicado
@@ -1406,8 +1455,8 @@ Lo que **sí** debe funcionar de verdad en U1:
   ejecuta en serie con ese mismo mecanismo.
 - Doctor: los chequeos de escena implementados sobre el modelo (escala
   plausible según el tipo de producto, origen y apoyo en el suelo,
-  suavizado, bisel, clipping de cámara, luces visibles); los de motor,
-  en *no disponible aún*.
+  suavizado, bisel, clipping de cámara, luces visibles, proporción de la
+  animación); los de motor, en *no disponible aún*.
 - Paleta de comandos, atajos, deshacer / rehacer, temas, idioma (todas
   las cadenas en `src/ui/strings.ts` en `es` y `en`, inglés por defecto),
   plegado de paneles, estado vacío con arrastre de archivo (el arrastre
