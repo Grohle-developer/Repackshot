@@ -1876,6 +1876,19 @@ dentro de la tabla Sobol.
 - La escena de paridad de E9 cambia de *hash* en (c): se eligió una sola
   escena para el medio y la dispersión en lugar de una nueva.
 
+**Veredicto del responsable** (sobre las hojas de (b) y (c)): E9 (a, b y c)
+aceptada. A 256 spp la leche y el zumo se leen como leche y zumo, las nueve
+recetas se distinguen, las franjas del borde del cristal con Abbe 40 son las
+que corresponden a ese vidrio y en el suelo del prisma el rojo queda cerca y
+el azul lejos, como debe. Se acepta una longitud de onda por camino sin MIS
+espectral; la longitud de onda héroe con MIS queda anotada como opción si
+algún día el cristal rugoso la necesita. Una sola escena de paridad para el
+medio y la dispersión es lo correcto: no se hace una escena aparte para el
+cristal. El grano de color a 64 spp alrededor del cristal y la convergencia
+como de cáustica de la luz vista a través del cristal se aceptan como el
+coste de la física. Se acepta que los rayos de sombra, la regla de las
+paredes y los sólidos con medio sigan sin dispersión.
+
 ## E10 · Muestreo adaptativo y terminar por ruido — **Opus**
 
 **Qué.** Reparto de muestras por píxel según la varianza (`Film::lum2`),
