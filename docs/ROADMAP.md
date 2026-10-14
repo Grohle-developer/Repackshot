@@ -1466,6 +1466,30 @@ STRIP_EDGE, BLACK_ON_BLACK y WARM_COOL_CINEMA a 96 spp antes y después
 ejemplo y el horno blanco; a ojo, sin chispas y la misma foto.
 `ARCHITECTURE.md` (motor: elección de luz) y CHANGELOG.
 
+## E13 · Estimación en variedad (MNEE) para la luz a través de vidrio — **Opus** (tras E9)
+
+**Por qué.** Los rayos de sombra se paran en una superficie refractante
+(diseño de E5): un líquido dentro de una botella, o cualquier cosa
+detrás de un cristal, solo recibe la luz de los focos por caminos que
+refractan por azar o por el mapa de fotones de E5b-1 (que *Automático*
+no enciende para un softbox). E9b lo salva con la regla de pared fina
+(aproximación explícita, sesgo medido). Lo correcto es **estimación de
+siguiente evento en variedad** (Hanika, Droske, Fascione, "Manifold Next
+Event Estimation", EGSR 2015): desde el vértice, buscar por iteración
+de Newton el camino de refracción que llega al punto de luz a través de
+una o dos superficies lisas, y usarlo como conexión con su jacobiano.
+
+**Qué.** MNEE en `rt-core` para hasta dos refracciones lisas (vidrio
+fino y botella con líquido), con el *half-vector* como variable, 8
+iteraciones máximo, `f32`, determinista; MIS con la continuación BSDF;
+la regla de pared fina de E9b se retira cuando MNEE la cubre (test de
+que el resultado converge al de referencia). Coste ≤ 1,3× en la botella
+de E5.
+
+**Criterio.** Botella de leche de E9b a 64 spp sin grano y dentro del
+3 % de la referencia; cáusticas de un vaso de agua bajo un foco
+pequeño con MNEE vs mapa de fotones; *hashes* repinados; paridad wasm.
+
 ## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
 
 **Qué.** Tres partes, en este orden, cada una con su commit y sus
