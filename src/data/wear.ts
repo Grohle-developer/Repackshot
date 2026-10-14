@@ -220,6 +220,11 @@ export const WEAR_PRESET_OVERRIDES: Readonly<Record<string, WearPatch>> = {
   PAINT_MET: { edges: 0.15, scratches: 0.15, smudges: 0.25, patina: 0 },
   WHITE_STUDIO: { amount: 0.1, edges: 0, scratches: 0, smudges: 0, dirt: 0, patina: 0, roughVar: 0.1 },
   CARBON: { smudges: 0.2, roughVar: 0.15, dirt: 0.05 },
+  // E9: liquids do not wear (their container does).
+  MILK: { amount: 0 },
+  JUICE_ORANGE: { amount: 0 },
+  JUICE_APPLE: { amount: 0 },
+  CREAM: { amount: 0 },
 };
 
 // Painted presets: on the edge the paint chips off and bare metal shows.

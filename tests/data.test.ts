@@ -272,9 +272,9 @@ describe('light setups', () => {
 });
 
 describe('materials', () => {
-  it('has 7 categories and 77 presets with unique keys', () => {
+  it('has 7 categories and 86 presets with unique keys (77 ported, 9 translucent of E9)', () => {
     expect(MATERIAL_CATEGORIES.map((c) => c.key)).toEqual(CATEGORIES);
-    expect(MATERIAL_PRESETS).toHaveLength(77);
+    expect(MATERIAL_PRESETS).toHaveLength(86);
     expect(unique(MATERIAL_PRESETS.map((m) => m.key))).toBe(true);
   });
 
@@ -282,12 +282,12 @@ describe('materials', () => {
     const counts = Object.fromEntries(CATEGORIES.map((c) => [c, materialsInCategory(c).length]));
     expect(counts).toEqual({
       METAL: 12,
-      PLASTIC: 12,
+      PLASTIC: 15,
       WOOD: 13,
       FABRIC: 11,
       GLASS: 5,
       EMISSIVE: 14,
-      OTHER: 10,
+      OTHER: 16,
     });
   });
 
@@ -301,7 +301,10 @@ describe('materials', () => {
   it('gives every GLASS-family material a transmission and an ior', () => {
     const glass = MATERIAL_PRESETS.filter((m) => m.family === 'GLASS');
     expect(glass.map((m) => m.key)).toEqual([
-      'PC_CLEAR', 'PMMA', 'PMMA_TINT', 'GLASS_CLEAR', 'GLASS_FROST', 'GLASS_TINT', 'GLASS_SMOKE',
+      // E9's translucent recipes are clear solids with a medium inside, next to their kin.
+      'PC_CLEAR', 'PMMA', 'PMMA_TINT', 'HDPE_WHITE', 'PP_NATURAL', 'PMMA_FROST',
+      'GLASS_CLEAR', 'GLASS_FROST', 'GLASS_TINT', 'GLASS_SMOKE',
+      'WAX', 'SOAP_GLYCERIN', 'MILK', 'JUICE_ORANGE', 'JUICE_APPLE', 'CREAM',
     ]);
     for (const m of glass) {
       expect(m.params.transmission, m.key).toBeDefined();
@@ -404,7 +407,8 @@ describe('wear catalogue', () => {
   });
 
   it('only overrides wear of existing material presets', () => {
-    expect(Object.keys(WEAR_PRESET_OVERRIDES)).toHaveLength(28);
+    // 28, and E9's four liquids (they do not wear).
+    expect(Object.keys(WEAR_PRESET_OVERRIDES)).toHaveLength(32);
     for (const k of Object.keys(WEAR_PRESET_OVERRIDES)) expect(materialPreset(k), k).toBeDefined();
     for (const k of WEAR_PAINTED) expect(materialPreset(k), k).toBeDefined();
     expect([...WEAR_PAINTED]).toEqual(['CAR_PAINT', 'PAINT_MET']);
@@ -488,7 +492,7 @@ describe('wear defaults', () => {
     expect(wearDefaults('OAK', 1e-9)?.refSize).toBe(1e-3);
   });
 
-  it('is defined for all 77 materials and never leaks wear into non-wear fields', () => {
+  it('is defined for every material and never leaks wear into non-wear fields', () => {
     for (const m of MATERIAL_PRESETS) {
       const w = wearDefaults(m.key);
       expect(w, m.key).not.toBeNull();

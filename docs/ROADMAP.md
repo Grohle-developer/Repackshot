@@ -1325,7 +1325,7 @@ cambia de *hash* (`0xab15f290` del ejemplo con *denoise*); los gestos
 siguen a resolución reducida sin *denoise*; captura `docs/ui/
 denoise-live.png` con la barra superior.
 
-## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
+## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus** — (a) y (b) hechas; (c) en curso
 
 **Qué.** Tres partes, en este orden, cada una con su commit y sus
 *hashes*; (c) solo si (a) y (b) están en verde.
@@ -1394,6 +1394,316 @@ determinismo con 1, 4 y 16 hilos y en wasm; `clippy -D warnings`;
 tiempos antes y después en el PR (el medio cuesta lo que cuesta, se
 mide); la hoja de contactos con el veredicto visual de Fable antes de
 cerrar.
+
+**Hecho (a) · compensación de energía del GGX** (commit `d736374`).
+
+- **Tablas propias** (`rt_core::bsdf::energy`, datos en
+  `bsdf/energy_table.rs`): `E(μ, α)` del GGX con Fresnel 1, el momento de
+  Schlick `E5(μ, α) = ∫(1 − wo·h)⁵ G2/G1` (para que
+  `E_s = f0 E + (f90 − f0) E5` sin otra tabla) y el albedo de potencia de
+  la parte clara `E_t(μ, α, η)` entrando y saliendo; integradas por nuestro
+  Monte Carlo con semilla fija (`0xe9ae9a`): por nodo, la semirrecta por
+  VNDF (Heitz 2018) en una rejilla *jittered* de 64 × 64 con un flujo PCG
+  propio. Nodos en `μ = (i/31)²`, `r = j/31` (`α = r²`) y 17 índices
+  uniformes en `(ior − 1)/(ior + 1)` hasta 3; 16 bits por valor (~70 kB).
+  `E_avg` es la integral de la propia tabla. Error frente a una
+  integración con 16 veces las muestras, en puntos entre nodos: 0,11 % el
+  peor (cota del test 0,5 % para `μ ≥ 0,05`; con 24 × 24 nodos no se
+  cumplía). Un test regenera una muestra de nodos bit a bit
+  (`REPACK_WRITE_TABLES=1` las reescribe enteras en segundos).
+- **Reflexión** (metal, especular del dieléctrico opaco y barniz): el
+  lóbulo añadido de Kulla y Conty (2017),
+  `F_ms (1 − E(μo)) (1 − E(μi)) / (π (1 − E_avg))` con
+  `F_ms = F_avg² E_avg / (1 − F_avg (1 − E_avg))` y el `F_avg` de Schlick
+  `f0 + (f90 − f0)/21`; muestreado por el coseno, con su densidad en la
+  mezcla del MIS. **Refracción** (la parte clara): dividida por su propio
+  albedo de potencia `E_t(μo, α, η)` (Turquin 2019). Por debajo de
+  `α = 0,002` no hay compensación: la rugosidad 0 conserva todos sus bits
+  (test).
+- **(a2) capa difusa bajo el especular** (petición de la dirección, regla 11, tras ver (a)):
+  peso `(1 − E_s(μo)) (1 − E_s(μi)) / (1 − E_s,avg)` (Kulla y Conty), con
+  `E_s` el albedo direccional del especular dieléctrico (su dispersión
+  simple con Schlick más su lóbulo añadido; la curva de Schlick misma si es
+  liso), y bajo el barniz la normalización conjunta de las dos capas (abajo).
+- ***Furnace*** (esfera blanca en un mundo uniforme de radiancia 1, media
+  de sus píxeles), antes → después, rugosidad 0,2 / 0,5 / 0,8 / 1,0:
+  metal 0,998 / 0,895 / 0,574 / 0,356 → 1,000 / 1,001 / 0,999 / 0,999;
+  vidrio claro (ior 1,5) 0,994 / 0,828 / 0,515 / 0,361 → 0,997 / 0,998 /
+  1,004 / 0,995 (16 × 16 px × 256 spp en el test; 0,999 / 1,001 / 1,001 /
+  1,000 a 32 × 32 × 1024). Plástico blanco (base 1, ior 1,5), rugosidad
+  0 / 0,2 / 0,5 / 0,8 / 1,0: desnudo 0,918 / 0,918 / 0,914 / 0,900 / 0,891
+  → 1,000 / 1,000 / 1,000 / 1,000 / 1,001; con barniz 1 liso 0,860…0,833 →
+  0,998…0,997; con barniz 1 de rugosidad 0,3, 0,860…0,833 → 0,999…0,998.
+  Los tests piden ±1 %.
+- ***Hashes*** que se mueven (todo lóbulo rugoso cambia la mezcla de
+  muestreo y la capa difusa gana lo que perdía), con la luminancia lineal
+  media antes → después, para que L6 la vuelva a medir:
+
+  | Imagen | Antes de E9 | Después de (a) + (a2) | Luminancia media |
+  | --- | --- | --- | --- |
+  | Ejemplo, 4 spp (`PINNED_EXAMPLE_4SPP`) | `0x223515c3` | `0x51ade97c` | +15,6 % |
+  | E5, HDRI (`PINNED_E5_HDRI_4SPP`) | `0xbf8abd5b` | `0x284f75e1` | +13,6 % |
+  | E5, cielo clásico (`PINNED_E5_SKY_4SPP`) | `0x2fcb098a` | `0x96f673b1` | — |
+  | E5c, cielo físico (`PINNED_E5C_SKY_4SPP`) | `0x8bb09f6b` | `0x83410b6e` | +13,2 % |
+  | E5b-1, cáusticas (`PINNED_E5B_CAUSTICS_4SPP`) | `0x55d60f2f` | `0x8bff5f8a` | +13,6 % |
+  | Ejemplo con *denoise* (`PINNED_DENOISED_EXAMPLE_4SPP`) | `0xab15f290` | `0x7483f82e` | — |
+  | Teselas del ejemplo (`PINNED_CENTRE`, `PINNED_SMALL_SPHERE`) | `0x7a5ae28b`, `0xb43bda52` | `0x023525f2`, `0x40ae1775` | — |
+
+  Casi todo es la luz difusa que se perdía (y sus interreflexiones). Los
+  seis *hashes* de pases de X2 no se mueven. Con solo (a), los cambios eran
+  de +0,40 % (ejemplo), +0,51 % (E5) y +0,65 % (E5c).
+
+**No encajó con el plan en (a), y por qué está bien así.**
+
+- **Muestreo del vidrio rugoso.** Con el factor de Turquin, el muestreo
+  antiguo de la parte clara (reflejar o refractar según el Fresnel
+  macroscópico, como mucho 0,99) daba pesos de 25 a 60 a las microfacetas
+  en reflexión total dentro de un sólido: destellos suficientes para leer
+  1,046 a 256 spp. El vidrio rugoso (compensado) muestrea ahora primero la
+  microfaceta y refleja con su propio Fresnel (Walter 2007, §5.3, la
+  elección con un número *hash* de la muestra 2-D); el liso conserva el
+  procedimiento de antes y sus bits.
+- **(a2), dos desviaciones de la receta literal.** (1) Bajo el barniz,
+  normalizar cada lóbulo por `1/(1 − E_c,avg)` se pasaba un +1,5 %: un
+  lóbulo especular bajo el barniz no redistribuye la luz, así que solo
+  lleva `(1 − E_c(μo))(1 − E_c(μi))`, sin normalizar. (2) La capa difusa
+  bajo las dos capas necesita su normalización **conjunta**
+  `1/∫(1 − E_s)(1 − E_c) 2μ dμ`: el producto de las dos normalizaciones
+  por separado salía un +1,4 % brillante porque las dos transmisiones caen
+  juntas en rasante. Se calcula por BSDF con Gauss–Legendre de 8 puntos
+  (exacto para curvas de Schlick), solo en difusos con barniz. Las dos
+  son lo que pide la conservación de energía, y el *furnace* con barniz lo
+  comprueba a ±1 %.
+- **La rugosidad 0 sí cambia en el plástico**, y debe: `E_s(μ)` con
+  `α → 0` es `F(μ)`, así que la forma es la de antes, pero la
+  normalización `1/(1 − E_s,avg)` es nueva: `1/(1 − F_avg)` = × 1,094 en
+  el difuso con ior 1,5 (exactamente el 8,6 % que perdía; plástico blanco
+  liso 0,918 → 1,000). El suelo (Lambert, `f0 = 0`) y las bases con ior 1
+  conservan todos sus bits. El criterio de la fase («con rugosidad 0 la
+  imagen no cambia») vale para el metal y el vidrio, no para el difuso.
+- Los lóbulos **anisótropos** usan las tablas isótropas con el ancho
+  `√(αx αy)` (aproximación); las **paredes finas** no se compensan; el
+  lóbulo añadido del barniz no atenúa las capas de debajo (su `F_avg` es
+  0,08: el término queda por debajo del 0,6 %); los fotones de E5b-1
+  usan el mismo muestreo de la BSDF con el factor de Turquin del lado del
+  fotón (no recíproco, como acepta el artículo; los *casters* tienen
+  rugosidad ≤ 0,25, donde el factor es casi 1).
+- Los criterios de U11 y E10 citan `0xab15f290` y `0x223515c3`: con E9a
+  son `0x7483f82e` y `0x51ade97c` (no se toca su texto).
+
+**Hecho (b) · medios dispersores dentro de sólidos.**
+
+- **Campos** (claves estables, al final): `MATL` pasa a 100 B con, en este
+  orden, `bevel_mm` (byte 72, reservado para E6: se lee y se conserva, la
+  interfaz escribe 0), `scatter_mm`, `scatter_color[3]`, `scatter_g` y
+  `abbe` (que se escribe ya y renderizará E9c); los registros de 56, 60 y
+  72 B se leen como antes. En el proyecto, `scatterMm`, `scatterColor` y
+  `scatterG` de la familia GLASS; un proyecto anterior se abre con los
+  mismos parámetros que tenía y sin medio.
+- **El medio** (`rt_core::integrator::medium`): un sólido claro
+  (transmisión, no pared fina, no metal, no emisor, `ior ≥ 1,0001`) con
+  `scatter_mm > 0`; `σt = 1/scatter_mm`, `σs = albedo σt` y
+  `σa = (1 − albedo) σt` por canal, más la absorción de `absorption_mm`
+  y `base_color` (que hace `σt` distinto por canal); `g` recortado a ±0,9.
+- **El paseo** (Chiang, Kutz y Burley, «Practical and Controllable
+  Subsurface Scattering for Production Path Tracing», SIGGRAPH 2016 Talks,
+  escrito desde la charla): distancias `−ln(ξ)/σt` de un canal *héroe*
+  elegido una vez por paseo, con el MIS espectral de una muestra sobre los
+  tres canales (Wilkie et al., EGSR 2014) llevado como cocientes
+  renormalizados en cada paso (un paseo largo no desborda); fase de
+  Henyey–Greenstein por su inversa; desde el evento 33, ruleta rusa sobre
+  el peso del propio paseo (supervivencia `max(throughput)/max(throughput
+  al entrar)`, entre 0,05 y 1: lo que el paseo ha perdido desde que entró;
+  decisión de la dirección con las medidas de abajo).
+  **Sin NEE dentro.** Un paseo que no dispersa cruza como el vidrio claro
+  (la BSDF de la superficie lo toma). Uno que dispersó, al llegar a la
+  frontera desde dentro, se refleja hacia dentro (espejo respecto de la
+  normal geométrica) con la probabilidad del Fresnel de salida —1 más allá
+  del ángulo crítico— o sale: el vértice de salida es un vértice de
+  superficie con un lóbulo de transmisión lambertiano de albedo `η²`
+  (`Bsdf::medium_exit`; la radiancia dentro de un sólido es `η²` la de
+  fuera, y el camino que entró lleva el `1/η²`), donde el integrador
+  muestrea una luz con su MIS y sigue por el coseno. La rugosidad de la
+  frontera no cambia el lóbulo. **Tope**: 1024 pasos por camino (eventos y
+  reflexiones en la frontera); pasado, el paseo va recto a la frontera
+  conservando todo salvo la absorción y sale por el lóbulo sin reflejarse
+  (si no, la reflexión total lo atraparía en un sólido curvo). Los medios
+  no cuentan contra `RNDR.max_depth`. El vértice de salida no ve recortes
+  ni el suelo, y el último tramo del paseo no recoge luces cruzadas.
+- **Paredes finas alrededor de un medio** (decisión de la dirección; una
+  **aproximación**): un rayo de sombra desde un vértice de salida, y solo
+  desde uno, atraviesa una pared de vidrio liso (rugosidad ≤ 0,05, del
+  todo clara, sin barniz ni medio propio) donde la luz que la cruzara
+  refractando saldría a menos de 5 mm de su entrada por una cara a menos de
+  15° de la primera, como si las dos refracciones se anularan: lleva el
+  producto de las transmitancias de Fresnel de entrada y de salida y la
+  absorción de la pared en ese tramo, y sigue en su dirección; una pared
+  gruesa, rugosa o con barniz lo sigue parando. Para que no cuente dos veces, una muestra de la
+  BSDF del vértice de salida que entra y sale de una pared que el rayo de
+  sombra cruzaría (la misma prueba, sobre el rayo recto) es un suceso recto
+  de ese vértice para el MIS (conserva su densidad y su distancia). Con
+  cáusticas, lo que una luz de fotones manda a través de una pared es del
+  mapa, como a través de cualquier *caster*. Sesgo medido: una losa de
+  leche bajo una placa de vidrio de 3 mm iluminada por un panel, −2,0 %
+  frente al trazador sin la regla a 2048 spp (con fotones, −1,7 %), con
+  4,8 veces menos varianza a 32 spp. En el frasco de leche, el ruido de
+  píxel (desviación frente a sus vecinos, relativa) baja de 0,112 (la
+  conexión recta) a 0,081 a 64 spp; una esfera de leche sin vidrio da 0,070
+  (era 0,131) y el suelo 0,03. La solución exacta (NEE de variedades) queda
+  para E13.
+- **Números aleatorios**: dimensiones *hash* más allá de la tabla Sobol
+  (`sampler::medium_dim(rebote, paso)`, 8 por paso, desde `1 << 21`;
+  `1 << 23` queda para E9c), así que una escena sin medios no cambia ni un
+  bit: los ocho *hashes* de antes y los de pases siguen iguales.
+- **Cáusticas**: un medio es receptor (`caustics::is_caster`); guarda
+  fotones en su superficie y ninguno entra. El vértice de salida recoge
+  los fotones del **exterior** de su superficie, hacia donde mira su
+  lóbulo (lo encontró la hoja: ver abajo).
+- **Rápido** (`src/render/materials.ts`): un difuso translúcido, el color
+  con que vuelve la luz por la similitud de van de Hulst
+  (`(1 − s)(1 − 0,139 s)/(1 + 1,17 s)`, `s = √(1 − albedo)`), y una
+  transmisión que baja con lo denso que es el medio para el tamaño de la
+  pieza; la ayuda de *Dispersión interna* dice que Rápido lo aproxima.
+- **Recetas** (nueve, claves nuevas; 86 en total): `HDPE_WHITE` (mfp
+  0,08 mm, albedo 0,996 / 0,995 / 0,99, rugosidad 0,35, ior 1,54),
+  `PP_NATURAL` (0,6; 0,995 / 0,994 / 0,988; 0,3; 1,49), `PMMA_FROST` (4;
+  0,999; g 0,3; 0,45; 1,49), `WAX` (0,35; 0,997 / 0,993 / 0,975; 0,4;
+  1,44), `SOAP_GLYCERIN` (12; 0,995 / 0,99 / 0,98; g 0,4; ámbar con
+  absorción a 60 mm; 0,12; 1,47), `MILK` (0,31; 0,9996 / 0,9993 / 0,9963;
+  1,35) y `CREAM` (0,19; 0,99997 / 0,9995 / 0,9949; 0,25; 1,4) de los
+  coeficientes reducidos medidos de Jensen et al. (SIGGRAPH 2001, leche
+  entera y nata), `JUICE_ORANGE` (0,9; 0,997 / 0,94 / 0,55; 1,35) y
+  `JUICE_APPLE` (40; 1; g 0,5; ámbar con absorción a 25 mm; 1,35); las de
+  plástico en *Plásticos* y el resto en *Otros*; los líquidos no se
+  desgastan. Las demás, a ojo.
+- **Interfaz**: bajo *Paredes* del vidrio, *Dispersión interna* (mm),
+  *Color de dispersión* y *Dirección* (−0,9 a 0,9, «hacia delante / hacia
+  atrás»), con su ayuda en los dos idiomas; mutación del *store*
+  deshacible como cualquier parámetro.
+- **Pruebas** (todas con su mutación, abajo): el *furnace* del medio
+  blanco (mfp 0,1 a 60 mm, g −0,4 a 0,4, frontera lisa y rugosa): entre
+  0,998 y 1,008 (antes, con la conexión recta, 0,983–1,015); un medio que
+  solo absorbe da Beer–Lambert en cada canal (el MIS espectral) a 2 %; un
+  medio gris (albedo 0,9 y 0,97) en un mundo uniforme da lo mismo con el
+  lóbulo que con la frontera exacta (0,2787 frente a 0,2776 y 0,4501
+  frente a 0,4496, cota 2 %: ahí el lóbulo es exacto y solo cuenta cuánto
+  refleja la frontera hacia dentro, que es lo que el *furnace* blanco no
+  ve); la leche bajo un panel lateral: el lóbulo a 256 spp contra la frontera
+  exacta (el paseo sale refractando por la superficie real; 4096 spp
+  distintas) da 2,881 frente a 2,790 (+3,3 %, cota 6 %) y su peor píxel
+  iluminado está al 0,971; la losa de leche bajo la placa de vidrio (la
+  regla de las paredes, arriba); un medio detrás de una bola de vidrio
+  recibe por fotones la misma luz que el trazador (−4,0 %, cota 10 %); la dispersión hacia delante deja pasar más luz por una losa
+  que la isótropa y esta más que hacia atrás (0,820 / 0,643 / 0,511); un
+  emisor que no es luz se encuentra tras un paseo; la fase es una densidad
+  y sus muestras la siguen; un medio es su mfp, su albedo y su absorción;
+  los medios son receptores, sin medio de Beer–Lambert y con sus propias
+  dimensiones; la hoja de contactos tiene las nueve recetas y sus escenas
+  son válidas; del lado de la interfaz, las recetas, los parámetros y sus
+  cadenas, el registro de 100 B, los proyectos de antes, el Rápido, que
+  `sss_sheet.rs` repite exactamente los números del catálogo y que el
+  `rt.wasm` real da el *hash* fijado.
+- **Paridad**: la escena de E9 (la de E5 con un medio de cera cálida, mfp
+  4 mm y absorción en su esfera de vidrio rugoso) tiene su *hash*
+  **`0xc6c9036e`** (`PINNED_E9_MEDIA_4SPP`, `rt --write-e9-example`,
+  `tests/fixtures/e9.rsb`), igual en todas las rutas SIMD, en WASI escalar
+  y `simd128`, con 1, 4 y 16 hilos, en el `rt.wasm` real
+  (`tools/wasm-parity.mjs`, también en CI) y por el código de la página.
+- **Coste**: {{COST}}
+- **Hoja de contactos** `out/sss-sheet.html` (`rt --sss-sheet out`):
+  las nueve recetas en esferas y el frasco de E5 lleno de leche y de zumo
+  de naranja, con y sin medio, y el de leche con fotones, a 64 y 256
+  muestras, con el tiempo y los rayos por muestra de cámara.
+
+**No encajó con el plan en (b).**
+
+- **El estimador del contrato** (NEE en cada evento a través de la
+  frontera con su transmitancia recta) se hizo primero y la dirección lo
+  rechazó tras ver la hoja: desde el lado de la cámara, una conexión recta
+  a una luz a más del ángulo crítico de la normal local (47,8° con ior
+  1,35; 41,8° a través de la pared de vidrio) no lleva nada, así que casi
+  todos los paseos de delante no ven la luz y la traen los pocos que llegan
+  al lado iluminado: en un píxel de leche bajo un panel lateral, mediana
+  0,011, media 0,098, y el 1 % de las muestras más brillantes llevaba el
+  23 % de la media. A 64 spp, 240 × 180 y cuatro hilos costaba 15 veces lo
+  claro en las esferas, 7,6 en el frasco de leche y 5,8 en el de zumo.
+  Medido después contra el camino exacto (el paseo sale refractando por
+  la frontera real, sin lóbulo ni conexión), además era un 25 % oscuro en
+  la esfera de leche; el lóbulo de salida queda un 3,5 % por encima. Se
+  descartaron con él sus tres decisiones: llevar **radiancia** por cada
+  cruce, `(1 − F(cos, η))/η²` lejos → cerca con reflexión total (la
+  versión en flujo leía 0,88–0,95 en el *furnace*); en una frontera
+  **rugosa**, el peso de una muestra de la BSDF en lugar de la fórmula
+  lisa (que leía 0,89), y la **ruleta con `η²`** (`max(throughput)·η²`,
+  para que el `1/η²` de entrar no matara la mitad de los paseos en el
+  primer evento). El tope de 1024 se queda (256 perdían un 3 % a 300 mfp
+  de ancho).
+- **La ruleta**: el plan de la dirección era ruleta sobre el *throughput*; el
+  camino entra en el sólido con `1/η²`, así que la primera ruleta (evento
+  33) mataba alrededor de la mitad de los paseos que llegaban ahí. Medido
+  (eficiencia `1/(varianza relativa × rayos)`, 12 × 12 px, dos mitades de
+  128 spp): leche 2,71 sobre el *throughput*, 4,30 con `× η²`, 4,29 sobre
+  el peso del propio paseo, 4,14 sin ruleta; HDPE 4,40, 5,65, 5,37 y 2,05.
+  La dirección eligió el peso del propio paseo (la versión con principio de
+  `× η²`).
+- **La cita**: el contrato dice «Pixar 2016, Chiang, Kulla y Fajardo»; la
+  charla de ese título es de Matt Jen-Yuan Chiang, Peter Kutz y Brent
+  Burley (Walt Disney Animation Studios, SIGGRAPH 2016 Talks). Se cita
+  así en el código.
+- **El lóbulo de salida es la aproximación de producción de la charla**:
+  ignora adónde refractaría la dirección de llegada y da a toda salida la
+  misma distribución en coseno. Con luz uniforme es exacto (el *furnace*);
+  bajo un panel lateral, +3,5 % frente al camino exacto.
+- **Un líquido dentro de un frasco de vidrio**: el vidrio macizo para los
+  rayos de sombra (E5), así que la NEE del vértice de salida no ve las
+  luces a través de la pared, y solo las encuentran las continuaciones por
+  el coseno que atraviesan el vidrio: el frasco de leche sigue con grano a
+  64 spp con cualquier estimador. Con cáusticas, los fotones se la llevan
+  (y ahí apareció el fallo de abajo); *Automático* solo enciende las
+  cáusticas con luces de menos de 20° vistas desde los *casters*, así que
+  con el *softbox* del frasco no se encienden. Decisión para la dirección.
+- **La regla de las paredes, medida sobre la refracción.** La decisión de
+  la dirección hablaba de los puntos de entrada y salida del rayo de sombra y de
+  la absorción en el tramo recto. Medido así (5 mm a lo largo del rayo
+  recto), en el frasco paraba la mitad de los rayos de sombra de las
+  salidas (90 de 183 en un render instrumentado de 60 × 45 a 4 spp): una
+  luz a más de 53° de la normal de una pared de 3 mm la cruza en más de
+  5 mm. Medida sobre el camino que refracta (el de la luz de verdad), una
+  pared de 3 mm deja pasar cualquier ángulo (el tramo dentro es como mucho
+  de 4,0 mm con ior 1,5); el rayo sigue luego en su dirección. Con eso, el
+  sesgo en la placa queda en −2,0 % y la varianza baja 4,8 veces (con la
+  medida recta, −2,1 % y 2,3 veces).
+- **«El frasco a 64 spp debe perder el grano»** no se cumple del todo: el
+  ruido de píxel de la leche baja un 28 % (0,112 → 0,081) y queda al nivel
+  de una esfera de leche sin vidrio (0,070), pero sigue por encima del
+  suelo (0,03). Lo que queda es del propio medio: cada muestra sale por un
+  punto distinto y su NEE elige una de tres luces y la cúpula, y el panel
+  de contraluz, el más potente, no se ve desde las salidas de delante
+  (la elección de luz por punto es E12).
+- **Fallo encontrado con la hoja**: con cáusticas, el vértice de salida
+  recogía los fotones con la normal de su lado (el de dentro) y no veía
+  ninguno: un medio dentro de vidrio perdía toda la luz que le llega a
+  través del vidrio (la leche del frasco salía un 19 % más oscura). Ahora
+  los recoge del exterior de su superficie; test nuevo (un bloque de medio
+  iluminado solo a través de una bola de vidrio: fotones y trazador
+  coinciden; con el fallo reintroducido, falla).
+- **La prueba de la leche y la varianza**: el plan pedía que una mutación
+  que reintrodujera la conexión desde dentro fallara por varianza. En una
+  esfera no se separan: con la luz a un lado, delante a 45° o a 70° y de
+  lado con un panel grande, el peor píxel iluminado a 256 spp de la
+  conexión recta está a 0,98 / 0,83 / 0,87 / 0,85 de su referencia y el
+  del lóbulo a 0,87 / — / 0,88 / 0,91; con la luz detrás (un borde
+  iluminado) fallan los dos (0,00 y 0,22). Su cola pesada se veía en el
+  frasco. Por decisión de la dirección, la prueba compara con la frontera exacta
+  (la conexión recta da 2,089 frente a 2,790, −25 %, y falla) y conserva
+  el peor píxel ≥ 0,6; la cláusula de la varianza se quita.
+- **Sin medios anidados** (un líquido dentro de otro medio), un sólido con
+  ior 1 no tiene medio (para la BSDF es una pared fina), un `g` cerca de
+  ±0,9 converge despacio (el *furnace* prueba hasta ±0,4) y el *furnace*
+  del medio solo corre en *release* (medio millón de caminos por caso; CI
+  lo corre en nativo y en WASI). Las cáusticas no entran en un medio.
+- La hoja se hizo a 64 y 256 muestras, no a 64 y 1024 como dice el
+  contrato (decisión de la dirección).
 
 ## E10 · Muestreo adaptativo y terminar por ruido — **Opus**
 

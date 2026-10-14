@@ -13,7 +13,8 @@
 //! extra trailing bytes (newer writers append fields), so old readers keep working.
 //!
 //! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
-//! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c) and are
+//! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c, `|||||`
+//! E9) and are
 //! optional: a shorter payload, as older writers wrote it, reads them as their defaults, and the
 //! writer always writes them):
 //!
@@ -25,6 +26,8 @@
 //! MATL  56 B  u32 kind; f32 base_color[3] metallic roughness ior transmission coat
 //!             coat_roughness emission[3] emission_power | u32 flags (default 0)       (60 B)
 //!             || f32 opacity (1) anisotropy (0) absorption_mm (0)                     (72 B)
+//!             ||||| f32 bevel_mm (0, reserved for E6) scatter_mm (0) scatter_color[3]
+//!             (1 1 1) scatter_g (0) abbe (0)                                          (100 B)
 //! LGHT  76 B  u32 kind; f32 position[3] direction[3] up[3] size_x size_y color[3] power
 //!             spread_deg angle_deg; u32 flags
 //! ENVR  40 B  u32 kind; f32 floor horizon zenith strength rotation_deg background_color[3];
@@ -91,7 +94,13 @@
 //!   straight through it (no refraction, the colour once) and so do shadow rays. `opacity` below
 //!   one makes the surface a stochastic cut-out (emitters ignore it); `absorption_mm` above zero
 //!   makes `base_color` the colour white light keeps after that many millimetres inside a solid
-//!   (Beer–Lambert) instead of a surface tint.
+//!   (Beer–Lambert) instead of a surface tint. E9: `bevel_mm` is reserved for E6 (read, kept,
+//!   written; not rendered); `scatter_mm` above zero fills a clear solid with a scattering medium
+//!   of that mean free path, single-scattering albedo `scatter_color` and Henyey–Greenstein
+//!   anisotropy `scatter_g` (see [`crate::integrator::medium`]); `abbe` above zero makes a clear
+//!   solid's index depend on the wavelength (Cauchy's law with that Abbe number, see
+//!   `integrator::dispersion`). A file written before E9 reads them as 0, white, 0, 0:
+//!   no medium and no dispersion.
 //! * `LGHT.kind`: **0 rect** (`size_x` × `size_y`, its local Y axis along `up`), **1 disk**
 //!   (diameter `size_x`), **2 sun** (a disc of angular diameter `angle_deg`, 0 for a delta
 //!   direction), **3 point** and **4 spot** (reserved for L4: parsed, kept, not rendered). Rect
@@ -387,6 +396,11 @@ fn parse_material(r: &mut Reader) -> Result<Material, RsbError> {
         opacity: r.opt_f32(1.0)?,
         anisotropy: r.opt_f32(0.0)?,
         absorption_mm: r.opt_f32(0.0)?,
+        bevel_mm: r.opt_f32(0.0)?,
+        scatter_mm: r.opt_f32(0.0)?,
+        scatter_color: Rgb::new(r.opt_f32(1.0)?, r.opt_f32(1.0)?, r.opt_f32(1.0)?),
+        scatter_g: r.opt_f32(0.0)?,
+        abbe: r.opt_f32(0.0)?,
     })
 }
 
@@ -697,6 +711,11 @@ impl Scene {
                 w.f32(m.opacity);
                 w.f32(m.anisotropy);
                 w.f32(m.absorption_mm);
+                w.f32(m.bevel_mm);
+                w.f32(m.scatter_mm);
+                w.rgb(m.scatter_color);
+                w.f32(m.scatter_g);
+                w.f32(m.abbe);
             });
         }
         for mesh in self.geometry.meshes() {
@@ -873,6 +892,11 @@ mod tests {
                     opacity: 0.75,
                     anisotropy: 0.4,
                     absorption_mm: 25.0,
+                    bevel_mm: 0.5,
+                    scatter_mm: 2.5,
+                    scatter_color: Rgb::new(0.9, 0.8, 0.7),
+                    scatter_g: -0.3,
+                    abbe: 42.0,
                 },
             ],
             geometry: Geometry::from_meshes(vec![
@@ -1026,7 +1050,7 @@ mod tests {
                 .map(|(_, p)| p.len())
         };
         assert_eq!(size(b"CAMR"), Some(15 * 4));
-        assert_eq!(size(b"MATL"), Some(18 * 4));
+        assert_eq!(size(b"MATL"), Some(25 * 4));
         assert_eq!(size(b"LGHT"), Some(19 * 4));
         assert_eq!(size(b"ENVR"), Some(21 * 4));
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
@@ -1125,6 +1149,16 @@ mod tests {
         let m = &read.materials[1];
         assert_eq!((m.opacity, m.anisotropy, m.absorption_mm), (1.0, 0.0, 0.0));
         assert_eq!(m.flags, 1);
+        assert_eq!(
+            (
+                m.bevel_mm,
+                m.scatter_mm,
+                m.scatter_color,
+                m.scatter_g,
+                m.abbe
+            ),
+            (0.0, 0.0, Rgb::WHITE, 0.0, 0.0)
+        );
         let e = &read.environment;
         assert_eq!(
             (e.hdri_map, e.backplate_map, e.backplate_fit),

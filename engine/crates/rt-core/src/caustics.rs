@@ -111,6 +111,10 @@ pub fn is_caster(m: &Material) -> bool {
     if m.is_emissive() || r.is_nan() || r > MAX_ROUGHNESS {
         return false;
     }
+    // A scattering medium (E9b) is a receiver: photons land on it and none enter it.
+    if crate::integrator::medium::of(m).is_some() {
+        return false;
+    }
     let glass = m.kind == MATERIAL_GLASS || (m.transmission >= 0.5 && m.metallic < 0.5);
     let metal = m.kind != MATERIAL_GLASS && m.metallic >= 0.5;
     glass || metal

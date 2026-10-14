@@ -85,6 +85,8 @@ export interface ParamSpec {
   preview: boolean;
   /** Only shown when another parameter has a given value. */
   when?: { key: string; value: unknown };
+  /** String key of the help shown on the row (`src/ui/strings.ts`). */
+  tip?: string;
 }
 
 const unit = (min: number, max: number, step = 0.01) => ({ min, max, step });
@@ -113,6 +115,11 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
     { key: 'absorptionMm', kind: 'number', min: 0, max: 5000, step: 1, unit: 'mm', fallback: 50, preview: true },
     // E5: a thin wall (a sheet, a bulb, a visor modelled as one surface) lets light straight through.
     { key: 'walls', kind: 'select', options: ['SOLID', 'THIN'], fallback: 'SOLID', preview: true },
+    // E9: a scattering medium inside the solid (translucent plastics, wax, soap, milk, juice): the mean free path
+    // (0: none), what each bounce keeps of each colour, and where light goes at each bounce (Henyey–Greenstein g).
+    { key: 'scatterMm', kind: 'number', min: 0, max: 1000, step: 0.05, unit: 'mm', fallback: 0, preview: true, tip: 'param.scatterMm.tip' },
+    { key: 'scatterColor', kind: 'color', fallback: [1, 1, 1, 1], preview: true, tip: 'param.scatterColor.tip' },
+    { key: 'scatterG', kind: 'number', min: -0.9, max: 0.9, step: 0.05, fallback: 0, preview: true, tip: 'param.scatterG.tip' },
   ],
   WOOD: [
     { key: 'woodColor1', kind: 'color', fallback: [0.56, 0.38, 0.21, 1], preview: true },

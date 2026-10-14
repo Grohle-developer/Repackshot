@@ -751,6 +751,24 @@ mod tests {
         assert_eq!(scene_4spp_hash(&scene, Isa::detect()), PINNED_E5_HDRI_4SPP);
     }
 
+    #[test]
+    fn the_e9_media_have_a_pinned_hash_on_every_platform() {
+        // E9b added scattering media. Scenes without one draw exactly the numbers they drew
+        // before (the hashes above); this one walks a medium behind a rough boundary and leaves
+        // it by exit vertices that sample the lights, through an RSB round trip;
+        // `tools/wasm-parity.mjs` checks the real module against it (`rt --write-e9-example`).
+        let scene = crate::example::e9_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("E9 example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_E9_MEDIA_4SPP, "media on {}", isa.name());
+        }
+    }
+
+    /// Pinned hash of the E9 example (scattering media) at 4 samples per pixel.
+    pub(crate) const PINNED_E9_MEDIA_4SPP: u32 = 0xc6c9_036e;
+
     /// Pinned hash of the E5b-1 example (caustics) at 4 samples per pixel.
     pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x8bff_5f8a;
 

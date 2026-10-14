@@ -220,7 +220,7 @@ fn thin_reflectance(cos: f32, eta: f32) -> f32 {
 /// `wo` refracted through the microfacet `h` (`wo·h > 0`) into a medium `eta` times denser;
 /// `None` under total internal reflection.
 #[inline]
-fn refract(wo: Vec3, h: Vec3, eta: f32) -> Option<Vec3> {
+pub(crate) fn refract(wo: Vec3, h: Vec3, eta: f32) -> Option<Vec3> {
     let cos_i = wo.dot(h);
     let sin2_t = (1.0 - cos_i * cos_i) / (eta * eta);
     if sin2_t >= 1.0 {
@@ -335,6 +335,9 @@ pub struct Bsdf {
     thin: bool,
     /// Multiple-scattering compensation (E9a).
     ms: MultiScatter,
+    /// Above zero, the surface is the exit of a scattering medium (E9b): a Lambertian
+    /// transmission lobe of this albedo and nothing else ([`Bsdf::medium_exit`]).
+    exit: f32,
     /// The opaque dielectric's specular layer, as the diffuse lobe under it sees it (E9a2).
     base_layer: energy::Layer,
     /// The clear coat, as the layers under it see it (E9a2).
@@ -398,6 +401,7 @@ impl Bsdf {
             tint,
             thin,
             ms: MultiScatter::NONE,
+            exit: 0.0,
             base_layer: energy::Layer::CLEAR,
             coat_layer: energy::Layer::CLEAR,
             diffuse_norm: 1.0,
@@ -503,9 +507,24 @@ impl Bsdf {
             tint: Rgb::WHITE,
             thin: false,
             ms: MultiScatter::NONE,
+            exit: 0.0,
             base_layer: energy::Layer::CLEAR,
             coat_layer: energy::Layer::CLEAR,
             diffuse_norm: 1.0,
+        }
+    }
+
+    /// Where a random walk leaves a scattering medium (E9b, [`crate::integrator::medium`]): a
+    /// Lambertian lobe that transmits through the surface (to `wi.z < 0`, the outside) with
+    /// albedo `albedo` (`η²` of the solid: radiance inside is that much brighter), and reflects
+    /// nothing. The walk has already chosen to leave with the probability `1 - F` of the
+    /// boundary's Fresnel; the directions it arrives with are taken as isotropic.
+    pub fn medium_exit(albedo: f32) -> Bsdf {
+        Bsdf {
+            exit: albedo.max(0.0),
+            diffuse: Rgb::BLACK,
+            clear: 1.0,
+            ..Bsdf::lambert(Rgb::BLACK)
         }
     }
 
@@ -644,6 +663,13 @@ impl Bsdf {
         if wo.z <= 0.0 {
             return Rgb::BLACK;
         }
+        if self.exit > 0.0 {
+            return if wi.z < 0.0 {
+                Rgb::splat(self.exit * fmath::FRAC_1_PI)
+            } else {
+                Rgb::BLACK
+            };
+        }
         if wi.z <= 0.0 {
             if wi.z < 0.0 && lobes == Lobes::All && self.clear > 0.0 && !self.thin {
                 return self.eval_refraction(wo, wi);
@@ -723,6 +749,9 @@ impl Bsdf {
         if wo.z <= 0.0 {
             return 0.0;
         }
+        if self.exit > 0.0 {
+            return (-wi.z).max(0.0) * fmath::FRAC_1_PI;
+        }
         if wi.z <= 0.0 {
             if wi.z < 0.0 && self.clear > 0.0 && !self.thin {
                 return self.refraction_pdf(&self.lobe_weights(wo), wo, wi);
@@ -775,6 +804,17 @@ impl Bsdf {
     pub fn sample(&self, wo: Vec3, u: (f32, f32)) -> Option<BsdfSample> {
         if wo.z <= 0.0 {
             return None;
+        }
+        if self.exit > 0.0 {
+            let d = warp::cosine_hemisphere(u);
+            let wi = Vec3::new(d.x, d.y, -d.z);
+            let pdf = d.z * fmath::FRAC_1_PI;
+            return (pdf > 0.0).then_some(BsdfSample {
+                wi,
+                weight: Rgb::splat(self.exit),
+                pdf,
+                straight: false,
+            });
         }
         let w = self.lobe_weights(wo);
         let (u0, u1) = u;

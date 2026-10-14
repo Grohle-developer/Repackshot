@@ -404,8 +404,8 @@ banderas) es opcional: sin ella, cada malla es una instancia identidad.
 Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 `rt-core`):
 
-- **`MATL`** (72 B desde E5; los de 56 y 60 B se leen con los valores por
-  defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
+- **`MATL`** (100 B desde E9; los de 56, 60 y 72 B se leen con los valores
+  por defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
   barniz; la parte `transmission` es vidrio claro: reflexión y refracción
   GGX con el Fresnel dieléctrico exacto), 1 vidrio (el principal sin
   metal), 2 emisivo (radiancia `emission × emission_power`); desconocido =
@@ -414,7 +414,13 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   rectos). E5 añade `opacity` (1; por debajo, recorte estocástico),
   `anisotropy` (0) y `absorption_mm` (0; por encima, Beer–Lambert dentro
   del sólido: `base_color` es lo que conserva la luz blanca tras esos
-  milímetros).
+  milímetros). E9 añade, en este orden: `bevel_mm` (byte 72, reservado
+  para E6: se lee y se conserva, la interfaz escribe 0), `scatter_mm` (0;
+  por encima, el sólido claro está lleno de un medio dispersor con esa
+  distancia libre media, §5.2 ter), `scatter_color` (tres `f32`, el albedo
+  de dispersión simple por canal; 1, 1, 1), `scatter_g` (0; la anisotropía
+  de Henyey–Greenstein, recortada a ±0,9) y `abbe` (0; el número de Abbe
+  del vidrio macizo, que se escribe ya y se renderiza desde E9c).
 - **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
   (L4); ≥ 5 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
@@ -550,7 +556,7 @@ con `HALO` = 72 filas alrededor (el alcance de todo el filtro) y da
 exactamente esas filas de la imagen entera, así que los anfitriones lo
 reparten entre hilos o *workers* sin cambiar un bit (bandas de 192 filas
 como mínimo). *Hash* fijado: el ejemplo a 4 muestras con *denoise*,
-`0xab15f290` (`PINNED_DENOISED_EXAMPLE_4SPP`), igual con el `rt.wasm` real
+`0x7483f82e` desde E9a (`PINNED_DENOISED_EXAMPLE_4SPP`), igual con el `rt.wasm` real
 (`tools/wasm-parity.mjs --expect-denoised`) y por el código de la página
 (`tests/denoise.test.ts`).
 
@@ -592,7 +598,7 @@ relativa a la del suelo abierto, al fondo que muestra; con fondo
 transparente no se muestran. Coste: `caustic_photons` fotones por muestra,
 trazados por cada anfitrión antes de las baldosas de esa muestra (en wasm,
 cada *worker* guarda los 16 mapas de la última pasada). *Hash* fijado: la
-escena de E5 con 2048 fotones por muestra, `0x55d60f2f`
+escena de E5 con 2048 fotones por muestra, `0x8bff5f8a` desde E9a
 (`PINNED_E5B_CAUSTICS_4SPP`, `rt --write-e5b-example`), igual en todas las
 rutas SIMD, en el `rt.wasm` real, por el lanzador con 1, 4 y 16 hilos y por
 el código de la página.
@@ -610,6 +616,82 @@ proyecto, copiados en cada trabajo) y llegan al motor como los campos de
 *Ruido reducido* cuando la imagen en pantalla es la filtrada y *Cáusticas ·
 N fotones por muestra* cuando el motor las renderiza (`rt_scene_caustics`
 en el pool, `FLAG_CAUSTICS` en el lanzador).
+
+### 5.2 ter · Materiales: energía y medios dispersores (E9)
+
+**Compensación de energía** (`rt_core::bsdf::energy`, tablas en
+`bsdf/energy_table.rs`). El GGX de dispersión simple pierde la luz que
+rebota más de una vez entre microfacetas (un metal blanco de rugosidad 1
+reflejaba 0,356 en el *furnace*). El lóbulo especular (metal y dieléctrico
+opaco) y el barniz llevan el lóbulo añadido de Kulla y Conty (2017),
+`F_ms (1 − E(μo)) (1 − E(μi)) / (π (1 − E_avg))` con
+`F_ms = F_avg² E_avg / (1 − F_avg (1 − E_avg))` y el `F_avg` de Schlick
+`f0 + (f90 − f0)/21`, muestreado por el coseno y con su densidad en la
+mezcla del MIS. La parte clara (Walter 2007) se divide por su propio albedo
+de potencia `E_t(μo, α, η)` (Turquin 2019); con rugosidad, se muestrea
+primero la microfaceta y se refleja con su propio Fresnel (Walter 2007,
+§5.3). La capa difusa bajo el especular dieléctrico pesa
+`(1 − E_s(μo)) (1 − E_s(μi)) / (1 − E_s,avg)` (Kulla y Conty), y bajo el
+barniz, el producto de las dos transmisiones normalizado por su media
+conjunta (Gauss–Legendre de 8 puntos, `energy::joint_norm`). Las tablas son
+nuestras: Monte Carlo con semilla fija (VNDF de Heitz 2018, rejilla
+*jittered* 64 × 64 por nodo, PCG), 32 × 32 nodos en `√μ` y `√α` (y 17
+índices de refracción entrando y saliendo para la parte clara), en
+fracciones de 16 bits; un test las regenera bit a bit y otro mide el error
+de interpolación (< 0,5 % frente a 16 veces las muestras). Por debajo de
+`α = 0,002` no hay compensación: la rugosidad 0 conserva los bits.
+
+**Medios dispersores** (`rt_core::integrator::medium`). Un sólido claro
+(transmisión, no pared fina, no metal, no emisor, `ior ≥ 1,0001`) con
+`scatter_mm > 0` está lleno de un medio homogéneo: `σt = 1/scatter_mm`,
+`σs = albedo σt`, `σa = (1 − albedo) σt` por canal, más la absorción de
+`absorption_mm` y `base_color` si la hay. El camino que refracta dentro
+hace un paseo aleatorio (Chiang, Kutz y Burley, SIGGRAPH 2016): distancias
+de un canal *héroe* elegido una vez por paseo con MIS espectral sobre los
+tres (Wilkie et al. 2014, cocientes renormalizados en cada paso), fase de
+Henyey–Greenstein y, tras 32 eventos, ruleta rusa sobre el peso del propio
+paseo (lo que ha perdido desde que entró: el camino entra con el `1/η²` de
+la refracción, que la salida devuelve).
+**Sin estimación del siguiente evento dentro.** Un paseo que no dispersa
+cruza como el vidrio claro; uno que dispersa, al llegar a la frontera, se
+refleja hacia dentro con el Fresnel de salida (reflexión total incluida) o
+sale: el vértice de salida es un vértice de superficie con un lóbulo de
+transmisión lambertiano de albedo `η²` (`Bsdf::medium_exit`), donde el
+integrador muestrea una luz con su MIS y sigue con una dirección por el
+coseno. Como máximo 1024 pasos por camino (eventos y reflexiones en la
+frontera); pasado el tope, el paseo va recto a la frontera conservando todo
+salvo la absorción y sale por el lóbulo. Los medios no cuentan contra
+`RNDR.max_depth`. Todos sus números son dimensiones *hash* más allá de la
+tabla Sobol (`sampler::medium_dim`, 8 por paso), así que una escena sin
+medios no cambia ni un bit. Para el mapa de fotones un medio es receptor:
+guarda fotones en su superficie y ninguno entra (`caustics::is_caster`);
+el vértice de salida recoge los del exterior de su superficie.
+**Paredes finas alrededor de un medio** (una **aproximación**): un rayo de
+sombra desde un vértice de salida, y solo desde uno, atraviesa una pared de
+vidrio liso (rugosidad ≤ 0,05, del todo clara, sin barniz ni medio propio)
+donde la luz que la cruzara refractando saldría a menos de 5 mm de su
+entrada por una cara a menos de 15° de la primera, como si las dos
+refracciones se anularan: conserva las transmitancias de Fresnel de entrada
+y de salida y la absorción de la pared en ese tramo (su tinte en cada cara
+sin distancia de absorción), y sigue en su dirección desde la cara de
+salida; una pared más gruesa, rugosa o con barniz lo sigue parando. En una
+losa de leche bajo una placa de 3 mm queda un 2,0 % por debajo del camino
+exacto. Para el MIS, una muestra de la BSDF del vértice de salida que
+entra y sale de una pared así es un suceso recto de ese vértice (conserva
+su densidad y su distancia), así que una luz que encuentra detrás pesa
+frente a esos rayos de sombra; con cáusticas, la luz de una luz de fotones
+a través de una pared es del mapa, como a través de cualquier *caster*.
+Es lo que deja ver las luces a un líquido dentro de un frasco por el lado
+del frasco; la solución exacta (NEE de variedades) es E13.
+*Hash* fijado: la escena de E5 con un medio en su esfera de vidrio rugoso,
+`PINNED_E9_MEDIA_4SPP` (`rt --write-e9-example`, `tests/fixtures/e9.rsb`),
+igual en todas las rutas SIMD, en WASI, en el `rt.wasm` real y por el
+código de la página. En el visor **Rápido** (`src/render/materials.ts`),
+un medio es un difuso translúcido: el color con que vuelve la luz
+(similitud de van de Hulst, `(1 − s)(1 − 0,139 s)/(1 + 1,17 s)` con
+`s = √(1 − albedo)`) y una transmisión que baja con lo denso que es el
+medio para el tamaño de la pieza; la ayuda del inspector dice que Rápido lo
+aproxima.
 
 ### 5.3 · En el navegador: workers
 

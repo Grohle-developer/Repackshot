@@ -3,9 +3,19 @@
 import type { MaterialCategoryEntry, MaterialPreset } from './types';
 
 // Material library (upstream MAT_CATEGORIES and MAT_METAL ... MAT_OTHER):
-// 77 presets in upstream order, grouped by category. The family decides which
-// shader recipe is built; the params fill in its editable properties. Colours
-// are linear RGBA.
+// 77 presets in upstream order, grouped by category, and the translucent
+// materials and liquids of phase E9 (not from upstream) at the end of their
+// category. The family decides which shader recipe is built; the params fill
+// in its editable properties. Colours are linear RGBA.
+//
+// E9 recipes: GLASS family with a scattering medium inside (`scatterMm`, the
+// mean free path; `scatterColor`, the single-scattering albedo; `scatterG`,
+// the Henyey–Greenstein direction). Dense media use the reduced coefficients
+// of the similarity relation (σs' = σs (1 - g), g = 0): the same look at a
+// fraction of the cost. Milk and cream are the measured reduced scattering and
+// absorption of H. W. Jensen et al., "A Practical Model for Subsurface Light
+// Transport", SIGGRAPH 2001 (table 2), as one mean free path (their mean σt')
+// and an albedo per channel; the others are set by eye on the E9 sheet.
 
 export const MATERIAL_CATEGORIES: readonly MaterialCategoryEntry[] = [
   { key: 'METAL', label: { es: 'Metal', en: 'Metal' } },
@@ -141,6 +151,24 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'BAKELITE', category: 'PLASTIC', family: 'SIMPLE',
     label: { es: 'Baquelita', en: 'Bakelite' },
     params: { baseColor: [0.09, 0.05, 0.035, 1], roughness: 0.25, coat: 0.6, coatRoughness: 0.12 },
+  },
+  {
+    key: 'HDPE_WHITE', category: 'PLASTIC', family: 'GLASS',
+    label: { es: 'HDPE blanco', en: 'White HDPE' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.35, ior: 1.54, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.08, scatterColor: [0.996, 0.995, 0.99, 1], scatterG: 0 },
+  },
+  {
+    key: 'PP_NATURAL', category: 'PLASTIC', family: 'GLASS',
+    label: { es: 'PP natural', en: 'Natural PP' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.3, ior: 1.49, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.6, scatterColor: [0.995, 0.994, 0.988, 1], scatterG: 0 },
+  },
+  {
+    key: 'PMMA_FROST', category: 'PLASTIC', family: 'GLASS',
+    label: { es: 'Acrílico esmerilado', en: 'Frosted acrylic' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.45, ior: 1.49, transmission: 1, absorptionMm: 0,
+      scatterMm: 4, scatterColor: [0.999, 0.999, 0.999, 1], scatterG: 0.3 },
   },
 
   // --- Woods ---
@@ -453,6 +481,42 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'WHITE_STUDIO', category: 'OTHER', family: 'SIMPLE',
     label: { es: 'Blanco estudio', en: 'Studio white' },
     params: { baseColor: [0.82, 0.82, 0.82, 1], roughness: 0.45 },
+  },
+  {
+    key: 'WAX', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Cera', en: 'Wax' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.4, ior: 1.44, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.35, scatterColor: [0.997, 0.993, 0.975, 1], scatterG: 0 },
+  },
+  {
+    key: 'SOAP_GLYCERIN', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Jabón de glicerina', en: 'Glycerine soap' },
+    params: { baseColor: [0.93, 0.72, 0.42, 1], roughness: 0.12, ior: 1.47, transmission: 1, absorptionMm: 60,
+      scatterMm: 12, scatterColor: [0.995, 0.99, 0.98, 1], scatterG: 0.4 },
+  },
+  {
+    key: 'MILK', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Leche', en: 'Milk' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0, ior: 1.35, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.31, scatterColor: [0.9996, 0.9993, 0.9963, 1], scatterG: 0 },
+  },
+  {
+    key: 'JUICE_ORANGE', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Zumo de naranja', en: 'Orange juice' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0, ior: 1.35, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.9, scatterColor: [0.997, 0.94, 0.55, 1], scatterG: 0 },
+  },
+  {
+    key: 'JUICE_APPLE', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Zumo de manzana', en: 'Apple juice' },
+    params: { baseColor: [0.86, 0.55, 0.16, 1], roughness: 0, ior: 1.35, transmission: 1, absorptionMm: 25,
+      scatterMm: 40, scatterColor: [1, 1, 1, 1], scatterG: 0.5 },
+  },
+  {
+    key: 'CREAM', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Crema', en: 'Cream' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.25, ior: 1.4, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.19, scatterColor: [0.99997, 0.9995, 0.9949, 1], scatterG: 0 },
   },
 ];
 

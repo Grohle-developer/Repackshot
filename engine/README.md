@@ -164,7 +164,8 @@ twice (0: off).
   distance; the lens point from the concentric disk map) or orthographic. Box pixel filter (a
   Gaussian or Blackman-Harris filter can replace it by weighting splats).
 * **Materials** (`bsdf`), `MATL.kind`: **0 principled**: Lambert diffuse weighted by
-  `(1 - F(μo))(1 - F(μi))`, GGX specular with height-correlated Smith masking (Heitz 2014),
+  `(1 - E_s(μo))(1 - E_s(μi)) / (1 - E_s,avg)` (E9a, Kulla and Conty 2017: `E_s` the albedo of
+  the specular layer above it; jointly normalised with the coat's under a coat), GGX specular with height-correlated Smith masking (Heitz 2014),
   sampled by its visible normals (Heitz 2018), `α = roughness²`, Schlick Fresnel with
   `F0 = ((ior - 1)/(ior + 1))²` for the dielectric and `base_color` for the metal, blended by
   `metallic`, `F90 = min(1, 50 F0)` (Lagarde and de Rousiers 2014: an `ior` of 1 has no
@@ -184,9 +185,32 @@ twice (0: off).
   area. The interface writes `emission_power = emitPower · EMIT_RADIANCE_PER_WATT` (0.06,
   `src/core/photometry.ts`, the factor the preview has used since U1: the catalogue's watts are
   a level, not a flux) and `emission` the black body's colour at its temperature (normalised to
-  its largest channel) or the colour given (`emitKind`). Single-scattering GGX loses energy when
-  rough (a white metal at roughness 1 reflects `1 - ln 2` head on; glass at roughness 1 keeps
-  as little as 42 % of the light from inside, at worst); it never gains any.
+  its largest channel) or the colour given (`emitKind`). **Energy compensation** (E9a,
+  `bsdf::energy`): single-scattering GGX loses the light that bounces between microfacets (a white
+  metal at roughness 1 reflected 0.356 in a furnace); the specular lobe and the coat get Kulla and
+  Conty's extra lobe `F_ms (1 - E(μo))(1 - E(μi)) / (π (1 - E_avg))`, cosine-sampled, and the
+  clear part is divided by its own power albedo (Turquin 2019), from our own Monte Carlo tables
+  (`bsdf/energy_table.rs`, 32 × 32 nodes, regenerated bit for bit by a test). White metal, glass
+  and plastic, bare or coated, come out white within 1 % in a furnace at any roughness;
+  roughness 0 keeps every bit except the plastic's diffuse, which no longer loses `F_avg`.
+* **Scattering media** (E9b, `integrator::medium`): a clear solid with `MATL.scatter_mm` is
+  filled with a homogeneous medium (mean free path `scatter_mm`, single-scattering albedo
+  `scatter_color`, Henyey–Greenstein `scatter_g`, plus the absorption of `absorption_mm`). The
+  path takes a random walk inside (Chiang, Kutz and Burley 2016): hero-channel distance sampling
+  with spectral MIS over the three channels, Russian roulette after 32 events on the walk's own
+  weight (what it lost since it entered), no light sampled inside. At the boundary the Fresnel of
+  leaving reflects the walk back in (total internal reflection included) or lets it out through
+  an exit vertex: a Lambertian transmission lobe of albedo `η²` where the integrator samples a
+  light with MIS and continues by the cosine. At most 1024 steps per path, after which the walk
+  goes straight out keeping all but absorption. Its random numbers are hashed dimensions beyond
+  the Sobol table, so scenes without media keep every bit. A medium is a receiver for the photon
+  map; its exit vertices gather the photons on the outside of its surface. **Thin walls** (an
+  approximation): a shadow ray from an exit vertex, and only from one, crosses smooth clear glass
+  where light refracting through it would leave within 5 mm by a face within 15° of the first,
+  as if the refractions cancelled (the Fresnel transmittances in and out and the absorption over
+  that path; 2.0 % darker than the exact path under a 3 mm plate), and the exit
+  vertex's BSDF samples through such a wall count as straight events for MIS: a liquid in a glass
+  bottle sees the lights through the bottle's side.
 * **Dielectrics in the integrator** (E5): a path keeps track of the solid it is in (the hit side
   of a closed mesh) and attenuates by Beer–Lambert along each segment inside. Thin walls and
   cut-outs are *passable*: their straight-through events keep the last vertex's BSDF density and
@@ -292,7 +316,7 @@ exponentials. `f32` only, a fixed order: the same bits natively and in WebAssemb
 RGBA sums out (coverage as it was). `denoise_rows` computes a band of rows from the rows and
 `HALO` = 72 rows around them, exactly those rows of the whole image: `rt`, the launcher and the
 page cut the work in bands (of at least 192 rows) on their threads or workers.
-`PINNED_DENOISED_EXAMPLE_4SPP` (`crates/rt-post/src/denoise/tests.rs`, `0xab15f290`) is the
+`PINNED_DENOISED_EXAMPLE_4SPP` (`crates/rt-post/src/denoise/tests.rs`, `0x7483f82e` since E9a) is the
 example at 4 spp denoised; `tools/wasm-parity.mjs --expect-denoised` checks the real module
 against it. On the sheet's scenes the relative MSE against a long render falls to 4–20 % of the
 noisy image's at 4 spp and to 10–40 % at 16 spp (`rt-cli/tests/example.rs` checks the bound).
@@ -327,7 +351,7 @@ stream per (seed, sample, photon): a map is the same bits however its photons ar
 all their threads and every web worker traces the maps of the samples it renders (keeping 16).
 The shadow catcher (the interface's floor) gets the caustics too: photons land on its plane, and a
 camera ray that sees it adds their light relative to the open floor's to the background it shows
-(not with a transparent background). `PINNED_E5B_CAUSTICS_4SPP` (`0x55d60f2f`, the E5 scene with
+(not with a transparent background). `PINNED_E5B_CAUSTICS_4SPP` (`0x8bff5f8a` since E9a, the E5 scene with
 2048 photons per sample, `rt --write-e5b-example`) holds on every SIMD path, in WASI, through
 the real module and through the launcher with 1, 4 and 16 threads.
 
@@ -500,7 +524,9 @@ and `absorption_mm` (72 bytes), the environment's `hdri_map`, `backplate_map`, `
 `BMAP` (a 16-byte header `format width height byte_len`, the data, zero padding to 4 bytes; the
 environment names a bitmap by its position among the `BMAP` sections, `0xffffffff` for none).
 X2 appended `RNDR.passes` (40 bytes), the mask of the exact passes above (0, and every older file:
-none). The exact field layout and the semantics
+none). E9 appended to `MATL` (100 bytes) `bevel_mm` (reserved for E6: read and kept, written 0),
+`scatter_mm`, `scatter_color` (three floats), `scatter_g` and `abbe` (written now, rendered from
+E9c on). The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the

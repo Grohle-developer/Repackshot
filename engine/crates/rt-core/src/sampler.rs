@@ -134,6 +134,31 @@ pub const fn cutout_dim(bounce: u32, crossing: u32) -> u32 {
     DIM_CUTOUT + bounce * 64 + c
 }
 
+/// First logical dimension of the scattering media (E9b): beyond the cut-outs, so a scene
+/// without media draws exactly the numbers it drew before.
+pub const DIM_MEDIUM: u32 = 1 << 21;
+/// Dimensions of one medium event.
+pub const MEDIUM_DIMS_PER_EVENT: u32 = 8;
+/// Medium events of one walk with their own dimensions (also the path's cap,
+/// [`crate::integrator::medium::MAX_MEDIUM_EVENTS`]).
+pub const MEDIUM_EVENTS: u32 = 1024;
+
+/// The first dimension of event `event` of the walk that starts after path vertex `bounce`
+/// (walks after vertex 255 share the last block of numbers).
+#[inline]
+pub const fn medium_dim(bounce: u32, event: u32) -> u32 {
+    let b = if bounce < 256 { bounce } else { 255 };
+    let e = if event < MEDIUM_EVENTS {
+        event
+    } else {
+        MEDIUM_EVENTS - 1
+    };
+    DIM_MEDIUM + (b * MEDIUM_EVENTS + e) * MEDIUM_DIMS_PER_EVENT
+}
+
+/// First logical dimension of the wavelength chosen at a path's first dispersive glass (E9c).
+pub const DIM_DISPERSION: u32 = 1 << 23;
+
 /// Degree `s`, coefficients `a` and initial direction numbers `m_1..m_s` of dimensions 2 to 64
 /// (Joe and Kuo, `new-joe-kuo-6.21201`, rows `d = 2..=64`). Unused `m` entries are zero.
 const JOE_KUO: [(u32, u32, [u32; 9]); 63] = [

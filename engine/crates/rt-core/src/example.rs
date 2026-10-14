@@ -358,6 +358,29 @@ pub fn e5b_scene() -> Scene {
     scene
 }
 
+/// The E9 parity scene (`render.rs` pins its hash; `rt --write-e9-example` writes it for
+/// `tools/wasm-parity.mjs`): the E5 scene ([`e5_scene`], HDRI) with its big sphere filled with a
+/// scattering medium (a warm, slightly forward-scattering wax with an absorption distance, so the
+/// extinction differs between channels and the walk's spectral MIS is in the hash) behind a rough
+/// boundary, so walks, their reflections back in, their exit vertices with their light samples and
+/// the plain crossings all take part.
+pub fn e9_scene() -> Scene {
+    let mut scene = e5_scene(false);
+    scene.materials[0] = Material {
+        kind: crate::scene::MATERIAL_GLASS,
+        base_color: Rgb::new(0.85, 0.7, 0.5),
+        roughness: 0.3,
+        ior: 1.44,
+        transmission: 1.0,
+        absorption_mm: 120.0,
+        scatter_mm: 4.0,
+        scatter_color: Rgb::new(0.995, 0.98, 0.95),
+        scatter_g: 0.3,
+        ..Material::default()
+    };
+    scene
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
