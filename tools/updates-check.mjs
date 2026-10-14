@@ -24,7 +24,7 @@
 // Screenshot (English, the newer-release case): settings-updates.png. Results: out/updates-check.json.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,6 +41,7 @@ mkdirSync(OUT, { recursive: true });
 mkdirSync(SHOTS, { recursive: true });
 const BASE_URL = `http://localhost:${PORT}`;
 const FEED_URL = 'https://api.github.com/repos/Grohle-developer/Repackshot/releases/latest';
+const VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 const results = {};
 const fail = (msg) => {
   throw new Error(msg);
@@ -132,7 +133,16 @@ function makeFeed(mode) {
 // ------------------------------------------------------------------ browser helpers
 
 const external = [];
-const OPENED = `window.__opened = []; window.open = (...a) => { window.__opened.push(a); return null; };`;
+// Links go out through `openInNewTab` (an <a target=_blank rel=noopener> that is clicked, since P3b) or window.open:
+// both are recorded as [url, target, 'noopener'] and nothing is opened.
+const OPENED = `window.__opened = [];
+window.open = (...a) => { window.__opened.push(a); return null; };
+document.addEventListener('click', (e) => {
+  const a = e.target instanceof Element ? e.target.closest('a[target="_blank"]') : null;
+  if (!a) return;
+  e.preventDefault();
+  window.__opened.push([a.href, a.target, a.rel.includes('noopener') ? 'noopener' : '']);
+}, true);`;
 
 async function newPage(browser, feed, { launcher = null } = {}) {
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
@@ -152,11 +162,18 @@ async function newPage(browser, feed, { launcher = null } = {}) {
       else await route.abort('connectionrefused');
     },
   );
+  // What the faked launcher was asked to open in the system's browser (POST /api/open-url).
+  const opens = [];
   if (launcher) {
-    // The desktop launcher, faked: only /api/info answers, so the page believes it runs in its window.
+    // The desktop launcher, faked: only /api/info and /api/open-url answer, so the page believes it runs in its window.
+    // It has no update API (a launcher from before phase P5): Download is what the application offers there.
     await context.route(`${BASE_URL}/api/**`, async (route) => {
-      if (new URL(route.request().url()).pathname === '/api/info') {
-        await route.fulfill(json(200, { app: 'repackshot', version: '0.1.0', engineVersion: '0.3.0', threads: 4, isa: 'avx2', simd: ['avx2'], dataDir: 'D:\\Repackshot\\data', modelsDir: 'D:\\m', logsDir: 'D:\\l', resultsDir: 'D:\\r', browser: 'msedge', pid: 1, ...launcher }));
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/api/info') {
+        await route.fulfill(json(200, { app: 'repackshot', version: '0.1.0', engineVersion: '0.3.0', threads: 4, isa: 'avx2', simd: ['avx2'], dataDir: 'D:\\Repackshot\\data', modelsDir: 'D:\\m', logsDir: 'D:\\l', resultsDir: 'D:\\r', browser: 'msedge', pid: 1, filesApi: 1, ...launcher }));
+      } else if (path === '/api/open-url' && route.request().method() === 'POST') {
+        opens.push(JSON.parse(route.request().postData() ?? '{}').url);
+        await route.fulfill({ status: 204 });
       } else await route.fulfill(json(404, { error: 'not_found' }));
     });
   }
@@ -166,7 +183,7 @@ async function newPage(browser, feed, { launcher = null } = {}) {
   page.on('pageerror', (e) => errors.push(String(e)));
   // The feed answering 404 or failing is logged by the browser itself ("Failed to load resource"): that one is expected.
   page.on('console', (m) => m.type() === 'error' && !m.location().url.startsWith('https://api.github.com/') && errors.push(m.text()));
-  return { context, page, errors };
+  return { context, page, errors, opens };
 }
 
 async function go(page, query = 'lang=en&theme=dark&mode=fast&example=1', hash = '') {
@@ -213,8 +230,8 @@ try {
     const { context, page, errors } = await newPage(browser, feed);
     await go(page);
     const shown = await noticeShown(page);
-    const notice = norm(await page.locator('.update-notice').innerText());
-    const buttons = await page.locator('.update-notice button').allInnerTexts();
+    const notice = norm(await page.locator('.update-notice[data-version]').innerText());
+    const buttons = await page.locator('.update-notice[data-version] button').allInnerTexts();
     const windows = await page.locator('.sw, .rw, .floating, .palette').count();
     const overflow = await page.evaluate(() => {
       const s = document.querySelector('.status');
@@ -233,7 +250,10 @@ try {
     const toggle = await page.locator('.sw [data-row="updates.atStartup"] [role="switch"]').getAttribute('aria-checked');
     const last = norm(await page.locator('.sw [data-row="updates.last"] .sw-value').innerText());
     const btns = (await page.locator('.sw .sw-update-actions button').allInnerTexts()).map(norm);
-    check('a_section_shows_the_release', current.includes('Repackshot 0.1.0') && res.state === 'AVAILABLE' && res.text.includes('Repackshot 0.2.0 is available, published 14 Oct 2026') && btns.join('|') === 'Download|Release notes' && toggle === 'true' && last !== 'Never' && last.length > 6, { current, res, btns, toggle, last });
+    check('a_section_shows_the_release', current.includes(`Repackshot ${VERSION}`) && res.state === 'AVAILABLE' && res.text.startsWith('Repackshot 0.2.0 is available, published 14 Oct 2026') && btns.join('|') === 'Download|Release notes' && toggle === 'true' && last !== 'Never' && last.length > 6, { current, res, btns, toggle, last });
+    // P5: only the desktop installs from inside; the web keeps Download (the release page) and says so.
+    const webNote = norm(await page.locator('.sw .sw-update-web-note').innerText());
+    check('a_web_keeps_download_and_says_what_it_does', webNote === 'Download opens the release page. To update from inside the application, use the desktop version.' && (await page.locator('.sw .sw-update-install').count()) === 0 && (await page.locator('.update-notice .update-install').count()) === 0, { webNote });
     check('a_no_coming_soon_row_left', (await page.locator('.sw .sw-badge', { hasText: 'coming soon' }).count()) === 0, {});
     await page.screenshot({ path: join(SHOTS, 'settings-updates.png') });
 
@@ -303,6 +323,8 @@ try {
     feed.mode = 'offline';
     await press(page);
     const esOff = await result(page);
+    // The check button went disabled while it asked and the focus fell to the body: Ctrl F is the window's when the focus is in it.
+    await page.locator('.sw .sw-option[data-section="updates"]').focus();
     await page.keyboard.press('Control+f');
     await page.keyboard.type('actualizaciones');
     const hits = (await page.locator('.sw .sw-hit .sw-hit-label').allInnerTexts()).map(norm);
@@ -347,16 +369,17 @@ try {
     ['linux', { os: 'linux', arch: 'x86_64', portable: true }, 'Repackshot-0.2.0-linux-x64-portable.tar.gz'],
   ]) {
     const feed = makeFeed('newer');
-    const { context, page } = await newPage(browser, feed, { launcher });
+    const { context, page, opens } = await newPage(browser, feed, { launcher });
     await go(page, 'lang=en&theme=dark&mode=fast', `#token=${'ab'.repeat(16)}`);
     const shown = await noticeShown(page);
     await openUpdates(page);
     const options = (await page.locator('.sw .sw-option').allInnerTexts()).map(norm);
     const tip = await page.locator('.sw .sw-update-download').getAttribute('data-tip');
     await page.locator('.sw .sw-update-download').click();
-    const links = await opened(page);
+    await sleep(300);
     const noticeDownload = await page.evaluate(() => document.querySelector('.update-notice .update-download') !== null);
-    check(`e_desktop_${name}`, shown && noticeDownload && links.length === 1 && links[0][0] === `${DL}/${file}` && links[0][2] === 'noopener' && tip.includes(file) && options.indexOf('Updates') === options.indexOf('About') - 1 && options.indexOf('Desktop') === options.indexOf('Updates') - 1, { links, tip, options });
+    const links = opens;
+    check(`e_desktop_${name}`, shown && noticeDownload && links.length === 1 && links[0] === `${DL}/${file}` && tip.includes(file) && options.indexOf('Updates') === options.indexOf('About') - 1 && options.indexOf('Desktop') === options.indexOf('Updates') - 1, { links, tip, options });
     await context.close();
   }
 

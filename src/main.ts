@@ -45,6 +45,7 @@ import type { PendingModels } from './io/native';
 import { choosePlatform } from './io/platform';
 import { readPref, writePref } from './io/prefs';
 import { readProjectFile, serializeProject } from './io/project';
+import { NativeInstaller } from './io/update-install';
 import { fetchLatestRelease } from './io/updates';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { NativeEngine } from './render/native';
@@ -58,7 +59,7 @@ import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadRe
 import { startupRuntimeCheck } from './ui/ai-runtime-state';
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
-import { startupUpdateCheck } from './ui/updates';
+import { startupUpdateCheck, syncInstall } from './ui/updates';
 import { maybeStartTour } from './ui/tour';
 import type { AiPort, AppServices, EngineConfig, ViewportPort } from './ui/ports';
 import { aiRuntimeQuery } from './ui/ai-query';
@@ -141,6 +142,7 @@ const ui = createUiStore(
           os: nativeInfo.os,
           arch: nativeInfo.arch,
           window: nativeInfo.window ?? null,
+          afterUpdate: nativeInfo.afterUpdate === true,
         }
       : null,
   },
@@ -777,6 +779,13 @@ const desktopStart = nativeReady.then(async (native) => {
   });
   // The inference runtime of the AI post-processing (X3b): Settings ▸ AI post-processing ▸ Runtime.
   if ((native.info.aiApi ?? 0) >= 1) services.aiRuntime = new AiRuntimeClient(native);
+  // Updating from inside the application (P5): the launcher downloads, checks and installs; one that was already at it
+  // (this page was reloaded) is followed again, and a launcher the previous version started to finish an update says so.
+  if ((native.info.updateApi ?? 0) >= 1) {
+    services.updates.installer = new NativeInstaller(native);
+    void syncInstall(app.ctx);
+  }
+  if (native.info.afterUpdate) ui.toast(t('up.updated', { version: native.info.version }));
   const i = native.info;
   // The AI pipeline (X3c) asks the launcher with the active model, which, unless the person chose one, is the
   // recommendation for this computer: the hardware is detected now, not only when Settings opens.
