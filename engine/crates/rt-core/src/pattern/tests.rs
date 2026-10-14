@@ -23,7 +23,8 @@ fn oak(material: u32) -> Pattern {
     }
 }
 
-/// Denim as the catalogue sends it, coarser (1.5 mm threads, so a ray grid sees them).
+/// Denim as the 2/2 twill of the other twills, coarser (1.5 mm threads, so a ray grid sees
+/// them), its yarn twisted.
 fn twill(material: u32) -> Pattern {
     Pattern {
         material,
@@ -32,7 +33,7 @@ fn twill(material: u32) -> Pattern {
         color_b: Rgb::new(0.66, 0.66, 0.64),
         scale_mm: 1.5,
         params: [
-            0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.6, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         ],
         variant: 1,
         seed: 0,
@@ -125,6 +126,7 @@ fn cloth_projects_on_the_mesh_axes_and_its_relief_tilts_the_normal() {
     let plain = sphere_scene(None);
     let mut warp_like = 0;
     let mut tilted = 0;
+    let mut across = 0;
     for k in 0..300 {
         let from = Vec3::new(
             (k % 23) as f32 * 3.0 - 33.0,
@@ -135,18 +137,27 @@ fn cloth_projects_on_the_mesh_axes_and_its_relief_tilts_the_normal() {
         let (shade, tint) = at(&scene, from);
         let tint = tint.expect("cloth");
         let c = tint.base_color;
+        // The highlights stretch across the thread on top: the warp runs upright on this side
+        // of the ball (along z), the weft along x.
+        assert_eq!(tint.anisotropy, 0.5);
+        let t = tint.tangent.expect("a tangent across the thread on top");
         if c.b > c.r * 1.5 {
             warp_like += 1;
+            across += usize::from(t == Vec3::new(1.0, 0.0, 0.0));
+        } else if c.b < c.r * 1.2 {
+            across += usize::from(t == Vec3::new(0.0, 0.0, 1.0));
+        } else {
+            across += 1;
         }
         if shade.normal != base.normal {
             tilted += 1;
             assert!(shade.normal.dot(base.normal) > 0.3, "a bump, not a fold");
         }
         assert_eq!((shade.point, shade.geometric), (base.point, base.geometric));
-        assert_eq!((tint.anisotropy, tint.tangent), (0.0, None));
     }
     // Twill: half warp (dark blue), half weft (grey).
     assert!((100..200).contains(&warp_like), "{warp_like}");
+    assert!(across > 285, "{across} of 300 across the thread on top");
     assert!(tilted > 250, "{tilted}");
     // Without relief, the normal stays.
     let mut flat = twill(0);
@@ -154,6 +165,11 @@ fn cloth_projects_on_the_mesh_axes_and_its_relief_tilts_the_normal() {
     let flat = sphere_scene(Some(flat));
     let from = Vec3::new(5.0, -200.0, 3.0);
     assert_eq!(at(&flat, from).0, at(&plain, from).0);
+    // Felt has no threads: no anisotropy.
+    let mut felt = twill(0);
+    felt.variant = 5;
+    let tint = at(&sphere_scene(Some(felt)), from).1.expect("felt");
+    assert_eq!((tint.anisotropy, tint.tangent), (0.0, None));
 }
 
 #[test]
@@ -184,6 +200,61 @@ fn the_box_projection_blends_without_a_seam() {
     assert!(w0 < 0.1 && w1 > 0.9, "and ends in the other");
     let big = jumps.iter().filter(|&&j| j > 0.05).count();
     assert!(big < jumps.len() / 50, "{big} jumps of {}", jumps.len());
+}
+
+#[test]
+fn where_projections_meet_the_cloth_is_their_blend() {
+    // On a diagonal the two projections weigh half each, at a cube corner's direction a third
+    // each: the colour is their weighted mean, never one of them alone (nor nothing).
+    let scene = sphere_scene(Some(twill(0)));
+    let setup = PatternSetup::new(&scene);
+    let placed = setup.instances[0].as_ref().expect("placed");
+    let Recipe::Cloth(c) = &placed.recipe else {
+        panic!("cloth")
+    };
+    let p = Vec3::new(31.3, -22.7, 17.9);
+    let d = (p - placed.origin) * placed.mm;
+    let at = [d.x, d.y, d.z];
+    let plane = |k: usize| {
+        let (a, b) = plane_axes(k);
+        c.sample(at[a], at[b]).color
+    };
+    let s3 = 1.0 / 3.0f32.sqrt();
+    for (n, want) in [
+        (
+            Vec3::new(s3, s3, s3),
+            (plane(0) + plane(1) + plane(2)) * (1.0 / 3.0),
+        ),
+        (
+            Vec3::new(0.5f32.sqrt(), 0.0, 0.5f32.sqrt()),
+            (plane(0) + plane(2)) * 0.5,
+        ),
+    ] {
+        let got = placed.color_only(p, n);
+        for (g, w) in [(got.r, want.r), (got.g, want.g), (got.b, want.b)] {
+            assert!((g - w).abs() < 1.0e-5, "{got:?} vs {want:?}");
+        }
+    }
+    // The three projections differ there, so a blend is not any one of them.
+    assert!(plane(0) != plane(1) || plane(1) != plane(2));
+}
+
+#[test]
+fn a_cloth_pattern_decodes_its_colours_spacing_relief_twist_and_weave() {
+    let mut p = twill(0);
+    (p.params[0], p.params[1], p.variant) = (1.7, 0.25, 6);
+    let Some(Recipe::Cloth(c)) = p.recipe() else {
+        panic!("cloth")
+    };
+    assert_eq!(
+        (c.warp, c.weft, c.pitch_mm, c.relief, c.twist, c.weave),
+        (p.color_a, p.color_b, 1.5, 1.0, 0.25, cloth::Weave::Twill31)
+    );
+    p.params[1] = -3.0;
+    let Some(Recipe::Cloth(c)) = p.recipe() else {
+        panic!("cloth")
+    };
+    assert_eq!(c.twist, 0.0);
 }
 
 #[test]

@@ -1421,7 +1421,7 @@ de vidrio y clave sola), el relMSE del adaptativo a igual tiempo es ≤
 0,6 × el uniforme (medido y en el PR); determinismo 1/4/16 hilos y
 teselas de dos tamaños; con el *flag* apagado, `0x223515c3` intacto.
 
-## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
+## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet) — hecha
 
 **Qué.** Primero el **bisel de aristas en el sombreado** (decisión Fable,
 tras v0.1.5: es la mejora de realismo más visible que queda para modelos
@@ -1650,6 +1650,98 @@ ARCHITECTURE §5.2 quater).
   se desvanece de 1,5 a 3 radios (no de 3 a 5) y abomba 0,35 R (no 0,5 R):
   en la cara de la caja se leía líquido.
 - **La pelusa (*fuzz*, *sheen*) sigue fuera**, como decía el plan.
+
+**Hecho — tela** (tercera parte, su propio *commit*; detalle en
+ARCHITECTURE §5.2 quater).
+
+- **La receta** (`rt_core::pattern::cloth`, `PATN.kind` 2), en milímetros
+  físicos: hilos de urdimbre y de trama redondos de través, con un hueco
+  entre ellos, que suben donde pasan por encima y bajan donde pasan por
+  debajo (una flotación larga se queda arriba) y enseñan las crestas
+  inclinadas de la torsión de su hilo; cada hilo varía ±6 % de color y
+  ±10 % de rugosidad. Tejidos: tafetán, sarga 2/2, raso de cinco lizos,
+  lona (cesta 2 × 2), punto (*jersey*: uves de dos patas que se solapan
+  fila a fila, cada punto de un jaspeado al azar), fieltro (fibras
+  apelmazadas, sin hilos) y **sarga 3/1** (nueva, la del vaquero). El
+  relieve (`weaveDepth`, media separación a 1) inclina la normal; la
+  rugosidad se estira **a través** del hilo de encima (anisotropía 0,5:
+  el brillo de las fibras; el fieltro no). El color medio es el de los
+  hilos mezclados por la parte de la cara que cubre cada uno (0,5; raso
+  0,72; sarga 3/1 0,685), y es el de la vista *Rápida* (`fabricMeanColor`).
+- **Dónde**: proyección de caja sobre los ejes de la malla, mezclada con
+  pesos `|nᵢ|⁸` en una banda estrecha sin costura; la urdimbre de pie en
+  los lados.
+- **RSB**: `PATN` de tipo 2 (los mismos 108 B): los dos colores de hilo,
+  `scale_mm = 10 / threadCount`, relieve (`weaveDepth`) y torsión
+  (`yarnTwist`), el tejido en `variant`. El escritor TypeScript la manda para cada material de tela.
+- **Interfaz**: *Hilos por cm* (2–200, físicos), *Tejido* (con *Sarga 3/1
+  (vaquero)*) y *Relieve del tejido* los pinta el modo Completo («lo
+  pintan el modo Completo y los renders»); la nota de tela ya no dice que
+  sea un color plano.
+- **Hashes**: los fijados no se mueven (la escena de dibujos sigue en
+  `0x2a3a7416`). Nuevo: la escena de tela de E6
+  (`rt --write-e6-cloth-example`: cojín vaquero biselado y bola de punto)
+  **`0xbb26399f`**, igual en escalar, SSE2, AVX2, WASI, el `rt.wasm` real y con
+  1, 4 y 16 hilos en `rt` y en el lanzador; paso nuevo en `engine.yml`.
+- **Hoja** `out/cloth-sheet.html` (`rt --pattern-sheet --only cloth`, del
+  mismo *fixture*, que ahora lleva también las 12 telas): cada tela en
+  esfera y caja, antes, después y de cerca, un campo de 10 mm visto de
+  frente (donde se ven los hilos a su tamaño real) y dos alternativas para
+  el veredicto: el vaquero tejido en 2/2 y el carbono con 0,05 de relieve.
+- **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina cargada):
+  la escena de tela (cojín y bola, 320 × 240, 8 muestras), 0,784 s →
+  0,844 s (**+7,6 %**) frente a la misma con el color liso: una tela tejida
+  son unas pocas cuentas por proyección (tres evaluaciones con el *bump*);
+  el punto, 18 elipses por evaluación.
+- **Tests**: 10 nuevos en `rt-core` (tela: la parte de la cara de la
+  urdimbre de cada tejido y su color medio, periodos y estructura —el raso
+  nunca enseña dos tramas juntas, ni en diagonal; la lona va por parejas; la
+  3/1—, relieve de media separación y plano a 0, variación por hilo, la
+  torsión y su periodo, y ninguna sin ella, el punto en uve hacia abajo;
+  escena: proyección en los ejes de la malla, la anisotropía a través del
+  hilo de encima y el fieltro sin ella, la mezcla sin costura y exacta
+  donde se juntan dos y tres proyecciones, el PATN de tela leído; la escena
+  fijada), `rt-cli` (hoja, `--only`, `--write-e6-cloth-example`, 1/4/16
+  hilos), `rt-app` (1/4/16 hilos) y la interfaz (`patternToRsb` de las 12
+  telas, físico, límites y valores por defecto; color medio igual al del
+  motor en la vista *Rápida* y en el `MATL`; mandos que pinta el motor;
+  `projectScene`; el *fixture* con las telas). Se comprobó que fallan con
+  22 mutaciones de la tela: todas cogidas; una (las proyecciones de peso
+  menor que 0,5, ignoradas) escapaba al principio y la coge el test nuevo
+  de la mezcla.
+
+**No encajó con el plan (tela):**
+
+- **Los hilos por cm, físicos y propuestos** (como la madera): el
+  `threadCount` del catálogo era por tamaño de pieza (algodón 200, carbono
+  90); ahora son hilos por cm y cada tela lleva los suyos de verdad
+  (algodón 40, lino 18, sarga 36, vaquero 24, raso 100, lona 14,
+  terciopelo 30, fieltro 20, punto 4 puntos por cm, malla 8, microfibra
+  120, carbono 5 mechas por cm). **Pendiente del veredicto del líder sobre
+  la hoja.** Un proyecto guardado conserva su `threadCount` antiguo, que
+  ahora se lee por cm (hasta 200: el algodón de antes sale a 200 hilos por
+  cm, invisible).
+- **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` de
+  EZ Packshot es 2/2 y la siguen usando la sarga y el carbono): con 2/2 su
+  color medio era un gris azulado (la mitad de la cara, trama blanca); el
+  de verdad es de urdimbre. Cambia su color en la vista *Rápida*. La hoja
+  enseña los dos para el veredicto.
+- **Campos nuevos**: `yarnTwist` (0 en el carbono y la malla: mechas y
+  monofilamentos lisos; 1 por defecto, sin mando).
+- **A tamaño real, la mayoría de las telas no se ven** en un plano de
+  producto (el algodón a 0,25 mm, menos de un píxel a 100 mm por 300 px):
+  se promedian con las muestras del píxel, sin filtro propio (el color
+  converge a la media y el relieve se vuelve rugosidad); algún *moiré* en
+  esferas de sarga a pocas muestras.
+- **El barniz del carbono sigue el relieve** (el *bump* es de toda la
+  BSDF): de cerca se leen tubos brillantes, cuando el barniz de verdad es
+  plano. Opciones para el líder: menos relieve en el carbono o que el
+  barniz use la normal sin *bump* (cambio del motor, también para la madera
+  barnizada).
+- **La malla técnica no tiene agujeros** (no hay opacidad por punto): es
+  un tafetán abierto de hilos oscuros.
+- **El terciopelo y la pelusa**: sin *sheen* en el motor, el terciopelo es
+  un punto fino oscuro; la vista *Rápida* sí pinta su pelusa.
 
 ## E7 · Desgaste visible — **Opus**, con visto bueno **Fable**
 

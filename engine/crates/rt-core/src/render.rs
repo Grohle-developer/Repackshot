@@ -821,7 +821,7 @@ mod tests {
     }
 
     /// Pinned hash of the E6 cloth example at 4 samples per pixel.
-    pub(crate) const PINNED_E6_CLOTH_4SPP: u32 = 0x0000_0000;
+    pub(crate) const PINNED_E6_CLOTH_4SPP: u32 = 0xbb26_399f;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

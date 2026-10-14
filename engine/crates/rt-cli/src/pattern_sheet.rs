@@ -7,8 +7,8 @@
 //! the images in `<dir>/patterns/`. When the materials hold `PINE`, the wood sheet ends with its
 //! knots: 0, 2 and 6 of 15 mm and 6 of 30 mm, on the box's largest face seen straight on and on
 //! a 300 × 100 × 20 mm board, at 512 px. The cloth sheet ends with every cloth up close (a
-//! [`MACRO_MM`] field seen straight on, where its real threads show) and denim woven as the 2/2
-//! twill of the other twills, to compare with its own 3/1.
+//! [`MACRO_MM`] field seen straight on, where its real threads show) and two alternatives for
+//! the lead's ruling ([`ALTERNATIVES`]).
 //!
 //! The materials are the interface's own: `tests/fixtures/patterns.rsb` is written by the
 //! TypeScript RSB writer (`materialToRsb`, `patternToRsb`) from the presets of
@@ -43,6 +43,19 @@ pub const KNOT_ROW: [(u32, f32); 4] = [(0, 15.0), (2, 15.0), (6, 15.0), (6, 30.0
 pub const KNOT_WIDTH: u32 = 512;
 /// Width of the field of a cloth's macro image, millimetres.
 pub const MACRO_MM: f32 = 10.0;
+
+/// One alternative of the cloth sheet: a catalogue key, what changes, and the change.
+pub type Alternative = (&'static str, &'static str, fn(&mut Pattern));
+
+/// The cloth sheet's alternatives: a catalogue key, what changes, and the change. Denim woven
+/// as the 2/2 twill of the other twills (its own is a 3/1), carbon fibre with a twentieth of its
+/// relief (its clear coat follows the relief: glossy tubes up close).
+pub const ALTERNATIVES: [Alternative; 2] = [
+    ("DENIM", "Denim as a 2/2 twill", |p| p.variant = 1),
+    ("CARBON", "Carbon fibre with relief 0.05", |p| {
+        p.params[0] = 0.05
+    }),
+];
 
 /// The name of a cloth's weave (`Pattern::variant`).
 pub fn weave_name(variant: u32) -> &'static str {
@@ -310,8 +323,8 @@ pub struct MacroImage {
     pub caption: String,
 }
 
-/// Renders every cloth of `cloths` up close, then denim as a 2/2 twill (its sphere, its close-up
-/// and its macro) when `cloths` hold it, into `dir/patterns`.
+/// Renders every cloth of `cloths` up close, then the [`ALTERNATIVES`] that `cloths` hold (each
+/// one's sphere, close-up and macro), into `dir/patterns`.
 pub fn macro_rows(
     dir: &Path,
     cloths: &[&SheetMaterial],
@@ -336,30 +349,33 @@ pub fn macro_rows(
             format!("{}: {}", m.label, pattern_info(&m.pattern)),
         )?);
     }
-    let mut denim22 = Vec::new();
-    if let Some(denim) = cloths.iter().find(|m| m.key == "DENIM") {
-        let mut pattern = denim.pattern.clone();
-        pattern.variant = 1;
+    let mut alternatives = Vec::new();
+    for (n, (key, what, change)) in ALTERNATIVES.iter().enumerate() {
+        let Some(m) = cloths.iter().find(|m| m.key == *key) else {
+            continue;
+        };
+        let mut pattern = m.pattern.clone();
+        change(&mut pattern);
         for (tag, scene) in [
             (
                 "sphere",
-                sheet_scene(&denim.material, Some(&pattern), size, Object::Sphere, false),
+                sheet_scene(&m.material, Some(&pattern), size, Object::Sphere, false),
             ),
             (
-                "close",
-                sheet_scene(&denim.material, Some(&pattern), size, Object::Sphere, true),
+                "close-up",
+                sheet_scene(&m.material, Some(&pattern), size, Object::Sphere, true),
             ),
-            ("macro", macro_scene(&denim.material, &pattern, size)),
+            ("macro", macro_scene(&m.material, &pattern, size)),
         ] {
-            let file = format!("patterns/denim-twill22-{tag}.png");
-            denim22.push(write(&scene, file, format!("Denim as a 2/2 twill, {tag}"))?);
+            let file = format!("patterns/alternative-{n}-{tag}.png");
+            alternatives.push(write(&scene, file, format!("{what}: {tag}"))?);
         }
     }
-    Ok((fields, denim22))
+    Ok((fields, alternatives))
 }
 
 /// The macro part of the cloth sheet.
-pub fn macro_html(fields: &[MacroImage], denim22: &[MacroImage]) -> String {
+pub fn macro_html(fields: &[MacroImage], alternatives: &[MacroImage]) -> String {
     let mut s = format!(
         "<h1 style=\"margin-top:28px\">Up close: {MACRO_MM:.0} mm fields</h1>\n<p class=\"meta\">Every \
          cloth on a large flat piece seen straight from above, orthographic, {MACRO_MM:.0} mm wide, \
@@ -378,15 +394,18 @@ pub fn macro_html(fields: &[MacroImage], denim22: &[MacroImage]) -> String {
         figure(&mut s, m);
     }
     s.push_str("</div>\n");
-    if !denim22.is_empty() {
+    if !alternatives.is_empty() {
         s.push_str(
-            "<h1 style=\"margin-top:28px\">Denim: 3/1 against 2/2</h1>\n<p class=\"meta\">Real denim \
-             is a 3/1 twill (the indigo warp on three quarters of the face); the catalogue sends it \
-             as one now. Here it is woven as the 2/2 twill of the other twills, as upstream's \
-             <code>TWILL</code> would: sphere, close-up and macro, to compare with its row above.</p>\n\
-             <div class=\"macro\">",
+            "<h1 style=\"margin-top:28px\">Alternatives</h1>\n<p class=\"meta\">Sphere, close-up \
+             and macro of each, to compare with its row above. <b>Denim</b>: real denim is a 3/1 \
+             twill (the indigo warp on three quarters of the face), which the catalogue sends now; \
+             here it is woven as the 2/2 twill of the other twills, as upstream's <code>TWILL</code> \
+             would. <b>Carbon fibre</b>: its clear coat follows the weave's relief (the bump is the \
+             whole material's), so up close the tows read as glossy tubes; here with a twentieth of \
+             its relief (0.05 instead of 0.3), the weave shown by the tows' anisotropic sheen under \
+             a flatter coat.</p>\n<div class=\"macro\">",
         );
-        for m in denim22 {
+        for m in alternatives {
             figure(&mut s, m);
         }
         s.push_str("</div>\n");
@@ -546,8 +565,8 @@ pub fn run(
     let macros = if fabrics.is_empty() {
         String::new()
     } else {
-        let (fields, denim22) = macro_rows(dir, &fabrics, size, samples, threads)?;
-        macro_html(&fields, &denim22)
+        let (fields, alternatives) = macro_rows(dir, &fabrics, size, samples, threads)?;
+        macro_html(&fields, &alternatives)
     };
     for (name, title, rows, extra) in [
         ("wood-sheet.html", "Woods", &woods, knots.as_str()),
@@ -691,5 +710,27 @@ mod tests {
             assert!(page.contains(f));
         }
         assert!(page.starts_with("<!doctype html>") && page.contains("<title>Woods sheet</title>"));
+    }
+
+    #[test]
+    fn a_cloth_row_says_its_weave_and_density() {
+        let denim = Pattern {
+            kind: PATTERN_CLOTH,
+            scale_mm: 10.0 / 24.0,
+            variant: 6,
+            ..Pattern::default()
+        };
+        assert_eq!(pattern_info(&denim), "twill 3/1 · 24/cm (0.42 mm)");
+        assert_eq!(pattern_info(&Pattern::default()), "");
+        let one = |f: &str| MacroImage {
+            file: f.into(),
+            caption: f.into(),
+        };
+        let page = macro_html(&[one("a.png")], &[one("b.png")]);
+        assert!(page.contains("a.png") && page.contains("b.png") && page.contains("Alternatives"));
+        assert!(!macro_html(&[one("a.png")], &[]).contains("Alternatives"));
+        // The macro sees a field of MACRO_MM straight from above.
+        let scene = macro_scene(&Material::default(), &denim, (8, 8));
+        assert!(scene.camera.ortho && scene.camera.ortho_width == MACRO_MM);
     }
 }

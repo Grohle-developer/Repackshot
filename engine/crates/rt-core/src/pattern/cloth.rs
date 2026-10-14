@@ -16,9 +16,10 @@
 //!   heathered yarn);
 //! * **felt** (fieltro): no threads, matted fibres of `pitch_mm`.
 //!
-//! A thread is round across (its height is a half circle, with small gaps between threads) and
-//! along its length rises where it floats over and falls where it goes under, smoothly from one
-//! crossing to the next, so a float of several crossings stays up. The surface is the higher of
+//! A thread is round across (its height is a half circle, with small gaps between threads), along
+//! its length rises where it floats over and falls where it goes under, smoothly from one
+//! crossing to the next, so a float of several crossings stays up, and shows the slanted ridges
+//! of its yarn's twist. The surface is the higher of
 //! the two threads; its height, scaled by `relief` (`weaveDepth`) and half a pitch, is the bump
 //! of the shading normal. Each thread varies its colour and roughness a little (±6 % and ±10 %);
 //! the crowns of the threads are lighter and the gaps darker, so that the mean colour is the
@@ -64,11 +65,11 @@ impl Weave {
 
     /// The share of the surface the warp covers (the rest is weft), as the mean colour uses it.
     /// Measured (the test pins it): satin shows its weft at one crossing in five, and a little
-    /// around it where the warps dip under, so 0.71 rather than 0.8; the 3/1 twill, 0.685 rather
-    /// than 0.75 (its warp floats are also the lighter, higher threads).
+    /// around it where the warps dip under, so 0.72 rather than 0.8; the 3/1 twill, 0.685 rather
+    /// than 0.75 (its warp floats are also the lighter, higher threads, which these shares count).
     pub fn warp_share(self) -> f32 {
         match self {
-            Weave::Satin => 0.71,
+            Weave::Satin => 0.72,
             Weave::Twill31 => 0.685,
             _ => 0.5,
         }
@@ -79,13 +80,13 @@ impl Weave {
     /// 12 x 12 mm (the test pins it): floats stay up longer in twill and satin, felt has no gaps.
     fn mean_shade(self) -> f32 {
         match self {
-            Weave::Plain => 0.905,
-            Weave::Twill => 0.915,
-            Weave::Satin => 0.921,
-            Weave::Canvas => 0.914,
-            Weave::Knit => 0.885,
+            Weave::Plain => 0.892,
+            Weave::Twill => 0.902,
+            Weave::Satin => 0.907,
+            Weave::Canvas => 0.900,
+            Weave::Knit => 0.881,
             Weave::Felt => 0.861,
-            Weave::Twill31 => 0.920,
+            Weave::Twill31 => 0.907,
         }
     }
 
@@ -104,6 +105,11 @@ impl Weave {
 
 /// Width of a thread, in pitches (the rest is the gap between two).
 const THREAD: f32 = 0.86;
+/// Ridges of a yarn's twist per pitch along a thread (a whole number: the weaves keep their
+/// period).
+const TWIST_PER_PITCH: f32 = 2.0;
+/// How deep the twist's grooves are, as a share of the thread's height.
+const TWIST_DEPTH: f32 = 0.12;
 /// A knit's legs lean out from the wale's middle by 15°: its sine and cosine.
 const KNIT_LEAN: (f32, f32) = (0.258_819, 0.965_926);
 /// A knit leg: its centre's distance from the wale's middle, its half-length and half-width, in
@@ -121,6 +127,8 @@ pub struct Cloth {
     pub pitch_mm: f32,
     /// Relief, 0..1 (`weaveDepth`).
     pub relief: f32,
+    /// How much the yarn's twist shows, 0 (smooth filaments: carbon tows) to 1 (`yarnTwist`).
+    pub twist: f32,
     /// The weave.
     pub weave: Weave,
 }
@@ -136,6 +144,18 @@ pub struct ClothSample {
     pub height: f32,
     /// 1 where the warp is on top, 0 for the weft; felt and knit mix the two colours by it.
     pub warp: f32,
+    /// True where the thread on top runs along `v` (the warp; a knit's legs, nearly upright).
+    pub along_v: bool,
+}
+
+/// The relief of a yarn's twist at `s` along a thread and `c` across it (pitches): ridges
+/// slanted about 35° to the thread, [`TWIST_PER_PITCH`] of them per pitch along it, `1 − depth`
+/// in the grooves and 1 on the ridges.
+#[inline]
+fn twist(s: f32, c: f32, depth: f32) -> f32 {
+    let t = s * TWIST_PER_PITCH + c * (TWIST_PER_PITCH * 1.4);
+    let tri = (2.0 * (t - t.floor()) - 1.0).abs();
+    1.0 - depth * (1.0 - smoothstep(0.0, 1.0, tri))
 }
 
 /// Height of a round thread `w` wide at `c` from its axis (both in pitches): a half circle.
@@ -150,6 +170,11 @@ fn round(c: f32, w: f32) -> f32 {
 }
 
 impl Cloth {
+    /// True when its threads stretch the highlights across them (all but felt, which has none).
+    pub fn has_threads(&self) -> bool {
+        self.weave != Weave::Felt
+    }
+
     /// The colour the preview shows: the mean of the pattern.
     pub fn mean_color(&self) -> Rgb {
         let w = self.weave.warp_share();
@@ -205,8 +230,10 @@ impl Cloth {
                 let (kx, tx) = ((x - 0.5).floor() as i32, (x - 0.5) - (x - 0.5).floor());
                 let lift_weft = (1.0 - state(kx, j))
                     + ((1.0 - state(kx + 1, j)) - (1.0 - state(kx, j))) * smoothstep(0.0, 1.0, tx);
-                let zw = (0.35 + 0.65 * lift_warp) * round(cx, THREAD);
-                let zf = (0.35 + 0.65 * lift_weft) * round(cy, THREAD);
+                // The yarn's twist: slanted ridges along each thread.
+                let depth = TWIST_DEPTH * self.twist;
+                let zw = (0.35 + 0.65 * lift_warp) * round(cx, THREAD) * twist(y, cx, depth);
+                let zf = (0.35 + 0.65 * lift_weft) * round(cy, THREAD) * twist(x, cy, depth);
                 if zw >= zf {
                     (zw, 1.0, i, j)
                 } else {
@@ -226,6 +253,7 @@ impl Cloth {
             roughness: 0.9 + 0.2 * hash01(thread, salt + 7, 3),
             height: z * self.relief * 0.5 * p,
             warp,
+            along_v: warp > 0.5 || self.weave == Weave::Knit,
         }
     }
 
@@ -245,6 +273,7 @@ mod tests {
             weft: Rgb::new(0.1, 0.3, 0.7),
             pitch_mm: 0.8,
             relief: 0.5,
+            twist: 1.0,
             weave,
         }
     }
@@ -284,8 +313,13 @@ mod tests {
                 (warp - weave.warp_share()).abs() < 0.035,
                 "{weave:?} warp {warp}"
             );
-            // Felt mixes its colours over a few millimetres: a 12 mm patch holds few of them.
-            let tolerance = if weave == Weave::Felt { 0.06 } else { 0.04 };
+            // Felt mixes its colours over a few millimetres: a 12 mm patch holds few of them; a
+            // knit's stitches are heathered at random.
+            let tolerance = match weave {
+                Weave::Felt => 0.06,
+                Weave::Knit => 0.025,
+                _ => 0.02,
+            };
             for (m, w) in [(mean.r, want.r), (mean.g, want.g), (mean.b, want.b)] {
                 assert!((m / w - 1.0).abs() < tolerance, "{weave:?}: {m} vs {w}");
             }
@@ -320,11 +354,72 @@ mod tests {
         }
         // Twill's diagonal: the pattern shifted by one thread both ways is the same.
         assert_eq!(Weave::Twill.warp_up(3, 5), Weave::Twill.warp_up(4, 4));
-        // Satin never shows the weft at two neighbouring crossings of a row.
+        // Satin never shows the weft at two neighbouring crossings, not even diagonally (a
+        // five-shaft twill would); canvas moves its threads in pairs.
+        let weft = |i, j| !Weave::Satin.warp_up(i, j);
         for i in 0..10 {
             for j in 0..10 {
-                assert!(Weave::Satin.warp_up(i, j) || Weave::Satin.warp_up(i + 1, j));
+                assert!(!(weft(i, j) && (weft(i + 1, j) || weft(i, j + 1))));
+                assert!(!(weft(i, j) && (weft(i + 1, j + 1) || weft(i + 1, j - 1))));
+                let c = Weave::Canvas;
+                assert_eq!(c.warp_up(2 * i, j), c.warp_up(2 * i + 1, j));
+                assert_eq!(c.warp_up(i, 2 * j), c.warp_up(i, 2 * j + 1));
+                assert_ne!(c.warp_up(2 * i, j), c.warp_up(2 * i + 2, j));
             }
+        }
+        // The 3/1 twill: three up, one down along a warp.
+        assert_eq!((0..4).filter(|&j| Weave::Twill31.warp_up(2, j)).count(), 3);
+    }
+
+    #[test]
+    fn each_thread_varies_a_little_and_its_yarn_shows_its_twist() {
+        // At the crown of every warp crossing of a plain weave, column by column: the colour
+        // varies ±6 % and the roughness ±10 % from thread to thread, never more.
+        let c = cloth(Weave::Plain);
+        let (mut lo, mut hi, mut rlo, mut rhi) = (f32::MAX, 0.0f32, f32::MAX, 0.0f32);
+        for i in 0..60 {
+            let j = i % 2; // (i + j) even: the warp is up
+            let s = c.sample((i as f32 + 0.5) * 0.8, (j as f32 + 0.5) * 0.8);
+            assert_eq!(s.warp, 1.0);
+            let k = s.color.g / c.warp.g;
+            (lo, hi) = (lo.min(k), hi.max(k));
+            (rlo, rhi) = (rlo.min(s.roughness), rhi.max(s.roughness));
+        }
+        assert!(hi / lo > 1.08 && hi / lo < 1.13, "colour {lo}..{hi}");
+        assert!(
+            rlo < 0.93 && rhi > 1.07 && rlo >= 0.9 && rhi <= 1.1,
+            "{rlo}..{rhi}"
+        );
+        // Along the crown of a satin float (warp 0 floats from crossing 1 to 4): ridges every
+        // half pitch, 12 % deep.
+        let c = cloth(Weave::Satin);
+        let hs: Vec<f32> = (0..100)
+            .map(|k| c.height(0.4, (1.6 + k as f32 * 0.02) * 0.8))
+            .collect();
+        let (lo, hi) = hs
+            .iter()
+            .fold((f32::MAX, 0.0f32), |(a, b), &h| (a.min(h), b.max(h)));
+        assert!((1.0 - lo / hi - 0.12).abs() < 0.01, "{lo}..{hi}");
+        for k in 0..75 {
+            assert!((hs[k] - hs[k + 25]).abs() < 1.0e-5, "the twist's period");
+        }
+        // Smooth filaments (carbon's tows): no ridges.
+        let smooth = Cloth { twist: 0.0, ..c };
+        let h0 = smooth.height(0.4, 1.6 * 0.8);
+        assert!((0..100).all(|k| smooth.height(0.4, (1.6 + k as f32 * 0.02) * 0.8) == h0));
+    }
+
+    #[test]
+    fn a_knit_stitch_is_a_v_pointing_down() {
+        // In the middle of a wale, low in the stitch both legs are there (they meet at the
+        // bottom), high up they have parted: a groove.
+        let c = cloth(Weave::Knit);
+        for (i, j) in [(0, 0), (3, 1), (-2, 5)] {
+            let at = |fx: f32, fy: f32| c.height((i as f32 + fx) * 0.8, (j as f32 + fy) * 0.8);
+            assert!(at(0.5, 0.2) > 0.7 * c.relief * 0.4, "bottom of the V");
+            assert!(at(0.5, 0.75) < 0.2 * at(0.5, 0.2), "top of the V");
+            // The legs, either side of the middle up high.
+            assert!(at(0.22, 0.75) > 0.5 * at(0.5, 0.2) && at(0.78, 0.75) > 0.5 * at(0.5, 0.2));
         }
     }
 

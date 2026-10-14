@@ -830,20 +830,26 @@ interpolada, mezclado con pesos `|nᵢ|⁸` donde dos componentes se parecen
 eje del plano (de pie en los lados, a lo largo de `y` arriba). **Tejidos**
 (`PATN.variant`): 0 tafetán (cada cruce alterno), 1 sarga 2/2 (diagonales),
 2 raso de cinco lizos (la trama asoma en uno de cada cinco cruces, nunca dos
-seguidos), 3 lona (cesta 2 × 2), 4 punto (*jersey*: dos patas inclinadas por
-punto; cada punto, una mezcla al azar de los dos colores, un hilo
-jaspeado), 5 fieltro (sin hilos: fibras apelmazadas, un `fbm` del tamaño de
+juntas, ni en diagonal), 3 lona (cesta 2 × 2), 4 punto (*jersey*: cada punto
+una uve de dos patas elípticas hacia abajo, inclinadas 15°, que se solapan
+con las de la fila de encima y las de las columnas vecinas; cada punto, una
+mezcla al azar de los dos colores, un hilo jaspeado), 5 fieltro (sin hilos: fibras apelmazadas, un `fbm` del tamaño de
 `scale_mm` y los dos colores mezclados a unos milímetros), 6 sarga 3/1
 (la del vaquero: la urdimbre en tres cuartos de la cara). Un hilo es redondo
 de través (medio círculo, 0,86 de la separación, con un hueco entre hilos)
 y a lo largo sube donde pasa por encima y baja donde pasa por debajo,
-suavemente de un cruce al siguiente; la superficie es el más alto de los
-dos. Su altura por `weaveDepth` y media separación es el relieve (*bump*
+suavemente de un cruce al siguiente, con las crestas inclinadas de la
+torsión de su hilo (dos por separación, 12 % de hondo por `yarnTwist`, 0 en
+las mechas del carbono y los monofilamentos de la malla); la superficie es
+el más alto de los dos. La rugosidad se estira **a través** del hilo de
+encima (anisotropía 0,5 con la tangente de través, en la proyección que más
+pesa: las normales de las fibras se abren de través, como en un metal
+cepillado); el fieltro, sin hilos, no. Su altura por `weaveDepth` y media separación es el relieve (*bump*
 por diferencias finitas a 0,05 separaciones, en cada proyección con su
 peso); la pendiente no depende de la escala. Cada hilo varía su color ±6 %
 y su rugosidad ±10 %; las crestas son más claras y los huecos más oscuros,
 normalizados para que el color medio sea el de los hilos mezclados por la
-parte de la cara que cubre cada uno (medida: 0,5 en casi todos, 0,71 en el
+parte de la cara que cubre cada uno (medida: 0,5 en casi todos, 0,72 en el
 raso y 0,685 en la sarga 3/1, `WEAVE_WARP_SHARE` en la interfaz): el de la
 vista *Rápida* y el que ven los fotones de las cáusticas. Hilos más finos
 que un píxel (el algodón a 0,25 mm en un plano general) se promedian con

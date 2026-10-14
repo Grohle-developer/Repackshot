@@ -624,9 +624,10 @@ pub fn e6_cloth_scene() -> Scene {
             ..Material::default()
         },
     ];
+    // The relief, and a twisted yarn.
     let relief = |r: f32| {
         let mut p = [0.0; PARAMS];
-        p[0] = r;
+        (p[0], p[1]) = (r, 1.0);
         p
     };
     scene.patterns = vec![

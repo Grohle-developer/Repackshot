@@ -258,7 +258,7 @@ export interface RsbPattern {
    * Wood: ring variation, ring noise, axial noise, colour noise, contrast (0: the colours as given), pore width
    * (mm, 0: none), pore depth, pore band (0 diffuse- to 1 ring-porous), fibre, anisotropy along the grain; knots
    * (figure RINGS only): count (0 to 12), diameter (mm), variation of the diameter (± fraction), darkness; two
-   * unused (0). Cloth: the relief (`weaveDepth`), then 0. PATN_PARAMS of them.
+   * unused (0). Cloth: the relief (`weaveDepth`), the yarn's twist (`yarnTwist`), then 0. PATN_PARAMS of them.
    */
   params: number[];
   /** Wood: the figure (WOOD_FIGURES). Cloth: the weave (WEAVES). */
@@ -832,7 +832,8 @@ export const CLOTH_SPAN_MM = 10;
  * fibres at full strength and the roughness stretched along the grain; its knots (only woods with rings have them:
  * `knotCount` 0 elsewhere), placed by the material's seed. Fallbacks are FAMILY_PARAMS' and, for the recipe-only
  * fields, those of a diffuse-porous wood. Cloth: warp and weft colours, `threadCount` threads per cm (physical: the
- * thread spacing is `10 / threadCount` mm whatever the part's size), its relief and its weave; the fuzz is not drawn.
+ * thread spacing is `10 / threadCount` mm whatever the part's size), its relief, its yarn's twist (none on carbon tows
+ * and mesh) and its weave; the fuzz is not drawn.
  */
 export function patternToRsb(inst: MaterialInstance | null | undefined, _partSizeMm: number, material: number): RsbPattern | null {
   if (!inst) return null;
@@ -872,6 +873,7 @@ export function patternToRsb(inst: MaterialInstance | null | undefined, _partSiz
     case 'FABRIC': {
       const params = new Array<number>(PATN_PARAMS).fill(0);
       params[0] = clamp01(num(p.weaveDepth, 0.35));
+      params[1] = clamp01(num(p.yarnTwist, 1));
       return {
         material,
         kind: PATTERN_CLOTH,

@@ -231,7 +231,9 @@ describe('E6 patterns: cloth', () => {
     expect(denim.colorA).toEqual([0.1, 0.16, 0.3]);
     expect(denim.colorB).toEqual([0.66, 0.66, 0.64]);
     expect(denim.scaleMm).toBeCloseTo(10 / 24, 9);
-    expect(denim.params).toEqual([0.6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(denim.params).toEqual([0.6, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    // Smooth filaments: carbon's tows and the mesh show no twist.
+    expect([of('CARBON').params[1], of('MESH').params[1], of('COTTON').params[1]]).toEqual([0, 0, 1]);
     expect(denim.variant).toBe(WEAVES.TWILL31);
     // Physical: the same threads on a phone case and on a sofa.
     expect(of('DENIM', {}, 30).scaleMm).toBe(denim.scaleMm);
@@ -246,16 +248,16 @@ describe('E6 patterns: cloth', () => {
     // Edited values, limits and fallbacks; an unknown weave is plain.
     expect(of('COTTON', { threadCount: 1000, weaveDepth: 4 }).scaleMm).toBeCloseTo(10 / 200, 9);
     expect(of('COTTON', { threadCount: 0 }).scaleMm).toBeCloseTo(5, 9);
-    expect(of('COTTON', { weaveDepth: 4 }).params[0]).toBe(1);
+    expect(of('COTTON', { weaveDepth: 4, yarnTwist: -2 }).params.slice(0, 2)).toEqual([1, 0]);
     expect(of('COTTON', { weave: 'LACE' }).variant).toBe(0);
     const bare = patternToRsb({ ...instanceFromPreset('f', 'COTTON', 100)!, params: {} }, 100, 0)!;
-    expect([bare.scaleMm, bare.params[0], bare.variant]).toEqual([0.25, 0.35, 0]);
+    expect([bare.scaleMm, bare.params[0], bare.params[1], bare.variant]).toEqual([0.25, 0.35, 1, 0]);
     expect(bare.colorA).toEqual([0.7, 0.7, 0.68]);
   });
 
   it('the mean colour is the weave\'s: warp-faced satin and 3/1 twill show mostly warp, the preview and the engine agree', () => {
     // rt-core's Weave::warp_share pins the same shares (measured over the weave).
-    expect(WEAVE_WARP_SHARE).toEqual({ SATIN: 0.71, TWILL31: 0.685 });
+    expect(WEAVE_WARP_SHARE).toEqual({ SATIN: 0.72, TWILL31: 0.685 });
     for (const key of ['COTTON', 'DENIM', 'SATIN', 'KNIT', 'CARBON']) {
       const inst = instanceFromPreset('f', key, 100)!;
       expect(materialToRsb(inst).baseColor, key).toEqual(fabricMeanColor(inst.params));

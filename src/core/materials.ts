@@ -173,7 +173,7 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
  * The share of a fabric's face its warp (`threadColor1`) covers, by weave, as rt_core::pattern::cloth measures it:
  * a warp-faced satin and 3/1 twill show mostly warp, the rest half and half.
  */
-export const WEAVE_WARP_SHARE: Readonly<Record<string, number>> = { SATIN: 0.71, TWILL31: 0.685 };
+export const WEAVE_WARP_SHARE: Readonly<Record<string, number>> = { SATIN: 0.72, TWILL31: 0.685 };
 
 /** The mean colour of a fabric's weave (linear RGB): what the Fast preview shows and what the engine averages to. */
 export function fabricMeanColor(p: MaterialParams): [number, number, number] {

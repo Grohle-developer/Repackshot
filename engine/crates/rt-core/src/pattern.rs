@@ -58,11 +58,11 @@ pub struct Pattern {
     /// Wood: ring variation, ring noise, axial noise, colour noise, contrast (0: the colours as
     /// given), pore width (mm, 0: none), pore depth, pore band (0 diffuse- to 1 ring-porous),
     /// fibre, anisotropy along the grain; knots: count (0 to 12), diameter (mm), variation of
-    /// the diameter (± fraction), darkness; two unused (0). Cloth: relief, then fifteen unused
-    /// (0).
+    /// the diameter (± fraction), darkness; two unused (0). Cloth: relief, the yarn's twist (0 smooth
+    /// filaments to 1), then fourteen unused (0).
     pub params: [f32; PARAMS],
     /// Wood: the figure ([`wood::Figure`]: 0 rings, 1 strips, 2 speckle, 3 streaked). Cloth:
-    /// the weave ([`Weave`]: 0 plain, 1 twill, 2 satin, 3 canvas, 4 knit, 5 felt).
+    /// the weave ([`Weave`]: 0 plain, 1 twill 2/2, 2 satin, 3 canvas, 4 knit, 5 felt, 6 twill 3/1).
     pub variant: u32,
     /// The material's seed (where the knots are).
     pub seed: u32,
@@ -141,6 +141,7 @@ impl Pattern {
                 weft: self.color_b,
                 pitch_mm: self.scale_mm,
                 relief: v[0].min(1.0),
+                twist: v[1].clamp(0.0, 1.0),
                 weave: Weave::from_u32(self.variant),
             })),
             _ => None,
@@ -467,6 +468,8 @@ fn plane_axes(k: usize) -> (usize, usize) {
 const WOOD_STEP_MM: f32 = 0.02;
 /// Step of the finite differences of a cloth's height, in pitches.
 const CLOTH_STEP: f32 = 0.05;
+/// Anisotropy of a cloth's roughness, wider across the thread on top (Burley's `a`).
+const CLOTH_ANISOTROPY: f32 = 0.5;
 /// Projections weighing less than this are skipped.
 const MIN_WEIGHT: f32 = 0.02;
 
@@ -519,6 +522,9 @@ impl Placed {
                 let d = (p - self.origin) * self.mm;
                 let at = [d.x, d.y, d.z];
                 let step = CLOTH_STEP * c.pitch_mm;
+                // The highlight is stretched across the thread on top (where its fibres' normals
+                // spread), in the projection that weighs most.
+                let (mut tangent, mut heaviest) = (None, 0.0f32);
                 for (k, &w) in weights.iter().enumerate() {
                     if w < MIN_WEIGHT {
                         continue;
@@ -526,6 +532,10 @@ impl Placed {
                     let (a, b) = plane_axes(k);
                     let (u, v) = (at[a], at[b]);
                     let s = c.sample(u, v);
+                    if w > heaviest {
+                        heaviest = w;
+                        tangent = Some(if s.along_v { AXES[a] } else { AXES[b] });
+                    }
                     color += s.color * w;
                     rough += s.roughness * w;
                     total += w;
@@ -540,8 +550,12 @@ impl Placed {
                     base_color: color * k,
                     roughness: rough * k,
                     roughness_add: 0.0,
-                    anisotropy: 0.0,
-                    tangent: None,
+                    anisotropy: if c.has_threads() {
+                        CLOTH_ANISOTROPY
+                    } else {
+                        0.0
+                    },
+                    tangent: tangent.filter(|_| c.has_threads()),
                 };
                 // The slope of a millimetre relief over millimetres: dimensionless, along the
                 // mesh's axes (the bump keeps its part across the normal).

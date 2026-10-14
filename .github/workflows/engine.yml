@@ -9,7 +9,7 @@
 # `wasm32-wasip1` binary under Node's WASI (tools/wasi-run.mjs). NEON is compile-checked only.
 # The real `rt_wasm.wasm` renders the example scene in Node and must give the film hash the native
 # tests pin (tools/wasm-parity.mjs), and so must the E5 scene, the E5c physical sky, the E6 bevel
-# and the E6 patterns; with every exact pass of X2 rendered next to the image, the image keeps its
+# and the E6 wood and cloth patterns; with every exact pass of X2 rendered next to the image, the image keeps its
 # hash and each pass gives the hash the native tests pin. The AI guard's `post.wasm`
 # (rt-post-wasm) runs the scenarios of tests/fixtures/ai-guard.json, which the native rt-post
 # tests pin, and must give the same image bits and report JSON (tests/ai-post-wasm.test.ts). The
@@ -160,6 +160,12 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6p.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6p.rsb" --expect "$expected" --passes
+          # E6: the procedural cloth (a denim cushion and a knit ball), alone and with the passes.
+          cargo run --release -p rt-cli -- --write-e6-cloth-example "$RUNNER_TEMP/e6c.rsb"
+          expected=$(sed -n 's/.*PINNED_E6_CLOTH_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6c.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6c.rsb" --expect "$expected" --passes
           expected=$(sed -n 's/.*PINNED_EXAMPLE_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
           denoised=$(sed -n 's/.*PINNED_DENOISED_EXAMPLE_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-post/src/denoise/tests.rs | tr -d _)
           test -n "$expected" && test -n "$denoised"

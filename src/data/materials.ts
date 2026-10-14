@@ -308,7 +308,7 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'MESH', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Malla tecnica', en: 'Technical mesh' },
     params: { threadColor1: [0.08, 0.08, 0.09, 1], threadColor2: [0.14, 0.14, 0.15, 1], weave: 'PLAIN',
-      threadCount: 8, weaveDepth: 0.9, fuzz: 0.15, fuzzRoughness: 0.3, roughness: 0.55 },
+      threadCount: 8, weaveDepth: 0.9, yarnTwist: 0, fuzz: 0.15, fuzzRoughness: 0.3, roughness: 0.55 },
   },
   {
     key: 'MICROFIB', category: 'FABRIC', family: 'FABRIC',
@@ -454,7 +454,7 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'CARBON', category: 'OTHER', family: 'FABRIC',
     label: { es: 'Carbono', en: 'Carbon fibre' },
     params: { threadColor1: [0.022, 0.022, 0.026, 1], threadColor2: [0.055, 0.055, 0.062, 1],
-      weave: 'TWILL', threadCount: 5, weaveDepth: 0.3, fuzz: 0, fuzzRoughness: 0.2,
+      weave: 'TWILL', threadCount: 5, weaveDepth: 0.3, yarnTwist: 0, fuzz: 0, fuzzRoughness: 0.2,
       roughness: 0.18, coat: 1, coatRoughness: 0.03 },
   },
   {

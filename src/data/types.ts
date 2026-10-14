@@ -260,6 +260,8 @@ export interface MaterialParams {
   threadCount?: number;
   /** FABRIC: relief of the threads, 0 to 1 (half a thread spacing at 1). */
   weaveDepth?: number;
+  /** FABRIC (E6): how much the yarn's twist shows on the threads, 0 (smooth filaments: carbon tows, mesh) to 1 (default). */
+  yarnTwist?: number;
   fuzz?: number;
   fuzzRoughness?: number;
   /** EMISSIVE: BLACKBODY uses `temperature`, COLOR uses `emitColor`. */

@@ -119,5 +119,6 @@ Deviations and oddities worth knowing about (values were ported as they are):
   canvas 14, velvet 30, felt 20, knit 4, mesh 8, microfibre 120, carbon 5
   tows per cm; upstream's were per part size: cotton 200, carbon 90).
   Denim's weave is `TWILL31` (a 3/1 warp-faced twill, which upstream does
-  not have; its `TWILL` is a 2/2). Proposed values, pending the lead's
-  ruling on the cloth sheet.
+  not have; its `TWILL` is a 2/2). `yarnTwist` (0 to 1, default 1) is new
+  too: carbon's tows and the mesh's monofilaments are smooth (0). Proposed
+  values, pending the lead's ruling on the cloth sheet.
