@@ -150,11 +150,11 @@ export async function importFile(file: ImportSource, options: ImportFileOptions 
     case 'GLTF': {
       const { readGltf } = await import('./gltf');
       const buffer = arrayBufferOf(bytes);
-      return { ...(await readGltf({ name, arrayBuffer: async () => buffer })), format };
+      return { ...(await readGltf({ name, arrayBuffer: async () => buffer }, options.companions)), format };
     }
     case 'FBX': {
       const { readFbx } = await import('./fbx');
-      return { ...(await readFbx(name, arrayBufferOf(bytes))), format };
+      return { ...(await readFbx(name, arrayBufferOf(bytes), options.companions)), format };
     }
     case '3DM': {
       const { readRhino } = await import('./rhino');
@@ -170,15 +170,23 @@ export async function importFile(file: ImportSource, options: ImportFileOptions 
     }
     case 'DAE': {
       const { readCollada } = await import('./collada');
-      return { ...(await readCollada(name, new TextDecoder('utf-8').decode(bytes))), format };
+      return { ...(await readCollada(name, new TextDecoder('utf-8').decode(bytes), options.companions)), format };
     }
     case 'USD': {
       const { readUsd } = await import('./usd');
-      return { ...(await readUsd(name, arrayBufferOf(bytes))), format };
+      return { ...(await readUsd(name, arrayBufferOf(bytes), options.companions)), format };
     }
     case 'OBJ': {
       const { parseObj } = await import('./obj');
-      return assemble(parseObj(new TextDecoder('utf-8').decode(bytes), name), name, format);
+      const parsed = parseObj(new TextDecoder('utf-8').decode(bytes), name);
+      const result = assemble(parsed, name, format);
+      if (!parsed.libraries?.length || !options.companions?.size) return result;
+      // M2a: the material libraries and their images, when they were dropped with the file.
+      const { applyObjMaterials } = await import('./obj-materials');
+      const { textureNotes } = await import('./texture-notes');
+      const { textures, notes } = await applyObjMaterials(result.materials, parsed.libraries, options.companions);
+      const others = result.notes.filter((n) => n.code !== 'mtlIgnored');
+      return { ...result, notes: [...others, ...notes, ...textureNotes(textures)], ...(textures.length > 0 ? { textures } : {}) };
     }
     case 'STL': {
       const { parseStl } = await import('./stl');

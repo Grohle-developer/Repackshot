@@ -30,6 +30,7 @@ import type { DisplayPrefs, EngineStatus, NavigationPrefs, PickHit, RenderEngine
 import { Gizmo, GizmoDrag, modelRay, SCALE_CUBE_AT, type GizmoMode } from './gizmo';
 import { applyMaterial, makeMaterial } from './materials';
 import { drawPasses, type PassMesh } from './preview-passes';
+import { TexturePreview } from './texture-preview';
 
 /** Model space (Z up, mm) to three.js space (Y up): (x, y, z) -> (x, z, -y). */
 export function toThree(p: readonly number[]): THREE.Vector3 {
@@ -241,6 +242,8 @@ export class PreviewEngine implements RenderEngine {
   private readonly geometries = new Map<string, THREE.BufferGeometry>();
   private readonly materials = new Map<string, THREE.MeshPhysicalMaterial>();
   private readonly fallbackMaterial = new THREE.MeshPhysicalMaterial({ color: 0xb3b3b3, roughness: 0.5 });
+  /** M2a: the image maps and labels of the materials (render/texture-preview.ts). */
+  private textures: TexturePreview = new TexturePreview(() => (this.needsRender = true));
   private readonly floor: THREE.Mesh<THREE.PlaneGeometry, THREE.ShadowMaterial>;
   private readonly shadowLight = new THREE.DirectionalLight(0xffffff, 0);
   private envKey = '';
@@ -340,6 +343,8 @@ export class PreviewEngine implements RenderEngine {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.textures.dispose();
+    this.textures = new TexturePreview(() => (this.needsRender = true), Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
     this.device = this.detectDevice();
     // "Alt + left button orbits": the left button's action is decided as it goes down, before the controls see it.
     canvas.addEventListener(
@@ -565,8 +570,14 @@ export class PreviewEngine implements RenderEngine {
   private syncMaterials(state: ProjectState, prev: ProjectState | null): void {
     for (const [id, inst] of Object.entries(state.materials)) {
       const m = this.materials.get(id);
-      if (!m) this.materials.set(id, makeMaterial(inst, state.scene.partSizeMm));
-      else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm) applyMaterial(m, inst, state.scene.partSizeMm);
+      if (!m) {
+        const made = makeMaterial(inst, state.scene.partSizeMm);
+        this.textures.apply(made, inst);
+        this.materials.set(id, made);
+      } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm) {
+        applyMaterial(m, inst, state.scene.partSizeMm);
+        this.textures.apply(m, inst);
+      }
     }
     for (const [id, m] of this.materials) {
       if (!state.materials[id]) {
@@ -574,6 +585,7 @@ export class PreviewEngine implements RenderEngine {
         this.materials.delete(id);
       }
     }
+    this.textures.prune(this.materials.values());
   }
 
   private geometryFor(node: SceneNode): THREE.BufferGeometry | null {
@@ -588,6 +600,8 @@ export class PreviewEngine implements RenderEngine {
     g.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3));
     if (data.uvs) g.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
+    // M2a: the second UV set, for the slots that name it.
+    if (data.uvs && data.uvs2) g.setAttribute('uv1', new THREE.BufferAttribute(data.uvs2, 2));
     g.setIndex(new THREE.BufferAttribute(data.indices, 1));
     if (node.smooth === false) {
       g = g.toNonIndexed();
@@ -1644,6 +1658,7 @@ export class PreviewEngine implements RenderEngine {
     this.gizmo.dispose();
     for (const g of this.geometries.values()) g.dispose();
     for (const m of this.materials.values()) m.dispose();
+    this.textures.dispose();
     this.envTexture?.dispose();
     this.envMap?.dispose();
     this.maskTarget?.dispose();

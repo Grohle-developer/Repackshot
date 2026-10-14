@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { Rhino3dmLoader } from 'three/examples/jsm/loaders/3DMLoader.js';
 import type { ImportDetected, ImportMessage, ImportUnit } from '../core/import-options';
 import type { ReadResult } from './gltf';
-import { collectTextures, convertScene, toPayload } from './three-scene';
+import { collectTextures, textureNotes, convertScene, toPayload } from './three-scene';
 
 let libraryPath = `${import.meta.env.BASE_URL}vendor/rhino3dm/`;
 
@@ -110,14 +110,14 @@ export async function readRhino(name: string, buffer: ArrayBuffer): Promise<Read
     roughnessWhenDefault: 0.5,
     layerOf: (mesh) => layerOfIndex((mesh.userData as { attributes?: RhinoAttributes }).attributes?.layerIndex)?.fullPath,
   });
-  const textures = await collectTextures(converted.sources);
+  const textures = await collectTextures(converted);
 
   const notes: ImportMessage[] = [];
   const missing = (userData.warnings ?? []).filter((w) => w.type === 'missing mesh').length;
   if (missing > 0) notes.push({ code: 'brepNoMesh', params: { count: missing } });
   const { units, unsupported } = rhinoUnits(userData.settings);
   if (unsupported) notes.push({ code: 'unitsUnsupported', params: { unit: unsupported } });
-  if (textures.length > 0) notes.push({ code: 'texturesKept', params: { count: textures.length } });
+  notes.push(...textureNotes(textures));
   // Rhino is Z up by definition.
   const detected: Pick<ImportDetected, 'units' | 'upAxis' | 'upAxisDeclared' | 'unsupportedUnit'> = { units, upAxis: 'Z', upAxisDeclared: true, ...(unsupported ? { unsupportedUnit: unsupported } : {}) };
   return { ...toPayload(converted, detected, textures), warnings: converted.warnings, notes };
