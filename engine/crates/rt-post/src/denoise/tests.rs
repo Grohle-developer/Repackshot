@@ -329,8 +329,8 @@ fn the_denoised_example_has_a_pinned_hash() {
     }
     assert_eq!(banded, out);
     // The image without denoise keeps its own pinned hash.
-    assert_eq!(fnv1a(&film.resolve()), 0x2235_15c3);
+    assert_eq!(fnv1a(&film.resolve()), 0x51ad_e97c);
 }
 
 /// Pinned hash of the denoised example image at 4 samples per pixel.
-pub(crate) const PINNED_DENOISED_EXAMPLE_4SPP: u32 = 0xab15_f290;
+pub(crate) const PINNED_DENOISED_EXAMPLE_4SPP: u32 = 0x7483_f82e;

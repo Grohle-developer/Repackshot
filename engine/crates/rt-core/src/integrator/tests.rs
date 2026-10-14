@@ -178,16 +178,14 @@ fn rough_metal_never_gains_energy() {
             (u * u + v * v).sqrt() * 220.0 < 90.0
         };
         let mean = mean_where(&film, 1, inside);
-        assert!(mean <= 1.002, "roughness {roughness}: mean {mean}");
-        // Single-scattering GGX loses energy as it gets rougher (about 60 % at roughness 1,
-        // see the BSDF tests), and never gains any: a nearly smooth mirror keeps almost all.
+        assert!(mean <= 1.005, "roughness {roughness}: mean {mean}");
+        // Single-scattering GGX lost energy as it got rougher (about 60 % at roughness 1);
+        // since E9a the extra lobe gives it back: white at every roughness, never above.
+        assert!(mean > 0.99, "roughness {roughness}: mean {mean}");
         assert!(
-            mean < previous,
+            mean < previous + 0.01,
             "roughness {roughness}: {mean} after {previous}"
         );
-        if roughness < 0.1 {
-            assert!(mean > 0.98, "roughness {roughness}: mean {mean}");
-        }
         previous = mean;
         for x in 0..16 {
             for y in 0..16 {
@@ -855,7 +853,7 @@ fn glass_in_a_white_furnace_conserves_energy() {
     // A clear sphere without absorption in a uniform world of radiance 1 refracts and reflects
     // the world back: every pixel converges to 1 (the radiance compressed by η² inside comes
     // back on the way out). Flat facets, so that shading and geometric normals agree.
-    for (roughness, low) in [(0.0f32, 0.98), (0.3, 0.9)] {
+    for (roughness, low) in [(0.0f32, 0.98), (0.3, 0.98)] {
         let scene = Scene {
             camera: ortho_front(260.0),
             materials: vec![clear_glass(roughness)],
@@ -1462,4 +1460,82 @@ fn the_caustic_split_starts_again_at_every_receiver() {
     assert_eq!(r2, r1);
     assert!(r2.after(true).after(true).photons_bring_it());
     assert!(!CausticState::Eye.after(true).photons_bring_it());
+}
+
+/// The mean of the sphere's pixels (centres inside 0.85 of its radius) of a faceted sphere of
+/// `material` in a uniform world of radiance 1, orthographic, `size` × `size` at `spp` samples.
+fn furnace_mean(material: Material, size: u32, spp: u32) -> f64 {
+    let scene = Scene {
+        camera: ortho_front(260.0),
+        materials: vec![material],
+        geometry: Geometry::from_meshes(vec![faceted_sphere(Vec3::ZERO, 100.0, 3)]),
+        environment: uniform_world(1.0),
+        render: RenderSettings {
+            max_depth: 64,
+            ..settings(size, size)
+        },
+        ..Scene::default()
+    };
+    let film = render(&scene, spp);
+    mean_where(&film, 1, |x, y| {
+        let (u, v) = (
+            (x as f32 + 0.5) / size as f32 - 0.5,
+            (y as f32 + 0.5) / size as f32 - 0.5,
+        );
+        (u * u + v * v).sqrt() * 260.0 < 85.0
+    })
+}
+
+#[test]
+fn rough_metal_and_glass_come_out_white_in_a_furnace() {
+    // E9a. A white metal sphere and a clear glass one in a uniform world of radiance 1 are
+    // invisible at any roughness once the light that single scattering loses between
+    // microfacets is given back (Kulla and Conty's lobe for the metal, Turquin's scaling for the
+    // glass). Before E9a they came out at 0.998, 0.895, 0.574 and 0.356 (metal) and 0.994,
+    // 0.828, 0.515 and 0.361 (glass) for roughness 0.2, 0.5, 0.8 and 1. Rough glass seen from
+    // inside chooses reflection rarely and weighs it heavily, so the glass needs many paths.
+    for roughness in [0.2f32, 0.5, 0.8, 1.0] {
+        let metal = furnace_mean(
+            Material {
+                base_color: Rgb::WHITE,
+                metallic: 1.0,
+                roughness,
+                ..Material::default()
+            },
+            16,
+            128,
+        );
+        let glass = furnace_mean(clear_glass(roughness), 16, 256);
+        eprintln!("furnace roughness {roughness}: metal {metal:.4}, glass {glass:.4}");
+        assert!((metal - 1.0).abs() < 0.01, "metal at {roughness}: {metal}");
+        assert!((glass - 1.0).abs() < 0.01, "glass at {roughness}: {glass}");
+    }
+}
+
+#[test]
+fn white_plastic_comes_out_white_in_a_furnace() {
+    // E9a2. A white plastic (a white Lambertian base under the dielectric's specular layer, ior
+    // 1.5), bare and under a full clear coat (smooth, and of roughness 0.3), in a uniform world of
+    // radiance 1: white at every roughness once the base is weighted by Kulla and Conty's
+    // (1 - E_s(μo)) (1 - E_s(μi)) / (1 - E_s,avg) (jointly normalised under the coat) instead of
+    // (1 - F(μo)) (1 - F(μi)). Before: 0.918, 0.918, 0.914, 0.900 and 0.891 bare for roughness
+    // 0, 0.2, 0.5, 0.8 and 1; 0.860 to 0.833 under a smooth coat, 0.860 to 0.833 under a rough
+    // one. Smooth plastic changes too: the old weight lost 1 - F_avg of the diffuse (8.6 %).
+    for coat in [None, Some(0.0f32), Some(0.3)] {
+        for roughness in [0.0f32, 0.2, 0.5, 0.8, 1.0] {
+            let plastic = Material {
+                base_color: Rgb::WHITE,
+                roughness,
+                coat: if coat.is_some() { 1.0 } else { 0.0 },
+                coat_roughness: coat.unwrap_or(0.0),
+                ..Material::default()
+            };
+            let mean = furnace_mean(plastic, 16, 128);
+            eprintln!("furnace plastic roughness {roughness} coat {coat:?}: {mean:.4}");
+            assert!(
+                (mean - 1.0).abs() < 0.01,
+                "roughness {roughness}, coat {coat:?}: {mean}"
+            );
+        }
+    }
 }

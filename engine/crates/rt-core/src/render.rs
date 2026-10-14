@@ -620,9 +620,9 @@ mod tests {
     }
 
     /// Pinned hash of the tile at the centre of the example (sample 3).
-    const PINNED_CENTRE: u32 = 0x7a5a_e28b;
+    const PINNED_CENTRE: u32 = 0x0235_25f2;
     /// Pinned hash of the tile over the small sphere of the example (sample 3).
-    const PINNED_SMALL_SPHERE: u32 = 0xb43b_da52;
+    const PINNED_SMALL_SPHERE: u32 = 0x40ae_1775;
 
     /// Renders the whole example, 32-pixel tiles, samples `0..4`, and hashes the resolved film.
     pub(crate) fn example_4spp_hash() -> u32 {
@@ -649,7 +649,7 @@ mod tests {
     }
 
     /// Pinned hash of the whole example image at 4 samples per pixel.
-    pub(crate) const PINNED_EXAMPLE_4SPP: u32 = 0x2235_15c3;
+    pub(crate) const PINNED_EXAMPLE_4SPP: u32 = 0x51ad_e97c;
 
     /// Renders the whole E5 example (`sky` or HDRI), 32-pixel tiles, samples `0..4`, and hashes
     /// the resolved film.
@@ -691,9 +691,9 @@ mod tests {
     }
 
     /// Pinned hash of the E5 example (HDRI) at 4 samples per pixel.
-    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0xbf8a_bd5b;
+    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0x284f_75e1;
     /// Pinned hash of the E5 example (sky) at 4 samples per pixel.
-    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x2fcb_098a;
+    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x96f6_73b1;
 
     #[test]
     fn the_e5c_physical_sky_has_a_pinned_hash_on_every_platform() {
@@ -712,7 +712,7 @@ mod tests {
     }
 
     /// Pinned hash of the E5c example (physical sky) at 4 samples per pixel.
-    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x8bb0_9f6b;
+    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x8341_0b6e;
 
     /// Renders all of `scene`, 32-pixel tiles, samples `0..4`, each with its photon map (traced
     /// once per sample, as every host does), and hashes the resolved film.
@@ -752,7 +752,7 @@ mod tests {
     }
 
     /// Pinned hash of the E5b-1 example (caustics) at 4 samples per pixel.
-    pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x55d6_0f2f;
+    pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x8bff_5f8a;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {
