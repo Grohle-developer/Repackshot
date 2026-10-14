@@ -1805,7 +1805,7 @@ fn media_are_receivers_with_their_own_random_numbers() {
     assert!(medium_dim(0, 0) >= SOBOL_DIMENSIONS);
     // Below the lens's chromatic band (O1) and the wavelength of dispersion (E9c).
     assert!(medium_dim(5000, 5000) + 8 <= DIM_LENS_BAND);
-    assert!(DIM_LENS_BAND < DIM_DISPERSION);
+    const { assert!(DIM_LENS_BAND < DIM_DISPERSION) };
     assert_ne!(medium_dim(1, 0), medium_dim(0, 1));
     // A scene with media keeps no Beer–Lambert medium for them (the walk absorbs).
     let scene = Scene {

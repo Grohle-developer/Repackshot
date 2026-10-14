@@ -712,9 +712,9 @@ sus texturas y sin ellas da los mismos bytes, y las escenas fijadas de
    (`io/texture-pixels.ts`, con el decodificador del navegador): el motor no
    lee PNG ni JPEG.
 2. **`MATL`**: los campos de antes (72 B), los de E6 (`f32 bevel_mm`, 76 B) y
-   E9 (`f32 scatter_mm scatter_color[3] scatter_g abbe`, 100 B) —ceros
-   mientras E6 y E9 no los escriban—, y desde el **byte 100** el bloque de
-   texturas:
+   E9 (`f32 scatter_mm scatter_color[3] scatter_g abbe`, 100 B) —E9 los
+   escribe siempre; el bisel, 0 mientras E6 no lo escriba—, y desde el
+   **byte 100** el bloque de texturas:
 
    ```text
    u32 texture_block_version (1)
