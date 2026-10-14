@@ -90,6 +90,15 @@ export function linkPath(x1: number, y1: number, x2: number, y2: number): string
 
 const SVG = 'http://www.w3.org/2000/svg';
 
+/** A card's title: the node's name, and for the nodes that are one operation of many (Maths, Mix) the operation. */
+export function cardTitle(n: GraphNode): string {
+  const spec = nodeSpec(n.type);
+  if (!spec) return n.type;
+  const key = n.type === 'MATH' ? 'op' : n.type === 'MIX' ? 'blend' : null;
+  const option = key ? spec.params.find((p) => p.key === key)?.options?.find((o) => o.value === n.params[key]) : undefined;
+  return option ? `${lbl(spec.label)} · ${lbl(option.label)}` : lbl(spec.label);
+}
+
 /** The value an unconnected input shows on its card. */
 function inlineValue(n: GraphNode, key: string): HTMLElement | null {
   const v = n.inputs[key];
@@ -146,7 +155,7 @@ export function graphCanvas(o: GraphCanvasOptions): GraphCanvas {
     const card = h(
       'div',
       { class: `ge-node${n.type === 'OUTPUT' ? ' is-output' : ''}`, 'data-node': n.id, 'data-type': n.type, role: 'group', 'aria-label': lbl(spec.label), style: `left:${n.x}px;top:${n.y}px;width:${NODE_W}px` },
-      h('div', { class: 'ge-head', 'data-tip': lbl(spec.description) }, lbl(spec.label)),
+      h('div', { class: 'ge-head', 'data-tip': lbl(spec.description) }, cardTitle(n)),
       h('div', { class: 'ge-preview' }, h('canvas', { width: 64, height: 64, 'aria-hidden': 'true' })),
       ...rows,
     );

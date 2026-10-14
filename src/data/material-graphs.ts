@@ -102,7 +102,7 @@ export const MATERIAL_GRAPHS: readonly ExampleGraph[] = [
       { id: 'x4', type: 'MATH', x: 480, y: 360, params: { op: 'MULTIPLY' }, inputs: { b: 5 } },
       { id: 'sin', type: 'MATH', x: 700, y: 120, params: { op: 'SINE' } },
       { id: 'abs', type: 'MATH', x: 700, y: 330, params: { op: 'ABSOLUTE' } },
-      { id: 'pow', type: 'MATH', x: 700, y: 520, params: { op: 'POWER' }, inputs: { b: 0.3 } },
+      { id: 'pow', type: 'MATH', x: 700, y: 520, params: { op: 'POWER' }, inputs: { b: 0.55 } },
       {
         id: 'ramp',
         type: 'RAMP',
@@ -110,9 +110,9 @@ export const MATERIAL_GRAPHS: readonly ExampleGraph[] = [
         y: 720,
         params: {
           stops: [
-            { pos: 0, color: [0.16, 0.16, 0.18] },
-            { pos: 0.45, color: [0.62, 0.61, 0.6] },
-            { pos: 1, color: [0.9, 0.89, 0.87] },
+            { pos: 0, color: [0.1, 0.1, 0.11] },
+            { pos: 0.35, color: [0.5, 0.49, 0.48] },
+            { pos: 1, color: [0.88, 0.87, 0.85] },
           ],
         },
       },

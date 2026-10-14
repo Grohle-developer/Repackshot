@@ -150,9 +150,10 @@ async function pickRow(page, name) {
   await settle(page, 200);
 }
 
-/** Opens the editor on the body of the example bottle. */
+/** Opens the editor on the body of the example bottle (its name in the page's language). */
 async function openEditor(page) {
-  await pickRow(page, 'Body');
+  const es = await page.evaluate(() => document.documentElement.lang === 'es');
+  await pickRow(page, es ? 'Cuerpo' : 'Body');
   await page.locator('[data-material-nodes]').click();
   await page.waitForSelector('[data-material-editor] .ge-node', { timeout: 30000 });
   await settle(page, 300);
@@ -275,14 +276,19 @@ async function marbleCheck(browser) {
   await bakesDone(page);
   await settle(page, 600);
   await page.locator('.me').screenshot({ path: join(SHOTS, 'material-nodes.png') });
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  await page.locator('.me button[aria-label="Close"]').click();
   await settle(page, 600);
+  ok((await page.locator('.me').count()) === 0, 'the editor did not close with ×', f);
   log.after = await meanColour(page, box);
   // Marble is lighter than the metallic paint it replaced.
   ok(log.after[0] > log.before[0] + 20, `the bottle did not turn to marble in Fast: ${JSON.stringify(log.before)} → ${JSON.stringify(log.after)}`, f);
+  // Without the selection's outline: Esc in the viewport deselects.
+  await page.locator('canvas[aria-label="viewport"]').focus();
+  await page.keyboard.press('Escape');
+  await page.mouse.move(5, 500);
+  await settle(page, 800);
   const cb = await canvasBox(page);
-  await page.screenshot({ path: join(SHOTS, 'material-nodes-preview.png'), clip: { x: Math.round(cb.x + cb.width * 0.2), y: Math.round(cb.y + cb.height * 0.04), width: Math.round(cb.width * 0.6), height: Math.round(cb.height * 0.92) } });
+  await page.screenshot({ path: join(SHOTS, 'material-nodes-preview.png'), clip: { x: Math.round(cb.x + cb.width * 0.27), y: Math.round(cb.y + cb.height * 0.2), width: Math.round(cb.width * 0.46), height: Math.round(cb.height * 0.62) } });
   ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
   await context.close();
   results.marble = { ok: f.length === 0, failures: f, ...log };

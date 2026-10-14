@@ -21,6 +21,7 @@ import * as gc from '../graph-commands';
 import { colorField, field, numberField, segmented, select, slider, toggle, type Control } from '../components/controls';
 import { openFloating, openMenu, showConfirmIn } from '../components/widgets';
 import { h, icon, isTyping, placeAt } from '../dom';
+import { preventedByGuard } from '../guards';
 import { dyn, materialName } from '../names';
 import { dynamic, type Ctx, type Scope } from '../reactive';
 import { kbdText } from '../shortcuts';
@@ -326,7 +327,11 @@ export function materialEditor(ctx: Ctx, scope: Scope): HTMLElement {
         run: () => {
           if (gc.applyExample(ctx, material, g.key)) {
             selection.set([]);
-            requestAnimationFrame(() => canvas?.frame());
+            requestAnimationFrame(() => {
+              canvas?.frame();
+              // The keys are the editor's again (the menu had the focus).
+              canvas?.el.focus({ preventScroll: true });
+            });
           }
         },
       })),
@@ -485,7 +490,8 @@ export function materialEditor(ctx: Ctx, scope: Scope): HTMLElement {
 
   // ------------------------------------------------------------------ keys
   const onKey = (e: KeyboardEvent): void => {
-    if (e.defaultPrevented || e.isComposing || !win.contains(e.target as Node) || document.querySelector('.floating')) return;
+    // The guards (ui/guards.ts) may have prevented the browser's own action of a key (Ctrl/⌘ D): the editor's still runs.
+    if ((e.defaultPrevented && !preventedByGuard(e)) || e.isComposing || !win.contains(e.target as Node) || document.querySelector('.floating')) return;
     if (ui.get().paletteOpen) return;
     const typing = isTyping(e);
     const mod = e.ctrlKey || e.metaKey;
