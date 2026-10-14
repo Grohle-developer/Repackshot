@@ -10,6 +10,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, poseActive, type Pose } from '../core/animation';
+import type { MotionHint } from '../core/motion-hint';
 import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
@@ -310,6 +311,10 @@ export class PreviewEngine implements RenderEngine {
   private readonly glyphLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, toneMapped: false, dashSize: 4, gapSize: 3 }));
   private readonly glyphSelected = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false }));
   private readonly glyphDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false }));
+  /** N6: the track of the animation selected in the timeline (overlay lines and dots, model space) and its target, outlined. */
+  private motionHighlight: readonly NodeId[] = [];
+  private readonly motionLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false }));
+  private readonly motionDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false }));
   /** Settings ▸ Preferences: how the mouse moves the camera, and the floor grid. */
   private tool: PreviewTool = 'select';
   private nav: NavigationPrefs = { mouse: 'LEFT', invertZoom: false, orbitSpeed: 1, zoomSpeed: 1 };
@@ -335,12 +340,12 @@ export class PreviewEngine implements RenderEngine {
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.outlineMaterial));
     this.overlayRoot.matrixAutoUpdate = false;
     this.overlayRoot.matrix.copy(BASIS);
-    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots]) {
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) {
       g.frustumCulled = false;
       g.renderOrder = -1;
       g.visible = false;
     }
-    this.overlayRoot.add(this.glyphLines, this.glyphSelected, this.glyphDots, this.gizmo.root);
+    this.overlayRoot.add(this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots, this.gizmo.root);
     this.overlayScene.add(this.overlayRoot);
   }
 
@@ -509,7 +514,7 @@ export class PreviewEngine implements RenderEngine {
   setInk(rgb: readonly number[]): void {
     this.outlineMaterial.uniforms.ink.value.set(rgb[0], rgb[1], rgb[2]);
     this.gizmo.setInk(rgb);
-    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots]) g.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) g.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
     this.needsRender = true;
   }
 
@@ -1009,7 +1014,8 @@ export class PreviewEngine implements RenderEngine {
     const s = this.state;
     if (!s) return;
     const selected = new Set(partsUnder(s, s.selection.ids.filter((id) => s.scene.nodes[id])));
-    const hovered = new Set(partsUnder(s, this.hover));
+    // The target of the animation selected in the timeline is outlined like a part under the pointer (N6).
+    const hovered = new Set([...partsUnder(s, this.hover), ...this.motionHighlight]);
     for (const [id, obj] of this.objects) {
       if (!(obj instanceof THREE.Mesh)) continue;
       obj.layers.set(0);
@@ -1084,7 +1090,7 @@ export class PreviewEngine implements RenderEngine {
 
   /** Something to draw over the path tracer: an outline, selected faces, the gizmo. */
   private hasOverlay(): boolean {
-    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive) || this.glyphs.length > 0) return true;
+    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive) || this.glyphs.length > 0 || this.motionLines.visible || this.motionDots.visible) return true;
     for (const o of this.objects.values()) if (o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER)) return true;
     return false;
   }
@@ -1279,6 +1285,28 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
+  /**
+   * N6: the animation selected in the timeline: its target outlined (as the pointer outlines a part) and its track drawn
+   * over the image in the theme's ink (model space; the overlay's basis turns it Y up). Null clears both.
+   */
+  setMotionHint(hint: MotionHint | null): void {
+    const ids = hint?.highlight ?? [];
+    if (ids.length !== this.motionHighlight.length || ids.some((x, i) => x !== this.motionHighlight[i])) {
+      this.motionHighlight = [...ids];
+      this.updateLayers();
+    }
+    const put = (obj: THREE.LineSegments | THREE.Points, pts: readonly Vec3[]) => {
+      const data: number[] = [];
+      for (const p of pts) data.push(p[0], p[1], p[2]);
+      obj.geometry.setAttribute('position', new THREE.Float32BufferAttribute(data, 3));
+      obj.geometry.computeBoundingSphere();
+      obj.visible = data.length > 0;
+    };
+    put(this.motionLines, hint?.lines ?? []);
+    put(this.motionDots, hint?.dots ?? []);
+    this.needsRender = true;
+  }
+
   /** Where an object (a light, a camera) is on the canvas now, CSS pixels; null behind the view (for checks). */
   objectAt(obj: ViewObject): { x: number; y: number } | null {
     const s = this.state;
@@ -1323,7 +1351,9 @@ export class PreviewEngine implements RenderEngine {
 
   private drawGizmo(cam: THREE.Camera): void {
     const gizmo = this.gizmo.visible && !this.poseActive;
-    if (!gizmo && this.glyphs.length === 0) return;
+    // N6: the track of the animation selected in the timeline goes over everything too, also while it plays.
+    const motion = this.motionLines.visible || this.motionDots.visible;
+    if (!gizmo && this.glyphs.length === 0 && !motion) return;
     // The glyphs of lights and cameras (L4) go with the gizmo, over everything; while the animation plays, not the gizmo.
     const shown = this.gizmo.root.visible;
     if (!gizmo) this.gizmo.root.visible = false;

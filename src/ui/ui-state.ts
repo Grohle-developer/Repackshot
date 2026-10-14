@@ -283,8 +283,19 @@ export interface UiState {
   /** Window narrower than 1100 px: side panels become drawers. */
   narrow: boolean;
   wizard: WizardState | null;
-  /** Clip selected in the animation drawer. */
+  /** Clip selected in the animation drawer: the one the properties edit (the last one picked). */
   selectedClip: string | null;
+  /**
+   * N6: every clip selected in the timeline (the multiple selection, `selectedClip` among them). Code that only knows
+   * `selectedClip` keeps working: the commands of ui/anim-commands.ts keep the two in step.
+   */
+  selectedClips: string[];
+  /** N6: targets of the timeline folded by the user (their clips hidden; the row shows their bars). */
+  animFolded: Record<string, true>;
+  /** N6: the timeline's zoom, 1 = the whole animation fits. */
+  animZoom: number;
+  /** N6: playing goes back to the start at the end (on), or stops there. */
+  animLoop: boolean;
   customResolution: boolean;
   /** A file is being dragged over the viewport. */
   fileDrag: boolean;
@@ -441,6 +452,10 @@ export function defaultUiState(): UiState {
     narrow: false,
     wizard: null,
     selectedClip: null,
+    selectedClips: [],
+    animFolded: {},
+    animZoom: 1,
+    animLoop: true,
     customResolution: false,
     fileDrag: false,
     shortcutsOpen: false,

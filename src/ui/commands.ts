@@ -485,7 +485,7 @@ function replaceProject(ctx: Ctx, state: ProjectState): void {
   // History is gone with the old project, and so are the geometry and the images only it used.
   retainMeshes(meshIdsInUse(state));
   retainImages([...imageIdsInUse(state.environment), ...textureImages(state).keys()]);
-  ctx.ui.set({ labelTool: null, catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null });
+  ctx.ui.set({ labelTool: null, catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null, selectedClips: [] });
 }
 
 export function newProject(ctx: Ctx): void {
