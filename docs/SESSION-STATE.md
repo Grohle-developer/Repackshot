@@ -2,9 +2,10 @@
 
 Este archivo lo escribe el responsable (Fable) para que cualquier sesión
 nueva pueda seguir donde se quedó esta. Lo que cuenta es lo que hay en
-`origin`: la rama de sesión `ccr-8df3f848-6ukiky` (**PR #9** hacia `main`; el PR #7
-se fusionó en `main` el 14-10 con la release v0.1.6 y el PR #8 llevó el arreglo
-del *smoke test* de la release) y las ramas `wip/ccr-8df3f848/<fase>` con el trabajo en curso
+`origin`: la rama de sesión `ccr-8df3f848-6ukiky` (igual a `main` en `5f20d9b` tras
+fusionar el usuario el PR #9; el PR #7 llevó la release v0.1.6 a `main`, el PR #8 el
+arreglo del *smoke test* y el PR #9 O3a; lo que llegue ahora —E9, E6, O2— abre un
+PR nuevo desde esta misma rama) y las ramas `wip/ccr-8df3f848/<fase>` con el trabajo en curso
 de cada agente (se empujan tras cada *commit* de su agente; un *commit*
 «WIP» puede tener tests en rojo). Los árboles de trabajo locales
 (`/home/user/Repackshot-<fase>`) y el *scratchpad* son efímeros.
@@ -89,7 +90,7 @@ nuevo con el brief de la fase del ROADMAP y la orden de seguir desde el último
    capa de realismo, E10 adaptativo, E13 MNEE, S3 lluvia/polvo y cristal
    frontal (tras S4a y S2), S9 telas, S7 líquidos, M5 tejido y pelusa
    (tras S8), O2.
-4. **Release v0.1.6** (14-10): commit `ec67370` en la rama, PR #7 fusionado en `main` (`f6f5ed3`); el primer `release.yml` (run 38599628176) construyó los tres paquetes y falló en el *smoke test* porque leía la trama del lanzador con cabecera de 48 B (U11 la subió a 52): arreglo en `packaging/smoke.mjs` (PR #8, `c413669`), release relanzada desde ese commit (run 38600597560). Queda: comprobar los cuatro *assets* y subir `film-0.1.0.rpk` con `gh release upload v0.1.6 <archivo>` (sha `a60dd9ed…3d8a`, 1 956 072 B). Lo que llegue después (E9, E6, O2) va al PR #9 (v0.1.7).
+4. **Release v0.1.6 publicada** (14-10, run 38600597560 sobre `c413669`, etiqueta `v0.1.6`, release 412955577): los cuatro *assets* subidos por el workflow (portable Windows 11 329 872 B, portable Linux 11 158 342 B, instalador 9 426 684 B, `SHA256SUMS.txt`). El primer intento (run 38599628176) falló en el *smoke test* porque leía la trama del lanzador con cabecera de 48 B (U11 la subió a 52): arreglo en `packaging/smoke.mjs` (PR #8). **Falta `film-0.1.0.rpk` como asset**: el proxy de GitHub de la sesión rechaza cuerpos binarios (solo JSON), así que lo sube el usuario a mano (el archivo se le entregó en el chat; sha `a60dd9ed…3d8a`, 1 956 072 B); hasta entonces *Ajustes ▸ Plugins ▸ Instalar* del registro falla la descarga (instalar desde archivo sí funciona).
    (procedimiento en `ROADMAP.md` P1 y `release-notes/`): subir además
    `film-0.1.0.rpk` reconstruido por P6b (sha256
    `a60dd9edea828f4ed29acd3d29b9ab1ffde384284da8c6a6a6619cc1d6ba3d8a`,
