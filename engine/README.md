@@ -211,6 +211,17 @@ twice (0: off).
   that path; 2.0 % darker than the exact path under a 3 mm plate), and the exit
   vertex's BSDF samples through such a wall count as straight events for MIS: a liquid in a glass
   bottle sees the lights through the bottle's side.
+* **Dispersion** (E9c, `integrator::dispersion`): a clear solid without a medium and with
+  `MATL.abbe > 0` refracts each wavelength with its own index, Cauchy's `A + B / λ²` through `ior`
+  at the helium d line (587.6 nm) and the Abbe number `(n_d - 1) / (n_F - n_C)`. Each channel is
+  a band of wavelengths (red 580–700, green 490–580, blue 400–490 nm); at its first dispersive
+  surface a path picks a channel (probability ⅓) and a wavelength uniformly in its band from one
+  hashed dimension of its own (`sampler::DIM_DISPERSION`), carries that channel alone times 3
+  from then on and refracts at that wavelength at every dispersive surface; photons do the same
+  with their own generator. Paths that meet no dispersive glass stay white, so scenes without
+  one keep every bit. `PINNED_E9_MEDIA_4SPP` (`0xf693c26b`, `rt --write-e9-example`: the E5
+  scene with a medium in its big sphere and a crystal sphere of Abbe number 40) holds on every
+  SIMD path, in WASI, through the real module and with 1, 4 and 16 threads.
 * **Dielectrics in the integrator** (E5): a path keeps track of the solid it is in (the hit side
   of a closed mesh) and attenuates by Beer–Lambert along each segment inside. Thin walls and
   cut-outs are *passable*: their straight-through events keep the last vertex's BSDF density and
@@ -525,8 +536,8 @@ and `absorption_mm` (72 bytes), the environment's `hdri_map`, `backplate_map`, `
 environment names a bitmap by its position among the `BMAP` sections, `0xffffffff` for none).
 X2 appended `RNDR.passes` (40 bytes), the mask of the exact passes above (0, and every older file:
 none). E9 appended to `MATL` (100 bytes) `bevel_mm` (reserved for E6: read and kept, written 0),
-`scatter_mm`, `scatter_color` (three floats), `scatter_g` and `abbe` (written now, rendered from
-E9c on). The exact field layout and the semantics
+`scatter_mm`, `scatter_color` (three floats), `scatter_g` and `abbe` (the Abbe number of solid
+glass, E9c). The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the

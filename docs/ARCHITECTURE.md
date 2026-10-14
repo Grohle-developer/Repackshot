@@ -420,7 +420,8 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   distancia libre media, §5.2 ter), `scatter_color` (tres `f32`, el albedo
   de dispersión simple por canal; 1, 1, 1), `scatter_g` (0; la anisotropía
   de Henyey–Greenstein, recortada a ±0,9) y `abbe` (0; el número de Abbe
-  del vidrio macizo, que se escribe ya y se renderiza desde E9c).
+  del vidrio macizo sin medio: por encima de 0, dispersión cromática,
+  §5.2 ter).
 - **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
   (L4); ≥ 5 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
@@ -692,6 +693,28 @@ un medio es un difuso translúcido: el color con que vuelve la luz
 `s = √(1 − albedo)`) y una transmisión que baja con lo denso que es el
 medio para el tamaño de la pieza; la ayuda del inspector dice que Rápido lo
 aproxima.
+
+**Dispersión cromática** (`rt_core::integrator::dispersion`, E9c). Un
+sólido claro sin medio con `abbe > 0` refracta cada longitud de onda con
+su índice: la ley de Cauchy de dos términos, `n(λ) = A + B/λ²`, que pasa
+por `ior` en la línea d del helio (587,6 nm) y da el número de Abbe
+`V = (n_d − 1)/(n_F − n_C)` (líneas F, 486,1 nm, y C, 656,3 nm, del
+hidrógeno). El motor no es espectral: cada canal es una banda de
+longitudes de onda (rojo 580–700, verde 490–580, azul 400–490 nm). Al
+primer vidrio dispersivo que encuentra, un camino elige un canal con
+probabilidad ⅓ y una longitud de onda uniforme dentro de su banda, con una
+dimensión *hash* propia (`sampler::DIM_DISPERSION`, `1 << 23`), y desde
+ahí lleva solo ese canal, por 3, y refracta con esa longitud de onda en
+todo vidrio dispersivo; la esperanza de cada canal es la de refractar su
+banda entera. Los fotones de las cáusticas hacen lo mismo con su propio
+generador. Un camino que no encuentra vidrio dispersivo sigue blanco, así
+que una escena sin ninguno no cambia ni un bit. El precio es ruido de color
+donde hay dispersión. Los rayos de sombra no atraviesan el vidrio (E5) y la
+regla de las paredes de los medios usa `ior`, sin dispersión. *Hash*
+fijado: la escena de E9 lleva desde E9c una esfera de cristal de Abbe 40
+(`PINNED_E9_MEDIA_4SPP`). En **Rápido**, la `dispersion` de three.js
+(`KHR_materials_dispersion`: 20 / número de Abbe, hasta 2), solo en vidrio
+macizo sin medio.
 
 ### 5.3 · En el navegador: workers
 

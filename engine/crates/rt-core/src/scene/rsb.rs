@@ -97,10 +97,10 @@
 //!   (Beer–Lambert) instead of a surface tint. E9: `bevel_mm` is reserved for E6 (read, kept,
 //!   written; not rendered); `scatter_mm` above zero fills a clear solid with a scattering medium
 //!   of that mean free path, single-scattering albedo `scatter_color` and Henyey–Greenstein
-//!   anisotropy `scatter_g` (see [`crate::integrator::medium`]); `abbe` above zero makes a clear
-//!   solid's index depend on the wavelength (Cauchy's law with that Abbe number, see
-//!   `integrator::dispersion`). A file written before E9 reads them as 0, white, 0, 0:
-//!   no medium and no dispersion.
+//!   anisotropy `scatter_g` (see [`crate::integrator::medium`]); `abbe` above zero makes the
+//!   index of a clear solid without a medium depend on the wavelength (Cauchy's law through `ior`
+//!   at the d line with that Abbe number, see [`crate::integrator::dispersion`]). A file written
+//!   before E9 reads them as 0, white, 0, 0: no medium and no dispersion.
 //! * `LGHT.kind`: **0 rect** (`size_x` × `size_y`, its local Y axis along `up`), **1 disk**
 //!   (diameter `size_x`), **2 sun** (a disc of angular diameter `angle_deg`, 0 for a delta
 //!   direction), **3 point** and **4 spot** (reserved for L4: parsed, kept, not rendered). Rect

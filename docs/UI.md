@@ -512,7 +512,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    transparente—, *Color de dispersión* —lo que conserva cada rebote de
    cada color— y *Dirección*, de −0,9 a 0,9, con la ayuda «hacia delante /
    hacia atrás»; la ayuda de *Dispersión interna* dice que el modo Rápido
-   la aproxima); madera
+   la aproxima; y, E9c, *Número de Abbe*, de 0 a 100 —la dispersión
+   cromática del vidrio macizo: cuanto menor, más separa los colores; 0,
+   ninguna—, cuya ayuda dice también que Rápido la aproxima); madera
    (dos colores, densidad de anillos…); tela (dos colores de hilo, tipo de
    tejido, hilos por cm, pelusa); emisor (tipo, temperatura, potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material

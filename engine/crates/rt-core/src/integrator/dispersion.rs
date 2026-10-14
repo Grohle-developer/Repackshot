@@ -103,6 +103,45 @@ mod tests {
     }
 
     #[test]
+    fn only_clear_solids_without_a_medium_disperse() {
+        use crate::scene::{MATERIAL_FLAG_THIN, MATERIAL_GLASS};
+        let glass = Material {
+            kind: MATERIAL_GLASS,
+            ior: 1.56,
+            transmission: 1.0,
+            abbe: 40.0,
+            ..Material::default()
+        };
+        assert!(is_dispersive(&glass));
+        let not = |m: Material| assert!(!is_dispersive(&m), "{m:?}");
+        not(Material {
+            abbe: 0.0,
+            ..glass.clone()
+        });
+        not(Material {
+            abbe: f32::INFINITY,
+            ..glass.clone()
+        });
+        not(Material {
+            flags: MATERIAL_FLAG_THIN,
+            ..glass.clone()
+        });
+        not(Material {
+            ior: 1.0,
+            ..glass.clone()
+        });
+        not(Material {
+            transmission: 0.0,
+            ..glass.clone()
+        });
+        // A medium leaves through its boundary at `ior`: its surface does not disperse either.
+        not(Material {
+            scatter_mm: 1.0,
+            ..glass
+        });
+    }
+
+    #[test]
     fn a_band_is_a_third_of_the_channels_and_keeps_the_mean() {
         let n = 3000;
         let mut sum = Rgb::BLACK;

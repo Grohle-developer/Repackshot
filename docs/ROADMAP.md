@@ -1325,7 +1325,7 @@ cambia de *hash* (`0xab15f290` del ejemplo con *denoise*); los gestos
 siguen a resolución reducida sin *denoise*; captura `docs/ui/
 denoise-live.png` con la barra superior.
 
-## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus** — (a) y (b) hechas; (c) en curso
+## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus** — hecha (a, b y c)
 
 **Qué.** Tres partes, en este orden, cada una con su commit y sus
 *hashes*; (c) solo si (a) y (b) están en verde.
@@ -1768,6 +1768,104 @@ un número de las recetas de la hoja distinto del catálogo: todos fallan.
   lo corre en nativo y en WASI). Las cáusticas no entran en un medio.
 - La hoja se hizo a 64 y 256 muestras, no a 64 y 1024 como dice el
   contrato (decisión de la dirección).
+
+**Hecho (c) · dispersión cromática.**
+
+- **Campo**: `abbe`, el último de `MATL` desde (b) (byte 96); en el
+  proyecto, `abbe` de la familia GLASS (0 por defecto: ninguna). Un
+  proyecto o un RSB anteriores se abren sin dispersión.
+- **El índice por longitud de onda** (`rt_core::integrator::dispersion`):
+  la ley de Cauchy de dos términos, `n(λ) = A + B/λ²`, que pasa por `ior`
+  en la línea d del helio (587,6 nm) y da el número de Abbe
+  `V = (n_d − 1)/(n_F − n_C)` (F 486,1 nm y C 656,3 nm, las líneas del
+  hidrógeno): `B = (n_d − 1)/(V (1/λ_F² − 1/λ_C²))`, `A = n_d − B/λ_d²`.
+  Solo en un sólido claro **sin medio** (un paseo sale por su frontera con
+  `ior`, así que su superficie tampoco dispersa) y nunca en una pared fina.
+- **Una longitud de onda por camino**: cada canal es una banda (rojo
+  580–700, verde 490–580, azul 400–490 nm). Al primer vidrio dispersivo,
+  el camino elige un canal con probabilidad ⅓ y una longitud de onda
+  uniforme en su banda, con una dimensión *hash* propia
+  (`sampler::DIM_DISPERSION`, `1 << 23`, más allá de las del medio), y
+  desde ahí lleva solo ese canal, por 3, y refracta con esa longitud de
+  onda en todo vidrio dispersivo (rugoso también: la BSDF entera, con su
+  compensación de energía, se construye con ese índice). Los fotones de
+  las cáusticas hacen lo mismo con su propio generador al primer *caster*
+  dispersivo. Un camino que no encuentra vidrio dispersivo sigue blanco:
+  una escena sin `abbe` no cambia ni un bit (todos los *hashes* fijados
+  salvo el de E9, abajo, siguen iguales).
+- **Rápido** (`src/render/materials.ts`): la `dispersion` de three.js con
+  la definición de glTF (`KHR_materials_dispersion`, 20 / número de Abbe,
+  hasta 2), solo en vidrio macizo sin medio; la ayuda dice que Rápido la
+  aproxima.
+- **Receta**: `CRYSTAL`, *Cristal de perfumería* (ior 1,56, Abbe 40, liso,
+  sin absorción), en *Vidrio*; 87 recetas.
+- **Interfaz**: *Número de Abbe* (0 a 100, paso 1) bajo *Dirección* del
+  vidrio, con su ayuda en los dos idiomas; mutación del *store* como
+  cualquier parámetro.
+- **Pruebas**: el prisma del contrato (45°, 100 mm, a 300 mm del suelo,
+  Abbe 25) bajo una luz de disco de 20 mm con un haz de 10° a 800 mm:
+  con fotones, en el suelo el azul cae más lejos que el verde y este que
+  el rojo (centroides 23,76 / 23,03 / 22,69 px de 40; por regiones, el
+  cociente azul/rojo de la mitad lejana de la banda es 1,073 y el de la
+  cercana 0,880) y sin `abbe` la banda es blanca bit a bit; el mismo
+  prisma visto desde arriba sobre una tira emisora separa las imágenes de
+  los canales (rojo 16,99, verde 13,65, azul 8,53 px; sin `abbe`, las
+  tres iguales bit a bit); una esfera de cristal (Abbe 30) lisa y rugosa
+  (0,3) en un mundo uniforme sale blanca en cada canal (0,992 / 1,005 /
+  1,002 y 0,993 / 1,004 / 1,004; cota 1,5 %); la ley de Cauchy pasa por
+  `ior` en d y da el Abbe pedido; la elección de banda conserva la media;
+  qué materiales dispersan; del lado de la interfaz, la receta, el
+  parámetro y sus cadenas, el Rápido (y que un material reutilizado para
+  otra familia la olvida) y el `rt.wasm` real con el *hash* nuevo.
+- **Paridad**: la escena de E9 lleva ahora, además del medio, una esfera de
+  cristal de Abbe 40 (radio 40 mm, delante a la derecha): **`0xc6c9036e`
+  → `0xf693c26b`** (`PINNED_E9_MEDIA_4SPP`, `tests/fixtures/e9.rsb` de
+  10 804 B), igual en escalar, SSE2 y AVX2, en WASI escalar y `simd128`,
+  con 1, 4 y 16 hilos, en el `rt.wasm` real y por el código de la página.
+- **Coste**: un número aleatorio por camino; los rayos no cambian (la
+  escena de E9 a 480 × 360 y 256 spp, dos hilos: 479,9 M rayos en 427,9 s
+  con el cristal, 475,4 M en 428,4 s con Abbe 0). El precio es ruido de
+  color: en una caja de 191 × 109 px alrededor de la esfera, el ruido de
+  píxel relativo (frente a sus vecinos) pasa de 0,029 a 0,037 a 256 spp
+  (0,071 a 64 spp).
+
+**Mutaciones de (c)**, todas cazadas: el canal sin el factor 3 (el
+*furnace* del cristal: 0,331 en rojo; la media de las bandas); volver a
+elegir la banda en cada superficie (el *furnace* diverge y el suelo del
+prisma invierte los colores); refractar con `ior` en lugar del índice de la
+banda (el prisma visto a través, los tres canales a 15,6 px); no enmascarar
+el *throughput* (el mismo); en los fotones, no enmascarar su potencia,
+volver a elegir la banda o refractar con `ior` (el suelo del prisma); el
+signo de `A` en Cauchy (su test y los dos prismas); las bandas al revés
+(los dos prismas); dispersar también un medio
+(`only_clear_solids_without_a_medium_disperse`). Solo con el *hash* de
+E9: la longitud de onda del centro de la banda en lugar de una uniforme
+(los centroides se mueven 0,1 px) y la dimensión de la longitud de onda
+dentro de la tabla Sobol.
+
+**No encajó con el plan en (c).**
+
+- **Una longitud de onda, sin MIS espectral.** El contrato ofrecía la
+  longitud de onda héroe con tres (Wilkie et al. 2014) o una sola con MIS
+  espectral. Con canales que son bandas disjuntas, cada longitud de onda
+  solo aporta a su canal y, en un vidrio liso, las tres longitudes de la
+  héroe se separan en la primera refracción (Wilkie deja ahí las
+  secundarias), así que en el caso que importa no hay nada que pesar: se
+  elige el canal con probabilidad ⅓ y se lleva por 3. Lo que sí ganaría
+  la héroe con MIS es en el cristal **rugoso**, donde las tres longitudes
+  podrían seguir con pesos; no se hizo.
+- **Lo que sigue sin dispersión**: los rayos de sombra no atraviesan el
+  vidrio (E5) y la regla de las paredes de los medios usa `ior`; un sólido
+  con medio no dispersa.
+- **El ruido de color**: una luz vista a través de un cristal converge
+  como su cáustica (cada muestra lleva un solo color); en la escena de E9,
+  a 64 spp el cristal tiene grano de color visible y a 256 spp casi no.
+- **El suelo del prisma**: con un prisma de 100 mm la banda es ancha y los
+  colores solo se separan en sus bordes (rojo cerca, azul lejos, a la
+  vista); los centroides de los canales se separan menos de un píxel de 40,
+  por eso el test mide también por regiones.
+- La escena de paridad de E9 cambia de *hash* en (c): se eligió una sola
+  escena para el medio y la dispersión en lugar de una nueva.
 
 ## E10 · Muestreo adaptativo y terminar por ruido — **Opus**
 
