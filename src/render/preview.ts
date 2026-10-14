@@ -37,7 +37,9 @@ import { drawPasses, type PassMesh } from './preview-passes';
 import { TexturePreview } from './texture-preview';
 import { filterActive, filtersOf, opticsOf } from '../core/optics';
 import { filterKernel, type FilterKernel } from './lens-filter-image';
-import { LensFilterPass } from './lens-filter-pass';
+import { LensFilterPass, type LensProfile } from './lens-filter-pass';
+import { lensProfileTable } from './lens-profile';
+import type { EngineLensInfo } from '../core/traced-lens';
 import { GraphBakes } from './graph-preview';
 import type { GraphWorkers } from './graph-client';
 
@@ -336,6 +338,8 @@ export class PreviewEngine implements RenderEngine {
   private maskTarget: THREE.WebGLRenderTarget | null = null;
   /** The camera's effect filters (O3a), drawn as an approximation in image space. */
   private readonly filterPass = new LensFilterPass();
+  /** O2: the engine's numbers of the active camera's traced lens (`setLensInfo`). */
+  private lensInfo: { cameraId: string; info: EngineLensInfo } | null = null;
   private readonly maskSelected = new THREE.MeshBasicMaterial({ toneMapped: false });
   private readonly maskHover = new THREE.MeshBasicMaterial({ toneMapped: false, blending: THREE.AdditiveBlending, transparent: true });
   private readonly outlineMaterial = new THREE.ShaderMaterial({
@@ -1307,9 +1311,36 @@ export class PreviewEngine implements RenderEngine {
    */
   private drawFiltered(cam: THREE.Camera, c: CameraState): boolean {
     const kernels = this.filterKernels(cam, c);
-    if (kernels.length === 0) return false;
-    this.filterPass.render(this.renderer!, this.scene, cam, kernels);
+    const profile = this.lensProfile(cam, c);
+    if (kernels.length === 0 && !profile) return false;
+    this.filterPass.render(this.renderer!, this.scene, cam, kernels, profile);
     return true;
+  }
+
+  /** O2: the engine's numbers of a camera's traced lens (main.ts asks the engine when the lens changes); null: none. */
+  setLensInfo(cameraId: string, info: EngineLensInfo | null): void {
+    const was = this.lensInfo;
+    this.lensInfo = info ? { cameraId, info } : null;
+    if (was?.info !== info) this.needsRender = true;
+  }
+
+  /** True when the Fast viewport draws a traced lens's distortion and falloff (the meter says it is an approximation). */
+  drawsLensProfile(): boolean {
+    const c = this.state ? activeCamera(this.state) : null;
+    return !!c && this.lensInfo?.cameraId === c.id && !!c.optics?.traced && c.projection !== 'ORTHOGRAPHIC';
+  }
+
+  /** The profile of camera `c`'s traced lens in drawing-buffer pixels of `cam`, when the engine has told it. */
+  private lensProfile(cam: THREE.Camera, c: CameraState): LensProfile | null {
+    const held = this.lensInfo;
+    if (!held || held.cameraId !== c.id || !c.optics?.traced || !(cam instanceof THREE.PerspectiveCamera) || c.projection === 'ORTHOGRAPHIC') return null;
+    const size = this.renderer!.getDrawingBufferSize(new THREE.Vector2());
+    // Pixels per unit of tangent over the focal length: pixels per millimetre of the sensor.
+    const pxPerMm = (cam.projectionMatrix.elements[0] * size.x) / 2 / Math.max(1, c.focalMm);
+    // The optical axis: a point straight ahead of the camera, projected (the lens shift moves it).
+    const ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).add(cam.position).project(cam);
+    const { table, hMaxMm } = lensProfileTable(held.info, c.focalMm);
+    return { table, hMaxMm, pxPerMm, axis: [(ahead.x + 1) / 2, (ahead.y + 1) / 2] };
   }
 
   /** The kernels of camera `c`'s filters in drawing-buffer pixels of `cam` (the projection's scale). */

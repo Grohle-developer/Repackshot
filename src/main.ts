@@ -53,7 +53,7 @@ import { readPref, writePref } from './io/prefs';
 import { readProjectFile, serializeProject } from './io/project';
 import { NativeInstaller } from './io/update-install';
 import { fetchLatestRelease } from './io/updates';
-import { projectScene, tonemapFor, writeRsb } from './io/rsb';
+import { lensInfoRsb, projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { loadCameraPictures } from './io/aperture';
 import { onAperturePicture } from './core/aperture';
 import { NativeEngine } from './render/native';
@@ -61,6 +61,8 @@ import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSour
 import { msaaSamples } from './core/antialias';
 import { PreviewEngine } from './render/preview';
 import { hasParticleExport } from './render/particles';
+import { hasLensInfoExport, readLensInfo } from './render/lens-info';
+import { parseLensInfo, type EngineLensInfo } from './core/traced-lens';
 import { engineParticleCap, particleCapFor, setEngineParticleCap } from './core/effects';
 import { PhysicsClient } from './render/physics';
 import { writePhysicsScene } from './io/phys';
@@ -266,19 +268,44 @@ let engineGen = 0;
 let restartTimer = 0;
 const base = new URL(import.meta.env.BASE_URL, window.location.href).href;
 
-// S4a: the Fast preview's particles come from rt.wasm on this thread (the engine's own simulator; the scalar build is
-// enough). Without the module the preview draws the region boxes and the meter says so.
+// The page's own rt.wasm on this thread (the scalar build is enough), loaded once: the Fast preview's particles (S4a:
+// the engine's own simulator; without the module the preview draws the region boxes and the meter says so) and the
+// numbers of a traced lens (O2).
+let pageEngineLoad: Promise<WebAssembly.Exports | null> | null = null;
+const pageEngine = (): Promise<WebAssembly.Exports | null> =>
+  (pageEngineLoad ??= loadEngineModule(base, { simd: false }).then(async (loaded) => {
+    if ('error' in loaded) return null;
+    try {
+      return (await WebAssembly.instantiate(loaded.module, {})).exports;
+    } catch {
+      return null;
+    }
+  }));
 if (preview) {
   const p = preview;
-  void loadEngineModule(base, { simd: false }).then(async (loaded) => {
-    if ('error' in loaded) return p.setParticleEngine(null);
+  void pageEngine().then((exports) => p.setParticleEngine(exports && hasParticleExport(exports) ? exports : null));
+}
+// O2: the engine's numbers of a traced lens, from the page's module (or the launcher's, without it), the last few kept.
+const lensInfoCache = new Map<string, EngineLensInfo | null | undefined>();
+async function engineLensInfo(cam: CameraState): Promise<EngineLensInfo | null | undefined> {
+  if (!cam.optics?.traced || cam.projection === 'ORTHOGRAPHIC') return null;
+  const rsb = lensInfoRsb(cam, cam.aspect.w, cam.aspect.h);
+  const key = Array.from(rsb, (b) => b.toString(16).padStart(2, '0')).join('');
+  if (lensInfoCache.has(key)) return lensInfoCache.get(key);
+  let info: EngineLensInfo | null | undefined = null;
+  const exports = await pageEngine();
+  if (exports && hasLensInfoExport(exports)) info = readLensInfo(exports, rsb);
+  else if (platform.native) {
     try {
-      const { exports } = await WebAssembly.instantiate(loaded.module, {});
-      p.setParticleEngine(hasParticleExport(exports) ? exports : null);
+      const res = await platform.native.request('/api/lens/info', { method: 'POST', body: rsb as Uint8Array<ArrayBuffer>, headers: { 'Content-Type': 'application/octet-stream' } });
+      info = res.ok ? parseLensInfo(await res.text()) : undefined;
     } catch {
-      p.setParticleEngine(null);
+      info = null;
     }
-  });
+  }
+  if (lensInfoCache.size >= 16) lensInfoCache.delete(lensInfoCache.keys().next().value!);
+  lensInfoCache.set(key, info);
+  return info;
 }
 // The particle cap of the engine that renders here (Settings ▸ Render engine ▸ Particles per effect): the Doctor
 // warns about what goes over it and the scene sent to the engine holds at most that many.
@@ -949,6 +976,7 @@ const services: AppServices = {
     },
   },
   graphPreview: graphWorkers ? { previews: (program, channel) => graphWorkers.previews(program, channel) } : null,
+  lens: { info: engineLensInfo },
 };
 
 const app = mountApp(appEl, store, ui, services);
@@ -1011,6 +1039,27 @@ const desktopStart = nativeReady.then(async (native) => {
 // path tracer starts the image again with it (until then the lens draws its iris).
 loadCameraPictures(store.get());
 store.subscribe((s) => loadCameraPictures(s));
+// O2: the Fast viewport draws the active camera's traced lens with its distortion and falloff, the engine's numbers.
+if (preview) {
+  const p = preview;
+  let asked = '';
+  const askLens = (s: ReturnType<typeof store.get>) => {
+    const c = activeCamera(s);
+    if (!c.optics?.traced || c.projection === 'ORTHOGRAPHIC') {
+      if (asked !== '') p.setLensInfo(c.id, null);
+      asked = '';
+      return;
+    }
+    const key = JSON.stringify([c.id, c.optics, c.focalMm, c.fstop, c.focusDistance, c.aspect]);
+    if (key === asked) return;
+    asked = key;
+    void engineLensInfo(c).then((info) => {
+      if (asked === key) p.setLensInfo(c.id, info ?? null);
+    });
+  };
+  askLens(store.get());
+  store.subscribe((s) => askLens(s));
+}
 onAperturePicture(() => tracer?.sync(store.get(), null));
 
 if (preview) {

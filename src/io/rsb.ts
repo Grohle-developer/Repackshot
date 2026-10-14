@@ -211,9 +211,36 @@ export interface RsbPrescription {
   surfaces: RsbSurface[];
 }
 
-/** Bytes of a prescription after the filter slots. */
-function prescriptionBytes(t: RsbPrescription): number {
+/** Size of a prescription after the filter slots. */
+function prescriptionSize(t: RsbPrescription): number {
   return 4 + 8 + 7 * 4 + 4 + t.moving.length * 12 + t.surfaces.length * 48;
+}
+
+/** The bytes of a prescription at the end of LENS (rt-core `scene::rsb::prescription_bytes`). */
+export function prescriptionBytes(t: RsbPrescription): Uint8Array {
+  const out = new Uint8Array(prescriptionSize(t));
+  const v = new DataView(out.buffer);
+  let o = 0;
+  const u32 = (x: number) => (v.setUint32(o, x >>> 0, true), (o += 4));
+  const f32 = (x: number) => (v.setFloat32(o, x, true), (o += 4));
+  u32(t.surfaces.length);
+  u32(t.stop);
+  u32(t.focusMode);
+  for (const x of [t.fNumberMin, t.magnification[0], t.magnification[1], t.distortion, t.vignetting, t.spherical, t.breathing]) f32(x);
+  u32(t.moving.length);
+  for (const m of t.moving) {
+    u32(m.surface);
+    f32(m.base);
+    f32(m.near);
+  }
+  for (const sf of t.surfaces) {
+    u32(sf.kind);
+    for (const x of [sf.radius, sf.thickness, sf.nd, sf.vd, sf.semiAperture]) f32(x);
+    u32(sf.coating);
+    f32(sf.conic);
+    for (const x of sf.aspheric) f32(x);
+  }
+  return out;
 }
 
 /** One LENS filter slot (rt-core `optics::filters::FilterParams`). */
@@ -577,7 +604,7 @@ function writesFilterSlots(l: RsbLens): boolean {
 /** A LENS payload: the numbers, the picture, zero padding to a multiple of four, the filters when there are any (or a prescription), and the prescription. */
 function lensBytes(l: RsbLens): number {
   const filters = writesFilterSlots(l) ? LENS_FILTER_SLOTS * LENS_FILTER_BYTES : 0;
-  const traced = l.prescription ? prescriptionBytes(l.prescription) : 0;
+  const traced = l.prescription ? prescriptionSize(l.prescription) : 0;
   return LENS_BYTES + l.mask.length + ((4 - (l.mask.length % 4)) % 4) + filters + traced;
 }
 
@@ -731,26 +758,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
           w.u32(f.points);
         }
       }
-      const t = lens.prescription;
-      if (t) {
-        w.u32(t.surfaces.length);
-        w.u32(t.stop);
-        w.u32(t.focusMode);
-        for (const v of [t.fNumberMin, t.magnification[0], t.magnification[1], t.distortion, t.vignetting, t.spherical, t.breathing]) w.f32(v);
-        w.u32(t.moving.length);
-        for (const m of t.moving) {
-          w.u32(m.surface);
-          w.f32(m.base);
-          w.f32(m.near);
-        }
-        for (const sf of t.surfaces) {
-          w.u32(sf.kind);
-          for (const v of [sf.radius, sf.thickness, sf.nd, sf.vd, sf.semiAperture]) w.f32(v);
-          w.u32(sf.coating);
-          w.f32(sf.conic);
-          for (const v of sf.aspheric) w.f32(v);
-        }
-      }
+      if (lens.prescription) w.raw(prescriptionBytes(lens.prescription));
     });
   }
   for (const m of scene.materials) {

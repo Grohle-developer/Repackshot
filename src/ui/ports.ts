@@ -6,7 +6,8 @@ import type { FastAa, PixelFilterFields, PixelFilterSetting } from '../core/anti
 import type { AiGuardMaterial, AiPipelineSettings, AiPostService, LinearImage } from '../core/ai';
 import type { ComposedPrompt, PromptCaps } from '../core/ai-prompt';
 import type { Projection, Rect } from '../core/box-select';
-import type { CameraId } from '../core/camera';
+import type { CameraId, CameraState } from '../core/camera';
+import type { EngineLensInfo } from '../core/traced-lens';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
 import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
@@ -584,6 +585,15 @@ export interface GraphPreviews {
   materialSize: number;
 }
 
+/** O2: what the engine makes of a camera's traced lens (rt.wasm on the page, or the launcher's /api/lens/info). */
+export interface LensPort {
+  /**
+   * The engine's numbers of `cam`'s traced lens for its output frame: null for the thin lens or when there is no
+   * engine to ask, undefined when the engine refuses the lens (it forms no image).
+   */
+  info(cam: CameraState): Promise<EngineLensInfo | null | undefined>;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -644,4 +654,6 @@ export interface AppServices {
   physics?: PhysicsPort | null;
   /** The material editor's node previews (M3a); absent or null where no worker runs them (the editor draws no spheres). */
   graphPreview?: GraphPreviewPort | null;
+  /** The engine's numbers of a traced lens (O2); absent or null where no engine is at hand. */
+  lens?: LensPort | null;
 }

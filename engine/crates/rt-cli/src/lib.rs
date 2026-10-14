@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 pub mod bench;
 pub mod cli;
 pub mod filter_sheet;
+pub mod lens_catalogue;
 pub mod scenes;
 pub mod sheet;
 pub mod tone;

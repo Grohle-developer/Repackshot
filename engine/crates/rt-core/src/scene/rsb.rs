@@ -685,6 +685,46 @@ fn set_once<T>(slot: &mut Option<T>, tag: [u8; 4], value: T) -> Result<(), RsbEr
     }
 }
 
+/// The bytes of a traced lens at the end of `LENS` (O2): the surface count, the stop, the focus,
+/// the overrides, the moving gaps and the surfaces, little-endian.
+pub fn prescription_bytes(t: &Prescription) -> Vec<u8> {
+    let mut out = Vec::with_capacity(44 + 12 * t.moving.len() + 48 * t.surfaces.len());
+    let u32_ = |out: &mut Vec<u8>, v: u32| out.extend_from_slice(&v.to_le_bytes());
+    let f32_ = |out: &mut Vec<u8>, v: f32| out.extend_from_slice(&v.to_le_bytes());
+    u32_(&mut out, t.surfaces.len() as u32);
+    u32_(&mut out, t.stop);
+    u32_(&mut out, t.focus_mode);
+    for v in [
+        t.f_number_min,
+        t.magnification.0,
+        t.magnification.1,
+        t.distortion,
+        t.vignetting,
+        t.spherical,
+        t.breathing,
+    ] {
+        f32_(&mut out, v);
+    }
+    u32_(&mut out, t.moving.len() as u32);
+    for m in &t.moving {
+        u32_(&mut out, m.surface);
+        f32_(&mut out, m.base);
+        f32_(&mut out, m.near);
+    }
+    for s in &t.surfaces {
+        u32_(&mut out, s.kind);
+        for v in [s.radius, s.thickness, s.nd, s.vd, s.semi_aperture] {
+            f32_(&mut out, v);
+        }
+        u32_(&mut out, s.coating);
+        f32_(&mut out, s.conic);
+        for v in s.aspheric {
+            f32_(&mut out, v);
+        }
+    }
+    out
+}
+
 /// What an update may keep of the loaded scene.
 struct Kept<'a> {
     geometry: &'a mut Geometry,
@@ -949,37 +989,7 @@ impl Scene {
                     }
                 }
                 if let Some(t) = &p.prescription {
-                    w.u32(t.surfaces.len() as u32);
-                    w.u32(t.stop);
-                    w.u32(t.focus_mode);
-                    for v in [
-                        t.f_number_min,
-                        t.magnification.0,
-                        t.magnification.1,
-                        t.distortion,
-                        t.vignetting,
-                        t.spherical,
-                        t.breathing,
-                    ] {
-                        w.f32(v);
-                    }
-                    w.u32(t.moving.len() as u32);
-                    for m in &t.moving {
-                        w.u32(m.surface);
-                        w.f32(m.base);
-                        w.f32(m.near);
-                    }
-                    for s in &t.surfaces {
-                        w.u32(s.kind);
-                        for v in [s.radius, s.thickness, s.nd, s.vd, s.semi_aperture] {
-                            w.f32(v);
-                        }
-                        w.u32(s.coating);
-                        w.f32(s.conic);
-                        for v in s.aspheric {
-                            w.f32(v);
-                        }
-                    }
+                    w.buf.extend_from_slice(&prescription_bytes(t));
                 }
             });
         }

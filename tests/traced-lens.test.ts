@@ -8,7 +8,7 @@ import { makeCamera, type CameraState } from '../src/core/camera';
 import { isNeutralOptics, normalizeOptics, OPTICS_NEUTRAL, opticsForBokeh, type CameraOptics } from '../src/core/optics';
 import { composeLens, DEFAULT_MASTER, isAdapter, masterLenses, newTracedLens, normalizeTracedLens, parseLensInfo, stateMagnification, type TracedLens } from '../src/core/traced-lens';
 import { LENS_PRESCRIPTIONS, lensPrescription } from '../src/data/lenses';
-import { lensInfoRsb, lensToRsb, prescriptionToRsb, writeRsb, type RsbPrescription, type RsbScene } from '../src/io/rsb';
+import { lensInfoRsb, lensToRsb, prescriptionBytes, prescriptionToRsb, writeRsb, type RsbPrescription, type RsbScene } from '../src/io/rsb';
 import { hasLensInfoExport, readLensInfo } from '../src/render/lens-info';
 import { readRsb } from './rsb-reader';
 import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
@@ -94,6 +94,18 @@ describe('the LENS prescription', () => {
     const lens = lensToRsb({ ...traced('double_gauss_normal'), blades: 7, roundness: 0.3 }, 640, 480);
     expect(f32(lens.prescription!)).toEqual(fixture);
     expect(lens.blades).toBe(7);
+  });
+
+  it('is what rt sends the engine for every lens of the catalogue (tests/fixtures/lens-catalogue.json)', () => {
+    const fixture = JSON.parse(readFileSync('tests/fixtures/lens-catalogue.json', 'utf8')) as { lenses: { key: string; squeeze: number; obstruction: number; prescription: string }[] };
+    expect(fixture.lenses.map((l) => l.key)).toEqual(LENS_PRESCRIPTIONS.map((p) => p.key));
+    for (const row of fixture.lenses) {
+      const lens = lensToRsb(traced(row.key), 640, 480);
+      const hex = Array.from(prescriptionBytes(lens.prescription!), (b) => b.toString(16).padStart(2, '0')).join('');
+      expect(hex, row.key).toBe(row.prescription);
+      expect(lens.squeeze, row.key).toBeCloseTo(row.squeeze, 6);
+      expect(lens.obstruction, row.key).toBeCloseTo(row.obstruction, 6);
+    }
   });
 
   it('carries the artistic overrides, the adapter’s squeeze and a mirror lens’s obstruction', () => {

@@ -250,7 +250,11 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       last = now;
       const st = port.status();
       // The Fast viewport's filters are an approximation (rule 10: it says so).
-      const approx = port.kind !== 'pathtracer' && filtersOf(opticsOf(activeCamera(store.get()))).some(filterActive) ? ` · ${t('status.filtersApprox')}` : '';
+      const cam = activeCamera(store.get());
+      const filtersApprox = port.kind !== 'pathtracer' && filtersOf(opticsOf(cam)).some(filterActive) ? ` · ${t('status.filtersApprox')}` : '';
+      // O2: and so is its picture of a traced lens (distortion and falloff from the engine's tables).
+      const lensApprox = port.kind !== 'pathtracer' && !!opticsOf(cam).traced && cam.projection !== 'ORTHOGRAPHIC' ? ` · ${t('status.lensApprox')}` : '';
+      const approx = filtersApprox + lensApprox;
       engine.textContent =
         port.kind !== 'pathtracer'
           ? t('status.engineFast', { device: st.device }) + approx

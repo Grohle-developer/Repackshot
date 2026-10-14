@@ -2463,6 +2463,7 @@ const TABLE = {
   'status.isaSimd': ['SIMD', 'SIMD'],
   'status.isaScalar': ['scalar', 'escalar'],
   'status.filtersApprox': ['Filters: approximation, the render is the engine’s', 'Filtros: aproximación, el render lo hace el motor'],
+  'status.lensApprox': ['Traced lens: distortion and falloff approximated, the render traces it', 'Lente trazada: distorsión y viñeteo aproximados, el render la traza'],
   'status.noEngine': ['No viewport engine', 'Sin motor de visor'],
   'doctor.title': ['Doctor', 'Doctor'],
   'doctor.fix': ['Fix', 'Arreglar'],
