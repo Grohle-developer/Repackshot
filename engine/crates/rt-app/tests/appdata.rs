@@ -566,6 +566,145 @@ fn a_result_keeps_the_image_the_ai_made_next_to_its_own() {
 }
 
 #[test]
+fn a_result_keeps_its_ai_variants_and_reads_an_old_single_one_as_the_first() {
+    let t = TestServer::start("appdata-ai-variants", 1);
+    let png = b"\x89PNG\r\n\x1a\nengine-image".to_vec();
+    let meta = |id: &str| {
+        format!(
+            r#"{{"id":"{id}","jobId":"j1","name":"Shot {id}.png","createdAt":1,"width":64,"height":32,"bytes":40,"thumb":""}}"#
+        )
+    };
+    let ok = |method: &str, path: &str, body: &[u8]| {
+        let r = t.api(method, path, body);
+        assert_eq!(
+            r.status,
+            204,
+            "{method} {path}: {}",
+            String::from_utf8_lossy(&r.body)
+        );
+    };
+    let dir = t.dir.join("data/results");
+
+    // X4b: three variants, the second one rejected by the guard (no image): 1 and 3 are kept, each by its number.
+    ok("PUT", "/api/store/results/v1?type=image/png", &png);
+    ok(
+        "PUT",
+        "/api/store/results/v1/ai/1?type=image/png",
+        b"variant-one",
+    );
+    ok(
+        "PUT",
+        "/api/store/results/v1/ai/3?type=image/jpeg",
+        b"variant-three",
+    );
+    ok("PUT", "/api/store/results/v1/meta", meta("v1").as_bytes());
+    assert_eq!(
+        std::fs::read(dir.join("v1.ai.1.png")).unwrap(),
+        b"variant-one"
+    );
+    assert_eq!(
+        std::fs::read(dir.join("v1.ai.3.jpg")).unwrap(),
+        b"variant-three"
+    );
+    let one = t.api("GET", "/api/store/results/v1/ai/1", b"");
+    assert_eq!(
+        (one.status, one.body.as_slice()),
+        (200, &b"variant-one"[..])
+    );
+    assert_eq!(one.header("content-type"), Some("image/png"));
+    let three = t.api("GET", "/api/store/results/v1/ai/3", b"");
+    assert_eq!(
+        (three.status, three.body.as_slice()),
+        (200, &b"variant-three"[..])
+    );
+    assert_eq!(three.header("content-type"), Some("image/jpeg"));
+    assert_eq!(t.api("GET", "/api/store/results/v1/ai/2", b"").status, 404);
+    // `…/ai` is the first variant, for a reader of before.
+    assert_eq!(
+        t.api("GET", "/api/store/results/v1/ai", b"").body,
+        b"variant-one"
+    );
+    // The index says which variants there are.
+    let index = std::fs::read_to_string(dir.join("index.json")).unwrap();
+    assert!(index.contains(r#""aiVariants":[{"n":1,"file":"v1.ai.1.png","type":"image/png"},{"n":3,"file":"v1.ai.3.jpg","type":"image/jpeg"}]"#), "{index}");
+
+    // A result of before X4b: its single AI image (`<id>.ai.<ext>`) is variant 1, and there is no other.
+    ok("PUT", "/api/store/results/old?type=image/png", &png);
+    ok(
+        "PUT",
+        "/api/store/results/old/ai?type=image/jpeg",
+        b"the-old-one",
+    );
+    ok("PUT", "/api/store/results/old/meta", meta("old").as_bytes());
+    let first = t.api("GET", "/api/store/results/old/ai/1", b"");
+    assert_eq!(
+        (first.status, first.body.as_slice()),
+        (200, &b"the-old-one"[..])
+    );
+    assert_eq!(first.header("content-type"), Some("image/jpeg"));
+    assert_eq!(
+        t.api("GET", "/api/store/results/old/ai", b"").body,
+        b"the-old-one"
+    );
+    assert_eq!(t.api("GET", "/api/store/results/old/ai/2", b"").status, 404);
+
+    // Only numbers 1 to 8, written plainly; only PUT, GET and HEAD.
+    for bad in ["0", "9", "01", "x", "1x", "-1", "99999999999"] {
+        assert_eq!(
+            t.api(
+                "PUT",
+                &format!("/api/store/results/v1/ai/{bad}?type=image/png"),
+                b"x"
+            )
+            .status,
+            400,
+            "{bad}"
+        );
+        assert_eq!(
+            t.api("GET", &format!("/api/store/results/v1/ai/{bad}"), b"")
+                .status,
+            400,
+            "{bad}"
+        );
+    }
+    ok("PUT", "/api/store/results/v1/ai/8?type=image/png", b"eight");
+    assert_eq!(
+        t.api("DELETE", "/api/store/results/v1/ai/1", b"").status,
+        405
+    );
+    assert_eq!(
+        t.api("PUT", "/api/store/results/v1/ai/2?type=text/html", b"x")
+            .status,
+        415
+    );
+    // The same variant sent again in another type leaves one file.
+    ok(
+        "PUT",
+        "/api/store/results/v1/ai/3?type=image/png",
+        b"three-again",
+    );
+    assert!(dir.join("v1.ai.3.png").is_file() && !dir.join("v1.ai.3.jpg").exists());
+
+    // Deleting a result removes every variant; clearing removes every one of every result.
+    ok("DELETE", "/api/store/results/v1", b"");
+    for name in ["v1.png", "v1.ai.1.png", "v1.ai.3.png", "v1.ai.8.png"] {
+        assert!(!dir.join(name).exists(), "{name}");
+    }
+    ok("PUT", "/api/store/results/v2?type=image/png", &png);
+    ok(
+        "PUT",
+        "/api/store/results/v2/ai/2?type=image/webp",
+        b"RIFFxxxxWEBP",
+    );
+    ok("PUT", "/api/store/results/v2/meta", meta("v2").as_bytes());
+    t.json("DELETE", "/api/store/results", b"");
+    for name in ["v2.png", "v2.ai.2.webp", "old.png", "old.ai.jpg"] {
+        assert!(!dir.join(name).exists(), "{name}");
+    }
+    assert!(temporaries(&t.dir.join("data")).is_empty());
+}
+
+#[test]
 fn the_thumbnail_cache_and_the_space_used() {
     let t = TestServer::start("appdata-usage", 1);
     let url = b"data:image/png;base64,AAAA";

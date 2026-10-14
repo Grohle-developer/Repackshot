@@ -38,6 +38,7 @@
 //! RNDR  28 B  u32 width height max_samples seed; f32 max_seconds exposure_ev; u32 tonemap
 //!             | u32 max_depth (default 8); f32 clamp_indirect (default 0)            (36 B)
 //!             ||| u32 passes (default 0)                                            (40 B)
+//!             |||| u32 denoise (0) caustic_photons (0); f32 caustic_radius (0)      (52 B)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
 //! ```
@@ -132,7 +133,11 @@
 //!   passes. `passes` (X2) is the mask of the exact passes the host writes next to the image:
 //!   bit `i` is [`crate::passes::PASS_KEYS`]`[i]` (albedo, normal, depth, partId, materialId,
 //!   coc); 0, or a file written before X2, asks for none, and unknown bits are kept and ignored.
-//!   Asking for passes never changes a pixel of the image.
+//!   Asking for passes never changes a pixel of the image. `denoise` (E5b-1) tells the host what
+//!   to hand out: bit 0 the denoised image, bit 1 also the one without denoise; the renderer
+//!   ignores it. `caustic_photons` (E5b-1) is the number of photons traced per sample index for
+//!   the caustics (0: none, at most 4 194 304; see [`crate::caustics`]) and `caustic_radius`
+//!   their first gather radius in pixels at the focus distance (0: 3).
 
 use super::{
     Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Light, LightKind,
@@ -463,7 +468,16 @@ fn parse_render(r: &mut Reader) -> Result<RenderSettings, RsbError> {
         max_depth: r.opt_u32(RenderSettings::DEFAULT_MAX_DEPTH)?,
         clamp_indirect: r.opt_f32(0.0)?,
         passes: r.opt_u32(0)?,
+        denoise: r.opt_u32(0)?,
+        caustic_photons: r.opt_u32(0)?,
+        caustic_radius: r.opt_f32(0.0)?,
     };
+    if settings.caustic_photons > RenderSettings::MAX_CAUSTIC_PHOTONS {
+        return Err(r.invalid("caustic_photons must be at most 4194304"));
+    }
+    if settings.caustic_radius < 0.0 {
+        return Err(r.invalid("caustic_radius must not be negative"));
+    }
     let range = 1..=RenderSettings::MAX_DIMENSION;
     if !range.contains(&settings.width) || !range.contains(&settings.height) {
         return Err(r.invalid("width and height must be between 1 and 16384"));
@@ -777,6 +791,9 @@ impl Scene {
             w.u32(r.max_depth);
             w.f32(r.clamp_indirect);
             w.u32(r.passes);
+            w.u32(r.denoise);
+            w.u32(r.caustic_photons);
+            w.f32(r.caustic_radius);
         });
         w.buf
     }
@@ -939,6 +956,9 @@ mod tests {
                 max_depth: 12,
                 clamp_indirect: 10.0,
                 passes: 0b10_1101,
+                denoise: 3,
+                caustic_photons: 4096,
+                caustic_radius: 2.5,
             },
             bitmaps: test_bitmaps(),
         }
@@ -1012,7 +1032,7 @@ mod tests {
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
         assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
-        assert_eq!(size(b"RNDR"), Some(10 * 4));
+        assert_eq!(size(b"RNDR"), Some(13 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
         assert_eq!(sections(&bytes)[3].1.len(), (2 + 24 + 6 + 1) * 4);
     }
@@ -1155,6 +1175,49 @@ mod tests {
     }
 
     #[test]
+    fn a_render_section_written_before_e5b_has_no_denoise_and_no_caustics() {
+        // RNDR of 40 B (X2 to E5c): denoise off, no caustic photons, the default radius.
+        let scene = full_scene();
+        assert_ne!(scene.render.caustic_photons, 0);
+        let bytes = scene.to_rsb();
+        let mut old = bytes[..8].to_vec();
+        for (tag, mut payload) in sections(&bytes) {
+            if tag == TAG_RNDR {
+                assert_eq!(payload[40..44], scene.render.denoise.to_le_bytes());
+                assert_eq!(payload[44..48], scene.render.caustic_photons.to_le_bytes());
+                assert_eq!(payload[48..52], scene.render.caustic_radius.to_le_bytes());
+                payload.truncate(40);
+            }
+            old.extend(unknown_section(&tag, &payload));
+        }
+        let read = Scene::from_rsb(&old).expect("X2 layout reads");
+        assert_eq!(read.render.passes, scene.render.passes);
+        assert_eq!(read.render.denoise, 0);
+        assert_eq!(read.render.caustic_photons, 0);
+        assert_eq!(read.render.caustic_radius, 0.0);
+        // Too many photons, or a negative radius, is an invalid file.
+        for (field, bad) in [
+            (
+                44usize,
+                (RenderSettings::MAX_CAUSTIC_PHOTONS + 1).to_le_bytes(),
+            ),
+            (48, (-1.0f32).to_le_bytes()),
+        ] {
+            let mut file = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_RNDR {
+                    payload[field..field + 4].copy_from_slice(&bad);
+                }
+                file.extend(unknown_section(&tag, &payload));
+            }
+            assert!(matches!(
+                Scene::from_rsb(&file),
+                Err(RsbError::Invalid { tag: TAG_RNDR, .. })
+            ));
+        }
+    }
+
+    #[test]
     fn a_render_section_written_before_x2_asks_for_no_passes() {
         // RNDR of 36 B (no pass mask), as E3 to E5 wrote it.
         let scene = full_scene();
@@ -1163,7 +1226,7 @@ mod tests {
         let mut old = bytes[..8].to_vec();
         for (tag, mut payload) in sections(&bytes) {
             if tag == TAG_RNDR {
-                assert_eq!(payload.len(), 40);
+                assert_eq!(payload.len(), 52);
                 assert_eq!(payload[36..40], scene.render.passes.to_le_bytes());
                 payload.truncate(36);
             }
@@ -1172,6 +1235,14 @@ mod tests {
         let read = Scene::from_rsb(&old).expect("E5 layout reads");
         assert_eq!(read.render.passes, 0);
         assert_eq!(read.render.clamp_indirect, scene.render.clamp_indirect);
+        assert_eq!(
+            (
+                read.render.denoise,
+                read.render.caustic_photons,
+                read.render.caustic_radius
+            ),
+            (0, 0, 0.0)
+        );
         // Bits nobody knows yet are kept as they are (a newer writer's passes).
         let mut newer = scene.clone();
         newer.render.passes = 0xffff_ffff;

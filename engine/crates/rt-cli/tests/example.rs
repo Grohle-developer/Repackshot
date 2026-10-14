@@ -23,6 +23,7 @@ fn example_scene_renders_a_bright_centre_and_a_darker_corner() {
         threads: Some(2),
         size: Some((96, 72)),
         max_seconds: None,
+        ..Options::default()
     };
     let (samples, threads) = options.apply(&mut scene);
     let output = rt_cli::render(&scene, samples, threads);
@@ -163,10 +164,17 @@ fn the_sheet_writes_every_image_with_its_statistics() {
     let dir = scratch("sheet");
     let _ = std::fs::remove_dir_all(&dir);
     let entries = rt_cli::sheet::run(&dir, (40, 30), 2, 2).expect("sheet renders");
-    // The six recipes, then the E5 scenes at a multiple of the samples.
+    // The six recipes, then the E5 scenes at a multiple of the samples, then the E5b-1 pairs
+    // (caustics at a multiple, the denoiser's at 4 samples).
     let e5 = rt_cli::scenes::e5_scenes((40, 30));
-    assert_eq!(entries.len(), 6 + e5.len());
-    let factors = std::iter::repeat_n(1, 6).chain(e5.iter().map(|s| s.sample_factor));
+    let e5b = rt_cli::scenes::e5b_scenes((40, 30));
+    assert_eq!(entries.len(), 6 + e5.len() + e5b.len());
+    let factors = std::iter::repeat_n(1, 6)
+        .chain(e5.iter().map(|s| s.sample_factor))
+        .chain(
+            e5b.iter()
+                .map(|s| if s.low_samples { 2 } else { s.sample_factor }),
+        );
     for (e, factor) in entries.iter().zip(factors) {
         let png = std::fs::read(dir.join(&e.file)).expect("PNG written");
         assert_eq!(&png[..8], &rt_core::png::SIGNATURE);
@@ -180,6 +188,9 @@ fn the_sheet_writes_every_image_with_its_statistics() {
     let json = std::fs::read_to_string(dir.join("stats.json")).expect("stats.json");
     assert!(html.contains("key-only.png") && html.contains("sun.png"));
     assert!(html.contains("e5-glass-bottle.png") && html.contains("e5-sky-dawn.png"));
+    assert!(
+        html.contains("e5b-sphere-caustics-on.png") && html.contains("e5b-key-4spp-denoised.png")
+    );
     assert!(json.contains("\"recipe\": \"backlit-panel\""));
 }
 
@@ -204,4 +215,120 @@ fn errors_name_the_file_and_the_problem() {
     };
     let error = run(command).expect_err("bad magic");
     assert!(error.contains("RSB1"), "{error}");
+}
+
+#[test]
+fn caustics_are_the_same_bits_with_1_4_or_16_threads() {
+    // E5b-1: every sample's photon map is traced in photon ranges on all the threads and put back
+    // together in order; the image does not depend on how many there are.
+    let scene = rt_cli::scenes::caustic_sphere((48, 36), 3000);
+    let one = rt_cli::render(&scene, 3, 1);
+    for threads in [4, 16] {
+        let many = rt_cli::render(&scene, 3, threads);
+        assert_eq!(one.film, many.film, "{threads} threads");
+        assert_eq!(one.rays, many.rays);
+    }
+    // And the photons change the image (the focus) against the path tracer alone.
+    let without = rt_cli::render(&rt_cli::scenes::caustic_sphere((48, 36), 0), 3, 4);
+    assert_ne!(one.film.rgb, without.film.rgb);
+    assert!(one.rays > without.rays, "the photons' rays count");
+}
+
+/// Relative mean squared error of `image` against `reference` (linear RGB, values clamped at 8 so
+/// a firefly of the reference cannot dominate).
+fn rel_mse(image: &[f32], reference: &[f32]) -> f64 {
+    image
+        .iter()
+        .zip(reference)
+        .map(|(&x, &r)| {
+            let (x, r) = (f64::from(x.min(8.0)), f64::from(r.min(8.0)));
+            (x - r) * (x - r) / (r * r + 1.0e-2)
+        })
+        .sum::<f64>()
+        / image.len() as f64
+}
+
+#[test]
+fn denoise_lowers_the_error_against_a_long_reference_on_sheet_scenes() {
+    // The E5b-1 criterion: at the same samples, the denoised image is closer to a long render
+    // than the noisy one, on scenes of the sheet (a light recipe on the part, and the backlit
+    // glass bottle with its gold cap).
+    let size = (48, 36);
+    let recipe = rt_cli::sheet::recipes()
+        .into_iter()
+        .find(|r| r.key == "key-only")
+        .expect("recipe");
+    let scenes = [
+        ("key-only", rt_cli::sheet::scene_for(&recipe, size)),
+        ("glass bottle", rt_cli::scenes::glass_bottle(size)),
+    ];
+    for (name, mut scene) in scenes {
+        let reference = rt_cli::render(&scene, 384, 4).film.resolve();
+        scene.render.denoise = rt_core::scene::DENOISE_IMAGE;
+        for spp in [4u32, 16] {
+            let out = rt_cli::render(&scene, spp, 4);
+            let clean = out.denoised(4).expect("guide passes");
+            let (noisy, denoised) = (
+                rel_mse(&out.film.resolve(), &reference),
+                rel_mse(&clean.resolve(), &reference),
+            );
+            eprintln!("{name} at {spp} spp: rMSE {noisy:.5} -> {denoised:.5}");
+            // (At this small size edges are a good part of the image, and the reference has
+            // its own noise: the gain is smaller than at the sheet's size.)
+            let bound = if spp == 4 { 0.5 } else { 0.8 };
+            assert!(
+                denoised < bound * noisy,
+                "{name} at {spp} spp: {noisy} -> {denoised}"
+            );
+            // The denoiser does not depend on the thread count either.
+            assert_eq!(out.denoised(1).expect("guides"), clean);
+        }
+    }
+}
+
+#[test]
+fn the_cli_writes_the_denoised_image_and_the_noisy_one_beside_it() {
+    let png = scratch("denoised.png");
+    let noisy = scratch("denoised-noisy.png");
+    let _ = std::fs::remove_file(&noisy);
+    let args: Vec<String> = [
+        "--example",
+        "-o",
+        png.to_str().unwrap(),
+        "--samples",
+        "2",
+        "--size",
+        "64x48",
+        "--denoise",
+        "--keep-noisy",
+        "--caustics",
+        "0",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let command = parse_args(&args).expect("valid");
+    match &command {
+        Command::Render { options, .. } => {
+            assert!(options.denoise && options.keep_noisy);
+            assert_eq!(options.caustics, Some(0));
+        }
+        other => panic!("{other:?}"),
+    }
+    run(command).expect("render succeeds");
+    let (a, b) = (std::fs::read(&png).unwrap(), std::fs::read(&noisy).unwrap());
+    assert_eq!(&a[..8], &rt_core::png::SIGNATURE);
+    assert_ne!(a, b, "the denoised image is not the noisy one");
+    assert_eq!(
+        rt_cli::cli::noisy_path(std::path::Path::new("out/x.png")),
+        PathBuf::from("out/x-noisy.png")
+    );
+    assert!(parse_args(&[
+        "--example".into(),
+        "-o".into(),
+        "x.png".into(),
+        "--caustics".into(),
+        "-3".into()
+    ])
+    .is_err());
 }

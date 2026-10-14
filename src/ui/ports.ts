@@ -3,6 +3,7 @@
 // services from the engine and the importers and hands them in.
 
 import type { AiGuardMaterial, AiPipelineSettings, AiPostService, LinearImage } from '../core/ai';
+import type { ComposedPrompt, PromptCaps } from '../core/ai-prompt';
 import type { Projection, Rect } from '../core/box-select';
 import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
@@ -12,6 +13,7 @@ import type { RenderPasses } from '../core/passes';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
+import type { ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
@@ -66,6 +68,10 @@ export interface EngineStatus {
   native?: boolean;
   threads?: number;
   isa?: string;
+  /** Path tracer (E5b-1): the image on screen is the engine's denoised one. */
+  denoised?: boolean;
+  /** Path tracer (E5b-1): the view renders caustics with this many photons per sample. */
+  caustics?: number;
 }
 
 export type { DisplayPrefs, NavigationPrefs } from '../core/settings';
@@ -96,7 +102,16 @@ export interface ViewportPort {
    * The gizmo of the move tool for these nodes in these axes (UI.md §2.3); null hides it. `handles` SCALE: only the
    * scale handles (the scale tool, phase U9).
    */
-  setGizmo(spec: { ids: readonly NodeId[]; space: Space; handles?: 'ALL' | 'SCALE' } | null): void;
+  setGizmo(spec: { ids: readonly NodeId[]; space: Space; handles?: 'ALL' | 'SCALE' | 'MOVE'; object?: ViewObject | null } | null): void;
+  /**
+   * L4: the glyphs of lights and saved cameras the viewport draws (all, or only the selected object's) and the light or
+   * camera it looks through (null: the active camera).
+   */
+  setGlyphs(spec: { all: boolean; selected: ViewObject | null; lookThrough: ViewObject | null }): void;
+  /** L4: the light or camera whose glyph is under a point (CSS pixels of the canvas), or null. */
+  glyphAt(x: number, y: number): ViewObject | null;
+  /** L4: where a light or a camera is on the canvas now (CSS pixels), or null; the viewport writes it for checks. */
+  objectAt?(obj: ViewObject): { x: number; y: number } | null;
   /** The gizmo handle under a point (and highlights it), or null. */
   gizmoHover(x: number, y: number): GizmoHandle | null;
   /** Starts dragging the handle under a point; null when there is none. */
@@ -261,6 +276,10 @@ export interface FrameResult {
   seconds: number;
   /** The desktop launcher's id of the render, by which it keeps the linear image and the passes (`aiPasses`). */
   renderId?: string;
+  /** E5b-1: the file is the engine's denoised image. */
+  denoised?: boolean;
+  /** E5b-1, Advanced ▸ Also save without denoise: the same render before denoise, in the same format. */
+  noisyFile?: Blob;
   /** How its file was converted from the render's light. */
   tone?: FrameTone;
 }
@@ -313,8 +332,12 @@ export interface AiPort {
   decode(image: Blob): Promise<LinearImage>;
   /** An image from the service as a file, in the job's format. */
   encode(image: LinearImage, opts: AiEncodeOptions): Promise<Blob>;
-  /** The prompt and the negative for a scene and a job's settings (src/ai/prompt.ts; default: the window's). */
-  scenePrompt(state: ProjectState, settings?: AiPipelineSettings): { prompt: string; negative: string };
+  /**
+   * The prompt and the negative for a scene and a job's settings (src/ai/prompt.ts; default: the window's). With a
+   * `context` (X4b): Settings' system prompt, the scene's and the job's own, in that order, fitted to the model whose
+   * capabilities it gives, and how that went (`composed`).
+   */
+  scenePrompt(state: ProjectState, settings?: AiPipelineSettings, context?: { system: string; caps: PromptCaps }): { prompt: string; negative: string; composed?: ComposedPrompt };
   /** The guard's material table for a job's camera: the engine scene's material order (io/rsb.ts), named (src/ai/prompt.ts). */
   materials(state: ProjectState, camera: CameraId | null): AiGuardMaterial[];
   /** The service takes the `RENDER` source: the desktop launcher kept the final render with its passes (X3c). */
@@ -327,9 +350,12 @@ export interface ResultsPort {
   persistent(): Promise<boolean>;
   /** Newest first. */
   list(): Promise<ResultMeta[]>;
-  /** Stores a result (`ai`: the image the AI post-processing made, when there is one); returns the ids evicted to stay within the limits (oldest first). */
-  add(meta: ResultMeta, file: Blob, display: Blob | null, ai?: Blob | null): Promise<string[]>;
-  get(id: string): Promise<{ file: Blob; display: Blob | null; ai?: Blob | null } | null>;
+  /**
+   * Stores a result (`ai`: the image the AI post-processing made, when there is one; `aiMore`: variants 2 and on, in
+   * order, null for one the guard rejected, X4b); returns the ids evicted to stay within the limits (oldest first).
+   */
+  add(meta: ResultMeta, file: Blob, display: Blob | null, ai?: Blob | null, aiMore?: readonly (Blob | null)[]): Promise<string[]>;
+  get(id: string): Promise<{ file: Blob; display: Blob | null; ai?: Blob | null; aiMore?: (Blob | null)[] } | null>;
   remove(id: string): Promise<void>;
   clear(): Promise<void>;
   /** New limits (Settings ▸ Storage); the ids evicted at once to fit them, oldest first. */

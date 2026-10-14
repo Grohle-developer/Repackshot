@@ -6,8 +6,8 @@
 //! colour handling and tone curves, the film, the PNG writer, the RSB scene format, SIMD,
 //! geometry (meshes, instances, BVHs, ray queries), the BSDF, lights and environment (the studio
 //! dome, the daylight sky, HDRI images), the image readers (`inflate`, `hdr`, `exr`, `bitmap`),
-//! the path tracer (`integrator`), the tile renderer and the exact passes written next to the
-//! image for the AI post-processing (`passes`).
+//! the path tracer (`integrator`), the photon map of the caustics (`caustics`), the tile renderer
+//! and the exact passes written next to the image for the AI post-processing (`passes`).
 //!
 //! It deliberately avoids every OS API (`std::fs`, `std::net`, `std::time`, `std::thread`) so
 //! that it compiles unchanged to `wasm32-unknown-unknown` and to any native target. Threading,
@@ -20,6 +20,7 @@
 
 pub mod bitmap;
 pub mod bsdf;
+pub mod caustics;
 pub mod color;
 pub mod environment;
 pub mod example;

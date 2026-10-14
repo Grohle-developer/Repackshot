@@ -7,6 +7,7 @@ import { materialPreset } from '../data/materials';
 import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
 import { aiFileName } from '../core/ai-post';
+import { aiImagesOf, aiVariantsOf } from '../core/results';
 import { activeCamera } from '../core/camera';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
 import {
@@ -47,14 +48,16 @@ import {
   type LibraryItem,
   type LibraryKind,
 } from '../core/library';
-import { LIBRARY_PREFIX, isLibraryKey } from '../core/lighting';
+import { LIBRARY_PREFIX, isLibraryKey, type NewLightKind } from '../core/lighting';
+import { lookThroughCamera, objectOf, sameObject, selectedObject, type ViewObject } from '../core/view-objects';
+import { boxCenter, isEmptyBox } from '../core/math';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
 import { imageIdsInUse, retainImages } from '../core/images';
 import { dropAction, type AssignAction, type DroppedMaterial, type DropTarget } from '../core/material-drop';
 import { applyBox, facesInBox, itemsInBox, type BoxCombine, type BoxMode, type Rect } from '../core/box-select';
 import { cadFaceRegion } from '../core/faces';
 import { getMesh, retainMeshes } from '../core/meshes';
-import { meshIdsInUse, resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
+import { boundsOf, meshIdsInUse, resolvePick, partsUnder, selectedNodes, type NodeId, type SelectionLevel } from '../core/scene';
 import {
   cameraLookAt,
   defaultPatternParams,
@@ -87,7 +90,7 @@ import { doctorCheck } from '../data/doctor';
 import { showFirstRunChooser } from '../core/models';
 import type { ConfirmSpec } from './components/widgets';
 import { downloadBlob } from './dom';
-import { cameraLabel, cameraName, dyn, materialLabel, materialName, presetLabel, primitiveParamKey, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
+import { cameraLabel, cameraName, dyn, lightName, materialLabel, materialName, presetLabel, primitiveParamKey, setupLabel, studioLabel, targetLabel, thumbKey } from './names';
 import type { Ctx } from './reactive';
 import { isRendering, pauseQueue, queueMode, runOnly, startQueue, stopJob } from './render-queue';
 import { effectiveMode, type CadReadState, type PendingImport, type Tool, type ViewportMode } from './ui-state';
@@ -798,6 +801,19 @@ export function maybeShowModelChooser(ctx: Ctx, o: { portable: boolean; pending:
   return show;
 }
 
+/**
+ * What the desktop installer chose (`pending-models.json`, read at the first start) that is the person's from then on
+ * (phase U10): the page of the installer asks *Run on the graphics card / the processor*, and the processor is the
+ * only answer that differs from what the application decides alone (AI-POST.md §2.4), so it becomes
+ * Settings ▸ AI post-processing ▸ Run on. The inference runtime the installer ticked is the launcher's to download
+ * (`Ai::start_pending_runtime`), and the models are the manager's. Returns what was set.
+ */
+export function applyInstallerChoice(ctx: Ctx, pending: { device: 'gpu' | 'cpu' }): boolean {
+  if (pending.device !== 'cpu' || ctx.ui.get().settings['ai.device'] === 'CPU') return false;
+  setSetting(ctx, 'ai.device', 'CPU');
+  return true;
+}
+
 /** The person already answered our own question about closing (Ctrl/⌘ W on the desktop): the page closes without another. */
 let closeAnswered = false;
 
@@ -994,8 +1010,122 @@ export function deleteSelection(ctx: Ctx, ids?: NodeId[]): void {
     ctx.store.dispatch({ type: 'scene/delete', ids: target, label: L('undo.delete', { target: targetLabel(s, target) }) });
     return;
   }
+  const lightId = s.selection.ids.find((id) => s.studio.lights.some((l) => l.id === id));
+  if (lightId) {
+    deleteLight(ctx, lightId);
+    return;
+  }
   const camId = s.selection.ids.find((id) => s.camera.cameras[id]);
   if (camId) deleteCamera(ctx, camId);
+}
+
+// --- Lights (phase L4) -----------------------------------------------------------
+
+/** A light's name in both languages, for the undo history. */
+export function lightLabel(state: ProjectState, id: string): Label {
+  return { en: lightName(state, id, 'en'), es: lightName(state, id, 'es') };
+}
+
+/** Add light ▸ (UI.md §2.2): a new own light in front of and above the part, switched on and selected. */
+export function addLight(ctx: Ctx, kind: NewLightKind): void {
+  ctx.store.dispatch({ type: 'studio/addLight', kind, label: L('undo.addLight', { name: L(dyn(`lightName.${kind === 'RECTANGLE' || kind === 'DISK' ? 'AREA' : kind}`)) }) });
+  ctx.ui.set({ sceneTab: 'lights' });
+}
+
+export function duplicateLight(ctx: Ctx, id: string): void {
+  const s = ctx.store.get();
+  if (!s.studio.lights.some((l) => l.id === id)) return;
+  ctx.store.dispatch({ type: 'studio/duplicateLight', id, label: L('undo.duplicateLight', { name: lightLabel(s, id) }) });
+}
+
+export function deleteLight(ctx: Ctx, id: string): void {
+  const s = ctx.store.get();
+  if (!s.studio.lights.some((l) => l.id === id)) return;
+  if (sameObject(ctx.ui.get().lookThrough, { kind: 'LIGHT', id })) exitLookThrough(ctx);
+  ctx.store.dispatch({ type: 'studio/deleteLight', id, label: L('undo.deleteLight', { name: lightLabel(s, id) }) });
+}
+
+/** Aim at… a world point; null: at the centre of the product again (where the setup's lights aim). */
+export function aimLight(ctx: Ctx, id: string, target: Vec3 | null): void {
+  const s = ctx.store.get();
+  ctx.store.dispatch({ type: 'studio/aimLight', id, target, label: L('undo.aimLight', { name: lightLabel(s, id) }) });
+}
+
+/** Aims a light at the centre of some nodes' bounds (the part menu's Aim a light ▸); none: at the product's centre. */
+export function aimLightAtNodes(ctx: Ctx, id: string, nodes: readonly NodeId[]): void {
+  const s = ctx.store.get();
+  const b = nodes.length > 0 ? boundsOf(s, nodes) : null;
+  aimLight(ctx, id, b && !isEmptyBox(b) ? boxCenter(b) : null);
+}
+
+
+/** The next click on a part aims the light there (`part`: at the centre of the part clicked). */
+export function pickAim(ctx: Ctx, id: string, part: boolean): void {
+  const pm = ctx.ui.get().pickMode;
+  ctx.ui.set({ pickMode: pm?.kind === 'aim' && pm.light === id && pm.part === part ? null : { kind: 'aim', light: id, part } });
+}
+
+/** Place on surface: the next click on a part puts the light over it along its normal, aiming at it. */
+export function pickSurface(ctx: Ctx, id: string): void {
+  const pm = ctx.ui.get().pickMode;
+  ctx.ui.set({ pickMode: pm?.kind === 'surface' && pm.light === id ? null : { kind: 'surface', light: id } });
+}
+
+/** The click of an aim or surface pick mode, on a point of a part (`node`). */
+export function finishLightPick(ctx: Ctx, pm: { kind: 'aim' | 'surface'; light: string; part?: boolean }, node: NodeId, point: Vec3, normal: Vec3): void {
+  const s = ctx.store.get();
+  if (pm.kind === 'surface') {
+    ctx.store.dispatch({ type: 'studio/placeOnSurface', id: pm.light, point, normal, label: L('undo.placeSurface', { name: lightLabel(s, pm.light) }) });
+    return;
+  }
+  const b = pm.part ? boundsOf(s, [node]) : null;
+  aimLight(ctx, pm.light, b && !isEmptyBox(b) ? boxCenter(b) : point);
+}
+
+// --- Lights and cameras in the viewport (L4) ----------------------------------------
+
+/** Lights and cameras (the view bar): every light's and saved camera's glyph, or only the selected one's. */
+export function toggleGlyphs(ctx: Ctx): void {
+  ctx.ui.set({ showGlyphs: !ctx.ui.get().showGlyphs });
+}
+
+/** What Look through would look through now: the given object, or the one selected; null when there is none. */
+export function lookThroughTarget(ctx: Ctx, obj?: ViewObject | null): ViewObject | null {
+  const s = ctx.store.get();
+  const o = obj ?? selectedObject(s);
+  return o && lookThroughCamera(s, o) ? o : null;
+}
+
+/**
+ * Look through (Ctrl/⌘ ⇧ L): the viewport looks from the selected light or saved camera, and orbiting, panning and
+ * zooming move it; again (or Esc) returns to the active camera. Nothing to look through: a toast says so.
+ */
+export function toggleLookThrough(ctx: Ctx, obj?: ViewObject | null): void {
+  if (ctx.ui.get().lookThrough && (!obj || sameObject(obj, ctx.ui.get().lookThrough))) {
+    exitLookThrough(ctx);
+    return;
+  }
+  const target = lookThroughTarget(ctx, obj);
+  if (!target) {
+    ctx.ui.toast(t('viewport.lookThroughNone'));
+    return;
+  }
+  ctx.ui.set({ lookThrough: target, pickMode: null });
+}
+
+export function exitLookThrough(ctx: Ctx): void {
+  if (ctx.ui.get().lookThrough) ctx.ui.set({ lookThrough: null });
+}
+
+/** A click on a glyph: the light or camera is selected (Ctrl/⌘ on the selected one takes it out). */
+export function selectObject(ctx: Ctx, obj: ViewObject, mode: 'set' | 'toggle' = 'set'): void {
+  const s = ctx.store.get();
+  if (!objectOf(s, obj.id)) return;
+  if (mode === 'toggle' && s.selection.ids.includes(obj.id)) {
+    ctx.store.dispatch({ type: 'scene/select', ids: [], mode: 'set' });
+    return;
+  }
+  ctx.store.dispatch({ type: 'scene/select', ids: [obj.id], mode: 'set' });
 }
 
 export function restOnFloor(ctx: Ctx, ids?: NodeId[]): void {
@@ -1944,18 +2074,35 @@ export function closeResult(ctx: Ctx): void {
 }
 
 /** Saves a result again (to the folder it went to, or a download). `which`: the engine's image (default) or the one the AI made. */
-export async function saveResultAgain(ctx: Ctx, id: string, which: 'RENDER' | 'AI' = 'RENDER'): Promise<void> {
+/** Saves a result's file again where it went: the render, or an AI image (`variant`, 1-based: X4b) under its own name. */
+export async function saveResultAgain(ctx: Ctx, id: string, which: 'RENDER' | 'AI' = 'RENDER', variant = 1): Promise<void> {
   const meta = ctx.ui.get().results.find((r) => r.id === id);
   const blobs = meta ? await ctx.services.results.get(id) : null;
-  const blob = which === 'AI' ? blobs?.ai : blobs?.file;
+  const blob = which === 'AI' ? [blobs?.ai ?? null, ...(blobs?.aiMore ?? [])][variant - 1] : blobs?.file;
   if (!meta || !blobs || !blob) {
     ctx.ui.toast(t('rv.missing'));
     return;
   }
-  const name = which === 'AI' ? (meta.ai?.name ?? aiFileName(meta.name)) : meta.name;
+  const name = which === 'AI' ? (aiVariantsOf(meta)[variant - 1]?.name ?? aiFileName(meta.name, variant)) : meta.name;
   if (meta.savedTo.kind === 'FOLDER') await ctx.services.files.ensureAccess(meta.savedTo.id);
   const where = await ctx.services.files.save(meta.savedTo, name, blob);
   ctx.ui.toast(where === 'FOLDER' && meta.savedTo.kind === 'FOLDER' ? t('render.doneFolder', { name, folder: meta.savedTo.name }) : t('render.done', { name }));
+}
+
+/** Results viewer ▸ Save all (X4b): every AI image of a result again, each under its own name (`_AI`, `_AI_2`…). */
+export async function saveAllVariants(ctx: Ctx, id: string): Promise<void> {
+  const meta = ctx.ui.get().results.find((r) => r.id === id);
+  const blobs = meta ? await ctx.services.results.get(id) : null;
+  const list = [blobs?.ai ?? null, ...(blobs?.aiMore ?? [])];
+  const images = meta ? aiImagesOf(meta).filter((v) => list[v.variant - 1]) : [];
+  if (!meta || !blobs || images.length === 0) {
+    ctx.ui.toast(t('rv.missing'));
+    return;
+  }
+  if (meta.savedTo.kind === 'FOLDER') await ctx.services.files.ensureAccess(meta.savedTo.id);
+  let where: 'FOLDER' | 'DOWNLOAD' = 'DOWNLOAD';
+  for (const v of images) where = await ctx.services.files.save(meta.savedTo, v.info.name || aiFileName(meta.name, v.variant), list[v.variant - 1]!);
+  ctx.ui.toast(where === 'FOLDER' && meta.savedTo.kind === 'FOLDER' ? t('rv.savedAllFolder', { n: images.length, folder: meta.savedTo.name }) : t('rv.savedAll', { n: images.length }));
 }
 
 export async function deleteResult(ctx: Ctx, id: string): Promise<void> {

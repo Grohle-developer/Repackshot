@@ -7,10 +7,11 @@
 //! <data>/settings.json              the settings document (src/core/settings.ts: {schema, settings, layout})
 //! <data>/state/<name>.json          small documents of the page (downloads to resume, the migration mark...)
 //! <data>/library/library.json       the user's library (U4)
-//! <data>/results/index.json         the results history: {"version": 1, "results": [{id, file, type, display, ai, aiType, meta}]}
+//! <data>/results/index.json         the results history: {"version": 1, "results": [{id, file, type, display, ai, aiType, aiVariants, meta}]}
 //! <data>/results/<id>.<ext>         a result's file as it was saved (png, jpg, exr, webp, tif)
 //! <data>/results/<id>.display.png   its picture for the viewer, when the file is one a page cannot show (EXR)
-//! <data>/results/<id>.ai.<ext>      the image the AI post-processing made, when the result went through it (phase X4)
+//! <data>/results/<id>.ai.<n>.<ext>  the AI post-processing's variant n (1 to MAX_AI_VARIANTS), when the result went through it (X4b)
+//! <data>/results/<id>.ai.<ext>      the single AI image of a result of before X4b (phase X4): read as its variant 1
 //! <data>/cache/thumbs/<key>.txt     the material spheres (data URLs): a cache, freed at will
 //! ```
 //!
@@ -50,6 +51,8 @@ pub const RESULT_TYPES: [(&str, &str); 5] = [
     ("image/webp", "webp"),
     ("image/tiff", "tif"),
 ];
+/// Most AI variants a result keeps (`<id>.ai.<n>.<ext>`, n from 1), as the page's `MAX_VARIANTS` (X4b).
+pub const MAX_AI_VARIANTS: u32 = 8;
 /// Entries a measurement walks at most (a sanity bound for a folder full of files).
 pub const WALK_LIMIT: u64 = 2_000_000;
 
@@ -381,21 +384,84 @@ pub struct ResultEntry {
     pub ai: Option<String>,
     /// The media type of that image.
     pub ai_type: Option<String>,
+    /// The AI's variants (X4b), by number from 1, each in the type it came in.
+    pub ai_variants: Vec<AiVariant>,
     /// What the page keeps about it (`ResultMeta` of src/core/results.ts), as it sent it.
     pub meta: Value,
 }
 
-impl ResultEntry {
+/// One AI variant of a result (X4b): its number (from 1), its file in `results/` and its media type.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AiVariant {
+    /// Its number, from 1.
+    pub n: u32,
+    /// Its file in `results/`.
+    pub file: String,
+    /// The file's media type.
+    pub media_type: String,
+}
+
+impl AiVariant {
     fn to_json(&self) -> String {
         json::Object::new()
+            .num("n", f64::from(self.n))
+            .str("file", &self.file)
+            .str("type", &self.media_type)
+            .build()
+    }
+
+    fn from_json(v: &Value) -> Option<AiVariant> {
+        let n = v.get("n").and_then(Value::as_f64)?;
+        let file = v.get("file")?.as_str()?.to_string();
+        let ok = n.fract() == 0.0
+            && (1.0..=f64::from(MAX_AI_VARIANTS)).contains(&n)
+            && valid_name(&file);
+        ok.then(|| AiVariant {
+            n: n as u32,
+            file,
+            media_type: v
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("application/octet-stream")
+                .to_string(),
+        })
+    }
+}
+
+impl ResultEntry {
+    fn to_json(&self) -> String {
+        let mut o = json::Object::new()
             .str("id", &self.id)
             .str("file", &self.file)
             .str("type", &self.media_type)
             .opt_str("display", self.display.as_deref())
             .opt_str("ai", self.ai.as_deref())
-            .opt_str("aiType", self.ai_type.as_deref())
-            .raw("meta", &self.meta.to_json())
-            .build()
+            .opt_str("aiType", self.ai_type.as_deref());
+        if !self.ai_variants.is_empty() {
+            o = o.raw(
+                "aiVariants",
+                &json::array(self.ai_variants.iter().map(AiVariant::to_json)),
+            );
+        }
+        o.raw("meta", &self.meta.to_json()).build()
+    }
+
+    /// Variant `n`'s file and type: one of the variants, or for variant 1 the single AI image of before X4b.
+    fn ai_file(&self, n: u32) -> Option<(String, String)> {
+        if let Some(v) = self.ai_variants.iter().find(|v| v.n == n) {
+            return Some((v.file.clone(), v.media_type.clone()));
+        }
+        if n != 1 {
+            return None;
+        }
+        self.ai.clone().map(|a| {
+            (
+                a,
+                self.ai_type
+                    .clone()
+                    .unwrap_or_else(|| "application/octet-stream".to_string()),
+            )
+        })
     }
 
     fn from_json(v: &Value) -> Option<ResultEntry> {
@@ -419,6 +485,11 @@ impl ResultEntry {
             display,
             ai,
             ai_type: v.get("aiType").and_then(Value::as_str).map(str::to_string),
+            ai_variants: v
+                .get("aiVariants")
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(AiVariant::from_json).collect())
+                .unwrap_or_default(),
             meta: v.get("meta").cloned().unwrap_or(Value::Null),
         })
     }
@@ -452,14 +523,42 @@ fn write_index(data: &Path, entries: &[ResultEntry]) -> Result<(), Response> {
     write_atomic(&path, text.as_bytes()).map_err(|e| io_error(&e))
 }
 
-/// The files of a result on the disk (the file in any of its types, its picture and the AI's image).
+/// The files of a result on the disk (the file in any of its types, its picture and the AI's images).
 fn result_files(id: &str) -> Vec<String> {
     let mut names: Vec<String> = RESULT_TYPES
         .iter()
-        .flat_map(|(_, ext)| [format!("{id}.{ext}"), format!("{id}.ai.{ext}")])
+        .flat_map(|(_, ext)| {
+            [format!("{id}.{ext}"), format!("{id}.ai.{ext}")]
+                .into_iter()
+                .chain((1..=MAX_AI_VARIANTS).map(move |n| format!("{id}.ai.{n}.{ext}")))
+        })
         .collect();
     names.push(format!("{id}{DISPLAY_SUFFIX}"));
     names
+}
+
+/// The name of the AI's image of a result: variant `n` (X4b), or the single one of before (`None`).
+fn ai_name(id: &str, n: Option<u32>, ext: &str) -> String {
+    match n {
+        Some(n) => format!("{id}.ai.{n}.{ext}"),
+        None => format!("{id}.ai.{ext}"),
+    }
+}
+
+/// A variant's number from the path (`.../ai/<n>`): 1 to [`MAX_AI_VARIANTS`], written plainly.
+fn variant_of(text: &str) -> Result<u32, Response> {
+    let plain = !text.is_empty()
+        && text.len() <= 2
+        && text.bytes().all(|b| b.is_ascii_digit())
+        && !text.starts_with('0');
+    match text.parse::<u32>() {
+        Ok(n) if plain && (1..=MAX_AI_VARIANTS).contains(&n) => Ok(n),
+        _ => Err(Response::error(
+            400,
+            "bad-variant",
+            "an AI variant is a number from 1 to 8",
+        )),
+    }
 }
 
 fn check_id(id: &str) -> Result<(), Response> {
@@ -541,8 +640,15 @@ fn put_result_display(req: &Request, body: &mut dyn Read, data: &Path, id: &str)
     }
 }
 
-/// The image the AI post-processing made (`PUT .../<id>/ai`): kept next to the result's file, in the type it came in.
-fn put_result_ai(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> Response {
+/// An image the AI post-processing made: variant `n` (`PUT .../<id>/ai/<n>`, X4b) or the single one of before
+/// (`PUT .../<id>/ai`), kept next to the result's file in the type it came in.
+fn put_result_ai(
+    req: &Request,
+    body: &mut dyn Read,
+    data: &Path,
+    id: &str,
+    n: Option<u32>,
+) -> Response {
     if let Err(r) = check_id(id) {
         return r;
     }
@@ -556,7 +662,7 @@ fn put_result_ai(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> R
     if req.content_length > MAX_RESULT {
         return Response::error(413, "too-large", "the file is too large");
     }
-    let path = match target(data, &[RESULTS], &format!("{id}.ai.{ext}")) {
+    let path = match target(data, &[RESULTS], &ai_name(id, n, ext)) {
         Ok(p) => p,
         Err(r) => return r,
     };
@@ -566,7 +672,7 @@ fn put_result_ai(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> R
     // The same image sent again in another type leaves one file.
     if let Some(dir) = path.parent() {
         for (_, other) in RESULT_TYPES.iter().filter(|(_, e)| *e != ext) {
-            let _ = remove_if_present(&dir.join(format!("{id}.ai.{other}")));
+            let _ = remove_if_present(&dir.join(ai_name(id, n, other)));
         }
     }
     Response::empty(204)
@@ -602,6 +708,19 @@ fn commit_result(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> R
     let ai = RESULT_TYPES
         .iter()
         .find(|(_, e)| dir.join(format!("{id}.ai.{e}")).is_file());
+    // X4b: every variant that was sent, by its number.
+    let ai_variants = (1..=MAX_AI_VARIANTS)
+        .filter_map(|n| {
+            RESULT_TYPES
+                .iter()
+                .find(|(_, e)| dir.join(ai_name(id, Some(n), e)).is_file())
+                .map(|(m, e)| AiVariant {
+                    n,
+                    file: ai_name(id, Some(n), e),
+                    media_type: (*m).to_string(),
+                })
+        })
+        .collect();
     let entry = ResultEntry {
         id: id.to_string(),
         file: format!("{id}.{ext}"),
@@ -609,6 +728,7 @@ fn commit_result(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> R
         display: dir.join(&display).is_file().then_some(display),
         ai: ai.map(|(_, e)| format!("{id}.ai.{e}")),
         ai_type: ai.map(|(m, _)| (*m).to_string()),
+        ai_variants,
         meta,
     };
     let mut entries: Vec<ResultEntry> = read_index(data)
@@ -622,12 +742,12 @@ fn commit_result(req: &Request, body: &mut dyn Read, data: &Path, id: &str) -> R
     }
 }
 
-/// Which of a result's files a request asks for.
+/// Which of a result's files a request asks for: the AI's image by its variant (1 for `.../ai`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Part {
     File,
     Display,
-    Ai,
+    Ai(u32),
 }
 
 fn serve_result(req: &Request, data: &Path, id: &str, part: Part) -> Response {
@@ -641,15 +761,19 @@ fn serve_result(req: &Request, data: &Path, id: &str, part: Part) -> Response {
                 Some(d) => (d, "image/png".to_string()),
                 None => return Response::error(404, "not-found", "this result has no picture"),
             },
-            Some(e) if part == Part::Ai => match e.ai {
-                Some(a) => (
-                    a,
-                    e.ai_type
-                        .unwrap_or_else(|| "application/octet-stream".to_string()),
-                ),
-                None => return Response::error(404, "not-found", "this result has no AI image"),
+            Some(e) => match part {
+                Part::Ai(n) => match e.ai_file(n) {
+                    Some(found) => found,
+                    None => {
+                        return Response::error(
+                            404,
+                            "not-found",
+                            "this result has no such AI image",
+                        )
+                    }
+                },
+                _ => (e.file, e.media_type),
             },
-            Some(e) => (e.file, e.media_type),
             None => return Response::error(404, "not-found", "no such result"),
         }
     };
@@ -918,8 +1042,18 @@ pub fn route(
         ("GET" | "HEAD", ["store", "results", id, "display"]) => {
             serve_result(req, data, id, Part::Display)
         }
-        ("PUT", ["store", "results", id, "ai"]) => put_result_ai(req, body, data, id),
-        ("GET" | "HEAD", ["store", "results", id, "ai"]) => serve_result(req, data, id, Part::Ai),
+        ("PUT", ["store", "results", id, "ai"]) => put_result_ai(req, body, data, id, None),
+        ("GET" | "HEAD", ["store", "results", id, "ai"]) => {
+            serve_result(req, data, id, Part::Ai(1))
+        }
+        ("PUT", ["store", "results", id, "ai", n]) => match variant_of(n) {
+            Ok(n) => put_result_ai(req, body, data, id, Some(n)),
+            Err(r) => r,
+        },
+        ("GET" | "HEAD", ["store", "results", id, "ai", n]) => match variant_of(n) {
+            Ok(n) => serve_result(req, data, id, Part::Ai(n)),
+            Err(r) => r,
+        },
         ("PUT", ["store", "results", id, "meta"]) => commit_result(req, body, data, id),
         ("GET", ["store", "cache", key]) => get_cache(data, key),
         ("PUT", ["store", "cache", key]) => put_cache(req, body, data, key),
@@ -930,6 +1064,7 @@ pub fn route(
             ["store", "settings" | "docs" | "library" | "results" | "cache"]
             | ["store", "docs" | "results" | "cache", _]
             | ["store", "results", _, "display" | "meta" | "ai"]
+            | ["store", "results", _, "ai", _]
             | ["storage", "usage"],
         ) => Response::error(405, "method", "method not allowed"),
         (_, ["store" | "storage", ..]) => Response::error(404, "not-found", "no such endpoint"),

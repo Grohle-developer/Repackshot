@@ -4,9 +4,12 @@
 // platform can), *Delete* and *Close* (Esc). *Compare with…* puts an earlier
 // result next to it with the split-compare divider. A result that went through
 // the AI post-processing (X4) opens as Render against AI under the same divider,
-// with the guard's report in one line, and both images can be saved.
+// with the guard's report in one line, and both images can be saved. With several
+// AI variants (X4b) a strip of their thumbnails under the header chooses the one
+// the divider compares with the render (its own report on the line), and *Save
+// this variant* and *Save all* save it or every one under its name.
 
-import { compareCandidates, type ResultMeta } from '../../core/results';
+import { aiImagesOf, aiVariantsOf, compareCandidates, type AiResultInfo, type ResultMeta } from '../../core/results';
 import { reportDetails, reportText } from '../ai-report';
 import * as cmd from '../commands';
 import { splitCompare, type SplitCompare, type SplitImage } from '../components/split-compare';
@@ -24,11 +27,20 @@ async function bitmap(blob: Blob | null | undefined): Promise<SplitImage | null>
   }
 }
 
-/** The images of a result: the engine's (what the browser can show), and the AI's when it has one. */
-async function decode(ctx: Ctx, id: string): Promise<{ render: SplitImage | null; ai: SplitImage | null }> {
+/**
+ * The images of a result: the engine's (what the browser can show), and the AI's when it has one: `variant` (1-based,
+ * X4b), and a way to decode any other variant when it is chosen.
+ */
+async function decode(ctx: Ctx, id: string, variant = 1): Promise<{ render: SplitImage | null; ai: SplitImage | null; variant: (n: number) => Promise<SplitImage | null> }> {
   const blobs = await ctx.services.results.get(id);
-  if (!blobs) return { render: null, ai: null };
-  return { render: await bitmap(blobs.display ?? blobs.file), ai: await bitmap(blobs.ai) };
+  if (!blobs) return { render: null, ai: null, variant: async () => null };
+  const list = [blobs.ai ?? null, ...(blobs.aiMore ?? [])];
+  const cache = new Map<number, Promise<SplitImage | null>>();
+  const of = (n: number) => {
+    if (!cache.has(n)) cache.set(n, bitmap(list[n - 1]));
+    return cache.get(n)!;
+  };
+  return { render: await bitmap(blobs.display ?? blobs.file), ai: await of(variant), variant: of };
 }
 
 /** "1920 × 1080 · 300 DPI · 256 samples · 1:24 · Camera 1" */
@@ -71,20 +83,61 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
   });
   const fitBtn = h('button', { type: 'button', class: 'btn btn-sm', 'data-kbd': '0', onclick: () => split?.fit() }, t('rv.fit'));
   const actualBtn = h('button', { type: 'button', class: 'btn btn-sm', 'data-kbd': '1', onclick: () => split?.actual() }, '100 %');
-  // The AI image exists when the guard let one through (bytes): a REJECTED result keeps its report and the engine's image only.
-  const hasAi = !!meta?.ai && meta.ai.bytes > 0;
+  // The AI images exist when the guard let one through (bytes): a REJECTED variant keeps its report and no image.
+  const variants: AiResultInfo[] = meta ? aiVariantsOf(meta) : [];
+  const images = meta ? aiImagesOf(meta) : [];
+  const several = variants.length > 1;
+  const hasAi = images.length > 0;
+  /** The variant the divider compares with the render (X4b): the one chosen, else the first with an image. */
+  let chosen = images.find((i) => i.variant === v0.variant)?.variant ?? images[0]?.variant ?? 1;
   const saveBtn = h('button', { type: 'button', class: 'btn', onclick: () => meta && void cmd.saveResultAgain(ctx, meta.id) }, icon('download', 14), hasAi ? t('rv.saveRender') : t('rv.saveAgain'));
-  const saveAiBtn = hasAi ? h('button', { type: 'button', class: 'btn', 'data-save': 'ai', onclick: () => meta && void cmd.saveResultAgain(ctx, meta.id, 'AI') }, icon('download', 14), t('rv.saveAi')) : null;
+  const saveAiBtn = hasAi ? h('button', { type: 'button', class: 'btn', 'data-save': 'ai', onclick: () => meta && void cmd.saveResultAgain(ctx, meta.id, 'AI', chosen) }, icon('download', 14), several ? t('rv.saveVariant') : t('rv.saveAi')) : null;
+  const saveAllBtn = images.length > 1 ? h('button', { type: 'button', class: 'btn', 'data-save': 'all', 'data-tip': t('rv.saveAllTip', { n: images.length }), onclick: () => meta && void cmd.saveAllVariants(ctx, meta.id) }, icon('download', 14), t('rv.saveAll')) : null;
   // The guard's report (AI-POST.md §4): what was checked, and what the guard did. Its own line under the title and
   // the toolbar, the whole width, one line; where it does not fit it ends in an ellipsis and the tooltip has it all,
-  // with what ran.
-  const report = meta?.ai ? reportText(meta.ai.report) : null;
-  const reportEl = report
+  // with what ran. With several variants, the chosen one's (X4b).
+  const reportEl = variants.length > 0 ? h('div', { class: 'rv-report' }) : null;
+  const showReport = () => {
+    const info = variants[chosen - 1] ?? variants[0];
+    if (!reportEl || !info) return;
+    const report = reportText(info.report);
+    const prefix = several ? t('rv.variantN', { n: chosen }) : '';
+    reportEl.dataset.verdict = info.report.verdict;
+    reportEl.title = `${[prefix, report.checked, report.note].filter(Boolean).join(' · ')}\n${reportDetails(info.report, info.report.modelKey)}`;
+    reportEl.replaceChildren(
+      ...(several ? [h('span', { class: 'rv-report-variant tabular' }, prefix)] : []),
+      ...(report.checked ? [h('span', { class: 'rv-report-checked tabular' }, report.checked)] : []),
+      ...(report.note ? [h('span', { class: `rv-report-note${info.report.verdict === 'REJECTED' ? ' is-rejected' : ''}` }, report.note)] : []),
+    );
+  };
+  showReport();
+  // The strip of variants (X4b): one thumbnail each, the chosen one pressed; a rejected one says so and has no image.
+  let pickVariant: (n: number) => void = () => undefined;
+  const strip = several
     ? h(
         'div',
-        { class: 'rv-report', 'data-verdict': meta!.ai!.report.verdict, title: `${[report.checked, report.note].filter(Boolean).join(' · ')}\n${reportDetails(meta!.ai!.report, meta!.ai!.report.modelKey)}` },
-        report.checked ? h('span', { class: 'rv-report-checked tabular' }, report.checked) : null,
-        report.note ? h('span', { class: `rv-report-note${meta!.ai!.report.verdict === 'REJECTED' ? ' is-rejected' : ''}` }, report.note) : null,
+        { class: 'rv-strip', role: 'radiogroup', 'aria-label': t('rv.variants') },
+        h('span', { class: 'aux rv-strip-label' }, t('rv.variants')),
+        ...variants.map((v, i) => {
+          const n = i + 1;
+          const rejected = v.bytes <= 0;
+          return h(
+            'button',
+            {
+              type: 'button',
+              class: `rv-variant${rejected ? ' is-rejected' : ''}`,
+              role: 'radio',
+              'aria-checked': String(n === chosen),
+              'aria-label': rejected ? t('rv.variantRejected', { n }) : t('rv.variantN', { n }),
+              'data-variant': n,
+              'data-tip': rejected ? t('rv.variantRejected', { n }) : `${t('rv.variantN', { n })} · ${t('rv.seed', { seed: v.report.seed })}`,
+              disabled: rejected,
+              onclick: () => pickVariant(n),
+            },
+            v.thumb ? h('img', { src: v.thumb, alt: '' }) : h('span', { class: 'rv-variant-none' }, icon('close', 12)),
+            h('span', { class: 'rv-variant-n tabular' }, String(n)),
+          );
+        }),
       )
     : null;
   // Where the image went, in the file manager (the desktop: with the file selected; Downloads too).
@@ -124,11 +177,12 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
         'div',
         { class: 'rv-top' },
         h('div', { class: 'rv-info' }, title, data, memory),
-        h('div', { class: 'rv-actions' }, compareBtn, h('span', { class: 'rv-sep' }), fitBtn, actualBtn, zoomText, h('span', { class: 'rv-sep' }), saveBtn, saveAiBtn, folderBtn, deleteBtn),
+        h('div', { class: 'rv-actions' }, compareBtn, h('span', { class: 'rv-sep' }), fitBtn, actualBtn, zoomText, h('span', { class: 'rv-sep' }), saveBtn, saveAiBtn, saveAllBtn, folderBtn, deleteBtn),
       ),
       reportEl,
       closeBtn,
     ),
+    strip,
     frame,
   );
 
@@ -138,7 +192,7 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
       frame.replaceChildren(h('div', { class: 'note rv-loading' }, t('rv.missing')));
       return;
     }
-    const [mine, theirs] = await Promise.all([decode(ctx, meta.id), other ? decode(ctx, other.id) : Promise.resolve(null)]);
+    const [mine, theirs] = await Promise.all([decode(ctx, meta.id, chosen), other ? decode(ctx, other.id) : Promise.resolve(null)]);
     const a = mine.render;
     if (!a) {
       frame.replaceChildren(h('div', { class: 'note rv-loading' }, t('rv.missing')));
@@ -148,10 +202,23 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
     const versusAi = !theirs && mine.ai !== null;
     const b = theirs ? theirs.render : mine.ai;
     const v = ui.get().resultView;
+    const aiLabel = (n: number) => (several ? t('rv.labelAiN', { n }) : t('rv.labelAi'));
+    // Another variant: the divider compares it with the render, where it was, at the same zoom (X4b).
+    pickVariant = (n) => {
+      if (n === chosen || !images.some((i) => i.variant === n)) return;
+      chosen = n;
+      strip?.querySelectorAll<HTMLElement>('.rv-variant').forEach((el) => el.setAttribute('aria-checked', String(Number(el.dataset.variant) === n)));
+      showReport();
+      const cur = ui.get().resultView;
+      if (cur) ui.set({ resultView: { ...cur, variant: n } });
+      void mine.variant(n).then((img) => {
+        if (img && chosen === n && versusAi) split?.setB(img, aiLabel(n));
+      });
+    };
     split = splitCompare({
       a,
       b,
-      labels: versusAi ? { a: t('rv.labelRender'), b: t('rv.labelAi') } : { a: meta.name, b: other?.name ?? '' },
+      labels: versusAi ? { a: t('rv.labelRender'), b: aiLabel(chosen) } : { a: meta.name, b: other?.name ?? '' },
       ...(versusAi ? { modeLabels: { a: t('rv.onlyRender'), b: t('rv.onlyAi'), split: t('split.split') } } : {}),
       mode: v?.split ?? 'SPLIT',
       position: v?.position ?? 0.5,

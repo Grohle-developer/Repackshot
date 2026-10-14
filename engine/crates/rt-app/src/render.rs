@@ -32,12 +32,14 @@
 //! Viewport jobs never render passes.
 
 use crate::kept::{KeepLimits, Kept, KeptRender, Look, PassesBody};
+use rt_core::caustics::{Photon, PhotonMap};
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, Passes, PASS_ALL};
-use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_prepared, tile_grid};
-use rt_core::scene::Scene;
+use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, tile_grid};
+use rt_core::scene::{Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use rt_core::simd::Isa;
+use rt_post::denoise::{denoise_rows, DenoiseInput, GUIDE_PASSES};
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -108,6 +110,15 @@ pub const FLAG_DATA: u32 = 16;
 /// Frame flag: the threads are shared between a final and a live viewport (a viewport job on its
 /// share, or a final leaving that share to it); the header's thread count is this job's now.
 pub const FLAG_SHARED: u32 = 32;
+/// Frame flag (E5b-1): the sums are denoised (`RNDR.denoise` bit 0, `rt_post::denoise`): the
+/// samples' radiance filtered, the coverage as it was.
+pub const FLAG_DENOISED: u32 = 64;
+/// Frame flag (E5b-1): after the (denoised) sums come the sums without denoise, as many again (a
+/// final of `RNDR.denoise` bit 1, in its last frame).
+pub const FLAG_NOISY: u32 = 128;
+/// Frame flag (E5b-1): the image has caustics from the photon map (`RNDR.caustic_photons`, and the
+/// scene has something that focuses light and a light that sends photons).
+pub const FLAG_CAUSTICS: u32 = 256;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -244,8 +255,11 @@ pub struct Frame {
     pub threads: u32,
     /// Rays cast so far.
     pub rays: u64,
-    /// RGBA sums, `width * height * 4` (empty before the first pass).
+    /// RGBA sums, `width * height * 4` (empty before the first pass); denoised with
+    /// [`FLAG_DENOISED`].
     pub sums: Arc<Vec<f32>>,
+    /// With [`FLAG_NOISY`]: the RGBA sums without denoise.
+    pub noisy: Option<Arc<Vec<f32>>>,
 }
 
 impl Frame {
@@ -279,12 +293,14 @@ impl Frame {
         h
     }
 
-    /// Writes the header and, with `data`, the sums as little-endian `f32`.
+    /// Writes the header and, with `data`, the sums (and the sums without denoise, with
+    /// [`FLAG_NOISY`]) as little-endian `f32`.
     pub fn write(&self, data: bool, w: &mut dyn Write) -> io::Result<()> {
         w.write_all(&self.header(data))?;
         if data {
             let mut buf = Vec::with_capacity(64 * 1024);
-            for chunk in self.sums.chunks(16 * 1024) {
+            let noisy = self.noisy.as_deref().map_or(&[][..], |v| &v[..]);
+            for chunk in self.sums.chunks(16 * 1024).chain(noisy.chunks(16 * 1024)) {
                 buf.clear();
                 for v in chunk {
                     buf.extend_from_slice(&v.to_le_bytes());
@@ -297,7 +313,13 @@ impl Frame {
 
     /// Bytes [`Frame::write`] writes.
     pub fn len(&self, data: bool) -> u64 {
-        FRAME_HEADER as u64 + if data { self.sums.len() as u64 * 4 } else { 0 }
+        let noisy = self.noisy.as_ref().map_or(0, |v| v.len() as u64);
+        FRAME_HEADER as u64
+            + if data {
+                (self.sums.len() as u64 + noisy) * 4
+            } else {
+                0
+            }
     }
 
     /// Reads what [`Frame::write`] wrote (the sums only with [`FLAG_DATA`], which the frame then
@@ -311,16 +333,26 @@ impl Frame {
         }
         let header = u(4)? as usize;
         let (width, height, flags) = (u(16)?, u(20)?, u(28)?);
+        let n = (width as usize)
+            .checked_mul(height as usize)?
+            .checked_mul(4)?;
+        let plane = |at: usize| -> Option<Vec<f32>> {
+            let data = bytes.get(at..at.checked_add(n.checked_mul(4)?)?)?;
+            Some(
+                data.chunks_exact(4)
+                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                    .collect(),
+            )
+        };
         let sums = if flags & FLAG_DATA != 0 {
-            let n = (width as usize)
-                .checked_mul(height as usize)?
-                .checked_mul(4)?;
-            let data = bytes.get(header..header.checked_add(n.checked_mul(4)?)?)?;
-            data.chunks_exact(4)
-                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect()
+            plane(header)?
         } else {
             Vec::new()
+        };
+        let noisy = if flags & FLAG_DATA != 0 && flags & FLAG_NOISY != 0 {
+            Some(Arc::new(plane(header.checked_add(n.checked_mul(4)?)?)?))
+        } else {
+            None
         };
         Some(Frame {
             pass: u(8)?,
@@ -333,6 +365,7 @@ impl Frame {
             threads: u(36)?,
             rays: u64::from_le_bytes(bytes.get(40..48)?.try_into().ok()?),
             sums: Arc::new(sums),
+            noisy,
         })
     }
 
@@ -349,6 +382,10 @@ struct Progress {
     samples: u32,
     rays: u64,
     sums: Arc<Vec<f32>>,
+    /// The sums without denoise, when they are handed out too ([`FLAG_NOISY`]).
+    noisy: Option<Arc<Vec<f32>>>,
+    /// [`FLAG_DENOISED`] and [`FLAG_NOISY`]: what the sums are.
+    image: u32,
     /// 0, [`FLAG_PAUSED`] or [`FLAG_SHARED`]: how it renders next to the finals.
     mode: u32,
     /// Threads rendering it now.
@@ -372,8 +409,12 @@ pub struct Job {
     /// A viewport job: the threads it keeps while a final runs (0: it pauses).
     pub share: usize,
     /// The exact passes it renders next to the image (`rt_core::passes` bits; 0 for none, and
-    /// always for a viewport job).
+    /// always for a viewport job), kept for the AI post-processing.
     pub passes: u32,
+    /// `RNDR.denoise` of its scene (E5b-1): bit 0 the frames carry the denoised image (with
+    /// [`FLAG_DENOISED`]; for a final, its last frame), bit 1 a final's last frame also the one
+    /// without denoise ([`FLAG_NOISY`]). The guide passes are then rendered too.
+    pub denoise: u32,
     /// The time limit in milliseconds, if any.
     limit_ms: Option<f64>,
     threads: usize,
@@ -395,6 +436,7 @@ impl std::fmt::Debug for Job {
             .field("max_samples", &self.max_samples)
             .field("share", &self.share)
             .field("passes", &self.passes)
+            .field("denoise", &self.denoise)
             .finish_non_exhaustive()
     }
 }
@@ -425,6 +467,7 @@ impl Job {
                 Kind::Final => (opts.passes | r.passes) & PASS_ALL,
                 Kind::Viewport => 0,
             },
+            denoise: r.denoise & (DENOISE_IMAGE | DENOISE_KEEP_NOISY),
             limit_ms,
             threads,
             cancel: AtomicBool::new(false),
@@ -434,6 +477,8 @@ impl Job {
                 samples: 0,
                 rays: 0,
                 sums: Arc::new(Vec::new()),
+                noisy: None,
+                image: 0,
                 mode: 0,
                 active: threads as u32,
                 ended: None,
@@ -479,6 +524,7 @@ impl Job {
         if p.ended.is_none() {
             flags |= p.mode;
         }
+        flags |= p.image;
         Frame {
             pass: p.pass,
             samples: p.samples,
@@ -494,6 +540,7 @@ impl Job {
             },
             rays: p.rays,
             sums: Arc::clone(&p.sums),
+            noisy: p.noisy.clone(),
         }
     }
 
@@ -552,6 +599,9 @@ impl Job {
             (FLAG_FAILED, "failed"),
             (FLAG_PAUSED, "paused"),
             (FLAG_SHARED, "shared"),
+            (FLAG_DENOISED, "denoised"),
+            (FLAG_NOISY, "noisy"),
+            (FLAG_CAUSTICS, "caustics"),
         ];
         let flags = names
             .iter()
@@ -571,6 +621,7 @@ impl Job {
             .num("maxSamples", f64::from(self.max_samples))
             .num("share", self.share as f64)
             .num("passes", f64::from(self.passes))
+            .num("denoise", f64::from(self.denoise))
             .num("threads", f64::from(f.threads))
             .num("pass", f64::from(f.pass))
             .num("samples", f64::from(f.samples))
@@ -753,6 +804,112 @@ impl Gate {
     }
 }
 
+/// The sums of the squared luminance of the tile films (`Film::lum2`), for the denoiser.
+fn lum2_of(films: &[Mutex<Film>], width: u32, height: u32) -> Vec<f32> {
+    let mut out = vec![0.0f32; width as usize * height as usize];
+    for film in films {
+        let f = lock(film);
+        for ly in 0..f.height {
+            let i = (f.origin_y + ly) as usize * width as usize + f.origin_x as usize;
+            let j = (ly * f.width) as usize;
+            out[i..i + f.width as usize].copy_from_slice(&f.lum2[j..j + f.width as usize]);
+        }
+    }
+    out
+}
+
+/// The passes of the tile films so far, assembled.
+fn passes_of(films: &[Mutex<PassFilm>], width: u32, height: u32, mask: u32) -> Passes {
+    let mut passes = Passes::new(width, height, mask);
+    for film in films {
+        let f = lock(film);
+        passes.copy_region(f.origin_x, f.origin_y, &f.resolve());
+    }
+    passes
+}
+
+/// Bands of rows a denoise of `height` rows is cut into on `threads` threads: no band under 192
+/// rows (each holds `rt_post::denoise::HALO` rows around it).
+fn denoise_bands(height: u32, threads: usize) -> u32 {
+    (height / 192).clamp(1, threads.max(1) as u32)
+}
+
+/// Denoises the RGBA `sums` of `samples` samples with their `lum2` and guide `passes`, in bands
+/// on `threads` threads (each band exactly those rows of the whole image: the same bits for any
+/// thread count, as the web pool's).
+fn denoise_sums(
+    sums: &[f32],
+    lum2: &[f32],
+    passes: &Passes,
+    samples: u32,
+    threads: usize,
+) -> Option<Vec<f32>> {
+    let whole = DenoiseInput::whole(samples, sums, lum2, passes).ok()?;
+    let h = passes.height;
+    let bands = denoise_bands(h, threads);
+    let parts: Vec<Option<Vec<f32>>> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..bands)
+            .map(|k| {
+                let (y0, y1) = (h * k / bands, h * (k + 1) / bands);
+                let band = whole.with_halo(y0, y1);
+                scope.spawn(move || denoise_rows(&band, y0, y1).ok())
+            })
+            .collect();
+        workers
+            .into_iter()
+            .map(|w| w.join().ok().flatten())
+            .collect()
+    });
+    let mut out = Vec::with_capacity(sums.len());
+    for part in parts {
+        out.extend(part?);
+    }
+    Some(out)
+}
+
+/// The photon maps of samples `first .. first + count` of a scene with caustics (E5b-1), each
+/// traced on `threads` threads in photon ranges put back together in order: the same bits for any
+/// thread count (`rt_cli::photon_maps` does the same). Returns them and their rays.
+fn photon_maps(
+    scene: &Scene,
+    prepared: &Prepared,
+    first: u32,
+    count: u32,
+    threads: usize,
+    isa: Isa,
+) -> (Vec<PhotonMap>, u64) {
+    if !prepared.has_caustics() {
+        return (Vec::new(), 0);
+    }
+    let photons = scene.render.caustic_photons;
+    let threads = threads.clamp(1, photons.max(1) as usize) as u64;
+    let mut maps = Vec::with_capacity(count as usize);
+    let mut rays = 0;
+    for sample in first..first + count {
+        let parts: Vec<(Vec<Photon>, u64)> = std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..threads)
+                .map(|k| {
+                    let range = (u64::from(photons) * k / threads) as u32
+                        ..(u64::from(photons) * (k + 1) / threads) as u32;
+                    scope.spawn(move || PhotonMap::trace_range(scene, prepared, sample, range, isa))
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|w| w.join().unwrap_or_default())
+                .collect()
+        });
+        let (mut all, mut map_rays) = (Vec::new(), 0);
+        for (part, r) in parts {
+            all.extend(part);
+            map_rays += r;
+        }
+        rays += map_rays;
+        maps.push(PhotonMap::build(prepared, sample, all, map_rays));
+    }
+    (maps, rays)
+}
+
 /// The RGBA sums of the tile films.
 fn sums_of(films: &[Mutex<Film>], width: u32, height: u32) -> Vec<f32> {
     let mut out = vec![0.0f32; width as usize * height as usize * 4];
@@ -797,13 +954,28 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
         .iter()
         .map(|t| Mutex::new(Film::region(t.x, t.y, t.w, t.h)))
         .collect();
-    let pass_films: Vec<Mutex<PassFilm>> = if job.passes == 0 {
+    // The passes it keeps, and the denoiser's guides when it denoises (E5b-1).
+    let denoise = job.denoise & DENOISE_IMAGE != 0;
+    let mask = job.passes | if denoise { GUIDE_PASSES } else { 0 };
+    let pass_films: Vec<Mutex<PassFilm>> = if mask == 0 {
         Vec::new()
     } else {
         tiles
             .iter()
-            .map(|t| Mutex::new(PassFilm::region(t.x, t.y, t.w, t.h, job.passes)))
+            .map(|t| Mutex::new(PassFilm::region(t.x, t.y, t.w, t.h, mask)))
             .collect()
+    };
+    // Photon maps and denoising run on the job's threads (a sharing viewport's share).
+    let side_threads = match job.kind {
+        Kind::Viewport if job.share > 0 => job.share,
+        _ => threads,
+    };
+    // The viewport's last denoised image: when, how long it took (ms), its samples and sums.
+    let mut last_clean: Option<(Instant, f64, u32, Arc<Vec<f32>>)> = None;
+    let caustics = if prepared.has_caustics() {
+        FLAG_CAUSTICS
+    } else {
+        0
     };
     let t0 = Instant::now();
     lock(&job.progress).started = Some(t0);
@@ -823,6 +995,10 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
         }
         let pass_start = Instant::now();
         let first = done;
+        // Caustics (E5b-1): the photon maps of this pass's samples, before its tiles.
+        let (maps, map_rays) = photon_maps(scene, prepared, first, count, side_threads, isa);
+        rays += map_rays;
+        let maps = &maps;
         let next_tile = AtomicUsize::new(0);
         let next_tile = &next_tile;
         // Every tile of the pass is taken: a thread waiting for its turn has nothing left to do.
@@ -857,8 +1033,9 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
                                 rays += render_tile_exact(scene, prepared, tile, passes, isa);
                             }
                             for sample in first..first + count {
-                                rays += render_tile_prepared(
-                                    scene, prepared, tile, sample, &mut film, isa,
+                                let map = maps.get((sample - first) as usize);
+                                rays += render_tile_photons(
+                                    scene, prepared, map, tile, sample, &mut film, isa,
                                 );
                                 if let Some(passes) = passes.as_deref_mut() {
                                     rays += render_tile_albedo(
@@ -885,27 +1062,97 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
         previous = count;
         passes += 1;
         let sums = Arc::new(sums_of(films, width, height));
+        // A viewport that denoises shows the denoised image: after its first and last passes,
+        // and after any other one once three times the last denoise has gone by (in between, the
+        // last denoised image at the samples it has now).
+        let (shown, image) = if denoise && job.kind == Kind::Viewport {
+            let last_pass = next_pass(done, previous, job.max_samples).is_none();
+            let due = last_clean.as_ref().is_none_or(|(at, took, _, _)| {
+                last_pass || at.elapsed().as_secs_f64() * 1000.0 >= 3.0 * took
+            });
+            let fresh = if due {
+                let t = Instant::now();
+                let clean = denoise_sums(
+                    &sums,
+                    &lum2_of(films, width, height),
+                    &passes_of(pass_tiles, width, height, mask),
+                    done,
+                    side_threads,
+                );
+                clean.map(|c| {
+                    let c = Arc::new(c);
+                    let took = t.elapsed().as_secs_f64() * 1000.0;
+                    last_clean = Some((Instant::now(), took, done, Arc::clone(&c)));
+                    c
+                })
+            } else {
+                last_clean.as_ref().map(|(_, _, n, clean)| {
+                    let k = done as f32 / *n as f32;
+                    Arc::new(
+                        clean
+                            .iter()
+                            .zip(sums.iter())
+                            .enumerate()
+                            .map(|(i, (&c, &a))| if i % 4 == 3 { a } else { c * k })
+                            .collect(),
+                    )
+                })
+            };
+            match fresh {
+                Some(clean) => (clean, FLAG_DENOISED),
+                None => (sums, 0),
+            }
+        } else {
+            (sums, 0)
+        };
         {
             let mut p = lock(&job.progress);
             p.pass = passes;
             p.samples = done;
             p.rays = rays;
-            p.sums = sums;
+            p.sums = shown;
+            p.image = image | caustics;
         }
         job.changed.notify_all();
     }
     // The share goes back before the job says it ended.
     drop(live);
-    if job.cancelled() || pass_films.is_empty() {
+    if job.cancelled() {
         return None;
     }
-    // Each tile's film is dropped once copied, so a large image does not hold its passes twice.
-    let mut passes = Passes::new(width, height, job.passes);
+    // A final that denoises: one more frame, its last, with the denoised image (and the one
+    // without denoise when it asks for both), before it is kept and says it ended.
+    if denoise && job.kind == Kind::Final && done > 0 {
+        let sums = sums_of(films, width, height);
+        let clean = denoise_sums(
+            &sums,
+            &lum2_of(films, width, height),
+            &passes_of(pass_tiles, width, height, mask),
+            done,
+            threads,
+        );
+        if let Some(clean) = clean {
+            let keep = job.denoise & DENOISE_KEEP_NOISY != 0;
+            let mut p = lock(&job.progress);
+            p.pass = passes + 1;
+            p.sums = Arc::new(clean);
+            p.image = FLAG_DENOISED | caustics | if keep { FLAG_NOISY } else { 0 };
+            p.noisy = keep.then(|| Arc::new(sums));
+            drop(p);
+            job.changed.notify_all();
+        }
+    }
+    if pass_films.is_empty() || job.passes == 0 {
+        return None;
+    }
+    // Each tile's film is dropped once copied, so a large image does not hold its passes twice;
+    // only the passes the job keeps (not the denoiser's guides).
+    let mut kept = Passes::new(width, height, job.passes);
     for film in pass_films {
         let f = film.into_inner().unwrap_or_else(PoisonError::into_inner);
-        passes.copy_region(f.origin_x, f.origin_y, &f.resolve());
+        kept.copy_region(f.origin_x, f.origin_y, &f.resolve());
     }
-    Some(passes)
+    Some(kept)
 }
 
 /// Why a job was not started.
@@ -1474,6 +1721,117 @@ mod tests {
         let mut out = Vec::new();
         f.write(true, &mut out).unwrap();
         assert_eq!(out.len() as u64, f.len(true));
+    }
+
+    #[test]
+    fn a_final_that_denoises_ends_with_the_denoised_image_of_rt_for_any_thread_count() {
+        // E5b-1: the launcher's denoised image is `rt`'s (rt_cli::denoise_film over the same
+        // film and guides), bit for bit, with 1 or 4 threads; the noisy one comes with it when
+        // asked, and the kept image (the AI's input) is the denoised one.
+        let _serial = serial();
+        let mut scene = small_example(6, 64, 400);
+        scene.render.denoise = DENOISE_IMAGE | DENOISE_KEEP_NOISY;
+        scene.render.passes = rt_core::passes::PASS_DEPTH;
+        let reference = rt_cli::render(&scene, 6, 2);
+        let clean = reference.denoised(3).expect("guides");
+        let expect = rt_post::denoise::rgba_sums(&clean);
+        let noisy = rt_post::denoise::rgba_sums(&reference.film);
+        assert_ne!(expect, noisy);
+        for threads in [1usize, 4] {
+            let engine = Engine::new(threads);
+            let job = engine
+                .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+                .unwrap();
+            let f = wait_done(&job);
+            assert_eq!(f.samples, 6);
+            assert_eq!(
+                f.flags & (FLAG_DENOISED | FLAG_NOISY),
+                FLAG_DENOISED | FLAG_NOISY
+            );
+            assert_eq!(*f.sums, expect, "{threads} threads");
+            assert_eq!(f.noisy.as_deref(), Some(&noisy), "{threads} threads");
+            // The frame carries both, and reads back.
+            let mut bytes = Vec::new();
+            f.write(true, &mut bytes).unwrap();
+            assert_eq!(bytes.len() as u64, f.len(true));
+            assert_eq!(bytes.len(), FRAME_HEADER + 64 * 400 * 4 * 4 * 2);
+            let back = Frame::read(&bytes).expect("frame");
+            assert_eq!(
+                (*back.sums == expect, back.noisy.as_deref() == Some(&noisy)),
+                (true, true)
+            );
+            // The kept render is the denoised image, with the depth it asked for (not the guides).
+            let kept = engine.kept(job.id).expect("kept");
+            assert_eq!(*kept.image.sums, expect);
+            assert_eq!(kept.passes.mask, rt_core::passes::PASS_DEPTH);
+        }
+        // Without bit 1 only the denoised image comes.
+        scene.render.denoise = DENOISE_IMAGE;
+        let engine = Engine::new(2);
+        let job = engine
+            .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+            .unwrap();
+        let f = wait_done(&job);
+        assert_eq!(f.flags & (FLAG_DENOISED | FLAG_NOISY), FLAG_DENOISED);
+        assert!(f.noisy.is_none());
+        assert_eq!(*f.sums, expect);
+    }
+
+    #[test]
+    fn a_viewport_that_denoises_shows_denoised_frames() {
+        let _serial = serial();
+        let mut scene = small_example(4, 48, 36);
+        scene.render.denoise = DENOISE_IMAGE;
+        let engine = Engine::new(2);
+        let job = engine
+            .submit(Kind::Viewport, &scene.to_rsb(), "", "", None)
+            .unwrap();
+        let f = wait_done(&job);
+        assert_eq!(f.samples, 4);
+        assert_eq!(f.flags & FLAG_DENOISED, FLAG_DENOISED);
+        // Its last frame is the denoised image of all its samples.
+        let reference = rt_cli::render(&scene, 4, 2);
+        let clean = reference.denoised(2).expect("guides");
+        assert_eq!(*f.sums, rt_post::denoise::rgba_sums(&clean));
+        // Without denoise, the plain sums and no flag.
+        scene.render.denoise = 0;
+        let job = engine
+            .submit(Kind::Viewport, &scene.to_rsb(), "", "b", None)
+            .unwrap();
+        let f = wait_done(&job);
+        assert_eq!(f.flags & (FLAG_DENOISED | FLAG_CAUSTICS), 0);
+        assert_eq!(*f.sums, rt_post::denoise::rgba_sums(&reference.film));
+    }
+
+    #[test]
+    fn caustics_give_the_pinned_image_with_any_thread_count() {
+        // E5b-1: the photon maps traced in parallel by photon ranges are the same bits for any
+        // thread count, so the image is rt-core's pinned one (PINNED_E5B_CAUSTICS_4SPP).
+        let _serial = serial();
+        let mut scene = rt_core::example::e5b_scene();
+        scene.render.max_samples = 4;
+        for threads in [1usize, 4, 16] {
+            let engine = Engine::new(threads);
+            let job = engine
+                .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+                .unwrap();
+            let f = wait_done(&job);
+            assert_eq!(f.samples, 4);
+            assert_eq!(f.flags & FLAG_CAUSTICS, FLAG_CAUSTICS);
+            let inv = 1.0f32 / 4.0;
+            let rgb: Vec<f32> = f
+                .sums
+                .chunks_exact(4)
+                .flat_map(|p| [p[0] * inv, p[1] * inv, p[2] * inv])
+                .collect();
+            let hash = rgb
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .fold(0x811c_9dc5u32, |h, b| {
+                    (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+                });
+            assert_eq!(hash, 0x55d6_0f2f, "{threads} threads");
+        }
     }
 
     #[test]

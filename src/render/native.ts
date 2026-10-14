@@ -46,6 +46,8 @@ import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
 import type { EngineStatus, PickHit, RenderOptions } from './engine';
 import { QUIET_MS, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
+import { CAUSTICS_PRESETS } from '../core/caustics';
+import { engineFieldsOf } from '../core/render';
 import { parsePasses } from './pass-planes';
 import { abortError, budgetProgress, type PassBudget } from './schedule';
 import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
@@ -65,6 +67,12 @@ export const FLAG_FAILED = 4;
 export const FLAG_PAUSED = 8;
 export const FLAG_DATA = 16;
 export const FLAG_SHARED = 32;
+/** E5b-1: the sums are the engine's denoised image. */
+export const FLAG_DENOISED = 64;
+/** E5b-1: after the sums come the sums without denoise (a final's last frame, Also save without denoise). */
+export const FLAG_NOISY = 128;
+/** E5b-1: the image has caustics from the photon map. */
+export const FLAG_CAUSTICS = 256;
 
 /** Threads the viewport keeps while a Render runs: a quarter, at least one (render.rs `viewport_share`). */
 export function viewportShare(threads: number): number {
@@ -82,8 +90,10 @@ export interface NativeFrame {
   /** Threads rendering the job now (its share while it shares, 0 while it waits). */
   threads: number;
   rays: number;
-  /** RGBA sums of `samples` samples per pixel (when the frame carries data). */
+  /** RGBA sums of `samples` samples per pixel (when the frame carries data); denoised with FLAG_DENOISED. */
   sums: Float32Array | null;
+  /** E5b-1, with FLAG_NOISY: the sums without denoise. */
+  noisy: Float32Array | null;
 }
 
 /** Reads a frame of `GET /api/render/<id>` (header, then little-endian f32 sums). */
@@ -98,11 +108,14 @@ export function parseFrame(buf: ArrayBuffer): NativeFrame {
   const height = u(20);
   const flags = u(28);
   let sums: Float32Array | null = null;
+  let noisy: Float32Array | null = null;
   if (flags & FLAG_DATA) {
     const n = width * height * 4;
-    if (buf.byteLength - header < n * 4) throw new Error('short frame data');
+    const planes = flags & FLAG_NOISY ? 2 : 1;
+    if (buf.byteLength - header < n * 4 * planes) throw new Error('short frame data');
     // The header is 48 bytes, so the floats are aligned; every browser is little-endian.
     sums = new Float32Array(buf, header, n);
+    if (planes === 2) noisy = new Float32Array(buf, header + n * 4, n);
   }
   return {
     pass: u(8),
@@ -115,6 +128,7 @@ export function parseFrame(buf: ArrayBuffer): NativeFrame {
     threads: u(36),
     rays: Number(v.getBigUint64(40, true)),
     sums,
+    noisy,
   };
 }
 
@@ -152,6 +166,8 @@ function sameBytes(a: Uint8Array | null, b: Uint8Array): boolean {
 function touchesImage(s: ProjectState, p: ProjectState): boolean {
   return (
     s.scene !== p.scene ||
+    // Denoise and caustics (E5b-1) are Advanced settings the viewport follows.
+    s.render.advanced !== p.render.advanced ||
     s.materials !== p.materials ||
     s.studio !== p.studio ||
     s.environment !== p.environment ||
@@ -207,6 +223,9 @@ interface ViewJob {
   shared: boolean;
   /** Threads rendering it now (from the launcher). */
   threads: number;
+  /** E5b-1: its last frame was denoised, and it renders caustics (the launcher's flags). */
+  denoised: boolean;
+  caustics: boolean;
   /** Milliseconds the next pass should take (from the last one), for the watchdog. */
   expectMs: number;
   /** Its long-poll is running (it ends when the job ends, is replaced, or fails). */
@@ -262,6 +281,8 @@ export class NativeEngine {
   private pendingSince = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private want: { state: ProjectState; w: number; h: number; dpr: number; limit: ViewportLimit; key: string } | null = null;
+  /** Look through (L4): the camera the viewport renders from, for a state; null: the active one. */
+  private viewCamera: ((state: ProjectState) => CameraState | null) | null = null;
   private readonly frameListeners = new Set<() => void>();
   private tileImage: ImageData | null = null;
   private renderChain: Promise<unknown> = Promise.resolve();
@@ -424,6 +445,25 @@ export class NativeEngine {
     return { width: Math.max(1, Math.round(this.viewW * k)), height: Math.max(1, Math.round(this.viewH * k)) };
   }
 
+  /**
+   * Look through (L4): the viewport renders from a light's or a saved camera's view instead of the active camera's,
+   * worked out from each state (it moves with the light); null renders the active camera again.
+   */
+  setViewCamera(fn: ((state: ProjectState) => CameraState | null) | null): void {
+    if (fn === this.viewCamera) return;
+    this.viewCamera = fn;
+    this.want = null;
+    this.restartWanted = true;
+  }
+
+  /** The camera of a gesture in progress, over the camera looked through (if any). */
+  private cameraPatch(state: ProjectState, patch: Partial<Omit<CameraState, 'id'>> | null): Partial<Omit<CameraState, 'id'>> | null {
+    const through = this.viewCamera?.(state) ?? null;
+    if (!through) return patch;
+    const { id: _id, ...rest } = through;
+    return patch ? { ...rest, ...patch } : rest;
+  }
+
   beginGesture(): void {
     this.gesture = { patch: null };
   }
@@ -475,7 +515,10 @@ export class NativeEngine {
         maxSamples: this.viewportSamples(state),
         maxSeconds: timed ? this.limit.seconds : 0,
         viewport: { viewW: this.viewW, viewH: this.viewH },
-        ...(patch ? { cameraPatch: patch } : {}),
+        ...(this.cameraPatch(state, patch) ? { cameraPatch: this.cameraPatch(state, patch)! } : {}),
+        // E5b-1: the launcher denoises the view (at full resolution) and renders its caustics.
+        ...engineFieldsOf(state.render.advanced, 'VIEWPORT'),
+        ...(scale > 1 ? { denoise: 0 } : {}),
       },
     };
   }
@@ -545,7 +588,7 @@ export class NativeEngine {
     this.failure = null;
     this.loadedMeshKey = built.meshKey;
     this.lastUpdate = update;
-    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, expectMs: 0, alive: true, abort: new AbortController() };
+    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, denoised: false, caustics: false, expectMs: 0, alive: true, abort: new AbortController() };
     this.job = job;
     this.dirty.clear();
     this.shownPass = 0;
@@ -573,6 +616,10 @@ export class NativeEngine {
         job.seconds = frame.seconds;
         job.paused = (frame.flags & FLAG_PAUSED) !== 0;
         job.shared = (frame.flags & FLAG_SHARED) !== 0;
+        if (frame.sums) {
+          job.denoised = (frame.flags & FLAG_DENOISED) !== 0;
+          job.caustics = (frame.flags & FLAG_CAUSTICS) !== 0;
+        }
         job.threads = frame.threads;
         // Waiting for a Render by choice is not a stall.
         if (job.paused) this.progressAt = now;
@@ -810,6 +857,8 @@ export class NativeEngine {
       watchdog: this.watchdog.fires,
       ...(this.shownKey ? { shownKey: this.shownKey } : {}),
       ...(wantKey ? { wantKey } : {}),
+      ...(full && job.denoised ? { denoised: true } : {}),
+      ...(job?.caustics && this.state ? { caustics: CAUSTICS_PRESETS[this.state.render.advanced.causticsQuality].photons } : {}),
     };
   }
 
@@ -850,7 +899,7 @@ export class NativeEngine {
         transparent: opts.transparent,
         ...(opts.camera ? { camera: opts.camera } : {}),
         ...(opts.time !== undefined ? { time: opts.time } : {}),
-        ...(opts.advanced ? { advanced: opts.advanced } : {}),
+        ...(opts.advanced ? { advanced: opts.advanced, ...engineFieldsOf(opts.advanced, 'RENDER') } : {}),
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
       };
       const built = this.source.build(state, view);
@@ -892,6 +941,9 @@ export class NativeEngine {
       if (!f.sums) throw new Error('the render has no image');
       const tone = this.source.tone(state);
       const data = await exactBytesSliced(f.sums, f.width, f.height, f.samples, tone.exposureEv, tone.tonemap);
+      // E5b-1: the launcher's last frame is the denoised image, with the one before denoise when asked.
+      const denoised = (f.flags & FLAG_DENOISED) !== 0;
+      const noisy = denoised && f.noisy ? { data: await exactBytesSliced(f.noisy, f.width, f.height, f.samples, tone.exposureEv, tone.tonemap), ...(opts.keepLinear ? { sum: f.noisy } : {}) } : undefined;
       opts.onProgress?.({ jobId: null, progress: 1, samples: f.samples, seconds: f.seconds });
       return {
         width: f.width,
@@ -905,6 +957,8 @@ export class NativeEngine {
         ...(opts.keepLinear ? { sum: f.sums } : {}),
         ...(passes ? { passes } : {}),
         renderId: id,
+        ...(denoised ? { denoised: true } : {}),
+        ...(noisy ? { noisy } : {}),
       };
     } catch (err) {
       // Aborted (Pause, Stop): the launcher stops the job, and the caller hears it as an abort.

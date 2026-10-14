@@ -3,12 +3,15 @@
 //! `rt-core` is pure computation; everything that touches the operating system lives here:
 //! reading and writing files, spawning threads and measuring time.
 
+use rt_core::caustics::PhotonMap;
 use rt_core::color::Tonemap;
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
-use rt_core::render::{render_tile_prepared, tile_grid};
-use rt_core::scene::Scene;
+use rt_core::passes::{PassFilm, Passes, PASS_ALL};
+use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, tile_grid};
+use rt_core::scene::{Scene, DENOISE_IMAGE};
 use rt_core::simd::Isa;
+use rt_post::denoise::{denoise_rows, DenoiseInput, GUIDE_PASSES};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -36,9 +39,64 @@ pub struct RenderOutput {
     pub rays: u64,
     /// Wall clock time spent rendering (excluding file output).
     pub elapsed: Duration,
+    /// The exact passes rendered next to the image: those of `RNDR.passes` and, when the scene
+    /// asks for denoise, the denoiser's guides (`rt_post::denoise::GUIDE_PASSES`).
+    pub passes: Option<Passes>,
+}
+
+/// The passes a render of `scene` needs: its own, and the denoiser's guides when it denoises.
+pub fn passes_for(scene: &Scene) -> u32 {
+    let guides = if scene.render.denoise & DENOISE_IMAGE != 0 {
+        GUIDE_PASSES
+    } else {
+        0
+    };
+    (scene.render.passes | guides) & PASS_ALL
+}
+
+/// Denoises `film` (`samples` samples per pixel) with its `passes` on `threads` threads: bands
+/// of rows with their halo, each exactly those rows of the whole image, so the result does not
+/// depend on the thread count. Returns the film with its radiance replaced, or `None` when the
+/// passes lack the guides.
+pub fn denoise_film(film: &Film, passes: &Passes, samples: u32, threads: usize) -> Option<Film> {
+    let sums = rt_post::denoise::rgba_sums(film);
+    let whole = DenoiseInput::whole(samples, &sums, &film.lum2, passes).ok()?;
+    let h = film.height;
+    let bands = (threads.max(1) as u32).min(h.max(1));
+    let rows: Vec<Option<Vec<f32>>> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..bands)
+            .map(|k| {
+                let (y0, y1) = (h * k / bands, h * (k + 1) / bands);
+                let band = whole.with_halo(y0, y1);
+                scope.spawn(move || denoise_rows(&band, y0, y1).ok())
+            })
+            .collect();
+        workers
+            .into_iter()
+            .map(|w| {
+                w.join()
+                    .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
+            })
+            .collect()
+    });
+    let mut out = film.clone();
+    let mut p = 0usize;
+    for band in rows {
+        for px in band?.chunks_exact(4) {
+            out.rgb[p * 3..p * 3 + 3].copy_from_slice(&px[..3]);
+            p += 1;
+        }
+    }
+    Some(out)
 }
 
 impl RenderOutput {
+    /// The denoised film (with the scene's `RNDR.denoise`, or for anyone who asks), on
+    /// `threads` threads; `None` without the guide passes.
+    pub fn denoised(&self, threads: usize) -> Option<Film> {
+        denoise_film(&self.film, self.passes.as_ref()?, self.samples, threads)
+    }
+
     /// Converts the film to 8-bit sRGB using the exposure and tone mapping stored in `scene`.
     pub fn to_rgb8(&self, scene: &Scene) -> Vec<u8> {
         self.film.to_srgb8_tonemapped(
@@ -56,6 +114,54 @@ impl RenderOutput {
             0.0
         }
     }
+}
+
+/// The photon maps of sample indices `first .. first + count` of a scene with caustics (none
+/// without), each traced on `threads` threads: its photons cut in as many ranges, traced in
+/// parallel and put back together in range order, so the maps are the same bits for any thread
+/// count. Returns the maps and the rays cast.
+pub fn photon_maps(
+    scene: &Scene,
+    prepared: &Prepared,
+    first: u32,
+    count: u32,
+    threads: usize,
+    isa: Isa,
+) -> (Vec<PhotonMap>, u64) {
+    if !prepared.has_caustics() {
+        return (Vec::new(), 0);
+    }
+    let photons = scene.render.caustic_photons;
+    let threads = threads.clamp(1, photons.max(1) as usize) as u32;
+    let mut maps = Vec::with_capacity(count as usize);
+    let mut rays = 0u64;
+    for sample in first..first + count {
+        let parts: Vec<(Vec<rt_core::caustics::Photon>, u64)> = std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..threads)
+                .map(|k| {
+                    let range = (photons as u64 * k as u64 / threads as u64) as u32
+                        ..(photons as u64 * (k as u64 + 1) / threads as u64) as u32;
+                    scope.spawn(move || PhotonMap::trace_range(scene, prepared, sample, range, isa))
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|w| {
+                    w.join()
+                        .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
+                })
+                .collect()
+        });
+        let mut all = Vec::new();
+        let mut map_rays = 0u64;
+        for (part, r) in parts {
+            all.extend(part);
+            map_rays += r;
+        }
+        rays += map_rays;
+        maps.push(PhotonMap::build(prepared, sample, all, map_rays));
+    }
+    (maps, rays)
 }
 
 /// Renders `samples` samples per pixel on `threads` threads, with no time limit.
@@ -89,6 +195,15 @@ pub fn render_progressive(
         .iter()
         .map(|t| Mutex::new(Film::region(t.x, t.y, t.w, t.h)))
         .collect();
+    let mask = passes_for(scene);
+    let pass_films: Vec<Mutex<PassFilm>> = if mask == 0 {
+        Vec::new()
+    } else {
+        tiles
+            .iter()
+            .map(|t| Mutex::new(PassFilm::region(t.x, t.y, t.w, t.h, mask)))
+            .collect()
+    };
 
     let mut done = 0u32;
     let mut rays = 0u64;
@@ -96,6 +211,10 @@ pub fn render_progressive(
     while done < samples {
         let count = pass.min(samples - done);
         let first = done;
+        // Caustics: the photon maps of this pass's samples, before its tiles.
+        let (maps, map_rays) = photon_maps(scene, &prepared, first, count, threads, isa);
+        rays += map_rays;
+        let maps = &maps;
         let next_tile = AtomicUsize::new(0);
         let pass_rays: u64 = std::thread::scope(|scope| {
             let workers: Vec<_> = (0..threads)
@@ -109,10 +228,22 @@ pub fn render_progressive(
                             };
                             // Each tile is claimed by one thread per pass: never contended.
                             let mut film = film.lock().unwrap_or_else(PoisonError::into_inner);
+                            let mut passes = pass_films
+                                .get(i)
+                                .map(|f| f.lock().unwrap_or_else(PoisonError::into_inner));
+                            if let (Some(passes), 0) = (passes.as_deref_mut(), first) {
+                                rays += render_tile_exact(scene, &prepared, tile, passes, isa);
+                            }
                             for sample in first..first + count {
-                                rays += render_tile_prepared(
-                                    scene, &prepared, tile, sample, &mut film, isa,
+                                let map = maps.get((sample - first) as usize);
+                                rays += render_tile_photons(
+                                    scene, &prepared, map, tile, sample, &mut film, isa,
                                 );
+                                if let Some(passes) = passes.as_deref_mut() {
+                                    rays += render_tile_albedo(
+                                        scene, &prepared, tile, sample, passes, isa,
+                                    );
+                                }
                             }
                         }
                         rays
@@ -143,11 +274,20 @@ pub fn render_progressive(
                 .unwrap_or_else(PoisonError::into_inner),
         );
     }
+    let passes = (!pass_films.is_empty()).then(|| {
+        let mut passes = Passes::new(width, height, mask);
+        for f in pass_films {
+            let f = f.into_inner().unwrap_or_else(PoisonError::into_inner);
+            passes.copy_region(f.origin_x, f.origin_y, &f.resolve());
+        }
+        passes
+    });
     RenderOutput {
         film,
         samples: done,
         rays,
         elapsed: start.elapsed(),
+        passes,
     }
 }
 

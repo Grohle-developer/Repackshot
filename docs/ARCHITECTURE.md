@@ -82,7 +82,8 @@ src/
     store.ts                estado, acciones, deshacer, suscripción (§4)
     scene.ts                piezas, grupos, jerarquía, selección por niveles
     materials.ts            instancia de material, parámetros, desgaste
-    lighting.ts             rig activo, focos, colocación por reflejo
+    lighting.ts             rig activo, focos (los del montaje y los propios de L4: añadir, duplicar, eliminar, apuntar, colocar sobre superficie), su colocación (`lightFrame`: posición, objetivo, giro), colocación por reflejo, lúmenes
+    view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
     camera.ts               óptica, encuadre, cámaras guardadas
     animation.ts            planos, movimientos, evaluación en el tiempo
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
@@ -343,9 +344,9 @@ Vive en `engine/`, un workspace de Cargo con siete *crates*:
 | --- | --- | --- |
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_version`…). Sin `wasm-bindgen` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_version`…). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
-| `rt-post` | **La guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
+| `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
 | `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
@@ -415,12 +416,20 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   del sólido: `base_color` es lo que conserva la luz blanca tras esos
   milímetros).
 - **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
-  (L4; se leen y se ignoran); ≥ 5 es error. Rectángulo y disco:
+  (L4); ≥ 5 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
   con la mitad de intensidad a `spread/2` (180 = sin caída). Sol: `power`
-  = irradiancia en W/m², disco de `angle_deg`. `flags` bit 0 *glossy*
-  (ilumina todos los lóbulos y se ve en reflejos; sin él solo difuso por
-  NEE), bit 1 visible a cámara.
+  = irradiancia en W/m², disco de `angle_deg`. Punto (L4): una esfera de
+  diámetro `size_x` (0, un punto) de radiancia uniforme, `power` = flujo
+  isótropo en W (intensidad `power / 4π` W/sr). Foco (L4): el punto que
+  sería, dentro de un cono de `spread_deg` alrededor de `direction`, con una
+  transición de `angle_deg` grados hacia dentro desde el borde (smoothstep,
+  como el `SpotLight` de three.js); su eje tiene el brillo de ese punto sea
+  cual sea el cono. `up` orienta el panel alrededor de su eje (el escritor
+  sigue poniendo `[0, 0, 1]` sin giro, como antes de L4). `flags` bit 0
+  *glossy* (ilumina todos los lóbulos y se ve en reflejos; sin él solo
+  difuso por NEE), bit 1 visible a cámara, bit 2 (L4) **sin sombra**: no se
+  trazan sus rayos de sombra (un fichero anterior nunca lo pone).
 - **`ENVR`** (84 B desde E5c; 80 B en E5) `kind`: 0 cúpula (lineal en z: suelo −1,
   horizonte 0, cénit +1, × `strength`), 1 plano, 2 cielo (con
   `sky_turbidity` y el sol en `sun_azimuth_deg` / `sun_elevation_deg`,
@@ -442,7 +451,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   mallas.
 - **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
   lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
-- **`RNDR`** (40 B desde X2; los de 28 y 36 B se leen con los valores
+- **`RNDR`** (52 B desde E5b-1; los de 28, 36 y 40 B se leen con los valores
   por defecto de lo que les falta): además `max_depth` (0 = 8, tope 1024),
   `clamp_indirect` (0 = desactivado) y, desde X2, `passes`: la **máscara
   de pases** exactos que se escriben junto a la imagen, bit *i* =
@@ -451,7 +460,13 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   confusión). 0, o un RSB anterior a X2, no pide ninguno; los bits que el
   motor no conoce se conservan y se ignoran. `tonemap`: 0 lineal, 1 ACES,
   2 fílmica, 3 AgX, 4 estándar; desconocido = ACES. Exposición 2^ev antes
-  de la curva.
+  de la curva. Desde E5b-1, al final: `denoise` (u32; bit 0, el anfitrión
+  entrega la imagen con *denoise*; bit 1, también la de antes; `rt-core` no
+  lo lee: renderizar es igual con o sin él), `caustic_photons` (u32,
+  fotones de cáusticas por muestra; 0 = sin cáusticas; tope 4 194 304) y
+  `caustic_radius` (f32, radio de reunión de la primera muestra en píxeles
+  a la distancia del objetivo de la cámara; 0 = 3). Un RSB anterior no pide
+  ni *denoise* ni cáusticas.
 - El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
@@ -500,6 +515,102 @@ lanzador con 1 y 4 hilos. El círculo de confusión es el de
 y coincide, dentro de 1 %, con el desenfoque medido de la propia lente
 de `Camera::generate_ray`.
 
+### 5.2 bis · Película, *denoise* y cáusticas (E5b-1)
+
+**Película.** `Film` acumula, además de la radiancia premultiplicada, el
+peso y la cobertura, la **suma de los cuadrados de la luminancia** de cada
+muestra (`Film::lum2`, `f32`, en orden de muestra). No toca `rgb`, `weight`
+ni `alpha`: ningún *hash* de imagen se mueve. Con la media da la varianza de
+cada píxel, `(E[l²] − E[l]²) / (n − 1)` de la media de `n` muestras. El pool
+la suma igual en TypeScript (`Accumulator.lum2`, `render/tiles.ts`:
+luminancia Rec. 709 en `f32` en el mismo orden, `l²` redondeado y sumado),
+y el lanzador la lee de sus películas por baldosa.
+
+***Denoise* propio** (`rt_post::denoise`, `crates/rt-post/src/denoise.rs`).
+Transformada à-trous con paradas en aristas (Dammertz, Sewtz, Hanika y
+Lensch, HPG 2010: núcleo B3 `(1, 4, 6, 4, 1)/16`, cinco pasadas con los
+saltos 1, 2, 4, 8 y 16) con la parada de luminancia guiada por la varianza
+de SVGF (Schied et al., HPG 2017: `exp(−|l_p − l_q| / (σ_l √g(Var_p)))`
+con la varianza filtrada por una gaussiana 3 × 3 y arrastrada de pasada en
+pasada como `Σ w² Var / (Σ w)²`, normal `max(0, n_p·n_q)^128`, profundidad
+`exp(−|z_p − z_q| / (σ_z |∇z·Δ|))`, σ_l = 4, σ_z = 1; el albedo se divide
+antes y se multiplica después, y con menos de cuatro muestras la varianza
+se estima con los vecinos 7 × 7). Guiado por los pases exactos de X2
+(`GUIDE_PASSES`: albedo, normal, profundidad, id de pieza, id de material),
+con **peso cero entre piezas o materiales distintos** (nunca mezcla dos
+piezas) y el fondo (id 0) intacto. Lo nuestro: la varianza de la película,
+los pases exactos como guías, las paradas por id, un recorte de
+luciérnagas antes de filtrar (un píxel más de cuatro veces más claro que
+todos sus vecinos de la misma superficie baja a ese límite) y las
+exponenciales de las paradas como `(1 − x/16)^16`. Todo `f32`, sin
+transcendentes de `std`, en orden fijo: los mismos bits en nativo y en
+wasm. Lee sumas RGBA de `n` muestras y devuelve sumas RGBA (la cobertura
+como estaba). **Por bandas de filas**: `denoise_rows` calcula unas filas
+con `HALO` = 72 filas alrededor (el alcance de todo el filtro) y da
+exactamente esas filas de la imagen entera, así que los anfitriones lo
+reparten entre hilos o *workers* sin cambiar un bit (bandas de 192 filas
+como mínimo). *Hash* fijado: el ejemplo a 4 muestras con *denoise*,
+`0xab15f290` (`PINNED_DENOISED_EXAMPLE_4SPP`), igual con el `rt.wasm` real
+(`tools/wasm-parity.mjs --expect-denoised`) y por el código de la página
+(`tests/denoise.test.ts`).
+
+**Cáusticas** (`rt_core::caustics`). Mapa de fotones progresivo estocástico
+(Hachisuka y Jensen, SIGGRAPH Asia 2009, tras Hachisuka, Ogaki y Jensen
+2008) en la forma probabilística de Knaus y Zwicker (ACM TOG 30(3), 2011):
+cada índice de muestra es una pasada con sus fotones y sus puntos visibles,
+y su estimación es un mapa de fotones con el radio
+`r_i² = r_1² Π_{k=1..i} (k + α)/(k + 1)`, α = 2/3 (r_1 = `caustic_radius`
+píxeles en la distancia del objetivo). Promediar las pasadas, que es lo que
+hace la película con sus muestras, converge como SPPM sin estado por píxel:
+una baldosa sigue pudiéndose renderizar en cualquier hilo y orden con los
+mismos bits. **Partición sin contar dos veces**: un *caster* es vidrio o
+metal cuya dirección más aguda tiene rugosidad ≤ 0,25 (el cepillado cuenta
+a lo largo de su cepillo); lo demás que dispersa es receptor (el suelo
+incluido); un suceso recto (recorte, transmisión recta de pared fina) no
+cuenta. El mapa lleva exactamente la luz de los tramos `L C+ R`: fotones
+de las luces que los mandan (paneles y discos *glossy*, soles *glossy*,
+mallas emisoras; nunca el entorno ni los puntos y focos de L4, cuyas
+cáusticas siguen en el trazador), solo por *casters*, guardados en el
+primer receptor que tocan; la cámara los reúne, con su BSDF, en **cada**
+receptor de su camino: el primero (la cáustica vista directamente o a
+través del vidrio) y los siguientes (una cáustica que ilumina la escena
+por un rebote difuso, con el recorte de la luz indirecta). El trazador
+deja fuera exactamente esa luz: después de cualquier receptor, lo que
+llega de una luz de fotones solo por *casters* (impacto por muestreo de
+BSDF o NEE en un *caster*). Dejada al trazador, la cáustica vista por un
+rebote difuso llegaba en muestras raras y muy brillantes: eran los
+destellos alrededor de la base del frasco a 1024 muestras. La
+profundidad máxima vale para los dos. Emisión dirigida a las esferas
+envolventes de los *casters* (hasta 16) con la densidad de la mezcla
+entera; refracción con flujo (sin el 1/η² de la radiancia) y corrección
+adjunta de normales de sombreado (Veach 1997); PCG por (semilla, muestra,
+fotón), así que un mapa da los mismos bits trazado en cualquier reparto
+(`PhotonMap::trace_range`). Rejilla *hash* de celda 2r, núcleo
+`2(1 − d²/r²)/(π r²)`. **Atrapasombras** (el suelo de la interfaz): los
+fotones caen también en su plano y el rayo de cámara que lo ve suma su luz,
+relativa a la del suelo abierto, al fondo que muestra; con fondo
+transparente no se muestran. Coste: `caustic_photons` fotones por muestra,
+trazados por cada anfitrión antes de las baldosas de esa muestra (en wasm,
+cada *worker* guarda los 16 mapas de la última pasada). *Hash* fijado: la
+escena de E5 con 2048 fotones por muestra, `0x55d60f2f`
+(`PINNED_E5B_CAUSTICS_4SPP`, `rt --write-e5b-example`), igual en todas las
+rutas SIMD, en el `rt.wasm` real, por el lanzador con 1, 4 y 16 hilos y por
+el código de la página.
+
+**Interfaz.** `core/caustics.ts`: *Cáusticas* (*Automático · Encendidas ·
+Apagadas*, en la sección de calidad de la ventana de render; *Automático*
+las enciende con un *caster* y una luz *glossy* que, vista desde los
+*casters*, no pase de 20°, un sol o un emisor encendido; lo decide
+`projectScene` desde la escena), *Calidad de cáusticas* (*Baja* 4096 fotones
+y 4 px, *Media* 16 384 y 3 px, *Alta* 65 536 y 2 px) y *Denoise* (*Apagado ·
+Visor · Render · Los dos*, por defecto *Los dos*) con *Guardar también sin
+denoise*; viven en `render.advanced` (deshacibles, guardados en el
+proyecto, copiados en cada trabajo) y llegan al motor como los campos de
+`RNDR` de arriba (`engineFieldsOf`). El medidor dice lo que el motor dice:
+*Ruido reducido* cuando la imagen en pantalla es la filtrada y *Cáusticas ·
+N fotones por muestra* cuando el motor las renderiza (`rt_scene_caustics`
+en el pool, `FLAG_CAUSTICS` en el lanzador).
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -524,6 +635,19 @@ en el trabajo que empieza en la muestra 0, sus planos exactos
 (`rt_render_tile_passes`), y el hilo principal los junta con
 `PassAccumulator` (`src/render/pass-planes.ts`) igual que la imagen: el
 resultado es el del motor nativo bit a bit y vuelve como `RenderPasses`.
+
+**Denoise y cáusticas en el pool** (E5b-1). Cada *worker* traza los mapas
+de fotones de las muestras que renderiza (los mismos bits que cualquier
+otro: no viajan) y dice en su respuesta a `scene` cuántos fotones por
+muestra renderiza esa escena. Con *denoise*, los trabajos piden los pases
+guía y el hilo principal suma `lum2`; al acabar una pasada el pool reparte
+el filtro en bandas de filas entre los *workers* del carril
+(`Pool.denoise`, mensaje `denoise`, `rt_denoise`); el visor muestra la
+imagen filtrada en cuanto vuelve (tras la primera pasada, tras la última y
+tras cualquier otra cuando ha pasado tres veces lo que tardó la anterior;
+mientras, la última filtrada) y el medidor cuenta sus muestras. A media y
+cuarta resolución (gestos) no se filtra. Un *Render* filtra al final con
+todos sus *workers* y, si se pide, devuelve también la imagen de antes.
 
 **Mientras corre un *Render*, el visor sigue vivo** (P3a): se queda con la
 cuarta parte de los workers (al menos uno; en un pool de uno, espera) y el
@@ -618,6 +742,19 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    el lanzador no conteste. El contrato completo, en
    `engine/crates/rt-app/README.md`.
 
+   ***Denoise* y cáusticas** (E5b-1): con `RNDR.denoise` el trabajo
+   renderiza también los pases guía y filtra con `rt_post::denoise` en
+   bandas de filas en sus hilos (los mismos bits con cualquier número). Un
+   visor publica la imagen filtrada (bandera 64 de la trama) tras su primera
+   pasada, la última y cualquier otra cuando han pasado tres veces lo que
+   tardó el filtro anterior (entre medias, la última filtrada a las muestras
+   de ahora); un final publica al terminar una trama más, la última, con la
+   imagen filtrada y, con el bit 1, detrás la de antes (bandera 128: el
+   cuerpo lleva dos veces las sumas). La imagen que se guarda para la IA es
+   la filtrada. Con `RNDR.caustic_photons` cada pasada traza antes de sus
+   baldosas los mapas de fotones de sus muestras en todos sus hilos (por
+   rangos de fotones, juntados en orden) y la trama lleva la bandera 256.
+
    **Pases** (X2): un trabajo final con `passes=albedo,normal,…` (y los
    de `RNDR.passes`) los renderiza junto a la imagen con los hilos que
    tenga (también con los que le deja un visor que comparte), y al
@@ -656,7 +793,9 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    state/<nombre>.json  cosas pequeñas de la página: descargas por reanudar, carpetas elegidas,
                         la marca de la migración desde el navegador
    library/             la biblioteca propia (U4)
-   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json
+   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json; con IA, las
+                        variantes de la IA como <id>.ai.<n>.<ext> (X4b; la única <id>.ai.<ext> de
+                        antes se lee como la variante 1)
    cache/thumbs/        las esferas de materiales (caché)
    cache/ai/            la imagen y los pases de los renders finales grandes que guarda el lanzador (X2)
    models/              los modelos de IA, por sha256
@@ -664,7 +803,8 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    browser-profile/     el perfil de la ventana de Edge o Chromium
    webview2/            el perfil de la ventana propia (P3c); window.json, su sitio
    launcher.json        el puerto; instance.json, la instancia en marcha
-   pending-models.json  lo que eligió el instalador
+   pending-models.json  lo que eligió el instalador: dispositivo, modelos y (U10) el
+                        motor de ejecución, que el lanzador empieza a descargar al arrancar
    ```
 
    En la página, **la costura de plataforma** (`src/io/platform.ts`): una
@@ -681,6 +821,16 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    la página no toca el almacenamiento del navegador salvo una vez por
    carpeta de datos, para copiar al lanzador lo que una versión anterior
    dejó en el origen actual (marca `state/migration.json`).
+
+   **El historial de resultados con variantes de IA** (X4b). `ResultMeta.ai` es la
+   primera variante (lo que era la única antes de X4b) y `ResultMeta.aiMore` las
+   demás, en orden, cada una con su nombre, su miniatura, sus bytes (0 si la guarda
+   la rechazó: no tiene imagen) y su informe; `aiVariantsOf` y `aiImagesOf`
+   (`src/core/results.ts`) las leen igual en un resultado nuevo que en uno viejo.
+   `ResultsStore.add(meta, file, display, ai, aiMore)` y `get` (`src/io/results.ts`)
+   las llevan como `ai` y `aiMore` (null para una variante sin imagen): en la web,
+   en el mismo registro de IndexedDB que el render; en escritorio, cada una por
+   `PUT /api/store/results/<id>/ai/<n>` y de vuelta con `GET …/ai/<n>`.
 6. **Diálogos y archivos** (P3b): `POST /api/dialog/{folder,open,save}`
    abre los diálogos del sistema y devuelve un permiso por ruta; la API de
    archivos (`/api/files…`) solo lee o escribe rutas concedidas así en el
@@ -691,7 +841,15 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    VRAM, la RAM y la recomendación de `src/data/ai-models.json`
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
    procesos del sistema y sin `unsafe`); lo usan el instalador y
-   *Ajustes ▸ Post-procesado IA ▸ Equipo*.
+   *Ajustes ▸ Post-procesado IA ▸ Equipo*. Desde U10 el INI lleva también
+   `[runtime]`: la compilación del motor de ejecución que elige la regla de
+   `src/data/ai-runtimes.json` para este sistema (con `--device cpu`, la de
+   CPU), que el paso *Modelos de IA* del instalador ofrece junto a los
+   modelos y anota en `pending-models.json` (`"runtime"`); el lanzador la
+   descarga en el primer arranque (`Ai::start_pending_runtime`).
+   `engine/crates/rt-app/tests/installer.rs` lee `models-page.nsh` como
+   texto y comprueba que cada `ReadINIStr` tiene su clave en el INI y que la
+   línea que escribe es la que lee `read_pending`.
 7. **Post-procesado IA, el motor de ejecución** (X3b, `src/ai/`): la compilación de
    stable-diffusion.cpp que elige la regla de `src/data/ai-runtimes.json` (Vulkan si el equipo
    tiene GPU que usar, CPU si no, o la que se fuerce) se descarga con el `curl` del sistema
@@ -739,6 +897,20 @@ comentario de por qué es correcto, el resto del *crate* mantiene
 - Estado de interfaz que no es del proyecto (anchos de panel, secciones
   plegadas) en `localStorage`, siempre dentro de `try/catch` y con valor
   por defecto.
+- **El recorrido guiado** (U10): `ui/tour.ts` son los pasos como datos
+  (cada uno con los `data-guide` que anilla y lo que necesita en pantalla,
+  un `TourStage`), las reglas para arrancar, los comandos (`startTour`,
+  `tourNext`, `tourBack`, `endTour`) y la geometría de la tarjeta
+  (`placeCard`); `ui/panels/tour.ts` es la capa. Lo que se recuerda
+  (`tourSeen`) va en el `layout` del documento de ajustes, como
+  `chooserShown`, así que en escritorio está en la carpeta de datos.
+- **El aviso del motor de ejecución** (U10): `core/ai-runtimes.ts`
+  decide qué decir (`runtimeWarning`, puro, sobre el informe del lanzador);
+  `ui/ai-runtime-state.ts` tiene el único sondeo de
+  `GET /api/ai/runtime` (`RuntimeWatch`, solo mientras alguien escucha), la
+  comprobación una vez por sesión al arrancar (la nota de la barra de
+  estado) y los botones; `ui/panels/ai-runtime-notice.ts` dibuja el
+  recuadro de la ventana de render y de Ajustes.
 
 ### 6.1 · El puerto del visor (`src/ui/ports.ts`)
 
@@ -772,7 +944,20 @@ interfaz sabe del visor:
 - **Herramientas y *gizmo***: `setTool`, `setGizmo`, `gizmoHover`,
   `gizmoBegin`, `gizmoDrag`, `gizmoEnd`. `setGizmo` lleva `handles`
   opcional (U9): `ALL` (Mover) o `SCALE` (Escalar: solo los cubos al final
-  de cada eje y el punto central, que es lo único que se dibuja y se coge).
+  de cada eje y el punto central, que es lo único que se dibuja y se coge),
+  y desde L4 `MOVE` con `object` (una luz o una cámara: el *gizmo* de Mover
+  sin cubos, sobre el objeto, con el asa de apuntar en su objetivo; la
+  interfaz convierte el arrastre con `objectGizmoAction` de
+  `core/view-objects.ts`).
+- **Luces y cámaras (L4)**: `setGlyphs({ all, selected, lookThrough })`
+  dice qué glifos dibuja la vista previa (todos o el del seleccionado) y
+  desde qué mira el visor (`lookThroughCamera`; `main.ts` le da al
+  trazador la misma cámara, `setViewCamera`, calculada de cada estado, y
+  convierte la navegación con `lookThroughAction` en acciones de la luz o la
+  cámara con un *token* de gesto: en vivo y una entrada de deshacer);
+  `glyphAt(x, y)` es el objeto cuyo glifo está bajo un punto (`pickGlyph`
+  de core, con la proyección de three) y `objectAt(obj)`, dónde está en el
+  lienzo (el visor lo copia en `data-object-at` para las comprobaciones).
 - **Estado y miniaturas**: `status`, `onFrame`, `materialThumbnail`,
   `thumbnailsPending`; **ajustes**: `setNavigation`, `setDisplay`.
 
@@ -794,7 +979,8 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Interfaz | `tests/strings.test.ts`, `ui-achromatic.test.ts` | Invariantes estáticas sobre fuentes |
 | Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
-| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
+| Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
+| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |

@@ -57,6 +57,9 @@
       "requirements": {
         "minVramGiB": 12,
         "minRamGiB": 32
+      },
+      "capabilities": {
+        "textPrompt": true
       }
     },
     {
@@ -113,6 +116,9 @@
       "requirements": {
         "minVramGiB": 6,
         "minRamGiB": 16
+      },
+      "capabilities": {
+        "textPrompt": true
       }
     },
     {
@@ -169,6 +175,9 @@
       "requirements": {
         "minVramGiB": 4,
         "minRamGiB": null
+      },
+      "capabilities": {
+        "textPrompt": true
       }
     },
     {
@@ -306,6 +315,9 @@
         "minVramGiB": null,
         "minRamGiB": null
       },
+      "capabilities": {
+        "textPrompt": true
+      },
       "unavailableReason": {
         "en": "No image-to-image browser build is published yet: the available ONNX export lacks the VAE encoder (and ControlNet).",
         "es": "Todavía no hay una versión para navegador con imagen a imagen: la exportación ONNX disponible no incluye el codificador del VAE (ni ControlNet)."
@@ -365,6 +377,9 @@
       "requirements": {
         "minVramGiB": 6,
         "minRamGiB": null
+      },
+      "capabilities": {
+        "textPrompt": true
       }
     },
     {
@@ -429,6 +444,9 @@
       "requirements": {
         "minVramGiB": 24,
         "minRamGiB": null
+      },
+      "capabilities": {
+        "textPrompt": true
       }
     },
     {
@@ -485,6 +503,10 @@
       "requirements": {
         "minVramGiB": 0,
         "minRamGiB": 8
+      },
+      "capabilities": {
+        "textPrompt": true,
+        "maxPromptTokens": 77
       }
     }
   ],

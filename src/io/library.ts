@@ -150,8 +150,18 @@ function lightSpec(v: unknown, path: string): LightSpec {
   if (camera !== undefined) spec.camera = camera;
   const fromPreset = opt(o.colorFromPreset, (x) => bool(x, `${path}.colorFromPreset`));
   if (fromPreset !== undefined) spec.colorFromPreset = fromPreset;
+  // L4: an own light's soft edge, shadow, aim and roll.
+  const blend = opt(o.blend, (x) => num(x, `${path}.blend`, 0, 1));
+  if (blend !== undefined) spec.blend = blend;
+  const shadow = opt(o.shadow, (x) => bool(x, `${path}.shadow`));
+  if (shadow !== undefined) spec.shadow = shadow;
+  const aim = opt(o.aim, (x) => vec3(x, `${path}.aim`));
+  if (aim) spec.aim = aim;
+  const roll = opt(o.roll, (x) => num(x, `${path}.roll`, -720, 720));
+  if (roll !== undefined) spec.roll = roll;
   return spec;
 }
+
 
 function lightSpecs(v: unknown, path: string, min: number): LightSpec[] {
   return arr(v, path, min, 32).map((x, i) => lightSpec(x, `${path}[${i}]`));
@@ -264,6 +274,13 @@ function lightInstance(v: unknown, path: string): LightInstance {
     brightField: bool(o.brightField, `${path}.brightField`),
     recipeGlossy: bool(o.recipeGlossy, `${path}.recipeGlossy`),
     enabled: bool(o.enabled, `${path}.enabled`),
+    // L4, all optional: studios saved before own lights have none of them.
+    ...(o.own === undefined ? {} : { own: bool(o.own, `${path}.own`) }),
+    ...(o.name === undefined ? {} : { name: str(o.name, `${path}.name`, 80) }),
+    ...(o.blend === undefined ? {} : { blend: num(o.blend, `${path}.blend`, 0, 1) }),
+    ...(o.shadow === undefined ? {} : { shadow: bool(o.shadow, `${path}.shadow`) }),
+    ...(o.aim === undefined ? {} : { aim: vec3(o.aim, `${path}.aim`) }),
+    ...(o.roll === undefined ? {} : { roll: num(o.roll, `${path}.roll`, -720, 720) }),
   };
 }
 

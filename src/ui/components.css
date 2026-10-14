@@ -281,6 +281,20 @@ kbd,
 .select:focus {
   border-color: var(--line-strong);
 }
+/* A multi-line text field (X4b): the same frame as a one-line field, its height from its rows, resized only downwards. */
+.text-area {
+  height: auto;
+  min-height: 56px;
+  padding: 5px 7px;
+  line-height: 1.4;
+  font: inherit;
+  resize: vertical;
+}
+.text-area:disabled {
+  color: var(--ink-3);
+  background: var(--bg-1);
+  cursor: not-allowed;
+}
 .color-input {
   width: 28px;
   height: 22px;

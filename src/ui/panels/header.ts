@@ -9,8 +9,9 @@ import { LOGO_MARK } from '../icons';
 import type { Ctx, Scope } from '../reactive';
 import { kbdFor } from '../shortcuts';
 import { t } from '../strings';
+import { startTour } from '../tour';
 import { effectiveMode, type ViewportMode } from '../ui-state';
-import { primitiveMenuItems } from './add-menu';
+import { lightMenuItems, primitiveMenuItems } from './add-menu';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -34,7 +35,7 @@ function logoMark(size: number): SVGSVGElement {
 export function header(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui } = ctx;
   // The application menu behind the app's mark, with a caret (the desktop window's title bar names the app).
-  const menuBtn = h('button', { type: 'button', class: 'brand-btn', 'aria-label': t('menu.main'), 'data-tip': t('menu.main'), 'aria-haspopup': 'menu' }, logoMark(22), icon('chevronDown', 12));
+  const menuBtn = h('button', { type: 'button', class: 'brand-btn', 'aria-label': t('menu.main'), 'data-tip': t('menu.main'), 'aria-haspopup': 'menu', 'data-guide': 'app-menu' }, logoMark(22), icon('chevronDown', 12));
 
   const openAppMenu = () => {
     const s = store.get();
@@ -45,7 +46,7 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
       { label: t('menu.saveAs'), icon: 'save', kbd: kbdFor('saveAs'), run: () => void cmd.saveProject(ctx, { saveAs: true }) },
       { label: t('menu.import'), icon: 'upload', kbd: kbdFor('import'), run: () => void cmd.importDialog(ctx) },
       // Add ▸ Primitive (phase U9).
-      { label: t('menu.add'), icon: 'plus', submenu: primitiveMenuItems(ctx) },
+      { label: t('menu.add'), icon: 'plus', submenu: [...primitiveMenuItems(ctx), null, ...lightMenuItems(ctx)] },
       { label: t('menu.exportImage'), icon: 'download', run: () => void cmd.exportViewport(ctx) },
       { label: t('menu.exportLibrary'), icon: 'download', run: () => cmd.exportLibraryFile(ctx) },
       { label: t('menu.importLibrary'), icon: 'upload', run: () => void cmd.importLibraryDialog(ctx) },
@@ -59,9 +60,17 @@ export function header(ctx: Ctx, scope: Scope): HTMLElement {
       { label: t('theme.system'), checked: s.meta.theme === 'system', run: () => cmd.setTheme(ctx, 'system') },
       { label: t('menu.settings'), icon: 'settings', kbd: kbdFor('settings'), run: () => cmd.openSettings(ctx) },
       null,
-      { label: t('menu.guide'), icon: 'guide', run: () => cmd.openGuide(ctx) },
-      { label: t('menu.shortcuts'), icon: 'keyboard', run: () => cmd.openSettings(ctx, 'shortcuts') },
-      { label: t('menu.about'), icon: 'info', run: () => cmd.openSettings(ctx, 'about') },
+      // Help ▸ Guided tour (phase U10), the six-step Guide, the shortcuts and About.
+      {
+        label: t('menu.help'),
+        icon: 'guide',
+        submenu: [
+          { label: t('menu.tour'), icon: 'guide', run: () => void startTour(ctx, 'menu') },
+          { label: t('menu.guide'), icon: 'guide', run: () => cmd.openGuide(ctx) },
+          { label: t('menu.shortcuts'), icon: 'keyboard', run: () => cmd.openSettings(ctx, 'shortcuts') },
+          { label: t('menu.about'), icon: 'info', run: () => cmd.openSettings(ctx, 'about') },
+        ],
+      },
     ];
     openMenu(menuBtn, entries);
   };

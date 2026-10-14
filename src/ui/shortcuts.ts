@@ -3,10 +3,12 @@
 
 import type { SelectionLevel } from '../core/scene';
 import { PRIMITIVE_KINDS } from '../data/primitives';
+import { NEW_LIGHT_KINDS } from '../core/lighting';
 import * as cmd from './commands';
 import type { ConfirmSpec } from './components/widgets';
 import type { Ctx } from './reactive';
 import { t, type StringKey } from './strings';
+import { startTour } from './tour';
 import type { Tool } from './ui-state';
 
 export interface AppAction {
@@ -60,8 +62,16 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'level.PART', label: 'action.levelPart', keys: '3', run: level('PART') },
   { id: 'level.FACES', label: 'action.levelFaces', keys: '4', run: level('FACES') },
   { id: 'panels', label: 'action.panels', keys: 'tab', run: (ctx) => cmd.togglePanels(ctx) },
-  // Esc leaves the move or the scale tool first, then deselects.
-  { id: 'deselect', label: 'action.deselect', keys: 'escape', palette: false, run: (ctx) => (ctx.ui.get().tool === 'move' || ctx.ui.get().tool === 'scale' ? cmd.setTool(ctx, 'select') : cmd.deselect(ctx)) },
+  // Look through the selected light or camera (L4); Esc comes back first.
+  { id: 'lookThrough', label: 'action.lookThrough', keys: 'mod+shift+l', run: (ctx) => cmd.toggleLookThrough(ctx) },
+  // Esc leaves Look through first, then the move or the scale tool, then deselects.
+  {
+    id: 'deselect',
+    label: 'action.deselect',
+    keys: 'escape',
+    palette: false,
+    run: (ctx) => (ctx.ui.get().lookThrough ? cmd.exitLookThrough(ctx) : ctx.ui.get().tool === 'move' || ctx.ui.get().tool === 'scale' ? cmd.setTool(ctx, 'select') : cmd.deselect(ctx)),
+  },
   { id: 'delete', label: 'action.delete', keys: 'delete', altKeys: ['backspace'], run: (ctx) => cmd.deleteSelection(ctx) },
   // Palette only.
   { id: 'example', label: 'action.example', run: (ctx) => cmd.loadExample(ctx) },
@@ -89,6 +99,7 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'doctor', label: 'action.doctor', run: (ctx) => ctx.ui.set({ doctorOpen: true }) },
   { id: 'fixAll', label: 'action.fixAll', run: (ctx) => cmd.doctorFixAll(ctx) },
   { id: 'guide', label: 'action.guide', run: (ctx) => cmd.openGuide(ctx) },
+  { id: 'tour', label: 'action.tour', run: (ctx) => void startTour(ctx, 'menu') },
   { id: 'themeDark', label: 'action.themeDark', run: (ctx) => cmd.setTheme(ctx, 'dark') },
   { id: 'themeLight', label: 'action.themeLight', run: (ctx) => cmd.setTheme(ctx, 'light') },
   { id: 'langEn', label: 'action.langEn', run: (ctx) => cmd.setLanguage(ctx, 'en') },
@@ -96,6 +107,9 @@ export const ACTIONS: readonly AppAction[] = [
   // Add ▸ Primitive (phase U9), one entry per shape of the catalogue.
   ...PRIMITIVE_KINDS.map((k): AppAction => ({ id: `add.${k}`, label: `prim.add.${k}` as StringKey, run: (ctx) => cmd.addPrimitive(ctx, k) })),
   { id: 'convertMesh', label: 'primitive.convert', run: (ctx) => cmd.convertToMesh(ctx) },
+  // Add light ▸ (phase L4), one entry per kind, and the Lights and cameras button of the view bar.
+  ...NEW_LIGHT_KINDS.map((k): AppAction => ({ id: `addLight.${k}`, label: `lights.addAction.${k}` as StringKey, run: (ctx) => cmd.addLight(ctx, k) })),
+  { id: 'glyphs', label: 'action.glyphs', run: (ctx) => cmd.toggleGlyphs(ctx) },
 ];
 
 /** Where Settings ▸ Keyboard shortcuts lists an action. */
@@ -105,7 +119,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['general', 'view', 'se
 export function shortcutGroup(id: string): ShortcutGroup {
   if (id.startsWith('level.') || ['hide', 'isolate', 'showAll', 'deselect', 'delete', 'selectAll'].includes(id)) return 'selection';
   if (id === 'tool.move' || id === 'tool.scale' || id.startsWith('space.') || ['duplicate', 'duplicateLinked', 'group', 'ungroup', 'copyMaterial', 'pasteMaterial'].includes(id)) return 'edit';
-  if (id.startsWith('tool.') || id === 'frame' || id === 'panels' || id === 'viewportMode') return 'view';
+  if (id.startsWith('tool.') || id === 'frame' || id === 'panels' || id === 'viewportMode' || id === 'lookThrough' || id === 'glyphs') return 'view';
   return 'general';
 }
 

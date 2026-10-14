@@ -11,9 +11,11 @@ import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
 import type { Space } from '../core/transform';
 import type { ClipTarget } from '../core/animation';
+import type { ViewObject } from '../core/view-objects';
 import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
+import type { RuntimeWarning } from '../core/ai-runtimes';
 import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
 import type { ReleaseInfo, UpdateFault } from '../core/updates';
 
@@ -32,6 +34,9 @@ export type Drawer = 'animation' | 'queue' | null;
 export type PickMode =
   | { kind: 'focus' }
   | { kind: 'reflect'; light: string }
+  /** L4: Place on surface (the light stands over the point along its normal) and Aim at… a point or a part. */
+  | { kind: 'surface'; light: string }
+  | { kind: 'aim'; light: string; part: boolean }
   | { kind: 'pivot'; ids: NodeId[] }
   | { kind: 'link'; parts: NodeId[] }
   | null;
@@ -96,6 +101,8 @@ export interface ResultViewState {
   id: string;
   /** A second result shown with the split divider, or null. */
   compare: string | null;
+  /** The AI variant compared with the render (X4b), 1-based; absent: the first with an image. */
+  variant?: number;
   split: SplitMode;
   /** Divider position, 0..1 of the width. */
   position: number;
@@ -110,6 +117,26 @@ export interface SettingsWindowState {
   nonce: number;
   /** The desktop portable's first start: the Models part as a chooser (one, several or none). */
   chooser?: boolean;
+  /** The chooser's box for the inference runtime (phase U10): ticked unless the person unticked it. */
+  chooserRuntime?: boolean;
+}
+
+/** The guided tour (phase U10): the step shown (an index into the steps this computer has), and how it started. */
+export interface TourState {
+  step: number;
+  /** `first`: by itself at the first start; `menu`: Help ▸ Guided tour (or the palette, or `?tour=1`). */
+  how: 'first' | 'menu';
+}
+
+/**
+ * The note in the status bar about the inference runtime (phase U10): the application checks once at start whether
+ * a model is installed and the runtime is not (or does not start), and says so quietly; *Later* dismisses it.
+ */
+export interface RuntimeNote {
+  /** The check had its turn this session (it runs once). */
+  checked: boolean;
+  /** What to say; null: nothing (no problem, or dismissed). */
+  warning: RuntimeWarning | null;
 }
 
 /** What Measure performance measured (Settings ▸ Render engine): real numbers of a real run. */
@@ -242,6 +269,10 @@ export interface UiState {
   scaleLock: boolean;
   /** Selection by box at the Faces level also takes the faces hidden behind others (X-ray). */
   boxXray: boolean;
+  /** L4: the viewport draws every light's and saved camera's glyph (Lights and cameras in the view bar; remembered). */
+  showGlyphs: boolean;
+  /** L4: the light or saved camera the viewport looks through (Look through), or null: the active camera. */
+  lookThrough: ViewObject | null;
   /** Copy material / Paste material: a snapshot of the copied instance. */
   materialClipboard: MaterialInstance | null;
   /**
@@ -264,6 +295,11 @@ export interface UiState {
   resultsStorage: 'LOADING' | 'PERSISTENT' | 'MEMORY';
   /** Pixel-samples per second the engine reached on this machine (measured, never assumed); null until measured. */
   throughput: number | null;
+  /**
+   * Pixels a second the AI post-processing of a final render took on this machine (X4b: measured around the last
+   * request of a job, never assumed; the model's loading included when it loaded then); null until measured.
+   */
+  aiThroughput: number | null;
   queueRun: QueueRun;
   /** The application settings (core/settings.ts): not the project's, not undone. */
   settings: Settings;
@@ -274,6 +310,11 @@ export interface UiState {
   settingsSection: SectionId;
   /** The desktop portable's model chooser was shown (once). */
   chooserShown: boolean;
+  /** The guided tour was finished or skipped (remembered): it starts by itself only until then. */
+  tourSeen: boolean;
+  /** The guided tour on screen, or null (not remembered). */
+  tour: TourState | null;
+  runtimeNote: RuntimeNote;
   /** When the update feed last answered (remembered), and the latest release it named. */
   updateCheckedAt: number | null;
   updateLatest: ReleaseInfo | null;
@@ -290,6 +331,16 @@ export interface UiState {
    * changes, whichever way they were asked for: menu, shortcut or a dropped file). Esc cancels.
    */
   prompt: ConfirmSpec | null;
+}
+
+/**
+ * Whether the viewport draws every light's and saved camera's glyph (L4), or only the selected one's: Lights and
+ * cameras is on, and the person is working with them (the Lights or the Cameras tab is open, a light or a camera
+ * is selected, or the view is through one). Otherwise the glyphs stay out of the picture: a setup panel's outline
+ * crossing the product (the key light is often between the camera and the part) must not read as part of it.
+ */
+export function drawAllGlyphs(u: Pick<UiState, 'showGlyphs' | 'sceneTab' | 'lookThrough'>, selected: unknown): boolean {
+  return u.showGlyphs && (u.sceneTab === 'lights' || u.sceneTab === 'cameras' || selected !== null || u.lookThrough !== null);
 }
 
 /** The mode the viewport is in: Full only when chosen and the engine is ready. */
@@ -319,9 +370,11 @@ const PERSISTED: readonly (keyof UiState & keyof Layout)[] = [
   'tuneOpen',
   'space',
   'scaleLock',
+  'showGlyphs',
   'viewportMode',
   'settingsSection',
   'chooserShown',
+  'tourSeen',
   'updateCheckedAt',
   'updateLatest',
 ];
@@ -364,6 +417,8 @@ export function defaultUiState(): UiState {
     space: 'GLOBAL',
     scaleLock: true,
     boxXray: false,
+    showGlyphs: true,
+    lookThrough: null,
     materialClipboard: null,
     library: emptyLibrary(),
     viewportMode: 'FULL',
@@ -374,12 +429,16 @@ export function defaultUiState(): UiState {
     results: [],
     resultsStorage: 'LOADING',
     throughput: null,
+    aiThroughput: null,
     queueRun: 'IDLE',
     settings: defaultSettings(),
     settingsWindow: null,
     settingsPos: null,
     settingsSection: 'general',
     chooserShown: false,
+    tourSeen: false,
+    tour: null,
+    runtimeNote: { checked: false, warning: null },
     updateCheckedAt: null,
     updateLatest: null,
     updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [] },

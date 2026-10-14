@@ -16,6 +16,7 @@ name = "rt-cli"
 version = "0.3.0"
 dependencies = [
  "rt-core",
+ "rt-post",
 ]
 
 [[package]]
@@ -48,4 +49,5 @@ name = "rt-wasm"
 version = "0.3.0"
 dependencies = [
  "rt-core",
+ "rt-post",
 ]

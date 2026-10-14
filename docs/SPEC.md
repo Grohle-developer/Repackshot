@@ -85,7 +85,9 @@ bisel de aristas, clipping de cámara, luces visibles, cáusticas, formato.
 ### 3.1 · Escena
 
 Un **árbol** de nodos. Tipos: `MODEL` (raíz de una importación), `GROUP`
-(ensamblaje), `PART` (malla), `CAMERA`, `LIGHT`, `FLOOR`. Cada nodo:
+(ensamblaje), `PART` (malla), `CAMERA`, `LIGHT`, `FLOOR` (las luces y las
+cámaras viven fuera del árbol, en `studio.lights` y `camera.cameras`: ver
+§3.4 y §3.5). Cada nodo:
 `id`, `name`, `parent`, `children`, `transform` (posición, rotación en
 grados, escala; local al padre), `visible`, `locked`. Una `PART` lleva
 además `mesh` (id de geometría: posiciones, normales, índices, uv
@@ -348,22 +350,110 @@ modificado).
 la del rig del tipo de producto. Cambiar de montaje no cambia la
 exposición.
 
-**Luces propias, al estilo KeyShot.** Además de los montajes, se pueden
-**añadir focos** desde la pestaña *Luces*: **Área** (rectángulo, disco o
-esfera, con tamaño), **Punto** (radio), **Foco direccional** (ángulo de
-cono y transición), **Sol** (ángulo del disco), y **IES** (perfil de
-archivo; fase posterior). Cada foco es un nodo de la escena con
-transformación propia: se mueve y apunta con el mismo *gizmo* que las
-piezas, se **apunta a una pieza** (*Apuntar a…*), se **coloca por
-reflejo** o **sobre una superficie** (clic: el foco queda a una distancia
-dada a lo largo de la normal). Propiedades: potencia en vatios (y su
-equivalente en lúmenes como ayuda), temperatura de color o color,
-tamaño, dispersión, *visible en reflejos*, *visible a cámara*, *proyecta
-sombra*, encendido. Cualquier pieza con material emisor también ilumina.
-Un rig editado a mano se **guarda como montaje propio** (nombre, estilo
-*Míos*, miniatura renderizada por el propio producto) en la biblioteca
-del usuario, con la misma normalización de exposición que los del
-catálogo cuando se aplica a otro tipo de producto.
+**Luces propias, al estilo KeyShot** (fase L4). Además de los montajes, se
+pueden **añadir focos** desde la pestaña *Luces* (*+ Añadir luz ▸*), desde
+*Añadir ▸* del menú de la cabecera, desde el clic derecho del visor en vacío y
+desde la paleta: **Área** (rectángulo, disco o esfera, con tamaño), **Punto**
+(radio), **Foco direccional** (ángulo de cono y transición), **Sol** (ángulo
+del disco) e **IES** (perfil de archivo; *próximamente*, fase L5). Claves
+estables: `RECTANGLE`, `DISK`, `SPHERE`, `POINT`, `SPOT`, `SUN`
+(`NEW_LIGHT_KINDS`). Un foco nuevo nace **delante y arriba de la pieza** tal
+como la ve la cámara activa (25° a su derecha, 40° de elevación, 50° el sol,
+a dos tamaños de pieza del pivote), encendido, **seleccionado** y con la
+**irradiancia media** de los focos encendidos (un sol, π veces esa media: ver
+*Unidades*), así que la imagen no salta. Es una sola entrada de deshacer.
+
+- **Dónde vive.** Cada foco es un `LightInstance` de `studio.lights` (los del
+  montaje y los propios en la misma lista, `own: true` en los propios), no
+  un nodo del árbol: es la lista que ya leen la vista previa, el motor, la
+  animación, el Doctor, los estudios y la biblioteca, así que un foco propio
+  se anima, se guarda en un estudio y entra en *Guardar montaje como…* sin
+  nada más. Su **transformación propia** es su posición alrededor del pivote
+  del montaje (`az`, `el`, `dist` en tamaños de pieza, como un foco de
+  receta), su **objetivo** `aim` (en tamaños de pieza desde el pivote;
+  ausente, el pivote: donde apuntan todos los focos de los montajes) y su
+  **giro** `roll` (grados alrededor de su eje; 0, los lados del panel
+  paralelos al suelo). Todo en tamaños de pieza: el foco sigue al producto y
+  vale para un anillo y para un sofá.
+- **Se mueve y se apunta** con el *gizmo* de *Mover* (ver *Luces y cámaras
+  en el visor*, abajo), con los campos del inspector (acimut, elevación y
+  distancia; o X, Y, Z en mm, que lo mueven sin cambiar a dónde apunta), con
+  **Apuntar a…** (el centro del producto, un punto picado, el centro de una
+  pieza picada; y, desde el menú contextual de una pieza, *Apuntar un foco
+  aquí ▸*), **por reflejo** o **sobre una superficie** (clic en una pieza: el
+  foco queda sobre ese punto a lo largo de la normal, a la distancia a la
+  que estaba de su objetivo, y apunta a él).
+- **Propiedades**: nombre (por defecto, el rol si es del montaje o el tipo si
+  es propio, numerado), tipo, forma, tamaño (ancho y alto; diámetro de la
+  esfera; radio del punto y del foco), dispersión (área), ángulo de cono y
+  transición en % del semiángulo (foco), disco del sol, giro, temperatura de
+  color o color, **potencia en vatios** con su **equivalente en lúmenes** (o
+  lux para el sol) en auxiliar, *visible en reflejos*, *visible a cámara*,
+  ***proyecta sombra*** (sin ella el motor no traza sus rayos de sombra) y
+  encendido. *Duplicar* (una copia propia, 15° al lado, seleccionada) y
+  *Eliminar* valen para los focos del montaje y los propios.
+- **Unidades.** Las de los montajes (vatios a tamaño de pieza 1, en el
+  sentido de Cycles; W/m² para el sol). Para los tipos nuevos, que no tiene
+  ninguna receta, **un punto o un foco de P W es tan brillante en su eje como
+  un panel de P W de cara al producto a la misma distancia**: flujo
+  isótropo `π · P · S²` para el motor (S, el tamaño de pieza en metros) e
+  intensidad `P · S² / 4` (S en mm) para la vista previa; un foco
+  direccional es el punto que sería sin su cono (su eje no cambia de brillo
+  con el cono). Así la medida con que se normalizan los montajes
+  (`specIrradiance`) es la misma fracción, 1/π, de lo que llega para paneles,
+  puntos y focos, y un montaje que los mezcla conserva su equilibrio. Una
+  esfera de área es un punto con tamaño. Los **lúmenes** son el flujo que se
+  le da al motor (estrechado por la dispersión de un panel; la parte de su
+  cono en un foco) por 683 lm/W y por la luminancia del color: la convención
+  de los renderizadores en RGB, no la eficacia de una lámpara.
+- **Guardar montaje como…** guarda los focos encendidos (con su tipo, forma,
+  objetivo, giro, transición y sombra) en la biblioteca; aplicado a otro
+  tipo de producto se normaliza como los del catálogo: la irradiancia total
+  es la de ese tipo y cada foco conserva su parte. **Restablecer al montaje**
+  quita los focos propios y devuelve los del montaje como eran.
+
+Cualquier pieza con material emisor también ilumina.
+
+**Luces y cámaras en el visor** (ampliación de L4). Las luces y las
+**cámaras guardadas** (no la activa, que es la vista) se dibujan como
+**glifos acromáticos** en la tinta del tema: el contorno del panel (rectángulo
+o elipse, con una marca hacia donde ilumina), la esfera, el punto (con una
+estrella pequeña), el cono del foco (con el cono interior donde empieza la
+transición), la flecha del sol y la pirámide de la cámara (con un triángulo
+que dice dónde está arriba). Se dibujan sobre todo, discontinuos, y el
+seleccionado continuo; nunca salen en un render. El botón **Luces y cámaras**
+de la barra de vista los muestra todos **mientras se trabaja con ellos**: con
+la pestaña *Luces* o *Cámaras* abierta, con una luz o una cámara
+seleccionada o mirando a través de una; si no (con *Piezas* y la pieza
+seleccionada), ninguno, para que el contorno de un panel del montaje que
+cruza el producto (el principal suele estar entre la cámara y la pieza) no
+se lea como parte de él. Apagado, solo el del objeto seleccionado. Un **clic**
+en un glifo (a 6 px de una de sus líneas) selecciona su luz o su cámara (una
+a la vez; `Ctrl/⌘` o `Alt` la quita), por encima de la pieza que haya
+detrás; un **doble clic** mira a través; el **clic derecho** abre *Mirar a
+través*, *Duplicar*, *Apuntar a…* y *Eliminar* (o *Activar* en una cámara).
+Con una luz o una cámara seleccionada, *Mover* pone sobre ella el *gizmo*
+sin los cubos de escala: **mover** la lleva sin cambiar a dónde apunta,
+**girar** gira alrededor de ella a dónde apunta (y el giro de un panel
+alrededor de su eje), y el **asa de apuntar** (la línea a su objetivo) mueve
+el objetivo de la luz o el de la cámara; en ejes globales o los suyos
+(derecha, arriba, atrás), con los incrementos de `Shift`. Un arrastre es una
+entrada de deshacer, y mover una cámara guardada no mueve la activa. Una
+cámara bloqueada no tiene *gizmo*. La caja de selección (U7) y *Escalar*
+(U9) no ven los glifos: la caja selecciona piezas al nivel vigente y el
+tamaño de un foco se cambia en el inspector.
+
+**Mirar a través** de la luz o la cámara seleccionada (botón de la barra de
+vista y del inspector, `Ctrl/⌘ ⇧ L`, doble clic en su glifo): el visor mira
+desde ella, en *Rápido* y en *Completo*. Una luz se ve desde su posición
+hacia su objetivo, con la óptica de la cámara activa; un foco direccional
+ajusta la focal para que su cono llene el lado corto del encuadre (lo que se
+ve es lo que ilumina). **Orbitar, Desplazar y Zoom mueven ese objeto**: la
+luz va a donde está la vista y apunta a donde mira, la cámara toma la vista;
+el gesto entero es una entrada de deshacer y la cámara activa no se mueve.
+**Respeta *Bloquear cámara***: una cámara bloqueada se ve pero no se mueve
+(el aviso lo dice). `Esc` o el botón vuelven a la cámara activa, tal como
+estaba.
 
 **Colocar por reflejo**: dado un punto de la pieza y su normal, el foco
 seleccionado se coloca en la dirección reflejada del rayo de cámara, a su
@@ -408,7 +498,10 @@ de pieza para que encaje con un margen del 10 %.
 
 **Encuadrar**: ajusta la distancia (o el ancho ortográfico) para que la
 caja envolvente de la selección (o de todo) quepa con margen, sin mover
-la orientación. **Vistas**: tres cuartos, frontal, lateral, cenital,
+la orientación. Las **cámaras guardadas** se ven en el visor como pirámides,
+se mueven con el *gizmo* (la posición sin cambiar su objetivo, el giro, el
+asa de su objetivo) y se **mira a través** de ellas (§3.4, *Luces y cámaras
+en el visor*). **Vistas**: tres cuartos, frontal, lateral, cenital,
 trasera. **Enfocar con clic**: el punto picado fija la distancia de
 enfoque.
 

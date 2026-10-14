@@ -48,6 +48,7 @@
 
 use crate::bitmap::Image;
 use crate::bsdf::{Bsdf, Lobes};
+use crate::caustics::{gather_at, gather_catcher, CausticSetup, PhotonMap};
 use crate::color::Rgb;
 use crate::fmath;
 use crate::geometry::{Geometry, RayHit};
@@ -154,10 +155,10 @@ pub struct Prepared {
     background: Background,
     background_color: Rgb,
     backplate: Option<Backplate>,
-    floor_mode: FloorMode,
-    floor_z: f32,
-    floor_bsdf: Bsdf,
-    max_depth: u32,
+    pub(crate) floor_mode: FloorMode,
+    pub(crate) floor_z: f32,
+    pub(crate) floor_bsdf: Bsdf,
+    pub(crate) max_depth: u32,
     clamp_indirect: f32,
     /// Used for instances whose material index is out of range.
     fallback: Material,
@@ -165,9 +166,12 @@ pub struct Prepared {
     passable: Vec<bool>,
     any_passable: bool,
     /// Per material: the absorption coefficients per millimetre of its inside, if any.
-    media: Vec<Option<Rgb>>,
+    pub(crate) media: Vec<Option<Rgb>>,
     /// Per instance with an anisotropic material: the world centre and axis of its tangents.
     tangent_axes: Vec<Option<(Vec3, Vec3, Vec3)>>,
+    /// The caustics of the scene (`RNDR.caustic_photons` above zero and something to focus
+    /// light: [`crate::caustics`]).
+    pub(crate) caustics: Option<CausticSetup>,
 }
 
 /// Absorption coefficients (per millimetre) of a clear material with an absorption distance.
@@ -241,8 +245,10 @@ impl Prepared {
                 Some((centre, axis, x_axis))
             })
             .collect();
+        let lights = Lights::new(scene);
+        let caustics = CausticSetup::new(scene, &lights);
         Prepared {
-            lights: Lights::new(scene),
+            lights,
             background,
             background_color: env.background_color.map(|v| v.max(0.0)),
             backplate,
@@ -256,7 +262,15 @@ impl Prepared {
             passable,
             media: scene.materials.iter().map(medium_of).collect(),
             tangent_axes,
+            caustics,
         }
+    }
+
+    /// True when the scene renders caustics from a photon map ([`crate::caustics`]): it asks for
+    /// photons and has lights and surfaces that focus them. A host traces a [`PhotonMap`] per
+    /// sample index then, and hands it to the tile renderer.
+    pub fn has_caustics(&self) -> bool {
+        self.caustics.is_some()
     }
 
     /// The prepared lights.
@@ -265,7 +279,7 @@ impl Prepared {
     }
 
     /// Ray parameter where `ray` meets the floor plane, if the floor is there for this ray.
-    fn floor_t(&self, ray: &Ray, camera_ray: bool) -> f32 {
+    pub(crate) fn floor_t(&self, ray: &Ray, camera_ray: bool) -> f32 {
         let present = match self.floor_mode {
             FloorMode::None => false,
             FloorMode::Visible => true,
@@ -283,7 +297,7 @@ impl Prepared {
     }
 
     /// The material of instance `i`.
-    fn material<'a>(&'a self, scene: &'a Scene, i: u32) -> &'a Material {
+    pub(crate) fn material<'a>(&'a self, scene: &'a Scene, i: u32) -> &'a Material {
         scene
             .geometry
             .instances()
@@ -362,7 +376,7 @@ impl Prepared {
     }
 
     /// The shading frame of instance `instance` at `point` with shading normal `n`.
-    fn frame(&self, instance: Option<u32>, point: Vec3, n: Vec3) -> Frame {
+    pub(crate) fn frame(&self, instance: Option<u32>, point: Vec3, n: Vec3) -> Frame {
         let axes = instance.and_then(|i| self.tangent_axes.get(i as usize).copied().flatten());
         let Some((centre, axis, x_axis)) = axes else {
             return Frame::from_normal(n);
@@ -461,13 +475,13 @@ pub fn first_hit<T: Tracer>(scene: &Scene, prepared: &Prepared, tracer: &T, ray:
 
 /// Largest channel.
 #[inline]
-fn peak(c: Rgb) -> f32 {
+pub(crate) fn peak(c: Rgb) -> f32 {
     c.r.max(c.g).max(c.b)
 }
 
 /// `exp(-σ t)` per channel.
 #[inline]
-fn beer_lambert(sigma: Rgb, t: f32) -> Rgb {
+pub(crate) fn beer_lambert(sigma: Rgb, t: f32) -> Rgb {
     sigma.map(|s| fmath::exp(-s * t))
 }
 
@@ -532,7 +546,60 @@ pub fn radiance_at<T: Tracer>(
     screen: (f32, f32),
     rays: &mut u64,
 ) -> (Rgb, f32) {
+    radiance_with(
+        scene, prepared, tracer, sampler, camera_ray, screen, None, rays,
+    )
+}
+
+/// Where a camera path is in the split of the caustics ([`crate::caustics`]): before its first
+/// receiver (only casters and straight events since the camera), or after a receiver, with or
+/// without casters since the last one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CausticState {
+    Eye,
+    AfterReceiver { casters: bool },
+}
+
+impl CausticState {
+    /// The state after a scattering event (not a straight one) at a caster or a receiver. Every
+    /// receiver starts the count again: the photon map brings the light of photon lights that
+    /// reaches it through casters, at the first receiver of the path or at any later one.
+    #[inline]
+    fn after(self, caster: bool) -> CausticState {
+        match (self, caster) {
+            (CausticState::Eye, true) => CausticState::Eye,
+            (_, false) => CausticState::AfterReceiver { casters: false },
+            (CausticState::AfterReceiver { .. }, true) => {
+                CausticState::AfterReceiver { casters: true }
+            }
+        }
+    }
+
+    /// Light of the photon lights arriving now is the photon map's (dropped here).
+    #[inline]
+    fn photons_bring_it(self) -> bool {
+        self == CausticState::AfterReceiver { casters: true }
+    }
+}
+
+/// [`radiance_at`] with the photon map of this sample index (`photons`, from
+/// [`PhotonMap::trace`] with the same `sampler` index): the camera path gathers the caustics at
+/// every receiver and leaves out the light the map brings ([`crate::caustics`]). Without a
+/// map it is exactly [`radiance_at`].
+#[allow(clippy::too_many_arguments)]
+pub fn radiance_with<T: Tracer>(
+    scene: &Scene,
+    prepared: &Prepared,
+    tracer: &T,
+    sampler: &PixelSampler,
+    camera_ray: Ray,
+    screen: (f32, f32),
+    photons: Option<&PhotonMap>,
+    rays: &mut u64,
+) -> (Rgb, f32) {
     let lights = &prepared.lights;
+    let caustics = photons.zip(prepared.caustics.as_ref());
+    let mut state = CausticState::Eye;
     let mut ray = camera_ray;
     let mut throughput = Rgb::WHITE;
     let mut sum = Rgb::BLACK;
@@ -560,8 +627,15 @@ pub fn radiance_at<T: Tracer>(
             }
         }
 
-        // Area lights are transparent emitters: add every one crossed on the way.
-        let crossed = lights.crossed_from(&ray, t_nearest, bsdf_pdf, offset);
+        // Area lights are transparent emitters: add every one crossed on the way (unless the
+        // photon map brings their light here: every area light a BSDF-sampled ray sees sends
+        // photons; point lights and spots do not).
+        let dropped = caustics.is_some() && state.photons_bring_it();
+        let crossed = if dropped {
+            lights.crossed_without_photons(&ray, t_nearest, bsdf_pdf, offset)
+        } else {
+            lights.crossed_from(&ray, t_nearest, bsdf_pdf, offset)
+        };
         prepared.add(&mut sum, throughput * crossed, bounce >= 2);
 
         if t_nearest == f32::INFINITY {
@@ -576,8 +650,11 @@ pub fn radiance_at<T: Tracer>(
                     alpha = if peak(crossed) > 0.0 { 1.0 } else { 0.0 };
                 }
                 _ => {
-                    let c = throughput * lights.escaped(ray.dir, bsdf_pdf);
-                    prepared.add(&mut sum, c, bounce >= 2);
+                    let sky = match bsdf_pdf {
+                        Some(pdf) if dropped => lights.escaped_environment(ray.dir, pdf),
+                        _ => lights.escaped(ray.dir, bsdf_pdf),
+                    };
+                    prepared.add(&mut sum, throughput * sky, bounce >= 2);
                 }
             }
             break;
@@ -586,7 +663,15 @@ pub fn radiance_at<T: Tracer>(
         let surface = if t_floor < t_geometry {
             if prepared.floor_mode == FloorMode::ShadowCatcher {
                 let (c, a) = shadow_catcher(
-                    scene, prepared, tracer, sampler, &ray, t_floor, screen, rays,
+                    scene,
+                    prepared,
+                    tracer,
+                    sampler,
+                    &ray,
+                    t_floor,
+                    screen,
+                    caustics.map(|(map, _)| map),
+                    rays,
                 );
                 return (sum + throughput * c, a);
             }
@@ -637,7 +722,7 @@ pub fn radiance_at<T: Tracer>(
                     .instances()
                     .get(instance as usize)
                     .is_some_and(|i| i.flags & INSTANCE_ONE_SIDED != 0);
-                if front || !one_sided {
+                if (front || !one_sided) && !(dropped && lights.is_mesh_light(instance)) {
                     let weight = bsdf_pdf.map_or(1.0, |pdf| {
                         let cos = surface.geometric.dot(ray.dir);
                         lights.emitter_weight(instance, pdf, offset + t_geometry, cos)
@@ -674,6 +759,31 @@ pub fn radiance_at<T: Tracer>(
         let origin = offset_origin(surface.point, ng);
         let dims = bounce_dim(bounce);
 
+        // Caustics: every receiver gathers the photons (the first one's light is direct, a later
+        // one's indirect, clamped as such); the state after this vertex (unless its event turns
+        // out straight) says whether its light of photon lights is the map's.
+        let mut next_state = state;
+        if let Some((map, setup)) = caustics {
+            let caster = surface
+                .instance
+                .is_some_and(|(i, _)| setup.is_caster_instance(i));
+            if !caster {
+                let budget = prepared.max_depth.saturating_sub(bounce + 1);
+                let c = gather_at(
+                    map,
+                    &bsdf,
+                    &frame,
+                    wo,
+                    surface.hit_point,
+                    surface.geometric,
+                    budget,
+                );
+                prepared.add(&mut sum, throughput * c, state != CausticState::Eye);
+            }
+            next_state = state.after(caster);
+        }
+        let drop_nee = caustics.is_some() && next_state.photons_bring_it();
+
         // Next-event estimation: one light.
         let light_sample = lights.sample(
             surface.point,
@@ -683,7 +793,7 @@ pub fn radiance_at<T: Tracer>(
         // No test against the geometric normal here: a light above the shading horizon but
         // below a coarse facet's plane is decided by the shadow ray from the lifted point, which
         // keeps the terminator smooth (a ray into the surface hits it and is shadowed).
-        if let Some(ls) = light_sample {
+        if let Some(ls) = light_sample.filter(|ls| !(drop_nee && ls.photon)) {
             let wi = frame.to_local(ls.wi);
             let lobes = if ls.glossy {
                 Lobes::All
@@ -692,16 +802,20 @@ pub fn radiance_at<T: Tracer>(
             };
             let f = bsdf.eval(wo, wi, lobes);
             if peak(f) > 0.0 {
-                *rays += 1;
                 // Light behind a refracting surface: the shadow ray leaves from its other side.
                 let from = if wi.z < 0.0 {
                     offset_origin(surface.hit_point, -ng)
                 } else {
                     origin
                 };
-                if let Some(pass) =
+                // A light that casts no shadow (L4) arrives whatever is in the way.
+                let arrives = if ls.shadow {
+                    *rays += 1;
                     prepared.shadow(scene, tracer, &shadow_ray(from, ls.wi, ls.distance))
-                {
+                } else {
+                    Some(Rgb::WHITE)
+                };
+                if let Some(pass) = arrives {
                     let weight = if ls.delta || !ls.glossy {
                         1.0
                     } else {
@@ -755,6 +869,7 @@ pub fn radiance_at<T: Tracer>(
             bsdf_pdf = Some(bs.pdf);
             primary = false;
             offset = 0.0;
+            state = next_state;
             if transmitted {
                 // Into the solid, or out of it.
                 medium = if surface.outside {
@@ -775,9 +890,14 @@ pub fn radiance_at<T: Tracer>(
     (sum, alpha)
 }
 
+/// Largest share of the open floor's light the caustics on the shadow catcher may add (a focus
+/// is many times brighter than the floor around it).
+const CATCHER_MAX_CAUSTIC: f32 = 64.0;
+
 /// A camera ray that hit the shadow catcher at `t`: the background behind it times the fraction
 /// of light the scene does not block, or (transparent background) black with the blocked
-/// fraction as alpha.
+/// fraction as alpha. With the photon map of the sample (`photons`), the caustics on it as well:
+/// their light over the open floor's, times the background ([`crate::caustics`]).
 #[allow(clippy::too_many_arguments)]
 fn shadow_catcher<T: Tracer>(
     scene: &Scene,
@@ -787,6 +907,7 @@ fn shadow_catcher<T: Tracer>(
     ray: &Ray,
     t: f32,
     screen: (f32, f32),
+    photons: Option<&PhotonMap>,
     rays: &mut u64,
 ) -> (Rgb, f32) {
     let lights = &prepared.lights;
@@ -818,15 +939,18 @@ fn shadow_catcher<T: Tracer>(
             (lambert.eval(wo, wi, Lobes::All) * ls.radiance).luminance() * wi.z * weight / ls.pdf;
         if c.is_finite() {
             open += c;
-            *rays += 1;
             // The catcher itself is invisible: only the geometry blocks (cut-outs and thin
-            // walls in part).
+            // walls in part); a light that casts no shadow (L4) is never blocked.
             let probe = shadow_ray(origin, ls.wi, ls.distance);
-            if !prepared.any_passable {
+            if !ls.shadow {
+                lit += c;
+            } else if !prepared.any_passable {
+                *rays += 1;
                 if !tracer.occluded(&probe) {
                     lit += c;
                 }
             } else {
+                *rays += 1;
                 let (keep, blocker) = prepared.walk(scene, tracer, &probe);
                 if blocker == f32::INFINITY {
                     lit += c * keep.luminance();
@@ -872,10 +996,26 @@ fn shadow_catcher<T: Tracer>(
     } else {
         1.0
     };
+    // The caustics on the catcher, relative to the open floor's light.
+    let caustic = photons.filter(|_| open > 0.0).map(|map| {
+        let budget = prepared.max_depth.saturating_sub(1);
+        gather_catcher(map, x, n, budget).map(|c| {
+            let k = c / open;
+            if k.is_finite() {
+                k.clamp(0.0, CATCHER_MAX_CAUSTIC)
+            } else {
+                0.0
+            }
+        })
+    });
+    let shown = |behind: Rgb| match caustic {
+        Some(k) => behind * unshadowed + behind * k,
+        None => behind * unshadowed,
+    };
     match prepared.background {
         Background::Transparent => (Rgb::BLACK, 1.0 - unshadowed),
-        Background::Environment => (lights.escaped(ray.dir, None) * unshadowed, 1.0),
-        Background::Color | Background::Backplate => (prepared.backdrop(screen) * unshadowed, 1.0),
+        Background::Environment => (shown(lights.escaped(ray.dir, None)), 1.0),
+        Background::Color | Background::Backplate => (shown(prepared.backdrop(screen)), 1.0),
     }
 }
 

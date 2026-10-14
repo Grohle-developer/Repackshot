@@ -177,3 +177,56 @@ export interface AiRuntimePort {
   /** Asks the installed build its version and devices again (after the Visual C++ runtime was installed, X3c). */
   probe(key: string): Promise<unknown>;
 }
+
+// ------------------------------------------------------------------ what to tell the person (phase U10)
+
+/**
+ * What is wrong with the inference runtime when a model is there to use it (AI-POST.md §7.1): the render window's AI
+ * section, Settings ▸ AI post-processing and the status bar all say it with these words. Every kind but `PROGRESS`
+ * is a problem the person can act on; `PROGRESS` is the runtime on its way (the installer ticked it, or Install was
+ * pressed), shown as progress and never as an alarm.
+ */
+export type RuntimeWarning =
+  /** Not installed: *Install* downloads the build the rule chose. `error` is the last attempt's, if it failed. */
+  | { kind: 'MISSING'; key: string; bytes: number; error: string | null }
+  /** A download that was paused (*Resume*). */
+  | { kind: 'PAUSED'; key: string; pct: number }
+  /** Downloading, checking or unpacking. */
+  | { kind: 'PROGRESS'; key: string; phase: 'downloading' | 'verifying' | 'installing'; pct: number; done: number; total: number }
+  /** Windows: installed, but it does not start for want of Microsoft's Visual C++ runtime (not ours to ship). */
+  | { kind: 'VC_RUNTIME'; key: string; url: string | null }
+  /** Installed, and it does not start on this computer for another reason. */
+  | { kind: 'BROKEN'; key: string; error: string }
+  /** The catalogue pins no build for this system. */
+  | { kind: 'NO_BUILD'; os: string; arch: string };
+
+/**
+ * The warning for the launcher's report, or null: nothing to say. It only speaks when a model is installed (without
+ * one the AI cannot be used anyway and the model chooser is the first thing to do), and only about the runtime the
+ * rule chose for this computer. A report that could not be had (`null`) says nothing: the Settings row says why.
+ */
+export function runtimeWarning(report: AiRuntimeReport | null, hasModel: boolean): RuntimeWarning | null {
+  if (!report || !hasModel) return null;
+  const rt = report.runtime;
+  if (!rt || !report.choice?.key) return { kind: 'NO_BUILD', os: report.platform.os, arch: report.platform.arch };
+  const pct = rt.total > 0 ? Math.floor((100 * rt.done) / rt.total) : 0;
+  switch (rt.state) {
+    case 'missing':
+      return { kind: 'MISSING', key: rt.key, bytes: rt.bytes, error: rt.error };
+    case 'paused':
+      return { kind: 'PAUSED', key: rt.key, pct };
+    case 'downloading':
+    case 'verifying':
+    case 'installing':
+      return { kind: 'PROGRESS', key: rt.key, phase: rt.state, pct, done: rt.done, total: rt.total };
+    case 'installed':
+      if (rt.vcRuntime === 'missing') return { kind: 'VC_RUNTIME', key: rt.key, url: rt.vcRuntimeUrl ?? null };
+      if (rt.probeError) return { kind: 'BROKEN', key: rt.key, error: rt.probeError };
+      return null;
+  }
+}
+
+/** Whether the person has something to do about it (the status bar's note only speaks for these). */
+export function needsAction(w: RuntimeWarning | null): boolean {
+  return w !== null && w.kind !== 'PROGRESS' && w.kind !== 'NO_BUILD';
+}

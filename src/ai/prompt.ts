@@ -5,8 +5,13 @@
 // the words only make the model's job easier. In English: the models are trained on it.
 //
 // Also here, for the guard: the material regions as the passes number them (`guardMaterials`).
+//
+// X4b: the words that go to the model are the system prompt of Settings, then the scene's, then the job's own
+// (`AiPipelineSettings.userPrompt`, only for a model that takes a text prompt), fitted to a model that reads a limited
+// number of tokens (core/ai-prompt.ts, `composePrompt`). The scene's part never gives way to the job's: it comes first.
 
 import type { AiGuardMaterial, AiPipelineSettings, AiStyle } from '../core/ai';
+import { composePrompt, type ComposedPrompt, type PromptCaps } from '../core/ai-prompt';
 import type { MaterialId, MaterialInstance } from '../core/materials';
 import { allParts, effectiveVisible } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -75,6 +80,14 @@ const BACKGROUND_WORDS: Readonly<Record<ProjectState['environment']['background'
 export interface ScenePrompt {
   prompt: string;
   negative: string;
+  /** How the prompt was composed (X4b), when it was composed with the system prompt and the model's capabilities. */
+  composed?: ComposedPrompt;
+}
+
+/** What the prompt is composed with besides the scene (X4b): Settings' system prompt and what the model does with words. */
+export interface PromptContext {
+  system: string;
+  caps: PromptCaps;
 }
 
 /** A material's name as the user sees it: its own name, else its catalogue label (in English). */
@@ -140,8 +153,20 @@ function lightWords(state: ProjectState): string {
   return parts.join(', ');
 }
 
-/** The prompt and the fixed negative for the project and the pipeline's settings. */
-export function buildPrompt(state: ProjectState, settings: AiPipelineSettings): ScenePrompt {
+/**
+ * The prompt and the fixed negative for the project and the pipeline's settings. With a `context` (X4b) the prompt is
+ * the system prompt, the scene's and the job's own, in that order and fitted to the model; without one, the scene's
+ * alone (as before X4b).
+ */
+export function buildPrompt(state: ProjectState, settings: AiPipelineSettings, context?: PromptContext): ScenePrompt {
+  const scene = scenePromptText(state, settings);
+  if (!context) return { prompt: scene, negative: NEGATIVE_PROMPT };
+  const composed = composePrompt({ system: context.system, scene, user: settings.userPrompt ?? '' }, context.caps);
+  return { prompt: composed.prompt, negative: NEGATIVE_PROMPT, composed };
+}
+
+/** The scene's own words: what the picture shows, how it is lit, what the controls ask for and the style. */
+export function scenePromptText(state: ProjectState, settings: AiPipelineSettings): string {
   const materials = sceneMaterials(state);
   const named = materials.map((m) => {
     const kind = CATEGORY_WORDS[m.category];
@@ -163,7 +188,7 @@ export function buildPrompt(state: ProjectState, settings: AiPipelineSettings): 
   if (asks.length > 0) out.push(`${capitalise(list(asks))}.`);
   if (settings.styleStrength > 0) out.push(`${capitalise(STYLE_PROMPTS[settings.style])}.`);
   out.push('Same object, same shapes, same text and logos, same framing.');
-  return { prompt: out.join(' '), negative: NEGATIVE_PROMPT };
+  return out.join(' ');
 }
 
 /**

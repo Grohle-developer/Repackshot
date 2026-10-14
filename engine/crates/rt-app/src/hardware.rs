@@ -30,6 +30,7 @@
 //! The RAM given to the rule is the installed amount when it can be read (a "16 GB" computer
 //! shows about 15.6 GiB usable), else the usable total.
 
+use crate::ai::catalogue::{choose, Backend, ChoiceInput, RuntimeCatalogue};
 use crate::json;
 use crate::process::{self, Ran};
 use crate::recommend::{self, Catalogue, Input, Recommendation};
@@ -170,17 +171,25 @@ pub struct Assessment {
     pub recommendation: Option<Recommendation>,
 }
 
+/// The device the launcher itself would use for the AI on this computer: the GPU if one has at
+/// least [`GPU_MIN_GIB`] of dedicated VRAM (effective GiB), else the CPU.
+pub fn default_device(hw: &Hardware) -> Device {
+    let gpu_gib = hw
+        .best_gpu()
+        .and_then(|g| g.vram_bytes)
+        .map(|b| b as f64 / GIB);
+    if gpu_gib.is_some_and(|v| recommend::effective_gib(v) >= GPU_MIN_GIB) {
+        Device::Gpu
+    } else {
+        Device::Cpu
+    }
+}
+
 /// Applies the rule to `hw`.
 pub fn assess(hw: &Hardware, forced: Option<Device>, catalogue: &Catalogue) -> Assessment {
     let best = hw.best_gpu();
     let gpu_gib = best.and_then(|g| g.vram_bytes).map(|b| b as f64 / GIB);
-    let device = forced.unwrap_or(
-        if gpu_gib.is_some_and(|v| recommend::effective_gib(v) >= GPU_MIN_GIB) {
-            Device::Gpu
-        } else {
-            Device::Cpu
-        },
-    );
+    let device = forced.unwrap_or_else(|| default_device(hw));
     let input = match device {
         Device::Gpu => gpu_gib.map(|vram_gib| Input::Gpu { vram_gib }),
         Device::Cpu => hw.ram().map(|b| Input::Cpu {
@@ -1168,8 +1177,61 @@ fn ini_value(text: &str) -> String {
         .to_string()
 }
 
-/// The INI the installer reads (`repackshot --hardware <file>`).
-pub fn to_ini(hw: &Hardware, a: &Assessment, catalogue: &Catalogue) -> String {
+/// The inference runtime the installer offers beside the models (phase U10, `docs/AI-POST.md`
+/// §2.2): the build the choice rule of `src/data/ai-runtimes.json` picks for this system.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimeOffer {
+    /// Its key (`SDCPP_WIN_VULKAN`): what `pending-models.json` records.
+    pub key: String,
+    /// What it computes on.
+    pub backend: Backend,
+    /// The archive's file name.
+    pub file: String,
+    /// The archive's size.
+    pub bytes: u64,
+    /// The row of the rule that decided (`gpu`, `no-gpu`).
+    pub row: String,
+}
+
+/// The runtime to offer: **the same rule on the same data** as `GET /api/ai/runtime` (which asks
+/// [`default_device`] unless the person chose the processor, `device=cpu`) and as the
+/// interface's Settings row. `forced` is the installer's *Run on the processor / graphics card*
+/// choice: the processor (`Some(Cpu)`) is the only one that changes the answer, because the
+/// application too only ever overrides the rule towards the processor. `None` when the catalogue
+/// has no build for `os` and `arch`.
+pub fn runtime_offer(
+    hw: &Hardware,
+    forced: Option<Device>,
+    cat: &RuntimeCatalogue,
+    os: &str,
+    arch: &str,
+) -> Option<RuntimeOffer> {
+    let gpu = forced != Some(Device::Cpu) && default_device(hw) == Device::Gpu;
+    let input = ChoiceInput {
+        os: os.to_string(),
+        arch: arch.to_string(),
+        gpu: Some(gpu),
+        force: None,
+    };
+    let choice = choose(cat, Some(&input))?;
+    let rt = cat.runtime(choice.key.as_deref()?)?;
+    Some(RuntimeOffer {
+        key: rt.key.clone(),
+        backend: rt.backend,
+        file: rt.name.clone(),
+        bytes: rt.bytes,
+        row: choice.row_id,
+    })
+}
+
+/// The INI the installer reads (`repackshot --hardware <file>`). `runtime`: what
+/// [`runtime_offer`] said (`[runtime]` has `available=0` when there is none).
+pub fn to_ini(
+    hw: &Hardware,
+    a: &Assessment,
+    catalogue: &Catalogue,
+    runtime: Option<&RuntimeOffer>,
+) -> String {
     let mut s = String::new();
     let gpu = hw.best_gpu();
     let one = |v: Option<f64>| v.map_or(String::new(), |v| format!("{v:.1}"));
@@ -1196,6 +1258,21 @@ pub fn to_ini(hw: &Hardware, a: &Assessment, catalogue: &Catalogue) -> String {
         recommended,
         offered.join(","),
     );
+    let _ = match runtime {
+        Some(r) => write!(
+            s,
+            "[runtime]\r\navailable=1\r\nkey={}\r\nbackend={}\r\nfile={}\r\nsize_mib={:.0}\r\nrow={}\r\n",
+            r.key,
+            r.backend.name(),
+            ini_value(&r.file),
+            r.bytes as f64 / (1024.0 * 1024.0),
+            r.row,
+        ),
+        None => write!(
+            s,
+            "[runtime]\r\navailable=0\r\nkey=\r\nbackend=\r\nfile=\r\nsize_mib=\r\nrow=\r\n"
+        ),
+    };
     let _ = write!(s, "[models]\r\ncount={}\r\n", catalogue.models.len());
     for (i, m) in catalogue.models.iter().enumerate() {
         let size = m.total_bytes as f64 / GIB;
@@ -1910,7 +1987,7 @@ mod tests {
         let cat = crate::recommend::catalogue();
         let hw = machine(Some(12 << 30), Some(32 << 30));
         let a = assess(&hw, None, cat);
-        let ini = to_ini(&hw, &a, cat);
+        let ini = to_ini(&hw, &a, cat, None);
         assert!(ini.starts_with("[hardware]\r\ncpu=Test CPU\r\ncores=8\r\nthreads=16\r\nram_gib=32.0\r\ngpu=Big GPU\r\nvram_gib=12.0\r\ngpu_found=1\r\ndetected=1\r\n"), "{ini}");
         assert!(ini.contains("[recommendation]\r\ndevice=gpu\r\nrow=gpu-12\r\nkey=ZIMAGE_Q8\r\noffered=KLEIN4B_Q4\r\n"));
         assert!(ini.contains(&format!("[models]\r\ncount={}\r\n", cat.models.len())));
@@ -1929,6 +2006,7 @@ mod tests {
             &Hardware::default(),
             &assess(&Hardware::default(), None, cat),
             cat,
+            None,
         );
         assert!(failed.contains("detected=0\r\n") && failed.contains("key=\r\n"));
         let bytes = utf16le("a·");
@@ -1943,6 +2021,84 @@ mod tests {
             Some("ZIMAGE_Q8")
         );
         assert_eq!(json.get("detected").unwrap().as_bool(), Some(true));
+    }
+
+    #[test]
+    fn the_installer_offers_the_runtime_the_rule_picks() {
+        let models = crate::recommend::catalogue();
+        let rt = crate::ai::catalogue::runtime_catalogue();
+        let key = |hw: &Hardware, forced, os: &str| {
+            runtime_offer(hw, forced, rt, os, "x86_64").map(|o| (o.key, o.backend, o.row))
+        };
+        // A usable graphics card: the Vulkan build. The processor build when the person asks for
+        // the processor. Asking for the card changes nothing: the application's own rule does
+        // not either (`device=cpu` is the only override of `GET /api/ai/runtime`).
+        let card = machine(Some(12 << 30), Some(32 << 30));
+        let vulkan = (
+            "SDCPP_WIN_VULKAN".to_string(),
+            Backend::Vulkan,
+            "gpu".to_string(),
+        );
+        let cpu = (
+            "SDCPP_WIN_CPU".to_string(),
+            Backend::Cpu,
+            "no-gpu".to_string(),
+        );
+        assert_eq!(key(&card, None, "windows"), Some(vulkan.clone()));
+        assert_eq!(key(&card, Some(Device::Gpu), "windows"), Some(vulkan));
+        assert_eq!(key(&card, Some(Device::Cpu), "windows"), Some(cpu.clone()));
+        assert_eq!(
+            key(&card, None, "linux").map(|k| k.0).as_deref(),
+            Some("SDCPP_LINUX_VULKAN")
+        );
+        // A card with too little video memory, none with known memory, nothing detected: the
+        // processor build, as the launcher's own assessment says.
+        let small = machine(Some(2 << 30), Some(16 << 30));
+        assert_eq!(assess(&small, None, models).device, Device::Cpu);
+        assert_eq!(key(&small, None, "windows"), Some(cpu.clone()));
+        assert_eq!(key(&small, Some(Device::Gpu), "windows"), Some(cpu.clone()));
+        assert_eq!(key(&Hardware::default(), None, "windows"), Some(cpu));
+        // The same device the launcher asked itself for the recommendation of the models.
+        for hw in [&card, &small] {
+            assert_eq!(default_device(hw), assess(hw, None, models).device);
+        }
+        // A system without a pinned build, and the size the page of the installer prints.
+        assert_eq!(key(&card, None, "macos"), None);
+        let offer = runtime_offer(&card, None, rt, "windows", "x86_64").unwrap();
+        assert_eq!(
+            (offer.file.as_str(), offer.bytes),
+            ("sd-master-d637cfb-bin-win-vulkan-x64.zip", 30_139_117)
+        );
+    }
+
+    #[test]
+    fn the_ini_has_a_runtime_section_for_the_installer() {
+        let cat = crate::recommend::catalogue();
+        let rt = crate::ai::catalogue::runtime_catalogue();
+        let hw = machine(Some(12 << 30), Some(32 << 30));
+        let a = assess(&hw, None, cat);
+        let offer = runtime_offer(&hw, None, rt, "windows", "x86_64");
+        let ini = to_ini(&hw, &a, cat, offer.as_ref());
+        assert!(
+            ini.contains("[runtime]\r\navailable=1\r\nkey=SDCPP_WIN_VULKAN\r\nbackend=VULKAN\r\nfile=sd-master-d637cfb-bin-win-vulkan-x64.zip\r\nsize_mib=29\r\nrow=gpu\r\n"),
+            "{ini}"
+        );
+        // The processor build is smaller.
+        let cpu = runtime_offer(&hw, Some(Device::Cpu), rt, "windows", "x86_64");
+        let ini = to_ini(&hw, &assess(&hw, Some(Device::Cpu), cat), cat, cpu.as_ref());
+        assert!(
+            ini.contains("[runtime]\r\navailable=1\r\nkey=SDCPP_WIN_CPU\r\nbackend=CPU\r\n"),
+            "{ini}"
+        );
+        assert!(ini.contains("size_mib=17\r\nrow=no-gpu\r\n"), "{ini}");
+        // No build for this system: the section is there, empty, and says so.
+        let ini = to_ini(&hw, &a, cat, None);
+        assert!(
+            ini.contains(
+                "[runtime]\r\navailable=0\r\nkey=\r\nbackend=\r\nfile=\r\nsize_mib=\r\nrow=\r\n"
+            ),
+            "{ini}"
+        );
     }
 
     #[test]

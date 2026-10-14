@@ -7,12 +7,27 @@ import type { MotionClip } from '../core/animation';
 import type { ProjectState } from '../core/store';
 import { formatNumber, tIn, type StringKey } from './strings';
 
-/** Display name of a light (its role, numbered when the role repeats). */
+/** What an own light (L4) is called before it has a name: its kind (an area light of shape SPHERE is a sphere). */
+function ownKind(l: { type: string; shape: string }): string {
+  return l.type === 'AREA' && l.shape === 'SPHERE' ? 'SPHERE' : l.type;
+}
+
+/**
+ * Display name of a light: the name given to it; otherwise a setup's light by its role and an own light (L4) by its
+ * kind, numbered when the role or the kind repeats.
+ */
 export function lightName(state: ProjectState, id: string, lang: Lang): string {
   const lights = state.studio.lights;
   const light = lights.find((l) => l.id === id);
   if (!light) return id;
-  const same = lights.filter((l) => l.role === light.role);
+  if (light.name) return light.name;
+  if (light.own) {
+    const kind = ownKind(light);
+    const same = lights.filter((l) => l.own && !l.name && ownKind(l) === kind);
+    const base = tIn(lang, `lightName.${kind}` as StringKey);
+    return same.length > 1 ? `${base} ${same.indexOf(light) + 1}` : base;
+  }
+  const same = lights.filter((l) => !l.own && l.role === light.role);
   const base = tIn(lang, `role.${light.role}` as StringKey);
   return same.length > 1 ? `${base} ${same.indexOf(light) + 1}` : base;
 }

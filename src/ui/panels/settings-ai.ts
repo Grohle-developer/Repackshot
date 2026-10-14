@@ -9,7 +9,7 @@
 // time left from the bytes that arrived (io/downloads.ts).
 
 import type { Recommendation } from '../../core/ai-recommend';
-import type { AiRuntimeEntryState, AiRuntimeReport } from '../../core/ai-runtimes';
+import type { AiRuntimeReport } from '../../core/ai-runtimes';
 import { aiRuntime, AI_RUNTIMES } from '../../data/ai-runtimes';
 import type { AiRecommendRow } from '../../data/ai-models';
 import {
@@ -34,10 +34,13 @@ import {
   type ModelsSnapshot,
   type ModelView,
 } from '../../core/models';
+import { composePrompt, DEFAULT_SYSTEM_PROMPT, isDefaultSystemPrompt, MAX_SYSTEM_PROMPT, normaliseSystemPrompt, SHORT_SYSTEM_PROMPT } from '../../core/ai-prompt';
 import type { RowMeta, SettingMeta } from '../../core/settings';
-import { aiRuntimeQuery, recommendationOf } from '../ai-query';
+import { aiRuntimeQuery, promptContext, recommendationOf } from '../ai-query';
+import { openVcRuntime, runtimeActions, runtimeWatch, startChosenRuntime, type RuntimeAction } from '../ai-runtime-state';
+import { runtimeNotice } from './ai-runtime-notice';
 import * as cmd from '../commands';
-import { select, textField, toggle } from '../components/controls';
+import { select, textArea, textField, toggle } from '../components/controls';
 import { showConfirmIn } from '../components/widgets';
 import { h, icon } from '../dom';
 import { dyn } from '../names';
@@ -53,8 +56,9 @@ const size = (bytes: number) => formatBytes(bytes, getLang());
 const storeReason = (code: string) => (code === 'opfs' ? t('set.ai.noOpfs') : code);
 const pct = (done: number, total: number) => (total > 0 ? Math.floor((100 * done) / total) : 0);
 
-/** Microsoft's page with the official downloads of the Visual C++ runtime (the launcher sends the same). */
-export const VC_RUNTIME_URL = 'https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist';
+// The Runtime row's buttons and the page of Microsoft's Visual C++ runtime moved to ui/ai-runtime-state.ts with the
+// warnings that use them too (phase U10); they are still exported from here.
+export { openVcRuntime, runtimeActions, VC_RUNTIME_URL, type RuntimeAction } from '../ai-runtime-state';
 
 /** The recommendation for what was detected, by the rule of the catalogue (P2's core/ai-recommend.ts). */
 export function currentRecommendation(ctx: Ctx): Recommendation | null {
@@ -291,6 +295,8 @@ function modelRow(ctx: Ctx, key: string): { el: HTMLElement; update(snap: Models
   };
   const download = async (m: ModelView) => {
     const r = await svc.download(m.key);
+    // The first start's chooser: the runtime the models need goes down with the first model started (U10).
+    if (r === 'started') void startChosenRuntime(ctx);
     if (r === 'needsLicence') {
       panel.replaceChildren(
         licencePanel(
@@ -300,6 +306,7 @@ function modelRow(ctx: Ctx, key: string): { el: HTMLElement; update(snap: Models
             panel.replaceChildren();
             svc.acceptLicence(m.key);
             void svc.download(m.key);
+            void startChosenRuntime(ctx);
           },
           () => panel.replaceChildren(),
         ),
@@ -399,7 +406,7 @@ function outcomeText(o: ImportOutcome): string {
 /** The inline form that fills a missing model.repackshot.json (AI-POST.md §5). */
 function manifestForm(ctx: Ctx, files: readonly File[], listed: { name: string; bytes: number }[], done: (o: ImportOutcome) => void): HTMLElement {
   const svc = ctx.services.models!;
-  const values = { name: listed[0]?.name.replace(/\.[^.]+$/, '') ?? '', family: 'sdxl', role: 'img2img', quantization: '', spdx: '', url: '', commercial: false, source: '' };
+  const values = { name: listed[0]?.name.replace(/\.[^.]+$/, '') ?? '', family: 'sdxl', role: 'img2img', quantization: '', spdx: '', url: '', commercial: false, textPrompt: true, source: '' };
   const roles = listed.map(() => 'transformer');
   const text = (k: 'name' | 'quantization' | 'spdx' | 'url' | 'source') => {
     const f = textField(values[k], (v) => (values[k] = v), t(dyn(`set.ai.form.${k}`)));
@@ -408,6 +415,11 @@ function manifestForm(ctx: Ctx, files: readonly File[], listed: { name: string; 
   };
   const field = (label: string, control: Node) => h('label', { class: 'sw-form-field' }, h('span', { class: 'note' }, label), control);
   const errors = h('div', { class: 'sw-warn', role: 'alert' });
+  // X4b: whether the model follows a text prompt (the job's own is sent to it), as its manifest's `capabilities`.
+  const textPromptToggle = toggle(true, (v) => {
+    values.textPrompt = v;
+    textPromptToggle.set(v);
+  }, t('set.ai.form.textPrompt'));
   const form = h(
     'form',
     { class: 'sw-form', 'aria-label': t('set.ai.formTitle') },
@@ -420,6 +432,7 @@ function manifestForm(ctx: Ctx, files: readonly File[], listed: { name: string; 
     field(t('set.ai.form.spdx'), text('spdx')),
     field(t('set.ai.form.url'), text('url')),
     h('div', { class: 'sw-form-field sw-inline' }, toggle(false, () => {}, t('set.ai.form.commercial')).el, h('span', { class: 'note' }, t('set.ai.form.commercial'))),
+    h('div', { class: 'sw-form-field sw-inline', 'data-form': 'textPrompt' }, textPromptToggle.el, h('span', { class: 'note' }, t('set.ai.form.textPrompt'))),
     field(t('set.ai.form.source'), text('source')),
     ...listed.map((f, i) => field(t('set.ai.form.fileRole', { file: f.name }), select(FILE_ROLES.map((r) => ({ value: r, label: t(dyn(`set.ai.fileRole.${r}`)) })), roles[i], (v) => (roles[i] = v), t('set.ai.form.fileRole', { file: f.name })).el)),
     errors,
@@ -441,6 +454,7 @@ function manifestForm(ctx: Ctx, files: readonly File[], listed: { name: string; 
       quantization: values.quantization,
       licence: { spdx: values.spdx, url: values.url, commercialUse: values.commercial },
       files: listed.map((f, i) => ({ name: f.name, role: roles[i], bytes: f.bytes })),
+      capabilities: { textPrompt: values.textPrompt },
       source: values.source,
     };
     const r = await svc.importFiles(files, manifest);
@@ -582,7 +596,7 @@ function guardBlock(ctx: Ctx, scope: Scope, rows: RowMeta[]): HTMLElement {
 }
 
 /** "Post-processing arrives in a coming version", where the pipeline is not built (the web before X3d): the service says. */
-function aiTop(ctx: Ctx): HTMLElement {
+function aiTop(ctx: Ctx, scope: Scope): HTMLElement {
   void cmd.detectHardware(ctx);
   const note = h('p', { class: 'note sw-ai-soon' }, t('set.ai.soon'));
   const service = ctx.services.ai?.service;
@@ -593,26 +607,50 @@ function aiTop(ctx: Ctx): HTMLElement {
       .then((st) => (note.style.display = st.reason === 'NOT_BUILT' ? '' : 'none'))
       .catch(() => (note.style.display = ''));
   }
-  return note;
+  // A model is installed and the inference runtime is not (or does not start): the first thing the section says (U10).
+  return h('div', { class: 'sw-ai-top' }, runtimeNotice(ctx, scope, 'settings'), note);
 }
 
 /** The desktop portable's first start (AI-POST.md §2.2): at the top of the list, which is where the deep link lands. */
 function chooserBanner(ctx: Ctx, scope: Scope): HTMLElement {
   const chooser = h('div', { class: 'sw-chooser', role: 'region', 'aria-label': t('set.ai.chooserTitle') });
+  // The inference runtime beside the models (phase U10), as the installer's page offers it: the build the rule chose for
+  // this computer, ticked, and the person can untick it. It downloads with the first model the person starts.
+  const runtimeRow = h('div', { class: 'sw-chooser-runtime', 'data-chooser-runtime': '', hidden: true });
+  const watch = runtimeWatch(ctx);
+  const drawRuntime = () => {
+    const rt = watch?.report?.runtime;
+    const offer = rt && watch?.report?.choice?.key && (rt.state === 'missing' || rt.state === 'paused') ? rt : null;
+    runtimeRow.hidden = !offer;
+    if (!offer) {
+      runtimeRow.replaceChildren();
+      return;
+    }
+    const on = ctx.ui.get().settingsWindow?.chooserRuntime !== false;
+    const box = toggle(on, () => {
+      const w = ctx.ui.get().settingsWindow;
+      if (w) ctx.ui.set({ settingsWindow: { ...w, chooserRuntime: w.chooserRuntime === false } });
+    }, t('set.ai.chooserRuntime', { backend: offer.backend === 'VULKAN' ? 'Vulkan' : 'CPU', size: size(offer.bytes) }));
+    runtimeRow.replaceChildren(box.el, h('span', { class: 'note' }, t('set.ai.chooserRuntime', { backend: offer.backend === 'VULKAN' ? 'Vulkan' : 'CPU', size: size(offer.bytes) })));
+  };
+  if (watch) scope.onDispose(watch.subscribe(drawRuntime));
   scope.watch(
-    (_s, u) => u.settingsWindow?.chooser === true,
-    (on) => {
+    (_s, u) => [u.settingsWindow?.chooser === true, u.settingsWindow?.chooserRuntime !== false] as const,
+    ([on]) => {
       chooser.style.display = on ? '' : 'none';
       chooser.replaceChildren(
         ...(on
           ? [
               h('div', { class: 'sw-strong' }, t('set.ai.chooserTitle')),
               h('p', { class: 'note' }, t('set.ai.chooserText')),
+              runtimeRow,
               h('button', { type: 'button', class: 'btn btn-primary', onclick: () => ctx.ui.set({ chooserShown: true, settingsWindow: { ...ctx.ui.get().settingsWindow!, chooser: false } }) }, t('set.ai.chooserDone')),
             ]
           : []),
       );
+      drawRuntime();
     },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
   );
   return chooser;
 }
@@ -620,34 +658,6 @@ function chooserBanner(ctx: Ctx, scope: Scope): HTMLElement {
 // ------------------------------------------------------------------ Runtime (desktop: stable-diffusion.cpp, X3b)
 
 const RUNTIME_BUSY = ['downloading', 'verifying', 'installing'];
-
-/** What the Runtime row offers for a build in a state. */
-export type RuntimeAction = 'download' | 'fromFile' | 'pause' | 'resume' | 'remove' | 'vcRuntime' | 'probe';
-
-/**
- * The Runtime row's buttons, in order: download it (or install the archive the person downloaded), pause, resume,
- * remove; and for an installed Windows build that does not start for want of Microsoft's Visual C++ runtime (X3c),
- * *Install Microsoft Visual C++ runtime…* (Microsoft's own page: we do not redistribute it) and *Check again*.
- */
-export function runtimeActions(rt: Pick<AiRuntimeEntryState, 'state' | 'vcRuntime'>): RuntimeAction[] {
-  switch (rt.state) {
-    case 'missing':
-      return ['download', 'fromFile'];
-    case 'downloading':
-      return ['pause'];
-    case 'paused':
-      return ['resume', 'remove'];
-    case 'installed':
-      return rt.vcRuntime === 'missing' ? ['vcRuntime', 'probe', 'remove'] : ['remove'];
-    default:
-      return [];
-  }
-}
-
-/** Opens Microsoft's download page of the Visual C++ runtime in the system's browser (the launcher's link, else ours). */
-export function openVcRuntime(ctx: Ctx, rt: Pick<AiRuntimeEntryState, 'vcRuntimeUrl'>): Promise<void> {
-  return ctx.services.openExternal(rt.vcRuntimeUrl ?? VC_RUNTIME_URL);
-}
 
 /**
  * The inference runtime the rule chose (AI-POST.md §7.1): which build and why, its state (downloading with
@@ -802,8 +812,67 @@ function runtimeRow(ctx: Ctx, scope: Scope): HTMLElement | null {
   return parts.el;
 }
 
+/**
+ * The system prompt line under its field (X4b), for the model in use: a model that reads a limited number of tokens gets
+ * the default's short form while the default is unedited, or the person's own text, of which the end is left out when
+ * it does not fit even alone (the scene's and the job's words give way first).
+ */
+export function systemPromptLine(system: string, model: Pick<ModelView, 'label' | 'maxPromptTokens'> | null): string {
+  const limit = model?.maxPromptTokens ?? null;
+  if (!model || limit === null) return '';
+  const name = modelName(model as ModelView);
+  if (isDefaultSystemPrompt(system)) return t('set.ai.sp.short', { model: name, limit });
+  const fit = composePrompt({ system, scene: '', user: '' }, { textPrompt: true, maxPromptTokens: limit });
+  if (fit.cut.system !== 'NONE') return t('set.ai.sp.cut', { model: name, limit });
+  return t('set.ai.sp.fit', { model: name, used: fit.tokens + 2, limit });
+}
+
+/** Settings ▸ AI post-processing ▸ System prompt (X4b): a multi-line field, Restore default, and what the model in use gets. */
+function systemPromptRow(ctx: Ctx, scope: Scope): HTMLElement {
+  // The row is the whole of its block: the block's title says what it is (the label stays for screen readers).
+  const parts = rowShell('ai.systemPrompt', { aux: t('set.ai.systemPrompt.aux'), control: null, stacked: true, hideLabel: true });
+  const count = h('span', { class: 'note tabular sw-sp-count' });
+  const field = textArea({
+    value: ctx.ui.get().settings['ai.systemPrompt'],
+    maxLength: MAX_SYSTEM_PROMPT,
+    rows: 8,
+    ariaLabel: t('set.ai.systemPrompt'),
+    normalise: (v) => normaliseSystemPrompt(v) ?? '',
+    onCommit: (v) => cmd.setSetting(ctx, 'ai.systemPrompt', v),
+    onInput: (v) => update(v),
+  });
+  field.el.classList.add('sw-sp-field');
+  const restore = h('button', { type: 'button', class: 'btn', 'data-sp': 'restore', onclick: () => cmd.resetOneSetting(ctx, 'ai.systemPrompt') }, icon('refresh', 14), t('set.ai.sp.restore'));
+  const line = h('div', { class: 'note sw-sp-line', role: 'status' });
+  const shortText = h('details', { class: 'sw-sp-short' }, h('summary', { class: 'note' }, t('set.ai.sp.shortForm')), h('p', { class: 'note sw-sp-short-text' }, SHORT_SYSTEM_PROMPT));
+  const update = (typed?: string) => {
+    const u = ctx.ui.get();
+    const text = typed !== undefined ? (normaliseSystemPrompt(typed) ?? '') : u.settings['ai.systemPrompt'];
+    count.textContent = t('rw.aiPromptCount', { n: text.length, max: MAX_SYSTEM_PROMPT });
+    const pc = promptContext(u, null);
+    const l = systemPromptLine(text, pc.model);
+    line.textContent = l;
+    line.style.display = l ? '' : 'none';
+    shortText.style.display = pc.caps.maxPromptTokens !== null && isDefaultSystemPrompt(text) ? '' : 'none';
+    const isDefault = text === DEFAULT_SYSTEM_PROMPT;
+    (restore as HTMLButtonElement).disabled = isDefault;
+    parts.el.classList.toggle('is-changed', !isDefault);
+    parts.el.dataset.changed = isDefault ? '0' : '1';
+  };
+  parts.el.insertBefore(h('div', { class: 'sw-value-block sw-sp', 'data-value': 'ai.systemPrompt' }, field.el, h('div', { class: 'sw-inline sw-sp-foot' }, count, h('span', { style: 'flex:1' }), restore), line, shortText), parts.ctrlEl);
+  scope.watch(
+    (_s, u) => [u.settings['ai.systemPrompt'], u.models, u.settings['ai.active'], u.hardware, getLang()] as const,
+    ([v]) => {
+      field.set(v);
+      update(document.activeElement === field.el ? field.el.value : undefined);
+    },
+    (a, b) => a.every((x, i) => x === b[i]),
+  );
+  return parts.el;
+}
+
 export const AI_HOOKS: SettingsHooks = {
-  rows: { 'ai.active': (ctx, scope) => activeRow(ctx, scope), 'ai.gpu': gpuRow, 'ai.runtime': (ctx, scope) => runtimeRow(ctx, scope) },
+  rows: { 'ai.active': (ctx, scope) => activeRow(ctx, scope), 'ai.gpu': gpuRow, 'ai.runtime': (ctx, scope) => runtimeRow(ctx, scope), 'ai.systemPrompt': (ctx, scope) => systemPromptRow(ctx, scope) },
   blocks: { models: (ctx, scope) => modelsBlock(ctx, scope), hardware: (ctx, scope) => hardwareBlock(ctx, scope), guard: guardBlock },
   rowOptions: {},
   top: { ai: aiTop },

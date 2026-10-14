@@ -13,8 +13,9 @@
 //! [`render_tile_albedo`] for every sample the image gets (the sample's own camera ray). Neither
 //! touches the image's film or its random numbers.
 
+use crate::caustics::PhotonMap;
 use crate::image::Film;
-use crate::integrator::{first_hit, radiance_at, BvhTracer, Prepared, Tracer};
+use crate::integrator::{first_hit, radiance_with, BvhTracer, Prepared, Tracer};
 use crate::math::Ray;
 use crate::passes::{albedo_of, Exact, PassFilm, PASS_ALBEDO, PASS_EXACT};
 use crate::sampler::{PixelSampler, DIM_CAMERA, DIM_LENS};
@@ -105,9 +106,30 @@ pub fn render_tile_with(
 }
 
 /// [`render_tile`] with the scene already prepared (`prepared` must come from `scene`).
+///
+/// A scene with caustics ([`Prepared::has_caustics`]) renders them only through
+/// [`render_tile_photons`], with the photon map of the sample; here it renders as the path
+/// tracer alone would.
 pub fn render_tile_prepared(
     scene: &Scene,
     prepared: &Prepared,
+    tile: TileRect,
+    sample_index: u32,
+    film: &mut Film,
+    isa: Isa,
+) -> u64 {
+    render_tile_photons(scene, prepared, None, tile, sample_index, film, isa)
+}
+
+/// [`render_tile_prepared`] with the photon map of `sample_index` (E5b-1, [`crate::caustics`]):
+/// the caustics come from the map and the paths leave them out. `photons` must be the map of
+/// this scene and this sample index ([`PhotonMap::trace`]); a map of another sample index is
+/// ignored (the tile renders without caustics, as with `None`). Returns the rays cast, the map's
+/// own not included.
+pub fn render_tile_photons(
+    scene: &Scene,
+    prepared: &Prepared,
+    photons: Option<&PhotonMap>,
     tile: TileRect,
     sample_index: u32,
     film: &mut Film,
@@ -117,7 +139,8 @@ pub fn render_tile_prepared(
         geometry: &scene.geometry,
         isa,
     };
-    render_tile_traced(scene, prepared, tile, sample_index, film, &tracer)
+    let photons = photons.filter(|m| m.iteration() == sample_index && prepared.has_caustics());
+    render_tile_traced(scene, prepared, tile, sample_index, film, &tracer, photons)
 }
 
 /// The body of the tile renderers, generic over how rays are traced.
@@ -128,6 +151,7 @@ fn render_tile_traced<T: Tracer>(
     sample_index: u32,
     film: &mut Film,
     tracer: &T,
+    photons: Option<&PhotonMap>,
 ) -> u64 {
     let (width, height) = (scene.render.width, scene.render.height);
     let x_end = tile.x.saturating_add(tile.w).min(width);
@@ -137,7 +161,9 @@ fn render_tile_traced<T: Tracer>(
         for x in tile.x..x_end {
             let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
             let (ray, screen) = camera_sample(scene, &sampler, x, y);
-            let (c, alpha) = radiance_at(scene, prepared, tracer, &sampler, ray, screen, &mut rays);
+            let (c, alpha) = radiance_with(
+                scene, prepared, tracer, &sampler, ray, screen, photons, &mut rays,
+            );
             film.splat_alpha(x, y, c, alpha);
         }
     }
@@ -267,6 +293,7 @@ pub(crate) fn render_tile_brute_force(
         sample_index,
         film,
         &BruteForce(&scene.geometry),
+        None,
     )
 }
 
@@ -686,6 +713,46 @@ mod tests {
 
     /// Pinned hash of the E5c example (physical sky) at 4 samples per pixel.
     pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x8bb0_9f6b;
+
+    /// Renders all of `scene`, 32-pixel tiles, samples `0..4`, each with its photon map (traced
+    /// once per sample, as every host does), and hashes the resolved film.
+    pub(crate) fn caustic_4spp_hash(scene: &Scene, isa: Isa) -> u32 {
+        let prepared = Prepared::new(scene);
+        let (w, h) = (scene.render.width, scene.render.height);
+        let mut film = Film::new(w, h);
+        let maps: Vec<PhotonMap> = (0..4)
+            .map(|sample| PhotonMap::trace(scene, &prepared, sample, isa))
+            .collect();
+        for tile in tile_grid(w, h, 32) {
+            for sample in 0..4 {
+                let map = Some(&maps[sample as usize]);
+                render_tile_photons(scene, &prepared, map, tile, sample, &mut film, isa);
+            }
+        }
+        fnv1a(&film.resolve())
+    }
+
+    #[test]
+    fn the_e5b_caustics_have_a_pinned_hash_on_every_platform() {
+        // E5b-1 added the photon map of the caustics. With photons the E5 scene's light reaches
+        // the floor and the cut-out plane through the glass by the map, and the paths leave it
+        // out; without photons nothing changed (the hashes above). Through an RSB round trip;
+        // `tools/wasm-parity.mjs` checks the real module against it (`rt --write-e5b-example`).
+        let scene = crate::example::e5b_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        assert!(Prepared::new(&scene).has_caustics());
+        for isa in Isa::available() {
+            let hash = caustic_4spp_hash(&scene, isa);
+            eprintln!("E5b example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_E5B_CAUSTICS_4SPP, "caustics on {}", isa.name());
+        }
+        // Without its photon maps the scene renders as the E5 one did.
+        assert_eq!(e5_4spp_hash(false, Isa::detect()), PINNED_E5_HDRI_4SPP);
+        assert_eq!(scene_4spp_hash(&scene, Isa::detect()), PINNED_E5_HDRI_4SPP);
+    }
+
+    /// Pinned hash of the E5b-1 example (caustics) at 4 samples per pixel.
+    pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x55d6_0f2f;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

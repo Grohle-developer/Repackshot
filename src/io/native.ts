@@ -155,6 +155,11 @@ export interface StoreList {
 export interface PendingModels {
   device: 'gpu' | 'cpu';
   keys: string[];
+  /**
+   * The inference runtime the installer ticked beside the models (phase U10, `ai-runtimes.json` key). The launcher
+   * starts downloading it itself at its first launch (`Ai::start_pending_runtime`); the page only knows it was there.
+   */
+  runtime?: string;
 }
 
 /** A path the person chose in one of the launcher's dialogs (engine/crates/rt-app/src/files.rs). */

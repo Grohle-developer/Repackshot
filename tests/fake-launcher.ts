@@ -22,7 +22,8 @@ export interface FakeLauncher {
   settings: string | null;
   library: string | null;
   docs: Map<string, string>;
-  results: Map<string, { meta: string; file?: Blob; display?: Blob; ai?: Blob }>;
+  /** `ai`: the single AI image of before X4b (`…/ai`); `variants`: X4b's, by number from 1 (`…/ai/<n>`). */
+  results: Map<string, { meta: string; file?: Blob; display?: Blob; ai?: Blob; variants?: Map<number, Blob> }>;
   cache: Map<string, string>;
   /** Paths whose writes fail (500), or `METHOD /path` that fails, to test error reporting. */
   failing: Set<string>;
@@ -43,7 +44,7 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
   };
   const info: NativeInfo = {
     app: 'repackshot',
-    version: '0.1.4',
+    version: '0.1.5',
     engineVersion: '0.3.0',
     threads: 4,
     isa: 'avx2',
@@ -81,7 +82,7 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
       return t;
     };
     if ((method !== 'GET' && state.failing.has(url.pathname)) || state.failing.has(`${method} ${url.pathname}`)) return error(500, 'io');
-    const key = `${method} ${parts.length > 3 ? `${parts.slice(0, 2).join('/')}/*/${parts.slice(3).join('/')}` : parts.length === 3 ? `${parts.slice(0, 2).join('/')}/*` : parts.join('/')}`;
+    const key = `${method} ${parts.length === 5 && parts[3] === 'ai' ? `${parts.slice(0, 2).join('/')}/*/ai/*` : parts.length > 3 ? `${parts.slice(0, 2).join('/')}/*/${parts.slice(3).join('/')}` : parts.length === 3 ? `${parts.slice(0, 2).join('/')}/*` : parts.join('/')}`;
     const name = parts[2] ?? '';
     if (parts.length >= 3 && parts[0] === 'store' && !validName(name)) return error(400, 'bad-name');
     switch (key) {
@@ -158,6 +159,26 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
         state.results.set(name, { ...(state.results.get(name) ?? { meta: '' }), ai });
         return new Response(null, { status: 204 });
       }
+      case 'PUT store/results/*/ai/*': {
+        // As the launcher: a variant is a number from 1 to 8, written plainly.
+        const n = parts[4];
+        if (!/^[1-8]$/.test(n)) return error(400, 'bad-variant');
+        const type = url.searchParams.get('type') ?? '';
+        if (!RESULT_TYPES[type]) return error(415, 'bad-type');
+        const blob = new Blob([await new Response(init.body ?? null).arrayBuffer()], { type });
+        const r = state.results.get(name) ?? { meta: '' };
+        state.results.set(name, { ...r, variants: new Map([...(r.variants ?? []), [Number(n), blob]]) });
+        return new Response(null, { status: 204 });
+      }
+      case 'GET store/results/*/ai/*': {
+        const n = parts[4];
+        if (!/^[1-8]$/.test(n)) return error(400, 'bad-variant');
+        const r = state.results.get(name);
+        // Variant 1 of a result of before X4b is its single AI image.
+        const blob = r?.variants?.get(Number(n)) ?? (n === '1' ? r?.ai : undefined);
+        if (!r?.meta || !blob) return error(404, 'not-found');
+        return new Response(blob, { status: 200, headers: { 'Content-Type': blob.type } });
+      }
       case 'PUT store/results/*/meta': {
         const r = state.results.get(name);
         if (!r?.file) return error(409, 'no-file');
@@ -171,7 +192,7 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
       case 'GET store/results/*/ai':
       case 'GET store/results/*/display': {
         const r = state.results.get(name);
-        const blob = key.endsWith('display') ? r?.display : key.endsWith('/ai') ? r?.ai : r?.file;
+        const blob = key.endsWith('display') ? r?.display : key.endsWith('/ai') ? (r?.variants?.get(1) ?? r?.ai) : r?.file;
         if (!r?.meta || !blob) return error(404, 'not-found');
         return new Response(blob, { status: 200, headers: { 'Content-Type': blob.type } });
       }
@@ -192,7 +213,7 @@ export function fakeLauncher(opts: { gpus?: { name: string; vendor: string; vram
       }
       case 'GET storage/usage': {
         const lib = state.library?.length ?? 0;
-        const res = [...state.results.values()].reduce((a, r) => a + (r.file?.size ?? 0) + (r.display?.size ?? 0) + (r.ai?.size ?? 0), 0);
+        const res = [...state.results.values()].reduce((a, r) => a + (r.file?.size ?? 0) + (r.display?.size ?? 0) + (r.ai?.size ?? 0) + [...(r.variants?.values() ?? [])].reduce((n, b) => n + b.size, 0), 0);
         const thumbs = [...state.cache.values()].reduce((a, v) => a + v.length, 0);
         const folders = [
           { id: 'models', path: '/data/models', bytes: 0, files: 0 },

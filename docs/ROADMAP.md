@@ -1013,7 +1013,7 @@ Lo que no encajó con el plan:
 - **Las capturas del hito (a)** se hicieron antes de corregir la asimetría
   de los aerosoles; las de (b) a (d), con la tabla final.
 
-## E5b-1 · Cáusticas y *denoise* propio — **Opus**
+## E5b-1 · Cáusticas y *denoise* propio — **Opus** — hecha
 
 **Petición del usuario (2026-10-13):** «integra también cáusticas,
 *denoise*…». Se adelanta esta parte de E5b; el reflejo del suelo, los
@@ -1050,6 +1050,189 @@ da su foco de luz con la energía esperada (test analítico o frente a una
 referencia larga del trazador), sin luciérnagas en la imagen con
 *denoise*; determinismo con cualquier número de hilos. Capturas antes y
 después.
+
+**Hecho.**
+
+- **Varianza en la película.** `Film::lum2` suma el cuadrado de la
+  luminancia de cada muestra (`f32`, en orden de muestra) sin tocar la
+  radiancia, el peso ni la cobertura: ningún *hash* de imagen se movió
+  (ejemplo `0x223515c3`, E5 `0xbf8abd5b`, cielo de E5 `0x2fcb098a`, E5c
+  `0x8bb09f6b` y los seis de pases de X2, en todas las rutas SIMD, WASI y
+  el `rt.wasm` real). La página la suma con la misma regla
+  (`Accumulator.lum2`, `Math.fround`).
+- ***Denoise*** (`rt_post::denoise`, Rust con `std`, sin pesos de nadie):
+  à-trous con paradas en aristas de Dammertz, Sewtz, Hanika y Lensch (HPG
+  2010; núcleo B3, cinco pasadas con pasos 1–16 px) con la parada de
+  luminancia guiada por la varianza de SVGF (Schied et al., HPG 2017:
+  varianza emborronada 3 × 3 y propagada como `Σ w² Var / (Σ w)²`, normal
+  `max(0, n·n')^128`, profundidad con su gradiente, albedo dividido y
+  vuelto a multiplicar, varianza espacial 7 × 7 por debajo de cuatro
+  muestras). Lo nuestro: la varianza de la película, los pases exactos de
+  X2 como guía, **peso cero entre dos piezas o dos materiales** (nunca las
+  mezcla) y el fondo intacto, un recorte de luciérnagas antes de filtrar
+  (un píxel más de cuatro veces más brillante que todos sus vecinos de la
+  misma superficie baja a eso) y `(1 − x/16)^16` en lugar de exponenciales.
+  Bandas de filas con un halo de 72 filas, exactamente esas filas de la
+  imagen entera, así que `rt`, el lanzador y la página reparten el trabajo
+  como quieren con los mismos bits. Error relativo (relMSE) frente a una
+  referencia de 384 muestras en escenas de la hoja (48 × 36, el test):
+  *key-only* 0,0401 → 0,0132 a 4 spp y 0,0048 → 0,0030 a 16; frasco de
+  vidrio 0,1259 → 0,0301 y 0,0284 → 0,0070; al tamaño de la hoja, entre el
+  4 y el 20 % del error sin filtrar a 4 spp. Coste: 4,6 s una imagen de
+  1920 × 1080 en un hilo y 2,4 s en cuatro (máquina compartida y cargada).
+  *Hash* fijado `0xab15f290` (`PINNED_DENOISED_EXAMPLE_4SPP`, el ejemplo
+  a 4 spp), igual en nativo, en el `rt.wasm` real por bandas y por el
+  código de la página con 1 y 2 *workers*.
+- **Cáusticas** (`rt_core::caustics`): SPPM (Hachisuka y Jensen 2009) en
+  la forma probabilística de Knaus y Zwicker (2011): cada índice de muestra
+  es una pasada con sus fotones, sin estado por píxel, y la película
+  promedia las pasadas. Partición *caster* / receptor / suceso recto, mapa
+  de los tramos `L C+ R` reunido en **cada** receptor del camino de cámara
+  y el trazador sin esa luz (ver los destellos, abajo); emisión dirigida a
+  las esferas envolventes de los *casters* con la densidad de la mezcla,
+  flujo sin 1/η², corrección adjunta de normales de Veach, PCG por
+  (semilla, muestra, fotón), rejilla *hash*, núcleo de Epanechnikov;
+  atrapasombras con cáusticas relativas al suelo abierto. Coste medido: el
+  frasco a 640 × 480 y 64 spp, 9,2 s sin fotones y 11,4 s con 16 384 por
+  muestra (*Media*), un 24 % más. *Hash* fijado **`0x55d60f2f`**
+  (`PINNED_E5B_CAUSTICS_4SPP`, la escena de E5 con 2048 fotones por
+  muestra, `rt --write-e5b-example`), igual en escalar, SSE2, AVX2, WASI
+  escalar y `simd128`, el `rt.wasm` real, el lanzador con 1, 4 y 16 hilos y
+  el código de la página.
+- **RSB**: `RNDR` pasa a 52 B con `denoise` (bit 0 imagen limpia, bit 1
+  también la original), `caustic_photons` (hasta 2²²) y `caustic_radius`
+  (px); un RSB anterior se lee sin *denoise* ni cáusticas. **Anfitriones**:
+  `rt --denoise --keep-noisy --caustics N --caustic-radius R` y la hoja
+  con los pares nuevos; el lanzador traza los mapas por rangos en todos
+  sus hilos, en el visor reduce ruido en el primer fotograma, en el último
+  y entre medias solo si ha pasado tres veces lo que costó la última vez, y
+  el render final entrega la limpia y, si se pide, la original; en la
+  página cada *worker* traza los mapas de sus muestras (guarda 16) y el
+  *pool* reduce ruido por bandas (`rt_denoise`).
+- **Interfaz**: *Calidad* ▸ *Cáusticas* (*Automático · Encendidas ·
+  Apagadas*; *Automático*: un *caster* y una luz *glossy* que vista desde
+  ellos no pase de 20°, un sol o un emisor encendido); *Avanzado* ▸
+  *Calidad de cáusticas* (*Baja* 4096 fotones y 4 px, *Media* 16 384 y
+  3 px, *Alta* 65 536 y 2 px), *Reducción de ruido* (*Apagada · Visor ·
+  Render · Los dos*, por defecto *Los dos*) y *Guardar también sin
+  reducción de ruido*; en el visor *Completo*, el medidor dice *Ruido
+  reducido* y *Cáusticas · N fotones por muestra* cuando el motor lo hace,
+  y el botón *Reducir ruido* cambia solo la parte del visor. La IA recibe
+  la imagen limpia como entrada.
+- **Tests**: 19 nuevos en `rt-core` (clasificación de *casters*; flujo de una esfera de vidrio frente
+  a una integración exacta en `f64`, 0,2 %; núcleo; reparto y SIMD de un
+  mapa; calendario del radio; partición frente al trazador solo en la
+  sombra de una esfera, bajo una esfera de metal pulido, con dos esferas
+  solapadas, en un suelo iluminado por la cáustica de una pared y con un
+  punto de luz de L4 junto al mapa; vidrio
+  macizo; atrapasombras; luz encerrada en vidrio con mapa vacío; estados
+  de la partición; orden de baldosas; `lum2`; RSB; *hash* fijado), 7 en
+  `rt-post`, los de `rt-cli` (hilos 1/4/16, error del
+  *denoise*, CLI), `rt-wasm`, `rt-app` (paridad con `rt`, visor, cáusticas
+  con 1/4/16 hilos) y la interfaz (`tests/denoise.test.ts` con el
+  `rt.wasm` real, *pool*, lanzador, cola, RSB). Se comprobó que fallan
+  reintroduciendo cada error: sin regla de descarte, sin reunir, sin η²,
+  núcleo mal normalizado, sin atrapasombras, radio congelado, estado que
+  cambia en un suceso recto, NEE sin descartar en un *caster*, densidad de
+  un solo cono, estado que no vuelve a empezar en el segundo receptor,
+  reunir solo en el primero, la luz de un punto quitada con el mapa
+  encendido, sin parada de ids, halo corto, `lum2` sin cuadrado (en Rust y
+  en la página), sin guardar la original, sin leerla del lanzador.
+
+**Convergencia de la cáustica (pregunta del líder).** Sí: el radio se
+encoge con las pasadas como dicen Knaus y Zwicker,
+`r_i² = r_1² Π_{k=1..i} (k + α)/(k + 1)` con α = 2/3, así que
+`r_i ∝ i^(−1/6)` (r_1024 ≈ 0,33 r_1); converge a calidad final sin estado
+por píxel. Medido en el frasco a 240 × 180 (r_1 = 3 px, 16 384 fotones por
+muestra), región de la cáustica = 2328 píxeles del suelo en la sombra del
+centro de la luz a más de 2 px de la silueta; relMSE (media de
+`(x − r)²/(r² + 0,01)` por canal, valores recortados a 1) frente a una
+referencia larga con otra semilla:
+
+| muestras | radio | cúpula 0,12 (ref. 8192 spp) sin / con *denoise* | entorno negro (ref. 4096) sin / con |
+|---|---|---|---|
+| 16 | 1,98 mm | 0,0224 / 0,0104 | 0,0325 / 0,0168 |
+| 64 | 1,58 mm | 0,0074 / 0,0052 | 0,0107 / 0,0077 |
+| 256 | 1,25 mm | 0,0037 / 0,0032 | 0,0051 / 0,0044 |
+| 1024 | 1,00 mm | 0,0026 / 0,0025 | 0,0031 / 0,0031 |
+
+Media de la región a 1024: 0,2852 frente a 0,2864 de la referencia
+(cúpula) y 0,2181 frente a 0,2186 (negro). Antes de corregir los destellos
+la curva subía a 1024 (0,0048 y 0,0068): dos píxeles con un destello se
+llevaban el 77 % del error. Las referencias se hicieron antes de esa
+corrección (el trazador es insesgado para esos caminos, así que valen).
+La hoja añade el par pedido: el frasco con cáusticas a 1024 muestras
+(*Final*), sin y con *denoise* (`e5b-bottle-caustics-final`).
+
+**Los destellos del par *Final* (pregunta del líder).** Con cada muestra
+separada por tipo de camino (recorte de 260 × 125 alrededor de la base,
+1024 spp): de 324 píxeles con destello, **157 eran del tipo (a)**: luz de
+una luz de fotones que, después del **segundo** receptor del camino, llegaba
+por el vidrio (`L C+ R C* R E`, una cáustica vista por un rebote difuso:
+el suelo junto al frasco viendo la cáustica a través del vidrio). La
+partición reunía el mapa solo en el primer receptor y dejaba al trazador
+todo lo de después: no contaba dos veces (la energía cuadraba), pero esos
+caminos llegaban en una muestra de cada mil con unas 1300 veces el valor
+medio. **Corregido**: cada receptor reúne el mapa (los siguientes al
+primero con el recorte de la luz indirecta) y el trazador descarta esa luz
+después de cualquier receptor; tests nuevos (luz encerrada en una bola de
+vidrio: con el mapa vacío todos los píxeles de receptor quedan negros, y la
+energía de un suelo iluminado por la cáustica de una pared cuadra con el
+trazador solo a −3 %; con el código anterior, 305 de 814 píxeles se
+encienden y el suelo sale −11 % a 192 spp). Del tipo (b) no hay nada: el
+vidrio macizo tapa la NEE y la NEE en un *caster* después de un receptor se
+descarta. Quedan **40 píxeles del tipo (c)**, brillos reales: la luz vista
+por la base de vidrio (`E C+ L`, también el brillo del tapón a través de
+ella), dos manchas de 2–4 px con medias de hasta 81 que el *denoise*
+conserva, y la línea focal de la cáustica en el borde de la base (estable
+de muestra a muestra). Capturas: `docs/ui/engine-e5b1-bottle-caustics-final.png`
+(el par vuelto a hacer) y `docs/ui/engine-e5b1-bottle-glints-4x.png`
+(la base a 4×: antes, después y después con *denoise*). Las escenas sin
+cáusticas no cambian de bits.
+
+Capturas: `docs/ui/engine-e5b1-denoise-4spp.png` (4 spp sin y con
+*denoise*), `docs/ui/engine-e5b1-bottle-caustics.png` (el frasco a 64 spp
+sin y con cáusticas) y las dos de arriba.
+
+Lo que no encajó con el plan:
+
+- **SPPM sin estadísticas por píxel**: el radio es global por pasada
+  (Knaus y Zwicker) y no el de Hachisuka y Jensen por punto visible; es lo
+  que permite renderizar baldosas en cualquier orden e hilo con los mismos
+  bits. Converge igual, pero el radio no se adapta a la densidad local.
+- **El entorno no emite fotones** (sus cáusticas siguen en el trazador) ni
+  las luces no *glossy*, ni los **puntos, esferas y focos direccionales de
+  L4** (llegaron con la fusión: sus cáusticas siguen en el trazador, así
+  que un punto no da ninguna, y *Automático* no los cuenta; un test
+  comprueba que con el mapa encendido el trazador no les quita su luz por
+  el vidrio); los brillos `E C+ L` de luces pequeñas en vidrio
+  liso siguen siendo del trazador (son reales, pero convergen despacio).
+- **Las cáusticas del primer receptor no pasan por el recorte de luz
+  indirecta** (`clamp_indirect`); las de los siguientes, sí.
+- **Atrapasombras con fondo transparente**: sin cáusticas (su alfa lleva
+  solo la sombra).
+- El ***denoise* filtra RGB, no la cobertura**, y no se aplica a los
+  fotogramas de resolución reducida de los gestos; entre dos *denoise* el
+  visor muestra el último limpio. El recorte de luciérnagas pierde algo de
+  energía donde las hay.
+- **El interruptor *Cáusticas* está en *Calidad*** y su calidad en
+  *Avanzado*, como pedía el plan, pero los dos campos se guardan en
+  `advanced` del proyecto; los proyectos antiguos abren con *denoise*
+  *Los dos* y cáusticas *Automático* (los valores por defecto).
+- ***Automático*** decide con un umbral de 20° para «luz pequeña» y
+  cuenta el metal cepillado como *caster* a lo largo de su cepillo
+  (`r ⁴√(1 − 0,9 a)` ≤ 0,25), así que el tapón del frasco lo es.
+  **Decisión tomada (Fable): se quedan los dos.** *Automático* quiere decir
+  «encendidas cuando puede salir una cáustica nítida que el trazador solo
+  encontraría por casualidad», que es justo lo que da luciérnagas. Una luz
+  de más de 20° vista desde el objeto (un *softbox* de 1 m a menos de unos
+  2,8 m) da cáusticas tan blandas que el trazador las resuelve bien, y no
+  las enciende. Un metal cepillado bajo una luz pequeña sí echa al suelo
+  una estela de luz a lo largo del cepillo, así que cuenta. El coste
+  (≈ +24 %) solo se paga con una luz pequeña en escena, y *Apagadas* sigue
+  a mano.
+- **El coste en el visor *Completo*** se dice en el medidor (fotones por
+  muestra) y en la ayuda, no en segundos.
 
 ## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
 
@@ -1202,7 +1385,7 @@ nodos con el mismo id, como ya hacía `studio.saved`; la captura de
 160 × 120 usa el encuadre tal cual (la pieza sale pequeña); importar con
 un id existente conserva el que había aunque el contenido difiera.
 
-## L4 · Focos propios — **Opus**
+## L4 · Focos propios — **Opus** — hecha
 
 **Qué.** Lo de `SPEC.md` §3.4 "Luces propias, al estilo KeyShot": añadir
 focos (área rectángulo, disco y esfera; punto; foco direccional con cono
@@ -1239,6 +1422,141 @@ gusto, también con el paneo.» Decisiones del líder, dentro de L4:
   ⇧ L`): el visor mira desde ella y **Orbitar, Desplazar y Zoom mueven ese
   objeto** (la luz apunta a donde mira el visor); `Esc` o el botón vuelven a
   la cámara activa. Respeta *Bloquear cámara*.
+
+**Hecho.** *Focos propios.* `LightType` gana `POINT` y `SPOT` y `LightShape`
+gana `SPHERE` (se añade, no se renombra). `core/lighting.ts`: los focos
+propios son `LightInstance` de `studio.lights` con `own: true`, en la misma
+lista que los del montaje, con campos opcionales nuevos (`name`, `blend`,
+`shadow`, `aim` en tamaños de pieza desde el pivote, `roll`), así que un
+proyecto, un estudio o una biblioteca de antes abren igual. `lightFrame`
+(posición, objetivo, *up* con su giro), `placementOf`, `polarAboutPivot`,
+`aimOffset`, `newLight` (delante y arriba de la pieza desde la cámara
+activa, con la irradiancia media de los encendidos; el sol, π veces) y las
+acciones `studio/addLight`, `duplicateLight`, `deleteLight`, `aimLight` y
+`placeOnSurface`; `studio/resetLights` ya quita los propios. Unidades de
+puntos y focos (`core/photometry.ts`): **un punto o un foco de P W es tan
+brillante en su eje como un panel de P W** (flujo `π P S²` para el motor,
+intensidad `P S² / 4` para three.js), lúmenes desde el flujo del motor
+(`lightLumens`, `spotFraction`). La biblioteca (`specOf`, los validadores de
+`io/library.ts`) lleva tipo, forma, objetivo, giro, transición y sombra.
+`io/rsb.ts` escribe `LGHT` 3 y 4, el bit 2 *sin sombra* y el *up* girado
+(sin giro, `[0, 0, 1]` como antes: los bytes de los proyectos sin focos
+propios no cambian). Vista previa: `PointLight` y `SpotLight` de three con la
+intensidad del motor, los paneles girados con su *up*. Motor (`rt-core`,
+`light.rs`): esferas de radiancia uniforme muestreadas en su cono, puntos
+por posición, la máscara del foco en *smoothstep* desde la dirección del
+centro (la de three), cámara y reflejos con MIS, `LightSample::shadow` y el
+integrador que no traza la sombra de una luz sin ella (tampoco en el
+*shadow catcher*). Interfaz: *+ Añadir luz* con su menú (y *Añadir ▸* de la
+cabecera, el visor en vacío y la paleta), la fila del foco seleccionado con
+duplicar, apuntar y eliminar, *Apuntar un foco aquí ▸* en el menú de una
+pieza, el inspector completo de `UI.md` §2.4 y los dos *próximamente*
+quitados (`lights.addSoon`, `lightEdit.moreSoon`).
+
+*Luces y cámaras en el visor, Mirar a través.* `core/view-objects.ts`:
+`objectFrame` y `objectGizmoAction` (el *gizmo* de *Mover* sobre una luz o
+una cámara guardada: mover sin cambiar a dónde apunta, girar su objetivo y
+el giro del panel, el asa de apuntar; una cámara bloqueada no tiene),
+`lookThroughCamera` y `lookThroughAction` (la vista desde el objeto y la
+navegación que lo mueve; un foco ajusta la focal a su cono), `glyphsOf`,
+`pickGlyph` y `viewProjector`. La vista previa dibuja los glifos en la capa
+del *gizmo* (discontinuos; el seleccionado, continuo), el modo `MOVE` del
+*gizmo* (sin cubos) y mira a través; el trazador (wasm y nativo) renderiza
+desde la misma cámara (`setViewCamera`). `main.ts` convierte la navegación
+en vivo, con un *token* de gesto que nace al empezar el gesto (una entrada
+de deshacer por órbita, desplazamiento o tirón de rueda). En la barra de
+vista, *Luces y cámaras* (recordado) y *Mirar a través*; `Ctrl/⌘ ⇧ L`, `Esc`
+vuelve antes que nada; un aviso bajo la barra; doble clic y clic derecho en
+un glifo.
+
+*Pruebas.* `tests/own-lights.test.ts` (20) y `tests/view-objects.test.ts`
+(16): el criterio (un montaje propio de un panel, un foco y un punto,
+guardado en Joyería y aplicado a Relojería, Mobiliario de interior y
+Estándar, da la irradiancia total de cada tipo con el mismo reparto, el
+mismo objetivo y la misma transición), añadir y deshacer, ids que no chocan,
+duplicar y eliminar, restablecer, apuntar, giro, colocar sobre superficie,
+RSB de ida y vuelta, el sol que coloca el cielo desde su objetivo,
+proyecto y biblioteca, glifos y su clic, el *gizmo* de luz y de cámara (una
+entrada de deshacer, la cámara activa quieta, la bloqueada sin *gizmo*),
+*Mirar a través* que mueve la luz y la cámara y respeta el bloqueo, la
+proyección. En `rt-core`, 7 tests de `light.rs` (`I / d²` del punto y de la
+esfera, su radiancia vista, el cono y su transición, el flujo del cono
+frente al cálculo de la interfaz, la esfera diminuta como punto, la
+selección de un foco estrecho, la marca sin sombra) y 4 del integrador (la
+irradiancia de puntos, esferas y focos sobre un suelo blanco, la esfera
+contada una vez con MIS, lo oscuro fuera del cono, la luz sin sombra que
+atraviesa una losa). Mutaciones: 9 en el motor y 21 en TypeScript, todas
+detectadas al final (la del proyector se escapaba y ganó un test).
+`tools/lights-check.mjs` (Playwright, *Rápido* y *Completo*) comprueba el
+menú, apuntar a una pieza con clic, el deshacer paso a paso, el clic en los
+glifos (y que no coge nada con el botón apagado o en *Piezas*), el *gizmo*
+de un foco y de una cámara guardada, *Mirar a través* con órbita, deshacer y
+`Esc`, y una cámara bloqueada que no se mueve; capturas
+`docs/ui/lights-add-menu.png`, `lights-spot-aimed.png`,
+`lights-spot-full.png` (convergida, solo el lienzo),
+`lights-glyphs-gizmo.png` y `lights-look-through.png`.
+
+No encajó con el plan:
+
+- **No son nodos `LIGHT` del árbol.** El plan (y `SPEC.md` §3.1) dice
+  nodos `LIGHT` con transformación propia, y U3 dejó `scene/aim` y el asa
+  de apuntar para ellos. Pero desde U1 las luces viven en `studio.lights` y
+  las cámaras en `camera.cameras`, y de esa lista tiran la vista previa, el
+  motor, la animación (los clips apuntan a un foco por su id), el Doctor,
+  los estudios, la biblioteca y las barras de reparto. Dos sistemas de luces
+  lo habrían duplicado todo y los focos del montaje no se habrían podido
+  mover con el *gizmo*. Los focos propios son `LightInstance` con su propia
+  colocación (posición, objetivo y giro en tamaños de pieza desde el pivote)
+  y los del montaje ganan la misma; el árbol de *Piezas* no los lista (los
+  lista *Luces*). `scene/aim` sigue como estaba, sin uso. Si Fable prefiere
+  nodos, es una migración de `studio.lights`.
+- **Los vatios de un punto y de un foco** no son los de Cycles (que serían π
+  veces más oscuros): ninguna receta los usa, y así un montaje que mezcla
+  paneles, puntos y focos conserva su equilibrio y un foco nuevo con la
+  irradiancia media se ve como los demás. Un sol nuevo nace con π veces la
+  media (su medida es la que llega; la de un panel, 1/π de la que llega en
+  su eje), así que su barra de reparto se ve mayor. Los lúmenes salen
+  pequeños en piezas pequeñas (son el flujo de verdad: los vatios se dan
+  para una pieza de 1 m), y la nota del inspector lo dice.
+- **Los glifos se dibujan solo mientras se trabaja con luces o cámaras**
+  (decisión del líder tras la primera captura): la pestaña *Luces* o
+  *Cámaras* abierta, una luz o una cámara seleccionada, o mirando a través;
+  con *Piezas* y una pieza, ninguno. El borde inferior del panel principal
+  del montaje *Estándar* cruzaba el hombro del frasco como una línea recta
+  (el foco está entre la cámara y la pieza, por encima): una segunda pasada
+  con profundidad no lo habría atenuado, porque está delante. Además, los
+  que no están seleccionados son **discontinuos**, como líneas de
+  construcción. *Luces y cámaras* está encendido por defecto y se recuerda.
+- **El botón *Luces y cámaras* está a la izquierda de *Desplazar***: U9
+  dejó *Escalar* a su derecha y las dos decisiones piden «junto a
+  *Desplazar*».
+- **Apuntar a la selección** pasó al menú contextual de la pieza (*Apuntar
+  un foco aquí ▸*): la selección es una cosa a la vez, y al seleccionar un
+  foco las piezas dejan de estarlo; las acciones de fila salen en la fila
+  del foco seleccionado (al pasar el ratón se movían bajo el clic que
+  selecciona la fila) y su *apuntar a…* es el mismo menú del inspector.
+- **Bloquear cámara** se aplica a lo que se mira a través cuando es una
+  cámara (su propio bloqueo; el botón de la barra sigue siendo el de la
+  activa). Una luz no tiene bloqueo: mirar a través de una luz la mueve
+  aunque la cámara activa esté bloqueada, y la cámara activa nunca se mueve
+  mirando a través. La cámara activa no tiene glifo ni se mira a través de
+  ella (es la vista); para elegir una cámara guardada sin activarla, su
+  glifo (la fila de *Cámaras* la activa, como dice §2.2).
+- **La caja de selección no coge glifos y *Escalar* no pone *gizmo* en una
+  luz o una cámara**: la caja selecciona piezas al nivel vigente, y el
+  tamaño de un foco es del inspector. El *gizmo* de *Mover* sobre ellas no
+  tiene cubos de escala.
+- **El motor elige un foco estrecho como su punto** cuando su cono abarca
+  el centro de la escena (y a un veinteavo si no): por su flujo, un foco de
+  9° salía casi nunca frente a la cúpula y su círculo de luz quedaba lleno
+  de ruido. Cambia solo el ruido, no la media; ninguna escena sin puntos ni
+  focos cambia (ningún *hash* ni test de imagen se ha movido). Test nuevo:
+  `a_narrow_spot_aimed_at_the_scene_is_chosen_like_its_point_light`.
+- **Coordenadas en lugar de un desplegable**: el inspector enseña X, Y, Z
+  siempre, como la posición de una pieza.
+- Para las comprobaciones, el visor copia el objeto seleccionado, dónde está
+  en el lienzo y lo que se mira a través en `data-object`, `data-object-at`
+  y `data-look-through`, como el medidor sus números.
 
 ## L5 · Luces IES — **Sonnet**
 
@@ -1712,7 +2030,7 @@ No encajó con el plan:
   herramienta, no abre el panel). Los modificadores de la caja de
   selección y los clics son los de *Mover*.
 
-## U10 · Recorrido guiado y avisos de la IA — **Sonnet**
+## U10 · Recorrido guiado y avisos de la IA — **Sonnet** — hecha
 
 **Petición del usuario (2026-10-13):** «avisar si no se tiene instalado el
 *inference runtime*; la primera vez que se inicie la app, un tutorial que
@@ -1750,6 +2068,82 @@ que existe; ningún paso apunta a un elemento oculto), de *Saltar* y del
 recuerdo (no vuelve a salir; sí desde *Ayuda*), del aviso con y sin motor
 de ejecución, del archivo de elección del instalador con el motor
 incluido (y del NSIS que lo escribe); capturas de tres pasos y del aviso.
+
+**Hecho.** *Recorrido guiado* (`src/ui/tour.ts`, `src/ui/panels/tour.ts`,
+`src/ui/tour.css`; `UI.md` §4.7): 30 pasos en la web y 31 en el escritorio,
+en el orden de arriba (bienvenida, menú, piezas y niveles, herramientas,
+*Rápido/Completo*, producto, luz, entorno, cámara, materiales, las tres
+pestañas, *Añadir ▸ Primitiva*, *Render…*, ventana de render, cola, IA,
+resultados, una sección de Ajustes por paso y el cierre), con texto corto en
+`es` y `en`, *Siguiente · Atrás · Saltar*, un punto por paso y `→ ← Esc`. Es
+modal (se queda con el puntero y con todas las teclas: `Supr` no borra bajo
+él), acromático, y localiza las zonas por los `data-guide` (los de la guía y
+los nuevos). Un paso cuya zona no está a la vista la pone (pestaña, panel
+lateral —en una ventana estrecha solo el que hace falta—, ventana de render
+o de Ajustes, cajón *Cola*, catálogo de materiales, selección) y al terminar
+todo vuelve a como estaba; un paso cuya zona no aparece en 0,7 s se salta.
+La tarjeta va al lado de la zona, fuera de la ventana de render o de
+Ajustes cuando hay sitio y, si no, dentro, donde no tape ningún control.
+*Saltar*, *Hecho* y `Esc` cuentan como visto: `layout.tourSeen` en el
+documento de ajustes (la carpeta de datos en escritorio, nada en el
+almacenamiento del navegador allí). Sale solo en el primer arranque, tras el
+selector de modelos de un portable, y desde *Ayuda ▸ Recorrido guiado* (nuevo
+submenú del menú de la aplicación, y la paleta).
+
+*Aviso del motor de ejecución*: `runtimeWarning` (`core/ai-runtimes.ts`, puro)
+dice qué pasa con un modelo instalado —no está, en pausa, bajando, no
+arranca, falta Visual C++ en Windows, no hay compilación para el sistema—;
+`ui/ai-runtime-state.ts` tiene el único sondeo del lanzador; el recuadro con
+*Instalar · 26 MB* (el flujo de la fila del motor de Ajustes), *Reanudar*,
+*Pausar*, *Instalar el entorno de Microsoft Visual C++…* y *Comprobar de
+nuevo* sale en la sección de IA de la ventana de render (con una marca en su
+título plegado) y arriba de *Ajustes ▸ Post-procesado IA*, y la barra de estado
+lleva una nota discreta una sola vez por sesión. **Instalador**: `repackshot
+--hardware` escribe `[runtime]` (la compilación que elige la regla de
+`ai-runtimes.json` para el sistema; con `--device cpu`, la de CPU), el paso
+*Modelos de IA* marca la casilla al elegir el primer modelo, se puede
+desmarcar y anota `"runtime"` en `pending-models.json`; el lanzador la
+descarga en el primer arranque (`Ai::start_pending_runtime`); el selector del
+primer arranque de un portable la ofrece igual y la baja con el primer
+modelo. Tests: la regla, la tabla de avisos, el sondeo, la nota una vez por
+sesión y los botones (`tests/ai-runtime-warning.test.ts`); el orden del
+recorrido, que cada ancla existe en el código, que cada paso abre lo que
+necesita y lo devuelve, *Saltar* y lo recordado, cuándo arranca, las teclas, la
+tarjeta y los textos en los dos idiomas (`tests/tour.test.ts`); el NSIS leído
+como texto contra el lanzador (`engine/crates/rt-app/tests/installer.rs`,
+`tests/installer-page.test.ts`); el lanzador descargando lo que el instalador
+dejó, sobre sockets con el `curl` real y un servidor local, y sin descargar
+nada con una clave de otro sistema, desconocida o sin motor
+(`tests/ai.rs`). Comprobaciones del navegador: `tools/tour-check.mjs` (el
+recorrido entero, ancho, estrecho y en español, con sus capturas) y
+`tools/ai-runtime-check.mjs` (contra el lanzador real: selector, avisos, nota,
+Visual C++ y el estado en la carpeta de datos). Cada test falla si se
+rompe lo que guarda. Capturas en `docs/ui/`: `tour-tools.png`,
+`tour-camera.png`, `tour-render-ai.png`, `tour-settings-es.png`,
+`ai-runtime-warning-render.png`, `ai-runtime-warning-settings.png`,
+`ai-runtime-warning-vc.png`, `ai-runtime-chooser.png`, `ai-runtime-note.png`.
+
+**No encajó con el plan.** (1) El *Ejecutar en el procesador* del instalador
+no se aplicaba a nada: para que el motor que marca el instalador sea el que
+la aplicación espera, el primer arranque lo convierte en *Ajustes ▸
+Post-procesado IA ▸ Ejecutar en* (`applyInstallerChoice`); es una decisión
+que no estaba en el plan. (2) La página del instalador no se puede ver aquí
+(*makensis* la compila con `-WX`, pero Wine no ejecuta un instalador NSIS):
+su lógica está cubierta como texto, y falta mirar en un Windows real que la
+fila nueva cabe en la página con seis modelos de dos líneas. (3) La
+descarga del motor desde el instalador, de punta a punta, tampoco se puede
+probar aquí; sí el lanzador (sockets) y la página (lanzador real). (4) Falta
+Visual C++ no se puede producir en Linux: el navegador lo prueba con la
+respuesta del lanzador cambiada. (5) La tarjeta de un paso de Ajustes va
+dentro de la ventana, donde no tapa ningún control pero sí texto de
+descripción; una sección que sea toda controles la dejaría en la esquina
+inferior derecha. (6) Quien actualiza desde una versión anterior ve el
+recorrido una vez (no hay marca previa que lo distinga de un primer
+arranque). (7) *Ayuda ▸* agrupa lo que antes eran tres entradas sueltas
+(*Guía*, *Atajos*, *Acerca de*); la *Guía* de seis pasos sigue como estaba y
+el recorrido no la sustituye. (8) Con los modelos todavía bajando (el
+instalador los dejó pendientes) no hay aviso: «hay un modelo» es un modelo
+instalado.
 
 ## M2 · Texturas de imagen y etiquetas — **Opus**
 
@@ -2627,7 +3021,7 @@ trabajo (hoy se ignora `onProgress` en la cola), el *prompt* de X3a, quitar
 lineal del motor. Y X2: los mismos ids, la misma profundidad y el mismo `coc`
 que dibuja la vista previa (el test del navegador es la vara de medir).
 
-## X4b · Prompt propio y variantes — **Opus**
+## X4b · Prompt propio y variantes — **Opus** — hecha
 
 **Petición del usuario (2026-10-13):** «si lo soporta el modelo, que deje
 un prompt de texto en la configuración del render en cuestión, y que se
@@ -2701,6 +3095,71 @@ terminadas; guardar y abrir (proyecto y resultados, también los de una
 sola `ai` de antes); deshacer del prompt (un cambio de texto es una
 entrada al salir del campo) y del número; cadenas en `es` y `en`; cromo
 acromático; capturas de la sección y del visor con varias variantes.
+
+**Hecho** (2026-10-13). **Prompt propio**: `AiPipelineSettings.userPrompt` (recortado, hasta
+`MAX_USER_PROMPT` = 400 caracteres) en la sección de la ventana de render, bajo los seis controles: un
+campo de varias líneas (`textArea` de `ui/components/controls.ts`) con contador y la nota del líder; se
+guarda al dejar de escribir (700 ms) y al salir del campo, y todo lo de una visita lleva el mismo gesto,
+así que es **una** entrada de deshacer (*Post-procesado IA: Prompt propio*); mientras tiene el foco, lo que
+vuelve del *store* no pisa lo que se escribe (el recorte de un espacio final no se lo come). Va en el
+proyecto y cada trabajo lleva el suyo; un proyecto anterior abre sin él. Se compone **sistema → escena →
+propio** (`composePrompt`, `src/core/ai-prompt.ts`; `buildPrompt(state, settings, context?)` en
+`src/ai/prompt.ts`, que sin contexto sigue dando solo el de la escena) y el negativo fijo va aparte, igual.
+**Capacidades**: `capabilities: { textPrompt, maxPromptTokens? }` en cada modelo de `ai-models.json` (todos
+con `textPrompt`; `SD15_LIGHT` con 77) y en el manifiesto de un importado (el formulario de importar lo
+pregunta); `ModelView.textPrompt`/`maxPromptTokens`; manda el modelo que el servicio dice activo
+(`promptCaps`; el sintético lo admite todo, uno desconocido nada). Sin `textPrompt` el campo se ve
+deshabilitado con el motivo y no se envía. **Prompt del sistema** (`ai.systemPrompt`, *Ajustes ▸
+Post-procesado IA ▸ Prompt del sistema*): el texto del líder por defecto, campo de varias líneas,
+contador, *Restablecer el predeterminado* y la nota de que la guarda no depende de él; puede quedarse
+vacío; en escritorio va en `settings.json` como todo ajuste (prueba con el espía de P3e). Con
+`maxPromptTokens` se usa la **versión corta** mientras el texto sea el predeterminado (los mismos
+espacios o no) y se recorta palabra a palabra desde el final, **el propio, luego la escena, luego el
+sistema**, con una estimación prudente documentada en `AI-POST.md` §4; la línea bajo el campo de la
+ventana dice qué se queda fuera, y la de Ajustes qué recibe el modelo en uso. **Variantes**:
+`AiPipelineSettings.variants` (1–8, 1 por defecto) junto a *Otra variación*, deshacible, con la línea
+de las semillas y el tiempo estimado; cambiarlo no rehace la vista previa (sigue siendo una imagen). En la
+cola, `aiStep` hace **un render** y N peticiones del mismo origen (el `renderId` guardado, o la imagen
+decodificada una sola vez) con `variantSettings` (semilla + n − 1), cada imagen con su informe y
+`aiFileName(nombre, n)` (`_AI`, `_AI_2`…); la fila dice *IA · variante 2 de 4 · mosaico 3 de 4* y la barra
+mide las variantes juntas; detener a mitad conserva el render y las terminadas; una rechazada queda con
+su informe y sin imagen; si una falla, se quedan las anteriores. **Resultados**: `ResultMeta.aiMore` (la
+primera sigue en `ai`), `aiVariantsOf`/`aiImagesOf`, `ResultsStore.add(…, ai, aiMore)` en memoria, en el
+registro de IndexedDB y en el lanzador como `<id>.ai.<n>.<ext>` con `PUT/GET /api/store/results/<id>/ai/<n>`
+(`appdata.rs`, aditivo: `aiVariants` en el índice; el `<id>.ai.<ext>` de antes se lee como la variante 1 y
+`…/ai` sigue); la migración desde el navegador las copia. El visor tiene la **tira de miniaturas** (una
+línea propia entre la cabecera y la imagen), el divisor compara la elegida sin perder el zum
+(`SplitCompare.setB`), su informe en la línea, *Guardar esta variante* y *Guardar todas*; la cola y el
+historial ponen *×4* y la cola *IA × 4*; el pie de la ventana, *IA activada · 4 variantes*. Pruebas: 39
+nuevas de vitest (22 del *prompt*, las capacidades, el sistema y el *store*; 15 de variantes contra el
+sintético, un servicio como el del lanzador y el `DesktopAiService` contra un lanzador de pega; 1 de
+persistencia del ajuste en escritorio; 1 de punta a punta con el lanzador real y el `rt-fake-sd`: tres
+variantes, un render, semillas 20, 21 y 22 en el registro del motor falso, que no vuelve a arrancar), más
+las que cambiaron (el doble del lanzador aprende `…/ai/<n>` tan estricto como el de verdad); 1 de Rust
+(`appdata`); 10 comprobaciones nuevas del navegador en `tools/ai-post-check.mjs` (k, l y la tira en j;
+36 en total, todas en verde);
+18 mutaciones comprobadas. Capturas: `docs/ui/ai-section-prompt.png`, `ai-results-variants.png` y
+`settings-ai-prompt.png`.
+
+**No encajó con el plan.** (1) `userPrompt` y `variants` son **opcionales** en el contrato
+(`AiPipelineSettings`, para no romper a quien construye uno sin ellos) y obligatorios en el *store*
+(`AiSettings` es `Required<…>`); el lanzador no los lee: cada petición es una imagen con su semilla y el
+*prompt* ya compuesto. (2) La composición y la cuenta viven en `src/core/ai-prompt.ts` (puras, para que
+Ajustes las use sin el puerto de la IA) y `src/ai/prompt.ts` las llama. (3) En escritorio la variante 1
+nueva se escribe `<id>.ai.1.<ext>`, como pide el plan; `<id>.ai.<ext>` queda para leer los de antes. (4) La
+estimación de *tokens* es prudente de verdad: la versión corta cuenta 65 de los 77 (con CLIP real, unos
+45), así que con SD 1.5 el *prompt* propio casi nunca entra; afinarla (o traer el vocabulario de CLIP,
+1,6 MB) queda para X1b. (5) El prompt del sistema y el de la escena se mandan también a un modelo sin
+`textPrompt` (como antes el de la escena); solo se retiene el propio del trabajo. Un importado `sd15` o
+`sdxl` sin `maxPromptTokens` lee 77. Z-Image, FLUX.2 klein y Qwen no llevan límite: sus codificadores
+leen cientos de *tokens* y lo compuesto más largo cabe; X1b lo confirma. (6) **El tiempo estimado** es N ×
+los píxeles del trabajo / la velocidad de la IA medida alrededor de cada petición del último trabajo con IA
+de este equipo (`UiState.aiThroughput`), no N × la medida de la vista previa (a 512 px no dice nada de los
+mosaicos de un final); sin medida, la línea dice que se mide con el primero; incluye la carga del modelo
+si la hubo, así que tira por arriba. (7) Al comparar con otro resultado (*Comparar con…*) la tira solo
+cambia la línea del informe: el divisor compara los dos resultados. (8) `src/main.ts` no pasaba la lista
+de variantes al historial (`results.add` con cuatro argumentos): lo encontró la lectura antes que una
+prueba; lo vigila la comprobación del navegador (k), que es la que pasa por `main.ts`.
 
 ## X5 · Ajustes y modelos — absorbida en U6
 
@@ -2894,6 +3353,17 @@ con `packaging/smoke.mjs` (nativo y bajo Wine, *hash* fijado) y
 `sha256sum -c`. La release se publica a mano desde la etiqueta mientras
 no haya minutos de Actions. El motor conserva su propia versión (0.3.0);
 la de la aplicación es la de `package.json`.
+
+**Cómo se publica ahora (desde la 0.1.4).** Con minutos de Actions, la
+release la publica `release.yml` lanzado a mano (*workflow_dispatch*)
+**en `main`**, con `tag` = `vX.Y.Z` (la versión de `package.json`) y
+`commit` vacío o un commit que ya esté en `main`: construye, crea la
+etiqueta y la release en ese commit y sube los cuatro archivos. La sesión
+no necesita subir etiquetas. Lanzado desde otra rama, GitHub rechazó crear
+la release con *Resource not accessible by integration* (dos veces, con la
+0.1.4); desde `main` salió a la primera. El workflow ahora se para en el
+primer paso si una publicación no se lanza en la rama por defecto. Sin
+`tag`, cualquier rama sirve para construir el artefacto de prueba.
 
 ## P2 · Escritorio: lanzador propio, portables e instalador — **Opus** — hecha
 

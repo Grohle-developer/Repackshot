@@ -11,3 +11,5 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 rt-core = { path = "../rt-core" }
+# The denoiser (E5b-1): only `rt_post::denoise` ends up in the module.
+rt-post = { path = "../rt-post" }

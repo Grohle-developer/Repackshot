@@ -35,6 +35,12 @@ export interface UrlParams {
   settings?: string;
   /** `?ai=synthetic`: the AI post-processing runs on the synthetic service (phase X4), for screenshots and demos; main.ts reads it. */
   ai?: 'synthetic';
+  /**
+   * The guided tour (phase U10; main.ts reads it once the interface has painted): `0` never starts by itself (the checks
+   * and the screenshots that load the page with a fresh profile); `1` starts now; `auto` as a first start would, even
+   * when the page is driven by automation (which otherwise never gets the tour).
+   */
+  tour?: '0' | '1' | 'auto';
 }
 
 export function readUrlParams(search: string): UrlParams {
@@ -69,6 +75,8 @@ export function readUrlParams(search: string): UrlParams {
   const render = q.get('render')?.toLowerCase();
   if (render === 'image' || render === 'animation') out.render = render === 'image' ? 'IMAGE' : 'ANIMATION';
   if (q.get('ai') === 'synthetic') out.ai = 'synthetic';
+  const tour = q.get('tour');
+  if (tour === '0' || tour === '1' || tour === 'auto') out.tour = tour;
   const settings = q.get('settings');
   if (settings !== null) out.settings = /^[A-Za-z0-9.]{0,64}$/.test(settings) ? settings : '';
   return out;

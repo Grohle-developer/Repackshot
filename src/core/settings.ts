@@ -19,6 +19,7 @@
 
 import type { Lang } from '../data/types';
 import { QUALITY_KEYS, QUALITY_PRESETS } from '../data/quality';
+import { DEFAULT_SYSTEM_PROMPT, normaliseSystemPrompt } from './ai-prompt';
 import { IMPORT_UNITS, LARGE_MODEL_MM, SMALL_MODEL_MM, TESSELLATION_PRESETS, UNIT_TO_MM, type ImportDetected, type ImportMessage, type ImportOptions, type ImportUnit } from './import-options';
 import { DEFAULT_NAME_TEMPLATE } from './name-template';
 import { DEFAULT_DPI } from './print-size';
@@ -131,6 +132,11 @@ export interface Settings {
   'ai.intervention': number;
   'ai.seed': 'FIXED' | 'NEW';
   'ai.offloadTextEncoder': boolean;
+  /**
+   * The system prompt (X4b): general words for every image, sent before the scene's and the job's own (AI-POST.md §4).
+   * Empty is allowed (none); a model with a prompt-length limit gets the default's short form while it is unedited.
+   */
+  'ai.systemPrompt': string;
   /** Guard tolerances (AI-POST.md §3.2): mean and 95th percentile ΔE00 per material, edge match in pixels. */
   'ai.guardDeltaE': number;
   'ai.guardDeltaE95': number;
@@ -161,12 +167,16 @@ export interface Layout {
   tuneOpen: boolean;
   space: string;
   scaleLock: boolean;
+  /** The viewport draws the glyphs of every light and saved camera (L4's Lights and cameras button). */
+  showGlyphs: boolean;
   /** The viewport mode last chosen (`viewport.startMode` LAST starts in it). */
   viewportMode: 'FAST' | 'FULL';
   /** The section of the Settings window last opened. */
   settingsSection: SectionId;
   /** The desktop portable's model chooser was shown (it is shown once). */
   chooserShown: boolean;
+  /** The guided tour (phase U10) was finished or skipped: it starts by itself only until then. */
+  tourSeen: boolean;
   /** When the update feed last answered (ms since 1970), null: never. */
   updateCheckedAt: number | null;
   /** The latest release that answer named, so an offline start can still show it. */
@@ -240,6 +250,7 @@ export function defaultSettings(): Settings {
     'ai.intervention': 30,
     'ai.seed': 'FIXED',
     'ai.offloadTextEncoder': false,
+    'ai.systemPrompt': DEFAULT_SYSTEM_PROMPT,
     'ai.guardDeltaE': 2,
     'ai.guardDeltaE95': 3,
     'ai.guardEdgePx': 2,
@@ -265,9 +276,11 @@ export function defaultLayout(): Layout {
     tuneOpen: false,
     space: 'GLOBAL',
     scaleLock: true,
+    showGlyphs: true,
     viewportMode: 'FULL',
     settingsSection: 'general',
     chooserShown: false,
+    tourSeen: false,
     updateCheckedAt: null,
     updateLatest: null,
   };
@@ -415,6 +428,8 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   setting('ai.intervention', 'ai', 'active', num(0, 100, 1), kw('intervention, strength, default, ai', 'intervención, fuerza, por defecto, ia'), { aux: true }),
   setting('ai.seed', 'ai', 'active', choice(['FIXED', 'NEW']), kw('seed, random, variation', 'semilla, aleatoria, variación')),
   setting('ai.offloadTextEncoder', 'ai', 'active', toggle, kw('text encoder, ram, offload, memory', 'codificador de texto, ram, memoria'), { aux: true }),
+  // AI post-processing ▸ System prompt (X4b): drawn by its own code (a multi-line field, Restore default, the fit line).
+  setting('ai.systemPrompt', 'ai', 'prompt', { kind: 'custom' }, kw('system prompt, prompt, words, text, instructions, default', 'prompt del sistema, prompt, texto, instrucciones, predeterminado'), { aux: true }),
   setting('ai.guardDeltaE', 'ai', 'guard', num(0.5, 10, 0.5), kw('guard, tolerance, delta e, colour', 'guarda, tolerancia, delta e, color'), { aux: true }),
   setting('ai.guardDeltaE95', 'ai', 'guard', num(0.5, 20, 0.5), kw('guard, tolerance, percentile, delta e', 'guarda, tolerancia, percentil, delta e')),
   setting('ai.guardEdgePx', 'ai', 'guard', num(0.5, 8, 0.5, 'px'), kw('guard, edges, pixels', 'guarda, bordes, píxeles')),
@@ -496,6 +511,7 @@ export function validateValue<K extends SettingKey>(key: K, raw: unknown): Setti
   const c = meta.control;
   if (key === 'render.destination') return validDestination(raw) as Settings[K] | null;
   if (key === 'ai.active') return (typeof raw === 'string' && (raw === '' || (MODEL_KEY_RE.test(raw) && !raw.includes('..'))) ? raw : null) as Settings[K] | null;
+  if (key === 'ai.systemPrompt') return normaliseSystemPrompt(raw) as Settings[K] | null;
   if (key === 'ai.gpu') return (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 && raw < 16 ? raw : null) as Settings[K] | null;
   switch (c.kind) {
     case 'choice':
@@ -548,7 +564,7 @@ export function validateLayout(raw: unknown): Layout {
     const v = raw[k];
     if (typeof v === 'number' && Number.isFinite(v)) out[k] = Math.round(Math.min(PANEL_MAX, Math.max(PANEL_MIN, v)));
   }
-  for (const k of ['leftCollapsed', 'rightCollapsed', 'tuneOpen', 'scaleLock', 'chooserShown'] as const) if (bool(k)) out[k] = raw[k] as boolean;
+  for (const k of ['leftCollapsed', 'rightCollapsed', 'tuneOpen', 'scaleLock', 'showGlyphs', 'chooserShown', 'tourSeen'] as const) if (bool(k)) out[k] = raw[k] as boolean;
   if (isRecord(raw.sections)) {
     const sections: Record<string, boolean> = {};
     for (const [k, v] of Object.entries(raw.sections)) if (typeof v === 'boolean' && k.length <= 64) sections[k] = v;

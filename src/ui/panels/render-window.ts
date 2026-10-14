@@ -24,6 +24,7 @@ import {
   settingsOf,
   supportsAlpha,
   VIDEO_AVAILABLE,
+  type AdvancedSettings,
   type CameraChoice,
   type OutputFormat,
   type RenderSettings,
@@ -31,11 +32,13 @@ import {
 import { matchPrintPreset, pixelsFor, printLength, printPresetPixels, PRINT_PRESETS, PRINT_UNITS, type PrintUnit } from '../../core/print-size';
 import { NAME_TOKENS, type NameToken } from '../../core/name-template';
 import * as cmd from '../commands';
+import { CAUSTICS_MODES, CAUSTICS_PRESETS, CAUSTICS_QUALITIES, DENOISE_MODES, denoiseIn } from '../../core/caustics';
 import { numberField, segmented, select, timeField, toggle } from '../components/controls';
 import { section } from '../components/section';
 import { h, icon, isTyping, placeAt } from '../dom';
 import { cameraName, dyn } from '../names';
 import { aiPostBody } from './ai-post';
+import { runtimeBadge } from './ai-runtime-notice';
 import type { Ctx, Scope } from '../reactive';
 import { nameValues } from '../render-queue';
 import { kbdText } from '../shortcuts';
@@ -67,7 +70,8 @@ function finishText(s: RenderSettings): string {
 export function summaryLine(s: RenderSettings, frames: number): string {
   const dest = s.destination.kind === 'FOLDER' ? s.destination.name : t('rw.downloads');
   const out = `${formatText(s)} → ${dest}`;
-  const ai = t(s.ai.enabled ? 'rw.summaryAiOn' : 'rw.summaryAiOff');
+  // X4b: with several variants, how many AI images the one render becomes (images only).
+  const ai = !s.ai.enabled ? t('rw.summaryAiOff') : s.ai.variants > 1 && s.mode !== 'ANIMATION' ? t('rw.summaryAiVariants', { n: s.ai.variants }) : t('rw.summaryAiOn');
   if (s.mode === 'ANIMATION') {
     return [t('rw.summaryFrames', { frames: framesText(frames), fps: s.animation.fps }), `${s.width} × ${s.height}`, t('rw.perFrameShort', { x: finishText(s) }), out, ai].join(' · ');
   }
@@ -387,7 +391,30 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   });
   const clamp = numberField({ value: s0.advanced.clampIndirect, min: 0, max: 1000, step: 0.5, digits: 1, format: (v) => (v <= 0 ? t('rw.clampOff') : formatNumber(v, getLang(), 1)), ariaLabel: t('rw.clamp'), onChange: (v, g) => set({ advanced: { ...get().advanced, clampIndirect: v } }, g) });
   const seed = numberField({ value: s0.advanced.seed, min: 0, max: 4294967295, step: 1, ariaLabel: t('rw.seed'), onChange: (v, g) => set({ advanced: { ...get().advanced, seed: v } }, g) });
-  const soonToggle = (label: string) => h('div', { class: 'rw-inline' }, toggle(false, () => {}, label, true).el, h('span', { class: 'aux' }, t('common.comingSoon')));
+  // E5b-1: the engine's caustics (photon map) and its own denoiser.
+  const setAdvanced = (patch: Partial<AdvancedSettings>) => set({ advanced: { ...get().advanced, ...patch } });
+  const caustics = segmented(
+    CAUSTICS_MODES.map((m) => ({ value: m, label: t(`rw.caustics${m === 'AUTO' ? 'Auto' : m === 'ON' ? 'On' : 'Off'}`) })),
+    s0.advanced.caustics,
+    (v) => setAdvanced({ caustics: v }),
+    { ariaLabel: t('rw.caustics') },
+  );
+  const causticsNote = h('div', { class: 'note' });
+  const causticsQuality = segmented(
+    CAUSTICS_QUALITIES.map((q) => ({ value: q, label: t(`rw.causticsQ${q === 'LOW' ? 'Low' : q === 'MEDIUM' ? 'Medium' : 'High'}`) })),
+    s0.advanced.causticsQuality,
+    (v) => setAdvanced({ causticsQuality: v }),
+    { ariaLabel: t('rw.causticsQuality') },
+  );
+  const causticsQualityNote = h('div', { class: 'note' });
+  const denoise = segmented(
+    DENOISE_MODES.map((m) => ({ value: m, label: t(`rw.denoise${m === 'OFF' ? 'Off' : m === 'VIEWPORT' ? 'Viewport' : m === 'RENDER' ? 'Render' : 'Both'}`) })),
+    s0.advanced.denoise,
+    (v) => setAdvanced({ denoise: v }),
+    { ariaLabel: t('rw.denoise') },
+  );
+  const saveNoisy = toggle(s0.advanced.saveNoisy, (v) => setAdvanced({ saveNoisy: v }), t('rw.saveNoisy'));
+  const saveNoisyRow = row(t('rw.saveNoisy'), h('div', { class: 'rw-inline' }, saveNoisy.el, h('span', { class: 'note' }, t('rw.saveNoisyNote'))));
   const advancedBody = h(
     'div',
     { class: 'rw-section' },
@@ -395,8 +422,9 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     row(t('rw.bounces'), bounces.el),
     row(t('rw.clamp'), clamp.el),
     row(t('rw.seed'), seed.el),
-    row(t('rw.caustics'), soonToggle(t('rw.caustics'))),
-    row(t('rw.denoise'), soonToggle(t('rw.denoise'))),
+    row(t('rw.causticsQuality'), h('div', { class: 'rw-stack' }, causticsQuality.el, causticsQualityNote)),
+    row(t('rw.denoise'), h('div', { class: 'rw-stack' }, denoise.el, h('div', { class: 'note' }, t('rw.denoiseNote')))),
+    saveNoisyRow,
   );
   const qualityBody = h(
     'div',
@@ -405,6 +433,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     samplesRow,
     timeRow,
     row(t('rw.estimateLabel'), h('div', { class: 'rw-stack' }, estimate, perFrame)),
+    row(t('rw.caustics'), h('div', { class: 'rw-stack' }, caustics.el, causticsNote)),
     section(ctx, 'rw.advanced', t('rw.advanced'), advancedBody, null, true),
   );
 
@@ -415,7 +444,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   const sizeSec = section(ctx, 'rw.size', t('rw.size'), sizeBody);
   const animSec = section(ctx, 'rw.anim', t('rw.animSection'), animBody);
   const qualitySec = section(ctx, 'rw.quality', t('rw.quality'), qualityBody);
-  const aiSec = section(ctx, 'rw.ai', t('rw.ai'), aiBody, null, true);
+  const aiSec = section(ctx, 'rw.ai', t('rw.ai'), aiBody, runtimeBadge(ctx, scope), true);
   const body = h('div', { class: 'rw-body' }, outputSec, sizeSec, animSec, qualitySec, aiSec);
 
   // ------------------------------------------------------------------ footer
@@ -424,9 +453,9 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   const renderBtn = h('button', { type: 'button', class: 'btn btn-primary btn-big', 'data-kbd': kbdText('enter'), 'data-tip': t('rw.renderTip'), onclick: () => void cmd.renderFromWindow(ctx) }, t('rw.render'));
   const cancelBtn = h('button', { type: 'button', class: 'btn', onclick: () => cmd.closeRenderWindow(ctx) }, t('common.cancel'));
   const saveBtn = h('button', { type: 'button', class: 'btn btn-primary btn-big', 'data-kbd': kbdText('enter'), onclick: () => cmd.saveJobEdit(ctx) }, t('rw.save'));
-  const foot = h('div', { class: 'rw-foot' }, summary, h('div', { class: 'rw-foot-actions' }, ...(editing ? [cancelBtn, saveBtn] : [addBtn, renderBtn])));
+  const foot = h('div', { class: 'rw-foot' }, summary, h('div', { class: 'rw-foot-actions', 'data-guide': 'rw-actions' }, ...(editing ? [cancelBtn, saveBtn] : [addBtn, renderBtn])));
 
-  const win = h('div', { class: 'rw', role: 'dialog', tabindex: -1, 'aria-label': t('rw.title'), 'aria-modal': 'false', 'data-render-window': '' }, titleBar, body, foot);
+  const win = h('div', { class: 'rw', role: 'dialog', tabindex: -1, 'aria-label': t('rw.title'), 'aria-modal': 'false', 'data-render-window': '', 'data-guide': 'render-window' }, titleBar, body, foot);
   const backdrop = h('div', { class: 'rw-backdrop', 'aria-hidden': 'true', onpointerdown: () => cmd.closeRenderWindow(ctx) });
   const host = h('div', { class: 'rw-host' }, backdrop, win);
 
@@ -518,6 +547,15 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     bounces.set(s.advanced.maxBounces ?? 0);
     clamp.set(s.advanced.clampIndirect);
     seed.set(s.advanced.seed);
+    caustics.set(s.advanced.caustics);
+    causticsNote.textContent = t(s.advanced.caustics === 'AUTO' ? 'rw.causticsAutoNote' : s.advanced.caustics === 'ON' ? 'rw.causticsOnNote' : 'rw.causticsOffNote');
+    causticsQuality.set(s.advanced.causticsQuality);
+    const preset = CAUSTICS_PRESETS[s.advanced.causticsQuality];
+    causticsQualityNote.textContent = t('rw.causticsQualityNote', { n: formatNumber(preset.photons, getLang(), 0), r: preset.radiusPx });
+    denoise.set(s.advanced.denoise);
+    saveNoisy.set(s.advanced.saveNoisy);
+    // Only a render that is denoised has an image without denoise to save.
+    saveNoisyRow.style.display = denoiseIn(s.advanced.denoise, 'RENDER') ? '' : 'none';
     perFrame.style.display = anim ? '' : 'none';
     estimate.textContent = estimateLine(s, throughputOf(ctx), anim ? fr.count : 1);
     summary.textContent = summaryLine(s, fr.count);

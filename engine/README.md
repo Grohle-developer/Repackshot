@@ -106,6 +106,9 @@ interface, the token, and the example rendered through `/api/render` to the pinn
 cargo run --release -p rt-cli -- --example -o out.png        # built-in scene, no input file
 cargo run --release -p rt-cli -- --write-example scene.rsb   # the same scene as an RSB file
 cargo run --release -p rt-cli -- --write-e5-example e5.rsb   # the E5 parity scene (glass, HDRI, background image)
+cargo run --release -p rt-cli -- --write-e5b-example e5b.rsb # the E5b-1 parity scene (the E5 scene with caustic photons)
+cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 16 --denoise --keep-noisy   # out.png denoised, out-noisy.png
+cargo run --release -p rt-cli -- scene.rsb -o out.png --caustics 16384 --caustic-radius 3   # photon-map caustics
 cargo run --release -p rt-cli -- --write-studio-hdri studio.hdr   # the procedural studio HDRI (tests/fixtures/studio.hdr)
 cargo run --release -p rt-cli -- --tone-table > tones.json   # the tone curves' reference values
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 64 --threads 4 --size 1280x720
@@ -189,19 +192,27 @@ twice (0: off).
   cut-outs are *passable*: their straight-through events keep the last vertex's BSDF density and
   add their distance, so an emitter or the environment found through them is still weighted
   against light sampling with the right MIS weight, and shadow rays go through them (at most 32
-  crossings, tinted by what they let through). A solid clear part still blocks shadow rays: its
-  caustics come from BSDF sampling alone (no caustic control yet).
+  crossings, tinted by what they let through). A solid clear part still blocks shadow rays: the
+  light through it comes by the caustics (E5b-1, below), or by BSDF sampling alone without them.
 * **Lights** (`light`), `LGHT.kind`: **0 rect**, **1 disk**: one-sided, transparent, uniform
   area sampling; `power` is the flux in watts (radiance `color * power / (π area_m²)`, a scene
   millimetre being 1e-3 m); `spread_deg` adds a `cos^n` falloff whose intensity halves at
   `spread_deg / 2` (180: none; the on-axis radiance does not change). **2 sun**: a disc of
   `angle_deg` sampled in its cone, `power` the irradiance in W/m² on a surface facing it (0
-  degrees: a delta direction). **3 point**, **4 spot**: reserved for L4, parsed and ignored.
-  `flags` bit 0 **glossy**: seen by BSDF-sampled rays and lighting every lobe (with MIS); without
-  it the light lights only the diffuse lobe, by light sampling alone, and is invisible in
-  reflections (Blender's "glossy" visibility, which the recipes come from). Bit 1 **camera**:
-  visible to camera rays. One light per vertex, chosen in proportion to an estimate of the flux
-  it sends into the scene's bounding sphere (a light tree replaces it in K4).
+  degrees: a delta direction). **3 point** (L4): a sphere of diameter `size_x` and uniform
+  radiance `I / (π r²)` with `I = power / 4π` W/sr (`power` the isotropic flux), sampled
+  uniformly in the cone of directions it fills; of no size, or too small to tell from a point
+  at that distance, a delta position (`I / d²`). **4 spot** (L4): the point light it would be,
+  masked by the direction from its centre: 1 inside the inner cone, a smoothstep to 0 at the
+  edge of its cone of `spread_deg` (the soft edge `angle_deg` wide). `flags` bit 0 **glossy**:
+  seen by BSDF-sampled rays and lighting every lobe (with MIS); without it the light lights only
+  the diffuse lobe, by light sampling alone, and is invisible in reflections (Blender's "glossy"
+  visibility, which the recipes come from). Bit 1 **camera**: visible to camera rays (a point's
+  sphere too). Bit 2 **no shadow** (L4): its shadow rays are not traced (the shadow catcher is
+  not darkened by it either). One light per vertex, chosen in proportion to an estimate of the
+  flux it sends into the scene's bounding sphere; a spot weighs as its point light would when
+  its cone takes in the scene's centre, a twentieth of that otherwise, so a narrow spot's pool is
+  not left to the rare samples its little flux would get (a light tree replaces it in K4).
 * **Environment** (`environment`), `ENVR.kind`: **0 studio dome**: radiance linear in the `z`
   of the direction, `floor` at -1, `horizon` at 0, `zenith` at +1, importance sampled by the
   closed-form inverse of that piecewise-linear density in `z` times a uniform azimuth (exact
@@ -256,6 +267,73 @@ twice (0: off).
 All of it uses `fmath` instead of `std`'s `sin`, `powf`, `exp2`...: those call the platform's
 maths library, which differs between glibc, musl and the WebAssembly `libm`. `fmath` is built from
 IEEE `+ - * /` and `sqrt` only, so a scene renders to the same bits everywhere.
+
+## Variance, denoise and caustics (E5b-1)
+
+**Film.** Besides the premultiplied radiance, the sample count and the coverage, `Film` sums the
+square of each sample's luminance (`Film::lum2`, `f32`, in sample order); it never changes the
+other three, so no image hash moved. With the mean it gives each pixel's sample variance,
+`(E[l²] - E[l]²) / (n - 1)` for the mean of `n` samples. The page's pool sums it with the same rule
+(`src/render/tiles.ts`, `Accumulator.lum2`).
+
+**Denoise** (`rt_post::denoise`). The edge-avoiding à-trous wavelet transform of H. Dammertz, D.
+Sewtz, J. Hanika and H. P. A. Lensch (HPG 2010): the B3-spline kernel `(1, 4, 6, 4, 1) / 16`, five
+passes with taps 1, 2, 4, 8 and 16 pixels apart, each tap weighted by edge-stopping functions; the
+variance-guided luminance stopping function of C. Schied et al., "Spatiotemporal Variance-Guided
+Filtering" (HPG 2017): `exp(-|l_p - l_q| / (σ_l √g(Var_p)))` with the variance blurred by a 3 x 3
+Gaussian and carried as `Σ w² Var / (Σ w)²`, normal weight `max(0, n_p·n_q)^128`, depth weight
+`exp(-|z_p - z_q| / (σ_z |∇z · Δ|))`, σ_l = 4, σ_z = 1, the albedo divided out and multiplied
+back, and the 7 x 7 spatial variance estimate below four samples. Ours: the variance from the film,
+the exact passes of X2 as guides (`GUIDE_PASSES`: albedo, normal, depth, part and material ids),
+a weight of zero between two parts or two materials (it never blends parts) and the background
+(id 0) left as it is, a firefly clamp before filtering (a pixel more than four times brighter
+than every neighbour on its surface is brought down to that), and `(1 - x/16)^16` for the
+exponentials. `f32` only, a fixed order: the same bits natively and in WebAssembly. RGBA sums in,
+RGBA sums out (coverage as it was). `denoise_rows` computes a band of rows from the rows and
+`HALO` = 72 rows around them, exactly those rows of the whole image: `rt`, the launcher and the
+page cut the work in bands (of at least 192 rows) on their threads or workers.
+`PINNED_DENOISED_EXAMPLE_4SPP` (`crates/rt-post/src/denoise/tests.rs`, `0xab15f290`) is the
+example at 4 spp denoised; `tools/wasm-parity.mjs --expect-denoised` checks the real module
+against it. On the sheet's scenes the relative MSE against a long render falls to 4–20 % of the
+noisy image's at 4 spp and to 10–40 % at 16 spp (`rt-cli/tests/example.rs` checks the bound).
+
+**Caustics** (`rt_core::caustics`). Stochastic progressive photon mapping (T. Hachisuka and H. W.
+Jensen, SIGGRAPH Asia 2009) in the probabilistic form of C. Knaus and M. Zwicker (ACM TOG 30(3),
+2011): every sample index is a pass with its own photons (`RNDR.caustic_photons` of them) and its
+own visible points, estimated with the radius `r_i² = r_1² Π_{k=1..i} (k + α) / (k + 1)`,
+`α = 2/3`, `r_1` = `RNDR.caustic_radius` pixels at the camera's target distance (default 3).
+Averaging the passes, which the film does with its samples, converges like SPPM with no state per
+pixel. **The split**: a *caster* is glass or metal whose sharper lobe is at most 0.25 rough
+(`is_caster`; brushed metal counts along its brush), every other scattering surface is a
+receiver, and a straight event (a cut-out passed, a thin wall's straight transmission) is no
+event. The photon map carries exactly the light of the segments `L C+ R` (photons from glossy
+area lights and suns and from emissive meshes, never the environment nor the point lights and
+spots of L4, whose caustics stay with the path tracer; they cross casters only
+and are stored on the first receiver they reach), gathered at every receiver of the camera path
+(the first one, and any later one as indirect light); the path tracer leaves out exactly that
+light (after any receiver, light of a photon light that arrives through casters only:
+BSDF-sampled hits and next-event estimation at a caster). Left to the path tracer, a caustic
+seen through a diffuse bounce came in rare, very bright samples (sparkles that 1024 samples did
+not smooth); a test with a light inside a glass ball checks that with an empty map every
+receiver is black.
+`caustics/tests.rs` checks the floor flux of a glass sphere against an exact f64 sphere (0.2 %),
+flux through a glass block (no 1/η² for particles), the kernel, the radius schedule, the split
+against the path tracer alone in a glass sphere's shadow (within 8 %), under a polished metal
+sphere, on a floor lit by a wall's caustic and with a point light beside the map, and the shadow
+catcher against a real white floor. Photons are aimed at the casters' bounding spheres with the density of
+the whole mixture, refract with flux and Veach's shading-normal correction, and draw a PCG
+stream per (seed, sample, photon): a map is the same bits however its photons are split
+(`PhotonMap::trace_range`), so `rt` and the launcher trace each sample's map in photon ranges on
+all their threads and every web worker traces the maps of the samples it renders (keeping 16).
+The shadow catcher (the interface's floor) gets the caustics too: photons land on its plane, and a
+camera ray that sees it adds their light relative to the open floor's to the background it shows
+(not with a transparent background). `PINNED_E5B_CAUSTICS_4SPP` (`0x55d60f2f`, the E5 scene with
+2048 photons per sample, `rt --write-e5b-example`) holds on every SIMD path, in WASI, through
+the real module and through the launcher with 1, 4 and 16 threads.
+
+The sheet adds the E5b-1 pairs: a glass sphere and the perfume bottle under a small light without
+and with caustics, the bottle's caustics at the Final preset's samples without and with denoise,
+and two scenes at 4 spp without and with denoise.
 
 ## Exact passes (X2)
 
@@ -442,7 +520,12 @@ byte for byte.
 * **E5**: clear dielectrics (rough and smooth GGX transmission, absorption, thin walls), cut-outs,
   anisotropy, emitters as lights by flux, the Preetham sky, HDRIs (own RGBE, OpenEXR and inflate
   readers, 2-D importance sampling), background images, `BMAP`; the E5 scenes of the contact
-  sheet. Next: subsurface, wood, fabric and bevel (E6), caustic control and denoising.
+  sheet. Next: subsurface, wood, fabric and bevel (E6).
+* **E5b-1**: the film's squared luminance, our own denoiser (`rt_post::denoise`, edge-avoiding
+  à-trous with variance-guided stopping, guided by the exact passes), photon-map caustics
+  (`rt_core::caustics`, SPPM in the form of Knaus and Zwicker), `RNDR.denoise`,
+  `caustic_photons`, `caustic_radius`, `rt --denoise --keep-noisy --caustics`, `rt_denoise` and
+  `rt_scene_caustics` in the module, the E5b parity scene and the sheet's pairs.
 * **E5c**: the physical sky, ours in a clean room: `rt-sky` simulates the atmosphere and fits the
   Hošek–Wilkie form to it (table with recipe, seed and SHA-256), `ENVR.sky_model` (0 physical, the
   default; 1 classic), the E5c parity scene (`rt --write-e5c-example`) and the physical-against-

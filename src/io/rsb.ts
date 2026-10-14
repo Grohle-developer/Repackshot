@@ -13,13 +13,14 @@
 import { evaluate, type Pose } from '../core/animation';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
-import { lightPosition, rigPivot, type LightInstance } from '../core/lighting';
+import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
 import type { MaterialInstance } from '../core/materials';
-import { mat4Compose, mat4Multiply, normalize, sub, type Mat4 } from '../core/math';
+import { mat4Compose, mat4Multiply, type Mat4 } from '../core/math';
 import { getMesh, type MeshData } from '../core/meshes';
 import type { PassIds, PassInstance } from '../core/pass-ids';
 import { passMask, type PassKey } from '../core/passes';
-import { areaLightFlux, EMIT_RADIANCE_PER_WATT, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
+import { autoCaustics, causticsFields, isCaster, type CausticsMode, type CausticsQuality } from '../core/caustics';
+import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { getImage } from '../core/images';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
@@ -52,9 +53,14 @@ export const MATERIAL_FLAG_THIN = 2;
 export const LIGHT_RECT = 0;
 export const LIGHT_DISK = 1;
 export const LIGHT_SUN = 2;
+/** L4: a point light (a sphere of diameter `size_x`; 0 is a point) and a spot (the same, inside a cone). */
+export const LIGHT_POINT = 3;
+export const LIGHT_SPOT = 4;
 /** `LGHT.flags`. */
 export const LIGHT_FLAG_GLOSSY = 1;
 export const LIGHT_FLAG_CAMERA = 2;
+/** L4: the light casts no shadow (its shadow rays are not traced). */
+export const LIGHT_FLAG_NO_SHADOW = 4;
 /** `ENVR.kind`. */
 export const ENV_STUDIO = 0;
 export const ENV_FLAT = 1;
@@ -213,6 +219,12 @@ export interface RsbRender {
   clampIndirect: number;
   /** X2: the exact passes to write next to the image, bit i = PASS_KEYS[i] of core/passes.ts (0: none). */
   passes: number;
+  /** E5b-1: what the host hands out, bit 0 the denoised image, bit 1 also the one without denoise (core/caustics.ts). */
+  denoise: number;
+  /** E5b-1: caustic photons per sample (0: none). */
+  causticPhotons: number;
+  /** E5b-1: the caustics' first gather radius in pixels at the camera's target distance (0: the engine's 3). */
+  causticRadius: number;
 }
 
 /** What the engine renders: `rt_core::scene::Scene`, field for field. */
@@ -271,7 +283,7 @@ export function defaultFloor(): RsbFloor {
 }
 
 export function defaultRender(): RsbRender {
-  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0 };
+  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0 };
 }
 
 export const IDENTITY_ROWS: readonly number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
@@ -307,7 +319,7 @@ const MATL_BYTES = 72;
 const LGHT_BYTES = 76;
 const ENVR_BYTES = 84;
 const FLOR_BYTES = 20;
-const RNDR_BYTES = 40;
+const RNDR_BYTES = 52;
 const INST_BYTES = 60;
 
 function meshBytes(m: RsbMesh): number {
@@ -492,6 +504,9 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.u32(r.maxDepth);
     w.f32(r.clampIndirect);
     w.u32(r.passes);
+    w.u32(r.denoise);
+    w.u32(r.causticPhotons);
+    w.f32(r.causticRadius);
   });
   if (w.length !== size) throw new Error(`RSB: wrote ${w.length} bytes, expected ${size}`);
   return w.bytes;
@@ -528,6 +543,10 @@ export interface SceneView {
   seed?: number;
   /** `RNDR.passes`: the exact passes the engine writes next to the image (AI-POST.md §7.4; default none). */
   passes?: readonly PassKey[];
+  /** E5b-1, `RNDR.denoise` (core/caustics.ts `denoiseBits`; default 0). */
+  denoise?: number;
+  /** E5b-1: the caustics switch and quality; Automatic is decided here, from the scene (core/caustics.ts). Default off. */
+  caustics?: { mode: CausticsMode; quality: CausticsQuality };
 }
 
 /** A scene and the identity of its geometry: an equal `meshKey` means the same MESH sections. */
@@ -545,6 +564,48 @@ export interface ProjectScene {
    * the neutral material of a part without one). What the AI guard's table is made from (`guardMaterials`).
    */
   materialOrder: (string | null)[];
+}
+
+/** An axis-aligned box. */
+interface Bounds {
+  min: [number, number, number];
+  max: [number, number, number];
+}
+
+const localBounds = new WeakMap<RsbMesh, Bounds | null>();
+
+/** The box of a mesh's positions (cached per mesh). */
+function meshBounds(m: RsbMesh): Bounds | null {
+  if (localBounds.has(m)) return localBounds.get(m)!;
+  const p = m.positions;
+  let b: Bounds | null = null;
+  for (let i = 0; i + 2 < p.length; i += 3) {
+    if (!b) b = { min: [p[i], p[i + 1], p[i + 2]], max: [p[i], p[i + 1], p[i + 2]] };
+    for (let k = 0; k < 3; k++) {
+      b.min[k] = Math.min(b.min[k], p[i + k]);
+      b.max[k] = Math.max(b.max[k], p[i + k]);
+    }
+  }
+  localBounds.set(m, b);
+  return b;
+}
+
+/** `into` grown by the box `b` moved by the 3 × 4 rows of an instance (its eight corners). */
+function extendBounds(into: Bounds | null, b: Bounds | null, rows: readonly number[]): Bounds | null {
+  if (!b) return into;
+  let out = into;
+  for (let c = 0; c < 8; c++) {
+    const v = [c & 1 ? b.max[0] : b.min[0], c & 2 ? b.max[1] : b.min[1], c & 4 ? b.max[2] : b.min[2]];
+    const w: [number, number, number] = [0, 0, 0];
+    for (let r = 0; r < 3; r++) w[r] = rows[r * 4] * v[0] + rows[r * 4 + 1] * v[1] + rows[r * 4 + 2] * v[2] + rows[r * 4 + 3];
+    if (!out) out = { min: [...w], max: [...w] };
+    else
+      for (let k = 0; k < 3; k++) {
+        out.min[k] = Math.min(out.min[k], w[k]);
+        out.max[k] = Math.max(out.max[k], w[k]);
+      }
+  }
+  return out;
 }
 
 /** `image.viewTransform` to `RNDR.tonemap`. */
@@ -637,22 +698,45 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
 }
 
 /**
- * One light of the resolved rig: placed like the preview places it (`lightPosition`, around and
- * aimed at the rig pivot), rect / disk / sun, its power converted to the engine's units
- * (`areaLightFlux`; a sun's power is its irradiance). An ellipse becomes the disk of the same
- * area (the engine has no ellipse); `LightInstance.angle` and `angle_deg` are both degrees
- * (0.545 is the real sun's angular diameter, as in EZ Packshot's recipes).
+ * One light of the resolved rig: placed like the preview places it (`lightFrame`: around the rig pivot, aimed at
+ * it or at its own aim, turned by its roll), its power converted to the engine's units. Rect / disk (an ellipse is
+ * the disk of the same area: the engine has no ellipse) with `areaLightFlux`; a sun's power is its irradiance;
+ * a point, and an area light of shape SPHERE, are kind 3 (a glowing sphere of diameter `size_x`) and a spot kind 4
+ * (the same inside a cone of `spread_deg` with a soft edge of `angle_deg`), both with `pointLightFlux` (L4).
+ * `LightInstance.angle` and `angle_deg` of a sun are both degrees (0.545 is the real sun's angular diameter, as
+ * in EZ Packshot's recipes). A light that casts no shadow has LIGHT_FLAG_NO_SHADOW.
  */
 export function lightToRsb(state: ProjectState, l: LightInstance): RsbLight {
   const size = state.scene.partSizeMm || 1;
-  const pos = lightPosition(state, l);
-  const target = rigPivot(state);
-  let dir = normalize(sub(target, pos));
-  if (dir[0] === 0 && dir[1] === 0 && dir[2] === 0) dir = [0, 0, -1];
-  const flags = (l.glossy ? LIGHT_FLAG_GLOSSY : 0) | (l.camera ? LIGHT_FLAG_CAMERA : 0);
+  const frame = lightFrame(state, l);
+  const pos = frame.position;
+  const dir = frame.forward;
+  // Without a roll the engine squares the world's Z to the axis itself (what every file before L4 says); a light
+  // straight up or down, or turned, gets its own up.
+  const up: RsbVec = !l.roll && Math.abs(dir[2]) < 0.9999 ? [0, 0, 1] : [frame.up[0], frame.up[1], frame.up[2]];
+  const flags = (l.glossy ? LIGHT_FLAG_GLOSSY : 0) | (l.camera ? LIGHT_FLAG_CAMERA : 0) | (l.shadow === false ? LIGHT_FLAG_NO_SHADOW : 0);
   const color: RsbVec = [l.color[0], l.color[1], l.color[2]];
   if (l.type === 'SUN') {
-    return { ...defaultLight(), kind: LIGHT_SUN, position: pos, direction: dir, up: [0, 0, 1], color, power: Math.max(0, l.power) * SUN_IRRADIANCE_PER_POWER, spreadDeg: 180, angleDeg: Math.max(0, l.angle), flags };
+    return { ...defaultLight(), kind: LIGHT_SUN, position: pos, direction: dir, up, color, power: Math.max(0, l.power) * SUN_IRRADIANCE_PER_POWER, spreadDeg: 180, angleDeg: Math.max(0, l.angle), flags };
+  }
+  if (isSphereLike(l)) {
+    const diameter = Math.max(0, l.size) * size;
+    const spot = l.type === 'SPOT';
+    const cone = Math.min(179, Math.max(1, l.spread));
+    return {
+      kind: spot ? LIGHT_SPOT : LIGHT_POINT,
+      position: pos,
+      direction: dir,
+      up,
+      sizeX: diameter,
+      sizeY: diameter,
+      color,
+      power: pointLightFlux(Math.max(0, l.power), state.scene.partSizeMm),
+      spreadDeg: spot ? cone : 180,
+      // A spot's soft edge in degrees, inward from the edge of its cone.
+      angleDeg: spot ? (Math.min(1, Math.max(0, l.blend ?? SPOT_DEFAULTS.blend)) * cone) / 2 : 0,
+      flags,
+    };
   }
   const w = Math.max(1e-3, l.size) * size;
   const h = Math.max(1e-3, l.shape === 'SQUARE' || l.shape === 'DISK' ? l.size : l.sizeY) * size;
@@ -662,7 +746,7 @@ export function lightToRsb(state: ProjectState, l: LightInstance): RsbLight {
     kind: disk ? LIGHT_DISK : LIGHT_RECT,
     position: pos,
     direction: dir,
-    up: [0, 0, 1],
+    up,
     sizeX,
     sizeY: disk ? sizeX : h,
     color,
@@ -844,6 +928,8 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   const meshIndex = new Map<string, number>();
   const instances: RsbInstance[] = [];
   const passInstances: PassInstance[] = [];
+  let casterBounds: Bounds | null = null;
+  let litEmitter = false;
   for (const id of allParts(state)) {
     const node = nodes[id];
     if (!node.mesh || !visible(id)) continue;
@@ -862,6 +948,12 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
       }
       instances.push({ mesh: mi, transform: rows, materialId, flags: 0 });
       passInstances.push({ node: id, material: part.material, materialId: materialId + 1 });
+      // Automatic caustics: where the glass and polished metal are (E5b-1).
+      if (view.caustics?.mode === 'AUTO') {
+        const m = materials[materialId];
+        if (isCaster(m)) casterBounds = extendBounds(casterBounds, meshBounds(meshes[mi]), rows);
+        if (m.kind === MATERIAL_EMISSIVE && m.flags & MATERIAL_FLAG_LIGHT) litEmitter = true;
+      }
     }
   }
   // A scene without parts still needs no material; one with parts always has its materials.
@@ -945,7 +1037,23 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     clampIndirect: Math.max(0, view.clampIndirect ?? 0),
     seed: Math.max(0, Math.round(view.seed ?? 0)) >>> 0,
     passes: passMask(view.passes ?? []),
+    denoise: Math.max(0, Math.round(view.denoise ?? 0)) >>> 0,
   };
+  if (view.caustics) {
+    const centre: [number, number, number] | null = casterBounds
+      ? [(casterBounds.min[0] + casterBounds.max[0]) / 2, (casterBounds.min[1] + casterBounds.max[1]) / 2, (casterBounds.min[2] + casterBounds.max[2]) / 2]
+      : null;
+    const auto =
+      view.caustics.mode === 'AUTO' &&
+      autoCaustics(
+        centre,
+        lights.map((l) => ({ kind: l.kind, position: l.position, sizeX: l.sizeX, sizeY: l.sizeY, angleDeg: l.angleDeg, glossy: (l.flags & LIGHT_FLAG_GLOSSY) !== 0 })),
+        litEmitter,
+      );
+    const c = causticsFields(view.caustics.mode, view.caustics.quality, auto);
+    render.causticPhotons = c.photons;
+    render.causticRadius = c.radiusPx;
+  }
 
   return {
     scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps },

@@ -7,18 +7,26 @@
 // The section works with `AiPort` (ui/ports.ts): the service says whether it can run and why not, and the
 // synthetic one of tests and screenshots (`?ai=synthetic`) answers `available`. Without a port (a build that
 // cannot draw the inputs) the section stays the placeholder it was: the switch says *coming soon*.
+//
+// X4b: the job's own prompt (a multi-line field with the protections' note, committed when typing stops or the field
+// is left: one undo entry a visit; disabled with the reason for a model that takes no text prompt; a line says what a
+// model with a token limit leaves out) and the number of variants next to *Another variation*, with the seeds they
+// take and, once the AI's time was measured on this computer, the time they would take. The preview stays one image.
 
-import { AI_STYLES, type AiRuntimeStatus, type AiStyle } from '../../core/ai';
-import { AI_PROTECTIONS, nextSeed, previewSize, switchAction, type SwitchAction } from '../../core/ai-post';
+import { AI_STYLES, MAX_USER_PROMPT, MAX_VARIANTS, type AiRuntimeStatus, type AiStyle } from '../../core/ai';
+import { AI_PROTECTIONS, nextSeed, previewSize, switchAction, variantSeed, type SwitchAction } from '../../core/ai-post';
+import { normaliseUserPrompt, type ComposedPrompt, type PromptCut } from '../../core/ai-prompt';
 import { linearToRgba8 } from '../../core/ai-image';
 import { activeModel, allModels } from '../../core/models';
 import { AI_PERCENT_KEYS, type AiPercentKey, type AiSettings, type RenderSettings } from '../../core/render';
 import type { Label } from '../../data/types';
-import { aiStatusKey, recommendationOf } from '../ai-query';
+import { aiStatusKey, promptContext, recommendationOf } from '../ai-query';
+import { hasModel, runtimeWatch } from '../ai-runtime-state';
+import { runtimeNotice } from './ai-runtime-notice';
 import { AiPreviewController, type AiPreviewInput, type AiPreviewState } from '../ai-preview';
 import { reportText } from '../ai-report';
 import * as cmd from '../commands';
-import { select, slider, toggle } from '../components/controls';
+import { numberField, select, slider, textArea, toggle } from '../components/controls';
 import { splitCompare, type SplitCompare } from '../components/split-compare';
 import { h, icon } from '../dom';
 import { dyn } from '../names';
@@ -51,6 +59,30 @@ function toCanvas(img: { width: number; height: number; rgba: Float32Array }): H
 function measuredText(seconds: number): string {
   if (seconds >= 59.5) return t('time.min', { n: Math.round(seconds / 60) });
   return t('time.s', { n: formatNumber(seconds, getLang(), seconds < 10 ? 1 : 0) });
+}
+
+/** An estimate in words: "45 s", "4 min", "1 h 20 min" (as the render window's). */
+function durationText(seconds: number): string {
+  const sec = Math.max(0, seconds);
+  if (sec < 59.5) return t('time.s', { n: Math.max(1, Math.round(sec)) });
+  const m = Math.round(sec / 60);
+  if (m < 60) return t('time.min', { n: m });
+  return t('time.h', { h: Math.floor(m / 60), m: m % 60 });
+}
+
+/** What a model with a token limit leaves out of the prompt, in words (X4b): "the end of your prompt, the scene description". */
+export function cutText(cut: ComposedPrompt['cut']): string {
+  const part = (key: 'user' | 'scene' | 'system', c: PromptCut) => (c === 'NONE' ? null : t(dyn(`rw.aiCut.${key}${c === 'ALL' ? 'All' : 'Part'}`)));
+  return [part('user', cut.user), part('scene', cut.scene), part('system', cut.system)].filter((x): x is string => x !== null).join(', ');
+}
+
+/** The line under the job's prompt (X4b): why nothing is sent, what does not fit, or how much of the model's limit it takes. */
+export function promptLine(composed: ComposedPrompt | undefined, textPrompt: boolean, modelName: string | null): string {
+  if (!textPrompt) return modelName ? t('rw.aiPromptNoTextModel', { model: modelName }) : t('rw.aiPromptNoText');
+  if (!composed || composed.limit === null) return '';
+  const cut = cutText(composed.cut);
+  if (cut) return t('rw.aiPromptCut', { limit: composed.limit, what: cut });
+  return t(composed.shortSystem ? 'rw.aiPromptFitShort' : 'rw.aiPromptFit', { used: composed.tokens + 2, limit: composed.limit });
 }
 
 /** The model in use and its line, from the model manager's data: "Z-Image-Turbo · Q4 · Apache-2.0 · downloaded". */
@@ -87,8 +119,10 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     const size = previewSize(s.width, s.height, status?.backend === 'CPU' ? 384 : 512);
     const camera = s.camera.kind === 'ONE' ? s.camera.id : null;
     const fullEngine = s.ai.previewFullEngine ? { finishBy: s.finishBy, maxSamples: s.maxSamples, maxSeconds: s.maxSeconds } : null;
-    const settings = { intervention: s.ai.intervention, light: s.ai.light, bounce: s.ai.bounce, wear: s.ai.wear, style: s.ai.style, styleStrength: s.ai.styleStrength, seed: s.ai.seed };
-    const text = port.scenePrompt(st, settings);
+    // One image (the first variant's seed), with the words the job would send.
+    const settings = { intervention: s.ai.intervention, light: s.ai.light, bounce: s.ai.bounce, wear: s.ai.wear, style: s.ai.style, styleStrength: s.ai.styleStrength, seed: s.ai.seed, userPrompt: s.ai.userPrompt };
+    const pc = promptContext(ui.get(), status);
+    const text = port.scenePrompt(st, settings, { system: pc.system, caps: pc.caps });
     return {
       // The picture depends on the scene, the camera, the look and the size; not on the AI controls.
       frameKey: [st.scene.nodes, st.scene.roots, st.materials, st.studio, st.environment, st.camera, st.image, st.animation, size.width, size.height, camera, s.ai.previewFullEngine, fullEngine?.maxSamples, fullEngine?.maxSeconds, fullEngine?.finishBy],
@@ -115,7 +149,8 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
   // ------------------------------------------------------------------ the switch
   const sw = toggle(false, () => {
     if (action.kind === 'OPEN_SETTINGS') {
-      cmd.openSettings(ctx, 'ai.models');
+      // No runtime: the Runtime row has the Install button; no model: the model chooser.
+      cmd.openSettings(ctx, status?.reason === 'NO_RUNTIME' ? 'ai.runtime' : 'ai.models');
       return;
     }
     if (action.kind === 'SWITCH' && !animation()) {
@@ -178,7 +213,70 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     ),
   );
   const variation = h('button', { type: 'button', class: 'btn', 'data-tip': t('rw.aiVariationTip'), onclick: () => patchAi({ seed: nextSeed(ai().seed) }, undefined, undoOf('rw.aiVariation')) }, icon('refresh', 14), t('rw.aiVariation'));
-  const controls = h('div', { class: 'rw-ai-controls' }, ...rows, protections, h('div', { class: 'rw-inline' }, variation));
+
+  // The job's own prompt (X4b): kept in the project, one undo entry a visit to the field.
+  const promptCount = h('span', { class: 'note tabular rw-ai-count' });
+  const promptWhy = h('div', { class: 'note rw-ai-prompt-line', role: 'status' });
+  const promptField = textArea({
+    value: ai().userPrompt,
+    maxLength: MAX_USER_PROMPT,
+    rows: 3,
+    ariaLabel: t('rw.aiPrompt'),
+    placeholder: t('rw.aiPromptPlaceholder'),
+    normalise: normaliseUserPrompt,
+    onCommit: (v, g) => patchAi({ userPrompt: v }, g, undoOf('rw.aiPrompt')),
+    onInput: (v) => updatePrompt(v),
+  });
+  const promptBox = h(
+    'div',
+    { class: 'rw-ai-ctl rw-ai-prompt', 'data-ai': 'userPrompt' },
+    h('div', { class: 'rw-ai-ctl-head' }, h('span', { class: 'rw-ai-ctl-name' }, t('rw.aiPrompt')), promptCount),
+    promptField.el,
+    h('div', { class: 'note' }, t('rw.aiPromptNote')),
+    promptWhy,
+  );
+  /** The counter and the line under the field, for the text being typed (`typed`) or the kept one. */
+  const updatePrompt = (typed?: string) => {
+    const s = env.get();
+    const text = normaliseUserPrompt(typed ?? s.ai.userPrompt);
+    promptCount.textContent = t('rw.aiPromptCount', { n: text.length, max: MAX_USER_PROMPT });
+    const pc = promptContext(ui.get(), status);
+    promptField.setDisabled(!pc.caps.textPrompt);
+    promptBox.dataset.text = pc.caps.textPrompt ? '1' : '0';
+    let composed: ComposedPrompt | undefined;
+    if (port && pc.caps.textPrompt && pc.caps.maxPromptTokens !== null) composed = port.scenePrompt(ctx.store.get(), { ...s.ai, userPrompt: text }, { system: pc.system, caps: pc.caps }).composed;
+    const line = promptLine(composed, pc.caps.textPrompt, pc.model ? pc.model.label[getLang()] : null);
+    promptWhy.textContent = line;
+    promptWhy.style.display = line ? '' : 'none';
+    promptWhy.dataset.cut = composed && cutText(composed.cut) ? '1' : '0';
+  };
+
+  // Variants (X4b): one render, then as many AI images with the seeds that follow.
+  const variantsField = numberField({
+    value: ai().variants,
+    min: 1,
+    max: MAX_VARIANTS,
+    step: 1,
+    ariaLabel: t('rw.aiVariants'),
+    onChange: (v, g) => patchAi({ variants: v }, g, undoOf('rw.aiVariants')),
+  });
+  variantsField.el.classList.add('rw-ai-variants-num');
+  const variantsLine = h('div', { class: 'note tabular rw-ai-variants-line' });
+  const updateVariants = () => {
+    const s = env.get();
+    const n = s.ai.variants;
+    const seeds = n > 1 ? t('rw.aiVariantsSeeds', { n, from: variantSeed(s.ai.seed, 1), to: variantSeed(s.ai.seed, n) }) : t('rw.aiVariantsOne');
+    const tp = ui.get().aiThroughput;
+    const time = tp && tp > 0 ? t('rw.aiVariantsTime', { time: durationText((n * s.width * s.height) / tp) }) : t('rw.aiVariantsTimeNone');
+    variantsLine.textContent = `${seeds} · ${time}`;
+  };
+  const variantsRow = h(
+    'div',
+    { class: 'rw-inline rw-ai-variants', 'data-ai': 'variants' },
+    variation,
+    h('label', { class: 'rw-inline rw-ai-variants-label', 'data-tip': t('rw.aiVariantsTip') }, h('span', { class: 'rw-ai-ctl-name' }, t('rw.aiVariants')), variantsField.el),
+  );
+  const controls = h('div', { class: 'rw-ai-controls' }, ...rows, promptBox, protections, h('div', { class: 'rw-ai-ctl' }, variantsRow, variantsLine));
 
   // ------------------------------------------------------------------ the preview
   const frame = h('div', { class: 'rw-ai-frame', role: 'img', 'aria-label': t('rw.aiPreviewAlt') });
@@ -247,10 +345,13 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
   const grid = h('div', { class: 'rw-ai-grid' }, controls, previewCol);
 
   // ------------------------------------------------------------------ the section
+  // A model is installed and the inference runtime is not (or does not start): said here, with its Install button (U10).
+  const notice = runtimeNotice(ctx, scope, 'render');
   const host = h(
     'div',
     { class: 'rw-section rw-ai' },
     h('div', { class: 'rw-row' }, h('div', { class: 'rw-label' }, t('rw.ai')), h('div', { class: 'rw-ctrl' }, h('div', { class: 'rw-inline' }, sw.el, aux))),
+    notice,
     why,
     grid,
     manage,
@@ -290,7 +391,9 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
       line = action.reason === 'NOT_BUILT' ? t('common.comingSoon') : '';
       reason = t(dyn(`rw.aiWhy.${(REASON_KEYS as readonly string[]).includes(action.reason) ? action.reason : 'NOT_BUILT'}`));
     } else if (action.kind === 'OPEN_SETTINGS') {
-      reason = status?.reason === 'NO_RUNTIME' ? t('rw.aiNoRuntime') : t('rw.aiNoModel');
+      // With a model installed the notice above says what is missing and offers the fix; the line is for the rest.
+      const noticed = status?.reason === 'NO_RUNTIME' && runtimeWatch(ctx) !== null && hasModel(ui.get());
+      reason = noticed ? '' : status?.reason === 'NO_RUNTIME' ? t('rw.aiNoRuntime') : t('rw.aiNoModel');
     } else {
       line = synthetic ? t('rw.aiSyntheticLine') : (model?.line ?? '');
     }
@@ -303,6 +406,10 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
     const a = s.ai;
     for (const key of AI_PERCENT_KEYS) percent.get(key)?.set(a[key]);
     styleSel.set(a.style);
+    promptField.set(a.userPrompt);
+    variantsField.set(a.variants);
+    updatePrompt(document.activeElement === promptField.el ? promptField.el.value : undefined);
+    updateVariants();
     full.set(a.previewFullEngine);
     fullNote.style.display = a.previewFullEngine ? 'none' : '';
     frame.dataset.on = on ? '1' : '0';
@@ -310,18 +417,32 @@ export function aiPostBody(ctx: Ctx, scope: Scope, env: AiSectionEnv): HTMLEleme
 
   // The settings (undo and redo included), the model manager and the section being opened all land here.
   scope.watch(
-    (s, u) => [u.renderWindow?.kind === 'EDIT' ? u.renderWindow.draft.ai : s.render.ai, u.renderWindow?.kind === 'EDIT' ? u.renderWindow.draft.mode : s.render.mode, u.models?.installed.join(','), u.models?.ready, u.settings['ai.active']] as unknown[],
-    (_v, prev) => {
+    (s, u) => [u.renderWindow?.kind === 'EDIT' ? u.renderWindow.draft.ai : s.render.ai, u.renderWindow?.kind === 'EDIT' ? u.renderWindow.draft.mode : s.render.mode, u.models?.installed.join(','), u.models?.ready, u.settings['ai.active'], u.settings['ai.systemPrompt'], u.models] as unknown[],
+    (v, prev) => {
       sync();
       if (prev === undefined) return;
+      // The number of variants does not change the preview (it is one image): nothing to make again (X4b).
+      const [a, b] = [v[0] as AiSettings, prev[0] as AiSettings];
+      if (a !== b && v.slice(1).every((x, i) => Object.is(x, prev[i + 1])) && (Object.keys(a) as (keyof AiSettings)[]).every((k) => k === 'variants' || a[k] === b[k])) return;
       preview.touch();
     },
+    (x, y) => x.length === y.length && x.every((v, i) => Object.is(v, y[i])),
+  );
+  // The AI's measured time (a job finished) and the size: the variants' estimate.
+  scope.watch(
+    (_s, u) => [u.aiThroughput, env.get().width, env.get().height] as unknown[],
+    () => updateVariants(),
     (x, y) => x.length === y.length && x.every((v, i) => Object.is(v, y[i])),
   );
   // The picture itself: the scene, the camera, the look and the size.
   scope.watch(
     (s) => [s.scene.nodes, s.scene.roots, s.materials, s.studio, s.environment, s.camera, s.image, s.animation] as unknown[],
-    (_v, prev) => prev !== undefined && preview.touch(),
+    (_v, prev) => {
+      if (prev === undefined) return;
+      // The scene's words changed with it: what a model with a limit leaves out may too.
+      updatePrompt(document.activeElement === promptField.el ? promptField.el.value : undefined);
+      preview.touch();
+    },
     (x, y) => x.length === y.length && x.every((v, i) => Object.is(v, y[i])),
   );
   scope.watch(

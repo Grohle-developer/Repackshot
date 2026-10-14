@@ -137,13 +137,23 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5c.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5c.rsb" --expect "$expected" --passes
+          # E5b-1: the E5 scene with caustics (the module traces each sample's photon map), and the
+          # example denoised as the page's pool does it (rt_denoise in three bands with their halo).
+          cargo run --release -p rt-cli -- --write-e5b-example "$RUNNER_TEMP/e5b.rsb"
+          expected=$(sed -n 's/.*PINNED_E5B_CAUSTICS_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5b.rsb" --expect "$expected"
+          expected=$(sed -n 's/.*PINNED_EXAMPLE_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          denoised=$(sed -n 's/.*PINNED_DENOISED_EXAMPLE_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-post/src/denoise/tests.rs | tr -d _)
+          test -n "$expected" && test -n "$denoised"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/example.rsb" --expect "$expected" --denoise --expect-denoised "$denoised"
 
       - name: Passes through the page's own code (the real rt.wasm in Node)
         working-directory: .
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:
