@@ -56,10 +56,13 @@ fn have_tools() -> bool {
 
 /// Serves files under `/<owner>/<repo>/releases/download/…`, with `Range` for resuming. It can be
 /// slow (`throttle`, per 64 KiB), and it can cut a download once, halfway.
+/// What was asked of the server: the path and the `Range` header.
+type Requests = Arc<Mutex<Vec<(String, Option<String>)>>>;
+
 struct Releases {
     port: u16,
     files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
-    requests: Arc<Mutex<Vec<(String, Option<String>)>>>,
+    requests: Requests,
     throttle_ms: Arc<AtomicU64>,
     cut_once: Arc<Mutex<HashSet<String>>>,
     stop: Arc<AtomicBool>,
@@ -70,7 +73,7 @@ impl Releases {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let files: Arc<Mutex<HashMap<String, Vec<u8>>>> = Arc::default();
-        let requests: Arc<Mutex<Vec<(String, Option<String>)>>> = Arc::default();
+        let requests: Requests = Arc::default();
         let throttle_ms = Arc::new(AtomicU64::new(0));
         let cut_once: Arc<Mutex<HashSet<String>>> = Arc::default();
         let stop = Arc::new(AtomicBool::new(false));

@@ -5,8 +5,14 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Escritorio
+
+- **Actualizar desde la aplicación** (P5): *Ajustes ▸ Actualizaciones ▸ **Instalar y reiniciar*** (y el mismo botón en el aviso de la barra de estado) descarga la versión nueva, comprueba su SHA-256 contra el `SHA256SUMS.txt` de la release, la instala y reinicia la aplicación con ella, sin pasar por el navegador. En **Windows instalado** ejecuta el instalador en silencio (`/S /LAUNCH`: espera a que la aplicación se cierre, instala y la vuelve a abrir); en un **portable** (Windows y Linux) extrae el paquete junto al programa y sustituye los archivos en el sitio —el ejecutable en uso se renombra a `.old`, `data/` y `portable.txt` no se tocan, y si algo falla a medias queda lo viejo donde estaba—, y la versión nueva borra los `.old` al arrancar. Solo se descarga de las releases del repositorio de la aplicación (`github.com/<owner>/<repo>/releases/download/…`); una suma que no cuadra no instala nada. La fila enseña *Descargando… 45 % · 3,2 de 7,1 MB*, *Comprobando…* e *Instalando…*, los fallos con su motivo y *Reintentar*, y *Cancelar la actualización*; cerrar *Ajustes* no la para. La web sigue con *Descargar*, que abre la página de la versión. La primera actualización desde la aplicación será de la versión que lleve esto a la siguiente (P5).
+- El instalador de Windows, en silencio, espera hasta 30 s a que `repackshot.exe` quede libre, no toca la elección de modelos de IA ni recrea un acceso directo del escritorio que se borró, y con `/LAUNCH` abre la aplicación al terminar (P5).
+
 ### Interfaz
 
+- **La pregunta por los cambios sin guardar** gana **Guardar como…** (con el diálogo) en todos sus usos —cerrar, *Nuevo*, *Abrir* y actualizar—: *Guardar · Guardar como… · No guardar*, y *Cancelar* o `Esc`. *Guardar* y *Guardar como…* siguen solo si el proyecto se escribió de verdad. En *Ajustes*, `Esc` cancela una pregunta abierta en lugar de cerrar la ventana (P5).
 - La lista de cámaras del visor (arriba a la derecha) enseña la óptica de cada cámara (*85 mm · f/5.6*) y un **lápiz** por fila que abre la ficha de esa cámara en el inspector (nombre, *Activar*, *Mirar a través*, óptica y posición) con la pestaña *Cámaras* abierta; y la sección *Cámara* del inspector de escena dice **qué cámara edita** (la activa, por su nombre), con el mismo lápiz y una nota de que cada cámara tiene su óptica y su posición (aviso del usuario: no se veía que se estuviera editando *Cámara 1*).
 
 ## v0.1.5 — 2026-10-14

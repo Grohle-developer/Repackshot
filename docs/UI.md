@@ -950,7 +950,7 @@ título del grupo en versalitas auxiliares:
 | | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
-| | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con **Descargar**, el paquete de esta plataforma, y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con *Descargar · Notas · Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`) |
+| | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con el botón principal y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con el mismo botón principal, *Notas* y *Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`). **El botón principal** es **Instalar y reiniciar** en escritorio (P5): pregunta por los cambios sin guardar (§4.3), el lanzador descarga el paquete de esta copia y su `SHA256SUMS.txt`, comprueba la suma, lo instala y la aplicación se reinicia sola con la versión nueva (detalle en `ARCHITECTURE.md` §5.5). En la web sigue siendo **Descargar** (abre la página de la versión) y la fila lo dice: *Descargar abre la página de la versión. Para actualizar desde la propia aplicación, usa la versión de escritorio.* También es *Descargar* donde el lanzador no sabe actualizarse (uno anterior) o la release no trae el paquete o las sumas. **Mientras se instala**, la fila (y la línea de la barra de estado, con *Ajustes* cerrado) dice dónde va: *Descargando… 45 % · 3,2 de 7,1 MB* con una barra fina (gris, sin color), *Comprobando…*, *Instalando… la aplicación se reiniciará*, con **Cancelar la actualización** hasta que empieza a cambiar archivos; cerrar *Ajustes* no la para (el estado es del lanzador y se sigue al recargar la página). **Los fallos** salen en la fila con su motivo y **Reintentar**: la descarga, la suma que no cuadra (*no se instaló*), sin espacio en el disco, el paquete que no se pudo desempaquetar o poner en su sitio (*no se cambió nada*) y *esta copia no está instalada ni es portable* (entonces el botón es *Descargar*). Al volver a arrancar, un aviso dice *Repackshot se actualizó a la versión X* |
 | | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
 
 **Columna derecha**: título de la sección, una frase de qué se ajusta
@@ -1160,6 +1160,21 @@ decisión con muchos parámetros que se toma de una vez, como en KeyShot,
 y la ventana de **Ajustes** (§2.9: secciones agrupadas en una columna a
 la izquierda, cambios al momento). Ninguna otra ventana; nada se abre
 solo.
+
+**La pregunta por los cambios sin guardar** (solo si el proyecto los
+tiene) es la misma para todo lo que los descartaría —cerrar la ventana,
+*Nuevo*, *Abrir* y *Instalar y reiniciar*— y tiene tres botones más
+*Cancelar*: **Guardar** (donde está el proyecto, sin diálogo), **Guardar
+como…** (con el diálogo) y **No guardar** (en la actualización, **Salir sin
+guardar**). *Guardar* y *Guardar como…* siguen solo si el proyecto se
+escribió de verdad: un diálogo cancelado o un archivo que no se puede
+escribir se quedan donde estaban. `Esc` y *Cancelar* no hacen nada. Sale bajo el
+nombre del proyecto (cerrar, nuevo, abrir), en la fila de *Ajustes ▸
+Actualizaciones* o encima del botón de la barra de estado (actualizar), que
+es donde se pulsó; en *Ajustes* `Esc` cancela la pregunta, no la ventana.
+Si durante la descarga el proyecto cambió, al cerrar la ventana para
+reiniciar se pregunta otra vez (bajo el nombre del proyecto, con la
+misma pregunta); si no ha cambiado desde que se contestó, no.
 
 ### 4.4 · Campos numéricos
 

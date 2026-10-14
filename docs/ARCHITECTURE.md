@@ -882,6 +882,41 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    dice `aiPost: 1`; entonces la página usa `src/io/ai-post.ts` (`DesktopAiService`), y la cola
    escribe la imagen de la IA desde esa luz lineal con la exposición y la curva del render, como el
    fichero del motor.
+9. **Actualizar desde la aplicación** (P5, `src/update/`): `POST /api/update/install` con `{tag,
+   assetUrl, sumsUrl}` (y `size`, solo para el progreso), `GET /api/update` y `POST /api/update/cancel`;
+   `/api/info` dice `updateApi: 1` y `afterUpdate`. El lanzador **decide qué se puede descargar**, no
+   la página: solo `https://github.com/<owner>/<repo>/releases/download/<versión>/<archivo>` del
+   repositorio de `src/data/update-feed.ts` (que el *crate* lee al compilarse, así que no pueden
+   diferir), el paquete que le toca a esta copia (instalada en Windows: `-setup.exe`; portable:
+   `.zip` en Windows y `.tar.gz` en Linux) y el `SHA256SUMS.txt` de la misma versión; una copia que
+   no es ni instalada (`uninstall.exe` junto al programa) ni portable (`portable.txt`), o un
+   procesador que no es x86-64, responde 409 `not-updatable`. El trabajo, en un hilo, con el `curl`
+   del sistema como el resto de descargas (`ai/download.rs`, que ahora admite un tamaño solo
+   acotado): **DOWNLOADING** (las sumas y el paquete a `<datos>/cache/update/`, con reanudación) →
+   **VERIFYING** (el SHA-256 propio contra la suma de la versión; si no cuadra, se borra y no se
+   instala nada) → **INSTALLING**: en una copia instalada el instalador verificado espera; en una
+   portable se extrae **todo** a `<carpeta del exe>/update-<tag>/` (el lector de zip propio de
+   `ai/zip.rs`; en Linux el `tar` del sistema, tras comprobar los nombres y que no haya enlaces) y
+   se **sustituye en el sitio** (`update/portable.rs`): cada archivo y carpeta del paquete, el
+   ejecutable el último, ocupa el lugar del que tenía su nombre, que pasa a `<nombre>.old`
+   (`repackshot.old.exe`, `app.old`; un ejecutable en uso se puede renombrar, no sobrescribir);
+   `data/` y `portable.txt` no se tocan; si un paso falla se deshacen los hechos y lo viejo queda
+   donde estaba (`FAILED`, con el motivo). Los nombres a borrar se apuntan antes en `update.json`.
+   `ready: true` dice que ya está todo en su sitio y el lanzador espera a que se cierre la
+   ventana: **la página la cierra** (con su pregunta sobre cambios sin guardar si el proyecto ha
+   cambiado desde que se contestó), y `--serve-only`, que no tiene ventana, sale solo. **Solo
+   cuando el lanzador ha parado** (`launcher::run`, tras el servidor, la ventana y `instance.json`)
+   arranca lo que toca, suelto del proceso (`DETACHED_PROCESS` en Windows, grupo propio en Unix):
+   `setup.exe /S /LAUNCH` o el ejecutable nuevo con los mismos argumentos y `--after-update`. Así
+   la versión nueva nunca arranca junto a una vieja que aún tiene el puerto, el perfil de la
+   ventana o `instance.json`; y como el nuevo toma el mismo puerto (el de `launcher.json`), el
+   origen no cambia. Al arrancar, el nuevo borra los `.old`, las carpetas `update-*` y la descarga
+   (`update::start_cleanup`; en Windows reintenta unos segundos, porque el ejecutable viejo puede
+   seguir cerrándose). El instalador (`packaging/windows/installer.nsi`) espera hasta 30 s a que
+   `repackshot.exe` quede libre cuando va en silencio, arranca la aplicación al acabar con
+   `/LAUNCH` y no cambia nada de lo que eligió la persona (ni la página de modelos ni un acceso
+   directo del escritorio que se borró). La interfaz (`ui/updates.ts`) pregunta, pide, sigue el
+   estado cada 400 ms y cierra la ventana; contrato completo en `engine/crates/rt-app/README.md`.
 
 ## 6 · Interfaz (`src/ui/`)
 

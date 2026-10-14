@@ -1896,7 +1896,7 @@ la cámara trazada ≤ 25 % del render del ejemplo con la doble Gauss a
 dan ojo de gato, burbuja, cremoso y remolino, **con veredicto de
 Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
 
-## P5 · Actualizar desde la aplicación — **Sonnet**
+## P5 · Actualizar desde la aplicación — **Sonnet** — hecha
 
 **Qué.** Petición del usuario: hoy *Ajustes ▸ Actualizaciones ▸
 Descargar* abre el instalador en el navegador; debe **instalar la
@@ -1967,6 +1967,64 @@ aplicación se reinicia con la versión nueva, en una copia en
 (Wine no ejecuta NSIS: anotarlo). Captura `docs/ui/update-install.png`.
 La primera actualización real desde la aplicación será de la versión
 que lleve esto a la siguiente: apuntarlo en las notas de la release.
+
+**Hecho.** `engine/crates/rt-app/src/update/` (`feed.rs`: la lista blanca —solo
+`github.com/<owner>/<repo>/releases/download/<versión>/<archivo>` del repositorio de
+`src/data/update-feed.ts`, que el *crate* lee al compilarse—, los nombres de los paquetes y las
+sumas; `portable.rs`: extraer, sustituir en el sitio con deshacer, limpiar al arrancar; `mod.rs`: el
+estado, el hilo y las rutas `GET /api/update`, `POST /api/update/install` y `…/cancel`);
+`ai/download.rs` admite un tamaño solo acotado; `process::spawn_detached`; `--after-update`;
+`/api/info` dice `updateApi` y `afterUpdate`. Instalada en Windows: descarga el `-setup.exe` y las
+sumas, comprueba el SHA-256 propio y, parado el lanzador, ejecuta `setup.exe /S /LAUNCH`; portable
+(Windows `.zip` con el lector propio, Linux `.tar.gz` con el `tar` del sistema, tras mirar su lista):
+extrae todo a `update-<tag>/`, renombra lo viejo a `.old`, pone lo nuevo sin tocar `data/` ni
+`portable.txt`, deshace lo hecho si un paso falla (probado inyectando el fallo en cada uno de los
+ocho) y arranca el ejecutable nuevo con los argumentos de antes y `--after-update`; el nuevo borra
+los `.old`, las carpetas `update-*` y la descarga. `installer.nsi`: la espera de hasta 30 s
+(`FileOpen` en modo `a` y `Sleep 500`, 60 vueltas), `/LAUNCH` en `.onInstSuccess`, y en silencio
+ni página de modelos ni acceso directo del escritorio que se borró. Interfaz (`ui/updates.ts`,
+`io/update-install.ts`): *Instalar y reiniciar* en la fila y en el aviso (en la web, *Descargar* y
+una línea que dice qué hace), progreso (*Descargando… 45 % · 3,2 de 7,1 MB* con barra,
+*Comprobando…*, *Instalando…*), *Cancelar la actualización*, fallos con su motivo y *Reintentar*,
+seguimiento del lanzador cada 400 ms (cerrar *Ajustes* no la para; una página recargada la
+recoge), y la pregunta por los cambios sin guardar con **Guardar como…** para todos los usos
+(`afterUnsavedCheck`: cerrar, nuevo, abrir, actualizar; *Guardar* y *Guardar como…* siguen solo si
+se escribió; `Esc` cancela), que en la actualización sale en el sitio del botón. Pruebas: 15 de
+sockets en `tests/update.rs` con el `curl` y el `tar` reales contra un servidor local (de punta a
+punta el portable de Linux y el de Windows, la suma que no cuadra, la lista blanca, cancelar,
+reanudar), 16 unitarias del módulo, 4 de contrato del `.nsi` en `tests/installer.rs`, 35 de
+TypeScript en `tests/update-install.test.ts` (más los de siempre, ajustados a tres botones).
+`tools/update-install-check.mjs` contra el lanzador real: el portable de Linux de punta a punta en
+`out/update-check/linux/` (la versión nueva arranca en el mismo puerto con `--after-update`, el
+marcador está en su `app/`, los `.old` ya no están, `data/` y `portable.txt` como estaban) y el
+instalado de Windows bajo Wine hasta el instalador arrancado con `/S /LAUNCH`. Captura
+`docs/ui/update-install.png`. Se repararon de paso `tools/updates-check.mjs` (roto desde U10 y
+P3b: un segundo `.update-notice`, enlaces por un ancla en vez de `window.open`, `open-url` del
+lanzador, la versión fijada a 0.1.0) y el `Esc` de *Ajustes* con una pregunta abierta, que
+cancelaba la ventana entera en lugar de la pregunta.
+
+No encajó con el plan: (1) *INSTALLING* cubre el desempaquetado y el cambio de archivos, y la
+página no puede cerrar la ventana hasta que están en su sitio, así que `GET /api/update` lleva un
+campo más, `ready` (contrato ampliado, no cambiado). (2) El lanzador **no sale él al acabar**: sale
+cuando se cierra la ventana (la página la cierra al ver `ready`; `--serve-only` sin ventana sale
+solo) y **solo entonces** arranca el instalador o el ejecutable nuevo; si arrancase antes, el nuevo
+se encontraría con el puerto, `instance.json` y el perfil de la ventana del viejo (y una ventana de
+navegador huérfana). (3) `POST /api/update/install` admite un `size` opcional: `curl` no da el total
+antes del cuerpo y la barra no inventa números; sin él, solo los MB recibidos. (4) La espera de 30 s
+del instalador solo va **en silencio**; a mano, pregunta enseguida como antes, para no hacer esperar
+medio minuto a quien lo ejecuta con la aplicación abierta. (5) Un instalador en silencio tampoco
+reescribe `pending-models.json` ni recrea un acceso directo del escritorio que la persona borró: no
+estaba en el texto y lo habría hecho en cada actualización. (6) El tercer botón dice *Salir sin
+guardar* solo en la actualización; al cerrar, nuevo y abrir sigue siendo *No guardar*. (7) Si el
+proyecto cambia mientras se descarga, al cerrar para reiniciar se pregunta otra vez; si no ha cambiado
+desde que se contestó, no. (8) NSIS no corre bajo Wine: el `.nsi` se compila con `makensis -WX` y su
+contrato se lee como texto; el instalador real, el cierre de la ventana propia (WebView2) con
+`close-ok`, el cambio de un ejecutable en uso en Windows y SmartScreen quedan por probar en un
+Windows real. (9) El zip propio exige nombres de `[A-Za-z0-9._+-]` y 8 niveles: el `dist/` de hoy
+cumple, un archivo de `app/` con un espacio en el nombre haría fallar la extracción (con `extract`,
+sin cambiar nada). (10) Con la máquina a carga 20–30 (otros agentes), dos pruebas ajenas a esta fase pasan del tiempo:
+la de *denoise* del *pool* en `pathtracer` (pasa sola al repetir) y el `afterAll` de
+`ai-passes-browser` (cierra el navegador en 10 s; sus siete pruebas pasan, el cierre no).
 
 ## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
 

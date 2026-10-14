@@ -369,6 +369,11 @@ mod tests {
             format!("https://github.com.evil.example/Grohle-developer/Repackshot/releases/download/v0.2.0/{name}"),
             format!("https://github.com/Grohle-developer/Other/releases/download/v0.2.0/{name}"),
             format!("https://github.com/Other/Repackshot/releases/download/v0.2.0/{name}"),
+            // The same length as the feed's own, character for character but one.
+            format!("https://gitlab.com/Grohle-developer/Repackshot/releases/download/v0.2.0/{name}"),
+            format!("https://github.com/Grohle-developeq/Repackshot/releases/download/v0.2.0/{name}"),
+            format!("https://github.com/Grohle-developer/Repackshop/releases/download/v0.2.0/{name}"),
+            format!("https://github.com/Grohle-developer/Repackshot/releases/upload/v0.2.0/{name}"),
             format!("https://github.com/Grohle-developer/Repackshot/releases/latest/download/{name}"),
             format!("https://github.com/Grohle-developer/Repackshot/archive/v0.2.0/{name}"),
             format!("{BASE}/v0.2.0/{name}?x=1"),

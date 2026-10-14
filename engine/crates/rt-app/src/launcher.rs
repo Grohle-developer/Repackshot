@@ -52,11 +52,6 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
     if opts.after_update {
         crate::log!("started by an update: this is the new version");
     }
-    // What an earlier update left beside the program (the old files, the unpacked package).
-    crate::update::start_cleanup(
-        paths.exe_dir.clone(),
-        paths.data_dir.join("cache").join("update"),
-    );
 
     if !opts.serve_only {
         if let Some(running) = instance::read(&paths.instance()) {
@@ -78,6 +73,14 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
             }
         }
     }
+
+    // What an earlier update left beside the program (the old files, the unpacked package). Only the
+    // launcher that serves does this: a second launch that hands over to a running one must not delete
+    // what an update of that one is downloading.
+    crate::update::start_cleanup(
+        paths.exe_dir.clone(),
+        paths.data_dir.join("cache").join("update"),
+    );
 
     let token = crate::token::generate();
     // The data folder's own port (port.rs): the window's origin stays the same from launch to launch.
