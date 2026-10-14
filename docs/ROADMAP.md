@@ -5665,6 +5665,94 @@ Doctor cuando un plano discrepa. Comprobación de navegador
 sección con 4:3 y el marco del visor cambiado) y
 `docs/ui/render-size-from-camera.png`.
 
+## N6 · Despiece configurable y línea de tiempo clara — **Opus**, decisión **Fable**
+
+Petición del usuario (14-10): en animación faltaban las **explosiones
+(despieces)** de un modelo, configurables en velocidad y suavidad, con
+piezas **excepción** que no se mueven, y de varios tipos (vertical,
+horizontal, radial, esférica…; «investiga tipos»); y **mejorar la
+interfaz de animación**: más cómoda, intuitiva, parecida a sistemas
+existentes, y que quede claro **qué** se anima y **cómo**.
+
+**Tipos de despiece (investigación).** Las herramientas CAD con vista
+explosionada coinciden en tres geometrías básicas y dos modos de orden
+(documentación pública de Onshape —*Linear / Radial / Spherical*—,
+Fusion 360 —*auto explode: one level / all levels*—, SolidWorks
+Composer e Inventor —niveles y direcciones—; observación de caja negra,
+ningún código):
+1. **Lineal** (`LINEAR`): a lo largo de un eje (vertical = Z;
+   horizontal = X o Y; o dirección propia). Dos sabores: *separar* (cada
+   pieza se aleja del plano central por su lado) y *apilar* (todas en el
+   mismo sentido, repartidas en su orden a lo largo del eje: el despiece
+   clásico de un envase con tapón, rosca y cuerpo).
+2. **Radial** (`RADIAL`, cilíndrico): alejándose de un **eje** (las piezas
+   se mueven perpendiculares a él). Lo que hoy se llama RADIAL pasa a
+   ser esférico; la clave `RADIAL` se conserva con su significado nuevo
+   solo si ningún proyecto guardado la usa (comprobar); si no, clave
+   nueva `CYLINDRICAL` y `RADIAL` queda como sinónimo de la esférica.
+3. **Esférica** (`SPHERICAL`): alejándose de un **punto** (el centro).
+4. **Por jerarquía** (`LEVELS`): primero los grupos como bloques y luego
+   las piezas dentro de cada grupo (*un nivel* / *todos los niveles*),
+   combinable con cualquiera de las tres geometrías.
+Parámetros: distancia (× tamaño del modelo o mm; *proporcional al
+tamaño de la pieza* sí/no), **centro** (centro del modelo, pieza elegida,
+pivote, punto propio), eje o dirección, **orden** (a la vez / escalonado
+por distancia al centro / por profundidad de jerarquía, con solape %),
+**velocidad** (duración) y **suavidad** (curva: lineal → suave → muy
+suave, un solo mando que elige y pesa la curva de `EASING_KINDS`),
+**excepciones** (piezas fijas: lista que se llena desde la selección o
+con *Fijar en el despiece* del menú contextual), conservar la
+orientación, invertir (montaje), y el objetivo puede ser el modelo o un
+grupo. Las claves `AXIS_X/Y/Z` existentes siguen valiendo (= lineal
+separar en ese eje).
+
+**La interfaz de animación** (decisión): el cajón pasa a ser una línea
+de tiempo de tres zonas, como el espacio de animación de KeyShot y las
+tiras de Blender/After Effects, sin copiar nada:
+- **Izquierda, el árbol de lo animado** (*qué*): una fila por objetivo
+  (pista de cámara, modelo, grupos, piezas, focos, entorno, set,
+  físicas) con sus animaciones anidadas (icono + frase llana: «orbita
+  90° · 4 s · suave»); seleccionar una fila selecciona la animación y
+  **resalta su objetivo en el visor**; seleccionar una pieza en la
+  escena resalta sus filas; botón **+ Animar…** contextual («Animar
+  Tapón…») que abre el asistente con el objetivo puesto; menú contextual:
+  duplicar, borrar, invertir, partir en el cabezal, fijar en el despiece.
+- **Centro, la línea de tiempo** (*cuándo*): regla en segundos y
+  fotogramas, cabezal arrastrable, barras con su frase, arrastrar para
+  mover y estirar por los extremos, **imán** a bordes de otras barras,
+  al cabezal y a los segundos, selección múltiple, pistas agrupadas por
+  objetivo y plegables, la pista de cámara con sus tramos.
+- **Derecha, las propiedades** de la animación elegida (*cómo*):
+  cabecera «Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s», los mandos
+  del tipo, la curva con vista previa, inicio/duración/fin, repetir,
+  invertir.
+- **Visor**: con una animación elegida se dibuja su pista (arco de la
+  órbita, flecha del desplazamiento, vectores del despiece, giro) y el
+  objetivo resaltado; el cabezal mueve la previa.
+- Teclado: espacio reproduce/pausa, Inicio/Fin, ←/→ un fotograma,
+  Mayús+←/→ diez, Supr borra, Ctrl+D duplica. Los presets siguen en su
+  lista. Cualquier tipo de clip se dibuja igual (también el `PHYSICS`
+  que S2 añade: «simulación física · 0–4 s»): el árbol y las barras no
+  conocen los tipos, leen la frase y el objetivo.
+
+**Depende de.** N1, U3. S2 añade `PHYSICS` en paralelo: mantener
+`MotionClip` y `evaluate` como API y dibujar genérico.
+
+**Criterio.** Tests (mutación comprobada): cada geometría mueve las
+piezas por donde dice (lineal separar/apilar, radial perpendicular al
+eje, esférica desde el punto, niveles por etapas); las excepciones no
+se mueven; el orden escalonado respeta el solape; suavidad lineal vs muy
+suave cambian la curva; invertir monta; proyectos antiguos con
+`EXPLODE` y `AXIS_*`/`RADIAL` se leen igual que antes (instantánea);
+árbol ↔ selección ↔ visor sincronizados; arrastrar y estirar barras con
+imán (tests de la aritmética del imán). Comprobación de navegador
+`tools/animation-check.mjs` con capturas `docs/ui/animation-timeline.png`
+(árbol + barras + propiedades con un despiece elegido y su pista en el
+visor) y `docs/ui/explode-types.png` (tira de 4 fotogramas por tipo con
+el envase de ejemplo). Hoja `out/explode-sheet.html` para el veredicto
+visual. `SPEC.md` §3.7, `UI.md` §2.5, CHANGELOG; cadenas es/en; cromo
+acromático; todo por el *store* y deshacible.
+
 ## P6 · Plugins, y el plugin de película (aintfilm) — **Opus**, decisión **Fable**
 
 Petición del usuario (14-10): un apartado **Plugins** en *Ajustes* con la
