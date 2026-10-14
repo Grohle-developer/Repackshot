@@ -24,6 +24,7 @@ import { cross, dot, mat4Invert, normalize, rotateAbout, transformDirection, tra
 import { nextId } from './ids';
 import type { ActionBase, ProjectState } from './store';
 import type { MaterialId, MaterialInstance } from './materials';
+import { graphImageRefs } from './material-graph';
 
 // --- Vocabulary -------------------------------------------------------------------------------
 
@@ -202,7 +203,7 @@ export function texturesImageIds(t: MaterialTextures): string[] {
   return out;
 }
 
-/** The images every material of a project uses, by id. */
+/** The images every material of a project uses, by id: its slots, its labels and its graph's image nodes (M3a). */
 export function textureImages(state: Pick<ProjectState, 'materials'>): Map<string, ImageRef> {
   const out = new Map<string, ImageRef>();
   for (const m of Object.values(state.materials)) {
@@ -212,6 +213,7 @@ export function textureImages(state: Pick<ProjectState, 'materials'>): Map<strin
       if (s && !out.has(s.image.id)) out.set(s.image.id, s.image);
     }
     for (const l of t.labels) if (!out.has(l.image.id)) out.set(l.image.id, l.image);
+    for (const r of graphImageRefs(m.graph)) if (!out.has(r.id)) out.set(r.id, r);
   }
   return out;
 }
