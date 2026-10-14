@@ -210,6 +210,37 @@ void main() {
 }
 `;
 
+// E11: the copy of the multisampled scene to the canvas, byte for byte (the target already holds what the canvas would).
+const COPY_VERT = /* glsl */ `
+precision highp float;
+attribute vec3 position;
+attribute vec2 uv;
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+`;
+
+const COPY_FRAG = /* glsl */ `
+precision highp float;
+uniform sampler2D image;
+varying vec2 vUv;
+void main() { gl_FragColor = texture2D(image, vUv); }
+`;
+
+/**
+ * E11: a render target three.js draws into as it draws to the canvas: the tone curve and the sRGB encoding applied by
+ * every material and the clear colour in sRGB (three.js does this for a target flagged as an XR one; to WebGLRenderer
+ * the flag means nothing else), stored in plain eight bits that are neither encoded when written nor decoded when
+ * sampled, so the copy to the canvas is byte for byte. `samples` 0 is a plain target.
+ */
+class ScreenTarget extends THREE.WebGLRenderTarget {
+  readonly isXRRenderTarget = true;
+  constructor(width: number, height: number, samples: number) {
+    super(width, height, { samples, colorSpace: THREE.SRGBColorSpace, depthBuffer: true, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    // Plain eight bits in the texture too (not sRGB8): the multisampled buffer is resolved into it and read back as it is.
+    this.texture.internalFormat = 'RGBA8';
+  }
+}
+
 export interface ViewChange {
   azimuth: number;
   elevation: number;
@@ -312,6 +343,24 @@ export class PreviewEngine implements RenderEngine {
   });
   private readonly quadScene = new THREE.Scene();
   private readonly quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  /**
+   * E11, Settings ▸ Render engine ▸ Fast mode: the multisampling the scene is drawn with (0 none, 2, 4, 8). When it is
+   * the canvas's own (`canvasSamples`) the scene is drawn on the canvas as always; otherwise into `aaTarget`, a target
+   * with that many samples (capped by the device) that three.js treats as the screen (tone curve and sRGB written in,
+   * like the canvas), copied as it is to the canvas before the overlays.
+   */
+  private msaaWanted = 4;
+  private canvasSamples = 0;
+  private aaTarget: ScreenTarget | null = null;
+  private readonly copyScene = new THREE.Scene();
+  private readonly copyMaterial = new THREE.RawShaderMaterial({
+    vertexShader: COPY_VERT,
+    fragmentShader: COPY_FRAG,
+    uniforms: { image: { value: null } },
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.NoBlending,
+  });
   private readonly raycaster = new THREE.Raycaster();
   /** The gizmo of the move tool, drawn over everything after the outline. */
   private readonly overlayScene = new THREE.Scene();
@@ -364,6 +413,7 @@ export class PreviewEngine implements RenderEngine {
     this.maskSelected.color.setRGB(1, 0, 0);
     this.maskHover.color.setRGB(0, 1, 0);
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.outlineMaterial));
+    this.copyScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.copyMaterial));
     this.overlayRoot.matrixAutoUpdate = false;
     this.overlayRoot.matrix.copy(BASIS);
     for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) {
@@ -387,6 +437,9 @@ export class PreviewEngine implements RenderEngine {
     // Every texture as sharp at a grazing angle as the device allows.
     this.textures = new TexturePreview(() => (this.needsRender = true), this.renderer.capabilities.getMaxAnisotropy());
     this.device = this.detectDevice();
+    // The samples of the canvas itself (antialias: the browser's choice, usually 4).
+    const gl = this.renderer.getContext();
+    this.canvasSamples = Number(gl.getParameter(gl.SAMPLES)) || 0;
     // "Alt + left button orbits": the left button's action is decided as it goes down, before the controls see it.
     canvas.addEventListener(
       'pointerdown',
@@ -443,6 +496,48 @@ export class PreviewEngine implements RenderEngine {
   /** The live view while a gesture lasts (the store hears of it only at the end): the path tracer follows it. */
   onGesture(fn: (phase: GesturePhase, v: ViewChange | null) => void): void {
     this.gestureListener = fn;
+  }
+
+  /** E11: the multisampling Fast mode draws the scene with (0: none); the device caps it (`msaa()` says at what). */
+  setMsaa(samples: number): void {
+    const n = Math.max(0, Math.round(samples));
+    if (n === this.msaaWanted) return;
+    this.msaaWanted = n;
+    this.needsRender = true;
+  }
+
+  /** E11: what the device can do (its maximum, 0 without multisampling) and the samples Fast mode draws with now. */
+  msaa(): { max: number; samples: number } | null {
+    if (!this.renderer) return null;
+    const max = this.renderer.capabilities.maxSamples;
+    return { max, samples: this.msaaPath() ?? this.canvasSamples };
+  }
+
+  /** The samples of the target the scene goes into, or null when it goes on the canvas (the canvas's own samples). */
+  private msaaPath(): number | null {
+    const n = Math.min(this.msaaWanted, this.renderer.capabilities.maxSamples);
+    return n === this.canvasSamples ? null : n;
+  }
+
+  /** The scene of Fast mode, with the multisampling asked for (see `msaaWanted`). */
+  private drawScene(cam: THREE.Camera): void {
+    const samples = this.msaaPath();
+    if (samples === null) {
+      this.aaTarget?.dispose();
+      this.aaTarget = null;
+      this.renderer.render(this.scene, cam);
+      return;
+    }
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    if (!this.aaTarget || this.aaTarget.width !== size.x || this.aaTarget.height !== size.y || this.aaTarget.samples !== samples) {
+      this.aaTarget?.dispose();
+      this.aaTarget = new ScreenTarget(size.x, size.y, samples);
+    }
+    this.renderer.setRenderTarget(this.aaTarget);
+    this.renderer.render(this.scene, cam);
+    this.renderer.setRenderTarget(null);
+    this.copyMaterial.uniforms.image.value = this.aaTarget.texture;
+    this.renderer.render(this.copyScene, this.quadCamera);
   }
 
   /** Full mode: draw only the overlays (outline, selected faces, gizmo) over a transparent canvas. */
@@ -1189,7 +1284,7 @@ export class PreviewEngine implements RenderEngine {
     if (this.overlayClear || !this.overlayOnly) this.renderer.domElement.style.opacity = '';
     this.overlayClear = false;
     if (this.overlayOnly) this.drawOverlayBase(cam);
-    else this.renderer.render(this.scene, cam);
+    else this.drawScene(cam);
     this.drawOutline(cam);
     this.drawGizmo(cam);
     this.lastFrameMs = performance.now() - t0;
@@ -1484,7 +1579,8 @@ export class PreviewEngine implements RenderEngine {
   }
 
   status(): EngineStatus {
-    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...(this.particleStats ? { particles: { ...this.particleStats } } : {}) };
+    const msaa = this.msaa();
+    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...(msaa ? { msaa } : {}), ...(this.particleStats ? { particles: { ...this.particleStats } } : {}) };
   }
 
   // ------------------------------------------------------------------ ambient effects (S4a)

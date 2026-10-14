@@ -64,7 +64,8 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'parts', chapter: 'scene', targets: ['parts-tab'], stage: { sceneTab: 'parts', panel: 'left' }, title: 'tour.parts.title', text: 'tour.parts.text' },
   { id: 'levels', chapter: 'scene', targets: ['levels'], stage: { sceneTab: 'parts', panel: 'left' }, title: 'tour.levels.title', text: 'tour.levels.text' },
   { id: 'tools', chapter: 'view', targets: ['tools'], when: 'viewport', title: 'tour.tools.title', text: 'tour.tools.text', params: { frame: () => kbdFor('frame') } },
-  { id: 'mode', chapter: 'view', targets: ['viewport-mode'], title: 'tour.mode.title', text: 'tour.mode.text' },
+  // Fast · Full and, next to it, the live denoise of Full (U11): one area of the top bar.
+  { id: 'mode', chapter: 'view', targets: ['viewport-mode'], title: 'tour.mode.title', text: 'tour.mode.text', params: { denoise: () => kbdFor('viewportDenoise') } },
   { id: 'product', chapter: 'inspector', targets: ['section-product'], stage: { panel: 'right', inspector: 'scene' }, title: 'tour.product.title', text: 'tour.product.text' },
   { id: 'light', chapter: 'inspector', targets: ['section-light'], stage: { panel: 'right', inspector: 'scene' }, title: 'tour.light.title', text: 'tour.light.text' },
   { id: 'environment', chapter: 'inspector', targets: ['section-environment'], stage: { panel: 'right', inspector: 'scene' }, title: 'tour.environment.title', text: 'tour.environment.text' },

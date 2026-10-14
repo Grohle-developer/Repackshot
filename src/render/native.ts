@@ -25,6 +25,14 @@
 // again when it stops answering, stops getting passes or stops being drawn,
 // writing what the launcher was doing to its log.
 //
+// Live denoise (U11): a full-resolution view is posted with `denoise=0|1`, its
+// live switch (the Viewport part of Advanced ▸ Denoise), and its RSB always asks
+// for denoise, so the launcher renders the guides and the switch never changes
+// the scene; turning it posts `/api/render/<id>/denoise`, and the image does not
+// start over. The long-poll carries the number of the image it has (`version`):
+// the launcher answers with the sums only for a newer one, and with the switch
+// turned on once the view is over, the poll waits for the denoised image.
+//
 // Render: a final job. It finishes by samples, by time or whichever comes
 // first (`finish=`): the launcher stops between passes with the rule of
 // schedule.ts `runPasses`, so the end lands as the pool's does. Progress comes
@@ -46,8 +54,9 @@ import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
 import type { EngineStatus, PickHit, RenderOptions } from './engine';
 import { QUIET_MS, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
-import { CAUSTICS_PRESETS } from '../core/caustics';
-import { engineFieldsOf } from '../core/render';
+import { CAUSTICS_PRESETS, DENOISE_IMAGE, denoiseIn } from '../core/caustics';
+import { advancedTouchesView, engineFieldsOf } from '../core/render';
+import { DEFAULT_PIXEL_FILTER, pixelFilterFields, type PixelFilterFields, type PixelFilterSetting } from '../core/antialias';
 import { parsePasses } from './pass-planes';
 import { abortError, budgetProgress, type PassBudget } from './schedule';
 import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
@@ -60,7 +69,8 @@ export interface NativeTransport {
 }
 
 export const FRAME_MAGIC = 0x31585052; // "RPX1" little-endian
-export const FRAME_HEADER = 48;
+/** Bytes of the header the launcher writes (U11: 52, with the image's number; a reader takes the length from the header). */
+export const FRAME_HEADER = 52;
 export const FLAG_DONE = 1;
 export const FLAG_CANCELLED = 2;
 export const FLAG_FAILED = 4;
@@ -94,15 +104,17 @@ export interface NativeFrame {
   sums: Float32Array | null;
   /** E5b-1, with FLAG_NOISY: the sums without denoise. */
   noisy: Float32Array | null;
+  /** U11: the number of the image (render.rs `Frame::version`; 0 in a header of before). */
+  version: number;
 }
 
 /** Reads a frame of `GET /api/render/<id>` (header, then little-endian f32 sums). */
 export function parseFrame(buf: ArrayBuffer): NativeFrame {
-  if (buf.byteLength < FRAME_HEADER) throw new Error('short frame');
+  if (buf.byteLength < 48) throw new Error('short frame');
   const v = new DataView(buf);
   if (v.getUint32(0, true) !== FRAME_MAGIC) throw new Error('not a frame');
   const header = v.getUint32(4, true);
-  if (header < FRAME_HEADER || header > buf.byteLength) throw new Error('bad frame header');
+  if (header < 48 || header % 4 !== 0 || header > buf.byteLength) throw new Error('bad frame header');
   const u = (i: number) => v.getUint32(i, true);
   const width = u(16);
   const height = u(20);
@@ -129,6 +141,7 @@ export function parseFrame(buf: ArrayBuffer): NativeFrame {
     rays: Number(v.getBigUint64(40, true)),
     sums,
     noisy,
+    version: header >= 52 ? u(48) : 0,
   };
 }
 
@@ -166,8 +179,8 @@ function sameBytes(a: Uint8Array | null, b: Uint8Array): boolean {
 export function touchesImage(s: ProjectState, p: ProjectState): boolean {
   return (
     s.scene !== p.scene ||
-    // Denoise and caustics (E5b-1) are Advanced settings the viewport follows.
-    s.render.advanced !== p.render.advanced ||
+    // Caustics and the other Advanced settings (E5b-1) reach the image; the denoise is the live switch (U11).
+    advancedTouchesView(s.render.advanced, p.render.advanced) ||
     s.materials !== p.materials ||
     s.studio !== p.studio ||
     s.environment !== p.environment ||
@@ -228,6 +241,13 @@ interface ViewJob {
   /** E5b-1: its last frame was denoised, and it renders caustics (the launcher's flags). */
   denoised: boolean;
   caustics: boolean;
+  /** U11: the live denoise switch the launcher has for it (a full-resolution view), and the number of its image. */
+  live: boolean;
+  /** E11: the pixel filter and edge samples it was posted with. */
+  filter: PixelFilterFields;
+  version: number;
+  /** U11: denoised images it has shown. */
+  cleanImages: number;
   /** Milliseconds the next pass should take (from the last one), for the watchdog. */
   expectMs: number;
   /** Its long-poll is running (it ends when the job ends, is replaced, or fails). */
@@ -277,8 +297,11 @@ export class NativeEngine {
   private aliveAt = 0;
   private progressAt = 0;
   private lastFrameCall = 0;
-  /** The pass of the job on the canvas, and since when a newer one waits to be drawn. */
+  /** The pass of the job on the canvas (and the number of its image, U11), and since when a newer one waits to be drawn. */
   private shownPass = 0;
+  private shownVersion = 0;
+  /** U11: the live denoise switch, as the project says. */
+  private liveOn = false;
   private shownKey: string | null = null;
   private pendingSince = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -296,6 +319,8 @@ export class NativeEngine {
   private limit: ViewportLimit = { by: 'OUTPUT', samples: 1024, seconds: 120 };
   /** Settings ▸ Render engine ▸ While a render runs: the viewport keeps a share of the threads, or waits. */
   private whileRender: 'SHARE' | 'PAUSE' = 'SHARE';
+  /** E11: the pixel filter and edge samples asked of views and finals. */
+  private filter: PixelFilterFields = pixelFilterFields(DEFAULT_PIXEL_FILTER);
 
   constructor(
     private readonly api: NativeTransport,
@@ -344,6 +369,14 @@ export class NativeEngine {
     if (mode === this.whileRender) return;
     this.whileRender = mode;
     this.lastUpdate = null;
+    this.restartWanted = true;
+  }
+
+  /** E11: the pixel filter and the edge samples of the view and of every final from now on (the view starts over). */
+  setPixelFilter(setting: PixelFilterSetting): void {
+    const f = pixelFilterFields(setting);
+    if (f.pixelFilter === this.filter.pixelFilter && f.edgeSupersample === this.filter.edgeSupersample) return;
+    this.filter = f;
     this.restartWanted = true;
   }
 
@@ -423,6 +456,36 @@ export class NativeEngine {
   sync(state: ProjectState, prev: ProjectState | null): void {
     this.state = state;
     if (!prev || touchesImage(state, prev)) this.changed();
+    this.setLiveDenoise(denoiseIn(state.render.advanced.denoise, 'VIEWPORT'));
+  }
+
+  /**
+   * U11: the live denoise switch. A full-resolution view of the launcher gets it at once (the image does not start
+   * over): on, it denoises what has accumulated; off, the next frame is the noisy one. A view that is over is followed
+   * again for that image.
+   */
+  private setLiveDenoise(on: boolean): void {
+    if (on === this.liveOn) return;
+    this.liveOn = on;
+    const job = this.job;
+    if (!job || job.scale !== 1 || job.gen !== this.gen || job.live === on) return;
+    job.live = on;
+    void this.api
+      .request(`/api/render/${job.id}/denoise?on=${on ? 1 : 0}`, { method: 'POST' })
+      .then(async (res) => {
+        if (!res.ok) {
+          const why = await failure(res);
+          // The launcher forgot the view: posted again (with the switch as it is now).
+          if (job.gen === this.gen) this.lost(`the launcher no longer has the view (${why.code})`);
+          return;
+        }
+        discard(res);
+        // A view that is over is not followed any more: once more, for the image the switch asked for.
+        if (job.gen === this.gen && !job.alive && job.done) void this.follow(job, performance.now());
+      })
+      .catch(() => {
+        if (job.gen === this.gen) this.lost('the launcher did not hear the denoise switch');
+      });
   }
 
   private changed(): void {
@@ -524,9 +587,13 @@ export class NativeEngine {
         maxSeconds: timed ? this.limit.seconds : 0,
         viewport: { viewW: this.viewW, viewH: this.viewH },
         ...(this.cameraPatch(state, patch) ? { cameraPatch: this.cameraPatch(state, patch)! } : {}),
-        // E5b-1: the launcher denoises the view (at full resolution) and renders its caustics.
+        // E5b-1: the launcher renders its caustics; U11: a full-resolution view can always be denoised (its live
+        // switch is a query of the job, so the scene is the same either way).
         ...engineFieldsOf(state.render.advanced, 'VIEWPORT'),
-        ...(scale > 1 ? { denoise: 0 } : {}),
+        denoise: scale > 1 ? 0 : DENOISE_IMAGE,
+        // E11: a gesture's frames keep the filter but not the edge samples.
+        pixelFilter: this.filter.pixelFilter,
+        edgeSupersample: scale > 1 ? 1 : this.filter.edgeSupersample,
       },
     };
   }
@@ -536,12 +603,13 @@ export class NativeEngine {
    * them as such even without a MESH section, which is what an empty project writes; otherwise a
    * viewport update the launcher cannot apply (409 need-meshes) is sent again whole.
    */
-  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, whole: boolean, meshKey: string, again: (() => Uint8Array) | undefined, opts: { finish?: FinishBy; seq?: number; share?: number; signal?: AbortSignal; passes?: readonly PassKey[] }): Promise<number> {
+  private async post(kind: 'viewport' | 'final', bytes: Uint8Array, whole: boolean, meshKey: string, again: (() => Uint8Array) | undefined, opts: { finish?: FinishBy; seq?: number; share?: number; signal?: AbortSignal; passes?: readonly PassKey[]; live?: boolean }): Promise<number> {
     const finish = opts.finish ? `&finish=${opts.finish.toLowerCase()}` : '';
     const wanted = opts.passes?.length ? `&passes=${opts.passes.join(',')}` : '';
     const order = opts.seq !== undefined ? `&seq=${opts.seq}` : '';
     const share = opts.share ? `&share=${opts.share}` : '';
-    const path = `/api/render?kind=${kind}${finish}${wanted}&mesh=${meshKeyHash(meshKey)}&client=${this.client}${order}${share}`;
+    const live = opts.live !== undefined ? `&denoise=${opts.live ? 1 : 0}` : '';
+    const path = `/api/render?kind=${kind}${finish}${wanted}&mesh=${meshKeyHash(meshKey)}&client=${this.client}${order}${share}${live}`;
     const send = (body: Uint8Array, full: boolean) =>
       this.api.request(full ? `${path}&full=1` : path, { method: 'POST', body: body as Uint8Array<ArrayBuffer>, headers: { 'Content-Type': 'application/octet-stream' }, ...(opts.signal ? { signal: opts.signal } : {}) });
     let res = await send(bytes, whole);
@@ -575,12 +643,14 @@ export class NativeEngine {
     const posting = { gen, at: t0, abort: new AbortController() };
     this.posting = posting;
     let id: number;
+    const live = scale === 1 ? this.liveOn : false;
     try {
       id = await this.post('viewport', meshes ? built.bytes(true) : update, meshes, built.meshKey, () => built.bytes(true), {
         ...(timed ? { finish: 'FIRST' as const } : {}),
         seq: gen,
         share,
         signal: posting.abort.signal,
+        ...(scale === 1 ? { live } : {}),
       });
     } catch (err) {
       if (gen === this.gen) this.fail(err instanceof Error ? err.message : String(err));
@@ -596,15 +666,28 @@ export class NativeEngine {
     this.failure = null;
     this.loadedMeshKey = built.meshKey;
     this.lastUpdate = update;
-    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, denoised: false, caustics: false, expectMs: 0, alive: true, abort: new AbortController() };
+    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, denoised: false, caustics: false, live, filter: { pixelFilter: view.pixelFilter ?? 0, edgeSupersample: view.edgeSupersample ?? 1 }, version: 0, cleanImages: 0, expectMs: 0, alive: true, abort: new AbortController() };
     this.job = job;
     this.dirty.clear();
     this.shownPass = 0;
+    this.shownVersion = 0;
     this.aliveAt = this.progressAt = performance.now();
     this.pendingSince = 0;
+    // The switch was turned while the view was being posted.
+    if (scale === 1 && this.liveOn !== live) {
+      this.liveOn = live;
+      this.setLiveDenoise(!live);
+    }
+    await this.follow(job, t0);
+  }
+
+  /** Long-polls the view job's frames until it ends, is replaced or fails; `t0`: when its view was asked for. */
+  private async follow(job: ViewJob, t0: number): Promise<void> {
+    const { id, gen, scale } = job;
+    job.alive = true;
     try {
       for (;;) {
-        const res = await this.api.request(`/api/render/${id}?after=${job.pass}`, { signal: job.abort.signal });
+        const res = await this.api.request(`/api/render/${id}?after=${job.pass}&version=${job.version}`, { signal: job.abort.signal });
         if (gen !== this.gen) {
           discard(res);
           return;
@@ -624,27 +707,30 @@ export class NativeEngine {
         job.seconds = frame.seconds;
         job.paused = (frame.flags & FLAG_PAUSED) !== 0;
         job.shared = (frame.flags & FLAG_SHARED) !== 0;
-        if (frame.sums) {
-          job.denoised = (frame.flags & FLAG_DENOISED) !== 0;
-          job.caustics = (frame.flags & FLAG_CAUSTICS) !== 0;
-        }
         job.threads = frame.threads;
         // Waiting for a Render by choice is not a stall.
         if (job.paused) this.progressAt = now;
-        if (frame.sums) {
-          job.acc.sum.set(frame.sums);
-          job.acc.samples.fill(frame.samples);
-          const first = job.pass === 0;
-          const counted = frame.pass - job.pass;
+        // A new pass, with its image or not (U11: while a denoised image is on screen the launcher sends none).
+        const first = job.pass === 0;
+        if (frame.pass > job.pass) {
+          this.passes += frame.pass - job.pass;
           job.pass = frame.pass;
-          this.passes += Math.max(1, counted);
           this.progressAt = now;
           this.retries = 0;
           this.watchdog.progressed();
-          if (this.pendingSince === 0) this.pendingSince = now;
           // The next pass doubles, up to 16 samples: about that much longer than this one took per sample.
           const per = frame.samples > 0 ? (frame.seconds * 1000) / frame.samples : 0;
           job.expectMs = per * Math.min(16, Math.max(1, frame.samples));
+        }
+        if (frame.sums) {
+          job.denoised = (frame.flags & FLAG_DENOISED) !== 0;
+          job.caustics = (frame.flags & FLAG_CAUSTICS) !== 0;
+          if (job.denoised && frame.version !== job.version) job.cleanImages++;
+          job.version = frame.version;
+          job.acc.sum.set(frame.sums);
+          job.acc.samples.fill(frame.samples);
+          this.progressAt = now;
+          if (this.pendingSince === 0) this.pendingSince = now;
           if (scale > 1) {
             this.presentAll = true;
             if (first) {
@@ -654,7 +740,7 @@ export class NativeEngine {
               this.frameInFlight = false;
             }
           } else for (const t of job.acc.tiles) this.dirty.add(t.index);
-        }
+        } else job.version = frame.version;
         if (frame.flags & (FLAG_DONE | FLAG_CANCELLED | FLAG_FAILED)) {
           if (frame.flags & FLAG_FAILED) this.fail('the render failed in the launcher');
           else if (frame.flags & FLAG_CANCELLED) this.lost('the launcher stopped the view');
@@ -754,9 +840,10 @@ export class NativeEngine {
     return this.curve;
   }
 
-  /** The job's pass is on the canvas. */
+  /** The job's pass (and its image, U11) is on the canvas. */
   private shown(job: ViewJob): void {
     this.shownPass = job.pass;
+    this.shownVersion = job.version;
     this.shownKey = job.scale === 1 ? job.key : null;
     this.pendingSince = 0;
   }
@@ -769,7 +856,7 @@ export class NativeEngine {
     const curve = this.displayCurve();
     if (job.scale > 1) {
       if (!this.presentAll) {
-        if (job.pass > this.shownPass) this.shown(job);
+        if (job.pass > this.shownPass || job.version !== this.shownVersion) this.shown(job);
         return;
       }
       this.presentAll = false;
@@ -802,7 +889,7 @@ export class NativeEngine {
       ctx.putImageData(this.tileImage, t.x, t.y);
       drawn++;
     }
-    if (this.dirty.size === 0 && job.pass > this.shownPass) this.shown(job);
+    if (this.dirty.size === 0 && (job.pass > this.shownPass || job.version !== this.shownVersion)) this.shown(job);
     // Drawing goes on (a big image takes a few frames): not a stall.
     else if (drawn > 0 && this.pendingSince) this.pendingSince = t0;
   }
@@ -866,7 +953,9 @@ export class NativeEngine {
       ...(this.shownKey ? { shownKey: this.shownKey } : {}),
       ...(wantKey ? { wantKey } : {}),
       ...(full && job.denoised ? { denoised: true } : {}),
+      ...(full && job.live !== undefined ? { liveDenoise: { images: job.cleanImages } } : {}),
       ...(job?.caustics && this.state ? { caustics: CAUSTICS_PRESETS[this.state.render.advanced.causticsQuality].photons } : {}),
+      ...(full ? { pixelFilter: { ...job.filter } } : {}),
     };
   }
 
@@ -909,6 +998,7 @@ export class NativeEngine {
         ...(opts.time !== undefined ? { time: opts.time } : {}),
         ...(opts.advanced ? { advanced: opts.advanced, ...engineFieldsOf(opts.advanced, 'RENDER') } : {}),
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
+        ...this.filter,
       };
       const built = this.source.build(state, view);
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.

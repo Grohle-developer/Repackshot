@@ -394,6 +394,8 @@ export interface UiState {
   hardware: { state: 'IDLE' | 'DETECTING' | 'DONE'; info: HardwareInfo | null };
   perf: PerfState;
   engineInfo: EngineInfo | null;
+  /** E11: the preview's multisampling now and the most the device can do (Settings ▸ Edge smoothing says it); null before it starts. */
+  fastAa: { samples: number; max: number } | null;
   desktop: DesktopInfo | null;
   /**
    * An inline confirmation the header shows under the project name (New and Open ask before they discard unsaved
@@ -528,6 +530,7 @@ export function defaultUiState(): UiState {
     hardware: { state: 'IDLE', info: null },
     perf: { state: 'IDLE' },
     engineInfo: null,
+    fastAa: null,
     desktop: null,
     prompt: null,
     physics: { state: 'STOPPED', time: 0, awake: 0, bodies: 0, ended: null, canReset: false },

@@ -342,6 +342,12 @@ export interface RsbRender {
   causticPhotons: number;
   /** E5b-1: the caustics' first gather radius in pixels at the camera's target distance (0: the engine's 3). */
   causticRadius: number;
+  /** U11b: how much of the denoised image is handed out, 0..1 (noisy × (1 − s) + denoised × s; default 1). */
+  denoiseStrength: number;
+  /** E11: the pixel filter (core/antialias.ts: 0 the box of one pixel, 1 the centre, 2 a tent, 3 Blackman–Harris). */
+  pixelFilter: number;
+  /** E11: the samples an edge pixel takes per sample index (1: none more; at most 16). */
+  edgeSupersample: number;
 }
 
 /** What the engine renders: `rt_core::scene::Scene`, field for field. */
@@ -432,7 +438,7 @@ export function defaultFloor(): RsbFloor {
 }
 
 export function defaultRender(): RsbRender {
-  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0 };
+  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1 };
 }
 
 export const IDENTITY_ROWS: readonly number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
@@ -506,7 +512,7 @@ function imagesBytes(images: readonly RsbImage[]): number {
 const LGHT_BYTES = 76;
 const ENVR_BYTES = 84;
 const FLOR_BYTES = 20;
-const RNDR_BYTES = 52;
+const RNDR_BYTES = 64;
 const INST_BYTES = 60;
 
 function meshBytes(m: RsbMesh, uvs = false): number {
@@ -797,6 +803,9 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.u32(r.denoise);
     w.u32(r.causticPhotons);
     w.f32(r.causticRadius);
+    w.f32(r.denoiseStrength);
+    w.u32(r.pixelFilter);
+    w.u32(r.edgeSupersample);
   });
   if (w.length !== size) throw new Error(`RSB: wrote ${w.length} bytes, expected ${size}`);
   return w.bytes;
@@ -835,6 +844,12 @@ export interface SceneView {
   passes?: readonly PassKey[];
   /** E5b-1, `RNDR.denoise` (core/caustics.ts `denoiseBits`; default 0). */
   denoise?: number;
+  /** U11b, `RNDR.denoise_strength`: 0..1 (core/render.ts `denoiseFraction`; default 1). */
+  denoiseStrength?: number;
+  /** E11, `RNDR.pixel_filter` (core/antialias.ts `pixelFilterFields`; default 0, the box). */
+  pixelFilter?: number;
+  /** E11, `RNDR.edge_supersample`: 1..16 (default 1). */
+  edgeSupersample?: number;
   /** E5b-1: the caustics switch and quality; Automatic is decided here, from the scene (core/caustics.ts). Default off. */
   caustics?: { mode: CausticsMode; quality: CausticsQuality };
   /**
@@ -1499,6 +1514,9 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     seed: Math.max(0, Math.round(view.seed ?? 0)) >>> 0,
     passes: passMask(view.passes ?? []),
     denoise: Math.max(0, Math.round(view.denoise ?? 0)) >>> 0,
+    denoiseStrength: Number.isFinite(view.denoiseStrength) ? Math.max(0, Math.min(1, view.denoiseStrength!)) : 1,
+    pixelFilter: Math.max(0, Math.round(view.pixelFilter ?? 0)) >>> 0,
+    edgeSupersample: Math.max(1, Math.min(16, Math.round(Number.isFinite(view.edgeSupersample) ? view.edgeSupersample! : 1))),
   };
   if (view.caustics) {
     const centre: [number, number, number] | null = casterBounds

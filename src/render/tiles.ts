@@ -67,6 +67,22 @@ export function nextPass(done: number, previous: number, max: number): { first: 
   return count > 0 ? { first: done, count } : null;
 }
 
+/** U11: while a live viewport's denoise is off, the guides' albedo is still rendered for this many samples (render.rs LIVE_ALBEDO_SAMPLES). */
+export const LIVE_ALBEDO_SAMPLES = 8;
+/** U11: the shortest pass a live viewport aims at while its denoise is on (render.rs LIVE_PASS_MS). */
+export const LIVE_PASS_MS = 250;
+
+/**
+ * U11 (render.rs `live_pass_cap`): the largest pass of a live viewport whose denoise is on, at `msPerSample` and with
+ * its last denoise taking `denoiseMs`: a pass lasts about as long as a denoise, and at least LIVE_PASS_MS, so a new
+ * denoised image comes within max(2 × the denoise, 0.5 s). Which pass a sample is in changes no pixel.
+ */
+export function livePassCap(msPerSample: number, denoiseMs: number): number {
+  const target = Math.max(denoiseMs, LIVE_PASS_MS);
+  if (!(msPerSample > 0) || !Number.isFinite(msPerSample)) return MAX_PASS_SAMPLES;
+  return Math.min(MAX_PASS_SAMPLES, Math.max(1, Math.floor(target / msPerSample)));
+}
+
 /**
  * Resolution divisor for the next frame of a camera gesture, ½ or ¼ of the viewport, from how
  * long the last frame took at `lastScale`: the cost goes with the pixels, so ½ costs (lastScale /
@@ -157,10 +173,10 @@ export class Accumulator {
     this.samples = new Int32Array(this.tiles.length);
   }
 
-  /** Shows `sums` (RGBA sums of `samples` samples, the denoised image) in place of the accumulated ones. */
-  show(sums: Float32Array, samples: number): void {
+  /** Shows `sums` (RGBA sums of `samples` samples, the denoised image) in place of the accumulated ones; null shows the accumulated ones again (U11). */
+  show(sums: Float32Array | null, samples = 0): void {
     this.shownSums = sums;
-    this.shownCount = samples;
+    this.shownCount = sums ? samples : 0;
   }
 
   /** Samples of the image shown instead of the sums (0: the sums are shown). */

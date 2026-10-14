@@ -2,8 +2,8 @@
 // size (top right), quality meter (bottom left), axes and part size (bottom
 // right), hover label, pick modes and drag and drop of materials (pointer events) and files.
 
+import { DEFAULT_PIXEL_FILTER, pixelFilterSetting } from '../../core/antialias';
 import { aspectText } from '../../core/aspect';
-import { denoiseIn, toggledViewportDenoise } from '../../core/caustics';
 import { activeCamera, cameraBasis, focusDistanceTo, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox } from '../../core/math';
 import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
@@ -167,15 +167,14 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
   const note = h('div', { class: 'note', style: 'font-size:var(--fs-aux)' });
   // E5b-1: what the engine says of the image on screen (denoised, caustics) and the Full viewport's denoise switch.
   const extras = h('div', { class: 'aux tabular', 'data-meter-extras': '' });
+  // U11: the same switch as the top bar's Denoise and `D` (one state: Advanced ▸ Denoise ▸ Viewport).
   const denoiseBtn = h('button', {
     type: 'button',
     class: 'btn-link ov-denoise',
     'aria-pressed': 'false',
     'data-tip': t('viewport.denoiseTip'),
-    onclick: () => {
-      const adv = ctx.store.get().render.advanced;
-      cmd.setRenderSettings(ctx, { advanced: { ...adv, denoise: toggledViewportDenoise(adv.denoise) } });
-    },
+    'data-kbd': kbdFor('viewportDenoise'),
+    onclick: () => cmd.toggleViewportDenoise(ctx),
   }, t('viewport.denoiseToggle'));
   // Without the engine, a way to its settings (UI.md §2.9: deep links).
   const engineLink = h('button', { type: 'button', class: 'btn-link ov-engine-link', 'data-settings-link': 'engine', onclick: () => cmd.openSettings(ctx, 'engine') }, t('viewport.engineSettings'));
@@ -235,16 +234,34 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
       note.style.display = issue ? '' : 'none';
       el.dataset.issue = issue ? issue.kind.toLowerCase() : '';
       // What the engine reports of the image (E5b-1): denoised, and the caustics' photons per sample.
-      const parts = [st.denoised ? t('viewport.meterDenoised') : '', st.caustics ? t('viewport.meterCaustics', { n: formatNumber(st.caustics, lang, 0) }) : ''].filter(Boolean);
+      // E11: and the pixel filter it renders with, when it is not the factory one (Fine): the usual case stays quiet.
+      const shownFilter = st.pixelFilter ? pixelFilterSetting(st.pixelFilter) : null;
+      const filter = shownFilter !== DEFAULT_PIXEL_FILTER ? shownFilter : null;
+      const parts = [
+        st.denoised ? t('viewport.meterDenoised') : '',
+        st.caustics ? t('viewport.meterCaustics', { n: formatNumber(st.caustics, lang, 0) }) : '',
+        filter ? t('viewport.meterFilter', { name: t(dyn(`set.engine.pixelFilter.${filter}`)) }) : '',
+      ].filter(Boolean);
       extras.textContent = parts.join(' · ');
       extras.style.display = parts.length ? '' : 'none';
-      const on = denoiseIn(ctx.store.get().render.advanced.denoise, 'VIEWPORT');
+      const on = cmd.viewportDenoiseOn(ctx.store.get());
       denoiseBtn.setAttribute('aria-pressed', String(on));
+      // What the live denoise measured (U11): the denoised images shown and the last one's cost, for the checks.
+      el.dataset.cleanImages = String(st.liveDenoise?.images ?? 0);
+      el.dataset.denoiseMs = st.liveDenoise?.ms !== undefined ? st.liveDenoise.ms.toFixed(0) : '';
+      el.dataset.accumulated = String(st.liveDenoise?.accumulated ?? '');
+      el.dataset.cleanAt = st.liveDenoise?.at ? st.liveDenoise.at.toFixed(1) : '';
       denoiseBtn.style.display = '';
       el.dataset.denoised = st.denoised ? '1' : '0';
       el.dataset.caustics = String(st.caustics ?? 0);
+      el.dataset.pixelFilter = String(st.pixelFilter?.pixelFilter ?? 0);
+      el.dataset.edgeSamples = String(st.pixelFilter?.edgeSupersample ?? 1);
     } else {
-      extras.style.display = 'none';
+      // E11: Fast mode's multisampling when it is not the canvas's usual 4×.
+      const msaa = st.msaa;
+      extras.textContent = msaa && msaa.samples !== 4 ? (msaa.samples > 0 ? t('viewport.meterMsaa', { n: msaa.samples }) : t('viewport.meterNoMsaa')) : '';
+      extras.style.display = extras.textContent ? '' : 'none';
+      el.dataset.msaa = msaa ? String(msaa.samples) : '';
       denoiseBtn.style.display = 'none';
       title.textContent = t('viewport.meterFast');
       line.textContent = t('viewport.frameMs', { ms: formatNumber(st.seconds * 1000, lang, 1) });
@@ -273,6 +290,8 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
   scope.onDispose(port.onFrame(() => update()));
   scope.onDispose(() => window.clearTimeout(trailing));
   scope.watch((_s, u) => [u.viewportMode, u.engine].join(), () => update(true));
+  // U11: the switch shows at once when the top bar, D or Advanced turns it.
+  scope.watch((s) => cmd.viewportDenoiseOn(s), () => update(true));
   update(true);
   return el;
 }

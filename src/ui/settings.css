@@ -481,6 +481,68 @@ summary.sw-block-title {
   overflow-wrap: break-word;
 }
 
+/* Edge smoothing (E11): the engine's pixel filters as an ordered list, cheapest first --- */
+.sw-row[data-row='engine.pixelFilter'] > .sw-ctrl {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+/* Reset under the list, not beside it. */
+.sw-row[data-row='engine.pixelFilter'] > .sw-ctrl > .sw-reset {
+  order: 1;
+}
+.sw-aa-list {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-0);
+}
+.sw-aa-option {
+  display: grid;
+  grid-template-columns: 1.6em minmax(0, 1fr);
+  align-items: start;
+  gap: 2px 8px;
+  padding: 6px 10px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-1);
+  text-align: left;
+  cursor: pointer;
+}
+.sw-aa-option:first-child {
+  border-top: 0;
+}
+.sw-aa-option:hover:not([aria-checked='true']) {
+  background: var(--hover);
+}
+.sw-aa-option[aria-checked='true'] {
+  background: var(--inv-bg);
+  color: var(--inv-ink);
+}
+.sw-aa-option[aria-checked='true'] .note {
+  color: inherit;
+  opacity: 0.8;
+}
+.sw-aa-rank {
+  color: var(--ink-3);
+}
+.sw-aa-option[aria-checked='true'] .sw-aa-rank {
+  color: inherit;
+}
+.sw-aa-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.sw-aa-name {
+  font-weight: 600;
+}
+
 /* Shortcuts ------------------------------------------------------------------------ */
 .sw-sc-filter {
   max-width: 320px;

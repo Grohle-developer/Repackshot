@@ -58,6 +58,7 @@ import { loadCameraPictures } from './io/aperture';
 import { onAperturePicture } from './core/aperture';
 import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
+import { msaaSamples } from './core/antialias';
 import { PreviewEngine } from './render/preview';
 import { hasParticleExport } from './render/particles';
 import { engineParticleCap, particleCapFor, setEngineParticleCap } from './core/effects';
@@ -301,6 +302,7 @@ const useTracer = (t: PathTracerEngine | NativeEngine, cfg: EngineConfig, info: 
   t.setGestureResolution(cfg.gestureResolution);
   t.setViewportLimit(cfg.viewportLimit);
   t.setWhileRender(cfg.whileRender);
+  t.setPixelFilter(cfg.pixelFilter);
   t.mount(backdrop);
   t.setViewCamera(viewCameraFn);
   if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
@@ -384,6 +386,9 @@ function configureEngine(cfg: EngineConfig): void {
     ui.set({ engine: 'FAILED' });
     return;
   }
+  // E11: Fast mode's multisampling, at once; what the device draws is said in the settings.
+  preview.setMsaa(msaaSamples(cfg.fastAa));
+  ui.set({ fastAa: preview.msaa() });
   if (first) {
     void startEngine(cfg);
     return;
@@ -391,6 +396,7 @@ function configureEngine(cfg: EngineConfig): void {
   tracer?.setGestureResolution(cfg.gestureResolution);
   tracer?.setViewportLimit(cfg.viewportLimit);
   tracer?.setWhileRender(cfg.whileRender);
+  tracer?.setPixelFilter(cfg.pixelFilter);
   void nativeReady.then((native) => {
     const backend = native && cfg.backend !== 'WASM' ? 'native' : 'wasm';
     // The native engine's threads are the launcher's (--threads): only the backend restarts it.

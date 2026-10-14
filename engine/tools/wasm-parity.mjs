@@ -24,6 +24,10 @@
 // them inside the module: each worker traces the photon map of a sample itself, and the image must
 // still have the native hash (`PINNED_E5B_CAUSTICS_4SPP`).
 //
+// A scene with a pixel filter and edge samples (E11, `rt --write-e11-example`) renders them inside the
+// module too: it finds each tile's edges from its centre rays, and the image must have the native hash
+// (`PINNED_E11_EDGES_4SPP`).
+//
 // `--particles` (S4a) also evaluates every ambient effect of the scene (its `FXAM` sections, in file
 // order) with `rt_particles_eval`, the export of the Fast preview, and hashes all their particles
 // one after another (FNV-1a over the 8 little-endian words of each: centre, radius, axis, tint

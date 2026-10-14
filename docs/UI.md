@@ -146,6 +146,25 @@ De izquierda a derecha:
    un render. **Render usa siempre el motor completo**, esté el visor
    en el modo que esté: el conmutador solo decide qué se ve mientras se
    trabaja.
+
+   A su derecha, en la misma zona (la que rodea el paso *Rápido y
+   Completo* del recorrido guiado), el interruptor **Reducir ruido**
+   (fase U11, atajo `D`): un botón de una posición, en negativo cuando
+   está encendido, que reduce el ruido del visor *Completo* **en
+   directo**, mientras se acumulan las muestras. Es el mismo estado que
+   el botón *Reducir ruido* del medidor y que la parte *Visor* de
+   *Avanzado ▸ Reducción de ruido* (*Los dos* ↔ *Render*, *Visor* ↔
+   *Apagada*): una sola verdad, la del proyecto, deshacible (*Deshacer:
+   Dejar de reducir el ruido del visor*) y guardada con él, también
+   cuando la ventana de render está editando un trabajo de la cola. El
+   *tooltip* lo dice en una frase. En *Rápido* se ve deshabilitado con
+   la ayuda *Se aplica al modo Completo*, y `D` no hace más que decirlo.
+   Encenderlo reduce el ruido de lo acumulado en ese momento (también con
+   el visor ya convergido) y apagarlo enseña en el fotograma siguiente
+   la imagen ruidosa; ninguna de las dos cosas vuelve a empezar la
+   imagen. Mientras se acumula, la imagen limpia se refresca tan a
+   menudo como cuesta un *denoise* (§2.3, medidor) y los gestos de
+   cámara siguen a resolución reducida, sin *denoise*.
 5. Derecha: **Buscar o ejecutar…** (`Ctrl/⌘ K`), campo de 240 px que abre
    la paleta de comandos; icono de **Guía**; icono de **Tema**.
 
@@ -287,9 +306,22 @@ tapar la pieza:
   cuando lo que se ve es la imagen filtrada por el *denoise* (y entonces
   las muestras son las de esa imagen) y *Cáusticas · 16 384 fotones por
   muestra* cuando el motor las renderiza; y el botón **Reducir ruido**
-  (pulsado o no) enciende o apaga el *denoise* del visor: cambia la parte
-  del visor de *Avanzado ▸ Reducción de ruido* (*Los dos* ↔ *Render*,
-  *Visor* ↔ *Apagada*), deshacible.
+  (pulsado o no) enciende o apaga el *denoise* del visor: el mismo
+  interruptor que *Reducir ruido* de la barra superior (§2.1, atajo `D`),
+  la parte del visor de *Avanzado ▸ Reducción de ruido* (*Los dos* ↔
+  *Render*, *Visor* ↔ *Apagada*), deshacible. Desde U11 el *denoise* es
+  **en directo**: un carril aparte (un hilo del lanzador, que toma uno de
+  los hilos del visor mientras trabaja; en la web, los *workers* del
+  visor por bandas entre sus baldosas) reduce el ruido de la última
+  pasada con el ajuste ligero del visor, la imagen limpia sale en cuanto
+  está y el siguiente arranca entonces sobre la pasada más nueva: el
+  visor la refresca al menos cada `max(2 × lo que cuesta un denoise,
+  0,5 s)` y nunca enseña una limpia de hace más de un *denoise*. Las
+  muestras del medidor son las de la imagen limpia que se ve. Para las
+  comprobaciones de navegador el medidor lleva además, en atributos
+  `data-*`, cuántas imágenes limpias ha enseñado, cuándo la última, lo
+  que costó el último *denoise* (en la web) y las muestras de la pasada
+  más nueva.
 - **Abajo a la derecha**: ejes de orientación (tres trazos finos X Y Z,
   monocromos) y el tamaño de la pieza en mm.
 - **Al pasar por una pieza**: su contorno se ilumina (silueta de 1 px en
@@ -1100,7 +1132,16 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   cáustica más fina y más tiempo por muestra, también en *Completo*),
   **Reducción de ruido** (*Apagada · Visor · Render · Los dos*, por
   defecto *Los dos*, con la nota de que es el filtro del motor guiado por
-  albedo, normales, profundidad y pieza, que nunca mezcla dos piezas) y,
+  albedo, normales, profundidad y pieza, que nunca mezcla dos piezas; su
+  parte *Visor* es el interruptor *Reducir ruido* de la barra superior y
+  del medidor, U11, y el render final usa siempre el filtro completo),
+  con su **Intensidad** debajo (fase U11b; 0–100 %, por defecto 100 %, oculta
+  con la reducción *Apagada*): la imagen entregada es la mezcla
+  `ruidosa × (1 − s) + filtrada × s`, por canal y en luz lineal, hecha en el
+  motor; vale a la vez para el render y para el visor *Completo* (un solo
+  mando, guardado en el proyecto y deshacible), y con 0 % no se filtra nada.
+  Cambiarla vuelve a empezar la imagen del visor, como cualquier ajuste del
+  motor. Y,
   cuando el render se filtra, **Guardar también sin reducción de ruido**
   (un segundo archivo con «-noisy» en el nombre).
 
@@ -1419,7 +1460,7 @@ título del grupo en versalitas auxiliares:
 | | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
-| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **partículas por efecto** (S4a: el tope de cada efecto de *Ambiente*; *Automático* = 100 000 en el navegador, 1 000 000 en nativo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
+| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **partículas por efecto** (S4a: el tope de cada efecto de *Ambiente*; *Automático* = 100 000 en el navegador, 1 000 000 en nativo); **Suavizado de bordes** (E11, abajo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
 | | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Plugins** | Los plugins del registro (`src/data/plugins.json`) y los instalados desde un archivo, cada uno con su logo, nombre, editor, versión, tamaño, resumen, la ficha **Licencia cerrada** y **Página del proyecto**; *Instalar*, *Actualizar a X*, *Quitar*; la clave de activación pedida en su fila; **Instalar desde archivo…** (detalle abajo) |
 | | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
@@ -1435,6 +1476,35 @@ desplegable). Una fila con un valor distinto del de fábrica lleva un
 punto y, al pasar, *Restablecer* en línea; al pie de cada sección,
 *Restablecer esta sección*. Lo que no existe todavía se ve,
 deshabilitado, con *próximamente*.
+
+**Motor de renderizado ▸ Suavizado de bordes** (fase E11). Dos listas,
+cada una ordenada de menos a más coste, sin cifras de coste (el orden y
+una frase de ayuda; regla 10). Son ajustes de la aplicación, no del
+proyecto: no se deshacen ni viajan en el `.repack.json`; en escritorio
+se guardan con los demás en `settings.json` del lanzador.
+
+- **Modo Rápido**: segmento *Ninguno · MSAA 2× · MSAA 4× · MSAA 8×*, por
+  defecto 4×. La línea auxiliar dice lo que da el dispositivo: *Este
+  dispositivo llega a N×; dibuja ahora: M×* (o que no tiene
+  multimuestreo); una opción por encima de su máximo dibuja con el máximo
+  (lo dice su *tooltip*). Cambia al momento, sin volver a empezar nada.
+- **Completo y render**: una lista vertical numerada, una opción por
+  fila con su nombre y su frase: **1 Ninguno** (todas las muestras por el
+  centro del píxel: bordes dentados, el más barato), **2 Estándar** (una
+  caja de un píxel: lo que renderiza un RSB que no dice filtro), **3 Suave**
+  (tienda de dos píxeles), **4 Fino** (Blackman–Harris de tres píxeles,
+  el habitual de producción; **por defecto**: cuesta los mismos rayos que
+  *Estándar*), **5 Fino + bordes ×2** (el doble de muestras donde cambian
+  la pieza, el material o la profundidad), **6 Fino + bordes ×4**. Vale
+  para el visor *Completo* y para todos los renders desde ese momento;
+  cambiarla vuelve a empezar la imagen del visor. Los fotogramas de gesto
+  (resolución reducida) usan el filtro pero no las muestras extra de
+  borde. Las flechas recorren la lista.
+
+En *Completo*, la línea del medidor que dice lo que el motor hace de la
+imagen añade **Filtro · Estándar** (o el que sea) cuando no es el de
+fábrica, *Fino*; en *Rápido*, **MSAA 2×** o **Sin multimuestreo** cuando
+no dibuja con 4×.
 
 **Ratón y caja de selección.** La fila *Ratón* (Preferencias ▸ Visor y
 navegación) dice en su línea auxiliar qué botón orbita (el derecho
@@ -1688,6 +1758,8 @@ de teclado* del menú):
 | `Ctrl/⌘ O` | Abrir proyecto |
 | `Ctrl/⌘ S` | Guardar proyecto (en el mismo archivo) |
 | `Ctrl/⌘ ⇧ S` | Guardar proyecto como… |
+| `Ctrl/⌘ ⇧ R` | Visor: *Rápido* o *Completo* |
+| `D` | *Reducir ruido* del visor *Completo*, en directo (fase U11) |
 | `Ctrl/⌘ ⏎` | Ventana de render |
 | `Ctrl/⌘ ⇧ ⏎` | Render con los últimos ajustes, sin abrir la ventana |
 | `F` | Encuadrar selección (o todo) |

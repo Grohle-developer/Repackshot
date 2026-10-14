@@ -42,6 +42,8 @@
 //!             | u32 max_depth (default 8); f32 clamp_indirect (default 0)            (36 B)
 //!             ||| u32 passes (default 0)                                            (40 B)
 //!             |||| u32 denoise (0) caustic_photons (0); f32 caustic_radius (0)      (52 B)
+//!             ||||| f32 denoise_strength (1)                                       (56 B)
+//!             |||||| u32 pixel_filter (0) edge_supersample (1)                     (64 B)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
 //! LENS  72 B  u32 blades; f32 roundness rotation_deg; u32 profile; f32 profile_param
@@ -167,7 +169,12 @@
 //!   to hand out: bit 0 the denoised image, bit 1 also the one without denoise; the renderer
 //!   ignores it. `caustic_photons` (E5b-1) is the number of photons traced per sample index for
 //!   the caustics (0: none, at most 4 194 304; see [`crate::caustics`]) and `caustic_radius`
-//!   their first gather radius in pixels at the focus distance (0: 3).
+//!   their first gather radius in pixels at the focus distance (0: 3). `denoise_strength` (U11b,
+//!   `0..=1`, default 1) is how much of the denoised image the host hands out (the rest is the
+//!   image without denoise); the renderer ignores it too. `pixel_filter` (E11) is where the
+//!   camera samples go ([`crate::pixel_filter`]: 0 the box of one pixel, 1 the centre, 2 a tent,
+//!   3 Blackman–Harris; unknown values mean the box) and `edge_supersample` the samples an edge
+//!   pixel takes per sample index (0 and 1: one; at most 16); a file of before renders as it did.
 //! * `LENS` (O1, optional, written right after `CAMR`): the optics of the camera beyond the plain
 //!   thin lens, see [`crate::optics`]. `blades` 0 is a round iris, 3 to 18 an iris of that many
 //!   blades of `roundness` (0 straight, 1 the inscribed circle) turned by `rotation_deg`;
@@ -559,7 +566,16 @@ fn parse_render(r: &mut Reader) -> Result<RenderSettings, RsbError> {
         denoise: r.opt_u32(0)?,
         caustic_photons: r.opt_u32(0)?,
         caustic_radius: r.opt_f32(0.0)?,
+        denoise_strength: r.opt_f32(1.0)?,
+        pixel_filter: r.opt_u32(0)?,
+        edge_supersample: r.opt_u32(1)?,
     };
+    if settings.edge_supersample > crate::pixel_filter::MAX_EDGE_SUPERSAMPLE {
+        return Err(r.invalid("edge_supersample must be at most 16"));
+    }
+    if !(0.0..=1.0).contains(&settings.denoise_strength) {
+        return Err(r.invalid("denoise_strength must be between 0 and 1"));
+    }
     if settings.caustic_photons > RenderSettings::MAX_CAUSTIC_PHOTONS {
         return Err(r.invalid("caustic_photons must be at most 4194304"));
     }
@@ -946,6 +962,9 @@ impl Scene {
             w.u32(r.denoise);
             w.u32(r.caustic_photons);
             w.f32(r.caustic_radius);
+            w.f32(r.denoise_strength);
+            w.u32(r.pixel_filter);
+            w.u32(r.edge_supersample);
         });
         w.buf
     }
@@ -1117,6 +1136,9 @@ mod tests {
                 denoise: 3,
                 caustic_photons: 4096,
                 caustic_radius: 2.5,
+                denoise_strength: 0.25,
+                pixel_filter: 3,
+                edge_supersample: 4,
             },
             bitmaps: test_bitmaps(),
             effects: Vec::new(),
@@ -1264,7 +1286,7 @@ mod tests {
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
         assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
-        assert_eq!(size(b"RNDR"), Some(13 * 4));
+        assert_eq!(size(b"RNDR"), Some(16 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
         assert_eq!(sections(&bytes)[3].1.len(), (2 + 24 + 6 + 1) * 4);
     }
@@ -1417,6 +1439,97 @@ mod tests {
     }
 
     #[test]
+    fn a_render_section_without_the_strength_hands_out_all_of_the_denoised_image() {
+        // U11b: RNDR of 52 B (E5b-1 to U11) reads a strength of 1; out of 0..=1 is invalid.
+        let scene = full_scene();
+        assert_eq!(scene.render.denoise_strength, 0.25);
+        let bytes = scene.to_rsb();
+        let rewrite = |cut: Option<usize>, value: Option<f32>| {
+            let mut out = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_RNDR {
+                    assert_eq!(payload[52..56], 0.25f32.to_le_bytes());
+                    if let Some(v) = value {
+                        payload[52..56].copy_from_slice(&v.to_le_bytes());
+                    }
+                    if let Some(n) = cut {
+                        payload.truncate(n);
+                    }
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        assert_eq!(
+            Scene::from_rsb(&bytes).unwrap().render.denoise_strength,
+            0.25
+        );
+        let old = Scene::from_rsb(&rewrite(Some(52), None)).expect("E5b-1 layout reads");
+        assert_eq!(old.render.denoise_strength, 1.0);
+        assert_eq!(old.render.denoise, scene.render.denoise);
+        for bad in [-0.1f32, 1.5, f32::NAN] {
+            assert!(
+                matches!(
+                    Scene::from_rsb(&rewrite(None, Some(bad))),
+                    Err(RsbError::Invalid { tag: TAG_RNDR, .. })
+                ),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_render_section_without_the_pixel_filter_renders_as_before() {
+        // E11: RNDR of 56 B (U11b) reads the box filter and no edge samples; more than 16 edge
+        // samples is invalid; an unknown filter is kept (it renders as the box).
+        let scene = full_scene();
+        assert_eq!(
+            (scene.render.pixel_filter, scene.render.edge_supersample),
+            (3, 4)
+        );
+        let bytes = scene.to_rsb();
+        let rewrite = |cut: Option<usize>, filter: Option<u32>, edges: Option<u32>| {
+            let mut out = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_RNDR {
+                    assert_eq!(payload[56..60], 3u32.to_le_bytes());
+                    assert_eq!(payload[60..64], 4u32.to_le_bytes());
+                    if let Some(v) = filter {
+                        payload[56..60].copy_from_slice(&v.to_le_bytes());
+                    }
+                    if let Some(v) = edges {
+                        payload[60..64].copy_from_slice(&v.to_le_bytes());
+                    }
+                    if let Some(n) = cut {
+                        payload.truncate(n);
+                    }
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        let old = Scene::from_rsb(&rewrite(Some(56), None, None)).expect("U11b layout reads");
+        assert_eq!(
+            (old.render.pixel_filter, old.render.edge_supersample),
+            (0, 1)
+        );
+        assert_eq!(old.render.denoise_strength, 0.25);
+        let odd = Scene::from_rsb(&rewrite(None, Some(77), Some(0))).expect("reads");
+        assert_eq!((odd.render.pixel_filter, odd.render.edge_factor()), (77, 1));
+        assert_eq!(
+            Scene::from_rsb(&rewrite(None, None, Some(16)))
+                .unwrap()
+                .render
+                .edge_factor(),
+            16
+        );
+        assert!(matches!(
+            Scene::from_rsb(&rewrite(None, None, Some(17))),
+            Err(RsbError::Invalid { tag: TAG_RNDR, .. })
+        ));
+    }
+
+    #[test]
     fn a_render_section_written_before_e5b_has_no_denoise_and_no_caustics() {
         // RNDR of 40 B (X2 to E5c): denoise off, no caustic photons, the default radius.
         let scene = full_scene();
@@ -1468,7 +1581,7 @@ mod tests {
         let mut old = bytes[..8].to_vec();
         for (tag, mut payload) in sections(&bytes) {
             if tag == TAG_RNDR {
-                assert_eq!(payload.len(), 52);
+                assert_eq!(payload.len(), 64);
                 assert_eq!(payload[36..40], scene.render.passes.to_le_bytes());
                 payload.truncate(36);
             }

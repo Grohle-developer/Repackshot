@@ -174,6 +174,9 @@ fn render_settings(size: (u32, u32)) -> RenderSettings {
         denoise: 0,
         caustic_photons: 0,
         caustic_radius: 0.0,
+        denoise_strength: 1.0,
+        pixel_filter: 0,
+        edge_supersample: 1,
     }
 }
 

@@ -18,6 +18,7 @@
 // strings (`set.<key>` in src/ui/strings.ts). Pure: no DOM, no storage.
 
 import type { Lang } from '../data/types';
+import { DEFAULT_FAST_AA, DEFAULT_PIXEL_FILTER, FAST_AA, PIXEL_FILTERS, type FastAa, type PixelFilterSetting } from './antialias';
 import { QUALITY_KEYS, QUALITY_PRESETS } from '../data/quality';
 import { DEFAULT_SYSTEM_PROMPT, normaliseSystemPrompt } from './ai-prompt';
 import { IMPORT_UNITS, LARGE_MODEL_MM, SMALL_MODEL_MM, TESSELLATION_PRESETS, UNIT_TO_MM, type ImportDetected, type ImportMessage, type ImportOptions, type ImportUnit } from './import-options';
@@ -120,6 +121,10 @@ export interface Settings {
   'engine.viewportSeconds': number;
   /** While a render runs, the viewport keeps a quarter of the engine (live) or waits for it (fastest render). */
   'engine.whileRender': 'SHARE' | 'PAUSE';
+  /** E11: Fast mode's multisampling, cheapest first (core/antialias.ts); the device caps it. */
+  'engine.fastAa': FastAa;
+  /** E11: Full mode's and the render's pixel filter and edge samples, cheapest first (core/antialias.ts). */
+  'engine.pixelFilter': PixelFilterSetting;
   /** S4a: the most particles of one ambient effect; 0 is automatic: 100 000 in the browser, 1 000 000 natively. */
   'engine.particleCap': number;
 
@@ -252,6 +257,8 @@ export function defaultSettings(): Settings {
     'engine.viewportSamples': 1024,
     'engine.viewportSeconds': 120,
     'engine.whileRender': 'SHARE',
+    'engine.fastAa': DEFAULT_FAST_AA,
+    'engine.pixelFilter': DEFAULT_PIXEL_FILTER,
     'engine.particleCap': 0,
 
     'ai.active': '',
@@ -432,6 +439,8 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   setting('engine.viewportSamples', 'engine', 'fullViewport', num(16, 100000, 16), kw('viewport, samples, limit', 'visor, muestras, límite')),
   setting('engine.viewportSeconds', 'engine', 'fullViewport', num(5, 3600, 5, 's'), kw('viewport, seconds, limit', 'visor, segundos, límite')),
   setting('engine.whileRender', 'engine', 'fullViewport', choice(['SHARE', 'PAUSE']), kw('while rendering, render, queue, share, pause, live viewport, threads', 'mientras se renderiza, render, cola, compartir, pausar, visor vivo, hilos'), { aux: true }),
+  setting('engine.fastAa', 'engine', 'antialias', choice(FAST_AA), kw('antialiasing, smoothing, jagged edges, msaa, multisampling, fast mode', 'suavizado, bordes, dientes de sierra, msaa, multimuestreo, modo rápido'), { aux: true }),
+  setting('engine.pixelFilter', 'engine', 'antialias', choice(PIXEL_FILTERS), kw('antialiasing, smoothing, jagged edges, pixel filter, box, tent, blackman-harris, edges, supersampling', 'suavizado, bordes, dientes de sierra, filtro de píxel, caja, tienda, blackman-harris, supermuestreo'), { aux: true }),
   row('engine.measure', 'engine', 'measure', kw('measure performance, benchmark, speed, samples per second', 'medir rendimiento, prueba, velocidad, muestras por segundo'), { aux: true }),
   row('engine.info', 'engine', 'info', kw('engine version, build, cpu features, simd, threads', 'versión del motor, compilación, cpu, simd, hilos')),
 
