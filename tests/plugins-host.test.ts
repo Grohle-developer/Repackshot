@@ -212,11 +212,13 @@ describe('running a plugin: the worker ABI end to end (the invert test plugin, n
       await expect(first).rejects.toMatchObject({ name: 'AbortError' });
       const second = await s.render({ width: 64, height: 64, pixels: px(), recipe: null, controls: { amount: 1 } });
       expect(second.rgba8[0]).toBe(245);
-      // The host said cancel, and the plugin dropped the render before starting it (it answered `cancelled`, not `render`).
+      // The host said cancel. The plugin either dropped the render before starting it (it answers `cancelled`) or had
+      // already started it (its `render` answer is then dropped by the host as cancelled): which one depends on the
+      // worker's timing, so both are right; either way the first render gets exactly one answer.
       const cancel = workers[0].sent.find((m) => (m as { type: string }).type === 'cancel') as { id: number };
       expect(cancel).toBeDefined();
-      expect(workers[0].received).toContainEqual({ type: 'cancelled', id: cancel.id });
-      expect(workers[0].received.filter((m) => (m as { type: string }).type === 'render')).toHaveLength(1);
+      const answers = workers[0].received.filter((m) => (m as { id?: number }).id === cancel.id) as { type: string }[];
+      expect(answers.map((m) => m.type)).toEqual([expect.stringMatching(/^(cancelled|render)$/)]);
     } finally {
       s.close();
     }
