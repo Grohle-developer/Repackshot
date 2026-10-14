@@ -2,7 +2,7 @@
 
 import type { DoctorCheck } from './types';
 
-// Scene doctor checks (upstream CHECKS, 14 entries in upstream order). These
+// Scene doctor checks (upstream CHECKS, 14 entries in upstream order, then the ones of later phases: S2's physics). These
 // are descriptors only: what each check looks at and what its one-click fix
 // does. The logic that runs them lives with the scene code, not here.
 export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
@@ -185,6 +185,20 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     fix: {
       es: 'Pone a las camaras de esos planos la proporcion del tamano de salida.',
       en: "Gives the cameras of those shots the output size's aspect ratio.",
+    },
+  },
+  // S2, not ported: a part a simulation would drop starts inside the floor (Spanish with accents, like the other
+  // data that is not ported). Appended after U13's.
+  {
+    key: 'physics',
+    label: { es: 'Físicas', en: 'Physics' },
+    checks: {
+      es: 'Una pieza dinámica empieza por debajo del suelo: al simular, el suelo la empujaría o la dejaría caer al vacío.',
+      en: 'A dynamic part starts below the floor: in a simulation the floor would push it out or let it fall away.',
+    },
+    fix: {
+      es: 'Sube cada pieza dinámica hasta apoyarla en el suelo.',
+      en: 'Lifts each dynamic part until it rests on the floor.',
     },
   },
 ];

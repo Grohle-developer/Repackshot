@@ -109,6 +109,14 @@ function easingText(clip: MotionClip, lang: Lang): string {
 
 /** "The camera orbits 90° over 4 s, smooth" / "La cámara orbita 90° durante 4 s, suave". */
 export function clipSentence(state: ProjectState, clip: MotionClip, lang: Lang): string {
+  // A recorded simulation (S2) has no amount and no easing: it plays what was simulated.
+  if (clip.move === 'PHYSICS') {
+    let p = `${subject(state, clip, lang)} ${tIn(lang, 'say.PHYSICS')} ${tIn(lang, 'say.over', { d: formatNumber(clip.duration, lang) })}`;
+    const m = clipRepeat(clip);
+    if (m > 1) p += ` ${tIn(lang, 'say.repeat', { n: m })}`;
+    if (clip.reverse) p += `, ${tIn(lang, 'say.reversed')}`;
+    return p;
+  }
   let s = `${subject(state, clip, lang)} ${verb(clip, lang)} ${tIn(lang, 'say.over', { d: formatNumber(clip.duration, lang) })}, ${easingText(clip, lang)}`;
   const n = clipRepeat(clip);
   if (n > 1) s += ` ${tIn(lang, 'say.repeat', { n })}`;
@@ -120,7 +128,9 @@ export function clipSentence(state: ProjectState, clip: MotionClip, lang: Lang):
 /** The short form a row of the timeline's tree shows: "orbits 90° · 4 s · smooth". */
 export function clipShort(clip: MotionClip, lang: Lang): string {
   const n = clipRepeat(clip);
-  const parts = [verb(clip, lang), `${formatNumber(clip.duration, lang)} s${n > 1 ? ` ${tIn(lang, 'say.repeat', { n })}` : ''}`, easingText(clip, lang)];
+  const parts = [verb(clip, lang), `${formatNumber(clip.duration, lang)} s${n > 1 ? ` ${tIn(lang, 'say.repeat', { n })}` : ''}`];
+  // A recorded simulation (S2) has no curve.
+  if (clip.move !== 'PHYSICS') parts.push(easingText(clip, lang));
   if (clip.reverse) parts.push(tIn(lang, 'say.reversed'));
   return parts.join(' · ');
 }

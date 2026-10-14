@@ -28,7 +28,23 @@ export type ViewportMode = 'FAST' | 'FULL';
 export type EngineState = 'LOADING' | 'READY' | 'NO_WASM' | 'NO_WORKERS' | 'OUTDATED' | 'FAILED';
 export type Tool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move' | 'scale';
 export const TOOLS: readonly Tool[] = ['select', 'orbit', 'pan', 'zoom', 'move', 'scale'];
-export type Drawer = 'animation' | 'queue' | null;
+export type Drawer = 'animation' | 'physics' | 'queue' | null;
+
+/**
+ * The physics bar (phase S2): what the simulation is doing, only as the simulator reports it (rule 10). STOPPED is
+ * the default: nothing runs until the person starts it or drops something.
+ */
+export interface PhysicsUi {
+  state: 'STOPPED' | 'STARTING' | 'RUNNING' | 'PAUSED';
+  /** Simulated seconds of the run in progress, or of the last one. */
+  time: number;
+  awake: number;
+  bodies: number;
+  /** How the last run ended (null: none yet), or why it could not start. */
+  ended: 'SETTLED' | 'STOPPED' | 'TIME' | 'NO_ENGINE' | 'FAILED' | 'NOTHING' | null;
+  /** Reset has something to undo: a run in progress, or the last one's clips and poses. */
+  canReset: boolean;
+}
 /**
  * The next click on the viewport picks something: the focus distance, where a light reflects, the pivot of
  * some nodes (phase U3), or the part whose material some parts link to.
@@ -380,6 +396,8 @@ export interface UiState {
    * changes, whichever way they were asked for: menu, shortcut or a dropped file). Esc cancels.
    */
   prompt: ConfirmSpec | null;
+  /** The physics bar (phase S2). */
+  physics: PhysicsUi;
 }
 
 /**
@@ -506,6 +524,7 @@ export function defaultUiState(): UiState {
     engineInfo: null,
     desktop: null,
     prompt: null,
+    physics: { state: 'STOPPED', time: 0, awake: 0, bodies: 0, ended: null, canReset: false },
   };
 }
 

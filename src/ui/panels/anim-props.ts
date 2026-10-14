@@ -220,7 +220,10 @@ function clipView(ctx: Ctx, scope: Scope, id: string): HTMLElement {
   const sentence = h('div', { class: 'note anim-props-sentence' });
 
   const move: HTMLElement[] = [];
+  const physics = c0.move === 'PHYSICS';
   if (c0.move === 'EXPLODE') move.push(...explodeKnobs(ctx, scope, id));
+  // A recorded simulation (S2): no amount and no curve, what was simulated; its time like any other clip's.
+  else if (physics) move.push(h('p', { class: 'note', style: 'margin:0', 'data-field': 'anim.physicsNote' }, t('anim.physicsNote')));
   else if (c0.move !== 'TINT') {
     const amount = amountField(c0, (v, g) => patch({ amount: v }, g));
     scope.watch((s) => s.animation.clips.find((c) => c.id === id)?.amount, (v) => v !== undefined && amount.set(v));
@@ -279,7 +282,7 @@ function clipView(ctx: Ctx, scope: Scope, id: string): HTMLElement {
   if (move.length) body.push(section(ctx, 'anim-move', t('anim.secMove'), h('div', { class: 'stack' }, ...move)));
   if (c0.move === 'EXPLODE') body.push(section(ctx, 'anim-parts', t('ex.pinned'), exceptions(ctx, scope, id)));
   body.push(section(ctx, 'anim-time', t('anim.secTime'), h('div', { class: 'stack' }, field(t('anim.start'), start.el), field(t('anim.duration'), dur.el), field(t('anim.end'), end.el), field(t('anim.repeat'), repeat.el), field(t(c0.move === 'EXPLODE' ? 'anim.reverseExplode' : 'anim.reverse'), reverse.el))));
-  body.push(section(ctx, 'anim-curve', t('anim.secCurve'), h('div', { class: 'stack' }, ...curve)));
+  if (!physics) body.push(section(ctx, 'anim-curve', t('anim.secCurve'), h('div', { class: 'stack' }, ...curve)));
   body.push(
     h(
       'div',

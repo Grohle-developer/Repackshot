@@ -16,13 +16,14 @@ importa de `render/` ni de `io/` (eso lo conecta `src/main.ts` mediante
 | `ui-state.ts` | Estado de interfaz (pestañas, cajones, anchos…); la parte que se recuerda (`Layout`) va al documento de ajustes con `try/catch`. Incluye `library`, la biblioteca propia (U4): estado de usuario, fuera del proyecto y de deshacer; `main.ts` la guarda con `io/library.ts` |
 | `commands.ts` | Lo que hacen botones, paleta y teclado; devuelve una confirmación en línea cuando hace falta. Proyecto (U2): `saveProject` (con `saveAs`), `openProject`, `openProjectFile`, `requestNewProject`, `dropFiles`; preguntan por los cambios sin guardar con `ui.prompt`, que la cabecera pinta bajo el nombre del proyecto |
 | `shortcuts.ts` | El único mapa de atajos: teclado, paleta y *tooltips* |
+| `physics.ts` | La simulación en marcha (S2, UI.md §2.5): *Dejar caer*, *Iniciar*, *Pausar* / *Reanudar*, *Parar*, *Reiniciar*; cada simulación graba sus clips `PHYSICS` y el cabezal los sigue; lo que llega en pausa espera a *Reanudar* y *Parar* confirma la pose que se ve; una simulación es un gesto (una entrada de deshacer) y *Reiniciar* otra |
 | `render-queue.ts` | La cola en marcha (U5): *Render* solo sus trabajos, *Iniciar cola* todos en orden, *Pausar*, detener, fotogramas de una animación, guardado y historial; siempre con el trazador (`renderFrame`) |
 | `components/` | `NumberField`, `Slider`, `Segmented`, `Toggle`, `Select`, `Section`, miniaturas, confirmación en línea, menús, *tooltip*, paleta; `library.ts`: campo de nombre en línea, tarjetas y filas de *Míos* con renombrar y eliminar, pie Exportar / Importar; `split-compare.ts`: dos imágenes cualesquiera con un divisor deslizable (U5; X3 lo reutiliza); `material-drag.ts`: arrastrar un material con eventos de puntero (U7: fantasma, zonas donde soltar, `Esc`, `Alt` = copia) |
 | `updates.ts` | Las actualizaciones tal como las corre la interfaz: pedir la última versión publicada a `services.updates`, guardar la respuesta (`updateCheckedAt`, `updateLatest`, en el `layout` de los ajustes), anunciar una versión nueva una sola vez (aviso discreto en la barra de estado, nunca una ventana) y abrir la descarga o las notas |
 | `panels/settings-*.ts` | La ventana de Ajustes (U6, UI.md §2.9): `settings-window.ts` (ventana, búsqueda, enlaces profundos, teclado), `settings-rows.ts` (filas desde los metadatos), `settings-sections.ts` (filas propias: medir rendimiento, almacenamiento, escritorio, Acerca de con las licencias), `settings-ai.ts` (modelo activo, gestor de modelos, licencias, importar, equipo y recomendación), `settings-updates.ts` (Actualizaciones: versión, *Buscar actualizaciones* con su resultado, *Comprobar al iniciar*, última comprobación) |
 | `tour.ts`, `panels/tour.ts`, `tour.css` | El recorrido guiado (U10, UI.md §4.7): los pasos como datos con los `data-guide` que anillan y lo que necesitan en pantalla (`TourStage`), las reglas para arrancar, `startTour` / `tourNext` / `tourBack` / `endTour` y `placeCard` (dónde va la tarjeta); la capa que oscurece, anilla y lleva las teclas |
 | `ai-runtime-state.ts`, `panels/ai-runtime-notice.ts` | El aviso del motor de ejecución de la IA (U10): el único sondeo de `GET /api/ai/runtime` (`RuntimeWatch`), la nota de la barra de estado una vez por sesión, los botones (*Instalar*, *Reanudar*, Visual C++, *Comprobar de nuevo*) y el recuadro de la ventana de render y de Ajustes |
-| `panels/` | Cabecera, escena, visor, inspector, barra inferior (cajones Animación y Cola, último resultado, *Render…*), ventana de render (`render-window.ts`), visor de resultados (`results-viewer.ts`), estado, guía; `add-menu.ts` (*Añadir ▸ Primitiva*, U9) y `scale-panel.ts` (*Clic derecho ▸ Escalar…*, U9) |
+| `panels/` | Cabecera, escena, visor, inspector (con `insp-physics.ts`, la sección *Físicas*, S2), barra inferior (cajones Animación, Físicas —`physics.ts`, S2— y Cola, último resultado, *Render…*), ventana de render (`render-window.ts`), visor de resultados (`results-viewer.ts`), estado, guía; `add-menu.ts` (*Añadir ▸ Primitiva*, U9) y `scale-panel.ts` (*Clic derecho ▸ Escalar…*, U9) |
 
 ## Parámetros de URL (demos y capturas)
 
@@ -36,7 +37,7 @@ resultado es un estado normal y deshacible.
 | `setup=REMBRANDT` | Elige ese montaje de luz (`LIGHT_SETUPS` o `PRESET`) y muestra su estilo en el catálogo |
 | `theme=dark\|light\|system` | Tema (si no, el guardado o el del sistema; oscuro salvo que el sistema pida claro) |
 | `lang=en\|es` | Idioma |
-| `drawer=animation\|queue` | Abre ese cajón de la barra de render |
+| `drawer=animation\|physics\|queue` | Abre ese cajón de la barra de render |
 | `panels=collapsed` | Pliega los dos paneles laterales (modo imagen) |
 | `select=cap` | Selecciona un nodo por su clave de ejemplo (`model`, `closure`, `base`, `body`, `label`, `collar`, `cap`) o por su nombre |
 | `catalog=1` | Abre el catálogo de materiales (en la categoría del material seleccionado) |

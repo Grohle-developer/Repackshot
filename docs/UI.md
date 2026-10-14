@@ -179,7 +179,8 @@ debajo, el **selector de nivel** de la selección (ver §4.1).
 El **menú contextual** completo de una fila (fase U3, con las acciones de
 `SPEC.md` §3.1): Encuadrar · Mover (activa el *gizmo*) · **Escalar…**
 (fase U9: el panel en línea de §2.3, junto a la fila) · Apoyar en el
-suelo · Centrar · Centrar y apoyar · Restablecer transformación ·
+suelo · Centrar · Centrar y apoyar · **Dejar caer** (fase S2) ·
+Restablecer transformación ·
 Establecer pivote ▸ (centro, base, origen, punto picado) · Fijar como
 objetivo de cámara · separador · Ocultar · Aislar · Mostrar todo ·
 Bloquear · separador · Duplicar · Duplicar enlazado · Patrón ▸ (lineal,
@@ -190,6 +191,17 @@ caras CAD, Separar por material, **Convertir en malla**, fase U9: activo
 solo si la selección tiene primitivas) · separador · Renombrar · Eliminar.
 En U1 existen las que ya están en §2.2 y el resto se añade en U3 sin
 cambiar la estructura del menú.
+
+**Dejar caer** (fase S2; el mismo menú en el visor, el botón de la
+sección *Físicas* y de la sección *Pieza* del inspector, y la paleta,
+*Dejar caer la selección*) simula la selección al momento: lo
+seleccionado pasa a *Dinámico* y cae sobre el suelo y lo que tenga debajo
+(el resto de la escena, quieto), se abre el cajón **Físicas** (§2.5) y la
+simulación se para sola cuando todo está quieto. Un grupo o un modelo cae
+como un cuerpo salvo que tenga *Como piezas*. Está desactivado con la
+selección bloqueada. Toda la caída es **una** entrada de deshacer
+(*Deshacer: Dejar caer 3 piezas*). No hay un menú *Pieza* en la cabecera
+en esta versión: su sitio es este menú contextual.
 
 **Cámaras**: lista de cámaras guardadas con la activa marcada. Botones:
 *Nueva desde la vista actual*, *Duplicar*, *Eliminar*. Clic activa la
@@ -667,7 +679,22 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    por pieza*, y *Aplicar a toda la pieza*.
 4. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
-   radio de bisel de aristas (mm), suavizado.
+   *Dejar caer* (fase S2), radio de bisel de aristas (mm), suavizado.
+5. **Físicas** (fase S2; `SPEC.md` §3.1) — **Papel**, segmentado:
+   *Estático · Dinámico · Tela · Líquido*, con *Tela* y *Líquido*
+   desactivados y un *tooltip* que dice *próximamente*; con varios nodos de
+   papeles distintos, ninguno marcado. Si la pieza cae con un grupo
+   dinámico que no cae *como piezas*, una nota lo dice (*Cae con Tapón,
+   como un cuerpo*). **Densidad** en kg/m³, arrastrable; debajo, en
+   auxiliar, de dónde sale (*Del material (Metal): 7 800 kg/m³*, *Sin
+   material: 1 000 kg/m³ (agua)* o *Densidad propia*, con el botón *Usar
+   la del material*). **Rozamiento** (0–2) y **Rebote** (0–1),
+   arrastrables. Con un grupo o un modelo, el interruptor **Como piezas**
+   y su nota. Una nota dice que la masa es la densidad por el volumen de
+   la envolvente convexa, y el botón **Dejar caer**. Cada cambio es una
+   acción del *store* y un arrastre una sola entrada de deshacer
+   (*Deshacer: Físicas de Cuerpo*). En el nivel *Caras*, la sección edita
+   la pieza de la cara.
 
 **Con una primitiva seleccionada** (fase U9), antes de *Material*, la
 sección **Primitiva**: *Forma* (el nombre, en texto), y un campo por
@@ -715,14 +742,16 @@ escena, con su **Proporción** (la de *esa* cámara: editarla no toca el
 tamaño de la ventana de render mientras no sea la activa), más nombre,
 *Activar* y, si no es la activa, *Mirar a través* (fase L4).
 
-### 2.5 · Barra inferior: Animación · Cola · Render
+### 2.5 · Barra inferior: Animación · Físicas · Cola · Render
 
 Siempre visible, 48 px. La configuración del render **no vive aquí**:
 vive en la **ventana de render** (§2.7), que se abre con el botón
 *Render…*. La barra queda con tres cosas:
 
-- A la izquierda, los cajones **Animación** y **Cola** (abren un cajón de
-  240 px sobre la barra). *Cola* lleva un contador de trabajos pendientes
+- A la izquierda, los cajones **Animación**, **Físicas** (fase S2) y
+  **Cola** (abren un cajón de 240 px sobre la barra; el de *Físicas*, solo
+  lo que ocupa). *Físicas* lleva, mientras una simulación corre, cuántos
+  cuerpos siguen despiertos. *Cola* lleva un contador de trabajos pendientes
   y, mientras hay uno en marcha, una barra de progreso fina en su borde
   inferior con el nombre del trabajo y el tiempo restante en el tooltip.
 - En el centro, en texto auxiliar, el último resultado (*Joyería_Cámara 1
@@ -850,6 +879,44 @@ la versión de U1 con planos y tarjetas queda sustituida.
 - El vídeo se renderiza desde la **ventana de render** en modo
   *Animación* (§2.7), con los mismos botones *Render* y *+ Añadir a la
   cola* que una imagen.
+
+**Cajón Físicas, la barra de físicas** (fase S2; `SPEC.md` §3.1 y §3.7):
+**▶ Iniciar** (simula las piezas cuyo papel es *Dinámico*) · **⏸ Pausar**,
+que pasa a **▶ Reanudar** mientras está en pausa · **■ Parar** · **↺
+Reiniciar**; después, lo que el simulador dice —**tiempo simulado**
+(*Simulado 0,42 s*) y **cuerpos despiertos** (*2 de 3 despiertos*)— y el
+**estado**: *Parado* por defecto, *Arrancando…*, *En marcha*, *En pausa*,
+y al acabar cómo acabó (*Se paró sola: todo está quieto*, *Parada donde
+estaba*, *Parada tras 30 s simulados*, *El simulador necesita el motor*).
+Nada corre hasta que se inicia o se deja caer algo. Antes de que el
+simulador diga nada, ni tiempo ni cuerpos: no se inventan. Debajo, una
+nota: cómo empezar, y mientras corre, que el visor la enseña en *Rápido*
+(el modo *Completo* espera a que pare).
+
+- **Pausar** congela la simulación donde el visor la enseña (lo que el
+  simulador mande mientras tanto espera a *Reanudar*); **Parar** confirma
+  la pose que se ve; dormirse todos los cuerpos, o 30 s simulados, la
+  paran y confirman el último fotograma.
+- **Toda simulación se graba**: al empezar, cada cuerpo tiene un clip
+  **Simulación** en la línea de tiempo (cajón *Animación*) que crece
+  fotograma a fotograma a los fps del proyecto mientras corre, con el
+  cabezal detrás; se queda donde se para. En la línea de tiempo (N6) su
+  fila del árbol dice *cae según la simulación · 0,83 s*; la barra se
+  mueve en el tiempo y se estira para ralentizarla, y sus propiedades son
+  las de tiempo (inicio, duración, fin, repetir, invertir) y una nota:
+  ni cantidad ni curva. *Animar…* no lo ofrece y no se parte: solo lo
+  crea una simulación. No hay botón de grabar.
+- **Reiniciar** quita los clips de la última simulación y devuelve las
+  piezas a donde estaban, como otra entrada de deshacer (*Deshacer:
+  Reiniciar la simulación*); está activo mientras esos clips sigan en el
+  proyecto. Deshacer mientras corre la abandona sin confirmar nada.
+- Una simulación nueva mientras otra corre para la primera (que confirma
+  su pose) y arranca desde ahí.
+
+Capturas (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (la barra
+en pausa, en mitad de una caída), `docs/ui/physics-drop.png` (tres
+primitivas antes y después de *Dejar caer*) y
+`docs/ui/physics-drop-strip.png` (seis instantes del clip grabado).
 
 **Cajón Cola**: lista de trabajos en orden (miniatura, nombre, cámara,
 tamaño, *Terminar por*, IA sí o no, estado y progreso), arrastrables para
