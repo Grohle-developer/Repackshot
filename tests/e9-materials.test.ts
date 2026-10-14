@@ -1,7 +1,7 @@
-// E9: the scattering medium inside clear solids, on the interface's side: the catalogue recipes
-// (and the engine's copy of them), the material parameters and their strings, the RSB fields
-// (with the Abbe number that dispersion will read), older projects, Fast mode's approximation, and
-// the real rt.wasm rendering a medium.
+// E9: the scattering medium inside clear solids and (E9c) the dispersion of solid glass, on the
+// interface's side: the catalogue recipes (and the engine's copy of them), the material parameters
+// and their strings, the RSB fields (with the Abbe number), older projects, Fast mode's
+// approximations, and the real rt.wasm rendering a medium and a crystal.
 
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
@@ -10,7 +10,7 @@ import { FAMILY_PARAMS, instanceFromPreset, type MaterialInstance } from '../src
 import { MATERIAL_PRESETS, materialPreset } from '../src/data/materials';
 import { wearDefaults } from '../src/core/wear';
 import { loadProject, serializeProject } from '../src/io/project';
-import { defaultCamera, defaultEnvironment, defaultFloor, defaultMaterial, defaultRender, MATERIAL_GLASS, materialToRsb, SCATTER_G_MAX, writeRsb, type RsbScene } from '../src/io/rsb';
+import { defaultCamera, defaultEnvironment, defaultFloor, defaultMaterial, defaultRender, MATERIAL_FLAG_THIN, MATERIAL_GLASS, materialToRsb, SCATTER_G_MAX, writeRsb, type RsbScene } from '../src/io/rsb';
 import { applyMaterial, clarityOfMedium, diffuseOfMedium } from '../src/render/materials';
 import { STRINGS } from '../src/ui/strings';
 import { readRsb, sections } from './rsb-reader';
@@ -87,7 +87,7 @@ describe('E9 material parameters', () => {
   it('the glass family shows the medium after its transmission, with strings in both languages', () => {
     const keys = FAMILY_PARAMS.GLASS.map((p) => p.key);
     const at = keys.indexOf('transmission');
-    expect(keys.slice(at)).toEqual(['transmission', 'absorptionMm', 'walls', 'scatterMm', 'scatterColor', 'scatterG']);
+    expect(keys.slice(at)).toEqual(['transmission', 'absorptionMm', 'walls', 'scatterMm', 'scatterColor', 'scatterG', 'abbe']);
     const g = FAMILY_PARAMS.GLASS.find((p) => p.key === 'scatterG')!;
     expect([g.min, g.max, g.fallback]).toEqual([-0.9, 0.9, 0]);
     for (const key of ['scatterMm', 'scatterColor', 'scatterG']) {
@@ -183,10 +183,54 @@ describe('E9 in Fast mode', () => {
   });
 });
 
+describe('E9c dispersion', () => {
+  it('the perfume crystal is solid glass of Abbe number 40, and the older glass has none', () => {
+    const p = materialPreset('CRYSTAL')!;
+    expect([p.family, p.category]).toEqual(['GLASS', 'GLASS']);
+    const rsb = materialToRsb(instanceFromPreset('m', 'CRYSTAL', 100));
+    expect([rsb.abbe, rsb.scatterMm, rsb.flags & MATERIAL_FLAG_THIN]).toEqual([40, 0, 0]);
+    expect(rsb.ior).toBeCloseTo(1.56, 6);
+    expect(wearDefaults('CRYSTAL')).not.toBeNull();
+    for (const m of MATERIAL_PRESETS.filter((x) => x.family === 'GLASS' && x.key !== 'CRYSTAL')) {
+      expect(materialToRsb(instanceFromPreset('m', m.key, 100)).abbe, m.key).toBe(0);
+    }
+  });
+
+  it('the Abbe number is a glass parameter from 0 (none) to 100, with its help in both languages', () => {
+    const spec = FAMILY_PARAMS.GLASS.find((p) => p.key === 'abbe')!;
+    expect([spec.min, spec.max, spec.fallback]).toEqual([0, 100, 0]);
+    for (const s of ['param.abbe', spec.tip!]) {
+      const [en, es] = [text('en', s), text('es', s)];
+      expect(en && es && en !== es, s).toBeTruthy();
+    }
+    expect(text('en', 'param.abbe.tip')).toMatch(/Fast approximates/);
+    expect(text('es', 'param.abbe.tip')).toMatch(/Rápido la aproxima/);
+  });
+
+  it('Fast gives solid glass three.js’s dispersion, 20 / Abbe number, and none to thin walls or media', () => {
+    const fast = (key: string, params: Record<string, unknown> = {}) => {
+      const inst = instanceFromPreset('m', key, 100)!;
+      const m = new THREE.MeshPhysicalMaterial();
+      applyMaterial(m, { ...inst, params: { ...inst.params, ...params } } as MaterialInstance, 100);
+      return m.dispersion;
+    };
+    expect(fast('CRYSTAL')).toBeCloseTo(0.5, 6);
+    expect(fast('CRYSTAL', { abbe: 5 })).toBe(2);
+    expect(fast('GLASS_CLEAR')).toBe(0);
+    expect(fast('CRYSTAL', { walls: 'THIN' })).toBe(0);
+    expect(fast('CRYSTAL', { scatterMm: 1 })).toBe(0);
+    // A material reused for another family forgets it.
+    const m = new THREE.MeshPhysicalMaterial();
+    applyMaterial(m, instanceFromPreset('m', 'CRYSTAL', 100)!, 100);
+    applyMaterial(m, instanceFromPreset('m', 'GOLD', 100)!, 100);
+    expect(m.dispersion).toBe(0);
+  });
+});
+
 const live = RT_WASM ? describe : describe.skip;
 
 live('E9 through the page’s code (the real rt.wasm)', () => {
-  it('renders the scattering medium of the E9 scene to rt-core’s pinned image', async () => {
+  it('renders the scattering medium and the crystal of the E9 scene to rt-core’s pinned image', async () => {
     // tests/fixtures/e9.rsb is `rt --write-e9-example`: the E5 scene with a medium in its glass
     // and a dispersive crystal sphere (E9c).
     const rt = await loadRt();

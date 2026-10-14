@@ -349,6 +349,12 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     params: { baseColor: [0.22, 0.21, 0.21, 1], roughness: 0.02, ior: 1.52, transmission: 1 },
   },
   {
+    // E9c: perfume crystal, dispersive (Abbe number 40: the colours part in its facets).
+    key: 'CRYSTAL', category: 'GLASS', family: 'GLASS',
+    label: { es: 'Cristal de perfumería', en: 'Perfume crystal' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0, ior: 1.56, transmission: 1, absorptionMm: 0, abbe: 40 },
+  },
+  {
     key: 'MIRROR', category: 'GLASS', family: 'SIMPLE',
     label: { es: 'Espejo', en: 'Mirror' },
     params: { baseColor: [0.95, 0.96, 0.97, 1], metallic: 1, roughness: 0 },

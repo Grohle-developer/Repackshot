@@ -35,7 +35,7 @@ describe('command palette search', () => {
   });
 
   it('lists every catalogue entry', () => {
-    expect(items.filter((i) => i.category === 'palette.cat.material')).toHaveLength(86);
+    expect(items.filter((i) => i.category === 'palette.cat.material')).toHaveLength(87);
     expect(items.filter((i) => i.category === 'palette.cat.setup')).toHaveLength(72);
     expect(items.filter((i) => i.category === 'palette.cat.product')).toHaveLength(16);
   });

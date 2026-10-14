@@ -272,9 +272,9 @@ describe('light setups', () => {
 });
 
 describe('materials', () => {
-  it('has 7 categories and 86 presets with unique keys (77 ported, 9 translucent of E9)', () => {
+  it('has 7 categories and 87 presets with unique keys (77 ported, 9 translucent of E9b, the crystal of E9c)', () => {
     expect(MATERIAL_CATEGORIES.map((c) => c.key)).toEqual(CATEGORIES);
-    expect(MATERIAL_PRESETS).toHaveLength(86);
+    expect(MATERIAL_PRESETS).toHaveLength(87);
     expect(unique(MATERIAL_PRESETS.map((m) => m.key))).toBe(true);
   });
 
@@ -285,7 +285,7 @@ describe('materials', () => {
       PLASTIC: 15,
       WOOD: 13,
       FABRIC: 11,
-      GLASS: 5,
+      GLASS: 6,
       EMISSIVE: 14,
       OTHER: 16,
     });
@@ -301,9 +301,10 @@ describe('materials', () => {
   it('gives every GLASS-family material a transmission and an ior', () => {
     const glass = MATERIAL_PRESETS.filter((m) => m.family === 'GLASS');
     expect(glass.map((m) => m.key)).toEqual([
-      // E9's translucent recipes are clear solids with a medium inside, next to their kin.
+      // E9's translucent recipes are clear solids with a medium inside, next to their kin, and
+      // E9c's dispersive crystal follows the glass.
       'PC_CLEAR', 'PMMA', 'PMMA_TINT', 'HDPE_WHITE', 'PP_NATURAL', 'PMMA_FROST',
-      'GLASS_CLEAR', 'GLASS_FROST', 'GLASS_TINT', 'GLASS_SMOKE',
+      'GLASS_CLEAR', 'GLASS_FROST', 'GLASS_TINT', 'GLASS_SMOKE', 'CRYSTAL',
       'WAX', 'SOAP_GLYCERIN', 'MILK', 'JUICE_ORANGE', 'JUICE_APPLE', 'CREAM',
     ]);
     for (const m of glass) {

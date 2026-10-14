@@ -592,6 +592,11 @@ const TABLE = {
     'Where light goes at each bounce inside: forwards (above 0) / backwards (below 0); 0 spreads it evenly.',
     'Adónde va la luz en cada rebote dentro: hacia delante (por encima de 0) / hacia atrás (por debajo de 0); 0 la reparte por igual.',
   ],
+  'param.abbe': ['Abbe number', 'Número de Abbe'],
+  'param.abbe.tip': [
+    'Chromatic dispersion of solid glass: the lower, the more it splits light into colours (crystal 30–40, window glass about 60; 0: none). Full mode renders it; Fast approximates it.',
+    'Dispersión cromática del vidrio macizo: cuanto menor, más separa la luz en colores (cristal 30–40, vidrio de ventana unos 60; 0: ninguna). El modo Completo la renderiza; el Rápido la aproxima.',
+  ],
   'param.opacity': ['Opacity', 'Opacidad'],
   'param.anisotropic': ['Anisotropy', 'Anisotropía'],
   'param.subsurface': ['Subsurface', 'Subsuperficie'],

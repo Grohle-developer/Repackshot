@@ -120,6 +120,8 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
     { key: 'scatterMm', kind: 'number', min: 0, max: 1000, step: 0.05, unit: 'mm', fallback: 0, preview: true, tip: 'param.scatterMm.tip' },
     { key: 'scatterColor', kind: 'color', fallback: [1, 1, 1, 1], preview: true, tip: 'param.scatterColor.tip' },
     { key: 'scatterG', kind: 'number', min: -0.9, max: 0.9, step: 0.05, fallback: 0, preview: true, tip: 'param.scatterG.tip' },
+    // E9c: chromatic dispersion of solid glass, its Abbe number (0: none; 30–70 typical).
+    { key: 'abbe', kind: 'number', min: 0, max: 100, step: 1, fallback: 0, preview: true, tip: 'param.abbe.tip' },
   ],
   WOOD: [
     { key: 'woodColor1', kind: 'color', fallback: [0.56, 0.38, 0.21, 1], preview: true },

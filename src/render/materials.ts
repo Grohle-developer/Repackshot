@@ -4,8 +4,8 @@
 // glass (refraction, absorption, thin walls), the clear coat, opacity and
 // anisotropy (E5). E9: a scattering medium is approximated as a translucent
 // diffuse (the colour light comes back with, opaque when the medium is dense
-// for the part's size, see-through when it is sparse); the engine renders it
-// in Full.
+// for the part's size, see-through when it is sparse), and (E9c) the dispersion
+// of glass with three.js's own `dispersion`; the engine renders both in Full.
 
 import * as THREE from 'three';
 import { kelvinToRgb } from '../core/light-math';
@@ -67,6 +67,7 @@ export function applyMaterial(m: THREE.MeshPhysicalMaterial, inst: MaterialInsta
   m.specularIntensity = 1;
   m.attenuationDistance = Infinity;
   setLinear(m.attenuationColor, [1, 1, 1]);
+  m.dispersion = 0;
 
   switch (inst.family) {
     case 'SIMPLE': {
@@ -110,6 +111,10 @@ export function applyMaterial(m: THREE.MeshPhysicalMaterial, inst: MaterialInsta
         m.transmission *= clarity;
         m.roughness = Math.max(m.roughness, 0.35 * (1 - clarity));
       }
+      // E9c: dispersion as three.js defines it for glTF (KHR_materials_dispersion: 20 / Abbe number),
+      // on solid glass without a medium, as the engine (rt_core::integrator::dispersion).
+      const abbe = Math.max(0, num(p.abbe, 0));
+      m.dispersion = abbe > 0 && p.walls !== 'THIN' && !(mfp > 0) ? Math.min(2, 20 / abbe) : 0;
       break;
     }
     case 'WOOD': {
