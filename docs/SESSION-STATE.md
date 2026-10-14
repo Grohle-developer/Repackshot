@@ -30,6 +30,27 @@ editor de materiales por nodos (modelo, compilador, editor, vista Rápido). Cada
 | S2 cuerpos rígidos | `s2` | **Entregada** (`cb862bc`; capturas `docs/ui/physics-*.png`; puertas del motor en verde). Veredictos dados (ver abajo); el agente está fusionando la cabeza de la rama de sesión en `s2` (23 archivos: el panel de animación es el de N6 entero con el clip `PHYSICS` portado; `playheadPose` respeta `poseActive` de N6; Doctor: 14 + `aspect` + `physics`). Al recibirla: fusionar antes que S4a. |
 | M3a editor por nodos | `m3a` | **Fusionada en la rama de sesión** (5e898cb, trailers reescritos al fusionar; veredicto en `ROADMAP.md` §M3a). Si una sesión nueva ve esta fila es que la fusión está ya en `origin`; el árbol `Repackshot-m3a` se puede borrar. |
 
+## Corte por límite de uso (14-10, ~12:40 UTC) y puntos de control
+
+El límite de uso cortó a la vez a los seis agentes en marcha. Antes de
+reanudarlos (el límite se restableció a las 13:50 UTC) el responsable dejó
+cada árbol de trabajo en un *commit* y empujó todas las ramas `wip/`:
+
+| Agente | Dónde estaba | Punto de control |
+| --- | --- | --- |
+| S2 | fusión de la cabeza hecha (`a5e8f1f`) y `physics-check` sobre la línea de tiempo de N6 (`9f7bcad`); le falta fusionar M3a y el párrafo de veredicto | árbol limpio |
+| S4a | fusión de la cabeza resuelta, puertas sin correr | `70573e3` (merge commit WIP) |
+| U11 | documentación de E11 | árbol limpio en `89c82f7` |
+| E9 | ediciones del integrador de E9b (paredes, bandera *exact*, MIS) | `146edb0` (1 archivo) |
+| E6 | razonamiento de la madera en el ROADMAP y huecos; tela por empezar | `fb247b7` (3 archivos + 1 nuevo) sobre `0c4095f` |
+| O3a/O2 | párrafo final de O3a en el ROADMAP; O2 empezada (exportar la lente trazada en rt-wasm) | `304696f` (2 archivos + 1 nuevo) |
+
+Reanudados los seis con `SendMessage` (mismos ids de agente; no se crean
+agentes nuevos). Si una sesión nueva no tiene esos agentes, cada rama `wip/`
+contiene todo: crear el árbol de trabajo (receta al final) y lanzar un agente
+nuevo con el brief de la fase del ROADMAP y la orden de seguir desde el último
+*commit* (el mensaje de cada WIP dice dónde estaba).
+
 ## Veredictos dados a S2 y S4a (14-10, por si la sesión corta antes de que lleguen a `ROADMAP.md`)
 
 - **S2.** El cabezal en 0: confirmado como está hecho (los nodos que sostiene una simulación grabada enseñan su fotograma también en 0, visor y foto fija, y el *gizmo* se oculta sobre ellos): el fotograma 0 de una animación renderizada tiene que ser el inicio de la caída, y la foto fija sigue al cabezal, que la simulación deja al final. Densidades por familia: aceptadas como valores típicos (revisar en M4). Decisión 2 a medias (los clips crecen por el *store* dentro del único paso de deshacer): aceptada. El resto de «no encajó»: aceptado y anotado.
