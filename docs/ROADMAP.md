@@ -1491,6 +1491,28 @@ cerrar.
 - Los criterios de U11 y E10 citan `0xab15f290` y `0x223515c3`: con E9a
   son `0x7483f82e` y `0x51ade97c` (no se toca su texto).
 
+**Mutaciones de (a)** (cada una rompe a propósito una línea; entre
+paréntesis, los tests que fallan): quitar el lóbulo añadido del especular
+en `eval` (`rough_white_metal_reflects_everything_once_compensated`,
+`rough_metal_and_glass_come_out_white_in_a_furnace`,
+`rough_metal_never_gains_energy`); quitar su peso de la densidad de la
+mezcla (`no_material_reflects_more_than_it_receives` y otros dos); `F_ms` →
+`F_avg` (`smooth_surfaces_have_no_compensation_and_rough_ones_do`); quitar
+el factor de Turquin (`rough_glass_never_gains_energy`, el *furnace*);
+reflejar el vidrio rugoso con el Fresnel macroscópico (el *furnace* del
+vidrio); `MIN_COMPENSATED_ALPHA` = 0 (`smooth_surfaces_…`); buscar en `μ` en
+lugar de `√μ` (`energy_tables_are_what_the_generator_writes`,
+`the_energy_tables_are_within_half_a_percent_of_a_finer_integration`);
+quitar el lóbulo añadido del barniz (la primera vez no lo vio nadie: se
+añadió `the_extra_lobes_are_kulla_and_contys_shape_times_their_fresnel`);
+(a2) quitar la normalización de la capa difusa
+(`white_plastic_comes_out_white_in_a_furnace`), quitar el lóbulo añadido
+del albedo de la capa (`layers_pass_what_they_do_not_reflect`), normalizar
+sin el paso del barniz o atenuar con `under` en lugar de `passes`, y la
+media lisa a 0 (los dos anteriores). Sin test, y no es un sesgo: el peso
+del lóbulo añadido en la estimación de reflectancia que elige el lóbulo a
+muestrear (solo cambia la varianza).
+
 **Hecho (b) · medios dispersores dentro de sólidos.**
 
 - **Campos** (claves estables, al final): `MATL` pasa a 100 B con, en este
@@ -1589,6 +1611,9 @@ cerrar.
   (`1 − H(1) √(1 − a)`, su función H resuelta en el test): 0,4118 frente a
   0,4149 con albedo 0,9 y 0,7503 frente a 0,7527 con 0,99 (cota 2 %; es la
   referencia absoluta de la ruleta y del muestreo con albedo entre 0 y 1);
+  un emisor pequeño visto a través de una losa de una centésima de mfp
+  sigue nítido y conserva lo que el vidrio claro deja (0,918 frente a
+  0,914): lo que no dispersa sale refractando, no por el lóbulo;
   un medio gris (albedo 0,9 y 0,97) en un mundo uniforme da lo mismo con el
   lóbulo que con la frontera exacta (0,2787 frente a 0,2776 y 0,4501
   frente a 0,4496, cota 2 %: ahí el lóbulo es exacto y solo cuenta cuánto
@@ -1627,6 +1652,31 @@ cerrar.
   las nueve recetas en esferas y el frasco de E5 lleno de leche y de zumo
   de naranja, con y sin medio, y el de leche con fotones, a 64 y 256
   muestras, con el tiempo y los rayos por muestra de cámara.
+
+**Mutaciones de (b)**: albedo del lóbulo de salida `η²` → 1 (el
+*furnace*: 0,47); salir siempre sin reflejarse hacia dentro, o el Fresnel
+de salida sin reflexión total (los dos, invisibles al *furnace* blanco:
+{{MUTGREY}}); la fase al revés (`the_phase_function_is_a_density…`,
+`forward_scattering_sends_the_light_onwards`); las dimensiones del medio
+dentro de la tabla Sobol (`media_are_receivers_with_their_own_random_numbers`);
+un medio como *caster* (el mismo); Beer–Lambert además del paseo
+(`a_medium_that_only_absorbs_is_beer_lambert_in_every_channel`); quitar la
+división de la ruleta ({{MUTRR}}); un paseo que topa sin salir se pierde
+(el *furnace*, mfp 0,1); canal héroe fijo (Beer–Lambert); distancias con
+`2 σt` (Beer–Lambert, el *furnace*); el lóbulo sin `1/π` o su densidad del
+lado equivocado (el *furnace*, la leche); la BSDF de la superficie en el
+vértice de salida además de la decisión del paseo (el *furnace*); un paseo
+sin eventos saliendo por el lóbulo ({{MUTSPARSE}}); recoger los fotones del
+lado de dentro (`a_medium_behind_glass_gathers_its_photons_where_its_walks_leave`);
+sin el suceso recto del MIS, sin la regla de las paredes, o sin dejar al
+mapa la luz de fotones que cruza una pared
+(`a_medium_sees_the_lights_through_a_thin_glass_wall`). Sin test, y no es
+un sesgo: quitar el MIS espectral (un solo canal héroe con `f/p_héroe` es
+insesgado; el MIS solo baja la varianza). Del lado de la interfaz: el orden
+de los campos del registro, `scatterG` sin recortar, la fórmula de van de
+Hulst (el test la fija ahora: antes solo comprobaba los extremos), quitar
+la claridad del Rápido, el desgaste de la leche, la ayuda de *Dirección* y
+un número de las recetas de la hoja distinto del catálogo: todos fallan.
 
 **No encajó con el plan en (b).**
 
@@ -1691,8 +1741,9 @@ cerrar.
   de una esfera de leche sin vidrio (0,070), pero sigue por encima del
   suelo (0,03). Lo que queda es del propio medio: cada muestra sale por un
   punto distinto y su NEE elige una de tres luces y la cúpula, y el panel
-  de contraluz, el más potente, no se ve desde las salidas de delante
-  (la elección de luz por punto es E12).
+  de contraluz, el más potente, no se ve desde las salidas de delante.
+  Ese grano es de E12 (la elección de luz por punto) y de E13 (la NEE de
+  variedades a través del vidrio, en lugar de esta regla).
 - **Fallo encontrado con la hoja**: con cáusticas, el vértice de salida
   recogía los fotones con la normal de su lado (el de dentro) y no veía
   ninguno: un medio dentro de vidrio perdía toda la luz que le llega a
