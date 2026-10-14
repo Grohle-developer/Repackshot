@@ -1221,9 +1221,16 @@ Lo que no encajó con el plan:
   *Los dos* y cáusticas *Automático* (los valores por defecto).
 - ***Automático*** decide con un umbral de 20° para «luz pequeña» y
   cuenta el metal cepillado como *caster* a lo largo de su cepillo
-  (`r ⁴√(1 − 0,9 a)` ≤ 0,25), así que el tapón del frasco lo es. El umbral
-  es criterio visual: queda anotado como decisión pendiente (regla 11 de
-  `CLAUDE.md`).
+  (`r ⁴√(1 − 0,9 a)` ≤ 0,25), así que el tapón del frasco lo es.
+  **Decisión tomada (Fable): se quedan los dos.** *Automático* quiere decir
+  «encendidas cuando puede salir una cáustica nítida que el trazador solo
+  encontraría por casualidad», que es justo lo que da luciérnagas. Una luz
+  de más de 20° vista desde el objeto (un *softbox* de 1 m a menos de unos
+  2,8 m) da cáusticas tan blandas que el trazador las resuelve bien, y no
+  las enciende. Un metal cepillado bajo una luz pequeña sí echa al suelo
+  una estela de luz a lo largo del cepillo, así que cuenta. El coste
+  (≈ +24 %) solo se paga con una luz pequeña en escena, y *Apagadas* sigue
+  a mano.
 - **El coste en el visor *Completo*** se dice en el medidor (fotones por
   muestra) y en la ayuda, no en segundos.
 
