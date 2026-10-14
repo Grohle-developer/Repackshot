@@ -17,7 +17,7 @@ import { libraryFoot, mineCards, mineEmpty, mineRows, namePrompt, type MineSpec 
 import { section } from '../components/section';
 import { confirmBox, showConfirmIn, thumb } from '../components/widgets';
 import { h, icon } from '../dom';
-import { dyn, lightName, setupLabel, studioLabel } from '../names';
+import { cameraName, dyn, lightName, setupLabel, studioLabel } from '../names';
 import { dynamic, shallowEq, type Ctx, type Scope } from '../reactive';
 import { L, formatNumber, getLang, lbl, t, type StringKey } from '../strings';
 
@@ -488,7 +488,29 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
 }
 
 function cameraSection(ctx: Ctx, scope: Scope): HTMLElement {
-  return section(ctx, 'camera', t('section.camera'), cameraFields(ctx, scope, () => ctx.store.get().camera.active));
+  const { store } = ctx;
+  // The title says which camera these fields edit (the active one, by name): every camera has its own lens and
+  // placement. The pencil opens that camera's own inspector (name, Activate, Look through).
+  const title = h('span', null, t('section.camera'));
+  const who = h('span', { class: 'aux', 'data-camera-title': '' });
+  const pencil = h('button', { type: 'button', class: 'icon-btn', 'data-action': 'camera.edit' }, icon('edit', 14));
+  pencil.addEventListener('click', (e) => {
+    e.stopPropagation();
+    cmd.editCamera(ctx, store.get().camera.active);
+  });
+  const note = h('div', { class: 'note' });
+  scope.watch(
+    (s) => [s.camera.active, cameraName(s, activeCamera(s))] as const,
+    ([, name]) => {
+      who.textContent = name;
+      pencil.setAttribute('aria-label', t('cameras.edit', { name }));
+      pencil.setAttribute('data-tip', t('cameras.edit', { name }));
+      note.textContent = t('camera.editingNote', { name });
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
+  const body = h('div', { class: 'stack' }, note, cameraFields(ctx, scope, () => store.get().camera.active));
+  return section(ctx, 'camera', title, body, h('span', { class: 'row', style: 'gap:6px;align-items:center' }, who, pencil));
 }
 
 // --- Image ------------------------------------------------------------------------------

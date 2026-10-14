@@ -238,8 +238,13 @@ tapar la pieza:
   de selección coge también las caras ocultas). Con una luz o una cámara
   guardada seleccionada aparece el botón de texto **Mirar a través**
   (`Ctrl/⌘ ⇧ L`), que mientras se mira dice *Volver a la cámara activa*.
-- **Arriba a la derecha**: nombre de la cámara activa (clic: lista) y
-  resolución de salida actual (clic: abre la barra de render).
+- **Arriba a la derecha**: nombre de la cámara activa (clic: la lista de
+  cámaras, con la activa marcada, la óptica de cada una en pequeño, *85 mm
+  · f/5.6*, y un **lápiz** al final de cada fila que abre la ficha de esa
+  cámara en el inspector: nombre, *Activar*, *Mirar a través*, óptica y
+  posición; la pestaña *Cámaras* se abre con ella marcada; `→` desde la
+  fila va al lápiz y `←` vuelve) y resolución de salida actual (clic:
+  abre la barra de render).
 - **Abajo a la izquierda, medidor de calidad**: modo y motor activos,
   muestras acumuladas, tiempo, y un pequeño indicador de progreso. En
   *Rápido* dice literalmente *Rápido · vista previa rasterizada*; en
@@ -482,10 +487,13 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    ninguna. Un archivo que no se puede leer se avisa en un *toast* que
    dice qué le pasa. Sombra en el suelo y reflejo en el suelo
    (intensidad).
-4. **Cámara** — Preset de óptica (8 `LENS_PRESETS`), focal en mm (campo
-   arrastrable), diafragma (f/), distancia de enfoque + botón *Enfocar
-   con clic*, interruptor Perspectiva / Ortográfica, *Encuadrar*, y
-   *Guardar como cámara*.
+4. **Cámara** — Edita la **cámara activa**, y lo dice: la cabecera lleva
+   su nombre (*Cámara 1*) y un lápiz que abre la ficha de esa cámara
+   (nombre, *Activar*, *Mirar a través*); una nota recuerda que cada
+   cámara tiene su óptica y su posición. Preset de óptica (8
+   `LENS_PRESETS`), focal en mm (campo arrastrable), diafragma (f/),
+   distancia de enfoque + botón *Enfocar con clic*, interruptor
+   Perspectiva / Ortográfica, *Encuadrar*, y *Guardar como cámara*.
 5. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.

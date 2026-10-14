@@ -1496,13 +1496,22 @@ export function separateByCadFaces(ctx: Ctx, ids?: NodeId[]): void {
 
 /** Opens the inspector on a field of the selection and focuses it (Smoothing…, Rename from the viewport). */
 export function focusInspectorField(ctx: Ctx, field: string, section = 'part'): void {
-  ctx.ui.set({ rightCollapsed: false });
-  requestAnimationFrame(() => {
-    const sec = document.querySelector(`[data-section="${section}"]`);
-    if (sec?.hasAttribute('data-collapsed')) (sec.querySelector('.section-head') as HTMLElement | null)?.click();
+  revealInspectorSection(ctx, section, () => {
     const el = document.querySelector(`[data-field="${field}"]`) as HTMLElement | null;
     el?.scrollIntoView({ block: 'center' });
     (el?.matches('input, [tabindex]') ? el : (el?.querySelector('input, [tabindex]') as HTMLElement | null))?.focus();
+  });
+}
+
+/** Opens the right panel, expands an inspector section and scrolls it into view (without focusing anything). */
+export function revealInspectorSection(ctx: Ctx, section: string, then?: () => void): void {
+  ctx.ui.set({ rightCollapsed: false });
+  if (typeof document === 'undefined' || typeof requestAnimationFrame === 'undefined') return;
+  requestAnimationFrame(() => {
+    const sec = document.querySelector(`[data-section="${section}"]`);
+    if (sec?.hasAttribute('data-collapsed')) (sec.querySelector('.section-head') as HTMLElement | null)?.click();
+    if (then) then();
+    else sec?.scrollIntoView({ block: 'nearest' });
   });
 }
 
@@ -1664,6 +1673,18 @@ export function parseMaterialDrag(data: string): MaterialRef | null {
 export function newCamera(ctx: Ctx): void {
   const n = Object.keys(ctx.store.get().camera.cameras).length + 1;
   ctx.store.dispatch({ type: 'camera/add', name: t('cameras.default', { n }), label: L('undo.newCamera') });
+}
+
+/**
+ * Opens a camera's own inspector (name, Activate, Look through, lens and placement): selects it, so the inspector shows
+ * it with its name in the breadcrumb, shows the Cameras tab with it marked, and brings the section into view. The
+ * pencil of the viewport's camera list and of the scene's camera section.
+ */
+export function editCamera(ctx: Ctx, id: string): void {
+  if (!ctx.store.get().camera.cameras[id]) return;
+  ctx.ui.set({ sceneTab: 'cameras' });
+  ctx.store.dispatch({ type: 'scene/select', ids: [id], mode: 'set' });
+  revealInspectorSection(ctx, 'cameraEdit');
 }
 
 export function activateCamera(ctx: Ctx, id: string): void {

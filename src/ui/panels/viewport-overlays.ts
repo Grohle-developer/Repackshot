@@ -27,6 +27,7 @@ import { partMenu } from './part-menu';
 import { aimMenu } from './scene';
 import { lightMenuItems, primitiveMenuItems } from './add-menu';
 import { openScalePanel } from './scale-panel';
+import { cameraMenuEntries } from '../camera-menu';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -133,14 +134,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
 function topRight(ctx: Ctx, scope: Scope): HTMLElement {
   const { store } = ctx;
   const camBtn = h('button', { type: 'button', class: 'ov-text-btn', 'aria-haspopup': 'menu', 'data-tip': t('viewport.cameraList') });
-  camBtn.addEventListener('click', () => {
-    const s = store.get();
-    openMenu(
-      camBtn,
-      Object.values(s.camera.cameras).map((c) => ({ label: cameraName(s, c), checked: c.id === s.camera.active, run: () => cmd.activateCamera(ctx, c.id) })),
-      'end',
-    );
-  });
+  camBtn.addEventListener('click', () => openMenu(camBtn, cameraMenuEntries(ctx), 'end'));
   const resBtn = h('button', { type: 'button', class: 'ov-text-btn', 'data-tip': t('viewport.output'), onclick: () => cmd.openRenderWindow(ctx) });
   scope.watch(
     (s) => [s.camera, s.render.width, s.render.height],

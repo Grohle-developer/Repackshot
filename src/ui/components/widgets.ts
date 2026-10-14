@@ -195,9 +195,16 @@ export interface MenuEntry {
   /** Tooltip; on a disabled entry it also says "coming soon". */
   note?: string;
   kbd?: string;
+  /** Quiet text at the right of the label (a camera's lens, a size). */
+  aux?: string;
   run?(): void;
   /** Entries of a submenu, opened to the side (hover, click or the right arrow). */
   submenu?: MenuItems;
+  /**
+   * A second, smaller button at the right end of the row (the pencil that edits a camera): its own tooltip and
+   * action, run instead of `run`. The right arrow moves from the row to it and the left arrow back.
+   */
+  action?: { icon: IconName; label: string; run(): void };
 }
 
 /** Menu content: entries, `null` separators and headings. */
@@ -271,11 +278,46 @@ export function menuList(entries: MenuItems, close: () => void): HTMLElement {
       e.checked !== undefined ? h('span', { class: 'check' }, e.checked ? icon('check', 14) : null) : e.icon ? icon(e.icon, 16) : null,
       h('span', null, e.label),
       sub
-        ? h('span', { class: 'menu-right' }, icon('chevronRight', 14))
-        : e.kbd || e.disabled
-          ? h('span', { class: 'menu-right' }, e.disabled && e.note ? h('span', { class: 'aux' }, t('common.comingSoon')) : null, e.kbd ? h('kbd', null, e.kbd) : null)
+        ? h('span', { class: 'menu-right' }, e.aux ? h('span', { class: 'aux' }, e.aux) : null, icon('chevronRight', 14))
+        : e.kbd || e.disabled || e.aux
+          ? h(
+              'span',
+              { class: 'menu-right' },
+              e.aux ? h('span', { class: 'aux' }, e.aux) : null,
+              e.disabled && e.note ? h('span', { class: 'aux' }, t('common.comingSoon')) : null,
+              e.kbd ? h('kbd', null, e.kbd) : null,
+            )
           : null,
     );
+    // The row's trailing action: a sibling button (a button inside a button is not HTML), in a flex row.
+    const action = !sub && e.action ? e.action : null;
+    const actionBtn = action
+      ? h(
+          'button',
+          { type: 'button', class: 'menu-action', 'aria-label': action.label, 'data-tip': action.label, disabled: e.disabled },
+          icon(action.icon, 14),
+        )
+      : null;
+    if (action && actionBtn) {
+      actionBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        close();
+        action.run();
+      });
+      actionBtn.addEventListener('keydown', (ev) => {
+        if (ev.key === 'ArrowLeft') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          item.focus();
+        }
+      });
+      item.addEventListener('keydown', (ev) => {
+        if (ev.key === 'ArrowRight') {
+          ev.preventDefault();
+          actionBtn.focus();
+        }
+      });
+    }
     if (sub) {
       item.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -298,13 +340,16 @@ export function menuList(entries: MenuItems, close: () => void): HTMLElement {
         e.run?.();
       });
     }
-    el.appendChild(item);
+    el.appendChild(actionBtn ? h('div', { class: 'menu-row' }, item, actionBtn) : item);
   }
   // Up and down move between the items of this level.
   el.addEventListener('keydown', (ev) => {
     if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
-    const items = [...el.children].filter((c): c is HTMLButtonElement => c instanceof HTMLButtonElement && !c.disabled);
-    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    // The items of this level: direct children, or inside a `.menu-row` (an item with a trailing action).
+    const items = [...el.querySelectorAll<HTMLButtonElement>(':scope > .menu-item, :scope > .menu-row > .menu-item')].filter((c) => !c.disabled);
+    const active = document.activeElement as HTMLElement | null;
+    const current = active?.classList.contains('menu-action') ? (active.parentElement?.querySelector('.menu-item') as HTMLButtonElement | null) : (active as HTMLButtonElement | null);
+    const i = current ? items.indexOf(current) : -1;
     if (i < 0) return;
     ev.preventDefault();
     ev.stopPropagation();
