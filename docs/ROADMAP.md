@@ -1896,6 +1896,78 @@ la cámara trazada ≤ 25 % del render del ejemplo con la doble Gauss a
 dan ojo de gato, burbuja, cremoso y remolino, **con veredicto de
 Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
 
+## P5 · Actualizar desde la aplicación — **Sonnet**
+
+**Qué.** Petición del usuario: hoy *Ajustes ▸ Actualizaciones ▸
+Descargar* abre el instalador en el navegador; debe **instalar la
+actualización y reiniciar la aplicación** desde dentro, preguntando antes
+por los cambios sin guardar.
+
+1. **Pregunta** (solo si el proyecto tiene cambios): «¿Guardar los
+   cambios de «X» antes de actualizar?» con **Guardar**, **Guardar
+   como…** y **Salir sin guardar**; `Esc` cancela (`UI.md` §4.3, en el
+   sitio). *Guardar* y *Guardar como…* siguen solo si el proyecto se
+   escribió de verdad. Es la misma pregunta de cerrar, con el tercer
+   botón: `afterUnsavedCheck` gana *Guardar como…* para todos los usos
+   (cerrar, nuevo, abrir), que es lo coherente.
+2. **Escritorio instalado (Windows)**: el lanzador descarga el
+   `-setup.exe` de la release (el mismo `curl` de los modelos, con
+   progreso), descarga `SHA256SUMS.txt` y **comprueba la suma** con el
+   `sha256` propio (si no cuadra, no se instala y se dice); lanza el
+   instalador en silencio, `setup.exe /S /LAUNCH`, suelto del proceso, y
+   la aplicación sale limpiamente (la ventana se cierra). El instalador
+   (`packaging/windows/installer.nsi`, sin *plugins*): espera hasta 30 s a
+   que `repackshot.exe` quede libre (bucle `FileOpen` en modo escritura
+   con `Sleep`), instala, y con `/LAUNCH` arranca la aplicación al acabar
+   (también en silencio). Un test de contrato lee el `.nsi` como texto y
+   comprueba el bucle de espera y el `/LAUNCH`, como hizo U10.
+3. **Portable (Windows y Linux)**: el lanzador descarga el portable
+   (`.zip` o `.tar.gz`), comprueba la suma, lo extrae a
+   `<carpeta del exe>/update-<tag>/` (el `zip` propio del motor de
+   ejecución de IA; en Linux `tar.gz` con el `tar` del sistema, como
+   `curl`), y se **sustituye a sí mismo**: renombra el ejecutable en uso
+   a `repackshot.old(.exe)` (un ejecutable en uso se puede renombrar,
+   no sobrescribir), mueve los archivos nuevos a su sitio sin tocar
+   `data/` ni `portable.txt`, arranca el nuevo ejecutable suelto con
+   `--after-update` y sale; el nuevo, al arrancar, borra los `.old` y la
+   carpeta `update-*`. Si algo falla a medias, deja lo viejo donde estaba
+   (orden: extraer todo primero, renombrar después) y lo dice.
+4. **Interfaz**: en *Ajustes ▸ Actualizaciones*, cuando hay versión
+   nueva el botón principal es **Instalar y reiniciar** (en la web sigue
+   *Descargar*, que abre la release, y lo dice); *Notas* se queda. La
+   fila enseña el progreso: *Descargando… 45 % · 3,2 de 7,1 MB*,
+   *Comprobando*, *Instalando… la aplicación se reiniciará*; los fallos
+   (descarga, suma, sin espacio, no es portable ni instalado) en la fila
+   con *Reintentar*. El aviso de inicio (cuando hay versión nueva) ofrece
+   el mismo *Instalar y reiniciar*. Mientras se descarga se puede cerrar
+   *Ajustes*; el progreso sigue en la fila al volver.
+5. **API del lanzador** (`rt-app`, documentada en su README):
+   `POST /api/update/install` `{tag, assetUrl, sumsUrl}` → `202` y
+   `GET /api/update` `{state: IDLE|DOWNLOADING|VERIFYING|INSTALLING|
+   FAILED, received, total, error, message}`; `POST /api/update/cancel`.
+   Solo URLs `https://github.com/<owner>/<repo>/releases/download/…` del
+   *feed* configurado (lista blanca, como el resto de descargas).
+
+**Depende de.** P2, P3e, U6 (Buscar actualizaciones).
+
+**Criterio.** Test TS: con cambios sin guardar la pregunta tiene los
+tres botones y cancela con `Esc`; *Guardar como…* escribe y sigue; sin
+cambios no pregunta; la petición al lanzador lleva la URL del activo
+que toca (instalador o portable según el modo) y nunca una URL fuera de
+la lista blanca; cadenas `es`/`en`. Test Rust: una suma que no cuadra
+no instala; la sustitución del portable sobre una carpeta de prueba con
+un ejecutable falso deja los archivos nuevos, el `.old`, `data/`
+intacta y el relanzamiento con `--after-update`; el arranque posterior
+limpia; el contrato del `.nsi`. Comprobación en navegador
+`tools/update-install-check.mjs` contra el lanzador real y un servidor
+local que hace de GitHub (release falsa, activo falso con su
+`SHA256SUMS.txt`): el camino portable de Linux de punta a punta (la
+aplicación se reinicia con la versión nueva, en una copia en
+`out/update-check/`), y el de Windows solo hasta «lanzar el instalador»
+(Wine no ejecuta NSIS: anotarlo). Captura `docs/ui/update-install.png`.
+La primera actualización real desde la aplicación será de la versión
+que lleve esto a la siguiente: apuntarlo en las notas de la release.
+
 ## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
 
 **Qué.** Primero el **bisel de aristas en el sombreado** (decisión Fable,
