@@ -2706,7 +2706,10 @@ S4a). Lo que se decidió al resolver:
   (partículas `0xe38b8480`, igual), E9 `0x5b5ea281`, ejemplo con *denoise*
   `0x2a430f92`; los de los pases, iguales. Con U11, U11b y E11 (segunda
   unión): E11 `0x3d8f85de` → `0xd01702ce` (su escena es el ejemplo con el
-  filtro fino: le llega E9a); los demás no se mueven; los *fixtures* RSB
+  filtro fino: le llega E9a) y el ejemplo con el *denoise* del visor (U11) a
+  2 y 4 spp `0x17514303` → `0x7000ceb2` y `0x6db6039b` → `0x5318d4c5`;
+  los demás no se mueven; las 88 miniaturas de los montajes se vuelven a
+  renderizar; los *fixtures* RSB
   crecen 12 B por el `RNDR` de 64 B (el de E9, 10 816 B). La sección de E9
   en `ARCHITECTURE.md` pasa a ser §5.2 sexies (E11 tomó la quinquies). Los números de los tests de (a),
   (b) y (c) (*furnace*, medios, prismas) no se mueven en cuatro cifras: sus

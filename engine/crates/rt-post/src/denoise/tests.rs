@@ -468,8 +468,8 @@ fn the_example_denoised_for_the_viewport_has_a_pinned_hash() {
 
 /// Pinned hashes of the example image at 2 and 4 samples per pixel denoised with
 /// [`Preset::VIEWPORT`].
-pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_2SPP: u32 = 0x1751_4303;
-pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_4SPP: u32 = 0x6db6_039b;
+pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_2SPP: u32 = 0x7000_ceb2;
+pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_4SPP: u32 = 0x5318_d4c5;
 
 // ------------------------------------------------------------------ the strength (U11b)
 
