@@ -5335,19 +5335,25 @@ que todo sirva también para animaciones. Son S2, S9 y S7 de
    deshacible; **Reiniciar** vuelve a la pose previa. Nativo no hace
    falta en v1 (el escritorio usa la misma interfaz).
 3. **La barra de físicas** (abajo, junto a la de animación): ▶ Iniciar ·
-   ⏸ Parar · ↺ Reiniciar, tiempo simulado, cuerpos despiertos, estado
-   (*parado* por defecto). El medidor dice lo que el simulador dice
+   ⏸ Pausar / ▶ Reanudar · ■ Parar · ↺ Reiniciar, tiempo simulado,
+   cuerpos despiertos, estado (*parado* por defecto). Pausar congela la
+   simulación donde está (las telas, los líquidos y la lluvia son caros:
+   el usuario decide cuándo seguir); Parar la confirma; Reiniciar la
+   deshace. El medidor dice lo que el simulador dice
    (regla 10). Una sección **Físicas** en el inspector de pieza: papel
    (estático / dinámico / tela / líquido), masa por densidad (tabla por
    familia de material; se puede fijar), rozamiento, rebote, *como
    piezas* (un grupo cae como un cuerpo o cada pieza por su cuenta).
 4. **Dormir.** Un cuerpo con velocidad bajo umbral durante 0,5 s duerme;
    con todos dormidos la simulación se para sola y confirma la pose.
-5. **Animación.** *Grabar como animación*: la simulación muestreada a
-   los fps del proyecto entra como clip de movimiento nuevo `PHYSICS`
-   (pista horneada: posiciones y cuaterniones por fotograma, `f32`,
-   guardada con el proyecto) que la línea de tiempo de N1 reproduce como
-   cualquier otro clip. Las telas y los líquidos guardan su malla por
+5. **Animación.** **Toda simulación entra sola en la animación** (petición
+   del usuario, 14-10): al iniciar, nace un clip de movimiento `PHYSICS`
+   en la línea de tiempo (pista horneada: posiciones y cuaterniones por
+   fotograma a los fps del proyecto, `f32`, guardada con el proyecto) que
+   crece mientras la simulación corre, se queda donde se para y la línea
+   de tiempo de N1 reproduce como cualquier otro clip; *Reiniciar* lo
+   quita (deshacible). No hay un paso aparte de «grabar»: la foto fija
+   usa el fotograma del cabezal, y la animación ya tiene la simulación. Las telas y los líquidos guardan su malla por
    fotograma en una caché junto al proyecto (clave = *hash* de
    parámetros + geometría + semilla + versión).
 6. **Orden.** S2 ahora (base de todo); S9 y S7 después de S2, cuando la
@@ -5428,6 +5434,71 @@ vidrio; material vidrio con absorción. Barra, *Grabar* y caché de S2.
 **Criterio.** Un litro vertido en un vaso cerrado conserva el volumen
 ± 3 %; la miel tarda ≥ 5× más que el agua en nivelarse (test); nada
 atraviesa el vaso; determinismo; hoja `out/liquid-sheet.html`.
+
+### S3 · Lluvia y polvo sobre el set y sobre la lente — **Opus** (tras S4a y S2)
+
+Petición del usuario (14-10): la lluvia de S4a cayendo sobre el set y la
+pieza y **resbalando** de forma realista; el polvo **asentándose**; y que
+gotas y polvo puedan afectar **a la lente** o no, como un cristal por
+delante. Es cálculo caro: va en el *worker* de físicas con Pausar /
+Reanudar, con caché y entra solo en la animación (§3 y §5 de arriba).
+
+**Qué.**
+1. **Gotas sobre superficies.** Una partícula de lluvia de S4a que toca
+   una superficie (su recorrido es determinista por semilla: los
+   aterrizajes son eventos reproducibles) nace como **gota**: casquete
+   esférico pegado a la superficie (esfera con el centro bajo ella, el
+   motor ya traza esferas: S4a), con material agua (vidrio IOR 1,33). Las
+   gotas **crecen al juntarse**, quedan **ancladas** por la histéresis
+   del ángulo de contacto del material (mojabilidad por familia:
+   vidrio, plástico, metal, papel, pintura; tabla en `src/data/`) y
+   **resbalan** cuando su peso a lo largo de la tangente la vence,
+   dejando un **rastro mojado** (película fina: baja la rugosidad y
+   oscurece lo poroso: máscara de humedad en el material) y recogiendo
+   las gotas que encuentran; en una arista **gotean** (vuelven a ser
+   partículas que caen) y al chocar salpican (gotas secundarias). Nieve:
+   se acumula como capa (perfil de S4a) y no resbala.
+2. **Polvo asentado.** Campo de cobertura por superficie (rejilla de
+   téxeles por pieza o por vértice) que acumula lo que el flujo de polvo
+   de S4a deposita (exposición hacia arriba × tiempo × densidad), con
+   **ángulo de reposo** (de las caras empinadas se desprende) y que la
+   lluvia **limpia** por donde pasa el rastro. Se renderiza como capa
+   (difuso grisáceo que sube la rugosidad, mezclado por cobertura) con
+   motas visibles (discos minúsculos de S4a donde la cobertura es alta).
+3. **El cristal de la lente.** En Cámara ▸ Lente ▸ Filtros, **Cristal
+   frontal** (sí/no): una lámina pegada a la cámara a la distancia del
+   elemento frontal (20–40 mm de la pupila, según la lente) sobre la que
+   caen la lluvia y el polvo de los efectos de la escena con los mismos
+   modelos (las gotas resbalan según el *arriba* de la cámara; el polvo
+   se asienta si mira hacia arriba). Es **geometría real** delante del
+   objetivo: los rayos de cámara la atraviesan y cada gota refracta
+   como la lente que es (manchas invertidas y muy desenfocadas, como en
+   una foto de verdad), el polvo son motas oscuras y suaves. Mandos
+   manuales para una foto fija sin simular: cantidad de gotas, tamaño,
+   polvo, semilla. Sin el cristal, nada toca la lente.
+4. **Simulación.** En `rt-phys` (paso fijo, determinista), con la barra
+   de físicas (Pausar / Reanudar), caché junto al proyecto (gotas por
+   fotograma, cobertura por fotograma, clave = *hash* de parámetros +
+   geometría + semilla + versión) y el clip `PHYSICS` automático (§5).
+   El visor Rápido enseña las gotas como esferas y la cobertura como
+   tinte; el motor renderiza lo real.
+
+**Depende de.** S4a (partículas y primitivas), S2 (`rt-phys`, barra,
+caché, clip), O1 (`LENS`: la distancia del elemento frontal).
+
+**Criterio.** Tests: una gota sobre vidrio inclinado 30° se queda hasta
+el radio crítico de la tabla y resbala por encima (test numérico contra
+el equilibrio tangente/ángulo de contacto); dos gotas que se tocan
+suman volumen (± 1 %); el rastro limpia el polvo; la cobertura de polvo
+en una cara a 60° es < 10 % de la horizontal; el cristal frontal con 0
+gotas y 0 polvo deja el render bit a bit igual que sin cristal;
+determinismo y caché reproducible; el clip existe tras iniciar y
+desaparece con Reiniciar (deshacible). Hoja `out/rain-dust-sheet.html`:
+la botella bajo lluvia a 0, 2, 5 y 15 s (gotas, rastros, goteo), polvo a
+0, 30 y 120 s, y la misma foto con el cristal frontal mojado y con
+polvo; a ojo (veredicto **Fable**). Capturas `docs/ui/physics-rain.png`,
+`docs/ui/lens-glass.png`. `SPEC.md`, `UI.md`, `ARCHITECTURE.md`,
+CHANGELOG.
 
 ## M5 · Tejido hilo a hilo y pelusa real — **Opus**, veredicto **Fable** (tras E6 y E9; la pelusa tras S8)
 
