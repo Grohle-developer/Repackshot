@@ -1421,6 +1421,360 @@ de vidrio y clave sola), el relMSE del adaptativo a igual tiempo es ≤
 0,6 × el uniforme (medido y en el PR); determinismo 1/4/16 hilos y
 teselas de dos tamaños; con el *flag* apagado, `0x223515c3` intacto.
 
+## Materiales y sets con efecto — decisión **Fable** (tras v0.1.5)
+
+Petición del usuario: importar materiales con sus normales, UV y
+texturas; crear y editar materiales con un sistema de nodos al uso; una
+capa de realismo en nuestros materiales; y montajes de luz que no se vean
+todos iguales. Cuatro cosas distintas, cuatro fases.
+
+**Por qué los montajes se ven iguales (diagnóstico Fable).** Un montaje
+hoy es solo la *forma* de la luz (fuentes, posición, tamaño, tono), con
+el nivel fijado por el tipo de producto, sobre el mismo fondo plano
+oscuro y el mismo suelo, y su miniatura es siempre un anillo mate con la
+misma cámara y la misma exposición. Pero la foto de producto no la hace
+la luz sola: la hacen la luz **y lo que se refleja** (tarjetas blancas y
+negras que dibujan los cantos de un cromado o la tira limpia de una
+botella), el **fondo** (un degradado con un charco de luz detrás del
+producto, un barrido, un fondo luminoso), el **suelo** (negro brillante
+con reflejo, espejo, blanco mate) y el **contraste de tono** (clave cálida
+y contra fría). Un montaje que solo mueve paneles no puede sorprender.
+
+**Decisión.** Un montaje pasa a ser un **set**: luces + tarjetas +
+fondo + suelo + exposición + entorno (+ una cámara sugerida), con una
+razón fotográfica escrita en la ayuda. Se añaden 16 sets diseñados
+(estilo nuevo `SETS`, el primero de la lista) y los 16 rigs de tipo de
+producto se rediseñan con los mismos criterios; los 72 montajes
+anteriores se quedan (claves estables) y pasan al final de la lista, con
+las miniaturas de todos re-renderizadas por el motor con el mismo
+sistema, cada set sobre el objeto para el que está pensado. Los sets se
+construyen con lo que ya existe (luces L4, primitivas U9 como tarjetas,
+barrido y suelo, materiales del catálogo, fondo plano o imagen de
+degradado, fuerza del entorno, exposición): nada nuevo en el motor.
+Fuentes (principios, no tablas): la «familia de ángulos» y el campo
+claro/oscuro de Hunter, Biver y Fuqua, *Light: Science & Magic*; las
+proporciones clásicas de clave/relleno; la práctica habitual del *still
+life* de estudio.
+
+**Orden.** Ahora, en paralelo con la ola A y sin tocar el motor: **L6**
+y **M2a**. Después, por este orden: **M3a** (en cuanto U11 libere la
+máquina), **M2b** y **M3b** (motor, tras E9 y E6), **M4** (tras E9, E6 y
+M2b). La máquina tiene 4 núcleos: cinco agentes a la vez es el tope, y
+los que no tocan el motor no compilan Rust (usan `/home/user/bin/rt` y
+el `rt.wasm` ya construido).
+
+## L6 · Sets de estudio con criterio fotográfico — **Opus**, diseño **Fable**
+
+**Qué.** `LightSetup` gana campos opcionales (los 72 montajes antiguos no
+cambian): `backdrop` (`FLAT` color; `GRADIENT` dos colores, arriba y
+abajo, como imagen de fondo generada; `SWEEP` fondo infinito de U9 con
+material y color, que recibe luz y sombra), `pool` (un *spot* aimed al
+fondo tras el producto: `az`, `el`, cono, `share`, kelvin: el charco de
+luz), `floor` (`CATCHER` atrapasombras; `MATTE` suelo del motor con
+color; `GLOSSY` y `MIRROR`: un plano primitivo bajo el producto con un
+material del catálogo —acrílico negro brillante, acrílico blanco, espejo
+negro—), `cards` (planos primitivos con materiales de catálogo nuevos
+*Tarjeta blanca* 0,92 mate, *Tarjeta negra* 0,02, *Tarjeta plateada*
+aluminio cepillado; `az`, `el`, `dist`, `size`, `sizeY`, giro; por
+construcción fuera del encuadre: `|az| ≥ 55°` o `el ≥ 60°`, y un test
+lo comprueba con la focal del tipo de producto), `exposureEv` (desvío
+sobre el del tipo de producto), `envStrength`, `kelvin` por luz (ya
+existe), `camera` sugerida (`el`, `focalMm`: no se aplica sola; un botón
+*Usar la cámara del set*), `hero` (el objeto de la miniatura: `BOTTLE`,
+`BOX`, `RING`, `CHROME`, `SHOE`, `SPHERES`) y `why` (`Label`: la razón
+fotográfica, dos frases, en la ayuda de la miniatura). Aplicar un set
+crea sus primitivas (tarjetas, barrido, suelo) marcadas como *del set*
+(decoración: no cuentan para el tamaño de pieza, el Doctor ni *Encuadrar
+el producto*) y aplicar otro las sustituye sin tocar las piezas del
+usuario; *Restablecer al montaje* las quita. Una entrada de deshacer.
+
+**Los 16 sets** (números de partida en tamaños de pieza; el agente los
+afina sobre la hoja de contactos y Fable da el veredicto, regla 11):
+
+1. `STRIP_EDGE` **Tira larga y canto negro** (botella, cosmética).
+   Clave: tira 0,35 × 4,5 a `az −115, el 25, dist 3`, 5300 K, 55 %;
+   relleno: panel 3 × 3 a `az 70, el 20, dist 3,5`, 25 %, `glossy
+   false`; contra: tira 0,3 × 3 a `az 160, el 30`, 20 %. Tarjetas: negra
+   2 × 5 a `az 60, el 15, dist 1,6` (dibuja el canto); blanca 2 × 4 a
+   `az −60, el 10, dist 2`. Fondo `GRADIENT` 0,10→0,02 con `pool` a
+   `az 180, el 10`, cono 25°, 15 %. Suelo `GLOSSY` negro. EV −0,3.
+   Cámara `el 8, 85 mm`. Héroe `BOTTLE`. Por qué: una sola tira limpia
+   recorre la botella de arriba abajo y el canto negro la separa del
+   fondo; el reflejo en el suelo la asienta.
+2. `DARK_FIELD` **Campo oscuro** (vidrio, perfume). Sin luz frontal: dos
+   tiras 0,4 × 4 a `az ±135, el 15, dist 2,8`, 40 % cada una, justo
+   fuera del encuadre; cenital débil 2 × 2 a `el 85`, 20 %, `glossy
+   false`. Fondo `FLAT` 0,01; `envStrength 0`. Suelo `GLOSSY` negro.
+   Tarjetas negras 3 × 4 a `az ±70, el 10, dist 1,8`. EV −0,5. Héroe
+   `BOTTLE`. Por qué: el vidrio solo se ve por sus bordes; sobre negro,
+   dos tiras detrás los dibujan en blanco (Hunter et al., *dark-field*).
+3. `BRIGHT_FIELD` **Campo claro** (vidrio, transparentes). Fondo
+   luminoso: panel 6 × 6 a `az 180, el 10, dist 3`, `camera true`,
+   60 %; cenital 3 × 3 a `el 80`, 20 %; relleno 2 × 2 a `az 0, el 20`,
+   20 %, `glossy false`. Tarjetas negras 2 × 5 a `az ±65, el 10, dist
+   1,6`. Suelo `GLOSSY` blanco (acrílico). EV +0,3. Héroe `BOTTLE`. Por
+   qué: sobre blanco el vidrio se dibuja con bordes negros, que ponen
+   las tarjetas, no la luz.
+4. `HIGH_KEY_WHITE` **Blanco infinito** (e-commerce). Fondo `SWEEP`
+   blanco 0,9; cenital 5 × 4 a `el 75, az 0, dist 2,6`, 45 %; dos
+   laterales 2 × 4 a `az ±95, el 20`, 20 % cada una; relleno frontal 3 ×
+   3 a `az 0, el 25`, 15 %, `glossy false`. Suelo `GLOSSY` blanco, sombra
+   suave. EV +0,5. Héroe `BOX`. Por qué: el fondo quemado a blanco y la
+   sombra de contacto apenas visible es el estándar de tienda.
+5. `JEWEL_BOX` **Caja de luz con negros** (joyería). Carpa de cuatro
+   paneles 3 × 3 a `az ±60, ±120, el 30, dist 2,5`, 15 % cada uno, y
+   cenital 3 × 3, 20 %; *spot* duro 0,05 a `az −40, el 55, dist 3`,
+   10 %, cono 12° (chispa, cáusticas on); tarjetas negras 2 × 2 a `az 0,
+   el 70, dist 1,5` (el oro necesita reflejos oscuros para leerse como
+   oro) y 2 × 3 a `az −30, el 5`. Fondo `GRADIENT` 0,06→0,015. Suelo
+   `GLOSSY` negro. EV 0. Cámara `100 mm`. Héroe `RING`. Por qué: luz
+   envolvente para que la piedra brille, y negros colocados para que el
+   metal tenga forma.
+6. `CHROME_FAMILY` **Familia de ángulos** (reloj, cromados). Un panel
+   grande con degradado de dos paneles: 4 × 4 a `az −35, el 45, dist 2,2`,
+   50 %, y 2 × 4 superpuesto a `az −25, el 50, dist 2,0`, 20 %; tarjeta
+   negra 4 × 4 a `az 50, el 35, dist 1,8` y plateada 2 × 3 a `az 120, el
+   10`; contra tira 0,3 × 3 a `az 170, el 20`, 15 %; relleno 15 %
+   `glossy false`. Fondo `GRADIENT` 0,12→0,03. Suelo `GLOSSY` negro.
+   EV −0,2. Héroe `CHROME`. Por qué: un cromado solo muestra lo que
+   refleja; se le pone delante un degradado grande y un negro limpio.
+7. `RAKING_TEXTURE` **Rasante con relleno** (calzado, textil, piel).
+   Clave tira 4 × 0,8 a `az −85, el 10, dist 3`, 4800 K, 65 %, `spread
+   60`; relleno 4 × 3 a `az 55, el 30, dist 3,6`, 6200 K, 20 %, `glossy
+   false`; contra 0,3 × 3 a `az 150, el 35`, 15 %. Fondo `SWEEP` gris
+   0,25. Suelo `MATTE` 0,3, sombra. EV 0. Cámara `el 15, 50 mm`. Héroe
+   `SHOE`. Por qué: la trama se lee con luz rasante, y la clave cálida
+   contra el relleno frío separa volumen de superficie.
+8. `BLACK_ON_BLACK` **Negro sobre negro** (electrónica). Dos tiras 0,3 ×
+   4 a `az ±150, el 30, dist 2,6`, 35 % cada una; relleno frontal 2 × 2 a
+   `az 0, el 20`, 8 %, `glossy false`; `pool` a `az 180, el 5`, cono 20°,
+   22 %, 6500 K. Fondo `FLAT` 0,01. Suelo `GLOSSY` negro. `envStrength
+   0,1`. EV −0,6. Héroe `BOX`. Por qué: un producto negro se dibuja por
+   dos líneas de luz en sus cantos y un halo tenue detrás.
+9. `WARM_WINDOW` **Ventana cálida** (alimentación, hogar). Clave 5 × 4 a
+   `az −65, el 40, dist 2,4`, 4300 K, 70 %; relleno 3 × 3 a `az 40, el
+   15, dist 3,5`, 6500 K, 15 %, `glossy false`; tarjeta negra 3 × 4 a
+   `az 75, el 10, dist 1,8` (relleno negativo). Fondo `SWEEP` 0,35 ×
+   (1, 0,9, 0,8). Suelo `MATTE` 0,35. EV 0. Héroe `SPHERES`. Por qué:
+   una ventana lateral grande y un lado dejado en sombra es la luz de
+   mesa de toda la vida.
+10. `BACKLIT_LIQUID` **Contraluz líquido** (bebidas). Contra panel 2 × 3
+    a `az 180, el 8, dist 2,2`, 55 %, `camera false`; dos tiras de canto
+    a `az ±130, el 20`, 15 % cada una; relleno frontal 2 × 2, 10 %
+    `glossy false`; tarjeta blanca 2 × 2 a `az 0, el 65, dist 1,4`.
+    Fondo `GRADIENT` 0,08→0,02. Suelo `GLOSSY` negro. Cáusticas on.
+    EV −0,2. Héroe `BOTTLE`. Por qué: el líquido se enciende cuando la
+    luz lo atraviesa hacia la cámara.
+11. `TEAL_ORANGE` **Cine cálido-frío**. Clave 3 × 3 a `az −45, el 35,
+    dist 2,8`, 3800 K, 55 %; contra tira 0,3 × 3 a `az 140, el 25`, color
+    (0,55, 0,8, 1), 25 %; relleno 10 % 5600 K; `pool` 8000 K a `az 180,
+    el 10`, 10 %. Fondo `GRADIENT` (0,03, 0,06, 0,08)→0,01. Suelo
+    `GLOSSY` negro. EV −0,3. Héroe `BOTTLE`. Por qué: dos temperaturas
+    opuestas en clave y contra es el contraste de color que más se usa
+    en cine.
+12. `POP_COLOR` **Color pop**. Fondo `SWEEP` color (0,95, 0,55, 0,45);
+    cenital 4 × 4 a `el 70`, 45 %; dos tiras 0,4 × 4 a `az ±110, el 20`,
+    colores complementarios (0,4, 0,7, 1) y (1, 0,85, 0,5), 20 % cada
+    una; relleno 15 % `glossy false`. Suelo = fondo, `MATTE`. EV +0,2.
+    Héroe `BOX`. Por qué: el color de fondo saturado y dos contras de
+    color son el lenguaje de la tienda en redes.
+13. `GRADIENT_POOL` **Fondo degradado con foco** (catálogo). Clave 3 ×
+    2,5 a `az −40, el 40, dist 2,8`, 50 %; relleno 3 × 3 a `az 60, el 20`,
+    20 % `glossy false`; contra 0,3 × 3 a `az 165, el 30`, 15 %; `pool`
+    a `az 180, el 15`, cono 30°, 15 %. Fondo `SWEEP` gris 0,45. Suelo
+    `GLOSSY` gris claro. EV 0. Héroe `SPHERES`. Por qué: el charco de luz
+    detrás separa el producto y da profundidad a un fondo neutro.
+14. `MIRROR_FLOOR` **Suelo espejo** (perfume, cosmética). Suelo `MIRROR`
+    (espejo negro); cenital 3 × 3 a `el 80`, 35 %; dos tiras bajas 0,4 ×
+    3 a `az ±120, el 5, dist 2,5`, 25 % cada una (encienden el reflejo);
+    relleno 15 % `glossy false`. Fondo `GRADIENT` 0,05→0,01. EV −0,3.
+    Héroe `BOTTLE`. Por qué: el reflejo completo bajo el producto es el
+    plano de perfumería por excelencia.
+15. `FLAT_LAY` **Cenital** . Cámara sugerida `el 85, 50 mm`; cenital
+    5 × 5 a `el 60, az −30, dist 2,5`, 60 %; relleno 3 × 3 a `az 150, el
+    40`, 25 % `glossy false`; tarjeta blanca 3 × 3 a `az 180, el 20, dist
+    1,6`. Fondo = suelo `MATTE` 0,8 (papel). EV +0,2. Héroe `BOX`. Por
+    qué: la luz desde un lado alto y una sombra suave hacia el otro es
+    el plano cenital de revista.
+16. `SILHOUETTE_GLOW` **Silueta con halo** (dramático). `pool` fuerte a
+    `az 180, el 15`, cono 35°, 55 %, 5600 K; relleno frontal 2 × 2 a `az
+    0, el 25`, 12 %, `glossy false`; dos tiras 0,3 × 3 a `az ±140, el
+    25`, 16 % cada una. Fondo `SWEEP` 0,2. Suelo `GLOSSY` negro.
+    `envStrength 0`. EV −0,4. Héroe `BOTTLE`. Por qué: el halo detrás
+    recorta la silueta y las tiras la rematan con dos filos de luz.
+
+**Rigs de tipo de producto (los 16 de `studios.ts`).** Cada uno pasa a
+ser un set con los mismos criterios: joyería ← 5; reloj y cromados ← 6;
+perfume y cosmética ← 1 (con suelo espejo si el tipo lo pide); vidrio y
+bebidas ← 10 (campo oscuro si el líquido es claro); electrónica ← 8;
+calzado, textil y piel ← 7; alimentación y hogar ← 9; *packaging* ← 13;
+el genérico ← 13. El agente mapea los 16 y lo deja escrito.
+
+**Miniaturas.** `tools/setup-thumbs.mjs`: construye el RSB con el
+mismo código de la aplicación (`core/rig.ts` → `io/rsb.ts`, en Node) y
+renderiza con `rt` (`/home/user/bin/rt` en este entorno; en CI el
+binario del job) a 256 × 256, 96 muestras, *denoise*, semilla fija, cada
+set sobre su héroe (`BOTTLE` el frasco de ejemplo con vidrio y líquido;
+`BOX` una caja con una banda de otro material; `RING` un toro de oro;
+`CHROME` un toro cromado; `SHOE` una cápsula de piel; `SPHERES` tres
+esferas mate, brillante y metal); los 72 antiguos se re-renderizan con el
+mismo sistema (héroe por estilo). Determinista: una captura cambia solo
+si cambia el set o el motor (un test fija el *hash* de una).
+
+**Interfaz.** El estilo *Sets* primero, miniaturas grandes (el doble que
+las actuales) con la razón fotográfica en la ayuda, *Usar la cámara del
+set*, y la sección *Luz* del inspector enseña las tarjetas y el fondo
+del set como filas propias (se pueden apagar). Cadena en `es` y `en`.
+
+**Depende de.** L4, U9.
+
+**Criterio.** Hoja `out/sets-sheet.html` con los 16 sets × 3 héroes a
+512 px y 256 muestras, **con veredicto de Fable antes de cerrar**; los
+72 montajes antiguos conservan sus claves y su resultado (test: el rig
+resuelto de cada uno es el mismo que antes); las tarjetas de ningún set
+entran en el encuadre con la focal del tipo (test); una entrada de
+deshacer por set; `npm run qa` en verde.
+
+## M2a · Texturas: importación, mapeado, etiquetas y vista previa — **Opus**
+
+**Qué.** La parte sin motor de M2 (el modelo ya tiene `textures`, los
+importadores ya conservan las texturas y las UV: hoy no se ven en
+ningún sitio). (1) **Importar**: glTF/GLB, FBX, OBJ+MTL, USD, Collada y
+3MF traen sus materiales con color base, rugosidad, metal, normal, alfa
+y emisión (mapas e intensidades), sus UV (y un segundo juego si lo hay)
+y sus normales por vértice, a instancias de material con sus mapas, y
+los mapas viajan en el proyecto embebidos (PNG/JPEG tal cual; límite de
+tamaño con aviso en la hoja de importación). (2) **Ranuras de textura**
+en el inspector de material: color, rugosidad, metal, normal, alfa, con
+*Proyección* (UV, caja, plana, cilíndrica, esférica), escala (mm o
+tamaños de pieza), giro, desplazamiento, repetición, e intensidad del
+mapa de normales; vista previa de la imagen y *Cargar…*, *Quitar*. (3)
+**Etiquetas**: una imagen con alfa colocada con clic y arrastre sobre
+una zona de la pieza (proyección plana desde la normal del punto
+clicado, con tamaño, giro y acabado propio: rugosidad, barniz y relieve
+del papel), varias por material, en orden; *Mover etiqueta* con el
+gizmo. (4) **Vista previa Rápido** (three.js): todos los mapas y
+proyecciones se ven (caja, cilíndrica y esférica con un *shader* propio
+de proyección triplanar en `preview.ts`; etiquetas con un segundo mapa
+alfa). (5) **Contrato RSB para M2b** (escrito en `ARCHITECTURE.md` §5.2,
+el motor lo lee en M2b): sección `IMGS` (imágenes: ancho, alto, canales,
+sRGB o lineal, 8 bits, mipmaps calculados en el motor) y en `MATL`
+campos finales (tras los de E6 y E9): índice de imagen y mapeado por
+ranura, y una subsección de etiquetas. (6) `UI.md` y `SPEC.md` §3.3.
+
+**Depende de.** U9, E5. No toca `engine/`.
+
+**Criterio.** Un GLB con mapas (color, normal, rugosidad-metal,
+emisión) se importa y se ve en Rápido con los mismos mapas que en un
+visor glTF de referencia (comparación de captura, tolerancia); un cubo
+con proyección caja recibe la textura sin estirar en las seis caras
+(test del *shader* por captura); el proyecto guarda y abre las imágenes
+embebidas en los mismos bytes; una etiqueta puesta con clic y arrastre
+sobre el frasco de ejemplo queda donde se puso (captura
+`docs/ui/label-placed.png`).
+
+## M2b · Texturas y etiquetas en el motor — **Opus** (tras E6 y E9)
+
+**Qué.** `rt-core` lee `IMGS` y el mapeado de `MATL`: muestreo bilineal
+con mipmaps por diferenciales de rayo (Igehy 1999, escrito desde el
+artículo; en los rebotes, el ancho del cono del camino), proyecciones
+caja (mezcla por normal), plana, cilíndrica, esférica y UV; mapa de
+normales (espacio tangente, con tangentes por UV o por proyección),
+relieve compuesto con el bisel de E6 y el terminador; alfa como recorte
+(ya existe la ruta); etiquetas como capa sobre el sustrato (alfa
+suaviza; acabado propio de la capa). Todo determinista en wasm y
+nativo. Cuesta lo que cuesta: medirlo.
+
+**Criterio.** Paridad wasm y *hashes* nuevos fijados; una esfera con
+textura de cuadros y una caja con proyección caja renderizadas por `rt`
+coinciden con la vista previa Rápido en posición de la textura
+(comparación por regiones); la etiqueta del criterio de M2a renderiza
+en su sitio en Completo.
+
+## M3a · Editor de materiales por nodos: modelo, editor y vista previa — **Opus** (tras U11)
+
+**Qué.** Un **grafo de material** como el de KeyShot o Blender,
+reducido a lo que nuestro motor puede evaluar: nodos *Salida de
+material* (las entradas del material: color base, metal, rugosidad,
+anisotropía, barniz, transmisión, IOR, absorción, dispersión interna
+(E9), emisión, opacidad, normal, relieve, bisel), *Textura de imagen*,
+*Mapeado* (proyecciones de M2a), *Ruido* (Perlin/simplex de E6, con
+escala y octavas), *Degradado*, *Cuadros*, *Rayas*, *Rampa de color*,
+*Mezcla*, *Matemática* (suma, producto, potencia, mínimo, máximo,
+suavizado, valor absoluto), *Fresnel / peso de capa*, *Curvatura*
+(aristas, de E7), *Valor*, *Color*, *Separar/Combinar RGB*, *Invertir*,
+*Mapa de normales*, *Relieve*. Modelo en `src/core/material-graph.ts`
+(DAG tipado: tomas de tipo color, float, vector, normal; conversiones
+implícitas documentadas), serializado en el proyecto (esquema con
+versión), deshacible nodo a nodo y conexión a conexión por el *store*.
+**Compilación a programa**: el grafo se compila a un programa lineal
+(*bytecode*: registros `f32` y `vec3`, instrucciones con códigos
+estables, lecturas de imagen) que es el contrato con el motor (M3b);
+`ARCHITECTURE.md` lo documenta instrucción a instrucción; límite de
+tamaño y un test que un grafo de 30 nodos compila en < 1 ms. **Editor**:
+una ventana *Editor de material* (como la de render), lienzo con zoom y
+desplazamiento, nodos arrastrables, tomas con tipos y colores
+acromáticos por tipo (forma, no color), conexiones por arrastre con
+validación de tipo, menú *Añadir nodo* con búsqueda, vista previa
+pequeña en cada nodo (evaluación en CPU sobre una esfera 64 × 64 en un
+*worker*, con el mismo intérprete que la vista previa), *Simple ↔ Nodos*
+(un material de parámetros se convierte en su grafo mínimo; volver a
+*Simple* solo si el grafo es el mínimo, si no, pregunta). **Vista
+previa Rápido**: un intérprete del programa en TypeScript evalúa el
+grafo en una textura de 512² por proyección (UV o triplanar) en un
+*worker* y la entrega a three.js como mapas; lo que no cabe en mapas
+(Fresnel, curvatura) se aproxima o se omite, y se dice. Atajos, tour,
+cadena `es`/`en`.
+
+**Depende de.** M2a, E6 (ruido), U11 (máquina).
+
+**Criterio.** Diez grafos de ejemplo (`src/data/material-graphs.ts`:
+plástico con etiqueta, metal cepillado con arañazos por ruido, mármol,
+cuero, madera con dos ruidos, vidrio con suciedad por Fresnel, cuadros,
+pintura metalizada con copos (ruido fino en la normal), cerámica con
+esmalte (barniz por rampa), rayas) compilan y se ven en Rápido; un grafo
+guardado abre idéntico; deshacer y rehacer de 50 ediciones devuelve el
+grafo original (test); el intérprete TS y el de referencia del contrato
+(un pequeño evaluador en Rust de prueba en M3b) dan los mismos valores
+en 1000 puntos aleatorios (test cruzado cuando M3b llegue).
+
+## M3b · El motor evalúa grafos — **Opus** (tras M2b y M3a)
+
+**Qué.** `rt-core` ejecuta el programa de M3a en cada impacto (un
+intérprete sin asignación en el bucle, registros en pila fija, `f32`,
+determinista; lecturas de imagen por M2b; ruido de E6; curvatura de E7
+o, si no ha llegado, una aproximación por el bisel). El material
+resuelto en el impacto alimenta el BSDF de E9. Coste medido en el PR.
+
+**Criterio.** Los diez grafos de M3a renderizados con `rt` coinciden con
+la vista previa Rápido en posición y tono (regiones); test cruzado
+TS/Rust de M3a en verde; paridad wasm.
+
+## M4 · Capa de realismo en el catálogo de materiales — **Opus**, veredicto **Fable** (tras E9, E6 y M2b)
+
+**Qué.** (1) **Motor**: Fresnel de conductor «*artist-friendly*» de
+Gulbrandsen (2014) con reflectancia y *edge tint* (nuestros metales
+hoy son F0 por color: les falta el tono del borde), los metales del
+catálogo con pares (reflectancia, borde) sacados de la literatura
+pública de índices de refracción (valores de tablas públicas de n, k
+integrados por nosotros a RGB); rugosidad perceptual (`α = r²`) si no lo
+es ya; *specular tint* para dieléctricos. (2) **Catálogo**: pasada sobre
+todas las recetas con criterio físico y fotográfico: albedos reales
+(el blanco del HDPE no es 1), IOR por tipo de vidrio y plástico, barniz
+donde lo hay de verdad (plásticos brillantes, cerámica esmaltada,
+madera barnizada), anisotropía en lo cepillado, **micro-bisel por
+defecto** (0,2–0,5 mm según material) en todo lo duro, medio dispersor
+(E9) en lo translúcido, **micro-variación** de rugosidad y de normal por
+ruido fino (E6) a una escala que no se ve como textura pero quita el
+«plástico de ordenador», y *imperfecciones sutiles* opcionales (E7
+cuando llegue). (3) Hoja `out/materials-sheet.html`: cada material
+antes y después, sobre esfera y sobre el frasco, con el set `STRIP_EDGE`;
+**veredicto de Fable** material a material antes de cerrar (regla 11).
+
+**Criterio.** Ningún material cambia de clave; los proyectos antiguos
+abren con las recetas nuevas (es lo que se quiere) salvo las instancias
+editadas, que conservan sus valores; la hoja con el veredicto.
+
 ## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
 
 **Qué.** Primero el **bisel de aristas en el sombreado** (decisión Fable,
@@ -2342,7 +2696,12 @@ el recorrido no la sustituye. (8) Con los modelos todavía bajando (el
 instalador los dejó pendientes) no hay aviso: «hay un modelo» es un modelo
 instalado.
 
-## M2 · Texturas de imagen y etiquetas — **Opus**
+## M2 · Texturas de imagen y etiquetas — **Opus** — sustituida por M2a y M2b
+
+**Nota (Fable, tras v0.1.5).** Esta fase se divide en M2a (sin motor:
+importación, ranuras, etiquetas, vista previa y contrato RSB) y M2b (el
+motor), definidas más arriba en «Materiales y sets con efecto». El texto
+siguiente se conserva como origen.
 
 **Qué.** Texturas de color, rugosidad, metal, normal y alfa con proyección
 caja, plana, cilíndrica y UV, escala, rotación y desplazamiento; etiquetas
