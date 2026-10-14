@@ -27,6 +27,8 @@ export interface ImageData {
   height: number;
   /** Background images: straight RGBA, 8 bits, sRGB, rows from the top. */
   rgba8?: Uint8Array;
+  /** Texture images (M2a): how many channels the file's pixels have (1, 3 or 4; core/image-header.ts). */
+  channels?: 1 | 3 | 4;
   /** HDRIs: linear RGB floats for the preview, rows from the top (`previewWidth` x `previewHeight`). */
   linear?: Float32Array;
   previewWidth?: number;

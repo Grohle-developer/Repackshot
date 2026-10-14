@@ -9,6 +9,7 @@ import type { MaterialInstance } from '../core/materials';
 import type { RenderSettings } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
+import type { ImageRef } from '../core/images';
 import type { Space } from '../core/transform';
 import type { ClipTarget } from '../core/animation';
 import type { ViewObject } from '../core/view-objects';
@@ -39,6 +40,15 @@ export type PickMode =
   | { kind: 'aim'; light: string; part: boolean }
   | { kind: 'pivot'; ids: NodeId[] }
   | { kind: 'link'; parts: NodeId[] }
+  | null;
+
+/**
+ * The label tool (M2a): `place` lays a new label of `image` on a part that carries `material` with a press (its
+ * centre) and a drag (its width); `move` slides label `label` over the surface under the pointer. Esc leaves it.
+ */
+export type LabelTool =
+  | { kind: 'place'; material: string; image: ImageRef }
+  | { kind: 'move'; material: string; label: string }
   | null;
 
 export interface Toast {
@@ -243,6 +253,8 @@ export interface UiState {
   folded: Record<NodeId, true>;
   hover: NodeId | null;
   pickMode: PickMode;
+  /** M2a: placing or moving a label in the viewport. */
+  labelTool: LabelTool;
   doctorOpen: boolean;
   menuOpen: boolean;
   /** Collapsed inspector sections, by id. */
@@ -401,6 +413,7 @@ export function defaultUiState(): UiState {
     folded: {},
     hover: null,
     pickMode: null,
+    labelTool: null,
     doctorOpen: false,
     menuOpen: false,
     sections: {},

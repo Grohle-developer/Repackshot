@@ -27,6 +27,7 @@ import { kbdFor } from '../shortcuts';
 import { normalize } from '../components/palette';
 import { cameraFields } from './insp-scene';
 import { aimMenu } from './scene';
+import { texturesSection } from './insp-textures';
 
 // --- What the selection carries ---------------------------------------------------
 
@@ -636,7 +637,7 @@ export function partsInspector(ctx: Ctx, scope: Scope, ids: string[], faces: boo
   const pattern = !faces && ids.length === 1 && s.scene.nodes[ids[0]]?.pattern ? patternSection(ctx, scope, ids[0]) : null;
   // A primitive's measures, until it is converted to a mesh (keyed on its shape: editing a measure does not rebuild).
   const primitive = !faces && ids.length === 1 ? dynamic(scope, (st) => st.scene.nodes[ids[0]]?.primitive?.kind ?? '', (sc, kind) => (kind ? primitiveSection(ctx, sc, ids[0]) : null)) : null;
-  return h('div', null, pattern, primitive, materialSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces));
+  return h('div', null, pattern, primitive, materialSection(ctx, scope, ids, faces), texturesSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces));
 }
 
 // --- Light -----------------------------------------------------------------------------

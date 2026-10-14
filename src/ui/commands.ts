@@ -14,6 +14,8 @@ import {
   applyImportOptions,
   centrePivot,
   defaultImportOptions,
+  fitTextureBudget,
+  withoutImages,
   ImportError,
   releaseImport,
   TESSELLATION_PRESETS,
@@ -24,7 +26,10 @@ import {
   type ImportOptions,
   type ImportPayload,
   type ImportProgress,
+  type ImportTexture,
 } from '../core/import-options';
+import { imageByteSize, registerTextureImage } from '../core/texture-images';
+import { textureImages } from '../core/textures';
 import {
   addItem,
   cleanName,
@@ -137,11 +142,23 @@ export const CAD_FORMATS = ['step', 'stp', 'iges', 'igs'];
 /** Extensions read in this version (the importers live in src/io/import.ts; ui cannot import them: a test keeps both lists equal). */
 export const READ_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', '3dm', '3mf', 'ply', 'dae', 'usd', 'usda', 'usdc', 'usdz', ...CAD_FORMATS];
 export const MODEL_ACCEPT = READ_FORMATS.map((f) => `.${f}`).join(',');
+/**
+ * Files that travel with a model (M2a): its material library, its buffers and its texture images. Chosen or
+ * dropped with a model they are not imported themselves: the model's reader finds in them what it names.
+ */
+export const COMPANION_FORMATS = ['mtl', 'bin', 'png', 'jpg', 'jpeg', 'tga', 'bmp', 'gif', 'webp', 'tif', 'tiff', 'ktx2', 'dds'];
+const IMPORT_ACCEPT = [...READ_FORMATS, ...COMPANION_FORMATS].map((f) => `.${f}`).join(',');
+const extOf = (name: string): string => name.split('.').pop()?.toLowerCase() ?? '';
+/** The files that came with the model of each queued file. */
+const companionsOf = new WeakMap<File, ReadonlyMap<string, Blob>>();
 
 /** The sentence for a note or warning an importer attached. */
 export function importMessageText(name: string, m: ImportMessage): string {
   const params: Record<string, string | number> = { name };
   for (const [k, v] of Object.entries(m.params)) params[k] = typeof v === 'number' ? formatNumber(v, getLang(), 4) : v;
+  // M2a: why a texture image was not kept, and what kind of map has no slot, in words.
+  if (m.code === 'textureDropped') params.reason = t(dyn(`texture.drop.${String(m.params.reason)}`));
+  if (m.code === 'textureUnused') params.kind = t(dyn(`texture.unused.${String(m.params.kind)}`));
   return t(dyn(`import.msg.${m.code}`), params);
 }
 
@@ -177,8 +194,16 @@ export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<voi
     if (files.length > 1) ctx.ui.toast(t('project.dropIgnored'));
     return openProjectFile(ctx, project);
   }
+  // Images, material libraries and buffers chosen with models go with them; alone, they are still reported below.
+  const models = files.filter((f) => !COMPANION_FORMATS.includes(extOf(f.name)));
+  const extras = files.filter((f) => COMPANION_FORMATS.includes(extOf(f.name)));
+  const batch = models.length > 0 ? models : files;
+  if (models.length > 0 && extras.length > 0) {
+    const map = new Map<string, Blob>(extras.map((f) => [f.name, f]));
+    for (const m of models) companionsOf.set(m, map);
+  }
   const q = queueOf(ctx);
-  q.waiting.push(...files);
+  q.waiting.push(...batch);
   const sheet = ctx.ui.get().importSheet;
   if (sheet) ctx.ui.set({ importSheet: { ...sheet, queued: q.waiting.length } });
   if (sheet || q.reading) return;
@@ -205,7 +230,8 @@ async function readNext(ctx: Ctx, q: ImportQueue): Promise<void> {
   }
   ctx.ui.set({ importMessage: t('import.busy', { name: file.name }) });
   try {
-    const read = await ctx.services.importFile(file);
+    const companions = companionsOf.get(file);
+    const read = await ctx.services.importFile(file, companions ? { companions } : undefined);
     const settings = ctx.ui.get().settings;
     const options = withImportDefaults(defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0), read.detected, settings);
     const sure = settings['import.sheet'] === 'UNSURE' && importIsSure(read.detected, read.warnings);
@@ -368,7 +394,18 @@ export function confirmImport(ctx: Ctx): void {
   releaseImport(payload, applied);
   // "Center" also puts the model's origin at the centre of its bounds, where the Doctor expects it.
   const placed = options.center ? centrePivot(applied) : applied;
-  const model = { nodes: placed.nodes, roots: placed.roots, materials: placed.materials };
+  // M2a: the texture images that fit the project's budget go to the registry; the others leave their materials.
+  const textures = projectTextures(ctx, applied.textures);
+  const gone = new Set(textures.filter((x) => x.dropped && x.id).map((x) => x.id));
+  for (const x of textures) {
+    if (x.dropped || x.unused || !x.bytes) continue;
+    try {
+      registerTextureImage(x.name, x.bytes, x.id);
+    } catch {
+      gone.add(x.id);
+    }
+  }
+  const model = { nodes: placed.nodes, roots: placed.roots, materials: withoutImages(placed.materials, gone) };
   // The Standard studio is already there: the part shows lit, centred, resting on the floor and framed.
   ctx.store.transaction(L('undo.import', { name }), () => {
     ctx.store.dispatch({ type: 'scene/addModel', payload: model, replace: options.mode === 'replace' });
@@ -381,8 +418,15 @@ export function confirmImport(ctx: Ctx): void {
     ctx.store.dispatch({ type: 'scene/setInitial', ids: added });
   });
   ctx.ui.toast(t('import.done', { name }));
-  reportImport(ctx, name, [...sheet.warnings, ...sheet.notes, ...applied.notes]);
+  const budget = textures.filter((x) => x.dropped === 'budget').map((x): ImportMessage => ({ code: 'textureDropped', params: { image: x.name, reason: 'budget' } }));
+  reportImport(ctx, name, [...sheet.warnings, ...budget, ...sheet.notes, ...applied.notes]);
   closeSheet(ctx);
+}
+
+/** The texture images of an import with the project's budget applied (what the project holds already costs nothing again). */
+export function projectTextures(ctx: Ctx, textures: readonly ImportTexture[]): ImportTexture[] {
+  const inProject = new Map([...textureImages(ctx.store.get()).keys()].map((id) => [id, imageByteSize(id)] as const));
+  return fitTextureBudget(textures, inProject);
 }
 
 /** Cancel (Esc): forgets the file. */
@@ -399,7 +443,10 @@ const allFiles = () => ({ name: t('dialog.allFiles'), extensions: ['*'] });
 export async function importDialog(ctx: Ctx): Promise<void> {
   // The desktop: the system's open dialog through the launcher; the browser: its file input.
   const dialogs = ctx.services.dialogs;
-  const files = dialogs ? ((await dialogs.openFiles({ title: t('dialog.importModel'), filters: [{ name: t('dialog.models'), extensions: [...READ_FORMATS] }, allFiles()] })) ?? []) : await pickFiles(MODEL_ACCEPT);
+  // Several files: a model with its material library and textures (M2a) is chosen together.
+  const files = dialogs
+    ? ((await dialogs.openFiles({ title: t('dialog.importModel'), multiple: true, filters: [{ name: t('dialog.models'), extensions: [...READ_FORMATS] }, { name: t('dialog.modelFiles'), extensions: [...READ_FORMATS, ...COMPANION_FORMATS] }, allFiles()] })) ?? [])
+    : await pickFiles(IMPORT_ACCEPT, true);
   if (files.length) await importFiles(ctx, files);
 }
 
@@ -431,8 +478,8 @@ function replaceProject(ctx: Ctx, state: ProjectState): void {
   ctx.store.reset(state);
   // History is gone with the old project, and so are the geometry and the images only it used.
   retainMeshes(meshIdsInUse(state));
-  retainImages(imageIdsInUse(state.environment));
-  ctx.ui.set({ catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null });
+  retainImages([...imageIdsInUse(state.environment), ...textureImages(state).keys()]);
+  ctx.ui.set({ labelTool: null, catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null });
 }
 
 export function newProject(ctx: Ctx): void {
@@ -628,7 +675,7 @@ const HDRI_EXTENSIONS = ['hdr', 'exr', 'rgbe', 'pic'];
 const PLATE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
 
 /** One image file to read: the system's open dialog on the desktop (through the launcher), the file input in the browser. */
-async function pickImage(ctx: Ctx, title: StringKey, kind: StringKey, extensions: readonly string[]): Promise<File | undefined> {
+export async function pickImage(ctx: Ctx, title: StringKey, kind: StringKey, extensions: readonly string[]): Promise<File | undefined> {
   const dialogs = ctx.services.dialogs;
   const files = dialogs
     ? ((await dialogs.openFiles({ title: t(title), filters: [{ name: t(kind), extensions: [...extensions] }, allFiles()] })) ?? [])

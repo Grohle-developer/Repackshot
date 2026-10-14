@@ -28,6 +28,7 @@ import {
 } from '../core/library';
 import { isLibraryKey, type CustomSetup, type LightInstance } from '../core/lighting';
 import { defaultTextures, type MaterialInstance, type MaterialTextures } from '../core/materials';
+import { normalizeTextures } from '../core/textures';
 import type { EnvironmentState, ImageState } from '../core/store';
 
 export { LIBRARY_FORMAT, LIBRARY_SCHEMA };
@@ -171,7 +172,6 @@ const FAMILIES = ['SIMPLE', 'GLASS', 'WOOD', 'FABRIC', 'EMISSIVE'] as const;
 const CATEGORIES = ['METAL', 'PLASTIC', 'WOOD', 'FABRIC', 'GLASS', 'EMISSIVE', 'OTHER'] as const;
 const WORLDS: readonly WorldKind[] = ['STUDIO', 'SKY', 'FLAT'];
 const QUALITIES = ['DRAFT', 'PREVIEW', 'FINAL'] as const;
-const PROJECTIONS = ['BOX', 'PLANAR', 'CYLINDRICAL', 'UV'] as const;
 
 /** Parameters of a material: any name made of letters and digits, with a number, text, flag or colour. */
 function params(v: unknown, path: string): MaterialInstance['params'] {
@@ -204,22 +204,11 @@ function wear(v: unknown, path: string): WearProps {
 }
 
 function textures(v: unknown, path: string): MaterialTextures {
-  const d = defaultTextures();
-  if (v === undefined) return d;
-  const o = obj(v, path);
-  const off = o.offset === undefined ? d.offset : arr(o.offset, `${path}.offset`, 2, 2).map((n, i) => num(n, `${path}.offset[${i}]`));
-  return {
-    // Image maps name files of a project: they do not travel in a library.
-    color: null,
-    roughness: null,
-    metal: null,
-    normal: null,
-    alpha: null,
-    projection: o.projection === undefined ? d.projection : oneOf(o.projection, `${path}.projection`, PROJECTIONS),
-    scale: o.scale === undefined ? d.scale : num(o.scale, `${path}.scale`, 0.0001, 1e6),
-    rotationDeg: o.rotationDeg === undefined ? d.rotationDeg : num(o.rotationDeg, `${path}.rotationDeg`, -3600, 3600),
-    offset: [off[0], off[1]],
-  };
+  if (v === undefined) return defaultTextures();
+  obj(v, path);
+  // Image maps and labels name images of a project: they do not travel in a library; the mapping does (M2a). A
+  // library written before M2a has the flat shape (projection, scale...), which normalizeTextures reads too.
+  return { ...defaultTextures(), mapping: normalizeTextures(v).mapping };
 }
 
 function materialPayload(v: unknown, path: string): MaterialPayload {
