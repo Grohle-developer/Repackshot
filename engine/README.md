@@ -488,8 +488,8 @@ A wasm instance is single threaded; the host runs one instance per Web Worker.
 ## The RSB scene format
 
 RSB (Repackshot Scene Binary, version 1) is little-endian: the magic `RSB1`, a `u32` header
-length, then sections `[tag: 4 ASCII bytes][u32 byte length][payload]`. Tags: `CAMR`, `MESH`,
-`MATL`, `LGHT`, `ENVR`, `FLOR`, `RNDR`, `INST`. Unknown tags are skipped, so old readers keep
+length, then sections `[tag: 4 ASCII bytes][u32 byte length][payload]`. Tags: `CAMR`, `LENS`,
+`MESH`, `MATL`, `LGHT`, `ENVR`, `FLOR`, `RNDR`, `INST`, `BMAP`. Unknown tags are skipped, so old readers keep
 working with newer writers. `INST` (E2) places a mesh with a 3x4 transform, a material and flags;
 a file without `INST` sections draws every mesh once, untransformed, with its own material,
 exactly as before. E3 appended optional fields (`MATL.flags`; `RNDR.max_depth`,
@@ -500,7 +500,11 @@ and `absorption_mm` (72 bytes), the environment's `hdri_map`, `backplate_map`, `
 `BMAP` (a 16-byte header `format width height byte_len`, the data, zero padding to 4 bytes; the
 environment names a bitmap by its position among the `BMAP` sections, `0xffffffff` for none).
 X2 appended `RNDR.passes` (40 bytes), the mask of the exact passes above (0, and every older file:
-none). The exact field layout and the semantics
+none). O1 added `LENS` (optional, right after `CAMR`): the optics of the camera beyond the thin lens
+(`rt_core::optics`: iris blades, roundness and rotation, an aperture mask or a pupil texture
+sampled through its 2-D CDF, the pupil's radial profile, a central obstruction, cat's eye, an
+anamorphic squeeze, lens shift and a Scheimpflug tilt, artistic chromatic bands and swirl); a file
+without it renders exactly as before. The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the
@@ -530,6 +534,11 @@ byte for byte.
   Hošek–Wilkie form to it (table with recipe, seed and SHA-256), `ENVR.sky_model` (0 physical, the
   default; 1 classic), the E5c parity scene (`rt --write-e5c-example`) and the physical-against-
   classic pairs of the contact sheet.
+* **O1**: the enhanced thin lens (`rt_core::optics`, the `LENS` section): pupils sampled with
+  their exact density (concentric disc, fans of straight or curved blades, 2-D CDFs of masks and
+  textures), radial profiles, obstruction, cat's eye, anamorphic squeeze, shift and Scheimpflug
+  tilt, chromatic bands stratified per pixel (`PixelSampler::stratum`, `DIM_LENS_BAND`) and
+  swirl; the O1 parity scene (`rt --write-o1-example`). Next: the traced lens (O2).
 
 ## Third-party data
 

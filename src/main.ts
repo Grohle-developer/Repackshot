@@ -47,6 +47,8 @@ import { readPref, writePref } from './io/prefs';
 import { readProjectFile, serializeProject } from './io/project';
 import { fetchLatestRelease } from './io/updates';
 import { projectScene, tonemapFor, writeRsb } from './io/rsb';
+import { loadCameraPictures } from './io/aperture';
+import { onAperturePicture } from './core/aperture';
 import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
@@ -809,6 +811,12 @@ const desktopStart = nativeReady.then(async (native) => {
   });
   if (loadedLibrary.status === 'corrupt' || loadedLibrary.skipped.length > 0) ui.toast(t('library.loadDamaged'));
 }
+
+// O1: the pupil pictures (aperture masks, textures) a camera's optics name are read once; when one arrives, the
+// path tracer starts the image again with it (until then the lens draws its iris).
+loadCameraPictures(store.get());
+store.subscribe((s) => loadCameraPictures(s));
+onAperturePicture(() => tracer?.sync(store.get(), null));
 
 if (preview) {
   preview.sync(store.get(), null);

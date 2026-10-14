@@ -494,6 +494,34 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    `LENS_PRESETS`), focal en mm (campo arrastrable), diafragma (f/),
    distancia de enfoque + botón *Enfocar con clic*, interruptor
    Perspectiva / Ortográfica, *Encuadrar*, y *Guardar como cámara*.
+   Debajo (O1, `src/ui/panels/insp-lens.ts`), dos desplegables:
+   - **Bokeh** (abierto): rejilla de 4 columnas con los 20 tipos de
+     `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
+     el propio motor** (`public/thumbs/bokeh/`, `tools/bokeh-thumbs.mjs`:
+     doce puntos de luz desenfocados sobre negro) y el nombre debajo; la
+     descripción del tipo va en el *tooltip* y, del elegido, en una nota.
+     Los cuatro que el modo 1 no hace salen apagados con *Próximamente* y
+     dicen qué esperan (*Necesita la lente trazada: llega con el editor
+     de lentes*; el de difracción, *Necesita óptica de ondas*). Un tipo
+     con variantes (polígono recto o curvo, obstrucción pequeña o
+     grande, polvo, rayas o malla, las estrellas y el corazón, 7 o 19
+     agujeros) muestra *Variante* y su miniatura en la casilla. Mover un
+     mando a mano desmarca el tipo y la nota dice *A medida*. *Disco
+     sencillo* quita toda la óptica (la lente fina de siempre). Cada
+     elección es una entrada de deshacer (*Cámara: Tipo de bokeh*).
+     ![bokeh](camera-bokeh.png)
+   - **Óptica avanzada** (cerrado): *Láminas* (0 es *Diafragma redondo*,
+     de 3 a 18), *Redondez*, *Giro*, *Perfil* y su *Intensidad*,
+     *Obstrucción*, *Ojo de gato* (oscurece las esquinas como los bordes
+     de una lente real; lo dice el *tooltip*), *Anamórfico* (*No · 1,33× ·
+     2×*; la imagen sale ya desestirada, y el *tooltip* avisa de que el
+     bokeh ovalado concentra más luz al mismo diafragma), *Inclinación* y *Eje de la
+     inclinación* (Scheimpflug; a 0° el plano de enfoque se inclina hacia
+     el suelo), *Desplazamiento* H y V en mm (mueve el encuadre sin
+     cambiar la perspectiva; el modo Rápido lo muestra), y bajo la marca
+     **NO FÍSICO** *Aberración cromática* y *Remolino*. Una nota recuerda
+     que todo esto se ve en el modo Completo y en el render.
+     ![óptica avanzada](camera-optics.png)
 5. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.

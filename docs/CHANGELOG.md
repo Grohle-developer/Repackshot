@@ -5,7 +5,13 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Motor
+
+- **Lente fina mejorada** (O1): sección nueva y opcional `LENS` del RSB, justo después de `CAMR`. Diafragma redondo o de 3 a 18 láminas rectas o curvas con su giro, o una máscara (estrellas, corazón, varios agujeros…) muestreada por su CDF 2D; textura de pupila (polvo, rayas, malla, anillos de cebolla); perfil de la pupila (uniforme, centro brillante, anillo brillante, apodizada), obstrucción central, ojo de gato aproximado (con el viñeteo que lo acompaña), compresión anamórfica de 1,33× y 2× (la imagen sale desestirada), descentramiento y **inclinación con plano de enfoque de Scheimpflug**, y, como ajustes artísticos, aberración cromática por tres bandas (cada muestra una banda, estratificada, sin mover el foco) y remolino. Todo muestreado con su densidad exacta, sin rechazo, determinista en cualquier plataforma. Una escena sin `LENS` renderiza bit a bit como antes (O1).
+
 ### Interfaz
+
+- Sección *Cámara* ▸ **Bokeh** (O1): los 20 tipos de bokeh con una miniatura renderizada por el propio motor (doce puntos de luz desenfocados sobre negro); los que necesitan la lente trazada o la óptica de ondas dicen lo que esperan. Variantes (láminas rectas o curvas, estrellas, corazón, agujeros…), *Disco sencillo* para volver a la lente fina de siempre, y **Óptica avanzada**: láminas, redondez, giro, perfil e intensidad, obstrucción, ojo de gato, anamórfico, inclinación y su eje, desplazamiento horizontal y vertical (el modo Rápido mueve el encuadre), y, marcados *no físico*, aberración cromática y remolino. Todo deshacible; las cámaras anteriores abren igual.
 
 - La lista de cámaras del visor (arriba a la derecha) enseña la óptica de cada cámara (*85 mm · f/5.6*) y un **lápiz** por fila que abre la ficha de esa cámara en el inspector (nombre, *Activar*, *Mirar a través*, óptica y posición) con la pestaña *Cámaras* abierta; y la sección *Cámara* del inspector de escena dice **qué cámara edita** (la activa, por su nombre), con el mismo lápiz y una nota de que cada cámara tiene su óptica y su posición (aviso del usuario: no se veía que se estuviera editando *Cámara 1*).
 

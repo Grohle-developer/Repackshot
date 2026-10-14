@@ -184,6 +184,7 @@ fn camera(position: Vec3, target: Vec3, focal_mm: f32) -> Camera {
         focus_dist: (target - position).length(),
         ortho: false,
         ortho_width: 100.0,
+        lens: None,
     }
 }
 

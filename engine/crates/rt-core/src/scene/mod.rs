@@ -7,6 +7,7 @@ pub mod rsb;
 pub use crate::bitmap::Bitmap;
 use crate::color::Rgb;
 use crate::math::{Aabb, Ray, Vec3};
+pub use crate::optics::{Lens, LensParams};
 
 pub use crate::geometry::{
     Geometry, GeometryError, Hit, Instance, Mesh, MeshError, RayHit, Transform, INSTANCE_ONE_SIDED,
@@ -34,6 +35,9 @@ pub struct Camera {
     pub ortho: bool,
     /// Width of the orthographic view in scene units (used when `ortho` is true).
     pub ortho_width: f32,
+    /// The optics beyond the plain thin lens (the `LENS` section, [`crate::optics`]); `None` is
+    /// the plain thin lens. An orthographic camera ignores it.
+    pub lens: Option<Lens>,
 }
 
 impl Default for Camera {
@@ -48,6 +52,7 @@ impl Default for Camera {
             focus_dist: 1000.0,
             ortho: false,
             ortho_width: 1000.0,
+            lens: None,
         }
     }
 }
@@ -89,6 +94,9 @@ impl Camera {
     /// `width / height`. `lens` is a point in the unit disk used to sample the aperture; it is
     /// ignored for a pinhole or orthographic camera. The returned direction is normalised.
     pub fn generate_ray(&self, aspect: f32, u: f32, v: f32, lens: (f32, f32)) -> Ray {
+        if let (Some(optics), false) = (&self.lens, self.ortho) {
+            return optics.thin_ray(self, aspect, u, v, lens);
+        }
         let (forward, right, up) = self.basis();
         if self.ortho {
             let w = self.ortho_width;
@@ -112,6 +120,29 @@ impl Camera {
         let focus_point = self.position + dir * (self.focus_dist / dir.dot(forward));
         let origin = self.position + (right * lens.0 + up * lens.1) * radius;
         Ray::new(origin, (focus_point - origin).normalize())
+    }
+
+    /// One camera sample through the image point `(u, v)` (as in [`Camera::generate_ray`]) with
+    /// the lens numbers of `sampler`: the ray, and the colour weight of the light it brings back.
+    /// The plain thin lens takes a point of the unit disk (the concentric map of the lens
+    /// dimensions) and weighs white; a [`Lens`] draws its own pupil and may weigh a band or block
+    /// the sample ([`Lens::sample`]).
+    pub fn sample_ray(
+        &self,
+        aspect: f32,
+        u: f32,
+        v: f32,
+        sampler: &crate::sampler::PixelSampler,
+    ) -> (Ray, Rgb) {
+        if let (Some(optics), false) = (&self.lens, self.ortho) {
+            return optics.sample(self, aspect, u, v, sampler);
+        }
+        let lens = if self.lens_radius() > 0.0 {
+            crate::warp::concentric_disk(sampler.get2(crate::sampler::DIM_LENS))
+        } else {
+            (0.0, 0.0)
+        };
+        (self.generate_ray(aspect, u, v, lens), Rgb::WHITE)
     }
 }
 

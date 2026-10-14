@@ -18,6 +18,7 @@ USAGE:
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
     rt --write-e5b-example <scene.rsb>
+    rt --write-o1-example <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
@@ -50,6 +51,9 @@ OPTIONS:
         --write-e5b-example <f>
                             write the E5b-1 parity scene (the E5 scene with caustic photons)
                             as an RSB file
+        --write-o1-example <f>
+                            write the O1 parity scene (the example through a lens with every
+                            knob of the enhanced thin lens, and bokeh lights) as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -168,6 +172,11 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the O1 parity scene (`rt_core::example::o1_scene`) as an RSB file.
+    WriteO1Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the procedural studio HDRI as a Radiance `.hdr` file.
     WriteStudioHdri {
         /// `.hdr` file to write.
@@ -229,6 +238,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e5 = None;
     let mut write_e5c = None;
     let mut write_e5b = None;
+    let mut write_o1 = None;
     let mut sheet_dir = None;
     let mut tone_table = false;
     let mut options = Options::default();
@@ -272,6 +282,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e5-example" => write_e5 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5c-example" => write_e5c = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5b-example" => write_e5b = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-o1-example" => write_o1 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -307,6 +318,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-e5b-example takes no other option".into());
         }
         return Ok(Command::WriteE5bExample { path });
+    }
+    if let Some(path) = write_o1 {
+        if args.len() != 2 {
+            return Err("--write-o1-example takes no other option".into());
+        }
+        return Ok(Command::WriteO1Example { path });
     }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
@@ -378,6 +395,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteE5bExample { path } => {
             let bytes = rt_core::example::e5b_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteO1Example { path } => {
+            let bytes = rt_core::example::o1_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
@@ -595,6 +618,13 @@ mod tests {
             })
         );
         assert!(parse(&["--write-e5c-example", "e5c.rsb", "--samples", "2"]).is_err());
+        assert_eq!(
+            parse(&["--write-o1-example", "o1.rsb"]),
+            Ok(Command::WriteO1Example {
+                path: "o1.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-o1-example", "o1.rsb", "--example"]).is_err());
         assert_eq!(parse(&["--tone-table"]), Ok(Command::ToneTable));
         assert!(parse(&["--tone-table", "--example"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Command::Help));
