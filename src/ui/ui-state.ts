@@ -266,6 +266,10 @@ export interface UiState {
   wizard: WizardState | null;
   /** Clip selected in the animation drawer. */
   selectedClip: string | null;
+  /** S4a: the ambient effect being edited in the scene's Ambient section (its region is drawn), or null. */
+  effectSelected: string | null;
+  /** S4a: the gallery of effect presets is open (Ambient ▸ Add). */
+  effectGallery: boolean;
   customResolution: boolean;
   /** A file is being dragged over the viewport. */
   fileDrag: boolean;
@@ -422,6 +426,8 @@ export function defaultUiState(): UiState {
     narrow: false,
     wizard: null,
     selectedClip: null,
+    effectSelected: null,
+    effectGallery: false,
     customResolution: false,
     fileDrag: false,
     shortcutsOpen: false,

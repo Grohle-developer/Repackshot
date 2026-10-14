@@ -119,6 +119,8 @@ export interface Settings {
   'engine.viewportSeconds': number;
   /** While a render runs, the viewport keeps a quarter of the engine (live) or waits for it (fastest render). */
   'engine.whileRender': 'SHARE' | 'PAUSE';
+  /** S4a: the most particles of one ambient effect; 0 is automatic: 100 000 in the browser, 1 000 000 natively. */
+  'engine.particleCap': number;
 
   /** Key of the model in use, '' for none. */
   'ai.active': string;
@@ -239,6 +241,7 @@ export function defaultSettings(): Settings {
     'engine.viewportSamples': 1024,
     'engine.viewportSeconds': 120,
     'engine.whileRender': 'SHARE',
+    'engine.particleCap': 0,
 
     'ai.active': '',
     'ai.device': 'GPU',
@@ -412,6 +415,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   setting('engine.backend', 'engine', 'engine', choice(['AUTO', 'NATIVE', 'WASM'], true), kw('engine, backend, native, webassembly, wasm, browser', 'motor, nativo, webassembly, wasm, navegador'), { aux: true }),
   setting('engine.threads', 'engine', 'engine', num(0, 256, 1, undefined, true), kw('threads, workers, cores, cpu', 'hilos, workers, núcleos, cpu'), { aux: true }),
   setting('engine.simd', 'engine', 'engine', choice(['AUTO', 'OFF']), kw('simd, vector, simd128, avx', 'simd, vectorial, simd128, avx'), { aux: true }),
+  setting('engine.particleCap', 'engine', 'engine', num(0, 16_777_216, 1000, undefined, true), kw('particles, cap, limit, ambient, effects, dust, rain, snow', 'partículas, tope, límite, ambiente, efectos, polvo, lluvia, nieve'), { aux: true }),
   setting('engine.viewportLimit', 'engine', 'fullViewport', choice(['OUTPUT', 'SAMPLES', 'TIME']), kw('viewport limit, battery, stop, samples, seconds', 'límite del visor, batería, parar, muestras, segundos'), { aux: true }),
   setting('engine.viewportSamples', 'engine', 'fullViewport', num(16, 100000, 16), kw('viewport, samples, limit', 'visor, muestras, límite')),
   setting('engine.viewportSeconds', 'engine', 'fullViewport', num(5, 3600, 5, 's'), kw('viewport, seconds, limit', 'visor, segundos, límite')),

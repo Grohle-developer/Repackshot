@@ -1,4 +1,5 @@
-// The Doctor (SPEC §4): fourteen checks, each with a detection and a fix.
+// The Doctor (SPEC §4): fourteen checks, each with a detection and a fix, and the
+// particle cap of the ambient effects (S4a).
 // Scene checks run on the model; engine checks report UNAVAILABLE until the
 // engine phases (D1) provide the data. The Doctor never changes anything
 // unless asked: `fixDoctor` is only called from an explicit action.
@@ -9,6 +10,7 @@ import type { ActionBase, ProjectState } from './store';
 import { clipEndFor, clipStartFor } from './camera';
 import { add, boxCenter, boxRadius, isEmptyBox, length, sub, transformPoint, type Mat4, type Vec3 } from './math';
 import { defaultBevelMm, partMaterials } from './materials';
+import { fitToCap, overCap } from './effects';
 import { presetRefOf } from './lighting';
 import { resolvePreset } from './rig';
 import { allParts, boundsOf, measuredSizeMm, reduceScene, worldMatrix, worldToLocalDelta, type NodeId, type SceneNode } from './scene';
@@ -33,6 +35,7 @@ export const SCENE_CHECKS: ReadonlySet<DoctorCheckKey> = new Set<DoctorCheckKey>
   'bevel',
   'clip',
   'lights',
+  'particles',
 ]);
 
 /** A scale is off when the ratio leaves [1/20, 20]. */
@@ -166,7 +169,14 @@ function checkLights(state: ProjectState): DoctorResult {
   return seen.length > 0 ? warn('lights', { count: seen.length }) : ok('lights');
 }
 
-/** Runs the fourteen checks, in catalogue order. */
+function checkParticles(state: ProjectState): DoctorResult {
+  const over = overCap(state);
+  if (over.length === 0) return ok('particles');
+  const first = over[0];
+  return warn('particles', { count: over.length, effect: first.effect.id, name: first.effect.name, preset: first.effect.preset, requested: first.requested, cap: first.cap });
+}
+
+/** Runs the checks, in catalogue order. */
 export function runDoctor(state: ProjectState): DoctorResult[] {
   return DOCTOR_CHECKS.map((c) => {
     switch (c.key) {
@@ -184,6 +194,8 @@ export function runDoctor(state: ProjectState): DoctorResult[] {
         return checkClip(state);
       case 'lights':
         return checkLights(state);
+      case 'particles':
+        return checkParticles(state);
       default:
         return { key: c.key, status: 'UNAVAILABLE', fixable: false, detail: {} };
     }
@@ -265,6 +277,8 @@ export function fixDoctor(state: ProjectState, key: DoctorCheckKey): ProjectStat
       for (const [id, c] of Object.entries(cameras)) cameras[id] = { ...c, clipStart: start, clipEnd: end };
       return { ...state, camera: { ...state.camera, cameras } };
     }
+    case 'particles':
+      return fitToCap(state);
     case 'lights': {
       if (!state.studio.lights.some((l) => l.camera && !l.brightField)) return state;
       const lights = state.studio.lights.map((l) => (l.brightField ? l : { ...l, camera: false, glossy: l.recipeGlossy }));
@@ -284,7 +298,12 @@ export function fixAll(state: ProjectState): ProjectState {
 
 export type DoctorAction =
   | ({ type: 'doctor/fix'; key: DoctorCheckKey } & ActionBase)
-  | ({ type: 'doctor/fixAll' } & ActionBase);
+  | ({ type: 'doctor/fixAll' } & ActionBase)
+  /**
+   * Volatile: runs the checks again on the same project, after something they read outside it changed (the
+   * engine's particle cap, Settings ▸ Render engine).
+   */
+  | ({ type: 'doctor/refresh' } & ActionBase);
 
 export function reduceDoctor(state: ProjectState, action: DoctorAction): ProjectState {
   switch (action.type) {
@@ -292,6 +311,10 @@ export function reduceDoctor(state: ProjectState, action: DoctorAction): Project
       return fixDoctor(state, action.key);
     case 'doctor/fixAll':
       return fixAll(state);
+    case 'doctor/refresh': {
+      const results = runDoctor(state);
+      return JSON.stringify(results) === JSON.stringify(state.doctor.results) ? state : { ...state, doctor: { results, stamp: state.doctor.stamp + 1 } };
+    }
     default:
       return state;
   }

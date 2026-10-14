@@ -595,11 +595,12 @@ describe('animation catalogues', () => {
 });
 
 describe('doctor checks and environment', () => {
-  it('has 14 checks with unique keys in upstream order', () => {
-    expect(DOCTOR_CHECKS).toHaveLength(14);
+  it('has the 14 upstream checks with unique keys in upstream order, then the particle cap of S4a', () => {
+    expect(DOCTOR_CHECKS).toHaveLength(15);
     expect(DOCTOR_CHECKS.map((c) => c.key)).toEqual([
       'engine', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
       'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output',
+      'particles',
     ]);
   });
 

@@ -36,6 +36,9 @@
 //   2 (U5) — `render` is the render window's settings and a queue of full `RenderJob`s (core/render.ts
 //            `migrateRender`).
 //
+// Ambient effects (S4a): `effects`, a list of parameters (core/effects.ts); a file from before S4a has none and
+// opens with an empty list, an entry of a newer version keeps what this version knows of it. The schema stays at 2.
+//
 // Primitives (U9): a part made by Add ▸ Primitive keeps its shape and measures in an optional field of its node
 // (`primitive`: `{ kind, params }`, core/primitives.ts), and its mesh is not written: on open it is made again from
 // the measures, under the id it had (the id names the content), so a project with primitives saves, opens and
@@ -47,6 +50,7 @@
 // or the store are touched, so a damaged file leaves the open project as it was.
 
 import { runDoctor } from '../core/doctor';
+import { normalizeEffects } from '../core/effects';
 import { buildExample } from '../core/example';
 import {
   getMesh,
@@ -314,6 +318,8 @@ function checkState(raw: RawState): ProjectState {
   if (!isObject(env.skySun) || !Number.isFinite(env.skySun.az) || !Number.isFinite(env.skySun.el)) throw damaged('environment.skySun is damaged');
   // E5c: a project saved before the physical sky has no skyModel and opens with the default (filled in above).
   if (env.skyModel !== 'PHYSICAL' && env.skyModel !== 'CLASSIC') throw damaged('environment.skyModel is damaged');
+  // S4a: the ambient effects (a project saved before them has none; filled in above), each checked and completed.
+  s.effects = normalizeEffects(s.effects, s);
   return s;
 }
 

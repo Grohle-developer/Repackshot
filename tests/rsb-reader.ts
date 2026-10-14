@@ -2,7 +2,7 @@
 // sections and decodes each one back into the shapes of src/io/rsb.ts, so a round trip can be
 // compared field by field. Layout: engine/crates/rt-core/src/scene/rsb.rs.
 
-import type { RsbBitmap, RsbCamera, RsbEnvironment, RsbFloor, RsbInstance, RsbLight, RsbMaterial, RsbMesh, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
+import type { RsbBitmap, RsbCamera, RsbEffect, RsbEnvironment, RsbFloor, RsbInstance, RsbLight, RsbMaterial, RsbMesh, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
 
 export interface Section {
   tag: string;
@@ -154,6 +154,47 @@ export function readRender(p: DataView): RsbRender {
 }
 
 /** The whole file (singletons that are missing are left undefined). */
+/** S4a: an FXAM payload (rt_sim::params), the trailing fields read as their defaults when the payload ends first. */
+export function readEffect(p: DataView): RsbEffect {
+  const c = new Cursor(p);
+  const e: RsbEffect = {
+    kind: c.u32(),
+    seed: c.u32(),
+    time: c.f32(),
+    count: c.u32(),
+    regionCenter: c.vec(),
+    regionHalf: c.vec(),
+    band: [c.f32(), c.f32()],
+    sizeMm: c.f32(),
+    sizeVar: c.f32(),
+    shape: c.u32(),
+    fallSpeed: c.f32(),
+    fallVar: c.f32(),
+    wind: c.vec(),
+    turbulence: c.vec(),
+    cloudCenter: c.vec(),
+    cloudRadius: c.f32(),
+    cloudSoftness: c.f32(),
+    materialId: c.u32(),
+    tintVar: c.f32(),
+    flags: c.u32(),
+    streak: c.f32(),
+    gravity: 1,
+    energy: 0,
+    spin: 0,
+    palette: [],
+  };
+  if (c.remaining >= 16) {
+    e.gravity = c.f32();
+    e.energy = c.f32();
+    e.spin = c.f32();
+    const n = c.u32();
+    const tints = [c.vec(), c.vec(), c.vec(), c.vec()];
+    e.palette = tints.slice(0, n);
+  }
+  return e;
+}
+
 export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: RsbMaterial[]; meshes: RsbMesh[]; lights: RsbLight[]; instances: RsbInstance[] | null; bitmaps: RsbBitmap[]; tags: string[] } {
   const out: Partial<RsbScene> & { materials: RsbMaterial[]; meshes: RsbMesh[]; lights: RsbLight[]; instances: RsbInstance[] | null; bitmaps: RsbBitmap[]; tags: string[] } = {
     materials: [],
@@ -192,6 +233,9 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
         break;
       case 'BMAP':
         out.bitmaps.push(readBitmap(s.payload));
+        break;
+      case 'FXAM':
+        (out.effects ??= []).push(readEffect(s.payload));
         break;
     }
   }

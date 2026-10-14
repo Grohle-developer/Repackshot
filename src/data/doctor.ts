@@ -2,9 +2,10 @@
 
 import type { DoctorCheck } from './types';
 
-// Scene doctor checks (upstream CHECKS, 14 entries in upstream order). These
-// are descriptors only: what each check looks at and what its one-click fix
-// does. The logic that runs them lives with the scene code, not here.
+// Scene doctor checks (upstream CHECKS, 14 entries in upstream order, then the
+// ones of Repackshot's own phases: `particles`, S4a). These are descriptors
+// only: what each check looks at and what its one-click fix does. The logic
+// that runs them lives with the scene code, not here.
 export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   {
     key: 'engine',
@@ -172,6 +173,18 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     fix: {
       es: 'Pasa a PNG si el formato no es de imagen, desactiva sobrescribir y activa los marcadores de posicion para poder reanudar.',
       en: 'Switches to PNG if the format is not an image format, disables overwrite and enables placeholders so a render can resume.',
+    },
+  },
+  {
+    key: 'particles',
+    label: { es: 'Tope de partículas', en: 'Particle cap' },
+    checks: {
+      es: 'Un efecto de ambiente pide más partículas que su tope (el suyo, o el del motor en Ajustes ▸ Motor de renderizado), así que el motor solo evaluará el tope y se verá menos denso de lo pedido.',
+      en: 'An ambient effect asks for more particles than its cap (its own, or the engine\'s in Settings ▸ Render engine), so the engine evaluates only the cap and it looks thinner than asked.',
+    },
+    fix: {
+      es: 'Baja la cantidad de cada efecto que se pasa hasta su tope.',
+      en: 'Lowers the amount of every effect that goes over to its cap.',
     },
   },
 ];

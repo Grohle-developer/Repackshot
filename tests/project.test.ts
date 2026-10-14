@@ -604,7 +604,12 @@ describe('fixtures: files written by earlier versions keep loading', () => {
     // The state alone (no geometry) is what `parseProject` and `migrateProject` give.
     const text = JSON.stringify(body);
     expect(parseProject(text)).toEqual(migrateProject(JSON.parse(text)));
-    expect(parseProject(text)).toEqual(loaded.state);
+    // But the Doctor's findings, which loadProject runs again with this version's checks (the file's are older: S4a
+    // added `particles` after the fixture was written).
+    const doctorless = (s: ProjectState) => ({ ...s, doctor: { ...s.doctor, results: [] } });
+    expect(doctorless(parseProject(text))).toEqual(doctorless(loaded.state));
+    expect(loaded.state.doctor.results.map((r) => r.key)).toEqual(doctor.runDoctor(loaded.state).map((r) => r.key));
+    expect(loaded.state.doctor.results.some((r) => r.key === 'particles')).toBe(true);
   });
 
   it('writes the fixtures when asked (REPACK_WRITE_FIXTURES=1 npx vitest run tests/project.test.ts)', async () => {
