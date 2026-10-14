@@ -3,6 +3,28 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Interfaz
+
+- **Texturas de imagen** (M2a): el inspector de un material gana la sección **Texturas**, con seis ranuras —*Color*, *Rugosidad*, *Metal*, *Normal*, *Alfa* y *Emisión*—, cada una con su vista previa, *Cargar…* (PNG o JPEG; el diálogo del sistema en escritorio) y *Quitar*, y cómo lee su imagen (canal, invertir, intensidad del mapa de normales o de alturas, recorte y umbral del alfa, tinte e intensidad de la emisión); y un **mapeado** común: *Proyección* (*UV · Caja · Plana · Cilíndrica · Esférica*), eje, juego UV, tamaño en mm con *Ajustar a la pieza*, giro, desplazamiento, repetición y bordes. Todo deshacible, un arrastre una entrada (M2a).
+- **Etiquetas** (M2a): *Añadir etiqueta…* elige una imagen con alfa, y una pulsación sobre la pieza con un arrastre la coloca allí (plana desde la normal de la superficie, derecha) con su ancho; varias por material, en orden (*Traer delante*, *Enviar atrás*), con ancho, giro, alcance y su acabado (rugosidad, barniz, relieve del papel); **Mover etiqueta** la desliza por la superficie (M2a).
+- La vista **Rápido** dibuja todas las ranuras, las cinco proyecciones (la caja mezcla tres ejes, la cilíndrica y la esférica sin costura visible) y las etiquetas, con mipmaps, sobre el aspecto de siempre (luces, entorno, sombras, contorno). *Completo* y *Render* las pintan cuando el motor las lea (*próximamente*, M2b) (M2a).
+- La **hoja de importación** gana la sección **Texturas**: cuántas imágenes se guardan y cuánto pesan, y cada una que no, con el porqué (M2a).
+
+### Importación
+
+- glTF y GLB traen sus **materiales con sus mapas** leídos de su JSON (color base, metal-rugosidad, normal con su escala, emisión con su factor y `KHR_materials_emissive_strength`, alfa con su modo y umbral; transmisión, IOR y barniz de sus extensiones; `KHR_texture_transform`); OBJ lee sus **`.mtl`** y sus imágenes (con `-s`, `-o`, `-bm`, `-clamp`, `-imfchan`); FBX, Collada, 3MF, USD y 3DM, los mapas que carga su lector. Las imágenes y bibliotecas que un modelo nombra se buscan entre los archivos **elegidos o soltados con él**; *Importar modelo…* deja elegir varios (M2a).
+- Las **UV** se conservan, también un **segundo juego** (glTF `TEXCOORD_1`), y las normales por vértice del archivo (M2a).
+
+### Proyecto
+
+- Las imágenes de textura **viajan en el proyecto** tal cual (PNG o JPEG, base64), una vez cada una, bajo un id que nombra su contenido: un proyecto guardado y abierto vuelve con los mismos bytes. Hasta 16 MB por imagen y 64 MB por proyecto. Los proyectos anteriores abren igual (M2a).
+
+### Motor
+
+- El **contrato RSB de las texturas** queda escrito para M2b (`ARCHITECTURE.md` §5.2: sección `IMGS`, bloque de texturas de `MATL` desde el byte 100, UV en `MESH`); el escritor lo produce solo cuando se le pide, y hasta entonces los bytes de cualquier escena son los de antes (M2a).
+
 ## v0.1.5 — 2026-10-14
 
 Versión de prueba con cáusticas y reducción de ruido propias, focos propios

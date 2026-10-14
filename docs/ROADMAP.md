@@ -1635,7 +1635,7 @@ resuelto de cada uno es el mismo que antes); las tarjetas de ningún set
 entran en el encuadre con la focal del tipo (test); una entrada de
 deshacer por set; `npm run qa` en verde.
 
-## M2a · Texturas: importación, mapeado, etiquetas y vista previa — **Opus**
+## M2a · Texturas: importación, mapeado, etiquetas y vista previa — **Opus** — hecha
 
 **Qué.** La parte sin motor de M2 (el modelo ya tiene `textures`, los
 importadores ya conservan las texturas y las UV: hoy no se ven en
@@ -1672,6 +1672,95 @@ con proyección caja recibe la textura sin estirar en las seis caras
 embebidas en los mismos bytes; una etiqueta puesta con clic y arrastre
 sobre el frasco de ejemplo queda donde se puso (captura
 `docs/ui/label-placed.png`).
+
+**Hecho.** Modelo en `src/core/textures.ts`: seis ranuras (color,
+rugosidad, metal, normal, alfa, emisión) con imagen, mapeado propio o
+común, canal, invertir, intensidad, mapa de alturas, recorte y umbral,
+tinte; el mapeado (UV con dos juegos, caja, plana, cilíndrica, esférica;
+eje, **tamaño en mm** —una textura de imagen es la foto de algo con tamaño
+propio, el material se comparte entre piezas y viaja en la biblioteca, el
+motor trabaja en mm; la primera imagen lo pone al tamaño de la pieza—,
+giro, desplazamiento, repetición, bordes) y las etiquetas (origen, normal
+y eje en el espacio de la pieza, ancho, giro, alcance, rugosidad, barniz,
+relieve), con las acciones `texture/*` (deshacibles, un arrastre una
+entrada, sin entrada si nada cambia) y la matemática de las proyecciones y
+de las etiquetas como referencia que fijan los tests (caja sin espejos ni
+estiramiento en las seis caras, giro antihorario con v arriba, cilíndrica
+centrada delante, colocación desde un punto y una normal a través de la
+matriz del mundo, también con escala desigual). Imágenes en el registro
+como su PNG o JPEG, con id por contenido (SHA-256) y límites (16 MB y 8192
+px por imagen, 64 MB por proyecto). **Importación**: glTF desde su JSON
+(`io/gltf-materials.ts`: PBR, emisión con `KHR_materials_emissive_strength`,
+`alphaMode`/`alphaCutoff`, transmisión, IOR y barniz, `KHR_texture_transform`
+convertido exacto a v arriba y comprobado contra el `setUvTransform` de
+three, muestreadores; el cargador recibe el archivo sin texturas); OBJ con
+sus `.mtl` (`io/mtl.ts`, `io/obj-materials.ts`, con sus opciones); FBX,
+Collada, 3MF, USD y 3DM con los mapas de sus cargadores
+(`collectTextures`); los archivos **elegidos o soltados con el modelo**
+(imágenes, `.mtl`, `.bin`) se le dan como compañeros y un
+`LoadingManager` los encuentra por nombre; UV con segundo juego en toda la
+tubería (soldadura, cortes, GLB del proyecto `TEXCOORD_1`), normales del
+archivo conservadas. La hoja de importación tiene su sección *Texturas*
+(cuántas, cuánto pesan, cada una que no y por qué, mapas sin ranura) y el
+presupuesto del proyecto se aplica al pulsar *Importar*. **Proyecto**: las
+imágenes en el bloque `images`, mismos bytes y mismos ids al abrir en otra
+sesión y al guardar otra vez; las que faltan quitan sus ranuras con
+`MISSING_IMAGES`; los proyectos y bibliotecas anteriores se leen con
+`normalizeTextures`. **Inspector**: sección *Texturas*
+(`ui/panels/insp-textures.ts`) con las ranuras, el mapeado y las
+etiquetas; herramienta de etiqueta en el visor
+(`ui/panels/viewport-labels.ts`): pulsación y arrastre, *Mover etiqueta*.
+**Rápido**: `render/texture-shader.ts` (GLSL en el `MeshPhysicalMaterial`
+con `onBeforeCompile`: proyecciones, caja triplanar por |n|⁴, cilíndrica y
+esférica sin costura por el gradiente de Tarini, normal en marco de
+derivadas de Schüler, alturas y borde de etiqueta por el relieve de
+Mikkelsen, etiquetas sobre color, rugosidad, metal y barniz) y
+`render/texture-preview.ts` (caché por imagen, mipmaps, anisotropía del
+dispositivo). **Contrato RSB para M2b** escrito en `ARCHITECTURE.md` §5.2
+(`IMGS`; bloque de texturas de `MATL` desde el byte 100, tras los campos de
+E6 y E9; UV en `MESH`) e implementado en `io/rsb.ts` detrás de
+`SceneView.textures`; apagado, los bytes de cualquier escena son los de
+antes (test), y los píxeles los decodifica `io/texture-pixels.ts`. Tests:
+`textures`, `textures-import`, `textures-project`, `textures-rsb`,
+`texture-shader`, `textures-ui` (62 casos, cada uno roto a propósito:
+46 mutaciones, todas fallan); `tools/textures-check.mjs` en Chromium: el GLB
+de los cuatro mapas, un Collada con su imagen al lado, la caja con
+proyección caja, la etiqueta en el frasco, el cromo acromático en los dos
+temas. Capturas `docs/ui/textures-fast.png` (junto a
+`docs/ui/textures-reference.png`, el mismo archivo con el `GLTFLoader` y
+`MeshStandardMaterial` de three.js, el visor sobre el que están hechos
+casi todos: mismos cuadrantes, flechas derechas, crestas del mapa de
+normales, anillo de emisión y esquina recortada; la cara de arriba se ve
+algo más blanda por el ángulo de la cámara, no por el filtrado: con
+anisotropía 8 y 16 los píxeles son idénticos, con 1 cambian),
+`docs/ui/box-projection.png`, `docs/ui/label-placed.png`,
+`docs/ui/textures-inspector.png`.
+
+No encajó con el plan: (1) la comparación con un visor glTF de referencia
+es a ojo, no por tolerancia de píxeles (las cámaras y los entornos no son
+los mismos). (2) *Mover etiqueta* no usa el *gizmo* de *Mover*: arrastra la
+etiqueta por la superficie bajo el cursor (una etiqueta vive en la
+superficie; un *gizmo* 3D la sacaría de ella). (3) El inspector edita solo
+el mapeado común; el mapeado propio de una ranura viene de los archivos y
+se puede devolver al común (*Usar el común*); el *store* ya admite editarlo
+(`texture/setMapping` con `slot`). (4) Las esferas de los materiales no
+muestran las texturas (su renderizador es aparte). (5) La emisión existe
+solo por su ranura: un glTF con `emissiveFactor` y sin textura no emite,
+como antes (la familia `SIMPLE` no tiene campo de emisión). (6) En Rápido,
+un recorte de alfa y las etiquetas no recortan las sombras del mapa de
+sombras de three; dibuja seis etiquetas por material (cada una es un
+*sampler*), el motor todas. (7) three aplica su transformación de textura
+como escala tras giro y nosotros giro tras escala: igual con repetición
+uniforme o sin giro; en FBX, Collada y USD con giro y repetición desigual
+es una aproximación (glTF se convierte exacto). (8) Imágenes WebP o KTX2 de
+un glTF se dejan fuera con su aviso; las de los cargadores de three que no
+son PNG ni JPEG (TGA de FBX, y las de un USDZ, cuyos *blobs* el cargador ya
+ha liberado) se pasan a PNG en el navegador; en Node no hay con qué y esos
+formatos no traen texturas (sí glTF y OBJ). (9) Encender el escritor de
+texturas queda para M2b: propuesto `rt_features` (bit 0) en `rt.wasm` y en
+`/api/info`, y `decodeTexturePixels` antes de escribir la escena; sin
+FBX con textura en los *fixtures*, el camino de los cargadores de three se
+prueba en el navegador con un Collada y su imagen (el mismo código).
 
 ## M2b · Texturas y etiquetas en el motor — **Opus** (tras E6 y E9)
 

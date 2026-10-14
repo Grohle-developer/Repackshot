@@ -9,7 +9,11 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
   format, with the values of the import sheet.
 - `obj.ts`, `stl.ts` (own, with `mesh-common.ts`: welding, smoothing-angle normals, hard edges).
 - `three-scene.ts`: what the three.js readers share (Object3D tree to nodes, world transforms baked, materials,
-  texture blobs kept for M2).
+  their maps as texture slots and the images as files, M2a; a loading manager that finds the files chosen with the
+  model).
+- Textures (M2a): `gltf-materials.ts` (a glTF's materials and images from its JSON; the loader gets the file without
+  textures), `mtl.ts` and `obj-materials.ts` (an OBJ's libraries and their images), `texture-notes.ts` (what the sheet
+  says), `texture-pixels.ts` (decoded pixels for the RSB's IMGS, read from M2b).
 - `gltf.ts`, `fbx.ts` (GlobalSettings scan for units and up axis), `rhino.ts` (rhino3dm in a worker, files in
   `public/vendor/rhino3dm/` copied by `tools/vendor.mjs`), `threemf.ts`, `ply.ts`, `collada.ts`, `usd.ts`.
 - STEP and IGES (phase I2): occt-import-js 0.0.23 (OpenCascade in wasm, **LGPL-2.1**, the one LGPL exception,

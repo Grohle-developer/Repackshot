@@ -281,7 +281,31 @@ inspector muestra una hoja en línea con las opciones de `SPEC.md` §5
 (unidades, eje arriba, centrar, apoyar, encuadrar, añadir o sustituir,
 agrupar por, mantener materiales, separar piezas, calidad de teselado) con
 los valores detectados ya puestos y un botón primario *Importar*. `Enter`
-importa con los valores por defecto.
+importa con los valores por defecto. Desde M2a la hoja tiene una sección
+**Texturas**: *N imágenes guardadas · X MB*, una línea por cada imagen que
+no se guarda con el porqué (*pesa más de 16 MB*, *no es PNG ni JPEG*, *no
+estaba entre los archivos elegidos con el modelo*, *el proyecto ya lleva 64
+MB de texturas*) y por cada mapa sin ranura (*mapa de oclusión ambiental,
+sin ranura*), *El archivo no trae imágenes de textura* cuando no las hay, o
+*Con el material predeterminado no se importa ninguna textura*, y una nota
+con los límites. Un modelo se elige o se suelta **con sus archivos**
+(imágenes, `.mtl`, `.bin`): no se importan solos, el lector del modelo
+encuentra en ellos lo que nombra (*Importar modelo…* deja elegir varios).
+
+**Herramienta de etiqueta** (fase M2a): tras *Añadir etiqueta…* el visor
+dice *Pulsa en una pieza con Pintura donde va la etiqueta y arrastra su
+ancho · Esc cancela*: la pulsación sobre una pieza que lleva el material
+pone el centro de la etiqueta (plana desde la normal de la superficie,
+derecha, con el arriba del modelo donde la superficie lo deja), el
+arrastre fija su ancho (desde el centro, en su plano) y soltar termina; un
+clic sin arrastre le da un cuarto del lado mayor de la pieza. Toda la
+colocación es una entrada de deshacer (*Deshacer: Añadir la etiqueta
+logo.png a Pintura*). Sobre una pieza que no lleva el material, un aviso
+(*Esa pieza no lleva Pintura*). **Mover etiqueta**: arrastrar sobre la
+pieza desliza la etiqueta por la superficie bajo el cursor, conservando
+tamaño y giro (una entrada por arrastre), hasta `Esc` o el botón. Mientras
+la herramienta está activa, la pulsación es suya: ni orbita, ni el
+*gizmo*, ni selecciona.
 
 **Herramienta de mover** (fase U3): con una selección y la herramienta
 *Mover* (`M`) activa, un *gizmo* sobre el pivote con asas de traslación
@@ -513,12 +537,46 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    Solo se pintan los que la familia usa. Un botón *Convertir en material
    propio* separa la instancia del preset cuando se edita (el nombre pasa
    a "Oro (editado)").
-2. **Desgaste** — Tres botones rápidos (*Nuevo · Usado · Viejo*), los 9
+2. **Texturas** (fase M2a) — Una nota dice que *Rápido* muestra texturas y
+   etiquetas y que el motor las pinta en *Completo* y en *Render*
+   (*próximamente*, fase M2b). Una fila por **ranura**: *Color*,
+   *Rugosidad*, *Metal*, *Normal*, *Alfa*, *Emisión*, cada una con la
+   vista previa de su imagen (un cuadrado rayado sin imagen), su nombre y
+   debajo el archivo y su tamaño en píxeles (o *Sin imagen*), **Cargar…**
+   (*Cambiar…* con imagen; el diálogo del sistema en escritorio, el
+   selector de archivos en el navegador; PNG o JPEG) y la papelera
+   (*Quitar*). La ayuda de cada ranura dice qué hace la imagen (*multiplica
+   el color base*…). Con imagen, lo suyo: *Canal* (*R · G · B · A · Lum*) e
+   *Invertir* en rugosidad, metal y alfa (y en un mapa de alturas);
+   *Mapa de alturas* e *Intensidad* (con mapa de alturas, en mm del
+   blanco) en normal; *Como recorte* y su *Umbral* en alfa; *Tinte* e
+   *Intensidad* en emisión. Una ranura con mapeado propio (del archivo) lo
+   dice, con *Usar el común*. Con alguna imagen, el bloque **Mapeado**
+   (el común): *Proyección* (*UV · Caja · Plana · Cilíndrica · Esférica*),
+   *Eje* (plana, cilíndrica, esférica), *Juego UV* (*1 · 2*, en UV),
+   *Tamaño* en las unidades de la interfaz con *Ajustar a la pieza* (no
+   en UV ni en esférica; una nota dice qué es, y en la cilíndrica que es
+   la circunferencia), *Giro*, *Desplazamiento* y *Repetición* (U y V),
+   *Bordes* (*Repetir · Estirar el borde · Espejo*); si alguna pieza del
+   material no tiene UV, con *UV* una nota lo dice y propone *Caja*.
+   Después, **Etiquetas**: una fila por etiqueta, la de encima arriba, con
+   su imagen, su nombre y su tamaño en mm, *Traer delante* y *Enviar
+   atrás*, la papelera, **Mover etiqueta** (activa la herramienta del visor;
+   pulsado mientras lo está) y, desplegable, *Ancho*, *Giro*, *Alcance*
+   (con su nota), *Rugosidad*, *Barniz* y *Relieve del papel*; *Aún no hay
+   etiquetas* si no hay; una nota cuando el material lo comparten varias
+   piezas (*Sale en las 3 piezas que comparten este material*) y otra
+   cuando hay más de las que dibuja *Rápido* (seis). Al pie,
+   **Añadir etiqueta…**: elige la imagen y activa la herramienta. Todo es
+   una acción del *store*: un arrastre de un campo, una entrada de
+   deshacer (*Deshacer: Mapeado de Oro*, *Cargar tex.png en Color de
+   Pintura*, *Añadir la etiqueta logo.png a Pintura*).
+3. **Desgaste** — Tres botones rápidos (*Nuevo · Usado · Viejo*), los 9
    básicos de `WEAR_PRESETS` en una fila de chips, el mando maestro, y
    un deslizador por tipo (solo los de `WEAR_FAMILY_TYPES` para la familia
    actual) que despliega sus mandos al activarse. Escala, semilla, *variar
    por pieza*, y *Aplicar a toda la pieza*.
-3. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
+4. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
    radio de bisel de aristas (mm), suavizado.
 
@@ -1364,7 +1422,8 @@ mover y el menú contextual completo de piezas (U3), focos propios y
 guardar montajes (L4), biblioteca *Míos* (U4), cara CAD entera, pelusa,
 desgaste visible, campo claro por entorno, cielo procedural, HDRI de
 archivo, colocación por reflejo exacta, vídeo, pases de render, etiquetas
-y texturas de imagen, vista en sección. Todo está en `ROADMAP.md` con su
+y texturas de imagen (fase M2a en la interfaz y la vista previa, M2b en el
+motor), vista en sección. Todo está en `ROADMAP.md` con su
 fase y su responsable. En la interfaz, cada uno de esos huecos se marca
 con la palabra *próximamente* en texto auxiliar, nunca con un control que
 parezca funcionar y no haga nada.

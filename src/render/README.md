@@ -22,3 +22,6 @@ never on ui (the RSB writer of `io/` reaches the path tracer through `SceneSourc
   nearest the time limit.
 - `tonemap.ts`: the engine's exposure, curves and sRGB encoding, ported bit for bit (`rt --tone-table`), and the
   fast path the viewport uses.
+- `texture-shader.ts` and `texture-preview.ts` (M2a): image textures and labels in *Fast* mode, the GLSL put into
+  three's physical material with `onBeforeCompile` (assembled and tested without a GPU) and a cache of textures by
+  image, with mipmaps.

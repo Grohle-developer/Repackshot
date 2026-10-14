@@ -458,6 +458,30 @@ async function labelCheck(browser) {
   ok(/label/i.test(undoTip ?? ''), `the undo does not name the label: ${undoTip}`, f);
   const shot = { x: Math.round(cb.x + cb.width * 0.25), y: Math.round(cb.y + cb.height * 0.05), width: Math.round(cb.width * 0.5), height: Math.round(cb.height * 0.9) };
   await page.screenshot({ path: join(SHOTS, 'label-placed.png'), clip: shot });
+  // Move label: a drag on the body slides it up; the pixel it left is the bottle's again, one undo entry.
+  await page.locator('[data-label-move]').first().click();
+  await settle(page, 150);
+  const to = { x: at.x, y: at.y - cb.height * 0.08 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.press('Escape');
+  await page.mouse.move(5, 500);
+  await rest(page, 900);
+  const moved = await pixels(page, [[at.x, at.y], [to.x, to.y]]);
+  log.moved = moved;
+  ok(Math.abs(moved[0][0] - before[0][0]) < 40 && moved[1][0] > moved[1][2] + 40, `Move label did not slide the label: ${JSON.stringify(moved)}`, f);
+  const tipMove = await page.locator('.hdr button[aria-label="Undo"]').getAttribute('data-tip');
+  ok(/Move label/.test(tipMove ?? ''), `the undo does not name the move: ${tipMove}`, f);
+  // Undo the move, then the placing: one entry each; the label is gone.
+  await page.locator('canvas[aria-label="viewport"]').focus();
+  await page.keyboard.press('Control+z');
+  await settle(page, 150);
+  await page.keyboard.press('Control+z');
+  await settle(page, 300);
+  const left = await page.evaluate(() => document.querySelectorAll('[data-label]').length);
+  ok(left === 0, `two undos left ${left} labels`, f);
   ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
   await context.close();
   results.label = { ok: f.length === 0, failures: f, ...log };
