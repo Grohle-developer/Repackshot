@@ -248,39 +248,64 @@ fn glass(base: Rgb, roughness: f32, absorption_mm: f32) -> Material {
     }
 }
 
+/// The profile of the perfume bottle's glass body: a 3 mm wall and an 8 mm base (radius, height, mm).
+const BOTTLE_BODY: [(f32, f32); 18] = [
+    (0.0, 0.0),
+    (33.0, 0.0),
+    (35.0, 2.0),
+    (35.0, 85.0),
+    (32.0, 92.0),
+    (24.0, 98.0),
+    (12.0, 102.0),
+    (10.0, 104.0),
+    (10.0, 112.0),
+    (7.0, 112.0),
+    (7.0, 104.0),
+    (9.0, 101.0),
+    (21.0, 95.5),
+    (29.0, 89.5),
+    (32.0, 84.0),
+    (32.0, 10.0),
+    (30.0, 8.0),
+    (0.0, 8.0),
+];
+/// The profile of its cap.
+const BOTTLE_CAP: [(f32, f32); 5] = [
+    (0.0, 106.0),
+    (14.0, 106.0),
+    (14.0, 128.0),
+    (13.0, 130.0),
+    (0.0, 130.0),
+];
+
+/// The perfume bottle's two meshes: its glass body and its cap, about the Z axis from the floor.
+fn bottle_meshes() -> [Mesh; 2] {
+    [
+        lathe(&BOTTLE_BODY, 96, 30.0, 0),
+        lathe(&BOTTLE_CAP, 96, 30.0, 0),
+    ]
+}
+
+/// The perfume bottle's materials: thick tinted glass, and brushed gold (anisotropic).
+fn bottle_materials() -> [Material; 2] {
+    [
+        glass(Rgb::new(0.78, 0.93, 0.88), 0.0, 40.0),
+        Material {
+            base_color: Rgb::new(1.0, 0.77, 0.34),
+            metallic: 1.0,
+            roughness: 0.28,
+            anisotropy: 0.8,
+            ..Material::default()
+        },
+    ]
+}
+
 /// A perfume bottle of thick glass (a solid of revolution with a 3 mm wall and an 8 mm base,
 /// tinted by absorption) and a brushed gold cap (anisotropic, its tangents around the bottle's
 /// axis), on a white floor, between two soft boxes and in front of a backlit panel that the
 /// camera sees (the bright field of the BACKLIT setup through and around the glass).
 pub fn glass_bottle(size: (u32, u32)) -> Scene {
-    let body = [
-        (0.0, 0.0),
-        (33.0, 0.0),
-        (35.0, 2.0),
-        (35.0, 85.0),
-        (32.0, 92.0),
-        (24.0, 98.0),
-        (12.0, 102.0),
-        (10.0, 104.0),
-        (10.0, 112.0),
-        (7.0, 112.0),
-        (7.0, 104.0),
-        (9.0, 101.0),
-        (21.0, 95.5),
-        (29.0, 89.5),
-        (32.0, 84.0),
-        (32.0, 10.0),
-        (30.0, 8.0),
-        (0.0, 8.0),
-    ];
-    let cap = [
-        (0.0, 106.0),
-        (14.0, 106.0),
-        (14.0, 128.0),
-        (13.0, 130.0),
-        (0.0, 130.0),
-    ];
-    let meshes = vec![lathe(&body, 96, 30.0, 0), lathe(&cap, 96, 30.0, 0)];
+    let meshes = Vec::from(bottle_meshes());
     let instances = vec![
         Instance::new(0, Transform::IDENTITY, 0),
         Instance::new(1, Transform::IDENTITY, 1),
@@ -288,16 +313,7 @@ pub fn glass_bottle(size: (u32, u32)) -> Scene {
     let target = Vec3::new(0.0, 0.0, 62.0);
     Scene {
         camera: camera(Vec3::new(0.0, -560.0, 150.0), target, 85.0),
-        materials: vec![
-            glass(Rgb::new(0.78, 0.93, 0.88), 0.0, 40.0),
-            Material {
-                base_color: Rgb::new(1.0, 0.77, 0.34),
-                metallic: 1.0,
-                roughness: 0.28,
-                anisotropy: 0.8,
-                ..Material::default()
-            },
-        ],
+        materials: Vec::from(bottle_materials()),
         geometry: Geometry::new(meshes, instances).unwrap_or_default(),
         lights: vec![
             panel(
@@ -393,9 +409,9 @@ pub fn materials_board(size: (u32, u32)) -> Scene {
     }
 }
 
-/// A table lamp in a dark room: a filament (an emissive coil at 2700 K, sampled as a light)
-/// inside a bulb of thin glass, on a lacquered stand, lighting a white sphere and a red box.
-pub fn lamp(size: (u32, u32)) -> Scene {
+/// The table lamp of [`lamp`]: its black lacquered base and stem, its thin glass bulb and its
+/// filament (a torus: a coil, seen from afar), and where the filament hangs.
+fn lamp_meshes() -> ([Mesh; 3], Transform) {
     let base = lathe(
         &[
             (0.0, 0.0),
@@ -425,6 +441,38 @@ pub fn lamp(size: (u32, u32)) -> Scene {
     }
     let filament = lathe(&ring, 48, 89.0, 0);
     let filament_at = Transform::translation(Vec3::new(0.0, 0.0, 200.0));
+    ([base, bulb, filament], filament_at)
+}
+
+/// The lamp's materials: the lacquered base, the bulb's thin glass and the 2700 K filament (900 W).
+fn lamp_materials() -> [Material; 3] {
+    [
+        Material {
+            base_color: Rgb::new(0.04, 0.04, 0.045),
+            roughness: 0.35,
+            coat: 1.0,
+            coat_roughness: 0.05,
+            ..Material::default()
+        },
+        Material {
+            flags: MATERIAL_FLAG_THIN,
+            ..glass(Rgb::WHITE, 0.0, 0.0)
+        },
+        Material {
+            kind: MATERIAL_EMISSIVE,
+            emission: kelvin_rgb(2700.0),
+            emission_power: 900.0,
+            flags: MATERIAL_FLAG_LIGHT,
+            ..Material::default()
+        },
+    ]
+}
+
+/// A table lamp in a dark room: a filament (an emissive coil at 2700 K, sampled as a light)
+/// inside a bulb of thin glass, on a lacquered stand, lighting a white sphere and a red box.
+pub fn lamp(size: (u32, u32)) -> Scene {
+    let ([base, bulb, filament], filament_at) = lamp_meshes();
+    let [lacquer, thin_glass, filament_light] = lamp_materials();
     let ball = rt_core::example::icosphere(Vec3::new(170.0, 60.0, 45.0), 45.0, 3);
     let cube = rt_core::example::icosphere(Vec3::ZERO, 1.0, 0);
     let cube_mesh = {
@@ -472,24 +520,9 @@ pub fn lamp(size: (u32, u32)) -> Scene {
     Scene {
         camera: camera(Vec3::new(60.0, -820.0, 300.0), target, 50.0),
         materials: vec![
-            Material {
-                base_color: Rgb::new(0.04, 0.04, 0.045),
-                roughness: 0.35,
-                coat: 1.0,
-                coat_roughness: 0.05,
-                ..Material::default()
-            },
-            Material {
-                flags: MATERIAL_FLAG_THIN,
-                ..glass(Rgb::WHITE, 0.0, 0.0)
-            },
-            Material {
-                kind: MATERIAL_EMISSIVE,
-                emission: kelvin_rgb(2700.0),
-                emission_power: 900.0,
-                flags: MATERIAL_FLAG_LIGHT,
-                ..Material::default()
-            },
+            lacquer,
+            thin_glass,
+            filament_light,
             Material {
                 base_color: Rgb::splat(0.8),
                 roughness: 0.4,
@@ -514,6 +547,53 @@ pub fn lamp(size: (u32, u32)) -> Scene {
             color: Rgb::splat(0.6),
         },
         render: settings(size, 16, 0.5),
+        bitmaps: Vec::new(),
+    }
+}
+
+/// The size of [`film_thumb`]: 16:10, small (the film plugin's recipes are applied to it, P6).
+pub const FILM_THUMB_SIZE: (u32, u32) = (320, 200);
+
+/// The base picture of the film plugin's recipe thumbnails (P6): the perfume bottle of
+/// [`glass_bottle`] standing beside the table lamp of [`lamp`], in the lamp's dark room with the
+/// lamp on (its filament is the only light), framed 16:10. `rt --write-film-thumb` writes it, and
+/// `rt <it> -o thumb-base.png --samples 512 --denoise` renders the picture the plugin carries.
+pub fn film_thumb(size: (u32, u32)) -> Scene {
+    let ([base, bulb, filament], filament_at) = lamp_meshes();
+    let [body, cap] = bottle_meshes();
+    let [lacquer, thin_glass, filament_light] = lamp_materials();
+    let [bottle_glass, gold] = bottle_materials();
+    let bottle_at = Transform::translation(Vec3::new(115.0, -30.0, 0.0));
+    let meshes = vec![base, bulb, filament, body, cap];
+    let instances = vec![
+        Instance::new(0, Transform::IDENTITY, 0),
+        Instance::new(1, Transform::IDENTITY, 1),
+        Instance::new(2, filament_at, 2),
+        Instance::new(3, bottle_at, 3),
+        Instance::new(4, bottle_at, 4),
+    ];
+    let target = Vec3::new(55.0, 0.0, 122.0);
+    Scene {
+        camera: camera(Vec3::new(95.0, -640.0, 215.0), target, 50.0),
+        materials: vec![lacquer, thin_glass, filament_light, bottle_glass, gold],
+        geometry: Geometry::new(meshes, instances).unwrap_or_default(),
+        lights: Vec::new(),
+        environment: Environment {
+            strength: 0.04,
+            background_color: Rgb::splat(0.002),
+            ..dome(0.04)
+        },
+        floor: Floor {
+            mode: FloorMode::Visible,
+            z: 0.0,
+            color: Rgb::splat(0.6),
+        },
+        render: RenderSettings {
+            // The filament seen through two glasses throws caustics on the floor that a path
+            // tracer finds as fireflies: capped, as a thumbnail wants them.
+            clamp_indirect: 2.0,
+            ..settings(size, 24, 0.5)
+        },
         bitmaps: Vec::new(),
     }
 }
@@ -996,6 +1076,36 @@ mod tests {
         for s in &scenes {
             assert!(Scene::from_rsb(&s.scene.to_rsb()).is_ok(), "{}", s.key);
             assert!(s.scene.triangle_count() > 0);
+        }
+    }
+
+    #[test]
+    fn the_film_thumb_puts_the_bottle_beside_the_lit_lamp() {
+        let scene = film_thumb(FILM_THUMB_SIZE);
+        assert_eq!((scene.render.width, scene.render.height), (320, 200));
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        // The lamp's three parts and the bottle's two, with their own materials.
+        let instances = scene.geometry.instances();
+        assert_eq!(instances.len(), 5);
+        for (i, instance) in instances.iter().enumerate() {
+            assert_eq!(
+                (instance.mesh as usize, instance.material_id as usize),
+                (i, i)
+            );
+        }
+        // The lamp's filament is the only light; the room around it stays dark.
+        assert!(scene.lights.is_empty());
+        assert!(scene.materials[2].emission_power > 0.0);
+        assert!(scene.environment.strength < 0.1);
+        // Lamp and bottle are side by side, both on the floor, both in front of the camera.
+        let (lamp, bottle) = (lamp(FILM_THUMB_SIZE), glass_bottle(FILM_THUMB_SIZE));
+        assert_eq!(scene.materials[..3], lamp.materials[..3]);
+        assert_eq!(scene.materials[3..], bottle.materials[..]);
+        let bottle_at = instances[3].transform.point(Vec3::new(0.0, 0.0, 0.0));
+        assert!(bottle_at.x > 80.0 && bottle_at.z == 0.0, "{bottle_at:?}");
+        let forward = (scene.camera.target - scene.camera.position).normalize();
+        for p in [Vec3::new(0.0, 0.0, 100.0), bottle_at] {
+            assert!((p - scene.camera.position).dot(forward) > 0.0);
         }
     }
 
