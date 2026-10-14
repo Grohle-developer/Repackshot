@@ -31,13 +31,11 @@ carrusel con deslizador y filtros · N6 despieces y línea de tiempo. Cada fase 
 
 ## Pendiente del responsable (orden)
 
-0. **Re-fijar la miniatura de bokeh** tras E12: con el wasm nuevo
-   (`npm run engine:build`), `REPACK_REQUIRE_POST_WASM=1 npx vitest run
-   --maxWorkers=1 tests/optics.test.ts` da el hash nuevo de *la curva
-   poligonal a 4 spp*; escribirlo en `PINNED_BOKEH_THUMB`
-   (`tests/optics.test.ts`). Solo se comprueba en local y en quien tenga
-   el wasm: el trabajo `suite` de CI no lo compila. El hash de la escena
-   O1 (`render.rs`, `ARCHITECTURE.md`, `ROADMAP.md`) ya está re-fijado.
+0. Hecho: con el wasm reconstruido tras E12 (`npm run engine:build`),
+   `REPACK_REQUIRE_POST_WASM=1 npx vitest run tests/optics.test.ts` pasa
+   entero (14 tests): la miniatura de bokeh (`PINNED_BOKEH_THUMB`) no se
+   movió y la escena O1 da el hash re-fijado también en el wasm. Nada
+   pendiente aquí.
 1. Fusionar lo que entregue cada agente en la rama de sesión: resolver
    conflictos (CHANGELOG/ROADMAP/ARCHITECTURE por secciones añadidas;
    `MATL`: bisel E6, campos E9, bloque de texturas M2a), `npm run check`,
