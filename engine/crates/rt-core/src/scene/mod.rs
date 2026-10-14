@@ -214,9 +214,11 @@ pub enum LightKind {
     Disk,
     /// 2: a distant sun of angular diameter `angle_deg`; light travels along `direction`.
     Sun,
-    /// 3: a point light. Reserved for phase L4: parsed and kept, not rendered yet.
+    /// 3: a point light (L4): a sphere of diameter `size_x` (0: a point) glowing the same in every
+    /// direction.
     Point,
-    /// 4: a spot light. Reserved for phase L4: parsed and kept, not rendered yet.
+    /// 4: a spot light (L4): the point light it would be, inside a cone of `spread_deg` about
+    /// `direction` with a soft edge of `angle_deg` inward from the cone's edge.
     Spot,
 }
 
@@ -251,6 +253,9 @@ impl LightKind {
 pub const LIGHT_FLAG_GLOSSY: u32 = 1;
 /// Light flag (bit 1): the light is directly visible to camera rays.
 pub const LIGHT_FLAG_CAMERA: u32 = 2;
+/// Light flag (bit 2, L4): the light casts no shadow (its shadow rays are not traced). Files from
+/// before it never set the bit: every light casts shadows.
+pub const LIGHT_FLAG_NO_SHADOW: u32 = 4;
 
 /// A light source.
 #[derive(Clone, Debug, PartialEq)]
@@ -263,7 +268,7 @@ pub struct Light {
     pub direction: Vec3,
     /// Orientation of the light's local Y axis around `direction`.
     pub up: Vec3,
-    /// Width (rect) or diameter (disk), in scene units.
+    /// Width (rect) or diameter (disk, point, spot), in scene units.
     pub size_x: f32,
     /// Height (rect), in scene units.
     pub size_y: f32,
@@ -271,12 +276,16 @@ pub struct Light {
     pub color: Rgb,
     /// Rect and disk: radiant flux in watts leaving the front face without spread falloff
     /// (scene millimetres are read as 1e-3 m, so the radiance is `power / (π · area_m2)`). Sun:
-    /// irradiance in W/m^2 on a surface facing it.
+    /// irradiance in W/m^2 on a surface facing it. Point: flux in watts sent the same in every
+    /// direction (intensity `power / 4π` W/sr). Spot: the flux of the point light it masks (its
+    /// axis is as bright as that point light, whatever its cone).
     pub power: f32,
-    /// Beam spread in degrees: 180 is a bare diffuser (Lambertian); smaller values add a
-    /// `cos^n` falloff whose intensity halves at `spread_deg / 2` from the normal.
+    /// Rect and disk: beam spread in degrees: 180 is a bare diffuser (Lambertian); smaller values
+    /// add a `cos^n` falloff whose intensity halves at `spread_deg / 2` from the normal. Spot: the
+    /// full angle of its cone.
     pub spread_deg: f32,
-    /// Angular diameter in degrees (sun).
+    /// Sun: angular diameter in degrees. Spot: the soft edge, degrees inward from the edge of the
+    /// cone (a smoothstep from 0 at the edge to 1).
     pub angle_deg: f32,
     /// Bit set of `LIGHT_FLAG_*` values.
     pub flags: u32,

@@ -11,6 +11,16 @@
 //! * **Sun** (kind 2): a disc of angular diameter `angle_deg`, sampled uniformly inside its cone;
 //!   radiance `E / (π sin² θmax)` so that a surface facing it receives `E = power` W/m². An
 //!   angle of zero is a delta direction.
+//! * **Point and spot lights** (kinds 3 and 4, phase L4): a sphere of diameter `size_x` and
+//!   uniform radiance `I / (π r²)`, with the intensity `I = power / 4π` W/sr of an isotropic
+//!   source of `power` watts, so that a surface facing it at `d` receives `I / d²` whatever its
+//!   size. Sampled uniformly inside the cone of directions it fills (density `1 / (2π (1 −
+//!   cos θmax))`); a sphere of no size (or too small to tell from a point at that distance) is a
+//!   delta position, `I / d²` with no other technique to find it. A spot is the point light it
+//!   would be, masked by the direction from its centre: 1 inside its inner cone, a smoothstep to
+//!   0 at the edge of its cone of `spread_deg` (the soft edge is `angle_deg` wide), as the
+//!   preview's spot light draws it. Its sphere shows to the camera and in reflections like a
+//!   panel does (flags `camera`, `glossy`).
 //! * **Emissive meshes**: instances whose material is emissive and carries
 //!   [`crate::scene::MATERIAL_FLAG_LIGHT`]; triangles are chosen in proportion to their area,
 //!   points uniformly on them. Two-sided unless the instance is one-sided.
@@ -18,16 +28,18 @@
 //!
 //! Next-event estimation picks **one** of them per vertex, with probability proportional to an
 //! estimate of the flux it sends into the scene's bounding sphere (flux and distance for area
-//! lights and emitters, `π E` for the sun, `4π² L̄` for the environment). A light tree (Conty and
-//! Kulla 2018) replaces this in phase K4. Point and spot lights (kinds 3 and 4) are reserved for
-//! L4 and ignored here.
+//! lights and emitters, `π E` for the sun, `4π² L̄` for the environment; a point light by its
+//! flux and distance, a spot as the point light it is when its cone takes in the scene's centre). A light tree (Conty and
+//! Kulla 2018) replaces this in phase K4. A light flagged `LIGHT_FLAG_NO_SHADOW` (L4) lights
+//! through everything: its samples say so ([`LightSample::shadow`]) and no shadow ray is traced.
 
 use crate::color::Rgb;
 use crate::environment::EnvLight;
 use crate::fmath;
 use crate::math::{Frame, Ray, Vec3};
 use crate::scene::{
-    LightKind, Scene, INSTANCE_ONE_SIDED, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY, MATERIAL_FLAG_LIGHT,
+    LightKind, Scene, INSTANCE_ONE_SIDED, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY,
+    LIGHT_FLAG_NO_SHADOW, MATERIAL_FLAG_LIGHT,
 };
 use crate::warp;
 
@@ -79,6 +91,7 @@ struct AreaLight {
     exponent: f32,
     glossy: bool,
     camera: bool,
+    shadow: bool,
     /// Probability of being chosen for next-event estimation.
     pmf: f32,
 }
@@ -164,12 +177,95 @@ struct SunLight {
     delta: bool,
     glossy: bool,
     camera: bool,
+    shadow: bool,
     pmf: f32,
 }
 
 impl SunLight {
     fn contains(&self, dir: Vec3) -> bool {
         !self.delta && dir.dot(self.frame.z) >= self.cos_max
+    }
+}
+
+/// Below this `1 − cos θmax` a sphere light is a point: its cone of directions is too narrow to
+/// sample (f32) and its radiance too large to matter apart from its intensity.
+const POINT_CONE: f32 = 1.0e-7;
+
+/// A point light or a spot (kinds 3 and 4): a sphere of uniform radiance, a spot's masked by
+/// the direction from its centre.
+#[derive(Clone, Debug, PartialEq)]
+struct SphereLight {
+    centre: Vec3,
+    /// Scene units (mm); 0 is a point.
+    radius: f32,
+    /// W/sr: `power / 4π`.
+    intensity: Rgb,
+    /// Radiance of the sphere's surface: `intensity / (π r²)`, r in metres (0 for a point).
+    radiance: Rgb,
+    /// A spot's axis and the cosines of the edge of its cone and of its inner cone; a point
+    /// light has `cos_outer` below -1 (no mask).
+    axis: Vec3,
+    cos_outer: f32,
+    cos_inner: f32,
+    glossy: bool,
+    camera: bool,
+    shadow: bool,
+    pmf: f32,
+}
+
+impl SphereLight {
+    /// How much of its light reaches `x`: 1 for a point light; for a spot a smoothstep from 0 at
+    /// the edge of its cone to 1 at its inner cone, by the direction from its centre to `x`.
+    fn mask(&self, x: Vec3) -> f32 {
+        if self.cos_outer < -1.0 {
+            return 1.0;
+        }
+        let d = x - self.centre;
+        let len2 = d.length_squared();
+        if !positive(len2) {
+            return 0.0;
+        }
+        let c = d.dot(self.axis) / len2.sqrt();
+        if c <= self.cos_outer {
+            0.0
+        } else if c >= self.cos_inner {
+            1.0
+        } else {
+            let t = (c - self.cos_outer) / (self.cos_inner - self.cos_outer);
+            t * t * (3.0 - 2.0 * t)
+        }
+    }
+
+    /// `1 − cos θmax` of the cone of directions the sphere fills seen from `dist2` (mm²) away;
+    /// None from inside it, and below [`POINT_CONE`] (a point) zero.
+    fn cone(&self, dist2: f32) -> Option<f32> {
+        let r2 = self.radius * self.radius;
+        if !positive(dist2 - r2) {
+            return None;
+        }
+        let sin2 = r2 / dist2;
+        let omc = sin2 / (1.0 + (1.0 - sin2).max(0.0).sqrt());
+        Some(if omc < POINT_CONE { 0.0 } else { omc })
+    }
+
+    /// Where `ray` (unit direction) meets the sphere from outside before `t_max`.
+    fn intersect(&self, ray: &Ray, t_max: f32) -> Option<f32> {
+        if !positive(self.radius) {
+            return None;
+        }
+        let oc = ray.origin - self.centre;
+        let r2 = self.radius * self.radius;
+        if oc.length_squared() <= r2 {
+            return None; // from inside
+        }
+        let b = oc.dot(ray.dir);
+        // The distance from the centre to the line, without the cancellation of b² − c.
+        let disc = r2 - (oc - ray.dir * b).length_squared();
+        if disc < 0.0 {
+            return None;
+        }
+        let t = -b - disc.sqrt();
+        (t > ray.t_min && t < t_max).then_some(t)
     }
 }
 
@@ -194,6 +290,7 @@ struct MeshEmitter {
 enum LightRef {
     Area(u32),
     Sun(u32),
+    Sphere(u32),
     Mesh(u32),
     Environment,
 }
@@ -215,6 +312,9 @@ pub struct LightSample {
     /// The light lights every lobe and BSDF sampling can find it (MIS applies); otherwise it
     /// lights the diffuse lobe only and its weight is one.
     pub glossy: bool,
+    /// The light casts shadows: a shadow ray decides whether the sample arrives. Without it
+    /// (`LIGHT_FLAG_NO_SHADOW`, L4) it always does.
+    pub shadow: bool,
 }
 
 /// Every light of a scene, ready for sampling.
@@ -222,6 +322,7 @@ pub struct LightSample {
 pub struct Lights {
     areas: Vec<AreaLight>,
     suns: Vec<SunLight>,
+    spheres: Vec<SphereLight>,
     meshes: Vec<MeshEmitter>,
     env: EnvLight,
     env_pmf: f32,
@@ -293,11 +394,13 @@ impl Lights {
 
         let mut areas = Vec::new();
         let mut suns = Vec::new();
+        let mut spheres = Vec::new();
         let mut weights = Vec::new();
         let mut entries = Vec::new();
         for light in &scene.lights {
             let glossy = light.flags & LIGHT_FLAG_GLOSSY != 0;
             let camera = light.flags & LIGHT_FLAG_CAMERA != 0;
+            let shadow = light.flags & LIGHT_FLAG_NO_SHADOW == 0;
             let power = light.power.max(0.0);
             match light.kind {
                 LightKind::Rect | LightKind::Disk => {
@@ -337,6 +440,7 @@ impl Lights {
                         exponent,
                         glossy,
                         camera,
+                        shadow,
                         pmf: 0.0,
                     });
                 }
@@ -372,11 +476,57 @@ impl Lights {
                         delta,
                         glossy,
                         camera,
+                        shadow,
                         pmf: 0.0,
                     });
                 }
-                // Reserved for L4.
-                LightKind::Point | LightKind::Spot => {}
+                LightKind::Point | LightKind::Spot => {
+                    let color = light.color.map(|v| v.max(0.0));
+                    let intensity = color * (power / (4.0 * fmath::PI));
+                    let radius = 0.5 * light.size_x.abs();
+                    let radius = if radius.is_finite() { radius } else { 0.0 };
+                    let (axis, cos_outer, cos_inner) = if light.kind == LightKind::Spot {
+                        let axis = light.direction.normalize();
+                        if axis.length_squared() < 0.5 {
+                            continue;
+                        }
+                        let half = 0.5 * light.spread_deg.clamp(1.0, 180.0) * fmath::DEG_TO_RAD;
+                        let soft = light.angle_deg.max(0.0) * fmath::DEG_TO_RAD;
+                        let inner = (half - soft).max(0.0);
+                        (axis, fmath::cos(half), fmath::cos(inner))
+                    } else {
+                        (Vec3::new(0.0, 0.0, -1.0), -2.0, -2.0)
+                    };
+                    let flux = color.luminance() * power;
+                    if !positive(flux) {
+                        continue;
+                    }
+                    let r_m = radius * MM_TO_M;
+                    let radiance = if radius > 0.0 {
+                        intensity * (1.0 / (fmath::PI * r_m * r_m))
+                    } else {
+                        Rgb::BLACK
+                    };
+                    let sphere = SphereLight {
+                        centre: light.position,
+                        radius,
+                        intensity,
+                        radiance,
+                        axis,
+                        cos_outer,
+                        cos_inner,
+                        glossy,
+                        camera,
+                        shadow,
+                        pmf: 0.0,
+                    };
+                    // What matters is how bright it is where the scene is, not the little flux of a narrow cone: a
+                    // spot aimed at the scene weighs as its point light would, one aimed away a twentieth of it.
+                    let toward = 0.05 + 0.95 * sphere.mask(centre);
+                    weights.push(flux * toward * reach(light.position, None));
+                    entries.push(LightRef::Sphere(spheres.len() as u32));
+                    spheres.push(sphere);
+                }
             }
         }
 
@@ -447,6 +597,7 @@ impl Lights {
         let mut lights = Lights {
             areas,
             suns,
+            spheres,
             meshes,
             env,
             env_pmf: 0.0,
@@ -459,6 +610,7 @@ impl Lights {
             match lights.entries[i] {
                 LightRef::Area(a) => lights.areas[a as usize].pmf = pmf,
                 LightRef::Sun(s) => lights.suns[s as usize].pmf = pmf,
+                LightRef::Sphere(s) => lights.spheres[s as usize].pmf = pmf,
                 LightRef::Mesh(m) => lights.meshes[m as usize].pmf = pmf,
                 LightRef::Environment => lights.env_pmf = pmf,
             }
@@ -506,6 +658,7 @@ impl Lights {
                     pdf: light.pmf * dist2 / (light.area * cos),
                     delta: false,
                     glossy: light.glossy,
+                    shadow: light.shadow,
                 }
             }
             LightRef::Sun(s) => {
@@ -518,6 +671,7 @@ impl Lights {
                         pdf: sun.pmf,
                         delta: true,
                         glossy: sun.glossy,
+                        shadow: sun.shadow,
                     }
                 } else {
                     let local = warp::uniform_cone(u, sun.one_minus_cos_max);
@@ -528,6 +682,51 @@ impl Lights {
                         pdf: sun.pmf / sun.solid_angle,
                         delta: false,
                         glossy: sun.glossy,
+                        shadow: sun.shadow,
+                    }
+                }
+            }
+            LightRef::Sphere(s) => {
+                let light = &self.spheres[s as usize];
+                let mask = light.mask(x);
+                let d = light.centre - x;
+                let dist2 = d.length_squared();
+                if !(mask > 0.0 && dist2 > 0.0) {
+                    return None;
+                }
+                let dist = dist2.sqrt();
+                let towards = d / dist;
+                let omc = if light.radius > 0.0 {
+                    light.cone(dist2)?
+                } else {
+                    0.0
+                };
+                if omc == 0.0 {
+                    // A point (or a sphere too small to tell from one): its intensity over d².
+                    LightSample {
+                        wi: towards,
+                        distance: dist,
+                        radiance: light.intensity * (mask / (dist2 * MM2_TO_M2)),
+                        pdf: light.pmf,
+                        delta: true,
+                        glossy: light.glossy,
+                        shadow: light.shadow,
+                    }
+                } else {
+                    let local = warp::uniform_cone(u, omc);
+                    let wi = Frame::from_normal(towards).to_world(local).normalize();
+                    // The near side of the sphere along wi.
+                    let b = wi.dot(d);
+                    let r2 = light.radius * light.radius;
+                    let near = b - (r2 - (d - wi * b).length_squared()).max(0.0).sqrt();
+                    LightSample {
+                        wi,
+                        distance: near.max(0.0),
+                        radiance: light.radiance * mask,
+                        pdf: light.pmf / (fmath::TAU * omc),
+                        delta: false,
+                        glossy: light.glossy,
+                        shadow: light.shadow,
                     }
                 }
             }
@@ -556,6 +755,7 @@ impl Lights {
                     pdf: emitter.pmf * dist2 / (emitter.area * cos),
                     delta: false,
                     glossy: true,
+                    shadow: true,
                 }
             }
             LightRef::Environment => {
@@ -567,6 +767,7 @@ impl Lights {
                     pdf: self.env_pmf * pdf,
                     delta: false,
                     glossy: true,
+                    shadow: true,
                 }
             }
         };
@@ -608,6 +809,33 @@ impl Lights {
             };
             sum += light.radiance_at(cos) * weight;
         }
+        for light in &self.spheres {
+            let visible = match bsdf_pdf {
+                None => light.camera,
+                Some(_) => light.glossy,
+            };
+            if !visible {
+                continue;
+            }
+            let Some(_) = light.intersect(ray, t_max) else {
+                continue;
+            };
+            // Seen from the vertex the ray left (offset back along it), as next-event estimation saw it.
+            let vertex = ray.origin - ray.dir * offset;
+            let mask = light.mask(vertex);
+            if !positive(mask) {
+                continue;
+            }
+            let weight = match bsdf_pdf {
+                None => 1.0,
+                Some(pdf) => match light.cone((light.centre - vertex).length_squared()) {
+                    // Next-event estimation takes it for a point there: only it counts it.
+                    Some(omc) if omc > 0.0 => power_heuristic(pdf, light.pmf / (fmath::TAU * omc)),
+                    _ => 0.0,
+                },
+            };
+            sum += light.radiance * (mask * weight);
+        }
         sum
     }
 
@@ -618,12 +846,19 @@ impl Lights {
         self.areas
             .iter()
             .any(|light| light.camera && light.intersect(ray, t_max).is_some())
+            || self.spheres.iter().any(|light| {
+                light.camera
+                    && light.intersect(ray, t_max).is_some()
+                    && light.mask(ray.origin) > 0.0
+            })
     }
 
     /// True when a camera ray could see any light directly (the alpha of a transparent
     /// background then needs [`Lights::crossed`]).
     pub fn any_camera_visible(&self) -> bool {
-        self.areas.iter().any(|l| l.camera) || self.suns.iter().any(|s| s.camera && !s.delta)
+        self.areas.iter().any(|l| l.camera)
+            || self.suns.iter().any(|s| s.camera && !s.delta)
+            || self.spheres.iter().any(|l| l.camera && l.radius > 0.0)
     }
 
     /// Radiance from the sky along the unit direction `dir` of a ray that left the scene: the
@@ -669,6 +904,30 @@ impl Lights {
 mod tests {
     use super::*;
     use crate::scene::{Environment, Light, Material, Mesh, MATERIAL_EMISSIVE};
+
+    #[test]
+    fn sphere_lights_too_small_to_tell_from_a_point_are_points() {
+        // 0.01 mm across at 10 m: its cone underflows, so it is sampled as the point it looks like.
+        let lights = Lights::new(&Scene {
+            lights: vec![Light {
+                kind: LightKind::Point,
+                position: Vec3::new(0.0, 0.0, 10_000.0),
+                size_x: 0.000_01,
+                power: 5.0,
+                ..Light::default()
+            }],
+            environment: Environment {
+                strength: 0.0,
+                ..Environment::default()
+            },
+            ..Scene::default()
+        });
+        let s = lights
+            .sample(Vec3::ZERO, 0.5, (0.5, 0.5))
+            .expect("tiny sphere");
+        assert!(s.delta);
+        assert!((s.radiance.g - 5.0 / (4.0 * fmath::PI * 100.0)).abs() < 1.0e-6);
+    }
 
     fn rect(position: Vec3, direction: Vec3, size: f32, power: f32) -> Light {
         Light {
@@ -795,7 +1054,7 @@ mod tests {
     }
 
     #[test]
-    fn selection_follows_power_and_reserved_kinds_are_ignored() {
+    fn selection_follows_power() {
         let scene = Scene {
             lights: vec![
                 rect(
@@ -810,14 +1069,6 @@ mod tests {
                     100.0,
                     10.0,
                 ),
-                Light {
-                    kind: LightKind::Point,
-                    ..Light::default()
-                },
-                Light {
-                    kind: LightKind::Spot,
-                    ..Light::default()
-                },
                 rect(Vec3::ZERO, Vec3::new(0.0, 0.0, -1.0), 100.0, 0.0),
             ],
             environment: black_env(),
@@ -840,6 +1091,280 @@ mod tests {
         });
         assert!(empty.is_empty());
         assert_eq!(empty.sample(Vec3::ZERO, 0.5, (0.5, 0.5)), None);
+    }
+
+    fn point(position: Vec3, diameter: f32, power: f32) -> Light {
+        Light {
+            kind: LightKind::Point,
+            position,
+            direction: Vec3::new(0.0, 0.0, -1.0),
+            size_x: diameter,
+            size_y: diameter,
+            power,
+            flags: LIGHT_FLAG_GLOSSY,
+            ..Light::default()
+        }
+    }
+
+    /// Irradiance at `x` on a surface facing +Z, by stratified samples of the only light.
+    fn irradiance_up(lights: &Lights, x: Vec3) -> f64 {
+        let mut e = 0.0f64;
+        let n = 64;
+        for i in 0..n {
+            for j in 0..n {
+                let u = ((i as f32 + 0.5) / n as f32, (j as f32 + 0.5) / n as f32);
+                if let Some(s) = lights.sample(x, 0.5, u) {
+                    e += (s.radiance.g * s.wi.z.max(0.0) / s.pdf) as f64;
+                }
+            }
+        }
+        e / (n * n) as f64
+    }
+
+    #[test]
+    fn a_point_light_gives_its_intensity_over_the_distance_squared() {
+        // 12 W sent the same in every direction, 400 mm above: E = 12 / (4π · 0.4²) W/m², a
+        // delta position (no other technique finds it); off the axis, cos θ / d².
+        let scene = Scene {
+            lights: vec![point(Vec3::new(0.0, 0.0, 400.0), 0.0, 12.0)],
+            environment: black_env(),
+            ..Scene::default()
+        };
+        let lights = Lights::new(&scene);
+        assert_eq!(lights.len(), 1);
+        let s = lights
+            .sample(Vec3::ZERO, 0.5, (0.3, 0.7))
+            .expect("point above");
+        let want = 12.0 / (4.0 * fmath::PI * 0.16);
+        assert!(s.delta && s.pdf == 1.0 && s.shadow);
+        assert!(
+            (s.radiance.g - want).abs() < want * 1.0e-5,
+            "{}",
+            s.radiance.g
+        );
+        assert!((s.distance - 400.0).abs() < 1.0e-3);
+        let side = Vec3::new(300.0, 0.0, 0.0);
+        let e = irradiance_up(&lights, side);
+        let (d2, cos) = (0.25f64, 0.8f64);
+        let want = 12.0 / (4.0 * std::f64::consts::PI * d2) * cos;
+        assert!((e / want - 1.0).abs() < 1.0e-4, "{e} vs {want}");
+        // A point is never seen: no camera or reflection rays find it.
+        let up = Ray::new(Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0));
+        assert_eq!(lights.crossed(&up, f32::INFINITY, None), Rgb::BLACK);
+        assert!(!lights.any_camera_visible());
+    }
+
+    #[test]
+    fn a_sphere_light_lights_like_its_point_and_shows_its_radiance() {
+        // A sphere of 100 mm diameter and 12 W, 400 mm above: on its axis a facing surface
+        // receives exactly I / d², the point light's irradiance, whatever its size.
+        let scene = Scene {
+            lights: vec![Light {
+                flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_CAMERA,
+                ..point(Vec3::new(0.0, 0.0, 400.0), 100.0, 12.0)
+            }],
+            environment: black_env(),
+            ..Scene::default()
+        };
+        let lights = Lights::new(&scene);
+        let e = irradiance_up(&lights, Vec3::ZERO);
+        let want = 12.0 / (4.0 * std::f64::consts::PI * 0.16);
+        assert!((e / want - 1.0).abs() < 2.0e-3, "{e} vs {want}");
+        let s = lights.sample(Vec3::ZERO, 0.5, (0.5, 0.5)).expect("sphere");
+        assert!(!s.delta && s.distance > 340.0 && s.distance < 400.0);
+        // Its surface has the radiance I / (π r²); the camera and reflections see it.
+        let radiance = 12.0 / (4.0 * fmath::PI) / (fmath::PI * 0.05 * 0.05);
+        let up = Ray::new(Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0));
+        assert!((lights.crossed(&up, f32::INFINITY, None).g - radiance).abs() < radiance * 1.0e-4);
+        assert!(lights.crossed(&up, 300.0, None) == Rgb::BLACK);
+        let w = lights.crossed(&up, f32::INFINITY, Some(1.0)).g;
+        assert!(w > 0.0 && w < radiance, "MIS weight of a BSDF ray: {w}");
+        assert!(lights.camera_sees_panel(&up, f32::INFINITY));
+        assert!(lights.any_camera_visible());
+        // From inside the sphere nothing is sampled.
+        assert_eq!(
+            lights.sample(Vec3::new(0.0, 0.0, 390.0), 0.5, (0.5, 0.5)),
+            None
+        );
+    }
+
+    #[test]
+    fn a_spot_lights_its_cone_and_fades_at_its_edge() {
+        // A 60 degree cone pointing down with a 10 degree soft edge: inside the inner cone it is
+        // its point light; past the edge nothing; in between the smoothstep.
+        let spot = Light {
+            kind: LightKind::Spot,
+            spread_deg: 60.0,
+            angle_deg: 10.0,
+            ..point(Vec3::new(0.0, 0.0, 1000.0), 0.0, 20.0)
+        };
+        let lights = Lights::new(&Scene {
+            lights: vec![spot],
+            environment: black_env(),
+            ..Scene::default()
+        });
+        let on_axis = lights.sample(Vec3::ZERO, 0.5, (0.5, 0.5)).expect("axis");
+        let want = 20.0 / (4.0 * fmath::PI * 1.0);
+        assert!((on_axis.radiance.g - want).abs() < want * 1.0e-5);
+        let at = |deg: f32| {
+            let a = deg * fmath::DEG_TO_RAD;
+            Vec3::new(1000.0 * fmath::sin(a) / fmath::cos(a), 0.0, 0.0)
+        };
+        // 15 degrees: inside the inner cone (20 degrees); 31: outside the cone (30).
+        let inner = lights
+            .sample(at(15.0), 0.5, (0.5, 0.5))
+            .expect("inner cone");
+        let d2 = at(15.0).length_squared() + 1.0e6;
+        assert!((inner.radiance.g - 20.0 / (4.0 * fmath::PI * d2 * 1.0e-6)).abs() < 1.0e-4);
+        assert_eq!(lights.sample(at(31.0), 0.5, (0.5, 0.5)), None);
+        // 25 degrees: half way through the soft edge, the smoothstep of one half.
+        let edge = lights.sample(at(25.0), 0.5, (0.5, 0.5)).expect("soft edge");
+        let d2 = at(25.0).length_squared() + 1.0e6;
+        let full = 20.0 / (4.0 * fmath::PI * d2 * 1.0e-6);
+        let t = (fmath::cos(25.0 * fmath::DEG_TO_RAD) - fmath::cos(30.0 * fmath::DEG_TO_RAD))
+            / (fmath::cos(20.0 * fmath::DEG_TO_RAD) - fmath::cos(30.0 * fmath::DEG_TO_RAD));
+        let smooth = t * t * (3.0 - 2.0 * t);
+        assert!((edge.radiance.g - full * smooth).abs() < full * 1.0e-4);
+        // A hard edge (no soft edge): all or nothing.
+        let hard = Lights::new(&Scene {
+            lights: vec![Light {
+                angle_deg: 0.0,
+                ..lights_spot(60.0)
+            }],
+            environment: black_env(),
+            ..Scene::default()
+        });
+        assert!(hard.sample(at(29.0), 0.5, (0.5, 0.5)).is_some());
+        assert_eq!(hard.sample(at(31.0), 0.5, (0.5, 0.5)), None);
+    }
+
+    fn lights_spot(spread: f32) -> Light {
+        Light {
+            kind: LightKind::Spot,
+            spread_deg: spread,
+            ..point(Vec3::new(0.0, 0.0, 1000.0), 0.0, 20.0)
+        }
+    }
+
+    #[test]
+    fn a_spot_sends_the_flux_of_its_cone() {
+        // The flux through a sphere around a spot of 80 degrees with a soft edge of 15: its
+        // point's intensity times the solid angle of its mask, which the interface's lumens use
+        // (`spotFraction` of core/photometry.ts): integrated here by sampling the mask.
+        let spot = Light {
+            angle_deg: 15.0,
+            ..lights_spot(80.0)
+        };
+        let lights = Lights::new(&Scene {
+            lights: vec![spot],
+            environment: black_env(),
+            ..Scene::default()
+        });
+        let light = &lights.spheres[0];
+        let n = 4096;
+        let mut sum = 0.0f64;
+        for i in 0..n {
+            // Uniform in cos over the lower hemisphere (the cone points down): mask times dω.
+            let c = (i as f64 + 0.5) / n as f64;
+            let s = (1.0 - c * c).sqrt();
+            let x = light.centre + Vec3::new(s as f32, 0.0, -c as f32) * 100.0;
+            sum += light.mask(x) as f64 * std::f64::consts::TAU / n as f64;
+        }
+        let half = 40.0f64.to_radians();
+        let inner = 25.0f64.to_radians();
+        // Bounds: between the solid angles of the inner cone and of the whole cone.
+        let solid = |a: f64| std::f64::consts::TAU * (1.0 - a.cos());
+        assert!(sum > solid(inner) && sum < solid(half), "{sum}");
+        // The same as the interface's 256-step midpoint integral of the smoothstep, to 0.1 %.
+        let mut ui = 0.0f64;
+        for i in 0..256 {
+            let a = (i as f64 + 0.5) / 256.0 * half;
+            let (co, ci) = (half.cos(), inner.cos());
+            let t = ((a.cos() - co) / (ci - co)).clamp(0.0, 1.0);
+            let mask = if a <= inner {
+                1.0
+            } else {
+                t * t * (3.0 - 2.0 * t)
+            };
+            ui += mask * a.sin() * half / 256.0;
+        }
+        let ui = ui * std::f64::consts::TAU;
+        assert!((sum / ui - 1.0).abs() < 1.0e-3, "{sum} vs {ui}");
+    }
+
+    #[test]
+    fn a_narrow_spot_aimed_at_the_scene_is_chosen_like_its_point_light() {
+        // With a bright environment, a 9 degree spot aimed at the scene is picked as often as the
+        // point light it masks would be (its little flux would leave its pool noisy); aimed away,
+        // a twentieth of that.
+        let env = Environment {
+            strength: 1.0,
+            ..Environment::default()
+        };
+        let quad = Mesh::new(
+            &[
+                Vec3::new(-100.0, -100.0, 0.0),
+                Vec3::new(100.0, -100.0, 0.0),
+                Vec3::new(100.0, 100.0, 0.0),
+            ],
+            &[],
+            &[0, 1, 2],
+            0,
+        )
+        .expect("triangle");
+        let pmf = |light: Light| {
+            let lights = Lights::new(&Scene {
+                lights: vec![light],
+                geometry: crate::scene::Geometry::from_meshes(vec![quad.clone()]),
+                environment: env.clone(),
+                ..Scene::default()
+            });
+            lights.spheres[0].pmf
+        };
+        let at = Vec3::new(0.0, 0.0, 600.0);
+        let bare = pmf(point(at, 0.0, 5.0));
+        let spot = |direction: Vec3| Light {
+            kind: LightKind::Spot,
+            spread_deg: 9.0,
+            angle_deg: 2.0,
+            direction,
+            ..point(at, 0.0, 5.0)
+        };
+        let aimed = pmf(spot(Vec3::new(0.0, 0.0, -1.0)));
+        let away = pmf(spot(Vec3::new(0.0, 0.0, 1.0)));
+        assert!(bare > 0.01 && bare < 0.99, "{bare}");
+        assert!((aimed - bare).abs() < 1.0e-6, "{aimed} vs {bare}");
+        assert!(away < aimed * 0.1, "{away} vs {aimed}");
+    }
+
+    #[test]
+    fn a_light_without_shadow_says_so() {
+        let lights = Lights::new(&Scene {
+            lights: vec![
+                Light {
+                    flags: LIGHT_FLAG_GLOSSY | LIGHT_FLAG_NO_SHADOW,
+                    ..point(Vec3::new(0.0, 0.0, 400.0), 0.0, 12.0)
+                },
+                Light {
+                    flags: LIGHT_FLAG_NO_SHADOW,
+                    ..rect(
+                        Vec3::new(0.0, 0.0, 1000.0),
+                        Vec3::new(0.0, 0.0, -1.0),
+                        100.0,
+                        1.0e-6,
+                    )
+                },
+            ],
+            environment: black_env(),
+            ..Scene::default()
+        });
+        assert!(!lights.sample(Vec3::ZERO, 0.1, (0.5, 0.5)).unwrap().shadow);
+        assert!(
+            !lights
+                .sample(Vec3::ZERO, 0.999_999_9, (0.5, 0.5))
+                .unwrap()
+                .shadow
+        );
     }
 
     #[test]

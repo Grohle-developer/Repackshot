@@ -135,6 +135,12 @@
 .light-row .bar-meter {
   width: 100%;
 }
+/* L4: duplicate, aim and delete on the selected light's row (or with the keyboard on it): on hover they would move
+   under the pointer of the click that selects the row. */
+.light-row.is-selected .light-actions,
+.light-row:focus-within .light-actions {
+  display: flex;
+}
 
 /* Inspector ---------------------------------------------------------------- */
 .crumbs {
@@ -324,6 +330,21 @@
   transform: translateX(-50%);
   padding: 6px 12px;
   font-weight: 600;
+}
+/* L4: Look through says what the view is from, under a pick mode's banner when both are there. */
+.ov-look {
+  top: 92px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 32px);
+}
+.ov-look .btn-link {
+  font-weight: 400;
+  white-space: nowrap;
+}
+.vp[data-glyph-hover] canvas {
+  cursor: pointer;
 }
 .hover-label {
   position: absolute;

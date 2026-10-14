@@ -49,6 +49,18 @@ export function normalize(a: readonly number[]): Vec3 {
   return l > 1e-12 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 0];
 }
 
+/** `v` turned `deg` degrees about the unit `axis` (right hand), by Rodrigues' formula. */
+export function rotateAbout(v: readonly number[], axis: readonly number[], deg: number): Vec3 {
+  if (deg === 0) return [v[0], v[1], v[2]];
+  const a = (deg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const k = normalize(axis);
+  const kxv = cross(k, v);
+  const kv = dot(k, v) * (1 - c);
+  return [v[0] * c + kxv[0] * s + k[0] * kv, v[1] * c + kxv[1] * s + k[1] * kv, v[2] * c + kxv[2] * s + k[2] * kv];
+}
+
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }

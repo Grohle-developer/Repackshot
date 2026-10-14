@@ -196,12 +196,20 @@ twice (0: off).
   millimetre being 1e-3 m); `spread_deg` adds a `cos^n` falloff whose intensity halves at
   `spread_deg / 2` (180: none; the on-axis radiance does not change). **2 sun**: a disc of
   `angle_deg` sampled in its cone, `power` the irradiance in W/m² on a surface facing it (0
-  degrees: a delta direction). **3 point**, **4 spot**: reserved for L4, parsed and ignored.
-  `flags` bit 0 **glossy**: seen by BSDF-sampled rays and lighting every lobe (with MIS); without
-  it the light lights only the diffuse lobe, by light sampling alone, and is invisible in
-  reflections (Blender's "glossy" visibility, which the recipes come from). Bit 1 **camera**:
-  visible to camera rays. One light per vertex, chosen in proportion to an estimate of the flux
-  it sends into the scene's bounding sphere (a light tree replaces it in K4).
+  degrees: a delta direction). **3 point** (L4): a sphere of diameter `size_x` and uniform
+  radiance `I / (π r²)` with `I = power / 4π` W/sr (`power` the isotropic flux), sampled
+  uniformly in the cone of directions it fills; of no size, or too small to tell from a point
+  at that distance, a delta position (`I / d²`). **4 spot** (L4): the point light it would be,
+  masked by the direction from its centre: 1 inside the inner cone, a smoothstep to 0 at the
+  edge of its cone of `spread_deg` (the soft edge `angle_deg` wide). `flags` bit 0 **glossy**:
+  seen by BSDF-sampled rays and lighting every lobe (with MIS); without it the light lights only
+  the diffuse lobe, by light sampling alone, and is invisible in reflections (Blender's "glossy"
+  visibility, which the recipes come from). Bit 1 **camera**: visible to camera rays (a point's
+  sphere too). Bit 2 **no shadow** (L4): its shadow rays are not traced (the shadow catcher is
+  not darkened by it either). One light per vertex, chosen in proportion to an estimate of the
+  flux it sends into the scene's bounding sphere; a spot weighs as its point light would when
+  its cone takes in the scene's centre, a twentieth of that otherwise, so a narrow spot's pool is
+  not left to the rare samples its little flux would get (a light tree replaces it in K4).
 * **Environment** (`environment`), `ENVR.kind`: **0 studio dome**: radiance linear in the `z`
   of the direction, `floor` at -1, `horizon` at 0, `zenith` at +1, importance sampled by the
   closed-form inverse of that piecewise-linear density in `z` times a uniform azimuth (exact

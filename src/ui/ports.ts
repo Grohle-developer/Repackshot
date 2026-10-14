@@ -13,6 +13,7 @@ import type { RenderPasses } from '../core/passes';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
+import type { ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
 import type { HardwareInfo, ModelsService } from '../core/models';
@@ -97,7 +98,16 @@ export interface ViewportPort {
    * The gizmo of the move tool for these nodes in these axes (UI.md §2.3); null hides it. `handles` SCALE: only the
    * scale handles (the scale tool, phase U9).
    */
-  setGizmo(spec: { ids: readonly NodeId[]; space: Space; handles?: 'ALL' | 'SCALE' } | null): void;
+  setGizmo(spec: { ids: readonly NodeId[]; space: Space; handles?: 'ALL' | 'SCALE' | 'MOVE'; object?: ViewObject | null } | null): void;
+  /**
+   * L4: the glyphs of lights and saved cameras the viewport draws (all, or only the selected object's) and the light or
+   * camera it looks through (null: the active camera).
+   */
+  setGlyphs(spec: { all: boolean; selected: ViewObject | null; lookThrough: ViewObject | null }): void;
+  /** L4: the light or camera whose glyph is under a point (CSS pixels of the canvas), or null. */
+  glyphAt(x: number, y: number): ViewObject | null;
+  /** L4: where a light or a camera is on the canvas now (CSS pixels), or null; the viewport writes it for checks. */
+  objectAt?(obj: ViewObject): { x: number; y: number } | null;
   /** The gizmo handle under a point (and highlights it), or null. */
   gizmoHover(x: number, y: number): GizmoHandle | null;
   /** Starts dragging the handle under a point; null when there is none. */

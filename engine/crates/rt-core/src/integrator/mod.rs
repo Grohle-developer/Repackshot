@@ -692,16 +692,20 @@ pub fn radiance_at<T: Tracer>(
             };
             let f = bsdf.eval(wo, wi, lobes);
             if peak(f) > 0.0 {
-                *rays += 1;
                 // Light behind a refracting surface: the shadow ray leaves from its other side.
                 let from = if wi.z < 0.0 {
                     offset_origin(surface.hit_point, -ng)
                 } else {
                     origin
                 };
-                if let Some(pass) =
+                // A light that casts no shadow (L4) arrives whatever is in the way.
+                let arrives = if ls.shadow {
+                    *rays += 1;
                     prepared.shadow(scene, tracer, &shadow_ray(from, ls.wi, ls.distance))
-                {
+                } else {
+                    Some(Rgb::WHITE)
+                };
+                if let Some(pass) = arrives {
                     let weight = if ls.delta || !ls.glossy {
                         1.0
                     } else {
@@ -818,15 +822,18 @@ fn shadow_catcher<T: Tracer>(
             (lambert.eval(wo, wi, Lobes::All) * ls.radiance).luminance() * wi.z * weight / ls.pdf;
         if c.is_finite() {
             open += c;
-            *rays += 1;
             // The catcher itself is invisible: only the geometry blocks (cut-outs and thin
-            // walls in part).
+            // walls in part); a light that casts no shadow (L4) is never blocked.
             let probe = shadow_ray(origin, ls.wi, ls.distance);
-            if !prepared.any_passable {
+            if !ls.shadow {
+                lit += c;
+            } else if !prepared.any_passable {
+                *rays += 1;
                 if !tracer.occluded(&probe) {
                     lit += c;
                 }
             } else {
+                *rays += 1;
                 let (keep, blocker) = prepared.walk(scene, tracer, &probe);
                 if blocker == f32::INFINITY {
                     lit += c * keep.luminance();

@@ -9,6 +9,7 @@ import { dropNodes, viewportDropTarget, type DropTarget } from '../../core/mater
 import { allParts, effectiveVisible, partsUnder, resolvePick, sceneBounds, selectedNodes, type NodeId } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
 import { gizmoTransforms, movableTargets, selectionFrame, type GizmoFrame, type GizmoHandle } from '../../core/transform';
+import { objectFrame, objectGizmoAction, sameObject, selectedObject, type ViewObject } from '../../core/view-objects';
 import * as cmd from '../commands';
 import { newGesture } from '../components/controls';
 import { materialDragActive, registerDropZone } from '../components/material-drag';
@@ -16,13 +17,14 @@ import { boxSelection } from './viewport-box';
 import { confirmBox, openMenu, openMenuAt } from '../components/widgets';
 import { h, icon } from '../dom';
 import type { IconName } from '../icons';
-import { cameraName, dyn, lightName, targetLabel } from '../names';
+import { cameraLabel, cameraName, dyn, lightName, targetLabel } from '../names';
 import { shallowEq, type Ctx, type Scope } from '../reactive';
 import { kbdFor } from '../shortcuts';
 import { L, formatNumber, getLang, isaLabel, t } from '../strings';
-import type { Tool } from '../ui-state';
+import { drawAllGlyphs, type Tool } from '../ui-state';
 import { partMenu } from './part-menu';
-import { primitiveMenuItems } from './add-menu';
+import { aimMenu } from './scene';
+import { lightMenuItems, primitiveMenuItems } from './add-menu';
 import { openScalePanel } from './scale-panel';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -55,7 +57,24 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
       icon(tl.icon, 20),
     ),
   );
-  scope.watch((_s, u) => u.tool, (tool) => buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(tools[i].id === tool))));
+  const toolButtons = [...buttons];
+  scope.watch((_s, u) => u.tool, (tool) => toolButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(tools[i].id === tool))));
+  // Lights and cameras (L4): every light's and saved camera's glyph, or only the selected one's. Left of Pan, so the
+  // scale tool (U9) stays on its right.
+  const glyphs = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('viewport.glyphs'), 'data-tip': `${t('viewport.glyphs')} · ${t('viewport.glyphsAux')}`, 'data-glyphs': '', onclick: () => cmd.toggleGlyphs(ctx) }, icon('glyphs', 20));
+  scope.watch((_s, u) => u.showGlyphs, (on) => glyphs.setAttribute('aria-pressed', String(on)));
+  buttons.splice(tools.findIndex((x) => x.id === 'pan'), 0, glyphs);
+  // Look through (L4): shown when a light or a saved camera is selected, or while looking through one.
+  const look = h('button', { type: 'button', class: 'ov-text-btn', 'data-tip': t('viewport.lookThroughAux'), 'data-kbd': kbdFor('lookThrough'), 'data-look': '', onclick: () => cmd.toggleLookThrough(ctx) });
+  scope.watch(
+    (_s, u) => [u.lookThrough !== null, cmd.lookThroughTarget(ctx) !== null] as const,
+    ([on, can]) => {
+      look.style.display = on || can ? '' : 'none';
+      look.textContent = on ? t('viewport.lookThroughBack') : t('viewport.lookThrough');
+      look.setAttribute('aria-pressed', String(on));
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
   // Axes of the move tool, shown while it is on (L / G).
   const space = h('button', { type: 'button', class: 'ov-text-btn', 'data-tip': t('viewport.space'), 'data-kbd': `${kbdFor('space.local')} / ${kbdFor('space.global')}` });
   space.addEventListener('click', () => cmd.setSpace(ctx, ui.get().space === 'LOCAL' ? 'GLOBAL' : 'LOCAL'));
@@ -107,7 +126,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
     },
   );
   const frame = h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('viewport.frameAll'), 'data-tip': t('viewport.frameAll'), 'data-kbd': kbdFor('frame'), 'data-guide': 'frame', onclick: () => cmd.frameSelection(ctx) }, icon('frame', 20));
-  return h('div', { class: 'ov ov-tl', role: 'toolbar', 'aria-label': t('viewport.views'), 'data-guide': 'tools' }, ...buttons, space, xray, h('span', { class: 'ov-sep' }), frame, views, proj, h('span', { class: 'ov-sep' }), lock);
+  return h('div', { class: 'ov ov-tl', role: 'toolbar', 'aria-label': t('viewport.views'), 'data-guide': 'tools' }, ...buttons, space, xray, look, h('span', { class: 'ov-sep' }), frame, views, proj, h('span', { class: 'ov-sep' }), lock);
 }
 
 function topRight(ctx: Ctx, scope: Scope): HTMLElement {
@@ -305,8 +324,53 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
       else if (pm?.kind === 'reflect') pickBanner.textContent = t('viewport.pickReflect', { light: lightName(s, pm.light, getLang()) });
       else if (pm?.kind === 'pivot') pickBanner.textContent = t('viewport.pickPivot');
       else if (pm?.kind === 'link') pickBanner.textContent = t('viewport.pickLink');
+      else if (pm?.kind === 'surface') pickBanner.textContent = t('viewport.pickSurface', { light: lightName(s, pm.light, getLang()) });
+      else if (pm?.kind === 'aim') pickBanner.textContent = t(pm.part ? 'viewport.pickAimPart' : 'viewport.pickAim', { light: lightName(s, pm.light, getLang()) });
     },
   );
+  // Lights and cameras (L4): the glyphs the viewport draws (all of them, or the selected one's) and what it looks
+  // through. Looking through something that is gone (deleted, undone) comes back to the active camera.
+  const objectName = (o: ViewObject) => {
+    const s = store.get();
+    return o.kind === 'LIGHT' ? lightName(s, o.id, getLang()) : cameraName(s, s.camera.cameras[o.id]);
+  };
+  const lookBanner = h('div', { class: 'ov ov-pick ov-look', role: 'status', style: 'display:none' });
+  scope.watch(
+    (s, u) => [drawAllGlyphs(u, selectedObject(s)), selectedObject(s), u.lookThrough, s.studio.lights, s.camera] as const,
+    ([all, selected, lookThrough]) => {
+      const s = store.get();
+      if (lookThrough && !cmd.lookThroughTarget(ctx, lookThrough)) {
+        cmd.exitLookThrough(ctx);
+        return;
+      }
+      port.setGlyphs({ all, selected, lookThrough });
+      lookBanner.style.display = lookThrough ? '' : 'none';
+      if (lookThrough) {
+        const locked = lookThrough.kind === 'CAMERA' && s.camera.cameras[lookThrough.id]?.locked;
+        lookBanner.replaceChildren(
+          h('span', null, t(locked ? 'viewport.lookingThroughLocked' : 'viewport.lookingThrough', { name: objectName(lookThrough) })),
+          h('button', { type: 'button', class: 'btn-link', onclick: () => cmd.exitLookThrough(ctx) }, t('viewport.lookThroughBack')),
+        );
+      }
+    },
+    (a, b) => a[0] === b[0] && sameObject(a[1], b[1]) && sameObject(a[2], b[2]) && a[3] === b[3] && a[4] === b[4],
+  );
+  scope.onDispose(() => port.setGlyphs({ all: false, selected: null, lookThrough: null }));
+  // Machine-readable copies for checks and screenshots, like the meter's: the selected light or camera and where it is.
+  scope.onDispose(
+    port.onFrame(() => {
+      const o = selectedObject(store.get());
+      const at = o && port.objectAt ? port.objectAt(o) : null;
+      const text = o ? `${o.kind}:${o.id}` : '';
+      if (vp.dataset.object !== text) vp.dataset.object = text;
+      const where = at ? `${Math.round(at.x)},${Math.round(at.y)}` : '';
+      if (vp.dataset.objectAt !== where) vp.dataset.objectAt = where;
+      const lt = ui.get().lookThrough;
+      const look = lt ? `${lt.kind}:${lt.id}` : '';
+      if (vp.dataset.lookThrough !== look) vp.dataset.lookThrough = look;
+    }),
+  );
+
   // Outline what the tree or the cursor hovers.
   scope.watch(
     (s, u) => [u.hover, s.scene.nodes] as const,
@@ -360,6 +424,17 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
         vp.removeAttribute('data-gizmo');
         vp.removeAttribute('data-gizmo-handle');
       }
+      // A light's or a camera's glyph (L4): its name, and it is what a click selects.
+      const glyph = ui.get().pickMode ? null : port.glyphAt(p.x, p.y);
+      vp.toggleAttribute('data-glyph-hover', glyph !== null);
+      if (glyph) {
+        if (ui.get().hover) ui.set({ hover: null });
+        label.textContent = objectName(glyph);
+        label.style.display = '';
+        label.style.left = `${p.x + 14}px`;
+        label.style.top = `${p.y + 12}px`;
+        return;
+      }
       const tg = targetAt(p.x, p.y);
       // Settings ▸ Preferences ▸ Outline on hover: off, the part under the cursor is not outlined (its name still shows).
       const id = ui.get().settings['selection.hoverOutline'] ? (tg?.id ?? null) : null;
@@ -385,10 +460,18 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
   // (phase U9) shows the same gizmo with only its scale handles.
   const gizmoIds = (s: ProjectState) => movableTargets(s, selectedNodes(s));
   const gizmoOn = () => (ui.get().tool === 'move' || ui.get().tool === 'scale') && !ui.get().pickMode;
+  // A light or a camera selected (L4): the move tool's gizmo without its scale handles, with the aim handle at what
+  // it looks at. The scale tool leaves them alone (their size is the inspector's).
   scope.watch(
     (s, u) => [u.tool, u.space, u.pickMode === null, s.selection, s.scene.nodes] as const,
     ([tool, space, free]) => {
-      const ids = gizmoIds(store.get());
+      const s = store.get();
+      const object = selectedObject(s);
+      if (object) {
+        port.setGizmo(tool === 'move' && free ? { ids: [], space, handles: 'MOVE', object } : null);
+        return;
+      }
+      const ids = gizmoIds(s);
       port.setGizmo((tool === 'move' || tool === 'scale') && free && ids.length > 0 ? { ids, space, handles: tool === 'scale' ? 'SCALE' : 'ALL' } : null);
     },
     shallowEq,
@@ -397,8 +480,15 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
 
   // A drag of a handle: measured by the engine from where it began, applied here from the state at that
   // moment, every step under one gesture token, so the whole drag is one undo entry.
-  let drag: { start: ProjectState; ids: NodeId[]; frame: GizmoFrame; handle: GizmoHandle; gesture: string; pointer: number } | null = null;
-  const dragLabel = (handle: GizmoHandle, ids: NodeId[]) => {
+  let drag: { start: ProjectState; ids: NodeId[]; object: ViewObject | null; frame: GizmoFrame; handle: GizmoHandle; gesture: string; pointer: number } | null = null;
+  const dragLabel = (handle: GizmoHandle, ids: NodeId[], object: ViewObject | null) => {
+    if (object) {
+      const s = store.get();
+      const name = object.kind === 'LIGHT' ? { en: lightName(s, object.id, 'en'), es: lightName(s, object.id, 'es') } : cameraLabel(s, s.camera.cameras[object.id]);
+      const verb = handle === 'aim' ? 'aim' : handle.startsWith('r') ? 'turn' : 'move';
+      const key = object.kind === 'LIGHT' ? (verb === 'aim' ? 'undo.aimLight' : verb === 'turn' ? 'undo.turnLight' : 'undo.moveLight') : verb === 'aim' ? 'undo.aimCamera' : verb === 'turn' ? 'undo.turnCamera' : 'undo.moveCamera';
+      return L(key, { name });
+    }
     const target = targetLabel(store.get(), ids);
     const key = handle === 'aim' ? 'undo.aim' : handle.startsWith('r') ? 'undo.rotate' : handle.startsWith('s') ? 'undo.scale' : 'undo.transform';
     return L(key, { target });
@@ -407,8 +497,9 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     if (e.button !== 0 || e.target !== canvas || !gizmoOn()) return;
     const p = local(e);
     const s = store.get();
-    const ids = gizmoIds(s);
-    const frame = selectionFrame(s, ids, ui.get().space);
+    const object = selectedObject(s);
+    const ids = object ? [] : gizmoIds(s);
+    const frame = object ? (objectFrame(s, object, ui.get().space)?.frame ?? null) : selectionFrame(s, ids, ui.get().space);
     if (!frame) return;
     const handle = port.gizmoBegin(p.x, p.y);
     if (!handle) return;
@@ -416,7 +507,7 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     e.stopPropagation();
     e.preventDefault();
     canvas.focus({ preventScroll: true });
-    drag = { start: s, ids, frame, handle, gesture: newGesture('gizmo'), pointer: e.pointerId };
+    drag = { start: s, ids, object, frame, handle, gesture: newGesture('gizmo'), pointer: e.pointerId };
     vp.setAttribute('data-gizmo', 'drag');
     label.style.display = 'none';
     try {
@@ -430,7 +521,13 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     const p = local(e);
     const delta = port.gizmoDrag(p.x, p.y);
     if (!delta) return;
-    const label = dragLabel(drag.handle, drag.ids);
+    const label = dragLabel(drag.handle, drag.ids, drag.object);
+    if (drag.object) {
+      // A light or a camera: measured from the state the drag began in, one gesture token (one undo entry).
+      const action = objectGizmoAction(drag.start, drag.object, drag.frame, delta, e.shiftKey, { gesture: drag.gesture, label });
+      if (action) store.dispatch(action);
+      return;
+    }
     if (delta.kind === 'aim') {
       store.dispatch({ type: 'scene/aim', id: drag.ids[0], target: delta.target, gesture: drag.gesture, label });
       return;
@@ -469,6 +566,8 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
         cmd.setPivot(ctx, 'CUSTOM', pm.ids, tg.hit.point);
       } else if (pm.kind === 'link') {
         cmd.linkMaterial(ctx, pm.parts, tg.part);
+      } else if (pm.kind === 'surface' || pm.kind === 'aim') {
+        cmd.finishLightPick(ctx, pm, tg.part, tg.hit.point, tg.hit.normal);
       } else {
         store.dispatch({ type: 'studio/placeLight', id: pm.light, point: tg.hit.point, normal: tg.hit.normal, label: L('undo.placeLight', { name: { en: lightName(s, pm.light, 'en'), es: lightName(s, pm.light, 'es') } }) });
       }
@@ -479,6 +578,13 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     if (ui.get().tool !== 'select' && ui.get().tool !== 'move' && ui.get().tool !== 'scale') return;
     // Plain: replace. Shift: add. Ctrl / Cmd: in or out. Alt: out (UI.md §4.1; the same for a face).
     const mode = clickModeOf(mods);
+    // A light's or a camera's glyph (L4) comes before the part behind it: it is drawn over everything. One object
+    // at a time (SPEC §3.2): Ctrl / Cmd or Alt on the selected one takes it out.
+    const glyph = port.glyphAt(p.x, p.y);
+    if (glyph) {
+      cmd.selectObject(ctx, glyph, mode === 'toggle' || mode === 'remove' ? 'toggle' : 'set');
+      return;
+    }
     if (!tg) {
       if (mode === 'set') cmd.deselect(ctx);
       return;
@@ -520,13 +626,27 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     rightDown = null;
     if (moved > 4 || ui.get().pickMode) return;
     const p = local(e);
+    // On a light's or a camera's glyph (L4): what acts on it.
+    const glyph = port.glyphAt(p.x, p.y);
+    if (glyph) {
+      cmd.selectObject(ctx, glyph);
+      const look = { label: t('viewport.lookThrough'), icon: 'lookThrough' as IconName, kbd: kbdFor('lookThrough'), run: () => cmd.toggleLookThrough(ctx, glyph) };
+      openMenuAt(
+        e.clientX,
+        e.clientY,
+        glyph.kind === 'LIGHT'
+          ? [look, null, { label: t('common.duplicate'), icon: 'duplicate', run: () => cmd.duplicateLight(ctx, glyph.id) }, { label: t('lights.aimMenu'), icon: 'target', submenu: aimMenu(ctx, glyph.id) }, null, { label: t('common.delete'), icon: 'trash', run: () => cmd.deleteLight(ctx, glyph.id) }]
+          : [look, { label: t('camera.activate'), icon: 'camera', run: () => cmd.activateCamera(ctx, glyph.id) }, null, { label: t('common.delete'), icon: 'trash', run: () => cmd.deleteCamera(ctx, glyph.id) }],
+      );
+      return;
+    }
     const tg = targetAt(p.x, p.y);
     if (!tg) {
-      // On empty space: Add ▸ Primitive (phase U9) and what acts on the whole scene.
+      // On empty space: Add ▸ Primitive (phase U9) and Light (L4), and what acts on the whole scene.
       const s = store.get();
       const at = { x: e.clientX, y: e.clientY };
       openMenuAt(at.x, at.y, [
-        { label: t('menu.add'), icon: 'plus', submenu: primitiveMenuItems(ctx) },
+        { label: t('menu.add'), icon: 'plus', submenu: [...primitiveMenuItems(ctx), null, ...lightMenuItems(ctx)] },
         null,
         { label: t('viewport.frameAll'), kbd: kbdFor('frame'), disabled: s.scene.roots.length === 0, run: () => cmd.frameSelection(ctx, []) },
         { label: t('tree.showAll'), kbd: kbdFor('showAll'), disabled: !allParts(s).some((q) => !effectiveVisible(s, q)), run: () => cmd.showAll(ctx) },
@@ -544,6 +664,12 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
   }, listen);
   canvas.addEventListener('dblclick', (e) => {
     const p = local(e);
+    // A double click on a light's or a camera's glyph looks through it (L4).
+    const glyph = port.glyphAt(p.x, p.y);
+    if (glyph) {
+      cmd.toggleLookThrough(ctx, glyph);
+      return;
+    }
     const tg = targetAt(p.x, p.y);
     if (tg) cmd.frameSelection(ctx, [tg.id]);
   }, listen);
@@ -633,5 +759,5 @@ export function viewportOverlays(ctx: Ctx, scope: Scope, vp: HTMLElement): HTMLE
     );
     return el;
   };
-  return [hideWhenEmpty(toolbar(ctx, scope), true), topRight(ctx, scope), meter(ctx, scope), hideWhenEmpty(axes(ctx, scope)), label, box, pickBanner, confirmHost];
+  return [hideWhenEmpty(toolbar(ctx, scope), true), topRight(ctx, scope), meter(ctx, scope), hideWhenEmpty(axes(ctx, scope)), label, box, pickBanner, lookBanner, confirmHost];
 }

@@ -13,13 +13,13 @@
 import { evaluate, type Pose } from '../core/animation';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
-import { lightPosition, rigPivot, type LightInstance } from '../core/lighting';
+import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
 import type { MaterialInstance } from '../core/materials';
-import { mat4Compose, mat4Multiply, normalize, sub, type Mat4 } from '../core/math';
+import { mat4Compose, mat4Multiply, type Mat4 } from '../core/math';
 import { getMesh, type MeshData } from '../core/meshes';
 import type { PassIds, PassInstance } from '../core/pass-ids';
 import { passMask, type PassKey } from '../core/passes';
-import { areaLightFlux, EMIT_RADIANCE_PER_WATT, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
+import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { getImage } from '../core/images';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
@@ -52,9 +52,14 @@ export const MATERIAL_FLAG_THIN = 2;
 export const LIGHT_RECT = 0;
 export const LIGHT_DISK = 1;
 export const LIGHT_SUN = 2;
+/** L4: a point light (a sphere of diameter `size_x`; 0 is a point) and a spot (the same, inside a cone). */
+export const LIGHT_POINT = 3;
+export const LIGHT_SPOT = 4;
 /** `LGHT.flags`. */
 export const LIGHT_FLAG_GLOSSY = 1;
 export const LIGHT_FLAG_CAMERA = 2;
+/** L4: the light casts no shadow (its shadow rays are not traced). */
+export const LIGHT_FLAG_NO_SHADOW = 4;
 /** `ENVR.kind`. */
 export const ENV_STUDIO = 0;
 export const ENV_FLAT = 1;
@@ -637,22 +642,45 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
 }
 
 /**
- * One light of the resolved rig: placed like the preview places it (`lightPosition`, around and
- * aimed at the rig pivot), rect / disk / sun, its power converted to the engine's units
- * (`areaLightFlux`; a sun's power is its irradiance). An ellipse becomes the disk of the same
- * area (the engine has no ellipse); `LightInstance.angle` and `angle_deg` are both degrees
- * (0.545 is the real sun's angular diameter, as in EZ Packshot's recipes).
+ * One light of the resolved rig: placed like the preview places it (`lightFrame`: around the rig pivot, aimed at
+ * it or at its own aim, turned by its roll), its power converted to the engine's units. Rect / disk (an ellipse is
+ * the disk of the same area: the engine has no ellipse) with `areaLightFlux`; a sun's power is its irradiance;
+ * a point, and an area light of shape SPHERE, are kind 3 (a glowing sphere of diameter `size_x`) and a spot kind 4
+ * (the same inside a cone of `spread_deg` with a soft edge of `angle_deg`), both with `pointLightFlux` (L4).
+ * `LightInstance.angle` and `angle_deg` of a sun are both degrees (0.545 is the real sun's angular diameter, as
+ * in EZ Packshot's recipes). A light that casts no shadow has LIGHT_FLAG_NO_SHADOW.
  */
 export function lightToRsb(state: ProjectState, l: LightInstance): RsbLight {
   const size = state.scene.partSizeMm || 1;
-  const pos = lightPosition(state, l);
-  const target = rigPivot(state);
-  let dir = normalize(sub(target, pos));
-  if (dir[0] === 0 && dir[1] === 0 && dir[2] === 0) dir = [0, 0, -1];
-  const flags = (l.glossy ? LIGHT_FLAG_GLOSSY : 0) | (l.camera ? LIGHT_FLAG_CAMERA : 0);
+  const frame = lightFrame(state, l);
+  const pos = frame.position;
+  const dir = frame.forward;
+  // Without a roll the engine squares the world's Z to the axis itself (what every file before L4 says); a light
+  // straight up or down, or turned, gets its own up.
+  const up: RsbVec = !l.roll && Math.abs(dir[2]) < 0.9999 ? [0, 0, 1] : [frame.up[0], frame.up[1], frame.up[2]];
+  const flags = (l.glossy ? LIGHT_FLAG_GLOSSY : 0) | (l.camera ? LIGHT_FLAG_CAMERA : 0) | (l.shadow === false ? LIGHT_FLAG_NO_SHADOW : 0);
   const color: RsbVec = [l.color[0], l.color[1], l.color[2]];
   if (l.type === 'SUN') {
-    return { ...defaultLight(), kind: LIGHT_SUN, position: pos, direction: dir, up: [0, 0, 1], color, power: Math.max(0, l.power) * SUN_IRRADIANCE_PER_POWER, spreadDeg: 180, angleDeg: Math.max(0, l.angle), flags };
+    return { ...defaultLight(), kind: LIGHT_SUN, position: pos, direction: dir, up, color, power: Math.max(0, l.power) * SUN_IRRADIANCE_PER_POWER, spreadDeg: 180, angleDeg: Math.max(0, l.angle), flags };
+  }
+  if (isSphereLike(l)) {
+    const diameter = Math.max(0, l.size) * size;
+    const spot = l.type === 'SPOT';
+    const cone = Math.min(179, Math.max(1, l.spread));
+    return {
+      kind: spot ? LIGHT_SPOT : LIGHT_POINT,
+      position: pos,
+      direction: dir,
+      up,
+      sizeX: diameter,
+      sizeY: diameter,
+      color,
+      power: pointLightFlux(Math.max(0, l.power), state.scene.partSizeMm),
+      spreadDeg: spot ? cone : 180,
+      // A spot's soft edge in degrees, inward from the edge of its cone.
+      angleDeg: spot ? (Math.min(1, Math.max(0, l.blend ?? SPOT_DEFAULTS.blend)) * cone) / 2 : 0,
+      flags,
+    };
   }
   const w = Math.max(1e-3, l.size) * size;
   const h = Math.max(1e-3, l.shape === 'SQUARE' || l.shape === 'DISK' ? l.size : l.sizeY) * size;
@@ -662,7 +690,7 @@ export function lightToRsb(state: ProjectState, l: LightInstance): RsbLight {
     kind: disk ? LIGHT_DISK : LIGHT_RECT,
     position: pos,
     direction: dir,
-    up: [0, 0, 1],
+    up,
     sizeX,
     sizeY: disk ? sizeX : h,
     color,

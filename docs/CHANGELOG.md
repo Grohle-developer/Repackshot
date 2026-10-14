@@ -7,11 +7,21 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Interfaz
 
+- **Focos propios** (L4): *+ Añadir luz* en la pestaña *Luces* (y en *Añadir ▸* de la cabecera, el clic derecho del visor en vacío y la paleta) añade un **área** (rectángulo, disco o esfera), un **punto**, un **foco direccional** (cono y transición) o un **sol**, delante y arriba de la pieza, encendido, seleccionado y con el brillo medio de los focos encendidos; *IES* sigue *próximamente* (L5). Duplicar, eliminar y apuntar en la fila del foco seleccionado; *Apuntar un foco aquí ▸* en el menú contextual de una pieza.
+- El inspector de un foco tiene todo: nombre, tipo, forma, tamaño o radio, acimut, elevación y distancia, **coordenadas X, Y, Z**, **Apuntar a…** (el centro del producto, un punto, una pieza), giro, dispersión, cono y transición, disco del sol, temperatura o color, **potencia en vatios con sus lúmenes** (o lux), visible en reflejos y a cámara, **proyecta sombra**, encendido, *Colocar por reflejo*, **Colocar sobre superficie**, *Mirar a través*, *Duplicar* y *Eliminar*. Ya no dice *próximamente* (L4).
+- **Guardar montaje como…** guarda también los focos propios (tipo, objetivo, giro, transición, sombra); aplicado a otro tipo de producto conserva la irradiancia total de ese tipo y el reparto entre focos. **Restablecer al montaje** quita los focos propios (L4).
+- **Luces y cámaras en el visor**: glifos acromáticos (el contorno del panel, la esfera, el punto, el cono del foco, la flecha del sol, la pirámide de cada cámara guardada) mientras la pestaña *Luces* o *Cámaras* está abierta o hay una seleccionada; el botón **Luces y cámaras** de la barra de vista, a la izquierda de *Desplazar*, los muestra u oculta. Un clic en un glifo lo selecciona y **Mover** lo mueve y lo gira (la luz con su asa de apuntar, la cámara con su objetivo), una entrada de deshacer por arrastre (L4).
+- **Mirar a través** (`Ctrl/⌘ ⇧ L`, el botón de la barra de vista o del inspector, doble clic en el glifo): el visor mira desde la luz o la cámara seleccionada, en *Rápido* y en *Completo*, y Orbitar, Desplazar y Zoom la mueven (la luz apunta a donde mira el visor); una cámara bloqueada no se mueve; `Esc` vuelve a la cámara activa (L4).
 - **Recorrido guiado** (U10): una capa propia que recorre la pantalla zona por zona —menú de la aplicación, árbol y niveles de selección, herramientas de vista, *Rápido* y *Completo*, el inspector (producto, luz y montajes, entorno y cielo, cámara y enfoque, materiales), las pestañas *Luces*, *Cámaras* y *Estudios*, *Añadir ▸ Primitiva*, la ventana de render (cola e IA), los resultados y *Ajustes* sección por sección— con un texto corto por paso, *Siguiente · Atrás · Saltar*, puntos de progreso y las teclas `→`, `←` y `Esc`; en español e inglés, acromática, y los pasos abren lo que necesitan (la ventana de render, Ajustes, la pestaña, el cajón) y lo dejan como estaba. Sale sola en el primer arranque y desde *Ayuda ▸ Recorrido guiado*; *Saltar* cuenta como visto, y se recuerda en el documento de ajustes (la carpeta de datos en escritorio).
 - El menú de la aplicación gana **Ayuda ▸** con *Recorrido guiado*, *Guía*, *Atajos de teclado* y *Acerca de*.
 
+### Motor
+
+- **Puntos y focos direccionales** en el integrador (`LGHT` 3 y 4): una esfera de radiancia uniforme muestreada en su cono de direcciones (un punto, por posición), el cono con transición en *smoothstep* como en la vista previa, visibles a cámara y en reflejos con MIS; un foco estrecho apuntado a la escena se elige como su punto, así que su círculo de luz no sale con ruido. Bit 2 de `LGHT.flags`: **sin sombra** (L4).
+
 ### Proyecto
 
+- Un proyecto guarda los focos propios con su objetivo, giro, transición y sombra; los proyectos, estudios y bibliotecas anteriores se abren igual, con sus focos apuntando al centro del producto (L4).
 - Los ajustes de la IA de la ventana de render y de cada trabajo guardan también el *prompt* propio y el número de variantes; un proyecto anterior se abre sin *prompt* y con una variante (X4b).
 
 ### Post-procesado IA
