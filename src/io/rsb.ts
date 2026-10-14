@@ -10,7 +10,7 @@
 // background image), the floor and the render settings. Model space only (Z up,
 // millimetres): no three.js here.
 
-import { evaluate, type Pose } from '../core/animation';
+import { evaluate, poseActive, type Pose } from '../core/animation';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
 import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
@@ -1208,10 +1208,9 @@ export function texturesToRsb(t: MaterialTextures, imageFor: (id: string, colorS
   return { slots, emissionTint: [tint[0], tint[1], tint[2]], labels };
 }
 
-/** The pose the preview shows: the playhead's, when clips exist and the playhead moved. */
+/** The pose the preview shows: the playhead's, when clips exist and the playhead moved (or a reversed clip holds its end). */
 export function currentPose(state: ProjectState): Pose | null {
-  const anim = state.animation;
-  return anim.clips.length > 0 && (anim.playing || anim.playhead > 0) ? evaluate(state, anim.playhead) : null;
+  return poseActive(state) ? evaluate(state, state.animation.playhead) : null;
 }
 
 /** The engine's scene for a project state and a view. */

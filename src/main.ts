@@ -438,6 +438,7 @@ const viewport: ViewportPort | null = preview
         }
       },
       glyphAt: (x, y) => preview!.glyphAt(x, y),
+      setMotionHint: (hint) => preview!.setMotionHint(hint),
       objectAt: (obj) => preview!.objectAt(obj),
       gizmoHover: (x, y) => preview!.gizmoHover(x, y),
       gizmoBegin: (x, y) => {
@@ -1036,7 +1037,11 @@ if (preview) {
         if (total <= 0) store.dispatch({ type: 'anim/play', playing: false });
         else {
           const t = s.animation.playhead + dt;
-          store.dispatch({ type: 'anim/playhead', t: t > total ? t - total : t });
+          // N6: the timeline's Loop; off, playing stops at the end.
+          if (t > total && !ui.get().animLoop) {
+            store.dispatch({ type: 'anim/playhead', t: total });
+            store.dispatch({ type: 'anim/play', playing: false });
+          } else store.dispatch({ type: 'anim/playhead', t: t > total ? t - total : t });
         }
       }
     });

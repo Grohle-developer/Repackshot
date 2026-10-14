@@ -759,7 +759,7 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | | **Traslación** (`MOVE`, `TRACK`) | Se desplaza una distancia en un eje, local o global |
 | | **Escala** (`SCALE`) | Cambia de tamaño por un factor |
 | | **Fundido** (`FADE`, nuevo) | Opacidad de 0 a 1 o de 1 a 0 |
-| | **Despiece** (`EXPLODE`) | Las piezas marcadas se separan del centro |
+| | **Despiece** (`EXPLODE`) | Las piezas del modelo o de un grupo se separan: lineal, radial, esférico o por niveles, con excepciones (ver abajo) |
 | | **Visibilidad** (`VISIBILITY`) | Aparece o desaparece |
 | Cámara | **Órbita** (`ORBIT`) | Gira alrededor del objetivo, grados |
 | | **Inclinación** (`RISE`) | Sube o baja en arco, grados |
@@ -793,12 +793,62 @@ sincronizado con la distancia recorrida, que se apaga al pararse. Sin
 simulación, la cámara se desliza como en un *travelling* de cine. Todo es
 una función determinista del tiempo, como el resto de animaciones.
 
+**Despiece (`EXPLODE`)**, configurable (N6). Las herramientas CAD con
+vista explosionada coinciden en tres geometrías y en el orden por
+jerarquía (documentación pública de Onshape, Fusion 360, SolidWorks
+Composer e Inventor; observación de caja negra, ningún código); el
+despiece las toma así (`src/core/explode.ts`, claves de `EXPLODE_MODES`):
+
+| Geometría | Clave | Qué hace |
+| --- | --- | --- |
+| **Lineal** | `LINEAR` | A lo largo de un eje (Z vertical, X o Y horizontal, o una dirección propia). *Separar*: cada pieza se aleja del plano central por su lado. *Apilar*: todas en el mismo sentido, repartidas en su orden a lo largo del eje; la primera se queda y la última recorre toda la distancia (el despiece clásico de un envase: cuerpo, rosca, tapón) |
+| **Radial** | `CYLINDRICAL` | Alejándose de un **eje** que pasa por el centro, en perpendicular a él; lo que está en el eje no se mueve |
+| **Esférica** | `SPHERICAL` (y su sinónimo `RADIAL`) | Alejándose de un **punto**, el centro, en todas direcciones |
+
+y, combinable con cualquiera de las tres, la **jerarquía**: *piezas*
+(cada pieza por su cuenta), *un nivel* (los hijos del objetivo como
+bloques: un grupo se mueve entero) o *todos los niveles* (primero los
+bloques y luego, por etapas, las piezas dentro de cada grupo, que se
+separan del centro de su grupo y en proporción a su tamaño).
+
+Parámetros (`MotionClip.explode`): **distancia** (la cantidad de la
+animación: × tamaño del modelo o mm), **reparto** (*igual*: cada pieza
+recorre la distancia; *por distancia*: cuanto más lejos del centro más se
+aleja, y la más lejana recorre la distancia), **proporcional al tamaño de
+la pieza** (la mayor recorre toda la distancia, las demás en proporción),
+**centro** (el del conjunto, una pieza elegida, el pivote del objetivo o
+un punto propio), **eje o dirección**, **orden** (*a la vez*,
+*escalonado por distancia* —la más lejana primero— o *por profundidad*
+—lo que cuelga del modelo antes que lo que está dentro de grupos—, con un
+**solape** de 0 % —una tras otra— a 100 % —a la vez—, que también encadena
+las etapas de *todos los niveles*), **velocidad** (la duración),
+**suavidad** (un solo mando de 0 % a 100 % que va de *lineal* a *suave* y
+a *muy suave* de `EASING_KINDS`, mezclándolas en medio, y escribe en la
+curva la más cercana), **excepciones** (piezas fijas; se llenan desde la
+selección o con *Fijar en el despiece* del menú contextual; fijar un grupo
+fija sus piezas), **conservar la orientación** (apagado, cada pieza se
+inclina un poco —hasta 20°— al alejarse), **invertir** (montaje: empieza
+separado y acaba montado) y el **objetivo**, el modelo entero o un grupo.
+Las piezas de un set (L6) no se despiezan nunca.
+
+Las claves de antes siguen valiendo: `RADIAL` es la **esférica** (lo que
+siempre significó: «cada pieza sale hacia fuera desde el centro»),
+`AXIS_X/Y/Z` son lineal *separar* en ese eje y `CUSTOM` (una dirección
+por pieza, no construida) se lee como la esférica. Un despiece sin
+parámetros —todos los guardados antes de N6— es el de entonces: esférico,
+cada pieza la misma distancia, desde el centro del modelo, a la vez; se
+lee exactamente igual (`tests/fixtures/explode-legacy.json`). La radial
+nueva usa la clave `CYLINDRICAL`, que ya estaba en el catálogo con ese
+sentido («salen en abanico sin subir ni bajar»).
+
 **Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,
 cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,
-eje, pivote, local o global), inicio y duración en segundos, **curva de
-tiempo** (`EASING_KINDS`: lineal, suave, entrada, salida, fuerte, y
-*personalizada* con una curva de dos asas), **invertida** (sí/no) y
-**repetir** (n veces). Su frase en lenguaje llano ("La cámara orbita 90°
+eje, pivote, local o global; los del despiece, arriba), inicio y duración
+en segundos, **curva de tiempo** (`EASING_KINDS`: lineal, suave, entrada,
+salida, fuerte, y *personalizada* con una curva de dos asas; o la
+**suavidad**, un mando sobre las tres simétricas), **invertida** (sí/no:
+se reproduce al revés y, antes de empezar, guarda su estado final) y
+**repetir** (n veces seguidas: la barra dura n veces su duración). Su frase en lenguaje llano ("La cámara orbita 90°
 durante 4 s, suave") es su nombre por defecto y su representación en la
 interfaz; también aparece **bajo su objetivo en el árbol de la escena**,
 como hace KeyShot.
@@ -811,6 +861,23 @@ reproducir y el motor para renderizar fotograma a fotograma. Dos
 animaciones del mismo tipo sobre el mismo objetivo y tiempo se suman si
 son traslaciones o rotaciones y se marcan en la interfaz si no pueden
 convivir; nunca se silencian.
+
+**La línea de tiempo** (N6) tiene **tres zonas** para que quede claro
+**qué** se anima y **cómo**: a la izquierda el **árbol de lo animado**
+(una fila por objetivo —la pista de cámara primero, luego el modelo, sus
+grupos y piezas, los focos y el entorno— con sus animaciones anidadas,
+cada una con su icono y su frase corta); en el centro **cuándo** (la
+regla en segundos y fotogramas, el cabezal y una barra por animación,
+que se arrastra y se estira con **imán** a los bordes de las otras
+barras, al cabezal y a los segundos enteros); a la derecha **cómo** (las
+propiedades de la animación elegida bajo una cabecera de una línea:
+«Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s»). Elegir una animación
+resalta su objetivo en el visor y dibuja su pista (el arco de la órbita,
+la flecha del desplazamiento, los vectores del despiece, el eje del
+giro); elegir una pieza en la escena marca las filas de lo que la mueve.
+El árbol y las barras no conocen los tipos: leen la frase y el objetivo,
+y un tipo nuevo (la simulación física que se graba en la línea de
+tiempo) se dibuja igual.
 
 **Reproducción**: la línea de tiempo tiene cabezal, fps (24, 25, 30, 60),
 duración total (la del último evento), reproducir, pausar, ir al

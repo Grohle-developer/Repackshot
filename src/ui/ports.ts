@@ -13,6 +13,7 @@ import type { RenderPasses } from '../core/passes';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
+import type { MotionHint } from '../core/motion-hint';
 import type { ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
@@ -112,6 +113,11 @@ export interface ViewportPort {
   setGlyphs(spec: { all: boolean; selected: ViewObject | null; lookThrough: ViewObject | null }): void;
   /** L4: the light or camera whose glyph is under a point (CSS pixels of the canvas), or null. */
   glyphAt(x: number, y: number): ViewObject | null;
+  /**
+   * N6: what the viewport draws for the animation selected in the timeline: its target outlined, its track (an orbit's
+   * arc, a move's arrow, an explode's vectors, a spin's axis) as lines in model space; null clears it.
+   */
+  setMotionHint?(hint: MotionHint | null): void;
   /** L4: where a light or a camera is on the canvas now (CSS pixels), or null; the viewport writes it for checks. */
   objectAt?(obj: ViewObject): { x: number; y: number } | null;
   /** The gizmo handle under a point (and highlights it), or null. */

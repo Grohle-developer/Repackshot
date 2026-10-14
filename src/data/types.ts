@@ -511,7 +511,12 @@ export type EasingKind = 'LINEAR' | 'EASE' | 'EASE_IN' | 'EASE_OUT' | 'EASE_STRO
 /** What a clip animates. */
 export type TargetKind = 'OBJECT' | 'SUBJECT' | 'SCENE';
 
-export type ExplodeMode = 'RADIAL' | 'AXIS_X' | 'AXIS_Y' | 'AXIS_Z' | 'CYLINDRICAL' | 'CUSTOM';
+/**
+ * How an EXPLODE separates the parts (core/explode.ts). LINEAR, CYLINDRICAL and SPHERICAL are the three geometries
+ * of N6; RADIAL is a synonym of SPHERICAL (its meaning since it was ported), AXIS_X/Y/Z are LINEAR (separate) along
+ * that axis, CUSTOM (a direction per part) is not built and reads as SPHERICAL.
+ */
+export type ExplodeMode = 'RADIAL' | 'AXIS_X' | 'AXIS_Y' | 'AXIS_Z' | 'CYLINDRICAL' | 'CUSTOM' | 'LINEAR' | 'SPHERICAL';
 
 export interface MoveItem {
   key: MoveKind;
