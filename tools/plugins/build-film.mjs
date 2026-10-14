@@ -1,16 +1,21 @@
 #!/usr/bin/env node
 // Builds the film simulation plugin (ROADMAP P6 decision 5) from an aintfilm checkout, and packs it.
 //
-//   node tools/plugins/build-film.mjs --aintfilm <checkout> [--out <folder>] [--rpk <file.rpk>]
+//   node tools/plugins/build-film.mjs --aintfilm <checkout> [--logo <picture.png>] [--out <folder>] [--rpk <file.rpk>]
 //                                    [--key-out <file> | --key-file <file>] [--version <v>]
 //
 // The bundle folder (`--out`, default out/plugins/film) gets, from the checkout, read where it is and never copied
 // into this repository: the engine's WebAssembly module (`public/engine/itsnotfilm-engine.wasm`, checked to import
 // nothing) as module.wasm, its presets (`src/engine/presets/`) made complete with the checkout's own reader of them
 // (`settingsFromValue`, so each is the engine's settings with every field) and renamed to neutral ids, the logo
-// (`assets/exported/marks/LOGO.svg`), the licence (`LICENSE` as LICENCE.txt) and the third-party notices
+// (decision 7, tools/plugins/dot-grid.mjs: drawn here as logo.svg, one dot a `rect`, from the owner's picture of the
+// logo when `--logo` gives it — white dots on black with the leader's greys, read dot by dot: what the user calls
+// the logo, and so what wins — else from the rows of the cartridge grid `LOGO` of `src/data/marks.ts`, by the two-ink
+// rule of the checkout's `DotGrid`), the licence (`LICENSE` as LICENCE.txt) and the third-party notices
 // (`public/THIRD-PARTY-NOTICES.txt` as NOTICES.txt); and, from here, the manifest (tools/plugins/film/manifest.json,
-// its version and file list filled in) and the glue (tools/plugins/film/plugin.js). recipes.json names every recipe
+// its version and file list filled in), the glue (tools/plugins/film/plugin.js) and the recipe cards' base picture
+// (tools/plugins/film/thumb-base.png, decision 8: the `film-thumb` scene of rt-cli as `rt` renders it). recipes.json
+// names every recipe
 // with its public name only (aintfilm's D112: no maker's or product's name anywhere the public sees): a film is its
 // neutral id in capitals (the catalogue's rule until the owner picks the names, D113), a diffusion filter or a format
 // one of D112's own words. engine.json is the engine data plugin.js reads: the formats, filters and lenses by index.
@@ -30,6 +35,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { listFiles, packFolder, sha256File } from '../plugin-pack.mjs';
 import { encodeKeyText, newKeyBytes, parseKey } from '../plugin-rpk.mjs';
 import { readBrandLists, scanFileBytes } from './brand-scan.mjs';
+import { inflateSync } from 'node:zlib';
+import { decodePngLuminance, dotGridSvg, readDotPicture, readGrid } from './dot-grid.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HERE = join(ROOT, 'tools', 'plugins', 'film');
@@ -94,7 +101,7 @@ async function main() {
   const checkout = opt('aintfilm');
   if (!checkout) fail('usage: node tools/plugins/build-film.mjs --aintfilm <checkout> [--out <folder>] [--rpk <file.rpk> (--key-out <file> | --key-file <file>)] [--version <v>]');
   const src = (p) => join(resolve(checkout), p);
-  const need = ['package.json', 'public/engine/itsnotfilm-engine.wasm', 'src/engine/presets/index.json', 'src/engine/settings.ts', 'src/engine/format.ts', 'src/engine/index.ts', 'src/lib/filmSettings.ts', 'docs/research/data/stocks-map.json', 'assets/exported/marks/LOGO.svg', 'LICENSE', 'public/THIRD-PARTY-NOTICES.txt', 'scripts/brand-hashes.json'];
+  const need = ['package.json', 'public/engine/itsnotfilm-engine.wasm', 'src/engine/presets/index.json', 'src/engine/settings.ts', 'src/engine/format.ts', 'src/engine/index.ts', 'src/lib/filmSettings.ts', 'docs/research/data/stocks-map.json', 'src/data/marks.ts', 'LICENSE', 'public/THIRD-PARTY-NOTICES.txt', 'scripts/brand-hashes.json'];
   for (const p of need) if (!existsSync(src(p))) fail(`${p} is not in ${checkout}`);
   const out = resolve(opt('out', join(ROOT, 'out', 'plugins', 'film')));
   if (inside(out, resolve(checkout))) fail('the bundle folder may not be inside the aintfilm checkout (it is read only)');
@@ -197,11 +204,30 @@ async function main() {
 
   // What the checkout gives as it is, and what this repository writes.
   write('module.wasm', new Uint8Array(wasm));
-  cpSync(src('assets/exported/marks/LOGO.svg'), join(out, 'logo.svg'));
+  const logoPicture = opt('logo');
+  if (logoPicture) {
+    let grid;
+    try {
+      grid = readDotPicture(decodePngLuminance(new Uint8Array(readFileSync(logoPicture)), inflateSync));
+    } catch (err) {
+      fail(`--logo ${logoPicture}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    write('logo.svg', dotGridSvg(grid.rows, { inks: grid.inks, dot: grid.dot }));
+    const dots = grid.rows.join('').replace(/ /g, '').length;
+    console.log(`  logo: ${grid.rows[0].length}×${grid.rows.length} dots from ${logoPicture} (${dots} dots; inks ${Object.entries(grid.inks).map(([c, v]) => `${c} ${v}`).join(', ')}; a dot ${grid.dot.toFixed(3)} of its cell)`);
+  } else {
+    const logo = readGrid(readFileSync(src('src/data/marks.ts'), 'utf8'), 'LOGO');
+    if (!logo) fail('src/data/marks.ts has no LOGO grid (rows of "#", "." and " ", all the same length)');
+    write('logo.svg', dotGridSvg(logo));
+    console.log(`  logo: the checkout's LOGO grid of src/data/marks.ts (${logo[0].length}×${logo.length}); --logo <the owner's picture> draws the logo the owner drew instead`);
+  }
   cpSync(src('LICENSE'), join(out, 'LICENCE.txt'));
   cpSync(src('public/THIRD-PARTY-NOTICES.txt'), join(out, 'NOTICES.txt'));
   cpSync(join(HERE, 'plugin.js'), join(out, 'plugin.js'));
-  const fixed = new Set(['manifest.json', 'plugin.js', 'module.wasm', 'logo.svg', 'LICENCE.txt', 'NOTICES.txt']);
+  // Decision 8: the recipe cards' base picture, this repository's own render (`rt --write-film-thumb`, then 512
+  // samples with denoise), read by the host and never sent to the worker.
+  cpSync(join(HERE, 'thumb-base.png'), join(out, 'thumb-base.png'));
+  const fixed = new Set(['manifest.json', 'plugin.js', 'module.wasm', 'logo.svg', 'LICENCE.txt', 'NOTICES.txt', 'thumb-base.png']);
   const files = listFiles(out).filter((f) => !fixed.has(f));
   write('manifest.json', `${JSON.stringify({ ...template, version, files }, null, 2)}\n`);
   console.log(`build-film: ${ordered.length} recipes (${stockEntries.filter((s) => !s.colour).length} films, ${stockEntries.filter((s) => s.colour).length} colour, ${recipes.filter((r) => r.recipe.category === GRAIN.id).length} grain, ${recipes.filter((r) => r.recipe.category === DIFFUSION.id).length} filters, ${recipes.filter((r) => r.recipe.category === LENS.id).length} lenses), ${files.length + fixed.size} files → ${out}`);

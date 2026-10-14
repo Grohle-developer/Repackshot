@@ -1309,7 +1309,12 @@ un *checkout* de aintfilm (que solo lee): el módulo
 exportaciones que usa el pegamento), sus *presets* (`src/engine/presets/`)
 completados con el propio lector del *checkout* (`settingsFromValue`: cada uno
 con todos sus campos, como los lee su *serde*) y renombrados a ids neutros, el
-logo, la licencia (`LICENSE` → `LICENCE.txt`) y los avisos de terceros
+logo (decisión 7: `logo.svg` dibujado aquí desde las filas de la rejilla `LOGO`
+de su `src/data/marks.ts`, el cartucho de 16×16 a dos tintas, con la regla de su
+`DotGrid` —una rejilla con un espacio es de dos tintas y sus `.` son puntos en
+la tenue—, un `rect` cuadrado por punto, del ancho de sus puntos: 0,84 de la
+celda; `tools/plugins/dot-grid.mjs`), la licencia (`LICENSE` → `LICENCE.txt`) y
+los avisos de terceros
 (`public/THIRD-PARTY-NOTICES.txt` → `NOTICES.txt`); de aquí, el manifiesto
 (`tools/plugins/film/manifest.json`, con su versión y su lista de archivos) y
 el pegamento (`tools/plugins/film/plugin.js`). `--key-out` no puede estar dentro
