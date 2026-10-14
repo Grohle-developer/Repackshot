@@ -19,6 +19,7 @@ import './ui/components.css';
 import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
+import './ui/material-editor.css';
 import './ui/guards.css';
 import './ui/tour.css';
 import { createSyntheticService } from './ai/synthetic';

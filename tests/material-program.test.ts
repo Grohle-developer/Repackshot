@@ -331,7 +331,7 @@ describe('the instructions', () => {
   });
 
   it('of the textures: checks, stripes, gradients and ramps', () => {
-    const at = (type: string, socket: string, params: Record<string, unknown>, inputs: Record<string, unknown>, P: number[]) => probe(graph([{ id: 'x', type, params, inputs: inputs as never }], []), 'x', socket, point({ P }))[0];
+    const at = (type: string, socket: string, params: Record<string, unknown>, inputs: Record<string, unknown>, P: number[]) => probe(graph([{ id: 'x', type, params: params as never, inputs: inputs as never }], []), 'x', socket, point({ P }))[0];
     // OBJECT coordinates: P / 100. Scale 1: cells of 100 mm.
     expect(at('CHECKER', 'value', {}, { scale: 1 }, [10, 10, 10])).toBe(0);
     expect(at('CHECKER', 'value', {}, { scale: 1 }, [110, 10, 10])).toBe(1);

@@ -9,6 +9,7 @@ import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
 import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
+import type { Program } from '../core/material-program';
 import type { RenderPasses } from '../core/passes';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
 import type { ResultMeta } from '../core/results';
@@ -493,6 +494,25 @@ export interface ImagesPort {
   loadBackplate(file: File): Promise<ImageRef>;
 }
 
+/** The material editor's previews (M3a): a program on the preview sphere, run in a worker (render/graph-client.ts). */
+export interface GraphPreviewPort {
+  /**
+   * The spheres of a program compiled with probes: one per probe and the material's own. A newer request on the same
+   * `channel` supersedes an older one, which resolves to null.
+   */
+  previews(program: Program, channel: string): Promise<GraphPreviews | null>;
+}
+
+export interface GraphPreviews {
+  /** Side of the probes' spheres, pixels. */
+  size: number;
+  /** RGBA, one per probe of the program, in order. */
+  probes: Uint8ClampedArray[];
+  /** The material's sphere, RGBA, `materialSize` square. */
+  material: Uint8ClampedArray;
+  materialSize: number;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -547,4 +567,6 @@ export interface AppServices {
   licenceText(file: string): Promise<string | null>;
   /** The environment's HDRI and background image files. */
   images: ImagesPort;
+  /** The material editor's node previews (M3a); absent or null where no worker runs them (the editor draws no spheres). */
+  graphPreview?: GraphPreviewPort | null;
 }
