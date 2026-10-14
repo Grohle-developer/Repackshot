@@ -1775,6 +1775,127 @@ antes y después, sobre esfera y sobre el frasco, con el set `STRIP_EDGE`;
 abren con las recetas nuevas (es lo que se quiere) salvo las instancias
 editadas, que conservan sus valores; la hoja con el veredicto.
 
+## Óptica: simulación de lentes — decisión **Fable** (tras v0.1.5)
+
+`STUDIO-TOOLS.md` §1 y `docs/research/optics.md` dejaban seis
+decisiones abiertas (§7). Se toman así:
+
+1. **Carácter por defecto**: *Clínica* (pupila redonda, lente bien
+   corregida). La foto de producto quiere una lente que no se note; el
+   carácter se elige a propósito. De las 16 prescripciones se enseñan
+   todas; las `verified` sin aviso, las `caveat` y `experimental` con una
+   nota en la ayuda, y las `own-design` marcadas como diseño propio.
+2. **Remolino**: las dos cosas. Sale solo de la Petzval trazada con sus
+   semiaperturas reales, y en la lente fina hay un mando artístico
+   marcado *no físico*.
+3. **Aberración cromática**: el esquema híbrido de tres bandas (cada
+   muestra de cámara elige R, G o B estratificado, traza la lente con el
+   índice de esa banda y pesa solo su canal). Nada espectral.
+4. **Ajuste de polinomios**: no se ajusta ningún polinomio de grado alto.
+   El perfil rápido son tablas muestreadas en `f32` (distorsión e
+   iluminación relativa por altura de imagen, puntos cardinales) sacadas
+   de un trazado de pocos rayos al cargar la lente.
+5. **Fantasmas del *flare***: no en esta primera entrega. Los *coatings*
+   entran solo como transmisión por superficie (T-stop y tinte). Los
+   fantasmas y la estrella de difracción quedan para O3.
+6. **Nombres**: neutros, los del catálogo A6.
+
+Y una regla de coste: la cámara trazada no puede pasar del 25 % del
+tiempo de render del ejemplo a 1024 muestras con la doble Gauss (medido
+y en el PR); si pasa, se bate por lotes (§6.1 del informe) antes de
+cerrar.
+
+## O1 · Lente fina mejorada y selector de bokeh — **Opus**
+
+**Qué.** `STUDIO-TOOLS.md` §1 modo 1, en `rt-core` y en la interfaz.
+Motor: sección RSB nueva opcional `LENS` después de `CAMR` (`CAMR` no
+cambia: un RSB sin `LENS` renderiza bit a bit como hoy): forma del
+diafragma (círculo; polígono de 3 a 18 láminas con redondez 0–1 y giro;
+imagen de máscara monocroma con muestreo por CDF 2D), perfil de pupila
+(uniforme, centro brillante, anillo brillante, apodizada: los pesos de
+`src/data/bokeh.ts` `PUPIL_PROFILES`), obstrucción central (relación ε),
+ojo de gato aproximado (intersección con un segundo disco desplazado en
+proporción a la altura de imagen, con un mando de intensidad),
+anamórfico (compresión horizontal de la pupila y desestiramiento de la
+imagen, 1,33× y 2×), **descentramiento e inclinación** (*tilt-shift*:
+desplazamiento del sensor en mm y plano de enfoque inclinado por
+Scheimpflug, con el punto de enfoque en el centro), aberración cromática
+por bandas (decisión 3: una banda por muestra, desplazamiento radial del
+origen en pupila por banda, peso en su canal) y remolino como mando
+artístico (giro y alargamiento de la pupila con la altura de imagen).
+Las dimensiones aleatorias nuevas (banda, máscara) son dimensiones
+*hash* más allá de la tabla Sobol, como los recortes: una escena sin
+`LENS` no cambia ni un bit. El pase `coc` sigue siendo el de la lente
+fina (anotarlo). **Interfaz**: en la sección *Cámara*, *Bokeh* con las
+miniaturas de los 20 tipos de `src/data/bokeh.json` que se hacen con el
+modo 1 (los que exigen lente trazada esperan a O2 y lo dicen), cada
+miniatura **renderizada por el propio motor** (un núcleo de desenfoque:
+puntos de luz desenfocados sobre negro, `tools/bokeh-thumbs.mjs` con
+`rt`, determinista, hash fijado); *Láminas*, *Redondez*, *Giro*,
+*Perfil*, *Obstrucción*, *Anamórfico*, *Inclinación* y *Desplazamiento*,
+*Aberración cromática* y *Remolino* (estos dos marcados *no físico*) en
+una subsección *Óptica avanzada*; el visor Rápido no dibuja profundidad
+de campo (ya lo dice) y no cambia. Proyecto: campos opcionales de la
+cámara; cámaras anteriores abren igual.
+
+**Depende de.** A6, E5.
+
+**Criterio.** El ejemplo sin `LENS` conserva `0x223515c3`; hoja
+`out/bokeh-sheet.html`: la escena de puntos de luz con cada tipo, a 256
+muestras, **con veredicto de Fable**; test: con 6 láminas la pupila
+muestreada cae dentro del hexágono y fuera del círculo inscrito en la
+proporción esperada (±1 %); el *tilt* mueve el plano de enfoque como
+dice Scheimpflug (test geométrico con tres puntos); la máscara con
+muestreo por CDF da la misma media que el muestreo por rechazo (±1 %);
+determinismo 1/4/16 hilos y wasm.
+
+## O2 · Lente trazada — **Opus** (tras O1)
+
+**Qué.** `STUDIO-TOOLS.md` §1 modo 2, desde el artículo de Kolb,
+Mitchell y Hanrahan (1995) y `docs/research/optics.md` §3, §5 y §6:
+trazado secuencial desde el sensor por las superficies de una
+prescripción de `src/data/lenses.json` (esfera, plano, asférica,
+cilíndrica, espejo, diafragma) con la intersección estable de §6.5
+(`t = c r² / (B + sqrt(B² − c² r²))`), solo `+ − × ÷ sqrt` (nada de
+`sin`, `exp` o `powf` en el trazado: determinismo entre plataformas),
+escalado uniforme a la focal pedida, iris con láminas, *coatings* como
+transmisión por superficie (decisión 5: T-stop y tinte, sin
+fantasmas), modos de enfoque `unit`, `internal` y `floating` según la
+prescripción, límites de pupila de salida precalculados por altura de
+imagen (unión de las tres bandas), aberración cromática por bandas
+(decisión 3), y lo que sale solo (distorsión, viñeteo, ojo de gato,
+burbuja y cremoso por aberración esférica, coma, curvatura de campo,
+respiración de foco). RSB: `LENS` crece con la prescripción (campos
+opcionales al final; el RSB de O1 sigue leyéndose). **Salidas físicas
+al inspector, calculadas por el motor y nunca inventadas** (regla 10):
+focal efectiva, tiraje, f/, T-stop, curva de distorsión e iluminación
+relativa por altura de imagen; `rt_wasm` las exporta y el lanzador las
+sirve (`/api/lens/info`); la interfaz las muestra en la sección
+*Cámara* ▸ *Lente*. **Editor de lente**: selector por *carácter*,
+familia, focal, f/, láminas, *coating*, foco, *tilt-shift*; *Avanzado*:
+los mandos artísticos de §5 marcados *no físico* (cantidad de
+aberración cromática, distorsión, viñeteo, remolino, carácter de la
+esférica, respiración); **corte de la lente en SVG** dibujado desde la
+prescripción; *Guardar lente como…* a la biblioteca propia (U4). Los
+tipos de bokeh que exigen lente trazada se activan en el selector de O1.
+**Perfil rápido** (decisión 4): al cargar la lente el motor saca puntos
+cardinales, distorsión e iluminación relativa (tablas `f32`), y el visor
+Rápido aplica distorsión y viñeteo como aproximación (dicho en la
+ayuda). Cambiar de lente nunca toca la resolución de salida.
+
+**Depende de.** O1, A6.
+
+**Criterio.** Focal y tiraje paraxiales de las 16 lentes dentro del
+0,05 % de `reported` (test, como `tests/lenses.test.ts` pero en Rust);
+rayos axiales de la doble Gauss salen paralelos a < 2e-4 de pendiente;
+f32 contra f64 de referencia (test con `f64` solo en la prueba) por
+debajo de 1e-4 mm; paridad wasm y determinismo 1/4/16 hilos; coste de
+la cámara trazada ≤ 25 % del render del ejemplo con la doble Gauss a
+1024 muestras (medido); hoja `out/lens-sheet.html`: el frasco con las
+16 lentes a f/ máximo y a f/8, y la escena de puntos de luz con las que
+dan ojo de gato, burbuja, cremoso y remolino, **con veredicto de
+Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
+
 ## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
 
 **Qué.** Primero el **bisel de aristas en el sombreado** (decisión Fable,
