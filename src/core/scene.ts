@@ -5,6 +5,7 @@ import type { ActionBase, ProjectState } from './store';
 import type { MaterialId, MaterialInstance } from './materials';
 import { getMesh, transformedMeshBounds, type MeshId, type MeshRef, type TriangleRange } from './meshes';
 import type { PrimitiveSpec } from './primitives';
+import type { PhysicsProps } from './physics';
 import { nextId } from './ids';
 import {
   add,
@@ -140,6 +141,11 @@ export interface SceneNode {
    * that changes the geometry otherwise (flip, smoothing angle, separate) drops it, like Convert to mesh.
    */
   primitive?: PrimitiveSpec;
+  /**
+   * The Physics section (phase S2, core/physics.ts): role (STATIC when absent), density, friction, bounciness and, on
+   * a group or a model, whether it falls as parts. Absent: the defaults.
+   */
+  physics?: PhysicsProps;
 }
 
 /** Ids of the meshes the parts of a state refer to, in order of first use. */

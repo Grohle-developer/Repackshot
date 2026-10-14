@@ -43,6 +43,12 @@
 // version does not know (a newer file) leaves its part without geometry, reported like any missing mesh. The
 // schema stays at 2.
 //
+// Physics (S2): a node may carry its Physics section (`physics`: role, density, friction, bounciness, as parts) and the
+// animation may hold PHYSICS clips with a recorded track (`track`: fps, frames and the local poses as base64 f32,
+// core/physics.ts), all plain JSON in the state. A file from before S2 has neither and opens as it always did; on
+// open the section keeps only what this version knows, and a clip whose track does not decode is left out. The
+// schema stays at 2.
+//
 // Opening is all or nothing: the text is read and checked (envelope, schema, state, meshes) before the registry
 // or the store are touched, so a damaged file leaves the open project as it was.
 
@@ -62,6 +68,7 @@ import { checkTextureFile, registerTextureImage, textureImageId } from '../core/
 import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
 import type { MaterialInstance } from '../core/materials';
 import { migrateRender } from '../core/render';
+import { isTrack, type PhysicsProps } from '../core/physics';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
@@ -274,6 +281,22 @@ function checkState(raw: RawState): ProjectState {
       if (!Array.isArray(n.faceMaterials)) throw damaged(`${at}.faceMaterials is not a list`);
       for (const f of n.faceMaterials) if (!isObject(f) || !Number.isInteger(f.start) || !Number.isInteger(f.count) || !isObject(s.materials[f.material])) throw damaged(`${at}.faceMaterials is damaged`);
     }
+    if (n.physics !== undefined) {
+      // The Physics section (S2): what this version knows of it, the rest dropped (a role of a later version, a
+      // value out of range), never a reason not to open the file.
+      const ph = n.physics as unknown;
+      if (!isObject(ph)) throw damaged(`${at}.physics is damaged`);
+      const fixed: SceneNode = { ...(emptied[id] ?? n) };
+      const props: PhysicsProps = {};
+      if (ph.role === 'STATIC' || ph.role === 'DYNAMIC') props.role = ph.role;
+      if (typeof ph.density === 'number' && Number.isFinite(ph.density) && ph.density > 0) props.density = ph.density;
+      if (typeof ph.friction === 'number' && Number.isFinite(ph.friction) && ph.friction >= 0) props.friction = ph.friction;
+      if (typeof ph.bounciness === 'number' && Number.isFinite(ph.bounciness) && ph.bounciness >= 0 && ph.bounciness <= 1) props.bounciness = ph.bounciness;
+      if (typeof ph.asParts === 'boolean') props.asParts = ph.asParts;
+      if (Object.keys(props).length > 0) fixed.physics = props;
+      else delete fixed.physics;
+      emptied[id] = fixed;
+    }
     if (n.primitive !== undefined) {
       // A primitive (U9): its shape and measures. A shape this version does not know is dropped (the part has no
       // geometry then, reported as missing); the measures are normalised like the inspector's.
@@ -314,6 +337,10 @@ function checkState(raw: RawState): ProjectState {
   if (!isObject(env.skySun) || !Number.isFinite(env.skySun.az) || !Number.isFinite(env.skySun.el)) throw damaged('environment.skySun is damaged');
   // E5c: a project saved before the physical sky has no skyModel and opens with the default (filled in above).
   if (env.skyModel !== 'PHYSICAL' && env.skyModel !== 'CLASSIC') throw damaged('environment.skyModel is damaged');
+  // S2: a recorded simulation (a PHYSICS clip) whose track does not decode is left out, not the project.
+  if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && c.move === 'PHYSICS' && !isTrack(c.track))) {
+    s.animation = { ...s.animation, clips: s.animation.clips.filter((c) => !(isObject(c) && c.move === 'PHYSICS' && !isTrack(c.track))) };
+  }
   return s;
 }
 
@@ -328,11 +355,13 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; im
   let state: RawState = body.state;
   for (let n = schema; n < PROJECT_SCHEMA; n++) state = STEPS[n](state);
   const checked = checkState({ ...state, render: migrateRender(state.render) });
-  // A file is the saved state, and nothing plays or renders after a load.
+  // A file is the saved state, and nothing plays or renders after a load. The Doctor's results are this version's:
+  // a file from before a check existed (S2's physics) opens with it.
   const loaded: ProjectState = {
     ...checked,
     meta: { ...checked.meta, dirty: false },
     animation: { ...checked.animation, playing: false },
+    doctor: { results: runDoctor(checked), stamp: checked.doctor.stamp },
   };
   return { state: loaded, meshes: body.meshes, images: body.images };
 }

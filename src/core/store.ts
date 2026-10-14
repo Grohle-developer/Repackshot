@@ -16,6 +16,7 @@ import { carryRuntime, defaultRenderState, reduceRender, type RenderAction, type
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
 import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
+import { reducePhysics, type PhysicsAction } from './physics';
 import { reduceTextures, type TextureAction } from './textures';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
@@ -121,6 +122,7 @@ export type Action =
   | SceneAction
   | TransformAction
   | PrimitiveAction
+  | PhysicsAction
   | MaterialAction
   | TextureAction
   | StudioAction
@@ -247,6 +249,9 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
     }
     case 'material':
       return reduceMaterials(state, action as MaterialAction);
+    case 'physics':
+      // Roles and settings, a simulation's final poses as one step, Reset, Record as animation (S2).
+      return reducePhysics(state, action as PhysicsAction);
     case 'texture':
       // The image maps and labels of a material (M2a).
       return reduceTextures(state, action as TextureAction);

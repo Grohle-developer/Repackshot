@@ -50,9 +50,12 @@ import { projectScene, tonemapFor, writeRsb } from './io/rsb';
 import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
+import { PhysicsClient } from './render/physics';
+import { writePhysicsScene } from './io/phys';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
+import { watchReset as watchPhysicsReset } from './ui/physics';
 import { cameraLabel, lightName } from './ui/names';
 import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
 import { startupRuntimeCheck } from './ui/ai-runtime-state';
@@ -209,6 +212,14 @@ const sceneSource: SceneSource = {
 };
 
 let tracer: PathTracerEngine | NativeEngine | null = null;
+const physicsClient = new PhysicsClient(
+  async () => {
+    const loaded = await loadEngineModule(base, { simd: false });
+    if ('error' in loaded) throw new Error('NO_ENGINE');
+    return loaded.module;
+  },
+  () => new Worker(new URL('./render/physics-worker.ts', import.meta.url), { type: 'module' }),
+);
 /** The viewport shows the path tracer now. */
 let full = false;
 /** The viewport's last size (the path tracer may arrive after it). */
@@ -220,7 +231,8 @@ let viewCameraFn: ((state: ProjectStateOf) => CameraState | null) | null = null;
 type ProjectStateOf = ReturnType<typeof store.get>;
 
 const applyMode = () => {
-  const next = tracer !== null && preview !== null && effectiveMode(ui.get()) === 'FULL';
+  // While a simulation runs (S2) the viewport shows it in Fast: the path tracer would start again every frame.
+  const next = tracer !== null && preview !== null && effectiveMode(ui.get()) === 'FULL' && ui.get().physics.state === 'STOPPED';
   if (next === full) return;
   full = next;
   preview?.setOverlayOnly(full);
@@ -760,9 +772,17 @@ const services: AppServices = {
       return loadBackplate(file.name, new Uint8Array(await file.arrayBuffer()));
     },
   },
+  // The rigid body simulator (S2): rt-phys in a worker of its own, with the scalar rt.wasm (started on the first
+  // simulation). In the desktop window too: the page serves the same module.
+  physics: typeof Worker === 'undefined' ? null : {
+    run(spec, options, onUpdate) {
+      return physicsClient.run(writePhysicsScene(spec), spec.bodies.length, options, onUpdate);
+    },
+  },
 };
 
 const app = mountApp(appEl, store, ui, services);
+watchPhysicsReset(app.ctx);
 void loadResults(app.ctx);
 
 // The desktop launcher's window (P2): its folders, its model store and, in a portable folder's first start, the

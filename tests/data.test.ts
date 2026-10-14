@@ -522,8 +522,9 @@ describe('fuzz and lenses', () => {
 });
 
 describe('animation catalogues', () => {
-  it('has 15 move kinds, 5 easings, 3 targets and 6 explode modes', () => {
-    expect(MOVE_KINDS).toHaveLength(15);
+  it('has 16 move kinds (PHYSICS of S2 last), 5 easings, 3 targets and 6 explode modes', () => {
+    expect(MOVE_KINDS).toHaveLength(16);
+    expect(MOVE_KINDS.at(-1)?.key).toBe('PHYSICS');
     expect(EASING_KINDS.map((e) => e.key)).toEqual(['LINEAR', 'EASE', 'EASE_IN', 'EASE_OUT', 'EASE_STRONG']);
     expect(TARGET_KINDS.map((t) => t.key)).toEqual(['OBJECT', 'SUBJECT', 'SCENE']);
     expect(EXPLODE_MODES.map((m) => m.key)).toEqual([
@@ -595,11 +596,12 @@ describe('animation catalogues', () => {
 });
 
 describe('doctor checks and environment', () => {
-  it('has 14 checks with unique keys in upstream order', () => {
-    expect(DOCTOR_CHECKS).toHaveLength(14);
+  it('has 14 checks with unique keys in upstream order, then the physics check of S2', () => {
+    expect(DOCTOR_CHECKS).toHaveLength(15);
+    expect(DOCTOR_CHECKS.at(-1)?.key).toBe('physics');
     expect(DOCTOR_CHECKS.map((c) => c.key)).toEqual([
       'engine', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
-      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output',
+      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output', 'physics',
     ]);
   });
 

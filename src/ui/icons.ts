@@ -36,6 +36,7 @@ export const ICONS = {
   play: ['M8 5l11 7-11 7z'],
   pause: ['M8 5v14', 'M16 5v14'],
   stop: ['M6 6h12v12H6z'],
+  drop: ['c:12,7,3.5', 'M12 13v4', 'M9.5 15l2.5 2.5 2.5-2.5', 'M4 20.5h16'],
   rewind: ['M6 5v14', 'M18 5 9 12l9 7z'],
   plus: ['M12 5v14', 'M5 12h14'],
   minus: ['M5 12h14'],

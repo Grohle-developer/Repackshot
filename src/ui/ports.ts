@@ -24,6 +24,7 @@ import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
 import type { UpdateOutcome } from '../core/updates';
 import type { PerfResult, Tool } from './ui-state';
+import type { PhysicsRunHandle, PhysicsRunOptions, PhysicsSpec, PhysicsUpdate } from '../core/physics';
 
 export interface PickResult {
   node: NodeId;
@@ -491,6 +492,18 @@ export interface ImagesPort {
   loadBackplate(file: File): Promise<ImageRef>;
 }
 
+/**
+ * The rigid body simulator (phase S2): rt-phys in a worker of its own (render/physics.ts), fed the PHY1 scene of a
+ * spec (io/phys.ts). The interface never sees the engine: only the spec, the frames and what the simulator measured.
+ */
+export interface PhysicsPort {
+  /**
+   * Starts a simulation (a new one replaces the one in progress). `started` rejects with `NO_ENGINE` when rt.wasm
+   * is not there (npm run engine:build), or with the engine's message when the scene does not load.
+   */
+  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void): PhysicsRunHandle;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -545,4 +558,6 @@ export interface AppServices {
   licenceText(file: string): Promise<string | null>;
   /** The environment's HDRI and background image files. */
   images: ImagesPort;
+  /** The rigid body simulator (S2); null or absent where it cannot run (no Web Workers). */
+  physics?: PhysicsPort | null;
 }

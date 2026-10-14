@@ -1,4 +1,5 @@
-// The Doctor (SPEC §4): fourteen checks, each with a detection and a fix.
+// The Doctor (SPEC §4): fourteen checks, each with a detection and a fix, and S2's physics check (a dynamic part
+// that starts below the floor).
 // Scene checks run on the model; engine checks report UNAVAILABLE until the
 // engine phases (D1) provide the data. The Doctor never changes anything
 // unless asked: `fixDoctor` is only called from an explicit action.
@@ -11,7 +12,8 @@ import { add, boxCenter, boxRadius, isEmptyBox, length, sub, transformPoint, typ
 import { defaultBevelMm, partMaterials } from './materials';
 import { presetRefOf } from './lighting';
 import { resolvePreset } from './rig';
-import { allParts, boundsOf, measuredSizeMm, reduceScene, worldMatrix, worldToLocalDelta, type NodeId, type SceneNode } from './scene';
+import { allParts, boundsOf, measuredSizeMm, reduceScene, translateWorld, worldMatrix, worldToLocalDelta, type NodeId, type SceneNode } from './scene';
+import { dynamicBelowFloor } from './physics';
 
 export type DoctorStatus = 'OK' | 'WARN' | 'UNAVAILABLE';
 
@@ -33,6 +35,7 @@ export const SCENE_CHECKS: ReadonlySet<DoctorCheckKey> = new Set<DoctorCheckKey>
   'bevel',
   'clip',
   'lights',
+  'physics',
 ]);
 
 /** A scale is off when the ratio leaves [1/20, 20]. */
@@ -161,12 +164,18 @@ function checkClip(state: ProjectState): DoctorResult {
   return bad.length > 0 ? warn('clip', { count: bad.length, clipStart: Math.round(bad[0].clipStart * 100) / 100 }) : ok('clip');
 }
 
+/** S2: the dynamic parts that start below the floor (the simulator's floor is always at z = 0). */
+function checkPhysics(state: ProjectState): DoctorResult {
+  const below = dynamicBelowFloor(state, floorTolerance(state));
+  return below.length > 0 ? warn('physics', { count: below.length, name: state.scene.nodes[below[0]].name }) : ok('physics');
+}
+
 function checkLights(state: ProjectState): DoctorResult {
   const seen = state.studio.lights.filter((l) => l.enabled && l.camera && !l.brightField);
   return seen.length > 0 ? warn('lights', { count: seen.length }) : ok('lights');
 }
 
-/** Runs the fourteen checks, in catalogue order. */
+/** Runs the checks, in catalogue order. */
 export function runDoctor(state: ProjectState): DoctorResult[] {
   return DOCTOR_CHECKS.map((c) => {
     switch (c.key) {
@@ -184,6 +193,8 @@ export function runDoctor(state: ProjectState): DoctorResult[] {
         return checkClip(state);
       case 'lights':
         return checkLights(state);
+      case 'physics':
+        return checkPhysics(state);
       default:
         return { key: c.key, status: 'UNAVAILABLE', fixable: false, detail: {} };
     }
@@ -264,6 +275,15 @@ export function fixDoctor(state: ProjectState, key: DoctorCheckKey): ProjectStat
       const cameras = { ...state.camera.cameras };
       for (const [id, c] of Object.entries(cameras)) cameras[id] = { ...c, clipStart: start, clipEnd: end };
       return { ...state, camera: { ...state.camera, cameras } };
+    }
+    case 'physics': {
+      // Each mover up until its lowest point is on the floor.
+      let next = state;
+      for (const id of dynamicBelowFloor(state, floorTolerance(state))) {
+        const b = boundsOf(next, [id]);
+        if (!isEmptyBox(b)) next = translateWorld(next, [id], [0, 0, -b.min[2]]);
+      }
+      return next;
     }
     case 'lights': {
       if (!state.studio.lights.some((l) => l.camera && !l.brightField)) return state;

@@ -6,6 +6,7 @@ import { allParts, effectiveVisible, partsUnder, type NodeId } from '../../core/
 import { groupTargets, hasCadFaces, hasFaceMaterials, movableTargets, pivotModeOf, PIVOT_MODES, sharesMaterial } from '../../core/transform';
 import { primitivesUnder } from '../../core/primitive-ops';
 import * as cmd from '../commands';
+import * as phys from '../physics';
 import type { MenuEntry, MenuItems } from '../components/widgets';
 import { dyn, lightName } from '../names';
 import type { Ctx } from '../reactive';
@@ -82,6 +83,8 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
     { label: t('tree.rest'), disabled: fixed, run: () => cmd.restOnFloor(ctx, moving) },
     { label: t('tree.center'), disabled: fixed, run: () => cmd.centerSelection(ctx, moving) },
     { label: t('ops.centerRest'), disabled: fixed, run: () => cmd.centerAndRest(ctx, nodes) },
+    // Physics (S2): the selection falls onto the floor and whatever is under it, and the bar opens.
+    { label: t('ops.drop'), icon: 'drop', note: fixed ? undefined : t('ops.dropAux'), disabled: fixed || noParts, run: () => phys.drop(ctx, nodes) },
     { label: t('ops.reset'), disabled: fixed, run: () => cmd.resetTransform(ctx, nodes) },
     { label: t('ops.pivot'), disabled: none, submenu: pivot },
     { label: t('ops.cameraTarget'), disabled: none, run: () => cmd.setCameraTarget(ctx, nodes) },

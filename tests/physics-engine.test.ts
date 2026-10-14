@@ -26,7 +26,7 @@ async function physics(): Promise<PhysExports> {
 describe.skipIf(!RT_WASM)('the simulator in rt.wasm', () => {
   it('steps the drop scene to the native pose hashes', async () => {
     const rt = await physics();
-    const world = new PhysWorld(rt, new Uint8Array(Buffer.from(fixture.scene, 'base64')), fixture.bodies);
+    const world = new PhysWorld(rt, Uint8Array.from(atob(fixture.scene), (c) => c.charCodeAt(0)), fixture.bodies);
     try {
       expect(world.bodies).toBe(fixture.bodies);
       expect([...world.ids]).toEqual([0, 1, 2]);

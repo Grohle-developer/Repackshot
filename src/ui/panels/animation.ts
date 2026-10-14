@@ -360,14 +360,15 @@ function clipEditor(ctx: Ctx, scope: Scope, id: string): HTMLElement {
     },
     shallowEq,
   );
+  const physics = c.move === 'PHYSICS';
   return h(
     'div',
     { class: 'stack' },
     sentence,
-    c.move !== 'TINT' ? field(t('anim.amount'), amount.el) : null,
+    c.move !== 'TINT' && !physics ? field(t('anim.amount'), amount.el) : null,
     field(t('anim.start'), start.el),
     field(t('anim.duration'), dur.el),
-    field(t('anim.easing'), easing.el),
+    physics ? h('p', { class: 'note', style: 'margin:0' }, t('anim.physicsNote')) : field(t('anim.easing'), easing.el),
     h(
       'div',
       { class: 'row' },

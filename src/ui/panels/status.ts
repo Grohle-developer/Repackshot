@@ -35,6 +35,8 @@ function sentence(r: DoctorResult): string {
       return t('doctor.clip', { clipStart: Number(d.clipStart) });
     case 'lights':
       return t('doctor.lights', { count: Number(d.count) });
+    case 'physics':
+      return t('doctor.physics', { count: Number(d.count), name: String(d.name) });
     default:
       return '';
   }

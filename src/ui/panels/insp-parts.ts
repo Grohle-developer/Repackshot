@@ -28,6 +28,8 @@ import { normalize } from '../components/palette';
 import { cameraFields } from './insp-scene';
 import { aimMenu } from './scene';
 import { texturesSection } from './insp-textures';
+import { physicsSection } from './insp-physics';
+import * as phys from '../physics';
 
 // --- What the selection carries ---------------------------------------------------
 
@@ -449,6 +451,8 @@ function operationButtons(ctx: Ctx, target: NodeId[]): HTMLElement {
     { class: 'stack', style: 'gap:6px' },
     h('div', { class: 'row' }, btn(t('tree.rest'), () => cmd.restOnFloor(ctx, target)), btn(t('tree.center'), () => cmd.centerSelection(ctx, target)), btn(t('ops.centerRest'), () => cmd.centerAndRest(ctx, target))),
     h('div', { class: 'row' }, btn(t('ops.reset'), () => cmd.resetTransform(ctx, target)), btn(t('ops.cameraTarget'), () => cmd.setCameraTarget(ctx, target))),
+    // Physics (S2): the selection falls onto the floor and whatever is under it.
+    h('div', { class: 'row' }, btn(t('ops.drop'), () => phys.drop(ctx, target), t('ops.dropAux'))),
   );
 }
 
@@ -637,7 +641,9 @@ export function partsInspector(ctx: Ctx, scope: Scope, ids: string[], faces: boo
   const pattern = !faces && ids.length === 1 && s.scene.nodes[ids[0]]?.pattern ? patternSection(ctx, scope, ids[0]) : null;
   // A primitive's measures, until it is converted to a mesh (keyed on its shape: editing a measure does not rebuild).
   const primitive = !faces && ids.length === 1 ? dynamic(scope, (st) => st.scene.nodes[ids[0]]?.primitive?.kind ?? '', (sc, kind) => (kind ? primitiveSection(ctx, sc, ids[0]) : null)) : null;
-  return h('div', null, pattern, primitive, materialSection(ctx, scope, ids, faces), texturesSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces));
+  // Physics (S2) edits the nodes; at the Faces level, the part of the faces.
+  const physTarget = faces && s.selection.faces ? [s.selection.faces.part] : ids;
+  return h('div', null, pattern, primitive, materialSection(ctx, scope, ids, faces), texturesSection(ctx, scope, ids, faces), wearSection(ctx, scope, ids, faces), partSection(ctx, scope, ids, faces), physicsSection(ctx, scope, physTarget));
 }
 
 // --- Light -----------------------------------------------------------------------------

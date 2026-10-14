@@ -9,6 +9,7 @@ import { activeCamera, cameraBasis, type CameraId } from './camera';
 import { nextId, nextIds } from './ids';
 import { add, boxCenter, clamp, isEmptyBox, lerp, normalize, scale, sub, type Mat4, type Vec3 } from './math';
 import { allParts, partWorldBounds, sceneBounds, worldToLocalDelta, type NodeId } from './scene';
+import { trackPose, type PhysicsTrack } from './physics';
 
 /** One shot: how long it lasts and which camera is seen (null = the active camera). */
 export interface Shot {
@@ -45,6 +46,12 @@ export interface MotionClip {
   vector?: Vec3;
   /** TINT: target colour, linear RGB. */
   color?: RGB;
+  /**
+   * PHYSICS (phase S2): the recorded simulation, the node's local position and rotation per frame (core/physics.ts).
+   * The clip plays it over its duration (stretching it slows it down); before its start and after its end the node
+   * holds the first and the last frame.
+   */
+  track?: PhysicsTrack;
 }
 
 /** Moves offered for each kind of target, in wizard order. */
@@ -254,7 +261,21 @@ export function evaluate(state: ProjectState, t: number): Pose {
       visible: node.visible,
     });
   };
-  for (const c of nodeClips) {
+  // A PHYSICS clip says where its node is; the other moves add to that, so it goes first.
+  const ordered = [...nodeClips.filter((c) => c.move === 'PHYSICS'), ...nodeClips.filter((c) => c.move !== 'PHYSICS')];
+  for (const c of ordered) {
+    if (c.move === 'PHYSICS') {
+      if (c.target.kind !== 'NODE' || !c.track) continue;
+      const np = ensure(c.target.id);
+      if (!np) continue;
+      const u = c.duration > 0 ? (t - c.start) / c.duration : 1;
+      const p = trackPose(c.track, u, state.scene.nodes[c.target.id].transform);
+      if (p) {
+        np.position = p.position;
+        np.rotation = p.rotation;
+      }
+      continue;
+    }
     const e = clipProgress(c, t);
     const ids = c.target.kind === 'NODE' ? [c.target.id] : state.scene.roots;
     if (c.move === 'EXPLODE') {

@@ -72,6 +72,8 @@ function verb(clip: MotionClip, lang: Lang): string {
 
 /** "The camera orbits 90° over 4 s, smooth" / "La cámara orbita 90° durante 4 s, suave". */
 export function clipSentence(state: ProjectState, clip: MotionClip, lang: Lang): string {
+  // A recorded simulation (S2) has no amount and no easing: it plays what was simulated.
+  if (clip.move === 'PHYSICS') return `${subject(state, clip, lang)} ${tIn(lang, 'say.PHYSICS')} ${tIn(lang, 'say.over', { d: formatNumber(clip.duration, lang) })}`;
   const easing = EASING_KINDS.find((e) => e.key === clip.easing)?.label[lang] ?? clip.easing;
   let s = `${subject(state, clip, lang)} ${verb(clip, lang)} ${tIn(lang, 'say.over', { d: formatNumber(clip.duration, lang) })}, ${easing.toLowerCase()}`;
   if (clip.target.kind === 'CAMERA' && clip.shot !== null) s += ` (${tIn(lang, 'say.inShot', { n: clip.shot + 1 })})`;
