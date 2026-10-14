@@ -42,6 +42,12 @@ export interface AdvancedSettings {
   seed: number;
   /** E5b-1, Advanced ▸ Denoise: where the engine's denoiser runs (`RNDR.denoise`; default both). */
   denoise: DenoiseMode;
+  /**
+   * U11b, Advanced ▸ Denoise ▸ Strength, 0–100 % (default 100): the image handed out is noisy × (1 − s) + denoised × s,
+   * per channel in linear light, in the engine (`RNDR.denoise_strength`); for the render and the Full viewport alike.
+   * 0 % runs no filter (the noisy image itself).
+   */
+  denoiseStrength: number;
   /** E5b-1, Advanced ▸ Also save without denoise: a render also writes the image before denoise (`<name>-noisy`). */
   saveNoisy: boolean;
   /** E5b-1, the render window's Caustics switch (Quality section): Automatic · On · Off. */
@@ -54,8 +60,13 @@ export interface AdvancedSettings {
  * What the engine is told of the denoise and the caustics for a view (io/rsb.ts `SceneView.denoise` and
  * `.caustics`): the viewport (Full mode) or a Render. The viewport never keeps the noisy image.
  */
-export function engineFieldsOf(a: AdvancedSettings, where: 'VIEWPORT' | 'RENDER'): { denoise: number; caustics: { mode: CausticsMode; quality: CausticsQuality } } {
-  return { denoise: denoiseBits(a.denoise, where, a.saveNoisy), caustics: { mode: a.caustics, quality: a.causticsQuality } };
+export function engineFieldsOf(a: AdvancedSettings, where: 'VIEWPORT' | 'RENDER'): { denoise: number; denoiseStrength: number; caustics: { mode: CausticsMode; quality: CausticsQuality } } {
+  return { denoise: denoiseBits(a.denoise, where, a.saveNoisy), denoiseStrength: denoiseFraction(a.denoiseStrength), caustics: { mode: a.caustics, quality: a.causticsQuality } };
+}
+
+/** U11b: the strength of Advanced ▸ Denoise (percent) as the engine takes it, a fraction 0..1 (`RNDR.denoise_strength`). */
+export function denoiseFraction(percent: number): number {
+  return Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.round(percent))) / 100 : 1;
 }
 
 /**
@@ -76,6 +87,7 @@ export const DEFAULT_ADVANCED: Readonly<AdvancedSettings> = Object.freeze({
   clampIndirect: 0,
   seed: 0,
   denoise: 'BOTH',
+  denoiseStrength: 100,
   saveNoisy: false,
   caustics: 'AUTO',
   causticsQuality: 'MEDIUM',
@@ -371,6 +383,7 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
       clampIndirect: Math.max(0, Number.isFinite(a.clampIndirect) ? a.clampIndirect : 0),
       seed: clampInt(a.seed, 0, 0xffffffff),
       denoise: DENOISE_MODES.includes(a.denoise) ? a.denoise : DEFAULT_ADVANCED.denoise,
+      denoiseStrength: typeof a.denoiseStrength === 'number' && Number.isFinite(a.denoiseStrength) ? clampInt(a.denoiseStrength, 0, 100) : DEFAULT_ADVANCED.denoiseStrength,
       saveNoisy: a.saveNoisy === true,
       caustics: CAUSTICS_MODES.includes(a.caustics) ? a.caustics : DEFAULT_ADVANCED.caustics,
       causticsQuality: CAUSTICS_QUALITIES.includes(a.causticsQuality) ? a.causticsQuality : DEFAULT_ADVANCED.causticsQuality,
@@ -660,6 +673,8 @@ function migrateSettings(raw: Record<string, unknown>, base: RenderSettings): Re
           clampIndirect: num(adv.clampIndirect) ?? 0,
           seed: num(adv.seed) ?? 0,
           denoise: oneOf<DenoiseMode>(adv.denoise, DENOISE_MODES) ?? DEFAULT_ADVANCED.denoise,
+          // U11b: a project of before has no strength: all of the filter.
+          denoiseStrength: num(adv.denoiseStrength) !== undefined ? clampInt(num(adv.denoiseStrength)!, 0, 100) : DEFAULT_ADVANCED.denoiseStrength,
           saveNoisy: bool(adv.saveNoisy) ?? false,
           caustics: oneOf<CausticsMode>(adv.caustics, CAUSTICS_MODES) ?? DEFAULT_ADVANCED.caustics,
           causticsQuality: oneOf<CausticsQuality>(adv.causticsQuality, CAUSTICS_QUALITIES) ?? DEFAULT_ADVANCED.causticsQuality,

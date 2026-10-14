@@ -42,7 +42,7 @@
 
 import type { CameraState } from '../core/camera';
 import { passMask, type PassKey, type RenderPasses } from '../core/passes';
-import { advancedTouchesView, engineFieldsOf, type AdvancedSettings } from '../core/render';
+import { advancedTouchesView, denoiseFraction, engineFieldsOf, type AdvancedSettings } from '../core/render';
 import { DENOISE_IMAGE, DENOISE_KEEP_NOISY, denoiseIn, type CausticsMode, type CausticsQuality } from '../core/caustics';
 import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob, type DenoisePreset } from './denoise';
 import type { ProjectState } from '../core/store';
@@ -73,6 +73,8 @@ export interface TracerView {
   passes?: readonly PassKey[];
   /** E5b-1: `RNDR.denoise` of this view (core/render.ts `engineFieldsOf`). */
   denoise?: number;
+  /** U11b: `RNDR.denoise_strength`, 0..1 (default 1): the denoised image blended with the noisy one. */
+  denoiseStrength?: number;
   /** E5b-1: the caustics switch and quality (Automatic is decided by io/rsb.ts from the scene). */
   caustics?: { mode: CausticsMode; quality: CausticsQuality };
 }
@@ -296,7 +298,7 @@ export class Pool {
    * give exactly the whole image's rows), with the full filter or (U11) the viewport's. A worker takes its band in
    * between the tiles it renders. Rejects when a worker cannot (an older rt.wasm).
    */
-  denoise(width: number, height: number, samples: number, sums: Float32Array, lum2: Float32Array, passes: RenderPasses, workers: readonly number[] = this.all(), preset: DenoisePreset = 'FULL'): Promise<Float32Array | null> {
+  denoise(width: number, height: number, samples: number, sums: Float32Array, lum2: Float32Array, passes: RenderPasses, workers: readonly number[] = this.all(), preset: DenoisePreset = 'FULL', strength = 1): Promise<Float32Array | null> {
     const lane = workers.length > 0 ? workers : this.all();
     return denoiseImage(
       width,
@@ -312,10 +314,11 @@ export class Pool {
         return new Promise<Float32Array>((resolve, reject) => {
           this.denoises.set(id, (data, error) => (data ? resolve(data) : reject(new Error(error ?? 'denoise failed'))));
           const input = job.input.buffer as ArrayBuffer;
-          w.postMessage({ type: 'denoise', id, width: job.width, height: job.height, samples: job.samples, ...job.band, input, ...(job.preset ? { preset: job.preset } : {}) } satisfies WorkerRequest, [input]);
+          w.postMessage({ type: 'denoise', id, width: job.width, height: job.height, samples: job.samples, ...job.band, input, ...(job.preset ? { preset: job.preset } : {}), ...(job.strength !== undefined ? { strength: job.strength } : {}) } satisfies WorkerRequest, [input]);
         });
       },
       preset,
+      strength,
     );
   }
 
@@ -502,6 +505,8 @@ export class PathTracerEngine implements RenderEngine {
   private accGuides: PassAccumulator | null = null;
   /** U11: the live denoise switch, as the project says (the Viewport part of Advanced ▸ Denoise). */
   private liveOn = false;
+  /** U11b: the strength of the view's denoise (Advanced ▸ Denoise ▸ Strength, 0..1); at 0 nothing is denoised. */
+  private liveStrength = 1;
   /** U11: the viewport's last pass, as the lane denoises it: its samples, sums and squared luminance. */
   private lastPass: { acc: Accumulator; samples: number; sum: Float32Array; lum2: Float32Array } | null = null;
   /** U11: the last pass denoised (its samples) and the denoised sums. */
@@ -682,7 +687,25 @@ export class PathTracerEngine implements RenderEngine {
   sync(state: ProjectState, prev: ProjectState | null): void {
     this.state = state;
     if (!prev || touchesImage(state, prev)) this.changed();
+    this.setLiveStrength(denoiseFraction(state.render.advanced.denoiseStrength));
     this.setLiveDenoise(denoiseIn(state.render.advanced.denoise, 'VIEWPORT'));
+  }
+
+  /**
+   * U11b: the strength of the live denoise. (It is in the view's scene too, so a change usually starts the image
+   * over; if not, the denoised image of another strength is dropped and the last pass denoised again, and at 0 % the
+   * accumulated sums are on screen.)
+   */
+  private setLiveStrength(strength: number): void {
+    if (strength === this.liveStrength) return;
+    this.liveStrength = strength;
+    this.clean = null;
+    const acc = this.acc;
+    if (strength <= 0 && acc && acc.shownSamples > 0) {
+      acc.show(null);
+      this.redrawAll();
+    }
+    this.pumpDenoise();
   }
 
   /**
@@ -992,16 +1015,18 @@ export class PathTracerEngine implements RenderEngine {
     const acc = this.acc;
     const guides = this.accGuides;
     const last = this.lastPass;
-    if (!this.liveOn || this.denoising || !acc || !guides || !last || last.acc !== acc || this.accScale !== 1) return;
+    if (!this.liveOn || this.liveStrength <= 0 || this.denoising || !acc || !guides || !last || last.acc !== acc || this.accScale !== 1) return;
     if (this.clean?.acc === acc && this.clean.samples >= last.samples) return;
     const gen = this.accGen;
     const t0 = performance.now();
     const id = ++this.denoiseSeq;
+    const strength = this.liveStrength;
     this.denoising = id;
     this.pool
-      .denoise(acc.width, acc.height, last.samples, last.sum, last.lum2, guides.resolve(), this.accLane, 'VIEWPORT')
+      .denoise(acc.width, acc.height, last.samples, last.sum, last.lum2, guides.resolve(), this.accLane, 'VIEWPORT', strength)
       .then((sums) => {
-        if (!sums || gen !== this.accGen || this.acc !== acc) return;
+        // (Of another strength than the one asked for now: dropped, and the pass denoised again.)
+        if (!sums || gen !== this.accGen || this.acc !== acc || strength !== this.liveStrength) return;
         this.clean = { acc, samples: last.samples, sums };
         if (!this.liveOn) return;
         acc.show(sums, last.samples);
@@ -1209,8 +1234,10 @@ export class PathTracerEngine implements RenderEngine {
         ...(opts.advanced ? { advanced: opts.advanced, ...engineFieldsOf(opts.advanced, 'RENDER') } : {}),
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
       };
-      // E5b-1: a denoised render also renders the guide passes and sums the squared luminance.
-      const denoise = ((view.denoise ?? 0) & DENOISE_IMAGE) !== 0;
+      // E5b-1: a denoised render also renders the guide passes and sums the squared luminance. U11b: at a strength
+      // of 0 it is not denoised at all (the image is the noisy one).
+      const strength = view.denoiseStrength ?? 1;
+      const denoise = ((view.denoise ?? 0) & DENOISE_IMAGE) !== 0 && strength > 0;
       const keepNoisy = ((view.denoise ?? 0) & DENOISE_KEEP_NOISY) !== 0;
       const mask = passMask(opts.passes ?? []) | (denoise ? DENOISE_GUIDE_MASK : 0);
       const built = this.source.build(state, view);
@@ -1270,7 +1297,7 @@ export class PathTracerEngine implements RenderEngine {
       let image = acc.sum;
       let denoised = false;
       if (denoise && passes && done > 0 && !signal?.aborted) {
-        const clean = await this.pool.denoise(opts.width, opts.height, done, acc.sum, acc.lum2, passes.resolve(), this.finalLane()).catch((err) => {
+        const clean = await this.pool.denoise(opts.width, opts.height, done, acc.sum, acc.lum2, passes.resolve(), this.finalLane(), 'FULL', strength).catch((err) => {
           console.warn(`render: denoise: ${err instanceof Error ? err.message : String(err)}`);
           return null;
         });

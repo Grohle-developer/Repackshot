@@ -827,7 +827,14 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   defecto *Los dos*, con la nota de que es el filtro del motor guiado por
   albedo, normales, profundidad y pieza, que nunca mezcla dos piezas; su
   parte *Visor* es el interruptor *Reducir ruido* de la barra superior y
-  del medidor, U11, y el render final usa siempre el filtro completo) y,
+  del medidor, U11, y el render final usa siempre el filtro completo),
+  con su **Intensidad** debajo (fase U11b; 0–100 %, por defecto 100 %, oculta
+  con la reducción *Apagada*): la imagen entregada es la mezcla
+  `ruidosa × (1 − s) + filtrada × s`, por canal y en luz lineal, hecha en el
+  motor; vale a la vez para el render y para el visor *Completo* (un solo
+  mando, guardado en el proyecto y deshacible), y con 0 % no se filtra nada.
+  Cambiarla vuelve a empezar la imagen del visor, como cualquier ajuste del
+  motor. Y,
   cuando el render se filtra, **Guardar también sin reducción de ruido**
   (un segundo archivo con «-noisy» en el nombre).
 

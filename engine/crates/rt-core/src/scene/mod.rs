@@ -579,6 +579,10 @@ pub struct RenderSettings {
     /// The gather radius of the first sample, in pixels of the image at the camera's focus
     /// distance (0: [`RenderSettings::DEFAULT_CAUSTIC_RADIUS`]); it shrinks with every sample.
     pub caustic_radius: f32,
+    /// U11b: how much of the denoised image a host hands out, `0..=1`: `noisy × (1 − s) +
+    /// denoised × s` per channel in linear light (`rt_post::denoise::blend`); 0 runs no filter,
+    /// 1 (the default, and a file without it) is the filter's image.
+    pub denoise_strength: f32,
 }
 
 /// `RNDR.denoise` bit 0: the host denoises the finished image.
@@ -625,6 +629,7 @@ impl Default for RenderSettings {
             denoise: 0,
             caustic_photons: 0,
             caustic_radius: 0.0,
+            denoise_strength: 1.0,
         }
     }
 }

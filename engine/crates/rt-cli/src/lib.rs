@@ -11,7 +11,7 @@ use rt_core::passes::{PassFilm, Passes, PASS_ALL};
 use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, tile_grid};
 use rt_core::scene::{Scene, DENOISE_IMAGE};
 use rt_core::simd::Isa;
-use rt_post::denoise::{denoise_rows, DenoiseInput, GUIDE_PASSES};
+use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset, GUIDE_PASSES};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -59,6 +59,18 @@ pub fn passes_for(scene: &Scene) -> u32 {
 /// depend on the thread count. Returns the film with its radiance replaced, or `None` when the
 /// passes lack the guides.
 pub fn denoise_film(film: &Film, passes: &Passes, samples: u32, threads: usize) -> Option<Film> {
+    denoise_film_at(film, passes, samples, threads, 1.0)
+}
+
+/// [`denoise_film`] at a strength (U11b, `0..=1`, `RNDR.denoise_strength`): the denoised film
+/// blended with `film`, `film × (1 − s) + denoised × s` per channel; 0 runs no filter.
+pub fn denoise_film_at(
+    film: &Film,
+    passes: &Passes,
+    samples: u32,
+    threads: usize,
+    strength: f32,
+) -> Option<Film> {
     let sums = rt_post::denoise::rgba_sums(film);
     let whole = DenoiseInput::whole(samples, &sums, &film.lum2, passes).ok()?;
     let h = film.height;
@@ -68,7 +80,7 @@ pub fn denoise_film(film: &Film, passes: &Passes, samples: u32, threads: usize) 
             .map(|k| {
                 let (y0, y1) = (h * k / bands, h * (k + 1) / bands);
                 let band = whole.with_halo(y0, y1);
-                scope.spawn(move || denoise_rows(&band, y0, y1).ok())
+                scope.spawn(move || denoise_rows_at(&band, y0, y1, Preset::FULL, strength).ok())
             })
             .collect();
         workers
@@ -95,6 +107,17 @@ impl RenderOutput {
     /// `threads` threads; `None` without the guide passes.
     pub fn denoised(&self, threads: usize) -> Option<Film> {
         denoise_film(&self.film, self.passes.as_ref()?, self.samples, threads)
+    }
+
+    /// [`RenderOutput::denoised`] at a strength (U11b; the scene's `RNDR.denoise_strength`).
+    pub fn denoised_at(&self, threads: usize, strength: f32) -> Option<Film> {
+        denoise_film_at(
+            &self.film,
+            self.passes.as_ref()?,
+            self.samples,
+            threads,
+            strength,
+        )
     }
 
     /// Converts the film to 8-bit sRGB using the exposure and tone mapping stored in `scene`.

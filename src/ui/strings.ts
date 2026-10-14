@@ -1099,6 +1099,12 @@ const TABLE = {
   ],
   'rw.saveNoisy': ['Also save without denoise', 'Guardar también sin reducción de ruido'],
   'rw.saveNoisyNote': ['A second file, with “-noisy” in its name', 'Un segundo archivo, con «-noisy» en el nombre'],
+  // U11b: the strength of the denoise.
+  'rw.denoiseStrength': ['Strength', 'Intensidad'],
+  'rw.denoiseStrengthNote': [
+    'How much of the denoised image: 100 % is the filter’s image, 0 % the image without it, in between a mix of the two. The render and the Full viewport use the same.',
+    'Cuánto de la imagen filtrada: 100 % es la imagen del filtro, 0 % la imagen sin él, y entre medias una mezcla de las dos. El render y el visor Completo usan la misma.',
+  ],
   'rw.ai': ['AI post-processing', 'Post-procesado IA'],
   'rw.aiSoon': [
     'An optional pass that makes light and wear more natural, with geometry, materials, resolution, focus and framing locked.',

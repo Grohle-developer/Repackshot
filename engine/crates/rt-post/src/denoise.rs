@@ -27,6 +27,9 @@
 //! bits natively and in WebAssembly, and a band of rows ([`denoise_rows`]) is exactly those rows
 //! of the whole image, so hosts can split the work among threads or workers.
 //!
+//! The strength (U11b): [`denoise_rows_at`] hands out `noisy × (1 − s) + denoised × s` per
+//! colour channel ([`blend`]); at 0 it runs no filter and the rows are the noisy ones.
+//!
 //! Two presets ([`Preset`], U11): [`Preset::FULL`], the filter above, for a render; and
 //! [`Preset::VIEWPORT`], lighter, for the live denoise of the viewport while it accumulates (fewer
 //! passes, a smaller neighbourhood for the spatial variance), so it keeps up with the image. Each
@@ -304,8 +307,23 @@ pub fn denoise_rows_with(
     y1: u32,
     preset: Preset,
 ) -> Result<Vec<f32>, DenoiseError> {
-    let n = input.check()?;
     let preset = preset.clamped();
+    let n = check_rows(input, y0, y1, preset)?;
+    let filtered = filter_band(input, n, preset);
+    let w = input.width as usize;
+    let from = (y0 - input.origin_y) as usize * w * 4;
+    let to = (y1 - input.origin_y) as usize * w * 4;
+    Ok(filtered[from..to].to_vec())
+}
+
+/// The input's size in pixels, when it holds image rows `y0 .. y1` with `preset`'s halo.
+fn check_rows(
+    input: &DenoiseInput,
+    y0: u32,
+    y1: u32,
+    preset: Preset,
+) -> Result<usize, DenoiseError> {
+    let n = input.check()?;
     let halo = preset.halo();
     let band_end = input.origin_y + input.rows;
     if y0 > y1
@@ -316,11 +334,58 @@ pub fn denoise_rows_with(
     {
         return Err(DenoiseError::Rows);
     }
-    let filtered = filter_band(input, n, preset);
-    let w = input.width as usize;
-    let from = (y0 - input.origin_y) as usize * w * 4;
-    let to = (y1 - input.origin_y) as usize * w * 4;
-    Ok(filtered[from..to].to_vec())
+    Ok(n)
+}
+
+/// A strength in `0..=1` (NaN: 1, all of the filter).
+fn strength_of(s: f32) -> f32 {
+    if s.is_nan() {
+        1.0
+    } else {
+        s.clamp(0.0, 1.0)
+    }
+}
+
+/// U11b: blends the denoised RGBA sums `clean` with the `noisy` ones, in place, at `strength`
+/// (`0..=1`): `noisy × (1 − s) + clean × s` per colour channel, in `f32`, the coverage as it was.
+/// At 1 `clean` is left as it is; at 0.5 every channel is exactly `(noisy + clean) / 2`.
+pub fn blend(noisy: &[f32], clean: &mut [f32], strength: f32) {
+    let s = strength_of(strength);
+    if s >= 1.0 {
+        return;
+    }
+    let k = 1.0 - s;
+    for (i, (c, &n)) in clean.iter_mut().zip(noisy).enumerate() {
+        if i % 4 != 3 {
+            *c = n * k + *c * s;
+        }
+    }
+}
+
+/// [`denoise_rows_with`] at `strength` (U11b): 1 is the filter's image, 0 runs no filter and
+/// gives the input's own rows, in between [`blend`] of the two. The band must hold the rows with
+/// the preset's halo either way.
+pub fn denoise_rows_at(
+    input: &DenoiseInput,
+    y0: u32,
+    y1: u32,
+    preset: Preset,
+    strength: f32,
+) -> Result<Vec<f32>, DenoiseError> {
+    let s = strength_of(strength);
+    let w = input.width as usize * 4;
+    if s <= 0.0 {
+        check_rows(input, y0, y1, preset.clamped())?;
+        let (a, b) = (
+            (y0 - input.origin_y) as usize * w,
+            (y1 - input.origin_y) as usize * w,
+        );
+        return Ok(input.sums[a..b].to_vec());
+    }
+    let mut out = denoise_rows_with(input, y0, y1, preset)?;
+    let a = (y0 - input.origin_y) as usize * w;
+    blend(&input.sums[a..a + out.len()], &mut out, s);
+    Ok(out)
 }
 
 /// Rec. 709 luminance, as `rt_core::color::Rgb::luminance`.

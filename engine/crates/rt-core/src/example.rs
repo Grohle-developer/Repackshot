@@ -193,6 +193,7 @@ pub fn scene() -> Scene {
             denoise: 0,
             caustic_photons: 0,
             caustic_radius: 0.0,
+            denoise_strength: 1.0,
         },
         bitmaps: Vec::new(),
     }

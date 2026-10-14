@@ -293,14 +293,16 @@ pub unsafe extern "C" fn rt_denoise(
     // SAFETY: the caller's promises are those of `rt_denoise_with`.
     unsafe {
         rt_denoise_with(
-            0, width, height, origin_y, rows, samples, y0, y1, in_ptr, out_ptr,
+            0, 1.0, width, height, origin_y, rows, samples, y0, y1, in_ptr, out_ptr,
         )
     }
 }
 
 /// [`rt_denoise`] with a preset (U11): 0 the full filter, 1 the viewport's lighter one
 /// (`rt_post::denoise::Preset::VIEWPORT`), whose band holds the rows with
-/// [`rt_denoise_halo`]`(1)` rows around them. An unknown preset is `STATUS_BAD_DENOISE`.
+/// [`rt_denoise_halo`]`(1)` rows around them; and a strength (U11b, `0..=1`): the rows are
+/// `noisy × (1 − s) + denoised × s`, and at 0 the noisy rows (no filter runs). An unknown preset
+/// is `STATUS_BAD_DENOISE`.
 ///
 /// # Safety
 ///
@@ -309,6 +311,7 @@ pub unsafe extern "C" fn rt_denoise(
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn rt_denoise_with(
     preset: u32,
+    strength: f32,
     width: u32,
     height: u32,
     origin_y: u32,
@@ -330,7 +333,7 @@ pub unsafe extern "C" fn rt_denoise_with(
     // this call.
     let input = unsafe { std::slice::from_raw_parts(in_ptr, len) };
     match crate::denoise_with(
-        preset, width, height, origin_y, rows, samples, y0, y1, input,
+        preset, strength, width, height, origin_y, rows, samples, y0, y1, input,
     ) {
         Ok(out) => {
             // SAFETY: the caller promises room for `width * (y1 - y0) * 4` floats, which is

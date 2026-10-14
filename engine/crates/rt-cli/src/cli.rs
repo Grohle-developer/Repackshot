@@ -11,7 +11,7 @@ rt: Repackshot command line renderer
 
 USAGE:
     rt <scene.rsb> -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
-       [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R]
+       [--denoise] [--denoise-strength S] [--keep-noisy] [--caustics N] [--caustic-radius R]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
@@ -30,6 +30,10 @@ OPTIONS:
                             stops between sample passes once it is spent (0: no limit)
         --denoise           write the denoised image (RNDR.denoise bit 0), guided by the
                             albedo, normal, depth and id passes rendered with it
+        --denoise-strength <S>
+                            how much of the denoised image, 0 to 1 (RNDR.denoise_strength;
+                            default 1): the image without denoise × (1 − S) + denoised × S;
+                            0 writes the image without denoise
         --keep-noisy        with --denoise, also write the image without denoise next to it
                             (<out>-noisy.png)
         --caustics <N>      trace N caustic photons per sample (RNDR.caustic_photons; 0: off)
@@ -81,6 +85,8 @@ pub struct Options {
     pub denoise: bool,
     /// `--keep-noisy`: also the image without denoise.
     pub keep_noisy: bool,
+    /// `--denoise-strength`: how much of the denoised image (U11b), overriding the scene's.
+    pub denoise_strength: Option<f32>,
     /// Caustic photons per sample, overriding the scene's.
     pub caustics: Option<u32>,
     /// First caustic gather radius in pixels, overriding the scene's.
@@ -99,6 +105,9 @@ impl Options {
         }
         if self.keep_noisy {
             scene.render.denoise |= DENOISE_KEEP_NOISY;
+        }
+        if let Some(strength) = self.denoise_strength {
+            scene.render.denoise_strength = strength;
         }
         if let Some(photons) = self.caustics {
             scene.render.caustic_photons = photons;
@@ -244,6 +253,17 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--max-seconds" => options.max_seconds = Some(seconds(value(&mut it, arg)?, arg)?),
             "--denoise" => options.denoise = true,
             "--keep-noisy" => options.keep_noisy = true,
+            "--denoise-strength" => {
+                let text = value(&mut it, arg)?;
+                match text.parse::<f32>() {
+                    Ok(s) if (0.0..=1.0).contains(&s) => options.denoise_strength = Some(s),
+                    _ => {
+                        return Err(format!(
+                            "--denoise-strength expects a number from 0 to 1, got '{text}'"
+                        ))
+                    }
+                }
+            }
             "--caustics" => {
                 let text = value(&mut it, arg)?;
                 match text.parse::<u32>() {
@@ -455,10 +475,11 @@ pub fn run(command: Command) -> Result<(), String> {
                     rt_core::color::Tonemap::from_u32(scene.render.tonemap),
                 )
             };
-            if scene.render.denoise & DENOISE_IMAGE != 0 {
+            // U11b: at a strength of 0 nothing is denoised (the image is the one without).
+            if scene.render.denoise & DENOISE_IMAGE != 0 && scene.render.denoise_strength > 0.0 {
                 let t0 = std::time::Instant::now();
                 let clean = result
-                    .denoised(threads)
+                    .denoised_at(threads, scene.render.denoise_strength)
                     .ok_or("the denoiser found no guide passes")?;
                 println!("denoised in {:.3} s", t0.elapsed().as_secs_f64());
                 write_png(&output, width, height, &tone(&clean))
@@ -514,6 +535,32 @@ mod tests {
                 },
             })
         );
+        // U11b: the strength of the denoise, 0 to 1.
+        assert_eq!(
+            parse(&[
+                "--example",
+                "-o",
+                "x.png",
+                "--denoise",
+                "--denoise-strength",
+                "0.25"
+            ]),
+            Ok(Command::Render {
+                input: Input::Example,
+                output: "x.png".into(),
+                options: Options {
+                    denoise: true,
+                    denoise_strength: Some(0.25),
+                    ..Options::default()
+                },
+            })
+        );
+        for bad in ["1.5", "-0.1", "half", "NaN"] {
+            assert!(
+                parse(&["--example", "-o", "x.png", "--denoise-strength", bad]).is_err(),
+                "{bad}"
+            );
+        }
         assert_eq!(
             parse(&["--example", "--output", "x.png", "--size", "64X48"]),
             Ok(Command::Render {
@@ -641,10 +688,12 @@ mod tests {
             max_seconds: None,
             denoise: true,
             keep_noisy: true,
+            denoise_strength: Some(0.5),
             caustics: Some(4096),
             caustic_radius: Some(2.0),
         }
         .apply(&mut scene);
+        assert_eq!(scene.render.denoise_strength, 0.5);
         assert_eq!((samples, threads), (3, 5));
         assert_eq!((scene.render.width, scene.render.height), (10, 20));
         assert_eq!(scene.render.denoise, DENOISE_IMAGE | DENOISE_KEEP_NOISY);

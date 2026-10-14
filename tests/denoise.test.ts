@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { autoCaustics, causticsFields, CAUSTICS_PRESETS, denoiseBits, denoiseIn, lightAngleDeg, toggledViewportDenoise, DENOISE_IMAGE, DENOISE_KEEP_NOISY } from '../src/core/caustics';
-import { DEFAULT_ADVANCED, defaultRenderSettings, engineFieldsOf, migrateRender, patchSettings } from '../src/core/render';
+import { DEFAULT_ADVANCED, defaultRenderSettings, denoiseFraction, engineFieldsOf, migrateRender, patchSettings } from '../src/core/render';
 import { DENOISE_GUIDE_MASK, DENOISE_HALO, DENOISE_PRESETS, denoiseBand, denoiseBands, denoiseImage, hasDenoiseExport, MIN_BAND_ROWS, packBand } from '../src/render/denoise';
 import { Accumulator, luminanceF32 } from '../src/render/tiles';
 import { noisyName } from '../src/ui/render-queue';
@@ -36,7 +36,17 @@ describe('denoise and caustics settings', () => {
     expect(denoiseBits('VIEWPORT', 'RENDER', true)).toBe(0);
     // The Full viewport's switch flips only the viewport's part.
     expect(['OFF', 'VIEWPORT', 'RENDER', 'BOTH'].map((m) => toggledViewportDenoise(m as never))).toEqual(['VIEWPORT', 'OFF', 'BOTH', 'RENDER']);
-    expect(engineFieldsOf({ ...DEFAULT_ADVANCED, saveNoisy: true }, 'RENDER')).toEqual({ denoise: 3, caustics: { mode: 'AUTO', quality: 'MEDIUM' } });
+    expect(engineFieldsOf({ ...DEFAULT_ADVANCED, saveNoisy: true }, 'RENDER')).toEqual({ denoise: 3, denoiseStrength: 1, caustics: { mode: 'AUTO', quality: 'MEDIUM' } });
+  });
+
+  it('U11b: the strength is 100 % by default and for a project of before, a whole percent 0..100, and a fraction for the engine', () => {
+    expect(DEFAULT_ADVANCED.denoiseStrength).toBe(100);
+    expect(migrateRender({ advanced: { maxBounces: 4, clampIndirect: 2, seed: 9, denoise: 'BOTH' } }).advanced.denoiseStrength).toBe(100);
+    expect(migrateRender({ advanced: { maxBounces: null, clampIndirect: 0, seed: 0, denoiseStrength: 40 } }).advanced.denoiseStrength).toBe(40);
+    const at = (v: unknown) => patchSettings(defaultRenderSettings(), { advanced: { ...DEFAULT_ADVANCED, denoiseStrength: v as number } }).advanced.denoiseStrength;
+    expect([at(150), at(-3), at(Number.NaN), at('x'), at(62.4)]).toEqual([100, 0, 100, 100, 62]);
+    expect([denoiseFraction(100), denoiseFraction(50), denoiseFraction(0), denoiseFraction(Number.NaN)]).toEqual([1, 0.5, 0, 1]);
+    expect(engineFieldsOf({ ...DEFAULT_ADVANCED, denoiseStrength: 25 }, 'VIEWPORT').denoiseStrength).toBe(0.25);
   });
 
   it('caustics: the quality is photons per sample and a first radius; Automatic needs a caster and a small light', () => {
@@ -173,6 +183,24 @@ live('the engine’s denoiser and caustics through the page’s code (the real r
         mean.sum.set(clean!);
         expect(fnv1a(resolveRgb(mean, samples)), `${samples} spp, ${workers} workers`).toBe(want);
       }
+    }
+  }, 120_000);
+
+  it('U11b: a strength of 50 % is exactly the mean of the noisy and the denoised image, 0 % the noisy one, 100 % the denoised', async () => {
+    const rt = await loadRt();
+    if (!hasDenoiseExport(rt) || typeof rt.rt_denoise_with !== 'function') throw new Error(`${RT_WASM} has no rt_denoise_with: npm run engine:build`);
+    const rsb = new Uint8Array(readFileSync('tests/fixtures/example.rsb'));
+    const { image, passes } = renderWithPasses(rt, rsb, 128, 96, 4, DENOISE_GUIDE_MASK, { lum2: true });
+    const run = async (strength: number, preset: 'FULL' | 'VIEWPORT') => (await denoiseImage(128, 96, 4, image.sum, image.lum2, passes, 2, async (job) => denoiseBand(rt, job), preset, strength))!;
+    for (const preset of ['FULL', 'VIEWPORT'] as const) {
+      const clean = await run(1, preset);
+      const half = await run(0.5, preset);
+      const none = await run(0, preset);
+      expect(Array.from(none), preset).toEqual(Array.from(image.sum));
+      const mean = image.sum.map((n, i) => (i % 4 === 3 ? n : Math.fround(Math.fround(n * 0.5) + Math.fround(clean[i] * 0.5))));
+      expect(Array.from(half), preset).toEqual(Array.from(mean));
+      // And it is (noisy + clean) / 2 in f32.
+      expect(Array.from(half).every((v, i) => i % 4 === 3 || v === Math.fround(Math.fround(image.sum[i] + clean[i]) * 0.5))).toBe(true);
     }
   }, 120_000);
 

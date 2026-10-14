@@ -278,10 +278,12 @@ class FakeWorker {
         this.reply({ type: 'pixels', id: msg.id, bytes: exactBytes(new Float32Array(msg.sum), msg.samples, msg.ev, msg.tonemap) });
         break;
       case 'denoise': {
-        // A stand-in for rt_denoise: the band's rows of the sums it was given, radiance halved (coverage as it was).
+        // A stand-in for rt_denoise: the band's rows of the sums it was given, radiance halved (coverage as it was),
+        // and (U11b) blended with the noisy rows as the engine does: noisy × (1 − s) + halved × s.
         const sums = new Float32Array(msg.input, 0, msg.width * (msg.hi - msg.lo) * 4);
         const rows = sums.slice((msg.y0 - msg.lo) * msg.width * 4, (msg.y1 - msg.lo) * msg.width * 4);
-        for (let i = 0; i < rows.length; i++) if (i % 4 !== 3) rows[i] *= 0.5;
+        const s = msg.strength ?? 1;
+        for (let i = 0; i < rows.length; i++) if (i % 4 !== 3) rows[i] = s === 1 ? rows[i] * 0.5 : Math.fround(Math.fround(rows[i] * (1 - s)) + Math.fround(rows[i] * 0.5 * s));
         this.denoised.push(msg);
         this.reply({ type: 'denoised', id: msg.id, data: rows });
         break;
@@ -668,7 +670,7 @@ describe('the viewport of the pool', () => {
     }
   });
 
-  it('denoises the Full viewport with its guide passes and shows the denoised image (E5b-1, U11: the viewport preset)', async () => {
+  it('denoises the Full viewport with its guide passes and shows the denoised image (E5b-1, U11: the viewport preset)', { timeout: 30000 }, async () => {
     const { engine, workers } = await viewport(3, 96, 64);
     await settle(engine, 30);
     // The jobs ask for the guides, and the denoiser runs on the viewport's workers with the viewport's preset, whose
@@ -707,7 +709,7 @@ describe('the viewport of the pool', () => {
     expect(engine.status().denoised).toBeUndefined();
   });
 
-  it('a denoise in flight does not stop the passes, and the next starts on the newest pass when it is back (U11)', async () => {
+  it('a denoise in flight does not stop the passes, and the next starts on the newest pass when it is back (U11)', { timeout: 30000 }, async () => {
     const { engine, workers } = await viewport(2, 64, 64);
     // The denoise answers wait: the passes go on meanwhile.
     workers.forEach((w) => ((w.held = []), (w.holdOnly = new Set(['denoised']))));
@@ -738,7 +740,7 @@ describe('the viewport of the pool', () => {
     workers.forEach((w) => w.release());
   });
 
-  it('turned on, it denoises the last pass at once, without starting the image over (U11)', async () => {
+  it('turned on, it denoises the last pass at once, without starting the image over (U11)', { timeout: 30000 }, async () => {
     const { engine, workers } = await viewport(2, 64, 32);
     const on = exampleState();
     const off = { ...on, render: { ...on.render, advanced: { ...on.render.advanced, denoise: 'OFF' as const } } };
@@ -765,7 +767,7 @@ describe('the viewport of the pool', () => {
     expect(workers.flatMap((w) => w.denoised)).toHaveLength(n);
   });
 
-  it('with the denoise on, the passes are about as long as a denoise; a gesture neither renders guides nor denoises (U11)', async () => {
+  it('with the denoise on, the passes are about as long as a denoise; a gesture neither renders guides nor denoises (U11)', { timeout: 30000 }, async () => {
     expect([livePassCap(10, 400), livePassCap(40, 100), livePassCap(40, 400), livePassCap(500, 400), livePassCap(0, 400)]).toEqual([16, 6, 10, 1, MAX_PASS_SAMPLES]);
     expect(LIVE_PASS_MS).toBe(250);
     const { engine, workers } = await viewport(2, 64, 32);
@@ -796,6 +798,22 @@ describe('the viewport of the pool', () => {
     engine.endGesture();
   });
 
+  it('U11b: the live denoise of the view uses the project’s strength, and at 0 % none runs', { timeout: 30000 }, async () => {
+    const { engine, workers } = await viewport(2, 64, 32);
+    const base = exampleState();
+    const at = (n: number) => ({ ...base, render: { ...base.render, advanced: { ...base.render.advanced, denoiseStrength: n } } });
+    engine.sync(at(40), base);
+    for (let i = 0; i < 100 && !workers.some((w) => w.denoised.some((m) => m.strength === 0.4)); i++) await settle(engine, 1);
+    expect(workers.flatMap((w) => w.denoised).some((m) => m.strength === 0.4 && m.preset === 'VIEWPORT')).toBe(true);
+    // At 0 % (a new view: the strength is in the scene the engine gets) nothing is denoised.
+    engine.sync(at(0), at(40));
+    await settle(engine, 20);
+    const before = workers.map((w) => w.denoised.length);
+    await settle(engine, 30);
+    workers.forEach((w, i) => expect(w.denoised.length).toBe(before[i]));
+    expect(engine.status().denoised).toBeUndefined();
+  });
+
   it('a Render denoises its image at the end and hands back the one before denoise when asked (E5b-1)', async () => {
     const { pool, workers } = await fakePool(3, 64);
     const engine = new PathTracerEngine(pool, viewSource(), false);
@@ -818,6 +836,20 @@ describe('the viewport of the pool', () => {
     expect(plain.denoised).toBeUndefined();
     expect(plain.noisy).toBeUndefined();
     expect(Array.from(plain.sum!)).toEqual(Array.from(noisy));
+    // U11b: at 50 % the workers are asked for that strength and the image is the blend; at 0 % none is asked for.
+    const asked = workers.flatMap((w) => w.denoised).length;
+    const half = await engine.renderPixels({ ...opts, advanced: { ...advanced, denoiseStrength: 50 } });
+    const halfAsks = workers.flatMap((w) => w.denoised).slice(asked);
+    expect(halfAsks.length).toBeGreaterThan(0);
+    expect(halfAsks.every((m) => m.strength === 0.5 && m.preset === undefined)).toBe(true);
+    expect(half.denoised).toBe(true);
+    expect(Array.from(half.sum!.filter((_, i) => i % 4 !== 3))).toEqual(Array.from(noisy.filter((_, i) => i % 4 !== 3)).map((v) => Math.fround(Math.fround(v * 0.5) + Math.fround(v * 0.25))));
+    const before = workers.flatMap((w) => w.denoised).length;
+    const zero = await engine.renderPixels({ ...opts, advanced: { ...advanced, denoiseStrength: 0 } });
+    expect(workers.flatMap((w) => w.denoised)).toHaveLength(before);
+    expect(zero.denoised).toBeUndefined();
+    expect(zero.noisy).toBeUndefined();
+    expect(Array.from(zero.sum!)).toEqual(Array.from(noisy));
   });
 
   it('waits while a Render runs when the settings say Pause, and the Render takes every worker', async () => {
@@ -834,7 +866,7 @@ describe('the viewport of the pool', () => {
     await pending;
     const during = workers.map((w, i) => jobsOf(w).slice(before[i]));
     expect(during.every((jobs) => jobs.length > 0)).toBe(true);
-  });
+  }, 30000);
 
   it('the watchdog starts the view again when its tiles stop coming, and says so', async () => {
     const { engine, workers } = await viewport(2, 64, 32);

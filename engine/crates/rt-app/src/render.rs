@@ -51,7 +51,7 @@ use rt_core::passes::{PassFilm, Passes, PASS_ALL};
 use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, tile_grid};
 use rt_core::scene::{Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use rt_core::simd::Isa;
-use rt_post::denoise::{denoise_rows_with, DenoiseInput, Preset, GUIDE_PASSES};
+use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset, GUIDE_PASSES};
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -436,6 +436,8 @@ struct Live {
     changed: Condvar,
     /// Tests: a stand-in for the filter ([`Options::stand_in_denoise`]).
     stand_in: Option<Duration>,
+    /// U11b: the view's `RNDR.denoise_strength`; at 0 nothing is denoised.
+    strength: f32,
 }
 
 #[derive(Default)]
@@ -469,7 +471,7 @@ struct LivePass {
 }
 
 impl Live {
-    fn new(on: bool, stand_in: Option<Duration>) -> Live {
+    fn new(on: bool, stand_in: Option<Duration>, strength: f32) -> Live {
         Live {
             on: AtomicBool::new(on),
             pending: AtomicBool::new(false),
@@ -477,6 +479,7 @@ impl Live {
             state: Mutex::new(LiveState::default()),
             changed: Condvar::new(),
             stand_in,
+            strength,
         }
     }
 
@@ -484,9 +487,11 @@ impl Live {
         self.on.load(Ordering::Relaxed)
     }
 
-    /// True when the switch is on and the newest pass has not been denoised.
+    /// True when the switch is on and the newest pass has not been denoised (at a strength of 0
+    /// there is never anything to denoise: the frames are the noisy accumulation).
     fn wanted(&self, s: &LiveState) -> bool {
         self.on()
+            && self.strength > 0.0
             && s.newest.as_ref().is_some_and(|n| {
                 s.clean
                     .as_ref()
@@ -572,6 +577,8 @@ pub struct Job {
     pub denoise: u32,
     /// U11: a viewport job's live denoise (`RNDR.denoise` bit 0).
     live: Option<Live>,
+    /// U11b: `RNDR.denoise_strength` (`0..=1`): how much of the denoised image is handed out.
+    pub denoise_strength: f32,
     /// The time limit in milliseconds, if any.
     limit_ms: Option<f64>,
     threads: usize,
@@ -625,8 +632,14 @@ impl Job {
                 Kind::Viewport => 0,
             },
             denoise: r.denoise & (DENOISE_IMAGE | DENOISE_KEEP_NOISY),
-            live: (kind == Kind::Viewport && r.denoise & DENOISE_IMAGE != 0)
-                .then(|| Live::new(opts.live_denoise.unwrap_or(true), opts.stand_in_denoise)),
+            live: (kind == Kind::Viewport && r.denoise & DENOISE_IMAGE != 0).then(|| {
+                Live::new(
+                    opts.live_denoise.unwrap_or(true),
+                    opts.stand_in_denoise,
+                    r.denoise_strength,
+                )
+            }),
+            denoise_strength: r.denoise_strength,
             limit_ms,
             threads,
             cancel: AtomicBool::new(false),
@@ -1015,6 +1028,7 @@ impl Job {
                     pass.samples,
                     1,
                     Preset::VIEWPORT,
+                    live.strength,
                 ),
             };
             let took = t.elapsed().as_secs_f64() * 1000.0;
@@ -1263,9 +1277,9 @@ fn denoise_bands(height: u32, threads: usize) -> u32 {
 }
 
 /// Denoises the RGBA `sums` of `samples` samples with their `lum2` and guide `passes` and
-/// `preset` (the full filter for a final, the viewport's for a live view), in bands on `threads`
-/// threads (each band exactly those rows of the whole image: the same bits for any thread count,
-/// as the web pool's).
+/// `preset` (the full filter for a final, the viewport's for a live view) at `strength` (U11b,
+/// `RNDR.denoise_strength`: blended with the noisy sums), in bands on `threads` threads (each band
+/// exactly those rows of the whole image: the same bits for any thread count, as the web pool's).
 fn denoise_sums(
     sums: &[f32],
     lum2: &[f32],
@@ -1273,19 +1287,20 @@ fn denoise_sums(
     samples: u32,
     threads: usize,
     preset: Preset,
+    strength: f32,
 ) -> Option<Vec<f32>> {
     let whole = DenoiseInput::whole(samples, sums, lum2, passes).ok()?;
     let h = passes.height;
     let bands = denoise_bands(h, threads);
     if bands == 1 {
-        return denoise_rows_with(&whole, 0, h, preset).ok();
+        return denoise_rows_at(&whole, 0, h, preset, strength).ok();
     }
     let parts: Vec<Option<Vec<f32>>> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..bands)
             .map(|k| {
                 let (y0, y1) = (h * k / bands, h * (k + 1) / bands);
                 let band = whole.with_halo_of(y0, y1, preset);
-                scope.spawn(move || denoise_rows_with(&band, y0, y1, preset).ok())
+                scope.spawn(move || denoise_rows_at(&band, y0, y1, preset, strength).ok())
             })
             .collect();
         workers
@@ -1392,7 +1407,9 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
     // The passes it keeps, and the denoiser's guides when it denoises: a final at its end
     // (E5b-1), a live viewport after every pass (U11).
     let live = job.live.as_ref();
-    let denoise = job.kind == Kind::Final && job.denoise & DENOISE_IMAGE != 0;
+    // (U11b: at a strength of 0 a final is not denoised: its image is the noisy one.)
+    let denoise =
+        job.kind == Kind::Final && job.denoise & DENOISE_IMAGE != 0 && job.denoise_strength > 0.0;
     let mask = job.passes
         | if denoise || live.is_some() {
             GUIDE_PASSES
@@ -1568,6 +1585,7 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
             done,
             threads,
             Preset::FULL,
+            job.denoise_strength,
         );
         if let Some(clean) = clean {
             let keep = job.denoise & DENOISE_KEEP_NOISY != 0;
@@ -2560,6 +2578,52 @@ mod tests {
         assert!(waits(0, 4));
         busy.store(false, Ordering::Relaxed);
         assert!(gate.viewport_turn(&job, 0, 4, &never));
+    }
+
+    #[test]
+    fn the_denoise_strength_blends_the_final_and_the_view_and_at_zero_none_runs() {
+        // U11b: RNDR.denoise_strength: a final hands out the noisy × (1 − s) + denoised × s of `rt`
+        // (the full filter), a live view the same with the viewport's preset; at 0 neither is
+        // denoised and the frames are the noisy sums.
+        let _serial = serial();
+        let mut scene = small_example(4, 48, 200);
+        scene.render.denoise = DENOISE_IMAGE | DENOISE_KEEP_NOISY;
+        let reference = rt_cli::render(&scene, 4, 2);
+        let noisy = rt_post::denoise::rgba_sums(&reference.film);
+        let engine = Engine::new(3);
+        for strength in [0.5f32, 0.0] {
+            scene.render.denoise_strength = strength;
+            let job = engine
+                .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+                .unwrap();
+            let f = wait_done(&job);
+            if strength > 0.0 {
+                let want =
+                    rt_post::denoise::rgba_sums(&reference.denoised_at(2, strength).unwrap());
+                assert_eq!(f.flags & FLAG_DENOISED, FLAG_DENOISED);
+                assert_eq!(*f.sums, want);
+                assert_eq!(f.noisy.as_deref(), Some(&noisy));
+            } else {
+                assert_eq!(f.flags & (FLAG_DENOISED | FLAG_NOISY), 0);
+                assert_eq!(*f.sums, noisy);
+            }
+            let view = engine
+                .submit(Kind::Viewport, &scene.to_rsb(), "", "v", None)
+                .unwrap();
+            let f = wait_done(&view);
+            if strength > 0.0 {
+                let mut want = viewport_clean(&reference);
+                rt_post::denoise::blend(&noisy, &mut want, strength);
+                assert_eq!(f.flags & FLAG_DENOISED, FLAG_DENOISED);
+                assert_eq!(*f.sums, want);
+            } else {
+                assert_eq!(f.flags & FLAG_DENOISED, 0);
+                assert_eq!(*f.sums, noisy);
+                assert!(view
+                    .live_status()
+                    .is_some_and(|l| !l.pending && l.presented == 0));
+            }
+        }
     }
 
     #[test]

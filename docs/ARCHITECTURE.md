@@ -500,7 +500,9 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   fotones de cáusticas por muestra; 0 = sin cáusticas; tope 4 194 304) y
   `caustic_radius` (f32, radio de reunión de la primera muestra en píxeles
   a la distancia del objetivo de la cámara; 0 = 3). Un RSB anterior no pide
-  ni *denoise* ni cáusticas.
+  ni *denoise* ni cáusticas. Desde U11b (56 B), al final,
+  `denoise_strength` (f32 en `0..=1`; fuera de ese rango el RSB no es
+  válido): cuánto de la imagen filtrada se entrega; sin él, 1.
 - El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
@@ -750,6 +752,21 @@ acumulación ruidosa; encendido, se reduce al momento lo acumulado (también
 con el visor convergido). Los fotogramas de gesto (resolución reducida)
 siguen sin guías ni *denoise*; el render final reduce ruido una vez, al
 final, con el filtro completo, como antes.
+
+**Intensidad del *denoise*** (U11b). `RNDR.denoise_strength` (`s`, la
+*Intensidad* de *Avanzado*, 0–100 % en el proyecto y `0..=1` en el motor)
+mezcla en el motor la imagen ruidosa y la filtrada, por canal y en luz
+lineal: `ruidosa × (1 − s) + filtrada × s` en `f32`
+(`rt_post::denoise::blend`; con `s = 0,5` es exactamente la media; el alfa
+no se toca). `denoise_rows_at(entrada, y0, y1, ajuste, s)` es la banda ya
+mezclada; con `s = 0` no ejecuta el filtro y devuelve las filas ruidosas
+tal cual, y con `s = 1` es `denoise_rows_with` (los *hashes* fijados no se
+mueven). La usan el lanzador (el render final y el carril del visor: un
+mismo mando), `rt --denoise-strength` y el wasm
+(`rt_denoise_with(ajuste, s, …)`; `rt_denoise` es `s = 1`). Con `s = 0` un
+final no se filtra (no lleva la bandera 64 ni la copia ruidosa) y el
+carril del visor no trabaja. Cambiar la intensidad vuelve a empezar el
+visor, como el resto de *Avanzado*.
 
 ### 5.3 · En el navegador: workers
 

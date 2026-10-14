@@ -14,6 +14,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - La **hoja de importación** gana la sección **Texturas**: cuántas imágenes se guardan y cuánto pesan, y cada una que no, con el porqué (M2a).
 - **Reducir ruido** en la barra superior, a la derecha de *Rápido · Completo* (atajo `D`): el *denoise* del visor *Completo* en directo. Es el mismo interruptor que el botón del medidor y que la parte *Visor* de *Avanzado ▸ Reducción de ruido*: una sola verdad, la del proyecto, deshacible y guardada con él. En *Rápido* se ve deshabilitado (*Se aplica al modo Completo*). El paso *Rápido y Completo* del recorrido guiado lo nombra (U11).
 - **El visor *Completo* reduce el ruido mientras se acumula**: encenderlo limpia al momento lo acumulado (también con la imagen ya convergida) y apagarlo enseña en el fotograma siguiente la imagen ruidosa, sin volver a empezar; mientras se renderiza, la imagen limpia se refresca tan a menudo como cuesta un *denoise* (al menos cada `max(2 × su coste, 0,5 s)`) y nunca es de hace más de un *denoise*. Antes se refrescaba al principio, al final y solo cuando había pasado tres veces lo que costó el último, y entre medias se quedaba atrás (U11).
+- *Avanzado ▸ Reducción de ruido* gana **Intensidad** (0–100 %, por defecto 100 %): cuánto de la imagen filtrada se entrega, mezclada con la ruidosa por canal en luz lineal. Un solo mando para el render y para el visor *Completo*; con 0 % no se filtra nada. Deshacible y guardada en el proyecto; los proyectos anteriores abren al 100 % (U11b).
 
 ### Importación
 
@@ -29,6 +30,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - El **contrato RSB de las texturas** queda escrito para M2b (`ARCHITECTURE.md` §5.2: sección `IMGS`, bloque de texturas de `MATL` desde el byte 100, UV en `MESH`); el escritor lo produce solo cuando se le pide, y hasta entonces los bytes de cualquier escena son los de antes (M2a).
 - **Ajuste de visor del *denoise*** (`Preset::VIEWPORT`): tres pasadas à-trous en vez de cinco y una varianza espacial 3 × 3 por debajo de cuatro muestras, con su propio halo de 24 filas. Frente a referencias de 1024 muestras, desde 8 muestras su error queda a menos de un 3 % del filtro completo y a 4 muestras entre un 3 y un 11 % por encima, en un 60 % del tiempo en un hilo y un 40 % por bandas. El render final y `rt` conservan el filtro completo y sus bits (`0xab15f290`) (U11).
 - El lanzador reduce el ruido del visor en un carril propio, un hilo que toma uno de los hilos del visor mientras trabaja (nunca uno de un render final), con pasadas de más o menos lo que dura un *denoise*; la web lo hace con los *workers* del visor por bandas, entre baldosa y baldosa. Los fotogramas del lanzador llevan el número de su imagen y el visor lo sigue sin pedir las sumas otra vez si no cambiaron (U11).
+- `RNDR` gana `denoise_strength` al final (56 B; sin él, 1: los *hashes* de siempre) y el motor mezcla `ruidosa × (1 − s) + filtrada × s` (`rt_post::denoise::blend`, `denoise_rows_at`); con 0 no ejecuta el filtro. `rt --denoise-strength <S>` y `rt_denoise_with(ajuste, s, …)` en wasm (U11b).
 
 ## v0.1.5 — 2026-10-14
 

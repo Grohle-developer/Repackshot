@@ -470,3 +470,68 @@ fn the_example_denoised_for_the_viewport_has_a_pinned_hash() {
 /// [`Preset::VIEWPORT`].
 pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_2SPP: u32 = 0x04d4_a08c;
 pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_4SPP: u32 = 0xc90e_e509;
+
+// ------------------------------------------------------------------ the strength (U11b)
+
+#[test]
+fn half_strength_is_the_mean_of_the_two_images_none_is_the_noisy_one_and_all_the_filter() {
+    let s = Synthetic::new(30, 200, 6, 0.7, 1.4, 1.0);
+    let w = 30usize;
+    for preset in [Preset::FULL, Preset::VIEWPORT] {
+        let clean = denoise_with(&s.input(), preset).expect("clean");
+        let noisy = &s.sums[..];
+        let half = denoise_rows_at(&s.input(), 0, 200, preset, 0.5).expect("half");
+        for (i, (&h, (&n, &c))) in half.iter().zip(noisy.iter().zip(&clean)).enumerate() {
+            let want = if i % 4 == 3 { n } else { (n + c) * 0.5 };
+            assert_eq!(h.to_bits(), want.to_bits(), "{preset:?} {i}");
+        }
+        assert_eq!(
+            denoise_rows_at(&s.input(), 0, 200, preset, 0.0).expect("none"),
+            noisy
+        );
+        assert_eq!(
+            denoise_rows_at(&s.input(), 0, 200, preset, 1.0).expect("all"),
+            clean
+        );
+        // Out of range is brought into it; NaN is all of the filter.
+        assert_eq!(
+            denoise_rows_at(&s.input(), 0, 200, preset, 7.0).expect("7"),
+            clean
+        );
+        assert_eq!(
+            denoise_rows_at(&s.input(), 0, 200, preset, -1.0).expect("-1"),
+            noisy
+        );
+        assert_eq!(
+            denoise_rows_at(&s.input(), 0, 200, preset, f32::NAN).expect("nan"),
+            clean
+        );
+        // A band at a strength is those rows of the whole image at that strength, and a band
+        // without its halo is refused even when no filter runs.
+        let halo = preset.halo();
+        let (y0, y1) = (90u32, 100u32);
+        let band = s.band(y0 - halo, (y1 + halo).min(200));
+        for strength in [0.0f32, 0.3, 1.0] {
+            let rows = denoise_rows_at(&band, y0, y1, preset, strength).expect("band");
+            let whole = denoise_rows_at(&s.input(), 0, 200, preset, strength).expect("whole");
+            assert_eq!(rows[..], whole[y0 as usize * w * 4..y1 as usize * w * 4]);
+            assert_eq!(
+                denoise_rows_at(&s.band(y0 - halo + 1, 200), y0, y1, preset, strength),
+                Err(DenoiseError::Rows)
+            );
+        }
+    }
+    // The blend itself: in place, coverage untouched.
+    let mut clean = vec![2.0f32, 4.0, 6.0, 1.0];
+    blend(&[0.0, 0.0, 2.0, 0.5], &mut clean, 0.25);
+    assert_eq!(clean, [0.5, 1.0, 3.0, 1.0]);
+}
+
+#[test]
+fn the_denoised_example_at_full_strength_keeps_its_pinned_hash() {
+    let (film, passes) = example_with_guides(4);
+    let sums = rgba_sums(&film);
+    let input = DenoiseInput::whole(4, &sums, &film.lum2, &passes).expect("input");
+    let out = denoise_rows_at(&input, 0, film.height, Preset::FULL, 1.0).expect("denoise");
+    assert_eq!(fnv1a(&means(&out, 4)), PINNED_DENOISED_EXAMPLE_4SPP);
+}

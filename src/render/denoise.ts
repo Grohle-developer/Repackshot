@@ -86,6 +86,8 @@ export interface DenoiseJob {
   input: Uint32Array;
   /** U11: the viewport's preset (absent: the full filter). */
   preset?: DenoisePreset;
+  /** U11b: how much of the denoised image, 0..1 (absent: 1): noisy × (1 − s) + denoised × s, in the engine. */
+  strength?: number;
 }
 
 /**
@@ -102,12 +104,14 @@ export async function denoiseImage(
   workers: number,
   run: (job: DenoiseJob, k: number) => Promise<Float32Array>,
   preset: DenoisePreset = 'FULL',
+  strength = 1,
 ): Promise<Float32Array | null> {
   if (!hasGuides(passes) || lum2.length !== width * height) return null;
   const out = new Float32Array(width * height * 4);
+  const s = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : 1;
   await Promise.all(
     denoiseBands(height, workers, preset).map(async (band, k) => {
-      const job: DenoiseJob = { width, height, samples, band, input: packBand(width, sums, lum2, passes, band.lo, band.hi), ...(preset === 'FULL' ? {} : { preset }) };
+      const job: DenoiseJob = { width, height, samples, band, input: packBand(width, sums, lum2, passes, band.lo, band.hi), ...(preset === 'FULL' ? {} : { preset }), ...(s === 1 ? {} : { strength: s }) };
       const rows = await run(job, k);
       out.set(rows.subarray(0, width * (band.y1 - band.y0) * 4), band.y0 * width * 4);
     }),
@@ -121,8 +125,8 @@ export interface RtDenoiseExports {
   rt_alloc(len: number): number;
   rt_free(ptr: number, len: number): void;
   rt_denoise(width: number, height: number, originY: number, rows: number, samples: number, y0: number, y1: number, input: number, out: number): number;
-  /** U11 (absent in an older module): `rt_denoise` with a preset number (DENOISE_PRESETS), and its halo. */
-  rt_denoise_with?(preset: number, width: number, height: number, originY: number, rows: number, samples: number, y0: number, y1: number, input: number, out: number): number;
+  /** U11 (absent in an older module): `rt_denoise` with a preset number (DENOISE_PRESETS) and (U11b) a strength 0..1, and its halo. */
+  rt_denoise_with?(preset: number, strength: number, width: number, height: number, originY: number, rows: number, samples: number, y0: number, y1: number, input: number, out: number): number;
   rt_denoise_halo?(preset: number): number;
 }
 
@@ -134,17 +138,18 @@ export function hasDenoiseExport(rt: object): rt is RtDenoiseExports {
 export function denoiseBand(rt: RtDenoiseExports, job: DenoiseJob): Float32Array {
   const { width, height, samples, band, input } = job;
   const preset = job.preset ?? 'FULL';
-  if (preset !== 'FULL' && typeof rt.rt_denoise_with !== 'function') throw new Error('this rt.wasm has no viewport denoiser (npm run engine:build)');
+  const strength = job.strength ?? 1;
+  const plain = preset === 'FULL' && strength === 1;
+  if (!plain && typeof rt.rt_denoise_with !== 'function') throw new Error('this rt.wasm has no viewport denoiser (npm run engine:build)');
   const inLen = input.byteLength;
   const outLen = width * (band.y1 - band.y0) * 16;
   const inPtr = rt.rt_alloc(inLen);
   const outPtr = rt.rt_alloc(outLen);
   try {
     new Uint8Array(rt.memory.buffer, inPtr, inLen).set(new Uint8Array(input.buffer, input.byteOffset, inLen));
-    const status =
-      preset === 'FULL'
-        ? rt.rt_denoise(width, height, band.lo, band.hi - band.lo, samples, band.y0, band.y1, inPtr, outPtr)
-        : rt.rt_denoise_with!(DENOISE_PRESETS[preset].id, width, height, band.lo, band.hi - band.lo, samples, band.y0, band.y1, inPtr, outPtr);
+    const status = plain
+      ? rt.rt_denoise(width, height, band.lo, band.hi - band.lo, samples, band.y0, band.y1, inPtr, outPtr)
+      : rt.rt_denoise_with!(DENOISE_PRESETS[preset].id, strength, width, height, band.lo, band.hi - band.lo, samples, band.y0, band.y1, inPtr, outPtr);
     if (status !== 0) throw new Error(`rt_denoise returned ${status}`);
     // A fresh view: the call may have grown the memory.
     return new Float32Array(rt.memory.buffer, outPtr, outLen / 4).slice();

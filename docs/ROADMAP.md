@@ -1514,7 +1514,7 @@ Captura: `docs/ui/denoise-live.png`.
   `GET /api/render/state`, `liveDenoise.costMs`); el de la web sí, en sus
   atributos `data-*`. Ninguno lo pinta en texto.
 
-## U11b · Intensidad de la reducción de ruido — **Opus** (con U11)
+## U11b · Intensidad de la reducción de ruido — **Opus** (con U11) — hecha
 
 **Qué.** Petición del usuario: elegir cuánto *denoise* se aplica. En la
 ventana de render, *Avanzado ▸ Reducción de ruido* gana **Intensidad**
@@ -1530,6 +1530,68 @@ proyecto; proyectos anteriores abren al 100 %. Cadena `es`/`en`.
 **Criterio.** Test: 50 % da exactamente la media de las dos imágenes
 (bits), 0 % la ruidosa y 100 % la limpia; el *hash* `0xab15f290` con 100 %
 no cambia; paridad wasm.
+
+**Hecho.**
+
+- **Motor** (`rt-post`): `blend(ruidosa, limpia, s)` hace en sitio
+  `n × (1 − s) + c × s` por canal de color en `f32` (el alfa no se toca;
+  con `s = 0,5` el producto por 0,5 es exacto y da `(n + c) / 2` bit a
+  bit) y `denoise_rows_at(entrada, y0, y1, ajuste, s)` es la banda ya
+  mezclada: con `s = 0` no ejecuta el filtro y devuelve las filas ruidosas
+  (comprobando igualmente que la banda trae su halo), con `s = 1` es
+  `denoise_rows_with`; fuera de `0..=1` se recorta y NaN es 1. Una banda a
+  cualquier intensidad son exactamente esas filas de la imagen entera.
+- **RSB**: `RNDR` gana `denoise_strength` (f32) al final, 56 B; sin él, 1;
+  fuera de `0..=1`, el RSB no es válido. Lo escriben `rt-core` y
+  `src/io/rsb.ts` byte a byte (fijaciones `example.rsb`, `e5.rsb` y
+  `e5b.rsb` regeneradas: 16 bytes más cada una).
+- **Un solo mando**: el lanzador lo usa en el render final (filtro
+  completo, en bandas) y en el carril del visor (ajuste de visor); `rt
+  --denoise-strength <S>`; wasm `rt_denoise_with(ajuste, s, …)`
+  (`rt_denoise` es `s = 1`); la web, en el render (`Pool.denoise`) y en su
+  carril. Con 0 % un final no se filtra (sin la bandera 64 ni la copia
+  ruidosa: la imagen es la ruidosa) y ningún carril trabaja.
+- **Interfaz**: *Avanzado ▸ Reducción de ruido ▸ Intensidad* en la ventana
+  de render (0–100 %, pasos de 5, oculta con la reducción *Apagada*), con
+  su nota; `render.advanced.denoiseStrength` en el proyecto, deshacible
+  (un arrastre, una entrada), los proyectos anteriores abren al 100 % y
+  `engineFieldsOf` la pasa al motor como fracción (`denoiseFraction`).
+  Cadenas `es`/`en`.
+- **Tests**: `rt-post` (50 % es la media bit a bit con los dos ajustes,
+  0 % la ruidosa, 100 % la limpia, bandas iguales a la imagen entera, la
+  mezcla a 25 % y el alfa intacto; el ejemplo con 100 % conserva
+  `0xab15f290`); `rt-core` (sin el campo, 1; fuera de rango, error;
+  ida y vuelta); `rt-app` (un final y un visor a 50 % son la mezcla de
+  `rt`, a 0 % la ruidosa sin bandera ni carril); `rt-cli` (la opción);
+  `rt-wasm` (50 % y 0 % por la exportación); y en la página: el `rt.wasm`
+  real a 50 % es exactamente la media y a 0 % la ruidosa (los dos
+  ajustes), los bytes del RSB, el *store* (por defecto, migración,
+  recorte), el render del *pool* y el carril del visor con la intensidad
+  del proyecto (y sin *denoise* a 0 %).
+
+*Comprobado que fallan* reintroduciendo cada error: la mezcla con los
+pesos cambiados o tocando el alfa, NaN como 0, la banda a 0 % sin
+comprobar su halo, `RNDR` leyendo 0 sin el campo o escribiendo siempre 1,
+el final filtrando a 0 %, el carril trabajando a 0 %, los dos ignorando la
+intensidad (lanzador y `rt`), `--denoise-strength` sin llegar a la escena,
+el wasm ignorándola; en la página, `engineFieldsOf` sin ella, la migración
+a 0, el escritor del RSB (campo y proyección), el render del *pool*
+filtrando a 0 %, el carril a 100 % siempre o trabajando a 0 %, y la
+banda usando `rt_denoise` (sin intensidad) con una intensidad.
+
+**No encajó.**
+
+- **Cambiar la intensidad vuelve a empezar la imagen del visor**: va en el
+  `RNDR` de la vista, como el resto de *Avanzado*, y el lanzador la lee de
+  ahí. Que no la reiniciara (como el interruptor de U11) pediría pasarla
+  aparte (`POST /api/render/<id>/denoise?strength=`); el carril de la web
+  ya sabe cambiarla sin reiniciar (descarta la limpia de otra intensidad y
+  filtra otra vez la última pasada). Queda para el líder si se quiere
+  ajustar mirando la imagen convergida.
+- **0 % no es «el filtro con peso 0»**: no se ejecuta, así que un render a
+  0 % no lleva la imagen filtrada ni la copia «-noisy» (sería la misma) y
+  el medidor no dice *Ruido reducido*, aunque el interruptor del visor siga
+  encendido.
 
 ## E11 · Suavizado de bordes, de menos a más coste — **Opus** (tras U11)
 

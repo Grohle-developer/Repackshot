@@ -20,7 +20,7 @@ use rt_core::passes::{PassFilm, PASS_ALBEDO, PASS_EXACT};
 use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, TileRect};
 use rt_core::scene::Scene;
 use rt_core::simd::Isa;
-use rt_post::denoise::{denoise_rows_with, DenoiseInput, Preset};
+use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
@@ -242,6 +242,7 @@ pub fn denoise(
 ) -> Result<Vec<f32>, u32> {
     denoise_with(
         Preset::FULL,
+        1.0,
         width,
         height,
         origin_y,
@@ -253,11 +254,13 @@ pub fn denoise(
     )
 }
 
-/// [`denoise`] with another preset (U11): the band holds the rows with that preset's
-/// [`Preset::halo`] around them.
+/// [`denoise`] with another preset (U11) and a strength (U11b, `0..=1`: the denoised image
+/// blended with the noisy one, `rt_post::denoise::denoise_rows_at`): the band holds the rows with
+/// that preset's [`Preset::halo`] around them.
 #[allow(clippy::too_many_arguments)]
 pub fn denoise_with(
     preset: Preset,
+    strength: f32,
     width: u32,
     height: u32,
     origin_y: u32,
@@ -301,7 +304,7 @@ pub fn denoise_with(
         part_id: &part_id,
         material_id: &material_id,
     };
-    denoise_rows_with(&band, y0, y1, preset).map_err(|_| STATUS_BAD_DENOISE)
+    denoise_rows_at(&band, y0, y1, preset, strength).map_err(|_| STATUS_BAD_DENOISE)
 }
 
 /// The exact passes of `mask` (normal, depth, part id, material id, circle of confusion: the
@@ -935,6 +938,7 @@ mod tests {
             unsafe {
                 rt_denoise_with(
                     preset,
+                    1.0,
                     40,
                     120,
                     band.origin_y,
@@ -955,6 +959,41 @@ mod tests {
         // The full filter needs a larger halo than this band has; an unknown preset is refused.
         assert_eq!(call(0), STATUS_BAD_DENOISE);
         assert_eq!(call(9), STATUS_BAD_DENOISE);
+        // U11b: at half strength, exactly the mean of the noisy and the denoised rows; at 0 the
+        // noisy rows themselves.
+        let noisy = &sums[50 * 40 * 4..70 * 40 * 4];
+        let clean = &expected[50 * 40 * 4..70 * 40 * 4];
+        for (strength, want) in [
+            (
+                0.5f32,
+                noisy
+                    .iter()
+                    .zip(clean)
+                    .enumerate()
+                    .map(|(i, (&n, &c))| if i % 4 == 3 { n } else { (n + c) * 0.5 })
+                    .collect::<Vec<f32>>(),
+            ),
+            (0.0, noisy.to_vec()),
+        ] {
+            // SAFETY: as above.
+            let status = unsafe {
+                rt_denoise_with(
+                    1,
+                    strength,
+                    40,
+                    120,
+                    band.origin_y,
+                    band.rows,
+                    3,
+                    50,
+                    70,
+                    input,
+                    out.cast::<f32>(),
+                )
+            };
+            assert_eq!(status, STATUS_OK);
+            assert_eq!(read_floats(out, 40 * 20 * 4), want, "strength {strength}");
+        }
         // SAFETY: both came from `rt_alloc` with these lengths.
         unsafe {
             rt_free(input, bytes.len() as u32);
