@@ -61,6 +61,10 @@ const pair = (c) => index.cells.find((x) => x.connect && x.stack.length === 1 &&
 const noise = existsSync(join(DIR, 'noise.json')) ? JSON.parse(readFileSync(join(DIR, 'noise.json'), 'utf8')) : null;
 const kindOf = (key) => [...types.entries()].find(([, t]) => key.startsWith(`${t.key.toLowerCase().replace(/_/g, '-')}--`))?.[0];
 const num = (x, d) => x.toFixed(d).replace('.', ',');
+const pct = (x) => {
+  const v = Math.round(x * 10) / 10;
+  return `${v > 0 ? '+' : v < 0 ? '−' : ''}${num(Math.abs(v), 1)} %`;
+};
 function noiseTable() {
   if (!noise) return '<p>Sin <code>noise.json</code>: <code>rt --filter-noise out/lens-filters-sheet</code>.</p>';
   const row = (key, connect) => noise.rows.find((r) => r.key === key && r.connect === connect);
@@ -71,10 +75,10 @@ function noiseTable() {
     const kind = kindOf(key);
     const name = `${esc(types.get(kind).es)} ${esc(key.split('--')[1].replace('-', '/'))}`;
     const added = (r) => Math.max(r.variance - base, 0);
-    return `<tr><td>${name}</td><td>${num(a.variance, 2)}</td><td>${num(b.variance, 2)}</td><td>${num(added(a), 2)} → ${num(added(b), 2)}</td><td>${num(added(a) / Math.max(added(b), 1e-9), 1)} ×</td><td>${num(a.mean, 4)} / ${num(b.mean, 4)} (${num((100 * (b.mean - a.mean)) / a.mean, 1)} %)</td><td>${num(a.seconds, 1)} / ${num(b.seconds, 1)} s (${num((100 * (b.seconds - a.seconds)) / a.seconds, 0)} %)</td></tr>`;
+    return `<tr><td>${name}</td><td>${num(a.variance, 2)}</td><td>${num(b.variance, 2)}</td><td>${num(added(a), 2)} → ${num(added(b), 2)}</td><td>${num(added(a) / Math.max(added(b), 1e-9), 1)} ×</td><td>${num(a.mean, 4)} / ${num(b.mean, 4)} (${pct((100 * (b.mean - a.mean)) / a.mean)})</td><td>${num(a.rays / 1e6, 2)} / ${num(b.rays / 1e6, 2)} M (${pct((100 * (b.rays - a.rays)) / a.rays)})</td><td>${num(a.seconds, 1)} / ${num(b.seconds, 1)} s</td></tr>`;
   });
-  return `<p>El mismo frasco a ${noise.width} × ${noise.height} y ${noise.samples} muestras, ${noise.runs} semillas por filtro; varianza de cada canal de cada píxel entre las semillas (valores recortados a ${noise.clamp}, para que una chispa no decida), media sobre la imagen. Sin filtro: ${num(base, 2)}. Primero las fuentes pequeñas a través de los núcleos dispersos (estrella, rayas, brillo). Medido con <code>rt --filter-noise</code> en esta máquina, cargada por otros procesos: los tiempos son orientativos.</p>
-<table><thead><tr><th>Filtro</th><th>Sin conexiones</th><th>Con conexiones</th><th>Lo que añade el filtro</th><th>Menos ruido</th><th>Media (sin / con)</th><th>Tiempo (sin / con)</th></tr></thead><tbody>
+  return `<p>El mismo frasco a ${noise.width} × ${noise.height} y ${noise.samples} muestras, ${noise.runs} semillas por filtro; varianza de cada canal de cada píxel entre las semillas (valores recortados a ${noise.clamp}, para que una chispa no decida), media sobre la imagen. Sin filtro: ${num(base, 2)}. Primero las fuentes pequeñas a través de los núcleos dispersos (estrella, rayas, brillo). Medido con <code>rt --filter-noise</code>. El coste, por los rayos trazados (los de sombra de las conexiones incluidos); los segundos, en esta máquina cargada por otros procesos, solo orientativos (sin filtro, el mismo trabajo dos veces, ya difieren).</p>
+<table><thead><tr><th>Filtro</th><th>Sin conexiones</th><th>Con conexiones</th><th>Lo que añade el filtro</th><th>Menos ruido</th><th>Media (sin / con)</th><th>Rayos (sin / con)</th><th>Segundos</th></tr></thead><tbody>
 ${lines.join('\n')}
 </tbody></table>`;
 }

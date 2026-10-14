@@ -265,6 +265,9 @@ pub struct Noise {
     /// Variance of a channel of a pixel between the seeds (values clamped at [`NOISE_CLAMP`]),
     /// averaged over the image.
     pub variance: f64,
+    /// Rays traced by all the seeds' renders (camera, bounce and shadow rays): the cost, without
+    /// the noise of a loaded machine in it.
+    pub rays: u64,
     /// Seconds of all the seeds' renders.
     pub seconds: f64,
 }
@@ -322,6 +325,7 @@ pub fn noise(
         for connect in [false, true] {
             let mut images = Vec::new();
             let mut seconds = 0.0;
+            let mut rays = 0;
             for run in 0..runs {
                 let mut scene = filter_bottle(size, [filter, none, none]);
                 scene.render.seed = 100 + run;
@@ -333,11 +337,12 @@ pub fn noise(
                 scene.camera.lens = lens;
                 let out = render_progressive(&scene, samples, threads, None);
                 seconds += out.elapsed.as_secs_f64();
+                rays += out.rays;
                 images.push(out.film.resolve());
             }
             let (mean, variance) = seed_variance(&images);
             println!(
-                "{key}: {} connections, mean {mean:.4}, variance {variance:.3}, {seconds:.1} s",
+                "{key}: {} connections, mean {mean:.4}, variance {variance:.3}, {rays} rays, {seconds:.1} s",
                 if connect { "with" } else { "without" }
             );
             rows.push(Noise {
@@ -345,6 +350,7 @@ pub fn noise(
                 connect,
                 mean,
                 variance,
+                rays,
                 seconds,
             });
         }
@@ -353,8 +359,8 @@ pub fn noise(
         .iter()
         .map(|r| {
             format!(
-                "{{\"key\":\"{}\",\"connect\":{},\"mean\":{:.5},\"variance\":{:.4},\"seconds\":{:.2}}}",
-                r.key, r.connect, r.mean, r.variance, r.seconds
+                "{{\"key\":\"{}\",\"connect\":{},\"mean\":{:.5},\"variance\":{:.4},\"rays\":{},\"seconds\":{:.2}}}",
+                r.key, r.connect, r.mean, r.variance, r.rays, r.seconds
             )
         })
         .collect();
@@ -419,6 +425,13 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert!(!rows[0].connect && rows[1].connect);
         assert!(rows.iter().all(|r| r.key == "star--1" && r.mean > 0.0));
+        // The connections trace shadow rays of their own.
+        assert!(
+            rows[1].rays > rows[0].rays,
+            "{} {}",
+            rows[0].rays,
+            rows[1].rays
+        );
         let json = std::fs::read_to_string(dir.join("noise.json")).unwrap();
         assert!(json.starts_with("{\"width\":16,\"height\":12,\"samples\":1,\"runs\":2,"));
         assert_eq!(json.matches("\"key\":\"star--1\"").count(), 2);

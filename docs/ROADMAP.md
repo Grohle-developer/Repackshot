@@ -2536,15 +2536,15 @@ dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
   `DIM_LENS_FILTER` = `4 << 20`, más allá de la tabla de Sobol; con
   bandas cromáticas, los del grupo de tres.
 - **Conexión con las luces** (tras la primera hoja y la indicación del
-  líder: MIS entre la dispersión en la pupila y un muestreo directo de las
-  luces a través de la PSF). Un rayo disperso rara vez da con una luz
-  pequeña, y la hoja sin conexión salía salpicada (la estrella como
+  líder: MIS entre la dispersión en la pupila y un muestreo directo de
+  las luces a través de la PSF). Un rayo disperso rara vez da con una
+  luz pequeña, y la hoja sin conexión salía salpicada (la estrella como
   puntos sueltos, el halo de las difusiones como chispas por toda la
   imagen). Cada muestra de cámara con filtros se conecta, por filtro, a
-  una de las luces que ve la cámara (`Lights::camera_lights`: las de área
-  y las esferas con la marca *cámara*, por su esfera envolvente; elegida
-  con probabilidad uniforme): un lóbulo por su parte de la PSF; la
-  desviación, dentro del disco que la luz ocupa en el plano de
+  una de las luces que ve la cámara (`Lights::camera_lights`: las de
+  área y las esferas con la marca *cámara*, por su esfera envolvente;
+  elegida con probabilidad uniforme): un lóbulo por su parte de la PSF;
+  la desviación, dentro del disco que la luz ocupa en el plano de
   desviaciones (`filters::light_disc`), con la densidad de conexión del
   lóbulo (radial: uniforme en el disco; rayas: la raya por la
   probabilidad de la PSF que cae dentro de la luz y la distancia por su
@@ -2558,17 +2558,27 @@ dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
   la conexión, `s·a·T·L` por el mismo peso. Números en
   `DIM_LENS_FILTER_LIGHT` = `5 << 20` (seis por filtro). **Medido**
   (`rt --filter-noise`, la tabla del final de la hoja) en el frasco de la
-  hoja a 192 × 144, 16 muestras, seis semillas (varianza por
-  píxel entre semillas, recortada a 64; sin filtro, 1,49): estrella 1,
-  de 10,03 sin conexión a 2,71 con ella; rayas 1, 8,57 → 2,71; brillo 1,
-  4,93 → 3,24; difusión blanca 1, 12,09 → 3,26; difusión negra 2, 18,41 →
-  3,69; red 1, 7,72 → 3,04 (el ruido que el filtro añade baja de 4 a 8
-  veces, la mitad en el brillo, cuyos destellos siguen dependiendo de la
-  celda de la pupila), con las medias iguales dentro del ruido y del 2 al
-  15 % más de tiempo. Diafragma, bokeh y foco no cambian: la conexión sale
-  del punto de la pupila de la muestra. Lo que queda de ruido es de los
-  brillos de las superficies (reflejos de las luces), que la conexión no
-  ve: solo la dispersión los alcanza.
+  hoja a 192 × 144, 16 muestras, seis semillas (varianza de cada canal
+  de cada píxel entre las semillas, recortada a 64, media sobre la
+  imagen; sin filtro, 1,49): estrella 1, de 10,03 sin conexión a 2,71
+  con ella; rayas 1, 8,57 → 2,71; brillo 1, 10,37 → 9,24; difusión
+  blanca 1, 12,09 → 3,25; difusión negra 2, 18,41 → 3,69; red 1, 7,72 →
+  3,04. El ruido que añade el filtro (lo que pasa de 1,49) baja 7 veces
+  en la estrella, 5,8 en las rayas, 6 y 7,7 en las difusiones y 4 en la
+  red, con las medias iguales dentro del ruido de la dispersión sola (de
+  −0,9 % a 0 %; la suma exacta del test lo confirma); cuesta, en rayos,
+  del 0,1 al 1,2 % más en los núcleos dispersos y el 31 % en las
+  difusiones, cuya cola alcanza la luz desde toda la imagen (el tiempo,
+  con la máquina cargada, no lo separa). **El brillo baja solo 1,14
+  veces**: su destello depende de la celda de la pupila de la muestra
+  (con un estenopo, desde (6), de la pupila virtual), y la conexión solo
+  llega a la luz cuando el destello de esa celda la cubre; con una luz
+  pequeña lo hacen pocas de las 36, y el ruido es el de elegir la celda,
+  que la conexión no elige. Las cifras de antes de (6) (4,93 → 3,24)
+  eran de la celda fija del estenopo. Diafragma, bokeh y foco no
+  cambian: la conexión sale del punto de la pupila de la muestra. Lo que
+  queda de ruido es de los brillos de las superficies (reflejos de las
+  luces), que la conexión no ve: solo la dispersión los alcanza.
 - Una lente sin filtros no saca ningún número nuevo ni traza nada nuevo:
   **todos los *hashes* de antes intactos** (ejemplo, E5, E5c, E5b-1,
   pases, *denoise* y O1 `0xcfc57d4a`). **RSB**: tres huecos de 28 B al
@@ -2620,7 +2630,8 @@ dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
   emborronan en horizontal todo el cuadro y las rayas lo azulean: si se
   quieren líneas solo en las luces, la propuesta es una tabla de `s` menor
   para las familias de líneas. Quedan chispas sueltas de los reflejos de
-  las luces en el vidrio (la conexión solo ve las luces, no sus brillos).
+  las luces en el vidrio (la conexión solo ve las luces, no sus brillos),
+  y el brillo sale granulado, con y sin la conexión (ver la tabla).
 - **Tests** (cada uno comprobado reintroduciendo el error): 13 en
   `optics::filter_tests` de rt-core: grados → `s` (sin interpolar,
   falla); difusión blanca que conserva la media de un campo blanco ±
@@ -2644,18 +2655,21 @@ dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
   fija del estenopo, que convertía el destello en un fantasma de toda la
   imagen, falla). El *hash* de O3a (los números de los filtros en la
   tabla de Sobol, falla). `rt-cli`: 1/4/16 hilos con filtros, las celdas
-  de la hoja (una luz dentro y otra fuera del encuadre), `--only`.
-  `tests/lens-filters.test.ts` (13): los datos son los de `filters.rs`
-  (claves, grados, anchos, tintes), nombres y frases en los dos idiomas
-  y sin marcas, `gradeS`, óptica no neutra con filtros (una que los
-  ignora, falla) y normalizada a tres (sin recortar, falla), los huecos
-  de `LENS` como los lee `rt` (sin las puntas o sin el ángulo, fallan),
-  `o3a.rsb` y `o1.rsb` byte a byte, la energía de la aproximación (la
-  cola sin su parte, falla), la estrella a su ángulo (5° de más, falla),
-  la dorada hacia el rojo (sin tinte, falla), y con el `rt.wasm` real el
-  *hash* de O3a y la aproximación contra el motor en el horno blanco con
-  las piezas del ejemplo por bloques de 4 × 4, < 2 % (sin la absorción
-  de la negra, falla).
+  de la hoja (una luz dentro y otra fuera del encuadre), `--only`, la
+  varianza entre semillas de `--filter-noise` (sin recortar, o dividida
+  entre las semillas y no entre una menos, falla) y sus dos filas por
+  filtro, la de la conexión con más rayos. `tests/lens-filters.test.ts`
+  (13): los datos son los de `filters.rs` (claves, grados, anchos,
+  tintes), nombres y frases en los dos idiomas y sin marcas, `gradeS`,
+  óptica no neutra con filtros (una que los ignora, falla) y normalizada
+  a tres (sin recortar, falla), los huecos de `LENS` como los lee `rt`
+  (sin las puntas o sin el ángulo, fallan), `o3a.rsb` y `o1.rsb` byte a
+  byte, la energía de la aproximación (la cola sin su parte, falla), la
+  estrella a su ángulo (5° de más, falla), la dorada hacia el rojo (sin
+  tinte, falla), y con el `rt.wasm` real el *hash* de O3a y la
+  aproximación contra el motor en el horno blanco con las piezas del
+  ejemplo por bloques de 4 × 4, < 2 % (sin la absorción de la negra,
+  falla).
 
 **No encajó con el plan.** (1) La **conexión con las luces** no estaba
 en el encargo: la propuso el líder tras la primera hoja y, medida, la
@@ -2677,7 +2691,12 @@ destello salía como un fantasma de toda la imagen; ahora una cámara sin
 profundidad de campo saca la celda de los números de la lente (la lente
 sigue teniendo tamaño detrás del filtro). (7) `rt --filter-sheet --only`
 vuelve a renderizar celdas sueltas de la hoja; las tres de brillo y la
-de comparación salen de ahí.
+de comparación salen de ahí. (8) **Propuesta para el brillo**, sin hacer
+(regla 11): que la conexión elija también la celda, entre las que tienen
+el destello sobre la luz, y con un diafragma un punto de la lente dentro
+de ella (con su peso de pupila); con un estenopo basta con elegir el
+destello, porque la celda no mueve el origen del rayo. Se haría si el
+veredicto lo pide.
 
 ## P5 · Actualizar desde la aplicación — **Sonnet** — hecha
 
