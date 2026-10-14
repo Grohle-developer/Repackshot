@@ -24,7 +24,7 @@ partículas de ambiente (ocho efectos, sección Ambiente, `FXAM`). Cada fase est
 
 | Fase | Rama | Estado y siguiente paso |
 | --- | --- | --- |
-| U11 + U11b + E11 | `u11` | **Entregadas las tres** (`920afb9` tras reescribir trailers; capturas `docs/ui/denoise-live.png`, `denoise-strength.png`, `settings-aa.png`, `meter-filter.png`; puertas del motor en verde; hoja `out/aa-sheet.html`). Veredictos: carril del lanzador con un hilo, cambiar la intensidad reinicia la vista, a 0 % no corre filtro. El agente está fusionando la cabeza (12 archivos: `cli.rs` con los comandos de O1/P6/U12, `render.rs`/`example.rs`/`rsb.rs`, tests de denoise, `engine.yml`, `viewport-overlays.ts`, docs) y re-fijando los hashes que E12 mueve (los dos del preset de visor y `PINNED_E11_EDGES_4SPP`). |
+| U11 + U11b + E11 | `u11` | **Entregadas las tres** (`920afb9`; capturas `docs/ui/denoise-live.png`, `denoise-strength.png`, `settings-aa.png`, `meter-filter.png`; puertas del motor en verde; hoja `out/aa-sheet.html`). Veredictos dados. El agente fusionó la cabeza (`83e28ad` + `e3aa8ee`, el mismo arreglo de `node_modules`) y está en las puertas; le falta fusionar `1cdefb0` y entregar. Al recibirla: fusionar, añadir nada a CI (su paso de paridad de E11 va en su rama). |
 | E9 (a, a2, b, c) | `e9` | (a)+(a2) confirmados (`d736374`: horno 1,000; +13–16 % de luminancia difusa). (b) medios dispersores: estimador de salida (Chiang 2016) en verde; decididos: ruleta por el peso del camino desde la entrada, regla de **pared fina** para líquidos en vidrio (sesgo medido), test de leche por acuerdo con el camino exacto; falta la hoja a 64/256 spp, el *commit* de (b) y (c) dispersión. |
 | E6 (bisel, madera, tela) | `e6` | Bisel confirmado (`59656ed`, `977307e`). **Madera con nudos a 45° en `0c4095f`** (razonamiento 30° → 60° → 45° en su párrafo del ROADMAP; 24 + 3 mutaciones cazadas); faltan las puertas completas del motor (workspace, wasm, paridad, WASI) que corre con la tela; está en la tela (hilos/cm realistas: algodón 40, vaquero 26, lona 12, punto 5…). |
 | O3a → O2 | `o1` | **O3a entregada** (`43840b6`; hoja `out/lens-filters-sheet.html` con tabla de ruido de `rt --filter-noise`; puertas completas en verde). **Veredicto dado** (14-10): motor, conexión a la luz, MIS, pinhole, `--only`, Filtros bajo Cámara hasta O2 y +31 % de rayos en difusiones: aceptados; difusiones y Soft se quedan. **Cinco arreglos antes de fusionar**: (1) dorado y rayas tiñen solo el lóbulo disperso, suelo neutro < 3 % a grado 1 y < 6 % a 2, tabla `s` del dorado = la de la negra; (2) red: cruz ≤ 15 % del ancho a grado 2, más suavizado que líneas; (3) estrella: la longitud escala con el grado (25 % / 60 % / cuadro entero), grosor fijo; (4) glimmer: chispas aleatorias por muestra (nada de rejilla 6×6, nada de anillo) y la conexión elige la chispa que cubre la luz; (5) re-ajustar `GRADES → s` solo en esos tipos. Después, fusionar la cabeza en `o1` y entregar; O2 (lente trazada) sigue en la misma rama (ya tiene WIP de O2 encima). |
@@ -104,6 +104,12 @@ git fetch origin
 git worktree add /home/user/Repackshot-<fase> -b <fase> origin/wip/ccr-8df3f848/<fase>
 ln -s /home/user/Repackshot/node_modules /home/user/Repackshot-<fase>/node_modules
 ```
+
+Con ese enlace en el árbol, **nunca** `git add -A` sin mirar antes `git status`:
+el `.gitignore` ya cubre `node_modules` con y sin barra (desde `1cdefb0`),
+pero un *checkpoint* anterior (`70573e3`) llegó a seguir el enlace y cada
+*checkout* de la rama sustituía el `node_modules` real por un enlace a sí
+mismo; si pasa, `git rm --cached node_modules`, borrar el enlace y `npm ci`.
 
 Lanzar un agente (Opus para motor/UI grandes, Sonnet para lo mecánico)
 con: el brief de la fase en `ROADMAP.md`, los veredictos de arriba, las
