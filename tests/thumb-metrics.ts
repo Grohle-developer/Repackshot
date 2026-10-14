@@ -1,5 +1,5 @@
 // Measures on the light-setup thumbnails (L6): what a set must look like once rendered and tone mapped (the
-// lead's criteria for the high key, the bright field, the pools and the halo), on the PNGs `rt` wrote for
+// criteria of the verdict on the high key, the bright field, the pools and the halo), on the PNGs `rt` wrote for
 // public/thumbs/setups (they are the scenes the code builds now: tests/sets.test.ts checks their manifest).
 
 import { readFileSync } from 'node:fs';

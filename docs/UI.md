@@ -448,7 +448,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    tipos propios de la pestaña *Míos* y *Guardar como tipo de producto*). Tamaño de la pieza en mm (detectado al importar,
    editable). Interruptores *Suelo* y *Sombra de contacto*. Botón
    primario **Crear estudio**: monta luces, suelo, cámara y ajustes de
-   motor del preset. Si ya hay estudio, pide confirmación en línea (no
+   motor del preset y, si el tipo es un set (L6: 15 de los 16), su
+   decoración y su aspecto (fondo, tarjetas, suelo, charco de luz); el
+   ejemplo y un modelo importado llegan ya vestidos con el set en vigor. Si ya hay estudio, pide confirmación en línea (no
    modal): "Sustituir el estudio actual · Sí / No".
 2. **Luz** — El **catálogo de montajes**: fila de pestañas de estilo
    (*Todos* + los 9 `LIGHT_STYLES`, **Sets** el primero, L6), rejilla de
@@ -468,8 +470,10 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    del set) con su nombre y un interruptor que la oculta o la muestra
    (`scene/setVisible`, deshacible); un fondo de color o degradado sin
    barrido es una fila que pone el fondo del set o devuelve el del tipo de
-   producto (`env/set`). El charco de luz es un foco: aparece en *Afinar
-   focos* con su nombre.
+   producto (`env/set`). Un fondo que el set hace barrido (`SWEEP`, o
+   cualquier fondo con charco de luz) es una pieza, nunca esa fila: tras
+   *Restablecer montaje* no queda nada que encender (`setBackground`). El
+   charco de luz es un foco: aparece en *Afinar focos* con su nombre.
    Desplegable secundario **Afinar focos**: lista de focos con potencia
    (en % del total), tamaño, temperatura en K y ángulo; cambiar algo
    aquí no cambia de montaje, lo marca como *modificado*. Botón

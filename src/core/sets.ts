@@ -98,6 +98,16 @@ export function setHasSweep(set: LightSetup): boolean {
   return set.backdrop?.kind === 'SWEEP' || (set.pool !== undefined && set.backdrop !== undefined);
 }
 
+/**
+ * The set's backdrop when it is the background (a colour or a gradient behind the product, no sweep): what In the set
+ * switches on and off. Null when the backdrop is a sweep (a piece of the decoration, also after Reset setup took it
+ * away) or the set has none.
+ */
+export function setBackground(set: LightSetup): 'FLAT' | 'GRADIENT' | null {
+  const b = set.backdrop;
+  return b && !setHasSweep(set) && b.kind !== 'SWEEP' ? b.kind : null;
+}
+
 /** The colour of a set's sweep: SWEEP and FLAT their colour, GRADIENT its top. */
 export function sweepColor(set: LightSetup): RGB {
   const b = set.backdrop;

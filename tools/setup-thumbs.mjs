@@ -4,12 +4,14 @@
 // tests/set-heroes.ts), the scene built with the application's own code (the rig, the set's decoration, core/rig.ts →
 // io/rsb.ts, in Node through vitest), rendered with the native `rt` at 256 × 256, 96 samples, denoised, seed 1.
 //
-//   node tools/setup-thumbs.mjs [--keys STRIP_EDGE,REMBRANDT]
+//   node tools/setup-thumbs.mjs [--keys STRIP_EDGE,REMBRANDT] [--no-render]
 //
-// Writes public/thumbs/setups/thumb_<key>.png (the PNG `rt` writes, as it is) and setup_<key>.png (64 × 64, the box
+// Writes public/thumbs/setups/thumb_<key>.png (the pixels `rt` wrote, re-encoded without loss: `rt` stores its PNG
+// uncompressed, 197 kB at 256 × 256, and the repository keeps about 23 kB) and setup_<key>.png (64 × 64, the box
 // average of it), and public/thumbs/setups/manifest.json: per setup the sha-256 of its RSB and of its thumb_ PNG
 // (tests/sets.test.ts checks that the code still builds the same scenes and that the PNGs are those). Deterministic:
-// the same code and the same engine give the same bytes, with any number of threads.
+// the same code and the same engine give the same pixels, with any number of threads, and the encoder below the same
+// bytes for them. `--no-render` re-encodes the PNGs `rt` left in out/setup-thumbs/ without rendering again.
 //
 // `rt`: REPACK_RT, else engine/target/release/rt, else /home/user/bin/rt.
 
@@ -27,6 +29,7 @@ const opt = (name, fallback) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
 const KEYS = opt('keys', '');
+const NO_RENDER = args.includes('--no-render');
 const WORK = join(ROOT, 'out', 'setup-thumbs');
 const PUBLIC = join(ROOT, 'public', 'thumbs', 'setups');
 const MANIFEST = join(PUBLIC, 'manifest.json');
@@ -94,15 +97,48 @@ function chunk(type, data) {
   crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
   return Buffer.concat([head, data, crc]);
 }
-/** An 8-bit RGBA PNG, filter 0, zlib level 9: the same pixels give the same bytes. */
+/**
+ * An 8-bit RGB PNG of the RGB of `rgba` (the thumbnails are opaque): each row with the filter whose bytes sum least
+ * (the usual heuristic), zlib level 9. The same pixels give the same bytes.
+ */
 function encodePng(width, height, rgba) {
-  const raw = Buffer.alloc((width * 4 + 1) * height);
-  for (let y = 0; y < height; y++) rgba.copy(raw, y * (width * 4 + 1) + 1, y * width * 4, (y + 1) * width * 4);
+  const stride = width * 3;
+  const raw = Buffer.alloc((stride + 1) * height);
+  let prev = Buffer.alloc(stride);
+  const line = Buffer.alloc(stride);
+  const trial = Buffer.alloc(stride);
+  for (let y = 0; y < height; y++) {
+    const row = Buffer.alloc(stride);
+    for (let x = 0; x < width; x++) for (let k = 0; k < 3; k++) row[x * 3 + k] = rgba[(y * width + x) * 4 + k];
+    let best = -1;
+    let bestSum = Infinity;
+    for (let f = 0; f < 5; f++) {
+      let sum = 0;
+      for (let x = 0; x < stride; x++) {
+        const a = x >= 3 ? row[x - 3] : 0;
+        const b = prev[x];
+        const c = x >= 3 ? prev[x - 3] : 0;
+        const p = a + b - c;
+        const pr = Math.abs(p - a) <= Math.abs(p - b) && Math.abs(p - a) <= Math.abs(p - c) ? a : Math.abs(p - b) <= Math.abs(p - c) ? b : c;
+        const v = (row[x] - [0, a, b, (a + b) >> 1, pr][f]) & 255;
+        trial[x] = v;
+        sum += v < 128 ? v : 256 - v;
+      }
+      if (sum < bestSum) {
+        bestSum = sum;
+        best = f;
+        trial.copy(line);
+      }
+    }
+    raw[y * (stride + 1)] = best;
+    line.copy(raw, y * (stride + 1) + 1);
+    prev = row;
+  }
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
-  ihdr[9] = 6;
+  ihdr[9] = 2;
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
 }
 
@@ -120,7 +156,7 @@ function shrink(img, size) {
   return out;
 }
 
-const rt = findRt(ROOT);
+const rt = NO_RENDER ? null : findRt(ROOT);
 mkdirSync(WORK, { recursive: true });
 mkdirSync(PUBLIC, { recursive: true });
 const plan = dumpScenes(ROOT, WORK, 'THUMBS', KEYS ? { REPACKSHOT_THUMBS_KEYS: KEYS } : {});
@@ -129,11 +165,11 @@ let total = 0;
 for (const s of plan.scenes) {
   const key = s.setup.toLowerCase();
   const png = join(WORK, `${key}.png`);
-  const seconds = render(rt, join(WORK, s.file), png);
+  const seconds = NO_RENDER ? 0 : render(rt, join(WORK, s.file), png);
   total += seconds;
-  const bytes = readFileSync(png);
+  const img = decodePng(readFileSync(png));
+  const bytes = encodePng(img.width, img.height, img.rgba);
   writeFileSync(join(PUBLIC, `thumb_${key}.png`), bytes);
-  const img = decodePng(bytes);
   writeFileSync(join(PUBLIC, `setup_${key}.png`), encodePng(SMALL, SMALL, shrink(img, SMALL)));
   manifest.scenes[s.setup] = { hero: s.hero, rsb: s.sha256, png: sha(bytes) };
   console.log(`${s.setup.padEnd(18)} ${s.hero.padEnd(8)} ${seconds.toFixed(1)} s`);

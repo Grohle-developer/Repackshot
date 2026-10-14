@@ -50,7 +50,7 @@ import {
 } from '../core/library';
 import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '../core/lighting';
 import { resolvePreset } from '../core/rig';
-import { activeSet, type SetPieceNames } from '../core/sets';
+import { activeSet, setBackground, type SetPieceNames } from '../core/sets';
 import { lookThroughCamera, objectOf, sameObject, selectedObject, type ViewObject } from '../core/view-objects';
 import { boxCenter, isEmptyBox } from '../core/math';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
@@ -1553,7 +1553,7 @@ export function useSetCamera(ctx: Ctx): void {
 export function toggleSetBackdrop(ctx: Ctx, on: boolean): void {
   const s = ctx.store.get();
   const set = activeSet(s);
-  if (!set?.backdrop) return;
+  if (!set?.backdrop || !setBackground(set)) return;
   const preset = resolvePreset(presetRefOf(s.studio));
   const b = set.backdrop;
   let patch: Partial<EnvironmentState>;

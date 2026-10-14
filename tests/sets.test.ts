@@ -9,10 +9,11 @@ import { gradientPixels } from '../src/core/images';
 import { specIrradiance } from '../src/core/light-math';
 import { lightFrame, lightsFromRig, rigPivot } from '../src/core/lighting';
 import { baseExposure, POOL_THROW, poolWeight, presetIrradiance, recipeScale, setupExposure, setupRig } from '../src/core/rig';
-import { applySet, cardCorners, cardFrame, eulerOf, isSet, POOL_GRAZE, poolLanding, poolTarget, poolTop, setOf, setPieceIds } from '../src/core/sets';
+import { activeSet, applySet, cardCorners, cardFrame, eulerOf, isSet, POOL_GRAZE, poolLanding, poolTarget, poolTop, setBackground, setOf, setPieceIds } from '../src/core/sets';
 import { sha256Hex } from '../src/core/sha256';
-import { isSetPiece, measuredSizeMm, productBounds } from '../src/core/scene';
-import { createStore, reduce, type ProjectState } from '../src/core/store';
+import { isSetPiece, measuredSizeMm, ownParts, productBounds, productParts } from '../src/core/scene';
+import { placePrimitive } from '../src/core/primitive-ops';
+import { createInitialState, createStore, reduce, type ProjectState } from '../src/core/store';
 import { mat4Compose, sub, length, normalize, dot, transformDirection } from '../src/core/math';
 import { LIGHT_SETUPS, lightSetup } from '../src/data/light-setups';
 import { materialPreset } from '../src/data/materials';
@@ -307,7 +308,9 @@ describe('the strips’ reflections in a glossy floor', () => {
 describe('applying a set', () => {
   it('puts its lights, its decoration and its look in force, marked as the set’s', () => {
     const base = exampleState();
+    const copy = structuredClone(base);
     const s = withSet('STRIP_EDGE', base);
+    expect(base, 'the state it starts from is left as it was').toEqual(copy);
     expect(s.studio.lightSetup).toBe('STRIP_EDGE');
     const pieces = setPieceIds(s).map((id) => s.scene.nodes[id].setPiece!);
     expect(pieces.map((p) => p.kind).sort()).toEqual(['BACKDROP', 'CARD', 'CARD', 'FLOOR']);
@@ -330,14 +333,24 @@ describe('applying a set', () => {
     expect(rigPivot(s)).toEqual(rigPivot(base));
     // Frame (with nothing selected) frames the product, not the sweep.
     expect(activeCamera(reduce(s, { type: 'camera/frame' }))).toEqual(activeCamera(reduce(base, { type: 'camera/frame' })));
-    // The Doctor looks at the user's scene only: the same warnings as without the set.
-    const warn = (st: ProjectState) => st.doctor.results.filter((r) => r.status === 'WARN').map((r) => r.key);
-    expect(warn(s)).toEqual(warn(reduce(base, { type: 'studio/setSetup', key: 'PRESET' })));
+    // The Doctor looks at the user's scene only: the same findings, with their counts, as under a setup that is not a set
+    // (the set's cards and paper have no bevel, and would be counted if it looked at them).
+    const scene = (st: ProjectState) => st.doctor.results.filter((r) => r.key !== 'lights');
+    const plain = reduce(base, { type: 'studio/setSetup', key: 'REMBRANDT' });
+    expect(setPieceIds(plain)).toEqual([]);
+    expect(scene(s)).toEqual(scene(plain));
+    // Even a card or a paper whose bevel the user took away is none of its business (the user's parts keep theirs).
+    const mats = (st: ProjectState, ids: string[]) => ids.flatMap((id) => [st.scene.nodes[id].material, ...(st.scene.nodes[id].faceMaterials ?? []).map((f) => f.material)]).filter((m): m is string => !!m);
+    const mine = new Set(mats(s, ownParts(s)));
+    const bare = [...new Set(mats(s, setPieceIds(s)))].filter((m) => !mine.has(m)).reduce((st, id) => reduce(st, { type: 'material/set', id, patch: { bevelRadiusMm: 0 } }), s);
+    expect(Object.values(bare.materials).filter((m) => m.bevelRadiusMm === 0).length).toBeGreaterThan(0);
+    expect(scene(bare)).toEqual(scene(plain));
   });
 
   it('is one undo step, and undo brings the scene back as it was', () => {
     const store = createStore(exampleState());
-    const before = store.get();
+    // A copy: if applying the set changed the state it starts from, the state undo goes back to would change with it.
+    const before = structuredClone(store.get());
     store.dispatch({ type: 'studio/setSetup', key: 'CHROME_FAMILY' });
     expect(setPieceIds(store.get()).length).toBeGreaterThan(0);
     expect(store.history().undo).toHaveLength(1);
@@ -354,6 +367,8 @@ describe('applying a set', () => {
     const a = withSet('STRIP_EDGE', own);
     const b = reduce(a, { type: 'studio/setSetup', key: 'WARM_WINDOW' });
     expect(setPieceIds(b).map((id) => b.scene.nodes[id].setPiece!.kind).sort()).toEqual(['BACKDROP', 'CARD']);
+    // Gone from the scene, not only from its roots.
+    expect(Object.values(b.scene.nodes).filter((n) => n.setPiece).map((n) => n.setPiece!.kind).sort()).toEqual(['BACKDROP', 'CARD']);
     expect(b.studio.lights.filter((l) => l.setPiece)).toHaveLength(0);
     expect(b.scene.nodes[ball]).toEqual(own.scene.nodes[ball]);
     // No material of the old set is left behind.
@@ -513,6 +528,17 @@ describe('the interface', () => {
     expect(setupTip(lightSetup('REMBRANDT')!, 'en')).toBe(lightSetup('REMBRANDT')!.intent.en);
   });
 
+  it('In the set switches the background on and off only for a set whose backdrop is not a sweep, also after Reset', () => {
+    expect(SETS.filter((x) => setBackground(x) !== null).map((x) => [x.key, setBackground(x)])).toEqual([
+      ['GLASS_DARK_FIELD', 'FLAT'], ['BRIGHT_FIELD', 'FLAT'], ['JEWEL_BOX', 'GRADIENT'], ['CHROME_FAMILY', 'GRADIENT'], ['BACKLIT_LIQUID', 'GRADIENT'], ['MIRROR_FLOOR', 'GRADIENT'],
+    ]);
+    // STRIP_EDGE's gradient is a sweep, because of its pool: once Reset setup has taken it away there is no gradient
+    // background to switch on.
+    const reset = reduce(withSet('STRIP_EDGE'), { type: 'studio/resetLights' });
+    expect(setPieceIds(reset)).toEqual([]);
+    expect(setBackground(activeSet(reset)!)).toBeNull();
+  });
+
   it('has every string of the sets in English and Spanish', () => {
     const keys = Object.keys(STRINGS.en).filter((k) => k.startsWith('set.') || k === 'undo.setCamera' || k === 'env.bg.GRADIENT');
     expect(keys.length).toBeGreaterThan(15);
@@ -533,9 +559,10 @@ describe('the thumbnails', () => {
   });
 
   it('pins one thumbnail’s bytes', () => {
-    // The PNG `rt` wrote for STRIP_EDGE on its bottle (256 x 256, 96 spp, denoised, seed 1). It changes only when the
-    // set, the bottle or the engine changes: then run `node tools/setup-thumbs.mjs` and put the new hash here.
-    expect(sha256Hex(readFileSync('public/thumbs/setups/thumb_strip_edge.png'))).toBe('TODO');
+    // STRIP_EDGE on its bottle as `rt` rendered it (256 x 256, 96 spp, denoised, seed 1), re-encoded without loss by
+    // tools/setup-thumbs.mjs. It changes only when the set, the bottle or the engine changes: then run
+    // `node tools/setup-thumbs.mjs` and put the new hash here.
+    expect(sha256Hex(readFileSync('public/thumbs/setups/thumb_strip_edge.png'))).toBe('f4722d00ff98cea12e0ab2ca480754440535aa69b64ede29805d2cc6ca5bd3f0');
   });
 });
 
@@ -573,6 +600,7 @@ describe('a set in a project file', () => {
   it('comes back with its pieces, its pool and its gradient', async () => {
     const s = withSet('STRIP_EDGE');
     const g = { ...s, environment: { ...s.environment, background: 'GRADIENT' as const, gradient: { top: [0.2, 0.1, 0.05] as const, bottom: [0.01, 0.02, 0.03] as const } } };
+    expect(setPieceIds(g)).toHaveLength(4);
     const back = loadProject(await serializeProject(g).text()).state;
     expect(setPieceIds(back).map((id) => back.scene.nodes[id].setPiece)).toEqual(setPieceIds(g).map((id) => g.scene.nodes[id].setPiece));
     expect(back.studio.lights.filter((l) => l.setPiece)).toEqual(g.studio.lights.filter((l) => l.setPiece));
@@ -586,9 +614,21 @@ describe('a set in a project file', () => {
 
 describe('set pieces in the scene model', () => {
   it('are never the product, even in a scene of primitives', () => {
-    const s = withSet('STRIP_EDGE', reduce(exampleState(), { type: 'scene/delete', ids: [...exampleState().scene.roots] }));
+    // A product that is a primitive itself: the box of Add > Primitive, 100 mm, and the set dressed around it.
+    const s0 = createInitialState();
+    const place = placePrimitive(s0, 'BOX');
+    const box = reduce(s0, { type: 'scene/addPrimitive', kind: 'BOX', params: place.params, position: place.position, name: 'Box' });
+    const s = withSet('STRIP_EDGE', box);
+    expect(setPieceIds(s)).toHaveLength(4);
     for (const id of setPieceIds(s)) expect(isSetPiece(s.scene.nodes[id])).toBe(true);
-    expect(measuredSizeMm(s)).toBe(0);
-    expect(outputAspect(s)).toBeGreaterThan(0);
+    expect(productParts(s)).toEqual(box.scene.roots);
+    expect(measuredSizeMm(s)).toBe(100);
+    expect(productBounds(s)).toEqual(productBounds(box));
+    expect(rigPivot(s)).toEqual(rigPivot(box));
+    // Nothing of the user's, nothing dressed.
+    const empty = withSet('STRIP_EDGE', reduce(exampleState(), { type: 'scene/delete', ids: [...exampleState().scene.roots] }));
+    expect(setPieceIds(empty)).toEqual([]);
+    expect(measuredSizeMm(empty)).toBe(0);
+    expect(outputAspect(empty)).toBeGreaterThan(0);
   });
 });

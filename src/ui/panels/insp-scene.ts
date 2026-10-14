@@ -10,7 +10,7 @@ import { activeCamera, type CameraId, type CameraState } from '../../core/camera
 import { itemsOf, type LightSetupItem, type ProductTypeItem } from '../../core/library';
 import { libraryKey, lightShares, lightIrradiance, presetRefOf } from '../../core/lighting';
 import { resolvePreset } from '../../core/rig';
-import { activeSet, setPieceIds } from '../../core/sets';
+import { activeSet, setBackground, setPieceIds } from '../../core/sets';
 import type { EnvironmentState, ImageState, ProjectState } from '../../core/store';
 import * as cmd from '../commands';
 import { colorField, field, lengthField, numberField, segmented, select, slider, toggle, type Control } from '../components/controls';
@@ -215,17 +215,14 @@ function setBlock(ctx: Ctx, scope: Scope): HTMLElement {
         rows.push(btn);
       }
       const pieces = setPieceIds(s);
-      const backdropIsPart = pieces.some((id) => s.scene.nodes[id].setPiece?.kind === 'BACKDROP');
       const items: HTMLElement[] = [];
       const row = (name: string, on: boolean, change: (v: boolean) => void) => {
         const sw = toggle(on, change, t('set.toggle', { name }));
         items.push(h('div', { class: 'row', style: 'justify-content:space-between' }, h('span', { class: 'field-label' }, name), sw.el));
       };
       // A colour or a gradient behind (no sweep): the background, on or off.
-      if (set.backdrop && !backdropIsPart && set.backdrop.kind !== 'SWEEP') {
-        const mine = set.backdrop.kind === 'GRADIENT' ? s.environment.background === 'GRADIENT' : s.environment.background === 'COLOR';
-        row(t(set.backdrop.kind === 'GRADIENT' ? 'set.bg.GRADIENT' : 'set.bg.FLAT'), mine, (v) => cmd.toggleSetBackdrop(ctx, v));
-      }
+      const bg = setBackground(set);
+      if (bg) row(t(bg === 'GRADIENT' ? 'set.bg.GRADIENT' : 'set.bg.FLAT'), s.environment.background === (bg === 'GRADIENT' ? 'GRADIENT' : 'COLOR'), (v) => cmd.toggleSetBackdrop(ctx, v));
       for (const id of pieces) {
         const n = s.scene.nodes[id];
         row(n.name, n.visible, (v) => cmd.hideSelection(ctx, [id], v));

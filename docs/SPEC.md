@@ -356,42 +356,59 @@ producto refleja y donde se apoya. `LightSetup` gana campos opcionales
 mismo rig que antes): `backdrop` (`FLAT` color de fondo; `GRADIENT` dos
 colores, arriba y abajo del encuadre, que el motor recibe como imagen de
 fondo generada y estirada; `SWEEP` el fondo infinito de U9 en papel mate
-del color, que recibe luz y sombra), `pool` (un foco direccional detrás
-del producto que dibuja un charco de luz en el fondo: `az`, `el`, cono,
-`share`, kelvin o color), `floor` (`CATCHER` el atrapasombras; `MATTE`
-mate de un color; `GLOSSY` y `MIRROR` un material del catálogo bajo el
-producto), `cards` (tarjetas: planos de *Tarjeta blanca*, *Tarjeta negra*
-o aluminio cepillado como tarjeta plateada, con `az`, `el`, `dist`,
-`size`, `sizeY` y giro, de cara al producto), `exposureEv` (desvío sobre
-la exposición del tipo de producto), `envStrength` (la cúpula mientras el
-set manda), `camera` (`el`, `focalMm`: sugerida, no se aplica sola),
-`hero` (el objeto de su miniatura) y `why` (la razón fotográfica, dos
-frases, en la ayuda de su miniatura). Los 16 sets son el estilo `SETS`,
-el primero del catálogo.
+del color, que recibe luz y sombra), `pool` (el charco de luz en el fondo
+detrás del producto: `az`, `el`, `cone`, `share`, kelvin o color), `floor`
+(`CATCHER` el atrapasombras; `MATTE` mate de un color; `GLOSSY` y `MIRROR`
+un material del catálogo bajo el producto, con su `roughness` si la
+lleva), `cards` (tarjetas: planos de *Tarjeta blanca*, *Tarjeta negra* o
+aluminio cepillado como tarjeta plateada, con `az`, `el`, `dist`, `size`,
+`sizeY` y giro, de cara al producto), `exposureEv` (desvío sobre la
+exposición base del tipo de producto), `envStrength` (la cúpula mientras
+el set manda), `camera` (`el`, `focalMm`: sugerida, no se aplica sola),
+`hero` (el objeto de su miniatura), `why` (la razón fotográfica, dos
+frases, en la ayuda de su miniatura) y `caustics`. Los 16 sets son el
+estilo `SETS`, el primero del catálogo.
 
 - **Aplicar un set** (`studio/setSetup` con su clave) es una sola entrada
   de deshacer: sus focos (normalizados como los de cualquier montaje; el
   charco se lleva su `share` del nivel y las luces se reparten el resto),
-  su aspecto (fondo, cúpula, exposición del tipo más el desvío; suelo y
-  sombra encendidos) y su **decoración**: primero el barrido (si el fondo
-  es `SWEEP`, o si es `FLAT` o `GRADIENT` con charco, que necesita una
-  pared donde caer), ajustado a la cámara activa como el de U9; luego el
-  suelo; luego las tarjetas; luego el charco.
+  su aspecto (fondo, cúpula, exposición base del tipo más el desvío; suelo
+  y sombra encendidos) y su **decoración**: primero el barrido (si el
+  fondo es `SWEEP`, o si es `FLAT` o `GRADIENT` con charco, que necesita
+  una pared donde caer), ajustado a la cámara activa como el de U9; luego
+  el suelo; luego las tarjetas; luego el charco. Una escena sin nada del
+  usuario recibe los focos y el aspecto; la decoración llega con el
+  producto (`studio/fitSet`, que la interfaz pide al cargar el ejemplo y al
+  importar, en la misma entrada de deshacer).
 - **El suelo.** Mate sobre un barrido es el propio barrido. Brillante o
   espejo sobre un barrido es la cara *suelo* del barrido en ese material
   (sin costura); si además hay charco, una lámina sobre el barrido que se
-  para antes de donde cae el charco (el charco cae en papel y la lámina
-  lo refleja). Sin barrido, un plano del tamaño del suelo que vería el
-  barrido de esa cámara, con el fondo (color o degradado) detrás de su
-  borde, a través del atrapasombras.
-- **El charco** cae donde la cámara ve el fondo justo detrás del producto
-  (su rayo por el pivote, sobre el barrido), así que es un halo detrás
-  del producto a cualquier altura de cámara. El foco se pone detrás del
-  producto en el `az` y `el` del set, a 0,75 tamaños de pieza del pivote,
-  y apunta ahí; su cono se abre para que el charco mida lo que su cono
-  daría a 2,5 tamaños de pieza (`POOL_THROW`) y su potencia hace que donde
-  cae llegue su `share` del nivel medido a esa distancia. No se ve a
-  cámara ni en reflejos.
+  para al 55 % del camino hasta donde cae el charco (el charco cae en papel
+  y la lámina lo refleja). Sin barrido, un plano del tamaño del suelo que
+  vería el barrido de esa cámara, con el fondo (color o degradado) detrás
+  de su borde, a través del atrapasombras. El suelo **brillante** es
+  acrílico con una ligera bruma (`roughness` 0,12: emborrona un poco lo que
+  refleja, no es un espejo); el **espejo** es un espejo. *Contraluz líquido*
+  lleva su lámina a 0,2: el reflejo del contraluz es un resplandor suave.
+- **Las tiras en un suelo brillante.** En los sets de suelo `GLOSSY` o
+  `MIRROR`, la imagen especular de cada tira (un panel que se refleja, al
+  menos cuatro veces más largo que ancho) en el plano del suelo, vista con
+  la cámara del set (o la de referencia a 85 mm), cae detrás de la huella
+  del producto o fuera del encuadre: un test lo comprueba con tres formas
+  de producto y dos proporciones; la regla de diseño, si no, es subir la
+  tira de 10° en 10° a distancia 3.
+- **El charco** cae donde la cámara ve el fondo justo por encima del
+  producto: su rayo por lo alto de la caja del producto, en su lado más
+  lejano, sobre el barrido. Así es un halo que asoma detrás del producto a
+  cualquier altura de cámara. El foco se apunta desde detrás del producto
+  (el `az` y `el` del set, a 0,75 tamaños de pieza del pivote) y se pone en
+  esa línea tan cerca del papel que su luz, que cae con el ángulo y la
+  distancia (a la mitad a 37,5° de su eje), dibuja un charco tan ancho como
+  el cono del set lo dibujaría a 2,5 tamaños de pieza (`POOL_THROW`). Su
+  cono es de 150° y suave desde el eje: el charco no tiene borde. Su
+  potencia hace que en su centro llegue su `share` del nivel medido a esa
+  distancia y de frente al papel (compensa hasta 72° de incidencia). No se
+  ve a cámara ni en reflejos.
 - **Las tarjetas** miran al pivote, con el ancho paralelo al suelo; una
   que atravesaría el suelo se sube sin girarla hasta apoyarse en él. Por
   construcción quedan **fuera del encuadre**: un test lo comprueba para
@@ -410,10 +427,16 @@ el primero del catálogo.
   focal que sugiere, el producto encuadrado de nuevo y el barrido, el
   suelo y el charco ajustados a la nueva vista (las tarjetas no se
   mueven); una entrada de deshacer; no hace nada con la cámara bloqueada.
-- **Rigs de tipo de producto.** Los 15 tipos de estudio toman los focos de
-  un set (`PRESET_SETS`), al nivel de irradiancia que tenían (su
-  exposición no cambia); *Mobiliario exterior* conserva su sol. Solo los
-  focos: el fondo, el suelo y la cúpula del tipo siguen siendo los suyos.
+- **Los tipos de producto son sets.** 15 de los 16 tipos de producto son un
+  set (`StudioPreset.set`, `PRESET_SETS`): sus focos son los del set, al
+  nivel de irradiancia que tenía el tipo (los montajes que se normalizan a
+  él no cambian), y con su rig propio (el montaje *El del tipo de
+  producto*, `PRESET`, que es el de *Crear estudio*) traen también la
+  decoración y el aspecto del set; el desvío de exposición del set está
+  sumado a la `exposure` del tipo, y cualquier otro montaje parte de la
+  exposición de antes (`baseExposure`, `setupExposure`). El suelo y la
+  sombra son los del tipo. *Mobiliario exterior* conserva su sol: no es un
+  set.
 
 **Luces propias, al estilo KeyShot** (fase L4). Además de los montajes, se
 pueden **añadir focos** desde la pestaña *Luces* (*+ Añadir luz ▸*), desde

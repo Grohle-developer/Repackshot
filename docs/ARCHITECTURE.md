@@ -140,6 +140,7 @@ tests/                      vitest; *.test.ts por módulo
 tools/                      scripts de desarrollo: capturas, generadores, hojas de contacto
   setup-thumbs.mjs          las miniaturas de montaje (L6): escenas con el código de la app (tests/setup-thumbs-dump.test.ts, vitest) y `rt`
   sets-sheet.mjs            la hoja de contactos de los sets (L6): out/sets-sheet.html; rt-batch.mjs, lo que comparten
+  sets-check.mjs            comprobación en el navegador de los sets (L6): catálogo, aplicar, En el set, Restablecer; docs/ui/sets-catalogue.png
   assets/                   generadores deterministas de public/assets/ (A6): common.mjs, aperture-masks.mjs, gobos.mjs; solo node:zlib y node:crypto
 docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
@@ -205,8 +206,12 @@ de Cycles: un panel de potencia P y área A tiene radiancia P / (4 A). `kelvin` 
   `hero` (`SetHero`), `why` (`Label`) y `caustics`. Los 16 sets son el
   estilo `SETS`, el primero; dos claves del plan ya existían
   (`DARK_FIELD`, `TEAL_ORANGE`) y sus sets son `GLASS_DARK_FIELD` y
-  `WARM_COOL_CINEMA`. `PRESET_SETS` (`studios.ts`) dice de qué set salen
-  los focos de cada tipo de producto.
+  `WARM_COOL_CINEMA`. **`StudioPreset.set`** (L6): el set que es el rig
+  propio del tipo de producto (sus focos, al nivel del tipo; con `PRESET`,
+  su decoración y su aspecto; su desvío de exposición ya sumado a
+  `exposure`); `PRESET_SETS` lo resume. `tests/preset-rigs-sync.test.ts`
+  (con `REPACKSHOT_SYNC_PRESETS=1`) reescribe los focos y la exposición de
+  esos tipos desde sus sets tras afinar uno.
 - **`MaterialPreset`** — categoría, familia (`SIMPLE`, `GLASS`, `WOOD`,
   `FABRIC`, `EMISSIVE`) y parámetros.
 - Desgaste, pelusa, ópticas, movimientos, suavizados, secuencias,
@@ -1000,7 +1005,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado |
-| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
+| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |
