@@ -14,7 +14,8 @@ de cada agente (se empujan tras cada *commit* de su agente; un *commit*
 M2a texturas · P5 actualizar desde la app · L6 sets de estudio · U12
 TIFF/DNG · O1 lente fina y bokeh · U13 proporción en la cámara · P6
 plugins + plugin de película · E12 elección de luz por punto · P6b
-carrusel con deslizador y filtros · N6 despieces y línea de tiempo. Cada fase está marcada «hecha» en
+carrusel con deslizador y filtros · N6 despieces y línea de tiempo · M3a
+editor de materiales por nodos (modelo, compilador, editor, vista Rápido). Cada fase está marcada «hecha» en
 `ROADMAP.md` con su párrafo *Hecho / Qué no encajó*.
 
 ## En curso (rama `wip/ccr-8df3f848/<fase>`; brief en `ROADMAP.md`)
@@ -23,11 +24,37 @@ carrusel con deslizador y filtros · N6 despieces y línea de tiempo. Cada fase 
 | --- | --- | --- |
 | U11 + U11b + E11 | `u11` | U11 (denoise en directo) y U11b (intensidad) confirmados; E11 (suavizado de bordes) aceptado con **Fino** por defecto en proyectos nuevos; falta el *commit* de E11 y la entrega conjunta. Fusionar los tres de una vez. |
 | E9 (a, a2, b, c) | `e9` | (a)+(a2) confirmados (`d736374`: horno 1,000; +13–16 % de luminancia difusa). (b) medios dispersores: estimador de salida (Chiang 2016) en verde; decididos: ruleta por el peso del camino desde la entrada, regla de **pared fina** para líquidos en vidrio (sesgo medido), test de leche por acuerdo con el camino exacto; falta la hoja a 64/256 spp, el *commit* de (b) y (c) dispersión. |
-| E6 (bisel, madera, tela) | `e6` | Bisel confirmado (`59656ed`, `977307e`). Madera con nudos: veredicto dado (desviación 1,5–3 radios, bulto 0,35 R, nudos solo con incidencia ≥ 30°, nota «6 pedidos · 3 caben»); falta el *commit* de madera y la tela (hilos/cm realistas: algodón 40, vaquero 26, lona 12, punto 5…). |
+| E6 (bisel, madera, tela) | `e6` | Bisel confirmado (`59656ed`, `977307e`). **Madera con nudos a 45° en `0c4095f`** (razonamiento 30° → 60° → 45° en su párrafo del ROADMAP; 24 + 3 mutaciones cazadas); faltan las puertas completas del motor (workspace, wasm, paridad, WASI) que corre con la tela; está en la tela (hilos/cm realistas: algodón 40, vaquero 26, lona 12, punto 5…). |
 | O3a → O2 | `o1` | O1 fusionado. O3a (filtros de lente) hecho en borrador del agente: motor, interfaz, previa WebGL; hoja renderizando; para estrella/rayas/brillo con fuentes pequeñas, medir MIS entre dispersión de pupila y NEE a través de la PSF. Después O2 (lente trazada). |
-| S4a partículas de aire | `s4a` | Sección Ambiente, efectos en el *store*, proyecto, RSB `FXAM`, primitivas en el motor, hoja de contacto hecha (`6a7c096`); está en las puertas finales del motor (`cargo test --release`) y la entrega. |
-| S2 cuerpos rígidos | `s2` | `rt-phys` XPBD, Dejar caer, barra con Pausar/Reanudar, clip `PHYSICS` automático, pruebas y comprobación de navegador hechas (`379c6c2`); está en las puertas finales del motor y la entrega. |
-| M3a editor por nodos | `m3a` | Programas de material, intérprete de referencia y vista previa; sigue con el editor (ventana, lienzo) y los diez grafos. |
+| S4a partículas de aire | `s4a` | **Entregada** (`6a7c096`; hoja `out/ambient-sheet.html`, capturas `docs/ui/ambient-*.png`). Veredictos dados (ver abajo); el agente está fusionando la cabeza de la rama de sesión en `s4a` (conflictos con E12 en la selección de luz desde partículas, `cli.rs`, inspector, `rsb.ts`, Doctor, docs) y re-fijando sus hashes (E12 los mueve). Al recibirla: fusionar, añadir a `.github/workflows/engine.yml` las líneas `--write-ambient-example` + `wasm-parity.mjs --particles --expect-particles <hash>` y `tests/effects-rsb.test.ts` en el paso del `rt.wasm` real. |
+| S2 cuerpos rígidos | `s2` | **Entregada** (`cb862bc`; capturas `docs/ui/physics-*.png`; puertas del motor en verde). Veredictos dados (ver abajo); el agente está fusionando la cabeza de la rama de sesión en `s2` (23 archivos: el panel de animación es el de N6 entero con el clip `PHYSICS` portado; `playheadPose` respeta `poseActive` de N6; Doctor: 14 + `aspect` + `physics`). Al recibirla: fusionar antes que S4a. |
+| M3a editor por nodos | `m3a` | **Fusionada en la rama de sesión** (5e898cb, trailers reescritos al fusionar; veredicto en `ROADMAP.md` §M3a). Si una sesión nueva ve esta fila es que la fusión está ya en `origin`; el árbol `Repackshot-m3a` se puede borrar. |
+
+## Corte por límite de uso (14-10, ~12:40 UTC) y puntos de control
+
+El límite de uso cortó a la vez a los seis agentes en marcha. Antes de
+reanudarlos (el límite se restableció a las 13:50 UTC) el responsable dejó
+cada árbol de trabajo en un *commit* y empujó todas las ramas `wip/`:
+
+| Agente | Dónde estaba | Punto de control |
+| --- | --- | --- |
+| S2 | fusión de la cabeza hecha (`a5e8f1f`) y `physics-check` sobre la línea de tiempo de N6 (`9f7bcad`); le falta fusionar M3a y el párrafo de veredicto | árbol limpio |
+| S4a | fusión de la cabeza resuelta, puertas sin correr | `70573e3` (merge commit WIP) |
+| U11 | documentación de E11 | árbol limpio en `89c82f7` |
+| E9 | ediciones del integrador de E9b (paredes, bandera *exact*, MIS) | `146edb0` (1 archivo) |
+| E6 | razonamiento de la madera en el ROADMAP y huecos; tela por empezar | `fb247b7` (3 archivos + 1 nuevo) sobre `0c4095f` |
+| O3a/O2 | párrafo final de O3a en el ROADMAP; O2 empezada (exportar la lente trazada en rt-wasm) | `304696f` (2 archivos + 1 nuevo) |
+
+Reanudados los seis con `SendMessage` (mismos ids de agente; no se crean
+agentes nuevos). Si una sesión nueva no tiene esos agentes, cada rama `wip/`
+contiene todo: crear el árbol de trabajo (receta al final) y lanzar un agente
+nuevo con el brief de la fase del ROADMAP y la orden de seguir desde el último
+*commit* (el mensaje de cada WIP dice dónde estaba).
+
+## Veredictos dados a S2 y S4a (14-10, por si la sesión corta antes de que lleguen a `ROADMAP.md`)
+
+- **S2.** El cabezal en 0: confirmado como está hecho (los nodos que sostiene una simulación grabada enseñan su fotograma también en 0, visor y foto fija, y el *gizmo* se oculta sobre ellos): el fotograma 0 de una animación renderizada tiene que ser el inicio de la caída, y la foto fija sigue al cabezal, que la simulación deja al final. Densidades por familia: aceptadas como valores típicos (revisar en M4). Decisión 2 a medias (los clips crecen por el *store* dentro del único paso de deshacer): aceptada. El resto de «no encajó»: aceptado y anotado.
+- **S4a.** Criterio 5 (coste ≤ 1,3×) se aplica a las densidades de los presets, no al tope de 200 000: S4b lo mide primero (escena de coste al número del preset en `tools/ambient-sheet.mjs`); la BVH de partículas se queda; la rejilla en pantalla para rayos de cámara solo si una escena de preset medida pasa de 1,3×. Densidades fotográficas: aceptadas. Polvo a contraluz: S4b da a polvo, polen y polvareda un lóbulo hacia delante (Henyey–Greenstein, g ≈ 0,7). Moteado de la lluvia bajo la clave lateral: S4b, las gotas no hacen cáusticas (el rayo de sombra pasa con su cobertura, sin refracción). Colocación (Ambiente tras Entorno, tope en el bloque del motor), ensanchado por probabilidad, `FXAM` de 192 bytes, conjuntos tras la BVH de instancias: aceptados. **S4b** queda en cola con esos cuatro puntos (brief que escribe el agente de S4a en su fusión, tras S4a).
 
 ## Pendiente del responsable (orden)
 

@@ -639,6 +639,19 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    Solo se pintan los que la familia usa. Un botón *Convertir en material
    propio* separa la instancia del preset cuando se edita (el nombre pasa
    a "Oro (editado)").
+   Sobre los parámetros, una fila **Simple · Nodos** y el botón **Nodos…**
+   (fase M3a). *Nodos* convierte el material en su grafo mínimo (una
+   entrada de deshacer); *Nodos…* hace lo mismo si hace falta y abre el
+   **editor de material** (§2.10). En modo *Nodos* los parámetros dejan
+   sitio a unas líneas que dicen cuántos nodos tiene el grafo, cómo lo
+   dibuja *Rápido* y qué aproxima, y que *Completo* renderiza el valor
+   medio de cada salida hasta la fase M3b (*próximamente*). Volver a
+   *Simple* desde un grafo que no es el mínimo pregunta en línea (§4.3):
+   *¿Volver a Simple? Simple guarda solo los valores propios de la salida:
+   se van N nodos y sus conexiones (Deshacer los recupera)* · **Volver a
+   Simple** · *Cancelar*. El menú contextual de la pieza tiene en
+   *Material ▸* la entrada **Editar con nodos…**, y la paleta de comandos
+   *Abrir el editor de material*.
 2. **Texturas** (fase M2a) — Una nota dice que *Rápido* muestra texturas y
    etiquetas y que el motor las pinta en *Completo* y en *Render*
    (*próximamente*, fase M2b). Una fila por **ranura**: *Color*,
@@ -1308,8 +1321,8 @@ una línea propia, sin solapes, a 1600, 1280 y 960 px. Captura:
 
 ### 2.9 · Ventana de Ajustes
 
-Se abre con **Ajustes…** del menú de aplicación o `Ctrl/⌘ ,`. Es la
-segunda y última ventana de la aplicación (§4.3): flotante, unos
+Se abre con **Ajustes…** del menú de aplicación o `Ctrl/⌘ ,`. Es una de
+las tres ventanas de la aplicación (§4.3): flotante, unos
 **960 × 680 px** centrada, el resto atenuado un 40 %, se mueve por su
 barra de título y se cierra con `Esc` o la ×. Acromática como todo el
 cromo. Se recuerda la última sección abierta.
@@ -1485,6 +1498,101 @@ Ajustes en una sección (*Gestionar modelos…* en la ventana de render,
 el medidor del visor cuando el motor no está), y `?settings=<sección>`
 en la URL lo hace para las capturas.
 
+### 2.10 · Editor de material (fase M3a)
+
+Se abre con **Nodos…** del inspector del material, con *Material ▸ Editar
+con nodos…* del menú contextual de una pieza o con la paleta, sobre el
+material de la selección (si la selección no tiene un solo material lo
+dice un aviso). Un material en modo *Simple* pasa antes a *Nodos* (su
+grafo mínimo: la salida sola, una entrada de deshacer). Es una ventana
+flotante como la de render, de unos **1040 × 660 px** y centrada la
+primera vez, pero **sin atenuar** lo de detrás: el visor sigue pintando lo
+que hace el grafo. Se mueve por su barra de título, se agranda por su
+esquina inferior derecha (mínimo 560 × 360) y recuerda dónde estaba y su
+tamaño entre sesiones; un doble clic en la barra la vuelve a centrar.
+`Esc` (sin nada seleccionado) o la × la cierran. Acromática como todo el
+cromo: el color solo está en las esferas de los nodos, la del material,
+los colores de los valores y la barra de las rampas, que son contenido.
+![editor de material](material-nodes.png)
+
+**Barra de título**: *Editor de material*, el nombre del material,
+**Simple · Nodos** (como en el inspector, con la misma pregunta al volver
+a Simple), **Ejemplos ▾** (los diez grafos de ejemplo, con su descripción
+en el *tooltip*; uno sustituye el grafo, una entrada de deshacer),
+**+ Añadir nodo** (`⇧ A`), **Encuadrar** (`F`) y la ×.
+
+**Lienzo** (izquierda): un plano de puntos que se acerca con la rueda
+(alrededor del cursor, 25 %–200 %, el porcentaje abajo a la derecha) y se
+desplaza con el botón central, o con `Espacio` o `Alt` y el izquierdo. La
+primera vez se encuadra el grafo. Cada **nodo** es una tarjeta: su nombre
+arriba (la *Salida de material* en negativo; *Matemática* y *Mezcla* con
+la operación: *Matemática · Seno*), su **esfera** de 64 × 64 (lo que da su
+primera salida sobre una esfera de 100 mm vista de frente: un número en
+gris, un color en sRGB, un vector por la parte fraccionaria de cada
+coordenada, una normal como ½ + n/2; la de la salida, el material
+sombreado), y una fila por toma: primero las salidas, a la derecha, y
+luego las entradas que sus parámetros muestran, a la izquierda, con su
+valor si no están conectadas (un número o una muestra del color). Las
+**tomas** tienen una forma por tipo: **círculo** número, **rombo** color,
+**cuadrado** vector, **triángulo** normal; huecas sin conexión, llenas
+con ella. Las esferas las calcula un *worker* con el mismo intérprete que
+la vista previa *Rápido*; mientras llegan, el hueco queda gris.
+- *Clic* en una tarjeta la selecciona (`⇧` o `Ctrl/⌘` suman o quitan);
+  arrastrarla la mueve con el resto de la selección (una entrada de
+  deshacer por arrastre). Arrastrar en el vacío selecciona lo que toca el
+  recuadro.
+- **Conectar**: arrastrar de una salida a una entrada, o de una entrada
+  libre a una salida. Mientras se arrastra, la toma bajo el cursor se
+  marca si la acepta y se apaga si no; soltar en una que no la acepta no
+  conecta y un aviso dice por qué (*Un color no puede entrar en una
+  entrada de normal*, *Esa conexión cerraría un bucle*). Una entrada
+  conectada se coge con el ratón y su conexión se suelta en otra entrada
+  (se mueve, una entrada de deshacer) o en el vacío (se desconecta). Una
+  conexión nueva a una entrada ya conectada sustituye la anterior.
+- *Doble clic* o *clic derecho* en el vacío abre **Añadir nodo** en ese
+  punto: un campo de búsqueda (por nombre, descripción y palabras clave,
+  en los dos idiomas: *perlin*, *ruido*, *altura*) sobre los nodos por
+  categoría (*Entrada, Textura, Color, Vector, Matemática, Superficie*);
+  flechas y `⏎` eligen. *Clic derecho* en una tarjeta: *Duplicar*,
+  *Desconectar las entradas*, *Eliminar* (la salida no se duplica ni se
+  elimina).
+
+**Panel** (derecha, 280 px): el material en una esfera de 128 px; **En
+Rápido**, las líneas que dicen cómo lo dibuja la vista previa (*Dibujado
+con mapas de 512 × 512 hechos en las UV de la malla* / *por su proyección
+cilíndrica: lo que da el grafo* / *Lee coordenadas 3D: …un corte por el
+frente de la pieza…*) y qué aproxima (*Rápido funde las caras de la
+proyección de caja; el motor toma la cara a la que más mira la normal*;
+*Fresnel y de cara se toman a 60° de la normal*; *La curvatura se omite
+(0): la mide el motor*; *Sin mapa para barniz: su valor medio*), y la de
+*Completo* hasta M3b. Debajo, el **nodo seleccionado**: su nombre y su
+descripción, sus **parámetros** (desplegables, deslizadores y campos
+numéricos con su unidad, interruptores, color; la imagen de una *Textura
+de imagen* con *Cargar…* y *Quitar*, por el mismo camino y límites que las
+ranuras de M2a; las paradas de una *Rampa de color* con su posición, su
+color y su ×, *Añadir una parada* en el hueco mayor, y una barra que la
+muestra) y sus **entradas**: las libres con su valor editable, las
+conectadas con *Desde Nodo · toma* y una × que desconecta, las que leen
+una fuente del punto con cuál (*La normal de la superficie*, *Las UV de la
+malla*, *Las coordenadas de la pieza (por 100 mm)*); *Duplicar* y
+*Eliminar*. Con varios nodos, *N nodos seleccionados* y los dos botones;
+con ninguno, una nota de cómo se usa.
+![el frasco con el mármol en Rápido](material-nodes-preview.png)
+
+**Pie**: *N nodos · M conexiones · programa de K instrucciones, F + V
+registros* (lo que dice el compilador), o por qué no compila (*El grafo
+es demasiado grande: su programa pasa de 2048 instrucciones*); a la
+derecha, los atajos.
+
+**Teclado**, con el foco en el editor: `Supr`/`Retroceso` elimina la
+selección, `Ctrl/⌘ D` la duplica, `Ctrl/⌘ A` lo selecciona todo, `⇧ A`
+abre *Añadir nodo*, `F` o `Inicio` encuadran, `Esc` deselecciona y, sin
+selección, cierra; `Ctrl/⌘ Z` y `Ctrl/⌘ ⇧ Z` son el deshacer y rehacer de
+la aplicación. Las demás teclas sueltas no llegan a las herramientas del
+visor mientras el foco está en el editor. Con el foco fuera, la aplicación
+tiene las suyas: el editor no es modal. El recorrido guiado tiene un paso
+para *Nodos…*.
+
 ## 3 · Paleta de comandos y teclado
 
 `Ctrl/⌘ K` abre la **paleta**: un campo centrado con lista debajo.
@@ -1573,12 +1681,13 @@ lista de parámetros.
 
 Toda confirmación es **en línea**, en el sitio donde se pulsó, con dos o
 tres botones y `Esc` para cancelar. Los elementos flotantes son los
-menús, la paleta, el popover del Doctor y **dos ventanas**, abiertas solo
+menús, la paleta, el popover del Doctor y **tres ventanas**, abiertas solo
 a petición: la **ventana de render** (§2.7), porque un render es una
 decisión con muchos parámetros que se toma de una vez, como en KeyShot,
-y la ventana de **Ajustes** (§2.9: secciones agrupadas en una columna a
-la izquierda, cambios al momento). Ninguna otra ventana; nada se abre
-solo.
+la ventana de **Ajustes** (§2.9: secciones agrupadas en una columna a
+la izquierda, cambios al momento) y el **editor de material** (§2.10,
+fase M3a: un grafo necesita un lienzo, y el visor sigue vivo detrás).
+Ninguna otra ventana; nada se abre solo.
 
 **La pregunta por los cambios sin guardar** (solo si el proyecto los
 tiene) es la misma para todo lo que los descartaría —cerrar la ventana,
