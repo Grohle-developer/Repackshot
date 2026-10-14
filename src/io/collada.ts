@@ -8,7 +8,7 @@
 import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { unitFromMillimetres, type ImportDetected, type ImportMessage, type UpAxis } from '../core/import-options';
 import type { ReadResult } from './gltf';
-import { collectTextures, convertScene, toPayload } from './three-scene';
+import { collectTextures, companionManager, convertScene, textureNotes, toPayload, type Companions } from './three-scene';
 
 export interface ColladaAsset {
   /** Metres in one unit of the file; null when `<unit>` is absent. */
@@ -27,16 +27,19 @@ export function colladaAsset(text: string): ColladaAsset {
   return { meter: Number.isFinite(m) && m > 0 ? m : null, upAxis: axis ?? 'Y_UP', upAxisDeclared: axis !== undefined };
 }
 
-export async function readCollada(name: string, text: string): Promise<ReadResult> {
+export async function readCollada(name: string, text: string, companions?: Companions): Promise<ReadResult> {
   const asset = colladaAsset(text);
-  const result = new ColladaLoader().parse(text, '');
+  // The images a .dae names are files next to it: the ones dropped with it.
+  const files = companionManager(companions);
+  const result = new ColladaLoader(files.manager).parse(text, '');
   if (!result || !result.scene) throw new Error('not a Collada document');
   const root = result.scene;
   // The loader applied the unit and the Z_UP turn to the root: take them back.
   root.rotation.set(0, 0, 0);
   root.scale.set(1, 1, 1);
   const converted = convertScene(root, { fileName: name, format: 'DAE' });
-  const textures = await collectTextures(converted.sources);
+  const textures = await collectTextures(converted);
+  files.dispose();
 
   const notes: ImportMessage[] = [];
   let units: ImportDetected['units'] = null;
@@ -53,7 +56,7 @@ export async function readCollada(name: string, text: string): Promise<ReadResul
     upAxis = 'Y';
     notes.push({ code: 'axisUnsupported', params: { axis: 'X' } });
   }
-  if (textures.length > 0) notes.push({ code: 'texturesKept', params: { count: textures.length } });
+  notes.push(...textureNotes(textures));
   const detected: Pick<ImportDetected, 'units' | 'upAxis' | 'upAxisDeclared' | 'unsupportedUnit'> = { units, upAxis, upAxisDeclared: asset.upAxisDeclared, ...(unsupportedUnit ? { unsupportedUnit } : {}) };
   return { ...toPayload(converted, detected, textures), warnings: converted.warnings, notes };
 }

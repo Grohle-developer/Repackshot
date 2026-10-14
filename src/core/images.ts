@@ -27,6 +27,8 @@ export interface ImageData {
   height: number;
   /** Background images: straight RGBA, 8 bits, sRGB, rows from the top. */
   rgba8?: Uint8Array;
+  /** Texture images (M2a): how many channels the file's pixels have (1, 3 or 4; core/image-header.ts). */
+  channels?: 1 | 3 | 4;
   /** HDRIs: linear RGB floats for the preview, rows from the top (`previewWidth` x `previewHeight`). */
   linear?: Float32Array;
   previewWidth?: number;
@@ -105,4 +107,32 @@ export function fitImageRect(fit: 'FILL' | 'FIT' | 'STRETCH', imageW: number, im
   if (r > 1 !== (fit === 'FIT')) width = frame.width * r;
   else height = frame.height / r;
   return { x: frame.x + (frame.width - width) / 2, y: frame.y + (frame.height - height) / 2, width, height };
+}
+
+/** Rows of the generated image of a GRADIENT background (L6): enough for no visible banding once stretched. */
+export const GRADIENT_ROWS = 256;
+/** Its width: one colour per row, a few columns so every reader takes it as an image. */
+export const GRADIENT_COLUMNS = 4;
+
+/** Linear light to an 8-bit sRGB value. */
+const srgb8 = (v: number): number => Math.round(255 * Math.min(1, Math.max(0, v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)));
+
+/**
+ * The pixels of a GRADIENT background (L6): straight RGBA, 8 bits, sRGB, rows from the top, `top` at the first row
+ * and `bottom` at the last, mixed in linear light. The engine stretches it over the output frame (RSB backplate).
+ */
+export function gradientPixels(top: readonly number[], bottom: readonly number[], width = GRADIENT_COLUMNS, height = GRADIENT_ROWS): Uint8Array {
+  const out = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const t = height > 1 ? y / (height - 1) : 0;
+    const px = [0, 1, 2].map((c) => srgb8(top[c] + (bottom[c] - top[c]) * t));
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      out[i] = px[0];
+      out[i + 1] = px[1];
+      out[i + 2] = px[2];
+      out[i + 3] = 255;
+    }
+  }
+  return out;
 }

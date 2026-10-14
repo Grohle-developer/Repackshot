@@ -155,7 +155,7 @@ describe('closing the native window asks in our own interface', () => {
     expect(ctx.ui.get().prompt).toBeNull();
   });
 
-  it('with unsaved changes: Save · Don’t save · Cancel, and nothing closes until one is chosen', async () => {
+  it('with unsaved changes: Save · Save as… · Don’t save, Cancel, and nothing closes until one is chosen', async () => {
     setLang('en');
     const { ctx, wv, saves } = makeCtx();
     installWindowHost(ctx, null);
@@ -164,7 +164,7 @@ describe('closing the native window asks in our own interface', () => {
     wv.emit({ type: 'close-requested' });
     const spec = ctx.ui.get().prompt!;
     expect(spec.message).toBe('Save changes to “Bottle” before closing?');
-    expect(spec.options.map((o) => o.label)).toEqual(['Save', 'Don’t save']);
+    expect(spec.options.map((o) => o.label)).toEqual(['Save', 'Save as…', 'Don’t save']);
     expect(spec.cancelLabel).toBeUndefined(); // the default: Cancel
     expect(closes(wv)).toBe(0);
     // Closing again (Alt F4 twice) does not stack a second question.
@@ -183,7 +183,7 @@ describe('closing the native window asks in our own interface', () => {
     installWindowHost(dont.ctx, null);
     rename(dont.ctx);
     dont.wv.emit({ type: 'close-requested' });
-    dont.ctx.ui.get().prompt!.options[1].run();
+    dont.ctx.ui.get().prompt!.options[2].run();
     expect(closes(dont.wv)).toBe(1);
 
     const cancel = makeCtx();
@@ -234,7 +234,7 @@ describe('one close flow for every way to close', () => {
     wv.emit({ type: 'close-requested' }); // the close button, Alt F4, the taskbar
     cmd.requestCloseWindow(ctx);
     expect(ctx.ui.get().prompt).toBe(spec);
-    spec.options[1].run();
+    spec.options[2].run();
     expect(closes(wv)).toBe(1);
   });
 

@@ -26,6 +26,7 @@ import { facePieces, type FacePiece } from './faces';
 import { defaultInstance, triangleMaterials, type MaterialId, type MaterialInstance } from './materials';
 import { getMesh, meshRef, registerMesh, remapTriangleRanges, sliceMesh, unregisterMesh, type MeshData } from './meshes';
 import type { ModelPayload, NodeId, SceneNode } from './scene';
+import { hasTextures, PROJECT_TEXTURE_MAX_BYTES, TEXTURE_SLOTS, texturesImageIds, type TextureDropReason } from './textures';
 
 // --- Vocabulary -------------------------------------------------------------------------
 
@@ -106,14 +107,26 @@ export interface ImportDetected {
   hiddenParts: number;
 }
 
-/** A texture image found in the file, kept for the materials phase (M2); not applied yet. */
+/**
+ * A texture image a reader found (M2a): the file's own bytes, kept when the import is confirmed (the materials'
+ * slots and labels name it by `id`, its content: core/texture-images.ts), or dropped and why. Dropped images are
+ * already out of the materials the reader returns.
+ */
 export interface ImportTexture {
+  /** The content id (`tex:…`), or '' for one dropped before its bytes were read. */
+  id: string;
+  /** The file name, or the name the model gave it. */
   name: string;
-  /** Which map of the material it fed. */
-  slot: 'color' | 'roughness' | 'metal' | 'normal' | 'alpha' | 'other';
-  material: MaterialId;
-  mime: string;
-  blob: Blob;
+  /** The file, PNG or JPEG; null when dropped. */
+  bytes: Uint8Array | null;
+  width: number;
+  height: number;
+  /** The materials of the payload that use it. */
+  materials: MaterialId[];
+  /** Null: kept. */
+  dropped: TextureDropReason | null;
+  /** A map our materials have no slot for (`occlusion`, `specular`, `bump`...): reported, not kept. */
+  unused?: string;
 }
 
 /** Something to tell the person after an import. `code` selects the string `import.msg.<code>`. */
@@ -130,6 +143,8 @@ export type ImportMessageCode =
   | 'vertexColors'
   | 'usdUnsupported'
   | 'texturesKept'
+  | 'textureDropped'
+  | 'textureUnused'
   | 'unitsConverted'
   | 'cadEmptyFaces';
 export interface ImportMessage {
@@ -166,6 +181,11 @@ export interface ImportReadOptions {
   tessellation?: TessellationParams;
   signal?: AbortSignal;
   onProgress?(p: ImportProgress): void;
+  /**
+   * M2a: the files dropped or chosen with the model, by name: the textures and material libraries it names but
+   * does not carry (an OBJ's .mtl and images, a .gltf's .bin and images, an FBX's or a .dae's images).
+   */
+  companions?: ReadonlyMap<string, Blob>;
 }
 
 /** What a reader returns: a model in the file's units and axes, plus what the sheet needs. */
@@ -326,7 +346,7 @@ function transformMesh(src: MeshData, k: number, swap: boolean, flip: boolean): 
       indices[i + 2] = t;
     }
   }
-  return { positions: p, normals: n, indices, uvs: src.uvs, sharpEdges: src.sharpEdges };
+  return { positions: p, normals: n, indices, uvs: src.uvs, ...(src.uvs2 ? { uvs2: src.uvs2 } : {}), sharpEdges: src.sharpEdges };
 }
 
 // --- The pipeline -------------------------------------------------------------------------------
@@ -478,7 +498,7 @@ export function applyImportOptions(input: ImportPayload, options: ImportOptions)
     if (hint) model.source.unitHint = hint;
   }
   const used = new Set(Object.keys(materials));
-  const textures = options.materials === 'default' ? [] : (input.textures ?? []).filter((t) => used.has(t.material));
+  const textures = options.materials === 'default' ? [] : (input.textures ?? []).filter((t) => t.materials.some((m) => used.has(m))).map((t) => ({ ...t, materials: t.materials.filter((m) => used.has(m)) }));
   return { nodes, roots, materials, textures, notes };
 }
 
@@ -608,4 +628,57 @@ export function releaseImport(raw: ModelPayload, keep?: ModelPayload): void {
   const spare = new Set<string>();
   for (const n of Object.values(keep?.nodes ?? {})) if (n.mesh) spare.add(n.mesh.id);
   for (const n of Object.values(raw.nodes)) if (n.mesh && !spare.has(n.mesh.id)) unregisterMesh(n.mesh.id);
+}
+
+// --- Texture images of an import (M2a) -------------------------------------------------------------
+
+/** Totals of the texture images of an import, for the sheet: what is kept and its size, what is dropped. */
+export function textureSummary(textures: readonly ImportTexture[]): { kept: number; bytes: number; dropped: ImportTexture[]; unused: ImportTexture[] } {
+  let kept = 0;
+  let bytes = 0;
+  const dropped: ImportTexture[] = [];
+  const unused: ImportTexture[] = [];
+  for (const t of textures) {
+    if (t.unused) unused.push(t);
+    else if (t.dropped) dropped.push(t);
+    else {
+      kept++;
+      bytes += t.bytes?.length ?? 0;
+    }
+  }
+  return { kept, bytes, dropped, unused };
+}
+
+/**
+ * The project's budget for texture files (PROJECT_TEXTURE_MAX_BYTES) applied to an import: the images the
+ * project already holds (`inProject`, by id, with their sizes) cost nothing again; new ones are kept in the order
+ * the file lists them while they fit, the rest are dropped with the reason `budget`.
+ */
+export function fitTextureBudget(textures: readonly ImportTexture[], inProject: ReadonlyMap<string, number>, budget = PROJECT_TEXTURE_MAX_BYTES): ImportTexture[] {
+  let used = 0;
+  for (const size of inProject.values()) used += size;
+  const counted = new Set<string>();
+  return textures.map((t) => {
+    if (t.dropped || t.unused || !t.bytes || inProject.has(t.id) || counted.has(t.id)) return t;
+    if (used + t.bytes.length > budget) return { ...t, dropped: 'budget' as const };
+    used += t.bytes.length;
+    counted.add(t.id);
+    return t;
+  });
+}
+
+/** The materials without the slots and labels whose image is in `gone` (dropped images). Untouched when none is. */
+export function withoutImages(materials: Record<MaterialId, MaterialInstance>, gone: ReadonlySet<string>): Record<MaterialId, MaterialInstance> {
+  if (gone.size === 0) return materials;
+  const out: Record<MaterialId, MaterialInstance> = {};
+  for (const [id, m] of Object.entries(materials)) {
+    if (!hasTextures(m.textures) || !texturesImageIds(m.textures).some((i) => gone.has(i))) {
+      out[id] = m;
+      continue;
+    }
+    const t = { ...m.textures, labels: m.textures.labels.filter((l) => !gone.has(l.image.id)) };
+    for (const k of TEXTURE_SLOTS) if (t[k] && gone.has(t[k]!.image.id)) t[k] = null;
+    out[id] = { ...m, textures: t };
+  }
+  return out;
 }

@@ -544,6 +544,14 @@ kbd,
 .thumbs.cols-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+/* L6: the sets, twice as tall as a setup's thumbnail (two columns, square). */
+.thumbs.cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.thumb.large img,
+.thumb.large .thumb-ph {
+  aspect-ratio: 1;
+}
 .thumb {
   display: flex;
   flex-direction: column;

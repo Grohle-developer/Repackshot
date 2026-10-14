@@ -210,3 +210,135 @@ fn the_runtime_the_page_offers_follows_the_device_it_detects() {
     let none = ini(&Hardware::default(), None);
     assert_eq!(value(&none, "runtime", "key"), "SDCPP_WIN_CPU");
 }
+
+// ------------------------------------------------------------------ updating from inside the application (P5)
+
+const INSTALLER: &str = include_str!("../../../../packaging/windows/installer.nsi");
+
+/// The lines of the script's `Function <name>` … `FunctionEnd`.
+fn function<'a>(script: &'a str, name: &str) -> &'a str {
+    script
+        .split(&format!("Function {name}"))
+        .nth(1)
+        .unwrap_or_else(|| panic!("no Function {name}"))
+        .split("FunctionEnd")
+        .next()
+        .unwrap()
+}
+
+/// The text of `CHECK_NOT_RUNNING`, which both the installer and the uninstaller use.
+fn not_running() -> &'static str {
+    INSTALLER
+        .split("!macro CHECK_NOT_RUNNING PREFIX")
+        .nth(1)
+        .expect("the macro")
+        .split("!macroend")
+        .next()
+        .unwrap()
+}
+
+fn at(text: &str, needle: &str, from: usize) -> usize {
+    from + text[from..]
+        .find(needle)
+        .unwrap_or_else(|| panic!("`{needle}` is not there after {from}:\n{text}"))
+}
+
+#[test]
+fn a_silent_install_waits_up_to_thirty_seconds_for_the_program_to_be_free() {
+    // The application that runs `setup.exe /S /LAUNCH` is still closing: the installer opens
+    // `repackshot.exe` for writing (a running program cannot be) and sleeps, until it can.
+    let m = not_running();
+    let exists = at(m, "IfFileExists \"$INSTDIR\\repackshot.exe\"", 0);
+    let open = at(m, "FileOpen $0 \"$INSTDIR\\repackshot.exe\" a", exists);
+    let silent = at(m, "IfSilent 0 ask", open);
+    let count = at(m, "IntOp $1 $1 + 1", silent);
+    let limit = at(m, "IntCmp $1 ", count);
+    let sleep = at(m, "Sleep ", limit);
+    let back = at(m, "Goto retry", sleep);
+    let ask = at(m, "ask:\n", back);
+    let ask_box = at(m, "MessageBox MB_RETRYCANCEL", ask);
+    assert!(exists < open && open < silent && silent < count && count < limit && limit < sleep);
+    assert!(sleep < back && back < ask && ask < ask_box);
+    // 60 turns of half a second: 30 seconds, and then it asks (a silent run answers Cancel).
+    let number = |from: usize, prefix: &str| -> u32 {
+        let start = from + prefix.len();
+        m[start..]
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap_or_else(|_| panic!("a number after `{prefix}`"))
+    };
+    let turns = number(limit, "IntCmp $1 ");
+    let ms = number(sleep, "Sleep ");
+    assert_eq!(turns * ms, 30_000, "{turns} turns of {ms} ms");
+    assert!(m.contains("/SD IDCANCEL"));
+    // Nothing in the script opens the file for truncating (`w`): that would empty a free program.
+    assert!(!m.contains("repackshot.exe\" w"));
+    // The file it waits for is the one it installs.
+    assert!(INSTALLER.contains("File \"${STAGE}/repackshot.exe\""));
+    // The uninstaller is built from the same macro.
+    assert!(INSTALLER.contains("!insertmacro CHECK_NOT_RUNNING \"un.\""));
+    // And a person running the installer by hand is asked at once, not after half a minute: the
+    // wait is behind IfSilent, whose "not silent" branch is the question.
+    assert!(m.contains("IfSilent 0 ask"));
+}
+
+#[test]
+fn launch_starts_the_application_when_the_installation_is_done_silently_too() {
+    // The launcher runs the installer with these (src/update/mod.rs).
+    assert_eq!(rt_app::update::INSTALLER_ARGS, ["/S", "/LAUNCH"]);
+    let f = function(INSTALLER, ".onInstSuccess");
+    let params = at(f, "${GetParameters} $R0", 0);
+    let option = at(f, "${GetOptions} $R0 \"/LAUNCH\" $R1", params);
+    let absent = at(f, "IfErrors done", option);
+    let start = at(f, "Exec '\"$INSTDIR\\repackshot.exe\"'", absent);
+    assert!(params < option && option < absent && absent < start);
+    // The option is read with FileFunc's macros, which have to be inserted once.
+    assert!(INSTALLER.contains("!insertmacro GetParameters"));
+    assert!(INSTALLER.contains("!insertmacro GetOptions"));
+    // `.onInstSuccess` runs for a silent install too (the finish page, which has the same
+    // "Open Repackshot", does not).
+    assert!(INSTALLER.contains("!define MUI_FINISHPAGE_RUN \"$INSTDIR\\repackshot.exe\""));
+}
+
+#[test]
+fn a_silent_run_changes_nothing_the_person_chose() {
+    // The models page neither shows nor writes pending-models.json in a silent run.
+    let page = function(PAGE, "ModelsPage");
+    assert!(
+        page.trim_start().starts_with("; A silent run") && page.contains("IfSilent 0 +2\n  Abort"),
+        "{page}"
+    );
+    let leave = function(PAGE, "ModelsLeave");
+    assert!(
+        leave.trim_start().starts_with("IfSilent 0 +2\n  Return"),
+        "{leave}"
+    );
+    // The desktop shortcut is renewed when it is there, not brought back.
+    let at_desktop = INSTALLER
+        .find("Section \"$(SecDesktop)\" SecDesktop")
+        .unwrap();
+    let section =
+        &INSTALLER[at_desktop..INSTALLER[at_desktop..].find("SectionEnd").unwrap() + at_desktop];
+    let silent = at(section, "IfSilent 0 create", 0);
+    let exists = at(
+        section,
+        "IfFileExists \"$DESKTOP\\Repackshot.lnk\" create done",
+        silent,
+    );
+    let create = at(section, "create:\n", exists);
+    let link = at(section, "CreateShortCut", create);
+    assert!(silent < exists && exists < create && create < link);
+}
+
+#[test]
+fn what_the_launcher_calls_an_installed_copy_is_what_the_installer_writes() {
+    // `Mode::of` tells an installed copy by the uninstaller beside the program.
+    assert_eq!(rt_app::update::UNINSTALLER, "uninstall.exe");
+    assert!(INSTALLER.contains("WriteUninstaller \"$INSTDIR\\uninstall.exe\""));
+    // It installs into the folder the registry remembers, so a silent run lands on the same copy.
+    assert!(INSTALLER.contains("InstallDirRegKey HKCU \"${APP_KEY}\" \"InstallDir\""));
+    // Per user: no administrator rights, so the application can run it without asking for them.
+    assert!(INSTALLER.contains("RequestExecutionLevel user"));
+}

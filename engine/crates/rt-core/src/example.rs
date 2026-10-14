@@ -6,8 +6,8 @@
 use crate::color::Rgb;
 use crate::math::Vec3;
 use crate::scene::{
-    Camera, EnvKind, Environment, Floor, Geometry, Instance, Light, LightKind, Material, Mesh,
-    RenderSettings, Scene, Transform, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY,
+    Camera, EnvKind, Environment, Floor, Geometry, Instance, Lens, LensParams, Light, LightKind,
+    Material, Mesh, RenderSettings, Scene, Transform, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY,
 };
 use std::collections::BTreeMap;
 
@@ -133,6 +133,7 @@ pub fn scene() -> Scene {
             focus_dist: (target - camera_position).length(),
             ortho: false,
             ortho_width: 600.0,
+            lens: None,
         },
         materials: vec![
             Material {
@@ -193,8 +194,12 @@ pub fn scene() -> Scene {
             denoise: 0,
             caustic_photons: 0,
             caustic_radius: 0.0,
+            denoise_strength: 1.0,
+            pixel_filter: 0,
+            edge_supersample: 1,
         },
         bitmaps: Vec::new(),
+        effects: Vec::new(),
     }
 }
 
@@ -358,6 +363,205 @@ pub fn e5b_scene() -> Scene {
     scene
 }
 
+/// The E11 parity scene: the example with the Blackman–Harris filter and twice the samples on
+/// its edges (`rt --write-e11-example`; `tools/wasm-parity.mjs` checks the real module renders
+/// rt-core's pinned image of it).
+pub fn e11_scene() -> Scene {
+    let mut scene = scene();
+    scene.render.pixel_filter = crate::pixel_filter::FILTER_BLACKMAN_HARRIS;
+    scene.render.edge_supersample = 2;
+    scene
+}
+
+/// The S4a parity scene: the example at 160 x 120 with three ambient effects, one of each shape:
+/// 20 000 motes of dust (spheres, fine enough to be widened to the minimum size on screen, with
+/// turbulence and tint variation), 3 000 raindrops (glass capsules slanted by the wind) and 2 000
+/// spinning snowflakes (discs, from a palette) that cast no shadow. `render.rs` pins its hash;
+/// `rt --write-ambient-example` writes it for `tools/wasm-parity.mjs`.
+pub fn ambient_scene() -> Scene {
+    use crate::scene::{AmbientParams, MATERIAL_GLASS};
+    use rt_sim::{Shape, FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW};
+    let mut scene = scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    let first = scene.materials.len() as u32;
+    scene.materials.extend([
+        Material {
+            base_color: Rgb::splat(0.75),
+            roughness: 0.45,
+            ..Material::default()
+        },
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::WHITE,
+            roughness: 0.0,
+            ior: 1.33,
+            transmission: 1.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::splat(0.92),
+            roughness: 0.6,
+            ..Material::default()
+        },
+    ]);
+    let all = FLAG_CAMERA | FLAG_REFLECTIONS | FLAG_SHADOW;
+    let region = AmbientParams {
+        region_centre: [0.0, 0.0, 220.0],
+        region_half: [450.0, 350.0, 220.0],
+        ..AmbientParams::default()
+    };
+    scene.effects = vec![
+        AmbientParams {
+            kind: 1,
+            seed: 7,
+            time: 1.25,
+            count: 20_000,
+            size_mm: 0.3,
+            size_var: 0.5,
+            fall_speed: 6.0,
+            fall_var: 0.5,
+            wind: [15.0, 5.0, 0.0],
+            turbulence: [10.0, 120.0, 20.0],
+            material_id: first,
+            tint_var: 0.4,
+            flags: all,
+            energy: 20.0,
+            ..region
+        },
+        AmbientParams {
+            kind: 3,
+            seed: 3,
+            time: 1.25,
+            count: 3_000,
+            size_mm: 1.0,
+            size_var: 0.3,
+            shape: Shape::Capsule,
+            fall_speed: 6_500.0,
+            fall_var: 0.2,
+            wind: [900.0, 0.0, 0.0],
+            material_id: first + 1,
+            flags: all,
+            streak: 0.01,
+            ..region
+        },
+        AmbientParams {
+            kind: 4,
+            seed: 5,
+            time: 1.25,
+            count: 2_000,
+            size_mm: 5.0,
+            size_var: 0.4,
+            shape: Shape::Disc,
+            fall_speed: 900.0,
+            fall_var: 0.3,
+            wind: [120.0, 40.0, 0.0],
+            turbulence: [20.0, 150.0, 40.0],
+            material_id: first + 2,
+            tint_var: 0.2,
+            flags: FLAG_CAMERA | FLAG_REFLECTIONS,
+            spin: 0.8,
+            palette_count: 2,
+            palette: [[1.0, 1.0, 1.0], [0.85, 0.9, 1.0], [1.0; 3], [1.0; 3]],
+            ..region
+        },
+    ];
+    scene.build_particles(Vec::new());
+    scene
+}
+
+/// A lens that uses every knob of the enhanced thin lens (O1) at once: seven curved blades, a
+/// bright ring, an obstruction, cat's eye, a 1.33× squeeze, shift and tilt, chromatic aberration
+/// and swirl (no picture; [`o1_scene`] adds one).
+pub fn busy_lens() -> LensParams {
+    LensParams {
+        blades: 7,
+        roundness: 0.3,
+        rotation_deg: 10.0,
+        profile: crate::optics::pupil::PROFILE_RING_BRIGHT,
+        profile_param: 0.6,
+        obstruction: 0.2,
+        cats_eye: 0.5,
+        squeeze: 1.33,
+        shift_x_mm: 1.5,
+        shift_y_mm: -2.0,
+        tilt_deg: 2.0,
+        tilt_axis_deg: 15.0,
+        ca_amount: 0.7,
+        swirl: 0.6,
+        field_mm: 21.6,
+        ..LensParams::default()
+    }
+}
+
+/// A `size × size` pupil texture from integer arithmetic only: concentric rings and specks.
+pub fn ring_texture(size: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity((size * size) as usize);
+    let half = size as i64;
+    for j in 0..size as i64 {
+        for i in 0..size as i64 {
+            let (x, y) = (2 * i + 1 - half, half - 2 * j - 1);
+            let r2 = x * x + y * y;
+            let ring = (r2 * 7 / (half * half) % 2) == 0;
+            let hash = (i as u64)
+                .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                .wrapping_add((j as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f));
+            let speck = (hash >> 59) == 0;
+            out.push(if speck {
+                40
+            } else if ring {
+                255
+            } else {
+                170
+            });
+        }
+    }
+    out
+}
+
+/// The O1 parity scene (`render.rs` pins its hash; `rt --write-o1-example` writes it for
+/// `tools/wasm-parity.mjs`): the example at f/2 focused on the big sphere, with six small lights
+/// far behind it that the lens turns into bokeh, seen through [`busy_lens`] with a ring texture
+/// on the pupil.
+pub fn o1_scene() -> Scene {
+    let mut scene = scene();
+    scene.render.width = 256;
+    scene.render.height = 192;
+    scene.camera.fstop = 2.0;
+    let size = 48;
+    let lens = Lens::new(LensParams {
+        mask_kind: crate::optics::MASK_TEXTURE,
+        mask_width: size,
+        mask_height: size,
+        mask: ring_texture(size),
+        ..busy_lens()
+    })
+    .unwrap_or_else(|_| unreachable!("the busy lens is valid"));
+    scene.camera.lens = Some(lens);
+    let towards = scene.camera.position;
+    let (forward, right, up) = scene.camera.basis();
+    for k in 0..6 {
+        let position = towards
+            + forward * 2600.0
+            + right * (-450.0 + 180.0 * k as f32)
+            + up * (250.0 + 70.0 * (k % 3) as f32);
+        scene.lights.push(Light {
+            kind: LightKind::Disk,
+            position,
+            direction: (towards - position).normalize(),
+            up: Vec3::new(0.0, 0.0, 1.0),
+            size_x: 14.0,
+            size_y: 14.0,
+            color: Rgb::new(1.0, 0.85 + 0.03 * k as f32, 0.7),
+            power: 0.004,
+            spread_deg: 180.0,
+            angle_deg: 0.0,
+            flags: LIGHT_FLAG_CAMERA,
+        });
+    }
+    scene
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,6 +612,15 @@ mod tests {
         assert!(small.min.z >= 0.0 && small.min.z < 5.0);
         assert!(small.max.x < -100.0);
         assert_eq!(Scene::from_rsb(&scene.to_rsb()), Ok(scene));
+    }
+
+    #[test]
+    fn the_ambient_example_has_its_three_effects_and_round_trips() {
+        let scene = ambient_scene();
+        assert_eq!(scene.effects.len(), 3);
+        assert_eq!(scene.geometry.particle_count(), 25_000);
+        assert!(scene.geometry.particle_sets()[0].widened());
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
     }
 
     #[test]

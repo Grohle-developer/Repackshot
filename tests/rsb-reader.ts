@@ -2,7 +2,7 @@
 // sections and decodes each one back into the shapes of src/io/rsb.ts, so a round trip can be
 // compared field by field. Layout: engine/crates/rt-core/src/scene/rsb.rs.
 
-import type { RsbBitmap, RsbCamera, RsbEnvironment, RsbFloor, RsbInstance, RsbLight, RsbMaterial, RsbMesh, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
+import type { RsbBitmap, RsbCamera, RsbEffect, RsbEnvironment, RsbFloor, RsbInstance, RsbLens, RsbLight, RsbMaterial, RsbMesh, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
 
 export interface Section {
   tag: string;
@@ -135,6 +135,35 @@ export function readBitmap(p: DataView): RsbBitmap {
   return { format, width, height, data };
 }
 
+/** A LENS section (O1): the numbers, then the picture (without its padding). */
+export function readLens(p: DataView): RsbLens {
+  const c = new Cursor(p);
+  const l: RsbLens = {
+    blades: c.u32(),
+    roundness: c.f32(),
+    rotationDeg: c.f32(),
+    profile: c.u32(),
+    profileParam: c.f32(),
+    obstruction: c.f32(),
+    catsEye: c.f32(),
+    squeeze: c.f32(),
+    shiftXMm: c.f32(),
+    shiftYMm: c.f32(),
+    tiltDeg: c.f32(),
+    tiltAxisDeg: c.f32(),
+    caAmount: c.f32(),
+    swirl: c.f32(),
+    fieldMm: c.f32(),
+    maskKind: c.u32(),
+    maskWidth: c.u32(),
+    maskHeight: c.u32(),
+    mask: new Uint8Array(0),
+  };
+  const len = l.maskWidth * l.maskHeight;
+  l.mask = new Uint8Array(p.buffer.slice(p.byteOffset + 72, p.byteOffset + 72 + len));
+  return l;
+}
+
 export function readFloor(p: DataView): RsbFloor {
   const c = new Cursor(p);
   return { mode: c.u32(), z: c.f32(), color: c.vec() };
@@ -142,7 +171,7 @@ export function readFloor(p: DataView): RsbFloor {
 
 export function readRender(p: DataView): RsbRender {
   const c = new Cursor(p);
-  const r = { width: c.u32(), height: c.u32(), maxSamples: c.u32(), seed: c.u32(), maxSeconds: c.f32(), exposureEv: c.f32(), tonemap: c.u32(), maxDepth: 8, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0 };
+  const r = { width: c.u32(), height: c.u32(), maxSamples: c.u32(), seed: c.u32(), maxSeconds: c.f32(), exposureEv: c.f32(), tonemap: c.u32(), maxDepth: 8, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1 };
   if (c.remaining >= 4) r.maxDepth = c.u32();
   if (c.remaining >= 4) r.clampIndirect = c.f32();
   // X2: the pass mask.
@@ -150,10 +179,55 @@ export function readRender(p: DataView): RsbRender {
   if (c.remaining >= 4) r.denoise = c.u32();
   if (c.remaining >= 4) r.causticPhotons = c.u32();
   if (c.remaining >= 4) r.causticRadius = c.f32();
+  if (c.remaining >= 4) r.denoiseStrength = c.f32();
+  // E11: the pixel filter and the edge samples.
+  if (c.remaining >= 4) r.pixelFilter = c.u32();
+  if (c.remaining >= 4) r.edgeSupersample = c.u32();
   return r;
 }
 
 /** The whole file (singletons that are missing are left undefined). */
+/** S4a: an FXAM payload (rt_sim::params), the trailing fields read as their defaults when the payload ends first. */
+export function readEffect(p: DataView): RsbEffect {
+  const c = new Cursor(p);
+  const e: RsbEffect = {
+    kind: c.u32(),
+    seed: c.u32(),
+    time: c.f32(),
+    count: c.u32(),
+    regionCenter: c.vec(),
+    regionHalf: c.vec(),
+    band: [c.f32(), c.f32()],
+    sizeMm: c.f32(),
+    sizeVar: c.f32(),
+    shape: c.u32(),
+    fallSpeed: c.f32(),
+    fallVar: c.f32(),
+    wind: c.vec(),
+    turbulence: c.vec(),
+    cloudCenter: c.vec(),
+    cloudRadius: c.f32(),
+    cloudSoftness: c.f32(),
+    materialId: c.u32(),
+    tintVar: c.f32(),
+    flags: c.u32(),
+    streak: c.f32(),
+    gravity: 1,
+    energy: 0,
+    spin: 0,
+    palette: [],
+  };
+  if (c.remaining >= 16) {
+    e.gravity = c.f32();
+    e.energy = c.f32();
+    e.spin = c.f32();
+    const n = c.u32();
+    const tints = [c.vec(), c.vec(), c.vec(), c.vec()];
+    e.palette = tints.slice(0, n);
+  }
+  return e;
+}
+
 export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: RsbMaterial[]; meshes: RsbMesh[]; lights: RsbLight[]; instances: RsbInstance[] | null; bitmaps: RsbBitmap[]; tags: string[] } {
   const out: Partial<RsbScene> & { materials: RsbMaterial[]; meshes: RsbMesh[]; lights: RsbLight[]; instances: RsbInstance[] | null; bitmaps: RsbBitmap[]; tags: string[] } = {
     materials: [],
@@ -167,7 +241,10 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
     out.tags.push(s.tag);
     switch (s.tag) {
       case 'CAMR':
-        out.camera = readCamera(s.payload);
+        out.camera = { ...readCamera(s.payload), ...(out.camera?.lens ? { lens: out.camera.lens } : {}) };
+        break;
+      case 'LENS':
+        out.camera = { ...(out.camera as RsbCamera), lens: readLens(s.payload) };
         break;
       case 'MATL':
         out.materials.push(readMaterial(s.payload));
@@ -192,6 +269,9 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
         break;
       case 'BMAP':
         out.bitmaps.push(readBitmap(s.payload));
+        break;
+      case 'FXAM':
+        (out.effects ??= []).push(readEffect(s.payload));
         break;
     }
   }

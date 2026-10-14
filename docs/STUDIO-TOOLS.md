@@ -136,6 +136,21 @@ dibujado desde la prescripción. **Guardar lente como…** a la biblioteca
 propia (U4), con la prescripción y los ajustes; cambiar de lente nunca
 toca la resolución de salida.
 
+**Hecho en O1.** El modo 1 entero en `rt-core/src/optics` (sección RSB
+`LENS`, opcional, después de `CAMR`): diafragma redondo, de 3 a 18
+láminas rectas o curvas con giro, o máscara por CDF 2D; texturas de
+pupila; los cuatro perfiles de `PUPIL_PROFILES`; obstrucción; ojo de gato
+por un segundo disco (con su viñeteo); anamórfico 1,33× y 2× con la
+imagen desestirada; descentramiento y plano de enfoque de Scheimpflug;
+aberración cromática por tres bandas (decisión 3) y remolino como ajustes
+marcados *no físico*. Todo con su densidad exacta y sin rechazo; un RSB
+sin `LENS` no cambia ni un bit. En la interfaz, *Cámara ▸ Bokeh* con las
+miniaturas de los 16 tipos que hace el modo 1 renderizadas por `rt`
+(`tools/bokeh-thumbs.mjs`) y *Óptica avanzada*. El *split diopter* y las
+rayas del anamórfico (`streaks`, pase de *flare*) no entran en O1; la
+hoja `out/bokeh-sheet.html` espera el veredicto de los valores de
+`bokeh.json` (regla 11).
+
 ## 2 · Entorno: estudio de HDRI propio
 
 **Qué se construye.** Un **editor de entorno por *pines*** (formas
@@ -213,6 +228,18 @@ Sobre la animación de N1 y el paseo de N3:
   9:16, 1:1 y 4:5 en la ventana de render.
 
 ## 5 · Partículas de todo tipo
+
+> **S0 decidido** y **S4a hecha** (`ROADMAP.md`, sección «Herramientas de
+> estudio»): las partículas de aire sin estado (polvo, polen, lluvia,
+> nieve, polvareda, ceniza, burbujas, confeti) como efectos de la sección
+> *Ambiente* de *Escena*, simulados por `engine/crates/rt-sim` y
+> renderizados por el motor como esferas, discos y cápsulas (`FXAM`,
+> `ARCHITECTURE.md` §5.2). Lo de abajo es el resto de la familia: el nodo
+> de escena con emisores, las fuerzas que no son de forma cerrada, la
+> colisión con las piezas y las horneadas siguen pendientes. Los valores
+> de partida de los presets de S4a se aceptaron con la hoja
+> `out/ambient-sheet.html`; el lóbulo hacia delante, la lluvia sin
+> cáusticas y el coste a las densidades de los presets son S4b.
 
 Un nodo de escena **Efecto** con emisor (punto, superficie de una pieza,
 volumen, curva o estallido en un fotograma), cantidad, vida, velocidad y

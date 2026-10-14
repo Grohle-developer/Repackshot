@@ -8,8 +8,8 @@ import { activeCamera } from '../src/core/camera';
 import { runDoctor } from '../src/core/doctor';
 import { centrePivot, describePayload } from '../src/core/import-options';
 import { hasMesh } from '../src/core/meshes';
-import { allParts, boundsOf, partsUnder } from '../src/core/scene';
-import { createInitialState, createStore } from '../src/core/store';
+import { boundsOf, ownParts, partsUnder } from '../src/core/scene';
+import { createInitialState, createStore, type ProjectState } from '../src/core/store';
 import { buildExample } from '../src/core/example';
 import { importFile, READ_EXTENSIONS } from '../src/io/import';
 import { CAD_FORMATS, cancelImport, confirmImport, importFiles, MODEL_ACCEPT, READ_FORMATS, setImportOptions } from '../src/ui/commands';
@@ -20,6 +20,9 @@ import { createUiStore } from '../src/ui/ui-state';
 import twoPartsFbx from './fixtures/two-parts.fbx?raw';
 import cubeObj from './fixtures/cube-two-groups.obj?raw';
 import { makePayload } from './io-helpers';
+
+/** The roots of the model: not the pieces a set (L6) dresses an imported product with. */
+const ownRoots = (st: ProjectState): string[] => st.scene.roots.filter((r) => !st.scene.nodes[r].setPiece);
 
 const close = (got: readonly number[], want: readonly number[], digits = 4) => want.forEach((w, i) => expect(got[i], `[${i}]`).toBeCloseTo(w, digits));
 
@@ -56,7 +59,7 @@ describe('the sheet opens with what the file says and imports nothing yet', () =
       units: 'cm', upAxis: 'Y', center: true, restOnFloor: true, frameCamera: true, mode: 'replace', groupBy: 'object',
       materials: 'keep', separate: 'none', tessellation: 'MEDIUM', chordPercent: 0.05, angleDeg: 12, importHidden: false, flipNormals: false,
     });
-    expect(ctx.store.get().scene.roots).toEqual([]);
+    expect(ownRoots(ctx.store.get())).toEqual([]);
     expect(ctx.store.history().undo).toEqual([]);
     expect(ctx.ui.get().rightCollapsed).toBe(false);
     expect(ctx.ui.get().importMessage).toContain('two-parts.fbx');
@@ -112,15 +115,15 @@ describe('Import', () => {
     confirmImport(ctx);
     const s = ctx.store.get();
     expect(ctx.ui.get().importSheet).toBeNull();
-    expect(s.scene.roots).toHaveLength(1);
-    expect(allParts(s)).toHaveLength(2);
+    expect(ownRoots(s)).toHaveLength(1);
+    expect(ownParts(s)).toHaveLength(2);
     // Centimetres, Y up: 40 x 40 x 70 mm, centred on the origin in XY, standing on z = 0.
-    const b = boundsOf(s, s.scene.roots);
+    const b = boundsOf(s, ownRoots(s));
     close(b.min, [-20, -20, 0], 3);
     close(b.max, [20, 20, 70], 3);
     expect(s.scene.partSizeMm).toBeCloseTo(70, 3);
     // The model's origin is at the centre of its bounds, so the Doctor has nothing to say about it.
-    const root = s.scene.nodes[s.scene.roots[0]];
+    const root = s.scene.nodes[ownRoots(s)[0]];
     close(root.transform.position, [0, 0, 35], 3);
     expect(runDoctor(s).find((r) => r.key === 'origin')!.status).toBe('OK');
     // The camera looks at the part, with clip planes that contain it.
@@ -131,7 +134,7 @@ describe('Import', () => {
     // One entry in the history, named after the file.
     expect(ctx.store.history().undo).toEqual(['Import two-parts.fbx']);
     ctx.store.undo();
-    expect(ctx.store.get().scene.roots).toEqual([]);
+    expect(ownRoots(ctx.store.get())).toEqual([]);
     expect(ctx.ui.get().toasts.some((x) => x.text === t('import.done', { name: 'two-parts.fbx' }))).toBe(true);
   });
 
@@ -156,7 +159,7 @@ describe('Import', () => {
       setImportOptions(ctx, { upAxis });
       confirmImport(ctx);
       const s = ctx.store.get();
-      const b = boundsOf(s, s.scene.roots);
+      const b = boundsOf(s, ownRoots(s));
       return [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]];
     };
     // The file is 4 x 6 x 4 cm with y as height: standing (Y up), 70 tall; lying (Z up), 40 tall and 70 deep.
@@ -170,10 +173,10 @@ describe('Import', () => {
     setImportOptions(ctx, { groupBy: 'material', separate: 'material' });
     confirmImport(ctx);
     const s = ctx.store.get();
-    const model = s.scene.nodes[s.scene.roots[0]];
+    const model = s.scene.nodes[ownRoots(s)[0]];
     // The OBJ has two groups (Caps without material, Body in Steel): two groups of one part each.
     expect(model.children.map((c) => [s.scene.nodes[c].kind, s.scene.nodes[c].children.length])).toEqual([['GROUP', 1], ['GROUP', 1]]);
-    expect(allParts(s)).toHaveLength(2);
+    expect(ownParts(s)).toHaveLength(2);
   });
 
   it('keeps the file materials or applies the default one', async () => {
@@ -182,7 +185,10 @@ describe('Import', () => {
       await importFiles(ctx, [obj()]);
       setImportOptions(ctx, { materials: policy });
       confirmImport(ctx);
-      return Object.values(ctx.store.get().materials).map((m) => m.name ?? 'Default').sort();
+      // The model's materials (not those of the pieces its product type's set dresses it with, L6).
+      const st = ctx.store.get();
+      const used = new Set(ownParts(st).flatMap((p) => [st.scene.nodes[p].material, ...(st.scene.nodes[p].faceMaterials ?? []).map((f) => f.material)]));
+      return Object.values(st.materials).filter((m) => used.has(m.id)).map((m) => m.name ?? 'Default').sort();
     };
     expect(await materials('keep')).toEqual(['Default', 'Steel']);
     expect(await materials('default')).toEqual(['Default']);
@@ -199,7 +205,7 @@ describe('Import', () => {
       setImportOptions(ctx, patch);
       confirmImport(ctx);
       const s = ctx.store.get();
-      return { b: boundsOf(s, s.scene.roots), cam: activeCamera(s), before };
+      return { b: boundsOf(s, ownRoots(s)), cam: activeCamera(s), before };
     };
     const off = await run({ center: false, restOnFloor: false, frameCamera: false });
     // Nothing moved: the file's own placement.
@@ -225,12 +231,12 @@ describe('Import', () => {
     const parts = async (mode: 'add' | 'replace') => {
       const ctx = makeCtx();
       ctx.store.dispatch({ type: 'scene/addModel', payload: buildExample(), replace: true });
-      const before = allParts(ctx.store.get()).length;
+      const before = ownParts(ctx.store.get()).length;
       await importFiles(ctx, [fbx()]);
       setImportOptions(ctx, { mode });
       confirmImport(ctx);
       const s = ctx.store.get();
-      return { before, after: allParts(s).length, roots: s.scene.roots.length };
+      return { before, after: ownParts(s).length, roots: ownRoots(s).length };
     };
     const add = await parts('add');
     expect(add.after).toBe(add.before + 2);
@@ -265,7 +271,7 @@ describe('Cancel and the queue', () => {
     cancelImport(ctx);
     expect(ctx.ui.get().importSheet).toBeNull();
     expect(ctx.ui.get().importMessage).toBeNull();
-    expect(ctx.store.get().scene.roots).toEqual([]);
+    expect(ownRoots(ctx.store.get())).toEqual([]);
     expect(ids.some(hasMesh)).toBe(false);
     // Nothing to cancel is fine.
     expect(() => cancelImport(ctx)).not.toThrow();
@@ -278,7 +284,7 @@ describe('Cancel and the queue', () => {
     confirmImport(ctx);
     // cm and Y up: new meshes were made for both parts.
     expect(ids.some(hasMesh)).toBe(false);
-    for (const p of partsUnder(ctx.store.get(), ctx.store.get().scene.roots)) expect(hasMesh(ctx.store.get().scene.nodes[p].mesh!.id)).toBe(true);
+    for (const p of partsUnder(ctx.store.get(), ownRoots(ctx.store.get()))) expect(hasMesh(ctx.store.get().scene.nodes[p].mesh!.id)).toBe(true);
   });
 
   it('shows files dropped together one after the other', async () => {
@@ -291,7 +297,7 @@ describe('Cancel and the queue', () => {
     confirmImport(ctx);
     await until(() => ctx.ui.get().importSheet?.name === 'cube-two-groups.obj');
     expect(ctx.ui.get().importSheet!.queued).toBe(1);
-    expect(ctx.store.get().scene.roots).toHaveLength(1);
+    expect(ownRoots(ctx.store.get())).toHaveLength(1);
     cancelImport(ctx);
     await until(() => ctx.ui.get().importSheet?.name === 'third.fbx');
     expect(ctx.ui.get().importSheet!.queued).toBe(0);
@@ -308,7 +314,7 @@ describe('Cancel and the queue', () => {
     model.visible = false;
     confirmImport(ctx);
     expect(ctx.ui.get().importSheet).not.toBeNull();
-    expect(ctx.store.get().scene.roots).toEqual([]);
+    expect(ownRoots(ctx.store.get())).toEqual([]);
     expect(ctx.ui.get().toasts.some((x) => x.text === t('import.noParts', { name: 'two-parts.fbx' }))).toBe(true);
     // The file's meshes are still there for another try.
     const ids = Object.values(sheet.payload.nodes).filter((n) => n.mesh).map((n) => n.mesh!.id);
@@ -316,7 +322,7 @@ describe('Cancel and the queue', () => {
     setImportOptions(ctx, { importHidden: true });
     confirmImport(ctx);
     expect(ctx.ui.get().importSheet).toBeNull();
-    expect(allParts(ctx.store.get())).toHaveLength(2);
+    expect(ownParts(ctx.store.get())).toHaveLength(2);
   });
 });
 

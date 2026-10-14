@@ -8,6 +8,7 @@
 //        /tmp/example.rsb [--samples 4] [--expect 0x12345678] \
 //        [--passes] [--expect-passes 0x...,0x...,0x...,0x...,0x...,0x...]
 //        [--denoise] [--expect-denoised 0x12345678]
+//        [--particles] [--expect-particles 0x12345678]
 //
 // The render mirrors the native test exactly: 32-pixel tiles row by row, samples 0..n of each
 // tile from `rt_render_tile`, accumulated per pixel in sample order in f32 (Math.fround), then
@@ -22,6 +23,18 @@
 // A scene with caustic photons (E5b-1, `RNDR.caustic_photons`, `rt --write-e5b-example`) renders
 // them inside the module: each worker traces the photon map of a sample itself, and the image must
 // still have the native hash (`PINNED_E5B_CAUSTICS_4SPP`).
+//
+// A scene with a pixel filter and edge samples (E11, `rt --write-e11-example`) renders them inside the
+// module too: it finds each tile's edges from its centre rays, and the image must have the native hash
+// (`PINNED_E11_EDGES_4SPP`).
+//
+// `--particles` (S4a) also evaluates every ambient effect of the scene (its `FXAM` sections, in file
+// order) with `rt_particles_eval`, the export of the Fast preview, and hashes all their particles
+// one after another (FNV-1a over the 8 little-endian words of each: centre, radius, axis, tint
+// bits); it must equal `--expect-particles` (`PINNED_AMBIENT_PARTICLES` of
+// crates/rt-core/src/render/ambient_tests.rs, for `rt --write-ambient-example`). The image of such
+// a scene has the native hash too (`PINNED_AMBIENT_4SPP`): the module evaluates the particles
+// when it loads the scene.
 //
 // `--denoise` (E5b-1) also denoises the image as the page's pool does: RGBA tiles
 // (`rt_render_tile_rgba`), the squared luminance of every sample summed in f32 next to them (the
@@ -39,6 +52,8 @@ let passes = false;
 let expectPasses = null;
 let denoise = false;
 let expectDenoised = null;
+let particles = false;
+let expectParticles = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--samples') samples = Number(args[++i]);
   else if (args[i] === '--expect') expect = Number.parseInt(args[++i], 16) >>> 0;
@@ -47,6 +62,11 @@ for (let i = 0; i < args.length; i++) {
     passes = true;
     expectPasses = args[++i].split(',').map((h) => Number.parseInt(h, 16) >>> 0);
   } else if (args[i] === '--denoise') denoise = true;
+  else if (args[i] === '--particles') particles = true;
+  else if (args[i] === '--expect-particles') {
+    particles = true;
+    expectParticles = Number.parseInt(args[++i], 16) >>> 0;
+  }
   else if (args[i] === '--expect-denoised') {
     denoise = true;
     expectDenoised = Number.parseInt(args[++i], 16) >>> 0;
@@ -64,10 +84,12 @@ const { instance } = await WebAssembly.instantiate(await readFile(wasmPath), {})
 const rt = instance.exports;
 const rsb = new Uint8Array(await readFile(rsbPath));
 
-// Image size from the RNDR section (u32 width, u32 height at the start of its payload).
+// Image size from the RNDR section (u32 width, u32 height at the start of its payload); the
+// payloads of the ambient effects (FXAM).
 const view = new DataView(rsb.buffer, rsb.byteOffset, rsb.byteLength);
 let width = 0;
 let height = 0;
+const effects = [];
 for (let pos = 8 + view.getUint32(4, true); pos + 8 <= rsb.length; ) {
   const tag = String.fromCharCode(...rsb.subarray(pos, pos + 4));
   const len = view.getUint32(pos + 4, true);
@@ -75,6 +97,7 @@ for (let pos = 8 + view.getUint32(4, true); pos + 8 <= rsb.length; ) {
     width = view.getUint32(pos + 8, true);
     height = view.getUint32(pos + 12, true);
   }
+  if (tag === 'FXAM') effects.push(rsb.slice(pos + 8, pos + 8 + len));
   pos += 8 + len;
 }
 if (!width || !height) {
@@ -92,6 +115,38 @@ if (handle === 0) {
   rt.rt_scene_error_copy(ptr);
   console.error('wasm-parity: load failed:', new TextDecoder().decode(new Uint8Array(rt.memory.buffer, ptr, len)));
   process.exit(1);
+}
+
+if (particles) {
+  if (typeof rt.rt_particles_eval !== 'function') {
+    console.error('wasm-parity: this rt_wasm.wasm has no particles (rt_particles_eval)');
+    process.exit(1);
+  }
+  let h = 0x811c9dc5;
+  let total = 0;
+  for (const payload of effects) {
+    const count = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(12, true);
+    const inPtr = rt.rt_alloc(payload.length);
+    new Uint8Array(rt.memory.buffer, inPtr, payload.length).set(payload);
+    const outLen = count * 8 * 4;
+    const outPtr = rt.rt_alloc(outLen);
+    const n = rt.rt_particles_eval(inPtr, payload.length, count, outPtr);
+    if (n !== count) {
+      console.error(`wasm-parity: rt_particles_eval returned ${n} for ${count} particles`);
+      process.exit(1);
+    }
+    const bytes = new Uint8Array(rt.memory.buffer, outPtr, outLen);
+    for (let i = 0; i < outLen; i++) h = Math.imul(h ^ bytes[i], 0x01000193) >>> 0;
+    total += n;
+    rt.rt_free(inPtr, payload.length);
+    rt.rt_free(outPtr, outLen);
+  }
+  const hp = `0x${h.toString(16).padStart(8, '0')}`;
+  console.log(`particles: ${total} in ${effects.length} effects, hash ${hp}`);
+  if (expectParticles !== null && h !== expectParticles) {
+    console.error(`wasm-parity: the particles' hash ${hp} differs from the native one 0x${expectParticles.toString(16).padStart(8, '0')}`);
+    process.exit(1);
+  }
 }
 
 const TILE = 32;

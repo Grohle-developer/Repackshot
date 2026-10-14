@@ -7,7 +7,8 @@
 // OBJ has no up axis and no units: the numbers are kept as the file has them
 // and the import options decide (Y up is the detected default, like glTF;
 // the units come from the size heuristic, `import-options.ts`).
-// `.mtl` libraries are not read yet: the importer only notes that they exist.
+// `.mtl` libraries are read by io/obj-materials.ts when they are dropped with
+// the file (M2a); here the reader only lists them and notes they were not read.
 
 import { buildMesh, FloatBuffer, type ImportMessage, type MaterialRange, type ParsedModel, type ParsedPart, type RawMesh } from './mesh-common';
 
@@ -249,5 +250,5 @@ export function parseObj(text: string, fileName: string): ParsedModel {
     out.push({ name: part.name, mesh: built.data, material: initial, ranges });
   }
   if (out.length === 0) throw new Error('no faces found');
-  return { parts: out, warnings, notes };
+  return { parts: out, warnings, notes, libraries };
 }

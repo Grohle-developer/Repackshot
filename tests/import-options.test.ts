@@ -345,7 +345,7 @@ describe('materials', () => {
 
   it('keeps the textures of the materials that stay', () => {
     const raw = makePayload([{ name: 'A', size: [1, 1, 1], material: 'Steel' }]);
-    raw.textures = [{ name: 'a.png', slot: 'color', material: 'tm1', mime: 'image/png', blob: new Blob(['x']) }];
+    raw.textures = [{ id: 'tex:a', name: 'a.png', bytes: new Uint8Array([1]), width: 1, height: 1, materials: ['tm1'], dropped: null }];
     expect(applyImportOptions(raw, optionsFor()).textures).toHaveLength(1);
     expect(applyImportOptions(raw, optionsFor({ materials: 'default' })).textures).toHaveLength(0);
   });

@@ -266,8 +266,50 @@ pub extern "C" fn rt_scene_caustics(handle: u32) -> u32 {
     crate::scene_caustics(handle).unwrap_or(u32::MAX)
 }
 
-/// The denoiser (E5b-1) on a band of `rows` image rows from `origin_y` of an image
-/// `width × height` of `samples` samples per pixel. `in_ptr` holds `width * rows * 14`
+/// The particles of an ambient effect (S4a) for the Fast preview: reads the `FXAM` payload of
+/// `params_len` bytes at `params_ptr` and writes at most `max` particles, 8 floats each (centre,
+/// radius, axis, tint seed bits: [`crate::PARTICLE_FLOATS`]), to `out_ptr`. Returns the number of
+/// particles written, or `u32::MAX` when a pointer is null or the payload is invalid (then see
+/// [`rt_scene_error_len`]).
+///
+/// # Safety
+///
+/// `params_ptr` must be null or point to `params_len` readable bytes, and `out_ptr` null or to
+/// `max * 8 * 4` writable bytes (alignment is not required).
+#[no_mangle]
+pub unsafe extern "C" fn rt_particles_eval(
+    params_ptr: *const u8,
+    params_len: u32,
+    max: u32,
+    out_ptr: *mut f32,
+) -> u32 {
+    if params_ptr.is_null() || out_ptr.is_null() {
+        crate::set_error("rt_particles_eval: null pointer");
+        return u32::MAX;
+    }
+    // SAFETY: non-null, and the caller promises `params_len` readable bytes; the slice does not
+    // outlive this call.
+    let params = unsafe { std::slice::from_raw_parts(params_ptr, params_len as usize) };
+    match crate::particles_eval(params, max) {
+        Ok(out) => {
+            // SAFETY: at most `max` particles of 8 floats were evaluated, for which the caller
+            // promises room; byte-wise copy needs no alignment, and `out` is a fresh allocation so
+            // the regions do not overlap.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    out.as_ptr().cast::<u8>(),
+                    out_ptr.cast::<u8>(),
+                    out.len() * std::mem::size_of::<f32>(),
+                );
+            }
+            (out.len() / crate::PARTICLE_FLOATS) as u32
+        }
+        Err(_) => u32::MAX,
+    }
+}
+
+/// The denoiser (E5b-1, the full filter) on a band of `rows` image rows from `origin_y` of an
+/// image `width × height` of `samples` samples per pixel. `in_ptr` holds `width * rows * 14`
 /// little-endian words: the planes `sums` (RGBA), `lum2`, `albedo` (3), `normal` (3), `depth`,
 /// `part_id` and `material_id`, one after another. Writes the denoised RGBA sums of image rows
 /// `y0 .. y1` (`width * (y1 - y0) * 4` floats) to `out_ptr`. Returns `STATUS_OK`,
@@ -290,14 +332,51 @@ pub unsafe extern "C" fn rt_denoise(
     in_ptr: *const u8,
     out_ptr: *mut f32,
 ) -> u32 {
+    // SAFETY: the caller's promises are those of `rt_denoise_with`.
+    unsafe {
+        rt_denoise_with(
+            0, 1.0, width, height, origin_y, rows, samples, y0, y1, in_ptr, out_ptr,
+        )
+    }
+}
+
+/// [`rt_denoise`] with a preset (U11): 0 the full filter, 1 the viewport's lighter one
+/// (`rt_post::denoise::Preset::VIEWPORT`), whose band holds the rows with
+/// [`rt_denoise_halo`]`(1)` rows around them; and a strength (U11b, `0..=1`): the rows are
+/// `noisy × (1 − s) + denoised × s`, and at 0 the noisy rows (no filter runs). An unknown preset
+/// is `STATUS_BAD_DENOISE`.
+///
+/// # Safety
+///
+/// As [`rt_denoise`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn rt_denoise_with(
+    preset: u32,
+    strength: f32,
+    width: u32,
+    height: u32,
+    origin_y: u32,
+    rows: u32,
+    samples: u32,
+    y0: u32,
+    y1: u32,
+    in_ptr: *const u8,
+    out_ptr: *mut f32,
+) -> u32 {
     if in_ptr.is_null() || out_ptr.is_null() {
         return STATUS_NULL_POINTER;
     }
+    let Some(preset) = crate::denoise_preset(preset) else {
+        return crate::STATUS_BAD_DENOISE;
+    };
     let len = width as usize * rows as usize * crate::DENOISE_WORDS * 4;
     // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
     // this call.
     let input = unsafe { std::slice::from_raw_parts(in_ptr, len) };
-    match crate::denoise(width, height, origin_y, rows, samples, y0, y1, input) {
+    match crate::denoise_with(
+        preset, strength, width, height, origin_y, rows, samples, y0, y1, input,
+    ) {
         Ok(out) => {
             // SAFETY: the caller promises room for `width * (y1 - y0) * 4` floats, which is
             // exactly `out.len()` (the rows asked for); byte-wise copy needs no alignment, and
@@ -313,4 +392,130 @@ pub unsafe extern "C" fn rt_denoise(
         }
         Err(status) => status,
     }
+}
+
+/// Rows a band of denoiser preset `preset` holds above and below the rows it computes
+/// (`rt_post::denoise::Preset::halo`: 72 for the full filter, the viewport's fewer); 0 for an
+/// unknown preset.
+#[no_mangle]
+pub extern "C" fn rt_denoise_halo(preset: u32) -> u32 {
+    crate::denoise_preset(preset).map_or(0, |p| p.halo())
+}
+
+// --- The rigid body simulator (S2) --------------------------------------------------------------
+
+/// Builds a physics world from `len` bytes of a `PHY1` scene at `ptr` (rt-phys `scene` module) and
+/// returns its handle, or 0 on error (then see [`rt_scene_error_len`]). The bytes are copied.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn phys_new(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() {
+        crate::set_error("phys_new: null pointer");
+        return 0;
+    }
+    // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
+    // this call.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    crate::phys::new(bytes)
+}
+
+/// Forgets a physics world. Returns 0, or 1 for a bad handle.
+#[no_mangle]
+pub extern "C" fn phys_free(handle: u32) -> u32 {
+    if crate::phys::free(handle) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Simulates `n` fixed steps of 1/240 s (at most a minute per call). Returns 0, or 1 for a bad
+/// handle.
+#[no_mangle]
+pub extern "C" fn phys_step(handle: u32, n: u32) -> u32 {
+    if crate::phys::step(handle, n) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Number of dynamic bodies (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn phys_bodies(handle: u32) -> u32 {
+    crate::phys::bodies(handle).unwrap_or(0)
+}
+
+/// Writes, for each dynamic body of the scene in order, its index among the poses (`u32::MAX`
+/// when it had no mass and stayed static) to `out` (one little-endian `u32` each). Returns 0, 1
+/// for a bad handle, 3 for a null `out`.
+///
+/// # Safety
+///
+/// `out` must be null or point to 4 writable bytes per dynamic body of the scene.
+#[no_mangle]
+pub unsafe extern "C" fn phys_ids(handle: u32, out: *mut u8) -> u32 {
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let Some(ids) = crate::phys::ids(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    let bytes: Vec<u8> = ids.iter().flat_map(|v| v.to_le_bytes()).collect();
+    // SAFETY: the caller promises 4 writable bytes per dynamic body, which is `bytes.len()`;
+    // byte-wise copy needs no alignment and `bytes` is a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    STATUS_OK
+}
+
+/// Writes the pose of every body to `out`: 7 little-endian `f32` each (translation x, y, z, then
+/// the rotation quaternion x, y, z, w). Returns 0, 1 for a bad handle, 3 for a null `out`.
+///
+/// # Safety
+///
+/// `out` must be null or point to `phys_bodies(handle) * 28` writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn phys_poses(handle: u32, out: *mut u8) -> u32 {
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let Some(poses) = crate::phys::poses(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    let bytes: Vec<u8> = poses.iter().flat_map(|v| v.to_le_bytes()).collect();
+    // SAFETY: the caller promises 28 writable bytes per body, which is `bytes.len()`; byte-wise
+    // copy needs no alignment and `bytes` is a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    STATUS_OK
+}
+
+/// Bodies awake (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn phys_awake(handle: u32) -> u32 {
+    crate::phys::awake(handle).unwrap_or(0)
+}
+
+/// 1 when every body sleeps (the simulation stops by itself), 0 when not, 2 for a bad handle.
+#[no_mangle]
+pub extern "C" fn phys_settled(handle: u32) -> u32 {
+    match crate::phys::settled(handle) {
+        Some(true) => 1,
+        Some(false) => 0,
+        None => 2,
+    }
+}
+
+/// Steps simulated so far (0 for a bad handle): the simulated time is this over 240.
+#[no_mangle]
+pub extern "C" fn phys_steps(handle: u32) -> u32 {
+    crate::phys::steps(handle).unwrap_or(0)
+}
+
+/// FNV-1a of the poses (rt-phys `World::hash`), for the parity check (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn phys_hash(handle: u32) -> u32 {
+    crate::phys::hash(handle).unwrap_or(0)
 }

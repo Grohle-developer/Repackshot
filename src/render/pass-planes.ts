@@ -49,9 +49,13 @@ export class PassAccumulator {
   readonly albedoSum: Float32Array;
   /** Albedo samples summed into each tile. */
   readonly albedoSamples: Int32Array;
+  /** The sample index each tile's albedo continues from. */
+  private readonly albedoNext: Int32Array;
+  /** U11, a live viewport's guides: the albedo may skip samples (it is rendered while the switch is on), in index order still. */
+  private readonly gaps: boolean;
   private readonly planes = new Map<PassKey, Float32Array | Uint32Array>();
 
-  constructor(width: number, height: number, mask: number, tiles: readonly Tile[]) {
+  constructor(width: number, height: number, mask: number, tiles: readonly Tile[], opts: { gaps?: boolean } = {}) {
     this.width = width;
     this.height = height;
     this.mask = mask & ((1 << PASS_KEYS.length) - 1);
@@ -59,6 +63,8 @@ export class PassAccumulator {
     const n = width * height;
     this.albedoSum = new Float32Array(this.mask & ALBEDO_BIT ? n * 3 : 0);
     this.albedoSamples = new Int32Array(tiles.length);
+    this.albedoNext = new Int32Array(tiles.length);
+    this.gaps = opts.gaps === true;
     for (const k of keysOfMask(this.mask & EXACT_BITS)) this.planes.set(k, blank(k, n));
   }
 
@@ -69,11 +75,13 @@ export class PassAccumulator {
 
   /**
    * Adds `count` albedo samples of tile `index` (each `w * h * 3` floats), which must continue where the
-   * tile stopped (samples in index order, like the image); anything else is refused and false returned.
+   * tile stopped (samples in index order, like the image; with `gaps`, any later sample); anything else is
+   * refused and false returned.
    */
   addAlbedo(index: number, first: number, count: number, data: Float32Array): boolean {
     const t = this.tiles[index];
-    if (!(this.mask & ALBEDO_BIT) || !t || first !== this.albedoSamples[index] || count <= 0 || data.length < count * t.w * t.h * 3) return false;
+    const next = this.albedoNext[index];
+    if (!(this.mask & ALBEDO_BIT) || !t || (this.gaps ? first < next : first !== next) || count <= 0 || data.length < count * t.w * t.h * 3) return false;
     const stride = t.w * t.h * 3;
     const sum = this.albedoSum;
     for (let s = 0; s < count; s++) {
@@ -84,6 +92,7 @@ export class PassAccumulator {
       }
     }
     this.albedoSamples[index] += count;
+    this.albedoNext[index] = first + count;
     return true;
   }
 

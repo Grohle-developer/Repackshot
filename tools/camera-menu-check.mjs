@@ -6,8 +6,8 @@
 //
 // Without --url it serves dist/ with `vite preview` on port 4190 and stops it at the end.
 //
-//   (a) the camera chip opens a list with one row per camera, the active one checked, each with its lens as quiet
-//       text and a pencil at the right end;
+//   (a) the camera chip opens a list with one row per camera, the active one checked, each with its lens and the ratio
+//       of its image as quiet text and a pencil at the right end;
 //   (b) the scene's camera section is titled with the active camera's name (and renaming it follows);
 //   (c) the pencil of the second row opens that camera's inspector (its section, its name in the breadcrumb), shows
 //       the Cameras tab with it marked, and does not activate it;
@@ -152,7 +152,8 @@ try {
   );
   check('list_rows', rows.length === 2 && rows[0].label === 'Camera 1' && rows[1].label === 'Camera 2', { rows });
   check('list_active_checked', rows[0]?.checked === 'true' && rows[1]?.checked === 'false', { checked: rows.map((r) => r.checked) });
-  check('list_lens', rows.every((r) => /^\d+ mm · f\/[\d.]+$/.test(r.aux)), { aux: rows.map((r) => r.aux) });
+  // The lens and, after it, the ratio of the camera's image (U13).
+  check('list_lens', rows.every((r) => /^\d+ mm · f\/[\d.]+ · \d+:\d+$/.test(r.aux)), { aux: rows.map((r) => r.aux) });
   check('list_pencils', rows.every((r) => r.pencil && r.tip.startsWith('Edit Camera')), { tips: rows.map((r) => r.tip) });
   await page.screenshot({ path: join(SHOTS, 'camera-menu.png') });
 

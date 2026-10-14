@@ -8,13 +8,14 @@ use rt_core::color::Tonemap;
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, Passes, PASS_ALL};
-use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, tile_grid};
+use rt_core::pixel_filter::EdgeMask;
+use rt_core::render::{render_tile_albedo_edges, render_tile_edges, render_tile_exact, tile_grid};
 use rt_core::scene::{Scene, DENOISE_IMAGE};
 use rt_core::simd::Isa;
-use rt_post::denoise::{denoise_rows, DenoiseInput, GUIDE_PASSES};
+use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset, GUIDE_PASSES};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 pub mod bench;
@@ -59,6 +60,18 @@ pub fn passes_for(scene: &Scene) -> u32 {
 /// depend on the thread count. Returns the film with its radiance replaced, or `None` when the
 /// passes lack the guides.
 pub fn denoise_film(film: &Film, passes: &Passes, samples: u32, threads: usize) -> Option<Film> {
+    denoise_film_at(film, passes, samples, threads, 1.0)
+}
+
+/// [`denoise_film`] at a strength (U11b, `0..=1`, `RNDR.denoise_strength`): the denoised film
+/// blended with `film`, `film × (1 − s) + denoised × s` per channel; 0 runs no filter.
+pub fn denoise_film_at(
+    film: &Film,
+    passes: &Passes,
+    samples: u32,
+    threads: usize,
+    strength: f32,
+) -> Option<Film> {
     let sums = rt_post::denoise::rgba_sums(film);
     let whole = DenoiseInput::whole(samples, &sums, &film.lum2, passes).ok()?;
     let h = film.height;
@@ -68,7 +81,7 @@ pub fn denoise_film(film: &Film, passes: &Passes, samples: u32, threads: usize) 
             .map(|k| {
                 let (y0, y1) = (h * k / bands, h * (k + 1) / bands);
                 let band = whole.with_halo(y0, y1);
-                scope.spawn(move || denoise_rows(&band, y0, y1).ok())
+                scope.spawn(move || denoise_rows_at(&band, y0, y1, Preset::FULL, strength).ok())
             })
             .collect();
         workers
@@ -95,6 +108,17 @@ impl RenderOutput {
     /// `threads` threads; `None` without the guide passes.
     pub fn denoised(&self, threads: usize) -> Option<Film> {
         denoise_film(&self.film, self.passes.as_ref()?, self.samples, threads)
+    }
+
+    /// [`RenderOutput::denoised`] at a strength (U11b; the scene's `RNDR.denoise_strength`).
+    pub fn denoised_at(&self, threads: usize, strength: f32) -> Option<Film> {
+        denoise_film_at(
+            &self.film,
+            self.passes.as_ref()?,
+            self.samples,
+            threads,
+            strength,
+        )
     }
 
     /// Converts the film to 8-bit sRGB using the exposure and tone mapping stored in `scene`.
@@ -204,6 +228,9 @@ pub fn render_progressive(
             .map(|t| Mutex::new(PassFilm::region(t.x, t.y, t.w, t.h, mask)))
             .collect()
     };
+    // E11: each tile's edge pixels, found once (from the centre rays) by whoever renders it first.
+    let edges: Vec<OnceLock<EdgeMask>> = tiles.iter().map(|_| OnceLock::new()).collect();
+    let edges = &edges;
 
     let mut done = 0u32;
     let mut rays = 0u64;
@@ -234,14 +261,19 @@ pub fn render_progressive(
                             if let (Some(passes), 0) = (passes.as_deref_mut(), first) {
                                 rays += render_tile_exact(scene, &prepared, tile, passes, isa);
                             }
+                            let edges = edges[i].get_or_init(|| {
+                                let mask = EdgeMask::of(scene, &prepared, tile, isa);
+                                rays += mask.rays();
+                                mask
+                            });
                             for sample in first..first + count {
                                 let map = maps.get((sample - first) as usize);
-                                rays += render_tile_photons(
-                                    scene, &prepared, map, tile, sample, &mut film, isa,
+                                rays += render_tile_edges(
+                                    scene, &prepared, map, edges, sample, &mut film, isa,
                                 );
                                 if let Some(passes) = passes.as_deref_mut() {
-                                    rays += render_tile_albedo(
-                                        scene, &prepared, tile, sample, passes, isa,
+                                    rays += render_tile_albedo_edges(
+                                        scene, &prepared, edges, sample, passes, isa,
                                     );
                                 }
                             }
@@ -291,10 +323,103 @@ pub fn render_progressive(
     }
 }
 
-/// Encodes `rgb8` as a PNG and writes it to `path`, creating missing parent directories.
-pub fn write_png(path: &Path, width: u32, height: u32, rgb8: &[u8]) -> std::io::Result<()> {
+/// Writes `bytes` to `path`, creating missing parent directories.
+pub fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, rt_core::png::encode(width, height, rgb8))
+    std::fs::write(path, bytes)
+}
+
+/// Encodes `rgb8` as a PNG and writes it to `path`, creating missing parent directories.
+pub fn write_png(path: &Path, width: u32, height: u32, rgb8: &[u8]) -> std::io::Result<()> {
+    write_file(path, &rt_core::png::encode(width, height, rgb8))
+}
+
+/// The file formats `rt` writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputFormat {
+    /// 8-bit sRGB PNG (the default).
+    Png,
+    /// Uncompressed TIFF: 8 or 16 bit sRGB, or 32-bit float in linear light.
+    Tiff,
+    /// Linear raw DNG: 32-bit float in linear light, a camera raw to a raw developer.
+    Dng,
+}
+
+/// Dots per inch `rt` writes into a TIFF.
+pub const TIFF_DPI: u32 = 72;
+
+/// What `rt` writes: the format and the bits per sample.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutputSpec {
+    /// The file format.
+    pub format: OutputFormat,
+    /// Bits per sample: 8 or 16 (sRGB, tone mapped) or 32 (float, linear light).
+    pub bits: u32,
+}
+
+impl OutputSpec {
+    /// Settles the output from `--format` and `--bits` (if given) and the extension of the
+    /// output path (`.tif`, `.tiff` and `.dng` choose their format when `--format` is absent).
+    /// A PNG is 8-bit, a TIFF is 8 (the default), 16 or 32, a DNG is 32.
+    pub fn resolve(
+        format: Option<OutputFormat>,
+        bits: Option<u32>,
+        path: &Path,
+    ) -> Result<OutputSpec, String> {
+        let by_extension = || match path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("tif" | "tiff") => OutputFormat::Tiff,
+            Some("dng") => OutputFormat::Dng,
+            _ => OutputFormat::Png,
+        };
+        let format = format.unwrap_or_else(by_extension);
+        let bits = match (format, bits) {
+            (OutputFormat::Png, None | Some(8)) => 8,
+            (OutputFormat::Png, Some(_)) => {
+                return Err(
+                    "a PNG is written with 8 bits per channel: use --format tiff for 16 or 32"
+                        .into(),
+                )
+            }
+            (OutputFormat::Tiff, None) => 8,
+            (OutputFormat::Tiff, Some(b @ (8 | 16 | 32))) => b,
+            (OutputFormat::Tiff, Some(_)) => return Err("--bits expects 8, 16 or 32".into()),
+            (OutputFormat::Dng, None | Some(32)) => 32,
+            (OutputFormat::Dng, Some(_)) => {
+                return Err("a DNG is always 32-bit float: --bits can only be 32".into())
+            }
+        };
+        Ok(OutputSpec { format, bits })
+    }
+}
+
+/// The file `spec` asks for, from the film's pixels: tone mapped sRGB for a PNG and the 8 and 16
+/// bit TIFFs, scene-linear light with the exposure applied (no curve, no clamp) for the 32-bit
+/// TIFF and the DNG. Colour only: the film's coverage is not written.
+pub fn encode_film(film: &Film, exposure_ev: f32, tonemap: Tonemap, spec: OutputSpec) -> Vec<u8> {
+    use rt_core::tiff::{encode as tiff, Samples};
+    let (w, h) = (film.width, film.height);
+    match (spec.format, spec.bits) {
+        (OutputFormat::Png, _) => {
+            rt_core::png::encode(w, h, &film.to_srgb8_tonemapped(exposure_ev, tonemap))
+        }
+        (OutputFormat::Tiff, 8) => {
+            let px = film.to_srgb8_tonemapped(exposure_ev, tonemap);
+            tiff(w, h, 3, Samples::U8(&px), TIFF_DPI)
+        }
+        (OutputFormat::Tiff, 16) => {
+            let px = film.to_srgb16_tonemapped(exposure_ev, tonemap);
+            tiff(w, h, 3, Samples::U16(&px), TIFF_DPI)
+        }
+        (OutputFormat::Tiff, _) => {
+            let px = film.to_linear_exposed(exposure_ev);
+            tiff(w, h, 3, Samples::F32(&px), TIFF_DPI)
+        }
+        (OutputFormat::Dng, _) => rt_core::dng::encode(w, h, &film.to_linear_exposed(exposure_ev)),
+    }
 }

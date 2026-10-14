@@ -137,6 +137,8 @@ export interface SettingRowOptions {
   optionTip?: (o: string | number) => string | undefined;
   /** The row is shown only when this says so (the samples field only for "At N samples"). */
   visible?: (s: Settings) => boolean;
+  /** The control on its own line under the label (a list too long beside it: E11's pixel filters). */
+  stacked?: boolean;
 }
 
 /** A row for one setting, kept in step with `ui.settings`. */
@@ -146,12 +148,12 @@ export function settingRow(ctx: Ctx, scope: Scope, meta: SettingMeta, o: Setting
   const handle = o.control ? null : controlFor(meta, s0[key], (v) => cmd.setSetting(ctx, key, v as Settings[typeof key]), { disabledOptions: o.disabledOptions, optionTip: o.optionTip });
   // "Only in the desktop application" is never said inside it.
   const badges = [meta.newProjects ? t('set.newProjects') : null, meta.desktopOnly && !ctx.ui.get().desktop ? t('set.desktopOnly') : null].filter((x): x is string => x !== null);
-  const parts = rowShell(key, { aux: meta.aux ? t(dyn(`set.${key}.aux`)) : null, control: o.control ?? handle?.el ?? null, soon: meta.comingSoon, badges });
+  const parts = rowShell(key, { aux: meta.aux ? t(dyn(`set.${key}.aux`)) : null, control: o.control ?? handle?.el ?? null, soon: meta.comingSoon, badges, ...(o.stacked ? { stacked: true } : {}) });
   const reset = h('button', { type: 'button', class: 'btn-link sw-reset', 'data-tip': `${t('set.resetTip')}: ${factoryText(meta)}`, 'aria-label': `${t('set.reset')}: ${rowLabel(key)}`, onclick: () => cmd.resetOneSetting(ctx, key) }, t('set.reset'));
   parts.ctrlEl.prepend(reset);
   if (meta.comingSoon) disableAll(parts.ctrlEl);
   scope.watch(
-    (_s, u) => [u.settings, u.engineInfo, u.desktop] as const,
+    (_s, u) => [u.settings, u.engineInfo, u.desktop, u.fastAa] as const,
     ([s]) => {
       handle?.set(s[key]);
       const changed = !isFactory(s, key);

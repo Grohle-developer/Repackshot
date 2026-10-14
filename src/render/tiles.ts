@@ -67,6 +67,22 @@ export function nextPass(done: number, previous: number, max: number): { first: 
   return count > 0 ? { first: done, count } : null;
 }
 
+/** U11: while a live viewport's denoise is off, the guides' albedo is still rendered for this many samples (render.rs LIVE_ALBEDO_SAMPLES). */
+export const LIVE_ALBEDO_SAMPLES = 8;
+/** U11: the shortest pass a live viewport aims at while its denoise is on (render.rs LIVE_PASS_MS). */
+export const LIVE_PASS_MS = 250;
+
+/**
+ * U11 (render.rs `live_pass_cap`): the largest pass of a live viewport whose denoise is on, at `msPerSample` and with
+ * its last denoise taking `denoiseMs`: a pass lasts about as long as a denoise, and at least LIVE_PASS_MS, so a new
+ * denoised image comes within max(2 × the denoise, 0.5 s). Which pass a sample is in changes no pixel.
+ */
+export function livePassCap(msPerSample: number, denoiseMs: number): number {
+  const target = Math.max(denoiseMs, LIVE_PASS_MS);
+  if (!(msPerSample > 0) || !Number.isFinite(msPerSample)) return MAX_PASS_SAMPLES;
+  return Math.min(MAX_PASS_SAMPLES, Math.max(1, Math.floor(target / msPerSample)));
+}
+
 /**
  * Resolution divisor for the next frame of a camera gesture, ½ or ¼ of the viewport, from how
  * long the last frame took at `lastScale`: the cost goes with the pixels, so ½ costs (lastScale /
@@ -157,10 +173,10 @@ export class Accumulator {
     this.samples = new Int32Array(this.tiles.length);
   }
 
-  /** Shows `sums` (RGBA sums of `samples` samples, the denoised image) in place of the accumulated ones. */
-  show(sums: Float32Array, samples: number): void {
+  /** Shows `sums` (RGBA sums of `samples` samples, the denoised image) in place of the accumulated ones; null shows the accumulated ones again (U11). */
+  show(sums: Float32Array | null, samples = 0): void {
     this.shownSums = sums;
-    this.shownCount = samples;
+    this.shownCount = sums ? samples : 0;
   }
 
   /** Samples of the image shown instead of the sums (0: the sums are shown). */
@@ -414,6 +430,47 @@ export function straightExr(rgba: Float32Array, ev: number, out: Float32Array = 
     const opaque = a >= OPAQUE;
     for (let c = 0; c < 3; c++) out[i + c] = f((opaque ? rgba[i + c] : f(rgba[i + c] * a)) * gain);
     out[i + 3] = opaque ? 1 : a;
+  }
+  return out;
+}
+
+/**
+ * Scene-linear RGBA with **straight** alpha for a 32-bit TIFF or a DNG: the mean of the samples with its
+ * colour divided by its coverage where the pixel is partly transparent, times the exposure gain, no curve
+ * (`linearRgba` premultiplies, as OpenEXR does; a TIFF declares unassociated alpha). For an opaque pixel it is
+ * `linearRgba`, bit for bit.
+ */
+export function straightLinearRgba(sum: Float32Array, samples: number, ev: number, out: Float32Array = new Float32Array(sum.length)): Float32Array {
+  const gain = Math.fround(exposureGain(ev));
+  const inv = Math.fround(1 / Math.max(1, samples));
+  const f = Math.fround;
+  for (let i = 0; i < sum.length; i += 4) {
+    const a = f(sum[i + 3] * inv);
+    let r = f(sum[i] * inv);
+    let g = f(sum[i + 1] * inv);
+    let b = f(sum[i + 2] * inv);
+    if (a < OPAQUE) {
+      if (a > 0) {
+        r = f(r / a);
+        g = f(g / a);
+        b = f(b / a);
+      } else r = g = b = 0;
+    }
+    out[i] = f(r * gain);
+    out[i + 1] = f(g * gain);
+    out[i + 2] = f(b * gain);
+    out[i + 3] = a >= OPAQUE ? 1 : a;
+  }
+  return out;
+}
+
+/** The same for a straight-alpha linear image (the AI's output, `straightExr` without the premultiplication). */
+export function straightLinear(rgba: Float32Array, ev: number, out: Float32Array = new Float32Array(rgba.length)): Float32Array {
+  const gain = Math.fround(exposureGain(ev));
+  const f = Math.fround;
+  for (let i = 0; i < rgba.length; i += 4) {
+    for (let c = 0; c < 3; c++) out[i + c] = f(rgba[i + c] * gain);
+    out[i + 3] = rgba[i + 3] >= OPAQUE ? 1 : rgba[i + 3];
   }
   return out;
 }

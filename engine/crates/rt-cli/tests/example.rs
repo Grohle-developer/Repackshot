@@ -234,6 +234,24 @@ fn caustics_are_the_same_bits_with_1_4_or_16_threads() {
     assert!(one.rays > without.rays, "the photons' rays count");
 }
 
+#[test]
+fn a_lens_renders_the_same_bits_with_1_4_or_16_threads() {
+    // O1: the pupil, the cat's eye and the chromatic band of every sample come from the pixel's
+    // own sampler; the image does not depend on how many threads render it.
+    let mut scene = rt_core::example::o1_scene();
+    scene.render.width = 64;
+    scene.render.height = 48;
+    let one = rt_cli::render(&scene, 3, 1);
+    for threads in [4, 16] {
+        let many = rt_cli::render(&scene, 3, threads);
+        assert_eq!(one.film, many.film, "{threads} threads");
+        assert_eq!(one.rays, many.rays);
+    }
+    // And the lens changes the image against the plain thin lens.
+    scene.camera.lens = None;
+    assert_ne!(rt_cli::render(&scene, 3, 4).film.rgb, one.film.rgb);
+}
+
 /// Relative mean squared error of `image` against `reference` (linear RGB, values clamped at 8 so
 /// a firefly of the reference cannot dominate).
 fn rel_mse(image: &[f32], reference: &[f32]) -> f64 {

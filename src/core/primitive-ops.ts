@@ -22,7 +22,7 @@
 
 import { PRIMITIVE_MATERIAL, primitiveEntry, type PrimitiveKind, type PrimitiveRole } from '../data/primitives';
 import type { ActionBase, ProjectState } from './store';
-import { activeCamera, cameraBasis, cameraPosition, fieldOfView, frameActive, outputAspect, type CameraState } from './camera';
+import { activeCamera, aspectRatio, cameraBasis, cameraPosition, fieldOfView, frameActive, type CameraState } from './camera';
 import { lightPosition } from './lighting';
 import { nextId } from './ids';
 import { instanceFromPreset, triangleMaterials, type MaterialId } from './materials';
@@ -299,7 +299,7 @@ export interface SweepFit {
  * meets, and a curve of SWEEP_FIT.radius of its height. Every ray of `frameRays` then meets it.
  */
 export function fitSweep(state: ProjectState, cam: CameraState = activeCamera(state)): SweepFit {
-  const aspect = outputAspect(state);
+  const aspect = aspectRatio(cam);
   const product = hasProduct(state, true);
   const pb = product ? productBounds(state, true) : emptyBox();
   const S = product && !isEmptyBox(pb) ? boxMaxDim(pb) : state.scene.partSizeMm > 0 ? state.scene.partSizeMm : 200;

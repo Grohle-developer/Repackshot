@@ -75,6 +75,7 @@ const BACKGROUND_WORDS: Readonly<Record<ProjectState['environment']['background'
   COLOR: 'a plain background',
   TRANSPARENT: 'a plain background',
   BACKPLATE: 'a photographic backplate',
+  GRADIENT: 'a smooth gradient background',
 };
 
 export interface ScenePrompt {
