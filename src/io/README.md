@@ -1,5 +1,5 @@
 Importers and exporters. Depends on core. In: glTF/GLB, OBJ, STL, FBX, 3DM, STEP/STP, IGES/IGS, 3MF, PLY, DAE,
-USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
+USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR/TIFF/DNG and the project file.
 
 - `import.ts` detects the format (extension, then header) and loads the right reader on demand with `import()`;
   nothing here is in the first chunk (`tests/chunks.test.ts` reads `dist/` to prove it).
@@ -70,7 +70,10 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
 - `image.ts`: PNG written here from the path tracer's 8-bit pixels (RGB, or RGBA when transparent; deflate by the
   browser's `CompressionStream`, stored blocks without it), JPEG through a canvas, 16-bit PNG from the float sums
   and a minimal uncompressed scan-line EXR (32-bit float, linear). The DPI of the render window goes into the file
-  (U5): PNG `pHYs` (pixels per metre, unit 1) and the JPEG JFIF density (units 1, dots per inch).
+  (U5): PNG `pHYs` (pixels per metre, unit 1), the JPEG JFIF density (units 1, dots per inch) and the TIFF
+  `XResolution`/`YResolution`. U12: `encodeTiff` (uncompressed TIFF 6.0, RGB or RGBA with unassociated alpha, 8, 16 or
+  32-bit float) and `encodeDng` (a linear raw DNG 1.4 of 32-bit floats), the same bytes as `rt_core::tiff` and
+  `rt_core::dng` (the golden files in `tests/fixtures/tiff/`).
 - `project.ts`: the `.repack.json` envelope, schema 2 (U5), and `migrateProject` / `parseProject` with one step per
   schema (1 → 2: the render block through `core/render.ts` `migrateRender`).
 - `results.ts`: the results history (U5) in IndexedDB (`meta`, `blobs` and `handles` stores), 50 results or 500 MB,

@@ -14,6 +14,7 @@ import { totalDuration } from '../../core/animation';
 import { outputFileName } from '../../core/name-template';
 import { QUALITY_KEYS, QUALITY_PRESETS, RESOLUTION_PRESETS } from '../../data/quality';
 import {
+  bitDepthsOf,
   effectiveBounces,
   estimateSamples,
   estimateSeconds,
@@ -25,6 +26,7 @@ import {
   supportsAlpha,
   VIDEO_AVAILABLE,
   type AdvancedSettings,
+  type BitDepth,
   type CameraChoice,
   type OutputFormat,
   type RenderSettings,
@@ -53,11 +55,12 @@ export function formatDuration(seconds: number): string {
   return t('time.h', { h: Math.floor(m / 60), m: m % 60 });
 }
 
-/** "PNG 16-bit", "JPEG 92", "EXR". */
+/** "PNG 16-bit", "JPEG 92", "TIFF 32-bit float", "DNG", "EXR". */
 function formatText(s: RenderSettings): string {
   if (s.format === 'PNG') return `PNG ${t('rw.bits', { n: s.bitDepth })}`;
+  if (s.format === 'TIFF') return `TIFF ${t(s.bitDepth === 32 ? 'rw.bitsFloat' : 'rw.bits', { n: s.bitDepth })}`;
   if (s.format === 'JPEG') return `JPEG ${s.jpegQuality}`;
-  return 'EXR';
+  return s.format;
 }
 
 function finishText(s: RenderSettings): string {
@@ -194,20 +197,27 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
       { value: 'PNG', label: 'PNG' },
       { value: 'JPEG', label: 'JPEG' },
       { value: 'EXR', label: 'EXR', title: t('rw.exrTip') },
+      { value: 'TIFF', label: 'TIFF', title: t('rw.tiffTip') },
+      { value: 'DNG', label: t('rw.dngLabel'), title: t('rw.dngTip') },
     ],
     s0.format,
     (v) => set({ format: v }),
     { ariaLabel: t('rw.format') },
   );
-  const bits = segmented(
-    [
-      { value: '8', label: t('rw.bits', { n: 8 }) },
-      { value: '16', label: t('rw.bits', { n: 16 }) },
-    ],
-    String(s0.bitDepth) as '8' | '16',
-    (v) => set({ bitDepth: v === '16' ? 16 : 8 }),
-    { ariaLabel: t('rw.bitDepth') },
-  );
+  // PNG offers 8 and 16 bits; TIFF adds the 32-bit float (linear). Each has its own control, so the divider of the
+  // last button is right; RAW (DNG) has no choice and says what it is.
+  const bitsOf = (depths: readonly BitDepth[]) =>
+    segmented(
+      depths.map((d) => ({ value: String(d) as '8' | '16' | '32', label: t(d === 32 ? 'rw.bitsFloat' : 'rw.bits', { n: d }) })),
+      String(s0.bitDepth) as '8' | '16' | '32',
+      (v) => set({ bitDepth: v === '32' ? 32 : v === '16' ? 16 : 8 }),
+      { ariaLabel: t('rw.bitDepth') },
+    );
+  const bitsPng = bitsOf(bitDepthsOf('PNG'));
+  const bitsTiff = bitsOf(bitDepthsOf('TIFF'));
+  const bitsFixed = h('span', { class: 'aux' }, t('rw.bitsFloat', { n: 32 }));
+  // One line about the format when it has something to say (the same text as the button's tooltip).
+  const formatNote = h('div', { class: 'note' });
   const jpegQ = numberField({ value: s0.jpegQuality, min: 1, max: 100, step: 1, fill: true, ariaLabel: t('rw.jpegQuality'), onChange: (v, g) => set({ jpegQuality: v }, g) });
   const jpegBox = h('span', { class: 'rw-inline' }, h('span', { class: 'aux' }, t('rw.jpegQuality')), jpegQ.el);
   const transparent = toggle(s0.transparent, (v) => set({ transparent: v }), t('rw.transparent'));
@@ -226,7 +236,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     row(t('rw.name'), h('div', { class: 'rw-stack' }, nameInput, chips, namePreview)),
     row(t('rw.folder'), h('div', { class: 'rw-stack' }, destSeg, destNote)),
     row(t('rw.showWhenDone'), showDone.el),
-    row(t('rw.format'), h('div', { class: 'rw-stack' }, h('div', { class: 'rw-inline' }, format.el, bits.el, jpegBox))),
+    row(t('rw.format'), h('div', { class: 'rw-stack' }, h('div', { class: 'rw-inline' }, format.el, bitsPng.el, bitsTiff.el, bitsFixed, jpegBox), formatNote)),
     row(t('rw.transparent'), h('div', { class: 'rw-inline' }, transparent.el, transparentNote)),
     row(t('rw.passes'), h('div', { class: 'rw-inline' }, passes.el, h('span', { class: 'aux' }, t('common.comingSoon')), h('span', { class: 'note' }, t('rw.passesSoon')))),
     row(t('rw.camera'), h('div', { class: 'rw-stack' }, cameraSel.el, cameraNote)),
@@ -478,13 +488,17 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     showDone.set(s.showWhenDone);
     // Format.
     format.set(s.format);
-    bits.set(String(s.bitDepth) as '8' | '16');
-    bits.el.style.display = s.format === 'PNG' ? '' : 'none';
+    bitsPng.set(String(s.bitDepth) as '8' | '16' | '32');
+    bitsTiff.set(String(s.bitDepth) as '8' | '16' | '32');
+    bitsPng.el.style.display = s.format === 'PNG' ? '' : 'none';
+    bitsTiff.el.style.display = s.format === 'TIFF' ? '' : 'none';
+    bitsFixed.style.display = s.format === 'DNG' ? '' : 'none';
+    formatNote.textContent = s.format === 'EXR' ? t('rw.exrTip') : s.format === 'TIFF' ? t('rw.tiffTip') : s.format === 'DNG' ? t('rw.dngTip') : '';
     jpegBox.style.display = s.format === 'JPEG' ? '' : 'none';
     jpegQ.set(s.jpegQuality);
     transparent.set(s.transparent);
     (transparent.el as HTMLButtonElement).disabled = !supportsAlpha(s.format);
-    transparentNote.textContent = supportsAlpha(s.format) ? '' : t('rw.transparentNo');
+    transparentNote.textContent = supportsAlpha(s.format) ? '' : t(s.format === 'DNG' ? 'rw.transparentNoDng' : 'rw.transparentNo');
     // Camera (the list is rebuilt only when the cameras change: an open dropdown stays open).
     const cams = Object.values(st.camera.cameras);
     const active = st.camera.cameras[st.camera.active];
