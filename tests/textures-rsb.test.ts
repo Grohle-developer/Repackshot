@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { getImage } from '../src/core/images';
+import { getMesh } from '../src/core/meshes';
 import { defaultTextures, TEXTURE_SLOTS, textureImages } from '../src/core/textures';
 import type { ProjectState } from '../src/core/store';
 import { MATL_TEXTURE_OFFSET, projectScene, TEXTURE_BLOCK_VERSION, writeRsb, type SceneView } from '../src/io/rsb';
@@ -28,6 +29,18 @@ describe('the RSB writer with textures off (until M2b)', () => {
     expect(sections(a).map((x) => x.tag)).not.toContain('IMGS');
     for (const sec of sections(a)) if (sec.tag === 'MATL') expect(sec.payload.byteLength).toBe(72);
     expect(projectScene(s, VIEW).meshKey).toBe(projectScene(stripped(s), VIEW).meshKey);
+    expect(projectScene(s, VIEW).scene.materials.every((m) => m.textures === undefined)).toBe(true);
+  });
+
+  it('ignores a material’s texture block and a scene’s images unless the scene says it carries textures', async () => {
+    const s = await texturedProject();
+    await decodeTexturePixels(s, fixtureDecoder);
+    const on = projectScene(s, { ...VIEW, textures: true }).scene;
+    const off = { ...on, textures: undefined };
+    const bytes = writeRsb(off);
+    expect(sections(bytes).map((x) => x.tag)).not.toContain('IMGS');
+    for (const sec of sections(bytes)) if (sec.tag === 'MATL') expect(sec.payload.byteLength).toBe(72);
+    expect(bytes).toEqual(writeRsb(projectScene(stripped(s), VIEW).scene));
   });
 });
 
@@ -69,9 +82,11 @@ describe('the RSB writer with textures on (the contract M2b reads)', () => {
     const matl = sections(bytes).filter((x) => x.tag === 'MATL');
     expect(matl).toHaveLength(1);
     const p = matl[0].payload;
-    expect(p.byteLength).toBe(MATL_TEXTURE_OFFSET + 4 * (1 + 6 * 15 + 3 + 1 + 19));
+    // The contract: the block starts at byte 100, after E6's bevel_mm and E9's six fields.
+    expect(MATL_TEXTURE_OFFSET).toBe(100);
+    expect(p.byteLength).toBe(100 + 4 * (1 + 6 * 15 + 3 + 1 + 19));
     // The fields of E6 and E9 (bytes 72 to 100) are zeros until those phases write theirs.
-    for (let i = 72; i < MATL_TEXTURE_OFFSET; i += 4) expect(p.getUint32(i, true)).toBe(0);
+    for (let i = 72; i < 100; i += 4) expect(p.getUint32(i, true)).toBe(0);
     let at = MATL_TEXTURE_OFFSET;
     const u32 = () => {
       const x = p.getUint32(at, true);
@@ -113,6 +128,11 @@ describe('the RSB writer with textures on (the contract M2b reads)', () => {
     const n = off.getUint32(0, true);
     expect(on.byteLength).toBe(off.byteLength + 4 + 2 * 8 * n);
     expect(on.getUint32(off.byteLength, true)).toBe(2);
+    // The first set, then the second, vertex by vertex, as the mesh holds them.
+    const mesh = getMesh(Object.values(s.scene.nodes).find((x) => x.mesh)!.mesh!.id)!;
+    const at = off.byteLength + 4;
+    for (let i = 0; i < 2 * n; i++) expect(on.getFloat32(at + 4 * i, true)).toBe(mesh.uvs![i]);
+    for (let i = 0; i < 2 * n; i++) expect(on.getFloat32(at + 8 * n + 4 * i, true)).toBe(mesh.uvs2![i]);
   });
 
   it('an image without decoded pixels gives its slots no image (-1)', async () => {

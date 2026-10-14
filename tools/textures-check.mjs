@@ -31,7 +31,7 @@ import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkerImage, labelImage, texturedGlb } from './texture-fixtures.mjs';
+import { checkerImage, labelImage, texturedDae, texturedGlb } from './texture-fixtures.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 4194;
@@ -309,6 +309,71 @@ async function glbCheck(browser) {
   console.log(`glb: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
 }
 
+/**
+ * A Collada file with its image beside it, through three's loader in the browser (the path FBX, 3MF, USD and 3DM
+ * share): chosen together, the image comes in as the material's colour, with the file's own bytes.
+ */
+async function daeCheck(browser) {
+  const f = [];
+  const log = {};
+  const { dae, image } = texturedDae();
+  const daeFile = join(FIX, 'quad.dae');
+  const pngFile = join(FIX, 'tex.png');
+  writeFileSync(daeFile, dae);
+  writeFileSync(pngFile, image);
+  const { page, context, errors } = await open(browser, 'theme=dark&lang=en&mode=fast');
+  const sheet = await importFile(page, [daeFile, pngFile]);
+  log.sheet = sheet;
+  ok(sheet.kept === '1', `the sheet does not say 1 image kept: ${JSON.stringify(sheet)}`, f);
+  await pickRow(page, 'Quad');
+  const slots = await page.evaluate(() => [...document.querySelectorAll('[data-texture-slot].has-image')].map((e) => e.getAttribute('data-texture-slot')));
+  log.slots = slots;
+  ok(slots.join(',') === 'color', `the slots with an image are ${slots.join(',')}`, f);
+  ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
+  await context.close();
+  results.dae = { ok: f.length === 0, failures: f, ...log };
+  console.log(`dae: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
+}
+
+/** The Textures section, its labels and the import sheet are achromatic in both themes (the images are not chrome). */
+async function chromeCheck(browser) {
+  const f = [];
+  const log = {};
+  const file = join(FIX, 'textured-box.glb');
+  writeFileSync(file, texturedGlb().glb);
+  const label = join(FIX, 'label.png');
+  writeFileSync(label, labelImage(96, 64));
+  for (const theme of ['dark', 'light']) {
+    const { page, context, errors } = await open(browser, `theme=${theme}&lang=es&mode=fast`);
+    const chooser = page.waitForEvent('filechooser', { timeout: 30000 });
+    await page.getByRole('button', { name: /Importar modelo/ }).first().click();
+    await (await chooser).setFiles(file);
+    await page.waitForSelector('[data-import-sheet]', { timeout: 60000 });
+    await settle(page, 200);
+    log[`${theme}Sheet`] = await chromatic(page, '[data-import-sheet]');
+    ok(log[`${theme}Sheet`].length === 0, `${theme}: the sheet has colour: ${log[`${theme}Sheet`].join(' | ')}`, f);
+    await page.getByRole('button', { name: /^Importar$/ }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.tree-row').length > 0, null, { timeout: 60000 });
+    await pickRow(page, 'Box');
+    // A label, so its row is in the section too (the tool starts; Esc leaves it).
+    const lc = page.waitForEvent('filechooser', { timeout: 30000 });
+    await page.locator('[data-label-add]').click();
+    await (await lc).setFiles(label);
+    await settle(page, 200);
+    log[`${theme}Section`] = await chromatic(page, '[data-section="textures"], [data-label-tool]');
+    ok(log[`${theme}Section`].length === 0, `${theme}: the Textures section has colour: ${log[`${theme}Section`].join(' | ')}`, f);
+    // Spanish: the section speaks it (its title and its slots).
+    const text = await page.locator('[data-section="textures"]').textContent();
+    ok(/Texturas/.test(text) && /Rugosidad/.test(text) && /Etiquetas/.test(text), `${theme}: the section is not in Spanish: ${text.slice(0, 120)}`, f);
+    if (theme === 'light') await page.locator('[data-section="textures"]').screenshot({ path: join(SHOTS, 'textures-inspector-light.png') }).catch(() => {});
+    await page.keyboard.press('Escape');
+    ok(errors.length === 0, `${theme}: errors in the page: ${errors.join(' | ')}`, f);
+    await context.close();
+  }
+  results.chrome = { ok: f.length === 0, failures: f, ...log };
+  console.log(`chrome: ${f.length === 0 ? 'OK' : `FAILED\n  - ${f.join('\n  - ')}`}`);
+}
+
 /** Header menu ▸ Add ▸ Primitive ▸ <name>. */
 async function addPrimitive(page, name) {
   await page.click('[data-add="primitive"]');
@@ -411,10 +476,12 @@ try {
   await waitFor(BASE_URL);
   const { chromium } = await import('playwright-core');
   browser = await chromium.launch({ executablePath: findChromium(), headless: true, args: ['--no-sandbox', '--disable-gpu', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const only = opt('only', 'glb,box,label').split(',');
+  const only = opt('only', 'glb,dae,box,label,chrome').split(',');
   if (only.includes('glb')) await glbCheck(browser);
+  if (only.includes('dae')) await daeCheck(browser);
   if (only.includes('box')) await boxCheck(browser);
   if (only.includes('label')) await labelCheck(browser);
+  if (only.includes('chrome')) await chromeCheck(browser);
   writeFileSync(join(OUT, 'textures-check.json'), JSON.stringify(results, null, 2));
   const all = Object.values(results).every((r) => r.ok);
   console.log(all ? 'all checks passed' : 'SOME CHECKS FAILED');

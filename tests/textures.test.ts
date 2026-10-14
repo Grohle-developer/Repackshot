@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { fitTextureBudget, withoutImages, type ImportTexture } from '../src/core/import-options';
 import { readImageHeader } from '../src/core/image-header';
-import { mat4Compose, transformDirection, transformPoint } from '../src/core/math';
+import { mat4Compose, mat4Invert, transformDirection, transformPoint } from '../src/core/math';
 import { cloneInstance, instanceFromPreset } from '../src/core/materials';
 import { worldMatrix } from '../src/core/scene';
 import { checkTextureFile, registerTextureImage, textureImageId } from '../src/core/texture-images';
@@ -244,6 +244,18 @@ describe('labels: where a press puts them and what they cover', () => {
     close(at.origin, [1, -3, 2]);
     close(at.normal, [0, -1, 0]);
     close(at.uAxis, [1, 0, 0]);
+  });
+
+  it('brings the normal back with the transpose of a world matrix that scales unevenly (not its inverse)', () => {
+    const world = mat4Compose([10, -4, 2], [15, 0, 30], [1, 3, 2]);
+    const local = [0.3, -1, 0.5].map((x) => x / Math.hypot(0.3, 1, 0.5));
+    // A normal goes to the model by the inverse transpose of the world matrix.
+    const inv = mat4Invert(world);
+    const n = [0, 1, 2].map((r) => inv[r * 4] * local[0] + inv[r * 4 + 1] * local[1] + inv[r * 4 + 2] * local[2]);
+    const at = placeLabel(world, transformPoint(world, [1, 2, 3]), n);
+    close(at.origin, [1, 2, 3]);
+    close(at.normal, local);
+    expect(Math.abs(at.uAxis[0] * local[0] + at.uAxis[1] * local[1] + at.uAxis[2] * local[2])).toBeLessThan(1e-9);
   });
 
   it('covers its rectangle in front of its plane, as tall as its image says, and nothing behind or facing away', () => {

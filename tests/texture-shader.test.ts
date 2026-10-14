@@ -134,5 +134,10 @@ describe('the texture shader in three.js’ physical material', () => {
     const a: ShaderConfig = { slots: [slot('color')], labels: 0, emissive: false };
     expect(shaderKey(a)).toBe(shaderKey(JSON.parse(JSON.stringify(a))));
     expect(shaderKey({ ...a, slots: [slot('color', { channel: 'G' })] })).not.toBe(shaderKey(a));
+    // A height map and a cut-out change the code: they change the key.
+    expect(shaderKey({ ...a, slots: [slot('normal', { height: true })] })).not.toBe(shaderKey({ ...a, slots: [slot('normal')] }));
+    expect(shaderKey({ ...a, slots: [slot('alpha', { cutout: true })] })).not.toBe(shaderKey({ ...a, slots: [slot('alpha')] }));
+    expect(shaderKey({ ...a, emissive: true })).not.toBe(shaderKey(a));
+    expect(shaderKey({ ...a, labels: 1 })).not.toBe(shaderKey(a));
   });
 });

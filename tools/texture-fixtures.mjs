@@ -277,3 +277,56 @@ export function texturedObj() {
   };
   return { obj, mtl, images };
 }
+
+/** A Collada quad with UVs whose effect reads an image named by the file: the image is a file next to it (`tex.png`). */
+export function texturedDae() {
+  const dae = `<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset><unit name="centimeter" meter="0.01"/><up_axis>Z_UP</up_axis></asset>
+  <library_images><image id="tex-image" name="tex"><init_from>tex.png</init_from></image></library_images>
+  <library_effects>
+    <effect id="paint-effect">
+      <profile_COMMON>
+        <newparam sid="tex-surface"><surface type="2D"><init_from>tex-image</init_from></surface></newparam>
+        <newparam sid="tex-sampler"><sampler2D><source>tex-surface</source></sampler2D></newparam>
+        <technique sid="common">
+          <phong>
+            <diffuse><texture texture="tex-sampler" texcoord="UVMap"/></diffuse>
+            <specular><color sid="specular">0.2 0.2 0.2 1</color></specular>
+            <shininess><float sid="shininess">20</float></shininess>
+          </phong>
+        </technique>
+      </profile_COMMON>
+    </effect>
+  </library_effects>
+  <library_materials><material id="paint" name="Paint"><instance_effect url="#paint-effect"/></material></library_materials>
+  <library_geometries>
+    <geometry id="quad-mesh" name="QuadMesh">
+      <mesh>
+        <source id="quad-pos"><float_array id="quad-pos-array" count="12">0 0 0 10 0 0 10 0 10 0 0 10</float_array>
+          <technique_common><accessor source="#quad-pos-array" count="4" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+        <source id="quad-uv"><float_array id="quad-uv-array" count="8">0 0 1 0 1 1 0 1</float_array>
+          <technique_common><accessor source="#quad-uv-array" count="4" stride="2"><param name="S" type="float"/><param name="T" type="float"/></accessor></technique_common></source>
+        <vertices id="quad-vertices"><input semantic="POSITION" source="#quad-pos"/></vertices>
+        <triangles material="paint-slot" count="2">
+          <input semantic="VERTEX" source="#quad-vertices" offset="0"/>
+          <input semantic="TEXCOORD" source="#quad-uv" offset="1" set="0"/>
+          <p>0 0 1 1 2 2 0 0 2 2 3 3</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="scene" name="Scene">
+      <node id="quad" name="Quad" type="NODE">
+        <instance_geometry url="#quad-mesh">
+          <bind_material><technique_common><instance_material symbol="paint-slot" target="#paint"><bind_vertex_input semantic="UVMap" input_semantic="TEXCOORD" input_set="0"/></instance_material></technique_common></bind_material>
+        </instance_geometry>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene><instance_visual_scene url="#scene"/></scene>
+</COLLADA>
+`;
+  return { dae, image: colourImage(32) };
+}

@@ -130,6 +130,17 @@ describe('a GLB with the four maps of the M2a criterion', () => {
     expect(r.textures.find((x) => x.name === 'emission.png')?.materials.sort()).toEqual([parts[0].material, parts[1].material].sort());
   });
 
+  it('a material without factors has glTF’s defaults: white, metal 1, roughness 1, opaque', async () => {
+    const json = { asset: { version: '2.0' }, materials: [{}, { alphaMode: 'BLEND', pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 0.5] } }, { alphaMode: 'OPAQUE', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 0.5] } }] };
+    const assets = await readGltfAssets(new TextEncoder().encode(JSON.stringify(json)));
+    expect(assets.materials.map((m) => m.params)).toEqual([
+      { baseColor: [1, 1, 1, 1], metallic: 1, roughness: 1 },
+      { baseColor: [1, 0, 0, 1], metallic: 1, roughness: 1, opacity: 0.5 },
+      // OPAQUE ignores the alpha of the factor (glTF §3.9.4).
+      { baseColor: [1, 1, 1, 1], metallic: 1, roughness: 1 },
+    ]);
+  });
+
   it('an image that is not a PNG or JPEG is dropped and said, and its slot stays empty', async () => {
     const webp = new Uint8Array([0x52, 0x49, 0x46, 0x46, 1, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]);
     const r = await readWithDefaults({ name: 'box.glb', bytes: texturedGlb({ colour: webp }).glb });
