@@ -28,6 +28,14 @@ async function bitmap(blob: Blob | null | undefined): Promise<SplitImage | null>
 }
 
 /**
+ * The blob the viewer decodes for a result's own image: the 8-bit picture the history keeps beside a file a browser
+ * cannot show (EXR, TIFF, DNG), else the file itself.
+ */
+export function previewOf(blobs: { file: Blob; display: Blob | null }): Blob {
+  return blobs.display ?? blobs.file;
+}
+
+/**
  * The images of a result: the engine's (what the browser can show), and the AI's when it has one: `variant` (1-based,
  * X4b), and a way to decode any other variant when it is chosen.
  */
@@ -40,7 +48,7 @@ async function decode(ctx: Ctx, id: string, variant = 1): Promise<{ render: Spli
     if (!cache.has(n)) cache.set(n, bitmap(list[n - 1]));
     return cache.get(n)!;
   };
-  return { render: await bitmap(blobs.display ?? blobs.file), ai: await of(variant), variant: of };
+  return { render: await bitmap(previewOf(blobs)), ai: await of(variant), variant: of };
 }
 
 /** "1920 × 1080 · 300 DPI · 256 samples · 1:24 · Camera 1" */
@@ -66,6 +74,18 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
   const other = v0.compare ? ui.get().results.find((r) => r.id === v0.compare) : undefined;
   const title = h('div', { class: 'rv-title' }, meta?.name ?? '');
   const data = h('div', { class: 'aux tabular rv-data' }, meta ? resultData(meta) : '');
+  // P6: a result a plugin made says which, with which recipe, from which result.
+  const prov = meta?.provenance;
+  const fromName = prov?.from ? (ui.get().results.find((r) => r.id === prov.from)?.name ?? prov.from) : '';
+  const provenance = prov
+    ? h(
+        'div',
+        { class: 'aux rv-provenance', 'data-plugin': prov.plugin },
+        prov.label?.recipe
+          ? t('rv.pluginRecipe', { plugin: prov.label.plugin, version: prov.version, recipe: prov.label.recipe, source: fromName })
+          : t('rv.plugin', { plugin: prov.label?.plugin ?? prov.plugin, version: prov.version, source: fromName }),
+      )
+    : null;
   const zoomText = h('span', { class: 'aux tabular rv-zoom' });
   const frame = h('div', { class: 'rv-frame' }, h('div', { class: 'note rv-loading' }, '…'));
   let split: SplitCompare | null = null;
@@ -176,7 +196,7 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
       h(
         'div',
         { class: 'rv-top' },
-        h('div', { class: 'rv-info' }, title, data, memory),
+        h('div', { class: 'rv-info' }, title, data, provenance, memory),
         h('div', { class: 'rv-actions' }, compareBtn, h('span', { class: 'rv-sep' }), fitBtn, actualBtn, zoomText, h('span', { class: 'rv-sep' }), saveBtn, saveAiBtn, saveAllBtn, folderBtn, deleteBtn),
       ),
       reportEl,

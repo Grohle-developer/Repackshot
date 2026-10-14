@@ -11,7 +11,7 @@
 // failed) and the tessellation quality is live: changing it reads the file
 // again, and the sheet is rebuilt with the new counts when it arrives.
 
-import { ANGLE_DEG_RANGE, CHORD_PERCENT_RANGE, describePayload, IMPORT_UNITS, type ImportOptions } from '../../core/import-options';
+import { ANGLE_DEG_RANGE, CHORD_PERCENT_RANGE, describePayload, IMPORT_UNITS, textureSummary, type ImportMessage, type ImportOptions } from '../../core/import-options';
 import * as cmd from '../commands';
 import { field, numberField, segmented, toggle } from '../components/controls';
 import { section } from '../components/section';
@@ -77,6 +77,39 @@ function installKeys(ctx: Ctx, scope: Scope): void {
   scope.onDispose(() => document.removeEventListener('keydown', onKey, true));
 }
 
+/** The notes the Textures section says in its own words. */
+const TEXTURE_NOTES = new Set<ImportMessage['code']>(['texturesKept', 'textureDropped', 'textureUnused']);
+
+/**
+ * The Textures section of the sheet (M2a): how many images come with the materials and their size, and each one
+ * that does not with why (too large, not a PNG or JPEG, not among the chosen files, the project's 64 MB), with the
+ * project's budget applied as Import would apply it; with the Default material, nothing.
+ */
+function texturesBlock(ctx: Ctx, scope: Scope): HTMLElement {
+  const el = h('div', { class: 'stack', 'data-import-textures': '' });
+  scope.watch(
+    (_s, u) => [u.importSheet?.payload, u.importSheet?.options.materials] as const,
+    ([payload, policy]) => {
+      if (!payload) return;
+      const textures = cmd.projectTextures(ctx, payload.textures ?? []);
+      const sum = textureSummary(textures);
+      const mb = (bytes: number) => formatNumber(Math.max(0.1, Math.round(bytes / 1e5) / 10), getLang(), 1);
+      const rows: HTMLElement[] = [];
+      if (policy === 'default' && textures.length > 0) rows.push(h('div', { class: 'note' }, t('import.textures.default')));
+      else if (textures.length === 0) rows.push(h('div', { class: 'note' }, t('import.textures.none')));
+      else {
+        rows.push(h('div', { class: 'note tabular', 'data-import-textures-kept': String(sum.kept) }, t('import.textures.kept', { count: formatNumber(sum.kept, getLang(), 0), size: mb(sum.bytes) })));
+        for (const d of sum.dropped) rows.push(h('div', { class: 'note import-note', 'data-import-texture-dropped': d.dropped ?? '' }, t('import.textures.dropped', { image: d.name, reason: t(dyn(`texture.drop.${d.dropped}`)) })));
+        for (const u of sum.unused) rows.push(h('div', { class: 'note import-note' }, t('import.textures.unused', { image: u.name, kind: t(dyn(`texture.unused.${u.unused}`)) })));
+      }
+      rows.push(aux(t('import.textures.limits')));
+      el.replaceChildren(...rows);
+    },
+    (a, b) => a[0] === b[0] && a[1] === b[1],
+  );
+  return el;
+}
+
 export function importSheet(ctx: Ctx, scope: Scope): HTMLElement {
   const sheet = ctx.ui.get().importSheet!;
   const { detected } = sheet.payload;
@@ -97,7 +130,8 @@ export function importSheet(ctx: Ctx, scope: Scope): HTMLElement {
     h('div', { class: 'import-title-row' }, h('div', { class: 'import-title', title: sheet.name }, sheet.name), h('span', { class: 'import-format' }, sheet.format)),
     read ? h('div', { class: 'note tabular', 'data-import-summary': '' }, t('import.sheet.summary', { parts: num(counts.parts), groups: num(counts.groups), triangles: num(counts.triangles), materials: num(counts.materials) })) : null,
     cad ? status : null,
-    ...[...sheet.warnings, ...sheet.notes].map((m) => h('div', { class: 'note import-note' }, cmd.importMessageText(sheet.name, m))),
+    // What became of the textures has its own section below.
+    ...[...sheet.warnings, ...sheet.notes].filter((m) => !TEXTURE_NOTES.has(m.code)).map((m) => h('div', { class: 'note import-note' }, cmd.importMessageText(sheet.name, m))),
     queued,
   );
 
@@ -281,6 +315,7 @@ export function importSheet(ctx: Ctx, scope: Scope): HTMLElement {
     section(ctx, 'import.placement', t('import.sheet.placement'), placement),
     section(ctx, 'import.content', t('import.sheet.content'), content),
     section(ctx, 'import.mesh', t('import.sheet.mesh'), mesh),
+    section(ctx, 'import.textures', t('import.sheet.textures'), texturesBlock(ctx, scope)),
     actions,
   );
 }

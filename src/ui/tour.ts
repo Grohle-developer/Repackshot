@@ -1,6 +1,6 @@
 // The guided tour (phase U10, UI.md §4.7): our own overlay that walks the person through the screen, area by area, in
 // the order of the roadmap: the app menu, the tree and the selection levels, the view tools, Fast and Full, the
-// inspector (product, light and setups, environment and sky, camera and focus, materials), the Lights, Cameras and
+// inspector (product, light and setups, environment and sky, camera and focus, materials and their nodes), the Lights, Cameras and
 // Studios tabs, Add ▸ Primitive, the render window (queue, AI), the results, and Settings by section.
 //
 // This file is the tour without the pictures: the steps as data, what each one needs on screen (`TourStage`), the
@@ -64,13 +64,16 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'parts', chapter: 'scene', targets: ['parts-tab'], stage: { sceneTab: 'parts', panel: 'left' }, title: 'tour.parts.title', text: 'tour.parts.text' },
   { id: 'levels', chapter: 'scene', targets: ['levels'], stage: { sceneTab: 'parts', panel: 'left' }, title: 'tour.levels.title', text: 'tour.levels.text' },
   { id: 'tools', chapter: 'view', targets: ['tools'], when: 'viewport', title: 'tour.tools.title', text: 'tour.tools.text', params: { frame: () => kbdFor('frame') } },
-  { id: 'mode', chapter: 'view', targets: ['viewport-mode'], title: 'tour.mode.title', text: 'tour.mode.text' },
+  // Fast · Full and, next to it, the live denoise of Full (U11): one area of the top bar.
+  { id: 'mode', chapter: 'view', targets: ['viewport-mode'], title: 'tour.mode.title', text: 'tour.mode.text', params: { denoise: () => kbdFor('viewportDenoise') } },
   { id: 'product', chapter: 'inspector', targets: ['section-product'], stage: { panel: 'right', inspector: 'scene' }, title: 'tour.product.title', text: 'tour.product.text' },
   { id: 'light', chapter: 'inspector', targets: ['section-light'], stage: { panel: 'right', inspector: 'scene' }, title: 'tour.light.title', text: 'tour.light.text' },
   { id: 'environment', chapter: 'inspector', targets: ['section-environment'], stage: { panel: 'right', inspector: 'scene' }, title: 'tour.environment.title', text: 'tour.environment.text' },
   { id: 'camera', chapter: 'inspector', targets: ['section-camera'], stage: { panel: 'right', inspector: 'scene' }, title: 'tour.camera.title', text: 'tour.camera.text' },
   // With no part to select (an empty project) the catalogue is not there: the inspector itself is shown, and says so.
   { id: 'material', chapter: 'inspector', targets: ['material', 'inspector'], stage: { panel: 'right', inspector: 'part', catalog: true }, title: 'tour.material.title', text: 'tour.material.text' },
+  // M3a: Simple ↔ Nodes and the material editor.
+  { id: 'nodes', chapter: 'inspector', targets: ['material-nodes', 'inspector'], stage: { panel: 'right', inspector: 'part' }, title: 'tour.nodes.title', text: 'tour.nodes.text' },
   { id: 'lights', chapter: 'scene', targets: ['scene-panel'], stage: { sceneTab: 'lights', panel: 'left' }, title: 'tour.lights.title', text: 'tour.lights.text' },
   { id: 'cameras', chapter: 'scene', targets: ['scene-panel'], stage: { sceneTab: 'cameras', panel: 'left' }, title: 'tour.cameras.title', text: 'tour.cameras.text' },
   { id: 'studios', chapter: 'scene', targets: ['scene-panel'], stage: { sceneTab: 'studios', panel: 'left' }, title: 'tour.studios.title', text: 'tour.studios.text' },

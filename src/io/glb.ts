@@ -1,7 +1,8 @@
 // A mesh as a binary glTF (GLB 2.0), for the meshes embedded in .repack.json (ARCHITECTURE §8).
 //
 // One mesh per file: a scene with one node, the node's mesh with one triangle primitive, and one buffer holding
-// POSITION (float32 x3), NORMAL (float32 x3), TEXCOORD_0 (float32 x2, when the mesh has UVs) and the indices
+// POSITION (float32 x3), NORMAL (float32 x3), TEXCOORD_0 (float32 x2, when the mesh has UVs), TEXCOORD_1 (the second
+// set, M2a, only when there is one) and the indices
 // (uint32), all little endian and tightly packed. The numbers are the registry's own bytes, so a mesh comes back
 // bit for bit. The node carries the rotation and scale that stand a Z-up millimetre mesh up in a Y-up metre
 // viewer, so a decoded GLB looks right in any other tool; the reader ignores them (the numbers are the mesh).
@@ -24,7 +25,7 @@ const ELEMENT_ARRAY_BUFFER = 34963;
 const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
 /** The part of a mesh a GLB carries. */
-export type GlbMesh = Pick<MeshData, 'positions' | 'normals' | 'indices' | 'uvs'>;
+export type GlbMesh = Pick<MeshData, 'positions' | 'normals' | 'indices' | 'uvs' | 'uvs2'>;
 
 const pad4 = (n: number): number => (n + 3) & ~3;
 
@@ -61,12 +62,14 @@ export function unpackUint32(bytes: Uint8Array): Uint32Array {
 
 /** `name` is the mesh's id; it goes into the node and mesh names so a decoded file says what it is. */
 export function meshToGlb(name: string, mesh: GlbMesh): Uint8Array {
-  const { positions, normals, indices, uvs } = mesh;
+  const { positions, normals, indices, uvs, uvs2 } = mesh;
   const streams: { key: string; type: 'VEC3' | 'VEC2' | 'SCALAR'; data: Float32Array | Uint32Array; component: number; target: number }[] = [
     { key: 'POSITION', type: 'VEC3', data: positions, component: FLOAT, target: ARRAY_BUFFER },
     { key: 'NORMAL', type: 'VEC3', data: normals, component: FLOAT, target: ARRAY_BUFFER },
   ];
   if (uvs) streams.push({ key: 'TEXCOORD_0', type: 'VEC2', data: uvs, component: FLOAT, target: ARRAY_BUFFER });
+  // M2a: the second set, only when there is one (a mesh without it writes the bytes it always did).
+  if (uvs && uvs2) streams.push({ key: 'TEXCOORD_1', type: 'VEC2', data: uvs2, component: FLOAT, target: ARRAY_BUFFER });
   streams.push({ key: 'indices', type: 'SCALAR', data: indices, component: UINT, target: ELEMENT_ARRAY_BUFFER });
 
   const per = (type: string) => (type === 'VEC3' ? 3 : type === 'VEC2' ? 2 : 1);
@@ -200,6 +203,7 @@ export function glbToMesh(bytes: Uint8Array): { name: string; mesh: GlbMesh } {
   const positions = read(attributes.POSITION, 'POSITION', FLOAT, 'VEC3', 3, (n) => new Float32Array(n));
   const normals = read(attributes.NORMAL, 'NORMAL', FLOAT, 'VEC3', 3, (n) => new Float32Array(n));
   const uvs = attributes.TEXCOORD_0 === undefined ? undefined : read(attributes.TEXCOORD_0, 'TEXCOORD_0', FLOAT, 'VEC2', 2, (n) => new Float32Array(n));
+  const uvs2 = uvs === undefined || attributes.TEXCOORD_1 === undefined ? undefined : read(attributes.TEXCOORD_1, 'TEXCOORD_1', FLOAT, 'VEC2', 2, (n) => new Float32Array(n));
   const indices = read(prim.indices, 'indices', UINT, 'SCALAR', 1, (n) => new Uint32Array(n));
-  return { name: typeof mesh0.name === 'string' ? mesh0.name : '', mesh: { positions, normals, indices, uvs } };
+  return { name: typeof mesh0.name === 'string' ? mesh0.name : '', mesh: { positions, normals, indices, uvs, ...(uvs2 ? { uvs2 } : {}) } };
 }

@@ -92,7 +92,7 @@ export interface Knot {
 
 /** The knot spec of a material instance, or null when it has none (as io/rsb.ts patternToRsb writes it). */
 export function knotSpecOf(inst: MaterialInstance | null | undefined): KnotSpec | null {
-  if (!inst || inst.family !== 'WOOD') return null;
+  if (!inst || inst.family !== 'WOOD' || inst.graph) return null;
   const p = inst.params;
   if (String(p.woodFigure ?? 'RINGS') !== 'RINGS') return null;
   const n = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);

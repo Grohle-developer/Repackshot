@@ -210,7 +210,8 @@ describe('invalid items are skipped with a reason and the rest are kept', () => 
     const item = r.lib.materials[0];
     expect(item.material.wear.amount).toBe(0);
     expect(item.material.wear.edgeColor).toEqual([0.75, 0.75, 0.75, 1]);
-    expect(item.material.textures).toMatchObject({ color: null, roughness: null, projection: 'UV', scale: 2 });
+    // A library written before M2a has the flat shape: its projection and scale become the mapping (M2a); the images never travel.
+    expect(item.material.textures).toMatchObject({ color: null, roughness: null, mapping: { projection: 'UV', repeat: [2, 2] }, labels: [] });
   });
 
   it('validates a single item directly', () => {

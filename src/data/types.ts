@@ -150,6 +150,11 @@ export type BackgroundMode = 'FLAT' | 'HDRI';
 
 export interface StudioPreset {
   key: string;
+  /**
+   * L6: the set this type's own rig is (light-setups.ts): its lights are the set's, and with the type's own rig
+   * (setup PRESET) its decoration and look come too. The set's exposure offset is already in `exposure`.
+   */
+  set?: string;
   label: Label;
   /** Typical part size in millimetres. */
   sizeMm: number;
@@ -169,6 +174,7 @@ export interface StudioPreset {
 }
 
 export type LightStyle =
+  | 'SETS'
   | 'PRODUCT'
   | 'TRADITIONAL'
   | 'CINEMATIC'
@@ -183,6 +189,77 @@ export interface LightStyleEntry {
   label: Label;
 }
 
+/** The object a set's thumbnail shows (L6): the one the set is designed for. */
+export type SetHero = 'BOTTLE' | 'BOX' | 'RING' | 'CHROME' | 'SHOE' | 'SPHERES';
+
+/**
+ * What stands behind the product in a set (L6). FLAT: a background colour; GRADIENT: a background image made from
+ * two colours, top to bottom; SWEEP: the infinity sweep of U9 (a primitive fitted to the camera), in a matte paper of
+ * `color`, which takes light and shadow. Neither FLAT nor GRADIENT is something light can land on: a set with a
+ * `pool` and one of them gets a sweep of that colour instead (the pool needs a wall).
+ */
+export interface SetBackdrop {
+  kind: 'FLAT' | 'GRADIENT' | 'SWEEP';
+  /** FLAT and SWEEP: the colour (linear RGB). */
+  color?: RGB;
+  /** GRADIENT: the colour at the top and at the bottom of the frame. */
+  top?: RGB;
+  bottom?: RGB;
+}
+
+/**
+ * The pool of light on the backdrop behind the product (L6): a spot aimed from behind the product (`az` / `el`,
+ * camera-relative, from the rig pivot) at the backdrop the camera sees over the product; `cone` (degrees) is how wide
+ * the pool is (the cone that would light it from POOL_THROW away), `share` its weight among the lights of the set
+ * (measured where it lands), white at `kelvin` or of `color` (core/sets.ts).
+ */
+export interface SetPool {
+  az: number;
+  el: number;
+  cone: number;
+  share: number;
+  kelvin?: number;
+  color?: RGB;
+}
+
+/**
+ * The floor of a set (L6). CATCHER: the studio's shadow catcher (the default); MATTE: a matte floor of `color` (the
+ * sweep's own floor when the backdrop is a sweep, a plane otherwise); GLOSSY and MIRROR: a catalogue material under
+ * the product (`material`; the floor of the sweep when there is one, a plane otherwise).
+ */
+export interface SetFloor {
+  kind: 'CATCHER' | 'MATTE' | 'GLOSSY' | 'MIRROR';
+  /** MATTE: the colour (linear RGB). */
+  color?: RGB;
+  /** GLOSSY and MIRROR: the catalogue material. */
+  material?: string;
+  /** GLOSSY and MIRROR: the sheet's own roughness, over its material's (a softer reflection). */
+  roughness?: number;
+}
+
+/**
+ * A card of a set (L6): a flat primitive of a catalogue material (white, black or silver card) that the product
+ * reflects, facing the rig pivot from `az` / `el` / `dist` (camera-relative, part sizes, as a light), `size` wide and
+ * `sizeY` tall in part sizes, turned `roll` degrees about its axis. Out of the frame by construction (L6:
+ * |az| >= 55 or el >= 60; a test checks it with every product type's focal length).
+ */
+export interface SetCard {
+  material: string;
+  az: number;
+  el: number;
+  dist: number;
+  size: number;
+  sizeY?: number;
+  roll?: number;
+}
+
+/** The camera a set suggests (L6): applied only with "Use the set's camera". */
+export interface SetCamera {
+  /** Elevation above the horizon, degrees. */
+  el?: number;
+  focalMm?: number;
+}
+
 export interface LightSetup {
   key: string;
   label: Label;
@@ -191,6 +268,23 @@ export interface LightSetup {
   world: WorldKind;
   /** `null` only for PRESET, which means "use the product preset's own rig". */
   lights: LightSpec[] | null;
+  // --- L6: a set is a setup with some of these (all optional: the 72 setups before L6 have none) ---
+  backdrop?: SetBackdrop;
+  pool?: SetPool;
+  floor?: SetFloor;
+  cards?: SetCard[];
+  /** Exposure offset over the product type's, EV. */
+  exposureEv?: number;
+  /** Strength of the environment (the studio dome) while the set is in force. */
+  envStrength?: number;
+  /** The camera the set suggests (not applied on its own). */
+  camera?: SetCamera;
+  /** The object of its thumbnail. */
+  hero?: SetHero;
+  /** The photographic reason, two sentences (the thumbnail's tooltip). */
+  why?: Label;
+  /** Caustics matter in this set (its thumbnail renders them; the render's Automatic picks them up). */
+  caustics?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,14 +526,21 @@ export type MoveKind =
   | 'TINT'
   | 'HDRI'
   | 'EXPLODE'
-  | 'VISIBILITY';
+  | 'VISIBILITY'
+  /** A recorded simulation (S2): the clip carries the baked track and plays it. */
+  | 'PHYSICS';
 
 export type EasingKind = 'LINEAR' | 'EASE' | 'EASE_IN' | 'EASE_OUT' | 'EASE_STRONG';
 
 /** What a clip animates. */
 export type TargetKind = 'OBJECT' | 'SUBJECT' | 'SCENE';
 
-export type ExplodeMode = 'RADIAL' | 'AXIS_X' | 'AXIS_Y' | 'AXIS_Z' | 'CYLINDRICAL' | 'CUSTOM';
+/**
+ * How an EXPLODE separates the parts (core/explode.ts). LINEAR, CYLINDRICAL and SPHERICAL are the three geometries
+ * of N6; RADIAL is a synonym of SPHERICAL (its meaning since it was ported), AXIS_X/Y/Z are LINEAR (separate) along
+ * that axis, CUSTOM (a direction per part) is not built and reads as SPHERICAL.
+ */
+export type ExplodeMode = 'RADIAL' | 'AXIS_X' | 'AXIS_Y' | 'AXIS_Z' | 'CYLINDRICAL' | 'CUSTOM' | 'LINEAR' | 'SPHERICAL';
 
 export interface MoveItem {
   key: MoveKind;
@@ -514,7 +615,12 @@ export type DoctorCheckKey =
   | 'lights'
   | 'caustics'
   | 'persist'
-  | 'output';
+  | 'output'
+  | 'aspect'
+  /** S2: a dynamic part starts below the floor (not ported). */
+  | 'physics'
+  /** S4a: an ambient effect asks for more particles than its cap. */
+  | 'particles';
 
 /** Descriptor only: what the check looks for and what its one-click fix does. */
 export interface DoctorCheck {

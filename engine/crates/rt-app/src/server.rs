@@ -83,6 +83,8 @@ pub struct App {
     pub files: crate::files::Files,
     /// The AI runtime, its downloads and its server (`/api/ai/*`, `src/ai/`).
     pub ai: Arc<crate::ai::Ai>,
+    /// Updating the application from inside it (`/api/update/*`, `src/update/`).
+    pub update: Arc<crate::update::Updater>,
     last_alive: Mutex<Instant>,
     hardware: Mutex<Option<Hardware>>,
     connections: AtomicUsize,
@@ -180,6 +182,10 @@ impl App {
         if let Some(r) = crate::ai::route(self, req, &parts, body) {
             return api(r);
         }
+        // Updating the application (update/mod.rs).
+        if let Some(r) = crate::update::route(&self.update, req, &parts, body) {
+            return api(r);
+        }
         let m = req.method.as_str();
         api(match (m, parts.as_slice()) {
             ("GET", ["info"]) => self.info(),
@@ -197,6 +203,7 @@ impl App {
             ("GET", ["render", "state"]) => self.render_state(req),
             ("GET", ["render", id]) => self.get_render(req, id),
             ("GET", ["render", id, "passes"]) => self.get_passes(id),
+            ("POST", ["render", id, "denoise"]) => self.post_live_denoise(req, id),
             ("DELETE", ["render", id]) => match id.parse::<u32>() {
                 Ok(id) if self.engine.cancel(id) => Response::empty(204),
                 _ => Response::error(404, "not-found", "no such job"),
@@ -338,6 +345,10 @@ impl App {
                 .num("aiApi", 1.0)
                 // The AI post-processing pipeline of ai/post.rs (`/api/ai/post`, version 1).
                 .num("aiPost", 1.0)
+                // Updating from inside the application (`/api/update/*`, version 1), and whether this
+                // launcher was started by an update (`--after-update`).
+                .num("updateApi", 1.0)
+                .bool("afterUpdate", self.update.after_update())
                 .build(),
         )
     }
@@ -391,6 +402,21 @@ impl App {
             Some(Ok(n)) => Some(n),
             Some(Err(_)) => return Response::error(400, "bad-query", "seq=<n>"),
         };
+        // `denoise=0|1` (U11): a viewport's live denoise switch to begin with (its RSB asks for
+        // denoise; without the query it begins on).
+        let live_denoise = match req.query("denoise") {
+            None => None,
+            Some("1") => Some(true),
+            Some("0") => Some(false),
+            Some(_) => return Response::error(400, "bad-query", "denoise=0|1"),
+        };
+        if live_denoise.is_some() && kind != Kind::Viewport {
+            return Response::error(
+                400,
+                "bad-query",
+                "denoise= is the live switch of a viewport job",
+            );
+        }
         // `full=1`: the body is the complete scene even without `MESH` sections (an empty project).
         let whole = req.query("full") == Some("1") || has_meshes(&rsb);
         let opts = JobOptions {
@@ -398,6 +424,8 @@ impl App {
             share,
             seq,
             passes,
+            live_denoise,
+            stand_in_denoise: None,
         };
         match self
             .engine
@@ -457,6 +485,11 @@ impl App {
         Response::json(200, state)
     }
 
+    /// `GET /api/render/<id>`: the job's frame. With `after=<pass>` it waits (up to
+    /// [`LONG_POLL`]) for a newer pass, the end, or a change in how it shares the threads; with
+    /// `version=<n>` too (U11), also for a newer image (a live viewport's denoised one, or its
+    /// switch turned), and the sums come only when the image is newer than `n` (without it, only
+    /// with a newer pass). `data=0`: the header only.
     fn get_render(&self, req: &Request, id: &str) -> Response {
         let Some(job) = id.parse::<u32>().ok().and_then(|id| self.engine.job(id)) else {
             return Response::error(404, "not-found", "no such job");
@@ -464,13 +497,18 @@ impl App {
         // Asked about: its page still wants it.
         job.touch();
         let after = req.query("after").and_then(|a| a.parse::<u32>().ok());
+        let version = req.query("version").and_then(|v| v.parse::<u32>().ok());
         let frame = match after {
-            Some(n) => job.wait_newer(n, LONG_POLL),
+            Some(n) => job.wait_newer_image(n, version, LONG_POLL),
             None => job.frame(),
         };
         let data = req.query("data") != Some("0")
             && !frame.is_empty()
-            && after.is_none_or(|n| frame.pass > n);
+            && match (version, after) {
+                (Some(v), _) => frame.version > v,
+                (None, Some(n)) => frame.pass > n,
+                (None, None) => true,
+            };
         Response {
             status: 200,
             headers: vec![("Content-Type".into(), "application/octet-stream".into())],
@@ -478,6 +516,33 @@ impl App {
                 len: frame.len(data),
                 write: Box::new(move |w| frame.write(data, w)),
             },
+        }
+    }
+
+    /// `POST /api/render/<id>/denoise?on=0|1` (U11): turns a viewport job's live denoise on or
+    /// off. Off, its next frame is the noisy accumulation; on, it denoises what has accumulated at
+    /// once (also once the job is over: a follower that asks with `version` waits for it). 409 for
+    /// a job without live denoise (a final, or a view posted without denoise).
+    fn post_live_denoise(&self, req: &Request, id: &str) -> Response {
+        let Some(job) = id.parse::<u32>().ok().and_then(|id| self.engine.job(id)) else {
+            return Response::error(404, "not-found", "no such job");
+        };
+        let on = match req.query("on") {
+            Some("1") => true,
+            Some("0") => false,
+            _ => return Response::error(400, "bad-query", "on=0|1"),
+        };
+        job.touch();
+        match job.set_live_denoise(on) {
+            Some(on) => Response::json(
+                200,
+                json::Object::new()
+                    .num("id", f64::from(job.id))
+                    .bool("on", on)
+                    .num("version", f64::from(job.frame().version))
+                    .build(),
+            ),
+            None => Response::error(409, "not-live", "this job has no live denoise"),
         }
     }
 
@@ -730,6 +795,9 @@ pub struct Options {
     /// How many final renders with passes are kept, and the largest kept in memory, in place of
     /// [`crate::kept::KeepLimits::default`] (the tests: a small store that spills to the disk).
     pub keep: Option<crate::kept::KeepLimits>,
+    /// The updater's feed, downloader and mode in place of the real ones (the tests: a local server
+    /// in place of GitHub, a kind of copy a Linux computer cannot be).
+    pub update: Option<crate::update::Config>,
 }
 
 /// A running server.
@@ -757,6 +825,11 @@ impl Server {
         let port = listener.local_addr()?.port();
         let models = Store::new(paths.models(), crate::recommend::catalogue().clone());
         let paths_data = paths.data_dir.clone();
+        let update = crate::update::Updater::new(
+            options
+                .update
+                .unwrap_or_else(|| crate::update::Config::of(&paths)),
+        );
         let app = Arc::new(App {
             paths,
             token,
@@ -777,6 +850,7 @@ impl Server {
                 }
                 None => crate::ai::Ai::new(&paths_data),
             },
+            update,
             last_alive: Mutex::new(Instant::now()),
             hardware: Mutex::new(None),
             connections: AtomicUsize::new(0),
@@ -838,6 +912,7 @@ impl Server {
         }
         self.app.engine.shutdown();
         self.app.ai.shutdown();
+        self.app.update.shutdown();
     }
 }
 

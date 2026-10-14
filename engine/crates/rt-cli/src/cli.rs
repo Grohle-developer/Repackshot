@@ -1,6 +1,10 @@
 //! Command line parsing and the `rt` command itself.
 
-use crate::{render_progressive, sheet, write_png};
+use crate::{encode_film, render_progressive, sheet, write_file, OutputFormat, OutputSpec};
+use rt_core::color::Tonemap;
+use rt_core::pixel_filter::{
+    FILTER_BLACKMAN_HARRIS, FILTER_NONE, FILTER_STANDARD, FILTER_TENT, MAX_EDGE_SUPERSAMPLE,
+};
 use rt_core::scene::{RenderSettings, Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -11,7 +15,8 @@ rt: Repackshot command line renderer
 
 USAGE:
     rt <scene.rsb> -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
-       [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R]
+       [--denoise] [--denoise-strength S] [--keep-noisy] [--caustics N] [--caustic-radius R]
+       [--format F] [--bits N] [--pixel-filter F] [--edge-samples K]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --pattern-sheet <dir> --materials <patterns.rsb> [--only wood|cloth] [--samples N]
@@ -23,11 +28,21 @@ USAGE:
     rt --write-e6-example <scene.rsb>
     rt --write-e6-patterns-example <scene.rsb>
     rt --write-e6-cloth-example <scene.rsb>
+    rt --write-e11-example <scene.rsb>
+    rt --write-ambient-example <scene.rsb>
+    rt --write-o1-example <scene.rsb>
+    rt --write-film-thumb <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
 OPTIONS:
-    -o, --output <file>     PNG file to write
+    -o, --output <file>     image file to write (PNG, or TIFF or DNG with --format or by extension)
+        --format <F>        png (the default), tiff or dng; without it, the output's extension
+                            decides: .tif and .tiff are TIFF, .dng is DNG, anything else PNG
+        --bits <N>          bits per channel: PNG 8; TIFF 8 (default), 16 (sRGB) or 32 (float,
+                            linear light, exposure applied, no tone curve); DNG 32. A DNG is a
+                            linear raw a photo developer opens with the whole latitude of the
+                            render
         --samples <N>       samples per pixel (default: the scene's, else 16; sheet: 64)
         --threads <N>       worker threads (default: all cores)
         --size <WxH>        image size in pixels, overriding the scene (sheet: 480x360)
@@ -35,11 +50,20 @@ OPTIONS:
                             stops between sample passes once it is spent (0: no limit)
         --denoise           write the denoised image (RNDR.denoise bit 0), guided by the
                             albedo, normal, depth and id passes rendered with it
+        --denoise-strength <S>
+                            how much of the denoised image, 0 to 1 (RNDR.denoise_strength;
+                            default 1): the image without denoise × (1 − S) + denoised × S;
+                            0 writes the image without denoise
         --keep-noisy        with --denoise, also write the image without denoise next to it
                             (<out>-noisy.png)
         --caustics <N>      trace N caustic photons per sample (RNDR.caustic_photons; 0: off)
         --caustic-radius <R>
                             first gather radius of the caustics in pixels (default 3)
+        --pixel-filter <F>  where the samples go in their pixel (RNDR.pixel_filter): none
+                            (the centre), standard (a box of 1 px, the default), soft (a
+                            tent of 2 px) or fine (Blackman-Harris of 3 px)
+        --edge-samples <K>  samples per sample index of the edge pixels, 1 to 16
+                            (RNDR.edge_supersample; default 1)
         --example           render the built-in example scene instead of a file
         --sheet <dir>       render the example part under six built-in light recipes, the
                             E5 scenes (glass, coat, emitter, sky, HDRI) and the E5c skies
@@ -70,6 +94,18 @@ OPTIONS:
                             write the E6 pattern scene (procedural wood) as an RSB file
         --write-e6-cloth-example <f>
                             write the E6 cloth scene (procedural cloth) as an RSB file
+        --write-e11-example <f>
+                            write the E11 parity scene (the example with the fine filter and
+                            twice the samples on its edges) as an RSB file
+        --write-ambient-example <f>
+                            write the S4a parity scene (the example with dust, rain and
+                            snow: three ambient effects) as an RSB file
+        --write-o1-example <f>
+                            write the O1 parity scene (the example through a lens with every
+                            knob of the enhanced thin lens, and bokeh lights) as an RSB file
+        --write-film-thumb <f>
+                            write the base scene of the film plugin's recipe thumbnails (the
+                            perfume bottle beside the table lamp, 320x200) as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -101,10 +137,21 @@ pub struct Options {
     pub denoise: bool,
     /// `--keep-noisy`: also the image without denoise.
     pub keep_noisy: bool,
+    /// `--denoise-strength`: how much of the denoised image (U11b), overriding the scene's.
+    pub denoise_strength: Option<f32>,
     /// Caustic photons per sample, overriding the scene's.
     pub caustics: Option<u32>,
     /// First caustic gather radius in pixels, overriding the scene's.
     pub caustic_radius: Option<f32>,
+    /// `--pixel-filter`: the pixel filter (E11, `RNDR.pixel_filter`), overriding the scene's.
+    pub pixel_filter: Option<u32>,
+    /// `--edge-samples`: the samples of an edge pixel per sample index (E11), overriding the
+    /// scene's.
+    pub edge_samples: Option<u32>,
+    /// `--format`: the file format (else the output's extension decides).
+    pub format: Option<OutputFormat>,
+    /// `--bits`: bits per channel.
+    pub bits: Option<u32>,
 }
 
 impl Options {
@@ -113,6 +160,8 @@ impl Options {
         if let Some((width, height)) = self.size {
             scene.render.width = width;
             scene.render.height = height;
+            // The particles' minimum size on screen depends on the image size.
+            scene.refresh_particles();
         }
         if self.denoise {
             scene.render.denoise |= DENOISE_IMAGE;
@@ -120,11 +169,20 @@ impl Options {
         if self.keep_noisy {
             scene.render.denoise |= DENOISE_KEEP_NOISY;
         }
+        if let Some(strength) = self.denoise_strength {
+            scene.render.denoise_strength = strength;
+        }
         if let Some(photons) = self.caustics {
             scene.render.caustic_photons = photons;
         }
         if let Some(radius) = self.caustic_radius {
             scene.render.caustic_radius = radius;
+        }
+        if let Some(filter) = self.pixel_filter {
+            scene.render.pixel_filter = filter;
+        }
+        if let Some(k) = self.edge_samples {
+            scene.render.edge_supersample = k;
         }
         let samples = self.samples.unwrap_or(if scene.render.max_samples > 0 {
             scene.render.max_samples
@@ -214,6 +272,26 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the E11 parity scene (`rt_core::example::e11_scene`) as an RSB file.
+    WriteE11Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the S4a parity scene (`rt_core::example::ambient_scene`) as an RSB file.
+    WriteAmbientExample {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the O1 parity scene (`rt_core::example::o1_scene`) as an RSB file.
+    WriteO1Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the base scene of the film plugin's thumbnails (`scenes::film_thumb`) as an RSB file.
+    WriteFilmThumb {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the procedural studio HDRI as a Radiance `.hdr` file.
     WriteStudioHdri {
         /// `.hdr` file to write.
@@ -248,6 +326,15 @@ fn seconds(text: &str, flag: &str) -> Result<f32, String> {
     }
 }
 
+fn parse_format(text: &str) -> Result<OutputFormat, String> {
+    match text.to_ascii_lowercase().as_str() {
+        "png" => Ok(OutputFormat::Png),
+        "tiff" | "tif" => Ok(OutputFormat::Tiff),
+        "dng" => Ok(OutputFormat::Dng),
+        _ => Err(format!("--format expects png, tiff or dng, got '{text}'")),
+    }
+}
+
 fn parse_size(text: &str) -> Result<(u32, u32), String> {
     let bad = || format!("--size expects WxH such as 1280x720, got '{text}'");
     let (w, h) = text.split_once(['x', 'X']).ok_or_else(bad)?;
@@ -278,6 +365,10 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e6 = None;
     let mut write_e6p = None;
     let mut write_e6cloth = None;
+    let mut write_e11 = None;
+    let mut write_ambient = None;
+    let mut write_o1 = None;
+    let mut write_film_thumb = None;
     let mut sheet_dir = None;
     let mut pattern_dir = None;
     let mut pattern_materials = None;
@@ -296,6 +387,17 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--max-seconds" => options.max_seconds = Some(seconds(value(&mut it, arg)?, arg)?),
             "--denoise" => options.denoise = true,
             "--keep-noisy" => options.keep_noisy = true,
+            "--denoise-strength" => {
+                let text = value(&mut it, arg)?;
+                match text.parse::<f32>() {
+                    Ok(s) if (0.0..=1.0).contains(&s) => options.denoise_strength = Some(s),
+                    _ => {
+                        return Err(format!(
+                            "--denoise-strength expects a number from 0 to 1, got '{text}'"
+                        ))
+                    }
+                }
+            }
             "--caustics" => {
                 let text = value(&mut it, arg)?;
                 match text.parse::<u32>() {
@@ -308,10 +410,45 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                     }
                 }
             }
+            "--pixel-filter" => {
+                let text = value(&mut it, arg)?;
+                options.pixel_filter = Some(match text.as_str() {
+                    "none" => FILTER_NONE,
+                    "standard" => FILTER_STANDARD,
+                    "soft" => FILTER_TENT,
+                    "fine" => FILTER_BLACKMAN_HARRIS,
+                    _ => {
+                        return Err(format!(
+                            "--pixel-filter expects none, standard, soft or fine, got '{text}'"
+                        ))
+                    }
+                });
+            }
+            "--edge-samples" => {
+                let text = value(&mut it, arg)?;
+                match text.parse::<u32>() {
+                    Ok(k) if (1..=MAX_EDGE_SUPERSAMPLE).contains(&k) => {
+                        options.edge_samples = Some(k)
+                    }
+                    _ => {
+                        return Err(format!(
+                            "--edge-samples expects a number from 1 to {MAX_EDGE_SUPERSAMPLE}, got '{text}'"
+                        ))
+                    }
+                }
+            }
             "--caustic-radius" => {
                 options.caustic_radius = Some(seconds(value(&mut it, arg)?, arg).map_err(|_| {
                     "--caustic-radius expects a non-negative number of pixels".to_string()
                 })?)
+            }
+            "--format" => options.format = Some(parse_format(value(&mut it, arg)?)?),
+            "--bits" => {
+                let text = value(&mut it, arg)?;
+                match text.parse::<u32>() {
+                    Ok(n @ (8 | 16 | 32)) => options.bits = Some(n),
+                    _ => return Err(format!("--bits expects 8, 16 or 32, got '{text}'")),
+                }
             }
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--pattern-sheet" => pattern_dir = Some(PathBuf::from(value(&mut it, arg)?)),
@@ -336,6 +473,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e6-example" => write_e6 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e6-patterns-example" => write_e6p = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e6-cloth-example" => write_e6cloth = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-ambient-example" => {
+                write_ambient = Some(PathBuf::from(value(&mut it, arg)?));
+            }
+            "--write-o1-example" => write_o1 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-film-thumb" => write_film_thumb = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -409,6 +552,30 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         }
         return Ok(Command::WriteE6ClothExample { path });
     }
+    if let Some(path) = write_e11 {
+        if args.len() != 2 {
+            return Err("--write-e11-example takes no other option".into());
+        }
+        return Ok(Command::WriteE11Example { path });
+    }
+    if let Some(path) = write_ambient {
+        if args.len() != 2 {
+            return Err("--write-ambient-example takes no other option".into());
+        }
+        return Ok(Command::WriteAmbientExample { path });
+    }
+    if let Some(path) = write_o1 {
+        if args.len() != 2 {
+            return Err("--write-o1-example takes no other option".into());
+        }
+        return Ok(Command::WriteO1Example { path });
+    }
+    if let Some(path) = write_film_thumb {
+        if args.len() != 2 {
+            return Err("--write-film-thumb takes no other option".into());
+        }
+        return Ok(Command::WriteFilmThumb { path });
+    }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
             return Err("--write-studio-hdri takes no other option".into());
@@ -422,13 +589,23 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         return Ok(Command::WriteExample { path });
     }
     if let Some(dir) = sheet_dir {
-        if input.is_some() || output.is_some() || options.max_seconds.is_some() {
-            return Err("--sheet renders its own scenes: no scene, -o or --max-seconds".into());
+        if input.is_some()
+            || output.is_some()
+            || options.max_seconds.is_some()
+            || options.format.is_some()
+            || options.bits.is_some()
+        {
+            return Err(
+                "--sheet renders its own scenes: no scene, -o, --max-seconds, --format or --bits"
+                    .into(),
+            );
         }
         return Ok(Command::Sheet { dir, options });
     }
     let input = input.ok_or("no scene given: pass a .rsb file or --example")?;
     let output = output.ok_or("no output given: pass -o <out.png>")?;
+    // Refused here, with the usage, not after the render.
+    OutputSpec::resolve(options.format, options.bits, &output)?;
     Ok(Command::Render {
         input,
         output,
@@ -489,14 +666,38 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::WriteE11Example { path } => {
+            let bytes = rt_core::example::e11_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteE6PatternsExample { path } => {
             let bytes = rt_core::example::e6_patterns_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::WriteAmbientExample { path } => {
+            let bytes = rt_core::example::ambient_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteE6ClothExample { path } => {
             let bytes = rt_core::example::e6_cloth_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteO1Example { path } => {
+            let bytes = rt_core::example::o1_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteFilmThumb { path } => {
+            let bytes = crate::scenes::film_thumb(crate::scenes::FILM_THUMB_SIZE).to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
@@ -574,6 +775,7 @@ pub fn run(command: Command) -> Result<(), String> {
             output,
             options,
         } => {
+            let started = std::time::Instant::now();
             let mut scene = match &input {
                 Input::Example => rt_core::example::scene(),
                 Input::File(path) => {
@@ -583,6 +785,7 @@ pub fn run(command: Command) -> Result<(), String> {
                 }
             };
             let (samples, threads) = options.apply(&mut scene);
+            let loaded = started.elapsed();
             let budget = options.budget(&scene);
             let (width, height) = (scene.render.width, scene.render.height);
             println!(
@@ -595,6 +798,14 @@ pub fn run(command: Command) -> Result<(), String> {
                 rt_core::simd::Isa::detect().name(),
                 scene.geometry.bvh_stats().width.lanes()
             );
+            if !scene.effects.is_empty() {
+                println!(
+                    "ambient: {} particles in {} effects, evaluated with their BVHs in {:.3} s",
+                    scene.geometry.particle_count(),
+                    scene.effects.len(),
+                    loaded.as_secs_f64()
+                );
+            }
 
             let result = render_progressive(&scene, samples, threads, budget);
             println!(
@@ -605,30 +816,31 @@ pub fn run(command: Command) -> Result<(), String> {
                 result.rays_per_second() / 1.0e6
             );
 
-            let tone = |film: &rt_core::image::Film| {
-                film.to_srgb8_tonemapped(
-                    scene.render.exposure_ev,
-                    rt_core::color::Tonemap::from_u32(scene.render.tonemap),
-                )
+            let spec = OutputSpec::resolve(options.format, options.bits, &output)?;
+            let (exposure_ev, tonemap) = (
+                scene.render.exposure_ev,
+                Tonemap::from_u32(scene.render.tonemap),
+            );
+            let write = |path: &std::path::Path, film: &rt_core::image::Film| {
+                write_file(path, &encode_film(film, exposure_ev, tonemap, spec))
+                    .map_err(|e| format!("{}: {e}", path.display()))
             };
-            if scene.render.denoise & DENOISE_IMAGE != 0 {
+            // U11b: at a strength of 0 nothing is denoised (the image is the one without).
+            if scene.render.denoise & DENOISE_IMAGE != 0 && scene.render.denoise_strength > 0.0 {
                 let t0 = std::time::Instant::now();
                 let clean = result
-                    .denoised(threads)
+                    .denoised_at(threads, scene.render.denoise_strength)
                     .ok_or("the denoiser found no guide passes")?;
                 println!("denoised in {:.3} s", t0.elapsed().as_secs_f64());
-                write_png(&output, width, height, &tone(&clean))
-                    .map_err(|e| format!("{}: {e}", output.display()))?;
+                write(&output, &clean)?;
                 println!("wrote {}", output.display());
                 if scene.render.denoise & DENOISE_KEEP_NOISY != 0 {
                     let noisy = noisy_path(&output);
-                    write_png(&noisy, width, height, &result.to_rgb8(&scene))
-                        .map_err(|e| format!("{}: {e}", noisy.display()))?;
+                    write(&noisy, &result.film)?;
                     println!("wrote {}", noisy.display());
                 }
             } else {
-                write_png(&output, width, height, &result.to_rgb8(&scene))
-                    .map_err(|e| format!("{}: {e}", output.display()))?;
+                write(&output, &result.film)?;
                 println!("wrote {}", output.display());
             }
             Ok(())
@@ -639,6 +851,7 @@ pub fn run(command: Command) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{OutputFormat, OutputSpec};
 
     fn parse(args: &[&str]) -> Result<Command, String> {
         parse_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
@@ -670,6 +883,67 @@ mod tests {
                 },
             })
         );
+        // U11b: the strength of the denoise, 0 to 1.
+        assert_eq!(
+            parse(&[
+                "--example",
+                "-o",
+                "x.png",
+                "--denoise",
+                "--denoise-strength",
+                "0.25"
+            ]),
+            Ok(Command::Render {
+                input: Input::Example,
+                output: "x.png".into(),
+                options: Options {
+                    denoise: true,
+                    denoise_strength: Some(0.25),
+                    ..Options::default()
+                },
+            })
+        );
+        for bad in ["1.5", "-0.1", "half", "NaN"] {
+            assert!(
+                parse(&["--example", "-o", "x.png", "--denoise-strength", bad]).is_err(),
+                "{bad}"
+            );
+        }
+        // E11: the pixel filter by name and the edge samples, 1 to 16.
+        for (name, filter) in [
+            ("none", FILTER_NONE),
+            ("standard", FILTER_STANDARD),
+            ("soft", FILTER_TENT),
+            ("fine", FILTER_BLACKMAN_HARRIS),
+        ] {
+            assert_eq!(
+                parse(&[
+                    "--example",
+                    "-o",
+                    "x.png",
+                    "--pixel-filter",
+                    name,
+                    "--edge-samples",
+                    "2"
+                ]),
+                Ok(Command::Render {
+                    input: Input::Example,
+                    output: "x.png".into(),
+                    options: Options {
+                        pixel_filter: Some(filter),
+                        edge_samples: Some(2),
+                        ..Options::default()
+                    },
+                })
+            );
+        }
+        assert!(parse(&["--example", "-o", "x.png", "--pixel-filter", "gauss"]).is_err());
+        for bad in ["0", "17", "two"] {
+            assert!(
+                parse(&["--example", "-o", "x.png", "--edge-samples", bad]).is_err(),
+                "{bad}"
+            );
+        }
         assert_eq!(
             parse(&["--example", "--output", "x.png", "--size", "64X48"]),
             Ok(Command::Render {
@@ -783,6 +1057,59 @@ mod tests {
     }
 
     #[test]
+    fn the_output_format_comes_from_the_flags_or_the_extension() {
+        let spec = |args: &[&str]| {
+            let Ok(Command::Render {
+                output, options, ..
+            }) = parse(args)
+            else {
+                panic!("{args:?} should parse");
+            };
+            OutputSpec::resolve(options.format, options.bits, &output).unwrap()
+        };
+        let tiff = |bits| OutputSpec {
+            format: OutputFormat::Tiff,
+            bits,
+        };
+        assert_eq!(
+            spec(&["--example", "-o", "a.png"]),
+            OutputSpec {
+                format: OutputFormat::Png,
+                bits: 8
+            }
+        );
+        assert_eq!(spec(&["--example", "-o", "a.tif"]), tiff(8));
+        assert_eq!(
+            spec(&["--example", "-o", "a.TIFF", "--bits", "16"]),
+            tiff(16)
+        );
+        assert_eq!(
+            spec(&[
+                "--example",
+                "-o",
+                "a.out",
+                "--format",
+                "tiff",
+                "--bits",
+                "32"
+            ]),
+            tiff(32)
+        );
+        let dng = OutputSpec {
+            format: OutputFormat::Dng,
+            bits: 32,
+        };
+        assert_eq!(spec(&["--example", "-o", "a.dng"]), dng);
+        assert_eq!(spec(&["--example", "-o", "a.raw", "--format", "dng"]), dng);
+        assert_eq!(spec(&["--example", "-o", "a.dng", "--bits", "32"]), dng);
+        // The flag wins over the extension.
+        assert_eq!(
+            spec(&["--example", "-o", "a.tif", "--format", "png"]).format,
+            OutputFormat::Png
+        );
+    }
+
+    #[test]
     fn parses_write_example_and_help() {
         assert_eq!(
             parse(&["--write-example", "s.rsb"]),
@@ -831,6 +1158,27 @@ mod tests {
             })
         );
         assert!(parse(&["--write-e6-cloth-example", "c.rsb", "--samples", "2"]).is_err());
+        assert_eq!(
+            parse(&["--write-ambient-example", "s4a.rsb"]),
+            Ok(Command::WriteAmbientExample {
+                path: "s4a.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-ambient-example", "s4a.rsb", "--samples", "2"]).is_err());
+        assert_eq!(
+            parse(&["--write-o1-example", "o1.rsb"]),
+            Ok(Command::WriteO1Example {
+                path: "o1.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-o1-example", "o1.rsb", "--example"]).is_err());
+        assert_eq!(
+            parse(&["--write-film-thumb", "t.rsb"]),
+            Ok(Command::WriteFilmThumb {
+                path: "t.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-film-thumb", "t.rsb", "--samples", "2"]).is_err());
         assert_eq!(parse(&["--tone-table"]), Ok(Command::ToneTable));
         assert!(parse(&["--tone-table", "--example"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Command::Help));
@@ -859,6 +1207,24 @@ mod tests {
             &["--sheet", "d", "-o", "o.png"],
             &["--example", "-o", "o.png", "--max-seconds", "-1"],
             &["--example", "-o", "o.png", "--max-seconds", "soon"],
+            &["--example", "-o", "o.png", "--format", "jpeg"],
+            &["--example", "-o", "o.png", "--format"],
+            &["--example", "-o", "o.tif", "--bits", "12"],
+            &["--example", "-o", "o.tif", "--bits", "many"],
+            // A PNG is 8-bit and a DNG is 32-bit float: the mismatch is refused before rendering.
+            &["--example", "-o", "o.png", "--bits", "16"],
+            &["--example", "-o", "o.dng", "--bits", "8"],
+            &[
+                "--example",
+                "-o",
+                "o.tif",
+                "--format",
+                "dng",
+                "--bits",
+                "16",
+            ],
+            &["--sheet", "d", "--format", "tiff"],
+            &["--sheet", "d", "--bits", "16"],
         ] {
             assert!(parse(bad).is_err(), "{bad:?} should be rejected");
         }
@@ -877,10 +1243,19 @@ mod tests {
             max_seconds: None,
             denoise: true,
             keep_noisy: true,
+            denoise_strength: Some(0.5),
             caustics: Some(4096),
             caustic_radius: Some(2.0),
+            pixel_filter: Some(FILTER_TENT),
+            edge_samples: Some(4),
+            ..Options::default()
         }
         .apply(&mut scene);
+        assert_eq!(scene.render.denoise_strength, 0.5);
+        assert_eq!(
+            (scene.render.pixel_filter, scene.render.edge_supersample),
+            (FILTER_TENT, 4)
+        );
         assert_eq!((samples, threads), (3, 5));
         assert_eq!((scene.render.width, scene.render.height), (10, 20));
         assert_eq!(scene.render.denoise, DENOISE_IMAGE | DENOISE_KEEP_NOISY);

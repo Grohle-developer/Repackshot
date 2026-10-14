@@ -12,20 +12,31 @@
 //   - Vertices are welded and hard edges found by `buildMesh`, like OBJ and STL;
 //     the loader's normals are kept when it has them.
 //   - Materials become SIMPLE instances: colour, roughness and metal read from
-//     the three material (Phong shininess is mapped to roughness). Texture
-//     images are collected as blobs for the materials phase (M2), not applied.
+//     the three material (Phong shininess is mapped to roughness). Its maps
+//     (M2a) become the slots of the instance (`collectTextures`): colour,
+//     roughness, metal, normal (or a bump map as a height map), alpha and
+//     emission, with the texture's transform as the mapping, and the images as
+//     PNG or JPEG files (the original bytes where the loader kept them, a PNG
+//     drawn from the decoded image otherwise; in a browser only).
+//   - UVs (and a second set, `uv1`) are kept per corner; glTF's v runs down and
+//     is turned over (`flipV`) to the model's convention (core/textures.ts).
 //
 // Nothing here scales or turns the axes: the geometry stays in the units and
 // axes of the file and the import options (core/import-options.ts) do the rest.
 
 import * as THREE from 'three';
 import type { ImportDetected, ImportMessage, ImportPayload, ImportTexture } from '../core/import-options';
+import { checkTextureFile, textureImageId } from '../core/texture-images';
+import { defaultMapping, newSlot, sharedMapping, type TextureMapping, type TextureSlot, type TextureSlotKey, type TextureWrap } from '../core/textures';
 import { payloadSize } from '../core/import-options';
 import { defaultInstance, plainInstance, type MaterialId, type MaterialInstance } from '../core/materials';
 import { registerMesh, type MeshData } from '../core/meshes';
 import type { FaceRange, NodeId, SceneNode } from '../core/scene';
 import type { MaterialParams } from '../data/types';
-import { buildMesh, type RawMesh } from './mesh-common';
+import { buildMesh, findCompanion, companionKey, roughnessFromShininess, type Companions, type RawMesh } from './mesh-common';
+
+export { companionKey, findCompanion, roughnessFromShininess, type Companions } from './mesh-common';
+export { textureNotes } from './texture-notes';
 
 export interface ConvertOptions {
   fileName: string;
@@ -43,6 +54,10 @@ export interface ConvertOptions {
   roughnessWhenDefault?: number;
   /** Ignore the loader's normals: it computed smooth ones for a file that has none (USD without `normals`). */
   ignoreNormals?: boolean;
+  /** The file's v runs down (glTF): turn it over to the model's v up. */
+  flipV?: boolean;
+  /** More of what makes two materials the same (glTF: the file's definition, whose maps the loader may not have loaded). */
+  materialKey?(m: THREE.Material): string;
 }
 
 export interface ConvertedScene {
@@ -60,12 +75,6 @@ export interface ConvertedScene {
 let importCounter = 0;
 
 // --- Materials -----------------------------------------------------------------------------
-
-/** Roughness for a Blinn-Phong material: the GGX alpha that has the same lobe, as `r = alpha^(1/2)`. */
-export function roughnessFromShininess(shininess: number, specularLuma: number): number {
-  if (specularLuma < 0.02) return 1;
-  return Math.min(1, Math.max(0.05, (2 / (Math.max(shininess, 0) + 2)) ** 0.25));
-}
 
 /** Colour, roughness, metal and the few extras of a three material, as the model's SIMPLE parameters. */
 export function surfaceParams(m: THREE.Material): MaterialParams {
@@ -111,12 +120,13 @@ const _n = new THREE.Vector3();
 const _normalMatrix = new THREE.Matrix3();
 
 /** The world-space triangle soup of a mesh, welded into a MeshData; null when no triangle survives. */
-function readGeometry(mesh: THREE.Mesh, ignoreNormals: boolean): PartGeometry | null {
+function readGeometry(mesh: THREE.Mesh, ignoreNormals: boolean, flipV: boolean): PartGeometry | null {
   const g = mesh.geometry as THREE.BufferGeometry;
   const pos = g.getAttribute('position');
   if (!pos || pos.count === 0) return null;
   const nor = ignoreNormals ? undefined : g.getAttribute('normal');
   const uv = g.getAttribute('uv');
+  const uv1 = uv ? g.getAttribute('uv1') : undefined;
   const index = g.index;
   const triangles = Math.floor((index ? index.count : pos.count) / 3);
   if (triangles === 0) return null;
@@ -136,6 +146,8 @@ function readGeometry(mesh: THREE.Mesh, ignoreNormals: boolean): PartGeometry | 
   const positions = new Float32Array(triangles * 9);
   const normals = nor ? new Float32Array(triangles * 9) : null;
   const uvs = uv ? new Float32Array(triangles * 6) : null;
+  const uvs2 = uv1 ? new Float32Array(triangles * 6) : null;
+  const vOf = (y: number): number => (flipV ? 1 - y : y);
   for (let t = 0; t < triangles; t++) {
     for (let j = 0; j < 3; j++) {
       // A mirrored mesh swaps the second and third corner to keep the fronts outward.
@@ -153,11 +165,15 @@ function readGeometry(mesh: THREE.Mesh, ignoreNormals: boolean): PartGeometry | 
       }
       if (uvs && uv) {
         uvs[6 * t + 2 * j] = uv.getX(vi);
-        uvs[6 * t + 2 * j + 1] = uv.getY(vi);
+        uvs[6 * t + 2 * j + 1] = vOf(uv.getY(vi));
+      }
+      if (uvs2 && uv1) {
+        uvs2[6 * t + 2 * j] = uv1.getX(vi);
+        uvs2[6 * t + 2 * j + 1] = vOf(uv1.getY(vi));
       }
     }
   }
-  const raw: RawMesh = { positions, normals, uvs };
+  const raw: RawMesh = { positions, normals, uvs, uvs2 };
   const built = buildMesh(raw);
   if (!built) return null;
   const materialOf = new Uint16Array(built.source.length);
@@ -195,7 +211,7 @@ export function convertScene(source: THREE.Object3D, o: ConvertOptions): Convert
 
   const byKey = new Map<string, MaterialId>();
   const textureKey = (m: THREE.Material): string =>
-    TEXTURE_SLOTS.map(([slot]) => (m as unknown as Record<string, THREE.Texture | null | undefined>)[slot]?.uuid ?? '').join(',');
+    MAP_KEYS.map((slot) => (m as unknown as Record<string, THREE.Texture | null | undefined>)[slot]?.uuid ?? '').join(',') + (o.materialKey ? `|${o.materialKey(m)}` : '');
   const materialFor = (m: THREE.Material): MaterialId => {
     const hit = byUuid.get(m.uuid);
     if (hit) return hit;
@@ -234,7 +250,7 @@ export function convertScene(source: THREE.Object3D, o: ConvertOptions): Convert
   };
 
   const makePart = (mesh: THREE.Mesh): NodeId | null => {
-    const geometry = readGeometry(mesh, o.ignoreNormals === true);
+    const geometry = readGeometry(mesh, o.ignoreNormals === true, o.flipV === true);
     const label = mesh.name || `Part ${n + 1}`;
     if (!geometry) {
       warnings.push({ code: 'degenerate', params: { part: label, count: ((mesh.geometry as THREE.BufferGeometry).index?.count ?? (mesh.geometry as THREE.BufferGeometry).getAttribute('position')?.count ?? 0) / 3 } });
@@ -347,17 +363,8 @@ export function toPayload(c: ConvertedScene, detected: Pick<ImportDetected, 'uni
 
 // --- Textures ----------------------------------------------------------------------------------
 
-const TEXTURE_SLOTS: readonly [keyof THREE.MeshStandardMaterial | 'specularMap', ImportTexture['slot']][] = [
-  ['map', 'color'],
-  ['roughnessMap', 'roughness'],
-  ['metalnessMap', 'metal'],
-  ['normalMap', 'normal'],
-  ['alphaMap', 'alpha'],
-  ['bumpMap', 'other'],
-  ['aoMap', 'other'],
-  ['emissiveMap', 'other'],
-  ['specularMap', 'other'],
-];
+/** Every map of a three material, for telling materials apart. */
+const MAP_KEYS = ['map', 'roughnessMap', 'metalnessMap', 'normalMap', 'alphaMap', 'bumpMap', 'aoMap', 'emissiveMap', 'specularMap', 'lightMap'] as const;
 
 /** Waits (up to `ms`) for a texture whose image is still loading. */
 async function imageOf(tex: THREE.Texture, ms = 4000): Promise<unknown> {
@@ -366,42 +373,201 @@ async function imageOf(tex: THREE.Texture, ms = 4000): Promise<unknown> {
   return tex.image;
 }
 
-/** The bytes of a texture image: the original when it came from a blob or data URL, else a PNG drawn from it. */
-async function textureBlob(tex: THREE.Texture): Promise<Blob | null> {
+/** A canvas with the pixels of a decoded image, an ImageBitmap or a DataTexture's RGBA / RGB bytes. */
+function canvasOf(img: unknown): HTMLCanvasElement | null {
+  const source = img as CanvasImageSource & { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number; data?: ArrayLike<number> };
+  const w = source.naturalWidth || source.width || 0;
+  const h = source.naturalHeight || source.height || 0;
+  if (!w || !h) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  if (source.data && !(img instanceof HTMLImageElement) && !(img instanceof HTMLCanvasElement)) {
+    // A DataTexture (TGA in FBX): straight bytes, RGBA or RGB, rows from the top as three keeps them for flipY.
+    const data = source.data;
+    const per = data.length >= w * h * 4 ? 4 : 3;
+    const out = ctx.createImageData(w, h);
+    for (let i = 0; i < w * h; i++) {
+      out.data[4 * i] = data[per * i];
+      out.data[4 * i + 1] = data[per * i + 1];
+      out.data[4 * i + 2] = data[per * i + 2];
+      out.data[4 * i + 3] = per === 4 ? data[per * i + 3] : 255;
+    }
+    ctx.putImageData(out, 0, 0);
+    return canvas;
+  }
+  ctx.drawImage(source, 0, 0);
+  return canvas;
+}
+
+/** The bytes of a texture image: the original when it came from a blob or data URL and is a PNG or JPEG, else a PNG drawn from it. */
+async function textureBytes(tex: THREE.Texture): Promise<Uint8Array | null> {
   if (typeof document === 'undefined') return null;
   const img = await imageOf(tex);
   if (!img) return null;
   try {
     if (img instanceof HTMLImageElement) {
       await img.decode();
-      if (/^(?:blob|data):/.test(img.src)) return await (await fetch(img.src)).blob();
+      if (/^(?:blob|data):/.test(img.src)) {
+        // The file itself when it is one we keep (a PNG or JPEG, even one too large: the check says so later).
+        const original = new Uint8Array(await (await fetch(img.src)).arrayBuffer());
+        const checked = checkTextureFile(original);
+        if (!('reason' in checked) || checked.reason !== 'format') return original;
+      }
     }
-    const source = img as CanvasImageSource & { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number };
-    const w = source.naturalWidth || source.width || 0;
-    const h = source.naturalHeight || source.height || 0;
-    if (!w || !h) return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    canvas.getContext('2d')!.drawImage(source, 0, 0);
-    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    const canvas = canvasOf(img);
+    if (!canvas) return null;
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
   } catch {
     return null;
   }
 }
 
-/** The texture images the materials of a scene use, as blobs (browser only; empty elsewhere). */
-export async function collectTextures(sources: ReadonlyMap<MaterialId, THREE.Material>): Promise<ImportTexture[]> {
+const WRAPS: Record<number, TextureWrap> = { [THREE.RepeatWrapping]: 'REPEAT', [THREE.ClampToEdgeWrapping]: 'CLAMP', [THREE.MirroredRepeatWrapping]: 'MIRROR' };
+
+/**
+ * A three texture's transform as a mapping (UV): three applies `T(offset) R(-rotation) S(repeat)` about `center`
+ * in the same v-up space as ours for the loaders that flip their images (every one but glTF's), so the turn
+ * changes sign and the centre goes into the offset. (Three scales after turning, we turn after scaling: the same
+ * when the repeat is uniform or there is no turn, the common case.)
+ */
+export function mappingOfTexture(tex: THREE.Texture): TextureMapping {
+  const m = defaultMapping();
+  const sx = tex.repeat.x;
+  const sy = tex.repeat.y;
+  const r = tex.rotation;
+  const c = Math.cos(r);
+  const sn = Math.sin(r);
+  const cx = tex.center.x;
+  const cy = tex.center.y;
+  m.repeat = [sx, sy];
+  m.rotationDeg = (-r * 180) / Math.PI;
+  m.offset = [-sx * (c * cx + sn * cy) + cx + tex.offset.x, -sy * (-sn * cx + c * cy) + cy + tex.offset.y];
+  m.uvSet = tex.channel === 1 ? 1 : 0;
+  m.wrap = WRAPS[tex.wrapS] ?? 'REPEAT';
+  return m;
+}
+
+/** What a three map becomes in our model. */
+const MAP_SLOTS: readonly { key: string; slot: TextureSlotKey | null; unused?: string }[] = [
+  { key: 'map', slot: 'color' },
+  { key: 'roughnessMap', slot: 'roughness' },
+  { key: 'metalnessMap', slot: 'metal' },
+  { key: 'normalMap', slot: 'normal' },
+  { key: 'bumpMap', slot: 'normal' },
+  { key: 'alphaMap', slot: 'alpha' },
+  { key: 'emissiveMap', slot: 'emission' },
+  { key: 'aoMap', slot: null, unused: 'occlusion' },
+  { key: 'specularMap', slot: null, unused: 'specular' },
+  { key: 'lightMap', slot: null, unused: 'light' },
+];
+
+/**
+ * The maps of the scene's three materials as slots of their instances (in place: `c.materials` gets its
+ * textures) and the images they use as files (browser only; in Node there is nothing to decode them with and
+ * nothing is collected). A map whose image cannot be had is reported as dropped; one we have no slot for, as
+ * unused.
+ */
+export async function collectTextures(c: Pick<ConvertedScene, 'materials' | 'sources'>): Promise<ImportTexture[]> {
+  if (typeof document === 'undefined') return [];
   const out: ImportTexture[] = [];
-  for (const [id, m] of sources) {
-    const seen = new Set<string>();
-    for (const [key, slot] of TEXTURE_SLOTS) {
-      const tex = (m as unknown as Record<string, THREE.Texture | null | undefined>)[key];
-      if (!tex || !(tex as THREE.Texture).isTexture || seen.has(tex.uuid)) continue;
-      seen.add(tex.uuid);
-      const blob = await textureBlob(tex);
-      if (blob) out.push({ name: tex.name || `${m.name || 'material'}-${key}`, slot, material: id, mime: blob.type || 'image/png', blob });
+  const byTexture = new Map<string, ImportTexture>();
+  for (const [id, m] of c.sources) {
+    const inst = c.materials[id];
+    if (!inst) continue;
+    const any = m as unknown as Record<string, unknown> & { normalScale?: THREE.Vector2; bumpScale?: number; emissive?: THREE.Color; emissiveIntensity?: number; alphaTest?: number; transparent?: boolean };
+    const textures = { ...inst.textures };
+    // The mapping most maps share is the material's.
+    const shared = sharedMapping(MAP_SLOTS.flatMap((spec) => {
+      const tex = any[spec.key] as THREE.Texture | null | undefined;
+      return spec.slot && tex?.isTexture ? [mappingOfTexture(tex)] : [];
+    }));
+    for (const spec of MAP_SLOTS) {
+      const tex = any[spec.key] as THREE.Texture | null | undefined;
+      if (!tex || !tex.isTexture) continue;
+      if (spec.key === 'bumpMap' && textures.normal) continue; // a normal map wins over a bump map
+      let entry = byTexture.get(tex.uuid);
+      if (!entry) {
+        const bytes = await textureBytes(tex);
+        const name = tex.name || (tex.image as { src?: string } | undefined)?.src?.split('/').pop()?.split('?')[0] || `${m.name || 'material'}-${spec.key}`;
+        const checked = bytes ? checkTextureFile(bytes) : null;
+        entry =
+          bytes && checked && 'header' in checked
+            ? { id: textureImageId(bytes), name, bytes, width: checked.header.width, height: checked.header.height, materials: [], dropped: null }
+            : { id: '', name, bytes: null, width: 0, height: 0, materials: [], dropped: checked && 'reason' in checked ? checked.reason : 'unreadable' };
+        byTexture.set(tex.uuid, entry);
+        out.push(entry);
+      }
+      if (!entry.materials.includes(id)) entry.materials.push(id);
+      if (!spec.slot) {
+        if (!entry.unused && !entry.dropped) out.push({ ...entry, bytes: null, unused: spec.unused, materials: [id] });
+        continue;
+      }
+      if (entry.dropped) continue;
+      const slot: TextureSlot = newSlot(spec.slot, { id: entry.id, name: entry.name, width: entry.width, height: entry.height });
+      const mapping = mappingOfTexture(tex);
+      // Three reads roughness from G, metal from B and alpha from G.
+      if (spec.slot === 'alpha') slot.channel = 'G';
+      if (spec.key === 'normalMap') slot.strength = Math.abs(any.normalScale?.x ?? 1);
+      if (spec.key === 'bumpMap') {
+        slot.height = true;
+        slot.strength = Math.max(0, any.bumpScale ?? 1);
+      }
+      if (spec.slot === 'emission') {
+        const e = any.emissive ?? new THREE.Color(1, 1, 1);
+        slot.tint = [e.r, e.g, e.b];
+        slot.strength = any.emissiveIntensity ?? 1;
+      }
+      slot.mapping = JSON.stringify(mapping) === JSON.stringify(shared) ? null : mapping;
+      textures[spec.slot] = slot;
     }
+    // A colour map with alpha on a material that is see-through or cut out: the alpha comes from it.
+    const colour = textures.color;
+    const alphaTest = any.alphaTest ?? 0;
+    if (colour && !textures.alpha && (alphaTest > 0 || any.transparent === true)) {
+      const entry = out.find((e) => e.id === colour.image.id && !e.unused);
+      const png = entry?.bytes ? checkTextureFile(entry.bytes) : null;
+      if (png && 'header' in png && png.header.channels === 4) {
+        const alpha = newSlot('alpha', colour.image);
+        alpha.channel = 'A';
+        alpha.mapping = colour.mapping;
+        alpha.cutout = alphaTest > 0;
+        alpha.cutoff = alphaTest > 0 ? alphaTest : 0.5;
+        textures.alpha = alpha;
+      }
+    }
+    if (shared) textures.mapping = shared;
+    c.materials[id] = { ...inst, textures };
   }
   return out;
+}
+
+
+/**
+ * A loading manager that finds the files a model refers to (its textures) among the files dropped with it,
+ * through object URLs; `dispose` frees them once the textures are read. Without companions or a browser it is
+ * three's default manager.
+ */
+export function companionManager(companions: Companions | undefined): { manager: THREE.LoadingManager; dispose(): void } {
+  const manager = new THREE.LoadingManager();
+  const urls: string[] = [];
+  if (!companions || companions.size === 0 || typeof URL.createObjectURL !== 'function') return { manager, dispose: () => undefined };
+  const made = new Map<string, string>();
+  manager.setURLModifier((url) => {
+    if (/^(?:blob|data):/.test(url)) return url;
+    const blob = findCompanion(companions, url);
+    if (!blob) return url;
+    const key = companionKey(url);
+    let u = made.get(key);
+    if (!u) {
+      u = URL.createObjectURL(blob);
+      made.set(key, u);
+      urls.push(u);
+    }
+    return u;
+  });
+  return { manager, dispose: () => urls.forEach((u) => URL.revokeObjectURL(u)) };
 }

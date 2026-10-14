@@ -55,7 +55,7 @@ export function readUrlParams(search: string): UrlParams {
   const lang = q.get('lang');
   if (lang === 'en' || lang === 'es') out.lang = lang;
   const drawer = q.get('drawer');
-  if (drawer === 'animation' || drawer === 'queue') out.drawer = drawer;
+  if (drawer === 'animation' || drawer === 'physics' || drawer === 'queue') out.drawer = drawer;
   if (q.get('panels') === 'collapsed') out.panels = 'collapsed';
   const select = q.get('select');
   if (select) out.select = select.toLowerCase();

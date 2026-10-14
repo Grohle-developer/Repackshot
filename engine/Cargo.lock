@@ -22,6 +22,16 @@ dependencies = [
 [[package]]
 name = "rt-core"
 version = "0.3.0"
+dependencies = [
+ "rt-sim",
+]
+
+[[package]]
+name = "rt-phys"
+version = "0.3.0"
+dependencies = [
+ "rt-core",
+]
 
 [[package]]
 name = "rt-post"
@@ -38,6 +48,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rt-sim"
+version = "0.3.0"
+
+[[package]]
 name = "rt-sky"
 version = "0.3.0"
 dependencies = [
@@ -49,5 +63,7 @@ name = "rt-wasm"
 version = "0.3.0"
 dependencies = [
  "rt-core",
+ "rt-phys",
  "rt-post",
+ "rt-sim",
 ]

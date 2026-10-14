@@ -3,7 +3,8 @@
 import type { MaterialCategoryEntry, MaterialPreset } from './types';
 
 // Material library (upstream MAT_CATEGORIES and MAT_METAL ... MAT_OTHER):
-// 77 presets in upstream order, grouped by category. The family decides which
+// 77 presets in upstream order, grouped by category, and the five set pieces of L6 (cards, acrylic floors, a
+// black mirror), each in its category. The family decides which
 // shader recipe is built; the params fill in its editable properties. Colours
 // are linear RGBA.
 
@@ -141,6 +142,18 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'BAKELITE', category: 'PLASTIC', family: 'SIMPLE',
     label: { es: 'Baquelita', en: 'Bakelite' },
     params: { baseColor: [0.09, 0.05, 0.035, 1], roughness: 0.25, coat: 0.6, coatRoughness: 0.12 },
+  },
+  // L6: the floors of the sets (not ported from EZ Packshot): sheets of cast acrylic, black and white, with the
+  // slight haze of a real sheet (roughness 0.12): they smear what they reflect a little, they are not mirrors.
+  {
+    key: 'ACRYLIC_BLACK', category: 'PLASTIC', family: 'SIMPLE',
+    label: { es: 'Acrílico negro brillante', en: 'Gloss black acrylic' },
+    params: { baseColor: [0.01, 0.01, 0.012, 1], roughness: 0.12, ior: 1.49 },
+  },
+  {
+    key: 'ACRYLIC_WHITE', category: 'PLASTIC', family: 'SIMPLE',
+    label: { es: 'Acrílico blanco', en: 'White acrylic' },
+    params: { baseColor: [0.85, 0.85, 0.85, 1], roughness: 0.12, ior: 1.49 },
   },
 
   // --- Woods ---
@@ -344,6 +357,12 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     label: { es: 'Espejo', en: 'Mirror' },
     params: { baseColor: [0.95, 0.96, 0.97, 1], metallic: 1, roughness: 0 },
   },
+  // L6: the mirror floor of a set (not ported): a black glass mirror, a dark full reflection.
+  {
+    key: 'MIRROR_BLACK', category: 'GLASS', family: 'SIMPLE',
+    label: { es: 'Espejo negro', en: 'Black mirror' },
+    params: { baseColor: [0.2, 0.2, 0.21, 1], metallic: 1, roughness: 0 },
+  },
 
   // --- Emitters ---
   // Real colour temperatures of each kind of source.
@@ -472,6 +491,18 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'WHITE_STUDIO', category: 'OTHER', family: 'SIMPLE',
     label: { es: 'Blanco estudio', en: 'Studio white' },
     params: { baseColor: [0.82, 0.82, 0.82, 1], roughness: 0.45 },
+  },
+  // L6: the cards of the sets (not ported): matte card stock, white (0.92) and black (0.02). The silver card of a
+  // set is brushed aluminium (ALU_BRUSH), which is what a silver card is.
+  {
+    key: 'CARD_WHITE', category: 'OTHER', family: 'SIMPLE',
+    label: { es: 'Tarjeta blanca', en: 'White card' },
+    params: { baseColor: [0.92, 0.92, 0.92, 1], roughness: 0.9 },
+  },
+  {
+    key: 'CARD_BLACK', category: 'OTHER', family: 'SIMPLE',
+    label: { es: 'Tarjeta negra', en: 'Black card' },
+    params: { baseColor: [0.02, 0.02, 0.02, 1], roughness: 0.9 },
   },
 ];
 

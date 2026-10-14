@@ -1,7 +1,8 @@
 // FBX (binary and ASCII, version 7 and later) through three's FBXLoader: the
 // hierarchy becomes groups, meshes parts, materials SIMPLE instances (colour
-// from the diffuse colour, roughness from the Phong shininess, metal 0) and the
-// embedded texture images are kept as blobs for the materials phase.
+// from the diffuse colour, roughness from the Phong shininess, metal 0) and
+// their maps the instances' texture slots (M2a; embedded images, or the files
+// dropped with the model for the ones it only names).
 //
 // FBXLoader does not convert units, and for a Z-up file it only turns the
 // scene (it says so itself), so this reader looks at `GlobalSettings` before
@@ -13,7 +14,7 @@
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { unitFromMillimetres, type ImportDetected, type ImportMessage, type UpAxis } from '../core/import-options';
 import type { ReadResult } from './gltf';
-import { collectTextures, convertScene, toPayload } from './three-scene';
+import { collectTextures, companionManager, convertScene, textureNotes, toPayload, type Companions } from './three-scene';
 
 export interface FbxGlobals {
   /** 0 X, 1 Y, 2 Z; null when the file does not say. */
@@ -161,15 +162,17 @@ export function fbxDetected(globals: FbxGlobals): { detected: Pick<ImportDetecte
   return { detected: { units, upAxis, upAxisDeclared: globals.upAxis !== null, ...(unsupportedUnit ? { unsupportedUnit } : {}) }, notes };
 }
 
-export async function readFbx(name: string, buffer: ArrayBuffer): Promise<ReadResult> {
+export async function readFbx(name: string, buffer: ArrayBuffer, companions?: Companions): Promise<ReadResult> {
   const globals = scanFbxGlobals(buffer);
-  const root = new FBXLoader().parse(buffer, '');
+  // Textures the file names but does not embed are looked for among the files dropped with it.
+  const files = companionManager(companions);
+  const root = new FBXLoader(files.manager).parse(buffer, '');
   // The loader turned a Z-up scene to Y up: undo it, the import options own the axes.
   if (globals.upAxis === 2) root.rotation.set(0, 0, 0);
   const converted = convertScene(root, { fileName: name, format: 'FBX' });
-  const textures = await collectTextures(converted.sources);
+  const textures = await collectTextures(converted);
+  files.dispose();
   const found = fbxDetected(globals);
-  const notes = [...found.notes];
-  if (textures.length > 0) notes.push({ code: 'texturesKept', params: { count: textures.length } });
+  const notes = [...found.notes, ...textureNotes(textures)];
   return { ...toPayload(converted, found.detected, textures), warnings: converted.warnings, notes };
 }

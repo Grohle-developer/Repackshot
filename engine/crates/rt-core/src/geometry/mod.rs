@@ -6,6 +6,12 @@
 //! * [`Geometry`]: the meshes, the instances and a wide BVH over the instances' world boxes (the
 //!   top level). Rays are moved into a mesh's space by the precomputed inverse transform, so the
 //!   ray parameter `t` is the same in both spaces; normals go back by the inverse transpose.
+//! * [`ParticleSet`] (S4a): the particles of an ambient effect, analytic spheres, discs or
+//!   capsules in world space with a flat BVH of their own, one more entry of the top level (walked
+//!   after the instance BVH, bounded by the nearest part).
+//!   A hit on one reports as its `instance` the number of instances plus the effect's index, and
+//!   as its `triangle` the particle's id; [`RayClass`] says which effects a query sees (their
+//!   camera, reflection and shadow flags).
 //!
 //! Queries: [`Geometry::intersect`] (nearest hit with point, normals and barycentrics),
 //! [`Geometry::trace`] (nearest hit, indices and `t` only) and [`Geometry::occluded`] (any hit
@@ -15,6 +21,7 @@
 mod bvh;
 pub mod edges;
 mod mesh;
+pub mod particles;
 mod transform;
 mod traverse;
 pub mod triangle;
@@ -24,6 +31,7 @@ mod tests;
 
 pub use bvh::{BvhStats, BvhWidth, BINS, SAH_DEPTH_LIMIT};
 pub use mesh::{Mesh, MeshError, MAX_TRIANGLES};
+pub use particles::{ParticleSet, PixelFootprint, MIN_PIXELS};
 pub use transform::Transform;
 pub use triangle::{intersect_triangle, Cull, TriangleHit};
 
@@ -38,8 +46,38 @@ use std::fmt;
 /// Instance flag: back faces (as wound in the mesh) are not hit.
 pub const INSTANCE_ONE_SIDED: u32 = 1;
 
-/// Largest number of instances in one [`Geometry`].
+/// Largest number of instances in one [`Geometry`] (particle sets included).
 pub const MAX_INSTANCES: usize = MAX_LEAF_FIRST;
+
+/// Which particle sets a query sees, by the flags of their effects (`rt_sim::FLAG_*`). Meshes are
+/// seen by every query.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RayClass {
+    /// Camera rays (and the rays that continue them straight): the effects seen by the camera,
+    /// widened to the minimum size on screen.
+    Camera,
+    /// Rays scattered by a surface (reflection, refraction, diffuse): the effects seen in
+    /// reflections.
+    Secondary,
+    /// Shadow rays: the effects that cast shadows.
+    Shadow,
+    /// Only the parts, no particles (picking).
+    Parts,
+}
+
+impl RayClass {
+    /// True when a query of this class sees the particles of `set`.
+    #[inline(always)]
+    pub fn sees(self, set: &ParticleSet) -> bool {
+        let flag = match self {
+            RayClass::Camera => rt_sim::FLAG_CAMERA,
+            RayClass::Secondary => rt_sim::FLAG_REFLECTIONS,
+            RayClass::Shadow => rt_sim::FLAG_SHADOW,
+            RayClass::Parts => return false,
+        };
+        set.params().visible_to(flag)
+    }
+}
 
 /// Leaf policy of the instance BVH: one instance per leaf.
 const INSTANCE_LEAVES: BuildParams = BuildParams {
@@ -89,7 +127,7 @@ pub enum GeometryError {
         /// Index of the offending instance.
         instance: u32,
     },
-    /// More than [`MAX_INSTANCES`] instances.
+    /// More than [`MAX_INSTANCES`] instances and particle sets.
     TooManyInstances,
 }
 
@@ -192,6 +230,8 @@ pub struct Geometry {
     /// Instance index of each leaf slot of `tlas`.
     tlas_instances: Vec<u32>,
     bounds: Aabb,
+    /// The particle sets of the ambient effects (S4a), in effect order.
+    particles: Vec<ParticleSet>,
 }
 
 /// True when `ray` can be traced: finite origin and a finite, non-zero direction.
@@ -245,7 +285,19 @@ impl Geometry {
         instances: Vec<Instance>,
         width: BvhWidth,
     ) -> Result<Geometry, GeometryError> {
-        if instances.len() > MAX_INSTANCES {
+        Geometry::with_particles(meshes, instances, Vec::new(), width)
+    }
+
+    /// Like [`Geometry::with_width`] with the particle sets of the scene's effects: each is one
+    /// more entry of the top level, beside the instance BVH. Without sets the geometry is exactly
+    /// the one of [`Geometry::with_width`].
+    pub fn with_particles(
+        meshes: Vec<Mesh>,
+        instances: Vec<Instance>,
+        particles: Vec<ParticleSet>,
+        width: BvhWidth,
+    ) -> Result<Geometry, GeometryError> {
+        if instances.len() + particles.len() > MAX_INSTANCES {
             return Err(GeometryError::TooManyInstances);
         }
         let mut prepared = Vec::with_capacity(instances.len());
@@ -286,6 +338,7 @@ impl Geometry {
             tlas,
             tlas_instances,
             bounds,
+            particles,
         })
     }
 
@@ -299,6 +352,42 @@ impl Geometry {
     /// building any mesh BVH again.
     pub fn into_meshes(self) -> Vec<Mesh> {
         self.meshes
+    }
+
+    /// Gives the meshes and the particle sets back (see [`Geometry::into_meshes`]).
+    pub fn into_parts(self) -> (Vec<Mesh>, Vec<ParticleSet>) {
+        (self.meshes, self.particles)
+    }
+
+    /// Takes the particle sets out (the geometry then has none to hit).
+    pub(crate) fn take_particles(&mut self) -> Vec<ParticleSet> {
+        std::mem::take(&mut self.particles)
+    }
+
+    /// The particle sets, in effect order.
+    pub fn particle_sets(&self) -> &[ParticleSet] {
+        &self.particles
+    }
+
+    /// The particle set whose hits report `instance` (`instances().len() + k` for set `k`).
+    #[inline(always)]
+    pub fn particle_set(&self, instance: u32) -> Option<&ParticleSet> {
+        let k = (instance as usize).checked_sub(self.instances.len())?;
+        self.particles.get(k)
+    }
+
+    /// The material index of what a hit on `instance` shades with: the instance's, or the
+    /// particle set's.
+    pub fn material_of(&self, instance: u32) -> Option<u32> {
+        match self.instances.get(instance as usize) {
+            Some(i) => Some(i.material_id),
+            None => self.particle_set(instance).map(ParticleSet::material_id),
+        }
+    }
+
+    /// Number of particles of every set.
+    pub fn particle_count(&self) -> usize {
+        self.particles.iter().map(ParticleSet::len).sum()
     }
 
     /// The instances.
@@ -325,7 +414,8 @@ impl Geometry {
             .sum()
     }
 
-    /// World bounding box of every instance that can be hit ([`Aabb::EMPTY`] when none).
+    /// World bounding box of every instance that can be hit ([`Aabb::EMPTY`] when none). The
+    /// particles are not in it (what lights the scene is framed by the parts).
     pub fn bounds(&self) -> Aabb {
         self.bounds
     }
@@ -400,23 +490,30 @@ impl Geometry {
     /// The brute-force reference of [`Geometry::trace`] and [`Geometry::occluded`]: every
     /// triangle of every instance, no BVH. Tests only.
     #[cfg(test)]
-    pub(crate) fn brute_force(&self, ray: &Ray) -> (Option<RayHit>, bool) {
-        traverse::brute_force(self, ray)
+    pub(crate) fn brute_force(&self, ray: &Ray, class: RayClass) -> (Option<RayHit>, bool) {
+        traverse::brute_force(self, ray, class)
     }
 
-    /// Nearest hit of `ray` within `[t_min, t_max]`: instance, triangle and `t` only.
+    /// Nearest hit of `ray` within `[t_min, t_max]`: instance, triangle and `t` only. Particles
+    /// are seen as by a scattered ray ([`RayClass::Secondary`]).
     pub fn trace(&self, ray: &Ray) -> Option<RayHit> {
         self.trace_with(ray, Isa::detect())
     }
 
     /// [`Geometry::trace`] on an explicit SIMD path.
     pub fn trace_with(&self, ray: &Ray, isa: Isa) -> Option<RayHit> {
+        self.trace_class(ray, isa, RayClass::Secondary)
+    }
+
+    /// [`Geometry::trace`] seeing the particles as a ray of `class` does.
+    pub fn trace_class(&self, ray: &Ray, isa: Isa, class: RayClass) -> Option<RayHit> {
         if !usable(ray) {
             return None;
         }
         isa.dispatch(NearestKernel {
             geometry: self,
             ray,
+            class,
         })
     }
 
@@ -427,21 +524,28 @@ impl Geometry {
             geometry: self,
             rays,
             out,
+            class: RayClass::Secondary,
         });
     }
 
-    /// True when `ray` hits anything within `[t_min, t_max]` (shadow rays). Stops at the first
-    /// hit found.
+    /// True when `ray` hits anything within `[t_min, t_max]` (shadow rays: particles that cast
+    /// shadows, [`RayClass::Shadow`]). Stops at the first hit found.
     pub fn occluded(&self, ray: &Ray) -> bool {
         self.occluded_with(ray, Isa::detect())
     }
 
     /// [`Geometry::occluded`] on an explicit SIMD path.
     pub fn occluded_with(&self, ray: &Ray, isa: Isa) -> bool {
+        self.occluded_class(ray, isa, RayClass::Shadow)
+    }
+
+    /// [`Geometry::occluded`] seeing the particles as a ray of `class` does.
+    pub fn occluded_class(&self, ray: &Ray, isa: Isa, class: RayClass) -> bool {
         usable(ray)
             && isa.dispatch(AnyKernel {
                 geometry: self,
                 ray,
+                class,
             })
     }
 
@@ -451,18 +555,36 @@ impl Geometry {
             geometry: self,
             rays,
             out,
+            class: RayClass::Shadow,
         });
     }
 
-    /// Nearest hit of `ray` with its surface details.
+    /// Nearest hit of `ray` with its surface details ([`RayClass::Secondary`]).
     pub fn intersect(&self, ray: &Ray) -> Option<Hit> {
         self.intersect_with(ray, Isa::detect())
     }
 
     /// [`Geometry::intersect`] on an explicit SIMD path.
     pub fn intersect_with(&self, ray: &Ray, isa: Isa) -> Option<Hit> {
-        let hit = self.trace_with(ray, isa)?;
+        self.intersect_class(ray, isa, RayClass::Secondary)
+    }
+
+    /// [`Geometry::intersect`] seeing the particles as a ray of `class` does.
+    pub fn intersect_class(&self, ray: &Ray, isa: Isa, class: RayClass) -> Option<Hit> {
+        let hit = self.trace_class(ray, isa, class)?;
         self.hit_details(ray, hit)
+    }
+
+    /// For a camera ray's hit on a particle widened to the minimum size on screen: the share of
+    /// the widened area the particle really covers (below one), and where the ray leaves the
+    /// widened particle. `None` for anything else.
+    pub fn widened_hit(&self, ray: &Ray, hit: &RayHit) -> Option<(f32, f32)> {
+        let set = self.particle_set(hit.instance)?;
+        if !set.widened() {
+            return None;
+        }
+        let coverage = set.coverage(hit.triangle);
+        (coverage < 1.0).then(|| (coverage, set.exit(hit.triangle, ray, hit.t, true)))
     }
 
     /// The point rays leaving a smooth-shaded hit should start from: the hit point lifted onto
@@ -522,6 +644,24 @@ impl Geometry {
 
     /// Surface details of a hit returned by [`Geometry::trace`] for the same `ray`.
     pub fn hit_details(&self, ray: &Ray, hit: RayHit) -> Option<Hit> {
+        if let Some(set) = self.particle_set(hit.instance) {
+            set.slot(hit.triangle)?;
+            let point = ray.at(hit.t);
+            let outward = set.normal(hit.triangle, point);
+            let front_face = outward.dot(ray.dir) < 0.0;
+            let n = if front_face { outward } else { -outward };
+            return Some(Hit {
+                instance: hit.instance,
+                triangle: hit.triangle,
+                t: hit.t,
+                point,
+                normal: n,
+                geometric_normal: n,
+                barycentrics: [1.0, 0.0, 0.0],
+                front_face,
+                outside: front_face,
+            });
+        }
         let (mesh, prepared) = self.instance_parts(hit.instance)?;
         let to_world = &self.instances.get(hit.instance as usize)?.transform;
         let corners = mesh.triangle_indices(hit.triangle as usize)?;

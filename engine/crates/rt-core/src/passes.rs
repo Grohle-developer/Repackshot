@@ -8,8 +8,8 @@
 //! | `albedo` | 3 × f32 | Base colour of the material at the first hit (no specular bounce is followed: glass gives its tint), averaged over the pixel's samples like the image | 0 |
 //! | `normal` | 3 × f32 | Unit shading normal at the first hit, world space (Z up), turned towards the camera (both sides of a triangle count) | 0 |
 //! | `depth` | f32 | Distance along the camera's view axis, scene units | +∞ |
-//! | `partId` | u32 | RSB instance index + 1 (what `Scene::pick` finds); the studio floor [`FLOOR_ID`] | 0 |
-//! | `materialId` | u32 | RSB material index + 1 of that instance; the floor [`FLOOR_ID`] | 0 |
+//! | `partId` | u32 | RSB instance index + 1 (what `Scene::pick` finds); the studio floor [`FLOOR_ID`]; a particle of an ambient effect (S4a) the number of instances + the effect's index + 1 | 0 |
+//! | `materialId` | u32 | RSB material index + 1 of that instance (of that effect for a particle); the floor [`FLOOR_ID`] | 0 |
 //! | `coc` | f32 | Circle-of-confusion diameter in output pixels, of the thin lens ([`coc_diameter`]) | 0 (also without depth of field) |
 //!
 //! `normal`, `depth`, the ids and `coc` come from **one ray through the centre of the pixel,
@@ -104,6 +104,10 @@ pub fn words_per_pixel(mask: u32) -> usize {
 /// `sensor_mm / long_side × focus_dist / focal_mm` of that plane. Zero on the focus plane, for a
 /// pinhole, an orthographic camera or no focus distance ([`Camera::lens_radius`] 0), and for a
 /// depth that is not positive and finite (the background).
+///
+/// It stays the circle of the plain thin lens whatever the camera's optics (O1, the `LENS`
+/// section): a round, untilted aperture of `focal_mm / fstop`, without the iris shape, the
+/// squeeze or the tilt of [`crate::optics`].
 pub fn coc_diameter(camera: &Camera, depth: f32, long_side: u32) -> f32 {
     if camera.lens_radius() <= 0.0 || !(depth > 0.0 && depth.is_finite()) {
         return 0.0;
@@ -153,9 +157,7 @@ impl Exact {
             } => {
                 let material = scene
                     .geometry
-                    .instances()
-                    .get(instance as usize)
-                    .map(|i| i.material_id)
+                    .material_of(instance)
                     .filter(|&m| (m as usize) < scene.materials.len())
                     .map_or(0, |m| m + 1);
                 (t, normal, instance + 1, material)

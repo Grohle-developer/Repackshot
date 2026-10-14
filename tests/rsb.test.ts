@@ -150,7 +150,7 @@ function engineExample(): RsbScene {
     ],
     environment: { ...defaultEnvironment(), kind: ENV_STUDIO, floor: 0.05, horizon: 0.12, zenith: 0.3, strength: 1, rotationDeg: 0, backgroundColor: [0.05, 0.05, 0.05], backgroundMode: 0 },
     floor: defaultFloor(),
-    render: { width: 512, height: 384, maxSamples: 16, seed: 1, maxSeconds: 0, exposureEv: 0, tonemap: 1, maxDepth: 8, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0 },
+    render: { width: 512, height: 384, maxSamples: 16, seed: 1, maxSeconds: 0, exposureEv: 0, tonemap: 1, maxDepth: 8, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1 },
     bitmaps: [],
   };
 }
@@ -196,7 +196,7 @@ function fullScene(): RsbScene {
       skyModel: 1,
     },
     floor: { mode: 2, z: -12.5, color: [0.4, 0.5, 0.6] },
-    render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10, passes: 0b101101, denoise: 3, causticPhotons: 4096, causticRadius: 2.5 },
+    render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10, passes: 0b101101, denoise: 3, causticPhotons: 4096, causticRadius: 2.5, denoiseStrength: 0.25, pixelFilter: 3, edgeSupersample: 4 },
     // A raw plate (an odd number of bytes: padded) and the bytes of a file.
     bitmaps: [
       { format: 0, width: 3, height: 1, data: new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80, 90]) },
@@ -227,7 +227,7 @@ describe('RSB writer: byte parity with rt-core', () => {
     const s = sections(bytes);
     expect(s.map((x) => x.tag)).toEqual(['CAMR', 'MATL', 'MATL', 'MESH', 'MESH', 'INST', 'INST', 'INST', 'LGHT', 'LGHT', 'LGHT', 'BMAP', 'BMAP', 'ENVR', 'FLOR', 'RNDR']);
     const size = (tag: string) => s.find((x) => x.tag === tag)!.payload.byteLength;
-    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 76, 76, 84, 20, 52, 60]);
+    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 76, 76, 84, 20, 64, 60]);
     // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
     expect(size('BMAP')).toBe(16 + 12);
     // 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
@@ -336,7 +336,8 @@ describe('project to RSB: camera', () => {
       [1000, 700, 1080, 1350],
       [640, 640, 2048, 2048],
     ]) {
-      const st: ProjectState = { ...s, render: { ...s.render, width: ow, height: oh } };
+      // The size typed in the render window: the active camera takes its ratio, which is the frame the viewport draws (U13).
+      const st: ProjectState = apply(s, { type: 'render/set', patch: { width: ow, height: oh } });
       const out = cameraToRsb(cam, ow, oh, ow, oh);
       // The viewport image at half the CSS size, as during a gesture.
       const w = Math.round(vw / 2);
@@ -619,7 +620,7 @@ describe('project to RSB: environment, floor and render settings', () => {
     expect(asked.render.passes).toBe(0b100101);
     expect(projectScene(s, view(s, { passes: [...PASS_KEYS] })).scene.render.passes).toBe(0b111111);
     const payload = sections(writeRsb(asked)).find((x) => x.tag === 'RNDR')!.payload;
-    expect(payload.byteLength).toBe(52);
+    expect(payload.byteLength).toBe(64);
     expect(payload.getUint32(36, true)).toBe(0b100101);
     expect(readRsb(writeRsb(asked)).render!.passes).toBe(0b100101);
     function r0() {
@@ -798,7 +799,26 @@ describe('project to RSB: denoise and caustics (E5b-1)', () => {
     expect(readRsb(writeRsb(scene)).render).toEqual(asF32(scene.render));
     // Nothing asked: denoise and caustics off, as a file before E5b-1 means.
     expect(fields(glass, {})).toEqual([0, 0, 0]);
+    // U11b: the strength comes last, a fraction; without one, all of the filter.
+    expect(payload.getFloat32(52, true)).toBe(1);
+    const half = projectScene(glass, view(glass, { denoise: 1, denoiseStrength: 0.5 })).scene;
+    expect(sections(writeRsb(half)).find((x) => x.tag === 'RNDR')!.payload.getFloat32(52, true)).toBe(0.5);
+    expect(projectScene(glass, view(glass, { denoiseStrength: 7 })).scene.render.denoiseStrength).toBe(1);
+    expect(projectScene(glass, view(glass, { denoiseStrength: -1 })).scene.render.denoiseStrength).toBe(0);
     expect(fields(glass, { caustics: { mode: 'OFF', quality: 'MEDIUM' } })).toEqual([0, 0, 0]);
+  });
+
+  it('E11: writes the pixel filter and the edge samples last into RNDR; without them the box and none, as rt-core reads a file of before', () => {
+    const plain = sections(writeRsb(projectScene(glass, view(glass)).scene)).find((x) => x.tag === 'RNDR')!.payload;
+    expect([plain.getUint32(56, true), plain.getUint32(60, true)]).toEqual([0, 1]);
+    const fine = projectScene(glass, view(glass, { pixelFilter: 3, edgeSupersample: 4 })).scene;
+    const payload = sections(writeRsb(fine)).find((x) => x.tag === 'RNDR')!.payload;
+    expect([payload.getUint32(56, true), payload.getUint32(60, true)]).toEqual([3, 4]);
+    expect(readRsb(writeRsb(fine)).render).toEqual(asF32(fine.render));
+    // Out of range is brought into it (rt-core refuses more than 16 edge samples).
+    expect(projectScene(glass, view(glass, { edgeSupersample: 99 })).scene.render.edgeSupersample).toBe(16);
+    expect(projectScene(glass, view(glass, { edgeSupersample: 0 })).scene.render.edgeSupersample).toBe(1);
+    expect(projectScene(glass, view(glass, { pixelFilter: -2 })).scene.render.pixelFilter).toBe(0);
   });
 
   it('Automatic: on with glass (or polished metal) and a small light, off without either', () => {

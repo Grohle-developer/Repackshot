@@ -228,6 +228,7 @@ pub fn sheet_scene(
             focus_dist: (target - position).length(),
             ortho: false,
             ortho_width: 0.0,
+            lens: None,
         },
         materials: vec![material.clone()],
         geometry: Geometry::new(
@@ -297,6 +298,7 @@ pub fn top_scene(
         focus_dist: 400.0,
         ortho: true,
         ortho_width: width,
+        lens: None,
     };
     scene
 }

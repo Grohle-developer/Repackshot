@@ -3,19 +3,24 @@
 // Reducers are pure functions in the core modules; effects (render,
 // download) live outside and subscribe.
 
-import type { Label, Lang, RGBA, StudioPreset } from '../data/types';
+import type { Label, Lang, RGB, RGBA, StudioPreset } from '../data/types';
 import type { ImageRef } from './images';
 import type { SkyModel } from './sky';
 import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
+import { reduceEffects, type AmbientEffect, type EffectAction } from './effects';
 import { buildStudio, lightsFromRig, reduceStudio, type CustomSetup, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
 import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialInstance } from './materials';
-import { carryRuntime, defaultRenderState, reduceRender, type RenderAction, type RenderState } from './render';
+import { carryRuntime, defaultRenderState, reduceRender, syncOutputSize, type RenderAction, type RenderState } from './render';
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
 import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
+import { reducePhysics, type PhysicsAction } from './physics';
+import { reduceSet } from './sets';
+import { reduceTextures, type TextureAction } from './textures';
+import { reduceGraph, type GraphAction } from './material-graph';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
 export type ActionLabel = string | Label;
@@ -38,9 +43,12 @@ export interface EnvironmentState {
   kind: 'STUDIO' | 'SKY' | 'FLAT' | 'HDRI';
   strength: number;
   rotationDeg: number;
-  background: 'ENVIRONMENT' | 'COLOR' | 'TRANSPARENT' | 'BACKPLATE';
+  /** GRADIENT (L6): `gradient` from the top of the output frame to its bottom (the colour around the frame). */
+  background: 'ENVIRONMENT' | 'COLOR' | 'TRANSPARENT' | 'BACKPLATE' | 'GRADIENT';
   /** Background colour (and the colour of FLAT), linear RGBA. */
   color: RGBA;
+  /** The two colours of the GRADIENT background (L6), linear RGB: the top and the bottom of the frame. */
+  gradient: { top: RGB; bottom: RGB };
   /** Opacity of the contact shadow on the floor, 0..1. */
   groundShadow: number;
   /** Strength of the floor reflection, 0..1. */
@@ -91,6 +99,8 @@ export interface ProjectState {
     customSetup?: CustomSetup | null;
   };
   environment: EnvironmentState;
+  /** The ambient effects (S4a, core/effects.ts): particles of the air, as parameters. */
+  effects: AmbientEffect[];
   camera: { active: CameraId; cameras: Record<CameraId, CameraState> };
   image: ImageState;
   animation: { shots: Shot[]; clips: MotionClip[]; fps: number; playhead: number; playing: boolean };
@@ -120,7 +130,10 @@ export type Action =
   | SceneAction
   | TransformAction
   | PrimitiveAction
+  | PhysicsAction
   | MaterialAction
+  | TextureAction
+  | GraphAction
   | StudioAction
   | CameraAction
   | AnimationAction
@@ -128,6 +141,7 @@ export type Action =
   | DoctorAction
   | MetaAction
   | EnvironmentAction
+  | EffectAction
   | ImageAction
   | HistoryAction;
 
@@ -150,6 +164,7 @@ export const VOLATILE_ACTIONS: ReadonlySet<ActionType> = new Set<ActionType>([
   'anim/play',
   'render/job',
   'render/running',
+  'doctor/refresh',
   'history/undo',
   'history/redo',
   'history/reset',
@@ -190,6 +205,7 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
       rotationDeg: 0,
       background: 'ENVIRONMENT',
       color: [0.05, 0.05, 0.05, 1],
+      gradient: { top: [0.1, 0.1, 0.1], bottom: [0.02, 0.02, 0.02] },
       groundShadow: 0.6,
       groundReflection: 0,
       hdri: null,
@@ -199,6 +215,7 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
       skyModel: 'PHYSICAL',
       skySun: { az: -55, el: 55 },
     },
+    effects: [],
     camera: { active: 'cam1', cameras: { cam1: makeCamera('cam1', '', partSizeMm) } },
     image: { exposureEv: 0, viewTransform: 'FILMIC', bloom: 0, sharpen: 0, saturation: 0, contrast: 0, vignette: 0 },
     animation: { shots: [], clips: [], fps: 24, playhead: 0, playing: false },
@@ -245,8 +262,18 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
     }
     case 'material':
       return reduceMaterials(state, action as MaterialAction);
+    case 'physics':
+      // Roles and settings, a simulation's final poses as one step, Reset, Record as animation (S2).
+      return reducePhysics(state, action as PhysicsAction);
+    case 'texture':
+      // The image maps and labels of a material (M2a).
+      return reduceTextures(state, action as TextureAction);
+    case 'graph':
+      // A material as a graph of nodes (M3a).
+      return reduceGraph(state, action as GraphAction);
     case 'studio':
-      return reduceStudio(state, action as StudioAction);
+      // A set (L6) brings decoration and a look: core/sets.ts handles the actions it changes, the rest is the rig's.
+      return reduceSet(state, action as StudioAction) ?? reduceStudio(state, action as StudioAction);
     case 'camera':
       return reduceCamera(state, action as CameraAction);
     case 'anim':
@@ -257,6 +284,8 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
       return reduceDoctor(state, action as DoctorAction);
     case 'meta':
       return reduceMeta(state, action as MetaAction);
+    case 'effect':
+      return reduceEffects(state, action as EffectAction);
     case 'env': {
       const env = shallowPatch(state.environment, (action as EnvironmentAction).patch);
       return env === state.environment ? state : { ...state, environment: env };
@@ -271,17 +300,23 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
 }
 
 /**
- * Root reducer: applies the action, then refreshes what is derived from the
- * model (the Doctor results) when the parts it looks at changed.
+ * Root reducer: applies the action, then keeps what is derived from the model
+ * in step: the size of an image follows the active camera's aspect ratio
+ * (U13), and the Doctor results are refreshed when the parts it looks at changed.
  */
 export function reduce(state: ProjectState, action: Action): ProjectState {
-  const next = reduceAny(state, action);
-  if (next === state) return state;
+  const reduced = reduceAny(state, action);
+  if (reduced === state) return state;
+  const next = syncOutputSize(reduced);
   if (
     next.scene !== state.scene ||
     next.materials !== state.materials ||
     next.camera !== state.camera ||
-    next.studio !== state.studio
+    next.studio !== state.studio ||
+    next.animation.shots !== state.animation.shots ||
+    next.render.width !== state.render.width ||
+    next.render.height !== state.render.height ||
+    next.effects !== state.effects
   ) {
     return { ...next, doctor: { results: runDoctor(next), stamp: state.doctor.stamp + 1 } };
   }

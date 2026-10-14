@@ -40,14 +40,27 @@
 //!             | u32 max_depth (default 8); f32 clamp_indirect (default 0)            (36 B)
 //!             ||| u32 passes (default 0)                                            (40 B)
 //!             |||| u32 denoise (0) caustic_photons (0); f32 caustic_radius (0)      (52 B)
+//!             ||||| f32 denoise_strength (1)                                       (56 B)
+//!             |||||| u32 pixel_filter (0) edge_supersample (1)                     (64 B)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
 //! PATN 108 B  u32 material kind; f32 color_a[3] color_b[3] scale_mm params[16];
 //!             u32 variant seed                                              (E6, new)
+//! LENS  72 B  u32 blades; f32 roundness rotation_deg; u32 profile; f32 profile_param
+//!             obstruction cats_eye squeeze shift_x_mm shift_y_mm tilt_deg tilt_axis_deg
+//!             ca_amount swirl field_mm; u32 mask_kind mask_width mask_height;
+//!             u8 mask[mask_width * mask_height]; zero padding to 4                 (O1, new)
+//! FXAM 128 B  an ambient effect (S4a, new): kind seed; f32 time; u32 count; f32
+//!             region_centre[3] region_half[3] band[2] size_mm size_var; u32 shape; f32
+//!             fall_speed fall_var wind[3] turbulence[3] cloud_centre[3] cloud_radius
+//!             cloud_softness; u32 material_id; f32 tint_var; u32 flags; f32 streak
+//!             | f32 gravity (1) energy (0) spin (0); u32 palette_count (0);
+//!             f32 palette[4][3] (white)                                           (192 B)
 //! ```
 //!
-//! `CAMR`, `ENVR`, `FLOR` and `RNDR` may appear at most once (a missing one means "defaults");
-//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP` and `PATN` repeat. A mesh refers to a material by its position
+//! `CAMR`, `ENVR`, `FLOR`, `RNDR` and `LENS` may appear at most once (a missing one means
+//! "defaults"; a missing `LENS` is the plain thin lens);
+//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN` and `FXAM` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
 //! environment to a bitmap by its position among the `BMAP` sections (`0xffffffff`: none),
 //! wherever they are in the file. All floats must be finite.
@@ -64,11 +77,21 @@
 //! a mesh no instance refers to is not drawn. The writer emits `INST` only when the instances
 //! differ from the implicit ones, so scenes without instancing keep their exact bytes.
 //!
+//! **Ambient effects** (S4a). Each `FXAM` section is the parameters of one effect, not its
+//! particles: the field table and their meaning are those of [`rt_sim::params`] (millimetres,
+//! seconds, mm/s; `flags` 1 seen by camera rays, 2 in reflections, 4 casts shadows). The reader
+//! evaluates the particles ([`rt_sim`]) for the file's camera and image size and builds their
+//! BVH ([`crate::geometry::ParticleSet`]); a reader without S4a skips the section. The effect's
+//! `material_id` must refer to a `MATL` section. In the part and material id passes a particle
+//! counts as instance `instances + effect index`.
+//!
 //! **Updates** (E4). [`Scene::update_from_rsb`] reads a file into an already loaded scene: a file
 //! without `MESH` sections keeps the loaded meshes and their BVHs (its `INST` sections, or the
 //! implicit instances, refer to them), so a host that changes the camera, the image size, the
 //! instances, the materials or the lights sends everything but the geometry. In the same way a
-//! file without `BMAP` sections keeps the loaded bitmaps (E5), which can be large.
+//! file without `BMAP` sections keeps the loaded bitmaps (E5), which can be large. The particles of
+//! an effect whose `FXAM` is unchanged are kept as well (S4a); only their BVH is built again when
+//! the camera or the image size changed.
 //!
 //! # Meaning of the values (fixed in E3)
 //!
@@ -158,11 +181,32 @@
 //!   to hand out: bit 0 the denoised image, bit 1 also the one without denoise; the renderer
 //!   ignores it. `caustic_photons` (E5b-1) is the number of photons traced per sample index for
 //!   the caustics (0: none, at most 4 194 304; see [`crate::caustics`]) and `caustic_radius`
-//!   their first gather radius in pixels at the focus distance (0: 3).
+//!   their first gather radius in pixels at the focus distance (0: 3). `denoise_strength` (U11b,
+//!   `0..=1`, default 1) is how much of the denoised image the host hands out (the rest is the
+//!   image without denoise); the renderer ignores it too. `pixel_filter` (E11) is where the
+//!   camera samples go ([`crate::pixel_filter`]: 0 the box of one pixel, 1 the centre, 2 a tent,
+//!   3 Blackman–Harris; unknown values mean the box) and `edge_supersample` the samples an edge
+//!   pixel takes per sample index (0 and 1: one; at most 16); a file of before renders as it did.
+//! * `LENS` (O1, optional, written right after `CAMR`): the optics of the camera beyond the plain
+//!   thin lens, see [`crate::optics`]. `blades` 0 is a round iris, 3 to 18 an iris of that many
+//!   blades of `roundness` (0 straight, 1 the inscribed circle) turned by `rotation_deg`;
+//!   `profile` **0** uniform, **1** bright centre `1 − k ρ²`, **2** bright ring
+//!   `(1 − k) + k ρ²`, **3** apodized (a Gaussian of `ρ` with `σ = k`), `k` = `profile_param`
+//!   (unknown profiles are uniform); `obstruction` the central obstruction (0 to 0.95 of the
+//!   aperture); `cats_eye` (0 to 1) the cat's eye clip; `squeeze` (1 to 4) the anamorphic squeeze
+//!   of the pupil; `shift_*_mm` the lens shift and `tilt_deg` (−45 to 45) about the axis at
+//!   `tilt_axis_deg` the tilt (Scheimpflug); `ca_amount` and `swirl` (0 to 1) the artistic
+//!   chromatic aberration and swirl; `field_mm` the image height of the frame's corner (0: half
+//!   the image's diagonal); `mask_kind` **0** none (size 0), **1** an aperture mask that replaces
+//!   the iris, **2** a transmission texture multiplied with it, `mask_width × mask_height` 8-bit
+//!   pixels (at most 1024 per side, 255 open) covering `[−1, 1]²` of the pupil, rows top to
+//!   bottom, the unit circle inscribed. Values out of range make the file invalid. An orthographic
+//!   camera ignores the section, and a file without it renders exactly as before O1.
 
 use super::{
-    Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Light, LightKind,
-    Material, Mesh, RenderSettings, Scene, SkyModel, Transform, NO_BITMAP,
+    particle_sets, AmbientParams, Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry,
+    Instance, Lens, LensParams, Light, LightKind, Material, Mesh, PixelFootprint, RenderSettings,
+    Scene, SkyModel, Transform, NO_BITMAP,
 };
 use crate::color::Rgb;
 use crate::math::Vec3;
@@ -191,6 +235,10 @@ pub const TAG_FLOR: [u8; 4] = *b"FLOR";
 pub const TAG_BMAP: [u8; 4] = *b"BMAP";
 /// Pattern section tag (E6).
 pub const TAG_PATN: [u8; 4] = *b"PATN";
+/// Lens section tag (O1).
+pub const TAG_LENS: [u8; 4] = *b"LENS";
+/// Ambient effect section tag (S4a).
+pub const TAG_FXAM: [u8; 4] = *b"FXAM";
 
 /// Why an RSB file could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -335,6 +383,7 @@ fn parse_camera(r: &mut Reader) -> Result<Camera, RsbError> {
         focus_dist: r.f32()?,
         ortho: r.u32()? != 0,
         ortho_width: r.f32()?,
+        lens: None,
     };
     if camera.focal_mm <= 0.0 || camera.sensor_mm <= 0.0 {
         return Err(r.invalid("focal_mm and sensor_mm must be positive"));
@@ -343,6 +392,38 @@ fn parse_camera(r: &mut Reader) -> Result<Camera, RsbError> {
         return Err(r.invalid("fstop, focus_dist and ortho_width must not be negative"));
     }
     Ok(camera)
+}
+
+fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
+    let mut p = LensParams {
+        blades: r.u32()?,
+        roundness: r.f32()?,
+        rotation_deg: r.f32()?,
+        profile: r.u32()?,
+        profile_param: r.f32()?,
+        obstruction: r.f32()?,
+        cats_eye: r.f32()?,
+        squeeze: r.f32()?,
+        shift_x_mm: r.f32()?,
+        shift_y_mm: r.f32()?,
+        tilt_deg: r.f32()?,
+        tilt_axis_deg: r.f32()?,
+        ca_amount: r.f32()?,
+        swirl: r.f32()?,
+        field_mm: r.f32()?,
+        mask_kind: r.u32()?,
+        mask_width: r.u32()?,
+        mask_height: r.u32()?,
+        mask: Vec::new(),
+    };
+    let len = u64::from(p.mask_width) * u64::from(p.mask_height);
+    let padded = len.div_ceil(4) * 4;
+    if padded > r.remaining() as u64 {
+        return Err(RsbError::SectionTooShort { tag: r.tag });
+    }
+    p.mask = r.data[r.pos..r.pos + len as usize].to_vec();
+    r.pos += padded as usize;
+    Lens::new(p).map_err(|reason| r.invalid(reason))
 }
 
 fn parse_mesh(r: &mut Reader) -> Result<Mesh, RsbError> {
@@ -521,7 +602,16 @@ fn parse_render(r: &mut Reader) -> Result<RenderSettings, RsbError> {
         denoise: r.opt_u32(0)?,
         caustic_photons: r.opt_u32(0)?,
         caustic_radius: r.opt_f32(0.0)?,
+        denoise_strength: r.opt_f32(1.0)?,
+        pixel_filter: r.opt_u32(0)?,
+        edge_supersample: r.opt_u32(1)?,
     };
+    if settings.edge_supersample > crate::pixel_filter::MAX_EDGE_SUPERSAMPLE {
+        return Err(r.invalid("edge_supersample must be at most 16"));
+    }
+    if !(0.0..=1.0).contains(&settings.denoise_strength) {
+        return Err(r.invalid("denoise_strength must be between 0 and 1"));
+    }
     if settings.caustic_photons > RenderSettings::MAX_CAUSTIC_PHOTONS {
         return Err(r.invalid("caustic_photons must be at most 4194304"));
     }
@@ -570,12 +660,14 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
         .ok_or(RsbError::Truncated { what: "header" })?;
 
     let mut camera = None;
+    let mut lens = None;
     let mut environment = None;
     let mut floor = None;
     let mut render = None;
     let mut meshes = Vec::new();
     let mut instances = Vec::new();
     let mut bitmaps = Vec::new();
+    let mut effects = Vec::new();
     let mut scene = Scene::default();
 
     while pos < bytes.len() {
@@ -595,6 +687,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
         let mut r = Reader::new(tag, payload);
         match tag {
             TAG_CAMR => set_once(&mut camera, tag, parse_camera(&mut r)?)?,
+            TAG_LENS => set_once(&mut lens, tag, parse_lens(&mut r)?)?,
             TAG_ENVR => set_once(&mut environment, tag, parse_environment(&mut r)?)?,
             TAG_FLOR => set_once(&mut floor, tag, parse_floor(&mut r)?)?,
             TAG_RNDR => set_once(&mut render, tag, parse_render(&mut r)?)?,
@@ -604,6 +697,10 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
             TAG_BMAP => bitmaps.push(parse_bitmap(&mut r)?),
             TAG_PATN => scene.patterns.push(parse_pattern(&mut r)?),
+            TAG_FXAM => effects.push(AmbientParams::decode(payload).map_err(|e| match e {
+                rt_sim::FxamError::TooShort => RsbError::SectionTooShort { tag },
+                rt_sim::FxamError::Invalid(reason) => RsbError::Invalid { tag, reason },
+            })?),
             _ => {} // Unknown section: skipped for forward compatibility.
         }
     }
@@ -614,11 +711,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
         Some(k) => (Some(k.geometry), Some(k.bitmaps)),
         None => (None, None),
     };
-    let reuse = if meshes.is_empty() {
-        kept_geometry
-    } else {
-        None
-    };
+    let reuse_meshes = meshes.is_empty() && kept_geometry.is_some();
     let reuse_bitmaps = if bitmaps.is_empty() {
         kept_bitmaps
     } else {
@@ -634,9 +727,9 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             });
         }
     }
-    let available: &[Mesh] = match &reuse {
-        Some(geometry) => geometry.meshes(),
-        None => &meshes,
+    let available: &[Mesh] = match &kept_geometry {
+        Some(geometry) if reuse_meshes => geometry.meshes(),
+        _ => &meshes,
     };
     let materials = scene.materials.len();
     if available
@@ -679,20 +772,43 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             reason: "material does not refer to a MATL section",
         });
     }
-    // Nothing below can fail: only now are the kept meshes and bitmaps taken.
-    if let Some(geometry) = reuse {
-        meshes = std::mem::take(geometry).into_meshes();
+    if effects.iter().any(|e| e.material_id as usize >= materials) {
+        return Err(RsbError::Invalid {
+            tag: TAG_FXAM,
+            reason: "material_id does not refer to a MATL section",
+        });
+    }
+    if instances.len() + effects.len() > crate::geometry::MAX_INSTANCES {
+        return Err(RsbError::Invalid {
+            tag: TAG_FXAM,
+            reason: "too many instances and effects",
+        });
+    }
+    // Nothing below can fail: only now are the kept meshes, particles and bitmaps taken.
+    let mut kept_sets = Vec::new();
+    if let Some(geometry) = kept_geometry {
+        kept_sets = geometry.take_particles();
+        if reuse_meshes {
+            meshes = std::mem::take(geometry).into_meshes();
+        }
     }
     if let Some(kept) = reuse_bitmaps {
         bitmaps = std::mem::take(kept);
     }
-    scene.geometry =
-        Geometry::new(meshes, instances).map_err(|_| invalid_instance("too many instances"))?;
+    let mut camera = camera.unwrap_or_default();
+    camera.lens = lens;
+    let render = render.unwrap_or_default();
+    let width = crate::geometry::BvhWidth::native();
+    let footprint = PixelFootprint::of(&camera, render.width, render.height);
+    let sets = particle_sets(&effects, kept_sets, footprint, width);
+    scene.geometry = Geometry::with_particles(meshes, instances, sets, width)
+        .map_err(|_| invalid_instance("too many instances"))?;
     scene.bitmaps = bitmaps;
-    scene.camera = camera.unwrap_or_default();
+    scene.camera = camera;
     scene.environment = environment;
     scene.floor = floor.unwrap_or_default();
-    scene.render = render.unwrap_or_default();
+    scene.render = render;
+    scene.effects = effects;
     Ok(scene)
 }
 
@@ -738,6 +854,36 @@ impl Scene {
             w.u32(u32::from(c.ortho));
             w.f32(c.ortho_width);
         });
+        if let Some(lens) = &self.camera.lens {
+            w.section(TAG_LENS, |w| {
+                let p = lens.params();
+                w.u32(p.blades);
+                w.f32(p.roundness);
+                w.f32(p.rotation_deg);
+                w.u32(p.profile);
+                for v in [
+                    p.profile_param,
+                    p.obstruction,
+                    p.cats_eye,
+                    p.squeeze,
+                    p.shift_x_mm,
+                    p.shift_y_mm,
+                    p.tilt_deg,
+                    p.tilt_axis_deg,
+                    p.ca_amount,
+                    p.swirl,
+                    p.field_mm,
+                ] {
+                    w.f32(v);
+                }
+                w.u32(p.mask_kind);
+                w.u32(p.mask_width);
+                w.u32(p.mask_height);
+                w.buf.extend_from_slice(&p.mask);
+                let pad = (4 - p.mask.len() % 4) % 4;
+                w.buf.extend(std::iter::repeat_n(0u8, pad));
+            });
+        }
         for m in &self.materials {
             w.section(TAG_MATL, |w| {
                 w.u32(m.kind);
@@ -819,6 +965,9 @@ impl Scene {
                 w.u32(l.flags);
             });
         }
+        for e in &self.effects {
+            w.section(TAG_FXAM, |w| w.buf.extend_from_slice(&e.encode()));
+        }
         for b in &self.bitmaps {
             w.section(TAG_BMAP, |w| {
                 w.u32(b.format);
@@ -870,6 +1019,9 @@ impl Scene {
             w.u32(r.denoise);
             w.u32(r.caustic_photons);
             w.f32(r.caustic_radius);
+            w.f32(r.denoise_strength);
+            w.u32(r.pixel_filter);
+            w.u32(r.edge_supersample);
         });
         w.buf
     }
@@ -931,6 +1083,7 @@ mod tests {
                 focus_dist: 212.5,
                 ortho: true,
                 ortho_width: 320.0,
+                lens: None,
             },
             materials: vec![
                 Material::default(),
@@ -1036,6 +1189,9 @@ mod tests {
                 denoise: 3,
                 caustic_photons: 4096,
                 caustic_radius: 2.5,
+                denoise_strength: 0.25,
+                pixel_filter: 3,
+                edge_supersample: 4,
             },
             bitmaps: test_bitmaps(),
             patterns: vec![crate::pattern::Pattern {
@@ -1051,6 +1207,7 @@ mod tests {
                 variant: 7,
                 seed: 0xdead_beef,
             }],
+            effects: Vec::new(),
         }
     }
 
@@ -1090,6 +1247,79 @@ mod tests {
     }
 
     #[test]
+    fn ambient_effects_are_written_after_the_lights_and_read_back() {
+        let scene = crate::example::ambient_scene();
+        let bytes = scene.to_rsb();
+        let found = sections(&bytes);
+        let tags: Vec<[u8; 4]> = found.iter().map(|(t, _)| *t).collect();
+        let fxam: Vec<usize> = (0..tags.len()).filter(|&i| tags[i] == TAG_FXAM).collect();
+        assert_eq!(fxam.len(), 3);
+        assert_eq!(tags[fxam[0] - 1], TAG_LGHT);
+        assert_eq!(tags[fxam[2] + 1], TAG_ENVR);
+        for &i in &fxam {
+            assert_eq!(found[i].1.len(), rt_sim::FXAM_BYTES);
+        }
+        assert_eq!(Scene::from_rsb(&bytes).as_ref(), Ok(&scene));
+        // Without its FXAM sections the file is the example at that size: what a reader that does
+        // not know them renders.
+        let mut stripped = bytes[..8].to_vec();
+        for (tag, payload) in &found {
+            if *tag != TAG_FXAM {
+                stripped.extend_from_slice(&unknown_section(tag, payload));
+            }
+        }
+        let plain = Scene::from_rsb(&stripped).unwrap();
+        assert!(plain.effects.is_empty() && plain.geometry.particle_sets().is_empty());
+        let mut expected = crate::example::scene();
+        expected.render.width = 160;
+        expected.render.height = 120;
+        expected.materials = scene.materials.clone();
+        assert_eq!(plain, expected);
+    }
+
+    #[test]
+    fn bad_ambient_effects_are_refused() {
+        let scene = crate::example::ambient_scene();
+        let bytes = scene.to_rsb();
+        let rebuild = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = bytes[..8].to_vec();
+            let mut first = true;
+            for (tag, payload) in sections(&bytes) {
+                let mut payload = payload;
+                if tag == TAG_FXAM && first {
+                    edit(&mut payload);
+                    first = false;
+                }
+                out.extend_from_slice(&unknown_section(&tag, &payload));
+            }
+            Scene::from_rsb(&out)
+        };
+        let invalid = |reason| {
+            Err(RsbError::Invalid {
+                tag: TAG_FXAM,
+                reason,
+            })
+        };
+        assert_eq!(
+            rebuild(&|p| p[112..116].copy_from_slice(&99u32.to_le_bytes())),
+            invalid("material_id does not refer to a MATL section")
+        );
+        assert_eq!(
+            rebuild(&|p| p.truncate(100)),
+            Err(RsbError::SectionTooShort { tag: TAG_FXAM })
+        );
+        assert_eq!(
+            rebuild(&|p| p[8..12].copy_from_slice(&f32::NAN.to_le_bytes())),
+            invalid("non-finite number")
+        );
+        assert!(rebuild(&|p| p[48..52].copy_from_slice(&(-1.0f32).to_le_bytes())).is_err());
+        // A payload with only the brief's fields reads the rest as defaults.
+        let short = rebuild(&|p| p.truncate(rt_sim::FXAM_MIN_BYTES)).unwrap();
+        assert_eq!(short.effects[0].gravity, 1.0);
+        assert_eq!(short.effects[0].energy, 0.0);
+    }
+
+    #[test]
     fn round_trips_every_section() {
         let scene = full_scene();
         let bytes = scene.to_rsb();
@@ -1122,7 +1352,7 @@ mod tests {
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
         assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
-        assert_eq!(size(b"RNDR"), Some(13 * 4));
+        assert_eq!(size(b"RNDR"), Some(16 * 4));
         assert_eq!(size(b"PATN"), Some(27 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
         assert_eq!(sections(&bytes)[4].1.len(), (2 + 24 + 6 + 1) * 4);
@@ -1319,6 +1549,97 @@ mod tests {
     }
 
     #[test]
+    fn a_render_section_without_the_strength_hands_out_all_of_the_denoised_image() {
+        // U11b: RNDR of 52 B (E5b-1 to U11) reads a strength of 1; out of 0..=1 is invalid.
+        let scene = full_scene();
+        assert_eq!(scene.render.denoise_strength, 0.25);
+        let bytes = scene.to_rsb();
+        let rewrite = |cut: Option<usize>, value: Option<f32>| {
+            let mut out = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_RNDR {
+                    assert_eq!(payload[52..56], 0.25f32.to_le_bytes());
+                    if let Some(v) = value {
+                        payload[52..56].copy_from_slice(&v.to_le_bytes());
+                    }
+                    if let Some(n) = cut {
+                        payload.truncate(n);
+                    }
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        assert_eq!(
+            Scene::from_rsb(&bytes).unwrap().render.denoise_strength,
+            0.25
+        );
+        let old = Scene::from_rsb(&rewrite(Some(52), None)).expect("E5b-1 layout reads");
+        assert_eq!(old.render.denoise_strength, 1.0);
+        assert_eq!(old.render.denoise, scene.render.denoise);
+        for bad in [-0.1f32, 1.5, f32::NAN] {
+            assert!(
+                matches!(
+                    Scene::from_rsb(&rewrite(None, Some(bad))),
+                    Err(RsbError::Invalid { tag: TAG_RNDR, .. })
+                ),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_render_section_without_the_pixel_filter_renders_as_before() {
+        // E11: RNDR of 56 B (U11b) reads the box filter and no edge samples; more than 16 edge
+        // samples is invalid; an unknown filter is kept (it renders as the box).
+        let scene = full_scene();
+        assert_eq!(
+            (scene.render.pixel_filter, scene.render.edge_supersample),
+            (3, 4)
+        );
+        let bytes = scene.to_rsb();
+        let rewrite = |cut: Option<usize>, filter: Option<u32>, edges: Option<u32>| {
+            let mut out = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_RNDR {
+                    assert_eq!(payload[56..60], 3u32.to_le_bytes());
+                    assert_eq!(payload[60..64], 4u32.to_le_bytes());
+                    if let Some(v) = filter {
+                        payload[56..60].copy_from_slice(&v.to_le_bytes());
+                    }
+                    if let Some(v) = edges {
+                        payload[60..64].copy_from_slice(&v.to_le_bytes());
+                    }
+                    if let Some(n) = cut {
+                        payload.truncate(n);
+                    }
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        let old = Scene::from_rsb(&rewrite(Some(56), None, None)).expect("U11b layout reads");
+        assert_eq!(
+            (old.render.pixel_filter, old.render.edge_supersample),
+            (0, 1)
+        );
+        assert_eq!(old.render.denoise_strength, 0.25);
+        let odd = Scene::from_rsb(&rewrite(None, Some(77), Some(0))).expect("reads");
+        assert_eq!((odd.render.pixel_filter, odd.render.edge_factor()), (77, 1));
+        assert_eq!(
+            Scene::from_rsb(&rewrite(None, None, Some(16)))
+                .unwrap()
+                .render
+                .edge_factor(),
+            16
+        );
+        assert!(matches!(
+            Scene::from_rsb(&rewrite(None, None, Some(17))),
+            Err(RsbError::Invalid { tag: TAG_RNDR, .. })
+        ));
+    }
+
+    #[test]
     fn a_render_section_written_before_e5b_has_no_denoise_and_no_caustics() {
         // RNDR of 40 B (X2 to E5c): denoise off, no caustic photons, the default radius.
         let scene = full_scene();
@@ -1370,7 +1691,7 @@ mod tests {
         let mut old = bytes[..8].to_vec();
         for (tag, mut payload) in sections(&bytes) {
             if tag == TAG_RNDR {
-                assert_eq!(payload.len(), 52);
+                assert_eq!(payload.len(), 64);
                 assert_eq!(payload[36..40], scene.render.passes.to_le_bytes());
                 payload.truncate(36);
             }

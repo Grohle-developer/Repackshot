@@ -77,26 +77,33 @@ const FRAGMENT_KNOTS = `
 
 // Kept aside (not in userData, which `Material.copy` replaces).
 const UNIFORMS = new WeakMap<THREE.Material, KnotUniforms>();
+/** The material a knotted copy was made from, whose own shader patch (M2a's textures) runs first. */
+const UNDER = new WeakMap<THREE.Material, THREE.Material>();
 
-/** Makes `m` draw knots (once; its uniforms are then set with `setKnots`). */
-export function enableKnots(m: THREE.MeshPhysicalMaterial): KnotUniforms {
+/**
+ * Makes `m` draw knots (once; its uniforms are then set with `setKnots`). With `under`, the material `m` copies, the
+ * patch of `under` (its textures, render/texture-preview.ts) is applied first, and the program follows its key too.
+ */
+export function enableKnots(m: THREE.MeshPhysicalMaterial, under?: THREE.Material): KnotUniforms {
+  if (under) UNDER.set(m, under);
   const existing = UNIFORMS.get(m);
   if (existing) return existing;
   const uniforms = knotUniforms();
   UNIFORMS.set(m, uniforms);
-  m.onBeforeCompile = (shader) => {
+  m.onBeforeCompile = (shader, renderer) => {
+    UNDER.get(m)?.onBeforeCompile(shader, renderer);
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = VERTEX_DECL + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvKnotPos = transformed;');
     shader.fragmentShader = FRAGMENT_DECL + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>${FRAGMENT_KNOTS}`);
   };
-  m.customProgramCacheKey = () => 'repack-knots';
+  m.customProgramCacheKey = () => `repack-knots|${UNDER.get(m)?.customProgramCacheKey() ?? ''}`;
   m.needsUpdate = true;
   return uniforms;
 }
 
 /** Points the knot uniforms of `m` at the knots of one part. */
-export function setKnots(m: THREE.MeshPhysicalMaterial, frame: WoodFrame, knots: readonly Knot[], darkness: number): void {
-  const u = enableKnots(m);
+export function setKnots(m: THREE.MeshPhysicalMaterial, frame: WoodFrame, knots: readonly Knot[], darkness: number, under?: THREE.Material): void {
+  const u = enableKnots(m, under);
   const v = (x: V3, to: THREE.Vector3) => to.set(x[0], x[1], x[2]);
   u.knotCount.value = Math.min(knots.length, MAX_KNOTS);
   u.knotDark.value = darkness;

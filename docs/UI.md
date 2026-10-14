@@ -146,6 +146,25 @@ De izquierda a derecha:
    un render. **Render usa siempre el motor completo**, esté el visor
    en el modo que esté: el conmutador solo decide qué se ve mientras se
    trabaja.
+
+   A su derecha, en la misma zona (la que rodea el paso *Rápido y
+   Completo* del recorrido guiado), el interruptor **Reducir ruido**
+   (fase U11, atajo `D`): un botón de una posición, en negativo cuando
+   está encendido, que reduce el ruido del visor *Completo* **en
+   directo**, mientras se acumulan las muestras. Es el mismo estado que
+   el botón *Reducir ruido* del medidor y que la parte *Visor* de
+   *Avanzado ▸ Reducción de ruido* (*Los dos* ↔ *Render*, *Visor* ↔
+   *Apagada*): una sola verdad, la del proyecto, deshacible (*Deshacer:
+   Dejar de reducir el ruido del visor*) y guardada con él, también
+   cuando la ventana de render está editando un trabajo de la cola. El
+   *tooltip* lo dice en una frase. En *Rápido* se ve deshabilitado con
+   la ayuda *Se aplica al modo Completo*, y `D` no hace más que decirlo.
+   Encenderlo reduce el ruido de lo acumulado en ese momento (también con
+   el visor ya convergido) y apagarlo enseña en el fotograma siguiente
+   la imagen ruidosa; ninguna de las dos cosas vuelve a empezar la
+   imagen. Mientras se acumula, la imagen limpia se refresca tan a
+   menudo como cuesta un *denoise* (§2.3, medidor) y los gestos de
+   cámara siguen a resolución reducida, sin *denoise*.
 5. Derecha: **Buscar o ejecutar…** (`Ctrl/⌘ K`), campo de 240 px que abre
    la paleta de comandos; icono de **Guía**; icono de **Tema**.
 
@@ -179,7 +198,8 @@ debajo, el **selector de nivel** de la selección (ver §4.1).
 El **menú contextual** completo de una fila (fase U3, con las acciones de
 `SPEC.md` §3.1): Encuadrar · Mover (activa el *gizmo*) · **Escalar…**
 (fase U9: el panel en línea de §2.3, junto a la fila) · Apoyar en el
-suelo · Centrar · Centrar y apoyar · Restablecer transformación ·
+suelo · Centrar · Centrar y apoyar · **Dejar caer** (fase S2) ·
+Restablecer transformación ·
 Establecer pivote ▸ (centro, base, origen, punto picado) · Fijar como
 objetivo de cámara · separador · Ocultar · Aislar · Mostrar todo ·
 Bloquear · separador · Duplicar · Duplicar enlazado · Patrón ▸ (lineal,
@@ -190,6 +210,17 @@ caras CAD, Separar por material, **Convertir en malla**, fase U9: activo
 solo si la selección tiene primitivas) · separador · Renombrar · Eliminar.
 En U1 existen las que ya están en §2.2 y el resto se añade en U3 sin
 cambiar la estructura del menú.
+
+**Dejar caer** (fase S2; el mismo menú en el visor, el botón de la
+sección *Físicas* y de la sección *Pieza* del inspector, y la paleta,
+*Dejar caer la selección*) simula la selección al momento: lo
+seleccionado pasa a *Dinámico* y cae sobre el suelo y lo que tenga debajo
+(el resto de la escena, quieto), se abre el cajón **Físicas** (§2.5) y la
+simulación se para sola cuando todo está quieto. Un grupo o un modelo cae
+como un cuerpo salvo que tenga *Como piezas*. Está desactivado con la
+selección bloqueada. Toda la caída es **una** entrada de deshacer
+(*Deshacer: Dejar caer 3 piezas*). No hay un menú *Pieza* en la cabecera
+en esta versión: su sitio es este menú contextual.
 
 **Cámaras**: lista de cámaras guardadas con la activa marcada. Botones:
 *Nueva desde la vista actual*, *Duplicar*, *Eliminar*. Clic activa la
@@ -238,8 +269,23 @@ tapar la pieza:
   de selección coge también las caras ocultas). Con una luz o una cámara
   guardada seleccionada aparece el botón de texto **Mirar a través**
   (`Ctrl/⌘ ⇧ L`), que mientras se mira dice *Volver a la cámara activa*.
-- **Arriba a la derecha**: nombre de la cámara activa (clic: lista) y
-  resolución de salida actual (clic: abre la barra de render).
+- **Arriba a la derecha**: nombre de la cámara activa (clic: la lista de
+  cámaras, con la activa marcada, la óptica de cada una en pequeño, *85 mm
+  · f/5.6*, y un **lápiz** al final de cada fila que abre la ficha de esa
+  cámara en el inspector: nombre, *Activar*, *Mirar a través*, óptica y
+  posición; la pestaña *Cámaras* se abre con ella marcada; `→` desde la
+  fila va al lápiz y `←` vuelve) y la proporción de la cámara activa con
+  la resolución de salida actual (*16:9 · 1920 × 1080*; clic: abre la
+  barra de render). En la lista, la proporción de cada cámara sigue a su
+  óptica (*85 mm · f/5.6 · 4:3*).
+- **El marco del visor** (la imagen que se renderiza, con lo de fuera
+  atenuado) es **de la cámara que se está viendo**: la activa, o la que se
+  mira a través (*Mirar a través*), con **su** proporción (U13). Cambiar la
+  proporción de la cámara activa cambia el marco al instante; cada cámara
+  guardada se dibuja en el visor con la pirámide de su propia proporción.
+  Con una animación en marcha el marco sigue siendo el de la cámara
+  activa: la salida tiene un solo tamaño y el Doctor avisa si un plano
+  usa una cámara con otra proporción.
 - **Abajo a la izquierda, medidor de calidad**: modo y motor activos,
   muestras acumuladas, tiempo, y un pequeño indicador de progreso. En
   *Rápido* dice literalmente *Rápido · vista previa rasterizada*; en
@@ -260,9 +306,22 @@ tapar la pieza:
   cuando lo que se ve es la imagen filtrada por el *denoise* (y entonces
   las muestras son las de esa imagen) y *Cáusticas · 16 384 fotones por
   muestra* cuando el motor las renderiza; y el botón **Reducir ruido**
-  (pulsado o no) enciende o apaga el *denoise* del visor: cambia la parte
-  del visor de *Avanzado ▸ Reducción de ruido* (*Los dos* ↔ *Render*,
-  *Visor* ↔ *Apagada*), deshacible.
+  (pulsado o no) enciende o apaga el *denoise* del visor: el mismo
+  interruptor que *Reducir ruido* de la barra superior (§2.1, atajo `D`),
+  la parte del visor de *Avanzado ▸ Reducción de ruido* (*Los dos* ↔
+  *Render*, *Visor* ↔ *Apagada*), deshacible. Desde U11 el *denoise* es
+  **en directo**: un carril aparte (un hilo del lanzador, que toma uno de
+  los hilos del visor mientras trabaja; en la web, los *workers* del
+  visor por bandas entre sus baldosas) reduce el ruido de la última
+  pasada con el ajuste ligero del visor, la imagen limpia sale en cuanto
+  está y el siguiente arranca entonces sobre la pasada más nueva: el
+  visor la refresca al menos cada `max(2 × lo que cuesta un denoise,
+  0,5 s)` y nunca enseña una limpia de hace más de un *denoise*. Las
+  muestras del medidor son las de la imagen limpia que se ve. Para las
+  comprobaciones de navegador el medidor lleva además, en atributos
+  `data-*`, cuántas imágenes limpias ha enseñado, cuándo la última, lo
+  que costó el último *denoise* (en la web) y las muestras de la pasada
+  más nueva.
 - **Abajo a la derecha**: ejes de orientación (tres trazos finos X Y Z,
   monocromos) y el tamaño de la pieza en mm.
 - **Al pasar por una pieza**: su contorno se ilumina (silueta de 1 px en
@@ -281,7 +340,31 @@ inspector muestra una hoja en línea con las opciones de `SPEC.md` §5
 (unidades, eje arriba, centrar, apoyar, encuadrar, añadir o sustituir,
 agrupar por, mantener materiales, separar piezas, calidad de teselado) con
 los valores detectados ya puestos y un botón primario *Importar*. `Enter`
-importa con los valores por defecto.
+importa con los valores por defecto. Desde M2a la hoja tiene una sección
+**Texturas**: *N imágenes guardadas · X MB*, una línea por cada imagen que
+no se guarda con el porqué (*pesa más de 16 MB*, *no es PNG ni JPEG*, *no
+estaba entre los archivos elegidos con el modelo*, *el proyecto ya lleva 64
+MB de texturas*) y por cada mapa sin ranura (*mapa de oclusión ambiental,
+sin ranura*), *El archivo no trae imágenes de textura* cuando no las hay, o
+*Con el material predeterminado no se importa ninguna textura*, y una nota
+con los límites. Un modelo se elige o se suelta **con sus archivos**
+(imágenes, `.mtl`, `.bin`): no se importan solos, el lector del modelo
+encuentra en ellos lo que nombra (*Importar modelo…* deja elegir varios).
+
+**Herramienta de etiqueta** (fase M2a): tras *Añadir etiqueta…* el visor
+dice *Pulsa en una pieza con Pintura donde va la etiqueta y arrastra su
+ancho · Esc cancela*: la pulsación sobre una pieza que lleva el material
+pone el centro de la etiqueta (plana desde la normal de la superficie,
+derecha, con el arriba del modelo donde la superficie lo deja), el
+arrastre fija su ancho (desde el centro, en su plano) y soltar termina; un
+clic sin arrastre le da un cuarto del lado mayor de la pieza. Toda la
+colocación es una entrada de deshacer (*Deshacer: Añadir la etiqueta
+logo.png a Pintura*). Sobre una pieza que no lleva el material, un aviso
+(*Esa pieza no lleva Pintura*). **Mover etiqueta**: arrastrar sobre la
+pieza desliza la etiqueta por la superficie bajo el cursor, conservando
+tamaño y giro (una entrada por arrastre), hasta `Esc` o el botón. Mientras
+la herramienta está activa, la pulsación es suya: ni orbita, ni el
+*gizmo*, ni selecciona.
 
 **Herramienta de mover** (fase U3): con una selección y la herramienta
 *Mover* (`M`) activa, un *gizmo* sobre el pivote con asas de traslación
@@ -448,13 +531,32 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    tipos propios de la pestaña *Míos* y *Guardar como tipo de producto*). Tamaño de la pieza en mm (detectado al importar,
    editable). Interruptores *Suelo* y *Sombra de contacto*. Botón
    primario **Crear estudio**: monta luces, suelo, cámara y ajustes de
-   motor del preset. Si ya hay estudio, pide confirmación en línea (no
+   motor del preset y, si el tipo es un set (L6: 15 de los 16), su
+   decoración y su aspecto (fondo, tarjetas, suelo, charco de luz); el
+   ejemplo y un modelo importado llegan ya vestidos con el set en vigor. Si ya hay estudio, pide confirmación en línea (no
    modal): "Sustituir el estudio actual · Sí / No".
 2. **Luz** — El **catálogo de montajes**: fila de pestañas de estilo
-   (*Todos* + los 8 `LIGHT_STYLES`), rejilla de miniaturas de 3 columnas
-   (`icons/thumb_<clave>.png`, 160×120, con la etiqueta debajo), la
-   activa con borde de selección. Debajo, la **intención** del montaje
-   activo en una frase. Flechas *anterior / siguiente* dentro del estilo.
+   (*Todos* + los 9 `LIGHT_STYLES`, **Sets** el primero, L6), rejilla de
+   miniaturas (`public/thumbs/setups/thumb_<clave>.png`, 256 × 256,
+   renderizadas por el motor: §6) con la etiqueta debajo, la activa con
+   borde de selección. Los **sets** van primero y en grande: dos columnas
+   y cuadradas (el doble de alto que las demás); los demás montajes, en
+   tres columnas y 4:3, como estaban; en *Todos*, la rejilla de los sets y
+   debajo la del resto. La **ayuda** de la miniatura de un set dice su
+   intención y su **razón fotográfica** (`why`, dos frases); la de un
+   montaje, su intención. Debajo, la **intención** del montaje activo en
+   una frase. Flechas *anterior / siguiente* dentro del estilo.
+   Con un **set** en vigor, debajo: **Usar la cámara del set** (solo si
+   sugiere una; la ayuda dice cuál, «8° de altura, 85 mm»; desactivado con
+   la cámara bloqueada; una entrada de deshacer) y **En el set**: una fila
+   por pieza de su decoración (cada tarjeta, el fondo del set, el suelo
+   del set) con su nombre y un interruptor que la oculta o la muestra
+   (`scene/setVisible`, deshacible); un fondo de color o degradado sin
+   barrido es una fila que pone el fondo del set o devuelve el del tipo de
+   producto (`env/set`). Un fondo que el set hace barrido (`SWEEP`, o
+   cualquier fondo con charco de luz) es una pieza, nunca esa fila: tras
+   *Restablecer montaje* no queda nada que encender (`setBackground`). El
+   charco de luz es un foco: aparece en *Afinar focos* con su nombre.
    Desplegable secundario **Afinar focos**: lista de focos con potencia
    (en % del total), tamaño, temperatura en K y ángulo; cambiar algo
    aquí no cambia de montaje, lo marca como *modificado*. Botón
@@ -475,18 +577,86 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    *Altura del sol*; si lo tiene, una nota dice que el sol del montaje
    coloca el del cielo. Intensidad, rotación (se
    oculta con *Cielo*: lo coloca su sol). Fondo: *El mismo entorno*,
-   *Color* (muestra), *Transparente*, *Imagen de fondo*; con esta última,
+   *Color* (muestra), *Degradado* (L6: *Arriba* y *Abajo*, dos muestras;
+   lo ponen los sets de fondo degradado), *Transparente*, *Imagen de
+   fondo*; con esta última,
    *Cargar imagen…* (PNG, JPEG, WebP), su nombre y tamaño, *Encaje*
    (*Llenar · Encajar · Estirar*, dentro del marco de salida) y el color,
    que se ve alrededor de la imagen encajada o en su lugar mientras no hay
    ninguna. Un archivo que no se puede leer se avisa en un *toast* que
    dice qué le pasa. Sombra en el suelo y reflejo en el suelo
    (intensidad).
-4. **Cámara** — Preset de óptica (8 `LENS_PRESETS`), focal en mm (campo
-   arrastrable), diafragma (f/), distancia de enfoque + botón *Enfocar
-   con clic*, interruptor Perspectiva / Ortográfica, *Encuadrar*, y
-   *Guardar como cámara*.
-5. **Imagen** — Exposición (EV), transformada de vista (Estándar /
+4. **Ambiente** (fase S4a) — Los efectos de partículas del aire. En la
+   cabecera, **Añadir**, que abre una **galería de tarjetas** en la propia
+   sección (nombre e intención de cada preset: *Motas de polvo*, *Polen*,
+   *Lluvia*, *Nieve*, *Polvareda*, *Ceniza*, *Burbujas que suben*,
+   *Confeti que cae*; *Calima*, *Haces de luz* y *Niebla baja* atenuadas y
+   deshabilitadas, *próximamente*, y *Cancelar*). Debajo, la **lista** de
+   efectos (vacía: una frase que invita a añadir uno): nombre, partículas
+   que pide (o *Pide N partículas; el motor evalúa M* si pasa del tope),
+   ojo para encender/apagar y papelera; un clic edita ese efecto, y el
+   visor dibuja la caja de su región. El efecto editado: **Efecto**
+   (desplegable de presets; cambiarlo es una entrada de deshacer) y
+   **Nombre**, una línea con sus partículas, y los **ocho mandos de
+   fotógrafo**, siempre visibles: *Cantidad* (partículas/m³ o cuenta),
+   *Tamaño* (mm), *Energía* (m/s), *Caos* (%), *Viento* (m/s) y
+   *Dirección del viento* (°), *Gravedad* (× g), *Variación* (%) y
+   *Semilla* con *Barajar*. **Avanzado**, plegado: región (*Alrededor de
+   la escena* con margen en mm, o *Caja propia* con centro y tamaño),
+   banda de alturas, *Cantidad por* (*Densidad · Cuenta*), forma (*Punto ·
+   Copo · Estela*), variación de tamaño, velocidad de caída ± variación, giro
+   (copo), largo de estela (estela), viento como vector, turbulencia
+   (escala y velocidad), nube (centro, radio, suavidad), material (*El
+   propio del efecto* o uno del catálogo), variación de tinte y tintes (hasta
+   4), *Congelar en* (s), *Visible a cámara*, *Visible en reflejos* y *Proyecta
+   sombra*, y el tope propio (*El del motor (N)* por defecto). Una nota
+   recuerda que *Rápido* dibuja hasta 50 000 partículas por efecto y
+   *Completo* y *Render* todas, iluminadas como el producto.
+5. **Cámara** — Edita la **cámara activa**, y lo dice: la cabecera lleva
+   su nombre (*Cámara 1*) y un lápiz que abre la ficha de esa cámara
+   (nombre, *Activar*, *Mirar a través*); una nota recuerda que cada
+   cámara tiene su óptica y su posición. Preset de óptica (8
+   `LENS_PRESETS`), focal en mm (campo arrastrable), diafragma (f/),
+   distancia de enfoque + botón *Enfocar con clic*, interruptor
+   Perspectiva / Ortográfica, **Proporción** (U13), *Encuadrar*, y
+   *Guardar como cámara*. **Proporción** es una lista (*3:2 · Foto 35 mm*,
+   *4:3*, *16:9 · Vídeo*, *1:1 · Cuadrado*, *5:4*, *4:5 · Retrato*,
+   *9:16 · Vertical*, *21:9 · Ultra ancho*, *2:1*, *65:24 · Panorámica* y
+   *Propia*) y, debajo, los campos `w : h`, que se pueden editar con
+   *Propia* (con un preset enseñan sus términos, apagados; elegir *Propia*
+   parte de la proporción que había). Cada cambio es una entrada de
+   deshacer (*Cámara: Proporción*; arrastrar un término es un solo
+   gesto). Cambiarla no recoloca la cámara: *Encuadrar* la ajusta a la
+   nueva imagen.
+   Debajo (O1, `src/ui/panels/insp-lens.ts`), dos desplegables:
+   - **Bokeh** (abierto): rejilla de 4 columnas con los 20 tipos de
+     `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
+     el propio motor** (`public/thumbs/bokeh/`, `tools/bokeh-thumbs.mjs`:
+     doce puntos de luz desenfocados sobre negro) y el nombre debajo; la
+     descripción del tipo va en el *tooltip* y, del elegido, en una nota.
+     Los cuatro que el modo 1 no hace salen apagados con *Próximamente* y
+     dicen qué esperan (*Necesita la lente trazada: llega con el editor
+     de lentes*; el de difracción, *Necesita óptica de ondas*). Un tipo
+     con variantes (polígono recto o curvo, obstrucción pequeña o
+     grande, polvo, rayas o malla, las estrellas y el corazón, 7 o 19
+     agujeros) muestra *Variante* y su miniatura en la casilla. Mover un
+     mando a mano desmarca el tipo y la nota dice *A medida*. *Disco
+     sencillo* quita toda la óptica (la lente fina de siempre). Cada
+     elección es una entrada de deshacer (*Cámara: Tipo de bokeh*).
+     ![bokeh](camera-bokeh.png)
+   - **Óptica avanzada** (cerrado): *Láminas* (0 es *Diafragma redondo*,
+     de 3 a 18), *Redondez*, *Giro*, *Perfil* y su *Intensidad*,
+     *Obstrucción*, *Ojo de gato* (oscurece las esquinas como los bordes
+     de una lente real; lo dice el *tooltip*), *Anamórfico* (*No · 1,33× ·
+     2×*; la imagen sale ya desestirada, y el *tooltip* avisa de que el
+     bokeh ovalado concentra más luz al mismo diafragma), *Inclinación* y *Eje de la
+     inclinación* (Scheimpflug; a 0° el plano de enfoque se inclina hacia
+     el suelo), *Desplazamiento* H y V en mm (mueve el encuadre sin
+     cambiar la perspectiva; el modo Rápido lo muestra), y bajo la marca
+     **NO FÍSICO** *Aberración cromática* y *Remolino*. Una nota recuerda
+     que todo esto se ve en el modo Completo y en el render.
+     ![óptica avanzada](camera-optics.png)
+6. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.
 
@@ -522,19 +692,81 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    Solo se pintan los que la familia usa. Un botón *Convertir en material
    propio* separa la instancia del preset cuando se edita (el nombre pasa
    a "Oro (editado)").
-2. **Desgaste** — Tres botones rápidos (*Nuevo · Usado · Viejo*), los 9
+   Sobre los parámetros, una fila **Simple · Nodos** y el botón **Nodos…**
+   (fase M3a). *Nodos* convierte el material en su grafo mínimo (una
+   entrada de deshacer); *Nodos…* hace lo mismo si hace falta y abre el
+   **editor de material** (§2.10). En modo *Nodos* los parámetros dejan
+   sitio a unas líneas que dicen cuántos nodos tiene el grafo, cómo lo
+   dibuja *Rápido* y qué aproxima, y que *Completo* renderiza el valor
+   medio de cada salida hasta la fase M3b (*próximamente*). Volver a
+   *Simple* desde un grafo que no es el mínimo pregunta en línea (§4.3):
+   *¿Volver a Simple? Simple guarda solo los valores propios de la salida:
+   se van N nodos y sus conexiones (Deshacer los recupera)* · **Volver a
+   Simple** · *Cancelar*. El menú contextual de la pieza tiene en
+   *Material ▸* la entrada **Editar con nodos…**, y la paleta de comandos
+   *Abrir el editor de material*.
+2. **Texturas** (fase M2a) — Una nota dice que *Rápido* muestra texturas y
+   etiquetas y que el motor las pinta en *Completo* y en *Render*
+   (*próximamente*, fase M2b). Una fila por **ranura**: *Color*,
+   *Rugosidad*, *Metal*, *Normal*, *Alfa*, *Emisión*, cada una con la
+   vista previa de su imagen (un cuadrado rayado sin imagen), su nombre y
+   debajo el archivo y su tamaño en píxeles (o *Sin imagen*), **Cargar…**
+   (*Cambiar…* con imagen; el diálogo del sistema en escritorio, el
+   selector de archivos en el navegador; PNG o JPEG) y la papelera
+   (*Quitar*). La ayuda de cada ranura dice qué hace la imagen (*multiplica
+   el color base*…). Con imagen, lo suyo: *Canal* (*R · G · B · A · Lum*) e
+   *Invertir* en rugosidad, metal y alfa (y en un mapa de alturas);
+   *Mapa de alturas* e *Intensidad* (con mapa de alturas, en mm del
+   blanco) en normal; *Como recorte* y su *Umbral* en alfa; *Tinte* e
+   *Intensidad* en emisión. Una ranura con mapeado propio (del archivo) lo
+   dice, con *Usar el común*. Con alguna imagen, el bloque **Mapeado**
+   (el común): *Proyección* (*UV · Caja · Plana · Cilíndrica · Esférica*),
+   *Eje* (plana, cilíndrica, esférica), *Juego UV* (*1 · 2*, en UV),
+   *Tamaño* en las unidades de la interfaz con *Ajustar a la pieza* (no
+   en UV ni en esférica; una nota dice qué es, y en la cilíndrica que es
+   la circunferencia), *Giro*, *Desplazamiento* y *Repetición* (U y V),
+   *Bordes* (*Repetir · Estirar el borde · Espejo*); si alguna pieza del
+   material no tiene UV, con *UV* una nota lo dice y propone *Caja*.
+   Después, **Etiquetas**: una fila por etiqueta, la de encima arriba, con
+   su imagen, su nombre y su tamaño en mm, *Traer delante* y *Enviar
+   atrás*, la papelera, **Mover etiqueta** (activa la herramienta del visor;
+   pulsado mientras lo está) y, desplegable, *Ancho*, *Giro*, *Alcance*
+   (con su nota), *Rugosidad*, *Barniz* y *Relieve del papel*; *Aún no hay
+   etiquetas* si no hay; una nota cuando el material lo comparten varias
+   piezas (*Sale en las 3 piezas que comparten este material*) y otra
+   cuando hay más de las que dibuja *Rápido* (seis). Al pie,
+   **Añadir etiqueta…**: elige la imagen y activa la herramienta. Todo es
+   una acción del *store*: un arrastre de un campo, una entrada de
+   deshacer (*Deshacer: Mapeado de Oro*, *Cargar tex.png en Color de
+   Pintura*, *Añadir la etiqueta logo.png a Pintura*).
+3. **Desgaste** — Tres botones rápidos (*Nuevo · Usado · Viejo*), los 9
    básicos de `WEAR_PRESETS` en una fila de chips, el mando maestro, y
    un deslizador por tipo (solo los de `WEAR_FAMILY_TYPES` para la familia
    actual) que despliega sus mandos al activarse. Escala, semilla, *variar
    por pieza*, y *Aplicar a toda la pieza*.
-3. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
+4. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
-   radio de bisel de aristas (mm), suavizado. El bisel es del material
-   (lo dice la nota bajo el campo: *Es del material. El modo Completo
-   redondea las aristas vivas en el sombreado, como un redondeo de este
-   radio; la vista Rápida las muestra vivas*): lo dibuja el motor
-   desde E6 (`ARCHITECTURE.md` §5.2 ter); three.js no puede hacerlo barato
-   y la vista *Rápida* no lo intenta.
+   *Dejar caer* (fase S2), radio de bisel de aristas (mm), suavizado. El
+   bisel es del material (lo dice la nota bajo el campo: *Es del material.
+   El modo Completo redondea las aristas vivas en el sombreado, como un
+   redondeo de este radio; la vista Rápida las muestra vivas*): lo dibuja el
+   motor desde E6 (`ARCHITECTURE.md` §5.2 sexies); three.js no puede hacerlo
+   barato y la vista *Rápida* no lo intenta.
+5. **Físicas** (fase S2; `SPEC.md` §3.1) — **Papel**, segmentado:
+   *Estático · Dinámico · Tela · Líquido*, con *Tela* y *Líquido*
+   desactivados y un *tooltip* que dice *próximamente*; con varios nodos de
+   papeles distintos, ninguno marcado. Si la pieza cae con un grupo
+   dinámico que no cae *como piezas*, una nota lo dice (*Cae con Tapón,
+   como un cuerpo*). **Densidad** en kg/m³, arrastrable; debajo, en
+   auxiliar, de dónde sale (*Del material (Metal): 7 800 kg/m³*, *Sin
+   material: 1 000 kg/m³ (agua)* o *Densidad propia*, con el botón *Usar
+   la del material*). **Rozamiento** (0–2) y **Rebote** (0–1),
+   arrastrables. Con un grupo o un modelo, el interruptor **Como piezas**
+   y su nota. Una nota dice que la masa es la densidad por el volumen de
+   la envolvente convexa, y el botón **Dejar caer**. Cada cambio es una
+   acción del *store* y un arrastre una sola entrada de deshacer
+   (*Deshacer: Físicas de Cuerpo*). En el nivel *Caras*, la sección edita
+   la pieza de la cara.
 
 **Con una primitiva seleccionada** (fase U9), antes de *Material*, la
 sección **Primitiva**: *Forma* (el nombre, en texto), y un campo por
@@ -578,17 +810,20 @@ y eliminar al pasar el ratón, y los botones *Exportar biblioteca* e
 *Importar biblioteca* (JSON) al pie. Fase U4.
 
 **Con una cámara seleccionada:** lo mismo que la sección Cámara de la
-escena, más nombre, *Activar* y, si no es la activa, *Mirar a través* (fase
-L4).
+escena, con su **Proporción** (la de *esa* cámara: editarla no toca el
+tamaño de la ventana de render mientras no sea la activa), más nombre,
+*Activar* y, si no es la activa, *Mirar a través* (fase L4).
 
-### 2.5 · Barra inferior: Animación · Cola · Render
+### 2.5 · Barra inferior: Animación · Físicas · Cola · Render
 
 Siempre visible, 48 px. La configuración del render **no vive aquí**:
 vive en la **ventana de render** (§2.7), que se abre con el botón
 *Render…*. La barra queda con tres cosas:
 
-- A la izquierda, los cajones **Animación** y **Cola** (abren un cajón de
-  240 px sobre la barra). *Cola* lleva un contador de trabajos pendientes
+- A la izquierda, los cajones **Animación**, **Físicas** (fase S2) y
+  **Cola** (abren un cajón de 240 px sobre la barra; el de *Físicas*, solo
+  lo que ocupa). *Físicas* lleva, mientras una simulación corre, cuántos
+  cuerpos siguen despiertos. *Cola* lleva un contador de trabajos pendientes
   y, mientras hay uno en marcha, una barra de progreso fina en su borde
   inferior con el nombre del trabajo y el tiempo restante en el tooltip.
 - En el centro, en texto auxiliar, el último resultado (*Joyería_Cámara 1
@@ -598,45 +833,162 @@ vive en la **ventana de render** (§2.7), que se abre con el botón
   pantalla; `Ctrl/⌘ ⏎`), que abre la ventana de render. `Ctrl/⌘ ⇧ ⏎`
   renderiza directamente con los últimos ajustes, sin abrir la ventana.
 
-**Cajón Animación**, al estilo de la línea de tiempo de KeyShot (la
-versión de U1 con planos y tarjetas se sustituye en N1 por esto):
+**Cajón Animación** (N6): una línea de tiempo de **tres zonas**, como el
+espacio de animación de KeyShot y las tiras de Blender o After Effects
+(sin copiar nada), para que quede claro **qué** se anima (izquierda),
+**cuándo** (centro) y **cómo** (derecha). Mide al menos 300 px de alto;
+la versión de U1 con planos y tarjetas queda sustituida.
 
-- **Cabecera del cajón**: ir al principio, reproducir / pausar, ir al
-  final, bucle; cabezal en `s` y en fotograma; fps; duración total;
-  conmutador *Vista previa rápida / Previa renderizada*; zoom de la línea
-  de tiempo; **+ Añadir animación** (abre el asistente) y *Presets*
-  (`SEQUENCE_PRESETS`, que añaden varias barras de golpe).
-- **Pistas**: una fila por objetivo con animaciones (cámara arriba,
-  después piezas y grupos, luces, entorno, materiales), con nombre y
-  triángulo para plegar; la **pista de cámara** muestra los tramos de
-  cámara activa y los eventos de cambio de cámara como marcas verticales
-  (corte o fundido). Cada animación es una **barra** con su frase; se
-  arrastra para mover el inicio y se estira por los extremos para cambiar
-  la duración (ajuste a fotograma con `Shift` libre); clic la selecciona
-  y el inspector pasa a editarla; doble clic renombra; menú contextual:
-  Duplicar, Invertir, Repetir…, Eliminar. Regla superior en segundos y
-  fotogramas; el cabezal se arrastra y, al soltarlo, el visor muestra ese
-  instante.
-- **Asistente de animación** (en línea, en el inspector, tres pasos con
-  *Atrás / Siguiente / Terminar*): 1) **Tipo**, en una rejilla de tarjetas
-  monocromas agrupadas como en `SPEC.md` §3.7 (Piezas · Cámara · Luz y
-  entorno · Materiales), cada una con un icono y una frase; 2)
-  **Objetivo**, la selección actual ya marcada y la posibilidad de
-  cambiarla en el árbol; 3) **Parámetros** del tipo (cantidad con unidad,
-  eje, pivote, local o global, inicio, duración, curva de tiempo,
-  invertida, repetir) con la frase resultante actualizándose en vivo.
-  *Terminar* añade la barra y la selecciona.
-- **Inspector de una animación**: nombre, objetivo (cambiable), tipo,
-  parámetros, inicio y fin (o duración), curva de tiempo con un pequeño
-  gráfico y, en *personalizada*, dos asas arrastrables, invertida,
-  repetir, y los botones *Duplicar*, *Invertir*, *Eliminar*. La frase en
-  lenguaje llano arriba, siempre.
-- En el **árbol de la escena**, cada objetivo con animaciones muestra un
-  desplegable *Animaciones* con una fila por barra (icono del tipo +
-  frase); seleccionarla selecciona la barra y viceversa.
+- **Cabecera** (transporte): *Reproducir / Pausar* (`Espacio`), *Ir al
+  principio* (`Inicio`), *Ir al final* (`Fin`), **Bucle** (encendido, al
+  acabar vuelve a empezar; apagado, se para al final); el cabezal en `s`
+  y su total (*2 s / 7 s*), el fotograma (*Fotograma 48*); los **fps**
+  (campo numérico); el **zoom** de la línea de tiempo (*Alejar*, *Ver
+  toda la animación*, *Acercar*: con zoom las pistas se desplazan en
+  horizontal bajo el árbol, que no se mueve); a la derecha **+ Animar…**
+  (botón primario, contextual: *Animar Tapón…* con una pieza elegida en
+  la escena, *Animar…* sin nada), **Presets ▾** (`SEQUENCE_PRESETS`, que
+  sustituyen la animación de una vez; deshacer la recupera),
+  *Renderizar animación…* (la ventana de render en modo *Animación*) y
+  cerrar.
+- **Izquierda, el árbol de lo animado** (*qué*). Una fila por objetivo,
+  en este orden: la **pista de cámara** (siempre, aunque no haya planos),
+  el modelo, sus grupos y piezas en el orden del árbol de la escena, los
+  focos y el entorno; cada una con su icono, su nombre, cuántas
+  animaciones lleva, un triángulo para plegarla y un **+** al pasar por
+  encima (*Animar Tapón…*). Debajo, sus animaciones, cada una con el icono
+  de su tipo y su **frase corta** (*orbita 90° · 4 s · suave*; *se
+  despieza desde su centro 1,5 × tamaño · 3 s · suave*; la frase entera,
+  en la ayuda). **Clic en una animación** la elige (`Ctrl/⌘` la añade o la
+  quita, `Mayús` la añade): el visor **resalta su objetivo** con el
+  contorno de la pieza bajo el puntero y dibuja su **pista**. **Clic en un
+  objetivo** lo elige en la escena (la pieza, el grupo, el modelo, el
+  foco) junto con todas sus animaciones. Al revés, **elegir una pieza en
+  la escena** pone en negrita las filas de lo que la mueve (sus
+  animaciones, las de sus grupos y las del modelo; no las de un despiece
+  del que es excepción). **Menú contextual** de una animación:
+  *Duplicar* (`Ctrl/⌘ D`), *Invertir*, *Partir en el cabezal* (solo una
+  animación que se reproduce una vez y hacia delante, con el cabezal
+  dentro, de un tipo que suma —giros, distancias, despiece a la vez— o
+  multiplica —escala, acercamiento—: las dos mitades siguen una de otra),
+  *Fijar la selección en este despiece* (en un despiece) y *Eliminar*
+  (`Supr`). De un objetivo: *Animar…*, *Seleccionar*, *Plegar /
+  Desplegar* y *Borrar sus animaciones*. Sin nada animado, una nota dice
+  cómo empezar.
+- **Centro, la línea de tiempo** (*cuándo*). Arriba la **regla**: los
+  segundos con su número de fotograma debajo, con marcas intermedias;
+  clic o arrastre en ella mueven el **cabezal** (fotograma a fotograma),
+  una línea con su triángulo que cruza todas las pistas, y el visor
+  enseña ese instante. Cada fila del árbol tiene su pista a la misma
+  altura: la **pista de cámara** con sus **tramos** (*Plano 1 · Cámara 1*;
+  sin planos, uno discontinuo, *Cámara activa*), cuyo borde derecho se
+  arrastra para cambiar la duración del plano y cuyo menú contextual
+  elige la cámara del plano o lo quita, con **+** al final para añadir
+  otro; la de un objetivo, una franja tenue de su primera a su última
+  animación (plegado, las barras de todas, finas); la de una animación,
+  su **barra** con la frase corta (las repeticiones, con marcas
+  discontinuas; invertida, con una flecha a la izquierda). Una barra se
+  **arrastra para moverla** (todas las elegidas a la vez) y se **estira
+  por cualquiera de sus extremos**; el **imán** la lleva a los bordes de
+  las otras barras, al cabezal, a los cortes de plano y a los segundos
+  enteros cuando está a menos de 6 px (una línea discontinua enseña dónde
+  ha pegado), y si no, a fotogramas enteros; con `Mayús`, sin imán. Un
+  arrastre es una sola entrada de deshacer. Elegida, la barra se invierte
+  (fondo de tinta); con un choque (dos del mismo tipo sobre el mismo
+  objetivo a la vez), borde discontinuo y una marca en el árbol; si la
+  mueve la pieza elegida en la escena, borde fuerte. Clic en el vacío de
+  una pista quita la selección de animaciones.
+- **Derecha, las propiedades** (*cómo*) de la animación elegida. Arriba
+  la **cabecera** de una línea —*objetivo · tipo · cantidad ·
+  inicio–fin*: «Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s»— y la
+  frase entera. Después, en secciones plegables:
+  - **Movimiento**: los mandos del tipo (la cantidad con su unidad, el
+    plano de una animación de cámara). En un **despiece**: *Qué se
+    despieza* (el modelo o un grupo), **Tipo** (*Lineal · Radial ·
+    Esférica*), en lineal **Cómo** (*Separar · Apilar*), en lineal y
+    radial el **Eje** o la **Dirección** (*X · Y · Z · Propio*, con sus
+    tres componentes), **Jerarquía** (*Piezas · Un nivel · Todos*),
+    **Distancia** con su unidad (*× tamaño · mm*; cambiar de unidad
+    conserva la longitud), **Reparto** (*Igual · Por distancia*; no en
+    apilar), **Proporcional al tamaño de la pieza**, **Centro** (*Del
+    conjunto · Una pieza · Pivote · Un punto*, con la pieza o el punto),
+    **Orden** (*A la vez · Por distancia · Por profundidad*) con su
+    **Solape** en % y **Conservar la orientación**.
+  - **Excepciones** (en un despiece): las piezas fijas, cada una con su
+    × para soltarla, y **Fijar la selección** (las piezas elegidas en la
+    escena); sin ninguna, *se mueven todas*.
+  - **Tiempo**: *Inicio*, *Duración*, *Fin* (cambiarlo cambia la
+    duración), *Repetir* (× n) e **Invertir** (en un despiece, *Invertir:
+    montar*).
+  - **Curva**: la **curva de tiempo** (`EASING_KINDS`) o, en un despiece,
+    la **Suavidad** (0 % lineal, 50 % suave, 100 % muy suave), con una
+    **vista previa** de la curva que sigue a cada cambio.
+  - *Duplicar* y *Eliminar*.
+
+  Con varias elegidas, cuántas y *Duplicar · Invertir · Eliminar*. Sin
+  ninguna, qué hacer y los **presets** en su lista. **+ Animar…** abre
+  aquí el **asistente** (tres pasos en línea: *¿Qué se mueve?* con el
+  objetivo ya puesto; *¿Cómo?*, el tipo —*Despiece* solo para el modelo o
+  un grupo con dos piezas o más—; *¿Cuánto y cuánto tiempo?*), y
+  *Añadir* deja la animación nueva elegida.
+- **Visor**: con una animación elegida se resalta su objetivo y se dibuja
+  su pista en la tinta del tema, sobre todo lo demás: el **arco** de una
+  órbita (un anillo alrededor del objetivo con el ángulo que barre y un
+  punto donde está la cámara), el de una elevación, la **flecha** de un
+  desplazamiento, un **vector por pieza** de un despiece (de donde está a
+  donde llega, con un punto donde está en el cabezal), el **eje** y el
+  giro de un *giro propio* o un *vuelco*; un tipo que no conoce, solo su
+  objetivo resaltado. El cabezal mueve la previa.
+- **Teclado**, con el foco en el cajón (un clic en el árbol o en las
+  pistas lo pone ahí): `Espacio` reproduce o pausa, `Inicio` / `Fin`,
+  `←` / `→` un fotograma (`Mayús`: diez), `Supr` borra las animaciones
+  elegidas y `Ctrl/⌘ D` las duplica. En un campo, el campo se queda sus
+  teclas.
+- En el **menú contextual de una pieza** (árbol de la escena y visor):
+  **Animar Tapón…** (el asistente con ella de objetivo) y **Fijar en el
+  despiece** / **Soltar del despiece** (en los despieces que la
+  contienen; desactivado si no hay ninguno).
 - El vídeo se renderiza desde la **ventana de render** en modo
   *Animación* (§2.7), con los mismos botones *Render* y *+ Añadir a la
   cola* que una imagen.
+
+**Cajón Físicas, la barra de físicas** (fase S2; `SPEC.md` §3.1 y §3.7):
+**▶ Iniciar** (simula las piezas cuyo papel es *Dinámico*) · **⏸ Pausar**,
+que pasa a **▶ Reanudar** mientras está en pausa · **■ Parar** · **↺
+Reiniciar**; después, lo que el simulador dice —**tiempo simulado**
+(*Simulado 0,42 s*) y **cuerpos despiertos** (*2 de 3 despiertos*)— y el
+**estado**: *Parado* por defecto, *Arrancando…*, *En marcha*, *En pausa*,
+y al acabar cómo acabó (*Se paró sola: todo está quieto*, *Parada donde
+estaba*, *Parada tras 30 s simulados*, *El simulador necesita el motor*).
+Nada corre hasta que se inicia o se deja caer algo. Antes de que el
+simulador diga nada, ni tiempo ni cuerpos: no se inventan. Debajo, una
+nota: cómo empezar, y mientras corre, que el visor la enseña en *Rápido*
+(el modo *Completo* espera a que pare).
+
+- **Pausar** congela la simulación donde el visor la enseña (lo que el
+  simulador mande mientras tanto espera a *Reanudar*); **Parar** confirma
+  la pose que se ve; dormirse todos los cuerpos, o 30 s simulados, la
+  paran y confirman el último fotograma.
+- **Toda simulación se graba**: al empezar, cada cuerpo tiene un clip
+  **Simulación** en la línea de tiempo (cajón *Animación*) que crece
+  fotograma a fotograma a los fps del proyecto mientras corre, con el
+  cabezal detrás; se queda donde se para. En la línea de tiempo (N6) su
+  fila del árbol dice *cae según la simulación · 0,83 s*; la barra se
+  mueve en el tiempo y se estira para ralentizarla, y sus propiedades son
+  las de tiempo (inicio, duración, fin, repetir, invertir) y una nota:
+  ni cantidad ni curva. *Animar…* no lo ofrece y no se parte: solo lo
+  crea una simulación. No hay botón de grabar.
+- **Reiniciar** quita los clips de la última simulación y devuelve las
+  piezas a donde estaban, como otra entrada de deshacer (*Deshacer:
+  Reiniciar la simulación*); está activo mientras esos clips sigan en el
+  proyecto. Deshacer mientras corre la abandona sin confirmar nada.
+- Una simulación nueva mientras otra corre para la primera (que confirma
+  su pose) y arranca desde ahí.
+
+Capturas (`tools/physics-check.mjs`): `docs/ui/physics-bar.png` (la barra
+en pausa, en mitad de una caída), `docs/ui/physics-drop.png` (tres
+primitivas antes y después de *Dejar caer*) y
+`docs/ui/physics-drop-strip.png` (seis instantes del clip grabado).
 
 **Cajón Cola**: lista de trabajos en orden (miniatura, nombre, cámara,
 tamaño, *Terminar por*, IA sí o no, estado y progreso), arrastrables para
@@ -656,7 +1008,10 @@ resultados.
 24 px, texto auxiliar: a la izquierda el **Doctor** (un punto relleno y
 "2 avisos", o un punto hueco y "Todo en orden"); clic abre su popover.
 Luego: piezas · triángulos · motor y dispositivo · muestras y tiempo del
-visor. A la derecha: idioma y versión.
+visor y, en *Rápido* con algún efecto de *Ambiente* (S4a), *Partículas N
+de M* (las que dibuja de las que el motor evalúa) o, sin `rt.wasm`,
+*Partículas: solo las regiones (el motor no está compilado)*. A la
+derecha: idioma y versión.
 
 **Nota del motor de ejecución** (fase U10, solo escritorio): si al
 arrancar hay un modelo de IA instalado y el motor de ejecución no
@@ -675,7 +1030,12 @@ de qué pasa y un botón *Arreglar* por fila, más *Arreglar todo* arriba. Es
 la traducción del panel Doctor de EZ Packshot. En U1 los chequeos que
 dependen del motor pueden estar en estado *no disponible aún*; los de
 escena (escala, origen, suavizado, bisel, clipping) se implementan sobre
-el modelo de datos.
+el modelo de datos. Una comprobación nuestra, la última de la lista
+(U13), es **Proporción de la animación**: avisa de los planos cuya cámara
+tiene otra proporción que el tamaño de salida (*Planos con otra
+proporción que la animación (1920 × 1080): 1. El primero usa Cámara 2
+(4:3).*) y su arreglo pone a las cámaras de esos planos la proporción del
+tamaño de salida.
 
 ---
 
@@ -702,10 +1062,29 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   carpeta se muestra por su nombre); donde no exista, el selector dice
   *Este navegador solo permite descargar* y se usa *Descargas*. En el
   escritorio (P2), una ruta normal. Interruptor *Mostrar al terminar*.
-- **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR; *Fondo
-  transparente* cuando el formato lo admite; *Pases* (alfa, profundidad,
-  normales, id de pieza) cuando existan (N2), con *próximamente* hasta
-  entonces.
+- **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR, **TIFF** (8, 16
+  o 32 bits flotante) y **RAW (DNG)** (U12); *Fondo transparente* cuando
+  el formato lo admite (PNG, EXR y TIFF; JPEG y DNG no, y el interruptor
+  dice por qué); *Pases* (alfa, profundidad, normales, id de pieza)
+  cuando existan (N2), con *próximamente* hasta entonces. Cada formato
+  que necesita explicación lleva **una línea de ayuda** bajo el
+  selector, la misma que el texto emergente del botón: *EXR: lineal en
+  coma flotante de 32 bits, para composición*; *TIFF: sin compresión, 8/16
+  bits sRGB o 32 bits lineal*; *DNG lineal en coma flotante: se revela
+  como un raw de cámara*. La profundidad de bits sale a la derecha del
+  selector solo donde se elige: PNG ofrece *8 bits* y *16 bits*; TIFF,
+  *8 bits*, *16 bits* y *32 bits flotante* (lineal, con la exposición del
+  render y sin curva, como el EXR); RAW (DNG) no ofrece nada que elegir y
+  dice *32 bits flotante*. TIFF lleva los DPI de la ventana como
+  resolución; el TIFF de 8 y 16 bits y el DNG se leen como sRGB y como
+  primarios sRGB lineales, sin perfil ICC. El nombre del archivo acaba en
+  `.tif` o `.dng`. Al terminar, el visor de resultados y las miniaturas
+  usan una **copia PNG de 8 bits** del mismo render (Chromium y Firefox no
+  muestran TIFF ni DNG, como no muestran EXR), y *Guardar de nuevo* escribe
+  el archivo, no la copia. El resumen del pie lo dice: *TIFF 32 bits
+  flotante → Descargas*. Captura: `docs/ui/render-format-tiff.png`
+  (`tools/render-format-check.mjs`). Una configuración antigua o ajena con un formato
+  que esta versión no escribe se abre como PNG.
 - **Cámara**: desplegable con *La activa*, cada cámara guardada y
   **Todas las cámaras** (un trabajo por cámara).
 - **Tamaño**: desplegable de presets (`RESOLUTION_PRESETS` y
@@ -716,6 +1095,25 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   recalcula el tamaño de impresión. Los ppp se escriben en el archivo
   (PNG y JPEG) para que la imprenta lea el tamaño correcto. Presets de
   impresión: A4, A3, carta, 10 × 15 cm a 300 ppp.
+
+  **La proporción es de la cámara** (U13). En una imagen, el tamaño sigue a
+  la proporción de la **cámara activa**: el ancho se conserva y el alto sale
+  de ella (con 4:3, 1920 de ancho dan 1440 de alto). Con el candado
+  cerrado, teclear un lado hace que el otro siga esa proporción; con el
+  candado abierto, un tamaño que la rompe la **reescribe en la cámara**
+  (*Propia*, con esos píxeles como `w : h`, o el preset de la lista si el
+  tamaño es exactamente uno), y teclear los dos lados a la vez, o elegir un
+  preset de tamaño con otra proporción, hace lo mismo con el candado que
+  sea. Una línea discreta bajo los píxeles dice cuál manda (*El alto sigue
+  la proporción de Cámara 1, 4:3*; con el candado abierto, *Un tamaño
+  tecleado pasa a ser la proporción de Cámara 1*) y, justo después de
+  cambiarla, qué ha pasado (*La proporción de Cámara 1 pasa a 4:3*). Todo
+  es una sola entrada de deshacer, la de la ventana (*Ajustes de render*),
+  que devuelve cámara y tamaño. Un trabajo para otra cámara con otra
+  proporción (*Cámara: una concreta*, o *Todas las cámaras*) sale con el
+  ancho de la ventana y el alto de **esa** cámara. Al editar un trabajo
+  de la cola la ventana enseña su tamaño tal cual y no toca ninguna
+  cámara.
 - **Región** (*próximamente*): un recuadro dibujado en el visor.
 
 **2 · Calidad**
@@ -741,13 +1139,27 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   cáustica más fina y más tiempo por muestra, también en *Completo*),
   **Reducción de ruido** (*Apagada · Visor · Render · Los dos*, por
   defecto *Los dos*, con la nota de que es el filtro del motor guiado por
-  albedo, normales, profundidad y pieza, que nunca mezcla dos piezas) y,
+  albedo, normales, profundidad y pieza, que nunca mezcla dos piezas; su
+  parte *Visor* es el interruptor *Reducir ruido* de la barra superior y
+  del medidor, U11, y el render final usa siempre el filtro completo),
+  con su **Intensidad** debajo (fase U11b; 0–100 %, por defecto 100 %, oculta
+  con la reducción *Apagada*): la imagen entregada es la mezcla
+  `ruidosa × (1 − s) + filtrada × s`, por canal y en luz lineal, hecha en el
+  motor; vale a la vez para el render y para el visor *Completo* (un solo
+  mando, guardado en el proyecto y deshacible), y con 0 % no se filtra nada.
+  Cambiarla vuelve a empezar la imagen del visor, como cualquier ajuste del
+  motor. Y,
   cuando el render se filtra, **Guardar también sin reducción de ruido**
   (un segundo archivo con «-noisy» en el nombre).
 
 **2 bis · Animación** (en lugar de *Tamaño*, con una fila *Tamaño del
 fotograma* solo en píxeles, y encima de *Calidad*, cuando
-el segmento está en *Animación*): **rango** (*Todo* o de–a en
+el segmento está en *Animación*; el tamaño de una animación es **suyo**:
+no sigue a la cámara, un vídeo tiene un solo tamaño, y al volver a
+*Imagen* el ancho se conserva y el alto sale de la cámara activa. El
+Doctor avisa —*Proporción de la animación*— cuando la cámara de un plano
+tiene otra proporción que ese tamaño, y su arreglo da a esas cámaras la
+proporción de la salida): **rango** (*Todo* o de–a en
 fotogramas o segundos), **fps** (24, 25, 30, 60), duración resultante,
 **salida** *Vídeo* (MP4 H.264 o WebM VP9, con calidad) o *Fotogramas*
 (secuencia PNG o JPEG con numeración `0001`), *Terminar por* aplicado
@@ -839,6 +1251,108 @@ defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
   siendo de una sola imagen. El resumen del pie dice *IA activada · 4 variantes*.
   Captura: `docs/ui/ai-section-prompt.png`.
 
+**4 · Plugins** (P6; `ui/panels/plugins.ts`), después de *Post-procesado IA*:
+un bloque por cada plugin instalado con el *slot* `render.plugins`, dibujado
+**solo desde su manifiesto** (ARCHITECTURE §9): la interfaz no conoce ningún
+plugin. Plegada al principio mientras no hay ninguno instalado; sin plugins,
+una línea: *No hay ningún plugin instalado: los plugins se instalan en Ajustes ▸
+Plugins* y **Gestionar plugins…**, que abre esa sección. En un trabajo de la
+cola que se edita, la sección no se muestra (no hay un resultado sobre el que
+trabajar).
+
+- **Cabecera**: el logo del plugin (de su paquete, sobre una tesela negra en los
+  dos temas: es contenido, el color es suyo), el nombre, *versión 0.1.0*, la
+  ficha **Licencia cerrada** y, debajo, su línea `notice` con **Página del
+  proyecto ↗**. Para el de película: *Adelanto de una app de edición de fotos y
+  simulación de película del mismo desarrollador, en desarrollo*.
+- **Receta**, debajo de la cabecera y a todo lo ancho (decisión 8;
+  `ui/panels/plugin-recipes.ts`): un **carrusel horizontal**, como la tira de
+  película de la app móvil, con una tarjeta por receta en el orden y por las
+  categorías **del plugin**: la imagen arriba, **su nombre público** debajo (el
+  de película no enseña marcas de fabricantes ni de películas: su regla D112)
+  y la categoría como etiqueta pequeña; la primera tarjeta es *Sin receta ·
+  Solo los mandos* (el punto de partida del propio plugin). Se desplaza de lado
+  con la rueda o el *trackpad* (una tarjeta por paso; en un extremo la rueda
+  vuelve a ser de la ventana) y con **← →** (también ↑ ↓, Inicio y Fin), que
+  eligen la tarjeta de al lado; un clic elige una. La elegida lleva un
+  contorno de la tinta; el carrusel se ajusta a las tarjetas y se funde en el
+  extremo donde hay más. Cada elección es una acción del *store*, deshacible.
+  La imagen de cada tarjeta es **la imagen base del plugin** (la escena de
+  prueba que trae su paquete: para el de película, el frasco junto a la
+  lámpara encendida de `rt --write-film-thumb`) por esa receta con los mandos
+  por defecto, a 160 × 100 y ampliada por CSS; mientras no llega, un hueco
+  rayado gris (*Se está haciendo su imagen*). Se hacen **una vez** en este
+  equipo (IndexedDB, por versión del plugin y receta), de una en una y solo
+  cuando no hay una vista previa esperando; mientras, *Imágenes de las recetas
+  12 de 128, hechas una vez en este equipo*. **Encima del carrusel, sus
+  filtros** (P6b), los del plugin, como los de la búsqueda de películas de la
+  app de aintfilm: una fila de *chips* por filtro, con su nombre, **Todos** y
+  sus valores (para el de película: **Tipo** —*Color* (negativo en color),
+  *B&W*, *Diapositiva*, *Cine*—, **ISO** en las tres bandas de la app —*≤ 100*,
+  *200–400*, *≥ 800*, cortadas en 100 y 400— y **Grupo** —*Películas*, *Color de
+  una película*, *Grano*, *Difusión*, *Objetivo*—; la fila de marcas de la app no
+  está: son nombres de fabricantes). Un filtro elige un valor (o *Todos*); los
+  filtros se combinan (todos a la vez) y una receta que no dice nada de uno (un
+  grano no tiene ISO) solo está en su *Todos*. Debajo, la cuenta: *23 de 127
+  recetas* (*Ninguna de las 127 recetas coincide con estos filtros*). La receta
+  elegida sigue elegida aunque los filtros la dejen fuera: su tarjeta va
+  **primera**, atenuada, con *Fuera de los filtros* en lugar de su categoría;
+  *Sin receta* va siempre. Cada filtro es una acción del *store*, deshacible, y
+  se guarda con los ajustes del plugin (`filters`); cambiarlo no rehace la
+  vista previa. **Debajo del carrusel, un deslizador** fino de su mismo ancho
+  para recorrer las recetas, atado al desplazamiento en los dos sentidos:
+  arrastrarlo desplaza el carrusel tarjeta a tarjeta (al soltarlo se ajusta a
+  la tarjeta) y desplazar el carrusel lo mueve; una marca en su pista dice
+  dónde está la tarjeta elegida; se enfoca con el teclado y ← → mueven una
+  tarjeta (*Recorrer las recetas*); sin nada que desplazar, no se ve. Debajo,
+  la elegida con su categoría (*CN-01 · Películas · negativo en color*). A la
+  izquierda, **los mandos del manifiesto** por grupos, cada grupo con
+  su título: deslizador con su campo numérico (y su unidad; un deslizador con
+  `minLabel` dice *Receta* en su tope izquierdo: ahí el plugin conserva el
+  valor de la receta), lista o interruptor, cada uno con su frase cuando la
+  trae. **Restaurar valores por defecto** al final. Cada cambio es una acción
+  del *store* (`RenderSettings.plugins`), deshacible; arrastrar es **un**
+  paso; se guarda con el proyecto.
+- **Vista previa**, a la derecha (debajo en una ventana estrecha): **el
+  resultado actual** —el abierto en el visor de resultados, si no el último; el
+  de un resultado hecho por un plugin es su origen— a **480 px** de ancho por el
+  plugin en su *worker*, con el divisor *Render · el plugin* de U5. Se rehace
+  **300 ms** después del último cambio (al soltar, en un deslizador) y la que
+  está en curso se cancela con la siguiente. Debajo: el tamaño, qué recibió
+  el plugin (*luz lineal del EXR* o *imagen de 8 bits*) y de qué resultado;
+  **la línea del plugin**: lo que el propio plugin dice de esa vista previa
+  (para el de película: *Negativo por píxel 75 µm · Grano Gaussian · Etapas 5 ·
+  Motor wasm 0.1.0*), nada que la interfaz calcule ni invente; y *El plugin
+  tardó 1,1 s*, medido alrededor de su render. Sin resultados, **la imagen base
+  del plugin** por él (*Escena de prueba · el plugin*; *de la escena de prueba
+  del plugin*) con la línea *Aún no hay resultado: la vista previa enseña la
+  escena de prueba del plugin; Aplicar necesita un render terminado*; un plugin
+  sin imagen base dice *Renderiza antes una imagen: un plugin trabaja sobre un
+  resultado terminado*.
+- **Aplicar**: el resultado a su tamaño por el plugin (*Aplicando a 1920 ×
+  1080…*, con **Cancelar**, que para el *worker*) y **un resultado nuevo** en el
+  historial junto a su origen, como la imagen de la IA: PNG (JPEG para un
+  resultado JPEG) con los ppp del origen, guardado donde se guardó el origen,
+  con el nombre *<origen>_<plugin>.png* y su procedencia (`provenance: { plugin,
+  version, recipe, controls }`). Se abre en el visor comparado con su origen,
+  que dice *Hecho con aintfilm · simulación de película 0.1.0, receta CN-01, a
+  partir de Botella_Cámara 1_0001.png*; un plugin con semilla guarda además
+  `seed: { control, seed0, frame, rule: 'seed0+frame' }`.
+- **Aplicar a los trabajos de render** (interruptor, decisión 9), debajo de
+  *Aplicar*: con él, **cada imagen que renderiza la cola** pasa también por el
+  plugin, con la receta y los mandos de ese trabajo, y se guarda junto a la del
+  motor (*<nombre>_<plugin>.png*); en una animación, **cada fotograma con su
+  semilla**, `semilla + fotograma` (el índice del fotograma en la animación, 0
+  para el primero: un tramo renderizado aparte lleva el mismo grano), para que
+  el grano sea el de una película fotograma a fotograma y no una capa fija; una
+  imagen fija usa la semilla tal cual. La primera imagen del trabajo se guarda
+  también en el historial con su procedencia. Si el plugin no está instalado o
+  falla, se dice una vez (*aintfilm · simulación de película no se aplicó a
+  …: …. Se guardó la imagen del motor.*) y el render queda como estaba.
+  Deshacible y guardado con el proyecto como el resto. Captura:
+  `docs/ui/render-plugins-film.png` (el paquete de película construido desde el
+  *checkout* de aintfilm, con el logo del dueño).
+
 **Pie de la ventana**: a la izquierda, el resumen en una línea
 (*1920 × 1080 · 300 ppp · 256 muestras · PNG → Descargas · IA
 apagada*); a la derecha **+ Añadir a la cola** (secundario) y
@@ -893,7 +1407,7 @@ escritorio (`PUT/GET /api/store/results/<id>/ai` del lanzador). Capturas:
 **En el escritorio (X3c).** El render final con IA deja su imagen lineal y sus
 pases en el lanzador, que hace la IA sin que los píxeles vayan y vuelvan; la
 imagen de la IA llega como luz lineal y se escribe **con la exposición y la curva
-del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG o EXR),
+del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG, EXR, TIFF o DNG),
 así que con Intervención 0 es el mismo fichero byte a byte. Mientras la IA
 trabaja, la fila de la cola dice dónde está —*IA · cargando el modelo*, *IA ·
 mosaico 2 de 4*, *· intento 2* tras un reintento, *IA · comprobando*— y la barra
@@ -901,9 +1415,10 @@ mide la tubería, no ya el render. *Detener* o *Pausar* en ese momento paran la
 IA al instante y **la imagen del motor se queda en el historial** (aviso *Post-procesado
 IA detenido: la imagen del motor se conserva en el historial*); con *Pausar*, el
 trabajo vuelve a esperar y *Reanudar* lo hace entero. Los navegadores no
-muestran EXR: la miniatura de la IA de un trabajo EXR sale de una copia de 8
-bits, pero el visor solo compara *Render | IA* cuando la IA es PNG o JPEG (el
-historial guarda el EXR tal cual; una copia para la vista queda pendiente).
+muestran EXR, TIFF ni DNG: la miniatura de la IA de un trabajo en uno de ellos
+sale de una copia de 8 bits, pero el visor solo compara *Render | IA* cuando la
+IA es PNG o JPEG (el historial guarda el archivo tal cual; una copia para la vista
+de la imagen de la IA queda pendiente).
 
 **Variantes (X4b).** Un trabajo con varias variantes hace un solo render y una
 pasada de la IA por variante, con la semilla siguiente cada vez; se guardan como
@@ -928,8 +1443,8 @@ una línea propia, sin solapes, a 1600, 1280 y 960 px. Captura:
 
 ### 2.9 · Ventana de Ajustes
 
-Se abre con **Ajustes…** del menú de aplicación o `Ctrl/⌘ ,`. Es la
-segunda y última ventana de la aplicación (§4.3): flotante, unos
+Se abre con **Ajustes…** del menú de aplicación o `Ctrl/⌘ ,`. Es una de
+las tres ventanas de la aplicación (§4.3): flotante, unos
 **960 × 680 px** centrada, el resto atenuado un 40 %, se mueve por su
 barra de título y se cierra con `Esc` o la ×. Acromática como todo el
 cromo. Se recuerda la última sección abierta.
@@ -952,11 +1467,12 @@ título del grupo en versalitas auxiliares:
 | | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
-| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
+| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **partículas por efecto** (S4a: el tope de cada efecto de *Ambiente*; *Automático* = 100 000 en el navegador, 1 000 000 en nativo); **Suavizado de bordes** (E11, abajo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
 | | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
-| **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
+| **Sistema** | **Plugins** | Los plugins del registro (`src/data/plugins.json`) y los instalados desde un archivo, cada uno con su logo, nombre, editor, versión, tamaño, resumen, la ficha **Licencia cerrada** y **Página del proyecto**; *Instalar*, *Actualizar a X*, *Quitar*; la clave de activación pedida en su fila; **Instalar desde archivo…** (detalle abajo) |
+| | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
-| | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con **Descargar**, el paquete de esta plataforma, y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con *Descargar · Notas · Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`) |
+| | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con el botón principal y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con el mismo botón principal, *Notas* y *Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`). **El botón principal** es **Instalar y reiniciar** en escritorio (P5): pregunta por los cambios sin guardar (§4.3), el lanzador descarga el paquete de esta copia y su `SHA256SUMS.txt`, comprueba la suma, lo instala y la aplicación se reinicia sola con la versión nueva (detalle en `ARCHITECTURE.md` §5.5). En la web sigue siendo **Descargar** (abre la página de la versión) y la fila lo dice: *Descargar abre la página de la versión. Para actualizar desde la propia aplicación, usa la versión de escritorio.* También es *Descargar* donde el lanzador no sabe actualizarse (uno anterior) o la release no trae el paquete o las sumas. **Mientras se instala**, la fila (y la línea de la barra de estado, con *Ajustes* cerrado) dice dónde va: *Descargando… 45 % · 3,2 de 7,1 MB* con una barra fina (gris, sin color), *Comprobando…*, *Instalando… la aplicación se reiniciará*, con **Cancelar la actualización** hasta que empieza a cambiar archivos; cerrar *Ajustes* no la para (el estado es del lanzador y se sigue al recargar la página). **Los fallos** salen en la fila con su motivo y **Reintentar**: la descarga, la suma que no cuadra (*no se instaló*), sin espacio en el disco, el paquete que no se pudo desempaquetar o poner en su sitio (*no se cambió nada*) y *esta copia no está instalada ni es portable* (entonces el botón es *Descargar*). Al volver a arrancar, un aviso dice *Repackshot se actualizó a la versión X* |
 | | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
 
 **Columna derecha**: título de la sección, una frase de qué se ajusta
@@ -967,6 +1483,35 @@ desplegable). Una fila con un valor distinto del de fábrica lleva un
 punto y, al pasar, *Restablecer* en línea; al pie de cada sección,
 *Restablecer esta sección*. Lo que no existe todavía se ve,
 deshabilitado, con *próximamente*.
+
+**Motor de renderizado ▸ Suavizado de bordes** (fase E11). Dos listas,
+cada una ordenada de menos a más coste, sin cifras de coste (el orden y
+una frase de ayuda; regla 10). Son ajustes de la aplicación, no del
+proyecto: no se deshacen ni viajan en el `.repack.json`; en escritorio
+se guardan con los demás en `settings.json` del lanzador.
+
+- **Modo Rápido**: segmento *Ninguno · MSAA 2× · MSAA 4× · MSAA 8×*, por
+  defecto 4×. La línea auxiliar dice lo que da el dispositivo: *Este
+  dispositivo llega a N×; dibuja ahora: M×* (o que no tiene
+  multimuestreo); una opción por encima de su máximo dibuja con el máximo
+  (lo dice su *tooltip*). Cambia al momento, sin volver a empezar nada.
+- **Completo y render**: una lista vertical numerada, una opción por
+  fila con su nombre y su frase: **1 Ninguno** (todas las muestras por el
+  centro del píxel: bordes dentados, el más barato), **2 Estándar** (una
+  caja de un píxel: lo que renderiza un RSB que no dice filtro), **3 Suave**
+  (tienda de dos píxeles), **4 Fino** (Blackman–Harris de tres píxeles,
+  el habitual de producción; **por defecto**: cuesta los mismos rayos que
+  *Estándar*), **5 Fino + bordes ×2** (el doble de muestras donde cambian
+  la pieza, el material o la profundidad), **6 Fino + bordes ×4**. Vale
+  para el visor *Completo* y para todos los renders desde ese momento;
+  cambiarla vuelve a empezar la imagen del visor. Los fotogramas de gesto
+  (resolución reducida) usan el filtro pero no las muestras extra de
+  borde. Las flechas recorren la lista.
+
+En *Completo*, la línea del medidor que dice lo que el motor hace de la
+imagen añade **Filtro · Estándar** (o el que sea) cuando no es el de
+fábrica, *Fino*; en *Rápido*, **MSAA 2×** o **Sin multimuestreo** cuando
+no dibuja con 4×.
 
 **Ratón y caja de selección.** La fila *Ratón* (Preferencias ▸ Visor y
 navegación) dice en su línea auxiliar qué botón orbita (el derecho
@@ -1059,6 +1604,38 @@ gráfica* (el lanzador preguntó y no hay) de *No se han podido leer las
 tarjetas gráficas: mira los registros* (ninguna fuente contestó,
 `gpuDetection: failed`).
 
+**Plugins** (P6, `ui/panels/settings-plugins.ts`): arriba, dónde se guardan
+(*Los plugins instalados se guardan en este equipo, sus paquetes cifrados y sus
+claves aparte*, o que solo duran esta sesión donde no hay almacenamiento
+duradero). Después, **Plugins disponibles**: una fila por plugin del registro
+(y por cada uno instalado desde un archivo, con la ficha *Desde un archivo*):
+el logo (el de su paquete, en cuanto está instalado: antes, un icono neutro),
+el nombre con la ficha **Licencia cerrada**, *Editor · versión 0.1.0 · 1,8 MB*
+(el tamaño que fija el registro), el resumen, **Página del proyecto ↗**, el
+estado (*No instalado* · *Descargando 42 % · 0,7 MB de 1,8 MB* · *Comprobando
+el paquete…* · *Esperando la clave de activación* · *Instalado: versión
+0.1.0, 1,8 MB en este equipo* · *No instalado: la descarga no es el paquete que
+fija el registro (su SHA-256 no coincide)*…) y la frase, en todos: *El código de
+este plugin es cerrado; la licencia de Repackshot no lo cubre*. Instalado,
+debajo, **su licencia completa** y **los avisos de terceros** de lo que lleva,
+en desplegables que se leen del paquete (descifrado en memoria) al abrirlos. A
+la derecha **Instalar**, **Actualizar a X** (cuando el registro trae otra
+versión) y **Quitar** (pregunta: *Su paquete y su clave de activación se borran
+de este equipo; los proyectos conservan sus ajustes*). Instalar descarga,
+comprueba el tamaño y el `sha256` del registro y la cabecera del paquete, y
+pide la clave: de `keyUrl` si el registro la trae; si no (o si falla), un
+recuadro en la fila con *Este plugin se activa con una clave de su
+desarrollador. Escríbela o pégala para terminar la instalación*, el campo
+(*Pega la clave de activación*), **Activar** y *Cancelar*; una clave que no
+abre el paquete y algo que no es una clave se dicen distinto. Una
+actualización prueba primero la clave que ya tiene.
+
+**Plugins ▸ Instalar desde un archivo**: **Elegir un archivo .rpk…** (el nombre
+y el tamaño del elegido al lado), el campo de la clave e **Instalar**; debajo,
+el resultado (*Instalado: Invertir (plugin de prueba) 1.0.0* o el motivo). La
+herramienta queda a la vista para los plugins que vengan. Captura:
+`docs/ui/settings-plugins.png`.
+
 **Último proyecto** (*General ▸ Al arrancar*): el encabezado pregunta
 *¿Abrir el último proyecto, «X»?* con *Abrir* y *Ahora no*; si el archivo
 se movió o falta el permiso, un aviso lo dice. En *Equipo* hay también el
@@ -1071,6 +1648,101 @@ vez (captura `docs/ui/settings-desktop.png`).
 Ajustes en una sección (*Gestionar modelos…* en la ventana de render,
 el medidor del visor cuando el motor no está), y `?settings=<sección>`
 en la URL lo hace para las capturas.
+
+### 2.10 · Editor de material (fase M3a)
+
+Se abre con **Nodos…** del inspector del material, con *Material ▸ Editar
+con nodos…* del menú contextual de una pieza o con la paleta, sobre el
+material de la selección (si la selección no tiene un solo material lo
+dice un aviso). Un material en modo *Simple* pasa antes a *Nodos* (su
+grafo mínimo: la salida sola, una entrada de deshacer). Es una ventana
+flotante como la de render, de unos **1040 × 660 px** y centrada la
+primera vez, pero **sin atenuar** lo de detrás: el visor sigue pintando lo
+que hace el grafo. Se mueve por su barra de título, se agranda por su
+esquina inferior derecha (mínimo 560 × 360) y recuerda dónde estaba y su
+tamaño entre sesiones; un doble clic en la barra la vuelve a centrar.
+`Esc` (sin nada seleccionado) o la × la cierran. Acromática como todo el
+cromo: el color solo está en las esferas de los nodos, la del material,
+los colores de los valores y la barra de las rampas, que son contenido.
+![editor de material](material-nodes.png)
+
+**Barra de título**: *Editor de material*, el nombre del material,
+**Simple · Nodos** (como en el inspector, con la misma pregunta al volver
+a Simple), **Ejemplos ▾** (los diez grafos de ejemplo, con su descripción
+en el *tooltip*; uno sustituye el grafo, una entrada de deshacer),
+**+ Añadir nodo** (`⇧ A`), **Encuadrar** (`F`) y la ×.
+
+**Lienzo** (izquierda): un plano de puntos que se acerca con la rueda
+(alrededor del cursor, 25 %–200 %, el porcentaje abajo a la derecha) y se
+desplaza con el botón central, o con `Espacio` o `Alt` y el izquierdo. La
+primera vez se encuadra el grafo. Cada **nodo** es una tarjeta: su nombre
+arriba (la *Salida de material* en negativo; *Matemática* y *Mezcla* con
+la operación: *Matemática · Seno*), su **esfera** de 64 × 64 (lo que da su
+primera salida sobre una esfera de 100 mm vista de frente: un número en
+gris, un color en sRGB, un vector por la parte fraccionaria de cada
+coordenada, una normal como ½ + n/2; la de la salida, el material
+sombreado), y una fila por toma: primero las salidas, a la derecha, y
+luego las entradas que sus parámetros muestran, a la izquierda, con su
+valor si no están conectadas (un número o una muestra del color). Las
+**tomas** tienen una forma por tipo: **círculo** número, **rombo** color,
+**cuadrado** vector, **triángulo** normal; huecas sin conexión, llenas
+con ella. Las esferas las calcula un *worker* con el mismo intérprete que
+la vista previa *Rápido*; mientras llegan, el hueco queda gris.
+- *Clic* en una tarjeta la selecciona (`⇧` o `Ctrl/⌘` suman o quitan);
+  arrastrarla la mueve con el resto de la selección (una entrada de
+  deshacer por arrastre). Arrastrar en el vacío selecciona lo que toca el
+  recuadro.
+- **Conectar**: arrastrar de una salida a una entrada, o de una entrada
+  libre a una salida. Mientras se arrastra, la toma bajo el cursor se
+  marca si la acepta y se apaga si no; soltar en una que no la acepta no
+  conecta y un aviso dice por qué (*Un color no puede entrar en una
+  entrada de normal*, *Esa conexión cerraría un bucle*). Una entrada
+  conectada se coge con el ratón y su conexión se suelta en otra entrada
+  (se mueve, una entrada de deshacer) o en el vacío (se desconecta). Una
+  conexión nueva a una entrada ya conectada sustituye la anterior.
+- *Doble clic* o *clic derecho* en el vacío abre **Añadir nodo** en ese
+  punto: un campo de búsqueda (por nombre, descripción y palabras clave,
+  en los dos idiomas: *perlin*, *ruido*, *altura*) sobre los nodos por
+  categoría (*Entrada, Textura, Color, Vector, Matemática, Superficie*);
+  flechas y `⏎` eligen. *Clic derecho* en una tarjeta: *Duplicar*,
+  *Desconectar las entradas*, *Eliminar* (la salida no se duplica ni se
+  elimina).
+
+**Panel** (derecha, 280 px): el material en una esfera de 128 px; **En
+Rápido**, las líneas que dicen cómo lo dibuja la vista previa (*Dibujado
+con mapas de 512 × 512 hechos en las UV de la malla* / *por su proyección
+cilíndrica: lo que da el grafo* / *Lee coordenadas 3D: …un corte por el
+frente de la pieza…*) y qué aproxima (*Rápido funde las caras de la
+proyección de caja; el motor toma la cara a la que más mira la normal*;
+*Fresnel y de cara se toman a 60° de la normal*; *La curvatura se omite
+(0): la mide el motor*; *Sin mapa para barniz: su valor medio*), y la de
+*Completo* hasta M3b. Debajo, el **nodo seleccionado**: su nombre y su
+descripción, sus **parámetros** (desplegables, deslizadores y campos
+numéricos con su unidad, interruptores, color; la imagen de una *Textura
+de imagen* con *Cargar…* y *Quitar*, por el mismo camino y límites que las
+ranuras de M2a; las paradas de una *Rampa de color* con su posición, su
+color y su ×, *Añadir una parada* en el hueco mayor, y una barra que la
+muestra) y sus **entradas**: las libres con su valor editable, las
+conectadas con *Desde Nodo · toma* y una × que desconecta, las que leen
+una fuente del punto con cuál (*La normal de la superficie*, *Las UV de la
+malla*, *Las coordenadas de la pieza (por 100 mm)*); *Duplicar* y
+*Eliminar*. Con varios nodos, *N nodos seleccionados* y los dos botones;
+con ninguno, una nota de cómo se usa.
+![el frasco con el mármol en Rápido](material-nodes-preview.png)
+
+**Pie**: *N nodos · M conexiones · programa de K instrucciones, F + V
+registros* (lo que dice el compilador), o por qué no compila (*El grafo
+es demasiado grande: su programa pasa de 2048 instrucciones*); a la
+derecha, los atajos.
+
+**Teclado**, con el foco en el editor: `Supr`/`Retroceso` elimina la
+selección, `Ctrl/⌘ D` la duplica, `Ctrl/⌘ A` lo selecciona todo, `⇧ A`
+abre *Añadir nodo*, `F` o `Inicio` encuadran, `Esc` deselecciona y, sin
+selección, cierra; `Ctrl/⌘ Z` y `Ctrl/⌘ ⇧ Z` son el deshacer y rehacer de
+la aplicación. Las demás teclas sueltas no llegan a las herramientas del
+visor mientras el foco está en el editor. Con el foco fuera, la aplicación
+tiene las suyas: el editor no es modal. El recorrido guiado tiene un paso
+para *Nodos…*.
 
 ## 3 · Paleta de comandos y teclado
 
@@ -1093,6 +1765,8 @@ de teclado* del menú):
 | `Ctrl/⌘ O` | Abrir proyecto |
 | `Ctrl/⌘ S` | Guardar proyecto (en el mismo archivo) |
 | `Ctrl/⌘ ⇧ S` | Guardar proyecto como… |
+| `Ctrl/⌘ ⇧ R` | Visor: *Rápido* o *Completo* |
+| `D` | *Reducir ruido* del visor *Completo*, en directo (fase U11) |
 | `Ctrl/⌘ ⏎` | Ventana de render |
 | `Ctrl/⌘ ⇧ ⏎` | Render con los últimos ajustes, sin abrir la ventana |
 | `F` | Encuadrar selección (o todo) |
@@ -1160,12 +1834,28 @@ lista de parámetros.
 
 Toda confirmación es **en línea**, en el sitio donde se pulsó, con dos o
 tres botones y `Esc` para cancelar. Los elementos flotantes son los
-menús, la paleta, el popover del Doctor y **dos ventanas**, abiertas solo
+menús, la paleta, el popover del Doctor y **tres ventanas**, abiertas solo
 a petición: la **ventana de render** (§2.7), porque un render es una
 decisión con muchos parámetros que se toma de una vez, como en KeyShot,
-y la ventana de **Ajustes** (§2.9: secciones agrupadas en una columna a
-la izquierda, cambios al momento). Ninguna otra ventana; nada se abre
-solo.
+la ventana de **Ajustes** (§2.9: secciones agrupadas en una columna a
+la izquierda, cambios al momento) y el **editor de material** (§2.10,
+fase M3a: un grafo necesita un lienzo, y el visor sigue vivo detrás).
+Ninguna otra ventana; nada se abre solo.
+
+**La pregunta por los cambios sin guardar** (solo si el proyecto los
+tiene) es la misma para todo lo que los descartaría —cerrar la ventana,
+*Nuevo*, *Abrir* y *Instalar y reiniciar*— y tiene tres botones más
+*Cancelar*: **Guardar** (donde está el proyecto, sin diálogo), **Guardar
+como…** (con el diálogo) y **No guardar** (en la actualización, **Salir sin
+guardar**). *Guardar* y *Guardar como…* siguen solo si el proyecto se
+escribió de verdad: un diálogo cancelado o un archivo que no se puede
+escribir se quedan donde estaban. `Esc` y *Cancelar* no hacen nada. Sale bajo el
+nombre del proyecto (cerrar, nuevo, abrir), en la fila de *Ajustes ▸
+Actualizaciones* o encima del botón de la barra de estado (actualizar), que
+es donde se pulsó; en *Ajustes* `Esc` cancela la pregunta, no la ventana.
+Si durante la descarga el proyecto cambió, al cerrar la ventana para
+reiniciar se pregunta otra vez (bajo el nombre del proyecto, con la
+misma pregunta); si no ha cambiado desde que se contestó, no.
 
 ### 4.4 · Campos numéricos
 
@@ -1298,8 +1988,8 @@ Lo que **sí** debe funcionar de verdad en U1:
   ejecuta en serie con ese mismo mecanismo.
 - Doctor: los chequeos de escena implementados sobre el modelo (escala
   plausible según el tipo de producto, origen y apoyo en el suelo,
-  suavizado, bisel, clipping de cámara, luces visibles); los de motor,
-  en *no disponible aún*.
+  suavizado, bisel, clipping de cámara, luces visibles, proporción de la
+  animación); los de motor, en *no disponible aún*.
 - Paleta de comandos, atajos, deshacer / rehacer, temas, idioma (todas
   las cadenas en `src/ui/strings.ts` en `es` y `en`, inglés por defecto),
   plegado de paneles, estado vacío con arrastre de archivo (el arrastre
@@ -1326,10 +2016,17 @@ rendimiento importa: 60 fps con la pieza de ejemplo en un portátil.
 
 ## 6 · Miniaturas
 
-- **Montajes de luz**: copiar las 72 `thumb_<clave>.png` (160 × 120) y las
-  72 `setup_<clave>.png` (64 × 64) de `/home/user/EZPackshot/icons/` a
-  `public/thumbs/setups/`. Son del mismo autor; se generan con un script
-  propio en una fase posterior.
+- **Montajes de luz** (L6): las 88 `thumb_<clave>.png` (256 × 256) y
+  `setup_<clave>.png` (64 × 64, su promedio) de `public/thumbs/setups/`
+  las renderiza nuestro motor (`node tools/setup-thumbs.mjs`): cada set
+  sobre su héroe (`BOTTLE` el frasco de ejemplo de vidrio con líquido,
+  `BOX` una caja con una banda de aluminio, `RING` un toro de oro,
+  `CHROME` un toro cromado, `SHOE` una cápsula de cuero, `SPHERES` tres
+  esferas mate, brillante y metal) y cada montaje anterior sobre el héroe
+  de su estilo, con el tipo *Estándar*, la cámara de referencia (o la del
+  set), 96 muestras, *denoise* y semilla fija. Sustituyen a las de EZ
+  Packshot. `manifest.json` guarda el *hash* de cada escena y de cada PNG;
+  la suite comprueba que el código sigue construyendo esas escenas.
 - **Materiales**: no hay PNG upstream (se renderizan dentro de Blender).
   En U1 se generan **en el navegador** con el propio visor: una esfera
   con el material sobre el fondo del tema, renderizada a 96 × 96 en un
@@ -1378,7 +2075,8 @@ mover y el menú contextual completo de piezas (U3), focos propios y
 guardar montajes (L4), biblioteca *Míos* (U4), cara CAD entera, pelusa,
 desgaste visible, campo claro por entorno, cielo procedural, HDRI de
 archivo, colocación por reflejo exacta, vídeo, pases de render, etiquetas
-y texturas de imagen, vista en sección. Todo está en `ROADMAP.md` con su
+y texturas de imagen (fase M2a en la interfaz y la vista previa, M2b en el
+motor), vista en sección. Todo está en `ROADMAP.md` con su
 fase y su responsable. En la interfaz, cada uno de esos huecos se marca
 con la palabra *próximamente* en texto auxiliar, nunca con un control que
 parezca funcionar y no haga nada.

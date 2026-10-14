@@ -11,8 +11,8 @@ import type {
   SpecDefaults,
 } from './types';
 
-// Light-setup catalogue (upstream LIGHT_SETUPS, 72 recipes, in upstream order,
-// PRESET first). Each recipe defines the SHAPE and TONE of the light: how many
+// Light-setup catalogue: the 16 sets of L6 first (style SETS, designed for Repackshot), then upstream LIGHT_SETUPS
+// (72 recipes, in upstream order, PRESET first). Each recipe defines the SHAPE and TONE of the light: how many
 // sources, where, how big, what colour. The LEVEL still comes from the product
 // preset (see core/rig.ts), so changing setup does not change the exposure.
 //
@@ -27,6 +27,8 @@ import type {
 
 /** Styles used to filter the catalogue. "All" is a UI filter, not a style. */
 export const LIGHT_STYLES: readonly LightStyleEntry[] = [
+  // L6: the designed sets, first.
+  { key: 'SETS', label: { es: 'Sets', en: 'Sets' } },
   { key: 'PRODUCT', label: { es: 'Producto', en: 'Product' } },
   { key: 'TRADITIONAL', label: { es: 'Tradicional', en: 'Traditional' } },
   { key: 'CINEMATIC', label: { es: 'Cinematografico', en: 'Cinematic' } },
@@ -88,6 +90,380 @@ export const LIGHT_ROLES: Readonly<Record<LightRole, Omit<ResolvedLight, 'role'>
 };
 
 export const LIGHT_SETUPS: readonly LightSetup[] = [
+  // --- Sets (L6, not ported from EZ Packshot: designed for Repackshot) -------------------------------------------
+  // A set is a setup with what the product reflects and stands on: cards, backdrop, floor, a pool of light behind,
+  // an exposure offset and the dome's strength (types.ts). Principles, not tables: the family of angles and the
+  // bright and dark fields of Hunter, Biver and Fuqua, *Light: Science & Magic*; the usual key / fill ratios; the
+  // common practice of the still-life studio. Two keys of the plan (ROADMAP L6) were taken by setups before L6 (keys stay):
+  // the dark field of glass is GLASS_DARK_FIELD and the warm-cool cinema set WARM_COOL_CINEMA. Shares as everywhere:
+  // the weight of each light, normalised to the product type's level (the pool's measured where it lands, core/rig.ts).
+  {
+    key: 'STRIP_EDGE', style: 'SETS', world: 'STUDIO', hero: 'BOTTLE',
+    label: { es: 'Tira larga y canto negro', en: 'Long strip and black edge' },
+    intent: {
+      es: 'Una tira de arriba abajo y una tarjeta negra que dibuja el canto: botellas y cosmética',
+      en: 'One strip top to bottom and a black card that draws the edge: bottles and cosmetics',
+    },
+    why: {
+      es: 'Una sola tira limpia recorre la botella de arriba abajo y el canto negro la separa del fondo. El reflejo en el suelo la asienta.',
+      en: 'One clean strip runs down the bottle from top to bottom, and the black edge sets it apart from the background. The reflection on the floor grounds it.',
+    },
+    lights: [
+      { role: 'KEY', size: 0.35, sizeY: 4.5, az: -115, el: 25, dist: 3, share: 0.55, kelvin: 5300 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 70, el: 20, dist: 3.5, share: 0.25, glossy: false },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 160, el: 50, dist: 3, share: 0.2 },
+    ],
+    cards: [
+      { material: 'CARD_BLACK', az: 70, el: 15, dist: 1.6, size: 2, sizeY: 5 },
+      { material: 'CARD_WHITE', az: -60, el: 10, dist: 2, size: 2, sizeY: 4 },
+    ],
+    backdrop: { kind: 'GRADIENT', top: [0.1, 0.1, 0.1], bottom: [0.02, 0.02, 0.02] },
+    pool: { az: 180, el: 10, cone: 25, share: 0.15 },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
+    exposureEv: -0.3,
+    camera: { el: 8, focalMm: 85 },
+  },
+  {
+    key: 'GLASS_DARK_FIELD', style: 'SETS', world: 'STUDIO', hero: 'BOTTLE',
+    label: { es: 'Campo oscuro', en: 'Dark field' },
+    intent: {
+      es: 'Sin luz frontal: dos tiras por detrás dibujan en blanco los bordes del vidrio',
+      en: 'No front light: two strips from behind draw the edges of the glass in white',
+    },
+    why: {
+      es: 'El vidrio solo se ve por sus bordes. Sobre negro, dos tiras detrás de la pieza los dibujan en blanco (campo oscuro, Hunter et al.).',
+      en: 'Glass shows only by its edges. On black, two strips behind the piece draw them in white (dark field, Hunter et al.).',
+    },
+    lights: [
+      { role: 'RIM', size: 0.4, sizeY: 4, az: -135, el: 55, dist: 3, share: 0.4 },
+      { role: 'RIM', size: 0.4, sizeY: 4, az: 135, el: 55, dist: 3, share: 0.4 },
+      { role: 'TOP', size: 2, sizeY: 2, az: 0, el: 85, dist: 2.6, share: 0.2, glossy: false },
+    ],
+    cards: [
+      { material: 'CARD_BLACK', az: -70, el: 10, dist: 1.8, size: 3, sizeY: 4 },
+      { material: 'CARD_BLACK', az: 70, el: 10, dist: 1.8, size: 3, sizeY: 4 },
+    ],
+    backdrop: { kind: 'FLAT', color: [0.01, 0.01, 0.01] },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
+    envStrength: 0,
+    exposureEv: -0.5,
+  },
+  {
+    key: 'BRIGHT_FIELD', style: 'SETS', world: 'STUDIO', hero: 'BOTTLE',
+    label: { es: 'Campo claro', en: 'Bright field' },
+    intent: {
+      es: 'Un fondo luminoso detrás y tarjetas negras que dibujan los bordes en negro',
+      en: 'A luminous background behind and black cards that draw the edges in black',
+    },
+    why: {
+      es: 'Sobre blanco, el vidrio se dibuja con bordes negros. Esos bordes los ponen las tarjetas, no la luz.',
+      en: 'On white, glass is drawn with black edges. The cards put those edges there, not the light.',
+    },
+    lights: [
+      { role: 'RIM', size: 4.5, sizeY: 4.5, az: 180, el: 10, dist: 4, share: 0.9, camera: true },
+      { role: 'TOP', size: 3, sizeY: 3, az: 0, el: 80, dist: 2.6, share: 0.06 },
+      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, share: 0.04, glossy: false },
+    ],
+    cards: [
+      { material: 'CARD_BLACK', az: -70, el: 10, dist: 1.6, size: 2, sizeY: 5 },
+      { material: 'CARD_BLACK', az: 70, el: 10, dist: 1.6, size: 2, sizeY: 5 },
+    ],
+    backdrop: { kind: 'FLAT', color: [0.9, 0.9, 0.9] },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_WHITE' },
+    envStrength: 1.2,
+    exposureEv: 1.2,
+  },
+  {
+    key: 'HIGH_KEY_WHITE', style: 'SETS', world: 'STUDIO', hero: 'BOX',
+    label: { es: 'Blanco infinito', en: 'Infinite white' },
+    intent: {
+      es: 'Fondo blanco quemado y sombra de contacto suave: la foto de tienda',
+      en: 'A white background burnt out and a soft contact shadow: the shop photo',
+    },
+    why: {
+      es: 'El fondo quemado a blanco y una sombra de contacto apenas visible son el estándar de la tienda en línea. Nada distrae del producto.',
+      en: 'A background burnt out to white and a barely visible contact shadow are the standard of the online shop. Nothing distracts from the product.',
+    },
+    lights: [
+      { role: 'TOP', size: 5, sizeY: 4, az: 0, el: 75, dist: 2.6, share: 0.45 },
+      { role: 'KEY', size: 2, sizeY: 4, az: -95, el: 20, dist: 3, share: 0.2 },
+      { role: 'FILL', size: 2, sizeY: 4, az: 95, el: 20, dist: 3, share: 0.2 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 0, el: 25, dist: 3.5, share: 0.15, glossy: false },
+    ],
+    backdrop: { kind: 'SWEEP', color: [0.9, 0.9, 0.9] },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_WHITE' },
+    pool: { az: 180, el: 30, cone: 90, share: 1.5 },
+    envStrength: 2,
+    exposureEv: 1.4,
+  },
+  {
+    key: 'JEWEL_BOX', style: 'SETS', world: 'STUDIO', hero: 'RING', caustics: true,
+    label: { es: 'Caja de luz con negros', en: 'Light box with blacks' },
+    intent: {
+      es: 'Luz envolvente para la piedra y negros colocados para el metal: joyería',
+      en: 'Wrapping light for the stone and placed blacks for the metal: jewellery',
+    },
+    why: {
+      es: 'La luz envolvente hace brillar la piedra y una chispa dura le saca fuego. Los negros colocados dan forma al metal: el oro necesita reflejos oscuros para leerse como oro.',
+      en: 'Wrapping light makes the stone shine, and one hard spark brings out its fire. Placed blacks give the metal its shape: gold needs dark reflections to read as gold.',
+    },
+    lights: [
+      { role: 'KEY', size: 3, sizeY: 3, az: -60, el: 30, dist: 2.5, share: 0.15 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 30, dist: 2.5, share: 0.15 },
+      { role: 'RIM', size: 3, sizeY: 3, az: -120, el: 30, dist: 2.5, share: 0.15 },
+      { role: 'RIM', size: 3, sizeY: 3, az: 120, el: 30, dist: 2.5, share: 0.15 },
+      { role: 'TOP', size: 3, sizeY: 3, az: 0, el: 80, dist: 2.5, share: 0.2 },
+      { role: 'KEY', type: 'SPOT', size: 0.05, az: -40, el: 55, dist: 3, share: 0.1, spread: 12, blend: 0.2 },
+    ],
+    cards: [
+      { material: 'CARD_BLACK', az: 0, el: 80, dist: 1.5, size: 2, sizeY: 2 },
+      { material: 'CARD_BLACK', az: -70, el: 5, dist: 1.7, size: 2, sizeY: 3 },
+    ],
+    backdrop: { kind: 'GRADIENT', top: [0.06, 0.06, 0.06], bottom: [0.015, 0.015, 0.015] },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
+    exposureEv: 0,
+    camera: { focalMm: 100 },
+  },
+  {
+    key: 'CHROME_FAMILY', style: 'SETS', world: 'STUDIO', hero: 'CHROME',
+    label: { es: 'Familia de ángulos', en: 'Family of angles' },
+    intent: {
+      es: 'Un degradado grande delante y un negro limpio: relojes y cromados',
+      en: 'A big gradient in front and a clean black: watches and chrome',
+    },
+    why: {
+      es: 'Un cromado solo enseña lo que refleja. Se le pone delante un degradado grande y un negro limpio, y el metal toma forma (la familia de ángulos de Hunter et al.).',
+      en: 'Chrome shows only what it reflects. Put a big gradient and a clean black in front of it and the metal takes shape (the family of angles of Hunter et al.).',
+    },
+    lights: [
+      { role: 'KEY', size: 4, sizeY: 4, az: -35, el: 45, dist: 2.2, share: 0.5 },
+      { role: 'TOP', size: 2, sizeY: 4, az: -25, el: 50, dist: 2, share: 0.2 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 70, dist: 3, share: 0.15 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, share: 0.15, glossy: false },
+    ],
+    cards: [
+      { material: 'CARD_BLACK', az: 75, el: 20, dist: 1.8, size: 4, sizeY: 4 },
+      { material: 'ALU_BRUSH', az: 90, el: 10, dist: 1.8, size: 2, sizeY: 3 },
+    ],
+    backdrop: { kind: 'GRADIENT', top: [0.12, 0.12, 0.12], bottom: [0.03, 0.03, 0.03] },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
+    exposureEv: -0.2,
+  },
+  {
+    key: 'RAKING_TEXTURE', style: 'SETS', world: 'STUDIO', hero: 'SHOE',
+    label: { es: 'Rasante con relleno', en: 'Raking with fill' },
+    intent: {
+      es: 'Clave cálida a ras y relleno frío: calzado, textil y piel',
+      en: 'A warm key almost flat and a cool fill: footwear, textile and leather',
+    },
+    why: {
+      es: 'La trama se lee con luz rasante. La clave cálida contra el relleno frío separa el volumen de la superficie.',
+      en: 'Texture reads in raking light. A warm key against a cool fill separates the volume from the surface.',
+    },
+    lights: [
+      { role: 'KEY', size: 4, sizeY: 0.8, az: -85, el: 10, dist: 3, share: 0.65, kelvin: 4800, spread: 60 },
+      { role: 'FILL', size: 4, sizeY: 3, az: 55, el: 30, dist: 3.6, share: 0.2, kelvin: 6200, glossy: false },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 150, el: 35, dist: 3, share: 0.15 },
+    ],
+    backdrop: { kind: 'SWEEP', color: [0.25, 0.25, 0.25] },
+    floor: { kind: 'MATTE', color: [0.3, 0.3, 0.3] },
+    exposureEv: 0,
+    camera: { el: 15, focalMm: 50 },
+  },
+  {
+    key: 'BLACK_ON_BLACK', style: 'SETS', world: 'STUDIO', hero: 'BOX',
+    label: { es: 'Negro sobre negro', en: 'Black on black' },
+    intent: {
+      es: 'Dos líneas de luz en los cantos y un halo tenue detrás: electrónica',
+      en: 'Two lines of light on the edges and a faint halo behind: electronics',
+    },
+    why: {
+      es: 'Un producto negro se dibuja con dos líneas de luz en sus cantos. Un halo tenue detrás lo despega del fondo.',
+      en: 'A black product is drawn by two lines of light on its edges. A faint halo behind lifts it off the background.',
+    },
+    lights: [
+      { role: 'RIM', size: 0.3, sizeY: 4, az: -150, el: 70, dist: 3, share: 0.35 },
+      { role: 'RIM', size: 0.3, sizeY: 4, az: 150, el: 70, dist: 3, share: 0.35 },
+      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, share: 0.08, glossy: false },
+    ],
+    backdrop: { kind: 'FLAT', color: [0.04, 0.04, 0.04] },
+    pool: { az: 180, el: 5, cone: 18, share: 0.3, kelvin: 6500 },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
+    envStrength: 0.1,
+    exposureEv: -0.6,
+  },
+  {
+    key: 'WARM_WINDOW', style: 'SETS', world: 'STUDIO', hero: 'SPHERES',
+    label: { es: 'Ventana cálida', en: 'Warm window' },
+    intent: {
+      es: 'Una ventana lateral grande y un lado en sombra: alimentación y hogar',
+      en: 'A big side window and one side left in shadow: food and home',
+    },
+    why: {
+      es: 'Una ventana lateral grande y un lado dejado en sombra es la luz de mesa de toda la vida. La tarjeta negra le quita el relleno y le da volumen.',
+      en: 'A big side window with one side left in shadow is the table light of all time. The black card takes the fill away and gives it volume.',
+    },
+    lights: [
+      { role: 'KEY', size: 5, sizeY: 4, az: -65, el: 40, dist: 2.4, share: 0.7, kelvin: 4300 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 40, el: 15, dist: 3.5, share: 0.15, kelvin: 6500, glossy: false },
+    ],
+    cards: [{ material: 'CARD_BLACK', az: 75, el: 10, dist: 1.8, size: 3, sizeY: 4 }],
+    backdrop: { kind: 'SWEEP', color: [0.35, 0.315, 0.28] },
+    floor: { kind: 'MATTE', color: [0.35, 0.35, 0.35] },
+    exposureEv: 0,
+  },
+  {
+    key: 'BACKLIT_LIQUID', style: 'SETS', world: 'STUDIO', hero: 'BOTTLE', caustics: true,
+    label: { es: 'Contraluz líquido', en: 'Backlit liquid' },
+    intent: {
+      es: 'Un panel detrás que atraviesa el líquido hacia la cámara: bebidas',
+      en: 'A panel behind whose light crosses the liquid towards the camera: drinks',
+    },
+    why: {
+      es: 'El líquido se enciende cuando la luz lo atraviesa hacia la cámara. Dos tiras de canto y una tarjeta blanca arriba dibujan el vidrio.',
+      en: 'Liquid lights up when the light crosses it towards the camera. Two edge strips and a white card above draw the glass.',
+    },
+    lights: [
+      { role: 'RIM', size: 2, sizeY: 3, az: 180, el: 8, dist: 2.2, share: 0.55, camera: false },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: -130, el: 30, dist: 3, share: 0.15 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 130, el: 30, dist: 3, share: 0.15 },
+      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, share: 0.1, glossy: false },
+    ],
+    cards: [{ material: 'CARD_WHITE', az: 0, el: 80, dist: 1.5, size: 2, sizeY: 2 }],
+    backdrop: { kind: 'GRADIENT', top: [0.08, 0.08, 0.08], bottom: [0.02, 0.02, 0.02] },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK', roughness: 0.2 },
+    exposureEv: -0.2,
+  },
+  {
+    key: 'WARM_COOL_CINEMA', style: 'SETS', world: 'STUDIO', hero: 'BOTTLE',
+    label: { es: 'Cine cálido-frío', en: 'Warm-cool cinema' },
+    intent: {
+      es: 'Clave cálida y contra fría: el contraste de color del cine',
+      en: 'A warm key and a cool rim: the colour contrast of cinema',
+    },
+    why: {
+      es: 'Dos temperaturas opuestas en la clave y la contra son el contraste de color que más usa el cine. Un charco frío detrás remata la separación.',
+      en: 'Two opposite temperatures in the key and the rim are the colour contrast cinema uses most. A cool pool behind finishes the separation.',
+    },
+    lights: [
+      { role: 'KEY', size: 3, sizeY: 3, az: -45, el: 35, dist: 2.8, share: 0.55, kelvin: 3800 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 140, el: 55, dist: 3, share: 0.25, color: [0.55, 0.8, 1] },
+      { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, share: 0.1, kelvin: 5600, glossy: false },
+    ],
+    backdrop: { kind: 'GRADIENT', top: [0.03, 0.06, 0.08], bottom: [0.01, 0.01, 0.01] },
+    pool: { az: 180, el: 10, cone: 25, share: 0.1, kelvin: 8000 },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
+    exposureEv: -0.3,
+  },
+  {
+    key: 'POP_COLOR', style: 'SETS', world: 'STUDIO', hero: 'BOX',
+    label: { es: 'Color pop', en: 'Pop colour' },
+    intent: {
+      es: 'Fondo saturado y dos contras de colores complementarios: tienda en redes',
+      en: 'A saturated backdrop and two rims in complementary colours: the social-media shop',
+    },
+    why: {
+      es: 'El color de fondo saturado y dos contras de color son el lenguaje de la tienda en redes. La luz cenital mantiene el producto limpio.',
+      en: 'A saturated backdrop and two coloured rims are the language of the social-media shop. The top light keeps the product clean.',
+    },
+    lights: [
+      { role: 'TOP', size: 4, sizeY: 4, az: 0, el: 70, dist: 2.6, share: 0.45 },
+      { role: 'RIM', size: 0.4, sizeY: 4, az: -110, el: 20, dist: 3, share: 0.2, color: [0.4, 0.7, 1] },
+      { role: 'RIM', size: 0.4, sizeY: 4, az: 110, el: 20, dist: 3, share: 0.2, color: [1, 0.85, 0.5] },
+      { role: 'FILL', size: 3, sizeY: 3, az: 30, el: 20, dist: 3.5, share: 0.15, glossy: false },
+    ],
+    backdrop: { kind: 'SWEEP', color: [0.95, 0.55, 0.45] },
+    floor: { kind: 'MATTE', color: [0.95, 0.55, 0.45] },
+    exposureEv: 0.2,
+  },
+  {
+    key: 'GRADIENT_POOL', style: 'SETS', world: 'STUDIO', hero: 'SPHERES',
+    label: { es: 'Fondo degradado con foco', en: 'Gradient backdrop with a pool' },
+    intent: {
+      es: 'Un charco de luz detrás sobre un fondo neutro: catálogo',
+      en: 'A pool of light behind on a neutral backdrop: catalogue',
+    },
+    why: {
+      es: 'El charco de luz detrás separa el producto y da profundidad a un fondo neutro. Clave, relleno y contra hacen el resto sin llamar la atención.',
+      en: 'The pool of light behind sets the product apart and gives a neutral backdrop depth. Key, fill and rim do the rest without drawing attention.',
+    },
+    lights: [
+      { role: 'KEY', size: 3, sizeY: 2.5, az: -40, el: 40, dist: 2.2, share: 0.5 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, share: 0.2, glossy: false },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 165, el: 70, dist: 3, share: 0.15 },
+    ],
+    backdrop: { kind: 'SWEEP', color: [0.3, 0.3, 0.3] },
+    pool: { az: 180, el: 15, cone: 22, share: 0.7 },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_WHITE', color: [0.6, 0.6, 0.6] },
+    envStrength: 0,
+    exposureEv: 0,
+  },
+  {
+    key: 'MIRROR_FLOOR', style: 'SETS', world: 'STUDIO', hero: 'BOTTLE',
+    label: { es: 'Suelo espejo', en: 'Mirror floor' },
+    intent: {
+      es: 'El reflejo completo bajo el producto: perfumería y cosmética',
+      en: 'The whole reflection under the product: fragrance and cosmetics',
+    },
+    why: {
+      es: 'El reflejo completo bajo el producto es el plano de perfumería por excelencia. Dos tiras bajas encienden ese reflejo.',
+      en: 'The whole reflection under the product is the fragrance shot par excellence. Two low strips light that reflection up.',
+    },
+    lights: [
+      { role: 'TOP', size: 3, sizeY: 3, az: 0, el: 80, dist: 2.6, share: 0.35 },
+      { role: 'RIM', size: 0.4, sizeY: 3, az: -120, el: 5, dist: 2.5, share: 0.25 },
+      { role: 'RIM', size: 0.4, sizeY: 3, az: 120, el: 5, dist: 2.5, share: 0.25 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 30, el: 20, dist: 3.5, share: 0.15, glossy: false },
+    ],
+    backdrop: { kind: 'GRADIENT', top: [0.05, 0.05, 0.05], bottom: [0.01, 0.01, 0.01] },
+    floor: { kind: 'MIRROR', material: 'MIRROR_BLACK' },
+    exposureEv: -0.3,
+  },
+  {
+    key: 'FLAT_LAY', style: 'SETS', world: 'STUDIO', hero: 'BOX',
+    label: { es: 'Cenital', en: 'Flat lay' },
+    intent: {
+      es: 'Desde arriba, luz de un lado alto y sombra suave hacia el otro: revista',
+      en: 'From above, light from one high side and a soft shadow to the other: magazine',
+    },
+    why: {
+      es: 'La luz desde un lado alto y una sombra suave hacia el otro es el plano cenital de revista. La tarjeta blanca abre la sombra sin borrarla.',
+      en: 'Light from one high side and a soft shadow towards the other is the magazine flat lay. The white card opens the shadow without erasing it.',
+    },
+    lights: [
+      { role: 'KEY', size: 5, sizeY: 5, az: -30, el: 60, dist: 2.5, share: 0.6 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 150, el: 40, dist: 3, share: 0.25, glossy: false },
+    ],
+    cards: [{ material: 'CARD_WHITE', az: 180, el: 45, dist: 2.8, size: 3, sizeY: 3 }],
+    backdrop: { kind: 'SWEEP', color: [0.8, 0.8, 0.8] },
+    floor: { kind: 'MATTE', color: [0.8, 0.8, 0.8] },
+    exposureEv: 0.2,
+    camera: { el: 85, focalMm: 50 },
+  },
+  {
+    key: 'SILHOUETTE_GLOW', style: 'SETS', world: 'STUDIO', hero: 'BOTTLE',
+    label: { es: 'Silueta con halo', en: 'Silhouette with a halo' },
+    intent: {
+      es: 'Un halo fuerte detrás recorta la silueta y dos filos la rematan: dramático',
+      en: 'A strong halo behind cuts out the silhouette and two edges finish it: dramatic',
+    },
+    why: {
+      es: 'El halo detrás recorta la silueta del producto. Dos tiras la rematan con dos filos de luz.',
+      en: 'The halo behind cuts out the silhouette of the product. Two strips finish it with two edges of light.',
+    },
+    lights: [
+      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 25, dist: 3, share: 0.12, glossy: false },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: -140, el: 55, dist: 3, share: 0.16 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 140, el: 55, dist: 3, share: 0.16 },
+    ],
+    backdrop: { kind: 'SWEEP', color: [0.2, 0.2, 0.2] },
+    pool: { az: 180, el: 15, cone: 45, share: 0.45, kelvin: 5600 },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
+    envStrength: 0,
+    exposureEv: -0.4,
+  },
+
+  // --- The 72 setups ported from EZ Packshot, in upstream order ---------------------------------------------------
   // Product
   {
     key: 'PRESET', style: 'PRODUCT', world: 'STUDIO',

@@ -1,5 +1,5 @@
 Importers and exporters. Depends on core. In: glTF/GLB, OBJ, STL, FBX, 3DM, STEP/STP, IGES/IGS, 3MF, PLY, DAE,
-USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
+USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR/TIFF/DNG and the project file.
 
 - `import.ts` detects the format (extension, then header) and loads the right reader on demand with `import()`;
   nothing here is in the first chunk (`tests/chunks.test.ts` reads `dist/` to prove it).
@@ -9,7 +9,11 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
   format, with the values of the import sheet.
 - `obj.ts`, `stl.ts` (own, with `mesh-common.ts`: welding, smoothing-angle normals, hard edges).
 - `three-scene.ts`: what the three.js readers share (Object3D tree to nodes, world transforms baked, materials,
-  texture blobs kept for M2).
+  their maps as texture slots and the images as files, M2a; a loading manager that finds the files chosen with the
+  model).
+- Textures (M2a): `gltf-materials.ts` (a glTF's materials and images from its JSON; the loader gets the file without
+  textures), `mtl.ts` and `obj-materials.ts` (an OBJ's libraries and their images), `texture-notes.ts` (what the sheet
+  says), `texture-pixels.ts` (decoded pixels for the RSB's IMGS, read from M2b).
 - `gltf.ts`, `fbx.ts` (GlobalSettings scan for units and up axis), `rhino.ts` (rhino3dm in a worker, files in
   `public/vendor/rhino3dm/` copied by `tools/vendor.mjs`), `threemf.ts`, `ply.ts`, `collada.ts`, `usd.ts`.
 - STEP and IGES (phase I2): occt-import-js 0.0.23 (OpenCascade in wasm, **LGPL-2.1**, the one LGPL exception,
@@ -25,6 +29,9 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
   es a la vez el JSON exportado y lo que se guarda bajo una sola clave (`repackshot.library`: `localStorage` en la web,
   `library/library.json` en escritorio). Todo lo que
   entra se valida elemento a elemento y se reconstruye con los campos conocidos; el inválido se omite con su motivo.
+- `phys.ts` (S2): the simulator's scene file (PHY1, `engine/crates/rt-phys/src/scene.rs`) for what `core/physics.ts`
+  says to simulate: the meshes of the dynamic pieces and of the static parts, each body's pieces with their world
+  matrices and its density, friction and bounciness, then the static parts and the floor.
 - `rsb.ts`: the engine's scene file (RSB v1, `engine/crates/rt-core/src/scene/rsb.rs`). `writeRsb` writes exactly
   the bytes of rt-core's writer (`tests/rsb.test.ts` compares with `rt --write-example`); `projectScene` maps a
   project onto it: active camera (36 mm on the longer side; in the viewport, the output frame inset as the preview
@@ -66,7 +73,10 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
 - `image.ts`: PNG written here from the path tracer's 8-bit pixels (RGB, or RGBA when transparent; deflate by the
   browser's `CompressionStream`, stored blocks without it), JPEG through a canvas, 16-bit PNG from the float sums
   and a minimal uncompressed scan-line EXR (32-bit float, linear). The DPI of the render window goes into the file
-  (U5): PNG `pHYs` (pixels per metre, unit 1) and the JPEG JFIF density (units 1, dots per inch).
+  (U5): PNG `pHYs` (pixels per metre, unit 1), the JPEG JFIF density (units 1, dots per inch) and the TIFF
+  `XResolution`/`YResolution`. U12: `encodeTiff` (uncompressed TIFF 6.0, RGB or RGBA with unassociated alpha, 8, 16 or
+  32-bit float) and `encodeDng` (a linear raw DNG 1.4 of 32-bit floats), the same bytes as `rt_core::tiff` and
+  `rt_core::dng` (the golden files in `tests/fixtures/tiff/`).
 - `project.ts`: the `.repack.json` envelope, schema 2 (U5), and `migrateProject` / `parseProject` with one step per
   schema (1 → 2: the render block through `core/render.ts` `migrateRender`).
 - `results.ts`: the results history (U5) in IndexedDB (`meta`, `blobs` and `handles` stores), 50 results or 500 MB,

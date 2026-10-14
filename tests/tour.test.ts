@@ -63,6 +63,7 @@ const ORDER = [
   'environment',
   'camera',
   'material',
+  'nodes',
   'lights',
   'cameras',
   'studios',

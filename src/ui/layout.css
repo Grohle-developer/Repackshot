@@ -99,6 +99,16 @@ textarea {
   margin: 0 4px;
   background: var(--line);
 }
+/* U11: Fast · Full and the live denoise of Full, side by side. */
+.hdr-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Disabled (Fast mode), the tooltip of the area says why. */
+.hdr-denoise button:disabled {
+  pointer-events: none;
+}
 .mode-reason {
   max-width: 380px;
   overflow: hidden;

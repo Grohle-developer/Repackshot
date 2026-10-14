@@ -73,7 +73,9 @@ describe('studios', () => {
     const cam = activeCamera(s);
     expect([cam.focalMm, cam.fstop]).toEqual([p.focalMm, p.fstop]);
     expect(s.environment.strength).toBe(p.envStrength);
-    expect(s.environment.background).toBe('COLOR');
+    // L6: JEWELLERY is the set JEWEL_BOX: its gradient backdrop comes with the type's own rig.
+    expect(p.set).toBe('JEWEL_BOX');
+    expect(s.environment.background).toBe('GRADIENT');
     expect(s.image.exposureEv).toBe(p.exposure);
     expect([s.studio.floor, s.studio.shadow]).toEqual([p.floor, p.shadow]);
     expect(s.render.quality).toBe(p.quality);

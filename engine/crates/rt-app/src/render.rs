@@ -29,22 +29,35 @@
 //! threads render the tile, never change a pixel of it, and when the job ends with all its
 //! samples (not cancelled, orphaned or failed) the image and the passes go to the store of
 //! [`crate::kept`] before the job says it is done, so they are there for whoever reads the end.
-//! Viewport jobs never render passes.
+//! Viewport jobs never keep passes.
+//!
+//! **Live denoise** (U11): a viewport job whose RSB asks for denoise (`RNDR.denoise` bit 0, the
+//! page's full-resolution views) renders the denoiser's guides and has a switch
+//! ([`Job::set_live_denoise`], `POST /api/render/<id>/denoise`), on or off as it was posted
+//! ([`Options::live_denoise`]). While it is on, a lane of its own (one thread, which takes one of
+//! the job's render threads while it works) denoises the newest pass with the viewport's preset
+//! (`rt_post::denoise::Preset::VIEWPORT`), presents it the moment it is done and starts again on
+//! the newest pass; the passes are kept short enough for the clean image to follow
+//! ([`live_pass_cap`]). Turned on, it denoises what has accumulated at once (also after the job
+//! is over); turned off, the next frame is the noisy accumulation. Every frame carries the number
+//! of its image ([`Frame::version`]), so a page that follows a job hears of a new denoised image
+//! without a new pass. A final job denoises once, at its end, with the full filter, as before.
 
 use crate::kept::{KeepLimits, Kept, KeptRender, Look, PassesBody};
 use rt_core::caustics::{Photon, PhotonMap};
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, Passes, PASS_ALL};
-use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, tile_grid};
+use rt_core::pixel_filter::EdgeMask;
+use rt_core::render::{render_tile_albedo_edges, render_tile_edges, render_tile_exact, tile_grid};
 use rt_core::scene::{Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use rt_core::simd::Isa;
-use rt_post::denoise::{denoise_rows, DenoiseInput, GUIDE_PASSES};
+use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset, GUIDE_PASSES};
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -95,8 +108,15 @@ impl Default for Limits {
 
 /// The frame header magic.
 pub const FRAME_MAGIC: [u8; 4] = *b"RPX1";
-/// Bytes of the frame header.
-pub const FRAME_HEADER: usize = 48;
+/// Bytes of the frame header (U11: 52, with the image's number; a reader takes the length from
+/// the header itself, so one of 48 bytes still reads).
+pub const FRAME_HEADER: usize = 52;
+/// U11: while a live viewport's switch is off, the guides' albedo is still rendered for this many
+/// samples (so turning it on denoises at once, with guides as good as those of the first passes),
+/// and then no more (the plain image costs nothing more after that).
+pub const LIVE_ALBEDO_SAMPLES: u32 = 8;
+/// U11: the shortest pass a live viewport aims at while its switch is on ([`live_pass_cap`]).
+pub const LIVE_PASS_MS: f64 = 250.0;
 /// Frame flag: the job is over (all samples, or the time budget).
 pub const FLAG_DONE: u32 = 1;
 /// Frame flag: the job was cancelled or replaced.
@@ -260,6 +280,9 @@ pub struct Frame {
     pub sums: Arc<Vec<f32>>,
     /// With [`FLAG_NOISY`]: the RGBA sums without denoise.
     pub noisy: Option<Arc<Vec<f32>>>,
+    /// U11: the number of the image in `sums`: it changes whenever they do (a pass, a denoised
+    /// image of a live viewport, its switch), and only then.
+    pub version: u32,
 }
 
 impl Frame {
@@ -290,6 +313,7 @@ impl Frame {
             h[4 + i * 4..8 + i * 4].copy_from_slice(&v.to_le_bytes());
         }
         h[40..48].copy_from_slice(&self.rays.to_le_bytes());
+        h[48..52].copy_from_slice(&self.version.to_le_bytes());
         h
     }
 
@@ -366,6 +390,8 @@ impl Frame {
             rays: u64::from_le_bytes(bytes.get(40..48)?.try_into().ok()?),
             sums: Arc::new(sums),
             noisy,
+            // A header of before U11 has no image number.
+            version: if header >= 52 { u(48)? } else { 0 },
         })
     }
 
@@ -390,8 +416,142 @@ struct Progress {
     mode: u32,
     /// Threads rendering it now.
     active: u32,
+    /// [`Frame::version`]: one more every time `sums` change.
+    version: u32,
     ended: Option<(u32, f32)>,
     error: Option<String>,
+}
+
+/// The live denoise of a viewport job (U11): its switch, the newest pass the render handed it
+/// and the lane's own state. Locked before the job's progress when both are (never the other way
+/// round).
+struct Live {
+    /// The switch: the frames show the denoised image.
+    on: AtomicBool,
+    /// The switch is on and the newest pass is not denoised yet: a follower of a job that is over
+    /// waits for it ([`Job::wait_newer`]).
+    pending: AtomicBool,
+    /// The lane is denoising now (it has one of the job's render threads, [`Gate::viewport_turn`]).
+    busy: AtomicBool,
+    state: Mutex<LiveState>,
+    changed: Condvar,
+    /// Tests: a stand-in for the filter ([`Options::stand_in_denoise`]).
+    stand_in: Option<Duration>,
+    /// U11b: the view's `RNDR.denoise_strength`; at 0 nothing is denoised.
+    strength: f32,
+}
+
+#[derive(Default)]
+struct LiveState {
+    /// The newest pass of the render.
+    newest: Option<Arc<LivePass>>,
+    /// The newest pass denoised so far (its number) and its denoised sums.
+    clean: Option<(u32, Arc<Vec<f32>>)>,
+    /// The frames show `clean` (else the noisy accumulation).
+    showing_clean: bool,
+    /// The lane's thread is there.
+    running: bool,
+    /// The render is over: no pass comes any more.
+    over: bool,
+    /// Milliseconds the last denoise took (0: none yet).
+    cost_ms: f64,
+    /// Denoised images presented.
+    presented: u32,
+}
+
+/// A pass as the lane reads it: the accumulated sums and what the filter needs with them.
+struct LivePass {
+    /// The pass's number (`Frame::pass`).
+    pass: u32,
+    samples: u32,
+    sums: Arc<Vec<f32>>,
+    lum2: Vec<f32>,
+    guides: Arc<Passes>,
+    /// [`FLAG_CAUSTICS`] or 0.
+    caustics: u32,
+}
+
+impl Live {
+    fn new(on: bool, stand_in: Option<Duration>, strength: f32) -> Live {
+        Live {
+            on: AtomicBool::new(on),
+            pending: AtomicBool::new(false),
+            busy: AtomicBool::new(false),
+            state: Mutex::new(LiveState::default()),
+            changed: Condvar::new(),
+            stand_in,
+            strength,
+        }
+    }
+
+    fn on(&self) -> bool {
+        self.on.load(Ordering::Relaxed)
+    }
+
+    /// True when the switch is on and the newest pass has not been denoised (at a strength of 0
+    /// there is never anything to denoise: the frames are the noisy accumulation).
+    fn wanted(&self, s: &LiveState) -> bool {
+        self.on()
+            && self.strength > 0.0
+            && s.newest.as_ref().is_some_and(|n| {
+                s.clean
+                    .as_ref()
+                    .is_none_or(|(denoised, _)| *denoised < n.pass)
+            })
+    }
+
+    fn refresh_pending(&self, s: &LiveState) {
+        self.pending.store(self.wanted(s), Ordering::Relaxed);
+    }
+}
+
+/// The largest pass (in samples) of a live viewport whose switch is on, at `ms_per_sample` and
+/// with its last denoise taking `denoise_ms` (U11): a pass lasts about as long as a denoise, and
+/// at least [`LIVE_PASS_MS`]. The lane denoises the newest pass and starts again when it is done,
+/// so a new denoised image comes at the latest a pass and a denoise after the last one: within
+/// `max(2 × the denoise, 0.5 s)`. (Which pass a sample is in changes no pixel.)
+pub fn live_pass_cap(ms_per_sample: f64, denoise_ms: f64) -> u32 {
+    let target = denoise_ms.max(LIVE_PASS_MS);
+    if ms_per_sample > 0.0 && ms_per_sample.is_finite() {
+        (target / ms_per_sample)
+            .floor()
+            .clamp(1.0, f64::from(MAX_PASS_SAMPLES)) as u32
+    } else {
+        MAX_PASS_SAMPLES
+    }
+}
+
+/// What a viewport job's live denoise is doing ([`Job::live_status`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LiveStatus {
+    /// The switch.
+    pub on: bool,
+    /// The lane is denoising now.
+    pub busy: bool,
+    /// The switch is on and the newest pass is not denoised yet.
+    pub pending: bool,
+    /// The newest pass of the render (0: none yet).
+    pub newest_pass: u32,
+    /// Its samples.
+    pub newest_samples: u32,
+    /// The newest pass denoised (0: none yet).
+    pub denoised_pass: u32,
+    /// The frames show a denoised image.
+    pub showing_clean: bool,
+    /// Milliseconds of the last denoise (0: none yet).
+    pub cost_ms: f64,
+    /// Denoised images presented so far.
+    pub presented: u32,
+}
+
+/// The stand-in denoiser of the tests ([`Options::stand_in_denoise`]): it takes `cost` and
+/// halves the radiance (coverage as it was).
+fn stand_in_denoise(sums: &[f32], cost: Duration) -> Vec<f32> {
+    std::thread::sleep(cost);
+    sums.iter()
+        .enumerate()
+        .map(|(i, &v)| if i % 4 == 3 { v } else { v * 0.5 })
+        .collect()
 }
 
 /// A render job.
@@ -412,9 +572,14 @@ pub struct Job {
     /// always for a viewport job), kept for the AI post-processing.
     pub passes: u32,
     /// `RNDR.denoise` of its scene (E5b-1): bit 0 the frames carry the denoised image (with
-    /// [`FLAG_DENOISED`]; for a final, its last frame), bit 1 a final's last frame also the one
-    /// without denoise ([`FLAG_NOISY`]). The guide passes are then rendered too.
+    /// [`FLAG_DENOISED`]; for a final, its last frame; for a viewport, while its live switch is
+    /// on, U11), bit 1 a final's last frame also the one without denoise ([`FLAG_NOISY`]). The
+    /// guide passes are then rendered too.
     pub denoise: u32,
+    /// U11: a viewport job's live denoise (`RNDR.denoise` bit 0).
+    live: Option<Live>,
+    /// U11b: `RNDR.denoise_strength` (`0..=1`): how much of the denoised image is handed out.
+    pub denoise_strength: f32,
     /// The time limit in milliseconds, if any.
     limit_ms: Option<f64>,
     threads: usize,
@@ -468,6 +633,14 @@ impl Job {
                 Kind::Viewport => 0,
             },
             denoise: r.denoise & (DENOISE_IMAGE | DENOISE_KEEP_NOISY),
+            live: (kind == Kind::Viewport && r.denoise & DENOISE_IMAGE != 0).then(|| {
+                Live::new(
+                    opts.live_denoise.unwrap_or(true),
+                    opts.stand_in_denoise,
+                    r.denoise_strength,
+                )
+            }),
+            denoise_strength: r.denoise_strength,
             limit_ms,
             threads,
             cancel: AtomicBool::new(false),
@@ -481,6 +654,7 @@ impl Job {
                 image: 0,
                 mode: 0,
                 active: threads as u32,
+                version: 0,
                 ended: None,
                 error: None,
             }),
@@ -490,10 +664,15 @@ impl Job {
         }
     }
 
-    /// Asks the job to stop (between tiles).
+    /// Asks the job to stop (between tiles); its live denoise stops too.
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
         self.changed.notify_all();
+        if let Some(live) = &self.live {
+            // Taken and dropped, so a lane between its check and its wait hears it.
+            drop(lock(&live.state));
+            live.changed.notify_all();
+        }
     }
 
     /// True once cancelled.
@@ -541,6 +720,7 @@ impl Job {
             rays: p.rays,
             sums: Arc::clone(&p.sums),
             noisy: p.noisy.clone(),
+            version: p.version,
         }
     }
 
@@ -558,11 +738,27 @@ impl Job {
     /// next to the finals (it starts or stops sharing, or waits: the page's meter says so at once),
     /// and returns the frame.
     pub fn wait_newer(&self, after: u32, timeout: Duration) -> Frame {
+        self.wait_newer_image(after, None, timeout)
+    }
+
+    /// [`Job::wait_newer`] that also returns for an image newer than `version` (U11: a live
+    /// viewport's denoised image, or its switch turned), and for a job that is over only once the
+    /// image its switch asked for is there.
+    pub fn wait_newer_image(&self, after: u32, version: Option<u32>, timeout: Duration) -> Frame {
         let deadline = Instant::now() + timeout;
         let mut p = lock(&self.progress);
         let mode = (p.mode, p.active);
+        let pending = || {
+            self.live
+                .as_ref()
+                .is_some_and(|l| l.pending.load(Ordering::Relaxed) && !self.cancelled())
+        };
         loop {
-            if p.pass > after || p.ended.is_some() || (p.mode, p.active) != mode {
+            if p.pass > after
+                || version.is_some_and(|v| p.version > v)
+                || (p.ended.is_some() && !(version.is_some() && pending()))
+                || (p.mode, p.active) != mode
+            {
                 return self.frame_of(&p);
             }
             let now = Instant::now();
@@ -622,6 +818,23 @@ impl Job {
             .num("share", self.share as f64)
             .num("passes", f64::from(self.passes))
             .num("denoise", f64::from(self.denoise))
+            .raw(
+                "liveDenoise",
+                &self.live_status().map_or_else(
+                    || "null".to_string(),
+                    |l| {
+                        Object::new()
+                            .bool("on", l.on)
+                            .bool("busy", l.busy)
+                            .num("newestPass", f64::from(l.newest_pass))
+                            .num("denoisedPass", f64::from(l.denoised_pass))
+                            .num("costMs", l.cost_ms)
+                            .num("presented", f64::from(l.presented))
+                            .build()
+                    },
+                ),
+            )
+            .num("version", f64::from(f.version))
             .num("threads", f64::from(f.threads))
             .num("pass", f64::from(f.pass))
             .num("samples", f64::from(f.samples))
@@ -631,6 +844,218 @@ impl Job {
             .num("unaskedMs", lock(&self.seen).elapsed().as_millis() as f64)
             .opt_str("error", self.error().as_deref())
             .build()
+    }
+
+    /// U11: the live denoise switch of a viewport job (`None`: it has none: a final, or a view
+    /// posted without denoise, such as a gesture's reduced frames).
+    pub fn live_denoise(&self) -> Option<bool> {
+        self.live.as_ref().map(Live::on)
+    }
+
+    /// U11: what the live denoise is doing (for the diagnostics and the tests).
+    pub fn live_status(&self) -> Option<LiveStatus> {
+        let live = self.live.as_ref()?;
+        let s = lock(&live.state);
+        Some(LiveStatus {
+            on: live.on(),
+            busy: live.busy.load(Ordering::Relaxed),
+            pending: live.pending.load(Ordering::Relaxed),
+            newest_pass: s.newest.as_ref().map_or(0, |n| n.pass),
+            newest_samples: s.newest.as_ref().map_or(0, |n| n.samples),
+            denoised_pass: s.clean.as_ref().map_or(0, |(pass, _)| *pass),
+            showing_clean: s.showing_clean,
+            cost_ms: s.cost_ms,
+            presented: s.presented,
+        })
+    }
+
+    /// U11: turns a viewport job's live denoise on or off; `None` when it has none. Off, the
+    /// next frame is the noisy accumulation (at once); on, the lane denoises what has accumulated
+    /// at once (a denoised image of the newest pass already there is shown at once), also after
+    /// the job is over. Returns the switch as it is now.
+    pub fn set_live_denoise(self: &Arc<Self>, on: bool) -> Option<bool> {
+        let live = self.live.as_ref()?;
+        let mut s = lock(&live.state);
+        if live.on.swap(on, Ordering::Relaxed) != on {
+            let shown = if on {
+                // A denoised image of the newest pass is already there: shown at once.
+                match (&s.clean, &s.newest) {
+                    (Some((pass, clean)), Some(n)) if *pass == n.pass => {
+                        Some((Arc::clone(clean), n.samples, FLAG_DENOISED | n.caustics))
+                    }
+                    _ => None,
+                }
+            } else if s.showing_clean {
+                // The noisy accumulation, as the last pass left it.
+                s.newest
+                    .as_ref()
+                    .map(|n| (Arc::clone(&n.sums), n.samples, n.caustics))
+            } else {
+                None
+            };
+            if let Some((sums, samples, image)) = shown {
+                s.showing_clean = on;
+                if on {
+                    s.presented += 1;
+                }
+                let mut p = lock(&self.progress);
+                p.sums = sums;
+                p.samples = samples;
+                p.image = image;
+                p.version = p.version.wrapping_add(1);
+            }
+            live.refresh_pending(&s);
+            drop(s);
+            if on {
+                self.start_lane();
+            }
+            live.changed.notify_all();
+            self.changed.notify_all();
+        }
+        Some(on)
+    }
+
+    /// Starts the lane of a live viewport if it is not there (U11).
+    fn start_lane(self: &Arc<Self>) {
+        let Some(live) = self.live.as_ref() else {
+            return;
+        };
+        let mut s = lock(&live.state);
+        if s.running || self.cancelled() {
+            return;
+        }
+        s.running = true;
+        drop(s);
+        let job = Arc::clone(self);
+        std::thread::spawn(move || job.lane());
+    }
+
+    /// The render's pass `pass` of a live viewport is done (U11): it is the lane's newest, and
+    /// the frames show it unless they show a denoised image (the lane's next one replaces that).
+    #[allow(clippy::too_many_arguments)]
+    fn publish_live_pass(
+        &self,
+        live: &Live,
+        pass: u32,
+        samples: u32,
+        rays: u64,
+        sums: Arc<Vec<f32>>,
+        lum2: Vec<f32>,
+        guides: Arc<Passes>,
+        caustics: u32,
+    ) {
+        let mut s = lock(&live.state);
+        s.newest = Some(Arc::new(LivePass {
+            pass,
+            samples,
+            sums: Arc::clone(&sums),
+            lum2,
+            guides,
+            caustics,
+        }));
+        let noisy = !(live.on() && s.showing_clean);
+        if noisy {
+            s.showing_clean = false;
+        }
+        live.refresh_pending(&s);
+        {
+            let mut p = lock(&self.progress);
+            p.pass = pass;
+            p.rays = rays;
+            if noisy {
+                p.samples = samples;
+                p.sums = sums;
+                p.image = caustics;
+                p.version = p.version.wrapping_add(1);
+            }
+        }
+        drop(s);
+        live.changed.notify_all();
+        self.changed.notify_all();
+    }
+
+    /// The render of a live viewport is over (U11): with the switch on, it waits for the denoised
+    /// image of its last pass (so the job ends on it), or until it is cancelled.
+    fn finish_live(&self, live: &Live) {
+        let mut s = lock(&live.state);
+        s.over = true;
+        live.changed.notify_all();
+        while live.wanted(&s) && !self.cancelled() {
+            s = live
+                .changed
+                .wait_timeout(s, Duration::from_millis(100))
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+
+    /// The lane of a live viewport (U11), on its own thread: while the switch is on, it denoises
+    /// the newest pass with the viewport's preset, presents it at once and starts again on the
+    /// newest pass. It ends when the job is cancelled, or once the render is over and nobody has
+    /// asked about the job for a while (a later switch starts it again).
+    fn lane(self: Arc<Self>) {
+        let Some(live) = self.live.as_ref() else {
+            return;
+        };
+        loop {
+            let pass = {
+                let mut s = lock(&live.state);
+                loop {
+                    if self.cancelled() || (s.over && self.orphaned() && !live.wanted(&s)) {
+                        s.running = false;
+                        live.refresh_pending(&s);
+                        return;
+                    }
+                    if live.wanted(&s) {
+                        break;
+                    }
+                    s = live
+                        .changed
+                        .wait_timeout(s, Duration::from_millis(250))
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .0;
+                }
+                live.busy.store(true, Ordering::Relaxed);
+                s.newest.as_ref().map(Arc::clone)
+            };
+            let Some(pass) = pass else { continue };
+            let t = Instant::now();
+            let clean = match live.stand_in {
+                Some(cost) => Some(stand_in_denoise(&pass.sums, cost)),
+                None => denoise_sums(
+                    &pass.sums,
+                    &pass.lum2,
+                    &pass.guides,
+                    pass.samples,
+                    1,
+                    Preset::VIEWPORT,
+                    live.strength,
+                ),
+            };
+            let took = t.elapsed().as_secs_f64() * 1000.0;
+            let mut s = lock(&live.state);
+            live.busy.store(false, Ordering::Relaxed);
+            s.cost_ms = took;
+            // Without its guides there is nothing to denoise with: the pass counts as done (its
+            // noisy sums), so the lane waits for the next instead of trying again.
+            let clean = Arc::new(clean.unwrap_or_else(|| pass.sums.to_vec()));
+            s.clean = Some((pass.pass, Arc::clone(&clean)));
+            // Presented unless the switch went off meanwhile (or a newer pass is on screen with it
+            // off, which is the same).
+            if live.on() && !self.cancelled() {
+                s.showing_clean = true;
+                s.presented += 1;
+                let mut p = lock(&self.progress);
+                p.sums = clean;
+                p.samples = pass.samples;
+                p.image = FLAG_DENOISED | pass.caustics;
+                p.version = p.version.wrapping_add(1);
+            }
+            live.refresh_pending(&s);
+            drop(s);
+            live.changed.notify_all();
+            self.changed.notify_all();
+        }
     }
 
     fn end(&self, flags: u32, error: Option<String>) {
@@ -752,11 +1177,19 @@ impl Gate {
         }
     }
 
-    /// Before a viewport tile of thread `worker`: without a final, every thread goes; while one
-    /// runs, the job's share goes on and the other threads wait (all of them without a share).
-    /// False when `job` was cancelled, or when a waiting thread finds the pass has no tile left
-    /// (`over`): the threads that go finish it.
-    fn viewport_turn(&self, job: &Job, worker: usize, over: &dyn Fn() -> bool) -> bool {
+    /// Before a viewport tile of thread `worker` (of `workers`): without a final, every thread
+    /// goes; while one runs, the job's share goes on and the other threads wait (all of them
+    /// without a share). While a live viewport's lane denoises (U11), it has the last of the
+    /// threads that go, which waits for it: the denoise takes one of the view's threads, never one
+    /// of a final's. False when `job` was cancelled, or when a waiting thread finds the pass has
+    /// no tile left (`over`): the threads that go finish it.
+    fn viewport_turn(
+        &self,
+        job: &Job,
+        worker: usize,
+        workers: usize,
+        over: &dyn Fn() -> bool,
+    ) -> bool {
         let mut s = lock(&self.state);
         let mut waited = false;
         loop {
@@ -772,11 +1205,21 @@ impl Gate {
             if job.cancelled() || (waited && over()) {
                 return false;
             }
-            if !busy || worker < job.share {
+            let going = if busy {
+                job.share.min(workers)
+            } else {
+                workers
+            };
+            let lane = job
+                .live
+                .as_ref()
+                .is_some_and(|l| l.busy.load(Ordering::Relaxed));
+            if worker < going && !(lane && worker + 1 == going) {
                 return true;
             }
             waited = true;
-            s = self.wait(s, 50);
+            // The lane's thread comes back as soon as it is done.
+            s = self.wait(s, if lane && worker < going { 5 } else { 50 });
         }
     }
 
@@ -834,25 +1277,31 @@ fn denoise_bands(height: u32, threads: usize) -> u32 {
     (height / 192).clamp(1, threads.max(1) as u32)
 }
 
-/// Denoises the RGBA `sums` of `samples` samples with their `lum2` and guide `passes`, in bands
-/// on `threads` threads (each band exactly those rows of the whole image: the same bits for any
-/// thread count, as the web pool's).
+/// Denoises the RGBA `sums` of `samples` samples with their `lum2` and guide `passes` and
+/// `preset` (the full filter for a final, the viewport's for a live view) at `strength` (U11b,
+/// `RNDR.denoise_strength`: blended with the noisy sums), in bands on `threads` threads (each band
+/// exactly those rows of the whole image: the same bits for any thread count, as the web pool's).
 fn denoise_sums(
     sums: &[f32],
     lum2: &[f32],
     passes: &Passes,
     samples: u32,
     threads: usize,
+    preset: Preset,
+    strength: f32,
 ) -> Option<Vec<f32>> {
     let whole = DenoiseInput::whole(samples, sums, lum2, passes).ok()?;
     let h = passes.height;
     let bands = denoise_bands(h, threads);
+    if bands == 1 {
+        return denoise_rows_at(&whole, 0, h, preset, strength).ok();
+    }
     let parts: Vec<Option<Vec<f32>>> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..bands)
             .map(|k| {
                 let (y0, y1) = (h * k / bands, h * (k + 1) / bands);
-                let band = whole.with_halo(y0, y1);
-                scope.spawn(move || denoise_rows(&band, y0, y1).ok())
+                let band = whole.with_halo_of(y0, y1, preset);
+                scope.spawn(move || denoise_rows_at(&band, y0, y1, preset, strength).ok())
             })
             .collect();
         workers
@@ -943,10 +1392,12 @@ fn end_flags(job: &Job) -> u32 {
 /// renders which tile (all of them, or the share left by the gate) does not change a pixel, nor
 /// a pass: with `job.passes`, the exact passes of every tile come with its first pass and the
 /// albedo of every sample after it, and they are returned, assembled, unless the job was
-/// cancelled. A viewport's share goes back before it returns; the caller ends the job.
-fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
+/// cancelled. A live viewport (U11) hands every pass to its lane, which denoises it; its passes
+/// are kept short while its switch is on ([`live_pass_cap`]). A viewport's share goes back
+/// before it returns; the caller ends the job.
+fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
     let (width, height) = (job.width, job.height);
-    let live = (job.kind == Kind::Viewport && job.share > 0).then(|| gate.live(job.share));
+    let live_share = (job.kind == Kind::Viewport && job.share > 0).then(|| gate.live(job.share));
     let prepared = Prepared::new(scene);
     let tiles = tile_grid(width, height, TILE_SIZE);
     let threads = job.threads.clamp(1, tiles.len().max(1));
@@ -954,9 +1405,18 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
         .iter()
         .map(|t| Mutex::new(Film::region(t.x, t.y, t.w, t.h)))
         .collect();
-    // The passes it keeps, and the denoiser's guides when it denoises (E5b-1).
-    let denoise = job.denoise & DENOISE_IMAGE != 0;
-    let mask = job.passes | if denoise { GUIDE_PASSES } else { 0 };
+    // The passes it keeps, and the denoiser's guides when it denoises: a final at its end
+    // (E5b-1), a live viewport after every pass (U11).
+    let live = job.live.as_ref();
+    // (U11b: at a strength of 0 a final is not denoised: its image is the noisy one.)
+    let denoise =
+        job.kind == Kind::Final && job.denoise & DENOISE_IMAGE != 0 && job.denoise_strength > 0.0;
+    let mask = job.passes
+        | if denoise || live.is_some() {
+            GUIDE_PASSES
+        } else {
+            0
+        };
     let pass_films: Vec<Mutex<PassFilm>> = if mask == 0 {
         Vec::new()
     } else {
@@ -965,13 +1425,17 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
             .map(|t| Mutex::new(PassFilm::region(t.x, t.y, t.w, t.h, mask)))
             .collect()
     };
+    if live.is_some_and(Live::on) {
+        job.start_lane();
+    }
+    // E11: each tile's edge pixels, found once (from the centre rays) by whoever renders it first.
+    let edges: Vec<OnceLock<EdgeMask>> = tiles.iter().map(|_| OnceLock::new()).collect();
+    let edges = &edges;
     // Photon maps and denoising run on the job's threads (a sharing viewport's share).
     let side_threads = match job.kind {
         Kind::Viewport if job.share > 0 => job.share,
         _ => threads,
     };
-    // The viewport's last denoised image: when, how long it took (ms), its samples and sums.
-    let mut last_clean: Option<(Instant, f64, u32, Arc<Vec<f32>>)> = None;
     let caustics = if prepared.has_caustics() {
         FLAG_CAUSTICS
     } else {
@@ -982,11 +1446,21 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
     let ms = |t: Instant| t.duration_since(t0).as_secs_f64() * 1000.0;
     let (mut done, mut previous, mut passes, mut rays) = (0u32, 0u32, 0u32, 0u64);
     let mut ms_per_sample: Option<f64> = None;
+    // A live viewport's guides as the lane last got them: they change only while the albedo is
+    // still being added.
+    let mut guides: Option<Arc<Passes>> = None;
     let (tiles, films, prepared, pass_tiles) = (&tiles, &films, &prepared, &pass_films);
     while !job.cancelled() {
-        let Some(count) = next_pass(done, previous, job.max_samples) else {
+        let Some(mut count) = next_pass(done, previous, job.max_samples) else {
             break;
         };
+        // A live viewport whose switch is on: passes about as long as a denoise, so the denoised
+        // image follows the accumulation (which pass a sample is in changes no pixel).
+        if let (Some(live), Some(per)) = (live, ms_per_sample) {
+            if live.on() {
+                count = count.min(live_pass_cap(per, lock(&live.state).cost_ms));
+            }
+        }
         let now = Instant::now();
         if stop_for_time(done, ms(now), job.limit_ms, ms_per_sample, count)
             || done > u32::MAX - 2 * MAX_PASS_SAMPLES
@@ -1004,6 +1478,10 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
         // Every tile of the pass is taken: a thread waiting for its turn has nothing left to do.
         let over = || next_tile.load(Ordering::Relaxed) >= tiles.len();
         let over = &over;
+        // A live viewport renders the albedo of its guides while its switch is on, and for its
+        // first samples while it is off (U11).
+        let albedo_more = AtomicBool::new(false);
+        let albedo_more = &albedo_more;
         let pass_rays: u64 = std::thread::scope(|scope| {
             let workers: Vec<_> = (0..threads)
                 .map(|worker| {
@@ -1015,7 +1493,7 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
                                 job.cancel();
                             }
                             let go = match job.kind {
-                                Kind::Viewport => gate.viewport_turn(job, worker, over),
+                                Kind::Viewport => gate.viewport_turn(job, worker, threads, over),
                                 Kind::Final => gate.final_turn(job, worker, over),
                             };
                             if !go {
@@ -1032,15 +1510,24 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
                             if let (Some(passes), 0) = (passes.as_deref_mut(), first) {
                                 rays += render_tile_exact(scene, prepared, tile, passes, isa);
                             }
+                            let live_on = live.is_none_or(Live::on);
+                            let edges = edges[i].get_or_init(|| {
+                                let mask = EdgeMask::of(scene, prepared, tile, isa);
+                                rays += mask.rays();
+                                mask
+                            });
                             for sample in first..first + count {
                                 let map = maps.get((sample - first) as usize);
-                                rays += render_tile_photons(
-                                    scene, prepared, map, tile, sample, &mut film, isa,
+                                rays += render_tile_edges(
+                                    scene, prepared, map, edges, sample, &mut film, isa,
                                 );
                                 if let Some(passes) = passes.as_deref_mut() {
-                                    rays += render_tile_albedo(
-                                        scene, prepared, tile, sample, passes, isa,
-                                    );
+                                    if live_on || sample < LIVE_ALBEDO_SAMPLES {
+                                        rays += render_tile_albedo_edges(
+                                            scene, prepared, edges, sample, passes, isa,
+                                        );
+                                        albedo_more.store(true, Ordering::Relaxed);
+                                    }
                                 }
                             }
                         }
@@ -1062,67 +1549,43 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
         previous = count;
         passes += 1;
         let sums = Arc::new(sums_of(films, width, height));
-        // A viewport that denoises shows the denoised image: after its first and last passes,
-        // and after any other one once three times the last denoise has gone by (in between, the
-        // last denoised image at the samples it has now).
-        let (shown, image) = if denoise && job.kind == Kind::Viewport {
-            let last_pass = next_pass(done, previous, job.max_samples).is_none();
-            let due = last_clean.as_ref().is_none_or(|(at, took, _, _)| {
-                last_pass || at.elapsed().as_secs_f64() * 1000.0 >= 3.0 * took
-            });
-            let fresh = if due {
-                let t = Instant::now();
-                let clean = denoise_sums(
-                    &sums,
-                    &lum2_of(films, width, height),
-                    &passes_of(pass_tiles, width, height, mask),
-                    done,
-                    side_threads,
-                );
-                clean.map(|c| {
-                    let c = Arc::new(c);
-                    let took = t.elapsed().as_secs_f64() * 1000.0;
-                    last_clean = Some((Instant::now(), took, done, Arc::clone(&c)));
-                    c
-                })
-            } else {
-                last_clean.as_ref().map(|(_, _, n, clean)| {
-                    let k = done as f32 / *n as f32;
-                    Arc::new(
-                        clean
-                            .iter()
-                            .zip(sums.iter())
-                            .enumerate()
-                            .map(|(i, (&c, &a))| if i % 4 == 3 { a } else { c * k })
-                            .collect(),
-                    )
-                })
-            };
-            match fresh {
-                Some(clean) => (clean, FLAG_DENOISED),
-                None => (sums, 0),
+        if let Some(live) = live {
+            // U11: the lane's newest pass; the frames show it unless they show a denoised image.
+            if guides.is_none() || albedo_more.load(Ordering::Relaxed) {
+                guides = Some(Arc::new(passes_of(pass_tiles, width, height, mask)));
             }
-        } else {
-            (sums, 0)
-        };
+            let guides = guides
+                .as_ref()
+                .map_or_else(|| Arc::new(Passes::new(width, height, 0)), Arc::clone);
+            let lum2 = lum2_of(films, width, height);
+            job.publish_live_pass(live, passes, done, rays, sums, lum2, guides, caustics);
+            continue;
+        }
         {
             let mut p = lock(&job.progress);
             p.pass = passes;
             p.samples = done;
             p.rays = rays;
-            p.sums = shown;
-            p.image = image | caustics;
+            p.sums = sums;
+            p.image = caustics;
+            p.version = p.version.wrapping_add(1);
         }
         job.changed.notify_all();
     }
+    // A live viewport ends on the denoised image of its last pass while its switch is on.
+    if let Some(live) = live {
+        if !job.cancelled() {
+            job.finish_live(live);
+        }
+    }
     // The share goes back before the job says it ended.
-    drop(live);
+    drop(live_share);
     if job.cancelled() {
         return None;
     }
     // A final that denoises: one more frame, its last, with the denoised image (and the one
     // without denoise when it asks for both), before it is kept and says it ended.
-    if denoise && job.kind == Kind::Final && done > 0 {
+    if denoise && done > 0 {
         let sums = sums_of(films, width, height);
         let clean = denoise_sums(
             &sums,
@@ -1130,6 +1593,8 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
             &passes_of(pass_tiles, width, height, mask),
             done,
             threads,
+            Preset::FULL,
+            job.denoise_strength,
         );
         if let Some(clean) = clean {
             let keep = job.denoise & DENOISE_KEEP_NOISY != 0;
@@ -1138,6 +1603,7 @@ fn render(job: &Job, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes> {
             p.sums = Arc::new(clean);
             p.image = FLAG_DENOISED | caustics | if keep { FLAG_NOISY } else { 0 };
             p.noisy = keep.then(|| Arc::new(sums));
+            p.version = p.version.wrapping_add(1);
             drop(p);
             job.changed.notify_all();
         }
@@ -1183,6 +1649,13 @@ pub struct Options {
     /// A final job: the exact passes to render next to the image besides its `RNDR.passes`
     /// (`rt_core::passes` bits; X2). A viewport job renders none.
     pub passes: u32,
+    /// U11, a viewport job whose RSB asks for denoise: its live denoise switch to begin with
+    /// (`None`: on). [`Job::set_live_denoise`] turns it later.
+    pub live_denoise: Option<bool>,
+    /// Tests only: the live denoise of a viewport is a stand-in that takes this long and halves
+    /// the radiance, so its cadence can be checked against a known cost (`None`: the filter).
+    #[doc(hidden)]
+    pub stand_in_denoise: Option<Duration>,
 }
 
 /// True when the RSB has a `MESH` section.
@@ -1625,6 +2098,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rt_core::render::render_tile_albedo;
 
     fn small_example(samples: u32, w: u32, h: u32) -> Scene {
         let mut scene = rt_core::example::scene();
@@ -1777,6 +2251,14 @@ mod tests {
         assert_eq!(*f.sums, expect);
     }
 
+    /// The viewport preset's denoise of a reference render (its film and guides): RGBA sums.
+    fn viewport_clean(out: &rt_cli::RenderOutput) -> Vec<f32> {
+        let sums = rt_post::denoise::rgba_sums(&out.film);
+        let passes = out.passes.as_ref().expect("guides");
+        let input = DenoiseInput::whole(out.samples, &sums, &out.film.lum2, passes).unwrap();
+        rt_post::denoise::denoise_with(&input, Preset::VIEWPORT).unwrap()
+    }
+
     #[test]
     fn a_viewport_that_denoises_shows_denoised_frames() {
         let _serial = serial();
@@ -1789,10 +2271,13 @@ mod tests {
         let f = wait_done(&job);
         assert_eq!(f.samples, 4);
         assert_eq!(f.flags & FLAG_DENOISED, FLAG_DENOISED);
-        // Its last frame is the denoised image of all its samples.
+        assert_eq!(job.live_denoise(), Some(true));
+        // Its last frame is the denoised image of all its samples, with the viewport's preset
+        // (U11), never the full filter of a render.
         let reference = rt_cli::render(&scene, 4, 2);
-        let clean = reference.denoised(2).expect("guides");
-        assert_eq!(*f.sums, rt_post::denoise::rgba_sums(&clean));
+        assert_eq!(*f.sums, viewport_clean(&reference));
+        let full = rt_post::denoise::rgba_sums(&reference.denoised(2).expect("guides"));
+        assert_ne!(*f.sums, full);
         // Without denoise, the plain sums and no flag.
         scene.render.denoise = 0;
         let job = engine
@@ -1801,6 +2286,381 @@ mod tests {
         let f = wait_done(&job);
         assert_eq!(f.flags & (FLAG_DENOISED | FLAG_CAUSTICS), 0);
         assert_eq!(*f.sums, rt_post::denoise::rgba_sums(&reference.film));
+    }
+
+    #[test]
+    fn a_live_pass_lasts_about_as_long_as_a_denoise() {
+        // 10 ms a sample: a denoise of 400 ms caps the pass at 40 (so 16), of 100 ms at 25 (the
+        // pass is never under LIVE_PASS_MS), and a slow sample is a pass of one.
+        assert_eq!(live_pass_cap(10.0, 400.0), 16);
+        assert_eq!(live_pass_cap(40.0, 100.0), 6);
+        assert_eq!(live_pass_cap(40.0, 400.0), 10);
+        assert_eq!(live_pass_cap(500.0, 400.0), 1);
+        assert_eq!(live_pass_cap(0.0, 400.0), MAX_PASS_SAMPLES);
+        assert_eq!(live_pass_cap(f64::NAN, 400.0), MAX_PASS_SAMPLES);
+        // A pass and a denoise fit in the refresh the page is promised: max(2 × denoise, 0.5 s).
+        for (per, denoise) in [(1.0, 50.0), (30.0, 100.0), (30.0, 900.0), (7.0, 3000.0)] {
+            let pass = f64::from(live_pass_cap(per, denoise)) * per;
+            assert!(
+                pass + denoise <= (2.0 * denoise).max(500.0),
+                "{per} {denoise}"
+            );
+        }
+    }
+
+    /// Follows a live viewport job for `secs` (or until it ends): every new pass (when it was
+    /// first seen, its samples) and every denoised image (when it came, its samples, the lane's
+    /// cost then).
+    #[allow(clippy::type_complexity)]
+    fn follow_live(job: &Job, secs: f64) -> (Vec<(Instant, u32, u32)>, Vec<(Instant, u32, f64)>) {
+        let t0 = Instant::now();
+        let (mut passes, mut cleans) = (Vec::new(), Vec::new());
+        let (mut after, mut version) = (0u32, 0u32);
+        while t0.elapsed().as_secs_f64() < secs {
+            let f = job.wait_newer_image(after, Some(version), Duration::from_millis(50));
+            let now = Instant::now();
+            job.touch();
+            let st = job.live_status().expect("live");
+            if st.newest_pass > passes.last().map_or(0, |p: &(Instant, u32, u32)| p.1) {
+                passes.push((now, st.newest_pass, st.newest_samples));
+            }
+            if f.version != version && f.flags & FLAG_DENOISED != 0 {
+                cleans.push((now, f.samples, st.cost_ms));
+            }
+            (after, version) = (f.pass, f.version);
+            if f.finished() {
+                break;
+            }
+        }
+        (passes, cleans)
+    }
+
+    #[test]
+    fn a_live_viewport_refreshes_its_denoised_image_at_the_cadence_and_never_an_old_one() {
+        // U11, the criterion: with the switch on, a denoised image at least every
+        // max(2 × the denoise, 0.5 s), each of the newest pass when its denoise began. A
+        // stand-in of 400 ms: the old rule (only once three times the last denoise had gone by)
+        // gave one every 1.2 s or more.
+        let _serial = serial();
+        let mut scene = small_example(1 << 20, 64, 48);
+        scene.render.denoise = DENOISE_IMAGE;
+        let engine = Engine::new(2);
+        let opts = Options {
+            stand_in_denoise: Some(Duration::from_millis(400)),
+            ..Options::default()
+        };
+        let job = engine
+            .submit_with(Kind::Viewport, &scene.to_rsb(), true, "", "", opts)
+            .unwrap();
+        let (passes, cleans) = follow_live(&job, 4.5);
+        job.cancel();
+        assert!(cleans.len() >= 6, "{} denoised images", cleans.len());
+        for pair in cleans.windows(2) {
+            let ((a, _, _), (b, _, cost)) = (pair[0], pair[1]);
+            let gap = b.duration_since(a).as_secs_f64() * 1000.0;
+            let promised = (2.0 * cost).max(500.0);
+            eprintln!("denoised image after {gap:.0} ms (denoise {cost:.0} ms)");
+            assert!(cost >= 400.0, "{cost}");
+            assert!(gap <= promised + 40.0, "{gap:.0} ms > {promised:.0} ms");
+        }
+        // Each image is of the pass that was the newest when its denoise began: the next pass came
+        // after that (the 100 ms are the follower's own delays on a loaded machine; an image of an
+        // older pass would be a whole denoise late).
+        for &(at, samples, cost) in &cleans {
+            let k = passes
+                .iter()
+                .position(|p| p.2 == samples)
+                .expect("a pass of those samples");
+            let began = at - Duration::from_secs_f64(cost / 1000.0);
+            if let Some(next) = passes.get(k + 1) {
+                assert!(
+                    next.0 + Duration::from_millis(100) >= began,
+                    "the image of {samples} samples began {:?} after a newer pass",
+                    began.duration_since(next.0)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_live_viewport_keeps_its_passes_about_as_long_as_a_denoise() {
+        // U11: with the switch on, a pass has the samples that fill max(denoise, LIVE_PASS_MS) at
+        // the pace of the pass before (live_pass_cap), not the 16 of an ordinary pass (a second or
+        // more for this image, which would hold the denoised image back as long). Counted from the
+        // passes' own pace, so a loaded machine does not change the verdict.
+        let _serial = serial();
+        let mut scene = small_example(1 << 20, 960, 720);
+        scene.render.denoise = DENOISE_IMAGE;
+        let engine = Engine::new(2);
+        let opts = Options {
+            stand_in_denoise: Some(Duration::from_millis(100)),
+            ..Options::default()
+        };
+        let job = engine
+            .submit_with(Kind::Viewport, &scene.to_rsb(), true, "", "", opts)
+            .unwrap();
+        let mut passes = Vec::new();
+        let t0 = Instant::now();
+        while passes.len() < 6 && t0.elapsed() < Duration::from_secs(60) {
+            passes.extend(follow_live(&job, 1.0).0);
+            passes.dedup_by_key(|p| p.1);
+        }
+        job.cancel();
+        assert!(passes.len() >= 4, "{} passes", passes.len());
+        for w in passes.windows(3) {
+            let ((a, _, s0), (b, _, s1), (_, pass, s2)) = (w[0], w[1], w[2]);
+            let per = b.duration_since(a).as_secs_f64() * 1000.0 / f64::from(s1 - s0);
+            let cap = live_pass_cap(per, 100.0);
+            eprintln!(
+                "pass {pass}: {} samples after {per:.0} ms a sample (cap {cap})",
+                s2 - s1
+            );
+            assert!(
+                f64::from(s2 - s1) <= 1.5 * f64::from(cap) + 1.0,
+                "pass {pass}: {} samples, the pace before allowed {cap}",
+                s2 - s1
+            );
+        }
+    }
+
+    #[test]
+    fn turned_off_a_live_viewport_shows_the_noisy_image_next_and_turned_on_denoises_it_at_once() {
+        let _serial = serial();
+        let mut scene = small_example(12, 48, 32);
+        scene.render.denoise = DENOISE_IMAGE;
+        let reference = rt_cli::render(&scene, 12, 2);
+        let noisy = rt_post::denoise::rgba_sums(&reference.film);
+        let halved = stand_in_denoise(&noisy, Duration::ZERO);
+        let engine = Engine::new(2);
+        let stand_in = Some(Duration::from_millis(100));
+        // On from the start: it ends on the denoised image of its 12 samples.
+        let opts = Options {
+            stand_in_denoise: stand_in,
+            ..Options::default()
+        };
+        let job = engine
+            .submit_with(Kind::Viewport, &scene.to_rsb(), true, "", "a", opts)
+            .unwrap();
+        let f = wait_done(&job);
+        assert_eq!((f.samples, f.flags & FLAG_DENOISED), (12, FLAG_DENOISED));
+        assert_eq!(*f.sums, halved);
+        // Off: the very next frame is the noisy accumulation, at once.
+        assert_eq!(job.set_live_denoise(false), Some(false));
+        let off = job.frame();
+        assert_eq!(off.version, f.version + 1);
+        assert_eq!(off.flags & FLAG_DENOISED, 0);
+        assert_eq!(*off.sums, noisy);
+        // On again with nothing new: the denoised image of the same pass, at once.
+        job.set_live_denoise(true);
+        let on = job.frame();
+        assert_eq!(
+            (on.version, on.flags & FLAG_DENOISED),
+            (off.version + 1, FLAG_DENOISED)
+        );
+        assert_eq!(*on.sums, halved);
+        // Posted off: noisy frames only, and turned on once it is over (no pass will come) it
+        // denoises what has accumulated; a follower that asks with the image's number waits for it.
+        let opts = Options {
+            live_denoise: Some(false),
+            stand_in_denoise: stand_in,
+            ..Options::default()
+        };
+        let job = Arc::clone(
+            &engine
+                .submit_with(Kind::Viewport, &scene.to_rsb(), true, "", "b", opts)
+                .unwrap(),
+        );
+        let f = wait_done(&job);
+        assert_eq!((f.samples, f.flags & FLAG_DENOISED), (12, 0));
+        assert_eq!(*f.sums, noisy);
+        assert_eq!(job.live_status().map(|s| s.presented), Some(0));
+        let t = Instant::now();
+        job.set_live_denoise(true);
+        assert!(job.live_status().is_some_and(|s| s.pending));
+        let clean = job.wait_newer_image(f.pass, Some(f.version), Duration::from_secs(10));
+        assert_eq!(clean.flags & FLAG_DENOISED, FLAG_DENOISED);
+        assert_eq!((clean.samples, clean.version), (12, f.version + 1));
+        assert_eq!(*clean.sums, halved);
+        assert!(t.elapsed() < Duration::from_secs(5));
+        // Nothing pending: a follower of a job that is over hears so at once.
+        let t = Instant::now();
+        let again = job.wait_newer_image(clean.pass, Some(clean.version), Duration::from_secs(10));
+        assert_eq!(again.version, clean.version);
+        assert!(t.elapsed() < Duration::from_secs(1));
+        // A final has no switch.
+        let fin = engine
+            .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+            .unwrap();
+        assert_eq!(fin.set_live_denoise(true), None);
+        assert_eq!(fin.live_denoise(), None);
+    }
+
+    #[test]
+    fn a_live_viewport_posted_off_denoises_with_the_guides_of_its_first_samples() {
+        // U11: off, the albedo of the guides stops after LIVE_ALBEDO_SAMPLES samples (the plain
+        // image costs nothing more); turned on, the real filter (the viewport's preset) denoises
+        // the whole accumulation with them.
+        let _serial = serial();
+        let samples = LIVE_ALBEDO_SAMPLES + 4;
+        let mut scene = small_example(samples, 40, 40);
+        scene.render.denoise = DENOISE_IMAGE;
+        let engine = Engine::new(3);
+        let opts = Options {
+            live_denoise: Some(false),
+            ..Options::default()
+        };
+        let job = engine
+            .submit_with(Kind::Viewport, &scene.to_rsb(), true, "", "", opts)
+            .unwrap();
+        let f = wait_done(&job);
+        assert_eq!(f.flags & FLAG_DENOISED, 0);
+        job.set_live_denoise(true);
+        let clean = job.wait_newer_image(f.pass, Some(f.version), Duration::from_secs(60));
+        assert_eq!(clean.flags & FLAG_DENOISED, FLAG_DENOISED);
+        // The reference: the same film, guides with the albedo of the first samples only.
+        use rt_core::render::{render_tile_prepared, tile_grid as grid};
+        let prepared = Prepared::new(&scene);
+        let isa = Isa::detect();
+        let mut film = Film::new(40, 40);
+        let mut guides = Passes::new(40, 40, GUIDE_PASSES);
+        for tile in grid(40, 40, TILE_SIZE) {
+            let mut pf = PassFilm::region(tile.x, tile.y, tile.w, tile.h, GUIDE_PASSES);
+            render_tile_exact(&scene, &prepared, tile, &mut pf, isa);
+            for sample in 0..samples {
+                render_tile_prepared(&scene, &prepared, tile, sample, &mut film, isa);
+                if sample < LIVE_ALBEDO_SAMPLES {
+                    render_tile_albedo(&scene, &prepared, tile, sample, &mut pf, isa);
+                }
+            }
+            guides.copy_region(tile.x, tile.y, &pf.resolve());
+        }
+        let sums = rt_post::denoise::rgba_sums(&film);
+        let input = DenoiseInput::whole(samples, &sums, &film.lum2, &guides).unwrap();
+        let want = rt_post::denoise::denoise_with(&input, Preset::VIEWPORT).unwrap();
+        assert_eq!(*clean.sums, want);
+        // With the albedo of every sample it would have been another image.
+        assert_ne!(
+            *clean.sums,
+            viewport_clean(&rt_cli::render(&scene, samples, 2))
+        );
+    }
+
+    #[test]
+    fn while_the_lane_denoises_it_has_one_of_the_views_threads() {
+        // U11: the live denoise takes the last thread that renders the view, never a final's.
+        let mut scene = small_example(4, 32, 32);
+        scene.render.denoise = DENOISE_IMAGE;
+        let job = Arc::new(Job::new(
+            1,
+            Kind::Viewport,
+            &scene,
+            4,
+            &Options {
+                share: 1,
+                ..Options::default()
+            },
+            ORPHAN_VIEWPORT,
+        ));
+        let gate = Gate::default();
+        let never = || false;
+        let busy = &job.live.as_ref().unwrap().busy;
+        busy.store(true, Ordering::Relaxed);
+        // No final: threads 0..2 go, the last of the four waits for the lane.
+        for worker in 0..3 {
+            assert!(gate.viewport_turn(&job, worker, 4, &never));
+        }
+        let waits = |worker: usize, workers: usize| {
+            std::thread::scope(|scope| {
+                let turn = scope.spawn(|| gate.viewport_turn(&job, worker, workers, &never));
+                std::thread::sleep(Duration::from_millis(120));
+                let waited = !turn.is_finished();
+                busy.store(false, Ordering::Relaxed);
+                assert!(turn.join().unwrap());
+                busy.store(true, Ordering::Relaxed);
+                waited
+            })
+        };
+        assert!(waits(3, 4));
+        // Fewer tiles than threads: the last of those that render.
+        assert!(waits(1, 2));
+        // A final runs: the view keeps its share (one thread), and that one is the lane's.
+        lock(&gate.state).running = 1;
+        assert!(waits(0, 4));
+        busy.store(false, Ordering::Relaxed);
+        assert!(gate.viewport_turn(&job, 0, 4, &never));
+    }
+
+    #[test]
+    fn the_denoise_strength_blends_the_final_and_the_view_and_at_zero_none_runs() {
+        // U11b: RNDR.denoise_strength: a final hands out the noisy × (1 − s) + denoised × s of `rt`
+        // (the full filter), a live view the same with the viewport's preset; at 0 neither is
+        // denoised and the frames are the noisy sums.
+        let _serial = serial();
+        let mut scene = small_example(4, 48, 200);
+        scene.render.denoise = DENOISE_IMAGE | DENOISE_KEEP_NOISY;
+        let reference = rt_cli::render(&scene, 4, 2);
+        let noisy = rt_post::denoise::rgba_sums(&reference.film);
+        let engine = Engine::new(3);
+        for strength in [0.5f32, 0.0] {
+            scene.render.denoise_strength = strength;
+            let job = engine
+                .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+                .unwrap();
+            let f = wait_done(&job);
+            if strength > 0.0 {
+                let want =
+                    rt_post::denoise::rgba_sums(&reference.denoised_at(2, strength).unwrap());
+                assert_eq!(f.flags & FLAG_DENOISED, FLAG_DENOISED);
+                assert_eq!(*f.sums, want);
+                assert_eq!(f.noisy.as_deref(), Some(&noisy));
+            } else {
+                assert_eq!(f.flags & (FLAG_DENOISED | FLAG_NOISY), 0);
+                assert_eq!(*f.sums, noisy);
+            }
+            let view = engine
+                .submit(Kind::Viewport, &scene.to_rsb(), "", "v", None)
+                .unwrap();
+            let f = wait_done(&view);
+            if strength > 0.0 {
+                let mut want = viewport_clean(&reference);
+                rt_post::denoise::blend(&noisy, &mut want, strength);
+                assert_eq!(f.flags & FLAG_DENOISED, FLAG_DENOISED);
+                assert_eq!(*f.sums, want);
+            } else {
+                assert_eq!(f.flags & FLAG_DENOISED, 0);
+                assert_eq!(*f.sums, noisy);
+                assert!(view
+                    .live_status()
+                    .is_some_and(|l| !l.pending && l.presented == 0));
+            }
+        }
+    }
+
+    #[test]
+    fn edge_samples_give_rt_s_image_with_any_thread_count_in_a_final_and_a_view() {
+        // E11: the fine filter and twice the samples on the edges: a final and a live view are
+        // the image of `rt` (which tiles and threads its own way) on 1, 4 and 16 threads, and
+        // the edges did get more samples (the image is not the one without them).
+        let _serial = serial();
+        let mut scene = small_example(4, 120, 90);
+        scene.render.pixel_filter = rt_core::pixel_filter::FILTER_BLACKMAN_HARRIS;
+        scene.render.edge_supersample = 2;
+        let want = rt_post::denoise::rgba_sums(&rt_cli::render(&scene, 4, 3).film);
+        let mut plain = scene.clone();
+        plain.render.edge_supersample = 1;
+        assert_ne!(
+            rt_post::denoise::rgba_sums(&rt_cli::render(&plain, 4, 3).film),
+            want
+        );
+        for threads in [1usize, 4, 16] {
+            let engine = Engine::new(threads);
+            for kind in [Kind::Final, Kind::Viewport] {
+                let job = engine.submit(kind, &scene.to_rsb(), "", "", None).unwrap();
+                let f = wait_done(&job);
+                assert_eq!(f.samples, 4);
+                assert_eq!(*f.sums, want, "{kind:?} on {threads} threads");
+            }
+        }
     }
 
     #[test]
@@ -1830,7 +2690,7 @@ mod tests {
                 .fold(0x811c_9dc5u32, |h, b| {
                     (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
                 });
-            assert_eq!(hash, 0x55d6_0f2f, "{threads} threads");
+            assert_eq!(hash, 0x5419_866e, "{threads} threads");
         }
     }
 
@@ -1860,7 +2720,7 @@ mod tests {
                 .fold(0x811c_9dc5u32, |h, b| {
                     (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
                 });
-            assert_eq!(hash, 0xfccd_a027, "{threads} threads");
+            assert_eq!(hash, 0x2f22_8634, "{threads} threads");
         }
     }
 
@@ -1886,7 +2746,7 @@ mod tests {
                 .fold(0x811c_9dc5u32, |h, b| {
                     (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
                 });
-            assert_eq!(hash, 0x2a3a_7416, "{threads} threads");
+            assert_eq!(hash, 0x6fbc_91f7, "{threads} threads");
         }
     }
 
@@ -1912,7 +2772,7 @@ mod tests {
                 .fold(0x811c_9dc5u32, |h, b| {
                     (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
                 });
-            assert_eq!(hash, 0xbb26_399f, "{threads} threads");
+            assert_eq!(hash, 0x5604_ec69, "{threads} threads");
         }
     }
 

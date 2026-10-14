@@ -274,6 +274,6 @@ describe('payload', () => {
 
   it('collects no textures where there is no document to decode them (Node)', async () => {
     const m = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
-    expect(await collectTextures(new Map([['tm1', m]]))).toEqual([]);
+    expect(await collectTextures({ materials: {}, sources: new Map([['tm1', m]]) })).toEqual([]);
   });
 });

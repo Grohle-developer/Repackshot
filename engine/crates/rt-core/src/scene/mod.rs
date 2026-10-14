@@ -7,11 +7,38 @@ pub mod rsb;
 pub use crate::bitmap::Bitmap;
 use crate::color::Rgb;
 use crate::math::{Aabb, Ray, Vec3};
+pub use crate::optics::{Lens, LensParams};
 
 pub use crate::geometry::{
-    Geometry, GeometryError, Hit, Instance, Mesh, MeshError, RayHit, Transform, INSTANCE_ONE_SIDED,
+    Geometry, GeometryError, Hit, Instance, Mesh, MeshError, ParticleSet, PixelFootprint, RayHit,
+    Transform, INSTANCE_ONE_SIDED,
 };
 pub use rsb::RsbError;
+pub use rt_sim::AmbientParams;
+
+/// The particle sets of `effects` for `footprint`: a set of `kept` with the same parameters is
+/// reused (its BVH built again only for another footprint), any other effect is evaluated.
+pub(crate) fn particle_sets(
+    effects: &[AmbientParams],
+    kept: Vec<ParticleSet>,
+    footprint: PixelFootprint,
+    width: crate::geometry::BvhWidth,
+) -> Vec<ParticleSet> {
+    let mut kept: Vec<Option<ParticleSet>> = kept.into_iter().map(Some).collect();
+    effects
+        .iter()
+        .map(|params| {
+            let reuse = kept
+                .iter_mut()
+                .find(|k| k.as_ref().is_some_and(|set| set.params() == params))
+                .and_then(Option::take);
+            match reuse {
+                Some(set) => set.with_footprint(footprint, width),
+                None => ParticleSet::evaluate(params, footprint, width),
+            }
+        })
+        .collect()
+}
 
 /// A camera: thin lens perspective or orthographic.
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +61,9 @@ pub struct Camera {
     pub ortho: bool,
     /// Width of the orthographic view in scene units (used when `ortho` is true).
     pub ortho_width: f32,
+    /// The optics beyond the plain thin lens (the `LENS` section, [`crate::optics`]); `None` is
+    /// the plain thin lens. An orthographic camera ignores it.
+    pub lens: Option<Lens>,
 }
 
 impl Default for Camera {
@@ -48,6 +78,7 @@ impl Default for Camera {
             focus_dist: 1000.0,
             ortho: false,
             ortho_width: 1000.0,
+            lens: None,
         }
     }
 }
@@ -89,6 +120,9 @@ impl Camera {
     /// `width / height`. `lens` is a point in the unit disk used to sample the aperture; it is
     /// ignored for a pinhole or orthographic camera. The returned direction is normalised.
     pub fn generate_ray(&self, aspect: f32, u: f32, v: f32, lens: (f32, f32)) -> Ray {
+        if let (Some(optics), false) = (&self.lens, self.ortho) {
+            return optics.thin_ray(self, aspect, u, v, lens);
+        }
         let (forward, right, up) = self.basis();
         if self.ortho {
             let w = self.ortho_width;
@@ -112,6 +146,29 @@ impl Camera {
         let focus_point = self.position + dir * (self.focus_dist / dir.dot(forward));
         let origin = self.position + (right * lens.0 + up * lens.1) * radius;
         Ray::new(origin, (focus_point - origin).normalize())
+    }
+
+    /// One camera sample through the image point `(u, v)` (as in [`Camera::generate_ray`]) with
+    /// the lens numbers of `sampler`: the ray, and the colour weight of the light it brings back.
+    /// The plain thin lens takes a point of the unit disk (the concentric map of the lens
+    /// dimensions) and weighs white; a [`Lens`] draws its own pupil and may weigh a band or block
+    /// the sample ([`Lens::sample`]).
+    pub fn sample_ray(
+        &self,
+        aspect: f32,
+        u: f32,
+        v: f32,
+        sampler: &crate::sampler::PixelSampler,
+    ) -> (Ray, Rgb) {
+        if let (Some(optics), false) = (&self.lens, self.ortho) {
+            return optics.sample(self, aspect, u, v, sampler);
+        }
+        let lens = if self.lens_radius() > 0.0 {
+            crate::warp::concentric_disk(sampler.get2(crate::sampler::DIM_LENS))
+        } else {
+            (0.0, 0.0)
+        };
+        (self.generate_ray(aspect, u, v, lens), Rgb::WHITE)
     }
 }
 
@@ -584,6 +641,17 @@ pub struct RenderSettings {
     /// The gather radius of the first sample, in pixels of the image at the camera's focus
     /// distance (0: [`RenderSettings::DEFAULT_CAUSTIC_RADIUS`]); it shrinks with every sample.
     pub caustic_radius: f32,
+    /// U11b: how much of the denoised image a host hands out, `0..=1`: `noisy × (1 − s) +
+    /// denoised × s` per channel in linear light (`rt_post::denoise::blend`); 0 runs no filter,
+    /// 1 (the default, and a file without it) is the filter's image.
+    pub denoise_strength: f32,
+    /// E11, `RNDR.pixel_filter`: where the camera samples go in and around their pixel
+    /// ([`crate::pixel_filter`]: 0 the box of one pixel, the default; 1 the centre; 2 a tent of
+    /// two pixels; 3 Blackman–Harris of three; unknown values are the box).
+    pub pixel_filter: u32,
+    /// E11, `RNDR.edge_supersample`: the samples an edge pixel takes per sample index (1: none
+    /// more; 0 is read as 1; at most [`crate::pixel_filter::MAX_EDGE_SUPERSAMPLE`]).
+    pub edge_supersample: u32,
 }
 
 /// `RNDR.denoise` bit 0: the host denoises the finished image.
@@ -602,6 +670,12 @@ impl RenderSettings {
     pub const MAX_CAUSTIC_PHOTONS: u32 = 1 << 22;
     /// Gather radius of the first sample, in pixels, when `caustic_radius` is 0.
     pub const DEFAULT_CAUSTIC_RADIUS: f32 = 3.0;
+
+    /// The samples an edge pixel takes per sample index ([`Self::edge_supersample`], 0 read as 1).
+    pub fn edge_factor(&self) -> u32 {
+        self.edge_supersample
+            .clamp(1, crate::pixel_filter::MAX_EDGE_SUPERSAMPLE)
+    }
 
     /// The path depth to render with: `max_depth`, or the default for 0, at most
     /// [`RenderSettings::MAX_DEPTH_LIMIT`].
@@ -630,6 +704,9 @@ impl Default for RenderSettings {
             denoise: 0,
             caustic_photons: 0,
             caustic_radius: 0.0,
+            denoise_strength: 1.0,
+            pixel_filter: 0,
+            edge_supersample: 1,
         }
     }
 }
@@ -656,9 +733,45 @@ pub struct Scene {
     /// Procedural patterns of the materials (E6, `PATN`: wood), at most one per material (the
     /// first counts).
     pub patterns: Vec<crate::pattern::Pattern>,
+    /// The ambient effects (S4a, `FXAM`), in file order. Their particles live in the geometry
+    /// ([`Geometry::particle_sets`], built by [`Scene::build_particles`]).
+    pub effects: Vec<AmbientParams>,
 }
 
 impl Scene {
+    /// The pixel footprint of the scene's camera and image (the particles' minimum size).
+    pub fn pixel_footprint(&self) -> PixelFootprint {
+        PixelFootprint::of(&self.camera, self.render.width, self.render.height)
+    }
+
+    /// Evaluates the particles of [`Scene::effects`] for the scene's camera and image and puts them
+    /// in the geometry (the instance BVH is built again; the meshes and their BVHs are kept). Sets
+    /// of `kept` with the same parameters are reused instead of being evaluated again (only their
+    /// BVH is built again when the camera or the image size changed). An effect whose material
+    /// index is out of range renders with the default material, like an instance. A scene with
+    /// more instances and effects than [`crate::geometry::MAX_INSTANCES`] keeps no particles.
+    pub fn build_particles(&mut self, kept: Vec<ParticleSet>) {
+        let width = crate::geometry::BvhWidth::native();
+        let instances = self.geometry.instances().to_vec();
+        let mut sets = particle_sets(&self.effects, kept, self.pixel_footprint(), width);
+        if instances.len() + sets.len() > crate::geometry::MAX_INSTANCES {
+            sets.clear();
+        }
+        let meshes = std::mem::take(&mut self.geometry).into_meshes();
+        // The instances come from a valid geometry and fit with the sets: this cannot fail.
+        self.geometry =
+            Geometry::with_particles(meshes, instances, sets, width).unwrap_or_default();
+    }
+
+    /// Builds the particles' BVHs again for the scene's camera and image size as they are now (a
+    /// host that changed them after loading the file): nothing is evaluated again.
+    pub fn refresh_particles(&mut self) {
+        let kept = self.geometry.take_particles();
+        if !kept.is_empty() || !self.effects.is_empty() {
+            self.build_particles(kept);
+        }
+    }
+
     /// Number of distinct triangles (each mesh counted once, however many instances use it).
     pub fn triangle_count(&self) -> usize {
         self.geometry.triangle_count()
@@ -670,9 +783,14 @@ impl Scene {
     }
 
     /// The front-most surface along `ray` within `[t_min, t_max]`: instance, triangle, point,
-    /// normals and barycentrics. Used to select, to focus by click and to place by reflection.
+    /// normals and barycentrics. Used to select, to focus by click and to place by reflection: the
+    /// parts only, never the particles of an effect.
     pub fn pick(&self, ray: &Ray) -> Option<Hit> {
-        self.geometry.intersect(ray)
+        self.geometry.intersect_class(
+            ray,
+            crate::simd::Isa::detect(),
+            crate::geometry::RayClass::Parts,
+        )
     }
 
     /// True when anything blocks `ray` within `[t_min, t_max]` (shadow rays, early exit).

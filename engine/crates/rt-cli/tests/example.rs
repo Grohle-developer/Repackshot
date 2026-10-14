@@ -250,7 +250,7 @@ fn the_bevel_is_the_same_bits_with_1_4_or_16_threads() {
             .fold(0x811c_9dc5u32, |h, b| {
                 (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
             });
-        assert_eq!(hash, 0xfccd_a027, "{threads} threads");
+        assert_eq!(hash, 0x2f22_8634, "{threads} threads");
     }
 }
 
@@ -269,7 +269,7 @@ fn the_patterns_are_the_same_bits_with_1_4_or_16_threads() {
             .fold(0x811c_9dc5u32, |h, b| {
                 (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
             });
-        assert_eq!(hash, 0x2a3a_7416, "{threads} threads");
+        assert_eq!(hash, 0x6fbc_91f7, "{threads} threads");
     }
 }
 
@@ -288,8 +288,26 @@ fn the_cloth_is_the_same_bits_with_1_4_or_16_threads() {
             .fold(0x811c_9dc5u32, |h, b| {
                 (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
             });
-        assert_eq!(hash, 0xbb26_399f, "{threads} threads");
+        assert_eq!(hash, 0x5604_ec69, "{threads} threads");
     }
+}
+
+#[test]
+fn a_lens_renders_the_same_bits_with_1_4_or_16_threads() {
+    // O1: the pupil, the cat's eye and the chromatic band of every sample come from the pixel's
+    // own sampler; the image does not depend on how many threads render it.
+    let mut scene = rt_core::example::o1_scene();
+    scene.render.width = 64;
+    scene.render.height = 48;
+    let one = rt_cli::render(&scene, 3, 1);
+    for threads in [4, 16] {
+        let many = rt_cli::render(&scene, 3, threads);
+        assert_eq!(one.film, many.film, "{threads} threads");
+        assert_eq!(one.rays, many.rays);
+    }
+    // And the lens changes the image against the plain thin lens.
+    scene.camera.lens = None;
+    assert_ne!(rt_cli::render(&scene, 3, 4).film.rgb, one.film.rgb);
 }
 
 /// Relative mean squared error of `image` against `reference` (linear RGB, values clamped at 8 so

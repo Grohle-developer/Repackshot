@@ -134,6 +134,11 @@ pub const fn cutout_dim(bounce: u32, crossing: u32) -> u32 {
     DIM_CUTOUT + bounce * 64 + c
 }
 
+/// The logical dimension of the chromatic band of a lens camera sample (O1, [`crate::optics`]):
+/// beyond the Sobol table and the cut-outs, so a scene without a `LENS` section draws exactly the
+/// numbers it drew before. It is used through [`PixelSampler::stratum`], not as a number.
+pub const DIM_LENS_BAND: u32 = 3 << 20;
+
 /// Degree `s`, coefficients `a` and initial direction numbers `m_1..m_s` of dimensions 2 to 64
 /// (Joe and Kuo, `new-joe-kuo-6.21201`, rows `d = 2..=64`). Unused `m` entries are zero.
 const JOE_KUO: [(u32, u32, [u32; 9]); 63] = [
@@ -319,6 +324,32 @@ impl PixelSampler {
     #[inline]
     pub fn get2(&self, dim: u32) -> (f32, f32) {
         (self.get1(dim), self.get1(dim + 1))
+    }
+
+    /// The stratum of this sample among `n` (at least one): `(index + offset) mod n`, where the
+    /// offset is hashed from the pixel and `dim` only. Every `n` consecutive samples of a pixel take
+    /// each stratum exactly once, and neighbouring pixels start at different ones (O1: the
+    /// chromatic band of a lens, [`DIM_LENS_BAND`]).
+    #[inline]
+    pub fn stratum(&self, dim: u32, n: u32) -> u32 {
+        self.strata(dim, n).0
+    }
+
+    /// [`PixelSampler::stratum`] and the sampler of the sample's group: the `n` samples of a group
+    /// (one per stratum) share the index `(index + offset) / n`, so each stratum walks the
+    /// sequence's own points in order (a stratified sequence per stratum) and the strata of a group
+    /// see the same numbers in the dimensions asked through it (the chromatic bands of a lens share
+    /// one point of the pupil: their colours are correlated, not speckled).
+    #[inline]
+    pub fn strata(&self, dim: u32, n: u32) -> (u32, PixelSampler) {
+        let n = u64::from(n.max(1));
+        let offset = (self.dim_seed(dim) >> 32) % n;
+        let at = u64::from(self.index) + offset;
+        let group = PixelSampler {
+            key: self.key,
+            index: (at / n) as u32,
+        };
+        ((at % n) as u32, group)
     }
 }
 

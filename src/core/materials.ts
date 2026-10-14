@@ -9,21 +9,15 @@ import type { ActionBase, ProjectState } from './store';
 import { nextId } from './ids';
 import { ancestors, partsUnder, type FaceRange, type NodeId, type SceneNode } from './scene';
 import { wearDefaults } from './wear';
+import { cloneTextures, defaultTextures, type MaterialTextures } from './textures';
+import { cloneGraph, type MaterialGraph } from './material-graph';
+
+export { defaultTextures } from './textures';
 
 export type MaterialId = string;
 
-/** Image textures of a material (phase M2 fills them; U1 keeps the shape). */
-export interface MaterialTextures {
-  color: string | null;
-  roughness: string | null;
-  metal: string | null;
-  normal: string | null;
-  alpha: string | null;
-  projection: 'BOX' | 'PLANAR' | 'CYLINDRICAL' | 'UV';
-  scale: number;
-  rotationDeg: number;
-  offset: [number, number];
-}
+/** Image textures of a material (phase M2a): core/textures.ts. */
+export type { MaterialTextures } from './textures';
 
 /** A material used in the scene; the catalogue preset is only its origin (SPEC §3.3). */
 export interface MaterialInstance {
@@ -47,6 +41,11 @@ export interface MaterialInstance {
   params: MaterialParams;
   wear: WearProps;
   textures: MaterialTextures;
+  /**
+   * The material as a graph of nodes (phase M3a, core/material-graph.ts): present in Nodes mode, absent in Simple
+   * mode. While it is present the graph is the material; `family` and `params` keep the Simple values.
+   */
+  graph?: MaterialGraph;
   /** Rounded-edge radius in millimetres (0 = no bevel). */
   bevelRadiusMm: number;
   /** 'DEFAULT': the neutral material a part gets when it comes without one. */
@@ -193,10 +192,6 @@ export function paramValue(mat: MaterialInstance, spec: ParamSpec): unknown {
 /** The parameters the inspector should draw for a material right now. */
 export function visibleParams(mat: MaterialInstance): ParamSpec[] {
   return FAMILY_PARAMS[mat.family].filter((p) => !p.when || paramValue(mat, FAMILY_PARAMS[mat.family].find((q) => q.key === p.when!.key)!) === p.when.value);
-}
-
-export function defaultTextures(): MaterialTextures {
-  return { color: null, roughness: null, metal: null, normal: null, alpha: null, projection: 'BOX', scale: 1, rotationDeg: 0, offset: [0, 0] };
 }
 
 /** Bevel a new instance gets: 0.25 % of the part size (Doctor bevel fix). */
@@ -500,7 +495,7 @@ function detach(state: ProjectState, id: MaterialId, parts: readonly NodeId[]): 
     return patchMaterial(state, id, (x) => (x.edited && x.preset === null ? x : { ...x, preset: null, edited: true }));
   }
   const copyId = nextId('m', Object.keys(state.materials));
-  const copy: MaterialInstance = { ...m, id: copyId, preset: null, edited: true, params: structuredCloneParams(m.params), wear: { ...m.wear } };
+  const copy: MaterialInstance = { ...m, id: copyId, preset: null, edited: true, params: structuredCloneParams(m.params), wear: { ...m.wear }, textures: cloneTextures(m.textures), ...(m.graph ? { graph: cloneGraph(m.graph) } : {}) };
   const nodes = { ...state.scene.nodes };
   for (const p of mine) {
     const node = nodes[p];
@@ -517,7 +512,7 @@ function detach(state: ProjectState, id: MaterialId, parts: readonly NodeId[]): 
 export function cloneInstance(m: MaterialInstance, id: MaterialId): MaterialInstance {
   const wear = { ...m.wear };
   for (const [k, v] of Object.entries(wear)) if (Array.isArray(v)) (wear as Record<string, unknown>)[k] = [...v];
-  return { ...m, id, params: structuredCloneParams(m.params), wear, textures: { ...m.textures, offset: [m.textures.offset[0], m.textures.offset[1]] } };
+  return { ...m, id, params: structuredCloneParams(m.params), wear, textures: cloneTextures(m.textures), ...(m.graph ? { graph: cloneGraph(m.graph) } : {}) };
 }
 
 function unlink(state: ProjectState, parts: readonly NodeId[]): ProjectState {
