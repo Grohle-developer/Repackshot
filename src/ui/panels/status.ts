@@ -13,6 +13,7 @@ import { h } from '../dom';
 import { dyn } from '../names';
 import { Scope, type Ctx } from '../reactive';
 import { formatClock, formatNumber, getLang, isaLabel, lbl, t } from '../strings';
+import { dismissRuntimeNote, fixRuntime } from '../ai-runtime-state';
 import { dismissUpdateNotice, downloadUpdate, openReleaseNotes } from '../updates';
 
 function sentence(r: DoctorResult): string {
@@ -92,6 +93,49 @@ function updateNotice(ctx: Ctx, scope: Scope): HTMLElement {
         h('button', { type: 'button', class: 'btn-link update-later', onclick: () => dismissUpdateNotice(ctx) }, t('up.later')),
         h('span', { class: 'sep' }),
       );
+    },
+  );
+  return el;
+}
+
+/**
+ * The inference runtime is missing (or does not start) while a model is installed: one quiet line at the start of the
+ * session (phase U10), never a window. *Install* downloads the build (or opens Microsoft's page for Visual C++), the
+ * words open Settings ▸ AI post-processing, *Later* hides it until the next start.
+ */
+function runtimeNote(ctx: Ctx, scope: Scope): HTMLElement {
+  const el = h('span', { class: 'update-notice runtime-note', role: 'status', 'aria-live': 'polite', 'data-runtime-note': '' });
+  scope.watch(
+    (_s, u) => u.runtimeNote.warning,
+    (w) => {
+      el.hidden = !w;
+      el.dataset.kind = w?.kind ?? '';
+      if (!w) {
+        el.replaceChildren();
+        return;
+      }
+      const kind = w.kind === 'MISSING' || w.kind === 'PAUSED' || w.kind === 'VC_RUNTIME' || w.kind === 'BROKEN' ? w.kind : 'MISSING';
+      const fix = w.kind === 'MISSING' || w.kind === 'PAUSED' || w.kind === 'VC_RUNTIME';
+      const parts: HTMLElement[] = [h('button', { type: 'button', class: 'btn-link update-text', 'data-tip': t('rt.note.settings'), onclick: () => cmd.openSettings(ctx, 'ai.runtime') }, t(`rt.note.${kind}`))];
+      if (fix) {
+        parts.push(
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'btn-link update-download',
+              'data-tip': w.kind === 'VC_RUNTIME' ? t('rt.note.vcTip') : undefined,
+              onclick: () => {
+                dismissRuntimeNote(ctx);
+                void fixRuntime(ctx, w);
+              },
+            },
+            t(w.kind === 'PAUSED' ? 'rt.note.resume' : 'rt.note.install'),
+          ),
+        );
+      }
+      parts.push(h('button', { type: 'button', class: 'btn-link update-later', onclick: () => dismissRuntimeNote(ctx) }, t('up.later')));
+      el.replaceChildren(...parts, h('span', { class: 'sep' }));
     },
   );
   return el;
@@ -177,6 +221,6 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
     engine,
     h('span', { class: 'sep' }),
     samples,
-    h('div', { class: 'status-right' }, updateNotice(ctx, scope), langBtn, h('span', { class: 'tabular' }, `v${VERSION}`)),
+    h('div', { class: 'status-right' }, runtimeNote(ctx, scope), updateNotice(ctx, scope), langBtn, h('span', { class: 'tabular' }, `v${VERSION}`)),
   );
 }

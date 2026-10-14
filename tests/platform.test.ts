@@ -192,6 +192,24 @@ describe('the platform seam picks the launcher when it answers', () => {
     expect(JSON.parse(l.docs.get('desktop.folders')!)).toEqual({ 'd-renders': '/home/a/Renders' });
   });
 
+  it('the system prompt of Settings (X4b) is kept in the launcher’s settings document and read back from it, never in the browser', async () => {
+    const l = fakeLauncher();
+    l.docs.set(MIGRATION_DOC, JSON.stringify({ from: 'browser' }));
+    const p = await choosePlatform({ native: l.client });
+    const doc = p.settings.initial.doc;
+    expect(doc.settings['ai.systemPrompt']).toBe(defaultSettings()['ai.systemPrompt']);
+    p.settings.save({ ...doc, settings: { ...doc.settings, 'ai.systemPrompt': 'Clean studio product photograph.' } }, { final: true });
+    p.flush();
+    await settled();
+    await settled();
+    expect(JSON.parse(l.settings!).settings['ai.systemPrompt']).toBe('Clean studio product photograph.');
+    // The next launch reads it from the data folder.
+    const again = await choosePlatform({ native: l.client });
+    expect(again.settings.initial.doc.settings['ai.systemPrompt']).toBe('Clean studio product photograph.');
+    expect(migrateDoc(JSON.parse(l.settings!)).settings['ai.systemPrompt']).toBe('Clean studio product photograph.');
+    expect(touched).toEqual([]);
+  });
+
   it('without the launcher it is the web platform, on the browser storage', async () => {
     const p = await choosePlatform({ native: null });
     expect(p.kind).toBe('web');
@@ -384,7 +402,8 @@ describe('the results history on the desktop', () => {
     const aiMeta = (id: string, at: number, bytes: number): ResultMeta => ({ ...meta(id, at), ai: { name: `${id}_AI.png`, thumb: '', bytes, report: { verdict: 'ACCEPTED', usedFraction: 1, attempts: 1, size: { ok: true, value: 1, limit: 1 }, outside: { ok: true, value: 0, limit: 0 }, edges: { ok: true, value: 0, limit: 2 }, detail: { ok: true, value: 1, limit: 0.9 }, focus: { ok: true, value: 0, limit: 0.25 }, materials: [], modelKey: 'SYNTHETIC', runtime: 'synthetic', seed: 0, seconds: 0 } } });
     // With an AI image: three files go to the launcher, in this order (the record last).
     await store.add(aiMeta('r1', 1, 3), new Blob(['engine'], { type: 'image/png' }), null, new Blob(['ai!'], { type: 'image/png' }));
-    expect(l.calls.filter((c) => c.includes('store/results/r1'))).toEqual(['PUT /api/store/results/r1', 'PUT /api/store/results/r1/ai', 'PUT /api/store/results/r1/meta']);
+    // X4b: the AI image goes as variant 1 (`<id>.ai.1.<ext>` in the launcher), and is read back as such.
+    expect(l.calls.filter((c) => c.includes('store/results/r1'))).toEqual(['PUT /api/store/results/r1', 'PUT /api/store/results/r1/ai/1', 'PUT /api/store/results/r1/meta']);
     const back = await store.get('r1');
     expect(await back?.file.text()).toBe('engine');
     expect(await back?.ai?.text()).toBe('ai!');

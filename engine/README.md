@@ -199,12 +199,20 @@ twice (0: off).
   millimetre being 1e-3 m); `spread_deg` adds a `cos^n` falloff whose intensity halves at
   `spread_deg / 2` (180: none; the on-axis radiance does not change). **2 sun**: a disc of
   `angle_deg` sampled in its cone, `power` the irradiance in W/m² on a surface facing it (0
-  degrees: a delta direction). **3 point**, **4 spot**: reserved for L4, parsed and ignored.
-  `flags` bit 0 **glossy**: seen by BSDF-sampled rays and lighting every lobe (with MIS); without
-  it the light lights only the diffuse lobe, by light sampling alone, and is invisible in
-  reflections (Blender's "glossy" visibility, which the recipes come from). Bit 1 **camera**:
-  visible to camera rays. One light per vertex, chosen in proportion to an estimate of the flux
-  it sends into the scene's bounding sphere (a light tree replaces it in K4).
+  degrees: a delta direction). **3 point** (L4): a sphere of diameter `size_x` and uniform
+  radiance `I / (π r²)` with `I = power / 4π` W/sr (`power` the isotropic flux), sampled
+  uniformly in the cone of directions it fills; of no size, or too small to tell from a point
+  at that distance, a delta position (`I / d²`). **4 spot** (L4): the point light it would be,
+  masked by the direction from its centre: 1 inside the inner cone, a smoothstep to 0 at the
+  edge of its cone of `spread_deg` (the soft edge `angle_deg` wide). `flags` bit 0 **glossy**:
+  seen by BSDF-sampled rays and lighting every lobe (with MIS); without it the light lights only
+  the diffuse lobe, by light sampling alone, and is invisible in reflections (Blender's "glossy"
+  visibility, which the recipes come from). Bit 1 **camera**: visible to camera rays (a point's
+  sphere too). Bit 2 **no shadow** (L4): its shadow rays are not traced (the shadow catcher is
+  not darkened by it either). One light per vertex, chosen in proportion to an estimate of the
+  flux it sends into the scene's bounding sphere; a spot weighs as its point light would when
+  its cone takes in the scene's centre, a twentieth of that otherwise, so a narrow spot's pool is
+  not left to the rare samples its little flux would get (a light tree replaces it in K4).
 * **Environment** (`environment`), `ENVR.kind`: **0 studio dome**: radiance linear in the `z`
   of the direction, `floor` at -1, `horizon` at 0, `zenith` at +1, importance sampled by the
   closed-form inverse of that piecewise-linear density in `z` times a uniform azimuth (exact
@@ -299,7 +307,8 @@ pixel. **The split**: a *caster* is glass or metal whose sharper lobe is at most
 (`is_caster`; brushed metal counts along its brush), every other scattering surface is a
 receiver, and a straight event (a cut-out passed, a thin wall's straight transmission) is no
 event. The photon map carries exactly the light of the segments `L C+ R` (photons from glossy
-area lights and suns and from emissive meshes, never the environment; they cross casters only
+area lights and suns and from emissive meshes, never the environment nor the point lights and
+spots of L4, whose caustics stay with the path tracer; they cross casters only
 and are stored on the first receiver they reach), gathered at every receiver of the camera path
 (the first one, and any later one as indirect light); the path tracer leaves out exactly that
 light (after any receiver, light of a photon light that arrives through casters only:
@@ -310,7 +319,8 @@ receiver is black.
 `caustics/tests.rs` checks the floor flux of a glass sphere against an exact f64 sphere (0.2 %),
 flux through a glass block (no 1/η² for particles), the kernel, the radius schedule, the split
 against the path tracer alone in a glass sphere's shadow (within 8 %), under a polished metal
-sphere and on a floor lit by a wall's caustic, and the shadow catcher against a real white floor. Photons are aimed at the casters' bounding spheres with the density of
+sphere, on a floor lit by a wall's caustic and with a point light beside the map, and the shadow
+catcher against a real white floor. Photons are aimed at the casters' bounding spheres with the density of
 the whole mixture, refract with flux and Veach's shading-normal correction, and draw a PCG
 stream per (seed, sample, photon): a map is the same bits however its photons are split
 (`PhotonMap::trace_range`), so `rt` and the launcher trace each sample's map in photon ranges on

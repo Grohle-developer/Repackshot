@@ -54,8 +54,10 @@ export interface ResolutionPreset {
 // ---------------------------------------------------------------------------
 
 export type LightRole = 'KEY' | 'FILL' | 'RIM' | 'TOP';
-export type LightType = 'AREA' | 'SUN';
-export type LightShape = 'RECTANGLE' | 'SQUARE' | 'DISK' | 'ELLIPSE';
+/** AREA: a panel (or a glowing sphere, shape SPHERE); POINT: a small round source; SPOT: a point with a cone (L4); SUN: distant. */
+export type LightType = 'AREA' | 'POINT' | 'SPOT' | 'SUN';
+/** Shapes of an AREA light; SPHERE (L4) glows the same in every direction, like a point light with a size. */
+export type LightShape = 'RECTANGLE' | 'SQUARE' | 'DISK' | 'ELLIPSE' | 'SPHERE';
 
 /**
  * One light of a studio preset or of a light-setup recipe.
@@ -99,6 +101,14 @@ export interface LightSpec {
   camera?: boolean;
   /** Legacy mark: take the colour of the active product preset's rig. */
   colorFromPreset?: boolean;
+  /** SPOT (L4): the soft edge, as a fraction of the cone's half-angle (0 hard, 1 soft from the centre). `spread` is its cone angle. */
+  blend?: number;
+  /** L4: the light casts shadows (default true). */
+  shadow?: boolean;
+  /** L4: the point it aims at, in part sizes from the rig's pivot (default: the pivot itself). */
+  aim?: [number, number, number];
+  /** L4: turn about its own axis, degrees (a panel's long side, default 0: level with the floor). */
+  roll?: number;
 }
 
 /** The defaults a LightSpec falls back to when a field is absent. */

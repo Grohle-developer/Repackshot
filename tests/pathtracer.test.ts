@@ -675,6 +675,10 @@ describe('the viewport of the pool', () => {
     const off = exampleState();
     const state = { ...off, render: { ...off.render, advanced: { ...off.render.advanced, denoise: 'RENDER' as const } } };
     engine.sync(state, off);
+    // A denoise of the view being replaced may still be on its way: count from the new view's first job on.
+    const sent = workers.map((w) => jobsOf(w).length);
+    for (let i = 0; i < 200 && !workers.some((w, k) => jobsOf(w).slice(sent[k]).some((m) => (m.passes ?? 0) === 0)); i++) await settle(engine, 1);
+    await settle(engine, 2);
     const before = workers.map((w) => [jobsOf(w).length, w.denoised.length]);
     await settle(engine, 30);
     workers.forEach((w, i) => {

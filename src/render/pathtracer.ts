@@ -530,6 +530,8 @@ export class PathTracerEngine implements RenderEngine {
   private shownKey: string | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private want: { state: ProjectState; w: number; h: number; dpr: number; limit: ViewportLimit; key: string } | null = null;
+  /** Look through (L4): the camera the viewport renders from, for a state; null: the active one. */
+  private viewCamera: ((state: ProjectState) => CameraState | null) | null = null;
 
   constructor(
     private readonly pool: Pool,
@@ -681,6 +683,25 @@ export class PathTracerEngine implements RenderEngine {
 
   // ------------------------------------------------------------------ gestures
 
+  /**
+   * Look through (L4): the viewport renders from a light's or a saved camera's view instead of the active camera's,
+   * worked out from each state (it moves with the light); null renders the active camera again.
+   */
+  setViewCamera(fn: ((state: ProjectState) => CameraState | null) | null): void {
+    if (fn === this.viewCamera) return;
+    this.viewCamera = fn;
+    this.want = null;
+    this.restartWanted = true;
+  }
+
+  /** The camera of a gesture in progress, over the camera looked through (if any). */
+  private cameraPatch(state: ProjectState, patch: Partial<Omit<CameraState, 'id'>> | null): Partial<Omit<CameraState, 'id'>> | null {
+    const through = this.viewCamera?.(state) ?? null;
+    if (!through) return patch;
+    const { id: _id, ...rest } = through;
+    return patch ? { ...rest, ...patch } : rest;
+  }
+
   /** A gesture started (the camera, or a gizmo drag): frames at reduced resolution until `endGesture`. */
   beginGesture(): void {
     this.gesture = { patch: null };
@@ -738,7 +759,7 @@ export class PathTracerEngine implements RenderEngine {
       maxSamples: this.viewportSamples(state),
       maxSeconds: 0,
       viewport: { viewW: this.viewW, viewH: this.viewH },
-      ...(patch ? { cameraPatch: patch } : {}),
+      ...(this.cameraPatch(state, patch) ? { cameraPatch: this.cameraPatch(state, patch)! } : {}),
       // Denoise (at full resolution only: a gesture's frames are gone before it would finish) and caustics.
       ...engineFieldsOf(state.render.advanced, 'VIEWPORT'),
       ...(scale > 1 ? { denoise: 0 } : {}),
@@ -832,7 +853,8 @@ export class PathTracerEngine implements RenderEngine {
         this.frameInFlight = false;
         return;
       }
-      if (denoise) this.denoiseView(gen, acc, lane, done + p.count, nextPass(done + p.count, p.count, max) === null);
+      // (Not an image a change is about to replace: the next view starts over.)
+      if (denoise && !this.restartWanted) this.denoiseView(gen, acc, lane, done + p.count, nextPass(done + p.count, p.count, max) === null);
       this.passes++;
       this.watchdog.progressed();
       if (!this.firstPassDone) {
@@ -910,7 +932,7 @@ export class PathTracerEngine implements RenderEngine {
         this.denoising = false;
         this.lastDenoiseAt = performance.now();
         this.lastDenoiseMs = this.lastDenoiseAt - t0;
-        if (this.denoiseAgain && gen === this.accGen && this.acc === acc) {
+        if (this.denoiseAgain && !this.restartWanted && gen === this.accGen && this.acc === acc) {
           this.denoiseAgain = false;
           this.denoiseView(gen, acc, lane, acc.minSamples, true);
         }

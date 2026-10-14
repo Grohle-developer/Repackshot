@@ -52,6 +52,8 @@ describe('denoise and caustics settings', () => {
     expect(autoCaustics([0, 0, 0], [{ ...panel(40, 500), glossy: false }], false)).toBe(false);
     expect(autoCaustics(null, [panel(40, 500)], true)).toBe(false);
     expect(autoCaustics([0, 0, 0], [], true)).toBe(true);
+    // A point light or a spot (L4) sends no photons: it does not turn them on.
+    expect(autoCaustics([0, 0, 0], [{ ...panel(40, 500), kind: 3 }, { ...panel(40, 500), kind: 4 }], false)).toBe(false);
   });
 
   it('the image before denoise is saved as <name>-noisy', () => {

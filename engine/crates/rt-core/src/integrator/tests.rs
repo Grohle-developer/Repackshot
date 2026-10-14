@@ -9,8 +9,8 @@ use crate::render::{render_tile_prepared, TileRect};
 use crate::scene::{
     Camera, EnvKind, Environment, Floor, Geometry, Instance, Light, LightKind, Material, Mesh,
     RenderSettings, Transform, BACKGROUND_COLOR, BACKGROUND_ENVIRONMENT, BACKGROUND_TRANSPARENT,
-    INSTANCE_ONE_SIDED, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY, MATERIAL_EMISSIVE,
-    MATERIAL_FLAG_LIGHT,
+    INSTANCE_ONE_SIDED, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY, LIGHT_FLAG_NO_SHADOW,
+    MATERIAL_EMISSIVE, MATERIAL_FLAG_LIGHT,
 };
 
 /// Renders samples `0..spp` of the whole image (one thread, one prepared scene).
@@ -257,6 +257,128 @@ fn a_rect_light_gives_the_analytic_irradiance() {
         radiance * rect_irradiance_factor(a as f64, b as f64, h as f64) / std::f64::consts::PI;
     let got = mean_where(&film, 1, |_, _| true);
     assert!((got / want - 1.0).abs() < 0.02, "{got} vs analytic {want}");
+}
+
+/// A point light (L4) of `power` W and `diameter` mm, `h` above a white floor seen straight down
+/// at a 2 mm spot.
+fn point_scene(kind: LightKind, diameter: f32, h: f32, power: f32, flags: u32) -> Scene {
+    Scene {
+        camera: ortho_down(0.0, 0.0, 2.0),
+        materials: vec![lambert(1.0)],
+        geometry: Geometry::from_meshes(vec![floor_quad(2000.0)]),
+        lights: vec![Light {
+            kind,
+            position: Vec3::new(0.0, 0.0, h),
+            direction: Vec3::new(0.0, 0.0, -1.0),
+            size_x: diameter,
+            size_y: diameter,
+            power,
+            spread_deg: 50.0,
+            angle_deg: 5.0,
+            flags,
+            ..Light::default()
+        }],
+        environment: black_world(),
+        render: settings(8, 8),
+        ..Scene::default()
+    }
+}
+
+#[test]
+fn point_and_spot_lights_give_the_inverse_square_irradiance() {
+    // 6 W, 300 mm above a white Lambertian floor: E = 6 / (4π 0.3²) W/m² and the floor's
+    // radiance E / π, for a point, a sphere of 80 mm (the same on its axis, found by both
+    // techniques), and a spot looking straight down (its axis is its point light's).
+    let (h, power) = (300.0f32, 6.0f32);
+    let e = power as f64 / (4.0 * std::f64::consts::PI * (h as f64 * 1.0e-3).powi(2));
+    let want = e / std::f64::consts::PI;
+    for (kind, diameter, spp) in [
+        (LightKind::Point, 0.0, 4),
+        (LightKind::Point, 80.0, 2048),
+        (LightKind::Spot, 0.0, 4),
+        (LightKind::Spot, 80.0, 2048),
+    ] {
+        let film = render(
+            &point_scene(kind, diameter, h, power, LIGHT_FLAG_GLOSSY),
+            spp,
+        );
+        let got = mean_where(&film, 1, |_, _| true);
+        assert!(
+            (got / want - 1.0).abs() < 0.01,
+            "{kind:?} {diameter}: {got} vs {want}"
+        );
+    }
+}
+
+#[test]
+fn sphere_lights_are_counted_once_whichever_way_they_are_found() {
+    // A glowing sphere close to a floor, wide to the camera: next-event estimation and BSDF
+    // sampling with MIS (glossy) light it as next-event estimation alone (not glossy) does.
+    let scene = |flags| Scene {
+        camera: ortho_down(0.0, 0.0, 1200.0),
+        render: settings(24, 24),
+        ..point_scene(LightKind::Point, 300.0, 250.0, 6.0, flags)
+    };
+    let both = mean_where(&render(&scene(LIGHT_FLAG_GLOSSY), 512), 1, |_, _| true);
+    let alone = mean_where(&render(&scene(0), 512), 1, |_, _| true);
+    assert!(both > 0.01);
+    assert!((both / alone - 1.0).abs() < 0.02, "{both} vs {alone}");
+}
+
+#[test]
+fn a_spot_leaves_dark_what_is_outside_its_cone() {
+    // A 50 degree spot 300 mm up: 200 mm to the side (34 degrees off its axis) is dark; a point
+    // light there is not.
+    let wide = |kind| Scene {
+        camera: ortho_down(200.0, 0.0, 2.0),
+        ..point_scene(kind, 0.0, 300.0, 6.0, LIGHT_FLAG_GLOSSY)
+    };
+    assert_eq!(
+        mean_where(&render(&wide(LightKind::Spot), 4), 1, |_, _| true),
+        0.0
+    );
+    assert!(mean_where(&render(&wide(LightKind::Point), 4), 1, |_, _| true) > 0.01);
+}
+
+#[test]
+fn a_light_without_shadow_lights_through_what_is_in_its_way() {
+    // A slab between a point light and the floor: dark under it, unless the light casts no
+    // shadow (L4), when the floor is lit as if the slab were not there. Direct light only (the
+    // floor around the shadow lights the slab's underside, which would light the floor under it).
+    let blocked = |flags| {
+        let mut scene = point_scene(LightKind::Point, 0.0, 300.0, 6.0, flags);
+        scene.render.max_depth = 1;
+        let slab = box_mesh(Vec3::new(-50.0, -50.0, 150.0), Vec3::new(50.0, 50.0, 160.0));
+        scene.geometry = Geometry::new(
+            vec![floor_quad(2000.0), slab],
+            vec![
+                Instance::new(0, Transform::IDENTITY, 0),
+                Instance::new(1, Transform::IDENTITY, 0),
+            ],
+        )
+        .expect("geometry");
+        // Straight down through the slab would see the slab: the camera is under it.
+        scene.camera = Camera {
+            position: Vec3::new(0.0, -1.0, 100.0),
+            target: Vec3::new(0.0, 0.0, 0.0),
+            up: Vec3::new(0.0, 0.0, 1.0),
+            ortho: true,
+            ortho_width: 2.0,
+            ..Camera::default()
+        };
+        mean_where(&render(&scene, 4), 1, |_, _| true)
+    };
+    let free = mean_where(
+        &render(
+            &point_scene(LightKind::Point, 0.0, 300.0, 6.0, LIGHT_FLAG_GLOSSY),
+            4,
+        ),
+        1,
+        |_, _| true,
+    );
+    assert_eq!(blocked(LIGHT_FLAG_GLOSSY), 0.0);
+    let through = blocked(LIGHT_FLAG_GLOSSY | LIGHT_FLAG_NO_SHADOW);
+    assert!((through / free - 1.0).abs() < 0.01, "{through} vs {free}");
 }
 
 #[test]
@@ -605,18 +727,6 @@ fn reserved_kinds_render_like_their_stand_ins() {
     scene.render.width = 24;
     scene.render.height = 18;
     let base = render(&scene, 2);
-    // Point and spot lights (L4) add nothing yet.
-    scene.lights.push(Light {
-        kind: LightKind::Point,
-        power: 1000.0,
-        ..Light::default()
-    });
-    scene.lights.push(Light {
-        kind: LightKind::Spot,
-        power: 1000.0,
-        ..Light::default()
-    });
-    assert_eq!(render(&scene, 2), base);
     // An HDRI without its bitmap renders as the dome; glass without transmission (and without
     // metal, as the example's) as the principled surface; a backplate without its bitmap as
     // the background colour. The sky (E5) is not the dome any more.

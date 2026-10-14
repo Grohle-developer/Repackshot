@@ -20,6 +20,7 @@ import './ui/panels.css';
 import './ui/render.css';
 import './ui/settings.css';
 import './ui/guards.css';
+import './ui/tour.css';
 import { createSyntheticService } from './ai/synthetic';
 import { notBuiltService } from './ai/not-built';
 import { buildPrompt, guardMaterials } from './ai/prompt';
@@ -28,7 +29,8 @@ import { AI_GUARD_PASSES, pipelineOf } from './core/ai-post';
 import { linearToRgba8, linearToSrgb, rgba8ToLinear } from './core/ai-image';
 import { evaluate, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
-import { activeCamera, sameView } from './core/camera';
+import { activeCamera, sameView, type CameraState } from './core/camera';
+import { lookThroughAction, lookThroughCamera, sameObject, type ViewObject } from './core/view-objects';
 import { historyLimits, startViewportMode, withProjectDefaults, type Layout, type SettingKey, type Settings, type SettingsDoc } from './core/settings';
 import { createInitialState, createStore } from './core/store';
 import { DownloadManager, type DownloadMemory } from './io/downloads';
@@ -51,10 +53,13 @@ import { PreviewEngine } from './render/preview';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
-import { detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
+import { cameraLabel, lightName } from './ui/names';
+import { applyInstallerChoice, detectHardware, exampleNames, loadExample, loadResults, maybeShowModelChooser, offerLastProject, requestCloseWindow } from './ui/commands';
+import { startupRuntimeCheck } from './ui/ai-runtime-state';
 import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
 import { startupUpdateCheck } from './ui/updates';
+import { maybeStartTour } from './ui/tour';
 import type { AiPort, AppServices, EngineConfig, ViewportPort } from './ui/ports';
 import { aiRuntimeQuery } from './ui/ai-query';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
@@ -209,6 +214,10 @@ let full = false;
 /** The viewport's last size (the path tracer may arrive after it). */
 const lastSize: { w: number; h: number; dpr: number } = { w: 0, h: 0, dpr: 1 };
 const tracerFrames = new Set<() => void>();
+/** Look through (L4): what the viewport looks through, and the camera the path tracer renders from for it. */
+let lookingThrough: ViewObject | null = null;
+let viewCameraFn: ((state: ProjectStateOf) => CameraState | null) | null = null;
+type ProjectStateOf = ReturnType<typeof store.get>;
 
 const applyMode = () => {
   const next = tracer !== null && preview !== null && effectiveMode(ui.get()) === 'FULL';
@@ -234,6 +243,7 @@ const useTracer = (t: PathTracerEngine | NativeEngine, cfg: EngineConfig, info: 
   t.setViewportLimit(cfg.viewportLimit);
   t.setWhileRender(cfg.whileRender);
   t.mount(backdrop);
+  t.setViewCamera(viewCameraFn);
   if (lastSize.w > 0) t.resize(lastSize.w, lastSize.h, lastSize.dpr);
   t.sync(store.get(), null);
   t.onFrame(() => tracerFrames.forEach((fn) => fn()));
@@ -408,6 +418,18 @@ const viewport: ViewportPort | null = preview
       visibleTriangles: (part, rect) => preview!.visibleTriangles(part, rect),
       setTool: (tool) => preview!.setTool(tool),
       setGizmo: (spec) => preview!.setGizmo(spec),
+      setGlyphs: (spec) => {
+        preview!.setGlyphs(spec);
+        // Full mode renders from the same view (worked out from each state: it moves with the light).
+        if (!sameObject(spec.lookThrough, lookingThrough)) {
+          const lt = spec.lookThrough;
+          lookingThrough = lt;
+          viewCameraFn = lt ? (state) => lookThroughCamera(state, lt) : null;
+          tracer?.setViewCamera(viewCameraFn);
+        }
+      },
+      glyphAt: (x, y) => preview!.glyphAt(x, y),
+      objectAt: (obj) => preview!.objectAt(obj),
       gizmoHover: (x, y) => preview!.gizmoHover(x, y),
       gizmoBegin: (x, y) => {
         const handle = preview!.gizmoBegin(x, y);
@@ -543,8 +565,9 @@ const aiPort: AiPort | null = preview
       },
       decode: decodeLinear,
       encode: encodeLinear,
-      // The prompt from the scene's materials and lights, and the fixed negative (AI-POST.md §3.2, src/ai/prompt.ts).
-      scenePrompt: (state, settings) => buildPrompt(state, settings ?? pipelineOf(state.render.ai)),
+      // The prompt from the scene's materials and lights, and the fixed negative (AI-POST.md §3.2, src/ai/prompt.ts);
+      // with a context (X4b), Settings' system prompt first and the job's own last, fitted to the model.
+      scenePrompt: (state, settings, context) => buildPrompt(state, settings ?? pipelineOf(state.render.ai), context),
       // The guard's table, numbered as the engine's scene numbers its materials (io/rsb.ts).
       materials: (state, camera) => guardMaterials(state, projectScene(state, { width: 16, height: 16, maxSamples: 1, maxSeconds: 0, ...(camera ? { camera } : {}) }).materialOrder),
       renderSource: async () => (await aiServiceReady) instanceof DesktopAiService,
@@ -610,7 +633,7 @@ const services: AppServices = {
   results: {
     persistent: async () => (await resultsReady).persistent,
     list: async () => (await resultsReady).list(),
-    add: async (meta, file, display, ai) => (await resultsReady).add(meta, file, display, ai),
+    add: async (meta, file, display, ai, aiMore) => (await resultsReady).add(meta, file, display, ai, aiMore),
     get: async (id) => (await resultsReady).get(id),
     remove: async (id) => (await resultsReady).remove(id),
     clear: async () => (await resultsReady).clear(),
@@ -743,8 +766,9 @@ const app = mountApp(appEl, store, ui, services);
 void loadResults(app.ctx);
 
 // The desktop launcher's window (P2): its folders, its model store and, in a portable folder's first start, the
-// model chooser. In the browser this resolves at once to null: OPFS models, no Desktop section.
-void nativeReady.then(async (native) => {
+// model chooser. In the browser this resolves at once to null: OPFS models, no Desktop section. `desktopStart` is
+// settled when all of that has had its turn (the guided tour waits for it: the chooser comes first).
+const desktopStart = nativeReady.then(async (native) => {
   if (!native) return;
   // The desktop window: Ctrl/⌘ W asks our own question, links open in the system's browser.
   guards.setDesktop(true, {
@@ -759,7 +783,11 @@ void nativeReady.then(async (native) => {
   if ((i.aiPost ?? 0) >= 1) void detectHardware(app.ctx);
   // The manager has read what the installer chose (if anything) once it has started.
   await modelsService.started;
+  // The installer's choice of device is the person's (the runtime it ticked is the launcher's to download).
+  if (pendingAtStart) applyInstallerChoice(app.ctx, pendingAtStart);
   maybeShowModelChooser(app.ctx, { portable: i.portable, pending: !!pendingAtStart && pendingAtStart.keys.length > 0 });
+  // A model is installed and the inference runtime is not: one quiet note in the status bar, once per session (U10).
+  void startupRuntimeCheck(app.ctx);
 });
 
 // Whatever changes the library is kept at once; if the browser cannot keep it, the person is told.
@@ -806,13 +834,30 @@ if (preview) {
   new MutationObserver(updateInk).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   updateInk();
 
-  // Camera gestures become one undoable action each (wheel ticks close in time join one gesture).
+  // Camera gestures become one undoable action each (wheel ticks close in time join one gesture). A gesture gets
+  // its token when it starts, so what it does while it lasts and where it ends are one entry.
   let gesture = 0;
   let lastEnd = 0;
-  preview.onViewChange((v) => {
+  const nextGesture = () => {
     const now = performance.now();
     if (now - lastEnd > 450) gesture++;
     lastEnd = now;
+  };
+  // Looking through a light or a saved camera (L4): the navigation moves that object, live and as one undo entry.
+  const lookName = (o: ViewObject) => {
+    const s = store.get();
+    return o.kind === 'LIGHT' ? { en: lightName(s, o.id, 'en'), es: lightName(s, o.id, 'es') } : cameraLabel(s, s.camera.cameras[o.id]);
+  };
+  const moveLookedThrough = (v: { azimuth: number; elevation: number; distance: number; target: [number, number, number]; orthoWidth?: number }): boolean => {
+    const lt = ui.get().lookThrough;
+    if (!lt) return false;
+    const action = lookThroughAction(store.get(), lt, v, { gesture: `orbit${gesture}`, label: L('undo.lookThrough', { name: lookName(lt) }) });
+    if (action) store.dispatch(action);
+    return true;
+  };
+  preview.onViewChange((v) => {
+    lastEnd = performance.now();
+    if (moveLookedThrough(v)) return;
     const s = store.get();
     const cam = activeCamera(s);
     const patch = { azimuth: v.azimuth, elevation: v.elevation, distance: v.distance, target: v.target, focusDistance: v.distance, ...(v.orthoWidth ? { orthoWidth: v.orthoWidth } : {}) };
@@ -823,6 +868,8 @@ if (preview) {
   preview.onFrame(() => (firstFrame = true));
   // While a camera gesture lasts the store hears nothing; the path tracer follows the live view.
   preview.onGesture((phase, v) => {
+    if (phase === 'start') nextGesture();
+    if (phase === 'move' && v) moveLookedThrough(v);
     if (!full || !tracer) return;
     if (phase === 'start') tracer.beginGesture();
     else if (phase === 'end') tracer.endGesture();
@@ -881,6 +928,9 @@ void app.painted.then(() => {
         appEl.dataset.ready = '1';
         // Updates ▸ Check at startup: once, in the background, now that the interface is there. Never waited for.
         void startupUpdateCheck(app.ctx);
+        // The guided tour (phase U10): by itself at the first start only, never under automation (ui/tour.ts). After the
+        // desktop's start (the portable's model chooser, which the tour then waits to be closed).
+        void desktopStart.catch(() => undefined).then(() => maybeStartTour(app.ctx, { automated: navigator.webdriver === true, param: params.tour ?? null }));
       });
       return;
     }

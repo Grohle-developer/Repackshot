@@ -55,10 +55,11 @@ export const SPEC_DEFAULTS: Readonly<SpecDefaults> = {
   camera: false,
 };
 
-// Light types and shapes the renderer understands. Upstream also lists POINT
-// and SPOT, which no recipe uses; they are not ported.
-export const LIGHT_TYPES: readonly LightType[] = ['AREA', 'SUN'];
-export const LIGHT_SHAPES: readonly LightShape[] = ['SQUARE', 'RECTANGLE', 'DISK', 'ELLIPSE'];
+// Light types and shapes the renderer understands. No recipe of the catalogue
+// uses POINT, SPOT or SPHERE: they are the own lights of phase L4 (Add light),
+// which a saved setup of the library can carry.
+export const LIGHT_TYPES: readonly LightType[] = ['AREA', 'POINT', 'SPOT', 'SUN'];
+export const LIGHT_SHAPES: readonly LightShape[] = ['SQUARE', 'RECTANGLE', 'DISK', 'ELLIPSE', 'SPHERE'];
 
 // Generic fallback per role, used when the active rig does not cover a role.
 // The real values always come from the rig. NOTE: `azimuthWorld` here is in

@@ -207,9 +207,22 @@ fn a_final_render_goes_through_every_tile_and_the_guard_with_progress_per_tile()
             ",\"steps\":20",
         ),
     );
-    assert_eq!((num(&v, "tiles"), text(&v, "state")), (2.0, "QUEUED"));
+    // The post's thread starts as soon as it is queued (QUEUED, then CONDITIONING while it
+    // prepares the tiles, then LOADING while the runtime starts), so on a busy machine the answer
+    // may already be one of those; starting the runtime takes far longer, so never INFERENCE.
+    assert_eq!(num(&v, "tiles"), 2.0);
+    assert!(
+        matches!(text(&v, "state"), "QUEUED" | "CONDITIONING" | "LOADING"),
+        "{}",
+        v.to_json()
+    );
     let pid = num(&v, "id") as u32;
-    let mut seen: Vec<(String, u32, u32, f64)> = Vec::new();
+    let mut seen: Vec<(String, u32, u32, f64)> = vec![(
+        text(&v, "state").to_string(),
+        num(&v, "tile") as u32,
+        num(&v, "attempt") as u32,
+        num(&v, "fraction"),
+    )];
     let end = follow(&t, pid, |s| {
         seen.push((
             text(s, "state").to_string(),

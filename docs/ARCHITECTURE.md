@@ -82,7 +82,8 @@ src/
     store.ts                estado, acciones, deshacer, suscripción (§4)
     scene.ts                piezas, grupos, jerarquía, selección por niveles
     materials.ts            instancia de material, parámetros, desgaste
-    lighting.ts             rig activo, focos, colocación por reflejo
+    lighting.ts             rig activo, focos (los del montaje y los propios de L4: añadir, duplicar, eliminar, apuntar, colocar sobre superficie), su colocación (`lightFrame`: posición, objetivo, giro), colocación por reflejo, lúmenes
+    view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
     camera.ts               óptica, encuadre, cámaras guardadas
     animation.ts            planos, movimientos, evaluación en el tiempo
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
@@ -415,12 +416,20 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   del sólido: `base_color` es lo que conserva la luz blanca tras esos
   milímetros).
 - **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
-  (L4; se leen y se ignoran); ≥ 5 es error. Rectángulo y disco:
+  (L4); ≥ 5 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
   con la mitad de intensidad a `spread/2` (180 = sin caída). Sol: `power`
-  = irradiancia en W/m², disco de `angle_deg`. `flags` bit 0 *glossy*
-  (ilumina todos los lóbulos y se ve en reflejos; sin él solo difuso por
-  NEE), bit 1 visible a cámara.
+  = irradiancia en W/m², disco de `angle_deg`. Punto (L4): una esfera de
+  diámetro `size_x` (0, un punto) de radiancia uniforme, `power` = flujo
+  isótropo en W (intensidad `power / 4π` W/sr). Foco (L4): el punto que
+  sería, dentro de un cono de `spread_deg` alrededor de `direction`, con una
+  transición de `angle_deg` grados hacia dentro desde el borde (smoothstep,
+  como el `SpotLight` de three.js); su eje tiene el brillo de ese punto sea
+  cual sea el cono. `up` orienta el panel alrededor de su eje (el escritor
+  sigue poniendo `[0, 0, 1]` sin giro, como antes de L4). `flags` bit 0
+  *glossy* (ilumina todos los lóbulos y se ve en reflejos; sin él solo
+  difuso por NEE), bit 1 visible a cámara, bit 2 (L4) **sin sombra**: no se
+  trazan sus rayos de sombra (un fichero anterior nunca lo pone).
 - **`ENVR`** (84 B desde E5c; 80 B en E5) `kind`: 0 cúpula (lineal en z: suelo −1,
   horizonte 0, cénit +1, × `strength`), 1 plano, 2 cielo (con
   `sky_turbidity` y el sol en `sun_azimuth_deg` / `sun_elevation_deg`,
@@ -560,7 +569,8 @@ a lo largo de su cepillo); lo demás que dispersa es receptor (el suelo
 incluido); un suceso recto (recorte, transmisión recta de pared fina) no
 cuenta. El mapa lleva exactamente la luz de los tramos `L C+ R`: fotones
 de las luces que los mandan (paneles y discos *glossy*, soles *glossy*,
-mallas emisoras; nunca el entorno), solo por *casters*, guardados en el
+mallas emisoras; nunca el entorno ni los puntos y focos de L4, cuyas
+cáusticas siguen en el trazador), solo por *casters*, guardados en el
 primer receptor que tocan; la cámara los reúne, con su BSDF, en **cada**
 receptor de su camino: el primero (la cáustica vista directamente o a
 través del vidrio) y los siguientes (una cáustica que ilumina la escena
@@ -783,7 +793,9 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    state/<nombre>.json  cosas pequeñas de la página: descargas por reanudar, carpetas elegidas,
                         la marca de la migración desde el navegador
    library/             la biblioteca propia (U4)
-   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json
+   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json; con IA, las
+                        variantes de la IA como <id>.ai.<n>.<ext> (X4b; la única <id>.ai.<ext> de
+                        antes se lee como la variante 1)
    cache/thumbs/        las esferas de materiales (caché)
    cache/ai/            la imagen y los pases de los renders finales grandes que guarda el lanzador (X2)
    models/              los modelos de IA, por sha256
@@ -791,7 +803,8 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    browser-profile/     el perfil de la ventana de Edge o Chromium
    webview2/            el perfil de la ventana propia (P3c); window.json, su sitio
    launcher.json        el puerto; instance.json, la instancia en marcha
-   pending-models.json  lo que eligió el instalador
+   pending-models.json  lo que eligió el instalador: dispositivo, modelos y (U10) el
+                        motor de ejecución, que el lanzador empieza a descargar al arrancar
    ```
 
    En la página, **la costura de plataforma** (`src/io/platform.ts`): una
@@ -808,6 +821,16 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    la página no toca el almacenamiento del navegador salvo una vez por
    carpeta de datos, para copiar al lanzador lo que una versión anterior
    dejó en el origen actual (marca `state/migration.json`).
+
+   **El historial de resultados con variantes de IA** (X4b). `ResultMeta.ai` es la
+   primera variante (lo que era la única antes de X4b) y `ResultMeta.aiMore` las
+   demás, en orden, cada una con su nombre, su miniatura, sus bytes (0 si la guarda
+   la rechazó: no tiene imagen) y su informe; `aiVariantsOf` y `aiImagesOf`
+   (`src/core/results.ts`) las leen igual en un resultado nuevo que en uno viejo.
+   `ResultsStore.add(meta, file, display, ai, aiMore)` y `get` (`src/io/results.ts`)
+   las llevan como `ai` y `aiMore` (null para una variante sin imagen): en la web,
+   en el mismo registro de IndexedDB que el render; en escritorio, cada una por
+   `PUT /api/store/results/<id>/ai/<n>` y de vuelta con `GET …/ai/<n>`.
 6. **Diálogos y archivos** (P3b): `POST /api/dialog/{folder,open,save}`
    abre los diálogos del sistema y devuelve un permiso por ruta; la API de
    archivos (`/api/files…`) solo lee o escribe rutas concedidas así en el
@@ -818,7 +841,15 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    VRAM, la RAM y la recomendación de `src/data/ai-models.json`
    (registro de Windows y `/proc`, `/sys` o `nvidia-smi` en Linux, por
    procesos del sistema y sin `unsafe`); lo usan el instalador y
-   *Ajustes ▸ Post-procesado IA ▸ Equipo*.
+   *Ajustes ▸ Post-procesado IA ▸ Equipo*. Desde U10 el INI lleva también
+   `[runtime]`: la compilación del motor de ejecución que elige la regla de
+   `src/data/ai-runtimes.json` para este sistema (con `--device cpu`, la de
+   CPU), que el paso *Modelos de IA* del instalador ofrece junto a los
+   modelos y anota en `pending-models.json` (`"runtime"`); el lanzador la
+   descarga en el primer arranque (`Ai::start_pending_runtime`).
+   `engine/crates/rt-app/tests/installer.rs` lee `models-page.nsh` como
+   texto y comprueba que cada `ReadINIStr` tiene su clave en el INI y que la
+   línea que escribe es la que lee `read_pending`.
 7. **Post-procesado IA, el motor de ejecución** (X3b, `src/ai/`): la compilación de
    stable-diffusion.cpp que elige la regla de `src/data/ai-runtimes.json` (Vulkan si el equipo
    tiene GPU que usar, CPU si no, o la que se fuerce) se descarga con el `curl` del sistema
@@ -866,6 +897,20 @@ comentario de por qué es correcto, el resto del *crate* mantiene
 - Estado de interfaz que no es del proyecto (anchos de panel, secciones
   plegadas) en `localStorage`, siempre dentro de `try/catch` y con valor
   por defecto.
+- **El recorrido guiado** (U10): `ui/tour.ts` son los pasos como datos
+  (cada uno con los `data-guide` que anilla y lo que necesita en pantalla,
+  un `TourStage`), las reglas para arrancar, los comandos (`startTour`,
+  `tourNext`, `tourBack`, `endTour`) y la geometría de la tarjeta
+  (`placeCard`); `ui/panels/tour.ts` es la capa. Lo que se recuerda
+  (`tourSeen`) va en el `layout` del documento de ajustes, como
+  `chooserShown`, así que en escritorio está en la carpeta de datos.
+- **El aviso del motor de ejecución** (U10): `core/ai-runtimes.ts`
+  decide qué decir (`runtimeWarning`, puro, sobre el informe del lanzador);
+  `ui/ai-runtime-state.ts` tiene el único sondeo de
+  `GET /api/ai/runtime` (`RuntimeWatch`, solo mientras alguien escucha), la
+  comprobación una vez por sesión al arrancar (la nota de la barra de
+  estado) y los botones; `ui/panels/ai-runtime-notice.ts` dibuja el
+  recuadro de la ventana de render y de Ajustes.
 
 ### 6.1 · El puerto del visor (`src/ui/ports.ts`)
 
@@ -899,7 +944,20 @@ interfaz sabe del visor:
 - **Herramientas y *gizmo***: `setTool`, `setGizmo`, `gizmoHover`,
   `gizmoBegin`, `gizmoDrag`, `gizmoEnd`. `setGizmo` lleva `handles`
   opcional (U9): `ALL` (Mover) o `SCALE` (Escalar: solo los cubos al final
-  de cada eje y el punto central, que es lo único que se dibuja y se coge).
+  de cada eje y el punto central, que es lo único que se dibuja y se coge),
+  y desde L4 `MOVE` con `object` (una luz o una cámara: el *gizmo* de Mover
+  sin cubos, sobre el objeto, con el asa de apuntar en su objetivo; la
+  interfaz convierte el arrastre con `objectGizmoAction` de
+  `core/view-objects.ts`).
+- **Luces y cámaras (L4)**: `setGlyphs({ all, selected, lookThrough })`
+  dice qué glifos dibuja la vista previa (todos o el del seleccionado) y
+  desde qué mira el visor (`lookThroughCamera`; `main.ts` le da al
+  trazador la misma cámara, `setViewCamera`, calculada de cada estado, y
+  convierte la navegación con `lookThroughAction` en acciones de la luz o la
+  cámara con un *token* de gesto: en vivo y una entrada de deshacer);
+  `glyphAt(x, y)` es el objeto cuyo glifo está bajo un punto (`pickGlyph`
+  de core, con la proyección de three) y `objectAt(obj)`, dónde está en el
+  lienzo (el visor lo copia en `data-object-at` para las comprobaciones).
 - **Estado y miniaturas**: `status`, `onFrame`, `materialThumbnail`,
   `thumbnailsPending`; **ajustes**: `setNavigation`, `setDisplay`.
 
@@ -921,7 +979,8 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Interfaz | `tests/strings.test.ts`, `ui-achromatic.test.ts` | Invariantes estáticas sobre fuentes |
 | Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
-| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
+| Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
+| Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |

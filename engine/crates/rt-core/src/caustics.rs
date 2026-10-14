@@ -19,7 +19,8 @@
 //! included. A *straight* event (a cut-out passed, a thin wall's straight transmission) is no
 //! event at all for this split, on both sides. The photon map carries exactly the light of the
 //! segments `L C+ R`: photons leave the lights that send them ([`crate::light::LightSample`]'s
-//! `photon`: glossy area lights and suns, emissive meshes; never the environment), cross casters
+//! `photon`: glossy area lights and suns, emissive meshes; never the environment, nor the point
+//! lights and spots of L4, whose caustics stay with the path tracer), cross casters
 //! only, and are stored on the first receiver they reach, which ends them. The camera gathers them
 //! at every receiver its path reaches, the first one (`L C+ R C* E`, the caustic seen directly or
 //! through glass) and any later one (`L C+ R … R E`, a caustic lighting the scene by a diffuse

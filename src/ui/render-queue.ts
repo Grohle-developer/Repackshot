@@ -21,14 +21,22 @@
 // saved picture and three.js passes go along (`INLINE`). While it runs, the
 // job's progress is the pipeline's, tile by tile. Stopping or pausing it then
 // keeps the engine's image in the history: only the AI's is lost.
+//
+// Variants (X4b): a job with N variants is still one render; the AI step then
+// posts it N times with consecutive seeds (seed, seed + 1…), the model kept
+// loaded and the launcher's kept render reused, and saves each image under its
+// own name (`_AI`, `_AI_2`…) with its own report. Stopping in the middle keeps
+// the render and the variants already finished. The prompt is Settings' system
+// prompt, the scene's and the job's own, fitted to the model (src/ai/prompt.ts).
 
 import { totalDuration } from '../core/animation';
 import type { AiPostProgress, AiPostRequest } from '../core/ai';
-import { aiFileName, pipelineOf } from '../core/ai-post';
+import { aiFileName, pipelineOf, variantSettings } from '../core/ai-post';
 import { outputFileName, type NameValues } from '../core/name-template';
 import { formatExtension, frameRange, frameTime, jobCamera, type JobRuntime, type JobStatus, type RenderJob, type RenderSettings } from '../core/render';
 import type { AiResultInfo, ResultMeta } from '../core/results';
 import type { ProjectState } from '../core/store';
+import { promptContext } from './ai-query';
 import { cameraName, dyn, studioLabel } from './names';
 import type { FrameRequest, FrameResult } from './ports';
 import type { Ctx } from './reactive';
@@ -131,13 +139,25 @@ function patchJob(ctx: Ctx, id: string, patch: Partial<JobRuntime>): void {
 
 const abortError = (): DOMException => new DOMException('aborted', 'AbortError');
 
+/** One variant the AI step made (X4b): its image (null when the guard rejected it: the engine's stays) and its record. */
+export interface AiVariantDone {
+  blob: Blob | null;
+  info: AiResultInfo;
+}
+
+/** Where the AI step is: the pipeline's progress of the variant in flight, and which variant of how many (X4b). */
+export type AiStepProgress = AiPostProgress & { variant: number; variants: number };
+
 /**
  * The AI post-processing of a finished image (AI-POST.md §4, §7): the engine's image has been saved already and
  * stays the result's own; the service gets the render the launcher kept (`RENDER`, desktop) or a copy of the
  * picture with the passes of its camera (`INLINE`), and what it makes is saved next to it (`…_AI.png`) and kept in
- * the history with the guard's report. Never throws but for an abort: when the AI cannot run, or fails, the person
- * is told and the engine's image is all there is. A REJECTED report keeps the report (the viewer words it) and no
- * second image: the delivered image is the engine's, unchanged.
+ * the history with the guard's report. With N variants (X4b) the same source is posted N times with consecutive
+ * seeds, each image saved under its own name (`…_AI_2.png`…) with its own report; `done` gets each variant as it
+ * ends, so a caller stopped in the middle keeps the ones finished. Never throws but for an abort: when the AI cannot
+ * run, or fails, the person is told and what was finished (maybe nothing) is all there is. A REJECTED report keeps
+ * the report (the viewer words it) and no image of its own: the delivered image is the engine's, unchanged.
+ * `measure` hears the seconds each finished request took, measured around it.
  */
 export async function aiStep(
   ctx: Ctx,
@@ -146,19 +166,25 @@ export async function aiStep(
   cam: string | null,
   fileName: string,
   signal: AbortSignal,
-  onProgress: (p: AiPostProgress) => void = () => undefined,
-): Promise<{ blob: Blob | null; info: AiResultInfo } | null> {
+  onProgress: (p: AiStepProgress) => void = () => undefined,
+  done: AiVariantDone[] = [],
+  measure: (seconds: number) => void = () => undefined,
+): Promise<AiVariantDone[] | null> {
   const port = ctx.services.ai;
   if (!port) return null;
+  const variants = Math.max(1, Math.round(s.ai.variants ?? 1));
   const skipped = (reason: string) => {
-    ctx.ui.toast(t('render.aiSkipped', { reason }));
-    return null;
+    ctx.ui.toast(done.length > 0 ? t('render.aiVariantFailed', { i: done.length + 1, n: variants, reason }) : t('render.aiSkipped', { reason }));
+    return done.length > 0 ? done : null;
   };
   try {
     const status = await port.service.status();
     if (!status.available) return skipped(t(dyn(`rw.aiWhy.${status.reason ?? 'NOT_BUILT'}`)));
     const st = ctx.store.get();
-    const text = port.scenePrompt(st, pipelineOf(s.ai));
+    const pipeline = pipelineOf(s.ai);
+    // Settings' system prompt, the scene's and the job's own (when the model takes one), fitted to the model.
+    const pc = promptContext(ctx.ui.get(), status);
+    const text = port.scenePrompt(st, pipeline, { system: pc.system, caps: pc.caps });
     const materials = port.materials(st, cam);
     const kept = out.renderId !== undefined && (await port.renderSource());
     let source: AiPostRequest['source'];
@@ -167,31 +193,45 @@ export async function aiStep(
       const [image, passes] = await Promise.all([port.decode(out.display ?? out.file), port.passes({ width: out.width, height: out.height, camera: cam })]);
       source = { kind: 'INLINE', image, passes };
     }
-    if (signal.aborted) throw abortError();
-    const result = await port.service.post({ source, settings: pipelineOf(s.ai), prompt: text.prompt, negative: text.negative, modelKey: status.activeModel ?? '', materials }, onProgress, signal);
-    if (signal.aborted) throw abortError();
-    const name = aiFileName(fileName);
-    if (result.report.verdict === 'REJECTED') {
-      ctx.ui.toast(t('render.aiRejected'));
-      return { blob: null, info: { name, thumb: '', bytes: 0, report: result.report } };
-    }
     const opts = { format: s.format, bitDepth: s.bitDepth, jpegQuality: s.jpegQuality, dpi: s.dpi, transparent: s.transparent, ...(kept && out.tone ? { tone: out.tone } : {}) };
-    const blob = await port.encode(result.image, opts);
-    await ctx.services.files.save(s.destination, name, blob);
-    // Browsers do not show EXR: the thumbnail comes from an 8-bit picture of the same image (as the engine's does).
-    const shown = s.format === 'EXR' ? await port.encode(result.image, { ...opts, format: 'PNG', bitDepth: 8 }) : blob;
-    return { blob, info: { name, thumb: await thumbnailOf(shown), bytes: blob.size, report: result.report } };
+    for (let v = done.length + 1; v <= variants; v++) {
+      if (signal.aborted) throw abortError();
+      // Each variant is one request with its own seed; the source (the kept render, or the decoded picture) is the same.
+      const t0 = performance.now();
+      const result = await port.service.post(
+        { source, settings: variantSettings(pipeline, v), prompt: text.prompt, negative: text.negative, modelKey: status.activeModel ?? '', materials },
+        (p) => onProgress({ ...p, fraction: (v - 1 + Math.max(0, Math.min(1, p.fraction))) / variants, variant: v, variants }),
+        signal,
+      );
+      if (signal.aborted) throw abortError();
+      measure(Math.max(0, (performance.now() - t0) / 1000));
+      const name = aiFileName(fileName, v);
+      if (result.report.verdict === 'REJECTED') {
+        ctx.ui.toast(variants > 1 ? t('render.aiVariantRejected', { i: v, n: variants }) : t('render.aiRejected'));
+        done.push({ blob: null, info: { name, thumb: '', bytes: 0, report: result.report } });
+        continue;
+      }
+      const blob = await port.encode(result.image, opts);
+      await ctx.services.files.save(s.destination, name, blob);
+      // Browsers do not show EXR: the thumbnail comes from an 8-bit picture of the same image (as the engine's does).
+      const shown = s.format === 'EXR' ? await port.encode(result.image, { ...opts, format: 'PNG', bitDepth: 8 }) : blob;
+      done.push({ blob, info: { name, thumb: await thumbnailOf(shown), bytes: blob.size, report: result.report } });
+    }
+    return done;
   } catch (err) {
     if (signal.aborted || (err instanceof Error && err.name === 'AbortError')) throw err;
     return skipped(err instanceof Error ? err.message : String(err));
   }
 }
 
-/** Stores a result in the history and in the interface's list (evicted ones leave both). `ai`: the image the AI post-processing made. */
-export async function recordResult(ctx: Ctx, meta: ResultMeta, out: FrameResult, ai: Blob | null = null): Promise<void> {
+/**
+ * Stores a result in the history and in the interface's list (evicted ones leave both). `ai`: the image the AI
+ * post-processing made (its first variant); `aiMore`: variants 2 and on (X4b), null for one the guard rejected.
+ */
+export async function recordResult(ctx: Ctx, meta: ResultMeta, out: FrameResult, ai: Blob | null = null, aiMore: readonly (Blob | null)[] = []): Promise<void> {
   let evicted: string[] = [];
   try {
-    evicted = await ctx.services.results.add(meta, out.file, out.display, ai);
+    evicted = await (aiMore.length > 0 ? ctx.services.results.add(meta, out.file, out.display, ai, aiMore) : ctx.services.results.add(meta, out.file, out.display, ai));
   } catch (err) {
     console.warn(`results history: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -277,27 +317,32 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
     if (out.seconds > 0 && out.samples > 0) ctx.ui.set({ throughput: (out.samples * out.width * out.height) / out.seconds });
     // The history keeps the image of a job (the first frame of an animation).
     if (k === 0) {
-      // The pipeline's progress, tile by tile, in place of the render's (the render is done).
+      // The pipeline's progress, tile by tile (and variant by variant, X4b), in place of the render's (the render is done).
       let lastAi = '';
-      const aiTick = (p: AiPostProgress) => {
+      const aiTick = (p: AiStepProgress) => {
         const t = now();
-        const key = `${p.stage}|${p.tile}|${p.attempt}`;
+        const key = `${p.variant}|${p.stage}|${p.tile}|${p.attempt}`;
         if (key === lastAi && t - lastTick < 200) return;
         lastAi = key;
         lastTick = t;
-        ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress: Math.min(1, p.fraction), samples: out.samples, seconds: out.seconds, ai: { stage: p.stage, tile: p.tile, tiles: p.tiles, attempt: p.attempt } } });
+        const where = { stage: p.stage, tile: p.tile, tiles: p.tiles, attempt: p.attempt, ...(p.variants > 1 ? { variant: p.variant, variants: p.variants } : {}) };
+        ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress: Math.min(1, p.fraction), samples: out.samples, seconds: out.seconds, ai: where } });
         patchJob(ctx, job.id, { progress: Math.min(1, p.fraction) });
       };
-      // Stopped or paused during the AI step: the engine's image is kept in the history all the same.
+      // Stopped or paused during the AI step: the engine's image is kept in the history all the same, with the
+      // variants already finished (X4b).
       let interrupted: unknown = null;
-      let ai: Awaited<ReturnType<typeof aiStep>> = null;
+      const variants: AiVariantDone[] = [];
+      // The AI's own throughput on this computer (pixels a second, measured around each request), for the window's estimate.
+      const measure = (seconds: number) => seconds > 0 && ctx.ui.set({ aiThroughput: (out.width * out.height) / seconds });
       if (withAi) {
         try {
-          ai = await aiStep(ctx, s, out, cam, names[k], signal, aiTick);
+          await aiStep(ctx, s, out, cam, names[k], signal, aiTick, variants, measure);
         } catch (err) {
           interrupted = err;
         }
       }
+      const [first, ...more] = variants;
       const st = ctx.store.get();
       const camId = cam ?? st.camera.active;
       const meta: ResultMeta = {
@@ -316,15 +361,17 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
         bitDepth: s.bitDepth,
         savedTo: where === 'FOLDER' && s.destination.kind === 'FOLDER' ? s.destination : { kind: 'DOWNLOADS' },
         thumb: await thumbnailOf(out.display ?? out.file),
-        bytes: out.file.size + (out.display?.size ?? 0) + (ai?.blob?.size ?? 0),
+        bytes: out.file.size + (out.display?.size ?? 0) + variants.reduce((n, v) => n + (v.blob?.size ?? 0), 0),
         ...(anim ? { frame: frames[0].n ?? 1, frames: total } : {}),
-        ...(ai ? { ai: ai.info } : {}),
+        ...(first ? { ai: first.info } : {}),
+        ...(more.length > 0 ? { aiMore: more.map((v) => v.info) } : {}),
       };
-      await recordResult(ctx, meta, out, ai?.blob ?? null);
+      await recordResult(ctx, meta, out, first?.blob ?? null, more.map((v) => v.blob));
       resultIds.push(meta.id);
       patchJob(ctx, job.id, { resultIds: [...resultIds] });
       if (interrupted) {
-        ctx.ui.toast(t('render.aiStopped'));
+        const kept = variants.filter((v) => v.blob).length;
+        ctx.ui.toast(kept > 0 ? t('render.aiStoppedVariants', { n: kept }) : t('render.aiStopped'));
         throw interrupted;
       }
     }

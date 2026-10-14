@@ -295,6 +295,11 @@ function specOf(l: LightInstance): LightSpec {
   };
   if (l.kelvin !== null) spec.kelvin = l.kelvin;
   else spec.color = [l.color[0], l.color[1], l.color[2]];
+  // An own light's soft edge, shadow, aim and roll (L4) travel with the setup; a setup light leaves them out.
+  if (l.blend !== undefined) spec.blend = l.blend;
+  if (l.shadow === false) spec.shadow = false;
+  if (l.aim) spec.aim = [l.aim[0], l.aim[1], l.aim[2]];
+  if (l.roll) spec.roll = l.roll;
   return spec;
 }
 

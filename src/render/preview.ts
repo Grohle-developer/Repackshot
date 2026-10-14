@@ -14,16 +14,17 @@ import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { fitImageRect, getImage, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
-import { lightPosition, rigPivot, skySunDirection, type LightInstance } from '../core/lighting';
+import { isSphereLike, lightFrame, rigPivot, skySunDirection, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
 import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
 import { lensOf } from '../core/lens-coc';
 import { getMesh } from '../core/meshes';
 import type { PassIds } from '../core/pass-ids';
 import type { PassKey, RenderPasses } from '../core/passes';
 import { SKY_HEIGHT, SKY_WIDTH, skyImage } from '../core/sky';
-import { areaLightRadiance, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
+import { areaLightRadiance, pointLightIntensity, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { partsUnder, productBounds, worldMatrix, type NodeId, type SceneNode } from '../core/scene';
 import { movableTargets, selectionFrame, type GizmoDelta, type GizmoHandle, type Space } from '../core/transform';
+import { glyphsOf, lookThroughCamera, objectFrame, pickGlyph, sameObject, type Glyph, type ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
 import type { DisplayPrefs, EngineStatus, NavigationPrefs, PickHit, RenderEngine, RenderOptions } from './engine';
 import { Gizmo, GizmoDrag, modelRay, SCALE_CUBE_AT, type GizmoMode } from './gizmo';
@@ -206,12 +207,23 @@ export type PreviewTool = 'select' | 'orbit' | 'pan' | 'zoom' | 'move' | 'scale'
 /** A camera gesture as it happens: start, every move (with the live view), end. */
 export type GesturePhase = 'start' | 'move' | 'end';
 
-/** What the move tool shows: the gizmo of these nodes, in these axes; the scale tool shows only its scale handles. */
+/**
+ * What the move tool shows: the gizmo of these nodes, in these axes; the scale tool shows only its scale handles. With
+ * `object` (L4) it is the gizmo of a light or a camera instead (no scale handles: `handles` MOVE).
+ */
 export interface GizmoSpec {
   ids: readonly NodeId[];
   space: Space;
   /** Default ALL (the move tool). */
   handles?: GizmoMode;
+  object?: ViewObject | null;
+}
+
+/** Which glyphs of lights and cameras the viewport draws (L4): all of them or only the selected one's, and whose view it shows. */
+export interface GlyphSpec {
+  all: boolean;
+  selected: ViewObject | null;
+  lookThrough: ViewObject | null;
 }
 
 export class PreviewEngine implements RenderEngine {
@@ -279,6 +291,13 @@ export class PreviewEngine implements RenderEngine {
   private readonly gizmo = new Gizmo();
   private gizmoSpec: GizmoSpec | null = null;
   private gizmoDragging: GizmoDrag | null = null;
+  /** The glyphs of lights and cameras (L4), drawn in the overlay with the gizmo, and what is looked through. */
+  private glyphSpec: GlyphSpec = { all: false, selected: null, lookThrough: null };
+  private glyphs: Glyph[] = [];
+  // The glyphs that are not selected are dashed, as a drawing's construction lines: never an edge of the product.
+  private readonly glyphLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, toneMapped: false, dashSize: 4, gapSize: 3 }));
+  private readonly glyphSelected = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false }));
+  private readonly glyphDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false }));
   /** Settings ▸ Preferences: how the mouse moves the camera, and the floor grid. */
   private tool: PreviewTool = 'select';
   private nav: NavigationPrefs = { mouse: 'LEFT', invertZoom: false, orbitSpeed: 1, zoomSpeed: 1 };
@@ -304,7 +323,12 @@ export class PreviewEngine implements RenderEngine {
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.outlineMaterial));
     this.overlayRoot.matrixAutoUpdate = false;
     this.overlayRoot.matrix.copy(BASIS);
-    this.overlayRoot.add(this.gizmo.root);
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots]) {
+      g.frustumCulled = false;
+      g.renderOrder = -1;
+      g.visible = false;
+    }
+    this.overlayRoot.add(this.glyphLines, this.glyphSelected, this.glyphDots, this.gizmo.root);
     this.overlayScene.add(this.overlayRoot);
   }
 
@@ -470,6 +494,7 @@ export class PreviewEngine implements RenderEngine {
   setInk(rgb: readonly number[]): void {
     this.outlineMaterial.uniforms.ink.value.set(rgb[0], rgb[1], rgb[2]);
     this.gizmo.setInk(rgb);
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots]) g.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
     this.needsRender = true;
   }
 
@@ -481,7 +506,13 @@ export class PreviewEngine implements RenderEngine {
 
   private get camera(): THREE.PerspectiveCamera | THREE.OrthographicCamera {
     const s = this.state;
-    return s && activeCamera(s)?.projection === 'ORTHOGRAPHIC' ? this.ortho : this.persp;
+    return s && this.viewCamera(s)?.projection === 'ORTHOGRAPHIC' ? this.ortho : this.persp;
+  }
+
+  /** The camera the viewport looks through: a light's or a saved camera's view (Look through, L4), or the active one. */
+  private viewCamera(state: ProjectState): CameraState | undefined {
+    const lt = this.glyphSpec.lookThrough;
+    return (lt ? lookThroughCamera(state, lt) : null) ?? activeCamera(state);
   }
 
   // ------------------------------------------------------------------ sync
@@ -512,7 +543,9 @@ export class PreviewEngine implements RenderEngine {
     if (full || state.image !== prev.image) this.syncImage(state);
     if (full || nodesChanged || state.studio !== prev.studio || state.environment !== prev.environment) this.syncFloor(state);
     if (full || nodesChanged || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncGrid(state);
-    if (full || state.camera !== prev.camera || state.render.width !== prev.render.width || state.render.height !== prev.render.height || poseChanged || nodesChanged) {
+    // Looking through a light (L4), the view follows it wherever it is moved from (the inspector, undo).
+    const throughLight = this.glyphSpec.lookThrough?.kind === 'LIGHT' && state.studio !== prev?.studio;
+    if (full || state.camera !== prev.camera || state.render.width !== prev.render.width || state.render.height !== prev.render.height || poseChanged || nodesChanged || throughLight) {
       if (!this.interacting) this.syncCamera(state, pose);
     }
     if (full || nodesChanged || state.selection !== prev.selection) {
@@ -521,8 +554,11 @@ export class PreviewEngine implements RenderEngine {
     }
     // The parts may have been rebuilt: the tint of a drag in progress would hang from one that is gone.
     if (nodesChanged) this.dropOverlay = PreviewEngine.dropTint(this.dropOverlay);
-    // The interface may hand the gizmo new ids before this sync: place it again with the state that has them.
-    if (this.gizmoSpec && (full || nodesChanged || state.selection !== prev.selection)) this.placeGizmo();
+    // The interface may hand the gizmo new ids before this sync: place it again with the state that has them. A
+    // light's or a camera's gizmo follows the light (and the product it is placed around) and the camera.
+    const objectsMoved = full || nodesChanged || state.studio !== prev.studio || state.camera !== prev.camera || state.scene.partSizeMm !== prev.scene.partSizeMm || state.render.width !== prev.render.width || state.render.height !== prev.render.height;
+    if (this.gizmoSpec && (full || nodesChanged || state.selection !== prev.selection || (this.gizmoSpec.object && objectsMoved))) this.placeGizmo();
+    if (objectsMoved || state.selection !== prev.selection) this.syncGlyphs();
     this.needsRender = true;
   }
 
@@ -675,15 +711,31 @@ export class PreviewEngine implements RenderEngine {
       const l = lp ? { ...l0, power: lp.power, color: lp.color, az: lp.az, el: lp.el, enabled: lp.enabled } : l0;
       if (!l.enabled) continue;
       if (!key && l.role === 'KEY') key = l;
-      // polar(toWorldAzimuth(az), el, dist · part size) around the rig pivot (core/lighting.ts).
-      const pos = toThree(lightPosition(state, l));
+      // Around the rig pivot, aimed at it or at its own aim, turned by its roll (core/lighting.ts lightFrame).
+      const f = lightFrame(state, l);
+      const pos = toThree(f.position);
+      const aim = toThree(f.target);
       const color = new THREE.Color().setRGB(l.color[0], l.color[1], l.color[2], THREE.LinearSRGBColorSpace);
       if (l.type === 'SUN') {
         // The same irradiance the path tracer gets (core/photometry.ts).
         const sun = new THREE.DirectionalLight(color, l.power * SUN_IRRADIANCE_PER_POWER);
         sun.position.copy(pos);
-        sun.target.position.copy(target);
+        sun.target.position.copy(aim);
         this.lightRoot.add(sun, sun.target);
+      } else if (isSphereLike(l)) {
+        // A point, a glowing sphere or a spot (L4): the engine's intensity for that flux (core/photometry.ts), decay 2.
+        const intensity = pointLightIntensity(l.power, state.scene.partSizeMm);
+        if (l.type === 'SPOT') {
+          const half = (Math.min(179, Math.max(1, l.spread)) * Math.PI) / 360;
+          const spot = new THREE.SpotLight(color, intensity, 0, half, Math.min(1, Math.max(0, l.blend ?? SPOT_DEFAULTS.blend)), 2);
+          spot.position.copy(pos);
+          spot.target.position.copy(aim);
+          this.lightRoot.add(spot, spot.target);
+        } else {
+          const point = new THREE.PointLight(color, intensity, 0, 2);
+          point.position.copy(pos);
+          this.lightRoot.add(point);
+        }
       } else {
         const w = Math.max(1e-3, l.size) * size;
         const hgt = Math.max(1e-3, l.shape === 'SQUARE' || l.shape === 'DISK' ? l.size : l.sizeY) * size;
@@ -691,7 +743,9 @@ export class PreviewEngine implements RenderEngine {
         // RectAreaLight takes radiance: the path tracer's for this flux and area (core/photometry.ts).
         const rect = new THREE.RectAreaLight(color, areaLightRadiance(l.power, area), w, hgt);
         rect.position.copy(pos);
-        rect.lookAt(target);
+        // Its sides level with the floor, or turned by its roll.
+        if (l.roll) rect.up.copy(toThree(f.up));
+        rect.lookAt(aim);
         this.lightRoot.add(rect);
       }
       if (l.camera) {
@@ -700,7 +754,7 @@ export class PreviewEngine implements RenderEngine {
         sprite.position.copy(pos);
         // Drawn before the shadow-catching floor, so the floor never cuts it into a hard edge.
         sprite.renderOrder = -2;
-        const s = Math.max(l.size, l.sizeY) * size;
+        const s = Math.max(isSphereLike(l) ? l.size : Math.max(l.size, l.sizeY), 1e-3) * size;
         sprite.scale.set(s, s, 1);
         this.lightRoot.add(sprite);
       }
@@ -839,6 +893,13 @@ export class PreviewEngine implements RenderEngine {
   }
 
   private syncCamera(state: ProjectState, pose: Pose | null): void {
+    // Looking through a light or a saved camera (L4): its view, and the navigation moves it (main.ts).
+    const through = this.glyphSpec.lookThrough ? lookThroughCamera(state, this.glyphSpec.lookThrough) : null;
+    if (through) {
+      this.placeCamera(through, this.width, this.height, state.render.width, state.render.height, true);
+      this.controls.enabled = !through.locked;
+      return;
+    }
     const base = pose?.camera ? (state.camera.cameras[pose.camera.camera] ?? activeCamera(state)) : activeCamera(state);
     if (!base) return;
     const cam: CameraState = pose?.camera ? { ...base, ...pose.camera, id: base.id } : base;
@@ -885,7 +946,7 @@ export class PreviewEngine implements RenderEngine {
   private currentView(): ViewChange | null {
     const s = this.state;
     if (!s) return null;
-    const cam = activeCamera(s);
+    const cam = this.viewCamera(s)!;
     const c = this.camera;
     const pos = fromThree(c.position);
     const target = fromThree(this.controls.target);
@@ -979,7 +1040,7 @@ export class PreviewEngine implements RenderEngine {
 
   /** Something to draw over the path tracer: an outline, selected faces, the gizmo. */
   private hasOverlay(): boolean {
-    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive)) return true;
+    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive) || this.glyphs.length > 0) return true;
     for (const o of this.objects.values()) if (o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER)) return true;
     return false;
   }
@@ -1099,9 +1160,10 @@ export class PreviewEngine implements RenderEngine {
       spec.space === this.gizmoSpec.space &&
       handles === (this.gizmoSpec.handles ?? 'ALL') &&
       spec.ids.length === this.gizmoSpec.ids.length &&
-      spec.ids.every((id, i) => id === this.gizmoSpec!.ids[i]);
+      spec.ids.every((id, i) => id === this.gizmoSpec!.ids[i]) &&
+      sameObject(spec.object, this.gizmoSpec.object);
     if (same || (!spec && !this.gizmoSpec)) return;
-    this.gizmoSpec = spec ? { ids: [...spec.ids], space: spec.space, handles } : null;
+    this.gizmoSpec = spec ? { ids: [...spec.ids], space: spec.space, handles, object: spec.object ?? null } : null;
     this.gizmoDragging = null;
     this.gizmo.setActive(null);
     this.gizmo.setMode(handles);
@@ -1111,6 +1173,14 @@ export class PreviewEngine implements RenderEngine {
   private placeGizmo(): void {
     const s = this.state;
     const spec = this.gizmoSpec;
+    if (s && spec?.object) {
+      // A light or a camera (L4): at its position, with the aim handle at what it looks at; none on the one looked through.
+      const placed = sameObject(spec.object, this.glyphSpec.lookThrough) ? null : objectFrame(s, spec.object, spec.space);
+      this.gizmo.place(placed?.frame ?? null, placed?.aim ?? null);
+      if (!placed) this.gizmo.setHover(null);
+      this.needsRender = true;
+      return;
+    }
     const ids = s && spec ? movableTargets(s, spec.ids) : [];
     const frame = s && spec && ids.length > 0 ? selectionFrame(s, ids, spec.space) : null;
     const first = s && ids[0] ? s.scene.nodes[ids[0]] : undefined;
@@ -1119,6 +1189,76 @@ export class PreviewEngine implements RenderEngine {
     this.gizmo.place(frame, aim);
     if (!frame) this.gizmo.setHover(null);
     this.needsRender = true;
+  }
+
+  // ------------------------------------------------------------------ lights and cameras (L4)
+
+  /** Which glyphs of lights and cameras to draw and what the viewport looks through (Look through). */
+  setGlyphs(spec: GlyphSpec): void {
+    const cur = this.glyphSpec;
+    if (spec.all === cur.all && sameObject(spec.selected, cur.selected) && sameObject(spec.lookThrough, cur.lookThrough)) return;
+    const lookChanged = !sameObject(spec.lookThrough, cur.lookThrough);
+    this.glyphSpec = { all: spec.all, selected: spec.selected, lookThrough: spec.lookThrough };
+    this.syncGlyphs();
+    if (this.state && lookChanged) {
+      this.syncCamera(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
+      if (this.gizmoSpec) this.placeGizmo();
+    }
+    this.needsRender = true;
+  }
+
+  private syncGlyphs(): void {
+    const s = this.state;
+    this.glyphs = s ? glyphsOf(s, this.glyphSpec) : [];
+    const selected = this.glyphSpec.selected;
+    const lines: number[] = [];
+    const strong: number[] = [];
+    const dots: number[] = [];
+    for (const g of this.glyphs) {
+      const out = sameObject(g.obj, selected) ? strong : lines;
+      for (const p of g.lines) out.push(p[0], p[1], p[2]);
+      for (const p of g.dots) dots.push(p[0], p[1], p[2]);
+    }
+    const put = (obj: THREE.LineSegments | THREE.Points, data: number[]) => {
+      obj.geometry.setAttribute('position', new THREE.Float32BufferAttribute(data, 3));
+      obj.geometry.computeBoundingSphere();
+      obj.visible = data.length > 0;
+    };
+    put(this.glyphLines, lines);
+    put(this.glyphSelected, strong);
+    put(this.glyphDots, dots);
+    // Dashes of a fortieth and gaps of a sixtieth of the part, so they read the same for a ring and a sofa.
+    const size = s?.scene.partSizeMm || 200;
+    this.glyphLines.material.dashSize = size / 40;
+    this.glyphLines.material.gapSize = size / 60;
+    if (lines.length > 0) this.glyphLines.computeLineDistances();
+    this.needsRender = true;
+  }
+
+  /** Where an object (a light, a camera) is on the canvas now, CSS pixels; null behind the view (for checks). */
+  objectAt(obj: ViewObject): { x: number; y: number } | null {
+    const s = this.state;
+    const placed = s ? objectFrame(s, obj, 'GLOBAL') : null;
+    if (!placed || this.width <= 0) return null;
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const v = toThree(placed.frame.origin).project(cam);
+    if (v.z < -1 || v.z > 1) return null;
+    return { x: ((v.x + 1) / 2) * this.width, y: ((1 - v.y) / 2) * this.height };
+  }
+
+  /** The light or camera whose glyph is under a point (CSS pixels on the canvas), or null. */
+  glyphAt(x: number, y: number): ViewObject | null {
+    if (this.glyphs.length === 0 || this.width <= 0 || this.poseActive) return null;
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const v = new THREE.Vector3();
+    const project = (p: Vec3) => {
+      v.copy(toThree(p)).project(cam);
+      if (v.z < -1 || v.z > 1) return null;
+      return { x: ((v.x + 1) / 2) * this.width, y: ((1 - v.y) / 2) * this.height };
+    };
+    return pickGlyph(this.glyphs, project, x, y);
   }
 
   /** World millimetres per CSS pixel at a model point, for handles of a constant size on screen. */
@@ -1138,12 +1278,17 @@ export class PreviewEngine implements RenderEngine {
   }
 
   private drawGizmo(cam: THREE.Camera): void {
-    if (!this.gizmo.visible || this.poseActive) return;
-    this.sizeGizmo();
+    const gizmo = this.gizmo.visible && !this.poseActive;
+    if (!gizmo && this.glyphs.length === 0) return;
+    // The glyphs of lights and cameras (L4) go with the gizmo, over everything; while the animation plays, not the gizmo.
+    const shown = this.gizmo.root.visible;
+    if (!gizmo) this.gizmo.root.visible = false;
+    if (gizmo) this.sizeGizmo();
     this.renderer.autoClear = false;
     this.renderer.clearDepth();
     this.renderer.render(this.overlayScene, cam);
     this.renderer.autoClear = true;
+    this.gizmo.root.visible = shown;
   }
 
   private rayAt(x: number, y: number): THREE.Raycaster {

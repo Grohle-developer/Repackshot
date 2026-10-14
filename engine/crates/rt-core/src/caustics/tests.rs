@@ -444,6 +444,58 @@ fn caustics_replace_the_paths_of_the_tracer_without_counting_twice() {
     );
 }
 
+#[test]
+fn a_point_light_s_caustics_stay_with_the_path_tracer() {
+    // Point lights and spots (L4) send no photons: with the photon map of the disc light on, the
+    // light the sphere light sends through the glass must still come by the path tracer's
+    // BSDF-sampled hits, or the shadow loses it. The sphere light sits behind the disc, on the
+    // same line from the glass sphere, so both focus into the same shadow.
+    let disc = Light {
+        kind: LightKind::Disk,
+        position: Vec3::new(0.0, -160.0, 200.0),
+        direction: Vec3::new(0.0, 160.0, -170.0).normalize(),
+        up: Vec3::new(0.0, 0.0, 1.0),
+        size_x: 160.0,
+        power: 2.0,
+        flags: LIGHT_FLAG_GLOSSY,
+        ..Light::default()
+    };
+    let point = Light {
+        kind: LightKind::Point,
+        position: Vec3::new(0.0, -208.0, 251.0),
+        size_x: 100.0,
+        power: 4.0,
+        flags: LIGHT_FLAG_GLOSSY,
+        ..Light::default()
+    };
+    let mut scene = sphere_scene(30.0, disc, 4096, (40, 30));
+    scene.lights.push(point);
+    let prepared = Prepared::new(&scene);
+    assert!(prepared.has_caustics());
+    let reference = render(&scene, 768, false).resolve();
+    let with = render(&scene, 192, true).resolve();
+    let centre = scene.lights[0].position;
+    let shadow = |p: Vec3| {
+        scene
+            .geometry
+            .trace(&Ray::new(
+                p + Vec3::new(0.0, 0.0, 1.0e-3),
+                (centre - p).normalize(),
+            ))
+            .is_some()
+    };
+    let (r, n) = floor_mean(&scene, &reference, &shadow);
+    let (c, _) = floor_mean(&scene, &with, &shadow);
+    // The disc's photons alone, for the share of the sphere light's caustic there.
+    let mut disc_only = scene.clone();
+    disc_only.lights.truncate(1);
+    let (d, _) = floor_mean(&scene, &render(&disc_only, 192, true).resolve(), &shadow);
+    eprintln!("shadow ({n} px): reference {r:.4}, with caustics {c:.4}, the disc alone {d:.4}");
+    assert!(n >= 12);
+    assert!(r - d > 0.15 * r, "the sphere light's share: {r} vs {d}");
+    assert!((c / r - 1.0).abs() < 0.08, "{c} vs {r}");
+}
+
 /// Mean green of the floor pixels (centre rays that meet no geometry) for which `keep(point)` holds.
 fn floor_mean(scene: &Scene, img: &[f32], keep: &dyn Fn(Vec3) -> bool) -> (f32, usize) {
     let (w, h) = (scene.render.width, scene.render.height);

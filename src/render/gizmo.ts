@@ -26,8 +26,11 @@ const CUBE_AT = 0.62;
 /** Where the scale tool's cubes sit on their shafts (the end of the axis), in arrow lengths. */
 export const SCALE_CUBE_AT = 0.9;
 
-/** Which handles the gizmo shows: all of the move tool's, or only the scale tool's. */
-export type GizmoMode = 'ALL' | 'SCALE';
+/**
+ * Which handles the gizmo shows: all of the move tool's, only the scale tool's, or the move tool's without its scale
+ * cubes (MOVE: a light or a camera, phase L4, which move and turn but do not scale).
+ */
+export type GizmoMode = 'ALL' | 'SCALE' | 'MOVE';
 /** Inner and outer edge of the plane squares. */
 const PLANE_LO = 0.22;
 const PLANE_HI = 0.4;
@@ -247,8 +250,8 @@ function letterTexture(letter: string): THREE.Texture | null {
 
 interface HandleParts {
   id: GizmoHandle;
-  /** The tool whose gizmo has this handle. */
-  mode: GizmoMode | 'AIM';
+  /** The tool whose gizmo has this handle (MOVE shows the handles of ALL but its scale ones). */
+  mode: 'ALL' | 'SCALE' | 'AIM';
   /** Drawn in ink. */
   solid: THREE.MeshBasicMaterial;
   /** Translucent fill (plane squares). */
@@ -269,7 +272,7 @@ export class Gizmo {
   private readonly aimHandle = new THREE.Group();
   private readonly aimLine: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
   private readonly handles: HandleParts[] = [];
-  private readonly groups: Record<GizmoMode, THREE.Group> = { ALL: new THREE.Group(), SCALE: new THREE.Group() };
+  private readonly groups: Record<'ALL' | 'SCALE', THREE.Group> = { ALL: new THREE.Group(), SCALE: new THREE.Group() };
   private mode: GizmoMode = 'ALL';
   private readonly halo = overlayMaterial(0.4);
   private readonly hitMaterial = new THREE.MeshBasicMaterial({ visible: false });
@@ -326,7 +329,7 @@ export class Gizmo {
     this.look();
   }
 
-  private add(id: GizmoHandle, visual: THREE.BufferGeometry[], hit: THREE.BufferGeometry[], halo: THREE.BufferGeometry[], fill = false, mode: GizmoMode = 'ALL'): void {
+  private add(id: GizmoHandle, visual: THREE.BufferGeometry[], hit: THREE.BufferGeometry[], halo: THREE.BufferGeometry[], fill = false, mode: 'ALL' | 'SCALE' = 'ALL'): void {
     const solid = overlayMaterial(fill ? 0.3 : 0.8);
     const objects: THREE.Object3D[] = [];
     for (const g of halo) {
@@ -352,8 +355,13 @@ export class Gizmo {
   setMode(mode: GizmoMode): void {
     if (mode === this.mode) return;
     this.mode = mode;
-    this.groups.ALL.visible = mode === 'ALL';
+    this.groups.ALL.visible = mode !== 'SCALE';
     this.groups.SCALE.visible = mode === 'SCALE';
+    // A light or a camera: the scale cubes of the move tool go.
+    for (const h of this.handles) {
+      if (h.mode !== 'ALL' || !h.id.startsWith('s')) continue;
+      for (const o of [...h.objects, ...h.hit]) o.visible = mode === 'ALL';
+    }
     this.hover = null;
     this.active = null;
     this.look();
@@ -436,13 +444,19 @@ export class Gizmo {
     if (!this.root.visible) return null;
     this.root.updateMatrixWorld(true);
     const targets: THREE.Object3D[] = [];
-    for (const h of this.handles) if (h.mode === this.mode || (h.mode === 'AIM' && this.aim)) targets.push(...h.hit);
+    for (const h of this.handles) if (this.shows(h) || (h.mode === 'AIM' && this.aim)) targets.push(...h.hit);
     let best: { id: GizmoHandle; d: number } | null = null;
     for (const hit of raycaster.intersectObjects(targets, false)) {
       const id = hit.object.userData.handle as GizmoHandle;
       if (!best || PRIORITY[id] < PRIORITY[best.id] || (PRIORITY[id] === PRIORITY[best.id] && hit.distance < best.d)) best = { id, d: hit.distance };
     }
     return best?.id ?? null;
+  }
+
+  /** Whether the handles of the current mode include this one. */
+  private shows(h: HandleParts): boolean {
+    if (this.mode === 'MOVE') return h.mode === 'ALL' && !h.id.startsWith('s');
+    return h.mode === this.mode;
   }
 
   /** Highlights a handle under the cursor; true when that changed. */
@@ -465,8 +479,9 @@ export class Gizmo {
       const on = this.active ? id === this.active : id === this.hover;
       const dim = this.active !== null && id !== this.active;
       h.solid.opacity = h.fill ? (on ? 0.6 : dim ? 0.06 : 0.3) : on ? 1 : dim ? 0.16 : 0.62;
-      // The halo of the highlighted handle thickens its outline.
-      for (const o of h.objects) if (o instanceof THREE.Mesh && o.material === this.halo) o.visible = !dim;
+      // The halo of the highlighted handle thickens its outline (a hidden scale cube keeps its halo hidden).
+      const hidden = this.mode === 'MOVE' && h.mode === 'ALL' && id.startsWith('s');
+      for (const o of h.objects) if (o instanceof THREE.Mesh && o.material === this.halo) o.visible = !dim && !hidden;
     }
     for (const l of this.labels) l.material.opacity = this.active ? 0.3 : 0.9;
   }

@@ -7,7 +7,7 @@
 // the photons per sample and the first gather radius. Automatic turns them on when the scene has
 // something that focuses light (glass or polished metal: the engine's own test, `isCaster`) and a
 // small light to focus (a glossy panel or disc no wider than SMALL_LIGHT_DEG seen from the
-// casters, a sun, a lit emitter).
+// casters, a sun, a lit emitter; the point lights and spots of L4 send no photons yet).
 //
 // Denoise is the engine's own (rt_post::denoise): Off · Viewport · Render · Both (default Both),
 // and a render can save the image without denoise as well.
@@ -98,7 +98,11 @@ export function isCaster(m: CasterMaterial): boolean {
   return glass || metal;
 }
 
-/** A light as the test sees it: its kind (0 rect, 1 disc, 2 sun), position, size and angle, and whether it is glossy. */
+/**
+ * A light as the test sees it: its kind (`LGHT.kind`: 0 rect, 1 disc, 2 sun, 3 point or sphere, 4 spot), position,
+ * size and angle, and whether it is glossy. Points, spheres and spots (L4) send no photons (rt_core::light), so
+ * they never turn the caustics on.
+ */
 export interface CausticLight {
   kind: number;
   position: readonly [number, number, number];
@@ -124,7 +128,7 @@ export function lightAngleDeg(l: CausticLight, from: readonly [number, number, n
 export function autoCaustics(casters: readonly [number, number, number] | null, lights: readonly CausticLight[], emitters: boolean): boolean {
   if (!casters) return false;
   if (emitters) return true;
-  return lights.some((l) => l.glossy && lightAngleDeg(l, casters) <= SMALL_LIGHT_DEG);
+  return lights.some((l) => l.glossy && l.kind <= 2 && lightAngleDeg(l, casters) <= SMALL_LIGHT_DEG);
 }
 
 /** `RNDR.caustic_photons` and `caustic_radius` for a switch and a quality, once Automatic has been decided (`auto`). */
