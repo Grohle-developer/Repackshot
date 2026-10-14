@@ -251,6 +251,29 @@ mod tests {
     const PINNED_VARIANCE: f64 = 0.073;
 
     #[test]
+    fn values_are_pinned() {
+        // A few values of the noise and of its fractal sum, to the bit (the gradients, the fade
+        // and the octaves' offsets all show in them).
+        let at = [
+            Vec3::new(0.3, 1.7, 2.2),
+            Vec3::new(-5.25, 3.5, 0.125),
+            Vec3::new(17.9, -2.4, 8.6),
+        ];
+        let got: Vec<(u32, u32)> = at
+            .iter()
+            .map(|&p| (noise3(p).to_bits(), fbm(p, 4).to_bits()))
+            .collect();
+        assert_eq!(got, PINNED_VALUES);
+    }
+
+    /// `(noise3, fbm(4))` bits at the points of `values_are_pinned`.
+    const PINNED_VALUES: [(u32, u32); 3] = [
+        (1_047_546_607, 1_047_140_575),
+        (3_198_605_503, 3_190_364_375),
+        (1_055_850_219, 1_045_438_662),
+    ];
+
+    #[test]
     fn hashes_are_uniform_and_deterministic() {
         let mut sum = 0.0f64;
         for i in 0..10_000 {

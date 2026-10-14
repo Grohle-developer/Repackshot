@@ -695,11 +695,16 @@ mod tests {
         // counted as connected regions, about 15 per cm², each longer along the strip than across;
         // on planes through the middle and near the edge of a row of cells alike.
         let wood = bamboo();
-        for plane in [2.03f32, 1.64, 0.41] {
+        // Faces y = c and x = c (both run along the strips), through and near the cells' edges.
+        let point = |face: u8, c: f32, u: f32, v: f32| match face {
+            0 => Vec3::new(u, c, v),
+            _ => Vec3::new(c, u, v),
+        };
+        for (face, plane) in [(0u8, 2.03f32), (0, 1.64), (0, 0.41), (1, 1.64), (1, 3.3)] {
             let (w, h) = (400usize, 800usize);
             let dark: Vec<bool> = (0..w * h)
                 .map(|i| {
-                    let q = Vec3::new((i % w) as f32 * 0.05, plane, (i / w) as f32 * 0.05);
+                    let q = point(face, plane, (i % w) as f32 * 0.05, (i / w) as f32 * 0.05);
                     wood.bamboo(q).0 < 0.97 && wood.bamboo(q).1 < 0.5 * NODE_HEIGHT_MM
                 })
                 .collect();
@@ -740,17 +745,19 @@ mod tests {
                 flecks.len()
             );
             // And they darken by about 10 % at their middle.
+            // And they darken by 10 % at their middle (off the nodes).
             let darkest = (0..w * h)
                 .map(|i| {
-                    wood.bamboo(Vec3::new(
+                    wood.bamboo(point(
+                        face,
+                        plane,
                         (i % w) as f32 * 0.05,
-                        2.03,
                         (i / w) as f32 * 0.05,
                     ))
-                    .0
                 })
-                .fold(1.0f32, f32::min);
-            assert!((darkest - 0.9).abs() < 0.02 || darkest < 0.8, "{darkest}");
+                .filter(|&(_, node)| node < 0.5 * NODE_HEIGHT_MM)
+                .fold(1.0f32, |a, (f, _)| a.min(f));
+            assert!((darkest - 0.9).abs() < 0.01, "{darkest}");
         }
     }
 

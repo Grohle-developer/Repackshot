@@ -1558,7 +1558,7 @@ ARCHITECTURE §5.2 quater).
   sombreado sigue la veta; no queda nada para otra fase).
 - **Nudos** (`pattern::knots`, pedido por el usuario): ramas en cono desde
   la médula que cruzan la pieza, colocadas por la semilla del material sin
-  tocarse y sin rozar la superficie (≥ 30°, hasta 8 nuevos intentos, si no
+  tocarse y sin rozar la superficie (≥ 45°, hasta 8 nuevos intentos, si no
   se descartan), con la fibra y los anillos fluyendo a su alrededor (de 1,5
   a 3 radios, abombamiento 0,35 R) y su testa, bolsa de corteza, cuenco y
   grieta; la interfaz los coloca igual (`src/core/knots.ts`), la vista
@@ -1633,10 +1633,19 @@ ARCHITECTURE §5.2 quater).
   colocación es la misma, la desviación no tiene nada que desviar.
   Aceptado por el líder.
 - **En una pieza pequeña caben menos nudos de los pedidos** (nunca se tocan
-  ni rozan; regla del líder tras la hoja: un nudo que corta la superficie a
-  menos de 30° se saca otra vez hasta 8 veces y si no, se descarta): en la
-  caja de 60 × 40 × 25 mm, CAJA_NUDOS; en la tabla, todos. El inspector lo
-  dice con una nota discreta.
+  ni rozan): en la caja de 60 × 40 × 25 mm, 2, 3 y 1 de 2 × 15, 6 × 15 y
+  6 × 30 mm; en la tabla de 300 × 100 × 20 mm, todos. El inspector lo dice
+  con una nota discreta.
+- **El umbral de incidencia, 30° → 60° → 45°** (reglas del líder tras la
+  hoja): un nudo cuyo eje corta la superficie a menos del umbral se saca otra
+  vez hasta 8 veces y si no, se descarta. Con 30° la bola de pino seguía
+  enseñando lágrimas: sus nudos la cortaban a 34–39°, y el borde del cono
+  roza antes que su eje. Con 60° (lo que pidió el líder para quedarse con los
+  nudos de frente) las piezas planas perdían nudos: las ramas suben 15–35°
+  por el tronco y la médula está 24° a un lado, así que una cara plana ve sus
+  nudos a 49–66° (la tabla de prueba, 1 de 2 y 10 de 12). Con 45° las piezas
+  planas no cambian (2 / 6 / 6) y la bola solo pierde las lágrimas (sus
+  nudos, a 47–64°): lo decidió la medida, con el visto bueno del líder.
 - **Ajustes del líder sobre la fila de nudos**: el flujo alrededor de un nudo
   se desvanece de 1,5 a 3 radios (no de 3 a 5) y abomba 0,35 R (no 0,5 R):
   en la cara de la caja se leía líquido.

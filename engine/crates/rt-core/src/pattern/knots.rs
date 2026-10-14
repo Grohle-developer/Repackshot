@@ -8,10 +8,12 @@
 //!   along its length and across its width at least a radius from the ends, at any depth. The
 //!   branch is the line from the pith through that point; a candidate whose cone would come
 //!   within a millimetre of an earlier knot inside the piece is tried elsewhere (32 tries in
-//!   all), and one whose axis would meet the surface at less than 30° (axis against the local
+//!   all), and one whose axis would meet the surface at less than 45° (axis against the local
 //!   tangent plane, where it crosses the surface; or that would not cross it) is drawn again,
 //!   at most 8 times, then dropped: a knot never touches another and never grazes (a long
-//!   teardrop on a ball). A dropped knot stays dropped.
+//!   teardrop on a ball: at 30° the cone's rim still grazed a ball; at 60° a flat face, which
+//!   sees its knots at 49° to 66° because the branches tilt up the trunk, lost some). A dropped
+//!   knot stays dropped.
 //! * **Around a knot.** The fibres and the rings flow around it as a potential flow around a
 //!   cylinder: the coordinate across the flow `a` becomes `a (1 - R²/ρ²)` (so the fibres sweep
 //!   round the knot and bunch on its sides), faded out from 1.5 to 3 radii; the rings bulge
@@ -21,8 +23,8 @@
 //!   0.05 mm deep, rougher by 0.1; on knots 20 mm or wider, a radial crack from the centre (one
 //!   line 0.3 mm wide, −20 %).
 //!
-//! `src/render/knots.ts` places the same knots for the Fast preview, with the same hash and the
-//! same order of tries.
+//! `src/core/knots.ts` places the same knots for the interface (the Fast preview and the
+//! inspector), with the same hash, the same order of tries and the same test of the surface.
 
 use super::noise::hash01;
 use crate::math::Vec3;
@@ -41,8 +43,8 @@ const FADE: (f32, f32) = (1.5, 3.0);
 const BULGE: f32 = 0.35;
 /// Times a knot is drawn again because its axis would meet the surface too obliquely.
 const REDRAWS: u32 = 8;
-/// The least sine of the angle between a knot's axis and the surface where it crosses it (30°).
-pub const MIN_INCIDENCE: f32 = 0.5;
+/// The least sine of the angle between a knot's axis and the surface where it crosses it (45°).
+pub const MIN_INCIDENCE: f32 = std::f32::consts::FRAC_1_SQRT_2;
 /// Width of the bark pocket at a knot's edge, millimetres.
 pub const BARK_MM: f32 = 0.5;
 /// Depth of a knot's dish, millimetres.
@@ -487,25 +489,25 @@ mod tests {
 
     #[test]
     fn the_placement_is_pinned_for_the_preview() {
-        // src/render/knots.ts places the same knots (tests/knots.test.ts pins the same numbers).
+        // src/core/knots.ts places the same knots (tests/patterns.test.ts pins the same numbers).
         let (centre, half) = board();
         let knots = Knots::place(&spec(4, 17.5), centre, half, meets_box(centre, half));
-        let first = knots.list[0];
-        let mid = first.origin + first.axis * first.middle;
-        let pinned = PINNED_FIRST_KNOT;
-        assert!(
-            (mid - Vec3::new(pinned[0], pinned[1], pinned[2])).length() < 1.0e-3,
-            "{mid:?}"
-        );
-        assert!(
-            (first.radius - pinned[3]).abs() < 1.0e-4,
-            "{}",
-            first.radius
-        );
+        assert_eq!(knots.list.len(), PINNED_KNOTS.len());
+        for (k, pinned) in knots.list.iter().zip(PINNED_KNOTS) {
+            let mid = k.origin + k.axis * k.middle;
+            let want = Vec3::new(pinned[0], pinned[1], pinned[2]);
+            assert!((mid - want).length() < 1.0e-3, "{mid:?}");
+            assert!((k.radius - pinned[3]).abs() < 1.0e-4, "{}", k.radius);
+        }
     }
 
-    /// The first knot of `spec(4, 17.5)` in `board()`: its middle and radius.
-    const PINNED_FIRST_KNOT: [f32; 4] = [51.081, 154.164, -45.991, 9.3261];
+    /// The knots of `spec(4, 17.5)` in `board()`: their middles and radii.
+    const PINNED_KNOTS: [[f32; 4]; 4] = [
+        [51.081, 154.164, -45.991, 9.3261],
+        [103.234, 169.191, -82.813, 10.2775],
+        [61.512, 158.414, 21.696, 7.2598],
+        [44.389, 161.345, -18.294, 9.2944],
+    ];
 
     #[test]
     fn a_knot_is_wider_where_it_leaves_the_piece_farther_from_the_pith() {

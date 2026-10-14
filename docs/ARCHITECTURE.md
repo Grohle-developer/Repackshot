@@ -792,7 +792,7 @@ en la más alejada de la médula. No es una calcomanía. **Colocación**: por
 la pieza en el marco de la madera (a lo largo y a lo ancho a un radio de los
 extremos, a cualquier profundidad); un candidato cuyo cono pasaría a menos
 de 1 mm de otro dentro de la pieza se prueba en otro sitio (32 intentos en
-total), y uno cuyo eje cortaría la superficie a menos de 30° (eje contra el
+total), y uno cuyo eje cortaría la superficie a menos de 45° (eje contra el
 plano tangente, en cada cruce con la malla, que se busca con el BVH de la
 escena; o que no la cortaría) se vuelve a sacar, hasta 8 veces, y si no, se
 descarta: nunca se tocan ni rozan (una lágrima larga en una bola), y en una

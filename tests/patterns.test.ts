@@ -160,8 +160,8 @@ describe('E6 patterns: wood', () => {
     const pinned = [
       [51.081, 154.164, -45.991, 9.3261],
       [103.234, 169.191, -82.813, 10.2775],
-      [121.727, 166.949, -189.95, 7.074],
-      [68.936, 161.181, 20.757, 9.3602],
+      [61.512, 158.414, 21.696, 7.2598],
+      [44.389, 161.345, -18.294, 9.2944],
     ];
     expect(mids.length).toBe(4);
     mids.forEach((m, i) => m.forEach((v, j) => expect(Math.abs(v - pinned[i][j]), `${i}.${j}`).toBeLessThan(2e-3)));
@@ -183,6 +183,9 @@ describe('E6 patterns: wood', () => {
     expect(meets([2, 1, -10], [2, 1, 10])).toBe(true); // straight through
     expect(meets([-9, 0, -10.8], [9, 0, -7.6])).toBe(false); // into the bottom at 10°
     expect(meets([-5, 0, -10], [5, 0, 10])).toBe(true); // 63°
+    // The threshold is 45°: into the bottom at 50°, kept; at 40°, drawn again.
+    expect(meets([-4.2, 0, -10.5], [4.2, 0, -0.5])).toBe(true);
+    expect(meets([-5.95, 0, -10.5], [5.95, 0, -0.5])).toBe(false);
     expect(meets([20, 20, -10], [20, 20, 10])).toBe(false); // misses
     // A non-uniform scale tilts the axis: measured in the world (x stretched 4 times, 59° becomes 23°).
     expect(meets([-6, 0, -10], [6, 0, 10])).toBe(true);

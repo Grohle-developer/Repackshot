@@ -445,7 +445,7 @@ fn a_knot_is_rougher_and_its_dish_tilts_the_normal() {
 
 #[test]
 fn knots_on_a_ball_never_graze_it() {
-    // Twelve knots asked of a ball of 100 mm: those placed cross its surface at 30° or more
+    // Twelve knots asked of a ball of 100 mm: those placed cross its surface at 45° or more
     // (against the radius, where the axis meets the sphere), the others are dropped.
     let mut pine = knotty(12, 10.0, 3).patterns[0].clone();
     pine.color_b = Rgb::new(0.4, 0.3, 0.2);
@@ -473,7 +473,7 @@ fn knots_on_a_ball_never_graze_it() {
         assert!(disc > 0.0, "every knot crosses the ball");
         for t in [-b - disc.sqrt(), -b + disc.sqrt()] {
             let n = (o + d * t).normalize();
-            assert!(n.dot(d).abs() > 0.45, "{}", n.dot(d));
+            assert!(n.dot(d).abs() > 0.68, "{}", n.dot(d));
         }
     }
 }

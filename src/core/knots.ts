@@ -15,8 +15,8 @@ export const MAX_KNOTS = 12;
 const TRIES = 32;
 /** Times a knot is drawn again because its axis meets the surface too obliquely. */
 const REDRAWS = 8;
-/** The least sine of the angle between a knot's axis and the surface where it crosses it (30°). */
-export const MIN_INCIDENCE = 0.5;
+/** The least sine of the angle between a knot's axis and the surface where it crosses it (45°). */
+export const MIN_INCIDENCE = Math.fround(Math.SQRT1_2);
 const SALT = 0x4b4e4f54; // "KNOT"
 const GAP_MM = 1;
 /** Farthest the pith runs from a part's centre across its thickness, mm. */
