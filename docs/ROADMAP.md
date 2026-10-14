@@ -1234,9 +1234,206 @@ Lo que no encajó con el plan:
 - **El coste en el visor *Completo*** se dice en el medidor (fotones por
   muestra) y en la ayuda, no en segundos.
 
-## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
+## Hacia el mejor modo Completo — decisión **Fable** (tras v0.1.5)
 
-**Qué.** Portar a `rt-core` las recetas procedurales de EZ Packshot (veta
+**Qué hay ya, y está bien.** Sobol con *scramble* de Owen por píxel y
+dimensión (Burley 2020) y un *layout* de pares comprobado; estimación del
+siguiente evento con heurística de potencia; GGX anisótropo con vidrio
+refractado por microfacetas (Walter 2007), absorción, pared fina, recorte
+y barniz con capa que conserva la energía; HDRI por CDF 2D, cielo físico
+propio, sol como disco; cáusticas por mapa de fotones progresivo; *denoise*
+propio guiado por pases; terminador de sombra suave (RTG II); curvas ACES,
+fílmica y AgX; determinismo por bits con cualquier número de hilos. Es una
+base seria. Lo que sigue es lo que separa un render «correcto» de una
+fotografía, por orden de lo que más se nota en una foto de producto.
+
+**Qué falta, por orden de importancia visual.**
+
+1. **Aristas vivas.** Un modelo CAD tiene aristas matemáticamente afiladas,
+   y una arista afilada no coge luz: se ve el «aspecto 3D» a la primera.
+   El bisel en el sombreado (E6, adelantado y pasado a Opus) es la mejora
+   de realismo más barata y más visible que nos queda.
+2. **Materiales translúcidos y líquidos.** Plástico de bote (HDPE, PP),
+   jabón, cera, acrílico esmerilado, leche, zumo, cremas: hoy no se pueden
+   hacer bien (hay absorción, no dispersión). Es el material del
+   *packaging*. Medios dispersores dentro de un sólido (E9b).
+3. **Energía del GGX.** Un metal o un plástico rugosos pierden hasta un
+   40 % de luz con una sola dispersión de microfacetas: salen oscuros y
+   apagados frente a la realidad. Compensación de dispersión múltiple
+   (E9a). Pequeña y de efecto inmediato en todo el catálogo.
+4. **Ruido donde importa.** Hoy cada píxel recibe las mismas muestras; la
+   varianza por píxel que ya guardamos (`lum2`) permite dar más a los
+   bordes de sombra, los vidrios y los brillos y menos al fondo. Muestreo
+   adaptativo determinista y «terminar por ruido» (E10): la misma limpieza
+   en menos tiempo, o más limpieza en el mismo.
+5. **Reducción de ruido en directo** en el visor, con su interruptor en
+   la barra superior (U11, petición del usuario).
+6. **Texturas y etiquetas** (M2): sin la ilustración del envase no hay
+   foto de producto. No es calidad del motor, es lo que falta para «el
+   mejor resultado»; va en la ola siguiente.
+7. **Dispersión cromática** del vidrio (perfume, cristal): E9c, al final
+   de E9 si cabe, con longitud de onda por camino (sin motor espectral).
+8. **Óptica de cámara** (láminas del diafragma, ojo de gato, viñeteo,
+   aberración cromática): ya está planificado en `STUDIO-TOOLS.md` §1 y no
+   se duplica aquí.
+9. Después: árbol de luces (K4) cuando haya muchas luces; estimación en
+   variedad (MNEE) para los brillos de luces pequeñas a través de vidrio;
+   *denoise* temporal del visor; rendimiento de la BVH (E8); IES (L5).
+
+**Lo que no se hace, y por qué.** Motor espectral: multiplica el coste y
+solo aporta en dispersión y metamerismo; la dispersión se resuelve con
+una longitud de onda por camino. Bidireccional o Metropolis: las
+cáusticas ya las da el mapa de fotones y el resto lo resuelve mejor el
+muestreo adaptativo. GPU: fuera de las reglas del motor (portable, sin
+dependencias, determinista).
+
+**Orden.** Ola A, en paralelo: U11, E9 (a, luego b, luego c si cabe) y
+E6 (bisel primero). Ola B: E10 (toca el bucle de render, después de U11)
+y M2. Cada fase, una PR; `npm run qa`, `engine:test` en *debug* y
+*release*, *hashes* fijados intactos salvo donde la fase diga.
+
+## U11 · Reducción de ruido en directo — **Opus**
+
+**Qué.** Un interruptor **Reducir ruido** en la barra superior, a la
+derecha de *Rápido · Completo*, con el mismo estado que el botón del
+medidor del visor y que el bit *Visor* de *Avanzado ▸ Reducción de ruido*
+(una sola verdad, deshacible, guardada en el proyecto como hasta ahora);
+en *Rápido* se ve deshabilitado con la ayuda «se aplica al modo
+Completo». Y que sea **en directo**: hoy el visor reduce ruido en el
+primer fotograma, en el último y entre medias solo si ha pasado tres
+veces lo que costó la última, y mientras tanto enseña el último limpio,
+que se queda atrás. Debe pasar a: (1) al encenderlo, reducir ruido de la
+acumulación actual al momento; (2) mientras se acumula, un *denoise* en
+canal aparte (un hilo del lanzador; en la web, los *workers* por bandas
+como ahora) que no para el render y presenta el resultado en cuanto
+acaba, con el siguiente arrancando entonces, de forma que el visor
+refresca la imagen limpia tan a menudo como cuesta un *denoise* y nunca
+enseña una limpia de hace más de un *denoise*; (3) un **ajuste de visor**
+del filtro (3 pasadas à-trous en vez de 5 y sin la varianza espacial 7×7
+a partir de 4 muestras, o lo que mida mejor) para que en el tamaño del
+visor quede por debajo de ~0,4 s en 4 hilos; el render final conserva el
+filtro completo. Atajo de teclado (uno libre; documentarlo), paso del
+recorrido guiado actualizado, cadena en `es` y `en`.
+
+**Depende de.** E5b-1.
+
+**Criterio.** Con el visor en *Completo* y el interruptor encendido, la
+imagen limpia se refresca al menos cada `max(2 × coste del denoise,
+0,5 s)` (test del lanzador con un *denoise* falso de coste fijo); al
+apagarlo, el siguiente fotograma es el ruidoso; el render final no
+cambia de *hash* (`0xab15f290` del ejemplo con *denoise*); los gestos
+siguen a resolución reducida sin *denoise*; captura `docs/ui/
+denoise-live.png` con la barra superior.
+
+## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
+
+**Qué.** Tres partes, en este orden, cada una con su commit y sus
+*hashes*; (c) solo si (a) y (b) están en verde.
+
+**(a) Compensación de energía del GGX** (Kulla y Conty 2017, «Revisiting
+Physically Based Shading at Imageworks»; Turquin 2019, «Practical
+multiple scattering compensation for microfacet models»). Tabla propia
+`E(μ, α)` y `E_avg(α)` de la reflectancia direccional del GGX con
+Fresnel 1, integrada por nosotros (Monte Carlo con semilla fija, 32 × 32
+o lo que la prueba de error pida, < 0,5 % frente a una integración de
+referencia a más muestras; ni un número copiado), para conductores
+(`F_avg` del color), dieléctricos (especular y refracción, Walter) y el
+barniz. El lobo añadido es `(1 − E(μo)) (1 − E(μi)) / (π (1 − E_avg))`
+escalado por el Fresnel medio, muestreado como coseno y con su PDF en el
+MIS. Con rugosidad 0 la imagen no cambia (test de píxeles sobre el
+ejemplo: *hash* `0x223515c3` intacto si el ejemplo no tiene rugosidad
+> 0 donde cuente; si cambia, se fija el nuevo y se dice cuánto). Prueba
+de furnace: una esfera de metal blanco rugoso en un entorno uniforme sale
+blanca a ±1 % con cualquier rugosidad (hoy sale gris: medirlo y dejarlo
+en el PR).
+
+**(b) Medios dispersores dentro de sólidos.** Material con campos nuevos
+(claves estables, al final del registro RSB `MATL` y del proyecto):
+distancia libre media `scatter_mm` (0: ninguno), color de dispersión
+(albedo del medio por canal) y anisotropía `g` (Henyey–Greenstein).
+Dentro de un sólido con `scatter_mm > 0` el camino hace un paseo
+aleatorio (distancia por `−ln(ξ)·mfp`, evento de dispersión HG, Beer por
+canal con `σ_t` por canal elegido con *spectral MIS* de un canal por
+camino, como Pixar 2016 «Practical and Controllable Subsurface
+Scattering for Production Path Tracing», Chiang, Kulla y Fajardo:
+escrito desde el artículo), estimación del siguiente evento en cada
+evento del medio a través de la frontera dieléctrica (la transmitancia
+recta de la frontera, sin refracción, como hace su artículo), y salida
+por la frontera con el Fresnel de la superficie. Las dimensiones
+aleatorias del medio son dimensiones *hash* más allá de la tabla Sobol
+(como los recortes), para que la imagen de una escena sin medios no
+cambie en ni un bit. Mapa de fotones: un medio es receptor; no se
+lanzan fotones dentro (anotar). En el visor Rápido, una aproximación:
+el color del medio como difuso translúcido (lo que three.js dé sin
+dependencias nuevas); se dice en la ayuda. Recetas de catálogo nuevas
+(se añade, no se renombra): plástico translúcido (HDPE blanco, PP
+natural), acrílico esmerilado, cera, jabón de glicerina, leche, zumo
+(naranja, manzana), crema. Interfaz: en el inspector de material, bajo
+*Transmisión*: *Dispersión interna* (mm), *Color de dispersión*,
+*Dirección* (−0,9 a 0,9, con ayuda «hacia delante / hacia atrás»).
+Hoja de contactos `out/sss-sheet.html` con esferas y un frasco: con y
+sin medio, 64 y 1024 muestras.
+
+**(c) Dispersión cromática** (solo vidrio sólido): campo `abbe` (0:
+ninguna; típico 30–70), IOR por longitud de onda con Cauchy a partir de
+`ior` y `abbe`; una longitud de onda por camino muestreada al primer
+vidrio dispersivo (*hero wavelength* con tres longitudes, una por canal,
+Wilkie et al. 2014, o una sola con *spectral MIS* si sale más simple), y
+el resto del camino en esa longitud de onda; los materiales sin `abbe`
+no cambian. Receta: cristal de perfume con Abbe 40. Prueba: un prisma
+bajo un foco pequeño separa los colores en el suelo (test de píxeles por
+regiones).
+
+**Depende de.** E5, E5b-1.
+
+**Criterio.** Furnace de (a) a ±1 %; (b): una esfera con medio y albedo 1
+en un entorno uniforme no crea ni pierde energía (±2 %); el ejemplo sin
+medios conserva `0x223515c3` (o el nuevo de (a)); las cáusticas conservan
+`0x55d60f2f` salvo que (a) toque el vidrio rugoso (decir cuánto);
+determinismo con 1, 4 y 16 hilos y en wasm; `clippy -D warnings`;
+tiempos antes y después en el PR (el medio cuesta lo que cuesta, se
+mide); la hoja de contactos con el veredicto visual de Fable antes de
+cerrar.
+
+## E10 · Muestreo adaptativo y terminar por ruido — **Opus**
+
+**Qué.** Reparto de muestras por píxel según la varianza (`Film::lum2`),
+determinista: tras cada pasada entera (todas las teselas, todos los
+hilos), el estimador de error por píxel (error relativo de la media,
+`sqrt(var/n) / (media + ε)`, suavizado 3×3 para que no sea ruidoso)
+decide qué píxeles reciben la pasada siguiente, en bloques de 8×8 para
+que la BVH y la caché lo agradezcan; la decisión solo depende de los
+datos de la imagen, así que es la misma con cualquier número de hilos y
+teselas (test). Al principio, 16 muestras a todos; después, cada pasada
+va a los bloques por encima del umbral del momento (el cuantil 50 % del
+error, bajando), y un bloque que ya no se muestrea conserva su media (la
+imagen sigue siendo insesgada por píxel). El *denoise* recibe `n` por
+píxel (ya lo tiene en los pases) y pondera la varianza por él. Interfaz:
+en *Calidad*, *Terminar por* gana **Ruido** (umbral 0,5–5 %, por defecto
+1 %, con una estimación del tiempo que sale de la pasada anterior); el
+medidor del visor dice «adaptativo · n mín–máx». Un *flag* `RNDR` nuevo
+al final; sin él todo es como antes (*hashes* intactos).
+
+**Depende de.** E5b-1, U11 (comparten el bucle del lanzador).
+
+**Criterio.** Mismo tiempo, menos error: sobre la hoja de E5b-1 (frasco
+de vidrio y clave sola), el relMSE del adaptativo a igual tiempo es ≤
+0,6 × el uniforme (medido y en el PR); determinismo 1/4/16 hilos y
+teselas de dos tamaños; con el *flag* apagado, `0x223515c3` intacto.
+
+## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
+
+**Qué.** Primero el **bisel de aristas en el sombreado** (decisión Fable,
+tras v0.1.5: es la mejora de realismo más visible que queda para modelos
+CAD): normal redondeada cerca de las aristas vivas con radio en mm por
+material (el campo *Bisel de arista* del inspector deja de decir
+*próximamente*), por el método de las aristas más cercanas al punto
+(se buscan en la malla, con precálculo de las aristas vivas por ángulo
+diedro > 20° y una rejilla o BVH propio de aristas), mezclando la normal
+de las dos caras según la distancia a la arista con un perfil circular;
+vale para el reflejo (la luz coge la arista) y para la sombra; límite de
+coste medido (≤ +15 % en el ejemplo con 0,3 mm). Después, portar a
+`rt-core` las recetas procedurales de EZ Packshot (veta
 de anillos con dos colores, variación, ruido axial y poro; trama de hilos
 con tipo de tejido, hilos por cm y relieve) como funciones de sombreado
 con ruido propio (Perlin o *simplex*, escrito aquí y con la estadística
