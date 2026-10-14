@@ -1835,6 +1835,36 @@ mod tests {
     }
 
     #[test]
+    fn the_bevel_gives_the_pinned_image_with_any_thread_count() {
+        // E6: the sharp edges of the meshes are extracted once when the scene is prepared; the
+        // bevelled image is rt-core's pinned one (PINNED_E6_BEVEL_4SPP) for any thread count.
+        let _serial = serial();
+        let mut scene = rt_core::example::e6_scene();
+        scene.render.max_samples = 4;
+        for threads in [1usize, 4, 16] {
+            let engine = Engine::new(threads);
+            let job = engine
+                .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+                .unwrap();
+            let f = wait_done(&job);
+            assert_eq!(f.samples, 4);
+            let inv = 1.0f32 / 4.0;
+            let rgb: Vec<f32> = f
+                .sums
+                .chunks_exact(4)
+                .flat_map(|p| [p[0] * inv, p[1] * inv, p[2] * inv])
+                .collect();
+            let hash = rgb
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .fold(0x811c_9dc5u32, |h, b| {
+                    (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+                });
+            assert_eq!(hash, 0xfccd_a027, "{threads} threads");
+        }
+    }
+
+    #[test]
     fn a_final_job_with_passes_keeps_them_with_its_image_before_it_ends() {
         use rt_core::passes::{PASS_DEPTH, PASS_PART_ID};
         let _serial = serial();

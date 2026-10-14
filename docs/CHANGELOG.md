@@ -3,6 +3,16 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Motor
+
+- **Bisel de aristas en el sombreado** (E6): el radio *Bisel de aristas* de cada material redondea la normal cerca de las aristas vivas de la malla (más de 20° entre caras, y los bordes abiertos) como un redondeo de ese radio, en los reflejos y en las sombras; aristas cóncavas, esquinas y aristas curvas incluidas, también entre las mallas de una pieza con materiales por cara. Las aristas se buscan una vez por malla, con un BVH propio; el coste medido es de un +3 % en la botella de ejemplo con su bisel de 0,3 mm. Los mismos bits con cualquier número de hilos y en el navegador (E6).
+
+### Interfaz
+
+- El campo *Bisel de aristas* del material ya no dice *próximamente*: lo dibujan el modo *Completo* y los renders; la vista *Rápida* sigue mostrando las aristas vivas, y la nota del campo lo dice (E6).
+
 ## v0.1.5 — 2026-10-14
 
 Versión de prueba con cáusticas y reducción de ruido propias, focos propios

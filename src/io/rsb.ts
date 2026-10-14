@@ -136,6 +136,8 @@ export interface RsbMaterial {
   anisotropy: number;
   /** E5: absorption distance of the clear part in mm (0: a surface tint). */
   absorptionMm: number;
+  /** E6: edge bevel radius in mm (0: sharp edges); the engine rounds the shading normal near the mesh's sharp edges. */
+  bevelMm: number;
 }
 
 export interface RsbMesh {
@@ -250,7 +252,7 @@ export function defaultCamera(): RsbCamera {
 }
 
 export function defaultMaterial(): RsbMaterial {
-  return { kind: MATERIAL_PRINCIPLED, baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.5, ior: 1.5, transmission: 0, coat: 0, coatRoughness: 0, emission: [0, 0, 0], emissionPower: 0, flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0 };
+  return { kind: MATERIAL_PRINCIPLED, baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.5, ior: 1.5, transmission: 0, coat: 0, coatRoughness: 0, emission: [0, 0, 0], emissionPower: 0, flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0, bevelMm: 0 };
 }
 
 export function defaultLight(): RsbLight {
@@ -315,7 +317,7 @@ export interface WriteOptions {
 }
 
 const CAMR_BYTES = 60;
-const MATL_BYTES = 72;
+const MATL_BYTES = 76;
 const LGHT_BYTES = 76;
 const ENVR_BYTES = 84;
 const FLOR_BYTES = 20;
@@ -418,6 +420,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.f32(m.opacity);
       w.f32(m.anisotropy);
       w.f32(m.absorptionMm);
+      w.f32(m.bevelMm);
     });
   }
   if (withMeshes) {
@@ -636,7 +639,8 @@ export const GLASS_ABSORPTION_MM = 50;
  * millimetres inside, or a surface tint at 0; a thin wall with `walls` THIN), EMISSIVE as kind 2
  * with radiance `colour x emitPower x EMIT_RADIANCE_PER_WATT` (the colour of a black body at its
  * temperature, normalised to its largest channel, or the colour given), sampled as a light when
- * it emits. Wear, wood and fabric patterns, bevel and subsurface come later (E6, E7).
+ * it emits. The edge bevel (E6, `bevelRadiusMm`) goes to every family but the emitter, which has none. Wear,
+ * wood and fabric patterns and subsurface come later (E6, E7).
  */
 export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMaterial {
   const m = defaultMaterial();
@@ -645,6 +649,7 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
     return m;
   }
   const p = inst.params;
+  if (inst.family !== 'EMISSIVE') m.bevelMm = Math.max(0, num(inst.bevelRadiusMm, 0));
   switch (inst.family) {
     case 'SIMPLE':
       m.baseColor = rgbOf(p.baseColor, [0.8, 0.8, 0.8]);

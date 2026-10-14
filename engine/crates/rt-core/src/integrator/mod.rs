@@ -46,6 +46,7 @@
 //! metals were tuned with), projected onto the tangent plane; where that degenerates, the
 //! instance's X axis; then any.
 
+use crate::bevel::BevelSetup;
 use crate::bitmap::Image;
 use crate::bsdf::{Bsdf, Lobes};
 use crate::caustics::{gather_at, gather_catcher, CausticSetup, PhotonMap};
@@ -172,6 +173,8 @@ pub struct Prepared {
     /// The caustics of the scene (`RNDR.caustic_photons` above zero and something to focus
     /// light: [`crate::caustics`]).
     pub(crate) caustics: Option<CausticSetup>,
+    /// The edge bevel of every instance ([`crate::bevel`], E6).
+    pub(crate) bevel: BevelSetup,
 }
 
 /// Absorption coefficients (per millimetre) of a clear material with an absorption distance.
@@ -263,6 +266,7 @@ impl Prepared {
             media: scene.materials.iter().map(medium_of).collect(),
             tangent_axes,
             caustics,
+            bevel: BevelSetup::new(scene),
         }
     }
 
@@ -467,7 +471,7 @@ pub fn first_hit<T: Tracer>(scene: &Scene, prepared: &Prepared, tracer: &T, ray:
         Some(details) => FirstHit::Surface {
             instance: details.instance,
             t: details.t,
-            normal: details.normal,
+            normal: prepared.bevel.pass_normal(scene, ray, &details),
         },
         None => FirstHit::Background,
     }
@@ -690,21 +694,14 @@ pub fn radiance_with<T: Tracer>(
             let Some(details) = hit.and_then(|h| scene.geometry.hit_details(&ray, h)) else {
                 break;
             };
-            // Keep the shading normal on the geometric side; where it would still face away
-            // from the viewer (silhouettes of coarse smooth meshes), shade flat.
-            let ng = details.geometric_normal;
-            let mut normal = details.normal;
-            if normal.dot(ng) < 0.0 {
-                normal = -normal;
-            }
-            if normal.dot(ray.dir) >= -1.0e-4 {
-                normal = ng;
-            }
+            // The shading normal on the geometric side, the terminator point of smooth meshes
+            // and the edge bevel (crate::bevel).
+            let shade = prepared.bevel.shading_point(scene, &ray, &details);
             Surface {
-                point: scene.geometry.terminator_point(&details),
+                point: shade.point,
                 hit_point: details.point,
-                normal,
-                geometric: ng,
+                normal: shade.normal,
+                geometric: shade.geometric,
                 instance: Some((details.instance, details.front_face)),
                 outside: details.outside,
             }

@@ -145,6 +145,10 @@ fn asking_for_passes_changes_no_pixel_of_the_image() {
         render_with_passes(&crate::example::e5_scene(true)),
         super::tests::PINNED_E5_SKY_4SPP
     );
+    assert_eq!(
+        render_with_passes(&crate::example::e6_scene()),
+        super::tests::PINNED_E6_BEVEL_4SPP
+    );
 }
 
 #[test]
@@ -219,6 +223,53 @@ fn the_passes_of_the_e5_example_have_pinned_hashes_on_every_platform() {
         assert!(tinted > 100, "{tinted} pixels of the glass sphere");
     }
 }
+
+#[test]
+fn the_passes_of_the_e6_example_have_pinned_hashes_on_every_platform() {
+    // E6: the normal pass is the bevelled shading normal (what the image is shaded with; the
+    // denoiser's normal guide follows the rounded strips). `tools/wasm-parity.mjs` checks the real
+    // module against the same values; the image keeps its hash with the passes interleaved.
+    let scene = crate::example::e6_scene();
+    let tiles = tile_grid(scene.render.width, scene.render.height, 32);
+    for isa in Isa::available() {
+        let passes = passes_of(&scene, PASS_ALL, 4, &tiles, isa);
+        let got = hashes(&passes);
+        for (key, hash) in PASS_KEYS.iter().zip(&got) {
+            eprintln!("E6 {key} on {}: {hash:#010x}", isa.name());
+        }
+        assert_eq!(got, PINNED_E6_PASSES, "on {}", isa.name());
+    }
+    let mut sharp = scene.clone();
+    for m in &mut sharp.materials {
+        m.bevel_mm = 0.0;
+    }
+    let plain = hashes(&passes_of(&sharp, PASS_ALL, 4, &tiles, Isa::detect()));
+    assert_ne!(
+        plain[1], PINNED_E6_PASS_NORMAL,
+        "the bevel shows in the normal pass"
+    );
+    assert_eq!(
+        plain[2], PINNED_E6_PASS_DEPTH,
+        "and nowhere in the geometry"
+    );
+}
+
+/// The pinned hashes of the E6 example's passes (4 samples of albedo), in the order of
+/// `PASS_KEYS` (`PINNED_E6_PASS_<KEY>` for CI).
+const PINNED_E6_PASSES: [u32; 6] = [
+    PINNED_E6_PASS_ALBEDO,
+    PINNED_E6_PASS_NORMAL,
+    PINNED_E6_PASS_DEPTH,
+    PINNED_E6_PASS_PART_ID,
+    PINNED_E6_PASS_MATERIAL_ID,
+    PINNED_E6_PASS_COC,
+];
+pub(crate) const PINNED_E6_PASS_ALBEDO: u32 = 0x2545_e8ce;
+pub(crate) const PINNED_E6_PASS_NORMAL: u32 = 0xfdbd_1a5b;
+pub(crate) const PINNED_E6_PASS_DEPTH: u32 = 0xda55_e505;
+pub(crate) const PINNED_E6_PASS_PART_ID: u32 = 0xf0c7_5106;
+pub(crate) const PINNED_E6_PASS_MATERIAL_ID: u32 = 0xf0c7_5106;
+pub(crate) const PINNED_E6_PASS_COC: u32 = 0x6ad5_8dc5;
 
 /// The pinned hashes of the example's passes (4 samples of albedo), in the order of
 /// `PASS_KEYS`. CI reads them from here (`PINNED_PASS_<KEY>`) for `tools/wasm-parity.mjs`.

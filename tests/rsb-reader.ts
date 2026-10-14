@@ -52,7 +52,7 @@ export function readCamera(p: DataView): RsbCamera {
 
 export function readMaterial(p: DataView): RsbMaterial {
   const c = new Cursor(p);
-  const m: RsbMaterial = { kind: c.u32(), baseColor: c.vec(), metallic: c.f32(), roughness: c.f32(), ior: c.f32(), transmission: c.f32(), coat: c.f32(), coatRoughness: c.f32(), emission: c.vec(), emissionPower: c.f32(), flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0 };
+  const m: RsbMaterial = { kind: c.u32(), baseColor: c.vec(), metallic: c.f32(), roughness: c.f32(), ior: c.f32(), transmission: c.f32(), coat: c.f32(), coatRoughness: c.f32(), emission: c.vec(), emissionPower: c.f32(), flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0, bevelMm: 0 };
   m.flags = c.remaining >= 4 ? c.u32() : 0;
   // E5 fields.
   if (c.remaining >= 12) {
@@ -60,6 +60,8 @@ export function readMaterial(p: DataView): RsbMaterial {
     m.anisotropy = c.f32();
     m.absorptionMm = c.f32();
   }
+  // E6.
+  if (c.remaining >= 4) m.bevelMm = c.f32();
   return m;
 }
 

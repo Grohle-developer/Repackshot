@@ -166,6 +166,10 @@ pub struct Material {
     /// white light after travelling this far inside (Beer–Lambert). 0: no absorption, the colour
     /// tints the surface instead (once per pass through a solid, or through a thin wall).
     pub absorption_mm: f32,
+    /// Radius of the edge bevel in millimetres (E6, [`crate::bevel`]): the shading normal is
+    /// rounded within this distance of the mesh's sharp edges, as if they were filleted. 0 (or
+    /// less): sharp edges.
+    pub bevel_mm: f32,
 }
 
 impl Default for Material {
@@ -185,6 +189,7 @@ impl Default for Material {
             opacity: 1.0,
             anisotropy: 0.0,
             absorption_mm: 0.0,
+            bevel_mm: 0.0,
         }
     }
 }

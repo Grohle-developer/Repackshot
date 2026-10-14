@@ -567,7 +567,10 @@ const TABLE = {
   'material.replaceAll': ['Replace all', 'Sustituir todos'],
   'material.keepExisting': ['Keep existing, apply only where there is none', 'Mantener los existentes y aplicar solo donde no hay'],
   'material.bevel': ['Edge bevel', 'Bisel de aristas'],
-  'material.bevelAux': ['Belongs to the material; drawn by the engine (coming soon).', 'Es del material; lo pinta el motor (próximamente).'],
+  'material.bevelAux': [
+    'Belongs to the material. Full mode rounds the sharp edges in the shading, as a fillet of this radius; the Fast preview shows them sharp.',
+    'Es del material. El modo Completo redondea las aristas vivas en el sombreado, como un redondeo de este radio; la vista Rápida las muestra vivas.',
+  ],
   'param.baseColor': ['Colour', 'Color'],
   'param.metallic': ['Metal', 'Metal'],
   'param.roughness': ['Roughness', 'Rugosidad'],

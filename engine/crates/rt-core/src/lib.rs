@@ -18,6 +18,7 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod bevel;
 pub mod bitmap;
 pub mod bsdf;
 pub mod caustics;

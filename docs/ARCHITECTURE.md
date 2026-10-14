@@ -342,7 +342,7 @@ Vive en `engine/`, un workspace de Cargo con siete *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
-| `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
+| `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
 | `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_version`…). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
@@ -404,8 +404,8 @@ banderas) es opcional: sin ella, cada malla es una instancia identidad.
 Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 `rt-core`):
 
-- **`MATL`** (72 B desde E5; los de 56 y 60 B se leen con los valores por
-  defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
+- **`MATL`** (76 B desde E6; los de 56, 60 y 72 B se leen con los valores
+  por defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
   barniz; la parte `transmission` es vidrio claro: reflexión y refracción
   GGX con el Fresnel dieléctrico exacto), 1 vidrio (el principal sin
   metal), 2 emisivo (radiancia `emission × emission_power`); desconocido =
@@ -414,7 +414,8 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   rectos). E5 añade `opacity` (1; por debajo, recorte estocástico),
   `anisotropy` (0) y `absorption_mm` (0; por encima, Beer–Lambert dentro
   del sólido: `base_color` es lo que conserva la luz blanca tras esos
-  milímetros).
+  milímetros). E6 añade `bevel_mm` (0; por encima, el radio del bisel de
+  aristas del sombreado, §5.2 ter; los emisores lo ignoran).
 - **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
   (L4); ≥ 5 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
@@ -610,6 +611,106 @@ proyecto, copiados en cada trabajo) y llegan al motor como los campos de
 *Ruido reducido* cuando la imagen en pantalla es la filtrada y *Cáusticas ·
 N fotones por muestra* cuando el motor las renderiza (`rt_scene_caustics`
 en el pool, `FLAG_CAUSTICS` en el lanzador).
+
+### 5.2 ter · Bisel de aristas en el sombreado (E6)
+
+Las aristas de un modelo CAD son matemáticamente vivas y una arista viva no
+coge luz. El bisel (`rt_core::bevel`, con las aristas en
+`rt_core::geometry::edges`) redondea la **normal de sombreado** cerca de las
+aristas vivas de la malla, como lo haría un redondeo de radio
+`MATL.bevel_mm`, sin tocar la geometría.
+
+**Aristas vivas** (una vez por malla, la primera vez que una instancia con
+bisel las pide, y guardadas con la malla, no por instancia: sobreviven a las
+actualizaciones sin `MESH` como su BVH; `Mesh::sharp_edges`). Los vértices se
+sueldan por posición exacta y luego por cercanía, a menos de 10⁻⁵ del mayor
+lado de la malla en cada eje (la costura de un torno, cuya última fila repite
+la primera salvo el redondeo de `sin 2π`), de forma determinista: celdas de
+dos tolerancias, unión de conjuntos con la raíz menor, cada grupo en la
+menor de sus posiciones. Una arista soldada con **un** triángulo es de
+**borde**; con **dos**, es **viva** si sus normales, orientadas de forma
+coherente (dos triángulos bien enrollados recorren la arista en sentidos
+contrarios; si no, se da la vuelta a una), se separan más de **20°**, salvo
+que las normales de vértice de la malla coincidan a los dos lados en los dos
+extremos (a 2°): la malla ya la sombrea redonda; con **tres o más** (no
+variedad, caras duplicadas) se ignora. Los triángulos sin área no cuentan.
+
+**Aceleración.** Un BVH binario propio sobre los segmentos (corte por la
+mediana de los centroides en el eje más ancho, hojas de 4), consultado con
+una esfera: las 8 aristas más cercanas a menos de 2 radios, visitando como
+mucho 128 nodos. Cada triángulo guarda además su **holgura**, una cota
+inferior de su distancia a la arista más cercana (distancia del centroide
+menos su esquina más lejana): un punto lejos de toda arista cuesta una
+comparación. **Coste medido** (tiempo de CPU de un hilo, mínimo de tres;
+máquina compartida): la botella de ejemplo de la interfaz con su bisel por
+defecto de 0,303 mm, +3,1 %; el ejemplo del motor con 0,3 mm, +0,7 %; la
+escena de E6 (piezas de pocos triángulos, todos tocando aristas, biseles de
+2 a 3 mm), +11 %.
+
+**La normal.** Con `n` la normal de sombreado del punto, `n'` la de la cara
+de enfrente en el punto más cercano de la arista (sus normales de vértice
+interpoladas, o su plano), `θ` el ángulo entre ellas, `v` la dirección de `n'`
+en el plano tangente de `n` y `d` la distancia a la arista, un redondeo de
+radio `r` tangente a las dos caras empieza a `t = r tan(θ/2)` de la arista y
+su normal es `normalize(r n + (t − d) v)` para `d < t`: la de la cara en `t`,
+la bisectriz en la arista (la misma desde los dos lados: continua), y la
+misma fórmula vale para una arista cóncava (un redondeo interior que llena la
+esquina). Si la arista es más aguda que un ángulo recto, la huella se queda
+en `r` y el radio baja a `r / tan(θ/2)`: la normal solo cambia a menos de `r`
+de una arista, sea cual sea su ángulo. Un **borde** abierto redondea un
+ángulo recto hacia fuera. **Varias aristas** (esquinas, y los segmentos de
+una arista curva): cada una pide `w · v_i ≥ a_i` al desplazamiento `w` que se
+suma a `r n`, y se toma el `w` más corto que cumple todas (un problema
+cuadrático en 2D: como mucho dos restricciones activas; se prueban todas las
+simples y los pares). Es exactamente la normal de una caja redondeada por una
+esfera en una esquina en ángulo recto, y la mayor de las peticiones (no su
+suma) a lo largo de una cadena de segmentos casi paralelos, así que una
+arista curva no hace cuentas en sus vértices. Si no caben todas (una pared o
+un borde más finos que unos dos radios), el radio baja en ese punto, por
+bisección (16 pasos), al mayor que cabe: un borde fino se vuelve un medio
+redondeo. La cara de un triángulo vecino cuenta como la superficie del punto
+si su normal está a menos de 25° y el punto queda de su lado de la arista;
+una arista al otro lado de un hueco no tuerce la normal.
+
+**Espacio y escala.** Todo se calcula en el espacio de la malla, con el radio
+dividido por la escala de la instancia `∛|det M|`. Con una escala no
+uniforme el redondeo es el transformado del circular (elíptico en el mundo,
+de radio medio `bevel_mm`) y el ángulo de 20° se mide en el espacio de la
+malla; la normal va al mundo por la inversa traspuesta como cualquier normal.
+
+**Sombras y reflejos.** Un redondeo de verdad queda por debajo de las caras
+que sustituye, así que la luz que le llega desde un poco por debajo del
+plano de una cara (desde el lado de la arista) no la tapa la esquina. Los
+rayos que salen de un punto biselado (sombra y siguiente rebote) parten del
+punto elevado a lo largo de la normal biselada `d · a_i / |r n + w|` (la
+menor elevación desde la que toda dirección por encima del plano tangente
+del redondeo libra la cara, deducida para una arista convexa; la mayor de
+las aristas activas en una esquina; las demás aristas de una cadena no
+cuentan), encima de la elevación del terminador (RTG II,
+`Geometry::terminator_point`). La normal geométrica de la superficie pasa a
+ser la del redondeo (el bisel aplicado al plano del triángulo): la prueba
+del integrador «un reflejo sale por encima de la superficie» se hace contra
+el redondeo. Una normal biselada que miraría hacia atrás (vistas rasantes)
+se dobla hacia el observador hasta un coseno de 0,01. Las mismas normales y
+el mismo punto usan los fotones de las cáusticas y el pase de normal de X2
+(el guía del *denoise* sigue las franjas redondeadas); los emisores no
+tienen bisel.
+
+**Sesgo.** Una normal biselada es una normal de sombreado como las
+interpoladas: la BSDF se evalúa en su marco para el muestreo de luces y para
+el de la BSDF, así que el MIS pesa los dos con las mismas densidades, pero
+una normal de sombreado no es recíproca ni conserva la energía exactamente
+(Veach 1997, §5.3): en un horno blanco con un cubo biselado la media de la
+imagen sale 0,99995 y los píxeles entre 0,988 y 1,014.
+
+**Interfaz.** El campo *Bisel de aristas* (mm) del material llega al motor
+tal cual (`materialToRsb`, todas las familias salvo el emisor); la vista
+*Rápida* (three.js) no lo dibuja y la nota del campo lo dice. *Hash* fijado:
+la escena de E6 a 4 muestras, `0xfccda027` (`PINNED_E6_BEVEL_4SPP`, `rt
+--write-e6-example`), y sus seis pases (`PINNED_E6_PASS_*`), iguales en todas
+las rutas SIMD, en WASI, en el `rt.wasm` real (también por el código de la
+página, `tests/passes-engine.test.ts` con `tests/fixtures/e6.rsb`), con 1, 4
+y 16 hilos en `rt` y en el lanzador. Las escenas sin bisel no cambian de bits.
 
 ### 5.3 · En el navegador: workers
 

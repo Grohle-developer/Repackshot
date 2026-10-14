@@ -291,6 +291,21 @@ todos editables), `wear` (los campos de desgaste), `textures` (color,
 rugosidad, metal, normal, alfa; proyección caja/plana/cilíndrica/UV;
 escala, rotación, desplazamiento), `bevelRadiusMm`.
 
+**Bisel de aristas** (`bevelRadiusMm`, E6): radio en mm de un redondeo
+que el motor dibuja **solo en el sombreado** (la geometría no cambia):
+cerca de las aristas vivas de la malla (más de 20° entre caras, y los bordes
+abiertos), la normal gira como la de un redondeo circular de ese radio
+tangente a las dos caras, así que la arista coge luz en los reflejos y en la
+sombra como una arista redondeada de verdad. Vale para aristas convexas y
+cóncavas, esquinas (como una caja redondeada por una esfera) y aristas
+curvas; nunca cambia la normal a más de ese radio de una arista; donde una
+pieza es más fina que unos dos radios, el redondeo se ajusta a lo que cabe.
+Es del material (todas las familias salvo el emisor, que no tiene); una
+instancia nueva de un preset lleva el 0,25 % del tamaño de la pieza (el
+arreglo del Doctor). El modo *Completo* y los renders lo dibujan; la vista
+*Rápida* muestra las aristas vivas. Detalle técnico: `ARCHITECTURE.md`
+§5.2 ter.
+
 Familias y lo que significan para el motor:
 
 | Familia | Modelo | Parámetros propios |

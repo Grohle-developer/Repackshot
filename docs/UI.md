@@ -520,7 +520,12 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    por pieza*, y *Aplicar a toda la pieza*.
 3. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
-   radio de bisel de aristas (mm), suavizado.
+   radio de bisel de aristas (mm), suavizado. El bisel es del material
+   (lo dice la nota bajo el campo: *Es del material. El modo Completo
+   redondea las aristas vivas en el sombreado, como un redondeo de este
+   radio; la vista Rápida las muestra vivas*): lo dibuja el motor
+   desde E6 (`ARCHITECTURE.md` §5.2 ter); three.js no puede hacerlo barato
+   y la vista *Rápida* no lo intenta.
 
 **Con una primitiva seleccionada** (fase U9), antes de *Material*, la
 sección **Primitiva**: *Forma* (el nombre, en texto), y un campo por

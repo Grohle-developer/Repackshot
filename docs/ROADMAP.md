@@ -1448,6 +1448,97 @@ estadísticas (periodo de anillos, contraste, media de rugosidad);
 renders de las 13 maderas y las 12 telas como esferas con `rt`; el bisel
 cambia la normal solo a menos del radio de una arista viva (cubo).
 
+**Hecho — bisel de aristas** (primera parte, su propio *commit*).
+
+- **Aristas vivas** (`rt_core::geometry::edges`): una vez por malla, la
+  primera vez que la pide una instancia con bisel, y guardadas con la malla
+  (sobreviven a las actualizaciones sin `MESH`). Soldado por posición exacta
+  y luego a menos de 10⁻⁵ del tamaño de la malla (la costura de un torno);
+  arista con un triángulo = borde; con dos = viva si sus normales,
+  orientadas de forma coherente, se separan más de 20° y la malla no la
+  suaviza con sus normales de vértice; con tres o más, ignorada. BVH binario
+  propio de segmentos (hojas de 4) y una holgura por triángulo; cada punto
+  mira como mucho 128 nodos y 8 aristas a menos de dos radios.
+- **La normal** (`rt_core::bevel`): la de un redondeo circular tangente a
+  las dos caras, `normalize(r n + (r tan(θ/2) − d) v)`, con la normal de
+  sombreado del punto y la de la cara de enfrente interpolada en la arista;
+  convexas y cóncavas con la misma fórmula; la huella nunca pasa de `r`
+  (aristas agudas: el radio baja a `r / tan(θ/2)`); bordes abiertos, un
+  ángulo recto hacia fuera. Varias aristas: el desplazamiento más corto que
+  cumple todas (exacto en la esquina de una caja; la mayor petición, no la
+  suma, en una arista curva); si no caben, el radio baja por bisección (un
+  borde fino se vuelve medio redondeo). Escala de instancia: el radio se
+  divide por `∛|det M|` (con escala no uniforme, el redondeo transformado:
+  elíptico, de radio medio `bevel_mm`). Se compone con el terminador (RTG
+  II): los rayos salen del punto elevado por el terminador y luego por el
+  redondeo, `d · a / |r n + w|` a lo largo de la normal biselada (lo justo
+  para que toda dirección por encima del plano tangente del redondeo libre
+  la cara), y la normal geométrica pasa a ser la del redondeo; una normal
+  que miraría hacia atrás se dobla hacia el observador. Lo usan el
+  integrador, los fotones de las cáusticas y el pase de normal.
+- **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina compartida
+  con otros dos agentes): botella de ejemplo de la interfaz con su bisel por
+  defecto de 0,303 mm, 1,444 s → 1,489 s (**+3,1 %**); ejemplo del motor con
+  0,3 mm en sus tres materiales, +0,7 %; escena de E6 (pocos triángulos,
+  todos tocando aristas, biseles de 2–3 mm), +11 %. Por debajo del +15 %.
+- **Sesgo**: una normal de sombreado más; MIS pesa las dos estrategias con
+  la misma BSDF, pero no es recíproca: horno blanco con un cubo biselado,
+  media 0,99995, píxeles entre 0,988 y 1,014.
+- **RSB**: `MATL` pasa a 76 B con `bevel_mm` (f32, 0 = vivo), en el orden
+  acordado con E9 (detrás irán `scatter_mm`, `scatter_color[3]`,
+  `scatter_g`, `abbe`); un `MATL` de 72 B se lee sin bisel. El escritor
+  TypeScript manda `bevelRadiusMm` de todas las familias salvo el emisor.
+- **Interfaz**: la nota del campo *Bisel de aristas* deja de decir
+  *próximamente* («Es del material. El modo Completo redondea las aristas
+  vivas en el sombreado, como un redondeo de este radio; la vista Rápida
+  las muestra vivas»). La vista *Rápida* no lo dibuja.
+- **Hashes**: los fijados no se mueven (ninguna escena fijada lleva bisel:
+  ejemplo `0x223515c3`, E5 `0xbf8abd5b`, cielo de E5 `0x2fcb098a`, E5c
+  `0x8bb09f6b`, *denoise* `0xab15f290`, cáusticas `0x55d60f2f`). Nuevo:
+  la escena de E6 (`rt --write-e6-example`: caja bicolor en dos mallas con
+  escala no uniforme, cilindro metálico de 48 lados, placa más fina que dos
+  biseles) **`0xfccda027`** y sus seis pases (`PINNED_E6_PASS_*`), iguales
+  en escalar, SSE2, AVX2, WASI, el `rt.wasm` real (también por el código de
+  la página) y con 1, 4 y 16 hilos en `rt` y en el lanzador; paso nuevo en
+  `engine.yml`.
+- **Tests**: 29 nuevos en `rt-core` (extracción: caja, esferas suaves y
+  facetadas, bordes y enrollado incoherente, costura de torno, consultas
+  frente a fuerza bruta y holgura; bisel: el cubo cambia solo a menos del
+  radio y en la forma exacta, simetría entre caras, esquina como esfera,
+  esfera suave intacta, arista curva sin cuentas, elevación de una arista
+  curva, pieza en dos mallas igual que en una y costura plana, cóncava,
+  borde fino, escala de instancia, aristas agudas y poco marcadas, vecino al
+  otro lado de un hueco, nunca de espaldas, emisores; renders: la arista
+  coge una luz por debajo del plano de la cara, un brillo que la arista viva
+  no tiene, un espejo refleja lo que hay bajo el plano, horno blanco; pase
+  de normal; RSB), `rt-cli` y `rt-app` (1/4/16 hilos) y la interfaz
+  (`materialToRsb`, tamaños de sección, ida y vuelta, `e6.rsb` con el
+  `rt.wasm` real).
+
+**No encajó con el plan (bisel):**
+
+- **Bordes entre mallas de una pieza.** La interfaz manda una pieza con
+  materiales por cara como una malla por material, con la misma
+  transformación: sus bordes comunes no son bordes. `BevelSetup` empareja
+  los bordes de las mallas con la misma transformación (bit a bit): si la
+  superficie sigue lisa es una costura (sin bisel) y si dobla más de 20° es
+  una arista viva con la cara de la otra malla. Se calcula en cada
+  preparación de la escena, por instancia. Una costura que no coincida
+  (T, soldaduras de más de 10⁻⁵) sigue leyéndose como borde.
+- **El pase de normal lleva el bisel** (es la normal con que se sombrea):
+  las escenas con bisel cambian sus pases; las fijadas no lo llevan.
+- **Todas las instancias de un preset ya traían 0,25 % del tamaño de la
+  pieza** (el arreglo del Doctor): desde ahora todo proyecto existente se
+  ve con bisel en *Completo* sin tocar nada. Es lo que pedía el Doctor,
+  pero cambia el aspecto de los proyectos guardados.
+- **Lo que no se redondea**: aristas que la malla suaviza con sus normales
+  de vértice (ya son redondas), aristas no variedad y caras duplicadas;
+  con escala no uniforme, el umbral de 20° se mide en el espacio de la
+  malla.
+- **Un borde más fino que dos radios** se ajusta solo en ese punto: la cara
+  ancha de al lado conserva su radio, así que el redondeo es elíptico
+  (continuo en la arista).
+
 ## E7 · Desgaste visible — **Opus**, con visto bueno **Fable**
 
 **Qué.** Los ocho tipos de desgaste de `src/data/wear.ts` como capas del
