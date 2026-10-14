@@ -5743,9 +5743,11 @@ partículas y su BVH. Tamaño mínimo de 0,35 px para los rayos de cámara
 con la energía conservada (abajo). `rt --write-ambient-example` escribe
 la escena de paridad (`example::ambient_scene`: polvo ensanchado, lluvia
 de vidrio, nieve con paleta y sin sombra); imagen fijada
-`PINNED_AMBIENT_4SPP = c4406309` y partículas `e38b8480`, iguales en
-escalar, SSE2, AVX2 y en wasm escalar y `simd128`, con 1 y N hilos; sin
-efectos todas las escenas de referencia dan los mismos *hashes*.
+`PINNED_AMBIENT_4SPP = 415d7d74` (era `c4406309` antes de la selección
+de luces por punto de E12, que la mueve; las partículas no) y partículas
+`e38b8480`, iguales en escalar, SSE2, AVX2 y en wasm escalar y
+`simd128`, con 1 y N hilos; sin efectos todas las escenas de referencia
+dan los mismos *hashes*.
 `rt-wasm`: `rt_particles_eval(params, len, max, out) → u32` (8 `f32` por
 partícula: centro, radio, eje, semilla del tinte; `u32::MAX` si la carga
 no vale) y `engine/tools/wasm-parity.mjs --particles --expect-particles`.
@@ -5848,7 +5850,7 @@ defecto más bajos.
   resultados y comprueba que son los de esta versión.
 - **Lo que CI no tiene todavía** (`.github/` no se toca en esta fase): en el
   trabajo del motor, `rt --write-ambient-example` y `wasm-parity.mjs
-  --expect c4406309 --expect-particles e38b8480` sobre esa escena, y
+  --expect 415d7d74 --expect-particles e38b8480` sobre esa escena, y
   `tests/effects-rsb.test.ts` en el paso del `rt.wasm` real.
 
 **Valores de los presets** (regla 11; `src/data/effects.ts`; propuestos
