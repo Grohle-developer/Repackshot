@@ -199,7 +199,7 @@ ventana `--app` de Edge o Chromium, y el diálogo *¿Salir?* de `beforeunload` a
   solo si se pidió `writable` (un proyecto que se vuelve a guardar). Un fichero de `dialog/save`:
   escribirlo entero (a un temporal al lado y renombrado encima: un guardado fallido no deja medio
   fichero). Solo se escriben extensiones que produce la aplicación (`png`, `jpg`, `jpeg`, `exr`,
-  `json`, `rsb`, `mp4`, `webm`): nada ejecutable cae en ninguna parte; los nombres se hacen válidos
+  `tif`, `tiff`, `dng`, `json`, `rsb`, `mp4`, `webm`): nada ejecutable cae en ninguna parte; los nombres se hacen válidos
   en todos los sistemas (`\ / : * ? " < > |` y controles a `_`, sin puntos ni espacios finales, los
   nombres de dispositivo de Windows con `_` delante, 200 bytes como mucho). Dos entradas son del
   propio lanzador, no de la página: `downloads` (la carpeta Descargas del sistema, solo ficheros
@@ -433,8 +433,8 @@ almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src
 <datos>/state/<nombre>.json        documentos pequeños (descargas por reanudar, la marca de la migración...)
 <datos>/library/library.json       la biblioteca propia (U4)
 <datos>/results/index.json         el historial: {"version": 1, "results": [{id, file, type, display, ai, aiType, aiVariants, meta}]}
-<datos>/results/<id>.<ext>         el archivo de un resultado tal cual (png, jpg, exr, webp, tif)
-<datos>/results/<id>.display.png   su imagen para el visor, cuando la página no puede mostrar el archivo (EXR)
+<datos>/results/<id>.<ext>         el archivo de un resultado tal cual (png, jpg, exr, webp, tif, dng)
+<datos>/results/<id>.display.png   su imagen para el visor, cuando la página no puede mostrar el archivo (EXR, TIFF, DNG)
 <datos>/results/<id>.ai.<n>.<ext>  la variante n (de 1 a 8) que hizo el post-procesado IA, cuando el resultado pasó por él (X4b), en su tipo
 <datos>/results/<id>.ai.<ext>      la única imagen de la IA de un resultado de antes de X4b (fase X4): se lee como su variante 1
 <datos>/cache/thumbs/<clave>.txt   las esferas de materiales (data URL): caché, se libera cuando se quiera
@@ -461,7 +461,7 @@ almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src
 | `GET` / `PUT` / `DELETE /api/store/docs/<nombre>` | Uno (`null` si no está); `PUT` admite cualquier valor JSON de 1 MiB como mucho |
 | `GET` / `PUT` / `DELETE /api/store/library` | La biblioteca: un objeto JSON de 64 MiB como mucho |
 | `GET /api/store/results` | `{"results": [meta...]}`, en el orden en que llegaron; un resultado cuyo archivo se borró a mano no aparece |
-| `PUT /api/store/results/<id>?type=<tipo>` | Cuerpo: el archivo (4 GiB como mucho, escrito por trozos al disco). `image/png`, `image/jpeg`, `image/x-exr`, `image/webp` o `image/tiff`; otro tipo, 415 |
+| `PUT /api/store/results/<id>?type=<tipo>` | Cuerpo: el archivo (4 GiB como mucho, escrito por trozos al disco). `image/png`, `image/jpeg`, `image/x-exr`, `image/webp`, `image/tiff` (`.tif`) o `image/x-adobe-dng` (`.dng`); otro tipo, 415 |
 | `PUT /api/store/results/<id>/display` | Cuerpo: la imagen PNG para el visor (512 MiB como mucho) |
 | `PUT /api/store/results/<id>/ai/<n>?type=<tipo>` | Cuerpo: la variante `n` (1 a 8, escrita sin ceros delante; si no, 400 `bad-variant`) que hizo el post-procesado IA (X4b), con los mismos tipos y límite que el archivo; otra vez en otro tipo deja un solo archivo. Entra en el registro (`aiVariants: [{n, file, type}]`) con `PUT .../meta` si ya está. Una variante que la guarda rechazó no tiene archivo: no se manda |
 | `PUT /api/store/results/<id>/ai?type=<tipo>` | La única imagen de la IA de antes de X4b (X4), `<id>.ai.<ext>`; sigue funcionando y se lee como la variante 1 |

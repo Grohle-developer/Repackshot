@@ -418,6 +418,47 @@ export function straightExr(rgba: Float32Array, ev: number, out: Float32Array = 
   return out;
 }
 
+/**
+ * Scene-linear RGBA with **straight** alpha for a 32-bit TIFF or a DNG: the mean of the samples with its
+ * colour divided by its coverage where the pixel is partly transparent, times the exposure gain, no curve
+ * (`linearRgba` premultiplies, as OpenEXR does; a TIFF declares unassociated alpha). For an opaque pixel it is
+ * `linearRgba`, bit for bit.
+ */
+export function straightLinearRgba(sum: Float32Array, samples: number, ev: number, out: Float32Array = new Float32Array(sum.length)): Float32Array {
+  const gain = Math.fround(exposureGain(ev));
+  const inv = Math.fround(1 / Math.max(1, samples));
+  const f = Math.fround;
+  for (let i = 0; i < sum.length; i += 4) {
+    const a = f(sum[i + 3] * inv);
+    let r = f(sum[i] * inv);
+    let g = f(sum[i + 1] * inv);
+    let b = f(sum[i + 2] * inv);
+    if (a < OPAQUE) {
+      if (a > 0) {
+        r = f(r / a);
+        g = f(g / a);
+        b = f(b / a);
+      } else r = g = b = 0;
+    }
+    out[i] = f(r * gain);
+    out[i + 1] = f(g * gain);
+    out[i + 2] = f(b * gain);
+    out[i + 3] = a >= OPAQUE ? 1 : a;
+  }
+  return out;
+}
+
+/** The same for a straight-alpha linear image (the AI's output, `straightExr` without the premultiplication). */
+export function straightLinear(rgba: Float32Array, ev: number, out: Float32Array = new Float32Array(rgba.length)): Float32Array {
+  const gain = Math.fround(exposureGain(ev));
+  const f = Math.fround;
+  for (let i = 0; i < rgba.length; i += 4) {
+    for (let c = 0; c < 3; c++) out[i + c] = f(rgba[i + c] * gain);
+    out[i + 3] = rgba[i + 3] >= OPAQUE ? 1 : rgba[i + 3];
+  }
+  return out;
+}
+
 /** The straight-alpha linear image of accumulated sums, as the launcher's `linear_of` gives it (tests). */
 export function straightOf(sum: Float32Array, samples: number, out: Float32Array = new Float32Array(sum.length)): Float32Array {
   const inv = Math.fround(1 / Math.max(1, samples));

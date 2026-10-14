@@ -18,6 +18,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **Etiquetas** (M2a): *Añadir etiqueta…* elige una imagen con alfa, y una pulsación sobre la pieza con un arrastre la coloca allí (plana desde la normal de la superficie, derecha) con su ancho; varias por material, en orden (*Traer delante*, *Enviar atrás*), con ancho, giro, alcance y su acabado (rugosidad, barniz, relieve del papel); **Mover etiqueta** la desliza por la superficie (M2a).
 - La vista **Rápido** dibuja todas las ranuras, las cinco proyecciones (la caja mezcla tres ejes, la cilíndrica y la esférica sin costura visible) y las etiquetas, con mipmaps, sobre el aspecto de siempre (luces, entorno, sombras, contorno). *Completo* y *Render* las pintan cuando el motor las lea (*próximamente*, M2b) (M2a).
 - La **hoja de importación** gana la sección **Texturas**: cuántas imágenes se guardan y cuánto pesan, y cada una que no, con el porqué (M2a).
+- **Salida en TIFF y en RAW (DNG)** (U12): la ventana de render ofrece **TIFF** —sin compresión, con *8 bits*, *16 bits* (sRGB) o *32 bits flotante* (luz lineal con la exposición del render, como el EXR), con fondo transparente y los DPI de la ventana como resolución— y **RAW (DNG)** —un DNG 1.4 lineal en coma flotante que un revelador de raw abre como el de una cámara, con toda la latitud del render y sin alfa—, cada uno con una línea de ayuda. El nombre acaba en `.tif` o `.dng`; el visor de resultados y las miniaturas usan una copia PNG de 8 bits del mismo render (los navegadores no muestran TIFF ni DNG); *Guardar de nuevo* escribe el archivo. Los ajustes antiguos abren igual, y *Preferencias ▸ Render ▸ Formato* ofrece los dos (U12).
 
 ### Importación
 
@@ -31,6 +32,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 ### Motor
 
 - El **contrato RSB de las texturas** queda escrito para M2b (`ARCHITECTURE.md` §5.2: sección `IMGS`, bloque de texturas de `MATL` desde el byte 100, UV en `MESH`); el escritor lo produce solo cuando se le pide, y hasta entonces los bytes de cualquier escena son los de antes (M2a).
+- `rt-core::tiff` y `rt-core::dng`, los escritores de TIFF 6.0 y DNG 1.4 de la salida, solo con `std` y de la especificación pública; la interfaz escribe los mismos bytes (`encodeTiff`, `encodeDng`), con los archivos de `tests/fixtures/tiff/` como prueba de paridad. `rt` escribe `--format tiff` (con `--bits 8|16|32`) y `--format dng`, o por la extensión de `-o`; el lanzador guarda esos resultados y deja escribir `.tif`, `.tiff` y `.dng` (U12).
 
 ### Luz
 

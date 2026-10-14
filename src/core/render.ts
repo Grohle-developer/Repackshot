@@ -22,8 +22,9 @@ import { clampDpi, DEFAULT_DPI, lockedSide, PRINT_UNITS, type PrintUnit } from '
 
 export type RenderQuality = QualityKey | 'CUSTOM';
 export type RenderMode = 'IMAGE' | 'ANIMATION';
-export type OutputFormat = 'PNG' | 'JPEG' | 'EXR';
-export type BitDepth = 8 | 16;
+export type OutputFormat = 'PNG' | 'JPEG' | 'EXR' | 'TIFF' | 'DNG';
+/** Bits per channel: 8 and 16 are sRGB (PNG, TIFF); 32 is the float TIFF in linear light. */
+export type BitDepth = 8 | 16 | 32;
 /** When a render ends: at a number of samples, at a time, or whichever comes first (Advanced). */
 export type FinishBy = 'SAMPLES' | 'TIME' | 'FIRST';
 /** Where an output goes: the browser's downloads, or a folder chosen with the File System Access API. */
@@ -139,7 +140,7 @@ export interface RenderSettings {
   /** Open the result in the results viewer when the job ends. */
   showWhenDone: boolean;
   format: OutputFormat;
-  /** PNG only: 8 or 16 bits per channel. */
+  /** PNG: 8 or 16 bits per channel; TIFF: 8, 16 or 32 (float, linear). Any other format keeps 8 (EXR and DNG are 32-bit float always). */
   bitDepth: BitDepth;
   /** JPEG quality, 1..100. */
   jpegQuality: number;
@@ -216,19 +217,48 @@ export interface RenderState extends RenderSettings {
 }
 
 /** Formats this version writes. */
-export const WRITABLE_FORMATS: ReadonlySet<OutputFormat> = new Set<OutputFormat>(['PNG', 'JPEG', 'EXR']);
+export const WRITABLE_FORMATS: ReadonlySet<OutputFormat> = new Set<OutputFormat>(['PNG', 'JPEG', 'EXR', 'TIFF', 'DNG']);
 /** Frame rates offered for animation output. */
 export const FPS_CHOICES: readonly number[] = [24, 25, 30, 60];
 /** Encoded video arrives with N1; until then the output is a frame sequence. */
 export const VIDEO_AVAILABLE = false;
-/** Formats that carry an alpha channel. */
+/** Formats that carry an alpha channel (a DNG is a raw: it has none). */
 export function supportsAlpha(format: OutputFormat): boolean {
-  return format === 'PNG' || format === 'EXR';
+  return format === 'PNG' || format === 'EXR' || format === 'TIFF';
 }
 
 /** File extension of a format. */
 export function formatExtension(format: OutputFormat): string {
-  return format === 'JPEG' ? 'jpg' : format === 'EXR' ? 'exr' : 'png';
+  switch (format) {
+    case 'JPEG':
+      return 'jpg';
+    case 'EXR':
+      return 'exr';
+    case 'TIFF':
+      return 'tif';
+    case 'DNG':
+      return 'dng';
+    default:
+      return 'png';
+  }
+}
+
+/** The bit depths a format offers: PNG 8 or 16, TIFF 8, 16 or 32 (float); the others have no choice. */
+export function bitDepthsOf(format: OutputFormat): readonly BitDepth[] {
+  return format === 'PNG' ? [8, 16] : format === 'TIFF' ? [8, 16, 32] : [8];
+}
+
+/** Whether the file is written from the engine's linear float sums (not from its 8-bit pixels): 16-bit PNG and TIFF, 32-bit TIFF, EXR and DNG. */
+export function needsLinearSums(format: OutputFormat, bitDepth: BitDepth): boolean {
+  return format === 'EXR' || format === 'DNG' || (format === 'PNG' && bitDepth === 16) || (format === 'TIFF' && bitDepth !== 8);
+}
+
+/**
+ * Whether a browser cannot show the file (EXR, TIFF, DNG): the render keeps an 8-bit PNG of the same image
+ * beside it for the results viewer and the thumbnails.
+ */
+export function needsDisplayCopy(format: OutputFormat): boolean {
+  return format === 'EXR' || format === 'TIFF' || format === 'DNG';
 }
 
 /** The RESOLUTION_PRESETS key for a size, or 'CUSTOM'. */
@@ -349,7 +379,7 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
   // Format.
   if (!WRITABLE_FORMATS.has(next.format)) next.format = 'PNG';
   if (!supportsAlpha(next.format)) next.transparent = false;
-  if (next.bitDepth !== 16 || next.format !== 'PNG') next.bitDepth = 8;
+  if (!bitDepthsOf(next.format).includes(next.bitDepth)) next.bitDepth = 8;
   if (p.jpegQuality !== undefined) next.jpegQuality = clampInt(p.jpegQuality, 1, 100);
   // Engine.
   if (p.advanced !== undefined) {
@@ -626,8 +656,8 @@ function migrateSettings(raw: Record<string, unknown>, base: RenderSettings): Re
     name: str(raw.name),
     destination: dest,
     showWhenDone: bool(raw.showWhenDone),
-    format: oneOf<OutputFormat>(raw.format, ['PNG', 'JPEG', 'EXR']),
-    bitDepth: raw.bitDepth === 16 ? (16 as const) : raw.bitDepth === 8 ? (8 as const) : undefined,
+    format: oneOf<OutputFormat>(raw.format, ['PNG', 'JPEG', 'EXR', 'TIFF', 'DNG']),
+    bitDepth: raw.bitDepth === 32 ? (32 as const) : raw.bitDepth === 16 ? (16 as const) : raw.bitDepth === 8 ? (8 as const) : undefined,
     jpegQuality: num(raw.jpegQuality),
     transparent: bool(raw.transparent),
     camera,

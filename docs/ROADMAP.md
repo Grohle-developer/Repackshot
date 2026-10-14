@@ -5533,7 +5533,7 @@ con la trama (test numérico); energía ≤ 1 (horno blanco). M5b: 100 k
 fibras ≤ 1,5× el tiempo por muestra; determinismo; hoja con cuatro
 densidades.
 
-## U12 · Salida en TIFF y RAW (DNG) — **Sonnet**
+## U12 · Salida en TIFF y RAW (DNG) — **Sonnet** — hecha
 
 Petición del usuario: que las imágenes puedan salir en TIFF y en RAW.
 **Decisión Fable.** RAW = **DNG lineal en coma flotante** (DNG 1.4, TIFF
@@ -5565,6 +5565,61 @@ inversa de sRGB→XYZ (producto = identidad ± 1e-6); el visor de
 resultados muestra la vista previa de un TIFF de 32 bits; capturas
 `docs/ui/render-format-tiff.png`. `UI.md`, `ARCHITECTURE.md` §5,
 CHANGELOG.
+
+**Hecho.** `rt_core::tiff` y `rt_core::dng` (solo `std`, de TIFF 6.0 y
+DNG 1.4; el constructor de directorios es común: un DNG es un TIFF con
+más etiquetas) y, en `src/io/image.ts`, `encodeTiff` y `encodeDng`, que
+escriben **los mismos bytes**: `tests/fixtures/tiff/` guarda ocho archivos
+(RGB y RGBA a 8, 16 y 32 bits, uno de dos *strips* y el DNG) que
+`rt-cli/tests/tiff_golden.rs` y `tests/tiff-dng.test.ts` comparan con cada
+codificador, y cada lado se relee con un lector mínimo propio de su test
+(etiquetas ordenadas, desplazamientos pares, valores empaquetados,
+*strips* sin huecos, cada muestra); los archivos también los abren
+ImageMagick/libtiff y PIL, lectores ajenos usados solo para comprobar.
+`ColorMatrix1` es la inversa de sRGB → XYZ de los primarios y el blanco
+D65, calculada en aritmética exacta y guardada con denominador 10⁷
+(producto con sRGB → XYZ = identidad con error < 3·10⁻⁷, el test pide
+1·10⁻⁶). La interfaz: `OutputFormat` con `TIFF` y `DNG`, `BitDepth` con 32
+(solo TIFF), `bitDepthsOf`, `needsDisplayCopy` y `needsLinearSums` en
+`core/render.ts`; el normalizador quita el alfa al DNG y los 32 bits a todo
+lo que no sea TIFF; la ventana ofrece *TIFF* (8, 16, 32 bits flotante,
+alfa) y *RAW (DNG)* (sin alfa, «32 bits flotante» fijo) con una línea de
+ayuda cada uno; el render guarda junto al archivo una copia PNG de 8 bits
+para el visor y las miniaturas (como el EXR) y el historial de escritorio
+la pide también para TIFF y DNG; el lanzador guarda `image/tiff` e
+`image/x-adobe-dng` y escribe `.tif`, `.tiff` y `.dng`; `rt` escribe
+`--format tiff|dng` y `--bits 8|16|32` (o por la extensión de `-o`). La IA
+(`encodeLinear`) escribe también los dos formatos. Pruebas: 39 de
+TypeScript (`tests/tiff-dng.test.ts`, y una más en `ai-results` y en
+`render-queue`) y 22 de Rust (`rt-core`, `rt-cli`, `rt-app`), cada una
+comprobada reintroduciendo el fallo que vigila; y en el navegador,
+`tools/render-format-check.mjs` y `docs/ui/render-format-tiff.png`.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
+**Fable**, que decide si se cambia):
+- ◆ `WhiteLevel`: el encargo decía «el máximo del flotante». Un `WhiteLevel`
+  igual al mayor `f32` haría que un revelador, al normalizar por él, dejara
+  la imagen negra; se escribe **1** (`LONG`, el blanco del render; el negro
+  queda en 0 y los datos no se recortan a él, así que la latitud sigue
+  entera). Si Fable quería otra cosa, es una constante en cada codificador.
+- Los DPI: el encargo fijaba 72; `encodeTiff` escribe los de la ventana (72
+  si no se le dan, y 72 fijos en `rt`, que no tiene `--dpi`).
+- La copia PNG para el visor se hace también para el TIFF de 8 y 16 bits
+  (Chromium no decodifica TIFF de ninguna profundidad), no solo para el de
+  32.
+- En el DNG, `bitDepth` queda en 8 como en el EXR y el JPEG («la profundidad
+  que no se elige»); lo que se ve es una etiqueta fija «32 bits flotante».
+- «Un test de DOM como los del visor»: no hay ninguno (vitest corre sin DOM
+  y el visor solo se ha probado en el navegador). Hay `previewOf` (lo que
+  decodifica el visor, con test), el historial de memoria y el de escritorio
+  con TIFF y DNG, y `tools/render-format-check.mjs`, que renderiza en
+  Chromium un TIFF de 32 bits y un DNG y comprueba que los píxeles del
+  canvas del visor son los del PNG del mismo render.
+- La imagen de la IA de un trabajo TIFF o DNG se guarda en su formato pero
+  el visor no la compara con el render (no la puede decodificar), igual que
+  con EXR (`UI.md`, X3c); la copia para la vista de la imagen de la IA
+  sigue pendiente.
+- `rt` escribe color solo (sin alfa), como con PNG.
 
 ## P6 · Plugins, y el plugin de película (aintfilm) — **Opus**, decisión **Fable**
 

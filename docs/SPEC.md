@@ -775,8 +775,9 @@ de KeyShot, y no en la barra inferior. Un **trabajo de render**
 (`RenderJob`) guarda: modo (*imagen* o *animación*), nombre como
 plantilla, carpeta de destino (en el navegador, *Descargas* o una
 carpeta elegida con el acceso al sistema de archivos donde exista),
-formato (PNG 8/16 bits, JPEG con calidad, EXR lineal), fondo
-transparente, pases (fase posterior: alfa, profundidad, normales, id de
+formato (PNG 8/16 bits, JPEG con calidad, EXR lineal, TIFF de 8/16 bits
+sRGB o 32 bits lineal, RAW DNG lineal), fondo
+transparente (no en JPEG ni en DNG), pases (fase posterior: alfa, profundidad, normales, id de
 pieza), cámara (una o todas), tamaño en píxeles con su tamaño de
 impresión y **ppp** (los píxeles mandan; los ppp se escriben en el
 archivo), **terminar por** muestras o por tiempo (o lo que llegue antes,

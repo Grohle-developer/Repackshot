@@ -33,7 +33,7 @@ import { totalDuration } from '../core/animation';
 import type { AiPostProgress, AiPostRequest } from '../core/ai';
 import { aiFileName, pipelineOf, variantSettings } from '../core/ai-post';
 import { outputFileName, type NameValues } from '../core/name-template';
-import { formatExtension, frameRange, frameTime, jobCamera, type JobRuntime, type JobStatus, type RenderJob, type RenderSettings } from '../core/render';
+import { formatExtension, frameRange, frameTime, jobCamera, needsDisplayCopy, type JobRuntime, type JobStatus, type RenderJob, type RenderSettings } from '../core/render';
 import type { AiResultInfo, ResultMeta } from '../core/results';
 import type { ProjectState } from '../core/store';
 import { promptContext } from './ai-query';
@@ -213,8 +213,8 @@ export async function aiStep(
       }
       const blob = await port.encode(result.image, opts);
       await ctx.services.files.save(s.destination, name, blob);
-      // Browsers do not show EXR: the thumbnail comes from an 8-bit picture of the same image (as the engine's does).
-      const shown = s.format === 'EXR' ? await port.encode(result.image, { ...opts, format: 'PNG', bitDepth: 8 }) : blob;
+      // Browsers do not show EXR, TIFF or DNG: the thumbnail comes from an 8-bit picture of the same image (as the engine's does).
+      const shown = needsDisplayCopy(s.format) ? await port.encode(result.image, { ...opts, format: 'PNG', bitDepth: 8 }) : blob;
       done.push({ blob, info: { name, thumb: await thumbnailOf(shown), bytes: blob.size, report: result.report } });
     }
     return done;

@@ -468,6 +468,78 @@ fn results_are_files_in_the_results_folder_with_an_index() {
 }
 
 #[test]
+fn a_tiff_and_a_dng_result_keep_their_type_and_their_picture() {
+    let t = TestServer::start("appdata-tiff-dng", 1);
+    let png = b"\x89PNG\r\n\x1a\npicture".to_vec();
+    let tiff = b"II*\x00\x08\x00\x00\x00tiff-bytes".to_vec();
+    let dng = b"II*\x00\x08\x00\x00\x00dng-bytes".to_vec();
+    let meta = |id: &str, name: &str, format: &str| {
+        format!(
+            r#"{{"id":"{id}","jobId":"j1","name":"{name}","createdAt":1,"width":64,"height":32,"bytes":20,"thumb":"","format":"{format}"}}"#
+        )
+    };
+    for (id, media, bytes, name, format) in [
+        ("t1", "image/tiff", &tiff, "Shot.tif", "TIFF"),
+        ("d1", "image/x-adobe-dng", &dng, "Shot.dng", "DNG"),
+    ] {
+        assert_eq!(
+            t.api(
+                "PUT",
+                &format!("/api/store/results/{id}?type={media}"),
+                bytes
+            )
+            .status,
+            204,
+            "{media}"
+        );
+        assert_eq!(
+            t.api("PUT", &format!("/api/store/results/{id}/display"), &png)
+                .status,
+            204
+        );
+        assert_eq!(
+            t.api(
+                "PUT",
+                &format!("/api/store/results/{id}/meta"),
+                meta(id, name, format).as_bytes()
+            )
+            .status,
+            204
+        );
+    }
+    let dir = t.dir.join("data/results");
+    assert_eq!(std::fs::read(dir.join("t1.tif")).unwrap(), tiff);
+    assert_eq!(std::fs::read(dir.join("d1.dng")).unwrap(), dng);
+    let list = t.json("GET", "/api/store/results", b"");
+    assert_eq!(
+        list.get("results").and_then(Value::as_array).unwrap().len(),
+        2
+    );
+    let file = t.api("GET", "/api/store/results/t1", b"");
+    assert_eq!(file.header("content-type"), Some("image/tiff"));
+    assert_eq!(file.body, tiff);
+    let file = t.api("GET", "/api/store/results/d1", b"");
+    assert_eq!(file.header("content-type"), Some("image/x-adobe-dng"));
+    assert_eq!(file.body, dng);
+    assert_eq!(t.api("GET", "/api/store/results/d1/display", b"").body, png);
+    // Sent again in another type, a result leaves one file.
+    assert_eq!(
+        t.api("PUT", "/api/store/results/t1?type=image/png", &png)
+            .status,
+        204
+    );
+    assert!(!dir.join("t1.tif").exists() && dir.join("t1.png").is_file());
+    // Deleting a result removes its file and its picture, whatever its type.
+    assert_eq!(t.api("DELETE", "/api/store/results/d1", b"").status, 204);
+    assert!(!dir.join("d1.dng").exists() && !dir.join("d1.display.png").exists());
+    assert_eq!(
+        t.api("PUT", "/api/store/results/x1?type=image/gif", b"gif")
+            .status,
+        415
+    );
+}
+
+#[test]
 fn a_result_keeps_the_image_the_ai_made_next_to_its_own() {
     let t = TestServer::start("appdata-ai-image", 1);
     let png = b"\x89PNG\r\n\x1a\nengine-image".to_vec();

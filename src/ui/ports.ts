@@ -243,7 +243,7 @@ export interface FrameRequest {
   bitDepth: BitDepth;
   /** 1..100 */
   jpegQuality: number;
-  /** Written into the file (PNG pHYs, JPEG JFIF). */
+  /** Written into the file (PNG pHYs, JPEG JFIF, TIFF XResolution and YResolution). */
   dpi: number;
   /** An image job's camera. */
   camera?: CameraId;
@@ -270,7 +270,7 @@ export interface FrameTone {
 export interface FrameResult {
   /** The file as it is saved. */
   file: Blob;
-  /** An 8-bit picture of it when the browser cannot show the file (EXR); null otherwise. */
+  /** An 8-bit picture of it when the browser cannot show the file (EXR, TIFF, DNG; `needsDisplayCopy`); null otherwise. */
   display: Blob | null;
   width: number;
   height: number;
