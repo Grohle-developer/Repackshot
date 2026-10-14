@@ -278,9 +278,9 @@ describe('light setups', () => {
 });
 
 describe('materials', () => {
-  it('has 7 categories and 82 presets with unique keys (77 of EZ Packshot and the 5 set pieces of L6)', () => {
+  it('has 7 categories and 92 presets with unique keys (77 of EZ Packshot, the 5 set pieces of L6, 9 translucent of E9b, the crystal of E9c)', () => {
     expect(MATERIAL_CATEGORIES.map((c) => c.key)).toEqual(CATEGORIES);
-    expect(MATERIAL_PRESETS).toHaveLength(82);
+    expect(MATERIAL_PRESETS).toHaveLength(92);
     expect(unique(MATERIAL_PRESETS.map((m) => m.key))).toBe(true);
   });
 
@@ -288,12 +288,12 @@ describe('materials', () => {
     const counts = Object.fromEntries(CATEGORIES.map((c) => [c, materialsInCategory(c).length]));
     expect(counts).toEqual({
       METAL: 12,
-      PLASTIC: 14,
+      PLASTIC: 17,
       WOOD: 13,
       FABRIC: 11,
-      GLASS: 6,
+      GLASS: 7,
       EMISSIVE: 14,
-      OTHER: 12,
+      OTHER: 18,
     });
   });
 
@@ -307,7 +307,11 @@ describe('materials', () => {
   it('gives every GLASS-family material a transmission and an ior', () => {
     const glass = MATERIAL_PRESETS.filter((m) => m.family === 'GLASS');
     expect(glass.map((m) => m.key)).toEqual([
-      'PC_CLEAR', 'PMMA', 'PMMA_TINT', 'GLASS_CLEAR', 'GLASS_FROST', 'GLASS_TINT', 'GLASS_SMOKE',
+      // E9's translucent recipes are clear solids with a medium inside, next to their kin, and
+      // E9c's dispersive crystal follows the glass.
+      'PC_CLEAR', 'PMMA', 'PMMA_TINT', 'HDPE_WHITE', 'PP_NATURAL', 'PMMA_FROST',
+      'GLASS_CLEAR', 'GLASS_FROST', 'GLASS_TINT', 'GLASS_SMOKE', 'CRYSTAL',
+      'WAX', 'SOAP_GLYCERIN', 'MILK', 'JUICE_ORANGE', 'JUICE_APPLE', 'CREAM',
     ]);
     for (const m of glass) {
       expect(m.params.transmission, m.key).toBeDefined();
@@ -410,7 +414,8 @@ describe('wear catalogue', () => {
   });
 
   it('only overrides wear of existing material presets', () => {
-    expect(Object.keys(WEAR_PRESET_OVERRIDES)).toHaveLength(33);
+    // 28, L6's five set pieces and E9's four liquids (none of them wears).
+    expect(Object.keys(WEAR_PRESET_OVERRIDES)).toHaveLength(37);
     for (const k of Object.keys(WEAR_PRESET_OVERRIDES)) expect(materialPreset(k), k).toBeDefined();
     for (const k of WEAR_PAINTED) expect(materialPreset(k), k).toBeDefined();
     expect([...WEAR_PAINTED]).toEqual(['CAR_PAINT', 'PAINT_MET']);
@@ -494,7 +499,7 @@ describe('wear defaults', () => {
     expect(wearDefaults('OAK', 1e-9)?.refSize).toBe(1e-3);
   });
 
-  it('is defined for all 82 materials and never leaks wear into non-wear fields', () => {
+  it('is defined for every material and never leaks wear into non-wear fields', () => {
     for (const m of MATERIAL_PRESETS) {
       const w = wearDefaults(m.key);
       expect(w, m.key).not.toBeNull();

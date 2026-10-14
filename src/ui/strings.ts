@@ -756,6 +756,26 @@ const TABLE = {
   'param.transmission': ['Transmission', 'Transmisión'],
   'param.absorptionMm': ['Absorption distance', 'Distancia de absorción'],
   'param.walls': ['Walls', 'Paredes'],
+  'param.scatterMm': ['Internal scattering', 'Dispersión interna'],
+  'param.scatterMm.tip': [
+    'How far light travels inside the part between two bounces, in mm: the smaller, the milkier (0: clear). Full mode renders it; Fast approximates it.',
+    'Lo que recorre la luz dentro de la pieza entre dos rebotes, en mm: cuanto menor, más lechosa (0: transparente). El modo Completo la renderiza; el Rápido la aproxima.',
+  ],
+  'param.scatterColor': ['Scattering colour', 'Color de dispersión'],
+  'param.scatterColor.tip': [
+    'What each bounce inside keeps of each colour: white keeps everything; a little less in blue turns it warm deep inside.',
+    'Lo que conserva cada rebote dentro de cada color: el blanco lo conserva todo; un poco menos de azul lo vuelve cálido en lo hondo.',
+  ],
+  'param.scatterG': ['Direction', 'Dirección'],
+  'param.scatterG.tip': [
+    'Where light goes at each bounce inside: forwards (above 0) / backwards (below 0); 0 spreads it evenly.',
+    'Adónde va la luz en cada rebote dentro: hacia delante (por encima de 0) / hacia atrás (por debajo de 0); 0 la reparte por igual.',
+  ],
+  'param.abbe': ['Abbe number', 'Número de Abbe'],
+  'param.abbe.tip': [
+    'Chromatic dispersion of solid glass: the lower, the more it splits light into colours (crystal 30–40, window glass about 60; 0: none). Full mode renders it; Fast approximates it.',
+    'Dispersión cromática del vidrio macizo: cuanto menor, más separa la luz en colores (cristal 30–40, vidrio de ventana unos 60; 0: ninguna). El modo Completo la renderiza; el Rápido la aproxima.',
+  ],
   'param.opacity': ['Opacity', 'Opacidad'],
   'param.anisotropic': ['Anisotropy', 'Anisotropía'],
   'param.subsurface': ['Subsurface', 'Subsuperficie'],

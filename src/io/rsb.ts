@@ -262,6 +262,16 @@ export interface RsbMaterial {
   anisotropy: number;
   /** E5: absorption distance of the clear part in mm (0: a surface tint). */
   absorptionMm: number;
+  /** Reserved for E6 (the edge bevel radius in mm): written as 0 until E6 lands. */
+  bevelMm: number;
+  /** E9: mean free path of the scattering medium inside a clear solid, mm (0: none). */
+  scatterMm: number;
+  /** E9: single-scattering albedo of that medium, per channel (linear RGB). */
+  scatterColor: RsbVec;
+  /** E9: Henyey–Greenstein anisotropy of that medium, -0.9 (backwards) to 0.9 (forwards). */
+  scatterG: number;
+  /** E9c: Abbe number of solid glass without a medium (0: no dispersion). */
+  abbe: number;
   /** M2a: the texture block, written only when the scene carries textures (`RsbScene.textures`). */
   textures?: RsbTextures;
 }
@@ -399,7 +409,27 @@ export function defaultCamera(): RsbCamera {
 }
 
 export function defaultMaterial(): RsbMaterial {
-  return { kind: MATERIAL_PRINCIPLED, baseColor: [0.8, 0.8, 0.8], metallic: 0, roughness: 0.5, ior: 1.5, transmission: 0, coat: 0, coatRoughness: 0, emission: [0, 0, 0], emissionPower: 0, flags: 0, opacity: 1, anisotropy: 0, absorptionMm: 0 };
+  return {
+    kind: MATERIAL_PRINCIPLED,
+    baseColor: [0.8, 0.8, 0.8],
+    metallic: 0,
+    roughness: 0.5,
+    ior: 1.5,
+    transmission: 0,
+    coat: 0,
+    coatRoughness: 0,
+    emission: [0, 0, 0],
+    emissionPower: 0,
+    flags: 0,
+    opacity: 1,
+    anisotropy: 0,
+    absorptionMm: 0,
+    bevelMm: 0,
+    scatterMm: 0,
+    scatterColor: [1, 1, 1],
+    scatterG: 0,
+    abbe: 0,
+  };
 }
 
 export function defaultLight(): RsbLight {
@@ -466,11 +496,11 @@ export interface WriteOptions {
 const CAMR_BYTES = 60;
 /** LENS without its picture: 15 numbers before the picture's three words. */
 const LENS_BYTES = 72;
-const MATL_BYTES = 72;
+/** MATL with E9's fields (E6's reserved `bevel_mm`, the medium and the Abbe number). */
+const MATL_BYTES = 100;
 /**
  * M2a: where the texture block of a MATL starts: after E6's `bevel_mm` (72) and E9's `scatter_mm scatter_color[3]
- * scatter_g abbe` (76 to 100). Until those phases write their fields the writer fills them with zeros (no bevel,
- * no medium, no dispersion), which only happens once the engine reads textures (M2b, after E6 and E9).
+ * scatter_g abbe` (76 to 100), which E9 writes in every MATL (the bevel as 0 until E6).
  */
 export const MATL_TEXTURE_OFFSET = 100;
 /** M2a: version of the texture block (its first word). */
@@ -574,7 +604,7 @@ class ByteWriter {
   }
 }
 
-/** M2a: the texture block of a MATL, from MATL_TEXTURE_OFFSET (the fields between E5's and it are zeros until E6 and E9 write theirs). */
+/** M2a: the texture block of a MATL, from MATL_TEXTURE_OFFSET (right after E9's fields: no padding left). */
 function writeTextureBlock(w: ByteWriter, t: RsbTextures): void {
   w.pad(MATL_TEXTURE_OFFSET - MATL_BYTES);
   w.u32(TEXTURE_BLOCK_VERSION);
@@ -693,6 +723,12 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.f32(m.opacity);
       w.f32(m.anisotropy);
       w.f32(m.absorptionMm);
+      // E6 reserves the next field (the bevel); E9 appends the medium and the Abbe number.
+      w.f32(m.bevelMm);
+      w.f32(m.scatterMm);
+      w.vec(m.scatterColor);
+      w.f32(m.scatterG);
+      w.f32(m.abbe);
       if (t) writeTextureBlock(w, t);
     });
   }
@@ -938,6 +974,9 @@ function num(v: unknown, fallback: number): number {
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
+/** Largest |g| of a scattering medium's Henyey–Greenstein phase (the engine clamps to it too). */
+export const SCATTER_G_MAX = 0.9;
+
 /** Absorption distance of a GLASS material without its own (`absorptionMm` of core/materials.ts). */
 export const GLASS_ABSORPTION_MM = 50;
 
@@ -945,10 +984,12 @@ export const GLASS_ABSORPTION_MM = 50;
  * A material instance with the semantics of rt-core: SIMPLE, WOOD and FABRIC as principled (wood
  * and fabric as their mean colour until E6, like the preview; SIMPLE with its transmission,
  * opacity and anisotropy, E5), GLASS as kind 1 (clear glass: its colour after `absorptionMm`
- * millimetres inside, or a surface tint at 0; a thin wall with `walls` THIN), EMISSIVE as kind 2
- * with radiance `colour x emitPower x EMIT_RADIANCE_PER_WATT` (the colour of a black body at its
- * temperature, normalised to its largest channel, or the colour given), sampled as a light when
- * it emits. Wear, wood and fabric patterns, bevel and subsurface come later (E6, E7).
+ * millimetres inside, or a surface tint at 0; a thin wall with `walls` THIN; E9: a scattering
+ * medium inside with `scatterMm`, `scatterColor` and `scatterG`, and dispersion with `abbe`),
+ * EMISSIVE as kind 2 with radiance `colour x emitPower x EMIT_RADIANCE_PER_WATT` (the colour of a
+ * black body at its temperature, normalised to its largest channel, or the colour given), sampled
+ * as a light when it emits. Wear, wood and fabric patterns and the bevel come later (E6, E7): the
+ * bevel field is written as 0.
  */
 export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMaterial {
   const m = defaultMaterial();
@@ -979,6 +1020,12 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
       m.transmission = clamp01(num(p.transmission, 1));
       m.absorptionMm = Math.max(0, num(p.absorptionMm, GLASS_ABSORPTION_MM));
       m.flags = p.walls === 'THIN' ? MATERIAL_FLAG_THIN : 0;
+      // E9: a scattering medium inside the solid (mean free path, albedo, direction) and the
+      // dispersion of the glass (its Abbe number). A project without them writes the defaults.
+      m.scatterMm = Math.max(0, num(p.scatterMm, 0));
+      m.scatterColor = rgbOf(p.scatterColor, [1, 1, 1]).map(clamp01) as RsbVec;
+      m.scatterG = Math.min(SCATTER_G_MAX, Math.max(-SCATTER_G_MAX, num(p.scatterG, 0)));
+      m.abbe = Math.max(0, num(p.abbe, 0));
       break;
     case 'WOOD': {
       const a = rgbOf(p.woodColor1, [0.56, 0.38, 0.21]);

@@ -8,10 +8,27 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 ### Interfaz
 
 - *Cámara* ▸ **Filtros** (O3a): hasta tres filtros de efecto por cámara, cada uno con su tipo y una frase de lo que hace, su grado y, según el tipo, tinte, puntas y ángulo. El modo Rápido los dibuja como aproximación (y el medidor lo dice); el modo Completo y el render, con el motor.
+- En el inspector de un vidrio, bajo *Paredes*: **Dispersión interna** (mm), **Color de dispersión** y **Dirección** (−0,9 a 0,9, hacia atrás / hacia delante), con su ayuda; el visor Rápido lo aproxima con un difuso translúcido y lo dice (E9b).
+- **Nueve materiales nuevos** (92 en total con los de los sets de L6 y el cristal de E9c): HDPE blanco, PP natural y acrílico esmerilado entre los plásticos; cera, jabón de glicerina, leche, zumo de naranja, zumo de manzana y crema entre los otros. Los líquidos no se desgastan (E9b).
+- **Número de Abbe** en el inspector del vidrio (0 a 100; 0, sin dispersión), con su ayuda; el visor Rápido lo aproxima con la dispersión de three.js. Material nuevo: **Cristal de perfumería** (Abbe 40) en *Vidrio* (E9c).
 
 ### Motor
 
 - **Filtros de efecto en la lente** (O3a): difusión blanca, negra y dorada, brillo, suavizado, red, estrella (4, 6 u 8 puntas) y rayas, como dispersión del rayo de cámara en la pupila: con la probabilidad del grado (1/8 a 2) el rayo se desvía según la PSF del filtro (tablas de CDF inversa), así que el halo lleva el bokeh y el enfoque y una luz fuera del encuadre vela la imagen; hasta tres apilados; el tinte (dorada, red, rayas) va al halo y a las rayas, no a la imagen; el grado alarga las rayas de la estrella sin ensancharlas, la red deja una cruz corta y tenue, y el brillo es una nube de destellos finos. Cada muestra de cámara se conecta además, a través de la PSF, con una luz que ve la cámara, pesada contra la dispersión (MIS): la misma imagen con varias veces menos ruido alrededor de las luces pequeñas (`rt --filter-noise` lo mide). Campos nuevos al final de `LENS`; sin filtros no cambia ni un bit (O3a).
+- **Los materiales rugosos ya no pierden luz** (E9a): la luz que rebota varias veces entre las microfacetas del GGX vuelve (el lóbulo añadido de Kulla y Conty 2017 en el metal, el brillo del plástico y el barniz; el escalado de Turquin 2019 en el vidrio rugoso), con tablas integradas por nosotros. En un entorno blanco uniforme, un metal blanco de rugosidad 1 pasa de 0,356 a 0,999, el vidrio rugoso de 0,361 a 0,995 y el plástico blanco de 0,918 a 1,000 (0,860 a 0,998 con barniz). La capa difusa bajo el brillo recibe exactamente lo que el brillo no refleja (Kulla y Conty), también con rugosidad 0. Las imágenes ganan luz: el ejemplo un 15,6 % de luminancia media, la escena de E5 un 13,6 %, el cielo de E5c un 13,2 % (E9a).
+- **Medios dispersores dentro de los sólidos** (E9b): un vidrio con *Dispersión interna* se llena de un medio que dispersa la luz dentro (plástico translúcido, cera, jabón, leche, zumo, crema), con un paseo aleatorio por el interior, su color y su dirección por canal, y la luz encontrada donde el paseo sale. Las escenas sin medios no cambian ni un bit. Los mismos bits en el escritorio y en el navegador (E9b).
+- **Dispersión cromática del vidrio** (E9c): un vidrio macizo con *Número de Abbe* separa la luz en colores al refractar (cada longitud de onda con su índice, por la ley de Cauchy); un camino elige una longitud de onda al primer vidrio dispersivo y las cáusticas también se colorean. Las escenas sin él no cambian.
+
+### Proyecto
+
+- Los proyectos anteriores se abren igual y sus vidrios siguen sin medio; el registro `MATL` de la escena del motor pasa a 100 bytes (con el bisel reservado para E6, el medio y el número de Abbe de E9c) y los archivos anteriores se leen como antes (E9).
+
+### Limitaciones conocidas
+
+- La luz sale de un medio como de una superficie difusa (la aproximación de producción de Chiang, Kutz y Burley 2016): en una esfera de leche bajo un panel lateral queda un 3,3 % más brillante que el camino que refracta de verdad. No hay medios anidados (un líquido dentro de otro), un sólido con índice 1 no tiene medio, y con una dirección muy marcada (cerca de ±0,9) converge despacio (E9b).
+- **Un líquido dentro de un frasco de vidrio** ve las luces a través de una pared fina y lisa (hasta 5 mm, caras casi paralelas) como si el vidrio no las desviara, una aproximación que en una losa de leche bajo una placa de 3 mm queda un 2 % por debajo del camino exacto; a través de un fondo grueso, de vidrio rugoso o con barniz, solo le llega la luz por los caminos que la encuentran al azar (con grano a pocas muestras) o, con *Cáusticas* encendidas, por fotones (E9b).
+- La compensación de energía aproxima los lóbulos anisótropos con el ancho isótropo equivalente y no toca las paredes finas (E9a).
+- La dispersión lleva un solo color por camino: alrededor de un cristal hay grano de color a pocas muestras, y una luz vista a través de él converge como una cáustica. Los rayos de sombra, las paredes finas alrededor de un medio y los sólidos con medio no dispersan (E9c).
 
 ## v0.1.6 — 2026-10-14
 

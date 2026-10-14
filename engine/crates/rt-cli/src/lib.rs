@@ -23,6 +23,7 @@ pub mod cli;
 pub mod filter_sheet;
 pub mod scenes;
 pub mod sheet;
+pub mod sss_sheet;
 pub mod tone;
 
 /// Edge length of the square tiles handed to the worker threads.

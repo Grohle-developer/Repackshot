@@ -163,6 +163,7 @@ function paramControl(ctx: Ctx, scope: Scope, matId: MaterialId, spec: ParamSpec
   scope.watch((s) => cur(s.materials[matId]), (v) => (ctrl.set as (x: unknown) => void)(v));
   const row = field(t(dyn(`param.${spec.key}`)) + (spec.preview ? '' : ' ·'), ctrl.el);
   if (!spec.preview) row.setAttribute('data-tip', t('material.notDrawn'));
+  else if (spec.tip) row.setAttribute('data-tip', t(dyn(spec.tip)));
   return row;
 }
 
