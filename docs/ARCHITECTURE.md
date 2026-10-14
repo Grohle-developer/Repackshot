@@ -1317,7 +1317,7 @@ dimensiones) se desplaza, eje a eje, con la inversa de la CDF del filtro
 (los cuatro son separables); la muestra pesa 1 y va a su píxel, así que la
 imagen sigue siendo la media de las muestras de cada píxel y una baldosa no
 depende de sus vecinas. *Estándar* (0) es la posición tal cual (los mismos
-bits que antes: `0x223515c3` intacto); *Ninguno* (1), 0,5 en los dos ejes;
+bits que antes: el ejemplo, `0x8206111f` tras E12, intacto); *Ninguno* (1), 0,5 en los dos ejes;
 *Suave* (2), tienda `1 − |x|` en `[−1, 1]`, inversa con dos raíces
 (`f32::sqrt`, correctamente redondeada en todas partes, wasm incluido);
 *Fino* (3), Blackman–Harris de radio 1,5 px (Harris 1978, coeficientes

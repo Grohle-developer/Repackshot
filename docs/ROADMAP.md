@@ -1702,8 +1702,9 @@ interfaz); captura `docs/ui/settings-aa.png`.
   con baldosas de 32 y 23, igual por el `rt.wasm` real
   (`wasm-parity.mjs`, también en CI) y por el código de la página; `rt` y
   el lanzador (final y visor) con 1, 4 y 16 hilos, los mismos bits; el
-  ejemplo con *Estándar* conserva `0x223515c3` y todos los *hashes*
-  fijados siguen; RSB (sin los campos, la caja y ninguna; más de 16, no
+  ejemplo con *Estándar* conserva `0x223515c3` (el de entonces; con la
+  elección de luz de E12, `0x8206111f`, igual con y sin E11) y todos los
+  *hashes* fijados siguen; RSB (sin los campos, la caja y ninguna; más de 16, no
   válido) en `rt-core` y en `src/io/rsb.ts`; los ajustes (de fábrica,
   validación, bloque, cadenas sin cifras de coste); los dos motores de la
   página (la vista vuelve a empezar con otro filtro y no con el mismo, los
