@@ -454,7 +454,7 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'CARBON', category: 'OTHER', family: 'FABRIC',
     label: { es: 'Carbono', en: 'Carbon fibre' },
     params: { threadColor1: [0.022, 0.022, 0.026, 1], threadColor2: [0.055, 0.055, 0.062, 1],
-      weave: 'TWILL', threadCount: 5, weaveDepth: 0.3, yarnTwist: 0, fuzz: 0, fuzzRoughness: 0.2,
+      weave: 'TWILL', threadCount: 5, weaveDepth: 0.05, yarnTwist: 0, fuzz: 0, fuzzRoughness: 0.2,
       roughness: 0.18, coat: 1, coatRoughness: 0.03 },
   },
   {

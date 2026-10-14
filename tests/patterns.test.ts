@@ -234,6 +234,8 @@ describe('E6 patterns: cloth', () => {
     expect(denim.params).toEqual([0.6, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     // Smooth filaments: carbon's tows and the mesh show no twist.
     expect([of('CARBON').params[1], of('MESH').params[1], of('COTTON').params[1]]).toEqual([0, 0, 1]);
+    // The lead's verdict: carbon with a twentieth of upstream's relief (its clear coat follows it).
+    expect(of('CARBON').params[0]).toBe(0.05);
     expect(denim.variant).toBe(WEAVES.TWILL31);
     // Physical: the same threads on a phone case and on a sofa.
     expect(of('DENIM', {}, 30).scaleMm).toBe(denim.scaleMm);

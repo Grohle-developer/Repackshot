@@ -1686,8 +1686,9 @@ ARCHITECTURE §5.2 quater).
 - **Hoja** `out/cloth-sheet.html` (`rt --pattern-sheet --only cloth`, del
   mismo *fixture*, que ahora lleva también las 12 telas): cada tela en
   esfera y caja, antes, después y de cerca, un campo de 10 mm visto de
-  frente (donde se ven los hilos a su tamaño real) y dos alternativas para
-  el veredicto: el vaquero tejido en 2/2 y el carbono con 0,05 de relieve.
+  frente (donde se ven los hilos a su tamaño real) y el vaquero tejido en
+  2/2 para comparar con su 3/1 (la primera hoja enseñaba también el carbono
+  con 0,05 de relieve, que el líder eligió: ahora es su fila).
 - **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina cargada):
   la escena de tela (cojín y bola, 320 × 240, 8 muestras), 0,784 s →
   0,844 s (**+7,6 %**) frente a la misma con el color liso: una tela tejida
@@ -1717,8 +1718,8 @@ ARCHITECTURE §5.2 quater).
   90); ahora son hilos por cm y cada tela lleva los suyos de verdad
   (algodón 40, lino 18, sarga 36, vaquero 24, raso 100, lona 14,
   terciopelo 30, fieltro 20, punto 4 puntos por cm, malla 8, microfibra
-  120, carbono 5 mechas por cm). **Pendiente del veredicto del líder sobre
-  la hoja.** Un proyecto guardado conserva su `threadCount` antiguo, que
+  120, carbono 5 mechas por cm), aceptados por el líder (veredicto abajo).
+  Un proyecto guardado conserva su `threadCount` antiguo, que
   ahora se lee por cm (hasta 200: el algodón de antes sale a 200 hilos por
   cm, invisible).
 - **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` de
@@ -1742,6 +1743,30 @@ ARCHITECTURE §5.2 quater).
   un tafetán abierto de hilos oscuros.
 - **El terciopelo y la pelusa**: sin *sheen* en el motor, el terciopelo es
   un punto fino oscuro; la vista *Rápida* sí pinta su pelusa.
+
+**Veredicto del responsable (tela)** (sobre la hoja de telas, filas y
+campos de 10 mm; E6 aceptada):
+
+1. **Hilos por cm**: la tabla propuesta queda como valores del catálogo
+   (los típicos de verdad). El `threadCount` antiguo de un proyecto
+   guardado se sigue leyendo por cm, con el tope de 200.
+2. **Vaquero en sarga 3/1** (`TWILL31`): aceptado; la cara se lee índigo
+   sobre blanco, como debe.
+3. **Carbono**: la alternativa de relieve 0,05 (con el relieve entero, los
+   tubos brillantes están mal; con 0,05 la esfera y el campo se leen como
+   sarga 3K bajo barniz). Que el barniz ignore el *bump* es un cambio del
+   motor para la capa de realismo (M4), no ahora: anotado allí.
+4. **`yarnTwist`** sin mando (0 en el carbono y la malla, 1 en el resto):
+   aceptado.
+5. **Aceptados como están**: la malla sin agujeros hasta que el motor tenga
+   opacidad por punto (la traen las texturas de alfa de M2b: anotado en su
+   encargo), el terciopelo sin *sheen* hasta la pelusa (S8), el *moiré* a
+   pocas muestras (el filtro *Fine* de E11, ahora por defecto, lo suaviza) y
+   la proyección de caja sobre los ejes de la malla.
+
+Hecho tras el veredicto: el carbono del catálogo baja su `weaveDepth` de
+0,3 a 0,05 (el *fixture* de la hoja, al día) y la hoja ya no enseña esa
+alternativa.
 
 ## E7 · Desgaste visible — **Opus**, con visto bueno **Fable**
 

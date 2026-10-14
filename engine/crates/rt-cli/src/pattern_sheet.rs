@@ -7,8 +7,8 @@
 //! the images in `<dir>/patterns/`. When the materials hold `PINE`, the wood sheet ends with its
 //! knots: 0, 2 and 6 of 15 mm and 6 of 30 mm, on the box's largest face seen straight on and on
 //! a 300 × 100 × 20 mm board, at 512 px. The cloth sheet ends with every cloth up close (a
-//! [`MACRO_MM`] field seen straight on, where its real threads show) and two alternatives for
-//! the lead's ruling ([`ALTERNATIVES`]).
+//! [`MACRO_MM`] field seen straight on, where its real threads show) and the alternatives of
+//! [`ALTERNATIVES`].
 //!
 //! The materials are the interface's own: `tests/fixtures/patterns.rsb` is written by the
 //! TypeScript RSB writer (`materialToRsb`, `patternToRsb`) from the presets of
@@ -48,14 +48,9 @@ pub const MACRO_MM: f32 = 10.0;
 pub type Alternative = (&'static str, &'static str, fn(&mut Pattern));
 
 /// The cloth sheet's alternatives: a catalogue key, what changes, and the change. Denim woven
-/// as the 2/2 twill of the other twills (its own is a 3/1), carbon fibre with a twentieth of its
-/// relief (its clear coat follows the relief: glossy tubes up close).
-pub const ALTERNATIVES: [Alternative; 2] = [
-    ("DENIM", "Denim as a 2/2 twill", |p| p.variant = 1),
-    ("CARBON", "Carbon fibre with relief 0.05", |p| {
-        p.params[0] = 0.05
-    }),
-];
+/// as the 2/2 twill of the other twills (its own is a 3/1). (The first sheet also showed carbon
+/// fibre with relief 0.05, which the lead chose: the catalogue sends it now.)
+pub const ALTERNATIVES: [Alternative; 1] = [("DENIM", "Denim as a 2/2 twill", |p| p.variant = 1)];
 
 /// The name of a cloth's weave (`Pattern::variant`).
 pub fn weave_name(variant: u32) -> &'static str {
@@ -400,10 +395,7 @@ pub fn macro_html(fields: &[MacroImage], alternatives: &[MacroImage]) -> String 
              and macro of each, to compare with its row above. <b>Denim</b>: real denim is a 3/1 \
              twill (the indigo warp on three quarters of the face), which the catalogue sends now; \
              here it is woven as the 2/2 twill of the other twills, as upstream's <code>TWILL</code> \
-             would. <b>Carbon fibre</b>: its clear coat follows the weave's relief (the bump is the \
-             whole material's), so up close the tows read as glossy tubes; here with a twentieth of \
-             its relief (0.05 instead of 0.3), the weave shown by the tows' anisotropic sheen under \
-             a flatter coat.</p>\n<div class=\"macro\">",
+             would.</p>\n<div class=\"macro\">",
         );
         for m in alternatives {
             figure(&mut s, m);

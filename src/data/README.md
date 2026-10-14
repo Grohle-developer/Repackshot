@@ -120,5 +120,7 @@ Deviations and oddities worth knowing about (values were ported as they are):
   tows per cm; upstream's were per part size: cotton 200, carbon 90).
   Denim's weave is `TWILL31` (a 3/1 warp-faced twill, which upstream does
   not have; its `TWILL` is a 2/2). `yarnTwist` (0 to 1, default 1) is new
-  too: carbon's tows and the mesh's monofilaments are smooth (0). Proposed
-  values, pending the lead's ruling on the cloth sheet.
+  too: carbon's tows and the mesh's monofilaments are smooth (0). The lead
+  accepted these values on the cloth sheet, and chose for carbon a
+  `weaveDepth` of 0.05 (upstream 0.3: its clear coat follows the relief, so
+  the tows read as glossy tubes).
