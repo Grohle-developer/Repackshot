@@ -5145,9 +5145,10 @@ fotogramas `docs/ui/physics-drop-strip.png`. `SPEC.md` §3.1 y §3.7,
   a 60, 90, 120 y 480 pasos (`tests/fixtures/phys-drop.json`) y el *hash*
   igual con 1, 2, 3, 5, 8 y 13 trozos de fase estrecha y con 3 hilos.
   **Mil esferas** (radio 10 mm, diez capas de diez por diez en una bandeja)
-  se asientan en **1,70 s simulados**; en *release*, un hilo, **TIEMPO_1000**
+  se asientan en **1,70 s simulados**; en *release*, un hilo, **7,05 s**
   de reloj en la máquina virtual de 4 núcleos con otros siete agentes
-  compilando (carga ~26; sin carga, 2,4 s de CPU).
+  compilando (carga ~30; una medida anterior con menos carga dio 2,4 s de
+  CPU).
 - **`rt-wasm`**: `phys_new`, `phys_free`, `phys_step`, `phys_bodies`,
   `phys_ids`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_steps`,
   `phys_hash`, sobre un registro de mundos por *handle*. Nativo = wasm:
