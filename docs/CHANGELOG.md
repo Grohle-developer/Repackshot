@@ -3,7 +3,11 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
-## Sin publicar
+## v0.1.5 — 2026-10-14
+
+Versión de prueba con cáusticas y reducción de ruido propias, focos propios
+que se mueven en el visor, el *prompt* propio y las variantes de la IA, y
+un recorrido guiado. Lo de v0.1.2 a v0.1.4 sigue igual.
 
 ### Motor
 
@@ -37,6 +41,20 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - El visor de resultados enseña una **tira de miniaturas** de las variantes bajo la cabecera: la elegida es la que el divisor compara con el render, con su informe; *Guardar esta variante* y *Guardar todas*. La cola y el historial dicen cuántas imágenes de IA tiene cada resultado (X4b).
 - **Prompt del sistema** en *Ajustes ▸ Post-procesado IA*: unas palabras generales para todas las imágenes, que van antes de las de la escena y del *prompt* propio del trabajo, con *Restablecer el predeterminado*. Las protecciones de la guarda no dependen de él. Para un modelo que lee pocos *tokens* (SD 1.5: 77) se usa su versión corta mientras no se cambie, y lo que no cabe se recorta empezando por el *prompt* propio, luego la escena y por último el del sistema, con una línea que dice qué se quedó fuera (X4b).
 - Un modelo importado declara en su `model.repackshot.json` si sigue un *prompt* de texto (`capabilities.textPrompt`) y cuántos *tokens* lee (`capabilities.maxPromptTokens`); el formulario de importar lo pregunta (X4b).
+
+### Correcciones
+
+- Solo de pruebas, sin efecto en la aplicación: la prueba del lanzador que sigue un post-procesado por mosaicos pedía que la respuesta al encargo dijera *en espera*, y con la máquina muy cargada el trabajo ya había empezado; ahora acepta cualquier estado anterior al primer mosaico.
+
+### Limitaciones conocidas
+
+- **La IA sigue sin probarse en una tarjeta gráfica**, ahora también con el *prompt* propio y las variantes. Con SD 1.5 (77 *tokens*) el *prompt* propio casi nunca cabe: la cuenta de *tokens* es prudente y se queda corta de sitio antes que el modelo (X4b).
+- Con *Comparar con…* (otro resultado), elegir una variante en la tira solo cambia la línea del informe (X4b).
+- **La página del instalador con el motor de ejecución no se ha visto en un Windows real**: se construye y una prueba comprueba su guion, pero aquí no se puede ejecutar el instalador. Quien actualiza ve el recorrido guiado una vez, como en un primer arranque, y el aviso del motor de ejecución sale cuando hay un modelo ya descargado, no mientras se descarga (U10).
+- Los perfiles IES siguen *próximamente* (L5). Los puntos, las esferas y los focos direccionales no lanzan fotones: no dan cáusticas (L4, E5b-1).
+- **Cáusticas**: solo de las luces de área *glossy*, el sol y los emisores, no del entorno; el radio de recogida es uno por pasada, no por píxel; los brillos de una luz pequeña vistos a través del vidrio pulido siguen saliendo del trazador y tardan en limpiarse; con el fondo transparente el atrapasombras no recoge cáusticas. Cuestan alrededor de un 24 % más de tiempo (E5b-1).
+- **Reducción de ruido**: filtra el color sin separar la luz directa de la indirecta, no actúa sobre los fotogramas de resolución reducida mientras se mueve la vista, y el recorte de luciérnagas pierde algo de energía donde las hay. En 1920 × 1080 tarda unos segundos (E5b-1).
+- Siguen las de v0.1.2 a v0.1.4, sobre todo que **nada de lo nuevo de escritorio se ha probado en un Windows real**.
 
 ## v0.1.4 — 2026-10-13
 
