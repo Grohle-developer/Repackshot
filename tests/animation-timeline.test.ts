@@ -59,6 +59,8 @@ describe('the magnet', () => {
     expect(r.starts.c1).toBeCloseTo(2, 12);
     // Exactly on the target, whatever the pointer's fraction of a pixel (the browser check reads the start back).
     for (const dt of [0.99, 0.993, 0.9871, 0.97 + 0.0291, 1.017]) expect(dragBars([{ id: 'c1', start: 0, duration: 3 }], dt, opts([1])).starts.c1).toBe(1);
+    // Also when the end is what snaps (4 - (3 + dt) + dt is not 1 in floating point for these).
+    for (const dt of [0.98002, 0.98004, 0.98008, 0.9801]) expect(dragBars([{ id: 'c1', start: 0, duration: 3 }], dt, opts([4])).starts.c1).toBe(1);
     // Nothing near: the start lands on a frame.
     const f = dragBars([bar], 0.513, opts([10]));
     expect(f.hit).toBeNull();

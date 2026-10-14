@@ -36,6 +36,10 @@ function centreAt(s: ProjectState, id: NodeId, t: number): Vec3 {
   return [rest[0] + to[0] - from[0], rest[1] + to[1] - from[1], rest[2] + to[2] - from[2]];
 }
 
+function unionOf(s: ProjectState, ids: NodeId[]) {
+  return ids.map((id) => partWorldBounds(s, id)).reduce((a, b) => ({ min: [Math.min(a.min[0], b.min[0]), Math.min(a.min[1], b.min[1]), Math.min(a.min[2], b.min[2])] as Vec3, max: [Math.max(a.max[0], b.max[0]), Math.max(a.max[1], b.max[1]), Math.max(a.max[2], b.max[2])] as Vec3 }));
+}
+
 function expectVec(a: Vec3, b: Vec3, what = ''): void {
   for (let k = 0; k < 3; k++) expect(a[k], what).toBeCloseTo(b[k], 9);
 }
@@ -201,6 +205,12 @@ describe('the geometries', () => {
     all = withClip(all, { explode: explode({ mode: 'SPHERICAL', levels: 'ALL', overlap: 0 }) });
     const movers = explodeMovers(all, { node: null, amount: 1, explode: all.animation.clips[0].explode });
     expect(new Set(movers.map((m) => m.stage))).toEqual(new Set([0, 1]));
+    // Inside the closure the parts travel in proportion to it: the farthest one its share of the distance.
+    const whole = boxMaxDim(sceneBounds(all));
+    const closure = boxMaxDim(unionOf(all, [ids.collar, ids.cap]));
+    const inner = Math.max(...movers.filter((m) => m.stage === 1).map((m) => length(m.delta)));
+    expect(inner).toBeCloseTo((all.scene.partSizeMm * closure) / whole, 9);
+    expect(Math.max(...movers.filter((m) => m.stage === 0).map((m) => length(m.delta)))).toBeCloseTo(all.scene.partSizeMm, 9);
     // Two stages, one after the other: the first half moves the blocks, the second opens the closure.
     for (const m of movers) expect([m.from, m.to]).toEqual(m.stage === 0 ? [0, 0.5] : [0.5, 1]);
     for (const t of [0.25, 0.5]) expectVec(moved(all, ids.collar, t), moved(all, ids.cap, t), `stage 1 has not started at ${t}`);
