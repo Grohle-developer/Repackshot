@@ -10,6 +10,7 @@ import { instanceFromPreset } from '../src/core/materials';
 import { lightPosition, rigPivot } from '../src/core/lighting';
 import { getMesh } from '../src/core/meshes';
 import { PASS_KEYS } from '../src/core/passes';
+import { CAUSTICS_PRESETS, isCaster, lightAngleDeg, SMALL_LIGHT_DEG } from '../src/core/caustics';
 import { areaLightFlux, areaLightRadiance, EMIT_RADIANCE_PER_WATT } from '../src/core/photometry';
 import { allParts, worldMatrix } from '../src/core/scene';
 import { createInitialState, type ProjectState } from '../src/core/store';
@@ -149,7 +150,7 @@ function engineExample(): RsbScene {
     ],
     environment: { ...defaultEnvironment(), kind: ENV_STUDIO, floor: 0.05, horizon: 0.12, zenith: 0.3, strength: 1, rotationDeg: 0, backgroundColor: [0.05, 0.05, 0.05], backgroundMode: 0 },
     floor: defaultFloor(),
-    render: { width: 512, height: 384, maxSamples: 16, seed: 1, maxSeconds: 0, exposureEv: 0, tonemap: 1, maxDepth: 8, clampIndirect: 0, passes: 0 },
+    render: { width: 512, height: 384, maxSamples: 16, seed: 1, maxSeconds: 0, exposureEv: 0, tonemap: 1, maxDepth: 8, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0 },
     bitmaps: [],
   };
 }
@@ -195,7 +196,7 @@ function fullScene(): RsbScene {
       skyModel: 1,
     },
     floor: { mode: 2, z: -12.5, color: [0.4, 0.5, 0.6] },
-    render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10, passes: 0b101101 },
+    render: { width: 1920, height: 1080, maxSamples: 256, seed: 77, maxSeconds: 12.5, exposureEv: -0.5, tonemap: 3, maxDepth: 12, clampIndirect: 10, passes: 0b101101, denoise: 3, causticPhotons: 4096, causticRadius: 2.5 },
     // A raw plate (an odd number of bytes: padded) and the bytes of a file.
     bitmaps: [
       { format: 0, width: 3, height: 1, data: new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80, 90]) },
@@ -226,7 +227,7 @@ describe('RSB writer: byte parity with rt-core', () => {
     const s = sections(bytes);
     expect(s.map((x) => x.tag)).toEqual(['CAMR', 'MATL', 'MATL', 'MESH', 'MESH', 'INST', 'INST', 'INST', 'LGHT', 'LGHT', 'LGHT', 'BMAP', 'BMAP', 'ENVR', 'FLOR', 'RNDR']);
     const size = (tag: string) => s.find((x) => x.tag === tag)!.payload.byteLength;
-    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 72, 76, 84, 20, 40, 60]);
+    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 72, 76, 84, 20, 52, 60]);
     // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
     expect(size('BMAP')).toBe(16 + 12);
     // 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
@@ -618,7 +619,7 @@ describe('project to RSB: environment, floor and render settings', () => {
     expect(asked.render.passes).toBe(0b100101);
     expect(projectScene(s, view(s, { passes: [...PASS_KEYS] })).scene.render.passes).toBe(0b111111);
     const payload = sections(writeRsb(asked)).find((x) => x.tag === 'RNDR')!.payload;
-    expect(payload.byteLength).toBe(40);
+    expect(payload.byteLength).toBe(52);
     expect(payload.getUint32(36, true)).toBe(0b100101);
     expect(readRsb(writeRsb(asked)).render!.passes).toBe(0b100101);
     function r0() {
@@ -756,5 +757,60 @@ describe('project to RSB: E5 materials and environments', () => {
     const gone = apply(s, { type: 'env/set', patch: { kind: 'HDRI', hdri: { id: 'hdri:missing', name: 'x.hdr', width: 1, height: 1 } } });
     expect(projectScene(gone, view(gone)).scene.bitmaps).toHaveLength(0);
     void ids;
+  });
+});
+
+describe('project to RSB: denoise and caustics (E5b-1)', () => {
+  const s = exampleState();
+  const ids = keyIds(s);
+  const glass = apply(s, { type: 'material/assign', preset: 'GLASS_CLEAR', targets: [ids.body], mode: 'REPLACE' });
+  const fields = (st: ProjectState, extra: Partial<SceneView>) => {
+    const r = projectScene(st, view(st, extra)).scene.render;
+    return [r.denoise, r.causticPhotons, r.causticRadius];
+  };
+
+  it('writes the denoise bits and the caustic photons into RNDR, in the order of rt-core', () => {
+    const scene = projectScene(glass, view(glass, { denoise: 3, caustics: { mode: 'ON', quality: 'HIGH' } })).scene;
+    expect([scene.render.denoise, scene.render.causticPhotons, scene.render.causticRadius]).toEqual([3, CAUSTICS_PRESETS.HIGH.photons, CAUSTICS_PRESETS.HIGH.radiusPx]);
+    const payload = sections(writeRsb(scene)).find((x) => x.tag === 'RNDR')!.payload;
+    expect([payload.getUint32(40, true), payload.getUint32(44, true), payload.getFloat32(48, true)]).toEqual([3, 65536, 2]);
+    expect(readRsb(writeRsb(scene)).render).toEqual(asF32(scene.render));
+    // Nothing asked: denoise and caustics off, as a file before E5b-1 means.
+    expect(fields(glass, {})).toEqual([0, 0, 0]);
+    expect(fields(glass, { caustics: { mode: 'OFF', quality: 'MEDIUM' } })).toEqual([0, 0, 0]);
+  });
+
+  it('Automatic: on with glass (or polished metal) and a small light, off without either', () => {
+    const auto = { caustics: { mode: 'AUTO' as const, quality: 'MEDIUM' as const } };
+    const medium = [0, CAUSTICS_PRESETS.MEDIUM.photons, CAUSTICS_PRESETS.MEDIUM.radiusPx];
+    // The example's body is plastic: nothing focuses light.
+    expect(fields(s, auto)).toEqual([0, 0, 0]);
+    // Glass under the default rig: its softboxes are large, seen from the part.
+    const big = projectScene(glass, view(glass)).scene.lights;
+    const sizes = big.map((l) => lightAngleDeg({ kind: l.kind, position: l.position, sizeX: l.sizeX, sizeY: l.sizeY, angleDeg: l.angleDeg, glossy: true }, [0, 0, 0]));
+    expect(fields(glass, auto)).toEqual(sizes.some((d) => d <= SMALL_LIGHT_DEG) ? medium : [0, 0, 0]);
+    // A sun is a small light.
+    const sun = apply(glass, { type: 'studio/setLight', id: glass.studio.lights[0].id, patch: { type: 'SUN', power: 3, angle: 0.545 } });
+    expect(fields(sun, auto)).toEqual(medium);
+    // So is a lit emitter (a filament, a neon tube).
+    const lamp = apply(glass, { type: 'material/assign', preset: 'NEON_RED', targets: [ids.cap], mode: 'REPLACE' });
+    expect(fields(lamp, auto)).toEqual(medium);
+    // Polished metal focuses too; brushed (rough) metal does not.
+    const chrome = apply(s, { type: 'material/assign', preset: 'CHROME', targets: [ids.body], mode: 'REPLACE' }, { type: 'studio/setLight', id: s.studio.lights[0].id, patch: { type: 'SUN', power: 3, angle: 0.545 } });
+    expect(fields(chrome, auto)).toEqual(medium);
+  });
+
+  it("the caster test is the engine's", () => {
+    // rt_core::caustics::is_caster, case by case (crates/rt-core/src/caustics/tests.rs).
+    expect(isCaster({ kind: MATERIAL_GLASS, roughness: 0, transmission: 1, metallic: 0 })).toBe(true);
+    expect(isCaster({ kind: MATERIAL_GLASS, roughness: 0.25, transmission: 1, metallic: 0 })).toBe(true);
+    expect(isCaster({ kind: MATERIAL_GLASS, roughness: 0.4, transmission: 1, metallic: 0 })).toBe(false);
+    expect(isCaster({ kind: MATERIAL_PRINCIPLED, roughness: 0.05, transmission: 0, metallic: 1 })).toBe(true);
+    expect(isCaster({ kind: MATERIAL_PRINCIPLED, roughness: 0.5, transmission: 0, metallic: 1 })).toBe(false);
+    expect(isCaster({ kind: MATERIAL_PRINCIPLED, roughness: 0, transmission: 0, metallic: 0 })).toBe(false);
+    expect(isCaster({ kind: MATERIAL_EMISSIVE, roughness: 0.05, transmission: 0, metallic: 1 })).toBe(false);
+    // Brushed metal along its brush.
+    expect(isCaster({ kind: MATERIAL_PRINCIPLED, roughness: 0.28, transmission: 0, metallic: 1, anisotropy: 0.8 })).toBe(true);
+    expect(isCaster({ kind: MATERIAL_PRINCIPLED, roughness: 0.28, transmission: 0, metallic: 1, anisotropy: 0 })).toBe(false);
   });
 });

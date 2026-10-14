@@ -1338,3 +1338,18 @@ fn anisotropic_tangents_run_around_the_instance_axis() {
         Frame::from_normal(n)
     );
 }
+
+#[test]
+fn the_caustic_split_starts_again_at_every_receiver() {
+    // E C R C R C L: the light after the second receiver is the photon map's as much as after the
+    // first (the map is gathered at both); a state that stopped dropping it past the first
+    // receiver left the wall's caustic seen from the floor to rare, bright path-traced samples.
+    let r1 = CausticState::Eye.after(true).after(false);
+    assert_eq!(r1, CausticState::AfterReceiver { casters: false });
+    assert!(!r1.photons_bring_it());
+    assert!(r1.after(true).photons_bring_it());
+    let r2 = r1.after(true).after(false);
+    assert_eq!(r2, r1);
+    assert!(r2.after(true).after(true).photons_bring_it());
+    assert!(!CausticState::Eye.after(true).photons_bring_it());
+}

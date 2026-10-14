@@ -190,6 +190,9 @@ pub fn scene() -> Scene {
             max_depth: RenderSettings::DEFAULT_MAX_DEPTH,
             clamp_indirect: 0.0,
             passes: 0,
+            denoise: 0,
+            caustic_photons: 0,
+            caustic_radius: 0.0,
         },
         bitmaps: Vec::new(),
     }
@@ -341,6 +344,17 @@ pub fn e5c_scene() -> Scene {
     let (sa, ca) = crate::fmath::sin_cos(-60.0 * crate::fmath::DEG_TO_RAD);
     scene.lights[0].direction = -Vec3::new(ce * ca, ce * sa, se);
     scene.lights[0].color = Rgb::new(1.0, 0.78, 0.6);
+    scene
+}
+
+/// The E5b-1 parity scene: the E5 scene ([`e5_scene`], HDRI) with caustics, 2048 photons per
+/// sample from its light panel through the glass, the chrome, the cut-outs and the thin walls,
+/// gathered with a 4-pixel first radius. `rt --write-e5b-example` writes it for
+/// `tools/wasm-parity.mjs`.
+pub fn e5b_scene() -> Scene {
+    let mut scene = e5_scene(false);
+    scene.render.caustic_photons = 2048;
+    scene.render.caustic_radius = 4.0;
     scene
 }
 

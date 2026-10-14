@@ -14,6 +14,7 @@ import type { QualityKey, ResolutionKey } from '../data/types';
 import { AI_STYLES, DEFAULT_AI_PIPELINE, type AiPipelineSettings, type AiPostStage, type AiStyle } from './ai';
 import type { ActionBase, ProjectState } from './store';
 import type { CameraId } from './camera';
+import { CAUSTICS_MODES, CAUSTICS_QUALITIES, DENOISE_MODES, denoiseBits, type CausticsMode, type CausticsQuality, type DenoiseMode } from './caustics';
 import { nextId } from './ids';
 import { DEFAULT_NAME_TEMPLATE } from './name-template';
 import { clampDpi, DEFAULT_DPI, lockedSide, PRINT_UNITS, type PrintUnit } from './print-size';
@@ -38,7 +39,34 @@ export interface AdvancedSettings {
   clampIndirect: number;
   /** `RNDR.seed`: another seed, another noise pattern. */
   seed: number;
+  /** E5b-1, Advanced ▸ Denoise: where the engine's denoiser runs (`RNDR.denoise`; default both). */
+  denoise: DenoiseMode;
+  /** E5b-1, Advanced ▸ Also save without denoise: a render also writes the image before denoise (`<name>-noisy`). */
+  saveNoisy: boolean;
+  /** E5b-1, the render window's Caustics switch (Quality section): Automatic · On · Off. */
+  caustics: CausticsMode;
+  /** E5b-1, Advanced ▸ Caustic quality: photons per sample and first radius (core/caustics.ts). */
+  causticsQuality: CausticsQuality;
 }
+
+/**
+ * What the engine is told of the denoise and the caustics for a view (io/rsb.ts `SceneView.denoise` and
+ * `.caustics`): the viewport (Full mode) or a Render. The viewport never keeps the noisy image.
+ */
+export function engineFieldsOf(a: AdvancedSettings, where: 'VIEWPORT' | 'RENDER'): { denoise: number; caustics: { mode: CausticsMode; quality: CausticsQuality } } {
+  return { denoise: denoiseBits(a.denoise, where, a.saveNoisy), caustics: { mode: a.caustics, quality: a.causticsQuality } };
+}
+
+/** The Advanced settings of a new project (and what an older project lacks). */
+export const DEFAULT_ADVANCED: Readonly<AdvancedSettings> = Object.freeze({
+  maxBounces: null,
+  clampIndirect: 0,
+  seed: 0,
+  denoise: 'BOTH',
+  saveNoisy: false,
+  caustics: 'AUTO',
+  causticsQuality: 'MEDIUM',
+});
 
 export type VideoCodec = 'MP4' | 'WEBM';
 
@@ -238,7 +266,7 @@ export function defaultRenderSettings(): RenderSettings {
     quality: 'PREVIEW',
     maxSamples: QUALITY_PRESETS.PREVIEW.samples,
     maxSeconds: 120,
-    advanced: { maxBounces: null, clampIndirect: 0, seed: 0 },
+    advanced: { ...DEFAULT_ADVANCED },
     animation: { range: 'ALL', rangeUnit: 'FRAMES', from: 1, to: 1, fps: 24, output: 'FRAMES', video: 'MP4' },
     ai: DEFAULT_AI,
   };
@@ -324,6 +352,10 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
       maxBounces: a.maxBounces === null || a.maxBounces === undefined ? null : clampInt(a.maxBounces, 1, MAX_BOUNCES),
       clampIndirect: Math.max(0, Number.isFinite(a.clampIndirect) ? a.clampIndirect : 0),
       seed: clampInt(a.seed, 0, 0xffffffff),
+      denoise: DENOISE_MODES.includes(a.denoise) ? a.denoise : DEFAULT_ADVANCED.denoise,
+      saveNoisy: a.saveNoisy === true,
+      caustics: CAUSTICS_MODES.includes(a.caustics) ? a.caustics : DEFAULT_ADVANCED.caustics,
+      causticsQuality: CAUSTICS_QUALITIES.includes(a.causticsQuality) ? a.causticsQuality : DEFAULT_ADVANCED.causticsQuality,
     };
   }
   // Animation.
@@ -603,7 +635,18 @@ function migrateSettings(raw: Record<string, unknown>, base: RenderSettings): Re
     quality: oneOf(raw.quality, QUALITIES),
     maxSamples: num(raw.maxSamples),
     maxSeconds: maxSeconds !== undefined && maxSeconds > 0 ? maxSeconds : undefined,
-    advanced: adv ? { maxBounces: adv.maxBounces === null ? null : (num(adv.maxBounces) ?? null), clampIndirect: num(adv.clampIndirect) ?? 0, seed: num(adv.seed) ?? 0 } : undefined,
+    // Before E5b-1 the block had no denoise or caustics: the defaults (denoise both ways, caustics automatic).
+    advanced: adv
+      ? {
+          maxBounces: adv.maxBounces === null ? null : (num(adv.maxBounces) ?? null),
+          clampIndirect: num(adv.clampIndirect) ?? 0,
+          seed: num(adv.seed) ?? 0,
+          denoise: oneOf<DenoiseMode>(adv.denoise, DENOISE_MODES) ?? DEFAULT_ADVANCED.denoise,
+          saveNoisy: bool(adv.saveNoisy) ?? false,
+          caustics: oneOf<CausticsMode>(adv.caustics, CAUSTICS_MODES) ?? DEFAULT_ADVANCED.caustics,
+          causticsQuality: oneOf<CausticsQuality>(adv.causticsQuality, CAUSTICS_QUALITIES) ?? DEFAULT_ADVANCED.causticsQuality,
+        }
+      : undefined,
     animation: anim
       ? {
           range: oneOf<'ALL' | 'RANGE'>(anim.range, ['ALL', 'RANGE']) ?? 'ALL',

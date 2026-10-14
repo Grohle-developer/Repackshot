@@ -557,7 +557,25 @@ pub struct RenderSettings {
     /// [`crate::passes::PASS_KEYS`]; 0 for none. Bits the engine does not know are kept and
     /// ignored (a newer writer may ask for passes added later).
     pub passes: u32,
+    /// What the host does with the finished image (E5b-1, `rt_post::denoise`): bit 0
+    /// ([`DENOISE_IMAGE`]) hands out the denoised image, bit 1 ([`DENOISE_KEEP_NOISY`]) the one
+    /// without denoise as well. `rt-core` never reads it: rendering is the same with or without
+    /// it. Unknown bits are kept and ignored.
+    pub denoise: u32,
+    /// Caustics (E5b-1, [`crate::caustics`]): photons traced from the lights per sample index
+    /// (0: none; at most [`RenderSettings::MAX_CAUSTIC_PHOTONS`]). With photons the light that
+    /// reaches a diffuse surface through glass or polished metal comes from the photon map and
+    /// not from the paths of the tracer, which then leave it out.
+    pub caustic_photons: u32,
+    /// The gather radius of the first sample, in pixels of the image at the camera's focus
+    /// distance (0: [`RenderSettings::DEFAULT_CAUSTIC_RADIUS`]); it shrinks with every sample.
+    pub caustic_radius: f32,
 }
+
+/// `RNDR.denoise` bit 0: the host denoises the finished image.
+pub const DENOISE_IMAGE: u32 = 1;
+/// `RNDR.denoise` bit 1: the host also keeps the image without denoise.
+pub const DENOISE_KEEP_NOISY: u32 = 2;
 
 impl RenderSettings {
     /// Largest accepted image width or height.
@@ -566,6 +584,10 @@ impl RenderSettings {
     pub const DEFAULT_MAX_DEPTH: u32 = 8;
     /// Largest path depth the renderer honours.
     pub const MAX_DEPTH_LIMIT: u32 = 1024;
+    /// Most caustic photons per sample index.
+    pub const MAX_CAUSTIC_PHOTONS: u32 = 1 << 22;
+    /// Gather radius of the first sample, in pixels, when `caustic_radius` is 0.
+    pub const DEFAULT_CAUSTIC_RADIUS: f32 = 3.0;
 
     /// The path depth to render with: `max_depth`, or the default for 0, at most
     /// [`RenderSettings::MAX_DEPTH_LIMIT`].
@@ -591,6 +613,9 @@ impl Default for RenderSettings {
             max_depth: RenderSettings::DEFAULT_MAX_DEPTH,
             clamp_indirect: 0.0,
             passes: 0,
+            denoise: 0,
+            caustic_photons: 0,
+            caustic_radius: 0.0,
         }
     }
 }

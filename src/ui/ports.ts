@@ -66,6 +66,10 @@ export interface EngineStatus {
   native?: boolean;
   threads?: number;
   isa?: string;
+  /** Path tracer (E5b-1): the image on screen is the engine's denoised one. */
+  denoised?: boolean;
+  /** Path tracer (E5b-1): the view renders caustics with this many photons per sample. */
+  caustics?: number;
 }
 
 export type { DisplayPrefs, NavigationPrefs } from '../core/settings';
@@ -261,6 +265,10 @@ export interface FrameResult {
   seconds: number;
   /** The desktop launcher's id of the render, by which it keeps the linear image and the passes (`aiPasses`). */
   renderId?: string;
+  /** E5b-1: the file is the engine's denoised image. */
+  denoised?: boolean;
+  /** E5b-1, Advanced ▸ Also save without denoise: the same render before denoise, in the same format. */
+  noisyFile?: Blob;
   /** How its file was converted from the render's light. */
   tone?: FrameTone;
 }

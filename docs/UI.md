@@ -243,7 +243,14 @@ tapar la pieza:
   al motor · 5 s*; *El motor rechazó la vista: <su motivo> · se vuelve a
   intentar en 2 s*; *La vista se había parado y se ha vuelto a arrancar*),
   con las palabras del motor en el *tooltip*: nunca «0 muestras» en
-  silencio. **Nunca se inventa un número.**
+  silencio. **Nunca se inventa un número.** En *Completo* (E5b-1), una
+  línea más dice lo que el motor dice de la imagen: *Ruido reducido*
+  cuando lo que se ve es la imagen filtrada por el *denoise* (y entonces
+  las muestras son las de esa imagen) y *Cáusticas · 16 384 fotones por
+  muestra* cuando el motor las renderiza; y el botón **Reducir ruido**
+  (pulsado o no) enciende o apaga el *denoise* del visor: cambia la parte
+  del visor de *Avanzado ▸ Reducción de ruido* (*Los dos* ↔ *Render*,
+  *Visor* ↔ *Apagada*), deshacible.
 - **Abajo a la derecha**: ejes de orientación (tres trazos finos X Y Z,
   monocromos) y el tamaño de la pieza en mm.
 - **Al pasar por una pieza**: su contorno se ilumina (silueta de 1 px en
@@ -641,8 +648,21 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   mide el motor en el visor (*≈ 4 min en este equipo*); si el motor no
   ha medido todavía, dice *Estimación al cabo de unos segundos en modo
   Completo*. Nunca un número inventado.
+- **Cáusticas** (E5b-1): segmento **Automático · Encendidas · Apagadas**
+  (por defecto *Automático*) con una nota de lo que hace cada uno:
+  *Automático* las enciende cuando la escena tiene vidrio o metal pulido y
+  una luz pequeña (un sol, un foco, un filamento encendido); *Apagadas*,
+  la sombra del vidrio macizo queda oscura. El visor *Completo* sigue el
+  mismo interruptor.
 - **Avanzado** (plegado): rebotes máximos, recorte de indirecta,
-  semilla, cáusticas, *denoise* cuando exista.
+  semilla, **Calidad de cáusticas** (*Baja · Media · Alta*, con la nota de
+  sus fotones por muestra y su radio inicial, y de que más fotones son una
+  cáustica más fina y más tiempo por muestra, también en *Completo*),
+  **Reducción de ruido** (*Apagada · Visor · Render · Los dos*, por
+  defecto *Los dos*, con la nota de que es el filtro del motor guiado por
+  albedo, normales, profundidad y pieza, que nunca mezcla dos piezas) y,
+  cuando el render se filtra, **Guardar también sin reducción de ruido**
+  (un segundo archivo con «-noisy» en el nombre).
 
 **2 bis · Animación** (en lugar de *Tamaño*, con una fila *Tamaño del
 fotograma* solo en píxeles, y encima de *Calidad*, cuando

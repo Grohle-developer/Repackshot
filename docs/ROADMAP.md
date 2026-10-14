@@ -1013,7 +1013,7 @@ Lo que no encajó con el plan:
 - **Las capturas del hito (a)** se hicieron antes de corregir la asimetría
   de los aerosoles; las de (b) a (d), con la tabla final.
 
-## E5b-1 · Cáusticas y *denoise* propio — **Opus**
+## E5b-1 · Cáusticas y *denoise* propio — **Opus** — hecha
 
 **Petición del usuario (2026-10-13):** «integra también cáusticas,
 *denoise*…». Se adelanta esta parte de E5b; el reflejo del suelo, los
@@ -1050,6 +1050,177 @@ da su foco de luz con la energía esperada (test analítico o frente a una
 referencia larga del trazador), sin luciérnagas en la imagen con
 *denoise*; determinismo con cualquier número de hilos. Capturas antes y
 después.
+
+**Hecho.**
+
+- **Varianza en la película.** `Film::lum2` suma el cuadrado de la
+  luminancia de cada muestra (`f32`, en orden de muestra) sin tocar la
+  radiancia, el peso ni la cobertura: ningún *hash* de imagen se movió
+  (ejemplo `0x223515c3`, E5 `0xbf8abd5b`, cielo de E5 `0x2fcb098a`, E5c
+  `0x8bb09f6b` y los seis de pases de X2, en todas las rutas SIMD, WASI y
+  el `rt.wasm` real). La página la suma con la misma regla
+  (`Accumulator.lum2`, `Math.fround`).
+- ***Denoise*** (`rt_post::denoise`, Rust con `std`, sin pesos de nadie):
+  à-trous con paradas en aristas de Dammertz, Sewtz, Hanika y Lensch (HPG
+  2010; núcleo B3, cinco pasadas con pasos 1–16 px) con la parada de
+  luminancia guiada por la varianza de SVGF (Schied et al., HPG 2017:
+  varianza emborronada 3 × 3 y propagada como `Σ w² Var / (Σ w)²`, normal
+  `max(0, n·n')^128`, profundidad con su gradiente, albedo dividido y
+  vuelto a multiplicar, varianza espacial 7 × 7 por debajo de cuatro
+  muestras). Lo nuestro: la varianza de la película, los pases exactos de
+  X2 como guía, **peso cero entre dos piezas o dos materiales** (nunca las
+  mezcla) y el fondo intacto, un recorte de luciérnagas antes de filtrar
+  (un píxel más de cuatro veces más brillante que todos sus vecinos de la
+  misma superficie baja a eso) y `(1 − x/16)^16` en lugar de exponenciales.
+  Bandas de filas con un halo de 72 filas, exactamente esas filas de la
+  imagen entera, así que `rt`, el lanzador y la página reparten el trabajo
+  como quieren con los mismos bits. Error relativo (relMSE) frente a una
+  referencia de 384 muestras en escenas de la hoja (48 × 36, el test):
+  *key-only* 0,0401 → 0,0132 a 4 spp y 0,0048 → 0,0030 a 16; frasco de
+  vidrio 0,1259 → 0,0301 y 0,0284 → 0,0070; al tamaño de la hoja, entre el
+  4 y el 20 % del error sin filtrar a 4 spp. Coste: 4,6 s una imagen de
+  1920 × 1080 en un hilo y 2,4 s en cuatro (máquina compartida y cargada).
+  *Hash* fijado `0xab15f290` (`PINNED_DENOISED_EXAMPLE_4SPP`, el ejemplo
+  a 4 spp), igual en nativo, en el `rt.wasm` real por bandas y por el
+  código de la página con 1 y 2 *workers*.
+- **Cáusticas** (`rt_core::caustics`): SPPM (Hachisuka y Jensen 2009) en
+  la forma probabilística de Knaus y Zwicker (2011): cada índice de muestra
+  es una pasada con sus fotones, sin estado por píxel, y la película
+  promedia las pasadas. Partición *caster* / receptor / suceso recto, mapa
+  de los tramos `L C+ R` reunido en **cada** receptor del camino de cámara
+  y el trazador sin esa luz (ver los destellos, abajo); emisión dirigida a
+  las esferas envolventes de los *casters* con la densidad de la mezcla,
+  flujo sin 1/η², corrección adjunta de normales de Veach, PCG por
+  (semilla, muestra, fotón), rejilla *hash*, núcleo de Epanechnikov;
+  atrapasombras con cáusticas relativas al suelo abierto. Coste medido: el
+  frasco a 640 × 480 y 64 spp, 9,2 s sin fotones y 11,4 s con 16 384 por
+  muestra (*Media*), un 24 % más. *Hash* fijado **`0x55d60f2f`**
+  (`PINNED_E5B_CAUSTICS_4SPP`, la escena de E5 con 2048 fotones por
+  muestra, `rt --write-e5b-example`), igual en escalar, SSE2, AVX2, WASI
+  escalar y `simd128`, el `rt.wasm` real, el lanzador con 1, 4 y 16 hilos y
+  el código de la página.
+- **RSB**: `RNDR` pasa a 52 B con `denoise` (bit 0 imagen limpia, bit 1
+  también la original), `caustic_photons` (hasta 2²²) y `caustic_radius`
+  (px); un RSB anterior se lee sin *denoise* ni cáusticas. **Anfitriones**:
+  `rt --denoise --keep-noisy --caustics N --caustic-radius R` y la hoja
+  con los pares nuevos; el lanzador traza los mapas por rangos en todos
+  sus hilos, en el visor reduce ruido en el primer fotograma, en el último
+  y entre medias solo si ha pasado tres veces lo que costó la última vez, y
+  el render final entrega la limpia y, si se pide, la original; en la
+  página cada *worker* traza los mapas de sus muestras (guarda 16) y el
+  *pool* reduce ruido por bandas (`rt_denoise`).
+- **Interfaz**: *Calidad* ▸ *Cáusticas* (*Automático · Encendidas ·
+  Apagadas*; *Automático*: un *caster* y una luz *glossy* que vista desde
+  ellos no pase de 20°, un sol o un emisor encendido); *Avanzado* ▸
+  *Calidad de cáusticas* (*Baja* 4096 fotones y 4 px, *Media* 16 384 y
+  3 px, *Alta* 65 536 y 2 px), *Reducción de ruido* (*Apagada · Visor ·
+  Render · Los dos*, por defecto *Los dos*) y *Guardar también sin
+  reducción de ruido*; en el visor *Completo*, el medidor dice *Ruido
+  reducido* y *Cáusticas · N fotones por muestra* cuando el motor lo hace,
+  y el botón *Reducir ruido* cambia solo la parte del visor. La IA recibe
+  la imagen limpia como entrada.
+- **Tests**: 18 nuevos en `rt-core` (clasificación de *casters*; flujo de una esfera de vidrio frente
+  a una integración exacta en `f64`, 0,2 %; núcleo; reparto y SIMD de un
+  mapa; calendario del radio; partición frente al trazador solo en la
+  sombra de una esfera, bajo una esfera de metal pulido, con dos esferas
+  solapadas y en un suelo iluminado por la cáustica de una pared; vidrio
+  macizo; atrapasombras; luz encerrada en vidrio con mapa vacío; estados
+  de la partición; orden de baldosas; `lum2`; RSB; *hash* fijado), 7 en
+  `rt-post`, los de `rt-cli` (hilos 1/4/16, error del
+  *denoise*, CLI), `rt-wasm`, `rt-app` (paridad con `rt`, visor, cáusticas
+  con 1/4/16 hilos) y la interfaz (`tests/denoise.test.ts` con el
+  `rt.wasm` real, *pool*, lanzador, cola, RSB). Se comprobó que fallan
+  reintroduciendo cada error: sin regla de descarte, sin reunir, sin η²,
+  núcleo mal normalizado, sin atrapasombras, radio congelado, estado que
+  cambia en un suceso recto, NEE sin descartar en un *caster*, densidad de
+  un solo cono, estado que no vuelve a empezar en el segundo receptor,
+  reunir solo en el primero, sin parada de ids, halo corto, `lum2` sin
+  cuadrado (en Rust y en la página), sin guardar la original, sin leerla
+  del lanzador.
+
+**Convergencia de la cáustica (pregunta del líder).** Sí: el radio se
+encoge con las pasadas como dicen Knaus y Zwicker,
+`r_i² = r_1² Π_{k=1..i} (k + α)/(k + 1)` con α = 2/3, así que
+`r_i ∝ i^(−1/6)` (r_1024 ≈ 0,33 r_1); converge a calidad final sin estado
+por píxel. Medido en el frasco a 240 × 180 (r_1 = 3 px, 16 384 fotones por
+muestra), región de la cáustica = 2328 píxeles del suelo en la sombra del
+centro de la luz a más de 2 px de la silueta; relMSE (media de
+`(x − r)²/(r² + 0,01)` por canal, valores recortados a 1) frente a una
+referencia larga con otra semilla:
+
+| muestras | radio | cúpula 0,12 (ref. 8192 spp) sin / con *denoise* | entorno negro (ref. 4096) sin / con |
+|---|---|---|---|
+| 16 | 1,98 mm | 0,0224 / 0,0104 | 0,0325 / 0,0168 |
+| 64 | 1,58 mm | 0,0074 / 0,0052 | 0,0107 / 0,0077 |
+| 256 | 1,25 mm | 0,0037 / 0,0032 | 0,0051 / 0,0044 |
+| 1024 | 1,00 mm | 0,0026 / 0,0025 | 0,0031 / 0,0031 |
+
+Media de la región a 1024: 0,2852 frente a 0,2864 de la referencia
+(cúpula) y 0,2181 frente a 0,2186 (negro). Antes de corregir los destellos
+la curva subía a 1024 (0,0048 y 0,0068): dos píxeles con un destello se
+llevaban el 77 % del error. Las referencias se hicieron antes de esa
+corrección (el trazador es insesgado para esos caminos, así que valen).
+La hoja añade el par pedido: el frasco con cáusticas a 1024 muestras
+(*Final*), sin y con *denoise* (`e5b-bottle-caustics-final`).
+
+**Los destellos del par *Final* (pregunta del líder).** Con cada muestra
+separada por tipo de camino (recorte de 260 × 125 alrededor de la base,
+1024 spp): de 324 píxeles con destello, **157 eran del tipo (a)**: luz de
+una luz de fotones que, después del **segundo** receptor del camino, llegaba
+por el vidrio (`L C+ R C* R E`, una cáustica vista por un rebote difuso:
+el suelo junto al frasco viendo la cáustica a través del vidrio). La
+partición reunía el mapa solo en el primer receptor y dejaba al trazador
+todo lo de después: no contaba dos veces (la energía cuadraba), pero esos
+caminos llegaban en una muestra de cada mil con unas 1300 veces el valor
+medio. **Corregido**: cada receptor reúne el mapa (los siguientes al
+primero con el recorte de la luz indirecta) y el trazador descarta esa luz
+después de cualquier receptor; tests nuevos (luz encerrada en una bola de
+vidrio: con el mapa vacío todos los píxeles de receptor quedan negros, y la
+energía de un suelo iluminado por la cáustica de una pared cuadra con el
+trazador solo a −3 %; con el código anterior, 305 de 814 píxeles se
+encienden y el suelo sale −11 % a 192 spp). Del tipo (b) no hay nada: el
+vidrio macizo tapa la NEE y la NEE en un *caster* después de un receptor se
+descarta. Quedan **40 píxeles del tipo (c)**, brillos reales: la luz vista
+por la base de vidrio (`E C+ L`, también el brillo del tapón a través de
+ella), dos manchas de 2–4 px con medias de hasta 81 que el *denoise*
+conserva, y la línea focal de la cáustica en el borde de la base (estable
+de muestra a muestra). Capturas: `docs/ui/engine-e5b1-bottle-caustics-final.png`
+(el par vuelto a hacer) y `docs/ui/engine-e5b1-bottle-glints-4x.png`
+(la base a 4×: antes, después y después con *denoise*). Las escenas sin
+cáusticas no cambian de bits.
+
+Capturas: `docs/ui/engine-e5b1-denoise-4spp.png` (4 spp sin y con
+*denoise*), `docs/ui/engine-e5b1-bottle-caustics.png` (el frasco a 64 spp
+sin y con cáusticas) y las dos de arriba.
+
+Lo que no encajó con el plan:
+
+- **SPPM sin estadísticas por píxel**: el radio es global por pasada
+  (Knaus y Zwicker) y no el de Hachisuka y Jensen por punto visible; es lo
+  que permite renderizar baldosas en cualquier orden e hilo con los mismos
+  bits. Converge igual, pero el radio no se adapta a la densidad local.
+- **El entorno no emite fotones** (sus cáusticas siguen en el trazador) ni
+  las luces no *glossy*; los brillos `E C+ L` de luces pequeñas en vidrio
+  liso siguen siendo del trazador (son reales, pero convergen despacio).
+- **Las cáusticas del primer receptor no pasan por el recorte de luz
+  indirecta** (`clamp_indirect`); las de los siguientes, sí.
+- **Atrapasombras con fondo transparente**: sin cáusticas (su alfa lleva
+  solo la sombra).
+- El ***denoise* filtra RGB, no la cobertura**, y no se aplica a los
+  fotogramas de resolución reducida de los gestos; entre dos *denoise* el
+  visor muestra el último limpio. El recorte de luciérnagas pierde algo de
+  energía donde las hay.
+- **El interruptor *Cáusticas* está en *Calidad*** y su calidad en
+  *Avanzado*, como pedía el plan, pero los dos campos se guardan en
+  `advanced` del proyecto; los proyectos antiguos abren con *denoise*
+  *Los dos* y cáusticas *Automático* (los valores por defecto).
+- ***Automático*** decide con un umbral de 20° para «luz pequeña» y
+  cuenta el metal cepillado como *caster* a lo largo de su cepillo
+  (`r ⁴√(1 − 0,9 a)` ≤ 0,25), así que el tapón del frasco lo es. El umbral
+  es criterio visual: queda anotado como decisión pendiente (regla 11 de
+  `CLAUDE.md`).
+- **El coste en el visor *Completo*** se dice en el medidor (fotones por
+  muestra) y en la ayuda, no en segundos.
 
 ## E6 · Madera, tela y bisel en el sombreado — **Sonnet**
 

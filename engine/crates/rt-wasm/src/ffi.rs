@@ -258,3 +258,59 @@ pub unsafe extern "C" fn rt_render_tile_albedo(
         Err(status) => status,
     }
 }
+
+/// Caustic photons per sample the scene `handle` renders: 0 without caustics (none asked for, or
+/// nothing that focuses light, or no light that sends photons), `u32::MAX` for a bad handle.
+#[no_mangle]
+pub extern "C" fn rt_scene_caustics(handle: u32) -> u32 {
+    crate::scene_caustics(handle).unwrap_or(u32::MAX)
+}
+
+/// The denoiser (E5b-1) on a band of `rows` image rows from `origin_y` of an image
+/// `width × height` of `samples` samples per pixel. `in_ptr` holds `width * rows * 14`
+/// little-endian words: the planes `sums` (RGBA), `lum2`, `albedo` (3), `normal` (3), `depth`,
+/// `part_id` and `material_id`, one after another. Writes the denoised RGBA sums of image rows
+/// `y0 .. y1` (`width * (y1 - y0) * 4` floats) to `out_ptr`. Returns `STATUS_OK`,
+/// `STATUS_NULL_POINTER` or `STATUS_BAD_DENOISE` (the sizes, the band or its halo do not fit).
+///
+/// # Safety
+///
+/// `in_ptr` must be null or point to `width * rows * 14 * 4` readable bytes, and `out_ptr` null
+/// or to `width * (y1 - y0) * 4 * 4` writable bytes (alignment is not required).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn rt_denoise(
+    width: u32,
+    height: u32,
+    origin_y: u32,
+    rows: u32,
+    samples: u32,
+    y0: u32,
+    y1: u32,
+    in_ptr: *const u8,
+    out_ptr: *mut f32,
+) -> u32 {
+    if in_ptr.is_null() || out_ptr.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let len = width as usize * rows as usize * crate::DENOISE_WORDS * 4;
+    // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
+    // this call.
+    let input = unsafe { std::slice::from_raw_parts(in_ptr, len) };
+    match crate::denoise(width, height, origin_y, rows, samples, y0, y1, input) {
+        Ok(out) => {
+            // SAFETY: the caller promises room for `width * (y1 - y0) * 4` floats, which is
+            // exactly `out.len()` (the rows asked for); byte-wise copy needs no alignment, and
+            // `out` is a fresh allocation so the regions do not overlap.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    out.as_ptr().cast::<u8>(),
+                    out_ptr.cast::<u8>(),
+                    out.len() * std::mem::size_of::<f32>(),
+                );
+            }
+            STATUS_OK
+        }
+        Err(status) => status,
+    }
+}

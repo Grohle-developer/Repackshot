@@ -21,3 +21,5 @@ path = "src/bin/rt-bench.rs"
 
 [dependencies]
 rt-core = { path = "../rt-core" }
+# The denoiser (E5b-1) lives with the rest of the pixel work.
+rt-post = { path = "../rt-post" }

@@ -199,6 +199,13 @@ export async function recordResult(ctx: Ctx, meta: ResultMeta, out: FrameResult,
   ctx.ui.set({ results: [meta, ...ctx.ui.get().results.filter((r) => r.id !== meta.id && !gone.has(r.id))] });
 }
 
+/** The file name of a render's image before denoise (E5b-1): `-noisy` before the extension. */
+export function noisyName(name: string): string {
+  const dot = name.lastIndexOf('.');
+  const slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+  return dot > slash && dot > 0 ? `${name.slice(0, dot)}-noisy${name.slice(dot)}` : `${name}-noisy`;
+}
+
 /**
  * Renders one job: every frame with the path tracer, each saved under its name where the job
  * says, the first image kept in the history. Throws an AbortError when stopped.
@@ -260,6 +267,12 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
     if (signal.aborted) throw new DOMException('aborted', 'AbortError');
     const where = await ctx.services.files.save(s.destination, names[k], out.file);
     saved.push(names[k]);
+    // E5b-1: the image before denoise, next to it (`<name>-noisy`).
+    if (out.noisyFile) {
+      const noisy = noisyName(names[k]);
+      await ctx.services.files.save(s.destination, noisy, out.noisyFile);
+      saved.push(noisy);
+    }
     // A measured throughput for the window's estimate (the whole render, upload and conversion included).
     if (out.seconds > 0 && out.samples > 0) ctx.ui.set({ throughput: (out.samples * out.width * out.height) / out.seconds });
     // The history keeps the image of a job (the first frame of an animation).

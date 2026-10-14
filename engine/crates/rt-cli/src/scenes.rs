@@ -199,6 +199,9 @@ fn settings(size: (u32, u32), max_depth: u32, exposure_ev: f32) -> RenderSetting
         max_depth,
         clamp_indirect: 0.0,
         passes: 0,
+        denoise: 0,
+        caustic_photons: 0,
+        caustic_radius: 0.0,
     }
 }
 
@@ -625,6 +628,193 @@ pub fn hdri_studio(size: (u32, u32)) -> Scene {
         ..Environment::default()
     };
     scene
+}
+
+/// A disc light of `diameter` mm at `position` aimed at `target`, `power` watts, glossy.
+fn disc(position: Vec3, target: Vec3, diameter: f32, power: f32) -> Light {
+    Light {
+        kind: LightKind::Disk,
+        position,
+        direction: (target - position).normalize(),
+        up: Vec3::new(0.0, 0.0, 1.0),
+        size_x: diameter,
+        size_y: diameter,
+        color: Rgb::WHITE,
+        power,
+        spread_deg: 180.0,
+        angle_deg: 0.0,
+        flags: LIGHT_FLAG_GLOSSY,
+    }
+}
+
+/// E5b-1: a clear glass sphere (30 mm radius, ior 1.5) on a white floor under a small disc light
+/// (16 mm across, 354 mm away, from behind and above), a dim studio dome: the sphere's focus of
+/// light falls on the floor in front of it, towards the camera. With `photons` caustic photons
+/// per sample (0: none, the path tracer alone).
+pub fn caustic_sphere(size: (u32, u32), photons: u32) -> Scene {
+    let sphere = rt_core::example::icosphere(Vec3::new(0.0, 0.0, 30.0), 30.0, 5);
+    let mut render = settings(size, 16, 0.0);
+    render.caustic_photons = photons;
+    Scene {
+        camera: camera(
+            Vec3::new(0.0, 300.0, 170.0),
+            Vec3::new(0.0, 25.0, 12.0),
+            50.0,
+        ),
+        materials: vec![glass(Rgb::WHITE, 0.0, 0.0)],
+        geometry: Geometry::new(vec![sphere], vec![Instance::new(0, Transform::IDENTITY, 0)])
+            .unwrap_or_default(),
+        lights: vec![disc(
+            Vec3::new(0.0, -250.0, 280.0),
+            Vec3::new(0.0, 0.0, 30.0),
+            16.0,
+            2.0,
+        )],
+        environment: dome(0.08),
+        floor: Floor {
+            mode: FloorMode::Visible,
+            z: 0.0,
+            color: Rgb::splat(0.8),
+        },
+        render,
+        bitmaps: Vec::new(),
+    }
+}
+
+/// E5b-1: the perfume bottle of [`glass_bottle`] under one small key light (a 40 mm panel from
+/// behind and to the left, high) and a dim dome: its glass throws a caustic on the floor in
+/// front of it. With `photons` caustic photons per sample (0: none).
+pub fn bottle_caustics(size: (u32, u32), photons: u32) -> Scene {
+    let mut scene = glass_bottle(size);
+    let target = Vec3::new(0.0, 0.0, 40.0);
+    scene.lights = vec![panel(
+        Vec3::new(-260.0, 300.0, 420.0),
+        target,
+        (40.0, 40.0),
+        3.0,
+        LIGHT_FLAG_GLOSSY,
+    )];
+    scene.environment = dome(0.12);
+    scene.render.caustic_photons = photons;
+    scene
+}
+
+/// Caustic photons per sample of the sheet's caustic scenes (the interface's *Medium*).
+pub const SHEET_CAUSTIC_PHOTONS: u32 = 16_384;
+
+/// One E5b-1 scene of the sheet: a scene and how it is rendered.
+pub struct E5bScene {
+    /// File name stem and JSON key.
+    pub key: &'static str,
+    /// Caption.
+    pub label: &'static str,
+    /// The scene (with `RNDR.denoise` when it is to be denoised).
+    pub scene: Scene,
+    /// Samples relative to the sheet's (without `low_samples`).
+    pub sample_factor: u32,
+    /// Rendered at 4 samples per pixel, to show the denoiser at work.
+    pub low_samples: bool,
+    /// The denoised image is written.
+    pub denoise: bool,
+}
+
+/// The E5b-1 pairs of the sheet at `size`: the glass sphere and the perfume bottle without and
+/// with caustics, the bottle's caustics at the Final preset's samples without and with denoise,
+/// and two scenes at 4 samples per pixel without and with denoise.
+pub fn e5b_scenes(size: (u32, u32)) -> Vec<E5bScene> {
+    let pair =
+        |keys: [&'static str; 2], labels: [&'static str; 2], scene: &dyn Fn(u32) -> Scene| {
+            [0, SHEET_CAUSTIC_PHOTONS].map(|photons| {
+                let i = usize::from(photons > 0);
+                E5bScene {
+                    key: keys[i],
+                    label: labels[i],
+                    scene: scene(photons),
+                    sample_factor: 4,
+                    low_samples: false,
+                    denoise: false,
+                }
+            })
+        };
+    let noisy_clean = |keys: [&'static str; 2], labels: [&'static str; 2], scene: Scene| {
+        [false, true].map(|clean| {
+            let mut scene = scene.clone();
+            if clean {
+                scene.render.denoise = rt_core::scene::DENOISE_IMAGE;
+            }
+            E5bScene {
+                key: keys[usize::from(clean)],
+                label: labels[usize::from(clean)],
+                scene,
+                sample_factor: 1,
+                low_samples: true,
+                denoise: clean,
+            }
+        })
+    };
+    let recipe = crate::sheet::recipes()
+        .into_iter()
+        .find(|r| r.key == "key-only")
+        .map(|r| crate::sheet::scene_for(&r, size))
+        .unwrap_or_else(|| glass_bottle(size));
+    pair(
+        ["e5b-sphere-caustics-off", "e5b-sphere-caustics-on"],
+        [
+            "Glass sphere under a small disc light, the path tracer alone",
+            "Glass sphere under a small disc light, caustics from the photon map",
+        ],
+        &|photons| caustic_sphere(size, photons),
+    )
+    .into_iter()
+    .chain(pair(
+        ["e5b-bottle-caustics-off", "e5b-bottle-caustics-on"],
+        [
+            "Perfume bottle under a small key light, the path tracer alone",
+            "Perfume bottle under a small key light, caustics from the photon map",
+        ],
+        &|photons| bottle_caustics(size, photons),
+    ))
+    .chain([false, true].map(|clean| {
+        // The caustic at the Final preset's samples (16 × the sheet's 64: 1024), without and
+        // with denoise: the radius has shrunk to about a third of the first one by then.
+        let mut scene = bottle_caustics(size, SHEET_CAUSTIC_PHOTONS);
+        if clean {
+            scene.render.denoise = rt_core::scene::DENOISE_IMAGE;
+        }
+        E5bScene {
+            key: if clean {
+                "e5b-bottle-caustics-final-denoised"
+            } else {
+                "e5b-bottle-caustics-final"
+            },
+            label: if clean {
+                "Perfume bottle, caustics at the Final preset's samples, denoised"
+            } else {
+                "Perfume bottle, caustics at the Final preset's samples"
+            },
+            scene,
+            sample_factor: 16,
+            low_samples: false,
+            denoise: clean,
+        }
+    }))
+    .chain(noisy_clean(
+        ["e5b-key-4spp-noisy", "e5b-key-4spp-denoised"],
+        [
+            "Key light only at 4 samples per pixel",
+            "Key light only at 4 samples per pixel, denoised",
+        ],
+        recipe,
+    ))
+    .chain(noisy_clean(
+        ["e5b-bottle-4spp-noisy", "e5b-bottle-4spp-denoised"],
+        [
+            "Glass bottle (backlit) at 4 samples per pixel",
+            "Glass bottle (backlit) at 4 samples per pixel, denoised",
+        ],
+        glass_bottle(size),
+    ))
+    .collect()
 }
 
 /// Every E5 scene of the sheet at `size`.

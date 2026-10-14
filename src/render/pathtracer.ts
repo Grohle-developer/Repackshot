@@ -32,7 +32,9 @@
 
 import type { CameraState } from '../core/camera';
 import { passMask, type PassKey, type RenderPasses } from '../core/passes';
-import type { AdvancedSettings } from '../core/render';
+import { engineFieldsOf, type AdvancedSettings } from '../core/render';
+import { DENOISE_IMAGE, DENOISE_KEEP_NOISY, type CausticsMode, type CausticsQuality } from '../core/caustics';
+import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob } from './denoise';
 import type { ProjectState } from '../core/store';
 import type { EngineStatus, PickHit, RenderEngine, RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
@@ -59,6 +61,10 @@ export interface TracerView {
   advanced?: AdvancedSettings;
   /** The exact passes to render next to the image (`RNDR.passes`; Render only). */
   passes?: readonly PassKey[];
+  /** E5b-1: `RNDR.denoise` of this view (core/render.ts `engineFieldsOf`). */
+  denoise?: number;
+  /** E5b-1: the caustics switch and quality (Automatic is decided by io/rsb.ts from the scene). */
+  caustics?: { mode: CausticsMode; quality: CausticsQuality };
 }
 
 export interface BuiltScene {
@@ -166,6 +172,10 @@ export class Pool {
   private readonly jobs = new Map<number, JobState>();
   private tonemapSeq = 0;
   private readonly tonemaps = new Map<number, (bytes: Uint8ClampedArray) => void>();
+  private denoiseSeq = 0;
+  private readonly denoises = new Map<number, (data: Float32Array | null, error?: string) => void>();
+  /** E5b-1: the caustic photons per sample of the scene each worker holds (rt_scene_caustics). */
+  private readonly caustics: number[];
   /** The generation each worker is rendering (null: none). */
   private readonly busy: (number | null)[];
   /** The scene each worker holds once it has read its messages (null: unknown), and the id of the last one sent. */
@@ -176,6 +186,7 @@ export class Pool {
     this.workers = workers;
     this.size = workers.length;
     this.busy = workers.map(() => null);
+    this.caustics = workers.map(() => 0);
     this.tags = workers.map(() => null);
     this.lastScene = workers.map(() => 0);
     workers.forEach((w, i) => (w.onmessage = (e: MessageEvent<WorkerReply>) => this.receive(e.data, i)));
@@ -221,6 +232,7 @@ export class Pool {
       case 'scene': {
         // A worker that could not load its last scene holds who knows what: it gets the whole one next time.
         if (msg.error && this.lastScene[worker] === msg.id) this.tags[worker] = null;
+        if (this.lastScene[worker] === msg.id) this.caustics[worker] = msg.error ? 0 : (msg.caustics ?? 0);
         const s = this.scenes.get(msg.id);
         if (!s) return;
         s.error ??= msg.error;
@@ -256,7 +268,34 @@ export class Pool {
         this.tonemaps.get(msg.id)?.(msg.bytes);
         this.tonemaps.delete(msg.id);
         return;
+      case 'denoised':
+        this.denoises.get(msg.id)?.(msg.data, msg.error);
+        this.denoises.delete(msg.id);
+        return;
     }
+  }
+
+  /** E5b-1: the caustic photons per sample the scene `worker` holds renders (0: none). */
+  causticsOf(worker: number): number {
+    return this.caustics[worker] ?? 0;
+  }
+
+  /**
+   * E5b-1: the engine's denoiser on the RGBA sums of `samples` samples of a `width × height` image, with their
+   * squared luminance and the guide passes, in bands of rows on `workers` (each band with its halo, so the bands
+   * give exactly the whole image's rows). Rejects when a worker cannot (an older rt.wasm).
+   */
+  denoise(width: number, height: number, samples: number, sums: Float32Array, lum2: Float32Array, passes: RenderPasses, workers: readonly number[] = this.all()): Promise<Float32Array | null> {
+    const lane = workers.length > 0 ? workers : this.all();
+    return denoiseImage(width, height, samples, sums, lum2, passes, lane.length, (job: DenoiseJob, k: number) => {
+      const id = ++this.denoiseSeq;
+      const w = this.workers[lane[k % lane.length]];
+      return new Promise<Float32Array>((resolve, reject) => {
+        this.denoises.set(id, (data, error) => (data ? resolve(data) : reject(new Error(error ?? 'denoise failed'))));
+        const input = job.input.buffer as ArrayBuffer;
+        w.postMessage({ type: 'denoise', id, width: job.width, height: job.height, samples: job.samples, ...job.band, input } satisfies WorkerRequest, [input]);
+      });
+    });
   }
 
   /** The scene `worker` will hold once it has read the messages sent so far (null: unknown). */
@@ -380,6 +419,10 @@ export interface RenderedPixels {
   passes?: RenderPasses;
   /** The native engine: the launcher's id of this render, by which it keeps the image and its passes (AI-POST.md §7.3). */
   renderId?: number;
+  /** E5b-1: `data` and `sum` are the engine's denoised image. */
+  denoised?: boolean;
+  /** E5b-1, with Advanced ▸ Also save without denoise: the same render before denoise (8-bit, and its sums with `keepLinear`). */
+  noisy?: { data: Uint8ClampedArray; sum?: Float32Array };
 }
 
 /** What reaches the image, by reference: anything else (selection, names, the queue) does not restart it. */
@@ -394,6 +437,8 @@ function touchesImage(s: ProjectState, p: ProjectState): boolean {
     s.render.height !== p.render.height ||
     s.render.maxSamples !== p.render.maxSamples ||
     s.render.quality !== p.render.quality ||
+    // Denoise and caustics (E5b-1) are Advanced settings the viewport follows.
+    s.render.advanced !== p.render.advanced ||
     s.animation.clips !== p.animation.clips ||
     s.animation.shots !== p.animation.shots ||
     (s.animation.clips.length > 0 && (s.animation.playhead !== p.animation.playhead || s.animation.playing !== p.animation.playing))
@@ -432,6 +477,13 @@ export class PathTracerEngine implements RenderEngine {
   /** That generation has all its samples (or its time): it renders nothing more. */
   private viewDone = false;
   private acc: Accumulator | null = null;
+  /** E5b-1: the guide passes of the viewport's image when it is denoised, and the denoise in flight. */
+  private accGuides: PassAccumulator | null = null;
+  private denoising = false;
+  /** A denoise of the last samples is due once the one in flight is back. */
+  private denoiseAgain = false;
+  private lastDenoiseMs = 0;
+  private lastDenoiseAt = 0;
   private accGen = 0;
   private accScale = 1;
   /** The workers the viewport's generation renders on, and the scene key of its image. */
@@ -687,6 +739,9 @@ export class PathTracerEngine implements RenderEngine {
       maxSeconds: 0,
       viewport: { viewW: this.viewW, viewH: this.viewH },
       ...(patch ? { cameraPatch: patch } : {}),
+      // Denoise (at full resolution only: a gesture's frames are gone before it would finish) and caustics.
+      ...engineFieldsOf(state.render.advanced, 'VIEWPORT'),
+      ...(scale > 1 ? { denoise: 0 } : {}),
     };
   }
 
@@ -722,7 +777,9 @@ export class PathTracerEngine implements RenderEngine {
     const update = built.bytes(false);
     const acc0 = this.acc;
     // Nothing that reaches the image changed (a rename, a hidden-then-shown light): keep going.
-    if (acc0 && this.viewGen !== 0 && this.accGen === this.viewGen && this.accScale === scale && sameLane(this.accLane, lane) && acc0.width === view.width && acc0.height === view.height && sameBytes(this.lastUpdate, update)) return;
+    // (Whether it is denoised is the page's own work: it counts too.)
+    const denoiseNow = ((view.denoise ?? 0) & DENOISE_IMAGE) !== 0;
+    if (acc0 && this.viewGen !== 0 && this.accGen === this.viewGen && this.accScale === scale && sameLane(this.accLane, lane) && acc0.width === view.width && acc0.height === view.height && sameBytes(this.lastUpdate, update) && (this.accGuides !== null) === denoiseNow) return;
 
     const gen = this.gens.next();
     if (this.viewGen) this.pool.cancel(this.viewGen);
@@ -742,7 +799,13 @@ export class PathTracerEngine implements RenderEngine {
     if (gen !== this.viewGen) return;
     this.failure = null;
     this.lastUpdate = update;
-    const acc = new Accumulator(view.width, view.height);
+    // E5b-1: a denoised view renders the guide passes and sums the squared luminance too.
+    const denoise = ((view.denoise ?? 0) & DENOISE_IMAGE) !== 0;
+    const mask = denoise ? DENOISE_GUIDE_MASK : 0;
+    const acc = new Accumulator(view.width, view.height, undefined, { lum2: denoise });
+    this.accGuides = denoise ? new PassAccumulator(view.width, view.height, mask, acc.tiles) : null;
+    this.denoising = false;
+    this.denoiseAgain = false;
     this.acc = acc;
     this.accGen = gen;
     this.accScale = scale;
@@ -763,12 +826,13 @@ export class PathTracerEngine implements RenderEngine {
     for (;;) {
       const p = nextPass(done, pass, max);
       if (!p) break;
-      const ok = await this.pool.run(gen, acc.tiles, p.first, p.count, (r) => this.onTile(gen, r), lane);
+      const ok = await this.pool.run(gen, acc.tiles, p.first, p.count, (r) => this.onTile(gen, r), lane, mask);
       if (gen !== this.viewGen) return;
       if (!ok) {
         this.frameInFlight = false;
         return;
       }
+      if (denoise) this.denoiseView(gen, acc, lane, done + p.count, nextPass(done + p.count, p.count, max) === null);
       this.passes++;
       this.watchdog.progressed();
       if (!this.firstPassDone) {
@@ -795,6 +859,8 @@ export class PathTracerEngine implements RenderEngine {
       }
     }
     if (scale === 1) this.stoppedAt = performance.now();
+    // Stopped by time: the samples it has, denoised (a converged view denoised its last pass already).
+    if (denoise && this.timedOut && gen === this.viewGen) this.denoiseView(gen, acc, lane, done, true);
     // Converged (or stopped by time): nothing more comes, and the watchdog has nothing to wait for.
     if (gen === this.viewGen) this.viewDone = true;
   }
@@ -803,10 +869,52 @@ export class PathTracerEngine implements RenderEngine {
     const acc = this.acc;
     if (!acc || gen !== this.accGen || gen !== this.viewGen) return;
     this.tileAt = performance.now();
-    if (acc.add(r.index, r.first, r.count, r.data) && this.accScale === 1) {
+    const guides = this.accGuides;
+    if (guides && r.albedo) guides.addAlbedo(r.index, r.first, r.count, r.albedo);
+    if (guides && r.exact) guides.setExact(r.index, r.exact);
+    // Once the denoised image is on screen, the samples coming in are shown with the next one.
+    if (acc.add(r.index, r.first, r.count, r.data) && this.accScale === 1 && acc.shownSamples === 0) {
       this.dirty.add(r.index);
       if (!this.pendingSince) this.pendingSince = this.tileAt;
     }
+  }
+
+  /**
+   * E5b-1: denoises the viewport's image of `samples` samples on its workers, while the next pass renders: after
+   * the first pass and the last, and after any other once three times the last denoise has gone by; one at a
+   * time (the last samples' denoise waits for the one in flight). The denoised image replaces the sums on screen.
+   */
+  private denoiseView(gen: number, acc: Accumulator, lane: readonly number[], samples: number, last: boolean): void {
+    const guides = this.accGuides;
+    if (!guides) return;
+    if (this.denoising) {
+      if (last) this.denoiseAgain = true;
+      return;
+    }
+    const now = performance.now();
+    const due = acc.shownSamples === 0 || last || now - this.lastDenoiseAt >= 3 * this.lastDenoiseMs;
+    if (!due) return;
+    this.denoising = true;
+    const t0 = now;
+    // The bands are packed now, before the next pass adds to the sums.
+    this.pool
+      .denoise(acc.width, acc.height, samples, acc.sum, acc.lum2, guides.resolve(), lane)
+      .then((clean) => {
+        if (!clean || gen !== this.accGen || this.acc !== acc) return;
+        acc.show(clean, samples);
+        for (const t of acc.tiles) this.dirty.add(t.index);
+        if (!this.pendingSince) this.pendingSince = performance.now();
+      })
+      .catch((err) => console.warn(`[viewport] denoise: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => {
+        this.denoising = false;
+        this.lastDenoiseAt = performance.now();
+        this.lastDenoiseMs = this.lastDenoiseAt - t0;
+        if (this.denoiseAgain && gen === this.accGen && this.acc === acc) {
+          this.denoiseAgain = false;
+          this.denoiseView(gen, acc, lane, acc.minSamples, true);
+        }
+      });
   }
 
   /** The watchdog: the viewport's generation must keep getting tiles and have them drawn; if not, it starts again. */
@@ -910,7 +1018,10 @@ export class PathTracerEngine implements RenderEngine {
     const acc = this.acc;
     const now = performance.now();
     const full = acc !== null && this.accScale === 1;
-    const samples = full ? acc.minSamples : 0;
+    // A denoised view shows the samples of its last denoised image (E5b-1).
+    const denoised = full && acc.shownSamples > 0;
+    const samples = full ? (denoised ? acc.shownSamples : acc.minSamples) : 0;
+    const caustics = this.accLane.length > 0 ? this.pool.causticsOf(this.accLane[0]) : 0;
     const max = this.state ? this.viewportSamples(this.state) : 1;
     const end = this.stoppedAt || performance.now();
     const k = this.whileRender === 'SHARE' ? viewportWorkers(this.pool.size) : 0;
@@ -940,6 +1051,8 @@ export class PathTracerEngine implements RenderEngine {
       watchdog: this.watchdog.fires,
       ...(this.shownKey ? { shownKey: this.shownKey } : {}),
       ...(wantKey ? { wantKey } : {}),
+      ...(denoised ? { denoised: true } : {}),
+      ...(caustics > 0 && acc ? { caustics } : {}),
     };
   }
 
@@ -991,14 +1104,17 @@ export class PathTracerEngine implements RenderEngine {
         transparent: opts.transparent,
         ...(opts.camera ? { camera: opts.camera } : {}),
         ...(opts.time !== undefined ? { time: opts.time } : {}),
-        ...(opts.advanced ? { advanced: opts.advanced } : {}),
+        ...(opts.advanced ? { advanced: opts.advanced, ...engineFieldsOf(opts.advanced, 'RENDER') } : {}),
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
       };
-      const mask = passMask(opts.passes ?? []);
+      // E5b-1: a denoised render also renders the guide passes and sums the squared luminance.
+      const denoise = ((view.denoise ?? 0) & DENOISE_IMAGE) !== 0;
+      const keepNoisy = ((view.denoise ?? 0) & DENOISE_KEEP_NOISY) !== 0;
+      const mask = passMask(opts.passes ?? []) | (denoise ? DENOISE_GUIDE_MASK : 0);
       const built = this.source.build(state, view);
       const update = built.bytes(false);
       opts.onProgress?.({ jobId: null, progress: 0, samples: 0, seconds: 0 });
-      const acc = new Accumulator(opts.width, opts.height);
+      const acc = new Accumulator(opts.width, opts.height, undefined, { lum2: denoise });
       const passes = mask ? new PassAccumulator(opts.width, opts.height, mask, acc.tiles) : null;
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
       const budget: PassBudget = { finishBy: opts.finishBy ?? (opts.maxSeconds > 0 ? 'FIRST' : 'SAMPLES'), maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds };
@@ -1048,8 +1164,26 @@ export class PathTracerEngine implements RenderEngine {
       });
       done = result.samples;
       const tone = this.source.tone(state);
+      // The engine's denoiser on the finished image (all the workers; the viewport may have its share back).
+      let image = acc.sum;
+      let denoised = false;
+      if (denoise && passes && done > 0 && !signal?.aborted) {
+        const clean = await this.pool.denoise(opts.width, opts.height, done, acc.sum, acc.lum2, passes.resolve(), this.finalLane()).catch((err) => {
+          console.warn(`render: denoise: ${err instanceof Error ? err.message : String(err)}`);
+          return null;
+        });
+        if (signal?.aborted) throw abortError();
+        if (clean) {
+          image = clean;
+          denoised = true;
+        }
+      }
       // The workers convert slices of a copy; the sums stay here when they are wanted.
-      const data = await this.pool.tonemap(acc.sum, opts.width, opts.height, done, tone.exposureEv, tone.tonemap);
+      const data = await this.pool.tonemap(image, opts.width, opts.height, done, tone.exposureEv, tone.tonemap);
+      const noisy =
+        denoised && keepNoisy
+          ? { data: await this.pool.tonemap(acc.sum, opts.width, opts.height, done, tone.exposureEv, tone.tonemap), ...(opts.keepLinear ? { sum: acc.sum } : {}) }
+          : undefined;
       const seconds = (performance.now() - t0) / 1000;
       opts.onProgress?.({ jobId: null, progress: 1, samples: done, seconds });
       return {
@@ -1060,8 +1194,10 @@ export class PathTracerEngine implements RenderEngine {
         seconds,
         exposureEv: tone.exposureEv,
         tonemap: tone.tonemap,
-        ...(opts.keepLinear ? { sum: acc.sum } : {}),
-        ...(passes ? { passes: passes.resolve() } : {}),
+        ...(opts.keepLinear ? { sum: image } : {}),
+        ...(passes && opts.passes?.length ? { passes: passes.resolve() } : {}),
+        ...(denoised ? { denoised: true } : {}),
+        ...(noisy ? { noisy } : {}),
       };
     } finally {
       signal?.removeEventListener('abort', onAbort);

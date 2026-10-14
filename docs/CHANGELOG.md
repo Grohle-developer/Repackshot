@@ -5,6 +5,16 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Motor
+
+- ***Denoise* propio** (E5b-1): un filtro à-trous con paradas en aristas (Dammertz et al. 2010) con la parada de luminancia guiada por la varianza de SVGF (Schied et al. 2017), guiado por el albedo, las normales, la profundidad y los ids de cada píxel y por su varianza, que ahora acumula la película; nunca mezcla dos piezas. A 4 muestras por píxel el error frente a un render largo baja a entre el 4 y el 20 % del de la imagen sin filtrar en las escenas de la hoja de contactos. Los mismos bits en el escritorio y en el navegador (E5b-1).
+- **Cáusticas** con un mapa de fotones progresivo (SPPM, Hachisuka y Jensen 2009, en la forma de Knaus y Zwicker 2011): la luz que atraviesa el vidrio o rebota en el metal pulido hasta el suelo, el atrapasombras o una pieza mate llega por fotones y no por caminos ruidosos del trazador (también la que ilumina la escena después de un rebote difuso, que daba destellos), sin contarse dos veces; la sombra del vidrio macizo deja de ser negra. Deterministas con cualquier número de hilos (E5b-1).
+
+### Interfaz
+
+- Ventana de render ▸ *Calidad* ▸ **Cáusticas**: *Automático* (por defecto: encendidas con vidrio o metal pulido y una luz pequeña) · *Encendidas* · *Apagadas*; en *Avanzado*, **Calidad de cáusticas** (*Baja · Media · Alta*), **Reducción de ruido** (*Apagada · Visor · Render · Los dos*, por defecto *Los dos*) y **Guardar también sin reducción de ruido** (E5b-1).
+- El medidor del visor *Completo* dice *Ruido reducido* y *Cáusticas · N fotones por muestra* cuando el motor lo hace, y su botón *Reducir ruido* enciende o apaga el filtro del visor (E5b-1).
+
 ### Correcciones
 
 - *Enfocar con clic* enfoca justo en el punto clicado: medía la distancia en línea recta y el motor enfoca un plano perpendicular a la vista, así que cualquier punto fuera del centro quedaba detrás del plano de foco (aviso del usuario).

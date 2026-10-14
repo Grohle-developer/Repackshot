@@ -18,6 +18,10 @@
 //!    decides. At most `MAX_ATTEMPTS`; a rejection delivers the engine image unchanged.
 //!
 //! [`run`] is that driver for a model given as a function (tests, and `rt-app` later).
+//!
+//! It also holds the renderer's own denoiser ([`denoise`], E5b-1): an edge-avoiding à-trous
+//! filter guided by the exact passes and the film's variance, run by the launcher and by the
+//! web pool (through `rt-wasm`) on the finished image.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -26,6 +30,7 @@ mod blur;
 mod checks;
 mod color;
 mod conditioning;
+pub mod denoise;
 mod guard;
 mod image;
 mod job;

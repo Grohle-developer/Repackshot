@@ -372,6 +372,14 @@ impl Bsdf {
         self.clear > 0.0
     }
 
+    /// The relative index across the surface: the index on the side of `wi` over the one on the
+    /// side of `wo` (`ior` entering a solid, `1 / ior` leaving it, `ior` for a thin wall). The
+    /// refraction of [`Bsdf::sample`] carries the `1/η²` of radiance; light particles (the
+    /// photons of [`crate::caustics`]) carry flux and take it back out.
+    pub fn eta(&self) -> f32 {
+        self.eta
+    }
+
     /// True when the surface transmits straight through (a thin wall's clear part).
     pub fn is_thin(&self) -> bool {
         self.thin && self.clear > 0.0

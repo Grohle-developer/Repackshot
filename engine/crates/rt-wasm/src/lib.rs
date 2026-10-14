@@ -13,12 +13,14 @@
 
 #![deny(unsafe_code)]
 
+use rt_core::caustics::PhotonMap;
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, PASS_ALBEDO, PASS_EXACT};
-use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_prepared, TileRect};
+use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, TileRect};
 use rt_core::scene::Scene;
 use rt_core::simd::Isa;
+use rt_post::denoise::{denoise_rows, DenoiseInput};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
@@ -35,13 +37,55 @@ pub const STATUS_NULL_POINTER: u32 = 3;
 /// the last load error); the scene is unchanged.
 pub const STATUS_BAD_SCENE: u32 = 4;
 
+/// Status returned by `rt_denoise`: the image, the band or the rows do not fit together.
+pub const STATUS_BAD_DENOISE: u32 = 5;
+
 /// Largest tile (in pixels) `rt_render_tile` accepts: 2048 x 2048.
 pub const MAX_TILE_PIXELS: u64 = 1 << 22;
 
-/// A loaded scene with its lights prepared once for every tile rendered from it.
+/// Photon maps a scene keeps (E5b-1): the samples of one pass of the host (at most 16), so a
+/// worker that renders its tiles one after another, each with all the pass's samples, traces each
+/// map once.
+pub const KEPT_PHOTON_MAPS: usize = 16;
+
+/// A loaded scene with its lights prepared once for every tile rendered from it, and the photon
+/// maps of its last samples when it has caustics.
 struct Loaded {
     scene: Scene,
     prepared: Prepared,
+    maps: Vec<PhotonMap>,
+}
+
+impl Loaded {
+    fn new(scene: Scene) -> Loaded {
+        let prepared = Prepared::new(&scene);
+        Loaded {
+            scene,
+            prepared,
+            maps: Vec::new(),
+        }
+    }
+
+    /// The photon map of `sample` (traced now if it is not kept), or `None` without caustics.
+    /// The map is the same bits whoever traces it, so every worker's tiles agree.
+    fn photon_map(&mut self, sample: u32) -> Option<usize> {
+        if !self.prepared.has_caustics() {
+            return None;
+        }
+        if let Some(i) = self.maps.iter().position(|m| m.iteration() == sample) {
+            return Some(i);
+        }
+        if self.maps.len() >= KEPT_PHOTON_MAPS {
+            self.maps.remove(0);
+        }
+        self.maps.push(PhotonMap::trace(
+            &self.scene,
+            &self.prepared,
+            sample,
+            Isa::detect(),
+        ));
+        Some(self.maps.len() - 1)
+    }
 }
 
 /// Loaded scenes and the last load error.
@@ -76,8 +120,7 @@ pub fn scene_load(bytes: &[u8]) -> u32 {
                     reg.scenes.len() - 1
                 }
             };
-            let prepared = Prepared::new(&scene);
-            reg.scenes[slot] = Some(Loaded { scene, prepared });
+            reg.scenes[slot] = Some(Loaded::new(scene));
             slot as u32 + 1
         }
         Err(error) => {
@@ -103,6 +146,7 @@ pub fn scene_update(handle: u32, bytes: &[u8]) -> u32 {
     match loaded.scene.update_from_rsb(bytes) {
         Ok(()) => {
             loaded.prepared = Prepared::new(&loaded.scene);
+            loaded.maps.clear();
             reg.error.clear();
             STATUS_OK
         }
@@ -139,17 +183,88 @@ pub fn scene_free(handle: u32) -> u32 {
 }
 
 /// The loaded scene of `handle` after checking the tile, for `run`.
-fn with_tile<R>(handle: u32, w: u32, h: u32, run: impl FnOnce(&Loaded) -> R) -> Result<R, u32> {
+fn with_tile<R>(handle: u32, w: u32, h: u32, run: impl FnOnce(&mut Loaded) -> R) -> Result<R, u32> {
     if w == 0 || h == 0 || u64::from(w) * u64::from(h) > MAX_TILE_PIXELS {
         return Err(STATUS_BAD_TILE);
     }
+    let mut reg = registry();
+    let loaded = handle
+        .checked_sub(1)
+        .and_then(|i| reg.scenes.get_mut(i as usize))
+        .and_then(Option::as_mut)
+        .ok_or(STATUS_BAD_HANDLE)?;
+    Ok(run(loaded))
+}
+
+/// Caustic photons per sample the scene `handle` renders (0: none, also when nothing in it
+/// focuses light or no light sends photons), or `None` for a bad handle. What the meter says.
+pub fn scene_caustics(handle: u32) -> Option<u32> {
     let reg = registry();
     let loaded = handle
         .checked_sub(1)
         .and_then(|i| reg.scenes.get(i as usize))
-        .and_then(Option::as_ref)
-        .ok_or(STATUS_BAD_HANDLE)?;
-    Ok(run(loaded))
+        .and_then(Option::as_ref)?;
+    Some(if loaded.prepared.has_caustics() {
+        loaded.scene.render.caustic_photons
+    } else {
+        0
+    })
+}
+
+/// Words per pixel of the input of [`denoise`]: the planes `sums` (4), `lum2` (1), `albedo` (3),
+/// `normal` (3), `depth` (1), `part_id` (1) and `material_id` (1), one after another.
+pub const DENOISE_WORDS: usize = 14;
+
+/// The denoiser (`rt_post::denoise`) on a band of `rows` image rows from `origin_y` of an image
+/// `width × height` of `samples` samples per pixel: `input` holds its planes (little-endian words,
+/// see [`DENOISE_WORDS`]); returns the denoised RGBA sums of image rows `y0 .. y1` (which the
+/// band must hold with `rt_post::denoise::HALO` rows around them, or up to the image's edge).
+#[allow(clippy::too_many_arguments)]
+pub fn denoise(
+    width: u32,
+    height: u32,
+    origin_y: u32,
+    rows: u32,
+    samples: u32,
+    y0: u32,
+    y1: u32,
+    input: &[u8],
+) -> Result<Vec<f32>, u32> {
+    let n = width as usize * rows as usize;
+    if input.len() != n * DENOISE_WORDS * 4 {
+        return Err(STATUS_BAD_DENOISE);
+    }
+    let words = |from: usize, count: usize| -> Vec<u32> {
+        input[from * 4..(from + count) * 4]
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect()
+    };
+    let floats = |from: usize, count: usize| -> Vec<f32> {
+        words(from, count).into_iter().map(f32::from_bits).collect()
+    };
+    let sums = floats(0, n * 4);
+    let lum2 = floats(n * 4, n);
+    let albedo = floats(n * 5, n * 3);
+    let normal = floats(n * 8, n * 3);
+    let depth = floats(n * 11, n);
+    let part_id = words(n * 12, n);
+    let material_id = words(n * 13, n);
+    let band = DenoiseInput {
+        width,
+        height,
+        origin_y,
+        rows,
+        samples,
+        sums: &sums,
+        lum2: &lum2,
+        albedo: &albedo,
+        normal: &normal,
+        depth: &depth,
+        part_id: &part_id,
+        material_id: &material_id,
+    };
+    denoise_rows(&band, y0, y1).map_err(|_| STATUS_BAD_DENOISE)
 }
 
 /// The exact passes of `mask` (normal, depth, part id, material id, circle of confusion: the
@@ -219,9 +334,11 @@ fn render_region(
 ) -> Result<Film, u32> {
     with_tile(handle, w, h, |loaded| {
         let mut film = Film::region(x, y, w, h);
-        render_tile_prepared(
+        let map = loaded.photon_map(sample_index);
+        render_tile_photons(
             &loaded.scene,
             &loaded.prepared,
+            map.map(|i| &loaded.maps[i]),
             TileRect { x, y, w, h },
             sample_index,
             &mut film,
@@ -670,6 +787,155 @@ mod tests {
             );
         }
         scene_free(handle);
+    }
+
+    #[test]
+    fn caustic_tiles_trace_each_photon_map_once_and_match_the_engine() {
+        let _guard = serial();
+        let scene = rt_core::example::e5b_scene();
+        let rsb = scene.to_rsb();
+        let handle = scene_load(&rsb);
+        assert_ne!(handle, 0);
+        assert_eq!(rt_scene_caustics(handle), 2048);
+        assert_eq!(rt_scene_caustics(999), u32::MAX);
+        let prepared = Prepared::new(&scene);
+        let (x, y, w, h) = (40u32, 40u32, 24u32, 20u32);
+        for sample in [0u32, 1, 0, 2] {
+            let pixels = render_tile(handle, x, y, w, h, sample).expect("render");
+            let map = PhotonMap::trace(&scene, &prepared, sample, Isa::detect());
+            let mut film = Film::region(x, y, w, h);
+            render_tile_photons(
+                &scene,
+                &prepared,
+                Some(&map),
+                TileRect { x, y, w, h },
+                sample,
+                &mut film,
+                Isa::detect(),
+            );
+            assert_eq!(pixels, film.resolve(), "sample {sample}");
+        }
+        {
+            let reg = registry();
+            let loaded = reg.scenes[handle as usize - 1].as_ref().expect("loaded");
+            assert_eq!(loaded.maps.len(), 3, "sample 0 traced once");
+        }
+        // An update drops the maps (the scene may have changed); a scene without photons has none.
+        let mut off = scene.clone();
+        off.render.caustic_photons = 0;
+        assert_eq!(scene_update(handle, &off.to_rsb()), STATUS_OK);
+        assert_eq!(rt_scene_caustics(handle), 0);
+        let reg = registry();
+        assert!(reg.scenes[handle as usize - 1]
+            .as_ref()
+            .expect("loaded")
+            .maps
+            .is_empty());
+        drop(reg);
+        scene_free(handle);
+    }
+
+    #[test]
+    fn the_denoiser_through_the_c_api_is_rt_post_s() {
+        let _guard = serial();
+        use rt_core::passes::Passes;
+        use rt_post::denoise::{denoise as denoise_whole, rgba_sums, GUIDE_PASSES, HALO};
+        // A small render of the example with the guide passes.
+        let mut scene = rt_core::example::scene();
+        scene.render.width = 48;
+        scene.render.height = 160;
+        let prepared = Prepared::new(&scene);
+        let mut film = Film::new(48, 160);
+        let mut passes = Passes::new(48, 160, GUIDE_PASSES);
+        for tile in rt_core::render::tile_grid(48, 160, 32) {
+            let mut pf = PassFilm::region(tile.x, tile.y, tile.w, tile.h, GUIDE_PASSES);
+            render_tile_exact(&scene, &prepared, tile, &mut pf, Isa::detect());
+            for sample in 0..2 {
+                render_tile_photons(
+                    &scene,
+                    &prepared,
+                    None,
+                    tile,
+                    sample,
+                    &mut film,
+                    Isa::detect(),
+                );
+                render_tile_albedo(&scene, &prepared, tile, sample, &mut pf, Isa::detect());
+            }
+            passes.copy_region(tile.x, tile.y, &pf.resolve());
+        }
+        let sums = rgba_sums(&film);
+        let whole = DenoiseInput::whole(2, &sums, &film.lum2, &passes).expect("input");
+        let expected = denoise_whole(&whole).expect("denoise");
+        // The band of rows 100..120 with its halo, packed as the page packs it.
+        let band = whole.with_halo(100, 120);
+        assert_eq!((band.origin_y, band.rows), (100 - HALO, 160 - (100 - HALO)));
+        let mut bytes = Vec::new();
+        for v in band
+            .sums
+            .iter()
+            .chain(band.lum2)
+            .chain(band.albedo)
+            .chain(band.normal)
+            .chain(band.depth)
+        {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in band.part_id.iter().chain(band.material_id) {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        let input = upload(&bytes);
+        let out = rt_alloc(48 * 20 * 16);
+        // SAFETY: `input` holds the band's planes and `out` room for 20 rows of RGBA floats.
+        let status = unsafe {
+            rt_denoise(
+                48,
+                160,
+                band.origin_y,
+                band.rows,
+                2,
+                100,
+                120,
+                input,
+                out.cast::<f32>(),
+            )
+        };
+        assert_eq!(status, STATUS_OK);
+        assert_eq!(
+            read_floats(out, 48 * 20 * 4),
+            expected[100 * 48 * 4..120 * 48 * 4]
+        );
+        // Rows outside the band, a short buffer, or null pointers are refused.
+        // SAFETY: as above; the calls read nothing out of bounds before refusing.
+        unsafe {
+            assert_eq!(
+                rt_denoise(
+                    48,
+                    160,
+                    band.origin_y,
+                    band.rows,
+                    2,
+                    0,
+                    10,
+                    input,
+                    out.cast::<f32>()
+                ),
+                STATUS_BAD_DENOISE
+            );
+            assert_eq!(
+                rt_denoise(48, 160, 0, 1, 2, 0, 1, std::ptr::null(), out.cast::<f32>()),
+                STATUS_NULL_POINTER
+            );
+        }
+        assert_eq!(
+            denoise(48, 160, 0, 2, 2, 0, 1, &bytes[..16]),
+            Err(STATUS_BAD_DENOISE)
+        );
+        // SAFETY: both came from `rt_alloc` with these lengths.
+        unsafe {
+            rt_free(input, bytes.len() as u32);
+            rt_free(out, 48 * 20 * 16);
+        }
     }
 
     #[test]

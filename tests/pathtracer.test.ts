@@ -8,6 +8,8 @@ import { PathTracerEngine, Pool, SIMD_PROBE, simdSupported, viewportWorkers, typ
 import { WATCHDOG } from '../src/render/watchdog';
 import { installDom } from './launcher-mock';
 import { exampleState } from './helpers';
+import { DENOISE_GUIDE_MASK } from '../src/render/denoise';
+import { DEFAULT_ADVANCED } from '../src/core/render';
 import type { WorkerReply, WorkerRequest } from '../src/render/pool-protocol';
 import { Accumulator, alphaByte, assignTiles, chooseScale, exactBytes, Generations, nextPass, poolSize, scaledSize, TILE, tileGrid, type TileResult } from '../src/render/tiles';
 import { exactPixel, exposureGain } from '../src/render/tonemap';
@@ -220,6 +222,8 @@ class FakeWorker {
   terminated = false;
   /** Milliseconds a message takes (0: a microtask), so a viewport can render for a while. */
   delay = 0;
+  /** The denoise requests it answered (E5b-1). */
+  readonly denoised: Extract<WorkerRequest, { type: 'denoise' }>[] = [];
   constructor(private readonly width: number) {}
   postMessage(msg: WorkerRequest): void {
     this.got.push(msg);
@@ -264,6 +268,15 @@ class FakeWorker {
       case 'tonemap':
         this.reply({ type: 'pixels', id: msg.id, bytes: exactBytes(new Float32Array(msg.sum), msg.samples, msg.ev, msg.tonemap) });
         break;
+      case 'denoise': {
+        // A stand-in for rt_denoise: the band's rows of the sums it was given, radiance halved (coverage as it was).
+        const sums = new Float32Array(msg.input, 0, msg.width * (msg.hi - msg.lo) * 4);
+        const rows = sums.slice((msg.y0 - msg.lo) * msg.width * 4, (msg.y1 - msg.lo) * msg.width * 4);
+        for (let i = 0; i < rows.length; i++) if (i % 4 !== 3) rows[i] *= 0.5;
+        this.denoised.push(msg);
+        this.reply({ type: 'denoised', id: msg.id, data: rows });
+        break;
+      }
       case 'cancel':
         break;
     }
@@ -627,9 +640,10 @@ describe('the viewport of the pool', () => {
     const live = await pending;
     const isRender = (m: Extract<WorkerRequest, { type: 'job' }>) => m.tiles[3] === 24;
     const during = workers.map((w, i) => jobsOf(w).slice(before[i]));
-    // The viewport's worker rendered no part of the Render, and nothing of the viewport asks for passes.
+    // The viewport's worker rendered no part of the Render, and the viewport asks for no pass but the guides of its
+    // denoise (E5b-1: denoise is on in the viewport by default).
     expect(during[3].some(isRender)).toBe(false);
-    for (const jobs of during) for (const m of jobs) expect(m.passes ?? 0).toBe(isRender(m) ? mask : 0);
+    for (const jobs of during) for (const m of jobs) expect(m.passes ?? 0).toBe(isRender(m) ? mask : DENOISE_GUIDE_MASK);
     // Alone (Fast: every worker), the same passes, bit for bit, and what the tiles gave.
     engine.setActive(false);
     const alone = await engine.renderPixels(opts);
@@ -643,6 +657,55 @@ describe('the viewport of the pool', () => {
       expect(Array.from(live.passes![k]!), k).toEqual(Array.from(alone.passes![k]!));
       expect(Array.from(live.passes![k]!), k).toEqual(Array.from(want[k]!));
     }
+  });
+
+  it('denoises the Full viewport with its guide passes and shows the denoised image (E5b-1)', async () => {
+    const { engine, workers } = await viewport(3, 96, 64);
+    await settle(engine, 30);
+    // The jobs ask for the guides, and the denoiser runs on the viewport's workers.
+    expect(workers.flatMap(jobsOf).every((m) => m.passes === DENOISE_GUIDE_MASK)).toBe(true);
+    const asked = workers.flatMap((w) => w.denoised);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every((m) => m.y0 === 0 && m.y1 === 64 && m.lo === 0 && m.hi === 64)).toBe(true);
+    const st = engine.status();
+    expect(st.denoised).toBe(true);
+    // The samples the meter shows are those of the denoised image on screen.
+    expect(st.samples).toBe(asked[asked.length - 1].samples);
+    // Viewport denoise off: no guides, no denoise, the plain sums.
+    const off = exampleState();
+    const state = { ...off, render: { ...off.render, advanced: { ...off.render.advanced, denoise: 'RENDER' as const } } };
+    engine.sync(state, off);
+    const before = workers.map((w) => [jobsOf(w).length, w.denoised.length]);
+    await settle(engine, 30);
+    workers.forEach((w, i) => {
+      expect(jobsOf(w).slice(before[i][0]).every((m) => (m.passes ?? 0) === 0)).toBe(true);
+      expect(w.denoised.length).toBe(before[i][1]);
+    });
+    expect(engine.status().denoised).toBeUndefined();
+  });
+
+  it('a Render denoises its image at the end and hands back the one before denoise when asked (E5b-1)', async () => {
+    const { pool, workers } = await fakePool(3, 64);
+    const engine = new PathTracerEngine(pool, viewSource(), false);
+    engine.sync(exampleState(), null);
+    const advanced = { ...DEFAULT_ADVANCED, denoise: 'RENDER' as const, saveNoisy: true };
+    const opts = { width: 64, height: 24, maxSamples: 3, maxSeconds: 0, transparent: false, keepLinear: true, advanced };
+    const px = await engine.renderPixels(opts);
+    expect(px.denoised).toBe(true);
+    expect(px.noisy).toBeDefined();
+    // The stand-in denoiser halves the radiance: the image is the noisy one halved, coverage as it was.
+    const noisy = px.noisy!.sum!;
+    expect(Array.from(px.sum!.filter((_, i) => i % 4 !== 3))).toEqual(Array.from(noisy.filter((_, i) => i % 4 !== 3)).map((v) => Math.fround(v * 0.5)));
+    expect(Array.from(px.sum!.filter((_, i) => i % 4 === 3))).toEqual(Array.from(noisy.filter((_, i) => i % 4 === 3)));
+    expect(px.noisy!.data).not.toEqual(px.data);
+    // Every job asked for the guides; no pass came back that was not asked for.
+    expect(workers.flatMap(jobsOf).every((m) => m.passes === DENOISE_GUIDE_MASK)).toBe(true);
+    expect(px.passes).toBeUndefined();
+    // Denoise off (or only in the viewport): none, and no noisy copy.
+    const plain = await engine.renderPixels({ ...opts, advanced: { ...advanced, denoise: 'VIEWPORT' } });
+    expect(plain.denoised).toBeUndefined();
+    expect(plain.noisy).toBeUndefined();
+    expect(Array.from(plain.sum!)).toEqual(Array.from(noisy));
   });
 
   it('waits while a Render runs when the settings say Pause, and the Render takes every worker', async () => {
