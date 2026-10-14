@@ -288,38 +288,45 @@ async function main() {
     const after = await canvasShot(page);
     writeFileSync(join(SHOTS, 'physics-drop.png'), await strip(browser, [before, after], ['Before: in the air', 'After Drop: at rest on the floor'], 640));
 
-    // The clips: one Physics bar per part in the animation's timeline.
+    // The clips: one Physics bar per part in N6's timeline, a row each in its tree; the properties of one have its time
+    // and the note, no amount and no curve.
     await page.click('.drawer-btn[data-drawer="animation"]');
-    await settle(page, 300);
-    const blocks = await page.locator('.tl-block').allTextContents();
-    log.blocks = blocks;
-    ok(blocks.length === 3 && blocks.every((b) => b.startsWith('Physics')), `the timeline: ${blocks}`, f);
-    const total = await page.evaluate(() => Number((document.querySelector('.anim-head .tabular')?.textContent ?? '').split('/')[1]?.replace(/[^0-9.]/g, '')));
+    await settle(page, 400);
+    const bars = await page.evaluate(() => [...document.querySelectorAll('.tl-lane.is-clip .tl-bar')].map((b) => ({ start: Number(b.getAttribute('data-start')), end: Number(b.getAttribute('data-end')) })));
+    const rows = (await page.locator('.atr-clip').allTextContents()).map((r) => r.trim());
+    log.bars = bars;
+    log.rows = rows;
+    ok(bars.length === 3 && rows.filter((r) => r.includes('falls as simulated')).length === 3, `the timeline: ${JSON.stringify({ bars, rows })}`, f);
+    const total = Math.max(...bars.map((b) => b.end)) - Math.min(...bars.map((b) => b.start));
     log.duration = total;
     ok(total > 0.3 && total < 30, `the clip lasts ${total} s`, f);
+    await page.locator('.atr-clip').first().click();
+    await settle(page, 300);
+    const props = await page.evaluate(() => ({
+      note: !!document.querySelector('.anim-props [data-field="anim.physicsNote"]'),
+      curve: !!document.querySelector('.anim-props [data-section="anim-curve"]'),
+      time: !!document.querySelector('.anim-props [data-section="anim-time"]'),
+      header: document.querySelector('.anim-props-head')?.textContent ?? '',
+    }));
+    log.props = props;
+    ok(props.note && !props.curve && props.time, `the properties of a Physics clip: ${JSON.stringify(props)}`, f);
+    await page.keyboard.press('Escape');
 
     // strip: six instants of the recorded clip, through the ruler: five through the fall (the clip's last half second
-    // is the bodies going still before they sleep) and its last frame. The captions are the playhead the timeline shows.
+    // is the bodies going still before they sleep) and its last frame. The captions are the playhead's own time.
     const frames = [];
     const captions = [];
     const fall = Math.max(0.2, total - 0.5);
+    const pxPerS = Number(await page.locator('.anim-rows').getAttribute('data-px-per-s'));
     for (let k = 0; k < 6; k++) {
       const at = k < 5 ? (fall * k) / 4 : total;
-      await page.evaluate((t) => {
-        const tl = document.querySelector('.timeline');
-        const ruler = tl.querySelector('.tl-shots');
-        const w = Math.max(100, tl.clientWidth - 84 - 8);
-        const px = w / Math.max(t.total, 1);
-        const r = ruler.getBoundingClientRect();
-        const zoom = r.width / ruler.offsetWidth || 1;
-        const x = r.left + Math.min(t.at * px, w - 1) * zoom;
-        ruler.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: r.top + 4, bubbles: true }));
-      }, { at, total });
+      const r = (await page.locator('.tl-ruler').boundingBox()) ?? fail('no ruler');
+      await page.mouse.click(r.x + Math.min(at * pxPerS, r.width - 1) + 0.5, r.y + 8);
       await page.mouse.move(10, 500);
       await settle(page, 300);
       frames.push(await canvasShot(page));
-      const shown = await page.evaluate(() => (document.querySelector('.anim-head .tabular')?.textContent ?? '').split('/')[0].trim());
-      captions.push(shown || `${at.toFixed(2)} s`);
+      const shown = Number(await page.locator('.tl-playhead').getAttribute('data-t'));
+      captions.push(`${(Number.isFinite(shown) ? shown : at).toFixed(2)} s`);
     }
     writeFileSync(join(SHOTS, 'physics-drop-strip.png'), await strip(browser, frames, captions, 300));
 
@@ -343,7 +350,7 @@ async function main() {
     ok(Math.abs(back - parts[0].after.z) < 0.01, `undo of Reset: the box at ${back}`, f);
     await page.click('.drawer-btn[data-drawer="animation"]');
     await settle(page, 200);
-    ok((await page.locator('.tl-block').count()) === 3, 'undo of Reset did not bring the clips back', f);
+    ok((await page.locator('.tl-lane.is-clip .tl-bar').count()) === 3, 'undo of Reset did not bring the clips back', f);
     log.errors = errors;
     ok(errors.length === 0, `page errors: ${errors.join(' | ')}`, f);
     await context.close();
