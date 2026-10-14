@@ -4,7 +4,7 @@
 import { materialPreset } from '../data/materials';
 import { studioPreset } from '../data/studios';
 import { lightSetup } from '../data/light-setups';
-import type { Label, Lang, StudioPreset } from '../data/types';
+import type { Label, Lang, LightSetup, StudioPreset } from '../data/types';
 import type { CameraState } from '../core/camera';
 import type { MaterialInstance } from '../core/materials';
 import { partsUnder, type NodeId } from '../core/scene';
@@ -43,6 +43,11 @@ export function studioLabel(key: string, custom?: StudioPreset | null): Label {
 
 export function setupLabel(key: string): Label {
   return lightSetup(key)?.label ?? { en: key, es: key };
+}
+
+/** The tooltip of a setup's thumbnail: its intent and, for a set (L6), its photographic reason. */
+export function setupTip(setup: Pick<LightSetup, 'intent' | 'why'>, lang: Lang = getLang()): string {
+  return setup.why ? `${setup.intent[lang]}. ${setup.why[lang]}` : setup.intent[lang];
 }
 
 export function cameraName(state: ProjectState, cam: CameraState | undefined, lang: Lang = getLang()): string {
@@ -91,7 +96,9 @@ export function primitiveParamKey(kind: string, key: string): StringKey {
 /** Cache key of a material sphere: presets by key, everything else by content (family and parameters). */
 export function thumbKey(mat: MaterialInstance): string {
   if (mat.preset && !mat.edited && mat.role !== 'DEFAULT') return `preset:${mat.preset}`;
-  const text = JSON.stringify([mat.family, mat.params]);
+  // A graph counts by what it does, not by where its nodes sit on the editor's canvas.
+  const graph = mat.graph ? { nodes: mat.graph.nodes.map((n) => [n.id, n.type, n.params, n.inputs]), links: mat.graph.links } : null;
+  const text = JSON.stringify(graph ? [mat.family, mat.params, graph] : [mat.family, mat.params]);
   let hash = 0;
   for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
   return `inst:${(hash >>> 0).toString(36)}`;

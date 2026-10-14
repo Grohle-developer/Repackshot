@@ -2,8 +2,9 @@
 
 import type { DoctorCheck } from './types';
 
-// Scene doctor checks (upstream CHECKS, 14 entries in upstream order). These
-// are descriptors only: what each check looks at and what its one-click fix
+// Scene doctor checks (upstream CHECKS, 14 entries in upstream order, then the
+// ones of Repackshot's own phases: `aspect`, U13; `physics`, S2; `particles`, S4a).
+// These are descriptors only: what each check looks at and what its one-click fix
 // does. The logic that runs them lives with the scene code, not here.
 export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   {
@@ -172,6 +173,46 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     fix: {
       es: 'Pasa a PNG si el formato no es de imagen, desactiva sobrescribir y activa los marcadores de posicion para poder reanudar.',
       en: 'Switches to PNG if the format is not an image format, disables overwrite and enables placeholders so a render can resume.',
+    },
+  },
+  // Not from upstream (U13): appended, so the upstream order above is intact.
+  {
+    key: 'aspect',
+    label: { es: 'Proporcion de la animacion', en: 'Animation aspect ratio' },
+    checks: {
+      es: 'Un plano de la animacion usa una camara con otra proporcion de imagen que el tamano de salida, y un video tiene un solo tamano.',
+      en: 'A shot of the animation uses a camera whose image aspect ratio is not that of the output size, and a video has a single size.',
+    },
+    fix: {
+      es: 'Pone a las camaras de esos planos la proporcion del tamano de salida.',
+      en: "Gives the cameras of those shots the output size's aspect ratio.",
+    },
+  },
+  // S2, not ported: a part a simulation would drop starts inside the floor (Spanish with accents, like the other
+  // data that is not ported). Appended after U13's.
+  {
+    key: 'physics',
+    label: { es: 'Físicas', en: 'Physics' },
+    checks: {
+      es: 'Una pieza dinámica empieza por debajo del suelo: al simular, el suelo la empujaría o la dejaría caer al vacío.',
+      en: 'A dynamic part starts below the floor: in a simulation the floor would push it out or let it fall away.',
+    },
+    fix: {
+      es: 'Sube cada pieza dinámica hasta apoyarla en el suelo.',
+      en: 'Lifts each dynamic part until it rests on the floor.',
+    },
+  },
+  // S4a: an ambient effect asks for more particles than its cap. After S2's.
+  {
+    key: 'particles',
+    label: { es: 'Tope de partículas', en: 'Particle cap' },
+    checks: {
+      es: 'Un efecto de ambiente pide más partículas que su tope (el suyo, o el del motor en Ajustes ▸ Motor de renderizado), así que el motor solo evaluará el tope y se verá menos denso de lo pedido.',
+      en: 'An ambient effect asks for more particles than its cap (its own, or the engine\'s in Settings ▸ Render engine), so the engine evaluates only the cap and it looks thinner than asked.',
+    },
+    fix: {
+      es: 'Baja la cantidad de cada efecto que se pasa hasta su tope.',
+      en: 'Lowers the amount of every effect that goes over to its cap.',
     },
   },
 ];

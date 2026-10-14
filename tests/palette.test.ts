@@ -35,8 +35,9 @@ describe('command palette search', () => {
   });
 
   it('lists every catalogue entry', () => {
-    expect(items.filter((i) => i.category === 'palette.cat.material')).toHaveLength(87);
-    expect(items.filter((i) => i.category === 'palette.cat.setup')).toHaveLength(72);
+    // L6: the five set materials and the 16 sets; E9: ten materials.
+    expect(items.filter((i) => i.category === 'palette.cat.material')).toHaveLength(92);
+    expect(items.filter((i) => i.category === 'palette.cat.setup')).toHaveLength(88);
     expect(items.filter((i) => i.category === 'palette.cat.product')).toHaveLength(16);
   });
 

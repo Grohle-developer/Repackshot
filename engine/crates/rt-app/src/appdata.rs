@@ -8,8 +8,8 @@
 //! <data>/state/<name>.json          small documents of the page (downloads to resume, the migration mark...)
 //! <data>/library/library.json       the user's library (U4)
 //! <data>/results/index.json         the results history: {"version": 1, "results": [{id, file, type, display, ai, aiType, aiVariants, meta}]}
-//! <data>/results/<id>.<ext>         a result's file as it was saved (png, jpg, exr, webp, tif)
-//! <data>/results/<id>.display.png   its picture for the viewer, when the file is one a page cannot show (EXR)
+//! <data>/results/<id>.<ext>         a result's file as it was saved (png, jpg, exr, webp, tif, dng)
+//! <data>/results/<id>.display.png   its picture for the viewer, when the file is one a page cannot show (EXR, TIFF, DNG)
 //! <data>/results/<id>.ai.<n>.<ext>  the AI post-processing's variant n (1 to MAX_AI_VARIANTS), when the result went through it (X4b)
 //! <data>/results/<id>.ai.<ext>      the single AI image of a result of before X4b (phase X4): read as its variant 1
 //! <data>/cache/thumbs/<key>.txt     the material spheres (data URLs): a cache, freed at will
@@ -37,19 +37,20 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 pub const MAX_DOC: u64 = 1 << 20;
 /// Largest library (its thumbnails are data URLs).
 pub const MAX_LIBRARY: u64 = 64 << 20;
-/// Largest result file (a 16-bit PNG or an EXR of a big render).
+/// Largest result file (a 16-bit PNG, a float TIFF or an EXR of a big render).
 pub const MAX_RESULT: u64 = 4 << 30;
 /// Largest picture of a result.
 pub const MAX_DISPLAY: u64 = 512 << 20;
 /// Longest name.
 pub const MAX_NAME: usize = 96;
 /// The files a result may be, by media type, and their extension on the disk.
-pub const RESULT_TYPES: [(&str, &str); 5] = [
+pub const RESULT_TYPES: [(&str, &str); 6] = [
     ("image/png", "png"),
     ("image/jpeg", "jpg"),
     ("image/x-exr", "exr"),
     ("image/webp", "webp"),
     ("image/tiff", "tif"),
+    ("image/x-adobe-dng", "dng"),
 ];
 /// Most AI variants a result keeps (`<id>.ai.<n>.<ext>`, n from 1), as the page's `MAX_VARIANTS` (X4b).
 pub const MAX_AI_VARIANTS: u32 = 8;
@@ -594,7 +595,7 @@ fn put_result_file(req: &Request, body: &mut dyn Read, data: &Path, id: &str) ->
         .or_else(|| req.header("content-type"))
         .unwrap_or("");
     let Some(ext) = result_extension(media) else {
-        return Response::error(415, "bad-type", "png, jpeg, exr, webp or tiff");
+        return Response::error(415, "bad-type", "png, jpeg, exr, webp, tiff or dng");
     };
     if req.content_length > MAX_RESULT {
         return Response::error(413, "too-large", "the file is too large");
@@ -657,7 +658,7 @@ fn put_result_ai(
         .or_else(|| req.header("content-type"))
         .unwrap_or("");
     let Some(ext) = result_extension(media) else {
-        return Response::error(415, "bad-type", "png, jpeg, exr, webp or tiff");
+        return Response::error(415, "bad-type", "png, jpeg, exr, webp, tiff or dng");
     };
     if req.content_length > MAX_RESULT {
         return Response::error(413, "too-large", "the file is too large");
@@ -1124,9 +1125,12 @@ mod tests {
         assert_eq!(result_extension("image/png"), Some("png"));
         assert_eq!(result_extension("IMAGE/JPEG; q=1"), Some("jpg"));
         assert_eq!(result_extension("image/x-exr"), Some("exr"));
+        assert_eq!(result_extension("image/tiff"), Some("tif"));
+        assert_eq!(result_extension("image/x-adobe-dng"), Some("dng"));
         assert_eq!(result_extension("text/html"), None);
         assert_eq!(result_extension(""), None);
         assert!(is_result_file("r1.png"));
+        assert!(is_result_file("r1.tif") && is_result_file("r1.dng"));
         assert!(is_result_file("r1.display.png"));
         assert!(is_result_file("r1.png.123-4.tmp"));
         assert!(!is_result_file("index.json"));

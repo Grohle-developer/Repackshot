@@ -18,7 +18,7 @@ import type {
 // analytically (see `ease` in core/light-math.ts), so there is no Bezier
 // interpolation to surprise anyone.
 
-/** The 15 move kinds. `amountLabel` says what the clip's single amount means. */
+/** The 16 move kinds (PHYSICS, phase S2, is not ported: Record as animation makes it). `amountLabel` says what the clip's single amount means. */
 export const MOVE_KINDS: readonly MoveItem[] = [
   {
     key: 'ORBIT',
@@ -126,6 +126,14 @@ export const MOVE_KINDS: readonly MoveItem[] = [
     key: 'VISIBILITY',
     label: { es: 'Visibilidad', en: 'Visibility' },
     description: { es: 'Aparece u oculta el objetivo', en: 'Shows or hides the target' },
+  },
+  {
+    key: 'PHYSICS',
+    label: { es: 'Física', en: 'Physics' },
+    description: {
+      es: 'Reproduce una simulación grabada con Grabar como animación',
+      en: 'Plays a simulation recorded with Record as animation',
+    },
   },
 ];
 
@@ -237,6 +245,23 @@ export const EXPLODE_MODES: readonly ExplodeItem[] = [
     description: {
       es: 'Cada pieza en la direccion que le fijes',
       en: 'Each part in the direction you set for it',
+    },
+  },
+  // N6: the three geometries of an exploded view. CYLINDRICAL (above) is the radial one: away from an axis.
+  {
+    key: 'LINEAR',
+    label: { es: 'Lineal', en: 'Linear' },
+    description: {
+      es: 'A lo largo de un eje: se separan desde el centro o se apilan en orden',
+      en: 'Along an axis: they separate from the middle or stack in order',
+    },
+  },
+  {
+    key: 'SPHERICAL',
+    label: { es: 'Esferica', en: 'Spherical' },
+    description: {
+      es: 'Cada pieza se aleja de un punto, el centro',
+      en: 'Each part moves away from a point, the centre',
     },
   },
 ];

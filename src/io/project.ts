@@ -24,10 +24,29 @@
 // again on open; one that is missing or does not decode is dropped from the environment (the studio dome lights,
 // the colour shows) and reported, never a reason not to open the project.
 //
+// Texture images (M2a) travel in the same block, after the environment's: every PNG or JPEG a material's slots
+// or labels name, once, as its file's bytes (base64), under its content id (`tex:…`, core/texture-images.ts), so
+// a project saved and opened again gives back the same bytes under the same ids. On open they go back to the
+// registry without decoding; a slot or a label whose image is missing or is not a PNG or JPEG is dropped from its
+// material and counted with the missing images. The materials' `textures` are read through
+// `normalizeTextures` (core/textures.ts), which also takes the flat shape of files written before M2a.
+//
+// Material graphs (M3a) travel inside their material (`materials.<id>.graph`, with its own `version`, core/
+// material-graph.ts); a file from before M3a has none and its materials open as Simple ones. The images of a graph's
+// image nodes travel in `images` with the texture images, and a missing one leaves its node without an image. The
+// schema stays at 2.
+//
 // Schema history (each step a pure function over the state, applied in order on load):
 //   1 (U1) — the state as it was.
 //   2 (U5) — `render` is the render window's settings and a queue of full `RenderJob`s (core/render.ts
 //            `migrateRender`).
+//
+// Cameras (U13): each carries the aspect ratio of its image (`aspect: { preset, w, h }`). A file from before it has
+// none: its cameras take the ratio of the saved render size (a preset within 0.5 %, else a custom ratio with those
+// pixels; `withCameraAspects`), and the saved size stays. The schema stays at 2.
+//
+// Ambient effects (S4a): `effects`, a list of parameters (core/effects.ts); a file from before S4a has none and
+// opens with an empty list, an entry of a newer version keeps what this version knows of it. The schema stays at 2.
 //
 // Primitives (U9): a part made by Add ▸ Primitive keeps its shape and measures in an optional field of its node
 // (`primitive`: `{ kind, params }`, core/primitives.ts), and its mesh is not written: on open it is made again from
@@ -36,10 +55,17 @@
 // version does not know (a newer file) leaves its part without geometry, reported like any missing mesh. The
 // schema stays at 2.
 //
+// Physics (S2): a node may carry its Physics section (`physics`: role, density, friction, bounciness, as parts) and the
+// animation may hold PHYSICS clips with a recorded track (`track`: fps, frames and the local poses as base64 f32,
+// core/physics.ts) and the node's position and rotation it is relative to (`anchor`), all plain JSON in the state. A
+// file from before S2 has neither and opens as it always did; on open the section keeps only what this version
+// knows, a clip whose track does not decode is left out and so is a damaged anchor. The schema stays at 2.
+//
 // Opening is all or nothing: the text is read and checked (envelope, schema, state, meshes) before the registry
 // or the store are touched, so a damaged file leaves the open project as it was.
 
 import { runDoctor } from '../core/doctor';
+import { normalizeEffects } from '../core/effects';
 import { buildExample } from '../core/example';
 import {
   getMesh,
@@ -50,8 +76,15 @@ import {
   type MeshData,
   type MeshId,
 } from '../core/meshes';
+import { normalizeOptics } from '../core/optics';
 import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
-import { migrateRender } from '../core/render';
+import { checkTextureFile, registerTextureImage, textureImageId } from '../core/texture-images';
+import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
+import { mapGraphImages, normalizeGraph } from '../core/material-graph';
+import type { MaterialInstance } from '../core/materials';
+import { withCameraAspects } from '../core/camera';
+import { migrateRender, syncOutputSize } from '../core/render';
+import { isAnchor, isTrack, type PhysicsProps } from '../core/physics';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
@@ -149,11 +182,12 @@ export function serializeProject(state: ProjectState): Blob {
     first = false;
   }
   parts.push(first ? ']' : '\n ]');
-  // The environment's images, as their files.
-  const images = environmentImages(state).filter(([, ref]) => getImage(ref.id));
+  // The environment's images and the texture images (M2a), as their files.
+  const images: ImageRef[] = environmentImages(state).filter(([, ref]) => getImage(ref.id)).map(([, ref]) => ref);
+  for (const ref of textureImages(state).values()) if (getImage(ref.id) && !images.some((r) => r.id === ref.id)) images.push(ref);
   if (images.length > 0) {
     parts.push(',\n "images": [');
-    images.forEach(([, ref], i) => {
+    images.forEach((ref, i) => {
       try {
         parts.push(`${i === 0 ? '' : ','}\n  ${imageEntry(ref, getImage(ref.id)!)}`);
       } catch (err) {
@@ -263,6 +297,22 @@ function checkState(raw: RawState): ProjectState {
       if (!Array.isArray(n.faceMaterials)) throw damaged(`${at}.faceMaterials is not a list`);
       for (const f of n.faceMaterials) if (!isObject(f) || !Number.isInteger(f.start) || !Number.isInteger(f.count) || !isObject(s.materials[f.material])) throw damaged(`${at}.faceMaterials is damaged`);
     }
+    if (n.physics !== undefined) {
+      // The Physics section (S2): what this version knows of it, the rest dropped (a role of a later version, a
+      // value out of range), never a reason not to open the file.
+      const ph = n.physics as unknown;
+      if (!isObject(ph)) throw damaged(`${at}.physics is damaged`);
+      const fixed: SceneNode = { ...(emptied[id] ?? n) };
+      const props: PhysicsProps = {};
+      if (ph.role === 'STATIC' || ph.role === 'DYNAMIC') props.role = ph.role;
+      if (typeof ph.density === 'number' && Number.isFinite(ph.density) && ph.density > 0) props.density = ph.density;
+      if (typeof ph.friction === 'number' && Number.isFinite(ph.friction) && ph.friction >= 0) props.friction = ph.friction;
+      if (typeof ph.bounciness === 'number' && Number.isFinite(ph.bounciness) && ph.bounciness >= 0 && ph.bounciness <= 1) props.bounciness = ph.bounciness;
+      if (typeof ph.asParts === 'boolean') props.asParts = ph.asParts;
+      if (Object.keys(props).length > 0) fixed.physics = props;
+      else delete fixed.physics;
+      emptied[id] = fixed;
+    }
     if (n.primitive !== undefined) {
       // A primitive (U9): its shape and measures. A shape this version does not know is dropped (the part has no
       // geometry then, reported as missing); the measures are normalised like the inspector's.
@@ -287,8 +337,34 @@ function checkState(raw: RawState): ProjectState {
   if (Object.keys(emptied).length > 0) s.scene = { ...s.scene, nodes: { ...nodes, ...emptied } };
   if (!isObject(s.materials)) throw damaged('materials is not a list of materials');
   for (const [id, m] of Object.entries(s.materials)) if (!isObject(m) || m.id !== id) throw damaged(`materials.${id} is not a material`);
+  // M2a: the image maps and labels, read whatever shape they were written in (core/textures.ts). M3a: a material's
+  // graph, checked node by node and link by link (core/material-graph.ts); one this version cannot read (a newer
+  // schema) is dropped and the material opens as Simple, with its parameters.
+  const materials: Record<string, MaterialInstance> = {};
+  for (const [id, m] of Object.entries(s.materials)) {
+    const next: MaterialInstance = { ...m, textures: normalizeTextures(m.textures) };
+    const graph = (m as { graph?: unknown }).graph;
+    if (graph !== undefined) {
+      const g = normalizeGraph(graph);
+      if (g) next.graph = g;
+      else delete next.graph;
+    }
+    materials[id] = next;
+  }
+  s.materials = materials;
   if (!isObject(s.camera.cameras) || !isObject(s.camera.cameras[s.camera.active])) throw damaged('camera.active is not a camera');
   for (const [id, c] of Object.entries(s.camera.cameras)) if (!isObject(c) || c.id !== id) throw damaged(`camera.cameras.${id} is not a camera`);
+  // O1: a camera's optics (absent on cameras saved before O1, which keep the plain thin lens) within the engine's limits.
+  if (Object.values(s.camera.cameras).some((c) => (c as { optics?: unknown }).optics !== undefined)) {
+    const cameras = { ...s.camera.cameras };
+    for (const [id, c] of Object.entries(cameras)) {
+      const raw = (c as { optics?: unknown }).optics;
+      if (raw === undefined) continue;
+      const { optics: _drop, ...rest } = c;
+      cameras[id] = raw === null ? rest : { ...rest, optics: normalizeOptics(raw) };
+    }
+    s.camera = { ...s.camera, cameras };
+  }
   if (!Array.isArray(s.studio.lights) || s.studio.lights.some((l) => !isObject(l) || typeof l.id !== 'string')) throw damaged('studio.lights is damaged');
   if (!Array.isArray(s.selection.ids)) throw damaged('selection.ids is not a list');
   const env = s.environment;
@@ -299,6 +375,16 @@ function checkState(raw: RawState): ProjectState {
   if (!isObject(env.skySun) || !Number.isFinite(env.skySun.az) || !Number.isFinite(env.skySun.el)) throw damaged('environment.skySun is damaged');
   // E5c: a project saved before the physical sky has no skyModel and opens with the default (filled in above).
   if (env.skyModel !== 'PHYSICAL' && env.skyModel !== 'CLASSIC') throw damaged('environment.skyModel is damaged');
+  // S2: a recorded simulation (a PHYSICS clip) whose track does not decode is left out, not the project.
+  if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && c.move === 'PHYSICS' && !isTrack(c.track))) {
+    s.animation = { ...s.animation, clips: s.animation.clips.filter((c) => !(isObject(c) && c.move === 'PHYSICS' && !isTrack(c.track))) };
+  }
+  // A damaged anchor is left out: the clip then plays its frames as they are.
+  if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && 'anchor' in c && !isAnchor(c.anchor))) {
+    s.animation = { ...s.animation, clips: s.animation.clips.map((c) => (isObject(c) && 'anchor' in c && !isAnchor(c.anchor) ? (({ anchor: _a, ...rest }) => rest)(c) : c)) as typeof s.animation.clips };
+  }
+  // S4a: the ambient effects (a project saved before them has none; filled in above), each checked and completed.
+  s.effects = normalizeEffects(s.effects, s);
   return s;
 }
 
@@ -312,7 +398,8 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; im
   if (!isObject(body.state)) throw damaged('the project has no state');
   let state: RawState = body.state;
   for (let n = schema; n < PROJECT_SCHEMA; n++) state = STEPS[n](state);
-  const checked = checkState({ ...state, render: migrateRender(state.render) });
+  // U13: a camera of a project saved before it takes the ratio of the saved size; an image follows its camera.
+  const checked = syncOutputSize(withCameraAspects(checkState({ ...state, render: migrateRender(state.render) })));
   // A file is the saved state, and nothing plays or renders after a load.
   const loaded: ProjectState = {
     ...checked,
@@ -328,7 +415,9 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; im
  * project, comes from a newer version or is damaged.
  */
 export function migrateProject(body: unknown): ProjectState {
-  return cleanSelection(readEnvelope(body).state);
+  const state = cleanSelection(readEnvelope(body).state);
+  // The Doctor's findings follow the model and the catalogue of this version, not the file's (as `loadProject` does).
+  return { ...state, doctor: { results: runDoctor(state), stamp: state.doctor.stamp } };
 }
 
 function parseText(text: string): unknown {
@@ -363,9 +452,9 @@ function decodeMesh(entry: unknown, index: number): { id: MeshId; mesh: DecodedM
   } catch (err) {
     throw fail(err instanceof Error ? err.message : String(err));
   }
-  const { positions, normals, indices, uvs } = glb.mesh;
+  const { positions, normals, indices, uvs, uvs2 } = glb.mesh;
   const vertices = positions.length / 3;
-  if (!Number.isInteger(vertices) || normals.length !== positions.length || indices.length % 3 !== 0 || (uvs && uvs.length !== 2 * vertices)) throw fail('the arrays do not fit together');
+  if (!Number.isInteger(vertices) || normals.length !== positions.length || indices.length % 3 !== 0 || (uvs && uvs.length !== 2 * vertices) || (uvs2 && uvs2.length !== 2 * vertices)) throw fail('the arrays do not fit together');
   for (let i = 0; i < positions.length; i++) if (!Number.isFinite(positions[i]) || !Number.isFinite(normals[i])) throw fail('a position or normal is not a number');
   for (let i = 0; i < indices.length; i++) if (indices[i] >= vertices) throw fail('a triangle uses a vertex that does not exist');
   const optional = (field: 'sharpEdges' | 'triangleSource'): Uint32Array | undefined => {
@@ -382,7 +471,7 @@ function decodeMesh(entry: unknown, index: number): { id: MeshId; mesh: DecodedM
   if (sharpEdges && (sharpEdges.length % 2 !== 0 || sharpEdges.some((v) => v >= vertices))) throw fail('sharpEdges does not fit the mesh');
   const source = optional('triangleSource') ?? null;
   if (source && source.length !== indices.length / 3) throw fail('triangleSource does not fit the mesh');
-  return { id, mesh: { data: { positions, normals, indices, ...(uvs ? { uvs } : {}), ...(sharpEdges ? { sharpEdges } : {}) }, source } };
+  return { id, mesh: { data: { positions, normals, indices, ...(uvs ? { uvs } : {}), ...(uvs2 ? { uvs2 } : {}), ...(sharpEdges ? { sharpEdges } : {}) }, source } };
 }
 
 function decodeMeshes(block: unknown): Map<MeshId, DecodedMesh> {
@@ -408,7 +497,7 @@ const sameBytes = (a: ArrayBufferView | undefined, b: ArrayBufferView | undefine
 
 /** The same geometry, bit for bit. */
 export function sameMesh(a: MeshData, b: MeshData): boolean {
-  return sameBytes(a.positions, b.positions) && sameBytes(a.normals, b.normals) && sameBytes(a.indices, b.indices) && sameBytes(a.uvs, b.uvs) && sameBytes(a.sharpEdges, b.sharpEdges);
+  return sameBytes(a.positions, b.positions) && sameBytes(a.normals, b.normals) && sameBytes(a.indices, b.indices) && sameBytes(a.uvs, b.uvs) && sameBytes(a.uvs2, b.uvs2) && sameBytes(a.sharpEdges, b.sharpEdges);
 }
 
 /** Loads of this session: the prefix of the ids a file's meshes get when their own are taken. */
@@ -500,7 +589,8 @@ function placeMeshes(loaded: ProjectState, decoded: Map<MeshId, DecodedMesh>, re
 export interface ProjectWarning {
   /**
    * MISSING_MESHES: parts whose geometry is not in the file (a project from before the meshes block, other than
-   * the example). MISSING_IMAGES: environment images that are not in the file or do not decode (dropped).
+   * the example). MISSING_IMAGES: environment images that are not in the file or do not decode (dropped), and
+   * texture images that are not in the file (their slots and labels dropped, M2a).
    */
   code: 'MISSING_MESHES' | 'MISSING_IMAGES';
   count: number;
@@ -542,8 +632,10 @@ function savedImages(block: unknown): SavedImage[] {
  * dropped.
  */
 export async function placeImages(state: ProjectState, saved: readonly SavedImage[], decode?: PixelDecoder): Promise<{ state: ProjectState; missing: number }> {
+  const textured = placeTextureImages(state, saved);
+  state = textured.state;
   const env = { ...state.environment };
-  if (!env.hdri && !env.backplate) return { state, missing: 0 };
+  if (!env.hdri && !env.backplate) return { state, missing: textured.missing };
   // The readers load with the first project that has images (they stay out of the main chunk).
   const { restoreImage } = await import('./hdri');
   let missing = 0;
@@ -566,7 +658,55 @@ export async function placeImages(state: ProjectState, saved: readonly SavedImag
     if (!placed) missing++;
     env[slot] = placed;
   }
-  return { state: missing > 0 || env.hdri !== state.environment.hdri || env.backplate !== state.environment.backplate ? { ...state, environment: env } : state, missing };
+  return { state: missing > 0 || env.hdri !== state.environment.hdri || env.backplate !== state.environment.backplate ? { ...state, environment: env } : state, missing: missing + textured.missing };
+}
+
+/**
+ * The texture images of a loaded project into the registry (M2a), under the ids that name their content: one
+ * whose file is in `saved` is registered (an id the registry already holds is that content); one whose file is
+ * missing, or is not a PNG or JPEG, leaves its slots and labels, counted in `missing` once per image.
+ */
+export function placeTextureImages(state: ProjectState, saved: readonly SavedImage[]): { state: ProjectState; missing: number } {
+  const wanted = textureImages(state);
+  if (wanted.size === 0) return { state, missing: 0 };
+  const rename = new Map<string, ImageRef | null>();
+  for (const [id, ref] of wanted) {
+    if (getImage(id)) continue;
+    const entry = saved.find((e) => e.id === id);
+    if (!entry || 'reason' in checkTextureFile(entry.bytes)) {
+      rename.set(id, null);
+      continue;
+    }
+    // A file edited by hand may hold other bytes than its id names: the id follows the bytes.
+    const own = textureImageId(entry.bytes);
+    const placed = registerTextureImage(ref.name, entry.bytes, own);
+    if (own !== id) rename.set(id, placed);
+  }
+  if (rename.size === 0) return { state, missing: 0 };
+  const fix = (r: ImageRef): ImageRef | null => (rename.has(r.id) ? rename.get(r.id)! : r);
+  const materials: Record<string, MaterialInstance> = {};
+  for (const [id, m] of Object.entries(state.materials)) {
+    const t: MaterialTextures = { ...m.textures, labels: [] };
+    let changed = false;
+    for (const k of TEXTURE_SLOTS) {
+      const slot = m.textures[k];
+      if (!slot || !rename.has(slot.image.id)) continue;
+      const image = fix(slot.image);
+      t[k] = image ? { ...slot, image } : null;
+      changed = true;
+    }
+    for (const l of m.textures.labels) {
+      const image = fix(l.image);
+      if (image) t.labels.push(image === l.image ? l : { ...l, image });
+      if (image !== l.image) changed = true;
+    }
+    // M3a: the image nodes of its graph (a missing image leaves the node without one).
+    const graph = m.graph ? mapGraphImages(m.graph, fix) : undefined;
+    const next = changed ? { ...m, textures: t } : m;
+    materials[id] = graph && graph !== m.graph ? { ...next, graph } : next;
+  }
+  const missing = [...rename.values()].filter((r) => r === null).length;
+  return { state: { ...state, materials }, missing };
 }
 
 /**

@@ -135,19 +135,26 @@ pub const fn cutout_dim(bounce: u32, crossing: u32) -> u32 {
 }
 
 /// First logical dimension of the scattering media (E9b): beyond the cut-outs, so a scene
-/// without media draws exactly the numbers it drew before.
+/// without media draws exactly the numbers it drew before. Their block ends where
+/// [`DIM_LENS_BAND`] starts.
 pub const DIM_MEDIUM: u32 = 1 << 21;
 /// Dimensions of one medium event.
 pub const MEDIUM_DIMS_PER_EVENT: u32 = 8;
 /// Medium events of one walk with their own dimensions (also the path's cap,
 /// [`crate::integrator::medium::MAX_MEDIUM_EVENTS`]).
 pub const MEDIUM_EVENTS: u32 = 1024;
+/// Path vertices whose walks have their own block of dimensions; later walks share the last.
+pub const MEDIUM_BOUNCES: u32 = 128;
 
 /// The first dimension of event `event` of the walk that starts after path vertex `bounce`
-/// (walks after vertex 255 share the last block of numbers).
+/// (walks after vertex 127 share the last block of numbers).
 #[inline]
 pub const fn medium_dim(bounce: u32, event: u32) -> u32 {
-    let b = if bounce < 256 { bounce } else { 255 };
+    let b = if bounce < MEDIUM_BOUNCES {
+        bounce
+    } else {
+        MEDIUM_BOUNCES - 1
+    };
     let e = if event < MEDIUM_EVENTS {
         event
     } else {
@@ -155,6 +162,11 @@ pub const fn medium_dim(bounce: u32, event: u32) -> u32 {
     };
     DIM_MEDIUM + (b * MEDIUM_EVENTS + e) * MEDIUM_DIMS_PER_EVENT
 }
+
+/// The logical dimension of the chromatic band of a lens camera sample (O1, [`crate::optics`]):
+/// beyond the Sobol table and the cut-outs, so a scene without a `LENS` section draws exactly the
+/// numbers it drew before. It is used through [`PixelSampler::stratum`], not as a number.
+pub const DIM_LENS_BAND: u32 = 3 << 20;
 
 /// First logical dimension of the wavelength chosen at a path's first dispersive glass (E9c).
 pub const DIM_DISPERSION: u32 = 1 << 23;
@@ -344,6 +356,32 @@ impl PixelSampler {
     #[inline]
     pub fn get2(&self, dim: u32) -> (f32, f32) {
         (self.get1(dim), self.get1(dim + 1))
+    }
+
+    /// The stratum of this sample among `n` (at least one): `(index + offset) mod n`, where the
+    /// offset is hashed from the pixel and `dim` only. Every `n` consecutive samples of a pixel take
+    /// each stratum exactly once, and neighbouring pixels start at different ones (O1: the
+    /// chromatic band of a lens, [`DIM_LENS_BAND`]).
+    #[inline]
+    pub fn stratum(&self, dim: u32, n: u32) -> u32 {
+        self.strata(dim, n).0
+    }
+
+    /// [`PixelSampler::stratum`] and the sampler of the sample's group: the `n` samples of a group
+    /// (one per stratum) share the index `(index + offset) / n`, so each stratum walks the
+    /// sequence's own points in order (a stratified sequence per stratum) and the strata of a group
+    /// see the same numbers in the dimensions asked through it (the chromatic bands of a lens share
+    /// one point of the pupil: their colours are correlated, not speckled).
+    #[inline]
+    pub fn strata(&self, dim: u32, n: u32) -> (u32, PixelSampler) {
+        let n = u64::from(n.max(1));
+        let offset = (self.dim_seed(dim) >> 32) % n;
+        let at = u64::from(self.index) + offset;
+        let group = PixelSampler {
+            key: self.key,
+            index: (at / n) as u32,
+        };
+        ((at % n) as u32, group)
     }
 }
 

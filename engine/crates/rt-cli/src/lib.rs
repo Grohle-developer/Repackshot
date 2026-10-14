@@ -292,10 +292,103 @@ pub fn render_progressive(
     }
 }
 
-/// Encodes `rgb8` as a PNG and writes it to `path`, creating missing parent directories.
-pub fn write_png(path: &Path, width: u32, height: u32, rgb8: &[u8]) -> std::io::Result<()> {
+/// Writes `bytes` to `path`, creating missing parent directories.
+pub fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, rt_core::png::encode(width, height, rgb8))
+    std::fs::write(path, bytes)
+}
+
+/// Encodes `rgb8` as a PNG and writes it to `path`, creating missing parent directories.
+pub fn write_png(path: &Path, width: u32, height: u32, rgb8: &[u8]) -> std::io::Result<()> {
+    write_file(path, &rt_core::png::encode(width, height, rgb8))
+}
+
+/// The file formats `rt` writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputFormat {
+    /// 8-bit sRGB PNG (the default).
+    Png,
+    /// Uncompressed TIFF: 8 or 16 bit sRGB, or 32-bit float in linear light.
+    Tiff,
+    /// Linear raw DNG: 32-bit float in linear light, a camera raw to a raw developer.
+    Dng,
+}
+
+/// Dots per inch `rt` writes into a TIFF.
+pub const TIFF_DPI: u32 = 72;
+
+/// What `rt` writes: the format and the bits per sample.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutputSpec {
+    /// The file format.
+    pub format: OutputFormat,
+    /// Bits per sample: 8 or 16 (sRGB, tone mapped) or 32 (float, linear light).
+    pub bits: u32,
+}
+
+impl OutputSpec {
+    /// Settles the output from `--format` and `--bits` (if given) and the extension of the
+    /// output path (`.tif`, `.tiff` and `.dng` choose their format when `--format` is absent).
+    /// A PNG is 8-bit, a TIFF is 8 (the default), 16 or 32, a DNG is 32.
+    pub fn resolve(
+        format: Option<OutputFormat>,
+        bits: Option<u32>,
+        path: &Path,
+    ) -> Result<OutputSpec, String> {
+        let by_extension = || match path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("tif" | "tiff") => OutputFormat::Tiff,
+            Some("dng") => OutputFormat::Dng,
+            _ => OutputFormat::Png,
+        };
+        let format = format.unwrap_or_else(by_extension);
+        let bits = match (format, bits) {
+            (OutputFormat::Png, None | Some(8)) => 8,
+            (OutputFormat::Png, Some(_)) => {
+                return Err(
+                    "a PNG is written with 8 bits per channel: use --format tiff for 16 or 32"
+                        .into(),
+                )
+            }
+            (OutputFormat::Tiff, None) => 8,
+            (OutputFormat::Tiff, Some(b @ (8 | 16 | 32))) => b,
+            (OutputFormat::Tiff, Some(_)) => return Err("--bits expects 8, 16 or 32".into()),
+            (OutputFormat::Dng, None | Some(32)) => 32,
+            (OutputFormat::Dng, Some(_)) => {
+                return Err("a DNG is always 32-bit float: --bits can only be 32".into())
+            }
+        };
+        Ok(OutputSpec { format, bits })
+    }
+}
+
+/// The file `spec` asks for, from the film's pixels: tone mapped sRGB for a PNG and the 8 and 16
+/// bit TIFFs, scene-linear light with the exposure applied (no curve, no clamp) for the 32-bit
+/// TIFF and the DNG. Colour only: the film's coverage is not written.
+pub fn encode_film(film: &Film, exposure_ev: f32, tonemap: Tonemap, spec: OutputSpec) -> Vec<u8> {
+    use rt_core::tiff::{encode as tiff, Samples};
+    let (w, h) = (film.width, film.height);
+    match (spec.format, spec.bits) {
+        (OutputFormat::Png, _) => {
+            rt_core::png::encode(w, h, &film.to_srgb8_tonemapped(exposure_ev, tonemap))
+        }
+        (OutputFormat::Tiff, 8) => {
+            let px = film.to_srgb8_tonemapped(exposure_ev, tonemap);
+            tiff(w, h, 3, Samples::U8(&px), TIFF_DPI)
+        }
+        (OutputFormat::Tiff, 16) => {
+            let px = film.to_srgb16_tonemapped(exposure_ev, tonemap);
+            tiff(w, h, 3, Samples::U16(&px), TIFF_DPI)
+        }
+        (OutputFormat::Tiff, _) => {
+            let px = film.to_linear_exposed(exposure_ev);
+            tiff(w, h, 3, Samples::F32(&px), TIFF_DPI)
+        }
+        (OutputFormat::Dng, _) => rt_core::dng::encode(w, h, &film.to_linear_exposed(exposure_ev)),
+    }
 }

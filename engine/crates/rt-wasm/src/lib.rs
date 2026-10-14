@@ -24,6 +24,7 @@ use rt_post::denoise::{denoise_rows, DenoiseInput};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
+pub mod phys;
 
 /// Status returned by `rt_render_tile`: success.
 pub const STATUS_OK: u32 = 0;
@@ -209,6 +210,31 @@ pub fn scene_caustics(handle: u32) -> Option<u32> {
     } else {
         0
     })
+}
+
+/// Floats per particle written by [`particles_eval`]: centre `x y z`, radius, axis `x y z` (a
+/// disc's unit normal, half a capsule's segment, zero for a sphere), and the tint seed (its `u32`
+/// bits stored as the float's bits).
+pub const PARTICLE_FLOATS: usize = 8;
+
+/// The particles of the ambient effect whose `FXAM` payload is `params` (S4a), at most `max` of
+/// them, for the Fast preview: [`PARTICLE_FLOATS`] floats each, the same particles the renderer
+/// evaluates when it loads the scene. An invalid payload records the error (see
+/// [`error_message`]) and gives [`STATUS_BAD_SCENE`].
+pub fn particles_eval(params: &[u8], max: u32) -> Result<Vec<f32>, u32> {
+    let params = rt_sim::AmbientParams::decode(params).map_err(|e| {
+        set_error(&format!("FXAM: {e}"));
+        STATUS_BAD_SCENE
+    })?;
+    let particles = rt_sim::evaluate(&params, max);
+    let mut out = Vec::with_capacity(particles.len() * PARTICLE_FLOATS);
+    for p in &particles {
+        out.extend_from_slice(&p.centre);
+        out.push(p.radius);
+        out.extend_from_slice(&p.axis);
+        out.push(f32::from_bits(p.tint));
+    }
+    Ok(out)
 }
 
 /// Words per pixel of the input of [`denoise`]: the planes `sums` (4), `lum2` (1), `albedo` (3),
@@ -945,5 +971,53 @@ mod tests {
         assert!(!ptr.is_null());
         // SAFETY: `ptr` came from `rt_alloc(0)`.
         unsafe { rt_free(ptr, 0) };
+    }
+
+    #[test]
+    fn particles_through_the_c_api_are_the_simulators() {
+        let scene = rt_core::example::ambient_scene();
+        let params = scene.effects[2]; // snow: discs from a palette
+        let payload = params.encode();
+        let input = upload(&payload);
+        let max = 500u32;
+        let out = rt_alloc(max * PARTICLE_FLOATS as u32 * 4);
+        // SAFETY: both buffers come from `rt_alloc` with the sizes the call reads and writes.
+        let n = unsafe { rt_particles_eval(input, payload.len() as u32, max, out.cast::<f32>()) };
+        assert_eq!(n, max);
+        let floats = read_floats(out, max as usize * PARTICLE_FLOATS);
+        let expected = rt_sim::evaluate(&params, max);
+        for (p, f) in expected.iter().zip(floats.chunks_exact(PARTICLE_FLOATS)) {
+            assert_eq!(&f[..3], &p.centre);
+            assert_eq!(f[3], p.radius);
+            assert_eq!(&f[4..7], &p.axis);
+            assert_eq!(f[7].to_bits(), p.tint);
+        }
+        // What the engine renders is the same particles.
+        assert_eq!(
+            scene.geometry.particle_sets()[2].particles()[..500],
+            expected[..]
+        );
+        // A count below the maximum gives the count; a bad payload an error.
+        let mut few = params;
+        few.count = 7;
+        assert_eq!(
+            particles_eval(&few.encode(), max).map(|v| v.len()),
+            Ok(7 * PARTICLE_FLOATS)
+        );
+        let _guard = serial();
+        // SAFETY: as above; 100 bytes are readable at `input`.
+        let bad = unsafe { rt_particles_eval(input, 100, max, out.cast::<f32>()) };
+        assert_eq!(bad, u32::MAX);
+        assert!(String::from_utf8(error_message()).unwrap().contains("FXAM"));
+        // SAFETY: null pointers are refused before any access.
+        assert_eq!(
+            unsafe { rt_particles_eval(std::ptr::null(), 0, 1, out.cast::<f32>()) },
+            u32::MAX
+        );
+        // SAFETY: the buffers came from `rt_alloc` with these sizes.
+        unsafe {
+            rt_free(input, payload.len() as u32);
+            rt_free(out, max * PARTICLE_FLOATS as u32 * 4);
+        }
     }
 }

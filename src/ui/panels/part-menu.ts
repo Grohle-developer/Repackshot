@@ -5,12 +5,15 @@
 import { allParts, effectiveVisible, partsUnder, type NodeId } from '../../core/scene';
 import { groupTargets, hasCadFaces, hasFaceMaterials, movableTargets, pivotModeOf, PIVOT_MODES, sharesMaterial } from '../../core/transform';
 import { primitivesUnder } from '../../core/primitive-ops';
+import * as anim from '../anim-commands';
 import * as cmd from '../commands';
+import * as phys from '../physics';
 import type { MenuEntry, MenuItems } from '../components/widgets';
 import { dyn, lightName } from '../names';
 import type { Ctx } from '../reactive';
 import { kbdFor } from '../shortcuts';
 import { getLang, t } from '../strings';
+import { openMaterialEditor } from '../graph-commands';
 
 export interface PartMenuOptions {
   /** Starts renaming in place (the tree row); the viewport focuses the inspector's name field instead. */
@@ -36,6 +39,7 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
   const groups = groupTargets(s, nodes).filter((g) => !nodes.some((id) => s.scene.nodes[id].parent === g));
   const atRoot = nodes.every((id) => s.scene.nodes[id].parent === null);
   const clip = ctx.ui.get().materialClipboard;
+  const pin = none ? null : anim.pinState(s, nodes);
 
   const pivot: MenuItems = PIVOT_MODES.map((mode) => ({
     label: t(dyn(`pivot.${mode}`)),
@@ -54,6 +58,9 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
     { label: t('ops.copyMaterial'), kbd: kbdFor('copyMaterial'), disabled: mats.length !== 1, run: () => cmd.copyMaterial(ctx, nodes) },
     { label: t('ops.pasteMaterial'), kbd: kbdFor('pasteMaterial'), disabled: noParts || !clip, run: () => cmd.pasteMaterial(ctx, nodes) },
     { label: t('ops.selectByMaterial'), disabled: mats.length !== 1, run: () => cmd.selectByMaterial(ctx, nodes) },
+    null,
+    // M3a: the material editor, on the one material of the selection (Simple goes to Nodes first).
+    { label: t('ops.editNodes'), disabled: mats.length !== 1, run: () => openMaterialEditor(ctx, mats[0]) },
   ];
   const geometry: MenuItems = [
     { label: t('ops.flip'), disabled: noParts, run: () => cmd.flipNormals(ctx, nodes) },
@@ -82,9 +89,14 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
     { label: t('tree.rest'), disabled: fixed, run: () => cmd.restOnFloor(ctx, moving) },
     { label: t('tree.center'), disabled: fixed, run: () => cmd.centerSelection(ctx, moving) },
     { label: t('ops.centerRest'), disabled: fixed, run: () => cmd.centerAndRest(ctx, nodes) },
+    // Physics (S2): the selection falls onto the floor and whatever is under it, and the bar opens.
+    { label: t('ops.drop'), icon: 'drop', note: fixed ? undefined : t('ops.dropAux'), disabled: fixed || noParts, run: () => phys.drop(ctx, nodes) },
     { label: t('ops.reset'), disabled: fixed, run: () => cmd.resetTransform(ctx, nodes) },
     { label: t('ops.pivot'), disabled: none, submenu: pivot },
     { label: t('ops.cameraTarget'), disabled: none, run: () => cmd.setCameraTarget(ctx, nodes) },
+    // N6: animate it (the timeline's wizard, with it as the target), and keep it still in the explodes that hold it.
+    { label: t('anim.animateThis', { name: none ? '' : first.name }), icon: 'film', disabled: none || !anim.nodeTarget(s, nodes[0]), run: () => anim.openWizard(ctx, anim.nodeTarget(s, nodes[0])) },
+    pin ? { label: pin.pinned ? t('ops.unpinExplode') : t('ops.pinExplode'), run: () => anim.togglePin(ctx, nodes) } : { label: t('ops.pinExplode'), disabled: true },
     // L4: a light of the rig aimed at the selection (the centre of its bounds).
     { label: t('ops.aimLight'), icon: 'light', disabled: none || s.studio.lights.length === 0, submenu: s.studio.lights.map((l) => ({ label: lightName(s, l.id, getLang()), run: () => cmd.aimLightAtNodes(ctx, l.id, nodes) })) },
     null,

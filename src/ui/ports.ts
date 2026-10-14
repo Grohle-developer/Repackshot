@@ -9,10 +9,12 @@ import type { CameraId } from '../core/camera';
 import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/import-options';
 import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
+import type { Program } from '../core/material-program';
 import type { RenderPasses } from '../core/passes';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
+import type { MotionHint } from '../core/motion-hint';
 import type { ViewObject } from '../core/view-objects';
 import type { ProjectState } from '../core/store';
 import type { GizmoDelta, GizmoHandle, Space } from '../core/transform';
@@ -22,8 +24,11 @@ import type { AiRuntimePort } from '../core/ai-runtimes';
 import type { HostEvent, HostInfo } from '../core/host-protocol';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
-import type { UpdateOutcome } from '../core/updates';
+import type { InstallerPort, UpdateOutcome } from '../core/updates';
+import type { InstallOutcome, PluginImageRequest, PluginPresets, PluginRunRequest, PluginRunResult, PluginsSnapshot, ThumbsOutcome } from '../core/plugins';
+import type { PluginRegistryEntry } from '../data/plugins';
 import type { PerfResult, Tool } from './ui-state';
+import type { PhysicsRunHandle, PhysicsRunOptions, PhysicsSpec, PhysicsUpdate } from '../core/physics';
 
 export interface PickResult {
   node: NodeId;
@@ -58,6 +63,11 @@ export interface EngineStatus {
   issue?: { kind: 'WAITING' | 'FAILED' | 'RESTARTED'; detail: string; seconds?: number };
   /** Path tracer: passes received since it started, and times its watchdog restarted the view (for checks). */
   passes?: number;
+  /**
+   * Preview (S4a): the particles of the ambient effects it draws (evaluated by rt.wasm's own simulator), of how many
+   * the engine renders; `boxesOnly` when there is no rt.wasm and only the region boxes are drawn. Absent: no effect.
+   */
+  particles?: { shown: number; total: number; boxesOnly: boolean };
   watchdog?: number;
   /** Path tracer: the scene of the image on the canvas and the scene of the project now (equal: up to date). */
   shownKey?: string;
@@ -87,6 +97,8 @@ export interface ViewportPort {
   /** Coordinates in CSS pixels relative to the canvas. */
   pick(x: number, y: number): PickResult | null;
   /** Parts to outline as hovered (the ones under the cursor, or under a dragged material). */
+  /** S4a: the ambient effect whose region box the viewport draws (the one being edited), or null. */
+  setSelectedEffect?(id: string | null): void;
   setHover(ids: readonly NodeId[]): void;
   /** How the parts are projected as they are drawn now: selection by box tests them on the screen (core/box-select.ts). */
   projection(): Projection | null;
@@ -110,6 +122,11 @@ export interface ViewportPort {
   setGlyphs(spec: { all: boolean; selected: ViewObject | null; lookThrough: ViewObject | null }): void;
   /** L4: the light or camera whose glyph is under a point (CSS pixels of the canvas), or null. */
   glyphAt(x: number, y: number): ViewObject | null;
+  /**
+   * N6: what the viewport draws for the animation selected in the timeline: its target outlined, its track (an orbit's
+   * arc, a move's arrow, an explode's vectors, a spin's axis) as lines in model space; null clears it.
+   */
+  setMotionHint?(hint: MotionHint | null): void;
   /** L4: where a light or a camera is on the canvas now (CSS pixels), or null; the viewport writes it for checks. */
   objectAt?(obj: ViewObject): { x: number; y: number } | null;
   /** The gizmo handle under a point (and highlights it), or null. */
@@ -212,6 +229,8 @@ export interface DesktopPort {
 /** The release feed (src/io/updates.ts): the latest published release, or why it could not be had. Never throws. */
 export interface UpdatesPort {
   latest(): Promise<UpdateOutcome>;
+  /** Installing it from inside the application: the desktop launcher's; null or absent in the web version. */
+  installer?: InstallerPort | null;
 }
 
 export interface RenderRequest {
@@ -241,7 +260,7 @@ export interface FrameRequest {
   bitDepth: BitDepth;
   /** 1..100 */
   jpegQuality: number;
-  /** Written into the file (PNG pHYs, JPEG JFIF). */
+  /** Written into the file (PNG pHYs, JPEG JFIF, TIFF XResolution and YResolution). */
   dpi: number;
   /** An image job's camera. */
   camera?: CameraId;
@@ -268,7 +287,7 @@ export interface FrameTone {
 export interface FrameResult {
   /** The file as it is saved. */
   file: Blob;
-  /** An 8-bit picture of it when the browser cannot show the file (EXR); null otherwise. */
+  /** An 8-bit picture of it when the browser cannot show the file (EXR, TIFF, DNG; `needsDisplayCopy`); null otherwise. */
   display: Blob | null;
   width: number;
   height: number;
@@ -491,6 +510,70 @@ export interface ImagesPort {
   loadBackplate(file: File): Promise<ImageRef>;
 }
 
+/**
+ * The rigid body simulator (phase S2): rt-phys in a worker of its own (render/physics.ts), fed the PHY1 scene of a
+ * spec (io/phys.ts). The interface never sees the engine: only the spec, the frames and what the simulator measured.
+ */
+export interface PhysicsPort {
+  /**
+   * Starts a simulation (a new one replaces the one in progress). `started` rejects with `NO_ENGINE` when rt.wasm
+   * is not there (npm run engine:build), or with the engine's message when the scene does not load.
+   */
+  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void): PhysicsRunHandle;
+}
+
+/**
+ * Plugins (phase P6, src/plugins/): the registry, what is installed and its installs, and runs over a finished result.
+ * The interface never sees a plugin's code or its key: it asks, and draws what comes back.
+ */
+export interface PluginsPort {
+  readonly registry: readonly PluginRegistryEntry[];
+  snapshot(): PluginsSnapshot;
+  subscribe(fn: (s: PluginsSnapshot) => void): () => void;
+  /** Install or update a plugin of the registry; NEEDS_KEY: `provideKey` goes on. */
+  install(id: string): Promise<InstallOutcome>;
+  provideKey(id: string, key: string): Promise<InstallOutcome>;
+  cancelInstall(id: string): void;
+  /** Install from a `.rpk` the person chose, with the key they typed. */
+  installFile(file: Blob, key: string): Promise<InstallOutcome>;
+  remove(id: string): Promise<void>;
+  /** A text file of an installed plugin (its licence, its notices), or null. */
+  text(id: string, file: string): Promise<string | null>;
+  /** The plugin's recipes by category (it is started on first use). */
+  presets(id: string): Promise<PluginPresets>;
+  /** Stops a running plugin's worker (a cancelled Apply); the next use starts it again. */
+  stop(id: string): Promise<void>;
+  /** A result through a plugin (its base picture when `result` is null); rejects with an AbortError when `signal` aborts. */
+  run(req: PluginRunRequest, signal?: AbortSignal): Promise<PluginRunResult>;
+  /** Whether a plugin has a base picture (decision 8: the preview before there is a result, the recipe cards). */
+  hasBase(id: string): boolean;
+  /** An image a render job made, through a plugin at its own size (decision 9). */
+  runImage(req: PluginImageRequest, signal?: AbortSignal): Promise<PluginRunResult>;
+  /** The recipe cards' pictures (PNG), each as it is ready: kept ones at once, missing ones made one at a time. */
+  thumbnails(id: string, onThumb: (recipe: string | null, png: Blob) => void, signal?: AbortSignal): Promise<ThumbsOutcome>;
+  /** A plugin's image as a file: PNG, or JPEG for a JPEG result, with the result's DPI. */
+  encode(img: { width: number; height: number; rgba: Uint8ClampedArray }, format: 'PNG' | 'JPEG', dpi: number): Promise<Blob>;
+}
+
+/** The material editor's previews (M3a): a program on the preview sphere, run in a worker (render/graph-client.ts). */
+export interface GraphPreviewPort {
+  /**
+   * The spheres of a program compiled with probes: one per probe and the material's own. A newer request on the same
+   * `channel` supersedes an older one, which resolves to null.
+   */
+  previews(program: Program, channel: string): Promise<GraphPreviews | null>;
+}
+
+export interface GraphPreviews {
+  /** Side of the probes' spheres, pixels. */
+  size: number;
+  /** RGBA, one per probe of the program, in order. */
+  probes: Uint8ClampedArray[];
+  /** The material's sphere, RGBA, `materialSize` square. */
+  material: Uint8ClampedArray;
+  materialSize: number;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -545,4 +628,10 @@ export interface AppServices {
   licenceText(file: string): Promise<string | null>;
   /** The environment's HDRI and background image files. */
   images: ImagesPort;
+  /** Plugins (P6); absent or null in a build without them (tests). */
+  plugins?: PluginsPort | null;
+  /** The rigid body simulator (S2); null or absent where it cannot run (no Web Workers). */
+  physics?: PhysicsPort | null;
+  /** The material editor's node previews (M3a); absent or null where no worker runs them (the editor draws no spheres). */
+  graphPreview?: GraphPreviewPort | null;
 }

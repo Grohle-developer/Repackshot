@@ -34,7 +34,7 @@ export const SETTINGS_SCHEMA = 1;
 export type LengthUnit = ImportUnit;
 export const LENGTH_UNITS: readonly LengthUnit[] = IMPORT_UNITS;
 
-export type SectionId = 'general' | 'preferences' | 'accessibility' | 'shortcuts' | 'engine' | 'ai' | 'storage' | 'desktop' | 'updates' | 'about';
+export type SectionId = 'general' | 'preferences' | 'accessibility' | 'shortcuts' | 'engine' | 'ai' | 'plugins' | 'storage' | 'desktop' | 'updates' | 'about';
 export type SectionGroup = 'app' | 'render' | 'system';
 
 export interface SectionSpec {
@@ -52,6 +52,7 @@ export const SECTIONS: readonly SectionSpec[] = [
   { id: 'shortcuts', group: 'app' },
   { id: 'engine', group: 'render' },
   { id: 'ai', group: 'render' },
+  { id: 'plugins', group: 'system' },
   { id: 'storage', group: 'system' },
   { id: 'desktop', group: 'system', desktopOnly: true },
   { id: 'updates', group: 'system' },
@@ -119,6 +120,8 @@ export interface Settings {
   'engine.viewportSeconds': number;
   /** While a render runs, the viewport keeps a quarter of the engine (live) or waits for it (fastest render). */
   'engine.whileRender': 'SHARE' | 'PAUSE';
+  /** S4a: the most particles of one ambient effect; 0 is automatic: 100 000 in the browser, 1 000 000 natively. */
+  'engine.particleCap': number;
 
   /** Key of the model in use, '' for none. */
   'ai.active': string;
@@ -181,6 +184,16 @@ export interface Layout {
   updateCheckedAt: number | null;
   /** The latest release that answer named, so an offline start can still show it. */
   updateLatest: ReleaseInfo | null;
+  /** Where the material editor (M3a) was moved to and how large it was made (CSS pixels); null: centred, its own size. */
+  materialEditorRect: EditorRect | null;
+}
+
+/** A window's place and size, CSS pixels. */
+export interface EditorRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 export interface SettingsDoc {
@@ -239,6 +252,7 @@ export function defaultSettings(): Settings {
     'engine.viewportSamples': 1024,
     'engine.viewportSeconds': 120,
     'engine.whileRender': 'SHARE',
+    'engine.particleCap': 0,
 
     'ai.active': '',
     'ai.device': 'GPU',
@@ -283,6 +297,7 @@ export function defaultLayout(): Layout {
     tourSeen: false,
     updateCheckedAt: null,
     updateLatest: null,
+    materialEditorRect: null,
   };
 }
 
@@ -388,7 +403,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   // Preferences ▸ Render defaults for new projects
   setting('render.nameTemplate', 'preferences', 'render', { kind: 'text', maxLength: 200 }, kw('name, template, file name, output', 'nombre, plantilla, archivo, salida'), { newProjects: true }),
   setting('render.destination', 'preferences', 'render', { kind: 'custom' }, kw('folder, downloads, output, destination', 'carpeta, descargas, salida, destino'), { newProjects: true }),
-  setting('render.format', 'preferences', 'render', choice(['PNG', 'JPEG', 'EXR']), kw('format, png, jpeg, exr', 'formato, png, jpeg, exr'), { newProjects: true }),
+  setting('render.format', 'preferences', 'render', choice(['PNG', 'JPEG', 'EXR', 'TIFF', 'DNG']), kw('format, png, jpeg, exr, tiff, tif, raw, dng', 'formato, png, jpeg, exr, tiff, tif, raw, dng'), { newProjects: true }),
   setting('render.dpi', 'preferences', 'render', num(1, 9600, 1, 'DPI'), kw('dpi, print, resolution', 'ppp, dpi, impresión, resolución'), { newProjects: true }),
   setting('render.finishBy', 'preferences', 'render', choice(['SAMPLES', 'TIME']), kw('finish by, samples, time, quality', 'terminar por, muestras, tiempo, calidad'), { newProjects: true }),
   setting('render.samples', 'preferences', 'render', num(1, 100000, 16), kw('samples, quality', 'muestras, calidad'), { newProjects: true }),
@@ -412,6 +427,7 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   setting('engine.backend', 'engine', 'engine', choice(['AUTO', 'NATIVE', 'WASM'], true), kw('engine, backend, native, webassembly, wasm, browser', 'motor, nativo, webassembly, wasm, navegador'), { aux: true }),
   setting('engine.threads', 'engine', 'engine', num(0, 256, 1, undefined, true), kw('threads, workers, cores, cpu', 'hilos, workers, núcleos, cpu'), { aux: true }),
   setting('engine.simd', 'engine', 'engine', choice(['AUTO', 'OFF']), kw('simd, vector, simd128, avx', 'simd, vectorial, simd128, avx'), { aux: true }),
+  setting('engine.particleCap', 'engine', 'engine', num(0, 16_777_216, 1000, undefined, true), kw('particles, cap, limit, ambient, effects, dust, rain, snow', 'partículas, tope, límite, ambiente, efectos, polvo, lluvia, nieve'), { aux: true }),
   setting('engine.viewportLimit', 'engine', 'fullViewport', choice(['OUTPUT', 'SAMPLES', 'TIME']), kw('viewport limit, battery, stop, samples, seconds', 'límite del visor, batería, parar, muestras, segundos'), { aux: true }),
   setting('engine.viewportSamples', 'engine', 'fullViewport', num(16, 100000, 16), kw('viewport, samples, limit', 'visor, muestras, límite')),
   setting('engine.viewportSeconds', 'engine', 'fullViewport', num(5, 3600, 5, 's'), kw('viewport, seconds, limit', 'visor, segundos, límite')),
@@ -440,6 +456,10 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   row('ai.runtime', 'ai', 'runtime', kw('runtime, stable-diffusion.cpp, sd.cpp, vulkan, cpu, download, inference', 'motor de ejecución, stable-diffusion.cpp, sd.cpp, vulkan, cpu, descargar, inferencia'), { desktopOnly: true }),
   setting('ai.backend', 'ai', 'runtime', choice(['AUTO', 'VULKAN', 'CPU']), kw('run on, backend, vulkan, cpu, graphics card, force', 'ejecutar con, vulkan, cpu, tarjeta gráfica, forzar'), { aux: true, desktopOnly: true }),
   row('ai.hardware', 'ai', 'hardware', kw('hardware, gpu, vram, ram, webgpu, recommendation', 'equipo, gpu, vram, ram, webgpu, recomendación')),
+
+  // Plugins (P6): the registry with Install, Update and Remove, and Install from file… (drawn by settings-plugins.ts)
+  row('plugins.list', 'plugins', 'plugins', kw('plugins, plugin, install, update, remove, film, film simulation, grain, aintfilm, closed licence, activation key', 'plugins, plugin, instalar, actualizar, quitar, película, simulación de película, grano, aintfilm, licencia cerrada, clave de activación')),
+  row('plugins.file', 'plugins', 'pluginFile', kw('install from file, rpk, plugin package, activation key, key', 'instalar desde archivo, rpk, paquete de plugin, clave de activación, clave')),
 
   // Storage
   row('storage.usage', 'storage', 'usage', kw('storage, space, disk, free up, delete, cache', 'almacenamiento, espacio, disco, liberar, borrar, caché')),
@@ -577,6 +597,11 @@ export function validateLayout(raw: unknown): Layout {
   if (isSection(raw.settingsSection)) out.settingsSection = raw.settingsSection;
   if (typeof raw.updateCheckedAt === 'number' && Number.isFinite(raw.updateCheckedAt) && raw.updateCheckedAt > 0 && raw.updateCheckedAt < 8.64e15) out.updateCheckedAt = Math.round(raw.updateCheckedAt);
   out.updateLatest = validRelease(raw.updateLatest);
+  const r = raw.materialEditorRect;
+  if (isRecord(r) && [r.x, r.y, r.w, r.h].every((v) => typeof v === 'number' && Number.isFinite(v))) {
+    const n = (v: unknown, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v as number)));
+    out.materialEditorRect = { x: n(r.x, -4000, 8000), y: n(r.y, -4000, 8000), w: n(r.w, 480, 8000), h: n(r.h, 320, 8000) };
+  }
   return out;
 }
 

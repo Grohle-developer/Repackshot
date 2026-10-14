@@ -240,6 +240,7 @@ pub fn spheres(size: (u32, u32), with_medium: bool) -> Scene {
             focus_dist: (target - position).length(),
             ortho: false,
             ortho_width: 100.0,
+            lens: None,
         },
         materials,
         geometry: Geometry::new(vec![mesh], instances).unwrap_or_default(),
@@ -255,6 +256,7 @@ pub fn spheres(size: (u32, u32), with_medium: bool) -> Scene {
         },
         render: render_settings(size),
         bitmaps: Vec::new(),
+        effects: Vec::new(),
     }
 }
 

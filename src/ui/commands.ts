@@ -14,6 +14,8 @@ import {
   applyImportOptions,
   centrePivot,
   defaultImportOptions,
+  fitTextureBudget,
+  withoutImages,
   ImportError,
   releaseImport,
   TESSELLATION_PRESETS,
@@ -24,7 +26,10 @@ import {
   type ImportOptions,
   type ImportPayload,
   type ImportProgress,
+  type ImportTexture,
 } from '../core/import-options';
+import { imageByteSize, registerTextureImage } from '../core/texture-images';
+import { textureImages } from '../core/textures';
 import {
   addItem,
   cleanName,
@@ -48,7 +53,9 @@ import {
   type LibraryItem,
   type LibraryKind,
 } from '../core/library';
-import { LIBRARY_PREFIX, isLibraryKey, type NewLightKind } from '../core/lighting';
+import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '../core/lighting';
+import { resolvePreset } from '../core/rig';
+import { activeSet, setBackground, type SetPieceNames } from '../core/sets';
 import { lookThroughCamera, objectOf, sameObject, selectedObject, type ViewObject } from '../core/view-objects';
 import { boxCenter, isEmptyBox } from '../core/math';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
@@ -71,7 +78,7 @@ import {
 import { fitSweep, placePrimitive, primitivesUnder } from '../core/primitive-ops';
 import type { PrimitiveKind } from '../data/primitives';
 import type { Vec3 } from '../core/math';
-import { createInitialState, type ProjectState, type ThemeSetting } from '../core/store';
+import { createInitialState, type EnvironmentState, type ProjectState, type ThemeSetting } from '../core/store';
 import {
   importIsSure,
   isSection,
@@ -111,6 +118,8 @@ export function loadExample(ctx: Ctx): void {
   store.transaction(L('undo.example'), () => {
     store.dispatch({ type: 'scene/addModel', payload: buildExample(exampleNames()), replace: true });
     store.dispatch({ type: 'camera/frame' });
+    // L6: the set in force (chosen, or the product type's own) dresses the product that came in.
+    store.dispatch({ type: 'studio/fitSet', names: setPieceNames() });
   });
   ctx.ui.set({ importMessage: null });
 }
@@ -137,11 +146,23 @@ export const CAD_FORMATS = ['step', 'stp', 'iges', 'igs'];
 /** Extensions read in this version (the importers live in src/io/import.ts; ui cannot import them: a test keeps both lists equal). */
 export const READ_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', '3dm', '3mf', 'ply', 'dae', 'usd', 'usda', 'usdc', 'usdz', ...CAD_FORMATS];
 export const MODEL_ACCEPT = READ_FORMATS.map((f) => `.${f}`).join(',');
+/**
+ * Files that travel with a model (M2a): its material library, its buffers and its texture images. Chosen or
+ * dropped with a model they are not imported themselves: the model's reader finds in them what it names.
+ */
+export const COMPANION_FORMATS = ['mtl', 'bin', 'png', 'jpg', 'jpeg', 'tga', 'bmp', 'gif', 'webp', 'tif', 'tiff', 'ktx2', 'dds'];
+const IMPORT_ACCEPT = [...READ_FORMATS, ...COMPANION_FORMATS].map((f) => `.${f}`).join(',');
+const extOf = (name: string): string => name.split('.').pop()?.toLowerCase() ?? '';
+/** The files that came with the model of each queued file. */
+const companionsOf = new WeakMap<File, ReadonlyMap<string, Blob>>();
 
 /** The sentence for a note or warning an importer attached. */
 export function importMessageText(name: string, m: ImportMessage): string {
   const params: Record<string, string | number> = { name };
   for (const [k, v] of Object.entries(m.params)) params[k] = typeof v === 'number' ? formatNumber(v, getLang(), 4) : v;
+  // M2a: why a texture image was not kept, and what kind of map has no slot, in words.
+  if (m.code === 'textureDropped') params.reason = t(dyn(`texture.drop.${String(m.params.reason)}`));
+  if (m.code === 'textureUnused') params.kind = t(dyn(`texture.unused.${String(m.params.kind)}`));
   return t(dyn(`import.msg.${m.code}`), params);
 }
 
@@ -177,8 +198,16 @@ export async function importFiles(ctx: Ctx, files: readonly File[]): Promise<voi
     if (files.length > 1) ctx.ui.toast(t('project.dropIgnored'));
     return openProjectFile(ctx, project);
   }
+  // Images, material libraries and buffers chosen with models go with them; alone, they are still reported below.
+  const models = files.filter((f) => !COMPANION_FORMATS.includes(extOf(f.name)));
+  const extras = files.filter((f) => COMPANION_FORMATS.includes(extOf(f.name)));
+  const batch = models.length > 0 ? models : files;
+  if (models.length > 0 && extras.length > 0) {
+    const map = new Map<string, Blob>(extras.map((f) => [f.name, f]));
+    for (const m of models) companionsOf.set(m, map);
+  }
   const q = queueOf(ctx);
-  q.waiting.push(...files);
+  q.waiting.push(...batch);
   const sheet = ctx.ui.get().importSheet;
   if (sheet) ctx.ui.set({ importSheet: { ...sheet, queued: q.waiting.length } });
   if (sheet || q.reading) return;
@@ -205,7 +234,8 @@ async function readNext(ctx: Ctx, q: ImportQueue): Promise<void> {
   }
   ctx.ui.set({ importMessage: t('import.busy', { name: file.name }) });
   try {
-    const read = await ctx.services.importFile(file);
+    const companions = companionsOf.get(file);
+    const read = await ctx.services.importFile(file, companions ? { companions } : undefined);
     const settings = ctx.ui.get().settings;
     const options = withImportDefaults(defaultImportOptions(read.detected, ctx.store.get().scene.roots.length > 0), read.detected, settings);
     const sure = settings['import.sheet'] === 'UNSURE' && importIsSure(read.detected, read.warnings);
@@ -368,7 +398,18 @@ export function confirmImport(ctx: Ctx): void {
   releaseImport(payload, applied);
   // "Center" also puts the model's origin at the centre of its bounds, where the Doctor expects it.
   const placed = options.center ? centrePivot(applied) : applied;
-  const model = { nodes: placed.nodes, roots: placed.roots, materials: placed.materials };
+  // M2a: the texture images that fit the project's budget go to the registry; the others leave their materials.
+  const textures = projectTextures(ctx, applied.textures);
+  const gone = new Set(textures.filter((x) => x.dropped && x.id).map((x) => x.id));
+  for (const x of textures) {
+    if (x.dropped || x.unused || !x.bytes) continue;
+    try {
+      registerTextureImage(x.name, x.bytes, x.id);
+    } catch {
+      gone.add(x.id);
+    }
+  }
+  const model = { nodes: placed.nodes, roots: placed.roots, materials: withoutImages(placed.materials, gone) };
   // The Standard studio is already there: the part shows lit, centred, resting on the floor and framed.
   ctx.store.transaction(L('undo.import', { name }), () => {
     ctx.store.dispatch({ type: 'scene/addModel', payload: model, replace: options.mode === 'replace' });
@@ -379,10 +420,19 @@ export function confirmImport(ctx: Ctx): void {
     if (options.frameCamera) ctx.store.dispatch({ type: 'camera/frame' });
     // Reset transform returns to where the sheet placed the model.
     ctx.store.dispatch({ type: 'scene/setInitial', ids: added });
+    // L6: the set in force (chosen, or the product type's own) dresses the product that came in.
+    ctx.store.dispatch({ type: 'studio/fitSet', names: setPieceNames() });
   });
   ctx.ui.toast(t('import.done', { name }));
-  reportImport(ctx, name, [...sheet.warnings, ...sheet.notes, ...applied.notes]);
+  const budget = textures.filter((x) => x.dropped === 'budget').map((x): ImportMessage => ({ code: 'textureDropped', params: { image: x.name, reason: 'budget' } }));
+  reportImport(ctx, name, [...sheet.warnings, ...budget, ...sheet.notes, ...applied.notes]);
   closeSheet(ctx);
+}
+
+/** The texture images of an import with the project's budget applied (what the project holds already costs nothing again). */
+export function projectTextures(ctx: Ctx, textures: readonly ImportTexture[]): ImportTexture[] {
+  const inProject = new Map([...textureImages(ctx.store.get()).keys()].map((id) => [id, imageByteSize(id)] as const));
+  return fitTextureBudget(textures, inProject);
 }
 
 /** Cancel (Esc): forgets the file. */
@@ -399,7 +449,10 @@ const allFiles = () => ({ name: t('dialog.allFiles'), extensions: ['*'] });
 export async function importDialog(ctx: Ctx): Promise<void> {
   // The desktop: the system's open dialog through the launcher; the browser: its file input.
   const dialogs = ctx.services.dialogs;
-  const files = dialogs ? ((await dialogs.openFiles({ title: t('dialog.importModel'), filters: [{ name: t('dialog.models'), extensions: [...READ_FORMATS] }, allFiles()] })) ?? []) : await pickFiles(MODEL_ACCEPT);
+  // Several files: a model with its material library and textures (M2a) is chosen together.
+  const files = dialogs
+    ? ((await dialogs.openFiles({ title: t('dialog.importModel'), multiple: true, filters: [{ name: t('dialog.models'), extensions: [...READ_FORMATS] }, { name: t('dialog.modelFiles'), extensions: [...READ_FORMATS, ...COMPANION_FORMATS] }, allFiles()] })) ?? [])
+    : await pickFiles(IMPORT_ACCEPT, true);
   if (files.length) await importFiles(ctx, files);
 }
 
@@ -431,8 +484,8 @@ function replaceProject(ctx: Ctx, state: ProjectState): void {
   ctx.store.reset(state);
   // History is gone with the old project, and so are the geometry and the images only it used.
   retainMeshes(meshIdsInUse(state));
-  retainImages(imageIdsInUse(state.environment));
-  ctx.ui.set({ catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null });
+  retainImages([...imageIdsInUse(state.environment), ...textureImages(state).keys()]);
+  ctx.ui.set({ labelTool: null, catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null, selectedClips: [] });
 }
 
 export function newProject(ctx: Ctx): void {
@@ -494,21 +547,67 @@ export async function saveProject(ctx: Ctx, opts: { saveAs?: boolean } = {}): Pr
   return true;
 }
 
+/** What the unsaved-changes question can be told (it is the same question for every use). */
+export interface UnsavedOptions {
+  /** The third button, when "Don’t save" is not the word (quitting for an update). */
+  leaveLabel?: string;
+  /** The question ended without `proceed` running: Cancel or Esc, or a Save that wrote nothing (its dialog cancelled, a failure). */
+  onStay?: () => void;
+}
+
 /**
- * Runs `proceed` now, or after asking when the project has unsaved changes (UI.md §4.3: in place, three buttons,
- * Esc cancels). Save writes the project first and proceeds only if it was written.
+ * Runs `proceed` now, or after asking when the project has unsaved changes (UI.md §4.3: in place, Save · Save as… ·
+ * Don’t save, Cancel and Esc dismiss it). Save and Save as… write the project first and proceed only if it was
+ * written: a dialog that is cancelled or a file that cannot be written stays where it was. The same question for
+ * closing the window, New, Open and updating the application.
  */
-function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void): void {
-  if (!ctx.store.get().meta.dirty) return proceed();
-  ctx.ui.set({
-    prompt: {
-      message,
-      options: [
-        { label: t('project.save'), primary: true, run: () => void saveProject(ctx).then((saved) => saved && proceed()) },
-        { label: t('project.dontSave'), run: proceed },
-      ],
-    },
+export function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void, opts: UnsavedOptions = {}): void {
+  const q = unsavedQuestion(ctx, message, proceed, opts);
+  if (!q) return;
+  ctx.ui.set({ prompt: q.spec });
+  const stay = opts.onStay;
+  if (!stay) return;
+  // The question goes away without a choice (Cancel, Esc, a click outside): the flow stays where it was. An option
+  // closes the question first and runs after, in the same click, so the check waits a turn.
+  const off = ctx.ui.subscribe((u) => {
+    if (u.prompt === q.spec) return;
+    off();
+    queueMicrotask(() => {
+      if (!q.chosen()) stay();
+    });
   });
+}
+
+/**
+ * The question of `afterUnsavedCheck` for a caller that shows it itself, in its own place (a row of Settings, the
+ * button that was pressed): `null` when the project has nothing unsaved and `proceed` has already run. `chosen` says
+ * whether one of the three buttons was pressed (as opposed to Cancel or Esc).
+ */
+export function unsavedQuestion(ctx: Ctx, message: string, proceed: () => void, opts: UnsavedOptions = {}): { spec: ConfirmSpec; chosen: () => boolean } | null {
+  if (!ctx.store.get().meta.dirty) {
+    proceed();
+    return null;
+  }
+  let chosen = false;
+  const write = (saveAs: boolean) => () => {
+    chosen = true;
+    void saveProject(ctx, saveAs ? { saveAs: true } : {}).then((saved) => (saved ? proceed() : opts.onStay?.()));
+  };
+  const spec: ConfirmSpec = {
+    message,
+    options: [
+      { label: t('project.save'), primary: true, run: write(false) },
+      { label: t('project.saveAs'), run: write(true) },
+      {
+        label: opts.leaveLabel ?? t('project.dontSave'),
+        run: () => {
+          chosen = true;
+          proceed();
+        },
+      },
+    ],
+  };
+  return { spec, chosen: () => chosen };
 }
 
 /** New (menu): a fresh project, after asking when there are unsaved changes. */
@@ -628,7 +727,7 @@ const HDRI_EXTENSIONS = ['hdr', 'exr', 'rgbe', 'pic'];
 const PLATE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
 
 /** One image file to read: the system's open dialog on the desktop (through the launcher), the file input in the browser. */
-async function pickImage(ctx: Ctx, title: StringKey, kind: StringKey, extensions: readonly string[]): Promise<File | undefined> {
+export async function pickImage(ctx: Ctx, title: StringKey, kind: StringKey, extensions: readonly string[]): Promise<File | undefined> {
   const dialogs = ctx.services.dialogs;
   const files = dialogs
     ? ((await dialogs.openFiles({ title: t(title), filters: [{ name: t(kind), extensions: [...extensions] }, allFiles()] })) ?? [])
@@ -829,22 +928,12 @@ const closeQuestions = new WeakSet<ConfirmSpec>();
  * Closing the desktop window, the one flow for every way to ask it: Ctrl/⌘ W and Ctrl/⌘ Q (guards.ts) and, in
  * Repackshot's own window (P3c), the window's own close (its close button, Alt F4, the taskbar, the system menu, which
  * the window turns into `close-requested`). Our unsaved-changes question (UI.md §4.3, when General ▸ Confirm before
- * closing is on: Save · Don't save · Cancel), then the window closes: `close-ok` to our own window, `window.close()` in
+ * closing is on: Save · Save as… · Don't save, and Cancel), then the window closes: `close-ok` to our own window, `window.close()` in
  * the browser's app window. Never the browser's own "Leave?" dialog.
  */
 export function requestCloseWindow(ctx: Ctx): void {
-  const host = ctx.services.windowHost;
-  const close = ctx.services.desktop?.closeWindow;
-  if (!host && !close) return;
-  const go = () => {
-    // Our own window has no beforeunload to quieten: it closes when told.
-    if (host) return host.closeOk();
-    if (!close) return;
-    closeAnswered = true;
-    close();
-    // A window that did not close (the browser refused): the next close asks again.
-    setTimeout(() => (closeAnswered = false), 1500);
-  };
+  const go = closeWindowNow(ctx);
+  if (!go) return;
   if (!ctx.ui.get().settings['general.confirmClose']) return go();
   const asking = ctx.ui.get().prompt;
   if (asking && closeQuestions.has(asking)) return;
@@ -854,6 +943,44 @@ export function requestCloseWindow(ctx: Ctx): void {
   closeQuestions.add(spec);
   // The question sits under the project name, in the header: the Settings window, which is modal, makes way.
   if (ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
+}
+
+/** What closes this window without asking (our own window, or the app window of the browser's); null where nothing can. */
+function closeWindowNow(ctx: Ctx): (() => void) | null {
+  const host = ctx.services.windowHost;
+  const close = ctx.services.desktop?.closeWindow;
+  if (!host && !close) return null;
+  return () => {
+    // Our own window has no beforeunload to quieten: it closes when told.
+    if (host) return host.closeOk();
+    if (!close) return;
+    closeAnswered = true;
+    close();
+    // A window that did not close (the browser refused): the next close asks again.
+    setTimeout(() => (closeAnswered = false), 1500);
+  };
+}
+
+/**
+ * The new version is installed and the launcher waits for this window to close, to start it (phase P5). The same
+ * question as closing about unsaved changes, if there are some now that the person has not answered for already (they
+ * may have gone on working while the package downloaded: `unchangedSince` is the project’s revision when they answered),
+ * worded for the update; then the window closes. `onStay` when it does not: Cancel or Esc, a Save
+ * that wrote nothing, or no way to close the window from here. The question sits under the project name, so Settings,
+ * which is modal, makes way. Returns whether anything was done.
+ */
+export function closeForUpdate(ctx: Ctx, onStay: () => void, unchangedSince: number | null = null): boolean {
+  const go = closeWindowNow(ctx);
+  if (!go) return false;
+  // The person answered the question when the update began: the same project, the same answer.
+  if (unchangedSince !== null && ctx.store.revision() === unchangedSince) {
+    go();
+    return true;
+  }
+  const name = ctx.store.get().meta.name || t('app.untitled');
+  afterUnsavedCheck(ctx, t('project.unsavedUpdate', { name }), go, { leaveLabel: t('project.quitWithout'), onStay });
+  if (ctx.ui.get().prompt && ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
+  return true;
 }
 
 /** Settings ▸ Render engine ▸ Measure performance: a real run of the example scene with the engine in use. */
@@ -1496,13 +1623,22 @@ export function separateByCadFaces(ctx: Ctx, ids?: NodeId[]): void {
 
 /** Opens the inspector on a field of the selection and focuses it (Smoothing…, Rename from the viewport). */
 export function focusInspectorField(ctx: Ctx, field: string, section = 'part'): void {
-  ctx.ui.set({ rightCollapsed: false });
-  requestAnimationFrame(() => {
-    const sec = document.querySelector(`[data-section="${section}"]`);
-    if (sec?.hasAttribute('data-collapsed')) (sec.querySelector('.section-head') as HTMLElement | null)?.click();
+  revealInspectorSection(ctx, section, () => {
     const el = document.querySelector(`[data-field="${field}"]`) as HTMLElement | null;
     el?.scrollIntoView({ block: 'center' });
     (el?.matches('input, [tabindex]') ? el : (el?.querySelector('input, [tabindex]') as HTMLElement | null))?.focus();
+  });
+}
+
+/** Opens the right panel, expands an inspector section and scrolls it into view (without focusing anything). */
+export function revealInspectorSection(ctx: Ctx, section: string, then?: () => void): void {
+  ctx.ui.set({ rightCollapsed: false });
+  if (typeof document === 'undefined' || typeof requestAnimationFrame === 'undefined') return;
+  requestAnimationFrame(() => {
+    const sec = document.querySelector(`[data-section="${section}"]`);
+    if (sec?.hasAttribute('data-collapsed')) (sec.querySelector('.section-head') as HTMLElement | null)?.click();
+    if (then) then();
+    else sec?.scrollIntoView({ block: 'nearest' });
   });
 }
 
@@ -1522,7 +1658,48 @@ export function setProductType(ctx: Ctx, key: string): void {
 }
 
 export function buildStudio(ctx: Ctx): void {
-  ctx.store.dispatch({ type: 'studio/build', label: L('undo.createStudio') });
+  ctx.store.dispatch({ type: 'studio/build', names: setPieceNames(), label: L('undo.createStudio') });
+}
+
+/** What the pieces of a set (L6) are called in the interface's language. */
+export function setPieceNames(): SetPieceNames {
+  return {
+    cards: { CARD_WHITE: t('set.card.CARD_WHITE'), CARD_BLACK: t('set.card.CARD_BLACK'), ALU_BRUSH: t('set.card.ALU_BRUSH') },
+    backdrop: t('set.backdrop'),
+    floor: t('set.floor'),
+    pool: t('set.pool'),
+  };
+}
+
+/** Use the set's camera (L6): the view the set in force suggests, the product framed again. One undo step. */
+export function useSetCamera(ctx: Ctx): void {
+  ctx.store.dispatch({ type: 'studio/useSetCamera', label: L('undo.setCamera') });
+}
+
+/**
+ * The set's backdrop on or off (L6). A sweep is a part of the scene: it is shown or hidden. A colour or a gradient is
+ * the background: off, the product type's background comes back; on, the set's.
+ */
+export function toggleSetBackdrop(ctx: Ctx, on: boolean): void {
+  const s = ctx.store.get();
+  const set = activeSet(s);
+  if (!set?.backdrop || !setBackground(set)) return;
+  const preset = resolvePreset(presetRefOf(s.studio));
+  const b = set.backdrop;
+  let patch: Partial<EnvironmentState>;
+  if (!on) {
+    patch = preset
+      ? { background: preset.background === 'FLAT' ? 'COLOR' : 'ENVIRONMENT', color: [preset.backgroundColor[0], preset.backgroundColor[1], preset.backgroundColor[2], preset.backgroundColor[3]] }
+      : { background: 'ENVIRONMENT' };
+  } else if (b.kind === 'GRADIENT') {
+    const top = b.top ?? [0.1, 0.1, 0.1];
+    const bottom = b.bottom ?? [0.02, 0.02, 0.02];
+    patch = { background: 'GRADIENT', gradient: { top, bottom }, color: [bottom[0], bottom[1], bottom[2], 1] };
+  } else {
+    const c = b.color ?? [0.5, 0.5, 0.5];
+    patch = { background: 'COLOR', color: [c[0], c[1], c[2], 1] };
+  }
+  ctx.store.dispatch({ type: 'env/set', patch, label: L('undo.setBackdrop') });
 }
 
 /** "Create studio": asks first when a studio is already built. */
@@ -1552,7 +1729,7 @@ export function chooseSetup(ctx: Ctx, key: string): void {
     if (item) ctx.store.dispatch({ type: 'studio/applySetup', setup: customSetupOf(item), label: L('undo.setup', { name: setupName(ctx, key) }) });
     return;
   }
-  ctx.store.dispatch({ type: 'studio/setSetup', key, label: L('undo.setup', { name: setupLabel(key) }) });
+  ctx.store.dispatch({ type: 'studio/setSetup', key, names: setPieceNames(), label: L('undo.setup', { name: setupLabel(key) }) });
 }
 
 /** Changing setup asks first when the lights were edited by hand. */
@@ -1664,6 +1841,18 @@ export function parseMaterialDrag(data: string): MaterialRef | null {
 export function newCamera(ctx: Ctx): void {
   const n = Object.keys(ctx.store.get().camera.cameras).length + 1;
   ctx.store.dispatch({ type: 'camera/add', name: t('cameras.default', { n }), label: L('undo.newCamera') });
+}
+
+/**
+ * Opens a camera's own inspector (name, Activate, Look through, lens and placement): selects it, so the inspector shows
+ * it with its name in the breadcrumb, shows the Cameras tab with it marked, and brings the section into view. The
+ * pencil of the viewport's camera list and of the scene's camera section.
+ */
+export function editCamera(ctx: Ctx, id: string): void {
+  if (!ctx.store.get().camera.cameras[id]) return;
+  ctx.ui.set({ sceneTab: 'cameras' });
+  ctx.store.dispatch({ type: 'scene/select', ids: [id], mode: 'set' });
+  revealInspectorSection(ctx, 'cameraEdit');
 }
 
 export function activateCamera(ctx: Ctx, id: string): void {

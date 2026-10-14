@@ -3,10 +3,10 @@
 //! A CPU path tracer written from scratch with zero external dependencies. This crate holds
 //! everything that is independent of the host: vector maths and deterministic elementary
 //! functions (`fmath`), the random number generator and the Owen-scrambled Sobol sampler,
-//! colour handling and tone curves, the film, the PNG writer, the RSB scene format, SIMD,
+//! colour handling and tone curves, the film, the PNG, TIFF and DNG writers, the RSB scene format, SIMD,
 //! geometry (meshes, instances, BVHs, ray queries), the BSDF, lights and environment (the studio
 //! dome, the daylight sky, HDRI images), the image readers (`inflate`, `hdr`, `exr`, `bitmap`),
-//! the path tracer (`integrator`), the photon map of the caustics (`caustics`), the tile renderer
+//! the camera optics beyond the thin lens (`optics`), the path tracer (`integrator`), the photon map of the caustics (`caustics`), the tile renderer
 //! and the exact passes written next to the image for the AI post-processing (`passes`).
 //!
 //! It deliberately avoids every OS API (`std::fs`, `std::net`, `std::time`, `std::thread`) so
@@ -22,6 +22,7 @@ pub mod bitmap;
 pub mod bsdf;
 pub mod caustics;
 pub mod color;
+pub mod dng;
 pub mod environment;
 pub mod example;
 pub mod exr;
@@ -33,6 +34,7 @@ pub mod inflate;
 pub mod integrator;
 pub mod light;
 pub mod math;
+pub mod optics;
 pub mod passes;
 pub mod png;
 pub mod render;
@@ -43,6 +45,7 @@ pub mod scene;
 pub mod simd;
 pub mod sky;
 pub mod sky_table;
+pub mod tiff;
 pub mod warp;
 
 /// Parses a decimal component of the crate version at compile time.

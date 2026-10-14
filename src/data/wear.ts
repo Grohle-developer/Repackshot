@@ -225,6 +225,12 @@ export const WEAR_PRESET_OVERRIDES: Readonly<Record<string, WearPatch>> = {
   JUICE_ORANGE: { amount: 0 },
   JUICE_APPLE: { amount: 0 },
   CREAM: { amount: 0 },
+  // L6: the set pieces are new card and clean acrylic: no wear unless asked for.
+  CARD_WHITE: { amount: 0 },
+  CARD_BLACK: { amount: 0 },
+  ACRYLIC_BLACK: { amount: 0 },
+  ACRYLIC_WHITE: { amount: 0 },
+  MIRROR_BLACK: { amount: 0 },
 };
 
 // Painted presets: on the edge the paint chips off and bare metal shows.

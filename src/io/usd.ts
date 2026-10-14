@@ -19,7 +19,7 @@ import { USDLoader } from 'three/examples/jsm/loaders/USDLoader.js';
 import * as THREE from 'three';
 import { unitFromMillimetres, type ImportDetected, type ImportMessage, type UpAxis } from '../core/import-options';
 import type { ReadResult } from './gltf';
-import { collectTextures, convertScene, toPayload } from './three-scene';
+import { collectTextures, companionManager, convertScene, textureNotes, toPayload, type Companions } from './three-scene';
 
 const CRATE = 'PXR-USDC';
 /** Prim types three's loader skips. */
@@ -60,12 +60,14 @@ export function usdUnsupported(text: string, packaged: boolean): string[] {
   return [...found];
 }
 
-export async function readUsd(name: string, buffer: ArrayBuffer): Promise<ReadResult> {
+export async function readUsd(name: string, buffer: ArrayBuffer, companions?: Companions): Promise<ReadResult> {
   const bytes = new Uint8Array(buffer);
   const layer = rootLayerText(bytes);
+  // A .usda next to its textures: the ones dropped with it (a .usdz carries its own).
+  const files = companionManager(companions);
   const group = await new Promise<THREE.Group>((resolve, reject) => {
     try {
-      new USDLoader().parse(buffer, '', resolve, reject);
+      new USDLoader(files.manager).parse(buffer, '', resolve, reject);
     } catch (err) {
       reject(err);
     }
@@ -88,7 +90,8 @@ export async function readUsd(name: string, buffer: ArrayBuffer): Promise<ReadRe
     if (unsupported.length > 0 && err instanceof Error) throw new Error(`${err.message} (this file has ${unsupported.join(', ')}, which this version does not read)`);
     throw err;
   }
-  const textures = await collectTextures(converted.sources);
+  const textures = await collectTextures(converted);
+  files.dispose();
 
   const notes: ImportMessage[] = [];
   if (unsupported.length > 0) notes.push({ code: 'usdUnsupported', params: { features: unsupported.join(', ') } });
@@ -103,7 +106,7 @@ export async function readUsd(name: string, buffer: ArrayBuffer): Promise<ReadRe
   }
   let upAxis: UpAxis = axis === 'Z' ? 'Z' : 'Y';
   if (axis === 'X') notes.push({ code: 'axisUnsupported', params: { axis: 'X' } });
-  if (textures.length > 0) notes.push({ code: 'texturesKept', params: { count: textures.length } });
+  notes.push(...textureNotes(textures));
   const detected: Pick<ImportDetected, 'units' | 'upAxis' | 'upAxisDeclared' | 'unsupportedUnit'> = { units, upAxis, upAxisDeclared: axis !== null, ...(unsupportedUnit ? { unsupportedUnit } : {}) };
   return { ...toPayload(converted, detected, textures), warnings: converted.warnings, notes };
 }

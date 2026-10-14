@@ -19,7 +19,7 @@ import {
 import { createInitialState, createStore, type Store } from '../src/core/store';
 import { migrateProject, parseProject, PROJECT_FORMAT, PROJECT_SCHEMA, serializeProject } from '../src/io/project';
 import u1RenderText from './fixtures/u1-render.json?raw';
-import { apply, exampleState } from './helpers';
+import { apply, exampleState, withoutCameraAspects } from './helpers';
 
 const u1Render = JSON.parse(u1RenderText) as Record<string, unknown>;
 
@@ -202,7 +202,8 @@ describe('the queue', () => {
 });
 
 describe('migration of a U1 project', () => {
-  const u1Project = () => ({ format: PROJECT_FORMAT, schema: 1, state: { ...createInitialState(), render: u1Render } });
+  // A U1 file: its cameras have no aspect ratio (U13), the size is the render block's.
+  const u1Project = () => ({ format: PROJECT_FORMAT, schema: 1, state: { ...withoutCameraAspects(createInitialState()), render: u1Render } });
 
   it('schema 2 is written', async () => {
     expect(PROJECT_SCHEMA).toBe(2);

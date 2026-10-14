@@ -2,6 +2,7 @@
 // size (top right), quality meter (bottom left), axes and part size (bottom
 // right), hover label, pick modes and drag and drop of materials (pointer events) and files.
 
+import { aspectText } from '../../core/aspect';
 import { denoiseIn, toggledViewportDenoise } from '../../core/caustics';
 import { activeCamera, cameraBasis, focusDistanceTo, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox } from '../../core/math';
@@ -27,6 +28,7 @@ import { partMenu } from './part-menu';
 import { aimMenu } from './scene';
 import { lightMenuItems, primitiveMenuItems } from './add-menu';
 import { openScalePanel } from './scale-panel';
+import { cameraMenuEntries } from '../camera-menu';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -133,14 +135,7 @@ function toolbar(ctx: Ctx, scope: Scope): HTMLElement {
 function topRight(ctx: Ctx, scope: Scope): HTMLElement {
   const { store } = ctx;
   const camBtn = h('button', { type: 'button', class: 'ov-text-btn', 'aria-haspopup': 'menu', 'data-tip': t('viewport.cameraList') });
-  camBtn.addEventListener('click', () => {
-    const s = store.get();
-    openMenu(
-      camBtn,
-      Object.values(s.camera.cameras).map((c) => ({ label: cameraName(s, c), checked: c.id === s.camera.active, run: () => cmd.activateCamera(ctx, c.id) })),
-      'end',
-    );
-  });
+  camBtn.addEventListener('click', () => openMenu(camBtn, cameraMenuEntries(ctx), 'end'));
   const resBtn = h('button', { type: 'button', class: 'ov-text-btn', 'data-tip': t('viewport.output'), onclick: () => cmd.openRenderWindow(ctx) });
   scope.watch(
     (s) => [s.camera, s.render.width, s.render.height],
@@ -150,7 +145,8 @@ function topRight(ctx: Ctx, scope: Scope): HTMLElement {
       camBtn.style.display = 'inline-flex';
       camBtn.style.alignItems = 'center';
       camBtn.style.gap = '6px';
-      resBtn.textContent = `${s.render.width} × ${s.render.height}`;
+      // The camera's ratio with the size: the frame is the camera's, the size is what the render window says (U13).
+      resBtn.textContent = `${aspectText(activeCamera(s).aspect)} · ${s.render.width} × ${s.render.height}`;
     },
     shallowEq,
   );
