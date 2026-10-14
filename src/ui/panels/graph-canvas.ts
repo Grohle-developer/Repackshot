@@ -155,7 +155,7 @@ export function graphCanvas(o: GraphCanvasOptions): GraphCanvas {
     const card = h(
       'div',
       { class: `ge-node${n.type === 'OUTPUT' ? ' is-output' : ''}`, 'data-node': n.id, 'data-type': n.type, role: 'group', 'aria-label': lbl(spec.label), style: `left:${n.x}px;top:${n.y}px;width:${NODE_W}px` },
-      h('div', { class: 'ge-head', 'data-tip': lbl(spec.description) }, cardTitle(n)),
+      h('div', { class: 'ge-head', 'data-tip': lbl(spec.description) }, h('span', { class: 'ge-head-text' }, cardTitle(n))),
       h('div', { class: 'ge-preview' }, h('canvas', { width: 64, height: 64, 'aria-hidden': 'true' })),
       ...rows,
     );

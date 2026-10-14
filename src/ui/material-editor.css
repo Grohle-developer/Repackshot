@@ -217,6 +217,12 @@
   text-overflow: ellipsis;
   cursor: grab;
 }
+.ge-head-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ge-node.is-output .ge-head {
   background: var(--inv-bg);
   color: var(--inv-ink);

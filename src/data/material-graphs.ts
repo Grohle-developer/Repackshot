@@ -4,7 +4,8 @@
 //
 // A link is [from node, its output, to node, its input]. Coordinates are where the nodes sit on the editor's canvas.
 // Sizes are in millimetres of the part; the cylindrical label of PLASTIC_LABEL is laid out for the example bottle
-// (radius 31 mm, body from 5 to 98 mm): 40 mm tall at 44 mm, a third of the turn, facing the reference camera.
+// (radius 31 mm, body from 5 to 98 mm): 40 mm tall at 44 mm, a third of the turn, facing the reference camera (where
+// the bottle's own paper label part covers it: on any other part it shows).
 
 import type { Label } from './types';
 

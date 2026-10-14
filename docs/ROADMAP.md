@@ -2158,7 +2158,9 @@ y `docs/ui/material-nodes-preview.png`.
 
 No encajó con el plan: (1) **la etiqueta** del plástico con etiqueta es un
 nodo *Textura de imagen* con una imagen dibujada por el código
-(`core/material-examples.ts`) y mapeado cilíndrico; las etiquetas de M2a
+(`core/material-examples.ts`) y mapeado cilíndrico (en el frasco de
+ejemplo cae bajo su propia pieza *Etiqueta* de papel, que cubre el frente;
+en cualquier otra pieza se ve); las etiquetas de M2a
 siguen siendo del material (se colocan en el visor) y en los dos modos se
 ponen sobre lo que da el grafo, como las ranuras de M2a, que multiplican
 sus salidas. (2) **La caja** en un programa toma la cara a la que más mira
