@@ -1393,6 +1393,79 @@ ejemplo con *Estándar* conserva `0x223515c3`; paridad wasm; hoja
 ajustes y el tiempo de cada uno (los tiempos van en el PR, no en la
 interfaz); captura `docs/ui/settings-aa.png`.
 
+## E12 · Elección de luz por punto (árbol de luces plano) — **Opus**, decisión **Fable**
+
+**Por qué.** Diagnóstico de L6 sobre las miniaturas finales a 96 spp:
+chispas blancas dispersas en el papel de los sets con una luz de *pool*
+pequeña y cerca de su papel (STRIP_EDGE, BLACK_ON_BLACK,
+WARM_COOL_CINEMA). Con el *pool* apagado desaparecen; con *glossy* fuera
+de la clave o del *rim*, o con cáusticas, no. La causa está en el motor:
+`Lights::new` elige la luz de la estimación de siguiente evento por
+flujo (`flujo × hacia × alcance`), y `alcance` acota la distancia al
+radio de la esfera que envuelve la escena, así que toda luz dentro de
+esa esfera (todas, con el fondo barrido) tiene el mismo alcance. Un
+*pool* a 0,5 m de su papel tiene (0,5/2,5)² del flujo de la clave y la
+misma irradiancia donde cae: se elige el 3,9–6,5 % de las veces y, cuando
+sale desde el papel, devuelve 15–25× la media. Fuegos artificiales. La
+elección por flujo global es la que falla en todo renderizador cuando
+una luz pequeña está cerca de una superficie; lo que la arregla es
+elegir **por punto**, con la importancia de cada luz vista desde el
+vértice que se sombrea. Es el caso degenerado del árbol de luces de K4
+(lista plana en vez de jerarquía): K4 colgará la jerarquía de esta
+misma medida.
+
+**Decisión Fable.** Se hace en el motor (opción 1 de L6), no en los
+datos (alejar el *pool* cambia la foto que ya aprobé) ni en las
+miniaturas (una pinza en `thumbView` esconde el ruido a nosotros y no al
+usuario). L6 publica sus miniaturas como salen; al fusionar E12 se
+vuelven a renderizar los sets con chispas.
+
+**Qué.** Importancia por punto sobre la lista plana de luces, con las
+cotas de Conty Estevez y Kulla, "Importance Sampling of Many Lights with
+Adaptive Tree Splitting" (HPG 2018), §4.3, sin jerarquía:
+- Por cada vértice `x` de la estimación de siguiente evento, el peso de
+  cada entrada es una cota superior barata de su aporte sin oclusión:
+  esfera/punto, `lum(intensidad) × máscara(x) / max(d², r²)`; panel,
+  `lum(radiancia) × área × orientación / max(d², área)`, con la cota de
+  orientación de la referencia (ángulos `θ_o`, `θ_e`, `θ_u`), de modo que
+  **ninguna luz que pueda iluminar `x` tiene probabilidad cero** (un
+  panel que de canto, desde su centro, no mira a `x` pero sí desde su
+  borde, cuenta); sol, `π E`; entorno, `4π² L̄`; emisor de malla, su
+  flujo sobre `max(d², área)` desde su centroide. Los pesos se calculan
+  en un búfer de pila (hasta 64 entradas; por encima, la CDF estática
+  por flujo de hoy, la misma regla en todos los sitios: determinista).
+- **Consistencia MIS**: la misma función de probabilidad, evaluada en el
+  vértice del que salió el rayo BSDF, en `crossed`, `crossed_from`,
+  `crossed_without_photons`, `escaped`, `escaped_environment` y
+  `emitter_weight` (ganan el punto de origen; `crossed_from` con `offset`
+  usa el vértice donde se muestreó el rayo, no el muro delgado). Los
+  campos `pmf` por luz pasan a ser el peso base; nada queda con la
+  probabilidad global en un sitio y la local en otro.
+- La emisión de fotones de las cáusticas sigue eligiendo por flujo (no
+  hay punto).
+- Coste ≤ 3 % en las escenas de referencia (`engine:bench`); `f32`, sin
+  `sin`/`exp` en el bucle, mismos píxeles con cualquier número de hilos.
+
+**Depende de.** E5b-1 (cáusticas), E3.
+
+**Criterio.** (1) Test de insesgo: la escena del horno blanco y una
+escena con un panel y un foco a tres estrategias (solo NEE, solo BSDF,
+MIS) convergen a la misma media con un error < 1 % a 4096 muestras por
+píxel sobre un recorte de 8×8. (2) Test de regresión del diagnóstico:
+un foco de 20 mm a 300 mm de un papel blanco más un panel de 1 m a
+2,5 m; a 64 spp, la varianza por píxel (`Film::lum2`) en el parche del
+papel bajo el foco cae a ≤ 1/4 de la de la elección por flujo, y en la
+zona que ilumina el panel no sube más del 10 %; el test falla si se
+vuelve a la elección por flujo (comprobación por mutación anotada en el
+PR). (3) Un panel que desde su centro no mira al punto pero sí desde su
+borde tiene probabilidad > 0 (test). (4) Con una sola luz, los *hashes*
+no cambian; con varias cambian: lista de *hashes* movidos en el párrafo
+del ROADMAP, repinados; paridad wasm. (5) Hoja `out/light-select-sheet.html`:
+STRIP_EDGE, BLACK_ON_BLACK y WARM_COOL_CINEMA a 96 spp antes y después
+(los `.rsb` del diagnóstico están en el *scratchpad* de L6), más el
+ejemplo y el horno blanco; a ojo, sin chispas y la misma foto.
+`ARCHITECTURE.md` (motor: elección de luz) y CHANGELOG.
+
 ## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
 
 **Qué.** Tres partes, en este orden, cada una con su commit y sus
