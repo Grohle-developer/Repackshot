@@ -1641,6 +1641,67 @@ fn an_absorbing_medium_in_a_uniform_world_is_what_the_exact_boundary_gives() {
     }
 }
 
+/// Chandrasekhar's plane albedo of a half-space of isotropic scatterers of single-scattering
+/// albedo `a` under an index-matched boundary, for light along the normal: `1 - H(1) √(1 - a)`,
+/// with his H function solved by iteration on a midpoint grid (S. Chandrasekhar, *Radiative
+/// Transfer*, 1950).
+fn plane_albedo(a: f64) -> f64 {
+    let n = 400;
+    let mu: Vec<f64> = (0..n).map(|j| (j as f64 + 0.5) / n as f64).collect();
+    let h_at = |h: &[f64], m: f64| {
+        let integral: f64 = mu.iter().zip(h).map(|(&x, &hx)| hx / (m + x)).sum::<f64>() / n as f64;
+        1.0 / (1.0 - a / 2.0 * m * integral)
+    };
+    let mut h = vec![1.0; n];
+    for _ in 0..500 {
+        h = mu.iter().map(|&m| h_at(&h, m)).collect();
+    }
+    1.0 - h_at(&h, 1.0) * (1.0 - a).sqrt()
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "long walks in a thick slab: run with --release (CI does)"
+)]
+fn a_grey_half_space_reflects_chandrasekhars_plane_albedo() {
+    // E9b: a slab 400 mean free paths thick of isotropic scatterers behind a boundary of index
+    // 1.001 (no Fresnel to speak of), seen straight down in a uniform world of radiance 1, shows
+    // its plane albedo for light along the normal (by reciprocity): 0.415 at albedo 0.9, 0.753 at
+    // 0.99. Its walks often last far beyond the 32 events after which the roulette starts, so
+    // this is what tests that the roulette keeps the expectation (the white furnace never rolls
+    // it, and the exact boundary walks the same way), with the distance and phase sampling at an
+    // albedo between 0 and 1.
+    assert!((plane_albedo(0.0)).abs() < 1.0e-12 && (plane_albedo(1.0) - 1.0).abs() < 1.0e-9);
+    for a in [0.9f64, 0.99] {
+        let medium = Material {
+            ior: 1.001,
+            ..milky(1.0, Rgb::splat(a as f32), 0.0, 0.0)
+        };
+        let scene = Scene {
+            camera: ortho_down(0.0, 0.0, 20.0),
+            materials: vec![medium],
+            geometry: Geometry::from_meshes(vec![box_mesh(
+                Vec3::new(-2000.0, -2000.0, -400.0),
+                Vec3::new(2000.0, 2000.0, 0.0),
+            )]),
+            environment: uniform_world(1.0),
+            render: RenderSettings {
+                max_depth: 64,
+                ..settings(8, 8)
+            },
+            ..Scene::default()
+        };
+        let got = mean_where(&render(&scene, 512), 1, |_, _| true);
+        let want = plane_albedo(a);
+        eprintln!("half-space of albedo {a}: {got:.4}, Chandrasekhar {want:.4}");
+        assert!(
+            (got / want - 1.0).abs() < 0.02,
+            "albedo {a}: {got} vs {want}"
+        );
+    }
+}
+
 #[test]
 fn a_medium_that_only_absorbs_is_beer_lambert_in_every_channel() {
     // Albedo 0: every event absorbs, so what crosses the slab is exp(-σt d) per channel. σt
