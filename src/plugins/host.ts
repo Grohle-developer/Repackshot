@@ -80,7 +80,7 @@ export async function openPackage(bytes: Uint8Array, key: Uint8Array, subtle?: S
   if (!parsed.ok) throw new PluginError('MANIFEST', `manifest.json: ${parsed.problems.join(', ')}`);
   const m = parsed.manifest;
   if (m.id !== header.id || m.version !== header.version || m.abi !== header.abi) throw new PluginError('MISMATCH', `the manifest (${m.id} ${m.version}) is not the package's header (${header.id} ${header.version})`);
-  const needed = [m.entry, m.logo, ...(m.wasm ? [m.wasm.file] : []), ...(m.licence.file ? [m.licence.file] : []), ...(m.notices ? [m.notices] : []), ...m.files];
+  const needed = [m.entry, m.logo, ...(m.wasm ? [m.wasm.file] : []), ...(m.licence.file ? [m.licence.file] : []), ...(m.notices ? [m.notices] : []), ...(m.base ? [m.base] : []), ...m.files];
   const missing = needed.filter((n) => !files.has(n));
   if (missing.length) throw new PluginError('MANIFEST', `the package lacks ${missing.join(', ')}`);
   return { header, manifest: m, files };
@@ -434,10 +434,14 @@ export class PluginHost {
 
   /** A text file of an installed plugin (its licence, its notices), decrypted in memory. */
   async text(id: string, file: string): Promise<string | null> {
+    const bytes = await this.file(id, file);
+    return bytes ? new TextDecoder().decode(bytes) : null;
+  }
+
+  /** A file of an installed plugin (its base picture), decrypted in memory; null when it has none or does not open. */
+  async file(id: string, file: string): Promise<Uint8Array | null> {
     try {
-      const opened = await this.openStored(id);
-      const bytes = opened.files.get(file);
-      return bytes ? new TextDecoder().decode(bytes) : null;
+      return (await this.openStored(id)).files.get(file) ?? null;
     } catch {
       return null;
     }

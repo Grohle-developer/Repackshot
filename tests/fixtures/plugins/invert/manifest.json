@@ -12,8 +12,10 @@
   "slots": ["render.plugins"],
   "entry": "plugin.js",
   "wasm": null,
+  "base": "base.png",
   "groups": [
     { "id": "invert", "label": { "en": "Inversion", "es": "Inversión" } },
+    { "id": "noise", "label": { "en": "Noise", "es": "Ruido" } },
     { "id": "output", "label": { "en": "Output", "es": "Salida" } }
   ],
   "controls": [
@@ -24,6 +26,8 @@
       { "value": "g", "label": { "en": "Green", "es": "Verde" } },
       { "value": "b", "label": { "en": "Blue", "es": "Azul" } }
     ] },
+    { "key": "noise", "label": { "en": "Noise", "es": "Ruido" }, "kind": "slider", "min": 0, "max": 1, "step": 0.01, "default": 0, "group": "noise" },
+    { "key": "seed", "label": { "en": "Seed", "es": "Semilla" }, "kind": "slider", "min": 0, "max": 1000, "step": 1, "default": 1, "group": "noise", "role": "seed" },
     { "key": "mono", "label": { "en": "Black and white", "es": "Blanco y negro" }, "kind": "toggle", "default": false, "group": "output" }
   ],
   "files": ["recipes.json"]

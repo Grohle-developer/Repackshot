@@ -39,6 +39,11 @@ export interface PluginSliderControl extends ControlBase {
   unit?: string;
   /** What the value reads at `min` instead of the number: the plugin sends its own value there (the recipe's). */
   minLabel?: PluginLabel;
+  /**
+   * `seed`: the seed of what the plugin draws at random (its grain). An animation's frames are given their own,
+   * `seed0 + frame` (decision 9: SEED_RULE); a whole-number slider, one in a manifest.
+   */
+  role?: 'seed';
 }
 
 export interface PluginSelectControl extends ControlBase {
@@ -82,6 +87,11 @@ export interface PluginManifest {
   wasm: { file: string; noImports: boolean } | null;
   /** The third-party notices of what the plugin carries, a file of the package. */
   notices?: string;
+  /**
+   * The picture its recipes are shown on (decision 8): a PNG of the package, through the plugin once per recipe for
+   * the recipe cards, and what the preview shows before there is a result.
+   */
+  base?: string;
   groups: { id: string; label: PluginLabel }[];
   controls: PluginControl[];
   /** Every file of the package the plugin reads (sent to it at start), besides the entry. */
@@ -127,8 +137,11 @@ function control(raw: unknown, groups: Set<string> | null, problems: string[], a
     if (raw.unit !== undefined && (typeof raw.unit !== 'string' || raw.unit.length > 12)) problems.push(`${at}.unit`);
     const minLabel = raw.minLabel === undefined ? undefined : label(raw.minLabel);
     if (minLabel === null) problems.push(`${at}.minLabel`);
+    // A seed is a whole number: it goes up by one a frame.
+    const whole = (v: unknown) => typeof v === 'number' && Number.isInteger(v);
+    if (raw.role !== undefined && (raw.role !== 'seed' || !whole(min) || !whole(max) || step !== 1 || !whole(def))) problems.push(`${at}.role`);
     if (problems.length > n) return null;
-    return { ...base, kind: 'slider', min: min as number, max: max as number, step: step as number, default: def as number, ...(typeof raw.unit === 'string' ? { unit: raw.unit } : {}), ...(minLabel ? { minLabel } : {}) };
+    return { ...base, kind: 'slider', min: min as number, max: max as number, step: step as number, default: def as number, ...(typeof raw.unit === 'string' ? { unit: raw.unit } : {}), ...(minLabel ? { minLabel } : {}), ...(raw.role === 'seed' ? { role: 'seed' as const } : {}) };
   }
   if (raw.kind === 'select') {
     const opts = Array.isArray(raw.options) ? raw.options : null;
@@ -186,6 +199,7 @@ export function parseManifest(raw: unknown): { ok: true; manifest: PluginManifes
     else wasm = { file: raw.wasm.file, noImports: raw.wasm.noImports };
   }
   if (raw.notices !== undefined && !fileName(raw.notices)) problems.push('notices');
+  if (raw.base !== undefined && (!fileName(raw.base) || !raw.base.toLowerCase().endsWith('.png'))) problems.push('base');
   const files = Array.isArray(raw.files) ? raw.files : null;
   if (!files || files.length > 4096 || !files.every(fileName) || new Set(files).size !== files.length) problems.push('files');
   const groups: { id: string; label: PluginLabel }[] = [];
@@ -206,6 +220,7 @@ export function parseManifest(raw: unknown): { ok: true; manifest: PluginManifes
     rawControls.forEach((c, i) => {
       const ctl = control(c, groupIds, problems, `controls[${i}]`);
       if (ctl && controls.some((x) => x.key === ctl.key)) problems.push(`controls[${i}].key (twice)`);
+      else if (ctl && ctl.kind === 'slider' && ctl.role === 'seed' && controls.some((x) => x.kind === 'slider' && x.role === 'seed')) problems.push(`controls[${i}].role (a second seed)`);
       else if (ctl) controls.push(ctl);
     });
   }
@@ -229,6 +244,7 @@ export function parseManifest(raw: unknown): { ok: true; manifest: PluginManifes
       entry: raw.entry as string,
       wasm,
       ...(raw.notices !== undefined ? { notices: raw.notices as string } : {}),
+      ...(raw.base !== undefined ? { base: raw.base as string } : {}),
       groups,
       controls,
       files: [...(files as string[])],
@@ -285,6 +301,44 @@ export function sliderDigits(c: Pick<PluginSliderControl, 'step'>): number {
   return c.step >= 1 ? 0 : c.step >= 0.1 ? 1 : 2;
 }
 
+// ------------------------------------------------------------------ a seed a frame (decision 9)
+
+/** The rule an animation's frames take their seed by: the frame's index in the animation added to the seed set. */
+export const SEED_RULE = 'seed0+frame';
+
+/** The manifest's seed: the slider with `role: 'seed'`, or null. */
+export function seedControl(m: Pick<PluginManifest, 'controls'>): PluginSliderControl | null {
+  return m.controls.find((c): c is PluginSliderControl => c.kind === 'slider' && c.role === 'seed') ?? null;
+}
+
+/** `seed0 + frame`, wrapped round the slider's range (a seed past its top starts again at its bottom). */
+export function frameSeed(c: Pick<PluginSliderControl, 'min' | 'max'>, seed0: number, frame: number): number {
+  const span = c.max - c.min + 1;
+  const k = (((Math.round(seed0) - c.min + Math.max(0, Math.round(frame))) % span) + span) % span;
+  return c.min + k;
+}
+
+/**
+ * The controls of frame `frame` (0: the first frame of the animation, and a still): the seed advanced by the rule,
+ * every other control as it is. A plugin without a seed gets the same controls on every frame.
+ */
+export function frameControls(m: Pick<PluginManifest, 'controls'>, controls: Readonly<Record<string, PluginControlValue>>, frame: number): Record<string, PluginControlValue> {
+  const c = seedControl(m);
+  const out = { ...controls };
+  if (!c) return out;
+  const seed0 = typeof controls[c.key] === 'number' ? (controls[c.key] as number) : c.default;
+  out[c.key] = frameSeed(c, seed0, frame);
+  return out;
+}
+
+/** What the provenance of frame `frame` says of its seed, or nothing for a plugin without one. */
+export function seedProvenance(m: Pick<PluginManifest, 'controls'>, controls: Readonly<Record<string, PluginControlValue>>, frame: number): ResultProvenance['seed'] | undefined {
+  const c = seedControl(m);
+  if (!c) return undefined;
+  const seed0 = typeof controls[c.key] === 'number' ? (controls[c.key] as number) : c.default;
+  return { control: c.key, seed0, frame: Math.max(0, Math.round(frame)), rule: SEED_RULE };
+}
+
 // ------------------------------------------------------------------ the render settings of plugins
 
 /** What a project keeps of one plugin, in its render settings: the recipe chosen and the controls' values. */
@@ -292,6 +346,11 @@ export interface PluginRenderSettings {
   /** The recipe's id, or null for the plugin's own default. */
   recipe: string | null;
   controls: Readonly<Record<string, PluginControlValue>>;
+  /**
+   * The render jobs go through it too (decision 9): every image the queue renders, and every frame of an animation
+   * with its own seed (`frameControls`), saved next to the engine's. Off unless it is switched on.
+   */
+  jobs?: boolean;
 }
 
 export type PluginsSettings = Readonly<Record<string, PluginRenderSettings>>;
@@ -303,7 +362,7 @@ const MAX_PLUGINS = 32;
 function sameEntry(a: PluginRenderSettings, b: PluginRenderSettings): boolean {
   const ka = Object.keys(a.controls);
   const kb = Object.keys(b.controls);
-  return a.recipe === b.recipe && ka.length === kb.length && ka.every((k) => Object.is(a.controls[k], b.controls[k]));
+  return a.recipe === b.recipe && (a.jobs === true) === (b.jobs === true) && ka.length === kb.length && ka.every((k) => Object.is(a.controls[k], b.controls[k]));
 }
 
 /**
@@ -325,7 +384,7 @@ export function normalisePlugins(raw: unknown, base: PluginsSettings = NO_PLUGIN
         if ((typeof x === 'number' && Number.isFinite(x)) || typeof x === 'boolean' || (typeof x === 'string' && x.length <= 128)) controls[k] = x;
       }
     }
-    const entry = { recipe, controls };
+    const entry: PluginRenderSettings = { recipe, controls, ...(v.jobs === true ? { jobs: true } : {}) };
     const was = base[id];
     out[id] = was && sameEntry(was, entry) ? was : entry;
   }
@@ -333,10 +392,11 @@ export function normalisePlugins(raw: unknown, base: PluginsSettings = NO_PLUGIN
   return ids.length === Object.keys(base).length && ids.every((id) => out[id] === base[id]) ? base : out;
 }
 
-/** The settings with one plugin's entry changed: its recipe, or some of its controls merged in. */
-export function withPlugin(s: PluginsSettings, id: string, patch: { recipe?: string | null; controls?: Readonly<Record<string, PluginControlValue>> }): PluginsSettings {
-  const was = s[id] ?? { recipe: null, controls: {} };
-  return { ...s, [id]: { recipe: patch.recipe !== undefined ? patch.recipe : was.recipe, controls: patch.controls ? { ...was.controls, ...patch.controls } : was.controls } };
+/** The settings with one plugin's entry changed: its recipe, some of its controls merged in, or its render jobs. */
+export function withPlugin(s: PluginsSettings, id: string, patch: { recipe?: string | null; controls?: Readonly<Record<string, PluginControlValue>>; jobs?: boolean }): PluginsSettings {
+  const was: PluginRenderSettings = s[id] ?? { recipe: null, controls: {} };
+  const jobs = patch.jobs !== undefined ? patch.jobs : was.jobs === true;
+  return { ...s, [id]: { recipe: patch.recipe !== undefined ? patch.recipe : was.recipe, controls: patch.controls ? { ...was.controls, ...patch.controls } : was.controls, ...(jobs ? { jobs: true } : {}) } };
 }
 
 // ------------------------------------------------------------------ results
@@ -351,6 +411,11 @@ export interface ResultProvenance {
   from?: string;
   /** What the results viewer says of it: the plugin's and the recipe's public names when it was made. */
   label?: { plugin: PluginLabel; recipe: PluginLabel | null };
+  /**
+   * Its seed (decision 9), when the plugin has one: the seed set (`seed0`), the frame's index in the animation (0 for
+   * a still and for an animation's first frame) and the rule the seed it was given follows (`seed0 + frame`).
+   */
+  seed?: { control: string; seed0: number; frame: number; rule: typeof SEED_RULE };
 }
 
 /** The file name of a result made by a plugin from `source`: `<name>_<plugin>.<ext>` ("Render_0001_aintfilm-film.png"). */
@@ -359,6 +424,18 @@ export function derivedFileName(source: string, pluginId: string, ext: 'png' | '
   const dot = source.lastIndexOf('.');
   const stem = dot > slash && dot > 0 ? source.slice(0, dot) : source;
   return `${stem}_${pluginId}.${ext}`;
+}
+
+/**
+ * The size a recipe card's picture is made at (decision 8): the base picture, halved, through the plugin. Half of the
+ * base's 320×200, since a full-size one takes the film engine about a second a recipe (ROADMAP P6); the card shows
+ * it enlarged.
+ */
+export const THUMB_SIZE = { width: 160, height: 100 } as const;
+
+/** Where a recipe card's picture is kept (IndexedDB): by plugin, version and recipe (`""` for no recipe). */
+export function thumbKey(plugin: string, version: string, recipe: string | null): string {
+  return `${plugin}@${version}:${recipe ?? ''}`;
 }
 
 /** The size an image is drawn at for a preview: its own when it fits `maxWidth`, else scaled to that width (≥ 1 px). */
@@ -505,11 +582,28 @@ export function cleanInfo(raw: unknown): PluginRenderInfo {
 /** A run of a plugin over a result (the interface's request; src/plugins/service.ts does it). */
 export interface PluginRunRequest {
   plugin: string;
-  result: string;
+  /** The result's id; null: the plugin's base picture (decision 8: what the preview shows before there is a result). */
+  result: string | null;
   /** The preview's width; null: the result's own size (Apply). */
   maxWidth: number | null;
   recipe: string | null;
   controls: Record<string, PluginControlValue>;
+}
+
+/** An image a render job made, through a plugin (decision 9): its file and, for an EXR, the picture shown of it. */
+export interface PluginImageRequest {
+  plugin: string;
+  file: Blob;
+  display: Blob | null;
+  recipe: string | null;
+  controls: Record<string, PluginControlValue>;
+}
+
+/** How the recipe cards' pictures went: kept ones, made ones and the seconds each of those took (measured). */
+export interface ThumbsOutcome {
+  cached: number;
+  made: number;
+  seconds: number[];
 }
 
 export interface PluginRunResult {

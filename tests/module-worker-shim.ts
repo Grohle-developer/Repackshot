@@ -25,6 +25,8 @@ export class ModuleWorkerShim implements WorkerLike {
   /** Every message the host sent, and every one the plugin answered, for the tests to read. */
   readonly sent: unknown[] = [];
   readonly received: unknown[] = [];
+  /** Both, in the order they happened. */
+  readonly log: { dir: 'sent' | 'received'; message: unknown }[] = [];
   private thread: ThreadWorker | null = null;
   private queue: { message: unknown; transfer?: Transferable[] }[] = [];
   private closed = false;
@@ -37,6 +39,7 @@ export class ModuleWorkerShim implements WorkerLike {
       this.thread = new ThreadWorker(new URL(`data:text/javascript,${encodeURIComponent(PRELUDE + source)}`));
       this.thread.on('message', (data) => {
         this.received.push(data);
+        this.log.push({ dir: 'received', message: data });
         this.onmessage?.({ data });
       });
       this.thread.on('error', (err) => this.onerror?.(err));
@@ -47,7 +50,9 @@ export class ModuleWorkerShim implements WorkerLike {
 
   postMessage(message: unknown, transfer?: Transferable[]): void {
     // A copy: the buffers of the message are transferred (and so detached here) when it is posted.
-    this.sent.push(structuredClone(message));
+    const copy = structuredClone(message);
+    this.sent.push(copy);
+    this.log.push({ dir: 'sent', message: copy });
     if (this.thread) this.thread.postMessage(message, transfer as never);
     else this.queue.push({ message, transfer });
   }

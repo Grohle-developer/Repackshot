@@ -23,7 +23,7 @@ import type { HostEvent, HostInfo } from '../core/host-protocol';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
 import type { UpdateOutcome } from '../core/updates';
-import type { InstallOutcome, PluginPresets, PluginRunRequest, PluginRunResult, PluginsSnapshot } from '../core/plugins';
+import type { InstallOutcome, PluginImageRequest, PluginPresets, PluginRunRequest, PluginRunResult, PluginsSnapshot, ThumbsOutcome } from '../core/plugins';
 import type { PluginRegistryEntry } from '../data/plugins';
 import type { PerfResult, Tool } from './ui-state';
 
@@ -514,8 +514,14 @@ export interface PluginsPort {
   presets(id: string): Promise<PluginPresets>;
   /** Stops a running plugin's worker (a cancelled Apply); the next use starts it again. */
   stop(id: string): Promise<void>;
-  /** A result through a plugin; rejects with an AbortError when `signal` aborts. */
+  /** A result through a plugin (its base picture when `result` is null); rejects with an AbortError when `signal` aborts. */
   run(req: PluginRunRequest, signal?: AbortSignal): Promise<PluginRunResult>;
+  /** Whether a plugin has a base picture (decision 8: the preview before there is a result, the recipe cards). */
+  hasBase(id: string): boolean;
+  /** An image a render job made, through a plugin at its own size (decision 9). */
+  runImage(req: PluginImageRequest, signal?: AbortSignal): Promise<PluginRunResult>;
+  /** The recipe cards' pictures (PNG), each as it is ready: kept ones at once, missing ones made one at a time. */
+  thumbnails(id: string, onThumb: (recipe: string | null, png: Blob) => void, signal?: AbortSignal): Promise<ThumbsOutcome>;
   /** A plugin's image as a file: PNG, or JPEG for a JPEG result, with the result's DPI. */
   encode(img: { width: number; height: number; rgba: Uint8ClampedArray }, format: 'PNG' | 'JPEG', dpi: number): Promise<Blob>;
 }

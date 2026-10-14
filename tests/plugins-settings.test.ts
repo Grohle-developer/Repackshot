@@ -30,11 +30,16 @@ describe('the manifest and its controls', () => {
     expect(m.controls.map((c) => [c.key, c.kind, c.group])).toEqual([
       ['amount', 'slider', 'invert'],
       ['channel', 'select', 'invert'],
+      ['noise', 'slider', 'noise'],
+      ['seed', 'slider', 'noise'],
       ['mono', 'toggle', 'output'],
     ]);
+    expect(m.controls.find((c) => c.key === 'seed')).toMatchObject({ role: 'seed', min: 0, max: 1000, step: 1, default: 1 });
     const film = parseManifest({ ...JSON.parse(readFileSync('tools/plugins/film/manifest.json', 'utf8')), version: '0.1.0', files: ['recipes.json'] });
     expect(film.ok, film.ok ? '' : film.problems.join(', ')).toBe(true);
     if (film.ok) expect(film.manifest.groups.map((g) => g.id)).toEqual(['film', 'colour', 'grain', 'halation', 'diffusion', 'lens', 'rendering']);
+    // The film plugin's seed is its seed (decision 9), and its base picture the recipe cards' (decision 8).
+    if (film.ok) expect([film.manifest.controls.find((c) => c.kind === 'slider' && c.role === 'seed')?.key, film.manifest.base]).toEqual(['seed', 'thumb-base.png']);
   });
 
   it('a manifest with a bad control, a missing licence or another ABI is refused, each problem named', () => {
@@ -59,15 +64,16 @@ describe('the manifest and its controls', () => {
     const groups = controlGroups(m, { amount: 0.25, channel: 'nope' });
     expect(groups.map((g) => [g.group.id, g.controls.map((c) => [c.control.key, c.value])])).toEqual([
       ['invert', [['amount', 0.25], ['channel', 'all']]],
+      ['noise', [['noise', 0], ['seed', 1]]],
       ['output', [['mono', false]]],
     ]);
   });
 
   it('values are clamped to the range and the step, refused for the wrong type, and a slider at its left stop reads its label', () => {
     const m = invertManifest();
-    expect(controlsFor(m, { amount: 7, channel: 'g', mono: 'yes' })).toEqual({ amount: 1, channel: 'g', mono: false });
+    expect(controlsFor(m, { amount: 7, channel: 'g', mono: 'yes', seed: 7.6 })).toEqual({ amount: 1, channel: 'g', noise: 0, seed: 8, mono: false });
     expect(controlsFor(m, { amount: 0.3333 })).toMatchObject({ amount: 0.33 });
-    expect(defaultControls(m)).toEqual({ amount: 1, channel: 'all', mono: false });
+    expect(defaultControls(m)).toEqual({ amount: 1, channel: 'all', noise: 0, seed: 1, mono: false });
     const halation = { key: 'h', label: { en: 'Amount', es: 'Cantidad' }, group: 'g', kind: 'slider' as const, min: 0, max: 1, step: 0.01, default: 0, minLabel: { en: 'Recipe', es: 'Receta' } };
     const fmt = (n: number, d: number) => n.toFixed(d);
     expect(sliderText(halation, 0, 'es', fmt)).toBe('Receta');
@@ -93,6 +99,14 @@ describe('the plugin settings of a project (RenderSettings.plugins)', () => {
     // Another patch of the settings leaves them as they are.
     const s = patchSettings({ ...defaultRenderSettings(), plugins: clean }, { width: 800 });
     expect(s.plugins).toBe(clean);
+    // The render jobs' switch (decision 9): kept when on, nothing when off, and a change of it is a change.
+    const on = withPlugin(clean, 'test-invert', { jobs: true });
+    expect(on['test-invert']).toEqual({ recipe: 'half', controls: { amount: 0.5, channel: 'r', mono: true }, jobs: true });
+    expect(normalisePlugins(JSON.parse(JSON.stringify(on)), clean)['test-invert']).not.toBe(clean['test-invert']);
+    expect(normalisePlugins(JSON.parse(JSON.stringify(on)), on)).toBe(on);
+    expect(withPlugin(on, 'test-invert', { recipe: 'full' })['test-invert'].jobs).toBe(true);
+    expect(withPlugin(on, 'test-invert', { jobs: false })['test-invert']).toEqual(clean['test-invert']);
+    expect(normalisePlugins({ 'test-invert': { recipe: null, controls: {}, jobs: 'yes' } })['test-invert']).toEqual({ recipe: null, controls: {} });
   });
 
   it('every change is undoable, a drag is one entry, and the project file keeps them', () => {
@@ -114,6 +128,12 @@ describe('the plugin settings of a project (RenderSettings.plugins)', () => {
       .then((text) => {
         const back = parseProject(text);
         expect(back.render.plugins).toEqual({ 'test-invert': { recipe: 'half', controls: { amount: 0.5 } } });
+        // The render jobs' switch is the project's too.
+        set({ jobs: true });
+        return serializeProject(ctx.store.get()).text();
+      })
+      .then((text) => {
+        expect(parseProject(text).render.plugins['test-invert'].jobs).toBe(true);
       });
   });
 });

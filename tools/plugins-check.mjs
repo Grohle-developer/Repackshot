@@ -16,9 +16,15 @@
 //       key is said, the right one installs it; its logo shows and its licence opens in full;
 //   (c) Remove, then Install from file… with the .rpk and the typed key;
 //   (d) with --film: the film plugin from the local server with its typed key;  → settings-plugins.png
+//   (d2) before any render, Render window ▸ Plugins (decision 8): the preview is the plugin's base picture through it
+//       and Apply waits for a result; the recipes are a carousel of cards, no recipe first, each card's picture
+//       made once (counted and timed: with --film, every recipe of the film plugin, the seconds a picture);
 //   (e) a render, then Render window ▸ Plugins: a block per plugin drawn from its manifest (logo, name, notice,
 //       project page, badge); the invert preview with the plugin's numbers; a control changes it, undo brings it back;
-//   (f) with --film: a recipe of the film plugin and its preview with the engine's numbers;  → render-plugins-film.png
+//       the render jobs' switch (decision 9) is a setting, undoable;
+//   (f) with --film: the carousel by the keys (an arrow chooses the next card, undo the one before), the wheel
+//       scrolls it sideways with the fades at its ends, a click chooses a recipe and its preview has the engine's
+//       numbers;  → render-plugins-film.png
 //   (g) Apply: a new result in the results viewer with its provenance, saved as <name>_<plugin>.png;
 //   (h) the Plugins section and Settings ▸ Plugins are achromatic (every computed colour has r = g = b, but the
 //       pictures and the logos), and a reload keeps what is installed.
@@ -280,6 +286,41 @@ try {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.keyboard.press('Escape');
 
+  // (d2) No result yet: the base picture, and the recipe cards made once.
+  {
+    const t0 = Date.now();
+    await openRenderWindow(page);
+    await page.waitForSelector(`${block('test-invert')} .rw-pl-frame[data-phase="BASE"]`, { timeout: 60000 });
+    const applyOff = await page.locator(`${block('test-invert')} .rw-pl-apply`).isDisabled();
+    const baseLine = await page.locator(`${block('test-invert')} .rw-pl-base-line`).textContent();
+    const stateLine = await page.locator(`${block('test-invert')} .rw-pl-state`).textContent();
+    await page.waitForFunction((sel) => document.querySelectorAll(`${sel} .rw-pl-card .rw-pl-thumb img`).length === 3, block('test-invert'), { timeout: 60000 });
+    const cards = await page.locator(`${block('test-invert')} .rw-pl-card`).evaluateAll((els) => els.map((e) => [e.dataset.recipe, e.querySelector('.rw-pl-card-name')?.textContent, e.querySelector('.rw-pl-card-cat')?.textContent, e.getAttribute('aria-selected')]));
+    check('d2_base_preview_and_cards', applyOff && /test scene/.test(baseLine ?? '') && /320 × 200 · 8-bit picture · from the plugin’s test scene/.test(stateLine ?? '') && cards.length === 3 && cards[0][0] === '' && cards[0][3] === 'true' && cards[1][1] === 'Full inversion' && cards[1][2] === 'Basic', { applyOff, baseLine, stateLine, cards });
+    if (film) {
+      await page.waitForFunction((sel) => document.querySelectorAll(`${sel} .rw-pl-card`).length > 1, block('aintfilm-film'), { timeout: 60000 });
+      const total = await page.locator(`${block('aintfilm-film')} .rw-pl-card`).count();
+      await page.waitForFunction((sel) => document.querySelectorAll(`${sel} .rw-pl-card`).length === document.querySelectorAll(`${sel} .rw-pl-card .rw-pl-thumb img`).length, block('aintfilm-film'), { timeout: 900000, polling: 500 });
+      const seconds = (Date.now() - t0) / 1000;
+      const cardCount = await page.locator(`${block('aintfilm-film')} .rw-pl-card`).count();
+      const thumbSize = await page.locator(`${block('aintfilm-film')} .rw-pl-card .rw-pl-thumb img`).first().evaluate((img) => [img.naturalWidth, img.naturalHeight]);
+      const base = await page.locator(`${block('aintfilm-film')} .rw-pl-frame`).getAttribute('data-phase');
+      check('d2_film_cards', cardCount === total && cardCount > 100 && thumbSize.join('×') === '160×100' && base === 'BASE', { cards: cardCount, thumbSize, seconds: Math.round(seconds), perPicture: Number((seconds / cardCount).toFixed(3)) });
+      // Made once: open again, and every picture is there at once (kept in IndexedDB).
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      const t1 = Date.now();
+      await openRenderWindow(page);
+      await page.waitForFunction((sel) => {
+        const n = document.querySelectorAll(`${sel} .rw-pl-card`).length;
+        return n > 1 && n === document.querySelectorAll(`${sel} .rw-pl-card .rw-pl-thumb img`).length;
+      }, block('aintfilm-film'), { timeout: 60000, polling: 100 });
+      check('d2_film_cards_kept', true, { seconds: (Date.now() - t1) / 1000 });
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+  }
+
   // (e) A render to work on, then the render window's Plugins section.
   await page.waitForFunction(() => !document.querySelectorAll('.hdr .seg button')[1]?.disabled, null, { timeout: 120000 });
   await page.locator('.render-btn').click();
@@ -299,7 +340,7 @@ try {
     const meter = await page.locator(`${block('test-invert')} .rw-pl-meter`).textContent();
     const stateLine = await page.locator(`${block('test-invert')} .rw-pl-state`).textContent();
     const controls = await page.locator(`${block('test-invert')} [data-control]`).evaluateAll((els) => els.map((e) => e.dataset.control));
-    check('e_blocks_from_manifest', blocks.includes('test-invert') && (!film || blocks.includes('aintfilm-film')) && /Invert \(test plugin\)/.test(head) && /Closed licence/.test(head) && link?.startsWith('https://') && controls.join(',') === 'amount,channel,mono', { blocks, controls });
+    check('e_blocks_from_manifest', blocks.includes('test-invert') && (!film || blocks.includes('aintfilm-film')) && /Invert \(test plugin\)/.test(head) && /Closed licence/.test(head) && link?.startsWith('https://') && controls.join(',') === 'amount,channel,noise,seed,mono,jobs', { blocks, controls });
     check('e_preview_with_plugin_numbers', /Pixels [\d,.]+ · Input rgba8 · Inverted 100 %/.test(meter ?? '') && /× \d+ · 8-bit picture · from /.test(stateLine ?? ''), { meter, stateLine });
     await setNumber(page, `${block('test-invert')} [data-control="amount"] .num`, 0.5);
     await page.waitForFunction((sel) => /Inverted 50 %/.test(document.querySelector(sel)?.textContent ?? ''), `${block('test-invert')} .rw-pl-meter`, { timeout: 30000 });
@@ -308,19 +349,55 @@ try {
     await page.waitForFunction((sel) => /Inverted 100 %/.test(document.querySelector(sel)?.textContent ?? ''), `${block('test-invert')} .rw-pl-meter`, { timeout: 30000 });
     const value = await page.locator(`${block('test-invert')} [data-control="amount"] input[type=range]`).inputValue();
     check('e_control_and_undo', value === '1', { value });
+    // The render jobs' switch: on, and undone.
+    const jobs = page.locator(`${block('test-invert')} [data-control="jobs"] [role="switch"], ${block('test-invert')} [data-control="jobs"] button`).first();
+    await jobs.click();
+    const on = await jobs.getAttribute('aria-checked');
+    await page.locator('.rw').focus();
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(200);
+    const off = await jobs.getAttribute('aria-checked');
+    check('e_jobs_switch_undoable', on === 'true' && off === 'false', { on, off });
   }
 
   // (f) The film plugin: a recipe and its preview with the engine's numbers.
   if (film) {
-    await page.waitForFunction((sel) => !document.querySelector(sel)?.disabled, `${block('aintfilm-film')} .rw-pl-recipe`, { timeout: 60000 });
-    const groups = await page.locator(`${block('aintfilm-film')} .rw-pl-recipe optgroup`).evaluateAll((els) => els.map((e) => `${e.label} (${e.children.length})`));
-    await page.locator(`${block('aintfilm-film')} .rw-pl-recipe`).selectOption('cn-01');
+    const b = block('aintfilm-film');
+    await page.waitForFunction((sel) => document.querySelectorAll(`${sel} .rw-pl-card`).length > 1, b, { timeout: 60000 });
+    const groups = await page.locator(`${b} .rw-pl-card .rw-pl-card-cat`).evaluateAll((els) => [...new Set(els.map((e) => e.textContent))]);
+    const chosen = () => page.locator(`${b} .rw-pl-card[aria-selected="true"]`).getAttribute('data-recipe');
+    // The keys: the next card, and undo the one before.
+    const strip = page.locator(`${b} .rw-pl-strip`);
+    await strip.focus();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(150);
+    const byKey = await chosen();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(150);
+    const byKey2 = await chosen();
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(150);
+    const undone = await chosen();
+    // The wheel: sideways, a card a step; the fades at the ends where there are more.
+    const fadesBefore = await page.locator(`${b} .rw-pl-strip-wrap`).getAttribute('class');
+    const left0 = await strip.evaluate((el) => el.scrollLeft);
+    await strip.hover();
+    for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 100);
+    await page.waitForTimeout(800);
+    const left1 = await strip.evaluate((el) => el.scrollLeft);
+    const fadesAfter = await page.locator(`${b} .rw-pl-strip-wrap`).getAttribute('class');
+    const snap = await strip.evaluate((el) => getComputedStyle(el).scrollSnapType);
+    check('f_carousel_keys_wheel', byKey === 'cn-01' && byKey2 !== 'cn-01' && undone === 'cn-01' && left1 > left0 && /fade-r/.test(fadesBefore ?? '') && !/fade-l/.test(fadesBefore ?? '') && /fade-l/.test(fadesAfter ?? '') && /x mandatory/.test(snap), { byKey, byKey2, undone, left0, left1, fadesBefore, fadesAfter, snap });
+    await strip.evaluate((el) => el.scrollTo({ left: 0, behavior: 'instant' }));
+    await page.locator(`${b} .rw-pl-card[data-recipe="cn-01"]`).click();
+    // The picture without the keyboard's focus ring round the strip.
+    await strip.evaluate((el) => el.blur());
     await page.waitForFunction((sel) => document.querySelector(sel)?.dataset.phase === 'WORKING', `${block('aintfilm-film')} .rw-pl-frame`, { timeout: 30000 }).catch(() => undefined);
     await page.waitForSelector(`${block('aintfilm-film')} .rw-pl-frame[data-phase="DONE"]`, { timeout: 120000 });
     const meter = await page.locator(`${block('aintfilm-film')} .rw-pl-meter`).textContent();
     const time = await page.locator(`${block('aintfilm-film')} .rw-pl-time`).textContent();
     const notice = await page.locator(`${block('aintfilm-film')} .rw-pl-notice`).textContent();
-    check('f_film_recipe_preview', groups.length >= 6 && /Negative per pixel [\d.]+ µm/.test(meter ?? '') && /Engine wasm/.test(meter ?? '') && /^The plugin took/.test(time ?? '') && /A preview of aintfilm/.test(notice ?? ''), { groups, meter, time });
+    check('f_film_recipe_preview', groups.length >= 6 && (await chosen()) === 'cn-01' && /Negative per pixel [\d.]+ µm/.test(meter ?? '') && /Engine wasm/.test(meter ?? '') && /^The plugin took/.test(time ?? '') && /A preview of aintfilm/.test(notice ?? ''), { groups, meter, time });
     // The section alone, the film's block alone, as tall as it is.
     const style = await page.addStyleTag({ content: `.rw{height:auto!important;max-height:none!important}.rw-body{overflow:visible!important}.rw-body>.section:not([data-section="rw.plugins"]){display:none!important}.rw-pl:not([data-plugin="aintfilm-film"]){display:none!important}.rw-pl-foot{display:none!important}.rw-ai-preview{position:static!important}` });
     await page.waitForTimeout(600);

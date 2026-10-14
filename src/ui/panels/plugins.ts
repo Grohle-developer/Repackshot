@@ -1,14 +1,17 @@
 // Render window ▸ Plugins (UI.md §2.7, ROADMAP P6 decision 4), after AI post-processing: a block for each installed
 // plugin with the `render.plugins` slot, drawn from its manifest and nothing else: its logo, name, version, the line
 // it brings (`notice`, a preview of an app in development…), its project page and the Closed licence badge; its
-// recipes by its own categories and public names; its controls by group (slider, list, switch); the preview, the
-// current result at the preview's width through the plugin in its worker, made again 300 ms after the last change and
-// cancelled by the next one, with the plugin's own numbers under it and the time it took (measured); and Apply, the
-// result at full size through the plugin, kept as a new result with its provenance. The recipe and the controls are
-// the project's (`RenderSettings.plugins`): every change is a store action, undoable, one entry per drag. Without a
-// plugin the section says, in one line, where plugins are installed.
+// recipes as a carousel of cards (decision 8, plugin-recipes.ts: each the plugin's base picture through the recipe,
+// made once and kept), by its own categories and public names; its controls by group (slider, list, switch); the
+// preview, the current result at the preview's width through the plugin in its worker (the plugin's base picture
+// while there is no result), made again 300 ms after the last change and cancelled by the next one, with the plugin's
+// own numbers under it and the time it took (measured); Apply, the result at full size through the plugin, kept as a
+// new result with its provenance; and the switch that sends the render jobs through it too (decision 9, a seed a
+// frame). The recipe, the controls and the switch are the project's (`RenderSettings.plugins`): every change is a
+// store action, undoable, one entry per drag. Without a plugin the section says, in one line, where plugins are
+// installed.
 
-import { controlGroups, controlsFor, defaultControls, sliderDigits, sliderText, withPlugin, type InstalledPlugin, type PluginControl, type PluginControlValue, type PluginManifest, type PluginPresets, type PluginRunResult } from '../../core/plugins';
+import { controlGroups, controlsFor, defaultControls, seedProvenance, sliderDigits, sliderText, withPlugin, type InstalledPlugin, type PluginControl, type PluginControlValue, type PluginManifest, type PluginPresets, type PluginRunResult } from '../../core/plugins';
 import { pluginSource } from '../../core/plugin-pixels';
 import type { RenderSettings } from '../../core/render';
 import type { Label } from '../../data/types';
@@ -20,6 +23,7 @@ import { dyn } from '../names';
 import { recordPluginResult } from '../plugin-results';
 import type { Ctx, Scope } from '../reactive';
 import { formatNumber, getLang, L, lbl, t } from '../strings';
+import { recipeStrip, type RecipeCard } from './plugin-recipes';
 import { faultText } from './settings-plugins';
 
 /** The width a preview is rendered at (the result is scaled down to it). */
@@ -121,25 +125,56 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
     ),
   );
 
-  // ------------------------------------------------------------------ recipes and controls
-  const recipeSel = h('select', { class: 'select rw-pl-recipe', 'aria-label': t('rw.pl.recipe'), disabled: true }, h('option', { value: '' }, t('rw.pl.loadingRecipes'))) as HTMLSelectElement;
-  const recipeAux = h('div', { class: 'note rw-pl-recipe-aux' });
-  recipeSel.addEventListener('change', () => env.set({ plugins: withPlugin(env.get().plugins, id, { recipe: recipeSel.value || null }) }, undefined, L('undo.pluginRecipe', { plugin: m.name })));
+  // ------------------------------------------------------------------ recipes (decision 8: a carousel) and controls
+  const strip = recipeStrip({
+    label: t('rw.pl.recipes'),
+    pending: t('rw.pl.thumbPending'),
+    onPick: (r) => {
+      if (r !== recipe()) env.set({ plugins: withPlugin(env.get().plugins, id, { recipe: r }) }, undefined, L('undo.pluginRecipe', { plugin: m.name }));
+    },
+  });
+  scope.onDispose(() => strip.destroy());
+  const recipeAux = h('div', { class: 'note rw-pl-recipe-aux' }, t('rw.pl.loadingRecipes'));
+  const thumbsLine = h('div', { class: 'note tabular rw-pl-thumbs', role: 'status' });
   const fillRecipes = () => {
     if (!presets) return;
-    const groups = presets.categories.map((c) =>
-      h('optgroup', { label: lbl(c.label) }, ...presets!.presets.filter((p) => p.category === c.id).map((p) => h('option', { value: p.id }, p.aux ? `${lbl(p.name)} · ${lbl(p.aux)}` : lbl(p.name)))),
-    );
-    recipeSel.replaceChildren(h('option', { value: '' }, t('rw.pl.noRecipe')), ...groups);
-    recipeSel.disabled = false;
+    const catName = (c: string) => lbl(presets!.categories.find((x) => x.id === c)?.label ?? { en: c, es: c });
+    // In the plugin's order, by its categories (each category's recipes together).
+    const ordered = presets.categories.flatMap((c) => presets!.presets.filter((p) => p.category === c.id));
+    const cards: RecipeCard[] = [{ id: null, name: t('rw.pl.noRecipe'), category: t('rw.pl.noRecipeCard') }, ...ordered.map((p) => ({ id: p.id, name: p.aux ? `${lbl(p.name)} · ${lbl(p.aux)}` : lbl(p.name), category: catName(p.category) }))];
+    strip.setCards(cards);
     syncRecipe();
+    makeThumbs(cards.length);
   };
   const syncRecipe = () => {
     if (!presets) return;
     const r = recipe();
-    recipeSel.value = r && presets.presets.some((p) => p.id === r) ? r : '';
-    const p = presets.presets.find((x) => x.id === recipeSel.value);
-    recipeAux.textContent = p ? lbl(presets.categories.find((c) => c.id === p.category)?.label ?? { en: '', es: '' }) : t('rw.pl.noRecipeAux');
+    const p = r ? presets.presets.find((x) => x.id === r) : undefined;
+    strip.select(p ? p.id : null);
+    setText(recipeAux, p ? `${lbl(p.name)} · ${lbl(presets.categories.find((c) => c.id === p.category)?.label ?? { en: '', es: '' })}` : `${t('rw.pl.noRecipe')} · ${t('rw.pl.noRecipeAux')}`);
+  };
+  // The cards' pictures: the kept ones at once, the missing ones one by one (while no preview waits), each once.
+  const thumbsAc = new AbortController();
+  scope.onDispose(() => thumbsAc.abort());
+  const makeThumbs = (total: number) => {
+    if (!port.hasBase(id)) return;
+    let done = 0;
+    const line = () => setText(thumbsLine, done < total ? t('rw.pl.thumbs', { done, total }) : '');
+    line();
+    void port
+      .thumbnails(
+        id,
+        (r, png) => {
+          done++;
+          strip.picture(r, URL.createObjectURL(png));
+          line();
+        },
+        thumbsAc.signal,
+      )
+      .then(() => setText(thumbsLine, ''))
+      .catch((err: unknown) => {
+        if (!isAbort(err)) setText(thumbsLine, t('rw.pl.thumbsFailed', { reason: why(err) }));
+      });
   };
   const rows = new Map<string, ReturnType<typeof controlRow>>();
   const groupEls = controlGroups(m, kept()?.controls).map(({ group, controls: list }) => {
@@ -151,7 +186,11 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
     return h('div', { class: 'rw-pl-group', 'data-group': group.id }, h('h5', { class: 'rw-pl-group-title aux' }, lbl(group.label)), ...els);
   });
   const defaults = h('button', { type: 'button', class: 'btn btn-sm rw-pl-defaults', onclick: () => env.set({ plugins: withPlugin(env.get().plugins, id, { controls: defaultControls(m) }) }, undefined, L('undo.pluginDefaults', { plugin: m.name })) }, icon('refresh', 14), t('rw.pl.defaults'));
-  const controlsCol = h('div', { class: 'rw-ai-controls rw-pl-controls' }, h('div', { class: 'rw-ai-ctl' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.pl.recipe')), recipeSel, recipeAux), ...groupEls, h('div', null, defaults));
+  // Decision 9: the render jobs through the plugin too (each frame of an animation with its own seed).
+  const jobsToggle = toggle(kept()?.jobs === true, () => env.set({ plugins: withPlugin(env.get().plugins, id, { jobs: !(kept()?.jobs === true) }) }, undefined, L('undo.pluginJobs', { plugin: m.name })), t('rw.pl.jobs'));
+  const jobsRow = h('div', { class: 'rw-ai-ctl rw-pl-ctl rw-pl-jobs', 'data-control': 'jobs' }, h('div', { class: 'rw-inline rw-pl-toggle' }, jobsToggle.el, h('span', { class: 'rw-ai-ctl-name' }, t('rw.pl.jobs'))), h('div', { class: 'note' }, t('rw.pl.jobsAux')));
+  const controlsCol = h('div', { class: 'rw-ai-controls rw-pl-controls' }, ...groupEls, h('div', null, defaults));
+  const recipesRow = h('div', { class: 'rw-pl-recipes' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.pl.recipe')), strip.el, recipeAux, thumbsLine);
 
   // ------------------------------------------------------------------ the preview
   const frame = h('div', { class: 'rw-ai-frame rw-pl-frame', role: 'img', 'aria-label': t('rw.pl.previewAlt') }, h('div', { class: 'note rw-ai-empty' }, t('rw.pl.starting')));
@@ -161,7 +200,8 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
   const applyBtn = h('button', { type: 'button', class: 'btn btn-primary rw-pl-apply', disabled: true }, t('rw.pl.apply'));
   const cancelBtn = h('button', { type: 'button', class: 'btn rw-pl-cancel', style: 'display:none' }, t('common.cancel'));
   const applyLine = h('div', { class: 'note rw-pl-apply-line', role: 'status', 'aria-live': 'polite' });
-  const previewCol = h('div', { class: 'rw-ai-preview rw-pl-preview' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.pl.preview')), frame, stateLine, meter, timeLine, h('div', { class: 'rw-inline' }, applyBtn, cancelBtn), applyLine);
+  const baseLine = h('div', { class: 'note rw-pl-base-line' });
+  const previewCol = h('div', { class: 'rw-ai-preview rw-pl-preview' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.pl.preview')), frame, stateLine, baseLine, meter, timeLine, h('div', { class: 'rw-inline' }, applyBtn, cancelBtn), applyLine, jobsRow);
 
   let split: SplitCompare | null = null;
   let divider = { position: 0.5, mode: 'SPLIT' as 'A' | 'B' | 'SPLIT' };
@@ -178,7 +218,7 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
     frame.replaceChildren(h('div', { class: 'note rw-ai-empty' }, text));
   };
   const source = () => pluginSource(ui.get().results, ui.get().resultView?.id ?? null);
-  const sourceName = () => ui.get().results.find((r) => r.id === source())?.name ?? '';
+  const sourceName = () => ui.get().results.find((r) => r.id === source())?.name ?? t('rw.pl.base');
   const folded = () => ui.get().sections['rw.plugins'] ?? false;
   const draw = (r: PluginRunResult) => {
     split?.destroy();
@@ -186,7 +226,7 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
     split = splitCompare({
       a: canvasOf(r.width, r.height, r.before),
       b: canvasOf(r.width, r.height, r.after),
-      labels: { a: t('rw.pl.before'), b: lbl(m.name) },
+      labels: { a: source() ? t('rw.pl.before') : t('rw.pl.baseBefore'), b: lbl(m.name) },
       modeLabels: { a: t('rw.pl.onlyBefore'), b: t('rw.pl.onlyAfter'), split: t('split.split') },
       position: divider.position,
       mode: divider.mode,
@@ -200,14 +240,16 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
     setText(meter, infoLine(r.info.items));
     meter.style.display = r.info.items.length ? '' : 'none';
     setText(timeLine, t('rw.pl.time', { time: secondsText(r.seconds) }));
-    frame.dataset.phase = 'DONE';
+    frame.dataset.phase = source() ? 'DONE' : 'BASE';
   };
   const run = async () => {
     previewAc?.abort();
     if (folded() || held) return;
     const src = source();
     applyBtn.disabled = !src || applying !== null;
-    if (!src) {
+    setText(baseLine, src ? '' : t('rw.pl.baseNote'));
+    // Decision 8: with no result yet the preview is the plugin's base picture (its test scene), when it has one.
+    if (!src && !port.hasBase(id)) {
       empty(t('rw.pl.noResult'));
       setText(stateLine, '');
       frame.dataset.phase = 'NO_RESULT';
@@ -220,7 +262,7 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
     frame.dataset.phase = 'WORKING';
     setText(stateLine, t('rw.pl.working'));
     try {
-      const r = await port.run({ plugin: id, result: src, maxWidth: PREVIEW_WIDTH, recipe: recipe(), controls: controls() }, ac.signal);
+      const r = await port.run({ plugin: id, result: src ?? null, maxWidth: PREVIEW_WIDTH, recipe: recipe(), controls: controls() }, ac.signal);
       if (my !== seq || ac.signal.aborted) return;
       draw(r);
     } catch (err) {
@@ -262,7 +304,8 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
     try {
       const r = await port.run({ plugin: id, result: src, maxWidth: null, recipe: r0, controls: c0 }, ac.signal);
       const name = presets?.presets.find((p) => p.id === r0)?.name ?? null;
-      const out = await recordPluginResult(ctx, { source: meta, run: r, manifest: m, recipe: r0, recipeName: name, controls: c0 });
+      // A still, or an animation's first frame (all the history keeps of one): its seed is seed0 (decision 9).
+      const out = await recordPluginResult(ctx, { source: meta, run: r, manifest: m, recipe: r0, recipeName: name, controls: c0, seed: seedProvenance(m, c0, 0) });
       setText(applyLine, t('rw.pl.applied', { name: out.name }));
       ctx.ui.toast(t('rw.pl.applied', { name: out.name }));
       ctx.ui.set({ resultView: { id: out.id, compare: meta.id, split: 'SPLIT', position: 0.5 }, renderWindow: null });
@@ -285,6 +328,7 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
   const sync = () => {
     const values = controls();
     for (const [key, r] of rows) r.set(values[key]);
+    jobsToggle.set(kept()?.jobs === true);
     syncRecipe();
   };
   let first = true;
@@ -309,11 +353,13 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
       fillRecipes();
     })
     .catch((err: unknown) => {
-      recipeSel.replaceChildren(h('option', { value: '' }, t('rw.pl.noRecipe')));
+      strip.setCards([{ id: null, name: t('rw.pl.noRecipe'), category: t('rw.pl.noRecipeCard') }]);
+      strip.select(null);
+      setText(recipeAux, '');
       setText(stateLine, t('rw.pl.error', { reason: why(err) }));
     });
 
-  return h('div', { class: 'rw-pl', 'data-plugin': id }, head, h('div', { class: 'rw-ai-grid rw-pl-grid' }, controlsCol, previewCol));
+  return h('div', { class: 'rw-pl', 'data-plugin': id }, head, recipesRow, h('div', { class: 'rw-ai-grid rw-pl-grid' }, controlsCol, previewCol));
 }
 
 export function pluginsBody(ctx: Ctx, scope: Scope, env: PluginsSectionEnv): HTMLElement {

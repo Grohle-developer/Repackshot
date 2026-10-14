@@ -613,8 +613,9 @@ async function decodeRgba(blob: Blob): Promise<{ width: number; height: number; 
 // Plugins (P6, src/plugins/): the host with its store (IndexedDB, in the browser and in the desktop's WebView2 alike),
 // the module workers it starts from the packages' code, and the decoders a run over a result needs.
 const pluginEntries = pluginRegistry();
+const pluginStore = openPluginStore();
 const pluginHost = new PluginHost({
-  store: openPluginStore(),
+  store: pluginStore,
   registry: pluginEntries,
   fetch: (url, init) => fetch(url, init),
   spawn: (url) => new Worker(url, { type: 'module', name: 'plugin' }) as unknown as WorkerLike,
@@ -628,6 +629,8 @@ const pluginsService = new PluginsService({
   result: async (id) => (await resultsReady).get(id),
   decode: decodeRgba,
   decodeExr: async (bytes) => (await import('./io/hdri')).decodeExr(bytes),
+  encodePng: (img) => encodePixels({ width: img.width, height: img.height, data: img.rgba }, 'PNG'),
+  store: pluginStore,
   now: () => performance.now(),
 });
 pluginHost.subscribe((snap) => ui.set({ plugins: snap }));
@@ -647,6 +650,9 @@ const pluginsPort: PluginsPort = {
   presets: (id) => pluginsService.presets(id),
   stop: (id) => pluginsService.stop(id),
   run: (req, signal) => pluginsService.run(req, signal),
+  hasBase: (id) => pluginsService.hasBase(id),
+  runImage: (req, signal) => pluginsService.runImage(req, signal),
+  thumbnails: (id, onThumb, signal) => pluginsService.thumbnails(id, onThumb, signal),
   encode: (img, format, dpi) => encodePixels({ width: img.width, height: img.height, data: img.rgba }, format, 0.92, { dpi }),
 };
 

@@ -34,6 +34,7 @@
     "noImports": true
   },
   "notices": "NOTICES.txt",
+  "base": "thumb-base.png",
   "groups": [
     {
       "id": "film",
@@ -838,9 +839,10 @@
       "max": 999999999,
       "step": 1,
       "default": 1,
+      "role": "seed",
       "aux": {
-        "en": "The same seed gives the same grain on any computer.",
-        "es": "La misma semilla da el mismo grano en cualquier equipo."
+        "en": "The same seed gives the same grain on any computer. An animation's frames take seed + frame: a grain of its own each.",
+        "es": "La misma semilla da el mismo grano en cualquier equipo. Los fotogramas de una animación toman semilla + fotograma: cada uno, su grano."
       }
     }
   ],

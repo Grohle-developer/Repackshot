@@ -28,19 +28,30 @@
 // own name (`_AI`, `_AI_2`…) with its own report. Stopping in the middle keeps
 // the render and the variants already finished. The prompt is Settings' system
 // prompt, the scene's and the job's own, fitted to the model (src/ai/prompt.ts).
+//
+// Plugins (P6 decision 9): a plugin switched on for render jobs (its `jobs` in
+// the job's settings) takes every image the job renders, after the engine's is
+// saved: a still with the seed set (seed0), and each frame of an animation with
+// its own, seed0 + the frame's index in the animation (`frameControls`), so its
+// grain is drawn again on every frame. Its image is saved next to the engine's
+// (`<name>_<plugin>.png`); the first one is also kept in the history, with its
+// provenance (seed0 and the rule). A plugin that is not installed, or fails,
+// leaves the engine's images as they are and says so once.
 
 import { totalDuration } from '../core/animation';
 import type { AiPostProgress, AiPostRequest } from '../core/ai';
 import { aiFileName, pipelineOf, variantSettings } from '../core/ai-post';
 import { outputFileName, type NameValues } from '../core/name-template';
 import { formatExtension, frameRange, frameTime, jobCamera, type JobRuntime, type JobStatus, type RenderJob, type RenderSettings } from '../core/render';
+import { controlsFor, frameControls, seedProvenance, type PluginLabel, type PluginManifest, type PluginRenderSettings } from '../core/plugins';
 import type { AiResultInfo, ResultMeta } from '../core/results';
 import type { ProjectState } from '../core/store';
 import { promptContext } from './ai-query';
 import { cameraName, dyn, studioLabel } from './names';
+import { pluginImageFile, recordPluginResult } from './plugin-results';
 import type { FrameRequest, FrameResult } from './ports';
 import type { Ctx } from './reactive';
-import { t, tIn } from './strings';
+import { lbl, t, tIn } from './strings';
 
 interface Runner {
   /** IDLE: not started; ALL: every waiting job; ONLY: Render's jobs; PAUSED: stopped by Pause, waiting for Resume. */
@@ -248,6 +259,69 @@ export function noisyName(name: string): string {
   return dot > slash && dot > 0 ? `${name.slice(0, dot)}-noisy${name.slice(dot)}` : `${name}-noisy`;
 }
 
+/** A plugin a job goes through (decision 9): its kept settings, and its manifest when it is installed and opens. */
+interface JobPlugin {
+  id: string;
+  entry: PluginRenderSettings;
+  manifest: PluginManifest | null;
+  recipeName: PluginLabel | null | undefined;
+  failed: boolean;
+}
+
+/** The plugins switched on for render jobs in `s`, in the order the settings keep them. */
+export function jobPlugins(ctx: Ctx, s: RenderSettings): JobPlugin[] {
+  if (!ctx.services.plugins) return [];
+  const installed = ctx.ui.get().plugins?.installed ?? [];
+  return Object.entries(s.plugins ?? {})
+    .filter(([, e]) => e.jobs === true)
+    .map(([id, entry]) => {
+      const m = installed.find((p) => p.id === id)?.manifest ?? null;
+      return { id, entry, manifest: m && m.slots.includes('render.plugins') ? m : null, recipeName: undefined, failed: false };
+    });
+}
+
+/**
+ * One image of a job through the plugins switched on for jobs (decision 9): frame `frame` of the animation (0 for a
+ * still) with its seed, saved next to the engine's; the job's first image (`first`, the result just kept) is also
+ * kept in the history with its provenance. Returns the names it saved. A failure is said once per plugin and job.
+ */
+async function pluginsStep(ctx: Ctx, s: RenderSettings, plugins: JobPlugin[], out: FrameResult, name: string, frame: number, first: ResultMeta | null, signal: AbortSignal): Promise<string[]> {
+  const port = ctx.services.plugins;
+  const saved: string[] = [];
+  if (!port) return saved;
+  for (const p of plugins) {
+    if (p.failed) continue;
+    const label = p.manifest ? p.manifest.name : { en: p.id, es: p.id };
+    const skip = (reason: string) => {
+      p.failed = true;
+      ctx.ui.toast(t('render.pluginSkipped', { plugin: lbl(label), name, reason }));
+    };
+    if (!p.manifest) {
+      skip(t('render.pluginMissing'));
+      continue;
+    }
+    try {
+      const seed0 = controlsFor(p.manifest, p.entry.controls);
+      const controls = frameControls(p.manifest, seed0, frame);
+      const run = await port.runImage({ plugin: p.id, file: out.file, display: out.display, recipe: p.entry.recipe, controls }, signal);
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+      if (first) {
+        if (p.recipeName === undefined) p.recipeName = p.entry.recipe ? ((await port.presets(p.id).catch(() => null))?.presets.find((x) => x.id === p.entry.recipe)?.name ?? null) : null;
+        const kept = await recordPluginResult(ctx, { source: first, run, manifest: p.manifest, recipe: p.entry.recipe, recipeName: p.recipeName, controls, seed: seedProvenance(p.manifest, seed0, frame) });
+        saved.push(kept.name);
+      } else {
+        const file = await pluginImageFile(ctx, run, name, s.format, s.dpi, p.id);
+        await ctx.services.files.save(s.destination, file.name, file.blob);
+        saved.push(file.name);
+      }
+    } catch (err) {
+      if (signal.aborted || (err instanceof Error && err.name === 'AbortError')) throw err;
+      skip(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return saved;
+}
+
 /**
  * Renders one job: every frame with the path tracer, each saved under its name where the job
  * says, the first image kept in the history. Throws an AbortError when stopped.
@@ -267,6 +341,8 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
   let lastTick = 0;
   // AI post-processing: single images only (animations arrive later), after the engine's image is safe.
   const withAi = s.ai.enabled && !anim && !!ctx.services.ai;
+  // Plugins switched on for render jobs (decision 9): every image, a frame's seed its own.
+  const plugins = jobPlugins(ctx, s);
   const renderSource = async () => {
     try {
       return (await ctx.services.ai?.renderSource()) ?? false;
@@ -318,6 +394,7 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
     // A measured throughput for the window's estimate (the whole render, upload and conversion included).
     if (out.seconds > 0 && out.samples > 0) ctx.ui.set({ throughput: (out.samples * out.width * out.height) / out.seconds });
     // The history keeps the image of a job (the first frame of an animation).
+    let first: ResultMeta | null = null;
     if (k === 0) {
       // The pipeline's progress, tile by tile (and variant by variant, X4b), in place of the render's (the render is done).
       let lastAi = '';
@@ -344,7 +421,7 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
           interrupted = err;
         }
       }
-      const [first, ...more] = variants;
+      const [firstVariant, ...more] = variants;
       const st = ctx.store.get();
       const camId = cam ?? st.camera.active;
       const meta: ResultMeta = {
@@ -365,10 +442,11 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
         thumb: await thumbnailOf(out.display ?? out.file),
         bytes: out.file.size + (out.display?.size ?? 0) + variants.reduce((n, v) => n + (v.blob?.size ?? 0), 0),
         ...(anim ? { frame: frames[0].n ?? 1, frames: total } : {}),
-        ...(first ? { ai: first.info } : {}),
+        ...(firstVariant ? { ai: firstVariant.info } : {}),
         ...(more.length > 0 ? { aiMore: more.map((v) => v.info) } : {}),
       };
-      await recordResult(ctx, meta, out, first?.blob ?? null, more.map((v) => v.blob));
+      await recordResult(ctx, meta, out, firstVariant?.blob ?? null, more.map((v) => v.blob));
+      first = meta;
       resultIds.push(meta.id);
       patchJob(ctx, job.id, { resultIds: [...resultIds] });
       if (interrupted) {
@@ -377,6 +455,8 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
         throw interrupted;
       }
     }
+    // The frame's index in the animation (its number less one): a range rendered in parts draws the same grain.
+    if (plugins.length > 0) saved.push(...(await pluginsStep(ctx, s, plugins, out, names[k], anim ? Math.max(0, (f.n ?? 1) - 1) : 0, first, signal)));
     tick(1, out.samples, out.seconds, true);
   }
   return { resultIds, names: saved };
