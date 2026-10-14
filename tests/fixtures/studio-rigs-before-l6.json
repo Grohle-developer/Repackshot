@@ -1,0 +1,787 @@
+{
+ "commit": "a6bd4d1",
+ "lights": {
+  "GENERIC": [
+   {
+    "role": "KEY",
+    "size": 2.5,
+    "sizeY": 1.8,
+    "az": -5,
+    "el": 40,
+    "dist": 3,
+    "energy": 90,
+    "color": [
+     1,
+     0.98,
+     0.95
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 3.5,
+    "sizeY": 3.5,
+    "az": 90,
+    "el": 15,
+    "dist": 3.5,
+    "energy": 30,
+    "color": [
+     0.95,
+     0.97,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "RIM",
+    "size": 2,
+    "sizeY": 0.4,
+    "az": -165,
+    "el": 35,
+    "dist": 3,
+    "energy": 70,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "JEWELLERY": [
+   {
+    "role": "TOP",
+    "size": 4,
+    "sizeY": 4,
+    "az": 35,
+    "el": 80,
+    "dist": 2.6,
+    "energy": 36,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "KEY",
+    "size": 3.5,
+    "sizeY": 3.5,
+    "az": -10,
+    "el": 30,
+    "dist": 2.8,
+    "energy": 29,
+    "color": [
+     1,
+     0.99,
+     0.97
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 3.5,
+    "sizeY": 3.5,
+    "az": 80,
+    "el": 25,
+    "dist": 2.8,
+    "energy": 23,
+    "color": [
+     0.97,
+     0.98,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "RIM",
+    "size": 2,
+    "sizeY": 0.3,
+    "az": -155,
+    "el": 20,
+    "dist": 2.5,
+    "energy": 31,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 3,
+    "sizeY": 3,
+    "az": -75,
+    "el": 10,
+    "dist": 3,
+    "energy": 16,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "WATCH": [
+   {
+    "role": "KEY",
+    "size": 5,
+    "sizeY": 0.35,
+    "az": 0,
+    "el": 45,
+    "dist": 2.8,
+    "energy": 58,
+    "color": [
+     1,
+     0.99,
+     0.97
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 4,
+    "sizeY": 0.35,
+    "az": 85,
+    "el": 30,
+    "dist": 3,
+    "energy": 30,
+    "color": [
+     0.97,
+     0.98,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "TOP",
+    "size": 3,
+    "sizeY": 3,
+    "az": 35,
+    "el": 80,
+    "dist": 2.6,
+    "energy": 26,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "RIM",
+    "size": 2.5,
+    "sizeY": 0.25,
+    "az": -160,
+    "el": 25,
+    "dist": 2.6,
+    "energy": 46,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "PERFUME": [
+   {
+    "role": "RIM",
+    "size": 6,
+    "sizeY": 6,
+    "az": -145,
+    "el": 15,
+    "dist": 3.2,
+    "energy": 110,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "KEY",
+    "size": 4.5,
+    "sizeY": 0.3,
+    "az": -45,
+    "el": 20,
+    "dist": 2.4,
+    "energy": 34,
+    "color": [
+     1,
+     0.99,
+     0.98
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 4.5,
+    "sizeY": 0.3,
+    "az": 115,
+    "el": 20,
+    "dist": 2.4,
+    "energy": 34,
+    "color": [
+     0.98,
+     0.99,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "COSMETICS": [
+   {
+    "role": "KEY",
+    "size": 4,
+    "sizeY": 3,
+    "az": 5,
+    "el": 40,
+    "dist": 3,
+    "energy": 80,
+    "color": [
+     1,
+     0.99,
+     0.98
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 5,
+    "sizeY": 4,
+    "az": 80,
+    "el": 20,
+    "dist": 3.2,
+    "energy": 55,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "TOP",
+    "size": 4,
+    "sizeY": 4,
+    "az": 35,
+    "el": 75,
+    "dist": 3,
+    "energy": 45,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "ELECTRONICS": [
+   {
+    "role": "KEY",
+    "size": 4,
+    "sizeY": 3,
+    "az": -5,
+    "el": 35,
+    "dist": 3,
+    "energy": 70,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 4.5,
+    "sizeY": 3.5,
+    "az": 85,
+    "el": 20,
+    "dist": 3.2,
+    "energy": 35,
+    "color": [
+     0.96,
+     0.98,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "RIM",
+    "size": 3,
+    "sizeY": 0.3,
+    "az": -170,
+    "el": 40,
+    "dist": 2.8,
+    "energy": 95,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "APPLIANCE": [
+   {
+    "role": "KEY",
+    "size": 4,
+    "sizeY": 4,
+    "az": 0,
+    "el": 35,
+    "dist": 3.2,
+    "energy": 85,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 5,
+    "sizeY": 4,
+    "az": 85,
+    "el": 15,
+    "dist": 3.5,
+    "energy": 50,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "TOP",
+    "size": 4.5,
+    "sizeY": 4.5,
+    "az": 35,
+    "el": 78,
+    "dist": 3,
+    "energy": 50,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "FURNITURE_IN": [
+   {
+    "role": "KEY",
+    "size": 5,
+    "sizeY": 4,
+    "az": -15,
+    "el": 30,
+    "dist": 3,
+    "energy": 80,
+    "color": [
+     1,
+     0.96,
+     0.9
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 6,
+    "sizeY": 5,
+    "az": 90,
+    "el": 15,
+    "dist": 3.5,
+    "energy": 35,
+    "color": [
+     0.94,
+     0.96,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "RIM",
+    "size": 3,
+    "sizeY": 1,
+    "az": -175,
+    "el": 30,
+    "dist": 3,
+    "energy": 45,
+    "color": [
+     1,
+     0.98,
+     0.95
+    ],
+    "glossy": true
+   }
+  ],
+  "FURNITURE_OUT": [
+   {
+    "role": "KEY",
+    "size": 0.4,
+    "sizeY": 0.4,
+    "az": -20,
+    "el": 55,
+    "dist": 5,
+    "energy": 260,
+    "color": [
+     1,
+     0.95,
+     0.88
+    ],
+    "glossy": false
+   },
+   {
+    "role": "FILL",
+    "size": 8,
+    "sizeY": 8,
+    "az": 95,
+    "el": 25,
+    "dist": 4,
+    "energy": 30,
+    "color": [
+     0.8,
+     0.88,
+     1
+    ],
+    "glossy": false
+   }
+  ],
+  "FOOTWEAR": [
+   {
+    "role": "KEY",
+    "size": 3.5,
+    "sizeY": 2.5,
+    "az": -5,
+    "el": 35,
+    "dist": 3,
+    "energy": 85,
+    "color": [
+     1,
+     0.99,
+     0.97
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 4,
+    "sizeY": 3,
+    "az": 90,
+    "el": 20,
+    "dist": 3.2,
+    "energy": 40,
+    "color": [
+     0.97,
+     0.98,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "RIM",
+    "size": 2.5,
+    "sizeY": 0.5,
+    "az": -165,
+    "el": 30,
+    "dist": 2.8,
+    "energy": 75,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "TEXTILE": [
+   {
+    "role": "KEY",
+    "size": 4,
+    "sizeY": 0.8,
+    "az": -40,
+    "el": 12,
+    "dist": 3,
+    "energy": 95,
+    "color": [
+     1,
+     0.99,
+     0.97
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 4.5,
+    "sizeY": 3.5,
+    "az": 95,
+    "el": 30,
+    "dist": 3.5,
+    "energy": 30,
+    "color": [
+     0.98,
+     0.99,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "TOP",
+    "size": 3,
+    "sizeY": 3,
+    "az": 35,
+    "el": 70,
+    "dist": 3,
+    "energy": 25,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": false
+   }
+  ],
+  "PACKAGING": [
+   {
+    "role": "KEY",
+    "size": 5,
+    "sizeY": 4,
+    "az": 5,
+    "el": 35,
+    "dist": 3.2,
+    "energy": 75,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "FILL",
+    "size": 5,
+    "sizeY": 4,
+    "az": 75,
+    "el": 30,
+    "dist": 3.2,
+    "energy": 65,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "TOP",
+    "size": 5,
+    "sizeY": 5,
+    "az": 35,
+    "el": 80,
+    "dist": 3,
+    "energy": 40,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": false
+   }
+  ],
+  "AUTOMOTIVE": [
+   {
+    "role": "KEY",
+    "size": 8,
+    "sizeY": 0.5,
+    "az": -10,
+    "el": 50,
+    "dist": 3.2,
+    "energy": 100,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 6,
+    "sizeY": 0.5,
+    "az": 90,
+    "el": 30,
+    "dist": 3.4,
+    "energy": 50,
+    "color": [
+     0.96,
+     0.98,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "RIM",
+    "size": 5,
+    "sizeY": 0.3,
+    "az": -165,
+    "el": 25,
+    "dist": 3,
+    "energy": 85,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "TOOL": [
+   {
+    "role": "KEY",
+    "size": 2,
+    "sizeY": 1.5,
+    "az": -15,
+    "el": 40,
+    "dist": 2.8,
+    "energy": 100,
+    "color": [
+     1,
+     0.99,
+     0.96
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 3,
+    "sizeY": 2.5,
+    "az": 95,
+    "el": 15,
+    "dist": 3.2,
+    "energy": 22,
+    "color": [
+     0.95,
+     0.97,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "RIM",
+    "size": 2.5,
+    "sizeY": 0.3,
+    "az": -170,
+    "el": 35,
+    "dist": 2.8,
+    "energy": 80,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "EYEWEAR": [
+   {
+    "role": "TOP",
+    "size": 5,
+    "sizeY": 3,
+    "az": 35,
+    "el": 70,
+    "dist": 2.8,
+    "energy": 65,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   },
+   {
+    "role": "KEY",
+    "size": 4,
+    "sizeY": 0.4,
+    "az": -25,
+    "el": 25,
+    "dist": 2.8,
+    "energy": 60,
+    "color": [
+     1,
+     0.99,
+     0.98
+    ],
+    "glossy": true
+   },
+   {
+    "role": "FILL",
+    "size": 4,
+    "sizeY": 0.4,
+    "az": 95,
+    "el": 25,
+    "dist": 2.8,
+    "energy": 50,
+    "color": [
+     0.98,
+     0.99,
+     1
+    ],
+    "glossy": true
+   }
+  ],
+  "MEDICAL": [
+   {
+    "role": "KEY",
+    "size": 5,
+    "sizeY": 4,
+    "az": 0,
+    "el": 40,
+    "dist": 3.2,
+    "energy": 70,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "FILL",
+    "size": 5,
+    "sizeY": 4,
+    "az": 80,
+    "el": 25,
+    "dist": 3.2,
+    "energy": 60,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": false
+   },
+   {
+    "role": "TOP",
+    "size": 5,
+    "sizeY": 5,
+    "az": 35,
+    "el": 80,
+    "dist": 3,
+    "energy": 55,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "glossy": true
+   }
+  ]
+ }
+}

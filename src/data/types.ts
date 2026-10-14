@@ -169,6 +169,7 @@ export interface StudioPreset {
 }
 
 export type LightStyle =
+  | 'SETS'
   | 'PRODUCT'
   | 'TRADITIONAL'
   | 'CINEMATIC'
@@ -183,6 +184,74 @@ export interface LightStyleEntry {
   label: Label;
 }
 
+/** The object a set's thumbnail shows (L6): the one the set is designed for. */
+export type SetHero = 'BOTTLE' | 'BOX' | 'RING' | 'CHROME' | 'SHOE' | 'SPHERES';
+
+/**
+ * What stands behind the product in a set (L6). FLAT: a background colour; GRADIENT: a background image made from
+ * two colours, top to bottom; SWEEP: the infinity sweep of U9 (a primitive fitted to the camera), in a matte paper of
+ * `color`, which takes light and shadow. Neither FLAT nor GRADIENT is something light can land on: a set with a
+ * `pool` and one of them gets a sweep of that colour instead (the pool needs a wall).
+ */
+export interface SetBackdrop {
+  kind: 'FLAT' | 'GRADIENT' | 'SWEEP';
+  /** FLAT and SWEEP: the colour (linear RGB). */
+  color?: RGB;
+  /** GRADIENT: the colour at the top and at the bottom of the frame. */
+  top?: RGB;
+  bottom?: RGB;
+}
+
+/**
+ * The pool of light on the backdrop behind the product (L6): a spot that stands behind the product and lights the
+ * wall at `az` / `el` (camera-relative, from the rig pivot), its cone `cone` degrees, `share` its weight among the
+ * lights of the set (measured where it lands), white at `kelvin` or of `color`.
+ */
+export interface SetPool {
+  az: number;
+  el: number;
+  cone: number;
+  share: number;
+  kelvin?: number;
+  color?: RGB;
+}
+
+/**
+ * The floor of a set (L6). CATCHER: the studio's shadow catcher (the default); MATTE: a matte floor of `color` (the
+ * sweep's own floor when the backdrop is a sweep, a plane otherwise); GLOSSY and MIRROR: a catalogue material under
+ * the product (`material`; the floor of the sweep when there is one, a plane otherwise).
+ */
+export interface SetFloor {
+  kind: 'CATCHER' | 'MATTE' | 'GLOSSY' | 'MIRROR';
+  /** MATTE: the colour (linear RGB). */
+  color?: RGB;
+  /** GLOSSY and MIRROR: the catalogue material. */
+  material?: string;
+}
+
+/**
+ * A card of a set (L6): a flat primitive of a catalogue material (white, black or silver card) that the product
+ * reflects, facing the rig pivot from `az` / `el` / `dist` (camera-relative, part sizes, as a light), `size` wide and
+ * `sizeY` tall in part sizes, turned `roll` degrees about its axis. Out of the frame by construction (L6:
+ * |az| >= 55 or el >= 60; a test checks it with every product type's focal length).
+ */
+export interface SetCard {
+  material: string;
+  az: number;
+  el: number;
+  dist: number;
+  size: number;
+  sizeY?: number;
+  roll?: number;
+}
+
+/** The camera a set suggests (L6): applied only with "Use the set's camera". */
+export interface SetCamera {
+  /** Elevation above the horizon, degrees. */
+  el?: number;
+  focalMm?: number;
+}
+
 export interface LightSetup {
   key: string;
   label: Label;
@@ -191,6 +260,23 @@ export interface LightSetup {
   world: WorldKind;
   /** `null` only for PRESET, which means "use the product preset's own rig". */
   lights: LightSpec[] | null;
+  // --- L6: a set is a setup with some of these (all optional: the 72 setups before L6 have none) ---
+  backdrop?: SetBackdrop;
+  pool?: SetPool;
+  floor?: SetFloor;
+  cards?: SetCard[];
+  /** Exposure offset over the product type's, EV. */
+  exposureEv?: number;
+  /** Strength of the environment (the studio dome) while the set is in force. */
+  envStrength?: number;
+  /** The camera the set suggests (not applied on its own). */
+  camera?: SetCamera;
+  /** The object of its thumbnail. */
+  hero?: SetHero;
+  /** The photographic reason, two sentences (the thumbnail's tooltip). */
+  why?: Label;
+  /** Caustics matter in this set (its thumbnail renders them; the render's Automatic picks them up). */
+  caustics?: boolean;
 }
 
 // ---------------------------------------------------------------------------

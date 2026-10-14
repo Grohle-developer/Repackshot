@@ -11,7 +11,7 @@ import { add, boxCenter, boxRadius, isEmptyBox, length, sub, transformPoint, typ
 import { defaultBevelMm, partMaterials } from './materials';
 import { presetRefOf } from './lighting';
 import { resolvePreset } from './rig';
-import { allParts, boundsOf, measuredSizeMm, reduceScene, worldMatrix, worldToLocalDelta, type NodeId, type SceneNode } from './scene';
+import { boundsOf, isSetPiece, measuredSizeMm, ownParts, reduceScene, worldMatrix, worldToLocalDelta, type NodeId, type SceneNode } from './scene';
 
 export type DoctorStatus = 'OK' | 'WARN' | 'UNAVAILABLE';
 
@@ -57,6 +57,11 @@ function floorTolerance(state: ProjectState): number {
   return Math.max(0.01, state.scene.partSizeMm * 0.002);
 }
 
+/** The roots that are not a set's decoration (L6): the Doctor looks at the user's scene, not at the set's cards. */
+function ownRoots(state: ProjectState): NodeId[] {
+  return state.scene.roots.filter((r) => !isSetPiece(state.scene.nodes[r]));
+}
+
 /** Rounds a size for the message: whole millimetres, or three significant digits below 10. */
 function roundSize(mm: number): number {
   return mm >= 10 ? Math.round(mm) : Number(mm.toPrecision(3));
@@ -67,7 +72,7 @@ function roundSize(mm: number): number {
  * every model of the scene agrees on it.
  */
 function unitHint(state: ProjectState): 1000 | 0.001 | null {
-  const hints = state.scene.roots.map((r) => state.scene.nodes[r]?.source?.unitHint ?? null);
+  const hints = ownRoots(state).map((r) => state.scene.nodes[r]?.source?.unitHint ?? null);
   return hints.length > 0 && hints.every((h) => h !== null && h === hints[0]) ? hints[0] : null;
 }
 
@@ -96,7 +101,7 @@ function checkScale(state: ProjectState): DoctorResult {
 }
 
 function checkTransform(state: ProjectState): DoctorResult {
-  const off = allParts(state).filter((p) => state.scene.nodes[p].transform.scale.some((s) => Math.abs(s - 1) > 0.01));
+  const off = ownParts(state).filter((p) => state.scene.nodes[p].transform.scale.some((s) => Math.abs(s - 1) > 0.01));
   // Baking a scale into the mesh needs the geometry registry: fix comes with U2.
   return off.length > 0 ? warn('transform', { count: off.length }, false) : ok('transform', false);
 }
@@ -110,7 +115,7 @@ interface OriginIssue {
 function originIssues(state: ProjectState): OriginIssue[] {
   const out: OriginIssue[] = [];
   const cache = new Map<NodeId, Mat4>();
-  for (const root of state.scene.roots) {
+  for (const root of ownRoots(state)) {
     const b = boundsOf(state, [root]);
     if (isEmptyBox(b)) continue;
     const origin = transformPoint(worldMatrix(state, root, cache), [0, 0, 0]);
@@ -123,7 +128,7 @@ function originIssues(state: ProjectState): OriginIssue[] {
 
 function checkOrigin(state: ProjectState): DoctorResult {
   const issues = originIssues(state).filter((i) => i.offCentre);
-  const b = boundsOf(state, state.scene.roots);
+  const b = boundsOf(state, ownRoots(state));
   let floorGap = 0;
   if (!isEmptyBox(b) && state.studio.floor && Math.abs(b.min[2]) > floorTolerance(state)) floorGap = b.min[2];
   if (issues.length === 0 && floorGap === 0) return ok('origin');
@@ -134,7 +139,7 @@ function checkOrigin(state: ProjectState): DoctorResult {
 }
 
 function checkShading(state: ProjectState): DoctorResult {
-  const faceted = allParts(state).filter((p) => {
+  const faceted = ownParts(state).filter((p) => {
     const n = state.scene.nodes[p];
     return n.smooth === false && (n.mesh?.triangles ?? 0) > SHADING_MIN_TRIANGLES;
   });
@@ -143,7 +148,7 @@ function checkShading(state: ProjectState): DoctorResult {
 
 function usedMaterials(state: ProjectState): string[] {
   const used = new Set<string>();
-  for (const p of allParts(state)) for (const m of partMaterials(state.scene.nodes[p])) used.add(m);
+  for (const p of ownParts(state)) for (const m of partMaterials(state.scene.nodes[p])) used.add(m);
   return [...used].filter((m) => state.materials[m]);
 }
 
@@ -242,7 +247,7 @@ export function fixDoctor(state: ProjectState, key: DoctorCheckKey): ProjectStat
       return next;
     }
     case 'shading': {
-      const ids = allParts(state).filter((p) => state.scene.nodes[p].smooth === false);
+      const ids = ownParts(state).filter((p) => state.scene.nodes[p].smooth === false);
       return ids.length ? reduceScene(state, { type: 'scene/setSmooth', ids, smooth: true }) : state;
     }
     case 'bevel': {

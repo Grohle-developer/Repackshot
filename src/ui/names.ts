@@ -4,7 +4,7 @@
 import { materialPreset } from '../data/materials';
 import { studioPreset } from '../data/studios';
 import { lightSetup } from '../data/light-setups';
-import type { Label, Lang, StudioPreset } from '../data/types';
+import type { Label, Lang, LightSetup, StudioPreset } from '../data/types';
 import type { CameraState } from '../core/camera';
 import type { MaterialInstance } from '../core/materials';
 import { partsUnder, type NodeId } from '../core/scene';
@@ -43,6 +43,11 @@ export function studioLabel(key: string, custom?: StudioPreset | null): Label {
 
 export function setupLabel(key: string): Label {
   return lightSetup(key)?.label ?? { en: key, es: key };
+}
+
+/** The tooltip of a setup's thumbnail: its intent and, for a set (L6), its photographic reason. */
+export function setupTip(setup: Pick<LightSetup, 'intent' | 'why'>, lang: Lang = getLang()): string {
+  return setup.why ? `${setup.intent[lang]}. ${setup.why[lang]}` : setup.intent[lang];
 }
 
 export function cameraName(state: ProjectState, cam: CameraState | undefined, lang: Lang = getLang()): string {

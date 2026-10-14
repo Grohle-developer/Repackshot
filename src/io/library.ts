@@ -281,6 +281,8 @@ function lightInstance(v: unknown, path: string): LightInstance {
     ...(o.shadow === undefined ? {} : { shadow: bool(o.shadow, `${path}.shadow`) }),
     ...(o.aim === undefined ? {} : { aim: vec3(o.aim, `${path}.aim`) }),
     ...(o.roll === undefined ? {} : { roll: num(o.roll, `${path}.roll`, -720, 720) }),
+    // L6: the pool of a set.
+    ...(o.setPiece === undefined ? {} : { setPiece: oneOf(o.setPiece, `${path}.setPiece`, ['POOL'] as const) }),
   };
 }
 
@@ -290,8 +292,13 @@ function environment(v: unknown, path: string): EnvironmentState {
     kind: oneOf(o.kind, `${path}.kind`, ['STUDIO', 'SKY', 'FLAT', 'HDRI'] as const),
     strength: num(o.strength, `${path}.strength`, 0, 100),
     rotationDeg: num(o.rotationDeg, `${path}.rotationDeg`, -3600, 3600),
-    background: oneOf(o.background, `${path}.background`, ['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE'] as const),
+    background: oneOf(o.background, `${path}.background`, ['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE', 'GRADIENT'] as const),
     color: rgba(o.color, `${path}.color`),
+    // L6: studios saved before the gradient background have none and take the default.
+    gradient:
+      o.gradient === undefined
+        ? { top: [0.1, 0.1, 0.1], bottom: [0.02, 0.02, 0.02] }
+        : { top: rgb(obj(o.gradient, `${path}.gradient`).top, `${path}.gradient.top`), bottom: rgb(obj(o.gradient, `${path}.gradient`).bottom, `${path}.gradient.bottom`) },
     groundShadow: num(o.groundShadow, `${path}.groundShadow`, 0, 1),
     groundReflection: num(o.groundReflection, `${path}.groundReflection`, 0, 1),
     // E5: the library keeps no image files, so a studio comes back without its HDRI or background image

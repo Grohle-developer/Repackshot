@@ -350,6 +350,71 @@ modificado).
 la del rig del tipo de producto. Cambiar de montaje no cambia la
 exposición.
 
+**Sets** (fase L6). Un montaje puede ser un **set**: luces más lo que el
+producto refleja y donde se apoya. `LightSetup` gana campos opcionales
+(los 72 montajes anteriores no tienen ninguno y resuelven exactamente al
+mismo rig que antes): `backdrop` (`FLAT` color de fondo; `GRADIENT` dos
+colores, arriba y abajo del encuadre, que el motor recibe como imagen de
+fondo generada y estirada; `SWEEP` el fondo infinito de U9 en papel mate
+del color, que recibe luz y sombra), `pool` (un foco direccional detrás
+del producto que dibuja un charco de luz en el fondo: `az`, `el`, cono,
+`share`, kelvin o color), `floor` (`CATCHER` el atrapasombras; `MATTE`
+mate de un color; `GLOSSY` y `MIRROR` un material del catálogo bajo el
+producto), `cards` (tarjetas: planos de *Tarjeta blanca*, *Tarjeta negra*
+o aluminio cepillado como tarjeta plateada, con `az`, `el`, `dist`,
+`size`, `sizeY` y giro, de cara al producto), `exposureEv` (desvío sobre
+la exposición del tipo de producto), `envStrength` (la cúpula mientras el
+set manda), `camera` (`el`, `focalMm`: sugerida, no se aplica sola),
+`hero` (el objeto de su miniatura) y `why` (la razón fotográfica, dos
+frases, en la ayuda de su miniatura). Los 16 sets son el estilo `SETS`,
+el primero del catálogo.
+
+- **Aplicar un set** (`studio/setSetup` con su clave) es una sola entrada
+  de deshacer: sus focos (normalizados como los de cualquier montaje; el
+  charco se lleva su `share` del nivel y las luces se reparten el resto),
+  su aspecto (fondo, cúpula, exposición del tipo más el desvío; suelo y
+  sombra encendidos) y su **decoración**: primero el barrido (si el fondo
+  es `SWEEP`, o si es `FLAT` o `GRADIENT` con charco, que necesita una
+  pared donde caer), ajustado a la cámara activa como el de U9; luego el
+  suelo; luego las tarjetas; luego el charco.
+- **El suelo.** Mate sobre un barrido es el propio barrido. Brillante o
+  espejo sobre un barrido es la cara *suelo* del barrido en ese material
+  (sin costura); si además hay charco, una lámina sobre el barrido que se
+  para antes de donde cae el charco (el charco cae en papel y la lámina
+  lo refleja). Sin barrido, un plano del tamaño del suelo que vería el
+  barrido de esa cámara, con el fondo (color o degradado) detrás de su
+  borde, a través del atrapasombras.
+- **El charco** cae donde la cámara ve el fondo justo detrás del producto
+  (su rayo por el pivote, sobre el barrido), así que es un halo detrás
+  del producto a cualquier altura de cámara. El foco se pone detrás del
+  producto en el `az` y `el` del set, a 0,75 tamaños de pieza del pivote,
+  y apunta ahí; su cono se abre para que el charco mida lo que su cono
+  daría a 2,5 tamaños de pieza (`POOL_THROW`) y su potencia hace que donde
+  cae llegue su `share` del nivel medido a esa distancia. No se ve a
+  cámara ni en reflejos.
+- **Las tarjetas** miran al pivote, con el ancho paralelo al suelo; una
+  que atravesaría el suelo se sube sin girarla hasta apoyarse en él. Por
+  construcción quedan **fuera del encuadre**: un test lo comprueba para
+  cada tarjeta con la focal de los 16 tipos de producto, tres formas de
+  producto, tres proporciones de salida y la cámara del set.
+- **Decoración del set.** Cada pieza lleva `setPiece` (`CARD`, `BACKDROP`,
+  `FLOOR`; el charco, en su foco) y es decoración: no cuenta para el
+  tamaño de pieza, el pivote del rig ni *Encuadrar* sin selección, y el
+  Doctor no la mira. Aplicar otro montaje la sustituye (las piezas del
+  usuario, primitivas incluidas, no se tocan); un montaje que no es un set
+  la quita y devuelve el fondo, la cúpula y la exposición del tipo de
+  producto; **Restablecer montaje** la quita y devuelve los focos del set
+  como eran; *Crear estudio* con un set en vigor lo vuelve a poner,
+  ajustado al nuevo encuadre. Elegir el set otra vez la devuelve.
+- **Usar la cámara del set** (`studio/useSetCamera`): la elevación y la
+  focal que sugiere, el producto encuadrado de nuevo y el barrido, el
+  suelo y el charco ajustados a la nueva vista (las tarjetas no se
+  mueven); una entrada de deshacer; no hace nada con la cámara bloqueada.
+- **Rigs de tipo de producto.** Los 15 tipos de estudio toman los focos de
+  un set (`PRESET_SETS`), al nivel de irradiancia que tenían (su
+  exposición no cambia); *Mobiliario exterior* conserva su sol. Solo los
+  focos: el fondo, el suelo y la cúpula del tipo siguen siendo los suyos.
+
 **Luces propias, al estilo KeyShot** (fase L4). Además de los montajes, se
 pueden **añadir focos** desde la pestaña *Luces* (*+ Añadir luz ▸*), desde
 *Añadir ▸* del menú de la cabecera, desde el clic derecho del visor en vacío y
@@ -464,8 +529,8 @@ el horizonte, 0.85 en el cenit; ilumina y se refleja, no necesita ningún
 archivo), `SKY` (sol y cielo procedurales a partir del foco de tipo sol),
 `FLAT` (color liso), `HDRI` (archivo del usuario, con rotación e
 intensidad). Lo que ilumina y lo que ve la cámara se separan: el fondo
-puede ser el entorno, un color, transparente o una imagen, sin cambiar la
-luz.
+puede ser el entorno, un color, un degradado de dos colores (L6),
+transparente o una imagen, sin cambiar la luz.
 
 `EnvironmentState` (E5) guarda además `hdri` y `backplate` (`ImageRef`:
 id, nombre, ancho y alto; los bytes viven en el registro de imágenes,
@@ -631,7 +696,11 @@ compararlas con un divisor deslizable.
 
 Un **estudio** guarda una cámara, un montaje de luz y entorno, un set de
 materiales por pieza y la visibilidad de piezas; restaurarlo es una sola
-acción deshacible. El **proyecto** es el estado completo en un archivo
+acción deshacible. Con un set de L6 (§3.4) en vigor, el estudio guarda sus
+focos (el charco incluido) y su fondo; sus tarjetas, barrido y suelo son
+piezas de la escena y se quedan en ella. Fondo `GRADIENT` (L6): el entorno
+guarda sus dos colores (`gradient`), en el proyecto y en los estudios de la
+biblioteca. El **proyecto** es el estado completo en un archivo
 `.repack.json`, con las mallas dentro.
 
 La **biblioteca propia** guarda lo que el usuario crea y quiere reutilizar

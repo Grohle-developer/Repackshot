@@ -10,6 +10,7 @@ import { kelvinToRgb, polar, specIrradiance, toWorldAzimuth } from './light-math
 import { areaLightFlux, luminance, LUMENS_PER_WATT, pointLightFlux, spotFraction } from './photometry';
 import { activeRig, presetIrradiance, resolvePreset, type PresetRef, type SetupRef } from './rig';
 import type { ActionBase, EnvironmentState, ImageState, ProjectState } from './store';
+import type { SetPieceNames } from './sets';
 import { activeCamera, cameraPosition, frameBox, outputAspect, type CameraState } from './camera';
 import { nextId } from './ids';
 import { add, boxCenter, cross, dot, isEmptyBox, length, normalize, rotateAbout, scale, sub, type Vec3 } from './math';
@@ -60,6 +61,8 @@ export interface LightInstance {
   aim?: Vec3;
   /** L4: turned about its own axis, degrees; absent or 0, a panel's sides are level with the floor. */
   roll?: number;
+  /** L6: the pool of light of a set (a spot aimed at its backdrop): set decoration, like its cards (core/sets.ts). */
+  setPiece?: 'POOL';
 }
 
 /** What Add light ▸ adds (UI.md §2.2): three area shapes, a point, a spot and a sun. Stable keys. */
@@ -492,7 +495,7 @@ function restoreStudio(state: ProjectState, saved: SavedStudio): ProjectState {
 }
 
 /** Environment kind a setup asks for, unless the user loaded an HDRI (which wins). */
-function worldFor(state: ProjectState, setup: SetupRef): EnvironmentState['kind'] {
+export function worldFor(state: ProjectState, setup: SetupRef): EnvironmentState['kind'] {
   if (state.environment.kind === 'HDRI') return 'HDRI';
   return typeof setup === 'string' ? (lightSetup(setup)?.world ?? 'STUDIO') : setup.world;
 }
@@ -545,8 +548,11 @@ export function buildStudio(state: ProjectState): ProjectState {
 export type StudioAction =
   /** A catalogue product type by `key`, or an own one (`custom`, whose key is `libraryKey(id)`). */
   | ({ type: 'studio/setPreset'; key: string; custom?: StudioPreset } & ActionBase)
-  | ({ type: 'studio/build' } & ActionBase)
-  | ({ type: 'studio/setSetup'; key: string } & ActionBase)
+  /** `names`: what the pieces of a set (L6) are called, in the interface's language (core/sets.ts). */
+  | ({ type: 'studio/build'; names?: SetPieceNames } & ActionBase)
+  | ({ type: 'studio/setSetup'; key: string; names?: SetPieceNames } & ActionBase)
+  /** L6: Use the set's camera — the elevation and focal length the set in force suggests, the product framed again. */
+  | ({ type: 'studio/useSetCamera' } & ActionBase)
   /** An own light setup (library): normalised to the product type in force, like a catalogue one. */
   | ({ type: 'studio/applySetup'; setup: CustomSetup } & ActionBase)
   | ({ type: 'studio/setLight'; id: string; patch: Partial<Omit<LightInstance, 'id'>> } & ActionBase)

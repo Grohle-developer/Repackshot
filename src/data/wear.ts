@@ -220,6 +220,12 @@ export const WEAR_PRESET_OVERRIDES: Readonly<Record<string, WearPatch>> = {
   PAINT_MET: { edges: 0.15, scratches: 0.15, smudges: 0.25, patina: 0 },
   WHITE_STUDIO: { amount: 0.1, edges: 0, scratches: 0, smudges: 0, dirt: 0, patina: 0, roughVar: 0.1 },
   CARBON: { smudges: 0.2, roughVar: 0.15, dirt: 0.05 },
+  // L6: the set pieces are new card and clean acrylic: no wear unless asked for.
+  CARD_WHITE: { amount: 0 },
+  CARD_BLACK: { amount: 0 },
+  ACRYLIC_BLACK: { amount: 0 },
+  ACRYLIC_WHITE: { amount: 0 },
+  MIRROR_BLACK: { amount: 0 },
 };
 
 // Painted presets: on the edge the paint chips off and bare metal shows.

@@ -26,7 +26,7 @@ export function resolvePreset(ref: PresetRef): StudioPreset | undefined {
   return typeof ref === 'string' ? studioPreset(ref) : ref;
 }
 
-function resolveSetup(ref: SetupRef): { lights: readonly LightSpec[] | null } | undefined {
+function resolveSetup(ref: SetupRef): { lights: readonly LightSpec[] | null; pool?: { share: number } } | undefined {
   return typeof ref === 'string' ? lightSetup(ref) : ref;
 }
 
@@ -76,16 +76,36 @@ export function studioRig(preset: PresetRef): ResolvedLight[] {
 }
 
 /**
+ * The factor that turns a recipe's shares into energies: the product type's level over the recipe's own irradiance
+ * (plus `extra`, the irradiance a set's pool takes, `poolWeight`).
+ */
+export function recipeScale(preset: PresetRef, recipe: readonly LightSpec[], extra = 0): number {
+  const target = presetIrradiance(preset);
+  let sum = extra;
+  for (const spec of recipe) sum += specIrradiance(spec);
+  return sum > 1e-9 ? target / sum : 1;
+}
+
+/**
+ * The distance (part sizes) at which a set's pool (L6) is measured: its share counts in the normalisation as a
+ * light that far away, and the spot is given the power that makes it land on the backdrop as bright as that, however
+ * far the backdrop turns out to be (core/sets.ts).
+ */
+export const POOL_THROW = 2.5;
+
+/** The irradiance a set's pool takes in the normalisation of its lights (0 without a pool). */
+export function poolWeight(pool: { share: number } | undefined): number {
+  return pool ? specIrradiance({ share: pool.share, dist: POOL_THROW }) : 0;
+}
+
+/**
  * Resolves a recipe against a product preset: energy is `share` scaled so the
  * total irradiance of the recipe equals the preset's. A recipe light marked
  * `colorFromPreset` takes the colour of the FIRST light of the preset's rig
  * (the same light upstream inherits from, which is the key in most presets).
  */
-export function rigFromRecipe(preset: PresetRef, recipe: readonly LightSpec[]): ResolvedLight[] {
-  const target = presetIrradiance(preset);
-  let sum = 0;
-  for (const spec of recipe) sum += specIrradiance(spec);
-  const k = sum > 1e-9 ? target / sum : 1;
+export function rigFromRecipe(preset: PresetRef, recipe: readonly LightSpec[], extra = 0): ResolvedLight[] {
+  const k = recipeScale(preset, recipe, extra);
 
   const base = studioRig(preset);
   const inherited: RGB = base.length > 0 ? base[0].color : [1, 1, 1];
@@ -104,7 +124,8 @@ export function setupRig(preset: PresetRef, setupRef: SetupRef): ResolvedLight[]
   if (setupRef === 'PRESET' || setup === undefined || !setup.lights || setup.lights.length === 0) {
     return studioRig(preset);
   }
-  return rigFromRecipe(preset, setup.lights);
+  // A set's pool (L6) takes its share of the level: the lights share the rest.
+  return rigFromRecipe(preset, setup.lights, poolWeight(setup.pool));
 }
 
 /** Total irradiance of a resolved rig, in the same unit as presetIrradiance. */
