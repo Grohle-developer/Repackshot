@@ -40,6 +40,8 @@ export function doctorSentence(r: DoctorResult, state: ProjectState): string {
       return t('doctor.lights', { count: Number(d.count) });
     case 'aspect':
       return t('doctor.aspect', { count: Number(d.count), camera: cameraName(state, state.camera.cameras[String(d.camera)]), aspect: String(d.aspect), output: String(d.output) });
+    case 'physics':
+      return t('doctor.physics', { count: Number(d.count), name: String(d.name) });
     default:
       return '';
   }

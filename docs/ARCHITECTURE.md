@@ -107,6 +107,7 @@ src/
     motion-hint.ts          lo que el visor dibuja de la animación elegida (N6): su objetivo y su pista
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
+    physics.ts              físicas (S2): la sección Físicas de un nodo, qué se simula (`physicsSpec`), las poses del simulador de vuelta a los nodos, la pista del clip PHYSICS y su ancla, las acciones `physics/*` (§5.6)
     images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5), y de las texturas (M2a)
     textures.ts             texturas de imagen y etiquetas de un material (M2a): ranuras, mapeado, etiquetas, sus acciones `texture/*`, y la matemática de las proyecciones y de las etiquetas que siguen el shader y el motor
     texture-images.ts       las imágenes de textura en el registro: id por contenido, límites (M2a)
@@ -129,7 +130,7 @@ src/
     sets.ts                 los sets (L6): aplicar, sustituir y quitar su decoración (tarjetas, barrido, suelo, charco), su aspecto, Usar la cámara del set
     wear.ts                 valores por defecto del desgaste            (portado)
     version.ts
-  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9)
+  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9); physics.ts: densidades por familia de material y valores por defecto de las físicas (S2)
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
@@ -141,6 +142,8 @@ src/
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
     pass-planes.ts          los pases exactos del motor en la página (X2): junta los de rt.wasm por baldosa y lee el RPP1 del lanzador
+    physics-worker.ts       el worker del simulador (S2): su rt.wasm, una simulación a la vez, al ritmo del reloj y con acuse de recibo (§5.6)
+    physics.ts  phys-wasm.ts  el cliente de ese worker (`PhysicsClient`) y la envoltura tipada de las exportaciones `phys_*` (`PhysWorld`)
   ai/                       POST-PROCESADO IA OPCIONAL (X3). Depende de core (y data), nunca al revés; la guarda NO es TypeScript: es rt-post
     post-wasm.ts            envoltura tipada de public/engine/post.wasm (plan, condicionamiento, aceptar) y el conductor runGuarded; worker y Node
     prompt.ts               el prompt de la escena (materiales, luces, estilo) y el negativo fijo; la tabla de materiales de la guarda
@@ -156,6 +159,7 @@ src/
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
     project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c)
+    phys.ts                 escritor de PHY1, la escena del simulador (S2, §5.6)
     ai-runtime.ts           el motor de ejecución de la IA del lanzador (X3b); ai-post.ts, la tubería de escritorio (`DesktopAiService`, X3c)
     hdri.ts                 lectores propios de RGBE y OpenEXR, imagen de fondo, copia para la vista previa (E5)
     gltf-materials.ts       los materiales y las imágenes de un glTF leídos de su JSON (M2a)
@@ -180,6 +184,8 @@ src/
       viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
       animation.ts          el cajón de animación (N6): transporte y las tres zonas; anim-tree.ts (qué se anima), anim-timeline.ts (regla, barras, imán, pista de cámara), anim-props.ts (propiedades, asistente, presets)
     texture-commands.ts     lo que hacen las ranuras y las etiquetas del inspector (M2a)
+    physics.ts              la simulación en marcha (S2): Dejar caer, Iniciar, Pausar, Parar, Reiniciar, los clips que crecen
+    panels/physics.ts  panels/insp-physics.ts  la barra de físicas (cajón de la barra inferior) y la sección Físicas del inspector (S2)
     anim-commands.ts        lo que hace la línea de tiempo (N6): selección de animaciones en paso con la escena y el visor, Animar…, duplicar, borrar, invertir, partir, fijar en el despiece, transporte y teclas
     graph-commands.ts       lo que hacen el editor de material y el inspector con un grafo: abrir, Simple ↔ Nodos, ejemplos, ediciones (M3a)
 public/
@@ -210,6 +216,7 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
   crates/rt-post/           la guarda del post-procesado IA y todo su trabajo con píxeles (AI-POST.md §7.2); rt-core no la conoce
   crates/rt-post-wasm/      exportaciones extern "C" de rt-post → public/engine/post.wasm
+  crates/rt-phys/           el simulador de cuerpos rígidos (S2): XPBD, envolventes convexas, contactos, dormir; PHY1 (§5.6)
   crates/rt-sky/            herramienta fuera de línea `rt-sky` (E5c): simulador espectral de la atmósfera, ajuste
                             Levenberg–Marquardt del cielo físico y su tabla; escribe rt-core/src/sky_table.rs,
                             src/core/sky-table.ts y tests/fixtures/sky-physical.json
@@ -243,8 +250,8 @@ materiales las que no. La vista previa decodifica cada imagen una vez
 *store* expone lo que el visor necesita y el visor se suscribe). Un test
 de la suite (`tests/boundaries.test.ts`, U2) recorre los `import` y
 falla si se viola; hoy no hay ninguna infracción. El motor (`engine/`) no conoce nada de `src/`: su
-única interfaz con el resto es el formato RSB (§5.2) y las exportaciones
-de `rt-wasm` (§5.3). La excepción es de herramienta, no del motor: `rt-sky`
+única interfaz con el resto es el formato RSB (§5.2), el PHY1 del
+simulador (§5.6) y las exportaciones de `rt-wasm` (§5.3). La excepción es de herramienta, no del motor: `rt-sky`
 (fuera de línea) escribe la copia TypeScript de la tabla del cielo y un
 test suyo comprueba que coincide con la de `rt-core`.
 
@@ -439,21 +446,22 @@ export interface RenderEngine {
 
 ### 5.1 · El motor: Rust, desde cero, sin dependencias
 
-Vive en `engine/`, un workspace de Cargo con siete *crates*:
+Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_version`…). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_version`…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1) y `rt-phys` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
+| `rt-phys` | **El simulador de cuerpos rígidos** (S2, §5.6): dinámica por posiciones extendida (XPBD), envolventes convexas propias, contactos por ejes separadores, rozamiento de Coulomb, restitución, dormir; el formato PHY1 | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`, `f32` y `rt_core::fmath`, determinista con cualquier número de hilos (`std::thread::scope` solo en nativo; en wasm, uno). Depende de `rt-core`; `rt-core` no la conoce |
 | `rt-post-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`post_open`, `post_tile_input`, `post_tile_control`, `post_set_output`, `post_accept`, `post_result`…) → `public/engine/post.wasm`, un módulo aparte para que `rt.wasm` no crezca | Su `unsafe` vive solo en `src/ffi.rs`, comentado bloque a bloque; todo cruza como bytes *little-endian*, sin exigir alineación |
 
 **Sin dependencias externas** quiere decir exactamente eso: ningún
 *crate* de crates.io en ningún *crate* del workspace. `Cargo.lock` solo
-lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post`, `rt-post-wasm` y `rt-sky`,
+lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post`, `rt-post-wasm`, `rt-sky` y `rt-phys`,
 y CI falla si aparece un `source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
 baja discrepancia, zlib/PNG, lectores HDR, hilos) se escribe aquí.
 Fórmulas y tablas de la literatura pública (PCG, Sobol con números de
@@ -1651,6 +1659,85 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    directo del escritorio que se borró). La interfaz (`ui/updates.ts`) pregunta, pide, sigue el
    estado cada 400 ms y cierra la ventana; contrato completo en `engine/crates/rt-app/README.md`.
 
+### 5.6 · Físicas: `rt-phys`, PHY1 y su *worker* (S2)
+
+**El simulador** (`engine/crates/rt-phys`, solo `std` y `rt-core`) es
+dinámica por posiciones extendida (XPBD) para cuerpos rígidos, como en
+Müller, Macklin, Chentanez, Jeschke y Kim, «Detailed Rigid Body Simulation
+with Extended Position Based Dynamics» (SCA 2020): paso fijo de 1/240 s con
+4 subpasos y una iteración de posición por subpaso, masas inversas
+generalizadas, el cuaternión que avanza con `q += ½ [ω, 0] q` y el término
+giroscópico, velocidades derivadas de las posiciones y restitución con el
+umbral 2 |g| h. Gravedad −Z, 9 810 mm/s². La API es `World`: `add_floor`,
+`add_static_mesh`, `add_dynamic` (de puntos, una esfera o una caja, con
+densidad, rozamiento y restitución), `step(n)`, `poses()` (por cuerpo
+dinámico, el centro de masas y el cuaternión: 7 `f32`), `awake_count`,
+`settled`, `hash` (FNV-1a de las poses).
+
+- **Formas.** Cada pieza dinámica es su **envolvente convexa** (*quickhull*
+  propio, Barber, Dobkin y Huhdanpaa 1996, con las caras coplanarias
+  fundidas), de 128 vértices como mucho; si no sale, su caja orientada por
+  componentes principales. Una nube de ≥ 26 puntos a la misma distancia
+  del centro (0,2 %) es una **esfera** exacta. Un cuerpo de varias piezas
+  (un grupo que cae como uno) es la envolvente de todas. Lo estático son
+  triángulos en una BVH propia (mediana, hojas de 4), y el suelo un único
+  triángulo enorme (±10⁵ mm) a su altura.
+- **Contactos.** Ejes separadores con la poda por arcos del mapa de Gauss
+  (Gregorius, GDC 2013; un triángulo es una envolvente de dos caras), recorte
+  de Sutherland–Hodgman y como mucho 4 puntos por par, los ejes de cara
+  antes que los de arista, márgenes especulativos; los parches coplanarios
+  de un cuerpo contra lo estático se funden en uno. Entre dos superficies,
+  la media geométrica de los rozamientos y el mayor de los rebotes.
+- **Rozamiento**: de Coulomb, por parche (en su centroide) con torsión
+  por el radio del parche; el estático se sostiene contra un **ancla**
+  que se guarda de paso a paso mientras el parche no se mueve, el dinámico
+  es un impulso de como mucho μλ/h; resistencia a la rodadura de 0,02 veces
+  el radio. Son las desviaciones del artículo que hicieron falta para que
+  una caja quieta no derive ni gire y una pila no se caiga (ROADMAP, S2).
+- **Dormir**: un cuerpo cuyo recorrido en 0,5 s no pasa de lo que haría a la
+  velocidad de reposo (3 mm/s o el 5 % del radio por segundo) se duerme;
+  se despierta cuando algo se le acerca deprisa. Con todos dormidos,
+  `settled`.
+- **Determinismo**: `f32` y `rt_core::fmath`; la fase estrecha se reparte en
+  trozos (hilos con `std::thread::scope` en nativo, uno en wasm) y los
+  contactos se ordenan por (cuerpo, cuerpo, triángulo, rasgo) antes de
+  resolver, así que el *hash* no depende del número de hilos. Los tests
+  fijan el *hash* de una caída a 60, 90, 120 y 480 pasos y lo comprueban
+  también compilados a `wasm32-wasip1`; `tests/physics-engine.test.ts`
+  repite la escena de `tests/fixtures/phys-drop.json` con el `rt.wasm` real.
+
+**PHY1** (`rt-phys/src/scene.rs`; lo escribe `src/io/phys.ts`): `"PHY1"`,
+versión, las mallas (posiciones y triángulos), los cuerpos (estático o
+dinámico, densidad, rozamiento, restitución y sus piezas: malla y matriz
+objeto → mundo de 3 × 4 por filas) y el suelo; *little-endian*, palabras de
+4 bytes. La interfaz manda primero los dinámicos, en el orden de
+`physicsSpec`; `phys_ids` dice dónde quedó cada uno entre las poses (o que
+no tiene masa y no se simula).
+
+**En el navegador** (`src/render/physics-worker.ts`, `physics.ts`,
+`phys-wasm.ts`): un *worker* propio con el `rt.wasm` escalar, arrancado la
+primera vez que se simula; sin `rt.wasm`, la simulación dice que necesita
+el motor. Una simulación a la vez; avanza en rebanadas de como mucho 24
+pasos, al ritmo del reloj como mucho, guarda las poses en cada fotograma de
+los fps del proyecto (el paso `round(k · 240 / fps)`) y las manda en
+cuanto las tiene; la página acusa recibo de cada envío y el *worker* no va
+más de 1/8 s por delante de lo recibido (en una página cargada la
+simulación va más despacio, no acaba sin que se vea). Pausar, reanudar y
+parar entran entre rebanadas. Del lado de la interfaz, `ui/physics.ts`
+convierte cada fotograma en la muestra local de cada nodo
+(`moverSample`: Δ = T(p) R(q) T(−c₀) sobre su matriz de antes, en los ejes
+de su padre) y hace crecer los clips `PHYSICS` con `TrackWriter`, que
+codifica en base64 solo lo nuevo; el cabezal los sigue, así que el visor
+enseña la caída por la animación (`evaluate`, `SPEC.md` §3.7) sin tocar los nodos
+hasta confirmar. Mientras corre, el visor se queda en *Rápido*.
+
+**Por el *store***: `physics/set` (la sección *Físicas*), y una
+simulación son `physics/begin` (los clips, y los papeles que da *Dejar
+caer*), `physics/grow` (las pistas) y `physics/commit` (las poses finales y
+el ancla de los clips), todas con el mismo gesto: una entrada de deshacer.
+`physics/reset` es otra. `AppServices.physics` (`PhysicsPort`, §6.1) es lo
+único que la interfaz sabe del simulador.
+
 ## 6 · Interfaz (`src/ui/`)
 
 - Componentes = funciones `(store, props) => HTMLElement` que se
@@ -1731,6 +1818,13 @@ de material pide las esferas de sus nodos; sin él no las dibuja). Es lo
 - **Estado y miniaturas**: `status`, `onFrame`, `materialThumbnail`,
   `thumbnailsPending`; **ajustes**: `setNavigation`, `setDisplay`.
 
+El simulador (S2) es otro puerto, `AppServices.physics` (`PhysicsPort`):
+`run(spec, { fps, maxSeconds }, onUpdate)` devuelve una simulación
+(`started`, `done`, `pause`, `resume`, `stop`); `main.ts` lo construye con
+`writePhysicsScene` (`io/phys.ts`) y `PhysicsClient` (`render/physics.ts`).
+Sin él (`null`), la barra de físicas dice que hace falta el motor. Los
+tests usan un doble que contesta como el *worker*.
+
 Los tres métodos nuevos de U7 y M1 (`projection`, `visibleTriangles`,
 `setHoverFaces`) son, en `main.ts`, una línea cada uno hacia la vista
 previa. Un doble de pruebas del visor basta para probar la selección por
@@ -1753,6 +1847,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
+| Físicas (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | Una esfera descansa a `r ± 0,1` mm, una pila de tres cajas aguanta 5 s, una caja inclinada cae plana, un cubo resbala de una esfera, una rampa sostiene a μ 0,6 y deja resbalar a 0,1, mil esferas se asientan (< 20 s en *release*), dormir para la simulación, *hash* fijado igual con 1 y N hilos y en wasm; qué se simula, las poses de vuelta a los nodos, una simulación es una entrada de deshacer, *Reiniciar* otra, *Pausar* congela lo que se ve, el clip se guarda, se abre y se reproduce; tres primitivas que caen en el navegador |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |
 | Motor (fases E·) | `engine/crates/*/tests` y `cargo test` | Escenas analíticas (furnace test, factor de forma de un panel, espejo contra la cúpula) con tolerancias numéricas; determinismo (hash igual con 1 y N hilos); paridad wasm/nativo; SIMD contra escalar; cross-compilación a ARM64 y RISC-V; `clippy -D warnings`; `Cargo.lock` sin fuentes externas |
 | Hoja de contactos | `tools/contact-sheet.mjs` + `rt` | 16 estudios × montajes elegidos renderizados en CI con el binario nativo, con media, quemados y tapados por imagen; se adjunta al PR |
@@ -1820,6 +1915,20 @@ desplazamiento pasan al mapeado, la escala a la repetición. El esquema
 sigue en 2; una versión anterior abre un proyecto con texturas sin verlas.
 Las mallas guardan su segundo juego de UV como `TEXCOORD_1` del GLB, solo
 cuando lo tienen (una malla sin él escribe los bytes de siempre).
+
+**Físicas** (S2). Un nodo puede llevar su sección *Físicas* en el campo
+opcional `physics` (`{ "role": "DYNAMIC", "density": 2500, "friction":
+0.4, "bounciness": 0.1, "asParts": true }`, cada clave opcional) y la
+animación clips `PHYSICS` con su pista (`track`: `{ "fps", "frames",
+"data" }`, `data` los 7 `f32` por fotograma en base64 *little endian*) y su
+ancla (`anchor`: `{ "position", "rotation" }`). Todo es JSON del estado; no
+hay bloque nuevo. Al abrir, la sección se queda con lo que esta versión
+conoce (un papel desconocido o un número fuera de rango se quita), un clip
+`PHYSICS` cuya pista no se decodifica se quita, y un ancla dañada también
+(el clip reproduce entonces sus fotogramas tal cual). Un proyecto de antes
+de S2 abre igual (`tests/fixtures/project-v2.json`). El esquema sigue en 2.
+Al abrir, el Doctor se vuelve a pasar sobre el estado leído (también en
+`migrateProject`), no solo en `loadProject`.
 
 **Grafos de material** (M3a). Un material en modo *Nodos* lleva `graph`
 (`{ "version": 1, "nodes": [...], "links": [...] }`, §5.2 quater); uno en

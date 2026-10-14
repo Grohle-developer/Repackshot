@@ -11,7 +11,7 @@ const status = (s: ProjectState, key: string) => runDoctor(s).find((r) => r.key 
 const fix = (s: ProjectState, key: string) => apply(s, { type: 'doctor/fix', key: key as never });
 
 describe('doctor', () => {
-  it('runs the checks in catalogue order; engine checks are unavailable', () => {
+  it('runs the checks in catalogue order (the fourteen, then U13 aspect and S2 physics); engine checks are unavailable', () => {
     const r = runDoctor(exampleState());
     expect(r.map((x) => x.key)).toEqual(DOCTOR_CHECKS.map((c) => c.key));
     for (const x of r) expect(x.status).toBe(SCENE_CHECKS.has(x.key) ? 'OK' : 'UNAVAILABLE');

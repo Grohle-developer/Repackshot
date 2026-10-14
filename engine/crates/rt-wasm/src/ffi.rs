@@ -359,3 +359,121 @@ pub unsafe extern "C" fn rt_denoise_with(
 pub extern "C" fn rt_denoise_halo(preset: u32) -> u32 {
     crate::denoise_preset(preset).map_or(0, |p| p.halo())
 }
+
+// --- The rigid body simulator (S2) --------------------------------------------------------------
+
+/// Builds a physics world from `len` bytes of a `PHY1` scene at `ptr` (rt-phys `scene` module) and
+/// returns its handle, or 0 on error (then see [`rt_scene_error_len`]). The bytes are copied.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn phys_new(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() {
+        crate::set_error("phys_new: null pointer");
+        return 0;
+    }
+    // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
+    // this call.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    crate::phys::new(bytes)
+}
+
+/// Forgets a physics world. Returns 0, or 1 for a bad handle.
+#[no_mangle]
+pub extern "C" fn phys_free(handle: u32) -> u32 {
+    if crate::phys::free(handle) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Simulates `n` fixed steps of 1/240 s (at most a minute per call). Returns 0, or 1 for a bad
+/// handle.
+#[no_mangle]
+pub extern "C" fn phys_step(handle: u32, n: u32) -> u32 {
+    if crate::phys::step(handle, n) {
+        STATUS_OK
+    } else {
+        crate::STATUS_BAD_HANDLE
+    }
+}
+
+/// Number of dynamic bodies (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn phys_bodies(handle: u32) -> u32 {
+    crate::phys::bodies(handle).unwrap_or(0)
+}
+
+/// Writes, for each dynamic body of the scene in order, its index among the poses (`u32::MAX`
+/// when it had no mass and stayed static) to `out` (one little-endian `u32` each). Returns 0, 1
+/// for a bad handle, 3 for a null `out`.
+///
+/// # Safety
+///
+/// `out` must be null or point to 4 writable bytes per dynamic body of the scene.
+#[no_mangle]
+pub unsafe extern "C" fn phys_ids(handle: u32, out: *mut u8) -> u32 {
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let Some(ids) = crate::phys::ids(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    let bytes: Vec<u8> = ids.iter().flat_map(|v| v.to_le_bytes()).collect();
+    // SAFETY: the caller promises 4 writable bytes per dynamic body, which is `bytes.len()`;
+    // byte-wise copy needs no alignment and `bytes` is a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    STATUS_OK
+}
+
+/// Writes the pose of every body to `out`: 7 little-endian `f32` each (translation x, y, z, then
+/// the rotation quaternion x, y, z, w). Returns 0, 1 for a bad handle, 3 for a null `out`.
+///
+/// # Safety
+///
+/// `out` must be null or point to `phys_bodies(handle) * 28` writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn phys_poses(handle: u32, out: *mut u8) -> u32 {
+    if out.is_null() {
+        return STATUS_NULL_POINTER;
+    }
+    let Some(poses) = crate::phys::poses(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    let bytes: Vec<u8> = poses.iter().flat_map(|v| v.to_le_bytes()).collect();
+    // SAFETY: the caller promises 28 writable bytes per body, which is `bytes.len()`; byte-wise
+    // copy needs no alignment and `bytes` is a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    STATUS_OK
+}
+
+/// Bodies awake (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn phys_awake(handle: u32) -> u32 {
+    crate::phys::awake(handle).unwrap_or(0)
+}
+
+/// 1 when every body sleeps (the simulation stops by itself), 0 when not, 2 for a bad handle.
+#[no_mangle]
+pub extern "C" fn phys_settled(handle: u32) -> u32 {
+    match crate::phys::settled(handle) {
+        Some(true) => 1,
+        Some(false) => 0,
+        None => 2,
+    }
+}
+
+/// Steps simulated so far (0 for a bad handle): the simulated time is this over 240.
+#[no_mangle]
+pub extern "C" fn phys_steps(handle: u32) -> u32 {
+    crate::phys::steps(handle).unwrap_or(0)
+}
+
+/// FNV-1a of the poses (rt-phys `World::hash`), for the parity check (0 for a bad handle).
+#[no_mangle]
+pub extern "C" fn phys_hash(handle: u32) -> u32 {
+    crate::phys::hash(handle).unwrap_or(0)
+}

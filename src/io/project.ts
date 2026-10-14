@@ -52,6 +52,12 @@
 // version does not know (a newer file) leaves its part without geometry, reported like any missing mesh. The
 // schema stays at 2.
 //
+// Physics (S2): a node may carry its Physics section (`physics`: role, density, friction, bounciness, as parts) and the
+// animation may hold PHYSICS clips with a recorded track (`track`: fps, frames and the local poses as base64 f32,
+// core/physics.ts) and the node's position and rotation it is relative to (`anchor`), all plain JSON in the state. A
+// file from before S2 has neither and opens as it always did; on open the section keeps only what this version
+// knows, a clip whose track does not decode is left out and so is a damaged anchor. The schema stays at 2.
+//
 // Opening is all or nothing: the text is read and checked (envelope, schema, state, meshes) before the registry
 // or the store are touched, so a damaged file leaves the open project as it was.
 
@@ -74,6 +80,7 @@ import { mapGraphImages, normalizeGraph } from '../core/material-graph';
 import type { MaterialInstance } from '../core/materials';
 import { withCameraAspects } from '../core/camera';
 import { migrateRender, syncOutputSize } from '../core/render';
+import { isAnchor, isTrack, type PhysicsProps } from '../core/physics';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
@@ -286,6 +293,22 @@ function checkState(raw: RawState): ProjectState {
       if (!Array.isArray(n.faceMaterials)) throw damaged(`${at}.faceMaterials is not a list`);
       for (const f of n.faceMaterials) if (!isObject(f) || !Number.isInteger(f.start) || !Number.isInteger(f.count) || !isObject(s.materials[f.material])) throw damaged(`${at}.faceMaterials is damaged`);
     }
+    if (n.physics !== undefined) {
+      // The Physics section (S2): what this version knows of it, the rest dropped (a role of a later version, a
+      // value out of range), never a reason not to open the file.
+      const ph = n.physics as unknown;
+      if (!isObject(ph)) throw damaged(`${at}.physics is damaged`);
+      const fixed: SceneNode = { ...(emptied[id] ?? n) };
+      const props: PhysicsProps = {};
+      if (ph.role === 'STATIC' || ph.role === 'DYNAMIC') props.role = ph.role;
+      if (typeof ph.density === 'number' && Number.isFinite(ph.density) && ph.density > 0) props.density = ph.density;
+      if (typeof ph.friction === 'number' && Number.isFinite(ph.friction) && ph.friction >= 0) props.friction = ph.friction;
+      if (typeof ph.bounciness === 'number' && Number.isFinite(ph.bounciness) && ph.bounciness >= 0 && ph.bounciness <= 1) props.bounciness = ph.bounciness;
+      if (typeof ph.asParts === 'boolean') props.asParts = ph.asParts;
+      if (Object.keys(props).length > 0) fixed.physics = props;
+      else delete fixed.physics;
+      emptied[id] = fixed;
+    }
     if (n.primitive !== undefined) {
       // A primitive (U9): its shape and measures. A shape this version does not know is dropped (the part has no
       // geometry then, reported as missing); the measures are normalised like the inspector's.
@@ -348,6 +371,14 @@ function checkState(raw: RawState): ProjectState {
   if (!isObject(env.skySun) || !Number.isFinite(env.skySun.az) || !Number.isFinite(env.skySun.el)) throw damaged('environment.skySun is damaged');
   // E5c: a project saved before the physical sky has no skyModel and opens with the default (filled in above).
   if (env.skyModel !== 'PHYSICAL' && env.skyModel !== 'CLASSIC') throw damaged('environment.skyModel is damaged');
+  // S2: a recorded simulation (a PHYSICS clip) whose track does not decode is left out, not the project.
+  if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && c.move === 'PHYSICS' && !isTrack(c.track))) {
+    s.animation = { ...s.animation, clips: s.animation.clips.filter((c) => !(isObject(c) && c.move === 'PHYSICS' && !isTrack(c.track))) };
+  }
+  // A damaged anchor is left out: the clip then plays its frames as they are.
+  if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && 'anchor' in c && !isAnchor(c.anchor))) {
+    s.animation = { ...s.animation, clips: s.animation.clips.map((c) => (isObject(c) && 'anchor' in c && !isAnchor(c.anchor) ? (({ anchor: _a, ...rest }) => rest)(c) : c)) as typeof s.animation.clips };
+  }
   return s;
 }
 

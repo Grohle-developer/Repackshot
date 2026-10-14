@@ -29,6 +29,7 @@ import type { InstallerPort, UpdateOutcome } from '../core/updates';
 import type { InstallOutcome, PluginImageRequest, PluginPresets, PluginRunRequest, PluginRunResult, PluginsSnapshot, ThumbsOutcome } from '../core/plugins';
 import type { PluginRegistryEntry } from '../data/plugins';
 import type { PerfResult, Tool } from './ui-state';
+import type { PhysicsRunHandle, PhysicsRunOptions, PhysicsSpec, PhysicsUpdate } from '../core/physics';
 
 export interface PickResult {
   node: NodeId;
@@ -513,6 +514,18 @@ export interface ImagesPort {
 }
 
 /**
+ * The rigid body simulator (phase S2): rt-phys in a worker of its own (render/physics.ts), fed the PHY1 scene of a
+ * spec (io/phys.ts). The interface never sees the engine: only the spec, the frames and what the simulator measured.
+ */
+export interface PhysicsPort {
+  /**
+   * Starts a simulation (a new one replaces the one in progress). `started` rejects with `NO_ENGINE` when rt.wasm
+   * is not there (npm run engine:build), or with the engine's message when the scene does not load.
+   */
+  run(spec: PhysicsSpec, options: PhysicsRunOptions, onUpdate: (u: PhysicsUpdate) => void): PhysicsRunHandle;
+}
+
+/**
  * Plugins (phase P6, src/plugins/): the registry, what is installed and its installs, and runs over a finished result.
  * The interface never sees a plugin's code or its key: it asks, and draws what comes back.
  */
@@ -620,6 +633,8 @@ export interface AppServices {
   images: ImagesPort;
   /** Plugins (P6); absent or null in a build without them (tests). */
   plugins?: PluginsPort | null;
+  /** The rigid body simulator (S2); null or absent where it cannot run (no Web Workers). */
+  physics?: PhysicsPort | null;
   /** The material editor's node previews (M3a); absent or null where no worker runs them (the editor draws no spheres). */
   graphPreview?: GraphPreviewPort | null;
 }

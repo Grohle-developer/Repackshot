@@ -1,10 +1,11 @@
 // The one map of application actions and their shortcuts (ARCHITECTURE §6):
 // it drives the keyboard, the command palette and the tooltips.
 
-import type { SelectionLevel } from '../core/scene';
+import { selectedNodes, type SelectionLevel } from '../core/scene';
 import { PRIMITIVE_KINDS } from '../data/primitives';
 import { NEW_LIGHT_KINDS } from '../core/lighting';
 import * as cmd from './commands';
+import * as phys from './physics';
 import type { ConfirmSpec } from './components/widgets';
 import type { Ctx } from './reactive';
 import { t, type StringKey } from './strings';
@@ -82,6 +83,9 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'rest', label: 'action.rest', run: (ctx) => cmd.restOnFloor(ctx) },
   { id: 'center', label: 'action.center', run: (ctx) => cmd.centerSelection(ctx) },
   { id: 'centerRest', label: 'action.centerRest', run: (ctx) => cmd.centerAndRest(ctx) },
+  // Physics (S2): Drop the selection, and the physics bar.
+  { id: 'drop', label: 'action.drop', run: (ctx) => phys.drop(ctx, selectedNodes(ctx.store.get())) },
+  { id: 'physics', label: 'action.physics', run: (ctx) => ctx.ui.set({ drawer: 'physics' }) },
   { id: 'reset', label: 'action.reset', run: (ctx) => cmd.resetTransform(ctx) },
   { id: 'cameraTarget', label: 'action.cameraTarget', run: (ctx) => cmd.setCameraTarget(ctx) },
   { id: 'patternLinear', label: 'action.patternLinear', run: (ctx) => cmd.createPattern(ctx, 'LINEAR') },
