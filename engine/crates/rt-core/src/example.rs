@@ -521,11 +521,12 @@ pub fn e6_scene() -> Scene {
 }
 
 /// The E6 pattern scene (`render.rs` pins its hash; `rt --write-e6-patterns-example` writes it
-/// for `tools/wasm-parity.mjs`): an oak board (a box with a 1 mm bevel, its pores and rings) and a
-/// walnut sphere on the example's floor, under the example's key light. Instances: 0 floor, 1
-/// board, 2 sphere.
+/// for `tools/wasm-parity.mjs`): an oak board (a box with a 1 mm bevel, its pores, rings and three
+/// knots), a walnut sphere and a denim cushion (a box with a 4 mm bevel, coarse threads of 1.2
+/// mm so that a small image sees them) on the example's floor, under the example's key light.
+/// Instances: 0 floor, 1 board, 2 sphere, 3 cushion.
 pub fn e6_patterns_scene() -> Scene {
-    use crate::pattern::{Pattern, PATTERN_WOOD};
+    use crate::pattern::{Pattern, PATTERN_CLOTH, PATTERN_WOOD};
     let mut scene = e6_scene();
     let meshes = vec![
         floor_quad(0.0, 900.0, 0),
@@ -535,11 +536,17 @@ pub fn e6_patterns_scene() -> Scene {
             &[0, 1, 2, 3, 4, 5],
         ),
         icosphere(Vec3::new(80.0, 20.0, 36.0), 36.0, 4),
+        split_box(
+            Vec3::new(-60.0, 40.0, 0.0),
+            Vec3::new(40.0, 110.0, 22.0),
+            &[0, 1, 2, 3, 4, 5],
+        ),
     ];
     let instances = vec![
         Instance::new(0, Transform::IDENTITY, 0),
         Instance::new(1, Transform::IDENTITY, 1),
         Instance::new(2, Transform::IDENTITY, 2),
+        Instance::new(3, Transform::IDENTITY, 3),
     ];
     scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
     scene.materials = vec![
@@ -555,6 +562,12 @@ pub fn e6_patterns_scene() -> Scene {
             roughness: 0.36,
             coat: 0.4,
             coat_roughness: 0.05,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.38, 0.41, 0.47),
+            roughness: 0.78,
+            bevel_mm: 4.0,
             ..Material::default()
         },
     ];
@@ -582,6 +595,18 @@ pub fn e6_patterns_scene() -> Scene {
                 0.4, 0.5, 0.35, 0.22, 0.35, 0.2, 0.175, 0.0, 1.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
             ],
             variant: 0,
+            seed: 0,
+        },
+        Pattern {
+            material: 3,
+            kind: PATTERN_CLOTH,
+            color_a: Rgb::new(0.1, 0.16, 0.3),
+            color_b: Rgb::new(0.66, 0.66, 0.64),
+            scale_mm: 1.2,
+            params: [
+                0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+            variant: 1,
             seed: 0,
         },
     ];

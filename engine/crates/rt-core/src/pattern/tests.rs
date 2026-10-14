@@ -23,6 +23,22 @@ fn oak(material: u32) -> Pattern {
     }
 }
 
+/// Denim as the catalogue sends it, coarser (1.5 mm threads, so a ray grid sees them).
+fn twill(material: u32) -> Pattern {
+    Pattern {
+        material,
+        kind: PATTERN_CLOTH,
+        color_a: Rgb::new(0.1, 0.16, 0.3),
+        color_b: Rgb::new(0.66, 0.66, 0.64),
+        scale_mm: 1.5,
+        params: [
+            0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ],
+        variant: 1,
+        seed: 0,
+    }
+}
+
 /// A sphere of radius 50 with one material carrying `pattern`.
 fn sphere_scene(pattern: Option<Pattern>) -> Scene {
     Scene {
@@ -104,8 +120,75 @@ fn wood_varies_its_colour_and_its_pores_tilt_the_normal() {
 }
 
 #[test]
+fn cloth_projects_on_the_mesh_axes_and_its_relief_tilts_the_normal() {
+    let scene = sphere_scene(Some(twill(0)));
+    let plain = sphere_scene(None);
+    let mut warp_like = 0;
+    let mut tilted = 0;
+    for k in 0..300 {
+        let from = Vec3::new(
+            (k % 23) as f32 * 3.0 - 33.0,
+            -200.0,
+            (k / 23) as f32 * 4.0 - 26.0,
+        );
+        let (base, _) = at(&plain, from);
+        let (shade, tint) = at(&scene, from);
+        let tint = tint.expect("cloth");
+        let c = tint.base_color;
+        if c.b > c.r * 1.5 {
+            warp_like += 1;
+        }
+        if shade.normal != base.normal {
+            tilted += 1;
+            assert!(shade.normal.dot(base.normal) > 0.3, "a bump, not a fold");
+        }
+        assert_eq!((shade.point, shade.geometric), (base.point, base.geometric));
+        assert_eq!((tint.anisotropy, tint.tangent), (0.0, None));
+    }
+    // Twill: half warp (dark blue), half weft (grey).
+    assert!((100..200).contains(&warp_like), "{warp_like}");
+    assert!(tilted > 250, "{tilted}");
+    // Without relief, the normal stays.
+    let mut flat = twill(0);
+    flat.params[0] = 0.0;
+    let flat = sphere_scene(Some(flat));
+    let from = Vec3::new(5.0, -200.0, 3.0);
+    assert_eq!(at(&flat, from).0, at(&plain, from).0);
+}
+
+#[test]
+fn the_box_projection_blends_without_a_seam() {
+    // Along a great circle of the sphere, through the bands where the projection changes axis:
+    // the colour of neighbouring points 0.05 mm apart never jumps by more than a thread's own
+    // contrast does inside one projection. The weights are |n|^8: one axis rules away from the
+    // diagonals.
+    let pattern = twill(0);
+    let scene = sphere_scene(Some(pattern));
+    let setup = PatternSetup::new(&scene);
+    let mut jumps = Vec::new();
+    let mut last: Option<Rgb> = None;
+    for i in 0..4000 {
+        let a = 0.6 + i as f32 * 0.0001;
+        let from = Vec3::new(200.0 * a.cos(), -200.0 * a.sin(), 0.0);
+        let ray = Ray::new(from, (-from).normalize());
+        let hit = scene.geometry.intersect(&ray).expect("hit");
+        let c = setup.albedo(&scene, &hit).expect("cloth");
+        if let Some(l) = last {
+            jumps.push((c.luminance() - l.luminance()).abs());
+        }
+        last = Some(c);
+    }
+    let [w0, w1, _] = projection_weights(Vec3::new(0.6f32.cos(), 0.6f32.sin(), 0.0));
+    assert!(w0 > 0.9 && w1 < 0.1, "the arc starts in one projection");
+    let [w0, w1, _] = projection_weights(Vec3::new(1.0f32.cos(), 1.0f32.sin(), 0.0));
+    assert!(w0 < 0.1 && w1 > 0.9, "and ends in the other");
+    let big = jumps.iter().filter(|&&j| j > 0.05).count();
+    assert!(big < jumps.len() / 50, "{big} jumps of {}", jumps.len());
+}
+
+#[test]
 fn the_albedo_pass_shows_the_colour_the_camera_path_shades_with() {
-    for pattern in [oak(0)] {
+    for pattern in [oak(0), twill(0)] {
         let scene = sphere_scene(Some(pattern));
         let setup = PatternSetup::new(&scene);
         for k in 0..50 {
