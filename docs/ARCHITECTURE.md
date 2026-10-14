@@ -120,7 +120,7 @@ src/
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
-    project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR)
+    project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c)
     ai-runtime.ts           el motor de ejecución de la IA del lanzador (X3b); ai-post.ts, la tubería de escritorio (`DesktopAiService`, X3c)
     hdri.ts                 lectores propios de RGBE y OpenEXR, imagen de fondo, copia para la vista previa (E5)
@@ -153,9 +153,9 @@ tools/                      scripts de desarrollo: capturas, generadores, hojas 
 docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
-  crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG;
+  crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG, TIFF y DNG (U12);
                             imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c)
-  crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG con hilos; hojas de contacto
+  crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG, TIFF o DNG con hilos; hojas de contacto
                             (las escenas de E5 en scenes.rs)
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
   crates/rt-app/            lanzador de escritorio `repackshot`: servidor local, ventana, motor nativo (§5.5)
@@ -285,7 +285,7 @@ export interface ProjectState {
                saturation: number; contrast: number; vignette: number };
   animation: { shots: Shot[]; clips: MotionClip[]; fps: number; playhead: number; playing: boolean };
   render:    { quality: 'DRAFT' | 'PREVIEW' | 'FINAL' | 'CUSTOM'; width: number; height: number;
-               maxSamples: number; maxSeconds: number; format: 'PNG' | 'JPEG' | 'EXR'; transparent: boolean;
+               maxSamples: number; maxSeconds: number; format: 'PNG' | 'JPEG' | 'EXR' | 'TIFF' | 'DNG'; transparent: boolean;
                queue: RenderJob[]; running: RenderProgress | null };
   doctor:    { results: DoctorResult[]; stamp: number };
 }
@@ -779,10 +779,64 @@ ya no se para por una excepción en un fotograma.
 ### 5.4 · En nativo
 
 `rt` renderiza un `.rsb` con todos los hilos de la máquina y escribe PNG
-(8 o 16 bits) o EXR; sirve para lotes, para la hoja de contactos de CI y
+(8 bits), TIFF (`--format tiff`, con `--bits 8|16|32`) o DNG (`--format
+dng`); sin `--format`, manda la extensión de `-o` (`.tif`, `.tiff`, `.dng`;
+cualquier otra, PNG). Sirve para lotes, para la hoja de contactos de CI y
 para generar las miniaturas de los catálogos sin navegador. La
 aplicación de escritorio (P2) enlaza `rt-core` directamente en su
 lanzador y usa el mismo RSB que la web (§5.5).
+
+### 5.4 bis · Salida TIFF y DNG (U12)
+
+Dos codificadores propios, escritos de la especificación pública (TIFF 6.0
+de Adobe, 1992, §2, §6, §8, §19; DNG 1.4.0.0 de Adobe, 2012) y sin
+mirar ningún lector ni escritor ajeno, uno en cada lado, que **escriben
+los mismos bytes**: `rt_core::tiff` y `rt_core::dng` (solo `std`) para
+el CLI, y `encodeTiff` y `encodeDng` en `src/io/image.ts` para la
+interfaz (que es la que escribe el archivo de un render, también en
+escritorio: el lanzador solo lo guarda, `image/tiff` como `.tif` e
+`image/x-adobe-dng` como `.dng`, y deja escribir esas extensiones).
+
+- **TIFF.** Little-endian (`II`, 42), un solo directorio, sin compresión
+  (`Compression` 1), en *strips* de unos 8 KiB (§7), RGB (fotométrico 2)
+  o RGBA con alfa **no asociado** (`ExtraSamples` 2), a 8 o 16 bits, o a
+  32 bits `f32` (`SampleFormat` 3). `XResolution` y `YResolution` son los
+  DPI de la ventana (72 en el CLI), `ResolutionUnit` 2 (pulgadas), sin
+  perfil ICC: 8 y 16 bits son sRGB por convención y el flotante es luz
+  lineal con la exposición del render y sin curva, como el EXR (que sí
+  guarda el alfa premultiplicado; el TIFF, recto: el color dividido por la
+  cobertura, `straightLinearRgba` en `render/tiles.ts`). Las etiquetas van
+  ordenadas, y los valores que no caben en la entrada (>4 bytes) detrás
+  del directorio, en el orden de las entradas y cada uno en un
+  desplazamiento par; los *strips* siguen sin huecos. Desplazamientos de
+  32 bits: más de 4 GiB se rechaza.
+- **DNG.** Un TIFF más con las etiquetas de DNG 1.4: `NewSubFileType` 0,
+  `PhotometricInterpretation` 34892 (*LinearRaw*), tres muestras `f32`
+  (`SampleFormat` 3, sin alfa), `Make`, `Model` y `UniqueCameraModel`
+  «Repackshot», `DNGVersion` y `DNGBackwardVersion` 1.4.0.0 (los datos en
+  coma flotante piden 1.4), `ColorMatrix1` = CIE XYZ (D65) → sRGB lineal,
+  **la inversa de sRGB → XYZ** de los primarios (0,64 0,33; 0,30 0,60;
+  0,15 0,06) y el blanco (0,3127; 0,3290), calculada en aritmética exacta
+  y redondeada a siete decimales como racionales con signo de
+  denominador 10⁷ (`CalibrationIlluminant1` 21: D65), `AsShotNeutral` 1 1
+  1, `BaselineExposure` 0 y `WhiteLevel` 1 (el blanco del render es 1,0 y el
+  negro 0; los datos no se recortan a él, así que un revelador de raw abre
+  el archivo con **toda la latitud del render**; el mayor `f32` no sirve
+  de nivel de blanco, porque el revelador normalizaría por él y la imagen
+  saldría negra).
+- **Paridad.** `tests/fixtures/tiff/` guarda los siete archivos de una
+  imagen de 4×4 con valores conocidos (RGB y RGBA a 8, 16 y 32 bits, y el
+  DNG). `engine/crates/rt-cli/tests/tiff_golden.rs` comprueba que
+  `rt_core` escribe exactamente esos bytes (con `REPACK_WRITE_GOLDEN=1` los
+  reescribe) y `tests/tiff-dng.test.ts`, que la interfaz también; cada lado
+  se relee además con un lector mínimo de su propio test (cabecera,
+  etiquetas, desplazamientos, valores). Cambiar el formato a propósito es
+  cambiar los dos codificadores y reescribir esos archivos.
+- **En la interfaz.** `OutputFormat` gana `TIFF` y `DNG`; `BitDepth` gana
+  32 (solo TIFF; el normalizador de `render/set` lo pone a 8 en cualquier
+  otro formato, y el alfa a falso en JPEG y DNG). Chromium y Firefox no
+  muestran TIFF ni DNG: el render guarda, junto al archivo, la copia PNG
+  de 8 bits que ya guardaba para el EXR (`needsDisplayCopy`).
 
 ### 5.5 · Escritorio: el lanzador `repackshot`
 
@@ -896,7 +950,7 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    state/<nombre>.json  cosas pequeñas de la página: descargas por reanudar, carpetas elegidas,
                         la marca de la migración desde el navegador
    library/             la biblioteca propia (U4)
-   results/             el historial: un archivo por resultado (png, jpg, exr) e index.json; con IA, las
+   results/             el historial: un archivo por resultado (png, jpg, exr, tif, dng) e index.json; con IA, las
                         variantes de la IA como <id>.ai.<n>.<ext> (X4b; la única <id>.ai.<ext> de
                         antes se lee como la variante 1)
    cache/thumbs/        las esferas de materiales (caché)

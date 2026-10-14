@@ -754,10 +754,29 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   carpeta se muestra por su nombre); donde no exista, el selector dice
   *Este navegador solo permite descargar* y se usa *Descargas*. En el
   escritorio (P2), una ruta normal. Interruptor *Mostrar al terminar*.
-- **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR; *Fondo
-  transparente* cuando el formato lo admite; *Pases* (alfa, profundidad,
-  normales, id de pieza) cuando existan (N2), con *próximamente* hasta
-  entonces.
+- **Formato**: PNG (8 o 16 bits), JPEG (calidad), EXR, **TIFF** (8, 16
+  o 32 bits flotante) y **RAW (DNG)** (U12); *Fondo transparente* cuando
+  el formato lo admite (PNG, EXR y TIFF; JPEG y DNG no, y el interruptor
+  dice por qué); *Pases* (alfa, profundidad, normales, id de pieza)
+  cuando existan (N2), con *próximamente* hasta entonces. Cada formato
+  que necesita explicación lleva **una línea de ayuda** bajo el
+  selector, la misma que el texto emergente del botón: *EXR: lineal en
+  coma flotante de 32 bits, para composición*; *TIFF: sin compresión, 8/16
+  bits sRGB o 32 bits lineal*; *DNG lineal en coma flotante: se revela
+  como un raw de cámara*. La profundidad de bits sale a la derecha del
+  selector solo donde se elige: PNG ofrece *8 bits* y *16 bits*; TIFF,
+  *8 bits*, *16 bits* y *32 bits flotante* (lineal, con la exposición del
+  render y sin curva, como el EXR); RAW (DNG) no ofrece nada que elegir y
+  dice *32 bits flotante*. TIFF lleva los DPI de la ventana como
+  resolución; el TIFF de 8 y 16 bits y el DNG se leen como sRGB y como
+  primarios sRGB lineales, sin perfil ICC. El nombre del archivo acaba en
+  `.tif` o `.dng`. Al terminar, el visor de resultados y las miniaturas
+  usan una **copia PNG de 8 bits** del mismo render (Chromium y Firefox no
+  muestran TIFF ni DNG, como no muestran EXR), y *Guardar de nuevo* escribe
+  el archivo, no la copia. El resumen del pie lo dice: *TIFF 32 bits
+  flotante → Descargas*. Captura: `docs/ui/render-format-tiff.png`
+  (`tools/render-format-check.mjs`). Una configuración antigua o ajena con un formato
+  que esta versión no escribe se abre como PNG.
 - **Cámara**: desplegable con *La activa*, cada cámara guardada y
   **Todas las cámaras** (un trabajo por cámara).
 - **Tamaño**: desplegable de presets (`RESOLUTION_PRESETS` y
@@ -945,7 +964,7 @@ escritorio (`PUT/GET /api/store/results/<id>/ai` del lanzador). Capturas:
 **En el escritorio (X3c).** El render final con IA deja su imagen lineal y sus
 pases en el lanzador, que hace la IA sin que los píxeles vayan y vuelvan; la
 imagen de la IA llega como luz lineal y se escribe **con la exposición y la curva
-del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG o EXR),
+del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG, EXR, TIFF o DNG),
 así que con Intervención 0 es el mismo fichero byte a byte. Mientras la IA
 trabaja, la fila de la cola dice dónde está —*IA · cargando el modelo*, *IA ·
 mosaico 2 de 4*, *· intento 2* tras un reintento, *IA · comprobando*— y la barra
@@ -953,9 +972,10 @@ mide la tubería, no ya el render. *Detener* o *Pausar* en ese momento paran la
 IA al instante y **la imagen del motor se queda en el historial** (aviso *Post-procesado
 IA detenido: la imagen del motor se conserva en el historial*); con *Pausar*, el
 trabajo vuelve a esperar y *Reanudar* lo hace entero. Los navegadores no
-muestran EXR: la miniatura de la IA de un trabajo EXR sale de una copia de 8
-bits, pero el visor solo compara *Render | IA* cuando la IA es PNG o JPEG (el
-historial guarda el EXR tal cual; una copia para la vista queda pendiente).
+muestran EXR, TIFF ni DNG: la miniatura de la IA de un trabajo en uno de ellos
+sale de una copia de 8 bits, pero el visor solo compara *Render | IA* cuando la
+IA es PNG o JPEG (el historial guarda el archivo tal cual; una copia para la vista
+de la imagen de la IA queda pendiente).
 
 **Variantes (X4b).** Un trabajo con varias variantes hace un solo render y una
 pasada de la IA por variante, con la semilla siguiente cada vez; se guardan como
