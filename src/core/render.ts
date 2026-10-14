@@ -58,6 +58,18 @@ export function engineFieldsOf(a: AdvancedSettings, where: 'VIEWPORT' | 'RENDER'
   return { denoise: denoiseBits(a.denoise, where, a.saveNoisy), caustics: { mode: a.caustics, quality: a.causticsQuality } };
 }
 
+/**
+ * U11: whether two Advanced settings give the Full viewport another image. The denoise does not: the viewport's part
+ * is its live switch (the engines turn it without starting the image over) and the rest is the Render's, as is
+ * Also save without denoise.
+ */
+export function advancedTouchesView(a: AdvancedSettings, b: AdvancedSettings): boolean {
+  if (a === b) return false;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)] as (keyof AdvancedSettings)[]);
+  for (const k of keys) if (k !== 'denoise' && k !== 'saveNoisy' && a[k] !== b[k]) return true;
+  return false;
+}
+
 /** The Advanced settings of a new project (and what an older project lacks). */
 export const DEFAULT_ADVANCED: Readonly<AdvancedSettings> = Object.freeze({
   maxBounces: null,

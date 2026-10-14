@@ -52,6 +52,13 @@ const TABLE = {
   'header.fullNoWorkers': ['Full: this browser has no Web Workers', 'Completo: este navegador no tiene Web Workers'],
   'header.fullOutdated': ['Full: the engine is out of date (npm run engine:build)', 'Completo: el motor está desactualizado (npm run engine:build)'],
   'header.fullFailed': ['Full: the engine did not start', 'Completo: el motor no arrancó'],
+  // U11: the live denoise of the Full viewport, next to Fast · Full.
+  'header.denoise': ['Denoise', 'Reducir ruido'],
+  'header.denoiseTip': [
+    'Denoise the Full viewport as it renders: the clean image keeps up while the samples come in (the Viewport part of Render settings ▸ Advanced ▸ Denoise).',
+    'Reducir el ruido del visor Completo mientras renderiza: la imagen limpia sigue a las muestras según llegan (la parte Visor de Ajustes de render ▸ Avanzado ▸ Reducción de ruido).',
+  ],
+  'header.denoiseFastTip': ['Applies to Full mode', 'Se aplica al modo Completo'],
 
   // Common words
   'common.yes': ['Yes', 'Sí'],
@@ -1953,6 +1960,7 @@ const TABLE = {
   'action.saveAs': ['Save project as', 'Guardar proyecto como'],
   'action.render': ['Render…', 'Render…'],
   'action.viewportMode': ['Viewport: Fast or Full', 'Visor: Rápido o Completo'],
+  'action.viewportDenoise': ['Denoise the Full viewport', 'Reducir el ruido del visor Completo'],
   'action.exportScene': ['Export engine scene (.rsb)', 'Exportar escena del motor (.rsb)'],
   'action.frame': ['Frame selection or all', 'Encuadrar selección o todo'],
   'action.hide': ['Hide selection', 'Ocultar selección'],
@@ -2105,6 +2113,8 @@ const TABLE = {
   'undo.restoreStudio': ['Restore studio {name}', 'Restaurar estudio {name}'],
   'undo.deleteStudio': ['Delete studio {name}', 'Eliminar estudio {name}'],
   'undo.render': ['Render settings', 'Ajustes de render'],
+  'undo.denoiseOn': ['Denoise the viewport', 'Reducir el ruido del visor'],
+  'undo.denoiseOff': ['Stop denoising the viewport', 'Dejar de reducir el ruido del visor'],
   'undo.quality': ['Quality: {name}', 'Calidad: {name}'],
   'undo.resolution': ['Resolution {w} × {h}', 'Resolución {w} × {h}'],
   'undo.anim': ['Animation: {what}', 'Animación: {what}'],
@@ -2256,8 +2266,8 @@ const TABLE = {
   ],
   'tour.mode.title': ['Fast and Full', 'Rápido y Completo'],
   'tour.mode.text': [
-    'Fast is the instant preview, for placing lights, painting materials and framing. Full is the path tracer itself, running in the viewport. Render always uses the full engine.',
-    'Rápido es la vista previa al instante, para colocar luces, pintar materiales y encuadrar. Completo es el propio trazador de rayos, funcionando en el visor. Render siempre usa el motor completo.',
+    'Fast is the instant preview, for placing lights, painting materials and framing. Full is the path tracer itself, running in the viewport; Denoise, next to it ({denoise}), cleans its image as it renders. Render always uses the full engine.',
+    'Rápido es la vista previa al instante, para colocar luces, pintar materiales y encuadrar. Completo es el propio trazador de rayos, funcionando en el visor; Reducir ruido, a su lado ({denoise}), limpia su imagen mientras renderiza. Render siempre usa el motor completo.',
   ],
   'tour.product.title': ['Product and studio', 'Producto y estudio'],
   'tour.product.text': [

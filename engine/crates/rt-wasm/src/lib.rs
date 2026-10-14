@@ -20,7 +20,7 @@ use rt_core::passes::{PassFilm, PASS_ALBEDO, PASS_EXACT};
 use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, TileRect};
 use rt_core::scene::Scene;
 use rt_core::simd::Isa;
-use rt_post::denoise::{denoise_rows, DenoiseInput};
+use rt_post::denoise::{denoise_rows_with, DenoiseInput, Preset};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
@@ -215,12 +215,49 @@ pub fn scene_caustics(handle: u32) -> Option<u32> {
 /// `normal` (3), `depth` (1), `part_id` (1) and `material_id` (1), one after another.
 pub const DENOISE_WORDS: usize = 14;
 
-/// The denoiser (`rt_post::denoise`) on a band of `rows` image rows from `origin_y` of an image
-/// `width × height` of `samples` samples per pixel: `input` holds its planes (little-endian words,
-/// see [`DENOISE_WORDS`]); returns the denoised RGBA sums of image rows `y0 .. y1` (which the
-/// band must hold with `rt_post::denoise::HALO` rows around them, or up to the image's edge).
+/// The denoiser's presets by number (U11): 0 the full filter of a render, 1 the viewport's.
+pub fn denoise_preset(id: u32) -> Option<Preset> {
+    match id {
+        0 => Some(Preset::FULL),
+        1 => Some(Preset::VIEWPORT),
+        _ => None,
+    }
+}
+
+/// The denoiser (`rt_post::denoise`, the full filter) on a band of `rows` image rows from
+/// `origin_y` of an image `width × height` of `samples` samples per pixel: `input` holds its
+/// planes (little-endian words, see [`DENOISE_WORDS`]); returns the denoised RGBA sums of image
+/// rows `y0 .. y1` (which the band must hold with `rt_post::denoise::HALO` rows around them, or up
+/// to the image's edge).
 #[allow(clippy::too_many_arguments)]
 pub fn denoise(
+    width: u32,
+    height: u32,
+    origin_y: u32,
+    rows: u32,
+    samples: u32,
+    y0: u32,
+    y1: u32,
+    input: &[u8],
+) -> Result<Vec<f32>, u32> {
+    denoise_with(
+        Preset::FULL,
+        width,
+        height,
+        origin_y,
+        rows,
+        samples,
+        y0,
+        y1,
+        input,
+    )
+}
+
+/// [`denoise`] with another preset (U11): the band holds the rows with that preset's
+/// [`Preset::halo`] around them.
+#[allow(clippy::too_many_arguments)]
+pub fn denoise_with(
+    preset: Preset,
     width: u32,
     height: u32,
     origin_y: u32,
@@ -264,7 +301,7 @@ pub fn denoise(
         part_id: &part_id,
         material_id: &material_id,
     };
-    denoise_rows(&band, y0, y1).map_err(|_| STATUS_BAD_DENOISE)
+    denoise_rows_with(&band, y0, y1, preset).map_err(|_| STATUS_BAD_DENOISE)
 }
 
 /// The exact passes of `mask` (normal, depth, part id, material id, circle of confusion: the
@@ -833,6 +870,96 @@ mod tests {
             .is_empty());
         drop(reg);
         scene_free(handle);
+    }
+
+    #[test]
+    fn the_viewport_preset_through_the_c_api_is_rt_post_s() {
+        // U11: `rt_denoise_with(1, …)` is `rt_post::denoise::Preset::VIEWPORT` on a band with
+        // `rt_denoise_halo(1)` rows around it; preset 0 is `rt_denoise`; others are refused.
+        let _guard = serial();
+        use rt_core::passes::Passes;
+        use rt_post::denoise::{denoise_with as denoise_whole, rgba_sums, GUIDE_PASSES, HALO};
+        assert_eq!(rt_denoise_halo(0), HALO);
+        assert_eq!(rt_denoise_halo(1), Preset::VIEWPORT.halo());
+        assert_eq!(rt_denoise_halo(2), 0);
+        assert_eq!(
+            (denoise_preset(0), denoise_preset(1), denoise_preset(7)),
+            (Some(Preset::FULL), Some(Preset::VIEWPORT), None)
+        );
+        let mut scene = rt_core::example::scene();
+        scene.render.width = 40;
+        scene.render.height = 120;
+        let prepared = Prepared::new(&scene);
+        let mut film = Film::new(40, 120);
+        let mut passes = Passes::new(40, 120, GUIDE_PASSES);
+        for tile in rt_core::render::tile_grid(40, 120, 32) {
+            let mut pf = PassFilm::region(tile.x, tile.y, tile.w, tile.h, GUIDE_PASSES);
+            render_tile_exact(&scene, &prepared, tile, &mut pf, Isa::detect());
+            for sample in 0..3 {
+                render_tile_photons(
+                    &scene,
+                    &prepared,
+                    None,
+                    tile,
+                    sample,
+                    &mut film,
+                    Isa::detect(),
+                );
+                render_tile_albedo(&scene, &prepared, tile, sample, &mut pf, Isa::detect());
+            }
+            passes.copy_region(tile.x, tile.y, &pf.resolve());
+        }
+        let sums = rgba_sums(&film);
+        let whole = DenoiseInput::whole(3, &sums, &film.lum2, &passes).expect("input");
+        let expected = denoise_whole(&whole, Preset::VIEWPORT).expect("denoise");
+        let band = whole.with_halo_of(50, 70, Preset::VIEWPORT);
+        assert_eq!(band.origin_y, 50 - rt_denoise_halo(1));
+        let mut bytes = Vec::new();
+        for v in band
+            .sums
+            .iter()
+            .chain(band.lum2)
+            .chain(band.albedo)
+            .chain(band.normal)
+            .chain(band.depth)
+        {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in band.part_id.iter().chain(band.material_id) {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        let input = upload(&bytes);
+        let out = rt_alloc(40 * 20 * 16);
+        let call = |preset: u32| {
+            // SAFETY: `input` holds the band's planes and `out` room for 20 rows of RGBA floats.
+            unsafe {
+                rt_denoise_with(
+                    preset,
+                    40,
+                    120,
+                    band.origin_y,
+                    band.rows,
+                    3,
+                    50,
+                    70,
+                    input,
+                    out.cast::<f32>(),
+                )
+            }
+        };
+        assert_eq!(call(1), STATUS_OK);
+        assert_eq!(
+            read_floats(out, 40 * 20 * 4),
+            expected[50 * 40 * 4..70 * 40 * 4]
+        );
+        // The full filter needs a larger halo than this band has; an unknown preset is refused.
+        assert_eq!(call(0), STATUS_BAD_DENOISE);
+        assert_eq!(call(9), STATUS_BAD_DENOISE);
+        // SAFETY: both came from `rt_alloc` with these lengths.
+        unsafe {
+            rt_free(input, bytes.len() as u32);
+            rt_free(out, 40 * 20 * 16);
+        }
     }
 
     #[test]

@@ -266,8 +266,8 @@ pub extern "C" fn rt_scene_caustics(handle: u32) -> u32 {
     crate::scene_caustics(handle).unwrap_or(u32::MAX)
 }
 
-/// The denoiser (E5b-1) on a band of `rows` image rows from `origin_y` of an image
-/// `width × height` of `samples` samples per pixel. `in_ptr` holds `width * rows * 14`
+/// The denoiser (E5b-1, the full filter) on a band of `rows` image rows from `origin_y` of an
+/// image `width × height` of `samples` samples per pixel. `in_ptr` holds `width * rows * 14`
 /// little-endian words: the planes `sums` (RGBA), `lum2`, `albedo` (3), `normal` (3), `depth`,
 /// `part_id` and `material_id`, one after another. Writes the denoised RGBA sums of image rows
 /// `y0 .. y1` (`width * (y1 - y0) * 4` floats) to `out_ptr`. Returns `STATUS_OK`,
@@ -290,14 +290,48 @@ pub unsafe extern "C" fn rt_denoise(
     in_ptr: *const u8,
     out_ptr: *mut f32,
 ) -> u32 {
+    // SAFETY: the caller's promises are those of `rt_denoise_with`.
+    unsafe {
+        rt_denoise_with(
+            0, width, height, origin_y, rows, samples, y0, y1, in_ptr, out_ptr,
+        )
+    }
+}
+
+/// [`rt_denoise`] with a preset (U11): 0 the full filter, 1 the viewport's lighter one
+/// (`rt_post::denoise::Preset::VIEWPORT`), whose band holds the rows with
+/// [`rt_denoise_halo`]`(1)` rows around them. An unknown preset is `STATUS_BAD_DENOISE`.
+///
+/// # Safety
+///
+/// As [`rt_denoise`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn rt_denoise_with(
+    preset: u32,
+    width: u32,
+    height: u32,
+    origin_y: u32,
+    rows: u32,
+    samples: u32,
+    y0: u32,
+    y1: u32,
+    in_ptr: *const u8,
+    out_ptr: *mut f32,
+) -> u32 {
     if in_ptr.is_null() || out_ptr.is_null() {
         return STATUS_NULL_POINTER;
     }
+    let Some(preset) = crate::denoise_preset(preset) else {
+        return crate::STATUS_BAD_DENOISE;
+    };
     let len = width as usize * rows as usize * crate::DENOISE_WORDS * 4;
     // SAFETY: non-null, and the caller promises `len` readable bytes; the slice does not outlive
     // this call.
     let input = unsafe { std::slice::from_raw_parts(in_ptr, len) };
-    match crate::denoise(width, height, origin_y, rows, samples, y0, y1, input) {
+    match crate::denoise_with(
+        preset, width, height, origin_y, rows, samples, y0, y1, input,
+    ) {
         Ok(out) => {
             // SAFETY: the caller promises room for `width * (y1 - y0) * 4` floats, which is
             // exactly `out.len()` (the rows asked for); byte-wise copy needs no alignment, and
@@ -313,4 +347,12 @@ pub unsafe extern "C" fn rt_denoise(
         }
         Err(status) => status,
     }
+}
+
+/// Rows a band of denoiser preset `preset` holds above and below the rows it computes
+/// (`rt_post::denoise::Preset::halo`: 72 for the full filter, the viewport's fewer); 0 for an
+/// unknown preset.
+#[no_mangle]
+pub extern "C" fn rt_denoise_halo(preset: u32) -> u32 {
+    crate::denoise_preset(preset).map_or(0, |p| p.halo())
 }

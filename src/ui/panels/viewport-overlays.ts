@@ -2,7 +2,6 @@
 // size (top right), quality meter (bottom left), axes and part size (bottom
 // right), hover label, pick modes and drag and drop of materials (pointer events) and files.
 
-import { denoiseIn, toggledViewportDenoise } from '../../core/caustics';
 import { activeCamera, cameraBasis, focusDistanceTo, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox } from '../../core/math';
 import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
@@ -171,15 +170,14 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
   const note = h('div', { class: 'note', style: 'font-size:var(--fs-aux)' });
   // E5b-1: what the engine says of the image on screen (denoised, caustics) and the Full viewport's denoise switch.
   const extras = h('div', { class: 'aux tabular', 'data-meter-extras': '' });
+  // U11: the same switch as the top bar's Denoise and `D` (one state: Advanced ▸ Denoise ▸ Viewport).
   const denoiseBtn = h('button', {
     type: 'button',
     class: 'btn-link ov-denoise',
     'aria-pressed': 'false',
     'data-tip': t('viewport.denoiseTip'),
-    onclick: () => {
-      const adv = ctx.store.get().render.advanced;
-      cmd.setRenderSettings(ctx, { advanced: { ...adv, denoise: toggledViewportDenoise(adv.denoise) } });
-    },
+    'data-kbd': kbdFor('viewportDenoise'),
+    onclick: () => cmd.toggleViewportDenoise(ctx),
   }, t('viewport.denoiseToggle'));
   // Without the engine, a way to its settings (UI.md §2.9: deep links).
   const engineLink = h('button', { type: 'button', class: 'btn-link ov-engine-link', 'data-settings-link': 'engine', onclick: () => cmd.openSettings(ctx, 'engine') }, t('viewport.engineSettings'));
@@ -242,8 +240,13 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
       const parts = [st.denoised ? t('viewport.meterDenoised') : '', st.caustics ? t('viewport.meterCaustics', { n: formatNumber(st.caustics, lang, 0) }) : ''].filter(Boolean);
       extras.textContent = parts.join(' · ');
       extras.style.display = parts.length ? '' : 'none';
-      const on = denoiseIn(ctx.store.get().render.advanced.denoise, 'VIEWPORT');
+      const on = cmd.viewportDenoiseOn(ctx.store.get());
       denoiseBtn.setAttribute('aria-pressed', String(on));
+      // What the live denoise measured (U11): the denoised images shown and the last one's cost, for the checks.
+      el.dataset.cleanImages = String(st.liveDenoise?.images ?? 0);
+      el.dataset.denoiseMs = st.liveDenoise?.ms !== undefined ? st.liveDenoise.ms.toFixed(0) : '';
+      el.dataset.accumulated = String(st.liveDenoise?.accumulated ?? '');
+      el.dataset.cleanAt = st.liveDenoise?.at ? st.liveDenoise.at.toFixed(1) : '';
       denoiseBtn.style.display = '';
       el.dataset.denoised = st.denoised ? '1' : '0';
       el.dataset.caustics = String(st.caustics ?? 0);
@@ -277,6 +280,8 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
   scope.onDispose(port.onFrame(() => update()));
   scope.onDispose(() => window.clearTimeout(trailing));
   scope.watch((_s, u) => [u.viewportMode, u.engine].join(), () => update(true));
+  // U11: the switch shows at once when the top bar, D or Advanced turns it.
+  scope.watch((s) => cmd.viewportDenoiseOn(s), () => update(true));
   update(true);
   return el;
 }

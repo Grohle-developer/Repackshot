@@ -26,6 +26,11 @@
 //! is `f32` (no `std` transcendental), in a fixed order: the same input gives the same
 //! bits natively and in WebAssembly, and a band of rows ([`denoise_rows`]) is exactly those rows
 //! of the whole image, so hosts can split the work among threads or workers.
+//!
+//! Two presets ([`Preset`], U11): [`Preset::FULL`], the filter above, for a render; and
+//! [`Preset::VIEWPORT`], lighter, for the live denoise of the viewport while it accumulates (fewer
+//! passes, a smaller neighbourhood for the spatial variance), so it keeps up with the image. Each
+//! has its own halo ([`Preset::halo`]); a band of either is exactly those rows of the whole image.
 
 use rt_core::image::Film;
 use rt_core::passes::{
@@ -49,8 +54,67 @@ pub const SIGMA_ALBEDO: f32 = 0.1;
 /// Below this many samples a pixel's variance is estimated from its neighbours.
 pub const MIN_SAMPLES_FOR_VARIANCE: u32 = 4;
 /// Rows a band must hold above and below the rows it computes: the reach of the whole filter
-/// (the 7 × 7 variance estimate, the depth gradient, then `2 · 2^k` per pass), rounded up.
-pub const HALO: u32 = 72;
+/// (the 7 × 7 variance estimate, the depth gradient, then `2 · 2^k` per pass), rounded up
+/// ([`Preset::FULL`]'s [`Preset::halo`]).
+pub const HALO: u32 = Preset::FULL.halo();
+
+/// How hard the filter works (U11): the passes of the à-trous transform and the neighbourhood of
+/// the spatial variance estimate (below [`MIN_SAMPLES_FOR_VARIANCE`] samples). Everything else
+/// (the edge-stopping functions and their parameters, the firefly clamp, the guides) is the same.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Preset {
+    /// Passes of the transform, taps `1, 2, … 2^(levels - 1)` pixels apart (1 to [`LEVELS`]).
+    pub levels: u32,
+    /// The spatial variance estimate looks `radius` pixels around (3: 7 × 7; 1 to 3).
+    pub variance_radius: u32,
+}
+
+impl Preset {
+    /// The final render's filter (E5b-1): five passes, the 7 × 7 variance estimate.
+    pub const FULL: Preset = Preset {
+        levels: LEVELS,
+        variance_radius: 3,
+    };
+    /// The viewport's live filter (U11): three passes (taps 1, 2, 4 apart) and a 3 × 3 variance
+    /// estimate. Measured against references of 1024 samples (ROADMAP U11): from eight samples on
+    /// its error is within 3 % of the full filter's, at four within 3 to 11 %, below four from
+    /// better (the smaller neighbourhood mixes less across features) to worse on smooth surfaces;
+    /// in about 60 % of the time on one thread, and 40 % in bands (its halo is a third).
+    pub const VIEWPORT: Preset = Preset {
+        levels: 3,
+        variance_radius: 1,
+    };
+
+    /// Rows a band of this preset holds above and below the rows it computes: `2^(levels + 1) + 8`,
+    /// more than the filter's reach (the variance estimate, the firefly clamp and the depth
+    /// gradient, at most 6 rows, and then `2 · 2^k + 1` per pass), so the band's rows are exactly
+    /// the whole image's: 72 for the full filter, 24 for the viewport's.
+    pub const fn halo(self) -> u32 {
+        (2 << self.levels) + 8
+    }
+
+    /// The preset with its fields in their ranges.
+    const fn clamped(self) -> Preset {
+        let levels = if self.levels < 1 {
+            1
+        } else if self.levels > LEVELS {
+            LEVELS
+        } else {
+            self.levels
+        };
+        let variance_radius = if self.variance_radius < 1 {
+            1
+        } else if self.variance_radius > 3 {
+            3
+        } else {
+            self.variance_radius
+        };
+        Preset {
+            levels,
+            variance_radius,
+        }
+    }
+}
 /// Smallest albedo divided out (black materials keep their light).
 const MIN_ALBEDO: f32 = 0.01;
 /// A pixel brighter than this many times its brightest neighbour is a firefly.
@@ -145,9 +209,17 @@ impl<'a> DenoiseInput<'a> {
     /// The band of this input that [`denoise_rows`] needs for image rows `y0 .. y1`: those rows
     /// and [`HALO`] rows around them, within the image and within this input.
     pub fn with_halo(&self, y0: u32, y1: u32) -> DenoiseInput<'a> {
-        let lo = y0.saturating_sub(HALO).max(self.origin_y);
+        self.with_halo_of(y0, y1, Preset::FULL)
+    }
+
+    /// The band of this input that [`denoise_rows_with`] needs for image rows `y0 .. y1` with
+    /// `preset`: those rows and its [`Preset::halo`] rows around them, within the image and within
+    /// this input.
+    pub fn with_halo_of(&self, y0: u32, y1: u32, preset: Preset) -> DenoiseInput<'a> {
+        let halo = preset.clamped().halo();
+        let lo = y0.saturating_sub(halo).max(self.origin_y);
         let hi = y1
-            .saturating_add(HALO)
+            .saturating_add(halo)
             .min(self.height)
             .min(self.origin_y + self.rows)
             .max(lo);
@@ -205,27 +277,46 @@ pub fn rgba_sums(film: &Film) -> Vec<f32> {
     out
 }
 
-/// Denoises every row of the input: RGBA sums (`samples` × the denoised mean, coverage as it
-/// was), `width × rows` pixels.
+/// Denoises every row of the input with the full filter: RGBA sums (`samples` × the denoised
+/// mean, coverage as it was), `width × rows` pixels.
 pub fn denoise(input: &DenoiseInput) -> Result<Vec<f32>, DenoiseError> {
-    denoise_rows(input, input.origin_y, input.origin_y + input.rows)
+    denoise_with(input, Preset::FULL)
 }
 
-/// Denoises image rows `y0 .. y1`, which the input must hold with [`HALO`] rows around them (or
-/// up to the image's edge): exactly those rows of [`denoise`] over the whole image. RGBA sums,
-/// `width × (y1 - y0)` pixels.
+/// [`denoise`] with another preset.
+pub fn denoise_with(input: &DenoiseInput, preset: Preset) -> Result<Vec<f32>, DenoiseError> {
+    denoise_rows_with(input, input.origin_y, input.origin_y + input.rows, preset)
+}
+
+/// Denoises image rows `y0 .. y1` with the full filter, which the input must hold with [`HALO`]
+/// rows around them (or up to the image's edge): exactly those rows of [`denoise`] over the whole
+/// image. RGBA sums, `width × (y1 - y0)` pixels.
 pub fn denoise_rows(input: &DenoiseInput, y0: u32, y1: u32) -> Result<Vec<f32>, DenoiseError> {
+    denoise_rows_with(input, y0, y1, Preset::FULL)
+}
+
+/// [`denoise_rows`] with another preset: the input must hold the rows with its
+/// [`Preset::halo`] around them, and they are exactly those rows of [`denoise_with`] over the
+/// whole image with the same preset.
+pub fn denoise_rows_with(
+    input: &DenoiseInput,
+    y0: u32,
+    y1: u32,
+    preset: Preset,
+) -> Result<Vec<f32>, DenoiseError> {
     let n = input.check()?;
+    let preset = preset.clamped();
+    let halo = preset.halo();
     let band_end = input.origin_y + input.rows;
     if y0 > y1
         || y0 < input.origin_y
         || y1 > band_end
-        || input.origin_y > y0.saturating_sub(HALO)
-        || band_end < y1.saturating_add(HALO).min(input.height)
+        || input.origin_y > y0.saturating_sub(halo)
+        || band_end < y1.saturating_add(halo).min(input.height)
     {
         return Err(DenoiseError::Rows);
     }
-    let filtered = filter_band(input, n);
+    let filtered = filter_band(input, n, preset);
     let w = input.width as usize;
     let from = (y0 - input.origin_y) as usize * w * 4;
     let to = (y1 - input.origin_y) as usize * w * 4;
@@ -273,7 +364,7 @@ impl Guide {
 }
 
 /// The filter over the whole band (rows outside it count as missing): RGBA sums.
-fn filter_band(input: &DenoiseInput, n: usize) -> Vec<f32> {
+fn filter_band(input: &DenoiseInput, n: usize, preset: Preset) -> Vec<f32> {
     let (w, h) = (input.width as usize, input.rows as usize);
     let samples = input.samples.max(1);
     let inv = 1.0 / samples as f32;
@@ -395,7 +486,8 @@ fn filter_band(input: &DenoiseInput, n: usize) -> Vec<f32> {
     }
     if samples < MIN_SAMPLES_FOR_VARIANCE {
         // Too few samples for a pixel's own variance: the spread of its neighbours on the same
-        // surface (7 × 7, normal and depth weights).
+        // surface (7 × 7 with the full filter, normal and depth weights).
+        let r = preset.variance_radius as i32;
         for y in 0..h {
             for x in 0..w {
                 let p = y * w + x;
@@ -404,12 +496,12 @@ fn filter_band(input: &DenoiseInput, n: usize) -> Vec<f32> {
                     continue;
                 }
                 let (mut sw, mut m1, mut m2) = (0.0f32, 0.0f32, 0.0f32);
-                for dy in -3i32..=3 {
+                for dy in -r..=r {
                     let qy = y as i32 + dy;
                     if qy < 0 || qy >= h as i32 {
                         continue;
                     }
-                    for dx in -3i32..=3 {
+                    for dx in -r..=r {
                         let qx = x as i32 + dx;
                         if qx < 0 || qx >= w as i32 {
                             continue;
@@ -439,7 +531,7 @@ fn filter_band(input: &DenoiseInput, n: usize) -> Vec<f32> {
     let mut next_var = var.clone();
     let mut gvar = vec![0.0f32; n];
     let mut lum = vec![0.0f32; n];
-    for level in 0..LEVELS {
+    for level in 0..preset.levels {
         let step = 1i32 << level;
         for (p, l) in lum.iter_mut().enumerate() {
             *l = lum_of(&light, p);

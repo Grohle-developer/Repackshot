@@ -611,6 +611,43 @@ proyecto, copiados en cada trabajo) y llegan al motor como los campos de
 N fotones por muestra* cuando el motor las renderiza (`rt_scene_caustics`
 en el pool, `FLAG_CAUSTICS` en el lanzador).
 
+***Denoise* en directo del visor** (U11). Dos ajustes del filtro
+(`rt_post::denoise::Preset`): `FULL`, el de arriba, para el render (y para
+`rt`), y `VIEWPORT`, tres pasadas à-trous (saltos 1, 2 y 4) y la varianza
+espacial 3 × 3 por debajo de cuatro muestras, con su propio halo (24 filas;
+`Preset::halo` es `2^(pasadas+1) + 8`, 72 para el completo); los dos son
+deterministas y una banda de cualquiera son exactamente esas filas de la
+imagen entera (`denoise_rows_with`; en wasm, `rt_denoise_with(1, …)` y
+`rt_denoise_halo`; *hash* fijado del ejemplo con el del visor,
+`PINNED_DENOISED_VIEWPORT_EXAMPLE_4SPP`). El ajuste lo elige el tipo de
+trabajo, no el RSB: el `RNDR` no cambia. Un visor a resolución completa
+pide siempre *denoise* en su RSB (así el motor renderiza las guías y el
+interruptor no cambia la escena; mientras está apagado, el albedo de las
+guías solo para las primeras `LIVE_ALBEDO_SAMPLES` = 8 muestras) y lleva el
+interruptor aparte: en el lanzador, `denoise=0|1` al publicar la vista y
+`POST /api/render/<id>/denoise?on=0|1` después; en la web, el propio
+`PathTracerEngine`. **El carril**: cada pasada terminada se le entrega
+(sumas, `lum2` y guías); mientras el interruptor está encendido, el
+carril reduce el ruido de la pasada más nueva, enseña la imagen limpia en
+cuanto está y arranca el siguiente sobre la más nueva entonces, sin parar
+el render. En el lanzador es un hilo por trabajo de visor que, mientras
+trabaja, toma uno de los hilos de render del visor (el último de los que
+renderizan: `Gate::viewport_turn`), así que nunca le quita un hilo a un
+render final que comparte la máquina; en la web, los *workers* del visor
+toman sus bandas entre baldosa y baldosa. Con el interruptor encendido las
+pasadas duran más o menos lo que un *denoise* y al menos 250 ms
+(`live_pass_cap`, `livePassCap`; en qué pasada cae una muestra no cambia
+un píxel), así que una imagen limpia llega como mucho una pasada y un
+*denoise* después de la anterior: cada `max(2 × el denoise, 0,5 s)`. Cada
+fotograma del lanzador lleva el número de su imagen (cabecera de 52 bytes,
+`Frame::version`) y el *long-poll* lo pide con `version=`: las sumas solo
+vienen con una imagen más nueva, y un visor ya terminado espera a la
+limpia que el interruptor pidió. Apagado, el siguiente fotograma es la
+acumulación ruidosa; encendido, se reduce al momento lo acumulado (también
+con el visor convergido). Los fotogramas de gesto (resolución reducida)
+siguen sin guías ni *denoise*; el render final reduce ruido una vez, al
+final, con el filtro completo, como antes.
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de

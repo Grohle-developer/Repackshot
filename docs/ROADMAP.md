@@ -1292,7 +1292,7 @@ E6 (bisel primero). Ola B: E10 (toca el bucle de render, después de U11)
 y M2. Cada fase, una PR; `npm run qa`, `engine:test` en *debug* y
 *release*, *hashes* fijados intactos salvo donde la fase diga.
 
-## U11 · Reducción de ruido en directo — **Opus**
+## U11 · Reducción de ruido en directo — **Opus** — hecha
 
 **Qué.** Un interruptor **Reducir ruido** en la barra superior, a la
 derecha de *Rápido · Completo*, con el mismo estado que el botón del
@@ -1324,6 +1324,195 @@ apagarlo, el siguiente fotograma es el ruidoso; el render final no
 cambia de *hash* (`0xab15f290` del ejemplo con *denoise*); los gestos
 siguen a resolución reducida sin *denoise*; captura `docs/ui/
 denoise-live.png` con la barra superior.
+
+**Hecho.**
+
+- **Interruptor *Reducir ruido*** en la barra superior, a la derecha de
+  *Rápido · Completo* y en la misma zona (`data-guide="viewport-mode"`,
+  la que rodea el paso *Rápido y Completo* del recorrido guiado, cuyo
+  texto lo nombra con su atajo): un botón de una posición, acromático, en
+  negativo cuando está encendido, con su *tooltip* y el atajo **`D`**
+  (libre; en la tabla de UI.md §3). **Una sola verdad**: la parte *Visor*
+  de `render.advanced.denoise` (*Los dos* ↔ *Render*, *Visor* ↔
+  *Apagada*), que la barra, el botón del medidor y `D` leen y cambian con
+  el mismo comando (`toggleViewportDenoise`), por el *store*, deshacible
+  con su nombre (*Reducir el ruido del visor* / *Dejar de reducir el ruido
+  del visor*) y guardada en el proyecto. En *Rápido* se ve deshabilitado
+  con la ayuda *Se aplica al modo Completo* y `D` solo lo dice.
+- **Ajuste de visor del filtro** (`rt_post::denoise::Preset`): `FULL`
+  (el de E5b-1, para el render y `rt`, mismos bits: `0xab15f290`) y
+  `VIEWPORT`, **tres pasadas à-trous y la varianza espacial 3 × 3** por
+  debajo de cuatro muestras, con su halo propio de 24 filas
+  (`Preset::halo = 2^(pasadas+1) + 8`, que da los 72 del completo).
+  Bandas exactamente iguales a la imagen entera con los dos; *hashes*
+  fijados del ejemplo con el del visor a 2 y 4 muestras
+  (`PINNED_DENOISED_VIEWPORT_EXAMPLE_2SPP` = `0x04d4a08c` y `_4SPP` =
+  `0xc90ee509`), iguales en nativo, en el `rt.wasm` real
+  (`rt_denoise_with`, `rt_denoise_halo`) y por el código de la página con
+  1 y 3 *workers*. Lo elige el tipo de trabajo; el `RSB`/`RNDR` no cambia.
+  Medido (tabla abajo): de las ocho combinaciones probadas es la que da
+  mejor calidad por debajo de ~0,4 s en el tamaño del visor con cuatro
+  hilos.
+- **En directo, en el lanzador** (`rt-app/src/render.rs`): un visor a
+  resolución completa renderiza siempre las guías y tiene su interruptor
+  (`denoise=0|1` al publicarlo, `POST /api/render/<id>/denoise?on=0|1`
+  después). Cada pasada se entrega a un **carril** propio (un hilo por
+  trabajo de visor) que, encendido, reduce el ruido de la pasada más
+  nueva, la presenta en cuanto acaba y arranca el siguiente sobre la más
+  nueva entonces; mientras trabaja **toma uno de los hilos de render del
+  visor** (el último de los que renderizan, `Gate::viewport_turn`), así
+  que con un render final en marcha nunca le quita un hilo a este. Al
+  encenderlo reduce el ruido de lo acumulado al momento (si ya tenía la
+  limpia de esa pasada, la enseña sin más), también con el visor ya
+  terminado; al apagarlo, el fotograma siguiente es la acumulación
+  ruidosa, publicada en la misma llamada. Con el interruptor encendido las
+  pasadas duran lo que un *denoise* y al menos 250 ms (`live_pass_cap`):
+  como una muestra cae en la pasada que sea sin cambiar un píxel, la
+  imagen limpia llega como mucho una pasada y un *denoise* después de la
+  anterior. La regla de antes (primera, última y entre medias si habían
+  pasado tres veces lo que costó la anterior) desaparece en el visor; el
+  render final sigue con un *denoise* al final con el filtro completo.
+- **En la web** (`render/pathtracer.ts`): igual, con el carril en los
+  *workers* del visor por bandas entre sus baldosas (las pasadas siguen);
+  la página guarda las sumas de la última pasada para él. Las mismas
+  pasadas cortas (`livePassCap`).
+- **Fotogramas con número de imagen**: la cabecera `RPX1` pasa a 52 bytes
+  con `Frame::version`, que cambia cada vez que cambian las sumas (una
+  pasada, una imagen limpia, el interruptor). El *long-poll* de la página
+  la pide con `version=`; el lanzador manda las sumas solo con una imagen
+  más nueva, y con un visor ya terminado espera a la limpia que se pidió.
+  Un lector de antes lee la cabecera por su longitud, que va en ella.
+- **Los gestos** siguen a resolución reducida, sin guías ni *denoise*.
+- **Pruebas** (rt-post 4, rt-wasm 1, rt-app 6 unitarias y 1 por HTTP; la
+  interfaz: `tests/live-denoise.test.ts`, 12; `tests/pathtracer.test.ts`,
+  3 nuevas y 1 rehecha; `tests/denoise.test.ts`, 2 nuevas, una con el
+  `rt.wasm` real) y una comprobación en el navegador
+  (`tools/denoise-live-check.mjs`). Se comprobó que fallan
+  reintroduciendo cada error (lista abajo).
+
+**Medidas.** Máquina compartida de 4 núcleos; los tiempos «en calma» son
+de cuando los otros agentes apenas cargaban (carga 1–3), los «cargados» con
+carga 10–16.
+
+*Calidad* (relMSE frente a 1024 muestras con otra semilla, 480 × 280, solo
+píxeles de pieza; cinco pasadas y 7 × 7 es el filtro completo, `L3r1` el
+de visor elegido):
+
+| escena · spp | sin filtrar | completo | L4 7×7 | L4 5×5 | L3 7×7 | L3 5×5 | **L3 3×3** | L2 5×5 | L2 3×3 |
+|---|---|---|---|---|---|---|---|---|---|
+| ejemplo · 1 | 0,5123 | 0,0137 | 0,0147 | 0,0149 | 0,0195 | 0,0195 | **0,0215** | 0,0375 | 0,0393 |
+| ejemplo · 2 | 0,1646 | 0,0044 | 0,0046 | 0,0045 | 0,0058 | 0,0057 | **0,0060** | 0,0108 | 0,0111 |
+| ejemplo · 4 | 0,0634 | 0,0019 | 0,0019 | 0,0019 | 0,0021 | 0,0021 | **0,0021** | 0,0034 | 0,0034 |
+| ejemplo · 16 | 0,0077 | 0,0007 | 0,0007 | 0,0007 | 0,0007 | 0,0007 | **0,0007** | 0,0008 | 0,0008 |
+| frasco · 1 | 0,3279 | 0,0447 | 0,0457 | 0,0415 | 0,0453 | 0,0421 | **0,0371** | 0,0443 | 0,0439 |
+| frasco · 2 | 0,1612 | 0,0396 | 0,0401 | 0,0354 | 0,0389 | 0,0350 | **0,0266** | 0,0311 | 0,0269 |
+| frasco · 4 | 0,0739 | 0,0144 | 0,0145 | 0,0145 | 0,0151 | 0,0151 | **0,0151** | 0,0163 | 0,0163 |
+| frasco · 16 | 0,0223 | 0,0067 | 0,0067 | 0,0067 | 0,0068 | 0,0068 | **0,0068** | 0,0072 | 0,0072 |
+| tablero · 1 | 0,4434 | 0,0466 | 0,0482 | 0,0462 | 0,0530 | 0,0508 | **0,0468** | 0,0675 | 0,0634 |
+| tablero · 2 | 0,1622 | 0,0365 | 0,0370 | 0,0346 | 0,0386 | 0,0360 | **0,0304** | 0,0421 | 0,0365 |
+| tablero · 4 | 0,0812 | 0,0171 | 0,0172 | 0,0172 | 0,0176 | 0,0176 | **0,0176** | 0,0199 | 0,0199 |
+| tablero · 16 | 0,0352 | 0,0073 | 0,0072 | 0,0072 | 0,0073 | 0,0073 | **0,0073** | 0,0080 | 0,0080 |
+
+A 64 muestras los nueve quedan iguales (0,0002 / 0,0021 / 0,0033–0,0034).
+
+*Tiempo* a 1200 × 700 (el mejor de 3–5; «4 bandas» son cuatro hilos con el
+halo de cada ajuste):
+
+| | completo, 1 hilo | completo, 4 bandas | visor, 1 hilo | visor, 4 bandas |
+|---|---|---|---|---|
+| ejemplo (todo pieza), en calma, 2 / 4 / 16 spp | 1,92 / 1,77 / 1,54 s | 1,04 / 1,12 / 0,82 s | 1,16 / 0,94 / 0,91 s | 0,46 / 0,33–0,40 / 0,33 s |
+| frasco, en calma, 2 / 4 / 16 spp | 1,28 / 1,04 / 1,12 s | 1,06 / 0,65 / 0,82 s | 0,70 / 0,69 / 0,75 s | 0,35 / 0,31 / 0,31 s |
+| ejemplo, cargado, 2 / 4 / 16 spp | 1,90 / 1,67 / 1,68 s | 1,71 / 2,16 / 1,81 s | 1,05 / 0,99 / 1,07 s | 0,63 / 0,66 / 1,04 s |
+| ejemplo a 1920 × 1080, cargado, 2 / 4 spp | 6,46 / 6,39 s | 8,69 / 8,70 s | 4,56 / 3,46 s | 4,25 / 4,08 s |
+
+Con cuatro hilos libres el de visor queda por debajo de los ~0,4 s del plan
+a 1200 × 700 (0,31–0,46 s); L4 ya no (0,45–0,69 s). Las guías, cuando el
+interruptor está encendido, añaden un 30 % por muestra al ejemplo y un
+19 % a la escena de E5 (1200 × 700, 4 spp, 4 hilos).
+
+*El carril del lanzador*, tomando un hilo del visor o como hilo de más
+(el ejemplo a 1200 × 700, 4 hilos, filtro real, 15–20 s): en calma, 12 frente
+a 16 muestras renderizadas y 5 frente a 4 imágenes limpias (*denoise* de
+3,4 frente a 3,1 s, con el visor y el carril compitiendo); cargado, 8 frente a
+8–9 muestras y 3–4 frente a 2–3 limpias (*denoise* 3,5–5,1 frente a
+5,1–5,2 s). Indistinguibles con esta carga; se queda el que toma un hilo
+del visor, que no le quita nada a un render final. Refresco observado: la
+media de los huecos entre limpias es lo que cuesta un *denoise* (4,8–5,2 s
+con ese coste), el máximo 6,6 s, por debajo de `2 × denoise`.
+
+*En la web* (`tools/denoise-live-check.mjs`, swiftshader, 3 *workers*, visor
+de 840 × 775, cargado): 20 imágenes limpias en 24 s, huecos de 0,72 a
+1,77 s con *denoise* de 0,33 a 0,97 s; 16 de 19 dentro de
+`max(2 × denoise, 0,5 s)` y 3 acotados por la pasada (una muestra de toda
+la vista costaba ~1,2 s y llegó más de un *denoise* después de la limpia
+anterior); ninguna limpia de una pasada vieja.
+
+*Comprobado que fallan* reintroduciendo cada error: el lanzador con la
+regla de antes (esperar dos veces el coste después de cada limpia), con el
+carril sobre una entrada vieja (300 ms de retraso antes de filtrar), sin
+publicar la ruidosa al apagar, sin esperar la limpia de un trabajo
+terminado, sin arrancar el carril al encender, sin el albedo de las
+primeras muestras, sin tomar el hilo del visor, sin acortar las pasadas,
+con el filtro completo en el visor o el de visor en el final, con las
+sumas aunque la imagen no sea nueva; `rt-post` con un halo corto y con la
+7 × 7 en el visor; `rt_denoise_with` sin mirar el ajuste; la web sin
+arrancar el siguiente *denoise* al volver, parando las pasadas mientras
+filtra, sin filtrar al encender, sin quitar la limpia al apagar, sin
+acortar las pasadas, con el interruptor contando como cambio de imagen,
+con el albedo siempre; el lanzador de la página volviendo a publicar la
+vista, sin volver a seguirla terminada, sin `version`; el comando
+cambiando el borrador de la ventana de render y sin negarse en *Rápido*;
+un halo de la página distinto del del motor; las guías sin aceptar huecos.
+Captura: `docs/ui/denoise-live.png`.
+
+**No encajó.**
+
+- **Las guías se renderizan siempre a resolución completa**, también con
+  el interruptor apagado: es lo que deja reducir el ruido «de la
+  acumulación actual al momento» al encenderlo. Cuestan (el rayo de
+  albedo de cada muestra) entre un 19 y un 30 % más por muestra (el
+  ejemplo y la escena de E5 a 1200 × 700 en cuatro hilos), así que
+  apagado el albedo solo se renderiza para las primeras 8 muestras
+  (`LIVE_ALBEDO_SAMPLES`) y la imagen limpia de después lo hace con esas
+  guías (el test lo compara con una referencia así). El plan no lo decía.
+- **El refresco tiene un suelo: una muestra de todo el visor.** La pasada
+  más corta es de una muestra; si una muestra de toda la vista cuesta más
+  que `max(2 × denoise, 0,5 s)` − *denoise* (una vista muy grande, una
+  escena lenta, swiftshader en una máquina cargada: en la comprobación del
+  navegador de esta máquina, a 840 × 775, una muestra tardaba ~1,2–1,3 s y
+  el *denoise* 0,3–1,0 s), no hay nada más nuevo que filtrar y la limpia llega
+  una pasada después: el carril nunca espera teniendo trabajo (la
+  comprobación lo verifica y cuenta esos huecos aparte). Cumplirlo también
+  ahí pediría filtrar pasadas a medias (baldosas con `n` y `n + 1`
+  muestras, normalizadas): queda para el líder si hace falta.
+- **El carril del lanzador es un hilo** (lo que pedía el plan); el ajuste
+  de visor baja de ~0,4 s en cuatro hilos por bandas, pero en un hilo
+  cuesta ~0,7–1,2 s a 1200 × 700, y eso es lo que tarda en refrescarse la
+  limpia en el lanzador. Darle más hilos refrescaría antes a costa de
+  converger más despacio: decisión **Fable** (los datos, abajo).
+- **«Sin la varianza espacial 7 × 7 a partir de 4 muestras»**: la 7 × 7
+  solo se usa por debajo de 4 muestras; el ajuste de visor la deja en
+  3 × 3 ahí, que medido es igual o mejor en las escenas de producto y peor
+  en la superficie lisa del ejemplo a 1–2 muestras.
+- **La última limpia del visor convergido** usa también el ajuste de visor
+  (el contrato: lo elige el tipo de trabajo). Un *denoise* completo al
+  converger daría algo más de calidad en la imagen que se queda en
+  pantalla: queda anotado para el líder.
+- **El protocolo del lanzador cambia** (no el RSB): la cabecera `RPX1` pasa
+  de 48 a 52 bytes con el número de la imagen, `GET /api/render/<id>`
+  acepta `version=`, `POST /api/render` acepta `denoise=0|1` (solo para
+  vistas) y hay un `POST /api/render/<id>/denoise?on=0|1`. El RSB de una
+  vista a resolución completa dice siempre `denoise` bit 0 (las guías), sea
+  cual sea el modo; el interruptor va aparte.
+- **Arreglado de paso**: el botón del medidor cambiaba el borrador del
+  trabajo de la cola cuando la ventana de render lo estaba editando (usaba
+  `setRenderSettings`); el comando nuevo cambia siempre el proyecto (con su
+  test). Y cambiar *Guardar también sin reducción de ruido* o la parte
+  *Render* del *denoise* ya no vuelve a empezar la imagen del visor
+  (`advancedTouchesView`).
+- **El medidor del lanzador no sabe lo que cuesta su *denoise*** (está en
+  `GET /api/render/state`, `liveDenoise.costMs`); el de la web sí, en sus
+  atributos `data-*`. Ninguno lo pinta en texto.
 
 ## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
 

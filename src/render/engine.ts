@@ -55,6 +55,13 @@ export interface EngineStatus {
   isa?: string;
   /** Path tracer (E5b-1): the image on screen is the engine's denoised one. */
   denoised?: boolean;
+  /**
+   * Path tracer (U11), the live denoise of the Full viewport: what it measured. `ms`, the last denoise's cost (the
+   * pool; the launcher's own is in its state); `images`, the denoised images put on screen for this view;
+   * `accumulated`, the samples of the newest pass (the pool: what the next denoise starts from); `at`, when the last
+   * denoised image was put on screen (performance.now(), the pool).
+   */
+  liveDenoise?: { ms?: number; images: number; accumulated?: number; at?: number };
   /** Path tracer (E5b-1): the view renders caustics with this many photons per sample (absent: none). */
   caustics?: number;
 }

@@ -146,6 +146,25 @@ De izquierda a derecha:
    un render. **Render usa siempre el motor completo**, esté el visor
    en el modo que esté: el conmutador solo decide qué se ve mientras se
    trabaja.
+
+   A su derecha, en la misma zona (la que rodea el paso *Rápido y
+   Completo* del recorrido guiado), el interruptor **Reducir ruido**
+   (fase U11, atajo `D`): un botón de una posición, en negativo cuando
+   está encendido, que reduce el ruido del visor *Completo* **en
+   directo**, mientras se acumulan las muestras. Es el mismo estado que
+   el botón *Reducir ruido* del medidor y que la parte *Visor* de
+   *Avanzado ▸ Reducción de ruido* (*Los dos* ↔ *Render*, *Visor* ↔
+   *Apagada*): una sola verdad, la del proyecto, deshacible (*Deshacer:
+   Dejar de reducir el ruido del visor*) y guardada con él, también
+   cuando la ventana de render está editando un trabajo de la cola. El
+   *tooltip* lo dice en una frase. En *Rápido* se ve deshabilitado con
+   la ayuda *Se aplica al modo Completo*, y `D` no hace más que decirlo.
+   Encenderlo reduce el ruido de lo acumulado en ese momento (también con
+   el visor ya convergido) y apagarlo enseña en el fotograma siguiente
+   la imagen ruidosa; ninguna de las dos cosas vuelve a empezar la
+   imagen. Mientras se acumula, la imagen limpia se refresca tan a
+   menudo como cuesta un *denoise* (§2.3, medidor) y los gestos de
+   cámara siguen a resolución reducida, sin *denoise*.
 5. Derecha: **Buscar o ejecutar…** (`Ctrl/⌘ K`), campo de 240 px que abre
    la paleta de comandos; icono de **Guía**; icono de **Tema**.
 
@@ -260,9 +279,22 @@ tapar la pieza:
   cuando lo que se ve es la imagen filtrada por el *denoise* (y entonces
   las muestras son las de esa imagen) y *Cáusticas · 16 384 fotones por
   muestra* cuando el motor las renderiza; y el botón **Reducir ruido**
-  (pulsado o no) enciende o apaga el *denoise* del visor: cambia la parte
-  del visor de *Avanzado ▸ Reducción de ruido* (*Los dos* ↔ *Render*,
-  *Visor* ↔ *Apagada*), deshacible.
+  (pulsado o no) enciende o apaga el *denoise* del visor: el mismo
+  interruptor que *Reducir ruido* de la barra superior (§2.1, atajo `D`),
+  la parte del visor de *Avanzado ▸ Reducción de ruido* (*Los dos* ↔
+  *Render*, *Visor* ↔ *Apagada*), deshacible. Desde U11 el *denoise* es
+  **en directo**: un carril aparte (un hilo del lanzador, que toma uno de
+  los hilos del visor mientras trabaja; en la web, los *workers* del
+  visor por bandas entre sus baldosas) reduce el ruido de la última
+  pasada con el ajuste ligero del visor, la imagen limpia sale en cuanto
+  está y el siguiente arranca entonces sobre la pasada más nueva: el
+  visor la refresca al menos cada `max(2 × lo que cuesta un denoise,
+  0,5 s)` y nunca enseña una limpia de hace más de un *denoise*. Las
+  muestras del medidor son las de la imagen limpia que se ve. Para las
+  comprobaciones de navegador el medidor lleva además, en atributos
+  `data-*`, cuántas imágenes limpias ha enseñado, cuándo la última, lo
+  que costó el último *denoise* (en la web) y las muestras de la pasada
+  más nueva.
 - **Abajo a la derecha**: ejes de orientación (tres trazos finos X Y Z,
   monocromos) y el tamaño de la pieza en mm.
 - **Al pasar por una pieza**: su contorno se ilumina (silueta de 1 px en
@@ -727,7 +759,9 @@ decide qué se va a renderizar. Debajo, tres secciones desplegables.
   cáustica más fina y más tiempo por muestra, también en *Completo*),
   **Reducción de ruido** (*Apagada · Visor · Render · Los dos*, por
   defecto *Los dos*, con la nota de que es el filtro del motor guiado por
-  albedo, normales, profundidad y pieza, que nunca mezcla dos piezas) y,
+  albedo, normales, profundidad y pieza, que nunca mezcla dos piezas; su
+  parte *Visor* es el interruptor *Reducir ruido* de la barra superior y
+  del medidor, U11, y el render final usa siempre el filtro completo) y,
   cuando el render se filtra, **Guardar también sin reducción de ruido**
   (un segundo archivo con «-noisy» en el nombre).
 
@@ -1079,6 +1113,8 @@ de teclado* del menú):
 | `Ctrl/⌘ O` | Abrir proyecto |
 | `Ctrl/⌘ S` | Guardar proyecto (en el mismo archivo) |
 | `Ctrl/⌘ ⇧ S` | Guardar proyecto como… |
+| `Ctrl/⌘ ⇧ R` | Visor: *Rápido* o *Completo* |
+| `D` | *Reducir ruido* del visor *Completo*, en directo (fase U11) |
 | `Ctrl/⌘ ⏎` | Ventana de render |
 | `Ctrl/⌘ ⇧ ⏎` | Render con los últimos ajustes, sin abrir la ventana |
 | `F` | Encuadrar selección (o todo) |

@@ -38,6 +38,8 @@ export const ACTIONS: readonly AppAction[] = [
   { id: 'render', label: 'action.render', keys: 'mod+enter', global: true, run: (ctx) => cmd.openRenderWindow(ctx) },
   { id: 'renderNow', label: 'action.renderNow', keys: 'mod+shift+enter', global: true, run: (ctx) => cmd.renderNow(ctx) },
   { id: 'viewportMode', label: 'action.viewportMode', keys: 'mod+shift+r', global: true, run: (ctx) => cmd.toggleViewportMode(ctx) },
+  // U11: the live denoise of the Full viewport (the top bar's Denoise, the meter's, Advanced ▸ Denoise ▸ Viewport).
+  { id: 'viewportDenoise', label: 'action.viewportDenoise', keys: 'd', run: (ctx) => cmd.toggleViewportDenoise(ctx) },
   { id: 'settings', label: 'action.settings', keys: 'mod+,', global: true, run: (ctx) => (ctx.ui.get().settingsWindow ? cmd.closeSettings(ctx) : cmd.openSettings(ctx)) },
   { id: 'frame', label: 'action.frame', keys: 'f', run: (ctx) => cmd.frameSelection(ctx) },
   { id: 'tool.select', label: 'tool.select', keys: 'v', run: setTool('select') },
@@ -119,7 +121,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['general', 'view', 'se
 export function shortcutGroup(id: string): ShortcutGroup {
   if (id.startsWith('level.') || ['hide', 'isolate', 'showAll', 'deselect', 'delete', 'selectAll'].includes(id)) return 'selection';
   if (id === 'tool.move' || id === 'tool.scale' || id.startsWith('space.') || ['duplicate', 'duplicateLinked', 'group', 'ungroup', 'copyMaterial', 'pasteMaterial'].includes(id)) return 'edit';
-  if (id.startsWith('tool.') || id === 'frame' || id === 'panels' || id === 'viewportMode' || id === 'lookThrough' || id === 'glyphs') return 'view';
+  if (id.startsWith('tool.') || id === 'frame' || id === 'panels' || id === 'viewportMode' || id === 'viewportDenoise' || id === 'lookThrough' || id === 'glyphs') return 'view';
   return 'general';
 }
 

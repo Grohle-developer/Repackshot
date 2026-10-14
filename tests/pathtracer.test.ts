@@ -11,7 +11,7 @@ import { exampleState } from './helpers';
 import { DENOISE_GUIDE_MASK } from '../src/render/denoise';
 import { DEFAULT_ADVANCED } from '../src/core/render';
 import type { WorkerReply, WorkerRequest } from '../src/render/pool-protocol';
-import { Accumulator, alphaByte, assignTiles, chooseScale, exactBytes, Generations, nextPass, poolSize, scaledSize, TILE, tileGrid, type TileResult } from '../src/render/tiles';
+import { Accumulator, alphaByte, assignTiles, chooseScale, exactBytes, Generations, LIVE_ALBEDO_SAMPLES, LIVE_PASS_MS, livePassCap, MAX_PASS_SAMPLES, nextPass, poolSize, scaledSize, TILE, tileGrid, type TileResult } from '../src/render/tiles';
 import { exactPixel, exposureGain } from '../src/render/tonemap';
 import { ALBEDO_BIT, EXACT_BITS, PassAccumulator, wordsPerPixel } from '../src/render/pass-planes';
 import { passMask } from '../src/core/passes';
@@ -222,12 +222,15 @@ class FakeWorker {
   terminated = false;
   /** Milliseconds a message takes (0: a microtask), so a viewport can render for a while. */
   delay = 0;
+  /** U11: with this, a job's message takes this many milliseconds per sample instead (a pass costs what it renders). */
+  sampleDelay = 0;
   /** The denoise requests it answered (E5b-1). */
   readonly denoised: Extract<WorkerRequest, { type: 'denoise' }>[] = [];
   constructor(private readonly width: number) {}
   postMessage(msg: WorkerRequest): void {
     this.got.push(msg);
-    if (this.delay > 0) setTimeout(() => this.handle(msg), this.delay);
+    const ms = msg.type === 'job' && this.sampleDelay > 0 ? this.sampleDelay * msg.count : this.delay;
+    if (ms > 0) setTimeout(() => this.handle(msg), ms);
     else queueMicrotask(() => this.handle(msg));
   }
   private reply(m: WorkerReply): void {
@@ -238,6 +241,12 @@ class FakeWorker {
     const held = this.held ?? [];
     this.held = null;
     for (const m of held) this.onmessage?.({ data: m });
+  }
+  /** Sends the held replies of these types only; the others stay held. */
+  releaseOnly(types: ReadonlySet<WorkerReply['type']>): void {
+    const held = this.held ?? [];
+    this.held = held.filter((m) => !types.has(m.type));
+    for (const m of held) if (types.has(m.type)) this.onmessage?.({ data: m });
   }
   private handle(msg: WorkerRequest): void {
     switch (msg.type) {
@@ -659,33 +668,132 @@ describe('the viewport of the pool', () => {
     }
   });
 
-  it('denoises the Full viewport with its guide passes and shows the denoised image (E5b-1)', async () => {
+  it('denoises the Full viewport with its guide passes and shows the denoised image (E5b-1, U11: the viewport preset)', async () => {
     const { engine, workers } = await viewport(3, 96, 64);
     await settle(engine, 30);
-    // The jobs ask for the guides, and the denoiser runs on the viewport's workers.
+    // The jobs ask for the guides, and the denoiser runs on the viewport's workers with the viewport's preset, whose
+    // halo is 24 rows (one band here: 64 rows).
     expect(workers.flatMap(jobsOf).every((m) => m.passes === DENOISE_GUIDE_MASK)).toBe(true);
     const asked = workers.flatMap((w) => w.denoised);
     expect(asked.length).toBeGreaterThan(0);
-    expect(asked.every((m) => m.y0 === 0 && m.y1 === 64 && m.lo === 0 && m.hi === 64)).toBe(true);
+    expect(asked.every((m) => m.y0 === 0 && m.y1 === 64 && m.lo === 0 && m.hi === 64 && m.preset === 'VIEWPORT')).toBe(true);
     const st = engine.status();
     expect(st.denoised).toBe(true);
+    expect(st.liveDenoise?.images).toBeGreaterThan(0);
     // The samples the meter shows are those of the denoised image on screen.
     expect(st.samples).toBe(asked[asked.length - 1].samples);
-    // Viewport denoise off: no guides, no denoise, the plain sums.
-    const off = exampleState();
-    const state = { ...off, render: { ...off.render, advanced: { ...off.render.advanced, denoise: 'RENDER' as const } } };
-    engine.sync(state, off);
-    // A denoise of the view being replaced may still be on its way: count from the new view's first job on.
-    const sent = workers.map((w) => jobsOf(w).length);
-    for (let i = 0; i < 200 && !workers.some((w, k) => jobsOf(w).slice(sent[k]).some((m) => (m.passes ?? 0) === 0)); i++) await settle(engine, 1);
-    await settle(engine, 2);
+    // Viewport denoise off (U11): the image goes on (no new view), the accumulated sums are on screen at once, no more
+    // denoise, and the guides' albedo only for the first samples.
+    const on = exampleState();
+    const off = { ...on, render: { ...on.render, advanced: { ...on.render.advanced, denoise: 'RENDER' as const } } };
     const before = workers.map((w) => [jobsOf(w).length, w.denoised.length]);
-    await settle(engine, 30);
-    workers.forEach((w, i) => {
-      expect(jobsOf(w).slice(before[i][0]).every((m) => (m.passes ?? 0) === 0)).toBe(true);
-      expect(w.denoised.length).toBe(before[i][1]);
-    });
+    // (Turned quickly off, on and off again: still no change of the image, so not a gesture's reduced frames either.)
+    engine.sync(off, on);
+    engine.sync(on, off);
+    engine.sync(off, on);
     expect(engine.status().denoised).toBeUndefined();
+    await settle(engine, 30);
+    const after = workers.map((w, i) => jobsOf(w).slice(before[i][0]));
+    expect(after.flat().length).toBeGreaterThan(0);
+    expect(after.flat().every((m) => m.first > 0)).toBe(true);
+    expect(engine.status().scale).toBe(1);
+    expect(after.flat().every((m) => (m.first >= LIVE_ALBEDO_SAMPLES ? m.passes === (DENOISE_GUIDE_MASK & ~ALBEDO_BIT) : m.passes === DENOISE_GUIDE_MASK))).toBe(true);
+    // (A denoise already on its way may still be answered, but none is asked for after.)
+    await settle(engine, 10);
+    const settled = workers.map((w) => w.denoised.length);
+    await settle(engine, 20);
+    workers.forEach((w, i) => expect(w.denoised.length).toBe(settled[i]));
+    expect(settled.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(before.reduce((a, b) => a + b[1], 0) + workers.length);
+    expect(engine.status().denoised).toBeUndefined();
+  });
+
+  it('a denoise in flight does not stop the passes, and the next starts on the newest pass when it is back (U11)', async () => {
+    const { engine, workers } = await viewport(2, 64, 64);
+    // The denoise answers wait: the passes go on meanwhile.
+    workers.forEach((w) => ((w.held = []), (w.holdOnly = new Set(['denoised']))));
+    for (let i = 0; i < 100 && workers.every((w) => w.denoised.length === 0); i++) await settle(engine, 1);
+    const first = workers.flatMap((w) => w.denoised);
+    expect(first.length).toBeGreaterThan(0);
+    const jobsThen = workers.map((w) => jobsOf(w).length);
+    await settle(engine, 25);
+    const later = workers.flatMap((w, i) => jobsOf(w).slice(jobsThen[i]));
+    expect(later.length).toBeGreaterThan(2);
+    // No second denoise while one is out, and nothing denoised on screen yet.
+    expect(workers.flatMap((w) => w.denoised)).toHaveLength(first.length);
+    expect(engine.status().denoised).toBeUndefined();
+    // The passes stop where they are (the one out waits), and the denoise comes back: shown at once, and the next
+    // denoise is of the newest pass done (where the pass that is out begins), not of one before it.
+    workers.forEach((w) => (w.holdOnly = new Set(['denoised', 'tile', 'done'])));
+    await settle(engine, 5);
+    const newest = Math.max(...workers.flatMap(jobsOf).map((m) => m.first));
+    workers.forEach((w) => w.releaseOnly(new Set(['denoised'])));
+    await new Promise((r) => setTimeout(r, 0));
+    engine.frame();
+    expect(engine.status().denoised).toBe(true);
+    expect(engine.status().samples).toBe(first[0].samples);
+    const second = workers.flatMap((w) => w.got).filter((m): m is Extract<WorkerRequest, { type: 'denoise' }> => m.type === 'denoise').slice(first.length);
+    expect(second.length).toBeGreaterThan(0);
+    expect(second[0].samples).toBe(newest);
+    expect(newest).toBeGreaterThan(first[0].samples);
+    workers.forEach((w) => w.release());
+  });
+
+  it('turned on, it denoises the last pass at once, without starting the image over (U11)', async () => {
+    const { engine, workers } = await viewport(2, 64, 32);
+    const on = exampleState();
+    const off = { ...on, render: { ...on.render, advanced: { ...on.render.advanced, denoise: 'OFF' as const } } };
+    engine.sync(off, on);
+    engine.setViewportLimit({ by: 'SAMPLES', samples: 20, seconds: 120 });
+    for (let i = 0; i < 200 && !engine.status().converged; i++) await settle(engine, 1);
+    expect(engine.status().converged).toBe(true);
+    expect(workers.flatMap((w) => w.denoised)).toHaveLength(0);
+    const jobs = workers.flatMap(jobsOf).length;
+    engine.sync(on, off);
+    // Asked for at once, of the 20 samples there are; no pass is rendered for it.
+    const asked = workers.flatMap((w) => w.got).filter((m): m is Extract<WorkerRequest, { type: 'denoise' }> => m.type === 'denoise');
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every((m) => m.samples === 20)).toBe(true);
+    await settle(engine, 5);
+    expect(engine.status()).toMatchObject({ denoised: true, samples: 20, converged: true });
+    expect(workers.flatMap(jobsOf)).toHaveLength(jobs);
+    // Off and on again with nothing new: the same denoised image, at once, without denoising it again.
+    const n = workers.flatMap((w) => w.denoised).length;
+    engine.sync(off, on);
+    expect(engine.status().denoised).toBeUndefined();
+    engine.sync(on, off);
+    expect(engine.status().denoised).toBe(true);
+    expect(workers.flatMap((w) => w.denoised)).toHaveLength(n);
+  });
+
+  it('with the denoise on, the passes are about as long as a denoise; a gesture neither renders guides nor denoises (U11)', async () => {
+    expect([livePassCap(10, 400), livePassCap(40, 100), livePassCap(40, 400), livePassCap(500, 400), livePassCap(0, 400)]).toEqual([16, 6, 10, 1, MAX_PASS_SAMPLES]);
+    expect(LIVE_PASS_MS).toBe(250);
+    const { engine, workers } = await viewport(2, 64, 32);
+    // A pass costs 60 ms a sample: four samples fill the 250 ms a pass aims at.
+    workers.forEach((w) => ((w.delay = 0), (w.sampleDelay = 60)));
+    engine.setViewportLimit({ by: 'SAMPLES', samples: 99999, seconds: 120 });
+    const later = exampleState();
+    engine.sync({ ...later, render: { ...later.render, maxSamples: later.render.maxSamples + 1 } }, later);
+    const start = workers.map((w) => jobsOf(w).length);
+    const t0 = Date.now();
+    while (Date.now() - t0 < 1500) await settle(engine, 1);
+    const counts = workers.flatMap((w, i) => jobsOf(w).slice(start[i])).map((m) => m.count);
+    expect(counts.length).toBeGreaterThan(3);
+    expect(Math.max(...counts)).toBeLessThanOrEqual(livePassCap(60, LIVE_PASS_MS));
+    // A gesture: reduced frames, no guides, no denoise.
+    workers.forEach((w) => ((w.sampleDelay = 0), (w.delay = 1)));
+    const asked = workers.flatMap((w) => w.denoised).length;
+    const before = workers.map((w) => jobsOf(w).length);
+    engine.beginGesture();
+    engine.gestureView({ azimuth: 2 });
+    await settle(engine, 20);
+    const gesture = workers.flatMap((w, i) => jobsOf(w).slice(before[i]));
+    expect(gesture.length).toBeGreaterThan(0);
+    expect(gesture.every((m) => (m.passes ?? 0) === 0)).toBe(true);
+    expect(engine.status().scale).toBeGreaterThan(1);
+    expect(engine.status().denoised).toBeUndefined();
+    expect(workers.flatMap((w) => w.denoised).length).toBeLessThanOrEqual(asked + workers.length);
+    engine.endGesture();
   });
 
   it('a Render denoises its image at the end and hands back the one before denoise when asked (E5b-1)', async () => {

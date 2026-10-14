@@ -334,3 +334,139 @@ fn the_denoised_example_has_a_pinned_hash() {
 
 /// Pinned hash of the denoised example image at 4 samples per pixel.
 pub(crate) const PINNED_DENOISED_EXAMPLE_4SPP: u32 = 0xab15_f290;
+
+// ------------------------------------------------------------------ the viewport's preset (U11)
+
+#[test]
+fn the_presets_halos_hold_the_filter_and_the_full_one_is_the_same_filter() {
+    assert_eq!(Preset::FULL.halo(), HALO);
+    assert_eq!(HALO, 72);
+    assert_eq!(Preset::FULL.levels, LEVELS);
+    const { assert!(Preset::VIEWPORT.levels < Preset::FULL.levels) };
+    const { assert!(Preset::VIEWPORT.halo() < Preset::FULL.halo()) };
+    // The default calls are the full filter.
+    let s = Synthetic::new(30, 60, 2, 0.7, 1.4, 1.0);
+    assert_eq!(
+        denoise(&s.input()).expect("full"),
+        denoise_with(&s.input(), Preset::FULL).expect("full")
+    );
+    assert_eq!(
+        denoise_rows(&s.input(), 10, 20).expect("full"),
+        denoise_rows_with(&s.input(), 10, 20, Preset::FULL).expect("full")
+    );
+    // Out of range fields are brought into it (a host cannot ask for more than the full filter).
+    let wild = Preset {
+        levels: 9,
+        variance_radius: 0,
+    };
+    assert_eq!(
+        wild.clamped(),
+        Preset {
+            levels: LEVELS,
+            variance_radius: 1
+        }
+    );
+}
+
+#[test]
+fn the_viewport_preset_is_deterministic_and_a_band_of_it_is_exactly_those_rows() {
+    // Below four samples (the spatial variance) and above.
+    for samples in [2u32, 6] {
+        let s = Synthetic::new(30, 200, samples, 0.7, 1.4, 1.0);
+        let p = Preset::VIEWPORT;
+        let whole = denoise_with(&s.input(), p).expect("denoise");
+        assert_eq!(whole, denoise_with(&s.input(), p).expect("again"));
+        // Another filter than the full one.
+        assert_ne!(whole, denoise(&s.input()).expect("full"));
+        let w = 30usize;
+        let halo = p.halo();
+        for (y0, y1) in [(0u32, 40u32), (40, 41), (100, 160), (150, 200), (0, 200)] {
+            let lo = y0.saturating_sub(halo);
+            let hi = (y1 + halo).min(200);
+            let rows = denoise_rows_with(&s.band(lo, hi), y0, y1, p).expect("band");
+            assert_eq!(
+                rows[..],
+                whole[y0 as usize * w * 4..y1 as usize * w * 4],
+                "{samples} spp, rows {y0}..{y1}"
+            );
+            // The input's own band of the rows is the same band.
+            let b = s.input().with_halo_of(y0, y1, p);
+            assert_eq!((b.origin_y, b.origin_y + b.rows), (lo, hi));
+        }
+        // A band without its halo is refused, not computed wrong; the full filter needs more.
+        assert_eq!(
+            denoise_rows_with(&s.band(100 - halo + 1, 200), 100, 110, p),
+            Err(DenoiseError::Rows)
+        );
+        assert_eq!(
+            denoise_rows(&s.band(100 - halo, 200), 100, 110),
+            Err(DenoiseError::Rows)
+        );
+    }
+}
+
+#[test]
+fn the_viewport_preset_lowers_the_error_and_never_mixes_two_parts() {
+    for samples in [1u32, 2, 4, 16] {
+        let s = Synthetic::new(48, 40, samples, 0.5, 2.0, 1.0);
+        let out = denoise_with(&s.input(), Preset::VIEWPORT).expect("denoise");
+        for (id, truth) in [(1u32, 0.5f32), (2, 2.0)] {
+            let (before, after) = (mse(&s, &s.sums, id, truth), mse(&s, &out, id, truth));
+            eprintln!("viewport preset, {samples} spp, part {id}: mse {before:.5} -> {after:.5}");
+            assert!(
+                after < 0.35 * before,
+                "{samples} spp part {id}: {before} -> {after}"
+            );
+        }
+    }
+    let s = Synthetic::new(40, 32, 8, 0.0, 3.0, 1.5);
+    let out = denoise_with(&s.input(), Preset::VIEWPORT).expect("denoise");
+    for p in 0..s.part_id.len() {
+        match s.part_id[p] {
+            0 => assert_eq!(
+                out[p * 4..p * 4 + 4],
+                s.sums[p * 4..p * 4 + 4],
+                "background {p}"
+            ),
+            1 => assert!(out[p * 4..p * 4 + 3].iter().all(|&v| v == 0.0), "left {p}"),
+            _ => {}
+        }
+        assert_eq!(out[p * 4 + 3], s.sums[p * 4 + 3]);
+    }
+}
+
+#[test]
+fn the_example_denoised_for_the_viewport_has_a_pinned_hash() {
+    // The page's pool (rt.wasm, `rt_denoise_with`) and the launcher give these bits too
+    // (tests/denoise.test.ts with the real module). At 2 samples the 3 × 3 variance estimate
+    // works, at 4 the film's own variance.
+    let p = Preset::VIEWPORT;
+    for (samples, pinned) in [
+        (2u32, PINNED_DENOISED_VIEWPORT_EXAMPLE_2SPP),
+        (4, PINNED_DENOISED_VIEWPORT_EXAMPLE_4SPP),
+    ] {
+        let (film, passes) = example_with_guides(samples);
+        let sums = rgba_sums(&film);
+        let input = DenoiseInput::whole(samples, &sums, &film.lum2, &passes).expect("input");
+        let out = denoise_with(&input, p).expect("denoise");
+        let hash = fnv1a(&means(&out, samples));
+        eprintln!("example denoised for the viewport at {samples} spp: {hash:#010x}");
+        assert_eq!(hash, pinned, "{samples} spp");
+        let h = film.height;
+        let mut banded = Vec::new();
+        for k in 0..7 {
+            let (y0, y1) = (h * k / 7, h * (k + 1) / 7);
+            banded.extend(
+                denoise_rows_with(&input.with_halo_of(y0, y1, p), y0, y1, p).expect("band"),
+            );
+        }
+        assert_eq!(banded, out);
+        // The full filter's image is another one.
+        assert_ne!(out, denoise(&input).expect("full"));
+    }
+}
+
+/// Pinned hashes of the example image at 2 and 4 samples per pixel denoised with
+/// [`Preset::VIEWPORT`].
+pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_2SPP: u32 = 0x04d4_a08c;
+pub(crate) const PINNED_DENOISED_VIEWPORT_EXAMPLE_4SPP: u32 = 0xc90e_e509;

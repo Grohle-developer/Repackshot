@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { autoCaustics, causticsFields, CAUSTICS_PRESETS, denoiseBits, denoiseIn, lightAngleDeg, toggledViewportDenoise, DENOISE_IMAGE, DENOISE_KEEP_NOISY } from '../src/core/caustics';
 import { DEFAULT_ADVANCED, defaultRenderSettings, engineFieldsOf, migrateRender, patchSettings } from '../src/core/render';
-import { DENOISE_GUIDE_MASK, DENOISE_HALO, denoiseBand, denoiseBands, denoiseImage, hasDenoiseExport, MIN_BAND_ROWS, packBand } from '../src/render/denoise';
+import { DENOISE_GUIDE_MASK, DENOISE_HALO, DENOISE_PRESETS, denoiseBand, denoiseBands, denoiseImage, hasDenoiseExport, MIN_BAND_ROWS, packBand } from '../src/render/denoise';
 import { Accumulator, luminanceF32 } from '../src/render/tiles';
 import { noisyName } from '../src/ui/render-queue';
 import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
@@ -72,6 +72,18 @@ describe('the denoiser’s input on the page', () => {
     expect(bands[0]).toEqual({ y0: 0, y1: 216, lo: 0, hi: 216 + DENOISE_HALO });
     expect(bands[4].hi).toBe(1080);
     expect(bands.map((b) => b.y0).concat(1080)).toEqual([0, 216, 432, 648, 864, 1080]);
+  });
+
+  it('U11: the viewport preset cuts smaller bands with its own halo of 24 rows', () => {
+    expect(DENOISE_PRESETS.FULL).toEqual({ id: 0, halo: DENOISE_HALO, minRows: MIN_BAND_ROWS });
+    expect(DENOISE_PRESETS.VIEWPORT.halo).toBe(24);
+    const bands = denoiseBands(700, 4, 'VIEWPORT');
+    expect(bands).toHaveLength(4);
+    expect(bands[1]).toEqual({ y0: 175, y1: 350, lo: 151, hi: 374 });
+    expect(bands.map((b) => b.y0).concat(700)).toEqual([0, 175, 350, 525, 700]);
+    // The full filter of the same view: three bands of at least 192 rows, 72 around each.
+    expect(denoiseBands(700, 4)).toHaveLength(3);
+    expect(denoiseBands(100, 8, 'VIEWPORT')).toEqual([{ y0: 0, y1: 100, lo: 0, hi: 100 }]);
   });
 
   it('packs the planes in the order of rt_wasm::denoise', () => {
@@ -142,6 +154,25 @@ live('the engine’s denoiser and caustics through the page’s code (the real r
       const mean = new Accumulator(512, 384, image.tiles);
       mean.sum.set(clean!);
       expect(fnv1a(resolveRgb(mean, 4)), `${workers} workers`).toBe(want);
+    }
+  }, 120_000);
+
+  it('U11: denoises the example with the viewport preset to rt-post’s pinned images, with any number of bands', async () => {
+    const rt = await loadRt();
+    if (!hasDenoiseExport(rt) || typeof rt.rt_denoise_with !== 'function' || typeof rt.rt_denoise_halo !== 'function') throw new Error(`${RT_WASM} has no rt_denoise_with: npm run engine:build`);
+    // The page's halos are the engine's.
+    expect([rt.rt_denoise_halo(0), rt.rt_denoise_halo(1), rt.rt_denoise_halo(2)]).toEqual([DENOISE_PRESETS.FULL.halo, DENOISE_PRESETS.VIEWPORT.halo, 0]);
+    const rsb = new Uint8Array(readFileSync('tests/fixtures/example.rsb'));
+    const file = 'engine/crates/rt-post/src/denoise/tests.rs';
+    for (const samples of [2, 4]) {
+      const { image, passes } = renderWithPasses(rt, rsb, 512, 384, samples, DENOISE_GUIDE_MASK, { lum2: true });
+      const want = pinned(file, `PINNED_DENOISED_VIEWPORT_EXAMPLE_${samples}SPP`);
+      for (const workers of [1, 3]) {
+        const clean = await denoiseImage(512, 384, samples, image.sum, image.lum2, passes, workers, async (job) => denoiseBand(rt, job), 'VIEWPORT');
+        const mean = new Accumulator(512, 384, image.tiles);
+        mean.sum.set(clean!);
+        expect(fnv1a(resolveRgb(mean, samples)), `${samples} spp, ${workers} workers`).toBe(want);
+      }
     }
   }, 120_000);
 

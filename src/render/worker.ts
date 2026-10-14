@@ -193,6 +193,7 @@ scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           samples: msg.samples,
           band: { y0: msg.y0, y1: msg.y1, lo: msg.lo, hi: msg.hi },
           input: new Uint32Array(msg.input),
+          ...(msg.preset ? { preset: msg.preset } : {}),
         });
         post({ type: 'denoised', id: msg.id, data }, [data.buffer]);
       } catch (err) {
