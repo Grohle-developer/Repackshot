@@ -28,7 +28,7 @@ binary-ninja/
 render-output/
 
 # Build / tooling artifacts
-node_modules/
+node_modules
 dist/
 out/
 .vite/
