@@ -94,6 +94,7 @@ nuevo con el brief de la fase del ROADMAP y la orden de seguir desde el último
    de la release; la clave de activación la tiene el usuario (no está en
    ningún repositorio). La primera actualización desde la app es de esta
    versión a la siguiente.
+5. Especificación diferida en `docs/TODO.md` (Room Builder, paseos, paneles del canvas, físicas de ambiente y viento, servidor MCP, emisor/desagüe de líquido, vídeo con IA consistente y Open Gate; nudos de la madera): se retoma cuando acabe todo lo anterior.
 
 ## Para reanudar una fase
 
