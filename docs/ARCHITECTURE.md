@@ -780,7 +780,7 @@ con `HALO` = 72 filas alrededor (el alcance de todo el filtro) y da
 exactamente esas filas de la imagen entera, así que los anfitriones lo
 reparten entre hilos o *workers* sin cambiar un bit (bandas de 192 filas
 como mínimo). *Hash* fijado: el ejemplo a 4 muestras con *denoise*,
-`0xab15f290` (`PINNED_DENOISED_EXAMPLE_4SPP`), igual con el `rt.wasm` real
+`0x9ef7c8a0` (`PINNED_DENOISED_EXAMPLE_4SPP`, desde E12), igual con el `rt.wasm` real
 (`tools/wasm-parity.mjs --expect-denoised`) y por el código de la página
 (`tests/denoise.test.ts`).
 
@@ -822,7 +822,7 @@ relativa a la del suelo abierto, al fondo que muestra; con fondo
 transparente no se muestran. Coste: `caustic_photons` fotones por muestra,
 trazados por cada anfitrión antes de las baldosas de esa muestra (en wasm,
 cada *worker* guarda los 16 mapas de la última pasada). *Hash* fijado: la
-escena de E5 con 2048 fotones por muestra, `0x55d60f2f`
+escena de E5 con 2048 fotones por muestra, `0x5419866e` (desde E12)
 (`PINNED_E5B_CAUSTICS_4SPP`, `rt --write-e5b-example`), igual en todas las
 rutas SIMD, en el `rt.wasm` real, por el lanzador con 1, 4 y 16 hilos y por
 el código de la página.
@@ -840,6 +840,62 @@ proyecto, copiados en cada trabajo) y llegan al motor como los campos de
 *Ruido reducido* cuando la imagen en pantalla es la filtrada y *Cáusticas ·
 N fotones por muestra* cuando el motor las renderiza (`rt_scene_caustics`
 en el pool, `FLAG_CAUSTICS` en el lanzador).
+
+### 5.2 ter · Elección de luz (E12)
+
+**Por punto** (`rt_core::light`). La estimación de siguiente evento elige
+**una** luz por vértice con probabilidad proporcional a una cota barata de
+la irradiancia que cada una, sin oclusión, puede dar al punto `x` que se
+sombrea: el caso plano, de un solo nivel, del árbol de luces de Conty
+Estevez y Kulla («Importance Sampling of Many Lights with Adaptive Tree
+Splitting», HPG 2018), con su cota de orientación del §4.3. Pesos en
+`x`, todos en W/m² con las distancias en metros:
+
+| Luz | Peso en `x` |
+| --- | --- |
+| Punto o foco | `lum(I) · máscara(x) / max(d², r²)` (la máscara del foco es exacta: el modelo enmascara por la dirección desde su centro) |
+| Rectángulo o disco | `lum(L) · A · cos θ' / max(d², A)` |
+| Malla emisora | lo mismo desde su centroide, con el cono de normales de sus caras; de dos caras o cerrada, `cos θ' = 1`, y cuenta una vez (una cara mira a `x`) |
+| Sol | `lum(E)` |
+| Entorno | `π L̄` |
+
+`θ' = max(0, θ − θo − θu)`, cero cuando `θ' ≥ θe = π/2`: `θ` es el ángulo
+entre el eje de las normales y la dirección del centro a `x`, `θo` la
+apertura del cono de normales (0 en un panel), `θu` el semiángulo de la
+esfera que envuelve la luz vista desde `x` (`sin θu = r / d`; dentro de
+ella, cualquier dirección). Así ninguna luz que pueda iluminar `x` desde
+alguno de sus puntos tiene probabilidad cero (un panel de canto desde su
+centro cuenta). Se calcula con productos escalares y raíces
+(`cos(a ± b)`), en `f32`, sin `sin`/`exp`/`powf` en el bucle.
+
+**Contrato.** `Lights::select(x)` suma los pesos en `x` y devuelve una
+`Selection` (el vértice, esa suma, los ocho primeros pesos y si la
+elección es por flujo: 52 bytes, nada del tamaño de la lista de luces);
+`sample_selected` elige con ella, reconstruyendo la distribución acumulada
+entrada a entrada, con las mismas operaciones que `build_cdf` y `pick`,
+hasta la luz que toma (los pesos pasados el octavo se vuelven a calcular,
+con las mismas operaciones). El
+rayo BSDF que sale del vértice la lleva en `Scattered { pdf, from }`.
+`crossed`, `crossed_from`, `crossed_without_photons`, `escaped`,
+`escaped_environment` y `emitter_weight` la reciben, y **una sola
+función** (`Lights::pmf`) da la probabilidad de una luz en una selección
+para la estimación de siguiente evento y para los pesos MIS: evaluada en
+el vértice donde se muestreó el rayo, también cuando sigue recto por
+paredes finas y recortes (los sucesos rectos no cambian `from`). De dos a
+`MAX_LOCAL_LIGHTS` = 64 entradas (el coste por punto crece con su número);
+con más, todos los sitios usan la distribución estática de antes de E12,
+por flujo hacia la esfera que envuelve la escena
+(`Lights::select_by_flux`). Con una sola entrada la elección es cierta y
+la imagen la misma, bit a bit, por punto o por flujo (un test lo
+comprueba), así que se elige por flujo, sin coste.
+
+**Lo que sigue por flujo.** La emisión de fotones de las cáusticas (no hay
+punto) y el **atrapasombras**: su sombra es el cociente de la luz que
+llega y la que llegaría de una sola muestra, cuyo valor depende de cómo se
+elige la luz; sigue con la elección estática (su muestra de luz y el MIS de
+su rayo BSDF) y conserva su aspecto bit a bit. Un atrapasombras que
+acumule las dos sumas por píxel y divida al resolver no dependería de la
+elección (E13).
 
 ### 5.3 · En el navegador: workers
 
