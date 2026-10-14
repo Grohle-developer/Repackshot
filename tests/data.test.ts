@@ -528,12 +528,12 @@ describe('fuzz and lenses', () => {
 });
 
 describe('animation catalogues', () => {
-  it('has 15 move kinds, 5 easings, 3 targets and 6 explode modes', () => {
+  it('has 15 move kinds, 5 easings, 3 targets and 8 explode modes (N6 appended LINEAR and SPHERICAL)', () => {
     expect(MOVE_KINDS).toHaveLength(15);
     expect(EASING_KINDS.map((e) => e.key)).toEqual(['LINEAR', 'EASE', 'EASE_IN', 'EASE_OUT', 'EASE_STRONG']);
     expect(TARGET_KINDS.map((t) => t.key)).toEqual(['OBJECT', 'SUBJECT', 'SCENE']);
     expect(EXPLODE_MODES.map((m) => m.key)).toEqual([
-      'RADIAL', 'AXIS_X', 'AXIS_Y', 'AXIS_Z', 'CYLINDRICAL', 'CUSTOM',
+      'RADIAL', 'AXIS_X', 'AXIS_Y', 'AXIS_Z', 'CYLINDRICAL', 'CUSTOM', 'LINEAR', 'SPHERICAL',
     ]);
     expect(unique(MOVE_KINDS.map((m) => m.key))).toBe(true);
     expect(DEFAULT_AMOUNT_LABEL.en).toBe('Amount');
@@ -659,7 +659,7 @@ describe('labels', () => {
       MOVE_KINDS: 30,
       EASING_KINDS: 10,
       TARGET_KINDS: 6,
-      EXPLODE_MODES: 12,
+      EXPLODE_MODES: 16,
       SEQUENCE_PRESETS: 16,
       DOCTOR_CHECKS: 42,
       DEFAULT_AMOUNT_LABEL: 1,

@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
-import { evaluate, type Pose } from '../core/animation';
+import { evaluate, poseActive, type Pose } from '../core/animation';
 import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
@@ -541,7 +541,8 @@ export class PreviewEngine implements RenderEngine {
     if (nodesChanged) this.syncNodes(state, prev);
     if (nodesChanged || matsChanged) this.assignMaterials(state);
     const anim = state.animation;
-    const posed = anim.clips.length > 0 && (anim.playing || anim.playhead > 0);
+    // A reversed clip holds its end state from the first frame (an explode that assembles starts apart).
+    const posed = poseActive(state);
     const poseToggled = posed !== this.poseActive;
     const poseChanged = poseToggled || (posed && (full || anim !== prev.animation));
     const pose = posed ? evaluate(state, anim.playhead) : null;
