@@ -33,6 +33,7 @@ let engine = null;
 let neutral = null;
 const recipes = new Map();
 let categories = [];
+let filters = [];
 const presetFiles = new Map();
 const presetCache = new Map();
 const queue = [];
@@ -240,6 +241,7 @@ async function init(msg) {
   neutral = json(engine.neutral);
   const list = json('recipes.json');
   categories = list.categories;
+  filters = Array.isArray(list.filters) ? list.filters : [];
   for (const r of list.recipes) recipes.set(r.id, r);
   // The host compiled the module and checked it imports nothing; it is instantiated with nothing to import.
   const { instance } = await WebAssembly.instantiate(msg.wasm, {});
@@ -255,7 +257,8 @@ self.addEventListener('message', (e) => {
     } else if (msg.type === 'info') {
       self.postMessage({ type: 'info', id: msg.id, info: { name: manifest.name, version: manifest.version, engine: `wasm ${engine.version}` } });
     } else if (msg.type === 'presets') {
-      self.postMessage({ type: 'presets', id: msg.id, categories, presets: [...recipes.values()].map((r) => ({ id: r.id, name: r.name, category: r.category, ...(r.aux ? { aux: r.aux } : {}) })) });
+      // The filters the app's film search has (its TYPE and ISO rows) and the recipes' groups, each recipe with its tags.
+      self.postMessage({ type: 'presets', id: msg.id, categories, filters, presets: [...recipes.values()].map((r) => ({ id: r.id, name: r.name, category: r.category, ...(r.aux ? { aux: r.aux } : {}), ...(r.tags ? { tags: r.tags } : {}) })) });
     } else if (msg.type === 'render') {
       queue.push(msg);
       if (queue.length === 1) setTimeout(pump, 0);

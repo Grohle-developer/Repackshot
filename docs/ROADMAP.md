@@ -6562,6 +6562,37 @@ no tiene test en Node (no hay IndexedDB en los tests): la comprobación de
 navegador ve que guarda y devuelve (`d2_film_cards_kept`); que *Quitar* las
 borre solo lo comprueban los tests sobre el almacén en memoria.
 
+**P6b** (2026-10-14, petición del usuario: el carrusel como la búsqueda de
+películas de la app de aintfilm). **Hecho**: un deslizador fino bajo el
+carrusel, de su ancho, atado a su desplazamiento en los dos sentidos (sus pasos
+son las posiciones de ajuste del carrusel, una por tarjeta y la última su final:
+`ui/strip-math.ts`), con la tarjeta elegida marcada en su pista y manejable con
+el teclado; y los filtros, que el plugin declara en su respuesta `presets`
+(`filters` y los `tags` de cada receta) y el anfitrión dibuja como filas de
+*chips* sobre el carrusel, combinados (Y), con la cuenta (*23 de 127 recetas*),
+la receta elegida primera y marcada *Fuera de los filtros* cuando la dejan
+fuera, y guardados con los ajustes del plugin (`filters`, deshacibles). El de
+película trae los de la app (`docs/MANUAL.md` §7 y `src/lib/filmFilter.ts` de
+aintfilm): **Tipo** (sus palabras: *COLOR* para el negativo en color, *B&W*,
+*DIAPOSITIVA*, *CINE*, por la clase de cada película) e **ISO** (sus tres
+bandas, *≤ 100 · 200–400 · ≥ 800*, cortadas en 100 y 400 por la ISO de caja),
+más **Grupo** (películas, el color de una película, grano, difusión, objetivo:
+los grupos del paquete). Paquete reconstruido con la misma clave: 1 956 072
+bytes, `sha256`
+`a60dd9edea828f4ed29acd3d29b9ab1ffde384284da8c6a6a6619cc1d6ba3d8a`, versión
+0.1.0 (no publicado aún). Tests: 9 nuevos (`plugins-filters`, y uno en
+`plugins-film`), 15 mutaciones comprobadas; la comprobación de navegador
+arrastra el deslizador, lo mueve con la rueda y con el teclado, y aplica dos
+filtros (`f_scrub_slider`, `f_two_filters`). **No encajó.** (1) La app tiene un
+tercer filtro, **MARCA**, y no está: son nombres de fabricantes (su D112); el
+cuarto, **ORIGEN** (de la app, mías, de otros), aquí solo tendría uno. No hay
+más facetas en la app (formato, proceso, época): no se inventaron. (2) *Color /
+B&W* es el **Tipo** de la app, con sus cuatro valores: la diapositiva y el cine
+también son de color, y la app los separa así. (3) La app dibuja sus filtros
+como desplegables en una fila (M31-03); aquí son *chips*, como se pidió. (4) Una
+receta sin película (grano, filtro, objetivo) no tiene Tipo ni ISO: solo está en
+sus *Todos*, la regla de la app.
+
 ## Orden sugerido
 
 1. **U1** (Opus) y **E1** (Sonnet), en paralelo: la interfaz y el

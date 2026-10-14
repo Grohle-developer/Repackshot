@@ -515,10 +515,101 @@
   white-space: nowrap;
   color: var(--ink-2);
 }
+/* P6b: the recipe filters, a row of chips each (the chips of components.css), and the count of what they leave. */
+.rw-pl-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rw-pl-filters:empty {
+  display: none;
+}
+.rw-pl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.rw-pl-chips-name {
+  min-width: 64px;
+  color: var(--ink-2);
+}
+/* The chosen recipe the filters leave out: first, dimmed, its label saying so. */
+.rw-pl-card.is-outside .rw-pl-thumb,
+.rw-pl-card.is-outside .rw-pl-card-name {
+  opacity: 0.45;
+}
+.rw-pl-card.is-outside .rw-pl-card-cat {
+  font-style: italic;
+}
+/* The slider under the strip: a thin track as wide as the carousel, the chosen card's place a tick on it. */
+.rw-pl-scrub {
+  position: relative;
+  height: 16px;
+  margin: 0 3px;
+}
+.rw-pl-scrub.is-idle {
+  visibility: hidden;
+}
+.rw-pl-scrub-range {
+  display: block;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+.rw-pl-scrub-range::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--line);
+}
+.rw-pl-scrub-range::-moz-range-track {
+  height: 2px;
+  background: var(--line);
+}
+.rw-pl-scrub-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 28px;
+  height: 8px;
+  margin-top: -3px;
+  border-radius: 4px;
+  background: var(--ink-0);
+  border: 0;
+}
+.rw-pl-scrub-range::-moz-range-thumb {
+  width: 28px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ink-0);
+  border: 0;
+}
+.rw-pl-scrub-range:focus-visible {
+  outline: var(--focus-ring) solid var(--line-strong);
+  outline-offset: 2px;
+}
+.rw-pl-scrub-mark {
+  position: absolute;
+  top: 2px;
+  left: calc(var(--mark, 0) * (100% - 28px) + 14px);
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  background: var(--ink-2);
+  pointer-events: none;
+}
+.rw-pl-strip.is-scrubbing {
+  scroll-snap-type: none;
+  scroll-behavior: auto;
+}
 .rw-pl-recipe-aux,
 .rw-pl-thumbs,
+.rw-pl-count,
 .rw-pl-base-line {
   margin: 0;
+}
+.rw-pl-count:empty {
+  display: none;
 }
 .rw-pl-thumbs:empty,
 .rw-pl-base-line:empty {

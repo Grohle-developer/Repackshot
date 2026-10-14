@@ -6,6 +6,7 @@
 
 let recipes = [];
 let categories = [];
+let filters = [];
 let manifest = null;
 /** Renders waiting their turn: one runs per task, so a `cancel` that arrives before its turn drops it. */
 const queue = [];
@@ -82,11 +83,12 @@ self.addEventListener('message', (e) => {
       const data = JSON.parse(text);
       recipes = data.recipes;
       categories = data.categories;
+      filters = data.filters ?? [];
       self.postMessage({ type: 'ready', abi: 1 });
     } else if (msg.type === 'info') {
       self.postMessage({ type: 'info', id: msg.id, info: { name: manifest.name, version: manifest.version, engine: 'JavaScript' } });
     } else if (msg.type === 'presets') {
-      self.postMessage({ type: 'presets', id: msg.id, categories, presets: recipes.map((r) => ({ id: r.id, name: r.name, category: r.category })) });
+      self.postMessage({ type: 'presets', id: msg.id, categories, filters, presets: recipes.map((r) => ({ id: r.id, name: r.name, category: r.category, ...(r.tags ? { tags: r.tags } : {}) })) });
     } else if (msg.type === 'render') {
       queue.push(msg);
       setTimeout(pump, 0);

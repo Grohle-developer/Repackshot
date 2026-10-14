@@ -11,7 +11,7 @@
 // store action, undoable, one entry per drag. Without a plugin the section says, in one line, where plugins are
 // installed.
 
-import { controlGroups, controlsFor, defaultControls, seedProvenance, sliderDigits, sliderText, withPlugin, type InstalledPlugin, type PluginControl, type PluginControlValue, type PluginManifest, type PluginPresets, type PluginRunResult } from '../../core/plugins';
+import { activeFilters, controlGroups, controlsFor, defaultControls, filterPresets, seedProvenance, sliderDigits, sliderText, withPlugin, type InstalledPlugin, type PluginControl, type PluginControlValue, type PluginManifest, type PluginPreset, type PluginPresets, type PluginRunResult } from '../../core/plugins';
 import { pluginSource } from '../../core/plugin-pixels';
 import type { RenderSettings } from '../../core/render';
 import type { Label } from '../../data/types';
@@ -129,6 +129,8 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
   const strip = recipeStrip({
     label: t('rw.pl.recipes'),
     pending: t('rw.pl.thumbPending'),
+    outside: t('rw.pl.outside'),
+    scrub: t('rw.pl.scrub'),
     onPick: (r) => {
       if (r !== recipe()) env.set({ plugins: withPlugin(env.get().plugins, id, { recipe: r }) }, undefined, L('undo.pluginRecipe', { plugin: m.name }));
     },
@@ -136,18 +138,60 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
   scope.onDispose(() => strip.destroy());
   const recipeAux = h('div', { class: 'note rw-pl-recipe-aux' }, t('rw.pl.loadingRecipes'));
   const thumbsLine = h('div', { class: 'note tabular rw-pl-thumbs', role: 'status' });
+  // P6b: the plugin's recipe filters as rows of chips (All and its options), combined; the count of what they leave.
+  const chipsEl = h('div', { class: 'rw-pl-filters' });
+  const countLine = h('div', { class: 'note tabular rw-pl-count', role: 'status' });
+  const chipButtons = new Map<string, HTMLButtonElement>();
+  let ordered: PluginPreset[] = [];
+  let shownKey = '';
+  const chosenFilters = () => activeFilters(presets?.filters ?? [], kept()?.filters);
+  const setFilter = (filterId: string, value: string | null, label: PluginPresets['filters'][number]['label']) => {
+    if ((chosenFilters()[filterId] ?? null) === value) return;
+    env.set({ plugins: withPlugin(env.get().plugins, id, { filter: { id: filterId, value } }) }, undefined, L('undo.pluginFilter', { plugin: m.name, filter: label }));
+  };
+  const drawChips = () => {
+    if (!presets || presets.filters.length === 0) return;
+    chipButtons.clear();
+    chipsEl.replaceChildren(
+      ...presets.filters.map((f) => {
+        const chip = (value: string | null, text: string) => {
+          const b = h('button', { type: 'button', class: 'chip rw-pl-chip', 'aria-pressed': 'false', 'data-value': value ?? '', onclick: () => setFilter(f.id, value, f.label) }, text) as HTMLButtonElement;
+          chipButtons.set(`${f.id}=${value ?? ''}`, b);
+          return b;
+        };
+        return h('div', { class: 'rw-pl-chips', role: 'group', 'aria-label': lbl(f.label), 'data-filter': f.id }, h('span', { class: 'rw-pl-chips-name aux' }, lbl(f.label)), chip(null, t('rw.pl.filterAll')), ...f.options.map((o) => chip(o.value, lbl(o.label))));
+      }),
+    );
+  };
+  const cardOf = (p: PluginPreset, outside = false): RecipeCard => ({ id: p.id, name: p.aux ? `${lbl(p.name)} · ${lbl(p.aux)}` : lbl(p.name), category: lbl(presets!.categories.find((x) => x.id === p.category)?.label ?? { en: p.category, es: p.category }), ...(outside ? { outside: true } : {}) });
+  /** The cards the filters leave (the chosen recipe first when they leave it out), rebuilt only when that changes. */
+  const showCards = () => {
+    if (!presets) return;
+    const f = chosenFilters();
+    const res = filterPresets(ordered, f, recipe());
+    const key = `${JSON.stringify(f)}|${res.kept?.id ?? ''}`;
+    for (const [k, b] of chipButtons) {
+      const [fid, value] = k.split('=');
+      b.setAttribute('aria-pressed', String((f[fid] ?? '') === value));
+    }
+    setText(countLine, presets.filters.length ? (res.count === 0 ? t('rw.pl.filterNone', { total: res.total }) : t('rw.pl.filterCount', { n: res.count, total: res.total })) : '');
+    if (key === shownKey) return;
+    shownKey = key;
+    strip.setCards([...(res.kept ? [cardOf(res.kept, true)] : []), { id: null, name: t('rw.pl.noRecipe'), category: t('rw.pl.noRecipeCard') }, ...res.shown.map((p) => cardOf(p))]);
+  };
   const fillRecipes = () => {
     if (!presets) return;
-    const catName = (c: string) => lbl(presets!.categories.find((x) => x.id === c)?.label ?? { en: c, es: c });
     // In the plugin's order, by its categories (each category's recipes together).
-    const ordered = presets.categories.flatMap((c) => presets!.presets.filter((p) => p.category === c.id));
-    const cards: RecipeCard[] = [{ id: null, name: t('rw.pl.noRecipe'), category: t('rw.pl.noRecipeCard') }, ...ordered.map((p) => ({ id: p.id, name: p.aux ? `${lbl(p.name)} · ${lbl(p.aux)}` : lbl(p.name), category: catName(p.category) }))];
-    strip.setCards(cards);
+    ordered = presets.categories.flatMap((c) => presets!.presets.filter((p) => p.category === c.id));
+    drawChips();
+    shownKey = '';
+    showCards();
     syncRecipe();
-    makeThumbs(cards.length);
+    makeThumbs(ordered.length + 1);
   };
   const syncRecipe = () => {
     if (!presets) return;
+    showCards();
     const r = recipe();
     const p = r ? presets.presets.find((x) => x.id === r) : undefined;
     strip.select(p ? p.id : null);
@@ -190,7 +234,7 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
   const jobsToggle = toggle(kept()?.jobs === true, () => env.set({ plugins: withPlugin(env.get().plugins, id, { jobs: !(kept()?.jobs === true) }) }, undefined, L('undo.pluginJobs', { plugin: m.name })), t('rw.pl.jobs'));
   const jobsRow = h('div', { class: 'rw-ai-ctl rw-pl-ctl rw-pl-jobs', 'data-control': 'jobs' }, h('div', { class: 'rw-inline rw-pl-toggle' }, jobsToggle.el, h('span', { class: 'rw-ai-ctl-name' }, t('rw.pl.jobs'))), h('div', { class: 'note' }, t('rw.pl.jobsAux')));
   const controlsCol = h('div', { class: 'rw-ai-controls rw-pl-controls' }, ...groupEls, h('div', null, defaults));
-  const recipesRow = h('div', { class: 'rw-pl-recipes' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.pl.recipe')), strip.el, recipeAux, thumbsLine);
+  const recipesRow = h('div', { class: 'rw-pl-recipes' }, h('div', { class: 'rw-ai-ctl-name' }, t('rw.pl.recipe')), chipsEl, countLine, strip.el, recipeAux, thumbsLine);
 
   // ------------------------------------------------------------------ the preview
   const frame = h('div', { class: 'rw-ai-frame rw-pl-frame', role: 'img', 'aria-label': t('rw.pl.previewAlt') }, h('div', { class: 'note rw-ai-empty' }, t('rw.pl.starting')));
@@ -332,12 +376,15 @@ function pluginBlock(ctx: Ctx, scope: Scope, env: PluginsSectionEnv, plugin: Ins
     syncRecipe();
   };
   let first = true;
+  let previewKey = '';
   scope.watch(
     () => kept(),
     () => {
       sync();
-      // A change of the recipe or a control (undo and redo included) makes the preview again.
-      if (!first) schedule();
+      // A change of the recipe or a control (undo and redo included) makes the preview again; a filter does not.
+      const key = JSON.stringify([recipe(), controls()]);
+      if (!first && key !== previewKey) schedule();
+      previewKey = key;
       first = false;
     },
   );
