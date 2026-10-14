@@ -150,6 +150,11 @@ export type BackgroundMode = 'FLAT' | 'HDRI';
 
 export interface StudioPreset {
   key: string;
+  /**
+   * L6: the set this type's own rig is (light-setups.ts): its lights are the set's, and with the type's own rig
+   * (setup PRESET) its decoration and look come too. The set's exposure offset is already in `exposure`.
+   */
+  set?: string;
   label: Label;
   /** Typical part size in millimetres. */
   sizeMm: number;
@@ -203,9 +208,10 @@ export interface SetBackdrop {
 }
 
 /**
- * The pool of light on the backdrop behind the product (L6): a spot that stands behind the product and lights the
- * wall at `az` / `el` (camera-relative, from the rig pivot), its cone `cone` degrees, `share` its weight among the
- * lights of the set (measured where it lands), white at `kelvin` or of `color`.
+ * The pool of light on the backdrop behind the product (L6): a spot aimed from behind the product (`az` / `el`,
+ * camera-relative, from the rig pivot) at the backdrop the camera sees over the product; `cone` (degrees) is how wide
+ * the pool is (the cone that would light it from POOL_THROW away), `share` its weight among the lights of the set
+ * (measured where it lands), white at `kelvin` or of `color` (core/sets.ts).
  */
 export interface SetPool {
   az: number;
@@ -227,6 +233,8 @@ export interface SetFloor {
   color?: RGB;
   /** GLOSSY and MIRROR: the catalogue material. */
   material?: string;
+  /** GLOSSY and MIRROR: the sheet's own roughness, over its material's (a softer reflection). */
+  roughness?: number;
 }
 
 /**

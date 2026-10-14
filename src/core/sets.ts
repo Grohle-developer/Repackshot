@@ -17,15 +17,15 @@ import { materialPreset } from '../data/materials';
 import type { Label, LightSetup, RGB, SetCard, StudioPreset } from '../data/types';
 import { activeCamera, cameraPosition, frameBox, outputAspect, type CameraState } from './camera';
 import { kelvinToRgb, polar, toWorldAzimuth } from './light-math';
-import { buildStudio, levelUp, lightsFromRig, polarAboutPivot, presetRefOf, reduceStudio, rigPivot, worldFor, type LightInstance, type StudioAction } from './lighting';
+import { buildStudio, levelUp, lightsFromRig, polarAboutPivot, presetRefOf, reduceStudio, rigPivot, setupRefOf, worldFor, type LightInstance, type StudioAction } from './lighting';
 import { nextId } from './ids';
 import { instanceFromPreset, pruneMaterials, type MaterialId, type MaterialInstance } from './materials';
 import { add, cross, dot, isEmptyBox, length, mat4Compose, normalize, round, scale, sub, transformPoint, type Mat4, type Vec3 } from './math';
 import { getMesh, type MeshData } from './meshes';
 import { fitSweep, FLOOR_LIFT, type SweepFit } from './primitive-ops';
 import { ensurePrimitiveMesh, normalizeParams, type PrimitiveSpec } from './primitives';
-import { POOL_THROW, recipeScale, poolWeight, resolvePreset } from './rig';
-import { cleanSelection, isSetPiece, productBounds, type FaceRange, type NodeId, type SceneNode, type SetPiece } from './scene';
+import { POOL_THROW, recipeScale, poolWeight, resolvePreset, setupExposure } from './rig';
+import { cleanSelection, isSetPiece, ownParts, productBounds, type FaceRange, type NodeId, type SceneNode, type SetPiece } from './scene';
 import type { EnvironmentState, ProjectState } from './store';
 
 /** What the pieces of a set are called (the interface gives them in its language; English otherwise). */
@@ -37,12 +37,18 @@ export interface SetPieceNames {
   pool?: string;
 }
 
-/** Where the pool's spot stands: this many part sizes from the pivot towards the backdrop, behind the product. */
+/** Where the pool's spot is aimed from: this many part sizes from the pivot, behind the product. */
 export const POOL_STAND = 0.75;
-/** The pool's soft edge, a fraction of its cone's half-angle: a pool, not a disc. */
-export const POOL_BLEND = 0.6;
+/** The cone of the pool's spot, degrees: wide, so its pool has no edge (its size is its distance's, POOL_HALF). */
+export const POOL_CONE = 150;
+/** The pool's spot is soft from its axis to the edge of its cone. */
+export const POOL_BLEND = 1;
+/** Off its axis by this many degrees, a light near a wall lands half as bright (cos³: the angle and the distance). */
+export const POOL_HALF = 37.5;
 /** Size of the pool's bulb, part sizes. */
 export const POOL_BULB = 0.05;
+/** The most a pool's power is raised for meeting its backdrop at an angle: as if at 72 degrees from square. */
+export const POOL_GRAZE = 0.3;
 /** The catalogue material a backdrop's paper (and a matte floor) is made from, in the set's colour. */
 export const PAPER_MATERIAL = 'CARD_WHITE';
 
@@ -60,9 +66,26 @@ export function setOf(key: string): LightSetup | undefined {
   return isSet(s) ? s : undefined;
 }
 
-/** The set in force (the active setup when it is a set). */
+/**
+ * The set in force: the active setup when it is a set, or, with the product type's own rig (setup PRESET), the set the
+ * type is (`StudioPreset.set`), whose decoration and look come with it.
+ */
 export function activeSet(state: ProjectState): LightSetup | undefined {
+  if (state.studio.lightSetup === 'PRESET') {
+    const own = resolvePreset(presetRefOf(state.studio))?.set;
+    return own ? setOf(own) : undefined;
+  }
   return setOf(state.studio.lightSetup);
+}
+
+/** The set in force is the product type's own (setup PRESET), not one chosen from the catalogue. */
+export function isTypeSet(state: ProjectState): boolean {
+  return state.studio.lightSetup === 'PRESET' && activeSet(state) !== undefined;
+}
+
+/** The scene holds something of the user's: a set is not dressed around nothing. */
+function hasOwnParts(state: ProjectState): boolean {
+  return ownParts(state).length > 0;
 }
 
 /** The parts of the scene that are a set's decoration, in tree order. */
@@ -166,12 +189,13 @@ export function floorPlaneFit(fit: SweepFit): { spec: PrimitiveSpec; position: V
   };
 }
 
-/** The nearest hit of a ray on a mesh placed by `m` (world mm), or null. Möller–Trumbore, both faces. */
-export function rayHit(origin: Vec3, dir: Vec3, data: MeshData, m: Mat4): Vec3 | null {
+/** The nearest hit of a ray on a mesh placed by `m` (world mm) and the unit normal of the triangle hit, or null. Möller–Trumbore, both faces. */
+export function rayHit(origin: Vec3, dir: Vec3, data: MeshData, m: Mat4): { point: Vec3; normal: Vec3 } | null {
   const pos = data.positions;
   const idx = data.indices;
   const p = (i: number): Vec3 => transformPoint(m, [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]]);
   let best = Infinity;
+  let normal: Vec3 = [0, 0, 1];
   for (let t = 0; t + 2 < idx.length; t += 3) {
     const a = p(idx[t]);
     const e1 = sub(p(idx[t + 1]), a);
@@ -187,38 +211,63 @@ export function rayHit(origin: Vec3, dir: Vec3, data: MeshData, m: Mat4): Vec3 |
     const v = dot(dir, r) * inv;
     if (v < 0 || u + v > 1) continue;
     const d = dot(e2, r) * inv;
-    if (d > 1e-9 && d < best) best = d;
+    if (d > 1e-9 && d < best) {
+      best = d;
+      normal = normalize(cross(e1, e2));
+    }
   }
-  return Number.isFinite(best) ? add(origin, scale(dir, best)) : null;
+  return Number.isFinite(best) ? { point: add(origin, scale(dir, best)), normal } : null;
 }
 
 /**
- * Where a set's pool lands (world mm): the point of the backdrop the camera sees right behind the product (its ray
- * through the rig pivot, on the sweep), so the pool is a halo behind the product whatever the camera's height. Without
- * a sweep to land on, three part sizes behind the pivot, away from the camera.
+ * Where a set's pool lands (world mm): the point of the backdrop the camera sees right over the product (its ray
+ * through the top of the product's bounds at their far side, behind the rig pivot, on the sweep), so the pool is a
+ * halo that rises from behind the product whatever the camera's height. Without a sweep to land on, three part sizes
+ * beyond that point.
  */
-export function poolTarget(state: ProjectState, sweep: SceneNode | undefined): Vec3 {
+export function poolTop(state: ProjectState): Vec3 {
   const pivot = rigPivot(state);
-  const cam = activeCamera(state);
-  const eye = cameraPosition(cam);
-  const dir = normalize(sub(pivot, eye));
+  const box = productBounds(state, true);
+  if (isEmptyBox(box)) return pivot;
+  const eye = cameraPosition(activeCamera(state));
+  const ground = normalize([pivot[0] - eye[0], pivot[1] - eye[1], 0]);
+  // How far the bounds reach behind the pivot, away from the camera.
+  let back = 0;
+  for (let i = 0; i < 4; i++) back = Math.max(back, dot(sub([i & 1 ? box.max[0] : box.min[0], i & 2 ? box.max[1] : box.min[1], 0], [pivot[0], pivot[1], 0]), ground));
+  return [pivot[0] + ground[0] * back, pivot[1] + ground[1] * back, box.max[2]];
+}
+
+export function poolTarget(state: ProjectState, sweep: SceneNode | undefined): Vec3 {
+  return poolLanding(state, sweep).point;
+}
+
+/** Where the pool lands and the backdrop's unit normal there (null without a backdrop). */
+export function poolLanding(state: ProjectState, sweep: SceneNode | undefined): { point: Vec3; normal: Vec3 | null } {
+  const top = poolTop(state);
+  const eye = cameraPosition(activeCamera(state));
+  const dir = normalize(sub(top, eye));
   const data = sweep?.mesh ? getMesh(sweep.mesh.id) : undefined;
-  const hit = sweep && data ? rayHit(pivot, dir, data, mat4Compose(sweep.transform.position, sweep.transform.rotation, sweep.transform.scale)) : null;
-  return hit ?? add(pivot, scale(dir, 3 * (state.scene.partSizeMm || 1)));
+  const hit = sweep && data ? rayHit(top, dir, data, mat4Compose(sweep.transform.position, sweep.transform.rotation, sweep.transform.scale)) : null;
+  return hit ?? { point: add(top, scale(dir, 3 * (state.scene.partSizeMm || 1))), normal: null };
 }
 
 /**
- * The pool's spot: it stands behind the product, at the set's az / el and POOL_STAND part sizes from the pivot (never
- * under the floor), and aims at `target`. Its cone is opened so the pool on the backdrop is as wide as the set's cone
- * makes it at POOL_THROW, however close the backdrop is; `throwSizes` is how far it throws, in part sizes.
+ * The pool's spot (L6): a background light near its paper. It is aimed from behind the product, from the set's az / el
+ * at POOL_STAND part sizes from the pivot (never under the floor), at `target`, and stands on that line as close to
+ * the backdrop as makes the pool as wide as the set's cone makes it at POOL_THROW: its light falls off from the centre
+ * of the pool with the angle and the distance (half as bright at POOL_HALF degrees off its axis), in a cone so wide
+ * (POOL_CONE, soft from its axis) that the pool has no edge. Its glow is not seen (not by the camera, not in
+ * reflections). `throwSizes` is how far it throws, in part sizes.
  */
 export function poolGeometry(pool: { az: number; el: number; cone: number }, pivot: Vec3, target: Vec3, sizeMm: number, floorZ = 0): { stand: Vec3; throwSizes: number; cone: number } {
-  let stand = add(pivot, polar(toWorldAzimuth(pool.az), pool.el, POOL_STAND * sizeMm));
-  if (stand[2] < floorZ + 0.05 * sizeMm) stand = [stand[0], stand[1], floorZ + 0.05 * sizeMm];
-  const throwSizes = Math.max(0.05, length(sub(target, stand)) / sizeMm);
-  const half = Math.atan((POOL_THROW * Math.tan((pool.cone * Math.PI) / 360)) / throwSizes);
-  const cone = Math.min(150, Math.max(pool.cone, (2 * half * 180) / Math.PI));
-  return { stand, throwSizes, cone };
+  let from = add(pivot, polar(toWorldAzimuth(pool.az), pool.el, POOL_STAND * sizeMm));
+  if (from[2] < floorZ + 0.05 * sizeMm) from = [from[0], from[1], floorZ + 0.05 * sizeMm];
+  const reach = length(sub(from, target));
+  // The pool's radius at the reference throw, and the throw at which the falloff gives it that radius.
+  const radius = POOL_THROW * Math.tan((Math.min(170, Math.max(1, pool.cone)) * Math.PI) / 360);
+  const near = (radius / Math.tan((POOL_HALF * Math.PI) / 180)) * sizeMm;
+  const stand = reach > near ? add(target, scale(sub(from, target), near / reach)) : from;
+  return { stand, throwSizes: Math.max(0.05, length(sub(target, stand)) / sizeMm), cone: POOL_CONE };
 }
 
 /**
@@ -270,6 +319,7 @@ export function withoutSetDecoration(state: ProjectState): ProjectState {
 /** The product type's environment, background and exposure (what Create studio sets), after leaving a set. */
 function presetLook(state: ProjectState, preset: StudioPreset | undefined): ProjectState {
   if (!preset) return state;
+  const exposureEv = setupExposure(preset, setupRefOf(state.studio));
   const background: EnvironmentState['background'] = preset.background === 'FLAT' ? 'COLOR' : 'ENVIRONMENT';
   return {
     ...state,
@@ -279,22 +329,23 @@ function presetLook(state: ProjectState, preset: StudioPreset | undefined): Proj
       background,
       color: [preset.backgroundColor[0], preset.backgroundColor[1], preset.backgroundColor[2], preset.backgroundColor[3]],
     },
-    image: { ...state.image, exposureEv: preset.exposure },
+    image: { ...state.image, exposureEv },
   };
 }
 
 /** A catalogue material for a piece: the scene's unedited instance of it, or a new one; `color` makes an own one. */
-function pieceMaterial(state: ProjectState, preset: string, own: { color?: RGB; name?: string } = {}): { state: ProjectState; id: MaterialId | null } {
-  if (!own.color) {
+function pieceMaterial(state: ProjectState, preset: string, own: { color?: RGB; roughness?: number; name?: string } = {}): { state: ProjectState; id: MaterialId | null } {
+  if (!own.color && own.roughness === undefined) {
     const existing = Object.values(state.materials).find((m) => m.preset === preset && !m.edited && m.role !== 'DEFAULT' && !m.library);
     if (existing) return { state, id: existing.id };
   }
   const id = nextId('m', Object.keys(state.materials));
   const base = instanceFromPreset(id, preset, state.scene.partSizeMm);
   if (!base) return { state, id: null };
-  const inst: MaterialInstance = own.color
-    ? { ...base, name: own.name ?? null, edited: true, params: { ...base.params, baseColor: [own.color[0], own.color[1], own.color[2], 1] } }
-    : base;
+  const params = { ...base.params };
+  if (own.color) params.baseColor = [own.color[0], own.color[1], own.color[2], 1];
+  if (own.roughness !== undefined) params.roughness = own.roughness;
+  const inst: MaterialInstance = own.color || own.roughness !== undefined ? { ...base, name: own.name ?? null, edited: true, params } : base;
   return { state: { ...state, materials: { ...state.materials, [id]: inst } }, id };
 }
 
@@ -337,15 +388,21 @@ function addPiece(
 const labelIn = (label: Label | undefined, state: ProjectState, fallback: string): string => (label ? label[state.meta.lang] : fallback);
 
 /** The pool's spot (a light of the set's decoration), with the power that lands its share on the backdrop. */
-function poolLight(state: ProjectState, set: LightSetup, target: Vec3, name: string | undefined): LightInstance | null {
+function poolLight(state: ProjectState, set: LightSetup, landing: { point: Vec3; normal: Vec3 | null }, name: string | undefined): LightInstance | null {
+  const target = landing.point;
   const pool = set.pool;
   if (!pool || !set.lights) return null;
   const size = state.scene.partSizeMm || 1;
   const pivot = rigPivot(state);
   const g = poolGeometry(pool, pivot, target, size);
-  const k = recipeScale(presetRefOf(state.studio), set.lights, poolWeight(pool));
-  // Measured at POOL_THROW (core/rig.ts): as bright where it lands as that light would be at that distance.
-  const power = k * pool.share * (g.throwSizes / POOL_THROW) ** 2;
+  // The set's own lights share the level with the pool; a product type that is the set keeps its lights at its level
+  // and the pool stands to them as it does in the set.
+  const preset = presetRefOf(state.studio);
+  const k = state.studio.lightSetup === 'PRESET' ? recipeScale(preset, set.lights) : recipeScale(preset, set.lights, poolWeight(pool));
+  // Measured at POOL_THROW (core/rig.ts) and square to the backdrop: as bright where it lands as that light would be
+  // at that distance, facing it, whatever the angle the spot meets the backdrop at (up to POOL_GRAZE).
+  const facing = landing.normal ? Math.abs(dot(landing.normal, normalize(sub(g.stand, target)))) : 1;
+  const power = (k * pool.share * (g.throwSizes / POOL_THROW) ** 2) / Math.max(POOL_GRAZE, facing);
   const kelvin = pool.color ? null : (pool.kelvin ?? 5600);
   const color: RGB = pool.color ?? kelvinToRgb(kelvin ?? 5600);
   const id = nextId('l', [...state.studio.lights.map((l) => l.id), ...Object.keys(state.camera.cameras), ...Object.keys(state.scene.nodes)]);
@@ -398,12 +455,13 @@ export function addSetDecoration(state: ProjectState, set: LightSetup, names: Se
     if (!floor || floor.kind === 'CATCHER') return null;
     const preset = floor.kind === 'MATTE' ? PAPER_MATERIAL : (floor.material ?? 'ACRYLIC_BLACK');
     const color = floor.kind === 'MATTE' ? (floor.color ?? [0.5, 0.5, 0.5]) : floor.color;
-    const m = pieceMaterial(next, preset, color ? { color, name: floorName } : {});
+    const roughness = floor.kind === 'MATTE' ? undefined : floor.roughness;
+    const m = pieceMaterial(next, preset, color || roughness !== undefined ? { color, roughness, name: floorName } : {});
     next = m.state;
     return m.id;
   };
 
-  let poolAt: Vec3 | null = null;
+  let poolAt: { point: Vec3; normal: Vec3 | null } | null = null;
   if (sweep && fit) {
     const paper = pieceMaterial(next, PAPER_MATERIAL, { color: sweepColor(set), name: names.backdrop ?? 'Backdrop' });
     next = paper.state;
@@ -416,11 +474,11 @@ export function addSetDecoration(state: ProjectState, set: LightSetup, names: Se
     });
     if (set.pool) {
       const backdrop = next.scene.nodes[next.scene.roots[next.scene.roots.length - 1]];
-      poolAt = poolTarget(next, backdrop);
+      poolAt = poolLanding(next, backdrop);
       if (glossy) {
         const theta = (fit.rotation[2] * Math.PI) / 180;
         const ey: Vec3 = [-Math.sin(theta), Math.cos(theta), 0];
-        const sheet = floorSheet(fit, pivot, POOL_EDGE * dot(sub(poolAt, pivot), ey), 2 * lift);
+        const sheet = floorSheet(fit, pivot, POOL_EDGE * dot(sub(poolAt.point, pivot), ey), 2 * lift);
         const mat = floorMaterial();
         next = addPiece(next, { kind: 'FLOOR', index: 0 }, floorName, sheet.spec, sheet.position, sheet.rotation, mat);
       }
@@ -441,7 +499,7 @@ export function addSetDecoration(state: ProjectState, set: LightSetup, names: Se
     next = addPiece(next, { kind: 'CARD', index }, `${name} ${index + 1}`, spec, f.centre, eulerOf(f.right, f.up, f.normal), mat.id);
   });
 
-  const pool = poolLight(next, set, poolAt ?? poolTarget(next, undefined), names.pool);
+  const pool = poolLight(next, set, poolAt ?? poolLanding(next, undefined), names.pool);
   if (pool) next = { ...next, studio: { ...next.studio, lights: [...next.studio.lights, pool] } };
   return next;
 }
@@ -463,19 +521,60 @@ function setLook(state: ProjectState, set: LightSetup, preset: StudioPreset | un
     env.color = [bottom[0], bottom[1], bottom[2], 1];
   }
   env.strength = set.envStrength ?? preset?.envStrength ?? env.strength;
-  return { ...state, environment: env, image: { ...state.image, exposureEv: (preset?.exposure ?? 0) + (set.exposureEv ?? 0) } };
+  const exposureEv = preset ? setupExposure(preset, setupRefOf(state.studio)) : (set.exposureEv ?? 0);
+  return { ...state, environment: env, image: { ...state.image, exposureEv } };
 }
 
-/** Puts a set in force: its lights, its look and its decoration (replacing any set's), over the user's scene. */
-export function applySet(state: ProjectState, set: LightSetup, names: SetPieceNames = {}): ProjectState {
+/**
+ * Puts a set in force: its lights, its look and its decoration (replacing any set's), over the user's scene. With
+ * `asType`, the set is the product type's own rig (setup PRESET): the type's lights and exposure, the set's decoration.
+ * A scene with nothing of the user's gets the lights and the look, and its decoration when a product comes in
+ * (`studio/fitSet`).
+ */
+export function applySet(state: ProjectState, set: LightSetup, names: SetPieceNames = {}, asType = false): ProjectState {
   const preset = resolvePreset(presetRefOf(state.studio));
   const clean = withoutSetDecoration(state);
+  const key = asType ? 'PRESET' : set.key;
   const lit: ProjectState = {
     ...clean,
-    studio: { ...clean.studio, lightSetup: set.key, customSetup: null, lights: lightsFromRig(presetRefOf(clean.studio), set.key), modified: false, floor: true, shadow: true },
-    environment: { ...clean.environment, kind: worldFor(clean, set.key) },
+    // A chosen set puts the studio's floor and contact shadow on; the type's own keeps the type's.
+    studio: { ...clean.studio, lightSetup: key, customSetup: null, lights: lightsFromRig(presetRefOf(clean.studio), key), modified: false, ...(asType ? {} : { floor: true, shadow: true }) },
+    environment: { ...clean.environment, kind: worldFor(clean, key) },
   };
-  return addSetDecoration(setLook(lit, set, preset), set, names);
+  const looked = setLook(lit, set, preset);
+  return hasOwnParts(looked) ? addSetDecoration(looked, set, names) : looked;
+}
+
+/** The names the pieces of the decoration in force have now (so a refit keeps them). */
+function namesInUse(state: ProjectState): { names: SetPieceNames; before: SceneNode[] } {
+  const before = setPieceIds(state).map((id) => state.scene.nodes[id]);
+  const names: SetPieceNames = { cards: {}, pool: state.studio.lights.find((l) => l.setPiece)?.name };
+  for (const n of before) {
+    if (n.setPiece?.kind === 'BACKDROP') names.backdrop = n.name;
+    else if (n.setPiece?.kind === 'FLOOR') names.floor = n.name;
+  }
+  return { names, before };
+}
+
+/**
+ * The decoration of the set in force made again for the scene as it is now (the product, the camera), each piece
+ * keeping its name and whether it was on, and the pool; the lights and the look are left as they are. What Use the
+ * set's camera ends with, and what a product coming into the scene asks for (`studio/fitSet`).
+ */
+function refitDecoration(state: ProjectState, set: LightSetup, given: SetPieceNames = {}): ProjectState {
+  if (!hasOwnParts(state)) return state;
+  const { names, before } = namesInUse(state);
+  const pool = state.studio.lights.find((l) => l.setPiece);
+  const merged: SetPieceNames = { ...given, ...Object.fromEntries(Object.entries(names).filter(([, v]) => v !== undefined && !(typeof v === 'object' && Object.keys(v).length === 0))) };
+  let next = addSetDecoration(withoutSetDecoration(state), set, merged);
+  const nodes = { ...next.scene.nodes };
+  for (const id of setPieceIds(next)) {
+    const n = nodes[id];
+    const old = before.find((b) => b.setPiece?.kind === n.setPiece?.kind && b.setPiece?.index === n.setPiece?.index);
+    if (old) nodes[id] = { ...n, name: old.name, visible: old.visible };
+  }
+  next = { ...next, scene: { ...next.scene, nodes }, studio: { ...next.studio, lights: next.studio.lights.map((l) => (l.setPiece && pool ? { ...l, enabled: pool.enabled } : l)) } };
+  return next;
 }
 
 /** The camera a set suggests on the active camera, the product framed again; null when there is nothing to do. */
@@ -501,65 +600,60 @@ function useSetCamera(state: ProjectState): ProjectState {
   const cam = setCamera(state, set);
   if (!cam) return state;
   const moved: ProjectState = { ...state, camera: { ...state.camera, cameras: { ...state.camera.cameras, [cam.id]: cam } } };
-  if (setPieceIds(state).length === 0) return moved;
-  // The pieces again, fitted to the new view, each keeping whether it was on.
-  const before = setPieceIds(state).map((id) => state.scene.nodes[id]);
-  const names: SetPieceNames = { cards: {}, pool: state.studio.lights.find((l) => l.setPiece)?.name };
-  for (const n of before) {
-    if (n.setPiece?.kind === 'BACKDROP') names.backdrop = n.name;
-    else if (n.setPiece?.kind === 'FLOOR') names.floor = n.name;
-  }
-  const lights = moved.studio.lights.filter((l) => !l.setPiece);
-  const poolWasOn = state.studio.lights.find((l) => l.setPiece)?.enabled ?? true;
-  let next = addSetDecoration({ ...withoutSetDecoration(moved), studio: { ...moved.studio, lights } }, set, names);
-  // Card names and visibility as they were (by piece).
-  const nodes = { ...next.scene.nodes };
-  for (const id of setPieceIds(next)) {
-    const n = nodes[id];
-    const old = before.find((b) => b.setPiece?.kind === n.setPiece?.kind && b.setPiece?.index === n.setPiece?.index);
-    if (old) nodes[id] = { ...n, name: old.name, visible: old.visible };
-  }
-  next = { ...next, scene: { ...next.scene, nodes }, studio: { ...next.studio, lights: next.studio.lights.map((l) => (l.setPiece ? { ...l, enabled: poolWasOn } : l)) } };
-  return next;
+  return setPieceIds(state).length === 0 ? moved : refitDecoration(moved, set);
 }
 
 /**
  * The studio actions a set changes (store.ts routes them here first); null when the action is not one of them, so
  * the plain reducer (core/lighting.ts) handles it.
  *
- * - `studio/setSetup` with a set: the set in force (applySet). With any other setup, after a set: the set's
- *   decoration goes and the product type's environment, background and exposure come back.
+ * - `studio/setSetup` with a set: the set in force (applySet). PRESET with a product type that is a set: the type's
+ *   rig and that set's decoration. With any other setup, after a set: the set's decoration goes and the product type's
+ *   environment, background and exposure come back.
  * - `studio/applySetup` (an own setup of the library), after a set: the same.
- * - `studio/build` with a set in force: Create studio, then the set's look and decoration fitted to the new framing.
+ * - `studio/build` with a set in force (chosen, or the type's own): Create studio, then the set's look and decoration
+ *   fitted to the new framing.
  * - `studio/resetLights` with a set in force: the set's lights as they were, its decoration taken away.
  * - `studio/useSetCamera`: Use the set's camera.
+ * - `studio/fitSet`: the decoration made again for the scene as it is (a product came in); nothing without a set.
  */
 export function reduceSet(state: ProjectState, action: StudioAction): ProjectState | null {
+  const decorated = () => activeSet(state) !== undefined || setPieceIds(state).length > 0 || state.studio.lights.some((l) => l.setPiece);
   switch (action.type) {
     case 'studio/setSetup': {
       const set = setOf(action.key);
       if (set) return applySet(state, set, action.names);
-      if (!activeSet(state) && setPieceIds(state).length === 0) return null;
+      if (action.key === 'PRESET') {
+        const own = resolvePreset(presetRefOf(state.studio))?.set;
+        const typeSet = own ? setOf(own) : undefined;
+        if (typeSet) return applySet(state, typeSet, action.names, true);
+      }
+      if (!decorated()) return null;
       const next = reduceStudio(withoutSetDecoration(state), action);
       return next.studio.lightSetup === action.key ? presetLook(next, resolvePreset(presetRefOf(next.studio))) : null;
     }
     case 'studio/applySetup': {
-      if (!activeSet(state) && setPieceIds(state).length === 0) return null;
+      if (!decorated()) return null;
       const next = reduceStudio(withoutSetDecoration(state), action);
       return next.studio.lightSetup === action.setup.key ? presetLook(next, resolvePreset(presetRefOf(next.studio))) : null;
     }
     case 'studio/build': {
-      const set = activeSet(state);
-      if (!set) return null;
-      return applySet(buildStudio(withoutSetDecoration(state)), set, action.names);
+      const built = buildStudio(withoutSetDecoration(state));
+      const set = activeSet(built);
+      if (!set) return decorated() ? built : null;
+      return applySet(built, set, action.names, isTypeSet(built));
     }
     case 'studio/resetLights': {
-      if (!activeSet(state)) return null;
+      if (!decorated()) return null;
       const clean = withoutSetDecoration(state);
-      return { ...clean, studio: { ...clean.studio, lights: lightsFromRig(presetRefOf(clean.studio), clean.studio.lightSetup), modified: false } };
+      return { ...clean, studio: { ...clean.studio, lights: lightsFromRig(presetRefOf(clean.studio), setupRefOf(clean.studio)), modified: false } };
     }
     case 'studio/useSetCamera':
       return useSetCamera(state);
+    case 'studio/fitSet': {
+      const set = activeSet(state);
+      return set ? refitDecoration(state, set, action.names) : state;
+    }
     default:
       return null;
   }

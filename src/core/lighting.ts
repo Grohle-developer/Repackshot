@@ -8,7 +8,7 @@ import { studioPreset } from '../data/studios';
 import type { LightRole, LightShape, LightSpec, LightType, RGB, StudioPreset, WorldKind } from '../data/types';
 import { kelvinToRgb, polar, specIrradiance, toWorldAzimuth } from './light-math';
 import { areaLightFlux, luminance, LUMENS_PER_WATT, pointLightFlux, spotFraction } from './photometry';
-import { activeRig, presetIrradiance, resolvePreset, type PresetRef, type SetupRef } from './rig';
+import { activeRig, presetIrradiance, resolvePreset, setupExposure, type PresetRef, type SetupRef } from './rig';
 import type { ActionBase, EnvironmentState, ImageState, ProjectState } from './store';
 import type { SetPieceNames } from './sets';
 import { activeCamera, cameraPosition, frameBox, outputAspect, type CameraState } from './camera';
@@ -539,7 +539,8 @@ export function buildStudio(state: ProjectState): ProjectState {
       background,
       color: [p.backgroundColor[0], p.backgroundColor[1], p.backgroundColor[2], p.backgroundColor[3]],
     },
-    image: { ...state.image, exposureEv: p.exposure },
+    // L6: a type that is a set has its offset in its exposure; any other setup starts from the type's base.
+    image: { ...state.image, exposureEv: setupExposure(p, setupRefOf(state.studio)) },
     render: { ...state.render, quality: p.quality, maxSamples: QUALITY_PRESETS[p.quality].samples },
     camera,
   };
@@ -553,6 +554,8 @@ export type StudioAction =
   | ({ type: 'studio/setSetup'; key: string; names?: SetPieceNames } & ActionBase)
   /** L6: Use the set's camera — the elevation and focal length the set in force suggests, the product framed again. */
   | ({ type: 'studio/useSetCamera' } & ActionBase)
+  /** L6: the decoration of the set in force made again for the scene as it is (a product came in). */
+  | ({ type: 'studio/fitSet'; names?: SetPieceNames } & ActionBase)
   /** An own light setup (library): normalised to the product type in force, like a catalogue one. */
   | ({ type: 'studio/applySetup'; setup: CustomSetup } & ActionBase)
   | ({ type: 'studio/setLight'; id: string; patch: Partial<Omit<LightInstance, 'id'>> } & ActionBase)

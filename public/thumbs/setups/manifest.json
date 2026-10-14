@@ -1,0 +1,33 @@
+{
+ "size": "256x256",
+ "spp": 96,
+ "seed": 1,
+ "denoise": true,
+ "scenes": {
+  "BLACK_ON_BLACK": {
+   "hero": "BOX",
+   "rsb": "2c34a9b2b1d16c0effef3b09530b7a4105f67c468b0ec8c3c7fadfa41ebb592b",
+   "png": "cf3f18724316fc42143ee06393b2ddedabc905b9282f54a92b961e823148c0cb"
+  },
+  "BRIGHT_FIELD": {
+   "hero": "BOTTLE",
+   "rsb": "d328573d4dbc8d20b73e6c4a094a4add63ba13febfbc94d930373d554fe72540",
+   "png": "9e7513cf72c84ca52e14a9c73b13763b94e39b80e44ff7ee0743da782dd5e918"
+  },
+  "GRADIENT_POOL": {
+   "hero": "SPHERES",
+   "rsb": "d740affde5a9472f68744a0df68ddf0406480de58fd94a681f4d70a69e3d4e27",
+   "png": "2876905daf6f92766c645f6c6409be5bbfbda5b2bd1a174143a8073a22d2a6ec"
+  },
+  "HIGH_KEY_WHITE": {
+   "hero": "BOX",
+   "rsb": "9aaf80ee054da85457e022842aa0c647e407ea2df0e56b62582257cfd5b26380",
+   "png": "359e2980fc972f3ec30dbb1daf98e58ba59cc65b1b69ce69cee20e1ec726a4c6"
+  },
+  "SILHOUETTE_GLOW": {
+   "hero": "BOTTLE",
+   "rsb": "8944172863e52926a1a5c0975ce123d2638d3e38ea0dfe7cd034bd23f6b1d275",
+   "png": "f7bc1e4806f9eb9bee8c08cce62e149b40742119ba2ca5d97b6bf6749aa00d61"
+  }
+ }
+}

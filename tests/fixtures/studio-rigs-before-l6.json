@@ -783,5 +783,23 @@
     "glossy": true
    }
   ]
+ },
+ "exposure": {
+  "GENERIC": 0.0,
+  "JEWELLERY": 0.0,
+  "WATCH": 0.0,
+  "PERFUME": 0.0,
+  "COSMETICS": 0.15,
+  "ELECTRONICS": -0.15,
+  "APPLIANCE": 0.1,
+  "FURNITURE_IN": 0.0,
+  "FURNITURE_OUT": 0.0,
+  "FOOTWEAR": 0.0,
+  "TEXTILE": 0.0,
+  "PACKAGING": 0.05,
+  "AUTOMOTIVE": -0.1,
+  "TOOL": -0.1,
+  "EYEWEAR": 0.0,
+  "MEDICAL": 0.1
  }
 }

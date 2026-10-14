@@ -73,7 +73,7 @@ describe('studioRig', () => {
       glossy: true,
       size: 3,
       sizeY: 2.5,
-      dist: 2.8,
+      dist: 2.2,
     });
   });
 

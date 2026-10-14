@@ -50,6 +50,7 @@ function part(id: string, name: string, mesh: ReturnType<typeof registerMesh>, m
     mesh,
     material: mat,
     smooth: true,
+    key: id,
   };
 }
 

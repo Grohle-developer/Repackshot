@@ -143,16 +143,17 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     label: { es: 'Baquelita', en: 'Bakelite' },
     params: { baseColor: [0.09, 0.05, 0.035, 1], roughness: 0.25, coat: 0.6, coatRoughness: 0.12 },
   },
-  // L6: the floors of the sets (not ported from EZ Packshot): sheets of cast acrylic, black and white, polished.
+  // L6: the floors of the sets (not ported from EZ Packshot): sheets of cast acrylic, black and white, with the
+  // slight haze of a real sheet (roughness 0.12): they smear what they reflect a little, they are not mirrors.
   {
     key: 'ACRYLIC_BLACK', category: 'PLASTIC', family: 'SIMPLE',
     label: { es: 'Acrílico negro brillante', en: 'Gloss black acrylic' },
-    params: { baseColor: [0.01, 0.01, 0.012, 1], roughness: 0.02, ior: 1.49 },
+    params: { baseColor: [0.01, 0.01, 0.012, 1], roughness: 0.12, ior: 1.49 },
   },
   {
     key: 'ACRYLIC_WHITE', category: 'PLASTIC', family: 'SIMPLE',
     label: { es: 'Acrílico blanco', en: 'White acrylic' },
-    params: { baseColor: [0.85, 0.85, 0.85, 1], roughness: 0.04, ior: 1.49 },
+    params: { baseColor: [0.85, 0.85, 0.85, 1], roughness: 0.12, ior: 1.49 },
   },
 
   // --- Woods ---

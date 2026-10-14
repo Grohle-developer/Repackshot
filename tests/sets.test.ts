@@ -8,8 +8,8 @@ import { activeCamera, cameraPosition, outputAspect } from '../src/core/camera';
 import { gradientPixels } from '../src/core/images';
 import { specIrradiance } from '../src/core/light-math';
 import { lightFrame, lightsFromRig, rigPivot } from '../src/core/lighting';
-import { POOL_THROW, poolWeight, presetIrradiance, recipeScale, setupRig } from '../src/core/rig';
-import { cardCorners, cardFrame, eulerOf, isSet, poolTarget, setOf, setPieceIds } from '../src/core/sets';
+import { baseExposure, POOL_THROW, poolWeight, presetIrradiance, recipeScale, setupExposure, setupRig } from '../src/core/rig';
+import { applySet, cardCorners, cardFrame, eulerOf, isSet, POOL_GRAZE, poolLanding, poolTarget, poolTop, setOf, setPieceIds } from '../src/core/sets';
 import { sha256Hex } from '../src/core/sha256';
 import { isSetPiece, measuredSizeMm, productBounds } from '../src/core/scene';
 import { createStore, reduce, type ProjectState } from '../src/core/store';
@@ -23,7 +23,9 @@ import { setupTip } from '../src/ui/names';
 import { loadProject, serializeProject } from '../src/io/project';
 import { STRINGS } from '../src/ui/strings';
 import { apply, exampleState } from './helpers';
-import { framedCamera, inFrame } from './frame-check';
+import { buildExample } from '../src/core/example';
+import { framedCamera, inFrame, reflectionSeen } from './frame-check';
+import { backdropMask, maskedMean, partPeak, poolContrast, poolPixel, rowProfile, thumbnail } from './thumb-metrics';
 import { PRESET_KEYS, rigHash } from './old-rigs';
 import { thumbRsb } from './set-heroes';
 import type { Box } from '../src/core/math';
@@ -60,14 +62,15 @@ describe('the schema of a set', () => {
     }
   });
 
-  it('only names catalogue materials, and its shares add up to about one with the pool', () => {
+  it('only names catalogue materials, and gives every light and pool a share (they are normalised to the level)', () => {
     for (const s of SETS) {
       for (const c of s.cards ?? []) expect(materialPreset(c.material), `${s.key} card ${c.material}`).toBeDefined();
       if (s.floor?.material) expect(materialPreset(s.floor.material), s.key).toBeDefined();
       const total = s.lights!.reduce((a, l) => a + (l.share ?? 0), 0) + (s.pool?.share ?? 0);
       expect(total, s.key).toBeGreaterThan(0.8);
-      expect(total, s.key).toBeLessThan(1.2);
+      expect(total, s.key).toBeLessThan(2.6);
       for (const l of s.lights!) expect(l.share, s.key).toBeGreaterThan(0);
+      if (s.pool) expect(s.pool.share, s.key).toBeGreaterThan(0);
     }
   });
 
@@ -118,6 +121,76 @@ describe('the product types take the lights of a set', () => {
       });
       expect(studioPreset(p)!.lights).not.toEqual(before.lights[p]);
     }
+  });
+});
+
+describe('a product type that is a set', () => {
+  const before = JSON.parse(readFileSync('tests/fixtures/studio-rigs-before-l6.json', 'utf8')) as { exposure: Record<string, number> };
+
+  it('has its set’s exposure offset folded into its exposure; any other setup starts from the exposure it had', () => {
+    for (const p of STUDIO_PRESETS) {
+      const offset = p.set ? (lightSetup(p.set)!.exposureEv ?? 0) : 0;
+      expect(p.exposure, p.key).toBeCloseTo(before.exposure[p.key] + offset, 9);
+      expect(baseExposure(p), p.key).toBeCloseTo(before.exposure[p.key], 9);
+      expect(setupExposure(p, 'PRESET'), p.key).toBe(p.exposure);
+      expect(setupExposure(p, 'REMBRANDT'), p.key).toBeCloseTo(before.exposure[p.key], 9);
+      // A set on it: the type's base and the set's offset, never the type's own offset as well.
+      expect(setupExposure(p, 'STRIP_EDGE'), p.key).toBeCloseTo(before.exposure[p.key] - 0.3, 9);
+    }
+  });
+
+  it('Create studio with its own rig dresses the product with its set: the type’s lights, the set’s decoration', () => {
+    const s = apply(exampleState(), { type: 'studio/setPreset', key: 'PERFUME' }, { type: 'studio/build' });
+    expect(s.studio.lightSetup).toBe('PRESET');
+    expect(s.studio.lights.filter((l) => !l.setPiece)).toEqual(lightsFromRig('PERFUME', 'PRESET'));
+    expect(setPieceIds(s).map((id) => s.scene.nodes[id].setPiece!.kind).sort()).toEqual(['BACKDROP', 'CARD', 'CARD', 'FLOOR']);
+    expect(s.studio.lights.filter((l) => l.setPiece === 'POOL')).toHaveLength(1);
+    expect(s.image.exposureEv).toBe(studioPreset('PERFUME')!.exposure);
+    // The pool stands to the type's lights as it stands to the set's.
+    const k = presetIrradiance('PERFUME') / set('STRIP_EDGE').lights!.reduce((a, l) => a + specIrradiance(l), 0);
+    const pool = s.studio.lights.find((l) => l.setPiece === 'POOL')!;
+    const f = lightFrame(s, pool);
+    const sweep = s.scene.nodes[setPieceIds(s).find((id) => s.scene.nodes[id].setPiece!.kind === 'BACKDROP')!];
+    const { normal } = poolLanding(s, sweep);
+    const facing = Math.max(POOL_GRAZE, Math.abs(dot(normal!, normalize(sub(f.position, f.target)))));
+    expect(pool.power).toBeCloseTo((k * set('STRIP_EDGE').pool!.share * (length(sub(f.target, f.position)) / s.scene.partSizeMm / POOL_THROW) ** 2) / facing, 4);
+    // Choosing the type's own rig in the catalogue does the same; another setup takes it away.
+    const again = reduce(reduce(s, { type: 'studio/setSetup', key: 'REMBRANDT' }), { type: 'studio/setSetup', key: 'PRESET' });
+    expect(setPieceIds(again).length).toBe(4);
+    const away = reduce(s, { type: 'studio/setSetup', key: 'REMBRANDT' });
+    expect(setPieceIds(away)).toEqual([]);
+    expect(away.image.exposureEv).toBeCloseTo(before.exposure.PERFUME, 9);
+  });
+
+  it('a new project has the type’s look but nothing around nothing; the decoration comes with the product', () => {
+    const fresh = createStore();
+    expect(setPieceIds(fresh.get())).toEqual([]);
+    fresh.transaction('Example', () => {
+      fresh.dispatch({ type: 'scene/addModel', payload: buildExample(), replace: true });
+      fresh.dispatch({ type: 'camera/frame' });
+      fresh.dispatch({ type: 'studio/fitSet' });
+    });
+    expect(setPieceIds(fresh.get()).length).toBeGreaterThan(0);
+    expect(fresh.history().undo).toHaveLength(1);
+    // Fitting again keeps each piece as it was (here: a card the person switched off stays off).
+    const s = fresh.get();
+    const piece = setPieceIds(s)[0];
+    const off = reduce(s, { type: 'scene/setVisible', ids: [piece], visible: false });
+    const refit = reduce(off, { type: 'studio/fitSet' });
+    const same = setPieceIds(refit).find((id) => refit.scene.nodes[id].setPiece!.kind === s.scene.nodes[piece].setPiece!.kind && refit.scene.nodes[id].setPiece!.index === s.scene.nodes[piece].setPiece!.index)!;
+    expect(refit.scene.nodes[same].visible).toBe(false);
+    // Outdoor furniture is no set: nothing to fit.
+    const out = apply(exampleState(), { type: 'studio/setPreset', key: 'FURNITURE_OUT' }, { type: 'studio/build' });
+    expect(setPieceIds(out)).toEqual([]);
+    expect(reduce(out, { type: 'studio/fitSet' })).toBe(out);
+  });
+
+  it('Reset setup takes its decoration away too', () => {
+    const s = apply(exampleState(), { type: 'studio/build' });
+    expect(setPieceIds(s).length).toBeGreaterThan(0);
+    const reset = reduce(s, { type: 'studio/resetLights' });
+    expect(setPieceIds(reset)).toEqual([]);
+    expect(reset.studio.lights).toEqual(lightsFromRig('GENERIC', 'PRESET'));
   });
 });
 
@@ -177,6 +250,57 @@ describe('the cards never enter the frame', () => {
       expect(z[k]).toBeCloseTo(f.normal[k], 9);
       expect(x[k]).toBeCloseTo(f.right[k], 9);
     }
+  });
+});
+
+describe('the strips’ reflections in a glossy floor', () => {
+  const S = 100;
+  const boxes: Record<string, Box> = {
+    cube: { min: [-50, -50, 0], max: [50, 50, 100] },
+    tall: { min: [-25, -25, 0], max: [25, 25, 100] },
+    wide: { min: [-50, -25, 0], max: [50, 25, 40] },
+  };
+  /** A strip: a panel that reflects, four times as long as it is wide. */
+  const isStrip = (l: LightSpec) => (l.type ?? 'AREA') === 'AREA' && l.glossy !== false && Math.max(l.size, l.sizeY ?? l.size) >= 4 * Math.min(l.size, l.sizeY ?? l.size);
+  const shown = (s: LightSetup, l: LightSpec): string[] => {
+    const out: string[] = [];
+    for (const [name, box] of Object.entries(boxes)) {
+      const pivot: [number, number, number] = [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, (box.min[2] + box.max[2]) / 2];
+      for (const aspect of [16 / 9, 1]) {
+        const cam = framedCamera(box, s.camera?.focalMm ?? 85, aspect, s.camera?.el);
+        const strip = cardCorners(cardFrame({ material: '', az: l.az, el: l.el, dist: l.dist, size: l.size, sizeY: l.sizeY }, pivot, S, -Infinity));
+        if (reflectionSeen(cam, aspect, strip, box).length > 0) out.push(`${name} ${aspect.toFixed(2)}`);
+      }
+    }
+    return out;
+  };
+
+  it('of every set with a glossy or mirror floor fall behind the product or out of the frame of the set’s camera', () => {
+    const glossy = SETS.filter((s) => s.floor?.kind === 'GLOSSY' || s.floor?.kind === 'MIRROR');
+    expect(glossy.length).toBeGreaterThan(8);
+    let strips = 0;
+    for (const s of glossy) {
+      s.lights!.forEach((l, i) => {
+        if (!isStrip(l)) return;
+        strips++;
+        expect(shown(s, l), `${s.key} light ${i}`).toEqual([]);
+      });
+    }
+    expect(strips).toBe(15);
+  });
+
+  it('is not a test that passes on its own: a rim strip behind the product, low, shows in front of it', () => {
+    expect(shown(set('CHROME_FAMILY'), { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 20, dist: 3 }).length).toBeGreaterThan(0);
+  });
+
+  it('BACKLIT_LIQUID keeps its backlight’s glow on the floor, softened: the sheet is hazier there', () => {
+    expect(set('BACKLIT_LIQUID').floor).toMatchObject({ kind: 'GLOSSY', roughness: 0.2 });
+    const s = withSet('BACKLIT_LIQUID');
+    const floor = s.scene.nodes[setPieceIds(s).find((id) => s.scene.nodes[id].setPiece!.kind === 'FLOOR')!];
+    expect(s.materials[floor.material!].params.roughness).toBe(0.2);
+    // Elsewhere a glossy floor is the catalogue's acrylic, with its slight haze.
+    expect(materialPreset('ACRYLIC_BLACK')!.params.roughness).toBe(0.12);
+    expect(materialPreset('ACRYLIC_WHITE')!.params.roughness).toBe(0.12);
   });
 });
 
@@ -272,8 +396,11 @@ describe('applying a set', () => {
   it('a matte floor on a sweep is the sweep, a glossy one is its floor or a sheet that stops before the pool', () => {
     const raking = withSet('RAKING_TEXTURE');
     expect(setPieceIds(raking).map((id) => raking.scene.nodes[id].setPiece!.kind)).toEqual(['BACKDROP']);
-    const white = withSet('HIGH_KEY_WHITE');
+    // A sweep with a glossy floor and no pool: the sweep's floor face in the floor's material, no seam.
+    const plain: LightSetup = { ...set('HIGH_KEY_WHITE'), key: 'TEST_GLOSSY_SWEEP', pool: undefined };
+    const white = applySet(exampleState(), plain);
     const sweep = white.scene.nodes[setPieceIds(white)[0]];
+    expect(setPieceIds(white)).toHaveLength(1);
     expect(sweep.primitive?.kind).toBe('SWEEP');
     expect(sweep.faceMaterials).toHaveLength(1);
     expect(white.materials[sweep.faceMaterials![0].material].preset).toBe('ACRYLIC_WHITE');
@@ -304,21 +431,26 @@ describe('the pool of light', () => {
     expect(lights / presetIrradiance('GENERIC')).toBeLessThan(0.5);
   });
 
-  it('lands right behind the product as the camera sees it, on the backdrop, with its share where it lands', () => {
+  it('lands right behind the top of the product as the camera sees it, on the backdrop, with its share where it lands', () => {
     const s = withSet('SILHOUETTE_GLOW');
     const pool = s.studio.lights.find((l) => l.setPiece === 'POOL')!;
     const sweep = s.scene.nodes[setPieceIds(s).find((id) => s.scene.nodes[id].setPiece!.kind === 'BACKDROP')!];
     const target = poolTarget(s, sweep);
     const f = lightFrame(s, pool);
     expect(length(sub(f.target, target))).toBeLessThan(1e-3);
-    // On the camera's line through the pivot, beyond the product.
+    // On the camera's line over the top of the product, beyond the product.
     const eye = cameraPosition(activeCamera(s));
-    const toPivot = normalize(sub(rigPivot(s), eye));
-    expect(dot(normalize(sub(target, eye)), toPivot)).toBeCloseTo(1, 6);
+    const top = poolTop(s);
+    expect(top[2]).toBe(productBounds(s, true).max[2]);
+    expect(dot(normalize(sub(target, eye)), normalize(sub(top, eye)))).toBeCloseTo(1, 6);
+    expect(length(sub(target, eye))).toBeGreaterThan(length(sub(top, eye)));
     // The power: its share of the level at POOL_THROW, wherever the backdrop is.
     const k = recipeScale('GENERIC', set('SILHOUETTE_GLOW').lights!, poolWeight(set('SILHOUETTE_GLOW').pool));
     const throwSizes = length(sub(target, f.position)) / s.scene.partSizeMm;
-    expect(pool.power).toBeCloseTo(k * 0.55 * (throwSizes / POOL_THROW) ** 2, 4);
+    const { normal } = poolLanding(s, sweep);
+    const facing = Math.max(POOL_GRAZE, Math.abs(dot(normal!, normalize(sub(f.position, target)))));
+    expect(pool.power).toBeCloseTo((k * set('SILHOUETTE_GLOW').pool!.share * (throwSizes / POOL_THROW) ** 2) / facing, 4);
+    expect(facing).toBeLessThan(1);
   });
 });
 
@@ -404,6 +536,36 @@ describe('the thumbnails', () => {
     // The PNG `rt` wrote for STRIP_EDGE on its bottle (256 x 256, 96 spp, denoised, seed 1). It changes only when the
     // set, the bottle or the engine changes: then run `node tools/setup-thumbs.mjs` and put the new hash here.
     expect(sha256Hex(readFileSync('public/thumbs/setups/thumb_strip_edge.png'))).toBe('TODO');
+  });
+});
+
+describe('what the sets look like once rendered (their thumbnails)', () => {
+  it('BRIGHT_FIELD and HIGH_KEY_WHITE burn the background to white without clipping the product', () => {
+    for (const [key, part] of [['BRIGHT_FIELD', 'label'], ['HIGH_KEY_WHITE', 'band']] as const) {
+      const t = thumbnail(key);
+      expect(maskedMean(t.img, backdropMask(t)), key).toBeGreaterThanOrEqual(0.92);
+      expect(partPeak(t, part), key).toBeLessThan(1);
+    }
+  });
+
+  it('BLACK_ON_BLACK and GRADIENT_POOL: the pool is at least twice as bright as the backdrop at the frame’s edges', () => {
+    for (const key of ['BLACK_ON_BLACK', 'GRADIENT_POOL']) expect(poolContrast(thumbnail(key)), key).toBeGreaterThanOrEqual(2);
+  });
+
+  it('SILHOUETTE_GLOW: the halo falls off from its centre over 30 % of the frame on each side, without a plateau', () => {
+    const t = thumbnail('SILHOUETTE_GLOW');
+    const [px, py] = poolPixel(t);
+    const span = Math.round(0.3 * t.img.width);
+    for (const end of [0, t.img.width - 1]) {
+      const p = rowProfile(t.img, py, px, end, 7).slice(0, span + 1).filter((_, i) => i % 8 === 0);
+      expect(p.length).toBeGreaterThan(9);
+      // Every step outwards is darker.
+      for (let i = 1; i < p.length; i++) expect(p[i], `${end ? 'right' : 'left'} ${i * 8} px`).toBeLessThan(p[i - 1]);
+      // Past the top of the peak, every 24 pixels at least half a percent darker: no plateau.
+      for (let i = 2; i + 3 < p.length; i++) expect(p[i] - p[i + 3], `${end ? 'right' : 'left'} from ${i * 8} px`).toBeGreaterThan(0.005);
+      // And the halo is there: the centre clearly brighter than 30 % away.
+      expect(p[0] - p[p.length - 1]).toBeGreaterThan(0.05);
+    }
   });
 });
 

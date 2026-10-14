@@ -111,7 +111,7 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
     lights: [
       { role: 'KEY', size: 0.35, sizeY: 4.5, az: -115, el: 25, dist: 3, share: 0.55, kelvin: 5300 },
       { role: 'FILL', size: 3, sizeY: 3, az: 70, el: 20, dist: 3.5, share: 0.25, glossy: false },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 160, el: 30, dist: 3, share: 0.2 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 160, el: 50, dist: 3, share: 0.2 },
     ],
     cards: [
       { material: 'CARD_BLACK', az: 70, el: 15, dist: 1.6, size: 2, sizeY: 5 },
@@ -135,8 +135,8 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
       en: 'Glass shows only by its edges. On black, two strips behind the piece draw them in white (dark field, Hunter et al.).',
     },
     lights: [
-      { role: 'RIM', size: 0.4, sizeY: 4, az: -135, el: 15, dist: 2.8, share: 0.4 },
-      { role: 'RIM', size: 0.4, sizeY: 4, az: 135, el: 15, dist: 2.8, share: 0.4 },
+      { role: 'RIM', size: 0.4, sizeY: 4, az: -135, el: 55, dist: 3, share: 0.4 },
+      { role: 'RIM', size: 0.4, sizeY: 4, az: 135, el: 55, dist: 3, share: 0.4 },
       { role: 'TOP', size: 2, sizeY: 2, az: 0, el: 85, dist: 2.6, share: 0.2, glossy: false },
     ],
     cards: [
@@ -160,9 +160,9 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
       en: 'On white, glass is drawn with black edges. The cards put those edges there, not the light.',
     },
     lights: [
-      { role: 'RIM', size: 6, sizeY: 6, az: 180, el: 10, dist: 3, share: 0.6, camera: true },
-      { role: 'TOP', size: 3, sizeY: 3, az: 0, el: 80, dist: 2.6, share: 0.2 },
-      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, share: 0.2, glossy: false },
+      { role: 'RIM', size: 4.5, sizeY: 4.5, az: 180, el: 10, dist: 4, share: 0.9, camera: true },
+      { role: 'TOP', size: 3, sizeY: 3, az: 0, el: 80, dist: 2.6, share: 0.06 },
+      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, share: 0.04, glossy: false },
     ],
     cards: [
       { material: 'CARD_BLACK', az: -70, el: 10, dist: 1.6, size: 2, sizeY: 5 },
@@ -170,7 +170,8 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
     ],
     backdrop: { kind: 'FLAT', color: [0.9, 0.9, 0.9] },
     floor: { kind: 'GLOSSY', material: 'ACRYLIC_WHITE' },
-    exposureEv: 0.3,
+    envStrength: 1.2,
+    exposureEv: 1.2,
   },
   {
     key: 'HIGH_KEY_WHITE', style: 'SETS', world: 'STUDIO', hero: 'BOX',
@@ -191,7 +192,9 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
     ],
     backdrop: { kind: 'SWEEP', color: [0.9, 0.9, 0.9] },
     floor: { kind: 'GLOSSY', material: 'ACRYLIC_WHITE' },
-    exposureEv: 0.5,
+    pool: { az: 180, el: 30, cone: 90, share: 1.5 },
+    envStrength: 2,
+    exposureEv: 1.4,
   },
   {
     key: 'JEWEL_BOX', style: 'SETS', world: 'STUDIO', hero: 'RING', caustics: true,
@@ -235,7 +238,7 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
     lights: [
       { role: 'KEY', size: 4, sizeY: 4, az: -35, el: 45, dist: 2.2, share: 0.5 },
       { role: 'TOP', size: 2, sizeY: 4, az: -25, el: 50, dist: 2, share: 0.2 },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 20, dist: 3, share: 0.15 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 70, dist: 3, share: 0.15 },
       { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, share: 0.15, glossy: false },
     ],
     cards: [
@@ -279,12 +282,12 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
       en: 'A black product is drawn by two lines of light on its edges. A faint halo behind lifts it off the background.',
     },
     lights: [
-      { role: 'RIM', size: 0.3, sizeY: 4, az: -150, el: 30, dist: 2.6, share: 0.35 },
-      { role: 'RIM', size: 0.3, sizeY: 4, az: 150, el: 30, dist: 2.6, share: 0.35 },
+      { role: 'RIM', size: 0.3, sizeY: 4, az: -150, el: 70, dist: 3, share: 0.35 },
+      { role: 'RIM', size: 0.3, sizeY: 4, az: 150, el: 70, dist: 3, share: 0.35 },
       { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, share: 0.08, glossy: false },
     ],
-    backdrop: { kind: 'FLAT', color: [0.01, 0.01, 0.01] },
-    pool: { az: 180, el: 5, cone: 20, share: 0.22, kelvin: 6500 },
+    backdrop: { kind: 'FLAT', color: [0.04, 0.04, 0.04] },
+    pool: { az: 180, el: 5, cone: 18, share: 0.3, kelvin: 6500 },
     floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
     envStrength: 0.1,
     exposureEv: -0.6,
@@ -322,13 +325,13 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
     },
     lights: [
       { role: 'RIM', size: 2, sizeY: 3, az: 180, el: 8, dist: 2.2, share: 0.55, camera: false },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: -130, el: 20, dist: 2.6, share: 0.15 },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 130, el: 20, dist: 2.6, share: 0.15 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: -130, el: 30, dist: 3, share: 0.15 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 130, el: 30, dist: 3, share: 0.15 },
       { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, share: 0.1, glossy: false },
     ],
     cards: [{ material: 'CARD_WHITE', az: 0, el: 80, dist: 1.5, size: 2, sizeY: 2 }],
     backdrop: { kind: 'GRADIENT', top: [0.08, 0.08, 0.08], bottom: [0.02, 0.02, 0.02] },
-    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
+    floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK', roughness: 0.2 },
     exposureEv: -0.2,
   },
   {
@@ -344,7 +347,7 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
     },
     lights: [
       { role: 'KEY', size: 3, sizeY: 3, az: -45, el: 35, dist: 2.8, share: 0.55, kelvin: 3800 },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 140, el: 25, dist: 3, share: 0.25, color: [0.55, 0.8, 1] },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 140, el: 55, dist: 3, share: 0.25, color: [0.55, 0.8, 1] },
       { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, share: 0.1, kelvin: 5600, glossy: false },
     ],
     backdrop: { kind: 'GRADIENT', top: [0.03, 0.06, 0.08], bottom: [0.01, 0.01, 0.01] },
@@ -385,13 +388,14 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
       en: 'The pool of light behind sets the product apart and gives a neutral backdrop depth. Key, fill and rim do the rest without drawing attention.',
     },
     lights: [
-      { role: 'KEY', size: 3, sizeY: 2.5, az: -40, el: 40, dist: 2.8, share: 0.5 },
+      { role: 'KEY', size: 3, sizeY: 2.5, az: -40, el: 40, dist: 2.2, share: 0.5 },
       { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, share: 0.2, glossy: false },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 165, el: 30, dist: 3, share: 0.15 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 165, el: 70, dist: 3, share: 0.15 },
     ],
-    backdrop: { kind: 'SWEEP', color: [0.45, 0.45, 0.45] },
-    pool: { az: 180, el: 15, cone: 30, share: 0.15 },
+    backdrop: { kind: 'SWEEP', color: [0.3, 0.3, 0.3] },
+    pool: { az: 180, el: 15, cone: 22, share: 0.7 },
     floor: { kind: 'GLOSSY', material: 'ACRYLIC_WHITE', color: [0.6, 0.6, 0.6] },
+    envStrength: 0,
     exposureEv: 0,
   },
   {
@@ -449,11 +453,11 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
     },
     lights: [
       { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 25, dist: 3, share: 0.12, glossy: false },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: -140, el: 25, dist: 3, share: 0.16 },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 140, el: 25, dist: 3, share: 0.16 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: -140, el: 55, dist: 3, share: 0.16 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 140, el: 55, dist: 3, share: 0.16 },
     ],
     backdrop: { kind: 'SWEEP', color: [0.2, 0.2, 0.2] },
-    pool: { az: 180, el: 15, cone: 35, share: 0.55, kelvin: 5600 },
+    pool: { az: 180, el: 15, cone: 45, share: 0.45, kelvin: 5600 },
     floor: { kind: 'GLOSSY', material: 'ACRYLIC_BLACK' },
     envStrength: 0,
     exposureEv: -0.4,

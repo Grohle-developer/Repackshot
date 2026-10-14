@@ -30,6 +30,22 @@ function resolveSetup(ref: SetupRef): { lights: readonly LightSpec[] | null; poo
   return typeof ref === 'string' ? lightSetup(ref) : ref;
 }
 
+/**
+ * The exposure of a product type without its set (L6): a type that is a set (`StudioPreset.set`) has its set's offset
+ * folded into its `exposure`; any other setup on it starts from the exposure before that offset.
+ */
+export function baseExposure(preset: StudioPreset): number {
+  const own = preset.set ? lightSetup(preset.set) : undefined;
+  return preset.exposure - (own?.exposureEv ?? 0);
+}
+
+/** The exposure a setup has on a product type: the type's own rig its `exposure`, any other its base plus its offset. */
+export function setupExposure(preset: StudioPreset, setupRef: SetupRef): number {
+  if (setupRef === 'PRESET') return preset.exposure;
+  const setup = typeof setupRef === 'string' ? lightSetup(setupRef) : undefined;
+  return baseExposure(preset) + (setup?.exposureEv ?? 0);
+}
+
 /** Irradiance used when a preset is unknown or has no lights. */
 const FALLBACK_IRRADIANCE = 1.6;
 

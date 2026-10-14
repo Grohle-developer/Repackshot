@@ -13,7 +13,7 @@ import type { StudioPreset } from './types';
 // to the camera axis (0 behind the camera, negative camera-left, 180 behind the part); `energy` is watts at part size 1.
 export const STUDIO_PRESETS: readonly StudioPreset[] = [
   {
-    key: 'GENERIC',
+    key: 'GENERIC', set: 'GRADIENT_POOL',
     label: { es: 'Estandar tres puntos', en: 'Standard three-point' },
     sizeMm: 200, focalMm: 85, fstop: 5.6,
     envStrength: 0.6, exposure: 0,
@@ -21,13 +21,13 @@ export const STUDIO_PRESETS: readonly StudioPreset[] = [
     floor: true, shadow: true, caustics: false, quality: 'PREVIEW',
     // L6: the lights of the set GRADIENT_POOL (light-setups.ts), at this type's level.
     lights: [
-      { role: 'KEY', size: 3, sizeY: 2.5, az: -40, el: 40, dist: 2.8, energy: 104.510837727 },
-      { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, energy: 41.8043350908, glossy: false },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 165, el: 30, dist: 3, energy: 31.3532513181 },
+      { role: 'KEY', size: 3, sizeY: 2.5, az: -40, el: 40, dist: 2.2, energy: 74.19995737689 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, energy: 29.67998295076, glossy: false },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 165, el: 70, dist: 3, energy: 22.25998721307 },
     ],
   },
   {
-    key: 'JEWELLERY',
+    key: 'JEWELLERY', set: 'JEWEL_BOX',
     label: { es: 'Joyeria', en: 'Jewellery' },
     sizeMm: 30, focalMm: 100, fstop: 11,
     envStrength: 0.9, exposure: 0,
@@ -44,67 +44,67 @@ export const STUDIO_PRESETS: readonly StudioPreset[] = [
     ],
   },
   {
-    key: 'WATCH',
+    key: 'WATCH', set: 'CHROME_FAMILY',
     label: { es: 'Relojeria', en: 'Watchmaking' },
     sizeMm: 45, focalMm: 100, fstop: 8,
-    envStrength: 0.7, exposure: 0,
+    envStrength: 0.7, exposure: -0.2,
     background: 'FLAT', backgroundColor: [0.03, 0.03, 0.035, 1],
     floor: true, shadow: true, caustics: true, quality: 'FINAL',
     // L6: the lights of the set CHROME_FAMILY (light-setups.ts), at this type's level.
     lights: [
       { role: 'KEY', size: 4, sizeY: 4, az: -35, el: 45, dist: 2.2, energy: 58.67218494926 },
       { role: 'TOP', size: 2, sizeY: 4, az: -25, el: 50, dist: 2, energy: 23.4688739797 },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 20, dist: 3, energy: 17.60165548478 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 70, dist: 3, energy: 17.60165548478 },
       { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, energy: 17.60165548478, glossy: false },
     ],
   },
   {
-    key: 'PERFUME',
+    key: 'PERFUME', set: 'STRIP_EDGE',
     label: { es: 'Perfumeria', en: 'Fragrance' },
     sizeMm: 110, focalMm: 100, fstop: 8,
-    envStrength: 0.35, exposure: 0,
+    envStrength: 0.35, exposure: -0.3,
     background: 'FLAT', backgroundColor: [0.015, 0.015, 0.02, 1],
     floor: true, shadow: false, caustics: true, quality: 'FINAL',
     // L6: the lights of the set STRIP_EDGE (light-setups.ts), at this type's level.
     lights: [
       { role: 'KEY', size: 0.35, sizeY: 4.5, az: -115, el: 25, dist: 3, energy: 119.5400017077, kelvin: 5300 },
       { role: 'FILL', size: 3, sizeY: 3, az: 70, el: 20, dist: 3.5, energy: 54.33636441257, glossy: false },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 160, el: 30, dist: 3, energy: 43.46909153005 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 160, el: 50, dist: 3, energy: 43.46909153005 },
     ],
   },
   {
-    key: 'COSMETICS',
+    key: 'COSMETICS', set: 'STRIP_EDGE',
     label: { es: 'Cosmetica', en: 'Cosmetics' },
     sizeMm: 90, focalMm: 100, fstop: 8,
-    envStrength: 0.8, exposure: 0.15,
+    envStrength: 0.8, exposure: -0.15,
     background: 'FLAT', backgroundColor: [0.78, 0.78, 0.78, 1],
     floor: true, shadow: true, caustics: false, quality: 'PREVIEW',
     // L6: the lights of the set STRIP_EDGE (light-setups.ts), at this type's level.
     lights: [
       { role: 'KEY', size: 0.35, sizeY: 4.5, az: -115, el: 25, dist: 3, energy: 102.1094817281, kelvin: 5300 },
       { role: 'FILL', size: 3, sizeY: 3, az: 70, el: 20, dist: 3.5, energy: 46.41340078552, glossy: false },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 160, el: 30, dist: 3, energy: 37.13072062842 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 160, el: 50, dist: 3, energy: 37.13072062842 },
     ],
   },
   {
-    key: 'ELECTRONICS',
+    key: 'ELECTRONICS', set: 'BLACK_ON_BLACK',
     label: { es: 'Electronica', en: 'Electronics' },
     sizeMm: 150, focalMm: 85, fstop: 8,
-    envStrength: 0.5, exposure: -0.15,
+    envStrength: 0.5, exposure: -0.75,
     background: 'FLAT', backgroundColor: [0.035, 0.035, 0.04, 1],
     floor: true, shadow: true, caustics: false, quality: 'PREVIEW',
     // L6: the lights of the set BLACK_ON_BLACK (light-setups.ts), at this type's level.
     lights: [
-      { role: 'RIM', size: 0.3, sizeY: 4, az: -150, el: 30, dist: 2.6, energy: 72.56885339095 },
-      { role: 'RIM', size: 0.3, sizeY: 4, az: 150, el: 30, dist: 2.6, energy: 72.56885339095 },
-      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, energy: 16.58716648936, glossy: false },
+      { role: 'RIM', size: 0.3, sizeY: 4, az: -150, el: 70, dist: 3, energy: 94.14903130723 },
+      { role: 'RIM', size: 0.3, sizeY: 4, az: 150, el: 70, dist: 3, energy: 94.14903130723 },
+      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, energy: 21.51977858451, glossy: false },
     ],
   },
   {
-    key: 'APPLIANCE',
+    key: 'APPLIANCE', set: 'HIGH_KEY_WHITE',
     label: { es: 'Electrodomestico', en: 'Appliance' },
     sizeMm: 600, focalMm: 50, fstop: 8,
-    envStrength: 0.7, exposure: 0.1,
+    envStrength: 0.7, exposure: 1.5,
     background: 'FLAT', backgroundColor: [0.72, 0.72, 0.73, 1],
     floor: true, shadow: true, caustics: false, quality: 'PREVIEW',
     // L6: the lights of the set HIGH_KEY_WHITE (light-setups.ts), at this type's level.
@@ -116,7 +116,7 @@ export const STUDIO_PRESETS: readonly StudioPreset[] = [
     ],
   },
   {
-    key: 'FURNITURE_IN',
+    key: 'FURNITURE_IN', set: 'WARM_WINDOW',
     label: { es: 'Mobiliario interior', en: 'Indoor furniture' },
     sizeMm: 900, focalMm: 50, fstop: 5.6,
     envStrength: 0.9, exposure: 0,
@@ -144,7 +144,7 @@ export const STUDIO_PRESETS: readonly StudioPreset[] = [
     ],
   },
   {
-    key: 'FOOTWEAR',
+    key: 'FOOTWEAR', set: 'RAKING_TEXTURE',
     label: { es: 'Calzado', en: 'Footwear' },
     sizeMm: 280, focalMm: 85, fstop: 8,
     envStrength: 0.6, exposure: 0,
@@ -158,7 +158,7 @@ export const STUDIO_PRESETS: readonly StudioPreset[] = [
     ],
   },
   {
-    key: 'TEXTILE',
+    key: 'TEXTILE', set: 'RAKING_TEXTURE',
     label: { es: 'Textil', en: 'Textile' },
     sizeMm: 400, focalMm: 100, fstop: 8,
     envStrength: 0.45, exposure: 0,
@@ -172,7 +172,7 @@ export const STUDIO_PRESETS: readonly StudioPreset[] = [
     ],
   },
   {
-    key: 'PACKAGING',
+    key: 'PACKAGING', set: 'GRADIENT_POOL',
     label: { es: 'Packaging', en: 'Packaging' },
     sizeMm: 250, focalMm: 85, fstop: 11,
     envStrength: 0.7, exposure: 0.05,
@@ -180,60 +180,60 @@ export const STUDIO_PRESETS: readonly StudioPreset[] = [
     floor: true, shadow: true, caustics: false, quality: 'PREVIEW',
     // L6: the lights of the set GRADIENT_POOL (light-setups.ts), at this type's level.
     lights: [
-      { role: 'KEY', size: 3, sizeY: 2.5, az: -40, el: 40, dist: 2.8, energy: 93.60629027534 },
-      { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, energy: 37.44251611013, glossy: false },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 165, el: 30, dist: 3, energy: 28.0818870826 },
+      { role: 'KEY', size: 3, sizeY: 2.5, az: -40, el: 40, dist: 2.2, energy: 66.45801430452 },
+      { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, energy: 26.58320572181, glossy: false },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 165, el: 70, dist: 3, energy: 19.93740429136 },
     ],
   },
   {
-    key: 'AUTOMOTIVE',
+    key: 'AUTOMOTIVE', set: 'CHROME_FAMILY',
     label: { es: 'Componente de automocion', en: 'Automotive part' },
     sizeMm: 350, focalMm: 85, fstop: 8,
-    envStrength: 0.5, exposure: -0.1,
+    envStrength: 0.5, exposure: -0.3,
     background: 'FLAT', backgroundColor: [0.04, 0.04, 0.045, 1],
     floor: true, shadow: true, caustics: false, quality: 'FINAL',
     // L6: the lights of the set CHROME_FAMILY (light-setups.ts), at this type's level.
     lights: [
       { role: 'KEY', size: 4, sizeY: 4, az: -35, el: 45, dist: 2.2, energy: 64.58037336272 },
       { role: 'TOP', size: 2, sizeY: 4, az: -25, el: 50, dist: 2, energy: 25.83214934509 },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 20, dist: 3, energy: 19.37411200881 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 70, dist: 3, energy: 19.37411200881 },
       { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, energy: 19.37411200881, glossy: false },
     ],
   },
   {
-    key: 'TOOL',
+    key: 'TOOL', set: 'CHROME_FAMILY',
     label: { es: 'Herramienta industrial', en: 'Industrial tool' },
     sizeMm: 300, focalMm: 85, fstop: 8,
-    envStrength: 0.4, exposure: -0.1,
+    envStrength: 0.4, exposure: -0.3,
     background: 'FLAT', backgroundColor: [0.06, 0.06, 0.06, 1],
     floor: true, shadow: true, caustics: false, quality: 'PREVIEW',
     // L6: the lights of the set CHROME_FAMILY (light-setups.ts), at this type's level.
     lights: [
       { role: 'KEY', size: 4, sizeY: 4, az: -35, el: 45, dist: 2.2, energy: 68.89470516376 },
       { role: 'TOP', size: 2, sizeY: 4, az: -25, el: 50, dist: 2, energy: 27.5578820655 },
-      { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 20, dist: 3, energy: 20.66841154913 },
+      { role: 'RIM', size: 0.3, sizeY: 3, az: 170, el: 70, dist: 3, energy: 20.66841154913 },
       { role: 'FILL', size: 3, sizeY: 3, az: 60, el: 20, dist: 3.5, energy: 20.66841154913, glossy: false },
     ],
   },
   {
-    key: 'EYEWEAR',
+    key: 'EYEWEAR', set: 'BRIGHT_FIELD',
     label: { es: 'Optica y gafas', en: 'Eyewear' },
     sizeMm: 140, focalMm: 100, fstop: 8,
-    envStrength: 0.6, exposure: 0,
+    envStrength: 0.6, exposure: 1.2,
     background: 'FLAT', backgroundColor: [0.2, 0.2, 0.22, 1],
     floor: true, shadow: true, caustics: true, quality: 'FINAL',
     // L6: the lights of the set BRIGHT_FIELD (light-setups.ts), at this type's level.
     lights: [
-      { role: 'RIM', size: 6, sizeY: 6, az: 180, el: 10, dist: 3, energy: 113.0440383701, camera: true },
-      { role: 'TOP', size: 3, sizeY: 3, az: 0, el: 80, dist: 2.6, energy: 37.68134612336 },
-      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, energy: 37.68134612336, glossy: false },
+      { role: 'RIM', size: 4.5, sizeY: 4.5, az: 180, el: 10, dist: 4, energy: 288.7628655469, camera: true },
+      { role: 'TOP', size: 3, sizeY: 3, az: 0, el: 80, dist: 2.6, energy: 19.25085770313 },
+      { role: 'FILL', size: 2, sizeY: 2, az: 0, el: 20, dist: 3, energy: 12.83390513542, glossy: false },
     ],
   },
   {
-    key: 'MEDICAL',
+    key: 'MEDICAL', set: 'HIGH_KEY_WHITE',
     label: { es: 'Instrumental medico', en: 'Medical device' },
     sizeMm: 220, focalMm: 85, fstop: 11,
-    envStrength: 0.85, exposure: 0.1,
+    envStrength: 0.85, exposure: 1.5,
     background: 'FLAT', backgroundColor: [0.88, 0.88, 0.89, 1],
     floor: true, shadow: true, caustics: false, quality: 'PREVIEW',
     // L6: the lights of the set HIGH_KEY_WHITE (light-setups.ts), at this type's level.
@@ -247,27 +247,14 @@ export const STUDIO_PRESETS: readonly StudioPreset[] = [
 ];
 
 /**
- * L6: the set each product type's own rig comes from (its lights, at the type's level: the total irradiance the type
- * had before L6, so its exposure does not change). Outdoor furniture keeps its sun: no studio set is outdoor light.
- * Only the lights: the type's background, floor and environment stay its own (the whole set is its thumbnail).
+ * L6: the set each product type's own rig is (`StudioPreset.set`): its lights, at the type's level (the total
+ * irradiance the type had before L6, so the setups normalised to it do not change), and with the type's own rig
+ * (setup PRESET) its decoration and look too: cards, backdrop, floor, pool; the set's exposure offset is folded into
+ * the type's `exposure`. Outdoor furniture keeps its sun: no studio set is outdoor light.
  */
-export const PRESET_SETS: Readonly<Record<string, string>> = {
-  GENERIC: 'GRADIENT_POOL',
-  JEWELLERY: 'JEWEL_BOX',
-  WATCH: 'CHROME_FAMILY',
-  PERFUME: 'STRIP_EDGE',
-  COSMETICS: 'STRIP_EDGE',
-  ELECTRONICS: 'BLACK_ON_BLACK',
-  APPLIANCE: 'HIGH_KEY_WHITE',
-  FURNITURE_IN: 'WARM_WINDOW',
-  FOOTWEAR: 'RAKING_TEXTURE',
-  TEXTILE: 'RAKING_TEXTURE',
-  PACKAGING: 'GRADIENT_POOL',
-  AUTOMOTIVE: 'CHROME_FAMILY',
-  TOOL: 'CHROME_FAMILY',
-  EYEWEAR: 'BRIGHT_FIELD',
-  MEDICAL: 'HIGH_KEY_WHITE',
-};
+export const PRESET_SETS: Readonly<Record<string, string>> = /* @__PURE__ */ Object.fromEntries(
+  STUDIO_PRESETS.filter((p) => p.set !== undefined).map((p) => [p.key, p.set!]),
+);
 
 export function studioPreset(key: string): StudioPreset | undefined {
   return STUDIO_PRESETS.find((p) => p.key === key);

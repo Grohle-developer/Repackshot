@@ -113,6 +113,8 @@ export function loadExample(ctx: Ctx): void {
   store.transaction(L('undo.example'), () => {
     store.dispatch({ type: 'scene/addModel', payload: buildExample(exampleNames()), replace: true });
     store.dispatch({ type: 'camera/frame' });
+    // L6: the set in force (chosen, or the product type's own) dresses the product that came in.
+    store.dispatch({ type: 'studio/fitSet', names: setPieceNames() });
   });
   ctx.ui.set({ importMessage: null });
 }
@@ -381,6 +383,8 @@ export function confirmImport(ctx: Ctx): void {
     if (options.frameCamera) ctx.store.dispatch({ type: 'camera/frame' });
     // Reset transform returns to where the sheet placed the model.
     ctx.store.dispatch({ type: 'scene/setInitial', ids: added });
+    // L6: the set in force (chosen, or the product type's own) dresses the product that came in.
+    ctx.store.dispatch({ type: 'studio/fitSet', names: setPieceNames() });
   });
   ctx.ui.toast(t('import.done', { name }));
   reportImport(ctx, name, [...sheet.warnings, ...sheet.notes, ...applied.notes]);

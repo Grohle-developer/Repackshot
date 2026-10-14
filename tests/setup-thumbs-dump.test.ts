@@ -62,12 +62,12 @@ describe.skipIf(!dir)('setup thumbnails: RSB dump', () => {
         }
       }
       // Every product type's own rig before L6 (the fixture) and after, on the bottle, with its own camera and look.
-      const before = JSON.parse(readFileSync('tests/fixtures/studio-rigs-before-l6.json', 'utf8')) as { lights: Record<string, LightSpec[]> };
+      const before = JSON.parse(readFileSync('tests/fixtures/studio-rigs-before-l6.json', 'utf8')) as { lights: Record<string, LightSpec[]>; exposure: Record<string, number> };
       for (const p of STUDIO_PRESETS) {
         if (keys && !keys.includes(p.key)) continue;
         const now = setupScene('PRESET', { width, height, hero: 'BOTTLE', preset: p.key });
         write(entries, now, `preset-${p.key.toLowerCase()}-after.rsb`, { setup: 'PRESET', hero: 'BOTTLE', preset: p.key, variant: 'after' }, p.caustics);
-        const old = { ...studioPreset(p.key)!, key: `LIB:before-${p.key}`, lights: before.lights[p.key] };
+        const old = { ...studioPreset(p.key)!, key: `LIB:before-${p.key}`, set: undefined, exposure: before.exposure[p.key], lights: before.lights[p.key] };
         const then = setupScene('PRESET', { width, height, hero: 'BOTTLE', preset: p.key, custom: { type: 'studio/setPreset', key: old.key, custom: old } });
         write(entries, then, `preset-${p.key.toLowerCase()}-before.rsb`, { setup: 'PRESET', hero: 'BOTTLE', preset: p.key, variant: 'before' }, p.caustics);
       }
