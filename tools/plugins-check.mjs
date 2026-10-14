@@ -24,7 +24,9 @@
 //       the render jobs' switch (decision 9) is a setting, undoable;
 //   (f) with --film: the carousel by the keys (an arrow chooses the next card, undo the one before), the wheel
 //       scrolls it sideways with the fades at its ends, a click chooses a recipe and its preview has the engine's
-//       numbers;  → render-plugins-film.png
+//       numbers; P6b: the slider under the carousel dragged (it scrolls the strip, the strip's wheel moves it, the
+//       chosen card marked on it) and two filters chosen (TYPE and ISO: they combine, the count says how many are left,
+//       the chosen recipe stays first and marked outside them, undo takes a filter back);  → render-plugins-film.png
 //   (g) Apply: a new result in the results viewer with its provenance, saved as <name>_<plugin>.png;
 //   (h) the Plugins section and Settings ▸ Plugins are achromatic (every computed colour has r = g = b, but the
 //       pictures and the logos), and a reload keeps what is installed.
@@ -296,7 +298,9 @@ try {
     const stateLine = await page.locator(`${block('test-invert')} .rw-pl-state`).textContent();
     await page.waitForFunction((sel) => document.querySelectorAll(`${sel} .rw-pl-card .rw-pl-thumb img`).length === 3, block('test-invert'), { timeout: 60000 });
     const cards = await page.locator(`${block('test-invert')} .rw-pl-card`).evaluateAll((els) => els.map((e) => [e.dataset.recipe, e.querySelector('.rw-pl-card-name')?.textContent, e.querySelector('.rw-pl-card-cat')?.textContent, e.getAttribute('aria-selected')]));
-    check('d2_base_preview_and_cards', applyOff && /test scene/.test(baseLine ?? '') && /320 × 200 · 8-bit picture · from the plugin’s test scene/.test(stateLine ?? '') && cards.length === 3 && cards[0][0] === '' && cards[0][3] === 'true' && cards[1][1] === 'Full inversion' && cards[1][2] === 'Basic', { applyOff, baseLine, stateLine, cards });
+    const chipRows = await page.locator(`${block('test-invert')} .rw-pl-chips`).evaluateAll((els) => els.map((e) => [e.dataset.filter, [...e.querySelectorAll('.rw-pl-chip')].map((c) => c.textContent)]));
+    const count = await page.locator(`${block('test-invert')} .rw-pl-count`).textContent();
+    check('d2_base_preview_and_cards', applyOff && /test scene/.test(baseLine ?? '') && /320 × 200 · 8-bit picture · from the plugin’s test scene/.test(stateLine ?? '') && cards.length === 3 && cards[0][0] === '' && cards[0][3] === 'true' && cards[1][1] === 'Full inversion' && cards[1][2] === 'Basic' && JSON.stringify(chipRows) === '[["strength",["All","Strong","Mild"]]]' && count === '2 of 2 recipes', { applyOff, baseLine, stateLine, cards, chipRows, count });
     if (film) {
       await page.waitForFunction((sel) => document.querySelectorAll(`${sel} .rw-pl-card`).length > 1, block('aintfilm-film'), { timeout: 60000 });
       const total = await page.locator(`${block('aintfilm-film')} .rw-pl-card`).count();
@@ -398,6 +402,63 @@ try {
     const time = await page.locator(`${block('aintfilm-film')} .rw-pl-time`).textContent();
     const notice = await page.locator(`${block('aintfilm-film')} .rw-pl-notice`).textContent();
     check('f_film_recipe_preview', groups.length >= 6 && (await chosen()) === 'cn-01' && /Negative per pixel [\d.]+ µm/.test(meter ?? '') && /Engine wasm/.test(meter ?? '') && /^The plugin took/.test(time ?? '') && /A preview of aintfilm/.test(notice ?? ''), { groups, meter, time });
+    // P6b, the slider: dragged, it scrolls the strip a card a step; the strip's wheel moves it; the chosen card is on it.
+    {
+      const range = page.locator(`${b} .rw-pl-scrub-range`);
+      const scrollOf = () => strip.evaluate((el) => Math.round(el.scrollLeft));
+      await strip.evaluate((el) => el.scrollTo({ left: 0, behavior: 'instant' }));
+      await page.waitForTimeout(300);
+      const max = Number(await range.getAttribute('max'));
+      const box = await range.boundingBox();
+      await page.mouse.move(box.x + 14, box.y + box.height / 2);
+      await page.mouse.down();
+      for (let i = 1; i <= 10; i++) await page.mouse.move(box.x + 14 + (box.width - 28) * 0.06 * i, box.y + box.height / 2);
+      await page.mouse.up();
+      await page.waitForTimeout(600);
+      const dragged = Number(await range.inputValue());
+      const afterDrag = await scrollOf();
+      const step = await strip.evaluate((el) => el.firstElementChild.offsetWidth + parseFloat(getComputedStyle(el).columnGap || '0'));
+      // The strip, scrolled by the wheel: the slider follows.
+      await strip.hover();
+      for (let i = 0; i < 4; i++) await page.mouse.wheel(0, -100);
+      await page.waitForTimeout(800);
+      const wheeled = Number(await range.inputValue());
+      const afterWheel = await scrollOf();
+      // The keys on the slider: a card a press.
+      await range.focus();
+      await page.keyboard.press('ArrowRight');
+      await page.waitForTimeout(600);
+      const keyed = Number(await range.inputValue());
+      const markAt = await page.locator(`${b} .rw-pl-scrub-mark`).evaluate((el) => [el.hidden, el.style.getPropertyValue('--mark')]);
+      const maxScroll = await strip.evaluate((el) => el.scrollWidth - el.clientWidth);
+      check('f_scrub_slider', max > 50 && dragged > 20 && Math.abs(afterDrag - Math.min(dragged * step, maxScroll)) <= 2 && wheeled < dragged && Math.abs(afterWheel - wheeled * step) <= 2 && keyed === wheeled + 1 && markAt[0] === false && Number(markAt[1]) > 0, { max, dragged, afterDrag, step, wheeled, afterWheel, keyed, markAt });
+    }
+    // P6b, two filters: B&W and ≥ 800 combine; the count; CN-01, chosen, stays first and marked outside them.
+    {
+      const count = () => page.locator(`${b} .rw-pl-count`).textContent();
+      const all = await count();
+      await page.locator(`${b} .rw-pl-chips[data-filter="type"] .rw-pl-chip[data-value="bw"]`).click();
+      await page.waitForTimeout(300);
+      const bw = await count();
+      await page.locator(`${b} .rw-pl-chips[data-filter="iso"] .rw-pl-chip[data-value="fast"]`).click();
+      await page.waitForTimeout(300);
+      const both = await count();
+      const shown = await page.locator(`${b} .rw-pl-card`).evaluateAll((els) => els.map((e) => [e.dataset.recipe, e.classList.contains('is-outside'), e.querySelector('.rw-pl-card-cat')?.textContent]));
+      const pressed = await page.locator(`${b} .rw-pl-chip[aria-pressed="true"]`).evaluateAll((els) => els.map((e) => `${e.closest('.rw-pl-chips').dataset.filter}=${e.dataset.value}`));
+      const n = (txt) => Number(/^(\d+) of/.exec(txt ?? '')?.[1]);
+      const ok = /^127 of 127 recipes$/.test(all ?? '') && n(bw) > n(both) && n(both) > 0 && shown[0][0] === 'cn-01' && shown[0][1] === true && shown[0][2] === 'Not in the filters' && shown[1][0] === '' && shown.length === n(both) + 2 && shown.slice(2).every(([id]) => /^bw-/.test(id)) && pressed.join(',') === 'type=bw,iso=fast,group=' && (await chosen()) === 'cn-01';
+      // Undo takes the second filter back.
+      await page.locator('.rw').focus();
+      await page.keyboard.press('Control+z');
+      await page.waitForTimeout(300);
+      const undone = await count();
+      check('f_two_filters', ok && undone === bw, { all, bw, both, undone, first: shown[0], pressed, cards: shown.length });
+      // (The filter at All has its All chip pressed: group=.) The picture with both filters on: redo.
+      await page.keyboard.press('Control+Shift+z');
+      await page.waitForTimeout(300);
+      await strip.evaluate((el) => el.scrollTo({ left: 0, behavior: 'instant' }));
+      await page.locator('.rw').focus();
+    }
     // The section alone, the film's block alone, as tall as it is.
     const style = await page.addStyleTag({ content: `.rw{height:auto!important;max-height:none!important}.rw-body{overflow:visible!important}.rw-body>.section:not([data-section="rw.plugins"]){display:none!important}.rw-pl:not([data-plugin="aintfilm-film"]){display:none!important}.rw-pl-foot{display:none!important}.rw-ai-preview{position:static!important}` });
     await page.waitForTimeout(600);

@@ -12,7 +12,7 @@ import { deflateSync, inflateSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { defaultControls, parseManifest, THUMB_SIZE, type PluginManifest } from '../src/core/plugins';
+import { defaultControls, filterPresets, parseManifest, THUMB_SIZE, type PluginManifest } from '../src/core/plugins';
 import { PluginHost, type PluginSession } from '../src/plugins/host';
 import { memoryPluginStore } from '../src/plugins/store';
 import { newKeyBytes, packRpk, toBase64 } from '../src/plugins/rpk';
@@ -219,6 +219,33 @@ describe.skipIf(!HERE)('the film plugin, built from the aintfilm checkout', { ti
     const lists = readBrandLists(join(CHECKOUT, 'scripts', 'brand-hashes.json'));
     expect(scanText(JSON.stringify(p, null, 1), lists)).toEqual([]);
     expect(scanText(JSON.stringify(manifest, null, 1), lists)).toEqual([]);
+  });
+
+  it('offers the film search\'s filters (TYPE, ISO in its bands) and the recipes\' groups, each recipe tagged (P6b)', async () => {
+    const p = await session.presets();
+    expect(p.filters.map((f) => [f.id, f.options.map((o) => o.value)])).toEqual([
+      ['type', ['colour', 'bw', 'slide', 'cine']],
+      ['iso', ['slow', 'medium', 'fast']],
+      ['group', ['films', 'colour', 'grain', 'diffusion', 'lens']],
+    ]);
+    const n = (f: Record<string, string>) => filterPresets(p.presets, f).count;
+    expect([n({ group: 'films' }), n({ group: 'colour' }), n({ group: 'grain' }), n({ group: 'diffusion' }), n({ group: 'lens' })]).toEqual([51, 51, 8, 13, 4]);
+    // Every film and every film's colour has a TYPE and an ISO band; the bands and the types each split the 102.
+    expect(['slow', 'medium', 'fast'].map((b) => n({ iso: b })).reduce((a, b) => a + b, 0)).toBe(102);
+    expect(['colour', 'bw', 'slide', 'cine'].map((v) => n({ type: v })).reduce((a, b) => a + b, 0)).toBe(102);
+    // The bands are the app's: cut at 100 and 400, by the box speed each film's card shows.
+    for (const r of p.presets.filter((x) => x.tags?.iso)) {
+      const iso = Number(/ISO (\d+)/.exec(r.aux?.en ?? '')?.[1]);
+      expect(r.tags!.iso, r.id).toBe(iso <= 100 ? 'slow' : iso <= 400 ? 'medium' : 'fast');
+    }
+    // The categories already say a film's class: TYPE agrees with them.
+    const cls: Record<string, string> = { 'films-cn': 'colour', 'films-sl': 'slide', 'films-ci': 'cine', 'films-bw': 'bw' };
+    for (const r of p.presets.filter((x) => cls[x.category])) expect(r.tags?.type, r.id).toBe(cls[r.category]);
+    // They combine; a grain has no ISO.
+    expect(n({ type: 'bw', group: 'films' })).toBe(p.presets.filter((x) => x.category === 'films-bw').length);
+    expect(filterPresets(p.presets, { iso: 'fast' }).shown.some((x) => x.id.startsWith('grain'))).toBe(false);
+    // No maker's or product's name in the filters' words either.
+    expect(scanText(JSON.stringify(p.filters, null, 1), readBrandLists(join(CHECKOUT, 'scripts', 'brand-hashes.json')))).toEqual([]);
   });
 
   it('renders 8-bit pixels and linear planes through the engine, deterministically', async () => {

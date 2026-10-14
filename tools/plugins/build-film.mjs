@@ -63,6 +63,49 @@ const GRAIN = { id: 'grain', label: { en: 'Grain', es: 'Grano' } };
 const DIFFUSION = { id: 'diffusion', label: { en: 'Diffusion filters', es: 'Filtros de difusión' } };
 const LENS = { id: 'lens', label: { en: 'Lens characters', es: 'Caracteres de objetivo' } };
 
+/**
+ * The recipe filters (P6b): the two rows of the app's film search that carry no maker's name — TYPE, by the
+ * catalogue's class of each film (its words: COLOUR for a colour negative, B&W, SLIDE, CINE), and ISO, in its three
+ * bands cut at 100 and 400 (`isoBand` of the checkout's src/lib/filmFilter.ts: at or under 100, up to 400, over 400) —
+ * and the recipes' own groups (films, a film's colour alone, grain, diffusion, lens). MAKER is left out: it is a list
+ * of makers' names (D112), and ORIGIN (the app's, mine, other people's) has only the app's here. A recipe with no
+ * film (grain, a filter, a lens) has no TYPE and no ISO: it is under All of those and nowhere else, as in the app.
+ */
+const TYPE_OF = { 'C-NEG': 'colour', 'B&W': 'bw', SLIDE: 'slide', CINE: 'cine' };
+const isoBand = (iso) => (!Number.isFinite(iso) ? null : iso <= 100 ? 'slow' : iso <= 400 ? 'medium' : 'fast');
+const FILTERS = [
+  {
+    id: 'type',
+    label: { en: 'Type', es: 'Tipo' },
+    options: [
+      { value: 'colour', label: { en: 'Colour', es: 'Color' } },
+      { value: 'bw', label: { en: 'B&W', es: 'B&W' } },
+      { value: 'slide', label: { en: 'Slide', es: 'Diapositiva' } },
+      { value: 'cine', label: { en: 'Cine', es: 'Cine' } },
+    ],
+  },
+  {
+    id: 'iso',
+    label: { en: 'ISO', es: 'ISO' },
+    options: [
+      { value: 'slow', label: { en: '≤ 100', es: '≤ 100' } },
+      { value: 'medium', label: { en: '200–400', es: '200–400' } },
+      { value: 'fast', label: { en: '≥ 800', es: '≥ 800' } },
+    ],
+  },
+  {
+    id: 'group',
+    label: { en: 'Group', es: 'Grupo' },
+    options: [
+      { value: 'films', label: { en: 'Films', es: 'Películas' } },
+      { value: 'colour', label: { en: 'A film’s colour', es: 'Color de una película' } },
+      { value: 'grain', label: { en: 'Grain', es: 'Grano' } },
+      { value: 'diffusion', label: { en: 'Diffusion', es: 'Difusión' } },
+      { value: 'lens', label: { en: 'Lens', es: 'Objetivo' } },
+    ],
+  },
+];
+
 /** The grain presets' names (generic words) in both languages, in the order they are offered. */
 const GRAIN_NAMES = {
   'grain-ultrafine': { en: 'Ultra fine', es: 'Ultrafino' },
@@ -162,7 +205,8 @@ async function main() {
       const settings = complete(raw, nid);
       write(file, settings);
       const box = Math.round(settings.iso_rated || settings.iso);
-      stockEntries.push({ fam: famOrder.indexOf(row.klass), serial: row.id, colour: p.category === 'color', recipe: { id: nid, name: { en: row.id.toUpperCase(), es: row.id.toUpperCase() }, category: p.category === 'color' ? COLOUR.id : FAMILIES[row.klass].id, aux: { en: `ISO ${box}`, es: `ISO ${box}` }, file } });
+      const tags = { type: TYPE_OF[row.klass], ...(isoBand(box) ? { iso: isoBand(box) } : {}), group: p.category === 'color' ? 'colour' : 'films' };
+      stockEntries.push({ fam: famOrder.indexOf(row.klass), serial: row.id, colour: p.category === 'color', recipe: { id: nid, name: { en: row.id.toUpperCase(), es: row.id.toUpperCase() }, category: p.category === 'color' ? COLOUR.id : FAMILIES[row.klass].id, aux: { en: `ISO ${box}`, es: `ISO ${box}` }, tags, file } });
     } else if (p.category === 'grain') {
       const name = GRAIN_NAMES[p.id];
       if (!name) {
@@ -171,7 +215,7 @@ async function main() {
       }
       const file = `presets/grain/${p.id.replace(/^grain-/, '')}.json`;
       write(file, complete(raw, p.id));
-      recipes.push({ order: [6, Object.keys(GRAIN_NAMES).indexOf(p.id)], recipe: { id: p.id, name, category: GRAIN.id, file } });
+      recipes.push({ order: [6, Object.keys(GRAIN_NAMES).indexOf(p.id)], recipe: { id: p.id, name, category: GRAIN.id, tags: { group: 'grain' }, file } });
     } else if (p.category === 'look') {
       const d = diffusionIds.indexOf(p.id);
       const l = lensIds.indexOf(p.id);
@@ -179,18 +223,18 @@ async function main() {
         const id = `dif-${String(d + 1).padStart(2, '0')}`;
         const file = `presets/diffusion/${id}.json`;
         write(file, complete(raw, id));
-        recipes.push({ order: [7, d], recipe: { id, name: { en: DIFFUSION_WORDS[d], es: DIFFUSION_WORDS[d] }, category: DIFFUSION.id, file } });
+        recipes.push({ order: [7, d], recipe: { id, name: { en: DIFFUSION_WORDS[d], es: DIFFUSION_WORDS[d] }, category: DIFFUSION.id, tags: { group: 'diffusion' }, file } });
       } else if (l >= 0) {
         const file = `presets/lens/${p.id.replace(/^lens-/, '')}.json`;
         write(file, complete(raw, p.id));
-        recipes.push({ order: [8, l], recipe: { id: p.id, name: LENS_WORDS[l], category: LENS.id, file } });
+        recipes.push({ order: [8, l], recipe: { id: p.id, name: LENS_WORDS[l], category: LENS.id, tags: { group: 'lens' }, file } });
       } else skipped.push(p.file);
     } else skipped.push(p.file);
   }
   stockEntries.sort((a, b) => Number(a.colour) - Number(b.colour) || a.fam - b.fam || (a.serial < b.serial ? -1 : 1));
   const ordered = [...stockEntries.map((s) => s.recipe), ...recipes.sort((a, b) => a.order[0] - b.order[0] || a.order[1] - b.order[1]).map((r) => r.recipe)];
   const usedFamilies = famOrder.filter((k) => stockEntries.some((s) => !s.colour && FAMILIES[k] && s.recipe.category === FAMILIES[k].id)).map((k) => FAMILIES[k]);
-  write('recipes.json', { categories: [...usedFamilies, COLOUR, GRAIN, DIFFUSION, LENS], recipes: ordered });
+  write('recipes.json', { categories: [...usedFamilies, COLOUR, GRAIN, DIFFUSION, LENS], filters: FILTERS, recipes: ordered });
   write('presets/neutral.json', { ...engine.defaultSettings(), id: 'neutral', name: '', manufacturer: '', description: '' });
   const recipeFile = (id) => ordered.find((r) => r.id === id)?.file;
   write('engine.json', {

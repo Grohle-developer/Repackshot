@@ -351,7 +351,15 @@ export interface PluginRenderSettings {
    * with its own seed (`frameControls`), saved next to the engine's. Off unless it is switched on.
    */
   jobs?: boolean;
+  /**
+   * The recipe filters chosen (P6b): a value for each filter that narrows the carousel, none for one at All. Kept
+   * as they are (a filter the plugin no longer has is All where it runs: `activeFilters`).
+   */
+  filters?: RecipeFilters;
 }
+
+/** The chosen value of each recipe filter (P6b), by the filter's id; a filter that is not here is at All. */
+export type RecipeFilters = Readonly<Record<string, string>>;
 
 export type PluginsSettings = Readonly<Record<string, PluginRenderSettings>>;
 
@@ -359,10 +367,25 @@ export const NO_PLUGINS: PluginsSettings = Object.freeze({});
 
 const MAX_PLUGINS = 32;
 
+const FILTER_ID = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
+const MAX_FILTERS = 8;
+const MAX_FILTER_OPTIONS = 32;
+
+function sameRecord(a: Readonly<Record<string, unknown>>, b: Readonly<Record<string, unknown>>): boolean {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => Object.is(a[k], b[k]));
+}
+
 function sameEntry(a: PluginRenderSettings, b: PluginRenderSettings): boolean {
-  const ka = Object.keys(a.controls);
-  const kb = Object.keys(b.controls);
-  return a.recipe === b.recipe && (a.jobs === true) === (b.jobs === true) && ka.length === kb.length && ka.every((k) => Object.is(a.controls[k], b.controls[k]));
+  return a.recipe === b.recipe && (a.jobs === true) === (b.jobs === true) && sameRecord(a.controls, b.controls) && sameRecord(a.filters ?? {}, b.filters ?? {});
+}
+
+/** Recipe filters from anything (a project's): filter ids to short words, at most eight. */
+function shapeFilters(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!isRecord(raw)) return out;
+  for (const [k, v] of Object.entries(raw).slice(0, MAX_FILTERS)) if (FILTER_ID.test(k) && typeof v === 'string' && v !== '' && v.length <= 64) out[k] = v;
+  return out;
 }
 
 /**
@@ -384,7 +407,8 @@ export function normalisePlugins(raw: unknown, base: PluginsSettings = NO_PLUGIN
         if ((typeof x === 'number' && Number.isFinite(x)) || typeof x === 'boolean' || (typeof x === 'string' && x.length <= 128)) controls[k] = x;
       }
     }
-    const entry: PluginRenderSettings = { recipe, controls, ...(v.jobs === true ? { jobs: true } : {}) };
+    const filters = shapeFilters(v.filters);
+    const entry: PluginRenderSettings = { recipe, controls, ...(v.jobs === true ? { jobs: true } : {}), ...(Object.keys(filters).length ? { filters } : {}) };
     const was = base[id];
     out[id] = was && sameEntry(was, entry) ? was : entry;
   }
@@ -392,11 +416,62 @@ export function normalisePlugins(raw: unknown, base: PluginsSettings = NO_PLUGIN
   return ids.length === Object.keys(base).length && ids.every((id) => out[id] === base[id]) ? base : out;
 }
 
-/** The settings with one plugin's entry changed: its recipe, some of its controls merged in, or its render jobs. */
-export function withPlugin(s: PluginsSettings, id: string, patch: { recipe?: string | null; controls?: Readonly<Record<string, PluginControlValue>>; jobs?: boolean }): PluginsSettings {
+/**
+ * The settings with one plugin's entry changed: its recipe, some of its controls merged in, its render jobs, or one
+ * recipe filter (`filter`: its id and its value, null for All).
+ */
+export function withPlugin(s: PluginsSettings, id: string, patch: { recipe?: string | null; controls?: Readonly<Record<string, PluginControlValue>>; jobs?: boolean; filter?: { id: string; value: string | null } }): PluginsSettings {
   const was: PluginRenderSettings = s[id] ?? { recipe: null, controls: {} };
   const jobs = patch.jobs !== undefined ? patch.jobs : was.jobs === true;
-  return { ...s, [id]: { recipe: patch.recipe !== undefined ? patch.recipe : was.recipe, controls: patch.controls ? { ...was.controls, ...patch.controls } : was.controls, ...(jobs ? { jobs: true } : {}) } };
+  let filters: Record<string, string> = { ...(was.filters ?? {}) };
+  if (patch.filter) {
+    if (patch.filter.value === null) delete filters[patch.filter.id];
+    else filters[patch.filter.id] = patch.filter.value;
+    filters = shapeFilters(filters);
+  }
+  return {
+    ...s,
+    [id]: {
+      recipe: patch.recipe !== undefined ? patch.recipe : was.recipe,
+      controls: patch.controls ? { ...was.controls, ...patch.controls } : was.controls,
+      ...(jobs ? { jobs: true } : {}),
+      ...(Object.keys(filters).length ? { filters } : {}),
+    },
+  };
+}
+
+// ------------------------------------------------------------------ recipe filters (P6b)
+
+/**
+ * The filters that narrow what is chosen: of `chosen`, only the filters the plugin offers with a value it offers
+ * (anything else is All), in the plugin's order.
+ */
+export function activeFilters(offered: readonly PluginFilter[], chosen: RecipeFilters | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of offered) {
+    const v = chosen?.[f.id];
+    if (v !== undefined && f.options.some((o) => o.value === v)) out[f.id] = v;
+  }
+  return out;
+}
+
+/**
+ * Whether a recipe is one the filters ask for: every filter chosen (they combine: AND) is a tag the recipe has, with
+ * that value. A recipe with no tag for a filter (a grain has no ISO) is under that filter's All and nowhere else.
+ */
+export function presetMatches(p: Pick<PluginPreset, 'tags'>, filters: RecipeFilters): boolean {
+  for (const [id, v] of Object.entries(filters)) if (p.tags?.[id] !== v) return false;
+  return true;
+}
+
+/**
+ * The recipes the carousel shows, in the plugin's order, and how many of all of them that is ("23 of 127"). The
+ * recipe chosen stays chosen when the filters leave it out: `kept` is it, drawn first and marked as outside them.
+ */
+export function filterPresets<P extends Pick<PluginPreset, 'id' | 'tags'>>(presets: readonly P[], filters: RecipeFilters, chosen: string | null = null): { shown: P[]; kept: P | null; count: number; total: number } {
+  const shown = presets.filter((p) => presetMatches(p, filters));
+  const c = chosen === null ? null : (presets.find((p) => p.id === chosen) ?? null);
+  return { shown, kept: c && !shown.includes(c) ? c : null, count: shown.length, total: presets.length };
 }
 
 // ------------------------------------------------------------------ results
@@ -529,11 +604,22 @@ export interface PluginPreset {
   category: string;
   /** A second line (the family, the speed…). */
   aux?: PluginLabel;
+  /** Its value for each of the plugin's recipe filters (P6b) that says something of it. */
+  tags?: Readonly<Record<string, string>>;
+}
+
+/** A recipe filter a plugin offers (P6b): a row of chips over the carousel, All and its options. */
+export interface PluginFilter {
+  id: string;
+  label: PluginLabel;
+  options: { value: string; label: PluginLabel }[];
 }
 
 export interface PluginPresets {
   categories: { id: string; label: PluginLabel }[];
   presets: PluginPreset[];
+  /** The recipe filters, in the order they are drawn; none when the plugin offers none. */
+  filters: PluginFilter[];
 }
 
 /** One number or word of a render, as the plugin says it (the host draws `label value unit`). */
@@ -557,13 +643,24 @@ export function cleanPresets(raw: unknown): PluginPresets {
   for (const c of Array.isArray(r.categories) ? r.categories : []) {
     if (isRecord(c) && typeof c.id === 'string' && c.id !== '' && isLabelLike(c.label) && !categories.some((x) => x.id === c.id)) categories.push({ id: c.id, label: { en: c.label.en, es: c.label.es } });
   }
+  // The filters: well-formed ones, unique ids and values, each with at least one option.
+  const filters: PluginFilter[] = [];
+  for (const f of (Array.isArray(r.filters) ? r.filters : []).slice(0, MAX_FILTERS)) {
+    if (!isRecord(f) || typeof f.id !== 'string' || !FILTER_ID.test(f.id) || !isLabelLike(f.label) || !Array.isArray(f.options) || filters.some((x) => x.id === f.id)) continue;
+    const options: PluginFilter['options'] = [];
+    for (const o of f.options.slice(0, MAX_FILTER_OPTIONS)) if (isRecord(o) && typeof o.value === 'string' && o.value !== '' && o.value.length <= 64 && isLabelLike(o.label) && !options.some((x) => x.value === o.value)) options.push({ value: o.value, label: { en: o.label.en, es: o.label.es } });
+    if (options.length) filters.push({ id: f.id, label: { en: f.label.en, es: f.label.es }, options });
+  }
   const presets: PluginPreset[] = [];
   for (const p of Array.isArray(r.presets) ? r.presets : []) {
     if (!isRecord(p) || typeof p.id !== 'string' || p.id === '' || p.id.length > 128 || !isLabelLike(p.name) || typeof p.category !== 'string' || presets.some((x) => x.id === p.id)) continue;
     if (!categories.some((c) => c.id === p.category)) categories.push({ id: p.category as string, label: { en: p.category as string, es: p.category as string } });
-    presets.push({ id: p.id, name: { en: p.name.en, es: p.name.es }, category: p.category as string, ...(isLabelLike(p.aux) ? { aux: { en: p.aux.en, es: p.aux.es } } : {}) });
+    // A tag counts only for a filter the plugin offers, with one of its values.
+    const tags: Record<string, string> = {};
+    if (isRecord(p.tags)) for (const f of filters) if (typeof p.tags[f.id] === 'string' && f.options.some((o) => o.value === (p.tags as Record<string, unknown>)[f.id])) tags[f.id] = p.tags[f.id] as string;
+    presets.push({ id: p.id, name: { en: p.name.en, es: p.name.es }, category: p.category as string, ...(isLabelLike(p.aux) ? { aux: { en: p.aux.en, es: p.aux.es } } : {}), ...(Object.keys(tags).length ? { tags } : {}) });
   }
-  return { categories, presets };
+  return { categories, presets, filters };
 }
 
 /** The render's info as the host draws it: well-formed items only (finite numbers, short words). */
