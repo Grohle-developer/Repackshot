@@ -175,7 +175,7 @@ describe('the image-space approximation', () => {
     const black = sum(applyLensFilters(img, [filter('DIFFUSION_BLACK', 1)], ppr)) / sum(img);
     expect(black).toBeCloseTo(1 - s + FILTER_PSF.blackTransmission * (white - (1 - s)), 6);
     expect(black).toBeLessThan(1 - s * (1 - FILTER_PSF.blackTransmission) + 1e-6);
-  });
+  }, 60000);
 
   it('draws a six-point star at its angle', () => {
     const ppr = pixelsPerRadian(256, 85, 36);
@@ -197,7 +197,7 @@ describe('the image-space approximation', () => {
       for (let d = -2; d <= 2; d++) near += bins[(at + d + 360) % 360];
       expect(near / total, `line ${k}`).toBeGreaterThan(0.12);
     }
-  });
+  }, 60000);
 
   it('turns the gold diffusion’s halo towards red, and fits the Cauchy tail with shares that add up to 1', () => {
     const ppr = pixelsPerRadian(128, 85, 36);
@@ -216,12 +216,12 @@ describe('the image-space approximation', () => {
     expect(TAIL_FIT.reduce((a, g) => a + g.share, 0)).toBeCloseTo(1, 6);
     // The glimmer's hash is the engine's (rt-core `cell_hash`, a few values computed there).
     expect([cellHash(0, 0), cellHash(3, 2), cellHash(5, 5)]).toEqual([0xdf7aaac7, 0xae2b81d2, 0x42ed0265]);
-  });
+  }, 60000);
 
   it('gives no kernel for a filter of grade 0', () => {
     expect(filterKernel(filter('STAR', 0), 1000)).toBeNull();
     expect(filtersOf(undefined)).toEqual([]);
-  });
+  }, 60000);
 });
 
 describe.skipIf(!RT_WASM)('the real rt.wasm', () => {

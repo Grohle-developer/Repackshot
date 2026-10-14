@@ -2438,7 +2438,7 @@ la cámara trazada ≤ 25 % del render del ejemplo con la doble Gauss a
 dan ojo de gato, burbuja, cremoso y remolino, **con veredicto de
 Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
 
-## O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas — **Opus** (tras O1, antes de O2), veredicto **Fable**
+## O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas — **Opus** (tras O1, antes de O2), veredicto **Fable** — hecha
 
 Petición del usuario (14-10): en la lente, filtros «de estilo» (difusión
 negra, dorada…), no recetas de color. Son los filtros físicos que se
@@ -2506,6 +2506,171 @@ a contraluz dentro del encuadre y otro fuera, 512 px / 128 spp, cada
 tipo a grados 1/4, 1 y 2, y dos pilas (difusión negra 1/2 + estrella 6;
 dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
 `UI.md`, `SPEC.md` §3.5, `ARCHITECTURE.md` (`LENS`), CHANGELOG.
+
+**Hecho.**
+
+- **Motor** (`rt-core/src/optics/filters.rs`). Los ocho tipos con su
+  `FILTER_*` (1 difusión blanca … 8 rayas) y la pila de hasta tres en
+  `LensParams.filters`; `Lens::new` construye cada filtro que dispersa
+  (grado > 0) y rechaza tipos, grados (0 a 2), tintes negativos y puntas
+  (4, 6, 8) fuera de rango. En `Lens::sample`, tras la pupila de O1, cada
+  filtro decide con su número si dispersa la muestra (probabilidad `s`
+  del grado: `GRADES` 1/8 … 2 → `GRADE_S` 0,03 … 0,38, lineal entre
+  ellos) y la desvía `d + right·δx + up·δy` pesada `a·T`, así que la
+  imagen es `(1 − s)·I + s·a·T·(I ⊗ K)` con el bokeh y el enfoque de la
+  lente y las luces de fuera del encuadre. PSF por CDF inversa tabulada
+  (256 valores en `f32`, construida al cargar con `fmath`; en el bucle,
+  búsqueda, interpolación y la dirección con `fmath::sin_cos`): difusión,
+  gaussiana de 0,25° (60 % de lo disperso) y cola de Cauchy 2D de 2,5°
+  hasta 12 anchos; suavizado, la gaussiana sola con el doble de `s`
+  (máximo 0,8); brillo, la gaussiana y, con la mitad de lo disperso, un
+  lóbulo de 0,03° cuya dirección y distancia (de 0,3 a 1 vez 2,5°) salen
+  del *hash* de la celda de 6 × 6 de la pupila de la que sale el rayo
+  (destellos fijos alrededor de cada luz); red, la gaussiana y, con la
+  mitad, rayas en dos ejes a 90° desde `angle`; estrella, `points` rayas
+  desde `angle`; rayas, una línea horizontal (dos semirrayas) hasta 15°;
+  las rayas con densidad 1/r de 0,05° a 6° y 0,02° de grosor. `a` = 0,7
+  en la difusión negra y 1 en las demás; tintes por defecto de la dorada
+  (1,25, 0,98, 0,62), la red (1,06, 1, 0,94) y las rayas (0,7, 0,92,
+  1,4), llevados a luminancia 1. Números propios (cuatro por filtro) en
+  `DIM_LENS_FILTER` = `4 << 20`, más allá de la tabla de Sobol; con
+  bandas cromáticas, los del grupo de tres.
+- **Conexión con las luces** (tras la primera hoja y la indicación del
+  líder: MIS entre la dispersión en la pupila y un muestreo directo de las
+  luces a través de la PSF). Un rayo disperso rara vez da con una luz
+  pequeña, y la hoja sin conexión salía salpicada (la estrella como
+  puntos sueltos, el halo de las difusiones como chispas por toda la
+  imagen). Cada muestra de cámara con filtros se conecta, por filtro, a
+  una de las luces que ve la cámara (`Lights::camera_lights`: las de área
+  y las esferas con la marca *cámara*, por su esfera envolvente; elegida
+  con probabilidad uniforme): un lóbulo por su parte de la PSF; la
+  desviación, dentro del disco que la luz ocupa en el plano de
+  desviaciones (`filters::light_disc`), con la densidad de conexión del
+  lóbulo (radial: uniforme en el disco; rayas: la raya por la
+  probabilidad de la PSF que cae dentro de la luz y la distancia por su
+  1/r ahí; destello: uniforme en la parte de su caja dentro); un rayo de
+  sombra, y la radiancia de esa luz por `s·a·T`, el color antes del
+  filtro y la probabilidad de que los siguientes no dispersen. Las dos
+  estimaciones se pesan con la heurística del balance lóbulo a lóbulo
+  (`Filter::mis_weight`, `K / (K + p·q)`): las luces que cruza el primer
+  tramo del rayo de una muestra que el filtro dispersó pesan eso
+  (`integrator::radiance_weighted`, `Lights::crossed_camera_weighted`) y
+  la conexión, `s·a·T·L` por el mismo peso. Números en
+  `DIM_LENS_FILTER_LIGHT` = `5 << 20` (seis por filtro). **Medido** en el
+  frasco de la hoja a 192 × 144, 16 muestras, seis semillas (varianza por
+  píxel entre semillas, recortada a 64; sin filtro, 1,49): estrella 1,
+  de 10,03 sin conexión a 2,71 con ella; rayas 1, 8,57 → 2,71; brillo 1,
+  4,93 → 3,24; difusión blanca 1, 12,09 → 3,26; difusión negra 2, 18,41 →
+  3,69; red 1, 7,72 → 3,04 (el ruido que el filtro añade baja de 4 a 8
+  veces, la mitad en el brillo, cuyos destellos siguen dependiendo de la
+  celda de la pupila), con las medias iguales dentro del ruido y del 2 al
+  15 % más de tiempo. Diafragma, bokeh y foco no cambian: la conexión sale
+  del punto de la pupila de la muestra. Lo que queda de ruido es de los
+  brillos de las superficies (reflejos de las luces), que la conexión no
+  ve: solo la dispersión los alcanza.
+- Una lente sin filtros no saca ningún número nuevo ni traza nada nuevo:
+  **todos los *hashes* de antes intactos** (ejemplo, E5, E5c, E5b-1,
+  pases, *denoise* y O1 `0xcfc57d4a`). **RSB**: tres huecos de 28 B al
+  final de `LENS`, tras el relleno de la imagen, escritos solo cuando hay
+  algún filtro (una `LENS` de O1 sale byte a byte igual y se lee sin
+  filtros). Escena de paridad `example::o3a_scene` (difusión negra 1/2,
+  estrella de 6 a 15°, rayas 1/2 sobre un diafragma de 6 láminas, las
+  luces de fondo de O1; `rt --write-o3a-example`, `tests/fixtures/o3a.rsb`):
+  `PINNED_O3A_FILTERS_4SPP = 0x715dc88e` en escalar, SSE2 y AVX2, en WASI
+  (escalar y `simd128`), en el `rt_wasm.wasm` real (también con los pases;
+  en CI), por el código de la página y con 1, 4 y 16 hilos.
+- **Interfaz.** `src/data/lens-filters.ts` (claves estables, nombres
+  genéricos es/en, una frase de lo que hace cada uno; los números son los
+  del motor y un test los compara con `filters.rs`). `CameraOptics.filters`
+  (opcional: las ópticas de antes no lo escriben); elegir un tipo de bokeh
+  o *Disco sencillo* conserva los filtros. *Cámara ▸ **Filtros***
+  (`src/ui/panels/insp-filters.ts`): la pila, *Añadir filtro* (hasta
+  tres), y por filtro tipo con su frase, ×, *Grado* (1/8 … 2), y según el
+  tipo *Tinte* (con *Tinte propio*), *Puntas* y *Ángulo*; todo por el
+  *store*, una entrada de deshacer por cambio. **Vista previa**:
+  `render/lens-filter-image.ts` calcula los núcleos en píxeles (las
+  gaussianas; la cola de Cauchy como cuatro gaussianas ajustadas a su
+  energía, error de la CDF ≤ 1 %; las rayas como 49 tomas de peso 1/r; los
+  puntos del brillo con el mismo *hash* que el motor) y su convolución en
+  TS; `render/lens-filter-pass.ts` hace lo mismo en WebGL para el modo
+  Rápido (la escena a un objetivo lineal de medio flotante, gaussianas
+  anchas a tamaño reducido, rayas y puntos a media resolución con las tomas
+  de dos en dos, y la curva y el espacio de color del visor al final) y en
+  las imágenes rápidas de la vista previa; el medidor dice *Filtros:
+  aproximación, el render lo hace el motor*. `tools/lens-filters-check.mjs`
+  (Chromium local): ocho comprobaciones, `docs/ui/lens-filters.png` y, para
+  mirar, `out/lens-filters-viewport.png`.
+- **Hoja** `out/lens-filters-sheet.html` (`node tools/lens-filters-sheet.mjs`,
+  `rt --filter-sheet`): el frasco de perfume con un foco pequeño detrás,
+  dentro del encuadre, y otro justo encima del encuadre, 512 × 384 y 128
+  muestras, cada tipo a 1/4, 1 y 2 junto a la imagen sin filtro, las dos
+  pilas (difusión negra 1/2 + estrella 6; dorada 1 + rayas) y, para
+  comparar, estrella 1, difusión negra 2 y brillo 1 sin la conexión.
+  Lo que se ve, para el veredicto (regla 11): las difusiones dan halo
+  alrededor del foco y velo desde el que está fuera del encuadre, la negra
+  con menos subida de las sombras; la dorada a 2 tiñe toda la imagen
+  (la luz dispersa es el 38 % de todo); la estrella, las rayas y la red
+  salen limpias a 128 muestras con la conexión y como puntos sueltos sin
+  ella (las tres celdas de comparación), con el grosor del foco (las rayas
+  son la PSF convolucionada con su disco) y de 6° de largo; como `s`
+  dispersa toda la imagen y no solo las luces, la red y las rayas a 1 y 2
+  emborronan en horizontal todo el cuadro y las rayas lo azulean: si se
+  quieren líneas solo en las luces, la propuesta es una tabla de `s` menor
+  para las familias de líneas. Quedan chispas sueltas de los reflejos de
+  las luces en el vidrio (la conexión solo ve las luces, no sus brillos).
+- **Tests** (cada uno comprobado reintroduciendo el error): 13 en `optics::filter_tests` de rt-core: grados →
+  `s` (sin interpolar, falla); difusión blanca que conserva la media de un
+  campo blanco ± 0,5 % (un peso del 95 %, falla); difusión negra a 1 entre
+  0,90 y 0,97 (sin absorción, falla); estrella de 6 con la energía en seis
+  rayas ± 2° más allá de 1° (una raya de más, falla); dorada con el haz
+  disperso hacia el rojo y el núcleo blanco (sin tinte, falla); tres
+  filtros de grado 0 = sin filtro bit a bit (el grado 0 que dispersa,
+  falla); filtros que cambian la imagen y dan los mismos bits en cada ruta
+  SIMD; ida y vuelta de `LENS` y la de O1 byte a byte (escribir siempre los
+  huecos, falla); valores fuera de rango (una estrella de 5, falla); el
+  *hash* de las celdas del brillo, el mismo que en TS (otro multiplicador,
+  falla); la conexión que da la misma imagen que la dispersión sola a 1024
+  muestras ± 3 % en cada tipo (las luces cruzadas sin peso o la conexión
+  sin `s`, fallan); la suma exacta, sin renderizar, de la dispersión pesada
+  y la conexión contra la dispersión sola en cada lóbulo, también con una
+  luz que solo es medio disco (las rayas sin MIS, la densidad radial al
+  doble, la caja del destello mal medida o la raya elegida sin su
+  probabilidad, fallan); y una cámara sin profundidad de campo que reparte
+  el brillo por el filtro (la celda fija del estenopo, que convertía el
+  destello en un fantasma de toda la imagen, falla). El *hash* de O3a
+  (los números de los filtros en la tabla de Sobol, falla). `rt-cli`: 1/4/16
+  hilos con filtros, las celdas de la hoja (una luz dentro y otra fuera del
+  encuadre), `--only`. `tests/lens-filters.test.ts` (13): los datos son los
+  de `filters.rs` (claves, grados, anchos, tintes), nombres y frases en los
+  dos idiomas y sin marcas, `gradeS`, óptica no neutra con filtros (una que
+  los ignora, falla) y normalizada a tres (sin recortar, falla), los huecos
+  de `LENS` como los lee `rt` (sin las puntas o sin el ángulo, fallan),
+  `o3a.rsb` y `o1.rsb` byte a byte, la energía de la aproximación (la cola
+  sin su parte, falla), la estrella a su ángulo (5° de más, falla), la
+  dorada hacia el rojo (sin tinte, falla), y con el `rt.wasm` real el
+  *hash* de O3a y la aproximación contra el motor en el horno blanco con
+  las piezas del ejemplo por bloques de 4 × 4, < 2 % (sin la absorción de
+  la negra, falla).
+
+**No encajó con el plan.** (1) La **conexión con las luces** no estaba en
+el encargo: la propuso el líder tras la primera hoja y, medida, la llevan
+todos los tipos y no solo los dispersos (estrella, rayas, brillo), porque
+la cola de las difusiones daba el mismo ruido de chispas alrededor de una
+luz pequeña; es la misma imagen en promedio y sigue siendo espacio de
+rayos. (2) La ventana de render no tiene imagen: la convolución en TS es
+la referencia del pase WebGL, la que comparan los tests con el motor y la
+que se aplica a las imágenes rápidas de la vista previa. El fotograma de
+la IA (X4) sigue sin filtros. (3) Aún no hay sección *Lente* en el
+inspector (llega con O2): *Filtros* es una subsección de *Cámara* junto a
+*Bokeh* y *Óptica avanzada*. (4) La comparación con el motor «en la escena
+del horno» se hace por bloques de 4 × 4 (si no, el ruido de dos renders a
+128 muestras cuenta como diferencia). (5) Los grados → `s`, los anchos y
+el resto de números son propuestas para el veredicto (regla 11). (6) La primera hoja se rindió sin la conexión y con un estenopo que
+fijaba la celda del brillo: el destello salía como un fantasma de toda la
+imagen; ahora una cámara sin profundidad de campo saca la celda de los
+números de la lente (la lente sigue teniendo tamaño detrás del filtro).
+(7) `rt --filter-sheet --only` vuelve a renderizar celdas sueltas de la
+hoja; las tres de brillo y la de comparación salen de ahí.
 
 ## P5 · Actualizar desde la aplicación — **Sonnet** — hecha
 

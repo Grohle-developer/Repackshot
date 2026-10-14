@@ -501,7 +501,7 @@ fn rendered(scene: &Scene, samples: u32, connect: bool) -> Vec<f32> {
 }
 
 #[test]
-fn the_connections_to_the_lights_keep_the_image_and_lower_its_noise() {
+fn the_connections_to_the_lights_keep_the_image() {
     // Every kind's scattered light around a light (one large enough for the scattering alone to
     // converge at 1024 samples), away from the middle of its own image: the same with the
     // connections at 128 samples.

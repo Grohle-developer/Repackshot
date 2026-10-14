@@ -15,7 +15,7 @@ USAGE:
        [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R] [--format F] [--bits N]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
-    rt --filter-sheet <dir> [--samples N] [--threads N] [--size WxH]
+    rt --filter-sheet <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
@@ -54,6 +54,8 @@ OPTIONS:
                             render the perfume bottle through every effect filter of the lens
                             at three grades, two stacks and none (512x384, 128 spp) into <dir>:
                             one PNG each and index.json (tools/lens-filters-sheet.mjs)
+        --only <keys>       with --filter-sheet: only those cells (comma separated), the others
+                            kept in index.json
         --write-example <f> write the built-in example scene as an RSB file
         --write-e5-example <f>
                             write the E5 parity scene (glass, cut-outs, anisotropy, HDRI,
@@ -178,6 +180,8 @@ pub enum Command {
         dir: PathBuf,
         /// Overrides (samples, threads, size).
         options: Options,
+        /// Only these cells (`--only key,key`), the others kept from `index.json`.
+        only: Vec<String>,
     },
     /// Write the example scene as an RSB file.
     WriteExample {
@@ -283,6 +287,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_o3a = None;
     let mut sheet_dir = None;
     let mut filter_sheet_dir = None;
+    let mut only: Vec<String> = Vec::new();
     let mut tone_table = false;
     let mut options = Options::default();
     let mut it = args.iter();
@@ -324,6 +329,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--filter-sheet" => filter_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--only" => {
+                only = value(&mut it, arg)?
+                    .split(',')
+                    .map(str::to_string)
+                    .collect()
+            }
             "--example" => {
                 if input.replace(Input::Example).is_some() {
                     return Err("only one scene can be rendered at a time".into());
@@ -416,7 +427,10 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                 "--filter-sheet renders its own scenes: no scene, -o or --max-seconds".into(),
             );
         }
-        return Ok(Command::FilterSheet { dir, options });
+        return Ok(Command::FilterSheet { dir, options, only });
+    }
+    if !only.is_empty() {
+        return Err("--only goes with --filter-sheet".into());
     }
     let input = input.ok_or("no scene given: pass a .rsb file or --example")?;
     let output = output.ok_or("no output given: pass -o <out.png>")?;
@@ -519,7 +533,7 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {}", dir.join("index.html").display());
             Ok(())
         }
-        Command::FilterSheet { dir, options } => {
+        Command::FilterSheet { dir, options, only } => {
             let size = options
                 .size
                 .unwrap_or(crate::filter_sheet::FILTER_SHEET_SIZE);
@@ -533,7 +547,7 @@ pub fn run(command: Command) -> Result<(), String> {
                 "filter sheet: {}x{}, {samples} spp, {threads} threads",
                 size.0, size.1
             );
-            let n = crate::filter_sheet::run(&dir, size, samples, threads)?;
+            let n = crate::filter_sheet::run(&dir, size, samples, threads, &only)?;
             println!("wrote {n} images and {}", dir.join("index.json").display());
             Ok(())
         }
@@ -787,6 +801,15 @@ mod tests {
             })
         );
         assert!(parse(&["--write-o3a-example", "o3a.rsb", "--samples", "2"]).is_err());
+        assert_eq!(
+            parse(&["--filter-sheet", "out", "--only", "star--1,none"]),
+            Ok(Command::FilterSheet {
+                dir: "out".into(),
+                options: Options::default(),
+                only: vec!["star--1".into(), "none".into()],
+            })
+        );
+        assert!(parse(&["--example", "-o", "a.png", "--only", "none"]).is_err());
         assert_eq!(parse(&["--tone-table"]), Ok(Command::ToneTable));
         assert!(parse(&["--tone-table", "--example"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Command::Help));

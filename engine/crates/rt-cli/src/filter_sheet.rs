@@ -159,12 +159,35 @@ pub fn cells(size: (u32, u32)) -> Vec<FilterCell> {
 }
 
 /// Renders the sheet into `dir`: one PNG per cell and `index.json` (key, stack, samples, rays,
-/// seconds).
-pub fn run(dir: &Path, size: (u32, u32), samples: u32, threads: usize) -> Result<usize, String> {
+/// seconds). With `only`, just those cells; the other lines of an existing `index.json` stay.
+pub fn run(
+    dir: &Path,
+    size: (u32, u32),
+    samples: u32,
+    threads: usize,
+    only: &[String],
+) -> Result<usize, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let path = dir.join("index.json");
+    // The cells of an earlier index, one per line, by key.
+    let earlier = std::fs::read_to_string(&path).unwrap_or_default();
+    let line_of = |key: &str| {
+        earlier
+            .lines()
+            .find(|l| l.starts_with(&format!("{{\"key\":\"{key}\"")))
+            .map(|l| l.trim_end_matches(',').to_string())
+    };
     let mut json = Vec::new();
     let all = cells(size);
+    let mut rendered = 0;
     for cell in &all {
+        if !only.is_empty() && !only.iter().any(|k| *k == cell.key) {
+            if let Some(line) = line_of(&cell.key) {
+                json.push(line);
+                continue;
+            }
+        }
+        rendered += 1;
         let mut scene = cell.scene.clone();
         let lens = scene
             .camera
@@ -200,9 +223,8 @@ pub fn run(dir: &Path, size: (u32, u32), samples: u32, threads: usize) -> Result
         size.1,
         json.join(",\n")
     );
-    let path = dir.join("index.json");
     std::fs::write(&path, index).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(all.len())
+    Ok(rendered)
 }
 
 #[cfg(test)]
