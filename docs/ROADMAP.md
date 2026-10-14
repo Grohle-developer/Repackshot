@@ -5229,6 +5229,106 @@ resultados muestra la vista previa de un TIFF de 32 bits; capturas
 `docs/ui/render-format-tiff.png`. `UI.md`, `ARCHITECTURE.md` §5,
 CHANGELOG.
 
+## P6 · Plugins, y el plugin de película (aintfilm) — **Opus**, decisión **Fable**
+
+Petición del usuario (14-10): un apartado **Plugins** en *Ajustes* con la
+herramienta de añadir plugins a la vista, y como primer plugin
+descargable el **motor de simulación de película de aintfilm** (la app de
+edición de fotos y simulación de película del mismo desarrollador, en
+desarrollo): su motor wasm, sus configuraciones y sus recetas, en la
+ventana de render en un apartado *Plugins* después del de IA, con vista
+previa, recetas y simulador de grano; el módulo **cifrado**, con el logo
+del plugin, un enlace al proyecto (aviso: app en desarrollo, esto es un
+adelanto) y la **licencia cerrada** dicha con claridad.
+
+**Decisiones.**
+1. **Paquete `.rpk`** (*Repackshot plugin*): `RPK1` + cabecera JSON en
+   claro (`id`, `version`, `abi`, `bytes`, `sha256` del cifrado, `nonce`)
+   + **AES-256-GCM** (WebCrypto) de un contenedor plano (entradas
+   nombre/bytes: `manifest.json`, `plugin.js`, `module.wasm`, `presets/`,
+   `logo.svg`, `LICENCE.txt`, `NOTICES.txt`). La **clave de activación**
+   (32 bytes, base64) **no está en el repositorio** (el anfitrión es de
+   código disponible: no puede guardar secretos): llega por `keyUrl` del
+   registro (una URL del desarrollador, que puede rotarla o condicionarla
+   más adelante) o la teclea el usuario al instalar. El paquete se guarda
+   **cifrado** (IndexedDB, también en WebView2) y la clave aparte; se
+   descifra **solo en memoria** al cargar, nunca se escribe en claro. Lo
+   que esto protege: el módulo en reposo y en tránsito, y que el paquete
+   no sirva fuera de Repackshot sin la clave; lo que no: a quien depure el
+   navegador con la clave en la mano. Dicho así en `ARCHITECTURE.md`.
+2. **Anfitrión** (`src/plugins/`): registro (`src/data/plugins.json`: id,
+   nombre, editor, versión, resumen es/en, licencia `closed`, `homepage`,
+   `url` del paquete, `sha256`, `bytes`, `keyUrl`), almacén (IndexedDB),
+   cargador (descifra en memoria → `plugin.js` como módulo ES desde un
+   Blob URL en un **Worker** sin DOM, con el `module.wasm` transferido;
+   `WebAssembly.Module.imports()` vacío exigido para un módulo que lo
+   declare), ABI v1 por mensajes: `info`, `presets`, `render({w, h,
+   píxeles lineales f32 por planos o RGBA8, ajustes}) → RGBA8 + info`,
+   `cancel`. El manifiesto declara dónde entra (`slots: ['render.plugins']`)
+   y **sus mandos** (`controls`: clave, etiqueta es/en, tipo
+   deslizador/lista/interruptor, mín/máx/paso/defecto, grupo): la interfaz
+   del apartado es **genérica** y la dibuja desde el manifiesto; `plugin.js`
+   traduce mandos y receta a los ajustes del motor. Un plugin nunca toca el
+   DOM ni el *store*: el anfitrión le da píxeles y recibe píxeles.
+3. **Ajustes ▸ Plugins** (grupo *sistema*, antes de *Almacenamiento*):
+   la lista del registro con logo, nombre, editor, versión, tamaño,
+   resumen, **«Licencia cerrada»** y enlace; *Instalar* (descarga →
+   comprueba `sha256` → clave por `keyUrl` o pedida → guarda), *Actualizar*,
+   *Quitar*, **Instalar desde archivo…** (`.rpk` + clave): la herramienta
+   queda a la vista para plugins futuros. Cada plugin instalado muestra su
+   licencia completa desplegable y la frase: «El código de este plugin es
+   cerrado; la licencia de Repackshot no lo cubre».
+4. **Ventana de render ▸ Plugins**, después de *IA*: un bloque por plugin
+   con *slot* `render.plugins`. Para el de película: logo, nombre,
+   «Adelanto de una app de edición de fotos y simulación de película del
+   mismo desarrollador, en desarrollo» con el enlace, licencia cerrada;
+   **vista previa** (el resultado actual a tamaño de previa por el motor,
+   en el *worker*, con retardo); **recetas** (la lista del plugin por sus
+   categorías y con **sus nombres públicos**: aintfilm no muestra marcas
+   de fabricantes ni de películas (su regla D112) y aquí tampoco); los
+   **mandos** del manifiesto (exposición y forzado, formato de negativo,
+   grano: cantidad y tamaño, halación, difusión, copia/escaneo, semilla,
+   lo que el plugin declare); **Aplicar** → un resultado nuevo en el visor
+   de resultados, como la IA, con `provenance: { plugin, version, recipe,
+   controls }`. Los ajustes del plugin viven en los del render
+   (`plugins: Record<id, …>`), deshacibles y guardados con el proyecto.
+5. **El paquete de película** se construye con `tools/plugins/build-film.mjs
+   --aintfilm <ruta del checkout>`: toma `public/engine/itsnotfilm-engine.wasm`
+   (compilado reproducible y sin importaciones), las recetas
+   (`src/engine/presets/`), el logo (`assets/exported/marks/LOGO.svg`) y
+   la licencia de ese repositorio; el `plugin.js` del plugin (el pegamento
+   del ABI en C: `inf_alloc`, `inf_render_linear_rgba`… con la regla de
+   no retener vistas entre llamadas) se escribe **nuevo** en
+   `tools/plugins/film/` (es nuestro; no se copia código del otro
+   repositorio al nuestro: lo cerrado va solo dentro del paquete cifrado).
+   `tools/plugin-pack.mjs <carpeta> <salida.rpk> [--key b64 | --new-key]`
+   empaqueta y cifra. Comprobación de marcas sobre el paquete y las
+   cadenas del anfitrión con la lista de *hashes* de aintfilm
+   (`scripts/check-brands.mjs` de ese repositorio, ejecutado desde allí).
+6. **Publicación.** El `.rpk` como *asset* de la release de Repackshot
+   (v0.1.6) y el registro apuntando a él con su `sha256`; la clave la
+   guarda el desarrollador (el agente la deja en el *scratchpad* para el
+   responsable, nunca en el repositorio) y `keyUrl` queda vacío hasta
+   que la aloje: mientras, se pide al instalar.
+
+**Depende de.** U5 (ventana de render, visor), X2 (resultado derivado),
+U6 (ventana de ajustes).
+
+**Criterio.** Tests (mutación comprobada): empaquetar → descifrar devuelve
+los mismos ficheros; clave errónea y paquete manipulado fallan limpios
+(etiqueta GCM); `sha256` del registro comprobado; un plugin de prueba de
+los *fixtures* (sin wasm: invierte los píxeles) pasa por el *worker* de
+punta a punta y deja un resultado con `provenance`; el manifiesto dibuja
+sus mandos; los ajustes del plugin son deshacibles y se guardan.
+Comprobación de navegador `tools/plugins-check.mjs` (instala el plugin de
+prueba desde un servidor local con clave tecleada; abre *Plugins* de la
+ventana de render; aplica) con capturas `docs/ui/settings-plugins.png` y
+`docs/ui/render-plugins-film.png` (esta con el paquete de película real
+construido desde el *checkout*). `UI.md`, `ARCHITECTURE.md` (§1: los
+plugins no son dependencias: los instala el usuario, con su licencia;
+§ nuevo: el formato `.rpk`, el ABI y lo que el cifrado protege), `SPEC.md`
+§3.8, CHANGELOG, `release-notes` (cómo publicar el `.rpk`).
+
 ## Orden sugerido
 
 1. **U1** (Opus) y **E1** (Sonnet), en paralelo: la interfaz y el
