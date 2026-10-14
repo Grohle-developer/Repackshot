@@ -102,7 +102,7 @@ src/
     lighting.ts             rig activo, focos (los del montaje y los propios de L4: añadir, duplicar, eliminar, apuntar, colocar sobre superficie), su colocación (`lightFrame`: posición, objetivo, giro), colocación por reflejo, lúmenes
     view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
     camera.ts               óptica, encuadre, cámaras guardadas
-    optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh
+    optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a)
     aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
     aspect.ts               la proporción de la imagen de una cámara (U13): preset o propia, su lectura, el tamaño que le toca; el marco del visor y el tamaño de una imagen la siguen (`syncOutputSize`, en `render.ts`)
     animation.ts            planos, movimientos, evaluación en el tiempo (invertir, repetir, suavidad: N6)
@@ -142,6 +142,8 @@ src/
     particles.ts            las partículas de Ambiente para Rápido (S4a): `rt_particles_eval` de rt.wasm en el hilo de la página, su tinte
     texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
     texture-preview.ts      las texturas y etiquetas en Rápido: el shader en cada material y la caché de texturas por imagen, con mipmaps (M2a)
+    lens-filter-image.ts    los filtros de efecto de la lente en imagen (O3a): los núcleos en píxeles y su convolución en TS, la referencia del pase WebGL
+    lens-filter-pass.ts     el pase WebGL de esos núcleos en el modo Rápido (objetivo lineal de medio flotante, gaussianas a tamaño reducido, rayas a media resolución; cada parte con su color)
     graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a)
     graph-client.ts  graph-worker.ts  graph-protocol.ts  los workers de los grafos: las esferas del editor y las bandas de los mapas (M3a)
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
@@ -184,6 +186,7 @@ src/
       add-menu.ts           Añadir ▸ Primitiva: las mismas entradas en la cabecera, el + de Escena y el menú del visor en vacío (U9)
       scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
       insp-lens.ts          Cámara ▸ Bokeh (miniaturas del motor) y Óptica avanzada (O1)
+      insp-filters.ts       Cámara ▸ Filtros: la pila de filtros de efecto de la lente (O3a)
       insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
       insp-ambient.ts       inspector ▸ Escena ▸ Ambiente: lista, galería de tarjetas, ocho mandos y Avanzado (S4a)
       material-editor.ts    la ventana Editor de material: barra, panel del nodo, teclas, sitio y tamaño recordados (M3a, UI.md §2.10)
@@ -613,7 +616,13 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   diafragma, 2 textura que lo multiplica) `mask_width mask_height`, los
   píxeles de 8 bits (255 abierto; [−1, 1]² de la pupila, filas de arriba
   abajo, círculo unidad inscrito; hasta 1024 por lado) y relleno a 4
-  bytes. Un valor fuera de rango hace inválido el fichero. Un RSB sin
+  bytes. **O3a** añade al final los tres huecos de la pila de filtros de
+  efecto, 28 B cada uno (`u32 kind`: 0 ninguno, 1 difusión blanca, 2
+  negra, 3 dorada, 4 brillo, 5 suavizado, 6 red, 7 estrella, 8 rayas;
+  `f32 grade` 0 a 2, `tint[3]` (ceros: el del tipo), `angle_deg`; `u32
+  points` 4, 6 u 8, 0 es 6), escritos solo cuando hay alguno: una `LENS`
+  sin filtros es la de O1 byte a byte, y una sección de O1 se lee sin
+  filtros. Un valor fuera de rango hace inválido el fichero. Un RSB sin
   `LENS` es la lente fina de siempre, bit a bit (los *hash* del ejemplo,
   E5, E5c, E5b-1 y los pases no se movieron); una `LENS` neutra también.
   La interfaz la escribe solo para una cámara con óptica no neutra
@@ -848,6 +857,56 @@ que la baldosa multiplica antes de acumular (`render::camera_sample_weighted`):
   `0x087d1276` (desde la unión de E9 y E12: la compensación de energía y la selección de luz por punto mueven el hash) en cada ruta SIMD, en WASI, en el `rt_wasm.wasm` real
   (`rt --write-o1-example`, `tools/wasm-parity.mjs`, en CI) y con 1, 4 y
   16 hilos (`rt-cli/tests`).
+- **Filtros de efecto** (O3a, `optics::filters`): tras la pupila, cada
+  filtro de la pila (hasta tres, en orden) decide con un número si dispersa
+  la muestra (probabilidad `s` del grado: `kind_s`, tablas por `GRADES`
+  lineales entre grados, `GRADE_S` de las difusiones, el brillo y la red,
+  `STAR_S` y `STREAK_S` propias) y, si lo hace, desvía la dirección del
+  rayo `d + right·δx + up·δy` (δ en tangentes, radianes) y la pesa con
+  `Filter::colour_at`: `a` en el núcleo y los destellos, `a·T` en las
+  rayas y, en la difusión, por la parte de la cola en la densidad a esa
+  distancia (el tinte va al halo, no a la imagen). Las PSF son radiales
+  (difusión: gaussiana de `SIGMA_CORE_DEG` y cola de Cauchy 2D de
+  `SIGMA_TAIL_DEG` hasta 12 anchos; suavizado: la gaussiana), de rayas
+  (estrella, rayas y la cruz de la red: densidad 1/r desde
+  `LINE_START_DEG` que se afila hasta 0 en su largo, `line_length_deg`:
+  `STAR_LENGTH_DEG` y `NET_LENGTH_DEG` por grado, `STREAK_END_DEG` las
+  rayas; grosor de `LINE_WIDTH_DEG`) o de destellos (brillo: la gaussiana, un
+  halo suave de `GLIMMER_CLOUD_DEG` y una nube fija de `GLIMMER_SPARKLES`
+  destellos, gaussiana 2D de
+  `GLIMMER_CLOUD_DEG`, con brillos exponenciales de un *hash*, de la que
+  cada muestra toma uno por su peso; en una rejilla de 64 × 64 para las
+  conexiones); todas por CDF inversa tabulada (256 valores, construida al
+  cargar con `fmath`), sin `exp` ni `ln` en el bucle. Los
+  rayos dispersos rara vez dan con una luz pequeña, así que cada muestra
+  de cámara con filtros **se conecta además a una luz** que la cámara ve
+  (`Lights::camera_lights`, por su esfera envolvente; una elegida al azar
+  por filtro): un lóbulo por su parte de la PSF, una desviación dentro de
+  la luz con la densidad de conexión de ese lóbulo (el disco de la luz en
+  el plano de desviaciones, `filters::light_disc`; para las rayas, la raya
+  elegida por la probabilidad que cae dentro y la distancia por su
+  densidad ahí; para el brillo, uno de los destellos cuya caja toca la luz,
+  por su peso y el área de esa parte, y un punto en ella), un rayo de
+  sombra y su radiancia por `s`, el color del lóbulo y la probabilidad de que los
+  filtros siguientes no dispersen. La dispersión y la conexión se pesan
+  una contra otra con la heurística del balance lóbulo a lóbulo
+  (`Filter::mis_weight`): las luces que cruza el primer tramo del rayo de
+  una muestra dispersa pesan `K / (K + p·q)` (`integrator::radiance_weighted`)
+  y la conexión `s·L` por su color y ese mismo peso donde cayó. Sin luces que la
+  cámara vea, no hay conexión. Los números de cada filtro salen de cuatro
+  dimensiones propias más allá de la tabla de Sobol (`DIM_LENS_FILTER`,
+  `4 << 20`, cuatro por filtro) y los de su conexión de seis más
+  (`DIM_LENS_FILTER_LIGHT`, `5 << 20`);
+  con bandas cromáticas, los del grupo de tres (una dispersión, tres
+  colores). Una lente sin filtros no saca ninguno: los *hashes* de antes
+  no se mueven. Escena de paridad `example::o3a_scene` (difusión negra
+  1/2, estrella de 6 a 15° y rayas 1/2 sobre un diafragma de 6 láminas):
+  `PINNED_O3A_FILTERS_4SPP` = `0x21e43bb1` (desde que le llegó E9a; antes `0x49938f3b`) en cada ruta SIMD, en WASI, en
+  el `rt_wasm.wasm` real (`rt --write-o3a-example`, `tests/fixtures/o3a.rsb`)
+  y con 1, 4 y 16 hilos. El visor Rápido aplica `(1 − s)·I + s·a·(I ⊗ K_T)`
+  con los mismos núcleos proyectados por la focal (`render/lens-filter-*`;
+  cada parte con su color, la nube del brillo como la gaussiana de la que
+  sale), como aproximación que el medidor declara.
 
 ### 5.2 bis · Película, *denoise* y cáusticas (E5b-1)
 
@@ -2017,6 +2076,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
 | Ambiente (S4a) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests` y `geometry::tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %) |
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
+| Filtros de efecto (O3a) | `optics::filter_tests` de rt-core, `tests/lens-filters.test.ts`, `tools/lens-filters-check.mjs` | Grados → `s`; difusión blanca que conserva la media (±0,5 %), negra a 1 entre 0,90 y 0,97, dorada hacia el rojo; estrella de 6 con seis rayas (±2°); tres filtros de grado 0 = sin filtro bit a bit; la conexión con las luces y su MIS contra la dispersión sola (imagen ±3 % y suma exacta por lóbulo, también con media luz); `LENS` con huecos de ida y vuelta y la de O1 byte a byte; tinte solo en el halo y las rayas (dorada con el núcleo neutro; el suelo lejos de las luces de la hoja mueve su azul/rojo < 3 % a 1 y < 6 % a 2 con dorada y rayas); estrella que se alarga con el grado sin ensancharse, red con la cruz corta y más tenue que la estrella, brillo como nube de destellos y no anillo; aproximación del visor contra el motor en el horno (< 2 %); *hash* de O3a en SIMD, WASI, wasm y 1/4/16 hilos |
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Físicas (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | Una esfera descansa a `r ± 0,1` mm, una pila de tres cajas aguanta 5 s, una caja inclinada cae plana, un cubo resbala de una esfera, una rampa sostiene a μ 0,6 y deja resbalar a 0,1, mil esferas se asientan (< 20 s en *release*), dormir para la simulación, *hash* fijado igual con 1 y N hilos y en wasm; qué se simula, las poses de vuelta a los nodos, una simulación es una entrada de deshacer, *Reiniciar* otra, *Pausar* congela lo que se ve, el clip se guarda, se abre y se reproduce; tres primitivas que caen en el navegador |

@@ -89,7 +89,7 @@ nuevo con el brief de la fase del ROADMAP y la orden de seguir desde el último
    capa de realismo, E10 adaptativo, E13 MNEE, S3 lluvia/polvo y cristal
    frontal (tras S4a y S2), S9 telas, S7 líquidos, M5 tejido y pelusa
    (tras S8), O2.
-4. Release v0.1.6 desde `main` cuando el usuario fusione el PR #7
+4. **Release v0.1.6 en marcha (pedida por el usuario el 14-10 con lo fusionado hasta U11/E11)**: commit de release en la rama de sesión (versión, CHANGELOG con limitaciones, `docs/release-notes/v0.1.6.md`), CI en verde, fusión del PR #7 en `main` por la API (merge commit), `release.yml` lanzado a mano en `main` con `tag` v0.1.6 y el commit de la fusión, y el `.rpk` subido como *asset* con `gh release upload`. Lo que llegue después (E9, E6, O3a/O2) sigue en la misma rama y va a un PR nuevo. Antes decía: release desde `main` cuando el usuario fusione el PR #7
    (procedimiento en `ROADMAP.md` P1 y `release-notes/`): subir además
    `film-0.1.0.rpk` reconstruido por P6b (sha256
    `a60dd9edea828f4ed29acd3d29b9ab1ffde384284da8c6a6a6619cc1d6ba3d8a`,

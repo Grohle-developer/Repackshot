@@ -5,11 +5,76 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ## Sin publicar
 
+### Interfaz
+
+- *Cámara* ▸ **Filtros** (O3a): hasta tres filtros de efecto por cámara, cada uno con su tipo y una frase de lo que hace, su grado y, según el tipo, tinte, puntas y ángulo. El modo Rápido los dibuja como aproximación (y el medidor lo dice); el modo Completo y el render, con el motor.
+- En el inspector de un vidrio, bajo *Paredes*: **Dispersión interna** (mm), **Color de dispersión** y **Dirección** (−0,9 a 0,9, hacia atrás / hacia delante), con su ayuda; el visor Rápido lo aproxima con un difuso translúcido y lo dice (E9b).
+- **Nueve materiales nuevos** (92 en total con los de los sets de L6 y el cristal de E9c): HDPE blanco, PP natural y acrílico esmerilado entre los plásticos; cera, jabón de glicerina, leche, zumo de naranja, zumo de manzana y crema entre los otros. Los líquidos no se desgastan (E9b).
+- **Número de Abbe** en el inspector del vidrio (0 a 100; 0, sin dispersión), con su ayuda; el visor Rápido lo aproxima con la dispersión de three.js. Material nuevo: **Cristal de perfumería** (Abbe 40) en *Vidrio* (E9c).
+
+### Motor
+
+- **Filtros de efecto en la lente** (O3a): difusión blanca, negra y dorada, brillo, suavizado, red, estrella (4, 6 u 8 puntas) y rayas, como dispersión del rayo de cámara en la pupila: con la probabilidad del grado (1/8 a 2) el rayo se desvía según la PSF del filtro (tablas de CDF inversa), así que el halo lleva el bokeh y el enfoque y una luz fuera del encuadre vela la imagen; hasta tres apilados; el tinte (dorada, red, rayas) va al halo y a las rayas, no a la imagen; el grado alarga las rayas de la estrella sin ensancharlas, la red deja una cruz corta y tenue, y el brillo es una nube de destellos finos. Cada muestra de cámara se conecta además, a través de la PSF, con una luz que ve la cámara, pesada contra la dispersión (MIS): la misma imagen con varias veces menos ruido alrededor de las luces pequeñas (`rt --filter-noise` lo mide). Campos nuevos al final de `LENS`; sin filtros no cambia ni un bit (O3a).
+- **Los materiales rugosos ya no pierden luz** (E9a): la luz que rebota varias veces entre las microfacetas del GGX vuelve (el lóbulo añadido de Kulla y Conty 2017 en el metal, el brillo del plástico y el barniz; el escalado de Turquin 2019 en el vidrio rugoso), con tablas integradas por nosotros. En un entorno blanco uniforme, un metal blanco de rugosidad 1 pasa de 0,356 a 0,999, el vidrio rugoso de 0,361 a 0,995 y el plástico blanco de 0,918 a 1,000 (0,860 a 0,998 con barniz). La capa difusa bajo el brillo recibe exactamente lo que el brillo no refleja (Kulla y Conty), también con rugosidad 0. Las imágenes ganan luz: el ejemplo un 15,6 % de luminancia media, la escena de E5 un 13,6 %, el cielo de E5c un 13,2 % (E9a).
+- **Medios dispersores dentro de los sólidos** (E9b): un vidrio con *Dispersión interna* se llena de un medio que dispersa la luz dentro (plástico translúcido, cera, jabón, leche, zumo, crema), con un paseo aleatorio por el interior, su color y su dirección por canal, y la luz encontrada donde el paseo sale. Las escenas sin medios no cambian ni un bit. Los mismos bits en el escritorio y en el navegador (E9b).
+- **Dispersión cromática del vidrio** (E9c): un vidrio macizo con *Número de Abbe* separa la luz en colores al refractar (cada longitud de onda con su índice, por la ley de Cauchy); un camino elige una longitud de onda al primer vidrio dispersivo y las cáusticas también se colorean. Las escenas sin él no cambian.
+
+### Proyecto
+
+- Los proyectos anteriores se abren igual y sus vidrios siguen sin medio; el registro `MATL` de la escena del motor pasa a 100 bytes (con el bisel reservado para E6, el medio y el número de Abbe de E9c) y los archivos anteriores se leen como antes (E9).
+
+### Limitaciones conocidas
+
+- La luz sale de un medio como de una superficie difusa (la aproximación de producción de Chiang, Kutz y Burley 2016): en una esfera de leche bajo un panel lateral queda un 3,3 % más brillante que el camino que refracta de verdad. No hay medios anidados (un líquido dentro de otro), un sólido con índice 1 no tiene medio, y con una dirección muy marcada (cerca de ±0,9) converge despacio (E9b).
+- **Un líquido dentro de un frasco de vidrio** ve las luces a través de una pared fina y lisa (hasta 5 mm, caras casi paralelas) como si el vidrio no las desviara, una aproximación que en una losa de leche bajo una placa de 3 mm queda un 2 % por debajo del camino exacto; a través de un fondo grueso, de vidrio rugoso o con barniz, solo le llega la luz por los caminos que la encuentran al azar (con grano a pocas muestras) o, con *Cáusticas* encendidas, por fotones (E9b).
+- La compensación de energía aproxima los lóbulos anisótropos con el ancho isótropo equivalente y no toca las paredes finas (E9a).
+- La dispersión lleva un solo color por camino: alrededor de un cristal hay grano de color a pocas muestras, y una luz vista a través de él converge como una cáustica. Los rayos de sombra, las paredes finas alrededor de un medio y los sólidos con medio no dispersan (E9c).
+
+## v0.1.6 — 2026-10-14
+
+Versión de prueba con texturas y etiquetas, el editor de materiales por
+nodos, sets de estudio con intención fotográfica, lente fina mejorada con
+selector de bokeh, filtros de lente planificados para la siguiente, salida
+TIFF y RAW, la proporción en la cámara, plugins con el primero de película,
+elección de luz por punto, despieces configurables y línea de tiempo nueva,
+cuerpos rígidos con *Dejar caer*, partículas de ambiente, *denoise* en
+directo con intensidad y suavizado de bordes, y actualizar desde la
+aplicación. Lo de v0.1.2 a v0.1.5 sigue igual.
+
+### Limitaciones conocidas de esta versión
+
+- Las **texturas**, las **etiquetas** y los **materiales de nodos** se ven en
+  *Rápido*; *Completo* y el render usan la media de cada salida hasta que el
+  motor las lea (M2b y M3b, en marcha). La madera con nudos, el bisel y la
+  tela hilo a hilo (E6), la energía, los medios y la dispersión (E9) y los
+  filtros de lente (O3a) están hechos y entran en la siguiente versión.
+- **Partículas**: el polvo a contraluz apenas brilla en el haz y la lluvia
+  bajo una clave dura motea el producto (los dos en S4b); no se seleccionan
+  en el visor; a 200 000 partículas el render cuesta 3,2×, a las densidades
+  de los presets cerca de 1,1×.
+- **Físicas**: solo cuerpos rígidos; *Tela* y *Líquido* dicen *próximamente*.
+  Mientras corre una simulación el visor pasa a *Rápido*. Con el cabezal en 0
+  una pieza que sostiene una simulación grabada enseña su fotograma inicial.
+- **Plugin de película**: licencia cerrada, un adelanto de una app en
+  desarrollo; la clave de activación la da su desarrollador (el registro no
+  la trae: se teclea al instalar). El paquete `film-0.1.0.rpk` es un *asset*
+  de esta release.
+- **Reducción de ruido en directo**: el carril del lanzador es un hilo; el
+  refresco nunca supera una muestra de toda la vista. MSAA 8× no se ha visto
+  dibujado (el Chromium de aquí llega a 4×).
+- **Actualizar desde la aplicación**: la primera actualización real es de
+  esta versión a la siguiente; la instalación en Windows no se ha probado en
+  un Windows real.
+- Las 88 **miniaturas de montaje** se renderizaron antes de la elección de
+  luz por punto (E12); se rehacen en la siguiente versión.
+- Siguen las de las versiones anteriores, sobre todo que lo nuevo de
+  escritorio **no se ha probado en un Windows real** y que la primera imagen
+  real de la IA en una tarjeta gráfica sigue pendiente.
+
 ### Escritorio
 
 - **Actualizar desde la aplicación** (P5): *Ajustes ▸ Actualizaciones ▸ **Instalar y reiniciar*** (y el mismo botón en el aviso de la barra de estado) descarga la versión nueva, comprueba su SHA-256 contra el `SHA256SUMS.txt` de la release, la instala y reinicia la aplicación con ella, sin pasar por el navegador. En **Windows instalado** ejecuta el instalador en silencio (`/S /LAUNCH`: espera a que la aplicación se cierre, instala y la vuelve a abrir); en un **portable** (Windows y Linux) extrae el paquete junto al programa y sustituye los archivos en el sitio —el ejecutable en uso se renombra a `.old`, `data/` y `portable.txt` no se tocan, y si algo falla a medias queda lo viejo donde estaba—, y la versión nueva borra los `.old` al arrancar. Solo se descarga de las releases del repositorio de la aplicación (`github.com/<owner>/<repo>/releases/download/…`); una suma que no cuadra no instala nada. La fila enseña *Descargando… 45 % · 3,2 de 7,1 MB*, *Comprobando…* e *Instalando…*, los fallos con su motivo y *Reintentar*, y *Cancelar la actualización*; cerrar *Ajustes* no la para. La web sigue con *Descargar*, que abre la página de la versión. La primera actualización desde la aplicación será de la versión que lleve esto a la siguiente (P5).
 - El instalador de Windows, en silencio, espera hasta 30 s a que `repackshot.exe` quede libre, no toca la elección de modelos de IA ni recrea un acceso directo del escritorio que se borró, y con `/LAUNCH` abre la aplicación al terminar (P5).
-
 
 ### Interfaz
 
@@ -34,10 +99,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - **La proporción de la imagen es de la cámara** (U13): cada cámara lleva la suya —*3:2*, *4:3*, *16:9*, *1:1*, *5:4*, *4:5*, *9:16*, *21:9*, *2:1*, *65:24* panorámica o *Propia* con su `w : h`—, en una fila **Proporción** de la sección Cámara y de la ficha de cada cámara (deshacible). El **marco del visor** sigue a la cámara que se ve, el chip de arriba a la derecha dice la proporción con el tamaño (*16:9 · 1920 × 1080*) y la lista de cámaras la pone tras la óptica. La **ventana de render** lee y escribe la misma: en una imagen el ancho se conserva y el alto sale de la proporción de la cámara activa; un tamaño que la rompe (los dos lados, o uno con el candado abierto, o un preset de tamaño de otra proporción) la reescribe en la cámara y la ventana lo dice en una línea (*La proporción de Cámara 1 pasa a 4:3*). *Nueva desde la vista actual* copia la proporción; cada cámara conserva la suya al cambiar la activa; un trabajo para otra cámara sale con el alto de esa cámara. La animación conserva su tamaño propio y el Doctor gana **Proporción de la animación**, que avisa de los planos cuya cámara tiene otra proporción (y lo arregla).
 - **Ambiente** (S4a): la pestaña *Escena* gana la sección **Ambiente**, entre *Entorno* y *Cámara*: efectos de partículas del aire —*Motas de polvo*, *Polen*, *Lluvia*, *Nieve*, *Polvareda*, *Ceniza*, *Burbujas que suben*, *Confeti que cae*— que se añaden desde una galería de tarjetas (*Calima*, *Haces de luz* y *Niebla baja*, *próximamente*), con ocho mandos de fotógrafo siempre visibles (cantidad, tamaño, energía, caos, viento y su dirección, gravedad, variación, semilla con *Barajar*) y *Avanzado* plegado con todo lo demás (región, banda, forma, caída, giro, estela, turbulencia, nube, material, tintes, *Congelar en*, visibilidad, tope). Todo deshacible. El visor *Rápido* dibuja hasta 50 000 partículas por efecto con el simulador del propio motor (o la caja de la región sin `rt.wasm`, y el medidor lo dice); *Ajustes ▸ Motor de renderizado ▸ Partículas por efecto* fija el tope (automático: 100 000 en el navegador, 1 000 000 en nativo) y el Doctor avisa de lo que pasa de él.
-- En el inspector de un vidrio, bajo *Paredes*: **Dispersión interna** (mm), **Color de dispersión** y **Dirección** (−0,9 a 0,9, hacia atrás / hacia delante), con su ayuda; el visor Rápido lo aproxima con un difuso translúcido y lo dice (E9b).
-- **Nueve materiales nuevos** (92 en total con los de los sets de L6 y el cristal de E9c): HDPE blanco, PP natural y acrílico esmerilado entre los plásticos; cera, jabón de glicerina, leche, zumo de naranja, zumo de manzana y crema entre los otros. Los líquidos no se desgastan (E9b).
-- **Número de Abbe** en el inspector del vidrio (0 a 100; 0, sin dispersión), con su ayuda; el visor Rápido lo aproxima con la dispersión de three.js. Material nuevo: **Cristal de perfumería** (Abbe 40) en *Vidrio* (E9c).
-
 
 ### Plugins
 
@@ -50,7 +111,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **Aplicar a los trabajos de render** (P6): un plugin puede pasar también cada imagen que renderiza la cola; en una animación, cada fotograma con su semilla (*semilla + fotograma*), así que el grano de la película cambia de fotograma en fotograma como en una película de verdad (P6).
 - El logo del plugin de película es el del dueño: el cartucho de 35 mm en puntos, con la lengüeta en tres grises (P6).
 
-
 ### Animación
 
 - **Despieces configurables** (N6): el despiece (`EXPLODE`) gana tres geometrías —**lineal** a lo largo de Z, X, Y o una dirección propia, *separar* (cada pieza por su lado del centro) o *apilar* (todas en el mismo sentido, en su orden: el despiece clásico de un envase); **radial**, alejándose de un eje; **esférica**, alejándose de un punto— y la **jerarquía** (piezas, un nivel con los grupos como bloques, o todos los niveles por etapas), con distancia en × tamaño o mm, reparto igual o por distancia, proporcional al tamaño de la pieza, centro (el conjunto, una pieza, el pivote o un punto), orden (a la vez, por distancia o por profundidad, con solape), **suavidad** en un solo mando (de lineal a muy suave), **excepciones** que no se mueven (*Fijar en el despiece* en el menú de una pieza), conservar la orientación o inclinar las piezas, y el modelo o un grupo como objetivo. Las piezas de un set no se despiezan (N6).
@@ -59,12 +119,10 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - Los despieces guardados antes se leen **exactamente igual** (la clave `RADIAL` sigue siendo la esférica; la radial nueva es `CYLINDRICAL`) (N6).
 - **Toda simulación se graba en la animación** (S2): cada cuerpo que cae recibe un clip **Simulación** (`PHYSICS`) en la línea de tiempo, que crece fotograma a fotograma mientras corre, con el cabezal detrás; se mueve en el tiempo, se estira para ralentizarlo, se repite y se invierte como cualquier otro, se guarda con el proyecto y sigue al nodo si se mueve después. La foto fija usa el fotograma del cabezal (S2).
 
-
 ### Importación
 
 - glTF y GLB traen sus **materiales con sus mapas** leídos de su JSON (color base, metal-rugosidad, normal con su escala, emisión con su factor y `KHR_materials_emissive_strength`, alfa con su modo y umbral; transmisión, IOR y barniz de sus extensiones; `KHR_texture_transform`); OBJ lee sus **`.mtl`** y sus imágenes (con `-s`, `-o`, `-bm`, `-clamp`, `-imfchan`); FBX, Collada, 3MF, USD y 3DM, los mapas que carga su lector. Las imágenes y bibliotecas que un modelo nombra se buscan entre los archivos **elegidos o soltados con él**; *Importar modelo…* deja elegir varios (M2a).
 - Las **UV** se conservan, también un **segundo juego** (glTF `TEXCOORD_1`), y las normales por vértice del archivo (M2a).
-
 
 ### Proyecto
 
@@ -73,8 +131,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - El **grafo** de un material viaja en el proyecto (con su versión) y en la biblioteca (sin sus imágenes, que son del proyecto); un grafo guardado abre idéntico. Los proyectos anteriores abren con sus materiales en *Simple* (M3a).
 - Las imágenes de textura **viajan en el proyecto** tal cual (PNG o JPEG, base64), una vez cada una, bajo un id que nombra su contenido: un proyecto guardado y abierto vuelve con los mismos bytes. Hasta 16 MB por imagen y 64 MB por proyecto. Los proyectos anteriores abren igual (M2a).
 - Los efectos de *Ambiente* se guardan con el proyecto como parámetros (las partículas no: se evalúan); un proyecto anterior abre sin ninguno (S4a).
-- Los proyectos anteriores se abren igual y sus vidrios siguen sin medio; el registro `MATL` de la escena del motor pasa a 100 bytes (con el bisel reservado para E6, el medio y el número de Abbe de E9c) y los archivos anteriores se leen como antes (E9).
-
 
 ### Motor
 
@@ -90,10 +146,6 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **Filtros de píxel** por muestreo de importancia: centro, caja de 1 px (el de siempre), tienda de 2 px y Blackman–Harris de 3 px (CDF inversa tabulada en `f32`, sin trigonometría al renderizar), y **muestras extra en los bordes** (×2, ×4): los píxeles cuyo vecino ve otra pieza, otro material o otra profundidad, desde los rayos centrales, toman `k` muestras por índice y suman su media; la misma imagen con cualquier número de hilos y cualquier corte de baldosas. `RNDR` gana `pixel_filter` y `edge_supersample` al final (64 B; sin ellos, la imagen de antes); `rt --pixel-filter none|standard|soft|fine --edge-samples K` y `rt --write-e11-example` (E11).
 - `rt-core::tiff` y `rt-core::dng`, los escritores de TIFF 6.0 y DNG 1.4 de la salida, solo con `std` y de la especificación pública; la interfaz escribe los mismos bytes (`encodeTiff`, `encodeDng`), con los archivos de `tests/fixtures/tiff/` como prueba de paridad. `rt` escribe `--format tiff` (con `--bits 8|16|32`) y `--format dng`, o por la extensión de `-o`; el lanzador guarda esos resultados y deja escribir `.tif`, `.tiff` y `.dng` (U12).
 - **Partículas de aire sin estado** (S4a): *crate* nuevo `rt-sim` (cada partícula es función pura de semilla, id e instante, en forma cerrada, con deriva de *curl noise* y muerte en el suelo); sección RSB `FXAM` con los parámetros de cada efecto (192 B, `ARCHITECTURE.md` §5.2); esferas con intersección estable, discos y cápsulas con su BVH en `rt-core`, un tamaño mínimo de 0,35 px para los rayos de cámara que conserva la energía, visibilidad a cámara, en reflejos y en sombras; `rt_particles_eval` en `rt.wasm` para el visor, y `rt --write-ambient-example`. Sin efectos, los píxeles de toda escena no cambian.
-- **Los materiales rugosos ya no pierden luz** (E9a): la luz que rebota varias veces entre las microfacetas del GGX vuelve (el lóbulo añadido de Kulla y Conty 2017 en el metal, el brillo del plástico y el barniz; el escalado de Turquin 2019 en el vidrio rugoso), con tablas integradas por nosotros. En un entorno blanco uniforme, un metal blanco de rugosidad 1 pasa de 0,356 a 0,999, el vidrio rugoso de 0,361 a 0,995 y el plástico blanco de 0,918 a 1,000 (0,860 a 0,998 con barniz). La capa difusa bajo el brillo recibe exactamente lo que el brillo no refleja (Kulla y Conty), también con rugosidad 0. Las imágenes ganan luz: el ejemplo un 15,6 % de luminancia media, la escena de E5 un 13,6 %, el cielo de E5c un 13,2 % (E9a).
-- **Medios dispersores dentro de los sólidos** (E9b): un vidrio con *Dispersión interna* se llena de un medio que dispersa la luz dentro (plástico translúcido, cera, jabón, leche, zumo, crema), con un paseo aleatorio por el interior, su color y su dirección por canal, y la luz encontrada donde el paseo sale. Las escenas sin medios no cambian ni un bit. Los mismos bits en el escritorio y en el navegador (E9b).
-- **Dispersión cromática del vidrio** (E9c): un vidrio macizo con *Número de Abbe* separa la luz en colores al refractar (cada longitud de onda con su índice, por la ley de Cauchy); un camino elige una longitud de onda al primer vidrio dispersivo y las cáusticas también se colorean. Las escenas sin él no cambian.
-
 
 ### Luz
 
@@ -102,23 +154,13 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - Los 15 tipos de producto de estudio **son un set**: *Crear estudio* (y *El del tipo de producto*) pone sus focos, su fondo, su suelo, sus tarjetas y su charco de luz, y el ejemplo o el modelo importado llegan ya vestidos (joyería, *Caja de luz con negros*; relojería, automoción y herramienta, *Familia de ángulos*; perfumería y cosmética, *Tira larga y canto negro*; electrónica, *Negro sobre negro*; electrodoméstico e instrumental médico, *Blanco infinito*; mobiliario interior, *Ventana cálida*; calzado y textil, *Rasante con relleno*; óptica, *Campo claro*; estándar y *packaging*, *Fondo degradado con foco*). Los demás montajes se ven sobre ellos igual que antes. Mobiliario exterior conserva su sol (L6).
 - Las 88 **miniaturas de montaje** las renderiza ahora nuestro motor, cada set sobre el objeto para el que está pensado y los montajes anteriores sobre el de su estilo; las de los sets, el doble de grandes (L6).
 
-
 ### Materiales
 
 - Cinco materiales nuevos para los sets: *Tarjeta blanca*, *Tarjeta negra*, *Acrílico negro brillante* y *Acrílico blanco* (con la ligera bruma de una lámina real) y *Espejo negro* (la tarjeta plateada es el *Aluminio cepillado*) (L6).
 
-
 ### Entorno
 
 - Fondo **Degradado**: dos colores, arriba y abajo del encuadre, en la vista previa y en el motor (L6).
-
-
-### Limitaciones conocidas
-
-- La luz sale de un medio como de una superficie difusa (la aproximación de producción de Chiang, Kutz y Burley 2016): en una esfera de leche bajo un panel lateral queda un 3,3 % más brillante que el camino que refracta de verdad. No hay medios anidados (un líquido dentro de otro), un sólido con índice 1 no tiene medio, y con una dirección muy marcada (cerca de ±0,9) converge despacio (E9b).
-- **Un líquido dentro de un frasco de vidrio** ve las luces a través de una pared fina y lisa (hasta 5 mm, caras casi paralelas) como si el vidrio no las desviara, una aproximación que en una losa de leche bajo una placa de 3 mm queda un 2 % por debajo del camino exacto; a través de un fondo grueso, de vidrio rugoso o con barniz, solo le llega la luz por los caminos que la encuentran al azar (con grano a pocas muestras) o, con *Cáusticas* encendidas, por fotones (E9b).
-- La compensación de energía aproxima los lóbulos anisótropos con el ancho isótropo equivalente y no toca las paredes finas (E9a).
-- La dispersión lleva un solo color por camino: alrededor de un cristal hay grano de color a pocas muestras, y una luz vista a través de él converge como una cáustica. Los rayos de sombra, las paredes finas alrededor de un medio y los sólidos con medio no dispersan (E9c).
 
 ## v0.1.5 — 2026-10-14
 

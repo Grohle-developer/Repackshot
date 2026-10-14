@@ -565,8 +565,9 @@ none). O1 added `LENS` (optional, right after `CAMR`): the optics of the camera 
 (`rt_core::optics`: iris blades, roundness and rotation, an aperture mask or a pupil texture
 sampled through its 2-D CDF, the pupil's radial profile, a central obstruction, cat's eye, an
 anamorphic squeeze, lens shift and a Scheimpflug tilt, artistic chromatic bands and swirl); a file
-without it renders exactly as before. E9 appended to `MATL` (100 bytes) `bevel_mm` (reserved for
-E6: read and kept, written 0), `scatter_mm`, `scatter_color` (three floats), `scatter_g` and
+without it renders exactly as before. O3a appended the lens's three effect-filter slots (28 bytes
+each, written only when there are filters). E9 appended to `MATL` (100 bytes) `bevel_mm` (reserved
+for E6: read and kept, written 0), `scatter_mm`, `scatter_color` (three floats), `scatter_g` and
 `abbe` (the Abbe number of solid glass, E9c). The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
@@ -601,7 +602,15 @@ byte for byte.
   their exact density (concentric disc, fans of straight or curved blades, 2-D CDFs of masks and
   textures), radial profiles, obstruction, cat's eye, anamorphic squeeze, shift and Scheimpflug
   tilt, chromatic bands stratified per pixel (`PixelSampler::stratum`, `DIM_LENS_BAND`) and
-  swirl; the O1 parity scene (`rt --write-o1-example`). Next: the traced lens (O2).
+  swirl; the O1 parity scene (`rt --write-o1-example`).
+* **O3a**: effect filters on the lens (`rt_core::optics::filters`): diffusion (white, black,
+  gold), glimmer, soft, net, star and streak as scattering of the camera ray at the pupil, with
+  tabulated inverse CDFs of their angular PSFs, and a connection of each camera sample to a light
+  the camera sees through the filter's PSF, weighted against the scattering with the balance
+  heuristic lobe by lobe; a stack of three per camera; the O3a parity scene
+  (`rt --write-o3a-example`), the filter sheet (`rt --filter-sheet`) and the measurement of the
+  noise the filters add with and without the connections (`rt --filter-noise`). Next: the traced
+  lens (O2).
 
 ## Third-party data
 

@@ -1800,12 +1800,16 @@ fn media_are_receivers_with_their_own_random_numbers() {
     assert!(!crate::caustics::is_caster(&m));
     assert!(crate::caustics::is_caster(&clear_glass(0.0)));
     // The medium's dimensions are hashed ones beyond the Sobol table and the cut-outs.
-    use crate::sampler::{cutout_dim, medium_dim, DIM_DISPERSION, DIM_LENS_BAND, SOBOL_DIMENSIONS};
+    use crate::sampler::{
+        cutout_dim, medium_dim, DIM_DISPERSION, DIM_LENS_BAND, DIM_LENS_FILTER_LIGHT,
+        SOBOL_DIMENSIONS,
+    };
     assert!(medium_dim(0, 0) > cutout_dim(1023, 63));
     assert!(medium_dim(0, 0) >= SOBOL_DIMENSIONS);
-    // Below the lens's chromatic band (O1) and the wavelength of dispersion (E9c).
+    // Below the lens's chromatic band (O1); the wavelength of dispersion (E9c) beyond the blocks
+    // of the lens filters (O3a).
     assert!(medium_dim(5000, 5000) + 8 <= DIM_LENS_BAND);
-    const { assert!(DIM_LENS_BAND < DIM_DISPERSION) };
+    const { assert!(DIM_LENS_FILTER_LIGHT + (1 << 20) <= DIM_DISPERSION) };
     assert_ne!(medium_dim(1, 0), medium_dim(0, 1));
     // A scene with media keeps no Beer–Lambert medium for them (the walk absorbs).
     let scene = Scene {

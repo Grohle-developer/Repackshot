@@ -29,8 +29,9 @@ import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_P
 import { getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS } from '../core/images';
 import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type TextureSlotKey } from '../core/textures';
 import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
-import { isNeutralOptics, type CameraOptics } from '../core/optics';
+import { filtersOf, isNeutralOptics, type CameraOptics, type LensFilter } from '../core/optics';
 import type { PupilProfile } from '../data/bokeh';
+import { lensFilterType } from '../data/lens-filters';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -165,6 +166,29 @@ export interface RsbLens {
   maskHeight: number;
   /** maskWidth × maskHeight bytes, rows top to bottom (empty without a mask). */
   mask: Uint8Array;
+  /** O3a: the stack of effect filters (up to three; absent or empty: none, and the O1 bytes). */
+  filters?: RsbLensFilter[];
+}
+
+/** One LENS filter slot (rt-core `optics::filters::FilterParams`). */
+export interface RsbLensFilter {
+  /** `FILTER_*`: 0 none, 1 white, 2 black, 3 gold diffusion, 4 glimmer, 5 soft, 6 net, 7 star, 8 streak. */
+  kind: number;
+  grade: number;
+  /** All zero: the kind's own. */
+  tint: [number, number, number];
+  angleDeg: number;
+  /** Star: 4, 6 or 8 (0: 6). */
+  points: number;
+}
+
+/** The three filter slots of a LENS section: 28 bytes each. */
+export const LENS_FILTER_SLOTS = 3;
+const LENS_FILTER_BYTES = 28;
+
+/** True when a slot holds anything (the engine writes the slots when one does). */
+function filterSlotUsed(f: RsbLensFilter): boolean {
+  return f.kind !== 0 || f.grade !== 0 || f.tint.some((v) => v !== 0) || f.angleDeg !== 0 || f.points !== 0;
 }
 
 /** M2a: how a slot reads its image (one of the six of the MATL texture block). */
@@ -529,9 +553,10 @@ function bitmapBytes(b: RsbBitmap): number {
   return 16 + b.data.length + ((4 - (b.data.length % 4)) % 4);
 }
 
-/** A LENS payload: the numbers, the picture, zero padding to a multiple of four. */
+/** A LENS payload: the numbers, the picture, zero padding to a multiple of four, and the filters when there are any. */
 function lensBytes(l: RsbLens): number {
-  return LENS_BYTES + l.mask.length + ((4 - (l.mask.length % 4)) % 4);
+  const filters = (l.filters ?? []).some(filterSlotUsed) ? LENS_FILTER_SLOTS * LENS_FILTER_BYTES : 0;
+  return LENS_BYTES + l.mask.length + ((4 - (l.mask.length % 4)) % 4) + filters;
 }
 
 /** Little-endian writer over a buffer of the exact final size. */
@@ -673,6 +698,17 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.u32(lens.maskHeight);
       w.raw(lens.mask);
       w.pad((4 - (lens.mask.length % 4)) % 4);
+      const filters = lens.filters ?? [];
+      if (filters.some(filterSlotUsed)) {
+        for (let i = 0; i < LENS_FILTER_SLOTS; i++) {
+          const f = filters[i] ?? { kind: 0, grade: 0, tint: [0, 0, 0], angleDeg: 0, points: 0 };
+          w.u32(f.kind);
+          w.f32(f.grade);
+          for (const v of f.tint) w.f32(v);
+          w.f32(f.angleDeg);
+          w.u32(f.points);
+        }
+      }
     });
   }
   for (const m of scene.materials) {
@@ -1176,7 +1212,22 @@ export function lensToRsb(o: CameraOptics, outW: number, outH: number): RsbLens 
     maskWidth: picture ? APERTURE_SIZE : 0,
     maskHeight: picture ? APERTURE_SIZE : 0,
     mask: picture ?? new Uint8Array(0),
+    ...(filtersOf(o).length > 0 ? { filters: filtersToRsb(filtersOf(o)) } : {}),
   };
+}
+
+/** The LENS filter slots of a camera's filters (O3a): the type's kind, the grade, the tint (zeros: the type's own). */
+export function filtersToRsb(filters: readonly LensFilter[]): RsbLensFilter[] {
+  return filters.slice(0, LENS_FILTER_SLOTS).map((f) => {
+    const type = lensFilterType(f.type);
+    return {
+      kind: type?.kind ?? 0,
+      grade: Math.min(2, Math.max(0, f.grade)),
+      tint: type?.tint && f.tint ? [f.tint[0], f.tint[1], f.tint[2]] : [0, 0, 0],
+      angleDeg: type?.angle ? f.angleDeg : 0,
+      points: type?.points ? (f.points === 4 || f.points === 8 ? f.points : 6) : 0,
+    };
+  });
 }
 
 /** The 3 x 4 rows of a column-major Mat4. */

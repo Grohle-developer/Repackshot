@@ -169,6 +169,12 @@ jobs:
           expected=$(sed -n 's/.*PINNED_E11_EDGES_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e11.rsb" --expect "$expected"
+          # O3a: the effect filters of the lens (the LENS filter slots), alone and with the passes.
+          cargo run --release -p rt-cli -- --write-o3a-example "$RUNNER_TEMP/o3a.rsb"
+          expected=$(sed -n 's/.*PINNED_O3A_FILTERS_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o3a.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o3a.rsb" --expect "$expected" --passes
           # E9: the E5 scene with a scattering medium in its glass and a dispersive crystal (the
           # random walk, its hashed dimensions, the spectral MIS and the wavelength each path
           # chooses must give the native bits in WebAssembly).

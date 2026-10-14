@@ -6,6 +6,8 @@
 import { DOCTOR_CHECKS } from '../../data/doctor';
 import { effectPreset } from '../../data/effects';
 import { warningCount, type DoctorResult } from '../../core/doctor';
+import { activeCamera } from '../../core/camera';
+import { filterActive, filtersOf, opticsOf } from '../../core/optics';
 import { allParts, triangleCount } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
 import { VERSION } from '../../core/version';
@@ -247,9 +249,11 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       }
       last = now;
       const st = port.status();
+      // The Fast viewport's filters are an approximation (rule 10: it says so).
+      const approx = port.kind !== 'pathtracer' && filtersOf(opticsOf(activeCamera(store.get()))).some(filterActive) ? ` · ${t('status.filtersApprox')}` : '';
       engine.textContent =
         port.kind !== 'pathtracer'
-          ? t('status.engineFast', { device: st.device })
+          ? t('status.engineFast', { device: st.device }) + approx
           : st.native
             ? t('status.engineNative', { threads: st.threads ?? 0, isa: isaLabel(st.isa) })
             : t('status.engineFull', { workers: st.workers ?? 0, isa: st.simd ? t('status.isaSimd') : t('status.isaScalar') });
