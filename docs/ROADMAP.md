@@ -5099,8 +5099,10 @@ sin `rt.wasm`, cromo acromático en los dos temas; capturas
 `docs/ui/ambient-section.png` y `docs/ui/ambient-gallery.png`) y la hoja
 `tools/ambient-sheet.mjs` → `out/ambient-sheet.html` (los ocho presets
 con clave lateral y foco a contraluz, la lluvia con estelas de 4, 12 y
-30 ms y la polvareda con suavidad 0,2 y 0,9; 512 × 288, 128 spp,
-`--threads 2`; escenas de `tests/ambient-rsb-dump.test.ts`).
+30 ms y la polvareda con suavidad 0,2 y 0,9; 512 × 288, el 16:9 de la
+cámara, 128 spp, `--threads 2`; la cámara del ejemplo con la focal × 1,5
+para que las partículas se lean, un estudio plano oscuro y *Solo
+principal* como única luz; escenas de `tests/ambient-rsb-dump.test.ts`).
 
 **Criterios.** (1), (2), (3) por test, arriba. (4) La energía del
 ensanchado: la imagen de polvo fino da de media 1,0820557 a 4 spp
