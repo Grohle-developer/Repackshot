@@ -5,6 +5,8 @@ Render (U5): `render.ts` (the render window's settings, `RenderJob`, the queue r
 `name-template.ts` (output names with `{project}`, `{camera}`, `{studio}`, `{date}`, `{n}`), `results.ts` (the
 results history's record and eviction).
 
+Aspect ratio (U13): `aspect.ts` (a camera's image ratio: a preset of `data/aspects.ts` or its own `w : h`, its reading and its text; the size of an image follows the active camera's: `sizeForWidth`, `aspectForSize` and `syncOutputSize` in `render.ts`).
+
 Settings (U6): `settings.ts` (the application settings: one typed record with a schema version, defaults,
 validation, migration from the loose preferences of before and from older versions, and the metadata of every row,
 which drives the Settings window and its search), `models.ts` (the AI model manager's model: the store's view by

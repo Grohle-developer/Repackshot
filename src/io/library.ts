@@ -7,6 +7,7 @@
 import { LIGHT_ROLES, LIGHT_SHAPES, LIGHT_TYPES } from '../data/light-setups';
 import type { LightSpec, RGB, RGBA, StudioPreset, WearProps, WorldKind } from '../data/types';
 import { WEAR_PROP_DEFAULTS } from '../data/wear';
+import { normaliseAspect } from '../core/aspect';
 import type { CameraState } from '../core/camera';
 import {
   COLLECTION,
@@ -338,6 +339,8 @@ function camera(v: unknown, path: string): CameraState {
     clipEnd: num(o.clipEnd, `${path}.clipEnd`, 0, 1e9),
     locked: bool(o.locked, `${path}.locked`),
     lens: o.lens === null ? null : str(o.lens, `${path}.lens`, 64),
+    // U13: a studio saved before the camera carried its ratio has none (16:9, as every camera was).
+    aspect: normaliseAspect(o.aspect),
   };
 }
 

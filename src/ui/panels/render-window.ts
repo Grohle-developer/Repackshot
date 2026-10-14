@@ -11,6 +11,8 @@
 // Save changes instead. ⏎ is Render and ⇧ ⏎ + Add to queue.
 
 import { totalDuration } from '../../core/animation';
+import { aspectText, type CameraAspect } from '../../core/aspect';
+import { activeCamera } from '../../core/camera';
 import { outputFileName } from '../../core/name-template';
 import { QUALITY_KEYS, QUALITY_PRESETS, RESOLUTION_PRESETS } from '../../data/quality';
 import {
@@ -243,6 +245,32 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   );
 
   // ------------------------------------------------------------------ size
+  // An image's size follows the active camera's aspect ratio (U13). A size that changes that ratio (a preset, or both
+  // sides, or one with the lock open) rewrites the camera's, and the window says so in one quiet line.
+  const aspectLine = h('div', { class: 'note', 'data-aspect-line': '' });
+  let aspectNote: { camera: string; aspect: CameraAspect; text: string } | null = null;
+  const updateAspectLine = () => {
+    const st = store.get();
+    const s = get();
+    const cam = activeCamera(st);
+    // A queued job being edited and an animation have a size of their own: no camera rules them.
+    const own = ui.get().renderWindow?.kind === 'EDIT' || s.mode === 'ANIMATION';
+    aspectLine.style.display = own ? 'none' : '';
+    if (aspectNote && (aspectNote.camera !== cam.id || aspectNote.aspect !== cam.aspect)) aspectNote = null;
+    const params = { camera: cameraName(st, cam), aspect: aspectText(cam.aspect) };
+    aspectLine.textContent = aspectNote ? aspectNote.text : t(s.aspectLock ? 'rw.aspectFollows' : 'rw.aspectFree', params);
+  };
+  const setSize = (patch: Partial<RenderSettings>, gesture?: string) => {
+    const own = ui.get().renderWindow?.kind === 'EDIT' || get().mode === 'ANIMATION';
+    const before = own ? null : activeCamera(store.get());
+    set(patch, gesture);
+    const after = activeCamera(store.get());
+    aspectNote =
+      before && before.id === after.id && before.aspect !== after.aspect
+        ? { camera: after.id, aspect: after.aspect, text: t('rw.aspectBecomes', { camera: cameraName(store.get(), after), aspect: aspectText(after.aspect) }) }
+        : null;
+    updateAspectLine();
+  };
   const sizeOptions = () => {
     const opts = [
       ...RESOLUTION_PRESETS.map((r) => ({ value: `RES:${r.key}`, label: `${lbl(r.label)} · ${r.width} × ${r.height}` })),
@@ -261,27 +289,27 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     const s = get();
     if (v.startsWith('RES:')) {
       const r = RESOLUTION_PRESETS.find((x) => `RES:${x.key}` === v);
-      if (r) set({ width: r.width, height: r.height });
+      if (r) setSize({ width: r.width, height: r.height });
     } else if (v.startsWith('PRINT:')) {
       const p = PRINT_PRESETS.find((x) => `PRINT:${x.key}` === v);
       if (p) {
         const px = printPresetPixels(p, s.width >= s.height);
-        set({ width: px.width, height: px.height, dpi: px.dpi });
+        setSize({ width: px.width, height: px.height, dpi: px.dpi });
       }
     }
   };
   const makeSizeControls = () => {
     const preset = select(sizeOptions(), presetValue(s0), applyPreset, t('rw.preset'));
-    const w = numberField({ value: s0.width, min: 16, max: 8192, step: 1, unit: 'px', ariaLabel: t('render.width'), onChange: (v, g) => set({ width: v }, g) });
-    const hgt = numberField({ value: s0.height, min: 16, max: 8192, step: 1, unit: 'px', ariaLabel: t('render.height'), onChange: (v, g) => set({ height: v }, g) });
+    const w = numberField({ value: s0.width, min: 16, max: 8192, step: 1, unit: 'px', ariaLabel: t('render.width'), onChange: (v, g) => setSize({ width: v }, g) });
+    const hgt = numberField({ value: s0.height, min: 16, max: 8192, step: 1, unit: 'px', ariaLabel: t('render.height'), onChange: (v, g) => setSize({ height: v }, g) });
     const lock = h('button', { type: 'button', class: 'icon-btn', onclick: () => set({ aspectLock: !get().aspectLock }) });
     return { preset, w, hgt, lock, el: h('div', { class: 'rw-inline' }, w.el, h('span', { class: 'aux' }, '×'), hgt.el, lock) };
   };
   const size = makeSizeControls();
   const unitDigits = (u: PrintUnit) => (u === 'MM' ? 1 : 2);
   const printFormat = (v: number) => formatNumber(v, getLang(), unitDigits(get().printUnit));
-  const printW = numberField({ value: 0, min: 0.01, step: 0.5, format: printFormat, ariaLabel: t('rw.printWidth'), onChange: (v, g) => set({ width: pixelsFor(v, get().printUnit, get().dpi) }, g) });
-  const printH = numberField({ value: 0, min: 0.01, step: 0.5, format: printFormat, ariaLabel: t('rw.printHeight'), onChange: (v, g) => set({ height: pixelsFor(v, get().printUnit, get().dpi) }, g) });
+  const printW = numberField({ value: 0, min: 0.01, step: 0.5, format: printFormat, ariaLabel: t('rw.printWidth'), onChange: (v, g) => setSize({ width: pixelsFor(v, get().printUnit, get().dpi) }, g) });
+  const printH = numberField({ value: 0, min: 0.01, step: 0.5, format: printFormat, ariaLabel: t('rw.printHeight'), onChange: (v, g) => setSize({ height: pixelsFor(v, get().printUnit, get().dpi) }, g) });
   const unitSel = select(
     PRINT_UNITS.map((u) => ({ value: u, label: t(dyn(`rw.unit.${u}`)) })),
     s0.printUnit,
@@ -293,7 +321,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     'div',
     { class: 'rw-section' },
     row(t('rw.preset'), size.preset.el),
-    row(t('rw.pixels'), size.el),
+    row(t('rw.pixels'), h('div', { class: 'rw-stack' }, size.el, aspectLine)),
     row(t('rw.print'), h('div', { class: 'rw-stack' }, h('div', { class: 'rw-inline' }, printW.el, h('span', { class: 'aux' }, '×'), printH.el, unitSel.el), h('div', { class: 'note' }, t('rw.pixelsRule')))),
     row(t('rw.dpi'), dpi.el),
     row(t('rw.region'), h('div', { class: 'rw-inline' }, h('span', { class: 'aux' }, t('common.comingSoon')), h('span', { class: 'note' }, t('rw.regionSoon')))),
@@ -527,6 +555,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
       z.lock.setAttribute('aria-label', s.aspectLock ? t('rw.unlock') : t('rw.lock'));
       z.lock.setAttribute('data-tip', s.aspectLock ? t('rw.unlock') : t('rw.lock'));
     }
+    updateAspectLine();
     printW.set(printLength(s.width, s.dpi, s.printUnit));
     printH.set(printLength(s.height, s.dpi, s.printUnit));
     unitSel.set(s.printUnit);

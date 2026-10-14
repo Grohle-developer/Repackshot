@@ -120,6 +120,7 @@ const TABLE = {
   'cameras.deleteLast': ['The last camera cannot be deleted', 'La última cámara no se puede eliminar'],
   'cameras.edit': ['Edit {name}: name, activate, look through, lens and placement', 'Editar {name}: nombre, activar, mirar a través, óptica y posición'],
   'cameras.lens': ['{focal} mm · f/{fstop}', '{focal} mm · f/{fstop}'],
+  'cameras.lensAspect': ['{focal} mm · f/{fstop} · {aspect}', '{focal} mm · f/{fstop} · {aspect}'],
   'camera.editingNote': ['Lens and placement of the active camera, {name}; every camera has its own', 'Óptica y posición de la cámara activa, {name}; cada cámara tiene las suyas'],
   'lights.empty': ['The active setup has no lights.', 'El montaje activo no tiene focos.'],
   'lights.share': ['{pct} % of the light', '{pct} % de la luz'],
@@ -578,6 +579,9 @@ const TABLE = {
   'camera.notPhysical': ['not physical', 'no físico'],
   'camera.notPhysicalAux': ['An artistic adjustment on top of the optics: a real lens with these settings would not do it', 'Un ajuste artístico encima de la óptica: una lente real con estos valores no lo haría'],
   'camera.opticsNote': ['Blur, tilt and these optics show in Full mode and in the render; Fast mode shows only the shift', 'El desenfoque, la inclinación y esta óptica se ven en el modo Completo y en el render; el modo Rápido solo muestra el desplazamiento'],
+  'camera.aspect': ['Aspect ratio', 'Proporción'],
+  'camera.aspectW': ['Aspect ratio, width', 'Proporción, ancho'],
+  'camera.aspectH': ['Aspect ratio, height', 'Proporción, alto'],
   'camera.frame': ['Frame', 'Encuadrar'],
   'camera.saveAs': ['Save as camera', 'Guardar como cámara'],
   'camera.name': ['Name', 'Nombre'],
@@ -1066,6 +1070,9 @@ const TABLE = {
   'rw.pixels': ['Pixels', 'Píxeles'],
   'rw.lock': ['Lock the proportions', 'Bloquear la proporción'],
   'rw.unlock': ['Unlock the proportions', 'Desbloquear la proporción'],
+  'rw.aspectFollows': ["The height follows {camera}'s aspect ratio, {aspect}.", 'El alto sigue la proporción de {camera}, {aspect}.'],
+  'rw.aspectFree': ["A size you type becomes {camera}'s aspect ratio (now {aspect}).", 'Un tamaño tecleado pasa a ser la proporción de {camera} (ahora {aspect}).'],
+  'rw.aspectBecomes': ["{camera}'s aspect becomes {aspect}", 'La proporción de {camera} pasa a {aspect}'],
   'rw.print': ['Print size', 'Tamaño de impresión'],
   'rw.printWidth': ['Print width', 'Ancho de impresión'],
   'rw.printHeight': ['Print height', 'Alto de impresión'],
@@ -2020,6 +2027,10 @@ const TABLE = {
   'doctor.bevel': ['{count} materials have no edge bevel.', '{count} materiales no llevan bisel de aristas.'],
   'doctor.clip': ['A camera clips the part up close (starts at {clipStart} mm).', 'Una cámara recorta la pieza de cerca (empieza a {clipStart} mm).'],
   'doctor.lights': ['{count} studio lights are visible to the camera.', '{count} focos del estudio se ven a cámara.'],
+  'doctor.aspect': [
+    'Shots with another aspect ratio than the animation ({output}): {count}. The first uses {camera} ({aspect}).',
+    'Planos con otra proporción que la animación ({output}): {count}. El primero usa {camera} ({aspect}).',
+  ],
 
   // Palette
   'palette.placeholder': ['Search actions, materials, light setups, product types…', 'Busca acciones, materiales, montajes, tipos de producto…'],

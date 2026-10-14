@@ -663,6 +663,38 @@ ortográfico), clipping, `locked`. Cámara de referencia: acimut −35°,
 elevación 22° (tres cuartos), distancia derivada de la focal y el tamaño
 de pieza para que encaje con un margen del 10 %.
 
+**Proporción de la imagen** (U13). Cada cámara lleva la suya,
+`CameraState.aspect: { preset, w, h }`, con `preset` una clave estable de
+`src/data/aspects.ts` (`3:2`, `4:3`, `16:9`, `1:1`, `5:4`, `4:5`, `9:16`,
+`21:9`, `2:1`, `65:24` panorámica) o `CUSTOM` con `w : h` libres (la
+razón queda entre 1 : 512 y 512 : 1, la de los tamaños más extremos que
+admite la ventana de render, 16 × 8192 y 8192 × 16). Es el ancho sobre el alto de la imagen que esa cámara
+toma: una cámara nueva es 16:9; *Nueva desde la vista actual* y duplicar
+copian la de la origen; `camera/set` la cambia (deshacible) y la lee como
+cualquier campo (`normaliseAspect`: una clave conocida trae sus términos,
+algo que no puede serlo se descarta). La **fuente única** es la cámara:
+
+- el **marco del visor** es el de la cámara que se ve (la activa o la que se
+  mira a través), con su proporción;
+- el **tamaño en píxeles de una imagen** conserva el ancho y toma el alto
+  de la proporción de la cámara activa (`syncOutputSize`, en cada acción,
+  también al cambiar de cámara activa, al deshacer y al abrir un proyecto).
+  Si se teclea un tamaño que rompe esa proporción (los dos lados a la vez,
+  o uno con el candado abierto) es la cámara la que lo recibe, en la misma
+  acción: el preset de la lista si el tamaño es exactamente uno
+  (`aspectForSize`), si no `CUSTOM` con esos píxeles como `w : h`;
+- una **animación** tiene un solo tamaño de salida, el de la ventana de
+  render, que no sigue a la cámara; el Doctor avisa (`aspect`) cuando la
+  cámara de un plano tiene otra proporción;
+- un trabajo de la cola para una cámara con otra proporción que la de la
+  ventana sale con el mismo ancho y el alto de esa cámara.
+
+Un proyecto guardado antes no tiene `aspect` en sus cámaras: cada una toma
+la proporción del tamaño de render guardado (el preset que cuadra con una
+tolerancia del 0,5 %, si no `CUSTOM` con esos píxeles), y el tamaño guardado
+no se toca. Recolocar la cámara al cambiar la proporción no se hace
+solo: *Encuadrar* la ajusta a la imagen nueva.
+
 **Encuadrar**: ajusta la distancia (o el ancho ortográfico) para que la
 caja envolvente de la selección (o de todo) quepa con margen, sin mover
 la orientación. Las **cámaras guardadas** se ven en el visor como pirámides,

@@ -586,7 +586,8 @@ export type DoctorCheckKey =
   | 'lights'
   | 'caustics'
   | 'persist'
-  | 'output';
+  | 'output'
+  | 'aspect';
 
 /** Descriptor only: what the check looks for and what its one-click fix does. */
 export interface DoctorCheck {

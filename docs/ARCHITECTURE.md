@@ -87,6 +87,7 @@ src/
     camera.ts               óptica, encuadre, cámaras guardadas
     optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh
     aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
+    aspect.ts               la proporción de la imagen de una cámara (U13): preset o propia, su lectura, el tamaño que le toca; el marco del visor y el tamaño de una imagen la siguen (`syncOutputSize`, en `render.ts`)
     animation.ts            planos, movimientos, evaluación en el tiempo
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo

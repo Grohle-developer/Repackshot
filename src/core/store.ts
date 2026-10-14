@@ -12,7 +12,7 @@ import { makeCamera, reduceCamera, type CameraAction, type CameraId, type Camera
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
 import { buildStudio, lightsFromRig, reduceStudio, type CustomSetup, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
 import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialInstance } from './materials';
-import { carryRuntime, defaultRenderState, reduceRender, type RenderAction, type RenderState } from './render';
+import { carryRuntime, defaultRenderState, reduceRender, syncOutputSize, type RenderAction, type RenderState } from './render';
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
 import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
@@ -282,17 +282,22 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
 }
 
 /**
- * Root reducer: applies the action, then refreshes what is derived from the
- * model (the Doctor results) when the parts it looks at changed.
+ * Root reducer: applies the action, then keeps what is derived from the model
+ * in step: the size of an image follows the active camera's aspect ratio
+ * (U13), and the Doctor results are refreshed when the parts it looks at changed.
  */
 export function reduce(state: ProjectState, action: Action): ProjectState {
-  const next = reduceAny(state, action);
-  if (next === state) return state;
+  const reduced = reduceAny(state, action);
+  if (reduced === state) return state;
+  const next = syncOutputSize(reduced);
   if (
     next.scene !== state.scene ||
     next.materials !== state.materials ||
     next.camera !== state.camera ||
-    next.studio !== state.studio
+    next.studio !== state.studio ||
+    next.animation.shots !== state.animation.shots ||
+    next.render.width !== state.render.width ||
+    next.render.height !== state.render.height
   ) {
     return { ...next, doctor: { results: runDoctor(next), stamp: state.doctor.stamp + 1 } };
   }

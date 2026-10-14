@@ -36,6 +36,10 @@
 //   2 (U5) — `render` is the render window's settings and a queue of full `RenderJob`s (core/render.ts
 //            `migrateRender`).
 //
+// Cameras (U13): each carries the aspect ratio of its image (`aspect: { preset, w, h }`). A file from before it has
+// none: its cameras take the ratio of the saved render size (a preset within 0.5 %, else a custom ratio with those
+// pixels; `withCameraAspects`), and the saved size stays. The schema stays at 2.
+//
 // Primitives (U9): a part made by Add ▸ Primitive keeps its shape and measures in an optional field of its node
 // (`primitive`: `{ kind, params }`, core/primitives.ts), and its mesh is not written: on open it is made again from
 // the measures, under the id it had (the id names the content), so a project with primitives saves, opens and
@@ -62,7 +66,8 @@ import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } fr
 import { checkTextureFile, registerTextureImage, textureImageId } from '../core/texture-images';
 import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
 import type { MaterialInstance } from '../core/materials';
-import { migrateRender } from '../core/render';
+import { withCameraAspects } from '../core/camera';
+import { migrateRender, syncOutputSize } from '../core/render';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
@@ -339,7 +344,8 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; im
   if (!isObject(body.state)) throw damaged('the project has no state');
   let state: RawState = body.state;
   for (let n = schema; n < PROJECT_SCHEMA; n++) state = STEPS[n](state);
-  const checked = checkState({ ...state, render: migrateRender(state.render) });
+  // U13: a camera of a project saved before it takes the ratio of the saved size; an image follows its camera.
+  const checked = syncOutputSize(withCameraAspects(checkState({ ...state, render: migrateRender(state.render) })));
   // A file is the saved state, and nothing plays or renders after a load.
   const loaded: ProjectState = {
     ...checked,
@@ -355,7 +361,9 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; im
  * project, comes from a newer version or is damaged.
  */
 export function migrateProject(body: unknown): ProjectState {
-  return cleanSelection(readEnvelope(body).state);
+  const state = cleanSelection(readEnvelope(body).state);
+  // The Doctor's findings follow the model and the catalogue of this version, not the file's (as `loadProject` does).
+  return { ...state, doctor: { results: runDoctor(state), stamp: state.doctor.stamp } };
 }
 
 function parseText(text: string): unknown {

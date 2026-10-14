@@ -601,11 +601,11 @@ describe('animation catalogues', () => {
 });
 
 describe('doctor checks and environment', () => {
-  it('has 14 checks with unique keys in upstream order', () => {
-    expect(DOCTOR_CHECKS).toHaveLength(14);
+  it('has the 14 upstream checks in their order, with unique keys, and ours after them (U13: aspect)', () => {
+    expect(DOCTOR_CHECKS).toHaveLength(15);
     expect(DOCTOR_CHECKS.map((c) => c.key)).toEqual([
       'engine', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
-      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output',
+      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output', 'aspect',
     ]);
   });
 

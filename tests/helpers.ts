@@ -22,3 +22,12 @@ export function exampleStore(): { store: Store; ids: Record<string, string> } {
 export function apply(state: ProjectState, ...actions: Action[]): ProjectState {
   return actions.reduce(reduce, state);
 }
+
+/** The state as a project saved before the cameras carried their aspect ratio (U13) has it: cameras without one. */
+export function withoutCameraAspects(state: ProjectState): ProjectState {
+  const cameras = Object.fromEntries(Object.entries(state.camera.cameras).map(([id, c]) => {
+    const { aspect: _aspect, ...old } = c;
+    return [id, old];
+  }));
+  return { ...state, camera: { ...state.camera, cameras: cameras as unknown as ProjectState['camera']['cameras'] } };
+}

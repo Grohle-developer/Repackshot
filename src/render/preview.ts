@@ -11,7 +11,7 @@ import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLigh
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, type Pose } from '../core/animation';
 import type { Projection, Rect } from '../core/box-select';
-import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, SENSOR_MM, type CameraState } from '../core/camera';
+import { activeCamera, aspectRatio, cameraFrameRect, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, SENSOR_MM, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { fitImageRect, getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
 import { isSphereLike, lightFrame, rigPivot, skySunDirection, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
@@ -525,7 +525,7 @@ export class PreviewEngine implements RenderEngine {
   }
 
   /** The camera the viewport looks through: a light's or a saved camera's view (Look through, L4), or the active one. */
-  private viewCamera(state: ProjectState): CameraState | undefined {
+  private viewCamera(state: ProjectState): CameraState {
     const lt = this.glyphSpec.lookThrough;
     return (lt ? lookThroughCamera(state, lt) : null) ?? activeCamera(state);
   }
@@ -553,7 +553,8 @@ export class PreviewEngine implements RenderEngine {
     if (full || nodesChanged || poseLights || state.studio !== prev.studio || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncLights(state, pose);
     // The sky follows the sun light; the background image the frame (output size).
     const skyFollows = state.environment.kind === 'SKY' && !full && (state.studio !== prev.studio || poseLights);
-    const plateFollows = (state.environment.background === 'BACKPLATE' || state.environment.background === 'GRADIENT') && !full && (state.render.width !== prev.render.width || state.render.height !== prev.render.height);
+    // The frame is the image of the camera on screen (U13): its ratio moves the background image and the gradient.
+    const plateFollows = (state.environment.background === 'BACKPLATE' || state.environment.background === 'GRADIENT') && !full && aspectRatio(this.viewCamera(state)) !== aspectRatio(this.viewCamera(prev));
     if (full || state.environment !== prev.environment || poseEnv || skyFollows || plateFollows) this.syncEnvironment(state, pose);
     if (full || state.image !== prev.image) this.syncImage(state);
     if (full || nodesChanged || state.studio !== prev.studio || state.environment !== prev.environment) this.syncFloor(state);
@@ -868,10 +869,10 @@ export class PreviewEngine implements RenderEngine {
       this.scene.background = null;
     } else if (env.background === 'BACKPLATE') {
       // The image fitted to the output frame of the viewport, the colour while none is loaded.
-      const frame = outputFrameRect(this.width, this.height, state.render.width, state.render.height);
+      const frame = cameraFrameRect(this.viewCamera(state), this.width, this.height);
       this.scene.background = this.viewportPlate(state, this.width, this.height, frame) ?? color();
     } else if (env.background === 'GRADIENT') {
-      const frame = outputFrameRect(this.width, this.height, state.render.width, state.render.height);
+      const frame = cameraFrameRect(this.viewCamera(state), this.width, this.height);
       this.scene.background = this.viewportGradient(state, this.width, this.height, frame);
     } else {
       this.scene.background = this.envTexture;
@@ -939,14 +940,17 @@ export class PreviewEngine implements RenderEngine {
     // Looking through a light or a saved camera (L4): its view, and the navigation moves it (main.ts).
     const through = this.glyphSpec.lookThrough ? lookThroughCamera(state, this.glyphSpec.lookThrough) : null;
     if (through) {
-      this.placeCamera(through, this.width, this.height, state.render.width, state.render.height, true);
+      this.placeCamera(through, this.width, this.height, through.aspect.w, through.aspect.h, true);
       this.controls.enabled = !through.locked;
       return;
     }
     const base = pose?.camera ? (state.camera.cameras[pose.camera.camera] ?? activeCamera(state)) : activeCamera(state);
     if (!base) return;
     const cam: CameraState = pose?.camera ? { ...base, ...pose.camera, id: base.id } : base;
-    this.placeCamera(cam, this.width, this.height, state.render.width, state.render.height, true);
+    // The frame is the active camera's even while a shot's camera plays: the output has one size (U13; the Doctor
+    // warns when a shot's camera has another ratio).
+    const frame = activeCamera(state).aspect;
+    this.placeCamera(cam, this.width, this.height, frame.w, frame.h, true);
     this.controls.enabled = !cam.locked && !pose?.camera;
   }
 
@@ -1256,7 +1260,11 @@ export class PreviewEngine implements RenderEngine {
     this.glyphSpec = { all: spec.all, selected: spec.selected, lookThrough: spec.lookThrough };
     this.syncGlyphs();
     if (this.state && lookChanged) {
-      this.syncCamera(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
+      const pose = this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null;
+      this.syncCamera(this.state, pose);
+      // A background image or gradient fills the frame of the camera on screen, which may have another ratio (U13).
+      const bg = this.state.environment.background;
+      if (bg === 'BACKPLATE' || bg === 'GRADIENT') this.syncEnvironment(this.state, pose);
       if (this.gizmoSpec) this.placeGizmo();
     }
     this.needsRender = true;

@@ -6,18 +6,20 @@
 import { DOCTOR_CHECKS } from '../../data/doctor';
 import { warningCount, type DoctorResult } from '../../core/doctor';
 import { allParts, triangleCount } from '../../core/scene';
+import type { ProjectState } from '../../core/store';
 import { VERSION } from '../../core/version';
 import * as cmd from '../commands';
 import { confirmBox, openFloating } from '../components/widgets';
 import { h } from '../dom';
-import { dyn } from '../names';
+import { cameraName, dyn } from '../names';
 import { Scope, shallowEq, type Ctx } from '../reactive';
 import { formatClock, formatNumber, getLang, isaLabel, lbl, t } from '../strings';
 import { dismissRuntimeNote, fixRuntime } from '../ai-runtime-state';
 import { installActive } from '../../core/updates';
 import { cancelInstall, dismissUpdateNotice, downloadUpdate, installFaultText, installRequestFor, installText, installUpdate, openReleaseNotes, restartNow, retryInstall } from '../updates';
 
-function sentence(r: DoctorResult): string {
+/** The sentence of a warning of the Doctor, in the current language (the state names the cameras it speaks of). */
+export function doctorSentence(r: DoctorResult, state: ProjectState): string {
   const d = r.detail;
   switch (r.key) {
     case 'scale':
@@ -36,6 +38,8 @@ function sentence(r: DoctorResult): string {
       return t('doctor.clip', { clipStart: Number(d.clipStart) });
     case 'lights':
       return t('doctor.lights', { count: Number(d.count) });
+    case 'aspect':
+      return t('doctor.aspect', { count: Number(d.count), camera: cameraName(state, state.camera.cameras[String(d.camera)]), aspect: String(d.aspect), output: String(d.output) });
     default:
       return '';
   }
@@ -50,7 +54,7 @@ function doctorPopover(ctx: Ctx, scope: Scope): HTMLElement {
       const rows = results.map((r) => {
         const check = DOCTOR_CHECKS.find((c) => c.key === r.key)!;
         const warn = r.status === 'WARN';
-        const text = warn ? sentence(r) : r.status === 'UNAVAILABLE' ? t('doctor.unavailable') : lbl(check.checks);
+        const text = warn ? doctorSentence(r, ctx.store.get()) : r.status === 'UNAVAILABLE' ? t('doctor.unavailable') : lbl(check.checks);
         let action: HTMLElement | null = null;
         if (warn && r.fixable) action = h('button', { type: 'button', class: 'btn', 'data-tip': lbl(check.fix), onclick: () => cmd.doctorFix(ctx, r.key) }, t('doctor.fix'));
         else if (warn) action = h('span', { class: 'aux' }, t('doctor.fixSoon'));
