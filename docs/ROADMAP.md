@@ -1829,6 +1829,15 @@ un número de las recetas de la hoja distinto del catálogo: todos fallan.
   píxel relativo (frente a sus vecinos) pasa de 0,029 a 0,037 a 256 spp
   (0,071 a 64 spp).
 
+- **Puertas** sobre el árbol final: `cargo fmt`, `clippy -D warnings`
+  (todo el *workspace* con todos los *targets*, y `rt-app` para Windows),
+  la compilación de `rt-wasm`, `cargo test --workspace` en *debug* (624
+  pruebas) y en *release* (630), `rt-core` en WASI escalar y `simd128`
+  (272 cada uno), `tools/wasm-parity.mjs` con la escena de E9
+  (`0xf693c26b`) y el ejemplo (`0x51ade97c`), el *fixture* `e9.rsb`
+  idéntico a lo que escribe `rt`, y `npm run check`, `build` y `vitest`
+  (1830 pruebas).
+
 **Mutaciones de (c)**, todas cazadas: el canal sin el factor 3 (el
 *furnace* del cristal: 0,331 en rojo; la media de las bandas); volver a
 elegir la banda en cada superficie (el *furnace* diverge y el suelo del
