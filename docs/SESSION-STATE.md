@@ -17,14 +17,16 @@ plugins + plugin de película · E12 elección de luz por punto · P6b
 carrusel con deslizador y filtros · N6 despieces y línea de tiempo · M3a
 editor de materiales por nodos (modelo, compilador, editor, vista Rápido) ·
 S2 cuerpos rígidos (Dejar caer, barra de físicas, clips `PHYSICS`) · S4a
-partículas de ambiente (ocho efectos, sección Ambiente, `FXAM`). Cada fase está marcada «hecha» en
+partículas de ambiente (ocho efectos, sección Ambiente, `FXAM`) · U11 denoise
+en directo · U11b intensidad del denoise · E11 suavizado de bordes (Fino por
+defecto). Cada fase está marcada «hecha» en
 `ROADMAP.md` con su párrafo *Hecho / Qué no encajó*.
 
 ## En curso (rama `wip/ccr-8df3f848/<fase>`; brief en `ROADMAP.md`)
 
 | Fase | Rama | Estado y siguiente paso |
 | --- | --- | --- |
-| U11 + U11b + E11 | `u11` | **Entregadas las tres** (`920afb9`; capturas `docs/ui/denoise-live.png`, `denoise-strength.png`, `settings-aa.png`, `meter-filter.png`; puertas del motor en verde; hoja `out/aa-sheet.html`). Veredictos dados. El agente fusionó la cabeza (`83e28ad` + `e3aa8ee`, el mismo arreglo de `node_modules`) y está en las puertas; le falta fusionar `1cdefb0` y entregar. Al recibirla: fusionar, añadir nada a CI (su paso de paridad de E11 va en su rama). |
+| U11 + U11b + E11 | `u11` | **Fusionadas en la rama de sesión** (`1ed4157`; el agente fusionó la cabeza paso a paso hasta `71521bc`, re-fijó los hashes que E12 movió —preset de visor `0x17514303`/`0x6db6039b`, bordes E11 `0x3d8f85de`—, reescribió `o1.rsb`/`ambient.rsb` por el `RNDR` de 64 B y los 88 hashes de escena del manifiesto de L6, y pasó todas las puertas). Árbol `Repackshot-u11` borrado. Pendiente aparte: re-renderizar las 88 miniaturas de L6 tras E12 (punto 2 de abajo), ahora con E9 dentro. |
 | E9 (a, a2, b, c) | `e9` | **Entregada entera** (`9e8b075`: (a)+(a2) energía GGX, (b) medios por paseo aleatorio con estimador de salida, pared fina y ruleta, (c) dispersión por número de Abbe con una longitud de onda por camino; receta `CRYSTAL`, 87 recetas; hojas en el *scratchpad* `e9-deliver/`; puertas en verde; `PINNED_E9_MEDIA_4SPP = 0xf693c26b` antes de E12). **Veredicto dado**: aceptada tal cual (sin MIS espectral, una escena de paridad, grano de color a 64 spp aceptado). El agente está fusionando la cabeza (`4613b14`): integrador con E12/O1/S4a, `MATL`, `cli.rs`, pins, inspector, docs, paso de CI de E9. Después de U11 fusiona la cabeza otra vez. E6 fusiona después de E9 (comparten `MATL`). |
 | E6 (bisel, madera, tela) | `e6` | Bisel confirmado (`59656ed`, `977307e`). **Madera con nudos a 45° en `0c4095f`** (razonamiento 30° → 60° → 45° en su párrafo del ROADMAP; 24 + 3 mutaciones cazadas); faltan las puertas completas del motor (workspace, wasm, paridad, WASI) que corre con la tela; está en la tela (hilos/cm realistas: algodón 40, vaquero 26, lona 12, punto 5…). |
 | O3a → O2 | `o1` | **O3a entregada** (`43840b6`; hoja `out/lens-filters-sheet.html` con tabla de ruido de `rt --filter-noise`; puertas completas en verde). **Veredicto dado** (14-10): motor, conexión a la luz, MIS, pinhole, `--only`, Filtros bajo Cámara hasta O2 y +31 % de rayos en difusiones: aceptados; difusiones y Soft se quedan. **Cinco arreglos antes de fusionar**: (1) dorado y rayas tiñen solo el lóbulo disperso, suelo neutro < 3 % a grado 1 y < 6 % a 2, tabla `s` del dorado = la de la negra; (2) red: cruz ≤ 15 % del ancho a grado 2, más suavizado que líneas; (3) estrella: la longitud escala con el grado (25 % / 60 % / cuadro entero), grosor fijo; (4) glimmer: chispas aleatorias por muestra (nada de rejilla 6×6, nada de anillo) y la conexión elige la chispa que cubre la luz; (5) re-ajustar `GRADES → s` solo en esos tipos. Después, fusionar la cabeza en `o1` y entregar; O2 (lente trazada) sigue en la misma rama (ya tiene WIP de O2 encima). |
@@ -73,7 +75,7 @@ nuevo con el brief de la fase del ROADMAP y la orden de seguir desde el último
    `public/engine/` no se sube: recompilarlo antes de los tests de
    paridad). Empujar solo a `ccr-8df3f848-6ukiky`. Actualizar la
    descripción del PR #7.
-2. Tras E9 + E12: recompilar `rt` (`cargo build -p rt-cli --release` →
+2. Tras E9 (E12 y E11 ya están): recompilar `rt` (`cargo build -p rt-cli --release` →
    `/home/user/bin/rt`) y el wasm; remedir los sets de L6
    (`REPACKSHOT_SET_MEASURES=1 npx vitest run tests/sets.test.ts -t
    measures`; umbrales en `tests/thumb-metrics.ts` `LOOK`), retocar solo
