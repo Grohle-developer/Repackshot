@@ -345,6 +345,15 @@ describe('applying a set', () => {
     const bare = [...new Set(mats(s, setPieceIds(s)))].filter((m) => !mine.has(m)).reduce((st, id) => reduce(st, { type: 'material/set', id, patch: { bevelRadiusMm: 0 } }), s);
     expect(Object.values(bare.materials).filter((m) => m.bevelRadiusMm === 0).length).toBeGreaterThan(0);
     expect(scene(bare)).toEqual(scene(plain));
+    // Nor do its fixes touch it: pieces switched to flat shading stay flat, without a bevel, where they are.
+    const flat = reduce(bare, { type: 'scene/setSmooth', ids: setPieceIds(bare), smooth: false });
+    // Fix all, and each of the two fixes that would reach a piece run on its own (whatever the check says).
+    const fixed = [{ type: 'doctor/fixAll' } as const, { type: 'doctor/fix', key: 'shading' } as const, { type: 'doctor/fix', key: 'bevel' } as const].reduce((st, a) => reduce(st, a), flat);
+    for (const id of setPieceIds(flat)) {
+      expect(fixed.scene.nodes[id].smooth, id).toBe(false);
+      expect(fixed.scene.nodes[id].transform, id).toEqual(flat.scene.nodes[id].transform);
+    }
+    for (const m of mats(flat, setPieceIds(flat)).filter((x) => !mine.has(x))) expect(fixed.materials[m].bevelRadiusMm, m).toBe(0);
   });
 
   it('is one undo step, and undo brings the scene back as it was', () => {
