@@ -162,6 +162,11 @@ decisiones escritas (datos, contratos, revisión), no código.
   salida por plantilla, carpeta, ppp escritos en PNG y JPEG, PNG de 16
   bits y EXR, *Terminar por* muestras o tiempo, cola deshacible, visor de
   resultados con divisor y historial en IndexedDB; 621 tests — **Opus**.
+- **E12** · Elección de luz por punto: la lista plana del árbol de luces de
+  Conty Estevez y Kulla con su cota de orientación, pesos en unidades de
+  irradiancia, MIS con la misma probabilidad en el vértice del rayo BSDF;
+  el atrapasombras y los fotones siguen por flujo; sin chispas en los sets
+  con *pool*; 614 tests del motor — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -1393,7 +1398,7 @@ ejemplo con *Estándar* conserva `0x223515c3`; paridad wasm; hoja
 ajustes y el tiempo de cada uno (los tiempos van en el PR, no en la
 interfaz); captura `docs/ui/settings-aa.png`.
 
-## E12 · Elección de luz por punto (árbol de luces plano) — **Opus**, decisión **Fable**
+## E12 · Elección de luz por punto (árbol de luces plano) — **Opus**, decisión **Fable** — hecha
 
 **Por qué.** Diagnóstico de L6 sobre las miniaturas finales a 96 spp:
 chispas blancas dispersas en el papel de los sets con una luz de *pool*
@@ -1465,6 +1470,208 @@ STRIP_EDGE, BLACK_ON_BLACK y WARM_COOL_CINEMA a 96 spp antes y después
 (los `.rsb` del diagnóstico están en el *scratchpad* de L6), más el
 ejemplo y el horno blanco; a ojo, sin chispas y la misma foto.
 `ARCHITECTURE.md` (motor: elección de luz) y CHANGELOG.
+
+**Hecho.**
+
+- **Elección por punto** (`rt_core::light`, con la cita de Conty Estevez
+  y Kulla, HPG 2018, §4.3, en el comentario del módulo; nada de otro
+  renderizador). Pesos en `x`, todos en unidades de irradiancia (W/m²,
+  distancias en metros; ver *Qué no encajó*): punto y foco
+  `lum(I) · máscara(x) / max(d², r²)`; rectángulo y disco
+  `lum(L) · A · cos θ' / max(d², A)` con la cota de orientación de la
+  referencia (`θo` = 0, `θe` = π/2, `θu` del radio de la esfera que
+  envuelve el panel visto desde `x`); malla emisora, lo mismo desde su
+  centroide con el cono de normales de sus caras como `θo` (de dos caras
+  o cerrada, `cos θ'` = 1 y cuenta una vez); sol `lum(E)`; entorno `π L̄`.
+  La cota se escribe con productos escalares y raíces (`cos(a ± b)`):
+  `f32`, sin `sin`/`exp`/`powf` en el bucle. `Lights::select(x)` suma los
+  pesos y devuelve una `Selection` (el vértice, la suma, los ocho primeros
+  pesos y si es por flujo); `sample_selected` reconstruye la distribución
+  acumulada entrada a entrada, con las mismas operaciones que `build_cdf`
+  y `pick`, hasta la luz que toma. De dos a `MAX_LOCAL_LIGHTS` = 64
+  entradas; por encima, la CDF estática por flujo de antes en todos los
+  sitios (`Lights::select_by_flux`); con una sola, también por flujo: la
+  elección es cierta igual y no cuesta nada (un test la renderiza de los
+  dos modos, bit a bit).
+- **Consistencia MIS**: una sola función, `Lights::pmf(entrada,
+  selección)`, da la probabilidad de la estimación de siguiente evento y la
+  de los pesos MIS. El rayo BSDF lleva `Scattered { pdf, from }`, que
+  presta la `Selection` del vértice donde se muestreó; `crossed`,
+  `crossed_from`, `crossed_without_photons`, `escaped`,
+  `escaped_environment` y `emitter_weight` lo reciben en lugar de la
+  densidad suelta. Por paredes finas y recortes (`offset`), `from`
+  sigue siendo ese vértice: los sucesos rectos no lo cambian. Los campos
+  `pmf` por luz pasan a ser `base` (el peso sin distancia ni orientación)
+  y `entry`.
+- **Cáusticas**: la emisión de fotones sigue por flujo (su CDF propia, sin
+  tocar). **Atrapasombras**: sigue por flujo, su muestra de luz y el MIS
+  de su rayo BSDF (decisión Fable tras ver los datos, abajo): sus píxeles
+  son bit a bit los de d1f356f.
+- **Comprobaciones**: la elección por flujo a través del código
+  nuevo renderiza STRIP_EDGE bit a bit igual que el binario de d1f356f; la
+  misma escena con 1 y 4 hilos da el mismo PNG; con una sola luz la
+  película por punto es la de flujo, bit a bit.
+- **Tests** (cada uno con su mutación, que lo hace fallar):
+  - `light_selection_is_unbiased_with_either_technique_and_with_both`
+    (criterio 1; las estrategias son un mando de `cfg(test)`, `Techniques`):
+    horno blanco MIS 1,00006, solo NEE 1,00006, solo BSDF 1 (exacto);
+    suelo con panel, foco y mundo tenue MIS 1,49876, solo NEE 1,49861,
+    solo BSDF 1,49950 (4096 spp, 8 × 8). Mutación: en `crossed_areas`,
+    `self.pmf(light.entry, &self.select_by_flux(s.from.point))` (el lado
+    BSDF con la probabilidad global) → MIS 1,719 frente a 1,499,
+    falla; la misma en `escaped_environment` → MIS 1,476, falla. Las dos
+    hacen fallar también `next_event_estimation_and_bsdf_rays_agree_on_every_probability`
+    (cada luz, en `light::tests`: un rayo BSDF de la densidad de la muestra
+    de luz recibe exactamente el ½ de la heurística de potencia).
+  - `a_small_spot_close_to_its_paper_is_chosen_where_it_lands` (criterio 2:
+    foco de 20 mm a 300 mm del papel, panel de 1 m a 2,5 m, 64 spp):
+    varianza por píxel (`Film::lum2`) bajo el foco 0,0015 por punto frente
+    a 1,653 por flujo (1/1100; se pedía ≤ 1/4); donde solo ilumina el
+    panel, 0,00024 frente a 0,0043 (no sube: baja). Mutación: en
+    `select`, `if true || !self.per_point || n == 0` (por flujo en todas
+    partes) → las dos varianzas iguales, falla; también
+    `a_light_close_to_the_point_is_chosen_there`.
+  - `a_panel_seen_edge_on_keeps_a_chance` (criterio 3: un panel en cuyo
+    plano, pasado su borde, está `x`; y a 1 mm por encima) y
+    `the_orientation_bound_holds_for_every_point_of_the_panel` (400
+    paneles y puntos al azar: la cota nunca baja del coseno desde ningún
+    punto del panel). Mutación: `let sin_u = 0.0 * bound * inv_d;` (sin
+    `θu`, el coseno del centro) → los dos fallan (probabilidad 0 en el
+    plano; cota 0,944 < 0,962).
+  - `one_light_renders_the_same_pixels_chosen_per_point_or_by_flux`
+    (criterio 4: panel, emisor muestreado, foco, sol y el horno, la
+    película por punto igual bit a bit a la de flujo). Mutación: el peso del
+    foco por su cono interior, `let mask = if self.mask(x) >= 1.0 { 1.0 }
+    else { 0.0 };` → falla. (El test de insesgo no la ve: con luces
+    *glossy*, lo que la estimación de siguiente evento deja lo encuentra
+    el rayo BSDF con peso 1; por eso este test.)
+  - `the_orientation_bound_holds_for_every_face_of_a_one_sided_emitter`
+    (casquete de una cara y puntos alrededor). Mutación: el peso de la
+    malla con `(1.0, 0.0)` en lugar de su cono de normales → falla.
+  - `beyond_sixty_four_lights_every_point_chooses_by_flux` (64 entradas por
+    punto, 65 por flujo, en la muestra y en el MIS). Mutación:
+    `(2..MAX_LOCAL_LIGHTS).contains(&entries.len())` → falla.
+  - `the_shadow_catcher_keeps_choosing_its_light_by_flux` (su cobertura,
+    bit a bit, con dos luces, por punto o por flujo). Mutación: `let
+    selection = lights.select(x);` en el atrapasombras → falla.
+  - `through_thin_walls_mis_takes_the_probabilities_of_the_vertex_the_ray_left`
+    (una pared fina transparente a 140 mm bajo una esfera de luz de
+    200 mm: su probabilidad es 0,166 en el suelo y 0,429 en la pared; MIS
+    0,7238, solo BSDF 0,7197). Mutación: en la rama de los sucesos rectos,
+    `sampled_at = selection;` (el origen pasa a la pared) → MIS 0,6853,
+    falla.
+  - Sin test que la vea, como debe ser: evaluar la probabilidad en el
+    origen desplazado del rayo (`lights.select(next_origin)`) en lugar del
+    punto de sombreado (una diferencia de 10⁻⁴ mm).
+  - Las mutaciones se pasaron sobre el código final, en una copia del
+    motor: cada una hace fallar sus tests (once en total), que pasan sin
+    ella.
+- **Coste** (≤ 3 %): medido con *valgrind* (instrucciones ejecutadas,
+  deterministas e independientes de la carga de la máquina: la diferencia
+  entre 6 y 2 spp a 128², un hilo, así que la preparación de la escena se
+  cancela), binario de d1f356f frente al de E12, por muestra: ejemplo
+  88,5 M → 93,4 M (+5,6 %; rayos +4,7 %), STRIP_EDGE 282,0 M →
+  299,6 M (+6,2 %; rayos +3,3 %), BLACK_ON_BLACK 215,4 M → 227,8 M
+  (+5,8 %; +1,0 %), WARM_COOL_CINEMA 245,8 M → 262,0 M (+6,6 %; +3,2 %),
+  horno blanco 60,0 M → 61,4 M (+2,3 %, una entrada, por flujo). El
+  tiempo de CPU (un hilo, 16 spp, el mínimo de tres en una máquina con
+  carga ~40 en 4 núcleos: ±7 %, el horno da +7 % con el mismo trabajo)
+  dice lo mismo: +5,6 %, +5,5 %, +2,6 %, +6,0 %. A igualdad de muestras el
+  ruido baja (16 spp, dos semillas, RMS en sRGB): varianza ×0,57
+  (STRIP_EDGE), ×0,25 (BLACK_ON_BLACK), ×0,69 (WARM_COOL_CINEMA), ×0,40
+  (ejemplo); a igualdad de ruido, el tiempo ×0,61, ×0,27, ×0,74 y ×0,42.
+  Ver *Qué no encajó*.
+- **Hoja** `out/light-select-sheet.html`: STRIP_EDGE, BLACK_ON_BLACK y
+  WARM_COOL_CINEMA a 96 spp antes (binario de d1f356f) y después, con
+  *denoise* y la imagen sin filtrar debajo, el tiempo de cada una;
+  STRIP_EDGE con una tercera columna, la referencia por flujo a 1024 spp;
+  el ejemplo y el horno blanco. Probabilidad de elegir el *pool* en el
+  papel bajo él (medida, 10⁵ elecciones): STRIP_EDGE 0,08 % por flujo →
+  22,7 % por punto (el entorno, del 76 % al 22 %); BLACK_ON_BLACK 0,27 %
+  → 48,3 %; WARM_COOL_CINEMA 0,08 % → 21,0 %.
+- ***Hashes* movidos** (repinados una vez, con las unidades de
+  irradiancia; los mismos en escalar, SSE2 y AVX2, en WASI escalar y
+  `simd128` y en el `rt.wasm` real):
+  - `PINNED_CENTRE` (`a_tile_of_the_example_has_a_pinned_hash_on_every_platform`):
+    `0x7a5ae28b` → `0x8023c8cf`;
+  - `PINNED_SMALL_SPHERE` (el mismo test): `0xb43bda52` → `0x8b220e08`;
+  - `PINNED_EXAMPLE_4SPP` (`the_whole_example_at_four_samples_has_a_pinned_hash`,
+    `asking_for_passes_changes_no_pixel_of_the_image`, la comprobación de
+    la imagen sin filtrar de `the_denoised_example_has_a_pinned_hash`):
+    `0x223515c3` → `0x8206111f`;
+  - `PINNED_E5_HDRI_4SPP` (`the_e5_example_has_pinned_hashes_on_every_platform`):
+    `0xbf8abd5b` → `0x065d16e0`;
+  - `PINNED_E5_SKY_4SPP` (el mismo test): `0x2fcb098a` → `0x1c24c35c`;
+  - `PINNED_E5C_SKY_4SPP` (`the_e5c_physical_sky_has_a_pinned_hash_on_every_platform`):
+    `0x8bb09f6b` → `0x9f4af472`;
+  - `PINNED_E5B_CAUSTICS_4SPP` (`the_e5b_caustics_have_a_pinned_hash_on_every_platform`
+    y, en `rt-app`, `caustics_give_the_pinned_image_with_any_thread_count`):
+    `0x55d60f2f` → `0x5419866e`;
+  - `PINNED_DENOISED_EXAMPLE_4SPP` (`rt-post`,
+    `the_denoised_example_has_a_pinned_hash`): `0xab15f290` → `0x9ef7c8a0`.
+
+  No se mueven los doce de los pases de X2 (`PINNED_PASS_*`,
+  `PINNED_E5_PASS_*`): no dependen de la luz. Los criterios de fases
+  pendientes que citan `0x223515c3`, `0x55d60f2f` o `0xab15f290` (E9, E10,
+  O1…) se escribieron antes de E12: se leen con los valores nuevos.
+
+**Qué no encajó con el plan.**
+
+- **Las unidades de los pesos.** El brief mezclaba flujo e irradiancia:
+  punto, foco y panel en irradiancia, y sol `π E`, entorno `4π² L̄` y malla
+  con su flujo `π L A` por cara, que frente a la irradiancia que dan pesan
+  π, 4π y π–2π veces de más. Con los pesos del brief el *pool* de
+  STRIP_EDGE se elegía el 6,4 % de las veces en su papel y la cúpula se
+  llevaba el 78 % de las muestras de luz; en unidades de irradiancia, el
+  22,7 % y el 22 %. Decisión Fable: unidades de irradiancia (sol `E`,
+  entorno `π L̄`, malla `L · A · cos θ' / max(d², A)` desde su centroide,
+  una cara). RMSE frente a la referencia de 1024 spp (STRIP_EDGE, con
+  *denoise*): antes 0,0200, pesos del brief 0,0114, unidades de
+  irradiancia 0,0113 (las dos en el suelo de ruido de la referencia): el
+  RMSE no decide entre ellas; deciden la física y esas probabilidades.
+- **El atrapasombras.** Su sombra es el cociente de la luz que llega y la
+  que llegaría en **una** muestra, así que su valor converge a algo que
+  depende de cómo se elige la luz, no solo de la escena. En la escena de
+  `the_shadow_catcher_keeps_the_shadow_and_writes_alpha`, la cobertura de
+  la sombra en (−170, 0) a 1024 spp: por flujo 0,356; por punto con los
+  pesos del brief 0,207 (el test, que pide > 0,3, fallaba); por punto en
+  irradiancia 0,429; la verdad, en un suelo visible con luz directa,
+  0,286. Decisión Fable: E12 deja el atrapasombras por flujo (un test lo
+  fija: `the_shadow_catcher_keeps_choosing_its_light_by_flux`); **un
+  atrapasombras de cociente de sumas (acumular por píxel la luz que llega
+  y la abierta, y dividir al resolver) es E13** y convergería a la verdad
+  con cualquier elección.
+- **Los números del diagnóstico.** El brief daba al *pool* un 3,9–6,5 %
+  por flujo; medido en el papel bajo él, 0,08 % en STRIP_EDGE: el centro
+  de la escena queda fuera del cono del foco, así que pesaba la veinteava
+  parte de su flujo (la regla de L4 para un foco apuntado fuera).
+- **El búfer de pila.** Escrito como pedía el brief (64 pesos por vértice
+  en la pila), el perfil (*callgrind*) daba al `memset` de esos 256 bytes
+  el 1,9 % de todas las instrucciones del ejemplo: la `Selection` guarda
+  la suma y los ocho primeros pesos (32 bytes), y la elección rehace la
+  distribución acumulada hasta la luz que toma, con las mismas operaciones
+  (los mismos píxeles, bit a bit); pasado el octavo, los pesos se vuelven
+  a calcular. El límite de 64 entradas se queda como regla.
+- **El coste por muestra pasa del 3 %**: +5,6 a +6,6 % de instrucciones en
+  las escenas de referencia con varias luces (arriba). El perfil
+  (*callgrind*, ejemplo) lo reparte entre trabajo útil de más (las
+  muestras de luz caen más a menudo en una luz que llega al punto: +17 %
+  de rayos de sombra y +23 % de densidades BSDF para el MIS) y la propia
+  cota (por panel y vértice, tres raíces y dos divisiones) con su
+  fontanería. Se probaron y midieron seis versiones (+8,7 % la primera);
+  la que queda no copia ni rellena nada del tamaño de la lista y elige por
+  flujo, sin coste, con una sola entrada. Como el ruido baja más de lo
+  que sube el coste, a igualdad de ruido sale entre 1,4 y 3,8 veces más
+  rápido; el 3 % no se cumple: queda anotado.
+- **No hay `engine:bench`** en `package.json`, y `rt-bench` mide el
+  rendimiento de la BVH, no el integrador: el coste se midió con `rt` (ver
+  arriba).
+- **La cota de la referencia lleva también el coseno del receptor**
+  (`|cos θ'i|`, con la normal del punto); el brief no lo pide y la API de
+  la elección solo conoce el punto: queda para K4.
+- **Las estrategias de los tests** (`Techniques`, solo en `cfg(test)`):
+  *solo NEE* es válida sin caminos especulares hacia la luz; el test de
+  paredes finas compara MIS con *solo BSDF*.
 
 ## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
 

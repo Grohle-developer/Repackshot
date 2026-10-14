@@ -24,6 +24,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Motor
 
+- **Elección de luz por punto** (E12): la estimación de siguiente evento elige cada vez la luz por lo que puede iluminar el punto que se sombrea (las cotas de Conty Estevez y Kulla, HPG 2018), no por su flujo en toda la escena. Un foco pequeño cerca de su papel —el *pool* de STRIP_EDGE, BLACK_ON_BLACK o WARM_COOL_CINEMA— deja de sembrar chispas blancas en el papel: bajo el foco se elige el 21–48 % de las veces en lugar del 0,08–0,3 %. Con una sola luz la imagen es la misma, bit a bit; el atrapasombras y las cáusticas siguen eligiendo por flujo (el atrapasombras conserva su aspecto); los mismos bits con cualquier número de hilos y en el navegador (E12).
 - El **contrato RSB de las texturas** queda escrito para M2b (`ARCHITECTURE.md` §5.2: sección `IMGS`, bloque de texturas de `MATL` desde el byte 100, UV en `MESH`); el escritor lo produce solo cuando se le pide, y hasta entonces los bytes de cualquier escena son los de antes (M2a).
 
 ## v0.1.5 — 2026-10-14
