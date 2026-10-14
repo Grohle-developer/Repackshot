@@ -502,7 +502,11 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   a la distancia del objetivo de la cámara; 0 = 3). Un RSB anterior no pide
   ni *denoise* ni cáusticas. Desde U11b (56 B), al final,
   `denoise_strength` (f32 en `0..=1`; fuera de ese rango el RSB no es
-  válido): cuánto de la imagen filtrada se entrega; sin él, 1.
+  válido): cuánto de la imagen filtrada se entrega; sin él, 1. Desde E11
+  (64 B), al final, `pixel_filter` (u32: 0 la caja de un píxel, lo de
+  siempre; 1 el centro; 2 tienda; 3 Blackman–Harris; desconocido = caja) y
+  `edge_supersample` (u32: muestras por índice de un píxel de borde; 0 y
+  1, una; más de 16, RSB no válido); sin ellos, la imagen de antes.
 - El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
@@ -767,6 +771,61 @@ mismo mando), `rt --denoise-strength` y el wasm
 final no se filtra (no lleva la bandera 64 ni la copia ruidosa) y el
 carril del visor no trabaja. Cambiar la intensidad vuelve a empezar el
 visor, como el resto de *Avanzado*.
+
+### 5.2 ter · Filtro de píxel y muestras de borde (E11)
+
+`rt_core::pixel_filter`. **Filtro por muestreo de importancia**: la
+posición uniforme en el píxel que da el muestreador (`DIM_CAMERA`, dos
+dimensiones) se desplaza, eje a eje, con la inversa de la CDF del filtro
+(los cuatro son separables); la muestra pesa 1 y va a su píxel, así que la
+imagen sigue siendo la media de las muestras de cada píxel y una baldosa no
+depende de sus vecinas. *Estándar* (0) es la posición tal cual (los mismos
+bits que antes: `0x223515c3` intacto); *Ninguno* (1), 0,5 en los dos ejes;
+*Suave* (2), tienda `1 − |x|` en `[−1, 1]`, inversa con dos raíces
+(`f32::sqrt`, correctamente redondeada en todas partes, wasm incluido);
+*Fino* (3), Blackman–Harris de radio 1,5 px (Harris 1978, coeficientes
+0,35875 · 0,48829 · 0,14128 · 0,01168) con su CDF inversa en una tabla
+`f32` de 256 valores en `u = i/255` (`BLACKMAN_HARRIS_INV_CDF`; la hace y
+la comprueba un test, por bisección sobre la integral de la ventana en
+`f64`) interpolada linealmente: ni `exp` ni `sin` ni `cos` al renderizar.
+La posición en pantalla (para la imagen de fondo) se recorta a `[0, 1]`
+cuando el filtro pasa del borde de la imagen.
+
+**Muestras de borde.** `EdgeMask::of(escena, preparado, baldosa, isa)`
+lanza los rayos centrales (los de los pases exactos, `centre_ray` y
+`Exact`) de la baldosa y de un anillo de un píxel a su alrededor (dentro de
+la imagen) y marca como borde el píxel cuyo vecino 3 × 3 ve otra pieza, otro
+material o una profundidad a más del 2 %: no depende de cómo se corte la
+imagen en baldosas. `render_tile_edges` y `render_tile_albedo_edges` hacen
+lo de siempre fuera de los bordes; en un borde, la muestra de índice `s`
+son `k` muestras de índices `s·k … s·k + k − 1` de la propia secuencia del
+píxel, y se suma **su media una sola vez**. Así cada píxel sigue teniendo
+una aportación por índice (el peso de la película, el contador de muestras
+de los anfitriones, la varianza de la media que usa el *denoise*: todo
+igual), y un píxel de borde acaba con `k` veces las muestras. El mapa de
+fotones de las cáusticas de `s` sirve a sus `k` muestras. Los anfitriones
+calculan la máscara una vez por baldosa: `rt` y el lanzador en un
+`OnceLock` por baldosa (la primera que la renderiza), el wasm en su escena
+cargada por rectángulo (`KEPT_EDGE_MASKS`, se vacía al actualizar la
+escena). En el ejemplo son el 1,8 % de los píxeles. *Hash* fijado del
+ejemplo con *Fino + bordes ×2*: `PINNED_E11_EDGES_4SPP` = `0xf3787fe7`,
+igual en escalar, SSE2 y AVX2, con baldosas de 32 y de 23, por `rt` y el
+lanzador con 1, 4 y 16 hilos, por el `rt.wasm` real (`wasm-parity.mjs`,
+`rt --write-e11-example`) y por el código de la página.
+
+**En la interfaz** son ajustes de la aplicación (`engine.fastAa`, de
+fábrica 4×, y `engine.pixelFilter`, de fábrica *Fino*: los mismos rayos
+que la caja; `core/antialias.ts`): `PathTracerEngine` y
+`NativeEngine` (`setPixelFilter`) los ponen en la vista y en cada render
+(`TracerView.pixelFilter`, `.edgeSupersample`; los fotogramas de gesto,
+sin muestras de borde), y su `status()` dice el filtro de la imagen en
+pantalla. *Rápido*: `PreviewEngine.setMsaa(n)`; con el número de muestras
+del lienzo (`antialias: true`, normalmente 4) dibuja en el lienzo como
+siempre; con otro, en un destino de `n` muestras (como mucho
+`capabilities.maxSamples`) que three.js trata como la pantalla
+(`isXRRenderTarget`: curva de tono y sRGB en cada material, color de
+fondo en sRGB) guardado en `RGBA8` sin codificar ni decodificar, y lo
+copia tal cual al lienzo antes de los contornos y el *gizmo*.
 
 ### 5.3 · En el navegador: workers
 

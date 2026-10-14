@@ -1045,7 +1045,7 @@ título del grupo en versalitas auxiliares:
 | | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
-| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
+| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **Suavizado de bordes** (E11, abajo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
 | | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
@@ -1060,6 +1060,35 @@ desplegable). Una fila con un valor distinto del de fábrica lleva un
 punto y, al pasar, *Restablecer* en línea; al pie de cada sección,
 *Restablecer esta sección*. Lo que no existe todavía se ve,
 deshabilitado, con *próximamente*.
+
+**Motor de renderizado ▸ Suavizado de bordes** (fase E11). Dos listas,
+cada una ordenada de menos a más coste, sin cifras de coste (el orden y
+una frase de ayuda; regla 10). Son ajustes de la aplicación, no del
+proyecto: no se deshacen ni viajan en el `.repack.json`; en escritorio
+se guardan con los demás en `settings.json` del lanzador.
+
+- **Modo Rápido**: segmento *Ninguno · MSAA 2× · MSAA 4× · MSAA 8×*, por
+  defecto 4×. La línea auxiliar dice lo que da el dispositivo: *Este
+  dispositivo llega a N×; dibuja ahora: M×* (o que no tiene
+  multimuestreo); una opción por encima de su máximo dibuja con el máximo
+  (lo dice su *tooltip*). Cambia al momento, sin volver a empezar nada.
+- **Completo y render**: una lista vertical numerada, una opción por
+  fila con su nombre y su frase: **1 Ninguno** (todas las muestras por el
+  centro del píxel: bordes dentados, el más barato), **2 Estándar** (una
+  caja de un píxel: lo que renderiza un RSB que no dice filtro), **3 Suave**
+  (tienda de dos píxeles), **4 Fino** (Blackman–Harris de tres píxeles,
+  el habitual de producción; **por defecto**: cuesta los mismos rayos que
+  *Estándar*), **5 Fino + bordes ×2** (el doble de muestras donde cambian
+  la pieza, el material o la profundidad), **6 Fino + bordes ×4**. Vale
+  para el visor *Completo* y para todos los renders desde ese momento;
+  cambiarla vuelve a empezar la imagen del visor. Los fotogramas de gesto
+  (resolución reducida) usan el filtro pero no las muestras extra de
+  borde. Las flechas recorren la lista.
+
+En *Completo*, la línea del medidor que dice lo que el motor hace de la
+imagen añade **Filtro · Estándar** (o el que sea) cuando no es el de
+fábrica, *Fino*; en *Rápido*, **MSAA 2×** o **Sin multimuestreo** cuando
+no dibuja con 4×.
 
 **Ratón y caja de selección.** La fila *Ratón* (Preferencias ▸ Visor y
 navegación) dice en su línea auxiliar qué botón orbita (el derecho

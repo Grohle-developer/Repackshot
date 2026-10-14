@@ -56,6 +56,7 @@ import type { EngineStatus, PickHit, RenderOptions } from './engine';
 import { QUIET_MS, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
 import { CAUSTICS_PRESETS, DENOISE_IMAGE, denoiseIn } from '../core/caustics';
 import { advancedTouchesView, engineFieldsOf } from '../core/render';
+import { DEFAULT_PIXEL_FILTER, pixelFilterFields, type PixelFilterFields, type PixelFilterSetting } from '../core/antialias';
 import { parsePasses } from './pass-planes';
 import { abortError, budgetProgress, type PassBudget } from './schedule';
 import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
@@ -240,6 +241,8 @@ interface ViewJob {
   caustics: boolean;
   /** U11: the live denoise switch the launcher has for it (a full-resolution view), and the number of its image. */
   live: boolean;
+  /** E11: the pixel filter and edge samples it was posted with. */
+  filter: PixelFilterFields;
   version: number;
   /** U11: denoised images it has shown. */
   cleanImages: number;
@@ -314,6 +317,8 @@ export class NativeEngine {
   private limit: ViewportLimit = { by: 'OUTPUT', samples: 1024, seconds: 120 };
   /** Settings ▸ Render engine ▸ While a render runs: the viewport keeps a share of the threads, or waits. */
   private whileRender: 'SHARE' | 'PAUSE' = 'SHARE';
+  /** E11: the pixel filter and edge samples asked of views and finals. */
+  private filter: PixelFilterFields = pixelFilterFields(DEFAULT_PIXEL_FILTER);
 
   constructor(
     private readonly api: NativeTransport,
@@ -362,6 +367,14 @@ export class NativeEngine {
     if (mode === this.whileRender) return;
     this.whileRender = mode;
     this.lastUpdate = null;
+    this.restartWanted = true;
+  }
+
+  /** E11: the pixel filter and the edge samples of the view and of every final from now on (the view starts over). */
+  setPixelFilter(setting: PixelFilterSetting): void {
+    const f = pixelFilterFields(setting);
+    if (f.pixelFilter === this.filter.pixelFilter && f.edgeSupersample === this.filter.edgeSupersample) return;
+    this.filter = f;
     this.restartWanted = true;
   }
 
@@ -570,6 +583,9 @@ export class NativeEngine {
         // switch is a query of the job, so the scene is the same either way).
         ...engineFieldsOf(state.render.advanced, 'VIEWPORT'),
         denoise: scale > 1 ? 0 : DENOISE_IMAGE,
+        // E11: a gesture's frames keep the filter but not the edge samples.
+        pixelFilter: this.filter.pixelFilter,
+        edgeSupersample: scale > 1 ? 1 : this.filter.edgeSupersample,
       },
     };
   }
@@ -642,7 +658,7 @@ export class NativeEngine {
     this.failure = null;
     this.loadedMeshKey = built.meshKey;
     this.lastUpdate = update;
-    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, denoised: false, caustics: false, live, version: 0, cleanImages: 0, expectMs: 0, alive: true, abort: new AbortController() };
+    const job: ViewJob = { id, gen, scale, acc: new Accumulator(view.width, view.height), key: bytesKey(update), share, pass: 0, samples: 0, seconds: 0, done: false, paused: false, shared: false, threads: this.info.threads, denoised: false, caustics: false, live, filter: { pixelFilter: view.pixelFilter ?? 0, edgeSupersample: view.edgeSupersample ?? 1 }, version: 0, cleanImages: 0, expectMs: 0, alive: true, abort: new AbortController() };
     this.job = job;
     this.dirty.clear();
     this.shownPass = 0;
@@ -931,6 +947,7 @@ export class NativeEngine {
       ...(full && job.denoised ? { denoised: true } : {}),
       ...(full && job.live !== undefined ? { liveDenoise: { images: job.cleanImages } } : {}),
       ...(job?.caustics && this.state ? { caustics: CAUSTICS_PRESETS[this.state.render.advanced.causticsQuality].photons } : {}),
+      ...(full ? { pixelFilter: { ...job.filter } } : {}),
     };
   }
 
@@ -973,6 +990,7 @@ export class NativeEngine {
         ...(opts.time !== undefined ? { time: opts.time } : {}),
         ...(opts.advanced ? { advanced: opts.advanced, ...engineFieldsOf(opts.advanced, 'RENDER') } : {}),
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
+        ...this.filter,
       };
       const built = this.source.build(state, view);
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.

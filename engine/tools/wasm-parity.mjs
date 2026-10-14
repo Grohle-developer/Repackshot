@@ -23,6 +23,10 @@
 // them inside the module: each worker traces the photon map of a sample itself, and the image must
 // still have the native hash (`PINNED_E5B_CAUSTICS_4SPP`).
 //
+// A scene with a pixel filter and edge samples (E11, `rt --write-e11-example`) renders them inside the
+// module too: it finds each tile's edges from its centre rays, and the image must have the native hash
+// (`PINNED_E11_EDGES_4SPP`).
+//
 // `--denoise` (E5b-1) also denoises the image as the page's pool does: RGBA tiles
 // (`rt_render_tile_rgba`), the squared luminance of every sample summed in f32 next to them (the
 // page's rule, src/render/tiles.ts), the guide passes, then `rt_denoise` over three bands of rows,

@@ -20,7 +20,9 @@
 //             Where one sample of the whole view takes longer than that (a loaded machine, swiftshader), nothing newer
 //             exists to denoise: then the image must come one denoise after its pass (the lane never waits with
 //             something to do), and the check says how many gaps were bounded by the passes;
-//   (shot)    docs/ui/denoise-live.png: the top bar with Denoise on and the Full viewport denoised.
+//   (shot)    docs/ui/denoise-live.png: the top bar with Denoise on and the Full viewport denoised;
+//   (strength) U11b: Render settings ▸ Advanced ▸ Denoise ▸ Strength, 100 % by default with its note; 50 % and the view is
+//             denoised again; docs/ui/denoise-strength.png.
 //
 // Results: out/denoise-live-check.json.
 
@@ -257,6 +259,31 @@ async function checks(browser) {
   await page.keyboard.press('Control+Shift+r');
   s = await until(page, (x) => x.mode === 'full', 10000, 50);
   ok(s !== null && s.disabled === false, 'back in Full it is not enabled', f);
+  // (strength, U11b) Render settings ▸ Advanced ▸ Denoise ▸ Strength: 100 % by default under the denoise row; 50 %
+  // starts the view over and it is denoised again (the blend); the shot; back to 100 % by undo.
+  await page.locator('canvas[aria-label="viewport"]').focus();
+  await page.keyboard.press('Control+Enter');
+  await page.waitForSelector('.rw[role="dialog"]');
+  const adv = page.locator('.rw [data-section="rw.advanced"]');
+  if ((await adv.getAttribute('data-collapsed')) !== null) await adv.locator('.section-head').click();
+  const strengthRow = page.locator('.rw .rw-row', { has: page.locator('.rw-label', { hasText: /^Strength$/ }) });
+  await strengthRow.scrollIntoViewIfNeeded();
+  const field = strengthRow.locator('[role="spinbutton"]').first();
+  const before = (await field.textContent())?.trim();
+  const note = (await strengthRow.locator('.note').textContent()) ?? '';
+  await field.dblclick();
+  await field.locator('input').fill('50');
+  await field.locator('input').press('Enter');
+  await page.waitForTimeout(300);
+  const after = (await field.textContent())?.trim();
+  s = await until(page, (x) => x.denoised === '1' && x.samples >= 1, 60000, 50);
+  await page.mouse.move(5, 895);
+  await page.screenshot({ path: join(SHOTS, 'denoise-strength.png') });
+  log.strength = { before, after, note: note.slice(0, 80), denoisedAgain: s !== null };
+  ok(before === '100 %' && after === '50 %' && /How much of the denoised image/.test(note) && s !== null, `strength: ${JSON.stringify(log.strength)}`, f);
+  await page.keyboard.press('Escape');
+  await page.locator('canvas[aria-label="viewport"]').focus();
+  await page.keyboard.press('Control+z');
   ok(errors.length === 0, `errors in the page: ${errors.join(' | ')}`, f);
   await context.close();
   // Spanish: the label.

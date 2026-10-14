@@ -1,9 +1,11 @@
 //! The renderer: tiles of pixels, one sample at a time.
 //!
 //! [`render_tile`] renders one sample of every pixel of a tile with the path tracer of
-//! [`crate::integrator`]: a camera ray per pixel (box filter: the position inside the pixel is
-//! uniform; a Gaussian or Blackman–Harris filter can replace it by weighting splats later), the
-//! point on the lens of a thin-lens camera, then the path. The random numbers come from the
+//! [`crate::integrator`]: a camera ray per pixel (where in or around the pixel it passes is the
+//! scene's pixel filter, [`crate::pixel_filter`]; by default the box of the pixel, a uniform
+//! position inside it), the point on the lens of a thin-lens camera, then the path. With edge
+//! samples (E11, [`render_tile_edges`]) an edge pixel renders several samples per sample index
+//! and splats their mean. The random numbers come from the
 //! [`PixelSampler`] of (scene seed, pixel, sample index) only, so a tile can be rendered by any
 //! thread, in any order, cut in any way, on any platform: the film is the same. Accumulating
 //! samples `0..n` into a film in that order is progressive rendering; the hosts do it per tile.
@@ -14,10 +16,12 @@
 //! touches the image's film or its random numbers.
 
 use crate::caustics::PhotonMap;
+use crate::color::Rgb;
 use crate::image::Film;
 use crate::integrator::{first_hit, radiance_with, BvhTracer, Prepared, Tracer};
 use crate::math::Ray;
 use crate::passes::{albedo_of, Exact, PassFilm, PASS_ALBEDO, PASS_EXACT};
+use crate::pixel_filter::{self, EdgeMask};
 use crate::sampler::{PixelSampler, DIM_CAMERA, DIM_LENS};
 use crate::scene::Scene;
 use crate::simd::Isa;
@@ -55,18 +59,25 @@ pub fn tile_grid(width: u32, height: u32, size: u32) -> Vec<TileRect> {
     tiles
 }
 
-/// The camera ray of image-space pixel `(x, y)` for the samples of `sampler`: a uniform position
-/// inside the pixel (box filter) and, for a thin lens, a point on the aperture.
+/// The camera ray of image-space pixel `(x, y)` for the samples of `sampler`: a position in or
+/// around the pixel by the scene's pixel filter ([`pixel_filter::offset`]; the box: uniform
+/// inside it) and, for a thin lens, a point on the aperture.
 pub fn camera_ray(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> Ray {
     camera_sample(scene, sampler, x, y).0
 }
 
 /// [`camera_ray`] and the position it passes through on the screen, `(u, v)` in `[0, 1]²` from
-/// the top left (where a background image is looked up).
+/// the top left (where a background image is looked up; a filter wider than the pixel can pass
+/// beyond the image's border, and the position is then the border's).
 pub fn camera_sample(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> (Ray, (f32, f32)) {
     let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
     let aspect = width as f32 / height as f32;
     let (du, dv) = sampler.get2(DIM_CAMERA);
+    let filter = scene.render.pixel_filter;
+    let (du, dv) = (
+        pixel_filter::offset(filter, du),
+        pixel_filter::offset(filter, dv),
+    );
     let u = (x as f32 + du) / width as f32;
     let v = (y as f32 + dv) / height as f32;
     let lens = if scene.camera.lens_radius() > 0.0 {
@@ -74,7 +85,10 @@ pub fn camera_sample(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> (
     } else {
         (0.0, 0.0)
     };
-    (scene.camera.generate_ray(aspect, u, v, lens), (u, v))
+    (
+        scene.camera.generate_ray(aspect, u, v, lens),
+        (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)),
+    )
 }
 
 /// Renders one sample of every pixel of `tile` into `film` and returns the number of rays cast
@@ -140,10 +154,59 @@ pub fn render_tile_photons(
         isa,
     };
     let photons = photons.filter(|m| m.iteration() == sample_index && prepared.has_caustics());
-    render_tile_traced(scene, prepared, tile, sample_index, film, &tracer, photons)
+    render_tile_traced(
+        scene,
+        prepared,
+        tile,
+        sample_index,
+        film,
+        &tracer,
+        photons,
+        None,
+    )
+}
+
+/// [`render_tile_photons`] with the edge samples of E11: the edge pixels of `edges` (made by
+/// [`EdgeMask::of`] for this scene; its tile is the one rendered) render `k` samples, the sample
+/// indices `sample_index · k … sample_index · k + k − 1` of their own sequence, and splat their
+/// mean once; the other pixels render as [`render_tile_photons`] does. So every pixel still gets
+/// one splat per sample index, and the image does not depend on threads or tiles. The photon map
+/// of `sample_index` serves all of an edge pixel's samples.
+pub fn render_tile_edges(
+    scene: &Scene,
+    prepared: &Prepared,
+    photons: Option<&PhotonMap>,
+    edges: &EdgeMask,
+    sample_index: u32,
+    film: &mut Film,
+    isa: Isa,
+) -> u64 {
+    let tracer = BvhTracer {
+        geometry: &scene.geometry,
+        isa,
+    };
+    let photons = photons.filter(|m| m.iteration() == sample_index && prepared.has_caustics());
+    render_tile_traced(
+        scene,
+        prepared,
+        edges.tile(),
+        sample_index,
+        film,
+        &tracer,
+        photons,
+        Some(edges),
+    )
+}
+
+/// The sample indices of sample `sample_index` of a pixel that takes `k` per index (E11): `k`
+/// consecutive ones of its sequence (wrapping past `u32::MAX`, far beyond any host's samples).
+#[inline]
+fn sub_sample(sample_index: u32, k: u32, j: u32) -> u32 {
+    sample_index.wrapping_mul(k).wrapping_add(j)
 }
 
 /// The body of the tile renderers, generic over how rays are traced.
+#[allow(clippy::too_many_arguments)]
 fn render_tile_traced<T: Tracer>(
     scene: &Scene,
     prepared: &Prepared,
@@ -152,6 +215,7 @@ fn render_tile_traced<T: Tracer>(
     film: &mut Film,
     tracer: &T,
     photons: Option<&PhotonMap>,
+    edges: Option<&EdgeMask>,
 ) -> u64 {
     let (width, height) = (scene.render.width, scene.render.height);
     let x_end = tile.x.saturating_add(tile.w).min(width);
@@ -159,12 +223,30 @@ fn render_tile_traced<T: Tracer>(
     let mut rays = 0u64;
     for y in tile.y..y_end {
         for x in tile.x..x_end {
-            let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
-            let (ray, screen) = camera_sample(scene, &sampler, x, y);
-            let (c, alpha) = radiance_with(
-                scene, prepared, tracer, &sampler, ray, screen, photons, &mut rays,
-            );
-            film.splat_alpha(x, y, c, alpha);
+            let k = edges.map_or(1, |e| e.factor_at(x, y));
+            if k <= 1 {
+                let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
+                let (ray, screen) = camera_sample(scene, &sampler, x, y);
+                let (c, alpha) = radiance_with(
+                    scene, prepared, tracer, &sampler, ray, screen, photons, &mut rays,
+                );
+                film.splat_alpha(x, y, c, alpha);
+                continue;
+            }
+            // An edge pixel: the mean of its k samples of this index, splatted once.
+            let (mut sum, mut coverage) = (Rgb::BLACK, 0.0f32);
+            for j in 0..k {
+                let index = sub_sample(sample_index, k, j);
+                let sampler = PixelSampler::new(scene.render.seed, x, y, index);
+                let (ray, screen) = camera_sample(scene, &sampler, x, y);
+                let (c, alpha) = radiance_with(
+                    scene, prepared, tracer, &sampler, ray, screen, photons, &mut rays,
+                );
+                sum += c;
+                coverage += alpha;
+            }
+            let inv = 1.0 / k as f32;
+            film.splat_alpha(x, y, sum * inv, coverage * inv);
         }
     }
     rays
@@ -236,6 +318,39 @@ pub fn render_tile_albedo(
     film: &mut PassFilm,
     isa: Isa,
 ) -> u64 {
+    render_tile_albedo_traced(scene, prepared, tile, sample_index, film, isa, None)
+}
+
+/// [`render_tile_albedo`] with the edge samples of E11, as [`render_tile_edges`] renders the
+/// image: an edge pixel adds the mean albedo of its `k` samples of `sample_index`.
+pub fn render_tile_albedo_edges(
+    scene: &Scene,
+    prepared: &Prepared,
+    edges: &EdgeMask,
+    sample_index: u32,
+    film: &mut PassFilm,
+    isa: Isa,
+) -> u64 {
+    render_tile_albedo_traced(
+        scene,
+        prepared,
+        edges.tile(),
+        sample_index,
+        film,
+        isa,
+        Some(edges),
+    )
+}
+
+fn render_tile_albedo_traced(
+    scene: &Scene,
+    prepared: &Prepared,
+    tile: TileRect,
+    sample_index: u32,
+    film: &mut PassFilm,
+    isa: Isa,
+    edges: Option<&EdgeMask>,
+) -> u64 {
     if film.mask & PASS_ALBEDO == 0 {
         return 0;
     }
@@ -248,14 +363,27 @@ pub fn render_tile_albedo(
     let mut rays = 0u64;
     for y in tile.y..y_end {
         for x in tile.x..x_end {
-            let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
-            let ray = camera_ray(scene, &sampler, x, y);
-            rays += 1;
-            film.add_albedo(
-                x,
-                y,
-                albedo_of(scene, first_hit(scene, prepared, &tracer, &ray)),
-            );
+            let k = edges.map_or(1, |e| e.factor_at(x, y));
+            if k <= 1 {
+                let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
+                let ray = camera_ray(scene, &sampler, x, y);
+                rays += 1;
+                film.add_albedo(
+                    x,
+                    y,
+                    albedo_of(scene, first_hit(scene, prepared, &tracer, &ray)),
+                );
+                continue;
+            }
+            let mut sum = Rgb::BLACK;
+            for j in 0..k {
+                let index = sub_sample(sample_index, k, j);
+                let sampler = PixelSampler::new(scene.render.seed, x, y, index);
+                let ray = camera_ray(scene, &sampler, x, y);
+                rays += 1;
+                sum += albedo_of(scene, first_hit(scene, prepared, &tracer, &ray));
+            }
+            film.add_albedo(x, y, sum * (1.0 / k as f32));
         }
     }
     rays
@@ -293,6 +421,7 @@ pub(crate) fn render_tile_brute_force(
         sample_index,
         film,
         &BruteForce(&scene.geometry),
+        None,
         None,
     )
 }
@@ -753,6 +882,49 @@ mod tests {
 
     /// Pinned hash of the E5b-1 example (caustics) at 4 samples per pixel.
     pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x55d6_0f2f;
+
+    /// Renders all of `scene` as a host does with edge samples (E11): 32-pixel tiles, an
+    /// [`EdgeMask`] per tile, samples `0..4`, and hashes the resolved film.
+    pub(crate) fn scene_4spp_edges_hash(scene: &Scene, tile_size: u32, isa: Isa) -> u32 {
+        let prepared = Prepared::new(scene);
+        let (w, h) = (scene.render.width, scene.render.height);
+        let mut film = Film::new(w, h);
+        for tile in tile_grid(w, h, tile_size) {
+            let edges = EdgeMask::of(scene, &prepared, tile, isa);
+            for sample in 0..4 {
+                render_tile_edges(scene, &prepared, None, &edges, sample, &mut film, isa);
+            }
+        }
+        fnv1a(&film.resolve())
+    }
+
+    #[test]
+    fn the_e11_example_has_a_pinned_hash_on_every_platform_and_for_any_tile_cut() {
+        // E11: the example with the Blackman–Harris filter and twice the samples on its edges.
+        // `tools/wasm-parity.mjs` checks the real module against it (`rt --write-e11-example`);
+        // with the standard filter and no edge samples the example keeps PINNED_EXAMPLE_4SPP.
+        let scene = crate::example::e11_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_edges_hash(&scene, 32, isa);
+            eprintln!("E11 example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_E11_EDGES_4SPP, "on {}", isa.name());
+        }
+        assert_eq!(
+            scene_4spp_edges_hash(&scene, 23, Isa::detect()),
+            PINNED_E11_EDGES_4SPP
+        );
+        let mut plain = scene.clone();
+        plain.render.pixel_filter = crate::pixel_filter::FILTER_STANDARD;
+        plain.render.edge_supersample = 1;
+        assert_eq!(
+            scene_4spp_edges_hash(&plain, 32, Isa::detect()),
+            PINNED_EXAMPLE_4SPP
+        );
+    }
+
+    /// Pinned hash of the E11 example (fine filter, edges ×2) at 4 samples per pixel.
+    pub(crate) const PINNED_E11_EDGES_4SPP: u32 = 0xf378_7fe7;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

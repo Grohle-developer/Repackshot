@@ -2,6 +2,7 @@
 // size (top right), quality meter (bottom left), axes and part size (bottom
 // right), hover label, pick modes and drag and drop of materials (pointer events) and files.
 
+import { DEFAULT_PIXEL_FILTER, pixelFilterSetting } from '../../core/antialias';
 import { activeCamera, cameraBasis, focusDistanceTo, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox } from '../../core/math';
 import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
@@ -231,7 +232,14 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
       note.style.display = issue ? '' : 'none';
       el.dataset.issue = issue ? issue.kind.toLowerCase() : '';
       // What the engine reports of the image (E5b-1): denoised, and the caustics' photons per sample.
-      const parts = [st.denoised ? t('viewport.meterDenoised') : '', st.caustics ? t('viewport.meterCaustics', { n: formatNumber(st.caustics, lang, 0) }) : ''].filter(Boolean);
+      // E11: and the pixel filter it renders with, when it is not the factory one (Fine): the usual case stays quiet.
+      const shownFilter = st.pixelFilter ? pixelFilterSetting(st.pixelFilter) : null;
+      const filter = shownFilter !== DEFAULT_PIXEL_FILTER ? shownFilter : null;
+      const parts = [
+        st.denoised ? t('viewport.meterDenoised') : '',
+        st.caustics ? t('viewport.meterCaustics', { n: formatNumber(st.caustics, lang, 0) }) : '',
+        filter ? t('viewport.meterFilter', { name: t(dyn(`set.engine.pixelFilter.${filter}`)) }) : '',
+      ].filter(Boolean);
       extras.textContent = parts.join(' · ');
       extras.style.display = parts.length ? '' : 'none';
       const on = cmd.viewportDenoiseOn(ctx.store.get());
@@ -244,8 +252,14 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
       denoiseBtn.style.display = '';
       el.dataset.denoised = st.denoised ? '1' : '0';
       el.dataset.caustics = String(st.caustics ?? 0);
+      el.dataset.pixelFilter = String(st.pixelFilter?.pixelFilter ?? 0);
+      el.dataset.edgeSamples = String(st.pixelFilter?.edgeSupersample ?? 1);
     } else {
-      extras.style.display = 'none';
+      // E11: Fast mode's multisampling when it is not the canvas's usual 4×.
+      const msaa = st.msaa;
+      extras.textContent = msaa && msaa.samples !== 4 ? (msaa.samples > 0 ? t('viewport.meterMsaa', { n: msaa.samples }) : t('viewport.meterNoMsaa')) : '';
+      extras.style.display = extras.textContent ? '' : 'none';
+      el.dataset.msaa = msaa ? String(msaa.samples) : '';
       denoiseBtn.style.display = 'none';
       title.textContent = t('viewport.meterFast');
       line.textContent = t('viewport.frameMs', { ms: formatNumber(st.seconds * 1000, lang, 1) });

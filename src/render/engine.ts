@@ -4,6 +4,7 @@
 // which one the viewport shows (Fast / Full); Render always uses the path
 // tracer. main.ts wires both.
 
+import type { PixelFilterFields } from '../core/antialias';
 import type { CameraId } from '../core/camera';
 import type { PassKey } from '../core/passes';
 import type { AdvancedSettings, FinishBy, RenderProgress } from '../core/render';
@@ -64,6 +65,13 @@ export interface EngineStatus {
   liveDenoise?: { ms?: number; images: number; accumulated?: number; at?: number };
   /** Path tracer (E5b-1): the view renders caustics with this many photons per sample (absent: none). */
   caustics?: number;
+  /**
+   * Path tracer (E11): the pixel filter and edge samples the image on screen was asked to render with
+   * (`RNDR.pixel_filter`, `RNDR.edge_supersample`), at full resolution.
+   */
+  pixelFilter?: PixelFilterFields;
+  /** Preview (E11): the multisampling it draws with now, and the most the device can do. */
+  msaa?: { samples: number; max: number };
 }
 
 export interface RenderOptions {

@@ -43,6 +43,7 @@
 import type { CameraState } from '../core/camera';
 import { passMask, type PassKey, type RenderPasses } from '../core/passes';
 import { advancedTouchesView, denoiseFraction, engineFieldsOf, type AdvancedSettings } from '../core/render';
+import { DEFAULT_PIXEL_FILTER, pixelFilterFields, type PixelFilterFields, type PixelFilterSetting } from '../core/antialias';
 import { DENOISE_IMAGE, DENOISE_KEEP_NOISY, denoiseIn, type CausticsMode, type CausticsQuality } from '../core/caustics';
 import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob, type DenoisePreset } from './denoise';
 import type { ProjectState } from '../core/store';
@@ -75,6 +76,9 @@ export interface TracerView {
   denoise?: number;
   /** U11b: `RNDR.denoise_strength`, 0..1 (default 1): the denoised image blended with the noisy one. */
   denoiseStrength?: number;
+  /** E11: `RNDR.pixel_filter` and `RNDR.edge_supersample` (Settings ▸ Render engine ▸ Edge smoothing; core/antialias.ts). */
+  pixelFilter?: number;
+  edgeSupersample?: number;
   /** E5b-1: the caustics switch and quality (Automatic is decided by io/rsb.ts from the scene). */
   caustics?: { mode: CausticsMode; quality: CausticsQuality };
 }
@@ -507,6 +511,9 @@ export class PathTracerEngine implements RenderEngine {
   private liveOn = false;
   /** U11b: the strength of the view's denoise (Advanced ▸ Denoise ▸ Strength, 0..1); at 0 nothing is denoised. */
   private liveStrength = 1;
+  /** E11: the pixel filter and edge samples asked of views and Renders, and those of the view on screen. */
+  private filter: PixelFilterFields = pixelFilterFields(DEFAULT_PIXEL_FILTER);
+  private accFilter: PixelFilterFields | null = null;
   /** U11: the viewport's last pass, as the lane denoises it: its samples, sums and squared luminance. */
   private lastPass: { acc: Accumulator; samples: number; sum: Float32Array; lum2: Float32Array } | null = null;
   /** U11: the last pass denoised (its samples) and the denoised sums. */
@@ -607,6 +614,17 @@ export class PathTracerEngine implements RenderEngine {
   setWhileRender(mode: 'SHARE' | 'PAUSE'): void {
     if (mode === this.whileRender) return;
     this.whileRender = mode;
+    this.restartWanted = true;
+  }
+
+  /**
+   * E11, Settings ▸ Render engine ▸ Edge smoothing ▸ Full mode and render: the pixel filter and the edge samples of the
+   * view and of every Render from now on. The view starts over (its scene changes).
+   */
+  setPixelFilter(setting: PixelFilterSetting): void {
+    const f = pixelFilterFields(setting);
+    if (f.pixelFilter === this.filter.pixelFilter && f.edgeSupersample === this.filter.edgeSupersample) return;
+    this.filter = f;
     this.restartWanted = true;
   }
 
@@ -856,6 +874,9 @@ export class PathTracerEngine implements RenderEngine {
       // can always be denoised (a gesture's frames are gone before a denoise would finish).
       ...engineFieldsOf(state.render.advanced, 'VIEWPORT'),
       denoise: scale > 1 ? 0 : DENOISE_IMAGE,
+      // E11: a gesture's frames keep the filter but not the edge samples (they are gone before they would tell).
+      pixelFilter: this.filter.pixelFilter,
+      edgeSupersample: scale > 1 ? 1 : this.filter.edgeSupersample,
     };
   }
 
@@ -924,6 +945,7 @@ export class PathTracerEngine implements RenderEngine {
     this.cleanImages = 0;
     this.cleanAt = 0;
     this.acc = acc;
+    this.accFilter = { pixelFilter: view.pixelFilter ?? 0, edgeSupersample: view.edgeSupersample ?? 1 };
     this.accGen = gen;
     this.accScale = scale;
     this.accLane = lane;
@@ -1180,6 +1202,7 @@ export class PathTracerEngine implements RenderEngine {
       ...(denoised ? { denoised: true } : {}),
       ...(full && this.accGuides ? { liveDenoise: { ms: this.denoiseMs, images: this.cleanImages, accumulated: this.lastPass?.acc === acc ? this.lastPass.samples : 0, at: this.cleanAt } } : {}),
       ...(caustics > 0 && acc ? { caustics } : {}),
+      ...(full && this.accFilter ? { pixelFilter: { ...this.accFilter } } : {}),
     };
   }
 
@@ -1233,6 +1256,7 @@ export class PathTracerEngine implements RenderEngine {
         ...(opts.time !== undefined ? { time: opts.time } : {}),
         ...(opts.advanced ? { advanced: opts.advanced, ...engineFieldsOf(opts.advanced, 'RENDER') } : {}),
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
+        ...this.filter,
       };
       // E5b-1: a denoised render also renders the guide passes and sums the squared luminance. U11b: at a strength
       // of 0 it is not denoised at all (the image is the noisy one).

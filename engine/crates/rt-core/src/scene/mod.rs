@@ -583,6 +583,13 @@ pub struct RenderSettings {
     /// denoised × s` per channel in linear light (`rt_post::denoise::blend`); 0 runs no filter,
     /// 1 (the default, and a file without it) is the filter's image.
     pub denoise_strength: f32,
+    /// E11, `RNDR.pixel_filter`: where the camera samples go in and around their pixel
+    /// ([`crate::pixel_filter`]: 0 the box of one pixel, the default; 1 the centre; 2 a tent of
+    /// two pixels; 3 Blackman–Harris of three; unknown values are the box).
+    pub pixel_filter: u32,
+    /// E11, `RNDR.edge_supersample`: the samples an edge pixel takes per sample index (1: none
+    /// more; 0 is read as 1; at most [`crate::pixel_filter::MAX_EDGE_SUPERSAMPLE`]).
+    pub edge_supersample: u32,
 }
 
 /// `RNDR.denoise` bit 0: the host denoises the finished image.
@@ -601,6 +608,12 @@ impl RenderSettings {
     pub const MAX_CAUSTIC_PHOTONS: u32 = 1 << 22;
     /// Gather radius of the first sample, in pixels, when `caustic_radius` is 0.
     pub const DEFAULT_CAUSTIC_RADIUS: f32 = 3.0;
+
+    /// The samples an edge pixel takes per sample index ([`Self::edge_supersample`], 0 read as 1).
+    pub fn edge_factor(&self) -> u32 {
+        self.edge_supersample
+            .clamp(1, crate::pixel_filter::MAX_EDGE_SUPERSAMPLE)
+    }
 
     /// The path depth to render with: `max_depth`, or the default for 0, at most
     /// [`RenderSettings::MAX_DEPTH_LIMIT`].
@@ -630,6 +643,8 @@ impl Default for RenderSettings {
             caustic_photons: 0,
             caustic_radius: 0.0,
             denoise_strength: 1.0,
+            pixel_filter: 0,
+            edge_supersample: 1,
         }
     }
 }

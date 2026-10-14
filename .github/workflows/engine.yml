@@ -147,6 +147,12 @@ jobs:
           denoised=$(sed -n 's/.*PINNED_DENOISED_EXAMPLE_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-post/src/denoise/tests.rs | tr -d _)
           test -n "$expected" && test -n "$denoised"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/example.rsb" --expect "$expected" --denoise --expect-denoised "$denoised"
+          # E11: the example with the fine filter and twice the samples on its edges (the module finds
+          # each tile's edges from its centre rays).
+          cargo run --release -p rt-cli -- --write-e11-example "$RUNNER_TEMP/e11.rsb"
+          expected=$(sed -n 's/.*PINNED_E11_EDGES_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e11.rsb" --expect "$expected"
 
       - name: Passes through the page's own code (the real rt.wasm in Node)
         working-directory: .

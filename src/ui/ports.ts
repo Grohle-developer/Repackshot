@@ -2,6 +2,7 @@
 // imports from `render` or `io` (ARCHITECTURE §2): main.ts builds these
 // services from the engine and the importers and hands them in.
 
+import type { FastAa, PixelFilterFields, PixelFilterSetting } from '../core/antialias';
 import type { AiGuardMaterial, AiPipelineSettings, AiPostService, LinearImage } from '../core/ai';
 import type { ComposedPrompt, PromptCaps } from '../core/ai-prompt';
 import type { Projection, Rect } from '../core/box-select';
@@ -74,6 +75,10 @@ export interface EngineStatus {
   liveDenoise?: { ms?: number; images: number; accumulated?: number; at?: number };
   /** Path tracer (E5b-1): the view renders caustics with this many photons per sample. */
   caustics?: number;
+  /** Path tracer (E11): the pixel filter and edge samples the image on screen was asked to render with, at full resolution. */
+  pixelFilter?: PixelFilterFields;
+  /** Preview (E11): the multisampling it draws with now, and the most the device can do. */
+  msaa?: { samples: number; max: number };
 }
 
 export type { DisplayPrefs, NavigationPrefs } from '../core/settings';
@@ -142,6 +147,9 @@ export interface EngineConfig {
   viewportLimit: ViewportLimit;
   /** While a render runs: the viewport keeps a quarter of the engine, or waits. */
   whileRender: 'SHARE' | 'PAUSE';
+  /** E11, Edge smoothing: Fast mode's multisampling, and Full mode's and the render's pixel filter. */
+  fastAa: FastAa;
+  pixelFilter: PixelFilterSetting;
 }
 
 export interface EnginePort {

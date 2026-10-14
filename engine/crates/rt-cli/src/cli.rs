@@ -1,6 +1,9 @@
 //! Command line parsing and the `rt` command itself.
 
 use crate::{render_progressive, sheet, write_png};
+use rt_core::pixel_filter::{
+    FILTER_BLACKMAN_HARRIS, FILTER_NONE, FILTER_STANDARD, FILTER_TENT, MAX_EDGE_SUPERSAMPLE,
+};
 use rt_core::scene::{RenderSettings, Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -12,12 +15,14 @@ rt: Repackshot command line renderer
 USAGE:
     rt <scene.rsb> -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
        [--denoise] [--denoise-strength S] [--keep-noisy] [--caustics N] [--caustic-radius R]
+       [--pixel-filter F] [--edge-samples K]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
     rt --write-e5b-example <scene.rsb>
+    rt --write-e11-example <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
@@ -39,6 +44,11 @@ OPTIONS:
         --caustics <N>      trace N caustic photons per sample (RNDR.caustic_photons; 0: off)
         --caustic-radius <R>
                             first gather radius of the caustics in pixels (default 3)
+        --pixel-filter <F>  where the samples go in their pixel (RNDR.pixel_filter): none
+                            (the centre), standard (a box of 1 px, the default), soft (a
+                            tent of 2 px) or fine (Blackman-Harris of 3 px)
+        --edge-samples <K>  samples per sample index of the edge pixels, 1 to 16
+                            (RNDR.edge_supersample; default 1)
         --example           render the built-in example scene instead of a file
         --sheet <dir>       render the example part under six built-in light recipes, the
                             E5 scenes (glass, coat, emitter, sky, HDRI) and the E5c skies
@@ -54,6 +64,9 @@ OPTIONS:
         --write-e5b-example <f>
                             write the E5b-1 parity scene (the E5 scene with caustic photons)
                             as an RSB file
+        --write-e11-example <f>
+                            write the E11 parity scene (the example with the fine filter and
+                            twice the samples on its edges) as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -91,6 +104,11 @@ pub struct Options {
     pub caustics: Option<u32>,
     /// First caustic gather radius in pixels, overriding the scene's.
     pub caustic_radius: Option<f32>,
+    /// `--pixel-filter`: the pixel filter (E11, `RNDR.pixel_filter`), overriding the scene's.
+    pub pixel_filter: Option<u32>,
+    /// `--edge-samples`: the samples of an edge pixel per sample index (E11), overriding the
+    /// scene's.
+    pub edge_samples: Option<u32>,
 }
 
 impl Options {
@@ -114,6 +132,12 @@ impl Options {
         }
         if let Some(radius) = self.caustic_radius {
             scene.render.caustic_radius = radius;
+        }
+        if let Some(filter) = self.pixel_filter {
+            scene.render.pixel_filter = filter;
+        }
+        if let Some(k) = self.edge_samples {
+            scene.render.edge_supersample = k;
         }
         let samples = self.samples.unwrap_or(if scene.render.max_samples > 0 {
             scene.render.max_samples
@@ -174,6 +198,11 @@ pub enum Command {
     },
     /// Write the E5b-1 parity scene (`rt_core::example::e5b_scene`) as an RSB file.
     WriteE5bExample {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the E11 parity scene (`rt_core::example::e11_scene`) as an RSB file.
+    WriteE11Example {
         /// RSB file to write.
         path: PathBuf,
     },
@@ -238,6 +267,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e5 = None;
     let mut write_e5c = None;
     let mut write_e5b = None;
+    let mut write_e11 = None;
     let mut sheet_dir = None;
     let mut tone_table = false;
     let mut options = Options::default();
@@ -276,6 +306,33 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                     }
                 }
             }
+            "--pixel-filter" => {
+                let text = value(&mut it, arg)?;
+                options.pixel_filter = Some(match text.as_str() {
+                    "none" => FILTER_NONE,
+                    "standard" => FILTER_STANDARD,
+                    "soft" => FILTER_TENT,
+                    "fine" => FILTER_BLACKMAN_HARRIS,
+                    _ => {
+                        return Err(format!(
+                            "--pixel-filter expects none, standard, soft or fine, got '{text}'"
+                        ))
+                    }
+                });
+            }
+            "--edge-samples" => {
+                let text = value(&mut it, arg)?;
+                match text.parse::<u32>() {
+                    Ok(k) if (1..=MAX_EDGE_SUPERSAMPLE).contains(&k) => {
+                        options.edge_samples = Some(k)
+                    }
+                    _ => {
+                        return Err(format!(
+                            "--edge-samples expects a number from 1 to {MAX_EDGE_SUPERSAMPLE}, got '{text}'"
+                        ))
+                    }
+                }
+            }
             "--caustic-radius" => {
                 options.caustic_radius = Some(seconds(value(&mut it, arg)?, arg).map_err(|_| {
                     "--caustic-radius expects a non-negative number of pixels".to_string()
@@ -292,6 +349,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e5-example" => write_e5 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5c-example" => write_e5c = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5b-example" => write_e5b = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -327,6 +385,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-e5b-example takes no other option".into());
         }
         return Ok(Command::WriteE5bExample { path });
+    }
+    if let Some(path) = write_e11 {
+        if args.len() != 2 {
+            return Err("--write-e11-example takes no other option".into());
+        }
+        return Ok(Command::WriteE11Example { path });
     }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
@@ -398,6 +462,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteE5bExample { path } => {
             let bytes = rt_core::example::e5b_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteE11Example { path } => {
+            let bytes = rt_core::example::e11_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
@@ -561,6 +631,41 @@ mod tests {
                 "{bad}"
             );
         }
+        // E11: the pixel filter by name and the edge samples, 1 to 16.
+        for (name, filter) in [
+            ("none", FILTER_NONE),
+            ("standard", FILTER_STANDARD),
+            ("soft", FILTER_TENT),
+            ("fine", FILTER_BLACKMAN_HARRIS),
+        ] {
+            assert_eq!(
+                parse(&[
+                    "--example",
+                    "-o",
+                    "x.png",
+                    "--pixel-filter",
+                    name,
+                    "--edge-samples",
+                    "2"
+                ]),
+                Ok(Command::Render {
+                    input: Input::Example,
+                    output: "x.png".into(),
+                    options: Options {
+                        pixel_filter: Some(filter),
+                        edge_samples: Some(2),
+                        ..Options::default()
+                    },
+                })
+            );
+        }
+        assert!(parse(&["--example", "-o", "x.png", "--pixel-filter", "gauss"]).is_err());
+        for bad in ["0", "17", "two"] {
+            assert!(
+                parse(&["--example", "-o", "x.png", "--edge-samples", bad]).is_err(),
+                "{bad}"
+            );
+        }
         assert_eq!(
             parse(&["--example", "--output", "x.png", "--size", "64X48"]),
             Ok(Command::Render {
@@ -691,9 +796,15 @@ mod tests {
             denoise_strength: Some(0.5),
             caustics: Some(4096),
             caustic_radius: Some(2.0),
+            pixel_filter: Some(FILTER_TENT),
+            edge_samples: Some(4),
         }
         .apply(&mut scene);
         assert_eq!(scene.render.denoise_strength, 0.5);
+        assert_eq!(
+            (scene.render.pixel_filter, scene.render.edge_supersample),
+            (FILTER_TENT, 4)
+        );
         assert_eq!((samples, threads), (3, 5));
         assert_eq!((scene.render.width, scene.render.height), (10, 20));
         assert_eq!(scene.render.denoise, DENOISE_IMAGE | DENOISE_KEEP_NOISY);

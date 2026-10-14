@@ -17,10 +17,12 @@ use rt_core::caustics::PhotonMap;
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, PASS_ALBEDO, PASS_EXACT};
-use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, TileRect};
+use rt_core::pixel_filter::EdgeMask;
+use rt_core::render::{render_tile_albedo_edges, render_tile_edges, render_tile_exact, TileRect};
 use rt_core::scene::Scene;
 use rt_core::simd::Isa;
 use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset};
+use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
@@ -48,12 +50,18 @@ pub const MAX_TILE_PIXELS: u64 = 1 << 22;
 /// map once.
 pub const KEPT_PHOTON_MAPS: usize = 16;
 
+/// Edge masks a scene keeps (E11), one per tile rectangle a host renders: more than the tiles of
+/// a 4K image in 32-pixel tiles; past it they are all dropped and found again.
+pub const KEPT_EDGE_MASKS: usize = 16_384;
+
 /// A loaded scene with its lights prepared once for every tile rendered from it, and the photon
 /// maps of its last samples when it has caustics.
 struct Loaded {
     scene: Scene,
     prepared: Prepared,
     maps: Vec<PhotonMap>,
+    /// E11: the edge pixels of every tile rectangle rendered (with edge samples), by rectangle.
+    edges: BTreeMap<(u32, u32, u32, u32), EdgeMask>,
 }
 
 impl Loaded {
@@ -63,7 +71,26 @@ impl Loaded {
             scene,
             prepared,
             maps: Vec::new(),
+            edges: BTreeMap::new(),
         }
+    }
+
+    /// The edge pixels of `tile` (found now from its centre rays if they are not kept): the same
+    /// whoever finds them, so every worker's tiles agree. Without edge samples, none.
+    fn edge_mask(&mut self, tile: TileRect) -> EdgeMask {
+        if self.scene.render.edge_factor() <= 1 {
+            return EdgeMask::none(tile);
+        }
+        let key = (tile.x, tile.y, tile.w, tile.h);
+        if let Some(mask) = self.edges.get(&key) {
+            return mask.clone();
+        }
+        if self.edges.len() >= KEPT_EDGE_MASKS {
+            self.edges.clear();
+        }
+        let mask = EdgeMask::of(&self.scene, &self.prepared, tile, Isa::detect());
+        self.edges.insert(key, mask.clone());
+        mask
     }
 
     /// The photon map of `sample` (traced now if it is not kept), or `None` without caustics.
@@ -147,6 +174,7 @@ pub fn scene_update(handle: u32, bytes: &[u8]) -> u32 {
         Ok(()) => {
             loaded.prepared = Prepared::new(&loaded.scene);
             loaded.maps.clear();
+            loaded.edges.clear();
             reg.error.clear();
             STATUS_OK
         }
@@ -350,10 +378,11 @@ pub fn render_tile_albedo_sample(
 ) -> Result<Vec<f32>, u32> {
     with_tile(handle, w, h, |loaded| {
         let mut film = PassFilm::region(x, y, w, h, PASS_ALBEDO);
-        render_tile_albedo(
+        let edges = loaded.edge_mask(TileRect { x, y, w, h });
+        render_tile_albedo_edges(
             &loaded.scene,
             &loaded.prepared,
-            TileRect { x, y, w, h },
+            &edges,
             sample_index,
             &mut film,
             Isa::detect(),
@@ -375,11 +404,12 @@ fn render_region(
     with_tile(handle, w, h, |loaded| {
         let mut film = Film::region(x, y, w, h);
         let map = loaded.photon_map(sample_index);
-        render_tile_photons(
+        let edges = loaded.edge_mask(TileRect { x, y, w, h });
+        render_tile_edges(
             &loaded.scene,
             &loaded.prepared,
             map.map(|i| &loaded.maps[i]),
-            TileRect { x, y, w, h },
+            &edges,
             sample_index,
             &mut film,
             Isa::detect(),
@@ -429,6 +459,7 @@ mod tests {
     use super::*;
     use crate::ffi::*;
     use rt_core::math::Vec3;
+    use rt_core::render::{render_tile_albedo, render_tile_photons};
     use std::sync::Mutex;
 
     /// The registry is process-wide state: tests that touch it run one at a time.
@@ -827,6 +858,102 @@ mod tests {
             );
         }
         scene_free(handle);
+    }
+
+    #[test]
+    fn edge_samples_go_through_the_tiles_as_the_engine_renders_them_and_an_update_drops_the_edges()
+    {
+        // E11: the module finds each tile's edges once and renders its edge pixels with k samples
+        // per index, image and albedo, exactly as rt-core does; a scene update without edge
+        // samples renders the plain image again.
+        let _guard = serial();
+        let scene = rt_core::example::e11_scene();
+        let rsb = scene.to_rsb();
+        let handle = scene_load(&rsb);
+        assert_ne!(handle, 0);
+        let prepared = Prepared::new(&scene);
+        let isa = Isa::detect();
+        // Across the top of the parts, and a rectangle of odd size over a border.
+        let around = TileRect {
+            x: 180,
+            y: 60,
+            w: 64,
+            h: 48,
+        };
+        let odd = TileRect {
+            x: 330,
+            y: 200,
+            w: 33,
+            h: 17,
+        };
+        for (tile, sample) in [(around, 0u32), (around, 3), (odd, 1)] {
+            let edges = EdgeMask::of(&scene, &prepared, tile, isa);
+            assert!(edges.edges() > 0, "{tile:?} has edges");
+            let mut film = Film::region(tile.x, tile.y, tile.w, tile.h);
+            render_tile_edges(&scene, &prepared, None, &edges, sample, &mut film, isa);
+            assert_eq!(
+                render_tile(handle, tile.x, tile.y, tile.w, tile.h, sample),
+                Ok(film.resolve())
+            );
+            let mut albedo = PassFilm::region(tile.x, tile.y, tile.w, tile.h, PASS_ALBEDO);
+            rt_core::render::render_tile_albedo_edges(
+                &scene,
+                &prepared,
+                &edges,
+                sample,
+                &mut albedo,
+                isa,
+            );
+            assert_eq!(
+                render_tile_albedo_sample(handle, tile.x, tile.y, tile.w, tile.h, sample),
+                Ok(albedo.albedo)
+            );
+        }
+        // The camera moves (the edges with it): the module finds the tile's edges again.
+        let mut moved = scene.clone();
+        moved.camera.position += rt_core::math::Vec3::new(40.0, 0.0, 25.0);
+        assert_eq!(scene_update(handle, &moved.to_rsb()), STATUS_OK);
+        let prepared_moved = Prepared::new(&moved);
+        let edges_moved = EdgeMask::of(&moved, &prepared_moved, around, isa);
+        assert_ne!(edges_moved, EdgeMask::of(&scene, &prepared, around, isa));
+        let mut film = Film::region(around.x, around.y, around.w, around.h);
+        render_tile_edges(
+            &moved,
+            &prepared_moved,
+            None,
+            &edges_moved,
+            0,
+            &mut film,
+            isa,
+        );
+        assert_eq!(
+            render_tile(handle, around.x, around.y, around.w, around.h, 0),
+            Ok(film.resolve())
+        );
+        let mut plain = scene.clone();
+        plain.render.edge_supersample = 1;
+        assert_eq!(scene_update(handle, &plain.to_rsb()), STATUS_OK);
+        let tile = TileRect {
+            x: 96,
+            y: 64,
+            w: 64,
+            h: 48,
+        };
+        let mut film = Film::region(tile.x, tile.y, tile.w, tile.h);
+        render_tile_photons(
+            &plain,
+            &Prepared::new(&plain),
+            None,
+            tile,
+            0,
+            &mut film,
+            isa,
+        );
+        assert_eq!(
+            render_tile(handle, tile.x, tile.y, tile.w, tile.h, 0),
+            Ok(film.resolve())
+        );
+        assert_eq!(scene_free(handle), STATUS_OK);
     }
 
     #[test]

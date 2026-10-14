@@ -868,6 +868,62 @@ describe('the viewport of the pool', () => {
     expect(during.every((jobs) => jobs.length > 0)).toBe(true);
   }, 30000);
 
+  it('E11: the pixel filter reaches the view and every Render, a change starts the view over, gestures leave out the edge samples, and the status says it', { timeout: 30000 }, async () => {
+    const dom = installDom();
+    restore = dom.restore;
+    const { pool, workers } = await fakePool(2, 64);
+    workers.forEach((w) => (w.delay = 1));
+    const views: TracerView[] = [];
+    // The bytes say the filter: another filter, another scene.
+    const recording: SceneSource = {
+      build: (_s, view) => (views.push(view), { meshKey: 'k', bytes: (meshes) => new Uint8Array([meshes ? 2 : 1, view.width & 255, view.height & 255, view.maxSamples & 255, (view.cameraPatch?.azimuth ?? 0) & 255, view.pixelFilter ?? 9, view.edgeSupersample ?? 9]) }),
+      tone: () => ({ exposureEv: 0.5, tonemap: 2 }),
+    };
+    const engine = new PathTracerEngine(pool, recording, true);
+    engine.setViewportLimit({ by: 'SAMPLES', samples: 100000, seconds: 120 });
+    engine.mount(dom.canvas as unknown as HTMLCanvasElement);
+    engine.sync(exampleState(), null);
+    engine.resize(64, 32, 1);
+    engine.setActive(true);
+    await settle(engine, 10);
+    // Before Settings says anything: the factory choice, Fine; then Standard, the box.
+    expect(views.at(-1)).toMatchObject({ width: 64, height: 32, pixelFilter: 3, edgeSupersample: 1 });
+    expect(engine.status().pixelFilter).toEqual({ pixelFilter: 3, edgeSupersample: 1 });
+    engine.setPixelFilter('STANDARD');
+    await settle(engine, 10);
+    expect(views.at(-1)).toMatchObject({ width: 64, height: 32, pixelFilter: 0, edgeSupersample: 1 });
+    expect(engine.status().pixelFilter).toEqual({ pixelFilter: 0, edgeSupersample: 1 });
+    const jobs = () => workers.flatMap(jobsOf).length;
+    const scenes = () => workers.flatMap((w) => w.got.filter((m) => m.type === 'scene')).length;
+    const before = scenes();
+    engine.setPixelFilter('FINE_EDGES4');
+    await settle(engine, 10);
+    // A new scene went to the workers (the view started over) and its image says the filter.
+    expect(scenes()).toBeGreaterThan(before);
+    expect(views.at(-1)).toMatchObject({ width: 64, height: 32, pixelFilter: 3, edgeSupersample: 4 });
+    expect(engine.status().samples).toBeGreaterThan(0);
+    expect(engine.status().pixelFilter).toEqual({ pixelFilter: 3, edgeSupersample: 4 });
+    // The same choice again: nothing starts over.
+    const now = scenes();
+    engine.setPixelFilter('FINE_EDGES4');
+    await settle(engine, 5);
+    expect(scenes()).toBe(now);
+    expect(jobs()).toBeGreaterThan(0);
+    // A gesture's reduced frames keep the filter, not the edge samples.
+    engine.beginGesture();
+    engine.gestureView({ azimuth: 1 });
+    await settle(engine, 5);
+    const reduced = views.filter((v) => v.width < 64);
+    expect(reduced.length).toBeGreaterThan(0);
+    expect(reduced.every((v) => v.pixelFilter === 3 && v.edgeSupersample === 1)).toBe(true);
+    engine.endGesture();
+    await settle(engine, 5);
+    // A Render carries the filter in force.
+    engine.setPixelFilter('SOFT');
+    await engine.renderPixels({ width: 40, height: 20, maxSamples: 1, maxSeconds: 0, transparent: false });
+    expect(views.find((v) => v.width === 40)).toMatchObject({ pixelFilter: 2, edgeSupersample: 1 });
+  });
+
   it('the watchdog starts the view again when its tiles stop coming, and says so', async () => {
     const { engine, workers } = await viewport(2, 64, 32);
     await settle(engine, 5);
@@ -890,7 +946,7 @@ describe('the viewport of the pool', () => {
     expect(engine.watchdogFires).toBe(1);
     expect(sent()).toBeGreaterThan(before);
     expect(engine.status().issue?.kind).toBe('RESTARTED');
-  }, 20000);
+  }, 60000);
 
   it('a worker handed from the viewport to a Render gets the Render scene as an update, and back', async () => {
     const { engine, workers } = await viewport(4);

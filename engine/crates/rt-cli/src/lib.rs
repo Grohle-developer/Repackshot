@@ -8,13 +8,14 @@ use rt_core::color::Tonemap;
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, Passes, PASS_ALL};
-use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, tile_grid};
+use rt_core::pixel_filter::EdgeMask;
+use rt_core::render::{render_tile_albedo_edges, render_tile_edges, render_tile_exact, tile_grid};
 use rt_core::scene::{Scene, DENOISE_IMAGE};
 use rt_core::simd::Isa;
 use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset, GUIDE_PASSES};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 pub mod bench;
@@ -227,6 +228,9 @@ pub fn render_progressive(
             .map(|t| Mutex::new(PassFilm::region(t.x, t.y, t.w, t.h, mask)))
             .collect()
     };
+    // E11: each tile's edge pixels, found once (from the centre rays) by whoever renders it first.
+    let edges: Vec<OnceLock<EdgeMask>> = tiles.iter().map(|_| OnceLock::new()).collect();
+    let edges = &edges;
 
     let mut done = 0u32;
     let mut rays = 0u64;
@@ -257,14 +261,19 @@ pub fn render_progressive(
                             if let (Some(passes), 0) = (passes.as_deref_mut(), first) {
                                 rays += render_tile_exact(scene, &prepared, tile, passes, isa);
                             }
+                            let edges = edges[i].get_or_init(|| {
+                                let mask = EdgeMask::of(scene, &prepared, tile, isa);
+                                rays += mask.rays();
+                                mask
+                            });
                             for sample in first..first + count {
                                 let map = maps.get((sample - first) as usize);
-                                rays += render_tile_photons(
-                                    scene, &prepared, map, tile, sample, &mut film, isa,
+                                rays += render_tile_edges(
+                                    scene, &prepared, map, edges, sample, &mut film, isa,
                                 );
                                 if let Some(passes) = passes.as_deref_mut() {
-                                    rays += render_tile_albedo(
-                                        scene, &prepared, tile, sample, passes, isa,
+                                    rays += render_tile_albedo_edges(
+                                        scene, &prepared, edges, sample, passes, isa,
                                     );
                                 }
                             }

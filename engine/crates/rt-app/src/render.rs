@@ -48,7 +48,8 @@ use rt_core::caustics::{Photon, PhotonMap};
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, Passes, PASS_ALL};
-use rt_core::render::{render_tile_albedo, render_tile_exact, render_tile_photons, tile_grid};
+use rt_core::pixel_filter::EdgeMask;
+use rt_core::render::{render_tile_albedo_edges, render_tile_edges, render_tile_exact, tile_grid};
 use rt_core::scene::{Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use rt_core::simd::Isa;
 use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset, GUIDE_PASSES};
@@ -56,7 +57,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -1427,6 +1428,9 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
     if live.is_some_and(Live::on) {
         job.start_lane();
     }
+    // E11: each tile's edge pixels, found once (from the centre rays) by whoever renders it first.
+    let edges: Vec<OnceLock<EdgeMask>> = tiles.iter().map(|_| OnceLock::new()).collect();
+    let edges = &edges;
     // Photon maps and denoising run on the job's threads (a sharing viewport's share).
     let side_threads = match job.kind {
         Kind::Viewport if job.share > 0 => job.share,
@@ -1507,15 +1511,20 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
                                 rays += render_tile_exact(scene, prepared, tile, passes, isa);
                             }
                             let live_on = live.is_none_or(Live::on);
+                            let edges = edges[i].get_or_init(|| {
+                                let mask = EdgeMask::of(scene, prepared, tile, isa);
+                                rays += mask.rays();
+                                mask
+                            });
                             for sample in first..first + count {
                                 let map = maps.get((sample - first) as usize);
-                                rays += render_tile_photons(
-                                    scene, prepared, map, tile, sample, &mut film, isa,
+                                rays += render_tile_edges(
+                                    scene, prepared, map, edges, sample, &mut film, isa,
                                 );
                                 if let Some(passes) = passes.as_deref_mut() {
                                     if live_on || sample < LIVE_ALBEDO_SAMPLES {
-                                        rays += render_tile_albedo(
-                                            scene, prepared, tile, sample, passes, isa,
+                                        rays += render_tile_albedo_edges(
+                                            scene, prepared, edges, sample, passes, isa,
                                         );
                                         albedo_more.store(true, Ordering::Relaxed);
                                     }
@@ -2089,6 +2098,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rt_core::render::render_tile_albedo;
 
     fn small_example(samples: u32, w: u32, h: u32) -> Scene {
         let mut scene = rt_core::example::scene();
@@ -2622,6 +2632,33 @@ mod tests {
                 assert!(view
                     .live_status()
                     .is_some_and(|l| !l.pending && l.presented == 0));
+            }
+        }
+    }
+
+    #[test]
+    fn edge_samples_give_rt_s_image_with_any_thread_count_in_a_final_and_a_view() {
+        // E11: the fine filter and twice the samples on the edges: a final and a live view are
+        // the image of `rt` (which tiles and threads its own way) on 1, 4 and 16 threads, and
+        // the edges did get more samples (the image is not the one without them).
+        let _serial = serial();
+        let mut scene = small_example(4, 120, 90);
+        scene.render.pixel_filter = rt_core::pixel_filter::FILTER_BLACKMAN_HARRIS;
+        scene.render.edge_supersample = 2;
+        let want = rt_post::denoise::rgba_sums(&rt_cli::render(&scene, 4, 3).film);
+        let mut plain = scene.clone();
+        plain.render.edge_supersample = 1;
+        assert_ne!(
+            rt_post::denoise::rgba_sums(&rt_cli::render(&plain, 4, 3).film),
+            want
+        );
+        for threads in [1usize, 4, 16] {
+            let engine = Engine::new(threads);
+            for kind in [Kind::Final, Kind::Viewport] {
+                let job = engine.submit(kind, &scene.to_rsb(), "", "", None).unwrap();
+                let f = wait_done(&job);
+                assert_eq!(f.samples, 4);
+                assert_eq!(*f.sums, want, "{kind:?} on {threads} threads");
             }
         }
     }

@@ -1567,7 +1567,11 @@ no cambia; paridad wasm.
   real a 50 % es exactamente la media y a 0 % la ruidosa (los dos
   ajustes), los bytes del RSB, el *store* (por defecto, migración,
   recorte), el render del *pool* y el carril del visor con la intensidad
-  del proyecto (y sin *denoise* a 0 %).
+  del proyecto (y sin *denoise* a 0 %). En el navegador
+  (`tools/denoise-live-check.mjs`, paso *strength*): la fila *Intensidad*
+  bajo la reducción de ruido, 100 % de fábrica con su nota; a 50 % el
+  visor vuelve a empezar y se vuelve a filtrar. Captura
+  `docs/ui/denoise-strength.png`.
 
 *Comprobado que fallan* reintroduciendo cada error: la mezcla con los
 pesos cambiados o tocando el alfa, NaN como 0, la banda a 0 % sin
@@ -1593,7 +1597,7 @@ banda usando `rt_denoise` (sin intensidad) con una intensidad.
   el medidor no dice *Ruido reducido*, aunque el interruptor del visor siga
   encendido.
 
-## E11 · Suavizado de bordes, de menos a más coste — **Opus** (tras U11)
+## E11 · Suavizado de bordes, de menos a más coste — **Opus** (tras U11) — hecha
 
 **Qué.** Petición del usuario: elegir en *Ajustes ▸ Motor de renderizado*
 el tipo de suavizado de bordes, ordenado de menos a más costoso. Dos
@@ -1643,6 +1647,158 @@ ejemplo con *Estándar* conserva `0x223515c3`; paridad wasm; hoja
 `out/aa-sheet.html`: un recorte 4× del canto del frasco con los seis
 ajustes y el tiempo de cada uno (los tiempos van en el PR, no en la
 interfaz); captura `docs/ui/settings-aa.png`.
+
+**Hecho.**
+
+- **Motor** (`rt_core::pixel_filter`, §5.2 ter de `ARCHITECTURE.md`):
+  los cuatro filtros por muestreo de importancia (la muestra pesa 1 y se
+  queda en su píxel), *Estándar* con los bits de siempre; Blackman–Harris
+  de 3 px con su CDF inversa en una tabla `f32` de 256 puntos hecha y
+  comprobada por un test (bisección sobre la integral de la ventana en
+  `f64`); **muestras de borde** (`EdgeMask`, `render_tile_edges`,
+  `render_tile_albedo_edges`) desde los rayos centrales de la baldosa y de
+  su anillo de un píxel: pieza, material o profundidad a más del 2 % en el
+  vecino 3 × 3; un píxel de borde hace `k` muestras por índice, los
+  índices `s·k … s·k + k − 1` de su secuencia, y suma su media. `RNDR`
+  gana `pixel_filter` y `edge_supersample` (64 B; sin ellos, la imagen de
+  antes). Lo usan `rt` (`--pixel-filter`, `--edge-samples`,
+  `--write-e11-example`), el lanzador (finales y visor) y el wasm (máscara
+  por rectángulo de baldosa en la escena cargada).
+- **Interfaz**: *Ajustes ▸ Motor de renderizado ▸ Suavizado de bordes*
+  con las dos listas en su orden (`engine.fastAa`, segmento de cuatro;
+  `engine.pixelFilter`, lista vertical numerada con la frase de cada
+  opción), ajustes de la aplicación (en escritorio, en `settings.json`
+  con los demás), cadenas `es`/`en`. **De fábrica, *Fino*** (decisión del
+  líder al ver la hoja: cuesta los mismos rayos que *Estándar* y es el
+  filtro de producción); un ajuste ya guardado se conserva, y el motor,
+  ante un RSB sin el campo, sigue con la caja (los *hashes* intactos).
+  *Rápido* sigue a 4× de fábrica y dibuja con el multimuestreo pedido
+  hasta el máximo del dispositivo, que la línea dice
+  (`PreviewEngine.setMsaa`, `msaa()`); *Completo* y los renders llevan el
+  filtro (`setPixelFilter` de los dos motores; los gestos, sin muestras de
+  borde). El medidor dice *Filtro · …* cuando no es el de fábrica
+  (*Fino*; p. ej. *Filtro · Estándar*) y el
+  multimuestreo de *Rápido* cuando no es 4×.
+- **Tests**: la tabla frente a su referencia; *Estándar* es la posición
+  tal cual y *Ninguno* el centro (todas las muestras de un píxel, el
+  mismo rayo primario a través de un estenopo; con lente, el mismo punto
+  de la imagen); χ² sobre 10⁶ desplazamientos en bins de 0,1 px
+  (*Fino* 33,0 con 29 grados de libertad, cota 58,30; *Suave*
+  9,2 con 19, cota 43,82) y la varianza del filtro a menos de un
+  0,3 %; la regla de borde; la máscara igual con cualquier corte de
+  baldosas; un píxel de borde a ×2 y ×4 es la media de sus `k` muestras
+  (imagen y albedo) y los demás la muestra de siempre; *hash* fijado del
+  ejemplo con *Fino + bordes ×2* (`0xf3787fe7`) en escalar, SSE2 y AVX2,
+  con baldosas de 32 y 23, igual por el `rt.wasm` real
+  (`wasm-parity.mjs`, también en CI) y por el código de la página; `rt` y
+  el lanzador (final y visor) con 1, 4 y 16 hilos, los mismos bits; el
+  ejemplo con *Estándar* conserva `0x223515c3` y todos los *hashes*
+  fijados siguen; RSB (sin los campos, la caja y ninguna; más de 16, no
+  válido) en `rt-core` y en `src/io/rsb.ts`; los ajustes (de fábrica,
+  validación, bloque, cadenas sin cifras de coste); los dos motores de la
+  página (la vista vuelve a empezar con otro filtro y no con el mismo, los
+  gestos sin muestras de borde, los renders con el filtro, `status()`).
+  En el navegador (`tools/settings-aa-check.mjs`): el orden de las dos
+  listas, MSAA 8× limitado al máximo del dispositivo (4× con swiftshader)
+  y dicho, *Ninguno* y 2× cambian solo los bordes de la vista previa
+  (diferencia media 0,48 y 0,42 sobre 255, el 98,5 % y el 99,1 % de los
+  píxeles iguales a 4×), *Fino + bordes ×2* en *Completo* con su palabra
+  en el medidor, guardado al recargar y en español. Capturas
+  `docs/ui/settings-aa.png` (el bloque, con *Fino + bordes ×2* elegido) y
+  `docs/ui/meter-filter.png` (el medidor con *Filter · Standard*).
+
+*La hoja* (`tools/aa-sheet.mjs` → `out/aa-sheet.html`, el frasco de
+ejemplo a 960 × 540, 64 muestras, 4 hilos; recorte de 100 × 75 px
+ampliado 4×), en esta máquina cargada (otros agentes a la vez):
+
+| Ajuste | Rayos | Frente a *Estándar* | CPU | Reloj |
+| --- | --- | --- | --- | --- |
+| Ninguno | 92,79 M | 1,0000 × | 24,4 s (0,97 ×) | 83,3 s |
+| Estándar | 92,80 M | 1,0000 × | 25,2 s (1,00 ×) | 88,6 s |
+| Suave | 92,80 M | 1,0000 × | 26,2 s (1,04 ×) | 77,3 s |
+| Fino | 92,80 M | 1,0000 × | 25,3 s (1,00 ×) | 79,2 s |
+| Fino + bordes ×2 | 93,95 M | 1,0125 × | 26,5 s (1,05 ×) | 76,8 s |
+| Fino + bordes ×4 | 95,10 M | 1,0248 × | 27,5 s (1,09 ×) | 87,5 s |
+
+Las muestras extra son pocas porque los bordes lo son (en el frasco de la
+hoja, un 1,2 % de los rayos de más con ×2; en el ejemplo del motor,
+el 1,8 % de los píxeles son borde); el filtro no cuesta rayos, solo su
+cuenta.
+
+*Comprobado que fallan* reintroduciendo cada error: la tienda lineal, la
+tabla sin interpolar o sin su reparto de puntos, el umbral de
+profundidad al 20 %, la vecindad sin la columna de la derecha, *Ninguno*
+con *jitter*, las `k` muestras con el mismo índice, la suma sin dividir
+(imagen y albedo), la posición en pantalla sin recortar, el mismo número
+para los dos ejes, `RNDR` leyendo otro filtro sin el campo o sin escribir
+las muestras de borde, `rt`, el lanzador y el wasm sin máscara de bordes,
+el wasm sin olvidar las máscaras al actualizar la escena (este pasaba
+primero: el test solo actualizaba a una escena sin muestras de borde, que
+no mira la caché; ahora también mueve la cámara con ellas, y falla); en la página,
+la lista con otro número de muestras, otro filtro o multimuestreo de
+fábrica, los gestos con muestras de borde, los renders sin el filtro (las
+dos máquinas), un cambio de filtro que no vuelve a empezar la vista, el
+estado del lanzador sin el filtro, el RSB escribiendo siempre la caja o
+sin limitar las muestras de borde; y en el navegador, el destino de
+multimuestreo guardado en sRGB8 (con 2× la vista previa salía más clara:
+diferencia media 21/255).
+
+**No encajó.**
+
+- **Las muestras de borde se promedian en una sola aportación por
+  índice**, en vez de que «el *denoise* y los pases reciban el número de
+  muestras por píxel»: así el peso de la película, el contador de
+  muestras de los anfitriones, la trama del lanzador, el pool de la web
+  y la varianza que usa el *denoise* (la de la media de `k`) no cambian,
+  y un píxel de borde acaba igualmente con `k` veces las muestras. Nada
+  del protocolo tuvo que cambiar.
+- **La tabla de Blackman–Harris no está en `u = i/255`** (desviación
+  aceptada por el líder): con puntos
+  equiespaciados en `u` la primera y la última celda (1/255 de las
+  muestras cada una) se reparten uniformes por el medio píxel exterior,
+  donde la ventana es casi cero: la varianza salía un 1,6 % mayor y el χ²
+  con bins de 0,1 px no pasaba (sí con bins de igual probabilidad sobre
+  los puntos de la tabla, que no ven la forma dentro de una celda). Con
+  los puntos en `q(i/255)` (`2s²` y su simétrica; su inversa, dos raíces
+  cuadradas) se juntan hacia los extremos: varianza a un 0,2 % y χ² en
+  bins uniformes. Siguen siendo 256 valores `f32` sin trigonometría.
+- **El material casi nunca decide**: en el RSB cada instancia tiene un
+  material, así que donde cambia el material cambia la pieza. Se compara
+  igual (el contrato lo pide; un mallado con varios materiales lo
+  necesitará).
+- **Los fotogramas de gesto** usan el filtro pero no las muestras de
+  borde (se van antes de que se notara y cuestan rayos de su máscara).
+- **El mapa de fotones de las cáusticas** de la muestra `s` sirve a las
+  `k` muestras de un píxel de borde (no hay mapas de los índices `s·k + j`):
+  sus cáusticas no ganan muestras propias.
+- **El multimuestreo de *Rápido*** con otro número que el del lienzo
+  (`antialias: true`, el que elija el navegador, normalmente 4) dibuja en
+  un destino que three.js trata como la pantalla gracias a
+  `isXRRenderTarget` (curva de tono y sRGB en cada material): un detalle
+  interno de three.js 0.186 que la comprobación del navegador vigila (si
+  una versión lo cambia, los colores salen distintos y la comprobación
+  falla). Swiftshader llega a 4×: 8× no se ha visto dibujado aquí.
+- **El medidor dice el filtro que se pidió al motor** con la vista en
+  pantalla (el motor no lo devuelve en sus tramas); en *Rápido* dice el
+  multimuestreo que three.js da.
+- **Ningún byte fijado del RSB del ejemplo se movió con el nuevo valor de
+  fábrica**: las fijaciones de `tests/fixtures/*.rsb` son las escenas de
+  `rt-core` (sin ajustes de la interfaz) y las pruebas del proyecto al RSB
+  pasan su vista sin filtro, así que `projectScene` sigue escribiendo
+  `pixel_filter` 0 (`edge_supersample` 1) mientras nadie lo pida; el
+  filtro de fábrica lo ponen los dos motores de la página en cada vista y
+  cada render (`setPixelFilter`), y lo que cambió son las expectativas de
+  sus tests (la primera vista lleva `pixel_filter` 3 y `status()` dice
+  *Fino*; antes, 0 y nada).
+- **El medidor nombra el filtro cuando no es el de fábrica**, no «cuando
+  no es el estándar» como decía el plan: con *Fino* de fábrica, el plan
+  habría dicho *Filtro · Fino* casi siempre. Decisión del líder; así el
+  caso de siempre calla y *Filtro · Estándar* sale cuando alguien lo
+  elige. El `status()` de los dos motores dice siempre el filtro de la
+  vista a resolución completa; el medidor decide.
+- **Los tiempos de la hoja** son de una máquina con otros procesos (carga
+  media de unos 35): el reloj dice tanto de ellos como del ajuste; por
+  eso la hoja da también el tiempo de CPU del proceso y los rayos.
 
 ## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
 

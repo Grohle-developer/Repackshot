@@ -40,6 +40,7 @@
 //!             ||| u32 passes (default 0)                                            (40 B)
 //!             |||| u32 denoise (0) caustic_photons (0); f32 caustic_radius (0)      (52 B)
 //!             ||||| f32 denoise_strength (1)                                       (56 B)
+//!             |||||| u32 pixel_filter (0) edge_supersample (1)                     (64 B)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
 //! ```
@@ -140,7 +141,10 @@
 //!   the caustics (0: none, at most 4 194 304; see [`crate::caustics`]) and `caustic_radius`
 //!   their first gather radius in pixels at the focus distance (0: 3). `denoise_strength` (U11b,
 //!   `0..=1`, default 1) is how much of the denoised image the host hands out (the rest is the
-//!   image without denoise); the renderer ignores it too.
+//!   image without denoise); the renderer ignores it too. `pixel_filter` (E11) is where the
+//!   camera samples go ([`crate::pixel_filter`]: 0 the box of one pixel, 1 the centre, 2 a tent,
+//!   3 Blackman–Harris; unknown values mean the box) and `edge_supersample` the samples an edge
+//!   pixel takes per sample index (0 and 1: one; at most 16); a file of before renders as it did.
 
 use super::{
     Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Light, LightKind,
@@ -475,7 +479,12 @@ fn parse_render(r: &mut Reader) -> Result<RenderSettings, RsbError> {
         caustic_photons: r.opt_u32(0)?,
         caustic_radius: r.opt_f32(0.0)?,
         denoise_strength: r.opt_f32(1.0)?,
+        pixel_filter: r.opt_u32(0)?,
+        edge_supersample: r.opt_u32(1)?,
     };
+    if settings.edge_supersample > crate::pixel_filter::MAX_EDGE_SUPERSAMPLE {
+        return Err(r.invalid("edge_supersample must be at most 16"));
+    }
     if !(0.0..=1.0).contains(&settings.denoise_strength) {
         return Err(r.invalid("denoise_strength must be between 0 and 1"));
     }
@@ -802,6 +811,8 @@ impl Scene {
             w.u32(r.caustic_photons);
             w.f32(r.caustic_radius);
             w.f32(r.denoise_strength);
+            w.u32(r.pixel_filter);
+            w.u32(r.edge_supersample);
         });
         w.buf
     }
@@ -968,6 +979,8 @@ mod tests {
                 caustic_photons: 4096,
                 caustic_radius: 2.5,
                 denoise_strength: 0.25,
+                pixel_filter: 3,
+                edge_supersample: 4,
             },
             bitmaps: test_bitmaps(),
         }
@@ -1041,7 +1054,7 @@ mod tests {
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
         assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
-        assert_eq!(size(b"RNDR"), Some(14 * 4));
+        assert_eq!(size(b"RNDR"), Some(16 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
         assert_eq!(sections(&bytes)[3].1.len(), (2 + 24 + 6 + 1) * 4);
     }
@@ -1224,6 +1237,57 @@ mod tests {
     }
 
     #[test]
+    fn a_render_section_without_the_pixel_filter_renders_as_before() {
+        // E11: RNDR of 56 B (U11b) reads the box filter and no edge samples; more than 16 edge
+        // samples is invalid; an unknown filter is kept (it renders as the box).
+        let scene = full_scene();
+        assert_eq!(
+            (scene.render.pixel_filter, scene.render.edge_supersample),
+            (3, 4)
+        );
+        let bytes = scene.to_rsb();
+        let rewrite = |cut: Option<usize>, filter: Option<u32>, edges: Option<u32>| {
+            let mut out = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_RNDR {
+                    assert_eq!(payload[56..60], 3u32.to_le_bytes());
+                    assert_eq!(payload[60..64], 4u32.to_le_bytes());
+                    if let Some(v) = filter {
+                        payload[56..60].copy_from_slice(&v.to_le_bytes());
+                    }
+                    if let Some(v) = edges {
+                        payload[60..64].copy_from_slice(&v.to_le_bytes());
+                    }
+                    if let Some(n) = cut {
+                        payload.truncate(n);
+                    }
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        let old = Scene::from_rsb(&rewrite(Some(56), None, None)).expect("U11b layout reads");
+        assert_eq!(
+            (old.render.pixel_filter, old.render.edge_supersample),
+            (0, 1)
+        );
+        assert_eq!(old.render.denoise_strength, 0.25);
+        let odd = Scene::from_rsb(&rewrite(None, Some(77), Some(0))).expect("reads");
+        assert_eq!((odd.render.pixel_filter, odd.render.edge_factor()), (77, 1));
+        assert_eq!(
+            Scene::from_rsb(&rewrite(None, None, Some(16)))
+                .unwrap()
+                .render
+                .edge_factor(),
+            16
+        );
+        assert!(matches!(
+            Scene::from_rsb(&rewrite(None, None, Some(17))),
+            Err(RsbError::Invalid { tag: TAG_RNDR, .. })
+        ));
+    }
+
+    #[test]
     fn a_render_section_written_before_e5b_has_no_denoise_and_no_caustics() {
         // RNDR of 40 B (X2 to E5c): denoise off, no caustic photons, the default radius.
         let scene = full_scene();
@@ -1275,7 +1339,7 @@ mod tests {
         let mut old = bytes[..8].to_vec();
         for (tag, mut payload) in sections(&bytes) {
             if tag == TAG_RNDR {
-                assert_eq!(payload.len(), 56);
+                assert_eq!(payload.len(), 64);
                 assert_eq!(payload[36..40], scene.render.passes.to_le_bytes());
                 payload.truncate(36);
             }
