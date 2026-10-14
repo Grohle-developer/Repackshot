@@ -22,10 +22,9 @@ use crate::integrator::{first_hit, radiance_with, BvhTracer, Prepared, Tracer};
 use crate::math::Ray;
 use crate::passes::{albedo_of, Exact, PassFilm, PASS_ALBEDO, PASS_EXACT};
 use crate::pixel_filter::{self, EdgeMask};
-use crate::sampler::{PixelSampler, DIM_CAMERA, DIM_LENS};
+use crate::sampler::{PixelSampler, DIM_CAMERA};
 use crate::scene::Scene;
 use crate::simd::Isa;
-use crate::warp;
 
 /// A rectangle of pixels in image space.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +69,19 @@ pub fn camera_ray(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> Ray 
 /// the top left (where a background image is looked up; a filter wider than the pixel can pass
 /// beyond the image's border, and the position is then the border's).
 pub fn camera_sample(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> (Ray, (f32, f32)) {
+    let (ray, screen, _) = camera_sample_weighted(scene, sampler, x, y);
+    (ray, screen)
+}
+
+/// [`camera_sample`] and the colour weight of the light the ray brings back: white for the plain
+/// thin lens, one channel (three times) for a chromatic band of a lens or black for a sample its
+/// cat's eye blocks ([`crate::optics::Lens::sample`]).
+pub fn camera_sample_weighted(
+    scene: &Scene,
+    sampler: &PixelSampler,
+    x: u32,
+    y: u32,
+) -> (Ray, (f32, f32), Rgb) {
     let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
     let aspect = width as f32 / height as f32;
     let (du, dv) = sampler.get2(DIM_CAMERA);
@@ -80,15 +92,8 @@ pub fn camera_sample(scene: &Scene, sampler: &PixelSampler, x: u32, y: u32) -> (
     );
     let u = (x as f32 + du) / width as f32;
     let v = (y as f32 + dv) / height as f32;
-    let lens = if scene.camera.lens_radius() > 0.0 {
-        warp::concentric_disk(sampler.get2(DIM_LENS))
-    } else {
-        (0.0, 0.0)
-    };
-    (
-        scene.camera.generate_ray(aspect, u, v, lens),
-        (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)),
-    )
+    let (ray, weight) = scene.camera.sample_ray(aspect, u, v, sampler);
+    (ray, (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)), weight)
 }
 
 /// Renders one sample of every pixel of `tile` into `film` and returns the number of rays cast
@@ -226,11 +231,11 @@ fn render_tile_traced<T: Tracer>(
             let k = edges.map_or(1, |e| e.factor_at(x, y));
             if k <= 1 {
                 let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
-                let (ray, screen) = camera_sample(scene, &sampler, x, y);
+                let (ray, screen, weight) = camera_sample_weighted(scene, &sampler, x, y);
                 let (c, alpha) = radiance_with(
                     scene, prepared, tracer, &sampler, ray, screen, photons, &mut rays,
                 );
-                film.splat_alpha(x, y, c, alpha);
+                film.splat_alpha(x, y, c * weight, alpha);
                 continue;
             }
             // An edge pixel: the mean of its k samples of this index, splatted once.
@@ -238,11 +243,11 @@ fn render_tile_traced<T: Tracer>(
             for j in 0..k {
                 let index = sub_sample(sample_index, k, j);
                 let sampler = PixelSampler::new(scene.render.seed, x, y, index);
-                let (ray, screen) = camera_sample(scene, &sampler, x, y);
+                let (ray, screen, weight) = camera_sample_weighted(scene, &sampler, x, y);
                 let (c, alpha) = radiance_with(
                     scene, prepared, tracer, &sampler, ray, screen, photons, &mut rays,
                 );
-                sum += c;
+                sum += c * weight;
                 coverage += alpha;
             }
             let inv = 1.0 / k as f32;
@@ -749,9 +754,9 @@ mod tests {
     }
 
     /// Pinned hash of the tile at the centre of the example (sample 3).
-    const PINNED_CENTRE: u32 = 0x7a5a_e28b;
+    const PINNED_CENTRE: u32 = 0x8023_c8cf;
     /// Pinned hash of the tile over the small sphere of the example (sample 3).
-    const PINNED_SMALL_SPHERE: u32 = 0xb43b_da52;
+    const PINNED_SMALL_SPHERE: u32 = 0x8b22_0e08;
 
     /// Renders the whole example, 32-pixel tiles, samples `0..4`, and hashes the resolved film.
     pub(crate) fn example_4spp_hash() -> u32 {
@@ -778,7 +783,7 @@ mod tests {
     }
 
     /// Pinned hash of the whole example image at 4 samples per pixel.
-    pub(crate) const PINNED_EXAMPLE_4SPP: u32 = 0x2235_15c3;
+    pub(crate) const PINNED_EXAMPLE_4SPP: u32 = 0x8206_111f;
 
     /// Renders the whole E5 example (`sky` or HDRI), 32-pixel tiles, samples `0..4`, and hashes
     /// the resolved film.
@@ -820,9 +825,9 @@ mod tests {
     }
 
     /// Pinned hash of the E5 example (HDRI) at 4 samples per pixel.
-    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0xbf8a_bd5b;
+    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0x065d_16e0;
     /// Pinned hash of the E5 example (sky) at 4 samples per pixel.
-    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x2fcb_098a;
+    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x1c24_c35c;
 
     #[test]
     fn the_e5c_physical_sky_has_a_pinned_hash_on_every_platform() {
@@ -841,7 +846,7 @@ mod tests {
     }
 
     /// Pinned hash of the E5c example (physical sky) at 4 samples per pixel.
-    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x8bb0_9f6b;
+    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x9f4a_f472;
 
     /// Renders all of `scene`, 32-pixel tiles, samples `0..4`, each with its photon map (traced
     /// once per sample, as every host does), and hashes the resolved film.
@@ -881,7 +886,26 @@ mod tests {
     }
 
     /// Pinned hash of the E5b-1 example (caustics) at 4 samples per pixel.
-    pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x55d6_0f2f;
+    pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x5419_866e;
+
+    #[test]
+    fn the_o1_lens_has_a_pinned_hash_on_every_platform() {
+        // O1 added the LENS section: an iris of curved blades, a bright ring, an obstruction, cat's
+        // eye, an anamorphic squeeze, shift and tilt, chromatic bands, swirl and a pupil texture,
+        // all on the example with bokeh lights behind it. The scenes without a lens kept every
+        // hash above. Through an RSB round trip; `tools/wasm-parity.mjs` checks the real module
+        // against it (`rt --write-o1-example`).
+        let scene = crate::example::o1_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("O1 example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_O1_LENS_4SPP, "O1 lens on {}", isa.name());
+        }
+    }
+
+    /// Pinned hash of the O1 example (the busy lens) at 4 samples per pixel.
+    pub(crate) const PINNED_O1_LENS_4SPP: u32 = 0x1439_a1a8;
 
     /// Renders all of `scene` as a host does with edge samples (E11): 32-pixel tiles, an
     /// [`EdgeMask`] per tile, samples `0..4`, and hashes the resolved film.
@@ -924,7 +948,7 @@ mod tests {
     }
 
     /// Pinned hash of the E11 example (fine filter, edges ×2) at 4 samples per pixel.
-    pub(crate) const PINNED_E11_EDGES_4SPP: u32 = 0xf378_7fe7;
+    pub(crate) const PINNED_E11_EDGES_4SPP: u32 = 0x3d8f_85de;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

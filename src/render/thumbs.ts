@@ -10,6 +10,7 @@ import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLigh
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import type { MaterialInstance } from '../core/materials';
 import { applyMaterial } from './materials';
+import { flattenGraph } from '../core/material-preview';
 
 const SIZE = 96;
 
@@ -148,7 +149,8 @@ export class ThumbnailRenderer {
         const job = this.queue.shift()!;
         let url: string | null = null;
         if (r) {
-          applyMaterial(this.material, job.mat, 100);
+          // M3a: a material of nodes as the means of its outputs (the editor draws the graph itself).
+          applyMaterial(this.material, job.mat.graph ? { ...job.mat, ...flattenGraph(job.mat.graph) } : job.mat, 100);
           if (job.mat.family === 'EMISSIVE') this.material.emissiveIntensity = Math.min(this.material.emissiveIntensity, 2.5);
           r.setClearColor(0x000000, 0);
           r.render(this.scene, this.camera);

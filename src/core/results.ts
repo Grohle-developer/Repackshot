@@ -4,6 +4,7 @@
 // is over its limits (oldest first).
 
 import type { GuardReport } from './ai';
+import type { ResultProvenance } from './plugins';
 import type { BitDepth, OutputFormat } from './render';
 
 /**
@@ -56,6 +57,11 @@ export interface ResultMeta {
   ai?: AiResultInfo;
   /** Variants 2 and on, in order, when the job made more than one (X4b); `ai` is the first. */
   aiMore?: AiResultInfo[];
+  /**
+   * A result a plugin made from another one (P6, Render window ▸ Plugins ▸ Apply): the plugin, its version, the recipe
+   * and the controls it was given, and the result it came from. Absent for what a render job wrote.
+   */
+  provenance?: ResultProvenance;
 }
 
 /** Every AI variant of a result, the first one first (a result of before X4b has one at most). */

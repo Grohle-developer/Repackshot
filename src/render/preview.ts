@@ -9,11 +9,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
-import { evaluate, type Pose } from '../core/animation';
+import { evaluate, poseActive, type Pose } from '../core/animation';
+import type { MotionHint } from '../core/motion-hint';
 import type { Projection, Rect } from '../core/box-select';
-import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
+import { activeCamera, aspectRatio, cameraFrameRect, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, SENSOR_MM, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
-import { fitImageRect, getImage, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
+import { fitImageRect, getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
 import { isSphereLike, lightFrame, rigPivot, skySunDirection, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
 import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
 import { lensOf } from '../core/lens-coc';
@@ -31,6 +32,8 @@ import { Gizmo, GizmoDrag, modelRay, SCALE_CUBE_AT, type GizmoMode } from './giz
 import { applyMaterial, makeMaterial } from './materials';
 import { drawPasses, type PassMesh } from './preview-passes';
 import { TexturePreview } from './texture-preview';
+import { GraphBakes } from './graph-preview';
+import type { GraphWorkers } from './graph-client';
 
 /** Model space (Z up, mm) to three.js space (Y up): (x, y, z) -> (x, z, -y). */
 export function toThree(p: readonly number[]): THREE.Vector3 {
@@ -140,6 +143,15 @@ function plateCanvas(src: HTMLCanvasElement, fit: 'FILL' | 'FIT' | 'STRETCH', co
   ctx.drawImage(src, r.x, r.y, r.width, r.height);
   ctx.restore();
   return c;
+}
+
+/** The canvas of a GRADIENT background (L6): the engine's image of its two colours, stretched over the frame, the colour around. */
+function gradientCanvas(top: readonly number[], bottom: readonly number[], color: readonly number[], w: number, h: number, frame: FrameRect): HTMLCanvasElement {
+  const src = document.createElement('canvas');
+  src.width = GRADIENT_COLUMNS;
+  src.height = GRADIENT_ROWS;
+  src.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(gradientPixels(top, bottom)), GRADIENT_COLUMNS, GRADIENT_ROWS), 0, 0);
+  return plateCanvas(src, 'STRETCH', color, w, h, frame);
 }
 
 /** A canvas as the scene's flat background (sRGB, drawn as it is, not tone mapped). */
@@ -275,6 +287,13 @@ export class PreviewEngine implements RenderEngine {
   private readonly fallbackMaterial = new THREE.MeshPhysicalMaterial({ color: 0xb3b3b3, roughness: 0.5 });
   /** M2a: the image maps and labels of the materials (render/texture-preview.ts). */
   private textures: TexturePreview = new TexturePreview(() => (this.needsRender = true));
+  /** M3a: the materials made of nodes, baked into maps by the graph workers (render/graph-preview.ts). */
+  private readonly graphs = new GraphBakes(
+    () => this.textures,
+    () => (this.needsRender = true),
+    // The canvas says how many bakes are under way (the browser checks wait for 0).
+    (n) => this.renderer?.domElement && (this.renderer.domElement.dataset.graphBakes = String(n)),
+  );
   private readonly floor: THREE.Mesh<THREE.PlaneGeometry, THREE.ShadowMaterial>;
   private readonly shadowLight = new THREE.DirectionalLight(0xffffff, 0);
   private envKey = '';
@@ -350,6 +369,10 @@ export class PreviewEngine implements RenderEngine {
   private readonly glyphLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, toneMapped: false, dashSize: 4, gapSize: 3 }));
   private readonly glyphSelected = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false }));
   private readonly glyphDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false }));
+  /** N6: the track of the animation selected in the timeline (overlay lines and dots, model space) and its target, outlined. */
+  private motionHighlight: readonly NodeId[] = [];
+  private readonly motionLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false }));
+  private readonly motionDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false }));
   /** Settings ▸ Preferences: how the mouse moves the camera, and the floor grid. */
   private tool: PreviewTool = 'select';
   private nav: NavigationPrefs = { mouse: 'LEFT', invertZoom: false, orbitSpeed: 1, zoomSpeed: 1 };
@@ -376,12 +399,12 @@ export class PreviewEngine implements RenderEngine {
     this.copyScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.copyMaterial));
     this.overlayRoot.matrixAutoUpdate = false;
     this.overlayRoot.matrix.copy(BASIS);
-    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots]) {
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) {
       g.frustumCulled = false;
       g.renderOrder = -1;
       g.visible = false;
     }
-    this.overlayRoot.add(this.glyphLines, this.glyphSelected, this.glyphDots, this.gizmo.root);
+    this.overlayRoot.add(this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots, this.gizmo.root);
     this.overlayScene.add(this.overlayRoot);
   }
 
@@ -595,7 +618,7 @@ export class PreviewEngine implements RenderEngine {
   setInk(rgb: readonly number[]): void {
     this.outlineMaterial.uniforms.ink.value.set(rgb[0], rgb[1], rgb[2]);
     this.gizmo.setInk(rgb);
-    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots]) g.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
+    for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) g.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.LinearSRGBColorSpace);
     this.needsRender = true;
   }
 
@@ -611,7 +634,7 @@ export class PreviewEngine implements RenderEngine {
   }
 
   /** The camera the viewport looks through: a light's or a saved camera's view (Look through, L4), or the active one. */
-  private viewCamera(state: ProjectState): CameraState | undefined {
+  private viewCamera(state: ProjectState): CameraState {
     const lt = this.glyphSpec.lookThrough;
     return (lt ? lookThroughCamera(state, lt) : null) ?? activeCamera(state);
   }
@@ -627,7 +650,8 @@ export class PreviewEngine implements RenderEngine {
     if (nodesChanged) this.syncNodes(state, prev);
     if (nodesChanged || matsChanged) this.assignMaterials(state);
     const anim = state.animation;
-    const posed = anim.clips.length > 0 && (anim.playing || anim.playhead > 0);
+    // A reversed clip holds its end state from the first frame (an explode that assembles starts apart).
+    const posed = poseActive(state);
     const poseToggled = posed !== this.poseActive;
     const poseChanged = poseToggled || (posed && (full || anim !== prev.animation));
     const pose = posed ? evaluate(state, anim.playhead) : null;
@@ -639,7 +663,8 @@ export class PreviewEngine implements RenderEngine {
     if (full || nodesChanged || poseLights || state.studio !== prev.studio || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncLights(state, pose);
     // The sky follows the sun light; the background image the frame (output size).
     const skyFollows = state.environment.kind === 'SKY' && !full && (state.studio !== prev.studio || poseLights);
-    const plateFollows = state.environment.background === 'BACKPLATE' && !full && (state.render.width !== prev.render.width || state.render.height !== prev.render.height);
+    // The frame is the image of the camera on screen (U13): its ratio moves the background image and the gradient.
+    const plateFollows = (state.environment.background === 'BACKPLATE' || state.environment.background === 'GRADIENT') && !full && aspectRatio(this.viewCamera(state)) !== aspectRatio(this.viewCamera(prev));
     if (full || state.environment !== prev.environment || poseEnv || skyFollows || plateFollows) this.syncEnvironment(state, pose);
     if (full || state.image !== prev.image) this.syncImage(state);
     if (full || nodesChanged || state.studio !== prev.studio || state.environment !== prev.environment) this.syncFloor(state);
@@ -663,18 +688,30 @@ export class PreviewEngine implements RenderEngine {
     this.needsRender = true;
   }
 
+  /** M3a: the workers that bake material graphs (main.ts gives them; without them a graph shows its means). */
+  setGraphWorkers(w: GraphWorkers | null): void {
+    this.graphs.setWorkers(w);
+  }
+
   private syncMaterials(state: ProjectState, prev: ProjectState | null): void {
     for (const [id, inst] of Object.entries(state.materials)) {
       const m = this.materials.get(id);
+      // A graph's maps are made for the parts that carry it: their meshes count too.
+      const graphParts = !!inst.graph && !!prev && prev.scene.nodes !== state.scene.nodes;
       if (!m) {
-        const made = makeMaterial(inst, state.scene.partSizeMm);
-        this.textures.apply(made, inst);
+        const made = makeMaterial(inst.graph ? null : inst, state.scene.partSizeMm);
+        if (inst.graph) this.graphs.apply(made, inst, state);
+        else this.textures.apply(made, inst);
         this.materials.set(id, made);
-      } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm) {
-        applyMaterial(m, inst, state.scene.partSizeMm);
-        this.textures.apply(m, inst);
+      } else if (!prev || prev.materials[id] !== inst || prev.scene.partSizeMm !== state.scene.partSizeMm || graphParts) {
+        if (inst.graph) this.graphs.apply(m, inst, state);
+        else {
+          applyMaterial(m, inst, state.scene.partSizeMm);
+          this.textures.apply(m, inst);
+        }
       }
     }
+    this.graphs.prune(new Set(Object.keys(state.materials).filter((id) => state.materials[id].graph)));
     for (const [id, m] of this.materials) {
       if (!state.materials[id]) {
         m.dispose();
@@ -954,11 +991,30 @@ export class PreviewEngine implements RenderEngine {
       this.scene.background = null;
     } else if (env.background === 'BACKPLATE') {
       // The image fitted to the output frame of the viewport, the colour while none is loaded.
-      const frame = outputFrameRect(this.width, this.height, state.render.width, state.render.height);
+      const frame = cameraFrameRect(this.viewCamera(state), this.width, this.height);
       this.scene.background = this.viewportPlate(state, this.width, this.height, frame) ?? color();
+    } else if (env.background === 'GRADIENT') {
+      const frame = cameraFrameRect(this.viewCamera(state), this.width, this.height);
+      this.scene.background = this.viewportGradient(state, this.width, this.height, frame);
     } else {
       this.scene.background = this.envTexture;
     }
+  }
+
+  /** The viewport's GRADIENT background (L6), cached like the background image. */
+  private viewportGradient(state: ProjectState, w: number, h: number, frame: FrameRect): THREE.Texture {
+    const env = state.environment;
+    const k = Math.min(Math.max(1, this.dpr), 2048 / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * k));
+    const ch = Math.max(1, Math.round(h * k));
+    const f = { x: frame.x * k, y: frame.y * k, width: frame.width * k, height: frame.height * k };
+    const key = `gradient|${env.gradient.top.join(',')}|${env.gradient.bottom.join(',')}|${env.color.join(',')}|${cw}x${ch}|${f.x},${f.y},${f.width},${f.height}`;
+    if (key !== this.plateKey || !this.plateTexture) {
+      this.plateKey = key;
+      this.plateTexture?.dispose();
+      this.plateTexture = backgroundTexture(gradientCanvas(env.gradient.top, env.gradient.bottom, env.color, cw, ch, f));
+    }
+    return this.plateTexture;
   }
 
   /** The canvas of the background image's pixels, or null when none is loaded. */
@@ -1006,14 +1062,17 @@ export class PreviewEngine implements RenderEngine {
     // Looking through a light or a saved camera (L4): its view, and the navigation moves it (main.ts).
     const through = this.glyphSpec.lookThrough ? lookThroughCamera(state, this.glyphSpec.lookThrough) : null;
     if (through) {
-      this.placeCamera(through, this.width, this.height, state.render.width, state.render.height, true);
+      this.placeCamera(through, this.width, this.height, through.aspect.w, through.aspect.h, true);
       this.controls.enabled = !through.locked;
       return;
     }
     const base = pose?.camera ? (state.camera.cameras[pose.camera.camera] ?? activeCamera(state)) : activeCamera(state);
     if (!base) return;
     const cam: CameraState = pose?.camera ? { ...base, ...pose.camera, id: base.id } : base;
-    this.placeCamera(cam, this.width, this.height, state.render.width, state.render.height, true);
+    // The frame is the active camera's even while a shot's camera plays: the output has one size (U13; the Doctor
+    // warns when a shot's camera has another ratio).
+    const frame = activeCamera(state).aspect;
+    this.placeCamera(cam, this.width, this.height, frame.w, frame.h, true);
     this.controls.enabled = !cam.locked && !pose?.camera;
   }
 
@@ -1035,6 +1094,18 @@ export class PreviewEngine implements RenderEngine {
     this.persp.near = Math.max(cam.clipStart, 0.01);
     this.persp.far = Math.max(cam.clipEnd, this.persp.near * 10);
     this.persp.updateProjectionMatrix();
+    // O1: a lens shift moves the frame on the sensor without turning the camera (rt-core `optics`): the projection's
+    // centre moves by the shift over the half size of the view, in millimetres of the 36 mm sensor.
+    const shiftX = cam.optics?.shiftXMm ?? 0;
+    const shiftY = cam.optics?.shiftYMm ?? 0;
+    if (shiftX !== 0 || shiftY !== 0) {
+      const frameW = outAspect >= 1 ? SENSOR_MM : SENSOR_MM * outAspect;
+      const frameH = outAspect >= 1 ? SENSOR_MM / outAspect : SENSOR_MM;
+      const e = this.persp.projectionMatrix.elements;
+      e[8] = shiftX / ((frameW / 2) * (w / Math.max(1, frame.width)));
+      e[9] = shiftY / ((frameH / 2) * k);
+      this.persp.projectionMatrixInverse.copy(this.persp.projectionMatrix).invert();
+    }
     const halfH = (cam.orthoWidth / outAspect / 2) * k;
     const halfW = halfH * (w / Math.max(1, h));
     this.ortho.left = -halfW;
@@ -1075,7 +1146,8 @@ export class PreviewEngine implements RenderEngine {
     const s = this.state;
     if (!s) return;
     const selected = new Set(partsUnder(s, s.selection.ids.filter((id) => s.scene.nodes[id])));
-    const hovered = new Set(partsUnder(s, this.hover));
+    // The target of the animation selected in the timeline is outlined like a part under the pointer (N6).
+    const hovered = new Set([...partsUnder(s, this.hover), ...this.motionHighlight]);
     for (const [id, obj] of this.objects) {
       if (!(obj instanceof THREE.Mesh)) continue;
       obj.layers.set(0);
@@ -1139,7 +1211,7 @@ export class PreviewEngine implements RenderEngine {
     this.renderer.setSize(width, height, false);
     if (this.state) this.syncCamera(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
     // The background image follows the output frame inside the viewport.
-    if (this.state?.environment.background === 'BACKPLATE') this.syncEnvironment(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
+    if (this.state?.environment.background === 'BACKPLATE' || this.state?.environment.background === 'GRADIENT') this.syncEnvironment(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
     this.needsRender = true;
   }
 
@@ -1150,7 +1222,7 @@ export class PreviewEngine implements RenderEngine {
 
   /** Something to draw over the path tracer: an outline, selected faces, the gizmo. */
   private hasOverlay(): boolean {
-    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive) || this.glyphs.length > 0) return true;
+    if (this.faceOverlay || this.dropOverlay || (this.gizmo.visible && !this.poseActive) || this.glyphs.length > 0 || this.motionLines.visible || this.motionDots.visible) return true;
     for (const o of this.objects.values()) if (o.layers.isEnabled(LAYER_SELECTED) || o.layers.isEnabled(LAYER_HOVER)) return true;
     return false;
   }
@@ -1311,7 +1383,11 @@ export class PreviewEngine implements RenderEngine {
     this.glyphSpec = { all: spec.all, selected: spec.selected, lookThrough: spec.lookThrough };
     this.syncGlyphs();
     if (this.state && lookChanged) {
-      this.syncCamera(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
+      const pose = this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null;
+      this.syncCamera(this.state, pose);
+      // A background image or gradient fills the frame of the camera on screen, which may have another ratio (U13).
+      const bg = this.state.environment.background;
+      if (bg === 'BACKPLATE' || bg === 'GRADIENT') this.syncEnvironment(this.state, pose);
       if (this.gizmoSpec) this.placeGizmo();
     }
     this.needsRender = true;
@@ -1342,6 +1418,28 @@ export class PreviewEngine implements RenderEngine {
     this.glyphLines.material.dashSize = size / 40;
     this.glyphLines.material.gapSize = size / 60;
     if (lines.length > 0) this.glyphLines.computeLineDistances();
+    this.needsRender = true;
+  }
+
+  /**
+   * N6: the animation selected in the timeline: its target outlined (as the pointer outlines a part) and its track drawn
+   * over the image in the theme's ink (model space; the overlay's basis turns it Y up). Null clears both.
+   */
+  setMotionHint(hint: MotionHint | null): void {
+    const ids = hint?.highlight ?? [];
+    if (ids.length !== this.motionHighlight.length || ids.some((x, i) => x !== this.motionHighlight[i])) {
+      this.motionHighlight = [...ids];
+      this.updateLayers();
+    }
+    const put = (obj: THREE.LineSegments | THREE.Points, pts: readonly Vec3[]) => {
+      const data: number[] = [];
+      for (const p of pts) data.push(p[0], p[1], p[2]);
+      obj.geometry.setAttribute('position', new THREE.Float32BufferAttribute(data, 3));
+      obj.geometry.computeBoundingSphere();
+      obj.visible = data.length > 0;
+    };
+    put(this.motionLines, hint?.lines ?? []);
+    put(this.motionDots, hint?.dots ?? []);
     this.needsRender = true;
   }
 
@@ -1389,7 +1487,9 @@ export class PreviewEngine implements RenderEngine {
 
   private drawGizmo(cam: THREE.Camera): void {
     const gizmo = this.gizmo.visible && !this.poseActive;
-    if (!gizmo && this.glyphs.length === 0) return;
+    // N6: the track of the animation selected in the timeline goes over everything too, also while it plays.
+    const motion = this.motionLines.visible || this.motionDots.visible;
+    if (!gizmo && this.glyphs.length === 0 && !motion) return;
     // The glyphs of lights and cameras (L4) go with the gizmo, over everything; while the animation plays, not the gizmo.
     const shown = this.gizmo.root.visible;
     if (!gizmo) this.gizmo.root.visible = false;
@@ -1640,8 +1740,13 @@ export class PreviewEngine implements RenderEngine {
       this.placeCamera(cam, opts.width, opts.height, opts.width, opts.height, false);
       // A picture's background image fills the whole picture (it is the output frame).
       const plate = !opts.transparent && s.environment.background === 'BACKPLATE' ? this.plateImage(s) : null;
+      const whole = { x: 0, y: 0, width: opts.width, height: opts.height };
       if (plate) {
-        stillPlate = backgroundTexture(plateCanvas(plate, s.environment.backplateFit, s.environment.color, opts.width, opts.height, { x: 0, y: 0, width: opts.width, height: opts.height }));
+        stillPlate = backgroundTexture(plateCanvas(plate, s.environment.backplateFit, s.environment.color, opts.width, opts.height, whole));
+        this.scene.background = stillPlate;
+      } else if (!opts.transparent && s.environment.background === 'GRADIENT') {
+        const g = s.environment.gradient;
+        stillPlate = backgroundTexture(gradientCanvas(g.top, g.bottom, s.environment.color, opts.width, opts.height, whole));
         this.scene.background = stillPlate;
       }
       if (opts.transparent) this.scene.background = null;

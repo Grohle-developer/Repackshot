@@ -2,7 +2,7 @@
 // sections and decodes each one back into the shapes of src/io/rsb.ts, so a round trip can be
 // compared field by field. Layout: engine/crates/rt-core/src/scene/rsb.rs.
 
-import type { RsbBitmap, RsbCamera, RsbEnvironment, RsbFloor, RsbInstance, RsbLight, RsbMaterial, RsbMesh, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
+import type { RsbBitmap, RsbCamera, RsbEnvironment, RsbFloor, RsbInstance, RsbLens, RsbLight, RsbMaterial, RsbMesh, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
 
 export interface Section {
   tag: string;
@@ -135,6 +135,35 @@ export function readBitmap(p: DataView): RsbBitmap {
   return { format, width, height, data };
 }
 
+/** A LENS section (O1): the numbers, then the picture (without its padding). */
+export function readLens(p: DataView): RsbLens {
+  const c = new Cursor(p);
+  const l: RsbLens = {
+    blades: c.u32(),
+    roundness: c.f32(),
+    rotationDeg: c.f32(),
+    profile: c.u32(),
+    profileParam: c.f32(),
+    obstruction: c.f32(),
+    catsEye: c.f32(),
+    squeeze: c.f32(),
+    shiftXMm: c.f32(),
+    shiftYMm: c.f32(),
+    tiltDeg: c.f32(),
+    tiltAxisDeg: c.f32(),
+    caAmount: c.f32(),
+    swirl: c.f32(),
+    fieldMm: c.f32(),
+    maskKind: c.u32(),
+    maskWidth: c.u32(),
+    maskHeight: c.u32(),
+    mask: new Uint8Array(0),
+  };
+  const len = l.maskWidth * l.maskHeight;
+  l.mask = new Uint8Array(p.buffer.slice(p.byteOffset + 72, p.byteOffset + 72 + len));
+  return l;
+}
+
 export function readFloor(p: DataView): RsbFloor {
   const c = new Cursor(p);
   return { mode: c.u32(), z: c.f32(), color: c.vec() };
@@ -171,7 +200,10 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
     out.tags.push(s.tag);
     switch (s.tag) {
       case 'CAMR':
-        out.camera = readCamera(s.payload);
+        out.camera = { ...readCamera(s.payload), ...(out.camera?.lens ? { lens: out.camera.lens } : {}) };
+        break;
+      case 'LENS':
+        out.camera = { ...(out.camera as RsbCamera), lens: readLens(s.payload) };
         break;
       case 'MATL':
         out.materials.push(readMaterial(s.payload));

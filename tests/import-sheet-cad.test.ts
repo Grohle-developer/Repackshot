@@ -6,8 +6,8 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { describePayload, ImportError, TESSELLATION_PRESETS, type ImportReadOptions } from '../src/core/import-options';
 import { hasMesh } from '../src/core/meshes';
-import { allParts } from '../src/core/scene';
-import { createInitialState, createStore } from '../src/core/store';
+import { ownParts } from '../src/core/scene';
+import { createInitialState, createStore, type ProjectState } from '../src/core/store';
 import { importFile } from '../src/io/import';
 import { releaseCadWorker, setCadWorkerFactory } from '../src/io/step';
 import { CAD_REREAD_DELAY_MS, cancelImport, confirmImport, importFiles, setImportOptions } from '../src/ui/commands';
@@ -17,6 +17,9 @@ import type { Ctx } from '../src/ui/reactive';
 import { setLang, t } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
 import { fixture, inProcessWorker, loadOcct } from './occt-node';
+
+/** The roots of the model: not the pieces a set (L6) dresses an imported product with. */
+const ownRoots = (st: ProjectState): string[] => st.scene.roots.filter((r) => !st.scene.nodes[r].setPiece);
 
 beforeAll(async () => {
   await loadOcct();
@@ -66,12 +69,12 @@ describe('a STEP file in the sheet', () => {
     const now = ctx.ui.get().importSheet!;
     expect(now.rev).toBe(1);
     expect(describePayload(now.payload)).toMatchObject({ parts: 2, groups: 1, materials: 2 });
-    expect(ctx.store.get().scene.roots).toEqual([]);
+    expect(ownRoots(ctx.store.get())).toEqual([]);
     confirmImport(ctx);
     const s = ctx.store.get();
-    expect(allParts(s).map((p) => s.scene.nodes[p].name).sort()).toEqual(['Body', 'Cap']);
+    expect(ownParts(s).map((p) => s.scene.nodes[p].name).sort()).toEqual(['Body', 'Cap']);
     // The CAD faces reach the scene with the parts.
-    expect(allParts(s).map((p) => s.scene.nodes[p].faceRanges!.length).sort()).toEqual([3, 6]);
+    expect(ownParts(s).map((p) => s.scene.nodes[p].faceRanges!.length).sort()).toEqual([3, 6]);
     expect(ctx.ui.get().importSheet).toBeNull();
   });
 
@@ -90,9 +93,9 @@ describe('a STEP file in the sheet', () => {
     confirmImport(ctx);
     expect(ctx.ui.get().importSheet!.cad!.confirm).toBe(true);
     expect(cadStatusText('box.step', ctx.ui.get().importSheet!.cad!)).toContain(t('import.cad.whenRead'));
-    expect(ctx.store.get().scene.roots).toEqual([]);
+    expect(ownRoots(ctx.store.get())).toEqual([]);
     await until(() => ctx.ui.get().importSheet === null);
-    expect(allParts(ctx.store.get())).toHaveLength(1);
+    expect(ownParts(ctx.store.get())).toHaveLength(1);
     expect(ctx.store.history().undo).toEqual(['Import box.step']);
   });
 
@@ -140,7 +143,7 @@ describe('a STEP file in the sheet', () => {
     expect(sheet.cad!.error).toBe(t('import.error.unreadable'));
     expect(cadStatusText(sheet.name, sheet.cad!)).toBe(t('import.cad.failed', { name: 'broken.step', reason: t('import.error.unreadable') }));
     confirmImport(ctx);
-    expect(ctx.store.get().scene.roots).toEqual([]);
+    expect(ownRoots(ctx.store.get())).toEqual([]);
     expect(ctx.ui.get().toasts.some((x) => x.text.includes('broken.step'))).toBe(true);
     cancelImport(ctx);
     expect(ctx.ui.get().importSheet).toBeNull();
@@ -188,6 +191,6 @@ describe('a STEP file in the sheet', () => {
     await until(() => ctx.ui.get().importSheet?.name === 'quarter.igs' && ready(ctx));
     expect(ctx.ui.get().importSheet!.format).toBe('IGES');
     confirmImport(ctx);
-    expect(allParts(ctx.store.get()).map((p) => ctx.store.get().scene.nodes[p].name).sort()).toEqual(['Box', 'Quarter shell']);
+    expect(ownParts(ctx.store.get()).map((p) => ctx.store.get().scene.nodes[p].name).sort()).toEqual(['Box', 'Quarter shell']);
   });
 });

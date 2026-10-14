@@ -1,0 +1,4 @@
+Invert (test plugin) — a fixture of Repackshot's tests.
+
+This file stands in for the licence text of a closed plugin, so the tests and the browser check can show one. The
+fixture itself is part of Repackshot and is under Repackshot's licence (PolyForm Noncommercial 1.0.0).

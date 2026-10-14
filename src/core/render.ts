@@ -14,16 +14,20 @@ import type { QualityKey, ResolutionKey } from '../data/types';
 import { AI_STYLES, DEFAULT_AI_PIPELINE, MAX_VARIANTS, type AiPipelineSettings, type AiPostStage, type AiStyle } from './ai';
 import { normaliseUserPrompt } from './ai-prompt';
 import type { ActionBase, ProjectState } from './store';
-import type { CameraId } from './camera';
+import { activeCamera, aspectRatio, type CameraId } from './camera';
+import { customFromPixels, type CameraAspect } from './aspect';
+import { ASPECT_PRESETS } from '../data/aspects';
 import { CAUSTICS_MODES, CAUSTICS_QUALITIES, DENOISE_MODES, denoiseBits, type CausticsMode, type CausticsQuality, type DenoiseMode } from './caustics';
 import { nextId } from './ids';
 import { DEFAULT_NAME_TEMPLATE } from './name-template';
+import { normalisePlugins, NO_PLUGINS, type PluginsSettings } from './plugins';
 import { clampDpi, DEFAULT_DPI, lockedSide, PRINT_UNITS, type PrintUnit } from './print-size';
 
 export type RenderQuality = QualityKey | 'CUSTOM';
 export type RenderMode = 'IMAGE' | 'ANIMATION';
-export type OutputFormat = 'PNG' | 'JPEG' | 'EXR';
-export type BitDepth = 8 | 16;
+export type OutputFormat = 'PNG' | 'JPEG' | 'EXR' | 'TIFF' | 'DNG';
+/** Bits per channel: 8 and 16 are sRGB (PNG, TIFF); 32 is the float TIFF in linear light. */
+export type BitDepth = 8 | 16 | 32;
 /** When a render ends: at a number of samples, at a time, or whichever comes first (Advanced). */
 export type FinishBy = 'SAMPLES' | 'TIME' | 'FIRST';
 /** Where an output goes: the browser's downloads, or a folder chosen with the File System Access API. */
@@ -163,16 +167,25 @@ export interface RenderSettings {
   /** Open the result in the results viewer when the job ends. */
   showWhenDone: boolean;
   format: OutputFormat;
-  /** PNG only: 8 or 16 bits per channel. */
+  /** PNG: 8 or 16 bits per channel; TIFF: 8, 16 or 32 (float, linear). Any other format keeps 8 (EXR and DNG are 32-bit float always). */
   bitDepth: BitDepth;
   /** JPEG quality, 1..100. */
   jpegQuality: number;
   transparent: boolean;
   camera: CameraChoice;
+  /**
+   * The size in pixels. An image keeps the width and takes its height from the active camera's aspect ratio
+   * (U13: `syncOutputSize`, and `reduceRender` for a size typed in the window); an animation has the size of its
+   * own, as the window shows it.
+   */
   width: number;
   height: number;
+  /** With the lock, typing one side keeps the ratio (an image: the camera's); without it a typed size becomes the camera's ratio. */
   aspectLock: boolean;
-  /** width / height the lock keeps. */
+  /**
+   * width / height the size follows: an image's is always the active camera's ratio (`aspectRatio`); an
+   * animation's is its own, the one its lock keeps. Jobs and the draft of an edited job keep their own.
+   */
   aspect: number;
   /** Written into the file (PNG pHYs, JPEG JFIF). */
   dpi: number;
@@ -185,6 +198,12 @@ export interface RenderSettings {
   advanced: AdvancedSettings;
   animation: AnimationOutput;
   ai: AiSettings;
+  /**
+   * P6, Render window ▸ Plugins: each plugin's recipe and controls, by plugin id (core/plugins.ts). Undoable and saved
+   * with the project; a project of before has none (`{}`), and an entry of a plugin that is not installed is kept as
+   * it is. The values are checked against the plugin's manifest where it runs (`controlsFor`).
+   */
+  plugins: PluginsSettings;
 }
 
 /** One job of the render queue: the settings it was made with, and how it is going. */
@@ -240,19 +259,48 @@ export interface RenderState extends RenderSettings {
 }
 
 /** Formats this version writes. */
-export const WRITABLE_FORMATS: ReadonlySet<OutputFormat> = new Set<OutputFormat>(['PNG', 'JPEG', 'EXR']);
+export const WRITABLE_FORMATS: ReadonlySet<OutputFormat> = new Set<OutputFormat>(['PNG', 'JPEG', 'EXR', 'TIFF', 'DNG']);
 /** Frame rates offered for animation output. */
 export const FPS_CHOICES: readonly number[] = [24, 25, 30, 60];
 /** Encoded video arrives with N1; until then the output is a frame sequence. */
 export const VIDEO_AVAILABLE = false;
-/** Formats that carry an alpha channel. */
+/** Formats that carry an alpha channel (a DNG is a raw: it has none). */
 export function supportsAlpha(format: OutputFormat): boolean {
-  return format === 'PNG' || format === 'EXR';
+  return format === 'PNG' || format === 'EXR' || format === 'TIFF';
 }
 
 /** File extension of a format. */
 export function formatExtension(format: OutputFormat): string {
-  return format === 'JPEG' ? 'jpg' : format === 'EXR' ? 'exr' : 'png';
+  switch (format) {
+    case 'JPEG':
+      return 'jpg';
+    case 'EXR':
+      return 'exr';
+    case 'TIFF':
+      return 'tif';
+    case 'DNG':
+      return 'dng';
+    default:
+      return 'png';
+  }
+}
+
+/** The bit depths a format offers: PNG 8 or 16, TIFF 8, 16 or 32 (float); the others have no choice. */
+export function bitDepthsOf(format: OutputFormat): readonly BitDepth[] {
+  return format === 'PNG' ? [8, 16] : format === 'TIFF' ? [8, 16, 32] : [8];
+}
+
+/** Whether the file is written from the engine's linear float sums (not from its 8-bit pixels): 16-bit PNG and TIFF, 32-bit TIFF, EXR and DNG. */
+export function needsLinearSums(format: OutputFormat, bitDepth: BitDepth): boolean {
+  return format === 'EXR' || format === 'DNG' || (format === 'PNG' && bitDepth === 16) || (format === 'TIFF' && bitDepth !== 8);
+}
+
+/**
+ * Whether a browser cannot show the file (EXR, TIFF, DNG): the render keeps an 8-bit PNG of the same image
+ * beside it for the results viewer and the thumbnails.
+ */
+export function needsDisplayCopy(format: OutputFormat): boolean {
+  return format === 'EXR' || format === 'TIFF' || format === 'DNG';
 }
 
 /** The RESOLUTION_PRESETS key for a size, or 'CUSTOM'. */
@@ -299,6 +347,7 @@ export function defaultRenderSettings(): RenderSettings {
     advanced: { ...DEFAULT_ADVANCED },
     animation: { range: 'ALL', rangeUnit: 'FRAMES', from: 1, to: 1, fps: 24, output: 'FRAMES', video: 'MP4' },
     ai: DEFAULT_AI,
+    plugins: NO_PLUGINS,
   };
 }
 
@@ -331,11 +380,47 @@ export function settingsOf(r: RenderSettings): RenderSettings {
     advanced: r.advanced,
     animation: r.animation,
     ai: r.ai,
+    plugins: r.plugins ?? NO_PLUGINS,
   };
 }
 
 const clampInt = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, Math.round(Number.isFinite(v) ? v : lo)));
 const clampSize = (v: number): number => clampInt(v, MIN_OUTPUT_SIDE, MAX_OUTPUT_SIDE);
+
+/**
+ * The size of an image of `ratio` (width / height) at this width: the width is kept (within the engine's limits)
+ * and the height is `round(width / ratio)`, within the limits too. At the extremes (a 3:700 ratio at 1000 pixels
+ * wide) the height stops at the limit and the pair no longer has the ratio, but the width is not lost: the ratio
+ * that comes next gives the height back.
+ */
+export function sizeForWidth(width: number, ratio: number): { width: number; height: number } {
+  const r = ratio > 0 && Number.isFinite(ratio) ? ratio : 16 / 9;
+  const w = clampSize(width);
+  return { width: w, height: clampSize(w / r) };
+}
+
+/** The size of an image of `ratio` at this height (the lock closed with the height typed): see `sizeForWidth`. */
+export function sizeForHeight(height: number, ratio: number): { width: number; height: number } {
+  const r = ratio > 0 && Number.isFinite(ratio) ? ratio : 16 / 9;
+  const h = clampSize(height);
+  return { width: clampSize(h * r), height: h };
+}
+
+/** Whether a size has this ratio to the pixel: the height is the one `sizeForWidth` gives, before the limits. */
+function followsRatio(width: number, height: number, ratio: number): boolean {
+  return Math.round(width / ratio) === height;
+}
+
+/**
+ * The aspect ratio a size in pixels is, to the letter: the preset whose ratio gives exactly this height at this
+ * width (so the size survives `syncOutputSize` as typed), else a custom ratio with the pixels as its terms.
+ */
+export function aspectForSize(width: number, height: number): CameraAspect {
+  const w = clampSize(width);
+  const h = clampSize(height);
+  for (const p of ASPECT_PRESETS) if (followsRatio(w, h, p.w / p.h)) return { preset: p.key, w: p.w, h: p.h };
+  return customFromPixels(w, h);
+}
 
 /**
  * Applies a patch of settings with every rule of the window: sizes clamped, the aspect lock (one
@@ -373,7 +458,7 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
   // Format.
   if (!WRITABLE_FORMATS.has(next.format)) next.format = 'PNG';
   if (!supportsAlpha(next.format)) next.transparent = false;
-  if (next.bitDepth !== 16 || next.format !== 'PNG') next.bitDepth = 8;
+  if (!bitDepthsOf(next.format).includes(next.bitDepth)) next.bitDepth = 8;
   if (p.jpegQuality !== undefined) next.jpegQuality = clampInt(p.jpegQuality, 1, 100);
   // Engine.
   if (p.advanced !== undefined) {
@@ -410,6 +495,8 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
   }
   // AI post-processing: merged into the current settings, then every control clamped (a slider drag is many patches).
   next.ai = normaliseAi(p.ai !== undefined ? { ...s.ai, ...p.ai } : s.ai, s.ai);
+  // Plugins: the shape checked, the entries that did not change kept as they were (watchers compare by reference).
+  next.plugins = p.plugins !== undefined ? normalisePlugins(p.plugins, s.plugins ?? NO_PLUGINS) : (s.plugins ?? NO_PLUGINS);
   if (next.mode !== 'ANIMATION') next.mode = 'IMAGE';
   return next;
 }
@@ -441,6 +528,20 @@ function freshRuntime(): JobRuntime {
 }
 
 /**
+ * The settings of an image job for a camera (U13): the window's size is the active camera's, so a camera with
+ * another aspect ratio (One camera, or each of All cameras) renders at the same width and its own height. A camera
+ * with the window's ratio, an animation, or no camera: the settings as they are.
+ */
+function sizedFor(state: ProjectState, s: RenderSettings, camera: CameraId | null): RenderSettings {
+  const cam = camera ? state.camera.cameras[camera] : undefined;
+  const active = activeCamera(state);
+  if (s.mode === 'ANIMATION' || !cam || !active) return s;
+  const ratio = aspectRatio(cam);
+  if (ratio === aspectRatio(active)) return s;
+  return { ...s, ...sizeForWidth(s.width, ratio), aspect: ratio };
+}
+
+/**
  * The jobs a set of settings becomes: one per camera for "All cameras", one for an animation
  * (whatever the camera says: the camera track decides). Ids and render numbers continue the queue's.
  */
@@ -452,7 +553,7 @@ export function expandJobs(state: ProjectState, settings: RenderSettings, at: nu
   return cams.map((cam, k) => {
     const id = nextId('j', taken);
     taken.push(id);
-    return { id, seq: r.seq + k + 1, settings: jobSettings(s, cam), createdAt: at, ...freshRuntime() };
+    return { id, seq: r.seq + k + 1, settings: jobSettings(sizedFor(state, s, cam), cam), createdAt: at, ...freshRuntime() };
   });
 }
 
@@ -476,6 +577,56 @@ export type RenderAction =
 
 const isFinished = (j: RenderJob) => j.status === 'DONE' || j.status === 'FAILED' || j.status === 'CANCELLED';
 
+/**
+ * `render/set`. An animation takes the patch as it is (its size is its own). An image takes the active camera's
+ * aspect ratio as the rule of its size (U13): a width keeps and the height follows; with the lock closed the
+ * other side of a typed one follows too; with it open, or when both sides come at once (a size preset), the
+ * size is what was asked and the camera takes its ratio (a preset of the list when the size is exactly one,
+ * else a custom one with the pixels). One action, so one undo entry restores both.
+ */
+function setSettings(state: ProjectState, patch: Partial<RenderSettings>): ProjectState {
+  const r = state.render;
+  const cam = activeCamera(state);
+  if (!cam || (patch.mode ?? r.mode) === 'ANIMATION') return { ...state, render: { ...r, ...patchSettings(r, patch) } };
+  const ratio = aspectRatio(cam);
+  const { width, height, aspect: _aspect, ...rest } = patch;
+  const next = patchSettings({ ...r, aspect: ratio }, rest);
+  // The size the window has now, as the camera's ratio gives it (an animation's own size becomes an image's).
+  const following = r.mode !== 'ANIMATION' && r.aspect === ratio;
+  let size = following ? { width: r.width, height: r.height } : sizeForWidth(r.width, ratio);
+  let aspect = cam.aspect;
+  const asked = (w: number, h: number) => {
+    size = { width: clampSize(w), height: clampSize(h) };
+    if (!followsRatio(size.width, size.height, ratio)) aspect = aspectForSize(size.width, size.height);
+  };
+  if (width !== undefined && height !== undefined) asked(width, height);
+  else if (width !== undefined || height !== undefined) {
+    if (next.aspectLock) size = width !== undefined ? sizeForWidth(width, ratio) : sizeForHeight(height!, ratio);
+    else asked(width ?? size.width, height ?? size.height);
+  }
+  const finalRatio = aspectRatio({ aspect });
+  if (aspect !== cam.aspect) size = sizeForWidth(size.width, finalRatio);
+  const camera = aspect === cam.aspect ? state.camera : { ...state.camera, cameras: { ...state.camera.cameras, [cam.id]: { ...cam, aspect } } };
+  return { ...state, camera, render: { ...r, ...next, width: size.width, height: size.height, aspect: finalRatio } };
+}
+
+/**
+ * An image's size follows the active camera's aspect ratio (U13): when the ratio the window's size follows is not
+ * the camera's any more (another camera became active, its ratio changed, an undo, a project was opened, the
+ * window came back from Animation) the width is kept and the height derived. An animation's size is its own. The
+ * same state when it already follows (the check is one comparison, so it runs on every action).
+ */
+export function syncOutputSize(state: ProjectState): ProjectState {
+  const r = state.render;
+  if (r.mode === 'ANIMATION') return state;
+  const cam = activeCamera(state);
+  if (!cam) return state;
+  const ratio = aspectRatio(cam);
+  if (r.aspect === ratio) return state;
+  const size = sizeForWidth(r.width, ratio);
+  return { ...state, render: { ...r, width: size.width, height: size.height, aspect: ratio } };
+}
+
 export function reduceRender(state: ProjectState, action: RenderAction): ProjectState {
   const r = state.render;
   const withQueue = (queue: RenderJob[], extra: Partial<RenderState> = {}): ProjectState => ({ ...state, render: { ...r, ...extra, queue } });
@@ -485,10 +636,8 @@ export function reduceRender(state: ProjectState, action: RenderAction): Project
       if (!q) return state;
       return { ...state, render: { ...r, ...patchSettings(r, { quality: action.quality, maxSamples: q.samples }) } };
     }
-    case 'render/set': {
-      const next = patchSettings(r, action.patch);
-      return { ...state, render: { ...r, ...next } };
-    }
+    case 'render/set':
+      return setSettings(state, action.patch);
     case 'render/enqueue': {
       const jobs = expandJobs(state, action.settings ?? settingsOf(r), action.at);
       if (jobs.length === 0) return state;
@@ -651,8 +800,8 @@ function migrateSettings(raw: Record<string, unknown>, base: RenderSettings): Re
     name: str(raw.name),
     destination: dest,
     showWhenDone: bool(raw.showWhenDone),
-    format: oneOf<OutputFormat>(raw.format, ['PNG', 'JPEG', 'EXR']),
-    bitDepth: raw.bitDepth === 16 ? (16 as const) : raw.bitDepth === 8 ? (8 as const) : undefined,
+    format: oneOf<OutputFormat>(raw.format, ['PNG', 'JPEG', 'EXR', 'TIFF', 'DNG']),
+    bitDepth: raw.bitDepth === 32 ? (32 as const) : raw.bitDepth === 16 ? (16 as const) : raw.bitDepth === 8 ? (8 as const) : undefined,
     jpegQuality: num(raw.jpegQuality),
     transparent: bool(raw.transparent),
     camera,
@@ -661,6 +810,8 @@ function migrateSettings(raw: Record<string, unknown>, base: RenderSettings): Re
     printUnit: oneOf<PrintUnit>(raw.printUnit, PRINT_UNITS),
     // Before X4 the block was `{ enabled }` only: the patch merges it into the defaults and clamps every control.
     ai: isObj(raw.ai) ? (raw.ai as unknown as AiSettings) : undefined,
+    // Before P6 there were no plugins: the patch keeps `{}`.
+    plugins: isObj(raw.plugins) ? (raw.plugins as unknown as PluginsSettings) : undefined,
     // U1 had no finishBy: its budget was the samples or the time, whichever came first (0 s: no time limit).
     finishBy: oneOf<FinishBy>(raw.finishBy, ['SAMPLES', 'TIME', 'FIRST']) ?? (raw.finishBy === undefined && maxSeconds !== undefined ? (maxSeconds > 0 ? 'FIRST' : 'SAMPLES') : undefined),
     quality: oneOf(raw.quality, QUALITIES),

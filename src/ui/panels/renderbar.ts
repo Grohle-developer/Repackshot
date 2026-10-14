@@ -104,7 +104,11 @@ export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
     'div',
     'drawer-host',
   );
-  scope.watch((_s, u) => u.drawer, (d) => drawer.classList.toggle('drawer', d !== null));
+  scope.watch((_s, u) => u.drawer, (d) => {
+    drawer.classList.toggle('drawer', d !== null);
+    // N6: the timeline's three zones need more height than the queue.
+    drawer.classList.toggle('is-anim', d === 'animation');
+  });
 
   const bar = h(
     'div',

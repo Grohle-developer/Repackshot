@@ -44,8 +44,13 @@ export function shaderConfigOf(inst: MaterialInstance): ShaderConfig {
   };
 }
 
+/** Ids of images that are not files of the registry but maps baked from a material graph (render/graph-preview.ts). */
+export const BAKED_PREFIX = 'graph:';
+
 export class TexturePreview {
   private readonly textures = new Map<string, THREE.Texture>();
+  /** M3a: the pixels of the baked maps, by id (RGBA8, rows from the top, square). */
+  private readonly baked = new Map<string, { rgba: Uint8ClampedArray; size: number }>();
   private readonly bitmaps = new Map<string, Promise<ImageBitmap | null>>();
   private readonly decoded = new Map<string, ImageBitmap>();
   private readonly white = pixel([255, 255, 255, 255]);
@@ -82,9 +87,32 @@ export class TexturePreview {
     return p;
   }
 
+  /** A map baked from a material graph, under an id of BAKED_PREFIX that slots can name like any image. */
+  setBaked(id: string, rgba: Uint8ClampedArray, size: number): void {
+    this.baked.set(id, { rgba, size });
+  }
+
   /** The three texture of an image read as colour or data, with a wrap; `fallback` while it decodes. */
   private texture(id: string, colour: boolean, wrap: TextureWrap, uniform: THREE.IUniform, fallback: THREE.Texture): string {
     const key = `${id}|${colour ? 's' : 'l'}|${wrap}`;
+    if (id.startsWith(BAKED_PREFIX)) {
+      let tex = this.textures.get(key);
+      const px = this.baked.get(id);
+      if (!tex && px) {
+        tex = new THREE.DataTexture(px.rgba, px.size, px.size, THREE.RGBAFormat, THREE.UnsignedByteType);
+        tex.flipY = false;
+        tex.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        tex.wrapS = tex.wrapT = WRAP[wrap];
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.anisotropy = this.anisotropy;
+        tex.needsUpdate = true;
+        this.textures.set(key, tex);
+      }
+      uniform.value = tex ?? fallback;
+      return key;
+    }
     const hit = this.textures.get(key);
     if (hit) {
       uniform.value = hit.image ? hit : fallback;
@@ -201,6 +229,7 @@ export class TexturePreview {
       tex.dispose();
       this.textures.delete(k);
     }
+    for (const id of this.baked.keys()) if (!ids.has(id)) this.baked.delete(id);
     for (const [id, b] of this.decoded) {
       if (ids.has(id)) continue;
       b.close();
@@ -214,6 +243,7 @@ export class TexturePreview {
     for (const t of this.textures.values()) t.dispose();
     for (const b of this.decoded.values()) b.close();
     this.textures.clear();
+    this.baked.clear();
     this.decoded.clear();
     this.bitmaps.clear();
     this.white.dispose();

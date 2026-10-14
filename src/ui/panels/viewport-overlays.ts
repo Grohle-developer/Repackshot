@@ -3,6 +3,7 @@
 // right), hover label, pick modes and drag and drop of materials (pointer events) and files.
 
 import { DEFAULT_PIXEL_FILTER, pixelFilterSetting } from '../../core/antialias';
+import { aspectText } from '../../core/aspect';
 import { activeCamera, cameraBasis, focusDistanceTo, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox } from '../../core/math';
 import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
@@ -144,7 +145,8 @@ function topRight(ctx: Ctx, scope: Scope): HTMLElement {
       camBtn.style.display = 'inline-flex';
       camBtn.style.alignItems = 'center';
       camBtn.style.gap = '6px';
-      resBtn.textContent = `${s.render.width} × ${s.render.height}`;
+      // The camera's ratio with the size: the frame is the camera's, the size is what the render window says (U13).
+      resBtn.textContent = `${aspectText(activeCamera(s).aspect)} · ${s.render.width} × ${s.render.height}`;
     },
     shallowEq,
   );

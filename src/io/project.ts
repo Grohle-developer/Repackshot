@@ -31,10 +31,19 @@
 // material and counted with the missing images. The materials' `textures` are read through
 // `normalizeTextures` (core/textures.ts), which also takes the flat shape of files written before M2a.
 //
+// Material graphs (M3a) travel inside their material (`materials.<id>.graph`, with its own `version`, core/
+// material-graph.ts); a file from before M3a has none and its materials open as Simple ones. The images of a graph's
+// image nodes travel in `images` with the texture images, and a missing one leaves its node without an image. The
+// schema stays at 2.
+//
 // Schema history (each step a pure function over the state, applied in order on load):
 //   1 (U1) — the state as it was.
 //   2 (U5) — `render` is the render window's settings and a queue of full `RenderJob`s (core/render.ts
 //            `migrateRender`).
+//
+// Cameras (U13): each carries the aspect ratio of its image (`aspect: { preset, w, h }`). A file from before it has
+// none: its cameras take the ratio of the saved render size (a preset within 0.5 %, else a custom ratio with those
+// pixels; `withCameraAspects`), and the saved size stays. The schema stays at 2.
 //
 // Primitives (U9): a part made by Add ▸ Primitive keeps its shape and measures in an optional field of its node
 // (`primitive`: `{ kind, params }`, core/primitives.ts), and its mesh is not written: on open it is made again from
@@ -57,11 +66,14 @@ import {
   type MeshData,
   type MeshId,
 } from '../core/meshes';
+import { normalizeOptics } from '../core/optics';
 import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
 import { checkTextureFile, registerTextureImage, textureImageId } from '../core/texture-images';
 import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
+import { mapGraphImages, normalizeGraph } from '../core/material-graph';
 import type { MaterialInstance } from '../core/materials';
-import { migrateRender } from '../core/render';
+import { withCameraAspects } from '../core/camera';
+import { migrateRender, syncOutputSize } from '../core/render';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
@@ -298,12 +310,34 @@ function checkState(raw: RawState): ProjectState {
   if (Object.keys(emptied).length > 0) s.scene = { ...s.scene, nodes: { ...nodes, ...emptied } };
   if (!isObject(s.materials)) throw damaged('materials is not a list of materials');
   for (const [id, m] of Object.entries(s.materials)) if (!isObject(m) || m.id !== id) throw damaged(`materials.${id} is not a material`);
-  // M2a: the image maps and labels, read whatever shape they were written in (core/textures.ts).
+  // M2a: the image maps and labels, read whatever shape they were written in (core/textures.ts). M3a: a material's
+  // graph, checked node by node and link by link (core/material-graph.ts); one this version cannot read (a newer
+  // schema) is dropped and the material opens as Simple, with its parameters.
   const materials: Record<string, MaterialInstance> = {};
-  for (const [id, m] of Object.entries(s.materials)) materials[id] = { ...m, textures: normalizeTextures(m.textures) };
+  for (const [id, m] of Object.entries(s.materials)) {
+    const next: MaterialInstance = { ...m, textures: normalizeTextures(m.textures) };
+    const graph = (m as { graph?: unknown }).graph;
+    if (graph !== undefined) {
+      const g = normalizeGraph(graph);
+      if (g) next.graph = g;
+      else delete next.graph;
+    }
+    materials[id] = next;
+  }
   s.materials = materials;
   if (!isObject(s.camera.cameras) || !isObject(s.camera.cameras[s.camera.active])) throw damaged('camera.active is not a camera');
   for (const [id, c] of Object.entries(s.camera.cameras)) if (!isObject(c) || c.id !== id) throw damaged(`camera.cameras.${id} is not a camera`);
+  // O1: a camera's optics (absent on cameras saved before O1, which keep the plain thin lens) within the engine's limits.
+  if (Object.values(s.camera.cameras).some((c) => (c as { optics?: unknown }).optics !== undefined)) {
+    const cameras = { ...s.camera.cameras };
+    for (const [id, c] of Object.entries(cameras)) {
+      const raw = (c as { optics?: unknown }).optics;
+      if (raw === undefined) continue;
+      const { optics: _drop, ...rest } = c;
+      cameras[id] = raw === null ? rest : { ...rest, optics: normalizeOptics(raw) };
+    }
+    s.camera = { ...s.camera, cameras };
+  }
   if (!Array.isArray(s.studio.lights) || s.studio.lights.some((l) => !isObject(l) || typeof l.id !== 'string')) throw damaged('studio.lights is damaged');
   if (!Array.isArray(s.selection.ids)) throw damaged('selection.ids is not a list');
   const env = s.environment;
@@ -327,7 +361,8 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; im
   if (!isObject(body.state)) throw damaged('the project has no state');
   let state: RawState = body.state;
   for (let n = schema; n < PROJECT_SCHEMA; n++) state = STEPS[n](state);
-  const checked = checkState({ ...state, render: migrateRender(state.render) });
+  // U13: a camera of a project saved before it takes the ratio of the saved size; an image follows its camera.
+  const checked = syncOutputSize(withCameraAspects(checkState({ ...state, render: migrateRender(state.render) })));
   // A file is the saved state, and nothing plays or renders after a load.
   const loaded: ProjectState = {
     ...checked,
@@ -343,7 +378,9 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; im
  * project, comes from a newer version or is damaged.
  */
 export function migrateProject(body: unknown): ProjectState {
-  return cleanSelection(readEnvelope(body).state);
+  const state = cleanSelection(readEnvelope(body).state);
+  // The Doctor's findings follow the model and the catalogue of this version, not the file's (as `loadProject` does).
+  return { ...state, doctor: { results: runDoctor(state), stamp: state.doctor.stamp } };
 }
 
 function parseText(text: string): unknown {
@@ -626,7 +663,10 @@ export function placeTextureImages(state: ProjectState, saved: readonly SavedIma
       if (image) t.labels.push(image === l.image ? l : { ...l, image });
       if (image !== l.image) changed = true;
     }
-    materials[id] = changed ? { ...m, textures: t } : m;
+    // M3a: the image nodes of its graph (a missing image leaves the node without one).
+    const graph = m.graph ? mapGraphImages(m.graph, fix) : undefined;
+    const next = changed ? { ...m, textures: t } : m;
+    materials[id] = graph && graph !== m.graph ? { ...next, graph } : next;
   }
   const missing = [...rename.values()].filter((r) => r === null).length;
   return { state: { ...state, materials }, missing };

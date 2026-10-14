@@ -7,6 +7,7 @@
 import { LIGHT_ROLES, LIGHT_SHAPES, LIGHT_TYPES } from '../data/light-setups';
 import type { LightSpec, RGB, RGBA, StudioPreset, WearProps, WorldKind } from '../data/types';
 import { WEAR_PROP_DEFAULTS } from '../data/wear';
+import { normaliseAspect } from '../core/aspect';
 import type { CameraState } from '../core/camera';
 import {
   COLLECTION,
@@ -29,6 +30,7 @@ import {
 import { isLibraryKey, type CustomSetup, type LightInstance } from '../core/lighting';
 import { defaultTextures, type MaterialInstance, type MaterialTextures } from '../core/materials';
 import { normalizeTextures } from '../core/textures';
+import { mapGraphImages, normalizeGraph, type MaterialGraph } from '../core/material-graph';
 import type { EnvironmentState, ImageState } from '../core/store';
 
 export { LIBRARY_FORMAT, LIBRARY_SCHEMA };
@@ -220,7 +222,15 @@ function materialPayload(v: unknown, path: string): MaterialPayload {
     wear: wear(o.wear, `${path}.wear`),
     textures: textures(o.textures, `${path}.textures`),
     bevelRadiusMm: o.bevelRadiusMm === undefined ? 0 : num(o.bevelRadiusMm, `${path}.bevelRadiusMm`, 0, 1e6),
+    ...graphOf(o.graph),
   };
+}
+
+/** A material's graph (M3a): read like a project's, without images (a library does not carry them); one that cannot be read is left out. */
+function graphOf(v: unknown): { graph?: MaterialGraph } {
+  if (v === undefined || v === null) return {};
+  const g = normalizeGraph(v);
+  return g ? { graph: mapGraphImages(g, () => null) } : {};
 }
 
 function productTypePayload(v: unknown, path: string): ProductTypePayload {
@@ -270,6 +280,8 @@ function lightInstance(v: unknown, path: string): LightInstance {
     ...(o.shadow === undefined ? {} : { shadow: bool(o.shadow, `${path}.shadow`) }),
     ...(o.aim === undefined ? {} : { aim: vec3(o.aim, `${path}.aim`) }),
     ...(o.roll === undefined ? {} : { roll: num(o.roll, `${path}.roll`, -720, 720) }),
+    // L6: the pool of a set.
+    ...(o.setPiece === undefined ? {} : { setPiece: oneOf(o.setPiece, `${path}.setPiece`, ['POOL'] as const) }),
   };
 }
 
@@ -279,8 +291,13 @@ function environment(v: unknown, path: string): EnvironmentState {
     kind: oneOf(o.kind, `${path}.kind`, ['STUDIO', 'SKY', 'FLAT', 'HDRI'] as const),
     strength: num(o.strength, `${path}.strength`, 0, 100),
     rotationDeg: num(o.rotationDeg, `${path}.rotationDeg`, -3600, 3600),
-    background: oneOf(o.background, `${path}.background`, ['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE'] as const),
+    background: oneOf(o.background, `${path}.background`, ['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE', 'GRADIENT'] as const),
     color: rgba(o.color, `${path}.color`),
+    // L6: studios saved before the gradient background have none and take the default.
+    gradient:
+      o.gradient === undefined
+        ? { top: [0.1, 0.1, 0.1], bottom: [0.02, 0.02, 0.02] }
+        : { top: rgb(obj(o.gradient, `${path}.gradient`).top, `${path}.gradient.top`), bottom: rgb(obj(o.gradient, `${path}.gradient`).bottom, `${path}.gradient.bottom`) },
     groundShadow: num(o.groundShadow, `${path}.groundShadow`, 0, 1),
     groundReflection: num(o.groundReflection, `${path}.groundReflection`, 0, 1),
     // E5: the library keeps no image files, so a studio comes back without its HDRI or background image
@@ -331,6 +348,8 @@ function camera(v: unknown, path: string): CameraState {
     clipEnd: num(o.clipEnd, `${path}.clipEnd`, 0, 1e9),
     locked: bool(o.locked, `${path}.locked`),
     lens: o.lens === null ? null : str(o.lens, `${path}.lens`, 64),
+    // U13: a studio saved before the camera carried its ratio has none (16:9, as every camera was).
+    aspect: normaliseAspect(o.aspect),
   };
 }
 

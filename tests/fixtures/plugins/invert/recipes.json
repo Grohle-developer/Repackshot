@@ -1,0 +1,13 @@
+{
+  "categories": [{ "id": "basic", "label": { "en": "Basic", "es": "Básicas" } }],
+  "filters": [
+    { "id": "strength", "label": { "en": "Strength", "es": "Fuerza" }, "options": [
+      { "value": "strong", "label": { "en": "Strong", "es": "Fuerte" } },
+      { "value": "mild", "label": { "en": "Mild", "es": "Suave" } }
+    ] }
+  ],
+  "recipes": [
+    { "id": "full", "name": { "en": "Full inversion", "es": "Inversión completa" }, "category": "basic", "scale": 1, "tags": { "strength": "strong" } },
+    { "id": "half", "name": { "en": "Half inversion", "es": "Media inversión" }, "category": "basic", "scale": 0.5, "tags": { "strength": "mild" } }
+  ]
+}

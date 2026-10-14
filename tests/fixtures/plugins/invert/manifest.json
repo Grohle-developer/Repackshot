@@ -1,0 +1,34 @@
+{
+  "abi": 1,
+  "id": "test-invert",
+  "name": { "en": "Invert (test plugin)", "es": "Invertir (plugin de prueba)" },
+  "version": "1.0.0",
+  "publisher": "Repackshot tests",
+  "licence": { "kind": "closed", "label": { "en": "Closed licence", "es": "Licencia cerrada" }, "file": "LICENCE.txt" },
+  "homepage": "https://github.com/Grohle-developer/Repackshot",
+  "summary": { "en": "Inverts the colours of a result. A fixture of Repackshot's tests, without WebAssembly.", "es": "Invierte los colores de un resultado. Un fixture de los tests de Repackshot, sin WebAssembly." },
+  "notice": { "en": "A plugin for tests: it shows how the host draws a plugin.", "es": "Un plugin de prueba: enseña cómo dibuja el anfitrión un plugin." },
+  "logo": "logo.svg",
+  "slots": ["render.plugins"],
+  "entry": "plugin.js",
+  "wasm": null,
+  "base": "base.png",
+  "groups": [
+    { "id": "invert", "label": { "en": "Inversion", "es": "Inversión" } },
+    { "id": "noise", "label": { "en": "Noise", "es": "Ruido" } },
+    { "id": "output", "label": { "en": "Output", "es": "Salida" } }
+  ],
+  "controls": [
+    { "key": "amount", "label": { "en": "Amount", "es": "Cantidad" }, "kind": "slider", "min": 0, "max": 1, "step": 0.01, "default": 1, "group": "invert" },
+    { "key": "channel", "label": { "en": "Channels", "es": "Canales" }, "kind": "select", "default": "all", "group": "invert", "options": [
+      { "value": "all", "label": { "en": "All", "es": "Todos" } },
+      { "value": "r", "label": { "en": "Red", "es": "Rojo" } },
+      { "value": "g", "label": { "en": "Green", "es": "Verde" } },
+      { "value": "b", "label": { "en": "Blue", "es": "Azul" } }
+    ] },
+    { "key": "noise", "label": { "en": "Noise", "es": "Ruido" }, "kind": "slider", "min": 0, "max": 1, "step": 0.01, "default": 0, "group": "noise" },
+    { "key": "seed", "label": { "en": "Seed", "es": "Semilla" }, "kind": "slider", "min": 0, "max": 1000, "step": 1, "default": 1, "group": "noise", "role": "seed" },
+    { "key": "mono", "label": { "en": "Black and white", "es": "Blanco y negro" }, "kind": "toggle", "default": false, "group": "output" }
+  ],
+  "files": ["recipes.json"]
+}

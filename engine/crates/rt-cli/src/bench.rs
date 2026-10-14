@@ -146,7 +146,7 @@ pub fn displaced_sphere(triangles: u32) -> Mesh {
 #[derive(Clone, Debug, PartialEq)]
 enum RayKind {
     /// Rays of `Camera` through a 1024 x 1024 grid, in 16 x 16 tiles, with sub-pixel jitter.
-    Coherent(Camera),
+    Coherent(Box<Camera>),
     /// Random origin on a sphere around the scene, aimed at a random point of its bounds.
     Incoherent,
 }
@@ -357,7 +357,11 @@ pub fn run(options: &BenchOptions) -> String {
             ))
         );
         for (label, kind, any_hit) in [
-            ("coherent, closest hit  ", RayKind::Coherent(camera), false),
+            (
+                "coherent, closest hit  ",
+                RayKind::Coherent(Box::new(camera)),
+                false,
+            ),
             ("incoherent, closest hit", RayKind::Incoherent, false),
             ("incoherent, any hit    ", RayKind::Incoherent, true),
         ] {
