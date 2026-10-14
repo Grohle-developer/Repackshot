@@ -5621,6 +5621,50 @@ comprobada reintroduciendo el fallo que vigila; y en el navegador,
   sigue pendiente.
 - `rt` escribe color solo (sin alfa), como con PNG.
 
+## U13 · Proporción de la imagen en la cámara — **Sonnet**
+
+Petición del usuario (14-10): editar la **proporción** (16:9, 4:3… o una
+propia) **en la propia cámara**, además de en la ventana de render.
+
+**Decisión Fable.** La proporción es **de la cámara**: cada cámara lleva
+la suya (`CameraState.aspect: { preset, w, h }`; presets con claves
+estables en `src/data/aspects.ts`: `3:2`, `4:3`, `16:9`, `1:1`, `5:4`,
+`4:5`, `9:16`, `21:9`, `2:1`, `65:24` panorámica y `CUSTOM` con `w:h`
+libres), el **marco del visor** sigue a la cámara activa, y la ventana
+de render **lee y escribe la misma** proporción (una sola fuente): el
+tamaño en píxeles conserva el ancho y deriva el alto de la proporción de
+la cámara activa; teclear los dos lados con el candado abierto deja una
+proporción propia **en la cámara**; elegir un preset de tamaño con otra
+proporción cambia la de la cámara (y lo dice en una línea). *Nueva desde
+la vista* copia la proporción de la activa; el *chip* de cámara del visor
+muestra la proporción junto al tamaño (`16:9 · 1920 × 1080`). Animación:
+el tamaño de salida sigue siendo el de la ventana de render (un vídeo
+tiene un solo tamaño); el Doctor avisa si un plano usa una cámara con
+otra proporción. Proyectos antiguos: cámaras sin `aspect` toman la del
+tamaño de render guardado.
+
+**Qué.** Sección de cámara del inspector: fila **Proporción** (lista +
+campos `w : h` con *Propia*), con la misma fila en el inspector de la
+cámara activa de la pestaña *Cámaras*; `camera/set` deshacible; el
+marco del visor (`src/render/preview.ts` / `viewport-overlays.ts`) y el
+*chip*; la ventana de render (`core/render.ts` `aspect`/`aspectLock`
+pasan a derivarse de la cámara: `aspect` deja de ser estado propio
+salvo para la animación); guardar/abrir; cadenas es/en; `UI.md`,
+`SPEC.md` §3.5, CHANGELOG.
+
+**Depende de.** U5, la sección de cámara (lista con lápiz).
+
+**Criterio.** Tests (mutación comprobada): cambiar la proporción en la
+cámara cambia el alto del render y el marco del visor; teclear ambos
+lados en la ventana de render deja `CUSTOM` en la cámara con esa `w:h`;
+un preset de tamaño con otra proporción cambia la de la cámara; cada
+cámara conserva la suya al cambiar de activa; proyecto antiguo sin
+`aspect` → la del tamaño guardado; animación: tamaño propio y aviso del
+Doctor cuando un plano discrepa. Comprobación de navegador
+`tools/aspect-check.mjs` con capturas `docs/ui/camera-aspect.png` (la
+sección con 4:3 y el marco del visor cambiado) y
+`docs/ui/render-size-from-camera.png`.
+
 ## P6 · Plugins, y el plugin de película (aintfilm) — **Opus**, decisión **Fable**
 
 Petición del usuario (14-10): un apartado **Plugins** en *Ajustes* con la
