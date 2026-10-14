@@ -114,10 +114,14 @@ async function main() {
     for (;;) {
       const buf = await (await api(`/api/render/${id}?after=${pass}`)).arrayBuffer();
       const v = new DataView(buf);
+      // The header says its own length (48 bytes up to v0.1.5, 52 since U11 with the image's number), like the page reads it.
+      const header = v.getUint32(4, true);
+      if (header < 48 || header % 4 !== 0 || header > buf.byteLength) fail(`bad frame header: ${header}`);
       const flags = v.getUint32(28, true);
       if (flags & 16) {
         pass = v.getUint32(8, true);
-        frame = { samples: v.getUint32(12, true), sums: new Float32Array(buf, 48) };
+        const n = v.getUint32(16, true) * v.getUint32(20, true) * 4;
+        frame = { samples: v.getUint32(12, true), sums: new Float32Array(buf, header, n) };
       }
       if (flags & 7) break;
       if (Date.now() - started > 300_000) fail('render timeout');
