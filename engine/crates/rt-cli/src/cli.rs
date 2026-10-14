@@ -189,6 +189,9 @@ pub enum Command {
     },
     /// Write the O1 parity scene (`rt_core::example::o1_scene`) as an RSB file.
     WriteO1Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the base scene of the film plugin's thumbnails (`scenes::film_thumb`) as an RSB file.
     WriteFilmThumb {
         /// RSB file to write.
@@ -360,6 +363,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-o1-example takes no other option".into());
         }
         return Ok(Command::WriteO1Example { path });
+    }
     if let Some(path) = write_film_thumb {
         if args.len() != 2 {
             return Err("--write-film-thumb takes no other option".into());
@@ -452,6 +456,10 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteO1Example { path } => {
             let bytes = rt_core::example::o1_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteFilmThumb { path } => {
             let bytes = crate::scenes::film_thumb(crate::scenes::FILM_THUMB_SIZE).to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -732,6 +740,7 @@ mod tests {
             })
         );
         assert!(parse(&["--write-o1-example", "o1.rsb", "--example"]).is_err());
+        assert_eq!(
             parse(&["--write-film-thumb", "t.rsb"]),
             Ok(Command::WriteFilmThumb {
                 path: "t.rsb".into()
