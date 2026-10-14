@@ -57,6 +57,11 @@ export interface EngineStatus {
   denoised?: boolean;
   /** Path tracer (E5b-1): the view renders caustics with this many photons per sample (absent: none). */
   caustics?: number;
+  /**
+   * Preview (S4a): the particles of the ambient effects it draws (evaluated by rt.wasm's own simulator), of how many
+   * the engine renders; `boxesOnly` when there is no rt.wasm and only the region boxes are drawn. Absent: no effect.
+   */
+  particles?: { shown: number; total: number; boxesOnly: boolean };
 }
 
 export interface RenderOptions {

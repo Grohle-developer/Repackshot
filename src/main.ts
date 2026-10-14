@@ -59,6 +59,8 @@ import { onAperturePicture } from './core/aperture';
 import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
+import { hasParticleExport } from './render/particles';
+import { engineParticleCap, particleCapFor, setEngineParticleCap } from './core/effects';
 import { PhysicsClient } from './render/physics';
 import { writePhysicsScene } from './io/phys';
 import { bakeLaneCount, GraphWorkers } from './render/graph-client';
@@ -262,6 +264,37 @@ let poolCfg: { backend: 'native' | 'wasm'; threads: number; simd: EngineConfig['
 let engineGen = 0;
 let restartTimer = 0;
 const base = new URL(import.meta.env.BASE_URL, window.location.href).href;
+
+// S4a: the Fast preview's particles come from rt.wasm on this thread (the engine's own simulator; the scalar build is
+// enough). Without the module the preview draws the region boxes and the meter says so.
+if (preview) {
+  const p = preview;
+  void loadEngineModule(base, { simd: false }).then(async (loaded) => {
+    if ('error' in loaded) return p.setParticleEngine(null);
+    try {
+      const { exports } = await WebAssembly.instantiate(loaded.module, {});
+      p.setParticleEngine(hasParticleExport(exports) ? exports : null);
+    } catch {
+      p.setParticleEngine(null);
+    }
+  });
+}
+// The particle cap of the engine that renders here (Settings ▸ Render engine ▸ Particles per effect): the Doctor
+// warns about what goes over it and the scene sent to the engine holds at most that many.
+const applyParticleCap = () => {
+  const u = ui.get();
+  const cap = particleCapFor(u.settings['engine.particleCap'], u.engineInfo?.backend === 'native');
+  if (cap === engineParticleCap()) return;
+  setEngineParticleCap(cap);
+  store.dispatch({ type: 'doctor/refresh' });
+  // The scene the engine is sent holds at most that many: the Full viewport builds it again.
+  tracer?.sceneChanged();
+};
+applyParticleCap();
+ui.subscribe((u, prev) => {
+  if (u.settings['engine.particleCap'] !== prev.settings['engine.particleCap'] || u.engineInfo?.backend !== prev.engineInfo?.backend) applyParticleCap();
+});
+
 const cores = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : null;
 
 const useTracer = (t: PathTracerEngine | NativeEngine, cfg: EngineConfig, info: EngineInfo) => {
@@ -439,6 +472,7 @@ const viewport: ViewportPort | null = preview
       // Picking is geometry: the preview's, in both modes.
       pick: (x, y) => preview!.pick(x, y),
       setHover: (ids) => preview!.setHover(ids),
+      setSelectedEffect: (id) => preview!.setSelectedEffect(id),
       setHoverFaces: (spec) => preview!.setHoverFaces(spec),
       projection: () => preview!.projection(),
       visibleTriangles: (part, rect) => preview!.visibleTriangles(part, rect),

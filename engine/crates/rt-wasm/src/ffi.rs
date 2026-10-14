@@ -266,6 +266,48 @@ pub extern "C" fn rt_scene_caustics(handle: u32) -> u32 {
     crate::scene_caustics(handle).unwrap_or(u32::MAX)
 }
 
+/// The particles of an ambient effect (S4a) for the Fast preview: reads the `FXAM` payload of
+/// `params_len` bytes at `params_ptr` and writes at most `max` particles, 8 floats each (centre,
+/// radius, axis, tint seed bits: [`crate::PARTICLE_FLOATS`]), to `out_ptr`. Returns the number of
+/// particles written, or `u32::MAX` when a pointer is null or the payload is invalid (then see
+/// [`rt_scene_error_len`]).
+///
+/// # Safety
+///
+/// `params_ptr` must be null or point to `params_len` readable bytes, and `out_ptr` null or to
+/// `max * 8 * 4` writable bytes (alignment is not required).
+#[no_mangle]
+pub unsafe extern "C" fn rt_particles_eval(
+    params_ptr: *const u8,
+    params_len: u32,
+    max: u32,
+    out_ptr: *mut f32,
+) -> u32 {
+    if params_ptr.is_null() || out_ptr.is_null() {
+        crate::set_error("rt_particles_eval: null pointer");
+        return u32::MAX;
+    }
+    // SAFETY: non-null, and the caller promises `params_len` readable bytes; the slice does not
+    // outlive this call.
+    let params = unsafe { std::slice::from_raw_parts(params_ptr, params_len as usize) };
+    match crate::particles_eval(params, max) {
+        Ok(out) => {
+            // SAFETY: at most `max` particles of 8 floats were evaluated, for which the caller
+            // promises room; byte-wise copy needs no alignment, and `out` is a fresh allocation so
+            // the regions do not overlap.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    out.as_ptr().cast::<u8>(),
+                    out_ptr.cast::<u8>(),
+                    out.len() * std::mem::size_of::<f32>(),
+                );
+            }
+            (out.len() / crate::PARTICLE_FLOATS) as u32
+        }
+        Err(_) => u32::MAX,
+    }
+}
+
 /// The denoiser (E5b-1) on a band of `rows` image rows from `origin_y` of an image
 /// `width × height` of `samples` samples per pixel. `in_ptr` holds `width * rows * 14`
 /// little-endian words: the planes `sums` (RGBA), `lum2`, `albedo` (3), `normal` (3), `depth`,

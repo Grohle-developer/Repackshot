@@ -13,5 +13,7 @@ crate-type = ["cdylib", "rlib"]
 rt-core = { path = "../rt-core" }
 # The denoiser (E5b-1): only `rt_post::denoise` ends up in the module.
 rt-post = { path = "../rt-post" }
+# The particles of an ambient effect for the Fast preview (S4a, `rt_particles_eval`).
+rt-sim = { path = "../rt-sim" }
 # The rigid body simulator (S2): `phys_*`.
 rt-phys = { path = "../rt-phys" }

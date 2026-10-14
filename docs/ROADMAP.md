@@ -5588,6 +5588,8 @@ Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
 | **N4** | Sonnet | Biblioteca de movimientos de cámara, cámara en mano, rampas, proporciones |
 | **N5** | Opus | Dibujar y grabar recorridos, bloqueo de objetivo, desenfoque de movimiento |
 | **S0** | Fable | Decisiones de partículas: dónde vive el simulador, formato de caché, secciones RSB |
+| **S4a** — hecha | Opus | Ambiente: partículas de aire sin estado (`rt-sim`, `FXAM`, esferas, discos y cápsulas, la sección *Ambiente* de *Escena*); valores de los presets aceptados; lo que sigue, en S4b |
+| **S4b** | Opus | Partículas: el coste a las densidades de los presets, medido; un lóbulo hacia delante (Henyey–Greenstein) para polvo, polen y polvareda; gotas sin cáusticas |
 | **S1**–**S10** | Opus, Sonnet | Dispersión e instancias; caída y reposo; gotas y condensación; emisores sin estado; volúmenes; humo; líquidos; pelo y césped; telas; mejoras (detalle en `docs/research/particles.md` §6) |
 
 ### A6 · Assets sin motor nuevo — **Sonnet** — hecha
@@ -5721,7 +5723,7 @@ toda la familia S:
    misma escena sin ellas; tope por defecto 100 k en el navegador y 1 M
    en nativo, en *Ajustes ▸ Motor de renderizado*.
 
-### S4a · Ambiente: partículas de aire sin estado — **Opus**, veredicto **Fable**
+### S4a · Ambiente: partículas de aire sin estado — **Opus**, veredicto **Fable** — hecha
 
 **Qué.** En la pestaña *Escena*, una sección nueva **Ambiente** (en la
 lista de secciones, tras *Luz* y antes de *Cámara*) con una lista de
@@ -5798,6 +5800,232 @@ abrir, tope). `SPEC.md` §3.1 (el efecto como dato), `UI.md`,
 `ARCHITECTURE.md` (crate `rt-sim`, `FXAM`), `STUDIO-TOOLS.md` §5
 (apunte: S0 decidido, S4a hecha), CHANGELOG. Cadenas es/en, cromo
 acromático.
+
+**Hecho.** **Motor.** `engine/crates/rt-sim` (solo `std`,
+`#![forbid(unsafe_code)]`): `AmbientParams` lee y escribe la carga de
+`FXAM` (192 B; los 128 primeros son los campos de este apartado, en su
+orden), `evaluate(&params, max)` y `Evaluator::particle(id)`. Cada
+partícula sale de `mix64((seed << 32) ^ id)` y de un hash por vida: fase
+propia, velocidad en forma cerrada `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}`
+integrada (`τ` de la caída y la gravedad, `v₀` la deriva más *Energía* en
+una dirección al azar), deriva de *curl noise* como desplazamiento (tres
+ruidos de gradiente con *fade* quíntico y gradiente analítico; Bridson et
+al. 2007), exponencial y seno tabulados con `fmath` una vez por efecto.
+Las que caen (o suben) nacen en la cara de arriba (o de abajo) y viven lo
+que tardan en cruzar la caja: así mueren en el suelo y renacen arriba sin
+salto de densidad; las que flotan viven siempre y la caja se envuelve. La
+nube, por rechazo con borde *smoothstep*. Tests: *hash* de posiciones
+fijado (`PINNED_PARTICLES_HASH`), densidad a 0, 3 y 60 s dentro del 3 %
+(polvo y lluvia, 200 000 partículas, y la caja igual de llena arriba que
+abajo), nada bajo `z = 0`, la lluvia renace arriba, cualquier prefijo y
+cualquier número de hilos dan las mismas partículas, la nube sigue siendo
+nube. `rt-core`: `geometry/particles.rs` (esfera con la intersección
+estable de *Ray Tracing Gems* cap. 7, disco orientado, cápsula; BVH plana
+por efecto con hojas de una partícula y el id como desempate; `RayClass`
+cámara / secundario / sombra / piezas para las tres banderas), `FXAM` en
+`scene/rsb.rs` (lector y escritor, varias, validadas; un motor anterior
+las salta), el material de cada partícula con el tinte de su semilla,
+pases con `partId` = índice del efecto tras las instancias y `materialId`
+el suyo, una actualización con los mismos parámetros conserva las
+partículas y su BVH. Tamaño mínimo de 0,35 px para los rayos de cámara
+con la energía conservada (abajo). `rt --write-ambient-example` escribe
+la escena de paridad (`example::ambient_scene`: polvo ensanchado, lluvia
+de vidrio, nieve con paleta y sin sombra); imagen fijada
+`PINNED_AMBIENT_4SPP = 415d7d74` (era `c4406309` antes de la selección
+de luces por punto de E12, que la mueve; las partículas no) y partículas
+`e38b8480`, iguales en escalar, SSE2, AVX2 y en wasm escalar y
+`simd128`, con 1 y N hilos; sin efectos todas las escenas de referencia
+dan los mismos *hashes*.
+`rt-wasm`: `rt_particles_eval(params, len, max, out) → u32` (8 `f32` por
+partícula: centro, radio, eje, semilla del tinte; `u32::MAX` si la carga
+no vale) y `engine/tools/wasm-parity.mjs --particles --expect-particles`.
+**Interfaz.** `src/data/effects.ts` (los ocho presets y los tres de S5
+*próximamente*, claves estables, es/en), `src/core/effects.ts`
+(`ProjectState.effects`, `effect/add|remove|set|preset` deshacibles, la
+región, la cuenta y el tope, los campos y los bytes de `FXAM`, los efectos
+de un archivo), la sección *Ambiente* (`insp-ambient.ts`), el chequeo
+`particles` del Doctor con su arreglo, *Ajustes ▸ Motor de renderizado ▸
+Partículas por efecto*, el escritor RSB (una `FXAM` por efecto encendido,
+con su material detrás de los de las piezas) y el visor *Rápido*
+(`THREE.Points` para esferas y discos, `InstancedMesh` de cilindros para
+las estelas, hasta 50 000 por efecto, de `rt_particles_eval`; sin
+`rt.wasm`, la caja de la región y el medidor lo dice). Pruebas:
+`tests/effects.test.ts`, `tests/effects-rsb.test.ts` (la carga byte a
+byte frente a la de `rt --write-ambient-example`, `tests/fixtures/ambient.rsb`;
+con el `rt.wasm` real, las partículas y la imagen del motor nativo),
+`tools/ambient-check.mjs` (añadir desde la galería, cambiar preset, un
+mando, deshacer y rehacer, guardar y abrir, el tope y el Doctor, la caja
+sin `rt.wasm`, cromo acromático en los dos temas; capturas
+`docs/ui/ambient-section.png` y `docs/ui/ambient-gallery.png`) y la hoja
+`tools/ambient-sheet.mjs` → `out/ambient-sheet.html` (los ocho presets
+con clave lateral y foco a contraluz, la lluvia con estelas de 4, 12 y
+30 ms y la polvareda con suavidad 0,2 y 0,9; 512 × 288, el 16:9 de la
+cámara, 128 spp, `--threads 2`; la cámara del ejemplo con la focal × 1,5
+para que las partículas se lean, un estudio plano oscuro y *Solo
+principal* como única luz; escenas de `tests/ambient-rsb-dump.test.ts`).
+
+**Criterios.** (1), (2), (3) por test, arriba. (4) La energía del
+ensanchado: la imagen de polvo fino da de media 1,0820557 a 4 spp
+ensanchada, 1,0820074 a 256 spp ensanchada y 1,0809593 a 256 spp con las
+partículas exactas (+0,10 %, dentro del ± 2 %). (6) y (7), hechos; los
+valores de los presets, aceptados en el veredicto. (5) **No se cumple**: ver
+*coste*.
+
+**Coste** (criterio 5; `rt` nativo, AVX2, 2 hilos, con la máquina
+compartida por otros agentes: carga 30–38 en 4 núcleos, así que lo que
+vale son los cocientes de rondas alternadas). La botella del ejemplo
+(9 248 triángulos) con la clave lateral, 512 × 288, 16 spp, tres rondas:
+sin efecto 5,46 / 5,68 / 7,31 s; con 200 000 motas de polvo (cámara y
+reflejos, sin sombra: el preset) 18,27 / 17,78 / 22,30 s, **3,2×** (3,35,
+3,13, 3,05 por ronda); las mismas solo a cámara 15,04 / 15,91 / 16,52 s,
+2,6×; con cuenta 0, 5,16 / 7,36 / 6,96 s (lo mismo que sin efecto). Por
+cantidad, en dos rondas más: 20 000 → 1,8×, 50 000 → 2,0×, 200 000 →
+3,0×. Evaluar las 200 000 y construir su BVH: 1,6–2,0 s, una vez por
+carga de escena (no por muestra). En la escena de `rt --example` (322
+triángulos, 512 × 384, 4 spp) era 2,0–2,6 s frente a 10,0–10,5 s. Dos
+variantes probadas que no bajan nada: aceptar con probabilidad igual a la
+cobertura (más rayos que atraviesan y se vuelven a lanzar: 3,4–3,5×) y
+aceptar o no dentro del propio recorrido, sin relanzar el rayo (3,1–3,4×;
+solo cámara 2,5–2,6×). El coste es **recorrer la BVH de las partículas**:
+20 000 partículas ya cuestan lo que los 9 248 triángulos de la botella, y
+la escena de ejemplo es demasiado ligera para que 200 000 primitivas
+exactas quepan en un 30 %. Lo que podría cumplirlo, para decidir: para los
+rayos de cámara (todos salen del mismo punto con una cámara estenopeica),
+una rejilla de pantalla con las partículas proyectadas, de modo que cada
+rayo solo pruebe las de su píxel en lugar de recorrer la BVH; o topes por
+defecto más bajos.
+
+**Lo que no encajó con el plan.**
+- **El ensanchado no escala la radiancia.** Multiplicar el sombreado por
+  `área real / área ensanchada`, como dice S0 §4, oscurece lo que hay
+  detrás del disco ensanchado (lo tapa entero): medido, −5,6 % en la
+  imagen de prueba. Con cobertura `c` el rayo se sombrea con probabilidad
+  `q = max(c, ½)` y peso `c/q`, o sigue de largo con peso `(1 − c)/(1 − q)`:
+  la esperanza es la de la partícula exacta (test del criterio 4).
+- **Las partículas no son un nodo de la TLAS** (S0 §4): cada conjunto se
+  recorre después de la BVH de instancias, con el rayo ya acotado por la
+  pieza más cercana (y un rayo de sombra mira antes las piezas). Fue lo
+  más rápido de lo medido (hojas de 1 y conjuntos después: de 8,8× a
+  4,4×), y la BVH de un conjunto no depende de la cámara: se rellena con
+  el margen del ensanchado.
+- **`FXAM` tiene 64 B más** que los campos de este apartado: `gravity`,
+  `energy`, `spin` y una paleta de 4 tintes (los mandos *Gravedad* y
+  *Energía*, el giro de los copos y los colores del confeti no tenían
+  campo). Los primeros 128 B son los del plan, en su orden; dentro de los
+  256 B. Las banderas son positivas (1 cámara, 2 reflejos, 4 sombra), no
+  como el bit 2 de `LGHT` (*sin* sombra). La banda la aplica el escritor
+  TypeScript a la caja (escribe 0, 0); el motor la respeta igual.
+- `rt-sim` no puede depender de `rt-core` (es al revés): comparte
+  `fmath.rs` y `rng.rs` compilándolos por `#[path]`, y un test de `rt-core`
+  comprueba que dan los mismos bits.
+- **E12 no está hecha** (dependencia del plan): la NEE desde las partículas
+  usa la elección de luces que hay. Con muchos focos y 100 k partículas
+  habrá más ruido que el que tendrá con E12.
+- Un disco es siempre pared fina; la nieve con «`absorption` corto» es un
+  difuso blanco fino con un 30 % de transmisión, porque un copo plano no
+  tiene interior. *Energía* es la velocidad de nacimiento (m/s), que se
+  relaja hacia la caída.
+- La sección va tras *Entorno* (que ya iba tras *Luz*) y antes de
+  *Cámara*. La fila del tope está en el bloque *Motor* de *Ajustes* (tras
+  SIMD), para no partir los bloques.
+- El selector del visor no coge partículas (un clic sigue cogiendo piezas).
+  La guarda del post-procesado IA ve los materiales de los efectos como
+  *Por defecto* y sus `partId` no nombran ningún nodo.
+- `tests/project.test.ts` comparaba el estado de `parseProject` con el de
+  `loadProject` incluidos los resultados del Doctor, que `loadProject`
+  vuelve a pasar con los chequeos de esta versión: con `particles` nuevo ya
+  no coinciden en un archivo anterior. La comparación deja fuera esos
+  resultados y comprueba que son los de esta versión.
+- **Lo que CI no tiene todavía** (`.github/` no se toca en esta fase): en el
+  trabajo del motor, `rt --write-ambient-example` y `wasm-parity.mjs
+  --expect 415d7d74 --expect-particles e38b8480` sobre esa escena, y
+  `tests/effects-rsb.test.ts` en el paso del `rt.wasm` real.
+
+**Valores de los presets** (regla 11; `src/data/effects.ts`; propuestos
+con la hoja y **aceptados** en el veredicto). Densidades fotográficas, no
+físicas: la región es la caja del
+producto con su margen (o la esfera de la nube) y la cámara no ve más que
+eso. Sobre la botella del ejemplo (12,7 l de región; 1,6 l de nube):
+
+| Preset | Densidad (/m³) → partículas | Tamaño | Forma | Caída (m/s) | Otros | Material | Sombra |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Motas de polvo | 150 000 → 1 912 | 0,2 mm ± 60 % | esfera | 0,3 × 0,05 g | energía 0,02, caos 30 %, escala 80 mm, viento 0,02 | difuso claro, rugosidad 0,35 | no |
+| Polen | 40 000 → 510 | 0,3 mm ± 40 % | esfera | 0,2 × 0,1 g | energía 0,03, caos 40 %, viento 0,05 a 20° | difuso amarillento 0,6 | no |
+| Lluvia | 20 000 → 255 | 1,2 mm ± 40 % | estela 12 ms | 6,5 ± 20 % | caos 5 %, viento 1 | vidrio, ior 1,33 | no |
+| Nieve | 12 000 → 153 | 4 mm ± 50 % | copo | 1 ± 30 % | giro 0,5, viento 0,4 a 30° | blanco fino, 30 % transmisión | sí |
+| Polvareda | 3 000 000 → 4 889 | 0,3 mm ± 60 % | esfera | 0,1 × 0,2 g | nube 0,6 tamaños de pieza, suavidad 0,6, energía 0,3, caos 80 % | difuso pardo 0,8 | no |
+| Ceniza | 15 000 → 191 | 1,5 mm ± 60 % | copo | 0,4 | giro 0,8, viento 0,3 a 200° | casi negro 0,85 | no |
+| Burbujas | 10 000 → 127 | 2,5 mm ± 60 % | esfera | 0,25 × −1 g | energía 0,05 | vidrio fino | no |
+| Confeti | 5 000 → 64 | 8 mm ± 30 % | copo | 0,8 ± 40 % | giro 1,5, 4 tintes | papel 0,5 | sí |
+
+**Para el veredicto, de la hoja**: el polvo a contraluz **apenas brilla**
+en el haz. Una esfera opaca y difusa iluminada por detrás enseña su lado
+oscuro, el especular de rugosidad 0,35 da un borde muy fino, y una de
+0,2 mm a 512 px queda en el tamaño mínimo (su cobertura reparte la
+energía); probé un difuso fino con 60 % de transmisión y no cambia nada a
+ojo (la transmisión fina es especular y la NEE no la ve). El «polvo en el
+haz» de las fotos es dispersión hacia delante: o un lóbulo propio para
+las partículas, o esperar a los medios de E9b / S5. La lluvia a contraluz
+sí se enciende en el haz.
+
+**Veredicto del responsable** (14-10).
+
+1. **Coste** (criterio 5): el ≤ 1,3× vale a las densidades de los
+   presets, no al tope de 200 000. Por la curva medida (20 000 → 1,8×,
+   200 000 → 3,2×), los presets sobre la botella (≈ 1 900 motas, 4 900
+   granos de polvareda) deberían quedar cerca de 1,1×, pero es una
+   estimación: S4b lo mide primero. La BVH de las partículas se queda; la
+   rejilla de pantalla para los rayos de cámara estenopeicos es lo primero
+   de S4b solo si una escena de preset medida pasa de 1,3×. El tope por
+   defecto se queda como está.
+2. **Densidades de los presets**: aceptadas como se propusieron
+   (fotográficas, no físicas). La tabla de arriba deja de ser una
+   propuesta.
+3. **Polvo a contraluz**: aceptado por ahora. S4b da a las motas de polvo,
+   al polen y a la polvareda un lóbulo de dispersión hacia delante para
+   que un haz las encienda: en la hoja, `DUST_MOTES-back` casi no se ve a
+   512 px, y «cómo reflejan las luces» es lo que se pidió. La lluvia que se
+   enciende en el haz ya está bien.
+4. **Los puntitos de la lluvia con la clave lateral**: S4b. Las gotas no
+   hacen cáusticas (un rayo de sombra que cruza una gota pasa con su
+   cobertura y sin refracción), la regla habitual para partículas
+   refractivas pequeñas; la refracción se queda para los rayos de cámara.
+5. El ensanchado por probabilidad en lugar de escalar por el área, `FXAM`
+   de 192 B, los conjuntos de partículas después de la BVH de instancias,
+   el sitio (*Ambiente* tras *Entorno*, el tope en el bloque del motor),
+   las matemáticas compartidas por `#[path]` y el cambio del test del
+   proyecto: aceptados como se anotan.
+6. Las líneas de CI que faltan las añade el responsable a
+   `.github/workflows/engine.yml` al fusionar.
+
+## S4b · Partículas: lóbulo hacia delante, lluvia sin cáusticas y coste medido — Opus
+
+**Qué** (del veredicto de S4a):
+
+1. **El coste a las densidades de los presets, medido primero.**
+   `tools/ambient-sheet.mjs` gana una escena de coste por preset, a la
+   cuenta del preset sobre la botella del ejemplo (además de la de
+   200 000), con su cociente frente a la escena sin efecto en rondas
+   alternadas. Criterio: ≤ 1,3× por muestra en cada preset. Solo si alguno
+   pasa de 1,3×, lo primero de la fase es una rejilla de pantalla para los
+   rayos de cámara de una cámara estenopeica (las partículas proyectadas;
+   cada rayo prueba las de su píxel en lugar de recorrer la BVH). La BVH de
+   las partículas se queda para los demás rayos; el tope por defecto no
+   cambia.
+2. **Un lóbulo hacia delante** para `DUST_MOTES`, `POLLEN` y `DUST_CLOUD`:
+   dispersión de Henyey–Greenstein con g ≈ 0,7 (Henyey y Greenstein,
+   *Diffuse radiation in the galaxy*, ApJ 1941; literatura pública), un
+   lóbulo más del material de la partícula, muestreado y evaluado con el
+   MIS de la NEE de E12, para que un foco detrás del producto las encienda
+   en su haz. Criterio: `DUST_MOTES-back` de la hoja se ve; la energía se
+   conserva (test).
+3. **Gotas sin cáusticas**: un rayo de sombra que cruza una partícula
+   refractiva pequeña (lluvia, burbujas) pasa con su cobertura y sin
+   refracción; la refracción se queda para los rayos de cámara. Criterio:
+   los puntitos de `RAIN-side` de la hoja desaparecen y la lluvia a
+   contraluz no cambia a ojo.
+
+**Depende de.** S4a, E12.
 
 ## Físicas: cuerpos rígidos, telas y líquidos — decisión **Fable**
 

@@ -1,5 +1,5 @@
 // Inspector with nothing selected: the scene (UI.md §2.4): Product, Light,
-// Environment, Camera and Image sections.
+// Environment, Ambient (S4a, insp-ambient.ts), Camera and Image sections.
 
 import { LENS_PRESETS } from '../../data/lenses';
 import { LIGHT_STYLES, lightSetup, setupsInStyle } from '../../data/light-setups';
@@ -16,6 +16,7 @@ import * as cmd from '../commands';
 import { colorField, field, lengthField, numberField, segmented, select, slider, toggle, type Control } from '../components/controls';
 import { libraryFoot, mineCards, mineEmpty, mineRows, namePrompt, type MineSpec } from '../components/library';
 import { section } from '../components/section';
+import { ambientSection } from './insp-ambient';
 import { opticsFields } from './insp-lens';
 import { confirmBox, showConfirmIn, thumb } from '../components/widgets';
 import { h, icon } from '../dom';
@@ -615,7 +616,7 @@ function imageSection(ctx: Ctx, scope: Scope): HTMLElement {
 }
 
 export function sceneInspector(ctx: Ctx, scope: Scope): HTMLElement {
-  return h('div', null, productSection(ctx, scope), lightSection(ctx, scope), envSection(ctx, scope), cameraSection(ctx, scope), imageSection(ctx, scope));
+  return h('div', null, productSection(ctx, scope), lightSection(ctx, scope), envSection(ctx, scope), ambientSection(ctx, scope), cameraSection(ctx, scope), imageSection(ctx, scope));
 }
 
 export { confirmBox, formatNumber, setupLabel };

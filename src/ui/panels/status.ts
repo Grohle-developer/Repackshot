@@ -4,6 +4,7 @@
 // from engine.status().
 
 import { DOCTOR_CHECKS } from '../../data/doctor';
+import { effectPreset } from '../../data/effects';
 import { warningCount, type DoctorResult } from '../../core/doctor';
 import { allParts, triangleCount } from '../../core/scene';
 import type { ProjectState } from '../../core/store';
@@ -42,6 +43,11 @@ export function doctorSentence(r: DoctorResult, state: ProjectState): string {
       return t('doctor.aspect', { count: Number(d.count), camera: cameraName(state, state.camera.cameras[String(d.camera)]), aspect: String(d.aspect), output: String(d.output) });
     case 'physics':
       return t('doctor.physics', { count: Number(d.count), name: String(d.name) });
+    case 'particles': {
+      const preset = effectPreset(String(d.preset));
+      const name = String(d.name ?? '') || (preset ? lbl(preset.label) : '');
+      return t('doctor.particles', { name, requested: formatNumber(Number(d.requested), getLang(), 0), cap: formatNumber(Number(d.cap), getLang(), 0) });
+    }
     default:
       return '';
   }
@@ -226,6 +232,9 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
   );
   const engine = h('span');
   const samples = h('span', { class: 'tabular' });
+  // S4a: what the preview draws of the ambient effects, as the engine evaluated them (hidden without effects).
+  const particlesSep = h('span', { class: 'sep', style: 'display:none' });
+  const particles = h('span', { class: 'tabular', 'data-meter': 'particles', style: 'display:none' });
   const port = services.viewport;
   if (port) {
     let last = 0;
@@ -247,6 +256,9 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
       const n = st.samples === 1 ? t('viewport.sample') : t('viewport.samples', { n: formatNumber(st.samples, getLang(), 0) });
       // The path tracer reports the time it has been converging; the preview, the time of its last frame.
       samples.textContent = port.kind === 'pathtracer' ? `${n} · ${formatClock(st.seconds)}` : `${n} · ${formatNumber(st.seconds * 1000, getLang(), 1)} ms`;
+      const p = port.kind === 'preview' ? st.particles : undefined;
+      particles.style.display = particlesSep.style.display = p ? '' : 'none';
+      if (p) particles.textContent = p.boxesOnly ? t('status.particlesBoxes') : t('status.particles', { shown: formatNumber(p.shown, getLang(), 0), total: formatNumber(p.total, getLang(), 0) });
     };
     scope.onDispose(port.onFrame(update));
     scope.onDispose(() => window.clearTimeout(trailing));
@@ -263,6 +275,8 @@ export function statusBar(ctx: Ctx, scope: Scope): HTMLElement {
     engine,
     h('span', { class: 'sep' }),
     samples,
+    particlesSep,
+    particles,
     h('div', { class: 'status-right' }, runtimeNote(ctx, scope), updateNotice(ctx, scope), langBtn, h('span', { class: 'tabular' }, `v${VERSION}`)),
   );
 }

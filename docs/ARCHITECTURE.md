@@ -21,6 +21,10 @@ no una iniciativa dentro de un PR.
 | Tests | **vitest** (modelo e interfaz), **cargo test** (motor: escenas analíticas, determinismo, paridad wasm/nativo), **playwright-core** con el Chromium local para capturas | La suite de la interfaz corre sin GPU; la del motor corre en cualquier CPU |
 | Empaquetado de escritorio | **Lanzador propio en Rust, solo `std`** (`engine/crates/rt-app`, binario `repackshot`), decidido para la primera release (P2). Sirve la interfaz en `127.0.0.1`, la abre en una ventana de aplicación de Edge (Windows) o Chromium/Chrome (Linux) y renderiza con `rt-core` **en nativo** con todos los hilos. Windows x86_64 compilado en cruzado con mingw-w64; Linux x86_64 estático con musl; instalador de Windows con **NSIS** (herramienta de construcción, no dependencia) | **Tauri queda descartado**: arrastra cientos de *crates* de crates.io (bloqueado en este entorno) y necesita compilar en Windows (sin minutos de Actions). El lanzador propio mantiene el proyecto sin dependencias en Rust, la interfaz web no cambia y Edge viene con Windows. Ver §5.5 |
 
+Las partículas de *Ambiente* (S4a) no añaden dependencias: el simulador
+es un *crate* propio del motor (`rt-sim`) y la vista previa usa los
+`THREE.Points` e `InstancedMesh` de three.js, que ya estaba.
+
 Lo que **no** se usa: React/Vue/Svelte, Tailwind, fuentes de iconos,
 fuentes de red, Electron, WebGPU, ningún renderizador existente (ni
 Embree, ni OptiX, ni ports de pbrt, ni `three-gpu-pathtracer`), ningún
@@ -108,6 +112,7 @@ src/
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
     physics.ts              físicas (S2): la sección Físicas de un nodo, qué se simula (`physicsSpec`), las poses del simulador de vuelta a los nodos, la pista del clip PHYSICS y su ancla, las acciones `physics/*` (§5.6)
+    effects.ts              los efectos de Ambiente (S4a): el efecto como dato, sus acciones `effect/*`, la región, la cuenta y el tope, los campos y los bytes de `FXAM`, los efectos de un archivo
     images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5), y de las texturas (M2a)
     textures.ts             texturas de imagen y etiquetas de un material (M2a): ranuras, mapeado, etiquetas, sus acciones `texture/*`, y la matemática de las proyecciones y de las etiquetas que siguen el shader y el motor
     texture-images.ts       las imágenes de textura en el registro: id por contenido, límites (M2a)
@@ -130,10 +135,11 @@ src/
     sets.ts                 los sets (L6): aplicar, sustituir y quitar su decoración (tarjetas, barrido, suelo, charco), su aspecto, Usar la cámara del set
     wear.ts                 valores por defecto del desgaste            (portado)
     version.ts
-  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9); physics.ts: densidades por familia de material y valores por defecto de las físicas (S2)
+  data/                     CATÁLOGOS. Solo datos y tipos (§3); primitives.json + primitives.ts: las doce formas de Añadir ▸ Primitiva (U9); physics.ts: densidades por familia de material y valores por defecto de las físicas (S2); effects.ts: los presets de Ambiente (S4a)
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
+    particles.ts            las partículas de Ambiente para Rápido (S4a): `rt_particles_eval` de rt.wasm en el hilo de la página, su tinte
     texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
     texture-preview.ts      las texturas y etiquetas en Rápido: el shader en cada material y la caché de texturas por imagen, con mipmaps (M2a)
     graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a)
@@ -179,6 +185,7 @@ src/
       scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
       insp-lens.ts          Cámara ▸ Bokeh (miniaturas del motor) y Óptica avanzada (O1)
       insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
+      insp-ambient.ts       inspector ▸ Escena ▸ Ambiente: lista, galería de tarjetas, ocho mandos y Avanzado (S4a)
       material-editor.ts    la ventana Editor de material: barra, panel del nodo, teclas, sitio y tamaño recordados (M3a, UI.md §2.10)
       graph-canvas.ts       el lienzo del editor: tarjetas, tomas por forma, conexiones, zoom y desplazamiento (M3a)
       viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
@@ -209,7 +216,9 @@ docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
   Cargo.toml  rust-toolchain.toml  README.md
   crates/rt-core/           el trazador: matemáticas, SIMD, BVH, BSDF, luces, integrador, RSB, PNG, TIFF y DNG (U12);
-                            imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c)
+                            imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c);
+                            partículas de Ambiente: esferas, discos y cápsulas con su BVH (geometry/particles.rs, S4a)
+  crates/rt-sim/            el simulador de partículas sin estado (S4a): `FXAM` ⇄ `AmbientParams`, `evaluate`
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG, TIFF o DNG con hilos; hojas de contacto
                             (las escenas de E5 en scenes.rs)
   crates/rt-wasm/           exportaciones extern "C" para el navegador (sin wasm-bindgen)
@@ -451,8 +460,9 @@ Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
 | `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
+| `rt-sim` | **El simulador de partículas sin estado** (S0 §1–2, S4a): `AmbientParams` (lee y escribe la carga de `FXAM`), `evaluate(&params, max)` y `Evaluator::particle(id)`: cada partícula es función pura de (semilla, id, instante), en forma cerrada; fase propia (régimen estacionario: la región llena desde el primer instante), velocidad `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}` integrada, deriva de *curl noise* como desplazamiento sin divergencia (Bridson, Houriham y Nordenstam, *Curl-noise for procedural fluid flow*, SIGGRAPH 2007), muerte en el suelo y renacimiento arriba (las que caen o suben nacen en su cara y viven lo que tardan en cruzar la caja; las que flotan viven siempre y la caja se envuelve), envolvente de nube por rechazo. La exponencial y el seno, tabulados con `fmath` una vez por efecto: nada de `exp`/`sin` por partícula | Las reglas de `rt-core`: solo `std` sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, hash contador `mix64((seed << 32) ^ id)`. Comparte `fmath.rs` y `rng.rs` de `rt-core` compilándolos por `#[path]` (un test de `rt-core` comprueba que dan lo mismo): `rt-core` depende de `rt-sim`, no al revés |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_version`…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1) y `rt-phys` | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
@@ -461,7 +471,7 @@ Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 
 **Sin dependencias externas** quiere decir exactamente eso: ningún
 *crate* de crates.io en ningún *crate* del workspace. `Cargo.lock` solo
-lista `rt-core`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post`, `rt-post-wasm`, `rt-sky` y `rt-phys`,
+lista `rt-core`, `rt-sim`, `rt-cli`, `rt-wasm`, `rt-app`, `rt-post`, `rt-post-wasm`, `rt-sky` y `rt-phys`,
 y CI falla si aparece un `source =`. Todo lo que el motor necesita (vectores, RNG, secuencias de
 baja discrepancia, zlib/PNG, lectores HDR, hilos) se escribe aquí.
 Fórmulas y tablas de la literatura pública (PCG, Sobol con números de
@@ -599,6 +609,62 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   *canvas* por `src/io/aperture.ts`), máscara por textura en una sola
   imagen, y `field_mm` = media diagonal del encuadre de salida en el
   sensor de 36 mm, sea cual sea la parte del visor que cubra la imagen.
+- **`FXAM`** (S4a, repetible: una por efecto de *Ambiente*; un motor
+  anterior la salta como sección desconocida). Los **parámetros** del
+  efecto, no sus partículas: 192 B (los primeros 128 son obligatorios; una
+  carga más corta es error, una más larga se lee hasta donde se conoce y
+  lo que sobra se ignora; presupuesto, 256 B). El motor evalúa las
+  partículas al cargar la escena con `rt-sim` y construye su BVH; la
+  fuente de verdad es `rt_sim::params`.
+
+  | Desplazamiento | Tipo | Campo | Qué es |
+  | --- | --- | --- | --- |
+  | 0 | `u32` | `kind` | código del preset (1 `DUST_MOTES` … 8 `CONFETTI`; otro se evalúa igual: deciden los campos) |
+  | 4 | `u32` | `seed` | semilla |
+  | 8 | `f32` | `time` | instante congelado, s |
+  | 12 | `u32` | `count` | partículas que evaluar (el escritor ya aplica el tope; como mucho 2²⁴) |
+  | 16 | `f32[3]` | `region_centre` | mm |
+  | 28 | `f32[3]` | `region_half` | mitad del tamaño de la caja, mm (≥ 0) |
+  | 40 | `f32[2]` | `band` | alturas que se conservan, mm (`min ≥ max`: sin banda; el escritor TypeScript ya la aplica a la caja y escribe 0, 0) |
+  | 48 | `f32` | `size_mm` | diámetro medio, mm |
+  | 52 | `f32` | `size_var` | variación relativa, 0..1 |
+  | 56 | `u32` | `shape` | 0 esfera, 1 disco (copo), 2 cápsula (estela) |
+  | 60 | `f32` | `fall_speed` | velocidad terminal a 1 g, mm/s |
+  | 64 | `f32` | `fall_var` | variación relativa, 0..1 |
+  | 68 | `f32[3]` | `wind` | mm/s |
+  | 80 | `f32[3]` | `turbulence` | fuerza (desplazamiento, mm), escala (mm), velocidad (mm/s) |
+  | 92 | `f32[3]` | `cloud_centre` | mm |
+  | 104 | `f32` | `cloud_radius` | mm; 0: sin nube (se llena la caja) |
+  | 108 | `f32` | `cloud_softness` | 0 borde duro .. 1 suave |
+  | 112 | `u32` | `material_id` | índice de una `MATL` (si no existe, error) |
+  | 116 | `f32` | `tint_var` | variación de tinte por partícula, 0..1 |
+  | 120 | `u32` | `flags` | bit 0 visible a cámara, bit 1 en reflejos (y todo rayo secundario), bit 2 proyecta sombra |
+  | 124 | `f32` | `streak` | largo de la cápsula entre su velocidad, s |
+  | 128 | `f32` | `gravity` | múltiplo de g (1); negativa sube |
+  | 132 | `f32` | `energy` | velocidad de nacimiento, mm/s (0) |
+  | 136 | `f32` | `spin` | vueltas por segundo de los discos (0) |
+  | 140 | `u32` | `palette_count` | tintes entre los que elige cada partícula, 0..4 (0: el color del material) |
+  | 144 | `f32[4][3]` | `palette` | RGB lineal, multiplica el color base del material |
+
+  **En el motor** (`rt-core::geometry::particles`): un conjunto por efecto
+  con su BVH plana sobre los tamaños reales (hojas de una partícula; el id
+  desempata), recorrido **después** de la BVH de instancias (la pieza más
+  cercana acota el rayo; un rayo de sombra mira primero las piezas).
+  Intersección estable de la esfera (Haines, Günther y Akenine-Möller,
+  *Precision Improvements for Ray/Sphere Intersection*, *Ray Tracing Gems*
+  2019, cap. 7), disco orientado y cápsula. **Tamaño mínimo en pantalla**:
+  para los rayos de cámara, una partícula más fina que 0,35 px a su
+  distancia se ensancha a eso (la BVH se rellena con el mismo margen) y el
+  impacto se reparte para conservar la energía: con cobertura
+  `c = (r / r_ensanchado)²`, el rayo se sombrea con probabilidad
+  `q = max(c, ½)` y peso `c / q` o atraviesa con peso `(1 − c)/(1 − q)`
+  (escalar la radiancia por `c` sin más oscurecería lo que hay detrás). El
+  material de una partícula es el de su `material_id` con el tinte de su
+  semilla; un disco es siempre pared fina. Pases: `partId` = el índice del
+  efecto detrás de las instancias, `materialId` el de su `MATL`. Una
+  actualización sin `MESH` con los mismos parámetros conserva las
+  partículas y su BVH. Sin `FXAM` (o con cuenta 0) los píxeles de toda
+  escena son los de antes de S4a (test).
 - El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
@@ -1731,6 +1797,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
+| Ambiente (S4a) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests` y `geometry::tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %) |
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
@@ -1785,6 +1852,16 @@ objeto es daño. El esquema sigue en 2. Una versión anterior a U9 que abra
 un proyecto con primitivas no las verá (sin malla en el archivo): solo
 compatibilidad hacia atrás, como se decidió. El motor recibe la malla como
 una más: el RSB no cambia.
+
+**Ambiente** (S4a). `state.effects` es la lista de efectos (SPEC §3.1),
+sus parámetros y nada más: las partículas no se guardan, se evalúan. Un
+archivo sin el campo (anterior a S4a) abre con la lista vacía; al abrir,
+`normalizeEffects` quita lo que no es un efecto (o repite un id), completa
+con los valores de su preset los campos que faltan y deja con el primer
+preset disponible (y sus parámetros) un preset que esta versión no conoce.
+El esquema sigue en 2. El Doctor se vuelve a pasar al abrir con los
+chequeos de esta versión: un archivo anterior trae los suyos sin
+`particles`.
 
 **Texturas** (M2a). Las imágenes de las ranuras y de las etiquetas de los
 materiales van en el mismo bloque `images`, detrás de las del entorno, una

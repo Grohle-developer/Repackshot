@@ -51,7 +51,7 @@ use crate::bsdf::{Bsdf, Lobes};
 use crate::caustics::{gather_at, gather_catcher, CausticSetup, PhotonMap};
 use crate::color::Rgb;
 use crate::fmath;
-use crate::geometry::{Geometry, RayHit};
+use crate::geometry::{Geometry, RayClass, RayHit};
 use crate::light::{Lights, Scattered};
 use crate::math::{offset_origin, Frame, Ray, Vec3};
 use crate::sampler::{
@@ -71,12 +71,23 @@ pub const MAX_CUTOUTS: u32 = 64;
 /// blocked.
 pub const MAX_SHADOW_CROSSINGS: u32 = 32;
 
-/// Nearest-hit and shadow queries against the scene geometry.
+/// Nearest-hit and shadow queries against the scene geometry. The particles of the ambient
+/// effects (S4a) are seen by each kind of ray as their flags say ([`RayClass`]); a tracer that
+/// knows no particles answers every query with [`Tracer::trace`].
 pub trait Tracer {
-    /// Nearest hit of `ray` within `[t_min, t_max]`.
+    /// Nearest hit of a scattered ray within `[t_min, t_max]`.
     fn trace(&self, ray: &Ray) -> Option<RayHit>;
-    /// True when anything blocks `ray` within `[t_min, t_max]`.
+    /// True when anything that casts shadows blocks `ray` within `[t_min, t_max]`.
     fn occluded(&self, ray: &Ray) -> bool;
+    /// Nearest hit of a camera ray (particles seen by the camera, widened to the minimum size).
+    fn trace_camera(&self, ray: &Ray) -> Option<RayHit> {
+        self.trace(ray)
+    }
+    /// Nearest hit of a shadow ray (particles that cast shadows): what a shadow ray crossing cut-outs
+    /// and thin walls meets next.
+    fn trace_shadow(&self, ray: &Ray) -> Option<RayHit> {
+        self.trace(ray)
+    }
 }
 
 /// The BVH of a [`Geometry`], on one SIMD path.
@@ -91,12 +102,24 @@ pub struct BvhTracer<'a> {
 impl Tracer for BvhTracer<'_> {
     #[inline]
     fn trace(&self, ray: &Ray) -> Option<RayHit> {
-        self.geometry.trace_with(ray, self.isa)
+        self.geometry
+            .trace_class(ray, self.isa, RayClass::Secondary)
     }
 
     #[inline]
     fn occluded(&self, ray: &Ray) -> bool {
-        self.geometry.occluded_with(ray, self.isa)
+        self.geometry
+            .occluded_class(ray, self.isa, RayClass::Shadow)
+    }
+
+    #[inline]
+    fn trace_camera(&self, ray: &Ray) -> Option<RayHit> {
+        self.geometry.trace_class(ray, self.isa, RayClass::Camera)
+    }
+
+    #[inline]
+    fn trace_shadow(&self, ray: &Ray) -> Option<RayHit> {
+        self.geometry.trace_class(ray, self.isa, RayClass::Shadow)
     }
 }
 
@@ -215,17 +238,28 @@ impl Prepared {
             other => other,
         };
         let instances = scene.geometry.instances();
+        // Instances, then the particle sets (whose hits report the instances' count plus their
+        // index).
         let material = |i: usize| {
-            instances
-                .get(i)
-                .and_then(|inst| scene.materials.get(inst.material_id as usize))
+            scene
+                .geometry
+                .material_of(i as u32)
+                .and_then(|id| scene.materials.get(id as usize))
         };
-        let passable: Vec<bool> = (0..instances.len())
+        // A particle disc is a thin wall whatever its material says.
+        let disc = |i: usize| {
+            scene
+                .geometry
+                .particle_set(i as u32)
+                .is_some_and(|set| set.params().shape == rt_sim::Shape::Disc)
+        };
+        let passable: Vec<bool> = (0..instances.len() + scene.geometry.particle_sets().len())
             .map(|i| {
                 material(i).is_some_and(|m| {
+                    let thin = m.flags & MATERIAL_FLAG_THIN != 0 || disc(i);
                     !m.is_emissive()
                         && (m.opacity < 1.0
-                            || (m.flags & MATERIAL_FLAG_THIN != 0
+                            || (thin
                                 && m.transmission > 0.0
                                 && (m.metallic < 1.0 || m.kind == crate::scene::MATERIAL_GLASS)))
                 })
@@ -296,14 +330,50 @@ impl Prepared {
         }
     }
 
-    /// The material of instance `i`.
+    /// The material of instance `i` (or of the particle set whose hits report `i`).
     pub(crate) fn material<'a>(&'a self, scene: &'a Scene, i: u32) -> &'a Material {
         scene
             .geometry
-            .instances()
-            .get(i as usize)
-            .and_then(|inst| scene.materials.get(inst.material_id as usize))
+            .material_of(i)
+            .and_then(|id| scene.materials.get(id as usize))
             .unwrap_or(&self.fallback)
+    }
+
+    /// The material of particle `id` of the set whose hits report `i`, tinted by the particle's
+    /// own variation (`rt_sim::tint_factor`); a disc's is always a thin wall (a flake has no
+    /// inside). `None` for an instance, or a set of spheres or capsules without tints.
+    pub(crate) fn particle_material(&self, scene: &Scene, i: u32, id: u32) -> Option<Material> {
+        let set = scene.geometry.particle_set(i)?;
+        let params = set.params();
+        let disc = params.shape == rt_sim::Shape::Disc;
+        let tinted = params.tint_var > 0.0 || params.palette_count > 0;
+        if !(tinted || disc) {
+            return None;
+        }
+        let m = self.material(scene, i);
+        let mut out = m.clone();
+        if tinted {
+            let [r, g, b] = rt_sim::tint_factor(params, set.tint(id));
+            out.base_color = m.base_color * Rgb::new(r, g, b);
+        }
+        if disc {
+            out.flags |= MATERIAL_FLAG_THIN;
+        }
+        Some(out)
+    }
+
+    /// The absorption inside what instance `i` (or the particle set of `i`) is made of: none for a
+    /// disc, which has no inside.
+    fn medium_inside(&self, scene: &Scene, i: u32) -> Option<Rgb> {
+        if scene
+            .geometry
+            .particle_set(i)
+            .is_some_and(|set| set.params().shape == rt_sim::Shape::Disc)
+        {
+            return None;
+        }
+        let id = scene.geometry.material_of(i)?;
+        self.media.get(id as usize).copied().flatten()
     }
 
     /// Follows `ray` through the cut-outs and thin walls it meets: what a straight ray keeps up
@@ -316,14 +386,14 @@ impl Prepared {
             f32::INFINITY
         };
         if !self.any_passable {
-            let blocker = tracer.trace(ray).map_or(f32::INFINITY, |h| h.t);
+            let blocker = tracer.trace_shadow(ray).map_or(f32::INFINITY, |h| h.t);
             return (Rgb::WHITE, blocker.min(floor));
         }
         let mut keep = Rgb::WHITE;
         let mut r = *ray;
         let mut travelled = 0.0f32;
         for _ in 0..MAX_SHADOW_CROSSINGS {
-            let Some(hit) = tracer.trace(&r) else {
+            let Some(hit) = tracer.trace_shadow(&r) else {
                 return (keep, floor);
             };
             let t = travelled + hit.t;
@@ -341,7 +411,12 @@ impl Prepared {
             let Some(details) = scene.geometry.hit_details(&r, hit) else {
                 return (keep, t);
             };
-            let m = self.material(scene, hit.instance);
+            // A particle's own tint and thinness.
+            let own = self.particle_material(scene, hit.instance, hit.triangle);
+            let m = match &own {
+                Some(m) => m,
+                None => self.material(scene, hit.instance),
+            };
             let cos = details.geometric_normal.dot(r.dir);
             let opacity = m.opacity.clamp(0.0, 1.0);
             let through = Bsdf::principled(m).straight_transmittance(cos) * opacity
@@ -452,7 +527,7 @@ pub enum FirstHit {
 /// nearer of the geometry and the floor wins as in [`radiance_at`], and an area light flagged
 /// `camera` crossed on the way makes it background. One ray is traced.
 pub fn first_hit<T: Tracer>(scene: &Scene, prepared: &Prepared, tracer: &T, ray: &Ray) -> FirstHit {
-    let hit = tracer.trace(ray);
+    let hit = tracer.trace_camera(ray);
     let t_geometry = hit.map_or(f32::INFINITY, |h| h.t);
     let t_floor = prepared.floor_t(ray, true);
     let t_nearest = t_geometry.min(t_floor);
@@ -509,6 +584,8 @@ struct Surface {
     geometric: Vec3,
     /// The floor (`None`) or an instance with its material.
     instance: Option<(u32, bool)>,
+    /// The triangle (or, on a particle set, the particle's id).
+    triangle: u32,
     /// The ray arrived from the outside of the surface.
     outside: bool,
 }
@@ -618,9 +695,15 @@ pub fn radiance_with<T: Tracer>(
     // Absorption coefficients of the solid the ray is inside.
     let mut medium: Option<Rgb> = None;
     let mut cutouts = 0u32;
+    // The weight of the widened particles a camera ray went through or shaded (their coverage).
+    let mut alpha_weight = 1.0f32;
     loop {
         *rays += 1;
-        let hit = tracer.trace(&ray);
+        let hit = if primary {
+            tracer.trace_camera(&ray)
+        } else {
+            tracer.trace(&ray)
+        };
         let t_geometry = hit.map_or(f32::INFINITY, |h| h.t);
         let t_floor = prepared.floor_t(&ray, primary);
         let t_nearest = t_geometry.min(t_floor);
@@ -682,7 +765,7 @@ pub fn radiance_with<T: Tracer>(
                     caustics.map(|(map, _)| map),
                     rays,
                 );
-                return (sum + throughput * c, a);
+                return (sum + throughput * c, a * alpha_weight);
             }
             let p = ray.at(t_floor);
             let n = Vec3::new(0.0, 0.0, if ray.dir.z < 0.0 { 1.0 } else { -1.0 });
@@ -693,9 +776,37 @@ pub fn radiance_with<T: Tracer>(
                 normal: n,
                 geometric: n,
                 instance: None,
+                triangle: 0,
                 outside: true,
             }
         } else {
+            // A particle widened to the minimum size on screen (S4a): the camera ray shades it
+            // with probability q, weighted by its real share of the widened area over q, or goes
+            // on through it, weighted by the rest over 1 - q, to see what is behind; on average
+            // the pixel gets exactly the particle's share and the background's.
+            if let Some((coverage, exit)) = hit
+                .filter(|_| primary)
+                .and_then(|h| scene.geometry.widened_hit(&ray, &h))
+            {
+                let q = coverage.max(0.5);
+                let weight = if cutouts < MAX_CUTOUTS {
+                    let u = sampler.get1(cutout_dim(bounce, cutouts));
+                    cutouts += 1;
+                    if u < q {
+                        coverage / q
+                    } else {
+                        let through = (1.0 - coverage) / (1.0 - q);
+                        throughput = throughput * through;
+                        alpha_weight *= through;
+                        ray.t_min = exit * (1.0 + 1.0e-6) + Ray::EPSILON;
+                        continue;
+                    }
+                } else {
+                    coverage
+                };
+                throughput = throughput * weight;
+                alpha_weight *= weight;
+            }
             let Some(details) = hit.and_then(|h| scene.geometry.hit_details(&ray, h)) else {
                 break;
             };
@@ -715,13 +826,21 @@ pub fn radiance_with<T: Tracer>(
                 normal,
                 geometric: ng,
                 instance: Some((details.instance, details.front_face)),
+                triangle: details.triangle,
                 outside: details.outside,
             }
         };
 
-        let material = surface
-            .instance
-            .map(|(instance, _)| prepared.material(scene, instance));
+        // A particle's material carries its own tint.
+        let tinted = surface.instance.and_then(|(instance, _)| {
+            prepared.particle_material(scene, instance, surface.triangle)
+        });
+        let material = match &tinted {
+            Some(m) => Some(m),
+            None => surface
+                .instance
+                .map(|(instance, _)| prepared.material(scene, instance)),
+        };
 
         // Emitters reflect nothing: add their light and stop.
         if let (Some((instance, front)), Some(m)) = (surface.instance, material) {
@@ -885,10 +1004,9 @@ pub fn radiance_with<T: Tracer>(
                 // Into the solid, or out of it.
                 medium = if surface.outside {
                     material.and_then(|_| {
-                        surface.instance.and_then(|(i, _)| {
-                            let id = scene.geometry.instances().get(i as usize)?.material_id;
-                            prepared.media.get(id as usize).copied().flatten()
-                        })
+                        surface
+                            .instance
+                            .and_then(|(i, _)| prepared.medium_inside(scene, i))
                     })
                 } else {
                     None
@@ -898,7 +1016,7 @@ pub fn radiance_with<T: Tracer>(
         ray = Ray::new(next_origin, wi);
         bounce += 1;
     }
-    (sum, alpha)
+    (sum, alpha * alpha_weight)
 }
 
 /// Largest share of the open floor's light the caustics on the shadow catcher may add (a focus
@@ -983,7 +1101,7 @@ fn shadow_catcher<T: Tracer>(
         } else {
             (
                 Rgb::WHITE,
-                tracer.trace(&probe).map_or(f32::INFINITY, |h| h.t),
+                tracer.trace_shadow(&probe).map_or(f32::INFINITY, |h| h.t),
             )
         };
         let bsdf = Scattered {
