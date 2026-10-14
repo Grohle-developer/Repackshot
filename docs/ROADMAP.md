@@ -5665,7 +5665,7 @@ Doctor cuando un plano discrepa. Comprobación de navegador
 sección con 4:3 y el marco del visor cambiado) y
 `docs/ui/render-size-from-camera.png`.
 
-## N6 · Despiece configurable y línea de tiempo clara — **Opus**, decisión **Fable**
+## N6 · Despiece configurable y línea de tiempo clara — **Opus**, decisión **Fable** — hecha
 
 Petición del usuario (14-10): en animación faltaban las **explosiones
 (despieces)** de un modelo, configurables en velocidad y suavidad, con
@@ -5752,6 +5752,138 @@ visor) y `docs/ui/explode-types.png` (tira de 4 fotogramas por tipo con
 el envase de ejemplo). Hoja `out/explode-sheet.html` para el veredicto
 visual. `SPEC.md` §3.7, `UI.md` §2.5, CHANGELOG; cadenas es/en; cromo
 acromático; todo por el *store* y deshacible.
+
+**Hecho.** El despiece vive en `src/core/explode.ts` y se evalúa dentro
+de `evaluate` (puro y determinista; `MotionClip` y `evaluate` siguen
+siendo la API): `explodeMovers` calcula lo que se mueve como una unidad
+(una pieza, o un bloque en los niveles), su desplazamiento final y su
+ventana de tiempo dentro de la barra, y `evaluate` aplica en cada ventana
+la curva del clip. Geometrías `LINEAR` (*separar* y *apilar* en Z, X, Y o
+una dirección propia), `CYLINDRICAL` (la radial) y `SPHERICAL`; jerarquía
+`NONE` / `ONE` / `ALL` (por etapas encadenadas con el solape, y dentro de
+un grupo las piezas se alejan del centro del grupo en proporción a su
+tamaño); distancia en × tamaño o mm, reparto igual o por distancia,
+proporcional al tamaño, centro (conjunto, pieza, pivote, punto), orden (a
+la vez, por distancia con la más lejana primero, por profundidad) con
+solape, excepciones (`pinned`, que guarda piezas; fijar un grupo fija las
+suyas), conservar la orientación (apagado, cada pieza se inclina hasta
+20° sobre su propio centro), objetivo modelo o grupo. Genéricos de
+`MotionClip`, opcionales: `reverse` (antes de empezar guarda su estado
+final; `poseActive` hace que el visor y el motor enseñen ese estado desde
+el fotograma 0), `repeat` (la barra dura `duration × repeat`, `clipEnd`),
+`smoothness` (un mando sobre *lineal → suave → muy suave*, mezclándolas, que
+escribe en `easing` la más cercana) y `explode`. Acciones nuevas del
+*store*, todas deshacibles: `removeClips`, `duplicateClips`,
+`setClipTimes` (valores absolutos: un arrastre con su gesto es una entrada),
+`splitClip` (las dos mitades siguen una de otra en los tipos que suman o
+multiplican), `reverseClips`, `setExplode`, `pinExplode`. Las claves
+`LINEAR` y `SPHERICAL` se **añaden** a `EXPLODE_MODES`.
+
+**Decisión sobre `RADIAL`.** Ningún proyecto ni preset guardado usa
+`RADIAL`: `MotionClip` no tenía ningún campo de modo (el catálogo
+`EXPLODE_MODES` existía, pero nada lo escribía, y el evaluador hacía
+siempre «hacia fuera desde el centro»). Aun así `RADIAL` es una clave de
+catálogo con un sentido escrito («cada pieza sale hacia fuera desde el
+centro» = esférica), y la regla 7 no deja cambiarle el sentido; además el
+catálogo ya tenía `CYLINDRICAL` con el sentido exacto de la radial nueva
+(«salen en abanico sin subir ni bajar»). Así que **`RADIAL` queda como
+sinónimo de la esférica y la radial es `CYLINDRICAL`** (en la interfaz,
+*Radial*). `AXIS_X/Y/Z` = lineal *separar* en ese eje; `CUSTOM` (una
+dirección por pieza) no se construye y se lee como la esférica, lo que
+hacía antes. Un despiece sin parámetros —todos los de antes— es el de
+entonces: esférico, **cada pieza la misma distancia** (`EVEN`), desde el
+centro, a la vez; `tests/fixtures/explode-legacy.json` se tomó con el
+código anterior (seis casos: los dos presets, curvas distintas, `RADIAL`,
+el modelo y el cierre movidos y girados, y con un plato giratorio a la
+vez) y se lee igual a 1e-9 mm.
+
+**La línea de tiempo** sustituye el cajón de U1 (`src/ui/panels/animation.ts`
+con su nombre; `anim-tree.ts`, `anim-timeline.ts`, `anim-props.ts`, y las
+órdenes en `src/ui/anim-commands.ts`): tres zonas en una rejilla, el árbol
+fijo a la izquierda y la regla arriba mientras las pistas se desplazan;
+la pista de cámara con sus tramos (borde arrastrable, cámara del plano y
+quitar en su menú, **+** para añadir); barras con su frase, arrastre de
+todas las elegidas, estirado por los dos extremos, imán a bordes, cabezal,
+cortes de plano y segundos (a menos de 6 px; si no, a fotogramas; `Mayús`
+libre) con una línea que dice dónde pega; selección múltiple con
+`Ctrl/⌘` y `Mayús`; objetivos plegables; propiedades con cabecera de una
+línea, los mandos del tipo y del despiece, excepciones, tiempo (inicio,
+duración, fin, repetir, invertir), curva o suavidad con su vista previa;
+el asistente de siempre, ahora con el objetivo puesto; presets en su
+lista y en la cabecera; bucle y zoom. La aritmética (filas, regla, tramos,
+imán) está en `src/core/timeline.ts`; el árbol y las barras solo leen la
+frase y el objetivo (un `PHYSICS` se dibuja con un punto por icono y su
+frase o el nombre de su tipo). **Visor**: `src/core/motion-hint.ts` da el
+contorno del objetivo (el de la pieza bajo el puntero) y la pista en
+espacio del modelo —anillo con el ángulo de una órbita y un punto donde
+está la cámara, arco de una elevación, flecha de un desplazamiento, un
+vector y un punto por pieza de un despiece, eje y giro de un *giro
+propio*—, y la previa (`setMotionHint`) la dibuja en la tinta del tema
+encima de todo, también en *Completo* y mientras reproduce. El menú
+contextual de una pieza gana *Animar Tapón…* y *Fijar en el despiece* /
+*Soltar del despiece*. Cadenas es/en; cromo acromático.
+
+Pruebas: `tests/explode.test.ts` (27: la instantánea, cada geometría por
+donde dice, las unidades y lo proporcional, los niveles por etapas, el
+grupo como objetivo, las excepciones, el orden con solape, la suavidad,
+invertir, repetir, la orientación, partir) y
+`tests/animation-timeline.test.ts` (18: el imán, la regla, las filas, la
+cabecera, árbol ↔ selección ↔ visor en los *stores*, las órdenes y las
+teclas, la pista en el visor), cada una comprobada reintroduciendo el
+fallo que vigila; en el navegador, `tools/animation-check.mjs` (las tres
+zonas, el asistente, el contorno y la pista, las filas marcadas desde la
+escena, arrastrar y estirar con imán y deshacer, las teclas, los menús,
+cada tipo moviendo las piezas) con `docs/ui/animation-timeline.png` y
+`docs/ui/explode-types.png`, y la hoja `out/explode-sheet.html` para el
+veredicto visual (◆ Fable: qué valores por defecto y qué aspecto).
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
+**Fable**, que decide si se cambia):
+- N1 no estaba construido (su encabezado no dice *hecha*): el cajón que
+  se sustituye es el de U1 (planos, tarjetas y bloques). N6 trae de N1
+  lo que su interfaz necesitaba (invertir, repetir, cabecera, curva con
+  vista previa, pista de cámara con tramos); siguen pendientes de N1 la
+  curva *personalizada* con asas, `FADE`, `PAN`, `MATERIAL_COLOR`, los
+  cambios de cámara con fundido y las animaciones bajo su objetivo en el
+  árbol de la escena.
+- ◆ Valores por defecto de un despiece nuevo: esférico, piezas, **reparto
+  por distancia**, centro del conjunto, a la vez, suavidad 50 %. *Por
+  distancia* (la más lejana recorre la distancia, las demás en
+  proporción) separa piezas que están del mismo lado, como el cuello y el
+  tapón; *igual* (lo de antes) las mueve juntas. La hoja enseña las dos.
+- ◆ En el envase de ejemplo la radial sobre Z solo mueve la etiqueta: las
+  demás piezas están en el eje (es lo que pide la geometría); la hoja
+  enseña también la radial sobre X.
+- ◆ *Conservar la orientación* apagado inclina cada pieza hasta 20° al
+  alejarse; el brief no decía cómo. Es la constante `EXPLODE_TILT_DEG`.
+- Por niveles, el brief separaba *todos los niveles* y el orden *por
+  profundidad*; aquí *todos los niveles* ya va por etapas (los bloques y
+  luego su interior, encadenados con el solape) y el orden actúa dentro
+  de cada etapa; *por profundidad* sirve sobre todo con *piezas*.
+- Dos arreglos de comportamiento que cambian proyectos con set (L6) o con
+  un despiece sobre un nodo, nunca el ejemplo de la instantánea: antes el
+  despiece movía también el fondo y el suelo del set y tomaba su centro
+  de toda la escena; ahora las piezas de un set no se despiezan nunca. Y
+  un despiece con objetivo *una pieza o un grupo* movía todo el modelo
+  (el objetivo se ignoraba); ahora mueve lo que hay bajo el grupo.
+- Partir en el cabezal: solo en tipos que suman (giros, distancias,
+  despiece a la vez) o multiplican (escala, acercamiento), reproducidos
+  una vez y hacia delante; cada mitad conserva la curva, así que la
+  posición sigue pero la velocidad no es la de la barra entera.
+- Las pistas del visor se dibujan donde está el objetivo en reposo: si el
+  modelo además gira, los vectores del despiece no giran con él.
+- Sin selección por caja en las pistas ni doble clic para renombrar (las
+  barras no tienen nombre propio todavía: su frase lo es).
+- El cajón crece a 300 px de alto para las tres zonas.
+- *+ Animar…* con el modelo elegido en una escena con set: el fondo y el
+  suelo del set son raíces de la escena, así que el modelo no es «todo el
+  modelo» (`SUBJECT`, que actúa sobre todas las raíces) sino un nodo, y el
+  asistente lo pone como *Una pieza o grupo* (antes *Una pieza*: la etiqueta
+  cambia de texto, no de clave). Fuera de esta fase y sin tocar: un giro
+  sobre `SUBJECT` (el plato giratorio de los presets) gira también el fondo y
+  el suelo de un set, porque gira todas las raíces; queda anotado para L6.
+- En las tiras, la base que baja por debajo del suelo se ve oscurecida por
+  el suelo de sombras del estudio (está detrás de él desde la cámara).
 
 ## P6 · Plugins, y el plugin de película (aintfilm) — **Opus**, decisión **Fable**
 

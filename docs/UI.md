@@ -671,42 +671,121 @@ vive en la **ventana de render** (§2.7), que se abre con el botón
   pantalla; `Ctrl/⌘ ⏎`), que abre la ventana de render. `Ctrl/⌘ ⇧ ⏎`
   renderiza directamente con los últimos ajustes, sin abrir la ventana.
 
-**Cajón Animación**, al estilo de la línea de tiempo de KeyShot (la
-versión de U1 con planos y tarjetas se sustituye en N1 por esto):
+**Cajón Animación** (N6): una línea de tiempo de **tres zonas**, como el
+espacio de animación de KeyShot y las tiras de Blender o After Effects
+(sin copiar nada), para que quede claro **qué** se anima (izquierda),
+**cuándo** (centro) y **cómo** (derecha). Mide al menos 300 px de alto;
+la versión de U1 con planos y tarjetas queda sustituida.
 
-- **Cabecera del cajón**: ir al principio, reproducir / pausar, ir al
-  final, bucle; cabezal en `s` y en fotograma; fps; duración total;
-  conmutador *Vista previa rápida / Previa renderizada*; zoom de la línea
-  de tiempo; **+ Añadir animación** (abre el asistente) y *Presets*
-  (`SEQUENCE_PRESETS`, que añaden varias barras de golpe).
-- **Pistas**: una fila por objetivo con animaciones (cámara arriba,
-  después piezas y grupos, luces, entorno, materiales), con nombre y
-  triángulo para plegar; la **pista de cámara** muestra los tramos de
-  cámara activa y los eventos de cambio de cámara como marcas verticales
-  (corte o fundido). Cada animación es una **barra** con su frase; se
-  arrastra para mover el inicio y se estira por los extremos para cambiar
-  la duración (ajuste a fotograma con `Shift` libre); clic la selecciona
-  y el inspector pasa a editarla; doble clic renombra; menú contextual:
-  Duplicar, Invertir, Repetir…, Eliminar. Regla superior en segundos y
-  fotogramas; el cabezal se arrastra y, al soltarlo, el visor muestra ese
-  instante.
-- **Asistente de animación** (en línea, en el inspector, tres pasos con
-  *Atrás / Siguiente / Terminar*): 1) **Tipo**, en una rejilla de tarjetas
-  monocromas agrupadas como en `SPEC.md` §3.7 (Piezas · Cámara · Luz y
-  entorno · Materiales), cada una con un icono y una frase; 2)
-  **Objetivo**, la selección actual ya marcada y la posibilidad de
-  cambiarla en el árbol; 3) **Parámetros** del tipo (cantidad con unidad,
-  eje, pivote, local o global, inicio, duración, curva de tiempo,
-  invertida, repetir) con la frase resultante actualizándose en vivo.
-  *Terminar* añade la barra y la selecciona.
-- **Inspector de una animación**: nombre, objetivo (cambiable), tipo,
-  parámetros, inicio y fin (o duración), curva de tiempo con un pequeño
-  gráfico y, en *personalizada*, dos asas arrastrables, invertida,
-  repetir, y los botones *Duplicar*, *Invertir*, *Eliminar*. La frase en
-  lenguaje llano arriba, siempre.
-- En el **árbol de la escena**, cada objetivo con animaciones muestra un
-  desplegable *Animaciones* con una fila por barra (icono del tipo +
-  frase); seleccionarla selecciona la barra y viceversa.
+- **Cabecera** (transporte): *Reproducir / Pausar* (`Espacio`), *Ir al
+  principio* (`Inicio`), *Ir al final* (`Fin`), **Bucle** (encendido, al
+  acabar vuelve a empezar; apagado, se para al final); el cabezal en `s`
+  y su total (*2 s / 7 s*), el fotograma (*Fotograma 48*); los **fps**
+  (campo numérico); el **zoom** de la línea de tiempo (*Alejar*, *Ver
+  toda la animación*, *Acercar*: con zoom las pistas se desplazan en
+  horizontal bajo el árbol, que no se mueve); a la derecha **+ Animar…**
+  (botón primario, contextual: *Animar Tapón…* con una pieza elegida en
+  la escena, *Animar…* sin nada), **Presets ▾** (`SEQUENCE_PRESETS`, que
+  sustituyen la animación de una vez; deshacer la recupera),
+  *Renderizar animación…* (la ventana de render en modo *Animación*) y
+  cerrar.
+- **Izquierda, el árbol de lo animado** (*qué*). Una fila por objetivo,
+  en este orden: la **pista de cámara** (siempre, aunque no haya planos),
+  el modelo, sus grupos y piezas en el orden del árbol de la escena, los
+  focos y el entorno; cada una con su icono, su nombre, cuántas
+  animaciones lleva, un triángulo para plegarla y un **+** al pasar por
+  encima (*Animar Tapón…*). Debajo, sus animaciones, cada una con el icono
+  de su tipo y su **frase corta** (*orbita 90° · 4 s · suave*; *se
+  despieza desde su centro 1,5 × tamaño · 3 s · suave*; la frase entera,
+  en la ayuda). **Clic en una animación** la elige (`Ctrl/⌘` la añade o la
+  quita, `Mayús` la añade): el visor **resalta su objetivo** con el
+  contorno de la pieza bajo el puntero y dibuja su **pista**. **Clic en un
+  objetivo** lo elige en la escena (la pieza, el grupo, el modelo, el
+  foco) junto con todas sus animaciones. Al revés, **elegir una pieza en
+  la escena** pone en negrita las filas de lo que la mueve (sus
+  animaciones, las de sus grupos y las del modelo; no las de un despiece
+  del que es excepción). **Menú contextual** de una animación:
+  *Duplicar* (`Ctrl/⌘ D`), *Invertir*, *Partir en el cabezal* (solo una
+  animación que se reproduce una vez y hacia delante, con el cabezal
+  dentro, de un tipo que suma —giros, distancias, despiece a la vez— o
+  multiplica —escala, acercamiento—: las dos mitades siguen una de otra),
+  *Fijar la selección en este despiece* (en un despiece) y *Eliminar*
+  (`Supr`). De un objetivo: *Animar…*, *Seleccionar*, *Plegar /
+  Desplegar* y *Borrar sus animaciones*. Sin nada animado, una nota dice
+  cómo empezar.
+- **Centro, la línea de tiempo** (*cuándo*). Arriba la **regla**: los
+  segundos con su número de fotograma debajo, con marcas intermedias;
+  clic o arrastre en ella mueven el **cabezal** (fotograma a fotograma),
+  una línea con su triángulo que cruza todas las pistas, y el visor
+  enseña ese instante. Cada fila del árbol tiene su pista a la misma
+  altura: la **pista de cámara** con sus **tramos** (*Plano 1 · Cámara 1*;
+  sin planos, uno discontinuo, *Cámara activa*), cuyo borde derecho se
+  arrastra para cambiar la duración del plano y cuyo menú contextual
+  elige la cámara del plano o lo quita, con **+** al final para añadir
+  otro; la de un objetivo, una franja tenue de su primera a su última
+  animación (plegado, las barras de todas, finas); la de una animación,
+  su **barra** con la frase corta (las repeticiones, con marcas
+  discontinuas; invertida, con una flecha a la izquierda). Una barra se
+  **arrastra para moverla** (todas las elegidas a la vez) y se **estira
+  por cualquiera de sus extremos**; el **imán** la lleva a los bordes de
+  las otras barras, al cabezal, a los cortes de plano y a los segundos
+  enteros cuando está a menos de 6 px (una línea discontinua enseña dónde
+  ha pegado), y si no, a fotogramas enteros; con `Mayús`, sin imán. Un
+  arrastre es una sola entrada de deshacer. Elegida, la barra se invierte
+  (fondo de tinta); con un choque (dos del mismo tipo sobre el mismo
+  objetivo a la vez), borde discontinuo y una marca en el árbol; si la
+  mueve la pieza elegida en la escena, borde fuerte. Clic en el vacío de
+  una pista quita la selección de animaciones.
+- **Derecha, las propiedades** (*cómo*) de la animación elegida. Arriba
+  la **cabecera** de una línea —*objetivo · tipo · cantidad ·
+  inicio–fin*: «Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s»— y la
+  frase entera. Después, en secciones plegables:
+  - **Movimiento**: los mandos del tipo (la cantidad con su unidad, el
+    plano de una animación de cámara). En un **despiece**: *Qué se
+    despieza* (el modelo o un grupo), **Tipo** (*Lineal · Radial ·
+    Esférica*), en lineal **Cómo** (*Separar · Apilar*), en lineal y
+    radial el **Eje** o la **Dirección** (*X · Y · Z · Propio*, con sus
+    tres componentes), **Jerarquía** (*Piezas · Un nivel · Todos*),
+    **Distancia** con su unidad (*× tamaño · mm*; cambiar de unidad
+    conserva la longitud), **Reparto** (*Igual · Por distancia*; no en
+    apilar), **Proporcional al tamaño de la pieza**, **Centro** (*Del
+    conjunto · Una pieza · Pivote · Un punto*, con la pieza o el punto),
+    **Orden** (*A la vez · Por distancia · Por profundidad*) con su
+    **Solape** en % y **Conservar la orientación**.
+  - **Excepciones** (en un despiece): las piezas fijas, cada una con su
+    × para soltarla, y **Fijar la selección** (las piezas elegidas en la
+    escena); sin ninguna, *se mueven todas*.
+  - **Tiempo**: *Inicio*, *Duración*, *Fin* (cambiarlo cambia la
+    duración), *Repetir* (× n) e **Invertir** (en un despiece, *Invertir:
+    montar*).
+  - **Curva**: la **curva de tiempo** (`EASING_KINDS`) o, en un despiece,
+    la **Suavidad** (0 % lineal, 50 % suave, 100 % muy suave), con una
+    **vista previa** de la curva que sigue a cada cambio.
+  - *Duplicar* y *Eliminar*.
+
+  Con varias elegidas, cuántas y *Duplicar · Invertir · Eliminar*. Sin
+  ninguna, qué hacer y los **presets** en su lista. **+ Animar…** abre
+  aquí el **asistente** (tres pasos en línea: *¿Qué se mueve?* con el
+  objetivo ya puesto; *¿Cómo?*, el tipo —*Despiece* solo para el modelo o
+  un grupo con dos piezas o más—; *¿Cuánto y cuánto tiempo?*), y
+  *Añadir* deja la animación nueva elegida.
+- **Visor**: con una animación elegida se resalta su objetivo y se dibuja
+  su pista en la tinta del tema, sobre todo lo demás: el **arco** de una
+  órbita (un anillo alrededor del objetivo con el ángulo que barre y un
+  punto donde está la cámara), el de una elevación, la **flecha** de un
+  desplazamiento, un **vector por pieza** de un despiece (de donde está a
+  donde llega, con un punto donde está en el cabezal), el **eje** y el
+  giro de un *giro propio* o un *vuelco*; un tipo que no conoce, solo su
+  objetivo resaltado. El cabezal mueve la previa.
+- **Teclado**, con el foco en el cajón (un clic en el árbol o en las
+  pistas lo pone ahí): `Espacio` reproduce o pausa, `Inicio` / `Fin`,
+  `←` / `→` un fotograma (`Mayús`: diez), `Supr` borra las animaciones
+  elegidas y `Ctrl/⌘ D` las duplica. En un campo, el campo se queda sus
+  teclas.
+- En el **menú contextual de una pieza** (árbol de la escena y visor):
+  **Animar Tapón…** (el asistente con ella de objetivo) y **Fijar en el
+  despiece** / **Soltar del despiece** (en los despieces que la
+  contienen; desactivado si no hay ninguno).
 - El vídeo se renderiza desde la **ventana de render** en modo
   *Animación* (§2.7), con los mismos botones *Render* y *+ Añadir a la
   cola* que una imagen.
