@@ -1656,17 +1656,17 @@ muestrear (solo cambia la varianza).
 **Mutaciones de (b)**: albedo del lóbulo de salida `η²` → 1 (el
 *furnace*: 0,47); salir siempre sin reflejarse hacia dentro, o el Fresnel
 de salida sin reflexión total (los dos, invisibles al *furnace* blanco:
-{{MUTGREY}}); la fase al revés (`the_phase_function_is_a_density…`,
+`an_absorbing_medium_in_a_uniform_world_is_what_the_exact_boundary_gives`, 0,460 y 0,442 frente a 0,278); la fase al revés (`the_phase_function_is_a_density…`,
 `forward_scattering_sends_the_light_onwards`); las dimensiones del medio
 dentro de la tabla Sobol (`media_are_receivers_with_their_own_random_numbers`);
 un medio como *caster* (el mismo); Beer–Lambert además del paseo
 (`a_medium_that_only_absorbs_is_beer_lambert_in_every_channel`); quitar la
-división de la ruleta ({{MUTRR}}); un paseo que topa sin salir se pierde
+división de la ruleta (`a_grey_half_space_reflects_chandrasekhars_plane_albedo`: 0,676 frente a 0,753 con albedo 0,99); un paseo que topa sin salir se pierde
 (el *furnace*, mfp 0,1); canal héroe fijo (Beer–Lambert); distancias con
 `2 σt` (Beer–Lambert, el *furnace*); el lóbulo sin `1/π` o su densidad del
 lado equivocado (el *furnace*, la leche); la BSDF de la superficie en el
 vértice de salida además de la decisión del paseo (el *furnace*); un paseo
-sin eventos saliendo por el lóbulo ({{MUTSPARSE}}); recoger los fotones del
+sin eventos saliendo por el lóbulo (`a_sparse_medium_lets_what_does_not_scatter_through_straight`: 0,051 frente a 0,914); recoger los fotones del
 lado de dentro (`a_medium_behind_glass_gathers_its_photons_where_its_walks_leave`);
 sin el suceso recto del MIS, sin la regla de las paredes, o sin dejar al
 mapa la luz de fotones que cruza una pared
