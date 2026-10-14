@@ -861,7 +861,7 @@ mod tests {
     }
 
     /// Pinned hash of the O3a example (the filter stack) at 4 samples per pixel.
-    pub(crate) const PINNED_O3A_FILTERS_4SPP: u32 = 0x715d_c88e;
+    pub(crate) const PINNED_O3A_FILTERS_4SPP: u32 = 0x625d_565d;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

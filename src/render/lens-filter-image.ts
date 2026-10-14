@@ -76,8 +76,10 @@ export function filterKernel(f: LensFilter, pxPerRadian: number): FilterKernel |
   } else if (type.key === 'SOFT') {
     kernel.gaussians.push({ sigmaPx: core, share: 1, weight: neutral });
   } else if (type.key === 'GLIMMER') {
-    kernel.gaussians.push({ sigmaPx: core, share: 1 - P.glimmerShare, weight: neutral });
-    // The cloud: a 2-D Gaussian of its width, and the sparkle's own box (a variance of spread²/3 per axis).
+    const radial = 1 - P.glimmerShare;
+    kernel.gaussians.push({ sigmaPx: core, share: radial * (1 - P.glimmerHaloShare), weight: neutral });
+    kernel.gaussians.push({ sigmaPx: px(P.glimmerCloudDeg), share: radial * P.glimmerHaloShare, weight: neutral });
+    // The sparkles: a 2-D Gaussian of the cloud's width, and the sparkle's own box (a variance of spread²/3 per axis).
     const cloud = Math.sqrt(px(P.glimmerCloudDeg) ** 2 + px(P.glimmerSigmaDeg) ** 2 / 3);
     kernel.gaussians.push({ sigmaPx: cloud, share: P.glimmerShare, weight: neutral });
   }

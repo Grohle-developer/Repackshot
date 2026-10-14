@@ -15,8 +15,8 @@
 //!   deflection, radians), sampled by a tabulated inverse CDF in `f32` built when the lens is
 //!   loaded; the loop only looks up and interpolates. Diffusion: a narrow Gaussian of
 //!   [`SIGMA_CORE_DEG`] and a wide Cauchy tail of [`SIGMA_TAIL_DEG`]; soft: the Gaussian alone;
-//!   glimmer: the Gaussian and a cloud of [`GLIMMER_SPARKLES`] fine sparkles (fixed directions and
-//!   brightnesses, one drawn per sample); net: the Gaussian and a short cross along two axes at 90°; star:
+//!   glimmer: the Gaussian, a soft halo and a cloud of [`GLIMMER_SPARKLES`] fine sparkles as wide
+//!   (fixed directions and brightnesses, one drawn per sample); net: the Gaussian and a short cross along two axes at 90°; star:
 //!   `points` straight lines at `angle`, as long as the grade says, with a 1/r falloff that tapers
 //!   to their end; streak: one horizontal line.
 //! * **Stack** (decision 3): up to [`MAX_FILTERS`], applied in order, each with its own numbers.
@@ -85,8 +85,11 @@ pub const SOFT_MAX_S: f32 = 0.8;
 pub const GLIMMER_SPARKLES: u32 = 4096;
 /// Glimmer: the width of the cloud, degrees (the sparkles lie as a 2-D Gaussian of this width).
 pub const GLIMMER_CLOUD_DEG: f32 = 1.0;
-/// Glimmer: share of the scattered light in the sparkles (the rest in the narrow Gaussian).
-pub const GLIMMER_SHARE: f32 = 0.5;
+/// Glimmer: share of the scattered light in the sparkles (the rest in its radial lobe).
+pub const GLIMMER_SHARE: f32 = 0.3;
+/// Glimmer: share of its radial lobe in a soft halo as wide as the cloud (the rest in the narrow
+/// Gaussian): the halo is soft and the sparkles give it its grain.
+pub const GLIMMER_HALO_SHARE: f32 = 0.4;
 /// Glimmer: half the width of a sparkle, degrees.
 pub const GLIMMER_SIGMA_DEG: f32 = 0.03;
 /// Net: share of the scattered light in the cross (the rest in the narrow Gaussian, its softening).
@@ -330,6 +333,19 @@ pub struct Scatter {
     pub lobe: Lobe,
 }
 
+/// A connection of a camera sample to a light through a filter ([`Filter::connect`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Connection {
+    /// The deflection drawn inside the light.
+    pub delta: (f32, f32),
+    /// The multiple importance sampling weight there.
+    pub weight: f32,
+    /// The colour weight of the lobe there.
+    pub colour: [f32; 3],
+    /// The lobe it was drawn from.
+    pub lobe: Lobe,
+}
+
 /// A light as the deflections of one camera sample see it: the disc of the deflection plane
 /// (`d + right·δx + up·δy`) that holds every direction to it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -489,6 +505,13 @@ impl Filter {
             Inverse::new(tail * TAIL_REACH, move |r| {
                 let q = 1.0 + (r / tail) * (r / tail);
                 CORE_SHARE * g(r) / gn + (1.0 - CORE_SHARE) * r / (q * q.sqrt()) / (tail * tail)
+            })
+        } else if p.kind == FILTER_GLIMMER {
+            // The narrow Gaussian and the soft halo, each normalised to 1.
+            let cloud = deg(GLIMMER_CLOUD_DEG);
+            let (g, h) = (gaussian(core), gaussian(cloud));
+            Inverse::new(5.0 * cloud, move |r| {
+                (1.0 - GLIMMER_HALO_SHARE) * g(r) / gn + GLIMMER_HALO_SHARE * h(r) / (cloud * cloud)
             })
         } else {
             Inverse::new(5.0 * core, gaussian(core))
@@ -718,16 +741,11 @@ impl Filter {
 
     /// The connection of a camera sample to the light of `disc` (chosen with probability
     /// `p_light`) through this filter: a lobe chosen by its share, a deflection drawn inside the
-    /// light from that lobe's connection density (the glimmer: a sparkle by the area of its box
-    /// inside the light, a point in that part), its weight (`mis_weight` there) and its colour;
-    /// `None` when the lobe cannot reach the light. The estimate of the light is
-    /// `s·L·colour·weight` (see [`Filter::s`]).
-    pub fn connect(
-        &self,
-        disc: &Disc,
-        p_light: f32,
-        u: [f32; 4],
-    ) -> Option<((f32, f32), f32, [f32; 3])> {
+    /// light from that lobe's connection density (the glimmer: a sparkle by its brightness times
+    /// the area of its box inside the light, a point in that part), its weight (`mis_weight`
+    /// there) and its colour; `None` when the lobe cannot reach the light. The estimate of the
+    /// light is `s·L·colour·weight` (see [`Filter::s`]).
+    pub fn connect(&self, disc: &Disc, p_light: f32, u: [f32; 4]) -> Option<Connection> {
         let second = u[0] < self.second;
         let (delta, lobe) = if second && self.line.is_some() {
             let (spans, total) = self.line_spans(disc);
@@ -773,8 +791,13 @@ impl Filter {
                 Lobe::Radial,
             )
         };
-        let w = self.mis_weight(lobe, delta, disc, p_light);
-        (w > 0.0).then_some((delta, w, self.colour_at(lobe, delta)))
+        let weight = self.mis_weight(lobe, delta, disc, p_light);
+        (weight > 0.0).then_some(Connection {
+            delta,
+            weight,
+            colour: self.colour_at(lobe, delta),
+            lobe,
+        })
     }
 }
 
@@ -952,4 +975,31 @@ pub(crate) fn cell_hash(x: u32, y: u32) -> u32 {
 /// Two numbers in `[0, 1)` from a hash.
 fn unit_pair(h: u32) -> (f32, f32) {
     ((h >> 16) as f32 / 65536.0, (h & 0xffff) as f32 / 65536.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_grid_finds_every_sparkle_whose_box_meets_a_light() {
+        // Against all of them, for lights of every size all over the cloud (a box that crosses
+        // into a cell the light's square does not cover included).
+        let cloud = Sparkles::new();
+        for i in 0..3000u32 {
+            let (a, b) = unit_pair(cell_hash(i, 77));
+            let (c, _) = unit_pair(cell_hash(i, 78));
+            let disc = Disc {
+                centre: (0.08 * (2.0 * a - 1.0), 0.08 * (2.0 * b - 1.0)),
+                radius: 0.0002 + 0.01 * c * c,
+            };
+            let mut seen = Vec::new();
+            cloud.near(&disc, |j, rect| seen.push((j, rect)));
+            seen.sort_by_key(|&(j, _)| j);
+            let all: Vec<_> = (0..cloud.centres.len())
+                .filter_map(|j| sparkle_rect(cloud.centres[j], &disc).map(|r| (j, r)))
+                .collect();
+            assert_eq!(seen, all, "light {i}: {disc:?}");
+        }
+    }
 }

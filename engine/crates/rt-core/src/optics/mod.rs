@@ -521,7 +521,12 @@ impl Lens {
             l.centre,
             l.radius,
         )?;
-        let (delta, w, colour) = f.connect(&disc, 1.0 / n as f32, [a, b, c, e])?;
+        let filters::Connection {
+            delta,
+            weight: w,
+            colour,
+            ..
+        } = f.connect(&disc, 1.0 / n as f32, [a, b, c, e])?;
         let dir = (path.dir_in[i] + path.right * delta.0 + path.up * delta.1).normalize();
         let later: f32 = self.filters[i + 1..].iter().map(|g| 1.0 - g.s()).product();
         let weight =

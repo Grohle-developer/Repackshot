@@ -72,6 +72,7 @@ describe('the filter data', () => {
       [P.glimmerSparkles, 'GLIMMER_SPARKLES'],
       [P.glimmerCloudDeg, 'GLIMMER_CLOUD_DEG'],
       [P.glimmerShare, 'GLIMMER_SHARE'],
+      [P.glimmerHaloShare, 'GLIMMER_HALO_SHARE'],
       [P.glimmerSigmaDeg, 'GLIMMER_SIGMA_DEG'],
       [P.netAxisShare, 'NET_AXIS_SHARE'],
       [P.lineStartDeg, 'LINE_START_DEG'],

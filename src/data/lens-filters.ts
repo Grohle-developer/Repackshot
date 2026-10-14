@@ -56,9 +56,11 @@ export const FILTER_PSF = {
   blackTransmission: 0.7,
   softSScale: 2,
   softMaxS: 0.8,
-  glimmerSparkles: 256,
+  glimmerSparkles: 4096,
   glimmerCloudDeg: 1,
-  glimmerShare: 0.5,
+  glimmerShare: 0.3,
+  /** The glimmer's soft halo: its share of the radial lobe (the rest in the narrow Gaussian). */
+  glimmerHaloShare: 0.4,
   glimmerSigmaDeg: 0.03,
   netAxisShare: 0.1,
   lineStartDeg: 0.05,

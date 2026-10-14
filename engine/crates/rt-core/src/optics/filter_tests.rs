@@ -589,9 +589,9 @@ fn the_scattering_and_the_connection_add_up_to_the_scattering_alone_on_every_lob
                 weighted += red * f64::from(f.mis_weight(sc.lobe, sc.delta, &disc, p_light));
             }
             // The connection, which chooses this light with probability p_light.
-            if let Some((d, w, colour)) = f.connect(&disc, p_light, numbers(n + i)) {
-                if inside(d) {
-                    connected += f64::from(p_light * w * colour[0]);
+            if let Some(c) = f.connect(&disc, p_light, numbers(n + i)) {
+                if inside(c.delta) {
+                    connected += f64::from(p_light * c.weight * c.colour[0]);
                 }
             }
         }
@@ -655,6 +655,77 @@ fn the_glimmer_is_a_cloud_of_fine_sparkles_not_a_ring() {
         taken.insert(j);
     }
     assert!(taken.len() > 3000, "{} sparkles taken", taken.len());
+}
+
+#[test]
+fn the_glimmer_takes_and_connects_its_sparkles_by_their_brightness() {
+    let f = Filter::new(&filter(FILTER_GLIMMER, 1.0)).unwrap().unwrap();
+    let (centres, shares) = f.sparkles();
+    // The scattering takes a sparkle with its share: the brightest ones as often as that.
+    let n = 400_000;
+    let mut taken = vec![0u32; centres.len()];
+    for i in 0..n {
+        let mut u = numbers(i);
+        u[0] *= f.s();
+        u[3] *= GLIMMER_SHARE;
+        if let Lobe::Sparkle { j } = f.scatter(u).unwrap().lobe {
+            taken[j as usize] += 1;
+        }
+    }
+    let mut order: Vec<usize> = (0..centres.len()).collect();
+    order.sort_by(|&a, &b| shares[b].total_cmp(&shares[a]));
+    for &j in &order[..10] {
+        let expected = f64::from(shares[j]) * f64::from(n);
+        assert!(
+            (f64::from(taken[j]) / expected - 1.0).abs() < 0.15,
+            "sparkle {j}: taken {} times, {expected} expected",
+            taken[j]
+        );
+    }
+    // The connection takes one of the sparkles near the light by its share times its box's part
+    // inside the light's square.
+    let disc = Disc {
+        centre: (0.004, 0.002),
+        radius: 0.003,
+    };
+    let spread = GLIMMER_SIGMA_DEG.to_radians();
+    let part = |c: (f32, f32)| {
+        let (r, (dx, dy)) = (disc.radius, disc.centre);
+        let w = (c.0 + spread).min(dx + r) - (c.0 - spread).max(dx - r);
+        let h = (c.1 + spread).min(dy + r) - (c.1 - spread).max(dy - r);
+        if w > 0.0 && h > 0.0 {
+            f64::from(w * h)
+        } else {
+            0.0
+        }
+    };
+    let weights: Vec<f64> = (0..centres.len())
+        .map(|j| f64::from(shares[j]) * part(centres[j]))
+        .collect();
+    let total: f64 = weights.iter().sum();
+    let near = weights.iter().filter(|&&w| w > 0.0).count();
+    assert!(near > 20, "{near} sparkles near the light");
+    let mut picked = vec![0u32; centres.len()];
+    let m = 200_000;
+    for i in 0..m {
+        let mut u = numbers(n + i);
+        u[0] *= GLIMMER_SHARE; // the sparkles' lobe
+        let c = f.connect(&disc, 0.5, u).unwrap();
+        let Lobe::Sparkle { j } = c.lobe else {
+            panic!("{:?}", c.lobe);
+        };
+        picked[j as usize] += 1;
+    }
+    let mut by_weight: Vec<usize> = (0..centres.len()).filter(|&j| weights[j] > 0.0).collect();
+    by_weight.sort_by(|&a, &b| weights[b].total_cmp(&weights[a]));
+    for &j in &by_weight[..5] {
+        let expected = weights[j] / total * f64::from(m);
+        assert!(
+            (f64::from(picked[j]) / expected - 1.0).abs() < 0.15,
+            "sparkle {j}: picked {} times, {expected} expected",
+            picked[j]
+        );
+    }
 }
 
 #[test]
