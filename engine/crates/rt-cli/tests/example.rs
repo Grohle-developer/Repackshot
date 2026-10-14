@@ -252,6 +252,20 @@ fn a_lens_renders_the_same_bits_with_1_4_or_16_threads() {
     assert_ne!(rt_cli::render(&scene, 3, 4).film.rgb, one.film.rgb);
 }
 
+#[test]
+fn effect_filters_render_the_same_bits_with_1_4_or_16_threads() {
+    // O3a: whether a filter scatters a sample, and where to, comes from the pixel's own sampler.
+    let mut scene = rt_core::example::o3a_scene();
+    scene.render.width = 64;
+    scene.render.height = 48;
+    let one = rt_cli::render(&scene, 3, 1);
+    for threads in [4, 16] {
+        let many = rt_cli::render(&scene, 3, threads);
+        assert_eq!(one.film, many.film, "{threads} threads");
+        assert_eq!(one.rays, many.rays);
+    }
+}
+
 /// Relative mean squared error of `image` against `reference` (linear RGB, values clamped at 8 so
 /// a firefly of the reference cannot dominate).
 fn rel_mse(image: &[f32], reference: &[f32]) -> f64 {

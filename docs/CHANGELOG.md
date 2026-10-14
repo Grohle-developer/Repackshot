@@ -3,6 +3,16 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## Sin publicar
+
+### Interfaz
+
+- *Cámara* ▸ **Filtros** (O3a): hasta tres filtros de efecto por cámara, cada uno con su tipo y una frase de lo que hace, su grado y, según el tipo, tinte, puntas y ángulo. El modo Rápido los dibuja como aproximación (y el medidor lo dice); el modo Completo y el render, con el motor.
+
+### Motor
+
+- **Filtros de efecto en la lente** (O3a): difusión blanca, negra y dorada, brillo, suavizado, red, estrella (4, 6 u 8 puntas) y rayas, como dispersión del rayo de cámara en la pupila: con la probabilidad del grado (1/8 a 2) el rayo se desvía según la PSF del filtro (tablas de CDF inversa), así que el halo lleva el bokeh y el enfoque y una luz fuera del encuadre vela la imagen; hasta tres apilados; el tinte (dorada, red, rayas) va al halo y a las rayas, no a la imagen; el grado alarga las rayas de la estrella sin ensancharlas, la red deja una cruz corta y tenue, y el brillo es una nube de destellos finos. Cada muestra de cámara se conecta además, a través de la PSF, con una luz que ve la cámara, pesada contra la dispersión (MIS): la misma imagen con varias veces menos ruido alrededor de las luces pequeñas (`rt --filter-noise` lo mide). Campos nuevos al final de `LENS`; sin filtros no cambia ni un bit (O3a).
+
 ## v0.1.6 — 2026-10-14
 
 Versión de prueba con texturas y etiquetas, el editor de materiales por

@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 pub mod bench;
 pub mod cli;
+pub mod filter_sheet;
 pub mod scenes;
 pub mod sheet;
 pub mod tone;

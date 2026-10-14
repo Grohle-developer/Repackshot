@@ -920,6 +920,33 @@ lente fina redonda y sin inclinar, sea cual sea la óptica. El modo
 Rápido no dibuja profundidad de campo; del resto solo muestra el
 descentramiento (el encuadre).
 
+**Filtros de efecto (O3a).** `CameraOptics.filters` (opcional; sin él,
+ninguno, y los proyectos anteriores no cambian ni un byte): una pila de
+hasta tres filtros delante del objetivo, en orden. Cada uno tiene su
+**tipo** (`src/data/lens-filters.ts`, claves estables y nombres
+genéricos, nunca de una marca: *Difusión blanca*, *Difusión negra*,
+*Difusión dorada*, *Brillo*, *Suavizado*, *Red*, *Estrella*, *Rayas*), su
+**grado** (1/8, 1/4, 1/2, 1 o 2, como los filtros reales) y, según el
+tipo, su **tinte** (dorada, red y rayas; `null` es el propio del tipo),
+sus **puntas** (estrella: 4, 6 u 8) y su **ángulo** (estrella, rayas y
+los ejes de la red). El motor dispersa el rayo de cámara en la muestra de
+pupila: con la probabilidad `s` del grado lo desvía según la PSF angular
+del filtro y si no lo deja seguir, de modo que la imagen es
+`(1 − s)·I + s·a·(I ⊗ K_T)` (`a`, lo que dejan pasar las partículas: 1
+salvo la difusión negra; el tinte `T`, de luminancia 1, solo en las
+partes anchas de la PSF: la cola de la difusión, que es el halo, y las
+rayas; el núcleo estrecho, que cae sobre la imagen, y los destellos del
+brillo quedan neutros); así el halo lleva el bokeh y el enfoque de la
+lente, y una luz fuera del encuadre vela la imagen. El grado decide `s`
+y, en la estrella y la red, el largo de sus rayas (en ángulo: en un
+85 mm, la estrella llega a un cuarto del medio cuadro a 1/4, al 60 % a 1
+y al borde a 2, con el mismo brillo junto a la luz; la cruz de la red,
+como mucho al 15 % del ancho a 2). El brillo es una nube fija de
+destellos finos alrededor de cada luz. Un filtro de grado 0 no hace nada. Elegir un tipo de
+bokeh o *Disco sencillo* no quita los filtros. Una cámara ortográfica no
+tiene filtros (como no tiene lente). El modo Rápido dibuja una
+aproximación en imagen con los mismos núcleos y el medidor lo dice.
+
 ### 3.6 · Imagen
 
 Exposición en EV, transformada de vista (`STANDARD`, `FILMIC`, `AGX`),

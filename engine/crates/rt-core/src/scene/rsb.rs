@@ -47,6 +47,7 @@
 //!             obstruction cats_eye squeeze shift_x_mm shift_y_mm tilt_deg tilt_axis_deg
 //!             ca_amount swirl field_mm; u32 mask_kind mask_width mask_height;
 //!             u8 mask[mask_width * mask_height]; zero padding to 4                 (O1, new)
+//!             | (u32 kind; f32 grade tint[3] angle_deg; u32 points)[3]           (O3a, +84 B)
 //! FXAM 128 B  an ambient effect (S4a, new): kind seed; f32 time; u32 count; f32
 //!             region_centre[3] region_half[3] band[2] size_mm size_var; u32 shape; f32
 //!             fall_speed fall_var wind[3] turbulence[3] cloud_centre[3] cloud_radius
@@ -181,6 +182,13 @@
 //!   pixels (at most 1024 per side, 255 open) covering `[−1, 1]²` of the pupil, rows top to
 //!   bottom, the unit circle inscribed. Values out of range make the file invalid. An orthographic
 //!   camera ignores the section, and a file without it renders exactly as before O1.
+//!   **O3a** appends the stack of three effect filters (see [`crate::optics::filters`]): `kind`
+//!   **0** none, **1** white diffusion, **2** black diffusion, **3** gold diffusion, **4**
+//!   glimmer, **5** soft, **6** net, **7** star, **8** streak; `grade` 0 (off) to 2; `tint` the
+//!   tint of the scattered light (gold, net and streak; all zero: the kind's own); `angle_deg` the
+//!   angle of a star's or a streak's first line, or of a net's axes; `points` a star's 4, 6 or 8
+//!   (0: 6). A section without them, or with every slot zero, has no filters; the writer adds
+//!   them only when there are any.
 
 use super::{
     particle_sets, AmbientParams, Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry,
@@ -189,6 +197,7 @@ use super::{
 };
 use crate::color::Rgb;
 use crate::math::Vec3;
+use crate::optics::filters::FilterParams;
 use std::fmt;
 
 /// The four magic bytes at the start of every RSB file.
@@ -392,6 +401,7 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
         mask_width: r.u32()?,
         mask_height: r.u32()?,
         mask: Vec::new(),
+        filters: [FilterParams::default(); 3],
     };
     let len = u64::from(p.mask_width) * u64::from(p.mask_height);
     let padded = len.div_ceil(4) * 4;
@@ -400,6 +410,18 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
     }
     p.mask = r.data[r.pos..r.pos + len as usize].to_vec();
     r.pos += padded as usize;
+    // O3a: the stack of effect filters, when the section goes on (an O1 file has none).
+    if r.remaining() > 0 {
+        for f in &mut p.filters {
+            *f = FilterParams {
+                kind: r.u32()?,
+                grade: r.f32()?,
+                tint: [r.f32()?, r.f32()?, r.f32()?],
+                angle_deg: r.f32()?,
+                points: r.u32()?,
+            };
+        }
+    }
     Lens::new(p).map_err(|reason| r.invalid(reason))
 }
 
@@ -821,6 +843,18 @@ impl Scene {
                 w.buf.extend_from_slice(&p.mask);
                 let pad = (4 - p.mask.len() % 4) % 4;
                 w.buf.extend(std::iter::repeat_n(0u8, pad));
+                // O3a: the filters only when there are any, so an O1 lens writes the O1 bytes.
+                if p.filters.iter().any(|f| *f != FilterParams::default()) {
+                    for f in &p.filters {
+                        w.u32(f.kind);
+                        w.f32(f.grade);
+                        for v in f.tint {
+                            w.f32(v);
+                        }
+                        w.f32(f.angle_deg);
+                        w.u32(f.points);
+                    }
+                }
             });
         }
         for m in &self.materials {

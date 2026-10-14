@@ -18,7 +18,7 @@
 use crate::caustics::PhotonMap;
 use crate::color::Rgb;
 use crate::image::Film;
-use crate::integrator::{first_hit, radiance_with, BvhTracer, Prepared, Tracer};
+use crate::integrator::{first_hit, radiance_weighted, radiance_with, BvhTracer, Prepared, Tracer};
 use crate::math::Ray;
 use crate::passes::{albedo_of, Exact, PassFilm, PASS_ALBEDO, PASS_EXACT};
 use crate::pixel_filter::{self, EdgeMask};
@@ -94,6 +94,38 @@ pub fn camera_sample_weighted(
     let v = (y as f32 + dv) / height as f32;
     let (ray, weight) = scene.camera.sample_ray(aspect, u, v, sampler);
     (ray, (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)), weight)
+}
+
+/// [`camera_sample_weighted`] and what the lens's effect filters did to the sample, when the
+/// camera has filters (O3a, [`crate::optics::FilterPath`]); the same ray and weight.
+pub fn camera_sample_filtered(
+    scene: &Scene,
+    sampler: &PixelSampler,
+    x: u32,
+    y: u32,
+) -> (Ray, (f32, f32), Rgb, Option<crate::optics::FilterPath>) {
+    let camera = &scene.camera;
+    let Some(lens) = camera
+        .lens
+        .as_ref()
+        .filter(|l| !camera.ortho && !l.filters().is_empty())
+    else {
+        let (ray, screen, weight) = camera_sample_weighted(scene, sampler, x, y);
+        return (ray, screen, weight, None);
+    };
+    // The sensor point as `camera_sample_weighted` draws it (E11's pixel filter included).
+    let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
+    let aspect = width as f32 / height as f32;
+    let (du, dv) = sampler.get2(DIM_CAMERA);
+    let filter = scene.render.pixel_filter;
+    let (du, dv) = (
+        pixel_filter::offset(filter, du),
+        pixel_filter::offset(filter, dv),
+    );
+    let u = (x as f32 + du) / width as f32;
+    let v = (y as f32 + dv) / height as f32;
+    let (ray, weight, path) = lens.sample_filtered(camera, aspect, u, v, sampler);
+    (ray, (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)), weight, path)
 }
 
 /// Renders one sample of every pixel of `tile` into `film` and returns the number of rays cast
@@ -228,26 +260,57 @@ fn render_tile_traced<T: Tracer>(
     let mut rays = 0u64;
     for y in tile.y..y_end {
         for x in tile.x..x_end {
+            // One camera sample of index `index`: its radiance times its weight, and its alpha.
+            // O3a: with the lens's filters, their scattering and their connections to the lights
+            // the camera sees, weighted against each other (multiple importance sampling).
+            let one = |index: u32, rays: &mut u64| -> (Rgb, f32) {
+                let sampler = PixelSampler::new(scene.render.seed, x, y, index);
+                let (ray, screen, weight, path) = camera_sample_filtered(scene, &sampler, x, y);
+                match (&path, scene.camera.lens.as_ref()) {
+                    (Some(path), Some(lens)) if lens.connects() => {
+                        let lights = prepared.lights().camera_lights();
+                        let weight_of = |i: usize| lens.crossed_weight(path, lights, i);
+                        let (c, alpha) = radiance_weighted(
+                            scene,
+                            prepared,
+                            tracer,
+                            &sampler,
+                            ray,
+                            screen,
+                            photons,
+                            Some(&weight_of),
+                            rays,
+                        );
+                        let mut sum = c * weight;
+                        for i in 0..lens.filters().len() {
+                            if let Some((to, light, w)) = lens.connection(path, lights, i) {
+                                *rays += 1;
+                                let t_geometry = tracer.trace(&to).map_or(f32::INFINITY, |h| h.t);
+                                let t = t_geometry.min(prepared.floor_t(&to, true));
+                                sum += prepared.lights().camera_light_radiance(light, &to, t) * w;
+                            }
+                        }
+                        (sum, alpha)
+                    }
+                    _ => {
+                        let (c, alpha) = radiance_with(
+                            scene, prepared, tracer, &sampler, ray, screen, photons, rays,
+                        );
+                        (c * weight, alpha)
+                    }
+                }
+            };
             let k = edges.map_or(1, |e| e.factor_at(x, y));
             if k <= 1 {
-                let sampler = PixelSampler::new(scene.render.seed, x, y, sample_index);
-                let (ray, screen, weight) = camera_sample_weighted(scene, &sampler, x, y);
-                let (c, alpha) = radiance_with(
-                    scene, prepared, tracer, &sampler, ray, screen, photons, &mut rays,
-                );
-                film.splat_alpha(x, y, c * weight, alpha);
+                let (c, alpha) = one(sample_index, &mut rays);
+                film.splat_alpha(x, y, c, alpha);
                 continue;
             }
             // An edge pixel: the mean of its k samples of this index, splatted once.
             let (mut sum, mut coverage) = (Rgb::BLACK, 0.0f32);
             for j in 0..k {
-                let index = sub_sample(sample_index, k, j);
-                let sampler = PixelSampler::new(scene.render.seed, x, y, index);
-                let (ray, screen, weight) = camera_sample_weighted(scene, &sampler, x, y);
-                let (c, alpha) = radiance_with(
-                    scene, prepared, tracer, &sampler, ray, screen, photons, &mut rays,
-                );
-                sum += c * weight;
+                let (c, alpha) = one(sub_sample(sample_index, k, j), &mut rays);
+                sum += c;
                 coverage += alpha;
             }
             let inv = 1.0 / k as f32;
@@ -962,6 +1025,29 @@ mod tests {
 
     /// Pinned hash of the E11 example (fine filter, edges ×2) at 4 samples per pixel.
     pub(crate) const PINNED_E11_EDGES_4SPP: u32 = 0x3d8f_85de;
+
+    #[test]
+    fn the_o3a_filters_have_a_pinned_hash_on_every_platform() {
+        // O3a added the effect filters at the end of LENS: black diffusion, a six-point star and
+        // a streak on a six-blade iris, with the bokeh lights of O1. Every hash above (O1's too)
+        // stayed. Through an RSB round trip; `tools/wasm-parity.mjs` checks the real module
+        // against it (`rt --write-o3a-example`).
+        let scene = crate::example::o3a_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("O3a example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(
+                hash,
+                PINNED_O3A_FILTERS_4SPP,
+                "O3a filters on {}",
+                isa.name()
+            );
+        }
+    }
+
+    /// Pinned hash of the O3a example (the filter stack) at 4 samples per pixel.
+    pub(crate) const PINNED_O3A_FILTERS_4SPP: u32 = 0x4993_8f3b;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

@@ -674,7 +674,30 @@ pub fn radiance_with<T: Tracer>(
     photons: Option<&PhotonMap>,
     rays: &mut u64,
 ) -> (Rgb, f32) {
+    radiance_weighted(
+        scene, prepared, tracer, sampler, camera_ray, screen, photons, None, rays,
+    )
+}
+
+/// [`radiance_with`] where the camera lights the camera ray crosses before it meets anything
+/// count `camera_lights(i)` times (O3a: the weight of a sample the lens's filters scattered,
+/// against their connection to light `i` of [`crate::light::Lights::camera_lights`]); `None` is
+/// exactly [`radiance_with`].
+#[allow(clippy::too_many_arguments)]
+pub fn radiance_weighted<T: Tracer>(
+    scene: &Scene,
+    prepared: &Prepared,
+    tracer: &T,
+    sampler: &PixelSampler,
+    camera_ray: Ray,
+    screen: (f32, f32),
+    photons: Option<&PhotonMap>,
+    camera_lights: Option<&dyn Fn(usize) -> f32>,
+    rays: &mut u64,
+) -> (Rgb, f32) {
     let lights = &prepared.lights;
+    // The first segment of the camera ray (until it meets anything), where `camera_lights` applies.
+    let mut first = true;
     let caustics = photons.zip(prepared.caustics.as_ref());
     let mut state = CausticState::Eye;
     let mut ray = camera_ray;
@@ -723,11 +746,14 @@ pub fn radiance_with<T: Tracer>(
         // photon map brings their light here: every area light a BSDF-sampled ray sees sends
         // photons; point lights and spots do not).
         let dropped = caustics.is_some() && state.photons_bring_it();
-        let crossed = if dropped {
-            lights.crossed_without_photons(&ray, t_nearest, scattered, offset)
-        } else {
-            lights.crossed_from(&ray, t_nearest, scattered, offset)
+        let crossed = match camera_lights {
+            Some(weight) if first && !dropped => {
+                lights.crossed_camera_weighted(&ray, t_nearest, weight)
+            }
+            _ if dropped => lights.crossed_without_photons(&ray, t_nearest, scattered, offset),
+            _ => lights.crossed_from(&ray, t_nearest, scattered, offset),
         };
+        first = false;
         prepared.add(&mut sum, throughput * crossed, bounce >= 2);
 
         if t_nearest == f32::INFINITY {

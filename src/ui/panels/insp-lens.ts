@@ -5,13 +5,14 @@
 
 import { BOKEH_TYPES, PUPIL_PROFILES, bokehParams, bokehType, type BokehThin, type BokehType, type PupilProfile } from '../../data/bokeh';
 import type { CameraId, CameraState } from '../../core/camera';
-import { OPTICS_LIMITS, OPTICS_NEUTRAL, SQUEEZES, opticsForBokeh, opticsOf, thinOf, type CameraOptics } from '../../core/optics';
+import { OPTICS_LIMITS, OPTICS_NEUTRAL, SQUEEZES, filtersOf, opticsForBokeh, opticsOf, thinOf, type CameraOptics } from '../../core/optics';
 import * as cmd from '../commands';
 import { field, numberField, segmented, select, slider, type Control } from '../components/controls';
 import { thumb } from '../components/widgets';
 import { h, icon } from '../dom';
 import { type Ctx, type Scope } from '../reactive';
 import { formatNumber, lbl, t, type StringKey } from '../strings';
+import { filterFields } from './insp-filters';
 
 /** The thumbnail of a bokeh type (and variant), as tools/bokeh-thumbs.mjs names it. */
 export function bokehThumb(key: string, variant: string | null = null): string {
@@ -90,7 +91,14 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
   }
   const variantHost = h('div');
   const describe = h('div', { class: 'note', 'data-bokeh-note': '' });
-  const reset = h('button', { type: 'button', class: 'btn', 'data-tip': t('camera.bokehResetAux'), 'data-action': 'optics.reset', onclick: () => dispatch(undefined, 'camera.bokehReset') }, t('camera.bokehReset'));
+  const reset = h('button', { type: 'button', class: 'btn', 'data-tip': t('camera.bokehResetAux'), 'data-action': 'optics.reset', onclick: () => {
+        // The plain thin lens; the filters in front of it stay.
+        const filters = filtersOf(optics());
+        dispatch(filters.length > 0 ? { ...OPTICS_NEUTRAL, filters } : undefined, 'camera.bokehReset');
+      },
+    },
+    t('camera.bokehReset'),
+  );
 
   // --- Advanced optics --------------------------------------------------------------------------------------------
   const o0 = optics();
@@ -205,5 +213,6 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     { class: 'stack', 'data-guide': 'camera-optics' },
     disclosure(ctx, 'cameraBokeh', t('camera.bokeh'), bokehBody, true),
     disclosure(ctx, 'cameraOptics', t('camera.opticsAdvanced'), h('div', { class: 'stack' }, advancedBody, h('div', { class: 'note' }, t('camera.opticsNote'))), false),
+    disclosure(ctx, 'cameraFilters', t('camera.filters'), filterFields(ctx, scope, camId), filtersOf(optics()).length > 0),
   );
 }
