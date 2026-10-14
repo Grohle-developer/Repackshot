@@ -723,63 +723,99 @@ fn the_normal_changes_only_within_the_radius_whatever_the_angle() {
     }
 }
 
-#[test]
-fn a_mirror_edge_reflects_what_lies_below_the_face() {
-    // A mirror cube seen from 45° above its -X side, a light 12° below the plane of its top
-    // face on the +X side: the flat top reflects the sky (black), the side facing the light is
-    // hidden, so without a bevel the image is black. The fillet along the top's +X edge turns
-    // the view (about 28° of tilt) towards the light: the reflection leaves it below the face's
-    // plane, which the integrator allows because the bevelled point's geometric normal is the
-    // fillet's (and the lift lets it clear the face).
-    let render = |r: f32| {
-        let mut scene = cube_scene(r);
-        scene.materials[0] = Material {
-            base_color: Rgb::splat(0.95),
-            metallic: 1.0,
-            roughness: 0.02,
-            bevel_mm: r,
+/// A mirror cube with bevel `r` seen from 45° above its -X side, 16 samples of 60 x 60 pixels,
+/// black world; lit 12° below the plane of its top face on the +X side by a rect light, or by
+/// an emissive panel in its place that only rays leaving a surface can find (it is no light).
+/// The sum of the image.
+fn mirror_cube(r: f32, panel: bool) -> f64 {
+    let mut scene = cube_scene(r);
+    scene.materials[0] = Material {
+        base_color: Rgb::splat(0.95),
+        metallic: 1.0,
+        roughness: 0.02,
+        bevel_mm: r,
+        ..Material::default()
+    };
+    let light = side_light(-12.0);
+    if panel {
+        // The light's 60 mm square as the -X face of a thin box, glowing, not sampled.
+        let c = light.position;
+        let slab = faceted_box(
+            Vec3::new(c.x, c.y - 30.0, c.z - 30.0),
+            Vec3::new(c.x + 2.0, c.y + 30.0, c.z + 30.0),
+            false,
+        );
+        let cube = faceted_box(Vec3::splat(-HALF), Vec3::splat(HALF), false);
+        let glow = Material {
+            kind: crate::scene::MATERIAL_EMISSIVE,
+            emission: Rgb::WHITE,
+            emission_power: 1.0,
+            flags: 0,
             ..Material::default()
         };
-        scene.camera = Camera {
-            position: Vec3::new(-400.0, 0.0, 400.0 + HALF),
-            target: Vec3::new(0.0, 0.0, HALF),
-            up: Vec3::new(0.0, 0.0, 1.0),
-            ortho: true,
-            ortho_width: 30.0,
-            ..Camera::default()
-        };
-        scene.lights = vec![side_light(-12.0)];
-        scene.environment = Environment {
-            kind: EnvKind::Flat,
-            horizon: 0.0,
-            strength: 0.0,
-            background_color: Rgb::BLACK,
-            background_mode: BACKGROUND_COLOR,
-            ..Environment::default()
-        };
-        scene.render = RenderSettings {
-            width: 60,
-            height: 60,
-            tonemap: 0,
-            ..RenderSettings::default()
-        };
-        let prepared = Prepared::new(&scene);
-        let mut film = Film::new(60, 60);
-        let tile = TileRect {
-            x: 0,
-            y: 0,
-            w: 60,
-            h: 60,
-        };
-        for s in 0..16 {
-            render_tile_prepared(&scene, &prepared, tile, s, &mut film, Isa::detect());
-        }
-        film.resolve().iter().map(|&v| f64::from(v)).sum::<f64>()
+        let materials = vec![scene.materials[0].clone(), glow];
+        scene = scene_of(
+            vec![cube, slab],
+            vec![
+                Instance::new(0, Transform::IDENTITY, 0),
+                Instance::new(1, Transform::IDENTITY, 1),
+            ],
+            materials,
+        );
+    } else {
+        scene.lights = vec![light];
+    }
+    scene.camera = Camera {
+        position: Vec3::new(-400.0, 0.0, 400.0 + HALF),
+        target: Vec3::new(0.0, 0.0, HALF),
+        up: Vec3::new(0.0, 0.0, 1.0),
+        ortho: true,
+        ortho_width: 30.0,
+        ..Camera::default()
     };
-    let (sharp, round) = (render(0.0), render(R));
-    eprintln!("mirror: sharp {sharp}, round {round}");
-    assert_eq!(sharp, 0.0);
-    assert!(round > 5.0, "{round}");
+    scene.environment = Environment {
+        kind: EnvKind::Flat,
+        horizon: 0.0,
+        strength: 0.0,
+        background_color: Rgb::BLACK,
+        background_mode: BACKGROUND_COLOR,
+        ..Environment::default()
+    };
+    scene.render = RenderSettings {
+        width: 60,
+        height: 60,
+        tonemap: 0,
+        ..RenderSettings::default()
+    };
+    let prepared = Prepared::new(&scene);
+    let mut film = Film::new(60, 60);
+    let tile = TileRect {
+        x: 0,
+        y: 0,
+        w: 60,
+        h: 60,
+    };
+    for s in 0..16 {
+        render_tile_prepared(&scene, &prepared, tile, s, &mut film, Isa::detect());
+    }
+    film.resolve().iter().map(|&v| f64::from(v)).sum::<f64>()
+}
+
+#[test]
+fn a_mirror_edge_reflects_what_lies_below_the_face() {
+    // The flat top reflects the sky (black), the side facing the light is hidden, so without a
+    // bevel the image is black. The fillet along the top's +X edge turns the view (about 28° of
+    // tilt) towards the light: the reflection leaves it below the face's plane, which the
+    // integrator allows because the bevelled point's geometric normal is the fillet's (and the
+    // lift lets it clear the face). The light is found by its own samples; the panel only by
+    // the reflected ray, which the integrator drops when it goes below the geometric normal.
+    // Measured: light 1.19e5 (1.1e3 with the face's geometric normal), panel 32.6 (0).
+    for (panel, least) in [(false, 2.0e4), (true, 5.0)] {
+        let (sharp, round) = (mirror_cube(0.0, panel), mirror_cube(R, panel));
+        eprintln!("mirror (panel {panel}): sharp {sharp}, round {round}");
+        assert_eq!(sharp, 0.0);
+        assert!(round > least, "{round}");
+    }
 }
 
 #[test]
