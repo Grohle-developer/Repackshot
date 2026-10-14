@@ -1041,8 +1041,28 @@ trabajar).
   rayado gris (*Se está haciendo su imagen*). Se hacen **una vez** en este
   equipo (IndexedDB, por versión del plugin y receta), de una en una y solo
   cuando no hay una vista previa esperando; mientras, *Imágenes de las recetas
-  12 de 128, hechas una vez en este equipo*. Debajo del carrusel, la elegida
-  con su categoría (*CN-01 · Películas · negativo en color*). A la
+  12 de 128, hechas una vez en este equipo*. **Encima del carrusel, sus
+  filtros** (P6b), los del plugin, como los de la búsqueda de películas de la
+  app de aintfilm: una fila de *chips* por filtro, con su nombre, **Todos** y
+  sus valores (para el de película: **Tipo** —*Color* (negativo en color),
+  *B&W*, *Diapositiva*, *Cine*—, **ISO** en las tres bandas de la app —*≤ 100*,
+  *200–400*, *≥ 800*, cortadas en 100 y 400— y **Grupo** —*Películas*, *Color de
+  una película*, *Grano*, *Difusión*, *Objetivo*—; la fila de marcas de la app no
+  está: son nombres de fabricantes). Un filtro elige un valor (o *Todos*); los
+  filtros se combinan (todos a la vez) y una receta que no dice nada de uno (un
+  grano no tiene ISO) solo está en su *Todos*. Debajo, la cuenta: *23 de 127
+  recetas* (*Ninguna de las 127 recetas coincide con estos filtros*). La receta
+  elegida sigue elegida aunque los filtros la dejen fuera: su tarjeta va
+  **primera**, atenuada, con *Fuera de los filtros* en lugar de su categoría;
+  *Sin receta* va siempre. Cada filtro es una acción del *store*, deshacible, y
+  se guarda con los ajustes del plugin (`filters`); cambiarlo no rehace la
+  vista previa. **Debajo del carrusel, un deslizador** fino de su mismo ancho
+  para recorrer las recetas, atado al desplazamiento en los dos sentidos:
+  arrastrarlo desplaza el carrusel tarjeta a tarjeta (al soltarlo se ajusta a
+  la tarjeta) y desplazar el carrusel lo mueve; una marca en su pista dice
+  dónde está la tarjeta elegida; se enfoca con el teclado y ← → mueven una
+  tarjeta (*Recorrer las recetas*); sin nada que desplazar, no se ve. Debajo,
+  la elegida con su categoría (*CN-01 · Películas · negativo en color*). A la
   izquierda, **los mandos del manifiesto** por grupos, cada grupo con
   su título: deslizador con su campo numérico (y su unidad; un deslizador con
   `minLabel` dice *Receta* en su tope izquierdo: ahí el plugin conserva el

@@ -1506,7 +1506,7 @@ Solo mensajes (`src/plugins/abi.ts`):
 | --- | --- | --- |
 | anfitrión → plugin | `init { abi, manifest, files, wasm }` (una vez, primero; *buffers* transferidos) | `ready { abi }` |
 | anfitrión → plugin | `info { id }` | `info { id, info: { name, version, engine? } }` |
-| anfitrión → plugin | `presets { id }` | `presets { id, presets: [{ id, name, category, aux? }], categories: [{ id, label }] }` |
+| anfitrión → plugin | `presets { id }` | `presets { id, presets: [{ id, name, category, aux?, tags? }], categories: [{ id, label }], filters? }` |
 | anfitrión → plugin | `render { id, width, height, pixels, recipe, controls }` | `render { id, width, height, rgba8, info: { items } }` |
 | anfitrión → plugin | `cancel { id }` | `cancelled { id }` si no había empezado |
 | plugin → anfitrión | `error { id, message }` (`id` nulo: el plugin mismo) | — |
@@ -1518,7 +1518,15 @@ recto); el anfitrión manda los planos cuando el resultado es un EXR (su luz,
 sin pasar por 8 bits; el alfa sale de su imagen de pantalla) y RGBA8 en otro
 caso, y vuelve a poner el alfa del origen sobre la respuesta. `info.items` son
 `{ key, label (es/en), value, unit? }`: el anfitrión los pinta tal cual y no
-calcula ninguno (regla 10); el tiempo lo mide él alrededor del render. Una
+calcula ninguno (regla 10); el tiempo lo mide él alrededor del render.
+`filters` (P6b) son los filtros de recetas que ofrece el plugin, `[{ id, label,
+options: [{ value, label }] }]`, y `tags` los valores de cada receta para ellos
+(`{ [id del filtro]: valor }`); `cleanPresets` solo deja los de filtros y valores
+ofrecidos. El anfitrión los dibuja y los aplica sin saber qué son
+(`activeFilters`, `presetMatches`, `filterPresets` de `src/core/plugins.ts`: se
+combinan, una receta sin el *tag* de un filtro solo está en su *Todos*, la
+elegida se conserva) y guarda los elegidos en `RenderSettings.plugins[id].filters`;
+el deslizador del carrusel es aritmética en `ui/strip-math.ts`. Una
 vista previa cancelada que llega tarde se descarta.
 
 ### 9.5 · El plugin de película (aintfilm)
