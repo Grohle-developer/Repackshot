@@ -96,7 +96,9 @@ export function primitiveParamKey(kind: string, key: string): StringKey {
 /** Cache key of a material sphere: presets by key, everything else by content (family and parameters). */
 export function thumbKey(mat: MaterialInstance): string {
   if (mat.preset && !mat.edited && mat.role !== 'DEFAULT') return `preset:${mat.preset}`;
-  const text = JSON.stringify(mat.graph ? [mat.family, mat.params, mat.graph] : [mat.family, mat.params]);
+  // A graph counts by what it does, not by where its nodes sit on the editor's canvas.
+  const graph = mat.graph ? { nodes: mat.graph.nodes.map((n) => [n.id, n.type, n.params, n.inputs]), links: mat.graph.links } : null;
+  const text = JSON.stringify(graph ? [mat.family, mat.params, graph] : [mat.family, mat.params]);
   let hash = 0;
   for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
   return `inst:${(hash >>> 0).toString(36)}`;

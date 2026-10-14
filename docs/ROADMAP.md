@@ -2150,7 +2150,7 @@ sin ranura con su media, dicho en el inspector y el editor. *Completo*
 recibe la media de cada salida (`flattenGraph`) y lo dice. **Diez
 ejemplos** en `src/data/material-graphs.ts`. Tests:
 `material-graph`, `material-program`, `material-preview`,
-`material-nodes-ui` (50 casos; 47 mutaciones reintroducidas, todas fallan);
+`material-nodes-ui` (50 casos; 43 mutaciones reintroducidas, todas fallan);
 `tools/material-nodes-check.mjs` en Chromium (abrir, añadir con búsqueda,
 conexión rechazada y hecha, el visor cambia, deshacer, teclas, ejemplo,
 cromo acromático en los dos temas). Capturas `docs/ui/material-nodes.png`

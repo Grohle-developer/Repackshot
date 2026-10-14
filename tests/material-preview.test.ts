@@ -187,10 +187,10 @@ describe('the plain values that stand for a graph', () => {
     const flat = flattenGraph(minimalGraph(m));
     expect(flat.family).toBe('SIMPLE');
     expect(flat.params.roughness).toBeCloseTo(m.params.roughness as number, 6);
-    expect((flat.params.baseColor as number[]).slice(0, 3).map((x) => +x.toFixed(5))).toEqual((m.params.baseColor as number[]).slice(0, 3).map((x) => +Math.fround(x).toFixed(5)));
+    expect((flat.params.baseColor as readonly number[]).slice(0, 3).map((x) => +x.toFixed(5))).toEqual((m.params.baseColor as readonly number[]).slice(0, 3).map((x) => +Math.fround(x).toFixed(5)));
     const marble = graphOfExample(MATERIAL_GRAPHS.find((g) => g.key === 'MARBLE')!);
     const mf = flattenGraph(marble);
-    expect((mf.params.baseColor as number[])[0]).toBeGreaterThan(0.5);
+    expect((mf.params.baseColor as readonly number[])[0]).toBeGreaterThan(0.5);
     expect(mf.params.coat).toBeCloseTo(0.7, 6);
   });
 
@@ -199,7 +199,7 @@ describe('the plain values that stand for a graph', () => {
     const marble = graphOfExample(MATERIAL_GRAPHS.find((g) => g.key === 'MARBLE')!);
     const withGraph = materialToRsb({ ...m, graph: marble });
     const flat = flattenGraph(marble);
-    expect(withGraph.baseColor[0]).toBeCloseTo((flat.params.baseColor as number[])[0], 6);
+    expect(withGraph.baseColor[0]).toBeCloseTo((flat.params.baseColor as readonly number[])[0], 6);
     expect(withGraph.coat).toBeCloseTo(0.7, 6);
     // Without a graph, the material's own parameters, as before.
     expect(materialToRsb(m).roughness).toBe(m.params.roughness);
