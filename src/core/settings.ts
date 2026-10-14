@@ -34,7 +34,7 @@ export const SETTINGS_SCHEMA = 1;
 export type LengthUnit = ImportUnit;
 export const LENGTH_UNITS: readonly LengthUnit[] = IMPORT_UNITS;
 
-export type SectionId = 'general' | 'preferences' | 'accessibility' | 'shortcuts' | 'engine' | 'ai' | 'storage' | 'desktop' | 'updates' | 'about';
+export type SectionId = 'general' | 'preferences' | 'accessibility' | 'shortcuts' | 'engine' | 'ai' | 'plugins' | 'storage' | 'desktop' | 'updates' | 'about';
 export type SectionGroup = 'app' | 'render' | 'system';
 
 export interface SectionSpec {
@@ -52,6 +52,7 @@ export const SECTIONS: readonly SectionSpec[] = [
   { id: 'shortcuts', group: 'app' },
   { id: 'engine', group: 'render' },
   { id: 'ai', group: 'render' },
+  { id: 'plugins', group: 'system' },
   { id: 'storage', group: 'system' },
   { id: 'desktop', group: 'system', desktopOnly: true },
   { id: 'updates', group: 'system' },
@@ -440,6 +441,10 @@ export const SETTING_ROWS: readonly RowMeta[] = [
   row('ai.runtime', 'ai', 'runtime', kw('runtime, stable-diffusion.cpp, sd.cpp, vulkan, cpu, download, inference', 'motor de ejecución, stable-diffusion.cpp, sd.cpp, vulkan, cpu, descargar, inferencia'), { desktopOnly: true }),
   setting('ai.backend', 'ai', 'runtime', choice(['AUTO', 'VULKAN', 'CPU']), kw('run on, backend, vulkan, cpu, graphics card, force', 'ejecutar con, vulkan, cpu, tarjeta gráfica, forzar'), { aux: true, desktopOnly: true }),
   row('ai.hardware', 'ai', 'hardware', kw('hardware, gpu, vram, ram, webgpu, recommendation', 'equipo, gpu, vram, ram, webgpu, recomendación')),
+
+  // Plugins (P6): the registry with Install, Update and Remove, and Install from file… (drawn by settings-plugins.ts)
+  row('plugins.list', 'plugins', 'plugins', kw('plugins, plugin, install, update, remove, film, film simulation, grain, aintfilm, closed licence, activation key', 'plugins, plugin, instalar, actualizar, quitar, película, simulación de película, grano, aintfilm, licencia cerrada, clave de activación')),
+  row('plugins.file', 'plugins', 'pluginFile', kw('install from file, rpk, plugin package, activation key, key', 'instalar desde archivo, rpk, paquete de plugin, clave de activación, clave')),
 
   // Storage
   row('storage.usage', 'storage', 'usage', kw('storage, space, disk, free up, delete, cache', 'almacenamiento, espacio, disco, liberar, borrar, caché')),
