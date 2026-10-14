@@ -3410,6 +3410,17 @@ dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
   difusiones, y las difusiones blanca y negra y el suavizado dan los
   mismos bits que antes (sus celdas de la hoja son las de la primera).
   El *hash* de O3a se movió (la estrella y las rayas de su pila).
+- **Veredicto del responsable (segunda hoja).** Aceptada: la dorada
+  calienta el halo y deja neutro el cuadro, la red es una cruz modesta
+  sobre su suavizado, las rayas de la estrella crecen con el grado y
+  siguen finas, las rayas son una línea con la imagen neutra y el brillo
+  es un halo suave con grano. Sobre los puntos de «No encajó»: (9) los
+  largos en ángulo calibrados en el 85 mm de la hoja son lo correcto (un
+  filtro real es angular; que con un 50 mm la estrella se vea más corta
+  respecto al cuadro es lo que pasa de verdad): se quedan así, sin
+  escalarlos con el campo; (10) la nube fija de destellos es lo correcto
+  (un vidrio de brillo es un patrón fijo): se queda; (11) a (13),
+  aceptados.
 - **Tests** (cada uno comprobado reintroduciendo el error): 16 en
   `optics::filter_tests` de rt-core y uno en `optics::filters`: grados →
   `s` (sin interpolar, falla); difusión blanca que conserva la media de
