@@ -2182,3 +2182,251 @@ fn a_medium_behind_glass_gathers_its_photons_where_its_walks_leave() {
     );
     assert!((c / r - 1.0).abs() < 0.1, "with photons {c} vs {r}");
 }
+
+// --- E9c: dispersion ----------------------------------------------------------------------------
+
+/// A glass prism with a 45° apex: its bottom face at height `z` (x from -50 to 50), its upright
+/// face at x = 50 (100 mm high) and its slanted face rising from x = -50, 100 mm deep along y.
+/// Every triangle faces out.
+fn prism(z: f32) -> Mesh {
+    let corner = |x: f32, y: f32, h: f32| Vec3::new(x, y, z + h);
+    let (a0, b0, c0) = (
+        corner(-50.0, -50.0, 0.0),
+        corner(50.0, -50.0, 0.0),
+        corner(50.0, -50.0, 100.0),
+    );
+    let (a1, b1, c1) = (
+        corner(-50.0, 50.0, 0.0),
+        corner(50.0, 50.0, 0.0),
+        corner(50.0, 50.0, 100.0),
+    );
+    let centre = Vec3::new(50.0 / 3.0, 0.0, z + 100.0 / 3.0);
+    let faces = [
+        [a0, b0, b1],
+        [a0, b1, a1],
+        [b0, c0, c1],
+        [b0, c1, b1],
+        [a0, c0, c1],
+        [a0, c1, a1],
+        [a0, b0, c0],
+        [a1, b1, c1],
+    ];
+    let mut positions = Vec::new();
+    for [p, q, r] in faces {
+        let outward = (q - p).cross(r - p).dot((p + q + r) * (1.0 / 3.0) - centre) > 0.0;
+        positions.extend(if outward { [p, q, r] } else { [p, r, q] });
+    }
+    let indices: Vec<u32> = (0..positions.len() as u32).collect();
+    Mesh::new(&positions, &[], &indices, 0).expect("prism")
+}
+
+/// Crystal of index 1.56 and Abbe number `abbe` (0: none).
+fn crystal(abbe: f32) -> Material {
+    Material {
+        ior: 1.56,
+        abbe,
+        ..clear_glass(0.0)
+    }
+}
+
+/// The centroid along x of each channel of `img` (`w` pixels wide), in pixels.
+fn channel_centroids(img: &[f32], w: u32) -> [f64; 3] {
+    let mut out = [0.0f64; 3];
+    for (c, centroid) in out.iter_mut().enumerate() {
+        let (mut sum, mut moment) = (0.0f64, 0.0f64);
+        for (i, px) in img.chunks_exact(3).enumerate() {
+            let v = f64::from(px[c]);
+            sum += v;
+            moment += v * (i as u32 % w) as f64;
+        }
+        *centroid = moment / sum.max(1.0e-30);
+    }
+    out
+}
+
+#[test]
+fn a_prism_parts_the_colours_of_what_is_seen_through_it() {
+    // E9c: seen straight down through the prism (its bottom 300 mm over the floor), a thin
+    // emitting strip on the floor shows up where each wavelength's refraction brings it: blue
+    // bends more, so its image lies further back towards the prism's thin edge (lower x) than red's,
+    // green's in between. Without an Abbe number the three images are the same, to the bit.
+    let image = |abbe: f32| {
+        let strip = Mesh::new(
+            &[
+                Vec3::new(149.0, -200.0, 0.5),
+                Vec3::new(151.0, -200.0, 0.5),
+                Vec3::new(151.0, 200.0, 0.5),
+                Vec3::new(149.0, 200.0, 0.5),
+            ],
+            &[],
+            &[0, 1, 2, 0, 2, 3],
+            0,
+        )
+        .expect("strip");
+        let scene = Scene {
+            camera: ortho_down(-10.0, 0.0, 60.0),
+            materials: vec![
+                crystal(abbe),
+                Material {
+                    kind: MATERIAL_EMISSIVE,
+                    emission: Rgb::WHITE,
+                    emission_power: 1.0,
+                    ..Material::default()
+                },
+            ],
+            geometry: Geometry::new(
+                vec![prism(300.0), strip],
+                vec![
+                    Instance::new(0, Transform::IDENTITY, 0),
+                    Instance::new(1, Transform::IDENTITY, 1),
+                ],
+            )
+            .expect("scene"),
+            environment: black_world(),
+            render: RenderSettings {
+                max_depth: 16,
+                ..settings(60, 4)
+            },
+            ..Scene::default()
+        };
+        render(&scene, 256).resolve()
+    };
+    let [red, green, blue] = channel_centroids(&image(25.0), 60);
+    eprintln!("prism, seen through: centroids red {red:.2}, green {green:.2}, blue {blue:.2} px");
+    assert!(
+        red > green + 0.3 && green > blue + 0.3,
+        "{red} {green} {blue}"
+    );
+    let plain = image(0.0);
+    assert!(plain.chunks_exact(3).all(|p| p[0] == p[1] && p[1] == p[2]));
+    let [r0, _, b0] = channel_centroids(&plain, 60);
+    assert!(r0 == b0 && (r0 - green).abs() < 3.0, "{r0} {b0} {green}");
+}
+
+#[test]
+fn a_prism_under_a_small_light_parts_the_colours_on_the_floor() {
+    // E9c: a small light 400 mm over the prism; its light leaves the prism's bottom face deviated
+    // by about 27° towards the upright face and falls on the floor as a caustic band, which the
+    // photon map brings. Blue bends more, so on the floor its light lies further out (higher x)
+    // than red's. Without an Abbe number the band is white.
+    let image = |abbe: f32| {
+        let scene = Scene {
+            camera: ortho_down(145.0, 0.0, 200.0),
+            materials: vec![crystal(abbe)],
+            geometry: Geometry::new(
+                vec![prism(300.0)],
+                vec![Instance::new(0, Transform::IDENTITY, 0)],
+            )
+            .expect("scene"),
+            lights: vec![Light {
+                kind: LightKind::Disk,
+                position: Vec3::new(0.0, 0.0, 800.0),
+                direction: Vec3::new(0.0, 0.0, -1.0),
+                up: Vec3::new(0.0, 1.0, 0.0),
+                size_x: 20.0,
+                power: 20.0,
+                // Half its intensity 5° off its axis: the prism (±3.6°) is in its beam, the floor
+                // beside it is not.
+                spread_deg: 10.0,
+                flags: LIGHT_FLAG_GLOSSY,
+                ..Light::default()
+            }],
+            environment: black_world(),
+            floor: Floor {
+                mode: crate::scene::FloorMode::Visible,
+                z: 0.0,
+                color: Rgb::splat(0.8),
+            },
+            render: RenderSettings {
+                max_depth: 16,
+                caustic_photons: 16_384,
+                caustic_radius: 1.5,
+                ..settings(40, 8)
+            },
+            ..Scene::default()
+        };
+        render_with_photons(&scene, 16).resolve()
+    };
+    let parted = image(25.0);
+    let [red, green, blue] = channel_centroids(&parted, 40);
+    eprintln!("prism on the floor: centroids red {red:.2}, green {green:.2}, blue {blue:.2} px");
+    assert!(
+        blue > green + 0.2 && green > red + 0.2,
+        "{red} {green} {blue}"
+    );
+    // By regions: the columns of the band (above a tenth of its brightest), split in a near and
+    // a far half along x; blue over red is higher on the far side.
+    let columns: Vec<[f64; 3]> = (0..40)
+        .map(|x| {
+            let mut sum = [0.0f64; 3];
+            for (i, px) in parted.chunks_exact(3).enumerate() {
+                if i % 40 == x {
+                    for c in 0..3 {
+                        sum[c] += f64::from(px[c]);
+                    }
+                }
+            }
+            sum
+        })
+        .collect();
+    let peak = columns
+        .iter()
+        .map(|c| c[0] + c[1] + c[2])
+        .fold(0.0, f64::max);
+    let lit: Vec<&[f64; 3]> = columns
+        .iter()
+        .filter(|c| c[0] + c[1] + c[2] > 0.1 * peak)
+        .collect();
+    let half = lit.len() / 2;
+    let ratio = |cols: &[&[f64; 3]]| {
+        let (r, b) = cols
+            .iter()
+            .fold((0.0, 0.0), |(r, b), c| (r + c[0], b + c[2]));
+        b / r
+    };
+    let (near, far) = (ratio(&lit[..half]), ratio(&lit[lit.len() - half..]));
+    eprintln!(
+        "prism on the floor: {} lit columns, blue / red near {near:.3}, far {far:.3}",
+        lit.len()
+    );
+    assert!(lit.len() >= 4 && far > 1.1 * near, "{near} {far}");
+    let plain = image(0.0);
+    assert!(plain.chunks_exact(3).all(|p| p[0] == p[1] && p[1] == p[2]));
+}
+
+#[test]
+fn a_crystal_in_a_furnace_comes_out_white_in_every_channel() {
+    // E9c: a path that meets a dispersive glass carries one channel, times 3, from then on, and
+    // keeps it at every dispersive surface after (into the sphere and out again). In a uniform
+    // world of radiance 1 a clear crystal sphere, smooth or rough, is invisible in each channel,
+    // as the same sphere without an Abbe number is.
+    for roughness in [0.0f32, 0.3] {
+        let scene = Scene {
+            camera: ortho_front(260.0),
+            materials: vec![Material {
+                roughness,
+                ..crystal(30.0)
+            }],
+            geometry: Geometry::from_meshes(vec![faceted_sphere(Vec3::ZERO, 100.0, 3)]),
+            environment: uniform_world(1.0),
+            render: RenderSettings {
+                max_depth: 64,
+                ..settings(16, 16)
+            },
+            ..Scene::default()
+        };
+        let film = render(&scene, 1024);
+        let inside = |x: u32, y: u32| {
+            let (u, v) = ((x as f32 + 0.5) / 16.0 - 0.5, (y as f32 + 0.5) / 16.0 - 0.5);
+            (u * u + v * v).sqrt() * 260.0 < 85.0
+        };
+        let means = [0, 1, 2].map(|c| mean_where(&film, c, inside));
+        eprintln!("crystal in a furnace, roughness {roughness}: {means:.4?}");
+        for (c, mean) in means.into_iter().enumerate() {
+            assert!(
+                (mean - 1.0).abs() < 0.015,
+                "roughness {roughness}, channel {c}: {mean}"
+            );
+        }
+    }
+}

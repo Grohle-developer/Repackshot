@@ -187,7 +187,8 @@ const live = RT_WASM ? describe : describe.skip;
 
 live('E9 through the page’s code (the real rt.wasm)', () => {
   it('renders the scattering medium of the E9 scene to rt-core’s pinned image', async () => {
-    // tests/fixtures/e9.rsb is `rt --write-e9-example`: the E5 scene with a medium in its glass.
+    // tests/fixtures/e9.rsb is `rt --write-e9-example`: the E5 scene with a medium in its glass
+    // and a dispersive crystal sphere (E9c).
     const rt = await loadRt();
     const rsb = new Uint8Array(readFileSync('tests/fixtures/e9.rsb'));
     const { image } = renderWithPasses(rt, rsb, 160, 120, 4, 0);

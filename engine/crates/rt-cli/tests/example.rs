@@ -237,8 +237,9 @@ fn caustics_are_the_same_bits_with_1_4_or_16_threads() {
 #[test]
 fn media_are_the_same_bits_with_1_4_or_16_threads() {
     // E9b: a walk takes its random numbers from hashed dimensions of its pixel's sample, never
-    // from a thread, so the E9 scene (a medium in the E5 sphere) does not depend on how many
-    // threads render it, and gives rt-core's pinned image (`PINNED_E9_MEDIA_4SPP`).
+    // from a thread, and so does the wavelength a path chooses at a dispersive glass (E9c), so
+    // the E9 scene (a medium in the E5 sphere, a crystal sphere beside it) does not depend on
+    // how many threads render it, and gives rt-core's pinned image (`PINNED_E9_MEDIA_4SPP`).
     let scene = rt_core::example::e9_scene();
     let one = rt_cli::render(&scene, 4, 1);
     for threads in [4, 16] {
@@ -254,7 +255,7 @@ fn media_are_the_same_bits_with_1_4_or_16_threads() {
         .fold(0x811c_9dc5u32, |h, b| {
             (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
         });
-    assert_eq!(hash, 0xc6c9_036e);
+    assert_eq!(hash, 0xf693_c26b);
 }
 
 /// Relative mean squared error of `image` against `reference` (linear RGB, values clamped at 8 so

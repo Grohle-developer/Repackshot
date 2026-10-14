@@ -65,6 +65,7 @@
 //! metals were tuned with), projected onto the tangent plane; where that degenerates, the
 //! instance's X axis; then any.
 
+pub mod dispersion;
 pub mod medium;
 
 use crate::bitmap::Image;
@@ -76,8 +77,8 @@ use crate::geometry::{Geometry, RayHit};
 use crate::light::{power_heuristic, Lights};
 use crate::math::{offset_origin, Frame, Ray, Vec3};
 use crate::sampler::{
-    bounce_dim, cutout_dim, PixelSampler, OFFSET_BSDF, OFFSET_LIGHT, OFFSET_LIGHT_SELECT,
-    OFFSET_ROULETTE,
+    bounce_dim, cutout_dim, PixelSampler, DIM_DISPERSION, OFFSET_BSDF, OFFSET_LIGHT,
+    OFFSET_LIGHT_SELECT, OFFSET_ROULETTE,
 };
 use crate::scene::{
     Background, FloorMode, Material, Scene, BACKPLATE_FIT, BACKPLATE_STRETCH, INSTANCE_ONE_SIDED,
@@ -797,6 +798,8 @@ pub fn radiance_with<T: Tracer>(
     // density; and the wall the path is inside, with the distance from that vertex (E9b).
     let mut exit_pdf: Option<f32> = None;
     let mut wall: Option<(u32, f32)> = None;
+    // The wavelength the path carries since its first dispersive glass (E9c).
+    let mut band: Option<dispersion::Band> = None;
     let mut cutouts = 0u32;
     loop {
         // After a walk that scattered: the exit lobe's albedo at the surface it reached.
@@ -979,6 +982,19 @@ pub fn radiance_with<T: Tracer>(
 
         let bsdf = match (exit, material) {
             (Some(eta2), _) => Bsdf::medium_exit(eta2),
+            (None, Some(m)) if dispersion::is_dispersive(m) => {
+                // The first dispersive glass chooses the path's wavelength (E9c).
+                let b = match band {
+                    Some(b) => b,
+                    None => {
+                        let b = dispersion::Band::choose(sampler.get1(DIM_DISPERSION));
+                        throughput = b.mask(throughput);
+                        band = Some(b);
+                        b
+                    }
+                };
+                Bsdf::surface_at(m, surface.outside, b.index(m))
+            }
             (None, Some(m)) => Bsdf::surface(m, surface.outside),
             (None, None) => prepared.floor_bsdf,
         };

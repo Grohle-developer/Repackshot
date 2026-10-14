@@ -596,6 +596,8 @@ fn trace_photon<T: Tracer>(
     let mut cutouts = 0u32;
     let mut medium: Option<Rgb> = None;
     let mut rays = 0u64;
+    // The wavelength the photon carries since its first dispersive glass (E9c).
+    let mut band: Option<crate::integrator::dispersion::Band> = None;
     // At most one event per crossing, cut-out or thin wall straight transmission included.
     for _ in 0..(setup.max_bounces + MAX_PHOTON_CUTOUTS + 64) {
         rays += 1;
@@ -643,7 +645,20 @@ fn trace_photon<T: Tracer>(
             }
         }
         let caster = setup.is_caster_instance(details.instance);
-        let bsdf = Bsdf::surface(m, details.outside);
+        let bsdf = if crate::integrator::dispersion::is_dispersive(m) {
+            let b = match band {
+                Some(b) => b,
+                None => {
+                    let b = crate::integrator::dispersion::Band::choose(rng.next_f32());
+                    power = b.mask(power);
+                    band = Some(b);
+                    b
+                }
+            };
+            Bsdf::surface_at(m, details.outside, b.index(m))
+        } else {
+            Bsdf::surface(m, details.outside)
+        };
         if !caster {
             if bounces > 0 {
                 out.push(Photon {

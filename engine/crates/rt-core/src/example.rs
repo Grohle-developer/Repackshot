@@ -363,9 +363,29 @@ pub fn e5b_scene() -> Scene {
 /// scattering medium (a warm, slightly forward-scattering wax with an absorption distance, so the
 /// extinction differs between channels and the walk's spectral MIS is in the hash) behind a rough
 /// boundary, so walks, their reflections back in, their exit vertices with their light samples and
-/// the plain crossings all take part.
+/// the plain crossings all take part; and (E9c) a sphere of dispersive crystal (index 1.56, Abbe
+/// number 40) at the front right, so the wavelength a path chooses is in the hash too.
 pub fn e9_scene() -> Scene {
     let mut scene = e5_scene(false);
+    scene.materials.push(Material {
+        kind: crate::scene::MATERIAL_GLASS,
+        roughness: 0.0,
+        ior: 1.56,
+        transmission: 1.0,
+        abbe: 40.0,
+        ..Material::default()
+    });
+    let mut instances = scene.geometry.instances().to_vec();
+    instances.push(Instance::new(
+        0,
+        Transform::from_rows([
+            [0.4, 0.0, 0.0, 200.0],
+            [0.0, 0.4, 0.0, -120.0],
+            [0.0, 0.0, 0.4, 0.0],
+        ]),
+        scene.materials.len() as u32 - 1,
+    ));
+    scene.geometry = Geometry::new(scene.geometry.meshes().to_vec(), instances).unwrap_or_default();
     scene.materials[0] = Material {
         kind: crate::scene::MATERIAL_GLASS,
         base_color: Rgb::new(0.85, 0.7, 0.5),

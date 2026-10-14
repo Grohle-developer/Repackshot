@@ -357,6 +357,12 @@ impl Bsdf {
     /// or inside it: only the clear part of a solid tells the difference (its relative index
     /// and coat).
     pub fn surface(m: &Material, entering: bool) -> Bsdf {
+        Bsdf::surface_at(m, entering, m.ior)
+    }
+
+    /// [`Bsdf::surface`] with the index of refraction `ior` instead of the material's (the index
+    /// of a dispersive glass at one wavelength, E9c).
+    pub fn surface_at(m: &Material, entering: bool, ior: f32) -> Bsdf {
         let base = m.base_color.map(|v| v.clamp(0.0, 1.0));
         let metallic = if m.kind == MATERIAL_GLASS {
             0.0
@@ -364,7 +370,7 @@ impl Bsdf {
             m.metallic.clamp(0.0, 1.0)
         };
         let transmission = m.transmission.clamp(0.0, 1.0);
-        let ior = m.ior.max(1.0);
+        let ior = ior.max(1.0);
         let f0 = ((ior - 1.0) / (ior + 1.0)) * ((ior - 1.0) / (ior + 1.0));
         let roughness = m.roughness.clamp(0.0, 1.0);
         let coat_roughness = m.coat_roughness.clamp(0.0, 1.0);

@@ -144,8 +144,9 @@ jobs:
           expected=$(sed -n 's/.*PINNED_E5B_CAUSTICS_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e5b.rsb" --expect "$expected"
-          # E9: the E5 scene with a scattering medium in its glass (the random walk, its hashed
-          # dimensions and the spectral MIS must give the native bits in WebAssembly).
+          # E9: the E5 scene with a scattering medium in its glass and a dispersive crystal (the
+          # random walk, its hashed dimensions, the spectral MIS and the wavelength each path
+          # chooses must give the native bits in WebAssembly).
           cargo run --release -p rt-cli -- --write-e9-example "$RUNNER_TEMP/e9.rsb"
           expected=$(sed -n 's/.*PINNED_E9_MEDIA_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
           test -n "$expected"

@@ -54,7 +54,8 @@ OPTIONS:
                             as an RSB file
         --write-e9-example <f>
                             write the E9 parity scene (the E5 scene with a scattering
-                            medium in its big sphere) as an RSB file
+                            medium in its big sphere and a dispersive crystal sphere) as
+                            an RSB file
         --sss-sheet <dir>   render the E9 contact sheet of the scattering media (each
                             recipe as a sphere, the perfume bottle filled with milk and
                             juice, with and without the medium, the milk bottle with
