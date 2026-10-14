@@ -26,7 +26,7 @@ import { STRINGS } from '../src/ui/strings';
 import { apply, exampleState } from './helpers';
 import { buildExample } from '../src/core/example';
 import { framedCamera, inFrame, reflectionSeen } from './frame-check';
-import { backdropMask, maskedMean, partPeak, poolContrast, poolPixel, rowProfile, thumbnail } from './thumb-metrics';
+import { backdropMask, haloProfiles, LOOK, maskedMean, partPeak, poolContrast, setMeasures, thumbnail } from './thumb-metrics';
 import { PRESET_KEYS, rigHash } from './old-rigs';
 import { thumbRsb } from './set-heroes';
 import type { Box } from '../src/core/math';
@@ -576,32 +576,45 @@ describe('the thumbnails', () => {
 });
 
 describe('what the sets look like once rendered (their thumbnails)', () => {
+  // The thresholds are LOOK's (tests/thumb-metrics.ts), the one place to change them.
   it('BRIGHT_FIELD and HIGH_KEY_WHITE burn the background to white without clipping the product', () => {
-    for (const [key, part] of [['BRIGHT_FIELD', 'label'], ['HIGH_KEY_WHITE', 'band']] as const) {
+    for (const [key, part] of Object.entries(LOOK.white.parts)) {
       const t = thumbnail(key);
-      expect(maskedMean(t.img, backdropMask(t)), key).toBeGreaterThanOrEqual(0.92);
-      expect(partPeak(t, part), key).toBeLessThan(1);
+      expect(maskedMean(t.img, backdropMask(t)), key).toBeGreaterThanOrEqual(LOOK.white.backdropMin);
+      expect(partPeak(t, part), key).toBeLessThan(LOOK.white.peakMax);
     }
   });
 
   it('BLACK_ON_BLACK and GRADIENT_POOL: the pool is at least twice as bright as the backdrop at the frame’s edges', () => {
-    for (const key of ['BLACK_ON_BLACK', 'GRADIENT_POOL']) expect(poolContrast(thumbnail(key)), key).toBeGreaterThanOrEqual(2);
+    for (const key of LOOK.pool.sets) expect(poolContrast(thumbnail(key)), key).toBeGreaterThanOrEqual(LOOK.pool.contrastMin);
   });
 
   it('SILHOUETTE_GLOW: the halo falls off from its centre over 30 % of the frame on each side, without a plateau', () => {
-    const t = thumbnail('SILHOUETTE_GLOW');
-    const [px, py] = poolPixel(t);
-    const span = Math.round(0.3 * t.img.width);
-    for (const end of [0, t.img.width - 1]) {
-      const p = rowProfile(t.img, py, px, end, 7).slice(0, span + 1).filter((_, i) => i % 8 === 0);
+    const h = LOOK.halo;
+    const sides = haloProfiles(thumbnail(h.set));
+    for (const [side, p] of Object.entries(sides)) {
       expect(p.length).toBeGreaterThan(9);
       // Every step outwards is darker.
-      for (let i = 1; i < p.length; i++) expect(p[i], `${end ? 'right' : 'left'} ${i * 8} px`).toBeLessThan(p[i - 1]);
-      // Past the top of the peak, every 24 pixels at least half a percent darker: no plateau.
-      for (let i = 2; i + 3 < p.length; i++) expect(p[i] - p[i + 3], `${end ? 'right' : 'left'} from ${i * 8} px`).toBeGreaterThan(0.005);
+      for (let i = 1; i < p.length; i++) expect(p[i], `${side} ${i * h.step} px`).toBeLessThan(p[i - 1]);
+      // Past the top of the peak, darker by plateauMin every plateauSteps steps: no plateau.
+      for (let i = 2; i + h.plateauSteps < p.length; i++) expect(p[i] - p[i + h.plateauSteps], `${side} from ${i * h.step} px`).toBeGreaterThan(h.plateauMin);
       // And the halo is there: the centre clearly brighter than 30 % away.
-      expect(p[0] - p[p.length - 1]).toBeGreaterThan(0.05);
+      expect(p[0] - p[p.length - 1]).toBeGreaterThan(h.fallMin);
     }
+  });
+
+  it.skipIf(!process.env.REPACKSHOT_SET_MEASURES)('measures: every set against the criteria (printed, for a re-tune)', () => {
+    const rows = SETS.map((s) => {
+      const m = setMeasures(s.key);
+      const f = (v: number | undefined, d = 3) => (v === undefined ? '' : v.toFixed(d));
+      const flags = [
+        LOOK.white.parts[s.key] && (m.backdrop < LOOK.white.backdropMin || m.partPeak! >= LOOK.white.peakMax) ? 'WHITE' : '',
+        (LOOK.pool.sets as readonly string[]).includes(s.key) && m.poolContrast! < LOOK.pool.contrastMin ? 'POOL' : '',
+        s.key === LOOK.halo.set && m.haloFall! <= LOOK.halo.fallMin ? 'HALO' : '',
+      ].filter(Boolean);
+      return `${s.key.padEnd(18)} EV ${String(s.exposureEv ?? 0).padStart(5)}  backdrop ${f(m.backdrop)}  peak ${f(m.partPeak).padStart(5)}  pool ${f(m.poolContrast, 2).padStart(5)}  halo ${f(m.haloFall).padStart(5)}  ${flags.join(' ') || 'ok'}`;
+    });
+    console.log(`criteria: white backdrop >= ${LOOK.white.backdropMin}, part peak < ${LOOK.white.peakMax}; pool >= ${LOOK.pool.contrastMin}; halo fall > ${LOOK.halo.fallMin} (monotonic, no plateau: see the test)\n${rows.join('\n')}`);
   });
 });
 

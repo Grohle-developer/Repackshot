@@ -1714,7 +1714,10 @@ promedio, y `manifest.json` con el *hash* de cada RSB y de cada PNG: un
 test reconstruye las 88 escenas y las compara, otro fija el *hash* de una
 miniatura, y otros miden sobre las miniaturas lo que pidió el veredicto
 (fondo ≥ 0,92 sin quemar la etiqueta; charco ≥ 2 veces el borde; halo que
-cae sin meseta). Hoja de contactos: `tools/sets-sheet.mjs` →
+cae sin meseta), con los umbrales en un solo sitio (`LOOK`,
+`tests/thumb-metrics.ts`); `REPACKSHOT_SET_MEASURES=1 npx vitest run
+tests/sets.test.ts -t measures` imprime las medidas de los 16 contra ellos,
+para reajustar solo la exposición del set que cruce uno si cambia el motor. Hoja de contactos: `tools/sets-sheet.mjs` →
 `out/sets-sheet.html` (sets × BOTTLE/BOX/CHROME y los 15 tipos que son
 un set, antes y después). Interfaz: estilo *Sets* primero, miniaturas de los sets en dos
 columnas y cuadradas (el doble de altas), la razón en la ayuda, *Usar la

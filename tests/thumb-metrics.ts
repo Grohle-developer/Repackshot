@@ -264,3 +264,44 @@ export function poolContrast(t: ReturnType<typeof thumbnail>): number {
   const right = maskedMean(img, mask, { x0: img.width - 16, x1: img.width - 1, y0: py - 16, y1: py + 16 });
   return centre / ((left + right) / 2);
 }
+
+/**
+ * The criteria of the verdict on how the sets look once rendered, in one place: tests/sets.test.ts reads them, and
+ * after an engine change `REPACKSHOT_SET_MEASURES=1 npx vitest run tests/sets.test.ts -t measures` prints every measure
+ * of the 16 sets against them (re-tune only the exposure of a set that crosses one; the designs stay).
+ */
+export const LOOK = {
+  /** The white sets burn the backdrop to white (its mean display luminance) and the part named does not clip. */
+  white: { backdropMin: 0.92, peakMax: 1, parts: { BRIGHT_FIELD: 'label', HIGH_KEY_WHITE: 'band' } as Record<string, string> },
+  /** The pool is this many times as bright as the backdrop at the frame's edges (`poolContrast`). */
+  pool: { contrastMin: 2, sets: ['BLACK_ON_BLACK', 'GRADIENT_POOL'] },
+  /**
+   * SILHOUETTE_GLOW's halo, along the row of its pool from the centre to each edge: darker at every `step` pixels over
+   * `span` of the width; past the top of the peak, at least `plateauMin` darker every `plateauSteps` steps (no plateau);
+   * and the centre at least `fallMin` brighter than the end.
+   */
+  halo: { set: 'SILHOUETTE_GLOW', span: 0.3, step: 8, rows: 7, plateauSteps: 3, plateauMin: 0.005, fallMin: 0.05 },
+} as const;
+
+/** The halo's profile from the centre of its pool to the left edge and to the right, sampled every LOOK.halo.step. */
+export function haloProfiles(t: ReturnType<typeof thumbnail>): { left: number[]; right: number[] } {
+  const h = LOOK.halo;
+  const [px, py] = poolPixel(t);
+  const span = Math.round(h.span * t.img.width);
+  const side = (end: number) => rowProfile(t.img, py, px, end, h.rows).slice(0, span + 1).filter((_, i) => i % h.step === 0);
+  return { left: side(0), right: side(t.img.width - 1) };
+}
+
+/** What the criteria of LOOK measure on a set's thumbnail: the backdrop, the clip of its part, its pool's contrast. */
+export function setMeasures(key: string): { backdrop: number; partPeak?: number; poolContrast?: number; haloFall?: number } {
+  const t = thumbnail(key);
+  const out: { backdrop: number; partPeak?: number; poolContrast?: number; haloFall?: number } = { backdrop: maskedMean(t.img, backdropMask(t)) };
+  const part = LOOK.white.parts[key];
+  if (part) out.partPeak = partPeak(t, part);
+  if (t.state.studio.lights.some((l) => l.setPiece === 'POOL')) out.poolContrast = poolContrast(t);
+  if (key === LOOK.halo.set) {
+    const { left, right } = haloProfiles(t);
+    out.haloFall = Math.min(left[0] - left[left.length - 1], right[0] - right[right.length - 1]);
+  }
+  return out;
+}
