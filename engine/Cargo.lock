@@ -22,6 +22,9 @@ dependencies = [
 [[package]]
 name = "rt-core"
 version = "0.3.0"
+dependencies = [
+ "rt-sim",
+]
 
 [[package]]
 name = "rt-post"
@@ -54,4 +57,5 @@ version = "0.3.0"
 dependencies = [
  "rt-core",
  "rt-post",
+ "rt-sim",
 ]

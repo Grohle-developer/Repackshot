@@ -35,7 +35,7 @@ pub mod eval;
 pub mod noise;
 pub mod params;
 
-pub use eval::{evaluate, evaluate_range, positions_hash, Evaluator, Particle};
+pub use eval::{evaluate, evaluate_range, positions_hash, tint_factor, Evaluator, Particle};
 pub use params::{
     AmbientParams, FxamError, Shape, FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW, FXAM_BYTES,
     FXAM_MIN_BYTES, MAX_COUNT, MAX_PALETTE,

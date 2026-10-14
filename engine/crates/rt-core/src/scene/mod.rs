@@ -9,9 +9,35 @@ use crate::color::Rgb;
 use crate::math::{Aabb, Ray, Vec3};
 
 pub use crate::geometry::{
-    Geometry, GeometryError, Hit, Instance, Mesh, MeshError, RayHit, Transform, INSTANCE_ONE_SIDED,
+    Geometry, GeometryError, Hit, Instance, Mesh, MeshError, ParticleSet, PixelFootprint, RayHit,
+    Transform, INSTANCE_ONE_SIDED,
 };
 pub use rsb::RsbError;
+pub use rt_sim::AmbientParams;
+
+/// The particle sets of `effects` for `footprint`: a set of `kept` with the same parameters is
+/// reused (its BVH built again only for another footprint), any other effect is evaluated.
+pub(crate) fn particle_sets(
+    effects: &[AmbientParams],
+    kept: Vec<ParticleSet>,
+    footprint: PixelFootprint,
+    width: crate::geometry::BvhWidth,
+) -> Vec<ParticleSet> {
+    let mut kept: Vec<Option<ParticleSet>> = kept.into_iter().map(Some).collect();
+    effects
+        .iter()
+        .map(|params| {
+            let reuse = kept
+                .iter_mut()
+                .find(|k| k.as_ref().is_some_and(|set| set.params() == params))
+                .and_then(Option::take);
+            match reuse {
+                Some(set) => set.with_footprint(footprint, width),
+                None => ParticleSet::evaluate(params, footprint, width),
+            }
+        })
+        .collect()
+}
 
 /// A camera: thin lens perspective or orthographic.
 #[derive(Clone, Debug, PartialEq)]
@@ -648,9 +674,45 @@ pub struct Scene {
     pub render: RenderSettings,
     /// Images the environment refers to (HDRI, background plate), by index.
     pub bitmaps: Vec<Bitmap>,
+    /// The ambient effects (S4a, `FXAM`), in file order. Their particles live in the geometry
+    /// ([`Geometry::particle_sets`], built by [`Scene::build_particles`]).
+    pub effects: Vec<AmbientParams>,
 }
 
 impl Scene {
+    /// The pixel footprint of the scene's camera and image (the particles' minimum size).
+    pub fn pixel_footprint(&self) -> PixelFootprint {
+        PixelFootprint::of(&self.camera, self.render.width, self.render.height)
+    }
+
+    /// Evaluates the particles of [`Scene::effects`] for the scene's camera and image and puts them
+    /// in the geometry (the instance BVH is built again; the meshes and their BVHs are kept). Sets
+    /// of `kept` with the same parameters are reused instead of being evaluated again (only their
+    /// BVH is built again when the camera or the image size changed). An effect whose material
+    /// index is out of range renders with the default material, like an instance. A scene with
+    /// more instances and effects than [`crate::geometry::MAX_INSTANCES`] keeps no particles.
+    pub fn build_particles(&mut self, kept: Vec<ParticleSet>) {
+        let width = crate::geometry::BvhWidth::native();
+        let instances = self.geometry.instances().to_vec();
+        let mut sets = particle_sets(&self.effects, kept, self.pixel_footprint(), width);
+        if instances.len() + sets.len() > crate::geometry::MAX_INSTANCES {
+            sets.clear();
+        }
+        let meshes = std::mem::take(&mut self.geometry).into_meshes();
+        // The instances come from a valid geometry and fit with the sets: this cannot fail.
+        self.geometry =
+            Geometry::with_particles(meshes, instances, sets, width).unwrap_or_default();
+    }
+
+    /// Builds the particles' BVHs again for the scene's camera and image size as they are now (a
+    /// host that changed them after loading the file): nothing is evaluated again.
+    pub fn refresh_particles(&mut self) {
+        let kept = self.geometry.take_particles();
+        if !kept.is_empty() || !self.effects.is_empty() {
+            self.build_particles(kept);
+        }
+    }
+
     /// Number of distinct triangles (each mesh counted once, however many instances use it).
     pub fn triangle_count(&self) -> usize {
         self.geometry.triangle_count()
@@ -662,9 +724,14 @@ impl Scene {
     }
 
     /// The front-most surface along `ray` within `[t_min, t_max]`: instance, triangle, point,
-    /// normals and barycentrics. Used to select, to focus by click and to place by reflection.
+    /// normals and barycentrics. Used to select, to focus by click and to place by reflection: the
+    /// parts only, never the particles of an effect.
     pub fn pick(&self, ray: &Ray) -> Option<Hit> {
-        self.geometry.intersect(ray)
+        self.geometry.intersect_class(
+            ray,
+            crate::simd::Isa::detect(),
+            crate::geometry::RayClass::Parts,
+        )
     }
 
     /// True when anything blocks `ray` within `[t_min, t_max]` (shadow rays, early exit).

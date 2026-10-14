@@ -18,6 +18,7 @@ USAGE:
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
     rt --write-e5b-example <scene.rsb>
+    rt --write-ambient-example <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
@@ -50,6 +51,9 @@ OPTIONS:
         --write-e5b-example <f>
                             write the E5b-1 parity scene (the E5 scene with caustic photons)
                             as an RSB file
+        --write-ambient-example <f>
+                            write the S4a parity scene (the example with dust, rain and
+                            snow: three ambient effects) as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -93,6 +97,8 @@ impl Options {
         if let Some((width, height)) = self.size {
             scene.render.width = width;
             scene.render.height = height;
+            // The particles' minimum size on screen depends on the image size.
+            scene.refresh_particles();
         }
         if self.denoise {
             scene.render.denoise |= DENOISE_IMAGE;
@@ -168,6 +174,11 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the S4a parity scene (`rt_core::example::ambient_scene`) as an RSB file.
+    WriteAmbientExample {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the procedural studio HDRI as a Radiance `.hdr` file.
     WriteStudioHdri {
         /// `.hdr` file to write.
@@ -229,6 +240,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e5 = None;
     let mut write_e5c = None;
     let mut write_e5b = None;
+    let mut write_ambient = None;
     let mut sheet_dir = None;
     let mut tone_table = false;
     let mut options = Options::default();
@@ -272,6 +284,9 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e5-example" => write_e5 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5c-example" => write_e5c = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5b-example" => write_e5b = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-ambient-example" => {
+                write_ambient = Some(PathBuf::from(value(&mut it, arg)?));
+            }
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -307,6 +322,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-e5b-example takes no other option".into());
         }
         return Ok(Command::WriteE5bExample { path });
+    }
+    if let Some(path) = write_ambient {
+        if args.len() != 2 {
+            return Err("--write-ambient-example takes no other option".into());
+        }
+        return Ok(Command::WriteAmbientExample { path });
     }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
@@ -382,6 +403,12 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::WriteAmbientExample { path } => {
+            let bytes = rt_core::example::ambient_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteStudioHdri { path } => {
             let bytes = crate::scenes::studio_hdri_file();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -418,6 +445,7 @@ pub fn run(command: Command) -> Result<(), String> {
             output,
             options,
         } => {
+            let started = std::time::Instant::now();
             let mut scene = match &input {
                 Input::Example => rt_core::example::scene(),
                 Input::File(path) => {
@@ -427,6 +455,7 @@ pub fn run(command: Command) -> Result<(), String> {
                 }
             };
             let (samples, threads) = options.apply(&mut scene);
+            let loaded = started.elapsed();
             let budget = options.budget(&scene);
             let (width, height) = (scene.render.width, scene.render.height);
             println!(
@@ -439,6 +468,14 @@ pub fn run(command: Command) -> Result<(), String> {
                 rt_core::simd::Isa::detect().name(),
                 scene.geometry.bvh_stats().width.lanes()
             );
+            if !scene.effects.is_empty() {
+                println!(
+                    "ambient: {} particles in {} effects, evaluated with their BVHs in {:.3} s",
+                    scene.geometry.particle_count(),
+                    scene.effects.len(),
+                    loaded.as_secs_f64()
+                );
+            }
 
             let result = render_progressive(&scene, samples, threads, budget);
             println!(
@@ -595,6 +632,13 @@ mod tests {
             })
         );
         assert!(parse(&["--write-e5c-example", "e5c.rsb", "--samples", "2"]).is_err());
+        assert_eq!(
+            parse(&["--write-ambient-example", "s4a.rsb"]),
+            Ok(Command::WriteAmbientExample {
+                path: "s4a.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-ambient-example", "s4a.rsb", "--samples", "2"]).is_err());
         assert_eq!(parse(&["--tone-table"]), Ok(Command::ToneTable));
         assert!(parse(&["--tone-table", "--example"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Command::Help));

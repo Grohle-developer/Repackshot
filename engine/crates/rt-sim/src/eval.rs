@@ -436,6 +436,31 @@ impl Evaluator {
     }
 }
 
+/// The colour a particle of tint seed `tint` multiplies its material's base colour by: one of the
+/// palette's tints (when the effect has a palette) times a brightness that varies by up to
+/// `± tint_var / 2` and a per-channel shift of up to `± 0.15 tint_var`.
+pub fn tint_factor(params: &AmbientParams, tint: u32) -> [f32; 3] {
+    let count = params.palette_count.min(crate::params::MAX_PALETTE as u32);
+    let base = if count > 0 {
+        params.palette[(tint % count) as usize]
+    } else {
+        [1.0; 3]
+    };
+    let v = params.tint_var.clamp(0.0, 1.0);
+    if v == 0.0 {
+        return base;
+    }
+    let h = mix64(u64::from(tint) ^ SALT_TINT);
+    let draw = |k: u64| unit(mix64(h ^ k)) - 0.5;
+    let brightness = 1.0 + v * draw(1);
+    let channel = |k: u64, b: f32| b * brightness * (1.0 + 0.3 * v * draw(k));
+    [
+        channel(2, base[0]),
+        channel(3, base[1]),
+        channel(4, base[2]),
+    ]
+}
+
 /// The first `min(params.count, max)` particles of an effect.
 pub fn evaluate(params: &AmbientParams, max: u32) -> Vec<Particle> {
     evaluate_range(params, 0, params.count.min(max))

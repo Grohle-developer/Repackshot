@@ -269,11 +269,21 @@ pub(crate) struct BruteForce<'a>(pub &'a crate::geometry::Geometry);
 #[cfg(test)]
 impl Tracer for BruteForce<'_> {
     fn trace(&self, ray: &Ray) -> Option<crate::geometry::RayHit> {
-        self.0.brute_force(ray).0
+        self.0
+            .brute_force(ray, crate::geometry::RayClass::Secondary)
+            .0
     }
 
     fn occluded(&self, ray: &Ray) -> bool {
-        self.0.brute_force(ray).1
+        self.0.brute_force(ray, crate::geometry::RayClass::Shadow).1
+    }
+
+    fn trace_camera(&self, ray: &Ray) -> Option<crate::geometry::RayHit> {
+        self.0.brute_force(ray, crate::geometry::RayClass::Camera).0
+    }
+
+    fn trace_shadow(&self, ray: &Ray) -> Option<crate::geometry::RayHit> {
+        self.0.brute_force(ray, crate::geometry::RayClass::Shadow).0
     }
 }
 
@@ -299,6 +309,9 @@ pub(crate) fn render_tile_brute_force(
 
 #[cfg(test)]
 mod passes_tests;
+
+#[cfg(test)]
+mod ambient_tests;
 
 #[cfg(test)]
 mod tests {

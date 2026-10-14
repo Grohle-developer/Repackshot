@@ -360,3 +360,29 @@ fn the_seed_and_the_time_change_the_particles() {
         assert!(p.radius >= 0.5 * 0.15 * 0.5 - 1.0e-6 && p.radius <= 0.5 * 0.15 * 1.5 + 1.0e-6);
     }
 }
+
+#[test]
+fn tints_pick_the_palette_and_vary_within_the_variation() {
+    let mut params = dust(1);
+    params.tint_var = 0.0;
+    assert_eq!(tint_factor(&params, 12345), [1.0; 3]);
+    params.palette_count = 2;
+    params.palette[0] = [1.0, 0.0, 0.0];
+    params.palette[1] = [0.0, 0.0, 1.0];
+    assert_eq!(tint_factor(&params, 4), [1.0, 0.0, 0.0]);
+    assert_eq!(tint_factor(&params, 5), [0.0, 0.0, 1.0]);
+    params.palette_count = 0;
+    params.tint_var = 1.0;
+    let mut spread = 0.0f32;
+    for t in 0..500u32 {
+        let c = tint_factor(&params, t.wrapping_mul(2_654_435_761));
+        for v in c {
+            assert!(
+                (0.5 * 0.85 - 1.0e-6..=1.5 * 1.15 + 1.0e-6).contains(&v),
+                "{c:?}"
+            );
+        }
+        spread = spread.max((c[0] - 1.0).abs());
+    }
+    assert!(spread > 0.3, "{spread}");
+}

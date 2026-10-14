@@ -16,11 +16,19 @@
 //! lexicographically. Because the order is total and the triangle test gives the same bits on
 //! every path, the result does not depend on the tree, its width or the traversal order: the BVH
 //! returns exactly what a brute-force loop over every triangle returns.
+//!
+//! **Particles** (S4a). Each particle set is one more entry of the top level, walked after the
+//! instance BVH: its own flat BVH in world space, one particle per leaf ([`ParticleSet`]), with
+//! the nearest part found so far as the end of the search (the particles behind the part are never
+//! visited; an any-hit query that a part already answered does not look at them). A hit offers
+//! `(t, instance of the set, particle id)` to the same order, so the same exactness holds. The
+//! [`RayClass`] of the query says which sets it sees.
 
 use super::bvh::{leaf_range, WideNode, WideNodes, EMPTY, LEAF};
 use super::mesh::Mesh;
+use super::particles::ParticleSet;
 use super::triangle::{packet_hits, Cull, PreparedRay, RayLanes, TriPacket};
-use super::{Geometry, RayHit};
+use super::{Geometry, RayClass, RayHit};
 use crate::math::Ray;
 use crate::simd::{Backend, Kernel, Mask, Vector};
 use std::marker::PhantomData;
@@ -143,24 +151,39 @@ struct BoxLanes<V> {
     inv: [V; 3],
     negative: [bool; 3],
     t_min: V,
+    /// Per axis, what moves the near plane of a box outwards by the padding (`-pad` for a min
+    /// plane, `+pad` for a max plane); the far plane moves by the opposite. Zero unless padded.
+    near_pad: [V; 3],
 }
 
 impl<V: Vector> BoxLanes<V> {
     #[inline(always)]
     fn new(r: &PreparedRay) -> Self {
+        BoxLanes::padded(r, 0.0)
+    }
+
+    /// The lanes for boxes grown by `pad` on every side (the particles a camera ray sees widened).
+    #[inline(always)]
+    fn padded(r: &PreparedRay, pad: f32) -> Self {
+        let near = |negative: bool| V::splat(if negative { pad } else { -pad });
         BoxLanes {
             org: [V::splat(r.org[0]), V::splat(r.org[1]), V::splat(r.org[2])],
             inv: [V::splat(r.inv[0]), V::splat(r.inv[1]), V::splat(r.inv[2])],
             negative: r.negative,
             t_min: V::splat(r.t_min),
+            near_pad: r.negative.map(near),
         }
     }
 }
 
 /// Slab test of every child of `node`: the bit mask of children hit within `[t_min, t_max]` and
-/// their entry distances.
+/// their entry distances. With `PAD` the boxes are grown by the padding of `r` first.
 #[inline(always)]
-fn node_test<V, const N: usize>(node: &WideNode<N>, r: &BoxLanes<V>, t_max: f32) -> (u32, [f32; N])
+fn node_test<V, const N: usize, const PAD: bool>(
+    node: &WideNode<N>,
+    r: &BoxLanes<V>,
+    t_max: f32,
+) -> (u32, [f32; N])
 where
     V: Vector<Array = [f32; N]>,
 {
@@ -169,12 +192,27 @@ where
     let [bx, by, bz] = &node.bounds;
     // `bool as usize` is 0 or 1: indexing the [min, max] pair needs no bounds check.
     let [nx, ny, nz] = r.negative.map(usize::from);
-    let tx0 = (V::load(&bx[nx]) - ox) * ix;
-    let ty0 = (V::load(&by[ny]) - oy) * iy;
-    let tz0 = (V::load(&bz[nz]) - oz) * iz;
-    let tx1 = (V::load(&bx[1 - nx]) - ox) * ix;
-    let ty1 = (V::load(&by[1 - ny]) - oy) * iy;
-    let tz1 = (V::load(&bz[1 - nz]) - oz) * iz;
+    let (mut lx0, mut ly0, mut lz0) = (V::load(&bx[nx]), V::load(&by[ny]), V::load(&bz[nz]));
+    let (mut lx1, mut ly1, mut lz1) = (
+        V::load(&bx[1 - nx]),
+        V::load(&by[1 - ny]),
+        V::load(&bz[1 - nz]),
+    );
+    if PAD {
+        let [px, py, pz] = r.near_pad;
+        lx0 = lx0 + px;
+        ly0 = ly0 + py;
+        lz0 = lz0 + pz;
+        lx1 = lx1 - px;
+        ly1 = ly1 - py;
+        lz1 = lz1 - pz;
+    }
+    let tx0 = (lx0 - ox) * ix;
+    let ty0 = (ly0 - oy) * iy;
+    let tz0 = (lz0 - oz) * iz;
+    let tx1 = (lx1 - ox) * ix;
+    let ty1 = (ly1 - oy) * iy;
+    let tz1 = (lz1 - oz) * iz;
     // NaN operands come first so that `max`/`min` drop them.
     let near = tz0.max(ty0.max(tx0.max(r.t_min)));
     let far = tz1.min(ty1.min(tx1.min(V::splat(t_max)))) * V::splat(ROBUST_SCALE);
@@ -254,12 +292,28 @@ fn walk<V, const N: usize, L: Leaves>(
 where
     V: Vector<Array = [f32; N]>,
 {
+    walk_with::<V, N, L, false>(nodes, root, ray, ordered, leaves, stack)
+}
+
+/// [`walk`] with every box grown by the padding of `ray` when `PAD` is set.
+#[inline(always)]
+fn walk_with<V, const N: usize, L: Leaves, const PAD: bool>(
+    nodes: &[WideNode<N>],
+    root: u32,
+    ray: &BoxLanes<V>,
+    ordered: bool,
+    leaves: &mut L,
+    stack: &mut Stack,
+) -> bool
+where
+    V: Vector<Array = [f32; N]>,
+{
     let base = stack.height();
     let mut current = root;
     loop {
         if current & LEAF == 0 {
             if let Some(node) = nodes.get(current as usize) {
-                let (bits, near) = node_test(node, ray, leaves.t_max());
+                let (bits, near) = node_test::<V, N, PAD>(node, ray, leaves.t_max());
                 if bits != 0 {
                     current = if ordered {
                         push_ordered(node, bits, &near, stack)
@@ -424,7 +478,118 @@ fn mesh_any<B: Backend>(mesh: &Mesh, r: &PreparedRay, cull: Cull, stack: &mut St
     }
 }
 
-/// Instance leaves for the nearest hit: each instance moves the ray into its mesh's space.
+/// Particle leaves for the nearest hit.
+struct NearestParticles<'a> {
+    set: &'a ParticleSet,
+    ray: &'a Ray,
+    t_min: f32,
+    camera: bool,
+    instance: u32,
+    best: &'a mut Best,
+}
+
+impl Leaves for NearestParticles<'_> {
+    #[inline(always)]
+    fn t_max(&self) -> f32 {
+        self.best.t
+    }
+
+    #[inline(always)]
+    fn leaf(&mut self, reference: u32, _: &mut Stack) -> bool {
+        for slot in self.set.leaf(reference) {
+            if let Some(t) = self
+                .set
+                .hit(slot, self.ray, self.t_min, self.best.t, self.camera)
+            {
+                self.best.offer(t, self.instance, self.set.id(slot));
+            }
+        }
+        false
+    }
+}
+
+/// Particle leaves for any hit.
+struct AnyParticle<'a> {
+    set: &'a ParticleSet,
+    ray: &'a Ray,
+    t_min: f32,
+    t_max: f32,
+    camera: bool,
+}
+
+impl Leaves for AnyParticle<'_> {
+    #[inline(always)]
+    fn t_max(&self) -> f32 {
+        self.t_max
+    }
+
+    #[inline(always)]
+    fn leaf(&mut self, reference: u32, _: &mut Stack) -> bool {
+        for slot in self.set.leaf(reference) {
+            if self
+                .set
+                .hit(slot, self.ray, self.t_min, self.t_max, self.camera)
+                .is_some()
+            {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Walks a particle set's BVH with `leaves` (in world space: `r` is the prepared world ray). For a
+/// camera ray the boxes (of the particles' real sizes) are grown by the set's camera padding, the
+/// most any of its particles is widened to the minimum size on screen.
+#[inline(always)]
+fn walk_particles<B: Backend, L: Leaves>(
+    set: &ParticleSet,
+    r: &PreparedRay,
+    ordered: bool,
+    camera: bool,
+    leaves: &mut L,
+    stack: &mut Stack,
+) -> bool {
+    let bvh = set.bvh();
+    let pad = if camera { set.camera_pad() } else { 0.0 };
+    match (&bvh.nodes, pad > 0.0) {
+        (WideNodes::Four(nodes), false) => walk(
+            nodes,
+            bvh.root,
+            &BoxLanes::<B::V4>::new(r),
+            ordered,
+            leaves,
+            stack,
+        ),
+        (WideNodes::Eight(nodes), false) => walk(
+            nodes,
+            bvh.root,
+            &BoxLanes::<B::V8>::new(r),
+            ordered,
+            leaves,
+            stack,
+        ),
+        (WideNodes::Four(nodes), true) => walk_with::<_, 4, _, true>(
+            nodes,
+            bvh.root,
+            &BoxLanes::<B::V4>::padded(r, pad),
+            ordered,
+            leaves,
+            stack,
+        ),
+        (WideNodes::Eight(nodes), true) => walk_with::<_, 8, _, true>(
+            nodes,
+            bvh.root,
+            &BoxLanes::<B::V8>::padded(r, pad),
+            ordered,
+            leaves,
+            stack,
+        ),
+    }
+}
+
+/// Instance leaves for the nearest hit: each instance moves the ray into its mesh's space; a
+/// particle set the query sees is walked in world space.
 struct NearestInstances<'a, B> {
     geometry: &'a Geometry,
     ray: &'a Ray,
@@ -485,7 +650,12 @@ impl<B: Backend> Leaves for AnyInstance<'_, B> {
 
 /// The nearest hit of `ray` in `geometry`.
 #[inline(always)]
-fn nearest<B: Backend>(geometry: &Geometry, ray: &Ray, stack: &mut Stack) -> Option<RayHit> {
+fn nearest<B: Backend>(
+    geometry: &Geometry,
+    ray: &Ray,
+    class: RayClass,
+    stack: &mut Stack,
+) -> Option<RayHit> {
     let r = PreparedRay::new(ray);
     if !r.has_interval() {
         return None;
@@ -520,12 +690,30 @@ fn nearest<B: Backend>(geometry: &Geometry, ray: &Ray, stack: &mut Stack) -> Opt
             );
         }
     }
-    leaves.best.hit()
+    // The particle sets after the parts: the nearest part bounds the search, so the particles
+    // behind it are never visited.
+    let mut best = leaves.best;
+    let first_set = geometry.instances().len() as u32;
+    for (k, set) in geometry.particle_sets().iter().enumerate() {
+        if set.is_empty() || !class.sees(set) {
+            continue;
+        }
+        let mut leaves = NearestParticles {
+            set,
+            ray,
+            t_min: r.t_min,
+            camera: class == RayClass::Camera,
+            instance: first_set + k as u32,
+            best: &mut best,
+        };
+        walk_particles::<B, _>(set, &r, true, class == RayClass::Camera, &mut leaves, stack);
+    }
+    best.hit()
 }
 
 /// Whether `ray` hits anything in `[t_min, t_max]`.
 #[inline(always)]
-fn any<B: Backend>(geometry: &Geometry, ray: &Ray, stack: &mut Stack) -> bool {
+fn any<B: Backend>(geometry: &Geometry, ray: &Ray, class: RayClass, stack: &mut Stack) -> bool {
     let r = PreparedRay::new(ray);
     if !r.has_interval() {
         return false;
@@ -538,7 +726,7 @@ fn any<B: Backend>(geometry: &Geometry, ray: &Ray, stack: &mut Stack) -> bool {
         backend: PhantomData,
     };
     let tlas = geometry.tlas();
-    match &tlas.nodes {
+    let parts = match &tlas.nodes {
         WideNodes::Four(nodes) => walk(
             nodes,
             tlas.root,
@@ -555,13 +743,42 @@ fn any<B: Backend>(geometry: &Geometry, ray: &Ray, stack: &mut Stack) -> bool {
             &mut leaves,
             stack,
         ),
+    };
+    if parts {
+        return true;
     }
+    // The particle sets only when no part is in the way. Plain loops, no closures: everything
+    // must inline into the dispatched kernel.
+    for set in geometry.particle_sets() {
+        if set.is_empty() || !class.sees(set) {
+            continue;
+        }
+        let mut leaves = AnyParticle {
+            set,
+            ray,
+            t_min: r.t_min,
+            t_max: r.t_max,
+            camera: class == RayClass::Camera,
+        };
+        if walk_particles::<B, _>(
+            set,
+            &r,
+            false,
+            class == RayClass::Camera,
+            &mut leaves,
+            stack,
+        ) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Kernel: nearest hit of one ray.
 pub(crate) struct NearestKernel<'a> {
     pub geometry: &'a Geometry,
     pub ray: &'a Ray,
+    pub class: RayClass,
 }
 
 impl Kernel for NearestKernel<'_> {
@@ -569,7 +786,7 @@ impl Kernel for NearestKernel<'_> {
 
     #[inline(always)]
     fn run<B: Backend>(self) -> Option<RayHit> {
-        nearest::<B>(self.geometry, self.ray, &mut Stack::new())
+        nearest::<B>(self.geometry, self.ray, self.class, &mut Stack::new())
     }
 }
 
@@ -578,6 +795,7 @@ pub(crate) struct NearestBatchKernel<'a> {
     pub geometry: &'a Geometry,
     pub rays: &'a [Ray],
     pub out: &'a mut [Option<RayHit>],
+    pub class: RayClass,
 }
 
 impl Kernel for NearestBatchKernel<'_> {
@@ -588,7 +806,7 @@ impl Kernel for NearestBatchKernel<'_> {
         let mut stack = Stack::new();
         for (ray, out) in self.rays.iter().zip(self.out.iter_mut()) {
             *out = if super::usable(ray) {
-                nearest::<B>(self.geometry, ray, &mut stack)
+                nearest::<B>(self.geometry, ray, self.class, &mut stack)
             } else {
                 None
             };
@@ -600,6 +818,7 @@ impl Kernel for NearestBatchKernel<'_> {
 pub(crate) struct AnyKernel<'a> {
     pub geometry: &'a Geometry,
     pub ray: &'a Ray,
+    pub class: RayClass,
 }
 
 impl Kernel for AnyKernel<'_> {
@@ -607,7 +826,7 @@ impl Kernel for AnyKernel<'_> {
 
     #[inline(always)]
     fn run<B: Backend>(self) -> bool {
-        any::<B>(self.geometry, self.ray, &mut Stack::new())
+        any::<B>(self.geometry, self.ray, self.class, &mut Stack::new())
     }
 }
 
@@ -616,6 +835,7 @@ pub(crate) struct AnyBatchKernel<'a> {
     pub geometry: &'a Geometry,
     pub rays: &'a [Ray],
     pub out: &'a mut [bool],
+    pub class: RayClass,
 }
 
 impl Kernel for AnyBatchKernel<'_> {
@@ -625,15 +845,19 @@ impl Kernel for AnyBatchKernel<'_> {
     fn run<B: Backend>(self) {
         let mut stack = Stack::new();
         for (ray, out) in self.rays.iter().zip(self.out.iter_mut()) {
-            *out = super::usable(ray) && any::<B>(self.geometry, ray, &mut stack);
+            *out = super::usable(ray) && any::<B>(self.geometry, ray, self.class, &mut stack);
         }
     }
 }
 
-/// The reference the BVH is tested against: every triangle of every instance, in order, with
-/// the same scalar watertight test and the same tie-break.
+/// The reference the BVH is tested against: every triangle of every instance and every particle
+/// the class sees, in order, with the same scalar tests and the same tie-break.
 #[cfg(test)]
-pub(crate) fn brute_force(geometry: &Geometry, ray: &Ray) -> (Option<RayHit>, bool) {
+pub(crate) fn brute_force(
+    geometry: &Geometry,
+    ray: &Ray,
+    class: RayClass,
+) -> (Option<RayHit>, bool) {
     use super::triangle::watertight;
     let r = PreparedRay::new(ray);
     if !super::usable(ray) || !r.has_interval() {
@@ -653,6 +877,19 @@ pub(crate) fn brute_force(geometry: &Geometry, ray: &Ray) -> (Option<RayHit>, bo
             any |= watertight(&local, a, b, c, local.t_max, prepared.cull).is_some();
             if let Some(h) = watertight(&local, a, b, c, best.t, prepared.cull) {
                 best.offer(h.t, instance, triangle as u32);
+            }
+        }
+    }
+    let first_set = geometry.instances().len() as u32;
+    for (k, set) in geometry.particle_sets().iter().enumerate() {
+        if !class.sees(set) {
+            continue;
+        }
+        let camera = class == RayClass::Camera;
+        for slot in 0..set.len() {
+            any |= set.hit(slot, ray, r.t_min, r.t_max, camera).is_some();
+            if let Some(t) = set.hit(slot, ray, r.t_min, best.t, camera) {
+                best.offer(t, first_set + k as u32, set.id(slot));
             }
         }
     }
