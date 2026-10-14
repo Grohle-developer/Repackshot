@@ -1486,8 +1486,10 @@ comentario de por qué es correcto, el resto del *crate* mantiene
 ### 6.1 · El puerto del visor (`src/ui/ports.ts`)
 
 La interfaz no importa `render`: `main.ts` construye un `ViewportPort`
-sobre el motor que está en pantalla y se lo entrega. Es lo único que la
-interfaz sabe del visor:
+sobre el motor que está en pantalla y se lo entrega (y, desde M3a, un
+`GraphPreviewPort` sobre los *workers* de los grafos, con el que el editor
+de material pide las esferas de sus nodos; sin él no las dibuja). Es lo
+único que la interfaz sabe del visor:
 
 - **Imagen y tamaño**: `kind` (`'preview'` o `'pathtracer'`), `canvas`,
   `backdrop` (la imagen del modo Completo, bajo el lienzo) y `resize`.

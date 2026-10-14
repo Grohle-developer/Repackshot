@@ -2178,8 +2178,8 @@ E6 aún no existía y se escribió aquí, de las fuentes públicas, como
 contrato para Rust. (6) Lo que lee los parámetros del material (el Doctor,
 las esferas del catálogo) ve en *Nodos* los de su familia o la media del
 grafo: las miniaturas usan la media; el Doctor, los parámetros. (7) Hay
-**tres ventanas** (render, Ajustes, editor de material): `UI.md` §4.3 se
-actualiza; el editor no es modal. (8) Los colores de este paso son los de
+**tres ventanas** (render, Ajustes, editor de material): `UI.md` §4.3 y la línea
+del `README` se actualizan; el editor no es modal. (8) Los colores de este paso son los de
 `MATERIAL_GRAPHS`, de criterio propio: un vistazo **Fable** a los diez
 ejemplos (sobre todo mármol y madera) queda pendiente.
 

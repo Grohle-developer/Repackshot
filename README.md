@@ -53,8 +53,8 @@ today.
   edits whatever is selected, and the scene when nothing is. Below,
   *Animation*, *Queue* and **Render…**, which opens a KeyShot-style render
   window: output name and folder, pixels or print size with DPI, finish by
-  samples or time, *Render* or *+ Add to queue*. No ribbon, and only two
-  windows in the whole app: Render and Settings.
+  samples or time, *Render* or *+ Add to queue*. No ribbon, and only three
+  windows in the whole app: Render, Settings and the material editor.
 - **16 product types** (jewellery, watches, fragrance, cosmetics,
   electronics, appliances, indoor and outdoor furniture, footwear, textile,
   packaging, automotive, tools, eyewear, medical, generic). *Build studio*
