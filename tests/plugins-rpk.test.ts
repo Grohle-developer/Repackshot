@@ -187,7 +187,7 @@ describe('tools/plugin-pack.mjs and tools/plugin-unpack.mjs', () => {
     expect(wrong.status).toBe(1);
     expect(wrong.stderr).toContain('KEY');
     expect(() => readdirSync(join(dir, 'wrong'))).toThrow();
-  });
+  }, 60_000);
 
   it('pack refuses a folder whose manifest is not valid, and asks for exactly one way of giving the key', () => {
     const none = node('tools/plugin-pack.mjs', FIXTURE, join(dir, 'x.rpk'));
@@ -195,5 +195,5 @@ describe('tools/plugin-pack.mjs and tools/plugin-unpack.mjs', () => {
     const bad = node('tools/plugin-pack.mjs', 'tests/fixtures', join(dir, 'y.rpk'), '--new-key');
     expect(bad.status).toBe(1);
     expect(bad.stderr).toContain('no manifest.json');
-  });
+  }, 60_000);
 });

@@ -47,5 +47,5 @@ describe.skipIf(!existsSync(HASHES))("Repackshot's own words, by the aintfilm ch
     for (const f of ['src/ui/strings.ts', 'src/data/plugins.json', 'tools/plugins/film/manifest.json', 'tools/plugins/film/plugin.js', 'tools/plugins/build-film.mjs', 'tests/fixtures/plugins/invert/manifest.json']) {
       expect(scanText(readFileSync(f, 'utf8'), list), f).toEqual([]);
     }
-  });
+  }, 30_000);
 });

@@ -706,6 +706,22 @@ cancelación, **siempre con el motor completo**. Cada resultado guarda la
 imagen del motor y, si hubo post-procesado, también la de la IA, para
 compararlas con un divisor deslizable.
 
+**Plugins** (P6; `ARCHITECTURE.md` §9). Herramientas de otros programas que
+trabajan sobre un **resultado terminado**: se instalan en *Ajustes ▸ Plugins*
+desde el registro de Repackshot o desde un archivo `.rpk`, con su clave de
+activación y bajo **su propia licencia** (cerrada en el de película, y se dice).
+Cada plugin instalado con el *slot* `render.plugins` tiene su bloque en la
+sección **Plugins** de la ventana de render, dibujado desde su manifiesto: sus
+recetas (con sus nombres públicos), sus mandos, una **vista previa** del
+resultado actual por el plugin con los números que el plugin da y **Aplicar**,
+que deja un **resultado nuevo** en el historial junto a su origen, con su
+procedencia (`provenance: { plugin, version, recipe, controls }`). La receta y
+los mandos de cada plugin son del proyecto (`render.plugins`): deshacibles y
+guardados con él; un proyecto anterior no tiene ninguno. Un plugin no toca el
+proyecto: recibe píxeles y devuelve píxeles. El primero es la **simulación de
+película de aintfilm** (la app de edición de fotos y simulación de película del
+mismo desarrollador, en desarrollo).
+
 ### 3.9 · Estudios, biblioteca propia y proyecto
 
 Un **estudio** guarda una cámara, un montaje de luz y entorno, un set de

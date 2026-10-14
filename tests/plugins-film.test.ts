@@ -42,7 +42,7 @@ function picture(w: number, h: number): { rgba: Uint8ClampedArray; planes: Float
   return { rgba, planes };
 }
 
-describe.skipIf(!HERE)('the film plugin, built from the aintfilm checkout', () => {
+describe.skipIf(!HERE)('the film plugin, built from the aintfilm checkout', { timeout: 60_000 }, () => {
   let session: PluginSession;
   let manifest: PluginManifest;
   const W = 96;

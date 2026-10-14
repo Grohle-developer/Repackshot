@@ -5229,7 +5229,7 @@ resultados muestra la vista previa de un TIFF de 32 bits; capturas
 `docs/ui/render-format-tiff.png`. `UI.md`, `ARCHITECTURE.md` §5,
 CHANGELOG.
 
-## P6 · Plugins, y el plugin de película (aintfilm) — **Opus**, decisión **Fable**
+## P6 · Plugins, y el plugin de película (aintfilm) — **Opus**, decisión **Fable** — hecha
 
 Petición del usuario (14-10): un apartado **Plugins** en *Ajustes* con la
 herramienta de añadir plugins a la vista, y como primer plugin
@@ -5328,6 +5328,102 @@ construido desde el *checkout*). `UI.md`, `ARCHITECTURE.md` (§1: los
 plugins no son dependencias: los instala el usuario, con su licencia;
 § nuevo: el formato `.rpk`, el ABI y lo que el cifrado protege), `SPEC.md`
 §3.8, CHANGELOG, `release-notes` (cómo publicar el `.rpk`).
+
+**Hecho** (2026-10-14). **El paquete** (`src/plugins/rpk.ts`, el mismo código en
+la página y en las herramientas por la eliminación de tipos de Node): `RPK1`, la
+cabecera en claro de la decisión 1 y AES-256-GCM de un contenedor plano; el
+cifrado autentica además la cabecera (menos su `sha256`), así que una cabecera
+editada no abre; el `sha256` y la longitud se comprueban antes de descifrar.
+`tools/plugin-pack.mjs` (`--new-key`, que solo la imprime, `--key`, `--key-file`)
+y `tools/plugin-unpack.mjs`. **El anfitrión** (`src/plugins/`, una capa nueva de
+`tests/boundaries.test.ts`: `plugins → core, data`): el registro
+`src/data/plugins.json` con su cargador; el almacén en IndexedDB (paquete cifrado
+y clave aparte en una transacción; en memoria sin él); la instalación del
+registro (tamaño y `sha256` del registro, cabecera con su `id` y su `version`,
+la clave que ya tiene una actualización, la de `keyUrl` o la tecleada) y desde
+archivo; el arranque (descifrado en memoria, `WebAssembly.compile` y la regla
+de `noImports`, `plugin.js` en un Blob URL como Worker de módulo, `init` con el
+módulo y los archivos transferidos) y el ABI v1 (`info`, `presets`, `render`,
+`cancel`, más `ready`, `cancelled` y `error`); el servicio que pasa un resultado
+por un plugin (un EXR como planos lineales de su luz, si no RGBA8; la vista
+previa a 480 px; el alfa del origen de vuelta). **Ajustes ▸ Plugins** (grupo
+*Sistema*, antes de *Almacenamiento*) y **Ventana de render ▸ Plugins**
+(después de *IA*), los dos dibujados desde los datos: el registro y el
+manifiesto; los ajustes en `RenderSettings.plugins` (deshacibles, un arrastre
+una entrada, con el proyecto; un proyecto anterior tiene `{}`); *Aplicar* deja
+un resultado nuevo con `provenance: { plugin, version, recipe, controls, from,
+label }`, guardado donde su origen y abierto en el visor comparado con él, que
+dice de dónde sale. **El plugin de película**: `tools/plugins/film/manifest.json`
+(los mandos de §9 del manual de aintfilm: formato del negativo, exposición y
+forzado, color y su modelo, contraste, saturación, calidez, exposición de la
+copia, copia o escaneo, grano —cantidad, tamaño, color, sesgo tonal, suavidad,
+enfoque del escáner, respuesta a la luz, escaneo—, halación, difusión, objetivo,
+motor de grano, semilla), `tools/plugins/film/plugin.js` (nuevo: el ABI en C con
+`inf_render_rgba` e `inf_render_linear_rgba` y un registro lateral vacío, sin
+retener vistas entre llamadas) y `tools/plugins/build-film.mjs --aintfilm`, que
+lo monta y lo empaqueta. **El paquete construido**: `film-0.1.0.rpk`, versión
+**0.1.0** (la de aintfilm; motor 0.1.0), **1 752 919 bytes**, `sha256`
+**`9f377b5c2f34a68d8d20e2b658ce760ca1d3f538ee0b327f0e0accd5484652da`**, 136
+archivos y 127 recetas (51 películas, su color solo, 8 granos, 13 filtros, 4
+objetivos), fijado en el registro con la `url` de la release v0.1.6 y `keyUrl`
+vacío; la clave la tiene el responsable (fuera del repositorio). Tests: 46
+nuevos en cinco archivos (`plugins-rpk`, `plugins-host`, `plugins-settings`,
+`plugins-brands` y `plugins-film`, este y una parte del anterior solo donde hay
+un *checkout* de aintfilm), con 22 mutaciones comprobadas (cada una rompe lo que
+un test guarda y ese test falla; una más sobrevive a propósito: quitar la
+comprobación de la longitud del cifrado, que su `sha256` ya cubre); `tools/plugins-check.mjs` en verde
+con el paquete de verdad (instalar del servidor local con la clave tecleada,
+una clave errónea, quitar e instalar desde archivo, la vista previa con los
+números del plugin, deshacer, *Aplicar*, acromático, recargar) y las capturas
+`docs/ui/settings-plugins.png` y `docs/ui/render-plugins-film.png`.
+`docs/release-notes/plugins.md`: cómo se publica el `.rpk` y qué se hace con la
+clave.
+
+**No encajó con el plan.** (1) **Los nombres públicos**: el árbol de aintfilm
+todavía enseña marcas (su M38-07, el renombrado, está pendiente; su
+`check:brands` está en rojo a propósito). Se usó lo decidido allí: una película
+es su id neutro en mayúsculas (*CN-01*, D113, desde `stocks-map.json`, hasta
+que el dueño elija nombres en M38-10, y entonces hay que reconstruir el paquete),
+con su ISO de caja; filtros y formatos, las palabras de D112 (*BLACK DIFFUSION*,
+*WARM DIFFUSION*, *SPARKLE*, *PEARL*, *INSTANT 54×86*, *15-PERF 70 MM*); granos
+y objetivos, palabras genéricas, con las del diccionario de aintfilm donde las
+hay. (2) **La comprobación de marcas**: `scripts/check-brands.mjs` de aintfilm
+solo recorre su propia lista de rutas y el *checkout* no tiene `node_modules`
+(importa `typescript`), así que no se puede ejecutar desde allí sobre otra
+carpeta. Se reescribió su mecanismo, tal como lo describe, en
+`tools/plugins/brand-scan.mjs` (lee la lista de *hashes* del *checkout*, que no
+se copia) y se comprobó además con las funciones exportadas del propio script
+(con un *hook* de resolución hacia un TypeScript del sistema, sin tocar el
+*checkout*): los dos dan lo mismo. Limpios: el manifiesto, `recipes.json`,
+`plugin.js`, el logo, la licencia y las cadenas de Repackshot. Quedan, dentro
+del paquete cifrado y sin enseñarse nunca, las etiquetas internas del motor: el
+módulo (16 coincidencias, su `--dist` está en rojo por lo mismo), los ajustes de
+los *presets* (490: el tipo de los filtros de difusión y la clave del papel del
+modelo espectral, que tiene cada *preset* completo), `engine.json` (3: dos ids de
+formato) y `NOTICES.txt` (9, lo que una licencia exige nombrar); son de su M38-07
+y M38-08 (renombrar etiquetas de *serde* por parche). (3) **Los *presets* van
+completos**, no dispersos: el *build* los lee con `settingsFromValue` del propio
+*checkout* (ejecutado con la eliminación de tipos de Node) para que el pegamento
+escale valores sin adivinar los valores por defecto de *serde*; son 1,1 MB del
+paquete. Una receta de *color solo* trae el grano por defecto del motor (así
+rellena *serde* un *preset* que no lo dice): el interruptor *Grano* lo quita.
+(4) Se añadieron al manifiesto, sin estar en la lista: `groups` (los títulos de
+los grupos), `minLabel` en un deslizador (la regla de aintfilm de que el tope
+izquierdo dice *PRESET* y no manda nada), `aux` y `notices`; y al ABI, `init`,
+`ready`, `cancelled` y `error`. (5) El logo del registro no puede ir en línea (es
+del paquete cerrado): antes de instalar se ve un icono neutro. `homepage` es
+`https://aintfilm.app`, el dominio que configura `src/lib/appConfig.ts` de
+aintfilm; `publisher`, *Grohle*. La semilla por defecto es la del motor (1).
+(6) *Aplicar* guarda la imagen donde se guardó su origen, como la de la IA: en
+el navegador es una descarga. Cancelarlo para el *worker* (el render del módulo
+es una sola llamada síncrona) y el siguiente uso lo arranca de nuevo. (7) La
+vista previa a 480 px enseña el grano de un negativo pequeño (*75 µm por
+píxel*): es lo que dice el motor; *Aplicar* lo hace al tamaño del resultado. (8)
+Las herramientas necesitan Node 22.18 o posterior. (9) `modelCatalogue()` de
+`src/main.ts` lee `?testModels=` con `atob` sin decodificar UTF-8 (un nombre con
+acentos saldría mal); el de plugins lo hace bien; el de modelos no se tocó. (10)
+El lanzador no cambia (el almacén es IndexedDB también en WebView2) y la prueba
+en un Windows real queda en la lista de `docs/release-notes/plugins.md`.
 
 ## Orden sugerido
 

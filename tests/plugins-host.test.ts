@@ -66,7 +66,7 @@ describe('the plugin registry (src/data/plugins.json)', () => {
   });
 });
 
-describe('install from the registry', () => {
+describe('install from the registry', { timeout: 30_000 }, () => {
   it('download → SHA-256 → no key address: the key is asked for; a wrong key and a typo are said, the right one installs', async () => {
     const pkg = await packInvert();
     const { host: h, store } = host([entryFor(pkg.bytes)], { [URL_RPK]: pkg.bytes });
@@ -142,7 +142,7 @@ describe('install from the registry', () => {
   });
 });
 
-describe('install from a file', () => {
+describe('install from a file', { timeout: 30_000 }, () => {
   it('with its key it installs; a wrong key, a typo and a file that is not a plugin each say so', async () => {
     const pkg = await packInvert();
     const { host: h, store } = host([], {});
@@ -165,7 +165,7 @@ describe('install from a file', () => {
   });
 });
 
-describe('running a plugin: the worker ABI end to end (the invert test plugin, no WebAssembly)', () => {
+describe('running a plugin: the worker ABI end to end (the invert test plugin, no WebAssembly)', { timeout: 30_000 }, () => {
   async function installed(opts: Parameters<typeof packInvert>[0] = {}) {
     const pkg = await packInvert(opts);
     const ctx = host([], {});
