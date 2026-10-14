@@ -287,9 +287,88 @@ izquierda a derecha) o lo que **toca** (*cruce*, de derecha a izquierda)
 
 Una **instancia** de material: `id`, `name`, `preset` (clave de origen o
 `null` si es propio), `family`, `category`, `params` (los del catálogo,
-todos editables), `wear` (los campos de desgaste), `textures` (color,
-rugosidad, metal, normal, alfa; proyección caja/plana/cilíndrica/UV;
-escala, rotación, desplazamiento), `bevelRadiusMm`.
+todos editables), `wear` (los campos de desgaste), `textures` (las
+texturas de imagen y las etiquetas: abajo), `bevelRadiusMm`.
+
+**Texturas de imagen** (fase M2a, `src/core/textures.ts`). `textures`
+tiene seis **ranuras**, cada una vacía o con una imagen: `color`,
+`roughness`, `metal`, `normal`, `alpha` y `emission`; un **mapeado
+común** (`mapping`) y las **etiquetas** (`labels`). Cada ranura lleva la
+imagen (`ImageRef`: id, nombre, ancho y alto), su mapeado propio o `null`
+(usa el común), y cómo lee la imagen: `channel` (R, G, B, A o L,
+luminancia; las escalares —rugosidad, metal, alfa— leen un canal: glTF
+empaqueta la rugosidad en G y el metal en B), `invert` (1 − valor: un mapa
+de brillo como rugosidad), `strength` (normal: cuánto dobla la normal, el
+`scale` de glTF; emisión: el multiplicador de la radiancia), `height`
+(normal: es un mapa de alturas, de relieve, con `strength` en mm de
+relieve del blanco, y no uno de normales en espacio tangente), `cutout` y
+`cutoff` (alfa: recorte duro en el umbral, el `MASK` de glTF; sin él, el
+valor es una cobertura que mezcla) y `tint` (emisión: el color lineal que
+multiplica la imagen, el `emissiveFactor` de glTF). La imagen
+**multiplica** el valor del parámetro (color × color base, rugosidad ×
+rugosidad, metal × metal, alfa × opacidad), la regla de glTF, para que un
+material importado sea el del archivo; la emisión se **suma**: tinte ×
+imagen × intensidad, en radiancia (1 es blanco a exposición 0, como la
+película del motor). En un emisor (familia `EMISSIVE`) la ranura de color
+tiñe lo que emite.
+
+El **mapeado**: `projection` (`UV`, `BOX` caja, `PLANAR` plana,
+`CYLINDRICAL` cilíndrica, `SPHERICAL` esférica), `axis` (X, Y, Z: el eje
+por el que mira la plana, el del cilindro, el de los polos), `uvSet` (UV:
+el primer juego de la malla o el segundo), `sizeMm`, `rotationDeg`,
+`offset`, `repeat` (en u y v) y `wrap` (fuera de la imagen: *repetir*,
+*estirar el borde* o *espejo*). Convenciones, que son el contrato con la
+vista previa y con el motor (M2b): las coordenadas de textura tienen **v
+hacia arriba** y (0, 0) es la esquina inferior izquierda de la imagen (el
+convenio de OBJ, FBX, Collada y USD; la v de glTF baja y su lector la da
+la vuelta); un téxel se lee en la columna `u·ancho` y la fila `(1 − v)·alto`
+de las filas desde arriba. Las proyecciones trabajan en el espacio propio
+de la pieza (sus coordenadas de malla, mm, Z arriba): la textura se mueve,
+gira y escala con la pieza, y un material compartido cae igual en cada
+pieza que lo lleva. *Plana* mira por su eje (Z desde arriba, Y desde
+delante, X desde +X); *Caja* mezcla las tres por |n|⁴ (una cara
+perpendicular a un eje toma solo ese eje, un bisel a 45° mitad y mitad) y
+vista desde fuera ninguna cara sale en espejo; *Cilíndrica* da una vuelta
+por repetición con el centro de la imagen delante (−Y para el eje Z);
+*Esférica* va de polo a polo. Después, el giro y la repetición:
+`uv = R(giro)·(c ⊙ repetición) + desplazamiento` (más ½ en las
+proyecciones, que centran la imagen en el origen de la pieza).
+
+**Por qué el tamaño va en mm y no en tamaños de pieza**: una textura de
+imagen es la foto de algo con tamaño propio (veta, tejido, carbono, una
+etiqueta) que no depende de la pieza; el material se comparte entre piezas
+de tamaños distintos y viaja en la biblioteca a otros productos, y debe
+caer igual en todos; el motor trabaja en mm. `sizeMm` es lo que ocupa una
+repetición de la imagen a lo ancho (su alto sigue a las proporciones de la
+imagen; en la cilíndrica es la circunferencia para la que está dibujada,
+que fija su alto). La primera imagen de un material sin ninguna pone
+`sizeMm` al tamaño de la pieza, para que se vea entera de una vez;
+*Ajustar a la pieza* lo vuelve a hacer con el lado mayor de las piezas que
+lo llevan. El procedural (desgaste, veta y trama de E6) sigue en tamaños
+de pieza, porque es una receta y no una foto.
+
+**Etiquetas**: imágenes con alfa puestas sobre la pieza con una
+proyección plana desde la normal del punto donde se colocan: `origin`,
+`normal` y `uAxis` (la derecha de la imagen sin giro) en el espacio propio
+de la pieza, `widthMm` (el alto sigue a la imagen), `rotationDeg` (en
+torno a la normal, antihorario visto desde fuera), `depthMm` (hasta dónde
+llega delante y detrás de su plano; 0, la mitad de su lado mayor) y su
+acabado donde cubre: `roughness`, `coat` (barniz) y `relief` (cuánto
+sobresale el borde del papel). Cubre su rectángulo, a menos de su alcance
+de su plano y solo en las superficies que miran a su lado. Varias por
+material, en orden (cada una sobre las anteriores); como las proyecciones,
+viven en el espacio de la pieza: un material compartido las lleva en cada
+pieza (lo de KeyShot; para una pieza sola, *Convertir en material
+propio*).
+
+Las **imágenes** viven en el registro (`core/images.ts`) como el archivo
+PNG o JPEG que eran, con un id que nombra su contenido (`tex:` y 16
+cifras de su SHA-256): la misma imagen en dos materiales, o importada dos
+veces, es una. Límites: 16 MB y 8192 píxeles de lado por imagen, 64 MB de
+texturas por proyecto. Toda edición de ranuras, mapeados y etiquetas es
+una acción del *store* (`texture/*`), deshacible (un arrastre, una
+entrada), y convierte el material en propio. La biblioteca guarda el
+mapeado, no las imágenes.
 
 Familias y lo que significan para el motor:
 
@@ -701,7 +780,34 @@ importar con calidad ajustable, conservando **cada cara CAD** como rango
 de triángulos (lo que hace que *Caras* seleccione una cara entera) y los
 **colores y nombres** del ensamblaje. FBX trae jerarquía, materiales,
 texturas incrustadas y unidades. Los formatos de malla traen lo que
-traen; el importador reconstruye normales y aristas vivas si faltan.
+traen; el importador reconstruye normales y aristas vivas si faltan, y
+conserva las normales por vértice del archivo cuando las trae.
+
+**Materiales y texturas del archivo** (fase M2a). glTF y GLB traen sus
+materiales leídos de su propio JSON: el PBR metálico-rugoso (color base,
+metal-rugosidad con G rugosidad y B metal, normal con su `scale`, emisión
+con su factor y `KHR_materials_emissive_strength`, `alphaMode` y
+`alphaCutoff`; la oclusión no tiene ranura y se avisa),
+`KHR_materials_transmission`, `_ior` y `_clearcoat`, y
+`KHR_texture_transform` y el muestreador de cada mapa como su mapeado. OBJ
+lee sus bibliotecas `.mtl` (`Kd`, `Ks`, `Ns`, `d`/`Tr`, `Ni`, `Ke` y la
+extensión PBR `Pr`, `Pm`, `Pc`; `map_Kd`, `map_Pr`, `map_Ns`/`map_Ks` como
+rugosidad invertida, `map_Pm`, `map_d`, `norm`, `map_Bump`/`bump` como
+mapa de alturas salvo que su nombre diga que es de normales, `map_Ke`, con
+`-s`, `-o`, `-bm`, `-clamp` e `-imfchan`). FBX, Collada, 3MF, USD y 3DM
+traen los mapas que su lector de three.js carga (color, rugosidad, metal,
+normal o relieve, alfa, emisión, con su transformación). Las imágenes y
+bibliotecas que un modelo nombra y no lleva dentro (las de un OBJ, un
+`.gltf` con sus `.bin`, un FBX o un `.dae` con sus imágenes) se buscan
+entre los archivos **elegidos o soltados con él**, por nombre. Las UV se
+guardan por vértice, y un segundo juego si lo hay (glTF `TEXCOORD_1`, FBX
+`uv1`). Las imágenes PNG y JPEG viajan en el proyecto tal cual; las demás
+se pasan a PNG en el navegador cuando el lector las ha decodificado, y las
+que no, se dejan fuera. La hoja dice cuántas imágenes se guardan y cuánto
+pesan, y cada una que no (más de 16 MB, más de 8192 píxeles de lado, no
+es PNG ni JPEG, no estaba entre los archivos elegidos, el proyecto ya
+lleva 64 MB) y por qué; con *material predeterminado* no se importa
+ninguna.
 
 **Hoja de importación** (en línea, no modal), con los valores por defecto
 ya puestos: **unidades** del archivo (mm, cm, m, pulgadas; detectadas

@@ -659,6 +659,33 @@ kbd,
 .menu-item .check {
   width: 14px;
 }
+/* A row with a trailing action (the camera list's pencil): the item takes the width, the action sits at the end. */
+.menu-row {
+  display: flex;
+  align-items: stretch;
+}
+.menu-row .menu-item {
+  flex: 1;
+  min-width: 0;
+}
+.menu-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  margin-left: 2px;
+  border-radius: var(--radius-s, 4px);
+  color: var(--ink-2);
+}
+.menu-action:hover:not(:disabled),
+.menu-action:focus-visible {
+  background: var(--hover);
+  color: var(--ink);
+}
+.menu-action:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
 .menu-item[aria-expanded='true'] {
   background: var(--hover);
 }

@@ -7,11 +7,26 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Interfaz
 
+- La lista de cámaras del visor (arriba a la derecha) enseña la óptica de cada cámara (*85 mm · f/5.6*) y un **lápiz** por fila que abre la ficha de esa cámara en el inspector (nombre, *Activar*, *Mirar a través*, óptica y posición) con la pestaña *Cámaras* abierta; y la sección *Cámara* del inspector de escena dice **qué cámara edita** (la activa, por su nombre), con el mismo lápiz y una nota de que cada cámara tiene su óptica y su posición (aviso del usuario: no se veía que se estuviera editando *Cámara 1*).
+- **Texturas de imagen** (M2a): el inspector de un material gana la sección **Texturas**, con seis ranuras —*Color*, *Rugosidad*, *Metal*, *Normal*, *Alfa* y *Emisión*—, cada una con su vista previa, *Cargar…* (PNG o JPEG; el diálogo del sistema en escritorio) y *Quitar*, y cómo lee su imagen (canal, invertir, intensidad del mapa de normales o de alturas, recorte y umbral del alfa, tinte e intensidad de la emisión); y un **mapeado** común: *Proyección* (*UV · Caja · Plana · Cilíndrica · Esférica*), eje, juego UV, tamaño en mm con *Ajustar a la pieza*, giro, desplazamiento, repetición y bordes. Todo deshacible, un arrastre una entrada (M2a).
+- **Etiquetas** (M2a): *Añadir etiqueta…* elige una imagen con alfa, y una pulsación sobre la pieza con un arrastre la coloca allí (plana desde la normal de la superficie, derecha) con su ancho; varias por material, en orden (*Traer delante*, *Enviar atrás*), con ancho, giro, alcance y su acabado (rugosidad, barniz, relieve del papel); **Mover etiqueta** la desliza por la superficie (M2a).
+- La vista **Rápido** dibuja todas las ranuras, las cinco proyecciones (la caja mezcla tres ejes, la cilíndrica y la esférica sin costura visible) y las etiquetas, con mipmaps, sobre el aspecto de siempre (luces, entorno, sombras, contorno). *Completo* y *Render* las pintan cuando el motor las lea (*próximamente*, M2b) (M2a).
+- La **hoja de importación** gana la sección **Texturas**: cuántas imágenes se guardan y cuánto pesan, y cada una que no, con el porqué (M2a).
 - **Reducir ruido** en la barra superior, a la derecha de *Rápido · Completo* (atajo `D`): el *denoise* del visor *Completo* en directo. Es el mismo interruptor que el botón del medidor y que la parte *Visor* de *Avanzado ▸ Reducción de ruido*: una sola verdad, la del proyecto, deshacible y guardada con él. En *Rápido* se ve deshabilitado (*Se aplica al modo Completo*). El paso *Rápido y Completo* del recorrido guiado lo nombra (U11).
 - **El visor *Completo* reduce el ruido mientras se acumula**: encenderlo limpia al momento lo acumulado (también con la imagen ya convergida) y apagarlo enseña en el fotograma siguiente la imagen ruidosa, sin volver a empezar; mientras se renderiza, la imagen limpia se refresca tan a menudo como cuesta un *denoise* (al menos cada `max(2 × su coste, 0,5 s)`) y nunca es de hace más de un *denoise*. Antes se refrescaba al principio, al final y solo cuando había pasado tres veces lo que costó el último, y entre medias se quedaba atrás (U11).
 
+### Importación
+
+- glTF y GLB traen sus **materiales con sus mapas** leídos de su JSON (color base, metal-rugosidad, normal con su escala, emisión con su factor y `KHR_materials_emissive_strength`, alfa con su modo y umbral; transmisión, IOR y barniz de sus extensiones; `KHR_texture_transform`); OBJ lee sus **`.mtl`** y sus imágenes (con `-s`, `-o`, `-bm`, `-clamp`, `-imfchan`); FBX, Collada, 3MF, USD y 3DM, los mapas que carga su lector. Las imágenes y bibliotecas que un modelo nombra se buscan entre los archivos **elegidos o soltados con él**; *Importar modelo…* deja elegir varios (M2a).
+- Las **UV** se conservan, también un **segundo juego** (glTF `TEXCOORD_1`), y las normales por vértice del archivo (M2a).
+
+### Proyecto
+
+- Las imágenes de textura **viajan en el proyecto** tal cual (PNG o JPEG, base64), una vez cada una, bajo un id que nombra su contenido: un proyecto guardado y abierto vuelve con los mismos bytes. Hasta 16 MB por imagen y 64 MB por proyecto. Los proyectos anteriores abren igual (M2a).
+
 ### Motor
 
+- El **contrato RSB de las texturas** queda escrito para M2b (`ARCHITECTURE.md` §5.2: sección `IMGS`, bloque de texturas de `MATL` desde el byte 100, UV en `MESH`); el escritor lo produce solo cuando se le pide, y hasta entonces los bytes de cualquier escena son los de antes (M2a).
 - **Ajuste de visor del *denoise*** (`Preset::VIEWPORT`): tres pasadas à-trous en vez de cinco y una varianza espacial 3 × 3 por debajo de cuatro muestras, con su propio halo de 24 filas. Frente a referencias de 1024 muestras, desde 8 muestras su error queda a menos de un 3 % del filtro completo y a 4 muestras entre un 3 y un 11 % por encima, en un 60 % del tiempo en un hilo y un 40 % por bandas. El render final y `rt` conservan el filtro completo y sus bits (`0xab15f290`) (U11).
 - El lanzador reduce el ruido del visor en un carril propio, un hilo que toma uno de los hilos del visor mientras trabaja (nunca uno de un render final), con pasadas de más o menos lo que dura un *denoise*; la web lo hace con los *workers* del visor por bandas, entre baldosa y baldosa. Los fotogramas del lanzador llevan el número de su imagen y el visor lo sigue sin pedir las sumas otra vez si no cambiaron (U11).
 

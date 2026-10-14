@@ -16,6 +16,7 @@ import { carryRuntime, defaultRenderState, reduceRender, type RenderAction, type
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
 import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
+import { reduceTextures, type TextureAction } from './textures';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
 export type ActionLabel = string | Label;
@@ -121,6 +122,7 @@ export type Action =
   | TransformAction
   | PrimitiveAction
   | MaterialAction
+  | TextureAction
   | StudioAction
   | CameraAction
   | AnimationAction
@@ -245,6 +247,9 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
     }
     case 'material':
       return reduceMaterials(state, action as MaterialAction);
+    case 'texture':
+      // The image maps and labels of a material (M2a).
+      return reduceTextures(state, action as TextureAction);
     case 'studio':
       return reduceStudio(state, action as StudioAction);
     case 'camera':

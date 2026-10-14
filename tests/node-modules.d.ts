@@ -18,6 +18,9 @@ declare module 'node:path' {
   export function join(...parts: string[]): string;
   export function resolve(...parts: string[]): string;
 }
+declare module 'node:zlib' {
+  export function inflateSync(data: Uint8Array): Uint8Array;
+}
 declare module 'node:os' {
   export function tmpdir(): string;
 }

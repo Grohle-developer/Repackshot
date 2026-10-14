@@ -1514,6 +1514,74 @@ Captura: `docs/ui/denoise-live.png`.
   `GET /api/render/state`, `liveDenoise.costMs`); el de la web sí, en sus
   atributos `data-*`. Ninguno lo pinta en texto.
 
+## U11b · Intensidad de la reducción de ruido — **Opus** (con U11)
+
+**Qué.** Petición del usuario: elegir cuánto *denoise* se aplica. En la
+ventana de render, *Avanzado ▸ Reducción de ruido* gana **Intensidad**
+(0–100 %, por defecto 100): la imagen entregada es la mezcla lineal
+`ruidosa × (1 − s) + limpia × s`, por canal, en luz lineal, en el motor
+(`rt_post::denoise` recibe `s`; `RNDR` gana `denoise_strength` como
+campo final; sin él, 100 %: *hashes* intactos). Vale para el render
+final, para el visor *Completo* (la misma intensidad: un solo mando) y
+para `rt --denoise-strength`. Con 0 % no se ejecuta el filtro (la imagen
+es la ruidosa, byte a byte). Deshacible, guardado en `advanced` del
+proyecto; proyectos anteriores abren al 100 %. Cadena `es`/`en`.
+
+**Criterio.** Test: 50 % da exactamente la media de las dos imágenes
+(bits), 0 % la ruidosa y 100 % la limpia; el *hash* `0xab15f290` con 100 %
+no cambia; paridad wasm.
+
+## E11 · Suavizado de bordes, de menos a más coste — **Opus** (tras U11)
+
+**Qué.** Petición del usuario: elegir en *Ajustes ▸ Motor de renderizado*
+el tipo de suavizado de bordes, ordenado de menos a más costoso. Dos
+listas, cada una en ese orden, sin cifras de coste inventadas (regla 10:
+el orden y una frase de ayuda, no porcentajes que nadie midió):
+
+**Visor Rápido** (three.js): *Ninguno · MSAA 2× · MSAA 4× · MSAA 8×*
+(por defecto 4×; el máximo que dé el dispositivo, y se dice cuál).
+
+**Completo y render** (el motor), el *filtro de píxel* y el extra en
+bordes, en una sola lista:
+1. **Ninguno**: todas las muestras por el centro del píxel (sin *jitter*
+   en el plano de imagen): bordes dentados, el más barato.
+2. **Estándar**: caja de 1 px con *jitter* uniforme (lo de hoy; por
+   defecto).
+3. **Suave**: filtro tienda de 2 px por muestreo de importancia del
+   filtro (la muestra se desplaza con la CDF inversa; peso 1).
+4. **Fino**: Blackman–Harris de 3 px (el filtro habitual de producción),
+   con CDF inversa tabulada en `f32` (256 entradas, calculada por un test
+   de referencia, sin `exp` ni `cos` en el bucle: determinismo).
+5. **Fino + bordes ×2**: lo anterior y el doble de muestras en los
+   píxeles de borde (los que en su vecindad 3×3 cambian de `partId` o de
+   material, o cuya profundidad salta más del 2 % de la distancia: los
+   pases de rayo central ya lo dan, determinista).
+6. **Fino + bordes ×4**: ídem con el cuádruple.
+
+Motor: `RNDR` gana `pixel_filter` (0 estándar) y `edge_supersample` (1)
+como campos finales; sin ellos, lo de hoy, *hashes* intactos. El
+*jitter* usa las mismas dimensiones de cámara con otra deformación. Las
+muestras extra de borde se reparten por pasadas (en cada pasada un píxel
+de borde recibe `k` muestras seguidas, con índices de muestra propios y
+consecutivos, de modo que la decisión depende solo de los pases y la
+imagen es la misma con cualquier número de hilos); el *denoise* y los
+pases reciben el número de muestras por píxel. El medidor del visor dice
+el filtro en uso cuando no es el estándar. Un **ajuste global** (no del
+proyecto), como el resto de *Motor de renderizado*; en escritorio vive en
+`settings.json` del lanzador (P3e). `UI.md` y `ARCHITECTURE.md`.
+
+**Depende de.** U11, E5b-1, X2 (pases).
+
+**Criterio.** Test: con *Ninguno* todas las muestras de un píxel generan
+el mismo rayo primario; con *Suave* y *Fino* la distribución del
+desplazamiento sigue la CDF del filtro (χ² sobre 10⁶ muestras); con
+bordes ×2 los píxeles de borde acaban con el doble de muestras y los
+demás con las mismas, con cualquier número de hilos (bits iguales); el
+ejemplo con *Estándar* conserva `0x223515c3`; paridad wasm; hoja
+`out/aa-sheet.html`: un recorte 4× del canto del frasco con los seis
+ajustes y el tiempo de cada uno (los tiempos van en el PR, no en la
+interfaz); captura `docs/ui/settings-aa.png`.
+
 ## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
 
 **Qué.** Tres partes, en este orden, cada una con su commit y sus
@@ -1609,6 +1677,642 @@ al final; sin él todo es como antes (*hashes* intactos).
 de vidrio y clave sola), el relMSE del adaptativo a igual tiempo es ≤
 0,6 × el uniforme (medido y en el PR); determinismo 1/4/16 hilos y
 teselas de dos tamaños; con el *flag* apagado, `0x223515c3` intacto.
+
+## Materiales y sets con efecto — decisión **Fable** (tras v0.1.5)
+
+Petición del usuario: importar materiales con sus normales, UV y
+texturas; crear y editar materiales con un sistema de nodos al uso; una
+capa de realismo en nuestros materiales; y montajes de luz que no se vean
+todos iguales. Cuatro cosas distintas, cuatro fases.
+
+**Por qué los montajes se ven iguales (diagnóstico Fable).** Un montaje
+hoy es solo la *forma* de la luz (fuentes, posición, tamaño, tono), con
+el nivel fijado por el tipo de producto, sobre el mismo fondo plano
+oscuro y el mismo suelo, y su miniatura es siempre un anillo mate con la
+misma cámara y la misma exposición. Pero la foto de producto no la hace
+la luz sola: la hacen la luz **y lo que se refleja** (tarjetas blancas y
+negras que dibujan los cantos de un cromado o la tira limpia de una
+botella), el **fondo** (un degradado con un charco de luz detrás del
+producto, un barrido, un fondo luminoso), el **suelo** (negro brillante
+con reflejo, espejo, blanco mate) y el **contraste de tono** (clave cálida
+y contra fría). Un montaje que solo mueve paneles no puede sorprender.
+
+**Decisión.** Un montaje pasa a ser un **set**: luces + tarjetas +
+fondo + suelo + exposición + entorno (+ una cámara sugerida), con una
+razón fotográfica escrita en la ayuda. Se añaden 16 sets diseñados
+(estilo nuevo `SETS`, el primero de la lista) y los 16 rigs de tipo de
+producto se rediseñan con los mismos criterios; los 72 montajes
+anteriores se quedan (claves estables) y pasan al final de la lista, con
+las miniaturas de todos re-renderizadas por el motor con el mismo
+sistema, cada set sobre el objeto para el que está pensado. Los sets se
+construyen con lo que ya existe (luces L4, primitivas U9 como tarjetas,
+barrido y suelo, materiales del catálogo, fondo plano o imagen de
+degradado, fuerza del entorno, exposición): nada nuevo en el motor.
+Fuentes (principios, no tablas): la «familia de ángulos» y el campo
+claro/oscuro de Hunter, Biver y Fuqua, *Light: Science & Magic*; las
+proporciones clásicas de clave/relleno; la práctica habitual del *still
+life* de estudio.
+
+**Orden.** Ahora, en paralelo con la ola A y sin tocar el motor: **L6**
+y **M2a**. Después, por este orden: **M3a** (en cuanto U11 libere la
+máquina), **M2b** y **M3b** (motor, tras E9 y E6), **M4** (tras E9, E6 y
+M2b). La máquina tiene 4 núcleos: cinco agentes a la vez es el tope, y
+los que no tocan el motor no compilan Rust (usan `/home/user/bin/rt` y
+el `rt.wasm` ya construido).
+
+## L6 · Sets de estudio con criterio fotográfico — **Opus**, diseño **Fable**
+
+**Qué.** `LightSetup` gana campos opcionales (los 72 montajes antiguos no
+cambian): `backdrop` (`FLAT` color; `GRADIENT` dos colores, arriba y
+abajo, como imagen de fondo generada; `SWEEP` fondo infinito de U9 con
+material y color, que recibe luz y sombra), `pool` (un *spot* aimed al
+fondo tras el producto: `az`, `el`, cono, `share`, kelvin: el charco de
+luz), `floor` (`CATCHER` atrapasombras; `MATTE` suelo del motor con
+color; `GLOSSY` y `MIRROR`: un plano primitivo bajo el producto con un
+material del catálogo —acrílico negro brillante, acrílico blanco, espejo
+negro—), `cards` (planos primitivos con materiales de catálogo nuevos
+*Tarjeta blanca* 0,92 mate, *Tarjeta negra* 0,02, *Tarjeta plateada*
+aluminio cepillado; `az`, `el`, `dist`, `size`, `sizeY`, giro; por
+construcción fuera del encuadre: `|az| ≥ 55°` o `el ≥ 60°`, y un test
+lo comprueba con la focal del tipo de producto), `exposureEv` (desvío
+sobre el del tipo de producto), `envStrength`, `kelvin` por luz (ya
+existe), `camera` sugerida (`el`, `focalMm`: no se aplica sola; un botón
+*Usar la cámara del set*), `hero` (el objeto de la miniatura: `BOTTLE`,
+`BOX`, `RING`, `CHROME`, `SHOE`, `SPHERES`) y `why` (`Label`: la razón
+fotográfica, dos frases, en la ayuda de la miniatura). Aplicar un set
+crea sus primitivas (tarjetas, barrido, suelo) marcadas como *del set*
+(decoración: no cuentan para el tamaño de pieza, el Doctor ni *Encuadrar
+el producto*) y aplicar otro las sustituye sin tocar las piezas del
+usuario; *Restablecer al montaje* las quita. Una entrada de deshacer.
+
+**Los 16 sets** (números de partida en tamaños de pieza; el agente los
+afina sobre la hoja de contactos y Fable da el veredicto, regla 11):
+
+1. `STRIP_EDGE` **Tira larga y canto negro** (botella, cosmética).
+   Clave: tira 0,35 × 4,5 a `az −115, el 25, dist 3`, 5300 K, 55 %;
+   relleno: panel 3 × 3 a `az 70, el 20, dist 3,5`, 25 %, `glossy
+   false`; contra: tira 0,3 × 3 a `az 160, el 30`, 20 %. Tarjetas: negra
+   2 × 5 a `az 60, el 15, dist 1,6` (dibuja el canto); blanca 2 × 4 a
+   `az −60, el 10, dist 2`. Fondo `GRADIENT` 0,10→0,02 con `pool` a
+   `az 180, el 10`, cono 25°, 15 %. Suelo `GLOSSY` negro. EV −0,3.
+   Cámara `el 8, 85 mm`. Héroe `BOTTLE`. Por qué: una sola tira limpia
+   recorre la botella de arriba abajo y el canto negro la separa del
+   fondo; el reflejo en el suelo la asienta.
+2. `DARK_FIELD` **Campo oscuro** (vidrio, perfume). Sin luz frontal: dos
+   tiras 0,4 × 4 a `az ±135, el 15, dist 2,8`, 40 % cada una, justo
+   fuera del encuadre; cenital débil 2 × 2 a `el 85`, 20 %, `glossy
+   false`. Fondo `FLAT` 0,01; `envStrength 0`. Suelo `GLOSSY` negro.
+   Tarjetas negras 3 × 4 a `az ±70, el 10, dist 1,8`. EV −0,5. Héroe
+   `BOTTLE`. Por qué: el vidrio solo se ve por sus bordes; sobre negro,
+   dos tiras detrás los dibujan en blanco (Hunter et al., *dark-field*).
+3. `BRIGHT_FIELD` **Campo claro** (vidrio, transparentes). Fondo
+   luminoso: panel 6 × 6 a `az 180, el 10, dist 3`, `camera true`,
+   60 %; cenital 3 × 3 a `el 80`, 20 %; relleno 2 × 2 a `az 0, el 20`,
+   20 %, `glossy false`. Tarjetas negras 2 × 5 a `az ±65, el 10, dist
+   1,6`. Suelo `GLOSSY` blanco (acrílico). EV +0,3. Héroe `BOTTLE`. Por
+   qué: sobre blanco el vidrio se dibuja con bordes negros, que ponen
+   las tarjetas, no la luz.
+4. `HIGH_KEY_WHITE` **Blanco infinito** (e-commerce). Fondo `SWEEP`
+   blanco 0,9; cenital 5 × 4 a `el 75, az 0, dist 2,6`, 45 %; dos
+   laterales 2 × 4 a `az ±95, el 20`, 20 % cada una; relleno frontal 3 ×
+   3 a `az 0, el 25`, 15 %, `glossy false`. Suelo `GLOSSY` blanco, sombra
+   suave. EV +0,5. Héroe `BOX`. Por qué: el fondo quemado a blanco y la
+   sombra de contacto apenas visible es el estándar de tienda.
+5. `JEWEL_BOX` **Caja de luz con negros** (joyería). Carpa de cuatro
+   paneles 3 × 3 a `az ±60, ±120, el 30, dist 2,5`, 15 % cada uno, y
+   cenital 3 × 3, 20 %; *spot* duro 0,05 a `az −40, el 55, dist 3`,
+   10 %, cono 12° (chispa, cáusticas on); tarjetas negras 2 × 2 a `az 0,
+   el 70, dist 1,5` (el oro necesita reflejos oscuros para leerse como
+   oro) y 2 × 3 a `az −30, el 5`. Fondo `GRADIENT` 0,06→0,015. Suelo
+   `GLOSSY` negro. EV 0. Cámara `100 mm`. Héroe `RING`. Por qué: luz
+   envolvente para que la piedra brille, y negros colocados para que el
+   metal tenga forma.
+6. `CHROME_FAMILY` **Familia de ángulos** (reloj, cromados). Un panel
+   grande con degradado de dos paneles: 4 × 4 a `az −35, el 45, dist 2,2`,
+   50 %, y 2 × 4 superpuesto a `az −25, el 50, dist 2,0`, 20 %; tarjeta
+   negra 4 × 4 a `az 50, el 35, dist 1,8` y plateada 2 × 3 a `az 120, el
+   10`; contra tira 0,3 × 3 a `az 170, el 20`, 15 %; relleno 15 %
+   `glossy false`. Fondo `GRADIENT` 0,12→0,03. Suelo `GLOSSY` negro.
+   EV −0,2. Héroe `CHROME`. Por qué: un cromado solo muestra lo que
+   refleja; se le pone delante un degradado grande y un negro limpio.
+7. `RAKING_TEXTURE` **Rasante con relleno** (calzado, textil, piel).
+   Clave tira 4 × 0,8 a `az −85, el 10, dist 3`, 4800 K, 65 %, `spread
+   60`; relleno 4 × 3 a `az 55, el 30, dist 3,6`, 6200 K, 20 %, `glossy
+   false`; contra 0,3 × 3 a `az 150, el 35`, 15 %. Fondo `SWEEP` gris
+   0,25. Suelo `MATTE` 0,3, sombra. EV 0. Cámara `el 15, 50 mm`. Héroe
+   `SHOE`. Por qué: la trama se lee con luz rasante, y la clave cálida
+   contra el relleno frío separa volumen de superficie.
+8. `BLACK_ON_BLACK` **Negro sobre negro** (electrónica). Dos tiras 0,3 ×
+   4 a `az ±150, el 30, dist 2,6`, 35 % cada una; relleno frontal 2 × 2 a
+   `az 0, el 20`, 8 %, `glossy false`; `pool` a `az 180, el 5`, cono 20°,
+   22 %, 6500 K. Fondo `FLAT` 0,01. Suelo `GLOSSY` negro. `envStrength
+   0,1`. EV −0,6. Héroe `BOX`. Por qué: un producto negro se dibuja por
+   dos líneas de luz en sus cantos y un halo tenue detrás.
+9. `WARM_WINDOW` **Ventana cálida** (alimentación, hogar). Clave 5 × 4 a
+   `az −65, el 40, dist 2,4`, 4300 K, 70 %; relleno 3 × 3 a `az 40, el
+   15, dist 3,5`, 6500 K, 15 %, `glossy false`; tarjeta negra 3 × 4 a
+   `az 75, el 10, dist 1,8` (relleno negativo). Fondo `SWEEP` 0,35 ×
+   (1, 0,9, 0,8). Suelo `MATTE` 0,35. EV 0. Héroe `SPHERES`. Por qué:
+   una ventana lateral grande y un lado dejado en sombra es la luz de
+   mesa de toda la vida.
+10. `BACKLIT_LIQUID` **Contraluz líquido** (bebidas). Contra panel 2 × 3
+    a `az 180, el 8, dist 2,2`, 55 %, `camera false`; dos tiras de canto
+    a `az ±130, el 20`, 15 % cada una; relleno frontal 2 × 2, 10 %
+    `glossy false`; tarjeta blanca 2 × 2 a `az 0, el 65, dist 1,4`.
+    Fondo `GRADIENT` 0,08→0,02. Suelo `GLOSSY` negro. Cáusticas on.
+    EV −0,2. Héroe `BOTTLE`. Por qué: el líquido se enciende cuando la
+    luz lo atraviesa hacia la cámara.
+11. `TEAL_ORANGE` **Cine cálido-frío**. Clave 3 × 3 a `az −45, el 35,
+    dist 2,8`, 3800 K, 55 %; contra tira 0,3 × 3 a `az 140, el 25`, color
+    (0,55, 0,8, 1), 25 %; relleno 10 % 5600 K; `pool` 8000 K a `az 180,
+    el 10`, 10 %. Fondo `GRADIENT` (0,03, 0,06, 0,08)→0,01. Suelo
+    `GLOSSY` negro. EV −0,3. Héroe `BOTTLE`. Por qué: dos temperaturas
+    opuestas en clave y contra es el contraste de color que más se usa
+    en cine.
+12. `POP_COLOR` **Color pop**. Fondo `SWEEP` color (0,95, 0,55, 0,45);
+    cenital 4 × 4 a `el 70`, 45 %; dos tiras 0,4 × 4 a `az ±110, el 20`,
+    colores complementarios (0,4, 0,7, 1) y (1, 0,85, 0,5), 20 % cada
+    una; relleno 15 % `glossy false`. Suelo = fondo, `MATTE`. EV +0,2.
+    Héroe `BOX`. Por qué: el color de fondo saturado y dos contras de
+    color son el lenguaje de la tienda en redes.
+13. `GRADIENT_POOL` **Fondo degradado con foco** (catálogo). Clave 3 ×
+    2,5 a `az −40, el 40, dist 2,8`, 50 %; relleno 3 × 3 a `az 60, el 20`,
+    20 % `glossy false`; contra 0,3 × 3 a `az 165, el 30`, 15 %; `pool`
+    a `az 180, el 15`, cono 30°, 15 %. Fondo `SWEEP` gris 0,45. Suelo
+    `GLOSSY` gris claro. EV 0. Héroe `SPHERES`. Por qué: el charco de luz
+    detrás separa el producto y da profundidad a un fondo neutro.
+14. `MIRROR_FLOOR` **Suelo espejo** (perfume, cosmética). Suelo `MIRROR`
+    (espejo negro); cenital 3 × 3 a `el 80`, 35 %; dos tiras bajas 0,4 ×
+    3 a `az ±120, el 5, dist 2,5`, 25 % cada una (encienden el reflejo);
+    relleno 15 % `glossy false`. Fondo `GRADIENT` 0,05→0,01. EV −0,3.
+    Héroe `BOTTLE`. Por qué: el reflejo completo bajo el producto es el
+    plano de perfumería por excelencia.
+15. `FLAT_LAY` **Cenital** . Cámara sugerida `el 85, 50 mm`; cenital
+    5 × 5 a `el 60, az −30, dist 2,5`, 60 %; relleno 3 × 3 a `az 150, el
+    40`, 25 % `glossy false`; tarjeta blanca 3 × 3 a `az 180, el 20, dist
+    1,6`. Fondo = suelo `MATTE` 0,8 (papel). EV +0,2. Héroe `BOX`. Por
+    qué: la luz desde un lado alto y una sombra suave hacia el otro es
+    el plano cenital de revista.
+16. `SILHOUETTE_GLOW` **Silueta con halo** (dramático). `pool` fuerte a
+    `az 180, el 15`, cono 35°, 55 %, 5600 K; relleno frontal 2 × 2 a `az
+    0, el 25`, 12 %, `glossy false`; dos tiras 0,3 × 3 a `az ±140, el
+    25`, 16 % cada una. Fondo `SWEEP` 0,2. Suelo `GLOSSY` negro.
+    `envStrength 0`. EV −0,4. Héroe `BOTTLE`. Por qué: el halo detrás
+    recorta la silueta y las tiras la rematan con dos filos de luz.
+
+**Rigs de tipo de producto (los 16 de `studios.ts`).** Cada uno pasa a
+ser un set con los mismos criterios: joyería ← 5; reloj y cromados ← 6;
+perfume y cosmética ← 1 (con suelo espejo si el tipo lo pide); vidrio y
+bebidas ← 10 (campo oscuro si el líquido es claro); electrónica ← 8;
+calzado, textil y piel ← 7; alimentación y hogar ← 9; *packaging* ← 13;
+el genérico ← 13. El agente mapea los 16 y lo deja escrito.
+
+**Miniaturas.** `tools/setup-thumbs.mjs`: construye el RSB con el
+mismo código de la aplicación (`core/rig.ts` → `io/rsb.ts`, en Node) y
+renderiza con `rt` (`/home/user/bin/rt` en este entorno; en CI el
+binario del job) a 256 × 256, 96 muestras, *denoise*, semilla fija, cada
+set sobre su héroe (`BOTTLE` el frasco de ejemplo con vidrio y líquido;
+`BOX` una caja con una banda de otro material; `RING` un toro de oro;
+`CHROME` un toro cromado; `SHOE` una cápsula de piel; `SPHERES` tres
+esferas mate, brillante y metal); los 72 antiguos se re-renderizan con el
+mismo sistema (héroe por estilo). Determinista: una captura cambia solo
+si cambia el set o el motor (un test fija el *hash* de una).
+
+**Interfaz.** El estilo *Sets* primero, miniaturas grandes (el doble que
+las actuales) con la razón fotográfica en la ayuda, *Usar la cámara del
+set*, y la sección *Luz* del inspector enseña las tarjetas y el fondo
+del set como filas propias (se pueden apagar). Cadena en `es` y `en`.
+
+**Depende de.** L4, U9.
+
+**Criterio.** Hoja `out/sets-sheet.html` con los 16 sets × 3 héroes a
+512 px y 256 muestras, **con veredicto de Fable antes de cerrar**; los
+72 montajes antiguos conservan sus claves y su resultado (test: el rig
+resuelto de cada uno es el mismo que antes); las tarjetas de ningún set
+entran en el encuadre con la focal del tipo (test); una entrada de
+deshacer por set; `npm run qa` en verde.
+
+## M2a · Texturas: importación, mapeado, etiquetas y vista previa — **Opus** — hecha
+
+**Qué.** La parte sin motor de M2 (el modelo ya tiene `textures`, los
+importadores ya conservan las texturas y las UV: hoy no se ven en
+ningún sitio). (1) **Importar**: glTF/GLB, FBX, OBJ+MTL, USD, Collada y
+3MF traen sus materiales con color base, rugosidad, metal, normal, alfa
+y emisión (mapas e intensidades), sus UV (y un segundo juego si lo hay)
+y sus normales por vértice, a instancias de material con sus mapas, y
+los mapas viajan en el proyecto embebidos (PNG/JPEG tal cual; límite de
+tamaño con aviso en la hoja de importación). (2) **Ranuras de textura**
+en el inspector de material: color, rugosidad, metal, normal, alfa, con
+*Proyección* (UV, caja, plana, cilíndrica, esférica), escala (mm o
+tamaños de pieza), giro, desplazamiento, repetición, e intensidad del
+mapa de normales; vista previa de la imagen y *Cargar…*, *Quitar*. (3)
+**Etiquetas**: una imagen con alfa colocada con clic y arrastre sobre
+una zona de la pieza (proyección plana desde la normal del punto
+clicado, con tamaño, giro y acabado propio: rugosidad, barniz y relieve
+del papel), varias por material, en orden; *Mover etiqueta* con el
+gizmo. (4) **Vista previa Rápido** (three.js): todos los mapas y
+proyecciones se ven (caja, cilíndrica y esférica con un *shader* propio
+de proyección triplanar en `preview.ts`; etiquetas con un segundo mapa
+alfa). (5) **Contrato RSB para M2b** (escrito en `ARCHITECTURE.md` §5.2,
+el motor lo lee en M2b): sección `IMGS` (imágenes: ancho, alto, canales,
+sRGB o lineal, 8 bits, mipmaps calculados en el motor) y en `MATL`
+campos finales (tras los de E6 y E9): índice de imagen y mapeado por
+ranura, y una subsección de etiquetas. (6) `UI.md` y `SPEC.md` §3.3.
+
+**Depende de.** U9, E5. No toca `engine/`.
+
+**Criterio.** Un GLB con mapas (color, normal, rugosidad-metal,
+emisión) se importa y se ve en Rápido con los mismos mapas que en un
+visor glTF de referencia (comparación de captura, tolerancia); un cubo
+con proyección caja recibe la textura sin estirar en las seis caras
+(test del *shader* por captura); el proyecto guarda y abre las imágenes
+embebidas en los mismos bytes; una etiqueta puesta con clic y arrastre
+sobre el frasco de ejemplo queda donde se puso (captura
+`docs/ui/label-placed.png`).
+
+**Hecho.** Modelo en `src/core/textures.ts`: seis ranuras (color,
+rugosidad, metal, normal, alfa, emisión) con imagen, mapeado propio o
+común, canal, invertir, intensidad, mapa de alturas, recorte y umbral,
+tinte; el mapeado (UV con dos juegos, caja, plana, cilíndrica, esférica;
+eje, **tamaño en mm** —una textura de imagen es la foto de algo con tamaño
+propio, el material se comparte entre piezas y viaja en la biblioteca, el
+motor trabaja en mm; la primera imagen lo pone al tamaño de la pieza—,
+giro, desplazamiento, repetición, bordes) y las etiquetas (origen, normal
+y eje en el espacio de la pieza, ancho, giro, alcance, rugosidad, barniz,
+relieve), con las acciones `texture/*` (deshacibles, un arrastre una
+entrada, sin entrada si nada cambia) y la matemática de las proyecciones y
+de las etiquetas como referencia que fijan los tests (caja sin espejos ni
+estiramiento en las seis caras, giro antihorario con v arriba, cilíndrica
+centrada delante, colocación desde un punto y una normal a través de la
+matriz del mundo, también con escala desigual). Imágenes en el registro
+como su PNG o JPEG, con id por contenido (SHA-256) y límites (16 MB y 8192
+px por imagen, 64 MB por proyecto). **Importación**: glTF desde su JSON
+(`io/gltf-materials.ts`: PBR, emisión con `KHR_materials_emissive_strength`,
+`alphaMode`/`alphaCutoff`, transmisión, IOR y barniz, `KHR_texture_transform`
+convertido exacto a v arriba y comprobado contra el `setUvTransform` de
+three, muestreadores; el cargador recibe el archivo sin texturas); OBJ con
+sus `.mtl` (`io/mtl.ts`, `io/obj-materials.ts`, con sus opciones); FBX,
+Collada, 3MF, USD y 3DM con los mapas de sus cargadores
+(`collectTextures`); los archivos **elegidos o soltados con el modelo**
+(imágenes, `.mtl`, `.bin`) se le dan como compañeros y un
+`LoadingManager` los encuentra por nombre; UV con segundo juego en toda la
+tubería (soldadura, cortes, GLB del proyecto `TEXCOORD_1`), normales del
+archivo conservadas. La hoja de importación tiene su sección *Texturas*
+(cuántas, cuánto pesan, cada una que no y por qué, mapas sin ranura) y el
+presupuesto del proyecto se aplica al pulsar *Importar*. **Proyecto**: las
+imágenes en el bloque `images`, mismos bytes y mismos ids al abrir en otra
+sesión y al guardar otra vez; las que faltan quitan sus ranuras con
+`MISSING_IMAGES`; los proyectos y bibliotecas anteriores se leen con
+`normalizeTextures`. **Inspector**: sección *Texturas*
+(`ui/panels/insp-textures.ts`) con las ranuras, el mapeado y las
+etiquetas; herramienta de etiqueta en el visor
+(`ui/panels/viewport-labels.ts`): pulsación y arrastre, *Mover etiqueta*.
+**Rápido**: `render/texture-shader.ts` (GLSL en el `MeshPhysicalMaterial`
+con `onBeforeCompile`: proyecciones, caja triplanar por |n|⁴, cilíndrica y
+esférica sin costura por el gradiente de Tarini, normal en marco de
+derivadas de Schüler, alturas y borde de etiqueta por el relieve de
+Mikkelsen, etiquetas sobre color, rugosidad, metal y barniz) y
+`render/texture-preview.ts` (caché por imagen, mipmaps, anisotropía del
+dispositivo). **Contrato RSB para M2b** escrito en `ARCHITECTURE.md` §5.2
+(`IMGS`; bloque de texturas de `MATL` desde el byte 100, tras los campos de
+E6 y E9; UV en `MESH`) e implementado en `io/rsb.ts` detrás de
+`SceneView.textures`; apagado, los bytes de cualquier escena son los de
+antes (test), y los píxeles los decodifica `io/texture-pixels.ts`. Tests:
+`textures`, `textures-import`, `textures-project`, `textures-rsb`,
+`texture-shader`, `textures-ui` (62 casos, cada uno roto a propósito:
+46 mutaciones, todas fallan); `tools/textures-check.mjs` en Chromium: el GLB
+de los cuatro mapas, un Collada con su imagen al lado, la caja con
+proyección caja, la etiqueta en el frasco, el cromo acromático en los dos
+temas. Capturas `docs/ui/textures-fast.png` (junto a
+`docs/ui/textures-reference.png`, el mismo archivo con el `GLTFLoader` y
+`MeshStandardMaterial` de three.js, el visor sobre el que están hechos
+casi todos: mismos cuadrantes, flechas derechas, crestas del mapa de
+normales, anillo de emisión y esquina recortada; la cara de arriba se ve
+algo más blanda por el ángulo de la cámara, no por el filtrado: con
+anisotropía 8 y 16 los píxeles son idénticos, con 1 cambian),
+`docs/ui/box-projection.png`, `docs/ui/label-placed.png`,
+`docs/ui/textures-inspector.png`.
+
+No encajó con el plan: (1) la comparación con un visor glTF de referencia
+es a ojo, no por tolerancia de píxeles (las cámaras y los entornos no son
+los mismos). (2) *Mover etiqueta* no usa el *gizmo* de *Mover*: arrastra la
+etiqueta por la superficie bajo el cursor (una etiqueta vive en la
+superficie; un *gizmo* 3D la sacaría de ella). (3) El inspector edita solo
+el mapeado común; el mapeado propio de una ranura viene de los archivos y
+se puede devolver al común (*Usar el común*); el *store* ya admite editarlo
+(`texture/setMapping` con `slot`). (4) Las esferas de los materiales no
+muestran las texturas (su renderizador es aparte). (5) La emisión existe
+solo por su ranura: un glTF con `emissiveFactor` y sin textura no emite,
+como antes (la familia `SIMPLE` no tiene campo de emisión). (6) En Rápido,
+un recorte de alfa y las etiquetas no recortan las sombras del mapa de
+sombras de three; dibuja seis etiquetas por material (cada una es un
+*sampler*), el motor todas. (7) three aplica su transformación de textura
+como escala tras giro y nosotros giro tras escala: igual con repetición
+uniforme o sin giro; en FBX, Collada y USD con giro y repetición desigual
+es una aproximación (glTF se convierte exacto). (8) Imágenes WebP o KTX2 de
+un glTF se dejan fuera con su aviso; las de los cargadores de three que no
+son PNG ni JPEG (TGA de FBX, y las de un USDZ, cuyos *blobs* el cargador ya
+ha liberado) se pasan a PNG en el navegador; en Node no hay con qué y esos
+formatos no traen texturas (sí glTF y OBJ). (9) Encender el escritor de
+texturas queda para M2b: propuesto `rt_features` (bit 0) en `rt.wasm` y en
+`/api/info`, y `decodeTexturePixels` antes de escribir la escena; sin
+FBX con textura en los *fixtures*, el camino de los cargadores de three se
+prueba en el navegador con un Collada y su imagen (el mismo código).
+
+## M2b · Texturas y etiquetas en el motor — **Opus** (tras E6 y E9)
+
+**Qué.** `rt-core` lee `IMGS` y el mapeado de `MATL`: muestreo bilineal
+con mipmaps por diferenciales de rayo (Igehy 1999, escrito desde el
+artículo; en los rebotes, el ancho del cono del camino), proyecciones
+caja (mezcla por normal), plana, cilíndrica, esférica y UV; mapa de
+normales (espacio tangente, con tangentes por UV o por proyección),
+relieve compuesto con el bisel de E6 y el terminador; alfa como recorte
+(ya existe la ruta); etiquetas como capa sobre el sustrato (alfa
+suaviza; acabado propio de la capa). Todo determinista en wasm y
+nativo. Cuesta lo que cuesta: medirlo.
+
+**Criterio.** Paridad wasm y *hashes* nuevos fijados; una esfera con
+textura de cuadros y una caja con proyección caja renderizadas por `rt`
+coinciden con la vista previa Rápido en posición de la textura
+(comparación por regiones); la etiqueta del criterio de M2a renderiza
+en su sitio en Completo.
+
+## M3a · Editor de materiales por nodos: modelo, editor y vista previa — **Opus** (tras U11)
+
+**Qué.** Un **grafo de material** como el de KeyShot o Blender,
+reducido a lo que nuestro motor puede evaluar: nodos *Salida de
+material* (las entradas del material: color base, metal, rugosidad,
+anisotropía, barniz, transmisión, IOR, absorción, dispersión interna
+(E9), emisión, opacidad, normal, relieve, bisel), *Textura de imagen*,
+*Mapeado* (proyecciones de M2a), *Ruido* (Perlin/simplex de E6, con
+escala y octavas), *Degradado*, *Cuadros*, *Rayas*, *Rampa de color*,
+*Mezcla*, *Matemática* (suma, producto, potencia, mínimo, máximo,
+suavizado, valor absoluto), *Fresnel / peso de capa*, *Curvatura*
+(aristas, de E7), *Valor*, *Color*, *Separar/Combinar RGB*, *Invertir*,
+*Mapa de normales*, *Relieve*. Modelo en `src/core/material-graph.ts`
+(DAG tipado: tomas de tipo color, float, vector, normal; conversiones
+implícitas documentadas), serializado en el proyecto (esquema con
+versión), deshacible nodo a nodo y conexión a conexión por el *store*.
+**Compilación a programa**: el grafo se compila a un programa lineal
+(*bytecode*: registros `f32` y `vec3`, instrucciones con códigos
+estables, lecturas de imagen) que es el contrato con el motor (M3b);
+`ARCHITECTURE.md` lo documenta instrucción a instrucción; límite de
+tamaño y un test que un grafo de 30 nodos compila en < 1 ms. **Editor**:
+una ventana *Editor de material* (como la de render), lienzo con zoom y
+desplazamiento, nodos arrastrables, tomas con tipos y colores
+acromáticos por tipo (forma, no color), conexiones por arrastre con
+validación de tipo, menú *Añadir nodo* con búsqueda, vista previa
+pequeña en cada nodo (evaluación en CPU sobre una esfera 64 × 64 en un
+*worker*, con el mismo intérprete que la vista previa), *Simple ↔ Nodos*
+(un material de parámetros se convierte en su grafo mínimo; volver a
+*Simple* solo si el grafo es el mínimo, si no, pregunta). **Vista
+previa Rápido**: un intérprete del programa en TypeScript evalúa el
+grafo en una textura de 512² por proyección (UV o triplanar) en un
+*worker* y la entrega a three.js como mapas; lo que no cabe en mapas
+(Fresnel, curvatura) se aproxima o se omite, y se dice. Atajos, tour,
+cadena `es`/`en`.
+
+**Depende de.** M2a, E6 (ruido), U11 (máquina).
+
+**Criterio.** Diez grafos de ejemplo (`src/data/material-graphs.ts`:
+plástico con etiqueta, metal cepillado con arañazos por ruido, mármol,
+cuero, madera con dos ruidos, vidrio con suciedad por Fresnel, cuadros,
+pintura metalizada con copos (ruido fino en la normal), cerámica con
+esmalte (barniz por rampa), rayas) compilan y se ven en Rápido; un grafo
+guardado abre idéntico; deshacer y rehacer de 50 ediciones devuelve el
+grafo original (test); el intérprete TS y el de referencia del contrato
+(un pequeño evaluador en Rust de prueba en M3b) dan los mismos valores
+en 1000 puntos aleatorios (test cruzado cuando M3b llegue).
+
+## M3b · El motor evalúa grafos — **Opus** (tras M2b y M3a)
+
+**Qué.** `rt-core` ejecuta el programa de M3a en cada impacto (un
+intérprete sin asignación en el bucle, registros en pila fija, `f32`,
+determinista; lecturas de imagen por M2b; ruido de E6; curvatura de E7
+o, si no ha llegado, una aproximación por el bisel). El material
+resuelto en el impacto alimenta el BSDF de E9. Coste medido en el PR.
+
+**Criterio.** Los diez grafos de M3a renderizados con `rt` coinciden con
+la vista previa Rápido en posición y tono (regiones); test cruzado
+TS/Rust de M3a en verde; paridad wasm.
+
+## M4 · Capa de realismo en el catálogo de materiales — **Opus**, veredicto **Fable** (tras E9, E6 y M2b)
+
+**Qué.** (1) **Motor**: Fresnel de conductor «*artist-friendly*» de
+Gulbrandsen (2014) con reflectancia y *edge tint* (nuestros metales
+hoy son F0 por color: les falta el tono del borde), los metales del
+catálogo con pares (reflectancia, borde) sacados de la literatura
+pública de índices de refracción (valores de tablas públicas de n, k
+integrados por nosotros a RGB); rugosidad perceptual (`α = r²`) si no lo
+es ya; *specular tint* para dieléctricos. (2) **Catálogo**: pasada sobre
+todas las recetas con criterio físico y fotográfico: albedos reales
+(el blanco del HDPE no es 1), IOR por tipo de vidrio y plástico, barniz
+donde lo hay de verdad (plásticos brillantes, cerámica esmaltada,
+madera barnizada), anisotropía en lo cepillado, **micro-bisel por
+defecto** (0,2–0,5 mm según material) en todo lo duro, medio dispersor
+(E9) en lo translúcido, **micro-variación** de rugosidad y de normal por
+ruido fino (E6) a una escala que no se ve como textura pero quita el
+«plástico de ordenador», y *imperfecciones sutiles* opcionales (E7
+cuando llegue). (3) Hoja `out/materials-sheet.html`: cada material
+antes y después, sobre esfera y sobre el frasco, con el set `STRIP_EDGE`;
+**veredicto de Fable** material a material antes de cerrar (regla 11).
+
+**Criterio.** Ningún material cambia de clave; los proyectos antiguos
+abren con las recetas nuevas (es lo que se quiere) salvo las instancias
+editadas, que conservan sus valores; la hoja con el veredicto.
+
+## Óptica: simulación de lentes — decisión **Fable** (tras v0.1.5)
+
+`STUDIO-TOOLS.md` §1 y `docs/research/optics.md` dejaban seis
+decisiones abiertas (§7). Se toman así:
+
+1. **Carácter por defecto**: *Clínica* (pupila redonda, lente bien
+   corregida). La foto de producto quiere una lente que no se note; el
+   carácter se elige a propósito. De las 16 prescripciones se enseñan
+   todas; las `verified` sin aviso, las `caveat` y `experimental` con una
+   nota en la ayuda, y las `own-design` marcadas como diseño propio.
+2. **Remolino**: las dos cosas. Sale solo de la Petzval trazada con sus
+   semiaperturas reales, y en la lente fina hay un mando artístico
+   marcado *no físico*.
+3. **Aberración cromática**: el esquema híbrido de tres bandas (cada
+   muestra de cámara elige R, G o B estratificado, traza la lente con el
+   índice de esa banda y pesa solo su canal). Nada espectral.
+4. **Ajuste de polinomios**: no se ajusta ningún polinomio de grado alto.
+   El perfil rápido son tablas muestreadas en `f32` (distorsión e
+   iluminación relativa por altura de imagen, puntos cardinales) sacadas
+   de un trazado de pocos rayos al cargar la lente.
+5. **Fantasmas del *flare***: no en esta primera entrega. Los *coatings*
+   entran solo como transmisión por superficie (T-stop y tinte). Los
+   fantasmas y la estrella de difracción quedan para O3.
+6. **Nombres**: neutros, los del catálogo A6.
+
+Y una regla de coste: la cámara trazada no puede pasar del 25 % del
+tiempo de render del ejemplo a 1024 muestras con la doble Gauss (medido
+y en el PR); si pasa, se bate por lotes (§6.1 del informe) antes de
+cerrar.
+
+## O1 · Lente fina mejorada y selector de bokeh — **Opus**
+
+**Qué.** `STUDIO-TOOLS.md` §1 modo 1, en `rt-core` y en la interfaz.
+Motor: sección RSB nueva opcional `LENS` después de `CAMR` (`CAMR` no
+cambia: un RSB sin `LENS` renderiza bit a bit como hoy): forma del
+diafragma (círculo; polígono de 3 a 18 láminas con redondez 0–1 y giro;
+imagen de máscara monocroma con muestreo por CDF 2D), perfil de pupila
+(uniforme, centro brillante, anillo brillante, apodizada: los pesos de
+`src/data/bokeh.ts` `PUPIL_PROFILES`), obstrucción central (relación ε),
+ojo de gato aproximado (intersección con un segundo disco desplazado en
+proporción a la altura de imagen, con un mando de intensidad),
+anamórfico (compresión horizontal de la pupila y desestiramiento de la
+imagen, 1,33× y 2×), **descentramiento e inclinación** (*tilt-shift*:
+desplazamiento del sensor en mm y plano de enfoque inclinado por
+Scheimpflug, con el punto de enfoque en el centro), aberración cromática
+por bandas (decisión 3: una banda por muestra, desplazamiento radial del
+origen en pupila por banda, peso en su canal) y remolino como mando
+artístico (giro y alargamiento de la pupila con la altura de imagen).
+Las dimensiones aleatorias nuevas (banda, máscara) son dimensiones
+*hash* más allá de la tabla Sobol, como los recortes: una escena sin
+`LENS` no cambia ni un bit. El pase `coc` sigue siendo el de la lente
+fina (anotarlo). **Interfaz**: en la sección *Cámara*, *Bokeh* con las
+miniaturas de los 20 tipos de `src/data/bokeh.json` que se hacen con el
+modo 1 (los que exigen lente trazada esperan a O2 y lo dicen), cada
+miniatura **renderizada por el propio motor** (un núcleo de desenfoque:
+puntos de luz desenfocados sobre negro, `tools/bokeh-thumbs.mjs` con
+`rt`, determinista, hash fijado); *Láminas*, *Redondez*, *Giro*,
+*Perfil*, *Obstrucción*, *Anamórfico*, *Inclinación* y *Desplazamiento*,
+*Aberración cromática* y *Remolino* (estos dos marcados *no físico*) en
+una subsección *Óptica avanzada*; el visor Rápido no dibuja profundidad
+de campo (ya lo dice) y no cambia. Proyecto: campos opcionales de la
+cámara; cámaras anteriores abren igual.
+
+**Depende de.** A6, E5.
+
+**Criterio.** El ejemplo sin `LENS` conserva `0x223515c3`; hoja
+`out/bokeh-sheet.html`: la escena de puntos de luz con cada tipo, a 256
+muestras, **con veredicto de Fable**; test: con 6 láminas la pupila
+muestreada cae dentro del hexágono y fuera del círculo inscrito en la
+proporción esperada (±1 %); el *tilt* mueve el plano de enfoque como
+dice Scheimpflug (test geométrico con tres puntos); la máscara con
+muestreo por CDF da la misma media que el muestreo por rechazo (±1 %);
+determinismo 1/4/16 hilos y wasm.
+
+## O2 · Lente trazada — **Opus** (tras O1)
+
+**Qué.** `STUDIO-TOOLS.md` §1 modo 2, desde el artículo de Kolb,
+Mitchell y Hanrahan (1995) y `docs/research/optics.md` §3, §5 y §6:
+trazado secuencial desde el sensor por las superficies de una
+prescripción de `src/data/lenses.json` (esfera, plano, asférica,
+cilíndrica, espejo, diafragma) con la intersección estable de §6.5
+(`t = c r² / (B + sqrt(B² − c² r²))`), solo `+ − × ÷ sqrt` (nada de
+`sin`, `exp` o `powf` en el trazado: determinismo entre plataformas),
+escalado uniforme a la focal pedida, iris con láminas, *coatings* como
+transmisión por superficie (decisión 5: T-stop y tinte, sin
+fantasmas), modos de enfoque `unit`, `internal` y `floating` según la
+prescripción, límites de pupila de salida precalculados por altura de
+imagen (unión de las tres bandas), aberración cromática por bandas
+(decisión 3), y lo que sale solo (distorsión, viñeteo, ojo de gato,
+burbuja y cremoso por aberración esférica, coma, curvatura de campo,
+respiración de foco). RSB: `LENS` crece con la prescripción (campos
+opcionales al final; el RSB de O1 sigue leyéndose). **Salidas físicas
+al inspector, calculadas por el motor y nunca inventadas** (regla 10):
+focal efectiva, tiraje, f/, T-stop, curva de distorsión e iluminación
+relativa por altura de imagen; `rt_wasm` las exporta y el lanzador las
+sirve (`/api/lens/info`); la interfaz las muestra en la sección
+*Cámara* ▸ *Lente*. **Editor de lente**: selector por *carácter*,
+familia, focal, f/, láminas, *coating*, foco, *tilt-shift*; *Avanzado*:
+los mandos artísticos de §5 marcados *no físico* (cantidad de
+aberración cromática, distorsión, viñeteo, remolino, carácter de la
+esférica, respiración); **corte de la lente en SVG** dibujado desde la
+prescripción; *Guardar lente como…* a la biblioteca propia (U4). Los
+tipos de bokeh que exigen lente trazada se activan en el selector de O1.
+**Perfil rápido** (decisión 4): al cargar la lente el motor saca puntos
+cardinales, distorsión e iluminación relativa (tablas `f32`), y el visor
+Rápido aplica distorsión y viñeteo como aproximación (dicho en la
+ayuda). Cambiar de lente nunca toca la resolución de salida.
+
+**Depende de.** O1, A6.
+
+**Criterio.** Focal y tiraje paraxiales de las 16 lentes dentro del
+0,05 % de `reported` (test, como `tests/lenses.test.ts` pero en Rust);
+rayos axiales de la doble Gauss salen paralelos a < 2e-4 de pendiente;
+f32 contra f64 de referencia (test con `f64` solo en la prueba) por
+debajo de 1e-4 mm; paridad wasm y determinismo 1/4/16 hilos; coste de
+la cámara trazada ≤ 25 % del render del ejemplo con la doble Gauss a
+1024 muestras (medido); hoja `out/lens-sheet.html`: el frasco con las
+16 lentes a f/ máximo y a f/8, y la escena de puntos de luz con las que
+dan ojo de gato, burbuja, cremoso y remolino, **con veredicto de
+Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
+
+## P5 · Actualizar desde la aplicación — **Sonnet**
+
+**Qué.** Petición del usuario: hoy *Ajustes ▸ Actualizaciones ▸
+Descargar* abre el instalador en el navegador; debe **instalar la
+actualización y reiniciar la aplicación** desde dentro, preguntando antes
+por los cambios sin guardar.
+
+1. **Pregunta** (solo si el proyecto tiene cambios): «¿Guardar los
+   cambios de «X» antes de actualizar?» con **Guardar**, **Guardar
+   como…** y **Salir sin guardar**; `Esc` cancela (`UI.md` §4.3, en el
+   sitio). *Guardar* y *Guardar como…* siguen solo si el proyecto se
+   escribió de verdad. Es la misma pregunta de cerrar, con el tercer
+   botón: `afterUnsavedCheck` gana *Guardar como…* para todos los usos
+   (cerrar, nuevo, abrir), que es lo coherente.
+2. **Escritorio instalado (Windows)**: el lanzador descarga el
+   `-setup.exe` de la release (el mismo `curl` de los modelos, con
+   progreso), descarga `SHA256SUMS.txt` y **comprueba la suma** con el
+   `sha256` propio (si no cuadra, no se instala y se dice); lanza el
+   instalador en silencio, `setup.exe /S /LAUNCH`, suelto del proceso, y
+   la aplicación sale limpiamente (la ventana se cierra). El instalador
+   (`packaging/windows/installer.nsi`, sin *plugins*): espera hasta 30 s a
+   que `repackshot.exe` quede libre (bucle `FileOpen` en modo escritura
+   con `Sleep`), instala, y con `/LAUNCH` arranca la aplicación al acabar
+   (también en silencio). Un test de contrato lee el `.nsi` como texto y
+   comprueba el bucle de espera y el `/LAUNCH`, como hizo U10.
+3. **Portable (Windows y Linux)**: el lanzador descarga el portable
+   (`.zip` o `.tar.gz`), comprueba la suma, lo extrae a
+   `<carpeta del exe>/update-<tag>/` (el `zip` propio del motor de
+   ejecución de IA; en Linux `tar.gz` con el `tar` del sistema, como
+   `curl`), y se **sustituye a sí mismo**: renombra el ejecutable en uso
+   a `repackshot.old(.exe)` (un ejecutable en uso se puede renombrar,
+   no sobrescribir), mueve los archivos nuevos a su sitio sin tocar
+   `data/` ni `portable.txt`, arranca el nuevo ejecutable suelto con
+   `--after-update` y sale; el nuevo, al arrancar, borra los `.old` y la
+   carpeta `update-*`. Si algo falla a medias, deja lo viejo donde estaba
+   (orden: extraer todo primero, renombrar después) y lo dice.
+4. **Interfaz**: en *Ajustes ▸ Actualizaciones*, cuando hay versión
+   nueva el botón principal es **Instalar y reiniciar** (en la web sigue
+   *Descargar*, que abre la release, y lo dice); *Notas* se queda. La
+   fila enseña el progreso: *Descargando… 45 % · 3,2 de 7,1 MB*,
+   *Comprobando*, *Instalando… la aplicación se reiniciará*; los fallos
+   (descarga, suma, sin espacio, no es portable ni instalado) en la fila
+   con *Reintentar*. El aviso de inicio (cuando hay versión nueva) ofrece
+   el mismo *Instalar y reiniciar*. Mientras se descarga se puede cerrar
+   *Ajustes*; el progreso sigue en la fila al volver.
+5. **API del lanzador** (`rt-app`, documentada en su README):
+   `POST /api/update/install` `{tag, assetUrl, sumsUrl}` → `202` y
+   `GET /api/update` `{state: IDLE|DOWNLOADING|VERIFYING|INSTALLING|
+   FAILED, received, total, error, message}`; `POST /api/update/cancel`.
+   Solo URLs `https://github.com/<owner>/<repo>/releases/download/…` del
+   *feed* configurado (lista blanca, como el resto de descargas).
+
+**Depende de.** P2, P3e, U6 (Buscar actualizaciones).
+
+**Criterio.** Test TS: con cambios sin guardar la pregunta tiene los
+tres botones y cancela con `Esc`; *Guardar como…* escribe y sigue; sin
+cambios no pregunta; la petición al lanzador lleva la URL del activo
+que toca (instalador o portable según el modo) y nunca una URL fuera de
+la lista blanca; cadenas `es`/`en`. Test Rust: una suma que no cuadra
+no instala; la sustitución del portable sobre una carpeta de prueba con
+un ejecutable falso deja los archivos nuevos, el `.old`, `data/`
+intacta y el relanzamiento con `--after-update`; el arranque posterior
+limpia; el contrato del `.nsi`. Comprobación en navegador
+`tools/update-install-check.mjs` contra el lanzador real y un servidor
+local que hace de GitHub (release falsa, activo falso con su
+`SHA256SUMS.txt`): el camino portable de Linux de punta a punta (la
+aplicación se reinicia con la versión nueva, en una copia en
+`out/update-check/`), y el de Windows solo hasta «lanzar el instalador»
+(Wine no ejecuta NSIS: anotarlo). Captura `docs/ui/update-install.png`.
+La primera actualización real desde la aplicación será de la versión
+que lleve esto a la siguiente: apuntarlo en las notas de la release.
 
 ## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
 
@@ -2531,7 +3235,12 @@ el recorrido no la sustituye. (8) Con los modelos todavía bajando (el
 instalador los dejó pendientes) no hay aviso: «hay un modelo» es un modelo
 instalado.
 
-## M2 · Texturas de imagen y etiquetas — **Opus**
+## M2 · Texturas de imagen y etiquetas — **Opus** — sustituida por M2a y M2b
+
+**Nota (Fable, tras v0.1.5).** Esta fase se divide en M2a (sin motor:
+importación, ranuras, etiquetas, vista previa y contrato RSB) y M2b (el
+motor), definidas más arriba en «Materiales y sets con efecto». El texto
+siguiente se conserva como origen.
 
 **Qué.** Texturas de color, rugosidad, metal, normal y alfa con proyección
 caja, plana, cilíndrica y UV, escala, rotación y desplazamiento; etiquetas

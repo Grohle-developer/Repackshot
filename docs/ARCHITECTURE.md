@@ -88,7 +88,10 @@ src/
     animation.ts            planos, movimientos, evaluación en el tiempo
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
-    images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5)
+    images.ts               registro de imágenes del entorno (HDRI, imagen de fondo), como el de mallas (E5), y de las texturas (M2a)
+    textures.ts             texturas de imagen y etiquetas de un material (M2a): ranuras, mapeado, etiquetas, sus acciones `texture/*`, y la matemática de las proyecciones y de las etiquetas que siguen el shader y el motor
+    texture-images.ts       las imágenes de textura en el registro: id por contenido, límites (M2a)
+    image-header.ts         tamaño y canales de un PNG o un JPEG por su cabecera, sin decodificar (M2a)
     sky.ts                  el cielo del motor portado para la vista previa: el físico de E5c (por defecto) y el de Preetham (E5)
     sky-table.ts            los coeficientes del cielo físico, generados por `rt-sky table` (los mismos f32 y el mismo hash que rt-core)
     faces.ts                caras enteras: cara CAD o superficie que continúa; piezas de «Separar por caras CAD» (M1)
@@ -104,6 +107,8 @@ src/
   render/                   MOTORES DEL LADO WEB. Dependen de core, nunca de ui
     engine.ts               la interfaz RenderEngine (§5)
     preview.ts              three.js: vista previa rasterizada mientras se mueve la cámara; `aiFrame` (X4): el fotograma del modo Rápido y sus pases
+    texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
+    texture-preview.ts      las texturas y etiquetas en Rápido: el shader en cada material y la caché de texturas por imagen, con mipmaps (M2a)
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
     pathtracer.ts           RenderEngine sobre un pool de workers que ejecutan rt.wasm (E4)
     worker.ts               el worker: instancia rt.wasm, recibe la escena RSB, renderiza baldosas
@@ -119,6 +124,10 @@ src/
     rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c)
     ai-runtime.ts           el motor de ejecución de la IA del lanzador (X3b); ai-post.ts, la tubería de escritorio (`DesktopAiService`, X3c)
     hdri.ts                 lectores propios de RGBE y OpenEXR, imagen de fondo, copia para la vista previa (E5)
+    gltf-materials.ts       los materiales y las imágenes de un glTF leídos de su JSON (M2a)
+    mtl.ts  obj-materials.ts  las bibliotecas .mtl de un OBJ y sus imágenes (M2a)
+    texture-notes.ts        lo que la hoja dice de las texturas de un archivo (M2a)
+    texture-pixels.ts       los píxeles de las texturas para la sección IMGS del RSB (M2a; la lee M2b)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
     ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
@@ -129,6 +138,9 @@ src/
       viewport-box.ts       el gesto de la caja de selección sobre el visor (U7)
       add-menu.ts           Añadir ▸ Primitiva: las mismas entradas en la cabecera, el + de Escena y el menú del visor en vacío (U9)
       scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
+      insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
+      viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
+    texture-commands.ts     lo que hacen las ranuras y las etiquetas del inspector (M2a)
 public/
   thumbs/setups/            72 miniaturas de montaje de luz (PNG)
   assets/aperture/          45 máscaras de diafragma y texturas de pupila (PNG 512², gris de 8 bits) + index.json (A6)
@@ -156,6 +168,26 @@ packaging/                  guiones de empaquetado: portables de Windows y Linux
 public/engine/rt.wasm       el motor compilado para el navegador (generado por npm run engine:build; no se sube)
 public/engine/post.wasm     la guarda IA compilada (rt-post-wasm), generada por el mismo guion; tampoco se sube
 ```
+
+**Cómo entran las texturas** (M2a). Cada lector deja los materiales del
+archivo como instancias con sus ranuras ya puestas (las imágenes por su id
+de contenido) y una lista de `ImportTexture` (`core/import-options.ts`):
+el archivo de cada imagen, sus materiales, y si se guarda o por qué no. glTF
+lee sus materiales e imágenes de su JSON (`io/gltf-materials.ts`) y pasa a
+`GLTFLoader` el mismo archivo sin texturas (no decodifica dos veces, y en
+Node no podría); OBJ lee sus `.mtl` (`io/mtl.ts`, `io/obj-materials.ts`);
+FBX, Collada, 3MF, USD y 3DM toman los mapas que su cargador de three
+carga (`collectTextures` de `io/three-scene.ts`: el archivo original cuando
+el cargador lo tiene en un *blob* o un *data URL*, si no un PNG dibujado,
+solo en el navegador), con un `LoadingManager` que encuentra entre los
+**archivos elegidos con el modelo** (`ImportReadOptions.companions`) las
+imágenes, los `.bin` y las bibliotecas que nombra. `applyImportOptions` se
+queda con las imágenes de los materiales que se quedan; al pulsar
+*Importar* (`ui/commands.ts`) se aplica el presupuesto del proyecto
+(`fitTextureBudget`, 64 MB), se registran las que caben y se quitan de los
+materiales las que no. La vista previa decodifica cada imagen una vez
+(`createImageBitmap`) y la sube con mipmaps; el RSB la recibe decodificada
+(arriba).
 
 **Regla de dependencias**: `ui → core`, `render → core`, `io → core`,
 `core → data`. Nunca al revés, nunca `ui → render` directamente (el
@@ -449,6 +481,8 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   por su posición entre las `BMAP` (`0xffffffff`: ninguno). Un RSB sin
   `BMAP` conserva los mapas cargados, como uno sin `MESH` conserva las
   mallas.
+- **Texturas** (contrato de M2a, el motor lo lee desde M2b): ver
+  *Texturas en el RSB* al final de este apartado.
 - **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
   lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
 - **`RNDR`** (52 B desde E5b-1; los de 28, 36 y 40 B se leen con los valores
@@ -481,9 +515,78 @@ que se escribe siempre. Unidades: milímetros, Z arriba, sensor de 36 mm
 en el lado largo; flujo de un panel = π/4 × potencia del rig × tamaño²
 (convención de las luces de área de Blender Cycles, L = P / (4 A), con la
 que se ajustaron las recetas; `src/core/photometry.ts`); el ángulo del sol, en grados. Los mapas de bits viajan en secciones `BMAP`
-(E5: el HDRI y la imagen de fondo; las texturas de M2 irán igual); la
+(E5: el HDRI y la imagen de fondo; las texturas, en `IMGS`, abajo); la
 clave de mallas del escritor TypeScript incluye los ids de las imágenes,
 de modo que un cambio de imagen manda la escena entera.
+
+**Texturas en el RSB** (contrato escrito en M2a; `rt-core` lo lee en M2b).
+El escritor TypeScript lo escribe **solo cuando la vista lo pide**
+(`SceneView.textures`, que M2b enciende cuando el motor dice que lo lee: una
+exportación `rt_features` de `rt.wasm` con el bit 0, y lo mismo en
+`/api/info` del lanzador); apagado, que es lo que hay hasta M2b, los bytes
+son los de antes de M2a para cualquier escena (test: la misma escena con
+sus texturas y sin ellas da los mismos bytes, y las escenas fijadas de
+`tests/rsb.test.ts` no cambian). Encendido escribe tres cosas:
+
+1. **`IMGS`** (nueva, una como máximo, viaja con las mallas: un RSB de
+   actualización sin `MESH` tampoco la lleva y el motor conserva las
+   imágenes cargadas). `u32 count`; por imagen `u32 width height channels
+   color_space` y `width × height × channels` bytes, filas desde arriba,
+   relleno a 4 bytes. `channels` 1 (gris), 3 (RGB) o 4 (RGBA, alfa recta);
+   `color_space` **0 sRGB** (lo que el motor decodifica a lineal: las
+   ranuras de color y emisión y las etiquetas) o **1 lineal** (datos:
+   rugosidad, metal, normal, alfa; el alfa es lineal siempre). Una imagen
+   usada de las dos maneras va dos veces. 8 bits; los **mipmaps los calcula
+   el motor**. Los píxeles los decodifica la interfaz
+   (`io/texture-pixels.ts`, con el decodificador del navegador): el motor no
+   lee PNG ni JPEG.
+2. **`MATL`**: los campos de antes (72 B), los de E6 (`f32 bevel_mm`, 76 B) y
+   E9 (`f32 scatter_mm scatter_color[3] scatter_g abbe`, 100 B) —ceros
+   mientras E6 y E9 no los escriban—, y desde el **byte 100** el bloque de
+   texturas:
+
+   ```text
+   u32 texture_block_version (1)
+   6 × ranura (color, rugosidad, metal, normal, alfa, emisión), 15 palabras:
+     i32 image          índice en IMGS, -1: ninguna
+     u32 projection     0 UV, 1 caja, 2 plana, 3 cilíndrica, 4 esférica
+     u32 axis           0 X, 1 Y, 2 Z
+     u32 uv_set         0 el primero, 1 el segundo
+     f32 size_mm        lo que ocupa una repetición a lo ancho (alto: por la imagen)
+     f32 rotation_deg   antihorario, v arriba
+     f32 offset[2]
+     f32 repeat[2]
+     u32 wrap           0 repetir, 1 estirar el borde, 2 espejo
+     u32 channel        0 R, 1 G, 2 B, 3 A, 4 luminancia (Rec. 709 de los valores)
+     u32 flags          bit 0 invertir, bit 1 recorte, bit 2 mapa de alturas
+     f32 strength       normal: intensidad (o mm de relieve del blanco); emisión: multiplicador
+     f32 cutoff         alfa con recorte: el umbral
+   f32 emission_tint[3]
+   u32 label_count
+   label_count × etiqueta, 19 palabras:
+     i32 image          índice en IMGS (sRGB), -1: ninguna
+     f32 origin[3] u[3] v[3] normal[3]   en el espacio de la pieza, u y v unitarias con el giro ya aplicado
+     f32 width_mm height_mm depth_mm      depth: alcance delante y detrás del plano
+     f32 roughness coat relief            el acabado donde cubre (relief: el borde del papel)
+   ```
+
+   Tamaño: `100 + 4·(1 + 90 + 3 + 1 + 19·n)` bytes. Cada ranura lleva ya
+   resuelto el mapeado que usa (el suyo o el común).
+3. **`MESH`**: tras `material_id`, `u32 uv_sets` (0, 1 o 2) y cada juego de
+   `2n` `f32`. Las posiciones de `MESH` son el espacio propio de la pieza (las
+   instancias llevan su transformación), que es el de las proyecciones y las
+   etiquetas.
+
+Semántica (la de `SPEC.md` §3.3 y `src/core/textures.ts`, cuyas funciones
+son la referencia que los tests fijan y el *shader* de Rápido sigue): las
+coordenadas de textura con v arriba, el téxel en la columna `u·ancho` y la
+fila `(1 − v)·alto`; caja con pesos |n|⁴ y sin espejos; cilíndrica y
+esférica con la imagen centrada delante (−T de la sección del eje); `uv =
+R(giro)·(c ⊙ repetición) + desplazamiento` (+½ en las proyecciones); la
+imagen multiplica el parámetro, la emisión suma `tinte × imagen ×
+intensidad` en radiancia; una etiqueta cubre `|s − ½| ≤ ½`, `|t − ½| ≤ ½`,
+a menos de `depth_mm` de su plano y en superficies con `n · normal > 0`, y
+se compone en orden sobre el sustrato por su alfa.
 
 **Pases exactos** (X2, `rt_core::passes`; contrato en `AI-POST.md` §7.4 y
 `src/core/passes.ts`). Un plano por pase, `ancho × alto`, por filas desde
@@ -1068,3 +1171,20 @@ objeto es daño. El esquema sigue en 2. Una versión anterior a U9 que abra
 un proyecto con primitivas no las verá (sin malla en el archivo): solo
 compatibilidad hacia atrás, como se decidió. El motor recibe la malla como
 una más: el RSB no cambia.
+
+**Texturas** (M2a). Las imágenes de las ranuras y de las etiquetas de los
+materiales van en el mismo bloque `images`, detrás de las del entorno, una
+vez cada una, como el archivo PNG o JPEG que eran, bajo el id que nombra su
+contenido (`tex:` y 16 cifras hexadecimales de su SHA-256,
+`core/texture-images.ts`): un proyecto guardado y abierto en otra sesión
+vuelve con los mismos bytes y los mismos ids, y se guarda otra vez en los
+mismos bytes (test). Al abrir se registran sin decodificar
+(`placeTextureImages`): una que falta o no es PNG ni JPEG quita sus ranuras
+y sus etiquetas y cuenta en `MISSING_IMAGES`. Los `textures` de cada
+material se leen con `normalizeTextures`, que también entiende la forma
+plana anterior a M2a (`projection`, `scale`, `rotationDeg`, `offset`, las
+ranuras como texto que nunca se llenaba): la proyección, el giro y el
+desplazamiento pasan al mapeado, la escala a la repetición. El esquema
+sigue en 2; una versión anterior abre un proyecto con texturas sin verlas.
+Las mallas guardan su segundo juego de UV como `TEXCOORD_1` del GLB, solo
+cuando lo tienen (una malla sin él escribe los bytes de siempre).

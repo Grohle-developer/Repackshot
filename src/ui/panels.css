@@ -766,3 +766,64 @@
 .scale-panel .field-label {
   width: 72px;
 }
+
+/* Inspector ▸ Textures (M2a): one row per slot, the mapping and the labels. Achromatic; the colour is the images'. */
+.tex-slot,
+.tex-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.tex-slot-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.tex-thumb {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  image-rendering: auto;
+}
+.tex-thumb-empty {
+  display: inline-block;
+  background: repeating-linear-gradient(135deg, var(--bg-2) 0 4px, var(--bg-1) 4px 8px);
+}
+.tex-slot-name {
+  font-size: var(--fs-label);
+  color: var(--ink-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tex-slot-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.tex-own {
+  justify-content: space-between;
+  gap: 6px;
+}
+.tex-mapping,
+.tex-labels {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.field-row2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+.vp[data-label-tool] canvas {
+  cursor: crosshair;
+}

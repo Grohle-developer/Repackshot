@@ -43,3 +43,8 @@ spot's watts are (as bright on their axis as a panel's) and where their lumens c
 light or a camera as an object of the viewport: the gizmo on it and what a drag of it does (`objectGizmoAction`), the
 view from it and what navigating that view does to it (`lookThroughCamera`, `lookThroughAction`), and the glyphs and the
 click that picks one (`glyphsOf`, `pickGlyph`, `viewProjector`).
+
+Textures (M2a): `textures.ts` (the image slots, the mapping and the labels of a material, their `texture/*` actions,
+and the maths of the projections and labels the preview's shader and the engine follow), `texture-images.ts`
+(texture images in the registry under ids that name their content, and their limits), `image-header.ts` (the size
+and channels of a PNG or JPEG from its header).
