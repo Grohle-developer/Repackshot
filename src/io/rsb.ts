@@ -11,7 +11,7 @@
 // (S4a: one FXAM section of parameters per effect, with a material of its own
 // after the parts' ones). Model space only (Z up, millimetres): no three.js here.
 
-import { evaluate, poseActive, type Pose } from '../core/animation';
+import { playheadPose, type Pose } from '../core/animation';
 import { effectFxam, engineParticleCap, fxamPayload, FXAM_BYTES, type AmbientEffect, type FxamFields } from '../core/effects';
 import { instanceFromPreset } from '../core/materials';
 import type { EffectMaterial } from '../data/effects';
@@ -1245,9 +1245,9 @@ export function texturesToRsb(t: MaterialTextures, imageFor: (id: string, colorS
   return { slots, emissionTint: [tint[0], tint[1], tint[2]], labels };
 }
 
-/** The pose the preview shows: the playhead's, when clips exist and the playhead moved (or a reversed clip holds its end). */
+/** The pose the preview shows (core/animation.ts playheadPose): the playhead's, when clips exist and it moved. */
 export function currentPose(state: ProjectState): Pose | null {
-  return poseActive(state) ? evaluate(state, state.animation.playhead) : null;
+  return playheadPose(state);
 }
 
 /** The engine's scene for a project state and a view. */

@@ -5,6 +5,7 @@ import type { ActionBase, ProjectState } from './store';
 import type { MaterialId, MaterialInstance } from './materials';
 import { getMesh, transformedMeshBounds, type MeshId, type MeshRef, type TriangleRange } from './meshes';
 import type { PrimitiveSpec } from './primitives';
+import type { PhysicsProps } from './physics';
 import { nextId } from './ids';
 import {
   add,
@@ -140,6 +141,11 @@ export interface SceneNode {
    * that changes the geometry otherwise (flip, smoothing angle, separate) drops it, like Convert to mesh.
    */
   primitive?: PrimitiveSpec;
+  /**
+   * The Physics section (phase S2, core/physics.ts): role (STATIC when absent), density, friction, bounciness and, on
+   * a group or a model, whether it falls as parts. Absent: the defaults.
+   */
+  physics?: PhysicsProps;
   /**
    * PART that a set (L6) put in the scene: one of its cards (`index` in the set's `cards`), its backdrop (the sweep) or
    * its floor (a plane). Set decoration: not the product (part size, the rig pivot, framing), not the Doctor's

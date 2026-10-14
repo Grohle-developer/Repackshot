@@ -1,4 +1,5 @@
-// Bottom bar (UI.md §2.5): on the left the Animation and Queue drawers (Queue
+// Bottom bar (UI.md §2.5): on the left the Animation, Physics (S2) and Queue drawers (Physics with the bodies
+// still awake while a simulation runs; Queue
 // with the jobs waiting and, while one runs, a thin progress bar on its
 // bottom edge, its name and the time left in the tooltip); in the centre the
 // last result, which opens the results viewer; on the right Render…, the
@@ -12,6 +13,7 @@ import { jobFileNames } from '../render-queue';
 import { kbdFor } from '../shortcuts';
 import { formatClock, getLang, t } from '../strings';
 import { animationDrawer } from './animation';
+import { physicsDrawer } from './physics';
 import { queueDrawer } from './queue';
 
 /** "2 min ago", "just now". */
@@ -39,15 +41,30 @@ function baseName(name: string): string {
 export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui } = ctx;
 
-  const drawerBtn = (id: 'animation' | 'queue', label: string, iconName: 'film' | 'queue') =>
+  const drawerBtn = (id: 'animation' | 'physics' | 'queue', label: string, iconName: 'film' | 'queue' | 'drop') =>
     h('button', { type: 'button', class: 'btn drawer-btn', 'aria-pressed': 'false', 'data-drawer': id, onclick: () => ui.set({ drawer: ui.get().drawer === id ? null : id }) }, icon(iconName, 14), h('span', null, label));
   const animBtn = drawerBtn('animation', t('render.animation'), 'film');
+  const physBtn = drawerBtn('physics', t('render.physics'), 'drop');
+  physBtn.setAttribute('data-tip', t('render.physicsTip'));
+  const physBadge = h('span', { class: 'badge tabular', 'aria-hidden': 'true', style: 'display:none' });
+  physBtn.append(physBadge);
+  scope.watch(
+    (_s, u) => u.physics,
+    (p) => {
+      // While a run is on: the bodies still awake, as the simulator counts them.
+      const on = p.state === 'RUNNING' || p.state === 'PAUSED';
+      physBadge.textContent = on ? String(p.awake) : '';
+      physBadge.style.display = on ? '' : 'none';
+      physBtn.classList.toggle('is-running', on);
+    },
+  );
   const queueBtn = drawerBtn('queue', t('render.queue'), 'queue');
   const badge = h('span', { class: 'badge tabular', 'aria-hidden': 'true' });
   const edge = h('span', { class: 'progress-edge', style: 'width:0' });
   queueBtn.append(badge, edge);
   scope.watch((_s, u) => u.drawer, (d) => {
     animBtn.setAttribute('aria-pressed', String(d === 'animation'));
+    physBtn.setAttribute('aria-pressed', String(d === 'physics'));
     queueBtn.setAttribute('aria-pressed', String(d === 'queue'));
   });
   scope.watch(
@@ -99,13 +116,14 @@ export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
   const drawer = dynamic(
     scope,
     (_s, u) => u.drawer,
-    (sc, d) => (d === 'animation' ? animationDrawer(ctx, sc) : d === 'queue' ? queueDrawer(ctx, sc) : null),
+    (sc, d) => (d === 'animation' ? animationDrawer(ctx, sc) : d === 'physics' ? physicsDrawer(ctx, sc) : d === 'queue' ? queueDrawer(ctx, sc) : null),
     undefined,
     'div',
     'drawer-host',
   );
   scope.watch((_s, u) => u.drawer, (d) => {
     drawer.classList.toggle('drawer', d !== null);
+    drawer.dataset.drawer = d ?? '';
     // N6: the timeline's three zones need more height than the queue.
     drawer.classList.toggle('is-anim', d === 'animation');
   });
@@ -113,7 +131,7 @@ export function renderBar(ctx: Ctx, scope: Scope): HTMLElement {
   const bar = h(
     'div',
     { class: 'bar', role: 'toolbar', 'aria-label': t('render.barLabel') },
-    h('div', { class: 'bar-group' }, animBtn, queueBtn),
+    h('div', { class: 'bar-group' }, animBtn, physBtn, queueBtn),
     h('div', { class: 'bar-mid' }, last),
     h('div', { class: 'render-btn-wrap' }, renderBtn),
   );

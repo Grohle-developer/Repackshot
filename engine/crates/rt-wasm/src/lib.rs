@@ -24,6 +24,7 @@ use rt_post::denoise::{denoise_rows, DenoiseInput};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub mod ffi;
+pub mod phys;
 
 /// Status returned by `rt_render_tile`: success.
 pub const STATUS_OK: u32 = 0;

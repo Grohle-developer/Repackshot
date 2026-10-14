@@ -504,7 +504,9 @@ export type MoveKind =
   | 'TINT'
   | 'HDRI'
   | 'EXPLODE'
-  | 'VISIBILITY';
+  | 'VISIBILITY'
+  /** A recorded simulation (S2): the clip carries the baked track and plays it. */
+  | 'PHYSICS';
 
 export type EasingKind = 'LINEAR' | 'EASE' | 'EASE_IN' | 'EASE_OUT' | 'EASE_STRONG';
 
@@ -593,6 +595,9 @@ export type DoctorCheckKey =
   | 'persist'
   | 'output'
   | 'aspect'
+  /** S2: a dynamic part starts below the floor (not ported). */
+  | 'physics'
+  /** S4a: an ambient effect asks for more particles than its cap. */
   | 'particles';
 
 /** Descriptor only: what the check looks for and what its one-click fix does. */

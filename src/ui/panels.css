@@ -424,6 +424,24 @@
   gap: 8px;
 }
 
+/* Physics bar (S2): a short drawer, one row of controls and a note. */
+.drawer[data-drawer='physics'] {
+  height: auto;
+}
+.phys-head {
+  height: 40px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.phys-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+}
+.phys-state {
+  color: var(--ink-1);
+}
+
 /* Animation drawer (N6): three zones. Left the tree of what is animated, centre the ruler and the bars, right the
    properties of the selected animation; the transport above. The tree and the lanes are one grid: the tree column is
    sticky on the left and the ruler on the top while the lanes scroll. */

@@ -225,6 +225,57 @@ interior), `STEPS` (número de escalones, subiendo hacia +Y) y `SWEEP`
   primitivas, todas), para que un fondo infinito seis veces mayor no mueva
   las luces ni cambie la escala. *Encuadrar todo* sigue siendo todo.
 
+**Físicas** (fase S2, `src/core/physics.ts`; el simulador es el *crate*
+`rt-phys`, en un *worker*). Cada nodo puede llevar su sección *Físicas*
+(`physics`, opcional; sin ella valen los valores por defecto):
+
+- **Papel** (`role`): *Estático* (por defecto: está, no se mueve y se
+  choca contra él) o *Dinámico* (cae y choca). *Tela* (S9) y *Líquido*
+  (S7) aparecen en el inspector como *próximamente*. Un grupo o un modelo
+  dinámico cae **como un cuerpo** (una envolvente de todas sus piezas) salvo que
+  tenga **Como piezas** (`asParts`), y entonces cada pieza cae por su
+  cuenta.
+- **Masa por densidad** (`density`, kg/m³): sin densidad propia, la de la
+  familia del material de la pieza (`DENSITY_BY_CATEGORY` en
+  `src/data/physics.ts`: metal 7 800, plástico 1 100, madera 700, tela
+  400, vidrio 2 500, emisivo 2 500, otro 1 000) o 1 000 sin material.
+  La masa es la densidad por el volumen de la forma de colisión.
+- **Rozamiento** de Coulomb (`friction`, 0–2, 0,5 por defecto; el mismo
+  para el estático y el dinámico) y **rebote** (`bounciness`, 0–1, 0,2).
+  Entre dos superficies, la media geométrica de los rozamientos y el
+  mayor de los rebotes; el suelo tiene 0,6 y 0,2.
+
+**Qué se simula** (`physicsSpec`). Con *Dejar caer*, la selección (de
+cada rama, el nodo de más arriba); con *Iniciar*, los nodos cuyo papel es
+dinámico. Un nodo bloqueado no se mueve y una pieza
+oculta no está. Todo lo demás visible es estático, como malla de
+triángulos, y el suelo del estudio (`z = 0`) siempre está. Cada pieza
+dinámica choca con su **envolvente convexa** (*quickhull* propio, como
+mucho 128 vértices; si no se puede, su caja orientada) y una esfera
+reconocida como tal (todos sus vértices a la misma distancia del centro)
+choca como esfera exacta. La gravedad es −Z, 9,81 m/s², en mm. La
+simulación avanza a paso fijo de 1/240 s (4 subpasos), al ritmo del reloj
+como mucho y a unos pocos fotogramas (1/8 s) de lo que la interfaz ya ha
+recibido, así que en una máquina cargada va más despacio en vez de acabar
+sin que se vea; un cuerpo quieto durante
+0,5 s **duerme** y, con todos dormidos, la simulación se para sola; si no,
+a los 30 s simulados. La misma escena da las mismas poses en cualquier
+máquina (*hash* de las poses fijado en los tests, igual en nativo y en
+wasm y con cualquier número de hilos).
+
+**Lo que hace en el proyecto.** Mientras corre, los nodos no cambian:
+cada uno tiene su clip `PHYSICS` (§3.7) que crece fotograma a fotograma y
+el cabezal lo sigue, así que el visor enseña la caída a través de la
+línea de tiempo. *Pausar* congela lo que el visor enseña (lo que el
+simulador manda mientras tanto espera a *Reanudar*); *Parar* confirma la
+pose que se ve; dormirse o el límite de tiempo confirman el último
+fotograma. Confirmar pone cada nodo donde acaba su clip (su escala no
+cambia; dentro de un grupo, en los ejes del grupo). Los clips, los papeles
+que da *Dejar caer* y las poses finales son **una** entrada de deshacer;
+*Reiniciar* quita los clips de la última simulación y devuelve los nodos a
+donde estaban antes, como otra entrada; deshacer mientras corre la
+abandona sin confirmar nada.
+
 **Ambiente** (fase S4a, `src/core/effects.ts`, catálogo
 `src/data/effects.ts`). Partículas del aire **sin estado**: polvo en
 suspensión, polen, lluvia, nieve, polvareda, ceniza, burbujas que suben y
@@ -898,6 +949,7 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | | **Fundido** (`FADE`, nuevo) | Opacidad de 0 a 1 o de 1 a 0 |
 | | **Despiece** (`EXPLODE`) | Las piezas del modelo o de un grupo se separan: lineal, radial, esférico o por niveles, con excepciones (ver abajo) |
 | | **Visibilidad** (`VISIBILITY`) | Aparece o desaparece |
+| | **Simulación** (`PHYSICS`, S2) | La caída grabada de una simulación (§3.1, *Físicas*); no se crea desde el asistente: la crea cada simulación |
 | Cámara | **Órbita** (`ORBIT`) | Gira alrededor del objetivo, grados |
 | | **Inclinación** (`RISE`) | Sube o baja en arco, grados |
 | | **Zoom** (`ZOOM`) | Cambia la focal, mm |
@@ -977,6 +1029,30 @@ cada pieza la misma distancia, desde el centro del modelo, a la vez; se
 lee exactamente igual (`tests/fixtures/explode-legacy.json`). La radial
 nueva usa la clave `CYLINDRICAL`, que ya estaba en el catálogo con ese
 sentido («salen en abanico sin subir ni bajar»).
+**Simulación (`PHYSICS`, fase S2).** **Toda simulación se graba sola**:
+al empezar, cada cuerpo que cae recibe un clip `PHYSICS` sobre su nodo,
+que empieza en el cabezal (redondeado a un fotograma) y crece mientras
+corre; se queda donde la simulación se para y *Reiniciar* lo quita
+(deshacible). No hay un paso aparte de grabar: la foto fija usa el
+fotograma del cabezal y la animación ya tiene la simulación. El clip lleva
+una **pista horneada** (`track`: fps del proyecto, número de fotogramas y,
+por fotograma, la posición local en mm y la rotación como cuaternión,
+`f32` *little endian* en base64, 7 números por fotograma) y un **ancla**
+(`anchor`: la posición y la rotación del nodo a las que la pista se
+refiere; al confirmar, donde la simulación lo dejó). Al reproducir, la
+posición se interpola linealmente entre fotogramas y la rotación por el
+arco corto; antes de su inicio el nodo tiene el primer fotograma y
+después el último. Si el nodo se mueve o gira después, la caída entera va
+con él (la pista por el cambio desde el ancla); su escala es la suya.
+Estirar la barra la ralentiza; se repite y se invierte con el mismo
+tiempo que cualquier otra (invertida, la caída va hacia atrás: las piezas
+suben desde el reposo); no tiene cantidad ni curva de tiempo, no se parte
+y *Animar…* no la ofrece. Las demás animaciones del mismo nodo se suman
+encima. Con el cabezal en 0, sin reproducir y sin clips invertidos, la
+escena se enseña como se edita (N1, N6), **salvo los nodos
+que una simulación grabada sostiene**, que enseñan su fotograma también
+ahí (una caída desde 0 empieza en 0, y la pose editada ya es la final);
+mientras un nodo está así, el *gizmo* no aparece sobre él.
 
 **Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,
 cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,
@@ -1118,12 +1194,13 @@ cotas, variantes, 360). Las decisiones, las fuentes y las fases están en
 
 ## 4 · El Doctor
 
-Catorce chequeos, cada uno con detección y arreglo (`DOCTOR_CHECKS` en
+Quince chequeos, cada uno con detección y arreglo (`DOCTOR_CHECKS` en
 `src/data/doctor.ts`). Los de escena se evalúan sobre el modelo: escala
 plausible para el tipo de producto (una joya de 3 m está mal), origen y
 apoyo en el suelo, suavizado de normales, bisel de aristas (sin bisel, las
 aristas de un CAD no reflejan nada y delatan el render), clipping de
-cámara, luces visibles a cámara sin querer. Los de motor se evalúan sobre
+cámara, luces visibles a cámara sin querer, y una pieza dinámica que
+empieza atravesando el suelo (S2: el arreglo la sube hasta apoyarla). Los de motor se evalúan sobre
 el motor activo: dispositivo, denoise, transformada de vista, cáusticas
 (fireflies), datos persistentes, formato de salida de vídeo. El Doctor no
 cambia nada sin que se le pida y explica cada aviso en una frase.

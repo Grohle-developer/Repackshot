@@ -27,6 +27,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rt-phys"
+version = "0.3.0"
+dependencies = [
+ "rt-core",
+]
+
+[[package]]
 name = "rt-post"
 version = "0.3.0"
 dependencies = [
@@ -56,6 +63,7 @@ name = "rt-wasm"
 version = "0.3.0"
 dependencies = [
  "rt-core",
+ "rt-phys",
  "rt-post",
  "rt-sim",
 ]
