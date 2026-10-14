@@ -233,7 +233,25 @@ export interface MaterialParams {
   axialNoise?: number;
   colorNoise?: number;
   grainStretch?: number;
+  /** WOOD (E6): Michelson contrast of spring and summer wood (0: the two colours as they are). */
+  ringContrast?: number;
+  /** WOOD (E6): pore width in mm (0: none); their depth is `poreDepth`. */
+  poreSize?: number;
   poreDepth?: number;
+  /** WOOD (E6): 1 ring-porous (pores in the spring wood only), 0 diffuse-porous. */
+  poreBand?: number;
+  /** WOOD (E6): RINGS (default), STRIPS (bamboo), SPECKLE (fibreboard) or STREAKED (ebony). */
+  woodFigure?: string;
+  /** WOOD (E6): multiplier of the ring spacing (1: the species'). */
+  woodScale?: number;
+  /** WOOD (E6): knots per piece, 0 to 12 (only woods with rings: woodFigure RINGS). */
+  knotCount?: number;
+  /** WOOD (E6): diameter of a knot at the middle of the piece, mm (5 to 40). */
+  knotSize?: number;
+  /** WOOD (E6): variation of the knots' diameter, ± this fraction (0 to 1). */
+  knotSizeVar?: number;
+  /** WOOD (E6): how much darker a knot is, 0 to 1 (35 % darker at 1). */
+  knotDarkness?: number;
   threadColor1?: RGBA;
   threadColor2?: RGBA;
   /** FABRIC weave pattern: PLAIN, TWILL, SATIN, CANVAS, KNIT or FELT. */

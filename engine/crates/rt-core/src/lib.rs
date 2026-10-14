@@ -6,7 +6,8 @@
 //! colour handling and tone curves, the film, the PNG writer, the RSB scene format, SIMD,
 //! geometry (meshes, instances, BVHs, ray queries), the BSDF, lights and environment (the studio
 //! dome, the daylight sky, HDRI images), the image readers (`inflate`, `hdr`, `exr`, `bitmap`),
-//! the path tracer (`integrator`), the photon map of the caustics (`caustics`), the tile renderer
+//! the edge bevel (`bevel`) and the procedural patterns (`pattern`) of the shading, the path
+//! tracer (`integrator`), the photon map of the caustics (`caustics`), the tile renderer
 //! and the exact passes written next to the image for the AI post-processing (`passes`).
 //!
 //! It deliberately avoids every OS API (`std::fs`, `std::net`, `std::time`, `std::thread`) so
@@ -35,6 +36,7 @@ pub mod integrator;
 pub mod light;
 pub mod math;
 pub mod passes;
+pub mod pattern;
 pub mod png;
 pub mod render;
 pub mod rng;

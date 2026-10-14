@@ -28,6 +28,8 @@ import { glyphsOf, lookThroughCamera, objectFrame, pickGlyph, sameObject, type G
 import type { ProjectState } from '../core/store';
 import type { DisplayPrefs, EngineStatus, NavigationPrefs, PickHit, RenderEngine, RenderOptions } from './engine';
 import { Gizmo, GizmoDrag, modelRay, SCALE_CUBE_AT, type GizmoMode } from './gizmo';
+import { partKnots, type PartKnots } from '../core/knots';
+import { setKnots } from './knots';
 import { applyMaterial, makeMaterial } from './materials';
 import { drawPasses, type PassMesh } from './preview-passes';
 
@@ -241,6 +243,8 @@ export class PreviewEngine implements RenderEngine {
   private readonly geometries = new Map<string, THREE.BufferGeometry>();
   private readonly materials = new Map<string, THREE.MeshPhysicalMaterial>();
   private readonly fallbackMaterial = new THREE.MeshPhysicalMaterial({ color: 0xb3b3b3, roughness: 0.5 });
+  /** E6: a copy of a wood material per part that shows its knots (they lie where that part's box puts them). */
+  private readonly knotMaterials = new Map<string, THREE.MeshPhysicalMaterial>();
   private readonly floor: THREE.Mesh<THREE.PlaneGeometry, THREE.ShadowMaterial>;
   private readonly shadowLight = new THREE.DirectionalLight(0xffffff, 0);
   private envKey = '';
@@ -673,13 +677,40 @@ export class PreviewEngine implements RenderEngine {
   }
 
   private assignMaterials(state: ProjectState): void {
+    const used = new Set<string>();
     for (const [id, obj] of this.objects) {
       if (!(obj instanceof THREE.Mesh)) continue;
       const node = state.scene.nodes[id];
       const ids = obj.geometry.userData.materialIds as (string | null)[] | undefined;
-      const get = (m: string | null | undefined) => (m ? (this.materials.get(m) ?? this.fallbackMaterial) : this.fallbackMaterial);
+      const get = (m: string | null | undefined) => {
+        const base = m ? (this.materials.get(m) ?? this.fallbackMaterial) : this.fallbackMaterial;
+        const knots = m ? partKnots(state, id, m) : null;
+        return knots && knots.knots.length > 0 ? this.knotted(id, m!, base, knots, used) : base;
+      };
       obj.material = ids ? ids.map((m, i) => get(i === 0 ? node.material : m)) : get(node.material);
     }
+    for (const [key, m] of this.knotMaterials) {
+      if (used.has(key)) continue;
+      m.dispose();
+      this.knotMaterials.delete(key);
+    }
+  }
+
+  /**
+   * The copy of `base` that shows the knots of part `id` (E6): they lie where the engine puts them (core/knots.ts:
+   * the box of the part's triangles of this material, the part's scale, its surface), different for every part.
+   */
+  private knotted(id: NodeId, materialId: string, base: THREE.MeshPhysicalMaterial, knots: PartKnots, used: Set<string>): THREE.MeshPhysicalMaterial {
+    const key = `${id}|${materialId}`;
+    used.add(key);
+    let m = this.knotMaterials.get(key);
+    if (m) m.copy(base);
+    else {
+      m = base.clone();
+      this.knotMaterials.set(key, m);
+    }
+    setKnots(m, knots.frame, knots.knots, knots.darkness);
+    return m;
   }
 
   private applyNodePose(state: ProjectState, pose: Pose | null): void {
@@ -1644,6 +1675,7 @@ export class PreviewEngine implements RenderEngine {
     this.gizmo.dispose();
     for (const g of this.geometries.values()) g.dispose();
     for (const m of this.materials.values()) m.dispose();
+    for (const m of this.knotMaterials.values()) m.dispose();
     this.envTexture?.dispose();
     this.envMap?.dispose();
     this.maskTarget?.dispose();

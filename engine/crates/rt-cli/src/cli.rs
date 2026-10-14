@@ -14,11 +14,13 @@ USAGE:
        [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
+    rt --pattern-sheet <dir> --materials <patterns.rsb> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
     rt --write-e5b-example <scene.rsb>
     rt --write-e6-example <scene.rsb>
+    rt --write-e6-patterns-example <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
@@ -41,6 +43,11 @@ OPTIONS:
                             E5 scenes (glass, coat, emitter, sky, HDRI) and the E5c skies
                             (physical against classic) into <dir>: one PNG each, index.html
                             and stats.json
+        --pattern-sheet <dir>
+                            render the woods of --materials (tests/fixtures/patterns.rsb, the
+                            interface's own) as spheres, before and after E6 and close up, into
+                            <dir>/wood-sheet.html (images in <dir>/patterns/)
+        --materials <f>     the materials of --pattern-sheet
         --write-example <f> write the built-in example scene as an RSB file
         --write-e5-example <f>
                             write the E5 parity scene (glass, cut-outs, anisotropy, HDRI,
@@ -54,6 +61,8 @@ OPTIONS:
         --write-e6-example <f>
                             write the E6 parity scene (bevelled CAD-like parts) as an RSB
                             file
+        --write-e6-patterns-example <f>
+                            write the E6 pattern scene (procedural wood) as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -152,6 +161,15 @@ pub enum Command {
         /// Overrides (samples, threads, size).
         options: Options,
     },
+    /// Render the pattern sheets into a directory.
+    PatternSheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// The fixture with the materials (`tests/fixtures/patterns.rsb`).
+        materials: PathBuf,
+        /// Overrides (samples, threads, size).
+        options: Options,
+    },
     /// Write the example scene as an RSB file.
     WriteExample {
         /// RSB file to write.
@@ -174,6 +192,11 @@ pub enum Command {
     },
     /// Write the E6 parity scene (`rt_core::example::e6_scene`) as an RSB file.
     WriteE6Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the E6 pattern scene (`rt_core::example::e6_patterns_scene`) as an RSB file.
+    WriteE6PatternsExample {
         /// RSB file to write.
         path: PathBuf,
     },
@@ -239,7 +262,10 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e5c = None;
     let mut write_e5b = None;
     let mut write_e6 = None;
+    let mut write_e6p = None;
     let mut sheet_dir = None;
+    let mut pattern_dir = None;
+    let mut pattern_materials = None;
     let mut tone_table = false;
     let mut options = Options::default();
     let mut it = args.iter();
@@ -272,6 +298,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                 })?)
             }
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--pattern-sheet" => pattern_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--materials" => pattern_materials = Some(PathBuf::from(value(&mut it, arg)?)),
             "--example" => {
                 if input.replace(Input::Example).is_some() {
                     return Err("only one scene can be rendered at a time".into());
@@ -283,6 +311,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e5c-example" => write_e5c = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5b-example" => write_e5b = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e6-example" => write_e6 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-e6-patterns-example" => write_e6p = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -300,6 +329,24 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--tone-table takes no other option".into());
         }
         return Ok(Command::ToneTable);
+    }
+    if let Some(dir) = pattern_dir {
+        let Some(materials) = pattern_materials else {
+            return Err("--pattern-sheet needs --materials <patterns.rsb>".into());
+        };
+        if input.is_some() || output.is_some() || options.max_seconds.is_some() {
+            return Err(
+                "--pattern-sheet renders its own scenes: no scene, -o or --max-seconds".into(),
+            );
+        }
+        return Ok(Command::PatternSheet {
+            dir,
+            materials,
+            options,
+        });
+    }
+    if pattern_materials.is_some() {
+        return Err("--materials goes with --pattern-sheet".into());
     }
     if let Some(path) = write_e5 {
         if args.len() != 2 {
@@ -324,6 +371,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-e6-example takes no other option".into());
         }
         return Ok(Command::WriteE6Example { path });
+    }
+    if let Some(path) = write_e6p {
+        if args.len() != 2 {
+            return Err("--write-e6-patterns-example takes no other option".into());
+        }
+        return Ok(Command::WriteE6PatternsExample { path });
     }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
@@ -405,10 +458,49 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::WriteE6PatternsExample { path } => {
+            let bytes = rt_core::example::e6_patterns_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteStudioHdri { path } => {
             let bytes = crate::scenes::studio_hdri_file();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::PatternSheet {
+            dir,
+            materials,
+            options,
+        } => {
+            use crate::pattern_sheet as ps;
+            let bytes =
+                std::fs::read(&materials).map_err(|e| format!("{}: {e}", materials.display()))?;
+            let list =
+                ps::read_materials(&bytes).map_err(|e| format!("{}: {e}", materials.display()))?;
+            let size = options.size.unwrap_or(ps::SHEET_SIZE);
+            let samples = options.samples.unwrap_or(ps::SHEET_SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            println!(
+                "pattern sheet: {} materials, {}x{}, {samples} spp, {threads} threads",
+                list.len(),
+                size.0,
+                size.1
+            );
+            let (woods, cloths) = ps::run(&dir, &list, size, samples, threads)?;
+            for (name, rows) in [("wood-sheet.html", woods), ("cloth-sheet.html", cloths)] {
+                if !rows.is_empty() {
+                    println!(
+                        "wrote {} ({} materials)",
+                        dir.join(name).display(),
+                        rows.len()
+                    );
+                }
+            }
             Ok(())
         }
         Command::Sheet { dir, options } => {
@@ -551,6 +643,39 @@ mod tests {
     }
 
     #[test]
+    fn parses_the_pattern_sheet() {
+        assert_eq!(
+            parse(&[
+                "--pattern-sheet",
+                "out",
+                "--materials",
+                "p.rsb",
+                "--samples",
+                "8"
+            ]),
+            Ok(Command::PatternSheet {
+                dir: "out".into(),
+                materials: "p.rsb".into(),
+                options: Options {
+                    samples: Some(8),
+                    ..Options::default()
+                },
+            })
+        );
+        assert!(parse(&["--pattern-sheet", "out"]).is_err());
+        assert!(parse(&["--materials", "p.rsb", "--example", "-o", "x.png"]).is_err());
+        assert!(parse(&[
+            "--pattern-sheet",
+            "out",
+            "--materials",
+            "p.rsb",
+            "-o",
+            "x.png"
+        ])
+        .is_err());
+    }
+
+    #[test]
     fn parses_the_sheet_and_the_time_budget() {
         assert_eq!(
             parse(&["--sheet", "out/sheet", "--samples", "4"]),
@@ -625,6 +750,12 @@ mod tests {
             })
         );
         assert!(parse(&["--write-e6-example", "e6.rsb", "--example"]).is_err());
+        assert_eq!(
+            parse(&["--write-e6-patterns-example", "p.rsb"]),
+            Ok(Command::WriteE6PatternsExample {
+                path: "p.rsb".into()
+            })
+        );
         assert_eq!(parse(&["--tone-table"]), Ok(Command::ToneTable));
         assert!(parse(&["--tone-table", "--example"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Command::Help));

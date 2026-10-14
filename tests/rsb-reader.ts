@@ -2,7 +2,7 @@
 // sections and decodes each one back into the shapes of src/io/rsb.ts, so a round trip can be
 // compared field by field. Layout: engine/crates/rt-core/src/scene/rsb.rs.
 
-import type { RsbBitmap, RsbCamera, RsbEnvironment, RsbFloor, RsbInstance, RsbLight, RsbMaterial, RsbMesh, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
+import type { RsbBitmap, RsbCamera, RsbEnvironment, RsbFloor, RsbInstance, RsbLight, RsbMaterial, RsbMesh, RsbPattern, RsbRender, RsbScene, RsbVec } from '../src/io/rsb';
 
 export interface Section {
   tag: string;
@@ -63,6 +63,20 @@ export function readMaterial(p: DataView): RsbMaterial {
   // E6.
   if (c.remaining >= 4) m.bevelMm = c.f32();
   return m;
+}
+
+export function readPattern(p: DataView): RsbPattern {
+  const c = new Cursor(p);
+  return {
+    material: c.u32(),
+    kind: c.u32(),
+    colorA: c.vec(),
+    colorB: c.vec(),
+    scaleMm: c.f32(),
+    params: Array.from({ length: 16 }, () => c.f32()),
+    variant: c.u32(),
+    seed: c.u32(),
+  };
 }
 
 export function readMesh(p: DataView): RsbMesh {
@@ -173,6 +187,9 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
         break;
       case 'MATL':
         out.materials.push(readMaterial(s.payload));
+        break;
+      case 'PATN':
+        (out.patterns ??= []).push(readPattern(s.payload));
         break;
       case 'MESH':
         out.meshes.push(readMesh(s.payload));

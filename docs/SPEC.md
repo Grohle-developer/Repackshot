@@ -102,7 +102,8 @@ genera de ahí (ver *Primitivas*, abajo).
 envolvente del modelo, detectada al importar y editable. Todo lo que
 tiene escala física se expresa en tamaños de pieza o se deriva de aquí:
 distancia de cámara, tamaño y distancia de focos, radio de bisel, escala
-del desgaste y del grano.
+del desgaste. La veta de la madera, no (E6, decisión del líder): sus anillos,
+poros y fibras tienen tamaño físico, el mismo en un joyero que en una mesa.
 
 **Apoyo en el suelo**: el punto más bajo de **todas** las mallas del
 objetivo (no de una sola) baja a `z = 0`. **Centrar**: el centro de la caja
@@ -312,7 +313,7 @@ Familias y lo que significan para el motor:
 | --- | --- | --- |
 | `SIMPLE` | BSDF de principio físico: base, metal, rugosidad, barniz, anisotropía, subsuperficie, opacidad | — |
 | `GLASS` | dieléctrico con transmisión, IOR, rugosidad, color de absorción: el color es lo que conserva la luz blanca tras `absorptionMm` milímetros dentro de la pieza (0: tinte de superficie); con `walls` `THIN`, pared fina sin interior (lámina, bombilla, visera modelada como una superficie), que deja pasar la luz recta | `ior`, `transmission`, `absorptionMm` (50), `walls` (`SOLID` · `THIN`) |
-| `WOOD` | veta procedural: dos colores, densidad y variación de anillos, ruido axial, poro | `woodColor1/2`, `ringDensity`… |
+| `WOOD` | veta procedural (E6): dos colores (primavera y verano) con el contraste de la especie, anillos por 100 mm (físicos) y su escala, variación y serpenteo de los anillos, ruido axial y de color, fibra, poros (anchura, profundidad, en anillo o difusos), la figura (anillos, tiras de bambú con sus haces y sus nodos, moteado de MDF, vetas de ébano) y los nudos de las maderas con anillos (cuántos por pieza, 0–12; diámetro en mm, 5–40, ± variación; oscuridad), colocados según la semilla del material. La vista *Rápida* muestra su color medio y dónde caen los nudos | `woodColor1/2`, `ringDensity`, `woodScale`, `ringContrast`, `poreSize`, `poreDepth`, `poreBand`, `woodFigure`, `knotCount`, `knotSize`, `knotSizeVar`, `knotDarkness`… |
 | `FABRIC` | trama procedural: dos colores de hilo, tejido (tafetán, sarga, satén, punto, malla), hilos por cm, relieve, pelusa | `threadColor1/2`, `weave`, `threadCount`, `fuzz` |
 | `EMISSIVE` | emisor: cuerpo negro a temperatura o color, potencia | `emitKind`, `temperature`, `emitPower` |
 

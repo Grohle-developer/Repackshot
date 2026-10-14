@@ -195,6 +195,7 @@ pub fn scene() -> Scene {
             caustic_radius: 0.0,
         },
         bitmaps: Vec::new(),
+        patterns: Vec::new(),
     }
 }
 
@@ -516,6 +517,74 @@ pub fn e6_scene() -> Scene {
     scene.lights[0].power = 4.0;
     scene.render.width = 160;
     scene.render.height = 120;
+    scene
+}
+
+/// The E6 pattern scene (`render.rs` pins its hash; `rt --write-e6-patterns-example` writes it
+/// for `tools/wasm-parity.mjs`): an oak board (a box with a 1 mm bevel, its pores and rings) and a
+/// walnut sphere on the example's floor, under the example's key light. Instances: 0 floor, 1
+/// board, 2 sphere.
+pub fn e6_patterns_scene() -> Scene {
+    use crate::pattern::{Pattern, PATTERN_WOOD};
+    let mut scene = e6_scene();
+    let meshes = vec![
+        floor_quad(0.0, 900.0, 0),
+        split_box(
+            Vec3::new(-110.0, -40.0, 0.0),
+            Vec3::new(50.0, 30.0, 18.0),
+            &[0, 1, 2, 3, 4, 5],
+        ),
+        icosphere(Vec3::new(80.0, 20.0, 36.0), 36.0, 4),
+    ];
+    let instances = vec![
+        Instance::new(0, Transform::IDENTITY, 0),
+        Instance::new(1, Transform::IDENTITY, 1),
+        Instance::new(2, Transform::IDENTITY, 2),
+    ];
+    scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
+    scene.materials = vec![
+        scene.materials[0].clone(),
+        Material {
+            base_color: Rgb::new(0.456, 0.3, 0.162),
+            roughness: 0.4,
+            bevel_mm: 1.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.236, 0.138, 0.078),
+            roughness: 0.36,
+            coat: 0.4,
+            coat_roughness: 0.05,
+            ..Material::default()
+        },
+    ];
+    scene.patterns = vec![
+        Pattern {
+            material: 1,
+            kind: PATTERN_WOOD,
+            color_a: Rgb::new(0.56, 0.38, 0.21),
+            color_b: Rgb::new(0.3, 0.18, 0.09),
+            scale_mm: 3.0,
+            // Three knots of 14 mm, so the pinned image covers them too.
+            params: [
+                0.45, 0.35, 0.25, 0.2, 0.35, 0.3, 0.5, 1.0, 1.0, 0.3, 3.0, 14.0, 0.3, 0.6, 0.0, 0.0,
+            ],
+            variant: 0,
+            seed: 11,
+        },
+        Pattern {
+            material: 2,
+            kind: PATTERN_WOOD,
+            color_a: Rgb::new(0.3, 0.18, 0.1),
+            color_b: Rgb::new(0.14, 0.075, 0.045),
+            scale_mm: 3.0,
+            params: [
+                0.4, 0.5, 0.35, 0.22, 0.35, 0.2, 0.175, 0.0, 1.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+            variant: 0,
+            seed: 0,
+        },
+    ];
     scene
 }
 

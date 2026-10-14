@@ -1,8 +1,9 @@
 // Material instances to three.js MeshPhysicalMaterial, shared by the
-// viewport and the thumbnail renderer. Approximations of the preview: wood and
-// fabric are flat colours, fuzz is sheen, wear is not drawn; the engine draws
-// glass (refraction, absorption, thin walls), the clear coat, opacity and
-// anisotropy (E5).
+// viewport and the thumbnail renderer. Approximations of the preview: wood is
+// the mean colour of its pattern (the engine draws its rings, pores and grain,
+// E6: rt_core::pattern), fabric a flat colour, fuzz is sheen, wear is not
+// drawn; the engine draws glass (refraction, absorption, thin walls), the
+// clear coat, opacity and anisotropy (E5).
 
 import * as THREE from 'three';
 import { kelvinToRgb } from '../core/light-math';

@@ -508,7 +508,13 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; vidrio
    (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm y
    *Paredes*: *Macizo · Pared fina*); madera
-   (dos colores, densidad de anillos…); tela (dos colores de hilo, tipo de
+   (dos colores, densidad de anillos por 100 mm, *Escala*, *Contraste de
+   anillos*, variación, ruidos, *Poros*: lo pintan el modo Completo y los
+   renders, y su punto «·» y su ayuda lo dicen; la vista Rápida muestra el
+   color medio; *Nudos*, *Tamaño de los nudos* en mm, *Variación de
+   tamaño* y *Oscuridad de los nudos*, que la vista Rápida ya enseña
+   oscureciendo donde caen; en el bambú, el MDF y el ébano están
+   desactivados y su ayuda dice por qué); tela (dos colores de hilo, tipo de
    tejido, hilos por cm, pelusa); emisor (tipo, temperatura, potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material
    propio* separa la instancia del preset cuando se edita (el nombre pasa

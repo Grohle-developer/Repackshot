@@ -404,6 +404,10 @@ banderas) es opcional: sin ella, cada malla es una instancia identidad.
 Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 `rt-core`):
 
+- **`PATN`** (E6, nueva, repetible, 108 B): el dibujo procedural de un
+  material (`u32 material kind; f32 color_a[3] color_b[3] scale_mm
+  params[16]; u32 variant seed`, §5.2 quater). `kind` 1 madera; un tipo
+  desconocido no dibuja nada; un `material` que no existe es error.
 - **`MATL`** (76 B desde E6; los de 56, 60 y 72 B se leen con los valores
   por defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
   barniz; la parte `transmission` es vidrio claro: reflexión y refracción
@@ -711,6 +715,109 @@ la escena de E6 a 4 muestras, `0xfccda027` (`PINNED_E6_BEVEL_4SPP`, `rt
 las rutas SIMD, en WASI, en el `rt.wasm` real (también por el código de la
 página, `tests/passes-engine.test.ts` con `tests/fixtures/e6.rsb`), con 1, 4
 y 16 hilos en `rt` y en el lanzador. Las escenas sin bisel no cambian de bits.
+
+### 5.2 quater · Dibujos procedurales: madera (E6)
+
+`rt_core::pattern`: la receta de un material de la familia `WOOD` como una
+función del punto, con ruido propio (`pattern::noise`: ruido de gradiente
+escrito desde la descripción pública de Perlin, «Improving Noise»,
+SIGGRAPH 2002, con los 12 gradientes de las aristas de un cubo y la curva
+`6t⁵ − 15t⁴ + 10t³`, y **nuestra** permutación, una mezcla de Fisher–Yates con
+el PCG del motor y semilla fija; solo `+ − ×`, `floor` y enteros: los mismos
+bits en todas partes; periodo 256, cero en la red, media −0,0012 y varianza
+0,0730 fijadas por test). Un material lleva como mucho un dibujo (sección
+`PATN` del RSB, 108 B, detrás de los `MATL`): sustituye su color base punto a
+punto, escala un poco su rugosidad (y le suma 0,1 en un nudo), la estira a lo largo de la fibra
+(anisotropía, con la tangente del marco de sombreado en la dirección de la
+médula) e inclina la normal de sombreado con su relieve (un *bump*: las
+diferencias finitas de su altura en el plano tangente, encima del bisel y
+del terminador). La normal geométrica y el punto de salida de los rayos no
+cambian. Lo usan los caminos de cámara y el pase de albedo; los fotones de
+las cáusticas ven el color liso del material (la madera es receptora: el
+color con que se reúne la cáustica es el del camino de cámara).
+
+**Dónde.** En el espacio de la malla (se pega a la pieza) y en milímetros
+(la escala `∛|det M|` de la instancia convierte). La médula va a lo largo
+del lado más largo de la caja de la malla, a 0,8 de ese lado (como mucho
+250 mm, el radio de un tronco, y al menos 0,75 del lado más corto) por
+debajo del centro según el lado más corto y a 0,35 de él (en la misma
+proporción) hacia el `−` del tercer eje: nunca atraviesa la pieza. Las
+caras de una tabla enseñan los arcos del corte plano y sus cantos las rayas
+del corte radial; una bola, arcos anidados en vez de una diana (el centro de
+sus anillos queda en su cara de atrás y abajo).
+
+**Madera** (`pattern::wood`; **decisión del líder sobre la hoja**: todo en
+milímetros físicos). `ringDensity` son anillos por **100 mm** (roble 3 mm,
+arce 2,5, pino 5…; `woodScale` los multiplica). Figuras (`PATN.variant`):
+**0 anillos**: cilindros alrededor de la médula; dentro de cada anillo el
+color sube despacio de la madera de primavera a la de verano durante el
+70 % del anillo y cae en su último 5 % (diente de sierra); los dos colores
+se acercan a su media `0,6 clara + 0,4 oscura` hasta que su contraste de
+Michelson sobre la luminancia es el de la especie (`ringContrast`: arce,
+abedul y fresno 0,15; pino, teca y cerezo 0,25; roble, nogal y caoba 0,35;
+ébano 0,2), y la madera de verano ocupa de media el 40 % del anillo, así
+que el color medio sigue siendo el de la vista *Rápida*. Los anillos serpean
+media separación con los ruidos del catálogo (longitud de onda 25 mm),
+cambian de ancho de uno a otro y se desplazan a lo largo del tronco; no
+tienen relieve (viven en el color). **1 tiras** (bambú, una gramínea): tiras
+paralelas de la separación de ancho, cada una con su mezcla de los dos
+colores y una junta más oscura; los haces vasculares como motas oscuras a lo
+largo de la tira (0,4 × 3 mm, −10 %, unas 15 por cm² en una cara a lo largo
+de las tiras: una por celda de una rejilla de 0,816 × 0,816 × 4 mm, en
+cualquier punto de su celda de través para que todo plano corte las mismas)
+y un nodo cada 150 ± 30 mm de cada tira (una banda de 2 mm de través, −15 %,
+0,02 mm en relieve). **2 moteado** (MDF): sin dibujo, un moteado fino y
+homogéneo. **3 vetas** (ébano): anillos tenues bajo vetas oscuras a lo
+largo de la fibra. En todas, **fibra**: ±5 % de color a 0,3 mm de través y
+30 mm a lo largo, y una variación lenta del brillo (`colorNoise`). **Poros**
+de `poreSize` mm de ancho y diez veces de largo, de `0,15 × poreSize ×
+poreDepth` de hondo (un vaso abierto a lo largo, medio lleno de barniz: el
+roble, 0,0225 mm): repartidos (porosidad difusa: nogal, caoba y teca,
+medianos, y el nogal y la caoba con la mitad de hondo; arce, abedul y cerezo,
+finísimos) o apretados en la banda de primavera de cada anillo, donde
+dibujan líneas (porosidad en anillo: roble y fresno, 0,3 × 3 mm); la banda
+entra en el primer 4 % del anillo y sale del 12 al 24 %, para que los poros
+no sumen un escalón a lo largo de cada anillo. El pino, el ébano y el MDF no
+tienen. Los poros oscurecen el color y hunden la superficie. La rugosidad
+baja un 3 % en la madera de verano (más dibuja los anillos como crestas en
+los brillos).
+
+**Nudos** (`pattern::knots`, petición del usuario; solo la figura de
+anillos). Una rama nace en la médula: en la madera es un cono a lo largo de
+una línea desde la médula hacia fuera, inclinada 15–35° tronco arriba, de
+radio `r (0,5 + 0,5 s / s₀)` (la mitad al nacer; `s₀` donde se colocó), y se
+ve donde cruza la superficie: en las dos caras que atraviesa, algo más ancho
+en la más alejada de la médula. No es una calcomanía. **Colocación**: por
+`hash01` de la semilla del material (la del desgaste), dentro de la caja de
+la pieza en el marco de la madera (a lo largo y a lo ancho a un radio de los
+extremos, a cualquier profundidad); un candidato cuyo cono pasaría a menos
+de 1 mm de otro dentro de la pieza se prueba en otro sitio (32 intentos en
+total), y uno cuyo eje cortaría la superficie a menos de 30° (eje contra el
+plano tangente, en cada cruce con la malla, que se busca con el BVH de la
+escena; o que no la cortaría) se vuelve a sacar, hasta 8 veces, y si no, se
+descarta: nunca se tocan ni rozan (una lágrima larga en una bola), y en una
+pieza pequeña caben menos de los pedidos (el inspector lo dice: «6 pedidos ·
+3 caben»). Un nudo descartado no se repone; más nudos dejan los primeros
+donde estaban. **Alrededor**: la fibra y los anillos fluyen como un flujo
+potencial alrededor de un cilindro: la coordenada de través `a` pasa a
+`a (1 − R²/ρ²)` (la fibra rodea el nudo y se aprieta a sus lados) y los
+anillos se abomban hacia fuera `0,35 R (R/ρ)²`, los dos desvaneciéndose de
+1,5 a 3 radios.
+**Dentro**: la testa del nudo, anillos alrededor de la rama a tres veces la
+densidad del tronco, `knotDarkness × 35 %` más oscura, una bolsa de corteza
+en el borde (0,5 mm, −50 %), un cuenco de 0,05 mm, rugosidad +0,1, y en los
+de 20 mm o más una grieta radial desde el centro (una línea de 0,3 mm,
+−20 %). La interfaz (`src/core/knots.ts`) coloca los mismos nudos con el
+mismo *hash*, los mismos intentos y la misma prueba de incidencia (contra
+los triángulos de la pieza con ese material, en f64: los mismos sitios a
+milésimas de milímetro); la vista *Rápida* (`src/render/knots.ts`, una copia
+del material por pieza) los oscurece, con su bolsa de corteza, sobre el
+color medio; como no pinta anillos, tampoco su flujo. Con 0 nudos los bits
+son los de antes.
+
+**Coste.** Una docena de evaluaciones de ruido por punto de una pieza de
+madera (dos más para el relieve de los poros); cada nudo, unos productos
+escalares por evaluación.
 
 ### 5.3 · En el navegador: workers
 

@@ -5,8 +5,9 @@ import { MATERIAL_CATEGORIES, MATERIAL_PRESETS } from '../../data/materials';
 import { WEAR_LEVELS, WEAR_PRESETS, WEAR_TYPES } from '../../data/wear';
 import { LIGHT_SHAPES, LIGHT_TYPES } from '../../data/light-setups';
 import type { LightRole, MaterialCategory, WearProps, WearType } from '../../data/types';
+import { partKnots } from '../../core/knots';
 import { instanceFromItem, itemsOf, type MaterialItem } from '../../core/library';
-import { instanceFromPreset, partMaterials, triangleMaterials, visibleParams, wearTypesFor, type MaterialId, type MaterialInstance, type ParamSpec } from '../../core/materials';
+import { instanceFromPreset, paramEnabled, partMaterials, triangleMaterials, visibleParams, wearTypesFor, type MaterialId, type MaterialInstance, type ParamSpec } from '../../core/materials';
 import { SMOOTH_ANGLE_DEG } from '../../core/meshes';
 import { partsUnder, type NodeId } from '../../core/scene';
 import { isLocked, PATTERN_MAX, pivotModeOf, pivotPoint, PIVOT_MODES, type PatternSpec } from '../../core/transform';
@@ -141,6 +142,8 @@ function paramControl(ctx: Ctx, scope: Scope, matId: MaterialId, spec: ParamSpec
   const label = (g?: string) => ({ label: L('undo.param', { material: materialLabel(store.get().materials[matId]), param: L(dyn(`param.${spec.key}`)) }), gesture: g });
   const setv = (value: unknown, g?: string) => store.dispatch({ type: 'material/setParam', id: matId, key: spec.key, value, ...label(g) });
   const cur = (m: MaterialInstance | undefined) => (m ? (m.params[spec.key] ?? spec.fallback) : spec.fallback);
+  // A knob this material has no use for (the knots of bamboo) is shown, disabled, with its note.
+  const enabled = !mat0 || paramEnabled(mat0, spec);
   let ctrl: Control<never>;
   if (spec.kind === 'color') {
     const c = colorField(cur(mat0) as number[], (rgb, g) => {
@@ -152,13 +155,14 @@ function paramControl(ctx: Ctx, scope: Scope, matId: MaterialId, spec: ParamSpec
     const opts = (spec.options ?? []).map((o) => ({ value: o, label: t(dyn(`${spec.key}.${o}`)) }));
     ctrl = select(opts, String(cur(mat0)), (v) => setv(v), t(dyn(`param.${spec.key}`))) as Control<never>;
   } else if (spec.min !== undefined && spec.max !== undefined && spec.max <= 2.5) {
-    ctrl = slider({ value: Number(cur(mat0)), min: spec.min, max: spec.max, step: spec.step ?? 0.01, unit: spec.unit, ariaLabel: t(dyn(`param.${spec.key}`)), onChange: (v, g) => setv(v, g) }) as Control<never>;
+    ctrl = slider({ value: Number(cur(mat0)), min: spec.min, max: spec.max, step: spec.step ?? 0.01, unit: spec.unit, disabled: !enabled, ariaLabel: t(dyn(`param.${spec.key}`)), onChange: (v, g) => setv(v, g) }) as Control<never>;
   } else {
-    ctrl = numberField({ value: Number(cur(mat0)), min: spec.min, max: spec.max, step: spec.step ?? 1, unit: spec.unit, ariaLabel: t(dyn(`param.${spec.key}`)), onChange: (v, g) => setv(v, g) }) as Control<never>;
+    ctrl = numberField({ value: Number(cur(mat0)), min: spec.min, max: spec.max, step: spec.step ?? 1, unit: spec.unit, disabled: !enabled, ariaLabel: t(dyn(`param.${spec.key}`)), onChange: (v, g) => setv(v, g) }) as Control<never>;
   }
   scope.watch((s) => cur(s.materials[matId]), (v) => (ctrl.set as (x: unknown) => void)(v));
   const row = field(t(dyn(`param.${spec.key}`)) + (spec.preview ? '' : ' ·'), ctrl.el);
-  if (!spec.preview) row.setAttribute('data-tip', t('material.notDrawn'));
+  if (!spec.preview) row.setAttribute('data-tip', t(spec.engine ? 'material.fullOnly' : 'material.notDrawn'));
+  if (!enabled && spec.enabledWhen) row.setAttribute('data-tip', t(dyn(spec.enabledWhen.note)));
   return row;
 }
 
@@ -170,7 +174,7 @@ function materialSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean):
     (s, u) => {
       const mats = targetMaterials(s, ids, faces);
       const m = mats.length === 1 ? s.materials[mats[0]] : undefined;
-      const p = m ? visibleParams(m).map((x) => x.key).join(',') : '';
+      const p = m ? visibleParams(m).map((x) => x.key + (paramEnabled(m, x) ? '' : '!')).join(',') : '';
       // Not keyed on name / preset / edited: editing a value must not rebuild under the pointer.
       return `${mats.join(',')}|${m?.family ?? ''}|${p}|${u.catalogOpen}`;
     },
@@ -222,8 +226,25 @@ function materialSection(ctx: Ctx, scope: Scope, ids: NodeId[], faces: boolean):
       if (mat) {
         parts.push(h('div', { class: 'subhead' }, t('material.params')));
         for (const spec of visibleParams(mat)) parts.push(paramControl(ctx, sc, mat.id, spec));
-        if (mat.family === 'WOOD' || mat.family === 'FABRIC') parts.push(h('div', { class: 'note' }, t('material.flatNote')));
         const mine = partsUnder(s, faces && s.selection.faces ? [s.selection.faces.part] : ids);
+        if (mat.family === 'WOOD') {
+          // E6: a small piece takes fewer knots than asked (they never touch nor graze its surface): say so, quietly.
+          const fit = h('div', { class: 'note' });
+          sc.watch(
+            (st) => [st.materials[mat.id], st.scene.nodes] as const,
+            () => {
+              const st = store.get();
+              const placed = mine.map((p) => partKnots(st, p, mat.id)).filter((k) => k !== null);
+              const fewest = placed.reduce((n, k) => Math.min(n, k.knots.length), Infinity);
+              const asked = placed[0]?.asked ?? 0;
+              fit.textContent = placed.length > 0 && fewest < asked ? t('material.knotsFit', { asked, fit: fewest }) : '';
+              fit.style.display = fit.textContent ? '' : 'none';
+            },
+            (a, b) => a[0] === b[0] && a[1] === b[1],
+          );
+          parts.push(fit);
+        }
+        if (mat.family === 'WOOD' || mat.family === 'FABRIC') parts.push(h('div', { class: 'note' }, t('material.flatNote')));
         const own = h('button', { type: 'button', class: 'btn', 'data-tip': t('material.makeOwnAux'), onclick: () => store.dispatch({ type: 'material/detach', id: mat.id, parts: mine, label: L('undo.makeOwn', { material: materialLabel(store.get().materials[mat.id]) }) }) }, t('material.makeOwn'));
         // Shown while the material is linked to the catalogue or shared beyond the selection.
         sc.watch(

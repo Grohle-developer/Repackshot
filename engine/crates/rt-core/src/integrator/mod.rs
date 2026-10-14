@@ -55,6 +55,7 @@ use crate::fmath;
 use crate::geometry::{Geometry, RayHit};
 use crate::light::{power_heuristic, Lights};
 use crate::math::{offset_origin, Frame, Ray, Vec3};
+use crate::pattern::{PatternSetup, Tint};
 use crate::sampler::{
     bounce_dim, cutout_dim, PixelSampler, OFFSET_BSDF, OFFSET_LIGHT, OFFSET_LIGHT_SELECT,
     OFFSET_ROULETTE,
@@ -175,6 +176,8 @@ pub struct Prepared {
     pub(crate) caustics: Option<CausticSetup>,
     /// The edge bevel of every instance ([`crate::bevel`], E6).
     pub(crate) bevel: BevelSetup,
+    /// The procedural pattern of every instance ([`crate::pattern`], E6).
+    pub(crate) patterns: PatternSetup,
 }
 
 /// Absorption coefficients (per millimetre) of a clear material with an absorption distance.
@@ -267,6 +270,7 @@ impl Prepared {
             tangent_axes,
             caustics,
             bevel: BevelSetup::new(scene),
+            patterns: PatternSetup::new(scene),
         }
     }
 
@@ -448,6 +452,8 @@ pub enum FirstHit {
         t: f32,
         /// Unit shading normal, facing the ray.
         normal: Vec3,
+        /// The material's base colour there (its pattern's, where it has one).
+        albedo: Rgb,
     },
 }
 
@@ -472,6 +478,10 @@ pub fn first_hit<T: Tracer>(scene: &Scene, prepared: &Prepared, tracer: &T, ray:
             instance: details.instance,
             t: details.t,
             normal: prepared.bevel.pass_normal(scene, ray, &details),
+            albedo: prepared
+                .patterns
+                .albedo(scene, &details)
+                .unwrap_or_else(|| prepared.material(scene, details.instance).base_color),
         },
         None => FirstHit::Background,
     }
@@ -515,6 +525,8 @@ struct Surface {
     instance: Option<(u32, bool)>,
     /// The ray arrived from the outside of the surface.
     outside: bool,
+    /// What the material's procedural pattern makes of it here, if it has one.
+    tint: Option<Tint>,
 }
 
 /// Radiance and coverage arriving at the camera along `camera_ray`, for one sample of one
@@ -689,6 +701,7 @@ pub fn radiance_with<T: Tracer>(
                 geometric: n,
                 instance: None,
                 outside: true,
+                tint: None,
             }
         } else {
             let Some(details) = hit.and_then(|h| scene.geometry.hit_details(&ray, h)) else {
@@ -696,7 +709,10 @@ pub fn radiance_with<T: Tracer>(
             };
             // The shading normal on the geometric side, the terminator point of smooth meshes
             // and the edge bevel (crate::bevel).
-            let shade = prepared.bevel.shading_point(scene, &ray, &details);
+            let mut shade = prepared.bevel.shading_point(scene, &ray, &details);
+            // A procedural pattern colours the material here and tilts the normal by its relief
+            // (crate::pattern).
+            let tint = prepared.patterns.apply(scene, &ray, &details, &mut shade);
             Surface {
                 point: shade.point,
                 hit_point: details.point,
@@ -704,12 +720,15 @@ pub fn radiance_with<T: Tracer>(
                 geometric: shade.geometric,
                 instance: Some((details.instance, details.front_face)),
                 outside: details.outside,
+                tint,
             }
         };
 
         let material = surface
             .instance
             .map(|(instance, _)| prepared.material(scene, instance));
+        let patterned = material.zip(surface.tint).map(|(m, t)| t.apply(m));
+        let material = patterned.as_ref().or(material);
 
         // Emitters reflect nothing: add their light and stop.
         if let (Some((instance, front)), Some(m)) = (surface.instance, material) {
@@ -746,11 +765,17 @@ pub fn radiance_with<T: Tracer>(
         }
 
         let bsdf = material.map_or(prepared.floor_bsdf, |m| Bsdf::surface(m, surface.outside));
-        let frame = prepared.frame(
-            surface.instance.map(|(i, _)| i),
-            surface.point,
-            surface.normal,
-        );
+        // A pattern that stretches the roughness along its grain gives the frame its tangent.
+        let frame = surface
+            .tint
+            .and_then(|t| t.frame(surface.normal))
+            .unwrap_or_else(|| {
+                prepared.frame(
+                    surface.instance.map(|(i, _)| i),
+                    surface.point,
+                    surface.normal,
+                )
+            });
         let wo = frame.to_local(-ray.dir);
         let ng = surface.geometric;
         let origin = offset_origin(surface.point, ng);

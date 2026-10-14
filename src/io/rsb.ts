@@ -34,6 +34,7 @@ export const RSB_MAGIC = 'RSB1';
 export const TAG_CAMR = 'CAMR';
 export const TAG_MESH = 'MESH';
 export const TAG_MATL = 'MATL';
+export const TAG_PATN = 'PATN';
 export const TAG_LGHT = 'LGHT';
 export const TAG_ENVR = 'ENVR';
 export const TAG_FLOR = 'FLOR';
@@ -230,9 +231,44 @@ export interface RsbRender {
 }
 
 /** What the engine renders: `rt_core::scene::Scene`, field for field. */
+/** `PATN.kind` 1: wood (rt_core::pattern::wood). */
+export const PATTERN_WOOD = 1;
+
+/** `PATN.variant` of a wood: its figure (`woodFigure`; unknown: rings). */
+export const WOOD_FIGURES: Readonly<Record<string, number>> = { RINGS: 0, STRIPS: 1, SPECKLE: 2, STREAKED: 3 };
+
+/** E6: the procedural pattern of a material (`PATN`, 108 B, written right after the MATL sections). */
+export interface RsbPattern {
+  /** Index of its material among the MATL sections. */
+  material: number;
+  kind: number;
+  /** Wood: the spring wood (light). Linear RGB. */
+  colorA: RsbVec;
+  /** Wood: the summer wood (dark). */
+  colorB: RsbVec;
+  /** Wood: the ring spacing (bamboo: the strip width), mm. */
+  scaleMm: number;
+  /**
+   * Wood: ring variation, ring noise, axial noise, colour noise, contrast (0: the colours as given), pore width
+   * (mm, 0: none), pore depth, pore band (0 diffuse- to 1 ring-porous), fibre, anisotropy along the grain; knots
+   * (figure RINGS only): count (0 to 12), diameter (mm), variation of the diameter (± fraction), darkness; two
+   * unused (0). PATN_PARAMS of them.
+   */
+  params: number[];
+  /** Wood: the figure (WOOD_FIGURES). */
+  variant: number;
+  /** The material's seed (`wear.seed`): where the knots are. */
+  seed: number;
+}
+
+/** Number of `PATN.params`. */
+export const PATN_PARAMS = 16;
+
 export interface RsbScene {
   camera: RsbCamera;
   materials: RsbMaterial[];
+  /** E6: the materials' procedural patterns (absent: none). */
+  patterns?: RsbPattern[];
   meshes: RsbMesh[];
   /** null: one identity instance per mesh with the mesh's material (no INST sections). */
   instances: RsbInstance[] | null;
@@ -318,6 +354,7 @@ export interface WriteOptions {
 
 const CAMR_BYTES = 60;
 const MATL_BYTES = 76;
+const PATN_BYTES = 108;
 const LGHT_BYTES = 76;
 const ENVR_BYTES = 84;
 const FLOR_BYTES = 20;
@@ -387,7 +424,8 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   // meshes always carries them, so the engine never pairs kept meshes with stale materials.
   const instances = !withMeshes || !sameInstances(given, implicit) ? given : null;
 
-  let size = 8 + 8 + CAMR_BYTES + scene.materials.length * (8 + MATL_BYTES) + scene.lights.length * (8 + LGHT_BYTES);
+  const patterns = scene.patterns ?? [];
+  let size = 8 + 8 + CAMR_BYTES + scene.materials.length * (8 + MATL_BYTES) + patterns.length * (8 + PATN_BYTES) + scene.lights.length * (8 + LGHT_BYTES);
   size += 8 + ENVR_BYTES + 8 + FLOR_BYTES + 8 + RNDR_BYTES;
   if (withMeshes) for (const m of scene.meshes) size += 8 + meshBytes(m);
   if (withMeshes) for (const b of scene.bitmaps) size += 8 + bitmapBytes(b);
@@ -421,6 +459,18 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.f32(m.anisotropy);
       w.f32(m.absorptionMm);
       w.f32(m.bevelMm);
+    });
+  }
+  for (const p of patterns) {
+    w.section(TAG_PATN, PATN_BYTES, () => {
+      w.u32(p.material);
+      w.u32(p.kind);
+      w.vec(p.colorA);
+      w.vec(p.colorB);
+      w.f32(p.scaleMm);
+      for (let i = 0; i < PATN_PARAMS; i++) w.f32(p.params[i] ?? 0);
+      w.u32(p.variant);
+      w.u32(p.seed >>> 0);
     });
   }
   if (withMeshes) {
@@ -762,6 +812,60 @@ export function lightToRsb(state: ProjectState, l: LightInstance): RsbLight {
   };
 }
 
+/** Rings per 100 mm of wood: `ringDensity` counts them over this length (E6, physical). */
+export const WOOD_RING_SPAN_MM = 100;
+/** Anisotropy of a wood's roughness along its grain (none for the grainless figures). */
+export const WOOD_ANISOTROPY = 0.3;
+/** Most knots of a piece of wood (rt_core::pattern::knots::MAX_KNOTS). */
+export const MAX_KNOTS = 12;
+
+/**
+ * The procedural pattern of a material instance (E6, `PATN`; null for the families without one), as
+ * rt_core::pattern draws it. Wood: its two colours, `ringDensity` rings per 100 mm (physical: the ring spacing is
+ * `100 / ringDensity` mm times `woodScale`, whatever the part's size), contrast, variation, noises, pores and figure;
+ * fibres at full strength and the roughness stretched along the grain; its knots (only woods with rings have them:
+ * `knotCount` 0 elsewhere), placed by the material's seed. Fallbacks are FAMILY_PARAMS' and, for the recipe-only
+ * fields, those of a diffuse-porous wood.
+ */
+export function patternToRsb(inst: MaterialInstance | null | undefined, _partSizeMm: number, material: number): RsbPattern | null {
+  if (!inst) return null;
+  const p = inst.params;
+  switch (inst.family) {
+    case 'WOOD': {
+      const figure = WOOD_FIGURES[String(p.woodFigure ?? 'RINGS')] ?? 0;
+      const scale = Math.min(10, Math.max(0.1, num(p.woodScale, 1)));
+      return {
+        material,
+        kind: PATTERN_WOOD,
+        colorA: rgbOf(p.woodColor1, [0.56, 0.38, 0.21]),
+        colorB: rgbOf(p.woodColor2, [0.3, 0.18, 0.09]),
+        scaleMm: (WOOD_RING_SPAN_MM / Math.max(1, num(p.ringDensity, 33))) * scale,
+        params: [
+          clamp01(num(p.ringVariation, 0.4)),
+          clamp01(num(p.ringNoise, 0.3)),
+          clamp01(num(p.axialNoise, 0.2)),
+          clamp01(num(p.colorNoise, 0.2)),
+          clamp01(num(p.ringContrast, 0.3)),
+          Math.max(0, num(p.poreSize, 0.2)),
+          clamp01(num(p.poreDepth, 0.3)),
+          clamp01(num(p.poreBand, 0)),
+          1,
+          figure === WOOD_FIGURES.SPECKLE ? 0 : WOOD_ANISOTROPY,
+          figure === WOOD_FIGURES.RINGS ? Math.min(MAX_KNOTS, Math.max(0, Math.round(num(p.knotCount, 0)))) : 0,
+          Math.max(0, num(p.knotSize, 15)),
+          clamp01(num(p.knotSizeVar, 0.3)),
+          clamp01(num(p.knotDarkness, 0.6)),
+          0,
+          0,
+        ],
+        variant: figure,
+        seed: Math.max(0, Math.round(num(inst.wear?.seed, 0))) >>> 0,
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * The camera for an image of `width x height` pixels. Without `viewport` it is the output
  * frame: the 36 mm sensor on the longer side, as the engine assumes. With it, the image covers
@@ -915,13 +1019,17 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   };
 
   const materials: RsbMaterial[] = [];
+  const patterns: RsbPattern[] = [];
   const materialOrder: (string | null)[] = [];
   const materialIndex = new Map<string | null, number>();
   const materialFor = (id: string | null): number => {
     const key = id && state.materials[id] ? id : null;
     let i = materialIndex.get(key);
     if (i === undefined) {
-      i = materials.push(materialToRsb(key ? state.materials[key] : null)) - 1;
+      const inst = key ? state.materials[key] : null;
+      i = materials.push(materialToRsb(inst)) - 1;
+      const pattern = patternToRsb(inst, state.scene.partSizeMm, i);
+      if (pattern) patterns.push(pattern);
       materialOrder.push(key);
       materialIndex.set(key, i);
     }
@@ -1061,7 +1169,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   }
 
   return {
-    scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps },
+    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : ''),
     ids: {

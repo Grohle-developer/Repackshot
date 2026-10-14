@@ -653,6 +653,9 @@ pub struct Scene {
     pub render: RenderSettings,
     /// Images the environment refers to (HDRI, background plate), by index.
     pub bitmaps: Vec<Bitmap>,
+    /// Procedural patterns of the materials (E6, `PATN`: wood), at most one per material (the
+    /// first counts).
+    pub patterns: Vec<crate::pattern::Pattern>,
 }
 
 impl Scene {

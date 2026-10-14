@@ -42,10 +42,12 @@
 //!             |||| u32 denoise (0) caustic_photons (0); f32 caustic_radius (0)      (52 B)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
+//! PATN 108 B  u32 material kind; f32 color_a[3] color_b[3] scale_mm params[16];
+//!             u32 variant seed                                              (E6, new)
 //! ```
 //!
 //! `CAMR`, `ENVR`, `FLOR` and `RNDR` may appear at most once (a missing one means "defaults");
-//! `MESH`, `MATL`, `LGHT`, `INST` and `BMAP` repeat. A mesh refers to a material by its position
+//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP` and `PATN` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
 //! environment to a bitmap by its position among the `BMAP` sections (`0xffffffff`: none),
 //! wherever they are in the file. All floats must be finite.
@@ -128,6 +130,18 @@
 //!   `color`, **2** shadow catcher: the plane is invisible to everything except camera rays,
 //!   where it shows the background darkened by the fraction of light the scene blocks (with a
 //!   transparent background: black with that fraction as alpha).
+//! * `PATN` (E6): the procedural pattern of the material `material` (its position among the
+//!   `MATL` sections; at most one per material, the first counts), which replaces its base colour
+//!   point by point, scales its roughness and tilts the shading normal by its relief
+//!   ([`crate::pattern`]). `kind` **1 wood**: `color_a` the spring wood (light), `color_b` the
+//!   summer wood (dark), `scale_mm` the ring spacing (bamboo: the strip width), `params` ring
+//!   variation, ring noise, axial noise, colour noise, contrast (0: the colours as given), pore
+//!   width in mm (0: none), pore depth, pore band (0 diffuse- to 1 ring-porous), fibre, the
+//!   anisotropy of the roughness along the grain, then the knots (figure 0 only): count (0 to
+//!   12), diameter in mm, variation of the diameter (± fraction) and darkness, then two unused
+//!   (0); `variant` the figure (0 rings, 1 strips, 2 speckle, 3 streaked); `seed` the
+//!   material's seed (where the knots are). Unknown kinds draw nothing. The writer emits the
+//!   `PATN` sections right after the `MATL` ones.
 //! * `RNDR.tonemap`: **0** linear (no curve, clipped), **1** ACES (Narkowicz fit), **2** filmic
 //!   (log2 shaper and S-curve, Blender-like), **3** AgX, **4** standard (sRGB, clipped); unknown
 //!   values mean ACES. `exposure_ev` multiplies by `2^ev` before the curve. `max_depth` is the
@@ -171,6 +185,8 @@ pub const TAG_INST: [u8; 4] = *b"INST";
 pub const TAG_FLOR: [u8; 4] = *b"FLOR";
 /// Bitmap section tag.
 pub const TAG_BMAP: [u8; 4] = *b"BMAP";
+/// Pattern section tag (E6).
+pub const TAG_PATN: [u8; 4] = *b"PATN";
 
 /// Why an RSB file could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -394,6 +410,32 @@ fn parse_material(r: &mut Reader) -> Result<Material, RsbError> {
     })
 }
 
+fn parse_pattern(r: &mut Reader) -> Result<crate::pattern::Pattern, RsbError> {
+    let material = r.u32()?;
+    let kind = r.u32()?;
+    let color_a = r.rgb()?;
+    let color_b = r.rgb()?;
+    let scale_mm = r.f32()?;
+    let mut params = [0.0f32; crate::pattern::PARAMS];
+    for p in &mut params {
+        *p = r.f32()?;
+    }
+    let pattern = crate::pattern::Pattern {
+        material,
+        kind,
+        color_a,
+        color_b,
+        scale_mm,
+        params,
+        variant: r.u32()?,
+        seed: r.u32()?,
+    };
+    if pattern.scale_mm < 0.0 {
+        return Err(r.invalid("scale_mm must not be negative"));
+    }
+    Ok(pattern)
+}
+
 fn parse_light(r: &mut Reader) -> Result<Light, RsbError> {
     let kind = LightKind::from_u32(r.u32()?).ok_or_else(|| r.invalid("unknown light kind"))?;
     Ok(Light {
@@ -557,6 +599,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             TAG_MATL => scene.materials.push(parse_material(&mut r)?),
             TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
             TAG_BMAP => bitmaps.push(parse_bitmap(&mut r)?),
+            TAG_PATN => scene.patterns.push(parse_pattern(&mut r)?),
             _ => {} // Unknown section: skipped for forward compatibility.
         }
     }
@@ -621,6 +664,16 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     }
     if instances.len() > crate::geometry::MAX_INSTANCES {
         return Err(invalid_instance("too many instances"));
+    }
+    if scene
+        .patterns
+        .iter()
+        .any(|p| p.material as usize >= materials)
+    {
+        return Err(RsbError::Invalid {
+            tag: TAG_PATN,
+            reason: "material does not refer to a MATL section",
+        });
     }
     // Nothing below can fail: only now are the kept meshes and bitmaps taken.
     if let Some(geometry) = reuse {
@@ -702,6 +755,20 @@ impl Scene {
                 w.f32(m.anisotropy);
                 w.f32(m.absorption_mm);
                 w.f32(m.bevel_mm);
+            });
+        }
+        for p in &self.patterns {
+            w.section(TAG_PATN, |w| {
+                w.u32(p.material);
+                w.u32(p.kind);
+                w.rgb(p.color_a);
+                w.rgb(p.color_b);
+                w.f32(p.scale_mm);
+                for v in p.params {
+                    w.f32(v);
+                }
+                w.u32(p.variant);
+                w.u32(p.seed);
             });
         }
         for mesh in self.geometry.meshes() {
@@ -967,6 +1034,19 @@ mod tests {
                 caustic_radius: 2.5,
             },
             bitmaps: test_bitmaps(),
+            patterns: vec![crate::pattern::Pattern {
+                material: 1,
+                kind: crate::pattern::PATTERN_WOOD,
+                color_a: Rgb::new(0.7, 0.5, 0.3),
+                color_b: Rgb::new(0.3, 0.2, 0.1),
+                scale_mm: 4.5,
+                params: [
+                    0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 3.0, 12.5, 0.25, 0.75, 0.0,
+                    0.0,
+                ],
+                variant: 7,
+                seed: 0xdead_beef,
+            }],
         }
     }
 
@@ -1015,8 +1095,8 @@ mod tests {
         assert_eq!(
             tags,
             [
-                *b"CAMR", *b"MATL", *b"MATL", *b"MESH", *b"MESH", *b"LGHT", *b"LGHT", *b"LGHT",
-                *b"LGHT", *b"BMAP", *b"BMAP", *b"ENVR", *b"FLOR", *b"RNDR"
+                *b"CAMR", *b"MATL", *b"MATL", *b"PATN", *b"MESH", *b"MESH", *b"LGHT", *b"LGHT",
+                *b"LGHT", *b"LGHT", *b"BMAP", *b"BMAP", *b"ENVR", *b"FLOR", *b"RNDR"
             ]
         );
         assert_eq!(Scene::from_rsb(&bytes), Ok(scene));
@@ -1039,8 +1119,9 @@ mod tests {
         assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
         assert_eq!(size(b"RNDR"), Some(13 * 4));
+        assert_eq!(size(b"PATN"), Some(27 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
-        assert_eq!(sections(&bytes)[3].1.len(), (2 + 24 + 6 + 1) * 4);
+        assert_eq!(sections(&bytes)[4].1.len(), (2 + 24 + 6 + 1) * 4);
     }
 
     #[test]
@@ -1109,6 +1190,40 @@ mod tests {
         assert_eq!(read.floor, Floor::default());
         assert_eq!(read.render.tonemap, scene.render.tonemap);
         assert_eq!(read.lights, scene.lights);
+    }
+
+    #[test]
+    fn patterns_must_name_a_material_and_have_a_scale() {
+        let good = full_scene().to_rsb();
+        let rebuild = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = good[..8].to_vec();
+            for (tag, mut payload) in sections(&good) {
+                if tag == TAG_PATN {
+                    edit(&mut payload);
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        let stray = rebuild(&|p| p[0..4].copy_from_slice(&2u32.to_le_bytes()));
+        assert!(matches!(
+            Scene::from_rsb(&stray),
+            Err(RsbError::Invalid { tag: TAG_PATN, .. })
+        ));
+        let negative = rebuild(&|p| p[32..36].copy_from_slice(&(-1.0f32).to_le_bytes()));
+        assert!(matches!(
+            Scene::from_rsb(&negative),
+            Err(RsbError::Invalid { tag: TAG_PATN, .. })
+        ));
+        let short = rebuild(&|p| p.truncate(104));
+        assert_eq!(
+            Scene::from_rsb(&short),
+            Err(RsbError::SectionTooShort { tag: TAG_PATN })
+        );
+        // A newer kind is read and kept; it draws nothing.
+        let newer = rebuild(&|p| p[4..8].copy_from_slice(&9u32.to_le_bytes()));
+        let scene = Scene::from_rsb(&newer).expect("newer kind");
+        assert_eq!(scene.patterns[0].kind, 9);
     }
 
     #[test]

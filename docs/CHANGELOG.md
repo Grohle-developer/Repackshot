@@ -7,10 +7,13 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Motor
 
+- **Madera procedural** (E6): las 13 maderas del catálogo dibujan sus anillos (diente de sierra, con el contraste de cada especie, que serpean y cambian de ancho), su fibra, sus poros (en anillo en el roble y el fresno, difusos en el nogal o finísimos en el arce; ninguno en el pino ni en el ébano) con su relieve, y la rugosidad estirada a lo largo de la veta; el bambú en tiras con sus haces y sus nodos, el MDF moteado y el ébano con vetas. Tamaños físicos: anillos de 2 a 5 mm según la especie, en cualquier pieza; la médula nunca cruza la pieza (una bola no enseña una diana). **Nudos**: ramas que cruzan la pieza desde la médula, con la fibra y los anillos rodeándolas, su testa más oscura, su bolsa de corteza y su grieta; el pino trae cuatro, el cerezo y el nogal uno. Ruido propio. Nueva sección `PATN` del RSB (E6).
 - **Bisel de aristas en el sombreado** (E6): el radio *Bisel de aristas* de cada material redondea la normal cerca de las aristas vivas de la malla (más de 20° entre caras, y los bordes abiertos) como un redondeo de ese radio, en los reflejos y en las sombras; aristas cóncavas, esquinas y aristas curvas incluidas, también entre las mallas de una pieza con materiales por cara. Las aristas se buscan una vez por malla, con un BVH propio; el coste medido es de un +3 % en la botella de ejemplo con su bisel de 0,3 mm. Los mismos bits con cualquier número de hilos y en el navegador (E6).
 
 ### Interfaz
 
+- La madera gana *Escala*, *Contraste de anillos* y *Poros*; su *Densidad de anillos* cuenta anillos por 100 mm, y los presets llevan los de cada especie (roble 33: 3 mm). Sus campos dicen que los pinta el modo *Completo*; la vista *Rápida* muestra su color medio (E6).
+- **Nudos** en la madera: *Nudos*, *Tamaño de los nudos*, *Variación de tamaño* y *Oscuridad de los nudos*, colocados con la *Semilla* del material; la vista *Rápida* ya enseña dónde caen. En el bambú, el MDF y el ébano están desactivados con una nota (E6).
 - El campo *Bisel de aristas* del material ya no dice *próximamente*: lo dibujan el modo *Completo* y los renders; la vista *Rápida* sigue mostrando las aristas vivas, y la nota del campo lo dice (E6).
 
 ## v0.1.5 — 2026-10-14

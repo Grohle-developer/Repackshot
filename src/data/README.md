@@ -105,3 +105,11 @@ Deviations and oddities worth knowing about (values were ported as they are):
   are not ported (`LightType` is `AREA | SUN`).
 - The upstream roadmap says the default wear master "sits at 0.30"; the code
   (and so this port) uses 0.45 in `WEAR_CATEGORY_DEFAULTS`.
+- Woods (E6, the lead's ruling on the wood sheet): `ringDensity` now counts
+  rings per 100 mm (physical) and its values are each species' own (oak 33,
+  i.e. 3 mm; upstream's were per part size, 14 for oak); the woods gain
+  `ringContrast`, `poreSize`, `poreDepth`, `poreBand` and, for bamboo, MDF and
+  ebony, `woodFigure`, which upstream does not have; ebony has no pores and
+  walnut and mahogany half the depth (second ruling). Knots (`knotCount`,
+  `knotSize`, `knotSizeVar`, `knotDarkness`; asked for by the user) are not
+  upstream either: pine 4, cherry and walnut 1, the rest 0.

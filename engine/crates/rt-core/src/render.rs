@@ -781,6 +781,29 @@ mod tests {
     pub(crate) const PINNED_E6_BEVEL_4SPP: u32 = 0xfccd_a027;
 
     #[test]
+    fn the_e6_pattern_scene_has_a_pinned_hash_on_every_platform() {
+        // E6 added the procedural patterns of the shading (crate::pattern): the colour, the
+        // roughness and the relief of wood. Through an RSB round trip; `tools/wasm-parity.mjs`
+        // checks the real module against it (`rt --write-e6-patterns-example`).
+        let scene = crate::example::e6_patterns_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("E6 patterns at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_E6_PATTERNS_4SPP, "patterns on {}", isa.name());
+        }
+        let mut flat = scene.clone();
+        flat.patterns.clear();
+        assert_ne!(
+            scene_4spp_hash(&flat, Isa::detect()),
+            PINNED_E6_PATTERNS_4SPP
+        );
+    }
+
+    /// Pinned hash of the E6 pattern example at 4 samples per pixel.
+    pub(crate) const PINNED_E6_PATTERNS_4SPP: u32 = 0x2a3a_7416;
+
+    #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {
         // The whole path (camera, shadow and bounce rays) through brute force and through the
         // BVH gives the same film.

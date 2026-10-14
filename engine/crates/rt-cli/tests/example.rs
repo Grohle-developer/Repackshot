@@ -254,6 +254,25 @@ fn the_bevel_is_the_same_bits_with_1_4_or_16_threads() {
     }
 }
 
+#[test]
+fn the_patterns_are_the_same_bits_with_1_4_or_16_threads() {
+    // E6: the procedural wood is a function of the point; the E6 pattern example is rt-core's
+    // pinned image (PINNED_E6_PATTERNS_4SPP) on any number of threads.
+    let scene = rt_core::example::e6_patterns_scene();
+    for threads in [1, 4, 16] {
+        let out = rt_cli::render(&scene, 4, threads);
+        let hash = out
+            .film
+            .resolve()
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .fold(0x811c_9dc5u32, |h, b| {
+                (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+            });
+        assert_eq!(hash, 0x2a3a_7416, "{threads} threads");
+    }
+}
+
 /// Relative mean squared error of `image` against `reference` (linear RGB, values clamped at 8 so
 /// a firefly of the reference cannot dominate).
 fn rel_mse(image: &[f32], reference: &[f32]) -> f64 {

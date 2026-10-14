@@ -1539,6 +1539,109 @@ cambia la normal solo a menos del radio de una arista viva (cubo).
   ancha de al lado conserva su radio, así que el redondeo es elíptico
   (continuo en la arista).
 
+**Hecho — madera** (segunda parte, su propio *commit*; detalle en
+ARCHITECTURE §5.2 quater).
+
+- **Ruido propio** (`rt_core::pattern::noise`): ruido de gradiente de la
+  descripción pública de Perlin (2002) con nuestra permutación (Fisher–Yates
+  con el PCG del motor, semilla fija), `fbm` y un *hash* entero. Estadística
+  fijada: media −0,0012, varianza 0,0730 (2¹⁸ puntos), rango
+  [−0,993, 0,941]; `fbm` de 4 octavas, varianza 0,0274; los ocho primeros
+  valores de la permutación, fijados.
+- **La receta** (`pattern::wood`), en milímetros físicos: anillos en diente
+  de sierra (suben el 70 %, caen en el último 5 %) con el contraste de
+  Michelson de cada especie y la media de la vista *Rápida*; serpenteo de
+  media separación a 25 mm; fibra ±5 % a 0,3 × 30 mm; poros en anillo o
+  difusos, de `0,15 × anchura × poreDepth` de hondo; figuras de tiras
+  (bambú, con sus haces y sus nodos), moteado (MDF) y vetas (ébano).
+  Rugosidad anisótropa 0,3 a lo largo de la médula (la tangente del marco de
+  sombreado sigue la veta; no queda nada para otra fase).
+- **Nudos** (`pattern::knots`, pedido por el usuario): ramas en cono desde
+  la médula que cruzan la pieza, colocadas por la semilla del material sin
+  tocarse y sin rozar la superficie (≥ 30°, hasta 8 nuevos intentos, si no
+  se descartan), con la fibra y los anillos fluyendo a su alrededor (de 1,5
+  a 3 radios, abombamiento 0,35 R) y su testa, bolsa de corteza, cuenco y
+  grieta; la interfaz los coloca igual (`src/core/knots.ts`), la vista
+  *Rápida* los oscurece sobre el color medio (`src/render/knots.ts`) y el
+  inspector avisa de los que no caben («6 pedidos · 3 caben»). Mandos
+  *Nudos*, *Tamaño*, *Variación*, *Oscuridad* (desactivados con una nota en
+  bambú, MDF y ébano); por defecto, pino 4 de 10–25 mm (oscuridad 0,9),
+  cerezo y nogal 1 (0,6).
+- **Dónde**: en el espacio de la malla, la médula a lo largo del lado más
+  largo, a 0,8 de él por debajo y 0,35 a un lado, nunca dentro de la pieza.
+- **RSB**: sección nueva `PATN` (108 B, detrás de los `MATL`): material,
+  tipo, dos colores, escala, 16 parámetros, figura y semilla. El escritor
+  TypeScript la manda para cada material de madera.
+- **Hashes**: los fijados no se mueven. Nuevo: la escena de dibujos de E6
+  (`rt --write-e6-patterns-example`: tabla de roble biselada y esfera de
+  nogal) **`0x2a3a7416`**, igual en escalar, SSE2, AVX2, WASI, el `rt.wasm`
+  real y con 1, 4 y 16 hilos en `rt` y en el lanzador; paso nuevo en
+  `engine.yml`. Con 0 nudos, los bits de la madera sin nudos.
+- **Hoja** `out/wood-sheet.html` (`rt --pattern-sheet`, materiales de
+  `tests/fixtures/patterns.rsb`, que escribe el escritor TypeScript): las 13
+  maderas en esfera y en caja de 60 × 40 × 25 mm, antes, después y de
+  cerca, y la fila de nudos del pino (0, 2 y 6 de 15 mm, 6 de 30 mm) en la
+  cara grande de la caja y en una tabla de 300 × 100 × 20 mm.
+- **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina cargada):
+  la escena de dibujos de E6, casi toda madera (tabla y esfera), 0,762 s →
+  1,058 s (**+39 %**) frente a la misma con el color liso: una docena de
+  evaluaciones de ruido por punto de madera; el relieve reutiliza la
+  fracción de anillo de la muestra (sin eso, +56 %). Los nudos, unos
+  productos escalares por nudo y punto; su colocación, unas decenas de rayos
+  por pieza al preparar la escena.
+- **Tests**: 34 nuevos en `rt-core` (ruido: permutación, red y periodo,
+  estadística fijada, *hash*; madera: perfil en diente de sierra y su media,
+  periodo exacto de los anillos, contraste de Michelson y media de la vista
+  *Rápida*, la madera de verano en su 40 %, media de cada figura en una
+  tabla, poros en la banda de primavera y su hondo por anchura, los poros
+  de un anillo no suman un escalón, fibra ±5 %, nodos del bambú cada
+  150 mm y sus motas 11–19 por cm² en cualquier plano, la testa de un
+  nudo; nudos: colocados como se piden y sin solaparse, la semilla y los
+  primeros quietos, flujo alrededor y nada a 3 radios, más ancho lejos de
+  la médula, nunca rozan y los descartados no se reponen, colocación fijada
+  para la interfaz; escena: el dibujo es de su material, se pega a la pieza
+  y escala con ella, médula a lo largo del lado largo y nunca dentro, la
+  rugosidad estirada a lo largo de la veta, un render determinista distinto
+  del liso, el pase de albedo es el color del camino, una tabla enseña los
+  nudos pedidos y de su tamaño (2 / 6 / 6 discos de 17,3 / 15,9 / 33,9 mm
+  para 2 × 15, 6 × 15 y 6 × 30 mm), la semilla y 0 nudos iguales bit a bit,
+  un nudo más rugoso y su cuenco, en una bola nunca rozan; RSB), `rt-cli` y
+  `rt-app` (1/4/16 hilos de la escena fijada) y la interfaz (`patternToRsb`
+  de las 13 maderas y sus nudos, mandos desactivados, la colocación igual
+  que el motor, `meetsSurface`, los nudos de una pieza, el *fixture* al
+  día).
+
+**No encajó con el plan (madera):**
+
+- **La escala es física, no en tamaños de pieza** (decisión del líder sobre
+  la primera hoja, por realismo): `ringDensity` pasa a ser anillos por
+  100 mm y los presets llevan los de cada especie (roble 33, pino 20, arce
+  40…; antes 14 para el roble, por pieza); el mando nuevo *Escala* los
+  multiplica. SPEC §3.3 lo dice. Un proyecto guardado conserva su
+  `ringDensity` antiguo, que ahora se lee por 100 mm.
+- **Campos nuevos que el catálogo de EZ Packshot no tiene**: `ringContrast`,
+  `poreSize`, `poreBand`, `woodFigure`, `woodScale` y los cuatro de los
+  nudos (claves nuevas; ninguna renombrada).
+- **El relieve de los anillos, fuera** (decisión del líder: las esferas
+  parecían torneadas); solo relieve de poros, nudos y nodos del bambú. La
+  primera hoja enseñó que los poros en anillo sumaban un escalón en cada
+  anillo (la banda empezaba de golpe): ahora entra poco a poco, con un test
+  que falla con la banda de antes.
+- **Limitación de la vista *Rápida***: no pinta anillos, solo el color medio
+  y los nudos oscurecidos; por eso tampoco el flujo de la fibra alrededor de
+  los nudos que pedía el líder («la misma colocación y desviación»): la
+  colocación es la misma, la desviación no tiene nada que desviar.
+  Aceptado por el líder.
+- **En una pieza pequeña caben menos nudos de los pedidos** (nunca se tocan
+  ni rozan; regla del líder tras la hoja: un nudo que corta la superficie a
+  menos de 30° se saca otra vez hasta 8 veces y si no, se descarta): en la
+  caja de 60 × 40 × 25 mm, CAJA_NUDOS; en la tabla, todos. El inspector lo
+  dice con una nota discreta.
+- **Ajustes del líder sobre la fila de nudos**: el flujo alrededor de un nudo
+  se desvanece de 1,5 a 3 radios (no de 3 a 5) y abomba 0,35 R (no 0,5 R):
+  en la cara de la caja se leía líquido.
+- **La pelusa (*fuzz*, *sheen*) sigue fuera**, como decía el plan.
+
 ## E7 · Desgaste visible — **Opus**, con visto bueno **Fable**
 
 **Qué.** Los ocho tipos de desgaste de `src/data/wear.ts` como capas del
