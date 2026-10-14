@@ -22,9 +22,10 @@ import {
   type ParamValue,
 } from '../core/material-graph';
 import { compileGraph, type CompileResult, type Program } from '../core/material-program';
-import { bakeNotes, planBake, BAKE_SIZE, MAPPED_OUTPUTS, type BakeNote } from '../core/material-preview';
+import { bakeNotes, materialBounds, planBake, BAKE_SIZE, MAPPED_OUTPUTS, type BakeNote } from '../core/material-preview';
 import { OUTPUT_KEYS } from '../core/material-program';
 import { partMaterials, type MaterialId } from '../core/materials';
+export { materialBounds } from '../core/material-preview';
 import { partsUnder } from '../core/scene';
 import type { ProjectState } from '../core/store';
 import type { ConfirmSpec } from './components/widgets';
@@ -237,20 +238,6 @@ export function graphStatusText(g: MaterialGraph, r: CompileResult = programOf(g
   if (!r.program) return t(dyn(`ge.error.${r.error!.code}`), { limit: r.error!.limit ?? 0 });
   const p = r.program;
   return t('ge.status', { nodes: g.nodes.length, links: g.links.length, instructions: p.code.length / 6, f: p.nF, v: p.nV - 9 });
-}
-
-/** The bounds of the parts that carry a material (part space; null when none has a mesh). */
-export function materialBounds(s: ProjectState, material: MaterialId): { min: [number, number, number]; max: [number, number, number] } | null {
-  let min: [number, number, number] = [Infinity, Infinity, Infinity];
-  let max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
-  for (const n of Object.values(s.scene.nodes)) {
-    if (!n.mesh || !partMaterials(n).includes(material)) continue;
-    const b = n.mesh.bounds;
-    if (!Number.isFinite(b.min[0])) continue;
-    min = [Math.min(min[0], b.min[0]), Math.min(min[1], b.min[1]), Math.min(min[2], b.min[2])];
-    max = [Math.max(max[0], b.max[0]), Math.max(max[1], b.max[1]), Math.max(max[2], b.max[2])];
-  }
-  return Number.isFinite(min[0]) ? { min, max } : null;
 }
 
 /** The outputs of a program that are not constants (what may vary over the part). */

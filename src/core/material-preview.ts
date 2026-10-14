@@ -22,6 +22,7 @@ import { compileGraph, CTX, OUTPUT_KEYS, OUTPUT_TYPES, type CoordSource, type Pr
 import { ProgramRunner, type ImagePixels, type ShadingPoint } from './material-interp';
 import { EMIT_RADIANCE_PER_WATT } from './photometry';
 import type { MaterialGraph } from './material-graph';
+import type { ProjectState } from './store';
 import type { TextureMapping } from './textures';
 
 // --- Shading points ---------------------------------------------------------------------------------
@@ -191,6 +192,29 @@ export function renderNodePreviews(p: Program, images: readonly (ImagePixels | n
     }
   }
   return { size, probes, material };
+}
+
+/** The output node's shaded sphere alone, at `size` (the editor's side panel shows it larger than a node's). */
+export function renderMaterialSphere(p: Program, images: readonly (ImagePixels | null)[], size: number): Uint8ClampedArray {
+  const run = new ProgramRunner(p, images);
+  const out = new Uint8ClampedArray(size * size * 4);
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      const pt = spherePoint(px, py, size);
+      if (!pt) continue;
+      const x = ((px + 0.5) / size) * 2 - 1;
+      const z = 1 - ((py + 0.5) / size) * 2;
+      const alpha = toByte((1 - Math.hypot(x, z)) * size * 0.5 + 0.5);
+      run.setPoint(pt);
+      run.run();
+      const outs = readOutputs(run, p);
+      const c = shadeOutputs(outs, pt.N);
+      const o = (py * size + px) * 4;
+      for (let k = 0; k < 3; k++) out[o + k] = toSrgbByte(c[k] / (1 + 0.35 * c[k]));
+      out[o + 3] = Math.round(alpha * Math.max(0.15, Math.min(1, outs.opacity as number)));
+    }
+  }
+  return out;
 }
 
 // --- Fast textures ----------------------------------------------------------------------------------
@@ -637,6 +661,20 @@ export function bakeProgram(p: Program, images: readonly (ImagePixels | null)[],
 export function bakeNotes(plan: BakePlan, varying: readonly string[]): { notes: BakeNote[]; means: string[] } {
   const means = varying.filter((k) => !MAPPED_OUTPUTS.includes(k));
   return { notes: means.length > 0 ? [...plan.notes, 'MEANS'] : plan.notes, means };
+}
+
+/** The bounds of the parts that carry a material (part space, the union of their meshes'); null when none has a mesh. */
+export function materialBounds(s: Pick<ProjectState, 'scene'>, material: string): Box | null {
+  let min: [number, number, number] = [Infinity, Infinity, Infinity];
+  let max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (const n of Object.values(s.scene.nodes)) {
+    if (!n.mesh || !(n.material === material || n.faceMaterials?.some((fm) => fm.material === material))) continue;
+    const b = n.mesh.bounds;
+    if (!Number.isFinite(b.min[0])) continue;
+    min = [Math.min(min[0], b.min[0]), Math.min(min[1], b.min[1]), Math.min(min[2], b.min[2])];
+    max = [Math.max(max[0], b.max[0]), Math.max(max[1], b.max[1]), Math.max(max[2], b.max[2])];
+  }
+  return Number.isFinite(min[0]) ? { min, max } : null;
 }
 
 // --- Plain values -------------------------------------------------------------------------------------
