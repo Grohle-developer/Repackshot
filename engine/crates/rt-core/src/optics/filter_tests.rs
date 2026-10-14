@@ -786,7 +786,7 @@ fn the_star_grows_longer_with_its_grade_and_no_wider() {
 fn the_net_gives_a_short_faint_cross_and_softens_with_most_of_its_light() {
     // Most of what the net scatters is its softening; its cross is shorter than the star's and
     // fainter per line near the light, at every grade.
-    assert!(NET_AXIS_SHARE < 0.5);
+    const { assert!(NET_AXIS_SHARE < 0.5) };
     for (i, g) in GRADES.iter().enumerate() {
         let net = Filter::new(&filter(FILTER_NET, *g)).unwrap().unwrap();
         let star = Filter::new(&FilterParams {
