@@ -11,6 +11,7 @@
 // millimetres): no three.js here.
 
 import { playheadPose, type Pose } from '../core/animation';
+import { flattenGraph } from '../core/material-preview';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
 import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
@@ -889,6 +890,8 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
     m.baseColor = [FALLBACK_GREY, FALLBACK_GREY, FALLBACK_GREY];
     return m;
   }
+  // M3a: until the engine evaluates graphs (M3b), a material of nodes is the means of its outputs.
+  if (inst.graph) inst = { ...inst, ...flattenGraph(inst.graph) };
   const p = inst.params;
   switch (inst.family) {
     case 'SIMPLE':

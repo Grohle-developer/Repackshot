@@ -10,6 +10,7 @@ import type { ConfirmSpec } from './components/widgets';
 import type { Ctx } from './reactive';
 import { t, type StringKey } from './strings';
 import { startTour } from './tour';
+import { openMaterialEditor } from './graph-commands';
 import type { Tool } from './ui-state';
 
 export interface AppAction {
@@ -114,6 +115,8 @@ export const ACTIONS: readonly AppAction[] = [
   // Add light ▸ (phase L4), one entry per kind, and the Lights and cameras button of the view bar.
   ...NEW_LIGHT_KINDS.map((k): AppAction => ({ id: `addLight.${k}`, label: `lights.addAction.${k}` as StringKey, run: (ctx) => cmd.addLight(ctx, k) })),
   { id: 'glyphs', label: 'action.glyphs', run: (ctx) => cmd.toggleGlyphs(ctx) },
+  // M3a: the material editor on the selection's material.
+  { id: 'materialEditor', label: 'action.materialEditor', run: (ctx) => void openMaterialEditor(ctx) },
 ];
 
 /** Where Settings ▸ Keyboard shortcuts lists an action. */

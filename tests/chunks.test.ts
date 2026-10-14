@@ -135,11 +135,13 @@ describe.skipIf(!hasDist)('bundle: importers load on demand', () => {
     for (const print of OCCT_GLUE) expect(glue.includes(print), `"${print}" is not in occt-import-js.js`).toBe(true);
     const assets = allAssets();
     for (const [f, text] of Object.entries(assets)) for (const print of OCCT_GLUE) expect(text.includes(print), `${f} carries "${print}" of occt-import-js.js`).toBe(false);
-    // Neither is the wasm: no asset is anywhere near its size, and none starts with the wasm magic.
+    // Neither is the wasm: no asset is anywhere near its size (7.6 MB; the main chunk passed 1.9 MB with M3a's editor,
+    // so the bar is half the wasm, with the fingerprints above and the magic below as the real checks), and none starts
+    // with the wasm magic.
     const wasmSize = readFileSync(`${DIST}/vendor/occt-import-js/occt-import-js.wasm`).length;
     for (const f of assetFiles()) {
       const bytes = readFileSync(`${DIST}/assets/${f}`);
-      expect(bytes.length < wasmSize / 4, `${f} is ${bytes.length} bytes`).toBe(true);
+      expect(bytes.length < wasmSize / 2, `${f} is ${bytes.length} bytes`).toBe(true);
       expect(bytes[0] === 0 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d, `${f} is wasm`).toBe(false);
     }
     // The worker is a small chunk of its own that names the library's files to fetch them.

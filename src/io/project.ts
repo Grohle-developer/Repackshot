@@ -31,6 +31,11 @@
 // material and counted with the missing images. The materials' `textures` are read through
 // `normalizeTextures` (core/textures.ts), which also takes the flat shape of files written before M2a.
 //
+// Material graphs (M3a) travel inside their material (`materials.<id>.graph`, with its own `version`, core/
+// material-graph.ts); a file from before M3a has none and its materials open as Simple ones. The images of a graph's
+// image nodes travel in `images` with the texture images, and a missing one leaves its node without an image. The
+// schema stays at 2.
+//
 // Schema history (each step a pure function over the state, applied in order on load):
 //   1 (U1) — the state as it was.
 //   2 (U5) — `render` is the render window's settings and a queue of full `RenderJob`s (core/render.ts
@@ -71,6 +76,7 @@ import { normalizeOptics } from '../core/optics';
 import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
 import { checkTextureFile, registerTextureImage, textureImageId } from '../core/texture-images';
 import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
+import { mapGraphImages, normalizeGraph } from '../core/material-graph';
 import type { MaterialInstance } from '../core/materials';
 import { withCameraAspects } from '../core/camera';
 import { migrateRender, syncOutputSize } from '../core/render';
@@ -327,9 +333,20 @@ function checkState(raw: RawState): ProjectState {
   if (Object.keys(emptied).length > 0) s.scene = { ...s.scene, nodes: { ...nodes, ...emptied } };
   if (!isObject(s.materials)) throw damaged('materials is not a list of materials');
   for (const [id, m] of Object.entries(s.materials)) if (!isObject(m) || m.id !== id) throw damaged(`materials.${id} is not a material`);
-  // M2a: the image maps and labels, read whatever shape they were written in (core/textures.ts).
+  // M2a: the image maps and labels, read whatever shape they were written in (core/textures.ts). M3a: a material's
+  // graph, checked node by node and link by link (core/material-graph.ts); one this version cannot read (a newer
+  // schema) is dropped and the material opens as Simple, with its parameters.
   const materials: Record<string, MaterialInstance> = {};
-  for (const [id, m] of Object.entries(s.materials)) materials[id] = { ...m, textures: normalizeTextures(m.textures) };
+  for (const [id, m] of Object.entries(s.materials)) {
+    const next: MaterialInstance = { ...m, textures: normalizeTextures(m.textures) };
+    const graph = (m as { graph?: unknown }).graph;
+    if (graph !== undefined) {
+      const g = normalizeGraph(graph);
+      if (g) next.graph = g;
+      else delete next.graph;
+    }
+    materials[id] = next;
+  }
   s.materials = materials;
   if (!isObject(s.camera.cameras) || !isObject(s.camera.cameras[s.camera.active])) throw damaged('camera.active is not a camera');
   for (const [id, c] of Object.entries(s.camera.cameras)) if (!isObject(c) || c.id !== id) throw damaged(`camera.cameras.${id} is not a camera`);
@@ -677,7 +694,10 @@ export function placeTextureImages(state: ProjectState, saved: readonly SavedIma
       if (image) t.labels.push(image === l.image ? l : { ...l, image });
       if (image !== l.image) changed = true;
     }
-    materials[id] = changed ? { ...m, textures: t } : m;
+    // M3a: the image nodes of its graph (a missing image leaves the node without one).
+    const graph = m.graph ? mapGraphImages(m.graph, fix) : undefined;
+    const next = changed ? { ...m, textures: t } : m;
+    materials[id] = graph && graph !== m.graph ? { ...next, graph } : next;
   }
   const missing = [...rename.values()].filter((r) => r === null).length;
   return { state: { ...state, materials }, missing };

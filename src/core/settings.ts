@@ -182,6 +182,16 @@ export interface Layout {
   updateCheckedAt: number | null;
   /** The latest release that answer named, so an offline start can still show it. */
   updateLatest: ReleaseInfo | null;
+  /** Where the material editor (M3a) was moved to and how large it was made (CSS pixels); null: centred, its own size. */
+  materialEditorRect: EditorRect | null;
+}
+
+/** A window's place and size, CSS pixels. */
+export interface EditorRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 export interface SettingsDoc {
@@ -284,6 +294,7 @@ export function defaultLayout(): Layout {
     tourSeen: false,
     updateCheckedAt: null,
     updateLatest: null,
+    materialEditorRect: null,
   };
 }
 
@@ -582,6 +593,11 @@ export function validateLayout(raw: unknown): Layout {
   if (isSection(raw.settingsSection)) out.settingsSection = raw.settingsSection;
   if (typeof raw.updateCheckedAt === 'number' && Number.isFinite(raw.updateCheckedAt) && raw.updateCheckedAt > 0 && raw.updateCheckedAt < 8.64e15) out.updateCheckedAt = Math.round(raw.updateCheckedAt);
   out.updateLatest = validRelease(raw.updateLatest);
+  const r = raw.materialEditorRect;
+  if (isRecord(r) && [r.x, r.y, r.w, r.h].every((v) => typeof v === 'number' && Number.isFinite(v))) {
+    const n = (v: unknown, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v as number)));
+    out.materialEditorRect = { x: n(r.x, -4000, 8000), y: n(r.y, -4000, 8000), w: n(r.w, 480, 8000), h: n(r.h, 320, 8000) };
+  }
   return out;
 }
 

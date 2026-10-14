@@ -339,7 +339,8 @@ izquierda a derecha) o lo que **toca** (*cruce*, de derecha a izquierda)
 Una **instancia** de material: `id`, `name`, `preset` (clave de origen o
 `null` si es propio), `family`, `category`, `params` (los del catálogo,
 todos editables), `wear` (los campos de desgaste), `textures` (las
-texturas de imagen y las etiquetas: abajo), `bevelRadiusMm`.
+texturas de imagen y las etiquetas: abajo), `bevelRadiusMm` y, en modo
+*Nodos*, `graph` (un grafo de nodos: abajo).
 
 **Texturas de imagen** (fase M2a, `src/core/textures.ts`). `textures`
 tiene seis **ranuras**, cada una vacía o con una imagen: `color`,
@@ -420,6 +421,87 @@ texturas por proyecto. Toda edición de ranuras, mapeados y etiquetas es
 una acción del *store* (`texture/*`), deshacible (un arrastre, una
 entrada), y convierte el material en propio. La biblioteca guarda el
 mapeado, no las imágenes.
+
+**Grafos de material** (fase M3a, `src/core/material-graph.ts`; el
+contrato con el motor en `ARCHITECTURE.md` §5.2 quater). Un material puede
+ser **Simple** (los parámetros de su familia) o **Nodos**: lleva entonces
+`graph`, un **grafo dirigido sin ciclos** de nodos del catálogo
+(`src/data/material-nodes.ts`, claves estables) y conexiones de una toma
+de salida a una toma de entrada. Uno de ellos, la **Salida de material**,
+recibe en cada punto lo que es el material allí: *color base, metal,
+rugosidad, anisotropía, barniz, rugosidad del barniz, transmisión, IOR,
+dispersión interna, emisión* (color) *e intensidad de emisión, opacidad,
+normal, relieve* (una altura en mm que dobla la normal) y *bisel* (un peso
+0–1 del radio de bisel del material, que sigue siendo uno: lo mira el
+Doctor); y como parámetros del material, no del punto, la *distancia de
+absorción* y las *paredes finas* (las del vidrio). Los demás nodos:
+*Textura de imagen* (un PNG o JPEG del registro, sRGB o datos, repetir,
+estirar o espejo; colores y alfa), *Mapeado* (las proyecciones de M2a,
+UV, plana, caja, cilíndrica, esférica, y además *Objeto*, las coordenadas
+3D de la pieza; tamaño en mm, giro, desplazamiento, repetición), *Ruido*
+(Perlin o símplex con escala, octavas, lacunaridad, rugosidad y semilla:
+valor de 0 a 1 y color), *Degradado* (lineal, cuadrático, suavizado,
+diagonal, esférico, radial), *Cuadros*, *Rayas* (anchura y suavidad),
+*Rampa de color* (hasta ocho paradas, lineal, suavizada o constante),
+*Mezcla* (mezcla, suma, producto, resta, trama, diferencia, aclarar,
+oscurecer, superponer), *Matemática* (suma, resta, producto, división,
+producto y suma, potencia, mínimo, máximo, mínimo y máximo suavizados,
+escalón suavizado, valor absoluto, menor y mayor que, parte entera y
+fraccionaria, seno), *Fresnel / peso de capa* (el Fresnel dieléctrico de
+un IOR y una rampa *de cara*), *Curvatura* (aristas y cavidades, que mide
+el motor), *Valor*, *Color*, *Separar* y *Combinar RGB*, *Invertir*,
+*Mapa de normales* (tangente o de la pieza) y *Relieve*.
+
+Las **tomas** tienen tipo: número, color, vector o normal (se dibujan con
+una forma por tipo: círculo, rombo, cuadrado, triángulo). Una conexión
+convierte sola un número en color o vector (las tres componentes iguales),
+un color en número (su luminancia Rec. 709) o en vector, un vector en
+número (la media) o en color, y una normal en vector; **una normal solo
+sale de una normal** (un color se convierte en normal con *Mapa de
+normales*), y se rechaza la conexión que cerraría un ciclo o que va de un
+nodo a sí mismo, diciendo por qué. Una entrada sin conexión lee su valor
+propio; las que no tienen leen una fuente del punto: la normal, las UV de
+la malla (la imagen) o las coordenadas de la pieza por cada 100 mm (los
+procedurales). Lo que no llega a la salida no cuenta.
+
+**Simple ↔ Nodos**: pasar a *Nodos* da el **grafo mínimo**, la salida sola
+con los valores del material (lo que el motor y la vista previa leen de
+sus parámetros; madera y tela, su color plano, porque anillos y trama son
+del motor, E6), y deja los parámetros como estaban. Volver a *Simple* es
+inmediato cuando el grafo es mínimo: la salida sola, sin conexiones, con
+valores que una familia guarda exactamente (los del material, que vuelve
+tal cual, o los de un material simple, de vidrio o emisor); si no,
+pregunta, y al aceptar se queda con los valores propios de la salida. Las
+**texturas de M2a y las etiquetas** siguen siendo una capa sobre el
+material en los dos modos: en *Nodos* multiplican lo que da el grafo como
+multiplican los parámetros en *Simple*.
+
+El grafo se guarda dentro del material (`graph`, con su `version`, 1);
+las imágenes de sus nodos de imagen viajan en el bloque de imágenes del
+proyecto, y la biblioteca guarda el grafo sin ellas. Toda edición (nodo,
+conexión, parámetro, valor, mover, duplicar, eliminar, un ejemplo) es una
+acción del *store* (`graph/*`), deshacible, una entrada cada una (un
+arrastre, una), y hace propio el material. Límites: 256 nodos, 512
+conexiones, y los del programa (2048 instrucciones, 256 registros de cada
+tipo, 16 imágenes): un grafo que los pasa no se compila y el editor lo
+dice. **Diez ejemplos** (`src/data/material-graphs.ts`): plástico con
+etiqueta, metal cepillado con arañazos, mármol, cuero, madera con dos
+ruidos, vidrio con suciedad por Fresnel, cuadros, pintura metalizada con
+copos, cerámica con esmalte y rayas.
+
+**Cómo se ve.** En *Rápido*, el programa del grafo se evalúa en mapas de
+512 × 512 (color, rugosidad, metal, opacidad, normal, emisión) que la
+vista previa pinta por las ranuras de M2a: en el cuadrado UV si solo lee
+UV; en la superficie de su proyección (un plano, una cara de la caja, un
+cilindro, una esfera) si una sola proyección lo alimenta todo, y entonces
+es lo que da el grafo; si lee coordenadas 3D, en un corte por el frente de
+la pieza puesto como proyección de caja (un ruido 3D se ve como su corte).
+Lo que no cabe en mapas se aproxima o se omite, y el inspector y el editor
+lo dicen: Fresnel y *de cara* a 60° de la normal, la curvatura como 0, y
+las salidas sin ranura (barniz, transmisión, IOR…) con su valor medio. En
+*Completo* y en *Render*, hasta que el motor evalúe grafos (fase M3b,
+*próximamente*), el material es el valor medio de cada salida sobre una
+esfera de muestras; lo dicen el inspector y el editor.
 
 Familias y lo que significan para el motor:
 
