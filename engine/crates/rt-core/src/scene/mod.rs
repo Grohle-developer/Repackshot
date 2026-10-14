@@ -105,6 +105,28 @@ impl Camera {
         (forward, right, up)
     }
 
+    /// What a traced lens is prepared for: the optics of this camera, not its placement (O2).
+    pub fn optics_key(&self) -> crate::optics::traced::CameraOptics {
+        crate::optics::traced::CameraOptics {
+            focal_mm: self.focal_mm,
+            fstop: self.fstop,
+            focus_dist: self.focus_dist,
+            sensor_mm: self.sensor_mm,
+        }
+    }
+
+    /// Prepares the camera's traced lens (O2) for its optics: scaled to `focal_mm`, focused at
+    /// `focus_dist`, the stop for `fstop`, the pupil bounds for `sensor_mm`. Nothing for the thin
+    /// lens or when it is already prepared for these values; every host that changes those four
+    /// fields of a camera with a traced lens calls it again (the RSB reader does).
+    pub fn prepare_lens(&mut self) -> Result<(), &'static str> {
+        let key = self.optics_key();
+        match &mut self.lens {
+            Some(lens) if !self.ortho => lens.prepare(key),
+            _ => Ok(()),
+        }
+    }
+
     /// Radius of the lens aperture in scene units, zero for a pinhole.
     pub fn lens_radius(&self) -> f32 {
         if self.fstop > 0.0 && self.focus_dist > 0.0 && !self.ortho {

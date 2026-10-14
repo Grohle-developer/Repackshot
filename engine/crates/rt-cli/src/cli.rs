@@ -30,6 +30,7 @@ USAGE:
     rt --write-o1-example <scene.rsb>
     rt --write-o3a-example <scene.rsb>
     rt --write-film-thumb <scene.rsb>
+    rt --write-o2-example <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
@@ -103,6 +104,9 @@ OPTIONS:
         --write-film-thumb <f>
                             write the base scene of the film plugin's recipe thumbnails (the
                             perfume bottle beside the table lamp, 320x200) as an RSB file
+        --write-o2-example <f>
+                            write the O2 parity scene (the example through the traced double
+                            Gauss, and bokeh lights) as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -286,6 +290,11 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the O2 parity scene (`rt_core::example::o2_scene`) as an RSB file.
+    WriteO2Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the procedural studio HDRI as a Radiance `.hdr` file.
     WriteStudioHdri {
         /// `.hdr` file to write.
@@ -361,6 +370,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_o1 = None;
     let mut write_o3a = None;
     let mut write_film_thumb = None;
+    let mut write_o2 = None;
     let mut sheet_dir = None;
     let mut filter_sheet_dir = None;
     let mut filter_noise_dir = None;
@@ -468,6 +478,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-o1-example" => write_o1 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-o3a-example" => write_o3a = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-film-thumb" => write_film_thumb = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-o2-example" => write_o2 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -533,6 +544,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-film-thumb takes no other option".into());
         }
         return Ok(Command::WriteFilmThumb { path });
+    }
+    if let Some(path) = write_o2 {
+        if args.len() != 2 {
+            return Err("--write-o2-example takes no other option".into());
+        }
+        return Ok(Command::WriteO2Example { path });
     }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
@@ -668,6 +685,12 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteFilmThumb { path } => {
             let bytes = crate::scenes::film_thumb(crate::scenes::FILM_THUMB_SIZE).to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteO2Example { path } => {
+            let bytes = rt_core::example::o2_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())

@@ -613,6 +613,89 @@ pub fn o3a_scene() -> Scene {
     scene
 }
 
+/// The double Gauss of Smith, *Modern Lens Design* (1992) p. 312, as printed in Kolb, Mitchell and
+/// Hanrahan (1995) Fig. 1 (`double_gauss_normal` of `src/data/lenses.json`): radius, distance to
+/// the next surface, `nd`, `vd`, semi-aperture; the stop is the sixth surface.
+pub const DOUBLE_GAUSS: [(f32, f32, f32, f32, f32); 11] = [
+    (58.95, 7.52, 1.67, 47.1, 25.2),
+    (169.66, 0.24, 1.0, 0.0, 25.2),
+    (38.55, 8.05, 1.67, 47.1, 23.0),
+    (81.54, 6.55, 1.699, 30.1, 23.0),
+    (25.5, 11.41, 1.0, 0.0, 18.0),
+    (0.0, 9.0, 1.0, 0.0, 17.1),
+    (-28.99, 2.36, 1.603, 38.0, 17.0),
+    (81.54, 12.13, 1.658, 57.3, 20.0),
+    (-40.77, 0.38, 1.0, 0.0, 20.0),
+    (874.13, 6.44, 1.717, 48.0, 20.0),
+    (-79.46, 72.228, 1.0, 0.0, 20.0),
+];
+
+/// [`DOUBLE_GAUSS`] as the prescription of a traced lens (multi-layer coatings on the air–glass
+/// surfaces, unit focus, f/2.03 at its fastest).
+pub fn double_gauss() -> crate::optics::traced::Prescription {
+    use crate::optics::traced::*;
+    let surfaces = DOUBLE_GAUSS
+        .iter()
+        .enumerate()
+        .map(|(i, &(radius, thickness, nd, vd, semi))| {
+            let before = if i == 0 { 1.0 } else { DOUBLE_GAUSS[i - 1].2 };
+            let air_glass = (before == 1.0) != (nd == 1.0);
+            SurfaceSpec {
+                kind: if radius == 0.0 {
+                    SURFACE_PLANE
+                } else {
+                    SURFACE_SPHERE
+                },
+                radius,
+                thickness,
+                nd,
+                vd,
+                semi_aperture: semi,
+                coating: if air_glass {
+                    COATING_MULTI
+                } else {
+                    COATING_NONE
+                },
+                conic: 0.0,
+                aspheric: [0.0; 4],
+            }
+        })
+        .collect();
+    Prescription {
+        stop: 5,
+        focus_mode: FOCUS_UNIT,
+        f_number_min: 2.03,
+        magnification: (0.0, 0.0),
+        distortion: 0.0,
+        vignetting: 0.0,
+        spherical: 0.0,
+        breathing: 0.0,
+        moving: Vec::new(),
+        surfaces,
+    }
+}
+
+/// The O2 parity scene (`render.rs` pins its hash; `rt --write-o2-example` writes it for
+/// `tools/wasm-parity.mjs`): the example at f/2.8 through the traced double Gauss with seven
+/// curved blades, focused on the big sphere, with the bokeh lights of [`o1_scene`] behind it.
+pub fn o2_scene() -> Scene {
+    let mut scene = o1_scene();
+    scene.camera.fstop = 2.8;
+    let lens = Lens::new(LensParams {
+        blades: 7,
+        roundness: 0.3,
+        prescription: Some(double_gauss()),
+        ..LensParams::default()
+    })
+    .unwrap_or_else(|_| unreachable!("the double Gauss is valid"));
+    scene.camera.lens = Some(lens);
+    scene
+        .camera
+        .prepare_lens()
+        .unwrap_or_else(|_| unreachable!("the double Gauss forms an image"));
+    scene
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

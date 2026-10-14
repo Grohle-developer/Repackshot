@@ -48,6 +48,11 @@
 //!             ca_amount swirl field_mm; u32 mask_kind mask_width mask_height;
 //!             u8 mask[mask_width * mask_height]; zero padding to 4                 (O1, new)
 //!             | (u32 kind; f32 grade tint[3] angle_deg; u32 points)[3]           (O3a, +84 B)
+//!             || u32 surface_count (0: the thin lens); with surfaces: u32 stop focus_mode;
+//!             f32 f_number_min magnification_base magnification_near distortion vignetting
+//!             spherical breathing; u32 moving_count; (u32 surface; f32 base near)[moving_count];
+//!             (u32 kind; f32 radius thickness nd vd semi_aperture; u32 coating;
+//!             f32 conic a4 a6 a8 a10)[surface_count]                                      (O2)
 //! FXAM 128 B  an ambient effect (S4a, new): kind seed; f32 time; u32 count; f32
 //!             region_centre[3] region_half[3] band[2] size_mm size_var; u32 shape; f32
 //!             fall_speed fall_var wind[3] turbulence[3] cloud_centre[3] cloud_radius
@@ -188,7 +193,18 @@
 //!   tint of the scattered light (gold, net and streak; all zero: the kind's own); `angle_deg` the
 //!   angle of a star's or a streak's first line, or of a net's axes; `points` a star's 4, 6 or 8
 //!   (0: 6). A section without them, or with every slot zero, has no filters; the writer adds
-//!   them only when there are any.
+//!   them only when there are any (or when a prescription follows).
+//!   **O2** appends the traced lens (see [`crate::optics::traced`]): `surface_count` surfaces
+//!   (object side first) of `kind` **0** sphere, **1** plane, **2** even asphere (`conic`,
+//!   `a4`..`a10`), **3** cylinder with its axis along x, **4** along y, **5** mirror; `radius` (0 a
+//!   plane), `thickness` to the next surface (negative while the light travels back after a
+//!   mirror), the medium after the surface as `nd` (1 air) and `vd`, `semi_aperture` (0: derived)
+//!   and `coating` (**0** not air–glass, **1** uncoated, **2** single layer, **3** multi-layer);
+//!   `stop` is the index of the aperture stop, `focus_mode` **0** unit, **1** internal, **2**
+//!   floating with the `moving` gaps between their `base` and `near` values (floating between the
+//!   two magnifications), `f_number_min` the fastest stop (0: none given), and the artistic
+//!   overrides (0: off). The engine scales the lens to `CAMR.focal_mm` and focuses it at
+//!   `CAMR.focus_dist`; a file without the fields, or with 0 surfaces, is the O1 thin lens.
 
 use super::{
     particle_sets, AmbientParams, Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry,
@@ -198,6 +214,7 @@ use super::{
 use crate::color::Rgb;
 use crate::math::Vec3;
 use crate::optics::filters::FilterParams;
+use crate::optics::traced::{MovingGap, Prescription, SurfaceSpec};
 use std::fmt;
 
 /// The four magic bytes at the start of every RSB file.
@@ -402,6 +419,7 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
         mask_height: r.u32()?,
         mask: Vec::new(),
         filters: [FilterParams::default(); 3],
+        prescription: None,
     };
     let len = u64::from(p.mask_width) * u64::from(p.mask_height);
     let padded = len.div_ceil(4) * 4;
@@ -421,6 +439,64 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
                 points: r.u32()?,
             };
         }
+    }
+    let count = r.opt_u32(0)?;
+    if count > 0 {
+        if count > 64 {
+            return Err(r.invalid("a prescription has at most 64 surfaces"));
+        }
+        let stop = r.u32()?;
+        let focus_mode = r.u32()?;
+        let f_number_min = r.f32()?;
+        let magnification = (r.f32()?, r.f32()?);
+        let (distortion, vignetting, spherical, breathing) =
+            (r.f32()?, r.f32()?, r.f32()?, r.f32()?);
+        let moving_count = r.u32()?;
+        if moving_count > 8 {
+            return Err(r.invalid("at most 8 moving gaps"));
+        }
+        let mut moving = Vec::with_capacity(moving_count as usize);
+        for _ in 0..moving_count {
+            moving.push(MovingGap {
+                surface: r.u32()?,
+                base: r.f32()?,
+                near: r.f32()?,
+            });
+        }
+        let mut surfaces = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            surfaces.push(SurfaceSpec {
+                kind: r.u32()?,
+                radius: r.f32()?,
+                thickness: r.f32()?,
+                nd: r.f32()?,
+                vd: r.f32()?,
+                semi_aperture: r.f32()?,
+                coating: r.u32()?,
+                conic: r.f32()?,
+                aspheric: [r.f32()?, r.f32()?, r.f32()?, r.f32()?],
+            });
+        }
+        if !(f_number_min >= 0.0)
+            || !(-1.0..=1.0).contains(&distortion)
+            || !(0.0..=1.0).contains(&vignetting)
+            || !(-1.0..=1.0).contains(&spherical)
+            || !(-1.0..=1.0).contains(&breathing)
+        {
+            return Err(r.invalid("an override of the traced lens is out of range"));
+        }
+        p.prescription = Some(Prescription {
+            stop,
+            focus_mode,
+            f_number_min,
+            magnification,
+            distortion,
+            vignetting,
+            spherical,
+            breathing,
+            moving,
+            surfaces,
+        });
     }
     Lens::new(p).map_err(|reason| r.invalid(reason))
 }
@@ -613,6 +689,8 @@ fn set_once<T>(slot: &mut Option<T>, tag: [u8; 4], value: T) -> Result<(), RsbEr
 struct Kept<'a> {
     geometry: &'a mut Geometry,
     bitmaps: &'a mut Vec<Bitmap>,
+    /// The loaded camera's lens: its traced preparation is reused when it still applies (O2).
+    lens: Option<&'a Lens>,
 }
 
 /// Parses an RSB file. With `kept`, a file without `MESH` sections uses the meshes of `kept`
@@ -678,9 +756,9 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
 
     // The meshes the instances refer to: the file's own, or the kept ones when it has none; the
     // same for the bitmaps.
-    let (kept_geometry, kept_bitmaps) = match kept {
-        Some(k) => (Some(k.geometry), Some(k.bitmaps)),
-        None => (None, None),
+    let (kept_geometry, kept_bitmaps, kept_lens) = match kept {
+        Some(k) => (Some(k.geometry), Some(k.bitmaps), k.lens),
+        None => (None, None, None),
     };
     let reuse_meshes = meshes.is_empty() && kept_geometry.is_some();
     let reuse_bitmaps = if bitmaps.is_empty() {
@@ -745,6 +823,19 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             reason: "too many instances and effects",
         });
     }
+    let mut camera = camera.unwrap_or_default();
+    camera.lens = lens;
+    // O2: the traced lens is prepared for this camera, or keeps the preparation of the loaded
+    // scene when only the camera's placement changed (before the kept data are taken: it can
+    // fail).
+    let key = camera.optics_key();
+    if let (Some(new), Some(old)) = (camera.lens.as_mut(), kept_lens) {
+        new.reuse(old, key);
+    }
+    camera.prepare_lens().map_err(|reason| RsbError::Invalid {
+        tag: TAG_LENS,
+        reason,
+    })?;
     // Nothing below can fail: only now are the kept meshes, particles and bitmaps taken.
     let mut kept_sets = Vec::new();
     if let Some(geometry) = kept_geometry {
@@ -756,8 +847,6 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     if let Some(kept) = reuse_bitmaps {
         bitmaps = std::mem::take(kept);
     }
-    let mut camera = camera.unwrap_or_default();
-    camera.lens = lens;
     let render = render.unwrap_or_default();
     let width = crate::geometry::BvhWidth::native();
     let footprint = PixelFootprint::of(&camera, render.width, render.height);
@@ -791,6 +880,7 @@ impl Scene {
         let kept = Kept {
             geometry: &mut self.geometry,
             bitmaps: &mut self.bitmaps,
+            lens: self.camera.lens.as_ref(),
         };
         let scene = read_scene(bytes, Some(kept))?;
         *self = scene;
@@ -843,8 +933,11 @@ impl Scene {
                 w.buf.extend_from_slice(&p.mask);
                 let pad = (4 - p.mask.len() % 4) % 4;
                 w.buf.extend(std::iter::repeat_n(0u8, pad));
-                // O3a: the filters only when there are any, so an O1 lens writes the O1 bytes.
-                if p.filters.iter().any(|f| *f != FilterParams::default()) {
+                // O3a: the filters only when there are any, so an O1 lens writes the O1 bytes (and
+                // before a prescription, which follows them).
+                if p.filters.iter().any(|f| *f != FilterParams::default())
+                    || p.prescription.is_some()
+                {
                     for f in &p.filters {
                         w.u32(f.kind);
                         w.f32(f.grade);
@@ -853,6 +946,39 @@ impl Scene {
                         }
                         w.f32(f.angle_deg);
                         w.u32(f.points);
+                    }
+                }
+                if let Some(t) = &p.prescription {
+                    w.u32(t.surfaces.len() as u32);
+                    w.u32(t.stop);
+                    w.u32(t.focus_mode);
+                    for v in [
+                        t.f_number_min,
+                        t.magnification.0,
+                        t.magnification.1,
+                        t.distortion,
+                        t.vignetting,
+                        t.spherical,
+                        t.breathing,
+                    ] {
+                        w.f32(v);
+                    }
+                    w.u32(t.moving.len() as u32);
+                    for m in &t.moving {
+                        w.u32(m.surface);
+                        w.f32(m.base);
+                        w.f32(m.near);
+                    }
+                    for s in &t.surfaces {
+                        w.u32(s.kind);
+                        for v in [s.radius, s.thickness, s.nd, s.vd, s.semi_aperture] {
+                            w.f32(v);
+                        }
+                        w.u32(s.coating);
+                        w.f32(s.conic);
+                        for v in s.aspheric {
+                            w.f32(v);
+                        }
                     }
                 }
             });
