@@ -602,12 +602,13 @@ describe('animation catalogues', () => {
 });
 
 describe('doctor checks and environment', () => {
-  it('has the 14 upstream checks in their order, with unique keys, and ours after them (U13: aspect, S2: physics)', () => {
-    expect(DOCTOR_CHECKS).toHaveLength(16);
-    expect(DOCTOR_CHECKS.at(-1)?.key).toBe('physics');
+  it('has the 14 upstream checks in their order, with unique keys, and ours after them (U13: aspect, S2: physics, S4a: particles)', () => {
+    expect(DOCTOR_CHECKS).toHaveLength(17);
+    expect(DOCTOR_CHECKS.at(-1)?.key).toBe('particles');
     expect(DOCTOR_CHECKS.map((c) => c.key)).toEqual([
       'engine', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
       'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output', 'aspect', 'physics',
+      'particles',
     ]);
   });
 

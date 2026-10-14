@@ -16,7 +16,8 @@ TIFF/DNG · O1 lente fina y bokeh · U13 proporción en la cámara · P6
 plugins + plugin de película · E12 elección de luz por punto · P6b
 carrusel con deslizador y filtros · N6 despieces y línea de tiempo · M3a
 editor de materiales por nodos (modelo, compilador, editor, vista Rápido) ·
-S2 cuerpos rígidos (Dejar caer, barra de físicas, clips `PHYSICS`). Cada fase está marcada «hecha» en
+S2 cuerpos rígidos (Dejar caer, barra de físicas, clips `PHYSICS`) · S4a
+partículas de ambiente (ocho efectos, sección Ambiente, `FXAM`). Cada fase está marcada «hecha» en
 `ROADMAP.md` con su párrafo *Hecho / Qué no encajó*.
 
 ## En curso (rama `wip/ccr-8df3f848/<fase>`; brief en `ROADMAP.md`)
@@ -27,7 +28,7 @@ S2 cuerpos rígidos (Dejar caer, barra de físicas, clips `PHYSICS`). Cada fase 
 | E9 (a, a2, b, c) | `e9` | (a)+(a2) confirmados (`d736374`: horno 1,000; +13–16 % de luminancia difusa). (b) medios dispersores: estimador de salida (Chiang 2016) en verde; decididos: ruleta por el peso del camino desde la entrada, regla de **pared fina** para líquidos en vidrio (sesgo medido), test de leche por acuerdo con el camino exacto; falta la hoja a 64/256 spp, el *commit* de (b) y (c) dispersión. |
 | E6 (bisel, madera, tela) | `e6` | Bisel confirmado (`59656ed`, `977307e`). **Madera con nudos a 45° en `0c4095f`** (razonamiento 30° → 60° → 45° en su párrafo del ROADMAP; 24 + 3 mutaciones cazadas); faltan las puertas completas del motor (workspace, wasm, paridad, WASI) que corre con la tela; está en la tela (hilos/cm realistas: algodón 40, vaquero 26, lona 12, punto 5…). |
 | O3a → O2 | `o1` | **O3a entregada** (`43840b6`; hoja `out/lens-filters-sheet.html` con tabla de ruido de `rt --filter-noise`; puertas completas en verde). **Veredicto dado** (14-10): motor, conexión a la luz, MIS, pinhole, `--only`, Filtros bajo Cámara hasta O2 y +31 % de rayos en difusiones: aceptados; difusiones y Soft se quedan. **Cinco arreglos antes de fusionar**: (1) dorado y rayas tiñen solo el lóbulo disperso, suelo neutro < 3 % a grado 1 y < 6 % a 2, tabla `s` del dorado = la de la negra; (2) red: cruz ≤ 15 % del ancho a grado 2, más suavizado que líneas; (3) estrella: la longitud escala con el grado (25 % / 60 % / cuadro entero), grosor fijo; (4) glimmer: chispas aleatorias por muestra (nada de rejilla 6×6, nada de anillo) y la conexión elige la chispa que cubre la luz; (5) re-ajustar `GRADES → s` solo en esos tipos. Después, fusionar la cabeza en `o1` y entregar; O2 (lente trazada) sigue en la misma rama (ya tiene WIP de O2 encima). |
-| S4a partículas de aire | `s4a` | **Entregada** (`6a7c096`; hoja `out/ambient-sheet.html`, capturas `docs/ui/ambient-*.png`). Veredictos dados (ver abajo); el agente está fusionando la cabeza de la rama de sesión en `s4a` (conflictos con E12 en la selección de luz desde partículas, `cli.rs`, inspector, `rsb.ts`, Doctor, docs) y re-fijando sus hashes (E12 los mueve). Al recibirla: fusionar, añadir a `.github/workflows/engine.yml` las líneas `--write-ambient-example` + `wasm-parity.mjs --particles --expect-particles <hash>` y `tests/effects-rsb.test.ts` en el paso del `rt.wasm` real. |
+| S4a partículas de aire | `s4a` | **Fusionada en la rama de sesión** (`af63f6f` + líneas de CI en `abca87b`; el agente fusionó antes M3a, S2 y la cabeza en `6e5799d` y pasó todas las puertas; hash de la escena de ambiente re-fijado tras E12 a `0x415d7d74`, partículas `0xe38b8480`). Árbol `Repackshot-s4a` borrado. **S4b** en cola (brief en `ROADMAP.md` tras S4a). |
 | S2 cuerpos rígidos | `s2` | **Fusionada en la rama de sesión** (`e0ce931`; el agente fusionó antes la cabeza con M3a en `cb4de73` y pasó todas las puertas). Árbol `Repackshot-s2` borrado; la rama `s2` y `wip/ccr-8df3f848/s2` quedan. |
 | M3a editor por nodos | `m3a` | **Fusionada en la rama de sesión** (5e898cb, trailers reescritos al fusionar; veredicto en `ROADMAP.md` §M3a). Si una sesión nueva ve esta fila es que la fusión está ya en `origin`; el árbol `Repackshot-m3a` se puede borrar. |
 
@@ -94,6 +95,7 @@ nuevo con el brief de la fase del ROADMAP y la orden de seguir desde el último
    de la release; la clave de activación la tiene el usuario (no está en
    ningún repositorio). La primera actualización desde la app es de esta
    versión a la siguiente.
+5. Especificación diferida en `docs/TODO.md` (Room Builder, paseos, paneles del canvas, físicas de ambiente y viento, servidor MCP, emisor/desagüe de líquido, vídeo con IA consistente y Open Gate; nudos de la madera): se retoma cuando acabe todo lo anterior.
 
 ## Para reanudar una fase
 

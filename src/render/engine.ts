@@ -72,6 +72,11 @@ export interface EngineStatus {
   pixelFilter?: PixelFilterFields;
   /** Preview (E11): the multisampling it draws with now, and the most the device can do. */
   msaa?: { samples: number; max: number };
+  /**
+   * Preview (S4a): the particles of the ambient effects it draws (evaluated by rt.wasm's own simulator), of how many
+   * the engine renders; `boxesOnly` when there is no rt.wasm and only the region boxes are drawn. Absent: no effect.
+   */
+  particles?: { shown: number; total: number; boxesOnly: boolean };
 }
 
 export interface RenderOptions {

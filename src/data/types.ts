@@ -596,7 +596,9 @@ export type DoctorCheckKey =
   | 'output'
   | 'aspect'
   /** S2: a dynamic part starts below the floor (not ported). */
-  | 'physics';
+  | 'physics'
+  /** S4a: an ambient effect asks for more particles than its cap. */
+  | 'particles';
 
 /** Descriptor only: what the check looks for and what its one-click fix does. */
 export interface DoctorCheck {

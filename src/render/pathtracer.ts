@@ -454,12 +454,14 @@ export interface RenderedPixels {
 }
 
 /** What reaches the image, by reference: anything else (selection, names, the queue) does not restart it. */
-function touchesImage(s: ProjectState, p: ProjectState): boolean {
+export function touchesImage(s: ProjectState, p: ProjectState): boolean {
   return (
     s.scene !== p.scene ||
     s.materials !== p.materials ||
     s.studio !== p.studio ||
     s.environment !== p.environment ||
+    // S4a: the ambient effects travel as FXAM sections.
+    s.effects !== p.effects ||
     s.camera !== p.camera ||
     s.render.width !== p.render.width ||
     s.render.height !== p.render.height ||
@@ -700,6 +702,12 @@ export class PathTracerEngine implements RenderEngine {
   onFrame(fn: () => void): () => void {
     this.frameListeners.add(fn);
     return () => this.frameListeners.delete(fn);
+  }
+
+  /** Something the scene depends on outside the project changed (S4a: the engine's particle cap): build it again. */
+  sceneChanged(): void {
+    this.want = null;
+    this.changed();
   }
 
   sync(state: ProjectState, prev: ProjectState | null): void {

@@ -350,6 +350,7 @@ pub fn glass_bottle(size: (u32, u32)) -> Scene {
         },
         render: settings(size, 24, 0.0),
         bitmaps: Vec::new(),
+        effects: Vec::new(),
     }
 }
 
@@ -410,6 +411,7 @@ pub fn materials_board(size: (u32, u32)) -> Scene {
         },
         render: settings(size, 16, 0.0),
         bitmaps: hdri.into_iter().collect(),
+        effects: Vec::new(),
     }
 }
 
@@ -552,6 +554,7 @@ pub fn lamp(size: (u32, u32)) -> Scene {
         },
         render: settings(size, 16, 0.5),
         bitmaps: Vec::new(),
+        effects: Vec::new(),
     }
 }
 
@@ -599,6 +602,7 @@ pub fn film_thumb(size: (u32, u32)) -> Scene {
             ..settings(size, 24, 0.5)
         },
         bitmaps: Vec::new(),
+        effects: Vec::new(),
     }
 }
 
@@ -762,6 +766,7 @@ pub fn caustic_sphere(size: (u32, u32), photons: u32) -> Scene {
         },
         render,
         bitmaps: Vec::new(),
+        effects: Vec::new(),
     }
 }
 

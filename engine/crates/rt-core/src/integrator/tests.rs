@@ -550,6 +550,7 @@ fn sphere_on_floor(floor: Floor, background_mode: u32) -> Scene {
         floor,
         render: settings(32, 32),
         bitmaps: Vec::new(),
+        effects: Vec::new(),
     }
 }
 

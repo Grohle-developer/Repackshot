@@ -45,6 +45,9 @@
 // none: its cameras take the ratio of the saved render size (a preset within 0.5 %, else a custom ratio with those
 // pixels; `withCameraAspects`), and the saved size stays. The schema stays at 2.
 //
+// Ambient effects (S4a): `effects`, a list of parameters (core/effects.ts); a file from before S4a has none and
+// opens with an empty list, an entry of a newer version keeps what this version knows of it. The schema stays at 2.
+//
 // Primitives (U9): a part made by Add ▸ Primitive keeps its shape and measures in an optional field of its node
 // (`primitive`: `{ kind, params }`, core/primitives.ts), and its mesh is not written: on open it is made again from
 // the measures, under the id it had (the id names the content), so a project with primitives saves, opens and
@@ -62,6 +65,7 @@
 // or the store are touched, so a damaged file leaves the open project as it was.
 
 import { runDoctor } from '../core/doctor';
+import { normalizeEffects } from '../core/effects';
 import { buildExample } from '../core/example';
 import {
   getMesh,
@@ -379,6 +383,8 @@ function checkState(raw: RawState): ProjectState {
   if (Array.isArray(s.animation.clips) && s.animation.clips.some((c) => isObject(c) && 'anchor' in c && !isAnchor(c.anchor))) {
     s.animation = { ...s.animation, clips: s.animation.clips.map((c) => (isObject(c) && 'anchor' in c && !isAnchor(c.anchor) ? (({ anchor: _a, ...rest }) => rest)(c) : c)) as typeof s.animation.clips };
   }
+  // S4a: the ambient effects (a project saved before them has none; filled in above), each checked and completed.
+  s.effects = normalizeEffects(s.effects, s);
   return s;
 }
 

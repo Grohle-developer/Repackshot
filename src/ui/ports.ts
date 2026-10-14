@@ -64,6 +64,11 @@ export interface EngineStatus {
   issue?: { kind: 'WAITING' | 'FAILED' | 'RESTARTED'; detail: string; seconds?: number };
   /** Path tracer: passes received since it started, and times its watchdog restarted the view (for checks). */
   passes?: number;
+  /**
+   * Preview (S4a): the particles of the ambient effects it draws (evaluated by rt.wasm's own simulator), of how many
+   * the engine renders; `boxesOnly` when there is no rt.wasm and only the region boxes are drawn. Absent: no effect.
+   */
+  particles?: { shown: number; total: number; boxesOnly: boolean };
   watchdog?: number;
   /** Path tracer: the scene of the image on the canvas and the scene of the project now (equal: up to date). */
   shownKey?: string;
@@ -99,6 +104,8 @@ export interface ViewportPort {
   /** Coordinates in CSS pixels relative to the canvas. */
   pick(x: number, y: number): PickResult | null;
   /** Parts to outline as hovered (the ones under the cursor, or under a dragged material). */
+  /** S4a: the ambient effect whose region box the viewport draws (the one being edited), or null. */
+  setSelectedEffect?(id: string | null): void;
   setHover(ids: readonly NodeId[]): void;
   /** How the parts are projected as they are drawn now: selection by box tests them on the screen (core/box-select.ts). */
   projection(): Projection | null;

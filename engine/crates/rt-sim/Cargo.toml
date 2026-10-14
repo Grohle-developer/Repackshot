@@ -1,0 +1,9 @@
+[package]
+name = "rt-sim"
+description = "Repackshot's stateless particle effects (S4a): every particle a pure function of (seed, id, time), evaluated in closed form. std only, no OS APIs."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]

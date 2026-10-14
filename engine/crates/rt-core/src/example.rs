@@ -199,6 +199,7 @@ pub fn scene() -> Scene {
             edge_supersample: 1,
         },
         bitmaps: Vec::new(),
+        effects: Vec::new(),
     }
 }
 
@@ -372,6 +373,103 @@ pub fn e11_scene() -> Scene {
     scene
 }
 
+/// The S4a parity scene: the example at 160 x 120 with three ambient effects, one of each shape:
+/// 20 000 motes of dust (spheres, fine enough to be widened to the minimum size on screen, with
+/// turbulence and tint variation), 3 000 raindrops (glass capsules slanted by the wind) and 2 000
+/// spinning snowflakes (discs, from a palette) that cast no shadow. `render.rs` pins its hash;
+/// `rt --write-ambient-example` writes it for `tools/wasm-parity.mjs`.
+pub fn ambient_scene() -> Scene {
+    use crate::scene::{AmbientParams, MATERIAL_GLASS};
+    use rt_sim::{Shape, FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW};
+    let mut scene = scene();
+    scene.render.width = 160;
+    scene.render.height = 120;
+    let first = scene.materials.len() as u32;
+    scene.materials.extend([
+        Material {
+            base_color: Rgb::splat(0.75),
+            roughness: 0.45,
+            ..Material::default()
+        },
+        Material {
+            kind: MATERIAL_GLASS,
+            base_color: Rgb::WHITE,
+            roughness: 0.0,
+            ior: 1.33,
+            transmission: 1.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::splat(0.92),
+            roughness: 0.6,
+            ..Material::default()
+        },
+    ]);
+    let all = FLAG_CAMERA | FLAG_REFLECTIONS | FLAG_SHADOW;
+    let region = AmbientParams {
+        region_centre: [0.0, 0.0, 220.0],
+        region_half: [450.0, 350.0, 220.0],
+        ..AmbientParams::default()
+    };
+    scene.effects = vec![
+        AmbientParams {
+            kind: 1,
+            seed: 7,
+            time: 1.25,
+            count: 20_000,
+            size_mm: 0.3,
+            size_var: 0.5,
+            fall_speed: 6.0,
+            fall_var: 0.5,
+            wind: [15.0, 5.0, 0.0],
+            turbulence: [10.0, 120.0, 20.0],
+            material_id: first,
+            tint_var: 0.4,
+            flags: all,
+            energy: 20.0,
+            ..region
+        },
+        AmbientParams {
+            kind: 3,
+            seed: 3,
+            time: 1.25,
+            count: 3_000,
+            size_mm: 1.0,
+            size_var: 0.3,
+            shape: Shape::Capsule,
+            fall_speed: 6_500.0,
+            fall_var: 0.2,
+            wind: [900.0, 0.0, 0.0],
+            material_id: first + 1,
+            flags: all,
+            streak: 0.01,
+            ..region
+        },
+        AmbientParams {
+            kind: 4,
+            seed: 5,
+            time: 1.25,
+            count: 2_000,
+            size_mm: 5.0,
+            size_var: 0.4,
+            shape: Shape::Disc,
+            fall_speed: 900.0,
+            fall_var: 0.3,
+            wind: [120.0, 40.0, 0.0],
+            turbulence: [20.0, 150.0, 40.0],
+            material_id: first + 2,
+            tint_var: 0.2,
+            flags: FLAG_CAMERA | FLAG_REFLECTIONS,
+            spin: 0.8,
+            palette_count: 2,
+            palette: [[1.0, 1.0, 1.0], [0.85, 0.9, 1.0], [1.0; 3], [1.0; 3]],
+            ..region
+        },
+    ];
+    scene.build_particles(Vec::new());
+    scene
+}
+
 /// A lens that uses every knob of the enhanced thin lens (O1) at once: seven curved blades, a
 /// bright ring, an obstruction, cat's eye, a 1.33× squeeze, shift and tilt, chromatic aberration
 /// and swirl (no picture; [`o1_scene`] adds one).
@@ -514,6 +612,15 @@ mod tests {
         assert!(small.min.z >= 0.0 && small.min.z < 5.0);
         assert!(small.max.x < -100.0);
         assert_eq!(Scene::from_rsb(&scene.to_rsb()), Ok(scene));
+    }
+
+    #[test]
+    fn the_ambient_example_has_its_three_effects_and_round_trips() {
+        let scene = ambient_scene();
+        assert_eq!(scene.effects.len(), 3);
+        assert_eq!(scene.geometry.particle_count(), 25_000);
+        assert!(scene.geometry.particle_sets()[0].widened());
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
     }
 
     #[test]

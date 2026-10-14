@@ -4,7 +4,10 @@
 
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PathTracerEngine, Pool, SIMD_PROBE, simdSupported, viewportWorkers, type SceneSource, type TracerView } from '../src/render/pathtracer';
+import { PathTracerEngine, Pool, SIMD_PROBE, simdSupported, touchesImage, viewportWorkers, type SceneSource, type TracerView } from '../src/render/pathtracer';
+import { touchesImage as nativeTouchesImage } from '../src/render/native';
+import { engineParticleCap, setEngineParticleCap } from '../src/core/effects';
+import { reduce } from '../src/core/store';
 import { WATCHDOG } from '../src/render/watchdog';
 import { installDom } from './launcher-mock';
 import { exampleState } from './helpers';
@@ -580,6 +583,51 @@ describe('the viewport of the pool', () => {
     }
   };
   const jobsOf = (w: FakeWorker) => w.got.filter((m): m is Extract<WorkerRequest, { type: 'job' }> => m.type === 'job');
+
+  it('starts over when an ambient effect changes, and builds the scene again for a new particle cap (S4a)', async () => {
+    const dom = installDom();
+    restore = dom.restore;
+    const { pool, workers } = await fakePool(1, 64);
+    workers.forEach((w) => (w.delay = 1));
+    // A scene whose bytes say how many effects there are and the engine's cap, as the RSB's FXAM sections do.
+    const source: SceneSource = {
+      build: (s, view) => ({ meshKey: 'k', bytes: (meshes) => new Uint8Array([meshes ? 2 : 1, view.width & 255, s.effects.length, (engineParticleCap() >> 8) & 255]) }),
+      tone: () => ({ exposureEv: 0, tonemap: 2 }),
+    };
+    const engine = new PathTracerEngine(pool, source, true);
+    engine.setViewportLimit({ by: 'SAMPLES', samples: 100000, seconds: 120 });
+    engine.mount(dom.canvas as unknown as HTMLCanvasElement);
+    const before = exampleState();
+    engine.sync(before, null);
+    engine.resize(64, 32, 1);
+    engine.setActive(true);
+    await settle(engine, 5);
+    const scenes = () => workers[0].got.filter((m) => m.type === 'scene').length;
+    const first = scenes();
+    expect(first).toBeGreaterThan(0);
+    // An effect: the image is not the same any more.
+    const after = reduce(before, { type: 'effect/add', preset: 'SNOW' });
+    expect(touchesImage(after, before)).toBe(true);
+    expect(nativeTouchesImage(after, before)).toBe(true);
+    engine.sync(after, before);
+    await settle(engine, 5);
+    expect(scenes()).toBeGreaterThan(first);
+    // The cap is not in the project: the engine is told, and sends the scene again.
+    const sent = scenes();
+    const cap = engineParticleCap();
+    try {
+      setEngineParticleCap(cap + 4096);
+      engine.sceneChanged();
+      await settle(engine, 5);
+      expect(scenes()).toBeGreaterThan(sent);
+    } finally {
+      setEngineParticleCap(cap);
+    }
+    // What does not reach the image does not start it over.
+    const selected = { ...after, selection: { ...after.selection } };
+    expect(touchesImage(selected, after)).toBe(false);
+    expect(nativeTouchesImage(selected, after)).toBe(false);
+  });
 
   it('Fast while a reduced-resolution frame is in flight does not keep Full from starting again', async () => {
     const { engine, workers } = await viewport(2, 64, 32);

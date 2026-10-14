@@ -302,6 +302,10 @@ export interface UiState {
   wizard: WizardState | null;
   /** Clip selected in the animation drawer: the one the properties edit (the last one picked). */
   selectedClip: string | null;
+  /** S4a: the ambient effect being edited in the scene's Ambient section (its region is drawn), or null. */
+  effectSelected: string | null;
+  /** S4a: the gallery of effect presets is open (Ambient ▸ Add). */
+  effectGallery: boolean;
   /**
    * N6: every clip selected in the timeline (the multiple selection, `selectedClip` among them). Code that only knows
    * `selectedClip` keeps working: the commands of ui/anim-commands.ts keep the two in step.
@@ -480,6 +484,8 @@ export function defaultUiState(): UiState {
     narrow: false,
     wizard: null,
     selectedClip: null,
+    effectSelected: null,
+    effectGallery: false,
     selectedClips: [],
     animFolded: {},
     animZoom: 1,

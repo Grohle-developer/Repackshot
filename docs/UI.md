@@ -586,7 +586,33 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    ninguna. Un archivo que no se puede leer se avisa en un *toast* que
    dice qué le pasa. Sombra en el suelo y reflejo en el suelo
    (intensidad).
-4. **Cámara** — Edita la **cámara activa**, y lo dice: la cabecera lleva
+4. **Ambiente** (fase S4a) — Los efectos de partículas del aire. En la
+   cabecera, **Añadir**, que abre una **galería de tarjetas** en la propia
+   sección (nombre e intención de cada preset: *Motas de polvo*, *Polen*,
+   *Lluvia*, *Nieve*, *Polvareda*, *Ceniza*, *Burbujas que suben*,
+   *Confeti que cae*; *Calima*, *Haces de luz* y *Niebla baja* atenuadas y
+   deshabilitadas, *próximamente*, y *Cancelar*). Debajo, la **lista** de
+   efectos (vacía: una frase que invita a añadir uno): nombre, partículas
+   que pide (o *Pide N partículas; el motor evalúa M* si pasa del tope),
+   ojo para encender/apagar y papelera; un clic edita ese efecto, y el
+   visor dibuja la caja de su región. El efecto editado: **Efecto**
+   (desplegable de presets; cambiarlo es una entrada de deshacer) y
+   **Nombre**, una línea con sus partículas, y los **ocho mandos de
+   fotógrafo**, siempre visibles: *Cantidad* (partículas/m³ o cuenta),
+   *Tamaño* (mm), *Energía* (m/s), *Caos* (%), *Viento* (m/s) y
+   *Dirección del viento* (°), *Gravedad* (× g), *Variación* (%) y
+   *Semilla* con *Barajar*. **Avanzado**, plegado: región (*Alrededor de
+   la escena* con margen en mm, o *Caja propia* con centro y tamaño),
+   banda de alturas, *Cantidad por* (*Densidad · Cuenta*), forma (*Punto ·
+   Copo · Estela*), variación de tamaño, velocidad de caída ± variación, giro
+   (copo), largo de estela (estela), viento como vector, turbulencia
+   (escala y velocidad), nube (centro, radio, suavidad), material (*El
+   propio del efecto* o uno del catálogo), variación de tinte y tintes (hasta
+   4), *Congelar en* (s), *Visible a cámara*, *Visible en reflejos* y *Proyecta
+   sombra*, y el tope propio (*El del motor (N)* por defecto). Una nota
+   recuerda que *Rápido* dibuja hasta 50 000 partículas por efecto y
+   *Completo* y *Render* todas, iluminadas como el producto.
+5. **Cámara** — Edita la **cámara activa**, y lo dice: la cabecera lleva
    su nombre (*Cámara 1*) y un lápiz que abre la ficha de esa cámara
    (nombre, *Activar*, *Mirar a través*); una nota recuerda que cada
    cámara tiene su óptica y su posición. Preset de óptica (8
@@ -630,7 +656,7 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      **NO FÍSICO** *Aberración cromática* y *Remolino*. Una nota recuerda
      que todo esto se ve en el modo Completo y en el render.
      ![óptica avanzada](camera-optics.png)
-5. **Imagen** — Exposición (EV), transformada de vista (Estándar /
+6. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.
 
@@ -968,7 +994,10 @@ resultados.
 24 px, texto auxiliar: a la izquierda el **Doctor** (un punto relleno y
 "2 avisos", o un punto hueco y "Todo en orden"); clic abre su popover.
 Luego: piezas · triángulos · motor y dispositivo · muestras y tiempo del
-visor. A la derecha: idioma y versión.
+visor y, en *Rápido* con algún efecto de *Ambiente* (S4a), *Partículas N
+de M* (las que dibuja de las que el motor evalúa) o, sin `rt.wasm`,
+*Partículas: solo las regiones (el motor no está compilado)*. A la
+derecha: idioma y versión.
 
 **Nota del motor de ejecución** (fase U10, solo escritorio): si al
 arrancar hay un modelo de IA instalado y el motor de ejecución no
@@ -1424,7 +1453,7 @@ título del grupo en versalitas auxiliares:
 | | **Preferencias** | *Visor y navegación*: modo del visor al arrancar (Rápido · Completo · El último), esquema del ratón (*Botón izquierdo orbita* · *Alt + botón izquierdo orbita* · *Botón central orbita*; la línea auxiliar cuenta también cómo se dibuja la caja de selección en cada uno), invertir zoom, velocidad de órbita y de zoom, resolución durante los gestos en Completo (Automática · ½ · ¼), rejilla del suelo, tamaño del *gizmo*. *Selección*: nivel por defecto, contorno al pasar. *Importación por defecto*: unidades si el archivo no las dice, eje arriba, calidad de teselado CAD, abrir la hoja de importación (*Siempre* · *Solo si hay dudas*). *Render por defecto* para proyectos nuevos: plantilla de nombre, carpeta, formato, ppp, *Terminar por* |
 | | **Accesibilidad** | Tamaño de la interfaz (90–150 %), tamaño del texto, **contraste alto** (bordes y texto auxiliar más fuertes, sigue acromático), **reducir movimiento** (Sistema · Sí · No), foco siempre visible, retardo de los tooltips, anunciar el progreso del render a los lectores de pantalla, subrayar la letra de acceso en los menús |
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
-| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **Suavizado de bordes** (E11, abajo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
+| **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **partículas por efecto** (S4a: el tope de cada efecto de *Ambiente*; *Automático* = 100 000 en el navegador, 1 000 000 en nativo); **Suavizado de bordes** (E11, abajo); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
 | | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
 | **Sistema** | **Plugins** | Los plugins del registro (`src/data/plugins.json`) y los instalados desde un archivo, cada uno con su logo, nombre, editor, versión, tamaño, resumen, la ficha **Licencia cerrada** y **Página del proyecto**; *Instalar*, *Actualizar a X*, *Quitar*; la clave de activación pedida en su fila; **Instalar desde archivo…** (detalle abajo) |
 | | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |

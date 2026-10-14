@@ -176,7 +176,7 @@ function sameBytes(a: Uint8Array | null, b: Uint8Array): boolean {
 }
 
 /** What reaches the image (as render/pathtracer.ts decides it). */
-function touchesImage(s: ProjectState, p: ProjectState): boolean {
+export function touchesImage(s: ProjectState, p: ProjectState): boolean {
   return (
     s.scene !== p.scene ||
     // Caustics and the other Advanced settings (E5b-1) reach the image; the denoise is the live switch (U11).
@@ -184,6 +184,8 @@ function touchesImage(s: ProjectState, p: ProjectState): boolean {
     s.materials !== p.materials ||
     s.studio !== p.studio ||
     s.environment !== p.environment ||
+    // S4a: the ambient effects travel as FXAM sections.
+    s.effects !== p.effects ||
     s.camera !== p.camera ||
     s.render.width !== p.render.width ||
     s.render.height !== p.render.height ||
@@ -443,6 +445,12 @@ export class NativeEngine {
   onFrame(fn: () => void): () => void {
     this.frameListeners.add(fn);
     return () => this.frameListeners.delete(fn);
+  }
+
+  /** Something the scene depends on outside the project changed (S4a: the engine's particle cap): build it again. */
+  sceneChanged(): void {
+    this.want = null;
+    this.changed();
   }
 
   sync(state: ProjectState, prev: ProjectState | null): void {

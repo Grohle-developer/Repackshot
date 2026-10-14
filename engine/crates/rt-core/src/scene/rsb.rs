@@ -47,11 +47,17 @@
 //!             obstruction cats_eye squeeze shift_x_mm shift_y_mm tilt_deg tilt_axis_deg
 //!             ca_amount swirl field_mm; u32 mask_kind mask_width mask_height;
 //!             u8 mask[mask_width * mask_height]; zero padding to 4                 (O1, new)
+//! FXAM 128 B  an ambient effect (S4a, new): kind seed; f32 time; u32 count; f32
+//!             region_centre[3] region_half[3] band[2] size_mm size_var; u32 shape; f32
+//!             fall_speed fall_var wind[3] turbulence[3] cloud_centre[3] cloud_radius
+//!             cloud_softness; u32 material_id; f32 tint_var; u32 flags; f32 streak
+//!             | f32 gravity (1) energy (0) spin (0); u32 palette_count (0);
+//!             f32 palette[4][3] (white)                                           (192 B)
 //! ```
 //!
 //! `CAMR`, `ENVR`, `FLOR`, `RNDR` and `LENS` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
-//! `MESH`, `MATL`, `LGHT`, `INST` and `BMAP` repeat. A mesh refers to a material by its position
+//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP` and `FXAM` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
 //! environment to a bitmap by its position among the `BMAP` sections (`0xffffffff`: none),
 //! wherever they are in the file. All floats must be finite.
@@ -68,11 +74,21 @@
 //! a mesh no instance refers to is not drawn. The writer emits `INST` only when the instances
 //! differ from the implicit ones, so scenes without instancing keep their exact bytes.
 //!
+//! **Ambient effects** (S4a). Each `FXAM` section is the parameters of one effect, not its
+//! particles: the field table and their meaning are those of [`rt_sim::params`] (millimetres,
+//! seconds, mm/s; `flags` 1 seen by camera rays, 2 in reflections, 4 casts shadows). The reader
+//! evaluates the particles ([`rt_sim`]) for the file's camera and image size and builds their
+//! BVH ([`crate::geometry::ParticleSet`]); a reader without S4a skips the section. The effect's
+//! `material_id` must refer to a `MATL` section. In the part and material id passes a particle
+//! counts as instance `instances + effect index`.
+//!
 //! **Updates** (E4). [`Scene::update_from_rsb`] reads a file into an already loaded scene: a file
 //! without `MESH` sections keeps the loaded meshes and their BVHs (its `INST` sections, or the
 //! implicit instances, refer to them), so a host that changes the camera, the image size, the
 //! instances, the materials or the lights sends everything but the geometry. In the same way a
-//! file without `BMAP` sections keeps the loaded bitmaps (E5), which can be large.
+//! file without `BMAP` sections keeps the loaded bitmaps (E5), which can be large. The particles of
+//! an effect whose `FXAM` is unchanged are kept as well (S4a); only their BVH is built again when
+//! the camera or the image size changed.
 //!
 //! # Meaning of the values (fixed in E3)
 //!
@@ -167,8 +183,9 @@
 //!   camera ignores the section, and a file without it renders exactly as before O1.
 
 use super::{
-    Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry, Instance, Lens, LensParams,
-    Light, LightKind, Material, Mesh, RenderSettings, Scene, SkyModel, Transform, NO_BITMAP,
+    particle_sets, AmbientParams, Bitmap, Camera, EnvKind, Environment, Floor, FloorMode, Geometry,
+    Instance, Lens, LensParams, Light, LightKind, Material, Mesh, PixelFootprint, RenderSettings,
+    Scene, SkyModel, Transform, NO_BITMAP,
 };
 use crate::color::Rgb;
 use crate::math::Vec3;
@@ -197,6 +214,8 @@ pub const TAG_FLOR: [u8; 4] = *b"FLOR";
 pub const TAG_BMAP: [u8; 4] = *b"BMAP";
 /// Lens section tag (O1).
 pub const TAG_LENS: [u8; 4] = *b"LENS";
+/// Ambient effect section tag (S4a).
+pub const TAG_FXAM: [u8; 4] = *b"FXAM";
 
 /// Why an RSB file could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -598,6 +617,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let mut meshes = Vec::new();
     let mut instances = Vec::new();
     let mut bitmaps = Vec::new();
+    let mut effects = Vec::new();
     let mut scene = Scene::default();
 
     while pos < bytes.len() {
@@ -626,6 +646,10 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             TAG_MATL => scene.materials.push(parse_material(&mut r)?),
             TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
             TAG_BMAP => bitmaps.push(parse_bitmap(&mut r)?),
+            TAG_FXAM => effects.push(AmbientParams::decode(payload).map_err(|e| match e {
+                rt_sim::FxamError::TooShort => RsbError::SectionTooShort { tag },
+                rt_sim::FxamError::Invalid(reason) => RsbError::Invalid { tag, reason },
+            })?),
             _ => {} // Unknown section: skipped for forward compatibility.
         }
     }
@@ -636,11 +660,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
         Some(k) => (Some(k.geometry), Some(k.bitmaps)),
         None => (None, None),
     };
-    let reuse = if meshes.is_empty() {
-        kept_geometry
-    } else {
-        None
-    };
+    let reuse_meshes = meshes.is_empty() && kept_geometry.is_some();
     let reuse_bitmaps = if bitmaps.is_empty() {
         kept_bitmaps
     } else {
@@ -656,9 +676,9 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             });
         }
     }
-    let available: &[Mesh] = match &reuse {
-        Some(geometry) => geometry.meshes(),
-        None => &meshes,
+    let available: &[Mesh] = match &kept_geometry {
+        Some(geometry) if reuse_meshes => geometry.meshes(),
+        _ => &meshes,
     };
     let materials = scene.materials.len();
     if available
@@ -691,21 +711,43 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     if instances.len() > crate::geometry::MAX_INSTANCES {
         return Err(invalid_instance("too many instances"));
     }
-    // Nothing below can fail: only now are the kept meshes and bitmaps taken.
-    if let Some(geometry) = reuse {
-        meshes = std::mem::take(geometry).into_meshes();
+    if effects.iter().any(|e| e.material_id as usize >= materials) {
+        return Err(RsbError::Invalid {
+            tag: TAG_FXAM,
+            reason: "material_id does not refer to a MATL section",
+        });
+    }
+    if instances.len() + effects.len() > crate::geometry::MAX_INSTANCES {
+        return Err(RsbError::Invalid {
+            tag: TAG_FXAM,
+            reason: "too many instances and effects",
+        });
+    }
+    // Nothing below can fail: only now are the kept meshes, particles and bitmaps taken.
+    let mut kept_sets = Vec::new();
+    if let Some(geometry) = kept_geometry {
+        kept_sets = geometry.take_particles();
+        if reuse_meshes {
+            meshes = std::mem::take(geometry).into_meshes();
+        }
     }
     if let Some(kept) = reuse_bitmaps {
         bitmaps = std::mem::take(kept);
     }
-    scene.geometry =
-        Geometry::new(meshes, instances).map_err(|_| invalid_instance("too many instances"))?;
+    let mut camera = camera.unwrap_or_default();
+    camera.lens = lens;
+    let render = render.unwrap_or_default();
+    let width = crate::geometry::BvhWidth::native();
+    let footprint = PixelFootprint::of(&camera, render.width, render.height);
+    let sets = particle_sets(&effects, kept_sets, footprint, width);
+    scene.geometry = Geometry::with_particles(meshes, instances, sets, width)
+        .map_err(|_| invalid_instance("too many instances"))?;
     scene.bitmaps = bitmaps;
-    scene.camera = camera.unwrap_or_default();
-    scene.camera.lens = lens;
+    scene.camera = camera;
     scene.environment = environment;
     scene.floor = floor.unwrap_or_default();
-    scene.render = render.unwrap_or_default();
+    scene.render = render;
+    scene.effects = effects;
     Ok(scene)
 }
 
@@ -846,6 +888,9 @@ impl Scene {
                 w.f32(l.angle_deg);
                 w.u32(l.flags);
             });
+        }
+        for e in &self.effects {
+            w.section(TAG_FXAM, |w| w.buf.extend_from_slice(&e.encode()));
         }
         for b in &self.bitmaps {
             w.section(TAG_BMAP, |w| {
@@ -1072,6 +1117,7 @@ mod tests {
                 edge_supersample: 4,
             },
             bitmaps: test_bitmaps(),
+            effects: Vec::new(),
         }
     }
 
@@ -1108,6 +1154,79 @@ mod tests {
         s.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         s.extend_from_slice(payload);
         s
+    }
+
+    #[test]
+    fn ambient_effects_are_written_after_the_lights_and_read_back() {
+        let scene = crate::example::ambient_scene();
+        let bytes = scene.to_rsb();
+        let found = sections(&bytes);
+        let tags: Vec<[u8; 4]> = found.iter().map(|(t, _)| *t).collect();
+        let fxam: Vec<usize> = (0..tags.len()).filter(|&i| tags[i] == TAG_FXAM).collect();
+        assert_eq!(fxam.len(), 3);
+        assert_eq!(tags[fxam[0] - 1], TAG_LGHT);
+        assert_eq!(tags[fxam[2] + 1], TAG_ENVR);
+        for &i in &fxam {
+            assert_eq!(found[i].1.len(), rt_sim::FXAM_BYTES);
+        }
+        assert_eq!(Scene::from_rsb(&bytes).as_ref(), Ok(&scene));
+        // Without its FXAM sections the file is the example at that size: what a reader that does
+        // not know them renders.
+        let mut stripped = bytes[..8].to_vec();
+        for (tag, payload) in &found {
+            if *tag != TAG_FXAM {
+                stripped.extend_from_slice(&unknown_section(tag, payload));
+            }
+        }
+        let plain = Scene::from_rsb(&stripped).unwrap();
+        assert!(plain.effects.is_empty() && plain.geometry.particle_sets().is_empty());
+        let mut expected = crate::example::scene();
+        expected.render.width = 160;
+        expected.render.height = 120;
+        expected.materials = scene.materials.clone();
+        assert_eq!(plain, expected);
+    }
+
+    #[test]
+    fn bad_ambient_effects_are_refused() {
+        let scene = crate::example::ambient_scene();
+        let bytes = scene.to_rsb();
+        let rebuild = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = bytes[..8].to_vec();
+            let mut first = true;
+            for (tag, payload) in sections(&bytes) {
+                let mut payload = payload;
+                if tag == TAG_FXAM && first {
+                    edit(&mut payload);
+                    first = false;
+                }
+                out.extend_from_slice(&unknown_section(&tag, &payload));
+            }
+            Scene::from_rsb(&out)
+        };
+        let invalid = |reason| {
+            Err(RsbError::Invalid {
+                tag: TAG_FXAM,
+                reason,
+            })
+        };
+        assert_eq!(
+            rebuild(&|p| p[112..116].copy_from_slice(&99u32.to_le_bytes())),
+            invalid("material_id does not refer to a MATL section")
+        );
+        assert_eq!(
+            rebuild(&|p| p.truncate(100)),
+            Err(RsbError::SectionTooShort { tag: TAG_FXAM })
+        );
+        assert_eq!(
+            rebuild(&|p| p[8..12].copy_from_slice(&f32::NAN.to_le_bytes())),
+            invalid("non-finite number")
+        );
+        assert!(rebuild(&|p| p[48..52].copy_from_slice(&(-1.0f32).to_le_bytes())).is_err());
+        // A payload with only the brief's fields reads the rest as defaults.
+        let short = rebuild(&|p| p.truncate(rt_sim::FXAM_MIN_BYTES)).unwrap();
+        assert_eq!(short.effects[0].gravity, 1.0);
+        assert_eq!(short.effects[0].energy, 0.0);
     }
 
     #[test]

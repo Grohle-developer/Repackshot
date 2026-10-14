@@ -10,7 +10,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, playheadPose, poseActive, type Pose } from '../core/animation';
+import { effectFxam, effectRegion, engineParticleCap, fxamPayload, PREVIEW_PARTICLES, type AmbientEffect } from '../core/effects';
 import type { MotionHint } from '../core/motion-hint';
+import { materialPreset } from '../data/materials';
+import { evalParticles, PARTICLE_FLOATS, previewTint, tintSeed, type RtParticleExports } from './particles';
 import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, aspectRatio, cameraFrameRect, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, SENSOR_MM, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
@@ -382,6 +385,16 @@ export class PreviewEngine implements RenderEngine {
   private gridOn = false;
   private grid: THREE.GridHelper | null = null;
   private gridCell = 0;
+  /**
+   * S4a: the ambient effects. `particleEngine` is rt.wasm on the page's thread (`rt_particles_eval`): undefined while
+   * it loads, null when there is none (then only the region boxes are drawn and the meter says so).
+   */
+  private particleEngine: RtParticleExports | null | undefined = undefined;
+  private readonly effectsRoot = new THREE.Group();
+  /** Per effect id: the payload last evaluated and its particles (a drag of an unrelated knob evaluates nothing). */
+  private readonly particleCache = new Map<string, { key: string; data: Float32Array | null }>();
+  private selectedEffect: string | null = null;
+  private particleStats: { shown: number; total: number; boxesOnly: boolean } | null = null;
 
   constructor() {
     this.modelRoot.matrixAutoUpdate = false;
@@ -391,6 +404,7 @@ export class PreviewEngine implements RenderEngine {
     this.floor.receiveShadow = true;
     this.floor.renderOrder = -1;
     this.modelRoot.add(this.floor);
+    this.modelRoot.add(this.effectsRoot);
     this.shadowLight.castShadow = true;
     this.shadowLight.shadow.mapSize.set(2048, 2048);
     this.shadowLight.shadow.radius = 8;
@@ -675,6 +689,7 @@ export class PreviewEngine implements RenderEngine {
     if (full || state.image !== prev.image) this.syncImage(state);
     if (full || nodesChanged || state.studio !== prev.studio || state.environment !== prev.environment) this.syncFloor(state);
     if (full || nodesChanged || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncGrid(state);
+    if (full || nodesChanged || state.effects !== prev.effects || state.scene.partSizeMm !== prev.scene.partSizeMm || state.materials !== prev.materials) this.syncEffects(state);
     // Looking through a light (L4), the view follows it wherever it is moved from (the inspector, undo).
     const throughLight = this.glyphSpec.lookThrough?.kind === 'LIGHT' && state.studio !== prev?.studio;
     if (full || state.camera !== prev.camera || state.render.width !== prev.render.width || state.render.height !== prev.render.height || poseChanged || nodesChanged || throughLight) {
@@ -1565,7 +1580,153 @@ export class PreviewEngine implements RenderEngine {
 
   status(): EngineStatus {
     const msaa = this.msaa();
-    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...(msaa ? { msaa } : {}) };
+    return { samples: 1, seconds: this.lastFrameMs / 1000, converged: true, device: this.device, ...(msaa ? { msaa } : {}), ...(this.particleStats ? { particles: { ...this.particleStats } } : {}) };
+  }
+
+  // ------------------------------------------------------------------ ambient effects (S4a)
+
+  /** rt.wasm for the particles (null: there is none; the region boxes are drawn instead). */
+  setParticleEngine(rt: RtParticleExports | null): void {
+    this.particleEngine = rt;
+    this.particleCache.clear();
+    if (this.state) this.syncEffects(this.state);
+    this.needsRender = true;
+  }
+
+  /** The effect whose region box is drawn (the one being edited), or null. */
+  setSelectedEffect(id: string | null): void {
+    if (this.selectedEffect === id) return;
+    this.selectedEffect = id;
+    if (this.state) this.syncEffects(this.state);
+    this.needsRender = true;
+  }
+
+  /** The particles an effect's material shows in the preview: its colour, and whether it is clear. */
+  private effectLook(e: AmbientEffect): { color: readonly number[]; clear: boolean } {
+    if (e.material) {
+      const p = materialPreset(e.material);
+      const c = p?.params.baseColor;
+      const color = Array.isArray(c) && c.length >= 3 ? (c as number[]) : [0.8, 0.8, 0.8];
+      return { color, clear: p?.family === 'GLASS' };
+    }
+    return { color: e.ownMaterial.baseColor, clear: e.ownMaterial.kind === 'GLASS' || e.ownMaterial.transmission > 0.6 };
+  }
+
+  private clearEffects(): void {
+    for (const child of [...this.effectsRoot.children]) {
+      this.effectsRoot.remove(child);
+      const o = child as THREE.Mesh;
+      o.geometry?.dispose();
+      const m = o.material;
+      if (Array.isArray(m)) m.forEach((x) => x.dispose());
+      else m?.dispose();
+    }
+  }
+
+  /** A region box as lines (model space): dashed for the boxes drawn instead of particles, solid for the selected one. */
+  private boxLines(min: readonly number[], max: readonly number[], dashed: boolean): THREE.LineSegments {
+    const box = new THREE.Box3(new THREE.Vector3(min[0], min[1], min[2]), new THREE.Vector3(max[0], max[1], max[2]));
+    const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(box.max.x - box.min.x || 1e-3, box.max.y - box.min.y || 1e-3, box.max.z - box.min.z || 1e-3));
+    const mat = dashed
+      ? new THREE.LineDashedMaterial({ color: 0x9a9a9a, transparent: true, opacity: 0.8, dashSize: 6, gapSize: 4, depthWrite: false, toneMapped: false })
+      : new THREE.LineBasicMaterial({ color: 0xd0d0d0, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false });
+    const lines = new THREE.LineSegments(geo, mat);
+    lines.position.copy(box.getCenter(new THREE.Vector3()));
+    if (dashed) lines.computeLineDistances();
+    lines.renderOrder = 2;
+    return lines;
+  }
+
+  /** The particles of every effect from the engine's own simulator, at most PREVIEW_PARTICLES of each. */
+  private syncEffects(state: ProjectState): void {
+    this.clearEffects();
+    const rt = this.particleEngine;
+    const enabled = state.effects.filter((e) => e.enabled);
+    if (enabled.length === 0) {
+      this.particleStats = null;
+      this.particleCache.clear();
+      return;
+    }
+    let shown = 0;
+    let total = 0;
+    const live = new Set<string>();
+    for (const e of enabled) {
+      live.add(e.id);
+      const fields = effectFxam(state, e, 0, engineParticleCap());
+      total += fields.count;
+      const region = effectRegion(state, e);
+      if (!rt) {
+        this.effectsRoot.add(this.boxLines(region.min, region.max, true));
+        continue;
+      }
+      const n = Math.min(fields.count, PREVIEW_PARTICLES);
+      const payload = fxamPayload(fields);
+      const key = `${n}|${Array.from(payload).join(',')}`;
+      let cached = this.particleCache.get(e.id);
+      if (!cached || cached.key !== key) {
+        cached = { key, data: evalParticles(rt, payload, n) };
+        this.particleCache.set(e.id, cached);
+      }
+      const data = cached.data;
+      if (!data || data.length === 0) continue;
+      const count = data.length / PARTICLE_FLOATS;
+      shown += count;
+      const look = this.effectLook(e);
+      const centre: Vec3 = [(region.min[0] + region.max[0]) / 2, (region.min[1] + region.max[1]) / 2, (region.min[2] + region.max[2]) / 2];
+      const perPixel = this.worldPerPixel(centre);
+      if (e.shape === 'CAPSULE') {
+        // Streaks: thin cylinders along each capsule's segment, at least a pixel wide.
+        const geo = new THREE.CylinderGeometry(1, 1, 1, 5, 1, true);
+        const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(look.color[0], look.color[1], look.color[2], THREE.LinearSRGBColorSpace), transparent: true, opacity: look.clear ? 0.35 : 0.9, depthWrite: false });
+        const mesh = new THREE.InstancedMesh(geo, mat, count);
+        const m = new THREE.Matrix4();
+        const q = new THREE.Quaternion();
+        const up = new THREE.Vector3(0, 1, 0);
+        const axis = new THREE.Vector3();
+        for (let i = 0; i < count; i++) {
+          const o = i * PARTICLE_FLOATS;
+          axis.set(data[o + 4], data[o + 5], data[o + 6]);
+          const length = 2 * axis.length();
+          if (length > 0) q.setFromUnitVectors(up, axis.normalize());
+          else q.identity();
+          const r = Math.max(data[o + 3], 0.5 * perPixel);
+          m.compose(new THREE.Vector3(data[o], data[o + 1], data[o + 2]), q, new THREE.Vector3(r, Math.max(length, 2 * r), r));
+          mesh.setMatrixAt(i, m);
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.frustumCulled = false;
+        this.effectsRoot.add(mesh);
+      } else {
+        // Dots: as wide as the particle at the region's centre, never under a pixel and a half.
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          const o = i * PARTICLE_FLOATS;
+          positions[i * 3] = data[o];
+          positions[i * 3 + 1] = data[o + 1];
+          positions[i * 3 + 2] = data[o + 2];
+          const tint = previewTint(tintSeed(data, i), e.palette, e.tintVar);
+          for (let c = 0; c < 3; c++) colors[i * 3 + c] = look.color[c] * tint[c];
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const px = Math.min(16, Math.max(1.5, e.sizeMm / Math.max(1e-6, perPixel)));
+        const mat = new THREE.PointsMaterial({ size: px * this.dpr, sizeAttenuation: false, vertexColors: true, map: this.disc, transparent: true, opacity: look.clear ? 0.5 : 1, depthWrite: false, alphaTest: 0.05 });
+        const points = new THREE.Points(geo, mat);
+        points.frustumCulled = false;
+        this.effectsRoot.add(points);
+      }
+    }
+    for (const id of [...this.particleCache.keys()]) if (!live.has(id)) this.particleCache.delete(id);
+    // The effect being edited shows its region.
+    const sel = enabled.find((e) => e.id === this.selectedEffect);
+    if (sel && rt) {
+      const r = effectRegion(state, sel);
+      this.effectsRoot.add(this.boxLines(r.min, r.max, false));
+    }
+    // While rt.wasm loads the boxes stand in for the particles and the meter waits.
+    this.particleStats = rt === undefined ? null : { shown, total, boxesOnly: rt === null };
   }
 
   // ------------------------------------------------------------------ pick
@@ -1876,6 +2037,7 @@ export class PreviewEngine implements RenderEngine {
 
   dispose(): void {
     this.controls?.dispose();
+    this.clearEffects();
     this.gizmo.dispose();
     for (const g of this.geometries.values()) g.dispose();
     for (const m of this.materials.values()) m.dispose();

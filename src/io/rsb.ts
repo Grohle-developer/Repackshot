@@ -7,10 +7,14 @@
 // `projectScene` maps a ProjectState onto it: the active camera, a mesh per
 // distinct geometry, an instance per visible part, a material per material
 // instance, the resolved rig, the environment (dome, sky, flat or HDRI, and the
-// background image), the floor and the render settings. Model space only (Z up,
-// millimetres): no three.js here.
+// background image), the floor, the render settings and the ambient effects
+// (S4a: one FXAM section of parameters per effect, with a material of its own
+// after the parts' ones). Model space only (Z up, millimetres): no three.js here.
 
 import { playheadPose, type Pose } from '../core/animation';
+import { effectFxam, engineParticleCap, fxamPayload, FXAM_BYTES, type AmbientEffect, type FxamFields } from '../core/effects';
+import { instanceFromPreset } from '../core/materials';
+import type { EffectMaterial } from '../data/effects';
 import { flattenGraph } from '../core/material-preview';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
@@ -49,6 +53,8 @@ export const TAG_BMAP = 'BMAP';
 export const TAG_IMGS = 'IMGS';
 /** O1: the camera's optics beyond the plain thin lens (optional, right after CAMR). */
 export const TAG_LENS = 'LENS';
+/** S4a: an ambient effect's parameters (rt_sim::params; the engine evaluates the particles). */
+export const TAG_FXAM = 'FXAM';
 
 /** `MATL.kind`. */
 export const MATERIAL_PRINCIPLED = 0;
@@ -354,7 +360,12 @@ export interface RsbScene {
   textures?: boolean;
   /** M2a: the texture images (IMGS), referred to by index from the materials' slots and labels. */
   images?: RsbImage[];
+  /** S4a: the ambient effects (FXAM), each referring to its material by index. */
+  effects?: RsbEffect[];
 }
+
+/** S4a: an ambient effect, the fields of `FXAM` (core/effects.ts `effectFxam`). */
+export type RsbEffect = FxamFields;
 
 // The defaults of rt-core (`impl Default` of each struct): what a field the
 // interface does not have is written as.
@@ -593,7 +604,8 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
 
   const tex = scene.textures === true;
   const images = tex ? (scene.images ?? []) : [];
-  let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES);
+  const effects = scene.effects ?? [];
+  let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES) + effects.length * (8 + FXAM_BYTES);
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
   const lens = scene.camera.lens ?? null;
   if (lens) size += 8 + lensBytes(lens);
@@ -693,6 +705,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.u32(l.flags);
     });
   }
+  for (const e of effects) w.section(TAG_FXAM, FXAM_BYTES, () => w.raw(fxamPayload(e)));
   if (withMeshes && images.length > 0) {
     w.section(TAG_IMGS, imagesBytes(images), () => {
       w.u32(images.length);
@@ -808,6 +821,8 @@ export interface SceneView {
    * turns it on from the engine's own word). Off by default: the bytes are those of before M2a.
    */
   textures?: boolean;
+  /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
+  particleCap?: number;
 }
 
 /** A scene and the identity of its geometry: an equal `meshKey` means the same MESH sections. */
@@ -958,6 +973,25 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
     }
   }
   return m;
+}
+
+/** S4a: an effect's own material (data/effects.ts) as the engine's. */
+export function effectMaterialToRsb(m: EffectMaterial): RsbMaterial {
+  const out = defaultMaterial();
+  out.kind = m.kind === 'GLASS' ? MATERIAL_GLASS : MATERIAL_PRINCIPLED;
+  out.baseColor = [m.baseColor[0], m.baseColor[1], m.baseColor[2]];
+  out.roughness = clamp01(m.roughness);
+  out.ior = Math.max(1, m.ior);
+  out.transmission = clamp01(m.transmission);
+  out.absorptionMm = Math.max(0, m.absorptionMm);
+  out.flags = m.thin ? MATERIAL_FLAG_THIN : 0;
+  return out;
+}
+
+/** S4a: the material an effect renders with: a catalogue material by key, or its own. */
+export function effectMaterial(state: ProjectState, e: AmbientEffect): RsbMaterial {
+  const inst = e.material ? instanceFromPreset(`fx:${e.id}`, e.material, state.scene.partSizeMm) : null;
+  return inst ? materialToRsb(inst) : effectMaterialToRsb(e.ownMaterial);
 }
 
 /**
@@ -1350,6 +1384,16 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     lights.push(light);
   }
 
+  // S4a: the ambient effects, each with a material of its own after the parts' (its passes' materialId).
+  const cap = view.particleCap ?? engineParticleCap();
+  const effects: RsbEffect[] = [];
+  for (const e of state.effects) {
+    if (!e.enabled) continue;
+    const materialId = materials.push(effectMaterial(state, e)) - 1;
+    materialOrder.push(null);
+    effects.push(effectFxam(state, e, materialId, cap));
+  }
+
   const env = state.environment;
   const flat = env.kind === 'FLAT';
   // The engine's flat environment is grey: the colour's luminance.
@@ -1444,7 +1488,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   }
 
   return {
-    scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}) },
+    scene: { camera, materials, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}) },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key. With textures (M2a) the
     // meshes carry their UVs and IMGS travels with them too.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : '') + (view.textures ? `|textures:${imageIds.join(',')}` : ''),

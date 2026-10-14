@@ -10,6 +10,7 @@ import { VERSION } from './version';
 import { reduceAnimation, type AnimationAction, type MotionClip, type Shot } from './animation';
 import { makeCamera, reduceCamera, type CameraAction, type CameraId, type CameraState } from './camera';
 import { reduceDoctor, runDoctor, type DoctorAction, type DoctorResult } from './doctor';
+import { reduceEffects, type AmbientEffect, type EffectAction } from './effects';
 import { buildStudio, lightsFromRig, reduceStudio, type CustomSetup, type LightInstance, type SavedStudio, type StudioAction } from './lighting';
 import { reduceMaterials, type MaterialAction, type MaterialId, type MaterialInstance } from './materials';
 import { carryRuntime, defaultRenderState, reduceRender, syncOutputSize, type RenderAction, type RenderState } from './render';
@@ -98,6 +99,8 @@ export interface ProjectState {
     customSetup?: CustomSetup | null;
   };
   environment: EnvironmentState;
+  /** The ambient effects (S4a, core/effects.ts): particles of the air, as parameters. */
+  effects: AmbientEffect[];
   camera: { active: CameraId; cameras: Record<CameraId, CameraState> };
   image: ImageState;
   animation: { shots: Shot[]; clips: MotionClip[]; fps: number; playhead: number; playing: boolean };
@@ -138,6 +141,7 @@ export type Action =
   | DoctorAction
   | MetaAction
   | EnvironmentAction
+  | EffectAction
   | ImageAction
   | HistoryAction;
 
@@ -160,6 +164,7 @@ export const VOLATILE_ACTIONS: ReadonlySet<ActionType> = new Set<ActionType>([
   'anim/play',
   'render/job',
   'render/running',
+  'doctor/refresh',
   'history/undo',
   'history/redo',
   'history/reset',
@@ -210,6 +215,7 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
       skyModel: 'PHYSICAL',
       skySun: { az: -55, el: 55 },
     },
+    effects: [],
     camera: { active: 'cam1', cameras: { cam1: makeCamera('cam1', '', partSizeMm) } },
     image: { exposureEv: 0, viewTransform: 'FILMIC', bloom: 0, sharpen: 0, saturation: 0, contrast: 0, vignette: 0 },
     animation: { shots: [], clips: [], fps: 24, playhead: 0, playing: false },
@@ -278,6 +284,8 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
       return reduceDoctor(state, action as DoctorAction);
     case 'meta':
       return reduceMeta(state, action as MetaAction);
+    case 'effect':
+      return reduceEffects(state, action as EffectAction);
     case 'env': {
       const env = shallowPatch(state.environment, (action as EnvironmentAction).patch);
       return env === state.environment ? state : { ...state, environment: env };
@@ -307,7 +315,8 @@ export function reduce(state: ProjectState, action: Action): ProjectState {
     next.studio !== state.studio ||
     next.animation.shots !== state.animation.shots ||
     next.render.width !== state.render.width ||
-    next.render.height !== state.render.height
+    next.render.height !== state.render.height ||
+    next.effects !== state.effects
   ) {
     return { ...next, doctor: { results: runDoctor(next), stamp: state.doctor.stamp + 1 } };
   }
