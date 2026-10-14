@@ -4914,6 +4914,134 @@ hueco que el informe nombra; el informe no da número f ni semiaperturas del mac
 ni semiaperturas de casi ninguna lente, así que esos campos quedan vacíos o
 derivados y marcados.
 
+### S0 · Decisiones de partículas — **Fable** — hecha
+
+Petición del usuario: simulación de partículas del ambiente (lluvia,
+polvo en suspensión y cómo refleja las luces, nieve, polvareda…) como
+una opción más dentro de *Escena*, completamente configurable y simulada
+en 3D. Es la clase **sin estado** de `STUDIO-TOOLS.md` §5 y de
+`docs/research/particles.md` (§2.1, §2.6, §3.2, §4, §5): no necesita
+caché ni horneado, y entra ahora como **S4a**. Decisiones que valen para
+toda la familia S:
+
+1. **Dónde vive el simulador.** Un *crate* nuevo `engine/crates/rt-sim`,
+   solo `std`, sin `unsafe`, sin APIs del sistema, con el contrato de
+   determinismo del motor (`f32`, `fmath`, hash contador
+   `mix64(seed ^ id)`): la misma semilla y el mismo instante dan las
+   mismas partículas en nativo y en wasm (test con *hash* de posiciones).
+   Lo usan `rt-core` (el render), `rt-wasm` (el visor Rápido, por una
+   exportación `particles_eval`) y `rt` nativo. **No hay puerto a
+   TypeScript**: sin wasm, el visor pinta solo la caja del emisor y el
+   medidor lo dice (regla 10).
+2. **Modelo de tiempo.** Cada partícula es función pura de (semilla, id,
+   tiempo): nacimiento = fase propia dentro de su vida (régimen
+   estacionario, la escena «llena» desde el primer instante), movimiento
+   de forma cerrada (velocidad terminal `v = v₀ + (v_t − v₀)(1 − e^{−t/τ})`
+   integrada, sin pasos; viento constante; deriva de *curl noise* como
+   **desplazamiento** `d(x₀, t)` sin divergencia, no como velocidad
+   integrada: así cualquier `t` cuesta lo mismo). Sin colisiones salvo
+   el suelo (mueren bajo `z = 0` y renacen por fase). *Congelar en* el
+   instante `time` del efecto; la animación N1 lo moverá más adelante.
+3. **Qué viaja al motor.** Los **parámetros**, no las partículas: sección
+   RSB `FXAM` (≤ 256 B por efecto, varias permitidas, ignorada por un
+   motor viejo), y el motor evalúa las partículas al cargar la escena y
+   construye su BVH. Un RSB con 1 M de partículas serían 24 MB por
+   trabajador en el navegador; así son 256 B.
+4. **Primitivas** en `rt-core`: esfera (intersección estable), disco
+   orientado (copo) y cápsula (esfera barrida: la estela de la lluvia sin
+   desenfoque de movimiento), con BVH plana propia sobre el conjunto y un
+   único nodo en la TLAS. Materiales del catálogo por clave (`MATL` ya
+   existente), con variación de tinte por partícula desde su semilla.
+   **Tamaño mínimo en pantalla**: una partícula más fina que 0,35 px se
+   ensancha a eso para los rayos de cámara y su radiancia se escala por
+   (área real / área ensanchada), así la energía no cambia (test).
+5. **Lo que no entra en S4a.** Calima, haces de luz, niebla baja y la
+   polvareda como volumen (medio participante con seguimiento delta): S5,
+   después de E9b (medios dispersores), y en la lista de S4a aparecen
+   como *próximamente*. Desenfoque de movimiento (N5). Colisiones con
+   las piezas, caché y horneado (S2). Lectura de `.vdb`: no.
+6. **Coste.** Con 200 k partículas, ≤ 1,3× el tiempo por muestra de la
+   misma escena sin ellas; tope por defecto 100 k en el navegador y 1 M
+   en nativo, en *Ajustes ▸ Motor de renderizado*.
+
+### S4a · Ambiente: partículas de aire sin estado — **Opus**, veredicto **Fable**
+
+**Qué.** En la pestaña *Escena*, una sección nueva **Ambiente** (en la
+lista de secciones, tras *Luz* y antes de *Cámara*) con una lista de
+efectos (0..n; *Añadir* abre una galería de tarjetas) y, por efecto:
+
+- **Tipo / preset** (claves estables en `src/data/effects.ts`, nombres
+  es/en): `DUST_MOTES` Motas de polvo, `POLLEN` Polen, `RAIN` Lluvia,
+  `SNOW` Nieve, `DUST_CLOUD` Polvareda, `ASH` Ceniza, `BUBBLES` Burbujas
+  que suben, `CONFETTI` Confeti que cae; y, atenuados con *próximamente*
+  (S5): `HAZE` Calima, `LIGHT_SHAFTS` Haces de luz, `GROUND_FOG` Niebla
+  baja. Valores de partida de cada preset: los pongo yo con la hoja (regla
+  11); el agente propone unos en el JSON y los anota como propuesta.
+- **Ocho mandos de fotógrafo** (siempre visibles): Cantidad, Tamaño,
+  Energía (velocidad), Caos (dispersión + turbulencia), Viento (fuerza y
+  dirección en grados), Gravedad, Variación, Semilla (con barajar).
+- **Avanzado** (plegado): región (caja alrededor de la escena con margen
+  en mm; o caja propia con centro y tamaño; banda de alturas), densidad
+  (partículas/m³) o cuenta, forma (punto/esfera, copo/disco, estela/
+  cápsula), tamaño mm ± variación, velocidad de caída (terminal) ±
+  variación, giro, viento (vector), turbulencia (fuerza, escala, velocidad),
+  envolvente de nube (centro, radio, suavidad, para la polvareda),
+  material (clave del catálogo; por defecto el del preset: polvo = difuso
+  claro con un poco de especular; lluvia = vidrio; nieve = difuso blanco
+  con `absorption` corto; polen = difuso amarillento; confeti = lista de
+  tintes), variación de tinte, instante (*Congelar en*, s), visible a
+  cámara / en reflejos / proyecta sombra (como las luces), y el tope de
+  partículas.
+- Todo en `ProjectState` (nuevo campo `effects: AmbientEffect[]`), por el
+  *store* y deshacible, guardado con el proyecto (U2), Doctor avisa si
+  hay más partículas que el tope.
+- **Visor Rápido**: `THREE.Points` (polvo, nieve) o `InstancedMesh`
+  (cápsulas de lluvia) con las posiciones que devuelve `particles_eval`
+  del wasm, hasta 50 k; selección del efecto muestra la caja de su
+  región. **Completo y render**: el motor, por `FXAM`.
+- **Luz sobre las partículas.** Nada especial: son geometría con su
+  material, así que el polvo a contraluz brilla por el especular y la
+  NEE las ilumina como a todo; un foco detrás del producto hace el
+  «polvo en el haz». La hoja lo tiene que enseñar.
+
+**Motor.** `rt-sim` (S0 §1–2), `FXAM` en `rt-core::scene::rsb` (campos:
+`kind u32`, `seed u32`, `time f32`, `count u32`, región (centro, mitad de
+tamaño, banda), tamaño y variación, forma, velocidad terminal y
+variación, viento xyz, turbulencia (fuerza, escala, velocidad), nube
+(centro, radio, suavidad), `material_id`, `tint_var`, `flags` (cámara,
+reflejos, sombra), estela (longitud como multiplicador de la velocidad);
+los que sobren, cero), las tres primitivas con intersección estable en
+`geometry/` y una BVH plana (S0 §4), `Film` y pases sin cambios
+(`partId` de una partícula = el id del efecto; `materialId` el suyo).
+`rt-wasm` exporta `particles_eval(params, max) → f32[]` (xyz, radio,
+orientación) para el visor. Sin `sin`/`exp` por partícula en el bucle
+caliente: la exponencial de la velocidad terminal va tabulada por `fmath`
+una vez por efecto.
+
+**Depende de.** E3, E5 (vidrio para la lluvia), E12 (elección de luz por
+punto: con 100 k partículas la NEE desde ellas no debe elegir a ciegas).
+
+**Criterio.** (1) Determinismo: `hash(posiciones)` igual en nativo y wasm
+y con 1 y N hilos, y el mismo píxel a píxel (test); con el efecto a
+cuenta 0 los *hashes* de todas las escenas de referencia no cambian.
+(2) Régimen estacionario: la densidad medida en la región a `t = 0`,
+`t = 3 s` y `t = 60 s` difiere < 3 % (test). (3) La lluvia muere en el
+suelo y renace arriba (test: ninguna partícula bajo `z = 0`). (4)
+Energía del ensanchado a 0,35 px: una imagen de polvo fino a 4 spp y a
+256 spp tiene la misma media ± 2 % (test). (5) Coste: ≤ 1,3× con 200 k
+partículas en la escena de ejemplo (medido, en el párrafo del ROADMAP).
+(6) *Hoja* `out/ambient-sheet.html`: la botella del ejemplo con los ocho
+presets a 512 px / 128 spp, cada uno en dos luces (clave lateral y foco
+a contraluz detrás del producto, para ver el polvo brillar en el haz),
+más la lluvia con tres longitudes de estela y la polvareda con dos
+suavidades; a ojo. (7) Capturas `docs/ui/ambient-section.png` y
+`docs/ui/ambient-gallery.png`; comprobación de navegador
+`tools/ambient-check.mjs` (añadir, cambiar preset, deshacer, guardar y
+abrir, tope). `SPEC.md` §3.1 (el efecto como dato), `UI.md`,
+`ARCHITECTURE.md` (crate `rt-sim`, `FXAM`), `STUDIO-TOOLS.md` §5
+(apunte: S0 decidido, S4a hecha), CHANGELOG. Cadenas es/en, cromo
+acromático.
+
 ## Orden sugerido
 
 1. **U1** (Opus) y **E1** (Sonnet), en paralelo: la interfaz y el
