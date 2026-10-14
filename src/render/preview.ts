@@ -344,7 +344,8 @@ export class PreviewEngine implements RenderEngine {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.textures.dispose();
-    this.textures = new TexturePreview(() => (this.needsRender = true), Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
+    // Every texture as sharp at a grazing angle as the device allows.
+    this.textures = new TexturePreview(() => (this.needsRender = true), this.renderer.capabilities.getMaxAnisotropy());
     this.device = this.detectDevice();
     // "Alt + left button orbits": the left button's action is decided as it goes down, before the controls see it.
     canvas.addEventListener(

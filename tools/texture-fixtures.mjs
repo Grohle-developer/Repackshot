@@ -101,14 +101,15 @@ export function occlusionImage(size = 8) {
   return png(size, size, 1, () => [200]);
 }
 
-/** A label: a dark rounded card with a white band and alpha around it. */
+/** A label: a cream rounded card with a dark band across its middle and alpha around it. */
 export function labelImage(w = 96, h = 64) {
   return png(w, h, 4, (x, y) => {
-    const dx = Math.max(0, Math.abs(x - w / 2 + 0.5) - (w / 2 - 8));
-    const dy = Math.max(0, Math.abs(y - h / 2 + 0.5) - (h / 2 - 8));
-    const inside = Math.hypot(dx, dy) < 7;
-    const band = y > h * 0.4 && y < h * 0.6 && x > w * 0.12 && x < w * 0.88;
-    const c = band ? [245, 245, 240] : [25, 30, 60];
+    const r = Math.min(w, h) * 0.12;
+    const dx = Math.max(0, Math.abs(x - w / 2 + 0.5) - (w / 2 - r - 1));
+    const dy = Math.max(0, Math.abs(y - h / 2 + 0.5) - (h / 2 - r - 1));
+    const inside = Math.hypot(dx, dy) < r;
+    const band = y > h * 0.38 && y < h * 0.62 && x > w * 0.1 && x < w * 0.9;
+    const c = band ? [150, 30, 30] : [240, 232, 214];
     return [...c, inside ? 255 : 0];
   });
 }

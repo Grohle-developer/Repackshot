@@ -500,8 +500,9 @@ export interface LabelFrame {
 
 /** The frame of a label, for an image `aspect` = width / height. */
 export function labelFrame(l: TextureLabel, aspect: number): LabelFrame {
-  const u = normalize(rotateAbout(l.uAxis, l.normal, l.rotationDeg));
-  const v = normalize(cross(l.normal, u));
+  // `+ 0`: plain zeros, never −0, so equal frames are equal bytes.
+  const u = normalize(rotateAbout(l.uAxis, l.normal, l.rotationDeg)).map((x) => x + 0) as Vec3;
+  const v = normalize(cross(l.normal, u)).map((x) => x + 0) as Vec3;
   const width = l.widthMm;
   const height = l.widthMm / (aspect > 0 ? aspect : 1);
   const depth = l.depthMm > 0 ? l.depthMm : 0.5 * Math.max(width, height);
