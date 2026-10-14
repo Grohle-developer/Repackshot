@@ -26,6 +26,7 @@ import {
 import { createInitialState, createStore } from '../src/core/store';
 import { NativeError } from '../src/io/native';
 import * as cmd from '../src/ui/commands';
+import type { ConfirmSpec } from '../src/ui/components/widgets';
 import type { AppServices, SaveResult } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
 import { setLang, STRINGS, t, type StringKey } from '../src/ui/strings';
@@ -133,6 +134,12 @@ const tick = async (ms = INSTALL_POLL_MS) => {
 };
 const labels = (ctx: Ctx) => ctx.ui.get().prompt?.options.map((o) => o.label);
 const install = (ctx: Ctx) => ctx.ui.get().updates.install;
+/** Presses a button of the question as the widget does: the question goes away first, then the button’s action runs. */
+const choose = (ctx: Ctx, index: number) => {
+  const spec = ctx.ui.get().prompt!;
+  ctx.ui.set({ prompt: null });
+  spec.options[index].run();
+};
 
 // ------------------------------------------------------------------ the question
 
@@ -173,7 +180,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     const h = harness();
     edit(h.ctx);
     cmd.requestCloseWindow(h.ctx);
-    h.ctx.ui.get().prompt!.options[1].run(); // Save as…
+    choose(h.ctx, 1); // Save as…
     await flush();
     expect(h.saves).toEqual([{ name: 'bottle.repack.json', saveAs: true }]);
     expect(h.closed()).toBe(1);
@@ -184,7 +191,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     edit(c.ctx);
     cmd.requestCloseWindow(c.ctx);
     c.saveResult.next = { kind: 'CANCELLED' };
-    c.ctx.ui.get().prompt!.options[1].run();
+    choose(c.ctx, 1);
     await flush();
     expect(c.saves).toHaveLength(1);
     expect(c.closed()).toBe(0);
@@ -195,7 +202,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     edit(f.ctx);
     cmd.requestCloseWindow(f.ctx);
     f.saveResult.next = { kind: 'FAILED', reason: 'disk full' };
-    f.ctx.ui.get().prompt!.options[1].run();
+    choose(f.ctx, 1);
     await flush();
     expect(f.closed()).toBe(0);
     expect(f.ctx.store.get().meta.dirty).toBe(true);
@@ -205,7 +212,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     const h = harness();
     edit(h.ctx);
     cmd.requestNewProject(h.ctx);
-    h.ctx.ui.get().prompt!.options[0].run();
+    choose(h.ctx, 0);
     await flush();
     expect(h.saves).toEqual([{ name: 'bottle.repack.json', saveAs: false }]);
     expect(h.ctx.store.get().meta.name).toBe('');
@@ -213,7 +220,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     edit(c.ctx);
     cmd.requestNewProject(c.ctx);
     c.saveResult.next = { kind: 'CANCELLED' };
-    c.ctx.ui.get().prompt!.options[0].run();
+    choose(c.ctx, 0);
     await flush();
     expect(c.ctx.store.get().meta.name).toBe('Bottle');
   });
@@ -230,6 +237,30 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     expect(labels(h.ctx)).toEqual(['Guardar', 'Guardar como…', 'Salir sin guardar']);
   });
 
+  it('the update question shows where the button was pressed (a row of Settings, the notice), not under the project name', async () => {
+    const h = harness();
+    edit(h.ctx);
+    const shown: ConfirmSpec[] = [];
+    installUpdate(h.ctx, RELEASE, (spec) => shown.push(spec));
+    expect(h.ctx.ui.get().prompt).toBeNull();
+    expect(shown).toHaveLength(1);
+    expect(shown[0].message).toBe('Save changes to “Bottle” before updating?');
+    expect(shown[0].options.map((o) => o.label)).toEqual(['Save', 'Save as…', 'Quit without saving']);
+    await flush();
+    expect(h.launcher.requests).toEqual([]);
+    shown[0].options[1].run();
+    await flush();
+    expect(h.saves).toEqual([{ name: 'bottle.repack.json', saveAs: true }]);
+    expect(h.launcher.requests).toHaveLength(1);
+    // Nothing to ask: nothing shown, and it goes on.
+    const clean = harness();
+    const none: ConfirmSpec[] = [];
+    installUpdate(clean.ctx, RELEASE, (spec) => none.push(spec));
+    await flush();
+    expect(none).toEqual([]);
+    expect(clean.launcher.requests).toHaveLength(1);
+  });
+
   it('the update asks “before updating” and its third button quits the application', async () => {
     const h = harness();
     edit(h.ctx);
@@ -240,7 +271,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     // Nothing is asked of the launcher until the person answers.
     await flush();
     expect(h.launcher.requests).toEqual([]);
-    prompt.options[2].run();
+    choose(h.ctx, 2);
     await flush();
     expect(h.launcher.requests).toHaveLength(1);
     expect(h.saves).toEqual([]);
@@ -248,7 +279,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     const s = harness();
     edit(s.ctx);
     installUpdate(s.ctx, RELEASE);
-    s.ctx.ui.get().prompt!.options[0].run();
+    choose(s.ctx, 0);
     await flush();
     expect(s.saves).toHaveLength(1);
     expect(s.launcher.requests).toHaveLength(1);
@@ -257,7 +288,7 @@ describe('the question about unsaved changes (UI.md §4.3)', () => {
     edit(n.ctx);
     installUpdate(n.ctx, RELEASE);
     n.saveResult.next = { kind: 'CANCELLED' };
-    n.ctx.ui.get().prompt!.options[1].run();
+    choose(n.ctx, 1);
     await flush();
     expect(n.launcher.requests).toEqual([]);
     expect(install(n.ctx).status.state).toBe('IDLE');
@@ -519,7 +550,7 @@ describe('Install and restart', () => {
     // Restart now: the same question; Save as… writes it and the window closes.
     restartNow(h.ctx);
     expect(install(h.ctx).deferred).toBe(false);
-    h.ctx.ui.get().prompt!.options[1].run();
+    choose(h.ctx, 1);
     await flush();
     expect(h.saves).toEqual([{ name: 'lamp.repack.json', saveAs: true }]);
     expect(h.closed()).toBe(1);
@@ -527,18 +558,58 @@ describe('Install and restart', () => {
 
   it('a save that wrote nothing keeps the window too', async () => {
     const h = harness();
-    h.launcher.script = [status({ state: 'INSTALLING', ready: true })];
-    edit(h.ctx);
+    h.launcher.script = [status({ state: 'DOWNLOADING', received: 1 }), status({ state: 'INSTALLING', ready: true })];
     installUpdate(h.ctx, RELEASE);
-    h.ctx.ui.get().prompt!.options[2].run(); // Quit without saving: the install starts
     await flush();
-    await tick();
+    edit(h.ctx);
+    await tick(INSTALL_POLL_MS * 2);
     expect(h.ctx.ui.get().prompt).not.toBeNull();
     h.saveResult.next = { kind: 'CANCELLED' };
-    h.ctx.ui.get().prompt!.options[0].run();
+    choose(h.ctx, 0);
     await flush();
     expect(h.closed()).toBe(0);
     expect(install(h.ctx).deferred).toBe(true);
+  });
+
+  it('what the person already answered at the click is not asked again, unless the project changes after that', async () => {
+    // Quit without saving, then nothing changes: the window closes when the update is ready, without a second question.
+    const h = harness();
+    h.launcher.script = [status({ state: 'INSTALLING', ready: true })];
+    edit(h.ctx);
+    installUpdate(h.ctx, RELEASE);
+    choose(h.ctx, 2);
+    await flush();
+    await tick();
+    expect(h.ctx.ui.get().prompt).toBeNull();
+    expect(h.closed()).toBe(1);
+    // The same, and the person works on in the meantime: that is asked.
+    const w = harness();
+    w.launcher.script = [status({ state: 'DOWNLOADING', received: 1 }), status({ state: 'INSTALLING', ready: true })];
+    edit(w.ctx);
+    installUpdate(w.ctx, RELEASE);
+    choose(w.ctx, 2);
+    await flush();
+    edit(w.ctx, 'Bottle, again');
+    await tick(INSTALL_POLL_MS * 2);
+    expect(w.ctx.ui.get().prompt!.message).toBe('Save changes to “Bottle, again” before updating?');
+    expect(w.closed()).toBe(0);
+    // Undoing back to what they answered for is the same project: no question.
+    w.ctx.ui.set({ prompt: null });
+    await flush();
+    w.ctx.store.undo();
+    restartNow(w.ctx);
+    expect(w.ctx.ui.get().prompt).toBeNull();
+    expect(w.closed()).toBe(1);
+    // Saved first (Save), then nothing: clean, no question.
+    const s = harness();
+    s.launcher.script = [status({ state: 'INSTALLING', ready: true })];
+    edit(s.ctx);
+    installUpdate(s.ctx, RELEASE);
+    choose(s.ctx, 0);
+    await flush();
+    await tick();
+    expect(s.ctx.ui.get().prompt).toBeNull();
+    expect(s.closed()).toBe(1);
   });
 
   it('Quit without saving closes with the changes lost, as the person said', async () => {
@@ -548,7 +619,7 @@ describe('Install and restart', () => {
     await flush();
     edit(h.ctx);
     await tick(INSTALL_POLL_MS * 2);
-    h.ctx.ui.get().prompt!.options[2].run();
+    choose(h.ctx, 2);
     await flush();
     expect(h.closed()).toBe(1);
     expect(h.saves).toEqual([]);
@@ -601,10 +672,22 @@ describe('when it fails', () => {
     expect(h.launcher.asked).toBe(asked);
     const first = h.launcher.requests[0];
     h.launcher.script = [status({ state: 'DOWNLOADING', received: 1 })];
-    retryInstall(h.ctx);
+    retryInstall(h.ctx, RELEASE);
     await flush();
     expect(h.launcher.requests).toEqual([first, first]);
     expect(install(h.ctx).status.state).toBe('DOWNLOADING');
+  });
+
+  it('Try again in a page that was reloaded since builds the request from the release', async () => {
+    const h = harness();
+    h.launcher.script = [status({ state: 'FAILED', error: 'download' })];
+    await syncInstall(h.ctx);
+    expect(install(h.ctx).status).toMatchObject({ state: 'FAILED', error: 'download' });
+    expect(install(h.ctx).request).toBeNull();
+    h.launcher.script = [status({ state: 'DOWNLOADING', received: 1 })];
+    retryInstall(h.ctx, RELEASE);
+    await flush();
+    expect(h.launcher.requests).toEqual([{ tag: '0.2.0', assetUrl: `${BASE}/${TARGZ}`, sumsUrl: `${BASE}/${SUMS_NAME}`, size: 39_000_000 }]);
   });
 
   it('a checksum that does not match, no room on the disk and a package that cannot be unpacked are failures, not restarts', async () => {

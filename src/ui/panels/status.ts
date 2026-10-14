@@ -8,7 +8,7 @@ import { warningCount, type DoctorResult } from '../../core/doctor';
 import { allParts, triangleCount } from '../../core/scene';
 import { VERSION } from '../../core/version';
 import * as cmd from '../commands';
-import { openFloating } from '../components/widgets';
+import { confirmBox, openFloating } from '../components/widgets';
 import { h } from '../dom';
 import { dyn } from '../names';
 import { Scope, shallowEq, type Ctx } from '../reactive';
@@ -80,6 +80,11 @@ function doctorPopover(ctx: Ctx, scope: Scope): HTMLElement {
  */
 function updateNotice(ctx: Ctx, scope: Scope): HTMLElement {
   const el = h('span', { class: 'update-notice', role: 'status', 'aria-live': 'polite' });
+  // The question about unsaved changes opens above the button that was pressed, in its place (UI.md §4.3).
+  const askFrom = (button: HTMLElement) => (spec: Parameters<typeof confirmBox>[0]) => {
+    let close = () => undefined as void;
+    close = openFloating(button, confirmBox(spec, () => close()), { above: true });
+  };
   scope.watch(
     (_s, u) => [u.updates.notice, u.updates.install, u.desktop] as const,
     ([release, install]) => {
@@ -101,11 +106,11 @@ function updateNotice(ctx: Ctx, scope: Scope): HTMLElement {
         return;
       }
       if (status.state === 'FAILED') {
-        const retry = status.error !== 'not-updatable' && install.request;
+        const retry = status.error !== 'not-updatable';
         el.replaceChildren(
           h('span', { class: 'update-text is-fault', 'data-tip': status.message ?? undefined }, t('up.failedInstall', { reason: installFaultText(status.error) })),
           retry
-            ? h('button', { type: 'button', class: 'btn-link update-retry', onclick: () => retryInstall(ctx) }, t('up.retry'))
+            ? h('button', { type: 'button', class: 'btn-link update-retry', onclick: (e: Event) => retryInstall(ctx, release, askFrom(e.currentTarget as HTMLElement)) }, t('up.retry'))
             : h('button', { type: 'button', class: 'btn-link update-download', onclick: () => downloadUpdate(ctx, release) }, t('up.download')),
           notes,
           h('button', { type: 'button', class: 'btn-link update-later', onclick: () => dismissUpdateNotice(ctx) }, t('up.later')),
@@ -117,7 +122,7 @@ function updateNotice(ctx: Ctx, scope: Scope): HTMLElement {
       el.replaceChildren(
         h('span', { class: 'update-text' }, t('up.available', { version: release.version })),
         installable
-          ? h('button', { type: 'button', class: 'btn-link update-install', onclick: () => installUpdate(ctx, release) }, t('up.install'))
+          ? h('button', { type: 'button', class: 'btn-link update-install', onclick: (e: Event) => installUpdate(ctx, release, askFrom(e.currentTarget as HTMLElement)) }, t('up.install'))
           : h('button', { type: 'button', class: 'btn-link update-download', onclick: () => downloadUpdate(ctx, release) }, t('up.download')),
         notes,
         h('button', { type: 'button', class: 'btn-link update-later', onclick: () => dismissUpdateNotice(ctx) }, t('up.later')),

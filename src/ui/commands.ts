@@ -509,7 +509,32 @@ export interface UnsavedOptions {
  * closing the window, New, Open and updating the application.
  */
 export function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void, opts: UnsavedOptions = {}): void {
-  if (!ctx.store.get().meta.dirty) return proceed();
+  const q = unsavedQuestion(ctx, message, proceed, opts);
+  if (!q) return;
+  ctx.ui.set({ prompt: q.spec });
+  const stay = opts.onStay;
+  if (!stay) return;
+  // The question goes away without a choice (Cancel, Esc, a click outside): the flow stays where it was. An option
+  // closes the question first and runs after, in the same click, so the check waits a turn.
+  const off = ctx.ui.subscribe((u) => {
+    if (u.prompt === q.spec) return;
+    off();
+    queueMicrotask(() => {
+      if (!q.chosen()) stay();
+    });
+  });
+}
+
+/**
+ * The question of `afterUnsavedCheck` for a caller that shows it itself, in its own place (a row of Settings, the
+ * button that was pressed): `null` when the project has nothing unsaved and `proceed` has already run. `chosen` says
+ * whether one of the three buttons was pressed (as opposed to Cancel or Esc).
+ */
+export function unsavedQuestion(ctx: Ctx, message: string, proceed: () => void, opts: UnsavedOptions = {}): { spec: ConfirmSpec; chosen: () => boolean } | null {
+  if (!ctx.store.get().meta.dirty) {
+    proceed();
+    return null;
+  }
   let chosen = false;
   const write = (saveAs: boolean) => () => {
     chosen = true;
@@ -529,18 +554,7 @@ export function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void
       },
     ],
   };
-  ctx.ui.set({ prompt: spec });
-  const stay = opts.onStay;
-  if (!stay) return;
-  // The question goes away without a choice (Cancel, Esc, a click outside): the flow stays where it was. An option
-  // closes the question first and runs after, in the same click, so the check waits a turn.
-  const off = ctx.ui.subscribe((u) => {
-    if (u.prompt === spec) return;
-    off();
-    queueMicrotask(() => {
-      if (!chosen) stay();
-    });
-  });
+  return { spec, chosen: () => chosen };
 }
 
 /** New (menu): a fresh project, after asking when there are unsaved changes. */
@@ -896,14 +910,20 @@ function closeWindowNow(ctx: Ctx): (() => void) | null {
 
 /**
  * The new version is installed and the launcher waits for this window to close, to start it (phase P5). The same
- * question as closing about unsaved changes, if there are some now (the person may have gone on working while the
- * package downloaded), worded for the update; then the window closes. `onStay` when it does not: Cancel or Esc, a Save
+ * question as closing about unsaved changes, if there are some now that the person has not answered for already (they
+ * may have gone on working while the package downloaded: `unchangedSince` is the project’s revision when they answered),
+ * worded for the update; then the window closes. `onStay` when it does not: Cancel or Esc, a Save
  * that wrote nothing, or no way to close the window from here. The question sits under the project name, so Settings,
  * which is modal, makes way. Returns whether anything was done.
  */
-export function closeForUpdate(ctx: Ctx, onStay: () => void): boolean {
+export function closeForUpdate(ctx: Ctx, onStay: () => void, unchangedSince: number | null = null): boolean {
   const go = closeWindowNow(ctx);
   if (!go) return false;
+  // The person answered the question when the update began: the same project, the same answer.
+  if (unchangedSince !== null && ctx.store.revision() === unchangedSince) {
+    go();
+    return true;
+  }
   const name = ctx.store.get().meta.name || t('app.untitled');
   afterUnsavedCheck(ctx, t('project.unsavedUpdate', { name }), go, { leaveLabel: t('project.quitWithout'), onStay });
   if (ctx.ui.get().prompt && ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });

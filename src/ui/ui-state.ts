@@ -212,6 +212,12 @@ export interface InstallUi {
   request: InstallRequest | null;
   /** The new version is in place and the window did not close for it (the person said Cancel): Restart now offers it again. */
   deferred: boolean;
+  /**
+   * The project’s revision when the person answered the question about unsaved changes: the window closes without
+   * asking again as long as the project is still as it was then, and asks when it is not. Null: never answered (a
+   * page that was reloaded in the middle of an update).
+   */
+  answeredAt: number | null;
 }
 
 /** The update check in this session (Settings ▸ Updates, the notice in the status bar); not remembered. */
@@ -454,7 +460,7 @@ export function defaultUiState(): UiState {
     runtimeNote: { checked: false, warning: null },
     updateCheckedAt: null,
     updateLatest: null,
-    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false } },
+    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false, answeredAt: null } },
     models: null,
     hardware: { state: 'IDLE', info: null },
     perf: { state: 'IDLE' },

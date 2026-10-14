@@ -9,6 +9,7 @@ import { formatBytes } from '../../core/models';
 import { installActive, installPercent } from '../../core/updates';
 import { VERSION } from '../../core/version';
 import { h } from '../dom';
+import { showConfirmIn } from '../components/widgets';
 import { shallowEq, type Ctx, type Scope } from '../reactive';
 import { formatDateTime, getLang, t } from '../strings';
 import { availableText, cancelInstall, checkForUpdates, downloadChoice, downloadUpdate, faultText, installFaultText, installRequestFor, installText, installUpdate, openReleaseNotes, restartNow, retryInstall, updateSummary } from '../updates';
@@ -28,8 +29,11 @@ function checkRow(ctx: Ctx, scope: Scope): HTMLElement {
   const button = h('button', { type: 'button', class: 'btn btn-primary sw-update-check' }, t('set.updates.check'));
   button.addEventListener('click', () => void checkForUpdates(ctx, 'manual'));
   const out = h('div', { class: 'sw-update-out', role: 'status', 'aria-live': 'polite' });
+  // The question about unsaved changes, in the place of the button that was pressed (UI.md §4.3).
+  const confirmHost = h('div', { class: 'sw-update-confirm' });
+  const ask = (spec: Parameters<typeof showConfirmIn>[1]) => showConfirmIn(confirmHost, spec);
   const parts = rowShell('updates.check', { control: button, wide: true });
-  parts.el.appendChild(out);
+  parts.el.append(out, confirmHost);
   const draw = () => {
     const sum = updateSummary(ctx);
     const checking = sum.state === 'CHECKING';
@@ -63,7 +67,7 @@ function checkRow(ctx: Ctx, scope: Scope): HTMLElement {
         const actions = h('div', { class: 'sw-update-actions' });
         // A launcher that cannot install here still has the package to download by hand.
         if (status.error === 'not-updatable') actions.appendChild(h('button', { type: 'button', class: 'btn btn-primary sw-update-download', onclick: () => downloadUpdate(ctx, release) }, t('up.download')));
-        else if (install.request) actions.appendChild(h('button', { type: 'button', class: 'btn btn-primary sw-update-retry', onclick: () => retryInstall(ctx) }, t('up.retry')));
+        else actions.appendChild(h('button', { type: 'button', class: 'btn btn-primary sw-update-retry', onclick: () => retryInstall(ctx, release, ask) }, t('up.retry')));
         actions.appendChild(notes);
         lines.push(h('div', { class: 'sw-update-line is-fault sw-update-failure', 'data-error': status.error ?? '', 'data-tip': status.message ?? undefined }, t('up.failedInstall', { reason })), actions);
       } else {
@@ -71,7 +75,7 @@ function checkRow(ctx: Ctx, scope: Scope): HTMLElement {
         const installable = installRequestFor(ctx, release) !== null;
         const tip = asset ? `${installable ? t('up.install') : t('up.download')}: ${asset.name}${asset.size !== null ? ` · ${formatBytes(asset.size, getLang())}` : ''}` : t('up.openRelease');
         const main = installable
-          ? h('button', { type: 'button', class: 'btn btn-primary sw-update-install', 'data-tip': tip, onclick: () => installUpdate(ctx, release) }, t('up.install'))
+          ? h('button', { type: 'button', class: 'btn btn-primary sw-update-install', 'data-tip': tip, onclick: () => installUpdate(ctx, release, ask) }, t('up.install'))
           : h('button', { type: 'button', class: 'btn btn-primary sw-update-download', 'data-tip': tip, onclick: () => downloadUpdate(ctx, release) }, t('up.download'));
         lines.push(h('div', { class: 'sw-update-actions' }, main, notes));
         // In the web version Download only opens the release page, and the row says so.

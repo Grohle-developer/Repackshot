@@ -459,6 +459,9 @@ summary.sw-block-title {
 .sw-update-bar.is-unknown .sw-update-fill {
   background: var(--ink-3);
 }
+.sw-update-confirm {
+  max-width: 560px;
+}
 .sw-update-web-note {
   color: var(--ink-2);
   font-size: var(--fs-aux);

@@ -34,9 +34,11 @@ import {
   type UpdateTarget,
 } from '../core/updates';
 import { VERSION } from '../core/version';
-import { afterUnsavedCheck, closeForUpdate } from './commands';
+import { afterUnsavedCheck, closeForUpdate, unsavedQuestion } from './commands';
+import type { ConfirmSpec } from './components/widgets';
 import type { Ctx } from './reactive';
 import { formatDate, getLang, t } from './strings';
+import type { InstallUi } from './ui-state';
 
 /** Where this runs, for choosing the package: the browser, or the desktop application (installed or portable). */
 export function updateTarget(ctx: Ctx): UpdateTarget {
@@ -149,7 +151,7 @@ export function installRequestFor(ctx: Ctx, release: ReleaseInfo): InstallReques
 /** An update is being downloaded, checked or installed. */
 export const installing = (ctx: Ctx): boolean => installActive(ctx.ui.get().updates.install.status);
 
-function setInstall(ctx: Ctx, patch: Partial<{ status: InstallStatus; request: InstallRequest | null; deferred: boolean }>): void {
+function setInstall(ctx: Ctx, patch: Partial<InstallUi>): void {
   const u = ctx.ui.get().updates;
   ctx.ui.set({ updates: { ...u, install: { ...u.install, ...patch } } });
 }
@@ -198,7 +200,7 @@ function follow(ctx: Ctx): void {
 export function restartNow(ctx: Ctx): void {
   const stay = () => setInstall(ctx, { deferred: true });
   setInstall(ctx, { deferred: false });
-  if (!closeForUpdate(ctx, stay)) stay();
+  if (!closeForUpdate(ctx, stay, ctx.ui.get().updates.install.answeredAt)) stay();
 }
 
 /** Starts the install: the launcher is told, and followed. `request` stays for Try again. */
@@ -223,24 +225,40 @@ async function startInstall(ctx: Ctx, request: InstallRequest): Promise<void> {
  * then the launcher installs. Where the application cannot install, this is Download. Nothing happens while an
  * update is under way.
  */
-export function installUpdate(ctx: Ctx, release: ReleaseInfo): void {
+export function installUpdate(ctx: Ctx, release: ReleaseInfo, show?: ShowQuestion): void {
   const request = installRequestFor(ctx, release);
   if (!request) return downloadUpdate(ctx, release);
   if (installing(ctx)) return;
-  askThenInstall(ctx, request);
+  askThenInstall(ctx, request, show);
 }
 
-/** Try again after a failure: the same request, after the same question. */
-export function retryInstall(ctx: Ctx): void {
+/**
+ * Try again after a failure: the same request (or, in a page that was reloaded since, the one for this release),
+ * after the same question.
+ */
+export function retryInstall(ctx: Ctx, release: ReleaseInfo, show?: ShowQuestion): void {
   const { request, status } = ctx.ui.get().updates.install;
-  if (!request || installActive(status)) return;
-  askThenInstall(ctx, request);
+  const again = request ?? installRequestFor(ctx, release);
+  if (!again || installActive(status)) return;
+  askThenInstall(ctx, again, show);
 }
+
+/** Where the question about unsaved changes shows: in the place of the button that was pressed (UI.md §4.3), else under the project name. */
+export type ShowQuestion = (spec: ConfirmSpec) => void;
 
 /** "Save changes to “X” before updating?" (only if there are some): Save · Save as… · Quit without saving, Esc cancels. */
-function askThenInstall(ctx: Ctx, request: InstallRequest): void {
+function askThenInstall(ctx: Ctx, request: InstallRequest, show?: ShowQuestion): void {
   const name = ctx.store.get().meta.name || t('app.untitled');
-  afterUnsavedCheck(ctx, t('project.unsavedUpdate', { name }), () => void startInstall(ctx, request), { leaveLabel: t('project.quitWithout') });
+  const go = () => {
+    // The person has answered for the project as it is now: it is not asked again unless it changes.
+    setInstall(ctx, { answeredAt: ctx.store.revision() });
+    void startInstall(ctx, request);
+  };
+  const message = t('project.unsavedUpdate', { name });
+  const opts = { leaveLabel: t('project.quitWithout') };
+  if (!show) return afterUnsavedCheck(ctx, message, go, opts);
+  const q = unsavedQuestion(ctx, message, go, opts);
+  if (q) show(q.spec);
 }
 
 /** Stops the download or the check, and clears a failure (the launcher keeps nothing of either). */
