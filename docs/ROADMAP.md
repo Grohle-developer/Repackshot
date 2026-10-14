@@ -2126,6 +2126,75 @@ la cámara trazada ≤ 25 % del render del ejemplo con la doble Gauss a
 dan ojo de gato, burbuja, cremoso y remolino, **con veredicto de
 Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
 
+## O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas — **Opus** (tras O1, antes de O2), veredicto **Fable**
+
+Petición del usuario (14-10): en la lente, filtros «de estilo» (difusión
+negra, dorada…), no recetas de color. Son los filtros físicos que se
+roscan delante del objetivo: una lámina que **dispersa** parte de la luz
+que entra, y lo que cambia entre ellos es cuánta, con qué forma angular
+y con qué color. Se hacen en el motor, en el espacio de rayos, para que
+interactúen bien con el bokeh, el desenfoque y las luces fuera de
+cuadro, y con un equivalente de imagen para la vista previa.
+
+**Decisiones.**
+1. **Modelo físico, en la pupila.** Un rayo de cámara, con probabilidad
+   `s` (el grado del filtro), se desvía un ángulo sacado de la
+   **PSF angular** del filtro; si no, sigue recto. Energía: `(1 − s)·I +
+   s·a·T·(I ⊗ K)`: `a` es lo que absorben las partículas (1 en los
+   blancos y dorados; < 1 en los negros: el halo sale pero las sombras
+   suben menos, por eso un filtro negro «conserva el contraste»), `T` el
+   tinte del haz disperso (neutro; dorado: cálido, normalizado en
+   luminancia), `K` la PSF. Ocurre en la muestra de pupila de O1, así que
+   el bokeh y el enfoque se llevan gratis y una luz fuera del encuadre
+   sigue velando.
+2. **Tipos** (`src/data/lens-filters.ts`, claves estables, nombres es/en
+   genéricos, **ninguna marca**): `DIFFUSION_WHITE` Difusión blanca
+   (gaussiana estrecha + cola ancha lorentziana: halo y contraste bajo),
+   `DIFFUSION_BLACK` Difusión negra (misma forma, `a` < 1),
+   `DIFFUSION_GOLD` Difusión dorada (difusión con `T` cálido), `GLIMMER`
+   Brillo (cola fina y dispersa: destellos pequeños alrededor de las
+   luces, por un segundo lóbulo estrecho cuya dirección se traba a un
+   *hash* de la posición de pupila), `SOFT` Suavizado (solo la gaussiana
+   estrecha, `s` alto: pierde nitidez sin halo), `NET` Red (dispersión
+   concentrada en dos ejes a 90°, con tinte suave), `STAR` Estrella
+   (`points` 4/6/8 rayas rectas desde las luces, ángulo `angle`, caída
+   1/r), `STREAK` Rayas (una sola línea horizontal, tinte azul por
+   defecto, como una lente anamórfica). **Grados** 1/8, 1/4, 1/2, 1, 2
+   (lista, como los filtros reales) → `s` propuesto 0,03 / 0,06 / 0,12 /
+   0,22 / 0,38 y anchos propuestos σ₁ = 0,25°, σ₂ = 2,5° de campo; los
+   definitivos los fijo yo con la hoja (regla 11).
+3. **Pila** de hasta tres filtros por cámara (en la práctica se apilan
+   dos: una difusión y una estrella), cada uno con tipo, grado y, según
+   el tipo, tinte (dorada, red, rayas), puntas y ángulo (estrella).
+4. **RSB.** `LENS` crece con tres filtros al final (`kind u32, grade f32,
+   tint[3] f32, angle f32, points u32`, 28 B cada uno; ceros = ninguno,
+   *hashes* intactos sin filtros). La PSF se muestrea por CDF inversa
+   tabulada en `f32` (sin `exp`/`log` en el bucle; determinismo).
+5. **Vista previa.** Equivalente de imagen: `(1 − s)·I + s·a·T·(I ⊗ K)`
+   con `K` proyectada a píxeles por la focal, como pase WebGL del visor
+   Rápido (separable en dos gaussianas + cola por submuestreo) y la misma
+   convolución en TS para la ventana de render; el medidor dice
+   «aproximación: el render lo hace el motor» (regla 10).
+6. **Interfaz.** Cámara ▸ Lente ▸ **Filtros**: la pila (añadir/quitar,
+   hasta tres), por filtro: tipo (lista con ayuda de una frase: qué hace
+   fotográficamente), grado, y los mandos del tipo. Guardado con la
+   cámara (cada cámara, los suyos). Cadenas es/en.
+
+**Depende de.** O1 (la pupila, `LENS`).
+
+**Criterio.** Tests: campo blanco con difusión blanca grado 1 conserva la
+media ± 0,5 %; difusión negra grado 1 queda entre 0,90 y 0,97; estrella 6
+da seis rayas (histograma angular de la energía de un foco puntual con
+picos en seis ángulos ± 2°); dorada desplaza la media del haz disperso
+hacia el rojo; pila de tres con grados ceros = sin filtro bit a bit;
+vista previa contra motor en la escena del horno: diferencia media
+< 2 %; lista de *hashes* sin cambios con `LENS` sin filtros; paridad
+wasm. Hoja `out/lens-filters-sheet.html`: la botella con un foco pequeño
+a contraluz dentro del encuadre y otro fuera, 512 px / 128 spp, cada
+tipo a grados 1/4, 1 y 2, y dos pilas (difusión negra 1/2 + estrella 6;
+dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
+`UI.md`, `SPEC.md` §3.5, `ARCHITECTURE.md` (`LENS`), CHANGELOG.
+
 ## P5 · Actualizar desde la aplicación — **Sonnet**
 
 **Qué.** Petición del usuario: hoy *Ajustes ▸ Actualizaciones ▸
