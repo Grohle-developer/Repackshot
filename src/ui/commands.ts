@@ -494,20 +494,52 @@ export async function saveProject(ctx: Ctx, opts: { saveAs?: boolean } = {}): Pr
   return true;
 }
 
+/** What the unsaved-changes question can be told (it is the same question for every use). */
+export interface UnsavedOptions {
+  /** The third button, when "Don’t save" is not the word (quitting for an update). */
+  leaveLabel?: string;
+  /** The question ended without `proceed` running: Cancel or Esc, or a Save that wrote nothing (its dialog cancelled, a failure). */
+  onStay?: () => void;
+}
+
 /**
- * Runs `proceed` now, or after asking when the project has unsaved changes (UI.md §4.3: in place, three buttons,
- * Esc cancels). Save writes the project first and proceeds only if it was written.
+ * Runs `proceed` now, or after asking when the project has unsaved changes (UI.md §4.3: in place, Save · Save as… ·
+ * Don’t save, Cancel and Esc dismiss it). Save and Save as… write the project first and proceed only if it was
+ * written: a dialog that is cancelled or a file that cannot be written stays where it was. The same question for
+ * closing the window, New, Open and updating the application.
  */
-function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void): void {
+export function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void, opts: UnsavedOptions = {}): void {
   if (!ctx.store.get().meta.dirty) return proceed();
-  ctx.ui.set({
-    prompt: {
-      message,
-      options: [
-        { label: t('project.save'), primary: true, run: () => void saveProject(ctx).then((saved) => saved && proceed()) },
-        { label: t('project.dontSave'), run: proceed },
-      ],
-    },
+  let chosen = false;
+  const write = (saveAs: boolean) => () => {
+    chosen = true;
+    void saveProject(ctx, saveAs ? { saveAs: true } : {}).then((saved) => (saved ? proceed() : opts.onStay?.()));
+  };
+  const spec: ConfirmSpec = {
+    message,
+    options: [
+      { label: t('project.save'), primary: true, run: write(false) },
+      { label: t('project.saveAs'), run: write(true) },
+      {
+        label: opts.leaveLabel ?? t('project.dontSave'),
+        run: () => {
+          chosen = true;
+          proceed();
+        },
+      },
+    ],
+  };
+  ctx.ui.set({ prompt: spec });
+  const stay = opts.onStay;
+  if (!stay) return;
+  // The question goes away without a choice (Cancel, Esc, a click outside): the flow stays where it was. An option
+  // closes the question first and runs after, in the same click, so the check waits a turn.
+  const off = ctx.ui.subscribe((u) => {
+    if (u.prompt === spec) return;
+    off();
+    queueMicrotask(() => {
+      if (!chosen) stay();
+    });
   });
 }
 
@@ -829,22 +861,12 @@ const closeQuestions = new WeakSet<ConfirmSpec>();
  * Closing the desktop window, the one flow for every way to ask it: Ctrl/⌘ W and Ctrl/⌘ Q (guards.ts) and, in
  * Repackshot's own window (P3c), the window's own close (its close button, Alt F4, the taskbar, the system menu, which
  * the window turns into `close-requested`). Our unsaved-changes question (UI.md §4.3, when General ▸ Confirm before
- * closing is on: Save · Don't save · Cancel), then the window closes: `close-ok` to our own window, `window.close()` in
+ * closing is on: Save · Save as… · Don't save, and Cancel), then the window closes: `close-ok` to our own window, `window.close()` in
  * the browser's app window. Never the browser's own "Leave?" dialog.
  */
 export function requestCloseWindow(ctx: Ctx): void {
-  const host = ctx.services.windowHost;
-  const close = ctx.services.desktop?.closeWindow;
-  if (!host && !close) return;
-  const go = () => {
-    // Our own window has no beforeunload to quieten: it closes when told.
-    if (host) return host.closeOk();
-    if (!close) return;
-    closeAnswered = true;
-    close();
-    // A window that did not close (the browser refused): the next close asks again.
-    setTimeout(() => (closeAnswered = false), 1500);
-  };
+  const go = closeWindowNow(ctx);
+  if (!go) return;
   if (!ctx.ui.get().settings['general.confirmClose']) return go();
   const asking = ctx.ui.get().prompt;
   if (asking && closeQuestions.has(asking)) return;
@@ -854,6 +876,38 @@ export function requestCloseWindow(ctx: Ctx): void {
   closeQuestions.add(spec);
   // The question sits under the project name, in the header: the Settings window, which is modal, makes way.
   if (ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
+}
+
+/** What closes this window without asking (our own window, or the app window of the browser's); null where nothing can. */
+function closeWindowNow(ctx: Ctx): (() => void) | null {
+  const host = ctx.services.windowHost;
+  const close = ctx.services.desktop?.closeWindow;
+  if (!host && !close) return null;
+  return () => {
+    // Our own window has no beforeunload to quieten: it closes when told.
+    if (host) return host.closeOk();
+    if (!close) return;
+    closeAnswered = true;
+    close();
+    // A window that did not close (the browser refused): the next close asks again.
+    setTimeout(() => (closeAnswered = false), 1500);
+  };
+}
+
+/**
+ * The new version is installed and the launcher waits for this window to close, to start it (phase P5). The same
+ * question as closing about unsaved changes, if there are some now (the person may have gone on working while the
+ * package downloaded), worded for the update; then the window closes. `onStay` when it does not: Cancel or Esc, a Save
+ * that wrote nothing, or no way to close the window from here. The question sits under the project name, so Settings,
+ * which is modal, makes way. Returns whether anything was done.
+ */
+export function closeForUpdate(ctx: Ctx, onStay: () => void): boolean {
+  const go = closeWindowNow(ctx);
+  if (!go) return false;
+  const name = ctx.store.get().meta.name || t('app.untitled');
+  afterUnsavedCheck(ctx, t('project.unsavedUpdate', { name }), go, { leaveLabel: t('project.quitWithout'), onStay });
+  if (ctx.ui.get().prompt && ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
+  return true;
 }
 
 /** Settings ▸ Render engine ▸ Measure performance: a real run of the example scene with the engine in use. */

@@ -10,6 +10,7 @@ repackshot: the Repackshot desktop application
 
 USAGE:
     repackshot [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N] [--window KIND]
+               [--after-update]
     repackshot --serve-only [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N]
     repackshot --hardware <file.ini> [--device gpu|cpu]
     repackshot --shortcut-id <file.lnk>
@@ -30,6 +31,8 @@ OPTIONS:
         --window <KIND>     webview2: only the program's own window (fail without WebView2);
                             browser: the browser's app window; auto (default): the first,
                             else the second. Also --window=KIND
+        --after-update      the previous version started this one to finish an update
+                            (the application passes it by itself; it only says so in the log)
         --serve-only        no window: print the URL (with its token) and serve until stopped
         --hardware <file>   detect the computer, apply the AI model recommendation and write
                             an INI file (UTF-16) for the installer, then exit
@@ -56,6 +59,8 @@ pub struct RunOptions {
     pub serve_only: bool,
     /// Which window (`--window`).
     pub window: WindowChoice,
+    /// `--after-update`: the previous version started this one to finish an update.
+    pub after_update: bool,
 }
 
 /// A parsed command line.
@@ -103,6 +108,7 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
             "-h" | "--help" => return Ok(Command::Help),
             "--version" | "-V" => return Ok(Command::Version),
             "--serve-only" => opts.serve_only = true,
+            "--after-update" => opts.after_update = true,
             "--port" => {
                 let v = value(&mut it, arg)?;
                 opts.port = v
@@ -177,6 +183,15 @@ mod tests {
                 threads: 3,
                 serve_only: true,
                 window: WindowChoice::Auto,
+                after_update: false,
+            }))
+        );
+        assert_eq!(
+            p(&["--after-update", "--port", "8123"]),
+            Ok(Command::Run(RunOptions {
+                port: 8123,
+                after_update: true,
+                ..RunOptions::default()
             }))
         );
         for (args, choice) in [
@@ -223,6 +238,8 @@ mod tests {
             &["--shortcut-id", "a.lnk", "--port", "1"],
             &["--shortcut-id", "a.lnk", "--hardware", "x"],
             &["--hardware", "x", "--window=browser"],
+            &["--hardware", "x", "--after-update"],
+            &["--after-update=1"],
         ] {
             assert!(p(bad).is_err(), "{bad:?}");
         }

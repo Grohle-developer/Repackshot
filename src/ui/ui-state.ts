@@ -17,7 +17,7 @@ import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
 import type { RuntimeWarning } from '../core/ai-runtimes';
 import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
-import type { ReleaseInfo, UpdateFault } from '../core/updates';
+import { NO_INSTALL, type InstallRequest, type InstallStatus, type ReleaseInfo, type UpdateFault } from '../core/updates';
 
 export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
 /** What the viewport shows (UI.md §2.1): the rasterised preview or the path tracer. */
@@ -201,6 +201,17 @@ export interface DesktopInfo {
    * or with --serve-only.
    */
   window?: DesktopWindow | null;
+  /** The launcher was started by an update (`--after-update`): the interface says so once (P5). */
+  afterUpdate?: boolean;
+}
+
+/** An update being installed from inside the application (P5), as the launcher reports it. */
+export interface InstallUi {
+  status: InstallStatus;
+  /** What was asked of the launcher: Try again sends it again. */
+  request: InstallRequest | null;
+  /** The new version is in place and the window did not close for it (the person said Cancel): Restart now offers it again. */
+  deferred: boolean;
 }
 
 /** The update check in this session (Settings ▸ Updates, the notice in the status bar); not remembered. */
@@ -215,6 +226,8 @@ export interface UpdatesUi {
   notice: ReleaseInfo | null;
   /** Versions announced in this session, dismissed or not: a version is announced once. */
   announced: string[];
+  /** Installing a new version from inside the application (desktop only). */
+  install: InstallUi;
 }
 
 /** What the queue runner is doing: nothing, the whole queue, or only the jobs Render started. */
@@ -441,7 +454,7 @@ export function defaultUiState(): UiState {
     runtimeNote: { checked: false, warning: null },
     updateCheckedAt: null,
     updateLatest: null,
-    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [] },
+    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false } },
     models: null,
     hardware: { state: 'IDLE', info: null },
     perf: { state: 'IDLE' },

@@ -440,6 +440,29 @@ summary.sw-block-title {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* An update being installed from inside the application (phase P5): where it is, as a line and a thin bar. */
+.sw-update-progress {
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+}
+.sw-update-bar {
+  height: 4px;
+  max-width: 560px;
+  border-radius: 2px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.sw-update-fill {
+  height: 100%;
+  background: var(--ink-0);
+}
+.sw-update-bar.is-unknown .sw-update-fill {
+  background: var(--ink-3);
+}
+.sw-update-web-note {
+  color: var(--ink-2);
+  font-size: var(--fs-aux);
+}
 .sw-info {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

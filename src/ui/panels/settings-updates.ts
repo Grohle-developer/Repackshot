@@ -1,16 +1,28 @@
 // Settings ▸ Updates (UI.md §2.9): the installed version, Check for updates with its result on the
-// row (Checking… · the latest version · a newer one with Download and Release notes · why the check
-// failed), Check at startup (a generated toggle row) and when the feed last answered. The result is
-// what core/updates.ts summarises from the state the commands of ui/updates.ts keep; nothing is assumed.
+// row (Checking… · the latest version · a newer one with Install and restart (the desktop) or Download (the
+// web) and Release notes · why the check failed), Check at startup (a generated toggle row) and when the feed
+// last answered. The result is what core/updates.ts summarises from the state the commands of ui/updates.ts
+// keep; nothing is assumed. While an update installs, the row shows where it is (Downloading… 45 % · 3,2 of
+// 7,1 MB, Verifying…, Installing…), and a failure with its reason and Try again (phase P5).
 
 import { formatBytes } from '../../core/models';
+import { installActive, installPercent } from '../../core/updates';
 import { VERSION } from '../../core/version';
 import { h } from '../dom';
 import { shallowEq, type Ctx, type Scope } from '../reactive';
 import { formatDateTime, getLang, t } from '../strings';
-import { availableText, checkForUpdates, downloadChoice, downloadUpdate, faultText, openReleaseNotes, updateSummary } from '../updates';
+import { availableText, cancelInstall, checkForUpdates, downloadChoice, downloadUpdate, faultText, installFaultText, installRequestFor, installText, installUpdate, openReleaseNotes, restartNow, retryInstall, updateSummary } from '../updates';
 import { infoRow, rowLabel, rowShell } from './settings-rows';
 import type { SettingsHooks } from './settings-sections';
+
+/** A thin bar for the download: how far it is, or a dim full bar while the size is not known. */
+function bar(status: Parameters<typeof installPercent>[0] & { state: string }): HTMLElement {
+  const percent = status.state === 'DOWNLOADING' ? installPercent(status) : null;
+  const done = status.state !== 'DOWNLOADING';
+  const attrs: Record<string, string> = { class: `sw-update-bar${percent === null ? ' is-unknown' : ''}`, role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' };
+  if (percent !== null) attrs['aria-valuenow'] = String(percent);
+  return h('div', attrs, h('div', { class: 'sw-update-fill', style: `width:${done ? 100 : (percent ?? 100)}%` }));
+}
 
 function checkRow(ctx: Ctx, scope: Scope): HTMLElement {
   const button = h('button', { type: 'button', class: 'btn btn-primary sw-update-check' }, t('set.updates.check'));
@@ -23,7 +35,7 @@ function checkRow(ctx: Ctx, scope: Scope): HTMLElement {
     const checking = sum.state === 'CHECKING';
     button.disabled = checking;
     button.textContent = checking ? t('up.checking') : t('set.updates.check');
-    // Download is the main action of the row while there is something to download.
+    // Install and restart (or Download) is the main action of the row while there is something to install.
     button.classList.toggle('btn-primary', !sum.available);
     out.dataset.state = sum.state;
     out.dataset.version = sum.available?.version ?? '';
@@ -33,18 +45,38 @@ function checkRow(ctx: Ctx, scope: Scope): HTMLElement {
     else if (sum.state === 'LATEST') lines.push(h('div', { class: 'sw-update-line' }, t('up.latest', { version: VERSION })));
     else if (sum.state === 'NEVER') lines.push(h('div', { class: 'sw-update-line' }, t('up.neverChecked')));
     const release = sum.available;
+    const install = ctx.ui.get().updates.install;
+    out.dataset.install = install.status.state;
     if (release) {
-      const { asset } = downloadChoice(ctx, release);
-      const tip = asset ? `${t('up.download')}: ${asset.name}${asset.size !== null ? ` · ${formatBytes(asset.size, getLang())}` : ''}` : t('up.openRelease');
-      lines.push(
-        h('div', { class: 'sw-update-line is-result' }, availableText(release)),
-        h(
-          'div',
-          { class: 'sw-update-actions' },
-          h('button', { type: 'button', class: 'btn btn-primary sw-update-download', 'data-tip': tip, onclick: () => downloadUpdate(ctx, release) }, t('up.download')),
-          h('button', { type: 'button', class: 'btn sw-update-notes', onclick: () => openReleaseNotes(ctx, release) }, t('up.notes')),
-        ),
-      );
+      lines.push(h('div', { class: 'sw-update-line is-result' }, availableText(release)));
+      const notes = h('button', { type: 'button', class: 'btn sw-update-notes', onclick: () => openReleaseNotes(ctx, release) }, t('up.notes'));
+      const status = install.status;
+      if (installActive(status)) {
+        const ready = status.state === 'INSTALLING' && status.ready;
+        lines.push(h('div', { class: 'sw-update-line sw-update-progress', 'data-state': status.state }, ready && install.deferred ? t('up.restartWaiting') : installText(status)), bar(status));
+        const actions = h('div', { class: 'sw-update-actions' });
+        if (ready && install.deferred) actions.appendChild(h('button', { type: 'button', class: 'btn btn-primary sw-update-restart', onclick: () => restartNow(ctx) }, t('up.restartNow')));
+        else if (status.state !== 'INSTALLING') actions.appendChild(h('button', { type: 'button', class: 'btn sw-update-cancel', onclick: () => void cancelInstall(ctx) }, t('up.cancelInstall')));
+        if (actions.childNodes.length) lines.push(actions);
+      } else if (status.state === 'FAILED') {
+        const reason = installFaultText(status.error);
+        const actions = h('div', { class: 'sw-update-actions' });
+        // A launcher that cannot install here still has the package to download by hand.
+        if (status.error === 'not-updatable') actions.appendChild(h('button', { type: 'button', class: 'btn btn-primary sw-update-download', onclick: () => downloadUpdate(ctx, release) }, t('up.download')));
+        else if (install.request) actions.appendChild(h('button', { type: 'button', class: 'btn btn-primary sw-update-retry', onclick: () => retryInstall(ctx) }, t('up.retry')));
+        actions.appendChild(notes);
+        lines.push(h('div', { class: 'sw-update-line is-fault sw-update-failure', 'data-error': status.error ?? '', 'data-tip': status.message ?? undefined }, t('up.failedInstall', { reason })), actions);
+      } else {
+        const { asset } = downloadChoice(ctx, release);
+        const installable = installRequestFor(ctx, release) !== null;
+        const tip = asset ? `${installable ? t('up.install') : t('up.download')}: ${asset.name}${asset.size !== null ? ` · ${formatBytes(asset.size, getLang())}` : ''}` : t('up.openRelease');
+        const main = installable
+          ? h('button', { type: 'button', class: 'btn btn-primary sw-update-install', 'data-tip': tip, onclick: () => installUpdate(ctx, release) }, t('up.install'))
+          : h('button', { type: 'button', class: 'btn btn-primary sw-update-download', 'data-tip': tip, onclick: () => downloadUpdate(ctx, release) }, t('up.download'));
+        lines.push(h('div', { class: 'sw-update-actions' }, main, notes));
+        // In the web version Download only opens the release page, and the row says so.
+        if (!ctx.ui.get().desktop) lines.push(h('div', { class: 'sw-update-line sw-update-web-note' }, t('up.webNote')));
+      }
     }
     out.replaceChildren(...lines);
   };

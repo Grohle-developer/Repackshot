@@ -382,12 +382,12 @@ describe('Open', () => {
     await cmd.openProjectFile(ctx, fileOf(text));
     const prompt = ctx.ui.get().prompt!;
     expect(prompt.message).toBe('Save changes to “Untitled” before opening saved.repack.json?');
-    expect(prompt.options.map((o) => o.label)).toEqual(['Save', 'Don’t save']);
+    expect(prompt.options.map((o) => o.label)).toEqual(['Save', 'Save as…', 'Don’t save']);
     expect(ctx.store.get()).toBe(before);
     expect(stubs.saves).toEqual([]);
 
     // Don't save: opens.
-    prompt.options[1].run();
+    prompt.options[2].run();
     expect(ctx.store.get().meta.name).toBe('Bottle');
     expect(stubs.saves).toEqual([]);
   });
@@ -510,7 +510,7 @@ describe('New', () => {
     expect(stubs.adopted).toEqual([null]);
   });
 
-  it('asks when there are unsaved changes: Save, Don’t save, or Esc', async () => {
+  it('asks when there are unsaved changes: Save, Save as…, Don’t save, or Esc', async () => {
     const { ctx, stubs } = makeCtx(exampleState());
     ctx.store.dispatch({ type: 'meta/rename', name: 'Bottle' });
     cmd.requestNewProject(ctx);
@@ -530,7 +530,7 @@ describe('New', () => {
     // Don't save.
     ctx.store.dispatch({ type: 'meta/rename', name: 'Other' });
     cmd.requestNewProject(ctx);
-    ctx.ui.get().prompt!.options[1].run();
+    ctx.ui.get().prompt!.options[2].run();
     expect(stubs.saves).toHaveLength(1);
     expect(ctx.store.get().meta.name).toBe('');
   });
@@ -543,7 +543,7 @@ describe('New', () => {
       cmd.requestNewProject(ctx);
       const p = ctx.ui.get().prompt!;
       expect(p.message.length).toBeGreaterThan(10);
-      expect(p.options.map((o) => o.label)).toEqual(lang === 'en' ? ['Save', 'Don’t save'] : ['Guardar', 'No guardar']);
+      expect(p.options.map((o) => o.label)).toEqual(lang === 'en' ? ['Save', 'Save as…', 'Don’t save'] : ['Guardar', 'Guardar como…', 'No guardar']);
     }
   });
 });

@@ -11,6 +11,12 @@
 ; application downloads it on its first start. The uninstaller asks whether to
 ; delete the models and settings too (no by default).
 ;
+; Updating from inside the application (phase P5): the launcher downloads this installer, checks its
+; SHA-256, closes itself and runs it as `setup.exe /S /LAUNCH`. So: a silent run first waits (up to 30 s)
+; for repackshot.exe to let go of its file, because the application that started it is still closing;
+; it changes nothing the person chose (no models page, no new desktop shortcut); and /LAUNCH starts the
+; application again when it is done, silently too.
+;
 ; Built by packaging/release.mjs:
 ;   makensis -WX -INPUTCHARSET UTF8 -DVERSION=0.1.0 -DVERSION4=0.1.0.0
 ;     -DSTAGE=<files> -DOUTFILE=<setup.exe> -DICON=<repackshot.ico>
@@ -46,6 +52,8 @@ RequestExecutionLevel user
 !include "nsDialogs.nsh"
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
+!insertmacro GetParameters
+!insertmacro GetOptions
 
 !define APP_KEY "Software\Repackshot"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Repackshot"
@@ -114,16 +122,28 @@ Var DeleteData
 
 !macro CHECK_NOT_RUNNING PREFIX
 Function ${PREFIX}CheckNotRunning
+  Push $1
+  StrCpy $1 0
   retry:
   IfFileExists "$INSTDIR\repackshot.exe" 0 done
   ClearErrors
   FileOpen $0 "$INSTDIR\repackshot.exe" a
   IfErrors 0 close
+  ; A silent run is the application updating itself: it is closing as this starts, so wait for it
+  ; to let go of its program file, twice a second for up to 30 seconds, before asking anyone anything.
+  IfSilent 0 ask
+  IntOp $1 $1 + 1
+  IntCmp $1 60 ask 0 ask
+  Sleep 500
+  Goto retry
+  ask:
   MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(CloseFirst)" /SD IDCANCEL IDRETRY retry
+  Pop $1
   Abort
   close:
   FileClose $0
   done:
+  Pop $1
 FunctionEnd
 !macroend
 !insertmacro CHECK_NOT_RUNNING ""
@@ -131,6 +151,17 @@ FunctionEnd
 
 Function .onInit
   !insertmacro MUI_LANGDLL_DISPLAY
+FunctionEnd
+
+; `setup.exe /S /LAUNCH` (what the application runs to update itself): start the application when the
+; installation is done. Not silent, the finish page offers it.
+Function .onInstSuccess
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/LAUNCH" $R1
+  IfErrors done
+  Exec '"$INSTDIR\repackshot.exe"'
+  done:
 FunctionEnd
 
 Function un.onInit
@@ -175,8 +206,14 @@ Section "$(SecProgram)" SecProgram
 SectionEnd
 
 Section "$(SecDesktop)" SecDesktop
+  ; A silent run is an update: it renews a desktop shortcut that is there, and does not bring back one
+  ; the person deleted.
+  IfSilent 0 create
+  IfFileExists "$DESKTOP\Repackshot.lnk" create done
+  create:
   CreateShortCut "$DESKTOP\Repackshot.lnk" "$INSTDIR\repackshot.exe" "" "$INSTDIR\repackshot.exe" 0
   ExecWait '"$INSTDIR\repackshot.exe" --shortcut-id "$DESKTOP\Repackshot.lnk"' $0
+  done:
 SectionEnd
 
 ; ---------------------------------------------------------------- AI models

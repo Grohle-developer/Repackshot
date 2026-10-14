@@ -22,7 +22,7 @@ import type { AiRuntimePort } from '../core/ai-runtimes';
 import type { HostEvent, HostInfo } from '../core/host-protocol';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
-import type { UpdateOutcome } from '../core/updates';
+import type { InstallerPort, UpdateOutcome } from '../core/updates';
 import type { PerfResult, Tool } from './ui-state';
 
 export interface PickResult {
@@ -212,6 +212,8 @@ export interface DesktopPort {
 /** The release feed (src/io/updates.ts): the latest published release, or why it could not be had. Never throws. */
 export interface UpdatesPort {
   latest(): Promise<UpdateOutcome>;
+  /** Installing it from inside the application: the desktop launcher's; null or absent in the web version. */
+  installer?: InstallerPort | null;
 }
 
 export interface RenderRequest {

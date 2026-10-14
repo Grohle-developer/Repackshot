@@ -49,6 +49,14 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
     if !paths.app_dir.join("index.html").is_file() {
         crate::log!("warning: {} has no index.html", paths.app_dir.display());
     }
+    if opts.after_update {
+        crate::log!("started by an update: this is the new version");
+    }
+    // What an earlier update left beside the program (the old files, the unpacked package).
+    crate::update::start_cleanup(
+        paths.exe_dir.clone(),
+        paths.data_dir.join("cache").join("update"),
+    );
 
     if !opts.serve_only {
         if let Some(running) = instance::read(&paths.instance()) {
@@ -76,6 +84,9 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
     let mut server = crate::port::start(&paths, opts.port, token.clone(), opts.threads)
         .map_err(|e| format!("cannot listen on 127.0.0.1:{}: {e}", opts.port))?;
     let port = server.port();
+    if opts.after_update {
+        server.app.update.mark_after_update();
+    }
     crate::log!(
         "listening on http://127.0.0.1:{port}/ with {} render threads ({})",
         server.app.engine.threads(),
@@ -85,9 +96,16 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
     if opts.serve_only {
         println!("{}", server.app.url());
         let _ = std::io::stdout().flush();
-        loop {
-            std::thread::park();
+        // No window to close: an update that is ready stops this launcher by itself, and the
+        // new version starts (`Updater::finish`) when this one has let go of its port.
+        while !server.app.update.exit_requested() {
+            std::thread::sleep(Duration::from_millis(100));
         }
+        crate::log!("closing: an update is ready");
+        let app = std::sync::Arc::clone(&server.app);
+        server.stop();
+        app.update.finish();
+        return Ok(());
     }
 
     let me = Instance {
@@ -136,8 +154,11 @@ pub fn run(opts: RunOptions) -> Result<(), String> {
         }
     }
     crate::log!("closing");
+    let app = std::sync::Arc::clone(&server.app);
     server.stop();
     instance::remove_if_ours(&paths.instance(), me.pid);
+    // An update that is ready starts now that the port, the window and the instance are free.
+    app.update.finish();
     Ok(())
 }
 
