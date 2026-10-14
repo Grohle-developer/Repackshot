@@ -5042,6 +5042,193 @@ abrir, tope). `SPEC.md` §3.1 (el efecto como dato), `UI.md`,
 (apunte: S0 decidido, S4a hecha), CHANGELOG. Cadenas es/en, cromo
 acromático.
 
+## Físicas: cuerpos rígidos, telas y líquidos — decisión **Fable**
+
+Petición del usuario (14-10): físicas realistas con *Iniciar / Parar*
+propio (por defecto parado); «**Dejar caer**» en el menú contextual de un
+modelo o sólido, con la simulación parándose sola cuando los sólidos se
+quedan quietos; **telas** sobre una cara o un sólido de un modelo, con el
+comportamiento según el **gramaje** y el tipo de tejido (un algodón fino
+no se pliega como un cuero grueso) y la **rigidez** a elegir;
+**líquidos** por viscosidad, pudiendo convertir un sólido en líquido; y
+que todo sirva también para animaciones. Son S2, S9 y S7 de
+`STUDIO-TOOLS.md` §5 y `docs/research/particles.md` §6. Decisiones:
+
+1. **Dónde vive.** Un *crate* nuevo `engine/crates/rt-phys` (solo `std`,
+   sin `unsafe`, determinista: `f32`, `fmath`, paso fijo de 1/240 s con
+   4 subpasos, contactos ordenados por (id, id, rasgo), *hash* de las
+   transformaciones igual con 1 y N hilos y nativo = wasm; v1 en un
+   hilo). Un único marco de **dinámica por posiciones extendida (XPBD)**:
+   rígidos (Müller, Macklin, Chentanez, Jeschke, Kim, "Detailed Rigid
+   Body Simulation with Extended Position Based Dynamics", SCA 2020),
+   telas (Macklin, Müller, Chentanez, "XPBD", MIG 2016), líquidos (PBF,
+   Macklin y Müller 2013). Separado de `rt-sim` (S4a, sin estado).
+2. **Dónde corre.** En la interfaz, en un *worker* por `rt-wasm`
+   (`phys_*`): el visor Rápido enseña la simulación en vivo sin tocar el
+   *store*; **Parar** confirma la pose actual como **una** acción
+   deshacible; **Reiniciar** vuelve a la pose previa. Nativo no hace
+   falta en v1 (el escritorio usa la misma interfaz).
+3. **La barra de físicas** (abajo, junto a la de animación): ▶ Iniciar ·
+   ⏸ Parar · ↺ Reiniciar, tiempo simulado, cuerpos despiertos, estado
+   (*parado* por defecto). El medidor dice lo que el simulador dice
+   (regla 10). Una sección **Físicas** en el inspector de pieza: papel
+   (estático / dinámico / tela / líquido), masa por densidad (tabla por
+   familia de material; se puede fijar), rozamiento, rebote, *como
+   piezas* (un grupo cae como un cuerpo o cada pieza por su cuenta).
+4. **Dormir.** Un cuerpo con velocidad bajo umbral durante 0,5 s duerme;
+   con todos dormidos la simulación se para sola y confirma la pose.
+5. **Animación.** *Grabar como animación*: la simulación muestreada a
+   los fps del proyecto entra como clip de movimiento nuevo `PHYSICS`
+   (pista horneada: posiciones y cuaterniones por fotograma, `f32`,
+   guardada con el proyecto) que la línea de tiempo de N1 reproduce como
+   cualquier otro clip. Las telas y los líquidos guardan su malla por
+   fotograma en una caché junto al proyecto (clave = *hash* de
+   parámetros + geometría + semilla + versión).
+6. **Orden.** S2 ahora (base de todo); S9 y S7 después de S2, cuando la
+   máquina lo permita (ocho agentes en paralelo ya la saturan).
+
+### S2 · Cuerpos rígidos: «Dejar caer», la barra de físicas y grabar — **Opus**
+
+**Qué.** `rt-phys` v1: cuerpos rígidos XPBD con **envolvente convexa**
+automática por pieza (*quickhull* propio) para los dinámicos, y las
+piezas estáticas y el suelo como mallas de triángulos (la BVH de
+`rt-core`); contactos envolvente–envolvente (ejes separadores / GJK–EPA
+propios) y envolvente–triángulos; rozamiento de Coulomb, restitución,
+dormir (§4). Gravedad −Z (el modelo es Z-arriba), 9,81 m/s², mm en la
+escena. `rt-wasm` exporta `phys_new(escena)`, `phys_step(n)`,
+`phys_poses()`, `phys_awake()`. Interfaz: **Dejar caer** en el menú
+contextual y en el menú *Pieza* (las piezas seleccionadas pasan a
+dinámicas, el resto y el suelo a estáticos, arranca y se para sola al
+dormir; con un grupo, *como piezas* decide), la barra de físicas (§3), la
+sección *Físicas* del inspector (§3), *Grabar como animación* (§5) con el
+clip `PHYSICS` en `src/core/animation.ts` y la barra en la línea de
+tiempo. Doctor: avisa si una pieza dinámica atraviesa el suelo al
+empezar. Cadenas es/en; cromo acromático; todo por el *store*.
+
+**Depende de.** U3 (mover), U9 (primitivas), N1 (animación).
+
+**Criterio.** Tests de `rt-phys`: una esfera cae sobre el suelo y
+descansa a `z = r ± 0,1 mm`; una pila de tres cajas se queda apilada 5 s;
+una caja inclinada 30° cae de lado y descansa plana; el cubo sobre una
+esfera estática resbala y cae; mil esferas se asientan en < 20 s en
+nativo, un hilo (el tiempo va en el párrafo del ROADMAP); dormir para la
+simulación; *hash* de poses igual con 1 y N hilos y nativo = wasm;
+tests de interfaz (mutación comprobada): *Dejar caer* es una sola acción
+deshacible, *Reiniciar* restaura, el clip `PHYSICS` se guarda y se abre.
+Comprobación de navegador `tools/physics-check.mjs` con capturas
+`docs/ui/physics-bar.png`, `docs/ui/physics-drop.png` (antes/después de
+dejar caer tres primitivas sobre el suelo) y un GIF o tira de 6
+fotogramas `docs/ui/physics-drop-strip.png`. `SPEC.md` §3.1 y §3.7,
+`UI.md`, `ARCHITECTURE.md` (crate `rt-phys`, el *worker*), CHANGELOG.
+
+### S9 · Telas con físicas reales — **Opus** (tras S2)
+
+**Qué.** Tela XPBD (distancia, flexión por diedro, área opcional) sobre
+**una cara** (la malla de la pieza elegida o de la cara seleccionada por
+niveles) o **un sólido** (su cáscara, con presión para cerrados: cojín,
+envase blando). Presets por **tipo de tejido y gramaje** (`src/data/
+fabrics.ts`, claves estables: seda 60 g/m², algodón fino 120, popelín
+150, lino 200, lana 300, vaquero 400, lona 600, fieltro 800, cuero fino
+900, cuero grueso 1 200, neopreno 1 500…) con masa por área, rigidez de
+estiramiento, de flexión y amortiguación; **Rigidez** y **Gramaje**
+editables por encima del preset, y *Grosor* para la colisión. Colisión
+con las piezas estáticas y los rígidos de S2, autocolisión por rejilla
+de dispersión, anclajes (por selección de vértices en caja o por la
+arista superior), viento de S4a. Preset *Caer sobre la pieza* (un plano
+de tela sobre el producto). La barra de físicas y *Grabar* de S2; la
+malla de la tela por fotograma en la caché (§5). **El sombreado del
+tejido es M5**, no esta fase.
+
+**Criterio.** Un paño de 1 m cuelga de dos esquinas y su punto más bajo
+queda dentro del 2 % de la catenaria analítica para el gramaje; la seda
+y el cuero grueso, con el mismo paño sobre la esfera, dan arrugas de
+distinta escala (métrica: curvatura media; la seda ≥ 3× la del cuero);
+nada atraviesa la esfera (test de distancia mínima); determinismo;
+hoja `out/cloth-sheet.html` con los presets sobre la botella del ejemplo.
+
+### S7 · Líquidos — **Opus** (tras S2 y el dieléctrico anidado)
+
+**Qué.** Fluido de posiciones (PBF) con viscosidad (XSPH), cohesión y
+tensión superficial; presets (`src/data/liquids.ts`: agua, aceite,
+miel, leche, gel, sirope…) con densidad, viscosidad y color/absorción;
+**Convertir en líquido** en el menú contextual: la pieza se rellena de
+partículas por paridad de rayos, se oculta y nace una pieza *Líquido*
+cuya superficie se reconstruye por cubos marchantes cada fotograma (en
+el *worker*); los recipientes son las piezas estáticas. Motor:
+**dieléctricos anidados** por prioridad (Schmidt y Budge, "Simple Nested
+Dielectrics in Ray Traced Images", JGT 2002) para líquido dentro de
+vidrio; material vidrio con absorción. Barra, *Grabar* y caché de S2.
+
+**Criterio.** Un litro vertido en un vaso cerrado conserva el volumen
+± 3 %; la miel tarda ≥ 5× más que el agua en nivelarse (test); nada
+atraviesa el vaso; determinismo; hoja `out/liquid-sheet.html`.
+
+## M5 · Tejido hilo a hilo y pelusa real — **Opus**, veredicto **Fable** (tras E6 y E9; la pelusa tras S8)
+
+Petición del usuario: tipo de tejido (*plain weave*, sarga…) simulado
+hilo a hilo y una pelusa editable y real. Dos partes:
+
+**M5a · Tejido.** Material `WOVEN` con tipos de ligamento (`src/data/
+weaves.ts`, claves estables): tafetán, sarga 2/1 y 3/1, raso de 5,
+panamá, espiga, punto (jersey), gabardina; parámetros: hilos por cm
+(urdimbre y trama), anchura de hilo, torsión, color de urdimbre y de
+trama, rugosidad de fibra, anchura del brillo, *sheen*, desgaste. Modelo
+de sombreado por hilo de Irawan y Marschner, "Specular Reflection from
+Woven Cloth", ACM TOG 2012 (público), implementado desde el artículo: el
+patrón del ligamento da el segmento de hilo visible en cada punto y el
+BRDF del hilo (fibras con torsión) la reflexión; el bump del tejido sale
+del mismo patrón (sin texturas). El visor Rápido aproxima con un
+*sheen* y el patrón como normal procedural. Reemplaza a la tela
+procedural de E6 como «tela realista»; la de E6 queda como «tela
+sencilla» (claves estables, no se renombra nada).
+
+**M5b · Pelusa.** Después de **S8** (primitiva de curva, BVH de curvas y
+sombreado de fibra en el motor): pelusa **geométrica** generada en el
+motor desde parámetros (como `FXAM`: densidad por cm², longitud ±
+variación, radio, rizo, gravedad, semilla, solo en caras visibles) en el
+material *Pelusa* del inspector, con vista previa de puntos en el visor.
+Sombreado de fibra: difuso + dos lóbulos (R y TT) primero; Marschner
+después.
+
+**Criterio.** M5a: tafetán, sarga y raso se distinguen a 1 cm de distancia
+en la hoja (esferas con `rt`); el brillo del raso es anisótropo y gira
+con la trama (test numérico); energía ≤ 1 (horno blanco). M5b: 100 k
+fibras ≤ 1,5× el tiempo por muestra; determinismo; hoja con cuatro
+densidades.
+
+## U12 · Salida en TIFF y RAW (DNG) — **Sonnet**
+
+Petición del usuario: que las imágenes puedan salir en TIFF y en RAW.
+**Decisión Fable.** RAW = **DNG lineal en coma flotante** (DNG 1.4, TIFF
+con `PhotometricInterpretation = LinearRaw`, 32 bits `f32`,
+`ColorMatrix1` = XYZ → primarios sRGB lineales (la inversa de la matriz
+sRGB → XYZ D65), `AsShotNeutral = 1 1 1`, `BaselineExposure 0`,
+`UniqueCameraModel = "Repackshot"`): un revelador fotográfico lo abre
+como un *raw* con toda la latitud del render, sin recorte. TIFF: sin
+compresión (baseline, *little-endian*), 8 y 16 bits RGB/RGBA y 32 bits
+flotante RGB/RGBA (`SampleFormat 3`, lineal), con resolución y sin
+perfil ICC (el de 8/16 bits lleva sRGB implícito; el flotante es
+lineal, como el EXR). Las especificaciones TIFF 6.0 y DNG son públicas;
+nada copiado de ningún lector.
+
+**Qué.** Codificadores en los dos lados, como el EXR: `rt-core::tiff` y
+`rt-core::dng` (solo `std`) para el escritorio y el CLI (`rt --format
+tiff|dng`), y `src/io/image.ts` (`encodeTiff`, `encodeDng`) para el
+navegador, con test de **paridad de bytes** entre ambos. Ventana de
+render: formato *TIFF* (bits: 8, 16, 32 flotante; alfa) y *RAW (DNG)*
+(sin alfa); el visor de resultados los guarda y los abre (vista previa
+desde los datos lineales); `formatExtension`, `supportsAlpha`,
+`WRITABLE_FORMATS`; cadenas es/en con una ayuda breve de cada formato.
+
+**Criterio.** Tests: una imagen de 4×4 con valores conocidos escrita en
+cada variante se relee bit a bit con un lector mínimo del test (las
+etiquetas, los *offsets* y los valores); TS = Rust en bytes; el DNG
+contiene las etiquetas obligatorias de DNG 1.4 y la matriz es la
+inversa de sRGB→XYZ (producto = identidad ± 1e-6); el visor de
+resultados muestra la vista previa de un TIFF de 32 bits; capturas
+`docs/ui/render-format-tiff.png`. `UI.md`, `ARCHITECTURE.md` §5,
+CHANGELOG.
+
 ## Orden sugerido
 
 1. **U1** (Opus) y **E1** (Sonnet), en paralelo: la interfaz y el
