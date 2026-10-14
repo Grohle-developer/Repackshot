@@ -180,8 +180,7 @@ twice (0: off).
   below one is a stochastic cut-out. **1 glass**: the principled surface without metal (what the
   interface's GLASS family writes). **2 emissive**: radiance `emission * emission_power`,
   reflects nothing; with `MATL.flags` bit 0 it is also sampled as an area light, chosen among
-  the lights by its flux (`luminance · π · area · sides`) and inside the instance by triangle
-  area. The interface writes `emission_power = emitPower · EMIT_RADIANCE_PER_WATT` (0.06,
+  the lights per shading point (below) and inside the instance by triangle area. The interface writes `emission_power = emitPower · EMIT_RADIANCE_PER_WATT` (0.06,
   `src/core/photometry.ts`, the factor the preview has used since U1: the catalogue's watts are
   a level, not a flux) and `emission` the black body's colour at its temperature (normalised to
   its largest channel) or the colour given (`emitKind`). Single-scattering GGX loses energy when
@@ -209,10 +208,18 @@ twice (0: off).
   the diffuse lobe, by light sampling alone, and is invisible in reflections (Blender's "glossy"
   visibility, which the recipes come from). Bit 1 **camera**: visible to camera rays (a point's
   sphere too). Bit 2 **no shadow** (L4): its shadow rays are not traced (the shadow catcher is
-  not darkened by it either). One light per vertex, chosen in proportion to an estimate of the
-  flux it sends into the scene's bounding sphere; a spot weighs as its point light would when
-  its cone takes in the scene's centre, a twentieth of that otherwise, so a narrow spot's pool is
-  not left to the rare samples its little flux would get (a light tree replaces it in K4).
+  not darkened by it either). **One light per vertex, chosen per point** (E12): in proportion to a
+  bound of the irradiance each light can give the shading point unoccluded, the flat case of the
+  light tree of Conty Estevez and Kulla (HPG 2018) with its orientation bound (§4.3): `lum(I) ·
+  mask / max(d², r²)` for points and spots, `lum(L) · A · cos θ' / max(d², A)` for panels and
+  (from the centroid, with the cone of their normals) emissive meshes, `lum(E)` for the sun, `π L̄`
+  for the environment. A `Selection` holds the vertex, the sum of the weights and the first eight
+  of them, and the pick rebuilds the cumulative distribution entry by entry; MIS takes the same
+  probability at the vertex the BSDF ray left (`Scattered`). From two to 64 entries (one is
+  certain either way and by flux costs nothing); beyond 64, and
+  always for the shadow catcher and the caustic photons, the static choice by the flux each light
+  sends into the scene's bounding sphere (a spot weighing as its point light when its cone takes
+  in the scene's centre).
 * **Environment** (`environment`), `ENVR.kind`: **0 studio dome**: radiance linear in the `z`
   of the direction, `floor` at -1, `horizon` at 0, `zenith` at +1, importance sampled by the
   closed-form inverse of that piecewise-linear density in `z` times a uniform azimuth (exact
@@ -292,7 +299,7 @@ exponentials. `f32` only, a fixed order: the same bits natively and in WebAssemb
 RGBA sums out (coverage as it was). `denoise_rows` computes a band of rows from the rows and
 `HALO` = 72 rows around them, exactly those rows of the whole image: `rt`, the launcher and the
 page cut the work in bands (of at least 192 rows) on their threads or workers.
-`PINNED_DENOISED_EXAMPLE_4SPP` (`crates/rt-post/src/denoise/tests.rs`, `0xab15f290`) is the
+`PINNED_DENOISED_EXAMPLE_4SPP` (`crates/rt-post/src/denoise/tests.rs`, `0x9ef7c8a0`) is the
 example at 4 spp denoised; `tools/wasm-parity.mjs --expect-denoised` checks the real module
 against it. On the sheet's scenes the relative MSE against a long render falls to 4–20 % of the
 noisy image's at 4 spp and to 10–40 % at 16 spp (`rt-cli/tests/example.rs` checks the bound).
@@ -327,7 +334,7 @@ stream per (seed, sample, photon): a map is the same bits however its photons ar
 all their threads and every web worker traces the maps of the samples it renders (keeping 16).
 The shadow catcher (the interface's floor) gets the caustics too: photons land on its plane, and a
 camera ray that sees it adds their light relative to the open floor's to the background it shows
-(not with a transparent background). `PINNED_E5B_CAUSTICS_4SPP` (`0x55d60f2f`, the E5 scene with
+(not with a transparent background). `PINNED_E5B_CAUSTICS_4SPP` (`0x5419866e`, the E5 scene with
 2048 photons per sample, `rt --write-e5b-example`) holds on every SIMD path, in WASI, through
 the real module and through the launcher with 1, 4 and 16 threads.
 
