@@ -23,6 +23,8 @@ import type { HostEvent, HostInfo } from '../core/host-protocol';
 import type { HistoryLimits } from '../core/results';
 import type { DisplayPrefs, NavigationPrefs, ViewportLimit } from '../core/settings';
 import type { UpdateOutcome } from '../core/updates';
+import type { InstallOutcome, PluginPresets, PluginRunRequest, PluginRunResult, PluginsSnapshot } from '../core/plugins';
+import type { PluginRegistryEntry } from '../data/plugins';
 import type { PerfResult, Tool } from './ui-state';
 
 export interface PickResult {
@@ -491,6 +493,31 @@ export interface ImagesPort {
   loadBackplate(file: File): Promise<ImageRef>;
 }
 
+/**
+ * Plugins (phase P6, src/plugins/): the registry, what is installed and its installs, and runs over a finished result.
+ * The interface never sees a plugin's code or its key: it asks, and draws what comes back.
+ */
+export interface PluginsPort {
+  readonly registry: readonly PluginRegistryEntry[];
+  snapshot(): PluginsSnapshot;
+  subscribe(fn: (s: PluginsSnapshot) => void): () => void;
+  /** Install or update a plugin of the registry; NEEDS_KEY: `provideKey` goes on. */
+  install(id: string): Promise<InstallOutcome>;
+  provideKey(id: string, key: string): Promise<InstallOutcome>;
+  cancelInstall(id: string): void;
+  /** Install from a `.rpk` the person chose, with the key they typed. */
+  installFile(file: Blob, key: string): Promise<InstallOutcome>;
+  remove(id: string): Promise<void>;
+  /** A text file of an installed plugin (its licence, its notices), or null. */
+  text(id: string, file: string): Promise<string | null>;
+  /** The plugin's recipes by category (it is started on first use). */
+  presets(id: string): Promise<PluginPresets>;
+  /** A result through a plugin; rejects with an AbortError when `signal` aborts. */
+  run(req: PluginRunRequest, signal?: AbortSignal): Promise<PluginRunResult>;
+  /** A plugin's image as a file: PNG, or JPEG for a JPEG result, with the result's DPI. */
+  encode(img: { width: number; height: number; rgba: Uint8ClampedArray }, format: 'PNG' | 'JPEG', dpi: number): Promise<Blob>;
+}
+
 export interface AppServices {
   /** Null when WebGL is not available. */
   viewport: ViewportPort | null;
@@ -545,4 +572,6 @@ export interface AppServices {
   licenceText(file: string): Promise<string | null>;
   /** The environment's HDRI and background image files. */
   images: ImagesPort;
+  /** Plugins (P6); absent or null in a build without them (tests). */
+  plugins?: PluginsPort | null;
 }

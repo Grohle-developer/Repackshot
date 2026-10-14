@@ -16,6 +16,7 @@ import type { ViewObject } from '../core/view-objects';
 import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
+import type { PluginsSnapshot } from '../core/plugins';
 import type { RuntimeWarning } from '../core/ai-runtimes';
 import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
 import type { ReleaseInfo, UpdateFault } from '../core/updates';
@@ -333,6 +334,8 @@ export interface UiState {
   updates: UpdatesUi;
   /** The model manager's view (null: no manager in this build or not started). */
   models: ModelsSnapshot | null;
+  /** The plugin host's view (P6; null: no host in this build). */
+  plugins: PluginsSnapshot | null;
   /** What was detected of this computer for the AI models. */
   hardware: { state: 'IDLE' | 'DETECTING' | 'DONE'; info: HardwareInfo | null };
   perf: PerfState;
@@ -456,6 +459,7 @@ export function defaultUiState(): UiState {
     updateLatest: null,
     updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [] },
     models: null,
+    plugins: null,
     hardware: { state: 'IDLE', info: null },
     perf: { state: 'IDLE' },
     engineInfo: null,

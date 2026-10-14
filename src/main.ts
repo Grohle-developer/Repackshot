@@ -29,6 +29,10 @@ import { AI_GUARD_PASSES, pipelineOf } from './core/ai-post';
 import { linearToRgba8, linearToSrgb, rgba8ToLinear } from './core/ai-image';
 import { evaluate, totalDuration } from './core/animation';
 import { AI_MODELS, type AiModelEntry, type AiModelsCatalogue } from './data/ai-models';
+import { PLUGIN_REGISTRY, validEntries, type PluginRegistryEntry } from './data/plugins';
+import { PluginHost, type WorkerLike } from './plugins/host';
+import { PluginsService } from './plugins/service';
+import { openPluginStore } from './plugins/store';
 import { activeCamera, sameView, type CameraState } from './core/camera';
 import { lookThroughAction, lookThroughCamera, sameObject, type ViewObject } from './core/view-objects';
 import { historyLimits, startViewportMode, withProjectDefaults, type Layout, type SettingKey, type Settings, type SettingsDoc } from './core/settings';
@@ -60,7 +64,7 @@ import { installGuards } from './ui/guards';
 import { downloadBlob, openInNewTab } from './ui/dom';
 import { startupUpdateCheck } from './ui/updates';
 import { maybeStartTour } from './ui/tour';
-import type { AiPort, AppServices, EngineConfig, ViewportPort } from './ui/ports';
+import type { AiPort, AppServices, EngineConfig, PluginsPort, ViewportPort } from './ui/ports';
 import { aiRuntimeQuery } from './ui/ai-query';
 import { isaLabel, L, setStringsPlatform, t } from './ui/strings';
 import { createUiStore, effectiveMode, type EngineInfo } from './ui/ui-state';
@@ -574,6 +578,75 @@ const aiPort: AiPort | null = preview
     }
   : null;
 
+/**
+ * The plugin registry: the data. Only a build made with `vite build --mode plugin-test` (the browser check of phase
+ * P6, tools/plugins-check.mjs) also reads `?testPlugins=<base64 JSON>`, entries served by a local test server; in
+ * every other build this branch is removed at build time (the mode is a constant), as `?testModels=` is.
+ */
+function pluginRegistry(): PluginRegistryEntry[] {
+  const base = validEntries(PLUGIN_REGISTRY);
+  if (import.meta.env.MODE !== 'plugin-test') return base;
+  const raw = new URLSearchParams(window.location.search).get('testPlugins');
+  if (!raw) return base;
+  try {
+    const extra = validEntries({ schema: 1, plugins: JSON.parse(atob(raw)) as PluginRegistryEntry[] });
+    return [...base.filter((e) => !extra.some((x) => x.id === e.id)), ...extra];
+  } catch {
+    return base;
+  }
+}
+
+/** A picture file as 8-bit straight RGBA, as it was written (no colour management, no premultiplication). */
+async function decodeRgba(blob: Blob): Promise<{ width: number; height: number; rgba: Uint8ClampedArray }> {
+  const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const g = canvas.getContext('2d', { willReadFrequently: true })!;
+  g.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return { width: canvas.width, height: canvas.height, rgba: g.getImageData(0, 0, canvas.width, canvas.height).data };
+}
+
+// Plugins (P6, src/plugins/): the host with its store (IndexedDB, in the browser and in the desktop's WebView2 alike),
+// the module workers it starts from the packages' code, and the decoders a run over a result needs.
+const pluginEntries = pluginRegistry();
+const pluginHost = new PluginHost({
+  store: openPluginStore(),
+  registry: pluginEntries,
+  fetch: (url, init) => fetch(url, init),
+  spawn: (url) => new Worker(url, { type: 'module', name: 'plugin' }) as unknown as WorkerLike,
+  createObjectURL: (b) => URL.createObjectURL(b),
+  revokeObjectURL: (u) => URL.revokeObjectURL(u),
+  now: () => Date.now(),
+});
+const pluginsService = new PluginsService({
+  host: pluginHost,
+  registry: pluginEntries,
+  result: async (id) => (await resultsReady).get(id),
+  decode: decodeRgba,
+  decodeExr: async (bytes) => (await import('./io/hdri')).decodeExr(bytes),
+  now: () => performance.now(),
+});
+pluginHost.subscribe((snap) => ui.set({ plugins: snap }));
+ui.set({ plugins: pluginHost.snapshot() });
+void pluginHost.start().catch((err: unknown) => console.warn(`plugins: ${err instanceof Error ? err.message : String(err)}`));
+window.addEventListener('pagehide', () => pluginHost.dispose());
+const pluginsPort: PluginsPort = {
+  registry: pluginsService.registry,
+  snapshot: () => pluginsService.snapshot(),
+  subscribe: (fn) => pluginsService.subscribe(fn),
+  install: (id) => pluginsService.install(id),
+  provideKey: (id, key) => pluginsService.provideKey(id, key),
+  cancelInstall: (id) => pluginsService.cancelInstall(id),
+  installFile: (file, key) => pluginsService.installFile(file, key),
+  remove: (id) => pluginsService.remove(id),
+  text: (id, file) => pluginsService.text(id, file),
+  presets: (id) => pluginsService.presets(id),
+  run: (req, signal) => pluginsService.run(req, signal),
+  encode: (img, format, dpi) => encodePixels({ width: img.width, height: img.height, data: img.rgba }, format, 0.92, { dpi }),
+};
+
 const LAST_PROJECT_HANDLE = 'project:last';
 const services: AppServices = {
   viewport,
@@ -760,6 +833,7 @@ const services: AppServices = {
       return loadBackplate(file.name, new Uint8Array(await file.arrayBuffer()));
     },
   },
+  plugins: pluginsPort,
 };
 
 const app = mountApp(appEl, store, ui, services);

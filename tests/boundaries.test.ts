@@ -15,6 +15,8 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
   io: ['core', 'data'],
   render: ['core', 'data'],
   ai: ['core', 'data'],
+  // P6: the plugin host (install, store, workers) is wired into the interface through ui/ports.ts, like io.
+  plugins: ['core', 'data'],
   ui: ['core', 'data'],
 };
 

@@ -18,6 +18,7 @@ import type { CameraId } from './camera';
 import { CAUSTICS_MODES, CAUSTICS_QUALITIES, DENOISE_MODES, denoiseBits, type CausticsMode, type CausticsQuality, type DenoiseMode } from './caustics';
 import { nextId } from './ids';
 import { DEFAULT_NAME_TEMPLATE } from './name-template';
+import { normalisePlugins, NO_PLUGINS, type PluginsSettings } from './plugins';
 import { clampDpi, DEFAULT_DPI, lockedSide, PRINT_UNITS, type PrintUnit } from './print-size';
 
 export type RenderQuality = QualityKey | 'CUSTOM';
@@ -161,6 +162,12 @@ export interface RenderSettings {
   advanced: AdvancedSettings;
   animation: AnimationOutput;
   ai: AiSettings;
+  /**
+   * P6, Render window ▸ Plugins: each plugin's recipe and controls, by plugin id (core/plugins.ts). Undoable and saved
+   * with the project; a project of before has none (`{}`), and an entry of a plugin that is not installed is kept as
+   * it is. The values are checked against the plugin's manifest where it runs (`controlsFor`).
+   */
+  plugins: PluginsSettings;
 }
 
 /** One job of the render queue: the settings it was made with, and how it is going. */
@@ -275,6 +282,7 @@ export function defaultRenderSettings(): RenderSettings {
     advanced: { ...DEFAULT_ADVANCED },
     animation: { range: 'ALL', rangeUnit: 'FRAMES', from: 1, to: 1, fps: 24, output: 'FRAMES', video: 'MP4' },
     ai: DEFAULT_AI,
+    plugins: NO_PLUGINS,
   };
 }
 
@@ -307,6 +315,7 @@ export function settingsOf(r: RenderSettings): RenderSettings {
     advanced: r.advanced,
     animation: r.animation,
     ai: r.ai,
+    plugins: r.plugins ?? NO_PLUGINS,
   };
 }
 
@@ -385,6 +394,8 @@ export function patchSettings(s: RenderSettings, patch: Partial<RenderSettings>)
   }
   // AI post-processing: merged into the current settings, then every control clamped (a slider drag is many patches).
   next.ai = normaliseAi(p.ai !== undefined ? { ...s.ai, ...p.ai } : s.ai, s.ai);
+  // Plugins: the shape checked, the entries that did not change kept as they were (watchers compare by reference).
+  next.plugins = p.plugins !== undefined ? normalisePlugins(p.plugins, s.plugins ?? NO_PLUGINS) : (s.plugins ?? NO_PLUGINS);
   if (next.mode !== 'ANIMATION') next.mode = 'IMAGE';
   return next;
 }
@@ -636,6 +647,8 @@ function migrateSettings(raw: Record<string, unknown>, base: RenderSettings): Re
     printUnit: oneOf<PrintUnit>(raw.printUnit, PRINT_UNITS),
     // Before X4 the block was `{ enabled }` only: the patch merges it into the defaults and clamps every control.
     ai: isObj(raw.ai) ? (raw.ai as unknown as AiSettings) : undefined,
+    // Before P6 there were no plugins: the patch keeps `{}`.
+    plugins: isObj(raw.plugins) ? (raw.plugins as unknown as PluginsSettings) : undefined,
     // U1 had no finishBy: its budget was the samples or the time, whichever came first (0 s: no time limit).
     finishBy: oneOf<FinishBy>(raw.finishBy, ['SAMPLES', 'TIME', 'FIRST']) ?? (raw.finishBy === undefined && maxSeconds !== undefined ? (maxSeconds > 0 ? 'FIRST' : 'SAMPLES') : undefined),
     quality: oneOf(raw.quality, QUALITIES),

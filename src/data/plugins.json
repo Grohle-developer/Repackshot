@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "plugins": [
+    {
+      "id": "aintfilm-film",
+      "name": {
+        "en": "aintfilm · film simulation",
+        "es": "aintfilm · simulación de película"
+      },
+      "publisher": "Grohle",
+      "version": "0.1.0",
+      "summary": {
+        "en": "The film engine of aintfilm, the photo editing and film simulation app by the same developer: film stocks, grain sized on the negative, halation, diffusion filters and the print or the scan, over a finished render.",
+        "es": "El motor de película de aintfilm, la app de edición de fotos y simulación de película del mismo desarrollador: películas, grano medido sobre el negativo, halación, filtros de difusión y la copia o el escaneo, sobre un render terminado."
+      },
+      "licence": {
+        "kind": "closed",
+        "label": {
+          "en": "Closed licence",
+          "es": "Licencia cerrada"
+        }
+      },
+      "homepage": "https://aintfilm.app",
+      "url": "https://github.com/Grohle-developer/Repackshot/releases/download/v0.1.6/film-0.1.0.rpk",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 1,
+      "keyUrl": "",
+      "logo": "logo.svg"
+    }
+  ]
+}

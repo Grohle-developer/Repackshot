@@ -350,3 +350,160 @@ export function previewSize(width: number, height: number, maxWidth: number): { 
   const k = maxWidth / width;
   return { width: maxWidth, height: Math.max(1, Math.round(height * k)) };
 }
+
+// ------------------------------------------------------------------ the host's state, for the interface
+
+/** Why an install or a start did not happen; the interface words each code. */
+export type PluginFault =
+  /** The package could not be downloaded (the network, or the server's answer: `detail`). */
+  | 'DOWNLOAD'
+  /** The download is not the size the registry pins. */
+  | 'SIZE'
+  /** The download's SHA-256 is not the one the registry pins. */
+  | 'SHA256'
+  /** The file is not a Repackshot plugin. */
+  | 'NOT_RPK'
+  /** The package's header or its ciphertext is damaged. */
+  | 'DAMAGED'
+  /** The package is not the plugin or the version the registry names. */
+  | 'MISMATCH'
+  /** The activation key does not open the package. */
+  | 'KEY'
+  /** What was typed is not an activation key (32 bytes of base64). */
+  | 'BAD_KEY'
+  /** The package opened, but its manifest is not valid or names files it does not have. */
+  | 'MANIFEST'
+  /** The plugin speaks another version of the host's ABI. */
+  | 'ABI'
+  /** Its WebAssembly module imports something although the manifest says it imports nothing. */
+  | 'IMPORTS'
+  /** It could not be kept on this computer. */
+  | 'STORE'
+  /** Its worker did not start or stopped. */
+  | 'START';
+
+/** What an install is doing, by plugin id. */
+export type PluginTask =
+  | { stage: 'DOWNLOADING'; done: number; total: number }
+  | { stage: 'VERIFYING' }
+  /** Waiting for the person to type the activation key: there is no `keyUrl` (NONE), it did not answer or its key did not open the package (FAILED), or the key typed did not (WRONG). */
+  | { stage: 'NEEDS_KEY'; reason: 'NONE' | 'FAILED' | 'WRONG' | 'BAD' }
+  | { stage: 'INSTALLING' }
+  | { stage: 'FAILED'; fault: PluginFault; detail: string };
+
+/** An installed plugin, as Settings and the render window show it. */
+export interface InstalledPlugin {
+  id: string;
+  version: string;
+  /** Bytes of the package kept on this computer. */
+  size: number;
+  sha256: string;
+  source: 'registry' | 'file';
+  installedAt: number;
+  /** Null when the package no longer opens with its key (`problem` says why). */
+  manifest: PluginManifest | null;
+  /** The logo of the package, as a `data:` URL, or null. */
+  logo: string | null;
+  problem: PluginFault | null;
+}
+
+export interface PluginsSnapshot {
+  /** The installed list has been read. */
+  ready: boolean;
+  /** Installed plugins survive the session (IndexedDB), or live in memory. */
+  persistent: boolean;
+  installed: InstalledPlugin[];
+  tasks: Readonly<Record<string, PluginTask>>;
+}
+
+export type InstallOutcome = { kind: 'DONE'; id: string; version: string } | { kind: 'NEEDS_KEY'; id: string; reason: 'NONE' | 'FAILED' | 'WRONG' | 'BAD' } | { kind: 'FAILED'; fault: PluginFault; detail: string };
+
+// ------------------------------------------------------------------ what a plugin answers (the ABI's, src/plugins/abi.ts)
+
+export type PluginPixels = { kind: 'linear-f32-planes'; data: Float32Array } | { kind: 'rgba8'; data: Uint8ClampedArray };
+
+export interface PluginInfo {
+  name: PluginLabel;
+  version: string;
+  /** What runs, in the plugin's words (the engine's version, wasm…). */
+  engine?: string;
+}
+
+export interface PluginPreset {
+  id: string;
+  name: PluginLabel;
+  category: string;
+  /** A second line (the family, the speed…). */
+  aux?: PluginLabel;
+}
+
+export interface PluginPresets {
+  categories: { id: string; label: PluginLabel }[];
+  presets: PluginPreset[];
+}
+
+/** One number or word of a render, as the plugin says it (the host draws `label value unit`). */
+export interface PluginInfoItem {
+  key: string;
+  label: PluginLabel;
+  value: number | string;
+  unit?: string;
+}
+
+export interface PluginRenderInfo {
+  items: PluginInfoItem[];
+}
+
+const isLabelLike = (v: unknown): v is PluginLabel => isRecord(v) && typeof v.en === 'string' && typeof v.es === 'string';
+
+/** The plugin's presets as the host keeps them: well-formed entries only, unique ids, a category for each. */
+export function cleanPresets(raw: unknown): PluginPresets {
+  const r = isRecord(raw) ? raw : {};
+  const categories: PluginPresets['categories'] = [];
+  for (const c of Array.isArray(r.categories) ? r.categories : []) {
+    if (isRecord(c) && typeof c.id === 'string' && c.id !== '' && isLabelLike(c.label) && !categories.some((x) => x.id === c.id)) categories.push({ id: c.id, label: { en: c.label.en, es: c.label.es } });
+  }
+  const presets: PluginPreset[] = [];
+  for (const p of Array.isArray(r.presets) ? r.presets : []) {
+    if (!isRecord(p) || typeof p.id !== 'string' || p.id === '' || p.id.length > 128 || !isLabelLike(p.name) || typeof p.category !== 'string' || presets.some((x) => x.id === p.id)) continue;
+    if (!categories.some((c) => c.id === p.category)) categories.push({ id: p.category as string, label: { en: p.category as string, es: p.category as string } });
+    presets.push({ id: p.id, name: { en: p.name.en, es: p.name.es }, category: p.category as string, ...(isLabelLike(p.aux) ? { aux: { en: p.aux.en, es: p.aux.es } } : {}) });
+  }
+  return { categories, presets };
+}
+
+/** The render's info as the host draws it: well-formed items only (finite numbers, short words). */
+export function cleanInfo(raw: unknown): PluginRenderInfo {
+  const items: PluginInfoItem[] = [];
+  const list = isRecord(raw) && Array.isArray(raw.items) ? raw.items : [];
+  for (const it of list.slice(0, 16)) {
+    if (!isRecord(it) || typeof it.key !== 'string' || !isLabelLike(it.label)) continue;
+    const v = it.value;
+    if (!((typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.length <= 64))) continue;
+    items.push({ key: it.key, label: { en: it.label.en, es: it.label.es }, value: v, ...(typeof it.unit === 'string' && it.unit.length <= 12 ? { unit: it.unit } : {}) });
+  }
+  return { items };
+}
+
+/** A run of a plugin over a result (the interface's request; src/plugins/service.ts does it). */
+export interface PluginRunRequest {
+  plugin: string;
+  result: string;
+  /** The preview's width; null: the result's own size (Apply). */
+  maxWidth: number | null;
+  recipe: string | null;
+  controls: Record<string, PluginControlValue>;
+}
+
+export interface PluginRunResult {
+  width: number;
+  height: number;
+  /** The result as it was, at this size (8-bit RGBA): the divider's left side. */
+  before: Uint8ClampedArray;
+  after: Uint8ClampedArray;
+  info: PluginRenderInfo;
+  /** Seconds the plugin's render took, measured around it. */
+  seconds: number;
+  /** What the plugin was given. */
+  input: PluginPixels['kind'];
+}

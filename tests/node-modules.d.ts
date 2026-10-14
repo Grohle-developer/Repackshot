@@ -44,6 +44,7 @@ declare module 'node:module' {
 declare module 'node:worker_threads' {
   export class Worker {
     constructor(code: string, options: { eval: boolean });
+    constructor(url: URL);
     on(event: 'message', fn: (data: unknown) => void): this;
     on(event: 'error', fn: (err: Error) => void): this;
     postMessage(value: unknown, transfer?: unknown[]): void;
@@ -54,5 +55,5 @@ declare module 'node:zlib' {
   export function inflateSync(data: Uint8Array): Uint8Array;
 }
 declare module 'node:crypto' {
-  export function createHash(algorithm: 'sha256'): { update(data: Uint8Array): { digest(encoding: 'hex'): string } };
+  export function createHash(algorithm: 'sha256'): { update(data: Uint8Array | string): { digest(encoding: 'hex'): string } };
 }
