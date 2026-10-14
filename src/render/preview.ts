@@ -13,7 +13,7 @@ import { evaluate, type Pose } from '../core/animation';
 import type { Projection, Rect } from '../core/box-select';
 import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
-import { fitImageRect, getImage, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
+import { fitImageRect, getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
 import { isSphereLike, lightFrame, rigPivot, skySunDirection, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
 import { boxCenter, boxMaxDim, isEmptyBox, normalize, transformPoint, type Vec3 } from '../core/math';
 import { lensOf } from '../core/lens-coc';
@@ -140,6 +140,15 @@ function plateCanvas(src: HTMLCanvasElement, fit: 'FILL' | 'FIT' | 'STRETCH', co
   ctx.drawImage(src, r.x, r.y, r.width, r.height);
   ctx.restore();
   return c;
+}
+
+/** The canvas of a GRADIENT background (L6): the engine's image of its two colours, stretched over the frame, the colour around. */
+function gradientCanvas(top: readonly number[], bottom: readonly number[], color: readonly number[], w: number, h: number, frame: FrameRect): HTMLCanvasElement {
+  const src = document.createElement('canvas');
+  src.width = GRADIENT_COLUMNS;
+  src.height = GRADIENT_ROWS;
+  src.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(gradientPixels(top, bottom)), GRADIENT_COLUMNS, GRADIENT_ROWS), 0, 0);
+  return plateCanvas(src, 'STRETCH', color, w, h, frame);
 }
 
 /** A canvas as the scene's flat background (sRGB, drawn as it is, not tone mapped). */
@@ -544,7 +553,7 @@ export class PreviewEngine implements RenderEngine {
     if (full || nodesChanged || poseLights || state.studio !== prev.studio || state.scene.partSizeMm !== prev.scene.partSizeMm) this.syncLights(state, pose);
     // The sky follows the sun light; the background image the frame (output size).
     const skyFollows = state.environment.kind === 'SKY' && !full && (state.studio !== prev.studio || poseLights);
-    const plateFollows = state.environment.background === 'BACKPLATE' && !full && (state.render.width !== prev.render.width || state.render.height !== prev.render.height);
+    const plateFollows = (state.environment.background === 'BACKPLATE' || state.environment.background === 'GRADIENT') && !full && (state.render.width !== prev.render.width || state.render.height !== prev.render.height);
     if (full || state.environment !== prev.environment || poseEnv || skyFollows || plateFollows) this.syncEnvironment(state, pose);
     if (full || state.image !== prev.image) this.syncImage(state);
     if (full || nodesChanged || state.studio !== prev.studio || state.environment !== prev.environment) this.syncFloor(state);
@@ -861,9 +870,28 @@ export class PreviewEngine implements RenderEngine {
       // The image fitted to the output frame of the viewport, the colour while none is loaded.
       const frame = outputFrameRect(this.width, this.height, state.render.width, state.render.height);
       this.scene.background = this.viewportPlate(state, this.width, this.height, frame) ?? color();
+    } else if (env.background === 'GRADIENT') {
+      const frame = outputFrameRect(this.width, this.height, state.render.width, state.render.height);
+      this.scene.background = this.viewportGradient(state, this.width, this.height, frame);
     } else {
       this.scene.background = this.envTexture;
     }
+  }
+
+  /** The viewport's GRADIENT background (L6), cached like the background image. */
+  private viewportGradient(state: ProjectState, w: number, h: number, frame: FrameRect): THREE.Texture {
+    const env = state.environment;
+    const k = Math.min(Math.max(1, this.dpr), 2048 / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * k));
+    const ch = Math.max(1, Math.round(h * k));
+    const f = { x: frame.x * k, y: frame.y * k, width: frame.width * k, height: frame.height * k };
+    const key = `gradient|${env.gradient.top.join(',')}|${env.gradient.bottom.join(',')}|${env.color.join(',')}|${cw}x${ch}|${f.x},${f.y},${f.width},${f.height}`;
+    if (key !== this.plateKey || !this.plateTexture) {
+      this.plateKey = key;
+      this.plateTexture?.dispose();
+      this.plateTexture = backgroundTexture(gradientCanvas(env.gradient.top, env.gradient.bottom, env.color, cw, ch, f));
+    }
+    return this.plateTexture;
   }
 
   /** The canvas of the background image's pixels, or null when none is loaded. */
@@ -1044,7 +1072,7 @@ export class PreviewEngine implements RenderEngine {
     this.renderer.setSize(width, height, false);
     if (this.state) this.syncCamera(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
     // The background image follows the output frame inside the viewport.
-    if (this.state?.environment.background === 'BACKPLATE') this.syncEnvironment(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
+    if (this.state?.environment.background === 'BACKPLATE' || this.state?.environment.background === 'GRADIENT') this.syncEnvironment(this.state, this.poseActive ? evaluate(this.state, this.state.animation.playhead) : null);
     this.needsRender = true;
   }
 
@@ -1544,8 +1572,13 @@ export class PreviewEngine implements RenderEngine {
       this.placeCamera(cam, opts.width, opts.height, opts.width, opts.height, false);
       // A picture's background image fills the whole picture (it is the output frame).
       const plate = !opts.transparent && s.environment.background === 'BACKPLATE' ? this.plateImage(s) : null;
+      const whole = { x: 0, y: 0, width: opts.width, height: opts.height };
       if (plate) {
-        stillPlate = backgroundTexture(plateCanvas(plate, s.environment.backplateFit, s.environment.color, opts.width, opts.height, { x: 0, y: 0, width: opts.width, height: opts.height }));
+        stillPlate = backgroundTexture(plateCanvas(plate, s.environment.backplateFit, s.environment.color, opts.width, opts.height, whole));
+        this.scene.background = stillPlate;
+      } else if (!opts.transparent && s.environment.background === 'GRADIENT') {
+        const g = s.environment.gradient;
+        stillPlate = backgroundTexture(gradientCanvas(g.top, g.bottom, s.environment.color, opts.width, opts.height, whole));
         this.scene.background = stillPlate;
       }
       if (opts.transparent) this.scene.background = null;

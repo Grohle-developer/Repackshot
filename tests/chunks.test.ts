@@ -47,6 +47,12 @@ function allAssets(): Record<string, string> {
   return out;
 }
 
+/**
+ * The chunk of src/io/import.ts: `import-` and the 8-character content hash. Not any chunk that starts with `import-`:
+ * core/import-options.ts has one too (`import-options-<hash>.js`), and which of the two sorts first depends on the hash.
+ */
+const IMPORT_CHUNK = /^import-[\w-]{8}\.js$/;
+
 function chunks(): { entry: string; lazy: Record<string, string> } {
   const html = readFileSync(`${DIST}/index.html`, 'utf8');
   const src = /<script[^>]*\ssrc="([^"]+\.js)"/.exec(html)?.[1];
@@ -77,14 +83,14 @@ describe.skipIf(!hasDist)('bundle: importers load on demand', () => {
         const where = Object.entries(lazy).filter(([, text]) => text.includes(print)).map(([f]) => f);
         expect(where.length, `${format}: "${print}" is in no lazy chunk, so the check above proves nothing`).toBeGreaterThan(0);
         // The page may name the import module (it loads it with import()), never a reader.
-        for (const f of where) if (!/^import-/.test(f)) expect(entry.includes(f), `${format}: the entry chunk names ${f}`).toBe(false);
+        for (const f of where) if (!IMPORT_CHUNK.test(f)) expect(entry.includes(f), `${format}: the entry chunk names ${f}`).toBe(false);
       }
     }
   });
 
   it('the entry reaches the importers through the import module only', () => {
     const { entry, lazy } = chunks();
-    const importer = Object.keys(lazy).find((f) => /^import-/.test(f));
+    const importer = Object.keys(lazy).find((f) => IMPORT_CHUNK.test(f));
     expect(importer, 'chunk of src/io/import.ts').toBeTruthy();
     expect(entry.includes(importer!)).toBe(true);
     // The import module in turn lists the readers as dynamic imports: their file names appear in it.
@@ -152,6 +158,6 @@ describe.skipIf(!hasDist)('bundle: importers load on demand', () => {
     expect(entry).not.toMatch(/step-worker-[\w-]+\.js/);
     // The reader names its worker; the import module names the reader.
     expect(lazy[reader!]).toMatch(/step-worker-[\w-]+\.js/);
-    expect(lazy[Object.keys(lazy).find((f) => /^import-/.test(f))!]).toContain(reader!);
+    expect(lazy[Object.keys(lazy).find((f) => IMPORT_CHUNK.test(f))!]).toContain(reader!);
   });
 });

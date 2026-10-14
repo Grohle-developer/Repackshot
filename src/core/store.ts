@@ -3,7 +3,7 @@
 // Reducers are pure functions in the core modules; effects (render,
 // download) live outside and subscribe.
 
-import type { Label, Lang, RGBA, StudioPreset } from '../data/types';
+import type { Label, Lang, RGB, RGBA, StudioPreset } from '../data/types';
 import type { ImageRef } from './images';
 import type { SkyModel } from './sky';
 import { VERSION } from './version';
@@ -16,6 +16,7 @@ import { carryRuntime, defaultRenderState, reduceRender, type RenderAction, type
 import { cleanSelection, reduceScene, type NodeId, type SceneAction, type SceneNode, type Selection } from './scene';
 import { reduceTransform, type TransformAction } from './transform';
 import { reducePrimitive, type PrimitiveAction } from './primitive-ops';
+import { reduceSet } from './sets';
 import { reduceTextures, type TextureAction } from './textures';
 
 /** A history label: plain text, or one text per language (shown in the current one). */
@@ -39,9 +40,12 @@ export interface EnvironmentState {
   kind: 'STUDIO' | 'SKY' | 'FLAT' | 'HDRI';
   strength: number;
   rotationDeg: number;
-  background: 'ENVIRONMENT' | 'COLOR' | 'TRANSPARENT' | 'BACKPLATE';
+  /** GRADIENT (L6): `gradient` from the top of the output frame to its bottom (the colour around the frame). */
+  background: 'ENVIRONMENT' | 'COLOR' | 'TRANSPARENT' | 'BACKPLATE' | 'GRADIENT';
   /** Background colour (and the colour of FLAT), linear RGBA. */
   color: RGBA;
+  /** The two colours of the GRADIENT background (L6), linear RGB: the top and the bottom of the frame. */
+  gradient: { top: RGB; bottom: RGB };
   /** Opacity of the contact shadow on the floor, 0..1. */
   groundShadow: number;
   /** Strength of the floor reflection, 0..1. */
@@ -192,6 +196,7 @@ export function createInitialState(opts: { lang?: Lang; theme?: ThemeSetting } =
       rotationDeg: 0,
       background: 'ENVIRONMENT',
       color: [0.05, 0.05, 0.05, 1],
+      gradient: { top: [0.1, 0.1, 0.1], bottom: [0.02, 0.02, 0.02] },
       groundShadow: 0.6,
       groundReflection: 0,
       hdri: null,
@@ -251,7 +256,8 @@ function reduceAny(state: ProjectState, action: Action): ProjectState {
       // The image maps and labels of a material (M2a).
       return reduceTextures(state, action as TextureAction);
     case 'studio':
-      return reduceStudio(state, action as StudioAction);
+      // A set (L6) brings decoration and a look: core/sets.ts handles the actions it changes, the rest is the rig's.
+      return reduceSet(state, action as StudioAction) ?? reduceStudio(state, action as StudioAction);
     case 'camera':
       return reduceCamera(state, action as CameraAction);
     case 'anim':

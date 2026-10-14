@@ -4,12 +4,13 @@
 import { LENS_PRESETS } from '../../data/lenses';
 import { LIGHT_STYLES, lightSetup, setupsInStyle } from '../../data/light-setups';
 import { STUDIO_PRESETS } from '../../data/studios';
-import type { LightStyle } from '../../data/types';
+import type { LightSetup, LightStyle } from '../../data/types';
 import type { UiState } from '../ui-state';
 import { activeCamera, type CameraId, type CameraState } from '../../core/camera';
 import { itemsOf, type LightSetupItem, type ProductTypeItem } from '../../core/library';
 import { libraryKey, lightShares, lightIrradiance, presetRefOf } from '../../core/lighting';
 import { resolvePreset } from '../../core/rig';
+import { activeSet, setBackground, setPieceIds } from '../../core/sets';
 import type { EnvironmentState, ImageState, ProjectState } from '../../core/store';
 import * as cmd from '../commands';
 import { colorField, field, lengthField, numberField, segmented, select, slider, toggle, type Control } from '../components/controls';
@@ -17,7 +18,7 @@ import { libraryFoot, mineCards, mineEmpty, mineRows, namePrompt, type MineSpec 
 import { section } from '../components/section';
 import { confirmBox, showConfirmIn, thumb } from '../components/widgets';
 import { h, icon } from '../dom';
-import { cameraName, dyn, lightName, setupLabel, studioLabel } from '../names';
+import { cameraName, dyn, lightName, setupLabel, setupTip, studioLabel } from '../names';
 import { dynamic, shallowEq, type Ctx, type Scope } from '../reactive';
 import { L, formatNumber, getLang, lbl, t, type StringKey } from '../strings';
 
@@ -187,6 +188,51 @@ function tuneLights(ctx: Ctx, scope: Scope): HTMLElement {
   );
 }
 
+/**
+ * L6: what the set in force brings, under the catalogue: Use the set's camera (when it suggests one) and a row per
+ * piece of its decoration (cards, backdrop, floor; the pool is a light, in Tune lights) with a switch. Nothing for a
+ * setup that is not a set.
+ */
+function setBlock(ctx: Ctx, scope: Scope): HTMLElement {
+  const { store } = ctx;
+  return dynamic(
+    scope,
+    (s) => {
+      const set = activeSet(s);
+      if (!set) return '';
+      const pieces = setPieceIds(s).map((id) => `${id}:${s.scene.nodes[id].visible ? 1 : 0}:${s.scene.nodes[id].name}`);
+      return [set.key, activeCamera(s)?.locked ? 'L' : '', s.environment.background, ...pieces].join('|');
+    },
+    () => {
+      const s = store.get();
+      const set = activeSet(s);
+      if (!set) return h('div');
+      const rows: HTMLElement[] = [];
+      if (set.camera) {
+        const view = [set.camera.el !== undefined ? t('set.cameraEl', { el: set.camera.el }) : '', set.camera.focalMm !== undefined ? t('set.cameraFocal', { focal: set.camera.focalMm }) : ''].filter(Boolean).join(', ');
+        const locked = activeCamera(s)?.locked === true;
+        const btn = h('button', { type: 'button', class: 'btn btn-block', 'data-tip': locked ? t('set.cameraLocked') : t('set.cameraAux', { view }), disabled: locked, onclick: () => cmd.useSetCamera(ctx) }, icon('camera', 14), t('set.camera')) as HTMLButtonElement;
+        rows.push(btn);
+      }
+      const pieces = setPieceIds(s);
+      const items: HTMLElement[] = [];
+      const row = (name: string, on: boolean, change: (v: boolean) => void) => {
+        const sw = toggle(on, change, t('set.toggle', { name }));
+        items.push(h('div', { class: 'row', style: 'justify-content:space-between' }, h('span', { class: 'field-label' }, name), sw.el));
+      };
+      // A colour or a gradient behind (no sweep): the background, on or off.
+      const bg = setBackground(set);
+      if (bg) row(t(bg === 'GRADIENT' ? 'set.bg.GRADIENT' : 'set.bg.FLAT'), s.environment.background === (bg === 'GRADIENT' ? 'GRADIENT' : 'COLOR'), (v) => cmd.toggleSetBackdrop(ctx, v));
+      for (const id of pieces) {
+        const n = s.scene.nodes[id];
+        row(n.name, n.visible, (v) => cmd.hideSelection(ctx, [id], v));
+      }
+      if (items.length > 0) rows.push(h('div', { class: 'subhead', 'data-tip': t('set.piecesAux') }, t('set.pieces')), ...items);
+      return h('div', { class: 'stack', style: 'gap:6px', 'data-set': set.key }, ...rows);
+    },
+  );
+}
+
 function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
   const { store, ui } = ctx;
   const styles: (LightStyle | 'ALL')[] = ['ALL', ...LIGHT_STYLES.map((x) => x.key)];
@@ -201,7 +247,7 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
     title: (item) => t('library.ownSetup', { n: item.lights.length }),
   };
   const chips = h('div', { class: 'chips', role: 'tablist', 'aria-label': t('light.style') });
-  const grid = h('div', { class: 'thumbs cols-3', 'data-guide': 'setups' });
+  const grid = h('div', { class: 'stack', style: 'gap:6px', 'data-guide': 'setups' });
   const intent = h('p', { class: 'note', style: 'margin:0' });
   const confirmHost = h('div');
 
@@ -238,10 +284,15 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
         const own = itemsOf(ui.get().library, 'lightSetup');
         grid.replaceChildren(...(own.length === 0 ? [mineEmpty()] : mineCards(ctx, own, mineSpec, mineConfirm)));
       } else {
+        // L6: the sets first and large, with their photographic reason in the tooltip; the other setups as they were.
+        const card = (st: LightSetup) =>
+          thumb({ src: setupThumb(st.key), caption: lbl(st.label), active: st.key === active, title: setupTip(st), large: st.style === 'SETS', onClick: () => choose(st.key) });
+        const list = setupsInStyle(style);
+        const sets = list.filter((st) => st.style === 'SETS');
+        const rest = list.filter((st) => st.style !== 'SETS');
         grid.replaceChildren(
-          ...setupsInStyle(style).map((st) =>
-            thumb({ src: setupThumb(st.key), caption: lbl(st.label), active: st.key === active, title: lbl(st.intent), onClick: () => choose(st.key) }),
-          ),
+          ...(sets.length > 0 ? [h('div', { class: 'thumbs cols-2', 'data-sets': '1' }, ...sets.map(card))] : []),
+          ...(rest.length > 0 ? [h('div', { class: 'thumbs cols-3' }, ...rest.map(card))] : []),
         );
       }
       mineFoot.style.display = style === 'MINE' ? '' : 'none';
@@ -293,7 +344,7 @@ function lightSection(ctx: Ctx, scope: Scope): HTMLElement {
     t('light.saveSetup'),
   ) as HTMLButtonElement;
   scope.watch((s) => s.studio.lights.some((l) => l.enabled), (on) => (saveSetup.disabled = !on));
-  const body = h('div', { class: 'stack' }, chips, grid, mineConfirm, mineFoot, intent, nav, confirmHost, saveSetup, saveHost, tuneHead, tuneBody);
+  const body = h('div', { class: 'stack' }, chips, grid, mineConfirm, mineFoot, intent, nav, confirmHost, setBlock(ctx, scope), saveSetup, saveHost, tuneHead, tuneBody);
   return section(ctx, 'light', t('section.light'), body);
 }
 
@@ -339,7 +390,7 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
   const skyBox = h('div', { class: 'stack' }, field(t('env.skyModel'), skyModel.el), field(t('env.turbidity'), turbidity.el), sunOwn, sunNote);
 
   const bg = segmented(
-    (['ENVIRONMENT', 'COLOR', 'TRANSPARENT', 'BACKPLATE'] as const).map((b) => ({ value: b, label: t(dyn(`env.bg.${b}`)) })),
+    (['ENVIRONMENT', 'COLOR', 'GRADIENT', 'TRANSPARENT', 'BACKPLATE'] as const).map((b) => ({ value: b, label: t(dyn(`env.bg.${b}`)) })),
     e0.background,
     (v) => set({ background: v }, 'env.background'),
     { ariaLabel: t('env.background') },
@@ -362,6 +413,10 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
   );
   const color = colorField(e0.color, (rgb, g) => set({ color: [rgb[0], rgb[1], rgb[2], 1] }, 'env.color', g), t('env.color'));
   const colorRow = field(t('env.color'), color.el);
+  // L6: the two colours of a gradient background, top and bottom of the frame.
+  const gradTop = colorField(e0.gradient.top, (rgb, g) => set({ gradient: { ...store.get().environment.gradient, top: [rgb[0], rgb[1], rgb[2]] } }, 'env.gradientTop', g), t('env.gradientTop'));
+  const gradBottom = colorField(e0.gradient.bottom, (rgb, g) => set({ gradient: { ...store.get().environment.gradient, bottom: [rgb[0], rgb[1], rgb[2]] } }, 'env.gradientBottom', g), t('env.gradientBottom'));
+  const gradBox = h('div', { class: 'stack' }, field(t('env.gradientTop'), gradTop.el), field(t('env.gradientBottom'), gradBottom.el));
   const shadow = slider({ value: e0.groundShadow, min: 0, max: 1, step: 0.01, ariaLabel: t('env.groundShadow'), onChange: (v, g) => set({ groundShadow: v }, 'env.groundShadow', g) });
   const refl = slider({ value: e0.groundReflection, min: 0, max: 1, step: 0.01, ariaLabel: t('env.groundReflection'), onChange: (v, g) => set({ groundReflection: v }, 'env.groundReflection', g) });
   const show = (el: HTMLElement, on: boolean) => (el.style.display = on ? '' : 'none');
@@ -386,6 +441,9 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
       sunAz.set(e.skySun.az);
       sunEl.set(e.skySun.el);
       show(plateBox, e.background === 'BACKPLATE');
+      show(gradBox, e.background === 'GRADIENT');
+      gradTop.set(e.gradient.top);
+      gradBottom.set(e.gradient.bottom);
       plateInfo.textContent = imageInfo(e.backplate, 'env.noPlate');
       plateInfo.title = e.backplate?.name ?? '';
       fit.set(e.backplateFit);
@@ -414,6 +472,7 @@ function envSection(ctx: Ctx, scope: Scope): HTMLElement {
     h('div', { class: 'field-label', style: 'margin-top:4px' }, t('env.background')),
     bg.el,
     plateBox,
+    gradBox,
     colorRow,
     field(t('env.groundShadow'), shadow.el),
     field(t('env.groundReflection'), refl.el),

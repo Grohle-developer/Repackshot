@@ -21,7 +21,7 @@ import type { PassIds, PassInstance } from '../core/pass-ids';
 import { passMask, type PassKey } from '../core/passes';
 import { autoCaustics, causticsFields, isCaster, type CausticsMode, type CausticsQuality } from '../core/caustics';
 import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
-import { getImage } from '../core/images';
+import { getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS } from '../core/images';
 import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type TextureSlotKey } from '../core/textures';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
@@ -1233,8 +1233,14 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   const hdriMap = hdri && (hdri.format === 'HDR' || hdri.format === 'EXR') ? bitmaps.push({ format: hdri.format === 'HDR' ? BITMAP_HDR : BITMAP_EXR, width: 0, height: 0, data: hdri.bytes }) - 1 : NO_BITMAP;
   if (hdriMap !== NO_BITMAP) imageKeys.push(env.hdri!.id);
   const plate = !view.transparent && env.background === 'BACKPLATE' && env.backplate ? getImage(env.backplate.id) : undefined;
-  const backplateMap = plate?.rgba8 ? bitmaps.push({ format: BITMAP_RGBA8, width: plate.width, height: plate.height, data: plate.rgba8 }) - 1 : NO_BITMAP;
-  if (backplateMap !== NO_BITMAP) imageKeys.push(env.backplate!.id);
+  // L6: a GRADIENT background is an image made from its two colours, stretched over the output frame.
+  const gradient = !view.transparent && env.background === 'GRADIENT' ? gradientPixels(env.gradient.top, env.gradient.bottom) : null;
+  const backplateMap = plate?.rgba8
+    ? bitmaps.push({ format: BITMAP_RGBA8, width: plate.width, height: plate.height, data: plate.rgba8 }) - 1
+    : gradient
+      ? bitmaps.push({ format: BITMAP_RGBA8, width: GRADIENT_COLUMNS, height: GRADIENT_ROWS, data: gradient }) - 1
+      : NO_BITMAP;
+  if (backplateMap !== NO_BITMAP) imageKeys.push(gradient ? `gradient:${[...env.gradient.top, ...env.gradient.bottom].join(',')}` : env.backplate!.id);
   // Without a sun light the sky's sun is the environment's own, placed like a light (camera-relative).
   const sun = toSun ?? polar(toWorldAzimuth(env.skySun.az), env.skySun.el, 1);
   const sunLength = Math.hypot(sun[0], sun[1], sun[2]) || 1;
@@ -1258,12 +1264,12 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
         ? BACKGROUND_COLOR
         : env.background === 'TRANSPARENT'
           ? BACKGROUND_TRANSPARENT
-          : env.background === 'BACKPLATE'
+          : env.background === 'BACKPLATE' || env.background === 'GRADIENT'
             ? BACKGROUND_BACKPLATE
             : BACKGROUND_ENVIRONMENT,
     hdriMap,
     backplateMap,
-    backplateFit: env.backplateFit === 'FIT' ? BACKPLATE_FIT : env.backplateFit === 'STRETCH' ? BACKPLATE_STRETCH : BACKPLATE_FILL,
+    backplateFit: gradient || env.backplateFit === 'STRETCH' ? BACKPLATE_STRETCH : env.backplateFit === 'FIT' ? BACKPLATE_FIT : BACKPLATE_FILL,
     // Each model clamps the turbidity to its own range (the physical sky 1 to 10, the classic one 1.7 to 10).
     skyTurbidity: Number.isFinite(env.skyTurbidity) ? Math.min(10, Math.max(1, env.skyTurbidity)) : DEFAULT_TURBIDITY,
     skyModel: env.skyModel === 'CLASSIC' ? SKY_MODEL_CLASSIC : SKY_MODEL_PHYSICAL,

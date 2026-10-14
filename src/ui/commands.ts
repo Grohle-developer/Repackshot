@@ -53,7 +53,9 @@ import {
   type LibraryItem,
   type LibraryKind,
 } from '../core/library';
-import { LIBRARY_PREFIX, isLibraryKey, type NewLightKind } from '../core/lighting';
+import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '../core/lighting';
+import { resolvePreset } from '../core/rig';
+import { activeSet, setBackground, type SetPieceNames } from '../core/sets';
 import { lookThroughCamera, objectOf, sameObject, selectedObject, type ViewObject } from '../core/view-objects';
 import { boxCenter, isEmptyBox } from '../core/math';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
@@ -76,7 +78,7 @@ import {
 import { fitSweep, placePrimitive, primitivesUnder } from '../core/primitive-ops';
 import type { PrimitiveKind } from '../data/primitives';
 import type { Vec3 } from '../core/math';
-import { createInitialState, type ProjectState, type ThemeSetting } from '../core/store';
+import { createInitialState, type EnvironmentState, type ProjectState, type ThemeSetting } from '../core/store';
 import {
   importIsSure,
   isSection,
@@ -116,6 +118,8 @@ export function loadExample(ctx: Ctx): void {
   store.transaction(L('undo.example'), () => {
     store.dispatch({ type: 'scene/addModel', payload: buildExample(exampleNames()), replace: true });
     store.dispatch({ type: 'camera/frame' });
+    // L6: the set in force (chosen, or the product type's own) dresses the product that came in.
+    store.dispatch({ type: 'studio/fitSet', names: setPieceNames() });
   });
   ctx.ui.set({ importMessage: null });
 }
@@ -416,6 +420,8 @@ export function confirmImport(ctx: Ctx): void {
     if (options.frameCamera) ctx.store.dispatch({ type: 'camera/frame' });
     // Reset transform returns to where the sheet placed the model.
     ctx.store.dispatch({ type: 'scene/setInitial', ids: added });
+    // L6: the set in force (chosen, or the product type's own) dresses the product that came in.
+    ctx.store.dispatch({ type: 'studio/fitSet', names: setPieceNames() });
   });
   ctx.ui.toast(t('import.done', { name }));
   const budget = textures.filter((x) => x.dropped === 'budget').map((x): ImportMessage => ({ code: 'textureDropped', params: { image: x.name, reason: 'budget' } }));
@@ -1652,7 +1658,48 @@ export function setProductType(ctx: Ctx, key: string): void {
 }
 
 export function buildStudio(ctx: Ctx): void {
-  ctx.store.dispatch({ type: 'studio/build', label: L('undo.createStudio') });
+  ctx.store.dispatch({ type: 'studio/build', names: setPieceNames(), label: L('undo.createStudio') });
+}
+
+/** What the pieces of a set (L6) are called in the interface's language. */
+export function setPieceNames(): SetPieceNames {
+  return {
+    cards: { CARD_WHITE: t('set.card.CARD_WHITE'), CARD_BLACK: t('set.card.CARD_BLACK'), ALU_BRUSH: t('set.card.ALU_BRUSH') },
+    backdrop: t('set.backdrop'),
+    floor: t('set.floor'),
+    pool: t('set.pool'),
+  };
+}
+
+/** Use the set's camera (L6): the view the set in force suggests, the product framed again. One undo step. */
+export function useSetCamera(ctx: Ctx): void {
+  ctx.store.dispatch({ type: 'studio/useSetCamera', label: L('undo.setCamera') });
+}
+
+/**
+ * The set's backdrop on or off (L6). A sweep is a part of the scene: it is shown or hidden. A colour or a gradient is
+ * the background: off, the product type's background comes back; on, the set's.
+ */
+export function toggleSetBackdrop(ctx: Ctx, on: boolean): void {
+  const s = ctx.store.get();
+  const set = activeSet(s);
+  if (!set?.backdrop || !setBackground(set)) return;
+  const preset = resolvePreset(presetRefOf(s.studio));
+  const b = set.backdrop;
+  let patch: Partial<EnvironmentState>;
+  if (!on) {
+    patch = preset
+      ? { background: preset.background === 'FLAT' ? 'COLOR' : 'ENVIRONMENT', color: [preset.backgroundColor[0], preset.backgroundColor[1], preset.backgroundColor[2], preset.backgroundColor[3]] }
+      : { background: 'ENVIRONMENT' };
+  } else if (b.kind === 'GRADIENT') {
+    const top = b.top ?? [0.1, 0.1, 0.1];
+    const bottom = b.bottom ?? [0.02, 0.02, 0.02];
+    patch = { background: 'GRADIENT', gradient: { top, bottom }, color: [bottom[0], bottom[1], bottom[2], 1] };
+  } else {
+    const c = b.color ?? [0.5, 0.5, 0.5];
+    patch = { background: 'COLOR', color: [c[0], c[1], c[2], 1] };
+  }
+  ctx.store.dispatch({ type: 'env/set', patch, label: L('undo.setBackdrop') });
 }
 
 /** "Create studio": asks first when a studio is already built. */
@@ -1682,7 +1729,7 @@ export function chooseSetup(ctx: Ctx, key: string): void {
     if (item) ctx.store.dispatch({ type: 'studio/applySetup', setup: customSetupOf(item), label: L('undo.setup', { name: setupName(ctx, key) }) });
     return;
   }
-  ctx.store.dispatch({ type: 'studio/setSetup', key, label: L('undo.setup', { name: setupLabel(key) }) });
+  ctx.store.dispatch({ type: 'studio/setSetup', key, names: setPieceNames(), label: L('undo.setup', { name: setupLabel(key) }) });
 }
 
 /** Changing setup asks first when the lights were edited by hand. */

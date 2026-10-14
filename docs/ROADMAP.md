@@ -1604,7 +1604,7 @@ M2b). La máquina tiene 4 núcleos: cinco agentes a la vez es el tope, y
 los que no tocan el motor no compilan Rust (usan `/home/user/bin/rt` y
 el `rt.wasm` ya construido).
 
-## L6 · Sets de estudio con criterio fotográfico — **Opus**, diseño **Fable**
+## L6 · Sets de estudio con criterio fotográfico — **Opus**, diseño **Fable** — hecha
 
 **Qué.** `LightSetup` gana campos opcionales (los 72 montajes antiguos no
 cambian): `backdrop` (`FLAT` color; `GRADIENT` dos colores, arriba y
@@ -1775,6 +1775,145 @@ del set como filas propias (se pueden apagar). Cadena en `es` y `en`.
 resuelto de cada uno es el mismo que antes); las tarjetas de ningún set
 entran en el encuadre con la focal del tipo (test); una entrada de
 deshacer por set; `npm run qa` en verde.
+
+**Hecho.** *Esquema.* `LightSetup` gana, todos opcionales, `backdrop`,
+`pool`, `floor` (con `roughness`), `cards`, `exposureEv`, `envStrength`,
+`camera`, `hero`, `why` y `caustics` (`data/types.ts`); `StudioPreset` gana
+`set`; `LightStyle` gana `SETS`, el primero de `LIGHT_STYLES`. Los 16 sets
+van primero en `LIGHT_SETUPS` y los 72 de antes detrás, con sus claves. Un
+test compara el rig resuelto de los 71 montajes antiguos (menos `PRESET`)
+contra los 16 tipos de producto con una instantánea tomada antes de tocar
+nada (`tests/fixtures/old-setup-rigs.json`: forma y energías relativas, y
+el nivel de cada tipo): siguen dando lo mismo, y su exposición también.
+
+*Aplicar un set* (`core/sets.ts`, que `store.ts` consulta antes que el
+reductor de luces): `studio/setSetup` con un set pone sus focos, su aspecto
+(fondo `COLOR`, `GRADIENT` —fondo nuevo del entorno, dos colores que el
+RSB lleva como imagen de fondo estirada y la vista previa pinta igual— o
+el barrido; cúpula; exposición) y su decoración: el barrido de U9 ajustado
+a la cámara (con fondo `SWEEP`, o `FLAT`/`GRADIENT` con charco), el suelo
+(cara *suelo* del barrido en el material, o una lámina que se para antes
+del charco, o un plano del tamaño del suelo del barrido sin él), las
+tarjetas (planos de cara al pivote, subidos sin girar hasta apoyarse en el
+suelo) y el charco (un foco direccional, `setPiece: 'POOL'`). Todo en una
+acción: una entrada de deshacer. Las piezas llevan `SceneNode.setPiece` y
+no son producto (`productParts`, pivote, tamaño), ni las mira el Doctor
+(`ownParts`), ni las encuadra *Encuadrar* sin selección. Otro set las
+sustituye; un montaje que no es set las quita y devuelve el aspecto del
+tipo; *Restablecer montaje* las quita (regla del plan) y devuelve los
+focos; *Crear estudio* las vuelve a ajustar; `studio/useSetCamera` (botón
+*Usar la cámara del set*) pone la elevación y la focal sugeridas, encuadra
+y reajusta barrido, suelo y charco; `studio/fitSet` viste el producto que
+llega (ejemplo, importación) en la misma entrada de deshacer.
+
+*Los 16 sets*, con los números del plan salvo lo que dicen la hoja de
+contactos, los tests y el veredicto: claves `GLASS_DARK_FIELD` y
+`WARM_COOL_CINEMA` (las del plan ya existían); tarjetas movidas solo donde
+el test las veía en el encuadre (`STRIP_EDGE` negra az 60→70;
+`BRIGHT_FIELD` negras ±65→±70; `JEWEL_BOX` cenital el 70→80, lateral
+az −30 el 5 → az −70 dist 1,7; `CHROME_FAMILY` negra az 50 el 35 → az 75
+el 20, plateada az 120→90; `BACKLIT_LIQUID` blanca el 65 dist 1,4 → el 80
+dist 1,5; `FLAT_LAY` blanca el 20 dist 1,6 → el 45 dist 2,8); tiras
+subidas por la regla de su reflejo (`STRIP_EDGE` contra el 30→50;
+`GLASS_DARK_FIELD` ±135 el 15→55, dist 3; `CHROME_FAMILY` contra el 20→70;
+`BLACK_ON_BLACK` ±150 el 30→70, dist 3; `BACKLIT_LIQUID` cantos el 20→30,
+dist 3; `WARM_COOL_CINEMA` contra el 25→55; `GRADIENT_POOL` contra el
+30→70; `SILHOUETTE_GLOW` ±140 el 25→55); `BRIGHT_FIELD` panel 6×6 a dist 3
+→ 4,5×4,5 a dist 4, partes 0,9/0,06/0,04, EV +1,2, cúpula 1,2;
+`HIGH_KEY_WHITE` EV +1,4, cúpula 2 y un baño del fondo (charco de cono 90,
+parte 1,5); `BLACK_ON_BLACK` barrido 0,04, charco 30 %, cono 18°;
+`GRADIENT_POOL` barrido 0,30, clave a dist 2,2, charco 70 % y cono 22°,
+cúpula 0; `SILHOUETTE_GLOW` charco 45 %, cono 45°; `BACKLIT_LIQUID` lámina
+con rugosidad 0,2. Donde el plan no daba
+geometría (rellenos, alguna distancia) se puso un panel 3 × 3 a az 30–60,
+el 20, dist 3–3,5 y las tiras a dist 3. Fondo de `BRIGHT_FIELD` `FLAT`
+0,9; `FLAT_LAY` es un barrido de papel 0,8.
+
+*Tipos de producto* (`studios.ts`, `PRESET_SETS`): GENERIC y PACKAGING ←
+`GRADIENT_POOL`; JEWELLERY ← `JEWEL_BOX`; WATCH, AUTOMOTIVE y TOOL ←
+`CHROME_FAMILY`; PERFUME y COSMETICS ← `STRIP_EDGE`; ELECTRONICS ←
+`BLACK_ON_BLACK`; APPLIANCE y MEDICAL ← `HIGH_KEY_WHITE`; FURNITURE_IN ←
+`WARM_WINDOW`; FOOTWEAR y TEXTILE ← `RAKING_TEXTURE`; EYEWEAR ←
+`BRIGHT_FIELD`; FURNITURE_OUT conserva su sol. Cada uno toma el set entero
+(veredicto): sus focos al nivel de irradiancia que tenía el tipo, el
+desvío de exposición sumado a su `exposure`, y con su rig propio la
+decoración y el aspecto; los presets de tipo de producto cambian (claves
+iguales), los montajes de antes no.
+
+*Materiales nuevos* (claves nuevas, nada renombrado): `CARD_WHITE` (0,92
+mate), `CARD_BLACK` (0,02 mate), `ACRYLIC_BLACK` y `ACRYLIC_WHITE`
+(acrílico con rugosidad 0,12) y `MIRROR_BLACK`; la tarjeta plateada es
+`ALU_BRUSH`, que es exactamente eso.
+
+*Miniaturas* (`tools/setup-thumbs.mjs`): las 88 renderizadas por `rt` a
+256 × 256, 96 muestras, *denoise*, semilla 1 (y vueltas a codificar sin
+pérdida: `rt` guarda el PNG sin comprimir, 197 kB cada una; quedan 2,5 MB
+las 176), con la escena que construye
+el código de la aplicación (`tests/setup-thumbs-dump.test.ts` en vitest;
+héroes en `tests/set-heroes.ts`), `setup_<clave>.png` a 64 × 64 por
+promedio, y `manifest.json` con el *hash* de cada RSB y de cada PNG: un
+test reconstruye las 88 escenas y las compara, otro fija el *hash* de una
+miniatura, y otros miden sobre las miniaturas lo que pidió el veredicto
+(fondo ≥ 0,92 sin quemar la etiqueta; charco ≥ 2 veces el borde; halo que
+cae sin meseta), con los umbrales en un solo sitio (`LOOK`,
+`tests/thumb-metrics.ts`); `REPACKSHOT_SET_MEASURES=1 npx vitest run
+tests/sets.test.ts -t measures` imprime las medidas de los 16 contra ellos,
+para reajustar solo la exposición del set que cruce uno si cambia el motor. Hoja de contactos: `tools/sets-sheet.mjs` →
+`out/sets-sheet.html` (sets × BOTTLE/BOX/CHROME y los 15 tipos que son
+un set, antes y después). Interfaz: estilo *Sets* primero, miniaturas de los sets en dos
+columnas y cuadradas (el doble de altas), la razón en la ayuda, *Usar la
+cámara del set*, la lista *En el set* con interruptores; fondo
+*Degradado* en *Entorno*; comprobado en el navegador con
+`tools/sets-check.mjs`.
+
+No encajó con el plan:
+- Un charco sobre fondo `FLAT` o `GRADIENT` no tiene dónde caer (el fondo
+  es una imagen): esos sets llevan barrido del color (`GRADIENT`: el de
+  arriba).
+- El charco no cae a `az`/`el` del pivote: con la cámara a 22° la pared del
+  barrido, detrás de los focos de contra, casi no sale en el encuadre.
+  Cae donde la cámara ve el fondo justo por encima del producto, y el foco
+  (apuntado desde `az`/`el` a 0,75 del pivote) se pone cerca del papel con
+  cono de 150°: el halo cae desde el centro, sin borde; el `cone` del set
+  dice su anchura.
+- Un suelo mate sobre un barrido es el barrido (un papel no tiene dos
+  albedos): el gris del suelo de `RAKING_TEXTURE` (0,3 frente a 0,25) no se
+  usa.
+- Los números de partida de `HIGH_KEY_WHITE`, `BRIGHT_FIELD` y
+  `GRADIENT_POOL` no llegaban a sus criterios medidos con *Fílmico* (que
+  comprime las luces): ver arriba lo que hizo falta.
+- *Restablecer montaje* quita la decoración (regla del plan); elegir el set
+  otra vez la devuelve.
+- Una escena vacía no recibe piezas: el ejemplo o el modelo importado las
+  traen (`studio/fitSet`); cargar un proyecto o sustituir la escena por
+  otra no las rehace solas.
+- La hoja final es de 512 px a 96 muestras con *denoise*, no a 256 (la
+  máquina es compartida y 256 no cambia nada del veredicto); sus pares de
+  tipo de producto son los 15 que son un set sobre BOTTLE, y Estándar y
+  Electrónica también sobre BOX.
+- Las miniaturas de `STRIP_EDGE`, `BLACK_ON_BLACK` y `WARM_COOL_CINEMA`
+  llevan puntos sueltos en el papel (*fireflies*). Su charco es un foco
+  cerca del papel con poca potencia, y el motor elige la luz de cada
+  muestra por su flujo: al charco le toca un 4–6 % de las veces, aunque
+  donde cae ilumina como una luz entera. Con el charco apagado
+  desaparecen; ni quitar el brillo a la clave o a la contra ni las
+  cáusticas cambian nada. Va al motor (E12, selección de luz por punto) y
+  esas miniaturas se vuelven a renderizar cuando entre; el charco no se
+  mueve ni las miniaturas recortan la luz indirecta.
+- *En el set* enseñaba la fila de fondo degradado de `STRIP_EDGE` tras
+  *Restablecer montaje* (su degradado es un barrido, por el charco): la
+  fila sale ahora solo para un fondo que el set pone detrás sin barrido
+  (`setBackground`, con su test). Lo encontró `tools/sets-check.mjs`.
+- La vista previa (*Rápido*) no distingue los focos con `glossy: false`
+  (ya era así antes de L6): el relleno de `STRIP_EDGE` deja su brillo en
+  el suelo acrílico de la vista previa (`docs/ui/sets-catalogue.png`, abajo
+  a la derecha) y el render no. Los suelos brillantes de los sets lo hacen
+  más visible; no se ha tocado.
+- `tests/chunks.test.ts` tomaba como *chunk* de `io/import.ts` el primero
+  cuyo nombre empezaba por `import-`; `import-options-<hash>.js` también
+  empieza así y cuál sale antes depende del *hash*: con el de esta fase
+  salía el otro y el test fallaba sin que el *bundle* cambiara. Ahora lo
+  busca por su nombre exacto.
 
 ## M2a · Texturas: importación, mapeado, etiquetas y vista previa — **Opus** — hecha
 

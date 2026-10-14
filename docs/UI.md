@@ -477,13 +477,32 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    tipos propios de la pestaña *Míos* y *Guardar como tipo de producto*). Tamaño de la pieza en mm (detectado al importar,
    editable). Interruptores *Suelo* y *Sombra de contacto*. Botón
    primario **Crear estudio**: monta luces, suelo, cámara y ajustes de
-   motor del preset. Si ya hay estudio, pide confirmación en línea (no
+   motor del preset y, si el tipo es un set (L6: 15 de los 16), su
+   decoración y su aspecto (fondo, tarjetas, suelo, charco de luz); el
+   ejemplo y un modelo importado llegan ya vestidos con el set en vigor. Si ya hay estudio, pide confirmación en línea (no
    modal): "Sustituir el estudio actual · Sí / No".
 2. **Luz** — El **catálogo de montajes**: fila de pestañas de estilo
-   (*Todos* + los 8 `LIGHT_STYLES`), rejilla de miniaturas de 3 columnas
-   (`icons/thumb_<clave>.png`, 160×120, con la etiqueta debajo), la
-   activa con borde de selección. Debajo, la **intención** del montaje
-   activo en una frase. Flechas *anterior / siguiente* dentro del estilo.
+   (*Todos* + los 9 `LIGHT_STYLES`, **Sets** el primero, L6), rejilla de
+   miniaturas (`public/thumbs/setups/thumb_<clave>.png`, 256 × 256,
+   renderizadas por el motor: §6) con la etiqueta debajo, la activa con
+   borde de selección. Los **sets** van primero y en grande: dos columnas
+   y cuadradas (el doble de alto que las demás); los demás montajes, en
+   tres columnas y 4:3, como estaban; en *Todos*, la rejilla de los sets y
+   debajo la del resto. La **ayuda** de la miniatura de un set dice su
+   intención y su **razón fotográfica** (`why`, dos frases); la de un
+   montaje, su intención. Debajo, la **intención** del montaje activo en
+   una frase. Flechas *anterior / siguiente* dentro del estilo.
+   Con un **set** en vigor, debajo: **Usar la cámara del set** (solo si
+   sugiere una; la ayuda dice cuál, «8° de altura, 85 mm»; desactivado con
+   la cámara bloqueada; una entrada de deshacer) y **En el set**: una fila
+   por pieza de su decoración (cada tarjeta, el fondo del set, el suelo
+   del set) con su nombre y un interruptor que la oculta o la muestra
+   (`scene/setVisible`, deshacible); un fondo de color o degradado sin
+   barrido es una fila que pone el fondo del set o devuelve el del tipo de
+   producto (`env/set`). Un fondo que el set hace barrido (`SWEEP`, o
+   cualquier fondo con charco de luz) es una pieza, nunca esa fila: tras
+   *Restablecer montaje* no queda nada que encender (`setBackground`). El
+   charco de luz es un foco: aparece en *Afinar focos* con su nombre.
    Desplegable secundario **Afinar focos**: lista de focos con potencia
    (en % del total), tamaño, temperatura en K y ángulo; cambiar algo
    aquí no cambia de montaje, lo marca como *modificado*. Botón
@@ -504,7 +523,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    *Altura del sol*; si lo tiene, una nota dice que el sol del montaje
    coloca el del cielo. Intensidad, rotación (se
    oculta con *Cielo*: lo coloca su sol). Fondo: *El mismo entorno*,
-   *Color* (muestra), *Transparente*, *Imagen de fondo*; con esta última,
+   *Color* (muestra), *Degradado* (L6: *Arriba* y *Abajo*, dos muestras;
+   lo ponen los sets de fondo degradado), *Transparente*, *Imagen de
+   fondo*; con esta última,
    *Cargar imagen…* (PNG, JPEG, WebP), su nombre y tamaño, *Encaje*
    (*Llenar · Encajar · Estirar*, dentro del marco de salida) y el color,
    que se ve alrededor de la imagen encajada o en su lugar mientras no hay
@@ -1393,10 +1414,17 @@ rendimiento importa: 60 fps con la pieza de ejemplo en un portátil.
 
 ## 6 · Miniaturas
 
-- **Montajes de luz**: copiar las 72 `thumb_<clave>.png` (160 × 120) y las
-  72 `setup_<clave>.png` (64 × 64) de `/home/user/EZPackshot/icons/` a
-  `public/thumbs/setups/`. Son del mismo autor; se generan con un script
-  propio en una fase posterior.
+- **Montajes de luz** (L6): las 88 `thumb_<clave>.png` (256 × 256) y
+  `setup_<clave>.png` (64 × 64, su promedio) de `public/thumbs/setups/`
+  las renderiza nuestro motor (`node tools/setup-thumbs.mjs`): cada set
+  sobre su héroe (`BOTTLE` el frasco de ejemplo de vidrio con líquido,
+  `BOX` una caja con una banda de aluminio, `RING` un toro de oro,
+  `CHROME` un toro cromado, `SHOE` una cápsula de cuero, `SPHERES` tres
+  esferas mate, brillante y metal) y cada montaje anterior sobre el héroe
+  de su estilo, con el tipo *Estándar*, la cámara de referencia (o la del
+  set), 96 muestras, *denoise* y semilla fija. Sustituyen a las de EZ
+  Packshot. `manifest.json` guarda el *hash* de cada escena y de cada PNG;
+  la suite comprueba que el código sigue construyendo esas escenas.
 - **Materiales**: no hay PNG upstream (se renderizan dentro de Blender).
   En U1 se generan **en el navegador** con el propio visor: una esfera
   con el material sobre el fondo del tema, renderizada a 96 × 96 en un

@@ -1,7 +1,7 @@
 // Catalogue data ported from EZPackshot (https://github.com/Grohle/EZPackshot, GPL-3.0) by its author for Repackshot (PolyForm Noncommercial 1.0.0); values are data, the implementation is new.
 
 import { describe, it, expect } from 'vitest';
-import { kelvinToRgb, specIrradiance } from '../src/core/light-math';
+import { kelvinToRgb, specColor, specIrradiance } from '../src/core/light-math';
 import {
   activeRig,
   presetIrradiance,
@@ -22,13 +22,14 @@ import {
 } from '../src/data';
 import type { LightSpec } from '../src/data';
 
-const SETUP_KEYS_WITHOUT_PRESET = LIGHT_SETUPS.filter((s) => s.key !== 'PRESET').map((s) => s.key);
+// The setups before L6: the sets (L6) also give part of the level to their pool (tests/sets.test.ts).
+const SETUP_KEYS_WITHOUT_PRESET = LIGHT_SETUPS.filter((s) => s.key !== 'PRESET' && s.style !== 'SETS').map((s) => s.key);
 
 describe('presetIrradiance', () => {
   it('sums the irradiance of the preset lights', () => {
-    const expected =
-      90 / (4 * Math.PI * 3 * 3) + 30 / (4 * Math.PI * 3.5 * 3.5) + 70 / (4 * Math.PI * 3 * 3);
+    const expected = (studioPreset('GENERIC')?.lights ?? []).reduce((a, l) => a + l.energy! / (4 * Math.PI * l.dist * l.dist), 0);
     expect(presetIrradiance('GENERIC')).toBeCloseTo(expected, 12);
+    // The levels before L6: the rigs of L6 keep them, so no product type's exposure moved.
     expect(presetIrradiance('GENERIC')).toBeCloseTo(1.6095942090472863, 12);
     expect(presetIrradiance('JEWELLERY')).toBeCloseTo(1.487770431075888, 12);
   });
@@ -55,9 +56,10 @@ describe('studioRig', () => {
       expect(light.role).toBe(lights[i].role);
       expect(light.energy).toBe(lights[i].energy);
       expect(light.elevation).toBe(lights[i].el);
-      expect(light.color).toEqual(lights[i].color);
+      expect(light.color).toEqual(specColor(lights[i]));
     });
-    expect(rig.map((l) => l.azimuthWorld)).toEqual([-40, 55, -200]);
+    // L6: the lights of GRADIENT_POOL (key -40, fill 60, rim 165, camera-relative).
+    expect(rig.map((l) => l.azimuthWorld)).toEqual([-75, 25, 130]);
   });
 
   it('fills in the defaults of absent fields', () => {
@@ -69,15 +71,16 @@ describe('studioRig', () => {
       angle: 0.545,
       camera: false,
       glossy: true,
-      size: 2.5,
-      sizeY: 1.8,
-      dist: 3,
+      size: 3,
+      sizeY: 2.5,
+      dist: 2.2,
     });
   });
 
-  it('keeps the two fill lights of JEWELLERY apart', () => {
+  it('keeps the two key lights and the two rims of JEWELLERY apart', () => {
     const rig = studioRig('JEWELLERY');
-    expect(rig.map((l) => l.role)).toEqual(['TOP', 'KEY', 'FILL', 'RIM', 'FILL']);
+    expect(rig.map((l) => l.role)).toEqual(['KEY', 'FILL', 'RIM', 'RIM', 'TOP', 'KEY']);
+    expect(rig[5]).toMatchObject({ type: 'SPOT', size: 0.05, spread: 12 });
   });
 
   it('returns an empty rig for an unknown preset', () => {
@@ -173,14 +176,14 @@ describe('rigFromRecipe', () => {
 
   it('gives a colorFromPreset light the colour of the first light of the preset rig', () => {
     const rig = rigFromRecipe('GENERIC', recipe({ colorFromPreset: true }));
-    expect(rig[0].color).toEqual(studioPreset('GENERIC')?.lights[0].color);
-    expect(rig[0].color).toEqual([1, 0.98, 0.95]);
-    // JEWELLERY starts with its TOP light, which is white.
-    expect(rigFromRecipe('JEWELLERY', recipe({ colorFromPreset: true }))[0].color).toEqual([1, 1, 1]);
-    // PERFUME starts with its RIM light, not with the key.
-    expect(rigFromRecipe('PERFUME', recipe({ colorFromPreset: true }))[0].color).toEqual(
-      studioPreset('PERFUME')?.lights[0].color,
-    );
+    expect(rig[0].color).toEqual(studioRig('GENERIC')[0].color);
+    // L6: GENERIC's key has no colour of its own: the default temperature's.
+    expect(rig[0].color).toEqual(kelvinToRgb(5600));
+    // PERFUME starts with its key strip, at 5300 K.
+    expect(rigFromRecipe('PERFUME', recipe({ colorFromPreset: true }))[0].color).toEqual(kelvinToRgb(5300));
+    // An own product type whose first light has a colour hands it on.
+    const own = { ...studioPreset('GENERIC')!, key: 'LIB:own', lights: [{ role: 'KEY' as const, size: 1, az: 0, el: 30, dist: 3, energy: 50, color: [1, 0.98, 0.95] as const }] };
+    expect(rigFromRecipe(own, recipe({ colorFromPreset: true }))[0].color).toEqual([1, 0.98, 0.95]);
   });
 
   it('uses white when the preset is unknown and the light is marked colorFromPreset', () => {
@@ -229,17 +232,17 @@ describe('activeRig, rigByRole and rigSpec', () => {
   it('groups a rig by role in order', () => {
     const byRole = rigByRole(studioRig('JEWELLERY'));
     expect(Object.keys(byRole).sort()).toEqual(['FILL', 'KEY', 'RIM', 'TOP']);
-    expect(byRole.FILL).toHaveLength(2);
-    expect(byRole.FILL?.[0].size).toBe(3.5);
-    expect(byRole.FILL?.[1].size).toBe(3);
+    expect(byRole.KEY).toHaveLength(2);
+    expect(byRole.KEY?.[0].size).toBe(3);
+    expect(byRole.KEY?.[1].size).toBe(0.05);
   });
 
   it('hands each copy of a role its own recipe and fans out the extras', () => {
     const byRole = rigByRole(studioRig('JEWELLERY'));
-    expect(rigSpec(byRole, 'FILL', 0)).toMatchObject({ light: { size: 3.5 }, fan: 0 });
-    expect(rigSpec(byRole, 'FILL', 1)).toMatchObject({ light: { size: 3 }, fan: 0 });
-    expect(rigSpec(byRole, 'FILL', 2)).toMatchObject({ light: { size: 3 }, fan: 1 });
-    expect(rigSpec(byRole, 'FILL', 4)).toMatchObject({ light: { size: 3 }, fan: 3 });
+    expect(rigSpec(byRole, 'KEY', 0)).toMatchObject({ light: { size: 3 }, fan: 0 });
+    expect(rigSpec(byRole, 'KEY', 1)).toMatchObject({ light: { size: 0.05 }, fan: 0 });
+    expect(rigSpec(byRole, 'KEY', 2)).toMatchObject({ light: { size: 0.05 }, fan: 1 });
+    expect(rigSpec(byRole, 'KEY', 4)).toMatchObject({ light: { size: 0.05 }, fan: 3 });
     // A role the rig does not cover uses the generic fallback.
     const generic = rigByRole(studioRig('GENERIC'));
     expect(rigSpec(generic, 'TOP', 0)).toEqual({ light: LIGHT_ROLES.TOP, fan: 0 });
