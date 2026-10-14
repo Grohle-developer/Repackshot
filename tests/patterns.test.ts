@@ -1,10 +1,10 @@
-// E6: the procedural patterns of wood (PATN) as the interface writes them, and the fixture the engine's
-// sheet renders (tests/fixtures/patterns.rsb: every wood of the catalogue on a part of 100 mm).
+// E6: the procedural patterns of wood and cloth (PATN) as the interface writes them, and the fixture the
+// engine's sheet renders (tests/fixtures/patterns.rsb: every wood and fabric of the catalogue on a part of 100 mm).
 //
 //   REPACK_WRITE_FIXTURES=1 npx vitest run tests/patterns.test.ts     rewrites the fixture
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { FAMILY_PARAMS, instanceFromPreset, paramEnabled } from '../src/core/materials';
+import { fabricMeanColor, FAMILY_PARAMS, instanceFromPreset, paramEnabled, WEAVE_WARP_SHARE } from '../src/core/materials';
 import { knotSpecOf, meetsBox, meetsSurface, partKnots, placeKnots, woodFrame } from '../src/core/knots';
 import { MATERIAL_PRESETS } from '../src/data/materials';
 import {
@@ -13,8 +13,10 @@ import {
   defaultFloor,
   defaultRender,
   materialToRsb,
+  PATTERN_CLOTH,
   PATTERN_WOOD,
   patternToRsb,
+  WEAVES,
   WOOD_FIGURES,
   projectScene,
   writeRsb,
@@ -27,9 +29,9 @@ const FIXTURE = 'tests/fixtures/patterns.rsb';
 /** The part size of the sheet's spheres (their diameter). */
 const SHEET_PART_MM = 100;
 
-/** The presets the sheet shows: every wood. */
+/** The presets the sheet shows: every wood, then every fabric (carbon fibre among them). */
 function sheetPresets() {
-  return MATERIAL_PRESETS.filter((m) => m.family === 'WOOD');
+  return [...MATERIAL_PRESETS.filter((m) => m.family === 'WOOD'), ...MATERIAL_PRESETS.filter((m) => m.family === 'FABRIC')];
 }
 
 /** The fixture: the presets' materials and patterns, and a NAME section with `KEY\tLabel` per material. */
@@ -213,5 +215,75 @@ describe('E6 patterns: wood', () => {
     expect(committed.length).toBe(bytes.length);
     expect(committed.every((b, i) => b === bytes[i])).toBe(true);
     expect(readRsb(committed).patterns!.length).toBe(sheetPresets().length);
+  });
+});
+
+describe('E6 patterns: cloth', () => {
+  const of = (key: string, params: Record<string, unknown> = {}, part = 100) => {
+    const inst = instanceFromPreset('f', key, part)!;
+    return patternToRsb({ ...inst, params: { ...inst.params, ...params } }, part, 2)!;
+  };
+
+  it('a fabric carries its weave: two thread colours, threadCount threads per cm whatever the part, its relief', () => {
+    const denim = of('DENIM');
+    expect(denim.material).toBe(2);
+    expect(denim.kind).toBe(PATTERN_CLOTH);
+    expect(denim.colorA).toEqual([0.1, 0.16, 0.3]);
+    expect(denim.colorB).toEqual([0.66, 0.66, 0.64]);
+    expect(denim.scaleMm).toBeCloseTo(10 / 24, 9);
+    expect(denim.params).toEqual([0.6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(denim.variant).toBe(WEAVES.TWILL31);
+    // Physical: the same threads on a phone case and on a sofa.
+    expect(of('DENIM', {}, 30).scaleMm).toBe(denim.scaleMm);
+    expect(of('DENIM', {}, 3000).scaleMm).toBe(denim.scaleMm);
+    // Every fabric with its own weave and real thread spacing (the engine's variants, rt-core pattern/cloth.rs).
+    const weaves = Object.fromEntries(MATERIAL_PRESETS.filter((m) => m.family === 'FABRIC').map((m) => [m.key, [of(m.key).variant, +(10 / of(m.key).scaleMm).toFixed(3)]]));
+    expect(weaves).toEqual({
+      COTTON: [0, 40], LINEN: [0, 18], TWILL: [1, 36], DENIM: [6, 24], SATIN: [2, 100], CANVAS: [3, 14],
+      VELVET: [4, 30], FELT: [5, 20], KNIT: [4, 4], MESH: [0, 8], MICROFIB: [2, 120], CARBON: [1, 5],
+    });
+    expect(WEAVES).toEqual({ PLAIN: 0, TWILL: 1, SATIN: 2, CANVAS: 3, KNIT: 4, FELT: 5, TWILL31: 6 });
+    // Edited values, limits and fallbacks; an unknown weave is plain.
+    expect(of('COTTON', { threadCount: 1000, weaveDepth: 4 }).scaleMm).toBeCloseTo(10 / 200, 9);
+    expect(of('COTTON', { threadCount: 0 }).scaleMm).toBeCloseTo(5, 9);
+    expect(of('COTTON', { weaveDepth: 4 }).params[0]).toBe(1);
+    expect(of('COTTON', { weave: 'LACE' }).variant).toBe(0);
+    const bare = patternToRsb({ ...instanceFromPreset('f', 'COTTON', 100)!, params: {} }, 100, 0)!;
+    expect([bare.scaleMm, bare.params[0], bare.variant]).toEqual([0.25, 0.35, 0]);
+    expect(bare.colorA).toEqual([0.7, 0.7, 0.68]);
+  });
+
+  it('the mean colour is the weave\'s: warp-faced satin and 3/1 twill show mostly warp, the preview and the engine agree', () => {
+    // rt-core's Weave::warp_share pins the same shares (measured over the weave).
+    expect(WEAVE_WARP_SHARE).toEqual({ SATIN: 0.71, TWILL31: 0.685 });
+    for (const key of ['COTTON', 'DENIM', 'SATIN', 'KNIT', 'CARBON']) {
+      const inst = instanceFromPreset('f', key, 100)!;
+      expect(materialToRsb(inst).baseColor, key).toEqual(fabricMeanColor(inst.params));
+    }
+    const denim = fabricMeanColor(instanceFromPreset('f', 'DENIM', 100)!.params);
+    [0.1 * 0.685 + 0.66 * 0.315, 0.16 * 0.685 + 0.66 * 0.315, 0.3 * 0.685 + 0.64 * 0.315].forEach((v, i) => expect(denim[i]).toBeCloseTo(v, 9));
+    const cotton = fabricMeanColor(instanceFromPreset('f', 'COTTON', 100)!.params);
+    [0.67, 0.66, 0.63].forEach((v, i) => expect(cotton[i]).toBeCloseTo(v, 9));
+  });
+
+  it('the weave, its density and relief are drawn by the engine; the fuzz roughness is stored', () => {
+    const spec = (key: string) => FAMILY_PARAMS.FABRIC.find((p) => p.key === key)!;
+    for (const key of ['weave', 'threadCount', 'weaveDepth']) expect([spec(key).preview, spec(key).engine], key).toEqual([false, true]);
+    expect([spec('fuzzRoughness').preview, spec('fuzzRoughness').engine]).toEqual([false, undefined]);
+    expect([spec('threadCount').min, spec('threadCount').max, spec('threadCount').unit, spec('threadCount').fallback]).toEqual([2, 200, '/cm', 40]);
+    expect(spec('weave').options).toContain('TWILL31');
+  });
+
+  it('projectScene sends a fabric part\'s weave with its material', () => {
+    const s0 = exampleState();
+    const ids = keyIds(s0);
+    const s = apply(s0, { type: 'material/assign', preset: 'DENIM', targets: [ids.body], mode: 'REPLACE' });
+    const { scene, materialOrder } = projectScene(s, { width: 64, height: 48, maxSamples: 1, maxSeconds: 0 });
+    const p = scene.patterns!.find((x) => x.kind === PATTERN_CLOTH)!;
+    expect(p.material).toBe(materialOrder.indexOf(s.scene.nodes[ids.body].material!));
+    expect(p.variant).toBe(WEAVES.TWILL31);
+    const back = readRsb(writeRsb(scene)).patterns!.find((x) => x.kind === PATTERN_CLOTH)!;
+    expect(back.scaleMm).toBe(Math.fround(10 / 24));
+    expect(back.variant).toBe(WEAVES.TWILL31);
   });
 });

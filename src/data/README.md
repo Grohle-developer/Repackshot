@@ -113,3 +113,11 @@ Deviations and oddities worth knowing about (values were ported as they are):
   walnut and mahogany half the depth (second ruling). Knots (`knotCount`,
   `knotSize`, `knotSizeVar`, `knotDarkness`; asked for by the user) are not
   upstream either: pine 4, cherry and walnut 1, the rest 0.
+- Fabrics (E6): `threadCount` now counts threads per cm (physical; knit:
+  stitches per cm; felt: fibres of `1 / threadCount` cm) and its values are
+  each fabric's own (cotton 40, linen 18, twill 36, denim 24, satin 100,
+  canvas 14, velvet 30, felt 20, knit 4, mesh 8, microfibre 120, carbon 5
+  tows per cm; upstream's were per part size: cotton 200, carbon 90).
+  Denim's weave is `TWILL31` (a 3/1 warp-faced twill, which upstream does
+  not have; its `TWILL` is a 2/2). Proposed values, pending the lead's
+  ruling on the cloth sheet.

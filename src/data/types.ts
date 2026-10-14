@@ -254,9 +254,11 @@ export interface MaterialParams {
   knotDarkness?: number;
   threadColor1?: RGBA;
   threadColor2?: RGBA;
-  /** FABRIC weave pattern: PLAIN, TWILL, SATIN, CANVAS, KNIT or FELT. */
+  /** FABRIC weave pattern: PLAIN, TWILL (2/2), SATIN, CANVAS, KNIT, FELT or TWILL31 (3/1, denim; E6). */
   weave?: string;
+  /** FABRIC (E6): threads per cm, physical (knit: stitches per cm; felt: fibres of 1/threadCount cm). */
   threadCount?: number;
+  /** FABRIC: relief of the threads, 0 to 1 (half a thread spacing at 1). */
   weaveDepth?: number;
   fuzz?: number;
   fuzzRoughness?: number;

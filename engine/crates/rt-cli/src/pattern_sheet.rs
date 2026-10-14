@@ -6,7 +6,9 @@
 //! what people recognise as wood), into `<dir>/wood-sheet.html` and `<dir>/cloth-sheet.html` with
 //! the images in `<dir>/patterns/`. When the materials hold `PINE`, the wood sheet ends with its
 //! knots: 0, 2 and 6 of 15 mm and 6 of 30 mm, on the box's largest face seen straight on and on
-//! a 300 × 100 × 20 mm board, at 512 px.
+//! a 300 × 100 × 20 mm board, at 512 px. The cloth sheet ends with every cloth up close (a
+//! [`MACRO_MM`] field seen straight on, where its real threads show) and denim woven as the 2/2
+//! twill of the other twills, to compare with its own 3/1.
 //!
 //! The materials are the interface's own: `tests/fixtures/patterns.rsb` is written by the
 //! TypeScript RSB writer (`materialToRsb`, `patternToRsb`) from the presets of
@@ -17,7 +19,7 @@
 use crate::render_progressive;
 use rt_core::color::Rgb;
 use rt_core::math::Vec3;
-use rt_core::pattern::{Pattern, PATTERN_WOOD};
+use rt_core::pattern::{Pattern, PATTERN_CLOTH, PATTERN_WOOD};
 use rt_core::scene::{
     Camera, EnvKind, Environment, Geometry, Instance, Light, LightKind, Material, RenderSettings,
     Scene, Transform, BACKGROUND_COLOR, LIGHT_FLAG_GLOSSY,
@@ -39,6 +41,35 @@ pub const BOARD_MM: (f32, f32, f32) = (300.0, 100.0, 20.0);
 pub const KNOT_ROW: [(u32, f32); 4] = [(0, 15.0), (2, 15.0), (6, 15.0), (6, 30.0)];
 /// Width of the knot row's images (the box's are square, the board's a third as high).
 pub const KNOT_WIDTH: u32 = 512;
+/// Width of the field of a cloth's macro image, millimetres.
+pub const MACRO_MM: f32 = 10.0;
+
+/// The name of a cloth's weave (`Pattern::variant`).
+pub fn weave_name(variant: u32) -> &'static str {
+    match variant {
+        1 => "twill 2/2",
+        2 => "satin",
+        3 => "canvas",
+        4 => "knit",
+        5 => "felt",
+        6 => "twill 3/1",
+        _ => "plain",
+    }
+}
+
+/// What a sheet row says of a material under its name: a cloth's weave and density.
+pub fn pattern_info(p: &Pattern) -> String {
+    if p.kind == PATTERN_CLOTH {
+        format!(
+            "{} · {:.0}/cm ({:.2} mm)",
+            weave_name(p.variant),
+            10.0 / p.scale_mm.max(1.0e-6),
+            p.scale_mm
+        )
+    } else {
+        String::new()
+    }
+}
 
 /// What a sheet image shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -262,6 +293,107 @@ pub fn top_scene(
     scene
 }
 
+/// A [`MACRO_MM`] field of a large flat piece of `material`, seen straight from above by an
+/// orthographic camera, under the sheet's lights (the key rakes it at about 40°).
+pub fn macro_scene(material: &Material, pattern: &Pattern, size: (u32, u32)) -> Scene {
+    let mut scene = top_scene(material, pattern, size, (60.0, 60.0, 10.0));
+    scene.camera.ortho_width = MACRO_MM;
+    scene
+}
+
+/// One image of the cloth sheet's macro rows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MacroImage {
+    /// File, relative to the sheet.
+    pub file: String,
+    /// What it shows.
+    pub caption: String,
+}
+
+/// Renders every cloth of `cloths` up close, then denim as a 2/2 twill (its sphere, its close-up
+/// and its macro) when `cloths` hold it, into `dir/patterns`.
+pub fn macro_rows(
+    dir: &Path,
+    cloths: &[&SheetMaterial],
+    size: (u32, u32),
+    samples: u32,
+    threads: usize,
+) -> Result<(Vec<MacroImage>, Vec<MacroImage>), String> {
+    let write = |scene: &Scene, file: String, caption: String| -> Result<MacroImage, String> {
+        let shot = render_progressive(scene, samples, threads, None);
+        let path = dir.join(&file);
+        crate::write_png(&path, size.0, size.1, &shot.to_rgb8(scene))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(MacroImage { file, caption })
+    };
+    let mut fields = Vec::new();
+    for m in cloths {
+        let scene = macro_scene(&m.material, &m.pattern, size);
+        let file = format!("patterns/{}-macro.png", m.key.to_lowercase());
+        fields.push(write(
+            &scene,
+            file,
+            format!("{}: {}", m.label, pattern_info(&m.pattern)),
+        )?);
+    }
+    let mut denim22 = Vec::new();
+    if let Some(denim) = cloths.iter().find(|m| m.key == "DENIM") {
+        let mut pattern = denim.pattern.clone();
+        pattern.variant = 1;
+        for (tag, scene) in [
+            (
+                "sphere",
+                sheet_scene(&denim.material, Some(&pattern), size, Object::Sphere, false),
+            ),
+            (
+                "close",
+                sheet_scene(&denim.material, Some(&pattern), size, Object::Sphere, true),
+            ),
+            ("macro", macro_scene(&denim.material, &pattern, size)),
+        ] {
+            let file = format!("patterns/denim-twill22-{tag}.png");
+            denim22.push(write(&scene, file, format!("Denim as a 2/2 twill, {tag}"))?);
+        }
+    }
+    Ok((fields, denim22))
+}
+
+/// The macro part of the cloth sheet.
+pub fn macro_html(fields: &[MacroImage], denim22: &[MacroImage]) -> String {
+    let mut s = format!(
+        "<h1 style=\"margin-top:28px\">Up close: {MACRO_MM:.0} mm fields</h1>\n<p class=\"meta\">Every \
+         cloth on a large flat piece seen straight from above, orthographic, {MACRO_MM:.0} mm wide, \
+         under the sheet's key (raking at about 40°): the threads at their real spacing, as \
+         the interface sends them.</p>\n<div class=\"macro\">"
+    );
+    let figure = |s: &mut String, m: &MacroImage| {
+        let _ = write!(
+            s,
+            "<figure><img src=\"{f}\" alt=\"{c}\"><figcaption>{c}</figcaption></figure>",
+            f = m.file,
+            c = m.caption,
+        );
+    };
+    for m in fields {
+        figure(&mut s, m);
+    }
+    s.push_str("</div>\n");
+    if !denim22.is_empty() {
+        s.push_str(
+            "<h1 style=\"margin-top:28px\">Denim: 3/1 against 2/2</h1>\n<p class=\"meta\">Real denim \
+             is a 3/1 twill (the indigo warp on three quarters of the face); the catalogue sends it \
+             as one now. Here it is woven as the 2/2 twill of the other twills, as upstream's \
+             <code>TWILL</code> would: sphere, close-up and macro, to compare with its row above.</p>\n\
+             <div class=\"macro\">",
+        );
+        for m in denim22 {
+            figure(&mut s, m);
+        }
+        s.push_str("</div>\n");
+    }
+    s
+}
+
 /// One image of the knot row.
 #[derive(Clone, Debug, PartialEq)]
 pub struct KnotImage {
@@ -343,6 +475,8 @@ pub struct SheetRow {
     pub key: String,
     /// English label.
     pub label: String,
+    /// What the row says under the name ([`pattern_info`]: a cloth's weave and density).
+    pub info: String,
     /// Image files, relative to the sheet: before, after and close-up of the sphere, then of
     /// the box.
     pub files: [String; 6],
@@ -391,6 +525,7 @@ pub fn run(
         let row = SheetRow {
             key: m.key.clone(),
             label: m.label.clone(),
+            info: pattern_info(&m.pattern),
             files,
             seconds,
         };
@@ -404,9 +539,19 @@ pub fn run(
         Some(pine) => knot_html(&knot_row(dir, pine, samples, threads)?),
         None => String::new(),
     };
+    let fabrics: Vec<&SheetMaterial> = materials
+        .iter()
+        .filter(|m| m.pattern.kind == PATTERN_CLOTH)
+        .collect();
+    let macros = if fabrics.is_empty() {
+        String::new()
+    } else {
+        let (fields, denim22) = macro_rows(dir, &fabrics, size, samples, threads)?;
+        macro_html(&fields, &denim22)
+    };
     for (name, title, rows, extra) in [
         ("wood-sheet.html", "Woods", &woods, knots.as_str()),
-        ("cloth-sheet.html", "Cloths", &cloths, ""),
+        ("cloth-sheet.html", "Cloths", &cloths, macros.as_str()),
     ] {
         if rows.is_empty() {
             continue;
@@ -439,6 +584,8 @@ pub fn html(title: &str, rows: &[SheetRow], size: (u32, u32), samples: u32) -> S
          .head {{ color: var(--muted); }}\n\
          .knots {{ display: grid; gap: 6px; grid-template-columns: 8rem repeat(4, minmax(0, 1fr));\n\
                   align-items: start; margin-bottom: 12px; max-width: 1600px; }}\n\
+         .macro {{ display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax({w}px, 1fr));\n\
+                  margin-bottom: 12px; max-width: 1800px; }}\n\
          figure {{ margin: 0; }} figcaption {{ color: var(--muted); font-size: 12px; }}\n\
          @media (max-width: 900px) {{ .row {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}\n\
            .row > div:first-child, .knots > div:first-child {{ grid-column: 1 / -1; }}\n\
@@ -448,7 +595,7 @@ pub fn html(title: &str, rows: &[SheetRow], size: (u32, u32), samples: u32) -> S
          ACES, one soft key, a fill and a dim studio dome. <b>Before</b>: the flat colour the engine drew until E6. <b>After</b>: the \
          procedural pattern with its relief. <b>Close-up</b>: the after at four times the focal \
          length. Then the same three of a 60 × 40 × 25 mm box. Materials as the interface writes \
-         them, on a part of 100 mm (wood sizes are physical: they do not depend on it).</p>\n\
+         them, on a part of 100 mm (wood and cloth sizes are physical: they do not depend on it).</p>\n\
          <div class=\"row head\"><div></div><div>Sphere, before</div><div>After</div>\
          <div>Close-up</div><div>Box, before</div><div>After</div><div>Close-up</div></div>\n",
         size.0,
@@ -458,12 +605,17 @@ pub fn html(title: &str, rows: &[SheetRow], size: (u32, u32), samples: u32) -> S
     for r in rows {
         let _ = writeln!(
             s,
-            "<div class=\"row\"><div><b>{label}</b><span>{key} · {secs:.1} s</span></div>\
+            "<div class=\"row\"><div><b>{label}</b><span>{key}{info} · {secs:.1} s</span></div>\
              <img src=\"{a}\" alt=\"{label}, sphere, before\"><img src=\"{b}\" alt=\"{label}, sphere, after\">\
              <img src=\"{c}\" alt=\"{label}, sphere, close-up\"><img src=\"{d}\" alt=\"{label}, box, before\">\
              <img src=\"{e}\" alt=\"{label}, box, after\"><img src=\"{f}\" alt=\"{label}, box, close-up\"></div>",
             label = r.label,
             key = r.key,
+            info = if r.info.is_empty() {
+                String::new()
+            } else {
+                format!(" · {}", r.info)
+            },
             secs = r.seconds,
             a = r.files[0],
             b = r.files[1],
@@ -523,6 +675,7 @@ mod tests {
         let rows = vec![SheetRow {
             key: "OAK".into(),
             label: "Oak".into(),
+            info: String::new(),
             files: [
                 "a.png".into(),
                 "b.png".into(),

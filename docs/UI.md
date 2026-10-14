@@ -515,7 +515,10 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    tamaño* y *Oscuridad de los nudos*, que la vista Rápida ya enseña
    oscureciendo donde caen; en el bambú, el MDF y el ébano están
    desactivados y su ayuda dice por qué); tela (dos colores de hilo, tipo de
-   tejido, hilos por cm, pelusa); emisor (tipo, temperatura, potencia).
+   tejido, *Hilos por cm* (2–200, físicos), relieve, pelusa: el tejido, su
+   densidad y su relieve los pintan el modo Completo y los renders, y la
+   vista Rápida muestra su color medio); emisor (tipo, temperatura,
+   potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material
    propio* separa la instancia del preset cuando se edita (el nombre pasa
    a "Oro (editado)").

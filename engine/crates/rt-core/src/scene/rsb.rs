@@ -140,8 +140,11 @@
 //!   anisotropy of the roughness along the grain, then the knots (figure 0 only): count (0 to
 //!   12), diameter in mm, variation of the diameter (± fraction) and darkness, then two unused
 //!   (0); `variant` the figure (0 rings, 1 strips, 2 speckle, 3 streaked); `seed` the
-//!   material's seed (where the knots are). Unknown kinds draw nothing. The writer emits the
-//!   `PATN` sections right after the `MATL` ones.
+//!   material's seed (where the knots are). `kind` **2 cloth**: `color_a` the warp, `color_b`
+//!   the weft, `scale_mm` the distance between threads (knit: between stitches; felt: the size
+//!   of its fibres), `params[0]` the relief (0 to 1), the rest unused (0); `variant` the weave (0
+//!   plain, 1 twill 2/2, 2 satin, 3 canvas, 4 knit, 5 felt, 6 twill 3/1). Unknown kinds draw
+//!   nothing. The writer emits the `PATN` sections right after the `MATL` ones.
 //! * `RNDR.tonemap`: **0** linear (no curve, clipped), **1** ACES (Narkowicz fit), **2** filmic
 //!   (log2 shaper and S-curve, Blender-like), **3** AgX, **4** standard (sRGB, clipped); unknown
 //!   values mean ACES. `exposure_ev` multiplies by `2^ev` before the curve. `max_depth` is the

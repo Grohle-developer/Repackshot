@@ -152,9 +152,11 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
   FABRIC: [
     { key: 'threadColor1', kind: 'color', fallback: [0.7, 0.7, 0.68, 1], preview: true },
     { key: 'threadColor2', kind: 'color', fallback: [0.6, 0.6, 0.58, 1], preview: true },
-    { key: 'weave', kind: 'select', options: ['PLAIN', 'TWILL', 'SATIN', 'CANVAS', 'KNIT', 'FELT'], fallback: 'PLAIN', preview: false },
-    { key: 'threadCount', kind: 'number', ...unit(10, 600, 1), fallback: 200, preview: false },
-    { key: 'weaveDepth', kind: 'number', ...unit(0, 1), fallback: 0.35, preview: false },
+    // E6: the engine weaves them (Full mode and renders); the Fast preview shows the mean colour.
+    { key: 'weave', kind: 'select', options: ['PLAIN', 'TWILL', 'TWILL31', 'SATIN', 'CANVAS', 'KNIT', 'FELT'], fallback: 'PLAIN', preview: false, engine: true },
+    // E6: threads per cm (physical: the same on a phone case and on a sofa).
+    { key: 'threadCount', kind: 'number', min: 2, max: 200, step: 1, unit: '/cm', fallback: 40, preview: false, engine: true },
+    { key: 'weaveDepth', kind: 'number', ...unit(0, 1), fallback: 0.35, preview: false, engine: true },
     { key: 'roughness', kind: 'number', ...unit(0, 1), fallback: 0.75, preview: true },
     { key: 'fuzz', kind: 'number', ...unit(0, 1), fallback: 0.3, preview: true },
     { key: 'fuzzRoughness', kind: 'number', ...unit(0, 1), fallback: 0.4, preview: false },
@@ -166,6 +168,21 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
     { key: 'emitPower', kind: 'number', min: 0, max: 500, step: 1, unit: 'W', fallback: 50, preview: true },
   ],
 };
+
+/**
+ * The share of a fabric's face its warp (`threadColor1`) covers, by weave, as rt_core::pattern::cloth measures it:
+ * a warp-faced satin and 3/1 twill show mostly warp, the rest half and half.
+ */
+export const WEAVE_WARP_SHARE: Readonly<Record<string, number>> = { SATIN: 0.71, TWILL31: 0.685 };
+
+/** The mean colour of a fabric's weave (linear RGB): what the Fast preview shows and what the engine averages to. */
+export function fabricMeanColor(p: MaterialParams): [number, number, number] {
+  const rgb = (v: unknown, f: readonly number[]) => (Array.isArray(v) && v.length >= 3 ? (v as number[]) : f);
+  const a = rgb(p.threadColor1, [0.7, 0.7, 0.68]);
+  const b = rgb(p.threadColor2, [0.6, 0.6, 0.58]);
+  const w = WEAVE_WARP_SHARE[String(p.weave ?? 'PLAIN')] ?? 0.5;
+  return [a[0] * w + b[0] * (1 - w), a[1] * w + b[1] * (1 - w), a[2] * w + b[2] * (1 - w)];
+}
 
 /** Current value of a parameter, with the family fallback. */
 export function paramValue(mat: MaterialInstance, spec: ParamSpec): unknown {

@@ -334,7 +334,10 @@ describe('materials', () => {
     for (const m of MATERIAL_PRESETS.filter((x) => x.family === 'FABRIC')) {
       expect(m.params.threadColor1, m.key).toHaveLength(4);
       expect(m.params.threadColor2, m.key).toHaveLength(4);
-      expect(['PLAIN', 'TWILL', 'SATIN', 'CANVAS', 'KNIT', 'FELT'], m.key).toContain(m.params.weave);
+      expect(['PLAIN', 'TWILL', 'SATIN', 'CANVAS', 'KNIT', 'FELT', 'TWILL31'], m.key).toContain(m.params.weave);
+      // E6: threads per cm, physical, inside the inspector's range.
+      expect(m.params.threadCount, m.key).toBeGreaterThanOrEqual(2);
+      expect(m.params.threadCount, m.key).toBeLessThanOrEqual(200);
     }
   });
 

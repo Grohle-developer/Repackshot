@@ -14,7 +14,7 @@ import { evaluate, type Pose } from '../core/animation';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
 import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
-import type { MaterialInstance } from '../core/materials';
+import { fabricMeanColor, type MaterialInstance } from '../core/materials';
 import { mat4Compose, mat4Multiply, type Mat4 } from '../core/math';
 import { getMesh, type MeshData } from '../core/meshes';
 import type { PassIds, PassInstance } from '../core/pass-ids';
@@ -237,25 +237,31 @@ export const PATTERN_WOOD = 1;
 /** `PATN.variant` of a wood: its figure (`woodFigure`; unknown: rings). */
 export const WOOD_FIGURES: Readonly<Record<string, number>> = { RINGS: 0, STRIPS: 1, SPECKLE: 2, STREAKED: 3 };
 
+/** `PATN.kind` 2: cloth (rt_core::pattern::cloth). */
+export const PATTERN_CLOTH = 2;
+
+/** `PATN.variant` of a cloth: its `weave` (unknown: plain). */
+export const WEAVES: Readonly<Record<string, number>> = { PLAIN: 0, TWILL: 1, SATIN: 2, CANVAS: 3, KNIT: 4, FELT: 5, TWILL31: 6 };
+
 /** E6: the procedural pattern of a material (`PATN`, 108 B, written right after the MATL sections). */
 export interface RsbPattern {
   /** Index of its material among the MATL sections. */
   material: number;
   kind: number;
-  /** Wood: the spring wood (light). Linear RGB. */
+  /** Wood: the spring wood (light). Cloth: the warp (`threadColor1`). Linear RGB. */
   colorA: RsbVec;
-  /** Wood: the summer wood (dark). */
+  /** Wood: the summer wood (dark). Cloth: the weft (`threadColor2`). */
   colorB: RsbVec;
-  /** Wood: the ring spacing (bamboo: the strip width), mm. */
+  /** Wood: the ring spacing (bamboo: the strip width), mm. Cloth: the distance between threads, mm. */
   scaleMm: number;
   /**
    * Wood: ring variation, ring noise, axial noise, colour noise, contrast (0: the colours as given), pore width
    * (mm, 0: none), pore depth, pore band (0 diffuse- to 1 ring-porous), fibre, anisotropy along the grain; knots
    * (figure RINGS only): count (0 to 12), diameter (mm), variation of the diameter (± fraction), darkness; two
-   * unused (0). PATN_PARAMS of them.
+   * unused (0). Cloth: the relief (`weaveDepth`), then 0. PATN_PARAMS of them.
    */
   params: number[];
-  /** Wood: the figure (WOOD_FIGURES). */
+  /** Wood: the figure (WOOD_FIGURES). Cloth: the weave (WEAVES). */
   variant: number;
   /** The material's seed (`wear.seed`): where the knots are. */
   seed: number;
@@ -684,13 +690,13 @@ export const GLASS_ABSORPTION_MM = 50;
 
 /**
  * A material instance with the semantics of rt-core: SIMPLE, WOOD and FABRIC as principled (wood
- * and fabric as their mean colour until E6, like the preview; SIMPLE with its transmission,
+ * and fabric with the mean colour of their pattern, which `patternToRsb` sends; SIMPLE with its transmission,
  * opacity and anisotropy, E5), GLASS as kind 1 (clear glass: its colour after `absorptionMm`
  * millimetres inside, or a surface tint at 0; a thin wall with `walls` THIN), EMISSIVE as kind 2
  * with radiance `colour x emitPower x EMIT_RADIANCE_PER_WATT` (the colour of a black body at its
  * temperature, normalised to its largest channel, or the colour given), sampled as a light when
- * it emits. The edge bevel (E6, `bevelRadiusMm`) goes to every family but the emitter, which has none. Wear,
- * wood and fabric patterns and subsurface come later (E6, E7).
+ * it emits. The edge bevel (E6, `bevelRadiusMm`) goes to every family but the emitter, which has none. Wear
+ * and subsurface come later (E7, E9).
  */
 export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMaterial {
   const m = defaultMaterial();
@@ -731,9 +737,7 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
       break;
     }
     case 'FABRIC': {
-      const a = rgbOf(p.threadColor1, [0.7, 0.7, 0.68]);
-      const b = rgbOf(p.threadColor2, [0.6, 0.6, 0.58]);
-      m.baseColor = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+      m.baseColor = fabricMeanColor(p);
       m.roughness = clamp01(num(p.roughness, 0.75));
       m.coat = clamp01(num(p.coat, 0));
       m.coatRoughness = clamp01(num(p.coatRoughness, 0.05));
@@ -818,6 +822,8 @@ export const WOOD_RING_SPAN_MM = 100;
 export const WOOD_ANISOTROPY = 0.3;
 /** Most knots of a piece of wood (rt_core::pattern::knots::MAX_KNOTS). */
 export const MAX_KNOTS = 12;
+/** Millimetres per cm: a fabric's `threadCount` counts threads per cm (E6, physical). */
+export const CLOTH_SPAN_MM = 10;
 
 /**
  * The procedural pattern of a material instance (E6, `PATN`; null for the families without one), as
@@ -825,7 +831,8 @@ export const MAX_KNOTS = 12;
  * `100 / ringDensity` mm times `woodScale`, whatever the part's size), contrast, variation, noises, pores and figure;
  * fibres at full strength and the roughness stretched along the grain; its knots (only woods with rings have them:
  * `knotCount` 0 elsewhere), placed by the material's seed. Fallbacks are FAMILY_PARAMS' and, for the recipe-only
- * fields, those of a diffuse-porous wood.
+ * fields, those of a diffuse-porous wood. Cloth: warp and weft colours, `threadCount` threads per cm (physical: the
+ * thread spacing is `10 / threadCount` mm whatever the part's size), its relief and its weave; the fuzz is not drawn.
  */
 export function patternToRsb(inst: MaterialInstance | null | undefined, _partSizeMm: number, material: number): RsbPattern | null {
   if (!inst) return null;
@@ -859,6 +866,20 @@ export function patternToRsb(inst: MaterialInstance | null | undefined, _partSiz
           0,
         ],
         variant: figure,
+        seed: Math.max(0, Math.round(num(inst.wear?.seed, 0))) >>> 0,
+      };
+    }
+    case 'FABRIC': {
+      const params = new Array<number>(PATN_PARAMS).fill(0);
+      params[0] = clamp01(num(p.weaveDepth, 0.35));
+      return {
+        material,
+        kind: PATTERN_CLOTH,
+        colorA: rgbOf(p.threadColor1, [0.7, 0.7, 0.68]),
+        colorB: rgbOf(p.threadColor2, [0.6, 0.6, 0.58]),
+        scaleMm: CLOTH_SPAN_MM / Math.min(200, Math.max(2, num(p.threadCount, 40))),
+        params,
+        variant: WEAVES[String(p.weave ?? 'PLAIN')] ?? 0,
         seed: Math.max(0, Math.round(num(inst.wear?.seed, 0))) >>> 0,
       };
     }

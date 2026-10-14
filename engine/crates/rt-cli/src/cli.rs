@@ -14,13 +14,15 @@ USAGE:
        [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
-    rt --pattern-sheet <dir> --materials <patterns.rsb> [--samples N] [--threads N] [--size WxH]
+    rt --pattern-sheet <dir> --materials <patterns.rsb> [--only wood|cloth] [--samples N]
+       [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
     rt --write-e5b-example <scene.rsb>
     rt --write-e6-example <scene.rsb>
     rt --write-e6-patterns-example <scene.rsb>
+    rt --write-e6-cloth-example <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
@@ -44,10 +46,13 @@ OPTIONS:
                             (physical against classic) into <dir>: one PNG each, index.html
                             and stats.json
         --pattern-sheet <dir>
-                            render the woods of --materials (tests/fixtures/patterns.rsb, the
-                            interface's own) as spheres, before and after E6 and close up, into
-                            <dir>/wood-sheet.html (images in <dir>/patterns/)
+                            render the woods and cloths of --materials
+                            (tests/fixtures/patterns.rsb, the interface's own) as spheres and
+                            boxes, before and after E6 and close up, into
+                            <dir>/wood-sheet.html and <dir>/cloth-sheet.html (images in
+                            <dir>/patterns/)
         --materials <f>     the materials of --pattern-sheet
+        --only <wood|cloth> render one of the two sheets of --pattern-sheet
         --write-example <f> write the built-in example scene as an RSB file
         --write-e5-example <f>
                             write the E5 parity scene (glass, cut-outs, anisotropy, HDRI,
@@ -63,6 +68,8 @@ OPTIONS:
                             file
         --write-e6-patterns-example <f>
                             write the E6 pattern scene (procedural wood) as an RSB file
+        --write-e6-cloth-example <f>
+                            write the E6 cloth scene (procedural cloth) as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -167,6 +174,8 @@ pub enum Command {
         dir: PathBuf,
         /// The fixture with the materials (`tests/fixtures/patterns.rsb`).
         materials: PathBuf,
+        /// Only this kind of pattern (`rt_core::pattern::PATTERN_WOOD` or `PATTERN_CLOTH`).
+        only: Option<u32>,
         /// Overrides (samples, threads, size).
         options: Options,
     },
@@ -197,6 +206,11 @@ pub enum Command {
     },
     /// Write the E6 pattern scene (`rt_core::example::e6_patterns_scene`) as an RSB file.
     WriteE6PatternsExample {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the E6 cloth scene (`rt_core::example::e6_cloth_scene`) as an RSB file.
+    WriteE6ClothExample {
         /// RSB file to write.
         path: PathBuf,
     },
@@ -263,9 +277,11 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e5b = None;
     let mut write_e6 = None;
     let mut write_e6p = None;
+    let mut write_e6cloth = None;
     let mut sheet_dir = None;
     let mut pattern_dir = None;
     let mut pattern_materials = None;
+    let mut pattern_only = None;
     let mut tone_table = false;
     let mut options = Options::default();
     let mut it = args.iter();
@@ -300,6 +316,13 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--pattern-sheet" => pattern_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--materials" => pattern_materials = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--only" => {
+                pattern_only = Some(match value(&mut it, arg)?.as_str() {
+                    "wood" => rt_core::pattern::PATTERN_WOOD,
+                    "cloth" => rt_core::pattern::PATTERN_CLOTH,
+                    other => return Err(format!("--only takes wood or cloth, not {other}")),
+                })
+            }
             "--example" => {
                 if input.replace(Input::Example).is_some() {
                     return Err("only one scene can be rendered at a time".into());
@@ -312,6 +335,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e5b-example" => write_e5b = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e6-example" => write_e6 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e6-patterns-example" => write_e6p = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-e6-cloth-example" => write_e6cloth = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -342,11 +366,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         return Ok(Command::PatternSheet {
             dir,
             materials,
+            only: pattern_only,
             options,
         });
     }
-    if pattern_materials.is_some() {
-        return Err("--materials goes with --pattern-sheet".into());
+    if pattern_materials.is_some() || pattern_only.is_some() {
+        return Err("--materials and --only go with --pattern-sheet".into());
     }
     if let Some(path) = write_e5 {
         if args.len() != 2 {
@@ -377,6 +402,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-e6-patterns-example takes no other option".into());
         }
         return Ok(Command::WriteE6PatternsExample { path });
+    }
+    if let Some(path) = write_e6cloth {
+        if args.len() != 2 {
+            return Err("--write-e6-cloth-example takes no other option".into());
+        }
+        return Ok(Command::WriteE6ClothExample { path });
     }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
@@ -464,6 +495,12 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::WriteE6ClothExample { path } => {
+            let bytes = rt_core::example::e6_cloth_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteStudioHdri { path } => {
             let bytes = crate::scenes::studio_hdri_file();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -473,13 +510,17 @@ pub fn run(command: Command) -> Result<(), String> {
         Command::PatternSheet {
             dir,
             materials,
+            only,
             options,
         } => {
             use crate::pattern_sheet as ps;
             let bytes =
                 std::fs::read(&materials).map_err(|e| format!("{}: {e}", materials.display()))?;
-            let list =
+            let mut list =
                 ps::read_materials(&bytes).map_err(|e| format!("{}: {e}", materials.display()))?;
+            if let Some(kind) = only {
+                list.retain(|m| m.pattern.kind == kind);
+            }
             let size = options.size.unwrap_or(ps::SHEET_SIZE);
             let samples = options.samples.unwrap_or(ps::SHEET_SAMPLES);
             let threads = options
@@ -656,12 +697,39 @@ mod tests {
             Ok(Command::PatternSheet {
                 dir: "out".into(),
                 materials: "p.rsb".into(),
+                only: None,
                 options: Options {
                     samples: Some(8),
                     ..Options::default()
                 },
             })
         );
+        assert_eq!(
+            parse(&[
+                "--pattern-sheet",
+                "out",
+                "--materials",
+                "p.rsb",
+                "--only",
+                "cloth"
+            ]),
+            Ok(Command::PatternSheet {
+                dir: "out".into(),
+                materials: "p.rsb".into(),
+                only: Some(rt_core::pattern::PATTERN_CLOTH),
+                options: Options::default(),
+            })
+        );
+        assert!(parse(&[
+            "--pattern-sheet",
+            "out",
+            "--materials",
+            "p.rsb",
+            "--only",
+            "glass"
+        ])
+        .is_err());
+        assert!(parse(&["--only", "wood", "--example", "-o", "x.png"]).is_err());
         assert!(parse(&["--pattern-sheet", "out"]).is_err());
         assert!(parse(&["--materials", "p.rsb", "--example", "-o", "x.png"]).is_err());
         assert!(parse(&[
@@ -756,6 +824,13 @@ mod tests {
                 path: "p.rsb".into()
             })
         );
+        assert_eq!(
+            parse(&["--write-e6-cloth-example", "c.rsb"]),
+            Ok(Command::WriteE6ClothExample {
+                path: "c.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-e6-cloth-example", "c.rsb", "--samples", "2"]).is_err());
         assert_eq!(parse(&["--tone-table"]), Ok(Command::ToneTable));
         assert!(parse(&["--tone-table", "--example"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Command::Help));

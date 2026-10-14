@@ -1,13 +1,14 @@
 // Material instances to three.js MeshPhysicalMaterial, shared by the
 // viewport and the thumbnail renderer. Approximations of the preview: wood is
 // the mean colour of its pattern (the engine draws its rings, pores and grain,
-// E6: rt_core::pattern), fabric a flat colour, fuzz is sheen, wear is not
+// E6: rt_core::pattern), fabric the mean colour of its weave (the engine
+// weaves it), fuzz is sheen, wear is not
 // drawn; the engine draws glass (refraction, absorption, thin walls), the
 // clear coat, opacity and anisotropy (E5).
 
 import * as THREE from 'three';
 import { kelvinToRgb } from '../core/light-math';
-import type { MaterialInstance } from '../core/materials';
+import { fabricMeanColor, type MaterialInstance } from '../core/materials';
 import { EMIT_RADIANCE_PER_WATT } from '../core/photometry';
 
 /** Emissive radiance per watt of an emitter material: the one the path tracer uses too. */
@@ -90,8 +91,7 @@ export function applyMaterial(m: THREE.MeshPhysicalMaterial, inst: MaterialInsta
     }
     case 'FABRIC': {
       const a = rgbOf(p.threadColor1, [0.7, 0.7, 0.68]);
-      const b = rgbOf(p.threadColor2, [0.6, 0.6, 0.58]);
-      setLinear(m.color, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]);
+      setLinear(m.color, fabricMeanColor(p));
       m.roughness = num(p.roughness, 0.75);
       m.sheen = num(p.fuzz, 0.3);
       m.sheenRoughness = num(p.fuzzRoughness, 0.5);

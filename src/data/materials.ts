@@ -248,71 +248,73 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
   },
 
   // --- Fabrics ---
+  // E6: threadCount is threads per cm (physical, each fabric's own; upstream's were per part size). Denim is
+  // a 3/1 twill (TWILL31), warp-faced like the real one.
   {
     key: 'COTTON', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Algodon', en: 'Cotton' },
     params: { threadColor1: [0.72, 0.71, 0.68, 1], threadColor2: [0.62, 0.61, 0.58, 1], weave: 'PLAIN',
-      threadCount: 200, weaveDepth: 0.35, fuzz: 0.35, fuzzRoughness: 0.35, roughness: 0.75 },
+      threadCount: 40, weaveDepth: 0.35, fuzz: 0.35, fuzzRoughness: 0.35, roughness: 0.75 },
   },
   {
     key: 'LINEN', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Lino', en: 'Linen' },
     params: { threadColor1: [0.7, 0.66, 0.55, 1], threadColor2: [0.58, 0.54, 0.44, 1], weave: 'PLAIN',
-      threadCount: 110, weaveDepth: 0.55, fuzz: 0.3, fuzzRoughness: 0.4, roughness: 0.8 },
+      threadCount: 18, weaveDepth: 0.55, fuzz: 0.3, fuzzRoughness: 0.4, roughness: 0.8 },
   },
   {
     key: 'TWILL', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Sarga', en: 'Twill' },
     params: { threadColor1: [0.35, 0.34, 0.32, 1], threadColor2: [0.26, 0.25, 0.24, 1], weave: 'TWILL',
-      threadCount: 180, weaveDepth: 0.45, fuzz: 0.28, fuzzRoughness: 0.35, roughness: 0.7 },
+      threadCount: 36, weaveDepth: 0.45, fuzz: 0.28, fuzzRoughness: 0.35, roughness: 0.7 },
   },
   {
     key: 'DENIM', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Vaquero', en: 'Denim' },
-    params: { threadColor1: [0.1, 0.16, 0.3, 1], threadColor2: [0.66, 0.66, 0.64, 1], weave: 'TWILL',
-      threadCount: 130, weaveDepth: 0.6, fuzz: 0.4, fuzzRoughness: 0.45, roughness: 0.78 },
+    params: { threadColor1: [0.1, 0.16, 0.3, 1], threadColor2: [0.66, 0.66, 0.64, 1], weave: 'TWILL31',
+      threadCount: 24, weaveDepth: 0.6, fuzz: 0.4, fuzzRoughness: 0.45, roughness: 0.78 },
   },
   {
     key: 'SATIN', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Raso', en: 'Satin' },
     params: { threadColor1: [0.55, 0.1, 0.16, 1], threadColor2: [0.42, 0.07, 0.12, 1], weave: 'SATIN',
-      threadCount: 260, weaveDepth: 0.07, fuzz: 0.6, fuzzRoughness: 0.12, roughness: 0.28 },
+      threadCount: 100, weaveDepth: 0.07, fuzz: 0.6, fuzzRoughness: 0.12, roughness: 0.28 },
   },
   {
     key: 'CANVAS', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Lona', en: 'Canvas' },
     params: { threadColor1: [0.55, 0.48, 0.34, 1], threadColor2: [0.44, 0.38, 0.26, 1], weave: 'CANVAS',
-      threadCount: 80, weaveDepth: 0.7, fuzz: 0.25, fuzzRoughness: 0.45, roughness: 0.82 },
+      threadCount: 14, weaveDepth: 0.7, fuzz: 0.25, fuzzRoughness: 0.45, roughness: 0.82 },
   },
   {
     key: 'VELVET', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Terciopelo', en: 'Velvet' },
     params: { threadColor1: [0.1, 0.045, 0.12, 1], threadColor2: [0.075, 0.03, 0.09, 1], weave: 'KNIT',
-      threadCount: 400, weaveDepth: 0.1, fuzz: 1, fuzzRoughness: 0.28, roughness: 0.9 },
+      threadCount: 30, weaveDepth: 0.1, fuzz: 1, fuzzRoughness: 0.28, roughness: 0.9 },
   },
   {
     key: 'FELT', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Fieltro', en: 'Felt' },
     params: { threadColor1: [0.3, 0.32, 0.34, 1], threadColor2: [0.26, 0.28, 0.3, 1], weave: 'FELT',
-      threadCount: 500, weaveDepth: 0.25, fuzz: 0.75, fuzzRoughness: 0.55, roughness: 0.92 },
+      threadCount: 20, weaveDepth: 0.25, fuzz: 0.75, fuzzRoughness: 0.55, roughness: 0.92 },
   },
   {
     key: 'KNIT', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Punto', en: 'Knit' },
     params: { threadColor1: [0.55, 0.42, 0.3, 1], threadColor2: [0.44, 0.33, 0.22, 1], weave: 'KNIT',
-      threadCount: 45, weaveDepth: 0.8, fuzz: 0.5, fuzzRoughness: 0.45, roughness: 0.85 },
+      threadCount: 4, weaveDepth: 0.8, fuzz: 0.5, fuzzRoughness: 0.45, roughness: 0.85 },
   },
   {
     key: 'MESH', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Malla tecnica', en: 'Technical mesh' },
     params: { threadColor1: [0.08, 0.08, 0.09, 1], threadColor2: [0.14, 0.14, 0.15, 1], weave: 'PLAIN',
-      threadCount: 45, weaveDepth: 0.9, fuzz: 0.15, fuzzRoughness: 0.3, roughness: 0.55 },
+      threadCount: 8, weaveDepth: 0.9, fuzz: 0.15, fuzzRoughness: 0.3, roughness: 0.55 },
   },
   {
     key: 'MICROFIB', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Microfibra', en: 'Microfibre' },
     params: { threadColor1: [0.16, 0.18, 0.2, 1], threadColor2: [0.13, 0.15, 0.17, 1], weave: 'SATIN',
-      threadCount: 450, weaveDepth: 0.12, fuzz: 0.7, fuzzRoughness: 0.5, roughness: 0.88 },
+      threadCount: 120, weaveDepth: 0.12, fuzz: 0.7, fuzzRoughness: 0.5, roughness: 0.88 },
   },
 
   // --- Glass and mirror ---
@@ -452,7 +454,7 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'CARBON', category: 'OTHER', family: 'FABRIC',
     label: { es: 'Carbono', en: 'Carbon fibre' },
     params: { threadColor1: [0.022, 0.022, 0.026, 1], threadColor2: [0.055, 0.055, 0.062, 1],
-      weave: 'TWILL', threadCount: 90, weaveDepth: 0.3, fuzz: 0, fuzzRoughness: 0.2,
+      weave: 'TWILL', threadCount: 5, weaveDepth: 0.3, fuzz: 0, fuzzRoughness: 0.2,
       roughness: 0.18, coat: 1, coatRoughness: 0.03 },
   },
   {

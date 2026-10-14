@@ -6,11 +6,14 @@
 //!
 //! * **plain** (tafetán): every other crossing;
 //! * **twill** (sarga) 2/2: two up, two down, shifted by one each row: diagonals;
+//! * **twill 3/1** (denim): three up, one down, shifted by one each row: a warp-faced twill, the
+//!   warp on three quarters of the face;
 //! * **satin** (raso), five-shaft, warp-faced: the weft shows at one crossing in five, never two
 //!   side by side;
 //! * **canvas** (lona): a 2 × 2 basket weave;
-//! * **knit** (punto): jersey stitches, two slanted legs per stitch, `pitch_mm` wide, each stitch
-//!   a random mix of the two colours (a heathered yarn);
+//! * **knit** (punto): jersey stitches, `pitch_mm` wide and high, each a V of two plump legs
+//!   pointing down, the rows overlapping, each stitch a random mix of the two colours (a
+//!   heathered yarn);
 //! * **felt** (fieltro): no threads, matted fibres of `pitch_mm`.
 //!
 //! A thread is round across (its height is a half circle, with small gaps between threads) and
@@ -41,6 +44,8 @@ pub enum Weave {
     Knit,
     /// 5: felt.
     Felt,
+    /// 6: 3/1 twill (warp-faced: denim).
+    Twill31,
 }
 
 impl Weave {
@@ -52,16 +57,19 @@ impl Weave {
             3 => Weave::Canvas,
             4 => Weave::Knit,
             5 => Weave::Felt,
+            6 => Weave::Twill31,
             _ => Weave::Plain,
         }
     }
 
     /// The share of the surface the warp covers (the rest is weft), as the mean colour uses it.
     /// Measured (the test pins it): satin shows its weft at one crossing in five, and a little
-    /// around it where the warps dip under, so 0.71 rather than 0.8.
+    /// around it where the warps dip under, so 0.71 rather than 0.8; the 3/1 twill, 0.685 rather
+    /// than 0.75 (its warp floats are also the lighter, higher threads).
     pub fn warp_share(self) -> f32 {
         match self {
             Weave::Satin => 0.71,
+            Weave::Twill31 => 0.685,
             _ => 0.5,
         }
     }
@@ -75,8 +83,9 @@ impl Weave {
             Weave::Twill => 0.915,
             Weave::Satin => 0.921,
             Weave::Canvas => 0.914,
-            Weave::Knit => 0.898,
+            Weave::Knit => 0.885,
             Weave::Felt => 0.861,
+            Weave::Twill31 => 0.920,
         }
     }
 
@@ -85,6 +94,7 @@ impl Weave {
     fn warp_up(self, i: i32, j: i32) -> bool {
         match self {
             Weave::Twill => (i + j).rem_euclid(4) < 2,
+            Weave::Twill31 => (i + j).rem_euclid(4) < 3,
             Weave::Satin => (j - 2 * i).rem_euclid(5) != 0,
             Weave::Canvas => (i.div_euclid(2) + j.div_euclid(2)).rem_euclid(2) == 0,
             _ => (i + j).rem_euclid(2) == 0,
@@ -94,6 +104,11 @@ impl Weave {
 
 /// Width of a thread, in pitches (the rest is the gap between two).
 const THREAD: f32 = 0.86;
+/// A knit's legs lean out from the wale's middle by 15°: its sine and cosine.
+const KNIT_LEAN: (f32, f32) = (0.258_819, 0.965_926);
+/// A knit leg: its centre's distance from the wale's middle, its half-length and half-width, in
+/// stitches.
+const KNIT_LEG: (f32, f32, f32) = (0.19, 0.62, 0.24);
 
 /// A cloth recipe in physical units.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -155,11 +170,29 @@ impl Cloth {
             Weave::Knit => {
                 let (i, j) = (x.floor() as i32, y.floor() as i32);
                 let (fx, fy) = (x - x.floor(), y - y.floor());
-                // Two legs of a V, meeting at the top of the stitch.
-                let lean = 0.27 * (1.0 - fy);
-                let left = round(fx - (0.5 - lean), 0.5);
-                let right = round(fx - (0.5 + lean), 0.5);
-                (left.max(right), hash01(i, j, 11), i, j)
+                // Each stitch is a V of two plump legs (ellipses, round across and along),
+                // pointing down and leaning out by KNIT_LEAN, a little longer than the stitch so
+                // that the rows overlap and a wale's legs touch its neighbours' at the top.
+                let (sin, cos) = KNIT_LEAN;
+                let (mut z, mut at) = (0.0f32, (i, j));
+                for dj in -1..=1 {
+                    for di in -1..=1 {
+                        let (lx, ly) = (fx - di as f32, fy - dj as f32);
+                        for side in [-1.0f32, 1.0] {
+                            let (dx, dy) = (lx - (0.5 + side * KNIT_LEG.0), ly - 0.5);
+                            let along = (dx * side * sin + dy * cos) / KNIT_LEG.1;
+                            let across = (dx * cos - dy * side * sin) / KNIT_LEG.2;
+                            let e = along * along + across * across;
+                            if e < 1.0 {
+                                let h = (1.0 - e).sqrt();
+                                if h > z {
+                                    (z, at) = (h, (i + di, j + dj));
+                                }
+                            }
+                        }
+                    }
+                }
+                (z, hash01(at.0, at.1, 11), at.0, at.1)
             }
             weave => {
                 let state = |a: i32, b: i32| if weave.warp_up(a, b) { 1.0f32 } else { 0.0 };
@@ -241,6 +274,7 @@ mod tests {
             Weave::Canvas,
             Weave::Knit,
             Weave::Felt,
+            Weave::Twill31,
         ] {
             let c = cloth(weave);
             let (mean, warp, rough) = means(&c);
@@ -265,6 +299,7 @@ mod tests {
         for (weave, period) in [
             (Weave::Plain, 2),
             (Weave::Twill, 4),
+            (Weave::Twill31, 4),
             (Weave::Canvas, 4),
             (Weave::Satin, 5),
         ] {

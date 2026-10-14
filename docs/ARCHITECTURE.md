@@ -406,8 +406,8 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 
 - **`PATN`** (E6, nueva, repetible, 108 B): el dibujo procedural de un
   material (`u32 material kind; f32 color_a[3] color_b[3] scale_mm
-  params[16]; u32 variant seed`, §5.2 quater). `kind` 1 madera; un tipo
-  desconocido no dibuja nada; un `material` que no existe es error.
+  params[16]; u32 variant seed`, §5.2 quater). `kind` 1 madera, 2 tela; un
+  tipo desconocido no dibuja nada; un `material` que no existe es error.
 - **`MATL`** (76 B desde E6; los de 56, 60 y 72 B se leen con los valores
   por defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
   barniz; la parte `transmission` es vidrio claro: reflexión y refracción
@@ -716,7 +716,7 @@ las rutas SIMD, en WASI, en el `rt.wasm` real (también por el código de la
 página, `tests/passes-engine.test.ts` con `tests/fixtures/e6.rsb`), con 1, 4
 y 16 hilos en `rt` y en el lanzador. Las escenas sin bisel no cambian de bits.
 
-### 5.2 quater · Dibujos procedurales: madera (E6)
+### 5.2 quater · Dibujos procedurales: madera y tela (E6)
 
 `rt_core::pattern`: la receta de un material de la familia `WOOD` como una
 función del punto, con ruido propio (`pattern::noise`: ruido de gradiente
@@ -818,6 +818,37 @@ son los de antes.
 **Coste.** Una docena de evaluaciones de ruido por punto de una pieza de
 madera (dos más para el relieve de los poros); cada nudo, unos productos
 escalares por evaluación.
+
+**Tela** (`pattern::cloth`, `PATN.kind` 2; tercera parte de E6). La receta
+de la familia `FABRIC` en milímetros físicos: `threadCount` son **hilos por
+cm** (algodón 40, vaquero 24, raso 100, lona 14, punto 4 puntos por cm,
+carbono 5 mechas por cm…; `scale_mm = 10 / threadCount`). **Dónde**: una
+proyección de caja sobre los ejes de la malla (se pega a la pieza): el
+plano de los dos ejes de través de la componente mayor de la normal
+interpolada, mezclado con pesos `|nᵢ|⁸` donde dos componentes se parecen
+(una banda estrecha, sin costura); la urdimbre va a lo largo del segundo
+eje del plano (de pie en los lados, a lo largo de `y` arriba). **Tejidos**
+(`PATN.variant`): 0 tafetán (cada cruce alterno), 1 sarga 2/2 (diagonales),
+2 raso de cinco lizos (la trama asoma en uno de cada cinco cruces, nunca dos
+seguidos), 3 lona (cesta 2 × 2), 4 punto (*jersey*: dos patas inclinadas por
+punto; cada punto, una mezcla al azar de los dos colores, un hilo
+jaspeado), 5 fieltro (sin hilos: fibras apelmazadas, un `fbm` del tamaño de
+`scale_mm` y los dos colores mezclados a unos milímetros), 6 sarga 3/1
+(la del vaquero: la urdimbre en tres cuartos de la cara). Un hilo es redondo
+de través (medio círculo, 0,86 de la separación, con un hueco entre hilos)
+y a lo largo sube donde pasa por encima y baja donde pasa por debajo,
+suavemente de un cruce al siguiente; la superficie es el más alto de los
+dos. Su altura por `weaveDepth` y media separación es el relieve (*bump*
+por diferencias finitas a 0,05 separaciones, en cada proyección con su
+peso); la pendiente no depende de la escala. Cada hilo varía su color ±6 %
+y su rugosidad ±10 %; las crestas son más claras y los huecos más oscuros,
+normalizados para que el color medio sea el de los hilos mezclados por la
+parte de la cara que cubre cada uno (medida: 0,5 en casi todos, 0,71 en el
+raso y 0,685 en la sarga 3/1, `WEAVE_WARP_SHARE` en la interfaz): el de la
+vista *Rápida* y el que ven los fotones de las cáusticas. Hilos más finos
+que un píxel (el algodón a 0,25 mm en un plano general) se promedian con
+las muestras del píxel, sin filtro propio: el color converge a la media y
+el relieve se vuelve rugosidad. La pelusa (`fuzz`, *sheen*) no se dibuja.
 
 ### 5.3 · En el navegador: workers
 
