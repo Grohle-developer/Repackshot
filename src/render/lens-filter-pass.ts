@@ -1,7 +1,7 @@
 // The effect filters of the camera on the Fast viewport (phase O3a, decision 5): the scene is drawn into a linear
-// half-float target, each filter of the stack makes `(1 − s)·I + s·a·T·(I ⊗ K)` of it with the kernels of
-// render/lens-filter-image.ts (the same numbers: Gaussians blurred at a reduced size when they are wide, taps along
-// the lines of a star, a streak or a net, the glimmer's points), and the result goes to the screen through the
+// half-float target, each filter of the stack makes `(1 − s)·I + s·a·(I ⊗ K_T)` of it with the kernels of
+// render/lens-filter-image.ts (the same numbers: Gaussians blurred at a reduced size when they are wide, each with its
+// colour, and taps along the lines of a star, a streak or a net), and the result goes to the screen through the
 // renderer's tone curve and output colour space. An approximation of what the engine traces (the meter says so).
 
 import * as THREE from 'three';
@@ -44,18 +44,17 @@ void main() {
   gl_FragColor = acc / sum;
 }`;
 
-/** Adds `scale` times a texture (of any size, bilinear) to the target. */
+/** Adds `scale` (per channel) times a texture (of any size, bilinear) to the target. */
 const ADD = /* glsl */ `
 uniform sampler2D src;
-uniform float scale;
+uniform vec3 scale;
 varying vec2 vUv;
 void main() {
-  gl_FragColor = texture2D(src, vUv) * scale;
+  gl_FragColor = texture2D(src, vUv) * vec4(scale, 1.0);
 }`;
 
 const MAX_LINES = 8;
 const MAX_TAPS = 49;
-const MAX_POINTS = 36;
 
 /** The lines of a star, a streak or a net: a pixel gathers what lies at −dir·r from it. */
 const LINES = /* glsl */ `
@@ -65,7 +64,7 @@ uniform float radii[${MAX_TAPS}];
 uniform float weights[${MAX_TAPS}];
 uniform int nDirs;
 uniform int nTaps;
-uniform float scale;
+uniform vec3 scale;
 varying vec2 vUv;
 void main() {
   vec4 acc = vec4(0.0);
@@ -76,36 +75,19 @@ void main() {
       acc += texture2D(src, vUv - dirs[d] * radii[i]) * weights[i];
     }
   }
-  gl_FragColor = acc * scale;
+  gl_FragColor = acc * vec4(scale, 1.0);
 }`;
 
-/** The glimmer's points: a pixel gathers what lies at −offset from it. */
-const POINTS = /* glsl */ `
-uniform sampler2D src;
-uniform vec2 offsets[${MAX_POINTS}];
-uniform float weights[${MAX_POINTS}];
-uniform int n;
-varying vec2 vUv;
-void main() {
-  vec4 acc = vec4(0.0);
-  for (int i = 0; i < ${MAX_POINTS}; i++) {
-    if (i >= n) break;
-    acc += texture2D(src, vUv - offsets[i]) * weights[i];
-  }
-  gl_FragColor = acc;
-}`;
-
-/** `(1 − s)·I + s·weight·scattered`, the alpha of I. */
+/** `(1 − s)·I + s·scattered` (the scattered light with its colours), the alpha of I. */
 const COMBINE = /* glsl */ `
 uniform sampler2D image;
 uniform sampler2D scattered;
 uniform float s;
-uniform vec3 weight;
 varying vec2 vUv;
 void main() {
   vec4 i = texture2D(image, vUv);
   vec3 k = texture2D(scattered, vUv).rgb;
-  gl_FragColor = vec4((1.0 - s) * i.rgb + s * weight * k, i.a);
+  gl_FragColor = vec4((1.0 - s) * i.rgb + s * k, i.a);
 }`;
 
 /** To the screen, through the renderer's tone curve and output colour space. */
@@ -149,7 +131,7 @@ export class LensFilterPass {
   private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly down = material(DOWN, { src: { value: null }, texel: { value: new THREE.Vector2() } });
   private readonly blur = material(BLUR, { src: { value: null }, stepv: { value: new THREE.Vector2() }, sigma: { value: 1 } });
-  private readonly add = material(ADD, { src: { value: null }, scale: { value: 1 } }, true);
+  private readonly add = material(ADD, { src: { value: null }, scale: { value: new THREE.Vector3(1, 1, 1) } }, true);
   private readonly lines = material(
     LINES,
     {
@@ -159,21 +141,11 @@ export class LensFilterPass {
       weights: { value: new Array<number>(MAX_TAPS).fill(0) },
       nDirs: { value: 0 },
       nTaps: { value: 0 },
-      scale: { value: 1 },
+      scale: { value: new THREE.Vector3(1, 1, 1) },
     },
     true,
   );
-  private readonly points = material(
-    POINTS,
-    {
-      src: { value: null },
-      offsets: { value: Array.from({ length: MAX_POINTS }, () => new THREE.Vector2()) },
-      weights: { value: new Array<number>(MAX_POINTS).fill(0) },
-      n: { value: 0 },
-    },
-    true,
-  );
-  private readonly combine = material(COMBINE, { image: { value: null }, scattered: { value: null }, s: { value: 0 }, weight: { value: new THREE.Vector3(1, 1, 1) } });
+  private readonly combine = material(COMBINE, { image: { value: null }, scattered: { value: null }, s: { value: 0 } });
   private readonly present = material(PRESENT, { src: { value: null } }, false, true);
   private sceneTarget: THREE.WebGLRenderTarget | null = null;
   private ping: THREE.WebGLRenderTarget | null = null;
@@ -222,8 +194,8 @@ export class LensFilterPass {
     r.render(this.scene, this.camera);
   }
 
-  /** `src` blurred by a Gaussian of `sigma` full-size pixels, added `share` times to the accumulation. */
-  private gaussian(r: THREE.WebGLRenderer, src: THREE.WebGLRenderTarget, sigma: number, share: number): void {
+  /** `src` blurred by a Gaussian of `sigma` full-size pixels, added `share` times its colour `weight` to the accumulation. */
+  private gaussian(r: THREE.WebGLRenderer, src: THREE.WebGLRenderTarget, sigma: number, share: number, weight: readonly number[]): void {
     let from = src;
     let k = -1;
     let f = 1;
@@ -249,7 +221,7 @@ export class LensFilterPass {
     this.blur.uniforms.stepv.value.set(0, 1 / from.height);
     this.draw(r, this.blur, second);
     this.add.uniforms.src.value = second.texture;
-    this.add.uniforms.scale.value = share;
+    this.add.uniforms.scale.value.set(share * weight[0], share * weight[1], share * weight[2]);
     this.draw(r, this.add, this.accum);
   }
 
@@ -270,10 +242,10 @@ export class LensFilterPass {
       r.setRenderTarget(this.accum);
       r.setClearColor(0x000000, 0);
       r.clear(true, false, false);
-      for (const g of k.gaussians) this.gaussian(r, cur, g.sigmaPx, g.share);
-      // The lines and the points gather from the half-size picture into its level's second target, which is then
-      // added (bilinear) to the accumulation: a quarter of the pixels, and half the taps along each line.
-      if (k.lines || k.points.length > 0) {
+      for (const g of k.gaussians) this.gaussian(r, cur, g.sigmaPx, g.share, g.weight);
+      // The lines gather from the half-size picture into its level's second target, which is then added (bilinear)
+      // to the accumulation: a quarter of the pixels, and half the taps along each line.
+      if (k.lines) {
         const [half, out] = this.level(0);
         this.down.uniforms.src.value = cur.texture;
         this.down.uniforms.texel.value.set(1 / cur.width, 1 / cur.height);
@@ -281,35 +253,23 @@ export class LensFilterPass {
         r.setRenderTarget(out);
         r.setClearColor(0x000000, 0);
         r.clear(true, false, false);
-        if (k.lines) {
-          const u = this.lines.uniforms;
-          const dirs = k.lines.dirs.slice(0, MAX_LINES);
-          // Offsets in texture coordinates: the same at any size. The picture's y runs down, the texture's up.
-          dirs.forEach(([x, y], i) => (u.dirs.value as THREE.Vector2[])[i].set(x / size.x, -y / size.y));
-          const taps = pairTaps(k.lines.taps).slice(0, MAX_TAPS);
-          taps.forEach((t, i) => {
-            (u.radii.value as number[])[i] = t.r;
-            (u.weights.value as number[])[i] = t.w;
-          });
-          u.nDirs.value = dirs.length;
-          u.nTaps.value = taps.length;
-          u.scale.value = k.lines.share / dirs.length;
-          u.src.value = half.texture;
-          this.draw(r, this.lines, out);
-        }
-        if (k.points.length > 0) {
-          const u = this.points.uniforms;
-          const pts = k.points.slice(0, MAX_POINTS);
-          pts.forEach((p, i) => {
-            (u.offsets.value as THREE.Vector2[])[i].set(p.dx / size.x, -p.dy / size.y);
-            (u.weights.value as number[])[i] = p.w;
-          });
-          u.n.value = pts.length;
-          u.src.value = half.texture;
-          this.draw(r, this.points, out);
-        }
+        const u = this.lines.uniforms;
+        const dirs = k.lines.dirs.slice(0, MAX_LINES);
+        // Offsets in texture coordinates: the same at any size. The picture's y runs down, the texture's up.
+        dirs.forEach(([x, y], i) => (u.dirs.value as THREE.Vector2[])[i].set(x / size.x, -y / size.y));
+        const taps = pairTaps(k.lines.taps).slice(0, MAX_TAPS);
+        taps.forEach((t, i) => {
+          (u.radii.value as number[])[i] = t.r;
+          (u.weights.value as number[])[i] = t.w;
+        });
+        u.nDirs.value = dirs.length;
+        u.nTaps.value = taps.length;
+        const per = k.lines.share / dirs.length;
+        (u.scale.value as THREE.Vector3).set(per * k.lines.weight[0], per * k.lines.weight[1], per * k.lines.weight[2]);
+        u.src.value = half.texture;
+        this.draw(r, this.lines, out);
         this.add.uniforms.src.value = out.texture;
-        this.add.uniforms.scale.value = 1;
+        this.add.uniforms.scale.value.set(1, 1, 1);
         this.draw(r, this.add, this.accum);
       }
       // The combination goes to the result target that is not `cur` (ping and pong are the blurs' scratch).
@@ -317,7 +277,6 @@ export class LensFilterPass {
       c.image.value = cur.texture;
       c.scattered.value = this.accum!.texture;
       c.s.value = k.s;
-      c.weight.value.set(k.weight[0], k.weight[1], k.weight[2]);
       const into = this.result(size);
       this.draw(r, this.combine, into);
       cur = into;

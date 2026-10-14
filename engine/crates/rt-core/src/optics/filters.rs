@@ -4,19 +4,21 @@
 //!
 //! * **Model** (decision 1): a camera ray, with probability `s` (from the filter's grade), is
 //!   turned by an angle drawn from the filter's **angular PSF** `K`; otherwise it goes straight
-//!   on. What the image gets is `(1 − s)·I + s·a·T·(I ⊗ K)`: `a` is what the particles let through
+//!   on. What the image gets is `(1 − s)·I + s·a·(I ⊗ K_T)`: `a` is what the particles let through
 //!   (1 for the white and gold diffusions; below 1 for the black one, whose halo lifts the shadows
-//!   less: it keeps the contrast), `T` the tint of the scattered light (luminance 1). It happens
-//!   at the pupil sample of O1, so the bokeh and the focus come for free and a light outside the
-//!   frame still veils it.
+//!   less: it keeps the contrast), and the tint `T` (luminance 1) goes on the wide parts of the
+//!   PSF only, the diffusion's tail (the halation) and the lines: the narrow core that sits on the
+//!   picture itself stays neutral (the lead's verdict on the first sheet). It happens at the pupil
+//!   sample of O1, so the bokeh and the focus come for free and a light outside the frame still
+//!   veils it.
 //! * **PSFs** (decision 2): each kind is a radial or a line profile in angle (the tangent of the
 //!   deflection, radians), sampled by a tabulated inverse CDF in `f32` built when the lens is
 //!   loaded; the loop only looks up and interpolates. Diffusion: a narrow Gaussian of
 //!   [`SIGMA_CORE_DEG`] and a wide Cauchy tail of [`SIGMA_TAIL_DEG`]; soft: the Gaussian alone;
-//!   glimmer: the Gaussian and a second narrow lobe whose direction is locked to a hash of the
-//!   cell of the pupil the ray comes from (sparkles around the lights); net: the Gaussian and lines
-//!   along two axes at 90°; star: `points` straight lines at `angle` with a 1/r falloff; streak: one
-//!   horizontal line.
+//!   glimmer: the Gaussian and a cloud of [`GLIMMER_SPARKLES`] fine sparkles (fixed directions and
+//!   brightnesses, one drawn per sample); net: the Gaussian and a short cross along two axes at 90°; star:
+//!   `points` straight lines at `angle`, as long as the grade says, with a 1/r falloff that tapers
+//!   to their end; streak: one horizontal line.
 //! * **Stack** (decision 3): up to [`MAX_FILTERS`], applied in order, each with its own numbers.
 //! * Determinism: the tables are built with [`crate::fmath`]; the loop only adds, multiplies,
 //!   divides and takes square roots (and the turn of the star's lines, precomputed).
@@ -50,10 +52,22 @@ pub const MAX_FILTERS: usize = 3;
 pub const MAX_GRADE: f32 = 2.0;
 
 /// The grades of the real filters and the scattered fraction `s` of each (decision 2; the lead's
-/// proposal, fixed from the sheet). Between two grades `s` is interpolated; below 1/8, towards 0.
+/// proposal, fixed from the sheet): the diffusions', the glimmer's and the net's. Between two
+/// grades every table here is interpolated; below 1/8, towards 0.
 pub const GRADES: [f32; 5] = [0.125, 0.25, 0.5, 1.0, 2.0];
 /// See [`GRADES`].
 pub const GRADE_S: [f32; 5] = [0.03, 0.06, 0.12, 0.22, 0.38];
+/// The star's `s` by grade: its rays keep their brightness near the light (so they do not widen)
+/// while the grade makes them longer, so `s` grows as the 1/r falloff's integral to their length.
+pub const STAR_S: [f32; 5] = [0.073, 0.082, 0.091, 0.1, 0.11];
+/// The length of the star's rays by grade, degrees: on the sheet's 85 mm (a half-frame of 12°),
+/// a quarter of the half-frame at 1/4, 60 % of it at 1 and all of it at 2.
+pub const STAR_LENGTH_DEG: [f32; 5] = [1.9, 3.0, 4.6, 7.2, 12.0];
+/// The length of the net's cross by grade, degrees: at 2, 15 % of the sheet's frame width.
+pub const NET_LENGTH_DEG: [f32; 5] = [0.6, 0.95, 1.45, 2.25, 3.5];
+/// The streak's `s` by grade: its line is the whole of its scattered light, and the picture
+/// along it takes the line's tint, so it scatters little.
+pub const STREAK_S: [f32; 5] = [0.02, 0.025, 0.035, 0.045, 0.07];
 /// Width of the narrow Gaussian of the diffusions, degrees of field.
 pub const SIGMA_CORE_DEG: f32 = 0.25;
 /// Width of the wide tail of the diffusions, degrees of field.
@@ -66,28 +80,31 @@ pub const BLACK_TRANSMISSION: f32 = 0.7;
 pub const SOFT_S_SCALE: f32 = 2.0;
 /// See [`SOFT_S_SCALE`].
 pub const SOFT_MAX_S: f32 = 0.8;
-/// Glimmer: cells per side of the pupil, each with its sparkle.
-pub const GLIMMER_CELLS: u32 = 6;
+/// Glimmer: the sparkles of its cloud, fixed directions of which each scattered sample takes one
+/// (by its brightness, which is a speckle's: exponential, from a hash).
+pub const GLIMMER_SPARKLES: u32 = 4096;
+/// Glimmer: the width of the cloud, degrees (the sparkles lie as a 2-D Gaussian of this width).
+pub const GLIMMER_CLOUD_DEG: f32 = 1.0;
 /// Glimmer: share of the scattered light in the sparkles (the rest in the narrow Gaussian).
 pub const GLIMMER_SHARE: f32 = 0.5;
-/// Glimmer: width of a sparkle, degrees.
+/// Glimmer: half the width of a sparkle, degrees.
 pub const GLIMMER_SIGMA_DEG: f32 = 0.03;
-/// Net: share of the scattered light in the two axes (the rest in the narrow Gaussian).
-pub const NET_AXIS_SHARE: f32 = 0.5;
-/// Lines (star, streak, net): where the 1/r falloff starts and ends, degrees.
+/// Net: share of the scattered light in the cross (the rest in the narrow Gaussian, its softening).
+pub const NET_AXIS_SHARE: f32 = 0.1;
+/// Lines (star, streak, net): where the 1/r falloff starts, degrees (it tapers to 0 at the line's
+/// length).
 pub const LINE_START_DEG: f32 = 0.05;
-/// See [`LINE_START_DEG`] (star and net).
-pub const LINE_END_DEG: f32 = 6.0;
-/// See [`LINE_START_DEG`] (the streak reaches further).
+/// The streak's length at every grade, degrees.
 pub const STREAK_END_DEG: f32 = 15.0;
 /// Width of a line, degrees.
 pub const LINE_WIDTH_DEG: f32 = 0.02;
-/// The default tints: gold, net and streak (before they are brought to luminance 1).
-pub const TINT_GOLD: [f32; 3] = [1.25, 0.98, 0.62];
+/// The default tints of the halation and the lines: gold, net and streak (before they are brought
+/// to luminance 1).
+pub const TINT_GOLD: [f32; 3] = [1.08, 1.0, 0.86];
 /// See [`TINT_GOLD`].
 pub const TINT_NET: [f32; 3] = [1.06, 1.0, 0.94];
 /// See [`TINT_GOLD`].
-pub const TINT_STREAK: [f32; 3] = [0.7, 0.92, 1.4];
+pub const TINT_STREAK: [f32; 3] = [0.82, 0.95, 1.25];
 
 /// Entries of an inverse CDF table.
 const TABLE: usize = 256;
@@ -96,6 +113,11 @@ const STEPS: usize = 4096;
 /// The diffusion tail stops here, in widths of the tail (the rest of the Cauchy is dropped).
 const TAIL_REACH: f32 = 12.0;
 const LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];
+/// The glimmer's sparkles hash with this as their second coordinate (their brightness with the
+/// next one).
+const SPARKLE_SALT: u32 = 0x51ed;
+/// The glimmer's sparkles are binned in a grid of this many cells a side, for the connections.
+const SPARKLE_GRID: usize = 64;
 
 /// One filter of a camera's stack, as the `LENS` section holds it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -130,21 +152,49 @@ fn positive(x: f32) -> bool {
     x > 0.0
 }
 
-/// The scattered fraction `s` of a grade (the diffusions' table).
-pub fn grade_s(grade: f32) -> f32 {
+/// A table by [`GRADES`] at `grade`: linear between two grades, towards 0 below 1/8, the last
+/// value above 2.
+pub fn by_grade(table: &[f32; 5], grade: f32) -> f32 {
     if !positive(grade) {
         return 0.0;
     }
     if grade <= GRADES[0] {
-        return GRADE_S[0] * grade / GRADES[0];
+        return table[0] * grade / GRADES[0];
     }
     for i in 1..GRADES.len() {
         if grade <= GRADES[i] {
             let t = (grade - GRADES[i - 1]) / (GRADES[i] - GRADES[i - 1]);
-            return GRADE_S[i - 1] + (GRADE_S[i] - GRADE_S[i - 1]) * t;
+            return table[i - 1] + (table[i] - table[i - 1]) * t;
         }
     }
-    GRADE_S[GRADES.len() - 1]
+    table[GRADES.len() - 1]
+}
+
+/// The scattered fraction `s` of a grade (the diffusions' table, [`GRADE_S`]).
+pub fn grade_s(grade: f32) -> f32 {
+    by_grade(&GRADE_S, grade)
+}
+
+/// The scattered fraction of a filter kind at a grade: the star's and the streak's own tables,
+/// the soft filter's [`SOFT_S_SCALE`] times the diffusions', the diffusions' for the rest.
+pub fn kind_s(kind: u32, grade: f32) -> f32 {
+    match kind {
+        FILTER_STAR => by_grade(&STAR_S, grade),
+        FILTER_STREAK => by_grade(&STREAK_S, grade),
+        FILTER_SOFT => (grade_s(grade) * SOFT_S_SCALE).min(SOFT_MAX_S),
+        _ => grade_s(grade),
+    }
+}
+
+/// The length of a kind's lines at a grade, degrees (0 for the kinds without lines).
+pub fn line_length_deg(kind: u32, grade: f32) -> f32 {
+    let length = match kind {
+        FILTER_STAR => by_grade(&STAR_LENGTH_DEG, grade),
+        FILTER_NET => by_grade(&NET_LENGTH_DEG, grade),
+        FILTER_STREAK => STREAK_END_DEG,
+        _ => return 0.0,
+    };
+    length.max(4.0 * LINE_START_DEG)
 }
 
 /// An inverse CDF: `TABLE` values of the variable at evenly spaced probabilities `0..=1`.
@@ -228,6 +278,20 @@ impl Inverse {
         (i as f32 + f) / (n - 1) as f32
     }
 
+    /// Where `x` falls in the table: the entry below it and the fraction to the next one.
+    fn locate(&self, x: f32) -> (usize, f32) {
+        let t = &self.0;
+        let n = t.len();
+        let i = t.partition_point(|&v| v <= x).clamp(1, n - 1) - 1;
+        let w = t[i + 1] - t[i];
+        let f = if w > 0.0 {
+            ((x - t[i]) / w).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (i, f)
+    }
+
     /// The largest value.
     fn end(&self) -> f32 {
         self.0[self.0.len() - 1]
@@ -247,17 +311,20 @@ pub enum Lobe {
         /// Distance along it, in tangent units.
         t: f32,
     },
-    /// The glimmer's sparkle of the sample's pupil cell.
-    Sparkle,
+    /// Sparkle `j` of the glimmer.
+    Sparkle {
+        /// The sparkle.
+        j: u32,
+    },
 }
 
 /// A scattered camera sample: the deflection (tangent units along the camera's right and up), its
-/// colour weight `a·T` and the lobe it came from.
+/// colour weight (`a`, times the tint where the lobe has it) and the lobe it came from.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Scatter {
     /// The deflection.
     pub delta: (f32, f32),
-    /// `a·T`.
+    /// The colour weight.
     pub weight: [f32; 3],
     /// Where in the PSF.
     pub lobe: Lobe,
@@ -320,14 +387,21 @@ pub struct Filter {
     kind: u32,
     /// Scattered fraction.
     s: f32,
-    /// `a · T`: the weight of a scattered sample.
-    weight: [f32; 3],
+    /// The weight of a scattered sample on the neutral parts (the narrow core, the sparkles).
+    core: [f32; 3],
+    /// The weight on the tinted parts: the diffusion's tail and the lines (`a·T`).
+    tinted: [f32; 3],
     /// Radial inverse CDF (the narrow Gaussian, or the whole diffusion PSF).
     radial: Inverse,
-    /// Line inverse CDF (1/r).
+    /// The share of the tail in the diffusion's radial density at each entry of `radial` (empty
+    /// when the core and the tail have the same weight).
+    tail: Vec<f32>,
+    /// Line inverse CDF (1/r tapering to the line's length).
     line: Option<Inverse>,
     /// Directions of the lines `(cos, sin)` in the image.
     lines: Vec<(f32, f32)>,
+    /// The glimmer's sparkles.
+    sparkles: Option<Sparkles>,
     /// Share of the second lobe (glimmer's sparkles, net's axes).
     second: f32,
 }
@@ -360,12 +434,9 @@ impl Filter {
         if !matches!(p.points, 0 | 4 | 6 | 8) {
             return Err("a star has 4, 6 or 8 points");
         }
-        let mut s = grade_s(p.grade);
+        let s = kind_s(p.kind, p.grade);
         if p.kind == FILTER_NONE || s == 0.0 {
             return Ok(None);
-        }
-        if p.kind == FILTER_SOFT {
-            s = (s * SOFT_S_SCALE).min(SOFT_MAX_S);
         }
         let own = match p.kind {
             FILTER_DIFFUSION_GOLD => TINT_GOLD,
@@ -373,8 +444,8 @@ impl Filter {
             FILTER_STREAK => TINT_STREAK,
             _ => [1.0; 3],
         };
-        let tinted = matches!(p.kind, FILTER_DIFFUSION_GOLD | FILTER_NET | FILTER_STREAK);
-        let tint = if tinted && p.tint.iter().any(|&t| t > 0.0) {
+        let tinted_kind = matches!(p.kind, FILTER_DIFFUSION_GOLD | FILTER_NET | FILTER_STREAK);
+        let tint = if tinted_kind && p.tint.iter().any(|&t| t > 0.0) {
             p.tint
         } else {
             own
@@ -388,33 +459,57 @@ impl Filter {
         } else {
             1.0
         };
-        let weight = tint.map(|t| a * t / lum);
+        let tinted = tint.map(|t| a * t / lum);
+        // The neutral parts weigh what an untinted filter's scattered light does (bit for bit the
+        // same for the kinds without a tint).
+        let core_weight = if tinted_kind {
+            let l = LUMA[0] + LUMA[1] + LUMA[2];
+            [a / l; 3]
+        } else {
+            tinted
+        };
         let core = deg(SIGMA_CORE_DEG);
         let tail = deg(SIGMA_TAIL_DEG);
-        let radial = match p.kind {
-            FILTER_DIFFUSION_WHITE | FILTER_DIFFUSION_BLACK | FILTER_DIFFUSION_GOLD => {
-                let g = gaussian(core);
-                // The 2-D Cauchy (Poisson) tail: r / (1 + (r / γ)²)^(3/2), normalised to 1.
-                let gn = core * core; // ∫ r exp(−r²/2σ²) dr
-                Inverse::new(tail * TAIL_REACH, move |r| {
-                    let q = 1.0 + (r / tail) * (r / tail);
-                    CORE_SHARE * g(r) / gn + (1.0 - CORE_SHARE) * r / (q * q.sqrt()) / (tail * tail)
+        let gn = core * core; // ∫ r exp(−r²/2σ²) dr
+                              // The diffusion's radial density per unit of r, without its factor r: the core and the
+                              // 2-D Cauchy (Poisson) tail, 1 / (1 + (r / γ)²)^(3/2), each normalised to 1.
+        let parts = move |r: f32| {
+            let q = 1.0 + (r / tail) * (r / tail);
+            (
+                CORE_SHARE * fmath::exp(-r * r / (2.0 * core * core)) / gn,
+                (1.0 - CORE_SHARE) / (q * q.sqrt()) / (tail * tail),
+            )
+        };
+        let diffusion = matches!(
+            p.kind,
+            FILTER_DIFFUSION_WHITE | FILTER_DIFFUSION_BLACK | FILTER_DIFFUSION_GOLD
+        );
+        let radial = if diffusion {
+            let g = gaussian(core);
+            Inverse::new(tail * TAIL_REACH, move |r| {
+                let q = 1.0 + (r / tail) * (r / tail);
+                CORE_SHARE * g(r) / gn + (1.0 - CORE_SHARE) * r / (q * q.sqrt()) / (tail * tail)
+            })
+        } else {
+            Inverse::new(5.0 * core, gaussian(core))
+        };
+        let tail_share = if diffusion && core_weight != tinted {
+            radial
+                .0
+                .iter()
+                .map(|&r| {
+                    let (c, t) = parts(r);
+                    t / (c + t)
                 })
-            }
-            _ => Inverse::new(5.0 * core, gaussian(core)),
+                .collect()
+        } else {
+            Vec::new()
         };
         let (line, lines, second) = match p.kind {
             FILTER_STAR | FILTER_STREAK | FILTER_NET => {
-                let (start, end) = (
-                    deg(LINE_START_DEG),
-                    deg(if p.kind == FILTER_STREAK {
-                        STREAK_END_DEG
-                    } else {
-                        LINE_END_DEG
-                    }),
-                );
-                let line =
-                    Inverse::new(end, move |r| if r < start { 1.0 / start } else { 1.0 / r });
+                let (start, end) = (deg(LINE_START_DEG), deg(line_length_deg(p.kind, p.grade)));
+                // 1/r from `start` (flat below it), tapering linearly to 0 at the line's end.
+                let line = Inverse::new(end, move |r| (1.0 - r / end).max(0.0) / r.max(start));
                 let n = match p.kind {
                     FILTER_STREAK => 2,
                     FILTER_NET => 4,
@@ -444,15 +539,45 @@ impl Filter {
             FILTER_GLIMMER => (None, Vec::new(), GLIMMER_SHARE),
             _ => (None, Vec::new(), 0.0),
         };
+        let sparkles = (p.kind == FILTER_GLIMMER).then(Sparkles::new);
         Ok(Some(Filter {
             kind: p.kind,
             s,
-            weight,
+            core: core_weight,
+            tinted,
             radial,
+            tail: tail_share,
             line,
             lines,
+            sparkles,
             second,
         }))
+    }
+
+    /// The colour weight of a scattered sample of `lobe` at `delta`: the tint on the lines and on
+    /// the diffusion's tail (by its share of the density there), neutral on the core and the
+    /// sparkles.
+    pub fn colour_at(&self, lobe: Lobe, delta: (f32, f32)) -> [f32; 3] {
+        match lobe {
+            Lobe::Line { .. } => self.tinted,
+            Lobe::Sparkle { .. } => self.core,
+            Lobe::Radial if self.tail.is_empty() => self.core,
+            Lobe::Radial => {
+                let r = (delta.0 * delta.0 + delta.1 * delta.1).sqrt();
+                let (i, f) = self.radial.locate(r);
+                let share = self.tail[i] + (self.tail[i + 1] - self.tail[i]) * f;
+                [0, 1, 2].map(|c| self.core[c] + share * (self.tinted[c] - self.core[c]))
+            }
+        }
+    }
+
+    /// The glimmer's sparkles: the deflections to their centres and their shares of the cloud's
+    /// light (empty for the other kinds).
+    pub fn sparkles(&self) -> (&[(f32, f32)], &[f32]) {
+        match &self.sparkles {
+            Some(c) => (&c.centres, &c.shares),
+            None => (&[], &[]),
+        }
     }
 
     /// The scattered fraction.
@@ -461,10 +586,9 @@ impl Filter {
     }
 
     /// The deflection of one camera sample and its colour weight, or `None` when it goes straight
-    /// on. `u` are four uniform numbers (the choice, two for the angle, one for the lobe or the
-    /// line), `pupil` the point of the unit pupil the ray leaves from (glimmer's sparkles are
-    /// locked to its cell).
-    pub fn scatter(&self, u: [f32; 4], pupil: (f32, f32)) -> Option<Scatter> {
+    /// on. `u` are four uniform numbers (the choice, two for the angle, one for the lobe and the
+    /// line or the sparkle).
+    pub fn scatter(&self, u: [f32; 4]) -> Option<Scatter> {
         if u[0] >= self.s {
             return None;
         }
@@ -482,17 +606,18 @@ impl Filter {
                 (c * t - s * across, s * t + c * across),
                 Lobe::Line { k: k as u32, t },
             )
-        } else if self.kind == FILTER_GLIMMER && u[3] < self.second {
-            // The sparkle of the pupil cell: a fixed direction and distance from a hash of the
-            // cell, and a small spread around it.
-            let (cx, cy) = sparkle_centre(pupil);
+        } else if let (Some(cloud), true) = (&self.sparkles, u[3] < self.second) {
+            // One of the sparkles by its share, from the lobe's number, and a small spread around
+            // it.
+            let j = cloud.pick(u[3] / self.second);
+            let (cx, cy) = cloud.centres[j];
             let spread = deg(GLIMMER_SIGMA_DEG);
             (
                 (
                     cx + spread * (2.0 * u[1] - 1.0),
                     cy + spread * (2.0 * u[2] - 1.0),
                 ),
-                Lobe::Sparkle,
+                Lobe::Sparkle { j: j as u32 },
             )
         } else {
             let r = self.radial.at(u[1]);
@@ -501,7 +626,7 @@ impl Filter {
         };
         Some(Scatter {
             delta,
-            weight: self.weight,
+            weight: self.colour_at(lobe, delta),
             lobe,
         })
     }
@@ -539,16 +664,9 @@ impl Filter {
     /// sampling, the balance heuristic, per lobe): for a deflection `delta` of `lobe` that reaches
     /// the light of `disc`, chosen for the connection with probability `p_light`,
     /// `K / (K + p_light·q)` with `K` the lobe's density and `q` the connection's. A deflection the
-    /// connection cannot draw weighs 1; the connection's own estimate is `s·a·T·L` times this
-    /// weight at the deflection it drew.
-    pub fn mis_weight(
-        &self,
-        lobe: Lobe,
-        delta: (f32, f32),
-        disc: &Disc,
-        p_light: f32,
-        pupil: (f32, f32),
-    ) -> f32 {
+    /// connection cannot draw weighs 1; the connection's own estimate is `s·L` times the colour
+    /// and this weight at the deflection it drew.
+    pub fn mis_weight(&self, lobe: Lobe, delta: (f32, f32), disc: &Disc, p_light: f32) -> f32 {
         match lobe {
             Lobe::Radial => {
                 let (dx, dy) = (delta.0 - disc.centre.0, delta.1 - disc.centre.1);
@@ -577,26 +695,22 @@ impl Filter {
                 let n = self.lines.len() as f32;
                 total / (total + n * p_light)
             }
-            Lobe::Sparkle => {
-                let area = sparkle_overlap(sparkle_centre(pupil), disc);
-                let (cx, cy) = sparkle_centre(pupil);
-                let spread = deg(GLIMMER_SIGMA_DEG);
-                let inside = |x: f32, lo: f32, hi: f32| x >= lo && x <= hi;
+            Lobe::Sparkle { .. } => {
+                // K = Σ w / box and q = Σ w / A over the sparkles whose box holds the deflection,
+                // inside the square that bounds the light (w: a sparkle's share; A: the boxes'
+                // area inside it, each by its share): the sums cancel.
                 let (r, (dx, dy)) = (disc.radius, disc.centre);
-                if !positive(area)
-                    || !inside(
-                        delta.0,
-                        (cx - spread).max(dx - r),
-                        (cx + spread).min(dx + r),
-                    )
-                    || !inside(
-                        delta.1,
-                        (cy - spread).max(dy - r),
-                        (cy + spread).min(dy + r),
-                    )
-                {
+                let Some(cloud) = &self.sparkles else {
+                    return 1.0;
+                };
+                if (delta.0 - dx).abs() > r || (delta.1 - dy).abs() > r {
                     return 1.0;
                 }
+                let area = cloud.area(disc);
+                if !positive(area) {
+                    return 1.0;
+                }
+                let spread = deg(GLIMMER_SIGMA_DEG);
                 area / (area + 4.0 * spread * spread * p_light)
             }
         }
@@ -604,16 +718,16 @@ impl Filter {
 
     /// The connection of a camera sample to the light of `disc` (chosen with probability
     /// `p_light`) through this filter: a lobe chosen by its share, a deflection drawn inside the
-    /// light from that lobe's connection density, and its weight (`mis_weight` there); `None` when
-    /// the lobe cannot reach the light. The estimate of the light is `s·a·T·L·weight` (see
-    /// [`Filter::s`] and [`Filter::colour`]).
+    /// light from that lobe's connection density (the glimmer: a sparkle by the area of its box
+    /// inside the light, a point in that part), its weight (`mis_weight` there) and its colour;
+    /// `None` when the lobe cannot reach the light. The estimate of the light is
+    /// `s·L·colour·weight` (see [`Filter::s`]).
     pub fn connect(
         &self,
         disc: &Disc,
         p_light: f32,
-        pupil: (f32, f32),
         u: [f32; 4],
-    ) -> Option<((f32, f32), f32)> {
+    ) -> Option<((f32, f32), f32, [f32; 3])> {
         let second = u[0] < self.second;
         let (delta, lobe) = if second && self.line.is_some() {
             let (spans, total) = self.line_spans(disc);
@@ -643,18 +757,11 @@ impl Filter {
                 (c * t - s * across, s * t + c * across),
                 Lobe::Line { k: k as u32, t },
             )
-        } else if second && self.kind == FILTER_GLIMMER {
-            let (cx, cy) = sparkle_centre(pupil);
-            let spread = deg(GLIMMER_SIGMA_DEG);
-            let (r, (dx, dy)) = (disc.radius, disc.centre);
-            let (x0, x1) = ((cx - spread).max(dx - r), (cx + spread).min(dx + r));
-            let (y0, y1) = ((cy - spread).max(dy - r), (cy + spread).min(dy + r));
-            if !(x1 > x0 && y1 > y0) {
-                return None;
-            }
+        } else if let (Some(cloud), true) = (&self.sparkles, second) {
+            let (j, (x0, x1, y0, y1)) = cloud.pick_in(disc, u[1])?;
             (
-                (x0 + (x1 - x0) * u[1], y0 + (y1 - y0) * u[2]),
-                Lobe::Sparkle,
+                (x0 + (x1 - x0) * u[2], y0 + (y1 - y0) * u[3]),
+                Lobe::Sparkle { j },
             )
         } else {
             let (x, y) = warp::concentric_disk((u[1], u[2]));
@@ -666,41 +773,173 @@ impl Filter {
                 Lobe::Radial,
             )
         };
-        let w = self.mis_weight(lobe, delta, disc, p_light, pupil);
-        (w > 0.0).then_some((delta, w))
-    }
-
-    /// `a·T`: the colour weight of the scattered light.
-    pub fn colour(&self) -> [f32; 3] {
-        self.weight
+        let w = self.mis_weight(lobe, delta, disc, p_light);
+        (w > 0.0).then_some((delta, w, self.colour_at(lobe, delta)))
     }
 }
 
-/// The deflection to the centre of the glimmer's sparkle of the pupil cell of `pupil`.
-fn sparkle_centre(pupil: (f32, f32)) -> (f32, f32) {
-    let n = GLIMMER_CELLS as f32;
-    let cx = (((pupil.0 * 0.5 + 0.5) * n) as u32).min(GLIMMER_CELLS - 1);
-    let cy = (((pupil.1 * 0.5 + 0.5) * n) as u32).min(GLIMMER_CELLS - 1);
-    let (hx, hy) = unit_pair(cell_hash(cx, cy));
-    let r = deg(SIGMA_TAIL_DEG) * (0.3 + 0.7 * hx);
-    let (sn, cs) = fmath::sin_cos(std::f32::consts::TAU * hy);
-    (cs * r, sn * r)
+/// The glimmer's cloud of sparkles: [`GLIMMER_SPARKLES`] deflections, their directions from a hash
+/// and their distances those of a 2-D Gaussian of [`GLIMMER_CLOUD_DEG`] (a soft halo, densest near
+/// the light, no ring), one per stratum of that distribution jittered by the hash; their shares of
+/// the cloud's light exponential (a speckle's) from another hash; and a grid of them for the
+/// connections, which only visit the sparkles near a light.
+#[derive(Clone, Debug, PartialEq)]
+struct Sparkles {
+    centres: Vec<(f32, f32)>,
+    /// Each one's share of the light (they add up to 1).
+    shares: Vec<f32>,
+    /// The shares added up, for drawing one.
+    cdf: Vec<f32>,
+    /// The grid: its lower corner and cell size, and the sparkles of each cell (`order` from
+    /// `starts[c]` to `starts[c + 1]`).
+    origin: f32,
+    cell: f32,
+    starts: Vec<u32>,
+    order: Vec<u32>,
 }
 
-/// The area of the sparkle's box around `centre` inside the square that bounds `disc`.
-fn sparkle_overlap(centre: (f32, f32), disc: &Disc) -> f32 {
+impl Sparkles {
+    fn new() -> Sparkles {
+        let sigma = deg(GLIMMER_CLOUD_DEG);
+        let n = GLIMMER_SPARKLES as f32;
+        let mut centres = Vec::with_capacity(GLIMMER_SPARKLES as usize);
+        let mut weights = Vec::with_capacity(GLIMMER_SPARKLES as usize);
+        for j in 0..GLIMMER_SPARKLES {
+            let (hx, hy) = unit_pair(cell_hash(j, SPARKLE_SALT));
+            let q = (j as f32 + hx) / n;
+            let r = sigma * (-2.0 * fmath::ln(1.0 - q)).sqrt();
+            let (sn, cs) = fmath::sin_cos(std::f32::consts::TAU * hy);
+            centres.push((cs * r, sn * r));
+            let (hw, _) = unit_pair(cell_hash(j, SPARKLE_SALT + 1));
+            weights.push(-fmath::ln(1.0 - hw) + 1.0e-3);
+        }
+        let total: f32 = weights.iter().sum();
+        let shares: Vec<f32> = weights.iter().map(|w| w / total).collect();
+        let mut cdf = Vec::with_capacity(shares.len());
+        let mut acc = 0.0f32;
+        for w in &shares {
+            acc += w;
+            cdf.push(acc);
+        }
+        // The grid covers every box.
+        let spread = deg(GLIMMER_SIGMA_DEG);
+        let reach = centres
+            .iter()
+            .fold(0.0f32, |m, &(x, y)| m.max(x.abs()).max(y.abs()))
+            + 2.0 * spread;
+        let (origin, cell) = (-reach, 2.0 * reach / SPARKLE_GRID as f32);
+        let index = |v: f32| (((v - origin) / cell) as usize).min(SPARKLE_GRID - 1);
+        let cell_of = |&(x, y): &(f32, f32)| index(y) * SPARKLE_GRID + index(x);
+        let mut counts = vec![0u32; SPARKLE_GRID * SPARKLE_GRID + 1];
+        for c in &centres {
+            counts[cell_of(c) + 1] += 1;
+        }
+        for i in 1..counts.len() {
+            counts[i] += counts[i - 1];
+        }
+        let starts = counts.clone();
+        let mut fill = counts;
+        let mut order = vec![0u32; centres.len()];
+        for (j, c) in centres.iter().enumerate() {
+            let k = cell_of(c);
+            order[fill[k] as usize] = j as u32;
+            fill[k] += 1;
+        }
+        Sparkles {
+            centres,
+            shares,
+            cdf,
+            origin,
+            cell,
+            starts,
+            order,
+        }
+    }
+
+    /// The sparkle at probability `u` of the shares.
+    fn pick(&self, u: f32) -> usize {
+        let target = u * self.cdf[self.cdf.len() - 1];
+        self.cdf
+            .partition_point(|&c| c <= target)
+            .min(self.cdf.len() - 1)
+    }
+
+    /// Calls `f` with every sparkle whose box meets the square that bounds `disc`, and that part
+    /// of its box, in a fixed order.
+    fn near(&self, disc: &Disc, mut f: impl FnMut(usize, (f32, f32, f32, f32))) {
+        let spread = deg(GLIMMER_SIGMA_DEG);
+        let (r, (dx, dy)) = (disc.radius + spread, disc.centre);
+        let range = |lo: f32, hi: f32| {
+            let a = ((lo - self.origin) / self.cell).floor().max(0.0);
+            let b = ((hi - self.origin) / self.cell).floor();
+            if b < 0.0 || a >= SPARKLE_GRID as f32 {
+                return 0..0;
+            }
+            (a as usize)..((b as usize).min(SPARKLE_GRID - 1) + 1)
+        };
+        for y in range(dy - r, dy + r) {
+            for x in range(dx - r, dx + r) {
+                let c = y * SPARKLE_GRID + x;
+                for &j in &self.order[self.starts[c] as usize..self.starts[c + 1] as usize] {
+                    if let Some(rect) = sparkle_rect(self.centres[j as usize], disc) {
+                        f(j as usize, rect);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The area of the sparkles' boxes inside the square that bounds `disc`, each by its share.
+    fn area(&self, disc: &Disc) -> f32 {
+        let mut total = 0.0;
+        self.near(disc, |j, (x0, x1, y0, y1)| {
+            total += self.shares[j] * (x1 - x0) * (y1 - y0);
+        });
+        total
+    }
+
+    /// A sparkle near `disc` by its share times its part of the box, from `u`, and that part.
+    fn pick_in(&self, disc: &Disc, u: f32) -> Option<(u32, (f32, f32, f32, f32))> {
+        let total = self.area(disc);
+        if !positive(total) {
+            return None;
+        }
+        let mut pick = u * total;
+        let mut chosen = None;
+        let mut done = false;
+        self.near(disc, |j, rect| {
+            if done {
+                return;
+            }
+            chosen = Some((j as u32, rect));
+            let a = self.shares[j] * (rect.1 - rect.0) * (rect.3 - rect.2);
+            if pick < a {
+                done = true;
+            } else {
+                pick -= a;
+            }
+        });
+        chosen
+    }
+}
+
+/// The part `(x0, x1, y0, y1)` of the box of the sparkle at `centre` inside the square that bounds
+/// `disc`, if any.
+fn sparkle_rect(centre: (f32, f32), disc: &Disc) -> Option<(f32, f32, f32, f32)> {
     let spread = deg(GLIMMER_SIGMA_DEG);
     let (r, (dx, dy)) = (disc.radius, disc.centre);
-    let w = (centre.0 + spread).min(dx + r) - (centre.0 - spread).max(dx - r);
-    let h = (centre.1 + spread).min(dy + r) - (centre.1 - spread).max(dy - r);
-    if w > 0.0 && h > 0.0 {
-        w * h
-    } else {
-        0.0
-    }
+    let (x0, x1) = (
+        (centre.0 - spread).max(dx - r),
+        (centre.0 + spread).min(dx + r),
+    );
+    let (y0, y1) = (
+        (centre.1 - spread).max(dy - r),
+        (centre.1 + spread).min(dy + r),
+    );
+    (x1 > x0 && y1 > y0).then_some((x0, x1, y0, y1))
 }
 
-/// A hash of a pupil cell (the interface's `cellHash` is the same).
+/// A hash of two numbers (the glimmer's sparkles).
 pub(crate) fn cell_hash(x: u32, y: u32) -> u32 {
     let mut h = x.wrapping_mul(0x9e37_79b1) ^ y.wrapping_mul(0x85eb_ca77) ^ 0x27d4_eb2f;
     h ^= h >> 15;

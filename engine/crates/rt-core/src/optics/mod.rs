@@ -47,10 +47,12 @@
 //!
 //! A stack of up to three filters in front of the lens ([`filters`]: diffusion, glimmer, soft,
 //! net, star, streak) scatters the camera ray after the steps above: with the filter's probability
-//! `s` the ray is turned by an angle from its PSF and weighs `a·T`, otherwise it goes straight on,
-//! so the image is `(1 − s)·I + s·a·T·(I ⊗ K)` with the bokeh and the focus of the lens. Each
-//! filter draws its numbers from its own dimensions beyond the Sobol table
-//! ([`crate::sampler::DIM_LENS_FILTER`]); a lens without filters draws none of them.
+//! `s` the ray is turned by an angle from its PSF and weighs `a` (times the tint on the wide parts
+//! of the PSF), otherwise it goes straight on, so the image is `(1 − s)·I + s·a·(I ⊗ K_T)` with
+//! the bokeh and the focus of the lens. Each filter draws its numbers from its own dimensions
+//! beyond the Sobol table ([`crate::sampler::DIM_LENS_FILTER`]); a lens without filters draws none
+//! of them. Each camera sample with filters is also connected, through the PSF, to a light the
+//! camera sees ([`Lens::connection`]), weighed against the scattering lobe by lobe.
 //!
 //! The exact passes (X2) keep the plain thin lens: the `coc` pass is the circle of confusion of a
 //! round, untilted aperture of `focal_mm / fstop` ([`crate::passes::coc_diameter`]), whatever the
@@ -191,8 +193,6 @@ impl Default for LensParams {
 pub struct FilterPath {
     /// Where the ray leaves the lens.
     pub origin: Vec3,
-    /// The point of the unit pupil it leaves from (the glimmer's cell).
-    pub pupil: (f32, f32),
     /// The camera's right and up: the axes of the deflections.
     pub right: Vec3,
     /// See `right`.
@@ -430,11 +430,10 @@ impl Lens {
         v: f32,
         sampler: &PixelSampler,
     ) -> (Ray, Rgb, Option<FilterPath>) {
+        let (ray, weight) = self.sample_lens(camera, aspect, u, v, sampler);
         if self.filters.is_empty() {
-            let (ray, weight) = self.sample_lens(camera, aspect, u, v, sampler).0;
             return (ray, weight, None);
         }
-        let ((ray, weight), pupil) = self.sample_lens(camera, aspect, u, v, sampler);
         // The three bands of a group share their filters' numbers too (one scattering, three
         // colours), as they share the pupil.
         let numbers = if self.params.ca_amount > 0.0 && camera.lens_radius() > 0.0 {
@@ -445,7 +444,6 @@ impl Lens {
         let (_, right, up) = camera.basis();
         let mut path = FilterPath {
             origin: ray.origin,
-            pupil,
             right,
             up,
             dir_in: [ray.dir; MAX_FILTERS],
@@ -461,7 +459,7 @@ impl Lens {
             let d = DIM_LENS_FILTER + 4 * i as u32;
             let (a, b) = numbers.get2(d);
             let (c, e) = numbers.get2(d + 2);
-            if let Some(sc) = f.scatter([a, b, c, e], pupil) {
+            if let Some(sc) = f.scatter([a, b, c, e]) {
                 dir = (dir + right * sc.delta.0 + up * sc.delta.1).normalize();
                 weight = weight * Rgb::new(sc.weight[0], sc.weight[1], sc.weight[2]);
                 path.last = Some((i, sc.lobe, sc.delta));
@@ -488,16 +486,16 @@ impl Lens {
             l.centre,
             l.radius,
         ) {
-            Some(disc) => f.mis_weight(lobe, delta, &disc, 1.0 / lights.len() as f32, path.pupil),
+            Some(disc) => f.mis_weight(lobe, delta, &disc, 1.0 / lights.len() as f32),
             None => 1.0,
         }
     }
 
     /// The connection of filter `i` of a sample that did `path` to one of `lights` (chosen by the
     /// sample's own numbers, each with probability `1 / lights.len()`): the ray to it, the light,
-    /// and the weight its radiance takes (the colour before the filter, `s·a·T`, the chance that no
-    /// later filter scatters, and the multiple importance sampling weight). `None` when the filter
-    /// cannot reach the chosen light.
+    /// and the weight its radiance takes (the colour before the filter, `s` and the filter's colour
+    /// there, the chance that no later filter scatters, and the multiple importance sampling
+    /// weight). `None` when the filter cannot reach the chosen light.
     pub fn connection(
         &self,
         path: &FilterPath,
@@ -523,17 +521,15 @@ impl Lens {
             l.centre,
             l.radius,
         )?;
-        let (delta, w) = f.connect(&disc, 1.0 / n as f32, path.pupil, [a, b, c, e])?;
+        let (delta, w, colour) = f.connect(&disc, 1.0 / n as f32, [a, b, c, e])?;
         let dir = (path.dir_in[i] + path.right * delta.0 + path.up * delta.1).normalize();
         let later: f32 = self.filters[i + 1..].iter().map(|g| 1.0 - g.s()).product();
-        let colour = f.colour();
         let weight =
             path.weight_in[i] * Rgb::new(colour[0], colour[1], colour[2]) * (f.s() * later * w);
         Some((Ray::new(path.origin, dir), light, weight))
     }
 
-    /// [`Lens::sample`] without the filters, and the point of the unit pupil it used (after the
-    /// pupil's effects; for a pinhole, a point of the unit disc from the lens numbers).
+    /// [`Lens::sample`] without the filters.
     fn sample_lens(
         &self,
         camera: &Camera,
@@ -541,16 +537,9 @@ impl Lens {
         u: f32,
         v: f32,
         sampler: &PixelSampler,
-    ) -> ((Ray, Rgb), (f32, f32)) {
+    ) -> (Ray, Rgb) {
         if camera.lens_radius() == 0.0 {
-            // No depth of field is still a lens of some size behind the filter: the point of the
-            // filter a ray crosses (the glimmer's cell) comes from the lens numbers, which a
-            // pinhole does not use for its ray.
-            let virtual_pupil = crate::warp::concentric_disk(sampler.get2(DIM_LENS));
-            return (
-                (self.thin_ray(camera, aspect, u, v, (0.0, 0.0)), Rgb::WHITE),
-                virtual_pupil,
-            );
+            return (self.thin_ray(camera, aspect, u, v, (0.0, 0.0)), Rgb::WHITE);
         }
         let prm = &self.params;
         // With chromatic aberration the samples go in groups of three, one per band, which share
@@ -604,7 +593,7 @@ impl Lens {
         if prm.squeeze != 1.0 {
             p.0 /= prm.squeeze;
         }
-        ((self.thin_ray(camera, aspect, u, v, p), weight), p)
+        (self.thin_ray(camera, aspect, u, v, p), weight)
     }
 }
 

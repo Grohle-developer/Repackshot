@@ -407,6 +407,58 @@ mod tests {
         assert!(!seen(scene.lights[n - 1].position));
     }
 
+    /// The blue-to-red ratio of the floor in the sheet's bottom-left corner, far from both lights,
+    /// through `filters`.
+    fn floor_blue_over_red(filters: [FilterParams; 3]) -> f64 {
+        let (w, h) = (128u32, 96u32);
+        let out = render_progressive(&filter_bottle((w, h), filters), 16, 4, None);
+        let rgb = out.film.resolve();
+        let (mut r, mut b) = (0.0f64, 0.0f64);
+        for y in (h * 85 / 100)..h {
+            for x in 0..(w / 4) {
+                let p = &rgb[((y * w + x) * 3) as usize..][..3];
+                r += f64::from(p[0]);
+                b += f64::from(p[2]);
+            }
+        }
+        b / r
+    }
+
+    #[test]
+    fn gold_and_streak_tint_their_halo_and_lines_and_hardly_the_floor_far_from_the_lights() {
+        let none = FilterParams::default();
+        let plain = floor_blue_over_red([none; 3]);
+        for kind in [FILTER_DIFFUSION_GOLD, FILTER_STREAK] {
+            for (grade, most) in [(1.0, 0.03), (2.0, 0.06)] {
+                let ratio = floor_blue_over_red([one(kind, grade), none, none]);
+                let shift = (ratio / plain - 1.0).abs();
+                println!("kind {kind} grade {grade}: the floor's blue/red moves {shift:.4}");
+                assert!(
+                    shift < most,
+                    "kind {kind} grade {grade}: the floor's blue/red moves {shift} ({ratio} against {plain})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_star_and_the_net_have_the_lengths_of_the_verdict_on_the_sheet() {
+        // The sheet's half-frame, degrees: a star's rays reach a quarter of it at 1/4, 60 % of it
+        // at 1 and all of it at 2; the net's cross, at most 15 % of the frame's width at 2.
+        let scene = filter_bottle((64, 48), [FilterParams::default(); 3]);
+        let half = (0.5 * scene.camera.sensor_mm / scene.camera.focal_mm)
+            .atan()
+            .to_degrees();
+        for (grade, share) in [(0.25, 0.25), (1.0, 0.6), (2.0, 1.0)] {
+            let length = line_length_deg(FILTER_STAR, grade);
+            assert!(
+                (length / half / share - 1.0).abs() < 0.1,
+                "grade {grade}: {length}° of a {half}° half-frame"
+            );
+        }
+        assert!(line_length_deg(FILTER_NET, 2.0) <= 0.15 * 2.0 * half);
+    }
+
     #[test]
     fn the_seed_variance_is_the_variance_between_the_runs_clamped() {
         // Two pixels, three runs: the first varies (1, 2, 3: variance 1), the second is a

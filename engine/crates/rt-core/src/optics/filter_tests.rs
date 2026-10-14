@@ -143,7 +143,7 @@ fn a_six_point_star_puts_its_energy_on_six_lines() {
                 delta: (dx, dy),
                 weight: w,
                 ..
-            }) = f.scatter(u, (0.0, 0.0))
+            }) = f.scatter(u)
             {
                 scattered += 1;
                 if f64::from(dx).hypot(f64::from(dy)) < 1.0f64.to_radians() {
@@ -206,24 +206,38 @@ fn a_six_point_star_puts_its_energy_on_six_lines() {
 }
 
 #[test]
-fn gold_diffusion_moves_the_scattered_light_towards_red() {
+fn gold_diffusion_warms_its_halation_and_leaves_its_core_neutral() {
     let gold = Filter::new(&filter(FILTER_DIFFUSION_GOLD, 1.0))
         .unwrap()
         .unwrap();
     let white = Filter::new(&filter(FILTER_DIFFUSION_WHITE, 1.0))
         .unwrap()
         .unwrap();
-    let mut u = numbers(1);
-    u[0] = 0.0;
-    let g = gold.scatter(u, (0.0, 0.0)).unwrap().weight;
-    let w = white.scatter(u, (0.0, 0.0)).unwrap().weight;
-    assert_eq!(w, [1.0, 1.0, 1.0]);
-    assert!(g[0] > 1.1 && g[2] < 0.8, "{g:?}");
-    let luma = 0.2126 * g[0] + 0.7152 * g[1] + 0.0722 * g[2];
+    // The same numbers, far out in the tail and in the core.
+    let at = |f: &Filter, radial: f32| {
+        let mut u = numbers(1);
+        u[0] = 0.0;
+        u[1] = radial;
+        f.scatter(u).unwrap()
+    };
+    let (far, near) = (at(&gold, 0.995), at(&gold, 0.05));
+    assert!(far.delta.0.hypot(far.delta.1) > 5.0f32.to_radians());
+    assert!(near.delta.0.hypot(near.delta.1) < 0.3f32.to_radians());
+    assert_eq!(at(&white, 0.995).weight, [1.0, 1.0, 1.0]);
+    assert_eq!(at(&white, 0.05).weight, [1.0, 1.0, 1.0]);
+    let (g, c) = (far.weight, near.weight);
+    assert!(g[0] > 1.05 && g[2] < 0.9, "the tail is warm: {g:?}");
     assert!(
-        (luma - 1.0).abs() < 1.0e-5,
-        "the tint keeps the luminance: {luma}"
+        (c[0] - 1.0).abs() < 0.01 && (c[2] - 1.0).abs() < 0.01,
+        "the core is neutral: {c:?}"
     );
+    for w in [g, c] {
+        let luma = 0.2126 * w[0] + 0.7152 * w[1] + 0.0722 * w[2];
+        assert!(
+            (luma - 1.0).abs() < 1.0e-5,
+            "the tint keeps the luminance: {luma}"
+        );
+    }
     // And in a picture: a white light on black, its halo warm and its core white.
     let mut scene = furnace(None);
     scene.environment = Environment {
@@ -294,8 +308,8 @@ fn gold_diffusion_moves_the_scattered_light_towards_red() {
             }
         }
     }
-    assert!(halo[0] > 1.2 * halo[2], "the halo is warm: {halo:?}");
-    assert!(core[0] < 1.2 * core[2], "the core stays white: {core:?}");
+    assert!(halo[0] > 1.1 * halo[2], "the halo is warm: {halo:?}");
+    assert!(core[0] < 1.05 * core[2], "the core stays white: {core:?}");
 }
 
 #[test]
@@ -409,8 +423,8 @@ fn out_of_range_filters_are_refused() {
 }
 
 #[test]
-fn the_glimmer_cells_hash_as_the_interface_does() {
-    // render/lens-filter-image.ts `cellHash` pins the same three values.
+fn the_glimmer_sparkles_hash_the_same_on_every_platform() {
+    // The cloud of sparkles is fixed: its hash is pinned.
     assert_eq!(
         [
             super::filters::cell_hash(0, 0),
@@ -536,10 +550,12 @@ fn the_scattering_and_the_connection_add_up_to_the_scattering_alone_on_every_lob
         (FILTER_NET, 0, (0.0, 0.006), 0.003, false),
         (FILTER_DIFFUSION_WHITE, 0, (0.012, -0.006), 0.01, false),
         (FILTER_SOFT, 0, (0.003, 0.002), 0.002, false),
-        (FILTER_GLIMMER, 0, (0.0, 0.0), 0.05, false),
+        (FILTER_GLIMMER, 0, (0.0, 0.0), 0.008, false),
         (FILTER_GLIMMER, 0, (0.004, 0.0), 0.006, true),
+        // A small light out in the cloud: some of its sparkles reach it.
+        (FILTER_GLIMMER, 0, (0.008, -0.005), 0.005, false),
+        (FILTER_DIFFUSION_GOLD, 0, (0.03, 0.0), 0.02, false),
     ];
-    let pupil = (0.3, -0.2);
     for (kind, points, centre, radius, half) in cases {
         let f = Filter::new(&FilterParams {
             kind,
@@ -555,20 +571,27 @@ fn the_scattering_and_the_connection_add_up_to_the_scattering_alone_on_every_lob
             x * x + y * y <= radius * radius && (!half || x > 0.0)
         };
         let p_light = 0.5;
-        let n = 1_000_000;
+        // The glimmer's connections visit the sparkles near the light: fewer numbers.
+        let n = if kind == FILTER_GLIMMER {
+            400_000
+        } else {
+            1_000_000
+        };
+        // Red, the channel the tints change most, weighs each estimate.
         let (mut alone, mut weighted, mut connected) = (0.0f64, 0.0f64, 0.0f64);
         for i in 0..n {
             let mut u = numbers(i);
             u[0] *= f.s(); // always scatter
-            let sc = f.scatter(u, pupil).unwrap();
+            let sc = f.scatter(u).unwrap();
             if inside(sc.delta) {
-                alone += 1.0;
-                weighted += f64::from(f.mis_weight(sc.lobe, sc.delta, &disc, p_light, pupil));
+                let red = f64::from(sc.weight[0]);
+                alone += red;
+                weighted += red * f64::from(f.mis_weight(sc.lobe, sc.delta, &disc, p_light));
             }
             // The connection, which chooses this light with probability p_light.
-            if let Some((d, w)) = f.connect(&disc, p_light, pupil, numbers(n + i)) {
+            if let Some((d, w, colour)) = f.connect(&disc, p_light, numbers(n + i)) {
                 if inside(d) {
-                    connected += f64::from(p_light * w);
+                    connected += f64::from(p_light * w * colour[0]);
                 }
             }
         }
@@ -587,27 +610,142 @@ fn the_scattering_and_the_connection_add_up_to_the_scattering_alone_on_every_lob
 }
 
 #[test]
-fn a_camera_without_depth_of_field_still_spreads_the_glimmer_over_the_filter() {
-    // fstop 0 renders no depth of field, but the filter in front of the lens is crossed all over:
-    // the glimmer's cells (one sparkle each) come from the lens numbers, not from the one point of
-    // a pinhole (which would turn the sparkle into a ghost of the whole picture).
-    let mut scene = light_on_black(
-        FilterParams {
-            kind: FILTER_GLIMMER,
-            grade: 1.0,
-            ..FilterParams::default()
-        },
-        50.0,
-    );
-    scene.camera.fstop = 0.0;
-    let lens = scene.camera.lens.clone().unwrap();
-    let mut cells = std::collections::BTreeSet::new();
-    for i in 0..256 {
-        let sampler = crate::sampler::PixelSampler::new(1, 7, 9, i);
-        let (_, _, path) = lens.sample_filtered(&scene.camera, 1.0, 0.4, 0.6, &sampler);
-        let p = path.unwrap().pupil;
-        assert!(p.0 * p.0 + p.1 * p.1 <= 1.0 + 1.0e-5);
-        cells.insert(((p.0 * 3.0 + 3.0) as i32, (p.1 * 3.0 + 3.0) as i32));
+fn the_glimmer_is_a_cloud_of_fine_sparkles_not_a_ring() {
+    let f = Filter::new(&filter(FILTER_GLIMMER, 1.0)).unwrap().unwrap();
+    let (sparkles, shares) = f.sparkles();
+    assert_eq!(sparkles.len(), GLIMMER_SPARKLES as usize);
+    // Every sparkle its own direction.
+    let mut seen = std::collections::BTreeSet::new();
+    for &(x, y) in sparkles {
+        seen.insert(((x * 1.0e6) as i64, (y * 1.0e6) as i64));
     }
-    assert!(cells.len() > 20, "{} cells of the 6 × 6", cells.len());
+    assert_eq!(seen.len(), sparkles.len());
+    // Their distances are a 2-D Gaussian's (the cloud is densest near the light): a ring, as
+    // the 6 × 6 cells of the first sheet were, has none of them near the centre.
+    let sigma = GLIMMER_CLOUD_DEG.to_radians();
+    let mut r: Vec<f32> = sparkles.iter().map(|&(x, y)| x.hypot(y) / sigma).collect();
+    r.sort_by(f32::total_cmp);
+    let median = r[r.len() / 2];
+    assert!((median - 1.1774).abs() < 0.02, "median {median}σ");
+    let near = r.iter().filter(|&&v| v < 0.5).count() as f32 / r.len() as f32;
+    assert!((0.1..0.135).contains(&near), "{near} within σ/2");
+    // Their brightness a speckle's: shares adding up to 1, a few sparkles much brighter.
+    let total: f32 = shares.iter().sum();
+    assert!((total - 1.0).abs() < 1.0e-4, "{total}");
+    let mean = 1.0 / shares.len() as f32;
+    let bright = shares.iter().filter(|&&w| w > 4.0 * mean).count();
+    assert!(
+        (20..200).contains(&bright),
+        "{bright} sparkles above 4 times the mean"
+    );
+    // And the sparkle a scattered sample takes comes from its own numbers, not from where it
+    // crosses the pupil (there is no pupil in it): over many samples, most of them.
+    let mut taken = std::collections::BTreeSet::new();
+    for i in 0..40_000 {
+        let mut u = numbers(i);
+        u[0] *= f.s();
+        u[3] *= GLIMMER_SHARE; // the sparkles' lobe
+        let sc = f.scatter(u).unwrap();
+        let Lobe::Sparkle { j } = sc.lobe else {
+            panic!("{:?}", sc.lobe);
+        };
+        let (cx, cy) = sparkles[j as usize];
+        let spread = GLIMMER_SIGMA_DEG.to_radians() * 1.0001;
+        assert!((sc.delta.0 - cx).abs() <= spread && (sc.delta.1 - cy).abs() <= spread);
+        taken.insert(j);
+    }
+    assert!(taken.len() > 3000, "{} sparkles taken", taken.len());
+}
+
+#[test]
+fn the_star_grows_longer_with_its_grade_and_no_wider() {
+    let star = |grade: f32| {
+        Filter::new(&FilterParams {
+            kind: FILTER_STAR,
+            grade,
+            points: 6,
+            ..FilterParams::default()
+        })
+        .unwrap()
+        .unwrap()
+    };
+    let mut near_density = Vec::new();
+    for (g, length) in GRADES.iter().zip(STAR_LENGTH_DEG) {
+        let f = star(*g);
+        let (mut longest, mut widest, mut near) = (0.0f32, 0.0f32, 0usize);
+        let n = 100_000;
+        for i in 0..n {
+            let mut u = numbers(i);
+            u[0] *= f.s();
+            let sc = f.scatter(u).unwrap();
+            let Lobe::Line { k, t } = sc.lobe else {
+                panic!("a star scatters along its lines");
+            };
+            let a = std::f32::consts::TAU * k as f32 / 6.0;
+            let across = -sc.delta.0 * a.sin() + sc.delta.1 * a.cos();
+            longest = longest.max(t);
+            widest = widest.max(across.abs());
+            if (0.1f32.to_radians()..0.3f32.to_radians()).contains(&t) {
+                near += 1;
+            }
+        }
+        let length = length.to_radians();
+        assert!(
+            longest <= length * 1.0001 && longest > 0.8 * length,
+            "grade {g}: rays to {longest}, length {length}"
+        );
+        assert!(
+            widest <= LINE_WIDTH_DEG.to_radians() * 1.0001,
+            "grade {g}: {widest}"
+        );
+        // The brightness of the rays near the light: s times the share of the line there.
+        near_density.push(f64::from(f.s()) * near as f64 / f64::from(n));
+    }
+    for (g, d) in GRADES.iter().zip(&near_density) {
+        assert!(
+            (d / near_density[3] - 1.0).abs() < 0.15,
+            "grade {g}: rays near the light {d} against {} at 1",
+            near_density[3]
+        );
+    }
+    assert!(STAR_LENGTH_DEG.windows(2).all(|w| w[1] > w[0]));
+}
+
+#[test]
+fn the_net_gives_a_short_faint_cross_and_softens_with_most_of_its_light() {
+    // Most of what the net scatters is its softening; its cross is shorter than the star's and
+    // fainter per line near the light, at every grade.
+    assert!(NET_AXIS_SHARE < 0.5);
+    for (i, g) in GRADES.iter().enumerate() {
+        let net = Filter::new(&filter(FILTER_NET, *g)).unwrap().unwrap();
+        let star = Filter::new(&FilterParams {
+            kind: FILTER_STAR,
+            grade: *g,
+            points: 6,
+            ..FilterParams::default()
+        })
+        .unwrap()
+        .unwrap();
+        assert!(NET_LENGTH_DEG[i] < 0.5 * STAR_LENGTH_DEG[i]);
+        let near = |f: &Filter, lines: f64| {
+            let n = 100_000;
+            let mut hits = 0;
+            for j in 0..n {
+                let mut u = numbers(j);
+                u[0] *= f.s();
+                if let Some(Scatter {
+                    lobe: Lobe::Line { t, .. },
+                    ..
+                }) = f.scatter(u)
+                {
+                    if (0.1f32.to_radians()..0.3f32.to_radians()).contains(&t) {
+                        hits += 1;
+                    }
+                }
+            }
+            f64::from(f.s()) * f64::from(hits) / f64::from(n) / lines
+        };
+        let (a, b) = (near(&net, 4.0), near(&star, 6.0));
+        assert!(a < 0.85 * b, "grade {g}: a net line {a}, a star ray {b}");
+    }
 }

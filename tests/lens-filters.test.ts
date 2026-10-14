@@ -7,8 +7,20 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { makeCamera, type CameraState } from '../src/core/camera';
 import { filterActive, filtersOf, isNeutralOptics, newLensFilter, normalizeOptics, OPTICS_NEUTRAL, opticsForBokeh, type CameraOptics, type LensFilter } from '../src/core/optics';
-import { FILTER_PSF, gradeS, LENS_FILTER_GRADES, LENS_FILTER_S, LENS_FILTERS } from '../src/data/lens-filters';
-import { applyLensFilters, cellHash, filterKernel, pixelsPerRadian, TAIL_FIT, type LinearImage } from '../src/render/lens-filter-image';
+import {
+  FILTER_PSF,
+  filterS,
+  gradeS,
+  LENS_FILTER_GRADES,
+  LENS_FILTER_S,
+  LENS_FILTER_STAR_S,
+  LENS_FILTER_STREAK_S,
+  LENS_FILTERS,
+  lineLengthDeg,
+  NET_LENGTH_DEG,
+  STAR_LENGTH_DEG,
+} from '../src/data/lens-filters';
+import { applyLensFilters, filterKernel, pixelsPerRadian, TAIL_FIT, type LinearImage } from '../src/render/lens-filter-image';
 import { cameraToRsb, filtersToRsb, lensToRsb, writeRsb, type RsbScene } from '../src/io/rsb';
 import { readRsb } from './rsb-reader';
 import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
@@ -45,6 +57,10 @@ describe('the filter data', () => {
     expect(LENS_FILTERS.map((t) => t.key)).toEqual(Object.keys(kinds));
     expect(LENS_FILTER_GRADES).toEqual(rustConst('GRADES'));
     expect(LENS_FILTER_S).toEqual(rustConst('GRADE_S'));
+    expect(LENS_FILTER_STAR_S).toEqual(rustConst('STAR_S'));
+    expect(LENS_FILTER_STREAK_S).toEqual(rustConst('STREAK_S'));
+    expect(STAR_LENGTH_DEG).toEqual(rustConst('STAR_LENGTH_DEG'));
+    expect(NET_LENGTH_DEG).toEqual(rustConst('NET_LENGTH_DEG'));
     const P = FILTER_PSF;
     const pairs: [number, string][] = [
       [P.sigmaCoreDeg, 'SIGMA_CORE_DEG'],
@@ -53,12 +69,12 @@ describe('the filter data', () => {
       [P.blackTransmission, 'BLACK_TRANSMISSION'],
       [P.softSScale, 'SOFT_S_SCALE'],
       [P.softMaxS, 'SOFT_MAX_S'],
-      [P.glimmerCells, 'GLIMMER_CELLS'],
+      [P.glimmerSparkles, 'GLIMMER_SPARKLES'],
+      [P.glimmerCloudDeg, 'GLIMMER_CLOUD_DEG'],
       [P.glimmerShare, 'GLIMMER_SHARE'],
       [P.glimmerSigmaDeg, 'GLIMMER_SIGMA_DEG'],
       [P.netAxisShare, 'NET_AXIS_SHARE'],
       [P.lineStartDeg, 'LINE_START_DEG'],
-      [P.lineEndDeg, 'LINE_END_DEG'],
       [P.streakEndDeg, 'STREAK_END_DEG'],
       [P.lineWidthDeg, 'LINE_WIDTH_DEG'],
     ];
@@ -80,11 +96,22 @@ describe('the filter data', () => {
     for (const brand of ['tiffen', 'pro-mist', 'promist', 'glimmerglass', 'black satin', 'schneider', 'hollywood', 'cokin', 'lee ']) expect(all).not.toContain(brand);
   });
 
-  it('give the scattered fraction of the engine between and beyond the listed grades', () => {
+  it('give the scattered fraction and the line lengths of the engine between and beyond the listed grades', () => {
     LENS_FILTER_GRADES.forEach((g, i) => expect(gradeS(g)).toBe(LENS_FILTER_S[i]));
     expect(gradeS(0)).toBe(0);
     expect(gradeS(0.75)).toBeCloseTo((LENS_FILTER_S[2] + LENS_FILTER_S[3]) / 2, 6);
     expect(gradeS(3)).toBe(LENS_FILTER_S[4]);
+    // Each type its own table (rt-core `kind_s`): the star's and the streak's, the soft filter's twice the diffusions'.
+    LENS_FILTER_GRADES.forEach((g, i) => {
+      expect(filterS('STAR', g)).toBe(LENS_FILTER_STAR_S[i]);
+      expect(filterS('STREAK', g)).toBe(LENS_FILTER_STREAK_S[i]);
+      expect(filterS('DIFFUSION_GOLD', g)).toBe(LENS_FILTER_S[i]);
+      expect(filterS('SOFT', g)).toBe(Math.min(2 * LENS_FILTER_S[i], 0.8));
+      expect(lineLengthDeg('STAR', g)).toBe(STAR_LENGTH_DEG[i]);
+      expect(lineLengthDeg('NET', g)).toBe(NET_LENGTH_DEG[i]);
+    });
+    expect(lineLengthDeg('STREAK', 1)).toBe(FILTER_PSF.streakEndDeg);
+    expect(lineLengthDeg('SOFT', 1)).toBe(0);
   });
 });
 
@@ -199,23 +226,49 @@ describe('the image-space approximation', () => {
     }
   }, 60000);
 
-  it('turns the gold diffusion’s halo towards red, and fits the Cauchy tail with shares that add up to 1', () => {
+  it('warms the gold diffusion’s halo and not its core, and fits the Cauchy tail with shares that add up to 1', () => {
     const ppr = pixelsPerRadian(128, 85, 36);
     const img = dot(128, 128);
     const out = applyLensFilters(img, [filter('DIFFUSION_GOLD', 2)], ppr);
-    let r = 0;
-    let b = 0;
-    for (let y = 0; y < 128; y++) {
-      for (let x = 0; x < 128; x++) {
-        if (Math.hypot(x - 64, y - 64) < 4) continue;
-        r += out.rgb[(y * 128 + x) * 3];
-        b += out.rgb[(y * 128 + x) * 3 + 2];
+    const ring = (from: number, to: number) => {
+      let r = 0;
+      let b = 0;
+      for (let y = 0; y < 128; y++) {
+        for (let x = 0; x < 128; x++) {
+          const d = Math.hypot(x - 64, y - 64);
+          if (d < from || d >= to) continue;
+          r += out.rgb[(y * 128 + x) * 3];
+          b += out.rgb[(y * 128 + x) * 3 + 2];
+        }
       }
-    }
-    expect(r).toBeGreaterThan(1.5 * b);
+      return r / b;
+    };
+    expect(ring(8, 64)).toBeGreaterThan(1.15);
+    expect(ring(0, 1)).toBeLessThan(1.02);
     expect(TAIL_FIT.reduce((a, g) => a + g.share, 0)).toBeCloseTo(1, 6);
-    // The glimmer's hash is the engine's (rt-core `cell_hash`, a few values computed there).
-    expect([cellHash(0, 0), cellHash(3, 2), cellHash(5, 5)]).toEqual([0xdf7aaac7, 0xae2b81d2, 0x42ed0265]);
+    // The tint is on the wide parts only: the core's colour weight is neutral, the tail's and the lines' the tint.
+    const gold = filterKernel(filter('DIFFUSION_GOLD', 1), ppr)!;
+    expect(gold.gaussians[0].weight).toEqual([1, 1, 1]);
+    expect(gold.gaussians[1].weight[0]).toBeGreaterThan(gold.gaussians[1].weight[2]);
+    const net = filterKernel(filter('NET', 1), ppr)!;
+    expect(net.gaussians[0].weight).toEqual([1, 1, 1]);
+    expect(net.lines!.weight[0]).toBeGreaterThan(net.lines!.weight[2]);
+  }, 60000);
+
+  it('makes the star’s rays as long as the grade says, and the net’s cross short', () => {
+    const ppr = pixelsPerRadian(512, 85, 36);
+    const reach = (type: LensFilter['type'], grade: number) => {
+      const k = filterKernel(filter(type, grade, { points: 6 }), ppr)!;
+      return Math.max(...k.lines!.taps.filter((t) => t.w > 0).map((t) => t.r)) / ppr;
+    };
+    for (const [g, i] of [[0.25, 1], [1, 3], [2, 4]] as const) {
+      expect(reach('STAR', g) / ((STAR_LENGTH_DEG[i] * Math.PI) / 180)).toBeGreaterThan(0.9);
+      expect(reach('STAR', g) / ((STAR_LENGTH_DEG[i] * Math.PI) / 180)).toBeLessThan(1);
+    }
+    expect(reach('NET', 2)).toBeLessThan((NET_LENGTH_DEG[4] * Math.PI) / 180);
+    // The taps' weights add up to the whole line.
+    const k = filterKernel(filter('STAR', 1), ppr)!;
+    expect(k.lines!.taps.reduce((a, t) => a + t.w, 0)).toBeCloseTo(1, 6);
   }, 60000);
 
   it('gives no kernel for a filter of grade 0', () => {
