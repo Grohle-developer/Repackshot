@@ -5,6 +5,7 @@
 
 use crate::color::Rgb;
 use crate::math::Vec3;
+use crate::optics::filters::FilterParams;
 use crate::scene::{
     Camera, EnvKind, Environment, Floor, Geometry, Instance, Lens, LensParams, Light, LightKind,
     Material, Mesh, RenderSettings, Scene, Transform, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY,
@@ -427,6 +428,13 @@ pub fn o1_scene() -> Scene {
     })
     .unwrap_or_else(|_| unreachable!("the busy lens is valid"));
     scene.camera.lens = Some(lens);
+    add_far_lights(&mut scene);
+    scene
+}
+
+/// The six small lights far behind the example's parts that [`o1_scene`] and [`o3a_scene`] turn
+/// into bokeh (seen by camera rays only).
+fn add_far_lights(scene: &mut Scene) {
     let towards = scene.camera.position;
     let (forward, right, up) = scene.camera.basis();
     for k in 0..6 {
@@ -448,6 +456,49 @@ pub fn o1_scene() -> Scene {
             flags: LIGHT_FLAG_CAMERA,
         });
     }
+}
+
+/// A stack of three effect filters (O3a): black diffusion 1/2, a six-point star at 15° and a
+/// streak of grade 1/2 with its own tint.
+pub fn filter_stack() -> [FilterParams; 3] {
+    use crate::optics::filters::*;
+    [
+        FilterParams {
+            kind: FILTER_DIFFUSION_BLACK,
+            grade: 0.5,
+            ..FilterParams::default()
+        },
+        FilterParams {
+            kind: FILTER_STAR,
+            grade: 1.0,
+            angle_deg: 15.0,
+            points: 6,
+            ..FilterParams::default()
+        },
+        FilterParams {
+            kind: FILTER_STREAK,
+            grade: 0.5,
+            ..FilterParams::default()
+        },
+    ]
+}
+
+/// The O3a parity scene (`render.rs` pins its hash; `rt --write-o3a-example` writes it): the
+/// example at f/2.8 with the far lights of [`o1_scene`], through a six-blade iris and
+/// [`filter_stack`].
+pub fn o3a_scene() -> Scene {
+    let mut scene = scene();
+    scene.render.width = 256;
+    scene.render.height = 192;
+    scene.camera.fstop = 2.8;
+    let lens = Lens::new(LensParams {
+        blades: 6,
+        filters: filter_stack(),
+        ..LensParams::default()
+    })
+    .unwrap_or_else(|_| unreachable!("the filter stack is valid"));
+    scene.camera.lens = Some(lens);
+    add_far_lights(&mut scene);
     scene
 }
 

@@ -139,6 +139,15 @@ pub const fn cutout_dim(bounce: u32, crossing: u32) -> u32 {
 /// numbers it drew before. It is used through [`PixelSampler::stratum`], not as a number.
 pub const DIM_LENS_BAND: u32 = 3 << 20;
 
+/// First logical dimension of the effect filters of a lens (O3a, [`crate::optics::filters`]):
+/// four per filter of the stack (the choice, two for the angle, one for the lobe), beyond the
+/// Sobol table, so a lens without filters draws exactly the numbers it drew before.
+pub const DIM_LENS_FILTER: u32 = 4 << 20;
+
+/// First logical dimension of the filters' connections to the lights (O3a): six per filter of
+/// the stack (the light, four for the deflection and the lobe, one spare), beyond the Sobol table.
+pub const DIM_LENS_FILTER_LIGHT: u32 = 5 << 20;
+
 /// Degree `s`, coefficients `a` and initial direction numbers `m_1..m_s` of dimensions 2 to 64
 /// (Joe and Kuo, `new-joe-kuo-6.21201`, rows `d = 2..=64`). Unused `m` entries are zero.
 const JOE_KUO: [(u32, u32, [u32; 9]); 63] = [

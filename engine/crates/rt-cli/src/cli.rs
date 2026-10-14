@@ -15,11 +15,13 @@ USAGE:
        [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R] [--format F] [--bits N]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
+    rt --filter-sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
     rt --write-e5b-example <scene.rsb>
     rt --write-o1-example <scene.rsb>
+    rt --write-o3a-example <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
@@ -48,6 +50,10 @@ OPTIONS:
                             E5 scenes (glass, coat, emitter, sky, HDRI) and the E5c skies
                             (physical against classic) into <dir>: one PNG each, index.html
                             and stats.json
+        --filter-sheet <dir>
+                            render the perfume bottle through every effect filter of the lens
+                            at three grades, two stacks and none (512x384, 128 spp) into <dir>:
+                            one PNG each and index.json (tools/lens-filters-sheet.mjs)
         --write-example <f> write the built-in example scene as an RSB file
         --write-e5-example <f>
                             write the E5 parity scene (glass, cut-outs, anisotropy, HDRI,
@@ -61,6 +67,9 @@ OPTIONS:
         --write-o1-example <f>
                             write the O1 parity scene (the example through a lens with every
                             knob of the enhanced thin lens, and bokeh lights) as an RSB file
+        --write-o3a-example <f>
+                            write the O3a parity scene (the example through a stack of three
+                            effect filters on the lens, and bokeh lights) as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -163,6 +172,13 @@ pub enum Command {
         /// Overrides (samples, threads, size).
         options: Options,
     },
+    /// Render the sheet of the effect filters (O3a) into a directory.
+    FilterSheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// Overrides (samples, threads, size).
+        options: Options,
+    },
     /// Write the example scene as an RSB file.
     WriteExample {
         /// RSB file to write.
@@ -185,6 +201,11 @@ pub enum Command {
     },
     /// Write the O1 parity scene (`rt_core::example::o1_scene`) as an RSB file.
     WriteO1Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the O3a parity scene (`rt_core::example::o3a_scene`) as an RSB file.
+    WriteO3aExample {
         /// RSB file to write.
         path: PathBuf,
     },
@@ -259,7 +280,9 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e5c = None;
     let mut write_e5b = None;
     let mut write_o1 = None;
+    let mut write_o3a = None;
     let mut sheet_dir = None;
+    let mut filter_sheet_dir = None;
     let mut tone_table = false;
     let mut options = Options::default();
     let mut it = args.iter();
@@ -300,6 +323,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                 }
             }
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--filter-sheet" => filter_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--example" => {
                 if input.replace(Input::Example).is_some() {
                     return Err("only one scene can be rendered at a time".into());
@@ -311,6 +335,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e5c-example" => write_e5c = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5b-example" => write_e5b = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-o1-example" => write_o1 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-o3a-example" => write_o3a = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -353,6 +378,12 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         }
         return Ok(Command::WriteO1Example { path });
     }
+    if let Some(path) = write_o3a {
+        if args.len() != 2 {
+            return Err("--write-o3a-example takes no other option".into());
+        }
+        return Ok(Command::WriteO3aExample { path });
+    }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
             return Err("--write-studio-hdri takes no other option".into());
@@ -378,6 +409,14 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             );
         }
         return Ok(Command::Sheet { dir, options });
+    }
+    if let Some(dir) = filter_sheet_dir {
+        if input.is_some() || output.is_some() || options.max_seconds.is_some() {
+            return Err(
+                "--filter-sheet renders its own scenes: no scene, -o or --max-seconds".into(),
+            );
+        }
+        return Ok(Command::FilterSheet { dir, options });
     }
     let input = input.ok_or("no scene given: pass a .rsb file or --example")?;
     let output = output.ok_or("no output given: pass -o <out.png>")?;
@@ -443,6 +482,12 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::WriteO3aExample { path } => {
+            let bytes = rt_core::example::o3a_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteStudioHdri { path } => {
             let bytes = crate::scenes::studio_hdri_file();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -472,6 +517,24 @@ pub fn run(command: Command) -> Result<(), String> {
                 );
             }
             println!("wrote {}", dir.join("index.html").display());
+            Ok(())
+        }
+        Command::FilterSheet { dir, options } => {
+            let size = options
+                .size
+                .unwrap_or(crate::filter_sheet::FILTER_SHEET_SIZE);
+            let samples = options
+                .samples
+                .unwrap_or(crate::filter_sheet::FILTER_SHEET_SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            println!(
+                "filter sheet: {}x{}, {samples} spp, {threads} threads",
+                size.0, size.1
+            );
+            let n = crate::filter_sheet::run(&dir, size, samples, threads)?;
+            println!("wrote {n} images and {}", dir.join("index.json").display());
             Ok(())
         }
         Command::Render {
@@ -717,6 +780,13 @@ mod tests {
             })
         );
         assert!(parse(&["--write-o1-example", "o1.rsb", "--example"]).is_err());
+        assert_eq!(
+            parse(&["--write-o3a-example", "o3a.rsb"]),
+            Ok(Command::WriteO3aExample {
+                path: "o3a.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-o3a-example", "o3a.rsb", "--samples", "2"]).is_err());
         assert_eq!(parse(&["--tone-table"]), Ok(Command::ToneTable));
         assert!(parse(&["--tone-table", "--example"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Command::Help));

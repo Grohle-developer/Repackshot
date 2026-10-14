@@ -567,6 +567,21 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      **NO FÍSICO** *Aberración cromática* y *Remolino*. Una nota recuerda
      que todo esto se ve en el modo Completo y en el render.
      ![óptica avanzada](camera-optics.png)
+   - **Filtros** (cerrado si la cámara no tiene ninguno; O3a): la pila de
+     filtros de efecto delante del objetivo, hasta tres, en orden. Sin
+     ninguno dice *Sin filtros*. **Añadir filtro** pone una *Difusión
+     negra* de grado 1/2 (o una *Estrella* si ya hay una difusión negra);
+     con tres, el botón se apaga y dice *Tres filtros como máximo*. Por
+     filtro: *Filtro* (lista con los ocho tipos) con la frase de lo que
+     hace fotográficamente debajo, una **×** para quitarlo, *Grado*
+     (*1/8 · 1/4 · 1/2 · 1 · 2*) y, según el tipo, *Tinte* (muestra de
+     color y *Tinte propio* para volver al del tipo), *Puntas* (*4 · 6 ·
+     8*) y *Ángulo*. Cada cambio es una entrada de deshacer (*Cámara:
+     Añadir filtro*, *Cámara: Grado*…). Una nota dice que el modo
+     Completo y el render los trazan y que el Rápido dibuja una
+     aproximación; con filtros, el medidor del modo Rápido añade
+     *Filtros: aproximación, el render lo hace el motor*.
+     ![filtros](lens-filters.png)
 5. **Imagen** — Exposición (EV), transformada de vista (Estándar /
    Fílmica / AgX), halo, nitidez, saturación, contraste, viñeta. Todo con
    deslizador y valor.
