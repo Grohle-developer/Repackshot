@@ -400,8 +400,11 @@ async function boxCheck(browser) {
   await addPrimitive(page, 'Box');
   await pickRow(page, 'Box');
   await loadSlot(page, 'color', checker);
-  await page.locator('[data-texture-mapping] select').first().selectOption('BOX');
-  await settle(page, 200);
+  // Back and forth through the projections (each its own program), ending on Box.
+  for (const p of ['PLANAR', 'CYLINDRICAL', 'UV', 'SPHERICAL', 'BOX']) {
+    await page.locator('[data-texture-mapping] select').first().selectOption(p);
+    await settle(page, 150);
+  }
   log.projection = await page.locator('[data-texture-mapping] select').first().inputValue();
   ok(log.projection === 'BOX', `the projection is ${log.projection}`, f);
   // Look at three faces: the Orbit tool (O), a drag up and to the side, then frame it (F) and back to Select.
