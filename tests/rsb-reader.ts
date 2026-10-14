@@ -161,6 +161,12 @@ export function readLens(p: DataView): RsbLens {
   };
   const len = l.maskWidth * l.maskHeight;
   l.mask = new Uint8Array(p.buffer.slice(p.byteOffset + 72, p.byteOffset + 72 + len));
+  // O3a: the three filter slots after the picture's padding, when the section goes on.
+  const at = 72 + Math.ceil(len / 4) * 4;
+  if (p.byteLength - at >= 84) {
+    const f = new Cursor(new DataView(p.buffer, p.byteOffset + at, 84));
+    l.filters = [0, 1, 2].map(() => ({ kind: f.u32(), grade: f.f32(), tint: [f.f32(), f.f32(), f.f32()] as [number, number, number], angleDeg: f.f32(), points: f.u32() }));
+  }
   return l;
 }
 

@@ -43,6 +43,17 @@
 //!    about the horizontal axis tips the lens down: the focus plane leans back towards the floor.
 //!    A chief ray that does not meet the focus plane in front of the lens is focused at infinity.
 //!
+//! # Effect filters (O3a)
+//!
+//! A stack of up to three filters in front of the lens ([`filters`]: diffusion, glimmer, soft,
+//! net, star, streak) scatters the camera ray after the steps above: with the filter's probability
+//! `s` the ray is turned by an angle from its PSF and weighs `a` (times the tint on the wide parts
+//! of the PSF), otherwise it goes straight on, so the image is `(1 − s)·I + s·a·(I ⊗ K_T)` with
+//! the bokeh and the focus of the lens. Each filter draws its numbers from its own dimensions
+//! beyond the Sobol table ([`crate::sampler::DIM_LENS_FILTER`]); a lens without filters draws none
+//! of them. Each camera sample with filters is also connected, through the PSF, to a light the
+//! camera sees ([`Lens::connection`]), weighed against the scattering lobe by lobe.
+//!
 //! The exact passes (X2) keep the plain thin lens: the `coc` pass is the circle of confusion of a
 //! round, untilted aperture of `focal_mm / fstop` ([`crate::passes::coc_diameter`]), whatever the
 //! lens. The ray of the exact passes ([`crate::render::centre_ray`]) goes through the lens centre
@@ -56,15 +67,22 @@
 //! [`DIM_LENS_BAND`]: crate::sampler::DIM_LENS_BAND
 //! [`PixelSampler::strata`]: crate::sampler::PixelSampler::strata
 
+#[cfg(test)]
+mod filter_tests;
+pub mod filters;
 pub mod pupil;
 #[cfg(test)]
 mod tests;
 
 use crate::color::Rgb;
 use crate::fmath;
+use crate::light::CameraLight;
 use crate::math::{Ray, Vec3};
-use crate::sampler::{PixelSampler, DIM_LENS, DIM_LENS_BAND};
+use crate::sampler::{
+    PixelSampler, DIM_LENS, DIM_LENS_BAND, DIM_LENS_FILTER, DIM_LENS_FILTER_LIGHT,
+};
 use crate::scene::Camera;
+use filters::{light_disc, Filter, FilterParams, Lobe, MAX_FILTERS};
 use pupil::{Grid, Iris, Profile, Pupil};
 
 /// `LENS.mask_kind` 0: no picture.
@@ -139,6 +157,8 @@ pub struct LensParams {
     /// The picture: 8-bit transmission (255 open), row-major, rows top to bottom, covering
     /// `[−1, 1]²` of the pupil with `y` up and the unit circle inscribed.
     pub mask: Vec<u8>,
+    /// O3a: the effect filters in front of the lens, in order (`FILTER_NONE`: an empty slot).
+    pub filters: [FilterParams; MAX_FILTERS],
 }
 
 impl Default for LensParams {
@@ -163,8 +183,28 @@ impl Default for LensParams {
             mask_width: 0,
             mask_height: 0,
             mask: Vec::new(),
+            filters: [FilterParams::default(); MAX_FILTERS],
         }
     }
+}
+
+/// What the effect filters did to one camera sample (O3a), for their connection to the lights.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FilterPath {
+    /// Where the ray leaves the lens.
+    pub origin: Vec3,
+    /// The camera's right and up: the axes of the deflections.
+    pub right: Vec3,
+    /// See `right`.
+    pub up: Vec3,
+    /// The ray's direction before each filter.
+    pub dir_in: [Vec3; MAX_FILTERS],
+    /// The sample's colour weight before each filter.
+    pub weight_in: [Rgb; MAX_FILTERS],
+    /// The last filter that scattered the sample, the lobe and the deflection.
+    pub last: Option<(usize, Lobe, (f32, f32))>,
+    /// The numbers of the filters (the band group's with chromatic aberration).
+    numbers: PixelSampler,
 }
 
 /// A camera's optics: the parameters of its `LENS` section and what is precomputed from them.
@@ -175,6 +215,11 @@ pub struct Lens {
     /// `(sin, cos)` of the tilt and of the direction of its axis.
     tilt: (f32, f32),
     tilt_axis: (f32, f32),
+    /// The filters that scatter (empty slots and grade 0 left out), in order.
+    filters: Vec<Filter>,
+    /// Whether the filters connect the camera samples to the lights (always, but for measuring
+    /// what the connections bring: [`Lens::with_connections`]).
+    connect: bool,
 }
 
 fn unit(v: f32) -> bool {
@@ -234,7 +279,15 @@ impl Lens {
             }
             _ => return Err("unknown mask_kind"),
         };
+        let mut filters = Vec::new();
+        for f in &p.filters {
+            if let Some(f) = Filter::new(f)? {
+                filters.push(f);
+            }
+        }
         Ok(Lens {
+            filters,
+            connect: true,
             tilt: fmath::sin_cos(p.tilt_deg * fmath::DEG_TO_RAD),
             tilt_axis: fmath::sin_cos(p.tilt_axis_deg * fmath::DEG_TO_RAD),
             params,
@@ -250,6 +303,24 @@ impl Lens {
     /// The pupil sampler.
     pub fn pupil(&self) -> &Pupil {
         &self.pupil
+    }
+
+    /// The filters that scatter, in order (O3a).
+    pub fn filters(&self) -> &[Filter] {
+        &self.filters
+    }
+
+    /// The lens with or without the filters' connections to the lights: without them the filters
+    /// are the pupil scattering alone (the same image on average, with more noise around small
+    /// lights). For measuring what the connections bring; a scene file always has them.
+    pub fn with_connections(mut self, on: bool) -> Lens {
+        self.connect = on;
+        self
+    }
+
+    /// Whether the filters connect the camera samples to the lights.
+    pub fn connects(&self) -> bool {
+        self.connect && !self.filters.is_empty()
     }
 
     fn tilted(&self) -> bool {
@@ -334,8 +405,137 @@ impl Lens {
     }
 
     /// One camera sample through the sensor point `(u, v)`: the ray and the colour weight of what
-    /// it brings back (white, black for a blocked sample, or one channel times three).
+    /// it brings back (white, black for a blocked sample, or one channel times three, and the
+    /// tint of a filter that scattered it).
     pub fn sample(
+        &self,
+        camera: &Camera,
+        aspect: f32,
+        u: f32,
+        v: f32,
+        sampler: &PixelSampler,
+    ) -> (Ray, Rgb) {
+        let (ray, weight, _) = self.sample_filtered(camera, aspect, u, v, sampler);
+        (ray, weight)
+    }
+
+    /// [`Lens::sample`] and, when the lens has filters, what they did to the sample
+    /// ([`FilterPath`]: for their connection to the lights, multiple importance sampling against
+    /// the scattering).
+    pub fn sample_filtered(
+        &self,
+        camera: &Camera,
+        aspect: f32,
+        u: f32,
+        v: f32,
+        sampler: &PixelSampler,
+    ) -> (Ray, Rgb, Option<FilterPath>) {
+        let (ray, weight) = self.sample_lens(camera, aspect, u, v, sampler);
+        if self.filters.is_empty() {
+            return (ray, weight, None);
+        }
+        // The three bands of a group share their filters' numbers too (one scattering, three
+        // colours), as they share the pupil.
+        let numbers = if self.params.ca_amount > 0.0 && camera.lens_radius() > 0.0 {
+            sampler.strata(DIM_LENS_BAND, 3).1
+        } else {
+            *sampler
+        };
+        let (_, right, up) = camera.basis();
+        let mut path = FilterPath {
+            origin: ray.origin,
+            right,
+            up,
+            dir_in: [ray.dir; MAX_FILTERS],
+            weight_in: [weight; MAX_FILTERS],
+            last: None,
+            numbers,
+        };
+        let mut dir = ray.dir;
+        let mut weight = weight;
+        for (i, f) in self.filters.iter().enumerate() {
+            path.dir_in[i] = dir;
+            path.weight_in[i] = weight;
+            let d = DIM_LENS_FILTER + 4 * i as u32;
+            let (a, b) = numbers.get2(d);
+            let (c, e) = numbers.get2(d + 2);
+            if let Some(sc) = f.scatter([a, b, c, e]) {
+                dir = (dir + right * sc.delta.0 + up * sc.delta.1).normalize();
+                weight = weight * Rgb::new(sc.weight[0], sc.weight[1], sc.weight[2]);
+                path.last = Some((i, sc.lobe, sc.delta));
+            }
+        }
+        (Ray::new(ray.origin, dir), weight, Some(path))
+    }
+
+    /// The weight of camera light `light` (of `lights`, chosen for the connections with
+    /// probability `1 / lights.len()`) crossed by the ray of a sample whose filters did `path`:
+    /// against the connection of the last filter that scattered it (1 when none did).
+    pub fn crossed_weight(&self, path: &FilterPath, lights: &[CameraLight], light: usize) -> f32 {
+        let (Some((j, lobe, delta)), Some(l)) = (path.last, lights.get(light)) else {
+            return 1.0;
+        };
+        let Some(f) = self.filters.get(j) else {
+            return 1.0;
+        };
+        match light_disc(
+            path.origin,
+            path.dir_in[j],
+            path.right,
+            path.up,
+            l.centre,
+            l.radius,
+        ) {
+            Some(disc) => f.mis_weight(lobe, delta, &disc, 1.0 / lights.len() as f32),
+            None => 1.0,
+        }
+    }
+
+    /// The connection of filter `i` of a sample that did `path` to one of `lights` (chosen by the
+    /// sample's own numbers, each with probability `1 / lights.len()`): the ray to it, the light,
+    /// and the weight its radiance takes (the colour before the filter, `s` and the filter's colour
+    /// there, the chance that no later filter scatters, and the multiple importance sampling
+    /// weight). `None` when the filter cannot reach the chosen light.
+    pub fn connection(
+        &self,
+        path: &FilterPath,
+        lights: &[CameraLight],
+        i: usize,
+    ) -> Option<(Ray, usize, Rgb)> {
+        let f = self.filters.get(i)?;
+        if lights.is_empty() {
+            return None;
+        }
+        let d = DIM_LENS_FILTER_LIGHT + 6 * i as u32;
+        let (pick, a) = path.numbers.get2(d);
+        let (b, c) = path.numbers.get2(d + 2);
+        let e = path.numbers.get1(d + 4);
+        let n = lights.len();
+        let light = ((pick * n as f32) as usize).min(n - 1);
+        let l = &lights[light];
+        let disc = light_disc(
+            path.origin,
+            path.dir_in[i],
+            path.right,
+            path.up,
+            l.centre,
+            l.radius,
+        )?;
+        let filters::Connection {
+            delta,
+            weight: w,
+            colour,
+            ..
+        } = f.connect(&disc, 1.0 / n as f32, [a, b, c, e])?;
+        let dir = (path.dir_in[i] + path.right * delta.0 + path.up * delta.1).normalize();
+        let later: f32 = self.filters[i + 1..].iter().map(|g| 1.0 - g.s()).product();
+        let weight =
+            path.weight_in[i] * Rgb::new(colour[0], colour[1], colour[2]) * (f.s() * later * w);
+        Some((Ray::new(path.origin, dir), light, weight))
+    }
+
+    /// [`Lens::sample`] without the filters.
+    fn sample_lens(
         &self,
         camera: &Camera,
         aspect: f32,
