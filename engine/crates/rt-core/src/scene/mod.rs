@@ -127,6 +127,24 @@ impl Camera {
         }
     }
 
+    /// O2: what the engine computed of the camera's traced lens, as JSON
+    /// ([`crate::optics::traced::LensInfo::to_json`]: focal length, back focus, f-number, T-stop,
+    /// transmittance, distortion and relative illumination against image height), or
+    /// `{"traced":false}` for the thin lens or an orthographic camera. The hosts (`rt_wasm`, the
+    /// launcher's `/api/lens/info`) hand it to the interface, which shows these numbers and never
+    /// its own (rule 10).
+    pub fn lens_info_json(&self) -> String {
+        match self
+            .lens
+            .as_ref()
+            .and_then(|l| l.traced())
+            .filter(|_| !self.ortho)
+        {
+            Some(traced) => traced.info().to_json(),
+            None => "{\"traced\":false}".to_string(),
+        }
+    }
+
     /// Radius of the lens aperture in scene units, zero for a pinhole.
     pub fn lens_radius(&self) -> f32 {
         if self.fstop > 0.0 && self.focus_dist > 0.0 && !self.ortho {

@@ -600,3 +600,28 @@ fn a_live_viewport_is_switched_through_the_api() {
         400
     );
 }
+
+#[test]
+fn the_lens_information_through_the_api_is_the_engines() {
+    // O2: the launcher answers `POST /api/lens/info` with the engine's numbers of the traced lens
+    // of the scene in the body, the very JSON `rt_wasm` gives the page; the thin lens says so.
+    let t = TestServer::start("lens-info", 1);
+    let scene = rt_core::example::o2_scene();
+    let r = t.api("POST", "/api/lens/info", &scene.to_rsb());
+    assert_eq!(r.status, 200, "{}", r.text());
+    assert_eq!(r.text(), scene.camera.lens_info_json());
+    let info = rt_app::json::parse(&r.text()).unwrap();
+    let efl = info.get("eflMm").and_then(|v| v.as_f64()).unwrap();
+    assert!(
+        (efl - f64::from(scene.camera.focal_mm)).abs() < 1.0e-2,
+        "{efl}"
+    );
+    let thin = t.api(
+        "POST",
+        "/api/lens/info",
+        &rt_core::example::scene().to_rsb(),
+    );
+    assert_eq!(thin.status, 200);
+    assert_eq!(thin.text(), "{\"traced\":false}");
+    assert_eq!(t.api("POST", "/api/lens/info", b"not an rsb").status, 400);
+}

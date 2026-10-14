@@ -1050,6 +1050,30 @@ mod tests {
     pub(crate) const PINNED_O3A_FILTERS_4SPP: u32 = 0x4993_8f3b;
 
     #[test]
+    fn the_o2_traced_lens_has_a_pinned_hash_on_every_platform() {
+        // O2 traced the camera rays through the double Gauss of the catalogue (f/2.8, seven
+        // rounded blades, the bokeh lights of O1): the prescription at the end of LENS, prepared
+        // when the scene is read. Every hash above stays. Through an RSB round trip (the traced
+        // preparation included); `tools/wasm-parity.mjs` checks the real module against it
+        // (`rt --write-o2-example`).
+        let scene = crate::example::o2_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("O2 example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(
+                hash,
+                PINNED_O2_TRACED_4SPP,
+                "O2 traced lens on {}",
+                isa.name()
+            );
+        }
+    }
+
+    /// Pinned hash of the O2 example (the traced double Gauss) at 4 samples per pixel.
+    pub(crate) const PINNED_O2_TRACED_4SPP: u32 = 0xe2e8_e3ab;
+
+    #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {
         // The whole path (camera, shadow and bounce rays) through brute force and through the
         // BVH gives the same film.

@@ -276,18 +276,7 @@ pub fn scene_lens_info(handle: u32) -> Option<String> {
         .checked_sub(1)
         .and_then(|i| reg.scenes.get(i as usize))
         .and_then(Option::as_ref)?;
-    let camera = &loaded.scene.camera;
-    Some(
-        match camera
-            .lens
-            .as_ref()
-            .and_then(|l| l.traced())
-            .filter(|_| !camera.ortho)
-        {
-            Some(traced) => traced.info().to_json(),
-            None => "{\"traced\":false}".to_string(),
-        },
-    )
+    Some(loaded.scene.camera.lens_info_json())
 }
 
 /// Words per pixel of the input of [`denoise`]: the planes `sums` (4), `lum2` (1), `albedo` (3),
