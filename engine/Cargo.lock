@@ -38,6 +38,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rt-sim"
+version = "0.3.0"
+
+[[package]]
 name = "rt-sky"
 version = "0.3.0"
 dependencies = [
