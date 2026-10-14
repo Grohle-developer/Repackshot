@@ -29,6 +29,9 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR and the project file.
   es a la vez el JSON exportado y lo que se guarda bajo una sola clave (`repackshot.library`: `localStorage` en la web,
   `library/library.json` en escritorio). Todo lo que
   entra se valida elemento a elemento y se reconstruye con los campos conocidos; el inválido se omite con su motivo.
+- `phys.ts` (S2): the simulator's scene file (PHY1, `engine/crates/rt-phys/src/scene.rs`) for what `core/physics.ts`
+  says to simulate: the meshes of the dynamic pieces and of the static parts, each body's pieces with their world
+  matrices and its density, friction and bounciness, then the static parts and the floor.
 - `rsb.ts`: the engine's scene file (RSB v1, `engine/crates/rt-core/src/scene/rsb.rs`). `writeRsb` writes exactly
   the bytes of rt-core's writer (`tests/rsb.test.ts` compares with `rt --write-example`); `projectScene` maps a
   project onto it: active camera (36 mm on the longer side; in the viewport, the output frame inset as the preview

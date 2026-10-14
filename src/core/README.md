@@ -48,3 +48,11 @@ Textures (M2a): `textures.ts` (the image slots, the mapping and the labels of a 
 and the maths of the projections and labels the preview's shader and the engine follow), `texture-images.ts`
 (texture images in the registry under ids that name their content, and their limits), `image-header.ts` (the size
 and channels of a PNG or JPEG from its header).
+
+Physics (S2): `physics.ts` (the Physics section of a node: role, density by the material's category or its own,
+friction, bounciness, as parts; what the simulator is given for a Drop or for the stored roles, `physicsSpec`; the
+simulator's poses back to the movers' local transforms, inside turned and scaled groups and keeping each mover's
+scale; the PHYSICS clip's baked track, base64 f32 written a frame at a time by `TrackWriter`, played between frames and
+carried by the node's moves since its anchor; the `physics/*` actions, where a run is one gesture and Reset another
+step; the Doctor's dynamic-part-below-the-floor test). `animation.ts` plays PHYSICS clips first and `playheadPose`
+says what the viewport and a still show at the playhead, at 0 too for what a recorded simulation holds.

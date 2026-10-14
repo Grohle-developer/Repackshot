@@ -5093,7 +5093,7 @@ que todo sirva también para animaciones. Son S2, S9 y S7 de
 6. **Orden.** S2 ahora (base de todo); S9 y S7 después de S2, cuando la
    máquina lo permita (ocho agentes en paralelo ya la saturan).
 
-### S2 · Cuerpos rígidos: «Dejar caer», la barra de físicas y grabar — **Opus**
+### S2 · Cuerpos rígidos: «Dejar caer», la barra de físicas y grabar — **Opus** — hecha
 
 **Qué.** `rt-phys` v1: cuerpos rígidos XPBD con **envolvente convexa**
 automática por pieza (*quickhull* propio) para los dinámicos, y las
@@ -5126,6 +5126,115 @@ Comprobación de navegador `tools/physics-check.mjs` con capturas
 dejar caer tres primitivas sobre el suelo) y un GIF o tira de 6
 fotogramas `docs/ui/physics-drop-strip.png`. `SPEC.md` §3.1 y §3.7,
 `UI.md`, `ARCHITECTURE.md` (crate `rt-phys`, el *worker*), CHANGELOG.
+
+**Hecho.** En tres pasos:
+
+- **`engine/crates/rt-phys`** (solo `std` y `rt-core`, `#![forbid(unsafe_code)]`):
+  XPBD de Müller et al. (SCA 2020) a 1/240 s con 4 subpasos; envolvente
+  convexa por *quickhull* propio (Barber et al. 1996, caras coplanarias
+  fundidas por normal y por distancia al plano) con tope de 128 vértices y
+  caja orientada por componentes principales de reserva; esferas
+  reconocidas como tales (≥ 26 puntos al 0,2 % del radio) y tratadas como
+  esferas exactas; contactos por ejes separadores con poda por el mapa de
+  Gauss (Gregorius), recorte de Sutherland–Hodgman, ≤ 4 puntos, márgenes
+  especulativos; rozamiento de Coulomb, restitución con el umbral 2|g|h,
+  dormir y despertar; el formato PHY1; `World` (`add_floor`,
+  `add_static_mesh`, `add_dynamic`, `step`, `poses`, `awake_count`,
+  `settled`, `hash`). Once tests en `tests/rigid.rs`, los del criterio más
+  una rampa (sostiene a μ 0,6, resbala a 0,1), la caída fijada por *hash*
+  a 60, 90, 120 y 480 pasos (`tests/fixtures/phys-drop.json`) y el *hash*
+  igual con 1, 2, 3, 5, 8 y 13 trozos de fase estrecha y con 3 hilos.
+  **Mil esferas** (radio 10 mm, diez capas de diez por diez en una bandeja)
+  se asientan en **1,70 s simulados**; en *release*, un hilo, **TIEMPO_1000**
+  de reloj en la máquina virtual de 4 núcleos con otros siete agentes
+  compilando (carga ~26; sin carga, 2,4 s de CPU).
+- **`rt-wasm`**: `phys_new`, `phys_free`, `phys_step`, `phys_bodies`,
+  `phys_ids`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_steps`,
+  `phys_hash`, sobre un registro de mundos por *handle*. Nativo = wasm:
+  los tests de `rt-phys` pasan compilados a `wasm32-wasip1` con los mismos
+  *hash*, y `tests/physics-engine.test.ts` repite la caída fijada con el
+  `rt.wasm` real.
+- **Interfaz**: `core/physics.ts` (papeles, densidad por familia de
+  material, `physicsSpec`, las poses de vuelta a los nodos dentro de grupos
+  girados y escalados, la pista `PHYSICS` y su ancla, las acciones
+  `physics/*`), `io/phys.ts` (PHY1), `render/physics-worker.ts` y
+  `physics.ts`, `ui/physics.ts` (la simulación en marcha), la barra de
+  físicas, la sección *Físicas*, *Dejar caer* en el menú contextual, en el
+  inspector y en la paleta, el clip `PHYSICS` en la línea de tiempo y el
+  chequeo `physics` del Doctor (15 chequeos; 16 tipos de animación).
+  `tests/physics.test.ts` (24 tests, cada uno comprobado reintroduciendo su
+  error) y `tools/physics-check.mjs`, con las tres capturas.
+
+**Lo que no encajó con el plan** (regla 12):
+
+- **No hay menú *Pieza* en la cabecera.** *Dejar caer* está en el menú
+  contextual (el mismo en el árbol y en el visor), en las secciones *Pieza*
+  y *Físicas* del inspector y en la paleta.
+- **«La BVH de `rt-core`»**: la de `rt-core` responde a rayos (anchura 4/8,
+  SAH), no a «qué triángulos tocan esta caja»; `rt-phys` tiene la suya,
+  pequeña (mediana, hojas de 4), y `rt-core` no se toca. **GJK–EPA** no
+  hizo falta: ejes separadores para envolvente–envolvente y
+  envolvente–triángulo, y esfera analítica. El suelo es un solo triángulo
+  enorme: con dos, la diagonal sesgaba el rozamiento.
+- **Desviaciones del artículo** que hicieron falta para que una caja quieta
+  no derive ni gire y una pila de tres no se caiga: rozamiento por parche
+  (en su centroide, con torsión por el radio del parche, y como mínimo un
+  brazo de rodadura: una bola que giraba sobre su punto de apoyo no
+  paraba) y no por punto;
+  **anclas** de rozamiento estático que se guardan de paso a paso; el
+  dinámico como impulso de como mucho μλ/h; los parches coplanarios de un
+  cuerpo contra lo estático fundidos en uno; resistencia a la rodadura de
+  0,02 r (una bola que rueda acaba parándose); dormir por recorrido en una
+  ventana de 0,5 s y no por velocidad instantánea (el temblor de contacto
+  no dejaba dormir nada); despertar solo por algo que se acerca deprisa
+  (las cadenas de despertares no dejaban asentarse a las mil esferas).
+- **El cubo sobre la esfera**: sobre una esfera teselada gruesa un cubo
+  puede descansar de verdad en una faceta. El test usa una esfera de 32 × 64,
+  μ 0,2 y el cubo un poco desplazado de la cumbre; resbala y cae.
+- **El tiempo de las mil esferas** se exige (< 20 s) solo en *release*; en
+  *debug* el test comprueba que se asientan.
+- **Las exportaciones** son más que las cuatro del plan (`phys_new(escena)`,
+  `phys_step(n)`, `phys_poses()`, `phys_awake()`): un *handle* por mundo y
+  `phys_ids` (dónde quedó cada cuerpo; uno sin masa no se simula).
+- **Grabar** (decisiones 3 y 5, cambiadas a mitad de fase): no hay botón
+  *Grabar como animación*; toda simulación se graba sola en un clip
+  `PHYSICS` por cuerpo que crece mientras corre. Por eso la decisión 2
+  («el visor Rápido enseña la simulación en vivo sin tocar el *store*») se
+  cumple a medias: los **nodos** no cambian hasta confirmar, pero los
+  clips crecen y el cabezal los sigue por el *store* (`physics/grow`,
+  `anim/playhead`, en el gesto de la simulación: una entrada de deshacer
+  con el comienzo y la confirmación), y el visor la enseña por la
+  animación. Mientras corre, el visor se queda en *Rápido*.
+- **Pausar en una página cargada.** La comprobación del navegador encontró
+  que, con el hilo principal ocupado, el *worker* acababa la simulación
+  antes de que la página viera la pausa. Ahora la página acusa recibo de
+  cada envío y el *worker* no va más de 1/8 s por delante (va más despacio
+  en vez de acabar sin verse), lo que llega en pausa espera a *Reanudar*,
+  *Parar* confirma la pose que se ve (no la que el simulador alcanzó
+  después), y una pausa pedida antes de que el *worker* tenga la
+  simulación le llega justo después. Con sus tests.
+- **El ancla del clip** (no estaba en el plan): sin ella, un clip `PHYSICS`
+  clavaba el nodo en sus fotogramas y la pieza ya no se podía mover después
+  de una caída. El clip guarda la pose a la que se refiere (`anchor`) y se
+  reproduce movido por lo que el nodo se haya movido desde entonces.
+- **El cabezal en 0** (para el criterio de **Fable**): N1 enseña en 0 la
+  escena como se edita, y tras una caída desde 0 la pose editada ya es la
+  final, así que en 0 se veía la pieza en reposo y un fotograma después en
+  el aire. Lo construido: en 0 los nodos que sostiene una simulación grabada
+  enseñan su fotograma (también la foto fija: «usa el fotograma del
+  cabezal»), el resto como se edita, y el *gizmo* no sale sobre esos nodos
+  en 0 (como no sale con el cabezal pasado 0). La otra opción, cumplir N1 a
+  rajatabla, es quitar `playheadPose` y su regla del *gizmo*.
+- **Densidad por familia de material**: la tabla va por las siete
+  `MATERIAL_CATEGORIES` (metal, plástico, madera, tela, vidrio, emisivo,
+  otro), que es la clave estable que tiene cada material; los valores son
+  típicos, para que **Fable** los revise.
+- `readEnvelope` (`io/project.ts`) vuelve a pasar el Doctor al abrir, como
+  ya hacía `loadProject`: con un chequeo nuevo, un proyecto abierto por
+  `migrateProject` traía los resultados de antes.
+- CI no se toca (`.github/` queda fuera de la fase): la paridad nativo =
+  wasm la comprueban los tests de `rt-phys` en `wasm32-wasip1` y
+  `tests/physics-engine.test.ts` cuando hay `rt.wasm`.
 
 ### S9 · Telas con físicas reales — **Opus** (tras S2)
 

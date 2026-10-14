@@ -12,6 +12,11 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **Etiquetas** (M2a): *Añadir etiqueta…* elige una imagen con alfa, y una pulsación sobre la pieza con un arrastre la coloca allí (plana desde la normal de la superficie, derecha) con su ancho; varias por material, en orden (*Traer delante*, *Enviar atrás*), con ancho, giro, alcance y su acabado (rugosidad, barniz, relieve del papel); **Mover etiqueta** la desliza por la superficie (M2a).
 - La vista **Rápido** dibuja todas las ranuras, las cinco proyecciones (la caja mezcla tres ejes, la cilíndrica y la esférica sin costura visible) y las etiquetas, con mipmaps, sobre el aspecto de siempre (luces, entorno, sombras, contorno). *Completo* y *Render* las pintan cuando el motor las lea (*próximamente*, M2b) (M2a).
 - La **hoja de importación** gana la sección **Texturas**: cuántas imágenes se guardan y cuánto pesan, y cada una que no, con el porqué (M2a).
+- **Dejar caer** (S2): en el menú contextual de una pieza, un grupo o un modelo (en el árbol y en el visor), en las secciones *Pieza* y *Físicas* del inspector y en la paleta. Lo seleccionado cae sobre el suelo y sobre lo que tenga debajo y la simulación se para sola cuando todo está quieto; toda la caída es una entrada de deshacer (S2).
+- La **barra de físicas** (S2), un cajón de la barra inferior junto a *Animación*: *▶ Iniciar · ⏸ Pausar / ▶ Reanudar · ■ Parar · ↺ Reiniciar*, el tiempo simulado y los cuerpos despiertos tal como los cuenta el simulador, y el estado (*Parado* por defecto, y cómo acabó). *Pausar* congela lo que se ve, *Parar* confirma la pose y *Reiniciar* la deshace como otra entrada de deshacer (S2).
+- **Toda simulación se graba en la animación** (S2): cada cuerpo que cae recibe un clip **Simulación** (`PHYSICS`) en la línea de tiempo, que crece fotograma a fotograma mientras corre, con el cabezal detrás; se mueve en el tiempo, se estira para ralentizarlo, se guarda con el proyecto y sigue al nodo si se mueve después. La foto fija usa el fotograma del cabezal (S2).
+- Inspector ▸ **Físicas** (S2): papel (*Estático · Dinámico*; *Tela* y *Líquido*, próximamente), densidad en kg/m³ (la de la familia del material, o propia), rozamiento, rebote y, en un grupo, *Como piezas* (S2).
+- El **Doctor** avisa de una pieza dinámica que empieza atravesando el suelo, y la sube (S2).
 
 ### Importación
 
@@ -20,10 +25,13 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 ### Proyecto
 
+- La sección *Físicas* de cada nodo y los clips `PHYSICS` (pista horneada en base64 y ancla) se guardan en el proyecto; un proyecto anterior abre igual y el esquema sigue en 2 (S2).
 - Las imágenes de textura **viajan en el proyecto** tal cual (PNG o JPEG, base64), una vez cada una, bajo un id que nombra su contenido: un proyecto guardado y abierto vuelve con los mismos bytes. Hasta 16 MB por imagen y 64 MB por proyecto. Los proyectos anteriores abren igual (M2a).
 
 ### Motor
 
+- **`rt-phys`**, el simulador de cuerpos rígidos propio (S2): dinámica por posiciones extendida (XPBD, Müller et al. 2020) a 240 pasos por segundo con 4 subpasos, envolventes convexas por *quickhull* propio (o caja orientada) y esferas exactas, contactos por ejes separadores contra envolventes, triángulos y el suelo, rozamiento de Coulomb con anclas y torsión, restitución, resistencia a la rodadura y dormir. Determinista: el mismo *hash* de poses con 1 y N hilos y en wasm. Mil esferas se asientan en 1,7 s simulados (S2).
+- `rt-wasm` exporta el simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…), que corre en un *worker* propio de la página (S2).
 - El **contrato RSB de las texturas** queda escrito para M2b (`ARCHITECTURE.md` §5.2: sección `IMGS`, bloque de texturas de `MATL` desde el byte 100, UV en `MESH`); el escritor lo produce solo cuando se le pide, y hasta entonces los bytes de cualquier escena son los de antes (M2a).
 
 ## v0.1.5 — 2026-10-14
