@@ -32,6 +32,8 @@ import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aper
 import { filtersOf, isNeutralOptics, type CameraOptics, type LensFilter } from '../core/optics';
 import type { PupilProfile } from '../data/bokeh';
 import { lensFilterType } from '../data/lens-filters';
+import type { CoatingId, LensSurface } from '../data/lenses';
+import { composeLens, type ComposedLens, type TracedLens } from '../core/traced-lens';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -168,6 +170,50 @@ export interface RsbLens {
   mask: Uint8Array;
   /** O3a: the stack of effect filters (up to three; absent or empty: none, and the O1 bytes). */
   filters?: RsbLensFilter[];
+  /** O2: the traced lens, after the filter slots (absent: the thin lens). */
+  prescription?: RsbPrescription;
+}
+
+/** `LENS` surface kinds (rt-core `optics::traced::SURFACE_*`). */
+export const SURFACE_KIND = { sphere: 0, plane: 1, asphere: 2, cylinderX: 3, cylinderY: 4, mirror: 5 } as const;
+/** `LENS` surface coatings (rt-core `COATING_*`): 0 is a surface that is not air–glass. */
+export const SURFACE_COATING: Readonly<Record<CoatingId, number>> = { none: 1, single: 2, multi: 3 };
+/** `LENS` focus modes (rt-core `FOCUS_*`). */
+export const FOCUS_MODE = { unit: 0, internal: 1, floating: 2 } as const;
+
+/** One surface of a traced lens (rt-core `optics::traced::SurfaceSpec`). */
+export interface RsbSurface {
+  kind: number;
+  /** 0: a plane. */
+  radius: number;
+  thickness: number;
+  /** The medium after the surface: 1 is air. */
+  nd: number;
+  vd: number;
+  /** 0: derived by the engine. */
+  semiAperture: number;
+  coating: number;
+  conic: number;
+  aspheric: [number, number, number, number];
+}
+
+/** The traced lens of a LENS section (rt-core `optics::traced::Prescription`). */
+export interface RsbPrescription {
+  stop: number;
+  focusMode: number;
+  fNumberMin: number;
+  magnification: [number, number];
+  distortion: number;
+  vignetting: number;
+  spherical: number;
+  breathing: number;
+  moving: { surface: number; base: number; near: number }[];
+  surfaces: RsbSurface[];
+}
+
+/** Bytes of a prescription after the filter slots. */
+function prescriptionBytes(t: RsbPrescription): number {
+  return 4 + 8 + 7 * 4 + 4 + t.moving.length * 12 + t.surfaces.length * 48;
 }
 
 /** One LENS filter slot (rt-core `optics::filters::FilterParams`). */
@@ -523,10 +569,16 @@ function bitmapBytes(b: RsbBitmap): number {
   return 16 + b.data.length + ((4 - (b.data.length % 4)) % 4);
 }
 
-/** A LENS payload: the numbers, the picture, zero padding to a multiple of four, and the filters when there are any. */
+/** True when a LENS section writes its filter slots: there is a filter, or a prescription follows them. */
+function writesFilterSlots(l: RsbLens): boolean {
+  return (l.filters ?? []).some(filterSlotUsed) || l.prescription !== undefined;
+}
+
+/** A LENS payload: the numbers, the picture, zero padding to a multiple of four, the filters when there are any (or a prescription), and the prescription. */
 function lensBytes(l: RsbLens): number {
-  const filters = (l.filters ?? []).some(filterSlotUsed) ? LENS_FILTER_SLOTS * LENS_FILTER_BYTES : 0;
-  return LENS_BYTES + l.mask.length + ((4 - (l.mask.length % 4)) % 4) + filters;
+  const filters = writesFilterSlots(l) ? LENS_FILTER_SLOTS * LENS_FILTER_BYTES : 0;
+  const traced = l.prescription ? prescriptionBytes(l.prescription) : 0;
+  return LENS_BYTES + l.mask.length + ((4 - (l.mask.length % 4)) % 4) + filters + traced;
 }
 
 /** Little-endian writer over a buffer of the exact final size. */
@@ -669,7 +721,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
       w.raw(lens.mask);
       w.pad((4 - (lens.mask.length % 4)) % 4);
       const filters = lens.filters ?? [];
-      if (filters.some(filterSlotUsed)) {
+      if (writesFilterSlots(lens)) {
         for (let i = 0; i < LENS_FILTER_SLOTS; i++) {
           const f = filters[i] ?? { kind: 0, grade: 0, tint: [0, 0, 0], angleDeg: 0, points: 0 };
           w.u32(f.kind);
@@ -677,6 +729,26 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
           for (const v of f.tint) w.f32(v);
           w.f32(f.angleDeg);
           w.u32(f.points);
+        }
+      }
+      const t = lens.prescription;
+      if (t) {
+        w.u32(t.surfaces.length);
+        w.u32(t.stop);
+        w.u32(t.focusMode);
+        for (const v of [t.fNumberMin, t.magnification[0], t.magnification[1], t.distortion, t.vignetting, t.spherical, t.breathing]) w.f32(v);
+        w.u32(t.moving.length);
+        for (const m of t.moving) {
+          w.u32(m.surface);
+          w.f32(m.base);
+          w.f32(m.near);
+        }
+        for (const sf of t.surfaces) {
+          w.u32(sf.kind);
+          for (const v of [sf.radius, sf.thickness, sf.nd, sf.vd, sf.semiAperture]) w.f32(v);
+          w.u32(sf.coating);
+          w.f32(sf.conic);
+          for (const v of sf.aspheric) w.f32(v);
         }
       }
     });
@@ -1124,6 +1196,25 @@ export function cameraToRsb(cam: CameraState, outW: number, outH: number, width:
   };
 }
 
+/**
+ * O2: the scene the engine reads to tell what it makes of a camera's traced lens (`rt_scene_lens_info`, the
+ * launcher's /api/lens/info): the camera and its LENS section for an output frame of `outW × outH`, nothing else.
+ */
+export function lensInfoRsb(cam: CameraState, outW: number, outH: number): Uint8Array {
+  const camera = cameraToRsb(cam, outW, outH, outW, outH);
+  return writeRsb({
+    camera,
+    materials: [],
+    meshes: [],
+    instances: null,
+    lights: [],
+    environment: defaultEnvironment(),
+    floor: defaultFloor(),
+    render: { ...defaultRender(), width: Math.max(1, outW), height: Math.max(1, outH) },
+    bitmaps: [],
+  });
+}
+
 /** Half the diagonal of the output frame on the reference sensor (36 mm along its longer side), mm. */
 export function frameFieldMm(outW: number, outH: number): number {
   const aspect = outW > 0 && outH > 0 ? outW / outH : 16 / 9;
@@ -1138,6 +1229,7 @@ export function frameFieldMm(outW: number, outH: number): number {
  * it arrives. The onion-ring texture is a modulation the camera's amplitude scales; the others apply as they are.
  */
 export function lensToRsb(o: CameraOptics, outW: number, outH: number): RsbLens {
+  const composed = o.traced ? composeLens(o.traced) : null;
   const mask = o.mask ? (getAperturePicture(o.mask) ?? null) : null;
   const texture = o.texture ? (getAperturePicture(o.texture) ?? null) : null;
   const amount = o.texture === 'onion_rings' ? o.onionAmplitude : 1;
@@ -1151,9 +1243,10 @@ export function lensToRsb(o: CameraOptics, outW: number, outH: number): RsbLens 
     rotationDeg: o.rotationDeg,
     profile: LENS_PROFILE[o.profile] ?? 0,
     profileParam: unit(o.profileParam),
-    obstruction: Math.min(0.95, Math.max(0, o.obstruction)),
+    // A mirror lens's central obstruction and an anamorphic adapter's squeeze are the traced lens's own.
+    obstruction: Math.min(0.95, Math.max(0, composed ? Math.max(o.obstruction, composed.obstruction) : o.obstruction)),
     catsEye: unit(o.catsEye),
-    squeeze: Math.min(4, Math.max(1, o.squeeze)),
+    squeeze: Math.min(4, Math.max(1, composed && composed.squeeze !== 1 ? composed.squeeze : o.squeeze)),
     shiftXMm: o.shiftXMm,
     shiftYMm: o.shiftYMm,
     tiltDeg: Math.min(45, Math.max(-45, o.tiltDeg)),
@@ -1166,6 +1259,56 @@ export function lensToRsb(o: CameraOptics, outW: number, outH: number): RsbLens 
     maskHeight: picture ? APERTURE_SIZE : 0,
     mask: picture ?? new Uint8Array(0),
     ...(filtersOf(o).length > 0 ? { filters: filtersToRsb(filtersOf(o)) } : {}),
+    ...(o.traced && composed ? { prescription: prescriptionToRsb(o.traced, composed) } : {}),
+  };
+}
+
+/**
+ * The LENS prescription of a camera's traced lens (O2): the surfaces of `composed` (core/traced-lens.ts
+ * `composeLens`: the catalogue's, with the person's coating and variable gap, an adapter in front of its lens) as
+ * the engine reads them, and the artistic overrides. rt-core's tests convert the catalogue the same way.
+ */
+export function prescriptionToRsb(t: TracedLens, composed: ComposedLens): RsbPrescription {
+  const kindOf = (s: LensSurface): number => {
+    switch (s.kind) {
+      case 'plane':
+        return SURFACE_KIND.plane;
+      case 'asphere':
+        return SURFACE_KIND.asphere;
+      case 'cylinder':
+        return s.axis === 'x' ? SURFACE_KIND.cylinderX : SURFACE_KIND.cylinderY;
+      case 'mirror':
+        return SURFACE_KIND.mirror;
+      default:
+        return SURFACE_KIND.sphere;
+    }
+  };
+  const focus = composed.focus;
+  const unitOr = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : 0));
+  return {
+    stop: composed.stop,
+    focusMode: focus.mode === 'internal' ? FOCUS_MODE.internal : focus.mode === 'floating' ? FOCUS_MODE.floating : FOCUS_MODE.unit,
+    fNumberMin: composed.fNumberMin,
+    magnification: composed.magnification,
+    distortion: unitOr(t.distortion, -1, 1),
+    vignetting: unitOr(t.vignetting, 0, 1),
+    spherical: unitOr(t.spherical, -1, 1),
+    breathing: unitOr(t.breathing, -1, 1),
+    moving: (focus.moving ?? []).map((m) => ({ surface: m.surface, base: m.dBase, near: m.dNear })),
+    surfaces: composed.surfaces.map((s) => {
+      const a = s.kind === 'asphere' ? (s.asphere?.coefficients ?? []) : [];
+      return {
+        kind: kindOf(s),
+        radius: s.r ?? 0,
+        thickness: s.d ?? 0,
+        nd: s.glass?.nd ?? 1,
+        vd: s.glass?.vd ?? 0,
+        semiAperture: s.semiAperture ?? 0,
+        coating: s.coating === null ? 0 : SURFACE_COATING[s.coating],
+        conic: s.kind === 'asphere' ? (s.asphere?.conic ?? 0) : 0,
+        aspheric: [a[0] ?? 0, a[1] ?? 0, a[2] ?? 0, a[3] ?? 0],
+      };
+    }),
   };
 }
 
