@@ -16,6 +16,7 @@ import * as cmd from '../commands';
 import { colorField, field, lengthField, numberField, segmented, select, slider, toggle, type Control } from '../components/controls';
 import { libraryFoot, mineCards, mineEmpty, mineRows, namePrompt, type MineSpec } from '../components/library';
 import { section } from '../components/section';
+import { opticsFields } from './insp-lens';
 import { confirmBox, showConfirmIn, thumb } from '../components/widgets';
 import { h, icon } from '../dom';
 import { cameraName, dyn, lightName, setupLabel, setupTip, studioLabel } from '../names';
@@ -534,6 +535,7 @@ export function cameraFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     field(t('camera.focus'), focus.el, focusBtn),
     h('div', { class: 'note' }, t('camera.dofNote')),
     field(t('camera.projection'), proj.el),
+    opticsFields(ctx, scope, camId),
     h(
       'div',
       { class: 'row' },

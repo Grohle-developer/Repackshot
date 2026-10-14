@@ -672,6 +672,34 @@ en el visor*). **Vistas**: tres cuartos, frontal, lateral, cenital,
 trasera. **Enfocar con clic**: el punto picado fija la distancia de
 enfoque.
 
+**Óptica (O1, lente fina mejorada).** `CameraState.optics` (opcional;
+una cámara sin él, como todas las anteriores a O1, es la lente fina de
+siempre y el motor la renderiza bit a bit igual): el **tipo de bokeh**
+elegido (`bokeh`, `variant`, claves de `src/data/bokeh.json`; vuelve a
+`null` en cuanto se mueve un mando del desenfoque a mano) y sus
+parámetros, que son los de `BokehThin`: láminas (0 redondo, 3 a 18) con
+redondez y giro, máscara (sustituye al diafragma) y textura de pupila
+(multiplica; los anillos de cebolla con su amplitud), perfil de la
+pupila (uniforme, centro brillante, anillo brillante, apodizada) con su
+intensidad, obstrucción central, ojo de gato, compresión anamórfica
+(1, 1,33 o 2; la imagen sale ya desestirada: solo el desenfoque es
+ovalado) y, marcados *no físico*, aberración cromática y remolino; más
+**descentramiento** (mm sobre el sensor, horizontal y vertical: mueve el
+encuadre sin cambiar la perspectiva) e **inclinación** (grados y eje en
+el plano del sensor: el plano de enfoque gira por Scheimpflug alrededor
+del punto de enfoque del eje). Elegir un tipo cambia solo los mandos del
+desenfoque; la inclinación y el descentramiento se quedan. El ojo de
+gato recorta el haz hacia las esquinas y las oscurece (es el viñeteo
+óptico que lo acompaña); la aberración cromática pinta cada muestra en
+una de tres bandas (decisión 3) sin mover el plano de enfoque. Los tipos
+que necesitan la lente trazada (cometa de coma, respiración de foco,
+aberración esférica variable) esperan a O2 y el de difracción a la óptica
+de ondas. Lo que hace el motor está en `ARCHITECTURE.md` (sección `LENS`)
+y en `rt-core/src/optics`. El pase `coc` (X2) sigue siendo el de la
+lente fina redonda y sin inclinar, sea cual sea la óptica. El modo
+Rápido no dibuja profundidad de campo; del resto solo muestra el
+descentramiento (el encuadre).
+
 ### 3.6 · Imagen
 
 Exposición en EV, transformada de vista (`STANDARD`, `FILMIC`, `AGX`),

@@ -23,6 +23,9 @@ import { autoCaustics, causticsFields, isCaster, type CausticsMode, type Caustic
 import { areaLightFlux, EMIT_RADIANCE_PER_WATT, pointLightFlux, SUN_IRRADIANCE_PER_POWER } from '../core/photometry';
 import { getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS } from '../core/images';
 import { labelFrame, slotMapping, TEXTURE_SLOTS, type MaterialTextures, type TextureSlotKey } from '../core/textures';
+import { APERTURE_SIZE, combinePictures, getAperturePicture } from '../core/aperture';
+import { isNeutralOptics, type CameraOptics } from '../core/optics';
+import type { PupilProfile } from '../data/bokeh';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { allParts, localMatrix, type NodeId, type SceneNode } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -43,6 +46,8 @@ export const TAG_INST = 'INST';
 export const TAG_BMAP = 'BMAP';
 /** M2a (read by the engine from M2b): the texture images, decoded to 8-bit rows (ARCHITECTURE §5.2). */
 export const TAG_IMGS = 'IMGS';
+/** O1: the camera's optics beyond the plain thin lens (optional, right after CAMR). */
+export const TAG_LENS = 'LENS';
 
 /** `MATL.kind`. */
 export const MATERIAL_PRINCIPLED = 0;
@@ -119,6 +124,40 @@ export interface RsbCamera {
   focusDist: number;
   ortho: boolean;
   orthoWidth: number;
+  /** O1: the LENS section (rt-core `optics::LensParams`); absent or null: none, the plain thin lens. */
+  lens?: RsbLens | null;
+}
+
+/** `LENS.profile`. */
+export const LENS_PROFILE: Readonly<Record<PupilProfile, number>> = { uniform: 0, centreBright: 1, ringBright: 2, apodized: 3 };
+/** `LENS.mask_kind`: none, an aperture mask that replaces the iris, a texture multiplied with it. */
+export const MASK_NONE = 0;
+export const MASK_APERTURE = 1;
+export const MASK_TEXTURE = 2;
+
+/** The LENS section, field for field (rt-core `optics::LensParams`). */
+export interface RsbLens {
+  blades: number;
+  roundness: number;
+  rotationDeg: number;
+  profile: number;
+  profileParam: number;
+  obstruction: number;
+  catsEye: number;
+  squeeze: number;
+  shiftXMm: number;
+  shiftYMm: number;
+  tiltDeg: number;
+  tiltAxisDeg: number;
+  caAmount: number;
+  swirl: number;
+  /** Image height of the frame's corner on the sensor, mm (0: half the image's diagonal). */
+  fieldMm: number;
+  maskKind: number;
+  maskWidth: number;
+  maskHeight: number;
+  /** maskWidth × maskHeight bytes, rows top to bottom (empty without a mask). */
+  mask: Uint8Array;
 }
 
 /** M2a: how a slot reads its image (one of the six of the MATL texture block). */
@@ -383,6 +422,8 @@ export interface WriteOptions {
 }
 
 const CAMR_BYTES = 60;
+/** LENS without its picture: 15 numbers before the picture's three words. */
+const LENS_BYTES = 72;
 const MATL_BYTES = 72;
 /**
  * M2a: where the texture block of a MATL starts: after E6's `bevel_mm` (72) and E9's `scatter_mm scatter_color[3]
@@ -438,6 +479,11 @@ function meshBytes(m: RsbMesh, uvs = false): number {
 /** A BMAP payload: four words, the data, zero padding to a multiple of four. */
 function bitmapBytes(b: RsbBitmap): number {
   return 16 + b.data.length + ((4 - (b.data.length % 4)) % 4);
+}
+
+/** A LENS payload: the numbers, the picture, zero padding to a multiple of four. */
+function lensBytes(l: RsbLens): number {
+  return LENS_BYTES + l.mask.length + ((4 - (l.mask.length % 4)) % 4);
 }
 
 /** Little-endian writer over a buffer of the exact final size. */
@@ -542,6 +588,8 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   const images = tex ? (scene.images ?? []) : [];
   let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES);
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
+  const lens = scene.camera.lens ?? null;
+  if (lens) size += 8 + lensBytes(lens);
   size += 8 + ENVR_BYTES + 8 + FLOR_BYTES + 8 + RNDR_BYTES;
   if (withMeshes) for (const m of scene.meshes) size += 8 + meshBytes(m, tex);
   if (withMeshes) for (const b of scene.bitmaps) size += 8 + bitmapBytes(b);
@@ -564,6 +612,20 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.u32(c.ortho ? 1 : 0);
     w.f32(c.orthoWidth);
   });
+  if (lens) {
+    w.section(TAG_LENS, lensBytes(lens), () => {
+      w.u32(lens.blades);
+      w.f32(lens.roundness);
+      w.f32(lens.rotationDeg);
+      w.u32(lens.profile);
+      for (const v of [lens.profileParam, lens.obstruction, lens.catsEye, lens.squeeze, lens.shiftXMm, lens.shiftYMm, lens.tiltDeg, lens.tiltAxisDeg, lens.caAmount, lens.swirl, lens.fieldMm]) w.f32(v);
+      w.u32(lens.maskKind);
+      w.u32(lens.maskWidth);
+      w.u32(lens.maskHeight);
+      w.raw(lens.mask);
+      w.pad((4 - (lens.mask.length % 4)) % 4);
+    });
+  }
   for (const m of scene.materials) {
     const t = tex ? m.textures : undefined;
     w.section(TAG_MATL, t ? materialBytes(m) : MATL_BYTES, () => {
@@ -958,6 +1020,8 @@ export function cameraToRsb(cam: CameraState, outW: number, outH: number, width:
     sensorMm = mmPerPx * Math.max(width, height);
     orthoWidth = (cam.orthoWidth * viewport.viewW) / frame.width;
   }
+  const ortho = cam.projection === 'ORTHOGRAPHIC';
+  const lens = !ortho && cam.optics && !isNeutralOptics(cam.optics) ? lensToRsb(cam.optics, outW, outH) : null;
   return {
     position: cameraPosition(cam),
     target: [cam.target[0], cam.target[1], cam.target[2]],
@@ -966,8 +1030,53 @@ export function cameraToRsb(cam: CameraState, outW: number, outH: number, width:
     sensorMm,
     fstop: Math.max(0, cam.fstop),
     focusDist: Math.max(0, cam.focusDistance),
-    ortho: cam.projection === 'ORTHOGRAPHIC',
+    ortho,
     orthoWidth: Math.max(1e-3, orthoWidth),
+    ...(lens ? { lens } : {}),
+  };
+}
+
+/** Half the diagonal of the output frame on the reference sensor (36 mm along its longer side), mm. */
+export function frameFieldMm(outW: number, outH: number): number {
+  const aspect = outW > 0 && outH > 0 ? outW / outH : 16 / 9;
+  const [w, h] = aspect >= 1 ? [SENSOR_MM, SENSOR_MM / aspect] : [SENSOR_MM * aspect, SENSOR_MM];
+  return Math.hypot(w, h) / 2;
+}
+
+/**
+ * The LENS section of a camera's optics (O1) for an output frame of `outW × outH`: the field effects (cat's eye,
+ * swirl, chromatic aberration) grow towards the frame's corner whatever part of the viewport the image covers. The
+ * pictures come from core/aperture.ts; one that has not been read yet is left out (the iris draws the shape) until
+ * it arrives. The onion-ring texture is a modulation the camera's amplitude scales; the others apply as they are.
+ */
+export function lensToRsb(o: CameraOptics, outW: number, outH: number): RsbLens {
+  const mask = o.mask ? (getAperturePicture(o.mask) ?? null) : null;
+  const texture = o.texture ? (getAperturePicture(o.texture) ?? null) : null;
+  const amount = o.texture === 'onion_rings' ? o.onionAmplitude : 1;
+  const picture = mask || texture ? combinePictures(mask, texture, amount) : null;
+  const kind = mask ? MASK_APERTURE : texture ? MASK_TEXTURE : MASK_NONE;
+  const blades = o.blades >= 3 ? Math.min(18, Math.round(o.blades)) : 0;
+  const unit = (v: number) => Math.min(1, Math.max(0, v));
+  return {
+    blades,
+    roundness: unit(o.roundness),
+    rotationDeg: o.rotationDeg,
+    profile: LENS_PROFILE[o.profile] ?? 0,
+    profileParam: unit(o.profileParam),
+    obstruction: Math.min(0.95, Math.max(0, o.obstruction)),
+    catsEye: unit(o.catsEye),
+    squeeze: Math.min(4, Math.max(1, o.squeeze)),
+    shiftXMm: o.shiftXMm,
+    shiftYMm: o.shiftYMm,
+    tiltDeg: Math.min(45, Math.max(-45, o.tiltDeg)),
+    tiltAxisDeg: o.tiltAxisDeg,
+    caAmount: unit(o.caAmount),
+    swirl: unit(o.swirl),
+    fieldMm: frameFieldMm(outW, outH),
+    maskKind: kind,
+    maskWidth: picture ? APERTURE_SIZE : 0,
+    maskHeight: picture ? APERTURE_SIZE : 0,
+    mask: picture ?? new Uint8Array(0),
   };
 }
 

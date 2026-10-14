@@ -3,6 +3,7 @@
 
 import { CAMERA_AZIMUTH_DEG, CAMERA_ELEVATION_DEG } from '../data/light-setups';
 import { lensPreset } from '../data/lenses';
+import type { CameraOptics } from './optics';
 import { polar } from './light-math';
 import type { ActionBase, ProjectState } from './store';
 import { nextId } from './ids';
@@ -35,6 +36,11 @@ export interface CameraState {
   locked: boolean;
   /** LENS_PRESETS key last chosen, or null after a manual focal change. */
   lens: string | null;
+  /**
+   * The optics beyond the plain thin lens (O1: the bokeh, tilt and shift; core/optics.ts). Absent on cameras made
+   * before O1 and on new ones: the plain thin lens, which the engine renders exactly as it always did.
+   */
+  optics?: CameraOptics;
 }
 
 /** Width of the reference sensor, millimetres (applies to the longer image side). */

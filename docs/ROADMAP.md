@@ -2174,7 +2174,7 @@ tiempo de render del ejemplo a 1024 muestras con la doble Gauss (medido
 y en el PR); si pasa, se bate por lotes (§6.1 del informe) antes de
 cerrar.
 
-## O1 · Lente fina mejorada y selector de bokeh — **Opus**
+## O1 · Lente fina mejorada y selector de bokeh — **Opus** — hecha
 
 **Qué.** `STUDIO-TOOLS.md` §1 modo 1, en `rt-core` y en la interfaz.
 Motor: sección RSB nueva opcional `LENS` después de `CAMR` (`CAMR` no
@@ -2217,6 +2217,179 @@ proporción esperada (±1 %); el *tilt* mueve el plano de enfoque como
 dice Scheimpflug (test geométrico con tres puntos); la máscara con
 muestreo por CDF da la misma media que el muestreo por rechazo (±1 %);
 determinismo 1/4/16 hilos y wasm.
+
+**Hecho.**
+
+- **Motor** (`rt-core/src/optics`, sección RSB nueva `LENS`, opcional,
+  justo después de `CAMR`; `CAMR` no cambia). `Camera.lens:
+  Option<Lens>`; `Camera::sample_ray` devuelve el rayo y un **peso de
+  color** que la baldosa multiplica (`render::camera_sample_weighted`). La
+  **pupila** se muestrea con su densidad exacta y sin rechazo
+  (`optics::pupil`): disco por el mapa concéntrico con el radio remapeado
+  por la inversa de la CDF del perfil en `s = ρ²` (raíces estables de una
+  cuadrática; la apodizada con `fmath::exp`/`ln`), abanico de triángulos
+  desde el centro para 3 a 18 láminas (rectas: N triángulos iguales; curvas:
+  arcos de radio `apotema / redondez` tangentes a la arista en su mitad, 24
+  cuerdas por lámina, la geometría de `tools/assets/aperture-masks.mjs`) con
+  el perfil del calibre de la forma, y rejilla con CDF marginal y condicional
+  para una máscara (sustituye al diafragma; gira con él) o una textura
+  (multiplica la forma, dibujada con borde suavizado), con el perfil y la
+  obstrucción dentro. La estratificación de Sobol llega a la pupila y el
+  brillo no cambia. **Ojo de gato**: segundo disco de radio 1 desplazado
+  `cats_eye × h` hacia el eje (h = 1 en `field_mm`, la esquina del
+  encuadre); fuera de él la muestra pesa negro pero traza su rayo (la
+  cobertura de un fondo transparente no cambia): es el viñeteo óptico que lo
+  acompaña. **Anamórfico**: x de la pupila entre la compresión; la imagen,
+  desestirada. **Descentramiento** en el rayo principal y **inclinación** por
+  la regla de la bisagra (normal del plano de enfoque `f·forward + u·sin α·b`,
+  por el punto de enfoque del eje; con el sensor a `f u / (u cos α − f)` se
+  cumple también Scheimpflug), con la pupila en el plano de la lente girado.
+  **Aberración cromática** (decisión 3) y **remolino** como ajustes
+  artísticos. La única dimensión nueva, la banda, es `DIM_LENS_BAND =
+  3 << 20` usada por `PixelSampler::strata`: cada tres muestras seguidas de
+  un píxel son las tres bandas (el desfase, *hash* del píxel) y **comparten un
+  punto de la pupila**, el índice `(i + desfase) / 3` de la secuencia de
+  Sobol de la lente, así que cada banda recorre sus propios puntos en orden y
+  los colores del interior de un disco coinciden (tras la hoja: antes cada
+  banda tenía su punto y el interior salía salpicado de color). Una `LENS` neutra
+  renderiza bit a bit como la lente fina; sin `LENS` no cambia ni un bit:
+  ejemplo `0x223515c3`, E5 `0xbf8abd5b`, cielo de E5 `0x2fcb098a`, E5c
+  `0x8bb09f6b`, cáusticas `0x55d60f2f` y *denoise* `0xab15f290` intactos.
+  Escena de paridad `example::o1_scene` (todos los mandos a la vez y una
+  textura de anillos de 48²; `rt --write-o1-example`, `tests/fixtures/o1.rsb`):
+  `PINNED_O1_LENS_4SPP = 0xcfc57d4a` en escalar, SSE2 y AVX2, en WASI
+  (escalar y `simd128`), en el `rt_wasm.wasm` real (también con los pases
+  intercalados; en CI), por el código de la página (`tests/optics.test.ts`)
+  y con 1, 4 y 16 hilos (`rt-cli/tests`). El pase `coc` sigue siendo el de la
+  lente fina redonda y sin inclinar (anotado en `passes.rs` y en
+  ARCHITECTURE §5.2 ter); `render::centre_ray` respeta el descentramiento.
+- **Interfaz.** `CameraState.optics` (opcional, `src/core/optics.ts`;
+  cámaras anteriores sin él, la lente fina de siempre: el RSB de un proyecto
+  de U2 sale byte a byte igual, test). *Cámara ▸ Bokeh*
+  (`src/ui/panels/insp-lens.ts`): rejilla con los 20 tipos, 16 con su
+  miniatura renderizada por el motor y los 4 que no hace el modo 1
+  apagados con lo que esperan (lente trazada, O2; óptica de ondas,
+  próximamente); variantes con su miniatura; mover un mando a mano dice *A
+  medida*; *Disco sencillo*. *Óptica avanzada*: *Láminas* (0 diafragma
+  redondo), *Redondez*, *Giro*, *Perfil* e *Intensidad*, *Obstrucción*, *Ojo
+  de gato*, *Anamórfico*, *Inclinación* y su *Eje*, *Desplazamiento* H y V,
+  y bajo **NO FÍSICO** *Aberración cromática* y *Remolino*. Todo por el
+  *store*, una entrada de deshacer por gesto. Las imágenes de pupila las lee
+  `src/io/aperture.ts` sin *canvas* (descodificador PNG propio, exacto en
+  cualquier navegador) y las promedia 2 × 2 a 256²; `main.ts` las pide al
+  cambiar el estado y reinicia el trazador cuando llegan (mientras, el
+  diafragma de láminas). El visor Rápido no dibuja profundidad de campo,
+  pero sí el **descentramiento** (la matriz de proyección: el encuadre del
+  visor sigue siendo el del render). `tools/optics-check.mjs` lo recorre en
+  el Chromium local (seis comprobaciones) y deja
+  `docs/ui/camera-bokeh.png` y `docs/ui/camera-optics.png`.
+- **Miniaturas** (`tools/bokeh-thumbs.mjs` con `rt`, escena de
+  `tools/bokeh-scene.mjs`: un 85 mm a f/1,6 enfocado a 600 mm y doce luces de
+  100 mm a 6 m en rejilla de 4 × 3, un quinto del disco de desenfoque,
+  fondo negro, curva sRGB, 1024 muestras): 30 PNG en `public/thumbs/bokeh/`
+  (16 tipos y sus variantes, 416 kB) con `index.json` (parámetros, *hash*
+  del RSB y de los píxeles); `--check` las renderiza otra vez y compara. Un
+  test exige que la escena de la herramienta escriba la misma `LENS` que la
+  página para cada tipo, que las miniaturas estén al día con
+  `bokeh.json` (*hash* del RSB), y con el `rt.wasm` real fija el *hash* de
+  la del polígono curvo a 4 muestras (`0xfa8496aa`).
+- **Hoja** `out/bokeh-sheet.html` (`node tools/bokeh-thumbs.mjs --sheet`):
+  los 30 núcleos a 480 × 360 y 256 muestras con luces de un quinto del disco
+  (el aspecto «convolucionado»), con su receta, y debajo, como pidió el
+  veredicto, una fila de **núcleo puro** con luces de 32 mm (un quinceavo
+  del disco, la radiancia escalada por la razón de áreas) a 512 muestras
+  para las texturas (anillos de cebolla, polvo, rayas, malla), los flecos
+  cromáticos y el disco de referencia. Las texturas **no se leen** en esa
+  fila, ni subiendo la amplitud (los anillos de cebolla a 1 en vez de 0,45,
+  probado: sale igual): sus detalles son menores que la fuente y casi del
+  tamaño de un píxel (un periodo de los anillos, unos 4 px en un disco de
+  90 px; la malla, unos 3 px; la fuente de un quinceavo, 6 px), y cada
+  píxel acierta la luz en 1 de cada 225 muestras. Por eso **la amplitud se
+  queda** (`onionAmplitude` 0,45, sin cambios) y la hoja añade una tercera
+  fila de **primeros planos** (`CLOSE_UP` de `tools/bokeh-scene.mjs`): una
+  sola luz que llena el encuadre (un 300 mm a f/5,6, la misma pupila de
+  entrada; un disco de unos 320 px) de un cuarentavo del disco, a 1024
+  muestras: los anillos (unos 14 px por periodo) se adivinan a través del
+  grano; las rayas y la malla, apenas. Limpiarlo pediría del orden de
+  50 000 muestras por píxel. **Veredicto**: la amplitud (0,45) y las
+  recetas se quedan; el polvo, las rayas y la malla solo se leen en
+  primeros planos de bokeh grande, como pasa con los filtros reales. Los **flecos cromáticos**, estratificados (arriba), se
+  volvieron a renderizar a 256 muestras. **Veredicto del líder**: el juego de
+  núcleos se acepta tal cual; se conservan las constantes del remolino
+  (`SWIRL_COMPRESS` 0,35, `SWIRL_STRETCH` 0,25, `SWIRL_TURN` 0,6 rad) y de la
+  aberración cromática; la sobreexposición del óvalo anamórfico es física y
+  se queda (lo dice la ayuda del mando: el bokeh ovalado concentra más luz
+  al mismo diafragma).
+- **Tests** (cada uno comprobado reintroduciendo el error): 18 en
+  `optics::tests` de rt-core: 6 láminas dentro del hexágono y fuera del
+  círculo inscrito en la proporción esperada, `1 − π cos² 30° / (3 sen 60°)`
+  ± 1 % (sin la raíz del radio, falla); láminas curvas dentro de sus arcos
+  (extremos en el circunscrito, falla); los ocho perfiles con su media de
+  `s` ± 0,5 % (signo de la raíz o 2σ² cambiados, fallan); obstrucción
+  (olvidada, falla); Scheimpflug y bisagra con tres puntos, con cuatro
+  inclinaciones y ejes (la normal con cos, la pupila girada al revés —
+  sus puntos fuera del plano de la lente—, fallan); hacia el suelo con inclinación positiva (eje invertido, falla);
+  descentramiento sin cambiar el plano (ignorado, falla) y lente neutra bit
+  a bit (otro orden de operaciones, falla); anamórfico (multiplicar en vez de
+  dividir, falla); ojo de gato con el área de dos discos ± 1 % (el doble de
+  desplazamiento, falla); máscara por CDF con la media del rechazo ± 1 % en
+  centroide y `E[r²]` (espejada, falla); textura dentro del diafragma y
+  máscara que lo sustituye punto a punto; tres bandas por cada tres muestras
+  (sin estratificar, falla), las tres bandas de un grupo con un solo punto de
+  la pupila (sin compartirlo, falla) y bandas que suman blanco en una escena neutra
+  sin obstrucción, exacto a 3 muestras y sin dominante a 256 (peso 2,9,
+  falla); misma película en cada ruta SIMD y en cualquier orden de
+  baldosas; `LENS` de ida y vuelta (sin relleno, falla); valores fuera de
+  rango rechazados (dos láminas aceptadas, falla); *hash* de O1 (otra
+  dimensión de banda, falla). `rt-cli`: 1/4/16 hilos con la lente.
+  `tests/optics.test.ts` (14): óptica neutra sin `LENS` (una neutra que la
+  escribe, falla), tipos que conservan inclinación y desplazamiento (un tipo
+  que la borra, falla), normalización de un fichero, `o1.rsb` de ida y
+  vuelta byte a byte con `rt`, campo del encuadre de salida y no de la
+  imagen del visor (falla), máscara, textura y anillos con su amplitud
+  (amplitud ignorada, falla), descodificador PNG y media 2 × 2 píxel a píxel
+  (Paeth cambiado o sin redondeo, fallan), la herramienta y la página con la
+  misma `LENS` (otro campo en la herramienta, falla), miniaturas al día (un
+  valor de `bokeh.json` cambiado, falla), proyectos de U2 sin óptica y
+  byte a byte iguales, óptica normalizada al abrir (sin normalizar, falla),
+  y con el `rt.wasm` real el *hash* de O1 y el de la miniatura.
+
+**No encajó con el plan.** (1) La **dimensión de máscara** no hizo
+falta: la máscara se muestrea con las dos dimensiones de lente (fila con la
+primera, columna con la segunda, la posición dentro del texel con lo que
+sobra de cada una), que conserva la estratificación mejor que dos números
+*hash*; la única dimensión nueva es la de la banda. (2) **La aberración
+cromática** es, como pide la decisión 3, una banda por muestra con
+desplazamiento radial de su origen en la pupila; para que lo enfocado siga
+nítido el plano de enfoque es el mismo en las tres bandas, así que los
+flecos (borde verde y núcleo magenta) salen igual delante y detrás del foco:
+la inversión de color entre delante y detrás llega con la lente trazada (O2).
+Los coeficientes (`CA_SCALE`, `CA_SHIFT`) y los del remolino
+(`SWIRL_*`) son propuestas para el veredicto. (3) **El ojo de gato
+oscurece** las esquinas (la muestra recortada pesa negro): es el viñeteo
+óptico que lo acompaña en una lente real; si se prefiere sin él, haría falta
+un muestreo de la intersección que no es exacto para polígonos ni máscaras.
+(4) La **amplitud** `onionAmplitude` escala solo la textura de anillos de
+cebolla (`1 − a + a·t`); las demás texturas (polvo, rayas, malla) se aplican
+tal cual: con amplitud 0 no se verían. (5) Las **rayas del anamórfico**
+(`streaks`) son del pase de *flare* y se guardan sin dibujarse; el *split
+diopter* de STUDIO-TOOLS §1 no estaba en la fase. (6) Para que la hoja salga a
+256 muestras sin ruido de sal y pimienta, cada luz mide un quinto del disco de
+desenfoque: el núcleo sale convolucionado con ese disco (esquinas de los
+polígonos algo redondeadas, texturas finas suavizadas). (7) El visor Rápido
+muestra el **descentramiento** (cambia el encuadre, y el visor es el
+render); la inclinación, como la profundidad de campo, solo en Completo.
+(8) **Coste**, medido con la máquina muy cargada por otros agentes: la
+muestra de cámara de la lente con todos los mandos (`example::busy_lens`:
+textura, remolino, aberración cromática, ojo de gato, anamórfico,
+inclinación y desplazamiento) cuesta de 0,4 a 0,6 µs más que la de la lente
+fina (banco de 786 000 muestras de cámara, tres vueltas: 0,48–0,85 µs
+frente a 0,88–1,07 µs), contra unos 26 µs por muestra del ejemplo a
+512 × 384 con 8 hilos: del orden del 2 %. El tiempo de pared del ejemplo
+con y sin lente (tres pares alternos: 34,0–58,1 s sin ella, 41,1–72,8 s
+con ella) no separa esa diferencia del ruido de la carga; la lente cambia
+además el encuadre (desplazamiento e inclinación) y con él los rayos que
+se trazan (35,2 M frente a 33,6 M).
 
 ## O2 · Lente trazada — **Opus** (tras O1)
 

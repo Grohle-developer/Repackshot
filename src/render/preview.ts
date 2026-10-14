@@ -11,7 +11,7 @@ import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLigh
 import { DOME_FLOOR, DOME_HORIZON, DOME_ZENITH } from '../data/environment';
 import { evaluate, type Pose } from '../core/animation';
 import type { Projection, Rect } from '../core/box-select';
-import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, type CameraState } from '../core/camera';
+import { activeCamera, cameraPosition, fieldOfView, orbitFromPosition, outputFrameRect, SENSOR_MM, type CameraState } from '../core/camera';
 import { polar, toWorldAzimuth } from '../core/light-math';
 import { fitImageRect, getImage, gradientPixels, GRADIENT_COLUMNS, GRADIENT_ROWS, type ImageData as RegistryImage, type Rect as FrameRect } from '../core/images';
 import { isSphereLike, lightFrame, rigPivot, skySunDirection, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
@@ -968,6 +968,18 @@ export class PreviewEngine implements RenderEngine {
     this.persp.near = Math.max(cam.clipStart, 0.01);
     this.persp.far = Math.max(cam.clipEnd, this.persp.near * 10);
     this.persp.updateProjectionMatrix();
+    // O1: a lens shift moves the frame on the sensor without turning the camera (rt-core `optics`): the projection's
+    // centre moves by the shift over the half size of the view, in millimetres of the 36 mm sensor.
+    const shiftX = cam.optics?.shiftXMm ?? 0;
+    const shiftY = cam.optics?.shiftYMm ?? 0;
+    if (shiftX !== 0 || shiftY !== 0) {
+      const frameW = outAspect >= 1 ? SENSOR_MM : SENSOR_MM * outAspect;
+      const frameH = outAspect >= 1 ? SENSOR_MM / outAspect : SENSOR_MM;
+      const e = this.persp.projectionMatrix.elements;
+      e[8] = shiftX / ((frameW / 2) * (w / Math.max(1, frame.width)));
+      e[9] = shiftY / ((frameH / 2) * k);
+      this.persp.projectionMatrixInverse.copy(this.persp.projectionMatrix).invert();
+    }
     const halfH = (cam.orthoWidth / outAspect / 2) * k;
     const halfW = halfH * (w / Math.max(1, h));
     this.ortho.left = -halfW;

@@ -85,6 +85,8 @@ src/
     lighting.ts             rig activo, focos (los del montaje y los propios de L4: añadir, duplicar, eliminar, apuntar, colocar sobre superficie), su colocación (`lightFrame`: posición, objetivo, giro), colocación por reflejo, lúmenes
     view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
     camera.ts               óptica, encuadre, cámaras guardadas
+    optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh
+    aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
     animation.ts            planos, movimientos, evaluación en el tiempo
     camera-moves.ts         expande un movimiento de cámara de data/camera-moves.json en las barras de la línea de tiempo para una cámara (A6)
     doctor.ts               chequeos y arreglos sobre el modelo
@@ -129,6 +131,7 @@ src/
     mtl.ts  obj-materials.ts  las bibliotecas .mtl de un OBJ y sus imágenes (M2a)
     texture-notes.ts        lo que la hoja dice de las texturas de un archivo (M2a)
     texture-pixels.ts       los píxeles de las texturas para la sección IMGS del RSB (M2a; la lee M2b)
+    aperture.ts             lee las imágenes de pupila de public/assets/aperture (PNG gris propio, sin canvas) y las promedia a 256² (O1)
   ui/                       INTERFAZ. Habla con core a través del store (§6)
     strings.ts              todas las cadenas, en es y en
     ports.ts                los servicios que main.ts le entrega (visor, importadores…), sin importar render ni io (§6)
@@ -139,11 +142,13 @@ src/
       viewport-box.ts       el gesto de la caja de selección sobre el visor (U7)
       add-menu.ts           Añadir ▸ Primitiva: las mismas entradas en la cabecera, el + de Escena y el menú del visor en vacío (U9)
       scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
+      insp-lens.ts          Cámara ▸ Bokeh (miniaturas del motor) y Óptica avanzada (O1)
       insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
       viewport-labels.ts    la herramienta de etiqueta del visor: colocar con pulsación y arrastre, Mover etiqueta (M2a)
     texture-commands.ts     lo que hacen las ranuras y las etiquetas del inspector (M2a)
 public/
   thumbs/setups/            88 miniaturas de montaje de luz renderizadas por el motor (PNG) y manifest.json (L6, tools/setup-thumbs.mjs)
+  thumbs/bokeh/             30 miniaturas de bokeh renderizadas por rt (16 tipos del modo 1 y sus variantes) + index.json (O1, tools/bokeh-thumbs.mjs)
   assets/aperture/          45 máscaras de diafragma y texturas de pupila (PNG 512², gris de 8 bits) + index.json (A6)
   assets/gobo/              12 patrones de gobo (PNG 1024², gris de 8 bits) + index.json (A6)
   assets/README.md          procedencia: generador, receta, semilla y hash de cada fichero
@@ -525,6 +530,27 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   `caustic_radius` (f32, radio de reunión de la primera muestra en píxeles
   a la distancia del objetivo de la cámara; 0 = 3). Un RSB anterior no pide
   ni *denoise* ni cáusticas.
+- **`LENS`** (O1, nueva, opcional, una como máximo, justo después de
+  `CAMR`; `CAMR` no cambia): la óptica de la cámara más allá de la lente
+  fina (`rt_core::optics`). 72 B de números y la imagen:
+  `u32 blades` (0 redondo, 3 a 18), `f32 roundness rotation_deg`,
+  `u32 profile` (0 uniforme, 1 centro brillante `1 − kρ²`, 2 anillo
+  brillante `(1 − k) + kρ²`, 3 apodizada, gaussiana de σ = k;
+  desconocido = 0), `f32 profile_param obstruction cats_eye squeeze
+  shift_x_mm shift_y_mm tilt_deg tilt_axis_deg ca_amount swirl
+  field_mm`, `u32 mask_kind` (0 ninguna, 1 máscara que sustituye al
+  diafragma, 2 textura que lo multiplica) `mask_width mask_height`, los
+  píxeles de 8 bits (255 abierto; [−1, 1]² de la pupila, filas de arriba
+  abajo, círculo unidad inscrito; hasta 1024 por lado) y relleno a 4
+  bytes. Un valor fuera de rango hace inválido el fichero. Un RSB sin
+  `LENS` es la lente fina de siempre, bit a bit (los *hash* del ejemplo,
+  E5, E5c, E5b-1 y los pases no se movieron); una `LENS` neutra también.
+  La interfaz la escribe solo para una cámara con óptica no neutra
+  (`src/io/rsb.ts` `lensToRsb`): las imágenes de `public/assets/aperture/`
+  promediadas 2 × 2 a 256 × 256 (`src/core/aperture.ts`, leídas sin
+  *canvas* por `src/io/aperture.ts`), máscara por textura en una sola
+  imagen, y `field_mm` = media diagonal del encuadre de salida en el
+  sensor de 36 mm, sea cual sea la parte del visor que cubra la imagen.
 - El escritor de `rt-core` emite siempre `FLOR` y los campos nuevos; el
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
@@ -641,6 +667,60 @@ lanzador con 1 y 4 hilos. El círculo de confusión es el de
 `src/core/lens-coc.ts` (los dos lados leen `tests/fixtures/lens-coc.json`)
 y coincide, dentro de 1 %, con el desenfoque medido de la propia lente
 de `Camera::generate_ray`.
+
+### 5.2 ter · La óptica de la cámara (O1, `rt_core::optics`)
+
+`Camera.lens: Option<Lens>`; sin ella, `Camera::sample_ray` hace lo de
+siempre (el mapa concéntrico de las dos dimensiones de lente y peso
+blanco). Con ella, `Lens::sample` devuelve el rayo **y un peso de color**
+que la baldosa multiplica antes de acumular (`render::camera_sample_weighted`):
+
+- **Pupila** (`optics::pupil`): disco (mapa concéntrico y radio
+  remapeado por la inversa de la CDF del perfil en `s = ρ²`), abanico de
+  triángulos desde el centro (diafragma de N láminas rectas; curvas con
+  24 cuerdas por lámina: arcos de radio `apotema / redondez` tangentes a
+  la arista en su mitad, como `tools/assets/aperture-masks.mjs`) con el
+  perfil del *calibre* de la forma, o rejilla con CDF marginal y
+  condicional de una imagen (máscara o textura por la forma con borde
+  suavizado; perfil y obstrucción dentro). Nada se rechaza y nada se
+  pesa: la estratificación de Sobol llega a la pupila y el brillo no
+  cambia. Solo `+ − × ÷ sqrt` y `fmath` (`exp`, `ln`, `sin_cos`, `atan2`
+  al preparar).
+- **Campo**: altura de imagen `h` (0 en el eje, 1 en `field_mm`) y
+  dirección radial desde el eje óptico (con el descentramiento). Remolino
+  (artístico): comprime radialmente, estira tangencialmente y gira la
+  pupila en proporción a `h`. Ojo de gato: una muestra fuera del segundo
+  disco (radio 1, desplazado `cats_eye × h` hacia el eje) pesa negro, pero
+  traza su rayo (la cobertura de un fondo transparente no cambia).
+  Aberración cromática (artística, decisión 3): con `ca_amount > 0` cada
+  muestra toma una banda R, G o B por `PixelSampler::strata` de
+  `DIM_LENS_BAND` (`3 << 20`, más allá de la tabla de Sobol y de los
+  recortes: cada tres muestras seguidas de un píxel son las tres bandas,
+  desplazadas por un *hash* del píxel, y las tres comparten un punto de la
+  pupila, el índice `(i + desfase) / 3` de la secuencia de Sobol de la
+  lente: cada banda recorre sus propios puntos en orden y los colores del
+  interior de un disco coinciden en vez de salpicarse), escala la pupila por
+  `1 + a·CA_SCALE[banda]` y la mueve `a·CA_SHIFT[banda]·h` en radial, y
+  pesa solo su canal por tres. Anamórfico: x de la pupila entre la
+  compresión.
+- **Rayo** (`Lens::thin_ray`, también lo que usa `Camera::generate_ray`
+  con lente, y por tanto `render::centre_ray`): el rayo principal por
+  `forward·f + right·(x + shift_x) + up·(y + shift_y)`; sin inclinación,
+  el plano de enfoque de siempre; con inclinación `α` sobre el eje `a`
+  del plano del sensor, la pupila en el plano de la lente girado y el
+  plano de enfoque por el punto de enfoque del eje con normal
+  `f·forward + u·sin α·(forward × a)` (regla de la bisagra; con el sensor
+  a `f u / (u cos α − f)` se cumple también Scheimpflug, y el test lo
+  comprueba con tres puntos). Un rayo principal que no corta ese plano
+  por delante enfoca al infinito.
+- Lo que no cambia: el pase `coc` (`passes::coc_diameter`) sigue siendo
+  el de la lente fina redonda y sin inclinar; la cámara ortográfica
+  ignora `LENS`; el muestreo de luces, BSDF y recortes no ve nada nuevo.
+- *Hash* fijado de la escena O1 (`example::o1_scene`, todas las
+  perillas a la vez y una textura de anillos): `PINNED_O1_LENS_4SPP` =
+  `0xcfc57d4a` en cada ruta SIMD, en WASI, en el `rt_wasm.wasm` real
+  (`rt --write-o1-example`, `tools/wasm-parity.mjs`, en CI) y con 1, 4 y
+  16 hilos (`rt-cli/tests`).
 
 ### 5.2 bis · Película, *denoise* y cáusticas (E5b-1)
 
@@ -1196,6 +1276,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Selección y arrastre | `tests/faces.test.ts`, `material-drop`, `box-select` | Caras con placa, cilindro, redondeo y rangos CAD; reglas de suelta con números; ventana y cruce sobre geometría proyectada con un visor simulado; qué teclas arman la caja en cada esquema del ratón |
 | Primitivas y escala | `tests/primitives.test.ts`, `primitive-ops` | Cada forma: estanca donde debe, normales hacia fuera, UV en [0, 1], caras lógicas que cubren la malla, mismos bytes, medidas exactas en mm y volúmenes analíticos; dónde nace (base 1,4 × la huella, producto encima, una entrada de deshacer; el fondo infinito llena el encuadre y deja delante de su pared los focos del montaje), edición viva y deshacer, guardar y abrir byte a byte, escala por eje, uniforme y a medida alrededor del pivote a cada nivel, las asas de *Escalar* |
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
+| Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Visor | `npm run screenshot` | Captura con Chromium local (swiftshader); se adjunta al PR |

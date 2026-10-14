@@ -57,6 +57,7 @@ import {
   type MeshData,
   type MeshId,
 } from '../core/meshes';
+import { normalizeOptics } from '../core/optics';
 import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
 import { checkTextureFile, registerTextureImage, textureImageId } from '../core/texture-images';
 import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
@@ -304,6 +305,17 @@ function checkState(raw: RawState): ProjectState {
   s.materials = materials;
   if (!isObject(s.camera.cameras) || !isObject(s.camera.cameras[s.camera.active])) throw damaged('camera.active is not a camera');
   for (const [id, c] of Object.entries(s.camera.cameras)) if (!isObject(c) || c.id !== id) throw damaged(`camera.cameras.${id} is not a camera`);
+  // O1: a camera's optics (absent on cameras saved before O1, which keep the plain thin lens) within the engine's limits.
+  if (Object.values(s.camera.cameras).some((c) => (c as { optics?: unknown }).optics !== undefined)) {
+    const cameras = { ...s.camera.cameras };
+    for (const [id, c] of Object.entries(cameras)) {
+      const raw = (c as { optics?: unknown }).optics;
+      if (raw === undefined) continue;
+      const { optics: _drop, ...rest } = c;
+      cameras[id] = raw === null ? rest : { ...rest, optics: normalizeOptics(raw) };
+    }
+    s.camera = { ...s.camera, cameras };
+  }
   if (!Array.isArray(s.studio.lights) || s.studio.lights.some((l) => !isObject(l) || typeof l.id !== 'string')) throw damaged('studio.lights is damaged');
   if (!Array.isArray(s.selection.ids)) throw damaged('selection.ids is not a list');
   const env = s.environment;
