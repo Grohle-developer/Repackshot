@@ -52,7 +52,7 @@ use crate::caustics::{gather_at, gather_catcher, CausticSetup, PhotonMap};
 use crate::color::Rgb;
 use crate::fmath;
 use crate::geometry::{Geometry, RayHit};
-use crate::light::{power_heuristic, Lights};
+use crate::light::{Lights, Scattered};
 use crate::math::{offset_origin, Frame, Ray, Vec3};
 use crate::sampler::{
     bounce_dim, cutout_dim, PixelSampler, OFFSET_BSDF, OFFSET_LIGHT, OFFSET_LIGHT_SELECT,
@@ -606,6 +606,10 @@ pub fn radiance_with<T: Tracer>(
     let mut alpha = 1.0;
     // Density of the BSDF sample that produced `ray`; `None` for the camera ray.
     let mut bsdf_pdf: Option<f32> = None;
+    // The light selection at the vertex where that sample was drawn (and next-event estimation
+    // chose a light): the MIS weights of what `ray` finds use its probabilities. Unused until
+    // the first BSDF sample.
+    let mut sampled_at = lights.select_by_flux(camera_ray.origin);
     let mut bounce = 0u32;
     // Nothing but straight events since the camera.
     let mut primary = true;
@@ -627,14 +631,19 @@ pub fn radiance_with<T: Tracer>(
             }
         }
 
+        let scattered = bsdf_pdf.map(|pdf| Scattered {
+            pdf,
+            from: &sampled_at,
+        });
+
         // Area lights are transparent emitters: add every one crossed on the way (unless the
         // photon map brings their light here: every area light a BSDF-sampled ray sees sends
         // photons; point lights and spots do not).
         let dropped = caustics.is_some() && state.photons_bring_it();
         let crossed = if dropped {
-            lights.crossed_without_photons(&ray, t_nearest, bsdf_pdf, offset)
+            lights.crossed_without_photons(&ray, t_nearest, scattered, offset)
         } else {
-            lights.crossed_from(&ray, t_nearest, bsdf_pdf, offset)
+            lights.crossed_from(&ray, t_nearest, scattered, offset)
         };
         prepared.add(&mut sum, throughput * crossed, bounce >= 2);
 
@@ -650,9 +659,9 @@ pub fn radiance_with<T: Tracer>(
                     alpha = if peak(crossed) > 0.0 { 1.0 } else { 0.0 };
                 }
                 _ => {
-                    let sky = match bsdf_pdf {
-                        Some(pdf) if dropped => lights.escaped_environment(ray.dir, pdf),
-                        _ => lights.escaped(ray.dir, bsdf_pdf),
+                    let sky = match scattered {
+                        Some(s) if dropped => lights.escaped_environment(ray.dir, s),
+                        _ => lights.escaped(ray.dir, scattered),
                     };
                     prepared.add(&mut sum, throughput * sky, bounce >= 2);
                 }
@@ -723,9 +732,9 @@ pub fn radiance_with<T: Tracer>(
                     .get(instance as usize)
                     .is_some_and(|i| i.flags & INSTANCE_ONE_SIDED != 0);
                 if (front || !one_sided) && !(dropped && lights.is_mesh_light(instance)) {
-                    let weight = bsdf_pdf.map_or(1.0, |pdf| {
+                    let weight = scattered.map_or(1.0, |s| {
                         let cos = surface.geometric.dot(ray.dir);
-                        lights.emitter_weight(instance, pdf, offset + t_geometry, cos)
+                        lights.emitter_weight(instance, s, offset + t_geometry, cos)
                     });
                     prepared.add(&mut sum, throughput * m.radiance() * weight, bounce >= 2);
                 }
@@ -784,9 +793,10 @@ pub fn radiance_with<T: Tracer>(
         }
         let drop_nee = caustics.is_some() && next_state.photons_bring_it();
 
-        // Next-event estimation: one light.
-        let light_sample = lights.sample(
-            surface.point,
+        // Next-event estimation: one light, chosen by what each one can send to this point.
+        let selection = lights.select(surface.point);
+        let light_sample = lights.sample_selected(
+            &selection,
             sampler.get1(dims + OFFSET_LIGHT_SELECT),
             sampler.get2(dims + OFFSET_LIGHT),
         );
@@ -819,7 +829,7 @@ pub fn radiance_with<T: Tracer>(
                     let weight = if ls.delta || !ls.glossy {
                         1.0
                     } else {
-                        power_heuristic(ls.pdf, bsdf.pdf(wo, wi))
+                        lights.sampled_weight(ls.pdf, bsdf.pdf(wo, wi))
                     };
                     let mut c = throughput * f * ls.radiance * (wi.z.abs() * weight / ls.pdf);
                     if pass != Rgb::WHITE {
@@ -867,6 +877,7 @@ pub fn radiance_with<T: Tracer>(
             offset += (next_origin - ray.origin).dot(ray.dir);
         } else {
             bsdf_pdf = Some(bs.pdf);
+            sampled_at = selection;
             primary = false;
             offset = 0.0;
             state = next_state;
@@ -923,8 +934,12 @@ fn shadow_catcher<T: Tracer>(
     let mut lit = 0.0f32;
     let mut open = 0.0f32;
 
-    let light_sample = lights.sample(
-        x,
+    // The catcher's shadow is a ratio of one sample's lit and open light, so how dark it comes
+    // out depends on how the light is chosen: it keeps the choice by flux of before E12 (for its
+    // light sample and its BSDF probe's MIS alike), and with it the look of every catcher.
+    let selection = lights.select_by_flux(x);
+    let light_sample = lights.sample_selected(
+        &selection,
         sampler.get1(dims + OFFSET_LIGHT_SELECT),
         sampler.get2(dims + OFFSET_LIGHT),
     );
@@ -933,7 +948,7 @@ fn shadow_catcher<T: Tracer>(
         let weight = if ls.delta || !ls.glossy {
             1.0
         } else {
-            power_heuristic(ls.pdf, lambert.pdf(wo, wi))
+            lights.sampled_weight(ls.pdf, lambert.pdf(wo, wi))
         };
         let c =
             (lambert.eval(wo, wi, Lobes::All) * ls.radiance).luminance() * wi.z * weight / ls.pdf;
@@ -971,12 +986,16 @@ fn shadow_catcher<T: Tracer>(
                 tracer.trace(&probe).map_or(f32::INFINITY, |h| h.t),
             )
         };
-        let pdf = Some(bs.pdf);
-        let all = lights.crossed(&probe, f32::INFINITY, pdf) + lights.escaped(wi, pdf);
+        let bsdf = Scattered {
+            pdf: bs.pdf,
+            from: &selection,
+        };
+        let all =
+            lights.crossed(&probe, f32::INFINITY, Some(bsdf)) + lights.escaped(wi, Some(bsdf));
         let mut reached = if blocker == f32::INFINITY {
             all
         } else {
-            lights.crossed(&probe, blocker, pdf)
+            lights.crossed(&probe, blocker, Some(bsdf))
         };
         if keep != Rgb::WHITE {
             reached = reached * keep;
