@@ -1285,6 +1285,7 @@ una fuente del punto con cuál (*La normal de la superficie*, *Las UV de la
 malla*, *Las coordenadas de la pieza (por 100 mm)*); *Duplicar* y
 *Eliminar*. Con varios nodos, *N nodos seleccionados* y los dos botones;
 con ninguno, una nota de cómo se usa.
+![el frasco con el mármol en Rápido](material-nodes-preview.png)
 
 **Pie**: *N nodos · M conexiones · programa de K instrucciones, F + V
 registros* (lo que dice el compilador), o por qué no compila (*El grafo
