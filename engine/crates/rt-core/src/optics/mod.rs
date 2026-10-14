@@ -533,7 +533,7 @@ impl Lens {
     }
 
     /// [`Lens::sample`] without the filters, and the point of the unit pupil it used (after the
-    /// pupil's effects; the centre for a pinhole).
+    /// pupil's effects; for a pinhole, a point of the unit disc from the lens numbers).
     fn sample_lens(
         &self,
         camera: &Camera,
@@ -543,9 +543,13 @@ impl Lens {
         sampler: &PixelSampler,
     ) -> ((Ray, Rgb), (f32, f32)) {
         if camera.lens_radius() == 0.0 {
+            // No depth of field is still a lens of some size behind the filter: the point of the
+            // filter a ray crosses (the glimmer's cell) comes from the lens numbers, which a
+            // pinhole does not use for its ray.
+            let virtual_pupil = crate::warp::concentric_disk(sampler.get2(DIM_LENS));
             return (
                 (self.thin_ray(camera, aspect, u, v, (0.0, 0.0)), Rgb::WHITE),
-                (0.0, 0.0),
+                virtual_pupil,
             );
         }
         let prm = &self.params;

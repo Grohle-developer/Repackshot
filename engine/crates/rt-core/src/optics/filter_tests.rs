@@ -548,16 +548,19 @@ fn the_scattering_and_the_connection_add_up_to_the_scattering_alone_on_every_lob
     // (the share of the PSF inside) against the two estimators weighted (the scattering times its
     // weight, plus the connection's), with many numbers and no rendering.
     let cases = [
-        (FILTER_STAR, 6, (0.005, 0.0005), 0.003),
-        (FILTER_STREAK, 0, (-0.03, 0.0005), 0.006),
-        (FILTER_NET, 0, (0.0, 0.006), 0.003),
-        (FILTER_DIFFUSION_WHITE, 0, (0.012, -0.006), 0.01),
-        (FILTER_SOFT, 0, (0.003, 0.002), 0.002),
-        (FILTER_GLIMMER, 0, (0.0, 0.0), 0.05),
-        (FILTER_GLIMMER, 0, (0.004, 0.0), 0.006),
+        (FILTER_STAR, 6, (0.005, 0.0005), 0.003, false),
+        // Around the star's own centre, a light that is only the right half of the disc: every
+        // line crosses the disc, and only some of them reach the light.
+        (FILTER_STAR, 6, (0.0008, 0.0003), 0.004, true),
+        (FILTER_STREAK, 0, (-0.03, 0.0005), 0.006, false),
+        (FILTER_NET, 0, (0.0, 0.006), 0.003, false),
+        (FILTER_DIFFUSION_WHITE, 0, (0.012, -0.006), 0.01, false),
+        (FILTER_SOFT, 0, (0.003, 0.002), 0.002, false),
+        (FILTER_GLIMMER, 0, (0.0, 0.0), 0.05, false),
+        (FILTER_GLIMMER, 0, (0.004, 0.0), 0.006, true),
     ];
     let pupil = (0.3, -0.2);
-    for (kind, points, centre, radius) in cases {
+    for (kind, points, centre, radius, half) in cases {
         let f = Filter::new(&FilterParams {
             kind,
             grade: 2.0,
@@ -569,7 +572,7 @@ fn the_scattering_and_the_connection_add_up_to_the_scattering_alone_on_every_lob
         let disc = Disc { centre, radius };
         let inside = |d: (f32, f32)| {
             let (x, y) = (d.0 - centre.0, d.1 - centre.1);
-            x * x + y * y <= radius * radius
+            x * x + y * y <= radius * radius && (!half || x > 0.0)
         };
         let p_light = 0.5;
         let n = 1_000_000;
@@ -601,4 +604,30 @@ fn the_scattering_and_the_connection_add_up_to_the_scattering_alone_on_every_lob
             "kind {kind}: {both} weighted against {alone} alone"
         );
     }
+}
+
+#[test]
+fn a_camera_without_depth_of_field_still_spreads_the_glimmer_over_the_filter() {
+    // fstop 0 renders no depth of field, but the filter in front of the lens is crossed all over:
+    // the glimmer's cells (one sparkle each) come from the lens numbers, not from the one point of
+    // a pinhole (which would turn the sparkle into a ghost of the whole picture).
+    let mut scene = light_on_black(
+        FilterParams {
+            kind: FILTER_GLIMMER,
+            grade: 1.0,
+            ..FilterParams::default()
+        },
+        50.0,
+    );
+    scene.camera.fstop = 0.0;
+    let lens = scene.camera.lens.clone().unwrap();
+    let mut cells = std::collections::BTreeSet::new();
+    for i in 0..256 {
+        let sampler = crate::sampler::PixelSampler::new(1, 7, 9, i);
+        let (_, _, path) = lens.sample_filtered(&scene.camera, 1.0, 0.4, 0.6, &sampler);
+        let p = path.unwrap().pupil;
+        assert!(p.0 * p.0 + p.1 * p.1 <= 1.0 + 1.0e-5);
+        cells.insert(((p.0 * 3.0 + 3.0) as i32, (p.1 * 3.0 + 3.0) as i32));
+    }
+    assert!(cells.len() > 20, "{} cells of the 6 × 6", cells.len());
 }
