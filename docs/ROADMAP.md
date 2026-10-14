@@ -1584,7 +1584,12 @@ cerrar.
   blanco (mfp 0,1 a 60 mm, g −0,4 a 0,4, frontera lisa y rugosa): entre
   0,998 y 1,008 (antes, con la conexión recta, 0,983–1,015); un medio que
   solo absorbe da Beer–Lambert en cada canal (el MIS espectral) a 2 %; un
-  medio gris (albedo 0,9 y 0,97) en un mundo uniforme da lo mismo con el
+  semiespacio gris de dispersión isótropa bajo una frontera de índice
+  1,001 da el albedo plano de Chandrasekhar para luz normal
+  (`1 − H(1) √(1 − a)`, su función H resuelta en el test): 0,4118 frente a
+  0,4149 con albedo 0,9 y 0,7503 frente a 0,7527 con 0,99 (cota 2 %; es la
+  referencia absoluta de la ruleta y del muestreo con albedo entre 0 y 1);
+  un medio gris (albedo 0,9 y 0,97) en un mundo uniforme da lo mismo con el
   lóbulo que con la frontera exacta (0,2787 frente a 0,2776 y 0,4501
   frente a 0,4496, cota 2 %: ahí el lóbulo es exacto y solo cuenta cuánto
   refleja la frontera hacia dentro, que es lo que el *furnace* blanco no
@@ -1609,7 +1614,15 @@ cerrar.
   `tests/fixtures/e9.rsb`), igual en todas las rutas SIMD, en WASI escalar
   y `simd128`, con 1, 4 y 16 hilos, en el `rt.wasm` real
   (`tools/wasm-parity.mjs`, también en CI) y por el código de la página.
-- **Coste**: {{COST}}
+- **Coste** (la hoja, 240 × 180, cuatro hilos en una máquina compartida
+  con carga ~40; los rayos por muestra de cámara no dependen de la carga),
+  medio frente a claro, 64 / 256 spp: esferas 22,9 frente a 4,0 rayos
+  (5,7 ×; tiempo 169,5 / 28,0 s = 6,1 × y 578,9 / 97,3 s = 5,9 ×); frasco
+  de leche 9,3 frente a 3,7 (2,5 ×; 56,2 / 21,4 s = 2,6 × y 236,1 / 69,4 s
+  = 3,4 ×); frasco de zumo 6,2 frente a 3,7 (1,7 ×; 39,3 / 22,1 s = 1,8 × y
+  157,3 / 85,4 s = 1,8 ×); el de leche con fotones, 10,1 rayos (75,2 y
+  270,3 s). Con la conexión recta eran 15 ×, 7,6 × y 5,8 × en tiempo a
+  64 spp. Objetivo de la dirección para el frasco de leche, ≤ 6 ×: cumplido.
 - **Hoja de contactos** `out/sss-sheet.html` (`rt --sss-sheet out`):
   las nueve recetas en esferas y el frasco de E5 lleno de leche y de zumo
   de naranja, con y sin medio, y el de leche con fotones, a 64 y 256
