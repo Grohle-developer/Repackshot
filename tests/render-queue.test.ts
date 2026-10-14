@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { totalDuration } from '../src/core/animation';
 import { createStore } from '../src/core/store';
+import { encodeTiff } from '../src/io/image';
 import { memoryResultsStore } from '../src/io/results';
 import * as cmd from '../src/ui/commands';
 import type { AppServices, FrameRequest, FrameResult } from '../src/ui/ports';
@@ -133,6 +134,34 @@ describe('Render and + Add to queue', () => {
     expect(f.saved).toEqual(['Bottle_Camera 1_0001.png', 'Bottle_Camera 1_0001-noisy.png']);
     // The history keeps the render (the denoised image) only.
     expect(ctx.ui.get().results.map((r) => r.name)).toEqual(['Bottle_Camera 1_0001.png']);
+  });
+
+  it('a TIFF job: the file is a .tif with its format and bits in the history, and the viewer’s picture beside it', async () => {
+    const f = makeCtx();
+    const { ctx } = f;
+    const png = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' });
+    ctx.services.renderFrame = async (req) => {
+      f.requests.push(req);
+      const data = new Float32Array(req.width * req.height * 4).fill(0.5);
+      const bytes = encodeTiff({ width: req.width, height: req.height, data }, { bits: 32, alpha: req.transparent, dpi: req.dpi });
+      return { file: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/tiff' }), display: png, width: req.width, height: req.height, samples: 4, seconds: 0.25 };
+    };
+    ctx.store.dispatch({ type: 'render/set', patch: { format: 'TIFF', bitDepth: 32, transparent: true, width: 32, height: 16, dpi: 150 } });
+    await cmd.renderFromWindow(ctx);
+    await queueSettled(ctx);
+    expect(f.requests[0]).toMatchObject({ format: 'TIFF', bitDepth: 32, transparent: true, dpi: 150 });
+    expect(f.saved).toEqual(['Bottle_Camera 1_0001.tif']);
+    const [r] = ctx.ui.get().results;
+    expect([r.name, r.format, r.bitDepth]).toEqual(['Bottle_Camera 1_0001.tif', 'TIFF', 32]);
+    const kept = await ctx.services.results.get(r.id);
+    expect(kept?.file.type).toBe('image/tiff');
+    expect(kept?.display).toBe(png);
+    // The history counts both files.
+    expect(r.bytes).toBe((kept?.file.size ?? 0) + png.size);
+    // A DNG has no alpha whatever the window said before.
+    ctx.store.dispatch({ type: 'render/set', patch: { format: 'DNG' } });
+    expect([ctx.store.get().render.transparent, ctx.store.get().render.bitDepth]).toEqual([false, 8]);
+    expect(jobFileNames(ctx.store.get(), { id: 'j', seq: 2, settings: ctx.store.get().render } as never)).toEqual(['Bottle_Camera 1_0002.dng']);
   });
 
   it('Start queue renders every waiting job in order', async () => {

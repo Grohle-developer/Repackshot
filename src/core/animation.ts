@@ -6,9 +6,11 @@ import type { EasingKind, MoveKind, RGB } from '../data/types';
 import { ease } from './light-math';
 import type { ActionBase, ProjectState } from './store';
 import { activeCamera, cameraBasis, type CameraId } from './camera';
+import { explodeMovers, explodeParts, moverPhase, resolveExplode, tiltAxis, EXPLODE_TILT_DEG, type ExplodeParams } from './explode';
 import { nextId, nextIds } from './ids';
-import { add, boxCenter, clamp, isEmptyBox, lerp, normalize, scale, sub, type Mat4, type Vec3 } from './math';
-import { allParts, partWorldBounds, sceneBounds, worldToLocalDelta, type NodeId } from './scene';
+import { add, clamp, lerp, mat4Compose, mat4Identity, mat4Invert, mat4Multiply, scale, type Mat4, type Vec3 } from './math';
+import { partsUnder, worldMatrix, worldToLocalDelta, type NodeId } from './scene';
+import { decomposeMatrix } from './transform';
 import { trackPose, type PhysicsTrack } from './physics';
 
 /** One shot: how long it lasts and which camera is seen (null = the active camera). */
@@ -46,6 +48,17 @@ export interface MotionClip {
   vector?: Vec3;
   /** TINT: target colour, linear RGB. */
   color?: RGB;
+  /** Plays backwards (SPEC §3.7): it holds its end state before it starts; an explode reversed assembles. */
+  reverse?: boolean;
+  /** Plays this many times in a row (a whole number, 1 when absent): the bar lasts `duration` × `repeat`. */
+  repeat?: number;
+  /**
+   * One knob over the symmetric curves of EASING_KINDS, 0..1: 0 linear, 0.5 smooth (EASE), 1 very smooth (EASE_STRONG),
+   * blended in between. Absent: `easing` alone (the knob writes the nearest kind there too).
+   */
+  smoothness?: number;
+  /** EXPLODE: how the parts come apart (core/explode.ts). Absent: the explode of before N6. */
+  explode?: ExplodeParams;
   /**
    * PHYSICS (phase S2): the recorded simulation, the node's local position and rotation per frame (core/physics.ts).
    * The clip plays it over its duration (stretching it slows it down); before its start and after its end the node
@@ -70,7 +83,8 @@ export interface ClipAnchor {
 export const TARGET_MOVES: Readonly<Record<ClipTargetKind, readonly MoveKind[]>> = {
   CAMERA: ['ORBIT', 'RISE', 'DOLLY', 'TRACK', 'ZOOM', 'FOCUS'],
   SUBJECT: ['SPIN', 'TUMBLE', 'MOVE', 'SCALE', 'EXPLODE', 'VISIBILITY'],
-  NODE: ['SPIN', 'TUMBLE', 'MOVE', 'SCALE', 'VISIBILITY'],
+  // EXPLODE on a node: a model or a group (the interface offers it only for those).
+  NODE: ['SPIN', 'TUMBLE', 'MOVE', 'SCALE', 'EXPLODE', 'VISIBILITY'],
   LIGHT: ['INTENSITY', 'TINT', 'ORBIT', 'RISE', 'VISIBILITY'],
   SCENE: ['HDRI'],
 };
@@ -124,10 +138,21 @@ export function defaultAmount(move: MoveKind): number {
   return table[move] ?? 1;
 }
 
+/** How many times a clip plays (a whole number, at least 1). */
+export function clipRepeat(clip: Pick<MotionClip, 'repeat'>): number {
+  const n = clip.repeat;
+  return typeof n === 'number' && Number.isFinite(n) && n >= 1 ? Math.min(100, Math.floor(n)) : 1;
+}
+
+/** When a clip ends, seconds: its start plus its duration times its repeats. */
+export function clipEnd(clip: Pick<MotionClip, 'start' | 'duration' | 'repeat'>): number {
+  return clip.start + clip.duration * clipRepeat(clip);
+}
+
 /** Total length of the sequence: the shots, or the last clip if it runs longer. */
 export function totalDuration(state: ProjectState): number {
   const shots = state.animation.shots.reduce((a, s) => a + Math.max(0, s.duration), 0);
-  const clips = state.animation.clips.reduce((a, c) => Math.max(a, c.start + c.duration), 0);
+  const clips = state.animation.clips.reduce((a, c) => Math.max(a, clipEnd(c)), 0);
   return Math.max(shots, clips);
 }
 
@@ -154,10 +179,52 @@ export function shotStarts(state: ProjectState): number[] {
   return out;
 }
 
+/**
+ * The linear phase of a clip at time t, 0..1, before its curve: 0 before it starts, 1 after it ends, the repeats
+ * one after another, mirrored when the clip is reversed.
+ */
+export function clipPhase(clip: Pick<MotionClip, 'start' | 'duration' | 'repeat' | 'reverse'>, t: number): number {
+  let x: number;
+  if (clip.duration <= 0) x = t >= clip.start ? 1 : 0;
+  else {
+    const u = (t - clip.start) / clip.duration;
+    const n = clipRepeat(clip);
+    x = u <= 0 ? 0 : u >= n ? 1 : u - Math.floor(u);
+  }
+  return clip.reverse ? 1 - x : x;
+}
+
+/** The symmetric curves the smoothness knob moves between: linear, smooth, very smooth. */
+export function smoothEase(x: number, smoothness: number): number {
+  const k = Number.isFinite(smoothness) ? clamp(smoothness, 0, 1) : 0;
+  const lin = ease(x, 'LINEAR');
+  const mid = ease(x, 'EASE');
+  if (k <= 0.5) return lin + (mid - lin) * (k / 0.5);
+  return mid + (ease(x, 'EASE_STRONG') - mid) * ((k - 0.5) / 0.5);
+}
+
+/** The easing kind nearest to a smoothness (what the knob writes in `easing`). */
+export function easingForSmoothness(smoothness: number): EasingKind {
+  return smoothness < 0.25 ? 'LINEAR' : smoothness < 0.75 ? 'EASE' : 'EASE_STRONG';
+}
+
+/** A clip's curve at phase x: its smoothness when it has one, otherwise its easing. */
+export function clipCurve(clip: Pick<MotionClip, 'easing' | 'smoothness'>, x: number): number {
+  return clip.smoothness === undefined ? ease(x, clip.easing) : smoothEase(x, clip.smoothness);
+}
+
 /** Eased progress of a clip at time t, 0..1. */
 export function clipProgress(clip: MotionClip, t: number): number {
-  if (clip.duration <= 0) return t >= clip.start ? 1 : 0;
-  return ease((t - clip.start) / clip.duration, clip.easing);
+  return clipCurve(clip, clipPhase(clip, t));
+}
+
+/**
+ * Whether the scene shows the pose of the playhead rather than the scene at rest: clips play, the playhead moved, or
+ * a reversed clip holds its end state from the start.
+ */
+export function poseActive(state: ProjectState): boolean {
+  const a = state.animation;
+  return a.clips.length > 0 && (a.playing || a.playhead > 0 || a.clips.some((c) => c.reverse === true));
 }
 
 /** The animated camera at an instant. */
@@ -202,14 +269,15 @@ function targetKey(t: ClipTarget): string {
 }
 
 /**
- * The pose the viewport and a still render show: the playhead's once it has moved (or while playing); at 0 the scene
- * as edited, except the nodes a recorded simulation (a PHYSICS clip) holds, which show its frame there too (a Drop at
- * 0 starts its clip at 0, so the scene as edited is already where the run ended). Null when nothing is posed.
+ * The pose the viewport and a still render show: the playhead's whenever `poseActive` says so; otherwise (at 0, not
+ * playing, nothing reversed) the scene as edited, except the nodes a recorded simulation (a PHYSICS clip) holds,
+ * which show its frame there too (a Drop at 0 starts its clip at 0, so the scene as edited is already where the run
+ * ended). Null when nothing is posed.
  */
 export function playheadPose(state: ProjectState): Pose | null {
   const anim = state.animation;
   if (anim.clips.length === 0) return null;
-  if (anim.playing || anim.playhead > 0) return evaluate(state, anim.playhead);
+  if (poseActive(state)) return evaluate(state, anim.playhead);
   const held = new Set(anim.clips.filter((c) => c.move === 'PHYSICS' && c.target.kind === 'NODE').map((c) => (c.target.kind === 'NODE' ? c.target.id : '')));
   if (held.size === 0) return null;
   const pose = evaluate(state, anim.playhead);
@@ -295,8 +363,8 @@ export function evaluate(state: ProjectState, t: number): Pose {
       if (c.target.kind !== 'NODE' || !c.track) continue;
       const np = ensure(c.target.id);
       if (!np) continue;
-      const u = c.duration > 0 ? (t - c.start) / c.duration : 1;
-      const p = trackPose(c.track, u, state.scene.nodes[c.target.id].transform, c.anchor);
+      // The recording follows the clip's time like any other clip (repeats, reversed), without a curve.
+      const p = trackPose(c.track, clipPhase(c, t), state.scene.nodes[c.target.id].transform, c.anchor);
       if (p) {
         np.position = p.position;
         np.rotation = p.rotation;
@@ -306,16 +374,7 @@ export function evaluate(state: ProjectState, t: number): Pose {
     const e = clipProgress(c, t);
     const ids = c.target.kind === 'NODE' ? [c.target.id] : state.scene.roots;
     if (c.move === 'EXPLODE') {
-      const box = sceneBounds(state);
-      if (isEmptyBox(box)) continue;
-      const center = boxCenter(box);
-      for (const p of allParts(state)) {
-        const pb = partWorldBounds(state, p, cache);
-        const dir = normalize(sub(boxCenter(pb), center));
-        const local = worldToLocalDelta(state, p, scale(dir, c.amount * size * e), cache);
-        const np = ensure(p);
-        if (np) np.position = add(np.position, local);
-      }
+      applyExplode(state, c, t, ensure, cache);
       continue;
     }
     for (const id of ids) {
@@ -340,8 +399,7 @@ export function evaluate(state: ProjectState, t: number): Pose {
         }
         case 'VISIBILITY': {
           const appear = c.amount >= 0.5;
-          const raw = c.duration > 0 ? (t - c.start) / c.duration : t >= c.start ? 1 : 0;
-          np.visible = raw >= 0.5 ? appear : !appear;
+          np.visible = clipPhase(c, t) >= 0.5 ? appear : !appear;
           break;
         }
         default:
@@ -373,11 +431,9 @@ export function evaluate(state: ProjectState, t: number): Pose {
       case 'RISE':
         lp.el = clamp(lp.el + c.amount * e, -89, 89);
         break;
-      case 'VISIBILITY': {
-        const raw = c.duration > 0 ? (t - c.start) / c.duration : 1;
-        lp.enabled = raw >= 0.5 ? c.amount >= 0.5 : c.amount < 0.5;
+      case 'VISIBILITY':
+        lp.enabled = clipPhase(c, t) >= 0.5 ? c.amount >= 0.5 : c.amount < 0.5;
         break;
-      }
       default:
         break;
     }
@@ -388,6 +444,65 @@ export function evaluate(state: ProjectState, t: number): Pose {
     if (c.target.kind === 'SCENE' && c.move === 'HDRI') pose.envRotationDeg += c.amount * clipProgress(c, t);
   }
   return pose;
+}
+
+/** A rotation of `deg` degrees about a unit axis through `c`, world space. */
+function rotationAbout(c: Vec3, axis: Vec3, deg: number): Mat4 {
+  const a = (deg * Math.PI) / 180;
+  const co = Math.cos(a);
+  const si = Math.sin(a);
+  const [x, y, z] = axis;
+  const t = 1 - co;
+  const r = mat4Identity();
+  r[0] = co + x * x * t;
+  r[1] = y * x * t + z * si;
+  r[2] = z * x * t - y * si;
+  r[4] = x * y * t - z * si;
+  r[5] = co + y * y * t;
+  r[6] = z * y * t + x * si;
+  r[8] = x * z * t + y * si;
+  r[9] = y * z * t - x * si;
+  r[10] = co + z * z * t;
+  const to = mat4Compose(c, [0, 0, 0], [1, 1, 1]);
+  const back = mat4Compose(scale(c, -1), [0, 0, 0], [1, 1, 1]);
+  return mat4Multiply(to, mat4Multiply(r, back));
+}
+
+/**
+ * An EXPLODE clip on the pose (core/explode.ts): each mover travels its displacement inside its window of the clip,
+ * with the clip's curve; the displacement is world space, added to each part's position in its parent's space.
+ */
+function applyExplode(state: ProjectState, c: MotionClip, t: number, ensure: (id: NodeId) => NodePose | null, cache: Map<NodeId, Mat4>): void {
+  const node = c.target.kind === 'NODE' ? c.target.id : null;
+  // Every part of the target has a pose, moving or not (as before N6).
+  for (const p of explodeParts(state, node)) ensure(p);
+  const movers = explodeMovers(state, { node, amount: c.amount, explode: c.explode }, cache);
+  if (movers.length === 0) return;
+  const x = clipPhase(c, t);
+  const keep = resolveExplode(c.explode).keepOrientation;
+  for (const m of movers) {
+    const e = clipCurve(c, moverPhase(m, x));
+    const d = scale(m.delta, e);
+    for (const p of m.parts) {
+      const np = ensure(p);
+      if (np) np.position = add(np.position, worldToLocalDelta(state, p, d, cache));
+    }
+    const axis = keep || e === 0 ? null : tiltAxis(m.delta);
+    if (!axis) continue;
+    // Not keeping the orientation: the mover tilts away as it travels, about its own (moved) centre.
+    const turn = rotationAbout(add(m.ref, d), axis, EXPLODE_TILT_DEG * e);
+    for (const p of m.parts) {
+      const np = ensure(p);
+      const parent = state.scene.nodes[p]?.parent;
+      if (!np) continue;
+      const pw = parent ? worldMatrix(state, parent, cache) : mat4Identity();
+      const local = mat4Compose(np.position, np.rotation, np.scale);
+      const next = decomposeMatrix(mat4Multiply(mat4Invert(pw), mat4Multiply(turn, mat4Multiply(pw, local))), { position: np.position, rotation: np.rotation, scale: np.scale });
+      np.position = next.position;
+      np.rotation = next.rotation;
+      np.scale = next.scale;
+    }
+  }
 }
 
 /**
@@ -404,7 +519,7 @@ export function clipConflicts(state: ProjectState): Set<string> {
       const b = clips[j];
       if (a.move !== b.move || targetKey(a.target) !== targetKey(b.target)) continue;
       if (a.target.kind === 'CAMERA' && a.shot !== null && b.shot !== null && a.shot !== b.shot) continue;
-      const overlap = a.start < b.start + b.duration && b.start < a.start + a.duration;
+      const overlap = a.start < clipEnd(b) && b.start < clipEnd(a);
       if (overlap) {
         out.add(a.id);
         out.add(b.id);
@@ -412,6 +527,96 @@ export function clipConflicts(state: ProjectState): Set<string> {
     }
   }
   return out;
+}
+
+/** The parts a clip moves (what the viewport highlights): the model's, a node's; none for cameras, lights, the environment. */
+export function clipTargetParts(state: ProjectState, clip: Pick<MotionClip, 'target' | 'move' | 'explode'>): NodeId[] {
+  const tg = clip.target;
+  if (tg.kind !== 'SUBJECT' && tg.kind !== 'NODE') return [];
+  const parts = explodeParts(state, tg.kind === 'NODE' ? tg.id : null);
+  if (clip.move !== 'EXPLODE') return parts;
+  // An explode does not move its exceptions.
+  const pinned = new Set(partsUnder(state, resolveExplode(clip.explode).pinned));
+  return parts.filter((p) => !pinned.has(p));
+}
+
+/**
+ * The clips that act on some of the selected things (scene nodes, or lights by id): what the timeline's tree marks
+ * when they are selected in the scene. A clip on a group or on the model acts on every part under it.
+ */
+export function clipsActingOn(state: ProjectState, ids: readonly string[]): string[] {
+  if (ids.length === 0) return [];
+  const parts = new Set(partsUnder(state, ids.filter((id) => state.scene.nodes[id])));
+  const lights = new Set(ids.filter((id) => state.studio.lights.some((l) => l.id === id)));
+  return state.animation.clips
+    .filter((c) => {
+      if (c.target.kind === 'LIGHT') return lights.has(c.target.id);
+      if (c.target.kind === 'NODE' && ids.includes(c.target.id)) return true;
+      return clipTargetParts(state, c).some((p) => parts.has(p));
+    })
+    .map((c) => c.id);
+}
+
+/** The EXPLODE clips whose target holds some of these parts (where "Pin in exploded view" pins them). */
+export function explodeClipsFor(state: ProjectState, parts: readonly NodeId[]): MotionClip[] {
+  const want = new Set(partsUnder(state, parts));
+  return state.animation.clips.filter((c) => c.move === 'EXPLODE' && explodeParts(state, c.target.kind === 'NODE' ? c.target.id : null).some((p) => want.has(p)));
+}
+
+/** Whether these parts are all exceptions of an explode clip. */
+export function isPinned(state: ProjectState, clip: MotionClip, parts: readonly NodeId[]): boolean {
+  const pinned = new Set(partsUnder(state, resolveExplode(clip.explode).pinned));
+  const ps = partsUnder(state, parts);
+  return ps.length > 0 && ps.every((p) => pinned.has(p));
+}
+
+/** Kinds whose amount adds up over time (a turn, a distance): a split gives each half its share. */
+const ADDITIVE: ReadonlySet<MoveKind> = new Set<MoveKind>(['ORBIT', 'RISE', 'SPIN', 'TUMBLE', 'HDRI', 'TRACK', 'MOVE', 'EXPLODE']);
+
+/**
+ * Whether a clip can be cut in two at time t: strictly inside it, played once and forwards, of a kind whose amount
+ * accumulates (or multiplies: scale, dolly), and for an explode only when every part moves at once.
+ */
+export function canSplit(clip: MotionClip, t: number): boolean {
+  if (!(t > clip.start + 1e-6 && t < clipEnd(clip) - 1e-6) || clip.reverse || clipRepeat(clip) > 1) return false;
+  if (clip.move === 'EXPLODE') {
+    const e = resolveExplode(clip.explode);
+    return e.order === 'AT_ONCE' && e.levels !== 'ALL';
+  }
+  return ADDITIVE.has(clip.move) || clip.move === 'SCALE' || clip.move === 'DOLLY';
+}
+
+/**
+ * The two halves of a clip cut at time t (null when it cannot be cut): the first ends where the clip was at t, the
+ * second goes on from there to where the clip ended. The motion is continuous; each half keeps the curve.
+ */
+export function splitClip(clip: MotionClip, t: number): [Omit<MotionClip, 'id'>, Omit<MotionClip, 'id'>] | null {
+  if (!canSplit(clip, t)) return null;
+  const { id: _id, ...rest } = clip;
+  void _id;
+  const p = clipProgress(clip, t);
+  const first: Omit<MotionClip, 'id'> = { ...structuredClone(rest), duration: t - clip.start };
+  const second: Omit<MotionClip, 'id'> = { ...structuredClone(rest), start: t, duration: clipEnd(clip) - t };
+  if (ADDITIVE.has(clip.move)) {
+    first.amount = clip.amount * p;
+    second.amount = clip.amount * (1 - p);
+    if (clip.vector) {
+      first.vector = scale(clip.vector, p);
+      second.vector = scale(clip.vector, 1 - p);
+    }
+  } else if (clip.move === 'SCALE') {
+    const k = lerp(1, clip.amount, p);
+    if (Math.abs(k) < 1e-9) return null;
+    first.amount = k;
+    second.amount = clip.amount / k;
+  } else {
+    // DOLLY multiplies the distance by 1 - amount / 100.
+    const d = 1 - (clip.amount / 100) * p;
+    if (Math.abs(d) < 1e-9) return null;
+    first.amount = clip.amount * p;
+    second.amount = 100 * (1 - (1 - clip.amount / 100) / d);
+  }
+  return [first, second];
 }
 
 /** Shots and clips of a SEQUENCE_PRESETS entry. Unknown key gives null. */
@@ -443,6 +648,20 @@ export type AnimationAction =
   | ({ type: 'anim/addClip'; clip: Omit<MotionClip, 'id'> } & ActionBase)
   | ({ type: 'anim/setClip'; id: string; patch: Partial<Omit<MotionClip, 'id'>> } & ActionBase)
   | ({ type: 'anim/removeClip'; id: string } & ActionBase)
+  /** N6: several clips at once (the timeline's multiple selection). */
+  | ({ type: 'anim/removeClips'; ids: string[] } & ActionBase)
+  /** N6: copies of clips, each placed right after its original. */
+  | ({ type: 'anim/duplicateClips'; ids: string[] } & ActionBase)
+  /** N6: new start and duration of some clips (a drag of bars: absolute values, so a gesture repeats it safely). */
+  | ({ type: 'anim/setClipTimes'; times: Record<string, { start?: number; duration?: number }> } & ActionBase)
+  /** N6: cut a clip in two at time t (see `splitClip`). */
+  | ({ type: 'anim/splitClip'; id: string; t: number } & ActionBase)
+  /** N6: turn the direction of some clips round (an explode reversed assembles). */
+  | ({ type: 'anim/reverseClips'; ids: string[] } & ActionBase)
+  /** N6: change some parameters of an explode. */
+  | ({ type: 'anim/setExplode'; id: string; patch: Partial<ExplodeParams> } & ActionBase)
+  /** N6: pin parts in (or free them from) the explodes that hold them, or only in `clips`. */
+  | ({ type: 'anim/pinExplode'; parts: NodeId[]; pinned: boolean; clips?: string[] } & ActionBase)
   | ({ type: 'anim/setFps'; fps: number } & ActionBase)
   | ({ type: 'anim/clear' } & ActionBase)
   | ({ type: 'anim/playhead'; t: number } & ActionBase)
@@ -483,12 +702,88 @@ export function reduceAnimation(state: ProjectState, action: AnimationAction): P
       return set({
         clips: anim.clips.map((c) =>
           c.id === action.id
-            ? { ...c, ...action.patch, start: Math.max(0, action.patch.start ?? c.start), duration: Math.max(0.05, action.patch.duration ?? c.duration) }
+            ? {
+                ...c,
+                ...action.patch,
+                start: Math.max(0, action.patch.start ?? c.start),
+                duration: Math.max(0.05, action.patch.duration ?? c.duration),
+                ...('repeat' in action.patch && action.patch.repeat !== undefined ? { repeat: clipRepeat(action.patch) } : {}),
+                ...('smoothness' in action.patch && action.patch.smoothness !== undefined ? { smoothness: clamp(action.patch.smoothness, 0, 1) } : {}),
+              }
             : c,
         ),
       });
     case 'anim/removeClip':
       return set({ clips: anim.clips.filter((c) => c.id !== action.id) });
+    case 'anim/removeClips': {
+      const gone = new Set(action.ids);
+      const clips = anim.clips.filter((c) => !gone.has(c.id));
+      return clips.length === anim.clips.length ? state : set({ clips });
+    }
+    case 'anim/duplicateClips': {
+      const ids = anim.clips.map((c) => c.id);
+      const clips = [...anim.clips];
+      for (const c of anim.clips) {
+        if (!action.ids.includes(c.id)) continue;
+        const id = nextId('c', ids);
+        ids.push(id);
+        clips.push({ ...structuredClone(c), id, start: clipEnd(c) });
+      }
+      return clips.length === anim.clips.length ? state : set({ clips });
+    }
+    case 'anim/setClipTimes': {
+      let changed = false;
+      const clips = anim.clips.map((c) => {
+        const tm = action.times[c.id];
+        if (!tm) return c;
+        const start = Math.max(0, tm.start ?? c.start);
+        const duration = Math.max(0.05, tm.duration ?? c.duration);
+        if (start === c.start && duration === c.duration) return c;
+        changed = true;
+        return { ...c, start, duration };
+      });
+      return changed ? set({ clips }) : state;
+    }
+    case 'anim/splitClip': {
+      const i = anim.clips.findIndex((c) => c.id === action.id);
+      const halves = i >= 0 ? splitClip(anim.clips[i], action.t) : null;
+      if (!halves) return state;
+      const id = nextId('c', anim.clips.map((c) => c.id));
+      const clips = [...anim.clips];
+      clips.splice(i, 1, { ...halves[0], id: anim.clips[i].id }, { ...halves[1], id });
+      return set({ clips });
+    }
+    case 'anim/reverseClips': {
+      const flip = new Set(action.ids);
+      if (!anim.clips.some((c) => flip.has(c.id))) return state;
+      return set({ clips: anim.clips.map((c) => (flip.has(c.id) ? { ...c, reverse: !c.reverse } : c)) });
+    }
+    case 'anim/setExplode': {
+      const c = anim.clips.find((x) => x.id === action.id);
+      if (!c || c.move !== 'EXPLODE') return state;
+      // A clip saved before N6 has no parameters: its own are the legacy ones, under the legacy key.
+      const explode: ExplodeParams = { ...(c.explode ?? { mode: 'RADIAL' }), ...action.patch };
+      if (explode.overlap !== undefined) explode.overlap = clamp(explode.overlap, 0, 1);
+      return set({ clips: anim.clips.map((x) => (x.id === action.id ? { ...x, explode } : x)) });
+    }
+    case 'anim/pinExplode': {
+      const parts = partsUnder(state, action.parts);
+      if (parts.length === 0) return state;
+      const which = new Set((action.clips ? anim.clips.filter((c) => action.clips!.includes(c.id) && c.move === 'EXPLODE') : explodeClipsFor(state, parts)).map((c) => c.id));
+      if (which.size === 0) return state;
+      let changed = false;
+      const clips = anim.clips.map((c) => {
+        if (!which.has(c.id)) return c;
+        const prev = c.explode?.pinned ?? [];
+        // Pins are kept as parts: pinning a group pins what is under it, freeing a part frees it from a pinned group.
+        const had = new Set(partsUnder(state, prev));
+        const next = action.pinned ? [...had, ...parts.filter((p) => !had.has(p))] : [...had].filter((p) => !parts.includes(p));
+        if (next.length === had.size && next.every((p) => had.has(p)) && prev.every((p) => state.scene.nodes[p]?.kind === 'PART')) return c;
+        changed = true;
+        return { ...c, explode: { ...(c.explode ?? { mode: 'RADIAL' }), pinned: next } };
+      });
+      return changed ? set({ clips }) : state;
+    }
     case 'anim/setFps':
       return action.fps > 0 ? set({ fps: Math.round(action.fps) }) : state;
     case 'anim/clear':

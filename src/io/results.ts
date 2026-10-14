@@ -9,6 +9,7 @@
 // everything lives in memory for the session and `persistent()` says so; the
 // application starts the same.
 
+import { needsDisplayCopy } from '../core/render';
 import { evictionPlan, HISTORY_LIMITS, sortResults, type HistoryLimits, type ResultMeta } from '../core/results';
 
 export interface StoredBlobs {
@@ -248,9 +249,9 @@ export function launcherResultsStore(api: LauncherResultsApi, initialLimits: His
       if (!m) return null;
       const file = await api.resultFile(id);
       if (!file) return null;
-      // Only a file a page cannot show (EXR) has a picture of it. An AI image is there when the guard let one through:
-      // the first variant (a result of before X4b has that one only), then the others (X4b).
-      const display = m.format === 'EXR' ? await api.resultFile(id, true) : null;
+      // Only a file a page cannot show (EXR, TIFF, DNG) has a picture of it. An AI image is there when the guard let one
+      // through: the first variant (a result of before X4b has that one only), then the others (X4b).
+      const display = needsDisplayCopy(m.format) ? await api.resultFile(id, true) : null;
       const ai = m.ai && m.ai.bytes > 0 ? await api.resultFile(id, 'ai', 1) : null;
       const more: (Blob | null)[] = [];
       for (const [i, v] of (m.aiMore ?? []).entries()) more.push(v && v.bytes > 0 ? await api.resultFile(id, 'ai', i + 2) : null);

@@ -146,6 +146,24 @@ export interface SceneNode {
    * a group or a model, whether it falls as parts. Absent: the defaults.
    */
   physics?: PhysicsProps;
+  /**
+   * PART that a set (L6) put in the scene: one of its cards (`index` in the set's `cards`), its backdrop (the sweep) or
+   * its floor (a plane). Set decoration: not the product (part size, the rig pivot, framing), not the Doctor's
+   * business, replaced when another set is applied and removed by Reset setup (core/sets.ts).
+   */
+  setPiece?: SetPiece;
+}
+
+/** What a part of a set's decoration is (L6). */
+export interface SetPiece {
+  kind: 'CARD' | 'BACKDROP' | 'FLOOR';
+  /** CARD: its index in the set's `cards`; 0 otherwise. */
+  index: number;
+}
+
+/** The node is a piece of a set's decoration (L6). */
+export function isSetPiece(node: SceneNode | undefined): boolean {
+  return node?.setPiece !== undefined;
 }
 
 /** Ids of the meshes the parts of a state refer to, in order of first use. */
@@ -355,17 +373,23 @@ export function sceneBounds(state: ProjectState, visibleOnly = false): Box {
 
 /**
  * The parts that are the product: every part that is not a primitive (phase U9: a base, a backdrop, a pedestal is
- * the set, not the subject). A scene made only of primitives is its own product: then every part.
+ * the set, not the subject). A scene made only of primitives is its own product: then every part. The decoration of
+ * a set (L6: cards, its backdrop, its floor) is never the product, not even then.
  */
 export function productParts(state: ProjectState, visibleOnly = false): NodeId[] {
-  const parts = allParts(state).filter((p) => !visibleOnly || effectiveVisible(state, p));
+  const parts = allParts(state).filter((p) => !isSetPiece(state.scene.nodes[p]) && (!visibleOnly || effectiveVisible(state, p)));
   const product = parts.filter((p) => !state.scene.nodes[p].primitive);
   return product.length > 0 ? product : parts;
 }
 
 /** Some part of the scene is not a primitive: there is a product to stage. */
 export function hasProduct(state: ProjectState, visibleOnly = false): boolean {
-  return allParts(state).some((p) => !state.scene.nodes[p].primitive && (!visibleOnly || effectiveVisible(state, p)));
+  return allParts(state).some((p) => !state.scene.nodes[p].primitive && !isSetPiece(state.scene.nodes[p]) && (!visibleOnly || effectiveVisible(state, p)));
+}
+
+/** The parts that are not a set's decoration (L6): what the Doctor looks at and what framing the scene frames. */
+export function ownParts(state: ProjectState): NodeId[] {
+  return allParts(state).filter((p) => !isSetPiece(state.scene.nodes[p]));
 }
 
 /**

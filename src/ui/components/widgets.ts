@@ -17,6 +17,8 @@ export interface ThumbProps {
   onClick(): void;
   /** Drag payload (a material: "preset:GOLD"), when the thumbnail can be dragged onto a part (pointer events). */
   drag?: string;
+  /** L6: a large, square thumbnail (the sets of the light catalogue). */
+  large?: boolean;
 }
 
 export function thumb(p: ThumbProps): HTMLButtonElement {
@@ -25,7 +27,7 @@ export function thumb(p: ThumbProps): HTMLButtonElement {
     'button',
     {
       type: 'button',
-      class: `thumb${p.sphere ? ' sphere' : ''}${p.active ? ' is-active' : ''}`,
+      class: `thumb${p.sphere ? ' sphere' : ''}${p.large ? ' large' : ''}${p.active ? ' is-active' : ''}`,
       'aria-pressed': String(p.active),
       'data-tip': p.title,
       onclick: p.onClick,

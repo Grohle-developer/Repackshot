@@ -16,9 +16,10 @@ import type { ViewObject } from '../core/view-objects';
 import type { ConfirmSpec } from './components/widgets';
 import type { MoveKind, EasingKind } from '../data/types';
 import type { HardwareInfo, ModelsSnapshot } from '../core/models';
+import type { PluginsSnapshot } from '../core/plugins';
 import type { RuntimeWarning } from '../core/ai-runtimes';
 import { defaultLayout, defaultSettings, type Layout, type SectionId, type Settings } from '../core/settings';
-import type { ReleaseInfo, UpdateFault } from '../core/updates';
+import { NO_INSTALL, type InstallRequest, type InstallStatus, type ReleaseInfo, type UpdateFault } from '../core/updates';
 
 export type SceneTab = 'parts' | 'cameras' | 'lights' | 'studios';
 /** What the viewport shows (UI.md §2.1): the rasterised preview or the path tracer. */
@@ -227,6 +228,23 @@ export interface DesktopInfo {
    * or with --serve-only.
    */
   window?: DesktopWindow | null;
+  /** The launcher was started by an update (`--after-update`): the interface says so once (P5). */
+  afterUpdate?: boolean;
+}
+
+/** An update being installed from inside the application (P5), as the launcher reports it. */
+export interface InstallUi {
+  status: InstallStatus;
+  /** What was asked of the launcher: Try again sends it again. */
+  request: InstallRequest | null;
+  /** The new version is in place and the window did not close for it (the person said Cancel): Restart now offers it again. */
+  deferred: boolean;
+  /**
+   * The project’s revision when the person answered the question about unsaved changes: the window closes without
+   * asking again as long as the project is still as it was then, and asks when it is not. Null: never answered (a
+   * page that was reloaded in the middle of an update).
+   */
+  answeredAt: number | null;
 }
 
 /** The update check in this session (Settings ▸ Updates, the notice in the status bar); not remembered. */
@@ -241,6 +259,8 @@ export interface UpdatesUi {
   notice: ReleaseInfo | null;
   /** Versions announced in this session, dismissed or not: a version is announced once. */
   announced: string[];
+  /** Installing a new version from inside the application (desktop only). */
+  install: InstallUi;
 }
 
 /** What the queue runner is doing: nothing, the whole queue, or only the jobs Render started. */
@@ -280,8 +300,19 @@ export interface UiState {
   /** Window narrower than 1100 px: side panels become drawers. */
   narrow: boolean;
   wizard: WizardState | null;
-  /** Clip selected in the animation drawer. */
+  /** Clip selected in the animation drawer: the one the properties edit (the last one picked). */
   selectedClip: string | null;
+  /**
+   * N6: every clip selected in the timeline (the multiple selection, `selectedClip` among them). Code that only knows
+   * `selectedClip` keeps working: the commands of ui/anim-commands.ts keep the two in step.
+   */
+  selectedClips: string[];
+  /** N6: targets of the timeline folded by the user (their clips hidden; the row shows their bars). */
+  animFolded: Record<string, true>;
+  /** N6: the timeline's zoom, 1 = the whole animation fits. */
+  animZoom: number;
+  /** N6: playing goes back to the start at the end (on), or stops there. */
+  animLoop: boolean;
   customResolution: boolean;
   /** A file is being dragged over the viewport. */
   fileDrag: boolean;
@@ -349,6 +380,8 @@ export interface UiState {
   updates: UpdatesUi;
   /** The model manager's view (null: no manager in this build or not started). */
   models: ModelsSnapshot | null;
+  /** The plugin host's view (P6; null: no host in this build). */
+  plugins: PluginsSnapshot | null;
   /** What was detected of this computer for the AI models. */
   hardware: { state: 'IDLE' | 'DETECTING' | 'DONE'; info: HardwareInfo | null };
   perf: PerfState;
@@ -440,6 +473,10 @@ export function defaultUiState(): UiState {
     narrow: false,
     wizard: null,
     selectedClip: null,
+    selectedClips: [],
+    animFolded: {},
+    animZoom: 1,
+    animLoop: true,
     customResolution: false,
     fileDrag: false,
     shortcutsOpen: false,
@@ -472,8 +509,9 @@ export function defaultUiState(): UiState {
     runtimeNote: { checked: false, warning: null },
     updateCheckedAt: null,
     updateLatest: null,
-    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [] },
+    updates: { checking: false, fault: null, startupDone: false, notice: null, announced: [], install: { status: NO_INSTALL, request: null, deferred: false, answeredAt: null } },
     models: null,
+    plugins: null,
     hardware: { state: 'IDLE', info: null },
     perf: { state: 'IDLE' },
     engineInfo: null,

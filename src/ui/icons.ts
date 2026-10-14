@@ -38,6 +38,12 @@ export const ICONS = {
   stop: ['M6 6h12v12H6z'],
   drop: ['c:12,7,3.5', 'M12 13v4', 'M9.5 15l2.5 2.5 2.5-2.5', 'M4 20.5h16'],
   rewind: ['M6 5v14', 'M18 5 9 12l9 7z'],
+  // N6: the timeline's transport and the kinds of its rows.
+  toEnd: ['M18 5v14', 'M6 5l9 7-9 7z'],
+  loop: ['M4 11V9a3 3 0 0 1 3-3h11', 'M15 3l3 3-3 3', 'M20 13v2a3 3 0 0 1-3 3H6', 'M9 21l-3-3 3-3'],
+  explode: ['M9.5 9.5h5v5h-5z', 'M4 4l3 3', 'M4 4h3', 'M4 4v3', 'M20 4l-3 3', 'M20 4h-3', 'M20 4v3', 'M4 20l3-3', 'M4 20h3', 'M4 20v-3', 'M20 20l-3-3', 'M20 20h-3', 'M20 20v-3'],
+  spin: ['M20 12a8 8 0 1 1-2.3-5.7', 'M20 4v4h-4'],
+  curve: ['M4 20C10 20 14 4 20 4', 'M4 4v16h16'],
   plus: ['M12 5v14', 'M5 12h14'],
   minus: ['M5 12h14'],
   edit: ['M4 20h4L19 9l-4-4L4 16z', 'M13.5 6.5l4 4'],

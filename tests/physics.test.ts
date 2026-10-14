@@ -7,7 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { evaluate, playheadPose } from '../src/core/animation';
+import { canSplit, evaluate, playheadPose, TARGET_MOVES } from '../src/core/animation';
 import { runDoctor } from '../src/core/doctor';
 import { mat4Invert, mat4Multiply, transformPoint, type Vec3 } from '../src/core/math';
 import {
@@ -227,6 +227,31 @@ describe('the PHYSICS clip', () => {
     expect(close(evaluate(spun, 2).nodes[box].rotation, [0, 0, 120], 1e-4)).toBe(true);
   });
 
+  it('is recorded only: Animate… never offers it, and it is not cut in two', () => {
+    for (const moves of Object.values(TARGET_MOVES)) expect(moves).not.toContain('PHYSICS');
+    const { state } = clipState();
+    expect(canSplit(state.animation.clips[0], 1.5)).toBe(false);
+  });
+
+  it('repeats and plays backwards through the same time as any other clip, without a curve', () => {
+    const { state, box } = clipState();
+    const at = (st: ProjectState, t: number) => evaluate(st, t).nodes[box];
+    // Reversed: it holds its last frame before it starts and ends on its first.
+    const back = reduce(state, { type: 'anim/setClip', id: 'c1', patch: { reverse: true } });
+    expect(close(at(back, 0.5).position, [10, 10, 0], 1e-6)).toBe(true);
+    expect(close(at(back, 1.25).position, [10, 5, 0], 1e-6)).toBe(true);
+    expect(close(at(back, 1.75).position, [5, 0, 0], 1e-6)).toBe(true);
+    expect(close(at(back, 9).position, [0, 0, 0], 1e-6)).toBe(true);
+    // Twice: the second time round starts again from the first frame.
+    const twice = reduce(state, { type: 'anim/setClip', id: 'c1', patch: { repeat: 2 } });
+    expect(close(at(twice, 2.25).position, [5, 0, 0], 1e-6)).toBe(true);
+    expect(close(at(twice, 2.75).position, [10, 5, 0], 1e-6)).toBe(true);
+    expect(close(at(twice, 9).position, [10, 10, 0], 1e-6)).toBe(true);
+    // An easing set on it changes nothing: a recording plays at its own pace.
+    const eased = reduce(state, { type: 'anim/setClip', id: 'c1', patch: { easing: 'EASE_STRONG' } });
+    expect(close(at(eased, 1.25).position, [5, 0, 0], 1e-6)).toBe(true);
+  });
+
   it('is anchored where the run left its node: moved afterwards, the node takes its whole fall with it', () => {
     const { state, box } = clipState();
     const t0 = state.scene.nodes[box].transform;
@@ -262,6 +287,10 @@ describe('the PHYSICS clip', () => {
     // Without a recorded simulation, 0 is the scene as edited (N1); past 0, the playhead's pose.
     const spin = reduce(threePrimitives().state, { type: 'anim/addClip', clip: { target: { kind: 'NODE', id: box }, move: 'SPIN', shot: null, start: 0, duration: 1, amount: 30, easing: 'LINEAR' } });
     expect(playheadPose({ ...spin, animation: { ...spin.animation, playhead: 0 } })).toBeNull();
+    // A reversed clip holds its end before it starts (N6): at 0 the whole pose, as the timeline would show it.
+    const flipped = reduce(spin, { type: 'anim/reverseClips', ids: [spin.animation.clips[0].id] });
+    const at0r = { ...flipped, animation: { ...flipped.animation, playhead: 0 } };
+    expect(playheadPose(at0r)).toEqual(evaluate(at0r, 0));
     expect(playheadPose({ ...at0, animation: { ...at0.animation, playhead: 1.25 } })).toEqual(evaluate(at0, 1.25));
   });
 
@@ -286,6 +315,15 @@ describe('the PHYSICS clip', () => {
     const opened = migrateProject(body);
     expect(opened.animation.clips).toHaveLength(0);
     expect(opened.scene.nodes[Object.keys(body.state.scene.nodes)[0]].physics).toEqual({ friction: 0.4 });
+  });
+
+  it('opening runs this version\'s Doctor, also through migrateProject: an older file gains the physics check', async () => {
+    const { state } = clipState();
+    const body = JSON.parse(await serializeProject(state).text());
+    body.state.doctor.results = body.state.doctor.results.filter((r: { key: string }) => r.key !== 'physics');
+    const opened = migrateProject(body);
+    expect(opened.doctor.results.map((r) => r.key)).toEqual(runDoctor(opened).map((r) => r.key));
+    expect(opened.doctor.results.some((r) => r.key === 'physics')).toBe(true);
   });
 
   it('a project from before S2 opens unchanged', () => {

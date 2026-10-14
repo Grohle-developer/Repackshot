@@ -174,8 +174,21 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       en: 'Switches to PNG if the format is not an image format, disables overwrite and enables placeholders so a render can resume.',
     },
   },
+  // Not from upstream (U13): appended, so the upstream order above is intact.
+  {
+    key: 'aspect',
+    label: { es: 'Proporcion de la animacion', en: 'Animation aspect ratio' },
+    checks: {
+      es: 'Un plano de la animacion usa una camara con otra proporcion de imagen que el tamano de salida, y un video tiene un solo tamano.',
+      en: 'A shot of the animation uses a camera whose image aspect ratio is not that of the output size, and a video has a single size.',
+    },
+    fix: {
+      es: 'Pone a las camaras de esos planos la proporcion del tamano de salida.',
+      en: "Gives the cameras of those shots the output size's aspect ratio.",
+    },
+  },
   // S2, not ported: a part a simulation would drop starts inside the floor (Spanish with accents, like the other
-  // data that is not ported).
+  // data that is not ported). Appended after U13's.
   {
     key: 'physics',
     label: { es: 'Físicas', en: 'Physics' },

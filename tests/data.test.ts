@@ -71,6 +71,7 @@ const CATEGORIES: readonly MaterialCategory[] = [
 ];
 const FAMILIES: readonly MaterialFamily[] = ['SIMPLE', 'GLASS', 'WOOD', 'FABRIC', 'EMISSIVE'];
 const STYLES: readonly LightStyle[] = [
+  'SETS',
   'PRODUCT',
   'TRADITIONAL',
   'CINEMATIC',
@@ -153,12 +154,14 @@ describe('studio presets', () => {
     expect(studioPreset('NOPE')).toBeUndefined();
   });
 
-  it('has 50 lights in total, every one with energy, colour and positive geometry', () => {
+  it('has 54 lights in total (L6: the lights of the sets), every one with energy, a tone and positive geometry', () => {
     const lights = STUDIO_PRESETS.flatMap((p) => p.lights);
-    expect(lights).toHaveLength(50);
+    expect(lights).toHaveLength(54);
     for (const l of lights) {
       expect(l.energy).toBeGreaterThan(0);
-      expect(l.color).toHaveLength(3);
+      // A colour, or a colour temperature (the sets' lights, L6), or the default white.
+      if (l.color !== undefined) expect(l.color).toHaveLength(3);
+      if (l.kelvin !== undefined) expect(l.kelvin).toBeGreaterThan(1000);
       expect(l.size).toBeGreaterThan(0);
       expect(l.dist).toBeGreaterThan(0);
       expect(l.share).toBeUndefined();
@@ -178,18 +181,20 @@ describe('studio presets', () => {
 });
 
 describe('light setups', () => {
-  it('has 72 setups with unique keys and PRESET first', () => {
-    expect(LIGHT_SETUPS).toHaveLength(72);
+  it('has 88 setups with unique keys: the 16 sets of L6 first, then the 72 of EZ Packshot with PRESET first', () => {
+    expect(LIGHT_SETUPS).toHaveLength(88);
     expect(unique(LIGHT_SETUPS.map((s) => s.key))).toBe(true);
-    expect(LIGHT_SETUPS[0].key).toBe('PRESET');
+    expect(LIGHT_SETUPS.slice(0, 16).every((s) => s.style === 'SETS')).toBe(true);
+    expect(LIGHT_SETUPS[16].key).toBe('PRESET');
   });
 
-  it('has the 8 styles, without the "all" filter entry', () => {
+  it('has the 9 styles, SETS first, without the "all" filter entry', () => {
     expect(LIGHT_STYLES.map((s) => s.key)).toEqual(STYLES);
   });
 
   it('has the per-style counts', () => {
     const counts: Record<LightStyle, number> = {
+      SETS: 16,
       PRODUCT: 12,
       TRADITIONAL: 13,
       CINEMATIC: 11,
@@ -200,9 +205,9 @@ describe('light setups', () => {
       SPICY: 6,
     };
     for (const style of STYLES) expect(setupsInStyle(style)).toHaveLength(counts[style]);
-    expect(setupsInStyle('ALL')).toHaveLength(72);
-    expect(setupsInStyle()).toHaveLength(72);
-    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(72);
+    expect(setupsInStyle('ALL')).toHaveLength(88);
+    expect(setupsInStyle()).toHaveLength(88);
+    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(88);
   });
 
   it('keeps each style in one contiguous block of the catalogue', () => {
@@ -214,7 +219,7 @@ describe('light setups', () => {
     expect(LIGHT_SETUPS.filter((s) => s.world === 'SKY').map((s) => s.key)).toEqual([
       'SUN', 'GOLDEN_HOUR', 'DAWN',
     ]);
-    expect(LIGHT_SETUPS.filter((s) => s.world === 'STUDIO')).toHaveLength(69);
+    expect(LIGHT_SETUPS.filter((s) => s.world === 'STUDIO')).toHaveLength(85);
     expect(LIGHT_SETUPS.filter((s) => s.world === 'FLAT')).toHaveLength(0);
   });
 
@@ -230,8 +235,8 @@ describe('light setups', () => {
     expect(LIGHT_SETUPS.filter((s) => s.lights === null).map((s) => s.key)).toEqual(['PRESET']);
   });
 
-  it('has 155 recipe lights whose shares sum to 1 per setup', () => {
-    const recipes = LIGHT_SETUPS.filter((s) => s.lights !== null);
+  it('has 155 recipe lights before L6, whose shares sum to 1 per setup', () => {
+    const recipes = LIGHT_SETUPS.filter((s) => s.lights !== null && s.style !== 'SETS');
     expect(recipes.flatMap((s) => s.lights ?? [])).toHaveLength(155);
     for (const s of recipes) {
       const total = (s.lights ?? []).reduce((a, l) => a + (l.share ?? 0), 0);
@@ -244,8 +249,9 @@ describe('light setups', () => {
     }
   });
 
-  it('marks exactly three recipe lights as seen by the camera', () => {
-    expect(LIGHT_SETUPS.flatMap((s) => s.lights ?? []).filter((l) => l.camera)).toHaveLength(3);
+  it('marks exactly three recipe lights before L6 as seen by the camera, and the bright field of the sets', () => {
+    expect(LIGHT_SETUPS.filter((s) => s.style !== 'SETS').flatMap((s) => s.lights ?? []).filter((l) => l.camera)).toHaveLength(3);
+    expect(LIGHT_SETUPS.filter((s) => s.style === 'SETS' && s.lights?.some((l) => l.camera)).map((s) => s.key)).toEqual(['BRIGHT_FIELD']);
   });
 
   it('looks setups up by key', () => {
@@ -272,9 +278,9 @@ describe('light setups', () => {
 });
 
 describe('materials', () => {
-  it('has 7 categories and 77 presets with unique keys', () => {
+  it('has 7 categories and 82 presets with unique keys (77 of EZ Packshot and the 5 set pieces of L6)', () => {
     expect(MATERIAL_CATEGORIES.map((c) => c.key)).toEqual(CATEGORIES);
-    expect(MATERIAL_PRESETS).toHaveLength(77);
+    expect(MATERIAL_PRESETS).toHaveLength(82);
     expect(unique(MATERIAL_PRESETS.map((m) => m.key))).toBe(true);
   });
 
@@ -282,12 +288,12 @@ describe('materials', () => {
     const counts = Object.fromEntries(CATEGORIES.map((c) => [c, materialsInCategory(c).length]));
     expect(counts).toEqual({
       METAL: 12,
-      PLASTIC: 12,
+      PLASTIC: 14,
       WOOD: 13,
       FABRIC: 11,
-      GLASS: 5,
+      GLASS: 6,
       EMISSIVE: 14,
-      OTHER: 10,
+      OTHER: 12,
     });
   });
 
@@ -404,7 +410,7 @@ describe('wear catalogue', () => {
   });
 
   it('only overrides wear of existing material presets', () => {
-    expect(Object.keys(WEAR_PRESET_OVERRIDES)).toHaveLength(28);
+    expect(Object.keys(WEAR_PRESET_OVERRIDES)).toHaveLength(33);
     for (const k of Object.keys(WEAR_PRESET_OVERRIDES)) expect(materialPreset(k), k).toBeDefined();
     for (const k of WEAR_PAINTED) expect(materialPreset(k), k).toBeDefined();
     expect([...WEAR_PAINTED]).toEqual(['CAR_PAINT', 'PAINT_MET']);
@@ -488,7 +494,7 @@ describe('wear defaults', () => {
     expect(wearDefaults('OAK', 1e-9)?.refSize).toBe(1e-3);
   });
 
-  it('is defined for all 77 materials and never leaks wear into non-wear fields', () => {
+  it('is defined for all 82 materials and never leaks wear into non-wear fields', () => {
     for (const m of MATERIAL_PRESETS) {
       const w = wearDefaults(m.key);
       expect(w, m.key).not.toBeNull();
@@ -522,13 +528,13 @@ describe('fuzz and lenses', () => {
 });
 
 describe('animation catalogues', () => {
-  it('has 16 move kinds (PHYSICS of S2 last), 5 easings, 3 targets and 6 explode modes', () => {
+  it('has 16 move kinds (PHYSICS of S2 last), 5 easings, 3 targets and 8 explode modes (N6 appended LINEAR and SPHERICAL)', () => {
     expect(MOVE_KINDS).toHaveLength(16);
     expect(MOVE_KINDS.at(-1)?.key).toBe('PHYSICS');
     expect(EASING_KINDS.map((e) => e.key)).toEqual(['LINEAR', 'EASE', 'EASE_IN', 'EASE_OUT', 'EASE_STRONG']);
     expect(TARGET_KINDS.map((t) => t.key)).toEqual(['OBJECT', 'SUBJECT', 'SCENE']);
     expect(EXPLODE_MODES.map((m) => m.key)).toEqual([
-      'RADIAL', 'AXIS_X', 'AXIS_Y', 'AXIS_Z', 'CYLINDRICAL', 'CUSTOM',
+      'RADIAL', 'AXIS_X', 'AXIS_Y', 'AXIS_Z', 'CYLINDRICAL', 'CUSTOM', 'LINEAR', 'SPHERICAL',
     ]);
     expect(unique(MOVE_KINDS.map((m) => m.key))).toBe(true);
     expect(DEFAULT_AMOUNT_LABEL.en).toBe('Amount');
@@ -596,12 +602,12 @@ describe('animation catalogues', () => {
 });
 
 describe('doctor checks and environment', () => {
-  it('has 14 checks with unique keys in upstream order, then the physics check of S2', () => {
-    expect(DOCTOR_CHECKS).toHaveLength(15);
+  it('has the 14 upstream checks in their order, with unique keys, and ours after them (U13: aspect, S2: physics)', () => {
+    expect(DOCTOR_CHECKS).toHaveLength(16);
     expect(DOCTOR_CHECKS.at(-1)?.key).toBe('physics');
     expect(DOCTOR_CHECKS.map((c) => c.key)).toEqual([
       'engine', 'lighttree', 'denoise', 'color', 'scale', 'transform', 'origin',
-      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output', 'physics',
+      'shading', 'bevel', 'clip', 'lights', 'caustics', 'persist', 'output', 'aspect', 'physics',
     ]);
   });
 
@@ -655,7 +661,7 @@ describe('labels', () => {
       MOVE_KINDS: 30,
       EASING_KINDS: 10,
       TARGET_KINDS: 6,
-      EXPLODE_MODES: 12,
+      EXPLODE_MODES: 16,
       SEQUENCE_PRESETS: 16,
       DOCTOR_CHECKS: 42,
       DEFAULT_AMOUNT_LABEL: 1,

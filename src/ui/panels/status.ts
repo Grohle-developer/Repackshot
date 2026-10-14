@@ -6,17 +6,20 @@
 import { DOCTOR_CHECKS } from '../../data/doctor';
 import { warningCount, type DoctorResult } from '../../core/doctor';
 import { allParts, triangleCount } from '../../core/scene';
+import type { ProjectState } from '../../core/store';
 import { VERSION } from '../../core/version';
 import * as cmd from '../commands';
-import { openFloating } from '../components/widgets';
+import { confirmBox, openFloating } from '../components/widgets';
 import { h } from '../dom';
-import { dyn } from '../names';
-import { Scope, type Ctx } from '../reactive';
+import { cameraName, dyn } from '../names';
+import { Scope, shallowEq, type Ctx } from '../reactive';
 import { formatClock, formatNumber, getLang, isaLabel, lbl, t } from '../strings';
 import { dismissRuntimeNote, fixRuntime } from '../ai-runtime-state';
-import { dismissUpdateNotice, downloadUpdate, openReleaseNotes } from '../updates';
+import { installActive } from '../../core/updates';
+import { cancelInstall, dismissUpdateNotice, downloadUpdate, installFaultText, installRequestFor, installText, installUpdate, openReleaseNotes, restartNow, retryInstall } from '../updates';
 
-function sentence(r: DoctorResult): string {
+/** The sentence of a warning of the Doctor, in the current language (the state names the cameras it speaks of). */
+export function doctorSentence(r: DoctorResult, state: ProjectState): string {
   const d = r.detail;
   switch (r.key) {
     case 'scale':
@@ -35,6 +38,8 @@ function sentence(r: DoctorResult): string {
       return t('doctor.clip', { clipStart: Number(d.clipStart) });
     case 'lights':
       return t('doctor.lights', { count: Number(d.count) });
+    case 'aspect':
+      return t('doctor.aspect', { count: Number(d.count), camera: cameraName(state, state.camera.cameras[String(d.camera)]), aspect: String(d.aspect), output: String(d.output) });
     case 'physics':
       return t('doctor.physics', { count: Number(d.count), name: String(d.name) });
     default:
@@ -51,7 +56,7 @@ function doctorPopover(ctx: Ctx, scope: Scope): HTMLElement {
       const rows = results.map((r) => {
         const check = DOCTOR_CHECKS.find((c) => c.key === r.key)!;
         const warn = r.status === 'WARN';
-        const text = warn ? sentence(r) : r.status === 'UNAVAILABLE' ? t('doctor.unavailable') : lbl(check.checks);
+        const text = warn ? doctorSentence(r, ctx.store.get()) : r.status === 'UNAVAILABLE' ? t('doctor.unavailable') : lbl(check.checks);
         let action: HTMLElement | null = null;
         if (warn && r.fixable) action = h('button', { type: 'button', class: 'btn', 'data-tip': lbl(check.fix), onclick: () => cmd.doctorFix(ctx, r.key) }, t('doctor.fix'));
         else if (warn) action = h('span', { class: 'aux' }, t('doctor.fixSoon'));
@@ -74,28 +79,63 @@ function doctorPopover(ctx: Ctx, scope: Scope): HTMLElement {
 }
 
 /**
- * A newer version was found at startup: one quiet line, never a window (UI.md §4.3). Download opens the
- * package for this computer (or the release page), Release notes the page, Later hides it until the next start.
+ * A newer version was found at startup: one quiet line, never a window (UI.md §4.3). On the desktop *Install and
+ * restart* does it from inside the application and the line then follows the install (Downloading… 45 %,
+ * Verifying…, Installing…, or why it failed with Try again); elsewhere *Download* opens the package for this
+ * computer (or the release page). *Release notes* opens the page, *Later* hides the line until the next start.
  */
 function updateNotice(ctx: Ctx, scope: Scope): HTMLElement {
   const el = h('span', { class: 'update-notice', role: 'status', 'aria-live': 'polite' });
+  // The question about unsaved changes opens above the button that was pressed, in its place (UI.md §4.3).
+  const askFrom = (button: HTMLElement) => (spec: Parameters<typeof confirmBox>[0]) => {
+    let close = () => undefined as void;
+    close = openFloating(button, confirmBox(spec, () => close()), { above: true });
+  };
   scope.watch(
-    (_s, u) => u.updates.notice,
-    (release) => {
+    (_s, u) => [u.updates.notice, u.updates.install, u.desktop] as const,
+    ([release, install]) => {
       el.hidden = !release;
       el.dataset.version = release?.version ?? '';
+      el.dataset.install = install.status.state;
       if (!release) {
         el.replaceChildren();
         return;
       }
+      const status = install.status;
+      const notes = h('button', { type: 'button', class: 'btn-link update-notes', onclick: () => openReleaseNotes(ctx, release) }, t('up.notes'));
+      if (installActive(status)) {
+        const ready = status.state === 'INSTALLING' && status.ready;
+        const parts: HTMLElement[] = [h('span', { class: 'update-text update-progress' }, ready && install.deferred ? t('up.restartWaiting') : installText(status))];
+        if (ready && install.deferred) parts.push(h('button', { type: 'button', class: 'btn-link update-restart', onclick: () => restartNow(ctx) }, t('up.restartNow')));
+        else if (status.state !== 'INSTALLING') parts.push(h('button', { type: 'button', class: 'btn-link update-cancel', onclick: () => void cancelInstall(ctx) }, t('common.cancel')));
+        el.replaceChildren(...parts, h('span', { class: 'sep' }));
+        return;
+      }
+      if (status.state === 'FAILED') {
+        const retry = status.error !== 'not-updatable';
+        el.replaceChildren(
+          h('span', { class: 'update-text is-fault', 'data-tip': status.message ?? undefined }, t('up.failedInstall', { reason: installFaultText(status.error) })),
+          retry
+            ? h('button', { type: 'button', class: 'btn-link update-retry', onclick: (e: Event) => retryInstall(ctx, release, askFrom(e.currentTarget as HTMLElement)) }, t('up.retry'))
+            : h('button', { type: 'button', class: 'btn-link update-download', onclick: () => downloadUpdate(ctx, release) }, t('up.download')),
+          notes,
+          h('button', { type: 'button', class: 'btn-link update-later', onclick: () => dismissUpdateNotice(ctx) }, t('up.later')),
+          h('span', { class: 'sep' }),
+        );
+        return;
+      }
+      const installable = installRequestFor(ctx, release) !== null;
       el.replaceChildren(
         h('span', { class: 'update-text' }, t('up.available', { version: release.version })),
-        h('button', { type: 'button', class: 'btn-link update-download', onclick: () => downloadUpdate(ctx, release) }, t('up.download')),
-        h('button', { type: 'button', class: 'btn-link update-notes', onclick: () => openReleaseNotes(ctx, release) }, t('up.notes')),
+        installable
+          ? h('button', { type: 'button', class: 'btn-link update-install', onclick: (e: Event) => installUpdate(ctx, release, askFrom(e.currentTarget as HTMLElement)) }, t('up.install'))
+          : h('button', { type: 'button', class: 'btn-link update-download', onclick: () => downloadUpdate(ctx, release) }, t('up.download')),
+        notes,
         h('button', { type: 'button', class: 'btn-link update-later', onclick: () => dismissUpdateNotice(ctx) }, t('up.later')),
         h('span', { class: 'sep' }),
       );
     },
+    shallowEq,
   );
   return el;
 }

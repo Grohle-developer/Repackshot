@@ -161,9 +161,34 @@ pub fn curl_error(code: Option<i32>, stderr: &str) -> String {
     }
 }
 
+/// How many bytes a download is expected to bring.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Expect {
+    /// Exactly this many (a runtime archive: the catalogue says how many).
+    Exactly(u64),
+    /// Any number up to this one (an application update: its size is the feed's word, and the
+    /// SHA-256 of the file is what tells it is the right one).
+    AtMost(u64),
+}
+
 /// Downloads `url` onto the end of `part` until it holds `total` bytes, or until `t.stop`.
 /// One attempt; the caller decides about retrying (resuming from what is there).
 pub fn fetch(d: &Downloader, url: &str, part: &Path, total: u64, t: &Arc<Transfer>) -> Outcome {
+    fetch_to(d, url, part, Expect::Exactly(total), t)
+}
+
+/// [`fetch`] for a size that is exact or only bounded (see [`Expect`]).
+pub fn fetch_to(
+    d: &Downloader,
+    url: &str,
+    part: &Path,
+    expect: Expect,
+    t: &Arc<Transfer>,
+) -> Outcome {
+    let (total, exact) = match expect {
+        Expect::Exactly(n) => (n, true),
+        Expect::AtMost(n) => (n, false),
+    };
     let Some(program) = &d.program else {
         return Outcome::failed("there is no curl on this computer to download with");
     };
@@ -173,7 +198,7 @@ pub fn fetch(d: &Downloader, url: &str, part: &Path, total: u64, t: &Arc<Transfe
     };
     let have = file.metadata().map(|m| m.len()).unwrap_or(0);
     t.done.store(have, Ordering::Relaxed);
-    if have == total {
+    if exact && have == total {
         return Outcome::Complete;
     }
     if have > total {
@@ -254,7 +279,7 @@ pub fn fetch(d: &Downloader, url: &str, part: &Path, total: u64, t: &Arc<Transfe
         };
     }
     let done = t.done.load(Ordering::Relaxed);
-    if done == total {
+    if !exact || done == total {
         Outcome::Complete
     } else {
         Outcome::failed(format!("the download ended at {done} of {total} bytes"))

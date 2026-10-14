@@ -1,9 +1,9 @@
 //! Running system programs (`reg`, `powershell`, `nvidia-smi`, the browser, `xdg-open`): with a
 //! time limit, without a console window on Windows, and never through a shell string.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -17,6 +17,45 @@ const STDERR_KEPT: usize = 64 << 10;
 
 /// How long the outputs may stay open after the program exits (a grandchild holding them).
 const OUTPUT_GRACE: Duration = Duration::from_secs(2);
+
+/// `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`: a program that goes on running when the
+/// launcher that started it exits.
+#[cfg(windows)]
+pub const DETACHED: u32 = 0x0000_0008 | 0x0000_0200;
+
+/// Starts `program` and leaves it running on its own: it has no console, no input and a process
+/// group of its own, so closing the launcher (or the terminal it was started from) does not stop
+/// it. `keep_output` hands it the launcher's standard output and error (the new version of the
+/// application, whose `--serve-only` prints the address to whoever started it); otherwise they
+/// go nowhere (an installer). The caller drops the child: it is never waited for.
+pub fn spawn_detached(
+    program: &Path,
+    args: &[OsString],
+    cwd: Option<&Path>,
+    keep_output: bool,
+) -> std::io::Result<Child> {
+    let mut cmd = Command::new(program);
+    cmd.args(args).stdin(Stdio::null());
+    if keep_output {
+        cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    } else {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    }
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(DETACHED);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    cmd.spawn()
+}
 
 /// Prepares `program` with `args` and no console window.
 pub fn command(program: impl AsRef<OsStr>, args: &[&str]) -> Command {

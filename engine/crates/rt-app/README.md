@@ -24,22 +24,30 @@ interfaz COM de WebView2 por FFI. Es la aplicación de escritorio (`docs/ARCHITE
    ni los permisos del navegador;
 7. descarga, comprueba, instala y **gobierna el motor de ejecución de la IA** (X3b,
    `src/ai/`): stable-diffusion.cpp como proceso aparte, nunca enlazado (abajo, *IA: el motor de
-   ejecución*).
+   ejecución*);
+8. **se actualiza a sí mismo** (P5, `src/update/`): descarga la versión nueva de la release,
+   comprueba su SHA-256, la instala y arranca la nueva cuando él ha parado (abajo,
+   *Actualizar desde la aplicación*).
 
 Lo que necesita del sistema lo pide a programas del sistema (`reg`, `powershell`, `wmic`,
-`nvidia-smi`, `explorer`, `rundll32`, `xdg-open`, `zenity`, `kdialog`, `curl`, `tasklist`,
+`nvidia-smi`, `explorer`, `rundll32`, `xdg-open`, `zenity`, `kdialog`, `curl`, `tar`, `tasklist`,
 `taskkill`, `kill`, el navegador), en Windows por su ruta absoluta en `System32`; por FFI, solo
 la ventana propia y DXGI para las tarjetas gráficas (`src/platform/`).
 
 ## Línea de órdenes
 
 ```text
-repackshot [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N] [--window webview2|browser|auto]
+repackshot [--port N] [--data-dir DIR] [--app-dir DIR] [--threads N] [--window webview2|browser|auto] [--after-update]
 repackshot --serve-only [...]           sin ventana: escribe la URL con el token y sirve hasta que se pare
 repackshot --hardware <f.ini> [--device gpu|cpu]   escribe el INI del instalador y sale
 repackshot --shortcut-id <f.lnk>        Windows: escribe el AppUserModelID en un acceso directo a repackshot.exe y sale
 repackshot --version | --help
 ```
+
+`--after-update` lo pone el propio lanzador al arrancar la versión nueva tras una actualización (P5):
+solo lo apunta en el registro y lo dice `/api/info` (`afterUpdate`), para que la página avise de que
+se actualizó. Los argumentos con que arrancó el viejo (`--port`, `--data-dir`, `--serve-only`…) los
+recibe el nuevo tal cual.
 
 En Windows la compilación *release* no tiene consola (`windows_subsystem = "windows"`): los
 mensajes van a `<datos>/logs/repackshot.log` (rotado a `.log.1` al pasar de 1 MiB), y la salida
@@ -52,7 +60,7 @@ de `--version` o `--serve-only` solo se ve redirigida a un fichero.
 | Interfaz | `<carpeta del ejecutable>/app/` (`--app-dir` la cambia) |
 | Datos, instalado | `%LOCALAPPDATA%\Repackshot` (Windows); `$XDG_DATA_HOME/repackshot` o `~/.local/share/repackshot` (Linux) |
 | Datos, **portable** | `data/` junto al ejecutable cuando existe `portable.txt` a su lado; todo va dentro (ajustes, biblioteca, resultados, modelos, perfiles de la ventana), así que viaja con la carpeta |
-| Dentro de los datos | `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` (estado de la página), `cache/ai/` (imagen y pases de los renders finales grandes, X2), `models/`, `ai/` (motores de ejecución de la IA y `sidecar.json`), `logs/`, `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `launcher.json` (el puerto), `instance.json`, `pending-models.json` |
+| Dentro de los datos | `settings.json`, `state/`, `library/`, `results/`, `cache/thumbs/` (estado de la página), `cache/ai/` (imagen y pases de los renders finales grandes, X2), `cache/update/` (la descarga de una actualización mientras se comprueba, P5), `models/`, `ai/` (motores de ejecución de la IA y `sidecar.json`), `logs/`, `browser-profile/` (Edge/Chromium), `webview2/` (perfil de la ventana propia), `window.json` (dónde estaba la ventana propia), `launcher.json` (el puerto), `instance.json`, `pending-models.json` |
 
 `--data-dir` manda sobre todo lo anterior.
 
@@ -191,7 +199,7 @@ ventana `--app` de Edge o Chromium, y el diálogo *¿Salir?* de `beforeunload` a
   solo si se pidió `writable` (un proyecto que se vuelve a guardar). Un fichero de `dialog/save`:
   escribirlo entero (a un temporal al lado y renombrado encima: un guardado fallido no deja medio
   fichero). Solo se escriben extensiones que produce la aplicación (`png`, `jpg`, `jpeg`, `exr`,
-  `json`, `rsb`, `mp4`, `webm`): nada ejecutable cae en ninguna parte; los nombres se hacen válidos
+  `tif`, `tiff`, `dng`, `json`, `rsb`, `mp4`, `webm`): nada ejecutable cae en ninguna parte; los nombres se hacen válidos
   en todos los sistemas (`\ / : * ? " < > |` y controles a `_`, sin puntos ni espacios finales, los
   nombres de dispositivo de Windows con `_` delante, 200 bytes como mucho). Dos entradas son del
   propio lanzador, no de la página: `downloads` (la carpeta Descargas del sistema, solo ficheros
@@ -241,7 +249,7 @@ Todas las rutas `/api/*` llevan `X-Repackshot-Token`. Errores en JSON:
 
 | Petición | Respuesta |
 | --- | --- |
-| `GET /api/info` | `{app:"repackshot", version, engineVersion, threads, isa, simd[], os, arch, dataDir, modelsDir, logsDir, resultsDir, portable, browser, window, pid}`. `window`: `{kind: "webview2"\|"browser"\|"default"\|"none", detail, reason}` (`detail`: la versión de WebView2 o el navegador; `reason`, por qué no es la ventana propia: `forced`, `not-windows`, `loader-missing`, `runtime-missing`, `failed`), `null` con `--serve-only` |
+| `GET /api/info` | `{app:"repackshot", version, engineVersion, threads, isa, simd[], os, arch, dataDir, modelsDir, logsDir, resultsDir, portable, browser, window, pid, filesApi, aiApi, aiPost, updateApi, afterUpdate}` (`updateApi: 1` cuando el lanzador sabe actualizarse, P5; `afterUpdate`, que lo arrancó una actualización). `window`: `{kind: "webview2"\|"browser"\|"default"\|"none", detail, reason}` (`detail`: la versión de WebView2 o el navegador; `reason`, por qué no es la ventana propia: `forced`, `not-windows`, `loader-missing`, `runtime-missing`, `failed`), `null` con `--serve-only` |
 | `POST /api/alive` | 204. El latido. |
 | `GET /api/hardware[?device=gpu\|cpu][&refresh=1]` | `{cpu, cores, threads, ramBytes, ramGiB, ramUsableBytes, gpus[{name, vendor, vramBytes, vramGiB}], gpuDetection, gpuSources[{source, ok, found, detail}], device, gpuFound, detected, input, recommendation{rowId, recommended, offered[], skipped[]} \| null}`. `gpuDetection`: `ok` si alguna fuente de tarjetas gráficas contestó, `failed` si ninguna (entonces `gpus` vacío no quiere decir «sin tarjeta»); `gpuSources`: qué dijo cada una (`dxgi`, `registry`, `cim`, `wmic`; `nvidia-smi`, `drm`; `test`), con `detail` el error o las notas |
 | `POST /api/open-folder` | Cuerpo `{"folder":"data\|models\|logs\|results"}` o `{"path":"<dentro de la carpeta de datos>"}`; 204, 403 fuera de los datos |
@@ -376,6 +384,43 @@ película de la escena completa. Con todos los pases (X2) la película no cambia
 sirve `/passes` son los `PINNED_PASS_*` de `rt-core`, también con 1 y 4 hilos; y el almacén guarda
 los últimos, los manda al disco, los desaloja y rechaza los ids que no conoce.
 
+### Actualizar desde la aplicación (P5)
+
+La página pide, el lanzador hace (`src/update/`). Solo `https://github.com/<owner>/<repo>/releases/download/<versión>/<archivo>` del repositorio de
+`src/data/update-feed.ts` (el *crate* lee ese archivo al compilarse), el paquete que le toca a esta copia y el `SHA256SUMS.txt` de la
+misma versión; nada más se descarga, venga de donde venga la petición.
+
+| Petición | Respuesta |
+| --- | --- |
+| `GET /api/update` | `{state, tag, received, total, ready, error, message, mode}`. `state`: `IDLE` · `DOWNLOADING` · `VERIFYING` · `INSTALLING` · `FAILED`. `received` y `total` en bytes (`total` es el `size` que dio la página, 0 si no lo dio). `ready: true` con `INSTALLING`: los archivos ya están en su sitio y el lanzador espera a que se cierre la ventana (antes, `INSTALLING` es el desempaquetado y el cambio de archivos: no se cierra nada todavía). `error` (con `FAILED`): `download` · `disk-full` · `sums` (la release no lista la suma del paquete) · `checksum` (no cuadra: nada se instaló) · `extract` · `install`; `message`, lo mismo en inglés y con detalle, para el registro. `mode`: `installer` · `portable` · `null` (una copia que no puede actualizarse) |
+| `POST /api/update/install` | Cuerpo `{tag, assetUrl, sumsUrl, size?}` (`tag`: `0.2.0` o `v0.2.0`). `202` con el estado. `400` `bad-tag`, `bad-url` (fuera de la lista blanca: otro servidor, otro repositorio, `http`, una consulta o un fragmento, `%`, `..`, otra versión), `bad-asset` (el paquete no es el de esta clase de copia, o las sumas no se llaman `SHA256SUMS.txt`), `bad-body`; `409` `not-updatable` (ni instalada —`uninstall.exe` junto al programa— ni portable —`portable.txt`—, o no x86-64) y `busy` (ya hay una en marcha) |
+| `POST /api/update/cancel` | Para una descarga o una comprobación (el lanzador no guarda nada de ellas) y borra un fallo: el estado, `200`. `409` `not-cancellable` cuando ya se están cambiando los archivos |
+
+Lo que hace, en un hilo y con el `curl` del sistema (los mismos límites y reintentos con reanudación que las demás descargas):
+
+1. **DOWNLOADING**: las sumas y el paquete (como mucho 1 GiB) a `<datos>/cache/update/`.
+2. **VERIFYING**: el SHA-256 propio del paquete contra la suma que la release lista para su nombre (dos sumas distintas para el mismo
+   nombre no se aceptan). Si no cuadra se borra y `FAILED` `checksum`.
+3. **INSTALLING**, según la copia:
+   - **Instalada (Windows)**: el instalador verificado se queda en `cache/update/` para el final.
+   - **Portable (Windows `.zip`, Linux `.tar.gz`)**: se extrae **todo** a `<carpeta del ejecutable>/update-<tag>/` (nombres de
+     `[A-Za-z0-9._+-]`, nada que suba con `..`, ningún enlace; el zip con el lector propio, el tar con el `tar` del sistema tras mirar
+     su lista) y se comprueba que trae el ejecutable y `app/index.html`. Después, **sustituye en el sitio**: cada archivo y carpeta del
+     paquete —el ejecutable el último— ocupa el lugar del que tenía su nombre, que se renombra `<nombre>.old` (`repackshot.old.exe`,
+     `app.old`; un ejecutable en uso se puede renombrar, no sobrescribir). `data/` y `portable.txt` no se tocan. Si cualquier paso
+     falla se deshacen los hechos, lo viejo queda donde estaba y el estado es `FAILED` (`disk-full` si faltó espacio, `extract`,
+     `install`). Los nombres a borrar se apuntan antes en `update.json`.
+4. **El lanzador espera a que se cierre la ventana** (la página la cierra al ver `ready`, tras su pregunta sobre cambios sin guardar;
+   con `--serve-only`, sin ventana, sale él solo). **Solo cuando ha parado** —el servidor, la ventana y `instance.json` ya soltados— arranca,
+   suelto del proceso (sin consola, sin entrada, grupo de procesos propio), `setup.exe /S /LAUNCH` o el ejecutable nuevo con los mismos
+   argumentos más `--after-update`. Nunca hay una versión nueva junto a una vieja que tenga el puerto.
+5. **Al arrancar**, la versión nueva borra los `.old` del `update.json` (y solo esos), las carpetas `update-<versión>` y
+   `cache/update/`; en Windows lo reintenta unos segundos porque el ejecutable viejo puede seguir cerrándose.
+
+El instalador (`packaging/windows/installer.nsi`) en silencio: espera hasta 30 s a poder abrir `repackshot.exe` para escribir, no enseña ni
+escribe la página de modelos de IA, renueva el acceso directo del escritorio solo si existe y, con `/LAUNCH`, arranca la aplicación al
+acabar (`.onInstSuccess`). `tests/installer.rs` lee el guion como texto y comprueba el bucle, `/LAUNCH` y esas protecciones.
+
 ### Estado de la página
 
 En escritorio la página es solo la interfaz (fase P3e): **todo lo que guarda lo escribe el
@@ -388,8 +433,8 @@ almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src
 <datos>/state/<nombre>.json        documentos pequeños (descargas por reanudar, la marca de la migración...)
 <datos>/library/library.json       la biblioteca propia (U4)
 <datos>/results/index.json         el historial: {"version": 1, "results": [{id, file, type, display, ai, aiType, aiVariants, meta}]}
-<datos>/results/<id>.<ext>         el archivo de un resultado tal cual (png, jpg, exr, webp, tif)
-<datos>/results/<id>.display.png   su imagen para el visor, cuando la página no puede mostrar el archivo (EXR)
+<datos>/results/<id>.<ext>         el archivo de un resultado tal cual (png, jpg, exr, webp, tif, dng)
+<datos>/results/<id>.display.png   su imagen para el visor, cuando la página no puede mostrar el archivo (EXR, TIFF, DNG)
 <datos>/results/<id>.ai.<n>.<ext>  la variante n (de 1 a 8) que hizo el post-procesado IA, cuando el resultado pasó por él (X4b), en su tipo
 <datos>/results/<id>.ai.<ext>      la única imagen de la IA de un resultado de antes de X4b (fase X4): se lee como su variante 1
 <datos>/cache/thumbs/<clave>.txt   las esferas de materiales (data URL): caché, se libera cuando se quiera
@@ -416,7 +461,7 @@ almacenamiento vacío). El cliente es `src/io/native-store.ts`; la costura, `src
 | `GET` / `PUT` / `DELETE /api/store/docs/<nombre>` | Uno (`null` si no está); `PUT` admite cualquier valor JSON de 1 MiB como mucho |
 | `GET` / `PUT` / `DELETE /api/store/library` | La biblioteca: un objeto JSON de 64 MiB como mucho |
 | `GET /api/store/results` | `{"results": [meta...]}`, en el orden en que llegaron; un resultado cuyo archivo se borró a mano no aparece |
-| `PUT /api/store/results/<id>?type=<tipo>` | Cuerpo: el archivo (4 GiB como mucho, escrito por trozos al disco). `image/png`, `image/jpeg`, `image/x-exr`, `image/webp` o `image/tiff`; otro tipo, 415 |
+| `PUT /api/store/results/<id>?type=<tipo>` | Cuerpo: el archivo (4 GiB como mucho, escrito por trozos al disco). `image/png`, `image/jpeg`, `image/x-exr`, `image/webp`, `image/tiff` (`.tif`) o `image/x-adobe-dng` (`.dng`); otro tipo, 415 |
 | `PUT /api/store/results/<id>/display` | Cuerpo: la imagen PNG para el visor (512 MiB como mucho) |
 | `PUT /api/store/results/<id>/ai/<n>?type=<tipo>` | Cuerpo: la variante `n` (1 a 8, escrita sin ceros delante; si no, 400 `bad-variant`) que hizo el post-procesado IA (X4b), con los mismos tipos y límite que el archivo; otra vez en otro tipo deja un solo archivo. Entra en el registro (`aiVariants: [{n, file, type}]`) con `PUT .../meta` si ya está. Una variante que la guarda rechazó no tiene archivo: no se manda |
 | `PUT /api/store/results/<id>/ai?type=<tipo>` | La única imagen de la IA de antes de X4b (X4), `<id>.ai.<ext>`; sigue funcionando y se lee como la variante 1 |
@@ -781,6 +826,16 @@ su carpeta, enlaces no seguidos, límites, una petición cortada, resultados con
 espacio usado, y que todo sigue ahí para otro arranque), el puerto estable (`tests/port.rs`: el
 mismo si está libre, otro recordado si está ocupado, `--port` sin recordar) y la paridad con `rt`,
 también con un visor vivo en 16 hilos.
+
+Actualizar (P5): `src/update/` (la lista blanca de URL con las hostiles de siempre, los nombres de los paquetes, las sumas, los
+nombres de lo que se sustituye y de lo que se borra al arrancar, el cambio de archivos con un fallo inyectado en cada uno de sus ocho
+pasos, la limpieza que no borra nada que no sea de una actualización) y `tests/update.rs`, con el `curl` y el `tar` reales contra un
+servidor local que hace de GitHub: de punta a punta el portable de Linux (`.tar.gz`) y el de Windows (`.zip`) sobre una carpeta de
+prueba con un ejecutable falso, que dejan lo nuevo, el `.old`, `data/` y `portable.txt` intactos y arrancan el nuevo con
+`--after-update` y los argumentos de antes, solo cuando se pide; una suma que no cuadra, una que no está, una release sin archivos, un
+paquete que no es la aplicación, que sale de su carpeta o lleva un enlace: no cambian nada; el instalador arrancado con `/S /LAUNCH`;
+la lista blanca por HTTP; una copia que no es instalada ni portable; el progreso, cancelar, una descarga cortada que reanuda.
+`tests/installer.rs` lee `installer.nsi` como texto. Fuera del motor, `tools/update-install-check.mjs` (el lanzador real con Chromium).
 
 La ventana propia (`src/platform/`): en todas las plataformas, los GUID, nuestros objetos COM
 (recuento de referencias, `QueryInterface`, `Invoke`), el tamaño de cada vtable de WebView2 contra

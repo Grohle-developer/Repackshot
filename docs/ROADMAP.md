@@ -162,6 +162,11 @@ decisiones escritas (datos, contratos, revisión), no código.
   salida por plantilla, carpeta, ppp escritos en PNG y JPEG, PNG de 16
   bits y EXR, *Terminar por* muestras o tiempo, cola deshacible, visor de
   resultados con divisor y historial en IndexedDB; 621 tests — **Opus**.
+- **E12** · Elección de luz por punto: la lista plana del árbol de luces de
+  Conty Estevez y Kulla con su cota de orientación, pesos en unidades de
+  irradiancia, MIS con la misma probabilidad en el vértice del rayo BSDF;
+  el atrapasombras y los fotones siguen por flujo; sin chispas en los sets
+  con *pool*; 614 tests del motor — **Opus**.
 
 (Las fases de esta lista las cierra quien las ejecuta en el mismo PR en
 que se entregan; el detalle de cada una está en su sección.)
@@ -1393,7 +1398,7 @@ ejemplo con *Estándar* conserva `0x223515c3`; paridad wasm; hoja
 ajustes y el tiempo de cada uno (los tiempos van en el PR, no en la
 interfaz); captura `docs/ui/settings-aa.png`.
 
-## E12 · Elección de luz por punto (árbol de luces plano) — **Opus**, decisión **Fable**
+## E12 · Elección de luz por punto (árbol de luces plano) — **Opus**, decisión **Fable** — hecha
 
 **Por qué.** Diagnóstico de L6 sobre las miniaturas finales a 96 spp:
 chispas blancas dispersas en el papel de los sets con una luz de *pool*
@@ -1465,6 +1470,232 @@ STRIP_EDGE, BLACK_ON_BLACK y WARM_COOL_CINEMA a 96 spp antes y después
 (los `.rsb` del diagnóstico están en el *scratchpad* de L6), más el
 ejemplo y el horno blanco; a ojo, sin chispas y la misma foto.
 `ARCHITECTURE.md` (motor: elección de luz) y CHANGELOG.
+
+**Hecho.**
+
+- **Elección por punto** (`rt_core::light`, con la cita de Conty Estevez
+  y Kulla, HPG 2018, §4.3, en el comentario del módulo; nada de otro
+  renderizador). Pesos en `x`, todos en unidades de irradiancia (W/m²,
+  distancias en metros; ver *Qué no encajó*): punto y foco
+  `lum(I) · máscara(x) / max(d², r²)`; rectángulo y disco
+  `lum(L) · A · cos θ' / max(d², A)` con la cota de orientación de la
+  referencia (`θo` = 0, `θe` = π/2, `θu` del radio de la esfera que
+  envuelve el panel visto desde `x`); malla emisora, lo mismo desde su
+  centroide con el cono de normales de sus caras como `θo` (de dos caras
+  o cerrada, `cos θ'` = 1 y cuenta una vez); sol `lum(E)`; entorno `π L̄`.
+  La cota se escribe con productos escalares y raíces (`cos(a ± b)`):
+  `f32`, sin `sin`/`exp`/`powf` en el bucle. `Lights::select(x)` suma los
+  pesos y devuelve una `Selection` (el vértice, la suma, los ocho primeros
+  pesos y si es por flujo); `sample_selected` reconstruye la distribución
+  acumulada entrada a entrada, con las mismas operaciones que `build_cdf`
+  y `pick`, hasta la luz que toma. De dos a `MAX_LOCAL_LIGHTS` = 64
+  entradas; por encima, la CDF estática por flujo de antes en todos los
+  sitios (`Lights::select_by_flux`); con una sola, también por flujo: la
+  elección es cierta igual y no cuesta nada (un test la renderiza de los
+  dos modos, bit a bit).
+- **Consistencia MIS**: una sola función, `Lights::pmf(entrada,
+  selección)`, da la probabilidad de la estimación de siguiente evento y la
+  de los pesos MIS. El rayo BSDF lleva `Scattered { pdf, from }`, que
+  presta la `Selection` del vértice donde se muestreó; `crossed`,
+  `crossed_from`, `crossed_without_photons`, `escaped`,
+  `escaped_environment` y `emitter_weight` lo reciben en lugar de la
+  densidad suelta. Por paredes finas y recortes (`offset`), `from`
+  sigue siendo ese vértice: los sucesos rectos no lo cambian. Los campos
+  `pmf` por luz pasan a ser `base` (el peso sin distancia ni orientación)
+  y `entry`.
+- **Cáusticas**: la emisión de fotones sigue por flujo (su CDF propia, sin
+  tocar). **Atrapasombras**: sigue por flujo, su muestra de luz y el MIS
+  de su rayo BSDF (decisión Fable tras ver los datos, abajo): sus píxeles
+  son bit a bit los de d1f356f.
+- **Comprobaciones**: la elección por flujo a través del código
+  nuevo renderiza STRIP_EDGE bit a bit igual que el binario de d1f356f; la
+  misma escena con 1 y 4 hilos da el mismo PNG; con una sola luz la
+  película por punto es la de flujo, bit a bit.
+- **Tests** (cada uno con su mutación, que lo hace fallar):
+  - `light_selection_is_unbiased_with_either_technique_and_with_both`
+    (criterio 1; las estrategias son un mando de `cfg(test)`, `Techniques`):
+    horno blanco MIS 1,00006, solo NEE 1,00006, solo BSDF 1 (exacto);
+    suelo con panel, foco y mundo tenue MIS 1,49876, solo NEE 1,49861,
+    solo BSDF 1,49950 (4096 spp, 8 × 8). Mutación: en `crossed_areas`,
+    `self.pmf(light.entry, &self.select_by_flux(s.from.point))` (el lado
+    BSDF con la probabilidad global) → MIS 1,719 frente a 1,499,
+    falla; la misma en `escaped_environment` → MIS 1,476, falla. Las dos
+    hacen fallar también `next_event_estimation_and_bsdf_rays_agree_on_every_probability`
+    (cada luz, en `light::tests`: un rayo BSDF de la densidad de la muestra
+    de luz recibe exactamente el ½ de la heurística de potencia).
+  - `a_small_spot_close_to_its_paper_is_chosen_where_it_lands` (criterio 2:
+    foco de 20 mm a 300 mm del papel, panel de 1 m a 2,5 m, 64 spp):
+    varianza por píxel (`Film::lum2`) bajo el foco 0,0015 por punto frente
+    a 1,653 por flujo (1/1100; se pedía ≤ 1/4); donde solo ilumina el
+    panel, 0,00024 frente a 0,0043 (no sube: baja). Mutación: en
+    `select`, `if true || !self.per_point || n == 0` (por flujo en todas
+    partes) → las dos varianzas iguales, falla; también
+    `a_light_close_to_the_point_is_chosen_there`.
+  - `a_panel_seen_edge_on_keeps_a_chance` (criterio 3: un panel en cuyo
+    plano, pasado su borde, está `x`; y a 1 mm por encima) y
+    `the_orientation_bound_holds_for_every_point_of_the_panel` (400
+    paneles y puntos al azar: la cota nunca baja del coseno desde ningún
+    punto del panel). Mutación: `let sin_u = 0.0 * bound * inv_d;` (sin
+    `θu`, el coseno del centro) → los dos fallan (probabilidad 0 en el
+    plano; cota 0,944 < 0,962).
+  - `one_light_renders_the_same_pixels_chosen_per_point_or_by_flux`
+    (criterio 4: panel, emisor muestreado, foco, sol y el horno, la
+    película por punto igual bit a bit a la de flujo). Mutación: el peso del
+    foco por su cono interior, `let mask = if self.mask(x) >= 1.0 { 1.0 }
+    else { 0.0 };` → falla. (El test de insesgo no la ve: con luces
+    *glossy*, lo que la estimación de siguiente evento deja lo encuentra
+    el rayo BSDF con peso 1; por eso este test.)
+  - `the_orientation_bound_holds_for_every_face_of_a_one_sided_emitter`
+    (casquete de una cara y puntos alrededor). Mutación: el peso de la
+    malla con `(1.0, 0.0)` en lugar de su cono de normales → falla.
+  - `beyond_sixty_four_lights_every_point_chooses_by_flux` (64 entradas por
+    punto, 65 por flujo, en la muestra y en el MIS). Mutación:
+    `(2..MAX_LOCAL_LIGHTS).contains(&entries.len())` → falla.
+  - `the_shadow_catcher_keeps_choosing_its_light_by_flux` (su cobertura,
+    bit a bit, con dos luces, por punto o por flujo). Mutación: `let
+    selection = lights.select(x);` en el atrapasombras → falla.
+  - `through_thin_walls_mis_takes_the_probabilities_of_the_vertex_the_ray_left`
+    (una pared fina transparente a 140 mm bajo una esfera de luz de
+    200 mm: su probabilidad es 0,166 en el suelo y 0,429 en la pared; MIS
+    0,7238, solo BSDF 0,7197). Mutación: en la rama de los sucesos rectos,
+    `sampled_at = selection;` (el origen pasa a la pared) → MIS 0,6853,
+    falla.
+  - Sin test que la vea, como debe ser: evaluar la probabilidad en el
+    origen desplazado del rayo (`lights.select(next_origin)`) en lugar del
+    punto de sombreado (una diferencia de 10⁻⁴ mm).
+  - Las mutaciones se pasaron sobre el código final, en una copia del
+    motor: cada una hace fallar sus tests (once en total), que pasan sin
+    ella.
+- **Coste** (≤ 3 %): medido con *valgrind* (instrucciones ejecutadas,
+  deterministas e independientes de la carga de la máquina: la diferencia
+  entre 6 y 2 spp a 128², un hilo, así que la preparación de la escena se
+  cancela), binario de d1f356f frente al de E12, por muestra: ejemplo
+  88,5 M → 93,4 M (+5,6 %; rayos +4,7 %), STRIP_EDGE 282,0 M →
+  299,6 M (+6,2 %; rayos +3,3 %), BLACK_ON_BLACK 215,4 M → 227,8 M
+  (+5,8 %; +1,0 %), WARM_COOL_CINEMA 245,8 M → 262,0 M (+6,6 %; +3,2 %),
+  horno blanco 60,0 M → 61,4 M (+2,3 %, una entrada, por flujo). El
+  tiempo de CPU (un hilo, 16 spp, el mínimo de tres en una máquina con
+  carga ~40 en 4 núcleos: ±7 %, el horno da +7 % con el mismo trabajo)
+  dice lo mismo: +5,6 %, +5,5 %, +2,6 %, +6,0 %. A igualdad de muestras el
+  ruido baja (16 spp, dos semillas, RMS en sRGB): varianza ×0,57
+  (STRIP_EDGE), ×0,25 (BLACK_ON_BLACK), ×0,69 (WARM_COOL_CINEMA), ×0,40
+  (ejemplo); a igualdad de ruido, el tiempo ×0,61, ×0,27, ×0,74 y ×0,42.
+  Ver *Qué no encajó*.
+- **Hoja** `out/light-select-sheet.html`: STRIP_EDGE, BLACK_ON_BLACK y
+  WARM_COOL_CINEMA a 96 spp antes (binario de d1f356f) y después, con
+  *denoise* y la imagen sin filtrar debajo, el tiempo de cada una;
+  STRIP_EDGE con una tercera columna, la referencia por flujo a 1024 spp;
+  el ejemplo y el horno blanco. Probabilidad de elegir el *pool* en el
+  papel bajo él (medida, 10⁵ elecciones): STRIP_EDGE 0,08 % por flujo →
+  22,7 % por punto (el entorno, del 76 % al 22 %); BLACK_ON_BLACK 0,27 %
+  → 48,3 %; WARM_COOL_CINEMA 0,08 % → 21,0 %.
+- ***Hashes* movidos** (repinados una vez, con las unidades de
+  irradiancia; los mismos en escalar, SSE2 y AVX2, en WASI escalar y
+  `simd128` y en el `rt.wasm` real):
+  - `PINNED_CENTRE` (`a_tile_of_the_example_has_a_pinned_hash_on_every_platform`):
+    `0x7a5ae28b` → `0x8023c8cf`;
+  - `PINNED_SMALL_SPHERE` (el mismo test): `0xb43bda52` → `0x8b220e08`;
+  - `PINNED_EXAMPLE_4SPP` (`the_whole_example_at_four_samples_has_a_pinned_hash`,
+    `asking_for_passes_changes_no_pixel_of_the_image`, la comprobación de
+    la imagen sin filtrar de `the_denoised_example_has_a_pinned_hash`):
+    `0x223515c3` → `0x8206111f`;
+  - `PINNED_E5_HDRI_4SPP` (`the_e5_example_has_pinned_hashes_on_every_platform`):
+    `0xbf8abd5b` → `0x065d16e0`;
+  - `PINNED_E5_SKY_4SPP` (el mismo test): `0x2fcb098a` → `0x1c24c35c`;
+  - `PINNED_E5C_SKY_4SPP` (`the_e5c_physical_sky_has_a_pinned_hash_on_every_platform`):
+    `0x8bb09f6b` → `0x9f4af472`;
+  - `PINNED_E5B_CAUSTICS_4SPP` (`the_e5b_caustics_have_a_pinned_hash_on_every_platform`
+    y, en `rt-app`, `caustics_give_the_pinned_image_with_any_thread_count`):
+    `0x55d60f2f` → `0x5419866e`;
+  - `PINNED_DENOISED_EXAMPLE_4SPP` (`rt-post`,
+    `the_denoised_example_has_a_pinned_hash`): `0xab15f290` → `0x9ef7c8a0`.
+
+  No se mueven los doce de los pases de X2 (`PINNED_PASS_*`,
+  `PINNED_E5_PASS_*`): no dependen de la luz. Los criterios de fases
+  pendientes que citan `0x223515c3`, `0x55d60f2f` o `0xab15f290` (E9, E10,
+  O1…) se escribieron antes de E12: se leen con los valores nuevos.
+
+**Qué no encajó con el plan.**
+
+- **Las unidades de los pesos.** El brief mezclaba flujo e irradiancia:
+  punto, foco y panel en irradiancia, y sol `π E`, entorno `4π² L̄` y malla
+  con su flujo `π L A` por cara, que frente a la irradiancia que dan pesan
+  π, 4π y π–2π veces de más. Con los pesos del brief el *pool* de
+  STRIP_EDGE se elegía el 6,4 % de las veces en su papel y la cúpula se
+  llevaba el 78 % de las muestras de luz; en unidades de irradiancia, el
+  22,7 % y el 22 %. Decisión Fable: unidades de irradiancia (sol `E`,
+  entorno `π L̄`, malla `L · A · cos θ' / max(d², A)` desde su centroide,
+  una cara). RMSE frente a la referencia de 1024 spp (STRIP_EDGE, con
+  *denoise*): antes 0,0200, pesos del brief 0,0114, unidades de
+  irradiancia 0,0113 (las dos en el suelo de ruido de la referencia): el
+  RMSE no decide entre ellas; deciden la física y esas probabilidades.
+- **El atrapasombras.** Su sombra es el cociente de la luz que llega y la
+  que llegaría en **una** muestra, así que su valor converge a algo que
+  depende de cómo se elige la luz, no solo de la escena. En la escena de
+  `the_shadow_catcher_keeps_the_shadow_and_writes_alpha`, la cobertura de
+  la sombra en (−170, 0) a 1024 spp: por flujo 0,356; por punto con los
+  pesos del brief 0,207 (el test, que pide > 0,3, fallaba); por punto en
+  irradiancia 0,429; la verdad, en un suelo visible con luz directa,
+  0,286. Decisión Fable: E12 deja el atrapasombras por flujo (un test lo
+  fija: `the_shadow_catcher_keeps_choosing_its_light_by_flux`); **un
+  atrapasombras de cociente de sumas (acumular por píxel la luz que llega
+  y la abierta, y dividir al resolver) es E13** y convergería a la verdad
+  con cualquier elección.
+- **Los números del diagnóstico.** El brief daba al *pool* un 3,9–6,5 %
+  por flujo; medido en el papel bajo él, 0,08 % en STRIP_EDGE: el centro
+  de la escena queda fuera del cono del foco, así que pesaba la veinteava
+  parte de su flujo (la regla de L4 para un foco apuntado fuera).
+- **El búfer de pila.** Escrito como pedía el brief (64 pesos por vértice
+  en la pila), el perfil (*callgrind*) daba al `memset` de esos 256 bytes
+  el 1,9 % de todas las instrucciones del ejemplo: la `Selection` guarda
+  la suma y los ocho primeros pesos (32 bytes), y la elección rehace la
+  distribución acumulada hasta la luz que toma, con las mismas operaciones
+  (los mismos píxeles, bit a bit); pasado el octavo, los pesos se vuelven
+  a calcular. El límite de 64 entradas se queda como regla.
+- **El coste por muestra pasa del 3 %**: +5,6 a +6,6 % de instrucciones en
+  las escenas de referencia con varias luces (arriba). El perfil
+  (*callgrind*, ejemplo) lo reparte entre trabajo útil de más (las
+  muestras de luz caen más a menudo en una luz que llega al punto: +17 %
+  de rayos de sombra y +23 % de densidades BSDF para el MIS) y la propia
+  cota (por panel y vértice, tres raíces y dos divisiones) con su
+  fontanería. Se probaron y midieron seis versiones (+8,7 % la primera);
+  la que queda no copia ni rellena nada del tamaño de la lista y elige por
+  flujo, sin coste, con una sola entrada. Como el ruido baja más de lo
+  que sube el coste, a igualdad de ruido sale entre 1,4 y 3,8 veces más
+  rápido; el 3 % no se cumple: queda anotado.
+- **No hay `engine:bench`** en `package.json`, y `rt-bench` mide el
+  rendimiento de la BVH, no el integrador: el coste se midió con `rt` (ver
+  arriba).
+- **La cota de la referencia lleva también el coseno del receptor**
+  (`|cos θ'i|`, con la normal del punto); el brief no lo pide y la API de
+  la elección solo conoce el punto: queda para K4.
+- **Las estrategias de los tests** (`Techniques`, solo en `cfg(test)`):
+  *solo NEE* es válida sin caminos especulares hacia la luz; el test de
+  paredes finas compara MIS con *solo BSDF*.
+
+## E13 · Estimación en variedad (MNEE) para la luz a través de vidrio — **Opus** (tras E9)
+
+**Por qué.** Los rayos de sombra se paran en una superficie refractante
+(diseño de E5): un líquido dentro de una botella, o cualquier cosa
+detrás de un cristal, solo recibe la luz de los focos por caminos que
+refractan por azar o por el mapa de fotones de E5b-1 (que *Automático*
+no enciende para un softbox). E9b lo salva con la regla de pared fina
+(aproximación explícita, sesgo medido). Lo correcto es **estimación de
+siguiente evento en variedad** (Hanika, Droske, Fascione, "Manifold Next
+Event Estimation", EGSR 2015): desde el vértice, buscar por iteración
+de Newton el camino de refracción que llega al punto de luz a través de
+una o dos superficies lisas, y usarlo como conexión con su jacobiano.
+
+**Qué.** MNEE en `rt-core` para hasta dos refracciones lisas (vidrio
+fino y botella con líquido), con el *half-vector* como variable, 8
+iteraciones máximo, `f32`, determinista; MIS con la continuación BSDF;
+la regla de pared fina de E9b se retira cuando MNEE la cubre (test de
+que el resultado converge al de referencia). Coste ≤ 1,3× en la botella
+de E5.
+
+**Criterio.** Botella de leche de E9b a 64 spp sin grano y dentro del
+3 % de la referencia; cáusticas de un vaso de agua bajo un foco
+pequeño con MNEE vs mapa de fotones; *hashes* repinados; paridad wasm.
 
 ## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
 
@@ -1604,7 +1835,7 @@ M2b). La máquina tiene 4 núcleos: cinco agentes a la vez es el tope, y
 los que no tocan el motor no compilan Rust (usan `/home/user/bin/rt` y
 el `rt.wasm` ya construido).
 
-## L6 · Sets de estudio con criterio fotográfico — **Opus**, diseño **Fable**
+## L6 · Sets de estudio con criterio fotográfico — **Opus**, diseño **Fable** — hecha
 
 **Qué.** `LightSetup` gana campos opcionales (los 72 montajes antiguos no
 cambian): `backdrop` (`FLAT` color; `GRADIENT` dos colores, arriba y
@@ -1775,6 +2006,145 @@ del set como filas propias (se pueden apagar). Cadena en `es` y `en`.
 resuelto de cada uno es el mismo que antes); las tarjetas de ningún set
 entran en el encuadre con la focal del tipo (test); una entrada de
 deshacer por set; `npm run qa` en verde.
+
+**Hecho.** *Esquema.* `LightSetup` gana, todos opcionales, `backdrop`,
+`pool`, `floor` (con `roughness`), `cards`, `exposureEv`, `envStrength`,
+`camera`, `hero`, `why` y `caustics` (`data/types.ts`); `StudioPreset` gana
+`set`; `LightStyle` gana `SETS`, el primero de `LIGHT_STYLES`. Los 16 sets
+van primero en `LIGHT_SETUPS` y los 72 de antes detrás, con sus claves. Un
+test compara el rig resuelto de los 71 montajes antiguos (menos `PRESET`)
+contra los 16 tipos de producto con una instantánea tomada antes de tocar
+nada (`tests/fixtures/old-setup-rigs.json`: forma y energías relativas, y
+el nivel de cada tipo): siguen dando lo mismo, y su exposición también.
+
+*Aplicar un set* (`core/sets.ts`, que `store.ts` consulta antes que el
+reductor de luces): `studio/setSetup` con un set pone sus focos, su aspecto
+(fondo `COLOR`, `GRADIENT` —fondo nuevo del entorno, dos colores que el
+RSB lleva como imagen de fondo estirada y la vista previa pinta igual— o
+el barrido; cúpula; exposición) y su decoración: el barrido de U9 ajustado
+a la cámara (con fondo `SWEEP`, o `FLAT`/`GRADIENT` con charco), el suelo
+(cara *suelo* del barrido en el material, o una lámina que se para antes
+del charco, o un plano del tamaño del suelo del barrido sin él), las
+tarjetas (planos de cara al pivote, subidos sin girar hasta apoyarse en el
+suelo) y el charco (un foco direccional, `setPiece: 'POOL'`). Todo en una
+acción: una entrada de deshacer. Las piezas llevan `SceneNode.setPiece` y
+no son producto (`productParts`, pivote, tamaño), ni las mira el Doctor
+(`ownParts`), ni las encuadra *Encuadrar* sin selección. Otro set las
+sustituye; un montaje que no es set las quita y devuelve el aspecto del
+tipo; *Restablecer montaje* las quita (regla del plan) y devuelve los
+focos; *Crear estudio* las vuelve a ajustar; `studio/useSetCamera` (botón
+*Usar la cámara del set*) pone la elevación y la focal sugeridas, encuadra
+y reajusta barrido, suelo y charco; `studio/fitSet` viste el producto que
+llega (ejemplo, importación) en la misma entrada de deshacer.
+
+*Los 16 sets*, con los números del plan salvo lo que dicen la hoja de
+contactos, los tests y el veredicto: claves `GLASS_DARK_FIELD` y
+`WARM_COOL_CINEMA` (las del plan ya existían); tarjetas movidas solo donde
+el test las veía en el encuadre (`STRIP_EDGE` negra az 60→70;
+`BRIGHT_FIELD` negras ±65→±70; `JEWEL_BOX` cenital el 70→80, lateral
+az −30 el 5 → az −70 dist 1,7; `CHROME_FAMILY` negra az 50 el 35 → az 75
+el 20, plateada az 120→90; `BACKLIT_LIQUID` blanca el 65 dist 1,4 → el 80
+dist 1,5; `FLAT_LAY` blanca el 20 dist 1,6 → el 45 dist 2,8); tiras
+subidas por la regla de su reflejo (`STRIP_EDGE` contra el 30→50;
+`GLASS_DARK_FIELD` ±135 el 15→55, dist 3; `CHROME_FAMILY` contra el 20→70;
+`BLACK_ON_BLACK` ±150 el 30→70, dist 3; `BACKLIT_LIQUID` cantos el 20→30,
+dist 3; `WARM_COOL_CINEMA` contra el 25→55; `GRADIENT_POOL` contra el
+30→70; `SILHOUETTE_GLOW` ±140 el 25→55); `BRIGHT_FIELD` panel 6×6 a dist 3
+→ 4,5×4,5 a dist 4, partes 0,9/0,06/0,04, EV +1,2, cúpula 1,2;
+`HIGH_KEY_WHITE` EV +1,4, cúpula 2 y un baño del fondo (charco de cono 90,
+parte 1,5); `BLACK_ON_BLACK` barrido 0,04, charco 30 %, cono 18°;
+`GRADIENT_POOL` barrido 0,30, clave a dist 2,2, charco 70 % y cono 22°,
+cúpula 0; `SILHOUETTE_GLOW` charco 45 %, cono 45°; `BACKLIT_LIQUID` lámina
+con rugosidad 0,2. Donde el plan no daba
+geometría (rellenos, alguna distancia) se puso un panel 3 × 3 a az 30–60,
+el 20, dist 3–3,5 y las tiras a dist 3. Fondo de `BRIGHT_FIELD` `FLAT`
+0,9; `FLAT_LAY` es un barrido de papel 0,8.
+
+*Tipos de producto* (`studios.ts`, `PRESET_SETS`): GENERIC y PACKAGING ←
+`GRADIENT_POOL`; JEWELLERY ← `JEWEL_BOX`; WATCH, AUTOMOTIVE y TOOL ←
+`CHROME_FAMILY`; PERFUME y COSMETICS ← `STRIP_EDGE`; ELECTRONICS ←
+`BLACK_ON_BLACK`; APPLIANCE y MEDICAL ← `HIGH_KEY_WHITE`; FURNITURE_IN ←
+`WARM_WINDOW`; FOOTWEAR y TEXTILE ← `RAKING_TEXTURE`; EYEWEAR ←
+`BRIGHT_FIELD`; FURNITURE_OUT conserva su sol. Cada uno toma el set entero
+(veredicto): sus focos al nivel de irradiancia que tenía el tipo, el
+desvío de exposición sumado a su `exposure`, y con su rig propio la
+decoración y el aspecto; los presets de tipo de producto cambian (claves
+iguales), los montajes de antes no.
+
+*Materiales nuevos* (claves nuevas, nada renombrado): `CARD_WHITE` (0,92
+mate), `CARD_BLACK` (0,02 mate), `ACRYLIC_BLACK` y `ACRYLIC_WHITE`
+(acrílico con rugosidad 0,12) y `MIRROR_BLACK`; la tarjeta plateada es
+`ALU_BRUSH`, que es exactamente eso.
+
+*Miniaturas* (`tools/setup-thumbs.mjs`): las 88 renderizadas por `rt` a
+256 × 256, 96 muestras, *denoise*, semilla 1 (y vueltas a codificar sin
+pérdida: `rt` guarda el PNG sin comprimir, 197 kB cada una; quedan 2,5 MB
+las 176), con la escena que construye
+el código de la aplicación (`tests/setup-thumbs-dump.test.ts` en vitest;
+héroes en `tests/set-heroes.ts`), `setup_<clave>.png` a 64 × 64 por
+promedio, y `manifest.json` con el *hash* de cada RSB y de cada PNG: un
+test reconstruye las 88 escenas y las compara, otro fija el *hash* de una
+miniatura, y otros miden sobre las miniaturas lo que pidió el veredicto
+(fondo ≥ 0,92 sin quemar la etiqueta; charco ≥ 2 veces el borde; halo que
+cae sin meseta), con los umbrales en un solo sitio (`LOOK`,
+`tests/thumb-metrics.ts`); `REPACKSHOT_SET_MEASURES=1 npx vitest run
+tests/sets.test.ts -t measures` imprime las medidas de los 16 contra ellos,
+para reajustar solo la exposición del set que cruce uno si cambia el motor. Hoja de contactos: `tools/sets-sheet.mjs` →
+`out/sets-sheet.html` (sets × BOTTLE/BOX/CHROME y los 15 tipos que son
+un set, antes y después). Interfaz: estilo *Sets* primero, miniaturas de los sets en dos
+columnas y cuadradas (el doble de altas), la razón en la ayuda, *Usar la
+cámara del set*, la lista *En el set* con interruptores; fondo
+*Degradado* en *Entorno*; comprobado en el navegador con
+`tools/sets-check.mjs`.
+
+No encajó con el plan:
+- Un charco sobre fondo `FLAT` o `GRADIENT` no tiene dónde caer (el fondo
+  es una imagen): esos sets llevan barrido del color (`GRADIENT`: el de
+  arriba).
+- El charco no cae a `az`/`el` del pivote: con la cámara a 22° la pared del
+  barrido, detrás de los focos de contra, casi no sale en el encuadre.
+  Cae donde la cámara ve el fondo justo por encima del producto, y el foco
+  (apuntado desde `az`/`el` a 0,75 del pivote) se pone cerca del papel con
+  cono de 150°: el halo cae desde el centro, sin borde; el `cone` del set
+  dice su anchura.
+- Un suelo mate sobre un barrido es el barrido (un papel no tiene dos
+  albedos): el gris del suelo de `RAKING_TEXTURE` (0,3 frente a 0,25) no se
+  usa.
+- Los números de partida de `HIGH_KEY_WHITE`, `BRIGHT_FIELD` y
+  `GRADIENT_POOL` no llegaban a sus criterios medidos con *Fílmico* (que
+  comprime las luces): ver arriba lo que hizo falta.
+- *Restablecer montaje* quita la decoración (regla del plan); elegir el set
+  otra vez la devuelve.
+- Una escena vacía no recibe piezas: el ejemplo o el modelo importado las
+  traen (`studio/fitSet`); cargar un proyecto o sustituir la escena por
+  otra no las rehace solas.
+- La hoja final es de 512 px a 96 muestras con *denoise*, no a 256 (la
+  máquina es compartida y 256 no cambia nada del veredicto); sus pares de
+  tipo de producto son los 15 que son un set sobre BOTTLE, y Estándar y
+  Electrónica también sobre BOX.
+- Las miniaturas de `STRIP_EDGE`, `BLACK_ON_BLACK` y `WARM_COOL_CINEMA`
+  llevan puntos sueltos en el papel (*fireflies*). Su charco es un foco
+  cerca del papel con poca potencia, y el motor elige la luz de cada
+  muestra por su flujo: al charco le toca un 4–6 % de las veces, aunque
+  donde cae ilumina como una luz entera. Con el charco apagado
+  desaparecen; ni quitar el brillo a la clave o a la contra ni las
+  cáusticas cambian nada. Va al motor (E12, selección de luz por punto) y
+  esas miniaturas se vuelven a renderizar cuando entre; el charco no se
+  mueve ni las miniaturas recortan la luz indirecta.
+- *En el set* enseñaba la fila de fondo degradado de `STRIP_EDGE` tras
+  *Restablecer montaje* (su degradado es un barrido, por el charco): la
+  fila sale ahora solo para un fondo que el set pone detrás sin barrido
+  (`setBackground`, con su test). Lo encontró `tools/sets-check.mjs`.
+- La vista previa (*Rápido*) no distingue los focos con `glossy: false`
+  (ya era así antes de L6): el relleno de `STRIP_EDGE` deja su brillo en
+  el suelo acrílico de la vista previa (`docs/ui/sets-catalogue.png`, abajo
+  a la derecha) y el render no. Los suelos brillantes de los sets lo hacen
+  más visible; no se ha tocado.
+- `tests/chunks.test.ts` tomaba como *chunk* de `io/import.ts` el primero
+  cuyo nombre empezaba por `import-`; `import-options-<hash>.js` también
+  empieza así y cuál sale antes depende del *hash*: con el de esta fase
+  salía el otro y el test fallaba sin que el *bundle* cambiara. Ahora lo
+  busca por su nombre exacto.
 
 ## M2a · Texturas: importación, mapeado, etiquetas y vista previa — **Opus** — hecha
 
@@ -2035,7 +2405,7 @@ tiempo de render del ejemplo a 1024 muestras con la doble Gauss (medido
 y en el PR); si pasa, se bate por lotes (§6.1 del informe) antes de
 cerrar.
 
-## O1 · Lente fina mejorada y selector de bokeh — **Opus**
+## O1 · Lente fina mejorada y selector de bokeh — **Opus** — hecha
 
 **Qué.** `STUDIO-TOOLS.md` §1 modo 1, en `rt-core` y en la interfaz.
 Motor: sección RSB nueva opcional `LENS` después de `CAMR` (`CAMR` no
@@ -2078,6 +2448,179 @@ proporción esperada (±1 %); el *tilt* mueve el plano de enfoque como
 dice Scheimpflug (test geométrico con tres puntos); la máscara con
 muestreo por CDF da la misma media que el muestreo por rechazo (±1 %);
 determinismo 1/4/16 hilos y wasm.
+
+**Hecho.**
+
+- **Motor** (`rt-core/src/optics`, sección RSB nueva `LENS`, opcional,
+  justo después de `CAMR`; `CAMR` no cambia). `Camera.lens:
+  Option<Lens>`; `Camera::sample_ray` devuelve el rayo y un **peso de
+  color** que la baldosa multiplica (`render::camera_sample_weighted`). La
+  **pupila** se muestrea con su densidad exacta y sin rechazo
+  (`optics::pupil`): disco por el mapa concéntrico con el radio remapeado
+  por la inversa de la CDF del perfil en `s = ρ²` (raíces estables de una
+  cuadrática; la apodizada con `fmath::exp`/`ln`), abanico de triángulos
+  desde el centro para 3 a 18 láminas (rectas: N triángulos iguales; curvas:
+  arcos de radio `apotema / redondez` tangentes a la arista en su mitad, 24
+  cuerdas por lámina, la geometría de `tools/assets/aperture-masks.mjs`) con
+  el perfil del calibre de la forma, y rejilla con CDF marginal y condicional
+  para una máscara (sustituye al diafragma; gira con él) o una textura
+  (multiplica la forma, dibujada con borde suavizado), con el perfil y la
+  obstrucción dentro. La estratificación de Sobol llega a la pupila y el
+  brillo no cambia. **Ojo de gato**: segundo disco de radio 1 desplazado
+  `cats_eye × h` hacia el eje (h = 1 en `field_mm`, la esquina del
+  encuadre); fuera de él la muestra pesa negro pero traza su rayo (la
+  cobertura de un fondo transparente no cambia): es el viñeteo óptico que lo
+  acompaña. **Anamórfico**: x de la pupila entre la compresión; la imagen,
+  desestirada. **Descentramiento** en el rayo principal y **inclinación** por
+  la regla de la bisagra (normal del plano de enfoque `f·forward + u·sin α·b`,
+  por el punto de enfoque del eje; con el sensor a `f u / (u cos α − f)` se
+  cumple también Scheimpflug), con la pupila en el plano de la lente girado.
+  **Aberración cromática** (decisión 3) y **remolino** como ajustes
+  artísticos. La única dimensión nueva, la banda, es `DIM_LENS_BAND =
+  3 << 20` usada por `PixelSampler::strata`: cada tres muestras seguidas de
+  un píxel son las tres bandas (el desfase, *hash* del píxel) y **comparten un
+  punto de la pupila**, el índice `(i + desfase) / 3` de la secuencia de
+  Sobol de la lente, así que cada banda recorre sus propios puntos en orden y
+  los colores del interior de un disco coinciden (tras la hoja: antes cada
+  banda tenía su punto y el interior salía salpicado de color). Una `LENS` neutra
+  renderiza bit a bit como la lente fina; sin `LENS` no cambia ni un bit:
+  ejemplo `0x223515c3`, E5 `0xbf8abd5b`, cielo de E5 `0x2fcb098a`, E5c
+  `0x8bb09f6b`, cáusticas `0x55d60f2f` y *denoise* `0xab15f290` intactos.
+  Escena de paridad `example::o1_scene` (todos los mandos a la vez y una
+  textura de anillos de 48²; `rt --write-o1-example`, `tests/fixtures/o1.rsb`):
+  `PINNED_O1_LENS_4SPP = 0x1439a1a8 (re-fijado tras E12)` en escalar, SSE2 y AVX2, en WASI
+  (escalar y `simd128`), en el `rt_wasm.wasm` real (también con los pases
+  intercalados; en CI), por el código de la página (`tests/optics.test.ts`)
+  y con 1, 4 y 16 hilos (`rt-cli/tests`). El pase `coc` sigue siendo el de la
+  lente fina redonda y sin inclinar (anotado en `passes.rs` y en
+  ARCHITECTURE §5.2 ter); `render::centre_ray` respeta el descentramiento.
+- **Interfaz.** `CameraState.optics` (opcional, `src/core/optics.ts`;
+  cámaras anteriores sin él, la lente fina de siempre: el RSB de un proyecto
+  de U2 sale byte a byte igual, test). *Cámara ▸ Bokeh*
+  (`src/ui/panels/insp-lens.ts`): rejilla con los 20 tipos, 16 con su
+  miniatura renderizada por el motor y los 4 que no hace el modo 1
+  apagados con lo que esperan (lente trazada, O2; óptica de ondas,
+  próximamente); variantes con su miniatura; mover un mando a mano dice *A
+  medida*; *Disco sencillo*. *Óptica avanzada*: *Láminas* (0 diafragma
+  redondo), *Redondez*, *Giro*, *Perfil* e *Intensidad*, *Obstrucción*, *Ojo
+  de gato*, *Anamórfico*, *Inclinación* y su *Eje*, *Desplazamiento* H y V,
+  y bajo **NO FÍSICO** *Aberración cromática* y *Remolino*. Todo por el
+  *store*, una entrada de deshacer por gesto. Las imágenes de pupila las lee
+  `src/io/aperture.ts` sin *canvas* (descodificador PNG propio, exacto en
+  cualquier navegador) y las promedia 2 × 2 a 256²; `main.ts` las pide al
+  cambiar el estado y reinicia el trazador cuando llegan (mientras, el
+  diafragma de láminas). El visor Rápido no dibuja profundidad de campo,
+  pero sí el **descentramiento** (la matriz de proyección: el encuadre del
+  visor sigue siendo el del render). `tools/optics-check.mjs` lo recorre en
+  el Chromium local (seis comprobaciones) y deja
+  `docs/ui/camera-bokeh.png` y `docs/ui/camera-optics.png`.
+- **Miniaturas** (`tools/bokeh-thumbs.mjs` con `rt`, escena de
+  `tools/bokeh-scene.mjs`: un 85 mm a f/1,6 enfocado a 600 mm y doce luces de
+  100 mm a 6 m en rejilla de 4 × 3, un quinto del disco de desenfoque,
+  fondo negro, curva sRGB, 1024 muestras): 30 PNG en `public/thumbs/bokeh/`
+  (16 tipos y sus variantes, 416 kB) con `index.json` (parámetros, *hash*
+  del RSB y de los píxeles); `--check` las renderiza otra vez y compara. Un
+  test exige que la escena de la herramienta escriba la misma `LENS` que la
+  página para cada tipo, que las miniaturas estén al día con
+  `bokeh.json` (*hash* del RSB), y con el `rt.wasm` real fija el *hash* de
+  la del polígono curvo a 4 muestras (`0xfa8496aa`).
+- **Hoja** `out/bokeh-sheet.html` (`node tools/bokeh-thumbs.mjs --sheet`):
+  los 30 núcleos a 480 × 360 y 256 muestras con luces de un quinto del disco
+  (el aspecto «convolucionado»), con su receta, y debajo, como pidió el
+  veredicto, una fila de **núcleo puro** con luces de 32 mm (un quinceavo
+  del disco, la radiancia escalada por la razón de áreas) a 512 muestras
+  para las texturas (anillos de cebolla, polvo, rayas, malla), los flecos
+  cromáticos y el disco de referencia. Las texturas **no se leen** en esa
+  fila, ni subiendo la amplitud (los anillos de cebolla a 1 en vez de 0,45,
+  probado: sale igual): sus detalles son menores que la fuente y casi del
+  tamaño de un píxel (un periodo de los anillos, unos 4 px en un disco de
+  90 px; la malla, unos 3 px; la fuente de un quinceavo, 6 px), y cada
+  píxel acierta la luz en 1 de cada 225 muestras. Por eso **la amplitud se
+  queda** (`onionAmplitude` 0,45, sin cambios) y la hoja añade una tercera
+  fila de **primeros planos** (`CLOSE_UP` de `tools/bokeh-scene.mjs`): una
+  sola luz que llena el encuadre (un 300 mm a f/5,6, la misma pupila de
+  entrada; un disco de unos 320 px) de un cuarentavo del disco, a 1024
+  muestras: los anillos (unos 14 px por periodo) se adivinan a través del
+  grano; las rayas y la malla, apenas. Limpiarlo pediría del orden de
+  50 000 muestras por píxel. **Veredicto**: la amplitud (0,45) y las
+  recetas se quedan; el polvo, las rayas y la malla solo se leen en
+  primeros planos de bokeh grande, como pasa con los filtros reales. Los **flecos cromáticos**, estratificados (arriba), se
+  volvieron a renderizar a 256 muestras. **Veredicto del líder**: el juego de
+  núcleos se acepta tal cual; se conservan las constantes del remolino
+  (`SWIRL_COMPRESS` 0,35, `SWIRL_STRETCH` 0,25, `SWIRL_TURN` 0,6 rad) y de la
+  aberración cromática; la sobreexposición del óvalo anamórfico es física y
+  se queda (lo dice la ayuda del mando: el bokeh ovalado concentra más luz
+  al mismo diafragma).
+- **Tests** (cada uno comprobado reintroduciendo el error): 18 en
+  `optics::tests` de rt-core: 6 láminas dentro del hexágono y fuera del
+  círculo inscrito en la proporción esperada, `1 − π cos² 30° / (3 sen 60°)`
+  ± 1 % (sin la raíz del radio, falla); láminas curvas dentro de sus arcos
+  (extremos en el circunscrito, falla); los ocho perfiles con su media de
+  `s` ± 0,5 % (signo de la raíz o 2σ² cambiados, fallan); obstrucción
+  (olvidada, falla); Scheimpflug y bisagra con tres puntos, con cuatro
+  inclinaciones y ejes (la normal con cos, la pupila girada al revés —
+  sus puntos fuera del plano de la lente—, fallan); hacia el suelo con inclinación positiva (eje invertido, falla);
+  descentramiento sin cambiar el plano (ignorado, falla) y lente neutra bit
+  a bit (otro orden de operaciones, falla); anamórfico (multiplicar en vez de
+  dividir, falla); ojo de gato con el área de dos discos ± 1 % (el doble de
+  desplazamiento, falla); máscara por CDF con la media del rechazo ± 1 % en
+  centroide y `E[r²]` (espejada, falla); textura dentro del diafragma y
+  máscara que lo sustituye punto a punto; tres bandas por cada tres muestras
+  (sin estratificar, falla), las tres bandas de un grupo con un solo punto de
+  la pupila (sin compartirlo, falla) y bandas que suman blanco en una escena neutra
+  sin obstrucción, exacto a 3 muestras y sin dominante a 256 (peso 2,9,
+  falla); misma película en cada ruta SIMD y en cualquier orden de
+  baldosas; `LENS` de ida y vuelta (sin relleno, falla); valores fuera de
+  rango rechazados (dos láminas aceptadas, falla); *hash* de O1 (otra
+  dimensión de banda, falla). `rt-cli`: 1/4/16 hilos con la lente.
+  `tests/optics.test.ts` (14): óptica neutra sin `LENS` (una neutra que la
+  escribe, falla), tipos que conservan inclinación y desplazamiento (un tipo
+  que la borra, falla), normalización de un fichero, `o1.rsb` de ida y
+  vuelta byte a byte con `rt`, campo del encuadre de salida y no de la
+  imagen del visor (falla), máscara, textura y anillos con su amplitud
+  (amplitud ignorada, falla), descodificador PNG y media 2 × 2 píxel a píxel
+  (Paeth cambiado o sin redondeo, fallan), la herramienta y la página con la
+  misma `LENS` (otro campo en la herramienta, falla), miniaturas al día (un
+  valor de `bokeh.json` cambiado, falla), proyectos de U2 sin óptica y
+  byte a byte iguales, óptica normalizada al abrir (sin normalizar, falla),
+  y con el `rt.wasm` real el *hash* de O1 y el de la miniatura.
+
+**No encajó con el plan.** (1) La **dimensión de máscara** no hizo
+falta: la máscara se muestrea con las dos dimensiones de lente (fila con la
+primera, columna con la segunda, la posición dentro del texel con lo que
+sobra de cada una), que conserva la estratificación mejor que dos números
+*hash*; la única dimensión nueva es la de la banda. (2) **La aberración
+cromática** es, como pide la decisión 3, una banda por muestra con
+desplazamiento radial de su origen en la pupila; para que lo enfocado siga
+nítido el plano de enfoque es el mismo en las tres bandas, así que los
+flecos (borde verde y núcleo magenta) salen igual delante y detrás del foco:
+la inversión de color entre delante y detrás llega con la lente trazada (O2).
+Los coeficientes (`CA_SCALE`, `CA_SHIFT`) y los del remolino
+(`SWIRL_*`) son propuestas para el veredicto. (3) **El ojo de gato
+oscurece** las esquinas (la muestra recortada pesa negro): es el viñeteo
+óptico que lo acompaña en una lente real; si se prefiere sin él, haría falta
+un muestreo de la intersección que no es exacto para polígonos ni máscaras.
+(4) La **amplitud** `onionAmplitude` escala solo la textura de anillos de
+cebolla (`1 − a + a·t`); las demás texturas (polvo, rayas, malla) se aplican
+tal cual: con amplitud 0 no se verían. (5) Las **rayas del anamórfico**
+(`streaks`) son del pase de *flare* y se guardan sin dibujarse; el *split
+diopter* de STUDIO-TOOLS §1 no estaba en la fase. (6) Para que la hoja salga a
+256 muestras sin ruido de sal y pimienta, cada luz mide un quinto del disco de
+desenfoque: el núcleo sale convolucionado con ese disco (esquinas de los
+polígonos algo redondeadas, texturas finas suavizadas). (7) El visor Rápido
+muestra el **descentramiento** (cambia el encuadre, y el visor es el
+render); la inclinación, como la profundidad de campo, solo en Completo.
+(8) **Coste**, medido con la máquina muy cargada por otros agentes: la
+muestra de cámara de la lente con todos los mandos (`example::busy_lens`:
+textura, remolino, aberración cromática, ojo de gato, anamórfico,
+inclinación y desplazamiento) cuesta de 0,4 a 0,6 µs más que la de la lente
+fina (banco de 786 000 muestras de cámara, tres vueltas: 0,48–0,85 µs
+frente a 0,88–1,07 µs), contra unos 26 µs por muestra del ejemplo a
+512 × 384 con 8 hilos: del orden del 2 %. El tiempo de pared del ejemplo
+con y sin lente (tres pares alternos: 34,0–58,1 s sin ella, 41,1–72,8 s
+con ella) no separa esa diferencia del ruido de la carga; la lente cambia
+además el encuadre (desplazamiento e inclinación) y con él los rayos que
+se trazan (35,2 M frente a 33,6 M).
 
 ## O2 · Lente trazada — **Opus** (tras O1)
 
@@ -2126,7 +2669,76 @@ la cámara trazada ≤ 25 % del render del ejemplo con la doble Gauss a
 dan ojo de gato, burbuja, cremoso y remolino, **con veredicto de
 Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
 
-## P5 · Actualizar desde la aplicación — **Sonnet**
+## O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas — **Opus** (tras O1, antes de O2), veredicto **Fable**
+
+Petición del usuario (14-10): en la lente, filtros «de estilo» (difusión
+negra, dorada…), no recetas de color. Son los filtros físicos que se
+roscan delante del objetivo: una lámina que **dispersa** parte de la luz
+que entra, y lo que cambia entre ellos es cuánta, con qué forma angular
+y con qué color. Se hacen en el motor, en el espacio de rayos, para que
+interactúen bien con el bokeh, el desenfoque y las luces fuera de
+cuadro, y con un equivalente de imagen para la vista previa.
+
+**Decisiones.**
+1. **Modelo físico, en la pupila.** Un rayo de cámara, con probabilidad
+   `s` (el grado del filtro), se desvía un ángulo sacado de la
+   **PSF angular** del filtro; si no, sigue recto. Energía: `(1 − s)·I +
+   s·a·T·(I ⊗ K)`: `a` es lo que absorben las partículas (1 en los
+   blancos y dorados; < 1 en los negros: el halo sale pero las sombras
+   suben menos, por eso un filtro negro «conserva el contraste»), `T` el
+   tinte del haz disperso (neutro; dorado: cálido, normalizado en
+   luminancia), `K` la PSF. Ocurre en la muestra de pupila de O1, así que
+   el bokeh y el enfoque se llevan gratis y una luz fuera del encuadre
+   sigue velando.
+2. **Tipos** (`src/data/lens-filters.ts`, claves estables, nombres es/en
+   genéricos, **ninguna marca**): `DIFFUSION_WHITE` Difusión blanca
+   (gaussiana estrecha + cola ancha lorentziana: halo y contraste bajo),
+   `DIFFUSION_BLACK` Difusión negra (misma forma, `a` < 1),
+   `DIFFUSION_GOLD` Difusión dorada (difusión con `T` cálido), `GLIMMER`
+   Brillo (cola fina y dispersa: destellos pequeños alrededor de las
+   luces, por un segundo lóbulo estrecho cuya dirección se traba a un
+   *hash* de la posición de pupila), `SOFT` Suavizado (solo la gaussiana
+   estrecha, `s` alto: pierde nitidez sin halo), `NET` Red (dispersión
+   concentrada en dos ejes a 90°, con tinte suave), `STAR` Estrella
+   (`points` 4/6/8 rayas rectas desde las luces, ángulo `angle`, caída
+   1/r), `STREAK` Rayas (una sola línea horizontal, tinte azul por
+   defecto, como una lente anamórfica). **Grados** 1/8, 1/4, 1/2, 1, 2
+   (lista, como los filtros reales) → `s` propuesto 0,03 / 0,06 / 0,12 /
+   0,22 / 0,38 y anchos propuestos σ₁ = 0,25°, σ₂ = 2,5° de campo; los
+   definitivos los fijo yo con la hoja (regla 11).
+3. **Pila** de hasta tres filtros por cámara (en la práctica se apilan
+   dos: una difusión y una estrella), cada uno con tipo, grado y, según
+   el tipo, tinte (dorada, red, rayas), puntas y ángulo (estrella).
+4. **RSB.** `LENS` crece con tres filtros al final (`kind u32, grade f32,
+   tint[3] f32, angle f32, points u32`, 28 B cada uno; ceros = ninguno,
+   *hashes* intactos sin filtros). La PSF se muestrea por CDF inversa
+   tabulada en `f32` (sin `exp`/`log` en el bucle; determinismo).
+5. **Vista previa.** Equivalente de imagen: `(1 − s)·I + s·a·T·(I ⊗ K)`
+   con `K` proyectada a píxeles por la focal, como pase WebGL del visor
+   Rápido (separable en dos gaussianas + cola por submuestreo) y la misma
+   convolución en TS para la ventana de render; el medidor dice
+   «aproximación: el render lo hace el motor» (regla 10).
+6. **Interfaz.** Cámara ▸ Lente ▸ **Filtros**: la pila (añadir/quitar,
+   hasta tres), por filtro: tipo (lista con ayuda de una frase: qué hace
+   fotográficamente), grado, y los mandos del tipo. Guardado con la
+   cámara (cada cámara, los suyos). Cadenas es/en.
+
+**Depende de.** O1 (la pupila, `LENS`).
+
+**Criterio.** Tests: campo blanco con difusión blanca grado 1 conserva la
+media ± 0,5 %; difusión negra grado 1 queda entre 0,90 y 0,97; estrella 6
+da seis rayas (histograma angular de la energía de un foco puntual con
+picos en seis ángulos ± 2°); dorada desplaza la media del haz disperso
+hacia el rojo; pila de tres con grados ceros = sin filtro bit a bit;
+vista previa contra motor en la escena del horno: diferencia media
+< 2 %; lista de *hashes* sin cambios con `LENS` sin filtros; paridad
+wasm. Hoja `out/lens-filters-sheet.html`: la botella con un foco pequeño
+a contraluz dentro del encuadre y otro fuera, 512 px / 128 spp, cada
+tipo a grados 1/4, 1 y 2, y dos pilas (difusión negra 1/2 + estrella 6;
+dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
+`UI.md`, `SPEC.md` §3.5, `ARCHITECTURE.md` (`LENS`), CHANGELOG.
+
+## P5 · Actualizar desde la aplicación — **Sonnet** — hecha
 
 **Qué.** Petición del usuario: hoy *Ajustes ▸ Actualizaciones ▸
 Descargar* abre el instalador en el navegador; debe **instalar la
@@ -2197,6 +2809,64 @@ aplicación se reinicia con la versión nueva, en una copia en
 (Wine no ejecuta NSIS: anotarlo). Captura `docs/ui/update-install.png`.
 La primera actualización real desde la aplicación será de la versión
 que lleve esto a la siguiente: apuntarlo en las notas de la release.
+
+**Hecho.** `engine/crates/rt-app/src/update/` (`feed.rs`: la lista blanca —solo
+`github.com/<owner>/<repo>/releases/download/<versión>/<archivo>` del repositorio de
+`src/data/update-feed.ts`, que el *crate* lee al compilarse—, los nombres de los paquetes y las
+sumas; `portable.rs`: extraer, sustituir en el sitio con deshacer, limpiar al arrancar; `mod.rs`: el
+estado, el hilo y las rutas `GET /api/update`, `POST /api/update/install` y `…/cancel`);
+`ai/download.rs` admite un tamaño solo acotado; `process::spawn_detached`; `--after-update`;
+`/api/info` dice `updateApi` y `afterUpdate`. Instalada en Windows: descarga el `-setup.exe` y las
+sumas, comprueba el SHA-256 propio y, parado el lanzador, ejecuta `setup.exe /S /LAUNCH`; portable
+(Windows `.zip` con el lector propio, Linux `.tar.gz` con el `tar` del sistema, tras mirar su lista):
+extrae todo a `update-<tag>/`, renombra lo viejo a `.old`, pone lo nuevo sin tocar `data/` ni
+`portable.txt`, deshace lo hecho si un paso falla (probado inyectando el fallo en cada uno de los
+ocho) y arranca el ejecutable nuevo con los argumentos de antes y `--after-update`; el nuevo borra
+los `.old`, las carpetas `update-*` y la descarga. `installer.nsi`: la espera de hasta 30 s
+(`FileOpen` en modo `a` y `Sleep 500`, 60 vueltas), `/LAUNCH` en `.onInstSuccess`, y en silencio
+ni página de modelos ni acceso directo del escritorio que se borró. Interfaz (`ui/updates.ts`,
+`io/update-install.ts`): *Instalar y reiniciar* en la fila y en el aviso (en la web, *Descargar* y
+una línea que dice qué hace), progreso (*Descargando… 45 % · 3,2 de 7,1 MB* con barra,
+*Comprobando…*, *Instalando…*), *Cancelar la actualización*, fallos con su motivo y *Reintentar*,
+seguimiento del lanzador cada 400 ms (cerrar *Ajustes* no la para; una página recargada la
+recoge), y la pregunta por los cambios sin guardar con **Guardar como…** para todos los usos
+(`afterUnsavedCheck`: cerrar, nuevo, abrir, actualizar; *Guardar* y *Guardar como…* siguen solo si
+se escribió; `Esc` cancela), que en la actualización sale en el sitio del botón. Pruebas: 15 de
+sockets en `tests/update.rs` con el `curl` y el `tar` reales contra un servidor local (de punta a
+punta el portable de Linux y el de Windows, la suma que no cuadra, la lista blanca, cancelar,
+reanudar), 16 unitarias del módulo, 4 de contrato del `.nsi` en `tests/installer.rs`, 35 de
+TypeScript en `tests/update-install.test.ts` (más los de siempre, ajustados a tres botones).
+`tools/update-install-check.mjs` contra el lanzador real: el portable de Linux de punta a punta en
+`out/update-check/linux/` (la versión nueva arranca en el mismo puerto con `--after-update`, el
+marcador está en su `app/`, los `.old` ya no están, `data/` y `portable.txt` como estaban) y el
+instalado de Windows bajo Wine hasta el instalador arrancado con `/S /LAUNCH`. Captura
+`docs/ui/update-install.png`. Se repararon de paso `tools/updates-check.mjs` (roto desde U10 y
+P3b: un segundo `.update-notice`, enlaces por un ancla en vez de `window.open`, `open-url` del
+lanzador, la versión fijada a 0.1.0) y el `Esc` de *Ajustes* con una pregunta abierta, que
+cancelaba la ventana entera en lugar de la pregunta.
+
+No encajó con el plan: (1) *INSTALLING* cubre el desempaquetado y el cambio de archivos, y la
+página no puede cerrar la ventana hasta que están en su sitio, así que `GET /api/update` lleva un
+campo más, `ready` (contrato ampliado, no cambiado). (2) El lanzador **no sale él al acabar**: sale
+cuando se cierra la ventana (la página la cierra al ver `ready`; `--serve-only` sin ventana sale
+solo) y **solo entonces** arranca el instalador o el ejecutable nuevo; si arrancase antes, el nuevo
+se encontraría con el puerto, `instance.json` y el perfil de la ventana del viejo (y una ventana de
+navegador huérfana). (3) `POST /api/update/install` admite un `size` opcional: `curl` no da el total
+antes del cuerpo y la barra no inventa números; sin él, solo los MB recibidos. (4) La espera de 30 s
+del instalador solo va **en silencio**; a mano, pregunta enseguida como antes, para no hacer esperar
+medio minuto a quien lo ejecuta con la aplicación abierta. (5) Un instalador en silencio tampoco
+reescribe `pending-models.json` ni recrea un acceso directo del escritorio que la persona borró: no
+estaba en el texto y lo habría hecho en cada actualización. (6) El tercer botón dice *Salir sin
+guardar* solo en la actualización; al cerrar, nuevo y abrir sigue siendo *No guardar*. (7) Si el
+proyecto cambia mientras se descarga, al cerrar para reiniciar se pregunta otra vez; si no ha cambiado
+desde que se contestó, no. (8) NSIS no corre bajo Wine: el `.nsi` se compila con `makensis -WX` y su
+contrato se lee como texto; el instalador real, el cierre de la ventana propia (WebView2) con
+`close-ok`, el cambio de un ejecutable en uso en Windows y SmartScreen quedan por probar en un
+Windows real. (9) El zip propio exige nombres de `[A-Za-z0-9._+-]` y 8 niveles: el `dist/` de hoy
+cumple, un archivo de `app/` con un espacio en el nombre haría fallar la extracción (con `extract`,
+sin cambiar nada). (10) Con la máquina a carga 20–30 (otros agentes), dos pruebas ajenas a esta fase pasan del tiempo:
+la de *denoise* del *pool* en `pathtracer` (pasa sola al repetir) y el `afterAll` de
+`ai-passes-browser` (cierra el navegador en 10 s; sus siete pruebas pasan, el cierre no).
 
 ## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
 
@@ -5162,7 +5832,8 @@ fotogramas `docs/ui/physics-drop-strip.png`. `SPEC.md` §3.1 y §3.7,
   `physics.ts`, `ui/physics.ts` (la simulación en marcha), la barra de
   físicas, la sección *Físicas*, *Dejar caer* en el menú contextual, en el
   inspector y en la paleta, el clip `PHYSICS` en la línea de tiempo y el
-  chequeo `physics` del Doctor (15 chequeos; 16 tipos de animación).
+  chequeo `physics` del Doctor (16 chequeos con el `aspect` de U13; 16 tipos
+  de animación).
   `tests/physics.test.ts` (24 tests, cada uno comprobado reintroduciendo su
   error) y `tools/physics-check.mjs`, con las tres capturas.
 
@@ -5230,12 +5901,42 @@ fotogramas `docs/ui/physics-drop-strip.png`. `SPEC.md` §3.1 y §3.7,
   `MATERIAL_CATEGORIES` (metal, plástico, madera, tela, vidrio, emisivo,
   otro), que es la clave estable que tiene cada material; los valores son
   típicos, para que **Fable** los revise.
-- `readEnvelope` (`io/project.ts`) vuelve a pasar el Doctor al abrir, como
-  ya hacía `loadProject`: con un chequeo nuevo, un proyecto abierto por
-  `migrateProject` traía los resultados de antes.
+- `migrateProject` (`io/project.ts`) vuelve a pasar el Doctor al abrir,
+  como ya hacía `loadProject`: con un chequeo nuevo, un proyecto abierto
+  por él traía los resultados de antes. La rama de la sesión hizo lo mismo
+  (U13); al unir queda una sola vez, la suya, con el test de S2 que falla
+  sin ella.
 - CI no se toca (`.github/` queda fuera de la fase): la paridad nativo =
   wasm la comprueban los tests de `rt-phys` en `wasm32-wasip1` y
   `tests/physics-engine.test.ts` cuando hay `rt.wasm`.
+- **Al unir la rama de la sesión** (N6, E12, U13, P6/P6b, O1, U12, L6,
+  M2a, P5): el clip `PHYSICS` vive en la línea de tiempo de tres zonas de
+  N6 (sus propiedades: inicio, duración, fin, repetir, invertir y la nota;
+  sin cantidad ni curva), pasa por el mismo tiempo que cualquier clip
+  (`clipPhase`: repetido, invertido) y `playheadPose` respeta
+  `poseActive` de N6 (un clip invertido sostiene su final antes de
+  empezar). El Doctor: los 14 de origen, `aspect` (U13) y `physics` (S2).
+
+**Veredicto del responsable.**
+
+1. **El cabezal en 0**: confirmado tal como está construido. En 0, los
+   nodos que sostiene una simulación grabada enseñan el fotograma de su
+   clip (en el visor y en la foto fija) y el *gizmo* no sale sobre ellos.
+   Razón: el fotograma 0 de una animación renderizada tiene que ser el
+   principio de la caída, y la foto fija sigue al cabezal, que una
+   simulación deja al final, así que *Dejar caer* y renderizar da la pose
+   en reposo; cumplir N1 a rajatabla metería un salto entre los fotogramas
+   0 y 1 de toda animación. Se quedan `playheadPose` y la regla del
+   *gizmo*.
+2. **Densidades por familia de material**: aceptadas como valores
+   típicos; se revisan con las fases de materiales (M4), no ahora.
+3. **La decisión 2 a medias** (los clips crecen por el *store*, dentro de
+   la única entrada de deshacer de la simulación): aceptado. Es justo lo
+   que pide «toda simulación se graba sola», y una entrada de deshacer es
+   lo correcto.
+4. El resto de lo anotado (del menú *Pieza* a la paridad sin tocar CI):
+   aceptado tal cual. El Doctor que se vuelve a pasar en `migrateProject`
+   se queda, con su test.
 
 ### S9 · Telas con físicas reales — **Opus** (tras S2)
 
@@ -5377,7 +6078,7 @@ con la trama (test numérico); energía ≤ 1 (horno blanco). M5b: 100 k
 fibras ≤ 1,5× el tiempo por muestra; determinismo; hoja con cuatro
 densidades.
 
-## U12 · Salida en TIFF y RAW (DNG) — **Sonnet**
+## U12 · Salida en TIFF y RAW (DNG) — **Sonnet** — hecha
 
 Petición del usuario: que las imágenes puedan salir en TIFF y en RAW.
 **Decisión Fable.** RAW = **DNG lineal en coma flotante** (DNG 1.4, TIFF
@@ -5409,6 +6110,768 @@ inversa de sRGB→XYZ (producto = identidad ± 1e-6); el visor de
 resultados muestra la vista previa de un TIFF de 32 bits; capturas
 `docs/ui/render-format-tiff.png`. `UI.md`, `ARCHITECTURE.md` §5,
 CHANGELOG.
+
+**Hecho.** `rt_core::tiff` y `rt_core::dng` (solo `std`, de TIFF 6.0 y
+DNG 1.4; el constructor de directorios es común: un DNG es un TIFF con
+más etiquetas) y, en `src/io/image.ts`, `encodeTiff` y `encodeDng`, que
+escriben **los mismos bytes**: `tests/fixtures/tiff/` guarda ocho archivos
+(RGB y RGBA a 8, 16 y 32 bits, uno de dos *strips* y el DNG) que
+`rt-cli/tests/tiff_golden.rs` y `tests/tiff-dng.test.ts` comparan con cada
+codificador, y cada lado se relee con un lector mínimo propio de su test
+(etiquetas ordenadas, desplazamientos pares, valores empaquetados,
+*strips* sin huecos, cada muestra); los archivos también los abren
+ImageMagick/libtiff y PIL, lectores ajenos usados solo para comprobar.
+`ColorMatrix1` es la inversa de sRGB → XYZ de los primarios y el blanco
+D65, calculada en aritmética exacta y guardada con denominador 10⁷
+(producto con sRGB → XYZ = identidad con error < 3·10⁻⁷, el test pide
+1·10⁻⁶). La interfaz: `OutputFormat` con `TIFF` y `DNG`, `BitDepth` con 32
+(solo TIFF), `bitDepthsOf`, `needsDisplayCopy` y `needsLinearSums` en
+`core/render.ts`; el normalizador quita el alfa al DNG y los 32 bits a todo
+lo que no sea TIFF; la ventana ofrece *TIFF* (8, 16, 32 bits flotante,
+alfa) y *RAW (DNG)* (sin alfa, «32 bits flotante» fijo) con una línea de
+ayuda cada uno; el render guarda junto al archivo una copia PNG de 8 bits
+para el visor y las miniaturas (como el EXR) y el historial de escritorio
+la pide también para TIFF y DNG; el lanzador guarda `image/tiff` e
+`image/x-adobe-dng` y escribe `.tif`, `.tiff` y `.dng`; `rt` escribe
+`--format tiff|dng` y `--bits 8|16|32` (o por la extensión de `-o`). La IA
+(`encodeLinear`) escribe también los dos formatos. Pruebas: 39 de
+TypeScript (`tests/tiff-dng.test.ts`, y una más en `ai-results` y en
+`render-queue`) y 22 de Rust (`rt-core`, `rt-cli`, `rt-app`), cada una
+comprobada reintroduciendo el fallo que vigila; y en el navegador,
+`tools/render-format-check.mjs` y `docs/ui/render-format-tiff.png`.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
+**Fable**, que decide si se cambia):
+- ◆ `WhiteLevel`: el encargo decía «el máximo del flotante». Un `WhiteLevel`
+  igual al mayor `f32` haría que un revelador, al normalizar por él, dejara
+  la imagen negra; se escribe **1** (`LONG`, el blanco del render; el negro
+  queda en 0 y los datos no se recortan a él, así que la latitud sigue
+  entera). Si Fable quería otra cosa, es una constante en cada codificador.
+- Los DPI: el encargo fijaba 72; `encodeTiff` escribe los de la ventana (72
+  si no se le dan, y 72 fijos en `rt`, que no tiene `--dpi`).
+- La copia PNG para el visor se hace también para el TIFF de 8 y 16 bits
+  (Chromium no decodifica TIFF de ninguna profundidad), no solo para el de
+  32.
+- En el DNG, `bitDepth` queda en 8 como en el EXR y el JPEG («la profundidad
+  que no se elige»); lo que se ve es una etiqueta fija «32 bits flotante».
+- «Un test de DOM como los del visor»: no hay ninguno (vitest corre sin DOM
+  y el visor solo se ha probado en el navegador). Hay `previewOf` (lo que
+  decodifica el visor, con test), el historial de memoria y el de escritorio
+  con TIFF y DNG, y `tools/render-format-check.mjs`, que renderiza en
+  Chromium un TIFF de 32 bits y un DNG y comprueba que los píxeles del
+  canvas del visor son los del PNG del mismo render.
+- La imagen de la IA de un trabajo TIFF o DNG se guarda en su formato pero
+  el visor no la compara con el render (no la puede decodificar), igual que
+  con EXR (`UI.md`, X3c); la copia para la vista de la imagen de la IA
+  sigue pendiente.
+- `rt` escribe color solo (sin alfa), como con PNG.
+
+## U13 · Proporción de la imagen en la cámara — **Sonnet** — hecha
+
+Petición del usuario (14-10): editar la **proporción** (16:9, 4:3… o una
+propia) **en la propia cámara**, además de en la ventana de render.
+
+**Decisión Fable.** La proporción es **de la cámara**: cada cámara lleva
+la suya (`CameraState.aspect: { preset, w, h }`; presets con claves
+estables en `src/data/aspects.ts`: `3:2`, `4:3`, `16:9`, `1:1`, `5:4`,
+`4:5`, `9:16`, `21:9`, `2:1`, `65:24` panorámica y `CUSTOM` con `w:h`
+libres), el **marco del visor** sigue a la cámara activa, y la ventana
+de render **lee y escribe la misma** proporción (una sola fuente): el
+tamaño en píxeles conserva el ancho y deriva el alto de la proporción de
+la cámara activa; teclear los dos lados con el candado abierto deja una
+proporción propia **en la cámara**; elegir un preset de tamaño con otra
+proporción cambia la de la cámara (y lo dice en una línea). *Nueva desde
+la vista* copia la proporción de la activa; el *chip* de cámara del visor
+muestra la proporción junto al tamaño (`16:9 · 1920 × 1080`). Animación:
+el tamaño de salida sigue siendo el de la ventana de render (un vídeo
+tiene un solo tamaño); el Doctor avisa si un plano usa una cámara con
+otra proporción. Proyectos antiguos: cámaras sin `aspect` toman la del
+tamaño de render guardado.
+
+**Qué.** Sección de cámara del inspector: fila **Proporción** (lista +
+campos `w : h` con *Propia*), con la misma fila en el inspector de la
+cámara activa de la pestaña *Cámaras*; `camera/set` deshacible; el
+marco del visor (`src/render/preview.ts` / `viewport-overlays.ts`) y el
+*chip*; la ventana de render (`core/render.ts` `aspect`/`aspectLock`
+pasan a derivarse de la cámara: `aspect` deja de ser estado propio
+salvo para la animación); guardar/abrir; cadenas es/en; `UI.md`,
+`SPEC.md` §3.5, CHANGELOG.
+
+**Depende de.** U5, la sección de cámara (lista con lápiz).
+
+**Criterio.** Tests (mutación comprobada): cambiar la proporción en la
+cámara cambia el alto del render y el marco del visor; teclear ambos
+lados en la ventana de render deja `CUSTOM` en la cámara con esa `w:h`;
+un preset de tamaño con otra proporción cambia la de la cámara; cada
+cámara conserva la suya al cambiar de activa; proyecto antiguo sin
+`aspect` → la del tamaño guardado; animación: tamaño propio y aviso del
+Doctor cuando un plano discrepa. Comprobación de navegador
+`tools/aspect-check.mjs` con capturas `docs/ui/camera-aspect.png` (la
+sección con 4:3 y el marco del visor cambiado) y
+`docs/ui/render-size-from-camera.png`.
+
+
+**Hecho.** `src/data/aspects.ts` (los diez presets con clave estable y
+`CUSTOM`, con su etiqueta es/en) y `src/core/aspect.ts` (`CameraAspect`,
+`normaliseAspect`, `aspectNearPixels`, `aspectText`); `CameraState.aspect`
+con `aspectRatio(cam)` en `core/camera.ts`, 16:9 por omisión (1920 × 1080
+como antes), `camera/set` la lee y la deshace, y `camera/add` (*Nueva desde
+la vista*, duplicar) la copia. **Una sola fuente**: la cámara. El tamaño de
+una imagen se deriva de ella en `syncOutputSize`, que corre en cada acción
+del *store* (cambiar la proporción, cambiar de cámara activa, borrar la
+activa, deshacer, abrir un proyecto, volver de *Animación*): conserva el
+ancho y calcula el alto; `render/set` en modo imagen es `setSettings`, que
+con el candado cerrado deja que un lado siga a la proporción y, con él
+abierto o con los dos lados a la vez (un preset de tamaño), **escribe la
+proporción en la cámara en la misma acción** (una entrada de deshacer):
+el preset de la lista si el tamaño es exactamente uno (`aspectForSize`),
+si no `CUSTOM` con esos píxeles como `w : h`, y un tamaño casi de un preset
+se respeta tal cual (nada de 1081 que se vuelve 1080 a escondidas). Los
+trabajos de la cola para otra cámara con otra proporción salen con el ancho
+de la ventana y el alto de esa cámara (`sizedFor`). Visor: el marco (la
+máscara, el fondo de imagen y el degradado, el *rsb* de Completo) y el
+`placeCamera` de Rápido usan la proporción de la cámara que se ve (activa, o
+la que se mira a través: `viewedCamera`), cada pirámide del visor la suya, y
+el *chip* dice `16:9 · 1920 × 1080`. Inspector: la fila **Proporción**
+(`insp-aspect.ts`: lista y campos `w : h`, apagados con un preset) vive en
+`cameraFields`, de modo que sale en la sección de cámara y en la ficha de
+cada cámara con una sola línea añadida; la ventana de render dice en una
+línea discreta quién manda y qué ha pasado (*La proporción de Cámara 1 pasa
+a 4:3*); la lista de cámaras pone la proporción tras la óptica. Proyectos:
+una cámara sin `aspect` toma la del tamaño guardado (preset a ≤ 0,5 %, si
+no *Propia* con esos píxeles) y el tamaño guardado **no se toca**. El Doctor
+gana la comprobación `aspect` (**Proporción de la animación**, la 15.ª,
+añadida tras las 14 de origen, con arreglo). Pruebas: `tests/aspect.test.ts`
+(33) más las que ya existían y se ajustaron, cada una comprobada
+reintroduciendo el fallo que vigila; y en el navegador
+`tools/aspect-check.mjs`, con `docs/ui/camera-aspect.png` y
+`docs/ui/render-size-from-camera.png`.
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es de criterio y se
+deja anotado para quien decide, la regla 11):
+- ◆ **El tamaño de la animación es el mismo par `width`/`height` que el de la
+  imagen**: «tamaño propio» se ha leído como «no sigue a la cámara mientras la
+  ventana está en *Animación*», y al volver a *Imagen* el ancho se conserva y el
+  alto sale de la cámara (se pierde el alto que se hubiera tecleado para el
+  vídeo). Guardar un tamaño de animación aparte (`animation.width/height`) es
+  un campo más si se quiere.
+- ◆ **En *Animación* el marco del visor sigue siendo el de la cámara activa**,
+  no el del tamaño del vídeo (la decisión dice que sigue a la cámara activa);
+  si el vídeo tiene otra proporción, el marco no lo enseña y quien avisa es el
+  Doctor.
+- ◆ **El arreglo del Doctor** pone a las cámaras de los planos la proporción
+  de la salida, no al revés (la salida cambiaría el tamaño de todo el vídeo).
+- ◆ **Los términos de una proporción propia son los píxeles tecleados** (1000
+  × 700 es *Propia* 1000 : 700, no 10 : 7) y, en el visor y la lista, se
+  escriben `1.43:1` cuando no son números pequeños; la razón de una cámara se
+  limita a 1 : 512 – 512 : 1 (la de 16 × 8192 y 8192 × 16, lo más extremo que
+  admite la ventana), que es un tope mío.
+- ◆ **Cambiar la proporción no recoloca la cámara**: el producto puede quedar
+  fuera del marco de un 9:16 hasta pulsar *Encuadrar*.
+- Restaurar un **estudio** guardado trae la óptica y la vista pero **no** la
+  proporción de la cámara en la que cae (la proporción es del proyecto, no del
+  estudio); los estudios de la biblioteca y los guardados antes se abren con
+  16:9 si no la traían.
+- Editar un **trabajo de la cola** (*Guardar cambios*) deja su tamaño tal cual
+  y no escribe en ninguna cámara: el borrador es del trabajo.
+- `migrateProject` (`parseProject`, el estado sin geometría) vuelve ahora a
+  calcular los resultados del Doctor como ya hacía `loadProject`: con el
+  catálogo ampliado, los del archivo habrían dejado a los dos distintos.
+- Los tests de `tests/primitive-ops.test.ts`, `tests/rsb.test.ts` y
+  `tests/render.test.ts` daban un tamaño de render sin la proporción de la
+  cámara (un *mock* más permisivo que el programa: allí tamaño y cámara son una
+  sola cosa): ahora usan `render/set`, y el proyecto de U1 va sin `aspect` en
+  las cámaras, como era de verdad.
+- En los extremos (3 : 700 a 1000 de ancho) el alto se queda en el límite de la
+  ventana y el par deja de tener la proporción, **sin perder el ancho**: la
+  proporción que venga después devuelve el alto (teclear los términos de una
+  proporción propia de uno en uno pasa por extremos).
+
+## N6 · Despiece configurable y línea de tiempo clara — **Opus**, decisión **Fable** — hecha
+
+Petición del usuario (14-10): en animación faltaban las **explosiones
+(despieces)** de un modelo, configurables en velocidad y suavidad, con
+piezas **excepción** que no se mueven, y de varios tipos (vertical,
+horizontal, radial, esférica…; «investiga tipos»); y **mejorar la
+interfaz de animación**: más cómoda, intuitiva, parecida a sistemas
+existentes, y que quede claro **qué** se anima y **cómo**.
+
+**Tipos de despiece (investigación).** Las herramientas CAD con vista
+explosionada coinciden en tres geometrías básicas y dos modos de orden
+(documentación pública de Onshape —*Linear / Radial / Spherical*—,
+Fusion 360 —*auto explode: one level / all levels*—, SolidWorks
+Composer e Inventor —niveles y direcciones—; observación de caja negra,
+ningún código):
+1. **Lineal** (`LINEAR`): a lo largo de un eje (vertical = Z;
+   horizontal = X o Y; o dirección propia). Dos sabores: *separar* (cada
+   pieza se aleja del plano central por su lado) y *apilar* (todas en el
+   mismo sentido, repartidas en su orden a lo largo del eje: el despiece
+   clásico de un envase con tapón, rosca y cuerpo).
+2. **Radial** (`RADIAL`, cilíndrico): alejándose de un **eje** (las piezas
+   se mueven perpendiculares a él). Lo que hoy se llama RADIAL pasa a
+   ser esférico; la clave `RADIAL` se conserva con su significado nuevo
+   solo si ningún proyecto guardado la usa (comprobar); si no, clave
+   nueva `CYLINDRICAL` y `RADIAL` queda como sinónimo de la esférica.
+3. **Esférica** (`SPHERICAL`): alejándose de un **punto** (el centro).
+4. **Por jerarquía** (`LEVELS`): primero los grupos como bloques y luego
+   las piezas dentro de cada grupo (*un nivel* / *todos los niveles*),
+   combinable con cualquiera de las tres geometrías.
+Parámetros: distancia (× tamaño del modelo o mm; *proporcional al
+tamaño de la pieza* sí/no), **centro** (centro del modelo, pieza elegida,
+pivote, punto propio), eje o dirección, **orden** (a la vez / escalonado
+por distancia al centro / por profundidad de jerarquía, con solape %),
+**velocidad** (duración) y **suavidad** (curva: lineal → suave → muy
+suave, un solo mando que elige y pesa la curva de `EASING_KINDS`),
+**excepciones** (piezas fijas: lista que se llena desde la selección o
+con *Fijar en el despiece* del menú contextual), conservar la
+orientación, invertir (montaje), y el objetivo puede ser el modelo o un
+grupo. Las claves `AXIS_X/Y/Z` existentes siguen valiendo (= lineal
+separar en ese eje).
+
+**La interfaz de animación** (decisión): el cajón pasa a ser una línea
+de tiempo de tres zonas, como el espacio de animación de KeyShot y las
+tiras de Blender/After Effects, sin copiar nada:
+- **Izquierda, el árbol de lo animado** (*qué*): una fila por objetivo
+  (pista de cámara, modelo, grupos, piezas, focos, entorno, set,
+  físicas) con sus animaciones anidadas (icono + frase llana: «orbita
+  90° · 4 s · suave»); seleccionar una fila selecciona la animación y
+  **resalta su objetivo en el visor**; seleccionar una pieza en la
+  escena resalta sus filas; botón **+ Animar…** contextual («Animar
+  Tapón…») que abre el asistente con el objetivo puesto; menú contextual:
+  duplicar, borrar, invertir, partir en el cabezal, fijar en el despiece.
+- **Centro, la línea de tiempo** (*cuándo*): regla en segundos y
+  fotogramas, cabezal arrastrable, barras con su frase, arrastrar para
+  mover y estirar por los extremos, **imán** a bordes de otras barras,
+  al cabezal y a los segundos, selección múltiple, pistas agrupadas por
+  objetivo y plegables, la pista de cámara con sus tramos.
+- **Derecha, las propiedades** de la animación elegida (*cómo*):
+  cabecera «Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s», los mandos
+  del tipo, la curva con vista previa, inicio/duración/fin, repetir,
+  invertir.
+- **Visor**: con una animación elegida se dibuja su pista (arco de la
+  órbita, flecha del desplazamiento, vectores del despiece, giro) y el
+  objetivo resaltado; el cabezal mueve la previa.
+- Teclado: espacio reproduce/pausa, Inicio/Fin, ←/→ un fotograma,
+  Mayús+←/→ diez, Supr borra, Ctrl+D duplica. Los presets siguen en su
+  lista. Cualquier tipo de clip se dibuja igual (también el `PHYSICS`
+  que S2 añade: «simulación física · 0–4 s»): el árbol y las barras no
+  conocen los tipos, leen la frase y el objetivo.
+
+**Depende de.** N1, U3. S2 añade `PHYSICS` en paralelo: mantener
+`MotionClip` y `evaluate` como API y dibujar genérico.
+
+**Criterio.** Tests (mutación comprobada): cada geometría mueve las
+piezas por donde dice (lineal separar/apilar, radial perpendicular al
+eje, esférica desde el punto, niveles por etapas); las excepciones no
+se mueven; el orden escalonado respeta el solape; suavidad lineal vs muy
+suave cambian la curva; invertir monta; proyectos antiguos con
+`EXPLODE` y `AXIS_*`/`RADIAL` se leen igual que antes (instantánea);
+árbol ↔ selección ↔ visor sincronizados; arrastrar y estirar barras con
+imán (tests de la aritmética del imán). Comprobación de navegador
+`tools/animation-check.mjs` con capturas `docs/ui/animation-timeline.png`
+(árbol + barras + propiedades con un despiece elegido y su pista en el
+visor) y `docs/ui/explode-types.png` (tira de 4 fotogramas por tipo con
+el envase de ejemplo). Hoja `out/explode-sheet.html` para el veredicto
+visual. `SPEC.md` §3.7, `UI.md` §2.5, CHANGELOG; cadenas es/en; cromo
+acromático; todo por el *store* y deshacible.
+
+**Hecho.** El despiece vive en `src/core/explode.ts` y se evalúa dentro
+de `evaluate` (puro y determinista; `MotionClip` y `evaluate` siguen
+siendo la API): `explodeMovers` calcula lo que se mueve como una unidad
+(una pieza, o un bloque en los niveles), su desplazamiento final y su
+ventana de tiempo dentro de la barra, y `evaluate` aplica en cada ventana
+la curva del clip. Geometrías `LINEAR` (*separar* y *apilar* en Z, X, Y o
+una dirección propia), `CYLINDRICAL` (la radial) y `SPHERICAL`; jerarquía
+`NONE` / `ONE` / `ALL` (por etapas encadenadas con el solape, y dentro de
+un grupo las piezas se alejan del centro del grupo en proporción a su
+tamaño); distancia en × tamaño o mm, reparto igual o por distancia,
+proporcional al tamaño, centro (conjunto, pieza, pivote, punto), orden (a
+la vez, por distancia con la más lejana primero, por profundidad) con
+solape, excepciones (`pinned`, que guarda piezas; fijar un grupo fija las
+suyas), conservar la orientación (apagado, cada pieza se inclina hasta
+20° sobre su propio centro), objetivo modelo o grupo. Genéricos de
+`MotionClip`, opcionales: `reverse` (antes de empezar guarda su estado
+final; `poseActive` hace que el visor y el motor enseñen ese estado desde
+el fotograma 0), `repeat` (la barra dura `duration × repeat`, `clipEnd`),
+`smoothness` (un mando sobre *lineal → suave → muy suave*, mezclándolas, que
+escribe en `easing` la más cercana) y `explode`. Acciones nuevas del
+*store*, todas deshacibles: `removeClips`, `duplicateClips`,
+`setClipTimes` (valores absolutos: un arrastre con su gesto es una entrada),
+`splitClip` (las dos mitades siguen una de otra en los tipos que suman o
+multiplican), `reverseClips`, `setExplode`, `pinExplode`. Las claves
+`LINEAR` y `SPHERICAL` se **añaden** a `EXPLODE_MODES`.
+
+**Decisión sobre `RADIAL`.** Ningún proyecto ni preset guardado usa
+`RADIAL`: `MotionClip` no tenía ningún campo de modo (el catálogo
+`EXPLODE_MODES` existía, pero nada lo escribía, y el evaluador hacía
+siempre «hacia fuera desde el centro»). Aun así `RADIAL` es una clave de
+catálogo con un sentido escrito («cada pieza sale hacia fuera desde el
+centro» = esférica), y la regla 7 no deja cambiarle el sentido; además el
+catálogo ya tenía `CYLINDRICAL` con el sentido exacto de la radial nueva
+(«salen en abanico sin subir ni bajar»). Así que **`RADIAL` queda como
+sinónimo de la esférica y la radial es `CYLINDRICAL`** (en la interfaz,
+*Radial*). `AXIS_X/Y/Z` = lineal *separar* en ese eje; `CUSTOM` (una
+dirección por pieza) no se construye y se lee como la esférica, lo que
+hacía antes. Un despiece sin parámetros —todos los de antes— es el de
+entonces: esférico, **cada pieza la misma distancia** (`EVEN`), desde el
+centro, a la vez; `tests/fixtures/explode-legacy.json` se tomó con el
+código anterior (seis casos: los dos presets, curvas distintas, `RADIAL`,
+el modelo y el cierre movidos y girados, y con un plato giratorio a la
+vez) y se lee igual a 1e-9 mm.
+
+**La línea de tiempo** sustituye el cajón de U1 (`src/ui/panels/animation.ts`
+con su nombre; `anim-tree.ts`, `anim-timeline.ts`, `anim-props.ts`, y las
+órdenes en `src/ui/anim-commands.ts`): tres zonas en una rejilla, el árbol
+fijo a la izquierda y la regla arriba mientras las pistas se desplazan;
+la pista de cámara con sus tramos (borde arrastrable, cámara del plano y
+quitar en su menú, **+** para añadir); barras con su frase, arrastre de
+todas las elegidas, estirado por los dos extremos, imán a bordes, cabezal,
+cortes de plano y segundos (a menos de 6 px; si no, a fotogramas; `Mayús`
+libre) con una línea que dice dónde pega; selección múltiple con
+`Ctrl/⌘` y `Mayús`; objetivos plegables; propiedades con cabecera de una
+línea, los mandos del tipo y del despiece, excepciones, tiempo (inicio,
+duración, fin, repetir, invertir), curva o suavidad con su vista previa;
+el asistente de siempre, ahora con el objetivo puesto; presets en su
+lista y en la cabecera; bucle y zoom. La aritmética (filas, regla, tramos,
+imán) está en `src/core/timeline.ts`; el árbol y las barras solo leen la
+frase y el objetivo (un `PHYSICS` se dibuja con un punto por icono y su
+frase o el nombre de su tipo). **Visor**: `src/core/motion-hint.ts` da el
+contorno del objetivo (el de la pieza bajo el puntero) y la pista en
+espacio del modelo —anillo con el ángulo de una órbita y un punto donde
+está la cámara, arco de una elevación, flecha de un desplazamiento, un
+vector y un punto por pieza de un despiece, eje y giro de un *giro
+propio*—, y la previa (`setMotionHint`) la dibuja en la tinta del tema
+encima de todo, también en *Completo* y mientras reproduce. El menú
+contextual de una pieza gana *Animar Tapón…* y *Fijar en el despiece* /
+*Soltar del despiece*. Cadenas es/en; cromo acromático.
+
+Pruebas: `tests/explode.test.ts` (27: la instantánea, cada geometría por
+donde dice, las unidades y lo proporcional, los niveles por etapas, el
+grupo como objetivo, las excepciones, el orden con solape, la suavidad,
+invertir, repetir, la orientación, partir) y
+`tests/animation-timeline.test.ts` (18: el imán, la regla, las filas, la
+cabecera, árbol ↔ selección ↔ visor en los *stores*, las órdenes y las
+teclas, la pista en el visor), cada una comprobada reintroduciendo el
+fallo que vigila; en el navegador, `tools/animation-check.mjs` (las tres
+zonas, el asistente, el contorno y la pista, las filas marcadas desde la
+escena, arrastrar y estirar con imán y deshacer, las teclas, los menús,
+cada tipo moviendo las piezas) con `docs/ui/animation-timeline.png` y
+`docs/ui/explode-types.png`, y la hoja `out/explode-sheet.html` para el
+veredicto visual (◆ Fable: qué valores por defecto y qué aspecto).
+
+**Qué no encajó con el plan** (regla 12; lo marcado ◆ es del criterio de
+**Fable**, que decide si se cambia):
+- N1 no estaba construido (su encabezado no dice *hecha*): el cajón que
+  se sustituye es el de U1 (planos, tarjetas y bloques). N6 trae de N1
+  lo que su interfaz necesitaba (invertir, repetir, cabecera, curva con
+  vista previa, pista de cámara con tramos); siguen pendientes de N1 la
+  curva *personalizada* con asas, `FADE`, `PAN`, `MATERIAL_COLOR`, los
+  cambios de cámara con fundido y las animaciones bajo su objetivo en el
+  árbol de la escena.
+- ◆ Valores por defecto de un despiece nuevo: esférico, piezas, **reparto
+  por distancia**, centro del conjunto, a la vez, suavidad 50 %. *Por
+  distancia* (la más lejana recorre la distancia, las demás en
+  proporción) separa piezas que están del mismo lado, como el cuello y el
+  tapón; *igual* (lo de antes) las mueve juntas. La hoja enseña las dos.
+- ◆ En el envase de ejemplo la radial sobre Z solo mueve la etiqueta: las
+  demás piezas están en el eje (es lo que pide la geometría); la hoja
+  enseña también la radial sobre X.
+- ◆ *Conservar la orientación* apagado inclina cada pieza hasta 20° al
+  alejarse; el brief no decía cómo. Es la constante `EXPLODE_TILT_DEG`.
+- Por niveles, el brief separaba *todos los niveles* y el orden *por
+  profundidad*; aquí *todos los niveles* ya va por etapas (los bloques y
+  luego su interior, encadenados con el solape) y el orden actúa dentro
+  de cada etapa; *por profundidad* sirve sobre todo con *piezas*.
+- Dos arreglos de comportamiento que cambian proyectos con set (L6) o con
+  un despiece sobre un nodo, nunca el ejemplo de la instantánea: antes el
+  despiece movía también el fondo y el suelo del set y tomaba su centro
+  de toda la escena; ahora las piezas de un set no se despiezan nunca. Y
+  un despiece con objetivo *una pieza o un grupo* movía todo el modelo
+  (el objetivo se ignoraba); ahora mueve lo que hay bajo el grupo.
+- Partir en el cabezal: solo en tipos que suman (giros, distancias,
+  despiece a la vez) o multiplican (escala, acercamiento), reproducidos
+  una vez y hacia delante; cada mitad conserva la curva, así que la
+  posición sigue pero la velocidad no es la de la barra entera.
+- Las pistas del visor se dibujan donde está el objetivo en reposo: si el
+  modelo además gira, los vectores del despiece no giran con él.
+- Sin selección por caja en las pistas ni doble clic para renombrar (las
+  barras no tienen nombre propio todavía: su frase lo es).
+- El cajón crece a 300 px de alto para las tres zonas.
+- *+ Animar…* con el modelo elegido en una escena con set: el fondo y el
+  suelo del set son raíces de la escena, así que el modelo no es «todo el
+  modelo» (`SUBJECT`, que actúa sobre todas las raíces) sino un nodo, y el
+  asistente lo pone como *Una pieza o grupo* (antes *Una pieza*: la etiqueta
+  cambia de texto, no de clave). Fuera de esta fase y sin tocar: un giro
+  sobre `SUBJECT` (el plato giratorio de los presets) gira también el fondo y
+  el suelo de un set, porque gira todas las raíces; queda anotado para L6.
+- En las tiras, la base que baja por debajo del suelo se ve oscurecida por
+  el suelo de sombras del estudio (está detrás de él desde la cámara).
+
+**Veredicto Fable (14-10).** Aceptado con las elecciones marcadas ◆:
+separación por distancia por omisión, el radial sobre Z mueve solo lo que
+está fuera del eje (la hoja enseña el radial sobre X), la inclinación de
+20° con la orientación libre, el orden de la etiqueta en la pila Z, y la
+decisión de claves `RADIAL` (esférica, como estaba) / `CYLINDRICAL` (la
+radial nueva), que aplica bien la regla 7.
+
+## P6 · Plugins, y el plugin de película (aintfilm) — **Opus**, decisión **Fable** — hecha
+
+Petición del usuario (14-10): un apartado **Plugins** en *Ajustes* con la
+herramienta de añadir plugins a la vista, y como primer plugin
+descargable el **motor de simulación de película de aintfilm** (la app de
+edición de fotos y simulación de película del mismo desarrollador, en
+desarrollo): su motor wasm, sus configuraciones y sus recetas, en la
+ventana de render en un apartado *Plugins* después del de IA, con vista
+previa, recetas y simulador de grano; el módulo **cifrado**, con el logo
+del plugin, un enlace al proyecto (aviso: app en desarrollo, esto es un
+adelanto) y la **licencia cerrada** dicha con claridad.
+
+**Decisiones.**
+1. **Paquete `.rpk`** (*Repackshot plugin*): `RPK1` + cabecera JSON en
+   claro (`id`, `version`, `abi`, `bytes`, `sha256` del cifrado, `nonce`)
+   + **AES-256-GCM** (WebCrypto) de un contenedor plano (entradas
+   nombre/bytes: `manifest.json`, `plugin.js`, `module.wasm`, `presets/`,
+   `logo.svg`, `LICENCE.txt`, `NOTICES.txt`). La **clave de activación**
+   (32 bytes, base64) **no está en el repositorio** (el anfitrión es de
+   código disponible: no puede guardar secretos): llega por `keyUrl` del
+   registro (una URL del desarrollador, que puede rotarla o condicionarla
+   más adelante) o la teclea el usuario al instalar. El paquete se guarda
+   **cifrado** (IndexedDB, también en WebView2) y la clave aparte; se
+   descifra **solo en memoria** al cargar, nunca se escribe en claro. Lo
+   que esto protege: el módulo en reposo y en tránsito, y que el paquete
+   no sirva fuera de Repackshot sin la clave; lo que no: a quien depure el
+   navegador con la clave en la mano. Dicho así en `ARCHITECTURE.md`.
+2. **Anfitrión** (`src/plugins/`): registro (`src/data/plugins.json`: id,
+   nombre, editor, versión, resumen es/en, licencia `closed`, `homepage`,
+   `url` del paquete, `sha256`, `bytes`, `keyUrl`), almacén (IndexedDB),
+   cargador (descifra en memoria → `plugin.js` como módulo ES desde un
+   Blob URL en un **Worker** sin DOM, con el `module.wasm` transferido;
+   `WebAssembly.Module.imports()` vacío exigido para un módulo que lo
+   declare), ABI v1 por mensajes: `info`, `presets`, `render({w, h,
+   píxeles lineales f32 por planos o RGBA8, ajustes}) → RGBA8 + info`,
+   `cancel`. El manifiesto declara dónde entra (`slots: ['render.plugins']`)
+   y **sus mandos** (`controls`: clave, etiqueta es/en, tipo
+   deslizador/lista/interruptor, mín/máx/paso/defecto, grupo): la interfaz
+   del apartado es **genérica** y la dibuja desde el manifiesto; `plugin.js`
+   traduce mandos y receta a los ajustes del motor. Un plugin nunca toca el
+   DOM ni el *store*: el anfitrión le da píxeles y recibe píxeles.
+3. **Ajustes ▸ Plugins** (grupo *sistema*, antes de *Almacenamiento*):
+   la lista del registro con logo, nombre, editor, versión, tamaño,
+   resumen, **«Licencia cerrada»** y enlace; *Instalar* (descarga →
+   comprueba `sha256` → clave por `keyUrl` o pedida → guarda), *Actualizar*,
+   *Quitar*, **Instalar desde archivo…** (`.rpk` + clave): la herramienta
+   queda a la vista para plugins futuros. Cada plugin instalado muestra su
+   licencia completa desplegable y la frase: «El código de este plugin es
+   cerrado; la licencia de Repackshot no lo cubre».
+4. **Ventana de render ▸ Plugins**, después de *IA*: un bloque por plugin
+   con *slot* `render.plugins`. Para el de película: logo, nombre,
+   «Adelanto de una app de edición de fotos y simulación de película del
+   mismo desarrollador, en desarrollo» con el enlace, licencia cerrada;
+   **vista previa** (el resultado actual a tamaño de previa por el motor,
+   en el *worker*, con retardo); **recetas** (la lista del plugin por sus
+   categorías y con **sus nombres públicos**: aintfilm no muestra marcas
+   de fabricantes ni de películas (su regla D112) y aquí tampoco); los
+   **mandos** del manifiesto (exposición y forzado, formato de negativo,
+   grano: cantidad y tamaño, halación, difusión, copia/escaneo, semilla,
+   lo que el plugin declare); **Aplicar** → un resultado nuevo en el visor
+   de resultados, como la IA, con `provenance: { plugin, version, recipe,
+   controls }`. Los ajustes del plugin viven en los del render
+   (`plugins: Record<id, …>`), deshacibles y guardados con el proyecto.
+5. **El paquete de película** se construye con `tools/plugins/build-film.mjs
+   --aintfilm <ruta del checkout>`: toma `public/engine/itsnotfilm-engine.wasm`
+   (compilado reproducible y sin importaciones), las recetas
+   (`src/engine/presets/`), el logo (`assets/exported/marks/LOGO.svg`) y
+   la licencia de ese repositorio; el `plugin.js` del plugin (el pegamento
+   del ABI en C: `inf_alloc`, `inf_render_linear_rgba`… con la regla de
+   no retener vistas entre llamadas) se escribe **nuevo** en
+   `tools/plugins/film/` (es nuestro; no se copia código del otro
+   repositorio al nuestro: lo cerrado va solo dentro del paquete cifrado).
+   `tools/plugin-pack.mjs <carpeta> <salida.rpk> [--key b64 | --new-key]`
+   empaqueta y cifra. Comprobación de marcas sobre el paquete y las
+   cadenas del anfitrión con la lista de *hashes* de aintfilm
+   (`scripts/check-brands.mjs` de ese repositorio, ejecutado desde allí).
+6. **Publicación.** El `.rpk` como *asset* de la release de Repackshot
+   (v0.1.6) y el registro apuntando a él con su `sha256`; la clave la
+   guarda el desarrollador (el agente la deja en el *scratchpad* para el
+   responsable, nunca en el repositorio) y `keyUrl` queda vacío hasta
+   que la aloje: mientras, se pide al instalar.
+
+Tres más del usuario (14-10, con la fase ya construida):
+
+7. **El logo es el de ahora**, no `assets/exported/marks/LOGO.svg` (ese es
+   el antiguo y no se usa en ningún sitio): el cartucho de 35 mm como
+   rejilla de 16×16 puntos a dos tintas de `src/data/marks.ts` (`LOGO`, con
+   las tres columnas de la lengüeta más cercanas al cartucho en la tinta
+   tenue, regla M32-02/D50), el que dibuja `src/components/DotGrid.tsx` y
+   rasteriza `scripts/build-icons.mjs` en `design/icon/itsnotfilm-1024.png`
+   y en la hoja de pruebas `design/icon/aintfilm-mark.png` (la referencia de
+   cómo tiene que verse, con el logotipo). `tools/plugins/build-film.mjs`
+   construye el `logo.svg` del paquete desde las filas de `LOGO`: un `rect`
+   por punto, las dos tintas como dos grises, celdas cuadradas (es vector:
+   sin preocuparse del suavizado), con exactamente la misma regla de la
+   tinta tenue que `DotGrid`. Después (14-10) el usuario mandó **su logo
+   como imagen** (2000×2000, puntos blancos sobre negro: el cartucho de
+   frente —eje arriba y abajo, hombros, cuerpo, la banda de la etiqueta como
+   hueco— y la lengüeta saliendo a la derecha, con sus tres columnas más
+   cercanas al cartucho en tres grises de oscuro a claro y después blanco):
+   el `logo.svg` tiene que reproducir ese patrón de puntos exactamente, y se
+   comprueba rasterizándolo a 2000×2000 sobre negro con el Chromium local y
+   comparándolo con la imagen punto a punto. Si `marks.ts` y la imagen no
+   coinciden, gana la imagen: es lo que el usuario llama el logo. El logo va
+   sobre una tesela negra u oscura en la tarjeta del plugin, para que los
+   puntos blancos se lean en los dos temas.
+8. **Las recetas son un carrusel horizontal**, como la tira de película de
+   la app móvil: una tarjeta por receta (la miniatura arriba, el nombre
+   público debajo, la categoría como etiqueta pequeña), que se desplaza de
+   lado con la rueda o el *trackpad* y con las flechas, con la tarjeta
+   elegida contorneada, ajuste a tarjeta y fundidos en los dos extremos
+   cuando hay más; el cromo acromático, el color solo dentro de las
+   miniaturas. La miniatura de cada tarjeta es la receta aplicada a **una
+   sola escena de prueba**: una escena nueva de `rt-cli`, `film-thumb`, en
+   `engine/crates/rt-cli/src/scenes.rs` junto a `e5-lamp` y
+   `e5-glass-bottle` (el frasco de perfume de `glass_bottle` junto a la
+   lámpara de mesa de `lamp`, en el cuarto oscuro, lámpara encendida,
+   16:10, 320×200), renderizada una vez con `rt` a 512 muestras con
+   *denoise* y metida en el paquete como `thumb-base.png` (16 bits lineal u
+   8 bits sRGB, lo que prefiera la entrada del plugin). Al cargar el plugin,
+   el anfitrión le pide al *worker* la miniatura de cada receta desde esa
+   base (guardada en IndexedDB por versión del plugin e id de receta: se
+   hace una vez) y enseña un hueco hasta que llega cada una. Esa misma base
+   es lo que enseña la vista previa cuando todavía no hay resultado. Si
+   cada miniatura es lenta para ~70 recetas, a media resolución (160×100)
+   y ampliada por CSS; se dice el tiempo por miniatura.
+9. **Animación**: cuando el plugin se aplica a un trabajo de animación,
+   cada fotograma pasa por el motor con su propia semilla, `seed = seed0 +
+   índice del fotograma` (el campo `seed` del motor), para que el grano sea
+   el de una película de verdad fotograma a fotograma y no una capa fija;
+   la imagen fija usa `seed0`; la vista previa enseña el fotograma 0;
+   `provenance` guarda `seed0` y la regla. Test por fotograma con el plugin
+   de prueba (el fotograma 0 y el 1 difieren donde el de prueba usa la
+   semilla; el mismo `seed0` dos veces da los mismos bytes).
+
+**Depende de.** U5 (ventana de render, visor), X2 (resultado derivado),
+U6 (ventana de ajustes).
+
+**Criterio.** Tests (mutación comprobada): empaquetar → descifrar devuelve
+los mismos ficheros; clave errónea y paquete manipulado fallan limpios
+(etiqueta GCM); `sha256` del registro comprobado; un plugin de prueba de
+los *fixtures* (sin wasm: invierte los píxeles) pasa por el *worker* de
+punta a punta y deja un resultado con `provenance`; el manifiesto dibuja
+sus mandos; los ajustes del plugin son deshacibles y se guardan.
+Comprobación de navegador `tools/plugins-check.mjs` (instala el plugin de
+prueba desde un servidor local con clave tecleada; abre *Plugins* de la
+ventana de render; aplica) con capturas `docs/ui/settings-plugins.png` y
+`docs/ui/render-plugins-film.png` (esta con el paquete de película real
+construido desde el *checkout*). `UI.md`, `ARCHITECTURE.md` (§1: los
+plugins no son dependencias: los instala el usuario, con su licencia;
+§ nuevo: el formato `.rpk`, el ABI y lo que el cifrado protege), `SPEC.md`
+§3.8, CHANGELOG, `release-notes` (cómo publicar el `.rpk`).
+
+**Hecho** (2026-10-14). **El paquete** (`src/plugins/rpk.ts`, el mismo código en
+la página y en las herramientas por la eliminación de tipos de Node): `RPK1`, la
+cabecera en claro de la decisión 1 y AES-256-GCM de un contenedor plano; el
+cifrado autentica además la cabecera (menos su `sha256`), así que una cabecera
+editada no abre; el `sha256` y la longitud se comprueban antes de descifrar.
+`tools/plugin-pack.mjs` (`--new-key`, que solo la imprime, `--key`, `--key-file`)
+y `tools/plugin-unpack.mjs`. **El anfitrión** (`src/plugins/`, una capa nueva de
+`tests/boundaries.test.ts`: `plugins → core, data`): el registro
+`src/data/plugins.json` con su cargador; el almacén en IndexedDB (paquete cifrado
+y clave aparte en una transacción; en memoria sin él); la instalación del
+registro (tamaño y `sha256` del registro, cabecera con su `id` y su `version`,
+la clave que ya tiene una actualización, la de `keyUrl` o la tecleada) y desde
+archivo; el arranque (descifrado en memoria, `WebAssembly.compile` y la regla
+de `noImports`, `plugin.js` en un Blob URL como Worker de módulo, `init` con el
+módulo y los archivos transferidos) y el ABI v1 (`info`, `presets`, `render`,
+`cancel`, más `ready`, `cancelled` y `error`); el servicio que pasa un resultado
+por un plugin (un EXR como planos lineales de su luz, si no RGBA8; la vista
+previa a 480 px; el alfa del origen de vuelta). **Ajustes ▸ Plugins** (grupo
+*Sistema*, antes de *Almacenamiento*) y **Ventana de render ▸ Plugins**
+(después de *IA*), los dos dibujados desde los datos: el registro y el
+manifiesto; los ajustes en `RenderSettings.plugins` (deshacibles, un arrastre
+una entrada, con el proyecto; un proyecto anterior tiene `{}`); *Aplicar* deja
+un resultado nuevo con `provenance: { plugin, version, recipe, controls, from,
+label }`, guardado donde su origen y abierto en el visor comparado con él, que
+dice de dónde sale. **El plugin de película**: `tools/plugins/film/manifest.json`
+(los mandos de §9 del manual de aintfilm: formato del negativo, exposición y
+forzado, color y su modelo, contraste, saturación, calidez, exposición de la
+copia, copia o escaneo, grano —cantidad, tamaño, color, sesgo tonal, suavidad,
+enfoque del escáner, respuesta a la luz, escaneo—, halación, difusión, objetivo,
+motor de grano, semilla), `tools/plugins/film/plugin.js` (nuevo: el ABI en C con
+`inf_render_rgba` e `inf_render_linear_rgba` y un registro lateral vacío, sin
+retener vistas entre llamadas) y `tools/plugins/build-film.mjs --aintfilm`, que
+lo monta y lo empaqueta. **El paquete construido** (con las decisiones 7–9):
+`film-0.1.0.rpk`, versión **0.1.0** (la de aintfilm; motor 0.1.0), **1 948 807
+bytes**, `sha256`
+**`e6b1e2c70beae17375d3eba222a2095fb653cce39264af12a0faa9229216b264`**, 137
+archivos y 127 recetas (51 películas, su color solo, 8 granos, 13 filtros, 4
+objetivos), fijado en el registro con la `url` de la release v0.1.6 y `keyUrl`
+vacío; la clave la tiene el responsable (fuera del repositorio). Tests: 62
+nuevos en siete archivos (`plugins-rpk`, `plugins-host`, `plugins-settings`,
+`plugins-brands`, `plugins-film`, `plugins-thumbs` y `plugins-frames`; una parte
+de `plugins-film` solo donde hay un *checkout* de aintfilm; y que `?testPlugins=`
+no esté en una versión de producción), con 44 mutaciones comprobadas (cada una
+rompe lo que un test guarda y ese test falla; una más sobrevive a propósito:
+quitar la comprobación de la longitud del cifrado, que su `sha256` ya cubre); `tools/plugins-check.mjs` en verde
+con el paquete de verdad (instalar del servidor local con la clave tecleada,
+una clave errónea, quitar e instalar desde archivo, la vista previa con los
+números del plugin, deshacer, *Aplicar*, acromático, recargar) y las capturas
+`docs/ui/settings-plugins.png` y `docs/ui/render-plugins-film.png`.
+`docs/release-notes/plugins.md`: cómo se publica el `.rpk` y qué se hace con la
+clave.
+
+**Hecho, decisiones 7–9** (2026-10-14). **El logo** (7):
+`tools/plugins/dot-grid.mjs` escribe el `logo.svg` del paquete, un `rect` por
+punto en celdas cuadradas, desde la **imagen del logo del dueño** (`build-film
+--logo`: leída punto a punto, sus columnas y filas de puntos por dónde hay tinta
+y la tinta de cada uno agrupada en los niveles de la imagen) o, sin ella, desde
+las filas de `LOGO` del `marks.ts` del *checkout* con la regla de dos tintas de
+`DotGrid`; el SVG antiguo ya no se usa. El del paquete sale de la imagen: 15×15,
+121 puntos, la lengüeta en `#808080`, `#BFBFBF` y `#E0E0E0` y el resto `#FFFFFF`,
+el punto 0,862 de la celda. **Comprobado** rasterizando el SVG a 2000×2000 sobre
+negro con el Chromium local, colocado donde la imagen tiene su rejilla:
+**225 de 225 celdas iguales** (la misma clase de tinta y la media de cada punto
+igual: diferencia máxima 0), los centros a 1 px como mucho, los cuatro niveles
+128 · 191 · 224 · 255 en los dos, el 98,9 % de los píxeles a menos de 24 niveles
+y un 96,2 % de solape de la tinta (los puntos de la imagen están dibujados a
+mano, no son círculos perfectos). Va sobre la tesela negra de *Ajustes* y de la
+ventana de render, en los dos temas. **El carrusel** (8): la escena `film-thumb`
+de `rt-cli` (`rt --write-film-thumb`; el frasco y la lámpara salen de
+`bottle_meshes`/`lamp_meshes`, y las escenas E5 de los dos siguen dando los
+mismos bytes) renderizada a 512 muestras con *denoise* (147 s con 4 hilos) en
+`tools/plugins/film/thumb-base.png`; el manifiesto la nombra (`base`); la vista
+previa sin resultado es esa imagen por el plugin (Aplicar sigue esperando un
+resultado); las tarjetas (`ui/panels/plugin-recipes.ts`) llevan la imagen base
+reducida a 160 × 100 por cada receta con los mandos por defecto, hechas una a
+una, guardadas en IndexedDB (versión 2, almacén `thumbs`) y entregadas al
+momento la vez siguiente. **Tiempo por miniatura**: con el motor de película,
+~1 s a 320 × 200 y ~0,2 s a 160 × 100 en Node con la máquina cargada (mediana
+de 20 recetas: 963 ms y 199 ms), así que van a media resolución; en el
+navegador, las 128 tarjetas en 27 s (0,21 s cada una, de la primera apertura a
+la última imagen) y 1,7 s al abrir otra vez. **La semilla por fotograma** (9):
+`role: 'seed'` en el deslizador de la semilla (el de película y el de prueba,
+que gana un ruido sacado de ella), `frameControls`/`frameSeed`/`SEED_RULE`, el
+interruptor **Aplicar a los trabajos de render** (`RenderSettings.plugins[id].
+jobs`) y el paso de la cola que manda cada imagen por el plugin; la primera, al
+historial con `provenance.seed`. Comprobación de navegador en verde con los
+puntos nuevos (`d2_base_preview_and_cards`, `d2_film_cards`,
+`d2_film_cards_kept`, `e_jobs_switch_undoable`, `f_carousel_keys_wheel`) y las
+dos capturas rehechas.
+
+**No encajó con el plan.** (1) **Los nombres públicos**: el árbol de aintfilm
+todavía enseña marcas (su M38-07, el renombrado, está pendiente; su
+`check:brands` está en rojo a propósito). Se usó lo decidido allí: una película
+es su id neutro en mayúsculas (*CN-01*, D113, desde `stocks-map.json`, hasta
+que el dueño elija nombres en M38-10, y entonces hay que reconstruir el paquete),
+con su ISO de caja; filtros y formatos, las palabras de D112 (*BLACK DIFFUSION*,
+*WARM DIFFUSION*, *SPARKLE*, *PEARL*, *INSTANT 54×86*, *15-PERF 70 MM*); granos
+y objetivos, palabras genéricas, con las del diccionario de aintfilm donde las
+hay. (2) **La comprobación de marcas**: `scripts/check-brands.mjs` de aintfilm
+solo recorre su propia lista de rutas y el *checkout* no tiene `node_modules`
+(importa `typescript`), así que no se puede ejecutar desde allí sobre otra
+carpeta. Se reescribió su mecanismo, tal como lo describe, en
+`tools/plugins/brand-scan.mjs` (lee la lista de *hashes* del *checkout*, que no
+se copia) y se comprobó además con las funciones exportadas del propio script
+(con un *hook* de resolución hacia un TypeScript del sistema, sin tocar el
+*checkout*): los dos dan lo mismo. Limpios: el manifiesto, `recipes.json`,
+`plugin.js`, el logo, la licencia y las cadenas de Repackshot. Quedan, dentro
+del paquete cifrado y sin enseñarse nunca, las etiquetas internas del motor: el
+módulo (15 coincidencias en el último *build*, su `--dist` está en rojo por lo mismo), los ajustes de
+los *presets* (490: el tipo de los filtros de difusión y la clave del papel del
+modelo espectral, que tiene cada *preset* completo), `engine.json` (3: dos ids de
+formato) y `NOTICES.txt` (9, lo que una licencia exige nombrar); son de su M38-07
+y M38-08 (renombrar etiquetas de *serde* por parche). (3) **Los *presets* van
+completos**, no dispersos: el *build* los lee con `settingsFromValue` del propio
+*checkout* (ejecutado con la eliminación de tipos de Node) para que el pegamento
+escale valores sin adivinar los valores por defecto de *serde*; son 1,1 MB del
+paquete. Una receta de *color solo* trae el grano por defecto del motor (así
+rellena *serde* un *preset* que no lo dice): el interruptor *Grano* lo quita.
+(4) Se añadieron al manifiesto, sin estar en la lista: `groups` (los títulos de
+los grupos), `minLabel` en un deslizador (la regla de aintfilm de que el tope
+izquierdo dice *PRESET* y no manda nada), `aux` y `notices`; y al ABI, `init`,
+`ready`, `cancelled` y `error`. (5) El logo del registro no puede ir en línea (es
+del paquete cerrado): antes de instalar se ve un icono neutro. `homepage` es
+`https://aintfilm.app`, el dominio que configura `src/lib/appConfig.ts` de
+aintfilm; `publisher`, *Grohle*. La semilla por defecto es la del motor (1).
+(6) *Aplicar* guarda la imagen donde se guardó su origen, como la de la IA: en
+el navegador es una descarga. Cancelarlo para el *worker* (el render del módulo
+es una sola llamada síncrona) y el siguiente uso lo arranca de nuevo. (7) La
+vista previa a 480 px enseña el grano de un negativo pequeño (*75 µm por
+píxel*): es lo que dice el motor; *Aplicar* lo hace al tamaño del resultado. (8)
+Las herramientas necesitan Node 22.18 o posterior. (9) `modelCatalogue()` de
+`src/main.ts` lee `?testModels=` con `atob` sin decodificar UTF-8 (un nombre con
+acentos saldría mal); el de plugins lo hace bien; el de modelos no se tocó. (10)
+El lanzador no cambia (el almacén es IndexedDB también en WebView2) y la prueba
+en un Windows real queda en la lista de `docs/release-notes/plugins.md`.
+
+**No encajó con el plan, decisiones 7–9.** (11) **El logo de `marks.ts` no es el
+de la imagen**, y no solo en los grises: la rejilla `LOGO` del *checkout* es de
+16×16 con 137 puntos (eje de 4, hombros de 10, cuerpo de 12 que pasa por encima
+de la lengüeta) y una sola tinta tenue `#4A4A4A`; la imagen del usuario (igual
+que el dibujo del dueño de su `design/screens/owner-0912b-film-cartridge.jpg`) es
+de 15×15 con 121 puntos (eje de 3, hombros de 7, cuerpo de 9) y tres grises.
+Ganó la imagen, como se pidió, pero entonces el logo no puede salir de las filas
+de `LOGO`: sale de la imagen, leída por `build-film --logo` al construir (la
+imagen es del dueño y va solo dentro del paquete, como su logo: no se guarda en
+este repositorio, ni sus filas); sin `--logo` sale el de `LOGO`, que no se
+publica (las notas de publicación lo dicen). La regla de `DotGrid` es la del
+camino de `marks.ts`. Habría que llevar a aintfilm que su `LOGO` no es el logo
+de su dueño. (12) **«Un `rect` por punto» y los puntos redondos**: la imagen y
+`DotGrid` dibujan círculos; cada punto es un `rect` con `rx = ry` la mitad de
+su lado (un círculo), en su celda cuadrada, para cumplir las dos cosas. (13) La
+imagen base es **PNG sRGB de 8 bits**, lo que escribe `rt` (no escribe 16 bits
+lineales), y entra por `inf_render_rgba`, como cualquier resultado PNG; la
+escena lleva `clamp_indirect` 2: el filamento visto a través de dos vidrios da
+cáusticas que el trazador encuentra como *fireflies* incluso a 512 muestras con
+*denoise*. (14) Las tarjetas se hacen cuando el bloque del plugin aparece por
+primera vez (ahí arranca su *worker*), no al arrancar la aplicación, y la de
+*Sin receta* también lleva su imagen; una versión nueva las rehace (la clave es
+la versión, no el `sha256`: un paquete distinto con la misma versión se quedaría
+las de antes, y por eso el paquete reconstruido aquí, que nunca se publicó,
+sigue siendo 0.1.0). (15) **Aplicar a un trabajo de animación no existía**: el
+plugin solo trabajaba sobre un resultado del historial, y el historial guarda
+solo el primer fotograma de una animación. Se añadió el interruptor *Aplicar a
+los trabajos de render* (`jobs`, apagado por defecto), que pasa por el plugin
+cada imagen de los trabajos (fijas y fotogramas), después de guardar la del
+motor y sin entrar en la barra de progreso. (16) «El índice del fotograma» es su
+número en la animación menos uno, no su posición en el trabajo: un tramo
+renderizado aparte (3–4) tiene el grano que tiene en la animación entera; la
+semilla da la vuelta al rango del deslizador (la del de película llega a 999
+999 999). (17) La vista previa no enseña otros fotogramas: es siempre la
+semilla puesta, la del fotograma 0. (18) El almacén de miniaturas de IndexedDB
+no tiene test en Node (no hay IndexedDB en los tests): la comprobación de
+navegador ve que guarda y devuelve (`d2_film_cards_kept`); que *Quitar* las
+borre solo lo comprueban los tests sobre el almacén en memoria.
+
+**P6b** (2026-10-14, petición del usuario: el carrusel como la búsqueda de
+películas de la app de aintfilm). **Hecho**: un deslizador fino bajo el
+carrusel, de su ancho, atado a su desplazamiento en los dos sentidos (sus pasos
+son las posiciones de ajuste del carrusel, una por tarjeta y la última su final:
+`ui/strip-math.ts`), con la tarjeta elegida marcada en su pista y manejable con
+el teclado; y los filtros, que el plugin declara en su respuesta `presets`
+(`filters` y los `tags` de cada receta) y el anfitrión dibuja como filas de
+*chips* sobre el carrusel, combinados (Y), con la cuenta (*23 de 127 recetas*),
+la receta elegida primera y marcada *Fuera de los filtros* cuando la dejan
+fuera, y guardados con los ajustes del plugin (`filters`, deshacibles). El de
+película trae los de la app (`docs/MANUAL.md` §7 y `src/lib/filmFilter.ts` de
+aintfilm): **Tipo** (sus palabras: *COLOR* para el negativo en color, *B&W*,
+*DIAPOSITIVA*, *CINE*, por la clase de cada película) e **ISO** (sus tres
+bandas, *≤ 100 · 200–400 · ≥ 800*, cortadas en 100 y 400 por la ISO de caja),
+más **Grupo** (películas, el color de una película, grano, difusión, objetivo:
+los grupos del paquete). Paquete reconstruido con la misma clave: 1 956 072
+bytes, `sha256`
+`a60dd9edea828f4ed29acd3d29b9ab1ffde384284da8c6a6a6619cc1d6ba3d8a`, versión
+0.1.0 (no publicado aún). Tests: 9 nuevos (`plugins-filters`, y uno en
+`plugins-film`), 15 mutaciones comprobadas; la comprobación de navegador
+arrastra el deslizador, lo mueve con la rueda y con el teclado, y aplica dos
+filtros (`f_scrub_slider`, `f_two_filters`). **No encajó.** (1) La app tiene un
+tercer filtro, **MARCA**, y no está: son nombres de fabricantes (su D112); el
+cuarto, **ORIGEN** (de la app, mías, de otros), aquí solo tendría uno. No hay
+más facetas en la app (formato, proceso, época): no se inventaron. (2) *Color /
+B&W* es el **Tipo** de la app, con sus cuatro valores: la diapositiva y el cine
+también son de color, y la app los separa así. (3) La app dibuja sus filtros
+como desplegables en una fila (M31-03); aquí son *chips*, como se pidió. (4) Una
+receta sin película (grano, filtro, objetivo) no tiene Tipo ni ISO: solo está en
+sus *Todos*, la regla de la app.
 
 ## Orden sugerido
 

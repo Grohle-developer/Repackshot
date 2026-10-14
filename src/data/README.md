@@ -10,6 +10,7 @@ logic lives here beyond tiny lookups (`studioPreset(key)`, `materialPreset(key)`
 | --- | --- |
 | `types.ts` | Shared contracts: `Label`, `LightSpec`, `StudioPreset`, `MaterialPreset`, `WearProps`, ... |
 | `quality.ts` | `QUALITY_PRESETS` (3), `RESOLUTION_PRESETS` (5) |
+| `aspects.ts` | `ASPECT_PRESETS` (10, U13; not ported): the image aspect ratios a camera is offered (`3:2`, `4:3`, `16:9`, `1:1`, `5:4`, `4:5`, `9:16`, `21:9`, `2:1`, `65:24`) with stable keys, and `CUSTOM` (`w : h` kept on the camera). Logic is `src/core/aspect.ts` |
 | `studios.ts` | `STUDIO_PRESETS` (16 product types, 50 lights) |
 | `light-setups.ts` | `LIGHT_STYLES` (8), `LIGHT_SETUPS` (72), `SPEC_DEFAULTS`, `LIGHT_ROLES`, camera angles |
 | `materials.ts` | `MATERIAL_CATEGORIES` (7), `MATERIAL_PRESETS` (77) |
@@ -20,7 +21,7 @@ logic lives here beyond tiny lookups (`studioPreset(key)`, `materialPreset(key)`
 | `bokeh.ts`, `bokeh.json` | `BOKEH_TYPES` (20, the taxonomy of optics.md §1), `BOKEH_NEUTRAL`, `PUPIL_PROFILES`, `bokehType(key)`, `bokehParams(type, variant)`. Each type is a set of thin-lens parameters (blades, roundness, mask id, pupil profile, obstruction, cat's eye, squeeze, CA, swirl, rings, texture), or needs a traced lens (`requires: 'traced'`, `lens` key) or wave optics (`requires: 'wave'`, coming soon). Mask ids are those of `public/assets/aperture/index.json` |
 | `camera-moves.ts`, `camera-moves.json` | `CAMERA_MOVE_LIBRARY` (14) and `HANDHELD_PRESETS` (3): product-relative camera moves as lists of the existing animation kinds (degrees, % of the framing distance, part sizes, focal and focus factors; times as fractions of the duration), and the handheld noise parameters. `src/core/camera-moves.ts` expands a move into the clips of the timeline |
 | `animation.ts` | `MOVE_KINDS` (16, `PHYSICS` from S2), `EASING_KINDS` (5), `TARGET_KINDS`, `EXPLODE_MODES`, move groups, `SEQUENCE_PRESETS` (16) |
-| `doctor.ts` | `DOCTOR_CHECKS` (15, `physics` from S2), descriptors only |
+| `doctor.ts` | `DOCTOR_CHECKS` (14 of upstream and, appended after them, `aspect`, U13, and `physics`, S2), descriptors only |
 | `physics.ts` | Physics (S2, not ported): `DENSITY_BY_CATEGORY` (kg/m³ by material category), `DEFAULT_DENSITY`, `PHYSICS_DEFAULTS` (friction, bounciness), `FLOOR_SURFACE`, `PHYSICS_LIMITS`, `PHYSICS_ROLES` (4, cloth and liquid coming soon), `BUILT_ROLES`, `MAX_SIMULATED_SECONDS` |
 | `environment.ts` | Studio dome grey levels and bright-field limits |
 | `primitives.json`, `primitives.ts` | `PRIMITIVES` (12, U9; no portado): las formas de *Añadir ▸ Primitiva* con clave estable, papel en el estudio (`BASE`, `FLOOR`, `BACKDROP`, `OBJECT`) y medidas (clave, longitud o número, mínimo, paso, factor del tamaño de la escena o valor por defecto), y el material neutro que llevan; los nombres y etiquetas son cadenas de la interfaz y la geometría es `src/core/primitives.ts` |
@@ -35,7 +36,7 @@ logic lives here beyond tiny lookups (`studioPreset(key)`, `materialPreset(key)`
   (`size_y` is `sizeY`, `coat_roughness` is `coatRoughness`).
 - Every user-facing string is a `Label` (`{ es, en }`). Spanish text is ASCII
   without accents, as upstream. The files that are not ported (`ai-models.json`
-  and the studio-tools data: `lenses.json`, `bokeh.json`, `camera-moves.json`) use
+  and the studio-tools data: `lenses.json`, `bokeh.json`, `camera-moves.json`, `aspects.ts`) use
   proper Spanish with accents, like the interface strings.
 - Catalogues are arrays when order matters (UI lists) and have a
   `key` field on every entry; use the `xxxPreset(key)` lookups to find one.

@@ -78,6 +78,10 @@ export interface NativeInfo {
   aiApi?: number;
   /** The AI post-processing pipeline of rt-app/src/ai/post.rs (`/api/ai/post`, X3c): its version, when there is one. */
   aiPost?: number;
+  /** Updating from inside the application (`/api/update/*`, rt-app/src/update/, P5): its version, when there is one. */
+  updateApi?: number;
+  /** This launcher was started by an update (`--after-update`): the page says so once. */
+  afterUpdate?: boolean;
 }
 
 export interface NativeRecommendation {
@@ -401,6 +405,21 @@ export class NativeClient {
 
   async setLastProject(id: string): Promise<void> {
     await this.json('/api/projects/last', { method: 'PUT', body: JSON.stringify({ id }) });
+  }
+
+  /** `GET /api/update`: where an update from inside the application is (P5). The caller reads it with `parseInstallStatus`. */
+  updateStatus(): Promise<unknown> {
+    return this.json('/api/update');
+  }
+
+  /** `POST /api/update/install` (202): the launcher downloads, checks and installs; throws a NativeError when it refuses (400 `bad-url`, 409 `not-updatable`, `busy`). */
+  updateInstall(req: { tag: string; assetUrl: string; sumsUrl: string; size?: number }): Promise<unknown> {
+    return this.json('/api/update/install', { method: 'POST', body: JSON.stringify(req) });
+  }
+
+  /** `POST /api/update/cancel`: stops a download or a check, and clears a failure. */
+  updateCancel(): Promise<unknown> {
+    return this.json('/api/update/cancel', { method: 'POST' });
   }
 
   /** Opens an https:// address in the system's browser. */

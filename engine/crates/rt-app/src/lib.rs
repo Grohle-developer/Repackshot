@@ -41,6 +41,7 @@ pub mod server;
 pub mod sha256;
 pub mod static_files;
 pub mod token;
+pub mod update;
 
 /// A fresh, empty folder for a test.
 #[cfg(test)]

@@ -5,6 +5,7 @@
 import { allParts, effectiveVisible, partsUnder, type NodeId } from '../../core/scene';
 import { groupTargets, hasCadFaces, hasFaceMaterials, movableTargets, pivotModeOf, PIVOT_MODES, sharesMaterial } from '../../core/transform';
 import { primitivesUnder } from '../../core/primitive-ops';
+import * as anim from '../anim-commands';
 import * as cmd from '../commands';
 import * as phys from '../physics';
 import type { MenuEntry, MenuItems } from '../components/widgets';
@@ -37,6 +38,7 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
   const groups = groupTargets(s, nodes).filter((g) => !nodes.some((id) => s.scene.nodes[id].parent === g));
   const atRoot = nodes.every((id) => s.scene.nodes[id].parent === null);
   const clip = ctx.ui.get().materialClipboard;
+  const pin = none ? null : anim.pinState(s, nodes);
 
   const pivot: MenuItems = PIVOT_MODES.map((mode) => ({
     label: t(dyn(`pivot.${mode}`)),
@@ -88,6 +90,9 @@ export function partMenu(ctx: Ctx, ids: NodeId[], opts: PartMenuOptions = {}): M
     { label: t('ops.reset'), disabled: fixed, run: () => cmd.resetTransform(ctx, nodes) },
     { label: t('ops.pivot'), disabled: none, submenu: pivot },
     { label: t('ops.cameraTarget'), disabled: none, run: () => cmd.setCameraTarget(ctx, nodes) },
+    // N6: animate it (the timeline's wizard, with it as the target), and keep it still in the explodes that hold it.
+    { label: t('anim.animateThis', { name: none ? '' : first.name }), icon: 'film', disabled: none || !anim.nodeTarget(s, nodes[0]), run: () => anim.openWizard(ctx, anim.nodeTarget(s, nodes[0])) },
+    pin ? { label: pin.pinned ? t('ops.unpinExplode') : t('ops.pinExplode'), run: () => anim.togglePin(ctx, nodes) } : { label: t('ops.pinExplode'), disabled: true },
     // L4: a light of the rig aimed at the selection (the centre of its bounds).
     { label: t('ops.aimLight'), icon: 'light', disabled: none || s.studio.lights.length === 0, submenu: s.studio.lights.map((l) => ({ label: lightName(s, l.id, getLang()), run: () => cmd.aimLightAtNodes(ctx, l.id, nodes) })) },
     null,

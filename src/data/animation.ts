@@ -247,6 +247,23 @@ export const EXPLODE_MODES: readonly ExplodeItem[] = [
       en: 'Each part in the direction you set for it',
     },
   },
+  // N6: the three geometries of an exploded view. CYLINDRICAL (above) is the radial one: away from an axis.
+  {
+    key: 'LINEAR',
+    label: { es: 'Lineal', en: 'Linear' },
+    description: {
+      es: 'A lo largo de un eje: se separan desde el centro o se apilan en orden',
+      en: 'Along an axis: they separate from the middle or stack in order',
+    },
+  },
+  {
+    key: 'SPHERICAL',
+    label: { es: 'Esferica', en: 'Spherical' },
+    description: {
+      es: 'Cada pieza se aleja de un punto, el centro',
+      en: 'Each part moves away from a point, the centre',
+    },
+  },
 ];
 
 // Move groups (upstream AIMING_MOVES ... COLOR_MOVES).
