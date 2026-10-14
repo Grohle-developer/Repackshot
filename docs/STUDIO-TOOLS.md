@@ -214,9 +214,16 @@ Sobre la animación de N1 y el paseo de N3:
 
 ## 5 · Partículas de todo tipo
 
-> Decisiones S0 tomadas y la primera fase (S4a, partículas de aire sin
-> estado: polvo, polen, lluvia, nieve, polvareda, ceniza, burbujas,
-> confeti) en `ROADMAP.md`, sección «Herramientas de estudio».
+> **S0 decidido** y **S4a hecha** (`ROADMAP.md`, sección «Herramientas de
+> estudio»): las partículas de aire sin estado (polvo, polen, lluvia,
+> nieve, polvareda, ceniza, burbujas, confeti) como efectos de la sección
+> *Ambiente* de *Escena*, simulados por `engine/crates/rt-sim` y
+> renderizados por el motor como esferas, discos y cápsulas (`FXAM`,
+> `ARCHITECTURE.md` §5.2). Lo de abajo es el resto de la familia: el nodo
+> de escena con emisores, las fuerzas que no son de forma cerrada, la
+> colisión con las piezas y las horneadas siguen pendientes, y los
+> valores de partida de los presets de S4a son una propuesta hasta que
+> Fable los fije con la hoja `out/ambient-sheet.html`.
 
 Un nodo de escena **Efecto** con emisor (punto, superficie de una pieza,
 volumen, curva o estallido en un fotograma), cantidad, vida, velocidad y

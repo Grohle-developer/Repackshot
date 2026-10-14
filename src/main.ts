@@ -51,7 +51,7 @@ import { NativeEngine } from './render/native';
 import { loadEngineModule, PathTracerEngine, Pool, simdSupported, type SceneSource } from './render/pathtracer';
 import { PreviewEngine } from './render/preview';
 import { hasParticleExport } from './render/particles';
-import { particleCapFor, setEngineParticleCap } from './core/effects';
+import { engineParticleCap, particleCapFor, setEngineParticleCap } from './core/effects';
 import { ThumbnailRenderer } from './render/thumbs';
 import { exactWords16, linearRgba, poolSize, straightBytes, straightExr, straightWords16 } from './render/tiles';
 import { mountApp } from './ui/app';
@@ -257,8 +257,12 @@ if (preview) {
 // warns about what goes over it and the scene sent to the engine holds at most that many.
 const applyParticleCap = () => {
   const u = ui.get();
-  setEngineParticleCap(particleCapFor(u.settings['engine.particleCap'], u.engineInfo?.backend === 'native'));
+  const cap = particleCapFor(u.settings['engine.particleCap'], u.engineInfo?.backend === 'native');
+  if (cap === engineParticleCap()) return;
+  setEngineParticleCap(cap);
   store.dispatch({ type: 'doctor/refresh' });
+  // The scene the engine is sent holds at most that many: the Full viewport builds it again.
+  tracer?.sceneChanged();
 };
 applyParticleCap();
 ui.subscribe((u, prev) => {

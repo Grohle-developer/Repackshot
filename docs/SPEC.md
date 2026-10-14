@@ -225,6 +225,61 @@ interior), `STEPS` (número de escalones, subiendo hacia +Y) y `SWEEP`
   primitivas, todas), para que un fondo infinito seis veces mayor no mueva
   las luces ni cambie la escala. *Encuadrar todo* sigue siendo todo.
 
+**Ambiente** (fase S4a, `src/core/effects.ts`, catálogo
+`src/data/effects.ts`). Partículas del aire **sin estado**: polvo en
+suspensión, polen, lluvia, nieve, polvareda, ceniza, burbujas que suben y
+confeti que cae. El proyecto guarda `effects: AmbientEffect[]` (0..n; un
+proyecto de antes de S4a abre con la lista vacía) y cada efecto es **un
+dato, no un montón de partículas**: sus parámetros, de los que el
+simulador del motor (`engine/crates/rt-sim`) saca cada partícula como
+función pura de (semilla, id, instante). Ni caché ni horneado.
+
+- **Campos**: `id` (`fx1`, `fx2`…), `preset` (clave estable del catálogo:
+  `DUST_MOTES`, `POLLEN`, `RAIN`, `SNOW`, `DUST_CLOUD`, `ASH`, `BUBBLES`,
+  `CONFETTI`; `HAZE`, `LIGHT_SHAFTS` y `GROUND_FOG` están en el catálogo
+  como *próximamente*, son volúmenes de S5), `name` (vacío: el del
+  preset), `enabled`; la cantidad (`amountMode` `DENSITY` con `density`
+  en partículas/m³ del volumen, o `COUNT` con `count`), `sizeMm` ±
+  `sizeVar`, `shape` (`SPHERE` punto/esfera, `DISC` copo, `CAPSULE`
+  estela), `energy` (m/s de nacimiento en dirección al azar, que se relaja
+  hacia la caída), `chaos` (fuerza de la turbulencia como fracción de su
+  escala), `turbulenceScaleMm`, `turbulenceSpeed` (m/s), `wind` (vector
+  en m/s, Z arriba), `fallSpeed` (velocidad terminal a 1 g, m/s) ±
+  `fallVar`, `gravity` (múltiplo de g; negativa sube), `spin` (vueltas/s
+  de un disco), `streak` (largo de la cápsula: lo recorrido en tantos
+  segundos), la región (`region`: `SCENE`, la caja del producto con
+  `marginMm`, o `BOX` con centro y tamaño; `band`: banda de alturas), la
+  nube (`cloud`: centro, radio en mm, suavidad 0..1; con ella, el volumen
+  es su esfera), el material (`material`: clave del catálogo de
+  materiales, o vacío y entonces `ownMaterial`, el del preset), `tintVar`
+  y `palette` (hasta 4 tintes), `time` (*Congelar en*, s), `camera`,
+  `reflections` y `shadows` (como en las luces), `cap` (tope propio; 0: el
+  del motor) y `seed`.
+- **Acciones del *store***, todas deshacibles: `effect/add` (un preset
+  disponible; nace con los valores del preset, la región alrededor de la
+  escena con un margen de 0,75 tamaños de pieza y la semilla de su
+  número), `effect/remove`, `effect/set` (un parche; un arrastre es una
+  entrada, y un valor que ya tiene no cambia nada) y `effect/preset`
+  (toma los valores del preset nuevo y conserva dónde está, su instante,
+  su semilla, su tope y su nombre). Los valores se acotan al aplicarse.
+- **Cuántas partículas**: la densidad por el volumen en m³ (la región o la
+  esfera de la nube) o la cuenta, y como mucho el tope: el del efecto, y
+  nunca más que el del motor (*Ajustes ▸ Motor de renderizado ▸
+  Partículas por efecto*; automático: 100 000 en el navegador, 1 000 000
+  en nativo). El Doctor avisa (`particles`) cuando un efecto pide más que
+  su tope, y *Arreglar* baja la cantidad hasta él.
+- **Qué viaja al motor**: una sección `FXAM` por efecto encendido, tras
+  las luces, con los parámetros en unidades del motor (mm, mm/s; la región
+  ya recortada por la banda y nunca bajo el suelo) y un material propio
+  detrás de los de las piezas (su `materialId`). Un efecto apagado no
+  viaja. El motor evalúa las partículas al cargar la escena y construye su
+  BVH; los pases dan a una partícula el `partId` de su efecto y el
+  `materialId` del suyo.
+- **Vista previa**: el visor *Rápido* pinta hasta 50 000 partículas de
+  cada efecto, las que evalúa `rt_particles_eval` de `rt.wasm` (el mismo
+  simulador, en el hilo de la página); sin `rt.wasm` pinta la caja de la
+  región y el medidor lo dice. *Completo* y *Render* las pintan todas.
+
 ### 3.2 · Selección por niveles
 
 `level ∈ {MODEL, GROUP, PART, FACES}`, excluyentes. Un clic en el visor

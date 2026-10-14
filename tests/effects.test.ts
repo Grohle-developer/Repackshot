@@ -250,6 +250,41 @@ describe('effects in project files', () => {
   it('are saved and opened as they were', async () => {
     let s = added(added(exampleState(), 'CONFETTI'), 'RAIN');
     s = apply(s, { type: 'effect/set', id: 'fx2', patch: { name: 'Storm', wind: [2, 0.5, 0], material: 'GLASS_CLEAR', shadows: true } });
+    // Every field away from what the preset would fill in, so that a field the file loses shows.
+    const fx1 = s.effects[0];
+    const patch = {
+      enabled: false,
+      amountMode: 'COUNT',
+      count: 4321,
+      density: 77,
+      sizeMm: 3.5,
+      sizeVar: 0.15,
+      shape: 'SPHERE',
+      energy: 0.4,
+      chaos: 1.2,
+      turbulenceScaleMm: 55,
+      turbulenceSpeed: 0.3,
+      fallSpeed: 1.1,
+      fallVar: 0.45,
+      gravity: 0.7,
+      spin: 2.5,
+      streak: 0.02,
+      region: { mode: 'BOX', marginMm: 33, center: [1, 2, 3], size: [40, 50, 60] },
+      band: { on: true, min: 10, max: 90 },
+      cloud: { on: true, center: [4, 5, 6], radiusMm: 70, softness: 0.25 },
+      ownMaterial: { ...fx1.ownMaterial, baseColor: [0.1, 0.2, 0.3], roughness: 0.66 },
+      tintVar: 0.85,
+      palette: [[0.5, 0.25, 1]],
+      time: 2.75,
+      camera: false,
+      reflections: false,
+      shadows: false,
+      cap: 999,
+      seed: 424242,
+    } as const satisfies Partial<AmbientEffect>;
+    s = apply(s, { type: 'effect/set', id: 'fx1', patch: { ...patch, region: { ...patch.region, center: [1, 2, 3], size: [40, 50, 60] }, cloud: { ...patch.cloud, center: [4, 5, 6] }, ownMaterial: { ...patch.ownMaterial, baseColor: [0.1, 0.2, 0.3] }, palette: [[0.5, 0.25, 1]] } });
+    const fresh = makeEffect(s, 'CONFETTI', 'fx1');
+    for (const k of Object.keys(patch) as (keyof AmbientEffect)[]) expect(s.effects[0][k], k).not.toEqual(fresh[k]);
     const opened = loadProject(await serializeProject(s).text()).state;
     expect(opened.effects).toEqual(s.effects);
   });

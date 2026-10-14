@@ -123,14 +123,18 @@ const BASE: Omit<EffectValues, 'density' | 'sizeMm' | 'shape'> = {
   shadows: true,
 };
 
-// PROPOSAL: the values below (see the file's head).
+// PROPOSAL: the values below (see the file's head). The densities are photographic, not physical: the region is the
+// product's box with its margin (or the cloud's sphere), a few litres around the product, and the camera sees no
+// more than that; on the example bottle (12.7 l of region, a 1.6 l cloud) they give about 1 900 dust motes, 500
+// grains of pollen, 250 drops of rain, 150 snowflakes, 4 900 grains of dust in the cloud, 190 flakes of ash,
+// 130 bubbles and 60 pieces of confetti.
 export const EFFECT_PRESETS: readonly EffectPreset[] = [
   {
     key: 'DUST_MOTES',
     code: 1,
     label: { en: 'Dust motes', es: 'Motas de polvo' },
     intent: { en: 'Specks floating in the air; a light behind the product makes them glow in its beam.', es: 'Motas que flotan en el aire; un foco detrás del producto las hace brillar en su haz.' },
-    values: { ...BASE, density: 40_000, sizeMm: 0.12, sizeVar: 0.6, shape: 'SPHERE', energy: 0.02, chaos: 0.3, turbulenceScaleMm: 80, windSpeed: 0.02, gravity: 0.05, tintVar: 0.3, shadows: false },
+    values: { ...BASE, density: 150_000, sizeMm: 0.2, sizeVar: 0.6, shape: 'SPHERE', energy: 0.02, chaos: 0.3, turbulenceScaleMm: 80, windSpeed: 0.02, gravity: 0.05, tintVar: 0.3, shadows: false },
     material: surface([0.8, 0.78, 0.74], 0.35),
   },
   {
@@ -138,7 +142,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     code: 2,
     label: { en: 'Pollen', es: 'Polen' },
     intent: { en: 'Yellowish grains drifting slowly, for spring and garden scenes.', es: 'Granos amarillentos que derivan despacio, para escenas de primavera y jardín.' },
-    values: { ...BASE, density: 15_000, sizeMm: 0.25, sizeVar: 0.4, shape: 'SPHERE', energy: 0.03, chaos: 0.4, windSpeed: 0.05, windDirDeg: 20, fallSpeed: 0.2, gravity: 0.1, tintVar: 0.3, shadows: false },
+    values: { ...BASE, density: 40_000, sizeMm: 0.3, sizeVar: 0.4, shape: 'SPHERE', energy: 0.03, chaos: 0.4, windSpeed: 0.05, windDirDeg: 20, fallSpeed: 0.2, gravity: 0.1, tintVar: 0.3, shadows: false },
     material: surface([0.85, 0.66, 0.22], 0.6),
   },
   {
@@ -146,7 +150,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     code: 3,
     label: { en: 'Rain', es: 'Lluvia' },
     intent: { en: 'Falling drops as short streaks of water, slanted by the wind.', es: 'Gotas que caen como estelas cortas de agua, inclinadas por el viento.' },
-    values: { ...BASE, density: 600, sizeMm: 1.2, sizeVar: 0.4, shape: 'CAPSULE', chaos: 0.05, turbulenceScaleMm: 300, windSpeed: 1, fallSpeed: 6.5, fallVar: 0.2, streak: 0.012, tintVar: 0, shadows: false },
+    values: { ...BASE, density: 20_000, sizeMm: 1.2, sizeVar: 0.4, shape: 'CAPSULE', chaos: 0.05, turbulenceScaleMm: 300, windSpeed: 1, fallSpeed: 6.5, fallVar: 0.2, streak: 0.012, tintVar: 0, shadows: false },
     material: { kind: 'GLASS', baseColor: [1, 1, 1], roughness: 0, ior: 1.33, transmission: 1, absorptionMm: 0, thin: false },
   },
   {
@@ -154,7 +158,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     code: 4,
     label: { en: 'Snow', es: 'Nieve' },
     intent: { en: 'Slow, tumbling flakes for winter and outdoor gear.', es: 'Copos lentos que giran, para invierno y material de exterior.' },
-    values: { ...BASE, density: 1_500, sizeMm: 4, sizeVar: 0.5, shape: 'DISC', chaos: 0.3, turbulenceScaleMm: 200, turbulenceSpeed: 0.05, windSpeed: 0.4, windDirDeg: 30, fallSpeed: 1, fallVar: 0.3, spin: 0.5, tintVar: 0.1 },
+    values: { ...BASE, density: 12_000, sizeMm: 4, sizeVar: 0.5, shape: 'DISC', chaos: 0.3, turbulenceScaleMm: 200, turbulenceSpeed: 0.05, windSpeed: 0.4, windDirDeg: 30, fallSpeed: 1, fallVar: 0.3, spin: 0.5, tintVar: 0.1 },
     material: surface([0.92, 0.93, 0.95], 0.55, { transmission: 0.3, thin: true }),
   },
   {
@@ -162,7 +166,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     code: 5,
     label: { en: 'Dust cloud', es: 'Polvareda' },
     intent: { en: 'A cloud of dust around the base, as if the product had just landed.', es: 'Una nube de polvo alrededor de la base, como si el producto acabara de aterrizar.' },
-    values: { ...BASE, density: 200_000, sizeMm: 0.3, sizeVar: 0.6, shape: 'SPHERE', energy: 0.3, chaos: 0.8, turbulenceScaleMm: 60, turbulenceSpeed: 0.05, windSpeed: 0.2, fallSpeed: 0.1, gravity: 0.2, cloudRadius: 0.6, cloudSoftness: 0.6, tintVar: 0.3, shadows: false },
+    values: { ...BASE, density: 3_000_000, sizeMm: 0.3, sizeVar: 0.6, shape: 'SPHERE', energy: 0.3, chaos: 0.8, turbulenceScaleMm: 60, turbulenceSpeed: 0.05, windSpeed: 0.2, fallSpeed: 0.1, gravity: 0.2, cloudRadius: 0.6, cloudSoftness: 0.6, tintVar: 0.3, shadows: false },
     material: surface([0.55, 0.46, 0.36], 0.8),
   },
   {
@@ -170,7 +174,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     code: 6,
     label: { en: 'Ash', es: 'Ceniza' },
     intent: { en: 'Dark flakes drifting down, for dramatic and industrial moods.', es: 'Copos oscuros que bajan a la deriva, para ambientes dramáticos e industriales.' },
-    values: { ...BASE, density: 3_000, sizeMm: 1.5, sizeVar: 0.6, shape: 'DISC', chaos: 0.5, turbulenceScaleMm: 150, turbulenceSpeed: 0.05, windSpeed: 0.3, windDirDeg: 200, fallSpeed: 0.4, spin: 0.8, tintVar: 0.4, shadows: false },
+    values: { ...BASE, density: 15_000, sizeMm: 1.5, sizeVar: 0.6, shape: 'DISC', chaos: 0.5, turbulenceScaleMm: 150, turbulenceSpeed: 0.05, windSpeed: 0.3, windDirDeg: 200, fallSpeed: 0.4, spin: 0.8, tintVar: 0.4, shadows: false },
     material: surface([0.09, 0.085, 0.08], 0.85),
   },
   {
@@ -178,7 +182,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     code: 7,
     label: { en: 'Rising bubbles', es: 'Burbujas que suben' },
     intent: { en: 'Clear bubbles rising around the product, for drinks and cosmetics.', es: 'Burbujas transparentes que suben alrededor del producto, para bebidas y cosmética.' },
-    values: { ...BASE, density: 800, sizeMm: 2.5, sizeVar: 0.6, shape: 'SPHERE', energy: 0.05, chaos: 0.3, turbulenceScaleMm: 100, fallSpeed: 0.25, fallVar: 0.4, gravity: -1, tintVar: 0, shadows: false },
+    values: { ...BASE, density: 10_000, sizeMm: 2.5, sizeVar: 0.6, shape: 'SPHERE', energy: 0.05, chaos: 0.3, turbulenceScaleMm: 100, fallSpeed: 0.25, fallVar: 0.4, gravity: -1, tintVar: 0, shadows: false },
     material: { kind: 'GLASS', baseColor: [1, 1, 1], roughness: 0, ior: 1.33, transmission: 1, absorptionMm: 0, thin: true },
   },
   {
@@ -188,7 +192,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     intent: { en: 'Paper flakes in a few colours, tumbling down for launches and celebrations.', es: 'Papelitos de unos pocos colores que caen girando, para lanzamientos y celebraciones.' },
     values: {
       ...BASE,
-      density: 400,
+      density: 5_000,
       sizeMm: 8,
       sizeVar: 0.3,
       shape: 'DISC',

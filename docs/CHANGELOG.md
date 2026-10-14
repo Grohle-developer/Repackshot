@@ -12,6 +12,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 - **Etiquetas** (M2a): *Añadir etiqueta…* elige una imagen con alfa, y una pulsación sobre la pieza con un arrastre la coloca allí (plana desde la normal de la superficie, derecha) con su ancho; varias por material, en orden (*Traer delante*, *Enviar atrás*), con ancho, giro, alcance y su acabado (rugosidad, barniz, relieve del papel); **Mover etiqueta** la desliza por la superficie (M2a).
 - La vista **Rápido** dibuja todas las ranuras, las cinco proyecciones (la caja mezcla tres ejes, la cilíndrica y la esférica sin costura visible) y las etiquetas, con mipmaps, sobre el aspecto de siempre (luces, entorno, sombras, contorno). *Completo* y *Render* las pintan cuando el motor las lea (*próximamente*, M2b) (M2a).
 - La **hoja de importación** gana la sección **Texturas**: cuántas imágenes se guardan y cuánto pesan, y cada una que no, con el porqué (M2a).
+- **Ambiente** (S4a): la pestaña *Escena* gana la sección **Ambiente**, entre *Entorno* y *Cámara*: efectos de partículas del aire —*Motas de polvo*, *Polen*, *Lluvia*, *Nieve*, *Polvareda*, *Ceniza*, *Burbujas que suben*, *Confeti que cae*— que se añaden desde una galería de tarjetas (*Calima*, *Haces de luz* y *Niebla baja*, *próximamente*), con ocho mandos de fotógrafo siempre visibles (cantidad, tamaño, energía, caos, viento y su dirección, gravedad, variación, semilla con *Barajar*) y *Avanzado* plegado con todo lo demás (región, banda, forma, caída, giro, estela, turbulencia, nube, material, tintes, *Congelar en*, visibilidad, tope). Todo deshacible. El visor *Rápido* dibuja hasta 50 000 partículas por efecto con el simulador del propio motor (o la caja de la región sin `rt.wasm`, y el medidor lo dice); *Ajustes ▸ Motor de renderizado ▸ Partículas por efecto* fija el tope (automático: 100 000 en el navegador, 1 000 000 en nativo) y el Doctor avisa de lo que pasa de él. Los valores de partida de cada preset son una propuesta.
 
 ### Importación
 
@@ -21,10 +22,12 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 ### Proyecto
 
 - Las imágenes de textura **viajan en el proyecto** tal cual (PNG o JPEG, base64), una vez cada una, bajo un id que nombra su contenido: un proyecto guardado y abierto vuelve con los mismos bytes. Hasta 16 MB por imagen y 64 MB por proyecto. Los proyectos anteriores abren igual (M2a).
+- Los efectos de *Ambiente* se guardan con el proyecto como parámetros (las partículas no: se evalúan); un proyecto anterior abre sin ninguno (S4a).
 
 ### Motor
 
 - El **contrato RSB de las texturas** queda escrito para M2b (`ARCHITECTURE.md` §5.2: sección `IMGS`, bloque de texturas de `MATL` desde el byte 100, UV en `MESH`); el escritor lo produce solo cuando se le pide, y hasta entonces los bytes de cualquier escena son los de antes (M2a).
+- **Partículas de aire sin estado** (S4a): *crate* nuevo `rt-sim` (cada partícula es función pura de semilla, id e instante, en forma cerrada, con deriva de *curl noise* y muerte en el suelo); sección RSB `FXAM` con los parámetros de cada efecto (192 B, `ARCHITECTURE.md` §5.2); esferas con intersección estable, discos y cápsulas con su BVH en `rt-core`, un tamaño mínimo de 0,35 px para los rayos de cámara que conserva la energía, visibilidad a cámara, en reflejos y en sombras; `rt_particles_eval` en `rt.wasm` para el visor, y `rt --write-ambient-example`. Sin efectos, los píxeles de toda escena no cambian.
 
 ## v0.1.5 — 2026-10-14
 
