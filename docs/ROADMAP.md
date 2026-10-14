@@ -5324,7 +5324,17 @@ Tres más del usuario (14-10, con la fase ya construida):
    construye el `logo.svg` del paquete desde las filas de `LOGO`: un `rect`
    por punto, las dos tintas como dos grises, celdas cuadradas (es vector:
    sin preocuparse del suavizado), con exactamente la misma regla de la
-   tinta tenue que `DotGrid`.
+   tinta tenue que `DotGrid`. Después (14-10) el usuario mandó **su logo
+   como imagen** (2000×2000, puntos blancos sobre negro: el cartucho de
+   frente —eje arriba y abajo, hombros, cuerpo, la banda de la etiqueta como
+   hueco— y la lengüeta saliendo a la derecha, con sus tres columnas más
+   cercanas al cartucho en tres grises de oscuro a claro y después blanco):
+   el `logo.svg` tiene que reproducir ese patrón de puntos exactamente, y se
+   comprueba rasterizándolo a 2000×2000 sobre negro con el Chromium local y
+   comparándolo con la imagen punto a punto. Si `marks.ts` y la imagen no
+   coinciden, gana la imagen: es lo que el usuario llama el logo. El logo va
+   sobre una tesela negra u oscura en la tarjeta del plugin, para que los
+   puntos blancos se lean en los dos temas.
 8. **Las recetas son un carrusel horizontal**, como la tira de película de
    la app móvil: una tarjeta por receta (la miniatura arriba, el nombre
    público debajo, la categoría como etiqueta pequeña), que se desplaza de
@@ -5404,24 +5414,63 @@ enfoque del escáner, respuesta a la luz, escaneo—, halación, difusión, obje
 motor de grano, semilla), `tools/plugins/film/plugin.js` (nuevo: el ABI en C con
 `inf_render_rgba` e `inf_render_linear_rgba` y un registro lateral vacío, sin
 retener vistas entre llamadas) y `tools/plugins/build-film.mjs --aintfilm`, que
-lo monta y lo empaqueta. **El paquete construido**: `film-0.1.0.rpk`, versión
-**0.1.0** (la de aintfilm; motor 0.1.0), **1 752 919 bytes**, `sha256`
-**`9f377b5c2f34a68d8d20e2b658ce760ca1d3f538ee0b327f0e0accd5484652da`**, 136
+lo monta y lo empaqueta. **El paquete construido** (con las decisiones 7–9):
+`film-0.1.0.rpk`, versión **0.1.0** (la de aintfilm; motor 0.1.0), **1 948 807
+bytes**, `sha256`
+**`e6b1e2c70beae17375d3eba222a2095fb653cce39264af12a0faa9229216b264`**, 137
 archivos y 127 recetas (51 películas, su color solo, 8 granos, 13 filtros, 4
 objetivos), fijado en el registro con la `url` de la release v0.1.6 y `keyUrl`
-vacío; la clave la tiene el responsable (fuera del repositorio). Tests: 47
-nuevos en cinco archivos (`plugins-rpk`, `plugins-host`, `plugins-settings`,
-`plugins-brands` y `plugins-film`, este y una parte del anterior solo donde hay
-un *checkout* de aintfilm; y que `?testPlugins=` no esté en una versión de
-producción), con 23 mutaciones comprobadas (cada una rompe lo que
-un test guarda y ese test falla; una más sobrevive a propósito: quitar la
-comprobación de la longitud del cifrado, que su `sha256` ya cubre); `tools/plugins-check.mjs` en verde
+vacío; la clave la tiene el responsable (fuera del repositorio). Tests: 62
+nuevos en siete archivos (`plugins-rpk`, `plugins-host`, `plugins-settings`,
+`plugins-brands`, `plugins-film`, `plugins-thumbs` y `plugins-frames`; una parte
+de `plugins-film` solo donde hay un *checkout* de aintfilm; y que `?testPlugins=`
+no esté en una versión de producción), con 44 mutaciones comprobadas (cada una
+rompe lo que un test guarda y ese test falla; una más sobrevive a propósito:
+quitar la comprobación de la longitud del cifrado, que su `sha256` ya cubre); `tools/plugins-check.mjs` en verde
 con el paquete de verdad (instalar del servidor local con la clave tecleada,
 una clave errónea, quitar e instalar desde archivo, la vista previa con los
 números del plugin, deshacer, *Aplicar*, acromático, recargar) y las capturas
 `docs/ui/settings-plugins.png` y `docs/ui/render-plugins-film.png`.
 `docs/release-notes/plugins.md`: cómo se publica el `.rpk` y qué se hace con la
 clave.
+
+**Hecho, decisiones 7–9** (2026-10-14). **El logo** (7):
+`tools/plugins/dot-grid.mjs` escribe el `logo.svg` del paquete, un `rect` por
+punto en celdas cuadradas, desde la **imagen del logo del dueño** (`build-film
+--logo`: leída punto a punto, sus columnas y filas de puntos por dónde hay tinta
+y la tinta de cada uno agrupada en los niveles de la imagen) o, sin ella, desde
+las filas de `LOGO` del `marks.ts` del *checkout* con la regla de dos tintas de
+`DotGrid`; el SVG antiguo ya no se usa. El del paquete sale de la imagen: 15×15,
+121 puntos, la lengüeta en `#808080`, `#BFBFBF` y `#E0E0E0` y el resto `#FFFFFF`,
+el punto 0,862 de la celda. **Comprobado** rasterizando el SVG a 2000×2000 sobre
+negro con el Chromium local, colocado donde la imagen tiene su rejilla:
+**225 de 225 celdas iguales** (la misma clase de tinta y la media de cada punto
+igual: diferencia máxima 0), los centros a 1 px como mucho, los cuatro niveles
+128 · 191 · 224 · 255 en los dos, el 98,9 % de los píxeles a menos de 24 niveles
+y un 96,2 % de solape de la tinta (los puntos de la imagen están dibujados a
+mano, no son círculos perfectos). Va sobre la tesela negra de *Ajustes* y de la
+ventana de render, en los dos temas. **El carrusel** (8): la escena `film-thumb`
+de `rt-cli` (`rt --write-film-thumb`; el frasco y la lámpara salen de
+`bottle_meshes`/`lamp_meshes`, y las escenas E5 de los dos siguen dando los
+mismos bytes) renderizada a 512 muestras con *denoise* (147 s con 4 hilos) en
+`tools/plugins/film/thumb-base.png`; el manifiesto la nombra (`base`); la vista
+previa sin resultado es esa imagen por el plugin (Aplicar sigue esperando un
+resultado); las tarjetas (`ui/panels/plugin-recipes.ts`) llevan la imagen base
+reducida a 160 × 100 por cada receta con los mandos por defecto, hechas una a
+una, guardadas en IndexedDB (versión 2, almacén `thumbs`) y entregadas al
+momento la vez siguiente. **Tiempo por miniatura**: con el motor de película,
+~1 s a 320 × 200 y ~0,2 s a 160 × 100 en Node con la máquina cargada (mediana
+de 20 recetas: 963 ms y 199 ms), así que van a media resolución; en el
+navegador, las 128 tarjetas en 27 s (0,21 s cada una, de la primera apertura a
+la última imagen) y 1,7 s al abrir otra vez. **La semilla por fotograma** (9):
+`role: 'seed'` en el deslizador de la semilla (el de película y el de prueba,
+que gana un ruido sacado de ella), `frameControls`/`frameSeed`/`SEED_RULE`, el
+interruptor **Aplicar a los trabajos de render** (`RenderSettings.plugins[id].
+jobs`) y el paso de la cola que manda cada imagen por el plugin; la primera, al
+historial con `provenance.seed`. Comprobación de navegador en verde con los
+puntos nuevos (`d2_base_preview_and_cards`, `d2_film_cards`,
+`d2_film_cards_kept`, `e_jobs_switch_undoable`, `f_carousel_keys_wheel`) y las
+dos capturas rehechas.
 
 **No encajó con el plan.** (1) **Los nombres públicos**: el árbol de aintfilm
 todavía enseña marcas (su M38-07, el renombrado, está pendiente; su
@@ -5468,6 +5517,45 @@ Las herramientas necesitan Node 22.18 o posterior. (9) `modelCatalogue()` de
 acentos saldría mal); el de plugins lo hace bien; el de modelos no se tocó. (10)
 El lanzador no cambia (el almacén es IndexedDB también en WebView2) y la prueba
 en un Windows real queda en la lista de `docs/release-notes/plugins.md`.
+
+**No encajó con el plan, decisiones 7–9.** (11) **El logo de `marks.ts` no es el
+de la imagen**, y no solo en los grises: la rejilla `LOGO` del *checkout* es de
+16×16 con 137 puntos (eje de 4, hombros de 10, cuerpo de 12 que pasa por encima
+de la lengüeta) y una sola tinta tenue `#4A4A4A`; la imagen del usuario (igual
+que el dibujo del dueño de su `design/screens/owner-0912b-film-cartridge.jpg`) es
+de 15×15 con 121 puntos (eje de 3, hombros de 7, cuerpo de 9) y tres grises.
+Ganó la imagen, como se pidió, pero entonces el logo no puede salir de las filas
+de `LOGO`: sale de la imagen, leída por `build-film --logo` al construir (la
+imagen es del dueño y va solo dentro del paquete, como su logo: no se guarda en
+este repositorio, ni sus filas); sin `--logo` sale el de `LOGO`, que no se
+publica (las notas de publicación lo dicen). La regla de `DotGrid` es la del
+camino de `marks.ts`. Habría que llevar a aintfilm que su `LOGO` no es el logo
+de su dueño. (12) **«Un `rect` por punto» y los puntos redondos**: la imagen y
+`DotGrid` dibujan círculos; cada punto es un `rect` con `rx = ry` la mitad de
+su lado (un círculo), en su celda cuadrada, para cumplir las dos cosas. (13) La
+imagen base es **PNG sRGB de 8 bits**, lo que escribe `rt` (no escribe 16 bits
+lineales), y entra por `inf_render_rgba`, como cualquier resultado PNG; la
+escena lleva `clamp_indirect` 2: el filamento visto a través de dos vidrios da
+cáusticas que el trazador encuentra como *fireflies* incluso a 512 muestras con
+*denoise*. (14) Las tarjetas se hacen cuando el bloque del plugin aparece por
+primera vez (ahí arranca su *worker*), no al arrancar la aplicación, y la de
+*Sin receta* también lleva su imagen; una versión nueva las rehace (la clave es
+la versión, no el `sha256`: un paquete distinto con la misma versión se quedaría
+las de antes, y por eso el paquete reconstruido aquí, que nunca se publicó,
+sigue siendo 0.1.0). (15) **Aplicar a un trabajo de animación no existía**: el
+plugin solo trabajaba sobre un resultado del historial, y el historial guarda
+solo el primer fotograma de una animación. Se añadió el interruptor *Aplicar a
+los trabajos de render* (`jobs`, apagado por defecto), que pasa por el plugin
+cada imagen de los trabajos (fijas y fotogramas), después de guardar la del
+motor y sin entrar en la barra de progreso. (16) «El índice del fotograma» es su
+número en la animación menos uno, no su posición en el trabajo: un tramo
+renderizado aparte (3–4) tiene el grano que tiene en la animación entera; la
+semilla da la vuelta al rango del deslizador (la del de película llega a 999
+999 999). (17) La vista previa no enseña otros fotogramas: es siempre la
+semilla puesta, la del fotograma 0. (18) El almacén de miniaturas de IndexedDB
+no tiene test en Node (no hay IndexedDB en los tests): la comprobación de
+navegador ve que guarda y devuelve (`d2_film_cards_kept`); que *Quitar* las
+borre solo lo comprueban los tests sobre el almacén en memoria.
 
 ## Orden sugerido
 

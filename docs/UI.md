@@ -905,11 +905,28 @@ trabajar).
   ficha **Licencia cerrada** y, debajo, su línea `notice` con **Página del
   proyecto ↗**. Para el de película: *Adelanto de una app de edición de fotos y
   simulación de película del mismo desarrollador, en desarrollo*.
-- **Receta**, a la izquierda: una lista con las recetas del plugin agrupadas
-  por **sus** categorías y con **sus nombres públicos** (el de película no
-  enseña marcas de fabricantes ni de películas: su regla D112), más *Sin
-  receta* (el punto de partida del propio plugin); debajo, la categoría de la
-  elegida. Después, **los mandos del manifiesto** por grupos, cada grupo con
+- **Receta**, debajo de la cabecera y a todo lo ancho (decisión 8;
+  `ui/panels/plugin-recipes.ts`): un **carrusel horizontal**, como la tira de
+  película de la app móvil, con una tarjeta por receta en el orden y por las
+  categorías **del plugin**: la imagen arriba, **su nombre público** debajo (el
+  de película no enseña marcas de fabricantes ni de películas: su regla D112)
+  y la categoría como etiqueta pequeña; la primera tarjeta es *Sin receta ·
+  Solo los mandos* (el punto de partida del propio plugin). Se desplaza de lado
+  con la rueda o el *trackpad* (una tarjeta por paso; en un extremo la rueda
+  vuelve a ser de la ventana) y con **← →** (también ↑ ↓, Inicio y Fin), que
+  eligen la tarjeta de al lado; un clic elige una. La elegida lleva un
+  contorno de la tinta; el carrusel se ajusta a las tarjetas y se funde en el
+  extremo donde hay más. Cada elección es una acción del *store*, deshacible.
+  La imagen de cada tarjeta es **la imagen base del plugin** (la escena de
+  prueba que trae su paquete: para el de película, el frasco junto a la
+  lámpara encendida de `rt --write-film-thumb`) por esa receta con los mandos
+  por defecto, a 160 × 100 y ampliada por CSS; mientras no llega, un hueco
+  rayado gris (*Se está haciendo su imagen*). Se hacen **una vez** en este
+  equipo (IndexedDB, por versión del plugin y receta), de una en una y solo
+  cuando no hay una vista previa esperando; mientras, *Imágenes de las recetas
+  12 de 128, hechas una vez en este equipo*. Debajo del carrusel, la elegida
+  con su categoría (*CN-01 · Películas · negativo en color*). A la
+  izquierda, **los mandos del manifiesto** por grupos, cada grupo con
   su título: deslizador con su campo numérico (y su unidad; un deslizador con
   `minLabel` dice *Receta* en su tope izquierdo: ahí el plugin conserva el
   valor de la receta), lista o interruptor, cada uno con su frase cuando la
@@ -926,8 +943,12 @@ trabajar).
   **la línea del plugin**: lo que el propio plugin dice de esa vista previa
   (para el de película: *Negativo por píxel 75 µm · Grano Gaussian · Etapas 5 ·
   Motor wasm 0.1.0*), nada que la interfaz calcule ni invente; y *El plugin
-  tardó 1,1 s*, medido alrededor de su render. Sin resultados: *Renderiza antes
-  una imagen: un plugin trabaja sobre un resultado terminado*.
+  tardó 1,1 s*, medido alrededor de su render. Sin resultados, **la imagen base
+  del plugin** por él (*Escena de prueba · el plugin*; *de la escena de prueba
+  del plugin*) con la línea *Aún no hay resultado: la vista previa enseña la
+  escena de prueba del plugin; Aplicar necesita un render terminado*; un plugin
+  sin imagen base dice *Renderiza antes una imagen: un plugin trabaja sobre un
+  resultado terminado*.
 - **Aplicar**: el resultado a su tamaño por el plugin (*Aplicando a 1920 ×
   1080…*, con **Cancelar**, que para el *worker*) y **un resultado nuevo** en el
   historial junto a su origen, como la imagen de la IA: PNG (JPEG para un
@@ -935,9 +956,22 @@ trabajar).
   con el nombre *<origen>_<plugin>.png* y su procedencia (`provenance: { plugin,
   version, recipe, controls }`). Se abre en el visor comparado con su origen,
   que dice *Hecho con aintfilm · simulación de película 0.1.0, receta CN-01, a
-  partir de Botella_Cámara 1_0001.png*. Captura:
+  partir de Botella_Cámara 1_0001.png*; un plugin con semilla guarda además
+  `seed: { control, seed0, frame, rule: 'seed0+frame' }`.
+- **Aplicar a los trabajos de render** (interruptor, decisión 9), debajo de
+  *Aplicar*: con él, **cada imagen que renderiza la cola** pasa también por el
+  plugin, con la receta y los mandos de ese trabajo, y se guarda junto a la del
+  motor (*<nombre>_<plugin>.png*); en una animación, **cada fotograma con su
+  semilla**, `semilla + fotograma` (el índice del fotograma en la animación, 0
+  para el primero: un tramo renderizado aparte lleva el mismo grano), para que
+  el grano sea el de una película fotograma a fotograma y no una capa fija; una
+  imagen fija usa la semilla tal cual. La primera imagen del trabajo se guarda
+  también en el historial con su procedencia. Si el plugin no está instalado o
+  falla, se dice una vez (*aintfilm · simulación de película no se aplicó a
+  …: …. Se guardó la imagen del motor.*) y el render queda como estaba.
+  Deshacible y guardado con el proyecto como el resto. Captura:
   `docs/ui/render-plugins-film.png` (el paquete de película construido desde el
-  *checkout* de aintfilm).
+  *checkout* de aintfilm, con el logo del dueño).
 
 **Pie de la ventana**: a la izquierda, el resumen en una línea
 (*1920 × 1080 · 300 ppp · 256 muestras · PNG → Descargas · IA

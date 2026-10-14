@@ -9,15 +9,35 @@ aintfilm, en la **v0.1.6**.
 ## 1 · Construir el paquete
 
 Desde la raíz del repositorio, con un *checkout* de aintfilm al lado (solo se
-lee):
+lee) y la imagen del logo del dueño (puntos blancos sobre negro, el cartucho con
+los tres grises de la lengüeta; la guarda el desarrollador, como la clave, y no
+entra en el repositorio):
 
 ```bash
 # Un plugin nuevo: una clave nueva, escrita solo en --key-out (fuera del repositorio).
-node tools/plugins/build-film.mjs --aintfilm ../aintfilm --rpk ~/plugins/film-0.1.0.rpk --key-out ~/plugins/film-activation-key.txt
+node tools/plugins/build-film.mjs --aintfilm ../aintfilm --logo ~/plugins/aintfilm-logo.png --rpk ~/plugins/film-0.1.0.rpk --key-out ~/plugins/film-activation-key.txt
 
 # Una versión nueva del mismo plugin: la misma clave, para que quien lo tiene lo actualice sin teclear otra.
-node tools/plugins/build-film.mjs --aintfilm ../aintfilm --rpk ~/plugins/film-0.1.1.rpk --key-file ~/plugins/film-activation-key.txt --version 0.1.1
+node tools/plugins/build-film.mjs --aintfilm ../aintfilm --logo ~/plugins/aintfilm-logo.png --rpk ~/plugins/film-0.1.1.rpk --key-file ~/plugins/film-activation-key.txt --version 0.1.1
 ```
+
+La línea *logo:* dice de dónde salió el logo: *15×15 dots from …* (121 puntos,
+las tintas `#808080`, `#BFBFBF`, `#E0E0E0` y `#FFFFFF`) con `--logo`; sin él, la
+rejilla `LOGO` del *checkout*, que no es el logo del dueño (otra forma y un solo
+gris): no se publica así.
+
+La imagen base de las tarjetas de recetas, `tools/plugins/film/thumb-base.png`,
+está en el repositorio (es nuestra); si cambia la escena, se rehace con:
+
+```bash
+cd engine
+cargo run --release -p rt-cli -- --write-film-thumb film-thumb.rsb
+cargo run --release -p rt-cli -- film-thumb.rsb -o ../tools/plugins/film/thumb-base.png --samples 512 --denoise
+```
+
+Una versión nueva del plugin rehace las imágenes de las tarjetas en cada equipo
+(se guardan por versión): con la misma versión y otro paquete, se quedarían las
+de antes.
 
 La salida tiene que decir *no listed mark, product name or retired id in the
 manifest, the recipes, the glue, the logo, the licence or Repackshot's strings*:
@@ -101,7 +121,7 @@ Un párrafo para *Qué hay de nuevo*:
 
 Y una fila para *Descargas*:
 
-> **film-0.1.0.rpk**: el plugin de película (1,8 MB). No se abre a mano: se
+> **film-0.1.0.rpk**: el plugin de película (1,9 MB). No se abre a mano: se
 > instala desde *Ajustes ▸ Plugins ▸ Instalar*, que lo descarga de aquí y
 > comprueba su `sha256`, o con *Instalar desde archivo…*; pide la clave de
 > activación.
@@ -112,7 +132,13 @@ Y para la lista de comprobación en Windows (WebView2):
    pide la clave, una clave mal escrita se dice, la buena lo instala; sale su
    logo y se abren su licencia y sus avisos.
 2. [ ] Cierra y abre la aplicación: sigue instalado.
-3. [ ] Un render, y en la ventana de render la sección *Plugins*: la vista
+3. [ ] Antes de renderizar, la ventana de render ▸ *Plugins*: la vista previa
+   es la escena de prueba del plugin; el carrusel de recetas se llena de
+   imágenes (una vez: al volver a abrir están todas); la rueda lo desplaza de
+   lado y las flechas eligen.
+4. [ ] Un render, y en la ventana de render la sección *Plugins*: la vista
    previa con una receta (*CN-01*), la línea del plugin y el tiempo; *Aplicar*
    deja un resultado nuevo con su procedencia y su archivo `_aintfilm-film.png`.
-4. [ ] *Quitar*: se borra, y el proyecto conserva sus ajustes.
+5. [ ] *Aplicar a los trabajos de render* y una animación corta: cada fotograma
+   tiene su `_aintfilm-film.png` y su grano cambia de uno a otro.
+6. [ ] *Quitar*: se borra, y el proyecto conserva sus ajustes.

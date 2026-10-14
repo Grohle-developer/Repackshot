@@ -1244,9 +1244,12 @@ tiene una actualización, la de `keyUrl` o la que teclea el usuario
 *eso no es una clave*) → el paquete abierto en memoria y su manifiesto
 comprobado → guardado. Instalar desde archivo: lo mismo desde la cabecera, con
 la clave tecleada. El almacén (`src/plugins/store.ts`) es una base de IndexedDB,
-`repackshot-plugins`, con dos almacenes: `packages` (el `.rpk` tal cual llegó,
-cifrado) y `keys` (su clave), escritos en una sola transacción; sin IndexedDB,
-en memoria durante la sesión, y *Ajustes* lo dice. Quitar borra los dos.
+`repackshot-plugins` (versión 2), con tres almacenes: `packages` (el `.rpk` tal
+cual llegó, cifrado) y `keys` (su clave), escritos en una sola transacción, y
+`thumbs` (las imágenes de las tarjetas de recetas, PNG, por `plugin@versión:receta`,
+con un índice por plugin: lo que el plugin devolvió de su imagen base, nada del
+paquete en claro); sin IndexedDB, en memoria durante la sesión, y *Ajustes* lo
+dice. Quitar borra los tres.
 
 Al usarse: el paquete se descifra en memoria, el manifiesto se comprueba otra
 vez, el módulo WebAssembly se compila (`WebAssembly.compile`, nunca en síncrono
@@ -1265,17 +1268,39 @@ problema): `abi: 1`, `id`, `name` (es/en), `version`, `publisher`, `licence: {
 kind: 'closed', label (es/en), file }`, `homepage` (https), `summary` y `notice`
 (es/en; el aviso de *adelanto de una app en desarrollo*), `logo`, `slots:
 ['render.plugins']`, `entry: 'plugin.js'`, `wasm: { file, noImports } | null`,
-`notices` (el archivo de avisos de terceros), `groups: [{ id, label }]`,
-`controls` y `files`. Un mando: `{ key, label (es/en), kind: 'slider' |
-'select' | 'toggle', group, default, aux? }`, con `min`, `max`, `step`, `unit?`
-y `minLabel?` en un deslizador (lo que se lee en su tope izquierdo: allí el
-plugin conserva el valor de la receta) y `options: [{ value, label }]` en una
-lista. La interfaz dibuja el bloque **solo** desde el manifiesto
+`notices` (el archivo de avisos de terceros), `base?` (decisión 8: un PNG del
+paquete, la imagen base de sus recetas: lo que enseña la vista previa sin
+resultado y lo que llevan las tarjetas; el anfitrión la lee, no va al
+*worker*), `groups: [{ id, label }]`, `controls` y `files`. Un mando: `{ key,
+label (es/en), kind: 'slider' | 'select' | 'toggle', group, default, aux? }`,
+con `min`, `max`, `step`, `unit?`, `minLabel?` (lo que se lee en su tope
+izquierdo: allí el plugin conserva el valor de la receta) y `role?: 'seed'` en
+un deslizador (decisión 9: la semilla de lo que el plugin dibuja al azar; un
+deslizador de enteros de paso 1, uno por manifiesto) y `options: [{ value,
+label }]` en una lista. La interfaz dibuja el bloque **solo** desde el manifiesto
 (`controlGroups`); los valores se guardan en `RenderSettings.plugins[id] = {
-recipe, controls }` (deshacibles, con el proyecto; un proyecto anterior tiene
-`{}`; los de un plugin que no está instalado se conservan) y se comprueban
+recipe, controls, jobs? }` (deshacibles, con el proyecto; un proyecto anterior
+tiene `{}`; los de un plugin que no está instalado se conservan) y se comprueban
 contra el manifiesto donde el plugin corre (`controlsFor`: en su rango y su
-paso, de su tipo, o el valor por defecto).
+paso, de su tipo, o el valor por defecto). `jobs: true` (decisión 9) manda por
+el plugin cada imagen de un trabajo de la cola (`ui/render-queue.ts`, después
+de guardar la del motor): una imagen fija con la semilla puesta (`seed0`), cada
+fotograma de una animación con `frameControls`: `seed0 + fotograma`, el índice
+del fotograma en la animación (su número menos uno), dando la vuelta al rango
+del deslizador (`frameSeed`, regla `SEED_RULE = 'seed0+frame'`); la imagen se
+guarda como `<nombre>_<plugin>.png` (JPEG para un trabajo JPEG) y la primera
+queda además en el historial con `provenance.seed = { control, seed0, frame,
+rule }`.
+
+**Las tarjetas de recetas** (decisión 8, `PluginsService.thumbnails`): la
+imagen base, reducida a la mitad (`THUMB_SIZE`, 160 × 100) en luz lineal, por
+cada receta (y por ninguna) con los mandos por defecto; primero se entregan las
+guardadas (`thumbKey(plugin, versión, receta)`) y las que faltan se hacen **de
+una en una**, cada una solo cuando no hay en curso una vista previa, un
+*Aplicar* ni una imagen de un trabajo (el servicio cuenta esas y las tarjetas
+esperan a que no quede ninguna), y se guardan al llegar; parar a medias
+conserva las hechas. Una vista previa sin resultado es la imagen base por el
+plugin (`run` con `result: null`).
 
 ### 9.4 · El ABI v1
 
@@ -1309,16 +1334,25 @@ un *checkout* de aintfilm (que solo lee): el módulo
 exportaciones que usa el pegamento), sus *presets* (`src/engine/presets/`)
 completados con el propio lector del *checkout* (`settingsFromValue`: cada uno
 con todos sus campos, como los lee su *serde*) y renombrados a ids neutros, el
-logo (decisión 7: `logo.svg` dibujado aquí desde las filas de la rejilla `LOGO`
-de su `src/data/marks.ts`, el cartucho de 16×16 a dos tintas, con la regla de su
-`DotGrid` —una rejilla con un espacio es de dos tintas y sus `.` son puntos en
-la tenue—, un `rect` cuadrado por punto, del ancho de sus puntos: 0,84 de la
-celda; `tools/plugins/dot-grid.mjs`), la licencia (`LICENSE` → `LICENCE.txt`) y
-los avisos de terceros
-(`public/THIRD-PARTY-NOTICES.txt` → `NOTICES.txt`); de aquí, el manifiesto
-(`tools/plugins/film/manifest.json`, con su versión y su lista de archivos) y
-el pegamento (`tools/plugins/film/plugin.js`). `--key-out` no puede estar dentro
-de este repositorio.
+logo (decisión 7, `tools/plugins/dot-grid.mjs`: `logo.svg`, un `rect` por
+punto con las esquinas redondeadas al círculo del punto, en celdas cuadradas;
+con `--logo <imagen>`, desde **la imagen del logo del dueño** —puntos blancos
+sobre negro—, leída punto a punto: las columnas y filas de puntos por dónde hay
+tinta, la tinta de cada punto su gris, los grises agrupados en los niveles que
+tiene la imagen; sin `--logo`, desde las filas de la rejilla `LOGO` de su
+`src/data/marks.ts` con la regla de su `DotGrid` —una rejilla con un espacio es
+de dos tintas y sus `.` son puntos en la tenue `#4A4A4A`—; la imagen gana: es lo
+que el usuario llama el logo), la licencia (`LICENSE` → `LICENCE.txt`) y los
+avisos de terceros (`public/THIRD-PARTY-NOTICES.txt` → `NOTICES.txt`); de aquí,
+el manifiesto (`tools/plugins/film/manifest.json`, con su versión y su lista de
+archivos), el pegamento (`tools/plugins/film/plugin.js`) y la imagen base de las
+tarjetas (`tools/plugins/film/thumb-base.png`: la escena `film-thumb` de
+`rt-cli`, el frasco de perfume de `glass_bottle` junto a la lámpara de mesa de
+`lamp` en su cuarto oscuro, con la lámpara encendida, 320 × 200, escrita con
+`rt --write-film-thumb` y renderizada con `rt <escena> -o thumb-base.png
+--samples 512 --denoise`: PNG sRGB de 8 bits, lo que escribe `rt`, que el
+pegamento recibe por `inf_render_rgba` como cualquier resultado PNG).
+`--key-out` no puede estar dentro de este repositorio.
 
 **El pegamento** (nuestro): sigue la regla del ABI en C del módulo —todo
 *buffer* se reserva en su memoria con `inf_alloc` y se devuelve con `inf_free`,

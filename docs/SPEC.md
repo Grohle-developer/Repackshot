@@ -717,10 +717,16 @@ resultado actual por el plugin con los números que el plugin da y **Aplicar**,
 que deja un **resultado nuevo** en el historial junto a su origen, con su
 procedencia (`provenance: { plugin, version, recipe, controls }`). La receta y
 los mandos de cada plugin son del proyecto (`render.plugins`): deshacibles y
-guardados con él; un proyecto anterior no tiene ninguno. Un plugin no toca el
-proyecto: recibe píxeles y devuelve píxeles. El primero es la **simulación de
-película de aintfilm** (la app de edición de fotos y simulación de película del
-mismo desarrollador, en desarrollo).
+guardados con él; un proyecto anterior no tiene ninguno. Las recetas son un
+**carrusel** de tarjetas, cada una con la imagen base del plugin (su escena de
+prueba) por esa receta, hecha una vez por equipo y versión; sin resultado
+todavía, la vista previa es esa escena de prueba. Con **Aplicar a los trabajos
+de render**, cada imagen de un trabajo de la cola pasa también por el plugin y
+se guarda junto a la del motor; en una animación, cada fotograma con su
+semilla, `semilla + fotograma` (`provenance.seed` guarda la semilla y la
+regla). Un plugin no toca el proyecto: recibe píxeles y devuelve píxeles. El
+primero es la **simulación de película de aintfilm** (la app de edición de
+fotos y simulación de película del mismo desarrollador, en desarrollo).
 
 ### 3.9 · Estudios, biblioteca propia y proyecto
 
