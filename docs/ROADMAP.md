@@ -1325,6 +1325,74 @@ cambia de *hash* (`0xab15f290` del ejemplo con *denoise*); los gestos
 siguen a resolución reducida sin *denoise*; captura `docs/ui/
 denoise-live.png` con la barra superior.
 
+## U11b · Intensidad de la reducción de ruido — **Opus** (con U11)
+
+**Qué.** Petición del usuario: elegir cuánto *denoise* se aplica. En la
+ventana de render, *Avanzado ▸ Reducción de ruido* gana **Intensidad**
+(0–100 %, por defecto 100): la imagen entregada es la mezcla lineal
+`ruidosa × (1 − s) + limpia × s`, por canal, en luz lineal, en el motor
+(`rt_post::denoise` recibe `s`; `RNDR` gana `denoise_strength` como
+campo final; sin él, 100 %: *hashes* intactos). Vale para el render
+final, para el visor *Completo* (la misma intensidad: un solo mando) y
+para `rt --denoise-strength`. Con 0 % no se ejecuta el filtro (la imagen
+es la ruidosa, byte a byte). Deshacible, guardado en `advanced` del
+proyecto; proyectos anteriores abren al 100 %. Cadena `es`/`en`.
+
+**Criterio.** Test: 50 % da exactamente la media de las dos imágenes
+(bits), 0 % la ruidosa y 100 % la limpia; el *hash* `0xab15f290` con 100 %
+no cambia; paridad wasm.
+
+## E11 · Suavizado de bordes, de menos a más coste — **Opus** (tras U11)
+
+**Qué.** Petición del usuario: elegir en *Ajustes ▸ Motor de renderizado*
+el tipo de suavizado de bordes, ordenado de menos a más costoso. Dos
+listas, cada una en ese orden, sin cifras de coste inventadas (regla 10:
+el orden y una frase de ayuda, no porcentajes que nadie midió):
+
+**Visor Rápido** (three.js): *Ninguno · MSAA 2× · MSAA 4× · MSAA 8×*
+(por defecto 4×; el máximo que dé el dispositivo, y se dice cuál).
+
+**Completo y render** (el motor), el *filtro de píxel* y el extra en
+bordes, en una sola lista:
+1. **Ninguno**: todas las muestras por el centro del píxel (sin *jitter*
+   en el plano de imagen): bordes dentados, el más barato.
+2. **Estándar**: caja de 1 px con *jitter* uniforme (lo de hoy; por
+   defecto).
+3. **Suave**: filtro tienda de 2 px por muestreo de importancia del
+   filtro (la muestra se desplaza con la CDF inversa; peso 1).
+4. **Fino**: Blackman–Harris de 3 px (el filtro habitual de producción),
+   con CDF inversa tabulada en `f32` (256 entradas, calculada por un test
+   de referencia, sin `exp` ni `cos` en el bucle: determinismo).
+5. **Fino + bordes ×2**: lo anterior y el doble de muestras en los
+   píxeles de borde (los que en su vecindad 3×3 cambian de `partId` o de
+   material, o cuya profundidad salta más del 2 % de la distancia: los
+   pases de rayo central ya lo dan, determinista).
+6. **Fino + bordes ×4**: ídem con el cuádruple.
+
+Motor: `RNDR` gana `pixel_filter` (0 estándar) y `edge_supersample` (1)
+como campos finales; sin ellos, lo de hoy, *hashes* intactos. El
+*jitter* usa las mismas dimensiones de cámara con otra deformación. Las
+muestras extra de borde se reparten por pasadas (en cada pasada un píxel
+de borde recibe `k` muestras seguidas, con índices de muestra propios y
+consecutivos, de modo que la decisión depende solo de los pases y la
+imagen es la misma con cualquier número de hilos); el *denoise* y los
+pases reciben el número de muestras por píxel. El medidor del visor dice
+el filtro en uso cuando no es el estándar. Un **ajuste global** (no del
+proyecto), como el resto de *Motor de renderizado*; en escritorio vive en
+`settings.json` del lanzador (P3e). `UI.md` y `ARCHITECTURE.md`.
+
+**Depende de.** U11, E5b-1, X2 (pases).
+
+**Criterio.** Test: con *Ninguno* todas las muestras de un píxel generan
+el mismo rayo primario; con *Suave* y *Fino* la distribución del
+desplazamiento sigue la CDF del filtro (χ² sobre 10⁶ muestras); con
+bordes ×2 los píxeles de borde acaban con el doble de muestras y los
+demás con las mismas, con cualquier número de hilos (bits iguales); el
+ejemplo con *Estándar* conserva `0x223515c3`; paridad wasm; hoja
+`out/aa-sheet.html`: un recorte 4× del canto del frasco con los seis
+ajustes y el tiempo de cada uno (los tiempos van en el PR, no en la
+interfaz); captura `docs/ui/settings-aa.png`.
+
 ## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
 
 **Qué.** Tres partes, en este orden, cada una con su commit y sus
