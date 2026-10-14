@@ -1,0 +1,848 @@
+{
+  "abi": 1,
+  "id": "aintfilm-film",
+  "name": {
+    "en": "aintfilm · film simulation",
+    "es": "aintfilm · simulación de película"
+  },
+  "version": "__VERSION__",
+  "publisher": "Grohle",
+  "licence": {
+    "kind": "closed",
+    "label": {
+      "en": "Closed licence",
+      "es": "Licencia cerrada"
+    },
+    "file": "LICENCE.txt"
+  },
+  "homepage": "https://aintfilm.app",
+  "summary": {
+    "en": "The film engine of aintfilm, the photo editing and film simulation app by the same developer: film stocks, grain sized on the negative, halation, diffusion filters and the print or the scan, over a finished render.",
+    "es": "El motor de película de aintfilm, la app de edición de fotos y simulación de película del mismo desarrollador: películas, grano medido sobre el negativo, halación, filtros de difusión y la copia o el escaneo, sobre un render terminado."
+  },
+  "notice": {
+    "en": "A preview of aintfilm, a photo editing and film simulation app by the same developer, in development.",
+    "es": "Adelanto de una app de edición de fotos y simulación de película del mismo desarrollador, en desarrollo."
+  },
+  "logo": "logo.svg",
+  "slots": [
+    "render.plugins"
+  ],
+  "entry": "plugin.js",
+  "wasm": {
+    "file": "module.wasm",
+    "noImports": true
+  },
+  "notices": "NOTICES.txt",
+  "groups": [
+    {
+      "id": "film",
+      "label": {
+        "en": "Film",
+        "es": "Película"
+      }
+    },
+    {
+      "id": "colour",
+      "label": {
+        "en": "Colour and the positive",
+        "es": "Color y el positivo"
+      }
+    },
+    {
+      "id": "grain",
+      "label": {
+        "en": "Grain",
+        "es": "Grano"
+      }
+    },
+    {
+      "id": "halation",
+      "label": {
+        "en": "Halation",
+        "es": "Halación"
+      }
+    },
+    {
+      "id": "diffusion",
+      "label": {
+        "en": "Diffusion filter",
+        "es": "Filtro de difusión"
+      }
+    },
+    {
+      "id": "lens",
+      "label": {
+        "en": "Lens",
+        "es": "Objetivo"
+      }
+    },
+    {
+      "id": "rendering",
+      "label": {
+        "en": "Rendering",
+        "es": "Renderizado"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "key": "format",
+      "label": {
+        "en": "Negative format",
+        "es": "Formato del negativo"
+      },
+      "kind": "select",
+      "group": "film",
+      "default": "recipe",
+      "options": [
+        {
+          "value": "recipe",
+          "label": {
+            "en": "Recipe’s",
+            "es": "La de la receta"
+          }
+        },
+        {
+          "value": "0",
+          "label": {
+            "en": "35 MM",
+            "es": "35 MM"
+          }
+        },
+        {
+          "value": "1",
+          "label": {
+            "en": "35 MM HALF FRAME",
+            "es": "35 MM HALF FRAME"
+          }
+        },
+        {
+          "value": "2",
+          "label": {
+            "en": "110",
+            "es": "110"
+          }
+        },
+        {
+          "value": "3",
+          "label": {
+            "en": "645",
+            "es": "645"
+          }
+        },
+        {
+          "value": "4",
+          "label": {
+            "en": "6×6",
+            "es": "6×6"
+          }
+        },
+        {
+          "value": "5",
+          "label": {
+            "en": "6×7",
+            "es": "6×7"
+          }
+        },
+        {
+          "value": "6",
+          "label": {
+            "en": "6×9",
+            "es": "6×9"
+          }
+        },
+        {
+          "value": "7",
+          "label": {
+            "en": "4×5",
+            "es": "4×5"
+          }
+        },
+        {
+          "value": "8",
+          "label": {
+            "en": "8×10",
+            "es": "8×10"
+          }
+        },
+        {
+          "value": "9",
+          "label": {
+            "en": "INSTANT 54×86",
+            "es": "INSTANT 54×86"
+          }
+        },
+        {
+          "value": "10",
+          "label": {
+            "en": "16 MM",
+            "es": "16 MM"
+          }
+        },
+        {
+          "value": "11",
+          "label": {
+            "en": "SUPER 16",
+            "es": "SUPER 16"
+          }
+        },
+        {
+          "value": "12",
+          "label": {
+            "en": "35 MM 2-PERF",
+            "es": "35 MM 2-PERF"
+          }
+        },
+        {
+          "value": "13",
+          "label": {
+            "en": "35 MM 3-PERF",
+            "es": "35 MM 3-PERF"
+          }
+        },
+        {
+          "value": "14",
+          "label": {
+            "en": "ACADEMY",
+            "es": "ACADEMY"
+          }
+        },
+        {
+          "value": "15",
+          "label": {
+            "en": "SUPER 35",
+            "es": "SUPER 35"
+          }
+        },
+        {
+          "value": "16",
+          "label": {
+            "en": "65/70 MM",
+            "es": "65/70 MM"
+          }
+        },
+        {
+          "value": "17",
+          "label": {
+            "en": "15-PERF 70 MM",
+            "es": "15-PERF 70 MM"
+          }
+        }
+      ],
+      "aux": {
+        "en": "Grain is sized in micrometres on the negative: a smaller format shows larger grain at the same pixels.",
+        "es": "El grano se mide en micras sobre el negativo: un formato menor enseña el grano más grande con los mismos píxeles."
+      }
+    },
+    {
+      "key": "exposure",
+      "label": {
+        "en": "Film exposure (push and pull)",
+        "es": "Exposición de la película (forzado)"
+      },
+      "kind": "slider",
+      "group": "film",
+      "min": -3,
+      "max": 3,
+      "step": 0.01,
+      "default": 0,
+      "unit": "EV",
+      "aux": {
+        "en": "Stops the film is given: above nought over-exposed or pushed, below it pulled.",
+        "es": "Pasos que recibe la película: por encima de cero sobreexpuesta o forzada, por debajo subexpuesta."
+      }
+    },
+    {
+      "key": "colour",
+      "label": {
+        "en": "Colour",
+        "es": "Color"
+      },
+      "kind": "toggle",
+      "group": "colour",
+      "default": true,
+      "aux": {
+        "en": "Off: the film’s colour is not heard, only its grain and its halation.",
+        "es": "Apagado: no se oye el color de la película, solo su grano y su halación."
+      }
+    },
+    {
+      "key": "model",
+      "label": {
+        "en": "Model",
+        "es": "Modelo"
+      },
+      "kind": "select",
+      "group": "colour",
+      "default": "matrix",
+      "options": [
+        {
+          "value": "matrix",
+          "label": {
+            "en": "Matrix",
+            "es": "Matriz"
+          }
+        },
+        {
+          "value": "spectral",
+          "label": {
+            "en": "Spectral",
+            "es": "Espectral"
+          }
+        }
+      ],
+      "aux": {
+        "en": "Spectral: the same curves with a spectrum, a light and a paper around them.",
+        "es": "Espectral: las mismas curvas con un espectro, una luz y un papel alrededor."
+      }
+    },
+    {
+      "key": "contrast",
+      "label": {
+        "en": "Contrast",
+        "es": "Contraste"
+      },
+      "kind": "slider",
+      "group": "colour",
+      "min": 0.5,
+      "max": 1.6,
+      "step": 0.01,
+      "default": 1,
+      "aux": {
+        "en": "Multiplies the gamma of the film’s curves.",
+        "es": "Multiplica la gamma de las curvas de la película."
+      }
+    },
+    {
+      "key": "saturation",
+      "label": {
+        "en": "Saturation",
+        "es": "Saturación"
+      },
+      "kind": "slider",
+      "group": "colour",
+      "min": 0,
+      "max": 2,
+      "step": 0.01,
+      "default": 1,
+      "aux": {
+        "en": "Multiplies the film’s own saturation.",
+        "es": "Multiplica la saturación propia de la película."
+      }
+    },
+    {
+      "key": "warmth",
+      "label": {
+        "en": "Warmth",
+        "es": "Calidez"
+      },
+      "kind": "slider",
+      "group": "colour",
+      "min": -1,
+      "max": 1,
+      "step": 0.01,
+      "default": 0,
+      "unit": "EV",
+      "aux": {
+        "en": "Printing filtration: stops of warm (above nought) or cool.",
+        "es": "Filtrado de copia: pasos de cálido (por encima de cero) o frío."
+      }
+    },
+    {
+      "key": "printExposure",
+      "label": {
+        "en": "Print exposure",
+        "es": "Exposición de la copia"
+      },
+      "kind": "slider",
+      "group": "colour",
+      "min": -2,
+      "max": 2,
+      "step": 0.01,
+      "default": 0,
+      "unit": "EV",
+      "aux": {
+        "en": "Brightness of the print or the scan, in stops.",
+        "es": "Brillo de la copia o del escaneo, en pasos."
+      }
+    },
+    {
+      "key": "output",
+      "label": {
+        "en": "Positive",
+        "es": "Positivo"
+      },
+      "kind": "select",
+      "group": "colour",
+      "default": "recipe",
+      "options": [
+        {
+          "value": "recipe",
+          "label": {
+            "en": "Recipe’s",
+            "es": "La de la receta"
+          }
+        },
+        {
+          "value": "print",
+          "label": {
+            "en": "Print on paper",
+            "es": "Copia en papel"
+          }
+        },
+        {
+          "value": "scan",
+          "label": {
+            "en": "Scan",
+            "es": "Escaneo"
+          }
+        },
+        {
+          "value": "direct",
+          "label": {
+            "en": "The film as it is",
+            "es": "La película tal cual"
+          }
+        }
+      ],
+      "aux": {
+        "en": "How the positive is made from the negative.",
+        "es": "Cómo se hace el positivo a partir del negativo."
+      }
+    },
+    {
+      "key": "grain",
+      "label": {
+        "en": "Grain",
+        "es": "Grano"
+      },
+      "kind": "toggle",
+      "group": "grain",
+      "default": true
+    },
+    {
+      "key": "grainAmount",
+      "label": {
+        "en": "Amount",
+        "es": "Cantidad"
+      },
+      "kind": "slider",
+      "group": "grain",
+      "min": 0,
+      "max": 3,
+      "step": 0.01,
+      "default": 1,
+      "aux": {
+        "en": "Multiplies the film’s measured granularity.",
+        "es": "Multiplica la granularidad medida de la película."
+      }
+    },
+    {
+      "key": "grainSize",
+      "label": {
+        "en": "Size",
+        "es": "Tamaño"
+      },
+      "kind": "slider",
+      "group": "grain",
+      "min": 0.25,
+      "max": 3,
+      "step": 0.01,
+      "default": 1,
+      "aux": {
+        "en": "Scales the film’s grain radius on the negative.",
+        "es": "Escala el radio del grano de la película sobre el negativo."
+      }
+    },
+    {
+      "key": "grainColour",
+      "label": {
+        "en": "Grain colour",
+        "es": "Color del grano"
+      },
+      "kind": "slider",
+      "group": "grain",
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "default": 0,
+      "minLabel": {
+        "en": "Recipe",
+        "es": "Receta"
+      }
+    },
+    {
+      "key": "grainBias",
+      "label": {
+        "en": "Tonal bias",
+        "es": "Sesgo tonal"
+      },
+      "kind": "slider",
+      "group": "grain",
+      "min": -1,
+      "max": 1,
+      "step": 0.01,
+      "default": 0,
+      "aux": {
+        "en": "Where in the tones the grain shows most.",
+        "es": "En qué tonos se ve más el grano."
+      }
+    },
+    {
+      "key": "grainSoftness",
+      "label": {
+        "en": "Softness",
+        "es": "Suavidad"
+      },
+      "kind": "slider",
+      "group": "grain",
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "default": 0,
+      "minLabel": {
+        "en": "Recipe",
+        "es": "Receta"
+      }
+    },
+    {
+      "key": "scannerFocus",
+      "label": {
+        "en": "Scanner focus",
+        "es": "Enfoque del escáner"
+      },
+      "kind": "slider",
+      "group": "grain",
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "default": 0
+    },
+    {
+      "key": "lightResponse",
+      "label": {
+        "en": "Light response",
+        "es": "Respuesta a la luz"
+      },
+      "kind": "toggle",
+      "group": "grain",
+      "default": true,
+      "aux": {
+        "en": "The grain follows how much light each tone received.",
+        "es": "El grano sigue cuánta luz recibió cada tono."
+      }
+    },
+    {
+      "key": "scan",
+      "label": {
+        "en": "Scan the grained negative",
+        "es": "Escanear el negativo con grano"
+      },
+      "kind": "toggle",
+      "group": "grain",
+      "default": true,
+      "aux": {
+        "en": "Reads the grain as a lab’s scanner does.",
+        "es": "Lee el grano como lo hace el escáner de un laboratorio."
+      }
+    },
+    {
+      "key": "halation",
+      "label": {
+        "en": "Halation",
+        "es": "Halación"
+      },
+      "kind": "toggle",
+      "group": "halation",
+      "default": true
+    },
+    {
+      "key": "halationAmount",
+      "label": {
+        "en": "Amount",
+        "es": "Cantidad"
+      },
+      "kind": "slider",
+      "group": "halation",
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "default": 0,
+      "minLabel": {
+        "en": "Recipe",
+        "es": "Receta"
+      }
+    },
+    {
+      "key": "halationRadius",
+      "label": {
+        "en": "Radius",
+        "es": "Radio"
+      },
+      "kind": "slider",
+      "group": "halation",
+      "min": 40,
+      "max": 1200,
+      "step": 10,
+      "default": 40,
+      "unit": "µm",
+      "minLabel": {
+        "en": "Recipe",
+        "es": "Receta"
+      }
+    },
+    {
+      "key": "diffusion",
+      "label": {
+        "en": "Filter",
+        "es": "Filtro"
+      },
+      "kind": "select",
+      "group": "diffusion",
+      "default": "recipe",
+      "options": [
+        {
+          "value": "recipe",
+          "label": {
+            "en": "Recipe’s",
+            "es": "La de la receta"
+          }
+        },
+        {
+          "value": "none",
+          "label": {
+            "en": "None",
+            "es": "Ninguno"
+          }
+        },
+        {
+          "value": "0",
+          "label": {
+            "en": "BLACK DIFFUSION 1/8",
+            "es": "BLACK DIFFUSION 1/8"
+          }
+        },
+        {
+          "value": "1",
+          "label": {
+            "en": "BLACK DIFFUSION 1/4",
+            "es": "BLACK DIFFUSION 1/4"
+          }
+        },
+        {
+          "value": "2",
+          "label": {
+            "en": "BLACK DIFFUSION 1/2",
+            "es": "BLACK DIFFUSION 1/2"
+          }
+        },
+        {
+          "value": "3",
+          "label": {
+            "en": "BLACK DIFFUSION 1",
+            "es": "BLACK DIFFUSION 1"
+          }
+        },
+        {
+          "value": "4",
+          "label": {
+            "en": "BLACK DIFFUSION 2",
+            "es": "BLACK DIFFUSION 2"
+          }
+        },
+        {
+          "value": "5",
+          "label": {
+            "en": "WHITE DIFFUSION 1/2",
+            "es": "WHITE DIFFUSION 1/2"
+          }
+        },
+        {
+          "value": "6",
+          "label": {
+            "en": "WHITE DIFFUSION 1",
+            "es": "WHITE DIFFUSION 1"
+          }
+        },
+        {
+          "value": "7",
+          "label": {
+            "en": "WARM DIFFUSION 1/4",
+            "es": "WARM DIFFUSION 1/4"
+          }
+        },
+        {
+          "value": "8",
+          "label": {
+            "en": "WARM DIFFUSION 1/2",
+            "es": "WARM DIFFUSION 1/2"
+          }
+        },
+        {
+          "value": "9",
+          "label": {
+            "en": "WARM DIFFUSION 1",
+            "es": "WARM DIFFUSION 1"
+          }
+        },
+        {
+          "value": "10",
+          "label": {
+            "en": "SPARKLE 1",
+            "es": "SPARKLE 1"
+          }
+        },
+        {
+          "value": "11",
+          "label": {
+            "en": "SPARKLE 2",
+            "es": "SPARKLE 2"
+          }
+        },
+        {
+          "value": "12",
+          "label": {
+            "en": "PEARL 1/2",
+            "es": "PEARL 1/2"
+          }
+        }
+      ]
+    },
+    {
+      "key": "diffusionGrade",
+      "label": {
+        "en": "Grade",
+        "es": "Grado"
+      },
+      "kind": "slider",
+      "group": "diffusion",
+      "min": 0,
+      "max": 3,
+      "step": 0.01,
+      "default": 0,
+      "minLabel": {
+        "en": "Recipe",
+        "es": "Receta"
+      }
+    },
+    {
+      "key": "lens",
+      "label": {
+        "en": "Character",
+        "es": "Carácter"
+      },
+      "kind": "select",
+      "group": "lens",
+      "default": "recipe",
+      "options": [
+        {
+          "value": "recipe",
+          "label": {
+            "en": "Recipe’s",
+            "es": "La de la receta"
+          }
+        },
+        {
+          "value": "none",
+          "label": {
+            "en": "None",
+            "es": "Ninguno"
+          }
+        },
+        {
+          "value": "0",
+          "label": {
+            "en": "CLEAN",
+            "es": "LIMPIO"
+          }
+        },
+        {
+          "value": "1",
+          "label": {
+            "en": "VINTAGE",
+            "es": "VINTAGE"
+          }
+        },
+        {
+          "value": "2",
+          "label": {
+            "en": "UNCOATED",
+            "es": "SIN TRATAMIENTO"
+          }
+        },
+        {
+          "value": "3",
+          "label": {
+            "en": "FAST PORTRAIT",
+            "es": "RETRATO LUMINOSO"
+          }
+        }
+      ]
+    },
+    {
+      "key": "lensIntensity",
+      "label": {
+        "en": "Intensity",
+        "es": "Intensidad"
+      },
+      "kind": "slider",
+      "group": "lens",
+      "min": 0,
+      "max": 3,
+      "step": 0.01,
+      "default": 1
+    },
+    {
+      "key": "renderer",
+      "label": {
+        "en": "Grain engine",
+        "es": "Motor de grano"
+      },
+      "kind": "select",
+      "group": "rendering",
+      "default": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "label": {
+            "en": "Automatic",
+            "es": "Automático"
+          }
+        },
+        {
+          "value": "stochastic",
+          "label": {
+            "en": "Stochastic",
+            "es": "Estocástico"
+          }
+        },
+        {
+          "value": "gaussian",
+          "label": {
+            "en": "Gaussian",
+            "es": "Gaussiano"
+          }
+        }
+      ]
+    },
+    {
+      "key": "seed",
+      "label": {
+        "en": "Seed",
+        "es": "Semilla"
+      },
+      "kind": "slider",
+      "group": "rendering",
+      "min": 0,
+      "max": 999999999,
+      "step": 1,
+      "default": 1,
+      "aux": {
+        "en": "The same seed gives the same grain on any computer.",
+        "es": "La misma semilla da el mismo grano en cualquier equipo."
+      }
+    }
+  ],
+  "files": "__FILES__"
+}
