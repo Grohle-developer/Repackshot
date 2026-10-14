@@ -34,7 +34,8 @@ import { fixture, inProcessWorker, loadOcct, readCad } from './occt-node';
 const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
 const clean = (s: ProjectState): ProjectState => ({ ...s, meta: { ...s.meta, dirty: false } });
 const text = (s: ProjectState): Promise<string> => serializeProject(s).text();
-const partsOf = (s: ProjectState): SceneNode[] => Object.values(s.scene.nodes).filter((n) => n.kind === 'PART');
+// The model's parts: not the pieces a set (L6) dresses an imported product with.
+const partsOf = (s: ProjectState): SceneNode[] => Object.values(s.scene.nodes).filter((n) => n.kind === 'PART' && !n.setPiece);
 const nameOf = (s: ProjectState, name: string): SceneNode => Object.values(s.scene.nodes).find((n) => n.name === name)!;
 /** A new browser session as far as geometry goes: nothing registered, importers numbering from 1 again. */
 const newSession = (): void => retainMeshes(new Set());
@@ -871,7 +872,8 @@ describe('a STEP-imported project', () => {
   }
 
   const byName = (s: ProjectState, name: string): SceneNode => nameOf(s, name);
-  const materialNames = (s: ProjectState): string[] => Object.values(s.materials).map((m) => m.name as string).sort();
+  // The model's materials (not those of the pieces a set dresses it with, L6).
+  const materialNames = (s: ProjectState): string[] => Object.values(s.materials).filter((m) => partsOf(s).some((n) => n.material === m.id || n.faceMaterials?.some((f) => f.material === m.id))).map((m) => m.name as string).sort();
   /** The ids a new session gives the meshes (`prjN:`) are the only difference from the state that was saved. */
   const withoutPrefix = (st: ProjectState) => JSON.parse(JSON.stringify(st).replace(/prj\d+:/g, ''));
 

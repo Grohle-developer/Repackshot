@@ -484,6 +484,94 @@ modificado).
 la del rig del tipo de producto. Cambiar de montaje no cambia la
 exposición.
 
+**Sets** (fase L6). Un montaje puede ser un **set**: luces más lo que el
+producto refleja y donde se apoya. `LightSetup` gana campos opcionales
+(los 72 montajes anteriores no tienen ninguno y resuelven exactamente al
+mismo rig que antes): `backdrop` (`FLAT` color de fondo; `GRADIENT` dos
+colores, arriba y abajo del encuadre, que el motor recibe como imagen de
+fondo generada y estirada; `SWEEP` el fondo infinito de U9 en papel mate
+del color, que recibe luz y sombra), `pool` (el charco de luz en el fondo
+detrás del producto: `az`, `el`, `cone`, `share`, kelvin o color), `floor`
+(`CATCHER` el atrapasombras; `MATTE` mate de un color; `GLOSSY` y `MIRROR`
+un material del catálogo bajo el producto, con su `roughness` si la
+lleva), `cards` (tarjetas: planos de *Tarjeta blanca*, *Tarjeta negra* o
+aluminio cepillado como tarjeta plateada, con `az`, `el`, `dist`, `size`,
+`sizeY` y giro, de cara al producto), `exposureEv` (desvío sobre la
+exposición base del tipo de producto), `envStrength` (la cúpula mientras
+el set manda), `camera` (`el`, `focalMm`: sugerida, no se aplica sola),
+`hero` (el objeto de su miniatura), `why` (la razón fotográfica, dos
+frases, en la ayuda de su miniatura) y `caustics`. Los 16 sets son el
+estilo `SETS`, el primero del catálogo.
+
+- **Aplicar un set** (`studio/setSetup` con su clave) es una sola entrada
+  de deshacer: sus focos (normalizados como los de cualquier montaje; el
+  charco se lleva su `share` del nivel y las luces se reparten el resto),
+  su aspecto (fondo, cúpula, exposición base del tipo más el desvío; suelo
+  y sombra encendidos) y su **decoración**: primero el barrido (si el
+  fondo es `SWEEP`, o si es `FLAT` o `GRADIENT` con charco, que necesita
+  una pared donde caer), ajustado a la cámara activa como el de U9; luego
+  el suelo; luego las tarjetas; luego el charco. Una escena sin nada del
+  usuario recibe los focos y el aspecto; la decoración llega con el
+  producto (`studio/fitSet`, que la interfaz pide al cargar el ejemplo y al
+  importar, en la misma entrada de deshacer).
+- **El suelo.** Mate sobre un barrido es el propio barrido. Brillante o
+  espejo sobre un barrido es la cara *suelo* del barrido en ese material
+  (sin costura); si además hay charco, una lámina sobre el barrido que se
+  para al 55 % del camino hasta donde cae el charco (el charco cae en papel
+  y la lámina lo refleja). Sin barrido, un plano del tamaño del suelo que
+  vería el barrido de esa cámara, con el fondo (color o degradado) detrás
+  de su borde, a través del atrapasombras. El suelo **brillante** es
+  acrílico con una ligera bruma (`roughness` 0,12: emborrona un poco lo que
+  refleja, no es un espejo); el **espejo** es un espejo. *Contraluz líquido*
+  lleva su lámina a 0,2: el reflejo del contraluz es un resplandor suave.
+- **Las tiras en un suelo brillante.** En los sets de suelo `GLOSSY` o
+  `MIRROR`, la imagen especular de cada tira (un panel que se refleja, al
+  menos cuatro veces más largo que ancho) en el plano del suelo, vista con
+  la cámara del set (o la de referencia a 85 mm), cae detrás de la huella
+  del producto o fuera del encuadre: un test lo comprueba con tres formas
+  de producto y dos proporciones; la regla de diseño, si no, es subir la
+  tira de 10° en 10° a distancia 3.
+- **El charco** cae donde la cámara ve el fondo justo por encima del
+  producto: su rayo por lo alto de la caja del producto, en su lado más
+  lejano, sobre el barrido. Así es un halo que asoma detrás del producto a
+  cualquier altura de cámara. El foco se apunta desde detrás del producto
+  (el `az` y `el` del set, a 0,75 tamaños de pieza del pivote) y se pone en
+  esa línea tan cerca del papel que su luz, que cae con el ángulo y la
+  distancia (a la mitad a 37,5° de su eje), dibuja un charco tan ancho como
+  el cono del set lo dibujaría a 2,5 tamaños de pieza (`POOL_THROW`). Su
+  cono es de 150° y suave desde el eje: el charco no tiene borde. Su
+  potencia hace que en su centro llegue su `share` del nivel medido a esa
+  distancia y de frente al papel (compensa hasta 72° de incidencia). No se
+  ve a cámara ni en reflejos.
+- **Las tarjetas** miran al pivote, con el ancho paralelo al suelo; una
+  que atravesaría el suelo se sube sin girarla hasta apoyarse en él. Por
+  construcción quedan **fuera del encuadre**: un test lo comprueba para
+  cada tarjeta con la focal de los 16 tipos de producto, tres formas de
+  producto, tres proporciones de salida y la cámara del set.
+- **Decoración del set.** Cada pieza lleva `setPiece` (`CARD`, `BACKDROP`,
+  `FLOOR`; el charco, en su foco) y es decoración: no cuenta para el
+  tamaño de pieza, el pivote del rig ni *Encuadrar* sin selección, y el
+  Doctor no la mira. Aplicar otro montaje la sustituye (las piezas del
+  usuario, primitivas incluidas, no se tocan); un montaje que no es un set
+  la quita y devuelve el fondo, la cúpula y la exposición del tipo de
+  producto; **Restablecer montaje** la quita y devuelve los focos del set
+  como eran; *Crear estudio* con un set en vigor lo vuelve a poner,
+  ajustado al nuevo encuadre. Elegir el set otra vez la devuelve.
+- **Usar la cámara del set** (`studio/useSetCamera`): la elevación y la
+  focal que sugiere, el producto encuadrado de nuevo y el barrido, el
+  suelo y el charco ajustados a la nueva vista (las tarjetas no se
+  mueven); una entrada de deshacer; no hace nada con la cámara bloqueada.
+- **Los tipos de producto son sets.** 15 de los 16 tipos de producto son un
+  set (`StudioPreset.set`, `PRESET_SETS`): sus focos son los del set, al
+  nivel de irradiancia que tenía el tipo (los montajes que se normalizan a
+  él no cambian), y con su rig propio (el montaje *El del tipo de
+  producto*, `PRESET`, que es el de *Crear estudio*) traen también la
+  decoración y el aspecto del set; el desvío de exposición del set está
+  sumado a la `exposure` del tipo, y cualquier otro montaje parte de la
+  exposición de antes (`baseExposure`, `setupExposure`). El suelo y la
+  sombra son los del tipo. *Mobiliario exterior* conserva su sol: no es un
+  set.
+
 **Luces propias, al estilo KeyShot** (fase L4). Además de los montajes, se
 pueden **añadir focos** desde la pestaña *Luces* (*+ Añadir luz ▸*), desde
 *Añadir ▸* del menú de la cabecera, desde el clic derecho del visor en vacío y
@@ -598,8 +686,8 @@ el horizonte, 0.85 en el cenit; ilumina y se refleja, no necesita ningún
 archivo), `SKY` (sol y cielo procedurales a partir del foco de tipo sol),
 `FLAT` (color liso), `HDRI` (archivo del usuario, con rotación e
 intensidad). Lo que ilumina y lo que ve la cámara se separan: el fondo
-puede ser el entorno, un color, transparente o una imagen, sin cambiar la
-luz.
+puede ser el entorno, un color, un degradado de dos colores (L6),
+transparente o una imagen, sin cambiar la luz.
 
 `EnvironmentState` (E5) guarda además `hdri` y `backplate` (`ImageRef`:
 id, nombre, ancho y alto; los bytes viven en el registro de imágenes,
@@ -630,6 +718,38 @@ ortográfico), clipping, `locked`. Cámara de referencia: acimut −35°,
 elevación 22° (tres cuartos), distancia derivada de la focal y el tamaño
 de pieza para que encaje con un margen del 10 %.
 
+**Proporción de la imagen** (U13). Cada cámara lleva la suya,
+`CameraState.aspect: { preset, w, h }`, con `preset` una clave estable de
+`src/data/aspects.ts` (`3:2`, `4:3`, `16:9`, `1:1`, `5:4`, `4:5`, `9:16`,
+`21:9`, `2:1`, `65:24` panorámica) o `CUSTOM` con `w : h` libres (la
+razón queda entre 1 : 512 y 512 : 1, la de los tamaños más extremos que
+admite la ventana de render, 16 × 8192 y 8192 × 16). Es el ancho sobre el alto de la imagen que esa cámara
+toma: una cámara nueva es 16:9; *Nueva desde la vista actual* y duplicar
+copian la de la origen; `camera/set` la cambia (deshacible) y la lee como
+cualquier campo (`normaliseAspect`: una clave conocida trae sus términos,
+algo que no puede serlo se descarta). La **fuente única** es la cámara:
+
+- el **marco del visor** es el de la cámara que se ve (la activa o la que se
+  mira a través), con su proporción;
+- el **tamaño en píxeles de una imagen** conserva el ancho y toma el alto
+  de la proporción de la cámara activa (`syncOutputSize`, en cada acción,
+  también al cambiar de cámara activa, al deshacer y al abrir un proyecto).
+  Si se teclea un tamaño que rompe esa proporción (los dos lados a la vez,
+  o uno con el candado abierto) es la cámara la que lo recibe, en la misma
+  acción: el preset de la lista si el tamaño es exactamente uno
+  (`aspectForSize`), si no `CUSTOM` con esos píxeles como `w : h`;
+- una **animación** tiene un solo tamaño de salida, el de la ventana de
+  render, que no sigue a la cámara; el Doctor avisa (`aspect`) cuando la
+  cámara de un plano tiene otra proporción;
+- un trabajo de la cola para una cámara con otra proporción que la de la
+  ventana sale con el mismo ancho y el alto de esa cámara.
+
+Un proyecto guardado antes no tiene `aspect` en sus cámaras: cada una toma
+la proporción del tamaño de render guardado (el preset que cuadra con una
+tolerancia del 0,5 %, si no `CUSTOM` con esos píxeles), y el tamaño guardado
+no se toca. Recolocar la cámara al cambiar la proporción no se hace
+solo: *Encuadrar* la ajusta a la imagen nueva.
+
 **Encuadrar**: ajusta la distancia (o el ancho ortográfico) para que la
 caja envolvente de la selección (o de todo) quepa con margen, sin mover
 la orientación. Las **cámaras guardadas** se ven en el visor como pirámides,
@@ -638,6 +758,34 @@ asa de su objetivo) y se **mira a través** de ellas (§3.4, *Luces y cámaras
 en el visor*). **Vistas**: tres cuartos, frontal, lateral, cenital,
 trasera. **Enfocar con clic**: el punto picado fija la distancia de
 enfoque.
+
+**Óptica (O1, lente fina mejorada).** `CameraState.optics` (opcional;
+una cámara sin él, como todas las anteriores a O1, es la lente fina de
+siempre y el motor la renderiza bit a bit igual): el **tipo de bokeh**
+elegido (`bokeh`, `variant`, claves de `src/data/bokeh.json`; vuelve a
+`null` en cuanto se mueve un mando del desenfoque a mano) y sus
+parámetros, que son los de `BokehThin`: láminas (0 redondo, 3 a 18) con
+redondez y giro, máscara (sustituye al diafragma) y textura de pupila
+(multiplica; los anillos de cebolla con su amplitud), perfil de la
+pupila (uniforme, centro brillante, anillo brillante, apodizada) con su
+intensidad, obstrucción central, ojo de gato, compresión anamórfica
+(1, 1,33 o 2; la imagen sale ya desestirada: solo el desenfoque es
+ovalado) y, marcados *no físico*, aberración cromática y remolino; más
+**descentramiento** (mm sobre el sensor, horizontal y vertical: mueve el
+encuadre sin cambiar la perspectiva) e **inclinación** (grados y eje en
+el plano del sensor: el plano de enfoque gira por Scheimpflug alrededor
+del punto de enfoque del eje). Elegir un tipo cambia solo los mandos del
+desenfoque; la inclinación y el descentramiento se quedan. El ojo de
+gato recorta el haz hacia las esquinas y las oscurece (es el viñeteo
+óptico que lo acompaña); la aberración cromática pinta cada muestra en
+una de tres bandas (decisión 3) sin mover el plano de enfoque. Los tipos
+que necesitan la lente trazada (cometa de coma, respiración de foco,
+aberración esférica variable) esperan a O2 y el de difracción a la óptica
+de ondas. Lo que hace el motor está en `ARCHITECTURE.md` (sección `LENS`)
+y en `rt-core/src/optics`. El pase `coc` (X2) sigue siendo el de la
+lente fina redonda y sin inclinar, sea cual sea la óptica. El modo
+Rápido no dibuja profundidad de campo; del resto solo muestra el
+descentramiento (el encuadre).
 
 ### 3.6 · Imagen
 
@@ -666,7 +814,7 @@ y se añaden las que faltan), agrupados como los agrupa el asistente:
 | | **Traslación** (`MOVE`, `TRACK`) | Se desplaza una distancia en un eje, local o global |
 | | **Escala** (`SCALE`) | Cambia de tamaño por un factor |
 | | **Fundido** (`FADE`, nuevo) | Opacidad de 0 a 1 o de 1 a 0 |
-| | **Despiece** (`EXPLODE`) | Las piezas marcadas se separan del centro |
+| | **Despiece** (`EXPLODE`) | Las piezas del modelo o de un grupo se separan: lineal, radial, esférico o por niveles, con excepciones (ver abajo) |
 | | **Visibilidad** (`VISIBILITY`) | Aparece o desaparece |
 | Cámara | **Órbita** (`ORBIT`) | Gira alrededor del objetivo, grados |
 | | **Inclinación** (`RISE`) | Sube o baja en arco, grados |
@@ -700,12 +848,62 @@ sincronizado con la distancia recorrida, que se apaga al pararse. Sin
 simulación, la cámara se desliza como en un *travelling* de cine. Todo es
 una función determinista del tiempo, como el resto de animaciones.
 
+**Despiece (`EXPLODE`)**, configurable (N6). Las herramientas CAD con
+vista explosionada coinciden en tres geometrías y en el orden por
+jerarquía (documentación pública de Onshape, Fusion 360, SolidWorks
+Composer e Inventor; observación de caja negra, ningún código); el
+despiece las toma así (`src/core/explode.ts`, claves de `EXPLODE_MODES`):
+
+| Geometría | Clave | Qué hace |
+| --- | --- | --- |
+| **Lineal** | `LINEAR` | A lo largo de un eje (Z vertical, X o Y horizontal, o una dirección propia). *Separar*: cada pieza se aleja del plano central por su lado. *Apilar*: todas en el mismo sentido, repartidas en su orden a lo largo del eje; la primera se queda y la última recorre toda la distancia (el despiece clásico de un envase: cuerpo, rosca, tapón) |
+| **Radial** | `CYLINDRICAL` | Alejándose de un **eje** que pasa por el centro, en perpendicular a él; lo que está en el eje no se mueve |
+| **Esférica** | `SPHERICAL` (y su sinónimo `RADIAL`) | Alejándose de un **punto**, el centro, en todas direcciones |
+
+y, combinable con cualquiera de las tres, la **jerarquía**: *piezas*
+(cada pieza por su cuenta), *un nivel* (los hijos del objetivo como
+bloques: un grupo se mueve entero) o *todos los niveles* (primero los
+bloques y luego, por etapas, las piezas dentro de cada grupo, que se
+separan del centro de su grupo y en proporción a su tamaño).
+
+Parámetros (`MotionClip.explode`): **distancia** (la cantidad de la
+animación: × tamaño del modelo o mm), **reparto** (*igual*: cada pieza
+recorre la distancia; *por distancia*: cuanto más lejos del centro más se
+aleja, y la más lejana recorre la distancia), **proporcional al tamaño de
+la pieza** (la mayor recorre toda la distancia, las demás en proporción),
+**centro** (el del conjunto, una pieza elegida, el pivote del objetivo o
+un punto propio), **eje o dirección**, **orden** (*a la vez*,
+*escalonado por distancia* —la más lejana primero— o *por profundidad*
+—lo que cuelga del modelo antes que lo que está dentro de grupos—, con un
+**solape** de 0 % —una tras otra— a 100 % —a la vez—, que también encadena
+las etapas de *todos los niveles*), **velocidad** (la duración),
+**suavidad** (un solo mando de 0 % a 100 % que va de *lineal* a *suave* y
+a *muy suave* de `EASING_KINDS`, mezclándolas en medio, y escribe en la
+curva la más cercana), **excepciones** (piezas fijas; se llenan desde la
+selección o con *Fijar en el despiece* del menú contextual; fijar un grupo
+fija sus piezas), **conservar la orientación** (apagado, cada pieza se
+inclina un poco —hasta 20°— al alejarse), **invertir** (montaje: empieza
+separado y acaba montado) y el **objetivo**, el modelo entero o un grupo.
+Las piezas de un set (L6) no se despiezan nunca.
+
+Las claves de antes siguen valiendo: `RADIAL` es la **esférica** (lo que
+siempre significó: «cada pieza sale hacia fuera desde el centro»),
+`AXIS_X/Y/Z` son lineal *separar* en ese eje y `CUSTOM` (una dirección
+por pieza, no construida) se lee como la esférica. Un despiece sin
+parámetros —todos los guardados antes de N6— es el de entonces: esférico,
+cada pieza la misma distancia, desde el centro del modelo, a la vez; se
+lee exactamente igual (`tests/fixtures/explode-legacy.json`). La radial
+nueva usa la clave `CYLINDRICAL`, que ya estaba en el catálogo con ese
+sentido («salen en abanico sin subir ni bajar»).
+
 **Una animación** (`MotionClip`): nombre, objetivo (pieza, grupo, modelo,
 cámara, foco, entorno, material), tipo, parámetros del tipo (cantidad,
-eje, pivote, local o global), inicio y duración en segundos, **curva de
-tiempo** (`EASING_KINDS`: lineal, suave, entrada, salida, fuerte, y
-*personalizada* con una curva de dos asas), **invertida** (sí/no) y
-**repetir** (n veces). Su frase en lenguaje llano ("La cámara orbita 90°
+eje, pivote, local o global; los del despiece, arriba), inicio y duración
+en segundos, **curva de tiempo** (`EASING_KINDS`: lineal, suave, entrada,
+salida, fuerte, y *personalizada* con una curva de dos asas; o la
+**suavidad**, un mando sobre las tres simétricas), **invertida** (sí/no:
+se reproduce al revés y, antes de empezar, guarda su estado final) y
+**repetir** (n veces seguidas: la barra dura n veces su duración). Su frase en lenguaje llano ("La cámara orbita 90°
 durante 4 s, suave") es su nombre por defecto y su representación en la
 interfaz; también aparece **bajo su objetivo en el árbol de la escena**,
 como hace KeyShot.
@@ -718,6 +916,23 @@ reproducir y el motor para renderizar fotograma a fotograma. Dos
 animaciones del mismo tipo sobre el mismo objetivo y tiempo se suman si
 son traslaciones o rotaciones y se marcan en la interfaz si no pueden
 convivir; nunca se silencian.
+
+**La línea de tiempo** (N6) tiene **tres zonas** para que quede claro
+**qué** se anima y **cómo**: a la izquierda el **árbol de lo animado**
+(una fila por objetivo —la pista de cámara primero, luego el modelo, sus
+grupos y piezas, los focos y el entorno— con sus animaciones anidadas,
+cada una con su icono y su frase corta); en el centro **cuándo** (la
+regla en segundos y fotogramas, el cabezal y una barra por animación,
+que se arrastra y se estira con **imán** a los bordes de las otras
+barras, al cabezal y a los segundos enteros); a la derecha **cómo** (las
+propiedades de la animación elegida bajo una cabecera de una línea:
+«Tapón · Despiece esférico · 1,5 × tamaño · 0–3 s»). Elegir una animación
+resalta su objetivo en el visor y dibuja su pista (el arco de la órbita,
+la flecha del desplazamiento, los vectores del despiece, el eje del
+giro); elegir una pieza en la escena marca las filas de lo que la mueve.
+El árbol y las barras no conocen los tipos: leen la frase y el objetivo,
+y un tipo nuevo (la simulación física que se graba en la línea de
+tiempo) se dibuja igual.
 
 **Reproducción**: la línea de tiempo tiene cabezal, fps (24, 25, 30, 60),
 duración total (la del último evento), reproducir, pausar, ir al
@@ -742,8 +957,9 @@ de KeyShot, y no en la barra inferior. Un **trabajo de render**
 (`RenderJob`) guarda: modo (*imagen* o *animación*), nombre como
 plantilla, carpeta de destino (en el navegador, *Descargas* o una
 carpeta elegida con el acceso al sistema de archivos donde exista),
-formato (PNG 8/16 bits, JPEG con calidad, EXR lineal), fondo
-transparente, pases (fase posterior: alfa, profundidad, normales, id de
+formato (PNG 8/16 bits, JPEG con calidad, EXR lineal, TIFF de 8/16 bits
+sRGB o 32 bits lineal, RAW DNG lineal), fondo
+transparente (no en JPEG ni en DNG), pases (fase posterior: alfa, profundidad, normales, id de
 pieza), cámara (una o todas), tamaño en píxeles con su tamaño de
 impresión y **ppp** (los píxeles mandan; los ppp se escriben en el
 archivo), **terminar por** muestras o por tiempo (o lo que llegue antes,
@@ -761,11 +977,37 @@ cancelación, **siempre con el motor completo**. Cada resultado guarda la
 imagen del motor y, si hubo post-procesado, también la de la IA, para
 compararlas con un divisor deslizable.
 
+**Plugins** (P6; `ARCHITECTURE.md` §9). Herramientas de otros programas que
+trabajan sobre un **resultado terminado**: se instalan en *Ajustes ▸ Plugins*
+desde el registro de Repackshot o desde un archivo `.rpk`, con su clave de
+activación y bajo **su propia licencia** (cerrada en el de película, y se dice).
+Cada plugin instalado con el *slot* `render.plugins` tiene su bloque en la
+sección **Plugins** de la ventana de render, dibujado desde su manifiesto: sus
+recetas (con sus nombres públicos), sus mandos, una **vista previa** del
+resultado actual por el plugin con los números que el plugin da y **Aplicar**,
+que deja un **resultado nuevo** en el historial junto a su origen, con su
+procedencia (`provenance: { plugin, version, recipe, controls }`). La receta y
+los mandos de cada plugin son del proyecto (`render.plugins`): deshacibles y
+guardados con él; un proyecto anterior no tiene ninguno. Las recetas son un
+**carrusel** de tarjetas, cada una con la imagen base del plugin (su escena de
+prueba) por esa receta, hecha una vez por equipo y versión; sin resultado
+todavía, la vista previa es esa escena de prueba. Con **Aplicar a los trabajos
+de render**, cada imagen de un trabajo de la cola pasa también por el plugin y
+se guarda junto a la del motor; en una animación, cada fotograma con su
+semilla, `semilla + fotograma` (`provenance.seed` guarda la semilla y la
+regla). Un plugin no toca el proyecto: recibe píxeles y devuelve píxeles. El
+primero es la **simulación de película de aintfilm** (la app de edición de
+fotos y simulación de película del mismo desarrollador, en desarrollo).
+
 ### 3.9 · Estudios, biblioteca propia y proyecto
 
 Un **estudio** guarda una cámara, un montaje de luz y entorno, un set de
 materiales por pieza y la visibilidad de piezas; restaurarlo es una sola
-acción deshacible. El **proyecto** es el estado completo en un archivo
+acción deshacible. Con un set de L6 (§3.4) en vigor, el estudio guarda sus
+focos (el charco incluido) y su fondo; sus tarjetas, barrido y suelo son
+piezas de la escena y se quedan en ella. Fondo `GRADIENT` (L6): el entorno
+guarda sus dos colores (`gradient`), en el proyecto y en los estudios de la
+biblioteca. El **proyecto** es el estado completo en un archivo
 `.repack.json`, con las mallas dentro.
 
 La **biblioteca propia** guarda lo que el usuario crea y quiere reutilizar

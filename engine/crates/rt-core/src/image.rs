@@ -176,6 +176,29 @@ impl Film {
         }
         out
     }
+
+    /// Resolves, applies `ev` stops of exposure and `tonemap`, and converts to 16-bit sRGB words:
+    /// the rule of [`Film::to_srgb8_tonemapped`] at 16 bits (`srgb_encode(v) * 65535 + 0.5`,
+    /// truncated).
+    pub fn to_srgb16_tonemapped(&self, ev: f32, tonemap: Tonemap) -> Vec<u16> {
+        let gain = crate::color::exposure(ev);
+        let linear = self.resolve();
+        let mut out = Vec::with_capacity(linear.len());
+        for px in linear.chunks_exact(3) {
+            let mapped = tonemap.apply(Rgb::new(px[0], px[1], px[2]) * gain);
+            for v in [mapped.r, mapped.g, mapped.b] {
+                out.push((srgb_encode(v) * 65535.0 + 0.5) as u16);
+            }
+        }
+        out
+    }
+
+    /// Resolves and applies `ev` stops of exposure: scene-linear light with no tone curve and no
+    /// clamp, `3 * width * height` floats (what the EXR, the 32-bit TIFF and the DNG hold).
+    pub fn to_linear_exposed(&self, ev: f32) -> Vec<f32> {
+        let gain = crate::color::exposure(ev);
+        self.resolve().into_iter().map(|v| v * gain).collect()
+    }
 }
 
 #[cfg(test)]
@@ -286,6 +309,37 @@ mod tests {
         assert_eq!(&bytes[0..3], &[0, 0, 0]);
         assert_eq!(&bytes[3..6], &[255, 255, 255]);
         assert_eq!(&bytes[6..9], &[188, 188, 188]); // sRGB(0.5) * 255 = 187.5 -> 188
+    }
+
+    #[test]
+    fn srgb16_follows_the_8_bit_rule() {
+        let mut film = Film::new(3, 1);
+        film.splat(0, 0, Rgb::BLACK);
+        film.splat(1, 0, Rgb::WHITE);
+        film.splat(2, 0, Rgb::splat(0.5));
+        let words = film.to_srgb16_tonemapped(0.0, Tonemap::Linear);
+        assert_eq!(&words[0..3], &[0, 0, 0]);
+        assert_eq!(&words[3..6], &[65535, 65535, 65535]);
+        let half = (srgb_encode(0.5) * 65535.0 + 0.5) as u16;
+        assert_eq!(&words[6..9], &[half, half, half]);
+        // The same pixel in 8 bits is the word's high byte, give or take the rounding.
+        let bytes = film.to_srgb8();
+        for (w, b) in words.iter().zip(&bytes) {
+            assert!((i32::from(*w) / 257 - i32::from(*b)).abs() <= 1);
+        }
+    }
+
+    #[test]
+    fn linear_output_has_the_exposure_and_no_curve() {
+        let mut film = Film::new(2, 1);
+        film.splat(0, 0, Rgb::splat(0.25));
+        film.splat(1, 0, Rgb::new(8.0, 0.0, 0.5));
+        // +2 EV: times 4, nothing clamped (the 8.0 becomes 32.0).
+        assert_eq!(
+            film.to_linear_exposed(2.0),
+            vec![1.0, 1.0, 1.0, 32.0, 0.0, 2.0]
+        );
+        assert_eq!(film.to_linear_exposed(0.0)[3], 8.0);
     }
 
     #[test]

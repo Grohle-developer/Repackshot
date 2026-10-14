@@ -130,7 +130,7 @@ const html = `<!doctype html>
 </head>
 <body>
 <h1>Ambient effects · contact sheet</h1>
-<p>The example bottle in a dark flat studio (FLAT environment, 0.012), Key only as the one light. ${esc(manifest.width)}×${esc(manifest.height)}, ${esc(SAMPLES)} spp, native <code>rt</code> with ${esc(THREADS)} threads. Every preset value is a proposal for the lead to decide.</p>
+<p>The example bottle in a dark flat studio (FLAT environment, 0.012), Key only as the one light. ${esc(manifest.width)}×${esc(manifest.height)}, ${esc(SAMPLES)} spp, native <code>rt</code> with ${esc(THREADS)} threads. The preset values are the accepted ones (ROADMAP S4a verdict).</p>
 <p>Lights: <b>side</b> — ${esc(manifest.lights.side)}; <b>back</b> — ${esc(manifest.lights.back)}.</p>
 <h2>The eight presets under the two lights</h2>
 <div class="pair"><div></div><div>Side key</div><div>Spot backlight</div></div>

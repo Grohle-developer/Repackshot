@@ -3,11 +3,13 @@
 
 import { CAMERA_AZIMUTH_DEG, CAMERA_ELEVATION_DEG } from '../data/light-setups';
 import { lensPreset } from '../data/lenses';
+import { aspectNearPixels, DEFAULT_ASPECT, normaliseAspect, type CameraAspect } from './aspect';
+import type { CameraOptics } from './optics';
 import { polar } from './light-math';
 import type { ActionBase, ProjectState } from './store';
 import { nextId } from './ids';
 import { add, boxCenter, boxRadius, clamp, cross, dot, isEmptyBox, normalize, sub, type Box, type Vec3 } from './math';
-import { boundsOf, sceneBounds, type NodeId } from './scene';
+import { boundsOf, isSetPiece, sceneBounds, type NodeId } from './scene';
 
 export type CameraId = string;
 
@@ -35,6 +37,16 @@ export interface CameraState {
   locked: boolean;
   /** LENS_PRESETS key last chosen, or null after a manual focal change. */
   lens: string | null;
+  /**
+   * The optics beyond the plain thin lens (O1: the bokeh, tilt and shift; core/optics.ts). Absent on cameras made
+   * before O1 and on new ones: the plain thin lens, which the engine renders exactly as it always did.
+   */
+  optics?: CameraOptics;
+  /**
+   * The ratio of the image this camera takes (U13): a preset of data/aspects.ts or a custom `w : h`. The
+   * viewport's frame and the render window's size follow the active camera's.
+   */
+  aspect: CameraAspect;
 }
 
 /** Width of the reference sensor, millimetres (applies to the longer image side). */
@@ -76,6 +88,7 @@ export function makeCamera(id: CameraId, name: string, partSizeMm: number): Came
     clipEnd: clipEndFor(size),
     locked: false,
     lens: null,
+    aspect: { ...DEFAULT_ASPECT },
   };
 }
 
@@ -228,10 +241,47 @@ export function activeCamera(state: ProjectState): CameraState {
   return state.camera.cameras[state.camera.active] ?? Object.values(state.camera.cameras)[0];
 }
 
-/** Aspect of the output image (width / height). */
+/** The ratio width / height of the image a camera takes (16:9 for a camera that has none). */
+export function aspectRatio(cam: { aspect?: Pick<CameraAspect, 'w' | 'h'> }): number {
+  const a = cam.aspect;
+  return a && a.w > 0 && a.h > 0 ? a.w / a.h : 16 / 9;
+}
+
+/** Aspect of the output image of the active camera (width / height): the ratio the viewport frames. */
 export function outputAspect(state: ProjectState): number {
-  const { width, height } = state.render;
-  return width > 0 && height > 0 ? width / height : 16 / 9;
+  return aspectRatio(activeCamera(state));
+}
+
+/**
+ * Where the image of a camera sits inside a viewport of `viewW x viewH`: `outputFrameRect` with the camera's own
+ * ratio, so the frame follows the camera whose view is on screen.
+ */
+export function cameraFrameRect(cam: CameraState, viewW: number, viewH: number, marginPx?: number): { x: number; y: number; width: number; height: number } {
+  return outputFrameRect(viewW, viewH, cam.aspect?.w ?? 16, cam.aspect?.h ?? 9, marginPx);
+}
+
+/**
+ * Cameras saved before U13 have no aspect: each takes the ratio of the render size the project saved (the one
+ * size every camera shared), rounded to a preset within 0.5 %, else a custom ratio with those pixels. A camera
+ * that has one keeps it (read through `normaliseAspect`). The saved size is not touched: an image's size
+ * follows the active camera from the next change on, and opening a project never changes what it renders.
+ */
+export function withCameraAspects(state: ProjectState): ProjectState {
+  const saved = aspectNearPixels(state.render.width, state.render.height);
+  let changed = false;
+  let legacy = false;
+  const cameras: Record<CameraId, CameraState> = {};
+  for (const [id, cam] of Object.entries(state.camera.cameras)) {
+    const raw = (cam as { aspect?: unknown }).aspect;
+    const aspect = raw === undefined ? saved : normaliseAspect(raw, saved);
+    if (raw === undefined) legacy = true;
+    const same = raw !== undefined && aspect.preset === (raw as CameraAspect).preset && aspect.w === (raw as CameraAspect).w && aspect.h === (raw as CameraAspect).h;
+    cameras[id] = same ? cam : { ...cam, aspect };
+    if (!same) changed = true;
+  }
+  if (!changed) return state;
+  const next: ProjectState = { ...state, camera: { ...state.camera, cameras } };
+  return legacy && next.render.mode !== 'ANIMATION' ? { ...next, render: { ...next.render, aspect: aspectRatio(activeCamera(next)) } } : next;
 }
 
 /**
@@ -267,11 +317,12 @@ function setCamera(state: ProjectState, cam: CameraState): ProjectState {
   return { ...state, camera: { ...state.camera, cameras: { ...state.camera.cameras, [cam.id]: cam } } };
 }
 
-/** Frames the active camera on some nodes (or on the whole visible scene). */
+/** Frames the active camera on some nodes (or on the whole visible scene, but the decoration of a set: L6). */
 export function frameActive(state: ProjectState, ids?: readonly NodeId[]): ProjectState {
   const cam = activeCamera(state);
   if (!cam) return state;
-  const box = ids && ids.length > 0 ? boundsOf(state, ids) : sceneBounds(state, true);
+  const own = state.scene.roots.filter((r) => !isSetPiece(state.scene.nodes[r]));
+  const box = ids && ids.length > 0 ? boundsOf(state, ids) : own.length === state.scene.roots.length ? sceneBounds(state, true) : boundsOf(state, own, true);
   if (isEmptyBox(box)) return state;
   return setCamera(state, frameBox(cam, box, outputAspect(state)));
 }
@@ -283,6 +334,7 @@ export function reduceCamera(state: ProjectState, action: CameraAction): Project
       if (!cam) return state;
       const patch = { ...action.patch };
       if (patch.focalMm !== undefined && patch.lens === undefined && patch.focalMm !== cam.focalMm) patch.lens = null;
+      if (patch.aspect !== undefined) patch.aspect = normaliseAspect(patch.aspect, cam.aspect);
       const next = { ...cam, ...patch };
       return setCamera(state, next);
     }

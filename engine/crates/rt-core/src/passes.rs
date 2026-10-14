@@ -104,6 +104,10 @@ pub fn words_per_pixel(mask: u32) -> usize {
 /// `sensor_mm / long_side × focus_dist / focal_mm` of that plane. Zero on the focus plane, for a
 /// pinhole, an orthographic camera or no focus distance ([`Camera::lens_radius`] 0), and for a
 /// depth that is not positive and finite (the background).
+///
+/// It stays the circle of the plain thin lens whatever the camera's optics (O1, the `LENS`
+/// section): a round, untilted aperture of `focal_mm / fstop`, without the iris shape, the
+/// squeeze or the tilt of [`crate::optics`].
 pub fn coc_diameter(camera: &Camera, depth: f32, long_side: u32) -> f32 {
     if camera.lens_radius() <= 0.0 || !(depth > 0.0 && depth.is_finite()) {
         return 0.0;

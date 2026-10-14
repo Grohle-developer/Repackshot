@@ -53,7 +53,9 @@ import {
   type LibraryItem,
   type LibraryKind,
 } from '../core/library';
-import { LIBRARY_PREFIX, isLibraryKey, type NewLightKind } from '../core/lighting';
+import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '../core/lighting';
+import { resolvePreset } from '../core/rig';
+import { activeSet, setBackground, type SetPieceNames } from '../core/sets';
 import { lookThroughCamera, objectOf, sameObject, selectedObject, type ViewObject } from '../core/view-objects';
 import { boxCenter, isEmptyBox } from '../core/math';
 import { actionParts, assignAction, inventoryFor, partMaterials, type MaterialId } from '../core/materials';
@@ -76,7 +78,7 @@ import {
 import { fitSweep, placePrimitive, primitivesUnder } from '../core/primitive-ops';
 import type { PrimitiveKind } from '../data/primitives';
 import type { Vec3 } from '../core/math';
-import { createInitialState, type ProjectState, type ThemeSetting } from '../core/store';
+import { createInitialState, type EnvironmentState, type ProjectState, type ThemeSetting } from '../core/store';
 import {
   importIsSure,
   isSection,
@@ -116,6 +118,8 @@ export function loadExample(ctx: Ctx): void {
   store.transaction(L('undo.example'), () => {
     store.dispatch({ type: 'scene/addModel', payload: buildExample(exampleNames()), replace: true });
     store.dispatch({ type: 'camera/frame' });
+    // L6: the set in force (chosen, or the product type's own) dresses the product that came in.
+    store.dispatch({ type: 'studio/fitSet', names: setPieceNames() });
   });
   ctx.ui.set({ importMessage: null });
 }
@@ -416,6 +420,8 @@ export function confirmImport(ctx: Ctx): void {
     if (options.frameCamera) ctx.store.dispatch({ type: 'camera/frame' });
     // Reset transform returns to where the sheet placed the model.
     ctx.store.dispatch({ type: 'scene/setInitial', ids: added });
+    // L6: the set in force (chosen, or the product type's own) dresses the product that came in.
+    ctx.store.dispatch({ type: 'studio/fitSet', names: setPieceNames() });
   });
   ctx.ui.toast(t('import.done', { name }));
   const budget = textures.filter((x) => x.dropped === 'budget').map((x): ImportMessage => ({ code: 'textureDropped', params: { image: x.name, reason: 'budget' } }));
@@ -479,7 +485,7 @@ function replaceProject(ctx: Ctx, state: ProjectState): void {
   // History is gone with the old project, and so are the geometry and the images only it used.
   retainMeshes(meshIdsInUse(state));
   retainImages([...imageIdsInUse(state.environment), ...textureImages(state).keys()]);
-  ctx.ui.set({ labelTool: null, catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null });
+  ctx.ui.set({ labelTool: null, catalogOpen: false, pickMode: null, wizard: null, importMessage: null, hover: null, renderWindow: null, selectedClip: null, selectedClips: [] });
 }
 
 export function newProject(ctx: Ctx): void {
@@ -541,21 +547,67 @@ export async function saveProject(ctx: Ctx, opts: { saveAs?: boolean } = {}): Pr
   return true;
 }
 
+/** What the unsaved-changes question can be told (it is the same question for every use). */
+export interface UnsavedOptions {
+  /** The third button, when "Don’t save" is not the word (quitting for an update). */
+  leaveLabel?: string;
+  /** The question ended without `proceed` running: Cancel or Esc, or a Save that wrote nothing (its dialog cancelled, a failure). */
+  onStay?: () => void;
+}
+
 /**
- * Runs `proceed` now, or after asking when the project has unsaved changes (UI.md §4.3: in place, three buttons,
- * Esc cancels). Save writes the project first and proceeds only if it was written.
+ * Runs `proceed` now, or after asking when the project has unsaved changes (UI.md §4.3: in place, Save · Save as… ·
+ * Don’t save, Cancel and Esc dismiss it). Save and Save as… write the project first and proceed only if it was
+ * written: a dialog that is cancelled or a file that cannot be written stays where it was. The same question for
+ * closing the window, New, Open and updating the application.
  */
-function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void): void {
-  if (!ctx.store.get().meta.dirty) return proceed();
-  ctx.ui.set({
-    prompt: {
-      message,
-      options: [
-        { label: t('project.save'), primary: true, run: () => void saveProject(ctx).then((saved) => saved && proceed()) },
-        { label: t('project.dontSave'), run: proceed },
-      ],
-    },
+export function afterUnsavedCheck(ctx: Ctx, message: string, proceed: () => void, opts: UnsavedOptions = {}): void {
+  const q = unsavedQuestion(ctx, message, proceed, opts);
+  if (!q) return;
+  ctx.ui.set({ prompt: q.spec });
+  const stay = opts.onStay;
+  if (!stay) return;
+  // The question goes away without a choice (Cancel, Esc, a click outside): the flow stays where it was. An option
+  // closes the question first and runs after, in the same click, so the check waits a turn.
+  const off = ctx.ui.subscribe((u) => {
+    if (u.prompt === q.spec) return;
+    off();
+    queueMicrotask(() => {
+      if (!q.chosen()) stay();
+    });
   });
+}
+
+/**
+ * The question of `afterUnsavedCheck` for a caller that shows it itself, in its own place (a row of Settings, the
+ * button that was pressed): `null` when the project has nothing unsaved and `proceed` has already run. `chosen` says
+ * whether one of the three buttons was pressed (as opposed to Cancel or Esc).
+ */
+export function unsavedQuestion(ctx: Ctx, message: string, proceed: () => void, opts: UnsavedOptions = {}): { spec: ConfirmSpec; chosen: () => boolean } | null {
+  if (!ctx.store.get().meta.dirty) {
+    proceed();
+    return null;
+  }
+  let chosen = false;
+  const write = (saveAs: boolean) => () => {
+    chosen = true;
+    void saveProject(ctx, saveAs ? { saveAs: true } : {}).then((saved) => (saved ? proceed() : opts.onStay?.()));
+  };
+  const spec: ConfirmSpec = {
+    message,
+    options: [
+      { label: t('project.save'), primary: true, run: write(false) },
+      { label: t('project.saveAs'), run: write(true) },
+      {
+        label: opts.leaveLabel ?? t('project.dontSave'),
+        run: () => {
+          chosen = true;
+          proceed();
+        },
+      },
+    ],
+  };
+  return { spec, chosen: () => chosen };
 }
 
 /** New (menu): a fresh project, after asking when there are unsaved changes. */
@@ -876,22 +928,12 @@ const closeQuestions = new WeakSet<ConfirmSpec>();
  * Closing the desktop window, the one flow for every way to ask it: Ctrl/⌘ W and Ctrl/⌘ Q (guards.ts) and, in
  * Repackshot's own window (P3c), the window's own close (its close button, Alt F4, the taskbar, the system menu, which
  * the window turns into `close-requested`). Our unsaved-changes question (UI.md §4.3, when General ▸ Confirm before
- * closing is on: Save · Don't save · Cancel), then the window closes: `close-ok` to our own window, `window.close()` in
+ * closing is on: Save · Save as… · Don't save, and Cancel), then the window closes: `close-ok` to our own window, `window.close()` in
  * the browser's app window. Never the browser's own "Leave?" dialog.
  */
 export function requestCloseWindow(ctx: Ctx): void {
-  const host = ctx.services.windowHost;
-  const close = ctx.services.desktop?.closeWindow;
-  if (!host && !close) return;
-  const go = () => {
-    // Our own window has no beforeunload to quieten: it closes when told.
-    if (host) return host.closeOk();
-    if (!close) return;
-    closeAnswered = true;
-    close();
-    // A window that did not close (the browser refused): the next close asks again.
-    setTimeout(() => (closeAnswered = false), 1500);
-  };
+  const go = closeWindowNow(ctx);
+  if (!go) return;
   if (!ctx.ui.get().settings['general.confirmClose']) return go();
   const asking = ctx.ui.get().prompt;
   if (asking && closeQuestions.has(asking)) return;
@@ -901,6 +943,44 @@ export function requestCloseWindow(ctx: Ctx): void {
   closeQuestions.add(spec);
   // The question sits under the project name, in the header: the Settings window, which is modal, makes way.
   if (ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
+}
+
+/** What closes this window without asking (our own window, or the app window of the browser's); null where nothing can. */
+function closeWindowNow(ctx: Ctx): (() => void) | null {
+  const host = ctx.services.windowHost;
+  const close = ctx.services.desktop?.closeWindow;
+  if (!host && !close) return null;
+  return () => {
+    // Our own window has no beforeunload to quieten: it closes when told.
+    if (host) return host.closeOk();
+    if (!close) return;
+    closeAnswered = true;
+    close();
+    // A window that did not close (the browser refused): the next close asks again.
+    setTimeout(() => (closeAnswered = false), 1500);
+  };
+}
+
+/**
+ * The new version is installed and the launcher waits for this window to close, to start it (phase P5). The same
+ * question as closing about unsaved changes, if there are some now that the person has not answered for already (they
+ * may have gone on working while the package downloaded: `unchangedSince` is the project’s revision when they answered),
+ * worded for the update; then the window closes. `onStay` when it does not: Cancel or Esc, a Save
+ * that wrote nothing, or no way to close the window from here. The question sits under the project name, so Settings,
+ * which is modal, makes way. Returns whether anything was done.
+ */
+export function closeForUpdate(ctx: Ctx, onStay: () => void, unchangedSince: number | null = null): boolean {
+  const go = closeWindowNow(ctx);
+  if (!go) return false;
+  // The person answered the question when the update began: the same project, the same answer.
+  if (unchangedSince !== null && ctx.store.revision() === unchangedSince) {
+    go();
+    return true;
+  }
+  const name = ctx.store.get().meta.name || t('app.untitled');
+  afterUnsavedCheck(ctx, t('project.unsavedUpdate', { name }), go, { leaveLabel: t('project.quitWithout'), onStay });
+  if (ctx.ui.get().prompt && ctx.ui.get().settingsWindow) ctx.ui.set({ settingsWindow: null });
+  return true;
 }
 
 /** Settings ▸ Render engine ▸ Measure performance: a real run of the example scene with the engine in use. */
@@ -1578,7 +1658,48 @@ export function setProductType(ctx: Ctx, key: string): void {
 }
 
 export function buildStudio(ctx: Ctx): void {
-  ctx.store.dispatch({ type: 'studio/build', label: L('undo.createStudio') });
+  ctx.store.dispatch({ type: 'studio/build', names: setPieceNames(), label: L('undo.createStudio') });
+}
+
+/** What the pieces of a set (L6) are called in the interface's language. */
+export function setPieceNames(): SetPieceNames {
+  return {
+    cards: { CARD_WHITE: t('set.card.CARD_WHITE'), CARD_BLACK: t('set.card.CARD_BLACK'), ALU_BRUSH: t('set.card.ALU_BRUSH') },
+    backdrop: t('set.backdrop'),
+    floor: t('set.floor'),
+    pool: t('set.pool'),
+  };
+}
+
+/** Use the set's camera (L6): the view the set in force suggests, the product framed again. One undo step. */
+export function useSetCamera(ctx: Ctx): void {
+  ctx.store.dispatch({ type: 'studio/useSetCamera', label: L('undo.setCamera') });
+}
+
+/**
+ * The set's backdrop on or off (L6). A sweep is a part of the scene: it is shown or hidden. A colour or a gradient is
+ * the background: off, the product type's background comes back; on, the set's.
+ */
+export function toggleSetBackdrop(ctx: Ctx, on: boolean): void {
+  const s = ctx.store.get();
+  const set = activeSet(s);
+  if (!set?.backdrop || !setBackground(set)) return;
+  const preset = resolvePreset(presetRefOf(s.studio));
+  const b = set.backdrop;
+  let patch: Partial<EnvironmentState>;
+  if (!on) {
+    patch = preset
+      ? { background: preset.background === 'FLAT' ? 'COLOR' : 'ENVIRONMENT', color: [preset.backgroundColor[0], preset.backgroundColor[1], preset.backgroundColor[2], preset.backgroundColor[3]] }
+      : { background: 'ENVIRONMENT' };
+  } else if (b.kind === 'GRADIENT') {
+    const top = b.top ?? [0.1, 0.1, 0.1];
+    const bottom = b.bottom ?? [0.02, 0.02, 0.02];
+    patch = { background: 'GRADIENT', gradient: { top, bottom }, color: [bottom[0], bottom[1], bottom[2], 1] };
+  } else {
+    const c = b.color ?? [0.5, 0.5, 0.5];
+    patch = { background: 'COLOR', color: [c[0], c[1], c[2], 1] };
+  }
+  ctx.store.dispatch({ type: 'env/set', patch, label: L('undo.setBackdrop') });
 }
 
 /** "Create studio": asks first when a studio is already built. */
@@ -1608,7 +1729,7 @@ export function chooseSetup(ctx: Ctx, key: string): void {
     if (item) ctx.store.dispatch({ type: 'studio/applySetup', setup: customSetupOf(item), label: L('undo.setup', { name: setupName(ctx, key) }) });
     return;
   }
-  ctx.store.dispatch({ type: 'studio/setSetup', key, label: L('undo.setup', { name: setupLabel(key) }) });
+  ctx.store.dispatch({ type: 'studio/setSetup', key, names: setPieceNames(), label: L('undo.setup', { name: setupLabel(key) }) });
 }
 
 /** Changing setup asks first when the lights were edited by hand. */

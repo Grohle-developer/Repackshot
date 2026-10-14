@@ -6,8 +6,8 @@
 use crate::color::Rgb;
 use crate::math::Vec3;
 use crate::scene::{
-    Camera, EnvKind, Environment, Floor, Geometry, Instance, Light, LightKind, Material, Mesh,
-    RenderSettings, Scene, Transform, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY,
+    Camera, EnvKind, Environment, Floor, Geometry, Instance, Lens, LensParams, Light, LightKind,
+    Material, Mesh, RenderSettings, Scene, Transform, LIGHT_FLAG_CAMERA, LIGHT_FLAG_GLOSSY,
 };
 use std::collections::BTreeMap;
 
@@ -133,6 +133,7 @@ pub fn scene() -> Scene {
             focus_dist: (target - camera_position).length(),
             ortho: false,
             ortho_width: 600.0,
+            lens: None,
         },
         materials: vec![
             Material {
@@ -453,6 +454,98 @@ pub fn ambient_scene() -> Scene {
         },
     ];
     scene.build_particles(Vec::new());
+    scene
+}
+
+/// A lens that uses every knob of the enhanced thin lens (O1) at once: seven curved blades, a
+/// bright ring, an obstruction, cat's eye, a 1.33× squeeze, shift and tilt, chromatic aberration
+/// and swirl (no picture; [`o1_scene`] adds one).
+pub fn busy_lens() -> LensParams {
+    LensParams {
+        blades: 7,
+        roundness: 0.3,
+        rotation_deg: 10.0,
+        profile: crate::optics::pupil::PROFILE_RING_BRIGHT,
+        profile_param: 0.6,
+        obstruction: 0.2,
+        cats_eye: 0.5,
+        squeeze: 1.33,
+        shift_x_mm: 1.5,
+        shift_y_mm: -2.0,
+        tilt_deg: 2.0,
+        tilt_axis_deg: 15.0,
+        ca_amount: 0.7,
+        swirl: 0.6,
+        field_mm: 21.6,
+        ..LensParams::default()
+    }
+}
+
+/// A `size × size` pupil texture from integer arithmetic only: concentric rings and specks.
+pub fn ring_texture(size: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity((size * size) as usize);
+    let half = size as i64;
+    for j in 0..size as i64 {
+        for i in 0..size as i64 {
+            let (x, y) = (2 * i + 1 - half, half - 2 * j - 1);
+            let r2 = x * x + y * y;
+            let ring = (r2 * 7 / (half * half) % 2) == 0;
+            let hash = (i as u64)
+                .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                .wrapping_add((j as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f));
+            let speck = (hash >> 59) == 0;
+            out.push(if speck {
+                40
+            } else if ring {
+                255
+            } else {
+                170
+            });
+        }
+    }
+    out
+}
+
+/// The O1 parity scene (`render.rs` pins its hash; `rt --write-o1-example` writes it for
+/// `tools/wasm-parity.mjs`): the example at f/2 focused on the big sphere, with six small lights
+/// far behind it that the lens turns into bokeh, seen through [`busy_lens`] with a ring texture
+/// on the pupil.
+pub fn o1_scene() -> Scene {
+    let mut scene = scene();
+    scene.render.width = 256;
+    scene.render.height = 192;
+    scene.camera.fstop = 2.0;
+    let size = 48;
+    let lens = Lens::new(LensParams {
+        mask_kind: crate::optics::MASK_TEXTURE,
+        mask_width: size,
+        mask_height: size,
+        mask: ring_texture(size),
+        ..busy_lens()
+    })
+    .unwrap_or_else(|_| unreachable!("the busy lens is valid"));
+    scene.camera.lens = Some(lens);
+    let towards = scene.camera.position;
+    let (forward, right, up) = scene.camera.basis();
+    for k in 0..6 {
+        let position = towards
+            + forward * 2600.0
+            + right * (-450.0 + 180.0 * k as f32)
+            + up * (250.0 + 70.0 * (k % 3) as f32);
+        scene.lights.push(Light {
+            kind: LightKind::Disk,
+            position,
+            direction: (towards - position).normalize(),
+            up: Vec3::new(0.0, 0.0, 1.0),
+            size_x: 14.0,
+            size_y: 14.0,
+            color: Rgb::new(1.0, 0.85 + 0.03 * k as f32, 0.7),
+            power: 0.004,
+            spread_deg: 180.0,
+            angle_deg: 0.0,
+            flags: LIGHT_FLAG_CAMERA,
+        });
+    }
     scene
 }
 

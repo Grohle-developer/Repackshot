@@ -217,6 +217,10 @@ Function Refresh
 FunctionEnd
 
 Function ModelsPage
+  ; A silent run is the application updating itself: it asks nothing, and the choice already made
+  ; (pending-models.json, then the application's own settings) is not touched.
+  IfSilent 0 +2
+  Abort
   !insertmacro MUI_HEADER_TEXT "$(ModelsTitle)" "$(ModelsSubtitle)"
   InitPluginsDir
   StrCpy $U "u"
@@ -324,6 +328,8 @@ FunctionEnd
 
 ; Writes {"device": ..., "keys": [...], "runtime": ...} for the application's first start.
 Function ModelsLeave
+  IfSilent 0 +2
+  Return
   StrCpy $5 ""
   StrCpy $R0 0
   ${While} $R0 < $Count

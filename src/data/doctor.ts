@@ -3,7 +3,7 @@
 import type { DoctorCheck } from './types';
 
 // Scene doctor checks (upstream CHECKS, 14 entries in upstream order, then the
-// ones of Repackshot's own phases: `particles`, S4a). These are descriptors
+// ones of Repackshot's own phases: `aspect`, U13; `particles`, S4a). These are descriptors
 // only: what each check looks at and what its one-click fix does. The logic
 // that runs them lives with the scene code, not here.
 export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
@@ -173,6 +173,19 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     fix: {
       es: 'Pasa a PNG si el formato no es de imagen, desactiva sobrescribir y activa los marcadores de posicion para poder reanudar.',
       en: 'Switches to PNG if the format is not an image format, disables overwrite and enables placeholders so a render can resume.',
+    },
+  },
+  // Not from upstream (U13): appended, so the upstream order above is intact.
+  {
+    key: 'aspect',
+    label: { es: 'Proporcion de la animacion', en: 'Animation aspect ratio' },
+    checks: {
+      es: 'Un plano de la animacion usa una camara con otra proporcion de imagen que el tamano de salida, y un video tiene un solo tamano.',
+      en: 'A shot of the animation uses a camera whose image aspect ratio is not that of the output size, and a video has a single size.',
+    },
+    fix: {
+      es: 'Pone a las camaras de esos planos la proporcion del tamano de salida.',
+      en: "Gives the cameras of those shots the output size's aspect ratio.",
     },
   },
   {

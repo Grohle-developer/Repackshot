@@ -1,8 +1,12 @@
 // Updates (Settings ▸ Updates, and the quiet notice at startup): the pure part. Versions and how to
 // compare them, what a published release is, how the answer of the release feed is read and checked,
-// which package of a release is for this computer, why a check can fail, and what the interface says
-// about all of it. The request itself is in src/io/updates.ts; the feed's address in
-// src/data/update-feed.ts. No DOM, no network, no clock.
+// which package of a release is for this computer, why a check can fail, what the interface says
+// about all of it, and (phase P5) what the application asks of the desktop launcher to install a new
+// version from inside itself and how it reads the launcher's answer. The request for the feed is in
+// src/io/updates.ts; the feed's address in src/data/update-feed.ts. No DOM, no network, no clock.
+
+import type { Lang } from '../data/types';
+import { UPDATE_FEED, type UpdateFeed } from '../data/update-feed';
 
 /** A semantic version: `major.minor.patch` and, after a hyphen, pre-release identifiers. */
 export interface ParsedVersion {
@@ -222,4 +226,125 @@ export function summarizeUpdates(o: { current: string; checking: boolean; fault:
   const available = o.latest && isNewer(o.latest.version, o.current) ? o.latest : null;
   const state = o.checking ? 'CHECKING' : o.fault ? 'FAILED' : available ? 'AVAILABLE' : o.latest ? 'LATEST' : 'NEVER';
   return { state, fault: o.fault, available };
+}
+
+// ------------------------------------------------------------------ installing from inside the application (P5)
+
+/** The checksums file every release carries (packaging/release.mjs): the launcher holds the package to it. */
+export const SUMS_NAME = 'SHA256SUMS.txt';
+
+/**
+ * `https://github.com/<owner>/<repo>/releases/download/<tag>/<file>` of the feed's repository and of this version
+ * (with or without the `v` in the path), nothing more: no query, no fragment, no escape, no other path. The
+ * launcher checks the same before it downloads anything (rt-app/src/update/feed.rs); this keeps the page from
+ * even asking for anything else.
+ */
+export function downloadUrlAllowed(url: string, version: string, feed: UpdateFeed = UPDATE_FEED): boolean {
+  const prefix = `https://github.com/${feed.owner}/${feed.repo}/releases/download/`;
+  if (typeof url !== 'string' || url.length <= prefix.length || url.length > MAX_URL) return false;
+  if (url.slice(0, prefix.length).toLowerCase() !== prefix.toLowerCase()) return false;
+  const rest = url.slice(prefix.length).split('/');
+  if (rest.length !== 2) return false;
+  const [segment, file] = rest;
+  if (segment !== version && segment !== `v${version}`) return false;
+  return /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(file) && !file.includes('..');
+}
+
+/** What `POST /api/update/install` takes. `size` is only for the progress (the package's size by the feed's word). */
+export interface InstallRequest {
+  tag: string;
+  assetUrl: string;
+  sumsUrl: string;
+  size?: number;
+}
+
+/**
+ * The request that installs `release` here: the package for this computer and the release's checksums, both
+ * downloads of the feed's repository. Null when the application cannot (the web, a system without a package, a
+ * release that lacks the package or its checksums): then Download, which opens the release page or the package.
+ */
+export function installRequest(release: ReleaseInfo, target: UpdateTarget, feed: UpdateFeed = UPDATE_FEED): InstallRequest | null {
+  const asset = pickAsset(release, target);
+  const sums = release.assets.find((a) => a.name === SUMS_NAME);
+  if (!asset || !sums) return null;
+  if (!downloadUrlAllowed(asset.url, release.version, feed) || !downloadUrlAllowed(sums.url, release.version, feed)) return null;
+  return { tag: release.version, assetUrl: asset.url, sumsUrl: sums.url, ...(asset.size !== null && asset.size > 0 ? { size: asset.size } : {}) };
+}
+
+export type InstallState = 'IDLE' | 'DOWNLOADING' | 'VERIFYING' | 'INSTALLING' | 'FAILED';
+
+/** The launcher's codes for a failed update (`error` of `GET /api/update`, and of a refused request). */
+export type InstallErrorCode = 'download' | 'disk-full' | 'sums' | 'checksum' | 'extract' | 'install' | 'not-updatable' | 'busy' | 'bad-url' | 'bad-asset' | 'bad-tag' | 'lost' | 'other';
+
+const ERROR_CODES: readonly string[] = ['download', 'disk-full', 'sums', 'checksum', 'extract', 'install', 'not-updatable', 'busy', 'bad-url', 'bad-asset', 'bad-tag', 'lost'];
+
+/** `GET /api/update`, as the page keeps it. */
+export interface InstallStatus {
+  state: InstallState;
+  /** The version being installed. */
+  tag: string | null;
+  /** Bytes downloaded, and the package's size (0: not known). */
+  received: number;
+  total: number;
+  /** INSTALLING and the files are in place: the launcher waits for the window to close. */
+  ready: boolean;
+  error: InstallErrorCode | null;
+  /** The launcher's own words, in English: for the log and the tooltip, not for the row. */
+  message: string | null;
+}
+
+export const NO_INSTALL: InstallStatus = { state: 'IDLE', tag: null, received: 0, total: 0, ready: false, error: null, message: null };
+
+/** An update under way: downloading, checking or installing. */
+export const installActive = (s: Pick<InstallStatus, 'state'>): boolean => s.state === 'DOWNLOADING' || s.state === 'VERIFYING' || s.state === 'INSTALLING';
+
+/** The code of an error word the launcher sent; `other` for one this version does not know. */
+export function installErrorCode(code: unknown): InstallErrorCode {
+  return typeof code === 'string' && ERROR_CODES.includes(code) ? (code as InstallErrorCode) : 'other';
+}
+
+const count = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v) : 0);
+
+/** The launcher's `GET /api/update` answer; null when it is not one. */
+export function parseInstallStatus(raw: unknown): InstallStatus | null {
+  if (!isRecord(raw) || typeof raw.state !== 'string') return null;
+  const state = (['IDLE', 'DOWNLOADING', 'VERIFYING', 'INSTALLING', 'FAILED'] as const).find((s) => s === raw.state);
+  if (!state) return null;
+  return {
+    state,
+    tag: typeof raw.tag === 'string' && raw.tag.length <= 64 ? raw.tag : null,
+    received: count(raw.received),
+    total: count(raw.total),
+    ready: raw.ready === true,
+    error: raw.error === null || raw.error === undefined ? null : installErrorCode(raw.error),
+    message: typeof raw.message === 'string' ? raw.message.slice(0, 500) : null,
+  };
+}
+
+/** How far a download is, 0 to 100, or null while the package's size is not known. */
+export function installPercent(s: Pick<InstallStatus, 'received' | 'total'>): number | null {
+  return s.total > 0 ? Math.min(100, Math.max(0, Math.floor((s.received / s.total) * 100))) : null;
+}
+
+/** `3,2 de 7,1 MB`: both in the unit of the total (so the unit is said once); the plain amount without a total. */
+export function formatProgress(received: number, total: number, lang: Lang, of: string): string {
+  const units = ['B', 'kB', 'MB', 'GB'];
+  const nf = (digits: number) => new Intl.NumberFormat(lang === 'es' ? 'es-ES' : 'en-GB', { maximumFractionDigits: digits, minimumFractionDigits: digits });
+  let unit = 0;
+  for (let v = Math.max(total, received); v >= 1000 && unit < units.length - 1; v /= 1000) unit++;
+  const scale = 1000 ** unit;
+  const digits = unit === 0 ? 0 : Math.max(total, received) / scale < 10 ? 1 : 0;
+  const fmt = nf(digits);
+  const amount = (n: number) => fmt.format(n / scale);
+  return total > 0 ? `${amount(Math.min(received, total))} ${of} ${amount(total)} ${units[unit]}` : `${amount(received)} ${units[unit]}`;
+}
+
+/**
+ * The launcher's side of an update, as the interface uses it (src/io/update-install.ts). `install` and `cancel`
+ * throw a NativeError (`code`: `not-updatable`, `bad-url`, `busy`…) when the launcher refuses or cannot be reached.
+ */
+export interface InstallerPort {
+  status(): Promise<InstallStatus>;
+  install(req: InstallRequest): Promise<InstallStatus>;
+  cancel(): Promise<InstallStatus>;
 }

@@ -563,8 +563,9 @@ describe('the infinity sweep fills the camera’s frame', () => {
     ['the reference three-quarter view, 16:9', (s) => s],
     ['a front view, low', (s) => withCamera(s, { azimuth: 0, elevation: 4 })],
     ['from above at 45 degrees with a 35 mm lens, behind and to the side', (s) => withCamera(s, { azimuth: 120, elevation: 45, focalMm: 35 })],
-    ['a 135 mm tele from the left, a portrait frame', (s) => ({ ...withCamera(s, { azimuth: -60, elevation: 10, focalMm: 135 }), render: { ...s.render, width: 1080, height: 1350 } })],
-    ['a 24 mm wide view, square', (s) => ({ ...withCamera(s, { azimuth: 20, elevation: 15, focalMm: 24 }), render: { ...s.render, width: 1000, height: 1000 } })],
+    // The frame is the camera's ratio: the size typed in the render window gives it (U13).
+    ['a 135 mm tele from the left, a portrait frame', (s) => apply(withCamera(s, { azimuth: -60, elevation: 10, focalMm: 135 }), { type: 'render/set', patch: { width: 1080, height: 1350 } })],
+    ['a 24 mm wide view, square', (s) => apply(withCamera(s, { azimuth: 20, elevation: 15, focalMm: 24 }), { type: 'render/set', patch: { width: 1000, height: 1000 } })],
     ['orthographic at 30 degrees', (s) => withCamera(s, { projection: 'ORTHOGRAPHIC', elevation: 30 })],
     ['straight down', (s) => withCamera(s, { elevation: 89 })],
     // A thin, tall product (a panel): the curve would reach under it at 1.75 depths; the wall goes further back.
@@ -626,13 +627,13 @@ describe('the infinity sweep fills the camera’s frame', () => {
     near(wall / depth, 1.75, 0.01);
   });
 
-  it('with the Standard rig and the reference camera, every light of the rig stays in front of the wall', () => {
-    const s0 = exampleState();
-    expect(s0.studio.preset).toBe('GENERIC');
+  it('with a rim behind the subject and the reference camera, every light of the rig stays in front of the wall', () => {
+    // L6 raised the Standard type's rim (its reflection in a glossy floor): a setup with a low rim behind (WRAP).
+    const s0 = apply(exampleState(), { type: 'studio/setSetup', key: 'WRAP' });
     const { state: s, id } = add(s0, 'SWEEP');
     const { along, depth, wall } = depthsOf(s, id);
     const lights = s.studio.lights.filter((l) => l.enabled);
-    expect(lights.length).toBe(3);
+    expect(lights.length).toBe(5);
     // The rim light stands behind the subject, further back than 1.75 subject depths: the paper goes back for it.
     const rim = lights.find((l) => l.role === 'RIM')!;
     expect(along(lightPosition(s, rim))).toBeGreaterThan(SWEEP_FIT.wall * depth);

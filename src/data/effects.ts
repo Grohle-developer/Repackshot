@@ -2,10 +2,9 @@
 // evaluated by the engine's own simulator (engine/crates/rt-sim) from the parameters below. The keys are stable
 // (rule 7: added, never renamed); `code` is the `kind` the RSB `FXAM` section carries.
 //
-// PROPOSAL: every value of `values` and of `material` is a starting point proposed by the implementation, not a
-// decision. The lead sets the final ones from the contact sheet `out/ambient-sheet.html` (rule 11). The three S5
-// effects (volumes: haze, light shafts, ground fog) are listed, greyed and marked "coming soon": they have no
-// values yet.
+// The values of `values` and of `material` were proposed with the contact sheet `out/ambient-sheet.html` and
+// accepted by the lead (rule 11, ROADMAP S4a verdict); changing them is the lead's call. The three S5 effects
+// (volumes: haze, light shafts, ground fog) are listed, greyed and marked "coming soon": they have no values yet.
 
 import type { Label, RGB } from './types';
 
@@ -85,7 +84,7 @@ export interface EffectPreset {
   intent: Label;
   /** S5: listed, not available yet (a volume, after E9b). */
   soon?: boolean;
-  /** PROPOSAL (see the file's head). Absent on the S5 effects. */
+  /** The preset's values (accepted, see the file's head). Absent on the S5 effects. */
   values?: EffectValues;
   material?: EffectMaterial;
 }
@@ -123,11 +122,11 @@ const BASE: Omit<EffectValues, 'density' | 'sizeMm' | 'shape'> = {
   shadows: true,
 };
 
-// PROPOSAL: the values below (see the file's head). The densities are photographic, not physical: the region is the
-// product's box with its margin (or the cloud's sphere), a few litres around the product, and the camera sees no
-// more than that; on the example bottle (12.7 l of region, a 1.6 l cloud) they give about 1 900 dust motes, 500
-// grains of pollen, 250 drops of rain, 150 snowflakes, 4 900 grains of dust in the cloud, 190 flakes of ash,
-// 130 bubbles and 60 pieces of confetti.
+// The values below were accepted with the contact sheet (see the file's head). The densities are photographic, not
+// physical: the region is the product's box with its margin (or the cloud's sphere), a few litres around the product,
+// and the camera sees no more than that; on the example bottle (12.7 l of region, a 1.6 l cloud) they give about
+// 1 900 dust motes, 500 grains of pollen, 250 drops of rain, 150 snowflakes, 4 900 grains of dust in the cloud,
+// 190 flakes of ash, 130 bubbles and 60 pieces of confetti.
 export const EFFECT_PRESETS: readonly EffectPreset[] = [
   {
     key: 'DUST_MOTES',

@@ -440,6 +440,32 @@ summary.sw-block-title {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* An update being installed from inside the application (phase P5): where it is, as a line and a thin bar. */
+.sw-update-progress {
+  color: var(--ink-0);
+  font-variant-numeric: tabular-nums;
+}
+.sw-update-bar {
+  height: 4px;
+  max-width: 560px;
+  border-radius: 2px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.sw-update-fill {
+  height: 100%;
+  background: var(--ink-0);
+}
+.sw-update-bar.is-unknown .sw-update-fill {
+  background: var(--ink-3);
+}
+.sw-update-confirm {
+  max-width: 560px;
+}
+.sw-update-web-note {
+  color: var(--ink-2);
+  font-size: var(--fs-aux);
+}
 .sw-info {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -783,4 +809,92 @@ summary.sw-block-title {
   margin: 4px 0 0;
   font-family: var(--mono);
   overflow-wrap: anywhere;
+}
+
+/* Settings ▸ Plugins (P6): a plugin a row; its logo (the plugin's own colour, content) on a black tile in both themes. */
+.sw-pl {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 4px 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.sw-pl:first-child {
+  border-top: 0;
+}
+.sw-pl-logo {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: #000000;
+}
+.sw-pl-logo.is-empty {
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--ink-2);
+}
+.sw-pl-logo img {
+  display: block;
+  width: 36px;
+  height: 36px;
+}
+.sw-pl-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.sw-pl-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ink-0);
+  font-weight: 600;
+}
+.sw-pl-licence {
+  border-color: var(--line-strong);
+  color: var(--ink-0);
+}
+.sw-pl-summary,
+.sw-pl-closed,
+.sw-pl-where {
+  max-width: 600px;
+  margin: 0;
+}
+.sw-pl-closed {
+  font-style: italic;
+}
+.sw-pl-state {
+  color: var(--ink-1);
+}
+.sw-pl[data-state='NEEDS_KEY'] .sw-pl-state,
+.sw-pl[data-state='FAILED'] .sw-pl-state,
+.sw-pl[data-state='DOWNLOADING'] .sw-pl-state {
+  font-weight: 600;
+}
+.sw-pl .sw-bar {
+  max-width: 420px;
+}
+.sw-pl-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sw-pl-panel {
+  grid-column: 1 / -1;
+}
+.sw-pl-key-input,
+.sw-pl-file-key {
+  width: min(100%, 34em);
+  font-family: var(--mono);
+}
+.sw-pl-file + .sw-pl-file {
+  margin-top: 6px;
+}
+.sw-pl-file-status:empty {
+  display: none;
 }

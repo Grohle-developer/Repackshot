@@ -3,7 +3,7 @@
 // camera's own inspector, and the section is titled with the active camera's name.
 
 import { describe, expect, it } from 'vitest';
-import { cameraLensSummary, cameraMenuEntries } from '../src/ui/camera-menu';
+import { cameraLensSummary, cameraMenuEntries, cameraSummary } from '../src/ui/camera-menu';
 import * as cmd from '../src/ui/commands';
 import type { Ctx } from '../src/ui/reactive';
 import { setLang, t } from '../src/ui/strings';
@@ -29,16 +29,18 @@ describe('the camera list of the viewport', () => {
     expect(rows.map((r) => r.checked)).toEqual([ids[0] === s.camera.active, ids[1] === s.camera.active]);
     expect(rows.filter((r) => r.checked)).toHaveLength(1);
     for (const r of rows) {
-      expect(r.aux).toBe(cameraLensSummary(s.camera.cameras[ids[rows.indexOf(r)]]));
+      expect(r.aux).toBe(cameraSummary(s.camera.cameras[ids[rows.indexOf(r)]]));
       expect(r.action?.icon).toBe('edit');
       expect(r.action?.label).toContain(r.label);
     }
   });
 
-  it('writes the lens as "85 mm · f/5.6"', () => {
+  it('writes the lens as "85 mm · f/5.6" and, in the list, the ratio after it', () => {
     setLang('en');
     expect(cameraLensSummary({ focalMm: 85, fstop: 5.6 })).toBe('85 mm · f/5.6');
     expect(cameraLensSummary({ focalMm: 100.4, fstop: 11 })).toBe('100 mm · f/11');
+    expect(cameraSummary({ focalMm: 85, fstop: 5.6, aspect: { preset: '4:3', w: 4, h: 3 } })).toBe('85 mm · f/5.6 · 4:3');
+    expect(cameraSummary({ focalMm: 85, fstop: 5.6, aspect: { preset: 'CUSTOM', w: 2.39, h: 1 } })).toBe('85 mm · f/5.6 · 2.39:1');
   });
 
   it('a row activates the camera; its pencil selects it and shows the Cameras tab, without activating it', () => {

@@ -307,6 +307,23 @@ describe('a job with AI on the desktop (X3c): the RENDER source', () => {
     expect(f.ctx.store.get().render.queue[0].status).toBe('DONE');
   });
 
+  it('a TIFF, DNG or EXR job writes the AI image in that format, and its thumbnail comes from an 8-bit PNG (a browser shows none of them)', async () => {
+    for (const [format, bitDepth, ext] of [['TIFF', 32, 'tif'], ['TIFF', 8, 'tif'], ['DNG', 8, 'dng'], ['EXR', 8, 'exr'], ['PNG', 16, 'png']] as const) {
+      const f = makeCtx(null);
+      f.renderSource = true;
+      (f.ctx.services as { ai: AiPort | null }).ai = port(f, launcherLike(f));
+      f.ctx.store.dispatch({ type: 'render/set', patch: { format, bitDepth } });
+      withAi(f);
+      await cmd.renderNow(f.ctx);
+      await queueSettled(f.ctx);
+      const label = `${format} ${bitDepth}`;
+      expect(f.saved.map((s) => s.name), label).toEqual([`Bottle_Camera 1_0001.${ext}`, `Bottle_Camera 1_0001_AI.${ext}`]);
+      const asked = f.encoded.map((e) => [e.format, e.bitDepth]);
+      // The file in the job's format; a second, 8-bit PNG only for the formats a browser cannot show.
+      expect(asked, label).toEqual(format === 'PNG' ? [[format, bitDepth]] : [[format, bitDepth], ['PNG', 8]]);
+    }
+  });
+
   it('a service without the RENDER source gets the picture inline, and the render is not asked to keep passes', async () => {
     const f = makeCtx(createSyntheticService());
     withAi(f);

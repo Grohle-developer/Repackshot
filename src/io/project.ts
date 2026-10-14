@@ -36,6 +36,10 @@
 //   2 (U5) — `render` is the render window's settings and a queue of full `RenderJob`s (core/render.ts
 //            `migrateRender`).
 //
+// Cameras (U13): each carries the aspect ratio of its image (`aspect: { preset, w, h }`). A file from before it has
+// none: its cameras take the ratio of the saved render size (a preset within 0.5 %, else a custom ratio with those
+// pixels; `withCameraAspects`), and the saved size stays. The schema stays at 2.
+//
 // Ambient effects (S4a): `effects`, a list of parameters (core/effects.ts); a file from before S4a has none and
 // opens with an empty list, an entry of a newer version keeps what this version knows of it. The schema stays at 2.
 //
@@ -61,11 +65,13 @@ import {
   type MeshData,
   type MeshId,
 } from '../core/meshes';
+import { normalizeOptics } from '../core/optics';
 import { getImage, nextImageId, type ImageData, type ImageId, type ImageRef } from '../core/images';
 import { checkTextureFile, registerTextureImage, textureImageId } from '../core/texture-images';
 import { normalizeTextures, TEXTURE_SLOTS, textureImages, type MaterialTextures } from '../core/textures';
 import type { MaterialInstance } from '../core/materials';
-import { migrateRender } from '../core/render';
+import { withCameraAspects } from '../core/camera';
+import { migrateRender, syncOutputSize } from '../core/render';
 import { ensurePrimitiveMeshAt, normalizeParams, primitiveMeshId, primitiveOwner } from '../core/primitives';
 import { isPrimitiveKind } from '../data/primitives';
 import { cleanSelection, meshIdsInUse, type SceneNode } from '../core/scene';
@@ -308,6 +314,17 @@ function checkState(raw: RawState): ProjectState {
   s.materials = materials;
   if (!isObject(s.camera.cameras) || !isObject(s.camera.cameras[s.camera.active])) throw damaged('camera.active is not a camera');
   for (const [id, c] of Object.entries(s.camera.cameras)) if (!isObject(c) || c.id !== id) throw damaged(`camera.cameras.${id} is not a camera`);
+  // O1: a camera's optics (absent on cameras saved before O1, which keep the plain thin lens) within the engine's limits.
+  if (Object.values(s.camera.cameras).some((c) => (c as { optics?: unknown }).optics !== undefined)) {
+    const cameras = { ...s.camera.cameras };
+    for (const [id, c] of Object.entries(cameras)) {
+      const raw = (c as { optics?: unknown }).optics;
+      if (raw === undefined) continue;
+      const { optics: _drop, ...rest } = c;
+      cameras[id] = raw === null ? rest : { ...rest, optics: normalizeOptics(raw) };
+    }
+    s.camera = { ...s.camera, cameras };
+  }
   if (!Array.isArray(s.studio.lights) || s.studio.lights.some((l) => !isObject(l) || typeof l.id !== 'string')) throw damaged('studio.lights is damaged');
   if (!Array.isArray(s.selection.ids)) throw damaged('selection.ids is not a list');
   const env = s.environment;
@@ -333,7 +350,8 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; im
   if (!isObject(body.state)) throw damaged('the project has no state');
   let state: RawState = body.state;
   for (let n = schema; n < PROJECT_SCHEMA; n++) state = STEPS[n](state);
-  const checked = checkState({ ...state, render: migrateRender(state.render) });
+  // U13: a camera of a project saved before it takes the ratio of the saved size; an image follows its camera.
+  const checked = syncOutputSize(withCameraAspects(checkState({ ...state, render: migrateRender(state.render) })));
   // A file is the saved state, and nothing plays or renders after a load.
   const loaded: ProjectState = {
     ...checked,
@@ -349,7 +367,9 @@ function readEnvelope(body: unknown): { state: ProjectState; meshes: unknown; im
  * project, comes from a newer version or is damaged.
  */
 export function migrateProject(body: unknown): ProjectState {
-  return cleanSelection(readEnvelope(body).state);
+  const state = cleanSelection(readEnvelope(body).state);
+  // The Doctor's findings follow the model and the catalogue of this version, not the file's (as `loadProject` does).
+  return { ...state, doctor: { results: runDoctor(state), stamp: state.doctor.stamp } };
 }
 
 function parseText(text: string): unknown {

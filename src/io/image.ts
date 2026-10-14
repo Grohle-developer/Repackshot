@@ -1,16 +1,18 @@
-// Image output: encodes a rendered image as PNG (8 or 16 bits), JPEG or EXR.
+// Image output: encodes a rendered image as PNG (8 or 16 bits), JPEG, EXR, TIFF (8, 16 or 32 bits) or DNG.
 //
 // The path tracer hands over its tone-mapped 8-bit pixels (`encodePixels`):
 // PNG is written here, byte for byte what the engine produced (a canvas would
 // premultiply the alpha and round the colour of every translucent pixel),
 // RGB when the image is opaque and RGBA otherwise. JPEG goes through a canvas.
-// A 16-bit PNG and an EXR come from the engine's float sums (render/tiles.ts
-// converts them; this file only writes bytes).
+// A 16-bit PNG, a 16 or 32-bit TIFF, a DNG and an EXR come from the engine's float sums
+// (render/tiles.ts converts them; this file only writes bytes). The TIFF and DNG encoders write
+// the same bytes as `rt_core::tiff` and `rt_core::dng` (engine/crates/rt-core): the files in
+// tests/fixtures/tiff/ are what tests/tiff-dng.test.ts and the engine's tests compare with.
 //
 // The DPI of the render window is written into the file so a print shop
 // reads the right print size: the PNG `pHYs` chunk (pixels per metre, unit 1)
 // and the JPEG JFIF header (units 1: dots per inch). EXR has no standard
-// density attribute.
+// density attribute; a TIFF carries it as XResolution/YResolution (inches).
 
 import { pixelsPerMetre } from '../core/print-size';
 
@@ -368,4 +370,281 @@ export function encodeExr(px: FloatPixels, opts: { alpha: boolean }): Uint8Array
     }
   }
   return out;
+}
+
+// ------------------------------------------------------------------ TIFF and DNG
+
+/**
+ * Samples of an image to write as TIFF, interleaved RGBA, rows from the top: 8 bits (display
+ * encoded, straight alpha), 16 bits (the same, as words) or 32-bit floats (linear light, straight
+ * alpha).
+ */
+export interface TiffPixels {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray | Uint8Array | Uint16Array | Float32Array;
+}
+
+export interface TiffOptions {
+  /** Bits per sample; `data` must be of the matching type (8: bytes, 16: words, 32: floats). */
+  bits: 8 | 16 | 32;
+  /** Write the alpha channel (unassociated, `ExtraSamples` 2); without it the file is RGB. */
+  alpha: boolean;
+  /** Dots per inch written as the resolution in both directions; 72 by default. */
+  dpi?: number;
+}
+
+/** A directory entry: tag, field type, count and the value already encoded little-endian. */
+interface TiffEntry {
+  tag: number;
+  type: number;
+  count: number;
+  data: Uint8Array;
+}
+
+const T_BYTE = 1;
+const T_ASCII = 2;
+const T_SHORT = 3;
+const T_LONG = 4;
+const T_RATIONAL = 5;
+const T_SRATIONAL = 10;
+
+/** The tag numbers of TIFF 6.0 §8 and the DNG 1.4 ones the DNG uses. */
+const TAG = {
+  newSubfileType: 254,
+  imageWidth: 256,
+  imageLength: 257,
+  bitsPerSample: 258,
+  compression: 259,
+  photometric: 262,
+  make: 271,
+  model: 272,
+  stripOffsets: 273,
+  samplesPerPixel: 277,
+  rowsPerStrip: 278,
+  stripByteCounts: 279,
+  xResolution: 282,
+  yResolution: 283,
+  planarConfiguration: 284,
+  resolutionUnit: 296,
+  extraSamples: 338,
+  sampleFormat: 339,
+  dngVersion: 50706,
+  dngBackwardVersion: 50707,
+  uniqueCameraModel: 50708,
+  whiteLevel: 50717,
+  colorMatrix1: 50721,
+  asShotNeutral: 50728,
+  baselineExposure: 50730,
+  calibrationIlluminant1: 50778,
+} as const;
+
+/** Bytes a strip aims at (TIFF 6.0 §7: "about 8K bytes"). */
+const STRIP_TARGET = 8192;
+
+function entryOf(tag: number, type: number, values: readonly number[], size: 1 | 2 | 4, put: (dv: DataView, at: number, v: number) => void): TiffEntry {
+  const data = new Uint8Array(values.length * size);
+  const dv = new DataView(data.buffer);
+  values.forEach((v, i) => put(dv, i * size, v));
+  return { tag, type, count: values.length, data };
+}
+
+const tByte = (tag: number, v: readonly number[]) => entryOf(tag, T_BYTE, v, 1, (dv, o, x) => dv.setUint8(o, x));
+const tShort = (tag: number, v: readonly number[]) => entryOf(tag, T_SHORT, v, 2, (dv, o, x) => dv.setUint16(o, x, true));
+const tLong = (tag: number, v: readonly number[]) => entryOf(tag, T_LONG, v, 4, (dv, o, x) => dv.setUint32(o, x, true));
+
+/** An ASCII field: the text (ASCII only) and its terminating NUL, which the count includes. */
+function tAscii(tag: number, text: string): TiffEntry {
+  const data = new Uint8Array(text.length + 1);
+  for (let i = 0; i < text.length; i++) data[i] = text.charCodeAt(i);
+  return { tag, type: T_ASCII, count: data.length, data };
+}
+
+/** Fractions as `[numerator, denominator]`, two longs each (signed or not). */
+function tFractions(tag: number, type: number, v: readonly (readonly [number, number])[]): TiffEntry {
+  const data = new Uint8Array(v.length * 8);
+  const dv = new DataView(data.buffer);
+  v.forEach(([n, d], i) => {
+    if (type === T_SRATIONAL) {
+      dv.setInt32(i * 8, n, true);
+      dv.setInt32(i * 8 + 4, d, true);
+    } else {
+      dv.setUint32(i * 8, n, true);
+      dv.setUint32(i * 8 + 4, d, true);
+    }
+  });
+  return { tag, type, count: v.length, data };
+}
+
+/** The image as the file stores it: its size, channels, bits and the pixel bytes (little-endian, chunky). */
+interface Raster {
+  width: number;
+  height: number;
+  channels: 3 | 4;
+  bits: 8 | 16 | 32;
+  pixels: Uint8Array;
+}
+
+/** RGB or RGBA samples of `px` (RGBA in) as bytes in the file's order; alpha dropped unless `alpha`. */
+function rasterOf(px: TiffPixels, bits: 8 | 16 | 32, alpha: boolean): Raster {
+  const { width, height, data } = px;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) throw new Error('TIFF dimensions must be positive');
+  if (data.length !== width * height * 4) throw new Error('the pixel buffer does not match the dimensions');
+  const want = bits === 8 ? [Uint8Array, Uint8ClampedArray] : bits === 16 ? [Uint16Array] : [Float32Array];
+  if (!want.some((c) => data instanceof c)) throw new Error(`${bits}-bit samples do not come in a ${data.constructor.name}`);
+  const channels = alpha ? 4 : 3;
+  const pixels = new Uint8Array(width * height * channels * (bits / 8));
+  const dv = new DataView(pixels.buffer);
+  let o = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    for (let c = 0; c < channels; c++) {
+      const v = data[i + c];
+      if (bits === 8) pixels[o++] = v;
+      else if (bits === 16) {
+        dv.setUint16(o, v, true);
+        o += 2;
+      } else {
+        dv.setFloat32(o, v, true);
+        o += 4;
+      }
+    }
+  }
+  return { width, height, channels, bits, pixels };
+}
+
+const rowBytes = (r: Raster) => r.width * r.channels * (r.bits / 8);
+const rowsPerStrip = (r: Raster) => Math.min(r.height, Math.max(1, Math.floor(STRIP_TARGET / rowBytes(r))));
+
+/** Byte count of every strip: whole strips of `rowsPerStrip` rows, the last one the rest. */
+function stripByteCounts(r: Raster): number[] {
+  const rows = rowsPerStrip(r);
+  const out: number[] = [];
+  for (let first = 0; first < r.height; first += rows) out.push(Math.min(rows, r.height - first) * rowBytes(r));
+  return out;
+}
+
+/** The entries every image has, plus ExtraSamples for alpha and SampleFormat for floats (StripOffsets is filled in later). */
+function rasterEntries(r: Raster): TiffEntry[] {
+  const counts = stripByteCounts(r);
+  const entries = [
+    tLong(TAG.imageWidth, [r.width]),
+    tLong(TAG.imageLength, [r.height]),
+    tShort(TAG.bitsPerSample, new Array(r.channels).fill(r.bits)),
+    tShort(TAG.compression, [1]),
+    tLong(TAG.stripOffsets, new Array(counts.length).fill(0)),
+    tShort(TAG.samplesPerPixel, [r.channels]),
+    tLong(TAG.rowsPerStrip, [rowsPerStrip(r)]),
+    tLong(TAG.stripByteCounts, counts),
+    tShort(TAG.planarConfiguration, [1]),
+  ];
+  // 2: unassociated alpha (the colour is not multiplied by it).
+  if (r.channels === 4) entries.push(tShort(TAG.extraSamples, [2]));
+  // 3: IEEE floating point.
+  if (r.bits === 32) entries.push(tShort(TAG.sampleFormat, new Array(r.channels).fill(3)));
+  return entries;
+}
+
+/**
+ * The file: header, the directory (sorted by tag), the values that do not fit in an entry (each at
+ * an even offset) and the pixels in strips; `StripOffsets` gets its real offsets. Layout in
+ * engine/crates/rt-core/src/tiff.rs.
+ */
+function assembleTiff(list: TiffEntry[], r: Raster): Uint8Array {
+  const entries = [...list].sort((a, b) => a.tag - b.tag);
+  const directory = 2 + 12 * entries.length + 4;
+  const external = entries.filter((e) => e.data.length > 4);
+  const extra = external.reduce((n, e) => n + e.data.length + (e.data.length & 1), 0);
+  const firstPixel = 8 + directory + extra;
+  if (firstPixel + r.pixels.length > 0xffffffff) throw new Error('the image is too large for a TIFF');
+  let at = firstPixel;
+  const offsets = stripByteCounts(r).map((c) => {
+    const start = at;
+    at += c;
+    return start;
+  });
+  const strips = entries.find((e) => e.tag === TAG.stripOffsets)!;
+  if (strips.count !== offsets.length) throw new Error('StripOffsets does not match the strips');
+  Object.assign(strips, tLong(TAG.stripOffsets, offsets));
+
+  const out = new Uint8Array(firstPixel + r.pixels.length);
+  const dv = new DataView(out.buffer);
+  out.set([0x49, 0x49, 42, 0]);
+  dv.setUint32(4, 8, true);
+  dv.setUint16(8, entries.length, true);
+  let next = 8 + directory;
+  let o = 10;
+  for (const e of entries) {
+    dv.setUint16(o, e.tag, true);
+    dv.setUint16(o + 2, e.type, true);
+    dv.setUint32(o + 4, e.count, true);
+    if (e.data.length <= 4) out.set(e.data, o + 8);
+    else {
+      dv.setUint32(o + 8, next, true);
+      next += e.data.length + (e.data.length & 1);
+    }
+    o += 12;
+  }
+  // The next directory: none. Then the external values, in entry order.
+  o += 4;
+  for (const e of external) {
+    out.set(e.data, o);
+    o += e.data.length + (e.data.length & 1);
+  }
+  out.set(r.pixels, firstPixel);
+  return out;
+}
+
+/**
+ * An uncompressed TIFF 6.0 (baseline, little-endian), written from the public specification: RGB, or
+ * RGBA with unassociated alpha, at 8, 16 or 32 bits per sample (32: IEEE floats, `SampleFormat` 3,
+ * linear light), in strips of about 8 KiB, with the resolution in dots per inch and no colour
+ * profile. The same bytes as `rt_core::tiff::encode`.
+ */
+export function encodeTiff(px: TiffPixels, opts: TiffOptions): Uint8Array {
+  const raster = rasterOf(px, opts.bits, opts.alpha);
+  const dpi = Math.max(1, Math.round(opts.dpi ?? 72));
+  const entries = [
+    ...rasterEntries(raster),
+    tShort(TAG.photometric, [2]),
+    tFractions(TAG.xResolution, T_RATIONAL, [[dpi, 1]]),
+    tFractions(TAG.yResolution, T_RATIONAL, [[dpi, 1]]),
+    // 2: inches.
+    tShort(TAG.resolutionUnit, [2]),
+  ];
+  return assembleTiff(entries, raster);
+}
+
+/** `ColorMatrix1` of the DNG: CIE XYZ (D65) to linear sRGB, row by row, numerators over `DNG_MATRIX_DENOMINATOR`. */
+export const DNG_COLOR_MATRIX: readonly number[] = [32409699, -15373832, -4986108, -9692436, 18759675, 415551, 556301, -2039770, 10569715];
+export const DNG_MATRIX_DENOMINATOR = 10_000_000;
+/** What `Make`, `Model` and `UniqueCameraModel` say. */
+export const DNG_CAMERA = 'Repackshot';
+
+/**
+ * A linear raw DNG 1.4 (Adobe's specification): a TIFF with `PhotometricInterpretation` 34892
+ * (LinearRaw), three 32-bit float samples (the alpha of `px` is dropped), the linear sRGB primaries
+ * declared by `ColorMatrix1` (the inverse of sRGB to XYZ, D65) and the tags DNG 1.4 asks for. A raw
+ * developer opens it as a camera raw with the whole latitude of the render. The same bytes as
+ * `rt_core::dng::encode`.
+ */
+export function encodeDng(px: { width: number; height: number; data: Float32Array }): Uint8Array {
+  const raster = rasterOf(px, 32, false);
+  const entries = [
+    ...rasterEntries(raster),
+    tLong(TAG.newSubfileType, [0]),
+    tShort(TAG.photometric, [34892]),
+    tAscii(TAG.make, DNG_CAMERA),
+    tAscii(TAG.model, DNG_CAMERA),
+    tByte(TAG.dngVersion, [1, 4, 0, 0]),
+    tByte(TAG.dngBackwardVersion, [1, 4, 0, 0]),
+    tAscii(TAG.uniqueCameraModel, DNG_CAMERA),
+    // The white of the render is 1.0 (BlackLevel stays 0); the data is not clipped to it.
+    tLong(TAG.whiteLevel, [1]),
+    tFractions(TAG.colorMatrix1, T_SRATIONAL, DNG_COLOR_MATRIX.map((n) => [n, DNG_MATRIX_DENOMINATOR] as const)),
+    tFractions(TAG.asShotNeutral, T_RATIONAL, [[1, 1], [1, 1], [1, 1]]),
+    tFractions(TAG.baselineExposure, T_SRATIONAL, [[0, 1]]),
+    // 21: D65 daylight (the Exif LightSource code).
+    tShort(TAG.calibrationIlluminant1, [21]),
+  ];
+  return assembleTiff(entries, raster);
 }

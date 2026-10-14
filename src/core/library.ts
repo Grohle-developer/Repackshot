@@ -357,7 +357,8 @@ export function fromCurrentProductType(state: ProjectState, lib: Library, name: 
       fstop: cam.fstop,
       envStrength: state.environment.strength,
       exposure: state.image.exposureEv,
-      background: state.environment.background === 'COLOR' ? 'FLAT' : 'HDRI',
+      // A gradient (L6) is not a product type's background: its colour (the bottom of the gradient) is.
+      background: state.environment.background === 'COLOR' || state.environment.background === 'GRADIENT' ? 'FLAT' : 'HDRI',
       backgroundColor: [bg[0], bg[1], bg[2], bg[3]],
       floor: state.studio.floor,
       shadow: state.studio.shadow,

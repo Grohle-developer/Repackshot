@@ -41,7 +41,7 @@ from nowhere in particular: an interface in **black and white only**, so
 the only colour on screen is the image.
 
 ![studio](docs/ui/dark-studio.png) ![materials](docs/ui/light-materials.png)
-![animation](docs/ui/animation-drawer.png)
+![animation](docs/ui/animation-timeline.png)
 
 ## What it does
 
@@ -90,7 +90,10 @@ today.
   rectangle with edges.
 - **Animation in plain language**: shots and movements written as
   sentences (*the camera orbits 90° over 4 s, ease*), 16 presets, a
-  three-question wizard, a block timeline, fades.
+  three-question wizard, a timeline in three zones (what is animated,
+  when, how) with snapping bars and the track drawn in the viewport,
+  configurable exploded views (linear, radial, spherical, by levels,
+  with parts that stay put), fades.
 - **The viewport is the render.** The path tracer converges where you work;
   *Render* only saves it at full size with a budget of samples or seconds.
   A render queue, batches of cameras × studios, passes.

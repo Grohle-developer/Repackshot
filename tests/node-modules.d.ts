@@ -12,7 +12,7 @@ declare module 'node:fs' {
   export function copyFileSync(from: string, to: string): void;
   export function mkdtempSync(prefix: string): string;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
-  export function statSync(path: string): { mtimeMs: number; size: number };
+  export function statSync(path: string): { mtimeMs: number; size: number; isFile(): boolean; isDirectory(): boolean };
 }
 declare module 'node:path' {
   export function join(...parts: string[]): string;
@@ -20,6 +20,7 @@ declare module 'node:path' {
 }
 declare module 'node:zlib' {
   export function inflateSync(data: Uint8Array): Uint8Array;
+  export function deflateSync(data: Uint8Array): Uint8Array;
 }
 declare module 'node:os' {
   export function tmpdir(): string;
@@ -32,8 +33,9 @@ declare module 'node:child_process' {
     kill(signal?: string): boolean;
   }
   export function spawn(command: string, args: readonly string[], options?: { stdio?: readonly string[] }): ChildProcess;
+  export function spawnSync(command: string, args: readonly string[], options?: { encoding?: 'utf8'; cwd?: string; env?: Record<string, string | undefined>; timeout?: number }): { status: number | null; stdout: string; stderr: string };
 }
-declare const process: { env: Record<string, string | undefined>; platform: string; arch: string };
+declare const process: { env: Record<string, string | undefined>; platform: string; arch: string; execPath: string };
 declare module 'node:buffer' {
   export function resolveObjectURL(url: string): Blob | undefined;
 }
@@ -43,6 +45,7 @@ declare module 'node:module' {
 declare module 'node:worker_threads' {
   export class Worker {
     constructor(code: string, options: { eval: boolean });
+    constructor(url: URL);
     on(event: 'message', fn: (data: unknown) => void): this;
     on(event: 'error', fn: (err: Error) => void): this;
     postMessage(value: unknown, transfer?: unknown[]): void;
@@ -53,5 +56,5 @@ declare module 'node:zlib' {
   export function inflateSync(data: Uint8Array): Uint8Array;
 }
 declare module 'node:crypto' {
-  export function createHash(algorithm: 'sha256'): { update(data: Uint8Array): { digest(encoding: 'hex'): string } };
+  export function createHash(algorithm: 'sha256'): { update(data: Uint8Array | string): { digest(encoding: 'hex'): string } };
 }

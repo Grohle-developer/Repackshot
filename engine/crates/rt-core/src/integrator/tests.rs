@@ -5,6 +5,7 @@ use crate::color::Rgb;
 use crate::example::icosphere;
 use crate::fmath;
 use crate::image::Film;
+use crate::light::Techniques;
 use crate::render::{render_tile_prepared, TileRect};
 use crate::scene::{
     Camera, EnvKind, Environment, Floor, Geometry, Instance, Light, LightKind, Material, Mesh,
@@ -1463,4 +1464,394 @@ fn the_caustic_split_starts_again_at_every_receiver() {
     assert_eq!(r2, r1);
     assert!(r2.after(true).after(true).photons_bring_it());
     assert!(!CausticState::Eye.after(true).photons_bring_it());
+}
+
+/// Renders samples `0..spp` of the image's region `tile` with the prepared lights changed by
+/// `tweak` first (the techniques of the estimators, the selection by flux).
+fn render_tweaked(scene: &Scene, tile: TileRect, spp: u32, tweak: impl Fn(&mut Lights)) -> Film {
+    let mut prepared = Prepared::new(scene);
+    tweak(&mut prepared.lights);
+    let mut film = Film::region(tile.x, tile.y, tile.w, tile.h);
+    for s in 0..spp {
+        render_tile_prepared(scene, &prepared, tile, s, &mut film, Isa::detect());
+    }
+    film
+}
+
+/// Mean of the green channel over the whole film.
+fn film_mean(film: &Film) -> f64 {
+    let pixels = film.resolve();
+    pixels
+        .iter()
+        .skip(1)
+        .step_by(3)
+        .map(|&v| v as f64)
+        .sum::<f64>()
+        / film.weight.len() as f64
+}
+
+/// A white Lambertian floor under a dim uniform world, a 800 mm panel 900 mm up and a spot of
+/// 160 mm 400 mm up, all three found by both techniques (glossy, no delta), seen straight down
+/// over the edge of the spot's pool, where all three light the floor.
+fn panel_and_spot_scene() -> Scene {
+    Scene {
+        camera: ortho_down(150.0, 0.0, 120.0),
+        materials: vec![lambert(1.0)],
+        geometry: Geometry::from_meshes(vec![floor_quad(2000.0)]),
+        lights: vec![
+            Light {
+                kind: LightKind::Rect,
+                position: Vec3::new(-500.0, 0.0, 900.0),
+                direction: Vec3::new(0.5, 0.0, -1.0).normalize(),
+                up: Vec3::new(0.0, 1.0, 0.0),
+                size_x: 800.0,
+                size_y: 800.0,
+                power: 20.0,
+                flags: LIGHT_FLAG_GLOSSY,
+                ..Light::default()
+            },
+            Light {
+                kind: LightKind::Spot,
+                position: Vec3::new(0.0, 0.0, 400.0),
+                direction: Vec3::new(0.0, 0.0, -1.0),
+                size_x: 160.0,
+                size_y: 160.0,
+                power: 2.0,
+                spread_deg: 60.0,
+                angle_deg: 20.0,
+                flags: LIGHT_FLAG_GLOSSY,
+                ..Light::default()
+            },
+        ],
+        environment: uniform_world(0.2),
+        render: settings(8, 8),
+        ..Scene::default()
+    }
+}
+
+#[test]
+fn light_selection_is_unbiased_with_either_technique_and_with_both() {
+    // Next-event estimation alone, BSDF sampling alone and both weighted by MIS converge to the
+    // same image (4096 samples per pixel over 8 x 8 pixels, to 1 %): in the white furnace,
+    // where the environment is the only light, and over a floor lit by a panel, a spot and a
+    // dim world, where the light chosen per point must have, on the BSDF side of MIS, the
+    // probability next-event estimation gave it at the vertex the ray left.
+    let furnace = Scene {
+        camera: ortho_front(260.0),
+        materials: vec![lambert(1.0)],
+        geometry: Geometry::from_meshes(vec![faceted_sphere(Vec3::ZERO, 100.0, 3)]),
+        environment: uniform_world(1.0),
+        render: settings(16, 16),
+        ..Scene::default()
+    };
+    // The middle of the sphere (well inside its silhouette) and the whole of the floor scene.
+    let crops = [
+        (
+            &furnace,
+            TileRect {
+                x: 4,
+                y: 4,
+                w: 8,
+                h: 8,
+            },
+        ),
+        (
+            &panel_and_spot_scene(),
+            TileRect {
+                x: 0,
+                y: 0,
+                w: 8,
+                h: 8,
+            },
+        ),
+    ];
+    for (i, (scene, tile)) in crops.into_iter().enumerate() {
+        // Chosen per point (the furnace has one entry, which by default is chosen by flux with
+        // the same bits; here per point too).
+        let mean = |techniques| {
+            film_mean(&render_tweaked(scene, tile, 4096, |l| {
+                l.techniques = techniques;
+                l.per_point = true;
+            }))
+        };
+        let both = mean(Techniques::Mis);
+        let lights_only = mean(Techniques::LightsOnly);
+        let bsdf_only = mean(Techniques::BsdfOnly);
+        eprintln!("scene {i}: MIS {both}, lights only {lights_only}, BSDF only {bsdf_only}");
+        if i == 0 {
+            assert!((both - 1.0).abs() < 0.01, "furnace, MIS: {both}");
+        }
+        assert!(both > 0.05, "scene {i} is lit: {both}");
+        assert!(
+            (lights_only / both - 1.0).abs() < 0.01,
+            "scene {i}: lights only {lights_only} vs MIS {both}"
+        );
+        assert!(
+            (bsdf_only / both - 1.0).abs() < 0.01,
+            "scene {i}: BSDF only {bsdf_only} vs MIS {both}"
+        );
+    }
+}
+
+/// A 20 mm spot 300 mm above a large white paper, aimed straight down (a "pool": no reflection,
+/// no camera, as the setups' pools are), and a 1 m panel 2.5 m up and 1 m aside, the key. The
+/// camera looks straight down at 900 x 900 mm of paper around the pool.
+fn pool_on_paper_scene() -> Scene {
+    Scene {
+        camera: ortho_down(0.0, 0.0, 900.0),
+        materials: vec![lambert(0.9)],
+        geometry: Geometry::from_meshes(vec![floor_quad(2000.0)]),
+        lights: vec![
+            Light {
+                kind: LightKind::Spot,
+                position: Vec3::new(0.0, 0.0, 300.0),
+                direction: Vec3::new(0.0, 0.0, -1.0),
+                size_x: 20.0,
+                size_y: 20.0,
+                power: 1.7,
+                spread_deg: 60.0,
+                angle_deg: 10.0,
+                flags: 0,
+                ..Light::default()
+            },
+            Light {
+                kind: LightKind::Rect,
+                position: Vec3::new(-1000.0, 0.0, 2500.0),
+                direction: Vec3::new(1000.0, 0.0, -2500.0).normalize(),
+                up: Vec3::new(0.0, 1.0, 0.0),
+                size_x: 1000.0,
+                size_y: 1000.0,
+                power: 20.0,
+                flags: LIGHT_FLAG_GLOSSY,
+                ..Light::default()
+            },
+        ],
+        environment: black_world(),
+        render: settings(24, 24),
+        ..Scene::default()
+    }
+}
+
+/// Mean over the pixels whose centre is within `inside` (or, negative, beyond `-inside`) mm of
+/// the pool's centre of each pixel's sample variance of the luminance (`Film::lum2`), and the
+/// mean luminance there.
+fn variance_and_mean(film: &Film, inside: f32) -> (f64, f64) {
+    let pixels = film.resolve();
+    let (mut var, mut mean, mut n) = (0.0f64, 0.0f64, 0usize);
+    for y in 0..film.height {
+        for x in 0..film.width {
+            let (u, v) = (
+                (x as f32 + 0.5) / film.width as f32 - 0.5,
+                (y as f32 + 0.5) / film.height as f32 - 0.5,
+            );
+            let r = (u * u + v * v).sqrt() * 900.0;
+            if (inside > 0.0 && r > inside) || (inside < 0.0 && r < -inside) {
+                continue;
+            }
+            let i = (y * film.width + x) as usize;
+            let samples = film.weight[i] as f64;
+            let c = &pixels[i * 3..i * 3 + 3];
+            let lum = Rgb::new(c[0], c[1], c[2]).luminance() as f64;
+            var += film.lum2[i] as f64 / samples - lum * lum;
+            mean += lum;
+            n += 1;
+        }
+    }
+    (var / n as f64, mean / n as f64)
+}
+
+#[test]
+fn a_small_spot_close_to_its_paper_is_chosen_where_it_lands() {
+    // L6's fireflies: chosen by flux the 20 mm pool is a small share of the scene's light
+    // (about 7 % here) yet the brightest light where it lands, so the few samples that pick it
+    // there are many times the mean. Chosen per point it is the light most often taken under
+    // itself: the variance of the pixels under it falls to well under a quarter, and where only
+    // the panel lights the paper (outside the spot's cone) it does not grow.
+    let scene = pool_on_paper_scene();
+    let whole = TileRect {
+        x: 0,
+        y: 0,
+        w: 24,
+        h: 24,
+    };
+    let per_point = render_tweaked(&scene, whole, 64, |_| {});
+    let by_flux = render_tweaked(&scene, whole, 64, |l| l.per_point = false);
+    // Under the spot (inside its inner cone, radius 300 tan 20° = 109 mm) and away from it
+    // (beyond its cone, 300 tan 30° = 173 mm).
+    let (under_point, lit_point) = variance_and_mean(&per_point, 100.0);
+    let (under_flux, lit_flux) = variance_and_mean(&by_flux, 100.0);
+    let (aside_point, _) = variance_and_mean(&per_point, -250.0);
+    let (aside_flux, _) = variance_and_mean(&by_flux, -250.0);
+    eprintln!(
+        "under the spot: variance {under_point} per point, {under_flux} by flux \
+         (means {lit_point}, {lit_flux}); aside: {aside_point} per point, {aside_flux} by flux"
+    );
+    // The same light arrives either way (to the noise of 64 samples by flux).
+    assert!(
+        (lit_point / lit_flux - 1.0).abs() < 0.1,
+        "{lit_point} vs {lit_flux}"
+    );
+    assert!(
+        under_point <= 0.25 * under_flux,
+        "under the spot: {under_point} vs {under_flux} by flux"
+    );
+    assert!(
+        aside_point <= 1.1 * aside_flux,
+        "where the panel lights: {aside_point} vs {aside_flux} by flux"
+    );
+}
+
+#[test]
+fn one_light_renders_the_same_pixels_chosen_per_point_or_by_flux() {
+    // With a single light (or only the environment) the choice per point is certain wherever
+    // the light can arrive, as it was by flux: the same film, bit for bit, for a panel, a spot,
+    // a sun, an emissive mesh sampled as a light and the white furnace's world.
+    let mut sun = point_scene(LightKind::Point, 0.0, 300.0, 6.0, LIGHT_FLAG_GLOSSY);
+    sun.lights = vec![Light {
+        kind: LightKind::Sun,
+        direction: Vec3::new(0.3, 0.1, -1.0),
+        power: 3.0,
+        angle_deg: 2.0,
+        flags: LIGHT_FLAG_GLOSSY,
+        ..Light::default()
+    }];
+    sun.camera = ortho_down(0.0, 0.0, 400.0);
+    let furnace = Scene {
+        camera: ortho_front(260.0),
+        materials: vec![lambert(1.0)],
+        geometry: Geometry::from_meshes(vec![faceted_sphere(Vec3::ZERO, 100.0, 3)]),
+        environment: uniform_world(1.0),
+        render: settings(16, 16),
+        ..Scene::default()
+    };
+    let mut spot = point_scene(LightKind::Spot, 40.0, 300.0, 6.0, LIGHT_FLAG_GLOSSY);
+    spot.camera = ortho_down(100.0, 0.0, 600.0);
+    let scenes = [
+        emitter_scene("light"),
+        emitter_scene("emitter sampled"),
+        spot,
+        sun,
+        furnace,
+    ];
+    for (i, scene) in scenes.iter().enumerate() {
+        assert_eq!(Lights::new(scene).len(), 1, "scene {i}");
+        let tile = TileRect {
+            x: 0,
+            y: 0,
+            w: scene.render.width,
+            h: scene.render.height,
+        };
+        // One entry is chosen by flux unless told otherwise (it costs nothing): per point here.
+        assert!(!Lights::new(scene).per_point, "scene {i}");
+        let per_point = render_tweaked(scene, tile, 16, |l| l.per_point = true);
+        let by_flux = render_tweaked(scene, tile, 16, |l| l.per_point = false);
+        assert!(film_mean(&per_point) > 0.0, "scene {i} is lit");
+        assert!(per_point == by_flux, "scene {i}");
+    }
+}
+
+#[test]
+fn the_shadow_catcher_keeps_choosing_its_light_by_flux() {
+    // The catcher's shadow is a ratio of one sample's lit and open light, so its value depends on
+    // how the light is chosen; it keeps the choice by flux, and with it its look of before E12:
+    // with two lights (a panel and the dome) its coverage is the same, bit for bit, whether the
+    // rest of the scene chooses per point or by flux. (Its alpha is all a transparent catcher
+    // writes; the sphere is opaque either way.)
+    let mut scene = sphere_on_floor(
+        Floor {
+            mode: FloorMode::ShadowCatcher,
+            z: 0.0,
+            color: Rgb::splat(0.5),
+        },
+        BACKGROUND_TRANSPARENT,
+    );
+    scene.render.width = 16;
+    scene.render.height = 16;
+    assert_eq!(Lights::new(&scene).len(), 2);
+    let tile = TileRect {
+        x: 0,
+        y: 0,
+        w: 16,
+        h: 16,
+    };
+    let per_point = render_tweaked(&scene, tile, 16, |_| {});
+    let by_flux = render_tweaked(&scene, tile, 16, |l| l.per_point = false);
+    assert!(
+        per_point.alpha.iter().any(|&a| a > 0.0 && a < 16.0),
+        "a shadow"
+    );
+    assert_eq!(per_point.alpha, by_flux.alpha);
+}
+
+#[test]
+fn through_thin_walls_mis_takes_the_probabilities_of_the_vertex_the_ray_left() {
+    // A grey floor under a thin clear wall 140 mm up, a panel 300 mm up and a glowing sphere of
+    // 200 mm whose underside nearly touches the wall. A BSDF ray from the floor under the sphere
+    // crosses the wall close to the sphere, where the sphere weighs several times more against
+    // the panel than at the floor; when the ray finds it, MIS must use the choice next-event
+    // estimation made at the floor, where the ray was sampled, not at the wall. The sphere is
+    // large, so the BSDF side carries a good share of its light. MIS and BSDF sampling alone
+    // agree under the sphere.
+    let mut scene = emitter_scene("light");
+    let wall = Mesh::new(
+        &[
+            Vec3::new(-2000.0, -2000.0, 140.0),
+            Vec3::new(2000.0, -2000.0, 140.0),
+            Vec3::new(2000.0, 2000.0, 140.0),
+            Vec3::new(-2000.0, 2000.0, 140.0),
+        ],
+        &[],
+        &[0, 1, 2, 0, 2, 3],
+        0,
+    )
+    .expect("wall");
+    let mut meshes = scene.geometry.meshes().to_vec();
+    let mut instances = scene.geometry.instances().to_vec();
+    meshes.push(wall);
+    instances.push(Instance::new(1, Transform::IDENTITY, 1));
+    scene.materials.push(Material {
+        flags: crate::scene::MATERIAL_FLAG_THIN,
+        ..clear_glass(0.0)
+    });
+    scene.geometry = Geometry::new(meshes, instances).expect("geometry");
+    scene.lights.push(Light {
+        kind: LightKind::Point,
+        position: Vec3::new(300.0, 0.0, 250.0),
+        size_x: 200.0,
+        size_y: 200.0,
+        power: 1.0,
+        flags: LIGHT_FLAG_GLOSSY,
+        ..Light::default()
+    });
+    let lights = Lights::new(&scene);
+    assert_eq!(lights.len(), 2);
+    let pmf_at = |z: f32| {
+        let at = lights.select(Vec3::new(300.0, 0.0, z));
+        lights.pmf(1, &at)
+    };
+    let (floor, wall) = (pmf_at(0.0), pmf_at(140.0));
+    assert!(
+        wall > 1.5 * floor,
+        "the sphere at the floor {floor}, at the wall {wall}"
+    );
+    // The floor under the sphere (300 ± 150 mm across, 1200 mm seen in 24 pixels).
+    let under = |x: u32, y: u32| (15..21).contains(&x) && (9..15).contains(&y);
+    let whole = TileRect {
+        x: 0,
+        y: 0,
+        w: 24,
+        h: 24,
+    };
+    let mean = |techniques| {
+        let film = render_tweaked(&scene, whole, 1024, |l| l.techniques = techniques);
+        mean_where(&film, 1, under)
+    };
+    let both = mean(Techniques::Mis);
+    let bsdf_only = mean(Techniques::BsdfOnly);
+    eprintln!("under the sphere, through the wall (choice {floor} at the floor, {wall} at the wall): MIS {both}, BSDF only {bsdf_only}");
+    assert!(both > 0.01);
+    assert!(
+        (bsdf_only / both - 1.0).abs() < 0.015,
+        "BSDF only {bsdf_only} vs MIS {both}"
+    );
 }

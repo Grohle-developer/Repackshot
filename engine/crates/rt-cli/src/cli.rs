@@ -1,6 +1,7 @@
 //! Command line parsing and the `rt` command itself.
 
-use crate::{render_progressive, sheet, write_png};
+use crate::{encode_film, render_progressive, sheet, write_file, OutputFormat, OutputSpec};
+use rt_core::color::Tonemap;
 use rt_core::scene::{RenderSettings, Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -11,7 +12,7 @@ rt: Repackshot command line renderer
 
 USAGE:
     rt <scene.rsb> -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
-       [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R]
+       [--denoise] [--keep-noisy] [--caustics N] [--caustic-radius R] [--format F] [--bits N]
     rt --example -o <out.png> [--samples N] [--threads N] [--size WxH] [--max-seconds S]
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-example <scene.rsb>
@@ -19,11 +20,19 @@ USAGE:
     rt --write-e5c-example <scene.rsb>
     rt --write-e5b-example <scene.rsb>
     rt --write-ambient-example <scene.rsb>
+    rt --write-o1-example <scene.rsb>
+    rt --write-film-thumb <scene.rsb>
     rt --write-studio-hdri <studio.hdr>
     rt --tone-table
 
 OPTIONS:
-    -o, --output <file>     PNG file to write
+    -o, --output <file>     image file to write (PNG, or TIFF or DNG with --format or by extension)
+        --format <F>        png (the default), tiff or dng; without it, the output's extension
+                            decides: .tif and .tiff are TIFF, .dng is DNG, anything else PNG
+        --bits <N>          bits per channel: PNG 8; TIFF 8 (default), 16 (sRGB) or 32 (float,
+                            linear light, exposure applied, no tone curve); DNG 32. A DNG is a
+                            linear raw a photo developer opens with the whole latitude of the
+                            render
         --samples <N>       samples per pixel (default: the scene's, else 16; sheet: 64)
         --threads <N>       worker threads (default: all cores)
         --size <WxH>        image size in pixels, overriding the scene (sheet: 480x360)
@@ -54,6 +63,12 @@ OPTIONS:
         --write-ambient-example <f>
                             write the S4a parity scene (the example with dust, rain and
                             snow: three ambient effects) as an RSB file
+        --write-o1-example <f>
+                            write the O1 parity scene (the example through a lens with every
+                            knob of the enhanced thin lens, and bokeh lights) as an RSB file
+        --write-film-thumb <f>
+                            write the base scene of the film plugin's recipe thumbnails (the
+                            perfume bottle beside the table lamp, 320x200) as an RSB file
         --write-studio-hdri <f>
                             write the procedural studio HDRI (Radiance .hdr) of the sheet
         --tone-table        print reference values of the tone curves as JSON (for the
@@ -89,6 +104,10 @@ pub struct Options {
     pub caustics: Option<u32>,
     /// First caustic gather radius in pixels, overriding the scene's.
     pub caustic_radius: Option<f32>,
+    /// `--format`: the file format (else the output's extension decides).
+    pub format: Option<OutputFormat>,
+    /// `--bits`: bits per channel.
+    pub bits: Option<u32>,
 }
 
 impl Options {
@@ -179,6 +198,16 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the O1 parity scene (`rt_core::example::o1_scene`) as an RSB file.
+    WriteO1Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Write the base scene of the film plugin's thumbnails (`scenes::film_thumb`) as an RSB file.
+    WriteFilmThumb {
+        /// RSB file to write.
+        path: PathBuf,
+    },
     /// Write the procedural studio HDRI as a Radiance `.hdr` file.
     WriteStudioHdri {
         /// `.hdr` file to write.
@@ -213,6 +242,15 @@ fn seconds(text: &str, flag: &str) -> Result<f32, String> {
     }
 }
 
+fn parse_format(text: &str) -> Result<OutputFormat, String> {
+    match text.to_ascii_lowercase().as_str() {
+        "png" => Ok(OutputFormat::Png),
+        "tiff" | "tif" => Ok(OutputFormat::Tiff),
+        "dng" => Ok(OutputFormat::Dng),
+        _ => Err(format!("--format expects png, tiff or dng, got '{text}'")),
+    }
+}
+
 fn parse_size(text: &str) -> Result<(u32, u32), String> {
     let bad = || format!("--size expects WxH such as 1280x720, got '{text}'");
     let (w, h) = text.split_once(['x', 'X']).ok_or_else(bad)?;
@@ -241,6 +279,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e5c = None;
     let mut write_e5b = None;
     let mut write_ambient = None;
+    let mut write_o1 = None;
+    let mut write_film_thumb = None;
     let mut sheet_dir = None;
     let mut tone_table = false;
     let mut options = Options::default();
@@ -273,6 +313,14 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                     "--caustic-radius expects a non-negative number of pixels".to_string()
                 })?)
             }
+            "--format" => options.format = Some(parse_format(value(&mut it, arg)?)?),
+            "--bits" => {
+                let text = value(&mut it, arg)?;
+                match text.parse::<u32>() {
+                    Ok(n @ (8 | 16 | 32)) => options.bits = Some(n),
+                    _ => return Err(format!("--bits expects 8, 16 or 32, got '{text}'")),
+                }
+            }
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--example" => {
                 if input.replace(Input::Example).is_some() {
@@ -287,6 +335,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-ambient-example" => {
                 write_ambient = Some(PathBuf::from(value(&mut it, arg)?));
             }
+            "--write-o1-example" => write_o1 = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-film-thumb" => write_film_thumb = Some(PathBuf::from(value(&mut it, arg)?)),
             "--tone-table" => tone_table = true,
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option '{flag}'"));
@@ -329,6 +379,18 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         }
         return Ok(Command::WriteAmbientExample { path });
     }
+    if let Some(path) = write_o1 {
+        if args.len() != 2 {
+            return Err("--write-o1-example takes no other option".into());
+        }
+        return Ok(Command::WriteO1Example { path });
+    }
+    if let Some(path) = write_film_thumb {
+        if args.len() != 2 {
+            return Err("--write-film-thumb takes no other option".into());
+        }
+        return Ok(Command::WriteFilmThumb { path });
+    }
     if let Some(path) = write_hdri {
         if args.len() != 2 {
             return Err("--write-studio-hdri takes no other option".into());
@@ -342,13 +404,23 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         return Ok(Command::WriteExample { path });
     }
     if let Some(dir) = sheet_dir {
-        if input.is_some() || output.is_some() || options.max_seconds.is_some() {
-            return Err("--sheet renders its own scenes: no scene, -o or --max-seconds".into());
+        if input.is_some()
+            || output.is_some()
+            || options.max_seconds.is_some()
+            || options.format.is_some()
+            || options.bits.is_some()
+        {
+            return Err(
+                "--sheet renders its own scenes: no scene, -o, --max-seconds, --format or --bits"
+                    .into(),
+            );
         }
         return Ok(Command::Sheet { dir, options });
     }
     let input = input.ok_or("no scene given: pass a .rsb file or --example")?;
     let output = output.ok_or("no output given: pass -o <out.png>")?;
+    // Refused here, with the usage, not after the render.
+    OutputSpec::resolve(options.format, options.bits, &output)?;
     Ok(Command::Render {
         input,
         output,
@@ -405,6 +477,18 @@ pub fn run(command: Command) -> Result<(), String> {
         }
         Command::WriteAmbientExample { path } => {
             let bytes = rt_core::example::ambient_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteO1Example { path } => {
+            let bytes = rt_core::example::o1_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteFilmThumb { path } => {
+            let bytes = crate::scenes::film_thumb(crate::scenes::FILM_THUMB_SIZE).to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
@@ -486,11 +570,14 @@ pub fn run(command: Command) -> Result<(), String> {
                 result.rays_per_second() / 1.0e6
             );
 
-            let tone = |film: &rt_core::image::Film| {
-                film.to_srgb8_tonemapped(
-                    scene.render.exposure_ev,
-                    rt_core::color::Tonemap::from_u32(scene.render.tonemap),
-                )
+            let spec = OutputSpec::resolve(options.format, options.bits, &output)?;
+            let (exposure_ev, tonemap) = (
+                scene.render.exposure_ev,
+                Tonemap::from_u32(scene.render.tonemap),
+            );
+            let write = |path: &std::path::Path, film: &rt_core::image::Film| {
+                write_file(path, &encode_film(film, exposure_ev, tonemap, spec))
+                    .map_err(|e| format!("{}: {e}", path.display()))
             };
             if scene.render.denoise & DENOISE_IMAGE != 0 {
                 let t0 = std::time::Instant::now();
@@ -498,18 +585,15 @@ pub fn run(command: Command) -> Result<(), String> {
                     .denoised(threads)
                     .ok_or("the denoiser found no guide passes")?;
                 println!("denoised in {:.3} s", t0.elapsed().as_secs_f64());
-                write_png(&output, width, height, &tone(&clean))
-                    .map_err(|e| format!("{}: {e}", output.display()))?;
+                write(&output, &clean)?;
                 println!("wrote {}", output.display());
                 if scene.render.denoise & DENOISE_KEEP_NOISY != 0 {
                     let noisy = noisy_path(&output);
-                    write_png(&noisy, width, height, &result.to_rgb8(&scene))
-                        .map_err(|e| format!("{}: {e}", noisy.display()))?;
+                    write(&noisy, &result.film)?;
                     println!("wrote {}", noisy.display());
                 }
             } else {
-                write_png(&output, width, height, &result.to_rgb8(&scene))
-                    .map_err(|e| format!("{}: {e}", output.display()))?;
+                write(&output, &result.film)?;
                 println!("wrote {}", output.display());
             }
             Ok(())
@@ -520,6 +604,7 @@ pub fn run(command: Command) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{OutputFormat, OutputSpec};
 
     fn parse(args: &[&str]) -> Result<Command, String> {
         parse_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
@@ -604,6 +689,59 @@ mod tests {
     }
 
     #[test]
+    fn the_output_format_comes_from_the_flags_or_the_extension() {
+        let spec = |args: &[&str]| {
+            let Ok(Command::Render {
+                output, options, ..
+            }) = parse(args)
+            else {
+                panic!("{args:?} should parse");
+            };
+            OutputSpec::resolve(options.format, options.bits, &output).unwrap()
+        };
+        let tiff = |bits| OutputSpec {
+            format: OutputFormat::Tiff,
+            bits,
+        };
+        assert_eq!(
+            spec(&["--example", "-o", "a.png"]),
+            OutputSpec {
+                format: OutputFormat::Png,
+                bits: 8
+            }
+        );
+        assert_eq!(spec(&["--example", "-o", "a.tif"]), tiff(8));
+        assert_eq!(
+            spec(&["--example", "-o", "a.TIFF", "--bits", "16"]),
+            tiff(16)
+        );
+        assert_eq!(
+            spec(&[
+                "--example",
+                "-o",
+                "a.out",
+                "--format",
+                "tiff",
+                "--bits",
+                "32"
+            ]),
+            tiff(32)
+        );
+        let dng = OutputSpec {
+            format: OutputFormat::Dng,
+            bits: 32,
+        };
+        assert_eq!(spec(&["--example", "-o", "a.dng"]), dng);
+        assert_eq!(spec(&["--example", "-o", "a.raw", "--format", "dng"]), dng);
+        assert_eq!(spec(&["--example", "-o", "a.dng", "--bits", "32"]), dng);
+        // The flag wins over the extension.
+        assert_eq!(
+            spec(&["--example", "-o", "a.tif", "--format", "png"]).format,
+            OutputFormat::Png
+        );
+    }
+
+    #[test]
     fn parses_write_example_and_help() {
         assert_eq!(
             parse(&["--write-example", "s.rsb"]),
@@ -639,6 +777,20 @@ mod tests {
             })
         );
         assert!(parse(&["--write-ambient-example", "s4a.rsb", "--samples", "2"]).is_err());
+        assert_eq!(
+            parse(&["--write-o1-example", "o1.rsb"]),
+            Ok(Command::WriteO1Example {
+                path: "o1.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-o1-example", "o1.rsb", "--example"]).is_err());
+        assert_eq!(
+            parse(&["--write-film-thumb", "t.rsb"]),
+            Ok(Command::WriteFilmThumb {
+                path: "t.rsb".into()
+            })
+        );
+        assert!(parse(&["--write-film-thumb", "t.rsb", "--samples", "2"]).is_err());
         assert_eq!(parse(&["--tone-table"]), Ok(Command::ToneTable));
         assert!(parse(&["--tone-table", "--example"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Command::Help));
@@ -667,6 +819,24 @@ mod tests {
             &["--sheet", "d", "-o", "o.png"],
             &["--example", "-o", "o.png", "--max-seconds", "-1"],
             &["--example", "-o", "o.png", "--max-seconds", "soon"],
+            &["--example", "-o", "o.png", "--format", "jpeg"],
+            &["--example", "-o", "o.png", "--format"],
+            &["--example", "-o", "o.tif", "--bits", "12"],
+            &["--example", "-o", "o.tif", "--bits", "many"],
+            // A PNG is 8-bit and a DNG is 32-bit float: the mismatch is refused before rendering.
+            &["--example", "-o", "o.png", "--bits", "16"],
+            &["--example", "-o", "o.dng", "--bits", "8"],
+            &[
+                "--example",
+                "-o",
+                "o.tif",
+                "--format",
+                "dng",
+                "--bits",
+                "16",
+            ],
+            &["--sheet", "d", "--format", "tiff"],
+            &["--sheet", "d", "--bits", "16"],
         ] {
             assert!(parse(bad).is_err(), "{bad:?} should be rejected");
         }
@@ -687,6 +857,7 @@ mod tests {
             keep_noisy: true,
             caustics: Some(4096),
             caustic_radius: Some(2.0),
+            ..Options::default()
         }
         .apply(&mut scene);
         assert_eq!((samples, threads), (3, 5));
