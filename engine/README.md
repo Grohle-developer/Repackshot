@@ -550,9 +550,12 @@ byte for byte.
   swirl; the O1 parity scene (`rt --write-o1-example`).
 * **O3a**: effect filters on the lens (`rt_core::optics::filters`): diffusion (white, black,
   gold), glimmer, soft, net, star and streak as scattering of the camera ray at the pupil, with
-  tabulated inverse CDFs of their angular PSFs; a stack of three per camera; the O3a parity scene
-  (`rt --write-o3a-example`) and the filter sheet (`rt --filter-sheet`). Next: the traced lens
-  (O2).
+  tabulated inverse CDFs of their angular PSFs, and a connection of each camera sample to a light
+  the camera sees through the filter's PSF, weighted against the scattering with the balance
+  heuristic lobe by lobe; a stack of three per camera; the O3a parity scene
+  (`rt --write-o3a-example`), the filter sheet (`rt --filter-sheet`) and the measurement of the
+  noise the filters add with and without the connections (`rt --filter-noise`). Next: the traced
+  lens (O2).
 
 ## Third-party data
 

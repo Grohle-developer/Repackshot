@@ -1,7 +1,9 @@
 //! The sheet of the effect filters (O3a, `rt --filter-sheet <dir>`; `tools/lens-filters-sheet.mjs`
 //! writes its page): the perfume bottle with a small spot behind it in the frame and another one
 //! outside it, through every filter at the grades 1/4, 1 and 2, two stacks, no filter, and three
-//! filters without their connections to the lights (the scattering alone), for comparison.
+//! filters without their connections to the lights (the scattering alone), for comparison. And
+//! the measurement of the noise the filters add, with and without those connections
+//! (`rt --filter-noise <dir>`, `noise.json` next to the sheet).
 
 use crate::render_progressive;
 use crate::scenes::glass_bottle;
@@ -227,6 +229,147 @@ pub fn run(
     Ok(rendered)
 }
 
+/// Size, samples and seeds of the noise measurement (`rt --filter-noise`): small and short,
+/// so the variance between the seeds is large enough to read.
+pub const NOISE_SIZE: (u32, u32) = (192, 144);
+/// See [`NOISE_SIZE`].
+pub const NOISE_SAMPLES: u32 = 16;
+/// See [`NOISE_SIZE`].
+pub const NOISE_RUNS: u32 = 6;
+/// Pixel values are clamped here before the variance, so one firefly does not decide.
+pub const NOISE_CLAMP: f32 = 64.0;
+
+/// The filters of the noise measurement: none, the sparse kernels at grade 1 (star 6, streak,
+/// glimmer), then white diffusion 1, black diffusion 2 and net 1.
+pub fn noise_cases() -> Vec<(&'static str, FilterParams)> {
+    vec![
+        ("none", FilterParams::default()),
+        ("star--1", one(FILTER_STAR, 1.0)),
+        ("streak--1", one(FILTER_STREAK, 1.0)),
+        ("glimmer--1", one(FILTER_GLIMMER, 1.0)),
+        ("diffusion-white--1", one(FILTER_DIFFUSION_WHITE, 1.0)),
+        ("diffusion-black--2", one(FILTER_DIFFUSION_BLACK, 2.0)),
+        ("net--1", one(FILTER_NET, 1.0)),
+    ]
+}
+
+/// The noise of one filter with or without its connections to the lights.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Noise {
+    /// Key of [`noise_cases`].
+    pub key: String,
+    /// Whether the filter connected to the lights.
+    pub connect: bool,
+    /// Mean of every channel of every pixel over the seeds (unclamped).
+    pub mean: f64,
+    /// Variance of a channel of a pixel between the seeds (values clamped at [`NOISE_CLAMP`]),
+    /// averaged over the image.
+    pub variance: f64,
+    /// Seconds of all the seeds' renders.
+    pub seconds: f64,
+}
+
+/// Mean and variance between `images` (the same render under different seeds), see [`Noise`].
+pub fn seed_variance(images: &[Vec<f32>]) -> (f64, f64) {
+    let runs = images.len();
+    let n = images.first().map_or(0, Vec::len);
+    if runs < 2 || n == 0 {
+        return (0.0, 0.0);
+    }
+    let clamp = |v: f32| f64::from(v.min(NOISE_CLAMP));
+    let mut mean = vec![0.0f64; n];
+    for image in images {
+        for (m, &v) in mean.iter_mut().zip(image) {
+            *m += clamp(v);
+        }
+    }
+    for m in &mut mean {
+        *m /= runs as f64;
+    }
+    let mut variance = 0.0f64;
+    for image in images {
+        for (m, &v) in mean.iter().zip(image) {
+            let d = clamp(v) - m;
+            variance += d * d;
+        }
+    }
+    variance /= (n * (runs - 1)) as f64;
+    let total: f64 = images
+        .iter()
+        .flat_map(|image| image.iter().map(|&v| f64::from(v)))
+        .sum();
+    (total / (n * runs) as f64, variance)
+}
+
+/// Measures the noise of every case of [`noise_cases`] (or just `only`) on the sheet's bottle,
+/// with and without the connections to the lights: `runs` renders under different seeds each,
+/// written to `dir/noise.json`.
+pub fn noise(
+    dir: &Path,
+    size: (u32, u32),
+    samples: u32,
+    runs: u32,
+    threads: usize,
+    only: &[String],
+) -> Result<Vec<Noise>, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let none = FilterParams::default();
+    let mut rows = Vec::new();
+    for (key, filter) in noise_cases() {
+        if !only.is_empty() && !only.iter().any(|k| k == key) {
+            continue;
+        }
+        for connect in [false, true] {
+            let mut images = Vec::new();
+            let mut seconds = 0.0;
+            for run in 0..runs {
+                let mut scene = filter_bottle(size, [filter, none, none]);
+                scene.render.seed = 100 + run;
+                let lens = scene
+                    .camera
+                    .lens
+                    .take()
+                    .map(|l| l.with_connections(connect));
+                scene.camera.lens = lens;
+                let out = render_progressive(&scene, samples, threads, None);
+                seconds += out.elapsed.as_secs_f64();
+                images.push(out.film.resolve());
+            }
+            let (mean, variance) = seed_variance(&images);
+            println!(
+                "{key}: {} connections, mean {mean:.4}, variance {variance:.3}, {seconds:.1} s",
+                if connect { "with" } else { "without" }
+            );
+            rows.push(Noise {
+                key: key.into(),
+                connect,
+                mean,
+                variance,
+                seconds,
+            });
+        }
+    }
+    let lines: Vec<String> = rows
+        .iter()
+        .map(|r| {
+            format!(
+                "{{\"key\":\"{}\",\"connect\":{},\"mean\":{:.5},\"variance\":{:.4},\"seconds\":{:.2}}}",
+                r.key, r.connect, r.mean, r.variance, r.seconds
+            )
+        })
+        .collect();
+    let json = format!(
+        "{{\"width\":{},\"height\":{},\"samples\":{samples},\"runs\":{runs},\"clamp\":{},\"rows\":[\n{}\n]}}\n",
+        size.0,
+        size.1,
+        NOISE_CLAMP,
+        lines.join(",\n")
+    );
+    let path = dir.join("noise.json");
+    std::fs::write(&path, json).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +399,30 @@ mod tests {
         let n = scene.lights.len();
         assert!(seen(scene.lights[n - 2].position));
         assert!(!seen(scene.lights[n - 1].position));
+    }
+
+    #[test]
+    fn the_seed_variance_is_the_variance_between_the_runs_clamped() {
+        // Two pixels, three runs: the first varies (1, 2, 3: variance 1), the second is a
+        // firefly clamped to the same value every time (variance 0).
+        let images = vec![vec![1.0, 100.0], vec![2.0, 200.0], vec![3.0, 300.0]];
+        let (mean, variance) = seed_variance(&images);
+        assert!((variance - 0.5).abs() < 1e-9, "{variance}");
+        assert!((mean - 101.0).abs() < 1e-9, "{mean}");
+        assert_eq!(seed_variance(&images[..1]), (0.0, 0.0));
+    }
+
+    #[test]
+    fn the_noise_measurement_writes_both_rows_of_a_case() {
+        let dir = std::env::temp_dir().join(format!("rt-filter-noise-{}", std::process::id()));
+        let rows = noise(&dir, (16, 12), 1, 2, 2, &["star--1".into()]).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(!rows[0].connect && rows[1].connect);
+        assert!(rows.iter().all(|r| r.key == "star--1" && r.mean > 0.0));
+        let json = std::fs::read_to_string(dir.join("noise.json")).unwrap();
+        assert!(json.starts_with("{\"width\":16,\"height\":12,\"samples\":1,\"runs\":2,"));
+        assert_eq!(json.matches("\"key\":\"star--1\"").count(), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(noise_cases()[0].1, FilterParams::default());
     }
 }

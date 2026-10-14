@@ -2556,8 +2556,9 @@ dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
   tramo del rayo de una muestra que el filtro dispersó pesan eso
   (`integrator::radiance_weighted`, `Lights::crossed_camera_weighted`) y
   la conexión, `s·a·T·L` por el mismo peso. Números en
-  `DIM_LENS_FILTER_LIGHT` = `5 << 20` (seis por filtro). **Medido** en el
-  frasco de la hoja a 192 × 144, 16 muestras, seis semillas (varianza por
+  `DIM_LENS_FILTER_LIGHT` = `5 << 20` (seis por filtro). **Medido**
+  (`rt --filter-noise`, la tabla del final de la hoja) en el frasco de la
+  hoja a 192 × 144, 16 muestras, seis semillas (varianza por
   píxel entre semillas, recortada a 64; sin filtro, 1,49): estrella 1,
   de 10,03 sin conexión a 2,71 con ella; rayas 1, 8,57 → 2,71; brillo 1,
   4,93 → 3,24; difusión blanca 1, 12,09 → 3,26; difusión negra 2, 18,41 →
@@ -2605,7 +2606,9 @@ dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
   dentro del encuadre, y otro justo encima del encuadre, 512 × 384 y 128
   muestras, cada tipo a 1/4, 1 y 2 junto a la imagen sin filtro, las dos
   pilas (difusión negra 1/2 + estrella 6; dorada 1 + rayas) y, para
-  comparar, estrella 1, difusión negra 2 y brillo 1 sin la conexión.
+  comparar, estrella 1, difusión negra 2 y brillo 1 sin la conexión; al
+  final, la tabla del ruido medido con y sin la conexión
+  (`rt --filter-noise`, `out/lens-filters-sheet/noise.json`).
   Lo que se ve, para el veredicto (regla 11): las difusiones dan halo
   alrededor del foco y velo desde el que está fuera del encuadre, la negra
   con menos subida de las sombras; la dorada a 2 tiñe toda la imagen
@@ -2618,59 +2621,63 @@ dorada 1 + rayas); a ojo. Capturas `docs/ui/lens-filters.png`.
   quieren líneas solo en las luces, la propuesta es una tabla de `s` menor
   para las familias de líneas. Quedan chispas sueltas de los reflejos de
   las luces en el vidrio (la conexión solo ve las luces, no sus brillos).
-- **Tests** (cada uno comprobado reintroduciendo el error): 13 en `optics::filter_tests` de rt-core: grados →
-  `s` (sin interpolar, falla); difusión blanca que conserva la media de un
-  campo blanco ± 0,5 % (un peso del 95 %, falla); difusión negra a 1 entre
-  0,90 y 0,97 (sin absorción, falla); estrella de 6 con la energía en seis
-  rayas ± 2° más allá de 1° (una raya de más, falla); dorada con el haz
-  disperso hacia el rojo y el núcleo blanco (sin tinte, falla); tres
-  filtros de grado 0 = sin filtro bit a bit (el grado 0 que dispersa,
-  falla); filtros que cambian la imagen y dan los mismos bits en cada ruta
-  SIMD; ida y vuelta de `LENS` y la de O1 byte a byte (escribir siempre los
-  huecos, falla); valores fuera de rango (una estrella de 5, falla); el
-  *hash* de las celdas del brillo, el mismo que en TS (otro multiplicador,
-  falla); la conexión que da la misma imagen que la dispersión sola a 1024
-  muestras ± 3 % en cada tipo (las luces cruzadas sin peso o la conexión
-  sin `s`, fallan); la suma exacta, sin renderizar, de la dispersión pesada
-  y la conexión contra la dispersión sola en cada lóbulo, también con una
-  luz que solo es medio disco (las rayas sin MIS, la densidad radial al
-  doble, la caja del destello mal medida o la raya elegida sin su
-  probabilidad, fallan); y una cámara sin profundidad de campo que reparte
-  el brillo por el filtro (la celda fija del estenopo, que convertía el
-  destello en un fantasma de toda la imagen, falla). El *hash* de O3a
-  (los números de los filtros en la tabla de Sobol, falla). `rt-cli`: 1/4/16
-  hilos con filtros, las celdas de la hoja (una luz dentro y otra fuera del
-  encuadre), `--only`. `tests/lens-filters.test.ts` (13): los datos son los
-  de `filters.rs` (claves, grados, anchos, tintes), nombres y frases en los
-  dos idiomas y sin marcas, `gradeS`, óptica no neutra con filtros (una que
-  los ignora, falla) y normalizada a tres (sin recortar, falla), los huecos
+- **Tests** (cada uno comprobado reintroduciendo el error): 13 en
+  `optics::filter_tests` de rt-core: grados → `s` (sin interpolar,
+  falla); difusión blanca que conserva la media de un campo blanco ±
+  0,5 % (un peso del 95 %, falla); difusión negra a 1 entre 0,90 y 0,97 (sin
+  absorción, falla); estrella de 6 con la energía en seis rayas ± 2° más
+  allá de 1° (una raya de más, falla); dorada con el haz disperso hacia
+  el rojo y el núcleo blanco (sin tinte, falla); tres filtros de grado 0
+  = sin filtro bit a bit (el grado 0 que dispersa, falla); filtros que
+  cambian la imagen y dan los mismos bits en cada ruta SIMD; ida y
+  vuelta de `LENS` y la de O1 byte a byte (escribir siempre los huecos,
+  falla); valores fuera de rango (una estrella de 5, falla); el *hash*
+  de las celdas del brillo, el mismo que en TS (otro multiplicador,
+  falla); la conexión que da la misma imagen que la dispersión sola a
+  1024 muestras ± 3 % en cada tipo (las luces cruzadas sin peso o la
+  conexión sin `s`, fallan); la suma exacta, sin renderizar, de la
+  dispersión pesada y la conexión contra la dispersión sola en cada
+  lóbulo, también con una luz que solo es medio disco (las rayas sin
+  MIS, la densidad radial al doble, la caja del destello mal medida o la
+  raya elegida sin su probabilidad, fallan); y una cámara sin
+  profundidad de campo que reparte el brillo por el filtro (la celda
+  fija del estenopo, que convertía el destello en un fantasma de toda la
+  imagen, falla). El *hash* de O3a (los números de los filtros en la
+  tabla de Sobol, falla). `rt-cli`: 1/4/16 hilos con filtros, las celdas
+  de la hoja (una luz dentro y otra fuera del encuadre), `--only`.
+  `tests/lens-filters.test.ts` (13): los datos son los de `filters.rs`
+  (claves, grados, anchos, tintes), nombres y frases en los dos idiomas
+  y sin marcas, `gradeS`, óptica no neutra con filtros (una que los
+  ignora, falla) y normalizada a tres (sin recortar, falla), los huecos
   de `LENS` como los lee `rt` (sin las puntas o sin el ángulo, fallan),
-  `o3a.rsb` y `o1.rsb` byte a byte, la energía de la aproximación (la cola
-  sin su parte, falla), la estrella a su ángulo (5° de más, falla), la
-  dorada hacia el rojo (sin tinte, falla), y con el `rt.wasm` real el
+  `o3a.rsb` y `o1.rsb` byte a byte, la energía de la aproximación (la
+  cola sin su parte, falla), la estrella a su ángulo (5° de más, falla),
+  la dorada hacia el rojo (sin tinte, falla), y con el `rt.wasm` real el
   *hash* de O3a y la aproximación contra el motor en el horno blanco con
-  las piezas del ejemplo por bloques de 4 × 4, < 2 % (sin la absorción de
-  la negra, falla).
+  las piezas del ejemplo por bloques de 4 × 4, < 2 % (sin la absorción
+  de la negra, falla).
 
-**No encajó con el plan.** (1) La **conexión con las luces** no estaba en
-el encargo: la propuso el líder tras la primera hoja y, medida, la llevan
-todos los tipos y no solo los dispersos (estrella, rayas, brillo), porque
-la cola de las difusiones daba el mismo ruido de chispas alrededor de una
-luz pequeña; es la misma imagen en promedio y sigue siendo espacio de
-rayos. (2) La ventana de render no tiene imagen: la convolución en TS es
-la referencia del pase WebGL, la que comparan los tests con el motor y la
-que se aplica a las imágenes rápidas de la vista previa. El fotograma de
-la IA (X4) sigue sin filtros. (3) Aún no hay sección *Lente* en el
-inspector (llega con O2): *Filtros* es una subsección de *Cámara* junto a
-*Bokeh* y *Óptica avanzada*. (4) La comparación con el motor «en la escena
-del horno» se hace por bloques de 4 × 4 (si no, el ruido de dos renders a
-128 muestras cuenta como diferencia). (5) Los grados → `s`, los anchos y
-el resto de números son propuestas para el veredicto (regla 11). (6) La primera hoja se rindió sin la conexión y con un estenopo que
-fijaba la celda del brillo: el destello salía como un fantasma de toda la
-imagen; ahora una cámara sin profundidad de campo saca la celda de los
-números de la lente (la lente sigue teniendo tamaño detrás del filtro).
-(7) `rt --filter-sheet --only` vuelve a renderizar celdas sueltas de la
-hoja; las tres de brillo y la de comparación salen de ahí.
+**No encajó con el plan.** (1) La **conexión con las luces** no estaba
+en el encargo: la propuso el líder tras la primera hoja y, medida, la
+llevan todos los tipos y no solo los dispersos (estrella, rayas,
+brillo), porque la cola de las difusiones daba el mismo ruido de chispas
+alrededor de una luz pequeña; es la misma imagen en promedio y sigue
+siendo espacio de rayos. (2) La ventana de render no tiene imagen: la
+convolución en TS es la referencia del pase WebGL, la que comparan los
+tests con el motor y la que se aplica a las imágenes rápidas de la vista
+previa. El fotograma de la IA (X4) sigue sin filtros. (3) Aún no hay
+sección *Lente* en el inspector (llega con O2): *Filtros* es una
+subsección de *Cámara* junto a *Bokeh* y *Óptica avanzada*. (4) La
+comparación con el motor «en la escena del horno» se hace por bloques de
+4 × 4 (si no, el ruido de dos renders a 128 muestras cuenta como
+diferencia). (5) Los grados → `s`, los anchos y el resto de números son
+propuestas para el veredicto (regla 11). (6) La primera hoja se rindió
+sin la conexión y con un estenopo que fijaba la celda del brillo: el
+destello salía como un fantasma de toda la imagen; ahora una cámara sin
+profundidad de campo saca la celda de los números de la lente (la lente
+sigue teniendo tamaño detrás del filtro). (7) `rt --filter-sheet --only`
+vuelve a renderizar celdas sueltas de la hoja; las tres de brillo y la
+de comparación salen de ahí.
 
 ## P5 · Actualizar desde la aplicación — **Sonnet** — hecha
 
