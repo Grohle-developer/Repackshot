@@ -74,6 +74,18 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
   const other = v0.compare ? ui.get().results.find((r) => r.id === v0.compare) : undefined;
   const title = h('div', { class: 'rv-title' }, meta?.name ?? '');
   const data = h('div', { class: 'aux tabular rv-data' }, meta ? resultData(meta) : '');
+  // P6: a result a plugin made says which, with which recipe, from which result.
+  const prov = meta?.provenance;
+  const fromName = prov?.from ? (ui.get().results.find((r) => r.id === prov.from)?.name ?? prov.from) : '';
+  const provenance = prov
+    ? h(
+        'div',
+        { class: 'aux rv-provenance', 'data-plugin': prov.plugin },
+        prov.label?.recipe
+          ? t('rv.pluginRecipe', { plugin: prov.label.plugin, version: prov.version, recipe: prov.label.recipe, source: fromName })
+          : t('rv.plugin', { plugin: prov.label?.plugin ?? prov.plugin, version: prov.version, source: fromName }),
+      )
+    : null;
   const zoomText = h('span', { class: 'aux tabular rv-zoom' });
   const frame = h('div', { class: 'rv-frame' }, h('div', { class: 'note rv-loading' }, '…'));
   let split: SplitCompare | null = null;
@@ -184,7 +196,7 @@ export function resultsViewer(ctx: Ctx, scope: Scope): HTMLElement {
       h(
         'div',
         { class: 'rv-top' },
-        h('div', { class: 'rv-info' }, title, data, memory),
+        h('div', { class: 'rv-info' }, title, data, provenance, memory),
         h('div', { class: 'rv-actions' }, compareBtn, h('span', { class: 'rv-sep' }), fitBtn, actualBtn, zoomText, h('span', { class: 'rv-sep' }), saveBtn, saveAiBtn, saveAllBtn, folderBtn, deleteBtn),
       ),
       reportEl,

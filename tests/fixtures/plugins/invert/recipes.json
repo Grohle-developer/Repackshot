@@ -1,0 +1,7 @@
+{
+  "categories": [{ "id": "basic", "label": { "en": "Basic", "es": "Básicas" } }],
+  "recipes": [
+    { "id": "full", "name": { "en": "Full inversion", "es": "Inversión completa" }, "category": "basic", "scale": 1 },
+    { "id": "half", "name": { "en": "Half inversion", "es": "Media inversión" }, "category": "basic", "scale": 0.5 }
+  ]
+}

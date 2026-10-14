@@ -1008,6 +1008,88 @@ defecto, en el cuerpo de la ventana (`ui/panels/ai-post.ts`).
   siendo de una sola imagen. El resumen del pie dice *IA activada · 4 variantes*.
   Captura: `docs/ui/ai-section-prompt.png`.
 
+**4 · Plugins** (P6; `ui/panels/plugins.ts`), después de *Post-procesado IA*:
+un bloque por cada plugin instalado con el *slot* `render.plugins`, dibujado
+**solo desde su manifiesto** (ARCHITECTURE §9): la interfaz no conoce ningún
+plugin. Plegada al principio mientras no hay ninguno instalado; sin plugins,
+una línea: *No hay ningún plugin instalado: los plugins se instalan en Ajustes ▸
+Plugins* y **Gestionar plugins…**, que abre esa sección. En un trabajo de la
+cola que se edita, la sección no se muestra (no hay un resultado sobre el que
+trabajar).
+
+- **Cabecera**: el logo del plugin (de su paquete, sobre una tesela negra en los
+  dos temas: es contenido, el color es suyo), el nombre, *versión 0.1.0*, la
+  ficha **Licencia cerrada** y, debajo, su línea `notice` con **Página del
+  proyecto ↗**. Para el de película: *Adelanto de una app de edición de fotos y
+  simulación de película del mismo desarrollador, en desarrollo*.
+- **Receta**, debajo de la cabecera y a todo lo ancho (decisión 8;
+  `ui/panels/plugin-recipes.ts`): un **carrusel horizontal**, como la tira de
+  película de la app móvil, con una tarjeta por receta en el orden y por las
+  categorías **del plugin**: la imagen arriba, **su nombre público** debajo (el
+  de película no enseña marcas de fabricantes ni de películas: su regla D112)
+  y la categoría como etiqueta pequeña; la primera tarjeta es *Sin receta ·
+  Solo los mandos* (el punto de partida del propio plugin). Se desplaza de lado
+  con la rueda o el *trackpad* (una tarjeta por paso; en un extremo la rueda
+  vuelve a ser de la ventana) y con **← →** (también ↑ ↓, Inicio y Fin), que
+  eligen la tarjeta de al lado; un clic elige una. La elegida lleva un
+  contorno de la tinta; el carrusel se ajusta a las tarjetas y se funde en el
+  extremo donde hay más. Cada elección es una acción del *store*, deshacible.
+  La imagen de cada tarjeta es **la imagen base del plugin** (la escena de
+  prueba que trae su paquete: para el de película, el frasco junto a la
+  lámpara encendida de `rt --write-film-thumb`) por esa receta con los mandos
+  por defecto, a 160 × 100 y ampliada por CSS; mientras no llega, un hueco
+  rayado gris (*Se está haciendo su imagen*). Se hacen **una vez** en este
+  equipo (IndexedDB, por versión del plugin y receta), de una en una y solo
+  cuando no hay una vista previa esperando; mientras, *Imágenes de las recetas
+  12 de 128, hechas una vez en este equipo*. Debajo del carrusel, la elegida
+  con su categoría (*CN-01 · Películas · negativo en color*). A la
+  izquierda, **los mandos del manifiesto** por grupos, cada grupo con
+  su título: deslizador con su campo numérico (y su unidad; un deslizador con
+  `minLabel` dice *Receta* en su tope izquierdo: ahí el plugin conserva el
+  valor de la receta), lista o interruptor, cada uno con su frase cuando la
+  trae. **Restaurar valores por defecto** al final. Cada cambio es una acción
+  del *store* (`RenderSettings.plugins`), deshacible; arrastrar es **un**
+  paso; se guarda con el proyecto.
+- **Vista previa**, a la derecha (debajo en una ventana estrecha): **el
+  resultado actual** —el abierto en el visor de resultados, si no el último; el
+  de un resultado hecho por un plugin es su origen— a **480 px** de ancho por el
+  plugin en su *worker*, con el divisor *Render · el plugin* de U5. Se rehace
+  **300 ms** después del último cambio (al soltar, en un deslizador) y la que
+  está en curso se cancela con la siguiente. Debajo: el tamaño, qué recibió
+  el plugin (*luz lineal del EXR* o *imagen de 8 bits*) y de qué resultado;
+  **la línea del plugin**: lo que el propio plugin dice de esa vista previa
+  (para el de película: *Negativo por píxel 75 µm · Grano Gaussian · Etapas 5 ·
+  Motor wasm 0.1.0*), nada que la interfaz calcule ni invente; y *El plugin
+  tardó 1,1 s*, medido alrededor de su render. Sin resultados, **la imagen base
+  del plugin** por él (*Escena de prueba · el plugin*; *de la escena de prueba
+  del plugin*) con la línea *Aún no hay resultado: la vista previa enseña la
+  escena de prueba del plugin; Aplicar necesita un render terminado*; un plugin
+  sin imagen base dice *Renderiza antes una imagen: un plugin trabaja sobre un
+  resultado terminado*.
+- **Aplicar**: el resultado a su tamaño por el plugin (*Aplicando a 1920 ×
+  1080…*, con **Cancelar**, que para el *worker*) y **un resultado nuevo** en el
+  historial junto a su origen, como la imagen de la IA: PNG (JPEG para un
+  resultado JPEG) con los ppp del origen, guardado donde se guardó el origen,
+  con el nombre *<origen>_<plugin>.png* y su procedencia (`provenance: { plugin,
+  version, recipe, controls }`). Se abre en el visor comparado con su origen,
+  que dice *Hecho con aintfilm · simulación de película 0.1.0, receta CN-01, a
+  partir de Botella_Cámara 1_0001.png*; un plugin con semilla guarda además
+  `seed: { control, seed0, frame, rule: 'seed0+frame' }`.
+- **Aplicar a los trabajos de render** (interruptor, decisión 9), debajo de
+  *Aplicar*: con él, **cada imagen que renderiza la cola** pasa también por el
+  plugin, con la receta y los mandos de ese trabajo, y se guarda junto a la del
+  motor (*<nombre>_<plugin>.png*); en una animación, **cada fotograma con su
+  semilla**, `semilla + fotograma` (el índice del fotograma en la animación, 0
+  para el primero: un tramo renderizado aparte lleva el mismo grano), para que
+  el grano sea el de una película fotograma a fotograma y no una capa fija; una
+  imagen fija usa la semilla tal cual. La primera imagen del trabajo se guarda
+  también en el historial con su procedencia. Si el plugin no está instalado o
+  falla, se dice una vez (*aintfilm · simulación de película no se aplicó a
+  …: …. Se guardó la imagen del motor.*) y el render queda como estaba.
+  Deshacible y guardado con el proyecto como el resto. Captura:
+  `docs/ui/render-plugins-film.png` (el paquete de película construido desde el
+  *checkout* de aintfilm, con el logo del dueño).
+
 **Pie de la ventana**: a la izquierda, el resumen en una línea
 (*1920 × 1080 · 300 ppp · 256 muestras · PNG → Descargas · IA
 apagada*); a la derecha **+ Añadir a la cola** (secundario) y
@@ -1124,7 +1206,8 @@ título del grupo en versalitas auxiliares:
 | | **Atajos de teclado** | La lista completa de §3, agrupada y con buscador; cambiar un atajo: *próximamente* |
 | **Render** | **Motor de renderizado** | Motor (*Nativo, todos los hilos* en escritorio · *Navegador, WebAssembly*); hilos (*Automático* o un número; en el navegador, *workers*); SIMD (Automático · Desactivado); límite del visor en Completo (parar a las N muestras o a los N segundos, para no gastar batería); **mientras se renderiza** (*Mantener el visor vivo (compartido)*, por defecto: el render usa tres cuartos del motor y el visor sigue con el resto · *Pausar el visor (render más rápido)*); **Medir rendimiento** (renderiza la escena de ejemplo 10 s y muestra las muestras por segundo medidas, con hilos y SIMD; nunca un número inventado); datos del motor (versión, compilación, CPU, extensiones SIMD, hilos) |
 | | **Post-procesado IA** | Tres apartados, en este orden: **Modelo activo**, **Modelos** y **Equipo** (detalle abajo); en escritorio, cuatro: **Motor de ejecución** entre *Modelos* y *Equipo*. Donde la tubería no existe (la web, hasta X3d; lo dice el servicio, `NOT_BUILT`), arriba una línea en auxiliar: *El post-procesado llega en una próxima versión; ya puedes descargar, importar y preparar modelos* |
-| **Sistema** | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
+| **Sistema** | **Plugins** | Los plugins del registro (`src/data/plugins.json`) y los instalados desde un archivo, cada uno con su logo, nombre, editor, versión, tamaño, resumen, la ficha **Licencia cerrada** y **Página del proyecto**; *Instalar*, *Actualizar a X*, *Quitar*; la clave de activación pedida en su fila; **Instalar desde archivo…** (detalle abajo) |
+| | **Almacenamiento** | Espacio usado por categoría (modelos, historial de resultados, biblioteca, caché) con barra y *Liberar* por fila; límite del historial (número y tamaño); pedir almacenamiento persistente al navegador; en escritorio, la carpeta de datos con *Abrir carpeta* |
 | | **Escritorio** | Solo en la aplicación de escritorio: modo portable (sí o no y dónde están los datos), navegador que dibuja la ventana, carpeta de registros |
 | | **Actualizaciones** | Encima de *Acerca de*, en web y escritorio: versión instalada; **Buscar actualizaciones** con el resultado en su fila (*Tienes la última versión* · *Repackshot X está disponible* con el botón principal y **Notas** · *No se pudo comprobar* con el motivo real); **Buscar al iniciar** (activado por defecto): al arrancar comprueba una vez en segundo plano y, si hay versión nueva, lo dice en una línea de la barra de estado con el mismo botón principal, *Notas* y *Más tarde*, nunca en una ventana; *Última comprobación*. La fuente son las releases de GitHub (`src/data/update-feed.ts`). **El botón principal** es **Instalar y reiniciar** en escritorio (P5): pregunta por los cambios sin guardar (§4.3), el lanzador descarga el paquete de esta copia y su `SHA256SUMS.txt`, comprueba la suma, lo instala y la aplicación se reinicia sola con la versión nueva (detalle en `ARCHITECTURE.md` §5.5). En la web sigue siendo **Descargar** (abre la página de la versión) y la fila lo dice: *Descargar abre la página de la versión. Para actualizar desde la propia aplicación, usa la versión de escritorio.* También es *Descargar* donde el lanzador no sabe actualizarse (uno anterior) o la release no trae el paquete o las sumas. **Mientras se instala**, la fila (y la línea de la barra de estado, con *Ajustes* cerrado) dice dónde va: *Descargando… 45 % · 3,2 de 7,1 MB* con una barra fina (gris, sin color), *Comprobando…*, *Instalando… la aplicación se reiniciará*, con **Cancelar la actualización** hasta que empieza a cambiar archivos; cerrar *Ajustes* no la para (el estado es del lanzador y se sigue al recargar la página). **Los fallos** salen en la fila con su motivo y **Reintentar**: la descarga, la suma que no cuadra (*no se instaló*), sin espacio en el disco, el paquete que no se pudo desempaquetar o poner en su sitio (*no se cambió nada*) y *esta copia no está instalada ni es portable* (entonces el botón es *Descargar*). Al volver a arrancar, un aviso dice *Repackshot se actualizó a la versión X* |
 | | **Acerca de** | Versión, licencia (PolyForm Noncommercial 1.0.0, resumen y texto completo), **licencias de terceros** con su texto (three.js, rhino3dm, occt-import-js con el enlace a su código fuente, stable-diffusion.cpp y ggml —MIT, el motor de ejecución de la IA de escritorio, X3c—, y los modelos de IA descargados con la suya), créditos (EZ Packshot) |
@@ -1228,6 +1311,38 @@ gráfica* y la fila *GPU* distinguen *No se ha encontrado ninguna tarjeta
 gráfica* (el lanzador preguntó y no hay) de *No se han podido leer las
 tarjetas gráficas: mira los registros* (ninguna fuente contestó,
 `gpuDetection: failed`).
+
+**Plugins** (P6, `ui/panels/settings-plugins.ts`): arriba, dónde se guardan
+(*Los plugins instalados se guardan en este equipo, sus paquetes cifrados y sus
+claves aparte*, o que solo duran esta sesión donde no hay almacenamiento
+duradero). Después, **Plugins disponibles**: una fila por plugin del registro
+(y por cada uno instalado desde un archivo, con la ficha *Desde un archivo*):
+el logo (el de su paquete, en cuanto está instalado: antes, un icono neutro),
+el nombre con la ficha **Licencia cerrada**, *Editor · versión 0.1.0 · 1,8 MB*
+(el tamaño que fija el registro), el resumen, **Página del proyecto ↗**, el
+estado (*No instalado* · *Descargando 42 % · 0,7 MB de 1,8 MB* · *Comprobando
+el paquete…* · *Esperando la clave de activación* · *Instalado: versión
+0.1.0, 1,8 MB en este equipo* · *No instalado: la descarga no es el paquete que
+fija el registro (su SHA-256 no coincide)*…) y la frase, en todos: *El código de
+este plugin es cerrado; la licencia de Repackshot no lo cubre*. Instalado,
+debajo, **su licencia completa** y **los avisos de terceros** de lo que lleva,
+en desplegables que se leen del paquete (descifrado en memoria) al abrirlos. A
+la derecha **Instalar**, **Actualizar a X** (cuando el registro trae otra
+versión) y **Quitar** (pregunta: *Su paquete y su clave de activación se borran
+de este equipo; los proyectos conservan sus ajustes*). Instalar descarga,
+comprueba el tamaño y el `sha256` del registro y la cabecera del paquete, y
+pide la clave: de `keyUrl` si el registro la trae; si no (o si falla), un
+recuadro en la fila con *Este plugin se activa con una clave de su
+desarrollador. Escríbela o pégala para terminar la instalación*, el campo
+(*Pega la clave de activación*), **Activar** y *Cancelar*; una clave que no
+abre el paquete y algo que no es una clave se dicen distinto. Una
+actualización prueba primero la clave que ya tiene.
+
+**Plugins ▸ Instalar desde un archivo**: **Elegir un archivo .rpk…** (el nombre
+y el tamaño del elegido al lado), el campo de la clave e **Instalar**; debajo,
+el resultado (*Instalado: Invertir (plugin de prueba) 1.0.0* o el motivo). La
+herramienta queda a la vista para los plugins que vengan. Captura:
+`docs/ui/settings-plugins.png`.
 
 **Último proyecto** (*General ▸ Al arrancar*): el encabezado pregunta
 *¿Abrir el último proyecto, «X»?* con *Abrir* y *Ahora no*; si el archivo

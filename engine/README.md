@@ -107,6 +107,7 @@ cargo run --release -p rt-cli -- --example -o out.png        # built-in scene, n
 cargo run --release -p rt-cli -- --write-example scene.rsb   # the same scene as an RSB file
 cargo run --release -p rt-cli -- --write-e5-example e5.rsb   # the E5 parity scene (glass, HDRI, background image)
 cargo run --release -p rt-cli -- --write-e5b-example e5b.rsb # the E5b-1 parity scene (the E5 scene with caustic photons)
+cargo run --release -p rt-cli -- --write-film-thumb t.rsb    # the film plugin's recipe-card scene (bottle beside the lit lamp, 320x200)
 cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 16 --denoise --keep-noisy   # out.png denoised, out-noisy.png
 cargo run --release -p rt-cli -- scene.rsb -o out.png --caustics 16384 --caustic-radius 3   # photon-map caustics
 cargo run --release -p rt-cli -- --write-studio-hdri studio.hdr   # the procedural studio HDRI (tests/fixtures/studio.hdr)

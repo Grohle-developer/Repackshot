@@ -42,6 +42,7 @@ import { section } from '../components/section';
 import { h, icon, isTyping, placeAt } from '../dom';
 import { cameraName, dyn } from '../names';
 import { aiPostBody } from './ai-post';
+import { pluginsBody, renderPlugins } from './plugins';
 import { runtimeBadge } from './ai-runtime-notice';
 import type { Ctx, Scope } from '../reactive';
 import { nameValues } from '../render-queue';
@@ -483,7 +484,12 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   const animSec = section(ctx, 'rw.anim', t('rw.animSection'), animBody);
   const qualitySec = section(ctx, 'rw.quality', t('rw.quality'), qualityBody);
   const aiSec = section(ctx, 'rw.ai', t('rw.ai'), aiBody, runtimeBadge(ctx, scope), true);
-  const body = h('div', { class: 'rw-body' }, outputSec, sizeSec, animSec, qualitySec, aiSec);
+  // P6: the installed plugins after the AI (ui/panels/plugins.ts); folded at first while none is installed.
+  const pluginsBodyEl = pluginsBody(ctx, scope, { get, set: (patch, gesture, label) => cmd.setRenderSettings(ctx, patch, gesture, label) });
+  const pluginsSec = section(ctx, 'rw.plugins', t('rw.plugins'), pluginsBodyEl, null, renderPlugins(ui.get().plugins?.installed).length === 0);
+  // A queued job being edited has no result to work on: the section is the project's.
+  if (editing) pluginsSec.style.display = 'none';
+  const body = h('div', { class: 'rw-body' }, outputSec, sizeSec, animSec, qualitySec, aiSec, pluginsSec);
 
   // ------------------------------------------------------------------ footer
   const summary = h('div', { class: 'rw-summary aux tabular' });

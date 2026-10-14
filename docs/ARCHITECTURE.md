@@ -46,6 +46,19 @@ comercialmente. Ninguna otra LGPL sin una decisión nueva. El
 **motor no admite dependencias**: `engine/Cargo.lock` solo contiene los
 *crates* del propio workspace, y CI lo comprueba.
 
+**Los plugins no son dependencias** (P6, §9). Repackshot no lleva ningún
+plugin, no enlaza su código ni lo redistribuye: el usuario los instala desde
+*Ajustes ▸ Plugins*, con su propia licencia (la del de película, de aintfilm,
+es **cerrada**, y la interfaz lo dice: *El código de este plugin es cerrado; la
+licencia de Repackshot no lo cubre*). Por eso no llevan línea en esta tabla ni
+caen bajo la regla de las licencias permisivas, y su código no entra en el
+repositorio: aquí solo están el anfitrión, el registro (`src/data/plugins.json`,
+que fija el paquete por su `sha256`), el pegamento propio de cada plugin
+(`tools/plugins/film/plugin.js`, código de Repackshot) y la herramienta que monta
+el paquete desde el *checkout* del otro programa. Lo cerrado (el módulo
+WebAssembly, las recetas, el logo, la licencia) va solo dentro del paquete
+cifrado.
+
 **Versiones instaladas** en el andamiaje inicial: three 0.186, Vite 8,
 TypeScript 7, vitest 5, playwright-core 1.64 (el `package-lock.json` es
 la verdad; esta lista orienta). **rhino3dm 8.35.0** (openNURBS, MIT,
@@ -121,6 +134,12 @@ src/
     post-wasm.ts            envoltura tipada de public/engine/post.wasm (plan, condicionamiento, aceptar) y el conductor runGuarded; worker y Node
     prompt.ts               el prompt de la escena (materiales, luces, estilo) y el negativo fijo; la tabla de materiales de la guarda
     synthetic.ts            el servicio sintético de X4 (sin modelo, determinista, informe medido); not-built.ts, el de una versión sin tubería
+  plugins/                  PLUGINS (P6, §9). Dependen de core y data; la interfaz los ve por ui/ports.ts, como io
+    rpk.ts                  el formato .rpk: cabecera, AES-256-GCM, contenedor, clave; lo comparten la página y las herramientas
+    abi.ts                  los mensajes del ABI v1 entre el anfitrión y un plugin
+    store.ts                IndexedDB: el paquete cifrado y su clave aparte (también en WebView2); en memoria sin él
+    host.ts                 instalar (registro o archivo), quitar, abrir en memoria, arrancar el Worker, la sesión
+    service.ts              lo que pide la interfaz: un resultado por un plugin (vista previa o a tamaño), los píxeles
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
@@ -159,6 +178,9 @@ tools/                      scripts de desarrollo: capturas, generadores, hojas 
   setup-thumbs.mjs          las miniaturas de montaje (L6): escenas con el código de la app (tests/setup-thumbs-dump.test.ts, vitest) y `rt`
   sets-sheet.mjs            la hoja de contactos de los sets (L6): out/sets-sheet.html; rt-batch.mjs, lo que comparten
   sets-check.mjs            comprobación en el navegador de los sets (L6): catálogo, aplicar, En el set, Restablecer; docs/ui/sets-catalogue.png
+  plugin-pack.mjs  plugin-unpack.mjs  empaquetar y abrir un .rpk (P6, §9); plugins-check.mjs, la comprobación de navegador
+  plugins/                  build-film.mjs (el paquete de película desde un checkout de aintfilm), brand-scan.mjs (D112),
+                            film/manifest.json y film/plugin.js (el pegamento del ABI, nuestro)
   assets/                   generadores deterministas de public/assets/ (A6): common.mjs, aperture-masks.mjs, gobos.mjs; solo node:zlib y node:crypto
 docs/                       este documento, SPEC, UI, ROADMAP
 engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias externas (§5.1)
@@ -200,7 +222,7 @@ materiales las que no. La vista previa decodifica cada imagen una vez
 (arriba).
 
 **Regla de dependencias**: `ui → core`, `render → core`, `io → core`,
-`core → data`. Nunca al revés, nunca `ui → render` directamente (el
+`plugins → core`, `core → data`. Nunca al revés, nunca `ui → render` directamente (el
 *store* expone lo que el visor necesita y el visor se suscribe). Un test
 de la suite (`tests/boundaries.test.ts`, U2) recorre los `import` y
 falla si se viola; hoy no hay ninguna infracción. El motor (`engine/`) no conoce nada de `src/`: su
@@ -1347,3 +1369,214 @@ desplazamiento pasan al mapeado, la escala a la repetición. El esquema
 sigue en 2; una versión anterior abre un proyecto con texturas sin verlas.
 Las mallas guardan su segundo juego de UV como `TEXCOORD_1` del GLB, solo
 cuando lo tienen (una malla sin él escribe los bytes de siempre).
+
+---
+
+## 9 · Plugins (P6)
+
+Un plugin es una herramienta de otro programa que trabaja dentro de
+Repackshot: el anfitrión le da píxeles y recibe píxeles. Lo instala el
+usuario (*Ajustes ▸ Plugins*), con su licencia, y nunca toca el DOM ni el
+*store* (§1: no es una dependencia).
+
+### 9.1 · El paquete `.rpk`
+
+Un solo archivo (`src/plugins/rpk.ts`, compartido por la página y por las
+herramientas de `tools/`, que lo leen con la eliminación de tipos de Node 22.18
+o posterior y el `webcrypto` de Node):
+
+| Bytes | Qué |
+| --- | --- |
+| 4 | `RPK1` |
+| 4 | longitud de la cabecera, `u32` *little-endian* |
+| n | **cabecera en claro**, JSON en UTF-8: `id`, `version`, `abi`, `bytes` (longitud del cifrado, etiqueta incluida), `sha256` (hexadecimal, del cifrado), `nonce` (12 bytes, base64) |
+| `bytes` | **AES-256-GCM** (WebCrypto) del contenedor, con su etiqueta de 16 bytes al final |
+
+El contenedor es plano: `RPKC`, `u32` versión 1, `u32` número de entradas y,
+por entrada, `u32` longitud del nombre, el nombre (UTF-8, una ruta relativa con
+`/`, sin `..` ni puntos iniciales), `u32` longitud y los bytes. En el paquete de
+película: `manifest.json`, `plugin.js`, `module.wasm`, `presets/`, `logo.svg`,
+`LICENCE.txt`, `NOTICES.txt` (y `recipes.json`, `engine.json`). El cifrado
+autentica, como datos adicionales, la marca y todos los campos de la cabecera
+menos el `sha256` (que es del propio cifrado): una cabecera editada a mano (otra
+versión, otro `id`) no abre. Al abrir, primero la cabecera, la longitud y el
+`sha256` del cifrado (*dañado*, sin descifrar nada); después la etiqueta GCM
+(*la clave no abre este paquete, o el paquete fue alterado*); después el
+contenedor. `tools/plugin-pack.mjs <carpeta> <salida.rpk> (--new-key | --key
+<b64> | --key-file <archivo>)` comprueba el manifiesto (`core/plugins.ts`) y que
+estén los archivos que nombra, empaqueta y cifra, e imprime el tamaño y el
+`sha256` del archivo (lo que fija el registro); con `--new-key` imprime la clave
+**solo por la salida estándar**. `tools/plugin-unpack.mjs` lo abre (tests, y
+revisar un paquete antes de publicarlo).
+
+**La clave y lo que el cifrado protege** (decisión 1 de P6, tal cual): la
+**clave de activación** (32 bytes, base64) **no está en el repositorio** (el
+anfitrión es de código disponible: no puede guardar secretos): llega por
+`keyUrl` del registro (una URL del desarrollador, que puede rotarla o
+condicionarla más adelante) o la teclea el usuario al instalar. El paquete se
+guarda **cifrado** (IndexedDB, también en WebView2) y la clave aparte; se
+descifra **solo en memoria** al cargar, nunca se escribe en claro. Lo que esto
+protege: el módulo en reposo y en tránsito, y que el paquete no sirva fuera de
+Repackshot sin la clave; lo que no: a quien depure el navegador con la clave en
+la mano.
+
+### 9.2 · Registro, instalación y almacén
+
+`src/data/plugins.json` (con su cargador tipado, `src/data/plugins.ts`) es el
+registro, como `ai-models.json`: por plugin `id`, `name` (es/en), `publisher`,
+`version`, `summary` (es/en), `licence: { kind: 'closed', label }`, `homepage`,
+`url` del paquete, su `sha256` y sus `bytes`, `keyUrl` (vacío: se pide al
+instalar) y `logo` (un archivo del paquete, o un SVG en línea `data:`; el del
+de película es del paquete: no está en este repositorio). Las claves se añaden,
+no se renombran. La versión de prueba (`vite build --mode plugin-test`) acepta
+además `?testPlugins=<base64 del JSON>`, para la comprobación de navegador; en
+las demás versiones esa rama no existe.
+
+Instalar desde el registro (`src/plugins/host.ts`): descarga → el tamaño y el
+`sha256` del registro → la cabecera (su `id` y su `version` tienen que ser los
+del registro; el `sha256` del cifrado, el de la cabecera) → la clave: la que ya
+tiene una actualización, la de `keyUrl` o la que teclea el usuario
+(`NEEDS_KEY`: *ninguna dirección*, *la dirección falló*, *esa clave no abre*,
+*eso no es una clave*) → el paquete abierto en memoria y su manifiesto
+comprobado → guardado. Instalar desde archivo: lo mismo desde la cabecera, con
+la clave tecleada. El almacén (`src/plugins/store.ts`) es una base de IndexedDB,
+`repackshot-plugins` (versión 2), con tres almacenes: `packages` (el `.rpk` tal
+cual llegó, cifrado) y `keys` (su clave), escritos en una sola transacción, y
+`thumbs` (las imágenes de las tarjetas de recetas, PNG, por `plugin@versión:receta`,
+con un índice por plugin: lo que el plugin devolvió de su imagen base, nada del
+paquete en claro); sin IndexedDB, en memoria durante la sesión, y *Ajustes* lo
+dice. Quitar borra los tres.
+
+Al usarse: el paquete se descifra en memoria, el manifiesto se comprueba otra
+vez, el módulo WebAssembly se compila (`WebAssembly.compile`, nunca en síncrono
+en el hilo principal) y, si el manifiesto declara `wasm.noImports: true`, se
+rechaza un módulo cuyo `WebAssembly.Module.imports()` no esté vacío; `plugin.js`
+se hace un Blob URL que arranca un **Worker de tipo módulo** sin DOM, y el
+mensaje `init` le **transfiere** los bytes del módulo y los archivos que lista
+`files`. El Blob URL se revoca en cuanto el plugin contesta `ready`. La sesión
+dura hasta que el plugin se quita, se actualiza o se para (un *Aplicar*
+cancelado detiene el Worker).
+
+### 9.3 · El manifiesto
+
+`manifest.json` (`parseManifest` en `src/core/plugins.ts`, que nombra cada
+problema): `abi: 1`, `id`, `name` (es/en), `version`, `publisher`, `licence: {
+kind: 'closed', label (es/en), file }`, `homepage` (https), `summary` y `notice`
+(es/en; el aviso de *adelanto de una app en desarrollo*), `logo`, `slots:
+['render.plugins']`, `entry: 'plugin.js'`, `wasm: { file, noImports } | null`,
+`notices` (el archivo de avisos de terceros), `base?` (decisión 8: un PNG del
+paquete, la imagen base de sus recetas: lo que enseña la vista previa sin
+resultado y lo que llevan las tarjetas; el anfitrión la lee, no va al
+*worker*), `groups: [{ id, label }]`, `controls` y `files`. Un mando: `{ key,
+label (es/en), kind: 'slider' | 'select' | 'toggle', group, default, aux? }`,
+con `min`, `max`, `step`, `unit?`, `minLabel?` (lo que se lee en su tope
+izquierdo: allí el plugin conserva el valor de la receta) y `role?: 'seed'` en
+un deslizador (decisión 9: la semilla de lo que el plugin dibuja al azar; un
+deslizador de enteros de paso 1, uno por manifiesto) y `options: [{ value,
+label }]` en una lista. La interfaz dibuja el bloque **solo** desde el manifiesto
+(`controlGroups`); los valores se guardan en `RenderSettings.plugins[id] = {
+recipe, controls, jobs? }` (deshacibles, con el proyecto; un proyecto anterior
+tiene `{}`; los de un plugin que no está instalado se conservan) y se comprueban
+contra el manifiesto donde el plugin corre (`controlsFor`: en su rango y su
+paso, de su tipo, o el valor por defecto). `jobs: true` (decisión 9) manda por
+el plugin cada imagen de un trabajo de la cola (`ui/render-queue.ts`, después
+de guardar la del motor): una imagen fija con la semilla puesta (`seed0`), cada
+fotograma de una animación con `frameControls`: `seed0 + fotograma`, el índice
+del fotograma en la animación (su número menos uno), dando la vuelta al rango
+del deslizador (`frameSeed`, regla `SEED_RULE = 'seed0+frame'`); la imagen se
+guarda como `<nombre>_<plugin>.png` (JPEG para un trabajo JPEG) y la primera
+queda además en el historial con `provenance.seed = { control, seed0, frame,
+rule }`.
+
+**Las tarjetas de recetas** (decisión 8, `PluginsService.thumbnails`): la
+imagen base, reducida a la mitad (`THUMB_SIZE`, 160 × 100) en luz lineal, por
+cada receta (y por ninguna) con los mandos por defecto; primero se entregan las
+guardadas (`thumbKey(plugin, versión, receta)`) y las que faltan se hacen **de
+una en una**, cada una solo cuando no hay en curso una vista previa, un
+*Aplicar* ni una imagen de un trabajo (el servicio cuenta esas y las tarjetas
+esperan a que no quede ninguna), y se guardan al llegar; parar a medias
+conserva las hechas. Una vista previa sin resultado es la imagen base por el
+plugin (`run` con `result: null`).
+
+### 9.4 · El ABI v1
+
+Solo mensajes (`src/plugins/abi.ts`):
+
+| Dirección | Mensaje | Respuesta |
+| --- | --- | --- |
+| anfitrión → plugin | `init { abi, manifest, files, wasm }` (una vez, primero; *buffers* transferidos) | `ready { abi }` |
+| anfitrión → plugin | `info { id }` | `info { id, info: { name, version, engine? } }` |
+| anfitrión → plugin | `presets { id }` | `presets { id, presets: [{ id, name, category, aux? }], categories: [{ id, label }] }` |
+| anfitrión → plugin | `render { id, width, height, pixels, recipe, controls }` | `render { id, width, height, rgba8, info: { items } }` |
+| anfitrión → plugin | `cancel { id }` | `cancelled { id }` si no había empezado |
+| plugin → anfitrión | `error { id, message }` (`id` nulo: el plugin mismo) | — |
+
+`pixels` es `{ kind: 'linear-f32-planes', data }` (3·w·h `f32`, plano rojo,
+verde y azul: luz lineal del espacio de trabajo, Rec. 709, valores por encima
+de 1 conservados) o `{ kind: 'rgba8', data }` (w·h·4 bytes de imagen sRGB, alfa
+recto); el anfitrión manda los planos cuando el resultado es un EXR (su luz,
+sin pasar por 8 bits; el alfa sale de su imagen de pantalla) y RGBA8 en otro
+caso, y vuelve a poner el alfa del origen sobre la respuesta. `info.items` son
+`{ key, label (es/en), value, unit? }`: el anfitrión los pinta tal cual y no
+calcula ninguno (regla 10); el tiempo lo mide él alrededor del render. Una
+vista previa cancelada que llega tarde se descarta.
+
+### 9.5 · El plugin de película (aintfilm)
+
+`tools/plugins/build-film.mjs --aintfilm <checkout> [--out <carpeta>] [--rpk
+<archivo> (--key-out <archivo> | --key-file <archivo>)]` monta la carpeta desde
+un *checkout* de aintfilm (que solo lee): el módulo
+(`public/engine/itsnotfilm-engine.wasm`, comprobado sin importaciones y con las
+exportaciones que usa el pegamento), sus *presets* (`src/engine/presets/`)
+completados con el propio lector del *checkout* (`settingsFromValue`: cada uno
+con todos sus campos, como los lee su *serde*) y renombrados a ids neutros, el
+logo (decisión 7, `tools/plugins/dot-grid.mjs`: `logo.svg`, un `rect` por
+punto con las esquinas redondeadas al círculo del punto, en celdas cuadradas;
+con `--logo <imagen>`, desde **la imagen del logo del dueño** —puntos blancos
+sobre negro—, leída punto a punto: las columnas y filas de puntos por dónde hay
+tinta, la tinta de cada punto su gris, los grises agrupados en los niveles que
+tiene la imagen; sin `--logo`, desde las filas de la rejilla `LOGO` de su
+`src/data/marks.ts` con la regla de su `DotGrid` —una rejilla con un espacio es
+de dos tintas y sus `.` son puntos en la tenue `#4A4A4A`—; la imagen gana: es lo
+que el usuario llama el logo), la licencia (`LICENSE` → `LICENCE.txt`) y los
+avisos de terceros (`public/THIRD-PARTY-NOTICES.txt` → `NOTICES.txt`); de aquí,
+el manifiesto (`tools/plugins/film/manifest.json`, con su versión y su lista de
+archivos), el pegamento (`tools/plugins/film/plugin.js`) y la imagen base de las
+tarjetas (`tools/plugins/film/thumb-base.png`: la escena `film-thumb` de
+`rt-cli`, el frasco de perfume de `glass_bottle` junto a la lámpara de mesa de
+`lamp` en su cuarto oscuro, con la lámpara encendida, 320 × 200, escrita con
+`rt --write-film-thumb` y renderizada con `rt <escena> -o thumb-base.png
+--samples 512 --denoise`: PNG sRGB de 8 bits, lo que escribe `rt`, que el
+pegamento recibe por `inf_render_rgba` como cualquier resultado PNG).
+`--key-out` no puede estar dentro de este repositorio.
+
+**El pegamento** (nuestro): sigue la regla del ABI en C del módulo —todo
+*buffer* se reserva en su memoria con `inf_alloc` y se devuelve con `inf_free`,
+y **nunca se conserva una vista entre llamadas**: cada una se toma de
+`memory.buffer` en el momento de usarla— y usa dos entradas:
+`inf_render_rgba` (RGBA de 8 bits, sRGB) e `inf_render_linear_rgba` (los planos
+lineales con un registro lateral **vacío**: versión 1, sin perfil ni máscara,
+cuenta 1, sin exposición base, equilibrio de toma 1, factores 1; 4·(14 + 3·36)
+bytes). Una receta es un *preset* completo; los mandos (los del editor de
+recetas de aintfilm: formato del negativo, exposición y forzado, color y su
+modelo, contraste, saturación, calidez, exposición de la copia, copia o
+escaneo, grano —cantidad, tamaño, color, sesgo tonal, suavidad, enfoque del
+escáner, respuesta a la luz, escaneo—, halación —cantidad y radio—, filtro de
+difusión y grado, carácter del objetivo e intensidad, motor de grano y semilla)
+apagan una etapa, eligen un formato, un filtro o un objetivo (su bloque, de su
+*preset*) o **escalan un valor que la receta ya trae**; en su tope *Receta* no
+mandan nada. Las renderizaciones se encolan una por tarea, así que un `cancel`
+que llega antes de su turno la descarta.
+
+**Nombres públicos** (regla D112 de aintfilm: ningún nombre de fabricante ni de
+producto donde lo vea el público): una película es su id neutro en mayúsculas
+(*CN-01*, la regla del catálogo hasta que el dueño elija los nombres, D113) con
+su ISO; los filtros y los formatos, las palabras de D112 (*BLACK DIFFUSION 1/2*,
+*INSTANT 54×86*…); los granos y los objetivos, palabras genéricas. El
+*build* pasa la comprobación de marcas (`tools/plugins/brand-scan.mjs`, el
+mecanismo de `scripts/check-brands.mjs` de aintfilm reescrito aquí, con la lista
+de *hashes* del *checkout*, que no se copia) por la carpeta y por las cadenas de
+Repackshot: lo que ve el público tiene que salir limpio o el *build* falla; las
+etiquetas internas del motor (dentro del módulo y de los ajustes de los
+*presets*: el tipo de un filtro, la clave de un papel, dos ids de formato) son
+del *checkout* (sus M38-07 y M38-08) y se cuentan por *hash*.
