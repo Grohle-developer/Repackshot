@@ -107,7 +107,8 @@ export function jobFileNames(state: ProjectState, job: RenderJob, date = new Dat
 }
 
 /** A small JPEG of an image for the queue and the history ('' when the browser cannot decode it). */
-async function thumbnailOf(blob: Blob): Promise<string> {
+/** A small JPEG (data URL) of an image file, for the queue and the history; '' where it cannot be drawn. */
+export async function thumbnailOf(blob: Blob): Promise<string> {
   try {
     if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return '';
     const bmp = await createImageBitmap(blob);
@@ -129,7 +130,8 @@ async function thumbnailOf(blob: Blob): Promise<string> {
 }
 
 let resultSeq = 0;
-function resultId(now: number): string {
+/** A new result id. */
+export function resultId(now: number): string {
   return `r${now.toString(36)}${(++resultSeq).toString(36)}`;
 }
 

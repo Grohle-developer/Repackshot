@@ -518,6 +518,11 @@ export class PluginHost {
     return session;
   }
 
+  /** Stops a running plugin (Apply cancelled: its worker may be in the middle of a render); the next use starts it again. */
+  async stop(id: string): Promise<void> {
+    await this.closeSession(id);
+  }
+
   /** Every running plugin stopped (the page goes). */
   dispose(): void {
     for (const id of [...this.sessions.keys()]) void this.closeSession(id);

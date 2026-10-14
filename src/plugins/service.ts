@@ -80,6 +80,9 @@ export class PluginsService {
   text(id: string, file: string): Promise<string | null> {
     return this.deps.host.text(id, file);
   }
+  stop(id: string): Promise<void> {
+    return this.deps.host.stop(id);
+  }
   async presets(id: string): Promise<PluginPresets> {
     return (await this.deps.host.session(id)).presets();
   }

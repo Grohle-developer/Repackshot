@@ -367,6 +367,83 @@
   font-size: var(--fs-label);
   color: var(--ink-1);
 }
+/* Plugins (phase P6): a block a plugin, drawn from its manifest; the controls on the left, the preview on the right. */
+.rw-plugins {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.rw-pl {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rw-pl + .rw-pl {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.rw-pl-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.rw-pl-logo {
+  flex: none;
+  width: 36px;
+  height: 36px;
+}
+.rw-pl-logo img {
+  width: 30px;
+  height: 30px;
+}
+.rw-pl-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.rw-pl-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.rw-pl-notice {
+  margin: 0;
+}
+.rw-pl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rw-pl-group-title {
+  margin: 6px 0 0;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.rw-pl-recipe {
+  width: 100%;
+}
+.rw-pl-toggle {
+  align-items: center;
+  gap: 8px;
+}
+.rw-pl-ctl .slider .num {
+  width: 100%;
+}
+.rw-pl-meter,
+.rw-pl-apply-line {
+  margin: 0;
+}
+.rw-pl-meter:empty,
+.rw-pl-apply-line:empty {
+  display: none;
+}
+.rw-pl-frame.is-working .split {
+  opacity: 0.6;
+}
 .rw-foot {
   display: flex;
   align-items: center;

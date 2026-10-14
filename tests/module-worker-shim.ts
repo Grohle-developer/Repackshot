@@ -22,8 +22,9 @@ parentPort.on('message', (data) => {
 export class ModuleWorkerShim implements WorkerLike {
   onmessage: ((e: { data: unknown }) => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
-  /** Every message the host sent, for the tests to read. */
+  /** Every message the host sent, and every one the plugin answered, for the tests to read. */
   readonly sent: unknown[] = [];
+  readonly received: unknown[] = [];
   private thread: ThreadWorker | null = null;
   private queue: { message: unknown; transfer?: Transferable[] }[] = [];
   private closed = false;
@@ -34,7 +35,10 @@ export class ModuleWorkerShim implements WorkerLike {
     void blob.text().then((source) => {
       if (this.closed) return;
       this.thread = new ThreadWorker(new URL(`data:text/javascript,${encodeURIComponent(PRELUDE + source)}`));
-      this.thread.on('message', (data) => this.onmessage?.({ data }));
+      this.thread.on('message', (data) => {
+        this.received.push(data);
+        this.onmessage?.({ data });
+      });
       this.thread.on('error', (err) => this.onerror?.(err));
       for (const q of this.queue) this.thread.postMessage(q.message, q.transfer as never);
       this.queue = [];

@@ -201,7 +201,7 @@ describe('running a plugin: the worker ABI end to end (the invert test plugin, n
   });
 
   it('a render cancelled before it starts is dropped by the plugin, and the next one answers', async () => {
-    const { host: h } = await installed();
+    const { host: h, workers } = await installed();
     const s = await h.session('test-invert');
     try {
       const ac = new AbortController();
@@ -211,6 +211,11 @@ describe('running a plugin: the worker ABI end to end (the invert test plugin, n
       await expect(first).rejects.toMatchObject({ name: 'AbortError' });
       const second = await s.render({ width: 64, height: 64, pixels: px(), recipe: null, controls: { amount: 1 } });
       expect(second.rgba8[0]).toBe(245);
+      // The host said cancel, and the plugin dropped the render before starting it (it answered `cancelled`, not `render`).
+      const cancel = workers[0].sent.find((m) => (m as { type: string }).type === 'cancel') as { id: number };
+      expect(cancel).toBeDefined();
+      expect(workers[0].received).toContainEqual({ type: 'cancelled', id: cancel.id });
+      expect(workers[0].received.filter((m) => (m as { type: string }).type === 'render')).toHaveLength(1);
     } finally {
       s.close();
     }

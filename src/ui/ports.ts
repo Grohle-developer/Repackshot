@@ -512,6 +512,8 @@ export interface PluginsPort {
   text(id: string, file: string): Promise<string | null>;
   /** The plugin's recipes by category (it is started on first use). */
   presets(id: string): Promise<PluginPresets>;
+  /** Stops a running plugin's worker (a cancelled Apply); the next use starts it again. */
+  stop(id: string): Promise<void>;
   /** A result through a plugin; rejects with an AbortError when `signal` aborts. */
   run(req: PluginRunRequest, signal?: AbortSignal): Promise<PluginRunResult>;
   /** A plugin's image as a file: PNG, or JPEG for a JPEG result, with the result's DPI. */

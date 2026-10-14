@@ -268,6 +268,23 @@ export function controlsFor(m: Pick<PluginManifest, 'controls'>, kept: Readonly<
   return out;
 }
 
+/** The controls as the render window draws them: the manifest's groups in order, each with its controls and values. */
+export function controlGroups(m: Pick<PluginManifest, 'groups' | 'controls'>, kept: Readonly<Record<string, unknown>> | undefined): { group: { id: string; label: PluginLabel }; controls: { control: PluginControl; value: PluginControlValue }[] }[] {
+  const values = controlsFor(m, kept);
+  return m.groups.map((group) => ({ group, controls: m.controls.filter((c) => c.group === group.id).map((control) => ({ control, value: values[control.key] })) })).filter((g) => g.controls.length > 0);
+}
+
+/** A slider's value as it reads: its `minLabel` at its left stop, else the number (with its unit). */
+export function sliderText(c: PluginSliderControl, v: number, lang: 'en' | 'es', number: (n: number, digits: number) => string): string {
+  if (c.minLabel && v <= c.min) return c.minLabel[lang];
+  return `${number(v, sliderDigits(c))}${c.unit ? ` ${c.unit}` : ''}`;
+}
+
+/** Decimals a slider shows, from its step. */
+export function sliderDigits(c: Pick<PluginSliderControl, 'step'>): number {
+  return c.step >= 1 ? 0 : c.step >= 0.1 ? 1 : 2;
+}
+
 // ------------------------------------------------------------------ the render settings of plugins
 
 /** What a project keeps of one plugin, in its render settings: the recipe chosen and the controls' values. */

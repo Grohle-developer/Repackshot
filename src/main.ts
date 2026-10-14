@@ -589,7 +589,9 @@ function pluginRegistry(): PluginRegistryEntry[] {
   const raw = new URLSearchParams(window.location.search).get('testPlugins');
   if (!raw) return base;
   try {
-    const extra = validEntries({ schema: 1, plugins: JSON.parse(atob(raw)) as PluginRegistryEntry[] });
+    // base64 of the JSON's UTF-8 bytes (names have "·" and accents).
+    const text = new TextDecoder().decode(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
+    const extra = validEntries({ schema: 1, plugins: JSON.parse(text) as PluginRegistryEntry[] });
     return [...base.filter((e) => !extra.some((x) => x.id === e.id)), ...extra];
   } catch {
     return base;
@@ -643,6 +645,7 @@ const pluginsPort: PluginsPort = {
   remove: (id) => pluginsService.remove(id),
   text: (id, file) => pluginsService.text(id, file),
   presets: (id) => pluginsService.presets(id),
+  stop: (id) => pluginsService.stop(id),
   run: (req, signal) => pluginsService.run(req, signal),
   encode: (img, format, dpi) => encodePixels({ width: img.width, height: img.height, data: img.rgba }, format, 0.92, { dpi }),
 };
