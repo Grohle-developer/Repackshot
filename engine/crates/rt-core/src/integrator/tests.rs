@@ -1703,6 +1703,69 @@ fn a_grey_half_space_reflects_chandrasekhars_plane_albedo() {
 }
 
 #[test]
+fn a_sparse_medium_lets_what_does_not_scatter_through_straight() {
+    // E9b: a walk that crosses the solid without scattering leaves through the surface's own
+    // BSDF (it refracts, as clear glass does), not by the exit lobe: a small emitter seen through
+    // a slab one hundredth of a mean free path thick stays sharp and keeps
+    // (1 - R)² τ / (1 - R² τ²) of its radiance, τ = e^-0.01 (the few scattered paths add little).
+    let medium = milky(1000.0, Rgb::WHITE, 0.0, 0.0);
+    let emitter = Material {
+        kind: MATERIAL_EMISSIVE,
+        emission: Rgb::WHITE,
+        emission_power: 1.0,
+        ..Material::default()
+    };
+    let patch = Mesh::new(
+        &[
+            Vec3::new(-10.0, -10.0, -50.0),
+            Vec3::new(10.0, -10.0, -50.0),
+            Vec3::new(10.0, 10.0, -50.0),
+            Vec3::new(-10.0, 10.0, -50.0),
+        ],
+        &[],
+        &[0, 1, 2, 0, 2, 3],
+        0,
+    )
+    .expect("patch");
+    let scene = Scene {
+        camera: ortho_down(0.0, 0.0, 40.0),
+        materials: vec![medium, emitter],
+        geometry: Geometry::new(
+            vec![
+                box_mesh(
+                    Vec3::new(-1000.0, -1000.0, 0.0),
+                    Vec3::new(1000.0, 1000.0, 10.0),
+                ),
+                patch,
+            ],
+            vec![
+                Instance::new(0, Transform::IDENTITY, 0),
+                Instance::new(1, Transform::IDENTITY, 1),
+            ],
+        )
+        .expect("scene"),
+        environment: black_world(),
+        render: RenderSettings {
+            max_depth: 64,
+            ..settings(8, 8)
+        },
+        ..Scene::default()
+    };
+    let film = render(&scene, 64);
+    let r = f64::from(crate::bsdf::fresnel_dielectric(1.0, 1.5));
+    let tau = (-0.01f64).exp();
+    let want = (1.0 - r) * (1.0 - r) * tau / (1.0 - r * r * tau * tau);
+    // The four pixels in the middle of the patch's image, and the corners outside it.
+    let middle = mean_where(&film, 1, |x, y| (3..5).contains(&x) && (3..5).contains(&y));
+    let outside = mean_where(&film, 1, |x, y| (x == 0 || x == 7) && (y == 0 || y == 7));
+    eprintln!(
+        "emitter through a sparse medium: {middle:.4} (straight {want:.4}), beside it {outside:.4}"
+    );
+    assert!((middle / want - 1.0).abs() < 0.03, "{middle} vs {want}");
+    assert!(outside < 0.05 * want, "{outside}");
+}
+
+#[test]
 fn a_medium_that_only_absorbs_is_beer_lambert_in_every_channel() {
     // Albedo 0: every event absorbs, so what crosses the slab is exp(-σt d) per channel. σt
     // differs between channels through the absorption distance, so the walk's spectral MIS has
