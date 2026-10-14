@@ -5514,6 +5514,13 @@ la release con *Resource not accessible by integration* (dos veces, con la
 primer paso si una publicación no se lanza en la rama por defecto. Sin
 `tag`, cualquier rama sirve para construir el artefacto de prueba.
 
+**Con un plugin (desde la 0.1.6).** El paquete `.rpk` que nombra
+`src/data/plugins.json` (su `url` apunta a los *assets* de la release de esa
+versión) se sube a mano a la release una vez publicada, con la API REST
+(`gh release upload <tag> <archivo>`), y se comprueba contra el `sha256` y
+los `bytes` del registro; la clave de activación no se sube a ningún sitio
+(`docs/release-notes/plugins.md`).
+
 ## P2 · Escritorio: lanzador propio, portables e instalador — **Opus** — hecha
 
 **Decisión tomada (Fable), sustituye a la de Tauri.** El escritorio es

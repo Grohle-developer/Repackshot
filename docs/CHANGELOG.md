@@ -3,7 +3,46 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
-## Sin publicar
+## v0.1.6 — 2026-10-14
+
+Versión de prueba con texturas y etiquetas, el editor de materiales por
+nodos, sets de estudio con intención fotográfica, lente fina mejorada con
+selector de bokeh, filtros de lente planificados para la siguiente, salida
+TIFF y RAW, la proporción en la cámara, plugins con el primero de película,
+elección de luz por punto, despieces configurables y línea de tiempo nueva,
+cuerpos rígidos con *Dejar caer*, partículas de ambiente, *denoise* en
+directo con intensidad y suavizado de bordes, y actualizar desde la
+aplicación. Lo de v0.1.2 a v0.1.5 sigue igual.
+
+### Limitaciones conocidas de esta versión
+
+- Las **texturas**, las **etiquetas** y los **materiales de nodos** se ven en
+  *Rápido*; *Completo* y el render usan la media de cada salida hasta que el
+  motor las lea (M2b y M3b, en marcha). La madera con nudos, el bisel y la
+  tela hilo a hilo (E6), la energía, los medios y la dispersión (E9) y los
+  filtros de lente (O3a) están hechos y entran en la siguiente versión.
+- **Partículas**: el polvo a contraluz apenas brilla en el haz y la lluvia
+  bajo una clave dura motea el producto (los dos en S4b); no se seleccionan
+  en el visor; a 200 000 partículas el render cuesta 3,2×, a las densidades
+  de los presets cerca de 1,1×.
+- **Físicas**: solo cuerpos rígidos; *Tela* y *Líquido* dicen *próximamente*.
+  Mientras corre una simulación el visor pasa a *Rápido*. Con el cabezal en 0
+  una pieza que sostiene una simulación grabada enseña su fotograma inicial.
+- **Plugin de película**: licencia cerrada, un adelanto de una app en
+  desarrollo; la clave de activación la da su desarrollador (el registro no
+  la trae: se teclea al instalar). El paquete `film-0.1.0.rpk` es un *asset*
+  de esta release.
+- **Reducción de ruido en directo**: el carril del lanzador es un hilo; el
+  refresco nunca supera una muestra de toda la vista. MSAA 8× no se ha visto
+  dibujado (el Chromium de aquí llega a 4×).
+- **Actualizar desde la aplicación**: la primera actualización real es de
+  esta versión a la siguiente; la instalación en Windows no se ha probado en
+  un Windows real.
+- Las 88 **miniaturas de montaje** se renderizaron antes de la elección de
+  luz por punto (E12); se rehacen en la siguiente versión.
+- Siguen las de las versiones anteriores, sobre todo que lo nuevo de
+  escritorio **no se ha probado en un Windows real** y que la primera imagen
+  real de la IA en una tarjeta gráfica sigue pendiente.
 
 ### Escritorio
 
