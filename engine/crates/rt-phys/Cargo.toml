@@ -1,0 +1,12 @@
+[package]
+name = "rt-phys"
+description = "Repackshot rigid body simulator (S2): extended position based dynamics (XPBD), own quickhull, separating-axis contacts, sleeping. std only, no unsafe, deterministic f32."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The vector type and the deterministic maths (fmath) the engine already has, so a pose is the same
+# bits natively and in WebAssembly.
+rt-core = { path = "../rt-core" }
