@@ -2099,7 +2099,7 @@ ejemplo y el horno blanco; a ojo, sin chispas y la misma foto.
   *solo NEE* es válida sin caminos especulares hacia la luz; el test de
   paredes finas compara MIS con *solo BSDF*.
 
-## E13 · Estimación en variedad (MNEE) para la luz a través de vidrio — **Opus** (tras E9)
+## E13 · Estimación en variedad (MNEE) para la luz a través de vidrio — **Opus** (tras E9) — hecha
 
 **Por qué.** Los rayos de sombra se paran en una superficie refractante
 (diseño de E5): un líquido dentro de una botella, o cualquier cosa
@@ -2122,6 +2122,326 @@ de E5.
 **Criterio.** Botella de leche de E9b a 64 spp sin grano y dentro del
 3 % de la referencia; cáusticas de un vaso de agua bajo un foco
 pequeño con MNEE vs mapa de fotones; *hashes* repinados; paridad wasm.
+
+**Hecho.**
+
+- **El método** (`rt_core::integrator::manifold`, con la cita de Hanika,
+  Droske y Fascione, «Manifold Next Event Estimation», EGSR 2015, y de
+  las restricciones de Jakob y Marschner, «Manifold Exploration»,
+  SIGGRAPH 2012; escrito desde los artículos, nada de otro renderizador).
+  En cada vértice, la estimación de siguiente evento elige luz y punto
+  como siempre; si el rayo de sombra recto lo paran **una o dos**
+  superficies de vidrio liso y nada más (`seed`), sus cruces son la
+  semilla. Incógnitas: dos por vértice, su desplazamiento en el plano de
+  su triángulo; ecuaciones: dos por vértice, la parte tangencial del
+  *half-vector* generalizado `ĥ = (ηₐ ωₐ + η_b ω_b)/|…|` respecto de la
+  normal de sombreado interpolada `n` (con sus derivadas por las
+  baricéntricas, `Geometry::world_triangle`), que se anula donde se cumple
+  Snell. Se toma a lo largo de las tangentes fijas del triángulo
+  proyectadas en el plano de sombreado, `c_s = ĥ·(e_s − (n·e_s) n)`, y así
+  sus derivadas, el giro de la normal incluido, son exactas. Newton
+  (`solve`): el sistema tridiagonal por bloques (a lo sumo 4 × 4,
+  eliminación gaussiana con pivote parcial en `f32`), un paso en los
+  planos tangentes, la proyección de los vértices movidos trazando otra
+  vez cada tramo (desde `x`, y desde el origen desplazado del vértice
+  anterior apuntando al punto movido: apuntar en paralelo al tramo dejaba
+  a Newton en 5·10⁻⁴ en una lámina de 0,5 mm), búsqueda lineal (el paso se
+  parte por la mitad si no baja la suma de los cuadrados de las
+  restricciones), **8 proyecciones como mucho**, tolerancia 10⁻⁴ en el
+  seno del ángulo entre `ĥ` y la normal, sin números aleatorios. Hacia un
+  sol el final es una dirección. Si Newton no converge desde la semilla
+  recta, una **segunda semilla trazada desde la luz** (el rayo de `y` hacia
+  `x` refractado por Snell en cada superficie de la cadena,
+  `seed_from_light`) se resuelve también; `connection_path` es la única
+  función que decide el camino de una conexión, en los dos lados del MIS.
+- **La conexión**: `f(x) |cos θx| T Le · J / p(y)`, con `p(y)` la
+  densidad de la NEE en la medida de la luz (por mm² del panel, de la
+  malla emisora o de la esfera; por estereorradián del disco de un sol),
+  `T` lo que guardan las interfaces (Fresnel, `(ηₐ/η_b)²` de radiancia,
+  `√base_color` por cruce o Beer–Lambert dentro, paredes finas, recortes y
+  partículas claras en los tramos) y `J = |ωx·n₁| / d₁² · |det (A⁻¹B)₁|`,
+  el término geométrico generalizado sacado de las mismas derivadas
+  (`dv = −A⁻¹B dy`). Un punto de luz se mide en el área transversal al
+  último tramo y un sol delta en su dirección: cuentan enteros. La emisión
+  se evalúa en la dirección del último tramo (el `cos^n` del panel, la
+  máscara del foco hacia el último vértice) y el último tramo traza su
+  rayo de sombra (`Lights::manifold_end`, `manifold_emission`).
+- **MIS** con la continuación BSDF: el integrador guarda el último vértice
+  desde el que se conecta y las refracciones lisas desde él
+  (`manifold::Track`, con sus puntos); `Scattered` lleva un gancho
+  (`light::Manifold`) que `crossed_from`, `crossed_without_photons`,
+  `escaped` (soles) y `emitter_weight_found` llaman con cada luz que el
+  rayo encuentra (`light::Found`). `found_factor` decide con las mismas
+  funciones que la NEE si `(x, y)` es del dominio de la conexión (semilla
+  de una o dos superficies de cadena, luz que no es el entorno y hace
+  sombra, sin cáusticas para las luces de fotones, punto que la NEE en `x`
+  elige: `Lights::manifold_found` da la densidad de `manifold_end`, test),
+  y dentro de él resuelve la conexión de ese `y` (`connection_path`) **y**
+  el camino especular por las propias superficies del camino BSDF (Newton
+  desde sus vértices); si son el mismo (dirección en `x` a 2·10⁻³ rad), la
+  luz toma `p_b²/(p_b² + p_m²)` con `p_m = p(y)/J`; si no, conserva su
+  peso. La segunda resolución hizo falta: con solo comparar direcciones a
+  1°, un vidrio facetado (cada faceta tiene su camino, a menos de un grado
+  del de la vecina) perdía el 43 % de la luz de una luz dentro de una bola.
+- **La regla de las paredes finas de E9b se retira donde conecta la
+  variedad** (una pared lisa son dos superficies; desde un vértice de
+  salida, si la semilla es de cadena, conexión y no regla) y se queda
+  donde no: el entorno, dos paredes seguidas, una pared texturada o
+  dispersiva. En el MIS, el suceso recto de la regla sigue para lo suyo y
+  `Manifold::raw` guarda la densidad, la selección y la distancia del
+  último vértice real para lo de la conexión.
+- **Qué superficies** (`is_chain_material`): las de la pared de E9b (vidrio
+  del todo claro con interior, rugosidad ≤ 0,05, sin barniz, recorte ni
+  medio) sin dispersión e `ior ≥ 1,01`, en piezas sin texturas, programa
+  ni dibujo (M2b/M3b/E6: sus normales no se pueden derivar; se excluyen y
+  siguen como antes). **El bisel de aristas** (E6), que la aplicación pone a
+  toda pieza (el del Doctor, 0,25 % del tamaño), solo dobla la normal cerca
+  de las aristas vivas: un camino con un vértice a su alcance
+  (`BevelSetup::reaches`: una arista a menos de dos radios) no se conecta,
+  y un camino BSDF que refractó ahí conserva su peso. Excluir la pieza
+  entera, como se hizo primero, dejaba la conexión sin efecto en todas las
+  escenas que construye la aplicación. Desde cualquier vértice que no sea
+  una partícula ni una superficie lisa clara (los vértices de salida de un
+  medio, sí).
+- **Interfaz**: nada; la conexión está siempre encendida.
+  `Prepared::set_manifold` y `set_thin_wall_rule` existen para referencias
+  y comparaciones. Herramientas: `rt --write-e13-example`,
+  `rt --e13-sheet <dir> [--only …]` (`rt-cli/src/e13_sheet.rs`) y
+  `tools/e13-cost.mjs`.
+
+**Tests** (rt-core, `integrator::manifold::tests` salvo donde se dice; los
+números, los que imprimen):
+
+- `newton_finds_the_closed_form_path_through_a_flat_slab`: losa plana,
+  ior 1,33, 1,5 y 1,9, cuatro ángulos y acimuts, hacia un punto y hacia un
+  sol; los dos vértices de Newton frente a los de Snell en forma cerrada, a
+  2·10⁻³ mm.
+- `newton_finds_the_closed_form_path_through_a_sphere`: bola teselada
+  (icosfera de nivel 6) frente a la esfera exacta, con dos superficies y
+  con una (una luz dentro del vidrio), a 0,02 mm.
+- `the_seed_from_the_light_finds_the_sphere_paths_the_straight_seed_misses`:
+  81 caminos construidos en forma cerrada desde un punto justo debajo de
+  una bola hasta luces lejanas por encima (todos tienen solución); cada
+  camino que se encuentra cumple Snell en la esfera exacta (una lente puede
+  tener más de un camino entre dos puntos); desde la semilla recta, 12; con
+  la semilla desde la luz, **15** (el test pide más que la recta).
+- `the_jacobian_is_what_finite_differences_of_the_solver_give`: `J`
+  frente a diferencias centrales del propio solver en cinco casos (por una
+  losa: un panel inclinado, un punto de luz, un sol; por la bola: un panel
+  y un sol): 7,457311·10⁻⁵ frente a 7,457103·10⁻⁵;
+  1,184210·10⁻⁴ / 1,184056·10⁻⁴; 0,9999997 / 0,9999020;
+  2,347294·10⁻⁵ / 2,345503·10⁻⁵; 0,1752903 / 0,1753331.
+- `through_a_thin_flat_pane_the_jacobian_is_nearly_the_straight_one`.
+- `seeds_are_one_or_two_chain_surfaces_and_nothing_else` (dos losas
+  seguidas, cuatro superficies, y el vidrio rugoso: sin semilla; barniz,
+  recorte, medio, dispersión, pared fina o índice cerca de 1 no son de
+  cadena).
+- `on_bevelled_glass_connections_stop_where_the_bevel_reaches` (con bisel
+  de 3 mm, la conexión por el centro de la losa es la de forma cerrada; a
+  3 mm del canto no hay conexión; sin bisel, sí) y
+  `on_bevelled_glass_light_is_counted_once` (el suelo bajo el canto
+  biselado de una losa: MIS 2,46109 frente a BSDF 2,46806; las conexiones
+  solas 1,95068).
+- `a_point_light_lights_through_a_slab_as_its_image_does`: un punto de luz
+  tras una losa ilumina el suelo como su imagen virtual con la
+  transmitancia de Fresnel: 0,848771 frente a 0,848780.
+- `a_sun_lights_through_a_pane_with_the_fresnel_of_both_faces`: 0,405195
+  frente a 0,405195.
+- `light_through_glass_is_counted_once_with_either_technique_and_with_both`:
+  el suelo bajo una losa con un panel encima, MIS 2,55106, solo
+  conexiones 2,56154, solo BSDF 2,54298 (los tres a menos del 1 %).
+- `next_event_estimation_and_bsdf_rays_give_a_connection_the_same_density`.
+- `on_faceted_glass_the_paths_through_other_facets_keep_their_weight`: una
+  luz dentro de una bola facetada, MIS 3,13816 frente a BSDF 3,15069 (las
+  conexiones solas, 1,56991: el resto son caminos por otras facetas, que
+  la BSDF conserva enteros).
+- `integrator::tests::a_medium_sees_the_lights_through_a_glass_wall_by_manifold_connections`:
+  leche bajo una placa de vidrio; referencia a 4096 spp sin conexión ni
+  regla; con la conexión 5,4701 frente a 5,4852 (−0,3 %), con fotones
+  5,4540; varianza relativa a 32 spp 0,04007 frente a 0,19691 del camino
+  sin conexión.
+- `integrator::tests::a_medium_sees_the_lights_through_thin_walls_where_connections_do_not_go`:
+  dos placas seguidas (cuatro superficies): la regla de E9b sigue, 5,0341
+  frente a 5,1555 de la referencia; varianza 0,06091 frente a 0,30729.
+- `render::tests::the_e13_connections_have_a_pinned_hash_on_every_platform`,
+  `without_the_connections_the_glass_scenes_render_as_before_e13` (con la
+  conexión apagada, E5, su cielo, E5c y E5b-1 dan los *hashes* de v0.1.12)
+  y `rt-cli/tests/example.rs::manifold_connections_are_the_same_bits_with_1_4_or_16_threads`.
+- `rt-cli::e13_sheet::tests::the_sheet_scenes_have_their_regions`.
+
+**Mutaciones** (en una copia del motor; cada una, con los tests que la
+cazan): sin el factor del lado BSDF (`light_through_glass…`); emparejar
+solo por dirección, sin el camino por las facetas propias
+(`on_faceted_glass…`); `J` sin el ángulo sólido del primer vértice (cinco
+tests); derivadas sin el giro de la normal (Jacobiano por diferencias,
+bola, semilla desde la luz); sin Fresnel (sol, punto de luz, MIS); sin el
+`η²` de radiancia (facetada; el medio tras el vidrio con fotones); la regla
+de paredes finas a la vez que la conexión
+(`a_medium_sees_the_lights_through_a_glass_wall…`); conectar las luces de
+fotones con cáusticas (dos tests); la densidad de la esfera sin el coseno
+(`next_event_estimation_and_bsdf_rays…`); proyección apuntada desde el
+vértice y no desde su origen desplazado (lámina fina); vidrio rugoso como
+superficie de cadena y tres superficies en la cadena (`seeds_are…`); el
+peso MIS de la conexión quitado (`light_through_glass…`); sin conexiones
+(sol, punto, medio); sin la semilla desde la luz
+(`the_seed_from_the_light…`); conectar a través del alcance del bisel
+(los dos tests del bisel: MIS 3,00934 frente a 2,46806) y emparejar los
+caminos BSDF que refractaron en él (MIS 2,30420). Las catorce primeras se
+pasaron antes de las restricciones exactas y la semilla desde la luz; el
+giro de la normal, otra vez después.
+
+***Hashes*** **repinados** (la luz de su panel o de su sol llega ahora al
+suelo y a las piezas a través de la esfera de vidrio de E5, de rugosidad
+0,05, que es de cadena; los nuevos valores ya llevan las restricciones
+exactas y la semilla desde la luz):
+
+| *Hash* | v0.1.12 | E13 |
+|---|---|---|
+| `PINNED_E5_HDRI_4SPP` | `0xfdf0c2ac` | `0x1c1a76dc` |
+| `PINNED_E5_SKY_4SPP` | `0x47fa4eb7` | `0xaf199b55` |
+| `PINNED_E5C_SKY_4SPP` | `0xf6fbc84f` | `0xb65ec6b2` |
+| `PINNED_E13_MANIFOLD_4SPP` (nuevo) | — | `0x0969a3cc` |
+
+Los mismos en escalar, SSE2 y AVX2, en WebAssembly (WASI, escalar y simd128) y en el `rt.wasm` real (los
+bloques de paridad de E5 y E5c leen el valor nuevo; bloque nuevo de E13 en
+`engine.yml`); E13 también con 1, 4 y 16 hilos. **No se mueven**: el
+ejemplo, sus teselas y su *denoise* (sin vidrio), E5b-1 `0x7135df4b` (sus
+luces son de fotones y el mapa las sigue trayendo), E9 (su esfera es un
+medio y el cristal es dispersivo: ninguna superficie de cadena), O1, O2,
+O3a, E6, E11, S4a, M2b, M3b y los pases de X2. La escena de E13
+(`example::e13_scene`) es la de E5 con la esfera lisa, una losa de leche
+bajo una placa de vidrio de 3 mm y un punto de luz. Con la conexión
+apagada, E5, su cielo, E5c y E5b-1 dan los *hashes* de v0.1.12 bit a bit
+(test): todo lo que cambia es de la conexión.
+
+**Coste** (`tools/e13-cost.mjs`: el `rt` de v0.1.12 frente al de E13,
+alternados, 5 rondas, 320 × 240, 32 spp, 2 hilos, en la máquina
+compartida con otro agente renderizando; tiempos: mediana de cada lado):
+
+| Escena | v0.1.12 | E13 | Cocientes por ronda | Mediana | Rayos por muestra de cámara |
+|---|---|---|---|---|---|
+| **Botella de E5** (`e5-bottle`) | 2,01 s | 2,28 s | 1,224 · 0,980 · 1,107 · 1,084 · 1,090 | **1,090×** (≤ 1,3×) | 3,58 → 3,83 |
+| Botella de leche (E9b) | 5,83 s | 6,56 s | 1,112 · 1,130 · 1,142 · 1,137 · 0,948 | 1,130× | 9,51 → 10,04 |
+| Vaso de agua | 1,86 s | 3,54 s | 2,005 · 1,825 · 1,837 · 1,926 · 1,817 | 1,837× | 3,58 → 6,03 |
+| Bola de vidrio (E5b-1) | 1,62 s | 3,28 s | 2,025 · 1,964 · 2,017 · 2,070 · 2,147 | 2,025× | 3,24 → 4,91 |
+
+**Hoja** `out/e13-sheet.html` (`rt --e13-sheet out`, 320 × 240, 64 spp,
+referencias a 2048 spp; los PNG y `sheet.json` en `out/e13/`): cada escena
+antes (sin conexión: lo que da v0.1.12), con la conexión, con el mapa de
+fotones donde hay cáusticas, y la referencia (sin conexión ni regla de
+paredes: la luz detrás del vidrio solo por los caminos que refractan
+hasta una luz, insesgada y ruidosa). Sobre la región de cada escena: media
+frente a la de la referencia, relMSE frente a ella (la medida de E5b-1) y
+ruido relativo de un píxel (dos semillas):
+
+| Imagen | Media / referencia | relMSE | Ruido |
+|---|---|---|---|
+| Leche, antes (regla de E9b) | 1,0015 | 0,01597 | 0,1244 |
+| **Leche, con la conexión** | **1,0026** | 0,01714 | 0,1291 |
+| Vaso de agua (cáustica), antes | 1,0208 | 0,49307 | 1,1233 |
+| Vaso de agua, con la conexión | 1,0249 | 0,52404 | 1,0290 |
+| Vaso de agua, mapa de fotones | 0,9997 | 0,29147 | 0,0121 |
+| Bola (cáustica), antes | 1,0241 | 0,34016 | 2,7169 |
+| Bola, con la conexión | 1,0235 | 0,34018 | 2,1636 |
+| Bola, mapa de fotones | 0,9939 | 2,06479 | 0,0191 |
+| Botella de E5 (suelo junto a ella), antes | 0,9996 | 0,00756 | 0,0851 |
+| Botella de E5, con la conexión | 0,9995 | 0,00754 | 0,0849 |
+
+Ruido de la leche a 64 spp con la conexión 0,1291; el suelo junto a la
+botella, 0,0626; **la misma leche sin su botella** (control), 0,0640.
+
+**Qué no encajó con el plan.**
+
+- **«Sin grano» no se cumple en la leche; «dentro del 3 %», sí.** La
+  leche con la conexión queda a +0,26 % de la referencia (la regla de E9b,
+  a +0,15 %: en esta botella su sesgo es pequeño), pero su ruido es el de
+  antes (0,129 frente a 0,124) y el doble que el de la misma leche sin la
+  botella (0,064). La conexión sustituye a la regla, que ya era una NEE
+  por la pared; el grano que queda no es de la luz directa a través de la
+  pared sino de lo que la conexión no cubre: los reflejos de los focos en
+  el vidrio de la botella (solo por muestreo BSDF), la luz del entorno y
+  la que cruza cuatro superficies (de un lado al otro del frasco).
+- **Bajo vidrio curvo, Newton encuentra pocos caminos en 8 proyecciones.**
+  Con la semilla recta, el método converge cuando el vidrio desvía poco la
+  luz (una lámina, una losa, la pared de un frasco, la leche bajo una
+  placa: ahí funciona); bajo una bola o tras el costado de un vaso de agua
+  la recta cae en otra cuenca. La semilla trazada desde la luz y las
+  restricciones exactas recuperan una parte (12 → 15 de 81 en el test de la
+  bola; con 32 proyecciones serían 27), pero las cáusticas de la hoja no
+  mejoran de forma medible (vaso: relMSE 0,49 → 0,52, ruido 1,12 → 1,03;
+  bola: 0,340 → 0,340, ruido 2,72 → 2,16), y el mapa de fotones sigue
+  siendo mucho mejor para ellas (ruido 0,012 y 0,019; su relMSE es su
+  sesgo de radio). El coste de intentarlo es lo que sube el vaso y la bola
+  en la tabla (1,8–2,0×). Subir el tope de 8, añadir semillas o dejar las
+  cáusticas al mapa es **decisión de la dirección**.
+- **Dos superficies no llegan a la sombra de un recipiente hueco.** Desde
+  el suelo, un frasco o un vaso huecos son cuatro superficies (entra y sale
+  por las dos paredes): la botella de E5 cambia poco (sobre todo lo que la
+  luz cruza por una sola pared, y la tapa y el suelo dentro del vidrio) y
+  un vaso de agua real (pared, agua, pared) son de cuatro a seis. Por eso
+  el vaso de la hoja es un vaso de **pared fina** (vidrio paralelo de 1 mm,
+  que el motor cruza recto) con el agua como sólido: dos superficies, el
+  agua, que es lo que enfoca. El código es general en `MAX_CHAIN` (el
+  sistema es de `2k × 2k`; hoy matrices de 4 × 4); subir a cuatro llevaría
+  la conexión a la sombra de los frascos huecos y a los vasos de verdad,
+  con más coste: **decisión de la dirección**.
+- **El entorno no se conecta** (es grande y suave, y el muestreo BSDF lo
+  encuentra siempre; conectarlo haría una resolución por cada rayo de
+  sombra al entorno bloqueado por el vidrio y por cada rayo BSDF que sale
+  por él). El grano de la cúpula en la sombra de un vidrio sigue como
+  antes; desde un vértice de salida, el entorno sigue cruzando las paredes
+  por la regla de E9b.
+- **Con cáusticas**, las luces que emiten fotones se dejan al mapa (ya trae
+  esa luz; las dos la contarían dos veces): la comparación de la hoja son
+  dos renders, la conexión con las cáusticas apagadas y el mapa con ellas
+  encendidas. Si *Automático* debe cambiar algo por E13 es **decisión
+  Fable**; con los números de arriba, el mapa sigue siendo lo que da las
+  cáusticas de un vidrio curvo.
+- **La BSDF resuelve dos veces** (la conexión de ese punto y el camino por
+  sus propias facetas): es lo que hace insesgado el MIS en vidrio facetado
+  (arriba), y cuesta en las escenas donde los caminos BSDF dan con una luz
+  a través del vidrio (el vaso y la bola, en la tabla).
+- **Rugosidad hasta 0,05 como espejo**: el vidrio liso del motor es un
+  lóbulo GGX de anchura 10⁻³ (rugosidad 0) a 2,5·10⁻³ (0,05); la conexión
+  es su límite especular, como la regla de las paredes. Sus caminos BSDF
+  caen al lado del especular; el lado BSDF los empareja por el camino
+  especular de sus propias facetas.
+- **Lo que no es una cadena de refracciones** sigue con la BSDF: las
+  reflexiones dentro del vidrio (la reflexión total en una bola) y los
+  caminos cuya recta no cruza el vidrio (la semilla, y con ella el dominio
+  de la conexión, sale del rayo de sombra recto).
+- **La normal de sombreado** es la interpolada: no se ve la vuelta a la
+  normal plana del integrador en las siluetas de mallas toscas. Una lámina
+  de vidrio **macizo** de una sola cara (sin espesor) se trata como la
+  trata la BSDF (su otro lado es el interior): el suelo debajo recibe
+  `η²` de más, como recibía por los caminos BSDF; es un error de modelado
+  de la escena.
+- **La NEE en el propio vértice de vidrio** (su lóbulo de 10⁻³ hacia la luz)
+  no toma el factor de la conexión: su peso MIS es del orden de
+  `(p_luz / p_vidrio)² ≈ 10⁻¹⁰`.
+- **El atrapasombras** no conecta (sigue con su elección por flujo y su
+  sombra de vidrio entera). E12 dejó escrito que «un atrapasombras de
+  cociente de sumas es E13»; el plan y el encargo de E13 no lo piden, y
+  toca la película (de E10): no se hizo, queda para la dirección.
+- **Las miniaturas de los montajes.** Con la conexión en las piezas
+  biseladas, 13 de las 32 miniaturas sobre la botella (CALM, CANDY, CYBER,
+  HOPE, INNOCENCE, LOW_KEY, MAGENTA_BITE, MELANCHOLY, MOONLIGHT, POISON,
+  STRIP_EDGE, TEAL_ORANGE, WARM_COOL_CINEMA) cambian en uno o dos píxeles
+  de un nivel; las otras 75, igual bit a bit. Con el `rt` de v0.1.12 salen
+  los PNG del repositorio byte a byte, así que el cambio es de E13. Se
+  volvieron a renderizar (`tools/setup-thumbs.mjs`, como pide su test) y el
+  *hash* PNG de STRIP_EDGE en `tests/sets.test.ts` pasa de `69dbb944…` a
+  `2315c21d…`. El test del manifiesto no se ponía en rojo (compara el PNG
+  con su manifiesto, no lo vuelve a renderizar). El cambio es tan pequeño
+  porque esas escenas llevan cáusticas (sus paneles y su sol se dejan al
+  mapa) y su suelo es atrapasombras (no conecta): en las escenas que
+  construye la aplicación con vidrio, hoy la conexión solo actúa para los
+  puntos de luz y los focos, o con las cáusticas apagadas. Esto, y si
+  *Automático* debe dejar de encender el mapa donde la conexión basta, es
+  la **decisión Fable** de arriba.
+- **Un commit de fusión sin las líneas de autoría**: la primera fusión de
+  `origin/ccr-8df3f848-6ukiky` en `e13` (`beb97f9`) se hizo con el mensaje
+  por defecto y ya estaba subida; no se reescribe la historia.
 
 ## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus** — hecha (a, b y c)
 
