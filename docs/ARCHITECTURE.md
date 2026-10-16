@@ -732,8 +732,9 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   crece con el círculo de confusión `R |1/z − 1/z_f|` en su peor
   profundidad y el rayo busca la celda de su punto en el plano de foco)
   prueba las de su celda en lugar de recorrer la BVH: el mismo impacto
-  más cercano, bit a bit (test frente a la fuerza bruta). Los demás rayos
-  siguen con la BVH. (2) *Gotas sin cáusticas*: una partícula de material
+  más cercano, bit a bit (test frente a la fuerza bruta). Una celda de
+  más de 128 partículas (`GRID_MAX_CANDIDATES`) manda su rayo a la BVH,
+  que para en el impacto más cercano. Los demás rayos siguen con la BVH. (2) *Gotas sin cáusticas*: una partícula de material
   claro (`(1 − metálico)·transmisión ≥ ½`: lluvia, burbujas) la cruzan
   recta, entera, desde más allá de su cara del fondo y con la transmitancia
   recta de una pared fina de su material, los rayos de sombra (si proyecta

@@ -9,7 +9,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - **Polvo que brilla a contraluz**: las motas de polvo, el polen y la polvareda dispersan hacia delante una parte de la luz (un lóbulo de Henyey–Greenstein, g 0,7, la mitad de lo que dispersan: propuesta pendiente del veredicto), así que un foco detrás del producto las enciende en su haz; con luz de lado se ven casi igual que antes (S4b).
 - **Lluvia sin puntitos**: las gotas y las burbujas ya no hacen cáusticas; la luz las cruza recta, con su transmitancia, en los rayos de sombra y en los caminos que ya rebotaron en una superficie mate, y desaparecen los puntitos que la lluvia dejaba sobre el producto con la clave lateral. La cámara (y lo que se ve a través de vidrios y espejos lisos) las sigue viendo refractar (S4b).
-- **Partículas más baratas**: los rayos de cámara (estenopeica o con desenfoque) prueban solo las partículas de su trozo de imagen en lugar de recorrer su BVH, sin cambiar un píxel; a la densidad de cada preset sobre la botella del ejemplo, una muestra cuesta de 1,05× a 1,2× la de la escena sin efecto, salvo la lluvia (≈ 1,6×: sus estelas cubren un cuarto del cuadro de vidrio) (S4b).
+- **Partículas más baratas**: los rayos de cámara (estenopeica o con desenfoque) prueban solo las partículas de su trozo de imagen en lugar de recorrer su BVH, sin cambiar un píxel; a la densidad de cada preset sobre la botella del ejemplo, una muestra cuesta de 1,07× a 1,19× la de la escena sin efecto, salvo la lluvia (1,63×: sus estelas cubren un cuarto del cuadro de vidrio) (S4b).
 
 ## v0.1.9 — 2026-10-16
 

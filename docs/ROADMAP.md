@@ -8084,17 +8084,42 @@ pasa, a la profundidad `z`, a menos de `R |1/z − 1/z_f|` (en tangente) de
 la proyección de `F`; cada rectángulo crece con ese círculo de confusión en
 la peor profundidad de su caja y el rayo busca la celda de `F`. Un rayo que
 no sale del disco (una lente trazada, la continuación desde un recorte)
-recorre la BVH. En la escena de coste de la lluvia, la rejilla deja 1,8
+recorre la BVH. La rejilla prueba todas las candidatas de la celda y la BVH
+para en el impacto más cercano: una celda de más de 128 partículas
+(`GRID_MAX_CANDIDATES`) manda su rayo a la BVH (sin tope, 200 000 motas a
+128 × 72 costaban 721 M de instrucciones por muestra frente a 147 M sin
+rejilla; medido el rayo de cámara de esas motas con topes de 16, 64, 128,
+256 y ninguno, a 128 × 72, 512 × 288 y 1920 × 1080, 128 es el mejor o
+empata con la BVH en los tres: 1 355, 457 y 153 ns frente a 1 313, 1 137 y
+550 con 16). En la escena de coste de la lluvia, la rejilla deja 1,8
 partículas candidatas por rayo de cámara.
 
 Con la rejilla, el lóbulo y las gotas de abajo, y la cápsula que descarta
 antes el rayo que no toca su cilindro infinito, el coste a las densidades
-de los presets (el mismo método, 5 rondas; `out/ambient-sheet`) y, para
-quitar el ruido de la máquina compartida, las **instrucciones por
-muestra** (*valgrind*, deterministas: 10 spp menos 2 spp a 128 × 72, un
-hilo, la imagen redimensionada con sus partículas ensanchadas para ella):
+de los presets (el mismo método, 5 rondas, el binario final;
+`out/ambient-sheet`, carga ≈ 2,8 en 4 núcleos) y, para quitar el ruido de
+la máquina compartida, las **instrucciones por muestra** (*valgrind*,
+deterministas: 3 spp menos 1 spp a 512 × 288, un hilo; antes, el binario de
+`09d8196`):
 
-COST_TABLE_AFTER
+| Preset (partículas) | Tiempo, rondas | Tiempo | Instrucciones, S4a | Instrucciones, S4b |
+| --- | --- | --- | --- | --- |
+| Motas de polvo (1 912) | 1,07 / 1,07 / 1,06 / 0,93 / 1,09 | 1,07× | 1,22× | 1,08× |
+| Polen (510) | 1,02 / 1,10 / 1,14 / 1,07 / 1,05 | 1,07× | 1,15× | 1,07× |
+| **Lluvia (255)** | 1,76 / 1,63 / 1,62 / 1,63 / 1,77 | **1,63×** | 1,75× | **1,50×** |
+| Nieve (153) | 1,18 / 1,19 / 1,16 / 1,22 / 1,21 | 1,19× | 1,17× | 1,15× |
+| Polvareda (4 889) | 1,15 / 1,14 / 1,09 / 1,13 / 1,09 | 1,13× | 1,21× | 1,10× |
+| Ceniza (191) | 1,09 / 1,06 / 1,09 / 1,12 / 1,12 | 1,09× | 1,11× | 1,07× |
+| Burbujas (127) | 1,13 / 1,03 / 1,18 / 1,09 / 1,21 | 1,13× | 1,11× | 1,10× |
+| Confeti (64) | 1,11 / 1,16 / 1,14 / 1,07 / 1,10 | 1,11× | 1,11× | 1,11× |
+| 200 000 motas (el tope, no un preset) | 2,00 / 1,94 / 2,08 / 1,91 / 1,91 | 1,94× | 2,17× | 1,94× |
+
+Todos los presets quedan por debajo de 1,3× menos la lluvia. La escena sin
+efecto pasa de 874,2 M a 879,5 M instrucciones por muestra (+0,61 %: las
+comprobaciones nuevas del integrador; se saltan sin partículas y las
+entradas del BSDF van en línea), con los mismos píxeles. La nieve, la ceniza
+y el confeti son discos opacos: ni la rejilla ni nada de S4b les cambia gran
+cosa.
 
 **Por qué la lluvia sigue por encima** (contado con contadores en una copia
 del motor, 512 × 288, 10 spp): sin efecto, la mayoría de los rayos de
@@ -8220,13 +8245,15 @@ antes y después (el binario de `09d8196` frente a este, `--rt-before`) de
 `DUST_MOTES-back`, `POLLEN-back`, `DUST_CLOUD-back`, `DUST_MOTES-side`,
 `RAIN-side` y `RAIN-back`, cada par con un recorte ×2; los ocho presets con
 las dos luces; las motas con cuotas 0,25, 0,75 y 1 (las de arriba tienen
-0,5); las estelas y las suavidades de S4a; la tabla de coste.
+0,5); `RAIN-side` a 1 024 spp; las estelas y las suavidades de S4a; la
+tabla de coste.
 
 **Qué no encajó con el plan.**
 - **La rejilla de una cámara estenopeica no habría servido**: la cámara de
   todo proyecto nuevo (y la de la hoja) tiene f/5,6. Se hizo para la lente
   fina también, exacta (arriba); sin ella el criterio no se habría movido.
-- **La lluvia sigue por encima de 1,3×** (≈ 1,6×, arriba): su coste es
+- **La lluvia sigue por encima de 1,3×** (1,63× en tiempo, 1,50× en
+  instrucciones, arriba): su coste es
   sombrear el vidrio que cubre un cuarto del cuadro, no recorrer la BVH. Lo
   que la bajaría ya no es exacto ni barato (estelas más cortas o menos
   densas, o gotas de cámara más sencillas): para el veredicto.
@@ -8236,8 +8263,8 @@ las dos luces; las motas con cuotas 0,25, 0,75 y 1 (las de arriba tienen
   otra se queda, porque es la refracción que el veredicto conserva: la
   clave vista **a través de cada gota** por la cámara es un detalle
   diminuto y brillante dentro de cada estela, y a 128 spp sale granulado;
-  converge (a 1 024 spp las estelas son lisas; recorte en
-  `scratchpad`, no en la hoja). Para el veredicto.
+  converge (`RAIN-side` a 1 024 spp, en la hoja: las estelas salen
+  lisas). Para el veredicto.
 - **«Pasa con su cobertura»**: leído como la transmitancia recta de una
   pared fina de su material (Fresnel de las dos caras, una vez). Y no solo
   los rayos de sombra: la lluvia del preset no proyecta sombra, así que
@@ -8270,8 +8297,9 @@ las dos luces; las motas con cuotas 0,25, 0,75 y 1 (las de arriba tienen
 1. La **cuota del lóbulo**: 0,5 propuesta; la hoja tiene 0,25, 0,75 y 1
    con las dos luces. Con más cuota, las motas del haz brillan más y las de
    la clave lateral pierden algo de su difuso.
-2. El **coste de la lluvia** (≈ 1,6×): aceptarlo, o estelas más cortas o
-   menos densas en el preset, o una gota de cámara más sencilla.
+2. El **coste de la lluvia** (1,63× en tiempo, 1,50× en instrucciones):
+   aceptarlo, o estelas más cortas o menos densas en el preset, o una gota
+   de cámara más sencilla.
 3. El **grano dentro de las estelas** con la clave lateral (la refracción
    que se queda): aceptarlo como ruido que converge o regularizarlo.
 4. La **regla de los caminos nítidos** (`SHARP_PDF`) frente a «solo los
