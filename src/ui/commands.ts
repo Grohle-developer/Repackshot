@@ -1095,7 +1095,7 @@ export function selectInBox(ctx: Ctx, box: { rect: Rect; mode: BoxMode }, combin
   }
   // What shows through the rectangle; a viewport that cannot tell leaves the geometry to decide, as X-ray does.
   const visible = opts.xray ? null : port.visibleTriangles(part, box.rect);
-  const indices = facesInBox({ data, faceRanges: node.faceRanges, mvp, width: projection.width, height: projection.height, rect: box.rect, mode: box.mode, visible });
+  const indices = facesInBox({ data, faceRanges: node.faceRanges, mvp, width: projection.width, height: projection.height, shown: projection.shown, rect: box.rect, mode: box.mode, visible });
   ctx.store.dispatch({ type: 'scene/selectFaces', part, indices, mode: combine === 'replace' ? 'set' : combine });
   return indices.length;
 }

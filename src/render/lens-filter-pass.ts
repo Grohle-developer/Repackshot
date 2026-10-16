@@ -7,6 +7,7 @@
 
 import * as THREE from 'three';
 import type { FilterKernel } from './lens-filter-image';
+import { PROFILE_GLSL, ProfileUniformSet, type LensProfile } from './lens-profile';
 
 const VERT = /* glsl */ `
 varying vec2 vUv;
@@ -91,45 +92,15 @@ void main() {
   gl_FragColor = vec4((1.0 - s) * i.rgb + s * k, i.a);
 }`;
 
-/** Entries of a lens profile's table (image height from 0 to its last). */
-export const PROFILE_SIZE = 64;
-
-/**
- * O2: what the Fast viewport draws of a traced lens: for each image height, how much nearer the axis the undistorted
- * picture holds what shows there (distortion and breathing) and the relative illumination, from the engine's tables.
- */
-export interface LensProfile {
-  /** PROFILE_SIZE pairs (scale, illumination) at heights 0 … hMaxMm. */
-  table: Float32Array;
-  hMaxMm: number;
-  /** Pixels of the drawing buffer per millimetre of image height. */
-  pxPerMm: number;
-  /** Where the optical axis is in the picture, in texture coordinates. */
-  axis: [number, number];
-}
-
 /** To the screen, through the renderer's tone curve and output colour space (O2: and a traced lens's profile). */
 const PRESENT = /* glsl */ `
 uniform sampler2D src;
-uniform sampler2D profile;
-uniform float useProfile;
-uniform float hMax;
-uniform float pxPerMm;
-uniform vec2 axis;
-uniform vec2 bufSize;
+${PROFILE_GLSL}
 varying vec2 vUv;
 void main() {
-  vec2 uv = vUv;
-  float light = 1.0;
-  if (useProfile > 0.5) {
-    vec2 px = (vUv - axis) * bufSize;
-    float h = length(px) / pxPerMm;
-    vec2 p = texture2D(profile, vec2((clamp(h / hMax, 0.0, 1.0) * ${PROFILE_SIZE - 1}.0 + 0.5) / ${PROFILE_SIZE}.0, 0.5)).rg;
-    uv = axis + (px * p.x) / bufSize;
-    light = p.y;
-  }
-  gl_FragColor = texture2D(src, uv);
-  gl_FragColor.rgb *= light;
+  vec3 at = lensProfileSource(vUv);
+  gl_FragColor = texture2D(src, at.xy);
+  gl_FragColor.rgb *= at.z;
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -180,21 +151,9 @@ export class LensFilterPass {
     true,
   );
   private readonly combine = material(COMBINE, { image: { value: null }, scattered: { value: null }, s: { value: 0 } });
-  private readonly profileTex = new THREE.DataTexture(new Float32Array(PROFILE_SIZE * 4), PROFILE_SIZE, 1, THREE.RGBAFormat, THREE.FloatType);
-  private readonly present = material(
-    PRESENT,
-    {
-      src: { value: null },
-      profile: { value: this.profileTex },
-      useProfile: { value: 0 },
-      hMax: { value: 1 },
-      pxPerMm: { value: 1 },
-      axis: { value: new THREE.Vector2(0.5, 0.5) },
-      bufSize: { value: new THREE.Vector2(1, 1) },
-    },
-    false,
-    true,
-  );
+  /** O2: the map of a traced lens's profile (render/lens-profile.ts), the one the hit tests invert. */
+  private readonly profileSet = new ProfileUniformSet();
+  private readonly present = material(PRESENT, { src: { value: null }, ...this.profileSet.uniforms }, false, true);
   private sceneTarget: THREE.WebGLRenderTarget | null = null;
   private ping: THREE.WebGLRenderTarget | null = null;
   private pong: THREE.WebGLRenderTarget | null = null;
@@ -331,19 +290,7 @@ export class LensFilterPass {
     }
     const u = this.present.uniforms;
     u.src.value = cur.texture;
-    u.useProfile.value = profile ? 1 : 0;
-    if (profile) {
-      const data = this.profileTex.image.data as Float32Array;
-      for (let i = 0; i < PROFILE_SIZE; i++) {
-        data[i * 4] = profile.table[i * 2];
-        data[i * 4 + 1] = profile.table[i * 2 + 1];
-      }
-      this.profileTex.needsUpdate = true;
-      u.hMax.value = Math.max(1e-6, profile.hMaxMm);
-      u.pxPerMm.value = Math.max(1e-6, profile.pxPerMm);
-      (u.axis.value as THREE.Vector2).set(profile.axis[0], profile.axis[1]);
-      (u.bufSize.value as THREE.Vector2).set(size.x, size.y);
-    }
+    this.profileSet.set(profile, size.x, size.y);
     this.draw(r, this.present, null);
     r.autoClear = autoClear;
   }

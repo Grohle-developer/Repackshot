@@ -10,8 +10,7 @@ import { ADAPTER_FOCUS_TRAVEL, composeLens, DEFAULT_MASTER, isAdapter, masterLen
 import { LENS_PRESCRIPTIONS, lensPrescription } from '../src/data/lenses';
 import { FOCUS_MODE, lensInfoRsb, lensToRsb, prescriptionBytes, prescriptionToRsb, writeRsb, type RsbPrescription, type RsbScene } from '../src/io/rsb';
 import { hasLensInfoExport, readLensInfo } from '../src/render/lens-info';
-import { lensProfileTable } from '../src/render/lens-profile';
-import { PROFILE_SIZE } from '../src/render/lens-filter-pass';
+import { lensProfileTable, PROFILE_SIZE, profileSource, shownOfSource, sourceOfShown, type LensProfile } from '../src/render/lens-profile';
 import { readRsb } from './rsb-reader';
 import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
 
@@ -94,6 +93,50 @@ describe('the traced lens of a camera', () => {
     expect(table[(PROFILE_SIZE - 1) * 2]).toBeCloseTo(50 / 55 / 1.1, 6);
     expect(table[1]).toBe(1);
     expect(table[(PROFILE_SIZE - 1) * 2 + 1]).toBeCloseTo(0.5, 6);
+  });
+
+  it('maps the screen to the undistorted picture and back with one map, read between its entries (render/lens-profile.ts)', () => {
+    // A barrel of −20 % at 21.6 mm, 240 × 160 pixels for 36 × 24 mm, the axis a little off the centre (a shift).
+    const table = new Float32Array(PROFILE_SIZE * 2);
+    for (let i = 0; i < PROFILE_SIZE; i++) {
+      const t = i / (PROFILE_SIZE - 1);
+      table[i * 2] = 1 / (1 - 0.2 * t * t);
+      table[i * 2 + 1] = 1 - 0.3 * t;
+    }
+    const p: LensProfile = { table, hMaxMm: 21.6, pxPerMm: 240 / 36, axis: [0.52, 0.48] };
+    const view = { width: 240, height: 160, bufW: 240, bufH: 160 };
+    // The thin lens (no profile): the point itself, in full light, both ways.
+    expect(profileSource(null, 240, 160, 0.3, 0.7)).toEqual([0.3, 0.7, 1]);
+    expect(sourceOfShown(null, view, 17.5, 80.25)).toEqual([17.5, 80.25]);
+    expect(shownOfSource(null, view, 17.5, 80.25)).toEqual([17.5, 80.25]);
+    // On the axis nothing moves; at an entry the table's own numbers.
+    expect(profileSource(p, 240, 160, 0.52, 0.48)).toEqual([0.52, 0.48, 1]);
+    const at = (i: number): [number, number] => [0.52 + (i * (21.6 / 63) * (240 / 36)) / 240, 0.48];
+    const [u10, , l10] = profileSource(p, 240, 160, ...at(10));
+    expect((u10 - 0.52) * 240).toBeCloseTo(10 * (21.6 / 63) * (240 / 36) * table[20], 3);
+    expect(l10).toBeCloseTo(table[21], 6);
+    // Between entries the map runs on without a step (the screen pass read the nearest entry: a ring at each one).
+    let worst = 0;
+    let prev = profileSource(p, 240, 160, 0.52, 0.48)[0];
+    for (let k = 1; k <= 4000; k++) {
+      const u = 0.52 + (0.47 * k) / 4000;
+      const s = profileSource(p, 240, 160, u, 0.48)[0];
+      worst = Math.max(worst, ((s - prev) * 240) / ((0.47 * 240) / 4000));
+      prev = s;
+    }
+    expect(worst).toBeLessThan(1.6);
+    // Back and forth: where the screen shows a point is where its picture comes from (inside the frame).
+    for (const [x, y] of [[10, 12], [120, 80], [200, 150], [33.3, 140.7], [239, 1]]) {
+      const [sx, sy] = sourceOfShown(p, view, x, y);
+      const [bx, by] = shownOfSource(p, view, sx, sy);
+      if (sx > 0 && sx < 240 && sy > 0 && sy < 160) {
+        expect(bx).toBeCloseTo(x, 4);
+        expect(by).toBeCloseTo(y, 4);
+      }
+    }
+    // A barrel brings what is off the axis nearer it on the screen.
+    const [ex, ey] = shownOfSource(p, view, 10, 12);
+    expect(Math.hypot(ex - 0.52 * 240, ey - 0.52 * 160)).toBeLessThan(Math.hypot(10 - 0.52 * 240, 12 - 0.52 * 160));
   });
 
   it('reads the engine’s lens information, and refuses what is not one', () => {

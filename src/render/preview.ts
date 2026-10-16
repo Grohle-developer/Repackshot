@@ -39,8 +39,8 @@ import { drawPasses, type PassMesh } from './preview-passes';
 import { TexturePreview } from './texture-preview';
 import { filterActive, filtersOf, opticsOf } from '../core/optics';
 import { filterKernel, type FilterKernel } from './lens-filter-image';
-import { LensFilterPass, type LensProfile } from './lens-filter-pass';
-import { lensProfileTable } from './lens-profile';
+import { LensFilterPass } from './lens-filter-pass';
+import { lensProfileTable, PROFILE_GLSL, ProfileUniformSet, shownOfSource, sourceOfShown, type LensProfile, type ProfileView } from './lens-profile';
 import type { EngineLensInfo } from '../core/traced-lens';
 import { GraphBakes } from './graph-preview';
 import type { GraphWorkers } from './graph-client';
@@ -192,20 +192,23 @@ varying vec2 vUv;
 void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
 `;
 
+// O2: the mask is read through a traced lens's profile (render/lens-profile.ts), so the line goes round the part as
+// the screen pass draws it, one pixel wide everywhere.
 const OUTLINE_FRAG = /* glsl */ `
 uniform sampler2D mask;
 uniform vec2 texel;
 uniform vec3 ink;
 uniform float hoverAlpha;
+${PROFILE_GLSL}
 varying vec2 vUv;
 void main() {
-  vec4 c = texture2D(mask, vUv);
+  vec4 c = texture2D(mask, lensProfileSource(vUv).xy);
   float sMax = 0.0;
   float hMax = 0.0;
   for (int i = 0; i < 8; i++) {
     vec2 o = vec2(i == 0 ? 1.0 : i == 1 ? -1.0 : i == 4 ? 1.0 : i == 5 ? -1.0 : i == 6 ? 1.0 : i == 7 ? -1.0 : 0.0,
                   i == 2 ? 1.0 : i == 3 ? -1.0 : i == 4 ? 1.0 : i == 5 ? -1.0 : i == 6 ? -1.0 : i == 7 ? 1.0 : 0.0);
-    vec4 n = texture2D(mask, vUv + o * texel);
+    vec4 n = texture2D(mask, lensProfileSource(vUv + o * texel).xy);
     sMax = max(sMax, n.r);
     hMax = max(hMax, n.g);
   }
@@ -231,6 +234,15 @@ precision highp float;
 uniform sampler2D image;
 varying vec2 vUv;
 void main() { gl_FragColor = texture2D(image, vUv); }
+`;
+
+// O2: the overlays drawn as the canvas would hold them (premultiplied), onto the canvas through a traced lens's profile.
+const WARP_FRAG = /* glsl */ `
+precision highp float;
+uniform sampler2D image;
+${PROFILE_GLSL}
+varying vec2 vUv;
+void main() { gl_FragColor = texture2D(image, lensProfileSource(vUv).xy); }
 `;
 
 /**
@@ -346,12 +358,14 @@ export class PreviewEngine implements RenderEngine {
   private readonly filterPass = new LensFilterPass();
   /** O2: the engine's numbers of the active camera's traced lens (`setLensInfo`). */
   private lensInfo: { cameraId: string; info: EngineLensInfo } | null = null;
+  /** O2: the map of the view's traced lens for the outline and the overlays (render/lens-profile.ts), set each frame. */
+  private readonly profileSet = new ProfileUniformSet();
   private readonly maskSelected = new THREE.MeshBasicMaterial({ toneMapped: false });
   private readonly maskHover = new THREE.MeshBasicMaterial({ toneMapped: false, blending: THREE.AdditiveBlending, transparent: true });
   private readonly outlineMaterial = new THREE.ShaderMaterial({
     vertexShader: OUTLINE_VERT,
     fragmentShader: OUTLINE_FRAG,
-    uniforms: { mask: { value: null }, texel: { value: new THREE.Vector2() }, ink: { value: new THREE.Vector3(1, 1, 1) }, hoverAlpha: { value: 0.55 } },
+    uniforms: { mask: { value: null }, texel: { value: new THREE.Vector2() }, ink: { value: new THREE.Vector3(1, 1, 1) }, hoverAlpha: { value: 0.55 }, ...this.profileSet.uniforms },
     transparent: true,
     depthTest: false,
     depthWrite: false,
@@ -375,6 +389,23 @@ export class PreviewEngine implements RenderEngine {
     depthTest: false,
     depthWrite: false,
     blending: THREE.NoBlending,
+  });
+  /** O2: the overlays of a view through a traced lens are drawn here first, then through the profile (`throughProfile`). */
+  private warpTarget: ScreenTarget | null = null;
+  private readonly warpScene = new THREE.Scene();
+  private readonly warpMaterial = new THREE.RawShaderMaterial({
+    vertexShader: COPY_VERT,
+    fragmentShader: WARP_FRAG,
+    uniforms: { image: { value: null }, ...this.profileSet.uniforms },
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendSrcAlpha: THREE.OneFactor,
+    blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
   });
   private readonly raycaster = new THREE.Raycaster();
   /** The gizmo of the move tool, drawn over everything after the outline. */
@@ -429,6 +460,7 @@ export class PreviewEngine implements RenderEngine {
     this.maskHover.color.setRGB(0, 1, 0);
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.outlineMaterial));
     this.copyScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.copyMaterial));
+    this.warpScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.warpMaterial));
     this.overlayRoot.matrixAutoUpdate = false;
     this.overlayRoot.matrix.copy(BASIS);
     for (const g of [this.glyphLines, this.glyphSelected, this.glyphDots, this.motionLines, this.motionDots]) {
@@ -1356,7 +1388,7 @@ export class PreviewEngine implements RenderEngine {
    */
   private drawFiltered(cam: THREE.Camera, c: CameraState): boolean {
     const kernels = this.filterKernels(cam, c);
-    const profile = this.lensProfile(cam, c);
+    const profile = this.viewProfile(cam);
     if (kernels.length === 0 && !profile) return false;
     this.filterPass.render(this.renderer!, this.scene, cam, kernels, profile);
     return true;
@@ -1371,14 +1403,67 @@ export class PreviewEngine implements RenderEngine {
 
   /** True when the Fast viewport draws a traced lens's distortion and falloff (the meter says it is an approximation). */
   drawsLensProfile(): boolean {
-    const c = this.state ? activeCamera(this.state) : null;
+    const c = this.state ? this.viewCamera(this.state) : null;
     return !!c && this.lensInfo?.cameraId === c.id && !!c.optics?.traced && c.projection !== 'ORTHOGRAPHIC';
+  }
+
+  /**
+   * The profile the view is drawn through: the traced lens of the camera it looks through, when the engine has told
+   * its numbers (the active camera's: not a light's or another camera's view, Look through). Everything drawn over the
+   * picture follows it, and every hit test inverts it (render/lens-profile.ts).
+   */
+  private viewProfile(cam: THREE.Camera = this.camera): LensProfile | null {
+    return this.state ? this.lensProfile(cam, this.viewCamera(this.state)) : null;
+  }
+
+  /** The canvas in CSS pixels and its drawing buffer in pixels, for the profile's map. */
+  private profileView(): ProfileView {
+    const size = this.renderer ? this.renderer.getDrawingBufferSize(new THREE.Vector2()) : new THREE.Vector2(this.width, this.height);
+    return { width: this.width, height: this.height, bufW: size.x, bufH: size.y };
+  }
+
+  /** The point of the undistorted picture (CSS pixels) that the screen shows at `x`, `y`: where a hit test casts. */
+  private sourceAt(x: number, y: number): { x: number; y: number } {
+    const [sx, sy] = sourceOfShown(this.viewProfile(), this.profileView(), x, y);
+    return { x: sx, y: sy };
+  }
+
+  /**
+   * O2: `draw` (which draws to the canvas, `autoClear` off) through the view's profile: into a target that holds what
+   * the canvas would, cleared to nothing, then onto the canvas through the map. Without a profile, straight.
+   */
+  private throughProfile(profile: LensProfile | null, draw: () => void): void {
+    const r = this.renderer;
+    const size = r.getDrawingBufferSize(new THREE.Vector2());
+    this.profileSet.set(profile, size.x, size.y);
+    if (!profile) {
+      draw();
+      return;
+    }
+    const samples = Math.min(this.msaaWanted, r.capabilities.maxSamples);
+    if (!this.warpTarget || this.warpTarget.width !== size.x || this.warpTarget.height !== size.y || this.warpTarget.samples !== samples) {
+      this.warpTarget?.dispose();
+      this.warpTarget = new ScreenTarget(size.x, size.y, samples);
+      // Read between its pixels: the map lands anywhere.
+      this.warpTarget.texture.minFilter = THREE.LinearFilter;
+      this.warpTarget.texture.magFilter = THREE.LinearFilter;
+    }
+    const autoClear = r.autoClear;
+    r.setRenderTarget(this.warpTarget);
+    r.setClearColor(0x000000, 0);
+    r.clear(true, true, true);
+    r.autoClear = false;
+    draw();
+    r.setRenderTarget(null);
+    this.warpMaterial.uniforms.image.value = this.warpTarget.texture;
+    r.render(this.warpScene, this.quadCamera);
+    r.autoClear = autoClear;
   }
 
   /** The profile of camera `c`'s traced lens in drawing-buffer pixels of `cam`, when the engine has told it. */
   private lensProfile(cam: THREE.Camera, c: CameraState): LensProfile | null {
     const held = this.lensInfo;
-    if (!held || held.cameraId !== c.id || !c.optics?.traced || !(cam instanceof THREE.PerspectiveCamera) || c.projection === 'ORTHOGRAPHIC') return null;
+    if (!this.renderer || !held || held.cameraId !== c.id || !c.optics?.traced || !(cam instanceof THREE.PerspectiveCamera) || c.projection === 'ORTHOGRAPHIC') return null;
     const size = this.renderer!.getDrawingBufferSize(new THREE.Vector2());
     // Pixels per unit of tangent over the focal length: pixels per millimetre of the sensor.
     const pxPerMm = (cam.projectionMatrix.elements[0] * size.x) / 2 / Math.max(1, c.focalMm);
@@ -1407,6 +1492,12 @@ export class PreviewEngine implements RenderEngine {
     this.renderer.clear();
     const tints = [this.faceOverlay, this.dropOverlay].filter((m): m is THREE.Mesh => m !== null);
     if (tints.length === 0) return;
+    this.throughProfile(this.viewProfile(cam), () => this.drawTints(cam, tints));
+  }
+
+  /** The selected faces' tints over the model's depth (Full mode, `drawOverlayBase`). */
+  private drawTints(cam: THREE.Camera, tints: THREE.Mesh[]): void {
+    const autoClear = this.renderer.autoClear;
     const bg = this.scene.background;
     const floorVisible = this.floor.visible;
     const lightsVisible = this.lightRoot.visible;
@@ -1424,7 +1515,7 @@ export class PreviewEngine implements RenderEngine {
       m.visible = true;
       this.renderer.render(m, cam);
     }
-    this.renderer.autoClear = true;
+    this.renderer.autoClear = autoClear;
     this.scene.background = bg;
     this.floor.visible = floorVisible;
     this.lightRoot.visible = lightsVisible;
@@ -1466,6 +1557,7 @@ export class PreviewEngine implements RenderEngine {
     this.lightRoot.visible = lightsVisible;
     if (this.grid) this.grid.visible = gridVisible;
     this.renderer.setRenderTarget(null);
+    this.profileSet.set(this.viewProfile(cam), size.x, size.y);
     const px = Math.max(1, Math.round(this.dpr));
     this.outlineMaterial.uniforms.mask.value = this.maskTarget.texture;
     this.outlineMaterial.uniforms.texel.value.set(px / size.x, px / size.y);
@@ -1594,7 +1686,8 @@ export class PreviewEngine implements RenderEngine {
     cam.updateMatrixWorld();
     const v = toThree(placed.frame.origin).project(cam);
     if (v.z < -1 || v.z > 1) return null;
-    return { x: ((v.x + 1) / 2) * this.width, y: ((1 - v.y) / 2) * this.height };
+    const [x, y] = shownOfSource(this.viewProfile(cam), this.profileView(), ((v.x + 1) / 2) * this.width, ((1 - v.y) / 2) * this.height);
+    return { x, y };
   }
 
   /** The light or camera whose glyph is under a point (CSS pixels on the canvas), or null. */
@@ -1603,10 +1696,14 @@ export class PreviewEngine implements RenderEngine {
     const cam = this.camera;
     cam.updateMatrixWorld();
     const v = new THREE.Vector3();
+    // O2: where the screen shows them, through a traced lens's profile.
+    const profile = this.viewProfile(cam);
+    const view = this.profileView();
     const project = (p: Vec3) => {
       v.copy(toThree(p)).project(cam);
       if (v.z < -1 || v.z > 1) return null;
-      return { x: ((v.x + 1) / 2) * this.width, y: ((1 - v.y) / 2) * this.height };
+      const [x, y] = shownOfSource(profile, view, ((v.x + 1) / 2) * this.width, ((1 - v.y) / 2) * this.height);
+      return { x, y };
     };
     return pickGlyph(this.glyphs, project, x, y);
   }
@@ -1638,13 +1735,15 @@ export class PreviewEngine implements RenderEngine {
     if (gizmo) this.sizeGizmo();
     this.renderer.autoClear = false;
     this.renderer.clearDepth();
-    this.renderer.render(this.overlayScene, cam);
+    this.throughProfile(this.viewProfile(cam), () => this.renderer.render(this.overlayScene, cam));
     this.renderer.autoClear = true;
     this.gizmo.root.visible = shown;
   }
 
+  /** The ray through what the screen shows at `x`, `y` (CSS pixels): through a traced lens's profile, its source (O2). */
   private rayAt(x: number, y: number): THREE.Raycaster {
-    const ndc = new THREE.Vector2((x / this.width) * 2 - 1, -(y / this.height) * 2 + 1);
+    const p = this.sourceAt(x, y);
+    const ndc = new THREE.Vector2((p.x / this.width) * 2 - 1, -(p.y / this.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
     return this.raycaster;
   }
@@ -1668,7 +1767,8 @@ export class PreviewEngine implements RenderEngine {
     if (!id || !frame) return null;
     const rc = this.rayAt(x, y);
     const view = normalize(fromThree(this.camera.getWorldDirection(new THREE.Vector3())));
-    this.gizmoDragging = new GizmoDrag(id, frame, this.gizmo.baseWorldSize, modelRay(rc, fromThree), { x, y }, view, this.gizmo.aimTarget, this.gizmo.handleMode === 'SCALE' ? SCALE_CUBE_AT : null);
+    // The drag measures on the undistorted picture, where the gizmo is drawn before the profile (O2).
+    this.gizmoDragging = new GizmoDrag(id, frame, this.gizmo.baseWorldSize, modelRay(rc, fromThree), this.sourceAt(x, y), view, this.gizmo.aimTarget, this.gizmo.handleMode === 'SCALE' ? SCALE_CUBE_AT : null);
     this.gizmo.setActive(id);
     this.needsRender = true;
     return id;
@@ -1677,7 +1777,7 @@ export class PreviewEngine implements RenderEngine {
   /** What the drag did so far, measured from where it began (not snapped). */
   gizmoDrag(x: number, y: number): GizmoDelta | null {
     if (!this.gizmoDragging) return null;
-    return this.gizmoDragging.update(modelRay(this.rayAt(x, y), fromThree), { x, y });
+    return this.gizmoDragging.update(modelRay(this.rayAt(x, y), fromThree), this.sourceAt(x, y));
   }
 
   gizmoEnd(): void {
@@ -1839,11 +1939,13 @@ export class PreviewEngine implements RenderEngine {
 
   // ------------------------------------------------------------------ pick
 
+  /**
+   * What is under a point (CSS pixels on the canvas). Through a traced lens's profile the ray goes through the point of
+   * the undistorted picture that the screen shows there (O2, `rayAt`): the part drawn under the cursor.
+   */
   pick(x: number, y: number): PickHit | null {
     if (!this.state || this.width <= 0) return null;
-    const ndc = new THREE.Vector2((x / this.width) * 2 - 1, -(y / this.height) * 2 + 1);
-    const cam = this.camera;
-    this.raycaster.setFromCamera(ndc, cam);
+    this.rayAt(x, y);
     const visible = (o: THREE.Object3D): boolean => {
       for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
       return true;
@@ -1864,9 +1966,13 @@ export class PreviewEngine implements RenderEngine {
     const cam = this.camera;
     cam.updateMatrixWorld();
     const viewProj = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    // O2: the parts are where the screen shows them, through a traced lens's profile.
+    const profile = this.viewProfile(cam);
+    const view = this.profileView();
     return {
       width: this.width,
       height: this.height,
+      ...(profile ? { shown: (x: number, y: number) => shownOfSource(profile, view, x, y) } : {}),
       mvp: (id) => {
         const obj = this.objects.get(id);
         if (!(obj instanceof THREE.Mesh)) return null;
@@ -1955,14 +2061,44 @@ export class PreviewEngine implements RenderEngine {
       ids.visible = true;
       obj.visible = true;
       r.render(ids, cam);
-      const pw = rx1 - rx0;
-      const ph = ry1 - ry0;
+      // O2: the pixel of the id pass that each pixel of the screen shows (through a traced lens's profile, its
+      // source; otherwise itself), and the block of the id pass they need.
+      const profile = this.viewProfile(cam);
+      const view = this.profileView();
+      const rw = rx1 - rx0;
+      const src = new Int32Array(rw * (ry1 - ry0) * 2);
+      let sx0 = profile ? W : rx0;
+      let sx1 = profile ? 0 : rx1;
+      let sy0 = profile ? H : ry0;
+      let sy1 = profile ? 0 : ry1;
+      for (let y = ry0; y < ry1; y++) {
+        for (let x = rx0; x < rx1; x++) {
+          let a = x;
+          let b = y;
+          if (profile) {
+            const [sx, sy] = sourceOfShown(profile, view, ((x + 0.5) * this.width) / W, ((y + 0.5) * this.height) / H);
+            a = Math.min(W - 1, Math.max(0, Math.floor((sx * W) / this.width)));
+            b = Math.min(H - 1, Math.max(0, Math.floor((sy * H) / this.height)));
+            sx0 = Math.min(sx0, a);
+            sx1 = Math.max(sx1, a + 1);
+            sy0 = Math.min(sy0, b);
+            sy1 = Math.max(sy1, b + 1);
+          }
+          const k = ((y - ry0) * rw + (x - rx0)) * 2;
+          src[k] = a;
+          src[k + 1] = b;
+        }
+      }
+      const pw = sx1 - sx0;
+      const ph = sy1 - sy0;
       const buf = new Uint8Array(pw * ph * 4);
-      r.readRenderTargetPixels(this.idTarget, rx0, H - ry1, pw, ph, buf);
-      // Rows of the buffer run bottom up; `at` reads the id of a pixel by its screen coordinates (-1 outside the target).
+      r.readRenderTargetPixels(this.idTarget, sx0, H - sy1, pw, ph, buf);
+      // Rows of the buffer run bottom up; `at` reads the id a pixel of the screen shows by its coordinates (-1 outside
+      // the target).
       const at = (x: number, y: number): number => {
         if (x < 0 || y < 0 || x >= W || y >= H) return -1;
-        const i = ((ry1 - 1 - y) * pw + (x - rx0)) * 4;
+        const k = ((y - ry0) * rw + (x - rx0)) * 2;
+        const i = ((sy1 - 1 - src[k + 1]) * pw + (src[k] - sx0)) * 4;
         return buf[i] | (buf[i + 1] << 8) | (buf[i + 2] << 16);
       };
       for (let y = y0; y < y1; y++) {
