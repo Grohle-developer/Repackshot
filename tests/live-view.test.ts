@@ -8,9 +8,9 @@ import { fitFactor, FrameCadence, LIVE_FRAME_MS, LIVE_MAX_BOX, liveBox, type Fra
 import type { RenderJob } from '../src/core/render';
 import { createStore } from '../src/core/store';
 import { memoryResultsStore } from '../src/io/results';
-import { liveImage } from '../src/render/live-frame';
+import { liveImage, LivePicture } from '../src/render/live-frame';
 import { NativeEngine } from '../src/render/native';
-import { alphaByte } from '../src/render/tiles';
+import { Accumulator, alphaByte } from '../src/render/tiles';
 import { DisplayCurve } from '../src/render/tonemap';
 import * as cmd from '../src/ui/commands';
 import { liveViewOf, liveDataText } from '../src/ui/panels/live-viewer';
@@ -80,6 +80,17 @@ describe('the picture (render/live-frame.ts)', () => {
     expect([...img.rgba.subarray(4, 8)]).toEqual(bytes(mean(b, 0), mean(b, 1), mean(b, 2), 1));
   });
 
+  it('boxes larger than 2 read a 2 × 2 grid of them, at a quarter and three quarters (the edge box within the image)', () => {
+    // 10 × 1 at 1 sample, k = 4: boxes 0–3, 4–7 and 8–9; the pixels read are 1 and 3, 5 and 7, 8 and 9.
+    const sum = new Float32Array(10 * 4);
+    for (let x = 0; x < 10; x++) sum.set([x / 10, 0, 0, 1], x * 4);
+    const img = liveImage({ sum, width: 10, height: 1, samples: 1 }, 4, curve);
+    expect([img.width, img.height]).toEqual([3, 1]);
+    expect([...img.rgba.subarray(0, 4)]).toEqual(bytes((0.1 + 0.3) / 2, 0, 0, 1));
+    expect([...img.rgba.subarray(4, 8)]).toEqual(bytes((0.5 + 0.7) / 2, 0, 0, 1));
+    expect([...img.rgba.subarray(8, 12)]).toEqual(bytes((0.8 + 0.9) / 2, 0, 0, 1));
+  });
+
   it('mid-pass, each tile counts its own samples, and a box with none is transparent', () => {
     // 4 × 2 in tiles of 2: tile 0 has 2 samples, tile 1 none yet. k = 2.
     const sum = new Float32Array(4 * 2 * 4);
@@ -88,6 +99,34 @@ describe('the picture (render/live-frame.ts)', () => {
     const img = liveImage({ sum, width: 4, height: 2, samples: Int32Array.of(2, 0), tile: 2 }, 2, curve);
     expect([...img.rgba.subarray(0, 4)]).toEqual(bytes(0.5, 0.25, 0.125, 1));
     expect([...img.rgba.subarray(4, 8)]).toEqual([0, 0, 0, 0]);
+  });
+
+  it('kept between two pictures, it does again only the boxes over tiles whose samples changed, and equals a new one', () => {
+    // 100 × 70 in tiles of 32 (4 × 3 tiles), k = 3 (boxes cross the tiles' edges).
+    const width = 100;
+    const height = 70;
+    const acc = new Accumulator(width, height);
+    const pic = new LivePicture(width, height, 3);
+    let seed = 7;
+    const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 2 ** 32);
+    const add = (index: number) => {
+      const t = acc.tiles[index];
+      acc.add(index, acc.samples[index], 1, Float32Array.from({ length: t.w * t.h * 4 }, (_, i) => (i % 4 === 3 ? 1 : rnd())));
+    };
+    // Mid-pass: tiles 0 to 6 have a sample, the others none.
+    for (let i = 0; i < 7; i++) add(i);
+    expect(pic.update(acc.sum, acc.samples, curve)).toBe(pic.width * pic.height);
+    const full = () => liveImage({ sum: acc.sum, width, height, samples: acc.samples }, 3, curve).rgba;
+    expect([...pic.rgba]).toEqual([...full()]);
+    // Two tiles more: only the boxes over them (and over their edges) are done again.
+    add(2);
+    add(9);
+    const redone = pic.update(acc.sum, acc.samples, curve);
+    expect(redone).toBeGreaterThan(0);
+    expect(redone).toBeLessThan(pic.width * pic.height / 3);
+    expect([...pic.rgba]).toEqual([...full()]);
+    // Nothing new: nothing done.
+    expect(pic.update(acc.sum, acc.samples, curve)).toBe(0);
   });
 
   it('where the background shows through, the colour is divided by the coverage and the alpha kept', () => {
@@ -201,7 +240,7 @@ describe('the queue’s tap (render-queue.ts liveTap) with a fake clock', () => 
     }
     now = LIVE_FRAME_MS;
     // The box the viewer measured, within the cap.
-    ctx.ui.set({ liveView: { jobId: a.id, box: { width: 800, height: 450 } } });
+    ctx.ui.set({ liveView: { ...ctx.ui.get().liveView!, box: { width: 800, height: 450 } } });
     expect(tap.frameBox()).toEqual({ width: 800, height: 450 });
     // Another job in the view: none, however long it waits.
     cmd.watchJob(ctx, b.id);
@@ -215,6 +254,29 @@ describe('the queue’s tap (render-queue.ts liveTap) with a fake clock', () => 
     cmd.closeLive(ctx);
     now += 10 * LIVE_FRAME_MS;
     expect(tap.frameBox()).toBeNull();
+  });
+
+  it('does not ask twice for the same image while the view stays open (a poll back without a new pass), but does once it opens again', () => {
+    const f = makeCtx();
+    const { ctx } = f;
+    cmd.enqueue(ctx);
+    const [a] = jobs(f);
+    let now = 0;
+    const tap = liveTap(ctx, a.id, () => now);
+    cmd.watchJob(ctx, a.id);
+    expect(tap.frameBox(3)).not.toBeNull();
+    now += 3 * LIVE_FRAME_MS;
+    expect(tap.frameBox(3)).toBeNull();
+    expect(tap.frameBox(4)).not.toBeNull();
+    cmd.closeLive(ctx);
+    expect(tap.frameBox(4)).toBeNull();
+    cmd.watchJob(ctx, a.id);
+    expect(tap.frameBox(4)).not.toBeNull();
+    // Closed and opened again between two questions of the engine: a new view, a picture of the image there is.
+    now += 3 * LIVE_FRAME_MS;
+    cmd.closeLive(ctx);
+    cmd.watchJob(ctx, a.id);
+    expect(tap.frameBox(4)).not.toBeNull();
   });
 
   it('a page in a background tab wants no picture; one that arrives after the view moved on is dropped', () => {

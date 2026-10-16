@@ -1216,7 +1216,13 @@ trabajo por cámara al entrar en la cola; una animación es un solo
 trabajo. Editar la cola es deshacible; el progreso no. La cola ejecuta en serie, con progreso, pausa, reordenar y
 cancelación, **siempre con el motor completo**. Cada resultado guarda la
 imagen del motor y, si hubo post-procesado, también la de la IA, para
-compararlas con un divisor deslizable.
+compararlas con un divisor deslizable. El trabajo en curso se puede **ver en
+vivo** (U14; `UI.md` §2.5 y §2.8): elegido en la cola, su imagen tal como el
+motor la acumula, reducida a lo que cabe y con las muestras y los segundos que
+dice el motor, como mucho dos veces por segundo y solo mientras se mira (el
+motor no hace ninguna mientras nadie la mira); un trabajo en espera dice que no
+ha empezado, y uno terminado abre su resultado. La vista en vivo es estado de la
+interfaz, no del proyecto: ni se guarda ni se deshace.
 
 **Plugins** (P6; `ARCHITECTURE.md` §9). Herramientas de otros programas que
 trabajan sobre un **resultado terminado**: se instalan en *Ajustes ▸ Plugins*

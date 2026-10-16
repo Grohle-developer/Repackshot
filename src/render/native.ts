@@ -1040,7 +1040,8 @@ export class NativeEngine {
         if (f.flags & FLAG_DONE) break;
         // U14: the queue's live view wants a picture of this pass: the launcher scales the sums down to its box
         // (`fit=`), so only the picture's pixels travel. Asked for nothing, nothing is fetched.
-        const box = f.samples > 0 && opts.onFrame ? opts.frameBox?.() : null;
+        // A poll that comes back without a new pass (after a second) asks with the same image: no new picture of it.
+        const box = f.samples > 0 && opts.onFrame ? opts.frameBox?.(f.pass) : null;
         if (box) await this.liveFrame(id, box, opts, state, init);
       }
       const res = await this.api.request(`/api/render/${id}`, init);

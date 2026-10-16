@@ -291,9 +291,11 @@ export interface FrameRequest {
    * U14, the queue's live view of this job: asked as the image accumulates (the web's pool: as its tiles come back;
    * the desktop launcher: after every pass), the box (device pixels) to fit a picture in when one is wanted now, else
    * null. The queue's cadence is inside it (core/live-frame.ts): it says yes at most every LIVE_FRAME_MS, and only
-   * while the live view shows this job; while it says no, no picture is made and no sums are copied for one.
+   * while the live view shows this job; while it says no, no picture is made and no sums are copied for one. `image`:
+   * the number of the image the engine has now (the desktop: its pass), so the same image is not asked for twice
+   * while the view stays open.
    */
-  frameBox?: () => FrameBox | null;
+  frameBox?: (image?: number) => FrameBox | null;
   /** U14: the picture `frameBox` asked for, scaled to its box, with the engine's samples and seconds. */
   onFrame?: (frame: LiveFrame) => void;
 }

@@ -274,7 +274,7 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
               const n = aiVariantsOf(r).length;
               return h(
                 'button',
-                { type: 'button', class: `history-item${first?.thumb ? ' history-pair' : ''}`, 'data-result': r.id, 'data-tip': `${r.name} · ${r.width} × ${r.height}${n > 1 ? ` · ${t('queue.aiImages', { n: aiImagesOf(r).length })}` : ''}`, onclick: () => cmd.openResult(ctx, r.id) },
+                { type: 'button', class: `history-item${first?.thumb ? ' history-pair' : ''}`, 'data-result': r.id, 'data-samples': r.samples, 'data-seconds': r.seconds, 'data-tip': `${r.name} · ${r.width} × ${r.height}${n > 1 ? ` · ${t('queue.aiImages', { n: aiImagesOf(r).length })}` : ''}`, onclick: () => cmd.openResult(ctx, r.id) },
                 r.thumb ? h('img', { src: r.thumb, alt: r.name }) : h('span', { class: 'queue-pic-empty' }, icon('camera', 14)),
                 first?.thumb ? h('img', { src: first.thumb, alt: first.name }) : null,
                 variantBadge(r),

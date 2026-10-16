@@ -8489,6 +8489,125 @@ deja anotado para quien decide, la regla 11):
   proporción que venga después devuelve el alto (teclear los términos de una
   proporción propia de uno en uno pasa por extremos).
 
+## U14 · Vista en vivo en la cola — **Opus** — hecha
+
+Petición del usuario (punto 3.1 del reporte del 14/15-10, `TODO.md`: «al irme
+a queue quiero poder ver un preview en tiempo real de un render
+seleccionado»); triaje en `TRIAGE.md` 3.1.
+
+**Qué.** Elegir en la cola el trabajo que **se renderiza** enseña su imagen en
+vivo, que se refresca a medida que acumula; uno **terminado** sigue abriendo el
+visor de resultados; uno **en espera** dice en una línea que aún no ha empezado
+(es/en). La imagen es la del propio trabajo, ajustada a la vista, con las
+muestras que dice el motor (regla 10): en el escritorio, las tramas del trabajo
+de `/api/render` del lanzador; en la web, la acumulación del *pool*. Un
+`onFrame` (o equivalente) en `FrameRequest` con una cadencia acotada; sin frenar
+el render (coste medido con y sin la vista, por debajo del 2 %); con la vista
+cerrada o con otro trabajo elegido, no se hacen ni se copian imágenes.
+
+**Criterio.** Tests que fallan sin la función: la cola con un render falso que
+entrega imágenes (el trabajo en curso elegido las enseña, el terminado abre el
+visor, el que espera dice que no ha empezado, quitar la selección para las
+imágenes), la cadencia con un reloj falso y el lado del lanzador. `npm run qa`,
+`npm run engine:test`, `cargo fmt` y `clippy`; capturas de la cola con un
+trabajo en curso en la vista, en los dos temas.
+
+**Hecho.**
+
+- **Dónde: el visor de resultados en modo «en curso»**, no un panel del cajón.
+  El cajón mide 240 px: la imagen se quedaría en unos 360 × 200, una miniatura;
+  la capa del visor de resultados tiene el tamaño del visor (950 × 530 en la
+  ventana de 1600 × 1000). El mismo clic abre el mismo sitio para un trabajo
+  terminado y para uno en curso, y al acabar la vista en curso **pasa a ser el
+  resultado** sin que nadie haga nada. El cajón no cambia de forma: la fila
+  elegida se marca (fondo de pasar el ratón y una barra de tinta), y su texto
+  emergente dice *Ver cómo se renderiza*. `ui/panels/live-viewer.ts`, en la
+  misma capa (`rv-host`) que `results-viewer.ts`: la ficha **En vivo**, el
+  nombre, los datos del motor (*1280 × 720 · 15 de 96 muestras · 0:14 · Cámara
+  1*, con *Terminar por tiempo* «0:14 de 1:00»), el estado de la fila con su
+  progreso y su barra, una nota y *Cerrar* (`Esc`); la imagen a la proporción
+  del render, todo lo grande que quepa, sobre el damero neutro. Uno en espera
+  dice *Este trabajo aún no ha empezado: su imagen aparecerá aquí en cuanto se
+  renderice* y enseña la imagen en cuanto la cola llega a él (también tras una
+  pausa, que lo devuelve a la espera); uno detenido o fallido lo dice; quitarlo
+  de la cola se lleva la vista.
+- **Estado de la interfaz**, como `resultView`: `ui.liveView` (`{jobId, box}`,
+  la caja que el visor midió en píxeles de pantalla) y `ui.liveFrame` (la última
+  imagen); nunca a la vez que `resultView`. Comandos `selectJob` (el clic y `⏎`
+  de la fila), `watchJob` y `closeLive` (`ui/commands.ts`); `openResult` y el
+  recorrido guiado la cierran.
+- **El puerto**: `FrameRequest.frameBox(image?)` y `onFrame(frame)`
+  (`ui/ports.ts`; lo mismo en `RenderOptions`, `render/engine.ts`). Tipos y
+  cadencia en `core/live-frame.ts`: `LiveFrame`, `FrameCadence` (reloj
+  inyectado), `LIVE_FRAME_MS` = 500, `LIVE_MAX_BOX` = 960 × 600, `fitFactor`
+  (el menor factor entero que cabe, la misma regla que el lanzador) y
+  `liveBox`. La cola (`liveTap`, `ui/render-queue.ts`) dice que sí solo
+  mientras la vista enseña **ese** trabajo y la pestaña se ve, como mucho cada
+  500 ms (la primera al momento, también al abrirla otra vez o al cambiar de
+  tamaño) y nunca dos veces la misma imagen (la pasada del lanzador); una imagen
+  que llega cuando la vista ya se fue se tira.
+- **La imagen** (`render/live-frame.ts`): las sumas reducidas por un factor
+  entero con una caja (cada píxel, la media de su caja; en cajas de más de
+  2 × 2, de una rejilla de 2 × 2, así que cuesta unas cuatro lecturas por píxel
+  sea cual sea el render), cada píxel dividido por las muestras de su baldosa (a
+  media pasada el *pool* tiene baldosas con cuentas distintas) y convertida con
+  la curva rápida del visor (`DisplayCurve`) con la exposición y la curva del
+  render. **Web**: `pathtracer.ts` la hace tras la baldosa que acaba de llegar
+  cuando la cola la pide, y la guarda entre dos (`LivePicture`): solo rehace las
+  cajas sobre las baldosas que han cambiado desde la anterior. **Escritorio**:
+  `native.ts`, tras cada pasada que el lanzador publica, pide
+  `GET /api/render/<id>?fit=<an>x<al>`; el lanzador (`rt-app`: `Frame::fitted`,
+  `fit_factor`, `parse_fit`, `FLAG_SCALED` = 512) promedia las sumas en el hilo
+  de la petición y solo viaja la imagen (640 × 360 × 16 bytes = 3,7 MB en vez de
+  14,7 MB de un 1280 × 720); con `data=0` no cambia nada y una caja mal escrita
+  es 400 `bad-query`. Un lanzador sin `fit=` mandaría las sumas enteras y la
+  página las reduce. Sin vista en vivo solo viajan cabeceras, como antes.
+- **Tests** (todos fallan sin la función: 16 mutaciones comprobadas una a una,
+  abajo): `tests/live-view.test.ts` (17: la cadencia y la caja con reloj falso,
+  la imagen —media de cajas, rejilla, baldosas sin muestras, cobertura, la
+  imagen guardada igual a una nueva y rehaciendo solo lo cambiado—, la toma de
+  la cola, la cola con un render falso que entrega imágenes, el motor del
+  escritorio contra el lanzador simulado, un lanzador sin `fit=` y uno que
+  falla), `tests/pathtracer.test.ts` (1: el *pool* hace imágenes solo cuando se
+  le piden, con las muestras de cada baldosa, y el render es los mismos bits), y
+  en `rt-app` `render.rs` (2: `fit_factor` y `parse_fit`, `Frame::fitted` con
+  cajas cortadas por el borde) y `tests/server.rs` (1: un final pedido con
+  `fit=16x16` llega en 16 × 12 con la bandera y las medias de sus cajas).
+  `tests/launcher-mock.ts` responde `fit=` como el lanzador.
+- **Comprobación de navegador** `tools/queue-live-check.mjs` (web y
+  `--desktop`, con el lanzador de *release* en `--serve-only`), las dos en
+  verde: (a) la fila en curso abre la vista y llegan imágenes con más muestras;
+  (b) la fila en espera dice que no ha empezado, sin imagen; (c) `Esc` la
+  cierra y, en el escritorio, no hay más peticiones `fit=` (5 con la vista
+  abierta, 0 después); (d) la fila terminada abre el visor de resultados; (e)
+  el trabajo mirado hasta el final pasa a ser su resultado. Capturas
+  `docs/ui/queue-live.png` y `docs/ui/queue-live-dark.png`.
+- **Coste medido** (`--measure`): COSTE_AQUI
+
+**Qué no encajó con el plan** (regla 12):
+
+- Se eligió **el visor de resultados en modo «en curso»** y no un panel en la
+  cola (el encargo dejaba las dos): las razones, arriba.
+- **En el escritorio la imagen cambia una vez por pasada**, no cada medio
+  segundo: el lanzador publica sus sumas al final de cada pasada (1, 2, 4, 8 y
+  luego 16 muestras), así que en un render grande la imagen nueva llega cada
+  varios segundos; en la web llega baldosa a baldosa. Una imagen a media pasada
+  pediría al lanzador un formato de trama con cuentas por baldosa: queda
+  anotado.
+- **Las muestras que dice la web** son las que tienen ya todos los píxeles
+  (`minSamples`): a media pasada hay baldosas con más; en la primera pasada son
+  0 mientras faltan baldosas (que se ven transparentes).
+- La vista en curso **no tiene zoom ni 100 %**: la imagen está reducida (como
+  mucho 960 × 600) y el zoom no enseñaría más; llegan con el resultado.
+- La **miniatura** de la fila en curso sigue siendo el icono: no se pidió.
+- Los elementos del historial llevan `data-samples` y `data-seconds` (los del
+  motor) para que la medida los lea sin redondear.
+- `tests/launcher-mock.ts` mandaba sumas antes de la primera pasada; el
+  lanzador no (`Frame::is_empty`): ahora tampoco el simulado (era más
+  permisivo que la realidad; ningún test dependía de ello).
+- En `engine/crates/rt-app/README.md` la tabla de banderas de la trama no
+  tenía las de E5b-1 (64, 128, 256): están, con la 512.
+
 ## N6 · Despiece configurable y línea de tiempo clara — **Opus**, decisión **Fable** — hecha
 
 Petición del usuario (14-10): en animación faltaban las **explosiones
@@ -9217,6 +9336,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   trabajo en curso enseña sus fotogramas al seleccionarlo (escritorio: los
   del trabajo de `/api/render`; web: la acumulación del *pool*), sin frenar
   el render (coste medido); los terminados siguen abriendo el visor.
+  **Hecha**: ver U14.
 
 ### Decisiones para Fable (regla 11; datos en `TRIAGE.md`)
 

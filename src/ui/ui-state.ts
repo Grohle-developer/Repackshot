@@ -143,6 +143,8 @@ export interface ResultViewState {
 export interface LiveViewState {
   jobId: string;
   box: FrameBox | null;
+  /** A new number for each opening (`watchJob`): the first picture of an opening comes at once. */
+  opened: number;
 }
 
 /** The Settings window (UI.md §2.9): the section shown, a row to bring into view, the first-run chooser. */

@@ -339,16 +339,23 @@ const pageHidden = (): boolean => typeof document !== 'undefined' && document.vi
  */
 export function liveTap(ctx: Ctx, jobId: string, now: () => number = Date.now): Required<Pick<FrameRequest, 'frameBox' | 'onFrame'>> {
   const cadence = new FrameCadence(now);
-  let watched = false;
+  // The opening of the view the last picture was for (each `watchJob` is a new one; a new size is not) and the image
+  // it was made of (the launcher's pass; none: any image is new).
+  let seen: number | null = null;
+  let taken: number | undefined;
   return {
-    frameBox: () => {
+    frameBox: (image) => {
       const v = ctx.ui.get().liveView;
       const on = v !== null && v.jobId === jobId && !pageHidden();
-      // Opened again (or on this job again): its picture at once.
-      if (on && !watched) cadence.reset();
-      watched = on;
-      if (!on || !cadence.due()) return null;
+      // Opened again (or on this job again): its picture at once, of the image there is.
+      if (on && v.opened !== seen) {
+        cadence.reset();
+        taken = undefined;
+      }
+      seen = on ? v.opened : null;
+      if (!on || !cadence.due() || (image !== undefined && image === taken)) return null;
       cadence.mark();
+      taken = image;
       return liveBox(v.box);
     },
     onFrame: (frame) => {

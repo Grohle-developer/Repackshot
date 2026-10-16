@@ -1602,7 +1602,7 @@ const TABLE = {
   'queue.watchTip': ['Watch it render', 'Ver cómo se renderiza'],
   'live.label': ['Live view', 'Vista en vivo'],
   'live.badge': ['Live', 'En vivo'],
-  'live.note': ['Its picture as the engine adds samples, scaled to fit; the result opens here when the job ends.', 'Su imagen a medida que el motor suma muestras, ajustada a la vista; el resultado se abre aquí al terminar.'],
+  'live.note': ['Its picture as the engine adds samples; the result opens here when the job ends.', 'Su imagen a medida que el motor suma muestras; el resultado se abre aquí al terminar.'],
   'live.waiting': ['This job has not started yet: its picture appears here as soon as it renders.', 'Este trabajo aún no ha empezado: su imagen aparecerá aquí en cuanto se renderice.'],
   'live.first': ['Rendering: the first picture comes with the engine’s first samples…', 'Renderizando: la primera imagen llega con las primeras muestras del motor…'],
   'live.failed': ['The render failed: {reason}', 'El render falló: {reason}'],

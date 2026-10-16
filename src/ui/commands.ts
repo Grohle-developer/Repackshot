@@ -2318,11 +2318,13 @@ export function selectJob(ctx: Ctx, id: string): void {
   if (result) openResult(ctx, result.id);
 }
 
+let liveOpenings = 0;
+
 /** U14: the live view on a job of the queue (it replaces the results viewer; the picture of another job goes). */
 export function watchJob(ctx: Ctx, id: string): void {
   const u = ctx.ui.get();
   if (!ctx.store.get().render.queue.some((j) => j.id === id)) return;
-  ctx.ui.set({ liveView: { jobId: id, box: u.liveView?.box ?? null }, resultView: null, renderWindow: null, ...(u.liveFrame && u.liveFrame.jobId !== id ? { liveFrame: null } : {}) });
+  ctx.ui.set({ liveView: { jobId: id, box: u.liveView?.box ?? null, opened: ++liveOpenings }, resultView: null, renderWindow: null, ...(u.liveFrame && u.liveFrame.jobId !== id ? { liveFrame: null } : {}) });
 }
 
 /** U14: closes the live view; the job goes on rendering, and no more pictures of it are made. */

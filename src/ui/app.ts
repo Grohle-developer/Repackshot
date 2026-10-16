@@ -105,9 +105,10 @@ function onKey(ctx: Ctx, e: KeyboardEvent): boolean {
     }
     return false;
   }
-  // The render window and the results viewer own the plain keys while they are open (their own
-  // listeners handle ⏎, Esc, + - 0 1); shortcuts with Ctrl/⌘ still work.
-  const overlay = u.renderWindow !== null || u.resultView !== null || u.liveView !== null;
+  // The render window and the results viewer (also in progress, U14) own the plain keys while they are open (their
+  // own listeners handle ⏎, Esc, + - 0 1); shortcuts with Ctrl/⌘ still work.
+  const live = u.liveView;
+  const overlay = u.renderWindow !== null || u.resultView !== null || (live !== null && ctx.store.get().render.queue.some((j) => j.id === live.jobId));
   for (const a of ACTIONS) {
     if (!a.keys) continue;
     const specs = [a.keys, ...(a.altKeys ?? [])];

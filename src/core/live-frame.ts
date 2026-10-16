@@ -10,7 +10,7 @@ export const LIVE_FRAME_MS = 500;
  * The largest picture the live view asks for, device pixels. Bigger viewers get it scaled up: the picture of a render
  * in progress is for watching it come, not for judging its pixels (the results viewer does that at the end).
  */
-export const LIVE_MAX_BOX: FrameBox = { width: 1280, height: 800 };
+export const LIVE_MAX_BOX: FrameBox = { width: 960, height: 600 };
 
 /** A box a picture is fitted in, pixels. */
 export interface FrameBox {

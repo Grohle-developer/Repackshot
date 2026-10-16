@@ -116,9 +116,10 @@ export interface RenderOptions {
   /**
    * U14, the queue's live view: asked as the image accumulates (the pool: as tiles come back; the launcher: after every
    * pass), the box to fit a picture of the render in when one is wanted now, else null; while it is null no picture is
-   * made and no sums are copied for one.
+   * made and no sums are copied for one. `image`: the number of the image it has now (the launcher's pass), so the
+   * same image is not asked for twice.
    */
-  frameBox?: () => FrameBox | null;
+  frameBox?: (image?: number) => FrameBox | null;
   /** U14: the picture `frameBox` asked for. */
   onFrame?: (frame: LiveFrame) => void;
 }
