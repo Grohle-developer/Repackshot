@@ -664,4 +664,6 @@ impl Program {
 }
 
 #[cfg(test)]
+mod scene_tests;
+#[cfg(test)]
 mod tests;

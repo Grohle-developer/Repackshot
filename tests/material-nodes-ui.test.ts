@@ -15,7 +15,7 @@ import { addNodeMatches } from '../src/ui/panels/material-editor';
 import { cardHeight, cardRows, cardTitle, HEAD_H, linkPath, NODE_W, PREVIEW_H, ROW_H, socketPoint } from '../src/ui/panels/graph-canvas';
 import type { AppServices } from '../src/ui/ports';
 import type { Ctx } from '../src/ui/reactive';
-import { setLang, t } from '../src/ui/strings';
+import { setLang, STRINGS, t } from '../src/ui/strings';
 import { createUiStore } from '../src/ui/ui-state';
 import { exampleState, keyIds } from './helpers';
 
@@ -131,7 +131,7 @@ describe('what the editor says', () => {
     expect(addNodeMatches('zzz')).toEqual([]);
   });
 
-  it('how Fast draws the material, what it approximates, and what Full does until M3b', () => {
+  it('how Fast draws the material, what it approximates, and what Full and Render do (M3b: the engine runs it)', () => {
     setLang('en');
     const ctx = makeCtx();
     const mat = bodyMat(ctx);
@@ -141,6 +141,9 @@ describe('what the editor says', () => {
     expect(lines).toContain(t('ge.fast.note.FRESNEL'));
     expect(lines).toContain('No map for transmission: its mean value.');
     expect(lines.at(-1)).toBe(t('ge.full.note'));
+    // M3b: the engine runs the graph; nothing of it is coming soon any more.
+    expect(t('ge.full.note')).toMatch(/runs the graph at every point/);
+    for (const lang of ['en', 'es'] as const) expect(STRINGS[lang]['ge.full.note']).not.toMatch(/soon|próximamente|M3b/);
     gc.applyExample(ctx, mat, 'PLASTIC_LABEL');
     expect(gc.fastNoteLines(ctx.store.get(), mat, graph(ctx))[0]).toMatch(/through its cylindrical projection/);
     expect(gc.graphStatusText(graph(ctx))).toMatch(/^6 nodes · 8 links · program of \d+ instructions, \d+ \+ \d+ registers$/);

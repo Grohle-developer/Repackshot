@@ -242,6 +242,18 @@ fn context(
     (ctx, side)
 }
 
+/// [`context`] for the tests of the module.
+#[cfg(test)]
+pub(crate) fn context_for_tests(
+    scene: &Scene,
+    details: &Hit,
+    normal: Vec3,
+    to_viewer: Vec3,
+    local: &Local,
+) -> (Context, f32) {
+    context(scene, details, normal, to_viewer, local)
+}
+
 /// The footprint of the ray at the hit in the part's space, and the change of each UV set along
 /// its axes (`None`: level 0).
 fn lod_footprint(

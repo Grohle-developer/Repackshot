@@ -440,3 +440,37 @@ fn a_run_allocates_nothing_and_does_not_depend_on_the_run_before() {
     runner.run(&pts[0], &mut NoHost, &mut b);
     assert_eq!(a, b);
 }
+
+#[test]
+fn the_m3b_example_programs_have_pinned_values() {
+    // The programs of the engine's own example (written by hand, crate::example::m3b_programs) at
+    // 200 points of the contract with the example's images: tests/programs-engine.test.ts reads
+    // them from tests/fixtures/m3b.rsb and runs the page's reference interpreter on them, which
+    // must give these hashes too (the cross test the other way round).
+    let images = crate::example::m2b_images();
+    let points = contract_points(200, 0x2545_f491);
+    let got: Vec<u32> = crate::example::m3b_programs()
+        .into_iter()
+        .map(|p| {
+            let imgs = p
+                .images
+                .iter()
+                .map(|e| e.image.map(|k| Arc::new(images[k as usize].clone())))
+                .collect();
+            outputs_hash(&Runner::new(p, imgs), &points)
+        })
+        .collect();
+    eprintln!("M3b example programs: {got:08x?}");
+    assert_eq!(got, PINNED_M3B_PROGRAM_VALUES);
+}
+
+/// The FNV-1a of every output of each program of the M3b example at 200 points of the contract.
+const PINNED_M3B_PROGRAM_VALUES: [u32; 7] = [
+    0x6a76_96a8,
+    0x870f_56ba,
+    0xb6ca_5408,
+    0xcf11_f98a,
+    0x587e_907c,
+    0x064b_830e,
+    0x214b_bc47,
+];
