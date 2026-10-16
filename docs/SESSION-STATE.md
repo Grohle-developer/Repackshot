@@ -2,10 +2,10 @@
 
 Este archivo lo escribe el responsable (Fable) para que cualquier sesión
 nueva pueda seguir donde se quedó esta. Lo que cuenta es lo que hay en
-`origin`: la rama de sesión `ccr-8df3f848-6ukiky` (los PR #7, #8, #9 y #10 están
-fusionados en `main` por el usuario, el último en `dcba23d`; v0.1.6 salió de `c413669`;
-el PR abierto ahora es el **#11** (E9 + el retoque de `GRADIENT_POOL` + el reporte en `TODO.md`), rama de sesión → `main`;
-E6 ya está dentro; O2 entrará en ese mismo PR si sigue abierto) y las ramas `wip/ccr-8df3f848/<fase>` con el trabajo en curso
+`origin`: la rama de sesión `ccr-8df3f848-6ukiky` (los PR #7 a #11 están
+fusionados en `main` por el usuario; el #11, con E9, E6 y las 88 miniaturas,
+en `72e4f79`; v0.1.6 salió de `c413669`; el PR abierto ahora es el **#12**,
+rama de sesión → `main`, con el triaje del reporte, B1 y O2 cuando entren) y las ramas `wip/ccr-8df3f848/<fase>` con el trabajo en curso
 de cada agente (se empujan tras cada *commit* de su agente; un *commit*
 «WIP» puede tener tests en rojo). Los árboles de trabajo locales
 (`/home/user/Repackshot-<fase>`) y el *scratchpad* son efímeros.
@@ -30,7 +30,7 @@ defecto). Cada fase está marcada «hecha» en
 | U11 + U11b + E11 | `u11` | **Fusionadas en la rama de sesión** (`1ed4157`; el agente fusionó la cabeza paso a paso hasta `71521bc`, re-fijó los hashes que E12 movió —preset de visor `0x17514303`/`0x6db6039b`, bordes E11 `0x3d8f85de`—, reescribió `o1.rsb`/`ambient.rsb` por el `RNDR` de 64 B y los 88 hashes de escena del manifiesto de L6, y pasó todas las puertas). Árbol `Repackshot-u11` borrado. Pendiente aparte: re-renderizar las 88 miniaturas de L6 tras E12 (punto 2 de abajo), ahora con E9 dentro. |
 | E9 (a, a2, b, c) | `e9` | **Fusionada en la rama de sesión** (`d0f6373`, 16-10; el agente fusionó la cabeza hasta el merge del PR #10 en `55b7fab` con todas las puertas en verde y re-fijó los pins: ejemplo `0x75ba4cb4`, O1 `0x087d1276`, E11 `0xd01702ce`, O3a `0x21e43bb1`, E9 `0x5b5ea281`, ambiente `0xeb60bea2`). El único rojo que dejó, el contraste de `GRADIENT_POOL` (1,96 < 2 con la energía de E9a), lo arregló el responsable subiendo el charco de 0,70 a 0,85 y re-renderizando las 88 miniaturas (`PRESET` y `GRADIENT_POOL` cambian). Árbol `Repackshot-e9` borrable. |
 | E6 (bisel, madera, tela) | `e6` | **Fusionada en la rama de sesión** (`563086d`, 16-10; el agente nuevo fusionó la cabeza `cdd4486` en `11e3442` resolviendo `MATL` con el bisel de E6 en el byte 72 y los campos de E9 detrás, el integrador, `rt-cli`, `engine.yml` y las docs, y re-fijó los tres pins de E6 que movió E9a: bisel `0x2f228634` → `0xeacaae75`, madera `0x6fbc91f7` → `0x5ed1bf32`, tela `0x5604ec69` → `0x53e6a855`; puertas en verde en `e143e59` salvo el manifiesto de miniaturas). **Veredicto**: las 88 miniaturas se rehacen con el bisel del Doctor (la escena que construye el código) y se re-fija el PNG de `STRIP_EDGE`. Árbol `Repackshot-e6` borrable. |
-| O3a → O2 | `o1` | **O3a fusionada en la rama de sesión** (`1ea775c`; en v0.1.7). **O2 (lente trazada) en marcha en la misma rama**: `f19a61f` (el lado del proyecto: `core/traced-lens.ts`, prescripción `LENS` del escritor RSB, `lensInfoRsb`), `579f8ac` (el catálogo como lentes trazadas del motor en rt-cli, `rt --write-lens-catalogue`, perfil de la lente trazada en el visor Rápido, puerto de lente de los servicios) y `5a576de`, **punto de control del responsable** con el árbol tal cual lo dejó el agente cuando el límite semanal lo mató el 15-10 (estaba en «Mirror it in the Rust catalogue»: `lens_catalogue.rs`, `lens_sheet.rs` nuevo, `optics/{mod,paraxial,traced}.rs`, `cli.rs`, `lib.rs`, `traced-lens.ts`, `rsb.ts`; sin validar). Agente nuevo desde ahí con la regla de *checkpoint* WIP; al entregar, fusionar solo su commit final. |
+| O3a → O2 | `o1` | **O3a fusionada** (`1ea775c`). **O2 entregada** en `c416f2f` (con la cabeza `72e4f79` fusionada; puertas en verde; hoja en `out/lens-sheet.html` de ese árbol, entregada al usuario en imágenes), **pero no cerrada**: la cámara trazada cuesta el 29,1 % del render del ejemplo contra el ≤ 25 % del brief, que manda batir por lotes antes de cerrar; el agente lo hace ahora en `o1` (WIP a `wip/ccr-8df3f848/o1`), y además el pico a través de la distorsión de *Rápido*. **El veredicto de la hoja es de Fable** (regla 11; la sesión corre con Opus 5.5 desde el 16-10): queda en `ROADMAP.md`, «Decisiones para Fable» del reporte. Al entregar: fusionar su commit final, puertas, PR #12. |
 | S4a partículas de aire | `s4a` | **Fusionada en la rama de sesión** (`af63f6f` + líneas de CI en `abca87b`; el agente fusionó antes M3a, S2 y la cabeza en `6e5799d` y pasó todas las puertas; hash de la escena de ambiente re-fijado tras E12 a `0x415d7d74`, partículas `0xe38b8480`). Árbol `Repackshot-s4a` borrado. **S4b** en cola (brief en `ROADMAP.md` tras S4a). |
 | S2 cuerpos rígidos | `s2` | **Fusionada en la rama de sesión** (`e0ce931`; el agente fusionó antes la cabeza con M3a en `cb4de73` y pasó todas las puertas). Árbol `Repackshot-s2` borrado; la rama `s2` y `wip/ccr-8df3f848/s2` quedan. |
 | M3a editor por nodos | `m3a` | **Fusionada en la rama de sesión** (5e898cb, trailers reescritos al fusionar; veredicto en `ROADMAP.md` §M3a). Si una sesión nueva ve esta fila es que la fusión está ya en `origin`; el árbol `Repackshot-m3a` se puede borrar. |
@@ -55,6 +55,20 @@ agentes nuevos). Si una sesión nueva no tiene esos agentes, cada rama `wip/`
 contiene todo: crear el árbol de trabajo (receta al final) y lanzar un agente
 nuevo con el brief de la fase del ROADMAP y la orden de seguir desde el último
 *commit* (el mensaje de cada WIP dice dónde estaba).
+
+## Reporte de errores: triaje y B1 (16-10)
+
+El triaje del reporte del usuario está en `docs/TRIAGE.md` (17 puntos: dos
+*bugs* confirmados —el enfoque con clic que deshace el mismo clic y el color
+de la tela al pasar a nodos—, faltas que ya tienen fase y decisiones para
+Fable). `ROADMAP.md`, sección «Reporte de errores del usuario», define **B1**
+(Sonnet: enfoque con clic, tela a nodos, extensión `.repack`, intentos de la
+IA contados y la vista previa que no se reinicia), **U14** (Opus, tras B1:
+vista en vivo en la cola), 1.4 tras O2, y la lista de decisiones para Fable.
+B1 corre en `/home/user/Repackshot-b1` (rama `b1`, WIP a
+`wip/ccr-8df3f848/b1`). Pendiente del usuario: el registro del lanzador de
+una pasada de IA con intentos (2.2) y una escena donde el *denoise* lave
+colores (4.2).
 
 ## Corte por límite semanal (15-10) y reanudación (16-10, 10:00 UTC)
 
