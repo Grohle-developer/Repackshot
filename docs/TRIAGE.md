@@ -225,7 +225,7 @@ ida y vuelta y de que una lente invertida dos veces es la misma.
   salidas van con su media, Fresnel a 60° y curvatura 0; lo 3D es un corte
   frontal dibujado como caja (M3a «Hecho» y «no encajó» 3;
   `src/render/graph-preview.ts`).
-- **Nodos en *Completo* y *Render***: solo la media de cada salida
+- **Nodos en *Completo* y *Render*** (hasta M3b; ver *Estado tras M3b*): solo la media de cada salida
   (`src/io/rsb.ts:1057`, `flattenGraph`), y un material de nodos no lleva
   `PATN` (`rsb.ts:1216`). Lo dice la interfaz (`src/ui/strings.ts:717`). Con el
   visor en *Completo* por defecto (`ui-state.ts:505`), **un grafo no tiene
@@ -263,6 +263,21 @@ el grafo mínimo dé el mismo material al motor.
 **Reproducción.** Nodos: confirmado por código. Madera: no puedo saber qué
 esferas miraba el usuario ni en qué modo; sin su escena, no confirmado.
 Tela → nodos: confirmado con el test de arriba.
+
+**Estado tras M3b (hecha).** Los nodos ya pilotan el material en *Completo* y
+en *Render*: el motor ejecuta el programa del grafo en cada impacto, con los
+mismos bits que el intérprete de *Rápido* (prueba cruzada de 172 casos), y la
+página se lo manda cuando el motor dice que lo corre (`rt_features` bit 1,
+`features` del lanzador); a un motor anterior, la media de cada salida, como
+antes. Los diez ejemplos caen donde los dibuja *Rápido* (siete al 100 % de los
+píxeles asentados; los otros tres, y por qué, en el párrafo de M3b del
+ROADMAP), y `docs/ui/m3b-graphs.png` los enseña en *Completo* con su media y
+con su programa. Queda: los nodos *Madera* y *Tela* (la decisión de arriba;
+M3b no los añade y dice cómo los facilita el intérprete), el parecido del
+ejemplo de madera con la familia *Madera* (`docs/ui/m3b-wood.png`: no se
+parecen), y el `NORMAL_MAP` de los copos de la pintura metalizada, que vuelve
+la mitad de sus normales hacia dentro (decisiones para Fable). El bug de la
+tela al pasar a nodos es aparte (1.6b, ya corregido: `fabricMeanColor`).
 
 **Clasificación.** **falta** (M3b; *Rápido* aproxima), con un **bug** suelto
 (el color de la tela al pasar a nodos) y una **decisión** (si M3b añade nodos

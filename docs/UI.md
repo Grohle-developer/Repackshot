@@ -798,8 +798,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    entrada de deshacer); *Nodos…* hace lo mismo si hace falta y abre el
    **editor de material** (§2.10). En modo *Nodos* los parámetros dejan
    sitio a unas líneas que dicen cuántos nodos tiene el grafo, cómo lo
-   dibuja *Rápido* y qué aproxima, y que *Completo* renderiza el valor
-   medio de cada salida hasta la fase M3b (*próximamente*). Volver a
+   dibuja *Rápido* y qué aproxima, y qué hacen *Completo* y *Render* (el
+   motor ejecuta el grafo en cada punto; uno anterior, el valor medio de
+   cada salida; fase M3b). Volver a
    *Simple* desde un grafo que no es el mínimo pregunta en línea (§4.3):
    *¿Volver a Simple? Simple guarda solo los valores propios de la salida:
    se van N nodos y sus conexiones (Deshacer los recupera)* · **Volver a
@@ -1861,7 +1862,10 @@ frente de la pieza…*) y qué aproxima (*Rápido funde las caras de la
 proyección de caja; el motor toma la cara a la que más mira la normal*;
 *Fresnel y de cara se toman a 60° de la normal*; *La curvatura se omite
 (0): la mide el motor*; *Sin mapa para barniz: su valor medio*), y la de
-*Completo* hasta M3b. Debajo, el **nodo seleccionado**: su nombre y su
+*Completo* y *Render* (*el motor ejecuta el grafo en cada punto (sus
+imágenes filtradas, Fresnel y de cara con la vista real, la curvatura en las
+aristas vivas de la pieza); la dispersión interna no se lee. Un motor
+anterior renderiza el valor medio de cada salida*, M3b). Debajo, el **nodo seleccionado**: su nombre y su
 descripción, sus **parámetros** (desplegables, deslizadores y campos
 numéricos con su unidad, interruptores, color; la imagen de una *Textura
 de imagen* con *Cargar…* y *Quitar*, por el mismo camino y límites que las

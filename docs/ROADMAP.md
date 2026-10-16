@@ -3515,7 +3515,7 @@ contrato `PROG` del RSB se escribe en M3b sobre el programa lineal de §5.2
 quater, no antes. Los trailers de los *commits* de esta fase se reescribieron
 al fusionar (misma autoría, la línea requerida por la sesión).
 
-## M3b · El motor evalúa grafos — **Opus** (tras M2b y M3a)
+## M3b · El motor evalúa grafos — **Opus** (tras M2b y M3a) — hecha
 
 **Qué.** `rt-core` ejecuta el programa de M3a en cada impacto (un
 intérprete sin asignación en el bucle, registros en pila fija, `f32`,
@@ -3526,6 +3526,244 @@ resuelto en el impacto alimenta el BSDF de E9. Coste medido en el PR.
 **Criterio.** Los diez grafos de M3a renderizados con `rt` coinciden con
 la vista previa Rápido en posición y tono (regiones); test cruzado
 TS/Rust de M3a en verde; paridad wasm.
+
+**Hecho.** Módulo nuevo `rt_core::program` (ARCHITECTURE §5.2 undecies): el
+contrato de §5.2 quater en Rust (`program.rs`: los códigos estables, las formas
+de las instrucciones, los límites, la lectura de los bytes de `encodeProgram`
+con todas sus comprobaciones —cada operando escrito antes de leerse, ningún
+destino igual a un operando, índices, constantes finitas, rampas de 1 a 64
+paradas— y la escritura), el intérprete (`program/interp.rs`: archivos de
+registros en pila de tamaño fijo, 256 `f32` y 256 `vec3`, ni una asignación en
+la ejecución —test—, `f32` sin FMA con las funciones de `fmath`, cada
+instrucción como la referencia de TypeScript), el ruido de M3a
+(`program/noise.rs`: Perlin y símplex con el *hash* de esquina y la suma en
+octavas, con el redondeo de `Math.round` y las semillas de `ToUint32` de
+JavaScript), lo que hace un programa en un impacto (`program/shade.rs`) y un
+escritor de programas a mano para el motor (`program/build.rs`). **El punto**:
+P, N, UV0, UV1, I, T, B y el cambio de las UV por T y B, en el espacio de la
+pieza (la malla; la transformación de la instancia lleva el punto, los vectores
+y la normal); N es la sombreada (con el bisel), vuelta al exterior de la pieza,
+y la normal del programa vuelve al mundo y al lado del rayo, nunca de espaldas
+al que mira (como M2b). **El material**: el `MATL` (que la página llena con la
+media de cada salida, su familia, su absorción y sus paredes finas) con cada
+salida del punto llevada a su rango (lo que no es un número deja el del
+fichero); la dispersión interna no se lee. **Imágenes**: la lectura de M2b en
+el nivel de detalle de la huella del rayo; las lecturas de una imagen por el
+mismo `MAP` (o por un mismo juego de UV, o pasos desde él) toman el nivel de la
+primera, así que las tres alturas de un relieve se leen en un nivel; unas
+coordenadas calculadas de otra forma, en el nivel 0; los rayos de sombra, en
+el 0. **Curvatura** (`EDGE`, `CAVITY`): de las aristas vivas del bisel de E6
+(E7 no ha llegado): `smoothstep(1 − d/r) · min(tan(θ/2), 1)` de la arista más
+fuerte a menos de `r` mm, convexa o cóncava. **Bisel**: la salida es un peso
+del radio del material: constante, lo escala para toda la pieza; calculado, el
+programa corre dos veces (en el punto sin biselar para el peso, y en el punto
+biselado por él para lo demás). **Emisión**: un emisor (`MATL` de tipo 2) manda
+`emisión × intensidad` del punto; otro material la suma a lo que refleja; un
+emisor cuya emisión no es una constante del programa no se muestrea como luz
+(`light.rs`), y la página lo escribe como no emisor (refleja y suma su
+emisión). **Recortes**: una opacidad que no es la constante 1 hace la instancia
+atravesable; la cámara, los rayos de sombra (también desde las salidas de un
+medio y por el cruce recto de S4b) y el pase de albedo leen el programa.
+**Integrador**: bisel → programa → texturas de M2b encima (multiplican lo que
+da el programa, como a un material plano); un material con programa no lleva
+el dibujo de E6. **RSB**: sección `PROG` (`u32 material` y los bytes del
+programa, una por material, tras todas las demás; la primera de un material
+cuenta; una versión más nueva se salta y el material queda con su `MATL`; un
+programa inválido, de un material que no está o con una imagen que no es de
+`IMGS` en su espacio de color hace el RSB inválido), en el lector y en el
+escritor de `rt-core` y en `src/io/rsb.ts`; un fichero sin `PROG` se lee y se
+escribe como antes. **La palabra del motor**: `FEATURE_PROGRAMS` (bit 1 de
+`rt_core::FEATURES`, `rt_features`, `features` de `/api/info`); la página
+(`render/engine.ts` `readsPrograms`, que pide también el bit 0: un programa lee
+`IMGS` y las UV) pone `programs: true` en las vistas de *Completo* y de
+*Render* del *pool* y del lanzador, y *Exportar escena del motor* las lleva;
+`projectScene` escribe entonces cada material de nodos como su programa sobre
+su media (con las UV de las mallas y las imágenes de los programas); a un motor
+de antes, la media de cada salida (`flattenGraph`), como hasta ahora. La nota
+del inspector y del editor (`ge.full.note`) dice lo que hacen *Completo* y
+*Render*. **Ejemplo y fijados**: `rt_core::example::m3b_scene`
+(`rt --write-m3b-example`, `tests/fixtures/m3b.rsb`): siete programas a mano
+sobre la escena de M2b (mármol de ruido y rampa en el suelo; cuadros gastados
+por `EDGE` con un bisel de peso 0,5; cuero con relieve por tres evaluaciones;
+una etiqueta por `TEX` de una imagen con un peso de bisel calculado; una
+tarjeta de rayas recortada con copos de `NOISEC` y `NMAP`; un emisor a
+cuadros; un vidrio fino con suciedad por `FACING` y `FRESNEL`). Fijados
+**nuevos** (ninguno anterior se movió): `PINNED_M3B_PROGRAMS_4SPP`
+**`0x0d6e20ba`** (todas las ISA, WASI, `rt-cli` y `rt-app` con 1, 4 y 16 hilos,
+el `rt.wasm` real en CI y por el código de la página), sus seis pases
+`PINNED_M3B_PASS_*` (albedo `0xa0543b58`, normal `0xc28ef77c`, profundidad
+`0x8f3d03ed`, ids de pieza y de material `0xa67fd1e5`, círculo de confusión
+`0x6ad58dc5`) con su bloque de paridad en `engine.yml`, y los valores de los
+siete programas en 1000 puntos (`PINNED_M3B_PROGRAM_VALUES`, que la página
+reproduce: la prueba cruzada al revés). Captura `docs/ui/m3b-graphs.png`: los
+diez ejemplos en *Completo*, con su media (izquierda, lo de antes) y con su
+programa (derecha).
+
+**Prueba cruzada** (`tests/material-program-cross.test.ts` escribe y fija
+`tests/fixtures/material-programs.json`; `rt-core` `program/tests.rs` lo
+corre): 172 casos —los diez ejemplos en los 1000 puntos de `contractPoints`
+(con los fijados de M3a), 102 de cada instrucción sola en cada modo,
+proyección, eje y borde en 200 puntos, y 60 de cada función con 0, −0, ±1,
+medios, enteros, lo diminuto y lo enorme, ±∞ y NaN—: **los mismos bits en
+todos** (tolerancia 0: los dos lados hacen las mismas operaciones `f32` en el
+mismo orden con las mismas funciones elementales, sin FMA; un cambio de 0,25 a
+0,24 en `FSMIN` pone 10 casos en rojo).
+
+**Comparación por regiones** (`tests/programs-full-browser.test.ts`, con
+`tests/browser/programs-scene.ts`): *Rápido* en Chromium (cada grafo horneado
+por los *workers* de la app, una vista previa nueva por escena) y el `rt.wasm`
+real por el escritor de la página, 200 × 150 a 32 muestras, cada grafo en una
+pieza donde los mapas de *Rápido* son el grafo (una placa de frente cuya cara
+es el plano y = 0 de la pieza, un cilindro para la etiqueta), en un mundo
+blanco plano (el metal cepillado, bajo el estudio). Cada imagen se clasifica
+por los tercios de su luminancia; *coinciden* es la parte de los píxeles
+asentados (oscuros o claros, lejos de los bordes) en la misma clase en las dos;
+el *control* renderiza el motor con el dibujo movido bajo la misma superficie
+(las coordenadas de la pieza desplazadas o giradas, o media banda de UV); el
+tono es el color medio de la pieza en las dos (valores de pantalla).
+
+| Grafo | Comparado | Coinciden (píxeles asentados) | Control | Correlación (control) | Tono *Rápido* / *Completo* (distancia) |
+| --- | --- | --- | --- | --- | --- |
+| Material plano (referencia) | tono | — | — | — | 220 220 220 / 195 195 195 (25) |
+| Plástico con etiqueta | sitio y tono | 100 % (2821) | 75 % | 0,996 (0,08) | 119 134 175 / 120 132 161 (14) |
+| Metal cepillado | tono | 98 % (2938) | 98 % | 0,45 (0,43) | 166 165 165 / 128 128 129 (38) |
+| Mármol | sitio y tono | 100 % (4707) | 29 % | 0,998 (−0,16) | 215 214 213 / 190 190 189 (25) |
+| Cuero | sitio y tono | 100 % (3864) | 63 % | 0,997 (0,14) | 119 89 69 / 123 101 84 (15) |
+| Madera con dos ruidos | sitio y tono | 100 % (602) | 39 % | 0,991 (0,02) | 174 144 111 / 158 137 112 (16) |
+| Vidrio con suciedad | tono | 98 % (1273) | 99 % | 0,60 (0,68) | 100 100 100 / 130 131 130 (30) |
+| Cuadros | sitio y tono | 100 % (4024) | 0 % | 0,996 (−0,97) | 154 154 155 / 146 146 146 (9) |
+| Pintura con copos | sitio | 0 % (157) | 45 % | **−0,91** (−0,005) | 206 145 144 / 100 43 43 (106) |
+| Cerámica esmaltada | sitio y tono | 100 % (5865) | 0 % | 0,999 (−0,91) | 173 191 180 / 155 170 162 (21) |
+| Rayas | sitio y tono | 100 % (1695) | 0 % | 0,998 (−0,98) | 149 151 160 / 141 143 150 (10) |
+
+Siete grafos coinciden en sitio (100 % de los píxeles asentados, correlación
+0,99 o más, el control se hunde) y en tono (a 9–25 de *Rápido*, dentro de la
+diferencia de los dos renderizadores con un material plano, 25: *Rápido* sale
+más claro con cualquier material). El metal cepillado y el vidrio se comparan
+por el tono (ver «no encajó» 6 y 7); los copos, por el sitio (8). Con los
+programas apagados en el escritor (el motor con la media), los ocho tests de
+sitio fallan.
+
+**Tests** (cada uno falla sin lo que prueba): en `rt-core`, 7 de
+`program/tests.rs` (la prueba cruzada y sus puntos, los fijados de M3a y del
+ruido, los valores de los programas del ejemplo, la lectura y 15 formas de un
+programa malo o de otra versión, una ejecución sin asignar ni depender de la anterior), 12 de
+`program/scene_tests.rs` (los valores punto a punto en el espacio de la pieza;
+las UV, la tangente, el cambio de las UV y la vista; la normal en el mundo, con
+la instancia girada y por detrás; el recorte para la cámara y las sombras; la
+emisión que se suma y el emisor que deja de ser luz; el peso del bisel
+constante y calculado; la curvatura en el cubo y en el pliegue, también por un
+programa; el nivel de detalle, el de un relieve y el de cada juego de UV; cada
+valor a su rango; `PROG` de ida y vuelta, los ficheros viejos, la versión
+nueva, los inválidos, la primera que cuenta y las actualizaciones; el dibujo
+de E6 que cede y una escena sin programas que no cambia), uno en
+`integrator/tests.rs` (los rayos de sombra desde las salidas de un medio por un
+recorte de programa), el fijado y los pases, los hilos en `rt-cli` y `rt-app`,
+`features` en `/api/info` y en `rt.wasm`; en TypeScript, la prueba cruzada (3: el fichero, los valores y que están
+todos los códigos),
+`tests/programs-engine.test.ts` (15: el interruptor con un motor que los corre,
+uno de M2b y uno de antes, en el *pool* y en el lanzador, en *Render* y en el
+visor; `PROG` al final sobre la media; las mismas cifras sin materiales de
+nodos; el emisor que varía; la imagen de la etiqueta en sRGB; los bytes de
+`m3b.rsb`; los valores del motor por el intérprete de la página; el `rt.wasm`
+real: el fijado por el código de la página y un material de nodos que cambia
+la imagen), la nota en `material-nodes-ui` y la comparación por regiones (11).
+**Mutaciones**: 33 del motor (cada instrucción y el ruido, el nivel de detalle
+y sus grupos, el espacio de la pieza, la tangente, las UV, la normal y su lado,
+los recortes y las tres rutas de sombra, la emisión y el emisor como luz, el
+peso del bisel constante y calculado, la curvatura convexa y cóncava, `EDGE`,
+el lector `PROG`, el dibujo de E6, el albedo, la validación, los rangos, cada
+juego de UV): 31 ponen su test en rojo; las otras dos eran equivalentes (la
+radiancia del emisor ya es la emisión del programa; el giro de la normal de
+sombra que el contexto vuelve a hacer, quitado del código). 12 de la página (el
+interruptor y sus dos bits, el escritor, el material de `PROG`, el emisor que
+varía, el espacio de color, las vistas del *pool* y del lanzador en *Render* y
+en el visor, la nota): las 12 en rojo. La primera ronda dejó vivas 10 del
+motor (8 de verdad) y 4 de la página: de ahí los tests nuevos.
+
+**Coste** (`rt` nativo, AVX2, máquina compartida, rondas alternadas, medido
+antes de fusionar v0.1.11; las diez piezas de los ejemplos —nueve cajas de
+100 × 60 × 100 mm y el cilindro de la etiqueta— cada una con su grafo, el
+estudio por defecto, escrita por la página con los programas y sin ellos, con
+su media):
+
+| Medida | Con programas | Con la media | Diferencia |
+| --- | --- | --- | --- |
+| 1 hilo, 320 × 240, 16 muestras, 6 rondas (mediana) | 1,91 s (1,85 Mrayos/s) | 1,30 s (2,73 Mrayos/s) | +47 % de tiempo, +47 % por rayo |
+| 4 hilos, 640 × 480, 64 muestras, 5 rondas (mediana) | 7,27 s (7,76 Mrayos/s) | 5,17 s (10,96 Mrayos/s) | +41 % de tiempo, +41 % por rayo |
+| La escena con la media, motor de antes (`3497ab5`) y de M3b, 1 hilo, 6 rondas | 1,30 s (M3b) | 1,27 s (antes) | +2 %, ruido; el mismo PNG byte a byte |
+
+Todas las piezas llevan un programa (de 6 a 41 instrucciones: cuadros 6,
+cerámica 9, rayas y copos 10, etiqueta 11, mármol 13, vidrio 18, madera 24,
+cuero 34, metal cepillado 41; los ruidos de varias octavas son lo caro). Una
+escena sin materiales de nodos no hace nada nuevo.
+
+No encajó con el plan: (1) **`PROG`** no es la propuesta de §5.2 quater (una
+sección con los programas de la escena y el índice de cada uno en `MATL`): es
+una sección por material con su índice delante, al final del fichero; `MATL`
+no cambia (un lector de antes ni lo nota, y el material de un programa que el
+motor no lee sigue siendo su media), y una actualización lleva los programas
+con los materiales. (2) **El ruido** es el de M3a (su contrato, escrito para
+esto), no el de E6 (`pattern/noise.rs`, que es otro): la prueba cruzada lo pide
+bit a bit. (3) **Curvatura**: de las aristas vivas del bisel (E7 no está); una
+malla suave sin aristas vivas da 0, y el radio de `EDGE` es en mm de la pieza.
+(4) **La dispersión interna** del grafo no se lee: el medio de E9 es del
+volumen (recorrido libre, color, dirección), no de un punto; tampoco llega al
+motor la de un material plano. La absorción y las paredes finas son las del
+`MATL` (la página escribe las de la salida en los dos sitios). (5) **Un emisor
+cuya emisión varía** no es luz muestreada: ilumina por los caminos que lo
+encuentran (sin sesgo, con más ruido), como el de imagen de M2b; la página lo
+escribe como no emisor (su media no emite) para que el motor de antes no
+pinte una luz uniforme que no está. (6) **El metal cepillado**: su dibujo está
+en la rugosidad y el relieve, que el mundo blanco no enseña; bajo el estudio
+las luces de three.js y las trazadas difieren (correlación 0,45, tono a 38):
+se compara por el tono. (7) **El vidrio con suciedad**: *Rápido* no tiene mapa
+de transmisión (la transmisión es la media del grafo), y el polvo es sobre
+todo menos transmisión: en *Rápido* casi no se ve y en *Completo* sí. Por el
+tono. (8) **Los copos de la pintura metalizada**: el sitio coincide (correlación
+−0,91: el mismo dibujo, el tono al revés), pero el `NORMAL_MAP` de M3a toma el
+azul como `2b − 1` sin la intensidad, y el color de un ruido pone la mitad de
+las normales hacia dentro de la superficie (el 49 % de los puntos de la placa);
+el motor las dobla hasta el borde del lado que mira, como los mapas de normales
+de M2b (salen oscuras), y three.js las ilumina con el mundo (salen claras).
+**Decisión para Fable** (regla 11/12, el contrato es de M3a): que
+`NORMAL_MAP` mezcle hacia la normal del mapa por la intensidad y la deje fuera
+(como el de Blender), o que el ejemplo pase el ruido por un rango con el azul
+cerca de 1, o que el motor refleje una normal de programa de espaldas en vez de
+doblarla; las dos primeras cambian *Rápido* y *Completo* a la vez. Con el
+ejemplo de hoy, los copos se ven más oscuros en *Completo* que en *Rápido*.
+(9) **Nivel de detalle**: el de la huella de M2b para las lecturas por un
+`MAP` o por un juego de UV (y sus pasos); unas coordenadas calculadas de otra
+forma se leen en el nivel 0 (*Rápido* las filtra en sus mapas), y los rayos de
+sombra también. (10) **Lo que no ve el programa**: las partículas (no tienen
+material de nodos), los fotones de las cáusticas (ven el `MATL`, la media,
+como ven los dibujos y las texturas) y el pase de normales (el del bisel, sin
+la normal del programa, como M2b). (11) **Tono**: *Rápido* sale unas 25
+unidades más claro en blancos con cualquier material (la referencia plana de
+la tabla): es la diferencia de los dos renderizadores, no de los programas.
+(12) **Observación sobre *Rápido*** (no tocada): una vista previa reutilizada
+de una escena a otra en la prueba enseñaba los mapas del grafo anterior hasta
+rehornear; con una vista previa por escena no pasa. No lo he reproducido en la
+app; queda anotado para quien mire `render/graph-preview.ts`. (13) **La madera**
+(lo que el veredicto de M3a dejó a M3b): `docs/ui/m3b-wood.png`, las dos en el
+motor: a la izquierda la familia *Madera* del catálogo (roble, la veta de E6:
+anillos finos y rectos, poros), a la derecha el ejemplo *Madera con dos
+ruidos* (anillos anchos y ondulados alrededor del eje vertical de la pieza,
+sin poros): no se parecen. Que se parezcan es una receta y un criterio visual
+(**Fable**). **Nodos *Madera* y *Tela*** no se añaden (decisión pendiente,
+TRIAGE 1.6). El intérprete los haría fáciles en el motor: una instrucción
+`PATTERN` con las constantes de `PATN` (familia, colores, escala, los 16
+parámetros, variante y semilla) que llame a `pattern.rs` en el punto de la
+pieza por el `Host` (que ya da la curvatura; los nudos se colocan por
+instancia como hoy) y dé color, rugosidad y altura (el relieve, con las tres
+evaluaciones); lo grande es *Rápido* y la prueba cruzada: TypeScript no tiene
+las recetas de E6 (pinta la madera con su color medio y los nudos), así que
+haría falta portarlas a `f32` en TypeScript (fase L). (14) La comparación por
+regiones necesita Chromium y `rt.wasm`: se salta en el trabajo del motor de
+CI; su mitad de Node (`programs-engine.test.ts`) va en *Passes through the
+page's own code* con el `rt.wasm` real. (15) La sombra desde la salida de un
+medio por una superficie atravesable corre el programa dos veces (una para el
+material de la pared y otra en el cruce recto de S4b), como las texturas.
 
 ## M4 · Capa de realismo en el catálogo de materiales — **Opus**, veredicto **Fable** (tras E9, E6 y M2b)
 
@@ -9880,7 +10118,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   la ranura; *Completo* y *Render* los dibujan desde **M2b** (hecha). Lo
   demás de 1.1 y la decisión de 5.1 siguen pendientes.
 - **1.6** (los nodos no pilotan el material en *Completo*, el modo por
-  defecto): **M3b**.
+  defecto): **M3b** (hecha).
 - **3.1** (vista en vivo del render seleccionado en la cola): fase nueva
   **U14** (Opus, M), tras B1 porque los dos tocan la fila de la cola: el
   trabajo en curso enseña sus fotogramas al seleccionarlo (escritorio: los
@@ -9918,7 +10156,13 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
   también en ellos) frente a solo los rayos de cámara.
 - **1.5**: el editor de elementos de una lente (editar, mover, añadir,
   girar 180°) sobre lo que O2 ya guarda como lente propia.
-- **1.6**: si M3b trae nodos *Madera* y *Tela* con las recetas de E6.
+- **1.6**: si se añaden nodos *Madera* y *Tela* con las recetas de E6 (M3b
+  no los trae; su párrafo dice cómo los facilita el intérprete), y si el
+  ejemplo de madera de los grafos tiene que parecerse a la familia *Madera*
+  (`docs/ui/m3b-wood.png`).
+- **M3b**: el `NORMAL_MAP` de M3a con el azul por debajo de 0,5 (los copos
+  de la pintura metalizada, la mitad de sus normales hacia dentro): cambiar
+  el nodo, el ejemplo o el motor (el párrafo de M3b, «no encajó» 8).
 - **4.2**: si el triaje se confirma con la escena del usuario, el recorte de
   *fireflies* y el borde solo por luminancia del *denoise*.
 
