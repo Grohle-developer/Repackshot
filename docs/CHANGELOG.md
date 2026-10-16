@@ -3,7 +3,11 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
-## Sin publicar
+## v0.1.12 — 2026-10-16
+
+Versión de prueba con los materiales de nodos funcionando en el modo
+*Completo* y en los renders (lo que el reporte del 14-10 pedía en su punto
+1.6). Lo de v0.1.2 a v0.1.11 sigue igual.
 
 ### Motor
 
