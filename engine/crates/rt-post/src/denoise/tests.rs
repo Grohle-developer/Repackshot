@@ -218,6 +218,57 @@ fn bad_shapes_are_refused() {
 }
 
 #[test]
+fn each_pixel_s_own_count_weighs_its_variance_and_equal_counts_change_nothing() {
+    // E10: the sums are those of `samples` samples; `counts` says how many each pixel really has.
+    let s = Synthetic::new(40, 120, 16, 0.5, 2.0, 1.0);
+    let plain = denoise(&s.input()).expect("denoise");
+    let n = s.part_id.len();
+    let equal = vec![16.0f32; n];
+    let same = denoise(&s.input().with_counts(&equal).expect("counts")).expect("denoise");
+    assert_eq!(same, plain, "counts equal to the samples are no counts");
+    assert_eq!(
+        s.input().with_counts(&equal[..n - 1]).err(),
+        Some(DenoiseError::Shape("counts"))
+    );
+    // The right part with four times the samples: the variance of its means is a quarter, so the
+    // filter stops sooner there and moves its pixels less; the left part is the same.
+    let counts: Vec<f32> = (0..n)
+        .map(|p| if s.part_id[p] == 2 { 64.0 } else { 16.0 })
+        .collect();
+    let weighed = denoise(&s.input().with_counts(&counts).expect("counts")).expect("denoise");
+    let moved = |out: &[f32], id: u32| -> f64 {
+        (0..n)
+            .filter(|&p| s.part_id[p] == id)
+            .map(|p| f64::from((out[p * 4 + 1] - s.sums[p * 4 + 1]).abs()))
+            .sum()
+    };
+    assert!(
+        moved(&weighed, 2) < 0.9 * moved(&plain, 2),
+        "{} vs {}",
+        moved(&weighed, 2),
+        moved(&plain, 2)
+    );
+    for p in 0..n {
+        if s.part_id[p] == 1 {
+            assert_eq!(weighed[p * 4..p * 4 + 4], plain[p * 4..p * 4 + 4], "left {p}");
+        }
+    }
+    // A band with its halo cuts the counts with the rest: the same rows as the whole image.
+    let w = 40usize;
+    let (y0, y1) = (80u32, 100u32);
+    let band = s.band(y0.saturating_sub(HALO), (y1 + HALO).min(120));
+    let lo = y0.saturating_sub(HALO) as usize * w;
+    let hi = (y1 + HALO).min(120) as usize * w;
+    let rows = denoise_rows(&band.with_counts(&counts[lo..hi]).expect("band"), y0, y1)
+        .expect("rows");
+    assert_eq!(
+        rows[..],
+        weighed[y0 as usize * w * 4..y1 as usize * w * 4],
+        "rows {y0}..{y1}"
+    );
+}
+
+#[test]
 fn a_clean_image_stays_clean() {
     // With no noise (every sample the same) the variance is zero and the filter keeps each
     // pixel's own value: edges and gradients inside a part survive.
