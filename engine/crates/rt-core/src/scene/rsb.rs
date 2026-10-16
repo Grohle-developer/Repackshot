@@ -13,7 +13,8 @@
 //! extra trailing bytes (newer writers append fields), so old readers keep working.
 //!
 //! Section payloads (`[3]` means three consecutive values; sizes are the minimum payload length;
-//! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c) and are
+//! fields after a `|` were appended later (E3, then `||` E5, `|||` X2, `||||` E5c, `|||||` E6
+//! and E9) and are
 //! optional: a shorter payload, as older writers wrote it, reads them as their defaults, and the
 //! writer always writes them):
 //!
@@ -25,6 +26,8 @@
 //! MATL  56 B  u32 kind; f32 base_color[3] metallic roughness ior transmission coat
 //!             coat_roughness emission[3] emission_power | u32 flags (default 0)       (60 B)
 //!             || f32 opacity (1) anisotropy (0) absorption_mm (0)                     (72 B)
+//!             ||||| f32 bevel_mm (0)                                                  (76 B)
+//!             scatter_mm (0) scatter_color[3] (1 1 1) scatter_g (0) abbe (0)          (100 B)
 //! LGHT  76 B  u32 kind; f32 position[3] direction[3] up[3] size_x size_y color[3] power
 //!             spread_deg angle_deg; u32 flags
 //! ENVR  40 B  u32 kind; f32 floor horizon zenith strength rotation_deg background_color[3];
@@ -43,6 +46,8 @@
 //!             |||||| u32 pixel_filter (0) edge_supersample (1)                     (64 B)
 //! INST  60 B  u32 mesh_id; f32 transform[12] (rows of the 3x4 object-to-world matrix);
 //!             u32 material_id; u32 flags (1 one-sided)
+//! PATN 108 B  u32 material kind; f32 color_a[3] color_b[3] scale_mm params[16];
+//!             u32 variant seed                                              (E6, new)
 //! LENS  72 B  u32 blades; f32 roundness rotation_deg; u32 profile; f32 profile_param
 //!             obstruction cats_eye squeeze shift_x_mm shift_y_mm tilt_deg tilt_axis_deg
 //!             ca_amount swirl field_mm; u32 mask_kind mask_width mask_height;
@@ -58,7 +63,7 @@
 //!
 //! `CAMR`, `ENVR`, `FLOR`, `RNDR` and `LENS` may appear at most once (a missing one means
 //! "defaults"; a missing `LENS` is the plain thin lens);
-//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP` and `FXAM` repeat. A mesh refers to a material by its position
+//! `MESH`, `MATL`, `LGHT`, `INST`, `BMAP`, `PATN` and `FXAM` repeat. A mesh refers to a material by its position
 //! among the `MATL` sections, an instance to a mesh by its position among the `MESH` sections, the
 //! environment to a bitmap by its position among the `BMAP` sections (`0xffffffff`: none),
 //! wherever they are in the file. All floats must be finite.
@@ -115,7 +120,15 @@
 //!   straight through it (no refraction, the colour once) and so do shadow rays. `opacity` below
 //!   one makes the surface a stochastic cut-out (emitters ignore it); `absorption_mm` above zero
 //!   makes `base_color` the colour white light keeps after that many millimetres inside a solid
-//!   (Beer–Lambert) instead of a surface tint.
+//!   (Beer–Lambert) instead of a surface tint. `bevel_mm` (E6) above zero rounds the shading
+//!   normal within that many millimetres of the mesh's sharp edges ([`crate::bevel`]); a file
+//!   without it (72 B) has sharp edges. E9: `scatter_mm` above zero fills a clear solid with a
+//!   scattering medium of that mean free path, single-scattering albedo `scatter_color` and
+//!   Henyey–Greenstein anisotropy `scatter_g` (see [`crate::integrator::medium`]); `abbe` above
+//!   zero makes the index of a clear solid without a medium depend on the wavelength (Cauchy's law
+//!   through `ior` at the d line with that Abbe number, see [`crate::integrator::dispersion`]). A
+//!   file written before E9 (72 or 76 B) reads them as 0, white, 0, 0: no medium and no
+//!   dispersion.
 //! * `LGHT.kind`: **0 rect** (`size_x` × `size_y`, its local Y axis along `up`), **1 disk**
 //!   (diameter `size_x`), **2 sun** (a disc of angular diameter `angle_deg`, 0 for a delta
 //!   direction), **3 point** and **4 spot** (reserved for L4: parsed, kept, not rendered). Rect
@@ -149,6 +162,22 @@
 //!   `color`, **2** shadow catcher: the plane is invisible to everything except camera rays,
 //!   where it shows the background darkened by the fraction of light the scene blocks (with a
 //!   transparent background: black with that fraction as alpha).
+//! * `PATN` (E6): the procedural pattern of the material `material` (its position among the
+//!   `MATL` sections; at most one per material, the first counts), which replaces its base colour
+//!   point by point, scales its roughness and tilts the shading normal by its relief
+//!   ([`crate::pattern`]). `kind` **1 wood**: `color_a` the spring wood (light), `color_b` the
+//!   summer wood (dark), `scale_mm` the ring spacing (bamboo: the strip width), `params` ring
+//!   variation, ring noise, axial noise, colour noise, contrast (0: the colours as given), pore
+//!   width in mm (0: none), pore depth, pore band (0 diffuse- to 1 ring-porous), fibre, the
+//!   anisotropy of the roughness along the grain, then the knots (figure 0 only): count (0 to
+//!   12), diameter in mm, variation of the diameter (± fraction) and darkness, then two unused
+//!   (0); `variant` the figure (0 rings, 1 strips, 2 speckle, 3 streaked); `seed` the
+//!   material's seed (where the knots are). `kind` **2 cloth**: `color_a` the warp, `color_b`
+//!   the weft, `scale_mm` the distance between threads (knit: between stitches; felt: the size
+//!   of its fibres), `params` the relief (0 to 1) and the yarn's twist (0 smooth filaments to 1),
+//!   the rest unused (0); `variant` the weave (0
+//!   plain, 1 twill 2/2, 2 satin, 3 canvas, 4 knit, 5 felt, 6 twill 3/1). Unknown kinds draw
+//!   nothing. The writer emits the `PATN` sections right after the `MATL` ones.
 //! * `RNDR.tonemap`: **0** linear (no curve, clipped), **1** ACES (Narkowicz fit), **2** filmic
 //!   (log2 shaper and S-curve, Blender-like), **3** AgX, **4** standard (sRGB, clipped); unknown
 //!   values mean ACES. `exposure_ev` multiplies by `2^ev` before the curve. `max_depth` is the
@@ -221,6 +250,8 @@ pub const TAG_INST: [u8; 4] = *b"INST";
 pub const TAG_FLOR: [u8; 4] = *b"FLOR";
 /// Bitmap section tag.
 pub const TAG_BMAP: [u8; 4] = *b"BMAP";
+/// Pattern section tag (E6).
+pub const TAG_PATN: [u8; 4] = *b"PATN";
 /// Lens section tag (O1).
 pub const TAG_LENS: [u8; 4] = *b"LENS";
 /// Ambient effect section tag (S4a).
@@ -490,7 +521,38 @@ fn parse_material(r: &mut Reader) -> Result<Material, RsbError> {
         opacity: r.opt_f32(1.0)?,
         anisotropy: r.opt_f32(0.0)?,
         absorption_mm: r.opt_f32(0.0)?,
+        bevel_mm: r.opt_f32(0.0)?,
+        scatter_mm: r.opt_f32(0.0)?,
+        scatter_color: Rgb::new(r.opt_f32(1.0)?, r.opt_f32(1.0)?, r.opt_f32(1.0)?),
+        scatter_g: r.opt_f32(0.0)?,
+        abbe: r.opt_f32(0.0)?,
     })
+}
+
+fn parse_pattern(r: &mut Reader) -> Result<crate::pattern::Pattern, RsbError> {
+    let material = r.u32()?;
+    let kind = r.u32()?;
+    let color_a = r.rgb()?;
+    let color_b = r.rgb()?;
+    let scale_mm = r.f32()?;
+    let mut params = [0.0f32; crate::pattern::PARAMS];
+    for p in &mut params {
+        *p = r.f32()?;
+    }
+    let pattern = crate::pattern::Pattern {
+        material,
+        kind,
+        color_a,
+        color_b,
+        scale_mm,
+        params,
+        variant: r.u32()?,
+        seed: r.u32()?,
+    };
+    if pattern.scale_mm < 0.0 {
+        return Err(r.invalid("scale_mm must not be negative"));
+    }
+    Ok(pattern)
 }
 
 fn parse_light(r: &mut Reader) -> Result<Light, RsbError> {
@@ -668,6 +730,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
             TAG_MATL => scene.materials.push(parse_material(&mut r)?),
             TAG_LGHT => scene.lights.push(parse_light(&mut r)?),
             TAG_BMAP => bitmaps.push(parse_bitmap(&mut r)?),
+            TAG_PATN => scene.patterns.push(parse_pattern(&mut r)?),
             TAG_FXAM => effects.push(AmbientParams::decode(payload).map_err(|e| match e {
                 rt_sim::FxamError::TooShort => RsbError::SectionTooShort { tag },
                 rt_sim::FxamError::Invalid(reason) => RsbError::Invalid { tag, reason },
@@ -732,6 +795,16 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     }
     if instances.len() > crate::geometry::MAX_INSTANCES {
         return Err(invalid_instance("too many instances"));
+    }
+    if scene
+        .patterns
+        .iter()
+        .any(|p| p.material as usize >= materials)
+    {
+        return Err(RsbError::Invalid {
+            tag: TAG_PATN,
+            reason: "material does not refer to a MATL section",
+        });
     }
     if effects.iter().any(|e| e.material_id as usize >= materials) {
         return Err(RsbError::Invalid {
@@ -877,6 +950,25 @@ impl Scene {
                 w.f32(m.opacity);
                 w.f32(m.anisotropy);
                 w.f32(m.absorption_mm);
+                w.f32(m.bevel_mm);
+                w.f32(m.scatter_mm);
+                w.rgb(m.scatter_color);
+                w.f32(m.scatter_g);
+                w.f32(m.abbe);
+            });
+        }
+        for p in &self.patterns {
+            w.section(TAG_PATN, |w| {
+                w.u32(p.material);
+                w.u32(p.kind);
+                w.rgb(p.color_a);
+                w.rgb(p.color_b);
+                w.f32(p.scale_mm);
+                for v in p.params {
+                    w.f32(v);
+                }
+                w.u32(p.variant);
+                w.u32(p.seed);
             });
         }
         for mesh in self.geometry.meshes() {
@@ -1060,6 +1152,11 @@ mod tests {
                     opacity: 0.75,
                     anisotropy: 0.4,
                     absorption_mm: 25.0,
+                    bevel_mm: 0.35,
+                    scatter_mm: 2.5,
+                    scatter_color: Rgb::new(0.9, 0.8, 0.7),
+                    scatter_g: -0.3,
+                    abbe: 42.0,
                 },
             ],
             geometry: Geometry::from_meshes(vec![
@@ -1151,6 +1248,19 @@ mod tests {
                 edge_supersample: 4,
             },
             bitmaps: test_bitmaps(),
+            patterns: vec![crate::pattern::Pattern {
+                material: 1,
+                kind: crate::pattern::PATTERN_WOOD,
+                color_a: Rgb::new(0.7, 0.5, 0.3),
+                color_b: Rgb::new(0.3, 0.2, 0.1),
+                scale_mm: 4.5,
+                params: [
+                    0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 3.0, 12.5, 0.25, 0.75, 0.0,
+                    0.0,
+                ],
+                variant: 7,
+                seed: 0xdead_beef,
+            }],
             effects: Vec::new(),
         }
     }
@@ -1273,8 +1383,8 @@ mod tests {
         assert_eq!(
             tags,
             [
-                *b"CAMR", *b"MATL", *b"MATL", *b"MESH", *b"MESH", *b"LGHT", *b"LGHT", *b"LGHT",
-                *b"LGHT", *b"BMAP", *b"BMAP", *b"ENVR", *b"FLOR", *b"RNDR"
+                *b"CAMR", *b"MATL", *b"MATL", *b"PATN", *b"MESH", *b"MESH", *b"LGHT", *b"LGHT",
+                *b"LGHT", *b"LGHT", *b"BMAP", *b"BMAP", *b"ENVR", *b"FLOR", *b"RNDR"
             ]
         );
         assert_eq!(Scene::from_rsb(&bytes), Ok(scene));
@@ -1290,15 +1400,16 @@ mod tests {
                 .map(|(_, p)| p.len())
         };
         assert_eq!(size(b"CAMR"), Some(15 * 4));
-        assert_eq!(size(b"MATL"), Some(18 * 4));
+        assert_eq!(size(b"MATL"), Some(25 * 4));
         assert_eq!(size(b"LGHT"), Some(19 * 4));
         assert_eq!(size(b"ENVR"), Some(21 * 4));
         // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
         assert_eq!(size(b"BMAP"), Some(16 + 12));
         assert_eq!(size(b"FLOR"), Some(5 * 4));
         assert_eq!(size(b"RNDR"), Some(16 * 4));
+        assert_eq!(size(b"PATN"), Some(27 * 4));
         // First mesh: 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
-        assert_eq!(sections(&bytes)[3].1.len(), (2 + 24 + 6 + 1) * 4);
+        assert_eq!(sections(&bytes)[4].1.len(), (2 + 24 + 6 + 1) * 4);
     }
 
     #[test]
@@ -1370,6 +1481,69 @@ mod tests {
     }
 
     #[test]
+    fn patterns_must_name_a_material_and_have_a_scale() {
+        let good = full_scene().to_rsb();
+        let rebuild = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = good[..8].to_vec();
+            for (tag, mut payload) in sections(&good) {
+                if tag == TAG_PATN {
+                    edit(&mut payload);
+                }
+                out.extend(unknown_section(&tag, &payload));
+            }
+            out
+        };
+        let stray = rebuild(&|p| p[0..4].copy_from_slice(&2u32.to_le_bytes()));
+        assert!(matches!(
+            Scene::from_rsb(&stray),
+            Err(RsbError::Invalid { tag: TAG_PATN, .. })
+        ));
+        let negative = rebuild(&|p| p[32..36].copy_from_slice(&(-1.0f32).to_le_bytes()));
+        assert!(matches!(
+            Scene::from_rsb(&negative),
+            Err(RsbError::Invalid { tag: TAG_PATN, .. })
+        ));
+        let short = rebuild(&|p| p.truncate(104));
+        assert_eq!(
+            Scene::from_rsb(&short),
+            Err(RsbError::SectionTooShort { tag: TAG_PATN })
+        );
+        // A newer kind is read and kept; it draws nothing.
+        let newer = rebuild(&|p| p[4..8].copy_from_slice(&9u32.to_le_bytes()));
+        let scene = Scene::from_rsb(&newer).expect("newer kind");
+        assert_eq!(scene.patterns[0].kind, 9);
+    }
+
+    #[test]
+    fn materials_written_before_e6_have_sharp_edges() {
+        // MATL of 72 B, as E5 to X5 wrote it: no bevel_mm. MATL of 76 B, as E6 wrote it before
+        // E9: the bevel, and no medium or dispersion.
+        let scene = full_scene();
+        let bytes = scene.to_rsb();
+        let with_matl = |len: usize| {
+            let mut old = bytes[..8].to_vec();
+            for (tag, mut payload) in sections(&bytes) {
+                if tag == TAG_MATL {
+                    assert_eq!(payload.len(), 100);
+                    payload.truncate(len);
+                }
+                old.extend(unknown_section(&tag, &payload));
+            }
+            Scene::from_rsb(&old).expect("older layout reads")
+        };
+        let e5 = with_matl(72);
+        assert_eq!(e5.materials[1].bevel_mm, 0.0);
+        assert_eq!(e5.materials[1].absorption_mm, 25.0);
+        assert_eq!(scene.materials[1].bevel_mm, 0.35);
+        let e6 = &with_matl(76).materials[1];
+        assert_eq!(e6.bevel_mm, 0.35);
+        assert_eq!(
+            (e6.scatter_mm, e6.scatter_color, e6.scatter_g, e6.abbe),
+            (0.0, Rgb::WHITE, 0.0, 0.0)
+        );
+    }
+
+    #[test]
     fn sections_written_before_e5_read_with_defaults() {
         // MATL of 60 B (no opacity, anisotropy, absorption), ENVR of 40 B, no BMAP.
         let scene = full_scene();
@@ -1389,6 +1563,16 @@ mod tests {
         let m = &read.materials[1];
         assert_eq!((m.opacity, m.anisotropy, m.absorption_mm), (1.0, 0.0, 0.0));
         assert_eq!(m.flags, 1);
+        assert_eq!(
+            (
+                m.bevel_mm,
+                m.scatter_mm,
+                m.scatter_color,
+                m.scatter_g,
+                m.abbe
+            ),
+            (0.0, 0.0, Rgb::WHITE, 0.0, 0.0)
+        );
         let e = &read.environment;
         assert_eq!(
             (e.hdri_map, e.backplate_map, e.backplate_fit),

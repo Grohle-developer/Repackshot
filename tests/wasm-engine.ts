@@ -90,7 +90,7 @@ export function pinned(file: string, name: string): number {
 }
 
 /** The pinned pass hashes of a scene (`PINNED_<prefix>PASS_*`), in the order of PASS_KEYS. */
-export function pinnedPasses(prefix: '' | 'E5_'): number[] {
+export function pinnedPasses(prefix: '' | 'E5_' | 'E6_'): number[] {
   const file = 'engine/crates/rt-core/src/render/passes_tests.rs';
   return ['ALBEDO', 'NORMAL', 'DEPTH', 'PART_ID', 'MATERIAL_ID', 'COC'].map((k) => pinned(file, `PINNED_${prefix}PASS_${k}`));
 }

@@ -3,10 +3,22 @@
 import type { MaterialCategoryEntry, MaterialPreset } from './types';
 
 // Material library (upstream MAT_CATEGORIES and MAT_METAL ... MAT_OTHER):
-// 77 presets in upstream order, grouped by category, and the five set pieces of L6 (cards, acrylic floors, a
-// black mirror), each in its category. The family decides which
-// shader recipe is built; the params fill in its editable properties. Colours
-// are linear RGBA.
+// 77 presets in upstream order, grouped by category; the five set pieces of L6
+// (cards, acrylic floors, a black mirror), each in its category; and the
+// translucent materials and liquids of phase E9 and its dispersive crystal (not
+// from upstream) at the end of their category. The family decides which shader
+// recipe is built; the params fill in its editable properties. Colours are
+// linear RGBA.
+//
+// E9 recipes: GLASS family with a scattering medium inside (`scatterMm`, the
+// mean free path; `scatterColor`, the single-scattering albedo; `scatterG`,
+// the Henyey–Greenstein direction). Dense media use the reduced coefficients
+// of the similarity relation (σs' = σs (1 - g), g = 0): the same look at a
+// fraction of the cost. Milk and cream are the measured reduced scattering and
+// absorption of H. W. Jensen et al., "A Practical Model for Subsurface Light
+// Transport", SIGGRAPH 2001 (table 2), as one mean free path (their mean σt')
+// and an albedo per channel; the others are set by eye on the E9 sheet. E9c's
+// crystal has an Abbe number (`abbe`): chromatic dispersion.
 
 export const MATERIAL_CATEGORIES: readonly MaterialCategoryEntry[] = [
   { key: 'METAL', label: { es: 'Metal', en: 'Metal' } },
@@ -143,6 +155,24 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     label: { es: 'Baquelita', en: 'Bakelite' },
     params: { baseColor: [0.09, 0.05, 0.035, 1], roughness: 0.25, coat: 0.6, coatRoughness: 0.12 },
   },
+  {
+    key: 'HDPE_WHITE', category: 'PLASTIC', family: 'GLASS',
+    label: { es: 'HDPE blanco', en: 'White HDPE' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.35, ior: 1.54, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.08, scatterColor: [0.996, 0.995, 0.99, 1], scatterG: 0 },
+  },
+  {
+    key: 'PP_NATURAL', category: 'PLASTIC', family: 'GLASS',
+    label: { es: 'PP natural', en: 'Natural PP' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.3, ior: 1.49, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.6, scatterColor: [0.995, 0.994, 0.988, 1], scatterG: 0 },
+  },
+  {
+    key: 'PMMA_FROST', category: 'PLASTIC', family: 'GLASS',
+    label: { es: 'Acrílico esmerilado', en: 'Frosted acrylic' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.45, ior: 1.49, transmission: 1, absorptionMm: 0,
+      scatterMm: 4, scatterColor: [0.999, 0.999, 0.999, 1], scatterG: 0.3 },
+  },
   // L6: the floors of the sets (not ported from EZ Packshot): sheets of cast acrylic, black and white, with the
   // slight haze of a real sheet (roughness 0.12): they smear what they reflect a little, they are not mirrors.
   {
@@ -157,158 +187,177 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
   },
 
   // --- Woods ---
-  // woodColor1 is the spring wood (light), woodColor2 the summer wood (dark).
+  // woodColor1 is the spring wood (light), woodColor2 the summer wood (dark). E6 (lead's ruling): ringDensity is
+  // rings per 100 mm, physical (oak 3 mm, maple 2.5, pine 5...), and every wood carries its ring contrast,
+  // pores (width in mm, depth, 1 ring-porous / 0 diffuse) and, for bamboo, MDF and ebony, its figure. Knots
+  // (count per piece, diameter in mm, ± variation, darkness): knotty pine 4 of 10 to 25 mm, cherry and walnut
+  // one; bamboo, MDF and ebony have none (their figure has no branches).
   {
     key: 'OAK', category: 'WOOD', family: 'WOOD',
     label: { es: 'Roble', en: 'Oak' },
-    params: { woodColor1: [0.56, 0.38, 0.21, 1], woodColor2: [0.3, 0.18, 0.09, 1], ringDensity: 14,
-      ringVariation: 0.45, ringNoise: 0.35, axialNoise: 0.25, colorNoise: 0.2, roughness: 0.4 },
+    params: { woodColor1: [0.56, 0.38, 0.21, 1], woodColor2: [0.3, 0.18, 0.09, 1], ringDensity: 33,
+      ringVariation: 0.45, ringNoise: 0.35, axialNoise: 0.25, colorNoise: 0.2, roughness: 0.4,
+      ringContrast: 0.35, poreSize: 0.3, poreDepth: 0.5, poreBand: 1 },
   },
   {
     key: 'OAK_WHITE', category: 'WOOD', family: 'WOOD',
     label: { es: 'Roble blanco', en: 'White oak' },
-    params: { woodColor1: [0.71, 0.57, 0.38, 1], woodColor2: [0.47, 0.33, 0.19, 1], ringDensity: 16,
-      ringVariation: 0.35, ringNoise: 0.3, axialNoise: 0.2, colorNoise: 0.15, roughness: 0.42 },
+    params: { woodColor1: [0.71, 0.57, 0.38, 1], woodColor2: [0.47, 0.33, 0.19, 1], ringDensity: 33,
+      ringVariation: 0.35, ringNoise: 0.3, axialNoise: 0.2, colorNoise: 0.15, roughness: 0.42,
+      ringContrast: 0.3, poreSize: 0.3, poreDepth: 0.5, poreBand: 1 },
   },
   {
     key: 'PINE', category: 'WOOD', family: 'WOOD',
     label: { es: 'Pino', en: 'Pine' },
-    params: { woodColor1: [0.78, 0.6, 0.36, 1], woodColor2: [0.46, 0.27, 0.12, 1], ringDensity: 14,
-      ringVariation: 0.6, ringNoise: 0.3, axialNoise: 0.25, colorNoise: 0.3, roughness: 0.48 },
+    params: { woodColor1: [0.78, 0.6, 0.36, 1], woodColor2: [0.46, 0.27, 0.12, 1], ringDensity: 20,
+      ringVariation: 0.6, ringNoise: 0.3, axialNoise: 0.25, colorNoise: 0.3, roughness: 0.48,
+      ringContrast: 0.25, poreSize: 0, knotCount: 4, knotSize: 17.5, knotSizeVar: 0.43, knotDarkness: 0.9 },
   },
   {
     key: 'WALNUT', category: 'WOOD', family: 'WOOD',
     label: { es: 'Nogal', en: 'Walnut' },
-    params: { woodColor1: [0.3, 0.18, 0.1, 1], woodColor2: [0.14, 0.075, 0.045, 1], ringDensity: 18,
-      ringVariation: 0.4, ringNoise: 0.5, axialNoise: 0.35, colorNoise: 0.22, roughness: 0.36 },
+    params: { woodColor1: [0.3, 0.18, 0.1, 1], woodColor2: [0.14, 0.075, 0.045, 1], ringDensity: 33,
+      ringVariation: 0.4, ringNoise: 0.5, axialNoise: 0.35, colorNoise: 0.22, roughness: 0.36,
+      ringContrast: 0.35, poreSize: 0.2, poreDepth: 0.175, poreBand: 0, knotCount: 1, knotSize: 15, knotDarkness: 0.6 },
   },
   {
     key: 'MAPLE', category: 'WOOD', family: 'WOOD',
     label: { es: 'Arce', en: 'Maple' },
-    params: { woodColor1: [0.76, 0.63, 0.43, 1], woodColor2: [0.63, 0.49, 0.31, 1], ringDensity: 22,
+    params: { woodColor1: [0.76, 0.63, 0.43, 1], woodColor2: [0.63, 0.49, 0.31, 1], ringDensity: 40,
       ringVariation: 0.35, ringNoise: 0.32, axialNoise: 0.22, colorNoise: 0.2,
-      roughness: 0.34 },
+      roughness: 0.34,
+      ringContrast: 0.15, poreSize: 0.08, poreDepth: 0.15, poreBand: 0 },
   },
   {
     key: 'CHERRY', category: 'WOOD', family: 'WOOD',
     label: { es: 'Cerezo', en: 'Cherry' },
-    params: { woodColor1: [0.55, 0.29, 0.16, 1], woodColor2: [0.36, 0.16, 0.085, 1], ringDensity: 20,
-      ringVariation: 0.3, ringNoise: 0.3, axialNoise: 0.2, colorNoise: 0.15, roughness: 0.32 },
+    params: { woodColor1: [0.55, 0.29, 0.16, 1], woodColor2: [0.36, 0.16, 0.085, 1], ringDensity: 40,
+      ringVariation: 0.3, ringNoise: 0.3, axialNoise: 0.2, colorNoise: 0.15, roughness: 0.32,
+      ringContrast: 0.25, poreSize: 0.08, poreDepth: 0.15, poreBand: 0, knotCount: 1, knotSize: 12, knotDarkness: 0.6 },
   },
   {
     key: 'TEAK', category: 'WOOD', family: 'WOOD',
     label: { es: 'Teca', en: 'Teak' },
-    params: { woodColor1: [0.58, 0.41, 0.2, 1], woodColor2: [0.38, 0.25, 0.11, 1], ringDensity: 15,
+    params: { woodColor1: [0.58, 0.41, 0.2, 1], woodColor2: [0.38, 0.25, 0.11, 1], ringDensity: 25,
       ringVariation: 0.35, ringNoise: 0.4, axialNoise: 0.28, colorNoise: 0.22,
-      roughness: 0.45 },
+      roughness: 0.45,
+      ringContrast: 0.25, poreSize: 0.2, poreDepth: 0.35, poreBand: 0 },
   },
   {
     key: 'MAHOGANY', category: 'WOOD', family: 'WOOD',
     label: { es: 'Caoba', en: 'Mahogany' },
-    params: { woodColor1: [0.42, 0.19, 0.11, 1], woodColor2: [0.24, 0.095, 0.055, 1], ringDensity: 22,
+    params: { woodColor1: [0.42, 0.19, 0.11, 1], woodColor2: [0.24, 0.095, 0.055, 1], ringDensity: 25,
       ringVariation: 0.28, ringNoise: 0.35, axialNoise: 0.25, colorNoise: 0.18,
-      roughness: 0.3 },
+      roughness: 0.3,
+      ringContrast: 0.35, poreSize: 0.2, poreDepth: 0.175, poreBand: 0 },
   },
   {
     key: 'ASH', category: 'WOOD', family: 'WOOD',
     label: { es: 'Fresno', en: 'Ash' },
-    params: { woodColor1: [0.68, 0.55, 0.38, 1], woodColor2: [0.44, 0.32, 0.19, 1], ringDensity: 12,
+    params: { woodColor1: [0.68, 0.55, 0.38, 1], woodColor2: [0.44, 0.32, 0.19, 1], ringDensity: 29,
       ringVariation: 0.55, ringNoise: 0.35, axialNoise: 0.22, colorNoise: 0.18,
-      roughness: 0.44 },
+      roughness: 0.44,
+      ringContrast: 0.15, poreSize: 0.3, poreDepth: 0.5, poreBand: 1 },
   },
   {
     key: 'BIRCH', category: 'WOOD', family: 'WOOD',
     label: { es: 'Abedul', en: 'Birch' },
-    params: { woodColor1: [0.8, 0.68, 0.5, 1], woodColor2: [0.62, 0.48, 0.31, 1], ringDensity: 26,
-      ringVariation: 0.18, ringNoise: 0.22, axialNoise: 0.14, colorNoise: 0.1, roughness: 0.4 },
+    params: { woodColor1: [0.8, 0.68, 0.5, 1], woodColor2: [0.62, 0.48, 0.31, 1], ringDensity: 40,
+      ringVariation: 0.18, ringNoise: 0.22, axialNoise: 0.14, colorNoise: 0.1, roughness: 0.4,
+      ringContrast: 0.15, poreSize: 0.08, poreDepth: 0.15, poreBand: 0 },
   },
   {
     key: 'EBONY', category: 'WOOD', family: 'WOOD',
     label: { es: 'Ebano', en: 'Ebony' },
-    params: { woodColor1: [0.055, 0.048, 0.042, 1], woodColor2: [0.02, 0.017, 0.015, 1], ringDensity: 28,
+    params: { woodColor1: [0.055, 0.048, 0.042, 1], woodColor2: [0.02, 0.017, 0.015, 1], ringDensity: 50,
       ringVariation: 0.25, ringNoise: 0.3, axialNoise: 0.18, colorNoise: 0.12,
-      roughness: 0.22 },
+      roughness: 0.22,
+      ringContrast: 0.2, poreSize: 0.08, poreDepth: 0, poreBand: 0, woodFigure: 'STREAKED' },
   },
   {
     key: 'BAMBOO', category: 'WOOD', family: 'WOOD',
     label: { es: 'Bambu', en: 'Bamboo' },
-    params: { woodColor1: [0.74, 0.6, 0.34, 1], woodColor2: [0.55, 0.4, 0.19, 1], ringDensity: 6,
-      ringVariation: 0.1, ringNoise: 0.05, axialNoise: 0.05, colorNoise: 0.08, roughness: 0.3 },
+    params: { woodColor1: [0.74, 0.6, 0.34, 1], woodColor2: [0.55, 0.4, 0.19, 1], ringDensity: 14,
+      ringVariation: 0.1, ringNoise: 0.05, axialNoise: 0.05, colorNoise: 0.08, roughness: 0.3,
+      ringContrast: 0.2, poreSize: 0, woodFigure: 'STRIPS' },
   },
   {
     key: 'MDF', category: 'WOOD', family: 'WOOD',
     label: { es: 'MDF', en: 'MDF' },
     params: { woodColor1: [0.52, 0.38, 0.24, 1], woodColor2: [0.46, 0.33, 0.2, 1], ringDensity: 2,
       ringVariation: 0.05, ringNoise: 0.05, axialNoise: 0.6, colorNoise: 0.35,
-      roughness: 0.68 },
+      roughness: 0.68,
+      ringContrast: 0, poreSize: 0, woodFigure: 'SPECKLE' },
   },
 
   // --- Fabrics ---
+  // E6: threadCount is threads per cm (physical, each fabric's own; upstream's were per part size). Denim is
+  // a 3/1 twill (TWILL31), warp-faced like the real one.
   {
     key: 'COTTON', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Algodon', en: 'Cotton' },
     params: { threadColor1: [0.72, 0.71, 0.68, 1], threadColor2: [0.62, 0.61, 0.58, 1], weave: 'PLAIN',
-      threadCount: 200, weaveDepth: 0.35, fuzz: 0.35, fuzzRoughness: 0.35, roughness: 0.75 },
+      threadCount: 40, weaveDepth: 0.35, fuzz: 0.35, fuzzRoughness: 0.35, roughness: 0.75 },
   },
   {
     key: 'LINEN', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Lino', en: 'Linen' },
     params: { threadColor1: [0.7, 0.66, 0.55, 1], threadColor2: [0.58, 0.54, 0.44, 1], weave: 'PLAIN',
-      threadCount: 110, weaveDepth: 0.55, fuzz: 0.3, fuzzRoughness: 0.4, roughness: 0.8 },
+      threadCount: 18, weaveDepth: 0.55, fuzz: 0.3, fuzzRoughness: 0.4, roughness: 0.8 },
   },
   {
     key: 'TWILL', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Sarga', en: 'Twill' },
     params: { threadColor1: [0.35, 0.34, 0.32, 1], threadColor2: [0.26, 0.25, 0.24, 1], weave: 'TWILL',
-      threadCount: 180, weaveDepth: 0.45, fuzz: 0.28, fuzzRoughness: 0.35, roughness: 0.7 },
+      threadCount: 36, weaveDepth: 0.45, fuzz: 0.28, fuzzRoughness: 0.35, roughness: 0.7 },
   },
   {
     key: 'DENIM', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Vaquero', en: 'Denim' },
-    params: { threadColor1: [0.1, 0.16, 0.3, 1], threadColor2: [0.66, 0.66, 0.64, 1], weave: 'TWILL',
-      threadCount: 130, weaveDepth: 0.6, fuzz: 0.4, fuzzRoughness: 0.45, roughness: 0.78 },
+    params: { threadColor1: [0.1, 0.16, 0.3, 1], threadColor2: [0.66, 0.66, 0.64, 1], weave: 'TWILL31',
+      threadCount: 24, weaveDepth: 0.6, fuzz: 0.4, fuzzRoughness: 0.45, roughness: 0.78 },
   },
   {
     key: 'SATIN', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Raso', en: 'Satin' },
     params: { threadColor1: [0.55, 0.1, 0.16, 1], threadColor2: [0.42, 0.07, 0.12, 1], weave: 'SATIN',
-      threadCount: 260, weaveDepth: 0.07, fuzz: 0.6, fuzzRoughness: 0.12, roughness: 0.28 },
+      threadCount: 100, weaveDepth: 0.07, fuzz: 0.6, fuzzRoughness: 0.12, roughness: 0.28 },
   },
   {
     key: 'CANVAS', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Lona', en: 'Canvas' },
     params: { threadColor1: [0.55, 0.48, 0.34, 1], threadColor2: [0.44, 0.38, 0.26, 1], weave: 'CANVAS',
-      threadCount: 80, weaveDepth: 0.7, fuzz: 0.25, fuzzRoughness: 0.45, roughness: 0.82 },
+      threadCount: 14, weaveDepth: 0.7, fuzz: 0.25, fuzzRoughness: 0.45, roughness: 0.82 },
   },
   {
     key: 'VELVET', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Terciopelo', en: 'Velvet' },
     params: { threadColor1: [0.1, 0.045, 0.12, 1], threadColor2: [0.075, 0.03, 0.09, 1], weave: 'KNIT',
-      threadCount: 400, weaveDepth: 0.1, fuzz: 1, fuzzRoughness: 0.28, roughness: 0.9 },
+      threadCount: 30, weaveDepth: 0.1, fuzz: 1, fuzzRoughness: 0.28, roughness: 0.9 },
   },
   {
     key: 'FELT', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Fieltro', en: 'Felt' },
     params: { threadColor1: [0.3, 0.32, 0.34, 1], threadColor2: [0.26, 0.28, 0.3, 1], weave: 'FELT',
-      threadCount: 500, weaveDepth: 0.25, fuzz: 0.75, fuzzRoughness: 0.55, roughness: 0.92 },
+      threadCount: 20, weaveDepth: 0.25, fuzz: 0.75, fuzzRoughness: 0.55, roughness: 0.92 },
   },
   {
     key: 'KNIT', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Punto', en: 'Knit' },
     params: { threadColor1: [0.55, 0.42, 0.3, 1], threadColor2: [0.44, 0.33, 0.22, 1], weave: 'KNIT',
-      threadCount: 45, weaveDepth: 0.8, fuzz: 0.5, fuzzRoughness: 0.45, roughness: 0.85 },
+      threadCount: 4, weaveDepth: 0.8, fuzz: 0.5, fuzzRoughness: 0.45, roughness: 0.85 },
   },
   {
     key: 'MESH', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Malla tecnica', en: 'Technical mesh' },
     params: { threadColor1: [0.08, 0.08, 0.09, 1], threadColor2: [0.14, 0.14, 0.15, 1], weave: 'PLAIN',
-      threadCount: 45, weaveDepth: 0.9, fuzz: 0.15, fuzzRoughness: 0.3, roughness: 0.55 },
+      threadCount: 8, weaveDepth: 0.9, yarnTwist: 0, fuzz: 0.15, fuzzRoughness: 0.3, roughness: 0.55 },
   },
   {
     key: 'MICROFIB', category: 'FABRIC', family: 'FABRIC',
     label: { es: 'Microfibra', en: 'Microfibre' },
     params: { threadColor1: [0.16, 0.18, 0.2, 1], threadColor2: [0.13, 0.15, 0.17, 1], weave: 'SATIN',
-      threadCount: 450, weaveDepth: 0.12, fuzz: 0.7, fuzzRoughness: 0.5, roughness: 0.88 },
+      threadCount: 120, weaveDepth: 0.12, fuzz: 0.7, fuzzRoughness: 0.5, roughness: 0.88 },
   },
 
   // --- Glass and mirror ---
@@ -332,6 +381,12 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'GLASS_SMOKE', category: 'GLASS', family: 'GLASS',
     label: { es: 'Vidrio ahumado', en: 'Smoked glass' },
     params: { baseColor: [0.22, 0.21, 0.21, 1], roughness: 0.02, ior: 1.52, transmission: 1 },
+  },
+  {
+    // E9c: perfume crystal, dispersive (Abbe number 40: the colours part in its facets).
+    key: 'CRYSTAL', category: 'GLASS', family: 'GLASS',
+    label: { es: 'Cristal de perfumería', en: 'Perfume crystal' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0, ior: 1.56, transmission: 1, absorptionMm: 0, abbe: 40 },
   },
   {
     key: 'MIRROR', category: 'GLASS', family: 'SIMPLE',
@@ -454,7 +509,7 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'CARBON', category: 'OTHER', family: 'FABRIC',
     label: { es: 'Carbono', en: 'Carbon fibre' },
     params: { threadColor1: [0.022, 0.022, 0.026, 1], threadColor2: [0.055, 0.055, 0.062, 1],
-      weave: 'TWILL', threadCount: 90, weaveDepth: 0.3, fuzz: 0, fuzzRoughness: 0.2,
+      weave: 'TWILL', threadCount: 5, weaveDepth: 0.05, yarnTwist: 0, fuzz: 0, fuzzRoughness: 0.2,
       roughness: 0.18, coat: 1, coatRoughness: 0.03 },
   },
   {
@@ -472,6 +527,42 @@ export const MATERIAL_PRESETS: readonly MaterialPreset[] = [
     key: 'WHITE_STUDIO', category: 'OTHER', family: 'SIMPLE',
     label: { es: 'Blanco estudio', en: 'Studio white' },
     params: { baseColor: [0.82, 0.82, 0.82, 1], roughness: 0.45 },
+  },
+  {
+    key: 'WAX', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Cera', en: 'Wax' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.4, ior: 1.44, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.35, scatterColor: [0.997, 0.993, 0.975, 1], scatterG: 0 },
+  },
+  {
+    key: 'SOAP_GLYCERIN', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Jabón de glicerina', en: 'Glycerine soap' },
+    params: { baseColor: [0.93, 0.72, 0.42, 1], roughness: 0.12, ior: 1.47, transmission: 1, absorptionMm: 60,
+      scatterMm: 12, scatterColor: [0.995, 0.99, 0.98, 1], scatterG: 0.4 },
+  },
+  {
+    key: 'MILK', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Leche', en: 'Milk' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0, ior: 1.35, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.31, scatterColor: [0.9996, 0.9993, 0.9963, 1], scatterG: 0 },
+  },
+  {
+    key: 'JUICE_ORANGE', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Zumo de naranja', en: 'Orange juice' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0, ior: 1.35, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.9, scatterColor: [0.997, 0.94, 0.55, 1], scatterG: 0 },
+  },
+  {
+    key: 'JUICE_APPLE', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Zumo de manzana', en: 'Apple juice' },
+    params: { baseColor: [0.86, 0.55, 0.16, 1], roughness: 0, ior: 1.35, transmission: 1, absorptionMm: 25,
+      scatterMm: 40, scatterColor: [1, 1, 1, 1], scatterG: 0.5 },
+  },
+  {
+    key: 'CREAM', category: 'OTHER', family: 'GLASS',
+    label: { es: 'Crema', en: 'Cream' },
+    params: { baseColor: [1, 1, 1, 1], roughness: 0.25, ior: 1.4, transmission: 1, absorptionMm: 0,
+      scatterMm: 0.19, scatterColor: [0.99997, 0.9995, 0.9949, 1], scatterG: 0 },
   },
   // L6: the cards of the sets (not ported): matte card stock, white (0.92) and black (0.02). The silver card of a
   // set is brushed aluminium (ALU_BRUSH), which is what a silver card is.

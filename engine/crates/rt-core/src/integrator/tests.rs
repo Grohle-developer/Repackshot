@@ -16,14 +16,37 @@ use crate::scene::{
 
 /// Renders samples `0..spp` of the whole image (one thread, one prepared scene).
 fn render(scene: &Scene, spp: u32) -> Film {
-    let prepared = Prepared::new(scene);
+    render_samples(scene, 0, spp)
+}
+
+/// Renders samples `from..to` of the whole image (one thread, one prepared scene).
+fn render_samples(scene: &Scene, from: u32, to: u32) -> Film {
+    render_prepared(scene, &Prepared::new(scene), from, to)
+}
+
+/// [`render_samples`] with a prepared scene of the test's own.
+fn render_prepared(scene: &Scene, prepared: &Prepared, from: u32, to: u32) -> Film {
     let (w, h) = (scene.render.width, scene.render.height);
     let mut film = Film::new(w, h);
     let tile = TileRect { x: 0, y: 0, w, h };
-    for s in 0..spp {
-        render_tile_prepared(scene, &prepared, tile, s, &mut film, Isa::detect());
+    for s in from..to {
+        render_tile_prepared(scene, prepared, tile, s, &mut film, Isa::detect());
     }
     film
+}
+
+/// Relative variance of one image of `half` samples per pixel, from two independent ones
+/// (samples `0..half` and `half..2 half`): `Σ (a - b)² / 2` over `Σ ((a + b) / 2)²`, green.
+fn relative_variance(scene: &Scene, prepared: &Prepared, half: u32) -> f64 {
+    let a = render_prepared(scene, prepared, 0, half).resolve();
+    let b = render_prepared(scene, prepared, half, 2 * half).resolve();
+    let (mut num, mut den) = (0.0f64, 0.0f64);
+    for (x, y) in a.iter().zip(&b).skip(1).step_by(3) {
+        let (x, y) = (f64::from(*x), f64::from(*y));
+        num += (x - y) * (x - y) / 2.0;
+        den += (x + y) * (x + y) / 4.0;
+    }
+    num / den.max(1.0e-30)
 }
 
 /// Mean of one channel over the pixels selected by `keep(x, y)`.
@@ -179,16 +202,14 @@ fn rough_metal_never_gains_energy() {
             (u * u + v * v).sqrt() * 220.0 < 90.0
         };
         let mean = mean_where(&film, 1, inside);
-        assert!(mean <= 1.002, "roughness {roughness}: mean {mean}");
-        // Single-scattering GGX loses energy as it gets rougher (about 60 % at roughness 1,
-        // see the BSDF tests), and never gains any: a nearly smooth mirror keeps almost all.
+        assert!(mean <= 1.005, "roughness {roughness}: mean {mean}");
+        // Single-scattering GGX lost energy as it got rougher (about 60 % at roughness 1);
+        // since E9a the extra lobe gives it back: white at every roughness, never above.
+        assert!(mean > 0.99, "roughness {roughness}: mean {mean}");
         assert!(
-            mean < previous,
+            mean < previous + 0.01,
             "roughness {roughness}: {mean} after {previous}"
         );
-        if roughness < 0.1 {
-            assert!(mean > 0.98, "roughness {roughness}: mean {mean}");
-        }
         previous = mean;
         for x in 0..16 {
             for y in 0..16 {
@@ -550,6 +571,7 @@ fn sphere_on_floor(floor: Floor, background_mode: u32) -> Scene {
         floor,
         render: settings(32, 32),
         bitmaps: Vec::new(),
+        patterns: Vec::new(),
         effects: Vec::new(),
     }
 }
@@ -857,7 +879,7 @@ fn glass_in_a_white_furnace_conserves_energy() {
     // A clear sphere without absorption in a uniform world of radiance 1 refracts and reflects
     // the world back: every pixel converges to 1 (the radiance compressed by η² inside comes
     // back on the way out). Flat facets, so that shading and geometric normals agree.
-    for (roughness, low) in [(0.0f32, 0.98), (0.3, 0.9)] {
+    for (roughness, low) in [(0.0f32, 0.98), (0.3, 0.98)] {
         let scene = Scene {
             camera: ortho_front(260.0),
             materials: vec![clear_glass(roughness)],
@@ -1464,6 +1486,958 @@ fn the_caustic_split_starts_again_at_every_receiver() {
     assert_eq!(r2, r1);
     assert!(r2.after(true).after(true).photons_bring_it());
     assert!(!CausticState::Eye.after(true).photons_bring_it());
+}
+
+/// The mean of the sphere's pixels (centres inside 0.85 of its radius) of a faceted sphere of
+/// `material` in a uniform world of radiance 1, orthographic, `size` × `size` at `spp` samples.
+fn furnace_mean(material: Material, size: u32, spp: u32) -> f64 {
+    furnace_mean_media(material, size, spp, false)
+}
+
+/// [`furnace_mean`], with the walks of media leaving by the exit lobe or (`exact`) through the
+/// surface's own BSDF.
+fn furnace_mean_media(material: Material, size: u32, spp: u32, exact: bool) -> f64 {
+    let scene = Scene {
+        camera: ortho_front(260.0),
+        materials: vec![material],
+        geometry: Geometry::from_meshes(vec![faceted_sphere(Vec3::ZERO, 100.0, 3)]),
+        environment: uniform_world(1.0),
+        render: RenderSettings {
+            max_depth: if exact { 256 } else { 64 },
+            ..settings(size, size)
+        },
+        ..Scene::default()
+    };
+    let mut prepared = Prepared::new(&scene);
+    prepared.exact_media = exact;
+    let film = render_prepared(&scene, &prepared, 0, spp);
+    mean_where(&film, 1, |x, y| {
+        let (u, v) = (
+            (x as f32 + 0.5) / size as f32 - 0.5,
+            (y as f32 + 0.5) / size as f32 - 0.5,
+        );
+        (u * u + v * v).sqrt() * 260.0 < 85.0
+    })
+}
+
+#[test]
+fn rough_metal_and_glass_come_out_white_in_a_furnace() {
+    // E9a. A white metal sphere and a clear glass one in a uniform world of radiance 1 are
+    // invisible at any roughness once the light that single scattering loses between
+    // microfacets is given back (Kulla and Conty's lobe for the metal, Turquin's scaling for the
+    // glass). Before E9a they came out at 0.998, 0.895, 0.574 and 0.356 (metal) and 0.994,
+    // 0.828, 0.515 and 0.361 (glass) for roughness 0.2, 0.5, 0.8 and 1. Rough glass seen from
+    // inside chooses reflection rarely and weighs it heavily, so the glass needs many paths.
+    for roughness in [0.2f32, 0.5, 0.8, 1.0] {
+        let metal = furnace_mean(
+            Material {
+                base_color: Rgb::WHITE,
+                metallic: 1.0,
+                roughness,
+                ..Material::default()
+            },
+            16,
+            128,
+        );
+        let glass = furnace_mean(clear_glass(roughness), 16, 256);
+        eprintln!("furnace roughness {roughness}: metal {metal:.4}, glass {glass:.4}");
+        assert!((metal - 1.0).abs() < 0.01, "metal at {roughness}: {metal}");
+        assert!((glass - 1.0).abs() < 0.01, "glass at {roughness}: {glass}");
+    }
+}
+
+#[test]
+fn white_plastic_comes_out_white_in_a_furnace() {
+    // E9a2. A white plastic (a white Lambertian base under the dielectric's specular layer, ior
+    // 1.5), bare and under a full clear coat (smooth, and of roughness 0.3), in a uniform world of
+    // radiance 1: white at every roughness once the base is weighted by Kulla and Conty's
+    // (1 - E_s(μo)) (1 - E_s(μi)) / (1 - E_s,avg) (jointly normalised under the coat) instead of
+    // (1 - F(μo)) (1 - F(μi)). Before: 0.918, 0.918, 0.914, 0.900 and 0.891 bare for roughness
+    // 0, 0.2, 0.5, 0.8 and 1; 0.860 to 0.833 under a smooth coat, 0.860 to 0.833 under a rough
+    // one. Smooth plastic changes too: the old weight lost 1 - F_avg of the diffuse (8.6 %).
+    for coat in [None, Some(0.0f32), Some(0.3)] {
+        for roughness in [0.0f32, 0.2, 0.5, 0.8, 1.0] {
+            let plastic = Material {
+                base_color: Rgb::WHITE,
+                roughness,
+                coat: if coat.is_some() { 1.0 } else { 0.0 },
+                coat_roughness: coat.unwrap_or(0.0),
+                ..Material::default()
+            };
+            let mean = furnace_mean(plastic, 16, 128);
+            eprintln!("furnace plastic roughness {roughness} coat {coat:?}: {mean:.4}");
+            assert!(
+                (mean - 1.0).abs() < 0.01,
+                "roughness {roughness}, coat {coat:?}: {mean}"
+            );
+        }
+    }
+}
+
+// --- E9b: scattering media -------------------------------------------------------------------
+
+/// Clear glass of `roughness` filled with a scattering medium.
+fn milky(scatter_mm: f32, albedo: Rgb, g: f32, roughness: f32) -> Material {
+    Material {
+        scatter_mm,
+        scatter_color: albedo,
+        scatter_g: g,
+        ..clear_glass(roughness)
+    }
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "half a million paths per case: run with --release (CI does, natively and on WASI)"
+)]
+fn a_white_medium_in_a_furnace_neither_creates_nor_loses_energy() {
+    // E9b: a sphere of glass filled with a medium of albedo 1 and no absorption, in a uniform
+    // world of radiance 1, is invisible within 2 %: the walk reflects back in with the
+    // boundary's Fresnel and leaves by the exit lobe of albedo η², which is what the radiance
+    // inside a solid is in a uniform world. Dense and sparse media, forwards and backwards
+    // scattering, smooth and rough boundaries.
+    // Strongly forward media (g near 0.9) are right too but converge slowly here.
+    for (mfp, g, roughness, spp) in [
+        (10.0f32, 0.0f32, 0.0f32, 512u32),
+        (10.0, 0.4, 0.0, 512),
+        (10.0, -0.4, 0.0, 512),
+        (10.0, 0.0, 0.5, 512),
+        (3.0, -0.3, 0.3, 1024),
+        (1.0, 0.0, 0.0, 256),
+        (0.1, 0.0, 0.0, 64),
+        (60.0, 0.0, 0.0, 512),
+    ] {
+        let mean = furnace_mean(milky(mfp, Rgb::WHITE, g, roughness), 16, spp);
+        eprintln!("medium furnace mfp {mfp} g {g} roughness {roughness}: {mean:.4}");
+        assert!(
+            (mean - 1.0).abs() < 0.02,
+            "mfp {mfp}, g {g}, roughness {roughness}: {mean}"
+        );
+    }
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "a quarter of a million paths per case: run with --release (CI does)"
+)]
+fn an_absorbing_medium_in_a_uniform_world_is_what_the_exact_boundary_gives() {
+    // E9b: in a uniform world the exit lobe is exact even when the medium absorbs, since a walk
+    // finds the same light whichever way it leaves; only how often the boundary reflects it back
+    // in (its Fresnel, total internal reflection included) and so how long it walks decide what
+    // it absorbs. A grey medium must then give what walks leaving through the surface's own BSDF
+    // give: reflecting back too seldom would make it brighter, too often darker.
+    for (mfp, albedo, g) in [(1.0f32, 0.9f32, 0.0f32), (4.0, 0.97, 0.3)] {
+        let m = milky(mfp, Rgb::splat(albedo), g, 0.0);
+        let lobe = furnace_mean_media(m.clone(), 16, 256, false);
+        let exact = furnace_mean_media(m, 16, 1024, true);
+        eprintln!(
+            "grey medium mfp {mfp} albedo {albedo} g {g}: exit lobe {lobe:.4}, exact {exact:.4}"
+        );
+        assert!(
+            (lobe / exact - 1.0).abs() < 0.02,
+            "mfp {mfp}, albedo {albedo}: {lobe} vs {exact}"
+        );
+        // Not white (the test means something).
+        assert!(exact < 0.9, "{exact}");
+    }
+}
+
+/// Chandrasekhar's plane albedo of a half-space of isotropic scatterers of single-scattering
+/// albedo `a` under an index-matched boundary, for light along the normal: `1 - H(1) √(1 - a)`,
+/// with his H function solved by iteration on a midpoint grid (S. Chandrasekhar, *Radiative
+/// Transfer*, 1950).
+fn plane_albedo(a: f64) -> f64 {
+    let n = 400;
+    let mu: Vec<f64> = (0..n).map(|j| (j as f64 + 0.5) / n as f64).collect();
+    let h_at = |h: &[f64], m: f64| {
+        let integral: f64 = mu.iter().zip(h).map(|(&x, &hx)| hx / (m + x)).sum::<f64>() / n as f64;
+        1.0 / (1.0 - a / 2.0 * m * integral)
+    };
+    let mut h = vec![1.0; n];
+    for _ in 0..500 {
+        h = mu.iter().map(|&m| h_at(&h, m)).collect();
+    }
+    1.0 - h_at(&h, 1.0) * (1.0 - a).sqrt()
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "long walks in a thick slab: run with --release (CI does)"
+)]
+fn a_grey_half_space_reflects_chandrasekhars_plane_albedo() {
+    // E9b: a slab 400 mean free paths thick of isotropic scatterers behind a boundary of index
+    // 1.001 (no Fresnel to speak of), seen straight down in a uniform world of radiance 1, shows
+    // its plane albedo for light along the normal (by reciprocity): 0.415 at albedo 0.9, 0.753 at
+    // 0.99. Its walks often last far beyond the 32 events after which the roulette starts, so
+    // this is what tests that the roulette keeps the expectation (the white furnace never rolls
+    // it, and the exact boundary walks the same way), with the distance and phase sampling at an
+    // albedo between 0 and 1.
+    assert!((plane_albedo(0.0)).abs() < 1.0e-12 && (plane_albedo(1.0) - 1.0).abs() < 1.0e-9);
+    for a in [0.9f64, 0.99] {
+        let medium = Material {
+            ior: 1.001,
+            ..milky(1.0, Rgb::splat(a as f32), 0.0, 0.0)
+        };
+        let scene = Scene {
+            camera: ortho_down(0.0, 0.0, 20.0),
+            materials: vec![medium],
+            geometry: Geometry::from_meshes(vec![box_mesh(
+                Vec3::new(-2000.0, -2000.0, -400.0),
+                Vec3::new(2000.0, 2000.0, 0.0),
+            )]),
+            environment: uniform_world(1.0),
+            render: RenderSettings {
+                max_depth: 64,
+                ..settings(8, 8)
+            },
+            ..Scene::default()
+        };
+        let got = mean_where(&render(&scene, 512), 1, |_, _| true);
+        let want = plane_albedo(a);
+        eprintln!("half-space of albedo {a}: {got:.4}, Chandrasekhar {want:.4}");
+        assert!(
+            (got / want - 1.0).abs() < 0.02,
+            "albedo {a}: {got} vs {want}"
+        );
+    }
+}
+
+#[test]
+fn a_sparse_medium_lets_what_does_not_scatter_through_straight() {
+    // E9b: a walk that crosses the solid without scattering leaves through the surface's own
+    // BSDF (it refracts, as clear glass does), not by the exit lobe: a small emitter seen through
+    // a slab one hundredth of a mean free path thick stays sharp and keeps
+    // (1 - R)² τ / (1 - R² τ²) of its radiance, τ = e^-0.01 (the few scattered paths add little).
+    let medium = milky(1000.0, Rgb::WHITE, 0.0, 0.0);
+    let emitter = Material {
+        kind: MATERIAL_EMISSIVE,
+        emission: Rgb::WHITE,
+        emission_power: 1.0,
+        ..Material::default()
+    };
+    let patch = Mesh::new(
+        &[
+            Vec3::new(-10.0, -10.0, -50.0),
+            Vec3::new(10.0, -10.0, -50.0),
+            Vec3::new(10.0, 10.0, -50.0),
+            Vec3::new(-10.0, 10.0, -50.0),
+        ],
+        &[],
+        &[0, 1, 2, 0, 2, 3],
+        0,
+    )
+    .expect("patch");
+    let scene = Scene {
+        camera: ortho_down(0.0, 0.0, 40.0),
+        materials: vec![medium, emitter],
+        geometry: Geometry::new(
+            vec![
+                box_mesh(
+                    Vec3::new(-1000.0, -1000.0, 0.0),
+                    Vec3::new(1000.0, 1000.0, 10.0),
+                ),
+                patch,
+            ],
+            vec![
+                Instance::new(0, Transform::IDENTITY, 0),
+                Instance::new(1, Transform::IDENTITY, 1),
+            ],
+        )
+        .expect("scene"),
+        environment: black_world(),
+        render: RenderSettings {
+            max_depth: 64,
+            ..settings(8, 8)
+        },
+        ..Scene::default()
+    };
+    let film = render(&scene, 64);
+    let r = f64::from(crate::bsdf::fresnel_dielectric(1.0, 1.5));
+    let tau = (-0.01f64).exp();
+    let want = (1.0 - r) * (1.0 - r) * tau / (1.0 - r * r * tau * tau);
+    // The four pixels in the middle of the patch's image, and the corners outside it.
+    let middle = mean_where(&film, 1, |x, y| (3..5).contains(&x) && (3..5).contains(&y));
+    let outside = mean_where(&film, 1, |x, y| (x == 0 || x == 7) && (y == 0 || y == 7));
+    eprintln!(
+        "emitter through a sparse medium: {middle:.4} (straight {want:.4}), beside it {outside:.4}"
+    );
+    assert!((middle / want - 1.0).abs() < 0.03, "{middle} vs {want}");
+    assert!(outside < 0.05 * want, "{outside}");
+}
+
+#[test]
+fn a_medium_that_only_absorbs_is_beer_lambert_in_every_channel() {
+    // Albedo 0: every event absorbs, so what crosses the slab is exp(-σt d) per channel. σt
+    // differs between channels through the absorption distance, so the walk's spectral MIS has
+    // to give each channel its own transmittance: σt = 1/20 + ln(1/c)/10 per millimetre, 10 mm.
+    let r = crate::bsdf::fresnel_dielectric(1.0, 1.5) as f64;
+    let m = Material {
+        base_color: Rgb::new(0.5, 0.5, 0.25),
+        absorption_mm: 10.0,
+        scatter_mm: 20.0,
+        scatter_color: Rgb::BLACK,
+        ..clear_glass(0.0)
+    };
+    let film = render(&slab_scene(m), 1024);
+    for (channel, tau) in [
+        (1usize, 0.5f64 * (-0.5f64).exp()),
+        (2, 0.25 * (-0.5f64).exp()),
+    ] {
+        let want = (1.0 - r) * (1.0 - r) * tau / (1.0 - r * r * tau * tau);
+        let got = mean_where(&film, channel, |_, _| true);
+        assert!(
+            (got / want - 1.0).abs() < 0.02,
+            "channel {channel}: {got} vs {want}"
+        );
+    }
+}
+
+#[test]
+fn media_are_receivers_with_their_own_random_numbers() {
+    let m = milky(1.0, Rgb::WHITE, 0.0, 0.0);
+    assert!(!crate::caustics::is_caster(&m));
+    assert!(crate::caustics::is_caster(&clear_glass(0.0)));
+    // The medium's dimensions are hashed ones beyond the Sobol table and the cut-outs.
+    use crate::sampler::{
+        cutout_dim, medium_dim, DIM_DISPERSION, DIM_LENS_BAND, DIM_LENS_FILTER_LIGHT,
+        SOBOL_DIMENSIONS,
+    };
+    assert!(medium_dim(0, 0) > cutout_dim(1023, 63));
+    assert!(medium_dim(0, 0) >= SOBOL_DIMENSIONS);
+    // Below the lens's chromatic band (O1); the wavelength of dispersion (E9c) beyond the blocks
+    // of the lens filters (O3a).
+    assert!(medium_dim(5000, 5000) + 8 <= DIM_LENS_BAND);
+    const { assert!(DIM_LENS_FILTER_LIGHT + (1 << 20) <= DIM_DISPERSION) };
+    assert_ne!(medium_dim(1, 0), medium_dim(0, 1));
+    // A scene with media keeps no Beer–Lambert medium for them (the walk absorbs).
+    let scene = Scene {
+        materials: vec![m, clear_glass(0.0)],
+        ..Scene::default()
+    };
+    let prepared = Prepared::new(&scene);
+    assert!(prepared.scattering[0].is_some() && prepared.media[0].is_none());
+    assert!(prepared.scattering[1].is_none());
+}
+
+/// A 10 mm slab of `medium` at z 0 to 10 under an orthographic camera looking down, lit from below
+/// by a 1 m square panel 50 mm under it, glossy, of radiance 1 (watts: π · area).
+fn medium_slab(medium: Material) -> Scene {
+    let mut scene = slab_scene(medium);
+    // The emitter of the glass slab scene, replaced by a light of the same radiance.
+    let instances: Vec<Instance> = scene.geometry.instances()[..1].to_vec();
+    let meshes = scene.geometry.meshes()[..1].to_vec();
+    scene.geometry = Geometry::new(meshes, instances).expect("slab");
+    scene.lights = vec![Light {
+        kind: LightKind::Rect,
+        position: Vec3::new(0.0, 0.0, -50.0),
+        direction: Vec3::new(0.0, 0.0, 1.0),
+        up: Vec3::new(0.0, 1.0, 0.0),
+        size_x: 1000.0,
+        size_y: 1000.0,
+        color: Rgb::WHITE,
+        power: std::f32::consts::PI,
+        spread_deg: 180.0,
+        angle_deg: 0.0,
+        flags: LIGHT_FLAG_GLOSSY,
+    }];
+    scene
+}
+
+#[test]
+fn forward_scattering_sends_the_light_onwards() {
+    // A slab one mean free path thick between a light below and the camera above: a medium that
+    // scatters forwards lets more of the light through to the camera than one that scatters
+    // backwards (the light's and the camera's view of the phase function agree).
+    let through = |g: f32| {
+        let film = render(&medium_slab(milky(10.0, Rgb::WHITE, g, 0.0)), 256);
+        mean_where(&film, 1, |_, _| true)
+    };
+    let (forwards, isotropic, backwards) = (through(0.8), through(0.0), through(-0.8));
+    eprintln!("slab: forwards {forwards:.4}, isotropic {isotropic:.4}, backwards {backwards:.4}");
+    assert!(
+        forwards > 1.05 * isotropic && isotropic > 1.2 * backwards,
+        "{forwards} {isotropic} {backwards}"
+    );
+}
+
+#[test]
+fn an_emitter_that_is_not_a_light_is_found_after_a_medium_event() {
+    // The panel under the slab is an emissive mesh that is not sampled as a light, so the exit
+    // vertices cannot sample it: its light arrives only by paths that leave the slab and hit it,
+    // and must be counted. A slab one mean free path thick passes the unscattered
+    // (1 - R)² τ / (1 - R² τ²) with τ = e^-1, and the scattered light on top of it.
+    let film = render(&slab_scene(milky(10.0, Rgb::WHITE, 0.0, 0.0)), 512);
+    let got = mean_where(&film, 1, |_, _| true);
+    let r = f64::from(crate::bsdf::fresnel_dielectric(1.0, 1.5));
+    let tau = (-1.0f64).exp();
+    let unscattered = (1.0 - r) * (1.0 - r) * tau / (1.0 - r * r * tau * tau);
+    eprintln!("slab over an emitter: {got:.4}, unscattered {unscattered:.4}");
+    assert!(
+        got > 1.5 * unscattered && got < 1.0,
+        "{got} vs {unscattered}"
+    );
+}
+
+/// A sphere of the milk recipe, 20 mm in radius, lit from one side by a panel 100 mm square
+/// 60 mm to its left, in a black world, seen from the front (deep enough for the exact
+/// boundary's reflections inside).
+fn milk_scene(size: u32) -> Scene {
+    let milk = Material {
+        ior: 1.35,
+        ..milky(0.31, Rgb::new(0.9996, 0.9993, 0.9963), 0.0, 0.0)
+    };
+    Scene {
+        camera: ortho_front(50.0),
+        materials: vec![milk],
+        geometry: Geometry::from_meshes(vec![icosphere(Vec3::ZERO, 20.0, 3)]),
+        lights: vec![Light {
+            kind: LightKind::Rect,
+            position: Vec3::new(-60.0, 0.0, 0.0),
+            direction: Vec3::new(1.0, 0.0, 0.0),
+            up: Vec3::new(0.0, 0.0, 1.0),
+            size_x: 100.0,
+            size_y: 100.0,
+            color: Rgb::WHITE,
+            power: 1.0,
+            spread_deg: 180.0,
+            angle_deg: 0.0,
+            flags: LIGHT_FLAG_GLOSSY,
+        }],
+        environment: black_world(),
+        render: RenderSettings {
+            max_depth: 1024,
+            ..settings(size, size)
+        },
+        ..Scene::default()
+    }
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "a 4096-sample reference of a dense medium: run with --release (CI does)"
+)]
+fn milk_is_what_the_exact_boundary_gives_without_holes() {
+    // E9b: a milk sphere under one side panel. The exit lobe at 256 samples is within 6 % of the
+    // exact boundary (walks that leave by refracting through the real surface, 4096 other
+    // samples), and no pixel of its lit side is below 60 % of it. The interior connections to
+    // the lights that the exit lobe replaced read 25 % too dark here (they see nothing beyond
+    // the critical angle); the lobe reads 3.5 % too bright (it gives every exit the same
+    // spread). The variance of those connections did not show in a sphere at 256 samples
+    // (their worst lit pixel was 0.85 of their reference, the lobe's 0.87), so it is not tested.
+    let size = 12;
+    let scene = milk_scene(size);
+    let image = render_samples(&scene, 0, 256);
+    let mut exact = Prepared::new(&scene);
+    exact.exact_media = true;
+    let reference = render_prepared(&scene, &exact, 256, 256 + 4096);
+    let (a, b) = (image.resolve(), reference.resolve());
+    let at = |p: &[f32], x: u32, y: u32| p[((y * size + x) * 3 + 1) as usize] as f64;
+    let inside = |x: u32, y: u32| {
+        let (u, v) = (
+            (x as f32 + 0.5) / size as f32 - 0.5,
+            (y as f32 + 0.5) / size as f32 - 0.5,
+        );
+        (u * u + v * v).sqrt() * 50.0 < 17.0
+    };
+    let (mut mean_a, mut mean_b, mut n) = (0.0f64, 0.0f64, 0usize);
+    let mut brightest = 0.0f64;
+    for y in 0..size {
+        for x in 0..size {
+            if inside(x, y) {
+                mean_a += at(&a, x, y);
+                mean_b += at(&b, x, y);
+                brightest = brightest.max(at(&b, x, y));
+                n += 1;
+            }
+        }
+    }
+    let (mean_a, mean_b) = (mean_a / n as f64, mean_b / n as f64);
+    // The lit side: the left half of the disc, where the reference is at least a fifth of its
+    // brightest pixel.
+    let mut worst = f64::INFINITY;
+    for y in 0..size {
+        for x in 0..size / 2 {
+            if inside(x, y) && at(&b, x, y) > 0.2 * brightest {
+                worst = worst.min(at(&a, x, y) / at(&b, x, y));
+            }
+        }
+    }
+    eprintln!(
+        "milk: exit lobe {mean_a:.4}, exact boundary {mean_b:.4}, worst lit pixel {worst:.3}"
+    );
+    assert!(mean_b > 0.0 && worst.is_finite());
+    assert!((mean_a / mean_b - 1.0).abs() < 0.06, "{mean_a} vs {mean_b}");
+    assert!(worst >= 0.6, "a lit pixel at {worst} of the reference");
+}
+
+/// A 10 mm slab of the milk recipe (z 0 to 10) under a 3 mm plate of clear glass (z 12 to 15),
+/// both 200 mm wide, lit by a 100 mm panel above and to one side, seen straight down through the
+/// plate, in a black world.
+fn milk_under_glass(size: u32) -> Scene {
+    let milk = Material {
+        ior: 1.35,
+        ..milky(0.31, Rgb::new(0.9996, 0.9993, 0.9963), 0.0, 0.0)
+    };
+    let slab = box_mesh(
+        Vec3::new(-100.0, -100.0, 0.0),
+        Vec3::new(100.0, 100.0, 10.0),
+    );
+    let plate = box_mesh(
+        Vec3::new(-100.0, -100.0, 12.0),
+        Vec3::new(100.0, 100.0, 15.0),
+    );
+    Scene {
+        camera: ortho_down(0.0, 0.0, 40.0),
+        materials: vec![milk, clear_glass(0.0)],
+        geometry: Geometry::new(
+            vec![slab, plate],
+            vec![
+                Instance::new(0, Transform::IDENTITY, 0),
+                Instance::new(1, Transform::IDENTITY, 1),
+            ],
+        )
+        .expect("scene"),
+        lights: vec![Light {
+            kind: LightKind::Rect,
+            position: Vec3::new(60.0, 0.0, 70.0),
+            direction: Vec3::new(-1.0, 0.0, -1.0).normalize(),
+            up: Vec3::new(0.0, 1.0, 0.0),
+            size_x: 100.0,
+            size_y: 100.0,
+            color: Rgb::WHITE,
+            power: 1.0,
+            spread_deg: 180.0,
+            angle_deg: 0.0,
+            flags: LIGHT_FLAG_GLOSSY,
+        }],
+        environment: black_world(),
+        render: RenderSettings {
+            max_depth: 64,
+            ..settings(size, size)
+        },
+        ..Scene::default()
+    }
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "a long reference of a dense medium under glass: run with --release (CI does)"
+)]
+fn a_medium_sees_the_lights_through_a_thin_glass_wall() {
+    // E9b: the shadow rays of the exit vertices cross the 3 mm plate (the thin-wall rule), so the
+    // milk is lit by next-event estimation, and its BSDF samples that refract through the plate
+    // are weighted against those shadow rays. The image is within 5 % of the path tracer's
+    // without the rule (where the light comes only by samples that refract through the plate),
+    // much less noisy, and with caustics the light through the plate comes once: the photons
+    // bring it, the shadow rays leave it.
+    let scene = milk_under_glass(8);
+    let mut without = Prepared::new(&scene);
+    without.exit_walls = false;
+    let reference = render_prepared(&scene, &without, 0, 2048).resolve();
+    let with = render_samples(&scene, 0, 256).resolve();
+    let mean = |img: &[f32]| {
+        img.iter()
+            .skip(1)
+            .step_by(3)
+            .map(|&v| f64::from(v))
+            .sum::<f64>()
+            / 64.0
+    };
+    let (r, w) = (mean(&reference), mean(&with));
+    let (noise_with, noise_without) = (
+        relative_variance(&scene, &Prepared::new(&scene), 32),
+        relative_variance(&scene, &without, 32),
+    );
+    let mut lit = scene.clone();
+    lit.render.caustic_photons = 4096;
+    lit.render.caustic_radius = 2.0;
+    let photons = mean(&render_with_photons(&lit, 128).resolve());
+    eprintln!(
+        "milk under glass: path tracer {r:.4}, through the wall {w:.4}, with photons \
+         {photons:.4}; relative variance at 32 spp {noise_with:.5} vs {noise_without:.5}"
+    );
+    assert!(r > 0.0);
+    assert!((w / r - 1.0).abs() < 0.05, "through the wall {w} vs {r}");
+    assert!(
+        noise_with < 0.5 * noise_without,
+        "{noise_with} vs {noise_without}"
+    );
+    assert!(
+        (photons / r - 1.0).abs() < 0.1,
+        "with photons {photons} vs {r}"
+    );
+}
+
+/// Renders samples `0..spp` of the whole image with the caustic photons of every sample.
+fn render_with_photons(scene: &Scene, spp: u32) -> Film {
+    let prepared = Prepared::new(scene);
+    let (w, h) = (scene.render.width, scene.render.height);
+    let mut film = Film::new(w, h);
+    let tile = TileRect { x: 0, y: 0, w, h };
+    for s in 0..spp {
+        let map = crate::caustics::PhotonMap::trace(scene, &prepared, s, Isa::detect());
+        crate::render::render_tile_photons(
+            scene,
+            &prepared,
+            Some(&map),
+            tile,
+            s,
+            &mut film,
+            Isa::detect(),
+        );
+    }
+    film
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "a medium lit through glass, with and without photons: run with --release (CI does)"
+)]
+fn a_medium_behind_glass_gathers_its_photons_where_its_walks_leave() {
+    // A disc light inside a glass ball faces a block of a scattering medium behind it: all the
+    // light the block gets crosses the glass, so with the photon map the camera paths leave it
+    // to the photons, and the exit vertices of the walks, which look outwards, must gather them
+    // from the outside of the block's surface. With and without the map the block gets the same
+    // light (none of it would be losing all of it).
+    let glass = clear_glass(0.0);
+    let block = milky(2.0, Rgb::splat(0.98), 0.0, 0.0);
+    let mut ball = icosphere(Vec3::new(0.0, 0.0, 40.0), 40.0, 4);
+    ball = Mesh::new(
+        &(0..ball.vertex_count())
+            .filter_map(|i| ball.position(i))
+            .collect::<Vec<_>>(),
+        &[],
+        ball.indices(),
+        0,
+    )
+    .expect("ball");
+    let mut scene = Scene {
+        camera: Camera {
+            position: Vec3::new(0.0, 1000.0, 75.0),
+            target: Vec3::new(0.0, 0.0, 75.0),
+            up: Vec3::new(0.0, 0.0, 1.0),
+            ortho: true,
+            ortho_width: 300.0,
+            ..Camera::default()
+        },
+        materials: vec![glass, block],
+        geometry: Geometry::new(
+            vec![
+                ball,
+                box_mesh(
+                    Vec3::new(-150.0, -110.0, 0.0),
+                    Vec3::new(150.0, -80.0, 150.0),
+                ),
+            ],
+            vec![
+                Instance::new(0, Transform::IDENTITY, 0),
+                Instance::new(1, Transform::IDENTITY, 1),
+            ],
+        )
+        .expect("scene"),
+        lights: vec![Light {
+            kind: LightKind::Disk,
+            position: Vec3::new(0.0, -5.0, 40.0),
+            direction: Vec3::new(0.0, -1.0, 0.0),
+            up: Vec3::new(0.0, 0.0, 1.0),
+            size_x: 50.0,
+            power: 2.0,
+            flags: LIGHT_FLAG_GLOSSY,
+            ..Light::default()
+        }],
+        environment: black_world(),
+        render: RenderSettings {
+            max_depth: 32,
+            caustic_photons: 4096,
+            caustic_radius: 2.0,
+            ..settings(30, 30)
+        },
+        ..Scene::default()
+    };
+    scene.render.seed = 5;
+    let block_pixels: Vec<usize> = (0..30u32 * 30)
+        .filter(|&i| {
+            let ray = crate::render::centre_ray(&scene, i % 30, i / 30);
+            scene.geometry.trace(&ray).is_some_and(|h| h.instance == 1)
+        })
+        .map(|i| i as usize)
+        .collect();
+    let mut tracer_only = scene.clone();
+    tracer_only.render.caustic_photons = 0;
+    let reference = render(&tracer_only, 512).resolve();
+    let with = render_with_photons(&scene, 128).resolve();
+    let mean = |img: &[f32]| {
+        block_pixels
+            .iter()
+            .map(|&i| f64::from(img[i * 3 + 1]))
+            .sum::<f64>()
+            / block_pixels.len() as f64
+    };
+    let (r, c) = (mean(&reference), mean(&with));
+    eprintln!(
+        "medium behind glass ({} px): path tracer {r:.4}, with photons {c:.4}",
+        block_pixels.len()
+    );
+    assert!(
+        block_pixels.len() > 300 && r > 0.0,
+        "{} px, {r}",
+        block_pixels.len()
+    );
+    assert!((c / r - 1.0).abs() < 0.1, "with photons {c} vs {r}");
+}
+
+// --- E9c: dispersion ----------------------------------------------------------------------------
+
+/// A glass prism with a 45° apex: its bottom face at height `z` (x from -50 to 50), its upright
+/// face at x = 50 (100 mm high) and its slanted face rising from x = -50, 100 mm deep along y.
+/// Every triangle faces out.
+fn prism(z: f32) -> Mesh {
+    let corner = |x: f32, y: f32, h: f32| Vec3::new(x, y, z + h);
+    let (a0, b0, c0) = (
+        corner(-50.0, -50.0, 0.0),
+        corner(50.0, -50.0, 0.0),
+        corner(50.0, -50.0, 100.0),
+    );
+    let (a1, b1, c1) = (
+        corner(-50.0, 50.0, 0.0),
+        corner(50.0, 50.0, 0.0),
+        corner(50.0, 50.0, 100.0),
+    );
+    let centre = Vec3::new(50.0 / 3.0, 0.0, z + 100.0 / 3.0);
+    let faces = [
+        [a0, b0, b1],
+        [a0, b1, a1],
+        [b0, c0, c1],
+        [b0, c1, b1],
+        [a0, c0, c1],
+        [a0, c1, a1],
+        [a0, b0, c0],
+        [a1, b1, c1],
+    ];
+    let mut positions = Vec::new();
+    for [p, q, r] in faces {
+        let outward = (q - p).cross(r - p).dot((p + q + r) * (1.0 / 3.0) - centre) > 0.0;
+        positions.extend(if outward { [p, q, r] } else { [p, r, q] });
+    }
+    let indices: Vec<u32> = (0..positions.len() as u32).collect();
+    Mesh::new(&positions, &[], &indices, 0).expect("prism")
+}
+
+/// Crystal of index 1.56 and Abbe number `abbe` (0: none).
+fn crystal(abbe: f32) -> Material {
+    Material {
+        ior: 1.56,
+        abbe,
+        ..clear_glass(0.0)
+    }
+}
+
+/// The centroid along x of each channel of `img` (`w` pixels wide), in pixels.
+fn channel_centroids(img: &[f32], w: u32) -> [f64; 3] {
+    let mut out = [0.0f64; 3];
+    for (c, centroid) in out.iter_mut().enumerate() {
+        let (mut sum, mut moment) = (0.0f64, 0.0f64);
+        for (i, px) in img.chunks_exact(3).enumerate() {
+            let v = f64::from(px[c]);
+            sum += v;
+            moment += v * (i as u32 % w) as f64;
+        }
+        *centroid = moment / sum.max(1.0e-30);
+    }
+    out
+}
+
+#[test]
+fn a_prism_parts_the_colours_of_what_is_seen_through_it() {
+    // E9c: seen straight down through the prism (its bottom 300 mm over the floor), a thin
+    // emitting strip on the floor shows up where each wavelength's refraction brings it: blue
+    // bends more, so its image lies further back towards the prism's thin edge (lower x) than red's,
+    // green's in between. Without an Abbe number the three images are the same, to the bit.
+    let image = |abbe: f32| {
+        let strip = Mesh::new(
+            &[
+                Vec3::new(149.0, -200.0, 0.5),
+                Vec3::new(151.0, -200.0, 0.5),
+                Vec3::new(151.0, 200.0, 0.5),
+                Vec3::new(149.0, 200.0, 0.5),
+            ],
+            &[],
+            &[0, 1, 2, 0, 2, 3],
+            0,
+        )
+        .expect("strip");
+        let scene = Scene {
+            camera: ortho_down(-10.0, 0.0, 60.0),
+            materials: vec![
+                crystal(abbe),
+                Material {
+                    kind: MATERIAL_EMISSIVE,
+                    emission: Rgb::WHITE,
+                    emission_power: 1.0,
+                    ..Material::default()
+                },
+            ],
+            geometry: Geometry::new(
+                vec![prism(300.0), strip],
+                vec![
+                    Instance::new(0, Transform::IDENTITY, 0),
+                    Instance::new(1, Transform::IDENTITY, 1),
+                ],
+            )
+            .expect("scene"),
+            environment: black_world(),
+            render: RenderSettings {
+                max_depth: 16,
+                ..settings(60, 4)
+            },
+            ..Scene::default()
+        };
+        render(&scene, 256).resolve()
+    };
+    let [red, green, blue] = channel_centroids(&image(25.0), 60);
+    eprintln!("prism, seen through: centroids red {red:.2}, green {green:.2}, blue {blue:.2} px");
+    assert!(
+        red > green + 0.3 && green > blue + 0.3,
+        "{red} {green} {blue}"
+    );
+    let plain = image(0.0);
+    assert!(plain.chunks_exact(3).all(|p| p[0] == p[1] && p[1] == p[2]));
+    let [r0, _, b0] = channel_centroids(&plain, 60);
+    assert!(r0 == b0 && (r0 - green).abs() < 3.0, "{r0} {b0} {green}");
+}
+
+#[test]
+fn a_prism_under_a_small_light_parts_the_colours_on_the_floor() {
+    // E9c: a small light 400 mm over the prism; its light leaves the prism's bottom face deviated
+    // by about 27° towards the upright face and falls on the floor as a caustic band, which the
+    // photon map brings. Blue bends more, so on the floor its light lies further out (higher x)
+    // than red's. Without an Abbe number the band is white.
+    let image = |abbe: f32| {
+        let scene = Scene {
+            camera: ortho_down(145.0, 0.0, 200.0),
+            materials: vec![crystal(abbe)],
+            geometry: Geometry::new(
+                vec![prism(300.0)],
+                vec![Instance::new(0, Transform::IDENTITY, 0)],
+            )
+            .expect("scene"),
+            lights: vec![Light {
+                kind: LightKind::Disk,
+                position: Vec3::new(0.0, 0.0, 800.0),
+                direction: Vec3::new(0.0, 0.0, -1.0),
+                up: Vec3::new(0.0, 1.0, 0.0),
+                size_x: 20.0,
+                power: 20.0,
+                // Half its intensity 5° off its axis: the prism (±3.6°) is in its beam, the floor
+                // beside it is not.
+                spread_deg: 10.0,
+                flags: LIGHT_FLAG_GLOSSY,
+                ..Light::default()
+            }],
+            environment: black_world(),
+            floor: Floor {
+                mode: crate::scene::FloorMode::Visible,
+                z: 0.0,
+                color: Rgb::splat(0.8),
+            },
+            render: RenderSettings {
+                max_depth: 16,
+                caustic_photons: 16_384,
+                caustic_radius: 1.5,
+                ..settings(40, 8)
+            },
+            ..Scene::default()
+        };
+        render_with_photons(&scene, 16).resolve()
+    };
+    let parted = image(25.0);
+    let [red, green, blue] = channel_centroids(&parted, 40);
+    eprintln!("prism on the floor: centroids red {red:.2}, green {green:.2}, blue {blue:.2} px");
+    assert!(
+        blue > green + 0.2 && green > red + 0.2,
+        "{red} {green} {blue}"
+    );
+    // By regions: the columns of the band (above a tenth of its brightest), split in a near and
+    // a far half along x; blue over red is higher on the far side.
+    let columns: Vec<[f64; 3]> = (0..40)
+        .map(|x| {
+            let mut sum = [0.0f64; 3];
+            for (i, px) in parted.chunks_exact(3).enumerate() {
+                if i % 40 == x {
+                    for c in 0..3 {
+                        sum[c] += f64::from(px[c]);
+                    }
+                }
+            }
+            sum
+        })
+        .collect();
+    let peak = columns
+        .iter()
+        .map(|c| c[0] + c[1] + c[2])
+        .fold(0.0, f64::max);
+    let lit: Vec<&[f64; 3]> = columns
+        .iter()
+        .filter(|c| c[0] + c[1] + c[2] > 0.1 * peak)
+        .collect();
+    let half = lit.len() / 2;
+    let ratio = |cols: &[&[f64; 3]]| {
+        let (r, b) = cols
+            .iter()
+            .fold((0.0, 0.0), |(r, b), c| (r + c[0], b + c[2]));
+        b / r
+    };
+    let (near, far) = (ratio(&lit[..half]), ratio(&lit[lit.len() - half..]));
+    eprintln!(
+        "prism on the floor: {} lit columns, blue / red near {near:.3}, far {far:.3}",
+        lit.len()
+    );
+    assert!(lit.len() >= 4 && far > 1.1 * near, "{near} {far}");
+    let plain = image(0.0);
+    assert!(plain.chunks_exact(3).all(|p| p[0] == p[1] && p[1] == p[2]));
+}
+
+#[test]
+fn a_crystal_in_a_furnace_comes_out_white_in_every_channel() {
+    // E9c: a path that meets a dispersive glass carries one channel, times 3, from then on, and
+    // keeps it at every dispersive surface after (into the sphere and out again). In a uniform
+    // world of radiance 1 a clear crystal sphere, smooth or rough, is invisible in each channel,
+    // as the same sphere without an Abbe number is.
+    for roughness in [0.0f32, 0.3] {
+        let scene = Scene {
+            camera: ortho_front(260.0),
+            materials: vec![Material {
+                roughness,
+                ..crystal(30.0)
+            }],
+            geometry: Geometry::from_meshes(vec![faceted_sphere(Vec3::ZERO, 100.0, 3)]),
+            environment: uniform_world(1.0),
+            render: RenderSettings {
+                max_depth: 64,
+                ..settings(16, 16)
+            },
+            ..Scene::default()
+        };
+        let film = render(&scene, 1024);
+        let inside = |x: u32, y: u32| {
+            let (u, v) = ((x as f32 + 0.5) / 16.0 - 0.5, (y as f32 + 0.5) / 16.0 - 0.5);
+            (u * u + v * v).sqrt() * 260.0 < 85.0
+        };
+        let means = [0, 1, 2].map(|c| mean_where(&film, c, inside));
+        eprintln!("crystal in a furnace, roughness {roughness}: {means:.4?}");
+        for (c, mean) in means.into_iter().enumerate() {
+            assert!(
+                (mean - 1.0).abs() < 0.015,
+                "roughness {roughness}, channel {c}: {mean}"
+            );
+        }
+    }
 }
 
 /// Renders samples `0..spp` of the image's region `tile` with the prepared lights changed by

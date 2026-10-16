@@ -691,10 +691,26 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    la suelta cae en la cara bajo el cursor. Debajo, los
    **parámetros** de la familia del material: color, metal, rugosidad,
    barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; vidrio
-   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm y
-   *Paredes*: *Macizo · Pared fina*); madera
-   (dos colores, densidad de anillos…); tela (dos colores de hilo, tipo de
-   tejido, hilos por cm, pelusa); emisor (tipo, temperatura, potencia).
+   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm,
+   *Paredes*: *Macizo · Pared fina*, y bajo ellos, E9, *Dispersión
+   interna* en mm —lo que recorre la luz dentro entre dos rebotes; 0,
+   transparente—, *Color de dispersión* —lo que conserva cada rebote de
+   cada color— y *Dirección*, de −0,9 a 0,9, con la ayuda «hacia delante /
+   hacia atrás»; la ayuda de *Dispersión interna* dice que el modo Rápido
+   la aproxima; y, E9c, *Número de Abbe*, de 0 a 100 —la dispersión
+   cromática del vidrio macizo: cuanto menor, más separa los colores; 0,
+   ninguna—, cuya ayuda dice también que Rápido la aproxima); madera
+   (dos colores, densidad de anillos por 100 mm, *Escala*, *Contraste de
+   anillos*, variación, ruidos, *Poros*: lo pintan el modo Completo y los
+   renders, y su punto «·» y su ayuda lo dicen; la vista Rápida muestra el
+   color medio; *Nudos*, *Tamaño de los nudos* en mm, *Variación de
+   tamaño* y *Oscuridad de los nudos*, que la vista Rápida ya enseña
+   oscureciendo donde caen; en el bambú, el MDF y el ébano están
+   desactivados y su ayuda dice por qué); tela (dos colores de hilo, tipo de
+   tejido, *Hilos por cm* (2–200, físicos), relieve, pelusa: el tejido, su
+   densidad y su relieve los pintan el modo Completo y los renders, y la
+   vista Rápida muestra su color medio); emisor (tipo, temperatura,
+   potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material
    propio* separa la instancia del preset cuando se edita (el nombre pasa
    a "Oro (editado)").
@@ -752,7 +768,12 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    por pieza*, y *Aplicar a toda la pieza*.
 4. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
-   *Dejar caer* (fase S2), radio de bisel de aristas (mm), suavizado.
+   *Dejar caer* (fase S2), radio de bisel de aristas (mm), suavizado. El
+   bisel es del material (lo dice la nota bajo el campo: *Es del material.
+   El modo Completo redondea las aristas vivas en el sombreado, como un
+   redondeo de este radio; la vista Rápida las muestra vivas*): lo dibuja el
+   motor desde E6 (`ARCHITECTURE.md` §5.2 septies); three.js no puede hacerlo
+   barato y la vista *Rápida* no lo intenta.
 5. **Físicas** (fase S2; `SPEC.md` §3.1) — **Papel**, segmentado:
    *Estático · Dinámico · Tela · Líquido*, con *Tela* y *Líquido*
    desactivados y un *tooltip* que dice *próximamente*; con varios nodos de
@@ -1963,7 +1984,7 @@ Lo que **sí** debe funcionar de verdad en U1:
 - Catálogo de montajes de luz con sus 72 miniaturas, filtro por estilo,
   intención, anterior / siguiente; al elegir uno, el rig del visor cambia
   (`setupRig()`): se tienen que ver moverse las luces y cambiar su color.
-- Catálogo de materiales con sus 77 presets y sus esferas (ver §6),
+- Catálogo de materiales con sus 86 presets y sus esferas (ver §6),
   asignación por nivel con inventario de confirmación, parámetros por
   familia que se reflejan en el visor (color, metal, rugosidad, barniz,
   transmisión, emisión; madera y tela como aproximación de color plano
@@ -2048,7 +2069,7 @@ Lo que revisa quien reciba el PR, en este orden:
    recorre `src/ui/**/*.css` y falla si algún color (`#rgb`, `#rrggbb`,
    `rgb()`, `hsl()`) tiene saturación distinta de cero. Las miniaturas y
    el visor quedan fuera porque son contenido.
-3. Las 72 miniaturas de montaje y las 77 esferas de material se ven y se
+3. Las 72 miniaturas de montaje y las 86 esferas de material se ven y se
    eligen; cambiar montaje mueve las luces del visor; cambiar material
    cambia la pieza.
 4. Flujo completo sin ratón salvo en el visor: `Ctrl K` → "ejemplo" →

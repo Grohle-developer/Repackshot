@@ -161,7 +161,7 @@ function fullScene(): RsbScene {
     camera: { position: [10, -200, 50], target: [1, 2, 3], up: [0, 0, 1], focalMm: 85, sensorMm: 36, fstop: 5.6, focusDist: 212.5, ortho: true, orthoWidth: 320 },
     materials: [
       defaultMaterial(),
-      { kind: 2, baseColor: [0.9, 0.5, 0.1], metallic: 1, roughness: 0.2, ior: 1.33, transmission: 0.25, coat: 0.5, coatRoughness: 0.05, emission: [1, 0.9, 0.8], emissionPower: 12, flags: 3, opacity: 0.75, anisotropy: 0.4, absorptionMm: 25 },
+      { kind: 2, baseColor: [0.9, 0.5, 0.1], metallic: 1, roughness: 0.2, ior: 1.33, transmission: 0.25, coat: 0.5, coatRoughness: 0.05, emission: [1, 0.9, 0.8], emissionPower: 12, flags: 3, opacity: 0.75, anisotropy: 0.4, absorptionMm: 25, bevelMm: 0.35, scatterMm: 2.5, scatterColor: [0.9, 0.8, 0.7], scatterG: -0.3, abbe: 42 },
     ],
     meshes: [
       { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2, 2, 1, 3], materialId: 1 },
@@ -227,7 +227,7 @@ describe('RSB writer: byte parity with rt-core', () => {
     const s = sections(bytes);
     expect(s.map((x) => x.tag)).toEqual(['CAMR', 'MATL', 'MATL', 'MESH', 'MESH', 'INST', 'INST', 'INST', 'LGHT', 'LGHT', 'LGHT', 'BMAP', 'BMAP', 'ENVR', 'FLOR', 'RNDR']);
     const size = (tag: string) => s.find((x) => x.tag === tag)!.payload.byteLength;
-    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 72, 76, 84, 20, 64, 60]);
+    expect([size('CAMR'), size('MATL'), size('LGHT'), size('ENVR'), size('FLOR'), size('RNDR'), size('INST')]).toEqual([60, 100, 76, 84, 20, 64, 60]);
     // The first bitmap: 16 bytes of header and 9 of data, padded to 12.
     expect(size('BMAP')).toBe(16 + 12);
     // 4 vertices, 6 indices: 2 + 4 * 6 + 6 + 1 words.
@@ -698,6 +698,27 @@ describe('project to RSB: E5 materials and environments', () => {
     const cut = materialToRsb({ ...plain, params: { ...plain.params, opacity: 0.3, anisotropic: 2 } });
     expect([cut.opacity, cut.anisotropy]).toEqual([0.3, 1]);
     expect(materialToRsb(plain).opacity).toBe(1);
+  });
+
+  it("E6: every material but an emitter carries its edge bevel, and the example's reach the engine", () => {
+    const plain = instanceFromPreset('p', 'WHITE_STUDIO', 200)!;
+    expect(plain.bevelRadiusMm).toBe(0.5);
+    expect(materialToRsb(plain).bevelMm).toBe(0.5);
+    expect(materialToRsb({ ...plain, bevelRadiusMm: 1.25 }).bevelMm).toBe(1.25);
+    expect(materialToRsb({ ...plain, bevelRadiusMm: -3 }).bevelMm).toBe(0);
+    expect(materialToRsb({ ...plain, bevelRadiusMm: Number.NaN }).bevelMm).toBe(0);
+    for (const key of ['GLASS_CLEAR', 'OAK', 'COTTON', 'CHROME']) {
+      expect(materialToRsb(instanceFromPreset('m', key, 200)).bevelMm, key).toBe(0.5);
+    }
+    const lamp = instanceFromPreset('e', 'LED_WARM', 200);
+    expect(lamp?.family).toBe('EMISSIVE');
+    expect(materialToRsb({ ...lamp!, bevelRadiusMm: 2 }).bevelMm).toBe(0);
+    expect(materialToRsb(null).bevelMm).toBe(0);
+    // The example bottle (121 mm): its materials' 0.25 % of the part size.
+    const { scene } = projectScene(s, view(s));
+    expect(scene.materials.map((m) => m.bevelMm)).toEqual(scene.materials.map(() => 0.303));
+    const back = readRsb(writeRsb(scene));
+    expect(back.materials.map((m) => m.bevelMm)).toEqual(scene.materials.map(() => Math.fround(0.303)));
   });
 
   it("a SKY setup puts the sky's sun where the rig's sun light is", () => {

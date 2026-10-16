@@ -111,6 +111,10 @@ pub fn is_caster(m: &Material) -> bool {
     if m.is_emissive() || r.is_nan() || r > MAX_ROUGHNESS {
         return false;
     }
+    // A scattering medium (E9b) is a receiver: photons land on it and none enter it.
+    if crate::integrator::medium::of(m).is_some() {
+        return false;
+    }
     let glass = m.kind == MATERIAL_GLASS || (m.transmission >= 0.5 && m.metallic < 0.5);
     let metal = m.kind != MATERIAL_GLASS && m.metallic >= 0.5;
     glass || metal
@@ -592,6 +596,8 @@ fn trace_photon<T: Tracer>(
     let mut cutouts = 0u32;
     let mut medium: Option<Rgb> = None;
     let mut rays = 0u64;
+    // The wavelength the photon carries since its first dispersive glass (E9c).
+    let mut band: Option<crate::integrator::dispersion::Band> = None;
     // At most one event per crossing, cut-out or thin wall straight transmission included.
     for _ in 0..(setup.max_bounces + MAX_PHOTON_CUTOUTS + 64) {
         rays += 1;
@@ -639,7 +645,20 @@ fn trace_photon<T: Tracer>(
             }
         }
         let caster = setup.is_caster_instance(details.instance);
-        let bsdf = Bsdf::surface(m, details.outside);
+        let bsdf = if crate::integrator::dispersion::is_dispersive(m) {
+            let b = match band {
+                Some(b) => b,
+                None => {
+                    let b = crate::integrator::dispersion::Band::choose(rng.next_f32());
+                    power = b.mask(power);
+                    band = Some(b);
+                    b
+                }
+            };
+            Bsdf::surface_at(m, details.outside, b.index(m))
+        } else {
+            Bsdf::surface(m, details.outside)
+        };
         if !caster {
             if bounces > 0 {
                 out.push(Photon {
@@ -658,14 +677,9 @@ fn trace_photon<T: Tracer>(
         } else if bounces >= setup.max_bounces {
             break;
         }
-        let mut normal = details.normal;
-        if normal.dot(ng) < 0.0 {
-            normal = -normal;
-        }
-        if normal.dot(ray.dir) >= -1.0e-4 {
-            normal = ng;
-        }
-        let point = scene.geometry.terminator_point(&details);
+        // The shading normal, terminator point and edge bevel the camera paths use.
+        let shade = prepared.bevel.shading_point(scene, &ray, &details);
+        let (point, normal, ng) = (shade.point, shade.normal, shade.geometric);
         let frame = prepared.frame(Some(details.instance), point, normal);
         let wo_world = -ray.dir;
         let wo = frame.to_local(wo_world);

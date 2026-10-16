@@ -4,11 +4,15 @@
 //! Lobes, all evaluated in the local shading frame (`z` is the shading normal on the side of
 //! `wo`; `wo` and `wi` point away from the surface, `wi.z < 0` is transmission):
 //!
-//! * **Diffuse**: Lambert, albedo `base_color * (1 - metallic) * (1 - transmission)`, weighted by
-//!   `(1 - F(μo)) (1 - F(μi))` with the dielectric Fresnel `F`, which keeps the sum with the
-//!   specular lobe from creating energy and keeps the BSDF reciprocal. (Burley's retro-reflection
-//!   term, B. Burley, "Physically-Based Shading at Disney", 2012, could replace the plain Lambert
-//!   later.)
+//! * **Diffuse**: Lambert, albedo `base_color * (1 - metallic) * (1 - transmission)`, under the
+//!   dielectric's specular layer, weighted (E9a2) by Kulla and Conty's
+//!   `(1 - E_s(μo)) (1 - E_s(μi)) / (1 - E_s,avg)`, where `E_s` is the directional albedo of that
+//!   specular layer (its single scattering with Schlick's Fresnel plus its extra lobe, from the
+//!   energy tables; Schlick's `F(μ)` itself when smooth): a white base gives back exactly the
+//!   energy the specular layer does not reflect, and the BSDF stays reciprocal. (Until E9a2 the
+//!   weight was `(1 - F(μo)) (1 - F(μi))`, which lost `F_avg` of the diffuse, 8.6 % at ior 1.5.)
+//!   Burley's retro-reflection term (B. Burley, "Physically-Based Shading at Disney", 2012) could
+//!   replace the plain Lambert later.
 //! * **Specular**: GGX / Trowbridge–Reitz microfacets (B. Walter et al., "Microfacet Models for
 //!   Refraction through Rough Surfaces", EGSR 2007) with width `α = roughness²` (at least
 //!   [`MIN_ALPHA`]), the height-correlated Smith masking-shadowing term (E. Heitz,
@@ -33,14 +37,23 @@
 //!   through, tinted by `base_color`, without refraction; that straight lobe is a direction
 //!   delta that only BSDF sampling produces ([`BsdfSample::straight`]).
 //! * **Clear coat**: a second GGX lobe of width `coat_roughness²`, `ior` 1.5, scaled by `coat`;
-//!   the layers below are attenuated by `(1 - coat F_c(μo)) (1 - coat F_c(μi))` (the albedo-scaling
-//!   layering, energy-conserving: what the coat reflects never reaches the base). A solid clear
-//!   material's coat is on its outside only.
+//!   the specular lobes below are attenuated by `(1 - coat E_c(μo)) (1 - coat E_c(μi))` (the
+//!   albedo-scaling layering, energy-conserving: what the coat reflects never reaches the base),
+//!   with `E_c` the coat's directional albedo (E9a2; Schlick's curve when smooth), and the diffuse
+//!   lobe by the product of both layers' transmissions normalised by their joint mean
+//!   ([`energy::joint_norm`]). A solid clear material's coat is on its outside only, and the light
+//!   it lets into the solid is `1 - coat E_c(μo)`.
 //! * **Anisotropy**: with `anisotropy` `a > 0` the specular and clear lobes have the widths
 //!   `αx = α / s`, `αy = α s` with `s = √(1 - 0.9 a)` (B. Burley 2012, the convention of the
 //!   recipes' Blender materials) along the frame's `x` (the tangent the integrator gives) and `y`;
 //!   the distribution, Smith term and visible-normal sampling are the anisotropic GGX ones
 //!   (Heitz 2014, 2018). `a = 0` computes exactly what the isotropic lobe computes.
+//!
+//! * **Multiple scattering** (E9a, [`energy`]): rough lobes get back the light that single
+//!   scattering loses between microfacets. The specular lobe (metal and opaque dielectric) and the
+//!   coat get Kulla and Conty's extra lobe `F_ms (1 - E(μo)) (1 - E(μi)) / (π (1 - E_avg))`,
+//!   sampled by the cosine; the clear part is divided by its own power albedo (Turquin 2019).
+//!   Roughness 0 changes nothing.
 //!
 //! Sampling picks a lobe in proportion to an estimate of its reflectance towards `wo` (the
 //! choice reuses the first BSDF dimension, rescaled): coat, specular, diffuse, clear. Inside the
@@ -56,6 +69,9 @@ use crate::fmath;
 use crate::math::Vec3;
 use crate::scene::{Material, MATERIAL_FLAG_THIN, MATERIAL_GLASS};
 use crate::warp;
+
+pub mod energy;
+pub mod energy_table;
 
 /// Smallest GGX width: roughness 0 renders as an almost perfect mirror.
 pub const MIN_ALPHA: f32 = 1.0e-3;
@@ -165,6 +181,12 @@ impl Ggx {
     }
 }
 
+/// Largest channel.
+#[inline]
+fn peak_of(c: Rgb) -> f32 {
+    c.r.max(c.g).max(c.b)
+}
+
 /// Schlick's approximation between `f0` (normal incidence) and `f90` (grazing).
 #[inline]
 fn schlick(f0: f32, f90: f32, cos: f32) -> f32 {
@@ -198,7 +220,7 @@ fn thin_reflectance(cos: f32, eta: f32) -> f32 {
 /// `wo` refracted through the microfacet `h` (`wo·h > 0`) into a medium `eta` times denser;
 /// `None` under total internal reflection.
 #[inline]
-fn refract(wo: Vec3, h: Vec3, eta: f32) -> Option<Vec3> {
+pub(crate) fn refract(wo: Vec3, h: Vec3, eta: f32) -> Option<Vec3> {
     let cos_i = wo.dot(h);
     let sin2_t = (1.0 - cos_i * cos_i) / (eta * eta);
     if sin2_t >= 1.0 {
@@ -250,12 +272,35 @@ fn sample_vndf(wo: Vec3, ax: f32, ay: f32, u: (f32, f32)) -> Vec3 {
     Vec3::new(ax * nh.x, ay * nh.y, nh.z.max(1.0e-7)).normalize()
 }
 
-/// Lobe selection probabilities `(coat, specular, diffuse, clear)` towards `wo`.
+/// Lobe selection probabilities `(coat, specular, diffuse, clear)` towards `wo`, and the
+/// multiple-scattering lobes', sampled by the cosine with the diffuse one.
 struct LobeWeights {
     coat: f32,
     specular: f32,
     diffuse: f32,
     clear: f32,
+    ms: f32,
+}
+
+/// The multiple-scattering compensation of one surface (E9a, [`energy`]); every part is `None`
+/// when its lobe is smooth (or absent), so a smooth surface computes exactly what it did before.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MultiScatter {
+    /// The specular lobe's extra lobe and its colour: `F_ms` of the metal and of the opaque
+    /// dielectric, by their weights.
+    spec: Option<(energy::Lobe, Rgb)>,
+    /// The coat's extra lobe and `coat · F_ms`.
+    coat: Option<(energy::Lobe, f32)>,
+    /// The clear part's GGX width when it is divided by its own albedo (Turquin).
+    clear: Option<f32>,
+}
+
+impl MultiScatter {
+    const NONE: MultiScatter = MultiScatter {
+        spec: None,
+        coat: None,
+        clear: None,
+    };
 }
 
 /// The principled BSDF of one surface point, in its local frame.
@@ -288,6 +333,17 @@ pub struct Bsdf {
     tint: Rgb,
     /// The clear part is a thin wall (or index-matched): straight transmission.
     thin: bool,
+    /// Multiple-scattering compensation (E9a).
+    ms: MultiScatter,
+    /// Above zero, the surface is the exit of a scattering medium (E9b): a Lambertian
+    /// transmission lobe of this albedo and nothing else ([`Bsdf::medium_exit`]).
+    exit: f32,
+    /// The opaque dielectric's specular layer, as the diffuse lobe under it sees it (E9a2).
+    base_layer: energy::Layer,
+    /// The clear coat, as the layers under it see it (E9a2).
+    coat_layer: energy::Layer,
+    /// The diffuse lobe's normalisation under both layers ([`energy::joint_norm`]).
+    diffuse_norm: f32,
 }
 
 impl Bsdf {
@@ -301,6 +357,12 @@ impl Bsdf {
     /// or inside it: only the clear part of a solid tells the difference (its relative index
     /// and coat).
     pub fn surface(m: &Material, entering: bool) -> Bsdf {
+        Bsdf::surface_at(m, entering, m.ior)
+    }
+
+    /// [`Bsdf::surface`] with the index of refraction `ior` instead of the material's (the index
+    /// of a dispersive glass at one wavelength, E9c).
+    pub fn surface_at(m: &Material, entering: bool, ior: f32) -> Bsdf {
         let base = m.base_color.map(|v| v.clamp(0.0, 1.0));
         let metallic = if m.kind == MATERIAL_GLASS {
             0.0
@@ -308,7 +370,7 @@ impl Bsdf {
             m.metallic.clamp(0.0, 1.0)
         };
         let transmission = m.transmission.clamp(0.0, 1.0);
-        let ior = m.ior.max(1.0);
+        let ior = ior.max(1.0);
         let f0 = ((ior - 1.0) / (ior + 1.0)) * ((ior - 1.0) / (ior + 1.0));
         let roughness = m.roughness.clamp(0.0, 1.0);
         let coat_roughness = m.coat_roughness.clamp(0.0, 1.0);
@@ -329,7 +391,7 @@ impl Bsdf {
         } else {
             m.coat.clamp(0.0, 1.0)
         };
-        Bsdf {
+        let mut bsdf = Bsdf {
             diffuse: base * ((1.0 - metallic) * (1.0 - transmission)),
             metal_f0: base,
             metal_f90: base.map(|v| (50.0 * v).min(1.0)),
@@ -344,7 +406,93 @@ impl Bsdf {
             eta,
             tint,
             thin,
+            ms: MultiScatter::NONE,
+            exit: 0.0,
+            base_layer: energy::Layer::CLEAR,
+            coat_layer: energy::Layer::CLEAR,
+            diffuse_norm: 1.0,
+        };
+        bsdf.ms = bsdf.multiple_scattering();
+        bsdf.layers();
+        bsdf
+    }
+
+    /// The specular layer over the diffuse lobe and the coat over everything, with their
+    /// albedos from the energy tables (E9a2, [`energy::Layer`]).
+    fn layers(&mut self) {
+        let alpha = if self.spec.iso {
+            self.spec.ax
+        } else {
+            (self.spec.ax * self.spec.ay).sqrt()
+        };
+        if self.diffuse.r > 0.0 || self.diffuse.g > 0.0 || self.diffuse.b > 0.0 {
+            let ms = self.ms.spec.map_or(0.0, |(lobe, _)| {
+                energy::multiple_fresnel(energy::schlick_average(self.f0, self.f90), lobe.e_avg)
+            });
+            self.base_layer = energy::Layer::new(self.f0, self.f90, 1.0, alpha, ms);
         }
+        if self.coat > 0.0 {
+            let ms = self.ms.coat.map_or(0.0, |(lobe, _)| {
+                energy::multiple_fresnel(energy::schlick_average(COAT_F0, 1.0), lobe.e_avg)
+            });
+            self.coat_layer = energy::Layer::new(COAT_F0, 1.0, self.coat, self.coat_ggx.ax, ms);
+        }
+        self.diffuse_norm = energy::joint_norm(&self.base_layer, &self.coat_layer);
+    }
+
+    /// The compensation of this surface's rough lobes (E9a).
+    fn multiple_scattering(&self) -> MultiScatter {
+        // Anisotropic lobes use the isotropic tables at the geometric mean of their widths.
+        let alpha = if self.spec.iso {
+            self.spec.ax
+        } else {
+            (self.spec.ax * self.spec.ay).sqrt()
+        };
+        let spec = energy::Lobe::new(alpha)
+            .filter(|_| self.has_specular())
+            .and_then(|lobe| {
+                let ms = |f0: f32, f90: f32| {
+                    energy::multiple_fresnel(energy::schlick_average(f0, f90), lobe.e_avg)
+                };
+                let dielectric = if self.dielectric > 0.0 {
+                    self.dielectric * ms(self.f0, self.f90)
+                } else {
+                    0.0
+                };
+                let colour = if self.metallic > 0.0 {
+                    Rgb::new(
+                        ms(self.metal_f0.r, self.metal_f90.r),
+                        ms(self.metal_f0.g, self.metal_f90.g),
+                        ms(self.metal_f0.b, self.metal_f90.b),
+                    ) * self.metallic
+                        + Rgb::splat(dielectric)
+                } else {
+                    Rgb::splat(dielectric)
+                };
+                (peak_of(colour) > 0.0).then_some((lobe, colour))
+            });
+        let coat = if self.coat > 0.0 {
+            energy::Lobe::new(self.coat_ggx.ax).and_then(|lobe| {
+                let c = self.coat
+                    * energy::multiple_fresnel(energy::schlick_average(COAT_F0, 1.0), lobe.e_avg);
+                (c > 0.0).then_some((lobe, c))
+            })
+        } else {
+            None
+        };
+        let clear = (self.clear > 0.0 && !self.thin && alpha >= energy::MIN_COMPENSATED_ALPHA)
+            .then_some(alpha);
+        MultiScatter { spec, coat, clear }
+    }
+
+    /// Turquin's factor of the clear part towards `wo`: one over its single-scattering power
+    /// albedo (1 when it is not compensated).
+    #[inline]
+    fn clear_compensation(&self, mu_o: f32) -> Option<f32> {
+        self.ms.clear.map(|alpha| {
+            let e = energy::clear_albedo(mu_o, alpha, self.eta);
+            1.0 / e.max(0.05)
+        })
     }
 
     /// A pure Lambertian BSDF of `albedo` (the visible floor).
@@ -364,6 +512,25 @@ impl Bsdf {
             eta: 1.0,
             tint: Rgb::WHITE,
             thin: false,
+            ms: MultiScatter::NONE,
+            exit: 0.0,
+            base_layer: energy::Layer::CLEAR,
+            coat_layer: energy::Layer::CLEAR,
+            diffuse_norm: 1.0,
+        }
+    }
+
+    /// Where a random walk leaves a scattering medium (E9b, [`crate::integrator::medium`]): a
+    /// Lambertian lobe that transmits through the surface (to `wi.z < 0`, the outside) with
+    /// albedo `albedo` (`η²` of the solid: radiance inside is that much brighter), and reflects
+    /// nothing. The walk has already chosen to leave with the probability `1 - F` of the
+    /// boundary's Fresnel; the directions it arrives with are taken as isotropic.
+    pub fn medium_exit(albedo: f32) -> Bsdf {
+        Bsdf {
+            exit: albedo.max(0.0),
+            diffuse: Rgb::BLACK,
+            clear: 1.0,
+            ..Bsdf::lambert(Rgb::BLACK)
         }
     }
 
@@ -445,6 +612,18 @@ impl Bsdf {
         self.clear_fresnel(cos).min(MAX_REFLECT_PROBABILITY)
     }
 
+    /// The probability with which the clear lobe reflects through the microfacet at `cos_h` from
+    /// `wo` (at `mu_o` from the normal): the macroscopic choice of the smooth lobe, the
+    /// microfacet's own Fresnel for the rough one ([`Bsdf::sample_rough_clear`]).
+    #[inline]
+    fn reflect_chance(&self, mu_o: f32, cos_h: f32) -> f32 {
+        if self.ms.clear.is_some() {
+            self.clear_fresnel(cos_h)
+        } else {
+            self.reflect_probability(mu_o)
+        }
+    }
+
     fn lobe_weights(&self, wo: Vec3) -> LobeWeights {
         let coat = self.coat_fresnel(wo.z);
         let below = 1.0 - coat;
@@ -453,9 +632,16 @@ impl Bsdf {
         } else {
             0.0
         };
-        let diffuse = below * self.diffuse.luminance() * (1.0 - schlick(self.f0, self.f90, wo.z));
+        let diffuse = below * self.diffuse.luminance() * self.base_layer.passes(wo.z);
         let clear = below * self.clear;
-        let total = coat + specular + diffuse + clear;
+        let mut ms = 0.0;
+        if let Some((lobe, colour)) = self.ms.spec {
+            ms += below * colour.luminance().max(0.0) * lobe.lost(wo.z);
+        }
+        if let Some((lobe, c)) = self.ms.coat {
+            ms += c * lobe.lost(wo.z);
+        }
+        let total = coat + specular + diffuse + clear + ms;
         if total > 0.0 {
             let inv = 1.0 / total;
             LobeWeights {
@@ -463,6 +649,7 @@ impl Bsdf {
                 specular: specular * inv,
                 diffuse: diffuse * inv,
                 clear: clear * inv,
+                ms: ms * inv,
             }
         } else {
             LobeWeights {
@@ -470,6 +657,7 @@ impl Bsdf {
                 specular: 0.0,
                 diffuse: 0.0,
                 clear: 0.0,
+                ms: 0.0,
             }
         }
     }
@@ -481,17 +669,27 @@ impl Bsdf {
         if wo.z <= 0.0 {
             return Rgb::BLACK;
         }
+        if self.exit > 0.0 {
+            return if wi.z < 0.0 {
+                Rgb::splat(self.exit * fmath::FRAC_1_PI)
+            } else {
+                Rgb::BLACK
+            };
+        }
         if wi.z <= 0.0 {
             if wi.z < 0.0 && lobes == Lobes::All && self.clear > 0.0 && !self.thin {
                 return self.eval_refraction(wo, wi);
             }
             return Rgb::BLACK;
         }
-        let attenuation = (1.0 - self.coat_fresnel(wo.z)) * (1.0 - self.coat_fresnel(wi.z));
+        // Under the coat, specular lobes keep what passes it down and back up; the diffuse lobe,
+        // which spreads light over the hemisphere, is normalised under both layers (E9a2).
+        let attenuation = self.coat_layer.passes(wo.z) * self.coat_layer.passes(wi.z);
         let diffuse = self.diffuse
             * (fmath::FRAC_1_PI
-                * (1.0 - schlick(self.f0, self.f90, wo.z))
-                * (1.0 - schlick(self.f0, self.f90, wi.z)));
+                * self.base_layer.passes(wo.z)
+                * self.base_layer.passes(wi.z)
+                * self.diffuse_norm);
         if lobes == Lobes::Diffuse {
             return diffuse * attenuation;
         }
@@ -501,14 +699,23 @@ impl Bsdf {
         if self.has_specular() {
             below += self.specular_fresnel(cos_h) * self.spec.microfacet(wo, wi, h);
         }
+        if let Some((lobe, colour)) = self.ms.spec {
+            below += colour * lobe.shape(wo.z, wi.z);
+        }
         if self.clear > 0.0 {
-            below += Rgb::splat(
-                self.clear * self.clear_fresnel(cos_h) * self.spec.microfacet(wo, wi, h),
-            );
+            let mut clear =
+                self.clear * self.clear_fresnel(cos_h) * self.spec.microfacet(wo, wi, h);
+            if let Some(k) = self.clear_compensation(wo.z) {
+                clear *= k;
+            }
+            below += Rgb::splat(clear);
         }
         let mut f = below * attenuation;
         if self.coat > 0.0 {
             f += Rgb::splat(self.coat_fresnel(cos_h) * self.coat_ggx.microfacet(wo, wi, h));
+        }
+        if let Some((lobe, c)) = self.ms.coat {
+            f += Rgb::splat(c * lobe.shape(wo.z, wi.z));
         }
         f
     }
@@ -533,8 +740,12 @@ impl Bsdf {
         let f = fresnel_dielectric(co, self.eta);
         let denom = co + self.eta * ci;
         let g2 = 1.0 / (1.0 + self.spec.lambda(wo) + self.spec.lambda(wi));
-        let value = (1.0 - f) * self.spec.d(h) * g2 * (-ci) * co / (-wi.z * wo.z * denom * denom);
-        let attenuation = 1.0 - self.coat_fresnel(wo.z);
+        let mut value =
+            (1.0 - f) * self.spec.d(h) * g2 * (-ci) * co / (-wi.z * wo.z * denom * denom);
+        if let Some(k) = self.clear_compensation(wo.z) {
+            value *= k;
+        }
+        let attenuation = self.coat_layer.passes(wo.z);
         self.tint * (self.clear * attenuation * value)
     }
 
@@ -543,6 +754,9 @@ impl Bsdf {
     pub fn pdf(&self, wo: Vec3, wi: Vec3) -> f32 {
         if wo.z <= 0.0 {
             return 0.0;
+        }
+        if self.exit > 0.0 {
+            return (-wi.z).max(0.0) * fmath::FRAC_1_PI;
         }
         if wi.z <= 0.0 {
             if wi.z < 0.0 && self.clear > 0.0 && !self.thin {
@@ -555,7 +769,7 @@ impl Bsdf {
 
     /// [`Bsdf::pdf`] of a reflected `wi` with the lobe weights of `wo` already computed.
     fn pdf_with(&self, w: &LobeWeights, wo: Vec3, wi: Vec3) -> f32 {
-        let mut pdf = w.diffuse * wi.z * fmath::FRAC_1_PI;
+        let mut pdf = (w.diffuse + w.ms) * wi.z * fmath::FRAC_1_PI;
         if w.specular > 0.0 || w.coat > 0.0 || w.clear > 0.0 {
             let h = (wo + wi).normalize();
             if wo.dot(h) > 0.0 {
@@ -566,8 +780,9 @@ impl Bsdf {
                     pdf += w.coat * self.coat_ggx.reflection_pdf(wo, h);
                 }
                 if w.clear > 0.0 {
-                    pdf +=
-                        w.clear * self.reflect_probability(wo.z) * self.spec.reflection_pdf(wo, h);
+                    pdf += w.clear
+                        * self.reflect_chance(wo.z, wo.dot(h))
+                        * self.spec.reflection_pdf(wo, h);
                 }
             }
         }
@@ -586,7 +801,7 @@ impl Bsdf {
         let visible = g1 * self.spec.d(h) * co / wo.z;
         let denom = co + self.eta * ci;
         let jacobian = self.eta * self.eta * (-ci) / (denom * denom);
-        w.clear * (1.0 - self.reflect_probability(wo.z)) * visible * jacobian
+        w.clear * (1.0 - self.reflect_chance(wo.z, co)) * visible * jacobian
     }
 
     /// Samples an incident direction for `wo` from the 2-D sample `u`. `None` when the surface
@@ -595,6 +810,17 @@ impl Bsdf {
     pub fn sample(&self, wo: Vec3, u: (f32, f32)) -> Option<BsdfSample> {
         if wo.z <= 0.0 {
             return None;
+        }
+        if self.exit > 0.0 {
+            let d = warp::cosine_hemisphere(u);
+            let wi = Vec3::new(d.x, d.y, -d.z);
+            let pdf = d.z * fmath::FRAC_1_PI;
+            return (pdf > 0.0).then_some(BsdfSample {
+                wi,
+                weight: Rgb::splat(self.exit),
+                pdf,
+                straight: false,
+            });
         }
         let w = self.lobe_weights(wo);
         let (u0, u1) = u;
@@ -609,9 +835,12 @@ impl Bsdf {
                 ((u0 - w.coat) / w.specular, u1),
             );
             h * (2.0 * wo.dot(h)) - wo
-        } else if w.diffuse > 0.0 && (w.clear <= 0.0 || u0 < w.coat + w.specular + w.diffuse) {
+        } else if w.diffuse + w.ms > 0.0
+            && (w.clear <= 0.0 || u0 < w.coat + w.specular + (w.diffuse + w.ms))
+        {
+            // The diffuse and multiple-scattering lobes are both sampled by the cosine.
             let start = w.coat + w.specular;
-            let u0 = ((u0 - start) / w.diffuse).clamp(0.0, 0.999_999_94);
+            let u0 = ((u0 - start) / (w.diffuse + w.ms)).clamp(0.0, 0.999_999_94);
             warp::cosine_hemisphere((u0, u1))
         } else if w.clear > 0.0 {
             return self.sample_clear(&w, wo, u);
@@ -636,8 +865,11 @@ impl Bsdf {
 
     /// The clear lobe's part of [`Bsdf::sample`].
     fn sample_clear(&self, w: &LobeWeights, wo: Vec3, u: (f32, f32)) -> Option<BsdfSample> {
-        let start = w.coat + w.specular + w.diffuse;
+        let start = w.coat + w.specular + (w.diffuse + w.ms);
         let uc = ((u.0 - start) / w.clear).clamp(0.0, 0.999_999_94);
+        if self.ms.clear.is_some() {
+            return self.sample_rough_clear(w, wo, (uc, u.1));
+        }
         let pr = self.reflect_probability(wo.z);
         if uc < pr {
             let h = sample_vndf(wo, self.spec.ax, self.spec.ay, (uc / pr, u.1));
@@ -673,6 +905,52 @@ impl Bsdf {
         }
         let ut = ((uc - pr) / (1.0 - pr)).clamp(0.0, 0.999_999_94);
         let h = sample_vndf(wo, self.spec.ax, self.spec.ay, (ut, u.1));
+        let wi = refract(wo, h, self.eta)?;
+        if wi.z >= 0.0 {
+            return None;
+        }
+        let pdf = self.refraction_pdf(w, wo, wi);
+        if !(pdf > 0.0 && pdf.is_finite()) {
+            return None;
+        }
+        let weight = self.eval_refraction(wo, wi) * (-wi.z / pdf);
+        Some(BsdfSample {
+            wi,
+            weight,
+            pdf,
+            straight: false,
+        })
+    }
+
+    /// The rough (compensated) clear lobe: the microfacet first, from the visible normals, then
+    /// reflection with the probability of its own Fresnel, refraction otherwise (Walter et al.
+    /// 2007, §5.3). Choosing by the macroscopic Fresnel instead, as the smooth lobe does, leaves
+    /// the microfacets that reflect totally inside a solid to the rarely chosen reflection and
+    /// gives them weights of tens, which the compensation would multiply. The choice takes a
+    /// number hashed from the sample (the lobe already used both dimensions).
+    fn sample_rough_clear(&self, w: &LobeWeights, wo: Vec3, u: (f32, f32)) -> Option<BsdfSample> {
+        let h = sample_vndf(wo, self.spec.ax, self.spec.ay, u);
+        let fresnel = self.clear_fresnel(wo.dot(h));
+        let key = (u64::from(u.0.to_bits()) << 32) | u64::from(u.1.to_bits());
+        let choice =
+            (crate::rng::mix64(key ^ 0x9e37_79b9_7f4a_7c15) >> 40) as f32 * (1.0 / 16_777_216.0);
+        if choice < fresnel {
+            let wi = h * (2.0 * wo.dot(h)) - wo;
+            if wi.z <= 0.0 {
+                return None;
+            }
+            let pdf = self.pdf_with(w, wo, wi);
+            if !(pdf > 0.0 && pdf.is_finite()) {
+                return None;
+            }
+            let weight = self.eval(wo, wi, Lobes::All) * (wi.z / pdf);
+            return Some(BsdfSample {
+                wi,
+                weight,
+                pdf,
+                straight: false,
+            });
+        }
         let wi = refract(wo, h, self.eta)?;
         if wi.z >= 0.0 {
             return None;

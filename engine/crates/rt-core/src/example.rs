@@ -200,6 +200,7 @@ pub fn scene() -> Scene {
             edge_supersample: 1,
         },
         bitmaps: Vec::new(),
+        patterns: Vec::new(),
         effects: Vec::new(),
     }
 }
@@ -361,6 +362,345 @@ pub fn e5b_scene() -> Scene {
     let mut scene = e5_scene(false);
     scene.render.caustic_photons = 2048;
     scene.render.caustic_radius = 4.0;
+    scene
+}
+
+/// Faces of [`split_box`], in order.
+pub const BOX_FACES: [&str; 6] = ["bottom", "top", "front", "back", "left", "right"];
+
+/// The faces `faces` (indices into [`BOX_FACES`]) of the axis-aligned box from `lo` to `hi`: four
+/// vertices of its own per face, wound counter-clockwise seen from outside, without vertex normals
+/// (flat shading). A CAD box tessellated face by face, its edges mathematically sharp.
+pub fn split_box(lo: Vec3, hi: Vec3, faces: &[usize]) -> Mesh {
+    let c = |x: usize, y: usize, z: usize| {
+        Vec3::new(
+            if x == 0 { lo.x } else { hi.x },
+            if y == 0 { lo.y } else { hi.y },
+            if z == 0 { lo.z } else { hi.z },
+        )
+    };
+    let quads = [
+        [c(0, 0, 0), c(0, 1, 0), c(1, 1, 0), c(1, 0, 0)],
+        [c(0, 0, 1), c(1, 0, 1), c(1, 1, 1), c(0, 1, 1)],
+        [c(0, 0, 0), c(1, 0, 0), c(1, 0, 1), c(0, 0, 1)],
+        [c(0, 1, 0), c(0, 1, 1), c(1, 1, 1), c(1, 1, 0)],
+        [c(0, 0, 0), c(0, 0, 1), c(0, 1, 1), c(0, 1, 0)],
+        [c(1, 0, 0), c(1, 1, 0), c(1, 1, 1), c(1, 0, 1)],
+    ];
+    let mut p = Vec::new();
+    let mut idx = Vec::new();
+    for &f in faces {
+        let Some(quad) = quads.get(f) else {
+            continue;
+        };
+        let base = p.len() as u32;
+        p.extend_from_slice(quad);
+        idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    Mesh::new(&p, &[], &idx, 0).unwrap_or_default()
+}
+
+/// A closed cylinder about Z through `(x, y)`, from `z0` to `z1`, of `segments` sides: smooth
+/// vertex normals around its side and flat caps, the vertices split along the two rims (a CAD
+/// cylinder: a curved face and two planar ones meeting at sharp circular edges).
+pub fn cylinder(x: f32, y: f32, radius: f32, z0: f32, z1: f32, segments: u32) -> Mesh {
+    let segments = segments.max(3);
+    let mut p = Vec::new();
+    let mut n = Vec::new();
+    let ring = |i: u32| {
+        let (s, c) =
+            crate::fmath::sin_cos(crate::fmath::TAU * (i % segments) as f32 / segments as f32);
+        (c, s)
+    };
+    let (down, up) = (Vec3::new(0.0, 0.0, -1.0), Vec3::new(0.0, 0.0, 1.0));
+    // Cap centres, then per segment: bottom cap rim, top cap rim, side bottom, side top.
+    p.extend_from_slice(&[Vec3::new(x, y, z0), Vec3::new(x, y, z1)]);
+    n.extend_from_slice(&[down, up]);
+    for i in 0..segments {
+        let (c, s) = ring(i);
+        let (b, t) = (
+            Vec3::new(x + radius * c, y + radius * s, z0),
+            Vec3::new(x + radius * c, y + radius * s, z1),
+        );
+        let side = Vec3::new(c, s, 0.0);
+        p.extend_from_slice(&[b, t, b, t]);
+        n.extend_from_slice(&[down, up, side, side]);
+    }
+    let mut idx = Vec::new();
+    for i in 0..segments {
+        let (a, b) = (2 + 4 * i, 2 + 4 * ((i + 1) % segments));
+        idx.extend_from_slice(&[0, b, a, 1, a + 1, b + 1]);
+        idx.extend_from_slice(&[a + 2, b + 2, b + 3, a + 2, b + 3, a + 3]);
+    }
+    Mesh::new(&p, &n, &idx, 0).unwrap_or_default()
+}
+
+/// The E6 parity scene (`render.rs` pins its hash; `rt --write-e6-example` writes it for
+/// `tools/wasm-parity.mjs`): CAD-like parts with sharp edges, every one bevelled, on the floor
+/// quad of the example under a key light and the studio dome. A two-tone box (its top face a mesh of its own, in
+/// another material, with the same transform: the edge between them is found across the two
+/// meshes), drawn from a unit cube with a non-uniform scale; a polished metal cylinder (a curved
+/// edge of 48 segments, smooth side normals); a 4 mm ceramic plate, thinner than twice its bevel
+/// along its rim. Instances: 0 floor, 1 box, 2 box top, 3 cylinder, 4 plate.
+pub fn e6_scene() -> Scene {
+    let unit = (Vec3::splat(-0.5), Vec3::splat(0.5));
+    let meshes = vec![
+        floor_quad(0.0, 900.0, 0),
+        split_box(unit.0, unit.1, &[0, 2, 3, 4, 5]),
+        split_box(unit.0, unit.1, &[1]),
+        cylinder(0.0, 0.0, 32.0, 0.0, 64.0, 48),
+        split_box(unit.0, unit.1, &[0, 1, 2, 3, 4, 5]),
+    ];
+    let scaled = |size: Vec3, at: Vec3| {
+        Transform::from_rows([
+            [size.x, 0.0, 0.0, at.x],
+            [0.0, size.y, 0.0, at.y],
+            [0.0, 0.0, size.z, at.z],
+        ])
+    };
+    let box_at = scaled(Vec3::new(110.0, 70.0, 44.0), Vec3::new(-62.0, 18.0, 22.0));
+    let instances = vec![
+        Instance::new(0, Transform::IDENTITY, 0),
+        Instance::new(1, box_at, 1),
+        Instance::new(2, box_at, 2),
+        Instance::new(3, Transform::translation(Vec3::new(66.0, 40.0, 0.0)), 3),
+        Instance::new(
+            4,
+            scaled(Vec3::new(90.0, 46.0, 4.0), Vec3::new(30.0, -62.0, 2.0)),
+            4,
+        ),
+    ];
+    let camera_position = Vec3::new(330.0, -620.0, 300.0);
+    let target = Vec3::new(10.0, 6.0, 26.0);
+    let light_position = Vec3::new(-260.0, -420.0, 420.0);
+    let mut scene = scene();
+    scene.camera = Camera {
+        position: camera_position,
+        target,
+        focal_mm: 115.0,
+        fstop: 0.0,
+        focus_dist: (target - camera_position).length(),
+        ..scene.camera
+    };
+    scene.materials = vec![
+        Material {
+            base_color: Rgb::new(0.35, 0.35, 0.36),
+            roughness: 0.7,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.85, 0.42, 0.2),
+            roughness: 0.3,
+            bevel_mm: 3.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.12, 0.12, 0.13),
+            roughness: 0.2,
+            bevel_mm: 3.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.9, 0.9, 0.92),
+            metallic: 1.0,
+            roughness: 0.12,
+            bevel_mm: 2.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.82, 0.82, 0.8),
+            roughness: 0.15,
+            coat: 0.5,
+            bevel_mm: 2.5,
+            ..Material::default()
+        },
+    ];
+    scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
+    scene.lights[0].position = light_position;
+    scene.lights[0].direction = (target - light_position).normalize();
+    scene.lights[0].size_x = 250.0;
+    scene.lights[0].size_y = 120.0;
+    scene.lights[0].power = 4.0;
+    scene.render.width = 160;
+    scene.render.height = 120;
+    scene
+}
+
+/// The E6 pattern scene (`render.rs` pins its hash; `rt --write-e6-patterns-example` writes it
+/// for `tools/wasm-parity.mjs`): an oak board (a box with a 1 mm bevel, its pores and rings) and a
+/// walnut sphere on the example's floor, under the example's key light. Instances: 0 floor, 1
+/// board, 2 sphere.
+pub fn e6_patterns_scene() -> Scene {
+    use crate::pattern::{Pattern, PATTERN_WOOD};
+    let mut scene = e6_scene();
+    let meshes = vec![
+        floor_quad(0.0, 900.0, 0),
+        split_box(
+            Vec3::new(-110.0, -40.0, 0.0),
+            Vec3::new(50.0, 30.0, 18.0),
+            &[0, 1, 2, 3, 4, 5],
+        ),
+        icosphere(Vec3::new(80.0, 20.0, 36.0), 36.0, 4),
+    ];
+    let instances = vec![
+        Instance::new(0, Transform::IDENTITY, 0),
+        Instance::new(1, Transform::IDENTITY, 1),
+        Instance::new(2, Transform::IDENTITY, 2),
+    ];
+    scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
+    scene.materials = vec![
+        scene.materials[0].clone(),
+        Material {
+            base_color: Rgb::new(0.456, 0.3, 0.162),
+            roughness: 0.4,
+            bevel_mm: 1.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.236, 0.138, 0.078),
+            roughness: 0.36,
+            coat: 0.4,
+            coat_roughness: 0.05,
+            ..Material::default()
+        },
+    ];
+    scene.patterns = vec![
+        Pattern {
+            material: 1,
+            kind: PATTERN_WOOD,
+            color_a: Rgb::new(0.56, 0.38, 0.21),
+            color_b: Rgb::new(0.3, 0.18, 0.09),
+            scale_mm: 3.0,
+            // Three knots of 14 mm, so the pinned image covers them too.
+            params: [
+                0.45, 0.35, 0.25, 0.2, 0.35, 0.3, 0.5, 1.0, 1.0, 0.3, 3.0, 14.0, 0.3, 0.6, 0.0, 0.0,
+            ],
+            variant: 0,
+            seed: 11,
+        },
+        Pattern {
+            material: 2,
+            kind: PATTERN_WOOD,
+            color_a: Rgb::new(0.3, 0.18, 0.1),
+            color_b: Rgb::new(0.14, 0.075, 0.045),
+            scale_mm: 3.0,
+            params: [
+                0.4, 0.5, 0.35, 0.22, 0.35, 0.2, 0.175, 0.0, 1.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+            variant: 0,
+            seed: 0,
+        },
+    ];
+    scene
+}
+
+/// The E6 cloth scene (`render.rs` pins its hash; `rt --write-e6-cloth-example` writes it for
+/// `tools/wasm-parity.mjs`): a denim cushion (a box with a 4 mm bevel, its 3/1 twill at 1.2 mm
+/// so that a small image sees it) and a chunky knit ball (2 mm stitches) on the example's floor,
+/// under the example's key light. Instances: 0 floor, 1 cushion, 2 ball.
+pub fn e6_cloth_scene() -> Scene {
+    use crate::pattern::{Pattern, PARAMS, PATTERN_CLOTH};
+    let mut scene = e6_scene();
+    let meshes = vec![
+        floor_quad(0.0, 900.0, 0),
+        split_box(
+            Vec3::new(-110.0, -45.0, 0.0),
+            Vec3::new(30.0, 45.0, 26.0),
+            &[0, 1, 2, 3, 4, 5],
+        ),
+        icosphere(Vec3::new(80.0, 15.0, 36.0), 36.0, 4),
+    ];
+    let instances = vec![
+        Instance::new(0, Transform::IDENTITY, 0),
+        Instance::new(1, Transform::IDENTITY, 1),
+        Instance::new(2, Transform::IDENTITY, 2),
+    ];
+    scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
+    scene.materials = vec![
+        scene.materials[0].clone(),
+        Material {
+            base_color: Rgb::new(0.38, 0.41, 0.47),
+            roughness: 0.78,
+            bevel_mm: 4.0,
+            ..Material::default()
+        },
+        Material {
+            base_color: Rgb::new(0.5, 0.38, 0.27),
+            roughness: 0.85,
+            ..Material::default()
+        },
+    ];
+    // The relief, and a twisted yarn.
+    let relief = |r: f32| {
+        let mut p = [0.0; PARAMS];
+        (p[0], p[1]) = (r, 1.0);
+        p
+    };
+    scene.patterns = vec![
+        Pattern {
+            material: 1,
+            kind: PATTERN_CLOTH,
+            color_a: Rgb::new(0.1, 0.16, 0.3),
+            color_b: Rgb::new(0.66, 0.66, 0.64),
+            scale_mm: 1.2,
+            params: relief(0.6),
+            variant: 6,
+            seed: 0,
+        },
+        Pattern {
+            material: 2,
+            kind: PATTERN_CLOTH,
+            color_a: Rgb::new(0.55, 0.42, 0.3),
+            color_b: Rgb::new(0.44, 0.33, 0.22),
+            scale_mm: 2.0,
+            params: relief(0.8),
+            variant: 4,
+            seed: 0,
+        },
+    ];
+    scene
+}
+
+/// The E9 parity scene (`render.rs` pins its hash; `rt --write-e9-example` writes it for
+/// `tools/wasm-parity.mjs`): the E5 scene ([`e5_scene`], HDRI) with its big sphere filled with a
+/// scattering medium (a warm, slightly forward-scattering wax with an absorption distance, so the
+/// extinction differs between channels and the walk's spectral MIS is in the hash) behind a rough
+/// boundary, so walks, their reflections back in, their exit vertices with their light samples and
+/// the plain crossings all take part; and (E9c) a sphere of dispersive crystal (index 1.56, Abbe
+/// number 40) at the front right, so the wavelength a path chooses is in the hash too.
+pub fn e9_scene() -> Scene {
+    let mut scene = e5_scene(false);
+    scene.materials.push(Material {
+        kind: crate::scene::MATERIAL_GLASS,
+        roughness: 0.0,
+        ior: 1.56,
+        transmission: 1.0,
+        abbe: 40.0,
+        ..Material::default()
+    });
+    let mut instances = scene.geometry.instances().to_vec();
+    instances.push(Instance::new(
+        0,
+        Transform::from_rows([
+            [0.4, 0.0, 0.0, 200.0],
+            [0.0, 0.4, 0.0, -120.0],
+            [0.0, 0.0, 0.4, 0.0],
+        ]),
+        scene.materials.len() as u32 - 1,
+    ));
+    scene.geometry = Geometry::new(scene.geometry.meshes().to_vec(), instances).unwrap_or_default();
+    scene.materials[0] = Material {
+        kind: crate::scene::MATERIAL_GLASS,
+        base_color: Rgb::new(0.85, 0.7, 0.5),
+        roughness: 0.3,
+        ior: 1.44,
+        transmission: 1.0,
+        absorption_mm: 120.0,
+        scatter_mm: 4.0,
+        scatter_color: Rgb::new(0.995, 0.98, 0.95),
+        scatter_g: 0.3,
+        ..Material::default()
+    };
     scene
 }
 

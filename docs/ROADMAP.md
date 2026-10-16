@@ -2110,7 +2110,7 @@ de E5.
 3 % de la referencia; cáusticas de un vaso de agua bajo un foco
 pequeño con MNEE vs mapa de fotones; *hashes* repinados; paridad wasm.
 
-## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus**
+## E9 · Materiales hacia el realismo: energía, medios dispersores, dispersión — **Opus** — hecha (a, b y c)
 
 **Qué.** Tres partes, en este orden, cada una con su commit y sus
 *hashes*; (c) solo si (a) y (b) están en verde.
@@ -2179,6 +2179,544 @@ determinismo con 1, 4 y 16 hilos y en wasm; `clippy -D warnings`;
 tiempos antes y después en el PR (el medio cuesta lo que cuesta, se
 mide); la hoja de contactos con el veredicto visual de Fable antes de
 cerrar.
+
+**Hecho (a) · compensación de energía del GGX** (commit `d736374`).
+
+- **Tablas propias** (`rt_core::bsdf::energy`, datos en
+  `bsdf/energy_table.rs`): `E(μ, α)` del GGX con Fresnel 1, el momento de
+  Schlick `E5(μ, α) = ∫(1 − wo·h)⁵ G2/G1` (para que
+  `E_s = f0 E + (f90 − f0) E5` sin otra tabla) y el albedo de potencia de
+  la parte clara `E_t(μ, α, η)` entrando y saliendo; integradas por nuestro
+  Monte Carlo con semilla fija (`0xe9ae9a`): por nodo, la semirrecta por
+  VNDF (Heitz 2018) en una rejilla *jittered* de 64 × 64 con un flujo PCG
+  propio. Nodos en `μ = (i/31)²`, `r = j/31` (`α = r²`) y 17 índices
+  uniformes en `(ior − 1)/(ior + 1)` hasta 3; 16 bits por valor (~70 kB).
+  `E_avg` es la integral de la propia tabla. Error frente a una
+  integración con 16 veces las muestras, en puntos entre nodos: 0,11 % el
+  peor (cota del test 0,5 % para `μ ≥ 0,05`; con 24 × 24 nodos no se
+  cumplía). Un test regenera una muestra de nodos bit a bit
+  (`REPACK_WRITE_TABLES=1` las reescribe enteras en segundos).
+- **Reflexión** (metal, especular del dieléctrico opaco y barniz): el
+  lóbulo añadido de Kulla y Conty (2017),
+  `F_ms (1 − E(μo)) (1 − E(μi)) / (π (1 − E_avg))` con
+  `F_ms = F_avg² E_avg / (1 − F_avg (1 − E_avg))` y el `F_avg` de Schlick
+  `f0 + (f90 − f0)/21`; muestreado por el coseno, con su densidad en la
+  mezcla del MIS. **Refracción** (la parte clara): dividida por su propio
+  albedo de potencia `E_t(μo, α, η)` (Turquin 2019). Por debajo de
+  `α = 0,002` no hay compensación: la rugosidad 0 conserva todos sus bits
+  (test).
+- **(a2) capa difusa bajo el especular** (petición de la dirección, regla 11, tras ver (a)):
+  peso `(1 − E_s(μo)) (1 − E_s(μi)) / (1 − E_s,avg)` (Kulla y Conty), con
+  `E_s` el albedo direccional del especular dieléctrico (su dispersión
+  simple con Schlick más su lóbulo añadido; la curva de Schlick misma si es
+  liso), y bajo el barniz la normalización conjunta de las dos capas (abajo).
+- ***Furnace*** (esfera blanca en un mundo uniforme de radiancia 1, media
+  de sus píxeles), antes → después, rugosidad 0,2 / 0,5 / 0,8 / 1,0:
+  metal 0,998 / 0,895 / 0,574 / 0,356 → 1,000 / 1,001 / 0,999 / 0,999;
+  vidrio claro (ior 1,5) 0,994 / 0,828 / 0,515 / 0,361 → 0,997 / 0,998 /
+  1,004 / 0,995 (16 × 16 px × 256 spp en el test; 0,999 / 1,001 / 1,001 /
+  1,000 a 32 × 32 × 1024). Plástico blanco (base 1, ior 1,5), rugosidad
+  0 / 0,2 / 0,5 / 0,8 / 1,0: desnudo 0,918 / 0,918 / 0,914 / 0,900 / 0,891
+  → 1,000 / 1,000 / 1,000 / 1,000 / 1,001; con barniz 1 liso 0,860…0,833 →
+  0,998…0,997; con barniz 1 de rugosidad 0,3, 0,860…0,833 → 0,999…0,998.
+  Los tests piden ±1 %.
+- ***Hashes*** que se mueven (todo lóbulo rugoso cambia la mezcla de
+  muestreo y la capa difusa gana lo que perdía), con la luminancia lineal
+  media antes → después, para que L6 la vuelva a medir:
+
+  | Imagen | Antes de E9 | Después de (a) + (a2) | Luminancia media |
+  | --- | --- | --- | --- |
+  | Ejemplo, 4 spp (`PINNED_EXAMPLE_4SPP`) | `0x223515c3` | `0x51ade97c` | +15,6 % |
+  | E5, HDRI (`PINNED_E5_HDRI_4SPP`) | `0xbf8abd5b` | `0x284f75e1` | +13,6 % |
+  | E5, cielo clásico (`PINNED_E5_SKY_4SPP`) | `0x2fcb098a` | `0x96f673b1` | — |
+  | E5c, cielo físico (`PINNED_E5C_SKY_4SPP`) | `0x8bb09f6b` | `0x83410b6e` | +13,2 % |
+  | E5b-1, cáusticas (`PINNED_E5B_CAUSTICS_4SPP`) | `0x55d60f2f` | `0x8bff5f8a` | +13,6 % |
+  | Ejemplo con *denoise* (`PINNED_DENOISED_EXAMPLE_4SPP`) | `0xab15f290` | `0x7483f82e` | — |
+  | Teselas del ejemplo (`PINNED_CENTRE`, `PINNED_SMALL_SPHERE`) | `0x7a5ae28b`, `0xb43bda52` | `0x023525f2`, `0x40ae1775` | — |
+
+  Casi todo es la luz difusa que se perdía (y sus interreflexiones). Los
+  seis *hashes* de pases de X2 no se mueven. Con solo (a), los cambios eran
+  de +0,40 % (ejemplo), +0,51 % (E5) y +0,65 % (E5c).
+
+**No encajó con el plan en (a), y por qué está bien así.**
+
+- **Muestreo del vidrio rugoso.** Con el factor de Turquin, el muestreo
+  antiguo de la parte clara (reflejar o refractar según el Fresnel
+  macroscópico, como mucho 0,99) daba pesos de 25 a 60 a las microfacetas
+  en reflexión total dentro de un sólido: destellos suficientes para leer
+  1,046 a 256 spp. El vidrio rugoso (compensado) muestrea ahora primero la
+  microfaceta y refleja con su propio Fresnel (Walter 2007, §5.3, la
+  elección con un número *hash* de la muestra 2-D); el liso conserva el
+  procedimiento de antes y sus bits.
+- **(a2), dos desviaciones de la receta literal.** (1) Bajo el barniz,
+  normalizar cada lóbulo por `1/(1 − E_c,avg)` se pasaba un +1,5 %: un
+  lóbulo especular bajo el barniz no redistribuye la luz, así que solo
+  lleva `(1 − E_c(μo))(1 − E_c(μi))`, sin normalizar. (2) La capa difusa
+  bajo las dos capas necesita su normalización **conjunta**
+  `1/∫(1 − E_s)(1 − E_c) 2μ dμ`: el producto de las dos normalizaciones
+  por separado salía un +1,4 % brillante porque las dos transmisiones caen
+  juntas en rasante. Se calcula por BSDF con Gauss–Legendre de 8 puntos
+  (exacto para curvas de Schlick), solo en difusos con barniz. Las dos
+  son lo que pide la conservación de energía, y el *furnace* con barniz lo
+  comprueba a ±1 %.
+- **La rugosidad 0 sí cambia en el plástico**, y debe: `E_s(μ)` con
+  `α → 0` es `F(μ)`, así que la forma es la de antes, pero la
+  normalización `1/(1 − E_s,avg)` es nueva: `1/(1 − F_avg)` = × 1,094 en
+  el difuso con ior 1,5 (exactamente el 8,6 % que perdía; plástico blanco
+  liso 0,918 → 1,000). El suelo (Lambert, `f0 = 0`) y las bases con ior 1
+  conservan todos sus bits. El criterio de la fase («con rugosidad 0 la
+  imagen no cambia») vale para el metal y el vidrio, no para el difuso.
+- Los lóbulos **anisótropos** usan las tablas isótropas con el ancho
+  `√(αx αy)` (aproximación); las **paredes finas** no se compensan; el
+  lóbulo añadido del barniz no atenúa las capas de debajo (su `F_avg` es
+  0,08: el término queda por debajo del 0,6 %); los fotones de E5b-1
+  usan el mismo muestreo de la BSDF con el factor de Turquin del lado del
+  fotón (no recíproco, como acepta el artículo; los *casters* tienen
+  rugosidad ≤ 0,25, donde el factor es casi 1).
+- Los criterios de U11 y E10 citan `0xab15f290` y `0x223515c3`: con E9a
+  son `0x7483f82e` y `0x51ade97c` (no se toca su texto).
+
+**Mutaciones de (a)** (cada una rompe a propósito una línea; entre
+paréntesis, los tests que fallan): quitar el lóbulo añadido del especular
+en `eval` (`rough_white_metal_reflects_everything_once_compensated`,
+`rough_metal_and_glass_come_out_white_in_a_furnace`,
+`rough_metal_never_gains_energy`); quitar su peso de la densidad de la
+mezcla (`no_material_reflects_more_than_it_receives` y otros dos); `F_ms` →
+`F_avg` (`smooth_surfaces_have_no_compensation_and_rough_ones_do`); quitar
+el factor de Turquin (`rough_glass_never_gains_energy`, el *furnace*);
+reflejar el vidrio rugoso con el Fresnel macroscópico (el *furnace* del
+vidrio); `MIN_COMPENSATED_ALPHA` = 0 (`smooth_surfaces_…`); buscar en `μ` en
+lugar de `√μ` (`energy_tables_are_what_the_generator_writes`,
+`the_energy_tables_are_within_half_a_percent_of_a_finer_integration`);
+quitar el lóbulo añadido del barniz (la primera vez no lo vio nadie: se
+añadió `the_extra_lobes_are_kulla_and_contys_shape_times_their_fresnel`);
+(a2) quitar la normalización de la capa difusa
+(`white_plastic_comes_out_white_in_a_furnace`), quitar el lóbulo añadido
+del albedo de la capa (`layers_pass_what_they_do_not_reflect`), normalizar
+sin el paso del barniz o atenuar con `under` en lugar de `passes`, y la
+media lisa a 0 (los dos anteriores). Sin test, y no es un sesgo: el peso
+del lóbulo añadido en la estimación de reflectancia que elige el lóbulo a
+muestrear (solo cambia la varianza).
+
+**Hecho (b) · medios dispersores dentro de sólidos.**
+
+- **Campos** (claves estables, al final): `MATL` pasa a 100 B con, en este
+  orden, `bevel_mm` (byte 72, reservado para E6: se lee y se conserva, la
+  interfaz escribe 0), `scatter_mm`, `scatter_color[3]`, `scatter_g` y
+  `abbe` (que se escribe ya y renderizará E9c); los registros de 56, 60 y
+  72 B se leen como antes. En el proyecto, `scatterMm`, `scatterColor` y
+  `scatterG` de la familia GLASS; un proyecto anterior se abre con los
+  mismos parámetros que tenía y sin medio.
+- **El medio** (`rt_core::integrator::medium`): un sólido claro
+  (transmisión, no pared fina, no metal, no emisor, `ior ≥ 1,0001`) con
+  `scatter_mm > 0`; `σt = 1/scatter_mm`, `σs = albedo σt` y
+  `σa = (1 − albedo) σt` por canal, más la absorción de `absorption_mm`
+  y `base_color` (que hace `σt` distinto por canal); `g` recortado a ±0,9.
+- **El paseo** (Chiang, Kutz y Burley, «Practical and Controllable
+  Subsurface Scattering for Production Path Tracing», SIGGRAPH 2016 Talks,
+  escrito desde la charla): distancias `−ln(ξ)/σt` de un canal *héroe*
+  elegido una vez por paseo, con el MIS espectral de una muestra sobre los
+  tres canales (Wilkie et al., EGSR 2014) llevado como cocientes
+  renormalizados en cada paso (un paseo largo no desborda); fase de
+  Henyey–Greenstein por su inversa; desde el evento 33, ruleta rusa sobre
+  el peso del propio paseo (supervivencia `max(throughput)/max(throughput
+  al entrar)`, entre 0,05 y 1: lo que el paseo ha perdido desde que entró;
+  decisión de la dirección con las medidas de abajo).
+  **Sin NEE dentro.** Un paseo que no dispersa cruza como el vidrio claro
+  (la BSDF de la superficie lo toma). Uno que dispersó, al llegar a la
+  frontera desde dentro, se refleja hacia dentro (espejo respecto de la
+  normal geométrica) con la probabilidad del Fresnel de salida —1 más allá
+  del ángulo crítico— o sale: el vértice de salida es un vértice de
+  superficie con un lóbulo de transmisión lambertiano de albedo `η²`
+  (`Bsdf::medium_exit`; la radiancia dentro de un sólido es `η²` la de
+  fuera, y el camino que entró lleva el `1/η²`), donde el integrador
+  muestrea una luz con su MIS y sigue por el coseno. La rugosidad de la
+  frontera no cambia el lóbulo. **Tope**: 1024 pasos por camino (eventos y
+  reflexiones en la frontera); pasado, el paseo va recto a la frontera
+  conservando todo salvo la absorción y sale por el lóbulo sin reflejarse
+  (si no, la reflexión total lo atraparía en un sólido curvo). Los medios
+  no cuentan contra `RNDR.max_depth`. El vértice de salida no ve recortes
+  ni el suelo, y el último tramo del paseo no recoge luces cruzadas.
+- **Paredes finas alrededor de un medio** (decisión de la dirección; una
+  **aproximación**): un rayo de sombra desde un vértice de salida, y solo
+  desde uno, atraviesa una pared de vidrio liso (rugosidad ≤ 0,05, del
+  todo clara, sin barniz ni medio propio) donde la luz que la cruzara
+  refractando saldría a menos de 5 mm de su entrada por una cara a menos de
+  15° de la primera, como si las dos refracciones se anularan: lleva el
+  producto de las transmitancias de Fresnel de entrada y de salida y la
+  absorción de la pared en ese tramo, y sigue en su dirección; una pared
+  gruesa, rugosa o con barniz lo sigue parando. Para que no cuente dos veces, una muestra de la
+  BSDF del vértice de salida que entra y sale de una pared que el rayo de
+  sombra cruzaría (la misma prueba, sobre el rayo recto) es un suceso recto
+  de ese vértice para el MIS (conserva su densidad y su distancia). Con
+  cáusticas, lo que una luz de fotones manda a través de una pared es del
+  mapa, como a través de cualquier *caster*. Sesgo medido: una losa de
+  leche bajo una placa de vidrio de 3 mm iluminada por un panel, −2,0 %
+  frente al trazador sin la regla a 2048 spp (con fotones, −1,7 %), con
+  4,8 veces menos varianza a 32 spp. En el frasco de leche, el ruido de
+  píxel (desviación frente a sus vecinos, relativa) baja de 0,112 (la
+  conexión recta) a 0,081 a 64 spp; una esfera de leche sin vidrio da 0,070
+  (era 0,131) y el suelo 0,03. La solución exacta (NEE de variedades) queda
+  para E13.
+- **Números aleatorios**: dimensiones *hash* más allá de la tabla Sobol
+  (`sampler::medium_dim(rebote, paso)`, 8 por paso, desde `1 << 21`;
+  `1 << 23` queda para E9c), así que una escena sin medios no cambia ni un
+  bit: los ocho *hashes* de antes y los de pases siguen iguales.
+- **Cáusticas**: un medio es receptor (`caustics::is_caster`); guarda
+  fotones en su superficie y ninguno entra. El vértice de salida recoge
+  los fotones del **exterior** de su superficie, hacia donde mira su
+  lóbulo (lo encontró la hoja: ver abajo).
+- **Rápido** (`src/render/materials.ts`): un difuso translúcido, el color
+  con que vuelve la luz por la similitud de van de Hulst
+  (`(1 − s)(1 − 0,139 s)/(1 + 1,17 s)`, `s = √(1 − albedo)`), y una
+  transmisión que baja con lo denso que es el medio para el tamaño de la
+  pieza; la ayuda de *Dispersión interna* dice que Rápido lo aproxima.
+- **Recetas** (nueve, claves nuevas; 86 en total): `HDPE_WHITE` (mfp
+  0,08 mm, albedo 0,996 / 0,995 / 0,99, rugosidad 0,35, ior 1,54),
+  `PP_NATURAL` (0,6; 0,995 / 0,994 / 0,988; 0,3; 1,49), `PMMA_FROST` (4;
+  0,999; g 0,3; 0,45; 1,49), `WAX` (0,35; 0,997 / 0,993 / 0,975; 0,4;
+  1,44), `SOAP_GLYCERIN` (12; 0,995 / 0,99 / 0,98; g 0,4; ámbar con
+  absorción a 60 mm; 0,12; 1,47), `MILK` (0,31; 0,9996 / 0,9993 / 0,9963;
+  1,35) y `CREAM` (0,19; 0,99997 / 0,9995 / 0,9949; 0,25; 1,4) de los
+  coeficientes reducidos medidos de Jensen et al. (SIGGRAPH 2001, leche
+  entera y nata), `JUICE_ORANGE` (0,9; 0,997 / 0,94 / 0,55; 1,35) y
+  `JUICE_APPLE` (40; 1; g 0,5; ámbar con absorción a 25 mm; 1,35); las de
+  plástico en *Plásticos* y el resto en *Otros*; los líquidos no se
+  desgastan. Las demás, a ojo.
+- **Interfaz**: bajo *Paredes* del vidrio, *Dispersión interna* (mm),
+  *Color de dispersión* y *Dirección* (−0,9 a 0,9, «hacia delante / hacia
+  atrás»), con su ayuda en los dos idiomas; mutación del *store*
+  deshacible como cualquier parámetro.
+- **Pruebas** (todas con su mutación, abajo): el *furnace* del medio
+  blanco (mfp 0,1 a 60 mm, g −0,4 a 0,4, frontera lisa y rugosa): entre
+  0,998 y 1,008 (antes, con la conexión recta, 0,983–1,015); un medio que
+  solo absorbe da Beer–Lambert en cada canal (el MIS espectral) a 2 %; un
+  semiespacio gris de dispersión isótropa bajo una frontera de índice
+  1,001 da el albedo plano de Chandrasekhar para luz normal
+  (`1 − H(1) √(1 − a)`, su función H resuelta en el test): 0,4118 frente a
+  0,4149 con albedo 0,9 y 0,7503 frente a 0,7527 con 0,99 (cota 2 %; es la
+  referencia absoluta de la ruleta y del muestreo con albedo entre 0 y 1);
+  un emisor pequeño visto a través de una losa de una centésima de mfp
+  sigue nítido y conserva lo que el vidrio claro deja (0,918 frente a
+  0,914): lo que no dispersa sale refractando, no por el lóbulo;
+  un medio gris (albedo 0,9 y 0,97) en un mundo uniforme da lo mismo con el
+  lóbulo que con la frontera exacta (0,2787 frente a 0,2776 y 0,4501
+  frente a 0,4496, cota 2 %: ahí el lóbulo es exacto y solo cuenta cuánto
+  refleja la frontera hacia dentro, que es lo que el *furnace* blanco no
+  ve); la leche bajo un panel lateral: el lóbulo a 256 spp contra la frontera
+  exacta (el paseo sale refractando por la superficie real; 4096 spp
+  distintas) da 2,881 frente a 2,790 (+3,3 %, cota 6 %) y su peor píxel
+  iluminado está al 0,971; la losa de leche bajo la placa de vidrio (la
+  regla de las paredes, arriba); un medio detrás de una bola de vidrio
+  recibe por fotones la misma luz que el trazador (−4,0 %, cota 10 %); la dispersión hacia delante deja pasar más luz por una losa
+  que la isótropa y esta más que hacia atrás (0,820 / 0,643 / 0,511); un
+  emisor que no es luz se encuentra tras un paseo; la fase es una densidad
+  y sus muestras la siguen; un medio es su mfp, su albedo y su absorción;
+  los medios son receptores, sin medio de Beer–Lambert y con sus propias
+  dimensiones; la hoja de contactos tiene las nueve recetas y sus escenas
+  son válidas; del lado de la interfaz, las recetas, los parámetros y sus
+  cadenas, el registro de 100 B, los proyectos de antes, el Rápido, que
+  `sss_sheet.rs` repite exactamente los números del catálogo y que el
+  `rt.wasm` real da el *hash* fijado.
+- **Paridad**: la escena de E9 (la de E5 con un medio de cera cálida, mfp
+  4 mm y absorción en su esfera de vidrio rugoso) tiene su *hash*
+  **`0xc6c9036e`** (`PINNED_E9_MEDIA_4SPP`, `rt --write-e9-example`,
+  `tests/fixtures/e9.rsb`), igual en todas las rutas SIMD, en WASI escalar
+  y `simd128`, con 1, 4 y 16 hilos, en el `rt.wasm` real
+  (`tools/wasm-parity.mjs`, también en CI) y por el código de la página.
+- **Coste** (la hoja, 240 × 180, cuatro hilos en una máquina compartida
+  con carga ~40; los rayos por muestra de cámara no dependen de la carga),
+  medio frente a claro, 64 / 256 spp: esferas 22,9 frente a 4,0 rayos
+  (5,7 ×; tiempo 169,5 / 28,0 s = 6,1 × y 578,9 / 97,3 s = 5,9 ×); frasco
+  de leche 9,3 frente a 3,7 (2,5 ×; 56,2 / 21,4 s = 2,6 × y 236,1 / 69,4 s
+  = 3,4 ×); frasco de zumo 6,2 frente a 3,7 (1,7 ×; 39,3 / 22,1 s = 1,8 × y
+  157,3 / 85,4 s = 1,8 ×); el de leche con fotones, 10,1 rayos (75,2 y
+  270,3 s). Con la conexión recta eran 15 ×, 7,6 × y 5,8 × en tiempo a
+  64 spp. Objetivo de la dirección para el frasco de leche, ≤ 6 ×: cumplido.
+- **Hoja de contactos** `out/sss-sheet.html` (`rt --sss-sheet out`):
+  las nueve recetas en esferas y el frasco de E5 lleno de leche y de zumo
+  de naranja, con y sin medio, y el de leche con fotones, a 64 y 256
+  muestras, con el tiempo y los rayos por muestra de cámara.
+
+**Mutaciones de (b)**: albedo del lóbulo de salida `η²` → 1 (el
+*furnace*: 0,47); salir siempre sin reflejarse hacia dentro, o el Fresnel
+de salida sin reflexión total (los dos, invisibles al *furnace* blanco:
+`an_absorbing_medium_in_a_uniform_world_is_what_the_exact_boundary_gives`, 0,460 y 0,442 frente a 0,278); la fase al revés (`the_phase_function_is_a_density…`,
+`forward_scattering_sends_the_light_onwards`); las dimensiones del medio
+dentro de la tabla Sobol (`media_are_receivers_with_their_own_random_numbers`);
+un medio como *caster* (el mismo); Beer–Lambert además del paseo
+(`a_medium_that_only_absorbs_is_beer_lambert_in_every_channel`); quitar la
+división de la ruleta (`a_grey_half_space_reflects_chandrasekhars_plane_albedo`: 0,676 frente a 0,753 con albedo 0,99); un paseo que topa sin salir se pierde
+(el *furnace*, mfp 0,1); canal héroe fijo (Beer–Lambert); distancias con
+`2 σt` (Beer–Lambert, el *furnace*); el lóbulo sin `1/π` o su densidad del
+lado equivocado (el *furnace*, la leche); la BSDF de la superficie en el
+vértice de salida además de la decisión del paseo (el *furnace*); un paseo
+sin eventos saliendo por el lóbulo (`a_sparse_medium_lets_what_does_not_scatter_through_straight`: 0,051 frente a 0,914); recoger los fotones del
+lado de dentro (`a_medium_behind_glass_gathers_its_photons_where_its_walks_leave`);
+sin el suceso recto del MIS, sin la regla de las paredes, o sin dejar al
+mapa la luz de fotones que cruza una pared
+(`a_medium_sees_the_lights_through_a_thin_glass_wall`). Sin test, y no es
+un sesgo: quitar el MIS espectral (un solo canal héroe con `f/p_héroe` es
+insesgado; el MIS solo baja la varianza). Del lado de la interfaz: el orden
+de los campos del registro, `scatterG` sin recortar, la fórmula de van de
+Hulst (el test la fija ahora: antes solo comprobaba los extremos), quitar
+la claridad del Rápido, el desgaste de la leche, la ayuda de *Dirección* y
+un número de las recetas de la hoja distinto del catálogo: todos fallan.
+
+**No encajó con el plan en (b).**
+
+- **El estimador del contrato** (NEE en cada evento a través de la
+  frontera con su transmitancia recta) se hizo primero y la dirección lo
+  rechazó tras ver la hoja: desde el lado de la cámara, una conexión recta
+  a una luz a más del ángulo crítico de la normal local (47,8° con ior
+  1,35; 41,8° a través de la pared de vidrio) no lleva nada, así que casi
+  todos los paseos de delante no ven la luz y la traen los pocos que llegan
+  al lado iluminado: en un píxel de leche bajo un panel lateral, mediana
+  0,011, media 0,098, y el 1 % de las muestras más brillantes llevaba el
+  23 % de la media. A 64 spp, 240 × 180 y cuatro hilos costaba 15 veces lo
+  claro en las esferas, 7,6 en el frasco de leche y 5,8 en el de zumo.
+  Medido después contra el camino exacto (el paseo sale refractando por
+  la frontera real, sin lóbulo ni conexión), además era un 25 % oscuro en
+  la esfera de leche; el lóbulo de salida queda un 3,5 % por encima. Se
+  descartaron con él sus tres decisiones: llevar **radiancia** por cada
+  cruce, `(1 − F(cos, η))/η²` lejos → cerca con reflexión total (la
+  versión en flujo leía 0,88–0,95 en el *furnace*); en una frontera
+  **rugosa**, el peso de una muestra de la BSDF en lugar de la fórmula
+  lisa (que leía 0,89), y la **ruleta con `η²`** (`max(throughput)·η²`,
+  para que el `1/η²` de entrar no matara la mitad de los paseos en el
+  primer evento). El tope de 1024 se queda (256 perdían un 3 % a 300 mfp
+  de ancho).
+- **La ruleta**: el plan de la dirección era ruleta sobre el *throughput*; el
+  camino entra en el sólido con `1/η²`, así que la primera ruleta (evento
+  33) mataba alrededor de la mitad de los paseos que llegaban ahí. Medido
+  (eficiencia `1/(varianza relativa × rayos)`, 12 × 12 px, dos mitades de
+  128 spp): leche 2,71 sobre el *throughput*, 4,30 con `× η²`, 4,29 sobre
+  el peso del propio paseo, 4,14 sin ruleta; HDPE 4,40, 5,65, 5,37 y 2,05.
+  La dirección eligió el peso del propio paseo (la versión con principio de
+  `× η²`).
+- **La cita**: el contrato dice «Pixar 2016, Chiang, Kulla y Fajardo»; la
+  charla de ese título es de Matt Jen-Yuan Chiang, Peter Kutz y Brent
+  Burley (Walt Disney Animation Studios, SIGGRAPH 2016 Talks). Se cita
+  así en el código.
+- **El lóbulo de salida es la aproximación de producción de la charla**:
+  ignora adónde refractaría la dirección de llegada y da a toda salida la
+  misma distribución en coseno. Con luz uniforme es exacto (el *furnace*);
+  bajo un panel lateral, +3,5 % frente al camino exacto.
+- **Un líquido dentro de un frasco de vidrio**: el vidrio macizo para los
+  rayos de sombra (E5), así que la NEE del vértice de salida no ve las
+  luces a través de la pared, y solo las encuentran las continuaciones por
+  el coseno que atraviesan el vidrio: el frasco de leche sigue con grano a
+  64 spp con cualquier estimador. Con cáusticas, los fotones se la llevan
+  (y ahí apareció el fallo de abajo); *Automático* solo enciende las
+  cáusticas con luces de menos de 20° vistas desde los *casters*, así que
+  con el *softbox* del frasco no se encienden. Decisión para la dirección.
+- **La regla de las paredes, medida sobre la refracción.** La decisión de
+  la dirección hablaba de los puntos de entrada y salida del rayo de sombra y de
+  la absorción en el tramo recto. Medido así (5 mm a lo largo del rayo
+  recto), en el frasco paraba la mitad de los rayos de sombra de las
+  salidas (90 de 183 en un render instrumentado de 60 × 45 a 4 spp): una
+  luz a más de 53° de la normal de una pared de 3 mm la cruza en más de
+  5 mm. Medida sobre el camino que refracta (el de la luz de verdad), una
+  pared de 3 mm deja pasar cualquier ángulo (el tramo dentro es como mucho
+  de 4,0 mm con ior 1,5); el rayo sigue luego en su dirección. Con eso, el
+  sesgo en la placa queda en −2,0 % y la varianza baja 4,8 veces (con la
+  medida recta, −2,1 % y 2,3 veces).
+- **«El frasco a 64 spp debe perder el grano»** no se cumple del todo: el
+  ruido de píxel de la leche baja un 28 % (0,112 → 0,081) y queda al nivel
+  de una esfera de leche sin vidrio (0,070), pero sigue por encima del
+  suelo (0,03). Lo que queda es del propio medio: cada muestra sale por un
+  punto distinto y su NEE elige una de tres luces y la cúpula, y el panel
+  de contraluz, el más potente, no se ve desde las salidas de delante.
+  Ese grano es de E12 (la elección de luz por punto) y de E13 (la NEE de
+  variedades a través del vidrio, en lugar de esta regla).
+- **Fallo encontrado con la hoja**: con cáusticas, el vértice de salida
+  recogía los fotones con la normal de su lado (el de dentro) y no veía
+  ninguno: un medio dentro de vidrio perdía toda la luz que le llega a
+  través del vidrio (la leche del frasco salía un 19 % más oscura). Ahora
+  los recoge del exterior de su superficie; test nuevo (un bloque de medio
+  iluminado solo a través de una bola de vidrio: fotones y trazador
+  coinciden; con el fallo reintroducido, falla).
+- **La prueba de la leche y la varianza**: el plan pedía que una mutación
+  que reintrodujera la conexión desde dentro fallara por varianza. En una
+  esfera no se separan: con la luz a un lado, delante a 45° o a 70° y de
+  lado con un panel grande, el peor píxel iluminado a 256 spp de la
+  conexión recta está a 0,98 / 0,83 / 0,87 / 0,85 de su referencia y el
+  del lóbulo a 0,87 / — / 0,88 / 0,91; con la luz detrás (un borde
+  iluminado) fallan los dos (0,00 y 0,22). Su cola pesada se veía en el
+  frasco. Por decisión de la dirección, la prueba compara con la frontera exacta
+  (la conexión recta da 2,089 frente a 2,790, −25 %, y falla) y conserva
+  el peor píxel ≥ 0,6; la cláusula de la varianza se quita.
+- **Sin medios anidados** (un líquido dentro de otro medio), un sólido con
+  ior 1 no tiene medio (para la BSDF es una pared fina), un `g` cerca de
+  ±0,9 converge despacio (el *furnace* prueba hasta ±0,4) y el *furnace*
+  del medio solo corre en *release* (medio millón de caminos por caso; CI
+  lo corre en nativo y en WASI). Las cáusticas no entran en un medio.
+- La hoja se hizo a 64 y 256 muestras, no a 64 y 1024 como dice el
+  contrato (decisión de la dirección).
+
+**Hecho (c) · dispersión cromática.**
+
+- **Campo**: `abbe`, el último de `MATL` desde (b) (byte 96); en el
+  proyecto, `abbe` de la familia GLASS (0 por defecto: ninguna). Un
+  proyecto o un RSB anteriores se abren sin dispersión.
+- **El índice por longitud de onda** (`rt_core::integrator::dispersion`):
+  la ley de Cauchy de dos términos, `n(λ) = A + B/λ²`, que pasa por `ior`
+  en la línea d del helio (587,6 nm) y da el número de Abbe
+  `V = (n_d − 1)/(n_F − n_C)` (F 486,1 nm y C 656,3 nm, las líneas del
+  hidrógeno): `B = (n_d − 1)/(V (1/λ_F² − 1/λ_C²))`, `A = n_d − B/λ_d²`.
+  Solo en un sólido claro **sin medio** (un paseo sale por su frontera con
+  `ior`, así que su superficie tampoco dispersa) y nunca en una pared fina.
+- **Una longitud de onda por camino**: cada canal es una banda (rojo
+  580–700, verde 490–580, azul 400–490 nm). Al primer vidrio dispersivo,
+  el camino elige un canal con probabilidad ⅓ y una longitud de onda
+  uniforme en su banda, con una dimensión *hash* propia
+  (`sampler::DIM_DISPERSION`, `1 << 23`, más allá de las del medio), y
+  desde ahí lleva solo ese canal, por 3, y refracta con esa longitud de
+  onda en todo vidrio dispersivo (rugoso también: la BSDF entera, con su
+  compensación de energía, se construye con ese índice). Los fotones de
+  las cáusticas hacen lo mismo con su propio generador al primer *caster*
+  dispersivo. Un camino que no encuentra vidrio dispersivo sigue blanco:
+  una escena sin `abbe` no cambia ni un bit (todos los *hashes* fijados
+  salvo el de E9, abajo, siguen iguales).
+- **Rápido** (`src/render/materials.ts`): la `dispersion` de three.js con
+  la definición de glTF (`KHR_materials_dispersion`, 20 / número de Abbe,
+  hasta 2), solo en vidrio macizo sin medio; la ayuda dice que Rápido la
+  aproxima.
+- **Receta**: `CRYSTAL`, *Cristal de perfumería* (ior 1,56, Abbe 40, liso,
+  sin absorción), en *Vidrio*; 87 recetas.
+- **Interfaz**: *Número de Abbe* (0 a 100, paso 1) bajo *Dirección* del
+  vidrio, con su ayuda en los dos idiomas; mutación del *store* como
+  cualquier parámetro.
+- **Pruebas**: el prisma del contrato (45°, 100 mm, a 300 mm del suelo,
+  Abbe 25) bajo una luz de disco de 20 mm con un haz de 10° a 800 mm:
+  con fotones, en el suelo el azul cae más lejos que el verde y este que
+  el rojo (centroides 23,76 / 23,03 / 22,69 px de 40; por regiones, el
+  cociente azul/rojo de la mitad lejana de la banda es 1,073 y el de la
+  cercana 0,880) y sin `abbe` la banda es blanca bit a bit; el mismo
+  prisma visto desde arriba sobre una tira emisora separa las imágenes de
+  los canales (rojo 16,99, verde 13,65, azul 8,53 px; sin `abbe`, las
+  tres iguales bit a bit); una esfera de cristal (Abbe 30) lisa y rugosa
+  (0,3) en un mundo uniforme sale blanca en cada canal (0,992 / 1,005 /
+  1,002 y 0,993 / 1,004 / 1,004; cota 1,5 %); la ley de Cauchy pasa por
+  `ior` en d y da el Abbe pedido; la elección de banda conserva la media;
+  qué materiales dispersan; del lado de la interfaz, la receta, el
+  parámetro y sus cadenas, el Rápido (y que un material reutilizado para
+  otra familia la olvida) y el `rt.wasm` real con el *hash* nuevo.
+- **Paridad**: la escena de E9 lleva ahora, además del medio, una esfera de
+  cristal de Abbe 40 (radio 40 mm, delante a la derecha): **`0xc6c9036e`
+  → `0xf693c26b`** (`PINNED_E9_MEDIA_4SPP`, `tests/fixtures/e9.rsb` de
+  10 804 B), igual en escalar, SSE2 y AVX2, en WASI escalar y `simd128`,
+  con 1, 4 y 16 hilos, en el `rt.wasm` real y por el código de la página.
+- **Coste**: un número aleatorio por camino; los rayos no cambian (la
+  escena de E9 a 480 × 360 y 256 spp, dos hilos: 479,9 M rayos en 427,9 s
+  con el cristal, 475,4 M en 428,4 s con Abbe 0). El precio es ruido de
+  color: en una caja de 191 × 109 px alrededor de la esfera, el ruido de
+  píxel relativo (frente a sus vecinos) pasa de 0,029 a 0,037 a 256 spp
+  (0,071 a 64 spp).
+
+- **Puertas** sobre el árbol final: `cargo fmt`, `clippy -D warnings`
+  (todo el *workspace* con todos los *targets*, y `rt-app` para Windows),
+  la compilación de `rt-wasm`, `cargo test --workspace` en *debug* (624
+  pruebas) y en *release* (630), `rt-core` en WASI escalar y `simd128`
+  (272 cada uno), `tools/wasm-parity.mjs` con la escena de E9
+  (`0xf693c26b`) y el ejemplo (`0x51ade97c`), el *fixture* `e9.rsb`
+  idéntico a lo que escribe `rt`, y `npm run check`, `build` y `vitest`
+  (1830 pruebas).
+
+**Mutaciones de (c)**, todas cazadas: el canal sin el factor 3 (el
+*furnace* del cristal: 0,331 en rojo; la media de las bandas); volver a
+elegir la banda en cada superficie (el *furnace* diverge y el suelo del
+prisma invierte los colores); refractar con `ior` en lugar del índice de la
+banda (el prisma visto a través, los tres canales a 15,6 px); no enmascarar
+el *throughput* (el mismo); en los fotones, no enmascarar su potencia,
+volver a elegir la banda o refractar con `ior` (el suelo del prisma); el
+signo de `A` en Cauchy (su test y los dos prismas); las bandas al revés
+(los dos prismas); dispersar también un medio
+(`only_clear_solids_without_a_medium_disperse`). Solo con el *hash* de
+E9: la longitud de onda del centro de la banda en lugar de una uniforme
+(los centroides se mueven 0,1 px) y la dimensión de la longitud de onda
+dentro de la tabla Sobol.
+
+**No encajó con el plan en (c).**
+
+- **Una longitud de onda, sin MIS espectral.** El contrato ofrecía la
+  longitud de onda héroe con tres (Wilkie et al. 2014) o una sola con MIS
+  espectral. Con canales que son bandas disjuntas, cada longitud de onda
+  solo aporta a su canal y, en un vidrio liso, las tres longitudes de la
+  héroe se separan en la primera refracción (Wilkie deja ahí las
+  secundarias), así que en el caso que importa no hay nada que pesar: se
+  elige el canal con probabilidad ⅓ y se lleva por 3. Lo que sí ganaría
+  la héroe con MIS es en el cristal **rugoso**, donde las tres longitudes
+  podrían seguir con pesos; no se hizo.
+- **Lo que sigue sin dispersión**: los rayos de sombra no atraviesan el
+  vidrio (E5) y la regla de las paredes de los medios usa `ior`; un sólido
+  con medio no dispersa.
+- **El ruido de color**: una luz vista a través de un cristal converge
+  como su cáustica (cada muestra lleva un solo color); en la escena de E9,
+  a 64 spp el cristal tiene grano de color visible y a 256 spp casi no.
+- **El suelo del prisma**: con un prisma de 100 mm la banda es ancha y los
+  colores solo se separan en sus bordes (rojo cerca, azul lejos, a la
+  vista); los centroides de los canales se separan menos de un píxel de 40,
+  por eso el test mide también por regiones.
+- La escena de paridad de E9 cambia de *hash* en (c): se eligió una sola
+  escena para el medio y la dispersión en lugar de una nueva.
+
+**Veredicto del responsable** (sobre las hojas de (b) y (c)): E9 (a, b y c)
+aceptada. A 256 spp la leche y el zumo se leen como leche y zumo, las nueve
+recetas se distinguen, las franjas del borde del cristal con Abbe 40 son las
+que corresponden a ese vidrio y en el suelo del prisma el rojo queda cerca y
+el azul lejos, como debe. Se acepta una longitud de onda por camino sin MIS
+espectral; la longitud de onda héroe con MIS queda anotada como opción si
+algún día el cristal rugoso la necesita. Una sola escena de paridad para el
+medio y la dispersión es lo correcto: no se hace una escena aparte para el
+cristal. El grano de color a 64 spp alrededor del cristal y la convergencia
+como de cáustica de la luz vista a través del cristal se aceptan como el
+coste de la física. Se acepta que los rayos de sombra, la regla de las
+paredes y los sólidos con medio sigan sin dispersión.
+
+**Unión con la rama de sesión** (U12, O1, U13, P6/P6b, E12, N6, M3a, S2,
+S4a). Lo que se decidió al resolver:
+
+- **Medios y E12**: el vértice de salida de un paseo hace su NEE con la
+  selección por punto (`Lights::select`) y su MIS con `sampled_weight`,
+  como cualquier vértice; el suceso recto de una pared fina conserva, además
+  de la densidad del vértice de salida, **su selección** (`Selection`), para
+  que la luz que encuentra detrás pese con las probabilidades con que eligió
+  luz el rayo de sombra que la cruzó. La longitud de onda de la dispersión no
+  toca la selección (es un canal del *throughput*).
+- **Medios y S4a**: las partículas no llevan medio dispersor (una gota, una
+  burbuja o una mota se cruzan como vidrio claro o absorben); el rayo de
+  sombra de un vértice de salida y la prueba de la pared ven las partículas
+  como cualquier rayo de sombra (`trace_shadow`, con el material teñido de
+  cada partícula).
+- **Dimensiones aleatorias y O1**: la banda cromática de la lente
+  (`DIM_LENS_BAND = 3 << 20`) caía dentro del bloque de los medios
+  (`1 << 21` en adelante, 256 vértices); los paseos tienen ahora bloque
+  propio hasta el vértice 127 (`MEDIUM_BOUNCES`; los de después comparten
+  el último), que acaba justo donde empieza la banda (test).
+- **`MATL`**: el bloque de texturas de M2a empieza en el byte 100, después de
+  los campos de E9, que ahora se escriben siempre (sin relleno); los
+  *fixtures* `o1.rsb` (11 644 B) y `ambient.rsb` (9 680 B) se regeneran.
+- **Catálogo**: 92 recetas (77, las cinco de los sets de L6, nueve de E9b y
+  el cristal de E9c); claves intactas.
+- ***Hashes*** **re-fijados** (la compensación de energía de E9a y la
+  selección por punto de E12 se suman): ejemplo `0x75ba4cb4`, sus teselas
+  `0xe2515c9a` y `0x7b62574d`, E5 `0xfdf0c2ac` (cielo `0x47fa4eb7`), E5c
+  `0xf6fbc84f`, E5b-1 `0x7135df4b`, O1 `0x087d1276`, S4a `0xeb60bea2`
+  (partículas `0xe38b8480`, igual), E9 `0x5b5ea281`, ejemplo con *denoise*
+  `0x2a430f92`; los de los pases, iguales. Con U11, U11b y E11 (segunda
+  unión): E11 `0x3d8f85de` → `0xd01702ce` (su escena es el ejemplo con el
+  filtro fino: le llega E9a) y el ejemplo con el *denoise* del visor (U11) a
+  2 y 4 spp `0x17514303` → `0x7000ceb2` y `0x6db6039b` → `0x5318d4c5`;
+  los demás no se mueven; las 88 miniaturas de los montajes se vuelven a
+  renderizar. Con O3a (tercera unión, tras v0.1.6): O3a `0x49938f3b` →
+  `0x21e43bb1` y su *fixture* `o3a.rsb` de 9 436 B; las dimensiones del
+  color de la dispersión (`1 << 23`) quedan por encima de las de los filtros
+  de la lente (`4 << 20` y `5 << 20`, test); los *fixtures* RSB
+  crecen 12 B por el `RNDR` de 64 B (el de E9, 10 816 B). La sección de E9
+  en `ARCHITECTURE.md` pasa a ser §5.2 sexies (E11 tomó la quinquies). Los números de los tests de (a),
+  (b) y (c) (*furnace*, medios, prismas) no se mueven en cuatro cifras: sus
+  escenas tienen una luz o solo el entorno.
 
 ## E10 · Muestreo adaptativo y terminar por ruido — **Opus**
 
@@ -2544,6 +3082,13 @@ No encajó con el plan:
   cáusticas cambian nada. Va al motor (E12, selección de luz por punto) y
   esas miniaturas se vuelven a renderizar cuando entre; el charco no se
   mueve ni las miniaturas recortan la luz indirecta.
+- Con la compensación de energía de E9a (los materiales rugosos ya no
+  pierden luz) el papel de `GRADIENT_POOL` subió más que su charco y el
+  criterio del test (charco ≥ 2× el fondo) quedó en 1,96: el charco pasa
+  de 0,70 a 0,85 (0,75 daba 1,99, todavía rojo). Como ese set es también
+  el del estudio PRESET y de PACKAGING/GENERIC, sus miniaturas y las de
+  `PRESET` se rehicieron con las 88 (`tools/setup-thumbs.mjs`); el resto
+  no cambió.
 - *En el set* enseñaba la fila de fondo degradado de `STRIP_EDGE` tras
   *Restablecer montaje* (su degradado es un barrido, por el charco): la
   fila sale ahora solo para un fondo que el set pone detrás sin barrido
@@ -2696,7 +3241,8 @@ normales (espacio tangente, con tangentes por UV o por proyección),
 relieve compuesto con el bisel de E6 y el terminador; alfa como recorte
 (ya existe la ruta); etiquetas como capa sobre el sustrato (alfa
 suaviza; acabado propio de la capa). Todo determinista en wasm y
-nativo. Cuesta lo que cuesta: medirlo.
+nativo. Cuesta lo que cuesta: medirlo. Con la opacidad por punto del alfa,
+la malla técnica de E6 (un tafetán abierto, sin agujeros) puede tenerlos.
 
 **Criterio.** Paridad wasm y *hashes* nuevos fijados; una esfera con
 textura de cuadros y una caja con proyección caja renderizadas por `rt`
@@ -2867,7 +3413,11 @@ defecto** (0,2–0,5 mm según material) en todo lo duro, medio dispersor
 (E9) en lo translúcido, **micro-variación** de rugosidad y de normal por
 ruido fino (E6) a una escala que no se ve como textura pero quita el
 «plástico de ordenador», y *imperfecciones sutiles* opcionales (E7
-cuando llegue). (3) Hoja `out/materials-sheet.html`: cada material
+cuando llegue). Pendiente de E6 (veredicto de la tela): **el barniz ignora
+el *bump* del dibujo** (hoy el relieve de la tela y de la madera inclina la
+normal de toda la BSDF, barniz incluido; el barniz de verdad es plano sobre
+el tejido o la veta): con eso el carbono puede volver a su relieve entero
+(ahora 0,05) y la madera barnizada gana un reflejo limpio sobre sus poros. (3) Hoja `out/materials-sheet.html`: cada material
 antes y después, sobre esfera y sobre el frasco, con el set `STRIP_EDGE`;
 **veredicto de Fable** material a material antes de cerrar (regla 11).
 
@@ -3644,7 +4194,7 @@ sin cambiar nada). (10) Con la máquina a carga 20–30 (otros agentes), dos pru
 la de *denoise* del *pool* en `pathtracer` (pasa sola al repetir) y el `afterAll` de
 `ai-passes-browser` (cierra el navegador en 10 s; sus siete pruebas pasan, el cierre no).
 
-## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet)
+## E6 · Bisel de aristas, madera y tela en el sombreado — **Opus** (bisel primero; era Sonnet) — hecha
 
 **Qué.** Primero el **bisel de aristas en el sombreado** (decisión Fable,
 tras v0.1.5: es la mejora de realismo más visible que queda para modelos
@@ -3670,6 +4220,386 @@ pelusa queda fuera.
 estadísticas (periodo de anillos, contraste, media de rugosidad);
 renders de las 13 maderas y las 12 telas como esferas con `rt`; el bisel
 cambia la normal solo a menos del radio de una arista viva (cubo).
+
+**Hecho — bisel de aristas** (primera parte, su propio *commit*).
+
+- **Aristas vivas** (`rt_core::geometry::edges`): una vez por malla, la
+  primera vez que la pide una instancia con bisel, y guardadas con la malla
+  (sobreviven a las actualizaciones sin `MESH`). Soldado por posición exacta
+  y luego a menos de 10⁻⁵ del tamaño de la malla (la costura de un torno);
+  arista con un triángulo = borde; con dos = viva si sus normales,
+  orientadas de forma coherente, se separan más de 20° y la malla no la
+  suaviza con sus normales de vértice; con tres o más, ignorada. BVH binario
+  propio de segmentos (hojas de 4) y una holgura por triángulo; cada punto
+  mira como mucho 128 nodos y 8 aristas a menos de dos radios.
+- **La normal** (`rt_core::bevel`): la de un redondeo circular tangente a
+  las dos caras, `normalize(r n + (r tan(θ/2) − d) v)`, con la normal de
+  sombreado del punto y la de la cara de enfrente interpolada en la arista;
+  convexas y cóncavas con la misma fórmula; la huella nunca pasa de `r`
+  (aristas agudas: el radio baja a `r / tan(θ/2)`); bordes abiertos, un
+  ángulo recto hacia fuera. Varias aristas: el desplazamiento más corto que
+  cumple todas (exacto en la esquina de una caja; la mayor petición, no la
+  suma, en una arista curva); si no caben, el radio baja por bisección (un
+  borde fino se vuelve medio redondeo). Escala de instancia: el radio se
+  divide por `∛|det M|` (con escala no uniforme, el redondeo transformado:
+  elíptico, de radio medio `bevel_mm`). Se compone con el terminador (RTG
+  II): los rayos salen del punto elevado por el terminador y luego por el
+  redondeo, `d · a / |r n + w|` a lo largo de la normal biselada (lo justo
+  para que toda dirección por encima del plano tangente del redondeo libre
+  la cara), y la normal geométrica pasa a ser la del redondeo; una normal
+  que miraría hacia atrás se dobla hacia el observador. Lo usan el
+  integrador, los fotones de las cáusticas y el pase de normal.
+- **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina compartida
+  con otros dos agentes): botella de ejemplo de la interfaz con su bisel por
+  defecto de 0,303 mm, 1,444 s → 1,489 s (**+3,1 %**); ejemplo del motor con
+  0,3 mm en sus tres materiales, +0,7 %; escena de E6 (pocos triángulos,
+  todos tocando aristas, biseles de 2–3 mm), +11 %. Por debajo del +15 %.
+- **Sesgo**: una normal de sombreado más; MIS pesa las dos estrategias con
+  la misma BSDF, pero no es recíproca: horno blanco con un cubo biselado,
+  media 0,99995, píxeles entre 0,988 y 1,014.
+- **RSB**: `MATL` pasa a 76 B con `bevel_mm` (f32, 0 = vivo), en el orden
+  acordado con E9 (detrás irán `scatter_mm`, `scatter_color[3]`,
+  `scatter_g`, `abbe`); un `MATL` de 72 B se lee sin bisel. El escritor
+  TypeScript manda `bevelRadiusMm` de todas las familias salvo el emisor.
+- **Interfaz**: la nota del campo *Bisel de aristas* deja de decir
+  *próximamente* («Es del material. El modo Completo redondea las aristas
+  vivas en el sombreado, como un redondeo de este radio; la vista Rápida
+  las muestra vivas»). La vista *Rápida* no lo dibuja.
+- **Hashes**: los fijados no se mueven (ninguna escena fijada lleva bisel:
+  ejemplo `0x223515c3`, E5 `0xbf8abd5b`, cielo de E5 `0x2fcb098a`, E5c
+  `0x8bb09f6b`, *denoise* `0xab15f290`, cáusticas `0x55d60f2f`). Nuevo:
+  la escena de E6 (`rt --write-e6-example`: caja bicolor en dos mallas con
+  escala no uniforme, cilindro metálico de 48 lados, placa más fina que dos
+  biseles) **`0xfccda027`** y sus seis pases (`PINNED_E6_PASS_*`), iguales
+  en escalar, SSE2, AVX2, WASI, el `rt.wasm` real (también por el código de
+  la página) y con 1, 4 y 16 hilos en `rt` y en el lanzador; paso nuevo en
+  `engine.yml`.
+- **Tests**: 29 nuevos en `rt-core` (extracción: caja, esferas suaves y
+  facetadas, bordes y enrollado incoherente, costura de torno, consultas
+  frente a fuerza bruta y holgura; bisel: el cubo cambia solo a menos del
+  radio y en la forma exacta, simetría entre caras, esquina como esfera,
+  esfera suave intacta, arista curva sin cuentas, elevación de una arista
+  curva, pieza en dos mallas igual que en una y costura plana, cóncava,
+  borde fino, escala de instancia, aristas agudas y poco marcadas, vecino al
+  otro lado de un hueco, nunca de espaldas, emisores; renders: la arista
+  coge una luz por debajo del plano de la cara, un brillo que la arista viva
+  no tiene, un espejo refleja lo que hay bajo el plano, horno blanco; pase
+  de normal; RSB), `rt-cli` y `rt-app` (1/4/16 hilos) y la interfaz
+  (`materialToRsb`, tamaños de sección, ida y vuelta, `e6.rsb` con el
+  `rt.wasm` real).
+
+**No encajó con el plan (bisel):**
+
+- **Bordes entre mallas de una pieza.** La interfaz manda una pieza con
+  materiales por cara como una malla por material, con la misma
+  transformación: sus bordes comunes no son bordes. `BevelSetup` empareja
+  los bordes de las mallas con la misma transformación (bit a bit): si la
+  superficie sigue lisa es una costura (sin bisel) y si dobla más de 20° es
+  una arista viva con la cara de la otra malla. Se calcula en cada
+  preparación de la escena, por instancia. Una costura que no coincida
+  (T, soldaduras de más de 10⁻⁵) sigue leyéndose como borde.
+- **El pase de normal lleva el bisel** (es la normal con que se sombrea):
+  las escenas con bisel cambian sus pases; las fijadas no lo llevan.
+- **Todas las instancias de un preset ya traían 0,25 % del tamaño de la
+  pieza** (el arreglo del Doctor): desde ahora todo proyecto existente se
+  ve con bisel en *Completo* sin tocar nada. Es lo que pedía el Doctor,
+  pero cambia el aspecto de los proyectos guardados.
+- **Lo que no se redondea**: aristas que la malla suaviza con sus normales
+  de vértice (ya son redondas), aristas no variedad y caras duplicadas;
+  con escala no uniforme, el umbral de 20° se mide en el espacio de la
+  malla.
+- **Un borde más fino que dos radios** se ajusta solo en ese punto: la cara
+  ancha de al lado conserva su radio, así que el redondeo es elíptico
+  (continuo en la arista).
+
+**Hecho — madera** (segunda parte, su propio *commit*; detalle en
+ARCHITECTURE §5.2 octies).
+
+- **Ruido propio** (`rt_core::pattern::noise`): ruido de gradiente de la
+  descripción pública de Perlin (2002) con nuestra permutación (Fisher–Yates
+  con el PCG del motor, semilla fija), `fbm` y un *hash* entero. Estadística
+  fijada: media −0,0012, varianza 0,0730 (2¹⁸ puntos), rango
+  [−0,993, 0,941]; `fbm` de 4 octavas, varianza 0,0274; los ocho primeros
+  valores de la permutación, fijados.
+- **La receta** (`pattern::wood`), en milímetros físicos: anillos en diente
+  de sierra (suben el 70 %, caen en el último 5 %) con el contraste de
+  Michelson de cada especie y la media de la vista *Rápida*; serpenteo de
+  media separación a 25 mm; fibra ±5 % a 0,3 × 30 mm; poros en anillo o
+  difusos, de `0,15 × anchura × poreDepth` de hondo; figuras de tiras
+  (bambú, con sus haces y sus nodos), moteado (MDF) y vetas (ébano).
+  Rugosidad anisótropa 0,3 a lo largo de la médula (la tangente del marco de
+  sombreado sigue la veta; no queda nada para otra fase).
+- **Nudos** (`pattern::knots`, pedido por el usuario): ramas en cono desde
+  la médula que cruzan la pieza, colocadas por la semilla del material sin
+  tocarse y sin rozar la superficie (≥ 45°, hasta 8 nuevos intentos, si no
+  se descartan), con la fibra y los anillos fluyendo a su alrededor (de 1,5
+  a 3 radios, abombamiento 0,35 R) y su testa, bolsa de corteza, cuenco y
+  grieta; la interfaz los coloca igual (`src/core/knots.ts`), la vista
+  *Rápida* los oscurece sobre el color medio (`src/render/knots.ts`) y el
+  inspector avisa de los que no caben («6 pedidos · 3 caben»). Mandos
+  *Nudos*, *Tamaño*, *Variación*, *Oscuridad* (desactivados con una nota en
+  bambú, MDF y ébano); por defecto, pino 4 de 10–25 mm (oscuridad 0,9),
+  cerezo y nogal 1 (0,6).
+- **Dónde**: en el espacio de la malla, la médula a lo largo del lado más
+  largo, a 0,8 de él por debajo y 0,35 a un lado, nunca dentro de la pieza.
+- **RSB**: sección nueva `PATN` (108 B, detrás de los `MATL`): material,
+  tipo, dos colores, escala, 16 parámetros, figura y semilla. El escritor
+  TypeScript la manda para cada material de madera.
+- **Hashes**: los fijados no se mueven. Nuevo: la escena de dibujos de E6
+  (`rt --write-e6-patterns-example`: tabla de roble biselada y esfera de
+  nogal) **`0x2a3a7416`**, igual en escalar, SSE2, AVX2, WASI, el `rt.wasm`
+  real y con 1, 4 y 16 hilos en `rt` y en el lanzador; paso nuevo en
+  `engine.yml`. Con 0 nudos, los bits de la madera sin nudos.
+- **Hoja** `out/wood-sheet.html` (`rt --pattern-sheet`, materiales de
+  `tests/fixtures/patterns.rsb`, que escribe el escritor TypeScript): las 13
+  maderas en esfera y en caja de 60 × 40 × 25 mm, antes, después y de
+  cerca, y la fila de nudos del pino (0, 2 y 6 de 15 mm, 6 de 30 mm) en la
+  cara grande de la caja y en una tabla de 300 × 100 × 20 mm.
+- **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina cargada):
+  la escena de dibujos de E6, casi toda madera (tabla y esfera), 0,762 s →
+  1,058 s (**+39 %**) frente a la misma con el color liso: una docena de
+  evaluaciones de ruido por punto de madera; el relieve reutiliza la
+  fracción de anillo de la muestra (sin eso, +56 %). Los nudos, unos
+  productos escalares por nudo y punto; su colocación, unas decenas de rayos
+  por pieza al preparar la escena.
+- **Tests**: 34 nuevos en `rt-core` (ruido: permutación, red y periodo,
+  estadística fijada, *hash*; madera: perfil en diente de sierra y su media,
+  periodo exacto de los anillos, contraste de Michelson y media de la vista
+  *Rápida*, la madera de verano en su 40 %, media de cada figura en una
+  tabla, poros en la banda de primavera y su hondo por anchura, los poros
+  de un anillo no suman un escalón, fibra ±5 %, nodos del bambú cada
+  150 mm y sus motas 11–19 por cm² en cualquier plano, la testa de un
+  nudo; nudos: colocados como se piden y sin solaparse, la semilla y los
+  primeros quietos, flujo alrededor y nada a 3 radios, más ancho lejos de
+  la médula, nunca rozan y los descartados no se reponen, colocación fijada
+  para la interfaz; escena: el dibujo es de su material, se pega a la pieza
+  y escala con ella, médula a lo largo del lado largo y nunca dentro, la
+  rugosidad estirada a lo largo de la veta, un render determinista distinto
+  del liso, el pase de albedo es el color del camino, una tabla enseña los
+  nudos pedidos y de su tamaño (2 / 6 / 6 discos de 17,3 / 15,9 / 33,9 mm
+  para 2 × 15, 6 × 15 y 6 × 30 mm), la semilla y 0 nudos iguales bit a bit,
+  un nudo más rugoso y su cuenco, en una bola nunca rozan; RSB), `rt-cli` y
+  `rt-app` (1/4/16 hilos de la escena fijada) y la interfaz (`patternToRsb`
+  de las 13 maderas y sus nudos, mandos desactivados, la colocación igual
+  que el motor, `meetsSurface`, los nudos de una pieza, el *fixture* al
+  día).
+
+**No encajó con el plan (madera):**
+
+- **La escala es física, no en tamaños de pieza** (decisión del líder sobre
+  la primera hoja, por realismo): `ringDensity` pasa a ser anillos por
+  100 mm y los presets llevan los de cada especie (roble 33, pino 20, arce
+  40…; antes 14 para el roble, por pieza); el mando nuevo *Escala* los
+  multiplica. SPEC §3.3 lo dice. Un proyecto guardado conserva su
+  `ringDensity` antiguo, que ahora se lee por 100 mm.
+- **Campos nuevos que el catálogo de EZ Packshot no tiene**: `ringContrast`,
+  `poreSize`, `poreBand`, `woodFigure`, `woodScale` y los cuatro de los
+  nudos (claves nuevas; ninguna renombrada).
+- **El relieve de los anillos, fuera** (decisión del líder: las esferas
+  parecían torneadas); solo relieve de poros, nudos y nodos del bambú. La
+  primera hoja enseñó que los poros en anillo sumaban un escalón en cada
+  anillo (la banda empezaba de golpe): ahora entra poco a poco, con un test
+  que falla con la banda de antes.
+- **Limitación de la vista *Rápida***: no pinta anillos, solo el color medio
+  y los nudos oscurecidos; por eso tampoco el flujo de la fibra alrededor de
+  los nudos que pedía el líder («la misma colocación y desviación»): la
+  colocación es la misma, la desviación no tiene nada que desviar.
+  Aceptado por el líder.
+- **En una pieza pequeña caben menos nudos de los pedidos** (nunca se tocan
+  ni rozan): en la caja de 60 × 40 × 25 mm, 2, 3 y 1 de 2 × 15, 6 × 15 y
+  6 × 30 mm; en la tabla de 300 × 100 × 20 mm, todos. El inspector lo dice
+  con una nota discreta.
+- **El umbral de incidencia, 30° → 60° → 45°** (reglas del líder tras la
+  hoja): un nudo cuyo eje corta la superficie a menos del umbral se saca otra
+  vez hasta 8 veces y si no, se descarta. Con 30° la bola de pino seguía
+  enseñando lágrimas: sus nudos la cortaban a 34–39°, y el borde del cono
+  roza antes que su eje. Con 60° (lo que pidió el líder para quedarse con los
+  nudos de frente) las piezas planas perdían nudos: las ramas suben 15–35°
+  por el tronco y la médula está 24° a un lado, así que una cara plana ve sus
+  nudos a 49–66° (la tabla de prueba, 1 de 2 y 10 de 12). Con 45° las piezas
+  planas no cambian (2 / 6 / 6) y la bola solo pierde las lágrimas (sus
+  nudos, a 47–64°): lo decidió la medida, con el visto bueno del líder.
+- **Ajustes del líder sobre la fila de nudos**: el flujo alrededor de un nudo
+  se desvanece de 1,5 a 3 radios (no de 3 a 5) y abomba 0,35 R (no 0,5 R):
+  en la cara de la caja se leía líquido.
+- **La pelusa (*fuzz*, *sheen*) sigue fuera**, como decía el plan.
+
+**Hecho — tela** (tercera parte, su propio *commit*; detalle en
+ARCHITECTURE §5.2 octies).
+
+- **La receta** (`rt_core::pattern::cloth`, `PATN.kind` 2), en milímetros
+  físicos: hilos de urdimbre y de trama redondos de través, con un hueco
+  entre ellos, que suben donde pasan por encima y bajan donde pasan por
+  debajo (una flotación larga se queda arriba) y enseñan las crestas
+  inclinadas de la torsión de su hilo; cada hilo varía ±6 % de color y
+  ±10 % de rugosidad. Tejidos: tafetán, sarga 2/2, raso de cinco lizos,
+  lona (cesta 2 × 2), punto (*jersey*: uves de dos patas que se solapan
+  fila a fila, cada punto de un jaspeado al azar), fieltro (fibras
+  apelmazadas, sin hilos) y **sarga 3/1** (nueva, la del vaquero). El
+  relieve (`weaveDepth`, media separación a 1) inclina la normal; la
+  rugosidad se estira **a través** del hilo de encima (anisotropía 0,5:
+  el brillo de las fibras; el fieltro no). El color medio es el de los
+  hilos mezclados por la parte de la cara que cubre cada uno (0,5; raso
+  0,72; sarga 3/1 0,685), y es el de la vista *Rápida* (`fabricMeanColor`).
+- **Dónde**: proyección de caja sobre los ejes de la malla, mezclada con
+  pesos `|nᵢ|⁸` en una banda estrecha sin costura; la urdimbre de pie en
+  los lados.
+- **RSB**: `PATN` de tipo 2 (los mismos 108 B): los dos colores de hilo,
+  `scale_mm = 10 / threadCount`, relieve (`weaveDepth`) y torsión
+  (`yarnTwist`), el tejido en `variant`. El escritor TypeScript la manda para cada material de tela.
+- **Interfaz**: *Hilos por cm* (2–200, físicos), *Tejido* (con *Sarga 3/1
+  (vaquero)*) y *Relieve del tejido* los pinta el modo Completo («lo
+  pintan el modo Completo y los renders»); la nota de tela ya no dice que
+  sea un color plano.
+- **Hashes**: los fijados no se mueven (la escena de dibujos sigue en
+  `0x2a3a7416`). Nuevo: la escena de tela de E6
+  (`rt --write-e6-cloth-example`: cojín vaquero biselado y bola de punto)
+  **`0xbb26399f`**, igual en escalar, SSE2, AVX2, WASI, el `rt.wasm` real y con
+  1, 4 y 16 hilos en `rt` y en el lanzador; paso nuevo en `engine.yml`.
+- **Hoja** `out/cloth-sheet.html` (`rt --pattern-sheet --only cloth`, del
+  mismo *fixture*, que ahora lleva también las 12 telas): cada tela en
+  esfera y caja, antes, después y de cerca, un campo de 10 mm visto de
+  frente (donde se ven los hilos a su tamaño real) y el vaquero tejido en
+  2/2 para comparar con su 3/1 (la primera hoja enseñaba también el carbono
+  con 0,05 de relieve, que el líder eligió: ahora es su fila).
+- **Coste** (tiempo de CPU de un hilo, mínimo de tres, máquina cargada):
+  la escena de tela (cojín y bola, 320 × 240, 8 muestras), 0,784 s →
+  0,844 s (**+7,6 %**) frente a la misma con el color liso: una tela tejida
+  son unas pocas cuentas por proyección (tres evaluaciones con el *bump*);
+  el punto, 18 elipses por evaluación.
+- **Tests**: 10 nuevos en `rt-core` (tela: la parte de la cara de la
+  urdimbre de cada tejido y su color medio, periodos y estructura —el raso
+  nunca enseña dos tramas juntas, ni en diagonal; la lona va por parejas; la
+  3/1—, relieve de media separación y plano a 0, variación por hilo, la
+  torsión y su periodo, y ninguna sin ella, el punto en uve hacia abajo;
+  escena: proyección en los ejes de la malla, la anisotropía a través del
+  hilo de encima y el fieltro sin ella, la mezcla sin costura y exacta
+  donde se juntan dos y tres proyecciones, el PATN de tela leído; la escena
+  fijada), `rt-cli` (hoja, `--only`, `--write-e6-cloth-example`, 1/4/16
+  hilos), `rt-app` (1/4/16 hilos) y la interfaz (`patternToRsb` de las 12
+  telas, físico, límites y valores por defecto; color medio igual al del
+  motor en la vista *Rápida* y en el `MATL`; mandos que pinta el motor;
+  `projectScene`; el *fixture* con las telas). Se comprobó que fallan con
+  22 mutaciones de la tela: todas cogidas; una (las proyecciones de peso
+  menor que 0,5, ignoradas) escapaba al principio y la coge el test nuevo
+  de la mezcla.
+
+**No encajó con el plan (tela):**
+
+- **Los hilos por cm, físicos y propuestos** (como la madera): el
+  `threadCount` del catálogo era por tamaño de pieza (algodón 200, carbono
+  90); ahora son hilos por cm y cada tela lleva los suyos de verdad
+  (algodón 40, lino 18, sarga 36, vaquero 24, raso 100, lona 14,
+  terciopelo 30, fieltro 20, punto 4 puntos por cm, malla 8, microfibra
+  120, carbono 5 mechas por cm), aceptados por el líder (veredicto abajo).
+  Un proyecto guardado conserva su `threadCount` antiguo, que
+  ahora se lee por cm (hasta 200: el algodón de antes sale a 200 hilos por
+  cm, invisible).
+- **El vaquero pasa a sarga 3/1** (`TWILL31`, clave nueva; la `TWILL` de
+  EZ Packshot es 2/2 y la siguen usando la sarga y el carbono): con 2/2 su
+  color medio era un gris azulado (la mitad de la cara, trama blanca); el
+  de verdad es de urdimbre. Cambia su color en la vista *Rápida*. La hoja
+  enseña los dos para el veredicto.
+- **Campos nuevos**: `yarnTwist` (0 en el carbono y la malla: mechas y
+  monofilamentos lisos; 1 por defecto, sin mando).
+- **A tamaño real, la mayoría de las telas no se ven** en un plano de
+  producto (el algodón a 0,25 mm, menos de un píxel a 100 mm por 300 px):
+  se promedian con las muestras del píxel, sin filtro propio (el color
+  converge a la media y el relieve se vuelve rugosidad); algún *moiré* en
+  esferas de sarga a pocas muestras.
+- **El barniz del carbono sigue el relieve** (el *bump* es de toda la
+  BSDF): de cerca se leen tubos brillantes, cuando el barniz de verdad es
+  plano. Opciones para el líder: menos relieve en el carbono o que el
+  barniz use la normal sin *bump* (cambio del motor, también para la madera
+  barnizada).
+- **La malla técnica no tiene agujeros** (no hay opacidad por punto): es
+  un tafetán abierto de hilos oscuros.
+- **El terciopelo y la pelusa**: sin *sheen* en el motor, el terciopelo es
+  un punto fino oscuro; la vista *Rápida* sí pinta su pelusa.
+
+**Veredicto del responsable (tela)** (sobre la hoja de telas, filas y
+campos de 10 mm; E6 aceptada):
+
+1. **Hilos por cm**: la tabla propuesta queda como valores del catálogo
+   (los típicos de verdad). El `threadCount` antiguo de un proyecto
+   guardado se sigue leyendo por cm, con el tope de 200.
+2. **Vaquero en sarga 3/1** (`TWILL31`): aceptado; la cara se lee índigo
+   sobre blanco, como debe.
+3. **Carbono**: la alternativa de relieve 0,05 (con el relieve entero, los
+   tubos brillantes están mal; con 0,05 la esfera y el campo se leen como
+   sarga 3K bajo barniz). Que el barniz ignore el *bump* es un cambio del
+   motor para la capa de realismo (M4), no ahora: anotado allí.
+4. **`yarnTwist`** sin mando (0 en el carbono y la malla, 1 en el resto):
+   aceptado.
+5. **Aceptados como están**: la malla sin agujeros hasta que el motor tenga
+   opacidad por punto (la traen las texturas de alfa de M2b: anotado en su
+   encargo), el terciopelo sin *sheen* hasta la pelusa (S8), el *moiré* a
+   pocas muestras (el filtro *Fine* de E11, ahora por defecto, lo suaviza) y
+   la proyección de caja sobre los ejes de la malla.
+
+Hecho tras el veredicto: el carbono del catálogo baja su `weaveDepth` de
+0,3 a 0,05 (el *fixture* de la hoja, al día) y la hoja ya no enseña esa
+alternativa; anotados el barniz sin *bump* en M4 y los agujeros de la malla
+en M2b.
+
+**Fusión con la rama de la sesión** (M2a, O1, E12, M3a, S2, S4a, U11,
+U11b, E11…). La selección de luz por punto de E12 mueve los tres fijados
+de E6, como movió los demás: bisel **`0x2f228634`** (era `0xfccda027`),
+madera **`0x6fbc91f7`** (era `0x2a3a7416`) y tela **`0x5604ec69`** (era
+`0xbb26399f`), en `rt-core` (todas las ISA), `rt-cli` y `rt-app` (1, 4 y
+16 hilos) y en `engine.yml` (sus pasos, detrás de los de O1, S4a y E11).
+El `MATL` de E6 (76 B, `bevel_mm` en el byte 72) es el que reservaba el
+bloque de texturas de M2a, que sigue en el byte 100 detrás de los campos de
+E9. Un material de nodos (M3a) no lleva `PATN` ni nudos en la vista
+*Rápida*: hasta M3b es la media de sus salidas. Las secciones de E6 en
+ARCHITECTURE eran entonces §5.2 sexies (bisel) y §5.2 septies (madera y
+tela); desde la segunda fusión, §5.2 septies y octies.
+
+**Segunda fusión con la rama de la sesión** (O3a, v0.1.6, el arreglo de la
+prueba de humo, E9 a, b y c, el ajuste de `GRADIENT_POOL`).
+
+- **`MATL`** es el de E9, de 100 B: el `bevel_mm` de E6 en el byte 72 (el
+  hueco que E9 le reservaba), y detrás `scatter_mm`, `scatter_color[3]`,
+  `scatter_g` y `abbe`. El motor y el escritor TypeScript escriben todos;
+  un registro de 72 B se lee sin bisel y uno de 76 B (E6 antes de E9), con
+  el bisel y sin medio ni dispersión (test nuevo). El bloque de texturas de
+  M2a sigue en el byte 100, ya sin relleno.
+- **El integrador**: la BSDF de E9 (salida de un medio, vidrio dispersivo
+  con su banda, superficie, suelo) con el marco de E6 (la tangente de la
+  veta del dibujo, si la hay); el punto de sombreado biselado y con su
+  dibujo alimenta a los dos.
+- **`rt`**: todas las órdenes de los dos lados; un solo `--only` para las
+  tres hojas (lista con comas en `--filter-sheet` y `--filter-noise`, `wood`
+  o `cloth` en `--pattern-sheet`). En `engine.yml`, todos los pasos de
+  paridad: O1, S4a, E11, O3a, E9 y los tres de E6.
+- **Hashes**: la compensación de energía de E9a mueve los tres fijados de
+  E6 (todas sus piezas tienen GGX rugoso, de 0,12 a 0,85): bisel
+  **`0xeacaae75`** (era `0x2f228634`), madera **`0x5ed1bf32`** (era
+  `0x6fbc91f7`) y tela **`0x53e6a855`** (era `0x5604ec69`), en `rt-core`
+  (todas las ISA), `rt-cli` y `rt-app` (1, 4 y 16 hilos) y en el `rt.wasm`
+  real; los seis pases de E6, iguales. Ninguna escena sin bisel, madera ni
+  tela se mueve, y todos los *fixtures* RSB sin E6 salen idénticos byte a
+  byte a los de la sesión; `e6.rsb` pasa a 9 852 B y `patterns.rsb` a
+  6 332 B.
+- **Las miniaturas de los montajes**: sus escenas sí cambian, y no por esta
+  fusión: toda instancia de un preset trae un *Bisel de aristas* del
+  0,25 % del tamaño de la pieza (el arreglo del Doctor) y desde E6 el
+  escritor lo manda, así que los héroes de los sets llevan bisel en
+  *Completo*. Con el bisel a cero en el escritor, los 88 *hashes* de escena
+  del manifiesto coinciden; el test del manifiesto ya fallaba en E6 antes
+  de esta fusión (`1dc375e`). No se vuelven a renderizar ni se fijan:
+  queda para el responsable (renderizarlas otra vez con el bisel, o que
+  las miniaturas no lo lleven).
+  **Veredicto del responsable (16-10):** se renderizan otra vez con el
+  bisel. Una miniatura enseña lo que da el montaje sobre la escena que
+  construye el código, y esa escena lleva el bisel del Doctor; quitárselo
+  solo a las miniaturas haría que no coincidieran con el primer render del
+  usuario. Las 88 se rehicieron con `rt` y el wasm de E6
+  (`tools/setup-thumbs.mjs`) y el *hash* PNG de `STRIP_EDGE` en
+  `tests/sets.test.ts` se re-fijó.
+- **Docs**: E9 conserva ARCHITECTURE §5.2 sexies y las secciones de E6 pasan
+  a §5.2 septies (bisel) y §5.2 octies (madera y tela); las líneas de E6
+  del CHANGELOG van en *Sin publicar*, no en v0.1.6.
 
 ## E7 · Desgaste visible — **Opus**, con visto bueno **Fable**
 

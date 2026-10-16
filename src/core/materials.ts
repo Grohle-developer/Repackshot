@@ -82,11 +82,29 @@ export interface ParamSpec {
   fallback: unknown;
   /** The U1 preview draws it (otherwise it is stored and drawn by a later engine). */
   preview: boolean;
+  /** The engine draws it (Full mode and renders) though the Fast preview does not (E6: the wood's rings). */
+  engine?: boolean;
   /** Only shown when another parameter has a given value. */
   when?: { key: string; value: unknown };
+  /**
+   * Shown always, but only editable when another parameter (or its fallback) has one of these values; otherwise
+   * disabled with the note `note` (E6: the knots of the woods without rings).
+   */
+  enabledWhen?: { key: string; values: readonly unknown[]; fallback: unknown; note: string };
+  /** String key of the help shown on the row (`src/ui/strings.ts`). */
+  tip?: string;
 }
 
 const unit = (min: number, max: number, step = 0.01) => ({ min, max, step });
+
+/** The knots' knobs work on the woods with rings only. */
+const KNOTTY = { key: 'woodFigure', values: ['RINGS'], fallback: 'RINGS', note: 'material.noKnots' } as const;
+
+/** True when the inspector lets `spec` be edited on `inst` (`ParamSpec.enabledWhen`). */
+export function paramEnabled(inst: MaterialInstance, spec: ParamSpec): boolean {
+  const e = spec.enabledWhen;
+  return !e || e.values.includes(inst.params[e.key] ?? e.fallback);
+}
 
 /** Parameters of each family, in the order the inspector shows them. */
 export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]>> = {
@@ -112,23 +130,41 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
     { key: 'absorptionMm', kind: 'number', min: 0, max: 5000, step: 1, unit: 'mm', fallback: 50, preview: true },
     // E5: a thin wall (a sheet, a bulb, a visor modelled as one surface) lets light straight through.
     { key: 'walls', kind: 'select', options: ['SOLID', 'THIN'], fallback: 'SOLID', preview: true },
+    // E9: a scattering medium inside the solid (translucent plastics, wax, soap, milk, juice): the mean free path
+    // (0: none), what each bounce keeps of each colour, and where light goes at each bounce (Henyey–Greenstein g).
+    { key: 'scatterMm', kind: 'number', min: 0, max: 1000, step: 0.05, unit: 'mm', fallback: 0, preview: true, tip: 'param.scatterMm.tip' },
+    { key: 'scatterColor', kind: 'color', fallback: [1, 1, 1, 1], preview: true, tip: 'param.scatterColor.tip' },
+    { key: 'scatterG', kind: 'number', min: -0.9, max: 0.9, step: 0.05, fallback: 0, preview: true, tip: 'param.scatterG.tip' },
+    // E9c: chromatic dispersion of solid glass, its Abbe number (0: none; 30–70 typical).
+    { key: 'abbe', kind: 'number', min: 0, max: 100, step: 1, fallback: 0, preview: true, tip: 'param.abbe.tip' },
   ],
   WOOD: [
     { key: 'woodColor1', kind: 'color', fallback: [0.56, 0.38, 0.21, 1], preview: true },
     { key: 'woodColor2', kind: 'color', fallback: [0.3, 0.18, 0.09, 1], preview: true },
     { key: 'roughness', kind: 'number', ...unit(0, 1), fallback: 0.45, preview: true },
-    { key: 'ringDensity', kind: 'number', ...unit(1, 60, 1), fallback: 14, preview: false },
-    { key: 'ringVariation', kind: 'number', ...unit(0, 1), fallback: 0.4, preview: false },
-    { key: 'ringNoise', kind: 'number', ...unit(0, 1), fallback: 0.3, preview: false },
-    { key: 'axialNoise', kind: 'number', ...unit(0, 1), fallback: 0.2, preview: false },
-    { key: 'colorNoise', kind: 'number', ...unit(0, 1), fallback: 0.2, preview: false },
+    // E6: rings per 100 mm (physical, the same on a ring box and on a table), times the scale.
+    { key: 'ringDensity', kind: 'number', ...unit(1, 60, 1), fallback: 33, preview: false, engine: true },
+    { key: 'woodScale', kind: 'number', ...unit(0.1, 10, 0.05), fallback: 1, preview: false, engine: true },
+    { key: 'ringContrast', kind: 'number', ...unit(0, 1), fallback: 0.3, preview: false, engine: true },
+    { key: 'ringVariation', kind: 'number', ...unit(0, 1), fallback: 0.4, preview: false, engine: true },
+    { key: 'ringNoise', kind: 'number', ...unit(0, 1), fallback: 0.3, preview: false, engine: true },
+    { key: 'axialNoise', kind: 'number', ...unit(0, 1), fallback: 0.2, preview: false, engine: true },
+    { key: 'colorNoise', kind: 'number', ...unit(0, 1), fallback: 0.2, preview: false, engine: true },
+    { key: 'poreDepth', kind: 'number', ...unit(0, 1), fallback: 0.3, preview: false, engine: true },
+    // E6: knots (bamboo, fibreboard and ebony have none). The Fast preview shows where they are.
+    { key: 'knotCount', kind: 'number', min: 0, max: 12, step: 1, fallback: 0, preview: true, enabledWhen: KNOTTY },
+    { key: 'knotSize', kind: 'number', min: 5, max: 40, step: 0.5, unit: 'mm', fallback: 15, preview: true, enabledWhen: KNOTTY },
+    { key: 'knotSizeVar', kind: 'number', ...unit(0, 1), fallback: 0.3, preview: true, enabledWhen: KNOTTY },
+    { key: 'knotDarkness', kind: 'number', ...unit(0, 1), fallback: 0.6, preview: true, enabledWhen: KNOTTY },
   ],
   FABRIC: [
     { key: 'threadColor1', kind: 'color', fallback: [0.7, 0.7, 0.68, 1], preview: true },
     { key: 'threadColor2', kind: 'color', fallback: [0.6, 0.6, 0.58, 1], preview: true },
-    { key: 'weave', kind: 'select', options: ['PLAIN', 'TWILL', 'SATIN', 'CANVAS', 'KNIT', 'FELT'], fallback: 'PLAIN', preview: false },
-    { key: 'threadCount', kind: 'number', ...unit(10, 600, 1), fallback: 200, preview: false },
-    { key: 'weaveDepth', kind: 'number', ...unit(0, 1), fallback: 0.35, preview: false },
+    // E6: the engine weaves them (Full mode and renders); the Fast preview shows the mean colour.
+    { key: 'weave', kind: 'select', options: ['PLAIN', 'TWILL', 'TWILL31', 'SATIN', 'CANVAS', 'KNIT', 'FELT'], fallback: 'PLAIN', preview: false, engine: true },
+    // E6: threads per cm (physical: the same on a phone case and on a sofa).
+    { key: 'threadCount', kind: 'number', min: 2, max: 200, step: 1, unit: '/cm', fallback: 40, preview: false, engine: true },
+    { key: 'weaveDepth', kind: 'number', ...unit(0, 1), fallback: 0.35, preview: false, engine: true },
     { key: 'roughness', kind: 'number', ...unit(0, 1), fallback: 0.75, preview: true },
     { key: 'fuzz', kind: 'number', ...unit(0, 1), fallback: 0.3, preview: true },
     { key: 'fuzzRoughness', kind: 'number', ...unit(0, 1), fallback: 0.4, preview: false },
@@ -140,6 +176,21 @@ export const FAMILY_PARAMS: Readonly<Record<MaterialFamily, readonly ParamSpec[]
     { key: 'emitPower', kind: 'number', min: 0, max: 500, step: 1, unit: 'W', fallback: 50, preview: true },
   ],
 };
+
+/**
+ * The share of a fabric's face its warp (`threadColor1`) covers, by weave, as rt_core::pattern::cloth measures it:
+ * a warp-faced satin and 3/1 twill show mostly warp, the rest half and half.
+ */
+export const WEAVE_WARP_SHARE: Readonly<Record<string, number>> = { SATIN: 0.72, TWILL31: 0.685 };
+
+/** The mean colour of a fabric's weave (linear RGB): what the Fast preview shows and what the engine averages to. */
+export function fabricMeanColor(p: MaterialParams): [number, number, number] {
+  const rgb = (v: unknown, f: readonly number[]) => (Array.isArray(v) && v.length >= 3 ? (v as number[]) : f);
+  const a = rgb(p.threadColor1, [0.7, 0.7, 0.68]);
+  const b = rgb(p.threadColor2, [0.6, 0.6, 0.58]);
+  const w = WEAVE_WARP_SHARE[String(p.weave ?? 'PLAIN')] ?? 0.5;
+  return [a[0] * w + b[0] * (1 - w), a[1] * w + b[1] * (1 - w), a[2] * w + b[2] * (1 - w)];
+}
 
 /** Current value of a parameter, with the family fallback. */
 export function paramValue(mat: MaterialInstance, spec: ParamSpec): unknown {
