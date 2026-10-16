@@ -3,7 +3,11 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
-## Sin publicar
+## v0.1.10 — 2026-10-16
+
+Versión de prueba con las texturas de imagen, su mapeado y las etiquetas
+en el modo *Completo* y en los renders (lo que el reporte del 14-10 pedía
+en su punto 1.1). Lo de v0.1.2 a v0.1.9 sigue igual.
 
 ### Motor
 
@@ -14,7 +18,7 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - *Inspector ▸ Texturas*: la nota ya no dice *próximamente*; *Rápido*, *Completo* y *Render* dibujan las texturas y las etiquetas en el mismo sitio (M2b).
 
-### Limitaciones conocidas
+### Limitaciones conocidas de esta versión
 
 - El tamaño de una textura sigue en mm y no sigue al del sólido: es una decisión pendiente (`TRIAGE.md` 5.1). Los materiales de nodos siguen pintándose con la media de sus salidas hasta M3b.
 - Un emisor con imagen no se muestrea como luz (lo que ilumina tiene más ruido); los fotones de las cáusticas ven el material sin texturas; el pase de normales no lleva el mapa de normales (M2b).
