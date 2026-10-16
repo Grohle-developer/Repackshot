@@ -37,8 +37,8 @@ pub const CHART_GRID: (usize, usize) = (13, 9);
 pub const CHART_FOCAL_TELE: f32 = 135.0;
 /// See [`CHART_FOCAL_TELE`].
 pub const CHART_FOCAL_NORMAL: f32 = 50.0;
-/// A fisheye's chart: the frame's corner near 85° off the axis.
-pub const CHART_FOCAL_FISHEYE: f32 = 16.0;
+/// A fisheye's chart: the frame's corner just inside its image circle.
+pub const CHART_FOCAL_FISHEYE: f32 = 18.0;
 
 /// One image of the sheet.
 pub struct LensCell {

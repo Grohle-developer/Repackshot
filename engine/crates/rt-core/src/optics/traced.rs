@@ -795,6 +795,11 @@ fn prepare(
     let (marginal, chief) = paraxial::marginal_and_chief(&base, &z_base, stop, 1, corner / efl);
     let pupil_full = efl / (2.0 * n_full);
     let mut surfaces = base;
+    let derived: Vec<bool> = surfaces
+        .iter()
+        .enumerate()
+        .map(|(i, s)| i != stop && s.semi_aperture == 0.0)
+        .collect();
     for (i, s) in surfaces.iter_mut().enumerate() {
         if i == stop && s.semi_aperture > 0.0 {
             // A stop's diameter in the source is the iris at some f-number: it opens to the
@@ -960,6 +965,12 @@ fn prepare(
         surfaces,
         z,
     };
+    let shift = (lens.shift_x_mm * lens.shift_x_mm + lens.shift_y_mm * lens.shift_y_mm).sqrt();
+    // The derived semi-apertures from real rays too: a wide angle's paraxial chief ray runs far
+    // below its real one, and rims sized by it would cut the corners of the frame off.
+    if lens_out.widen_derived(&derived, pupil_full * at_stop, corner + shift) {
+        lens_out.rear_radius = 1.05 * lens_out.surfaces[n - 1].semi_aperture;
+    }
     let (elements, groups) = lens_out.count_elements();
     lens_out.info.elements = elements;
     lens_out.info.groups = groups;
@@ -971,7 +982,6 @@ fn prepare(
             lens_out.breathing = crate::fmath::exp(-p.breathing * crate::fmath::ln(beta));
         }
     }
-    let shift = (lens.shift_x_mm * lens.shift_x_mm + lens.shift_y_mm * lens.shift_y_mm).sqrt();
     lens_out.precompute(0.75 * camera.sensor_mm + shift)?;
     // An anamorphic lens: the squeeze as the chief rays of two points near the axis trace it.
     if lens_out
@@ -1229,6 +1239,12 @@ impl TracedLens {
     /// [`TracedLens::chief_rear_x`] in the horizontal meridian, or with `vertical` for a film point
     /// at height `h` on +y (the coordinate on the rear plane is then y).
     fn chief_rear(&self, h: f32, vertical: bool) -> Option<f32> {
+        self.rear_for_stop(h, vertical, 0.0, self.rear_radius)
+    }
+
+    /// The coordinate on the rear plane (x, or y with `vertical`) of the ray from the film point at
+    /// height `h` that crosses the stop at `target` in that meridian, searched within `±reach`.
+    fn rear_for_stop(&self, h: f32, vertical: bool, target: f32, reach: f32) -> Option<f32> {
         let along = |a: f32, z: f32| {
             if vertical {
                 Vec3::new(0.0, a, z)
@@ -1238,10 +1254,10 @@ impl TracedLens {
         };
         let film = along(h, self.sensor_z);
         let rear_z = self.z[self.z.len() - 1];
-        let r = self.rear_radius;
+        let r = reach;
         let at_stop = |x: f32| -> Option<f32> {
             let d = unit(along(x, rear_z) - film);
-            self.stop_height(film, d, vertical)
+            self.stop_height(film, d, vertical).map(|y| y - target)
         };
         // A bracket of the stop's centre: the first pair of neighbouring points of a scan of the
         // rear plane where the ray reaches the stop on either side of its centre (rays near the
@@ -1273,6 +1289,76 @@ impl TracedLens {
             }
         }
         Some(0.5 * (lo + hi))
+    }
+
+    /// Widens the semi-apertures marked `derived` to pass the real rays of film points up to
+    /// `corner` (both meridians) through the stop at up to `iris` from its centre, when the
+    /// paraxial derivation made them smaller; whether any changed.
+    fn widen_derived(&mut self, derived: &[bool], iris: f32, corner: f32) -> bool {
+        if !derived.iter().any(|&d| d) {
+            return false;
+        }
+        let n = self.surfaces.len();
+        let rear_z = self.z[n - 1];
+        let mut envelope = vec![0.0f32; n];
+        let reach = 3.0 * self.rear_radius + corner;
+        for vertical in [false, true] {
+            for k in 0..=4 {
+                let h = corner * k as f32 / 4.0;
+                for target in [-iris, -0.5 * iris, 0.0, 0.5 * iris, iris] {
+                    let Some(a) = self.rear_for_stop(h, vertical, target, reach) else {
+                        continue;
+                    };
+                    let (film, q) = if vertical {
+                        (Vec3::new(0.0, h, self.sensor_z), Vec3::new(0.0, a, rear_z))
+                    } else {
+                        (Vec3::new(h, 0.0, self.sensor_z), Vec3::new(a, 0.0, rear_z))
+                    };
+                    if let Some(heights) = self.heights_of(film, unit(q - film)) {
+                        for (e, r) in envelope.iter_mut().zip(heights) {
+                            *e = e.max(r);
+                        }
+                    }
+                }
+            }
+        }
+        let mut changed = false;
+        for (i, s) in self.surfaces.iter_mut().enumerate() {
+            if derived[i] && 1.02 * envelope[i] > s.semi_aperture {
+                s.semi_aperture = 1.02 * envelope[i];
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    /// The distance from the axis where a ray from `p` along `d` (band G) meets each surface,
+    /// without rims or the iris; `None` when it misses one or is totally reflected.
+    fn heights_of(&self, p: Vec3, d: Vec3) -> Option<Vec<f32>> {
+        let n = self.surfaces.len();
+        let (mut p, mut d) = (p, d);
+        let mut out = vec![0.0f32; n];
+        let mut n_cur = self.surfaces[n - 1].index[1];
+        for i in (0..n).rev() {
+            let s = &self.surfaces[i];
+            let (q, normal) = intersect(s, self.z[i], p, d)?;
+            out[i] = (q.x * q.x + q.y * q.y).sqrt();
+            p = Vec3::new(q.x, q.y, self.z[i] + q.z);
+            if s.kind == SURFACE_MIRROR {
+                d = d - normal * (2.0 * d.dot(normal));
+            } else {
+                let n_next = if i == 0 {
+                    1.0
+                } else {
+                    self.surfaces[i - 1].index[1]
+                };
+                if n_next != n_cur {
+                    d = refract(d, normal, n_cur / n_next)?;
+                    n_cur = n_next;
+                }
+            }
+        }
+        Some(out)
     }
 
     /// Where a ray from the film crosses the stop, x (y with `vertical`) only (no rim checked),

@@ -680,3 +680,16 @@ fn the_artistic_distortion_and_vignetting_show_in_the_profile_and_the_chief_rays
         "the chief ray is {angle} rad off the samples"
     );
 }
+
+#[test]
+fn the_rims_the_source_does_not_give_pass_the_real_rays_of_the_frame() {
+    // The fast double Gauss gives one semi-aperture (its stop's): the rest, sized by a paraxial
+    // chief ray alone, fell short of the real rays of the corner and cut the frame's corners
+    // (0.79 at f/1.4 on 50 mm); widened to the real rays, the falloff is the lens's own.
+    let lens = traced("double_gauss_fast", 50.0, 0.0, 3000.0);
+    let corner = lens.info().relative_illumination.last().unwrap().1;
+    assert!(
+        corner > 0.85,
+        "relative illumination {corner} at the corner"
+    );
+}
