@@ -5,7 +5,7 @@
 // is mounted on. The numbers the interface shows of a lens (focal length, T-stop, distortion...) are the engine's
 // (rule 10), never computed here.
 
-import { lensPrescription, LENS_PRESCRIPTIONS, type CoatingId, type LensFocus, type LensPrescription, type LensSurface } from '../data/lenses';
+import { lensPrescription, LENS_PRESCRIPTIONS, type CoatingId, type LensFocus, type LensFocusTravel, type LensPrescription, type LensSurface } from '../data/lenses';
 
 /** A camera's traced lens (CameraOptics.traced). */
 export interface TracedLens {
@@ -33,6 +33,8 @@ export const DEFAULT_MASTER = 'double_gauss_normal';
 export const ADAPTER_GAP_MM = 5;
 /** An adapter is scaled so that its strongest surface's radius is this many times the front semi-aperture of its lens. */
 export const ADAPTER_CLEARANCE = 2.2;
+/** An adapter's focus: its widest air gap travels from its afocal value to this share of it (the near end, closer focus). */
+export const ADAPTER_FOCUS_TRAVEL = 0.6;
 
 /** The limits of the artistic overrides (rt-core refuses a LENS section outside them). */
 export const TRACED_LIMITS = {
@@ -95,6 +97,11 @@ export interface ComposedLens {
   squeeze: number;
   /** Central obstruction of the aperture (a mirror lens), fraction of its diameter. */
   obstruction: number;
+  /**
+   * An adapter in front of a lens that focuses as one unit: its gap that follows the focus so that the squeezed
+   * meridian focuses with the other (rt-core FOCUS_ANAMORPHIC); null otherwise.
+   */
+  squeezeFocus: LensFocusTravel | null;
 }
 
 /** The magnification of a floating-focus state as the catalogue writes it ("magnification 0.1"), 0 when none. */
@@ -131,12 +138,19 @@ export function composeLens(t: TracedLens): ComposedLens | null {
       semiAperture: s.semiAperture === null ? null : s.semiAperture * k,
     }));
     const pupil = p.reported.pupilMagnification ?? 1;
+    // The adapter's widest air gap focuses it, when its lens moves as one unit.
+    let gap = -1;
+    scaled.forEach((s, i) => {
+      if (i < scaled.length - 1 && s.glass === null && s.d !== null && (gap < 0 || s.d > scaled[gap].d!)) gap = i;
+    });
+    const unit = master.focus.mode === 'unit' && master.squeezeFocus === null;
     return {
       ...master,
       surfaces: [...scaled, ...master.surfaces],
       stop: master.stop + scaled.length,
       focus: { ...master.focus, moving: (master.focus.moving ?? []).map((m) => ({ ...m, surface: m.surface + scaled.length })) },
       squeeze: pupil > 1 ? pupil : 1 / Math.max(pupil, 1e-6),
+      squeezeFocus: unit && gap >= 0 ? { surface: gap, dBase: scaled[gap].d!, dNear: scaled[gap].d! * ADAPTER_FOCUS_TRAVEL } : null,
     };
   }
   const surfaces = withCoating(p.surfaces, t.coating);
@@ -151,6 +165,7 @@ export function composeLens(t: TracedLens): ComposedLens | null {
     magnification: p.focus.mode === 'floating' ? [stateMagnification(p.focus.base), stateMagnification(p.focus.near)] : [0, 0],
     squeeze: 1,
     obstruction: p.obstructionRatio ?? 0,
+    squeezeFocus: null,
   };
 }
 

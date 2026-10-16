@@ -15,6 +15,9 @@ pub const DEFAULT_MASTER: &str = "double_gauss_normal";
 pub const ADAPTER_GAP_MM: f64 = 5.0;
 /// An adapter's strongest radius over its lens's front semi-aperture (`ADAPTER_CLEARANCE`).
 pub const ADAPTER_CLEARANCE: f64 = 2.2;
+/// An adapter's widest gap travels to this share of its afocal value to focus close
+/// (`ADAPTER_FOCUS_TRAVEL`).
+pub const ADAPTER_FOCUS_TRAVEL: f64 = 0.6;
 
 /// A JSON value (the catalogue's subset: no escapes beyond `\x` for a character).
 #[derive(Clone, Debug, PartialEq)]
@@ -344,6 +347,28 @@ pub fn catalogue() -> Vec<CatalogueLens> {
                 p.stop += n as u32;
                 for m in &mut p.moving {
                     m.surface += n as u32;
+                }
+                // The adapter's widest air gap focuses it, when its lens moves as one unit.
+                let mut gap: Option<usize> = None;
+                for (i, s) in scaled.iter().enumerate() {
+                    if i + 1 < n && s.nd == 1.0 && s.d.is_some() {
+                        let wider = match gap {
+                            Some(g) => s.d > scaled[g].d,
+                            None => true,
+                        };
+                        if wider {
+                            gap = Some(i);
+                        }
+                    }
+                }
+                if let (FOCUS_UNIT, Some(g)) = (p.focus_mode, gap) {
+                    let d = scaled[g].d.unwrap_or(0.0);
+                    p.focus_mode = FOCUS_ANAMORPHIC;
+                    p.moving = vec![MovingGap {
+                        surface: g as u32,
+                        base: d as f32,
+                        near: (d * ADAPTER_FOCUS_TRAVEL) as f32,
+                    }];
                 }
                 let mut all = specs(&scaled);
                 all.extend(specs(&master_surfaces));

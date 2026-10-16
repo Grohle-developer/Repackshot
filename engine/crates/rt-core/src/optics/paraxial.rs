@@ -6,7 +6,7 @@
 //! meridian: an anamorphic adapter's cylinders squeeze the horizontal, so its focal length is its
 //! master lens's, as an anamorphic lens is named.
 
-use super::traced::{Surface, SURFACE_CYLINDER_Y, SURFACE_MIRROR};
+use super::traced::{Surface, SURFACE_CYLINDER_X, SURFACE_CYLINDER_Y, SURFACE_MIRROR};
 
 /// A paraxial ray: height and slope, in the medium after the last surface it met.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -17,10 +17,15 @@ pub struct ParaxialRay {
     pub u: f32,
 }
 
-/// The curvature a surface has in the y meridian.
-fn power_curvature(s: &Surface) -> f32 {
-    // A cylinder with its axis along y has no power in the y meridian.
-    if s.kind == SURFACE_CYLINDER_Y {
+/// The curvature a surface has in the y meridian, or in the x meridian with `x`.
+fn power_curvature(s: &Surface, x: bool) -> f32 {
+    // A cylinder with its axis along y has no power in the y meridian, one along x none in x.
+    let flat = if x {
+        SURFACE_CYLINDER_X
+    } else {
+        SURFACE_CYLINDER_Y
+    };
+    if s.kind == flat {
         0.0
     } else {
         s.curvature
@@ -37,6 +42,19 @@ pub fn trace_forward(
     ray: ParaxialRay,
     heights: &mut Vec<f32>,
 ) -> ParaxialRay {
+    trace_forward_in(surfaces, band, from, ray, heights, false)
+}
+
+/// [`trace_forward`] in the y meridian, or in the x meridian with `x` (an anamorphic lens's
+/// squeezed one).
+pub fn trace_forward_in(
+    surfaces: &[Surface],
+    band: usize,
+    from: usize,
+    ray: ParaxialRay,
+    heights: &mut Vec<f32>,
+    x: bool,
+) -> ParaxialRay {
     heights.clear();
     let ParaxialRay { mut y, mut u } = ray;
     let mut n = if from == 0 {
@@ -48,7 +66,7 @@ pub fn trace_forward(
         let s = &surfaces[i];
         heights.push(y);
         let np = signed_index(surfaces, i, band);
-        let c = power_curvature(s);
+        let c = power_curvature(s, x);
         u = (n * u - y * c * (np - n)) / np;
         n = np;
         if i + 1 < surfaces.len() {
@@ -90,6 +108,16 @@ pub fn efl_bfl(surfaces: &[Surface], band: usize) -> Option<(f32, f32)> {
 /// direction the light leaves in, for an object `object_distance` in front of the first vertex
 /// (`f32::INFINITY` for parallel light); `None` when the image is at infinity.
 pub fn image_distance(surfaces: &[Surface], band: usize, object_distance: f32) -> Option<f32> {
+    image_distance_in(surfaces, band, object_distance, false)
+}
+
+/// [`image_distance`] in the y meridian, or in the x meridian with `x`.
+pub fn image_distance_in(
+    surfaces: &[Surface],
+    band: usize,
+    object_distance: f32,
+    x: bool,
+) -> Option<f32> {
     let mut h = Vec::new();
     let ray = if object_distance.is_finite() {
         // A ray from the axial object point: height 1 at the first vertex, slope 1 / distance.
@@ -100,7 +128,7 @@ pub fn image_distance(surfaces: &[Surface], band: usize, object_distance: f32) -
     } else {
         ParaxialRay { y: 1.0, u: 0.0 }
     };
-    let out = trace_forward(surfaces, band, 0, ray, &mut h);
+    let out = trace_forward_in(surfaces, band, 0, ray, &mut h, x);
     if out.u.abs() < 1.0e-12 {
         return None;
     }

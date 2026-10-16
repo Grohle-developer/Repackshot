@@ -684,7 +684,13 @@ impl Lens {
     fn traced_film(&self, camera: &Camera, aspect: f32, u: f32, v: f32) -> (f32, f32) {
         let (sx, sy) = sensor_point(camera, aspect, u, v);
         let (x, y) = self.shifted(sx, sy);
-        (x / self.params.squeeze, y)
+        // An anamorphic lens desqueezes by its squeeze as traced at its focus.
+        let squeeze = self
+            .traced
+            .as_ref()
+            .and_then(|t| t.squeeze())
+            .unwrap_or(self.params.squeeze);
+        (x / squeeze, y)
     }
 
     /// A lens-frame ray (`traced`'s axis is −forward; its x and y are the camera's right and up)

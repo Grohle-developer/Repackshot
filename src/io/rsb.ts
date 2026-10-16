@@ -179,7 +179,7 @@ export const SURFACE_KIND = { sphere: 0, plane: 1, asphere: 2, cylinderX: 3, cyl
 /** `LENS` surface coatings (rt-core `COATING_*`): 0 is a surface that is not air–glass. */
 export const SURFACE_COATING: Readonly<Record<CoatingId, number>> = { none: 1, single: 2, multi: 3 };
 /** `LENS` focus modes (rt-core `FOCUS_*`). */
-export const FOCUS_MODE = { unit: 0, internal: 1, floating: 2 } as const;
+export const FOCUS_MODE = { unit: 0, internal: 1, floating: 2, anamorphic: 3 } as const;
 
 /** One surface of a traced lens (rt-core `optics::traced::SurfaceSpec`). */
 export interface RsbSurface {
@@ -1293,16 +1293,17 @@ export function prescriptionToRsb(t: TracedLens, composed: ComposedLens): RsbPre
   };
   const focus = composed.focus;
   const unitOr = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : 0));
+  const squeeze = composed.squeezeFocus;
   return {
     stop: composed.stop,
-    focusMode: focus.mode === 'internal' ? FOCUS_MODE.internal : focus.mode === 'floating' ? FOCUS_MODE.floating : FOCUS_MODE.unit,
+    focusMode: squeeze ? FOCUS_MODE.anamorphic : focus.mode === 'internal' ? FOCUS_MODE.internal : focus.mode === 'floating' ? FOCUS_MODE.floating : FOCUS_MODE.unit,
     fNumberMin: composed.fNumberMin,
     magnification: composed.magnification,
     distortion: unitOr(t.distortion, -1, 1),
     vignetting: unitOr(t.vignetting, 0, 1),
     spherical: unitOr(t.spherical, -1, 1),
     breathing: unitOr(t.breathing, -1, 1),
-    moving: (focus.moving ?? []).map((m) => ({ surface: m.surface, base: m.dBase, near: m.dNear })),
+    moving: (squeeze ? [squeeze] : (focus.moving ?? [])).map((m) => ({ surface: m.surface, base: m.dBase, near: m.dNear })),
     surfaces: composed.surfaces.map((s) => {
       const a = s.kind === 'asphere' ? (s.asphere?.coefficients ?? []) : [];
       return {

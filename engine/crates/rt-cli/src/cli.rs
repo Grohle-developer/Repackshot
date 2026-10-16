@@ -21,6 +21,7 @@ USAGE:
     rt --sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --filter-sheet <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
     rt --filter-noise <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
+    rt --lens-sheet <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
     rt --write-example <scene.rsb>
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
@@ -78,8 +79,13 @@ OPTIONS:
                             and without their connections to the lights (192x144, 16 spp, six
                             seeds; the variance of a pixel between the seeds) into
                             <dir>/noise.json
-        --only <keys>       with --filter-sheet: only those cells (comma separated), the others
-                            kept in index.json; with --filter-noise, only those filters
+        --lens-sheet <dir>  render the perfume bottle through each traced lens of the catalogue
+                            wide open and at f/8, and points of light through each wide open
+                            (400x300, 96 spp) into <dir>: one PNG each and index.json with the
+                            engine's numbers of each lens (tools/lens-sheet.mjs)
+        --only <keys>       with --filter-sheet or --lens-sheet: only those cells (comma
+                            separated), the others kept in index.json; with --filter-noise, only
+                            those filters
         --write-example <f> write the built-in example scene as an RSB file
         --write-e5-example <f>
                             write the E5 parity scene (glass, cut-outs, anisotropy, HDRI,
@@ -240,6 +246,15 @@ pub enum Command {
         /// Only these cells (`--only key,key`), the others kept from `index.json`.
         only: Vec<String>,
     },
+    /// Render the sheet of the traced lenses (O2) into a directory.
+    LensSheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// Overrides (samples, threads, size).
+        options: Options,
+        /// Only these cells (`--only key,key`), the others kept from `index.json`.
+        only: Vec<String>,
+    },
     /// Measure the noise of the effect filters with and without their connections (O3a).
     FilterNoise {
         /// Output directory (`noise.json`).
@@ -384,6 +399,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut sheet_dir = None;
     let mut filter_sheet_dir = None;
     let mut filter_noise_dir = None;
+    let mut lens_sheet_dir = None;
     let mut only: Vec<String> = Vec::new();
     let mut tone_table = false;
     let mut options = Options::default();
@@ -465,6 +481,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--filter-sheet" => filter_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--filter-noise" => filter_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--lens-sheet" => lens_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--only" => {
                 only = value(&mut it, arg)?
                     .split(',')
@@ -609,6 +626,19 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         }
         return Ok(Command::FilterSheet { dir, options, only });
     }
+    if let Some(dir) = lens_sheet_dir {
+        if input.is_some()
+            || output.is_some()
+            || options.max_seconds.is_some()
+            || filter_noise_dir.is_some()
+        {
+            return Err(
+                "--lens-sheet renders its own scenes: no scene, -o, --max-seconds or --filter-noise"
+                    .into(),
+            );
+        }
+        return Ok(Command::LensSheet { dir, options, only });
+    }
     if let Some(dir) = filter_noise_dir {
         if input.is_some() || output.is_some() || options.max_seconds.is_some() {
             return Err(
@@ -618,7 +648,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         return Ok(Command::FilterNoise { dir, options, only });
     }
     if !only.is_empty() {
-        return Err("--only goes with --filter-sheet or --filter-noise".into());
+        return Err("--only goes with --filter-sheet, --filter-noise or --lens-sheet".into());
     }
     let input = input.ok_or("no scene given: pass a .rsb file or --example")?;
     let output = output.ok_or("no output given: pass -o <out.png>")?;
@@ -766,6 +796,21 @@ pub fn run(command: Command) -> Result<(), String> {
                 size.0, size.1
             );
             let n = crate::filter_sheet::run(&dir, size, samples, threads, &only)?;
+            println!("wrote {n} images and {}", dir.join("index.json").display());
+            Ok(())
+        }
+        Command::LensSheet { dir, options, only } => {
+            use crate::lens_sheet::{run, LENS_SHEET_SAMPLES, LENS_SHEET_SIZE};
+            let size = options.size.unwrap_or(LENS_SHEET_SIZE);
+            let samples = options.samples.unwrap_or(LENS_SHEET_SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            println!(
+                "lens sheet: {}x{}, {samples} spp, {threads} threads",
+                size.0, size.1
+            );
+            let n = run(&dir, size, samples, threads, &only)?;
             println!("wrote {n} images and {}", dir.join("index.json").display());
             Ok(())
         }
@@ -1145,6 +1190,21 @@ mod tests {
             })
         );
         assert!(parse(&["--filter-noise", "out", "-o", "a.png"]).is_err());
+        assert_eq!(
+            parse(&["--lens-sheet", "out", "--only", "triplet--bottle--f8"]),
+            Ok(Command::LensSheet {
+                dir: "out".into(),
+                options: Options::default(),
+                only: vec!["triplet--bottle--f8".into()],
+            })
+        );
+        assert!(parse(&["--lens-sheet", "out", "scene.rsb"]).is_err());
+        assert_eq!(
+            parse(&["--write-lens-catalogue", "c.json"]),
+            Ok(Command::WriteLensCatalogue {
+                path: "c.json".into()
+            })
+        );
         assert!(parse(&["--filter-noise", "out", "--filter-sheet", "out"]).is_err());
         assert_eq!(
             parse(&["--write-film-thumb", "t.rsb"]),

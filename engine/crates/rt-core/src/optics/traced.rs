@@ -72,6 +72,10 @@ pub const FOCUS_UNIT: u32 = 0;
 pub const FOCUS_INTERNAL: u32 = 1;
 /// The whole lens moves and the listed gaps float with the magnification.
 pub const FOCUS_FLOATING: u32 = 2;
+/// An anamorphic adapter in front of a lens: the whole lens moves (the master's focus, in the
+/// vertical meridian) and the listed gap of the adapter follows, so that the squeezed (horizontal)
+/// meridian focuses at the same distance, as the focus ring of a front adapter does.
+pub const FOCUS_ANAMORPHIC: u32 = 3;
 
 /// Wavelengths of the three bands, micrometres (R, G, B): near the middle of each channel.
 pub const BAND_WAVELENGTHS_UM: [f32; 3] = [0.610, 0.545, 0.465];
@@ -204,6 +208,8 @@ pub struct LensInfo {
     pub relative_illumination: Vec<(f32, f32)>,
     /// The sensor's position behind the rear vertex, mm (the focus).
     pub sensor_mm: f32,
+    /// An anamorphic lens's squeeze at its focus (1 without cylinders).
+    pub squeeze: f32,
 }
 
 /// What a traced lens is prepared for: the camera's optics (not where it is or looks).
@@ -433,6 +439,10 @@ pub struct TracedLens {
     breathing: f32,
     /// The image height of the frame's corner, for the overrides, mm.
     field: f32,
+    /// An anamorphic lens's squeeze as traced at its focus (the horizontal over the vertical
+    /// magnification near the axis), what the image is desqueezed by; 0 for a lens without
+    /// cylinders.
+    squeeze: f32,
     /// What the engine reports.
     info: LensInfo,
     /// What it was prepared for.
@@ -487,6 +497,11 @@ impl TracedLens {
     /// What the engine computed of the lens.
     pub fn info(&self) -> &LensInfo {
         &self.info
+    }
+
+    /// An anamorphic lens's squeeze as traced at its focus, `None` for a lens without cylinders.
+    pub fn squeeze(&self) -> Option<f32> {
+        (self.squeeze > 0.0).then_some(self.squeeze)
     }
 
     /// The camera position on the axis (lens frame): the entrance pupil at infinity focus.
@@ -598,6 +613,9 @@ fn build(p: &Prescription, lens: &super::LensParams, focal_mm: f32) -> Result<Bu
             aspheric: s.aspheric,
             transmittance: [1.0; 3],
         });
+    }
+    if p.focus_mode > FOCUS_ANAMORPHIC {
+        return Err("unknown focus mode");
     }
     for m in &p.moving {
         if m.surface as usize >= n - 1 || !(m.base >= 0.0 && m.near >= 0.0) {
@@ -788,6 +806,34 @@ fn prepare(
                 }
             }
         }
+        FOCUS_ANAMORPHIC if !moving.is_empty() => {
+            // The vertical meridian focuses as one unit; the adapter's gap brings the horizontal
+            // one to the same image, both from the moved lens (the front vertex stays).
+            let focus_y = |s: &[Surface]| focus_of(s, object).map(|(img, _)| last(s) + img);
+            let miss = |t: f32| -> Option<f32> {
+                let s = with_gaps(&surfaces, &moving, t);
+                let x = paraxial::image_distance_in(&s, 1, object, true)?;
+                Some(last(&s) + x - focus_y(&s)?)
+            };
+            let (mut lo, mut hi) = (0.0f32, 2.0f32);
+            t = match (miss(lo), miss(hi)) {
+                (Some(a), _) if a.abs() < 1.0e-4 => 0.0,
+                (Some(a), Some(b)) if a.signum() != b.signum() => {
+                    for _ in 0..40 {
+                        let mid = 0.5 * (lo + hi);
+                        match miss(mid) {
+                            Some(m) if m.signum() == a.signum() => lo = mid,
+                            _ => hi = mid,
+                        }
+                    }
+                    0.5 * (lo + hi)
+                }
+                // Beyond what the gap reaches: the adapter stays afocal.
+                _ => 0.0,
+            };
+            let s = with_gaps(&surfaces, &moving, t);
+            focus_y(&s).unwrap_or(z_base[n - 1] + infinity.0)
+        }
         FOCUS_FLOATING if !moving.is_empty() => {
             let (mb, mn) = p.magnification;
             let mut z_sensor = sensor_far;
@@ -843,6 +889,7 @@ fn prepare(
         vignetting: p.vignetting,
         breathing: 1.0,
         field,
+        squeeze: 0.0,
         info: LensInfo {
             efl_mm: efl,
             bfl_mm: infinity.0,
@@ -858,6 +905,7 @@ fn prepare(
             distortion: Vec::new(),
             relative_illumination: Vec::new(),
             sensor_mm: sensor_z - z[n - 1],
+            squeeze: 1.0,
         },
         key: camera,
         surfaces,
@@ -875,6 +923,26 @@ fn prepare(
     }
     let shift = (lens.shift_x_mm * lens.shift_x_mm + lens.shift_y_mm * lens.shift_y_mm).sqrt();
     lens_out.precompute(0.75 * camera.sensor_mm + shift)?;
+    // An anamorphic lens: the squeeze as the chief rays of two points near the axis trace it.
+    if lens_out
+        .surfaces
+        .iter()
+        .any(|s| matches!(s.kind, SURFACE_CYLINDER_X | SURFACE_CYLINDER_Y))
+    {
+        let h = 0.02 * camera.sensor_mm;
+        let tan = |x: f32, y: f32| match lens_out.chief(x, y, (0.0, 0.0)) {
+            Traced::Out { dir, .. } if dir.z != 0.0 => {
+                Some(((dir.x / dir.z).abs(), (dir.y / dir.z).abs()))
+            }
+            _ => None,
+        };
+        if let (Some((tx, _)), Some((_, ty))) = (tan(h, 0.0), tan(0.0, h)) {
+            if tx > 0.0 && ty > 0.0 {
+                lens_out.squeeze = tx / ty;
+                lens_out.info.squeeze = tx / ty;
+            }
+        }
+    }
     Ok(lens_out)
 }
 
@@ -1216,7 +1284,7 @@ impl LensInfo {
             format!("[{}]", items.join(","))
         };
         format!(
-            "{{\"traced\":true,\"eflMm\":{},\"bflMm\":{},\"eflFocusedMm\":{},\"fNumber\":{},\"fNumberMin\":{},\"tStop\":{},\"transmittance\":[{},{},{}],\"lengthMm\":{},\"entrancePupilMm\":[{},{}],\"elements\":{},\"groups\":{},\"sensorMm\":{},\"distortion\":{},\"relativeIllumination\":{}}}",
+            "{{\"traced\":true,\"eflMm\":{},\"bflMm\":{},\"eflFocusedMm\":{},\"fNumber\":{},\"fNumberMin\":{},\"tStop\":{},\"transmittance\":[{},{},{}],\"lengthMm\":{},\"entrancePupilMm\":[{},{}],\"elements\":{},\"groups\":{},\"sensorMm\":{},\"squeeze\":{},\"distortion\":{},\"relativeIllumination\":{}}}",
             json_number(self.efl_mm),
             json_number(self.bfl_mm),
             json_number(self.efl_focused_mm),
@@ -1232,6 +1300,7 @@ impl LensInfo {
             self.elements,
             self.groups,
             json_number(self.sensor_mm),
+            json_number(self.squeeze),
             pairs(&self.distortion),
             pairs(&self.relative_illumination),
         )
