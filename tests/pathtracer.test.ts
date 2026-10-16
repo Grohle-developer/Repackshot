@@ -497,6 +497,42 @@ describe('Render with the path tracer', () => {
     await expect(aborted).rejects.toMatchObject({ name: 'AbortError' });
     expect(engine.status().rendering).toBe(false);
   });
+
+  it('U14: pictures of the accumulation for the live view only when it asks, each tile with its own samples', async () => {
+    const { pool } = await fakePool(3, 96);
+    const engine = new PathTracerEngine(pool, source([]), true);
+    engine.sync(exampleState(), null);
+    // Asked with every tile, it wants one picture now and then (here: every 4th time).
+    let asks = 0;
+    const frames: { samples: number; width: number; height: number; rgba: Uint8ClampedArray }[] = [];
+    const px = await engine.renderPixels({
+      width: 96,
+      height: 40,
+      maxSamples: 7,
+      maxSeconds: 0,
+      transparent: false,
+      frameBox: () => (++asks % 4 === 0 ? { width: 48, height: 48 } : null),
+      onFrame: (f) => frames.push(f),
+    });
+    expect(px.samples).toBe(7);
+    // 6 tiles × 3 passes: asked after every tile, a picture every 4th.
+    expect(asks).toBe(18);
+    expect(frames).toHaveLength(4);
+    // 96 × 40 in 48 × 48: k = 2, 48 × 20, the samples every pixel has when it was made (the least over the tiles).
+    expect(frames.map((f) => [f.width, f.height])).toEqual(Array(4).fill([48, 20]));
+    expect(frames.map((f) => f.samples)).toEqual([0, 1, 3, 3]);
+    // They are pictures of the accumulation (the first one, mid-pass, with some tiles still empty: transparent there).
+    expect(frames[3].rgba.some((v) => v !== 0)).toBe(true);
+    expect(frames[0].rgba.some((v, i) => i % 4 === 3 && v === 0)).toBe(true);
+    const ref = new Accumulator(96, 40);
+    for (const t of ref.tiles) ref.add(t.index, 0, 7, sampleData(t, 0, 7, 96));
+    // Not asked: none, and the render is the same bits.
+    frames.length = 0;
+    const plain = await engine.renderPixels({ width: 96, height: 40, maxSamples: 7, maxSeconds: 0, transparent: false, frameBox: () => null, onFrame: (f) => frames.push(f) });
+    expect(frames).toHaveLength(0);
+    expect([...plain.data]).toEqual([...px.data]);
+    expect([...px.data]).toEqual([...exactBytes(ref.sum, 7, 0.5, 2)]);
+  });
 });
 
 describe('simd128 detection', () => {

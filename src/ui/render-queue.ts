@@ -37,10 +37,17 @@
 // (`<name>_<plugin>.png`); the first one is also kept in the history, with its
 // provenance (seed0 and the rule). A plugin that is not installed, or fails,
 // leaves the engine's images as they are and says so once.
+//
+// Live view (U14): a job that runs while the live view shows it (a click on
+// its row: `ui.liveView`) gets pictures of its render as it accumulates
+// (`liveTap`: at most every LIVE_FRAME_MS, only while the view shows it and
+// the page is visible), kept in `ui.liveFrame`; when it ends with a result,
+// the view becomes the results viewer of that result.
 
 import { totalDuration } from '../core/animation';
 import type { AiPostProgress, AiPostRequest } from '../core/ai';
 import { aiFileName, pipelineOf, variantSettings } from '../core/ai-post';
+import { FrameCadence, liveBox } from '../core/live-frame';
 import { outputFileName, type NameValues } from '../core/name-template';
 import { formatExtension, frameRange, frameTime, jobCamera, needsDisplayCopy, type JobRuntime, type JobStatus, type RenderJob, type RenderSettings } from '../core/render';
 import { controlsFor, frameControls, seedProvenance, type PluginLabel, type PluginManifest, type PluginRenderSettings } from '../core/plugins';
@@ -322,6 +329,35 @@ async function pluginsStep(ctx: Ctx, s: RenderSettings, plugins: JobPlugin[], ou
   return saved;
 }
 
+/** The page is in a background tab (no live picture is wanted there). */
+const pageHidden = (): boolean => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
+/**
+ * U14: what a job's frame requests ask the live view with (`FrameRequest.frameBox`, `onFrame`): a box while the live
+ * view shows job `jobId` and a picture is due by the cadence, null otherwise; the pictures go to `ui.liveFrame`, unless
+ * the view moved on while one was being made.
+ */
+export function liveTap(ctx: Ctx, jobId: string, now: () => number = Date.now): Required<Pick<FrameRequest, 'frameBox' | 'onFrame'>> {
+  const cadence = new FrameCadence(now);
+  let watched = false;
+  return {
+    frameBox: () => {
+      const v = ctx.ui.get().liveView;
+      const on = v !== null && v.jobId === jobId && !pageHidden();
+      // Opened again (or on this job again): its picture at once.
+      if (on && !watched) cadence.reset();
+      watched = on;
+      if (!on || !cadence.due()) return null;
+      cadence.mark();
+      return liveBox(v.box);
+    },
+    onFrame: (frame) => {
+      if (ctx.ui.get().liveView?.jobId !== jobId) return;
+      ctx.ui.set({ liveFrame: { jobId, frame } });
+    },
+  };
+}
+
 /**
  * Renders one job: every frame with the path tracer, each saved under its name where the job
  * says, the first image kept in the history. Throws an AbortError when stopped.
@@ -350,6 +386,11 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
       return false;
     }
   };
+  // U14: the live view's pictures of this job (the results viewer in progress): only while it shows this job and
+  // the page is visible, at most every LIVE_FRAME_MS (the first one at once, also when the view opens again). While
+  // it asks for none the engine makes none (FrameRequest.frameBox).
+  const live = liveTap(ctx, job.id, now);
+  if (ctx.ui.get().liveFrame?.jobId === job.id) ctx.ui.set({ liveFrame: null });
   for (let k = 0; k < total; k++) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError');
     const f = frames[k];
@@ -376,6 +417,8 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
       advanced: s.advanced,
       signal,
       onProgress: (p, samples, seconds) => tick(p, samples, seconds),
+      frameBox: live.frameBox,
+      onFrame: live.onFrame,
       ...(cam ? { camera: cam } : {}),
       ...(f.time !== undefined ? { time: f.time } : {}),
       // The AI step works from the render the launcher keeps with its passes (desktop).
@@ -504,7 +547,10 @@ async function loop(ctx: Ctx, r: Runner): Promise<void> {
         const dest = job.settings.destination;
         if (n > 1) ctx.ui.toast(t('render.doneFrames', { n }));
         else ctx.ui.toast(dest.kind === 'FOLDER' ? t('render.doneFolder', { name: out.names[0] ?? '', folder: dest.name }) : t('render.done', { name: out.names[0] ?? '' }));
-        if (job.settings.showWhenDone && out.resultIds[0]) ctx.ui.set({ resultView: { id: out.resultIds[0], compare: null, split: 'SPLIT', position: 0.5 } });
+        // Its result opens in the viewer when the job says so, or when the live view was watching it (U14: the view
+        // in progress becomes the result's).
+        const watched = ctx.ui.get().liveView?.jobId === job.id;
+        if ((job.settings.showWhenDone || watched) && out.resultIds[0]) ctx.ui.set({ resultView: { id: out.resultIds[0], compare: null, split: 'SPLIT', position: 0.5 }, liveView: null, liveFrame: null });
       } catch (err) {
         const why = r.current?.why;
         if (abort.signal.aborted || (err instanceof Error && err.name === 'AbortError')) status = why === 'PAUSE' ? 'QUEUED' : 'CANCELLED';

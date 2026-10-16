@@ -7,6 +7,7 @@
 import type { PixelFilterFields } from '../core/antialias';
 import type { CameraId } from '../core/camera';
 import type { PassKey } from '../core/passes';
+import type { FrameBox, LiveFrame } from '../core/live-frame';
 import type { AdvancedSettings, FinishBy, RenderProgress } from '../core/render';
 import type { NodeId } from '../core/scene';
 import type { ProjectState } from '../core/store';
@@ -112,6 +113,14 @@ export interface RenderOptions {
   passesInLauncher?: boolean;
   /** Render this project instead of the one on screen (Settings ▸ Measure performance renders the example). */
   state?: ProjectState;
+  /**
+   * U14, the queue's live view: asked as the image accumulates (the pool: as tiles come back; the launcher: after every
+   * pass), the box to fit a picture of the render in when one is wanted now, else null; while it is null no picture is
+   * made and no sums are copied for one.
+   */
+  frameBox?: () => FrameBox | null;
+  /** U14: the picture `frameBox` asked for. */
+  onFrame?: (frame: LiveFrame) => void;
 }
 
 export interface PickHit {

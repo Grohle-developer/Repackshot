@@ -175,7 +175,7 @@ function snapshot(ctx: Ctx): Baseline {
 export function startTour(ctx: Ctx, how: 'first' | 'menu'): boolean {
   if (ctx.ui.get().tour) return false;
   baselines.set(ctx.ui, snapshot(ctx));
-  ctx.ui.set({ tour: { step: 0, how }, paletteOpen: false, guideStep: null, pickMode: null, renderWindow: null, settingsWindow: null, resultView: null });
+  ctx.ui.set({ tour: { step: 0, how }, paletteOpen: false, guideStep: null, pickMode: null, renderWindow: null, settingsWindow: null, resultView: null, liveView: null, liveFrame: null });
   applyStage(ctx, tourSteps(ctx)[0]?.stage);
   return true;
 }

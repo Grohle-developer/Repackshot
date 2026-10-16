@@ -3,7 +3,8 @@
 // each with Edit (the render window with its settings and Save changes),
 // Duplicate and Remove (Stop while it runs); Start queue / Pause / Resume and
 // Clear finished at the top. Finished jobs keep their thumbnail and open the
-// results viewer. On the right, the results history (newest first) with
+// results viewer; a job that renders or waits opens the live view (U14), and
+// the row in it stands out. On the right, the results history (newest first) with
 // Clear history; when the browser keeps no storage, it says so.
 
 import { MAX_ATTEMPTS } from '../../core/ai';
@@ -65,7 +66,7 @@ function variantBadge(r: ResultMeta): HTMLElement | null {
 }
 
 /** The status line of a job: its frame while an animation renders, where the AI is while it runs, else the status. */
-function statusTextOf(j: RenderJob, running: RenderProgress | null): string {
+export function statusTextOf(j: RenderJob, running: RenderProgress | null): string {
   if (j.status === 'RUNNING' && running?.jobId === j.id && running.ai) return aiStatusText(running.ai);
   if (j.status === 'RUNNING' && j.settings.mode === 'ANIMATION' && j.frames > 0) return t('queue.frameOf', { i: j.frame || 1, n: j.frames });
   return t(dyn(`queue.status.${j.status}`));
@@ -111,6 +112,8 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
           )
         : h('img', { src: result.thumb, alt: '', class: 'queue-pic' })
       : h('span', { class: 'queue-pic queue-pic-empty' }, icon(anim ? 'film' : 'camera', 14));
+    // A job that renders or waits opens the live view (U14); a finished one, its result.
+    const watchable = running || j.status === 'QUEUED';
     const statusText = statusTextOf(j, s.render.running);
     const why = statusWhyOf(j, s.render.running);
     const act = (label: string, iconName: 'edit' | 'duplicate' | 'close' | 'stop', fn: () => void, disabled = false) =>
@@ -118,14 +121,15 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
     const el = h(
       'div',
       {
-        class: `queue-row${running ? ' is-running' : ''}${finished ? ' is-finished' : ''}`,
+        class: `queue-row${running ? ' is-running' : ''}${finished ? ' is-finished' : ''}${watchable ? ' is-watchable' : ''}${ctx.ui.get().liveView?.jobId === j.id ? ' is-selected' : ''}`,
         role: 'listitem',
         tabindex: 0,
         draggable: running ? undefined : 'true',
         'data-job': j.id,
         'data-status': j.status,
-        'data-tip': result ? t('queue.openResult') : undefined,
-        onclick: () => result && cmd.openResult(ctx, result.id),
+        'aria-current': ctx.ui.get().liveView?.jobId === j.id ? 'true' : undefined,
+        'data-tip': watchable ? t('queue.watchTip') : result ? t('queue.openResult') : undefined,
+        onclick: () => cmd.selectJob(ctx, j.id),
       },
       h('span', { class: 'queue-grip', 'data-tip': t('queue.dragTip') }, icon('grip', 14)),
       pic,
@@ -186,9 +190,9 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
         e.stopPropagation();
         cmd.moveJob(ctx, j.id, index + (e.key === 'ArrowUp' ? -1 : 1));
         requestAnimationFrame(() => (list.querySelector(`[data-job="${j.id}"]`) as HTMLElement | null)?.focus());
-      } else if (e.key === 'Enter' && result) {
+      } else if (e.key === 'Enter' && (result || watchable)) {
         e.preventDefault();
-        cmd.openResult(ctx, result.id);
+        cmd.selectJob(ctx, j.id);
       }
     });
     return el;
@@ -239,6 +243,18 @@ export function queueDrawer(ctx: Ctx, scope: Scope): HTMLElement {
       list.replaceChildren(...queue.map((j, i) => row(j, i, results)));
     },
     (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2],
+  );
+
+  // The job in the live view (U14) stands out in the list; the rows are not rebuilt for it, so focus stays put.
+  scope.watch(
+    (_s, u) => u.liveView?.jobId ?? null,
+    (id) =>
+      list.querySelectorAll<HTMLElement>('.queue-row').forEach((el) => {
+        const on = el.dataset.job === id;
+        el.classList.toggle('is-selected', on);
+        if (on) el.setAttribute('aria-current', 'true');
+        else el.removeAttribute('aria-current');
+      }),
   );
 
   // The history: every result kept in the browser, newest first.

@@ -789,6 +789,8 @@ const services: AppServices = {
       ...(req.time !== undefined ? { time: req.time } : {}),
       ...(req.advanced ? { advanced: req.advanced } : {}),
       ...(kept ? { passes: AI_GUARD_PASSES, passesInLauncher: true } : {}),
+      // U14: the queue's live view of the job (its box and cadence are the queue's).
+      ...(req.frameBox && req.onFrame ? { frameBox: req.frameBox, onFrame: req.onFrame } : {}),
       onProgress: (p) => req.onProgress?.(p.progress, p.samples, p.seconds),
     });
     // The file in the job's format from the 8-bit pixels and, for 16 bits, EXR, the 32-bit TIFF and DNG, the linear sums.

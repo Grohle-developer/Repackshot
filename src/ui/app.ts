@@ -107,7 +107,7 @@ function onKey(ctx: Ctx, e: KeyboardEvent): boolean {
   }
   // The render window and the results viewer own the plain keys while they are open (their own
   // listeners handle ⏎, Esc, + - 0 1); shortcuts with Ctrl/⌘ still work.
-  const overlay = u.renderWindow !== null || u.resultView !== null;
+  const overlay = u.renderWindow !== null || u.resultView !== null || u.liveView !== null;
   for (const a of ACTIONS) {
     if (!a.keys) continue;
     const specs = [a.keys, ...(a.altKeys ?? [])];

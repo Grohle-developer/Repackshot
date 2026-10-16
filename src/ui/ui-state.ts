@@ -6,6 +6,7 @@ import type { LightStyle, MaterialCategory } from '../data/types';
 import type { ImportMessage, ImportOptions, ImportPayload, ImportProgress } from '../core/import-options';
 import { emptyLibrary, type Library } from '../core/library';
 import type { MaterialId, MaterialInstance } from '../core/materials';
+import type { FrameBox, LiveFrame } from '../core/live-frame';
 import type { RenderSettings } from '../core/render';
 import type { ResultMeta } from '../core/results';
 import type { NodeId } from '../core/scene';
@@ -133,6 +134,15 @@ export interface ResultViewState {
   split: SplitMode;
   /** Divider position, 0..1 of the width. */
   position: number;
+}
+
+/**
+ * U14: the results viewer's "in progress" mode over the viewport (UI.md §2.5, §2.8): the live view of a queue job that
+ * renders or waits. `box`: the device pixels its picture is fitted in, as the viewer measured them (null before).
+ */
+export interface LiveViewState {
+  jobId: string;
+  box: FrameBox | null;
 }
 
 /** The Settings window (UI.md §2.9): the section shown, a row to bring into view, the first-run chooser. */
@@ -356,6 +366,10 @@ export interface UiState {
   /** Where it was moved to and its size (remembered); null: centred at its own size. */
   materialEditorRect: EditorRect | null;
   resultView: ResultViewState | null;
+  /** U14: the live view of a queue job (the results viewer in progress); null: closed. Never open with `resultView`. */
+  liveView: LiveViewState | null;
+  /** U14: the newest picture of the job in the live view, as the engine made it at the queue's cadence; null: none yet. */
+  liveFrame: { jobId: string; frame: LiveFrame } | null;
   /** The results history, newest first (main.ts loads it from the browser's storage). */
   results: ResultMeta[];
   /** Whether the history survives the session. */
@@ -509,6 +523,8 @@ export function defaultUiState(): UiState {
     materialEditor: null,
     materialEditorRect: null,
     resultView: null,
+    liveView: null,
+    liveFrame: null,
     results: [],
     resultsStorage: 'LOADING',
     throughput: null,
