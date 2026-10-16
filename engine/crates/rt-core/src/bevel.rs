@@ -251,6 +251,30 @@ impl BevelSetup {
         }
     }
 
+    /// E13: whether the bevel of the hit's instance reaches the hit `details` (a sharp edge
+    /// within [`SEARCH_RADII`] radii: where [`BevelSetup::shading_point`] may bend its normal).
+    /// Manifold connections leave such vertices to BSDF sampling: the bevelled normal is not one
+    /// they can differentiate.
+    pub(crate) fn reaches(&self, geometry: &Geometry, details: &Hit) -> bool {
+        let Some(Some(b)) = self.instances.get(details.instance as usize) else {
+            return false;
+        };
+        let Some((mesh, _)) = geometry.instance_mesh(details.instance) else {
+            return false;
+        };
+        let edges = mesh.sharp_edges();
+        let search = b.radius * SEARCH_RADII;
+        if edges.is_empty() || edges.clearance(details.triangle) > search {
+            return false;
+        }
+        let Some([p0, p1, p2]) = mesh.triangle(details.triangle as usize) else {
+            return false;
+        };
+        let [b0, b1, b2] = details.barycentrics;
+        let p = p0 * b0 + p1 * b1 + p2 * b2;
+        !edges.within(p, search).as_slice().is_empty()
+    }
+
     /// [`BevelSetup::shading_point`] with the instance's radius times `scale` (M3b: a material
     /// program's bevel weight): 1 is exactly [`BevelSetup::shading_point`], 0 or less (or NaN) no
     /// bevel at all.

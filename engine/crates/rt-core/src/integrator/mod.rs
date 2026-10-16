@@ -269,7 +269,8 @@ pub struct Prepared {
     /// The material programs of every instance ([`crate::program`], M3b).
     pub(crate) programs: ProgramSetup,
     /// Per instance: manifold next-event estimation connects through its surfaces (E13,
-    /// [`manifold::is_chain_material`], on a part without textures, program, pattern or bevel).
+    /// [`manifold::is_chain_material`], on a part without textures, program or pattern; near the sharp edges of a bevelled part, the
+    /// vertices are refused one by one).
     chain_surfaces: Vec<bool>,
     /// Manifold next-event estimation is on (always, but for the tests' references) and the scene
     /// has surfaces it connects through: without them every path is exactly what it was before E13.
@@ -388,7 +389,8 @@ impl Prepared {
         let bevel = BevelSetup::new(scene);
         let patterns = PatternSetup::new(scene);
         // E13: the parts manifold next-event estimation refracts through, whose normals it can
-        // differentiate (no textures, program, pattern or bevel bend them).
+        // differentiate (no textures, program or pattern bend them; an edge bevel bends them
+        // only near the sharp edges, and the vertices it reaches are refused one by one).
         let chain_surfaces: Vec<bool> = (0..instances.len())
             .map(|i| {
                 let id = i as u32;
@@ -396,7 +398,6 @@ impl Prepared {
                     && !textures.has(id)
                     && !programs.has(id)
                     && !patterns.has(id)
-                    && bevel.radius(id) <= 0.0
             })
             .collect();
         Prepared {

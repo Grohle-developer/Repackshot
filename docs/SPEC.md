@@ -619,14 +619,18 @@ Con rugosidad 0, el metal y el vidrio no cambian; el plástico gana el
 
 **Luz a través del vidrio** (E13): en el modo Completo y en el render, lo
 que está detrás de un vidrio liso o dentro de él (un líquido en una
-botella, el suelo bajo un vaso, una pieza tras un cristal) recibe la luz de
-cada foco a través de una o dos superficies del vidrio con la refracción
+botella, el suelo bajo un cristal, una pieza tras una lámina) recibe la luz
+de cada foco a través de una o dos superficies del vidrio con la refracción
 exacta (la luz que la cruza llega por el camino que dobla en sus caras, con
-su Fresnel y su color), sin grano y también de un punto de luz o del sol,
-que antes no llegaban; incluye las cáusticas que ese vidrio enfoca. Vale
+su Fresnel y su color), como una muestra de luz más y también de un punto
+de luz o del sol, que antes no llegaban. Bajo vidrio muy curvo (una bola,
+el costado de un vaso) ese camino se encuentra pocas veces, y las cáusticas
+siguen viniendo sobre todo de los caminos que refractan o del mapa de
+fotones. Vale
 para el vidrio claro sin barniz ni recorte, liso o casi (rugosidad hasta
 0,05), sin medio dispersor, sin dispersión cromática y sin texturas,
-programa, dibujo ni bisel; el resto, y la luz que cruza más de dos
+programa ni dibujo (cerca de las aristas que redondea el bisel, tampoco);
+el resto, y la luz que cruza más de dos
 superficies o viene del entorno, sigue llegando como antes (por los caminos
 que refractan, por la regla de las paredes finas de los medios o por las
 cáusticas, si están encendidas, que entonces se encargan de las luces que

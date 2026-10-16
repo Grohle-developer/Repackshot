@@ -2234,8 +2234,12 @@ así que parten cada camino entre las dos técnicas.
 **Qué superficies.** `manifold::is_chain_material`: vidrio del todo claro
 con interior (no pared fina), rugosidad hasta la de la pared de E9b (0,05,
 tratada como espejo para la refracción), sin barniz, sin recorte, sin medio,
-sin dispersión e `ior ≥ 1,01`; y la pieza sin texturas, programa, dibujo
-procedural ni bisel (no se pueden derivar sus normales). Desde cualquier
+sin dispersión e `ior ≥ 1,01`; y la pieza sin texturas, programa ni dibujo
+procedural (no se pueden derivar sus normales). El bisel de aristas de E6
+(la aplicación pone a toda pieza el del Doctor) solo dobla la normal cerca
+de las aristas vivas: un camino con un vértice a su alcance
+(`BevelSetup::reaches`, dos radios) no se conecta, y un camino BSDF que
+refractó ahí conserva su peso (test). Desde cualquier
 vértice que no sea una partícula ni una superficie lisa clara (un vértice de
 salida de un medio sí). Todo lo demás sigue como antes: vidrio rugoso, con
 barniz, texturado, con programa o dispersivo, o más de dos superficies,

@@ -849,3 +849,59 @@ fn the_seed_from_the_light_finds_the_sphere_paths_the_straight_seed_misses() {
     assert!(straight > 0, "{straight}");
     assert!(connected > straight, "{connected} vs {straight}");
 }
+
+#[test]
+fn on_bevelled_glass_connections_stop_where_the_bevel_reaches() {
+    // The application gives every part the Doctor's edge bevel: away from the sharp edges it
+    // does not bend the normals, and the connections go through; within its reach they do not.
+    let mut scene = slab(1.5);
+    scene.materials[0].bevel_mm = 3.0;
+    assert!(Prepared::new(&scene).has_manifold());
+    let (v1, v2, y) = slab_path(1.5, 15.0, 30.0);
+    let end = End::Point {
+        y,
+        normal: Vec3::new(0.0, 0.0, -1.0),
+    };
+    let p = solve_in(&scene, Vec3::ZERO, end)
+        .0
+        .expect("far from the edges")
+        .points();
+    assert!(close(p[0], v1, 2.0e-3) && close(p[1], v2, 2.0e-3), "{p:?}");
+    // Straight up 3 mm from the slab's rim: both vertices within the bevel's reach.
+    let x = Vec3::new(397.0, 0.0, 0.0);
+    let end = End::Point {
+        y: x + Vec3::new(0.0, 0.0, 80.0),
+        normal: Vec3::new(0.0, 0.0, -1.0),
+    };
+    let (path, k) = solve_in(&scene, x, end);
+    assert_eq!(k, 2);
+    assert!(path.is_none());
+    scene.materials[0].bevel_mm = 0.0;
+    assert!(solve_in(&scene, x, end).0.is_some());
+}
+
+#[test]
+fn on_bevelled_glass_light_is_counted_once() {
+    // The floor under the bevelled edge of a slab, a panel above: paths through the bevel's
+    // reach are left to BSDF sampling (the connection refuses them, and their BSDF light keeps
+    // its weight), the rest are shared; together they give what BSDF sampling alone gives.
+    let mut scene = floor_under_slab(
+        vec![panel(Vec3::new(10.0, 0.0, 300.0), 120.0, 3.0)],
+        40.0,
+        8,
+    );
+    let slab = box_mesh(Vec3::new(-600.0, -600.0, 40.0), Vec3::new(6.0, 600.0, 50.0));
+    scene.geometry = Geometry::new(
+        vec![quad(2000.0, 0.0), slab],
+        vec![
+            Instance::new(0, Transform::IDENTITY, 0),
+            Instance::new(1, Transform::IDENTITY, 1),
+        ],
+    )
+    .expect("scene");
+    scene.materials[1].bevel_mm = 4.0;
+    let [mis, lights, bsdf] = three_techniques(&scene, 2048);
+    eprintln!("floor under a bevelled edge: MIS {mis:.5}, connections {lights:.5}, BSDF {bsdf:.5}");
+    assert!(bsdf > 0.0);
+    assert!((mis / bsdf - 1.0).abs() < 0.02, "MIS {mis} vs BSDF {bsdf}");
+}

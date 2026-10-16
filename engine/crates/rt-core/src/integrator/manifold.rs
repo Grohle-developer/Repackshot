@@ -57,9 +57,11 @@
 //! **What it takes.** A chain surface ([`is_chain_material`]) is smooth (roughness up to the
 //! E9b wall's 0.05, treated as a mirror for the refraction), wholly clear glass with an inside
 //! (not a thin wall), no coat, no cut-out, no scattering medium, no dispersion, an index of at
-//! least [`MIN_IOR`], on a part without textures, a program, a procedural pattern or an edge
-//! bevel (whose normals it could not differentiate). Everything else keeps the behaviour of
-//! before: a rough, coated, textured, programmed or dispersive glass, or more than [`MAX_CHAIN`]
+//! least [`MIN_IOR`], on a part without textures, a program or a procedural pattern (whose
+//! normals it could not differentiate). An edge bevel (E6; the application gives every part the
+//! Doctor's) bends the normals only near the sharp edges: a path with a vertex within its reach
+//! ([`crate::bevel::BevelSetup::reaches`]) is not connected, and a BSDF path that refracted
+//! there keeps its weight. Everything else keeps the behaviour of before: a rough, coated, textured, programmed or dispersive glass, or more than [`MAX_CHAIN`]
 //! refractions, stops the shadow ray as ever (a medium's exit vertex still crosses thin walls by
 //! the E9b rule). The environment is left to BSDF sampling (it is large and smooth); with caustics
 //! on, the lights that send photons are left to the photon map, which already brings that light.
@@ -166,6 +168,9 @@ struct Vertex {
     eta_b: f32,
     /// What the cut-outs, thin walls and clear particles on the segment arriving here keep.
     keep: Rgb,
+    /// Within reach of the edge bevel of its part ([`crate::bevel::BevelSetup::reaches`]): its
+    /// shading normal is the bevel's, which the constraints do not model.
+    bevelled: bool,
 }
 
 impl Vertex {
@@ -180,6 +185,7 @@ impl Vertex {
         eta_a: 1.0,
         eta_b: 1.0,
         keep: Rgb::WHITE,
+        bevelled: false,
     };
 }
 
@@ -260,6 +266,7 @@ fn vertex(
         eta_a,
         eta_b,
         keep,
+        bevelled: prepared.bevel.reaches(&scene.geometry, details),
     })
 }
 
@@ -761,6 +768,10 @@ pub(crate) fn solve<T: Tracer>(
             _ => beta *= 0.5,
         }
     }
+    // Within reach of a bevel the shading normal is not the one solved for: no connection.
+    if v[..k].iter().any(|v| v.bevelled) {
+        return None;
+    }
     // Every vertex refracts: the next segment leaves on the far side of its surface.
     for i in 0..k {
         let (wb, _) = onwards(&v[..k], i, end)?;
@@ -1079,6 +1090,9 @@ pub(crate) fn found_factor<T: Tracer>(
             &track.points,
             &mut traced,
         )
+        // A path that refracted where a bevel bent its normal is not one the connection
+        // produces (its own vertices would be bevelled too): it keeps its weight.
+        .filter(|own| !own.vertices[..own.chain.len].iter().any(|v| v.bevelled))
         .and_then(|own| solve(prepared, scene, tracer, from, &own, &end.end, &mut traced));
         if !own.is_some_and(|own| own.wi().dot(wi) >= MATCH_COS) {
             return 1.0;

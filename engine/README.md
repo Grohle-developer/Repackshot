@@ -256,7 +256,8 @@ twice (0: off).
   Marschner's "Manifold Exploration", SIGGRAPH 2012, written from the papers): when the shadow
   ray of a light sample is stopped by one or two surfaces of smooth clear glass and nothing else
   (`manifold::is_chain_material`: roughness up to 0.05, no coat, cut-out, medium or dispersion,
-  index at least 1.01, on a part without textures, program, pattern or bevel), the refraction
+  index at least 1.01, on a part without textures, program or pattern; a bevelled part's
+  vertices within the bevel's reach of its sharp edges are refused one by one), the refraction
   path to that point of the light is solved by Newton's method on the half-vector constraints
   (two unknowns per vertex in its triangle's plane, the interpolated shading normal and its
   derivatives, exact through the frame-free constraint `ĥ·(e_s − (n·e_s) n)`, a step kept only if
