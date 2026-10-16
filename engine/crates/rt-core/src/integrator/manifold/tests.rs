@@ -777,3 +777,75 @@ fn on_faceted_glass_the_paths_through_other_facets_keep_their_weight() {
     assert!(bsdf > 0.0);
     assert!((mis / bsdf - 1.0).abs() < 0.03, "MIS {mis} vs BSDF {bsdf}");
 }
+
+/// Seeds the path from `x` to `end` in `scene` and solves it as the connection does (the straight
+/// seed, then the one traced from the light): the straight seed's own solve, and the connection.
+fn connect_in(scene: &Scene, x: Vec3, end: End) -> Option<(Option<Path>, Option<Path>)> {
+    let prepared = Prepared::new(scene);
+    let tracer = BvhTracer {
+        geometry: &scene.geometry,
+        isa: Isa::detect(),
+    };
+    let (dir, distance) = match end {
+        End::Point { y, .. } => unit(y - x).expect("apart"),
+        End::Direction { w } => (w, f32::INFINITY),
+    };
+    let mut rays = 0;
+    let seed = seed(&prepared, scene, &tracer, x, dir, distance, &mut rays)?;
+    if seed.chain.len != 2 {
+        return None;
+    }
+    let straight = solve(&prepared, scene, &tracer, x, &seed, &end, &mut rays);
+    let path = connection_path(&prepared, scene, &tracer, x, &seed, &end, &mut rays);
+    Some((straight, path))
+}
+
+#[test]
+fn the_seed_from_the_light_finds_the_sphere_paths_the_straight_seed_misses() {
+    // Paths through the ball from a point just under it to lights far above, built in closed
+    // form (each has a solution): they bend far from the straight line between their ends, and
+    // the straight seed is mostly in another basin. The seed traced from the light finds some
+    // of those it misses (within the 8 projections; most stay unsolved, the ROADMAP's E13).
+    let scene = ball();
+    let x = Vec3::new(4.0, 3.0, -40.0);
+    let (mut cases, mut straight, mut connected) = (0, 0, 0);
+    for i in 0..9 {
+        for j in 0..9 {
+            let at = Vec3::new(-0.8 + 0.2 * i as f32, -0.8 + 0.2 * j as f32, -1.0);
+            let (_, v2, out) = sphere_path(x, at, 1.5);
+            let y = v2 + out * 300.0;
+            let end = End::Point { y, normal: -out };
+            let Some((alone, path)) = connect_in(&scene, x, end) else {
+                continue;
+            };
+            cases += 1;
+            straight += usize::from(alone.is_some());
+            if let Some(path) = path {
+                // A refraction path of the exact sphere (a lens may have more than one between
+                // two points, so not necessarily the one `at` was built from): Snell's law about
+                // the radial normal at both vertices.
+                let p = path.points();
+                let inside = snell((p[0] - x).normalize(), p[0].normalize(), 1.0, 1.5);
+                let inside = inside.expect("enters");
+                let out = snell(inside, -p[1].normalize(), 1.5, 1.0).expect("leaves");
+                assert!(
+                    (p[0].length() - 30.0).abs() < 0.01 && (p[1].length() - 30.0).abs() < 0.01,
+                    "{at:?}: {p:?}"
+                );
+                assert!(
+                    (p[1] - p[0]).normalize().dot(inside) > 0.99999
+                        && (y - p[1]).normalize().dot(out) > 0.99999,
+                    "{at:?}: {p:?}"
+                );
+                connected += 1;
+            }
+        }
+    }
+    eprintln!(
+        "under a ball: {cases} paths whose straight line crosses it twice; solved from the \
+         straight seed {straight}, by the connection {connected}"
+    );
+    assert!(cases >= 60, "{cases}");
+    assert!(straight > 0, "{straight}");
+    assert!(connected > straight, "{connected} vs {straight}");
+}
