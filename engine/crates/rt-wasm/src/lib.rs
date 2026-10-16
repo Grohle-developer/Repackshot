@@ -265,6 +265,20 @@ pub fn particles_eval(params: &[u8], max: u32) -> Result<Vec<f32>, u32> {
     Ok(out)
 }
 
+/// O2: what the engine computed of the traced lens of scene `handle` (focal length, back focus,
+/// f-number, T-stop, transmittance, distortion and relative illumination against image height:
+/// [`rt_core::optics::traced::LensInfo::to_json`]), or `{"traced":false}` for the thin lens (or
+/// an orthographic camera); `None` for a bad handle. The interface shows these numbers, never its
+/// own (rule 10).
+pub fn scene_lens_info(handle: u32) -> Option<String> {
+    let reg = registry();
+    let loaded = handle
+        .checked_sub(1)
+        .and_then(|i| reg.scenes.get(i as usize))
+        .and_then(Option::as_ref)?;
+    Some(loaded.scene.camera.lens_info_json())
+}
+
 /// Words per pixel of the input of [`denoise`]: the planes `sums` (4), `lum2` (1), `albedo` (3),
 /// `normal` (3), `depth` (1), `part_id` (1) and `material_id` (1), one after another.
 pub const DENOISE_WORDS: usize = 14;

@@ -629,15 +629,54 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    deshacer (*Cámara: Proporción*; arrastrar un término es un solo
    gesto). Cambiarla no recoloca la cámara: *Encuadrar* la ajusta a la
    nueva imagen.
-   Debajo (O1, `src/ui/panels/insp-lens.ts`), dos desplegables:
+   Debajo (O1, `src/ui/panels/insp-lens.ts`), los desplegables de la óptica:
+   - **Lente** (abierto; O2, `src/ui/panels/insp-traced.ts`): *Modelo de
+     lente* (*Lente fina · Lente trazada*). Con la lente fina, una nota dice
+     lo que es (una lente ideal). Con una trazada: *Carácter*, una fila de
+     chips (*Clínica · Suave · Remolino · Vintage · Anamórfica · Macro · Gran
+     angular · Tele · Míos*) que filtra la lista *Lente* (las lentes del
+     catálogo de ese carácter, por su nombre genérico); *Míos* enseña las
+     lentes propias en filas con *Renombrar* y *Eliminar*, y elegir una la
+     pone en la cámara. Debajo, la **fuente** de la lente (la patente o el
+     libro, el año y lo que se ha comprobado), y lo suyo: *Objetivo detrás*
+     (solo el adaptador anamórfico: la lente sobre la que va), *Tratamiento*
+     (*El de la lente · Sin tratar · Monocapa · Multicapa*), el hueco
+     variable de la lente blanda con *Normal*, *Láminas* (el mismo mando que
+     en *Óptica avanzada*) y el recorrido de su diafragma (*Su diafragma: f/2
+     a f/22*). **Lo que calcula el motor**: el **corte** de la lente en SVG
+     (el vidrio en gris, el diafragma en su sitio, el sensor a la derecha;
+     escalada a la focal y enfocada, como se traza) y los números del motor
+     para esa cámara: *Focal* (a infinito y al foco), *Tiraje*,
+     *Diafragma* (el f/ en uso y el T-stop), *Elementos · grupos*,
+     *Longitud*, *Pupila de entrada* y, en un anamórfico, *Compresión al
+     foco*; y dos curvas pequeñas, *Distorsión* y *Luz hacia la esquina*, con
+     su valor en la esquina. Mientras el motor contesta dice *Preguntando al
+     motor…*; sin motor, *El motor no está disponible aquí*; si no forma
+     imagen, lo dice. **Avanzado** (plegado), bajo **NO FÍSICO**:
+     *Distorsión*, *Viñeteo*, *Carácter de la esférica*, *Respiración*,
+     *Aberración cromática* y *Remolino*. **Guardar lente como…** pide un
+     nombre en el sitio y la guarda en *Míos*. Dos notas: el modo Rápido
+     dibuja la distorsión y el viñeteo como aproximación (y el medidor añade
+     *Lente trazada: distorsión y viñeteo aproximados, el render la traza*;
+     el contorno, el *gizmo* y los glifos van con ella, y los clics, la caja
+     y el *gizmo* cogen lo que se ve bajo el cursor),
+     y con una lente trazada el perfil, el ojo de gato, la compresión
+     anamórfica y la inclinación de la lente fina no se aplican (en *Óptica
+     avanzada* salen apagados con esa nota). Cada cambio es una entrada de
+     deshacer (*Cámara: Modelo de lente*, *Cámara: Lente*, *Cámara:
+     Tratamiento*…).
+     ![editor de lente](lens-editor.png)
+     ![lo que calcula el motor](lens-section.png)
    - **Bokeh** (abierto): rejilla de 4 columnas con los 20 tipos de
      `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
      el propio motor** (`public/thumbs/bokeh/`, `tools/bokeh-thumbs.mjs`:
      doce puntos de luz desenfocados sobre negro) y el nombre debajo; la
      descripción del tipo va en el *tooltip* y, del elegido, en una nota.
-     Los cuatro que el modo 1 no hace salen apagados con *Próximamente* y
-     dicen qué esperan (*Necesita la lente trazada: llega con el editor
-     de lentes*; el de difracción, *Necesita óptica de ondas*). Un tipo
+     Los tres de la lente trazada (O2: cometa de coma, respiración de
+     foco, aberración esférica variable) tienen su miniatura renderizada
+     con su lente y la ponen en la cámara (lo dice el *tooltip*); el de
+     difracción sale apagado con *Próximamente* (*Necesita óptica de
+     ondas*). Un tipo
      con variantes (polígono recto o curvo, obstrucción pequeña o
      grande, polvo, rayas o malla, las estrellas y el corazón, 7 o 19
      agujeros) muestra *Variante* y su miniatura en la casilla. Mover un

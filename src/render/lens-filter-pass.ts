@@ -3,9 +3,11 @@
 // render/lens-filter-image.ts (the same numbers: Gaussians blurred at a reduced size when they are wide, each with its
 // colour, and taps along the lines of a star, a streak or a net), and the result goes to the screen through the
 // renderer's tone curve and output colour space. An approximation of what the engine traces (the meter says so).
+// O2: a traced lens's distortion and falloff (the engine's tables, `LensProfile`) are drawn in that last step.
 
 import * as THREE from 'three';
 import type { FilterKernel } from './lens-filter-image';
+import { PROFILE_GLSL, ProfileUniformSet, type LensProfile } from './lens-profile';
 
 const VERT = /* glsl */ `
 varying vec2 vUv;
@@ -90,12 +92,15 @@ void main() {
   gl_FragColor = vec4((1.0 - s) * i.rgb + s * k, i.a);
 }`;
 
-/** To the screen, through the renderer's tone curve and output colour space. */
+/** To the screen, through the renderer's tone curve and output colour space (O2: and a traced lens's profile). */
 const PRESENT = /* glsl */ `
 uniform sampler2D src;
+${PROFILE_GLSL}
 varying vec2 vUv;
 void main() {
-  gl_FragColor = texture2D(src, vUv);
+  vec3 at = lensProfileSource(vUv);
+  gl_FragColor = texture2D(src, at.xy);
+  gl_FragColor.rgb *= at.z;
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -146,7 +151,9 @@ export class LensFilterPass {
     true,
   );
   private readonly combine = material(COMBINE, { image: { value: null }, scattered: { value: null }, s: { value: 0 } });
-  private readonly present = material(PRESENT, { src: { value: null } }, false, true);
+  /** O2: the map of a traced lens's profile (render/lens-profile.ts), the one the hit tests invert. */
+  private readonly profileSet = new ProfileUniformSet();
+  private readonly present = material(PRESENT, { src: { value: null }, ...this.profileSet.uniforms }, false, true);
   private sceneTarget: THREE.WebGLRenderTarget | null = null;
   private ping: THREE.WebGLRenderTarget | null = null;
   private pong: THREE.WebGLRenderTarget | null = null;
@@ -226,10 +233,10 @@ export class LensFilterPass {
   }
 
   /**
-   * Draws `scene` from `camera` through the filter `kernels` to the screen (the renderer's current size). The
-   * kernels' pixels are full-size pixels of the drawing buffer.
+   * Draws `scene` from `camera` through the filter `kernels` to the screen (the renderer's current size), and with a
+   * traced lens's `profile` (O2). The kernels' pixels are full-size pixels of the drawing buffer.
    */
-  render(r: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, kernels: readonly FilterKernel[]): void {
+  render(r: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, kernels: readonly FilterKernel[], profile: LensProfile | null = null): void {
     const size = r.getDrawingBufferSize(new THREE.Vector2());
     this.ensure(size.x, size.y);
     const autoClear = r.autoClear;
@@ -281,7 +288,9 @@ export class LensFilterPass {
       this.draw(r, this.combine, into);
       cur = into;
     }
-    this.present.uniforms.src.value = cur.texture;
+    const u = this.present.uniforms;
+    u.src.value = cur.texture;
+    this.profileSet.set(profile, size.x, size.y);
     this.draw(r, this.present, null);
     r.autoClear = autoClear;
   }

@@ -3679,7 +3679,7 @@ con ella) no separa esa diferencia del ruido de la carga; la lente cambia
 además el encuadre (desplazamiento e inclinación) y con él los rayos que
 se trazan (35,2 M frente a 33,6 M).
 
-## O2 · Lente trazada — **Opus** (tras O1)
+## O2 · Lente trazada — **Opus** (tras O1), veredicto **Fable** — hecha
 
 **Qué.** `STUDIO-TOOLS.md` §1 modo 2, desde el artículo de Kolb,
 Mitchell y Hanrahan (1995) y `docs/research/optics.md` §3, §5 y §6:
@@ -3725,6 +3725,260 @@ la cámara trazada ≤ 25 % del render del ejemplo con la doble Gauss a
 16 lentes a f/ máximo y a f/8, y la escena de puntos de luz con las que
 dan ojo de gato, burbuja, cremoso y remolino, **con veredicto de
 Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
+
+**Hecho.**
+
+- **Motor** (`rt-core/src/optics/traced.rs` y `paraxial.rs`). La
+  prescripción va al final de `LENS`, tras los huecos de los filtros de
+  O3a (que entonces se escriben siempre); una `LENS` sin ella es la de O1
+  byte a byte. Superficies esfera, plano, asférica par, cilindro (eje x o
+  y), espejo (la secuencia desplegada del catadióptrico) y el diafragma;
+  la intersección estable de §6.5, normal sin raíz, Newton en las
+  asféricas, Snell vectorial, solo `+ − × ÷ sqrt`. Al leer la escena (y
+  cada vez que cambian focal, f/, foco o sensor; si solo se mueve la
+  cámara se reutiliza) la lente se **escala** a la focal paraxial pedida,
+  toma los índices de las **tres bandas** (Cauchy de dos términos desde
+  `nd` y `vd`; la aberración cromática no física multiplica la dispersión)
+  y la **transmisión** de cada superficie aire–vidrio por su tratamiento
+  (T-stop y tinte, sin fantasmas), y se **enfoca**: unidad, interno
+  (bisección sobre los huecos), flotante (los huecos siguen al aumento) y,
+  nuevo, **anamórfico** (`FOCUS_ANAMORPHIC`: el adaptador delante de un
+  objetivo que enfoca como una unidad; su hueco más ancho, entre los
+  cilindros, recorre hasta el 60 % para llevar el meridiano comprimido al
+  mismo foco; la imagen se desestira por la compresión que traza a ese
+  foco: 2,00 a infinito, 1,96 a 3 m, 1,72 a la distancia del frasco). La
+  cámara se sitúa en la pupila de entrada paraxial a infinito (la
+  perspectiva de la lente fina); el diafragma da el f/ pedido, nunca más
+  abierto que la lente, y se abre hasta el f/ más rápido declarado aunque
+  la fuente dé su diámetro para otro (el triplete, f/4 en la patente y
+  f/3,7 de catálogo). Las semiaperturas que la fuente no da salen de un
+  rayo marginal y uno principal paraxiales y se **ensanchan con rayos
+  reales** del encuadre en los dos meridianos (en un gran angular el
+  principal paraxial se quedaba corto y recortaba las esquinas: la doble
+  Gauss rápida pasaba de 0,79 a 0,88 de luz en la esquina de un 50 mm a
+  f/1,4). Límites de la pupila de salida en 32 alturas (rejilla de
+  24 × 24 en el vértice trasero, tres bandas, una celda de margen) y la
+  irradiancia en 40 × 40 para el normalizador y la iluminación relativa.
+  Cada muestra: una banda (decisión 3; las tres de un grupo comparten el
+  punto de la pupila), un punto del rectángulo, el trazado con rimas e
+  iris y el peso `A cos⁴θ / Z²` sobre el del eje por el tinte; una muestra
+  que la lente para pesa negro y conserva su propio rayo sin recortar para
+  la cobertura (antes se trazaba otra vez el rayo principal). Atajos
+  exactos del iris (dentro del círculo inscrito pasa, fuera del
+  circunscrito no; un test compara 160 000 puntos con el borde exacto en
+  cinco iris) y cocientes de índice precalculados: los mismos bits. Los
+  ajustes **no físicos** (distorsión, viñeteo, esférica como lámina en el
+  diafragma, respiración, remolino, aberración cromática) se aplican
+  encima; los rayos centrales de los pases usan el mismo punto del sensor
+  que las muestras.
+- **Lo que el motor dice** (`LensInfo`, `rt_scene_lens_info` de `rt_wasm`,
+  `POST /api/lens/info` del lanzador): focal a infinito y al foco, la
+  **escala de imagen** cerca del eje (con la respiración: a foco cercano
+  la lente encuadra menos), tiraje, f/ en uso y el más rápido, T-stop,
+  transmisión por banda, longitud, pupila de entrada, elementos y grupos,
+  la compresión de un anamórfico, la **distorsión** contra esa escala y la
+  **iluminación relativa** en 17 alturas del encuadre de salida, y el
+  **corte** (cada superficie como se traza, enfocada, con su semiapertura;
+  el iris en uso y el sensor).
+- *Hash* fijado de la escena O2 (`example::o2_scene`: el ejemplo a f/2,8
+  por la doble Gauss del catálogo con siete láminas curvas y las luces de
+  fondo de O1, `tests/fixtures/o2.rsb`, 10 008 bytes):
+  `PINNED_O2_TRACED_4SPP` = `0x8f7d0ef8` (era `0xe2e8e3ab`; lo movió la
+  mezcla con E9, como a O1 y O3a; E6 no lo movió) en escalar, SSE2 y AVX2,
+  en WASI, en el `rt_wasm.wasm` real (en CI, tras E6), por el código de la
+  página y con 1, 4 y 16 hilos. Ningún otro *hash* se movió.
+- **El catálogo como lo traza el motor** (`rt-cli/src/lens_catalogue.rs`,
+  `rt --write-lens-catalogue`, `tests/fixtures/lens-catalogue.json`): la
+  misma composición que la página (el adaptador delante de la doble Gauss,
+  escalado para despejar su frente, su hueco de enfoque); la página
+  escribe los mismos bytes para las 16 lentes (test).
+- **Interfaz.** `CameraOptics.traced` (`src/core/traced-lens.ts`: la clave
+  del catálogo y lo que se cambió; las ópticas anteriores no lo tienen y
+  no cambian ni un byte). *Cámara ▸ **Lente*** (`insp-traced.ts`, el
+  editor de lente): *Lente fina · Lente trazada*; *Carácter* en chips y
+  *Míos*; *Lente*; la fuente (patente o libro y lo comprobado); *Objetivo
+  detrás* (adaptador), *Tratamiento*, el hueco variable de la lente blanda
+  y *Normal*, *Láminas* y el recorrido del diafragma; los números, las dos
+  curvas y el **corte en SVG** del motor (`ui/components/lens-section.ts`);
+  *Avanzado* bajo **NO FÍSICO**; **Guardar lente como…** a la biblioteca
+  propia (nuevo tipo `lens`, con su validación al importar). Los tres
+  tipos de bokeh de la lente trazada se eligen ya, con su miniatura
+  renderizada por `rt` con su lente (`tools/bokeh-thumbs.mjs`). Con una
+  lente trazada, *Óptica avanzada* apaga el perfil, el ojo de gato, la
+  compresión y la inclinación de la lente fina con una nota, y la
+  compresión de la lente fina ya no estira la imagen de una lente trazada
+  (el motor tampoco la aplica). El visor Rápido aplica la escala, la
+  distorsión y el viñeteo del motor (`render/lens-profile.ts`) y el
+  medidor dice *Lente trazada: distorsión y viñeteo aproximados, el render
+  la traza*. `tools/lens-check.mjs` (Chromium local, 13 comprobaciones)
+  deja `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
+- **El clic a través del perfil** (el 1.8 del triaje). El visor Rápido
+  dibuja la distorsión como un pase de pantalla y `pick` lanzaba el rayo
+  sin distorsionar: con un gran angular o el ojo de pez, enfocar con clic,
+  seleccionar, la caja y el *gizmo* no caían en lo que había bajo el cursor.
+  Ahora el mapa de la pantalla a la imagen sin distorsionar está una sola
+  vez en `render/lens-profile.ts`, en TypeScript y en GLSL uno junto al otro
+  con los mismos números (`profileSource`, `PROFILE_GLSL`,
+  `profileUniforms`): por él dibujan el pase de pantalla, el contorno de la
+  selección (la máscara se lee por el mapa: la línea rodea la pieza como se
+  dibuja) y los superpuestos (*gizmo*, glifos, trayectorias; en *Completo*,
+  las caras seleccionadas), y lo invierten el pico (enfocar con clic y
+  seleccionar), el *gizmo*, los glifos, `objectAt` (por `profileShown`, el
+  mapa al revés por bisección), la selección por caja
+  (`Projection.shown`) y el pase de ids de las caras. Sin perfil (lente
+  fina, o antes de que el motor diga sus números) es la identidad. La tabla
+  se lee ahora entre sus entradas (el pase leía la más cercana: un escalón,
+  un anillo, en cada una), y el perfil es el de la cámara por la que se
+  mira (al mirar a través de otra cámara o de una luz, L4, se aplicaba el de
+  la activa). La lógica de *Enfocar con clic* que deshace el `end` de la
+  órbita (`main.ts`, `core/view-objects.ts`) es de B1 y no se ha tocado.
+- **Hoja** `out/lens-sheet.html` (`rt --lens-sheet out/lens-sheet`,
+  `node tools/lens-sheet.mjs --reuse`), 400 × 300: por lente el frasco
+  abierto y a f/8 (96 muestras), los puntos de luz abiertos y con la lente
+  fina al mismo f/ (480 muestras, con primeros planos de la luz del centro
+  y de la esquina), un gráfico de luces enfocadas en rejilla rectilínea a
+  su propio campo (96 muestras), el corte, los números, las curvas y el
+  coste; arriba la lente fina de referencia y la tabla del coste
+  (`rt --lens-cost`, `out/lens-sheet/cost.json`).
+- **Lotes** (la regla de coste del encargo, §6.1 del informe). En la
+  primera entrega la cámara trazada era el 29,1 % del render del ejemplo
+  con la doble Gauss a 1024 muestras (0,71 µs por muestra de cámara), por
+  encima del 25 %: ahora la baldosa traza por la lente, fila a fila, las
+  muestras de los píxeles que toman una sola en **lotes de ocho**
+  (`optics::traced::batch`: las ocho a la vez, superficie a superficie, en
+  forma de estructura de *arrays*, cada carril con las mismas operaciones y
+  en el mismo orden que una sola, así que los mismos bits; los píxeles de
+  borde de E11 y una lente con asféricas, uno a uno), con la base de la
+  cámara una vez por lote. El trazado solo pasa de 0,60 a 0,14 µs por
+  muestra; ningún *hash* se mueve (`PINNED_O2_TRACED_4SPP` sigue en
+  `0x8f7d0ef8`, en cada ruta SIMD, en el `rt_wasm.wasm` real y con 1, 4 y
+  16 hilos).
+- **Coste** (`rt --lens-cost`, un hilo, la más rápida de tres vueltas de
+  cada medida, `out/lens-sheet/cost.json`):
+
+  | Escena | Cámara | Muestra de cámara | Parte del render | Render |
+  | --- | --- | --- | --- | --- |
+  | Ejemplo, 64 × 48, 1024 spp | Doble Gauss, antes de los lotes | 0,71 µs | **29,1 %** | 7,7 s |
+  | Ejemplo, 64 × 48, 1024 spp | Doble Gauss, en lotes | 0,25 µs (0,71 una a una) | **13,7 %** | 5,7 s |
+  | Ejemplo, 64 × 48, 1024 spp | Lente fina | 0,19 µs | 10,6 % | 5,6 s |
+  | Frasco, 96 × 72, 256 spp | Doble Gauss, en lotes | 0,26 µs (0,68 una a una) | 12,9 % | 3,6 s |
+  | Frasco, 96 × 72, 256 spp | Lente fina | 0,19 µs | 10,1 % | 3,4 s |
+
+  Lo que la lente trazada añade sobre la cámara de la lente fina es ya el
+  3 % del render del ejemplo. Con la máquina cargada las vueltas sueltas
+  varían (de 12,4 a 23,5 % en tres medidas de una vuelta); la más rápida de
+  tres es la que cuenta. Por lente, en lotes (una vuelta en la escena de
+  puntos), la muestra de cámara va de 0,21 µs (cuatro elementos con
+  doblete trasero) y 0,22 µs (menisco) a 0,43 µs (ojo de pez, 17
+  superficies) y 0,51 µs (asimétrico rápido); la de la lente fina, 0,16 µs.
+- **Tests** (cada uno comprobado reintroduciendo el error donde arregla
+  uno). rt-core `optics::traced_tests`: focal y tiraje paraxiales de las 15
+  lentes que forman imagen en la tolerancia del informe; rayos axiales de
+  la doble Gauss paralelos a < 2e-4; f32 contra f64 < 1e-4 mm; cada lente
+  a 50 mm con su corte, semiaperturas, iris dentro del diafragma (sin
+  abrir el diafragma al f/ declarado, falla con el triplete) y perfil;
+  foco unidad, interno y flotante; distorsión de la doble Gauss < 2,5 % a
+  infinito, 3 m y 0,5 m (contra la focal al foco daba +15,7 %, falla);
+  distorsión −1 que da barril (con el signo de antes, cojín, falla) y
+  rayos centrales que siguen a las muestras con ella (el rayo central de
+  antes, a 0,045 rad, falla); la doble Gauss rápida con 0,85 de luz en la
+  esquina (sin ensanchar las rimas, 0,79, falla); la compresión de la
+  lente fina que no cambia el rayo de una lente trazada (falla sin el
+  arreglo); los atajos del iris. rt-cli: el catálogo y su fichero al día,
+  el foco anamórfico con los dos meridianos al foco a 1,5 y 4 m (sin mover
+  el hueco, el horizontal enfoca a otra distancia, falla) y la compresión
+  2 a infinito; las celdas de la hoja y el campo de su gráfico; la línea
+  de órdenes; 1/4/16 hilos. rt-app: `POST /api/lens/info`. Los **lotes**:
+  cada carril de un lote con los bits de la muestra sola en las 15 lentes
+  que forman imagen, con y sin ajustes y remolino, lotes de 1, 3 y 8
+  (rt-core), los cilindros del adaptador (rt-cli) y las filas de la
+  baldosa, también con filtros y una fila que no es múltiplo de ocho,
+  contra `camera_sample_filtered` píxel a píxel (rt-core).
+  `tests/traced-lens.test.ts` (14): la lente de un proyecto, los tipos de
+  bokeh que la ponen, la composición (tratamiento, hueco variable,
+  adaptador y su hueco de enfoque, en otro objetivo su enfoque), el perfil
+  del visor con la escala del motor y no su focal, la información del
+  motor (y la que no lo es), `o2.rsb` byte a byte, la prescripción de la
+  página igual a la de `rt` para las 16 lentes, los ajustes, la compresión
+  del adaptador y no la de la lente fina, con el `rt.wasm` real el *hash*
+  de O2 y las 16 lentes preparadas con su escala, su corte y la compresión
+  del adaptador, la biblioteca de lentes (ida y vuelta por el fichero, una
+  clave desconocida rechazada), el corte en SVG y el mapa del perfil (la
+  identidad sin perfil, las entradas de la tabla, sin escalones entre ellas
+  —con la entrada más cercana, falla— y de ida y vuelta).
+  `tests/optics.test.ts`: los tipos de la lente trazada ponen su lente y sus
+  miniaturas están al día con la escena de la herramienta.
+  `tests/box-select.test.ts`: piezas y caras donde las pone `shown`.
+  `tests/lens-pick-browser.test.ts` (Chromium con SwiftShader, la vista
+  previa real): una pared de placas en tres colores a 24 mm a través de un
+  barril de −20 % y del ojo de pez del catálogo como lo dice el `rt.wasm`
+  real; se lee el lienzo y se pica cada píxel de color seguro (unos 32 000):
+  ninguno da otra pieza que la dibujada, y unos 5 000 muestran otra que la
+  imagen sin distorsionar (con el rayo de antes, 4 022 fallos); la lente
+  fina, sin números y la vista a través de otra cámara, la identidad (con
+  el perfil de la cámara activa, 5 010 píxeles movidos); el contorno a dos
+  píxeles del borde dibujado de la pieza (sin el mapa, el 13 %); la caja
+  alrededor de la pieza dibujada la toma (sin `shown`, no); el pase de ids
+  encuentra sus caras (sin el mapa, ninguna); y el *gizmo* da su asa en el
+  95 % de los píxeles que pinta, como sin perfil (dibujado recto o picado
+  sin el mapa, del 70 al 79 %).
+
+**No encajó con el plan.** (1) **Coste**: en la primera entrega la cámara
+trazada pasaba del 25 % (29,1 %); la regla del encargo pedía lotes antes de
+cerrar y se hicieron (arriba): 13,7 %. Los lotes son de ocho muestras en
+*arrays* que el compilador vectoriza solo (lo que medía §6.1), no con los
+tipos del módulo `simd`, que no tienen raíz cuadrada; los mismos bits en
+cada plataforma porque cada carril hace las operaciones IEEE de una
+muestra sola. La medida toma la más rápida de tres vueltas porque una sola
+vuelta, con la máquina compartida, varía mucho. (2) **Ruido**: con una banda por
+muestra (decisión 3) cada canal recibe un tercio de las muestras, y el
+rectángulo alrededor de la pupila de salida pierde del 33 al 40 % de ellas
+(el diafragma redondo dentro de su caja más una celda de margen): a igualdad
+de muestras el bokeh tiene unas cinco veces la varianza del de la lente
+fina, y la hoja renderiza los puntos a 480 muestras para que se lean.
+Muestrear las celdas que pasan (una rejilla de máscara por altura en vez
+del rectángulo) quitaría casi todo lo segundo; queda propuesto. (3) La
+**inclinación** no se traza (la lente trazada no tiene plano de lente
+girado): se apaga con una nota (*próximamente*); el descentramiento sí
+funciona. La máscara y las texturas de pupila son de la lente fina. (4) El
+**editor de lente** (O5 en la tabla, para Sonnet) venía en el encargo de O2
+y está hecho aquí; la focal, el f/ y el foco son los campos de la cámara de
+siempre, y el descentramiento sigue en *Óptica avanzada*. (5) Una **lente
+propia** guarda la clave del catálogo (estable) y sus ajustes, no una copia
+de las superficies, como el proyecto. (6) **Anamórfico**: la imagen
+conserva la proyección de O1 (el campo del objetivo, con la mitad del ancho
+del sensor), la compresión cambia con el foco, el perfil del visor es el
+del meridiano vertical y los límites de la pupila suponen simetría de
+rotación (los del objetivo, que el adaptador recorta por dentro). (7) La
+**distorsión** se mide ahora contra la escala de imagen cerca del eje: la
+medida de antes, contra la focal al foco, leía como distorsión la
+respiración a foco cercano. La **distorsión no física** tenía el signo al
+revés de lo que decía su documentación (negativa daba cojín) y los rayos
+centrales de los pases no la seguían: arreglados con su test. (8) Las
+focales de los gráficos de la hoja (las del campo de la fuente; 50 mm o
+135 mm en las tele cuando no dice ninguno; el ojo de pez a 18 mm) son
+elección mía para la hoja. (9) La miniatura de *Respiración de foco* es la
+del teleobjetivo a f/5,6: la respiración no se ve en un núcleo quieto. (10)
+Una muestra parada da ahora la cobertura de su propio rayo sin recortar en
+vez de la del rayo principal (el color no cambia ni un bit; el alfa de un
+fondo transparente, levemente). (11) **Decisiones para el veredicto**
+(regla 11), pendientes: la hoja, lente a lente (qué dan ojo de gato,
+burbuja, cremoso y remolino, y si las prescripciones y los diafragmas
+supuestos, los `stopBasis: assumed`, se quedan); el ruido de las bandas y
+la propuesta del muestreo por celdas de (2); las constantes del adaptador
+(`ADAPTER_GAP_MM` 5, `ADAPTER_CLEARANCE` 2,2, `ADAPTER_FOCUS_TRAVEL` 0,6);
+y las focales de los gráficos de la hoja de (8). (12) **El clic a través
+del perfil** llegó tras la entrega, del triaje (1.8). El mapa vale en los dos
+modos: en *Completo* la imagen es la del motor y el perfil la aproxima con
+sus propias tablas, como en *Rápido*. Los superpuestos se dibujan a un
+objetivo y de ahí al lienzo por el mapa: con SwiftShader a 800 × 600 el
+*gizmo* cuesta del orden de 30 a 60 ms más por fotograma con una lente
+trazada (en una GPU, despreciable), y sus líneas, de grosor fijo en
+píxeles, se adelgazan donde el perfil encoge la imagen. El pase de pantalla
+sostiene el borde de la imagen donde la fuente cae fuera de ella (un barril
+fuerte en las esquinas de un gran angular): el pico lanza por ese borde,
+lo que se ve; dibujar un campo más ancho para no estirar el borde queda
+propuesto.
 
 ## O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas — **Opus** (tras O1, antes de O2), veredicto **Fable** — hecha
 

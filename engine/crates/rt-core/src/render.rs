@@ -128,6 +128,65 @@ pub fn camera_sample_filtered(
     (ray, (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)), weight, path)
 }
 
+/// A camera sample: the ray, the screen position, the colour weight and what the lens's filters
+/// did ([`camera_sample_filtered`]).
+pub type CameraSample = (Ray, (f32, f32), Rgb, Option<crate::optics::FilterPath>);
+
+/// True when the camera's samples are traced through a lens in batches ([`camera_samples`]).
+pub fn camera_batches(scene: &Scene) -> bool {
+    !scene.camera.ortho
+        && scene
+            .camera
+            .lens
+            .as_ref()
+            .is_some_and(|l| l.traced().is_some())
+}
+
+/// O2: [`camera_sample_filtered`] of the pixels `pixels` for sample `index`, into `out` (one per
+/// pixel, in order): a traced lens traces them in batches, the same bits as one by one (the cost
+/// rule of the roadmap).
+pub fn camera_samples(
+    scene: &Scene,
+    pixels: &[(u32, u32)],
+    index: u32,
+    out: &mut Vec<CameraSample>,
+) {
+    out.clear();
+    let camera = &scene.camera;
+    let lens = camera.lens.as_ref().filter(|_| camera_batches(scene));
+    let Some(lens) = lens else {
+        for &(x, y) in pixels {
+            let sampler = PixelSampler::new(scene.render.seed, x, y, index);
+            out.push(camera_sample_filtered(scene, &sampler, x, y));
+        }
+        return;
+    };
+    // The sensor points as `camera_sample_filtered` draws them.
+    let (width, height) = (scene.render.width.max(1), scene.render.height.max(1));
+    let aspect = width as f32 / height as f32;
+    let filter = scene.render.pixel_filter;
+    let mut points = Vec::with_capacity(pixels.len());
+    let mut samplers = Vec::with_capacity(pixels.len());
+    for &(x, y) in pixels {
+        let sampler = PixelSampler::new(scene.render.seed, x, y, index);
+        let (du, dv) = sampler.get2(DIM_CAMERA);
+        let (du, dv) = (
+            pixel_filter::offset(filter, du),
+            pixel_filter::offset(filter, dv),
+        );
+        points.push((
+            (x as f32 + du) / width as f32,
+            (y as f32 + dv) / height as f32,
+        ));
+        samplers.push(sampler);
+    }
+    let mut lensed = Vec::with_capacity(pixels.len());
+    lens.sample_filtered_batch(camera, aspect, &points, &samplers, &mut lensed);
+    for ((ray, weight, path), (u, v)) in lensed.into_iter().zip(points) {
+        out.push((ray, (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)), weight, path));
+    }
+}
+
 /// Renders one sample of every pixel of `tile` into `film` and returns the number of rays cast
 /// (camera, extension and shadow rays).
 ///
@@ -258,14 +317,29 @@ fn render_tile_traced<T: Tracer>(
     let x_end = tile.x.saturating_add(tile.w).min(width);
     let y_end = tile.y.saturating_add(tile.h).min(height);
     let mut rays = 0u64;
+    // O2: through a traced lens, the camera samples of a row's pixels that take one sample are
+    // traced together first (the same bits as one by one).
+    let batched = camera_batches(scene);
+    let mut row_pixels: Vec<(u32, u32)> = Vec::new();
+    let mut row_samples: Vec<CameraSample> = Vec::new();
     for y in tile.y..y_end {
+        if batched {
+            row_pixels.clear();
+            row_pixels.extend(
+                (tile.x..x_end)
+                    .filter(|&x| edges.map_or(1, |e| e.factor_at(x, y)) <= 1)
+                    .map(|x| (x, y)),
+            );
+            camera_samples(scene, &row_pixels, sample_index, &mut row_samples);
+        }
+        let mut next = row_samples.drain(..);
         for x in tile.x..x_end {
             // One camera sample of index `index`: its radiance times its weight, and its alpha.
             // O3a: with the lens's filters, their scattering and their connections to the lights
             // the camera sees, weighted against each other (multiple importance sampling).
-            let one = |index: u32, rays: &mut u64| -> (Rgb, f32) {
+            let shade = |index: u32, sample: CameraSample, rays: &mut u64| -> (Rgb, f32) {
                 let sampler = PixelSampler::new(scene.render.seed, x, y, index);
-                let (ray, screen, weight, path) = camera_sample_filtered(scene, &sampler, x, y);
+                let (ray, screen, weight, path) = sample;
                 match (&path, scene.camera.lens.as_ref()) {
                     (Some(path), Some(lens)) if lens.connects() => {
                         let lights = prepared.lights().camera_lights();
@@ -300,9 +374,16 @@ fn render_tile_traced<T: Tracer>(
                     }
                 }
             };
+            let one = |index: u32, rays: &mut u64| -> (Rgb, f32) {
+                let sampler = PixelSampler::new(scene.render.seed, x, y, index);
+                shade(index, camera_sample_filtered(scene, &sampler, x, y), rays)
+            };
             let k = edges.map_or(1, |e| e.factor_at(x, y));
             if k <= 1 {
-                let (c, alpha) = one(sample_index, &mut rays);
+                let (c, alpha) = match batched.then(|| next.next()).flatten() {
+                    Some(sample) => shade(sample_index, sample, &mut rays),
+                    None => one(sample_index, &mut rays),
+                };
                 film.splat_alpha(x, y, c, alpha);
                 continue;
             }
@@ -1137,6 +1218,30 @@ mod tests {
 
     /// Pinned hash of the E6 cloth example at 4 samples per pixel.
     pub(crate) const PINNED_E6_CLOTH_4SPP: u32 = 0x53e6_a855;
+
+    #[test]
+    fn the_o2_traced_lens_has_a_pinned_hash_on_every_platform() {
+        // O2 traced the camera rays through the double Gauss of the catalogue (f/2.8, seven
+        // rounded blades, the bokeh lights of O1): the prescription at the end of LENS, prepared
+        // when the scene is read. Every hash above stays. Through an RSB round trip (the traced
+        // preparation included); `tools/wasm-parity.mjs` checks the real module against it
+        // (`rt --write-o2-example`).
+        let scene = crate::example::o2_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("O2 example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(
+                hash,
+                PINNED_O2_TRACED_4SPP,
+                "O2 traced lens on {}",
+                isa.name()
+            );
+        }
+    }
+
+    /// Pinned hash of the O2 example (the traced double Gauss) at 4 samples per pixel.
+    pub(crate) const PINNED_O2_TRACED_4SPP: u32 = 0x8f7d_0ef8;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

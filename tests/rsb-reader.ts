@@ -188,6 +188,30 @@ export function readLens(p: DataView): RsbLens {
     const f = new Cursor(new DataView(p.buffer, p.byteOffset + at, 84));
     l.filters = [0, 1, 2].map(() => ({ kind: f.u32(), grade: f.f32(), tint: [f.f32(), f.f32(), f.f32()] as [number, number, number], angleDeg: f.f32(), points: f.u32() }));
   }
+  // O2: the prescription of a traced lens after the slots, when the section goes on.
+  const tracedAt = at + 84;
+  if (p.byteLength - tracedAt >= 4) {
+    const t = new Cursor(new DataView(p.buffer, p.byteOffset + tracedAt, p.byteLength - tracedAt));
+    const count = t.u32();
+    if (count > 0) {
+      const stop = t.u32();
+      const focusMode = t.u32();
+      const [fNumberMin, m0, m1, distortion, vignetting, spherical, breathing] = [0, 1, 2, 3, 4, 5, 6].map(() => t.f32());
+      const moving = Array.from({ length: t.u32() }, () => ({ surface: t.u32(), base: t.f32(), near: t.f32() }));
+      const surfaces = Array.from({ length: count }, () => ({
+        kind: t.u32(),
+        radius: t.f32(),
+        thickness: t.f32(),
+        nd: t.f32(),
+        vd: t.f32(),
+        semiAperture: t.f32(),
+        coating: t.u32(),
+        conic: t.f32(),
+        aspheric: [t.f32(), t.f32(), t.f32(), t.f32()] as [number, number, number, number],
+      }));
+      l.prescription = { stop, focusMode, fNumberMin, magnification: [m0, m1], distortion, vignetting, spherical, breathing, moving, surfaces };
+    }
+  }
   return l;
 }
 

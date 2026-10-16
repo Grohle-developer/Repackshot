@@ -204,6 +204,13 @@ jobs:
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6c.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e6c.rsb" --expect "$expected" --passes
+          # O2: the example through the traced double Gauss (the prescription at the end of LENS, its
+          # preparation when the module reads the scene), alone and with the passes.
+          cargo run --release -p rt-cli -- --write-o2-example "$RUNNER_TEMP/o2.rsb"
+          expected=$(sed -n 's/.*PINNED_O2_TRACED_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o2.rsb" --expect "$expected" --passes
 
       - name: Passes through the page's own code (the real rt.wasm in Node)
         working-directory: .

@@ -8,7 +8,8 @@ import { STUDIO_PRESETS, studioPreset } from '../data/studios';
 import type { DoctorCheckKey, Label, Lang, StudioPreset } from '../data/types';
 import { aiFileName } from '../core/ai-post';
 import { aiImagesOf, aiVariantsOf } from '../core/results';
-import { activeCamera } from '../core/camera';
+import { activeCamera, type CameraId } from '../core/camera';
+import { opticsOf } from '../core/optics';
 import { buildExample, EXAMPLE_KEYS, type ExampleKey } from '../core/example';
 import {
   applyImportOptions,
@@ -38,8 +39,10 @@ import {
   findItem,
   fromCurrentProductType,
   fromCurrentRig,
+  fromCameraLens,
   fromCurrentStudio,
   fromMaterialInstance,
+  opticsWithLensItem,
   instanceFromItem,
   libraryIsEmpty,
   migrateSavedStudios,
@@ -52,6 +55,7 @@ import {
   type Library,
   type LibraryItem,
   type LibraryKind,
+  type LensItem,
 } from '../core/library';
 import { LIBRARY_PREFIX, isLibraryKey, presetRefOf, type NewLightKind } from '../core/lighting';
 import { resolvePreset } from '../core/rig';
@@ -1090,7 +1094,7 @@ export function selectInBox(ctx: Ctx, box: { rect: Rect; mode: BoxMode }, combin
   }
   // What shows through the rectangle; a viewport that cannot tell leaves the geometry to decide, as X-ray does.
   const visible = opts.xray ? null : port.visibleTriangles(part, box.rect);
-  const indices = facesInBox({ data, faceRanges: node.faceRanges, mvp, width: projection.width, height: projection.height, rect: box.rect, mode: box.mode, visible });
+  const indices = facesInBox({ data, faceRanges: node.faceRanges, mvp, width: projection.width, height: projection.height, shown: projection.shown, rect: box.rect, mode: box.mode, visible });
   ctx.store.dispatch({ type: 'scene/selectFaces', part, indices, mode: combine === 'replace' ? 'set' : combine });
   return indices.length;
 }
@@ -2038,6 +2042,20 @@ export async function saveProductTypeToLibrary(ctx: Ctx, name: string): Promise<
   if (!cleanName(name)) return;
   const thumb = await captureThumb(ctx);
   commitItem(ctx, (lib) => fromCurrentProductType(state, lib, name, { thumb }));
+}
+
+/** Save lens as… (O2): the camera's traced lens, its iris and artistic knobs, as a lens of one's own. */
+export function saveLensToLibrary(ctx: Ctx, camId: CameraId, name: string): void {
+  const cam = ctx.store.get().camera.cameras[camId];
+  if (!cam || !cleanName(name)) return;
+  commitItem(ctx, (lib) => fromCameraLens(lib, cam.optics, name));
+}
+
+/** Puts a lens of one's own on camera `camId` (one undo entry). */
+export function applyLibraryLens(ctx: Ctx, camId: CameraId, item: LensItem): void {
+  const cam = ctx.store.get().camera.cameras[camId];
+  if (!cam) return;
+  ctx.store.dispatch({ type: 'camera/set', id: camId, patch: { optics: opticsWithLensItem(opticsOf(cam), item) }, label: editLabel('camera', 'camera.lensChoice') });
 }
 
 export function renameLibraryItem(ctx: Ctx, kind: LibraryKind, id: string, name: string): void {

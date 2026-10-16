@@ -1,4 +1,4 @@
-// The user's own library (U4, SPEC §3.9): materials, light setups, product types and studios the person
+// The user's own library (U4, SPEC §3.9): materials, light setups, product types, studios and lenses (O2) the person
 // made and wants to reuse between projects. It is user state like the theme, not project state: it is not in
 // `ProjectState`, has no undo and is not saved in `.repack` (persistence and the JSON file are
 // `io/library.ts`; the interface holds the current value in its own state). This module is pure functions on
@@ -13,6 +13,8 @@ import { isLibraryKey, libraryKey, presetRefOf, snapshotStudio, type CustomSetup
 import { cloneInstance, defaultTextures, type MaterialInstance, type MaterialTextures } from './materials';
 import { mapGraphImages, type MaterialGraph } from './material-graph';
 import { resolvePreset, rigFromRecipe, type PresetRef } from './rig';
+import { normalizeTracedLens, type TracedLens } from './traced-lens';
+import type { CameraOptics } from './optics';
 import type { ProjectState } from './store';
 
 /** Name of the JSON envelope, shared by the file and the browser storage. */
@@ -20,8 +22,8 @@ export const LIBRARY_FORMAT = 'repackshot-library';
 /** Schema version of that envelope; `io/library.ts` migrates older ones. */
 export const LIBRARY_SCHEMA = 1;
 
-export type LibraryKind = 'material' | 'lightSetup' | 'productType' | 'studio';
-export const LIBRARY_KINDS: readonly LibraryKind[] = ['material', 'lightSetup', 'productType', 'studio'];
+export type LibraryKind = 'material' | 'lightSetup' | 'productType' | 'studio' | 'lens';
+export const LIBRARY_KINDS: readonly LibraryKind[] = ['material', 'lightSetup', 'productType', 'studio', 'lens'];
 
 /** Fields every item has. */
 export interface ItemBase {
@@ -76,14 +78,35 @@ export interface StudioItem extends ItemBase {
   studio: StudioPayload;
 }
 
-export type LibraryItem = MaterialItem | LightSetupItem | ProductTypeItem | StudioItem;
+/**
+ * A lens of one's own (O2, *Save lens as…*): a traced lens of the catalogue as the camera had it (its key, coating,
+ * variable gap, the lens behind an adapter and the artistic overrides) and the iris and the two artistic knobs of the
+ * camera's optics that go with it. The prescription is the catalogue's, by its stable key, as the project keeps it.
+ */
+export interface LensPayload {
+  traced: TracedLens;
+  blades: number;
+  roundness: number;
+  rotationDeg: number;
+  caAmount: number;
+  swirl: number;
+}
 
-/** The four collections, in insertion order. */
+export interface LensItem extends ItemBase {
+  kind: 'lens';
+  lens: LensPayload;
+}
+
+export type LibraryItem = MaterialItem | LightSetupItem | ProductTypeItem | StudioItem | LensItem;
+
+/** The collections, in insertion order. */
 export interface Library {
   materials: MaterialItem[];
   lightSetups: LightSetupItem[];
   productTypes: ProductTypeItem[];
   studios: StudioItem[];
+  /** O2: absent in a library made before it (none). */
+  lenses: LensItem[];
 }
 
 /** An item of an imported file that was not added. */
@@ -114,19 +137,20 @@ export const COLLECTION: Readonly<{ [K in LibraryKind]: keyof Library }> = {
   lightSetup: 'lightSetups',
   productType: 'productTypes',
   studio: 'studios',
+  lens: 'lenses',
 };
 
 export function emptyLibrary(): Library {
-  return { materials: [], lightSetups: [], productTypes: [], studios: [] };
+  return { materials: [], lightSetups: [], productTypes: [], studios: [], lenses: [] };
 }
 
 export function libraryIsEmpty(lib: Library): boolean {
-  return LIBRARY_KINDS.every((k) => lib[COLLECTION[k]].length === 0);
+  return LIBRARY_KINDS.every((k) => itemsOf(lib, k).length === 0);
 }
 
 /** The items of one kind. */
 export function itemsOf<K extends LibraryKind>(lib: Library, kind: K): ItemOf<K>[] {
-  return lib[COLLECTION[kind]] as unknown as ItemOf<K>[];
+  return (lib[COLLECTION[kind]] ?? []) as unknown as ItemOf<K>[];
 }
 
 /** Every item, kind by kind. */
@@ -144,7 +168,7 @@ function withItems<K extends LibraryKind>(lib: Library, kind: K, items: ItemOf<K
 
 // --- Ids and names ----------------------------------------------------------------
 
-const ID_PREFIX: Readonly<Record<LibraryKind, string>> = { material: 'mat', lightSetup: 'set', productType: 'typ', studio: 'std' };
+const ID_PREFIX: Readonly<Record<LibraryKind, string>> = { material: 'mat', lightSetup: 'set', productType: 'typ', studio: 'std', lens: 'lns' };
 
 /**
  * A fresh id for an item: kind prefix, time and a random tail, so two libraries made on two machines do not
@@ -401,4 +425,21 @@ export function migrateSavedStudios(lib: Library, saved: readonly SavedStudio[],
     next = addItem(next, { id: newItemId('studio', next, now), name, createdAt: now, kind: 'studio', studio });
   }
   return next;
+}
+
+/** The camera's traced lens as a lens of one's own (*Save lens as…*); null when the optics have no traced lens. */
+export function fromCameraLens(lib: Library, optics: CameraOptics | undefined, name: string, o: MakeOptions = {}): LensItem | null {
+  const traced = optics?.traced ? normalizeTracedLens(optics.traced) : null;
+  if (!optics || !traced) return null;
+  return {
+    ...base('lens', lib, name, traced.key, o),
+    kind: 'lens',
+    lens: { traced, blades: optics.blades, roundness: optics.roundness, rotationDeg: optics.rotationDeg, caAmount: optics.caAmount, swirl: optics.swirl },
+  };
+}
+
+/** The optics `current` with a lens of one's own on (its traced lens, iris and artistic knobs; the rest stays). */
+export function opticsWithLensItem(current: CameraOptics, item: LensItem): CameraOptics {
+  const l = item.lens;
+  return { ...current, bokeh: null, variant: null, traced: { ...l.traced }, blades: l.blades, roundness: l.roundness, rotationDeg: l.rotationDeg, caAmount: l.caAmount, swirl: l.swirl };
 }
