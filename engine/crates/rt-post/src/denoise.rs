@@ -574,9 +574,12 @@ fn filter_band(input: &DenoiseInput, n: usize, preset: Preset) -> Vec<f32> {
         }
     }
     let few = |p: usize| {
-        input.counts.get(p).map_or(samples < MIN_SAMPLES_FOR_VARIANCE, |&n| {
-            n < MIN_SAMPLES_FOR_VARIANCE as f32
-        })
+        input
+            .counts
+            .get(p)
+            .map_or(samples < MIN_SAMPLES_FOR_VARIANCE, |&n| {
+                n < MIN_SAMPLES_FOR_VARIANCE as f32
+            })
     };
     if (0..n).any(few) {
         // Too few samples for a pixel's own variance: the spread of its neighbours on the same

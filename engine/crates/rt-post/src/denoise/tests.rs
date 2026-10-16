@@ -250,7 +250,11 @@ fn each_pixel_s_own_count_weighs_its_variance_and_equal_counts_change_nothing() 
     );
     for p in 0..n {
         if s.part_id[p] == 1 {
-            assert_eq!(weighed[p * 4..p * 4 + 4], plain[p * 4..p * 4 + 4], "left {p}");
+            assert_eq!(
+                weighed[p * 4..p * 4 + 4],
+                plain[p * 4..p * 4 + 4],
+                "left {p}"
+            );
         }
     }
     // A band with its halo cuts the counts with the rest: the same rows as the whole image.
@@ -259,8 +263,8 @@ fn each_pixel_s_own_count_weighs_its_variance_and_equal_counts_change_nothing() 
     let band = s.band(y0.saturating_sub(HALO), (y1 + HALO).min(120));
     let lo = y0.saturating_sub(HALO) as usize * w;
     let hi = (y1 + HALO).min(120) as usize * w;
-    let rows = denoise_rows(&band.with_counts(&counts[lo..hi]).expect("band"), y0, y1)
-        .expect("rows");
+    let rows =
+        denoise_rows(&band.with_counts(&counts[lo..hi]).expect("band"), y0, y1).expect("rows");
     assert_eq!(
         rows[..],
         weighed[y0 as usize * w * 4..y1 as usize * w * 4],

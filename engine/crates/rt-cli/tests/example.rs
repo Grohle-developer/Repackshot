@@ -460,7 +460,9 @@ fn fnv1a_f32(values: &[f32]) -> u32 {
     values
         .iter()
         .flat_map(|v| v.to_le_bytes())
-        .fold(0x811c_9dc5u32, |h, b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193))
+        .fold(0x811c_9dc5u32, |h, b| {
+            (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+        })
 }
 
 #[test]
@@ -475,7 +477,11 @@ fn an_adaptive_render_is_the_pinned_image_with_1_4_or_16_threads() {
         assert_eq!((run.min, run.max), (16, 48), "{threads} threads");
         assert!(run.converged);
         assert_eq!(out.samples, 48);
-        assert_eq!(fnv1a_f32(&out.film.resolve()), 0x264b_4106, "{threads} threads");
+        assert_eq!(
+            fnv1a_f32(&out.film.resolve()),
+            0x264b_4106,
+            "{threads} threads"
+        );
     }
     let mut plain = scene.clone();
     plain.render.adaptive = 0;

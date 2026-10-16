@@ -1018,8 +1018,9 @@ pub fn run(command: Command) -> Result<(), String> {
                 size.0, size.1
             );
             let target = options.adaptive.unwrap_or(0.0);
-            let table =
-                crate::adaptive_noise::run(&dir, size, seconds, reference, rounds, threads, target)?;
+            let table = crate::adaptive_noise::run(
+                &dir, size, seconds, reference, rounds, threads, target,
+            )?;
             print!("{table}");
             println!("wrote {}", dir.join("noise.json").display());
             Ok(())
@@ -1340,7 +1341,8 @@ mod tests {
 
     #[test]
     fn parses_adaptive_sampling_and_its_noise_target() {
-        let Ok(Command::Render { options, .. }) = parse(&["--example", "-o", "o.png", "--adaptive"])
+        let Ok(Command::Render { options, .. }) =
+            parse(&["--example", "-o", "o.png", "--adaptive"])
         else {
             panic!("render");
         };

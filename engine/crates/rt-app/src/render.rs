@@ -1625,7 +1625,8 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
     // E10: adaptive sampling (`RNDR.adaptive`): rounds decided by the image at their ends, at
     // most `max_samples` per pixel (none for a job by time). The frames carry each pixel's sums
     // rescaled to the most samples of a pixel, so they read as before.
-    let mut adaptive = Adaptive::enabled(&scene.render).then(|| Adaptive::new(&scene.render, job.max_samples));
+    let mut adaptive =
+        Adaptive::enabled(&scene.render).then(|| Adaptive::new(&scene.render, job.max_samples));
     let (w, h) = (width as usize, height as usize);
     let (mut rgb, mut lum2_whole) = match adaptive {
         Some(_) => (vec![0.0f32; w * h * 3], vec![0.0f32; w * h]),
@@ -1705,9 +1706,7 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
         // the round's iteration (sample `j` of every block uses map `first + j`).
         let first = adaptive.as_ref().map_or(done, Adaptive::iteration);
         let warm = adaptive.as_ref().is_none_or(Adaptive::warming_up);
-        let cost = adaptive
-            .as_ref()
-            .map_or(0, |ad| ad.pass_cost(count));
+        let cost = adaptive.as_ref().map_or(0, |ad| ad.pass_cost(count));
         // Caustics (E5b-1): the photon maps of this pass's samples, before its tiles.
         let (maps, map_rays) = photon_maps(scene, prepared, first, count, side_threads, isa);
         rays += map_rays;
@@ -3097,10 +3096,8 @@ mod tests {
     fn rt_adaptive(scene: &Scene) -> (Vec<f32>, rt_cli::AdaptiveRun, rt_cli::RenderOutput) {
         let out = rt_cli::render(scene, scene.render.max_samples, 3);
         let run = out.adaptive.expect("adaptive");
-        let sums = rt_post::denoise::rgba_sums(&rt_core::adaptive::rescale_film(
-            &out.film,
-            out.samples,
-        ));
+        let sums =
+            rt_post::denoise::rgba_sums(&rt_core::adaptive::rescale_film(&out.film, out.samples));
         (sums, run, out)
     }
 
@@ -3119,7 +3116,10 @@ mod tests {
             for kind in [Kind::Final, Kind::Viewport] {
                 let job = engine.submit(kind, &scene.to_rsb(), "", "", None).unwrap();
                 let f = wait_done(&job);
-                assert_eq!(f.flags & (FLAG_DONE | FLAG_ADAPTIVE), FLAG_DONE | FLAG_ADAPTIVE);
+                assert_eq!(
+                    f.flags & (FLAG_DONE | FLAG_ADAPTIVE),
+                    FLAG_DONE | FLAG_ADAPTIVE
+                );
                 let a = f.adaptive.expect("adaptive numbers");
                 assert_eq!((a.min, a.max), (run.min, run.max), "{kind:?} on {threads}");
                 assert_eq!(f.samples, run.max);
@@ -3132,7 +3132,9 @@ mod tests {
         plain.render.adaptive = 0;
         plain.render.max_samples = 4;
         let engine = Engine::new(2);
-        let job = engine.submit(Kind::Final, &plain.to_rsb(), "", "", None).unwrap();
+        let job = engine
+            .submit(Kind::Final, &plain.to_rsb(), "", "", None)
+            .unwrap();
         let f = wait_done(&job);
         assert_eq!(f.flags & FLAG_ADAPTIVE, 0);
         assert!(f.adaptive.is_none());
@@ -3162,13 +3164,11 @@ mod tests {
         let clean = out.denoised(2).expect("guides");
         let expect = rt_post::denoise::rgba_sums(&clean);
         // The same image denoised as if every pixel had the most samples is another one.
-        let sums = rt_post::denoise::rgba_sums(&rt_core::adaptive::rescale_film(
-            &out.film,
-            out.samples,
-        ));
+        let sums =
+            rt_post::denoise::rgba_sums(&rt_core::adaptive::rescale_film(&out.film, out.samples));
         let lum2 = rt_core::adaptive::rescale_film(&out.film, out.samples).lum2;
-        let uniform =
-            denoise_sums(&sums, &lum2, passes, run.max, &[], 2, Preset::FULL, 1.0).expect("denoise");
+        let uniform = denoise_sums(&sums, &lum2, passes, run.max, &[], 2, Preset::FULL, 1.0)
+            .expect("denoise");
         assert_ne!(uniform, expect);
         for threads in [1usize, 4] {
             let engine = Engine::new(threads);
@@ -3210,20 +3210,24 @@ mod tests {
                 last_max = a.max;
                 let fit = f.fitted(40, 30);
                 assert_eq!((fit.width, fit.height), (40, 30));
-                assert_eq!(fit.flags & (FLAG_SCALED | FLAG_ADAPTIVE), FLAG_SCALED | FLAG_ADAPTIVE);
+                assert_eq!(
+                    fit.flags & (FLAG_SCALED | FLAG_ADAPTIVE),
+                    FLAG_SCALED | FLAG_ADAPTIVE
+                );
                 assert_eq!(fit.adaptive, f.adaptive);
                 // The box of output pixel (7, 5): input pixels (28..32, 20..24).
                 let mut acc = [0f32; 4];
                 for y in 20..24usize {
                     for x in 28..32usize {
-                        for c in 0..4 {
-                            acc[c] += f.sums[(y * 160 + x) * 4 + c];
+                        let px = &f.sums[(y * 160 + x) * 4..(y * 160 + x) * 4 + 4];
+                        for (a, v) in acc.iter_mut().zip(px) {
+                            *a += v;
                         }
                     }
                 }
                 let o = (5 * 40 + 7) * 4;
-                for c in 0..4 {
-                    assert_eq!(fit.sums[o + c], acc[c] * (1.0 / 16.0));
+                for (got, a) in fit.sums[o..o + 4].iter().zip(acc) {
+                    assert_eq!(*got, a * (1.0 / 16.0));
                 }
                 // Every pixel's coverage reads as opaque at the frame's samples.
                 assert!(f
@@ -3277,7 +3281,10 @@ mod tests {
             .submit(Kind::Final, &scene.to_rsb(), "", "", Some(Finish::Time))
             .unwrap();
         let f = wait_done(&job);
-        assert_eq!(f.flags & (FLAG_DONE | FLAG_ADAPTIVE), FLAG_DONE | FLAG_ADAPTIVE);
+        assert_eq!(
+            f.flags & (FLAG_DONE | FLAG_ADAPTIVE),
+            FLAG_DONE | FLAG_ADAPTIVE
+        );
         assert!(f.seconds < 5.0, "{}", f.seconds);
         // By noise: a target the example reaches soon, and a cap it does not.
         scene.render.max_seconds = 0.0;

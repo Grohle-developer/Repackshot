@@ -2274,8 +2274,10 @@ mod tests {
             (flag_only.render.adaptive, flag_only.render.noise_threshold),
             (1, 0.0)
         );
-        let odd = Scene::from_rsb(&rewrite(&|p| p[64..68].copy_from_slice(&6u32.to_le_bytes())))
-            .expect("reads");
+        let odd = Scene::from_rsb(&rewrite(&|p| {
+            p[64..68].copy_from_slice(&6u32.to_le_bytes())
+        }))
+        .expect("reads");
         assert_eq!(odd.render.adaptive, 6);
         assert!(!crate::adaptive::Adaptive::enabled(&odd.render));
         for bad in [-0.01f32, 1.5, f32::NAN] {

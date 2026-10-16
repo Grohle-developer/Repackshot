@@ -183,8 +183,7 @@ pub fn decide(
     }
     // 4. The candidates, the threshold of the moment, the blocks of the next round.
     let floor_target = if target > 0.0 { target } else { 0.0 };
-    let candidate =
-        |b: usize| block_error[b] > floor_target && (cap == 0 || counts[b] < cap);
+    let candidate = |b: usize| block_error[b] > floor_target && (cap == 0 || counts[b] < cap);
     let mut errors: Vec<f32> = (0..blocks)
         .filter(|&b| candidate(b))
         .map(|b| block_error[b])

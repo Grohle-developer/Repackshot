@@ -33,7 +33,11 @@ fn settings(width: u32, height: u32, target: f32, ev: f32) -> RenderSettings {
 fn grey(n: u32, mean: f32, spread: f32) -> ([f32; 3], f32) {
     let (mut s, mut l2) = (0.0f32, 0.0f32);
     for i in 0..n {
-        let v = if i % 2 == 0 { mean + spread } else { mean - spread };
+        let v = if i % 2 == 0 {
+            mean + spread
+        } else {
+            mean - spread
+        };
         s += v;
         l2 += v * v;
     }
@@ -62,7 +66,10 @@ fn the_error_of_a_pixel_is_the_relative_error_of_its_mean() {
     // Unmeasurable: fewer than two samples, a non-finite sum.
     assert_eq!(pixel_error(1.0, 1.0, 1.0, 1.0, 1, floor), UNMEASURED);
     assert_eq!(pixel_error(f32::NAN, 1.0, 1.0, 1.0, 8, floor), UNMEASURED);
-    assert_eq!(pixel_error(1.0, 1.0, 1.0, f32::INFINITY, 8, floor), UNMEASURED);
+    assert_eq!(
+        pixel_error(1.0, 1.0, 1.0, f32::INFINITY, 8, floor),
+        UNMEASURED
+    );
 }
 
 /// A `width × height` image whose pixels left of `split` are noisy (±`spread` around 0.5) and the
@@ -115,7 +122,18 @@ fn the_next_round_goes_to_the_noisy_blocks_above_the_median() {
     assert_eq!((d.round, d.max_error), (0, 0.0));
     // Blocks at the cap are no candidates.
     let (sums, lum2) = half_noisy(w, h, 32, 0.2, 16);
-    let d = decide(w, h, &counts, &sums, 4, &lum2, EPSILON, 0.0, 16, &mut active);
+    let d = decide(
+        w,
+        h,
+        &counts,
+        &sums,
+        4,
+        &lum2,
+        EPSILON,
+        0.0,
+        16,
+        &mut active,
+    );
     assert_eq!(d.round, 0);
 }
 
@@ -142,7 +160,18 @@ fn a_noisier_block_wins_and_few_active_blocks_take_longer_rounds() {
     let mut counts = vec![16u32; 64];
     let (sums, lum2) = one_noisy_block(&counts);
     let mut active = vec![false; 64];
-    let d = decide(64, 64, &counts, &sums, 3, &lum2, EPSILON, 0.06, 0, &mut active);
+    let d = decide(
+        64,
+        64,
+        &counts,
+        &sums,
+        3,
+        &lum2,
+        EPSILON,
+        0.06,
+        0,
+        &mut active,
+    );
     assert_eq!(d.active, 1, "{d:?}");
     assert!(active[0]);
     // 64 blocks / (4 × 1) is 16 times the round, but block 0 has 16 samples: 16.
@@ -151,17 +180,53 @@ fn a_noisier_block_wins_and_few_active_blocks_take_longer_rounds() {
     // 16 × 16 samples.
     counts[0] = 400;
     let (sums400, lum400) = one_noisy_block(&counts);
-    let d = decide(64, 64, &counts, &sums400, 3, &lum400, EPSILON, 0.02, 0, &mut active);
+    let d = decide(
+        64,
+        64,
+        &counts,
+        &sums400,
+        3,
+        &lum400,
+        EPSILON,
+        0.02,
+        0,
+        &mut active,
+    );
     assert_eq!(d.active, 1, "{d:?}");
     assert!(active[0]);
     assert_eq!(d.round, ROUND * MAX_ROUND_FACTOR);
     // With a target, the time estimate counts what the noisy blocks still need, at most to the
     // cap.
     counts[0] = 16;
-    let d = decide(64, 64, &counts, &sums, 3, &lum2, EPSILON, 0.01, 0, &mut active);
+    let d = decide(
+        64,
+        64,
+        &counts,
+        &sums,
+        3,
+        &lum2,
+        EPSILON,
+        0.01,
+        0,
+        &mut active,
+    );
     assert!(d.remaining > 64.0 * 16.0 * 200.0, "{d:?}");
-    let capped = decide(64, 64, &counts, &sums, 3, &lum2, EPSILON, 0.01, 100, &mut active);
-    assert!(capped.remaining > 0.0 && capped.remaining <= 4.0 * 84.0 * 64.0, "{capped:?}");
+    let capped = decide(
+        64,
+        64,
+        &counts,
+        &sums,
+        3,
+        &lum2,
+        EPSILON,
+        0.01,
+        100,
+        &mut active,
+    );
+    assert!(
+        capped.remaining > 0.0 && capped.remaining <= 4.0 * 84.0 * 64.0,
+        "{capped:?}"
+    );
 }
 
 #[test]
@@ -206,7 +271,11 @@ fn the_work_of_a_pass_covers_every_active_block_once_with_any_tiles() {
                     7 => 10,
                     _ => 0,
                 };
-                assert_eq!(covered[(y * 37 + x) as usize], want, "({x}, {y}) of tiles {size}");
+                assert_eq!(
+                    covered[(y * 37 + x) as usize],
+                    want,
+                    "({x}, {y}) of tiles {size}"
+                );
             }
         }
     }
@@ -351,7 +420,11 @@ fn every_pixel_of_an_adaptive_image_is_the_plain_mean_of_its_own_samples() {
         for (p, &n) in counts.iter().enumerate() {
             if n as u32 == s + 1 {
                 assert_eq!(film.weight[p], n);
-                assert_eq!(film.rgb[p * 3..p * 3 + 3], plain.rgb[p * 3..p * 3 + 3], "pixel {p}");
+                assert_eq!(
+                    film.rgb[p * 3..p * 3 + 3],
+                    plain.rgb[p * 3..p * 3 + 3],
+                    "pixel {p}"
+                );
                 assert_eq!(film.lum2[p], plain.lum2[p], "pixel {p}");
                 checked += 1;
             }
@@ -383,7 +456,12 @@ pub(crate) const PINNED_E10_SAMPLES: (u32, u32) = (16, 48);
 
 /// A synthetic image for the cross test of the decision with the page's port: per pixel a colour
 /// and a spread from an integer hash of the pixel and `round`, the sums of `counts` samples of it.
-pub(crate) fn synthetic(ad: &Adaptive, width: u32, height: u32, round: u32) -> (Vec<f32>, Vec<f32>) {
+pub(crate) fn synthetic(
+    ad: &Adaptive,
+    width: u32,
+    height: u32,
+    round: u32,
+) -> (Vec<f32>, Vec<f32>) {
     let hash = |mut x: u32| {
         x ^= x >> 16;
         x = x.wrapping_mul(0x7feb_352d);

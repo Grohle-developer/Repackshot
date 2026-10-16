@@ -358,7 +358,9 @@ pub fn render_until(
         }
         pass = (pass * 2).min(MAX_PASS_SAMPLES);
     }
-    finish(width, height, films, pass_films, mask, done, rays, start, None)
+    finish(
+        width, height, films, pass_films, mask, done, rays, start, None,
+    )
 }
 
 /// Puts the tile films (and the passes) of a render together.
