@@ -42,6 +42,11 @@
 //! is over); turned off, the next frame is the noisy accumulation. Every frame carries the number
 //! of its image ([`Frame::version`]), so a page that follows a job hears of a new denoised image
 //! without a new pass. A final job denoises once, at its end, with the full filter, as before.
+//!
+//! **Live view** (U14): the queue's live view of a final follows its passes like the page's Render
+//! does and, at its own cadence, asks for the frame of the newest pass scaled down to its box
+//! (`fit=` of `GET /api/render/<id>`, [`Frame::fitted`]: the sums averaged by a whole factor on
+//! the request's own thread), so only the picture's pixels travel; the job renders as before.
 
 use crate::kept::{KeepLimits, Kept, KeptRender, Look, PassesBody};
 use rt_core::caustics::{Photon, PhotonMap};
@@ -139,6 +144,26 @@ pub const FLAG_NOISY: u32 = 128;
 /// Frame flag (E5b-1): the image has caustics from the photon map (`RNDR.caustic_photons`, and the
 /// scene has something that focuses light and a light that sends photons).
 pub const FLAG_CAUSTICS: u32 = 256;
+/// Frame flag (U14): the sums are scaled down by a whole factor ([`Frame::fitted`], `fit=` of
+/// `GET /api/render/<id>`): the header's width and height are the scaled picture's.
+pub const FLAG_SCALED: u32 = 512;
+/// Largest side a `fit=` box may ask for.
+pub const MAX_FIT: u32 = 16384;
+
+/// U14: the smallest whole factor `k` that fits a `width x height` image in `max_w x max_h`
+/// (`fitFactor` of `src/core/live-frame.ts`): the scaled image is `ceil(width / k) x ceil(height
+/// / k)`; 1 when it fits as it is.
+pub fn fit_factor(width: u32, height: u32, max_w: u32, max_h: u32) -> u32 {
+    let (bw, bh) = (max_w.max(1), max_h.max(1));
+    width.div_ceil(bw).max(height.div_ceil(bh)).max(1)
+}
+
+/// U14: a `fit=<w>x<h>` box, each side 1..=[`MAX_FIT`].
+pub fn parse_fit(text: &str) -> Option<(u32, u32)> {
+    let (w, h) = text.split_once('x')?;
+    let side = |v: &str| v.parse::<u32>().ok().filter(|n| (1..=MAX_FIT).contains(n));
+    Some((side(w)?, side(h)?))
+}
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -398,6 +423,52 @@ impl Frame {
     /// True when there are no sums yet.
     pub fn is_empty(&self) -> bool {
         self.sums.is_empty()
+    }
+
+    /// U14: the frame scaled down to fit `max_w x max_h` by a whole factor ([`fit_factor`]), for
+    /// the queue's live view: each scaled pixel's sums are the mean of the sums of the pixels of
+    /// its box that are inside the image (every pixel has the same samples at the end of a pass,
+    /// so the mean of their sums is the sum of their means, and `samples` still holds), the
+    /// header's size is the scaled one and [`FLAG_SCALED`] is set. The sums without denoise are
+    /// left out (a picture to watch has one image). A frame that fits, or has no sums yet, comes
+    /// back as it is (without `FLAG_SCALED`).
+    pub fn fitted(&self, max_w: u32, max_h: u32) -> Frame {
+        let k = fit_factor(self.width, self.height, max_w, max_h);
+        let (w, h) = (self.width as usize, self.height as usize);
+        if k == 1 || self.sums.len() != w * h * 4 {
+            return self.clone();
+        }
+        let s = k as usize;
+        let (ow, oh) = (w.div_ceil(s), h.div_ceil(s));
+        let mut out = vec![0f32; ow * oh * 4];
+        for oy in 0..oh {
+            let (y0, y1) = (oy * s, ((oy + 1) * s).min(h));
+            for ox in 0..ow {
+                let (x0, x1) = (ox * s, ((ox + 1) * s).min(w));
+                let mut acc = [0f32; 4];
+                for y in y0..y1 {
+                    let row = &self.sums[(y * w + x0) * 4..(y * w + x1) * 4];
+                    for px in row.chunks_exact(4) {
+                        for (a, v) in acc.iter_mut().zip(px) {
+                            *a += v;
+                        }
+                    }
+                }
+                let inv = 1.0 / ((y1 - y0) * (x1 - x0)) as f32;
+                let o = (oy * ow + ox) * 4;
+                for (d, a) in out[o..o + 4].iter_mut().zip(acc) {
+                    *d = a * inv;
+                }
+            }
+        }
+        Frame {
+            width: ow as u32,
+            height: oh as u32,
+            flags: (self.flags | FLAG_SCALED) & !FLAG_NOISY,
+            sums: Arc::new(out),
+            noisy: None,
+            ..self.clone()
+        }
     }
 }
 
@@ -2124,6 +2195,93 @@ mod tests {
             }
             assert!(Instant::now() < deadline, "job {} did not finish", job.id);
         }
+    }
+
+    /// A frame of `w x h` whose sums say where each value is: pixel `p`, channel `c` is
+    /// `p * 4 + c`, with the sums without denoise after them.
+    fn counting_frame(w: u32, h: u32) -> Frame {
+        let n = (w * h * 4) as usize;
+        Frame {
+            pass: 3,
+            samples: 7,
+            width: w,
+            height: h,
+            seconds: 1.5,
+            flags: FLAG_DENOISED | FLAG_NOISY,
+            max_samples: 16,
+            threads: 4,
+            rays: 99,
+            sums: Arc::new((0..n).map(|i| i as f32).collect()),
+            noisy: Some(Arc::new(vec![-1.0; n])),
+            version: 3,
+        }
+    }
+
+    #[test]
+    fn a_fit_box_takes_the_smallest_whole_factor() {
+        // U14: the rule of the page's `fitFactor` (core/live-frame.ts).
+        assert_eq!(fit_factor(1920, 1080, 1280, 800), 2);
+        assert_eq!(fit_factor(1920, 1080, 1920, 1080), 1);
+        assert_eq!(fit_factor(1920, 1080, 4000, 4000), 1);
+        assert_eq!(fit_factor(1920, 1080, 600, 600), 4);
+        assert_eq!(fit_factor(5, 3, 2, 2), 3);
+        assert_eq!(fit_factor(5, 3, 0, 0), 5);
+        assert_eq!(parse_fit("1280x800"), Some((1280, 800)));
+        for bad in [
+            "", "x", "0x10", "10x0", "10", "10x", "ax10", "16385x10", "10x-1",
+        ] {
+            assert_eq!(parse_fit(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_fitted_frame_averages_the_sums_of_its_boxes() {
+        // 5 x 3 into a 3 x 2 box: k = 2, a picture of 3 x 2 whose last column and row have
+        // boxes cut by the edge, averaged over the pixels inside the image only.
+        let f = counting_frame(5, 3);
+        let s = f.fitted(3, 2);
+        assert_eq!((s.width, s.height), (3, 2));
+        assert_eq!(s.flags, FLAG_DENOISED | FLAG_SCALED);
+        assert!(s.noisy.is_none());
+        assert_eq!(
+            (s.pass, s.samples, s.max_samples, s.seconds, s.version),
+            (3, 7, 16, 1.5, 3)
+        );
+        let at = |x: usize, y: usize, c: usize| f.sums[(y * 5 + x) * 4 + c];
+        let mean = |xs: &[(usize, usize)], c: usize| -> f32 {
+            xs.iter().map(|&(x, y)| at(x, y, c)).sum::<f32>() / xs.len() as f32
+        };
+        let boxes: [&[(usize, usize)]; 6] = [
+            &[(0, 0), (1, 0), (0, 1), (1, 1)],
+            &[(2, 0), (3, 0), (2, 1), (3, 1)],
+            &[(4, 0), (4, 1)],
+            &[(0, 2), (1, 2)],
+            &[(2, 2), (3, 2)],
+            &[(4, 2)],
+        ];
+        for (i, b) in boxes.iter().enumerate() {
+            for c in 0..4 {
+                assert_eq!(s.sums[i * 4 + c], mean(b, c), "box {i} channel {c}");
+            }
+        }
+        // The bytes say so too: the header's size is the picture's, the data that many sums.
+        let mut out = Vec::new();
+        s.write(true, &mut out).unwrap();
+        assert_eq!(out.len(), FRAME_HEADER + 3 * 2 * 4 * 4);
+        let back = Frame::read(&out).unwrap();
+        assert_eq!((back.width, back.height), (3, 2));
+        assert_eq!(back.flags & FLAG_SCALED, FLAG_SCALED);
+        assert_eq!(back.sums, s.sums);
+        // A frame that fits, or has no sums yet, is not touched.
+        let fits = f.fitted(5, 3);
+        assert_eq!((fits.width, fits.height, fits.flags), (5, 3, f.flags));
+        assert!(Arc::ptr_eq(&fits.sums, &f.sums));
+        let empty = Frame {
+            sums: Arc::new(Vec::new()),
+            noisy: None,
+            ..counting_frame(5, 3)
+        };
+        assert_eq!(empty.fitted(2, 2).width, 5);
     }
 
     #[test]

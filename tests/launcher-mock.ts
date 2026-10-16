@@ -5,7 +5,8 @@
 // leaves responses unread runs out of connections and every later request waits for ever, which is what
 // stopped Full mode, Render and Pause on the desktop (v0.1.0).
 
-import { FLAG_CANCELLED, FLAG_DATA, FLAG_DENOISED, FLAG_DONE, FLAG_PAUSED, FLAG_SHARED, FRAME_HEADER } from '../src/render/native';
+import { fitFactor } from '../src/core/live-frame';
+import { FLAG_CANCELLED, FLAG_DATA, FLAG_DENOISED, FLAG_DONE, FLAG_PAUSED, FLAG_SCALED, FLAG_SHARED, FRAME_HEADER } from '../src/render/native';
 
 export interface MockJob {
   id: number;
@@ -79,6 +80,8 @@ export class LauncherMock {
   doneApart = false;
   /** The newest viewport job posted. */
   lastViewport = 0;
+  /** U14: every frame sent scaled for a live view (`fit=`), with the picture's size. */
+  readonly fitted: { id: number; width: number; height: number }[] = [];
   private lastSeq = new Map<string, number>();
   private polls = new Map<number, number>();
 
@@ -218,6 +221,10 @@ export class LauncherMock {
       return this.json(200, { id: job.id, on, version: job.version });
     }
     if (method === 'GET' && m) {
+      // U14: a live view's box (server.rs `get_render`): refused when it is not `<w>x<h>`, 1..16384 each.
+      const fitText = url.searchParams.get('fit');
+      const fit = fitText === null ? null : /^(\d+)x(\d+)$/.exec(fitText);
+      if (fitText !== null && (!fit || [fit[1], fit[2]].some((v) => Number(v) < 1 || Number(v) > 16384))) return this.json(400, { error: 'bad-query', message: 'fit=<w>x<h>, 1 to 16384 each' });
       const id = Number(m[1]);
       if (this.forget.delete(id)) this.jobs.delete(id);
       const job = this.jobs.get(id);
@@ -255,10 +262,16 @@ export class LauncherMock {
       const extra = job.kind === 'viewport' ? this.viewportFlags & (FLAG_PAUSED | FLAG_SHARED) : 0;
       const threads = job.kind === 'viewport' && extra ? this.viewportThreads : 8;
       // With `version` the sums come only for a newer image (render.rs, server.rs `get_render`).
-      const data = url.searchParams.get('data') !== '0' && (seen === null || job.version > seen);
-      const sums = data ? new Float32Array(job.width * job.height * 4).fill(job.samples) : undefined;
+      const data = url.searchParams.get('data') !== '0' && (seen === null || job.version > seen) && job.pass > 0;
+      // U14: with `fit=` and sums, the picture scaled down by a whole factor (render.rs `Frame::fitted`; these sums are
+      // all the same value, so their mean is that value), its size in the header and FLAG_SCALED.
+      const k = fit && data ? fitFactor(job.width, job.height, { width: Number(fit[1]), height: Number(fit[2]) }) : 1;
+      const width = Math.ceil(job.width / k);
+      const height = Math.ceil(job.height / k);
+      if (fit && data) this.fitted.push({ id, width, height });
+      const sums = data ? new Float32Array(width * height * 4).fill(job.samples) : undefined;
       const denoised = job.denoised ? FLAG_DENOISED : 0;
-      return { status: 200, body: frameBytes({ pass: job.pass, samples: job.samples, width: job.width, height: job.height, flags: done | extra | denoised | (data ? FLAG_DATA : 0), threads, version: job.version, ...(sums ? { sums } : {}) }) };
+      return { status: 200, body: frameBytes({ pass: job.pass, samples: job.samples, width, height, flags: done | extra | denoised | (data ? FLAG_DATA : 0) | (k > 1 ? FLAG_SCALED : 0), threads, version: job.version, ...(sums ? { sums } : {}) }) };
     }
     return this.json(404, { error: 'not-found', message: 'no such endpoint' });
   }

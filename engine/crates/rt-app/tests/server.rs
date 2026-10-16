@@ -644,3 +644,67 @@ fn a_long_polled_frame_nobody_reads_frees_its_connection() {
     );
     drop(s);
 }
+
+#[test]
+fn a_final_s_frame_comes_scaled_to_the_live_view_s_box() {
+    // U14: the queue's live view asks for a final's frame with `fit=`: the sums come averaged by a
+    // whole factor (here 64 x 48 into 16 x 16: k = 4, a 16 x 12 picture), the header says the
+    // picture's size and FLAG_SCALED, and a header alone or a bad box change nothing / are refused.
+    use rt_app::render::{Frame, FLAG_DATA, FLAG_DONE, FLAG_SCALED, FRAME_HEADER};
+    let t = TestServer::start("live-fit", 2);
+    let id = job_id(
+        &t,
+        "/api/render?kind=final&mesh=e&full=1",
+        &empty_scene(3, 64, 48),
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let whole = loop {
+        let r = t.api("GET", &format!("/api/render/{id}"), b"");
+        assert_eq!(r.status, 200);
+        let f = Frame::read(&r.body).unwrap();
+        if f.flags & FLAG_DONE != 0 {
+            break f;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the final did not end"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!((whole.width, whole.height, whole.samples), (64, 48, 3));
+    let r = t.api("GET", &format!("/api/render/{id}?fit=16x16"), b"");
+    assert_eq!(r.status, 200);
+    assert_eq!(r.body.len(), FRAME_HEADER + 16 * 12 * 4 * 4);
+    let flags = u32::from_le_bytes(r.body[28..32].try_into().unwrap());
+    assert_eq!(flags & (FLAG_DATA | FLAG_SCALED), FLAG_DATA | FLAG_SCALED);
+    let scaled = Frame::read(&r.body).unwrap();
+    assert_eq!(
+        (scaled.width, scaled.height, scaled.samples),
+        (16, 12, whole.samples)
+    );
+    assert_eq!(scaled.sums, whole.fitted(16, 16).sums);
+    // Pixel (1, 2) of the picture is the mean of pixels (4..8, 8..12) of the render.
+    for c in 0..4 {
+        let mut sum = 0f32;
+        for y in 8..12 {
+            for x in 4..8 {
+                sum += whole.sums[(y * 64 + x) * 4 + c];
+            }
+        }
+        assert_eq!(scaled.sums[(2 * 16 + 1) * 4 + c], sum * (1.0 / 16.0));
+    }
+    // A header alone keeps the render's size; a bad box is refused.
+    let head = t.api("GET", &format!("/api/render/{id}?fit=16x16&data=0"), b"");
+    assert_eq!(head.body.len(), FRAME_HEADER);
+    let h = Frame::read(&head.body).unwrap();
+    assert_eq!((h.width, h.height, h.flags & FLAG_SCALED), (64, 48, 0));
+    for bad in ["0x10", "16", "16x99999", "ax3"] {
+        let r = t.api("GET", &format!("/api/render/{id}?fit={bad}"), b"");
+        assert_eq!(r.status, 400, "{bad}");
+        assert!(r.text().contains("bad-query"), "{}", r.text());
+    }
+    assert_eq!(
+        t.api("DELETE", &format!("/api/render/{id}"), b"").status,
+        204
+    );
+}

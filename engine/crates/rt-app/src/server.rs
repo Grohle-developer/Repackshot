@@ -20,7 +20,9 @@ use crate::http::{read_request, write_response, Body, ReadError, Request, Respon
 use crate::json::{self, Value};
 use crate::models::{Store, StoreError};
 use crate::paths::Paths;
-use crate::render::{has_meshes, Engine, Finish, Kind, Options as JobOptions, SubmitError};
+use crate::render::{
+    has_meshes, parse_fit, Engine, Finish, Kind, Options as JobOptions, SubmitError,
+};
 use crate::static_files;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -510,8 +512,17 @@ impl App {
     /// [`LONG_POLL`]) for a newer pass, the end, or a change in how it shares the threads; with
     /// `version=<n>` too (U11), also for a newer image (a live viewport's denoised one, or its
     /// switch turned), and the sums come only when the image is newer than `n` (without it, only
-    /// with a newer pass). `data=0`: the header only.
+    /// with a newer pass). `data=0`: the header only. `fit=<w>x<h>` (U14, the queue's live view):
+    /// the sums scaled down by a whole factor to fit that box ([`crate::render::Frame::fitted`], with
+    /// `FLAG_SCALED` and the scaled size in the header); without sums it changes nothing.
     fn get_render(&self, req: &Request, id: &str) -> Response {
+        let fit = match req.query("fit") {
+            None => None,
+            Some(text) => match parse_fit(text) {
+                Some(fit) => Some(fit),
+                None => return Response::error(400, "bad-query", "fit=<w>x<h>, 1 to 16384 each"),
+            },
+        };
         let Some(job) = id.parse::<u32>().ok().and_then(|id| self.engine.job(id)) else {
             return Response::error(404, "not-found", "no such job");
         };
@@ -530,6 +541,11 @@ impl App {
                 (None, Some(n)) => frame.pass > n,
                 (None, None) => true,
             };
+        // Scaled only when the sums go out: a header alone keeps the image's size.
+        let frame = match fit {
+            Some((w, h)) if data => frame.fitted(w, h),
+            _ => frame,
+        };
         Response {
             status: 200,
             headers: vec![("Content-Type".into(), "application/octet-stream".into())],

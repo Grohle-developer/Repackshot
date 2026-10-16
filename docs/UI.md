@@ -1100,6 +1100,27 @@ mientras el trabajo pausado aún se está parando no se pierde. Los
 terminados quedan en la lista con su miniatura; clic abre el visor de
 resultados.
 
+**Vista en vivo** (U14, petición del usuario: «al irme a queue quiero poder
+ver un preview en tiempo real de un render seleccionado»). Clic (o `⏎`) en la
+fila de un trabajo que **se renderiza** abre su imagen **mientras se hace**: el
+visor de resultados en modo *en curso* (§2.8), sobre el visor, con el cajón
+abierto debajo; la fila elegida se marca (fondo de pasar el ratón y una barra
+de tinta a la izquierda) y su texto emergente dice *Ver cómo se renderiza*.
+Clic en uno **en espera** abre lo mismo con una línea en lugar de la imagen:
+*Este trabajo aún no ha empezado: su imagen aparecerá aquí en cuanto se
+renderice*; cuando la cola llega a él, la imagen aparece sola. Un **terminado**
+sigue abriendo su resultado, y un trabajo que acaba con la vista en vivo
+abierta sobre él **pasa a ser su resultado** en el visor (como *Mostrar al
+terminar*). Uno detenido o que falló lo dice (*Este trabajo se detuvo antes de
+terminar*, *El render falló: <motivo>*); uno que se quita de la cola se lleva
+su vista. Se ve como mucho **una imagen nueva cada medio segundo** (en el
+escritorio, una por pasada del lanzador: más espaciadas en un render grande), y
+solo mientras la vista está abierta sobre ese trabajo y la pestaña se ve:
+cerrarla (*Cerrar*, `Esc`) o elegir otro trabajo hace que el motor deje de
+hacerlas.
+Captura (`tools/queue-live-check.mjs`): `docs/ui/queue-live.png` y
+`docs/ui/queue-live-dark.png`.
+
 ### 2.6 · Barra de estado
 
 24 px, texto auxiliar: a la izquierda el **Doctor** (un punto relleno y
@@ -1541,6 +1562,25 @@ van en el mismo registro de IndexedDB; en escritorio, `<datos>/results/<id>.ai.<
 antes se lee como la variante 1). `tools/ai-post-check.mjs` (j) mide también la tira:
 una línea propia, sin solapes, a 1600, 1280 y 960 px. Captura:
 `docs/ui/ai-results-variants.png`.
+
+**En curso (U14).** El mismo sitio enseña un trabajo de la cola **mientras se
+renderiza** (§2.5, *Vista en vivo*): la cabecera con la ficha **En vivo**, el
+nombre del archivo que saldrá, una línea de datos con lo que dice el motor
+(*1280 × 720 · 15 de 96 muestras · 0:14 · Cámara 1*; con *Terminar por
+tiempo*, *15 muestras · 0:14 de 1:00*; antes de la primera imagen, solo el
+tamaño y la cámara), a la derecha el estado de la fila con su progreso
+(*Renderizando · 19 %*, *Fotograma 3 de 48*, *IA · mosaico 2 de 4 · intento 1
+de 4*) y su barra, una nota (*Su imagen a medida que el motor suma muestras; el
+resultado se abre aquí al terminar*) y *Cerrar* (`Esc`). Debajo, la imagen a la
+proporción del render, todo lo grande que quepa, sobre el damero neutro donde
+el render es transparente. La imagen es la del motor reducida por un factor
+entero a lo que cabe (como mucho 960 × 600 píxeles de pantalla; en cajas de más de 2 × 2 píxeles, la media de cuatro de ellos) y se amplía
+suavemente: es para ver cómo llega, no para juzgar sus píxeles (eso, el visor de
+resultados al terminar, con zoom). En la web, la acumulación del *pool* tal
+como va, cada baldosa con sus muestras (en la primera pasada aparecen baldosa a
+baldosa; los números son las muestras que ya tienen todos los píxeles); en el
+escritorio, la pasada que el lanzador acaba de publicar, reducida en el
+lanzador (`fit=`). Sin zoom ni comparación: llegan con el resultado.
 
 ### 2.9 · Ventana de Ajustes
 
