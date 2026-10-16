@@ -2832,8 +2832,8 @@ teselas de dos tamaños; con el *flag* apagado, `0x223515c3` intacto.
 --samples 4096 --rounds 3 --threads 4`, `crates/rt-cli/src/adaptive_noise.rs`):
 las dos escenas de la hoja de E5b-1 (la receta *clave sola* sobre la pieza
 de ejemplo y el frasco de vidrio a contraluz) a 480 × 360; la referencia,
-dos renders uniformes de 4096 muestras (semillas 1000 y 2000; 349 s y
-425 s), cuyo propio relMSE (la mitad del de una contra otra: 3,6·10⁻⁶ en la
+dos renders uniformes de 4096 muestras (semillas 1000 y 2000; el primero,
+349 s en la clave sola y 425 s en el frasco), cuyo propio relMSE (la mitad del de una contra otra: 3,6·10⁻⁶ en la
 clave sola, 4,7·10⁻⁵ en el frasco) se resta; tres rondas (semillas 1–3) de
 un render uniforme de 20 s, uno adaptativo de 20 s y uno adaptativo hasta
 los mismos rayos que el uniforme, sin objetivo de ruido (las muestras solo
