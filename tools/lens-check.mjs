@@ -11,8 +11,8 @@
 //               its source;
 //   info        the engine's numbers (focal length, back focus, f-number and T-stop, elements and groups...), the
 //               distortion and falloff curves and the cross-section (an SVG with the glass) show;
-//   character   the Swirl chip lists the Petzval; choosing it is one undo entry ("Camera: Lens") and the numbers
-//               follow (its four elements);
+//   character   the Swirl chip lists the Petzval; choosing it from the lens list (the interface's own menu) is one undo
+//               entry ("Camera: Lens") and the numbers follow (its four elements);
 //   adapter     the anamorphic adapter shows the lens behind it and the engine's squeeze;
 //   soft        the soft-focus lens shows its variable gap, and moving it is one undo entry;
 //   advanced    Advanced shows the artistic knobs under NOT PHYSICAL, and one moved is one undo entry;
@@ -105,8 +105,7 @@ const read = (page) =>
       model: pressed('[aria-label="Lens model"] button'),
       tracedShown: !!box && box.style.display !== 'none',
       chips: pressed('[data-lens-characters] .chip'),
-      options: select ? [...select.options].map((o) => o.value).filter(Boolean) : [],
-      lens: select?.value ?? null,
+      lens: select?.getAttribute('data-value') ?? null,
       source: sub?.querySelector('[data-lens-source]')?.textContent ?? '',
       values,
       infoState: sub?.querySelector('[data-lens-info-state]')?.getAttribute('data-lens-info-state') ?? null,
@@ -127,6 +126,16 @@ async function waitInfo(page) {
     await settle(page, 150);
   }
   return read(page);
+}
+
+/** Opens the lens list (the interface's own menu, O2b), returns the keys it offers, and chooses `pick` (or closes it with Escape). */
+async function lensList(page, sub, pick) {
+  await sub.locator('[data-lens-select]').click();
+  await page.waitForSelector('.menu-item[data-value]');
+  const options = await page.$$eval('.menu-item[data-value]', (els) => els.map((e) => e.getAttribute('data-value')));
+  if (pick) await page.locator(`.menu-item[data-value="${pick}"]`).click();
+  else await page.keyboard.press('Escape');
+  return options;
 }
 
 let server = null;
@@ -178,22 +187,21 @@ try {
 
   await sub.locator('[data-character="swirl"]').click();
   await settle(page, 300);
-  const opts = (await read(page)).options;
-  await sub.locator('[data-lens-select]').selectOption('petzval_portrait');
+  const opts = await lensList(page, sub, 'petzval_portrait');
   await settle(page, 400);
   const r3 = await waitInfo(page);
   check('character', opts.includes('petzval_portrait') && r3.lens === 'petzval_portrait' && r3.undo?.includes('Lens') && r3.values['camera.lensInfoElements'] === '4 · 3', { opts, lens: r3.lens, undo: r3.undo, elements: r3.values['camera.lensInfoElements'] });
 
   await sub.locator('[data-character="anamorphic"]').click();
   await settle(page, 300);
-  await sub.locator('[data-lens-select]').selectOption('anamorphic_adapter_2x');
+  await lensList(page, sub, 'anamorphic_adapter_2x');
   await settle(page, 400);
   const r4 = await waitInfo(page);
   check('adapter', r4.master && /×/.test(r4.values['camera.lensInfoSqueeze'] ?? ''), { master: r4.master, squeeze: r4.values['camera.lensInfoSqueeze'] });
 
   await sub.locator('[data-character="soft"]').click();
   await settle(page, 300);
-  await sub.locator('[data-lens-select]').selectOption('soft_focus_variable');
+  await lensList(page, sub, 'soft_focus_variable');
   await settle(page, 600);
   const gap = sub.locator('[data-lens-own] input[type="range"]').first();
   const hasGap = (await gap.count()) === 1;

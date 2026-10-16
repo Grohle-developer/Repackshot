@@ -12,21 +12,16 @@ import { itemsOf, type LensItem } from '../../core/library';
 import { OPTICS_LIMITS, OPTICS_NEUTRAL, opticsOf, tracedOf, type CameraOptics } from '../../core/optics';
 import { DEFAULT_MASTER, isAdapter, masterLenses, newTracedLens, TRACED_LIMITS, type EngineLensInfo, type TracedLens } from '../../core/traced-lens';
 import { COATINGS, LENS_CHARACTERS, LENS_PRESCRIPTIONS, lensPrescription, type LensCharacter, type LensPrescription } from '../../data/lenses';
+import { createLensPeek } from '../components/lens-peek';
 import { lensSectionSvg, profileChartSvg } from '../components/lens-section';
+import { pickMenu } from '../components/pick-menu';
 import * as cmd from '../commands';
 import { field, numberField, segmented, select, slider, type Control } from '../components/controls';
 import { mineEmpty, mineRows, namePrompt } from '../components/library';
 import { h } from '../dom';
+import { lensPeekCache, lensSourceLine, sensorHalf, type PeekAnswer } from '../lens-peek';
 import { type Ctx, type Scope } from '../reactive';
-import { dyn } from '../names';
 import { formatNumber, lbl, t, type StringKey } from '../strings';
-
-/** The half diagonal of the reference frame (36 mm along the longer side) of an aspect, mm: the sensor in the section. */
-function sensorHalf(cam: CameraState): number {
-  const a = cam.aspect.w > 0 && cam.aspect.h > 0 ? cam.aspect.w / cam.aspect.h : 3 / 2;
-  const [w, h2] = a >= 1 ? [36, 36 / a] : [36 * a, 36];
-  return Math.hypot(w, h2) / 2;
-}
 
 /** The heading of the artistic knobs, marked as not physical (STUDIO-TOOLS §0). */
 function artisticHead(): HTMLElement {
@@ -45,6 +40,9 @@ const n = (v: number, digits = 1) => formatNumber(v, undefined, digits);
 export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTMLElement {
   const { store } = ctx;
   const cam = (): CameraState | undefined => store.get().camera.cameras[camId()];
+  // The window of a lens's elements, from the entries of the list and the character chips (ui/lens-peek.ts).
+  const peek = createLensPeek(ctx, cam);
+  scope.onDispose(() => peek.dispose());
   const optics = (): CameraOptics => {
     const c = cam();
     return c ? opticsOf(c) : OPTICS_NEUTRAL;
@@ -89,14 +87,29 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
   const chips = h('div', { class: 'chips', role: 'tablist', 'aria-label': t('camera.lensCharacter'), 'data-lens-characters': '' });
   const listHost = h('div', { class: 'stack', 'data-lens-list': '' });
   const confirm = h('div');
-  const drawChips = () => {
-    chips.replaceChildren(
-      ...LENS_CHARACTERS.map((c) =>
-        h('button', { type: 'button', class: 'chip', role: 'tab', 'data-character': c.key, 'aria-pressed': String(filter === c.key), onclick: () => ((filter = c.key), drawChips(), drawList()) }, lbl(c.label)),
-      ),
-      h('button', { type: 'button', class: 'chip', role: 'tab', 'data-character': 'MINE', 'aria-pressed': String(filter === 'MINE'), onclick: () => ((filter = 'MINE'), drawChips(), drawList()) }, t('catalog.mine')),
-    );
+  // The chips are made once, so that pressing one leaves the element under the pointer and in the focus where it was.
+  const chipFor = new Map<LensCharacter | 'MINE', HTMLButtonElement>();
+  const pick = (key: LensCharacter | 'MINE') => {
+    peek.dismiss();
+    filter = key;
+    drawChips();
+    drawList();
   };
+  const drawChips = () => {
+    for (const [key, chip] of chipFor) chip.setAttribute('aria-pressed', String(filter === key));
+  };
+  for (const c of LENS_CHARACTERS) {
+    const chip = h('button', { type: 'button', class: 'chip', role: 'tab', 'data-character': c.key, 'aria-pressed': 'false', onclick: () => pick(c.key) }, lbl(c.label));
+    // Resting on a character shows the lenses of it.
+    peek.attach(
+      chip,
+      () => ({ keys: LENS_PRESCRIPTIONS.filter((p) => p.character === c.key).map((p) => p.key), heading: lbl(c.label) }),
+      () => tracedBox,
+    );
+    chipFor.set(c.key, chip);
+  }
+  chipFor.set('MINE', h('button', { type: 'button', class: 'chip', role: 'tab', 'data-character': 'MINE', 'aria-pressed': 'false', onclick: () => pick('MINE') }, t('catalog.mine')));
+  chips.replaceChildren(...chipFor.values());
   const drawList = () => {
     const cur = tracedOf(optics());
     if (filter === 'MINE') {
@@ -112,13 +125,26 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     }
     const lenses = LENS_PRESCRIPTIONS.filter((p) => p.character === filter);
     const inList = !!cur && lenses.some((p) => p.key === cur.key);
-    const sel = select(
-      [...(inList ? [] : [{ value: '', label: t('camera.lensPick'), disabled: true }]), ...lenses.map((p) => ({ value: p.key, label: lbl(p.name) }))],
+    // The interface's own list, not the browser's: its entries are elements the pointer can rest on, and one that
+    // does shows the lens's elements (ui/lens-peek.ts).
+    const sel = pickMenu(
+      lenses.map((p) => ({ value: p.key, label: lbl(p.name) })),
       inList ? cur!.key : '',
       (v) => v && chooseLens(v),
       t('camera.lensChoice'),
+      t('camera.lensPick'),
+      {
+        entry: (item, o) =>
+          peek.attach(
+            item,
+            () => ({ keys: [o.value] }),
+            () => item.closest<HTMLElement>('.floating'),
+          ),
+        onClose: () => peek.dismiss(),
+      },
     );
     sel.el.setAttribute('data-lens-select', '');
+    peek.dismiss();
     listHost.replaceChildren(field(t('camera.lensChoice'), sel.el));
   };
   scope.watch((_s, u) => u.library, () => filter === 'MINE' && drawList());
@@ -163,9 +189,7 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
       });
     }
     own.replaceChildren(...rows);
-    const st = dyn(`camera.lensStatus.${p.status}`);
-    const year = p.source.year && !p.source.doc.includes(String(p.source.year)) ? ` (${p.source.year})` : '';
-    source.textContent = t('camera.lensSource', { source: `${p.source.doc}${year}`, status: t(st) });
+    source.textContent = lensSourceLine(p);
     const range = p.iris.fNumberMin !== null && p.iris.fNumberMax !== null ? t('camera.lensRange', { min: n(p.iris.fNumberMin, 2), max: n(p.iris.fNumberMax, 1) }) : '';
     rangeNote.textContent = range;
     rangeNote.style.display = range ? '' : 'none';
@@ -242,17 +266,21 @@ export function tracedLensFields(ctx: Ctx, scope: Scope, camId: () => CameraId):
     } else sectionHost.replaceChildren();
   };
   let asked = '';
+  /** The engine's answer, as the section shows it: its numbers, undefined when it forms no image, null without an engine. */
+  const answered = (c: CameraState, a: PeekAnswer) => showInfo(c, a.state === 'ready' ? a.info : a.state === 'refused' ? undefined : null, false);
   const ask = (c: CameraState) => {
     const key = JSON.stringify([c.id, c.optics, c.focalMm, c.fstop, c.focusDistance, c.aspect, c.projection]);
     if (key === asked) return;
     asked = key;
     const port = ctx.services.lens;
-    if (!port) return showInfo(c, null, false);
+    const lens = tracedOf(opticsOf(c));
+    if (!port || !lens) return showInfo(c, null, false);
+    // Through the cache of the window of the lens's elements: the lens on the camera is one question for both.
+    const cache = lensPeekCache(port);
+    const known = cache.known(c, lens.key);
+    if (known) return answered(c, known);
     showInfo(c, null, true);
-    void port.info(c).then(
-      (i) => asked === key && showInfo(c, i, false),
-      () => asked === key && showInfo(c, null, false),
-    );
+    void cache.load(c, lens.key).then((a) => asked === key && answered(c, a));
   };
 
   // --- not physical --------------------------------------------------------------------------------------------------

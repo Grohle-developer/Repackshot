@@ -3980,6 +3980,129 @@ fuerte en las esquinas de un gran angular): el pico lanza por ese borde,
 lo que se ve; dibujar un campo más ancho para no estirar el borde queda
 propuesto.
 
+## O2b · Ventana de la lente al pasar el ratón — **Sonnet** — hecha
+
+**Qué.** La petición 1.4 del reporte de errores del usuario (`TRIAGE.md`:
+«al hacer hover por encima de la lente, ha de mostrar una ventana con los
+elementos»), tras O2: dejar el puntero (o el foco del teclado) sobre una
+lente de la lista *Lente* o sobre un chip de *carácter* abre a su lado una
+ventana pequeña con el **corte** de esa lente (el elemento, el diafragma, el
+plano de imagen), su **nombre**, su **fuente** (la patente o el libro, como la
+sección) y sus **números** (focal, diafragma, elementos y grupos, longitud),
+todos los que el **motor** dice para esa lente. Para una lente que no está en
+la cámara no hay `LensInfo`: se le pregunta al motor por la lente señalada
+(`rt_scene_lens_info` del `rt.wasm` de la página, o `/api/lens/info` del
+lanzador), sin bloquear nada, con una caché por lente y por lo que los números
+dependen de (focal, distancia de enfoque, f/, encuadre, ajustes de la lente);
+mientras llega lo dice, y sin motor (la versión web sin `rt.wasm`) dice que el
+motor no está cargado y deja solo el nombre y la fuente (regla 10).
+
+**Depende de.** O2.
+
+**Criterio.** Pruebas que fallan sin la función: el reposo abre la ventana con
+los datos de la lente señalada (con un puerto de lente falso que cuenta sus
+preguntas), la caché (pasar dos veces por la misma lente pregunta una vez al
+motor), los estados *preguntando* y *sin motor*, y el cierre al sacar el
+puntero, con Esc y al elegir; el foco del teclado la abre. Una comprobación en
+el navegador (`tools/lens-hover-check.mjs`, como `tools/lens-check.mjs`) que
+pasa por dos lentes en la interfaz de verdad con el `rt.wasm` real y deja
+`docs/ui/lens-hover.png` (y `lens-hover-dark.png`). Cadenas en `es` y `en`;
+el cromo acromático; ni el catálogo de lentes, ni las prescripciones, ni la
+óptica del motor cambian (regla 11).
+
+**Hecho.**
+
+- **La lógica, sin DOM** (`src/ui/lens-peek.ts`): `peekCamera` (la cámara tal
+  cual, con la lente señalada puesta como la dejaría elegirla: sus propios
+  ajustes, ninguno de la persona; la lente puesta se pregunta con los suyos),
+  `lensPeekCache` (una caché por puerto, hasta 48 respuestas; la clave es lo
+  que lee el motor: los `optics` de la cámara con su lente, la focal, el f/, el
+  enfoque, el encuadre y la proyección; una pregunta en vuelo se comparte; se
+  guarda lo que el motor dijo y su negativa, no «sin motor» ni un fallo, para
+  que una lente se vuelva a preguntar cuando llegue el motor),
+  `createPeekController` (el reposo de 300 ms con temporizadores inyectables:
+  cruzar la lista no abre nada, salir o pasar a otra entrada cierra, y una
+  ventana cerrada con Esc o al elegir no se reabre hasta que el puntero o el
+  foco vuelven) y `peekCard` (lo que dice una tarjeta: solo lo del motor; sin
+  respuesta, *Preguntando al motor…*; sin motor, el nombre y la fuente y *El
+  motor no está cargado…*; negada, *El motor no forma imagen…*). La fuente de
+  una lente en una línea (`lensSourceLine`) y el medio sensor del corte
+  (`sensorHalf`) salen de `insp-traced.ts` y los comparte con la sección.
+- **La ventana** (`src/ui/components/lens-peek.ts`): un `role="tooltip"` junto
+  a la lista y a la altura de la entrada (junto al inspector, para los chips),
+  por el lado con sitio, siempre dentro de la ventana del navegador (un
+  máximo de tamaño; en una pantalla baja recorta); dibuja con `lensSectionSvg`
+  de `components/lens-section.ts`, el único dibujo de una lente; **no toma el
+  foco ni el puntero** (`pointer-events: none`, no hay nada que se pueda
+  enfocar), se vincula a la entrada con `aria-describedby`, se cierra con Esc
+  (que no hace nada más) y cuando se pulsa la entrada. Un chip abre la ventana
+  de las lentes de su carácter (hasta cuatro, en dos columnas, con el nombre
+  del carácter); cada tarjeta llega cuando llega su respuesta. El foco abre
+  solo si es del teclado (`:focus-visible`: el foco que da un clic no abre
+  nada); el toque, nada.
+- **La lista *Lente* es la de la interfaz** (`src/ui/components/pick-menu.ts`):
+  el mismo marco y la misma flecha que un `select`, que abre el menú de
+  `widgets.ts` (flechas, Intro, Esc; la lente puesta, marcada y con el foco).
+- **Cableado** (`src/ui/panels/insp-traced.ts`): los chips se hacen una vez (ya
+  no se rehacen al pulsarlos: el foco se queda en el chip) y cada uno, y cada
+  entrada de la lista abierta, abre su ventana; la sección *Lo que calcula el
+  motor* pregunta por la caché, así que la lente puesta es una sola pregunta
+  para la sección y para la ventana. Cadenas nuevas: `camera.lensPeekNoEngine`
+  y `camera.lensPeekLabel` (el resto, las de la sección).
+- **Pruebas.** `tests/lens-peek.test.ts` (20, Node): la cámara por la que se
+  pregunta, la caché (una pregunta por lente, la compartida, la que cambia con
+  la focal, el foco, el f/, el encuadre, los ajustes, la negativa que se guarda,
+  «sin motor» y el fallo que no, el límite), el controlador con temporizadores
+  a mano, las tarjetas (con datos distintos por lente, *preguntando*, sin motor,
+  negada, en español), la colocación dentro de la ventana y, con el `rt.wasm`
+  real, los números de cuatro lentes que no están en la cámara contra los del
+  motor. `tests/lens-peek-browser.test.ts` (14, Chromium): la sección de verdad
+  con un puerto falso que cuenta, retiene, niega o falta: abre junto a la lista
+  y junto al chip tras el reposo, no antes, con el nombre, la fuente, el dibujo
+  y los números de esa lente; una pregunta por lente; la que se espera, la sin
+  motor y la negada; salir, Esc (también con la lista abierta) y elegir
+  cierran; el teclado la abre y la mueve de lente en lente; no toma foco ni
+  puntero; dentro de una pantalla pequeña; en español.
+  `tools/lens-hover-check.mjs` con la aplicación construida y el `rt.wasm` real:
+  los números de la ventana son los de la sección al poner esa lente (6 · 4 la
+  doble Gauss, 5 · 3 la simétrica de cinco), volver a pasar no pide nada al
+  módulo (contado envolviendo `rt_scene_load`), y las capturas
+  `docs/ui/lens-hover.png`, `lens-hover-dark.png` y `lens-hover-chip.png`.
+  `tools/lens-check.mjs` elige la lente en la lista nueva. Comprobado a mano
+  que las pruebas fallan sin la función, quitando de una en una: engancharla a
+  las entradas, la caché (y, aparte, su memoria), el reposo de 300 ms, Esc,
+  el cierre al salir, el foco del teclado, la tarjeta *preguntando* (dicha como
+  sin motor), el «sin motor» que enseña un número, la ventana que toma el
+  puntero y la cámara equivocada (la de la lente puesta para todas); cerrar al
+  elegir va por tres caminos (la lista que se cierra, la entrada que se pulsa
+  y la lista que se redibuja) y falla al quitar los tres.
+
+**No encajó con el plan.** (1) **La lista no podía ser un `select`**: el
+navegador dibuja las entradas de un desplegable nativo y la página no recibe
+nada hasta que se elige una (ni `mouseover` ni foco), así que «pasar por
+encima de una entrada del desplegable» no existe; la lista *Lente* pasa a ser
+la de la interfaz (`pick-menu.ts`). Cambia cómo se ve el menú abierto (el de
+la interfaz, no el del sistema) y no tiene búsqueda por la inicial; el cerrado
+es igual. (2) **Un chip es un carácter, no una lente**: el encargo decía «la
+ventana con el corte de esa lente»; un chip tiene entre una y cuatro lentes,
+así que su ventana enseña todas las del carácter, cada una con su tarjeta (con
+una sola, es igual que la de una entrada). *Míos* no abre ventana y las filas
+de lentes propias tampoco (su lente sale de un ajuste guardado: queda para
+quien edite lentes, 1.5). (3) Los números son los tres del encargo más la
+*longitud* (lo que más separa una lente de otra, con la focal ya escalada a la
+de la cámara) y, en el adaptador anamórfico, la compresión. (4) **El motor y
+la ortográfica**: con una cámara ortográfica el motor no traza la lente y el
+puerto contesta que no hay lente; la ventana dice entonces que el motor no
+está cargado, como ya hace la sección con su aviso (decir otra cosa quedaría
+para ese aviso). (5) **El escritorio** pregunta por `/api/lens/info` con el
+mismo puerto (`services.lens`) que la sección, que no se tocó: lo comprobado
+es el módulo de la página con el `rt.wasm` real; no se probó contra el
+lanzador. (6) En pantallas muy bajas la ventana de un carácter con cuatro
+lentes (unos 550 px) se recorta en vez de moverse o encogerse; con menos de
+1 100 px de ancho el inspector se pliega y la ventana pasa sobre su columna.
+(7) El reposo es de 300 ms siempre, sin un «calentamiento» que lo acorte entre
+entradas vecinas: salir cierra y entrar espera de nuevo.
+
 ## O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas — **Opus** (tras O1, antes de O2), veredicto **Fable** — hecha
 
 Petición del usuario (14-10): en la lente, filtros «de estilo» (difusión
@@ -9203,7 +9326,7 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **1.3** (elegir lente, distorsión y bokeh de verdad) es O2.
 - **1.4** (ventana con los elementos al pasar por una lente de la lista)
   va tras O2: el corte en SVG ya existe; falta el aviso flotante y pedir al
-  motor la información de la lente señalada (S–M, Sonnet).
+  motor la información de la lente señalada (S–M, Sonnet). Hecha en **O2b**.
 
 ### Faltas que ya tienen fase
 
