@@ -162,6 +162,121 @@ fn a_program_gives_the_material_its_values_point_by_point_in_the_parts_space() {
     assert!(pixel(&film, 14, 8).g > 0.9, "{:?}", pixel(&film, 14, 8));
 }
 
+/// The program of material 0 of `scene` at the hit of `ray`, with `footprint`.
+fn applied(scene: &Scene, ray: Ray, footprint: &Footprint) -> super::shade::Resolved {
+    let prepared = Prepared::new(scene);
+    let hit = scene.geometry.intersect(&ray).expect("hit");
+    let mut shade = prepared.bevel.shading_point(scene, &ray, &hit);
+    prepared
+        .programs
+        .apply(
+            scene,
+            &prepared.bevel,
+            &ray,
+            &hit,
+            &mut shade,
+            &scene.materials[0],
+            footprint,
+        )
+        .expect("a program")
+}
+
+#[test]
+fn a_programs_values_are_brought_to_their_ranges() {
+    // Out of its range a value is clamped to it; a value that is not a number (∞ − ∞) leaves the
+    // file's own.
+    let mut b = Builder::new();
+    let big = b.fconst(3.0e38);
+    let ten = b.fconst(10.0);
+    let inf = b.f(op::FMUL, big, ten, NONE, NONE);
+    let nan = b.f(op::FSUB, inf, inf, NONE, NONE);
+    let minus = b.fconst(-1.0);
+    let colour = b.v(op::VCOMB, minus, ten, nan, NONE);
+    b.out(OUT_BASE_COLOR, colour, true);
+    b.out(OUT_METALLIC, nan, false);
+    b.out_const(OUT_ROUGHNESS, &[2.0]);
+    b.out(OUT_COAT, minus, false);
+    b.out_const(OUT_TRANSMISSION, &[1.5]);
+    b.out_const(OUT_IOR, &[0.5]);
+    b.out(OUT_OPACITY, nan, false);
+    b.out_const(OUT_EMISSION, &[-1.0, 0.5, 2.0]);
+    b.out_const(OUT_EMISSION_STRENGTH, &[3.0]);
+    let base = Material {
+        base_color: Rgb::new(0.1, 0.2, 0.3),
+        metallic: 0.25,
+        opacity: 0.75,
+        ..matte(0.5)
+    };
+    let scene = scene_of(square(100.0), base, Some(b.build()), Transform::IDENTITY);
+    let r = applied(
+        &scene,
+        Ray::new(Vec3::new(2.0, -500.0, 3.0), Vec3::new(0.0, 1.0, 0.0)),
+        &Footprint::NONE,
+    );
+    let m = &r.material;
+    assert_eq!(m.base_color, Rgb::new(0.0, 1.0, 0.3));
+    assert_eq!(
+        (
+            m.metallic,
+            m.roughness,
+            m.coat,
+            m.transmission,
+            m.ior,
+            m.opacity
+        ),
+        (0.25, 1.0, 0.0, 1.0, 1.0, 0.75)
+    );
+    assert_eq!(r.emission, Rgb::new(0.0, 1.5, 6.0));
+}
+
+#[test]
+fn each_uv_set_takes_its_own_level_of_detail() {
+    // A checker of 1-texel cells read through each UV set of a square: the first set spans the
+    // image over the square, so a camera footprint of 40 mm covers many texels (the mean); the
+    // second spans a thirty-second of a texel around the centre of one, so the same footprint
+    // reads that texel (white or black, not the mean).
+    let px: Vec<u8> = (0..64u32)
+        .flat_map(|y| (0..64u32).flat_map(move |x| [if (x + y) % 2 == 0 { 0u8 } else { 255 }; 3]))
+        .collect();
+    let mut b = Builder::new();
+    let entry = b.image(Some(0), true, 0);
+    let (first, _) = b.tex(entry, UV0);
+    let (second, _) = b.tex(entry, super::build::UV1);
+    b.out(OUT_BASE_COLOR, first, true);
+    b.out(OUT_EMISSION, second, true);
+    let (c, e) = (32.5 / 64.0, 1.0 / 4096.0);
+    let mesh = square(100.0)
+        .with_uvs(vec![
+            vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+            vec![
+                [c - e, c - e],
+                [c + e, c - e],
+                [c + e, c + e],
+                [c - e, c + e],
+            ],
+        ])
+        .expect("uvs");
+    let mut scene = scene_of(mesh, matte(0.5), Some(b.build()), Transform::IDENTITY);
+    scene.images = vec![Arc::new(
+        TextureImage::new(64, 64, 3, COLOR_SRGB, px).expect("image"),
+    )];
+    let footprint = Footprint {
+        dx: Vec3::new(40.0, 0.0, 0.0),
+        dy: Vec3::new(0.0, 0.0, 40.0),
+    };
+    let r = applied(
+        &scene,
+        Ray::new(Vec3::new(2.0, -500.0, 3.0), Vec3::new(0.0, 1.0, 0.0)),
+        &footprint,
+    );
+    let (f, s) = (r.material.base_color, r.emission);
+    assert!((f.r - 0.5).abs() < 0.05, "the first set filtered: {f:?}");
+    assert!(
+        s.r < 0.01 || s.r > 0.99,
+        "the second set on its own level: {s:?}"
+    );
+}
+
 #[test]
 fn the_uvs_the_tangent_and_the_view_reach_the_program() {
     // The shading point the integrator fills: at the square's centre seen from the front, P is
@@ -225,7 +340,8 @@ fn the_uvs_the_tangent_and_the_view_reach_the_program() {
 fn a_programs_normal_bends_the_shading_normal_in_the_world() {
     // A program whose normal is (0.6, −0.8, 0) in the part's space: on the square seen from
     // the front, the shading normal is that, turned with the instance (90° about Z: (0.8, 0.6,
-    // 0)), and the point and the geometric normal stay.
+    // 0)); seen from behind, it is turned to the side the ray came from, (−0.6, 0.8, 0); and the
+    // point and the geometric normal stay.
     let mut b = Builder::new();
     let n = b.vconst([0.6, -0.8, 0.0]);
     b.out(OUT_NORMAL, n, true);
@@ -244,6 +360,11 @@ fn a_programs_normal_bends_the_shading_normal_in_the_world() {
             ]),
             Vec3::new(0.8, 0.6, 0.0),
             Vec3::new(500.0, 0.0, 0.0),
+        ),
+        (
+            Transform::IDENTITY,
+            Vec3::new(-0.6, 0.8, 0.0),
+            Vec3::new(0.0, 500.0, 0.0),
         ),
     ] {
         let scene = scene_of(square(100.0), matte(0.5), Some(program.clone()), transform);
@@ -374,9 +495,9 @@ fn cube(half: f32) -> Mesh {
 #[test]
 fn the_bevel_weight_scales_the_materials_radius() {
     // A cube with a 12 mm bevel seen from a corner: a program with the material's own values and
-    // a bevel weight of 0 draws the sharp cube, of 1 the bevelled one, bit for bit; a weight
-    // computed at each point (a constant clamped: 1) draws the bevelled one too, and a constant
-    // of 0.5 something in between.
+    // a bevel weight of 0 draws the sharp cube, of 1 the bevelled one, bit for bit, and a constant
+    // of 0.5 something in between; a weight computed at each point draws what the same constant
+    // draws (3, clamped, is 1).
     let base = Material {
         base_color: Rgb::splat(0.6),
         roughness: 0.3,
@@ -391,7 +512,7 @@ fn the_bevel_weight_scales_the_materials_radius() {
         match (weight, computed) {
             (Some(w), false) => b.out_const(OUT_BEVEL, &[w]),
             (Some(w), true) => {
-                let x = b.fconst(w * 3.0);
+                let x = b.fconst(w);
                 let c = b.f(op::FCLAMP, x, NONE, NONE, NONE);
                 b.out(OUT_BEVEL, c, false);
             }
@@ -424,9 +545,11 @@ fn the_bevel_weight_scales_the_materials_radius() {
     assert_eq!(at(base.clone(), Some(same(Some(0.0), false))), sharp);
     assert_eq!(at(base.clone(), Some(same(Some(1.0), false))), rounded);
     assert_eq!(at(base.clone(), Some(same(None, false))), rounded);
-    assert_eq!(at(base.clone(), Some(same(Some(1.0), true))), rounded);
+    assert_eq!(at(base.clone(), Some(same(Some(3.0), true))), rounded);
+    assert_eq!(at(base.clone(), Some(same(Some(0.0), true))), sharp);
     let halfway = at(base.clone(), Some(same(Some(0.5), false)));
     assert!(halfway != sharp && halfway != rounded);
+    assert_eq!(at(base.clone(), Some(same(Some(0.5), true))), halfway);
 }
 
 #[test]
@@ -482,6 +605,54 @@ fn the_curvature_is_read_at_the_sharp_edges() {
     let hit = scene.geometry.intersect(&ray).expect("hit");
     let (edge, cavity) = bevel.curvature(&scene, &hit, 4.0);
     assert!(cavity > 0.5 && edge == 0.0, "{edge} {cavity}");
+
+    // Through a program: EDGE as the metal and CAVITY as the clear coat, next to the cube's edge
+    // and inside the fold.
+    let mut b = Builder::new();
+    let radius = b.konst(&[4.0]);
+    let e = b.f(op::EDGE, NONE, NONE, NONE, radius);
+    let c = b.f(op::CAVITY, NONE, NONE, NONE, radius);
+    b.out(OUT_METALLIC, e, false);
+    b.out(OUT_COAT, c, false);
+    let program = b.build();
+    let resolved = |scene: Scene, ray: Ray| {
+        let prepared = Prepared::new(&scene);
+        let hit = scene.geometry.intersect(&ray).expect("hit");
+        let mut shade = prepared.bevel.shading_point(&scene, &ray, &hit);
+        let r = prepared.programs.apply(
+            &scene,
+            &prepared.bevel,
+            &ray,
+            &hit,
+            &mut shade,
+            &scene.materials[0],
+            &Footprint::NONE,
+        );
+        r.expect("a program").material
+    };
+    let cube_edge = resolved(
+        scene_of(
+            cube(40.0),
+            matte(0.5),
+            Some(program.clone()),
+            Transform::IDENTITY,
+        ),
+        Ray::new(Vec3::new(39.5, -500.0, 0.0), Vec3::new(0.0, 1.0, 0.0)),
+    );
+    assert!(
+        cube_edge.metallic > 0.95 && cube_edge.coat == 0.0,
+        "{cube_edge:?}"
+    );
+    let inside = resolved(
+        scene_of(
+            scene.geometry.meshes()[0].clone(),
+            matte(0.5),
+            Some(program),
+            Transform::IDENTITY,
+        ),
+        ray,
+    );
+    assert!(inside.coat > 0.5 && inside.metallic == 0.0, "{inside:?}");
 }
 
 /// A host with a footprint (part space) and no curvature.
@@ -576,6 +747,31 @@ fn image_reads_are_filtered_over_the_footprint_and_a_bump_reads_one_level() {
     runner.run(&ctx, &mut interp::NoHost, &mut out);
     let f0 = out.vec(OUT_BASE_COLOR);
     assert!(f0[0] < 0.05 || f0[0] > 0.95, "{f0:?}");
+
+    // The same through the UV set itself (an image node without a mapping): the read at the
+    // point's UVs and the one at UVs stepped from them (a bump's) take one level, the first's.
+    let mut b = Builder::new();
+    let entry = b.image(Some(0), true, 0);
+    let (direct, _) = b.tex(entry, UV0);
+    let step = b.fconst(0.01);
+    let duv = b.v(op::VSCALE, 7, step, NONE, NONE);
+    let uv2 = b.v(op::VADD, UV0, duv, NONE, NONE);
+    let (stepped, _) = b.tex(entry, uv2);
+    b.out(OUT_BASE_COLOR, direct, true);
+    b.out(OUT_EMISSION, stepped, true);
+    let px = |x: u32, y: u32| if (x + y).is_multiple_of(2) { 0u8 } else { 255 };
+    let checks: Vec<u8> = (0..64u32)
+        .flat_map(|y| (0..64u32).flat_map(move |x| [px(x, y); 3]))
+        .collect();
+    let image = Arc::new(TextureImage::new(64, 64, 3, COLOR_SRGB, checks).expect("image"));
+    let runner = Runner::new(b.build(), vec![Some(image)]);
+    runner.run(&ctx, &mut Wide(wide), &mut out);
+    let (d, s) = (out.vec(OUT_BASE_COLOR), out.vec(OUT_EMISSION));
+    assert!((d[0] - 0.5).abs() < 0.05, "filtered {d:?}");
+    assert!(
+        (s[0] - d[0]).abs() < 1.0e-3,
+        "the step from the UVs on the same level: {s:?} {d:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------- the RSB
@@ -654,6 +850,25 @@ fn programs_travel_in_prog_and_files_without_them_read_and_write_as_before() {
     });
     let s = Scene::from_rsb(&newer).expect("valid");
     assert!(s.programs.iter().all(Option::is_none));
+    // Two programs for one material: the first counts (a second PROG of material 0, the program
+    // of material 1, at the end).
+    let at = first + 1;
+    let mut start = 8 + u32::from_le_bytes(bytes[4..8].try_into().expect("u32")) as usize;
+    for _ in 0..at {
+        let len = u32::from_le_bytes(bytes[start + 4..start + 8].try_into().expect("u32"));
+        start += 8 + len as usize;
+    }
+    let len = u32::from_le_bytes(bytes[start + 4..start + 8].try_into().expect("u32")) as usize;
+    let mut again = bytes[start + 8..start + 8 + len].to_vec();
+    assert_eq!(again[0..4], 1u32.to_le_bytes(), "the PROG of material 1");
+    again[0..4].copy_from_slice(&0u32.to_le_bytes());
+    let mut twice = bytes.clone();
+    twice.extend_from_slice(b"PROG");
+    twice.extend_from_slice(&(again.len() as u32).to_le_bytes());
+    twice.extend_from_slice(&again);
+    let s = Scene::from_rsb(&twice).expect("valid");
+    assert_ne!(scene.programs[0], scene.programs[1]);
+    assert_eq!(s.programs, scene.programs);
     // A material that is not there, a bad program, a program that is not a material's, an image
     // that is not in IMGS or not of its colour space: errors.
     let invalid = |bytes: &[u8]| {

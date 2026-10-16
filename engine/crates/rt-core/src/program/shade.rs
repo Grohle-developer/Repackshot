@@ -500,11 +500,8 @@ impl ProgramSetup {
             footprint: None,
             curvature: None,
         };
-        let mut normal = details.normal;
-        if normal.dot(details.geometric_normal) < 0.0 {
-            normal = -normal;
-        }
-        let (ctx, _) = context(scene, details, normal, -dir.normalize(), &local);
+        // `context` turns the interpolated normal to the outside of the part.
+        let (ctx, _) = context(scene, details, details.normal, -dir.normalize(), &local);
         let mut out = Outputs::default();
         prog.runner.run(&ctx, &mut host, &mut out);
         Some(resolve(base, &out))

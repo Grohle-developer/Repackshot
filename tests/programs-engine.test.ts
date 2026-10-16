@@ -15,8 +15,10 @@ import { compileGraph, decodeProgram, type Program } from '../src/core/material-
 import { createInitialState, reduce, type ProjectState } from '../src/core/store';
 import { ENGINE_FEATURE_PROGRAMS, ENGINE_FEATURE_TEXTURES, readsPrograms } from '../src/render/engine';
 import { emissionVaries, graphProgram, materialToRsb, projectScene, writeRsb, type RsbImage, type RsbScene } from '../src/io/rsb';
+import { FLAG_DATA, FLAG_DONE, FRAME_HEADER, NativeEngine } from '../src/render/native';
 import { PathTracerEngine, Pool, type SceneSource, type TracerView } from '../src/render/pathtracer';
 import type { WorkerReply, WorkerRequest } from '../src/render/pool-protocol';
+import { installDom } from './launcher-mock';
 import { readRsb, sections } from './rsb-reader';
 import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
 
@@ -61,6 +63,20 @@ class ReadyWorker {
   terminate(): void {}
 }
 
+/** A finished frame of the launcher (render.rs `Frame::header`), its sums zero. */
+function doneFrame(width: number, height: number): ArrayBuffer {
+  const buf = new ArrayBuffer(FRAME_HEADER + width * height * 16);
+  const v = new DataView(buf);
+  'RPX1'.split('').forEach((c, i) => v.setUint8(i, c.charCodeAt(0)));
+  [FRAME_HEADER, 1, 1, width, height].forEach((x, i) => v.setUint32(4 + i * 4, x, true));
+  v.setFloat32(24, 0.5, true);
+  v.setUint32(28, FLAG_DONE | FLAG_DATA, true);
+  v.setUint32(32, 64, true);
+  v.setUint32(36, 8, true);
+  v.setBigUint64(40, 1n, true);
+  return buf;
+}
+
 function recording(views: TracerView[]): SceneSource {
   return {
     build: (_s, view) => {
@@ -96,7 +112,64 @@ describe('the switch: the page writes the programs when the engine runs them (M3
       expect(views.length).toBeGreaterThan(0);
       expect(views.every((v) => (v.programs === true) === on)).toBe(true);
       expect(views.every((v) => (v.textures === true) === (features !== undefined))).toBe(true);
+      // The viewport (Full): its views too.
+      const dom = installDom();
+      try {
+        views.length = 0;
+        engine.mount(dom.canvas as unknown as HTMLCanvasElement);
+        engine.resize(16, 8, 1);
+        engine.setActive(true);
+        for (let i = 0; i < 10 && !views.some((v) => v.viewport); i++) {
+          engine.frame();
+          await new Promise((r) => setTimeout(r, 3));
+        }
+        expect(views.some((v) => v.viewport)).toBe(true);
+        expect(views.every((v) => (v.programs === true) === on)).toBe(true);
+        engine.setActive(false);
+      } finally {
+        dom.restore();
+      }
       engine.dispose();
+    });
+  }
+
+  for (const [what, features, on] of [
+    ['a launcher whose engine runs them', 3, true],
+    ['a launcher of M2b (textures only)', 1, false],
+    ['a launcher of before M2b (no features)', undefined, false],
+  ] as const) {
+    it(`a Render on the desktop asks for them with ${what}, and the viewport too`, async () => {
+      const views: TracerView[] = [];
+      const transport = {
+        async request(_path: string, init: RequestInit = {}) {
+          if (init.method === 'POST') return new Response(JSON.stringify({ id: 1 }));
+          if (init.method === 'DELETE') return new Response(null, { status: 204 });
+          return new Response(doneFrame(4, 3));
+        },
+      };
+      const engine = new NativeEngine(transport, recording(views), { threads: 2, isa: 'avx2', ...(features === undefined ? {} : { features }) });
+      engine.sync(createInitialState({ lang: 'en', theme: 'dark' }), null);
+      await engine.renderPixels({ width: 4, height: 3, maxSamples: 1, maxSeconds: 0, transparent: false });
+      expect(views.length).toBeGreaterThan(0);
+      expect(views.every((v) => (v.programs === true) === on)).toBe(true);
+      expect(views.every((v) => (v.textures === true) === (features !== undefined))).toBe(true);
+      // The viewport (Full): its views too.
+      const dom = installDom();
+      try {
+        views.length = 0;
+        engine.mount(dom.canvas as unknown as HTMLCanvasElement);
+        engine.resize(16, 8, 1);
+        engine.setActive(true);
+        for (let i = 0; i < 10 && !views.some((v) => v.viewport); i++) {
+          engine.frame();
+          await new Promise((r) => setTimeout(r, 3));
+        }
+        expect(views.some((v) => v.viewport)).toBe(true);
+        expect(views.every((v) => (v.programs === true) === on)).toBe(true);
+        engine.setActive(false);
+      } finally {
+        dom.restore();
+      }
     });
   }
 
@@ -123,6 +196,16 @@ describe('the switch: the page writes the programs when the engine runs them (M3
     expect(r.materials[prog.material]).toEqual(readRsb(textured).materials[prog.material]);
     const cut = textured.length;
     expect(firstDiff(on.subarray(0, cut), textured)).toBe(-1);
+  });
+
+  it('a program’s image is the IMGS image of its colour space (the label: sRGB colour)', () => {
+    const { state } = nodeProject('PLASTIC_LABEL');
+    const r = readRsb(writeRsb(projectScene(state, { width: 64, height: 48, maxSamples: 4, maxSeconds: 0, textures: true, programs: true }).scene));
+    const { images } = decodeProgram(r.programs![0].bytes);
+    expect(images).toHaveLength(1);
+    expect(images[0].srgb).toBe(true);
+    // IMGS colour space 0: sRGB (rt-core's reader refuses a program whose image is of the other one).
+    expect(r.images![images[0].index].colorSpace).toBe(0);
   });
 
   it('a scene without node materials writes the same bytes with the switch on', () => {
