@@ -3607,7 +3607,13 @@ proyección, eje y borde en 200 puntos, y 60 de cada función con 0, −0, ±1,
 medios, enteros, lo diminuto y lo enorme, ±∞ y NaN—: **los mismos bits en
 todos** (tolerancia 0: los dos lados hacen las mismas operaciones `f32` en el
 mismo orden con las mismas funciones elementales, sin FMA; un cambio de 0,25 a
-0,24 en `FSMIN` pone 10 casos en rojo).
+0,24 en `FSMIN` pone 10 casos en rojo), con cada NaN contado como el NaN
+silencioso `0x7FC00000` (`tests/program-hash.ts`, y lo mismo en Rust): el
+signo y la carga de un NaN no los fija IEEE 754 ni WebAssembly, y en WASI un
+caso (`FSMAX` con ±∞) dio un NaN del otro signo corriendo entre todos los tests
+de `rt-core` y el de la referencia corriendo solo; el motor nunca lee esos bits
+(una salida NaN deja el valor del fichero). Los 44 casos con algún NaN
+cambiaron de *hash*; los diez ejemplos, no (son los fijados de M3a).
 
 **Comparación por regiones** (`tests/programs-full-browser.test.ts`, con
 `tests/browser/programs-scene.ts`): *Rápido* en Chromium (cada grafo horneado

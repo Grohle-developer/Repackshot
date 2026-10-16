@@ -2076,7 +2076,9 @@ referencia de TypeScript (`core/material-interp.ts`): la prueba cruzada
 (`tests/material-program-cross.test.ts` escribe y fija
 `tests/fixtures/material-programs.json`; `program/tests.rs` lo corre) son los
 diez ejemplos en 1000 puntos, cada instrucción en cada modo en 200 y cada
-función en sus casos especiales, a tolerancia 0, y la página corre al revés
+función en sus casos especiales, a tolerancia 0 (cada NaN contado como
+`0x7FC00000`: su signo y su carga son de la máquina, y el motor no los lee;
+`tests/program-hash.ts`), y la página corre al revés
 los programas del ejemplo del motor (`PINNED_M3B_PROGRAM_VALUES`). Un test de
 navegador (`tests/programs-full-browser.test.ts`) compara dónde caen los
 dibujos de los diez ejemplos en *Rápido* y con el `rt.wasm` real.

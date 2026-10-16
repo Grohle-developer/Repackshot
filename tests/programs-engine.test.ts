@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { buildExample } from '../src/core/example';
 import { exampleGraph, registerLabelImage } from '../src/core/material-examples';
 import { MATERIAL_GRAPHS } from '../src/data/material-graphs';
-import { contractPoints, outputsHash, ProgramRunner, type ImagePixels } from '../src/core/material-interp';
+import { contractPoints, ProgramRunner, type ImagePixels } from '../src/core/material-interp';
+import { crossHash } from './program-hash';
 import { compileGraph, decodeProgram, type Program } from '../src/core/material-program';
 import { createInitialState, reduce, type ProjectState } from '../src/core/store';
 import { ENGINE_FEATURE_PROGRAMS, ENGINE_FEATURE_TEXTURES, readsPrograms } from '../src/render/engine';
@@ -283,7 +284,7 @@ describe('the page’s writer and interpreter and the engine’s example of prog
       const d = decodeProgram(bytes);
       const program: Program = { ...d.program, images: d.images.map((im) => ({ image: im.index === 0xffffffff ? null : { id: `imgs:${im.index}`, name: '', width: 1, height: 1 }, srgb: im.srgb, wrap: im.wrap as 0 | 1 | 2 })), probes: [], uses: { coords: [], fresnel: false, curvature: false, bump: false } };
       const pixels = d.images.map((im) => (im.index === 0xffffffff ? null : rgbaOf(r.images![im.index])));
-      return outputsHash(new ProgramRunner(program, pixels), pts);
+      return crossHash(new ProgramRunner(program, pixels), pts);
     });
     expect(got).toEqual(pinnedProgramValues());
   });

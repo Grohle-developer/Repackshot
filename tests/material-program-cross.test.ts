@@ -21,7 +21,8 @@ import { MATERIAL_GRAPHS } from '../src/data/material-graphs';
 import { DEG_TO_RAD, f, sinCos } from '../src/core/f32math';
 import { graphOfExample, labelPixels, LABEL_HEIGHT, LABEL_WIDTH, registerLabelImage } from '../src/core/material-examples';
 import { compileGraph, encodeProgram, NONE, OP, type OpCode, type Program, type ProgramImage, type ValueRef } from '../src/core/material-program';
-import { contractPoints, outputsHash, ProgramRunner, type ImagePixels } from '../src/core/material-interp';
+import { contractPoints, ProgramRunner, type ImagePixels } from '../src/core/material-interp';
+import { crossHash } from './program-hash';
 
 const PATH = 'tests/fixtures/material-programs.json';
 const SEED = 0x2545f491;
@@ -502,7 +503,7 @@ function allCases(): Case[] {
 function fixtureText(cases: Case[]): string {
   const lines = cases.map((c) => {
     const bytes = encodeProgram(c.program, (_ref, i) => (c.sources[i] >= 0 ? c.sources[i] : 0));
-    const hash = outputsHash(new ProgramRunner(c.program, pixelsOf(c)), contractPoints(c.points, c.seed));
+    const hash = crossHash(new ProgramRunner(c.program, pixelsOf(c)), contractPoints(c.points, c.seed));
     return `    {"name": ${JSON.stringify(c.name)}, "points": ${c.points}, "seed": ${c.seed}, "hash": "${hash}", "program": "${b64(deflateSync(bytes))}"}`;
   });
   const label = b64(deflateSync(labelPixels()));
@@ -555,7 +556,7 @@ describe('the cross test of the material programs (M3b)', () => {
     const got: Record<string, string> = {};
     const want: Record<string, string> = {};
     for (const [i, c] of cases.entries()) {
-      got[c.name] = outputsHash(new ProgramRunner(c.program, pixelsOf(c)), contractPoints(c.points, c.seed));
+      got[c.name] = crossHash(new ProgramRunner(c.program, pixelsOf(c)), contractPoints(c.points, c.seed));
       want[c.name] = fixture.cases[i].hash;
     }
     expect(got).toEqual(want);

@@ -205,7 +205,10 @@ fn fnv(h: &mut u32, word: u32) {
 }
 
 /// `outputsHash` of the reference: every output (one or three components) at every point, point
-/// after point.
+/// after point, every NaN as the one quiet NaN `0x7FC00000` (`crossHash`, tests/program-hash.ts):
+/// the sign and payload of a NaN result are the machine's (under Node's WASI one case gave a NaN
+/// of the other sign run among all the tests, and the reference's run alone), and nothing the engine does with
+/// a value reads them.
 fn outputs_hash(runner: &Runner, points: &[Context]) -> u32 {
     let mut h = 0x811c_9dc5u32;
     let outputs = &runner.program().outputs;
@@ -215,7 +218,7 @@ fn outputs_hash(runner: &Runner, points: &[Context]) -> u32 {
         for (o, v) in outputs.iter().zip(&values) {
             let n = if o.is_vec() { 3 } else { 1 };
             for c in &v[..n] {
-                fnv(&mut h, c.to_bits());
+                fnv(&mut h, if c.is_nan() { 0x7fc0_0000 } else { c.to_bits() });
             }
         }
     }
