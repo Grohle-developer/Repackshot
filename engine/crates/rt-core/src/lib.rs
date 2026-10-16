@@ -7,7 +7,8 @@
 //! geometry (meshes, instances, BVHs, ray queries), the BSDF, lights and environment (the studio
 //! dome, the daylight sky, HDRI images), the image readers (`inflate`, `hdr`, `exr`, `bitmap`),
 //! the camera optics beyond the thin lens (`optics`), the edge bevel (`bevel`) and the procedural
-//! patterns (`pattern`) of the shading, the path tracer (`integrator`), the photon map of the
+//! patterns (`pattern`) of the shading, the material programs of node materials (`program`), the
+//! path tracer (`integrator`), the photon map of the
 //! caustics (`caustics`), the tile renderer, its pixel filters and edge samples
 //! (`pixel_filter`) and the exact passes written next to the image for the AI post-processing
 //! (`passes`).
@@ -43,6 +44,7 @@ pub mod passes;
 pub mod pattern;
 pub mod pixel_filter;
 pub mod png;
+pub mod program;
 pub mod render;
 pub mod rng;
 pub mod sampler;
@@ -71,10 +73,16 @@ const fn version_part(text: &str) -> u32 {
 /// texture block, the meshes' UV sets), so a host may send it.
 pub const FEATURE_TEXTURES: u32 = 1;
 
+/// [`FEATURES`] bit 1 (M3b): the engine runs the material programs of the RSB (`PROG`,
+/// [`program`]), so a host may send a node material as its program instead of the mean of its
+/// outputs. Programs read their images from `IMGS` and the meshes' UV sets: an engine with this
+/// bit has [`FEATURE_TEXTURES`] too.
+pub const FEATURE_PROGRAMS: u32 = 2;
+
 /// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
 /// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
 /// page writes only what the engine says it reads.
-pub const FEATURES: u32 = FEATURE_TEXTURES;
+pub const FEATURES: u32 = FEATURE_TEXTURES | FEATURE_PROGRAMS;
 
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)

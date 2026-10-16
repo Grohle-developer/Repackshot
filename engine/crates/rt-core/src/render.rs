@@ -1247,6 +1247,35 @@ mod tests {
     pub(crate) const PINNED_M2B_TEXTURES_4SPP: u32 = 0x5d94_b21c;
 
     #[test]
+    fn the_m3b_programs_have_a_pinned_hash_on_every_platform() {
+        // M3b runs the material programs of node materials (crate::program): marble from a 3D
+        // noise, checks by a box projection worn at the edges by the curvature with a constant
+        // bevel weight, leather bumped by three evaluations of a noise, a label read from an
+        // image with alpha and a bevel weight computed from a noise, a card cut out by stripes
+        // with a normal map of flakes, an emitter checked on its UVs and a thin glass pane dusted
+        // by Fresnel. Through an RSB round trip; `tools/wasm-parity.mjs` checks the real module
+        // against it (`rt --write-m3b-example`). Every hash above stayed: scenes without
+        // programs draw the same bits.
+        let scene = crate::example::m3b_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("M3b example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_M3B_PROGRAMS_4SPP, "programs on {}", isa.name());
+        }
+        // Without its programs the same scene is another image.
+        let mut plain = scene.clone();
+        plain.programs.clear();
+        assert_ne!(
+            scene_4spp_hash(&plain, Isa::detect()),
+            PINNED_M3B_PROGRAMS_4SPP
+        );
+    }
+
+    /// Pinned hash of the M3b example (material programs) at 4 samples per pixel.
+    pub(crate) const PINNED_M3B_PROGRAMS_4SPP: u32 = 0x0d6e_20ba;
+
+    #[test]
     fn the_o2_traced_lens_has_a_pinned_hash_on_every_platform() {
         // O2 traced the camera rays through the double Gauss of the catalogue (f/2.8, seven
         // rounded blades, the bokeh lights of O1): the prescription at the end of LENS, prepared

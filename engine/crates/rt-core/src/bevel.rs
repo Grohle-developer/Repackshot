@@ -251,6 +251,122 @@ impl BevelSetup {
         }
     }
 
+    /// [`BevelSetup::shading_point`] with the instance's radius times `scale` (M3b: a material
+    /// program's bevel weight): 1 is exactly [`BevelSetup::shading_point`], 0 or less (or NaN) no
+    /// bevel at all.
+    pub fn shading_point_scaled(
+        &self,
+        scene: &Scene,
+        ray: &Ray,
+        details: &Hit,
+        scale: f32,
+    ) -> ShadingPoint {
+        if scale == 1.0 {
+            return self.shading_point(scene, ray, details);
+        }
+        let ng = details.geometric_normal;
+        let mut normal = details.normal;
+        if normal.dot(ng) < 0.0 {
+            normal = -normal;
+        }
+        if normal.dot(ray.dir) >= -1.0e-4 {
+            normal = ng;
+        }
+        let base = ShadingPoint {
+            point: scene.geometry.terminator_point(details),
+            normal,
+            geometric: ng,
+        };
+        match self.instances.get(details.instance as usize) {
+            Some(Some(b)) if scale > 0.0 => {
+                let scaled = InstanceBevel {
+                    radius: b.radius * scale,
+                    across: b.across.clone(),
+                };
+                if scaled.radius > 0.0 && scaled.radius.is_finite() {
+                    scaled.apply(&scene.geometry, ray, details, base)
+                } else {
+                    base
+                }
+            }
+            _ => base,
+        }
+    }
+
+    /// M3b: the curvature of the part at the hit `details` within `radius_mm` (in the part's own
+    /// millimetres), as the programs' `EDGE` and `CAVITY` read it: `(convexity, concavity)`, each
+    /// 0 to 1. E7 (the curvature of the mesh itself) is not there yet, so it is measured from
+    /// the sharp edges the bevel rounds ([`crate::geometry::edges`]: folds of more than 20° and
+    /// open rims): each edge within reach gives `smoothstep(1 − d/r) · min(tan(θ/2), 1)` (its
+    /// closeness, eased, times how sharp it is: a right angle or sharper is 1, an open rim
+    /// counts as a right angle), the largest over the convex edges is the convexity and over
+    /// the concave ones the concavity. A smooth rounded mesh without sharp edges reads 0.
+    pub fn curvature(&self, scene: &Scene, details: &Hit, radius_mm: f32) -> (f32, f32) {
+        let geometry = &scene.geometry;
+        let Some((mesh, _)) = geometry.instance_mesh(details.instance) else {
+            return (0.0, 0.0);
+        };
+        let r = radius_mm / instance_scale(geometry, details.instance);
+        if !(r > 0.0 && r.is_finite()) {
+            return (0.0, 0.0);
+        }
+        let edges = mesh.sharp_edges();
+        if edges.is_empty() || edges.clearance(details.triangle) > r {
+            return (0.0, 0.0);
+        }
+        let Some([p0, p1, p2]) = mesh.triangle(details.triangle as usize) else {
+            return (0.0, 0.0);
+        };
+        let [b0, b1, b2] = details.barycentrics;
+        let p = p0 * b0 + p1 * b1 + p2 * b2;
+        let found = edges.within(p, r);
+        if found.as_slice().is_empty() {
+            return (0.0, 0.0);
+        }
+        let sign = if details.front_face { 1.0 } else { -1.0 };
+        let ng = winding_normal(mesh, details.triangle) * sign;
+        let mut ns = geometry
+            .normal_to_object(details.instance, details.normal)
+            .normalize();
+        if !ns.is_finite() || ns.dot(ng) < 0.0 {
+            ns = ng;
+        }
+        let across = match self.instances.get(details.instance as usize) {
+            Some(Some(b)) => b.across.as_deref().map(Vec::as_slice),
+            _ => None,
+        };
+        let local = Local {
+            mesh,
+            edges,
+            across,
+            triangle: details.triangle,
+            p,
+            ng,
+            ns,
+            sign,
+            frame: Frame::from_normal(ns),
+            radius: r,
+        };
+        let (mut convex, mut concave) = (0.0f32, 0.0f32);
+        for &(_, index) in found.as_slice() {
+            let Some(pull) = local.pull(index) else {
+                continue;
+            };
+            let near = 1.0 - pull.d / r;
+            if near.is_nan() || near <= 0.0 {
+                continue;
+            }
+            let near = near.min(1.0);
+            let w = (near * near) * (3.0 - 2.0 * near) * pull.m;
+            if pull.convex {
+                convex = convex.max(w);
+            } else {
+                concave = concave.max(w);
+            }
+        }
+        (convex, concave)
+    }
+
     /// The shading normal of the exact normal pass ([`crate::integrator::first_hit`]): the hit's
     /// own (facing the ray) without a bevel, the bevelled one with it.
     pub fn pass_normal(&self, scene: &Scene, ray: &Ray, details: &Hit) -> Vec3 {

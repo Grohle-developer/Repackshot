@@ -78,6 +78,7 @@ use crate::geometry::{Geometry, RayClass, RayHit};
 use crate::light::{Lights, Scattered};
 use crate::math::{offset_origin, Frame, Ray, Vec3};
 use crate::pattern::{PatternSetup, Tint};
+use crate::program::{ProgramSetup, Resolved};
 use crate::sampler::{
     bounce_dim, cutout_dim, PixelSampler, DIM_DISPERSION, OFFSET_BSDF, OFFSET_LIGHT,
     OFFSET_LIGHT_SELECT, OFFSET_ROULETTE,
@@ -242,6 +243,8 @@ pub struct Prepared {
     pub(crate) patterns: PatternSetup,
     /// The image textures and labels of every instance ([`crate::texture`], M2b).
     pub(crate) textures: TextureSetup,
+    /// The material programs of every instance ([`crate::program`], M3b).
+    pub(crate) programs: ProgramSetup,
 }
 
 /// True when a shadow ray from a medium's exit vertex may cross a solid of `m` (E9b): smooth,
@@ -312,8 +315,9 @@ impl Prepared {
                 .particle_set(i as u32)
                 .is_some_and(|set| set.params().shape == rt_sim::Shape::Disc)
         };
-        // M2b: an alpha image makes the opacity vary over the surface.
+        // M2b: an alpha image makes the opacity vary over the surface; M3b: so does a program.
         let textures = TextureSetup::new(scene);
+        let programs = ProgramSetup::new(scene);
         let passable: Vec<bool> = (0..instances.len() + scene.geometry.particle_sets().len())
             .map(|i| {
                 material(i).is_some_and(|m| {
@@ -321,6 +325,7 @@ impl Prepared {
                     !m.is_emissive()
                         && (m.opacity < 1.0
                             || textures.has_alpha(i as u32)
+                            || programs.see_through(i as u32)
                             || (thin
                                 && m.transmission > 0.0
                                 && (m.metallic < 1.0 || m.kind == crate::scene::MATERIAL_GLASS)))
@@ -370,6 +375,7 @@ impl Prepared {
             bevel: BevelSetup::new(scene),
             patterns: PatternSetup::new(scene),
             textures,
+            programs,
         }
     }
 
@@ -498,6 +504,9 @@ impl Prepared {
                 Some(m) => m,
                 None => self.material(scene, hit.instance),
             };
+            // M3b: what its program makes of it there.
+            let programmed = self.programs.at_shadow(scene, &details, r.dir, m);
+            let m = programmed.as_ref().unwrap_or(m);
             // M2b: the opacity, tint and transmission its textures give it there.
             let textured = self.textures.at_shadow(scene, &details, m);
             let m = textured.as_ref().unwrap_or(m);
@@ -581,6 +590,9 @@ impl Prepared {
                 Some(m) => m,
                 None => self.material(scene, hit.instance),
             };
+            // M3b: what its program makes of it there.
+            let programmed = self.programs.at_shadow(scene, &details, r.dir, m);
+            let m = programmed.as_ref().unwrap_or(m);
             // M2b: the opacity, tint and transmission its textures give it there.
             let textured = self.textures.at_shadow(scene, &details, m);
             let m = textured.as_ref().unwrap_or(m);
@@ -765,11 +777,32 @@ pub fn first_hit<T: Tracer>(scene: &Scene, prepared: &Prepared, tracer: &T, ray:
             let material = prepared.material(scene, details.instance);
             let pattern = prepared.patterns.albedo(scene, &details);
             let base = pattern.unwrap_or(material.base_color);
+            // M3b: the base colour of its program there, over the camera ray's footprint.
+            let programmed = prepared.programs.has(details.instance).then(|| {
+                let footprint = prepared.textures.camera().footprint(
+                    ray.dir.normalize(),
+                    details.t * ray.dir.length(),
+                    details.geometric_normal,
+                );
+                prepared.programs.albedo(
+                    scene,
+                    &prepared.bevel,
+                    ray,
+                    &details,
+                    material,
+                    &footprint,
+                )
+            });
+            let programmed = programmed.flatten();
+            let base = programmed.as_ref().map_or(base, |m| m.base_color);
             // M2b: the colour of the textures and labels over it.
             let textured = prepared.textures.has(details.instance).then(|| {
-                let m = Material {
-                    base_color: base,
-                    ..material.clone()
+                let m = match &programmed {
+                    Some(m) => m.clone(),
+                    None => Material {
+                        base_color: base,
+                        ..material.clone()
+                    },
                 };
                 prepared.textures.albedo(scene, ray, &details, &m)
             });
@@ -828,6 +861,8 @@ struct Surface {
     tint: Option<Tint>,
     /// What the material's textures and labels make of it here, if it has any (M2b).
     textured: Option<Textured>,
+    /// What the material's program makes of it here, if it has one (M3b).
+    programmed: Option<Resolved>,
 }
 
 /// Radiance and coverage arriving at the camera along `camera_ray`, for one sample of one
@@ -1100,6 +1135,7 @@ pub fn radiance_weighted<T: Tracer>(
                 outside: true,
                 tint: None,
                 textured: None,
+                programmed: None,
             }
         } else {
             // A particle widened to the minimum size on screen (S4a): the camera ray shades it
@@ -1138,12 +1174,12 @@ pub fn radiance_weighted<T: Tracer>(
             // A procedural pattern colours the material here and tilts the normal by its relief
             // (crate::pattern).
             let tint = prepared.patterns.apply(scene, &ray, &details, &mut shade);
-            // Image textures and labels (crate::texture, M2b), read over the ray's footprint:
-            // the camera's ray differentials for a camera ray, the path's cone after.
-            let textured = prepared.textures.has(details.instance).then(|| {
+            // The ray's footprint for the image reads: the camera's ray differentials for a
+            // camera ray, the path's cone after.
+            let footprint = || {
                 let camera = prepared.textures.camera();
                 let distance = offset + details.t;
-                let footprint = if primary {
+                if primary {
                     camera.footprint(ray.dir, distance, details.geometric_normal)
                 } else {
                     Footprint::cone(
@@ -1151,13 +1187,35 @@ pub fn radiance_weighted<T: Tracer>(
                         cone_width + camera.spread() * distance,
                         details.geometric_normal,
                     )
-                };
+                }
+            };
+            // A material program (crate::program, M3b) gives the material here, bends the
+            // normal and weighs the bevel.
+            let programmed = prepared.programs.has(details.instance).then(|| {
+                let plain = prepared.material(scene, details.instance);
+                prepared.programs.apply(
+                    scene,
+                    &prepared.bevel,
+                    &ray,
+                    &details,
+                    &mut shade,
+                    plain,
+                    &footprint(),
+                )
+            });
+            let programmed = programmed.flatten();
+            // Image textures and labels (crate::texture, M2b), read over the ray's footprint, over
+            // what the pattern or the program made of the material.
+            let textured = prepared.textures.has(details.instance).then(|| {
                 let plain = prepared.material(scene, details.instance);
                 let tinted = tint.map(|t| t.apply(plain));
-                let base = tinted.as_ref().unwrap_or(plain);
+                let base = match &programmed {
+                    Some(p) => &p.material,
+                    None => tinted.as_ref().unwrap_or(plain),
+                };
                 prepared
                     .textures
-                    .apply(scene, &ray, &details, &mut shade, base, &footprint)
+                    .apply(scene, &ray, &details, &mut shade, base, &footprint())
             });
             Surface {
                 point: shade.point,
@@ -1169,6 +1227,7 @@ pub fn radiance_weighted<T: Tracer>(
                 outside: details.outside,
                 tint,
                 textured: textured.flatten(),
+                programmed,
             }
         };
 
@@ -1184,7 +1243,13 @@ pub fn radiance_weighted<T: Tracer>(
         };
         let patterned = material.zip(surface.tint).map(|(m, t)| t.apply(m));
         let material = patterned.as_ref().or(material);
-        // The textures' material (M2b), made over the patterned one.
+        // The program's material (M3b).
+        let material = surface
+            .programmed
+            .as_ref()
+            .map(|p| &p.material)
+            .or(material);
+        // The textures' material (M2b), made over the patterned one (or the program's).
         let material = surface.textured.as_ref().map(|t| &t.material).or(material);
 
         // Emitters reflect nothing: add their light and stop.
@@ -1200,10 +1265,11 @@ pub fn radiance_weighted<T: Tracer>(
                         let cos = surface.geometric.dot(ray.dir);
                         lights.emitter_weight(instance, s, offset + t_geometry, cos)
                     });
-                    let radiance = surface
-                        .textured
-                        .as_ref()
-                        .map_or_else(|| m.radiance(), |t| t.emission);
+                    let radiance = match (&surface.textured, &surface.programmed) {
+                        (Some(t), _) => t.emission,
+                        (None, Some(p)) => p.emission,
+                        (None, None) => m.radiance(),
+                    };
                     prepared.add(&mut sum, throughput * radiance * weight, bounce >= 2);
                 }
                 break;
@@ -1226,6 +1292,14 @@ pub fn radiance_weighted<T: Tracer>(
             // rays that hit it, it is not sampled as a light.
             if let Some(t) = surface.textured.as_ref().filter(|t| peak(t.emission) > 0.0) {
                 prepared.add(&mut sum, throughput * t.emission, bounce >= 2);
+            }
+            // So does a program's emission on a material that is not an emitter (M3b).
+            if let Some(p) = surface
+                .programmed
+                .as_ref()
+                .filter(|p| peak(p.emission) > 0.0)
+            {
+                prepared.add(&mut sum, throughput * p.emission, bounce >= 2);
             }
         }
 
