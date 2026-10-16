@@ -70,8 +70,9 @@ const GRID_MAX_CELLS: u64 = 1 << 20;
 const GRID_MAX_PIECES: usize = 32;
 /// Most particles a camera ray tests from a cell of the screen grid: a ray of a fuller cell (or of
 /// a set with more particles that every ray tests) walks the BVH instead, which stops at the
-/// nearest hit where the cell would test them all.
-pub const GRID_MAX_CANDIDATES: usize = 16;
+/// nearest hit where the cell would test them all. Measured on 200 000 widened motes (S4b): best
+/// or as good as the BVH at 128 x 72, 512 x 288 and 1920 x 1080.
+pub const GRID_MAX_CANDIDATES: usize = 128;
 
 /// Leaf policy of a particle BVH.
 const PARTICLE_LEAVES: BuildParams = BuildParams {
@@ -124,7 +125,7 @@ impl ScreenProjection {
     #[inline(always)]
     pub fn project(&self, d: Vec3) -> Option<(f32, f32)> {
         let z = d.dot(self.forward);
-        if !(z > 1.0e-6 * d.abs().max_component()) {
+        if z.is_nan() || z <= 1.0e-6 * d.abs().max_component() {
             return None;
         }
         let k = self.scale / z;
@@ -148,7 +149,7 @@ impl ScreenProjection {
         let across = o - self.forward * along;
         let r = self.lens_radius * (1.0 + 1.0e-5) + tol;
         let dz = ray.dir.dot(self.forward);
-        if along.abs() > tol || across.dot(across) > r * r || !(dz > 0.0) {
+        if along.abs() > tol || across.dot(across) > r * r || dz.is_nan() || dz <= 0.0 {
             return None;
         }
         Some(o + ray.dir * ((self.focus - along) / dz))
@@ -1131,7 +1132,7 @@ mod grid_tests {
                 assert!(hits > 300, "{hits}");
             }
         }
-        // A crowd (6 000 particles 4 mm across in a box of 150 mm): the rays of its full cells
+        // A crowd (40 000 particles 4 mm across in a box of 150 mm): the rays of its full cells
         // walk the BVH, and every ray still finds what brute force finds.
         let camera = Camera {
             position: Vec3::new(0.0, -1000.0, 100.0),
@@ -1139,7 +1140,7 @@ mod grid_tests {
             ..Camera::default()
         };
         let mut rng = Pcg32::seeded(5, 5);
-        let crowd: Vec<Particle> = (0..6000)
+        let crowd: Vec<Particle> = (0..40_000)
             .map(|id| Particle {
                 centre: [
                     -75.0 + 150.0 * rng.next_f32(),
@@ -1153,7 +1154,7 @@ mod grid_tests {
             })
             .collect();
         let params = AmbientParams {
-            count: 6000,
+            count: 40_000,
             ..AmbientParams::default()
         };
         let footprint = PixelFootprint::of(&camera, 120, 80);

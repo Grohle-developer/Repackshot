@@ -1173,7 +1173,7 @@ pub fn radiance_weighted<T: Tracer>(
                 }
                 let (through, origin) = prepared.straight_through(scene, &ray, h, &details);
                 throughput = throughput * through;
-                if !(peak(throughput) > 0.0) {
+                if !(peak(throughput) > 0.0 && peak(throughput).is_finite()) {
                     break;
                 }
                 offset += (origin - ray.origin).dot(ray.dir);
