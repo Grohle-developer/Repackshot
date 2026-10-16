@@ -2256,6 +2256,8 @@ export function duplicateJob(ctx: Ctx, id: string): void {
 
 export function removeJob(ctx: Ctx, id: string): void {
   ctx.store.dispatch({ type: 'render/removeJob', id, label: L('undo.removeJob') });
+  // Its live view goes with it (U14).
+  if (ctx.ui.get().liveView?.jobId === id) closeLive(ctx);
 }
 
 export function moveJob(ctx: Ctx, id: string, to: number): void {
@@ -2296,7 +2298,38 @@ export function openResult(ctx: Ctx, id: string): void {
     ctx.ui.toast(t('rv.missing'));
     return;
   }
-  ctx.ui.set({ resultView: { id, compare: null, split: 'SPLIT', position: 0.5 }, renderWindow: null });
+  ctx.ui.set({ resultView: { id, compare: null, split: 'SPLIT', position: 0.5 }, renderWindow: null, liveView: null, liveFrame: null });
+}
+
+/**
+ * A click (or ⏎) on a queue row (UI.md §2.5): a finished job opens its result in the viewer, as before; one that renders
+ * or waits opens the live view (U14, the results viewer in progress): its picture as it accumulates, or a line saying it
+ * has not started. A job that ended without a result does nothing.
+ */
+export function selectJob(ctx: Ctx, id: string): void {
+  const job = ctx.store.get().render.queue.find((j) => j.id === id);
+  if (!job) return;
+  if (job.status === 'RUNNING' || job.status === 'QUEUED') {
+    watchJob(ctx, id);
+    return;
+  }
+  const results = ctx.ui.get().results;
+  const result = job.resultIds.map((r) => results.find((m) => m.id === r)).find(Boolean);
+  if (result) openResult(ctx, result.id);
+}
+
+let liveOpenings = 0;
+
+/** U14: the live view on a job of the queue (it replaces the results viewer; the picture of another job goes). */
+export function watchJob(ctx: Ctx, id: string): void {
+  const u = ctx.ui.get();
+  if (!ctx.store.get().render.queue.some((j) => j.id === id)) return;
+  ctx.ui.set({ liveView: { jobId: id, box: u.liveView?.box ?? null, opened: ++liveOpenings }, resultView: null, renderWindow: null, ...(u.liveFrame && u.liveFrame.jobId !== id ? { liveFrame: null } : {}) });
+}
+
+/** U14: closes the live view; the job goes on rendering, and no more pictures of it are made. */
+export function closeLive(ctx: Ctx): void {
+  if (ctx.ui.get().liveView || ctx.ui.get().liveFrame) ctx.ui.set({ liveView: null, liveFrame: null });
 }
 
 export function openLastResult(ctx: Ctx): void {

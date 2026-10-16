@@ -2082,6 +2082,17 @@ comentario de por qué es correcto, el resto del *crate* mantiene
    el lanzador no conteste. El contrato completo, en
    `engine/crates/rt-app/README.md`.
 
+   **Vista en vivo** (U14): mientras la vista en vivo de la cola mira un
+   *Render* y le toca una imagen (`FrameRequest.frameBox`, con la cadencia de
+   `core/live-frame.ts`), la página pide, tras la pasada recién publicada,
+   `GET /api/render/<id>?fit=<an>x<al>`: el lanzador promedia las sumas por un
+   factor entero (`Frame::fitted`, en el hilo de la petición) y la trama lleva
+   el tamaño reducido y la bandera 512, así que solo viajan los píxeles de la
+   imagen (un lanzador sin `fit=` las manda enteras y la página las reduce).
+   Sin vista en vivo solo viajan cabeceras, como antes. En la web, el *pool*
+   hace lo mismo con su acumulación (`render/live-frame.ts`) tras la baldosa
+   que acaba de llegar.
+
    ***Denoise* y cáusticas** (E5b-1): con `RNDR.denoise` el trabajo
    renderiza también los pases guía y filtra con `rt_post::denoise` en
    bandas de filas en sus hilos (los mismos bits con cualquier número). Un

@@ -12,6 +12,7 @@ import type { ImportMessage, ImportPayload, ImportReadOptions } from '../core/im
 import type { ImportResult, Library } from '../core/library';
 import type { MaterialInstance } from '../core/materials';
 import type { Program } from '../core/material-program';
+import type { FrameBox, LiveFrame } from '../core/live-frame';
 import type { RenderPasses } from '../core/passes';
 import type { AdvancedSettings, BitDepth, Destination, FinishBy, OutputFormat } from '../core/render';
 import type { ResultMeta } from '../core/results';
@@ -286,6 +287,17 @@ export interface FrameRequest {
    * image by the render's id (AI-POST.md §7.3), for the `RENDER` source. Ignored where there is no launcher.
    */
   aiPasses?: boolean;
+  /**
+   * U14, the queue's live view of this job: asked as the image accumulates (the web's pool: as its tiles come back;
+   * the desktop launcher: after every pass), the box (device pixels) to fit a picture in when one is wanted now, else
+   * null. The queue's cadence is inside it (core/live-frame.ts): it says yes at most every LIVE_FRAME_MS, and only
+   * while the live view shows this job; while it says no, no picture is made and no sums are copied for one. `image`:
+   * the number of the image the engine has now (the desktop: its pass), so the same image is not asked for twice
+   * while the view stays open.
+   */
+  frameBox?: (image?: number) => FrameBox | null;
+  /** U14: the picture `frameBox` asked for, scaled to its box, with the engine's samples and seconds. */
+  onFrame?: (frame: LiveFrame) => void;
 }
 
 /** The exposure and tone curve a render's file was written with (RSB codes): the AI image is written the same way. */

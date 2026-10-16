@@ -493,6 +493,10 @@ con un render falso que entrega fotogramas.
 
 **Dependencias.** U5 (hecha), N2 (en cola, toca la cola). Sale sola.
 
+**Estado.** Hecha en **U14** (`ROADMAP.md`): solo el trabajo en curso enseña su
+imagen en vivo (uno en espera lo dice, uno terminado abre su resultado), en el
+visor de resultados en modo «en curso», reducida a lo que cabe.
+
 ---
 
 ## 4.1 · Se guarda `.repack.json` y no `.repack`

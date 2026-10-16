@@ -3,6 +3,28 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
+## v0.1.9 — 2026-10-16
+
+Versión de prueba con la vista en vivo del render seleccionado en la cola
+(petición del reporte del 14-10). Lo de v0.1.2 a v0.1.8 sigue igual.
+
+### Interfaz
+
+- **Vista en vivo en la cola** (petición del usuario): clic en la fila del trabajo que se está renderizando abre su imagen mientras se hace, sobre el visor (el visor de resultados en modo *en curso*), con las muestras y los segundos que dice el motor, el estado y el progreso de la fila; la fila elegida se marca. Un trabajo en espera dice que aún no ha empezado y enseña su imagen en cuanto empieza; uno terminado sigue abriendo su resultado, y el que acaba con la vista abierta pasa a ser su resultado en el visor. Cerrarla (`Esc`) o elegir otro trabajo hace que el motor deje de hacer imágenes: solo se hacen mientras se mira, como mucho cada medio segundo (U14).
+
+### Escritorio
+
+- El lanzador manda la trama de un render **reducida** a un recuadro (`GET /api/render/<id>?fit=<an>x<al>`, bandera 512): la vista en vivo de la cola recibe solo los píxeles de su imagen y no las sumas enteras (U14).
+
+### Limitaciones conocidas de esta versión
+
+- En el escritorio la imagen en vivo cambia una vez por pasada del motor
+  (1, 2, 4, 8, 16 muestras…), no cada medio segundo; en la web el número de
+  muestras es el que ya tiene cada píxel (0 mientras la primera pasada llena
+  los mosaicos). No hay zoom ni 100 % en la vista en curso, y la miniatura
+  de la fila en marcha sigue siendo el icono.
+- Siguen las de la v0.1.8.
+
 ## v0.1.8 — 2026-10-16
 
 Versión de prueba con una sola novedad: la ventana con los elementos de una

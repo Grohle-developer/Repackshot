@@ -39,6 +39,12 @@
 // as long as a denoise (tiles.ts `livePassCap`). The switch never starts the
 // image over: on, it denoises the last pass at once; off, the accumulated sums
 // are on screen at the next frame.
+//
+// Live view (U14): while the queue's live view wants a picture of a Render
+// (`frameBox`, at its cadence), the tile that just came back is followed by a
+// picture of the accumulation as it is, each tile with its own samples, scaled
+// to the view's box (render/live-frame.ts); while it wants none, nothing more
+// is done than before.
 
 import type { CameraState } from '../core/camera';
 import { passMask, type PassKey, type RenderPasses } from '../core/passes';
@@ -46,6 +52,8 @@ import { advancedTouchesView, denoiseFraction, engineFieldsOf, type AdvancedSett
 import { DEFAULT_PIXEL_FILTER, pixelFilterFields, type PixelFilterFields, type PixelFilterSetting } from '../core/antialias';
 import { DENOISE_IMAGE, DENOISE_KEEP_NOISY, denoiseIn, type CausticsMode, type CausticsQuality } from '../core/caustics';
 import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob, type DenoisePreset } from './denoise';
+import { fitFactor } from '../core/live-frame';
+import { LivePicture } from './live-frame';
 import type { ProjectState } from '../core/store';
 import type { EngineStatus, PickHit, RenderEngine, RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
@@ -1285,6 +1293,24 @@ export class PathTracerEngine implements RenderEngine {
         const elapsed = performance.now() - t0;
         opts.onProgress?.({ jobId: null, progress: budgetProgress(budget, acc.totalSamples / Math.max(1, acc.tiles.length), elapsed), samples: done, seconds: elapsed / 1000 });
       };
+      // U14: the queue's live view, when it wants a picture now: the accumulation as it is (each tile with its own
+      // samples), scaled to its box, with the render's exposure and curve; the picture is kept, and only the boxes
+      // over the tiles that came back since the last one are done again. Nothing is made while it wants none.
+      let liveCurve: DisplayCurve | null = null;
+      let livePic: LivePicture | null = null;
+      const live = () => {
+        const box = opts.frameBox?.();
+        if (!box || !opts.onFrame) return;
+        if (!liveCurve) {
+          const tone = this.source.tone(state);
+          liveCurve = new DisplayCurve(tone.exposureEv, tone.tonemap);
+        }
+        const k = fitFactor(acc.width, acc.height, box);
+        if (livePic?.k !== k) livePic = new LivePicture(acc.width, acc.height, k);
+        livePic.update(acc.sum, acc.samples, liveCurve);
+        const seconds = (performance.now() - t0) / 1000;
+        opts.onFrame({ width: livePic.width, height: livePic.height, rgba: livePic.rgba.slice(), renderWidth: opts.width, renderHeight: opts.height, samples: acc.minSamples, seconds });
+      };
       const result = await runPasses(budget, {
         now: () => performance.now(),
         // Each pass on the workers the viewport leaves free now (all of them in Fast mode); the pool hands this
@@ -1309,6 +1335,7 @@ export class PathTracerEngine implements RenderEngine {
                   lastReport = now;
                   report();
                 }
+                if (opts.frameBox) live();
               },
               lane,
               mask,

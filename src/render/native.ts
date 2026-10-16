@@ -46,8 +46,15 @@
 // id for the AI (AI-POST.md §7.3, even after the page forgets the job), and the
 // page reads them once, before it lets the job go (`GET /api/render/<id>/passes`,
 // render/pass-planes.ts `parsePasses`), and hands them back with the render's id.
+//
+// Live view (U14): while the queue's live view wants a picture of the Render
+// (`frameBox`, at its cadence), the page asks for the frame of the pass just
+// published scaled down to the view's box (`GET /api/render/<id>?fit=WxH`:
+// the launcher averages the sums by a whole factor) and converts it for
+// display; while it wants none, only the headers travel, as before.
 
 import type { CameraState } from '../core/camera';
+import type { FrameBox } from '../core/live-frame';
 import type { PassKey, RenderPasses } from '../core/passes';
 import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
@@ -57,6 +64,7 @@ import { QUIET_MS, type RenderedPixels, type SceneSource, type TracerView } from
 import { CAUSTICS_PRESETS, DENOISE_IMAGE, denoiseIn } from '../core/caustics';
 import { advancedTouchesView, engineFieldsOf } from '../core/render';
 import { DEFAULT_PIXEL_FILTER, pixelFilterFields, type PixelFilterFields, type PixelFilterSetting } from '../core/antialias';
+import { liveFrameOf } from './live-frame';
 import { parsePasses } from './pass-planes';
 import { abortError, budgetProgress, type PassBudget } from './schedule';
 import { Accumulator, chooseScale, exactBytes, scaledSize } from './tiles';
@@ -83,6 +91,8 @@ export const FLAG_DENOISED = 64;
 export const FLAG_NOISY = 128;
 /** E5b-1: the image has caustics from the photon map. */
 export const FLAG_CAUSTICS = 256;
+/** U14: the sums are scaled down by a whole factor (`fit=`): the header's width and height are the picture's. */
+export const FLAG_SCALED = 512;
 
 /** Threads the viewport keeps while a Render runs: a quarter, at least one (render.rs `viewport_share`). */
 export function viewportShare(threads: number): number {
@@ -1028,6 +1038,11 @@ export class NativeEngine {
         if (f.flags & FLAG_CANCELLED) throw signal?.aborted ? abortError() : new Error('the render was interrupted');
         if (f.flags & FLAG_FAILED) throw new Error('the render failed');
         if (f.flags & FLAG_DONE) break;
+        // U14: the queue's live view wants a picture of this pass: the launcher scales the sums down to its box
+        // (`fit=`), so only the picture's pixels travel. Asked for nothing, nothing is fetched.
+        // A poll that comes back without a new pass (after a second) asks with the same image: no new picture of it.
+        const box = f.samples > 0 && opts.onFrame ? opts.frameBox?.(f.pass) : null;
+        if (box) await this.liveFrame(id, box, opts, state, init);
       }
       const res = await this.api.request(`/api/render/${id}`, init);
       if (!res.ok) throw new Error(await failureText(res));
@@ -1071,6 +1086,32 @@ export class NativeEngine {
       this.rendering--;
     }
   }
+
+  /**
+   * U14: a picture of final render `id` as it is now for the queue's live view, the launcher's sums scaled to `box`
+   * (`GET /api/render/<id>?fit=WxH`; a launcher without `fit=` sends them whole and they are scaled here). A picture
+   * that cannot be had is skipped (the render goes on); an abort is the render's.
+   */
+  private async liveFrame(id: number, box: FrameBox, opts: RenderOptions, state: ProjectState, init: RequestInit): Promise<void> {
+    try {
+      const res = await this.api.request(`/api/render/${id}?fit=${Math.max(1, Math.floor(box.width))}x${Math.max(1, Math.floor(box.height))}`, init);
+      // Every body is read (or its error text): an unread one would hold one of the six connections.
+      if (!res.ok) throw new Error(await failureText(res));
+      const f = parseFrame(await res.arrayBuffer());
+      if (!f.sums || f.samples <= 0) return;
+      if (!this.liveCurve || this.liveCurve.state !== state) {
+        const tone = this.source.tone(state);
+        this.liveCurve = { state, curve: new DisplayCurve(tone.exposureEv, tone.tonemap) };
+      }
+      opts.onFrame?.(liveFrameOf({ sum: f.sums, width: f.width, height: f.height, samples: f.samples }, box, this.liveCurve.curve, { renderWidth: opts.width, renderHeight: opts.height, samples: f.samples, seconds: f.seconds }));
+    } catch (err) {
+      if (isAbort(err) || init.signal?.aborted) throw err;
+      console.warn(`render ${id}: no live picture (${err instanceof Error ? err.message : String(err)})`);
+    }
+  }
+
+  /** U14: the display curve of the live view's pictures, for the project it was made from. */
+  private liveCurve: { state: ProjectState; curve: DisplayCurve } | null = null;
 
   /**
    * The passes the launcher kept for final render `id`. A launcher that has none (one older than X2, or a

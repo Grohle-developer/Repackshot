@@ -7,6 +7,7 @@ import * as cmd from '../commands';
 import { h, icon } from '../dom';
 import { dynamic, type Ctx, type Scope } from '../reactive';
 import { t } from '../strings';
+import { liveViewer } from './live-viewer';
 import { resultsViewer } from './results-viewer';
 import { viewportLabels } from './viewport-labels';
 import { viewportOverlays } from './viewport-overlays';
@@ -88,12 +89,18 @@ export function viewportPanel(ctx: Ctx, scope: Scope): HTMLElement {
   // The label tool (M2a) listens first: while it is on, a press on a part is its own, not the camera's or the gizmo's.
   if (port) el.append(viewportLabels(ctx, scope, el));
   if (port) el.append(...viewportOverlays(ctx, scope, el));
-  // The results viewer: a layer over the viewport (UI.md §2.8), rebuilt when the result or the comparison changes.
+  // The results viewer: a layer over the viewport (UI.md §2.8), rebuilt when the result or the comparison changes; in
+  // the same layer, its "in progress" mode (U14): the live view of a queue job while that job is in the queue.
   el.appendChild(
     dynamic(
       scope,
-      (_s, u) => (u.resultView ? `${u.resultView.id}|${u.resultView.compare ?? ''}` : null),
-      (sc, key) => (key ? resultsViewer(ctx, sc) : null),
+      (s, u) =>
+        u.resultView
+          ? `result|${u.resultView.id}|${u.resultView.compare ?? ''}`
+          : u.liveView && s.render.queue.some((j) => j.id === u.liveView!.jobId)
+            ? `live|${u.liveView.jobId}`
+            : null,
+      (sc, key) => (key?.startsWith('result|') ? resultsViewer(ctx, sc) : key ? liveViewer(ctx, sc) : null),
       undefined,
       'div',
       'rv-host',

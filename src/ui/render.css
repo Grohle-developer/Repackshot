@@ -1002,6 +1002,72 @@
   place-items: center;
 }
 
+/* Live view (U14): the results viewer's "in progress" mode, the picture of a job as it renders. ------------------ */
+.lv-titleline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lv-badge {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--ink-0);
+  border-radius: 2px;
+  color: var(--ink-0);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lv-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 220px;
+  max-width: 100%;
+}
+.lv-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+.lv-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lv-frame {
+  display: grid;
+  place-items: center;
+}
+.lv-canvas {
+  display: block;
+  /* The picture is smaller than the space (a whole factor of the render): scaled up smoothly, over the neutral checker
+     of the results viewer where the render is transparent. */
+  image-rendering: auto;
+  background-color: #8a8a8a;
+  background-image: linear-gradient(45deg, #7a7a7a 25%, transparent 25%), linear-gradient(-45deg, #7a7a7a 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #7a7a7a 75%), linear-gradient(-45deg, transparent 75%, #7a7a7a 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+.lv-line {
+  max-width: 46ch;
+  padding: 0 16px;
+  text-align: center;
+}
+.queue-row.is-watchable {
+  cursor: pointer;
+}
+/* The job in the live view: a bar of ink on its left edge (the row keeps its own weight and colours). */
+.queue-row.is-selected {
+  background: var(--hover);
+  box-shadow: inset 3px 0 0 var(--ink-0);
+}
+
 /* Split compare ------------------------------------------------------------------------- */
 .split {
   position: absolute;
