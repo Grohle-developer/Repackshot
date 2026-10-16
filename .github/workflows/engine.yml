@@ -11,7 +11,7 @@
 # tests pin (tools/wasm-parity.mjs), and so must the E5 scene, the E5c physical sky, the E5b-1
 # caustics, the O1 lens, the S4a ambient particles, the E11 edges, the O3a lens filters, the E9
 # scattering media and dispersion, the E6 bevel, the E6 wood and cloth patterns, the M2b image
-# textures and labels and the M3b material programs; with every
+# textures and labels, the M3b material programs and the E10 adaptive sampling; with every
 # exact pass of X2 rendered next to the image, the image keeps its hash and each pass gives the hash
 # the native tests pin. The AI guard's `post.wasm` (rt-post-wasm) runs the scenarios of
 # tests/fixtures/ai-guard.json, which the native rt-post tests
@@ -172,6 +172,13 @@ jobs:
           expected=$(sed -n 's/.*PINNED_E11_EDGES_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e11.rsb" --expect "$expected"
+          # E10: the E5b-1 scene sampled adaptively to a noise target with edge samples (the first round
+          # by tiles, then the blocks the module's own decision chooses, rt_adaptive_decide, each sample
+          # with the photon map of its round's iteration, rt_render_block_rgba).
+          cargo run --release -p rt-cli -- --write-e10-example "$RUNNER_TEMP/e10.rsb"
+          expected=$(sed -n 's/.*PINNED_E10_ADAPTIVE: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/adaptive/tests.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e10.rsb" --expect-adaptive "$expected"
           # O3a: the effect filters of the lens (the LENS filter slots), alone and with the passes.
           cargo run --release -p rt-cli -- --write-o3a-example "$RUNNER_TEMP/o3a.rsb"
           expected=$(sed -n 's/.*PINNED_O3A_FILTERS_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
@@ -241,7 +248,7 @@ jobs:
         env:
           REPACK_REQUIRE_RT_WASM: '1'
           REPACK_RT_WASM: engine/target/wasm32-unknown-unknown/release/rt_wasm.wasm
-        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts
+        run: npx vitest run tests/passes-engine.test.ts tests/denoise.test.ts tests/effects-rsb.test.ts tests/antialias.test.ts tests/textures-engine.test.ts tests/programs-engine.test.ts tests/adaptive.test.ts
 
       - name: Tests on WebAssembly, scalar and simd128 (Node WASI)
         env:
