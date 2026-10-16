@@ -57,12 +57,12 @@
   "CALM": {
    "hero": "BOTTLE",
    "rsb": "c45cd93bcb1d6d4e7c826b3db84e13168e541b4c7fb68ffe74cffaa0c0f382bd",
-   "png": "05f1da481016abc76a1387fa9813be9994c3b33ef8ab29d4edb71e6df0c5f05e"
+   "png": "d99187fed26e817b3c332a9567cf0b8bce1d7b0dd65fe2f5e34e37c6a7c7bf7a"
   },
   "CANDY": {
    "hero": "BOTTLE",
    "rsb": "63a510ca9c833fc87cc0a0b6f5c9ed109c8793345159392c46b952312b6c8f39",
-   "png": "46ae23b7df7ff1f9224ba6c5584788c6573d3996f7d13450fc5fb24e0d74defd"
+   "png": "8e6f2a8def0781f18f2ead45a2556fc1983be9e6efda5db2f02508b807192139"
   },
   "CATALOG_FLAT": {
    "hero": "SPHERES",
@@ -97,7 +97,7 @@
   "CYBER": {
    "hero": "BOTTLE",
    "rsb": "36ec3d62eeb9e73cb70afece5b521df11fc027a0b93a6164ab95cbc736287883",
-   "png": "1747e02084ad50e35c6e1a4aef5c163d245bcef5a4cabca102d1556168b23b60"
+   "png": "bac69a20adbac84f6b74545bdcba99ec23c9ec35f92f203d511c758648e82115"
   },
   "DARK_FIELD": {
    "hero": "SPHERES",
@@ -182,12 +182,12 @@
   "HOPE": {
    "hero": "BOTTLE",
    "rsb": "e839a47567ebdbc32ab358188d4b8f591590c9b1b6d8d18bb86aafa69579adcb",
-   "png": "d589e734f0f53b5c7963fbc2874d4ae413f37b870be59b8ccfccd4aee484dcab"
+   "png": "00091284a1670438916a899bdf2aecc4f949e7f44d0748816953a3854bff02f6"
   },
   "INNOCENCE": {
    "hero": "BOTTLE",
    "rsb": "6b85d8af86c5993a282653c035ab1785a2116b3be17036367227706458998a6d",
-   "png": "5532656cb3be060e4052e115423d1760abde5017f66400a883943b954d10952e"
+   "png": "a46a706c73426cce393e1fe10340cf67ad66da30d3a91e10c4b72a66ded3c902"
   },
   "JEWEL_BOX": {
    "hero": "RING",
@@ -232,7 +232,7 @@
   "LOW_KEY": {
    "hero": "BOTTLE",
    "rsb": "5c0a09a2eec39abc36fc1db3a98ea28ccf4cd5d4cb628956c8b3bcce9d1125c7",
-   "png": "177a01d73eb24cb1b2b10836f16a84ce3cae615e62bf8faf3f3eab13944a3a9f"
+   "png": "1dc93640df4a2a195b203a44b739c2e371468644e4cceb7eff862b8a31c707d8"
   },
   "LOW_TENT": {
    "hero": "SPHERES",
@@ -242,12 +242,12 @@
   "MAGENTA_BITE": {
    "hero": "BOTTLE",
    "rsb": "1f37b26f723c84ecc99a8dc112bca70b6e510eed82c1ca2a6ea1153bb9003a68",
-   "png": "d7b961bd54cdd89181d7c88646dc4bc52173a90fd50def5a66b05867d8014630"
+   "png": "a5aa05998e28d524c0d3dce84162fda4f308b9271ceb1ba07b3d2fe1de332e17"
   },
   "MELANCHOLY": {
    "hero": "BOTTLE",
    "rsb": "1632f4055ce7a3eb39ea48366d4742c7d83b1a41a846663ffb140593b0e0e55a",
-   "png": "ef70de5f0d7345bb836eff838d95fbc0a94d22070f8d8c2169822a40163085fc"
+   "png": "7be14ff16f4775b79e8c466c9b28838a3260b6d25fb8381e67586ee102fb1931"
   },
   "MIRROR_FLOOR": {
    "hero": "BOTTLE",
@@ -262,7 +262,7 @@
   "MOONLIGHT": {
    "hero": "BOTTLE",
    "rsb": "4982cfebb511cf2a8ae9ac43ea34b9b444e8615ea34453207e649ec943ae6de8",
-   "png": "4dc75316ffc66b6a38940d5315e061acc3a80e20354032ac57d71f9fd6e6556c"
+   "png": "e71e3eb631c0b81f9edec1c746976863a8baf525542733a1da0188e9f484f679"
   },
   "MUSEUM": {
    "hero": "RING",
@@ -277,7 +277,7 @@
   "POISON": {
    "hero": "BOTTLE",
    "rsb": "4da1e38d8ffec3d3d785dfa6ac3a69f66ea6dfbf45d45cbe5ddf76659db4a75b",
-   "png": "919e84596ffc9c7d09aeb3a426d3c94abf747754d77915db76424a50c1631f87"
+   "png": "65e8a4ebf6c9fd8cddeb086ac5a22035e4cb755571c0e49fa169e84ce957c9b8"
   },
   "POP_COLOR": {
    "hero": "BOX",
@@ -367,7 +367,7 @@
   "STRIP_EDGE": {
    "hero": "BOTTLE",
    "rsb": "a58ce000ef9e347a52bbb0836ec338b575704a6a3c2df228ada636902113f2a1",
-   "png": "69dbb9446664b0c4f90f6439cfb28f4543bb3b11a1857e851a73bed0f270b540"
+   "png": "2315c21d63e3a88fb6c95c221a903c99808eb4fb0e830622670ab050184883bb"
   },
   "SUN": {
    "hero": "BOTTLE",
@@ -377,7 +377,7 @@
   "TEAL_ORANGE": {
    "hero": "BOTTLE",
    "rsb": "136c069e201ef1add9ab626bbc3427b2ec70c08c45568cf4fc356ae2467c434e",
-   "png": "3637b3b9868244f0110700ce8c8242d4b5eb7ed334db0e6830390344a590cb53"
+   "png": "7276d50b07a104fec4ebec03a5c83e20feaf39337b7a7980145e813e06c54106"
   },
   "THREE_POINT": {
    "hero": "SPHERES",
@@ -417,7 +417,7 @@
   "WARM_COOL_CINEMA": {
    "hero": "BOTTLE",
    "rsb": "86794dd0bd7d52c7ee82aa2ae4e3530d7a2c06842321ae35f54288586fe1fa48",
-   "png": "c801077b595b1289f82042befcef22715587e69b4d8ea6441d800ff55dc14193"
+   "png": "e283ba0a972332f3ea92380bc619d1268447a177f43f7f09db016c775afb5bc5"
   },
   "WARM_RIM": {
    "hero": "BOX",

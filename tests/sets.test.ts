@@ -571,7 +571,7 @@ describe('the thumbnails', () => {
     // STRIP_EDGE on its bottle as `rt` rendered it (256 x 256, 96 spp, denoised, seed 1), re-encoded without loss by
     // tools/setup-thumbs.mjs. It changes only when the set, the bottle or the engine changes: then run
     // `node tools/setup-thumbs.mjs` and put the new hash here.
-    expect(sha256Hex(readFileSync('public/thumbs/setups/thumb_strip_edge.png'))).toBe('69dbb9446664b0c4f90f6439cfb28f4543bb3b11a1857e851a73bed0f270b540');
+    expect(sha256Hex(readFileSync('public/thumbs/setups/thumb_strip_edge.png'))).toBe('2315c21d63e3a88fb6c95c221a903c99808eb4fb0e830622670ab050184883bb');
   });
 });
 
