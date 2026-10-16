@@ -4552,7 +4552,47 @@ El `MATL` de E6 (76 B, `bevel_mm` en el byte 72) es el que reservaba el
 bloque de texturas de M2a, que sigue en el byte 100 detrás de los campos de
 E9. Un material de nodos (M3a) no lleva `PATN` ni nudos en la vista
 *Rápida*: hasta M3b es la media de sus salidas. Las secciones de E6 en
-ARCHITECTURE son ahora §5.2 sexies (bisel) y §5.2 septies (madera y tela).
+ARCHITECTURE eran entonces §5.2 sexies (bisel) y §5.2 septies (madera y
+tela); desde la segunda fusión, §5.2 septies y octies.
+
+**Segunda fusión con la rama de la sesión** (O3a, v0.1.6, el arreglo de la
+prueba de humo, E9 a, b y c, el ajuste de `GRADIENT_POOL`).
+
+- **`MATL`** es el de E9, de 100 B: el `bevel_mm` de E6 en el byte 72 (el
+  hueco que E9 le reservaba), y detrás `scatter_mm`, `scatter_color[3]`,
+  `scatter_g` y `abbe`. El motor y el escritor TypeScript escriben todos;
+  un registro de 72 B se lee sin bisel y uno de 76 B (E6 antes de E9), con
+  el bisel y sin medio ni dispersión (test nuevo). El bloque de texturas de
+  M2a sigue en el byte 100, ya sin relleno.
+- **El integrador**: la BSDF de E9 (salida de un medio, vidrio dispersivo
+  con su banda, superficie, suelo) con el marco de E6 (la tangente de la
+  veta del dibujo, si la hay); el punto de sombreado biselado y con su
+  dibujo alimenta a los dos.
+- **`rt`**: todas las órdenes de los dos lados; un solo `--only` para las
+  tres hojas (lista con comas en `--filter-sheet` y `--filter-noise`, `wood`
+  o `cloth` en `--pattern-sheet`). En `engine.yml`, todos los pasos de
+  paridad: O1, S4a, E11, O3a, E9 y los tres de E6.
+- **Hashes**: la compensación de energía de E9a mueve los tres fijados de
+  E6 (todas sus piezas tienen GGX rugoso, de 0,12 a 0,85): bisel
+  **`0xeacaae75`** (era `0x2f228634`), madera **`0x5ed1bf32`** (era
+  `0x6fbc91f7`) y tela **`0x53e6a855`** (era `0x5604ec69`), en `rt-core`
+  (todas las ISA), `rt-cli` y `rt-app` (1, 4 y 16 hilos) y en el `rt.wasm`
+  real; los seis pases de E6, iguales. Ninguna escena sin bisel, madera ni
+  tela se mueve, y todos los *fixtures* RSB sin E6 salen idénticos byte a
+  byte a los de la sesión; `e6.rsb` pasa a 9 852 B y `patterns.rsb` a
+  6 332 B.
+- **Las miniaturas de los montajes**: sus escenas sí cambian, y no por esta
+  fusión: toda instancia de un preset trae un *Bisel de aristas* del
+  0,25 % del tamaño de la pieza (el arreglo del Doctor) y desde E6 el
+  escritor lo manda, así que los héroes de los sets llevan bisel en
+  *Completo*. Con el bisel a cero en el escritor, los 88 *hashes* de escena
+  del manifiesto coinciden; el test del manifiesto ya fallaba en E6 antes
+  de esta fusión (`1dc375e`). No se vuelven a renderizar ni se fijan:
+  queda para el responsable (renderizarlas otra vez con el bisel, o que
+  las miniaturas no lo lleven).
+- **Docs**: E9 conserva ARCHITECTURE §5.2 sexies y las secciones de E6 pasan
+  a §5.2 septies (bisel) y §5.2 octies (madera y tela); las líneas de E6
+  del CHANGELOG van en *Sin publicar*, no en v0.1.6.
 
 ## E7 · Desgaste visible — **Opus**, con visto bueno **Fable**
 

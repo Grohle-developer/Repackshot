@@ -1093,7 +1093,7 @@ mod tests {
     }
 
     /// Pinned hash of the E6 example (edge bevel) at 4 samples per pixel.
-    pub(crate) const PINNED_E6_BEVEL_4SPP: u32 = 0x2f22_8634;
+    pub(crate) const PINNED_E6_BEVEL_4SPP: u32 = 0xeaca_ae75;
 
     #[test]
     fn the_e6_pattern_scene_has_a_pinned_hash_on_every_platform() {
@@ -1116,7 +1116,7 @@ mod tests {
     }
 
     /// Pinned hash of the E6 pattern example at 4 samples per pixel.
-    pub(crate) const PINNED_E6_PATTERNS_4SPP: u32 = 0x6fbc_91f7;
+    pub(crate) const PINNED_E6_PATTERNS_4SPP: u32 = 0x5ed1_bf32;
 
     #[test]
     fn the_e6_cloth_scene_has_a_pinned_hash_on_every_platform() {
@@ -1136,7 +1136,7 @@ mod tests {
     }
 
     /// Pinned hash of the E6 cloth example at 4 samples per pixel.
-    pub(crate) const PINNED_E6_CLOTH_4SPP: u32 = 0x5604_ec69;
+    pub(crate) const PINNED_E6_CLOTH_4SPP: u32 = 0x53e6_a855;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {
