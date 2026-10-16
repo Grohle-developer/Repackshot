@@ -8814,6 +8814,112 @@ como desplegables en una fila (M31-03); aquí son *chips*, como se pidió. (4) U
 receta sin película (grano, filtro, objetivo) no tiene Tipo ni ISO: solo está en
 sus *Todos*, la regla de la app.
 
+## Reporte de errores del usuario (14/15-10) — triaje, B1 y decisiones
+
+El usuario mandó un reporte de errores graves (guardado tal cual en
+`TODO.md`, segundo documento). Su triaje, punto por punto contra el código
+de `main` (`72e4f79`) y la rama de O2, está en **`TRIAGE.md`**: qué hay
+hoy, si se reproduce, si es *bug*, *falta* o *decisión*, causa, arreglo y
+dependencias. De ahí salen:
+
+### B1 · Arreglos del reporte — **Sonnet**
+
+**Qué.** Los fallos confirmados y lo que el usuario pidió sin dejar nada
+abierto:
+
+1. **Enfocar con clic (1.8).** El pico ya es el del píxel; lo deshace el
+   mismo clic: OrbitControls dispara `end` en cada `pointerup` y
+   `src/main.ts` parchea la cámara con `focusDistance: v.distance`. Una
+   función pura en `core/camera.ts` (`orbitPatch(cam, view)`): sin parche
+   si la vista no cambió; el foco sigue a la distancia de órbita solo si ya
+   la seguía (la regla de `view-objects.ts` del *gizmo*). Se usa en
+   `onViewChange`, en el gesto y en *Mirar a través*. De paso: `clickAt`
+   mide desde la cámara **vista** (`viewedCamera`), no la activa.
+2. **Tela a *Nodos* (1.6, de paso).** `outputSetup` de la tela usa
+   `fabricMeanColor`, no `(a + b) / 2`: el vaquero no vuelve al gris
+   azulado que E6 corrigió.
+3. **Extensión `.repack` (4.1).** Lo pide el usuario, así que el cambio
+   de contrato de U2 es suyo (regla 12): se guarda `.repack`, el contenido
+   sigue siendo el mismo JSON, se abren `.repack` y `.repack.json` (también
+   soltándolos en la ventana); el lanzador admite `repack` en
+   `WRITABLE_EXTENSIONS` y en sus diálogos; la prueba de Wine y los
+   documentos (SPEC, ARCHITECTURE, UI) lo dicen. La asociación del archivo
+   en el instalador queda fuera (no se pidió).
+4. **Intentos de la IA (2.2).** No hay bucle sin fin en el código (tope de
+   4 por variante), pero la cola no lo cuenta: la fila dice «intento *a* de
+   4», la variante y el motivo del último fallo, y la barra se reparte por
+   intentos. Y la vista previa de la ventana de render deja de reiniciarse
+   con cada instantánea del gestor de modelos que no cambia lo instalado ni
+   lo listo (hipótesis del triaje: durante una descarga llegan cada 200 ms).
+
+**Criterio.** Cada arreglo con su test, que falla sin el arreglo (regla
+3): `tests/camera-focus.test.ts` (vista igual sin parche, órbita con el foco
+siguiendo, órbita tras un enfoque con clic); el color de la tela para todos
+los `MATERIAL_PRESETS` (falla hoy en `DENIM`, `SATIN`, `MICROFIB`); los
+nombres y filtros de `.repack` en la página y en `rt-app` (`files.rs`,
+`dialogs.rs`); la fila de la cola y el controlador de la vista previa con
+un reloj falso. Una comprobación de navegador en `tools/` que hace el clic
+real sobre el frasco del ejemplo y lee *Distancia de enfoque* (en el triaje
+pasaba 688 → 660 → 688). `npm run qa`, `npm run engine:test`, fmt y clippy.
+
+**Pendiente del usuario** para cerrar lo que no se pudo reproducir:
+el registro del lanzador (`<datos>/logs/repackshot.log`) de una pasada de
+IA que se quede en intentos (2.2), y una escena guardada donde el
+*denoise* lave luces y colores, con y sin él (4.2: medido en el ejemplo,
+cambia la luminancia y la saturación media en menos del 0,1 %).
+
+### Con O2
+
+- O2 dibuja en *Rápido* la distorsión de una lente trazada, pero el pico
+  usa el rayo sin distorsión: con un gran angular o el ojo de pez el clic no
+  cae bajo el cursor. Lo arregla O2 antes de cerrar.
+- **1.3** (elegir lente, distorsión y bokeh de verdad) es O2.
+- **1.4** (ventana con los elementos al pasar por una lente de la lista)
+  va tras O2: el corte en SVG ya existe; falta el aviso flotante y pedir al
+  motor la información de la lente señalada (S–M, Sonnet).
+
+### Faltas que ya tienen fase
+
+- **1.1 y 5.1** (tipo de mapeado, tamaño, desplazamiento, tamaño relativo
+  al sólido): los mandos de M2a existen, pero solo salen con una imagen en
+  la ranura y *Completo* no los dibuja hasta **M2b**.
+- **1.6** (los nodos no pilotan el material en *Completo*, el modo por
+  defecto): **M3b**.
+- **3.1** (vista en vivo del render seleccionado en la cola): fase nueva
+  **U14** (Opus, M), tras B1 porque los dos tocan la fila de la cola: el
+  trabajo en curso enseña sus fotogramas al seleccionarlo (escritorio: los
+  del trabajo de `/api/render`; web: la acumulación del *pool*), sin frenar
+  el render (coste medido); los terminados siguen abriendo el visor.
+
+### Decisiones para Fable (regla 11; datos en `TRIAGE.md`)
+
+- **O2**: el veredicto de la hoja (`out/lens-sheet.html` de O2): qué
+  lentes dan ojo de gato, burbuja, cremoso y remolino; prescripciones y
+  diafragmas supuestos; constantes del adaptador anamórfico; focales de
+  los gráficos. Y el muestreo por máscara contra el ruido del bokeh trazado.
+- **2.1**: las tolerancias de la guarda de la IA (hoy ±4,6 % de luminancia y
+  ±1,8 % de color: casi invisible por diseño), con la comparación de X1
+  parte B.
+- **1.7**: qué mueve el interruptor de la focal (la cámara se acerca para
+  mantener el tamaño del objeto enfocado, o la cámara se queda y cambia el
+  encuadre) y cómo se ve en la cámara.
+- **6.1–6.3**: los sets de L6 dentro de *Estudios* con sus muestras
+  grandes, y sus luces como añadidos desactivables una a una sin tocar las
+  del estudio.
+- **5.1**: tamaño de las texturas y los procedurales relativo al sólido o
+  absoluto (SPEC l. 456 contradice a SPEC l. 101 y a E6), y cómo convive
+  con el tamaño manual.
+- **1.2**: la gota y la mezcla de geometrías en *Ambiente* (con S4b).
+- **1.5**: el editor de elementos de una lente (editar, mover, añadir,
+  girar 180°) sobre lo que O2 ya guarda como lente propia.
+- **1.6**: si M3b trae nodos *Madera* y *Tela* con las recetas de E6.
+- **4.2**: si el triaje se confirma con la escena del usuario, el recorte de
+  *fireflies* y el borde solo por luminancia del *denoise*.
+
+**1.9** (doble barra en el carrusel de LUTs de aintfilm) es de otro
+repositorio; el triaje anota que Repackshot también dibuja el carrusel de
+recetas del plugin, sin barra vertical.
+
 ## Orden sugerido
 
 1. **U1** (Opus) y **E1** (Sonnet), en paralelo: la interfaz y el

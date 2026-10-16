@@ -1,6 +1,6 @@
 # TODO diferido — documentos guardados tal cual (14/16-10-2026)
 
-Trabajo pedido para **después** de terminar todo lo que está en curso (ver `ROADMAP.md` y `SESSION-STATE.md`). No se implementa todavía; cuando toque, cada apartado se convierte en fases del `ROADMAP.md` con brief y veredictos del responsable. Guardado por petición del usuario sin cambios. Contiene dos documentos, uno detrás de otro: la especificación de Room Builder y paseos (14-10-2026) y el reporte de errores graves (Render IA y anteriores; añadido el 16-10-2026). El reporte de errores tiene prioridad sobre la especificación: son regresiones y faltas de la versión publicada, no trabajo nuevo.
+Trabajo pedido para **después** de terminar todo lo que está en curso (ver `ROADMAP.md` y `SESSION-STATE.md`). No se implementa todavía; cuando toque, cada apartado se convierte en fases del `ROADMAP.md` con brief y veredictos del responsable. Guardado por petición del usuario sin cambios. Contiene dos documentos, uno detrás de otro: la especificación de Room Builder y paseos (14-10-2026) y el reporte de errores graves (Render IA y anteriores; añadido el 16-10-2026). El reporte de errores tiene prioridad sobre la especificación: son regresiones y faltas de la versión publicada, no trabajo nuevo. Su triaje punto por punto está en `TRIAGE.md`, y lo que sale de él (B1, U14, las decisiones para Fable) en `ROADMAP.md`, sección «Reporte de errores del usuario».
 
 ---
 
