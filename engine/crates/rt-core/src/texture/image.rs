@@ -215,8 +215,7 @@ impl TextureImage {
     /// The image at `(u, v)` for the level of detail `lod` (≤ 0: level 0, bilinear; between two
     /// levels: both, blended; past the last: the last).
     pub fn sample(&self, u: f32, v: f32, lod: f32, wrap: u32) -> [f32; 4] {
-        // `!(lod > 0)` also catches NaN.
-        if !(lod > 0.0) || self.levels.len() == 1 {
+        if lod.is_nan() || lod <= 0.0 || self.levels.len() == 1 {
             return self.bilinear(0, u, v, wrap);
         }
         let last = (self.levels.len() - 1) as f32;

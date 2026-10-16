@@ -534,6 +534,18 @@ impl Prepared {
         (blocker == f32::INFINITY && peak(keep) > 0.0).then_some(keep)
     }
 
+    /// [`Prepared::shadow`] for the tests of other modules (M2b: shadow rays through cut-outs of
+    /// an alpha image).
+    #[cfg(test)]
+    pub(crate) fn shadow_for_tests<T: Tracer>(
+        &self,
+        scene: &Scene,
+        tracer: &T,
+        ray: &Ray,
+    ) -> Option<Rgb> {
+        self.shadow(scene, tracer, ray)
+    }
+
     /// The shadow test of a medium's exit vertex (E9b): [`Prepared::shadow`], and the ray also
     /// crosses thin smooth walls ([`Prepared::far_face`]) as if the two refractions cancelled,
     /// keeping the Fresnel transmittance in and out and the wall's absorption over the refracted

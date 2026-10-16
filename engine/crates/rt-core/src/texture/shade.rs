@@ -166,7 +166,7 @@ impl CameraCone {
             (self.right * self.pixel, self.up * self.pixel)
         } else {
             let along = dir.dot(self.forward);
-            if !(along > 1.0e-6) {
+            if along.is_nan() || along <= 1.0e-6 {
                 return Footprint::cone(dir, self.spread() * t, n);
             }
             // The ray's point on the sensor plane at the focal length, and how the unit

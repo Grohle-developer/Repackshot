@@ -20,6 +20,8 @@ import type { WorkerReply, WorkerRequest } from './pool-protocol';
 interface RtExports {
   memory: WebAssembly.Memory;
   rt_version(): number;
+  /** M2b (absent in an older rt.wasm): what the engine reads beyond the plain RSB; bit 0, the textures. */
+  rt_features?: () => number;
   rt_alloc(len: number): number;
   rt_free(ptr: number, len: number): void;
   rt_scene_load(ptr: number, len: number): number;
@@ -168,7 +170,7 @@ scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           return;
         }
         rt = exports;
-        post({ type: 'ready', version: rt.rt_version() });
+        post({ type: 'ready', version: rt.rt_version(), features: rt.rt_features ? rt.rt_features() >>> 0 : 0 });
       } catch (err) {
         post({ type: 'failed', reason: err instanceof Error ? err.message : String(err) });
       }

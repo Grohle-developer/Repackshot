@@ -331,6 +331,9 @@ impl App {
                 .str("app", "repackshot")
                 .str("version", &app_version())
                 .str("engineVersion", &engine_version())
+                // What the engine reads beyond the plain RSB (rt_core::FEATURES; bit 0, M2b:
+                // the texture data).
+                .num("features", f64::from(rt_core::FEATURES))
                 .num("threads", self.engine.threads() as f64)
                 .str("isa", self.engine.isa().name())
                 .raw("simd", &json::array(simd))

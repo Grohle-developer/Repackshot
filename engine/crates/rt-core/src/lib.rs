@@ -67,6 +67,15 @@ const fn version_part(text: &str) -> u32 {
     value
 }
 
+/// [`FEATURES`] bit 0 (M2b): the engine reads the texture data of the RSB (`IMGS`, the `MATL`
+/// texture block, the meshes' UV sets), so a host may send it.
+pub const FEATURE_TEXTURES: u32 = 1;
+
+/// What this engine reads beyond the RSB every engine reads: a bit set of `FEATURE_*` values. The
+/// hosts report it (`rt_features` of `rt.wasm`, `features` of the launcher's `/api/info`) and the
+/// page writes only what the engine says it reads.
+pub const FEATURES: u32 = FEATURE_TEXTURES;
+
 /// Engine version packed as `major << 16 | minor << 8 | patch`.
 pub const VERSION: u32 = (version_part(env!("CARGO_PKG_VERSION_MAJOR")) << 16)
     | (version_part(env!("CARGO_PKG_VERSION_MINOR")) << 8)

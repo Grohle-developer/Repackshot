@@ -670,7 +670,7 @@ fn parse_texture_block(r: &mut Reader) -> Result<MaterialTextures, RsbError> {
         {
             return Err(r.invalid("unknown texture projection, axis, UV set, wrap or channel"));
         }
-        if !(slot.size_mm > 0.0) {
+        if slot.size_mm.is_nan() || slot.size_mm <= 0.0 {
             return Err(r.invalid("texture size_mm must be positive"));
         }
     }
@@ -1136,11 +1136,13 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
         .map_err(|_| invalid_instance("too many instances"))?;
     scene.bitmaps = bitmaps;
     scene.images = images;
-    scene.textured = textured;
     // A scene without texture blocks holds no list of them (the in-memory default).
     if scene.textures.iter().all(Option::is_none) {
         scene.textures.clear();
     }
+    // The flag says only what the images and the blocks do not: a file whose meshes carried
+    // their UV sets without either.
+    scene.textured = textured && scene.images.is_empty() && scene.textures.is_empty();
     scene.camera = camera;
     scene.environment = environment;
     scene.floor = floor.unwrap_or_default();
