@@ -118,8 +118,9 @@ Escritorio, mínimo 1280 px de ancho. Cinco regiones fijas:
 De izquierda a derecha:
 
 1. **Menú de aplicación** (icono de tres líneas + "Repackshot"): Nuevo,
-   Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack.json`,
-   `Ctrl/⌘ S`, en el mismo archivo si ya se guardó), Guardar proyecto
+   Abrir proyecto (`Ctrl/⌘ O`), Guardar proyecto (`.repack`,
+   `Ctrl/⌘ S`, en el mismo archivo si ya se guardó; Abrir también lee los
+   `.repack.json` de antes de v0.1.6), Guardar proyecto
    como… (`Ctrl/⌘ ⇧ S`), Importar modelo, **Añadir ▸** (fase U9: bajo el
    rótulo *Primitiva*, las doce formas del catálogo —*Caja*, *Plano*,
    *Disco*, *Cilindro*, *Pedestal*, *Esfera*, *Cono*, *Toro*, *Cápsula*,
@@ -628,15 +629,54 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    deshacer (*Cámara: Proporción*; arrastrar un término es un solo
    gesto). Cambiarla no recoloca la cámara: *Encuadrar* la ajusta a la
    nueva imagen.
-   Debajo (O1, `src/ui/panels/insp-lens.ts`), dos desplegables:
+   Debajo (O1, `src/ui/panels/insp-lens.ts`), los desplegables de la óptica:
+   - **Lente** (abierto; O2, `src/ui/panels/insp-traced.ts`): *Modelo de
+     lente* (*Lente fina · Lente trazada*). Con la lente fina, una nota dice
+     lo que es (una lente ideal). Con una trazada: *Carácter*, una fila de
+     chips (*Clínica · Suave · Remolino · Vintage · Anamórfica · Macro · Gran
+     angular · Tele · Míos*) que filtra la lista *Lente* (las lentes del
+     catálogo de ese carácter, por su nombre genérico); *Míos* enseña las
+     lentes propias en filas con *Renombrar* y *Eliminar*, y elegir una la
+     pone en la cámara. Debajo, la **fuente** de la lente (la patente o el
+     libro, el año y lo que se ha comprobado), y lo suyo: *Objetivo detrás*
+     (solo el adaptador anamórfico: la lente sobre la que va), *Tratamiento*
+     (*El de la lente · Sin tratar · Monocapa · Multicapa*), el hueco
+     variable de la lente blanda con *Normal*, *Láminas* (el mismo mando que
+     en *Óptica avanzada*) y el recorrido de su diafragma (*Su diafragma: f/2
+     a f/22*). **Lo que calcula el motor**: el **corte** de la lente en SVG
+     (el vidrio en gris, el diafragma en su sitio, el sensor a la derecha;
+     escalada a la focal y enfocada, como se traza) y los números del motor
+     para esa cámara: *Focal* (a infinito y al foco), *Tiraje*,
+     *Diafragma* (el f/ en uso y el T-stop), *Elementos · grupos*,
+     *Longitud*, *Pupila de entrada* y, en un anamórfico, *Compresión al
+     foco*; y dos curvas pequeñas, *Distorsión* y *Luz hacia la esquina*, con
+     su valor en la esquina. Mientras el motor contesta dice *Preguntando al
+     motor…*; sin motor, *El motor no está disponible aquí*; si no forma
+     imagen, lo dice. **Avanzado** (plegado), bajo **NO FÍSICO**:
+     *Distorsión*, *Viñeteo*, *Carácter de la esférica*, *Respiración*,
+     *Aberración cromática* y *Remolino*. **Guardar lente como…** pide un
+     nombre en el sitio y la guarda en *Míos*. Dos notas: el modo Rápido
+     dibuja la distorsión y el viñeteo como aproximación (y el medidor añade
+     *Lente trazada: distorsión y viñeteo aproximados, el render la traza*;
+     el contorno, el *gizmo* y los glifos van con ella, y los clics, la caja
+     y el *gizmo* cogen lo que se ve bajo el cursor),
+     y con una lente trazada el perfil, el ojo de gato, la compresión
+     anamórfica y la inclinación de la lente fina no se aplican (en *Óptica
+     avanzada* salen apagados con esa nota). Cada cambio es una entrada de
+     deshacer (*Cámara: Modelo de lente*, *Cámara: Lente*, *Cámara:
+     Tratamiento*…).
+     ![editor de lente](lens-editor.png)
+     ![lo que calcula el motor](lens-section.png)
    - **Bokeh** (abierto): rejilla de 4 columnas con los 20 tipos de
      `src/data/bokeh.json`, cada uno con su **miniatura renderizada por
      el propio motor** (`public/thumbs/bokeh/`, `tools/bokeh-thumbs.mjs`:
      doce puntos de luz desenfocados sobre negro) y el nombre debajo; la
      descripción del tipo va en el *tooltip* y, del elegido, en una nota.
-     Los cuatro que el modo 1 no hace salen apagados con *Próximamente* y
-     dicen qué esperan (*Necesita la lente trazada: llega con el editor
-     de lentes*; el de difracción, *Necesita óptica de ondas*). Un tipo
+     Los tres de la lente trazada (O2: cometa de coma, respiración de
+     foco, aberración esférica variable) tienen su miniatura renderizada
+     con su lente y la ponen en la cámara (lo dice el *tooltip*); el de
+     difracción sale apagado con *Próximamente* (*Necesita óptica de
+     ondas*). Un tipo
      con variantes (polígono recto o curvo, obstrucción pequeña o
      grande, polvo, rayas o malla, las estrellas y el corazón, 7 o 19
      agujeros) muestra *Variante* y su miniatura en la casilla. Mover un
@@ -1432,8 +1472,12 @@ imagen de la IA llega como luz lineal y se escribe **con la exposición y la cur
 del propio render**, en el formato del trabajo (PNG de 8 o 16 bits, JPEG, EXR, TIFF o DNG),
 así que con Intervención 0 es el mismo fichero byte a byte. Mientras la IA
 trabaja, la fila de la cola dice dónde está —*IA · cargando el modelo*, *IA ·
-mosaico 2 de 4*, *· intento 2* tras un reintento, *IA · comprobando*— y la barra
-mide la tubería, no ya el render. *Detener* o *Pausar* en ese momento paran la
+mosaico 2 de 4 · intento 1 de 4*, *IA · comprobando · intento 1 de 4*— y la barra
+mide la tubería, no ya el render (B1: la guarda repite como mucho `MAX_ATTEMPTS`
+= 4 veces, y cada intento tiene su cuarto de la barra, así que la barra no se
+acerca al final a cada reintento; tras un reintento, una segunda línea
+en la fila, *El intento 1 no pasó: <motivo de la guarda>*; el estado y el motivo
+enteros, en el texto emergente de la fila). *Detener* o *Pausar* en ese momento paran la
 IA al instante y **la imagen del motor se queda en el historial** (aviso *Post-procesado
 IA detenido: la imagen del motor se conserva en el historial*); con *Pausar*, el
 trabajo vuelve a esperar y *Reanudar* lo hace entero. Los navegadores no
@@ -1509,7 +1553,7 @@ deshabilitado, con *próximamente*.
 **Motor de renderizado ▸ Suavizado de bordes** (fase E11). Dos listas,
 cada una ordenada de menos a más coste, sin cifras de coste (el orden y
 una frase de ayuda; regla 10). Son ajustes de la aplicación, no del
-proyecto: no se deshacen ni viajan en el `.repack.json`; en escritorio
+proyecto: no se deshacen ni viajan en el `.repack`; en escritorio
 se guardan con los demás en `settings.json` del lanzador.
 
 - **Modo Rápido**: segmento *Ninguno · MSAA 2× · MSAA 4× · MSAA 8×*, por
@@ -1557,7 +1601,7 @@ modelo no cabe en la memoria detectada.
 
 **Post-procesado IA ▸ Prompt del sistema** (X4b): unas palabras generales para
 todas las imágenes (es un ajuste de la aplicación, no del proyecto: no se deshace
-ni va en el `.repack.json`), en un campo de varias líneas con el predeterminado del
+ni va en el `.repack`), en un campo de varias líneas con el predeterminado del
 líder (*Photorealistic product photograph. Keep the image exactly as rendered…*, en
 inglés: los codificadores de texto de los modelos rinden mejor en él), contador
 *n / 2000*, **Restablecer el predeterminado** (deshabilitado mientras lo es) y la

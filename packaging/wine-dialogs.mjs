@@ -74,11 +74,18 @@ try {
   const names = readdirSync(join(work, 'out')).sort();
   check('new_files_in_the_folder', writes.join() === '201,201,201' && names.join('|') === 'Botella_Cámara 1_0001 (2).png|Botella_Cámara 1_0001.png|a_b_c.png', { writes, names });
 
-  answer(winPath(join(work, 'bottle.repack.json')));
-  const save = await (await api('/api/dialog/save', { method: 'POST', body: JSON.stringify({ title: 'Guardar proyecto', defaultName: 'bottle.repack.json', filters: [{ name: 'Proyecto de Repackshot', extensions: ['repack.json'] }] }) })).json();
+  // A project is saved as .repack; the dialog lists .repack.json too, and a save under that name is still written whole.
+  const projectFilters = [{ name: 'Proyecto de Repackshot', extensions: ['repack', 'repack.json'] }];
+  answer(winPath(join(work, 'bottle.repack')));
+  const save = await (await api('/api/dialog/save', { method: 'POST', body: JSON.stringify({ title: 'Guardar proyecto', defaultName: 'bottle.repack', filters: projectFilters }) })).json();
   const saveCall = lastCall();
   const puts = [await api(`/api/files/${save.file.id}`, { method: 'PUT', body: '{"v":1}' }), await api(`/api/files/${save.file.id}`, { method: 'PUT', body: '{"v":2}' })].map((r) => r.status);
-  check('save_dialog_and_whole_writes', puts.join() === '200,200' && readFileSync(join(work, 'bottle.repack.json'), 'utf8') === '{"v":2}' && saveCall.includes('env RPX_KIND=save') && saveCall.includes('env RPX_FILTER=Proyecto de Repackshot|*.repack.json') && saveCall.includes('env RPX_EXT=repack.json') && saveCall.includes('env RPX_NAME=bottle.repack.json'), { puts, path: save.file?.path });
+  check('save_dialog_and_whole_writes', puts.join() === '200,200' && readFileSync(join(work, 'bottle.repack'), 'utf8') === '{"v":2}' && saveCall.includes('env RPX_KIND=save') && saveCall.includes('env RPX_FILTER=Proyecto de Repackshot|*.repack;*.repack.json') && saveCall.includes('env RPX_EXT=repack') && saveCall.includes('env RPX_NAME=bottle.repack'), { puts, path: save.file?.path });
+
+  answer(winPath(join(work, 'old.repack.json')));
+  const legacy = await (await api('/api/dialog/save', { method: 'POST', body: JSON.stringify({ title: 'Guardar proyecto', defaultName: 'old.repack.json', filters: projectFilters }) })).json();
+  const legacyPut = await api(`/api/files/${legacy.file.id}`, { method: 'PUT', body: '{"v":3}' });
+  check('legacy_repack_json_still_saves', legacyPut.status === 200 && readFileSync(join(work, 'old.repack.json'), 'utf8') === '{"v":3}', { status: legacyPut.status });
 
   answer('');
   const cancel = await (await api('/api/dialog/open', { method: 'POST', body: JSON.stringify({ title: 'Abrir proyecto' }) })).json();

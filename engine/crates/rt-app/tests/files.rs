@@ -214,6 +214,22 @@ fn opened_files_are_read_and_written_only_as_granted() {
     let r = t.api("PUT", &format!("/api/files/{pid}"), br#"{"saved":1}"#);
     assert_eq!(r.status, 200, "{}", r.text());
     assert_eq!(std::fs::read(&project).unwrap(), br#"{"saved":1}"#);
+    // A project saved as .repack: the Open dialog lists both extensions in one filter, and the file is writable whole.
+    let repack = dir.join("bottle.repack");
+    std::fs::write(&repack, br#"{"format":"repackshot"}"#).unwrap();
+    fake.answer(&[&repack], 0);
+    let v = t.json(
+        "POST",
+        "/api/dialog/open",
+        br#"{"writable":true,"filters":[{"name":"Project","extensions":["repack","repack.json"]},{"name":"All files","extensions":["*"]}]}"#,
+    );
+    assert!(fake
+        .args()
+        .contains("--file-filter=Project | *.repack *.REPACK *.repack.json *.REPACK.JSON"));
+    let rid = s(v.get("file").unwrap(), "id").to_string();
+    let r = t.api("PUT", &format!("/api/files/{rid}"), br#"{"saved":2}"#);
+    assert_eq!(r.status, 200, "{}", r.text());
+    assert_eq!(std::fs::read(&repack).unwrap(), br#"{"saved":2}"#);
     // The last project survives the launch: a new server finds it through its data folder.
     assert_eq!(
         t.api(
@@ -296,6 +312,44 @@ fn a_save_dialog_grants_one_file_with_a_known_extension() {
     let r = t.api("POST", "/api/dialog/folder", b"{}");
     assert_eq!(r.status, 501, "{}", r.text());
     assert!(r.text().contains("no-dialog"));
+}
+
+#[test]
+fn a_project_is_saved_as_repack_and_a_repack_json_still_is() {
+    let t = TestServer::start("files-save-project", 1);
+    let fake = FakeDialog::install(&t);
+    let dir = temp_dir("files-save-project-dst");
+    let body = br#"{"filters":[{"name":"Project","extensions":["repack","repack.json"]}],"defaultName":"bottle.repack"}"#;
+    for name in ["bottle.repack", "old.repack.json"] {
+        let target = dir.join(name);
+        fake.answer(&[&target], 0);
+        let v = t.json("POST", "/api/dialog/save", body);
+        assert!(fake
+            .args()
+            .contains("--file-filter=Project | *.repack *.REPACK *.repack.json *.REPACK.JSON"));
+        let id = s(v.get("file").unwrap(), "id").to_string();
+        assert_eq!(
+            t.api("PUT", &format!("/api/files/{id}"), br#"{"v":2}"#)
+                .status,
+            200,
+            "{name}"
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), br#"{"v":2}"#, "{name}");
+        // The page remembers it as the last project.
+        assert_eq!(
+            t.api(
+                "PUT",
+                "/api/projects/last",
+                format!(r#"{{"id":"{id}"}}"#).as_bytes()
+            )
+            .status,
+            204,
+            "{name}"
+        );
+    }
+    // A name that is not a project, saved as one, is still refused when its extension is not ours.
+    fake.answer(&[&dir.join("bottle.repack.exe")], 0);
+    assert_eq!(t.api("POST", "/api/dialog/save", body).status, 422);
 }
 
 #[test]

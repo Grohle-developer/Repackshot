@@ -173,7 +173,7 @@ describe('closing the native window asks in our own interface', () => {
     // Save: the file is written first, then the window closes.
     spec.options[0].run();
     await flush();
-    expect(saves).toEqual(['bottle.repack.json']);
+    expect(saves).toEqual(['bottle.repack']);
     expect(closes(wv)).toBe(1);
     expect(ctx.store.get().meta.dirty).toBe(false);
   });

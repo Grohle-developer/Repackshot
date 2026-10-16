@@ -308,6 +308,34 @@ pub unsafe extern "C" fn rt_particles_eval(
     }
 }
 
+/// Length in bytes of the lens information of scene `handle` (O2, JSON: [`crate::scene_lens_info`]),
+/// `u32::MAX` for a bad handle.
+#[no_mangle]
+pub extern "C" fn rt_scene_lens_info_len(handle: u32) -> u32 {
+    crate::scene_lens_info(handle).map_or(u32::MAX, |s| s.len() as u32)
+}
+
+/// Copies the lens information of scene `handle` (UTF-8, no terminator) to `ptr`. Returns 0, 1 for
+/// a bad handle, 3 for a null `ptr`.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to at least [`rt_scene_lens_info_len`] writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rt_scene_lens_info_copy(handle: u32, ptr: *mut u8) -> u32 {
+    if ptr.is_null() {
+        return crate::STATUS_NULL_POINTER;
+    }
+    let Some(info) = crate::scene_lens_info(handle) else {
+        return crate::STATUS_BAD_HANDLE;
+    };
+    // SAFETY: the caller promises room for `rt_scene_lens_info_len(handle)` bytes, which is
+    // `info.len()` (the scene does not change in between: single threaded host); the regions
+    // cannot overlap because `info` is a fresh allocation.
+    unsafe { std::ptr::copy_nonoverlapping(info.as_ptr(), ptr, info.len()) };
+    crate::STATUS_OK
+}
+
 /// The denoiser (E5b-1, the full filter) on a band of `rows` image rows from `origin_y` of an
 /// image `width × height` of `samples` samples per pixel. `in_ptr` holds `width * rows * 14`
 /// little-endian words: the planes `sums` (RGBA), `lum2`, `albedo` (3), `normal` (3), `depth`,

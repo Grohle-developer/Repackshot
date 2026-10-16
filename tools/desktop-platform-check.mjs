@@ -73,7 +73,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** The launcher; `stub`: open the window through the stand-in `msedge` instead of serving only. Resolves with the URL. */
 /** A stand-in `zenity` for the launcher's dialogs (P3b): a folder dialog picks Renders, a save dialog a project file. */
 const RENDERS = join(BASE, 'Renders');
-const PROJECT = join(BASE, 'Shot.repack.json');
+const PROJECT = join(BASE, 'Shot.repack');
 const DOWNLOADS = join(BASE, 'Downloads-out');
 function fakeDialogs() {
   const dir = join(BASE, 'fake-dialogs');

@@ -271,6 +271,12 @@ impl Iris {
         self.blades == 0
     }
 
+    /// The radius of the circle inside the iris (in units of the circumradius): the apothem of the
+    /// polygon, which curved blades bulge beyond (1 for the round iris).
+    pub fn inscribed(&self) -> f32 {
+        self.apothem
+    }
+
     /// Signed distance-like value to the edge (negative inside) of the point `(x, y)`, in units of
     /// the circumradius (exact for the circle and the straight polygon; for curved blades the
     /// largest distance to a blade's circle).

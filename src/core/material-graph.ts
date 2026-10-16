@@ -34,6 +34,7 @@ import { nodeSpec, OUTPUT_INPUTS, type NodeSpec, type ParamSpec, type SocketSpec
 import type { MaterialFamily, MaterialParams } from '../data/types';
 import type { ImageRef } from './images';
 import { nextId, nextIds } from './ids';
+import { fabricMeanColor } from './fabric';
 import { kelvinToRgb } from './light-math';
 import type { MaterialId, MaterialInstance } from './materials';
 import { EMIT_RADIANCE_PER_WATT } from './photometry';
@@ -400,9 +401,8 @@ export function outputSetup(m: Pick<MaterialInstance, 'family' | 'params'>): Out
       break;
     }
     case 'FABRIC': {
-      const a = rgbOf(p.threadColor1, [0.7, 0.7, 0.68]);
-      const b = rgbOf(p.threadColor2, [0.6, 0.6, 0.58]);
-      set('baseColor', [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]);
+      // The mean of the weave, by its warp share (a denim's twill shows mostly warp), as the engine and the preview read it.
+      set('baseColor', fabricMeanColor(p));
       set('roughness', num(p.roughness, 0.75));
       set('coat', num(p.coat, 0));
       set('coatRoughness', num(p.coatRoughness, 0.05));

@@ -1,10 +1,12 @@
 // A camera's optics beyond the plain thin lens (phase O1, STUDIO-TOOLS §1 mode 1): the bokeh of the
-// enhanced thin lens, tilt and shift, and the effect filters in front of the lens (phase O3a). What the engine does with it is rt-core `optics` (the RSB `LENS`
+// enhanced thin lens, tilt and shift, the effect filters in front of the lens (phase O3a), and the traced lens
+// (phase O2, core/traced-lens.ts). What the engine does with it is rt-core `optics` (the RSB `LENS`
 // section, written by io/rsb.ts); this module is the project's side: the fields, the neutral optics (a
 // camera without them renders exactly as before O1), the parameters of a bokeh type, and the limits.
 
 import { BOKEH_NEUTRAL, bokehParams, bokehType, type BokehThin, type PupilProfile } from '../data/bokeh';
 import { LENS_FILTER_GRADES, lensFilterType, MAX_LENS_FILTERS, STAR_POINTS, type LensFilterKey } from '../data/lens-filters';
+import { newTracedLens, normalizeTracedLens, type TracedLens } from './traced-lens';
 
 /** One effect filter in front of the lens (O3a; data/lens-filters.ts). */
 export interface LensFilter {
@@ -33,6 +35,12 @@ export interface CameraOptics extends BokehThin {
   tiltAxisDeg: number;
   /** O3a: the effect filters in front of the lens, in order, at most MAX_LENS_FILTERS (absent before O3a: none). */
   filters?: LensFilter[];
+  /**
+   * O2: the traced lens (absent or null: the enhanced thin lens). With it the iris (blades, roundness, rotation,
+   * obstruction) sits at the lens's stop, the squeeze desqueezes and the chromatic aberration and the swirl are its
+   * artistic overrides; the pupil profile, the cat's eye, the tilt and the pictures belong to the thin lens.
+   */
+  traced?: TracedLens | null;
 }
 
 /** The plain thin lens: what a camera without optics is. */
@@ -132,7 +140,13 @@ export function normalizeOptics(o: unknown): CameraOptics {
     ...(Array.isArray(r.filters)
       ? { filters: r.filters.map(normalizeLensFilter).filter((f): f is LensFilter => f !== null).slice(0, MAX_LENS_FILTERS) }
       : {}),
+    ...(r.traced !== undefined ? { traced: normalizeTracedLens(r.traced) } : {}),
   };
+}
+
+/** The traced lens of optics (null: the thin lens). */
+export function tracedOf(o: CameraOptics | undefined): TracedLens | null {
+  return o?.traced ?? null;
 }
 
 /** True when the optics change nothing the engine renders (no LENS section is written for them). */
@@ -152,17 +166,24 @@ export function isNeutralOptics(o: CameraOptics | undefined): boolean {
     o.shiftXMm === n.shiftXMm &&
     o.shiftYMm === n.shiftYMm &&
     o.tiltDeg === 0 &&
-    !filtersOf(o).some(filterActive)
+    !filtersOf(o).some(filterActive) &&
+    !tracedOf(o)
   );
 }
 
 /**
  * The optics of a bokeh type (and variant) on top of `current`: the type's thin-lens parameters replace the bokeh
- * fields, the tilt and shift stay. Null for a type the thin lens cannot do (it needs the traced lens or wave optics).
+ * fields and the camera goes back to the thin lens; a type of the traced lens (O2) puts its lens on the camera and
+ * keeps the iris. The tilt, the shift and the filters stay. Null for a type nothing here can do (wave optics).
  */
 export function opticsForBokeh(current: CameraOptics, key: string, variant?: string | null): CameraOptics | null {
   const type = bokehType(key);
-  if (!type || type.requires !== null) return null;
+  if (!type) return null;
+  if (type.requires === 'traced') {
+    if (!type.lens || !normalizeTracedLens({ key: type.lens })) return null;
+    return { ...current, bokeh: key, variant: null, traced: newTracedLens(type.lens) };
+  }
+  if (type.requires !== null) return null;
   const v = variant ?? null;
   const thin = bokehParams(type, v ?? undefined);
   if (!thin) return null;
@@ -171,6 +192,8 @@ export function opticsForBokeh(current: CameraOptics, key: string, variant?: str
     ...thin,
     bokeh: key,
     variant: v && type.variants.some((x) => x.key === v) ? v : null,
+    // Back to the thin lens (a camera that never had a traced lens keeps no field for it).
+    ...(current.traced ? { traced: null } : {}),
   };
 }
 

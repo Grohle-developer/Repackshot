@@ -478,6 +478,13 @@ veces: en Rust en `rt-app` (escritorio) y en TypeScript en un worker
 (web). Todo lo que decide está en `rt-post` y se prueba una vez.
 Máximo `MAX_ATTEMPTS` = 4 intentos; si ninguno pasa, se entrega la
 imagen del motor **sin cambios** con el informe `REJECTED` y el motivo.
+El progreso que sale de la tubería (`AiPostProgress`) cuenta los intentos
+desde 1 y dice de cuántos (`maxAttempts`, el tope de arriba) y por qué se
+devolvió el anterior (`reason`, las palabras de la guarda; en el lanzador,
+`lastFailure` del estado del *post*); su barra se reparte por intentos, un
+cuarto cada uno, y solo llega al final cuando el trabajo acaba (B1). En el
+registro del lanzador, cada intento devuelto deja *AI post N: attempt k of 4
+failed: <motivo>*.
 Con Intervención 0 la salida es la entrada bit a bit, sin llamar al
 modelo.
 
@@ -517,7 +524,7 @@ devolver la memoria.
   escritorio cuando el lanzador dice `aiPost`; la web sigue con
   `notBuiltService` hasta X3d y `?ai=synthetic` con el sintético); la cola
   pide al render que deje los pases en el lanzador (`aiPasses`), manda el
-  id, enseña el progreso por mosaico (*IA · mosaico 2 de 4 · intento 2*) y
+  id, enseña el progreso por mosaico y por intento (*IA · mosaico 2 de 4 · intento 2 de 4*, y debajo, tras un reintento, por qué la guarda devolvió el anterior: B1) y
   escribe la imagen de la IA **desde la luz lineal del render** con su
   propia exposición y curva (`straightBytes`, `straightWords16`,
   `straightExr` de `src/render/tiles.ts`): un PNG de 16 bits o un EXR lo
@@ -668,7 +675,8 @@ hace en tu equipo:
    tuyo), ventana de render: 1024 × 1024, PNG de 16 bits, el presupuesto de
    siempre; enciende *Post-procesado IA* con los valores por defecto y
    *Render*. La cola dice *IA · cargando el modelo* y luego *IA · mosaico 1
-   de 1* (y *· intento 2* si la guarda pidió repetir).
+   de 1 · intento 1 de 4* (y *· intento 2 de 4*, con el motivo debajo, si la guarda
+pidió repetir).
 5. **Apunta los tiempos**: el del render del motor, y el de la IA la primera
    vez (carga el modelo) y una segunda seguida (ya cargado). El informe trae
    los segundos de la IA (`seconds`).

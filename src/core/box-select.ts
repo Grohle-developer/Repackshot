@@ -195,7 +195,15 @@ export interface Projection {
   height: number;
   /** Column-major 4x4: clip = M * (x, y, z, 1) for the vertices of the part's mesh; null for a part it does not draw. */
   mvp(part: NodeId): ArrayLike<number> | null;
+  /**
+   * Where the screen shows a point of the projected picture (CSS pixels both), when the viewport draws it through a
+   * lens's distortion (O2, render/lens-profile.ts); absent, where it is projected.
+   */
+  shown?: Shown;
 }
+
+/** A map from the projected picture to the screen (see `Projection.shown`). */
+export type Shown = (x: number, y: number) => [number, number];
 
 /** Clip coordinates (x, y, w) of every vertex of a mesh under a matrix: 3 numbers a vertex. */
 export function clipVertices(positions: ArrayLike<number>, m: ArrayLike<number>): Float64Array {
@@ -215,15 +223,20 @@ export function clipVertices(positions: ArrayLike<number>, m: ArrayLike<number>)
 /** Points nearer than this (clip w) are behind the camera. */
 const NEAR_W = 1e-6;
 
-/** Screen position of a clip-space point in front of the camera. */
-function toScreen(cx: number, cy: number, cw: number, width: number, height: number): [number, number] {
-  return [(cx / cw * 0.5 + 0.5) * width, (1 - (cy / cw * 0.5 + 0.5)) * height];
+/** Screen position of a clip-space point in front of the camera (through `shown`, when the screen distorts the picture). */
+function toScreen(cx: number, cy: number, cw: number, width: number, height: number, shown?: Shown): [number, number] {
+  const x = (cx / cw * 0.5 + 0.5) * width;
+  const y = (1 - (cy / cw * 0.5 + 0.5)) * height;
+  return shown ? shown(x, y) : [x, y];
 }
 
-/** The corners (x, y pairs) of triangle (a, b, c) on the screen, cut where it passes behind the camera; empty when it is all behind. */
-export function triangleOnScreen(clip: Float64Array, a: number, b: number, c: number, width: number, height: number): number[] {
+/**
+ * The corners (x, y pairs) of triangle (a, b, c) on the screen, cut where it passes behind the camera; empty when it is
+ * all behind. Through `shown` its corners go where the screen shows them (its sides stay straight between them).
+ */
+export function triangleOnScreen(clip: Float64Array, a: number, b: number, c: number, width: number, height: number, shown?: Shown): number[] {
   const pts = [a, b, c].map((v) => [clip[3 * v], clip[3 * v + 1], clip[3 * v + 2]]);
-  if (pts.every((p) => p[2] > NEAR_W)) return pts.flatMap((p) => toScreen(p[0], p[1], p[2], width, height));
+  if (pts.every((p) => p[2] > NEAR_W)) return pts.flatMap((p) => toScreen(p[0], p[1], p[2], width, height, shown));
   if (pts.every((p) => p[2] <= NEAR_W)) return [];
   // Sutherland-Hodgman against the plane w = NEAR_W.
   const out: number[][] = [];
@@ -238,24 +251,24 @@ export function triangleOnScreen(clip: Float64Array, a: number, b: number, c: nu
       out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1]), NEAR_W]);
     }
   }
-  return out.flatMap((p) => toScreen(p[0], p[1], p[2], width, height));
+  return out.flatMap((p) => toScreen(p[0], p[1], p[2], width, height, shown));
 }
 
 /** Every vertex of the mesh is in front of the camera and inside the rectangle: the part lies in the window. */
-function meshInside(data: MeshData, clip: Float64Array, rect: Rect, width: number, height: number): boolean {
+function meshInside(data: MeshData, clip: Float64Array, rect: Rect, width: number, height: number, shown?: Shown): boolean {
   const V = clip.length / 3;
   if (V === 0 || data.indices.length === 0) return false;
   for (let v = 0; v < V; v++) {
     const w = clip[3 * v + 2];
     if (!(w > NEAR_W)) return false;
-    const [x, y] = toScreen(clip[3 * v], clip[3 * v + 1], w, width, height);
+    const [x, y] = toScreen(clip[3 * v], clip[3 * v + 1], w, width, height, shown);
     if (x < rect.x0 || x > rect.x1 || y < rect.y0 || y > rect.y1) return false;
   }
   return true;
 }
 
 /** Some triangle of the mesh touches the rectangle. A cheap test of the bounds of the vertices comes first. */
-function meshTouches(data: MeshData, clip: Float64Array, rect: Rect, width: number, height: number): boolean {
+function meshTouches(data: MeshData, clip: Float64Array, rect: Rect, width: number, height: number, shown?: Shown): boolean {
   const V = clip.length / 3;
   let behind = false;
   let minX = Infinity;
@@ -268,7 +281,7 @@ function meshTouches(data: MeshData, clip: Float64Array, rect: Rect, width: numb
       behind = true;
       continue;
     }
-    const [x, y] = toScreen(clip[3 * v], clip[3 * v + 1], w, width, height);
+    const [x, y] = toScreen(clip[3 * v], clip[3 * v + 1], w, width, height, shown);
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
     if (y < minY) minY = y;
@@ -279,7 +292,7 @@ function meshTouches(data: MeshData, clip: Float64Array, rect: Rect, width: numb
   if (V === 0) return false;
   const T = Math.floor(data.indices.length / 3);
   for (let t = 0; t < T; t++) {
-    const poly = triangleOnScreen(clip, data.indices[3 * t], data.indices[3 * t + 1], data.indices[3 * t + 2], width, height);
+    const poly = triangleOnScreen(clip, data.indices[3 * t], data.indices[3 * t + 1], data.indices[3 * t + 2], width, height, shown);
     if (poly.length >= 6 && polygonTouches(rect, poly)) return true;
   }
   return false;
@@ -314,7 +327,8 @@ export function itemsInBox(state: ProjectState, rect: Rect, mode: BoxMode, level
     const hit = (part: NodeId) => {
       const e = clipFor(part);
       if (!e) return false;
-      return mode === 'window' ? meshInside(e.data, e.clip, rect, projection.width, projection.height) : meshTouches(e.data, e.clip, rect, projection.width, projection.height);
+      const { width, height, shown } = projection;
+      return mode === 'window' ? meshInside(e.data, e.clip, rect, width, height, shown) : meshTouches(e.data, e.clip, rect, width, height, shown);
     };
     // A node with a part that has no geometry to project (an empty mesh) cannot lie in a window.
     if (mode === 'window' ? parts.every(hit) : parts.some(hit)) out.push(item);
@@ -332,6 +346,8 @@ export interface FacesQuery {
   mvp: ArrayLike<number>;
   width: number;
   height: number;
+  /** See `Projection.shown`. */
+  shown?: Shown;
   rect: Rect;
   mode: BoxMode;
   /**
@@ -350,7 +366,7 @@ export interface FacesQuery {
  * a face that lies entirely inside the rectangle and shows (or, in X-ray, any face that does).
  */
 export function facesInBox(q: FacesQuery): number[] {
-  const { data, rect, width, height } = q;
+  const { data, rect, width, height, shown } = q;
   const T = Math.floor(data.indices.length / 3);
   if (T === 0) return [];
   const clip = clipVertices(data.positions, q.mvp);
@@ -365,13 +381,13 @@ export function facesInBox(q: FacesQuery): number[] {
   const corners = (t: number) => [data.indices[3 * t], data.indices[3 * t + 1], data.indices[3 * t + 2]];
   const triangleTouches = (t: number) => {
     const [a, b, c] = corners(t);
-    return polygonTouches(rect, triangleOnScreen(clip, a, b, c, width, height));
+    return polygonTouches(rect, triangleOnScreen(clip, a, b, c, width, height, shown));
   };
   // Inside means all three corners in front of the camera and in the rectangle.
   const triangleInside = (t: number) => {
     const [a, b, c] = corners(t);
     if (!(clip[3 * a + 2] > NEAR_W && clip[3 * b + 2] > NEAR_W && clip[3 * c + 2] > NEAR_W)) return false;
-    return polygonInside(rect, triangleOnScreen(clip, a, b, c, width, height));
+    return polygonInside(rect, triangleOnScreen(clip, a, b, c, width, height, shown));
   };
   // What each triangle has been decided: 0 not yet, 1 in a face that was taken, 2 in one that was not.
   const state = new Uint8Array(T);

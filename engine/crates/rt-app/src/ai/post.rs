@@ -415,8 +415,11 @@ struct PostState {
     step: u32,
     steps: u32,
     fraction: f64,
-    /// The fraction where this attempt's work started.
+    /// The fraction where this attempt's work started, and where its slice of the bar ends.
     base: f64,
+    top: f64,
+    /// Why the guard sent the previous attempt back (its words); none until one was.
+    last_failure: Option<String>,
     started: Instant,
     ended: Option<Instant>,
     error: Option<(String, String)>,
@@ -448,8 +451,15 @@ pub struct Post {
     orphan_after: Duration,
 }
 
-/// Where an attempt's inference ends, as a fraction of what is left of the whole.
+/// Where an attempt's inference ends, as a fraction of its slice of the bar.
 const INFERENCE_SHARE: f64 = 0.9;
+
+/// The slice of the bar an attempt (0 first) owns: the bar is split by the most attempts there can be, so
+/// it only reaches the end when the work does, and a retry moves it to the start of the next slice.
+fn attempt_range(attempt: u32) -> (f64, f64) {
+    let width = 1.0 / f64::from(MAX_ATTEMPTS);
+    (f64::from(attempt) * width, f64::from(attempt + 1) * width)
+}
 
 impl Post {
     fn set(&self, f: impl FnOnce(&mut PostState)) {
@@ -459,9 +469,9 @@ impl Post {
         self.changed.notify_all();
     }
 
-    /// The fraction at the end of the current attempt's inference.
-    fn inference_end(base: f64) -> f64 {
-        base + (1.0 - base) * INFERENCE_SHARE
+    /// The fraction at the end of an attempt's inference, in its slice from `base` to `top`.
+    fn inference_end(base: f64, top: f64) -> f64 {
+        base + (top - base) * INFERENCE_SHARE
     }
 
     /// Its page asked about it: it is still wanted.
@@ -495,7 +505,8 @@ impl Post {
             0.0
         };
         let done = (f64::from(tile - 1) + part) / f64::from(self.tiles.max(1));
-        let fraction = (s.base + (Post::inference_end(s.base) - s.base) * done).max(s.fraction);
+        let fraction =
+            (s.base + (Post::inference_end(s.base, s.top) - s.base) * done).max(s.fraction);
         if (s.phase, s.tile, s.step, s.steps) != (phase, tile, p.step, p.steps)
             || fraction != s.fraction
         {
@@ -561,6 +572,7 @@ impl Post {
             .num("tiles", f64::from(self.tiles))
             .num("attempt", f64::from(s.attempt))
             .num("maxAttempts", f64::from(MAX_ATTEMPTS))
+            .opt_str("lastFailure", s.last_failure.as_deref())
             .num("strength", (f64::from(s.strength) * 1.0e6).round() / 1.0e6)
             .num("step", f64::from(s.step))
             .num("steps", f64::from(s.steps))
@@ -765,6 +777,8 @@ impl Ai {
                 steps: 0,
                 fraction: 0.0,
                 base: 0.0,
+                top: 1.0,
+                last_failure: None,
                 started: Instant::now(),
                 ended: None,
                 error: None,
@@ -850,7 +864,9 @@ impl Ai {
         post.set(|s| {
             s.phase = "CONDITIONING";
             s.fraction = 0.01;
+            // The first attempt's slice starts after the conditioning.
             s.base = 0.02;
+            s.top = attempt_range(0).1;
         });
         // Every tile's image and control image, as the runtime takes them (PNG in base64), once.
         let prepared: Result<Vec<TileInputs>, rt_post::PostError> = (|| {
@@ -890,8 +906,11 @@ impl Ai {
                 s.step = 0;
                 s.steps = 0;
                 if attempt > 0 {
+                    let (base, top) = attempt_range(attempt);
                     s.phase = "RETRY";
-                    s.base = s.fraction;
+                    s.base = base;
+                    s.top = top;
+                    s.fraction = s.fraction.max(base);
                 }
             });
             let mut outputs = Vec::with_capacity(plan.tiles().len());
@@ -968,7 +987,7 @@ impl Ai {
             }
             post.set(|s| {
                 s.phase = "GUARD";
-                s.fraction = s.fraction.max(Post::inference_end(s.base));
+                s.fraction = s.fraction.max(Post::inference_end(s.base, s.top));
             });
             match rt_post::accept(&plan, &original, &view, &outputs, attempt) {
                 Ok(Outcome::Accepted { image, report }) => {
@@ -990,11 +1009,15 @@ impl Ai {
                     ..
                 }) => {
                     crate::log!(
-                        "AI post {}: attempt {} failed: {reason}",
+                        "AI post {}: attempt {} of {MAX_ATTEMPTS} failed: {reason}",
                         post.id,
                         attempt + 1
                     );
-                    post.set(|s| s.fraction += (1.0 - s.fraction) * 0.5);
+                    // The next attempt's slice starts where this one's ended; the page shows why.
+                    post.set(|s| {
+                        s.fraction = s.fraction.max(attempt_range(next).0);
+                        s.last_failure = Some(reason);
+                    });
                     attempt = next;
                 }
                 Err(e) => return self.fail_post(post, "guard", e.to_string()),
@@ -1051,6 +1074,23 @@ pub(super) type Posts = Mutex<BTreeMap<u32, Arc<Post>>>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_bar_is_split_by_the_most_attempts_there_can_be() {
+        // Four attempts, a quarter of the bar each, one after the other, none past the end.
+        let ranges: Vec<(f64, f64)> = (0..MAX_ATTEMPTS).map(attempt_range).collect();
+        assert_eq!(ranges.len(), 4);
+        assert_eq!(ranges[0].0, 0.0);
+        assert_eq!(ranges[3].1, 1.0);
+        for w in ranges.windows(2) {
+            assert_eq!(w[0].1, w[1].0, "{ranges:?}");
+        }
+        // Inference ends before its slice does, so the guard has room, and never at the slice's end.
+        for (base, top) in ranges {
+            let end = Post::inference_end(base, top);
+            assert!(base < end && end < top, "{base} {end} {top}");
+        }
+    }
 
     #[test]
     fn the_linear_image_is_the_pages_conversion_of_the_sums() {

@@ -102,7 +102,8 @@ src/
     lighting.ts             rig activo, focos (los del montaje y los propios de L4: añadir, duplicar, eliminar, apuntar, colocar sobre superficie), su colocación (`lightFrame`: posición, objetivo, giro), colocación por reflejo, lúmenes
     view-objects.ts         luces y cámaras como objetos del visor (L4): su *gizmo* y lo que hace un arrastre, *Mirar a través* y lo que hace la navegación, los glifos y el clic que coge uno
     camera.ts               óptica, encuadre, cámaras guardadas
-    optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a)
+    optics.ts               la óptica de una cámara más allá de la lente fina (O1): bokeh, inclinación y descentramiento; neutra, límites, tipos de bokeh; la pila de filtros de efecto (O3a); la lente trazada (O2)
+    traced-lens.ts          la lente trazada de una cámara (O2): la clave del catálogo y lo que la persona cambió (tratamiento, hueco variable, objetivo detrás de un adaptador, ajustes no físicos), su composición para el motor (`composeLens`) y la lectura de lo que el motor calcula (`parseLensInfo`)
     aperture.ts             registro de las imágenes de pupila (máscaras y texturas) a 256², como el de imágenes (O1)
     aspect.ts               la proporción de la imagen de una cámara (U13): preset o propia, su lectura, el tamaño que le toca; el marco del visor y el tamaño de una imagen la siguen (`syncOutputSize`, en `render.ts`)
     animation.ts            planos, movimientos, evaluación en el tiempo (invertir, repetir, suavidad: N6)
@@ -143,7 +144,9 @@ src/
     texture-shader.ts       el shader de texturas de Rápido (M2a): GLSL puesto en el MeshPhysicalMaterial de three con `onBeforeCompile`, montado sin GPU
     texture-preview.ts      las texturas y etiquetas en Rápido: el shader en cada material y la caché de texturas por imagen, con mipmaps (M2a)
     lens-filter-image.ts    los filtros de efecto de la lente en imagen (O3a): los núcleos en píxeles y su convolución en TS, la referencia del pase WebGL
-    lens-filter-pass.ts     el pase WebGL de esos núcleos en el modo Rápido (objetivo lineal de medio flotante, gaussianas a tamaño reducido, rayas a media resolución; cada parte con su color)
+    lens-filter-pass.ts     el pase WebGL de esos núcleos en el modo Rápido (objetivo lineal de medio flotante, gaussianas a tamaño reducido, rayas a media resolución; cada parte con su color); con una lente trazada, su distorsión y su viñeteo (O2)
+    lens-info.ts            lo que el motor calcula de una lente trazada (O2): `rt_scene_lens_info` de rt.wasm en el hilo de la página
+    lens-profile.ts         la tabla del visor Rápido de una lente trazada (O2): la escala de imagen, la distorsión y la iluminación relativa del motor; y el mapa de la pantalla a la imagen sin distorsionar, una vez en TypeScript y en GLSL con los mismos números: lo dibujan el pase de pantalla, el contorno y los superpuestos, y lo invierten el pico, el gizmo, los glifos y la selección por caja
     graph-preview.ts        los materiales de nodos en Rápido: sus mapas por las ranuras de M2a, en dos pasadas (M3a)
     graph-client.ts  graph-worker.ts  graph-protocol.ts  los workers de los grafos: las esferas del editor y las bandas de los mapas (M3a)
     preview-passes.ts       los pases de AI-POST.md §7.4 dibujados con three.js (albedo, normal, profundidad, ids exactos, coc) para la vista previa de la IA (X4); el suelo, con los rayos centrales del motor (X3c)
@@ -165,7 +168,7 @@ src/
   io/                       IMPORTADORES Y EXPORTADORES. Dependen de core
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
-    project.ts (.repack.json)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
+    project.ts (.repack)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
     rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c)
     phys.ts                 escritor de PHY1, la escena del simulador (S2, §5.6)
     ai-runtime.ts           el motor de ejecución de la IA del lanzador (X3b); ai-post.ts, la tubería de escritorio (`DesktopAiService`, X3c)
@@ -181,12 +184,14 @@ src/
     theme.css  layout.css  components.css  …
     components/             NumberField, Section, Grid, Palette, …
       material-drag.ts      arrastrar un material con eventos de puntero: fantasma, zonas de suelta, Esc (U7)
+      lens-section.ts       el corte en SVG de una lente trazada y las curvas de su perfil, desde lo que preparó el motor (O2; solo importa tipos: tools/lens-sheet.mjs lo usa también)
     panels/                 header, scene, viewport, inspector, renderbar, status
       viewport-box.ts       el gesto de la caja de selección sobre el visor (U7)
       add-menu.ts           Añadir ▸ Primitiva: las mismas entradas en la cabecera, el + de Escena y el menú del visor en vacío (U9)
       scale-panel.ts        clic derecho ▸ Escalar…: el panel en línea (uniforme, por eje, a medida, restablecer) (U9)
       insp-lens.ts          Cámara ▸ Bokeh (miniaturas del motor) y Óptica avanzada (O1)
       insp-filters.ts       Cámara ▸ Filtros: la pila de filtros de efecto de la lente (O3a)
+      insp-traced.ts        Cámara ▸ Lente (O2): lente fina o trazada, carácter, lente, fuente, objetivo detrás, tratamiento, hueco variable, láminas; los números, las curvas y el corte del motor; Avanzado (no físico); Guardar lente como…
       insp-textures.ts      inspector ▸ Texturas: ranuras, mapeado y etiquetas (M2a)
       insp-ambient.ts       inspector ▸ Escena ▸ Ambiente: lista, galería de tarjetas, ocho mandos y Avanzado (S4a)
       material-editor.ts    la ventana Editor de material: barra, panel del nodo, teclas, sitio y tamaño recordados (M3a, UI.md §2.10)
@@ -406,7 +411,7 @@ Reglas:
   `transaction` por gesto: una entrada de deshacer por arrastre.
 - Los reductores son funciones puras en `src/core/*.ts`; los efectos
   (renderizar, descargar) viven fuera, suscritos al store.
-- El estado es serializable tal cual a `.repack.json` (sin instancias de
+- El estado es serializable tal cual a `.repack` (sin instancias de
   clase, sin referencias circulares, sin `Map`). `io/project.ts` lo guarda
   y lo carga con una versión de esquema y migraciones.
 - Las acciones de deshacer no incluyen `meta.lang`, `meta.theme`, el
@@ -636,6 +641,26 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   *canvas* por `src/io/aperture.ts`), máscara por textura en una sola
   imagen, y `field_mm` = media diagonal del encuadre de salida en el
   sensor de 36 mm, sea cual sea la parte del visor que cubra la imagen.
+  **O2** añade, tras los huecos de los filtros (que entonces se escriben
+  siempre, vacíos si no hay filtros), la **prescripción** de una lente
+  trazada: `u32 surface_count` (0: la lente fina de O1; hasta 64), y con
+  superficies `u32 stop focus_mode` (0 unidad, 1 interno, 2 flotante,
+  3 anamórfico: el adaptador delante de su objetivo, que enfoca como una
+  unidad mientras el hueco listado del adaptador lleva el meridiano
+  comprimido al mismo foco), `f32 f_number_min magnification_base
+  magnification_near distortion vignetting spherical breathing` (los
+  ajustes no físicos, 0 apagados; −1 a 1, el viñeteo 0 a 1), `u32
+  moving_count` (hasta 8) y `(u32 surface; f32 base near)` por hueco
+  móvil, y por superficie, del lado del objeto primero, `u32 kind` (0
+  esfera, 1 plano, 2 asférica par, 3 cilindro de eje x, 4 de eje y, 5
+  espejo), `f32 radius thickness nd vd semi_aperture` (radio 0: plano;
+  espesor negativo tras un espejo; semiapertura 0: la deriva el motor),
+  `u32 coating` (0 no aire–vidrio, 1 sin tratar, 2 monocapa, 3 multicapa)
+  y `f32 conic a4 a6 a8 a10`. El motor la escala a `CAMR.focal_mm`, la
+  enfoca a `CAMR.focus_dist` y la prepara al leer la escena (§5.2 nonies).
+  La interfaz la escribe desde el catálogo (`composeLens` y
+  `prescriptionToRsb`): los bytes son los de `rt` para las 16 lentes
+  (`tests/fixtures/lens-catalogue.json`, `rt --write-lens-catalogue`).
 - **`FXAM`** (S4a, repetible: una por efecto de *Ambiente*; un motor
   anterior la salta como sección desconocida). Los **parámetros** del
   efecto, no sus partículas: 192 B (los primeros 128 son obligatorios; una
@@ -696,7 +721,7 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   escritor TypeScript de E4 hace lo mismo. `rt-core`
 tiene lector y escritor; `src/io/rsb.ts` tiene el escritor en
 TypeScript, y un test de paridad escribe la misma escena por los dos
-lados y compara los bytes. El `.repack.json` sigue siendo el formato de
+lados y compara los bytes. El `.repack` sigue siendo el formato de
 proyecto; el RSB es lo que viaja al motor (y lo que `rt` lee en la línea
 de comandos). **Actualizaciones** (E4): `rt_scene_update` acepta un RSB
 sin `MESH` que conserva las mallas cargadas y sus BVH (cámara, luces,
@@ -1773,6 +1798,102 @@ que un píxel (el algodón a 0,25 mm en un plano general) se promedian con
 las muestras del píxel, sin filtro propio: el color converge a la media y
 el relieve se vuelve rugosidad. La pelusa (`fuzz`, *sheen*) no se dibuja.
 
+### 5.2 nonies · La lente trazada (O2, `rt_core::optics::traced`)
+
+Con una prescripción en `LENS`, la cámara traza cada rayo desde el sensor
+por las superficies reales de la lente (Kolb, Mitchell y Hanrahan 1995;
+`docs/research/optics.md` §3 y §6):
+
+- **Preparación** (`TracedLens::new`, al leer la escena y cada vez que
+  cambian la focal, el diafragma, el foco o el sensor; si solo se mueve la
+  cámara, se reutiliza): la prescripción escalada a la focal paraxial
+  pedida, con los índices de las tres bandas (Cauchy de dos términos desde
+  `nd` y `vd`; `ca_amount` multiplica la dispersión) y la transmisión de
+  cada superficie aire–vidrio por su tratamiento (T-stop y tinte, sin
+  fantasmas). Enfoque: *unidad* (el sensor donde cae la imagen paraxial),
+  *interno* (bisección sobre los huecos móviles), *flotante* (los huecos
+  siguen al aumento) y *anamórfico* (`FOCUS_ANAMORPHIC`: el objetivo como
+  una unidad y el hueco más ancho del adaptador, por bisección, lleva el
+  meridiano horizontal al mismo foco). La posición de la cámara es la
+  pupila de entrada paraxial a infinito (la perspectiva de la lente fina);
+  el diafragma da el f/ pedido, nunca más abierto que la lente (y el del
+  catálogo se abre hasta el f/ más rápido declarado). Las semiaperturas que
+  la fuente no da salen de un rayo marginal y uno principal paraxiales y se
+  ensanchan con rayos reales del encuadre (en los dos meridianos) cuando
+  esos se salen. Para 32 alturas de imagen se traza una rejilla de 24 × 24
+  en el plano del vértice trasero en las tres bandas: el rectángulo de lo
+  que pasa, con una celda de margen, es donde se muestrea (§3.5), girado al
+  acimut de la muestra; la irradiancia sobre una rejilla de 40 × 40 da el
+  normalizador del eje y la iluminación relativa.
+- **Muestra** (`TracedLens::sample`): una banda por muestra (decisión 3,
+  `DIM_LENS_BAND`; las tres de un grupo comparten el punto de la pupila),
+  un punto del rectángulo, el rayo trazado hacia delante con rimas e iris
+  (el iris con atajos exactos: dentro del círculo inscrito pasa, fuera del
+  circunscrito no), peso `A cos⁴θ / Z²` sobre el del eje por el tinte de la
+  banda. Intersección estable de §6.5 (`t = c r² / (B ± sqrt(B² − c² r²))`),
+  normal sin raíz, Newton en las asféricas, Snell vectorial con los
+  cocientes de índice precalculados; solo `+ − × ÷ sqrt`. Una muestra que
+  la lente para pesa negro pero conserva su propio rayo sin recortar (para
+  la cobertura de un fondo transparente). La baldosa traza las muestras
+  de una fila (los píxeles que toman una sola) en **lotes de ocho**
+  (`traced::batch`, `render::camera_samples`): superficie a superficie, los
+  ocho carriles en *arrays* que el compilador vectoriza, cada uno con las
+  operaciones de una muestra sola en su orden, así que los mismos bits (un
+  test lo compara carril a carril); los píxeles de borde de E11 y una lente
+  con asféricas, una a una. Los ajustes no físicos: el
+  remolino gira el rectángulo, la distorsión (`r (1 − k (r / campo)²)`:
+  negativa es barril) y la respiración mueven el punto del sensor, el
+  viñeteo pesa, la esférica es una lámina asférica en el diafragma; los
+  rayos centrales de los pases (`TracedLens::chief`) usan el mismo punto
+  del sensor que las muestras. Un anamórfico se desestira por la
+  compresión que traza a su foco; una lente sin cilindros, por nada (la
+  compresión de la lente fina no le aplica).
+- **Lo que el motor dice** (`LensInfo`, `rt_scene_lens_info` de `rt_wasm`
+  y `POST /api/lens/info` del lanzador, el mismo JSON): focal a infinito y
+  al foco, **escala de imagen** cerca del eje (`h = k tan θ`, con los
+  ajustes no físicos: la respiración a foco cercano no es distorsión),
+  tiraje, f/ en uso y el más rápido, T-stop, transmisión por banda,
+  longitud, pupila de entrada, elementos y grupos, la compresión de un
+  anamórfico, la **distorsión** contra esa escala y la **iluminación
+  relativa** en 17 alturas del encuadre de salida (un anamórfico, en su
+  meridiano vertical), y el **corte** (`section`: cada superficie tal como
+  se traza, con su posición enfocada, curvatura en el meridiano horizontal,
+  semiapertura e índice; el iris en uso y el sensor). La interfaz lo pinta
+  sin calcular nada (regla 10): números, curvas y el SVG del corte
+  (`src/ui/components/lens-section.ts`), y el visor Rápido aplica la escala,
+  la distorsión y el viñeteo como aproximación (`render/lens-profile.ts`,
+  dicho en el medidor).
+- **El pico a través del perfil** (el 1.8 del triaje). El mapa de un punto
+  de la pantalla al de la imagen sin distorsionar que muestra está una sola
+  vez en `render/lens-profile.ts`, en dos lenguajes uno junto al otro
+  (`profileSource` y `PROFILE_GLSL`, los mismos pasos con los mismos
+  números de `profileUniforms`, la tabla leída entre sus entradas): por él
+  dibujan el pase de pantalla (`lens-filter-pass.ts`), el contorno de la
+  selección (la máscara se lee por el mapa, así que la línea va alrededor de
+  la pieza como se dibuja y mide un píxel en todas partes) y los
+  superpuestos (*gizmo*, glifos, trayectorias y, en *Completo*, las caras
+  seleccionadas: a un objetivo como el lienzo y de ahí al lienzo por el
+  mapa), y lo invierten `pick` (enfocar con clic, seleccionar), el *gizmo*
+  (`rayAt`; el arrastre mide en la imagen sin distorsionar, donde se dibuja
+  antes del mapa), `glyphAt` y `objectAt` (por `profileShown`, el mapa al
+  revés por bisección), la selección por caja (`Projection.shown` en
+  `core/box-select.ts`) y el pase de ids de las caras (cada píxel de la
+  pantalla lee el de su fuente). Sin perfil (lente fina, o antes de que el
+  motor diga sus números) el mapa es la identidad. El perfil es el de la
+  cámara por la que se mira: al mirar a través de una luz o de otra cámara
+  (L4) no se aplica el de la cámara activa.
+- *Hash* fijado de la escena O2 (`example::o2_scene`: el ejemplo a f/2,8
+  por la doble Gauss del catálogo con siete láminas curvas y las luces de
+  fondo de O1): `PINNED_O2_TRACED_4SPP` = `0x8f7d0ef8` (desde la mezcla con
+  E9; antes `0xe2e8e3ab`) en cada ruta SIMD, en WASI, en el `rt_wasm.wasm`
+  real (`rt --write-o2-example`, `tests/fixtures/o2.rsb`, en CI) y con 1, 4
+  y 16 hilos. Las escenas sin lente trazada no se mueven.
+- **Coste** (`rt --lens-cost`, un hilo, la más rápida de tres vueltas): en
+  lotes, la muestra de cámara por la doble Gauss cuesta 0,25 µs (0,71 µs
+  una a una; 0,19 µs la de la lente fina): en el ejemplo a 1024 muestras es
+  el 13,7 % del render (antes de los lotes, el 29,1 %), por debajo del 25 %
+  de la regla de coste.
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -2321,6 +2442,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Focos propios, luces y cámaras en el visor (L4) | `tests/own-lights.test.ts`, `view-objects`; `light::tests` e `integrator::tests` de rt-core; `tools/lights-check.mjs` | Añadir cada tipo delante y arriba, seleccionado, una entrada de deshacer; duplicar, eliminar, apuntar, colocar sobre superficie, giro; un montaje propio de tres focos aplicado a otro tipo de producto conserva su irradiancia total y sus partes; RSB `LGHT` 3 y 4 con su flujo, sombra y giro; proyecto y biblioteca de ida y vuelta; glifos y su clic, *gizmo* de luz y cámara con una entrada de deshacer, *Mirar a través* que mueve el objeto y respeta el bloqueo; en el motor, `I / d²` de puntos, esferas y focos, el cono y su transición, el flujo del cono, MIS de las esferas, la sombra apagada y el peso de un foco estrecho |
 | Ambiente (S4a) | `tests/effects.test.ts`, `effects-rsb.test.ts` (con el `rt.wasm` real); `rt-sim` (`eval::tests`, `params`), `render::ambient_tests` y `geometry::tests` de rt-core; `tools/ambient-check.mjs`; la hoja `tools/ambient-sheet.mjs` | El catálogo y sus claves; las cuatro acciones por el *store* (deshacer, gestos, nada para un valor que ya tiene, el preset que conserva sitio, instante, semilla, tope y nombre); región, cuenta y tope; los campos de `FXAM` en unidades del motor, byte a byte frente a los que escribe `rt --write-ambient-example`; el Doctor y su arreglo; guardar y abrir cada campo, un archivo anterior sin efectos; en el motor, el *hash* de posiciones fijado (nativo y wasm, 1 y N hilos), régimen estacionario a 0, 3 y 60 s (< 3 %), nada bajo el suelo, la imagen fijada en todas las ISA, las escenas de referencia sin cambios sin efectos, la fuerza bruta frente a la BVH para cada clase de rayo, y la energía del ensanchado (4 frente a 256 spp, ± 2 %) |
 | Óptica de cámara (O1) | `optics::tests` de rt-core, `tests/optics.test.ts`, `tools/optics-check.mjs` | Pupila de 6 láminas dentro del hexágono y fuera del círculo inscrito en su proporción (±1 %), láminas curvas, perfiles con su densidad, obstrucción, máscara por CDF con la media del rechazo (±1 %), Scheimpflug y bisagra con tres puntos, descentramiento, anamórfico, ojo de gato con el área de dos discos, bandas que suman blanco; una lente neutra es la lente fina bit a bit; `LENS` de ida y vuelta con los bytes de `rt`; miniaturas al día; *hash* de O1 en SIMD, WASI, wasm y 1/4/16 hilos |
+| Lente trazada (O2) | `optics::traced_tests` de rt-core, `lens_catalogue` y `lens_sheet` de rt-cli, `tests/traced-lens.test.ts`, `tests/lens-pick-browser.test.ts`, `tools/lens-check.mjs` | Focal y tiraje paraxiales de las 15 lentes que forman imagen dentro de la tolerancia del informe; rayos axiales de la doble Gauss paralelos a < 2e-4; f32 contra f64 < 1e-4 mm; los lotes con los bits de las muestras solas (lentes, cilindros, filas de la baldosa con filtros); cada lente se prepara a 50 mm con su corte, sus semiaperturas, su iris dentro del diafragma y su perfil; foco unidad, interno, flotante y anamórfico (los dos meridianos al foco, compresión 2 a infinito); distorsión contra la escala cerca del eje a cualquier foco; ajustes no físicos en el perfil y en los rayos centrales; rimas derivadas que dejan pasar los rayos reales; atajos del iris iguales al borde exacto; la compresión de la lente fina no estira una lente trazada; la prescripción de la página byte a byte con `rt` para las 16 lentes; biblioteca de lentes; *hash* de O2 en SIMD, WASI, wasm y 1/4/16 hilos; el mapa del perfil sin escalones y de ida y vuelta; en Chromium, cada píxel de color seguro picado a través de un barril fuerte y del ojo de pez del catálogo da la pieza dibujada en él (la identidad con la lente fina y sin números), y el contorno, la selección por caja, el pase de ids de las caras y el *gizmo* siguen lo dibujado |
 | Filtros de efecto (O3a) | `optics::filter_tests` de rt-core, `tests/lens-filters.test.ts`, `tools/lens-filters-check.mjs` | Grados → `s`; difusión blanca que conserva la media (±0,5 %), negra a 1 entre 0,90 y 0,97, dorada hacia el rojo; estrella de 6 con seis rayas (±2°); tres filtros de grado 0 = sin filtro bit a bit; la conexión con las luces y su MIS contra la dispersión sola (imagen ±3 % y suma exacta por lóbulo, también con media luz); `LENS` con huecos de ida y vuelta y la de O1 byte a byte; tinte solo en el halo y las rayas (dorada con el núcleo neutro; el suelo lejos de las luces de la hoja mueve su azul/rojo < 3 % a 1 y < 6 % a 2 con dorada y rayas); estrella que se alarga con el grado sin ensancharse, red con la cruz corta y más tenue que la estrella, brillo como nube de destellos y no anillo; aproximación del visor contra el motor en el horno (< 2 %); *hash* de O3a en SIMD, WASI, wasm y 1/4/16 hilos |
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
@@ -2341,7 +2463,19 @@ Reglas, heredadas de EZ Packshot y no negociables:
 
 ---
 
-## 8 · Formato de proyecto (`.repack.json`)
+## 8 · Formato de proyecto (`.repack`)
+
+**Extensión.** El archivo se guarda como `.repack` (B1, petición del usuario);
+el contenido es el mismo JSON de siempre. Hasta v0.1.6 se llamaba
+`.repack.json`: se siguen abriendo los dos (`core/project-names.ts`:
+`PROJECT_EXTENSION`, `PROJECT_EXTENSIONS`, `isProjectName`), tanto en el
+selector del navegador (`accept` y `types`), como en el diálogo del
+escritorio (un solo filtro con `repack` y `repack.json`, el primero es el que
+un diálogo de guardar añade a un nombre sin extensión) y al soltarlos en la
+ventana. El lanzador escribe `.repack` (`WRITABLE_EXTENSIONS` de
+`rt-app/src/files.rs`) y recuerda como último proyecto cualquiera de los dos.
+No hay asociación de la extensión con el programa en los instaladores (doble
+clic): no se pidió, y queda para una fase de empaquetado.
 
 `{ "format": "repackshot-project", "schema": 2, "state": ProjectState,
 "meshes": [{ "id", "glb", "sharpEdges"?, "triangleSource"? }] }` (U2). Las

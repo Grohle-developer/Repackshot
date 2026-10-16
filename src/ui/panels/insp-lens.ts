@@ -5,7 +5,8 @@
 
 import { BOKEH_TYPES, PUPIL_PROFILES, bokehParams, bokehType, type BokehThin, type BokehType, type PupilProfile } from '../../data/bokeh';
 import type { CameraId, CameraState } from '../../core/camera';
-import { OPTICS_LIMITS, OPTICS_NEUTRAL, SQUEEZES, filtersOf, opticsForBokeh, opticsOf, thinOf, type CameraOptics } from '../../core/optics';
+import { OPTICS_LIMITS, OPTICS_NEUTRAL, SQUEEZES, filtersOf, opticsForBokeh, opticsOf, thinOf, tracedOf, type CameraOptics } from '../../core/optics';
+import { lensPrescription } from '../../data/lenses';
 import * as cmd from '../commands';
 import { field, numberField, segmented, select, slider, type Control } from '../components/controls';
 import { thumb } from '../components/widgets';
@@ -13,6 +14,7 @@ import { h, icon } from '../dom';
 import { type Ctx, type Scope } from '../reactive';
 import { formatNumber, lbl, t, type StringKey } from '../strings';
 import { filterFields } from './insp-filters';
+import { tracedLensFields } from './insp-traced';
 
 /** The thumbnail of a bokeh type (and variant), as tools/bokeh-thumbs.mjs names it. */
 export function bokehThumb(key: string, variant: string | null = null): string {
@@ -70,12 +72,15 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
   const grid = h('div', { class: 'thumbs cols-4', role: 'listbox', 'aria-label': t('camera.bokehType'), 'data-bokeh-grid': '' });
   const tiles = new Map<string, HTMLButtonElement>();
   for (const type of BOKEH_TYPES) {
-    const can = type.requires === null && type.thin !== null;
+    // O2: the types of the traced lens put their lens on the camera; wave optics is still to come.
+    const traced = type.requires === 'traced' && !!type.lens && !!lensPrescription(type.lens);
+    const can = (type.requires === null && type.thin !== null) || traced;
+    const lensName = traced ? lbl(lensPrescription(type.lens!)!.name) : '';
     const el = thumb({
       src: can ? bokehThumb(type.key) : null,
       caption: lbl(type.name),
       active: false,
-      title: can ? lbl(type.description) : `${lbl(type.description)} · ${t(type.requires === 'wave' ? 'camera.bokehWave' : 'camera.bokehTraced')}`,
+      title: traced ? `${lbl(type.description)} · ${t('camera.bokehTraced', { lens: lensName })}` : can ? lbl(type.description) : `${lbl(type.description)} · ${t('camera.bokehWave')}`,
       onClick: () => {
         if (can) choose(type.key, optics().bokeh === type.key ? optics().variant : defaultVariant(type));
       },
@@ -143,19 +148,30 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
     el.setAttribute('data-tip', t(key));
     return el;
   };
-  const advancedBody = h(
-    'div',
-    { class: 'stack' },
-    field(t('camera.blades'), blades.el),
-    field(t('camera.roundness'), roundness.el),
-    field(t('camera.rotation'), rotation.el),
+  // The thin lens's own knobs: off with a traced lens.
+  const thinOnly = [
     field(t('camera.profile'), profile.el),
     field(t('camera.profileStrength'), strength.el),
-    field(t('camera.obstruction'), obstruction.el),
     tip(field(t('camera.catsEye'), catsEye.el), 'camera.catsEyeAux'),
     tip(field(t('camera.anamorphic'), squeeze.el), 'camera.anamorphicAux'),
     tip(field(t('camera.tilt'), tilt.el), 'camera.tiltAux'),
     tip(field(t('camera.tiltAxis'), tiltAxis.el), 'camera.tiltAux'),
+  ];
+  const thinOnlyNote = h('div', { class: 'note', 'data-thin-only': '' }, t('camera.lensThinOnly'));
+  const advancedBody = h(
+    'div',
+    { class: 'stack' },
+    thinOnlyNote,
+    field(t('camera.blades'), blades.el),
+    field(t('camera.roundness'), roundness.el),
+    field(t('camera.rotation'), rotation.el),
+    thinOnly[0],
+    thinOnly[1],
+    field(t('camera.obstruction'), obstruction.el),
+    thinOnly[2],
+    thinOnly[3],
+    thinOnly[4],
+    thinOnly[5],
     tip(field(t('camera.shift'), shiftX.el, shiftY.el), 'camera.shiftAux'),
     artisticHead(),
     field(t('camera.ca'), ca.el),
@@ -184,13 +200,20 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
       profile.set(o.profile);
       squeeze.set(String(o.squeeze));
       roundness.el.toggleAttribute('data-disabled', o.blades === 0);
+      // With a traced lens the lens makes its own pupil, cat's eye and squeeze, and does not tilt (yet).
+      const traced = !!tracedOf(o);
+      for (const el of thinOnly) {
+        el.toggleAttribute('data-disabled', traced);
+        el.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input, button, select').forEach((x) => (x.disabled = traced));
+      }
+      thinOnlyNote.style.display = traced ? '' : 'none';
       for (const [key, el] of tiles) {
         const on = o.bokeh === key;
         el.classList.toggle('is-active', on);
         el.setAttribute('aria-pressed', String(on));
         const type = bokehType(key)!;
         const img = el.querySelector('img');
-        if (img && type.requires === null) {
+        if (img && type.requires !== 'wave') {
           const want = bokehThumb(key, on ? o.variant : null);
           if (!img.src.endsWith(want)) img.src = want;
         }
@@ -211,6 +234,7 @@ export function opticsFields(ctx: Ctx, scope: Scope, camId: () => CameraId): HTM
   return h(
     'div',
     { class: 'stack', 'data-guide': 'camera-optics' },
+    disclosure(ctx, 'cameraLens', t('camera.lensSection'), tracedLensFields(ctx, scope, camId), true),
     disclosure(ctx, 'cameraBokeh', t('camera.bokeh'), bokehBody, true),
     disclosure(ctx, 'cameraOptics', t('camera.opticsAdvanced'), h('div', { class: 'stack' }, advancedBody, h('div', { class: 'note' }, t('camera.opticsNote'))), false),
     disclosure(ctx, 'cameraFilters', t('camera.filters'), filterFields(ctx, scope, camId), filtersOf(optics()).length > 0),

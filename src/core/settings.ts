@@ -1,6 +1,6 @@
 // Application settings (UI.md §2.9): what the Settings window changes. They
 // belong to the application on this computer, not to a project: they are not
-// undone and are not saved in .repack.json. The defaults for new projects set
+// undone and are not saved in .repack. The defaults for new projects set
 // here (render, import) apply only to projects created afterwards.
 //
 // One persisted document holds them, `{ schema, settings, layout }`:

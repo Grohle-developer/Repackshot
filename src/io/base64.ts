@@ -1,4 +1,4 @@
-// Base64 for big buffers (embedded meshes in .repack.json). Both directions work in chunks, so the cost is
+// Base64 for big buffers (embedded meshes in .repack). Both directions work in chunks, so the cost is
 // linear in the size: no string is grown one character (or one chunk) at a time, and no argument list of
 // millions of numbers is built.
 

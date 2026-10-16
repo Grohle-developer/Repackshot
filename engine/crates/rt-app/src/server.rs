@@ -30,6 +30,8 @@ use std::time::{Duration, Instant};
 
 /// Connections served at once.
 pub const MAX_CONNECTIONS: usize = 64;
+/// Largest RSB accepted by `/api/lens/info` (the page sends the camera without the meshes).
+pub const MAX_LENS_RSB: u64 = 16 << 20;
 /// Largest RSB accepted by `/api/render`.
 pub const MAX_RSB: u64 = 2 << 30;
 /// Largest JSON body.
@@ -200,6 +202,7 @@ impl App {
                 Response::json(200, hardware::to_json(&hw, &a))
             }
             ("POST", ["render"]) => self.post_render(req, body),
+            ("POST", ["lens", "info"]) => self.post_lens_info(req, body),
             ("GET", ["render", "state"]) => self.render_state(req),
             ("GET", ["render", id]) => self.get_render(req, id),
             ("GET", ["render", id, "passes"]) => self.get_passes(id),
@@ -351,6 +354,24 @@ impl App {
                 .bool("afterUpdate", self.update.after_update())
                 .build(),
         )
+    }
+
+    /// `POST /api/lens/info` (O2): the RSB of a scene in the body (the camera and its `LENS` are
+    /// what counts); the engine's numbers of its traced lens as JSON
+    /// ([`rt_core::scene::Camera::lens_info_json`], `{"traced":false}` for the thin lens), the
+    /// same as `rt_wasm` gives the page.
+    fn post_lens_info(&self, req: &Request, body: &mut dyn Read) -> Response {
+        if req.content_length > MAX_LENS_RSB {
+            return Response::error(413, "too-large", "scene too large");
+        }
+        let mut rsb = Vec::with_capacity(req.content_length as usize);
+        if body.read_to_end(&mut rsb).is_err() || rsb.len() as u64 != req.content_length {
+            return Response::error(400, "bad-body", "short body");
+        }
+        match rt_core::scene::Scene::from_rsb(&rsb) {
+            Ok(scene) => Response::json(200, scene.camera.lens_info_json()),
+            Err(e) => Response::error(400, "bad-scene", &e.to_string()),
+        }
     }
 
     fn post_render(&self, req: &Request, body: &mut dyn Read) -> Response {

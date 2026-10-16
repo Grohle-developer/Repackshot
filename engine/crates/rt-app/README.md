@@ -199,12 +199,12 @@ ventana `--app` de Edge o Chromium, y el diálogo *¿Salir?* de `beforeunload` a
   solo si se pidió `writable` (un proyecto que se vuelve a guardar). Un fichero de `dialog/save`:
   escribirlo entero (a un temporal al lado y renombrado encima: un guardado fallido no deja medio
   fichero). Solo se escriben extensiones que produce la aplicación (`png`, `jpg`, `jpeg`, `exr`,
-  `tif`, `tiff`, `dng`, `json`, `rsb`, `mp4`, `webm`): nada ejecutable cae en ninguna parte; los nombres se hacen válidos
+  `tif`, `tiff`, `dng`, `json`, `repack`, `rsb`, `mp4`, `webm`): nada ejecutable cae en ninguna parte; los nombres se hacen válidos
   en todos los sistemas (`\ / : * ? " < > |` y controles a `_`, sin puntos ni espacios finales, los
   nombres de dispositivo de Windows con `_` delante, 200 bytes como mucho). Dos entradas son del
   propio lanzador, no de la página: `downloads` (la carpeta Descargas del sistema, solo ficheros
   nuevos: el *Descargas* de la ventana de render) y el último proyecto, que el lanzador recuerda
-  en `<datos>/last-project.json` cuando la página se lo pide para un `.repack.json` concedido
+  en `<datos>/last-project.json` cuando la página se lo pide para un `.repack` (o `.repack.json`) concedido
   (*General ▸ Al iniciar ▸ Último proyecto*). Lo que la página manda a un diálogo (título, nombre,
   filtros, carpeta inicial) es solo texto para el diálogo: no concede nada. `/api/open-url` abre
   solo direcciones `https://` sin comillas, espacios ni metacaracteres, con `rundll32
@@ -264,7 +264,7 @@ Cada concesión es `{id, name, path, folder, read, write, size}`. Una respuesta 
 | Petición | Respuesta |
 | --- | --- |
 | `POST /api/dialog/folder` | Cuerpo `{title, start?, read?, write?, folderItem?}`: una carpeta; `write` (por defecto) permite crear ficheros nuevos, `read` listarla y leerla. `start` es un id o una carpeta que exista (solo una pista) |
-| `POST /api/dialog/open` | Cuerpo `{title, multiple?, filters?, start?, writable?}`; `filters` es `[{name, extensions:["png","repack.json","*"]}]` (extensiones validadas, 400 si no) |
+| `POST /api/dialog/open` | Cuerpo `{title, multiple?, filters?, start?, writable?}`; `filters` es `[{name, extensions:["png","repack","repack.json","*"]}]` (extensiones validadas, 400 si no) |
 | `POST /api/dialog/save` | Cuerpo `{title, defaultName, filters?, start?}`; el diálogo pregunta antes de sustituir. 422 `extension` si la persona escribe una extensión que la aplicación no escribe |
 | `PUT /api/files?dir=<id>&name=<nombre>` | Cuerpo: los bytes. Un fichero **nuevo** en la carpeta `<id>` (o `downloads`): `nombre`, o `nombre (2)`...; 201 con su concesión (que se puede mostrar, no leer ni escribir). 404 `not-granted`, 403 sin permiso o extensión no admitida, 400 `bad-name`, 507 sin espacio |
 | `PUT /api/files/<id>` | Escribe el fichero entero (temporal y renombrado); 403 si no es escribible |
@@ -274,7 +274,7 @@ Cada concesión es `{id, name, path, folder, read, write, size}`. Una respuesta 
 | `GET /api/files/<id>/list` | `{files:[{id, name, rel, size}]}`: lo que cuelga de una carpeta legible (8 niveles, 4096 ficheros, sin enlaces) |
 | `POST /api/files/<id>/reveal` | 204: la carpeta, o el fichero seleccionado (`explorer /select,`), en el gestor de archivos; 410 si ya no está |
 | `GET /api/projects/last` | La concesión del último proyecto (lectura y escritura) o `null` |
-| `PUT /api/projects/last` | Cuerpo `{id}` de un `.repack.json` concedido; 204 |
+| `PUT /api/projects/last` | Cuerpo `{id}` de un `.repack` o `.repack.json` concedido; 204 |
 | `POST /api/open-url` | Cuerpo `{url}`, solo `https://`; 204 |
 
 `GET /api/info` lleva `filesApi: 1` cuando el lanzador tiene esta API.

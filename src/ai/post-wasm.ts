@@ -363,18 +363,25 @@ export async function runGuarded(
   const start = performance.now();
   const tiles = session.plan.tiles.length;
   const controls = session.plan.tiles.map((_, i) => session.control(i));
+  // The progress is 1-based and its bar is split by attempts (core/ai.ts AiPostProgress); the model's own `attempt` is 0-based.
+  let sentBack: string | undefined;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const strength = session.strength(attempt);
+    const at = (within: number) => (attempt + within) / MAX_ATTEMPTS;
+    const where = { tiles, attempt: attempt + 1, maxAttempts: MAX_ATTEMPTS, ...(sentBack ? { reason: sentBack } : {}) };
     for (let tile = 0; tile < tiles; tile++) {
       signal?.throwIfAborted();
-      onProgress?.({ stage: attempt === 0 ? 'INFERENCE' : 'RETRY', tile: tile + 1, tiles, attempt, fraction: tile / (tiles + 1) });
+      onProgress?.({ stage: attempt === 0 ? 'INFERENCE' : 'RETRY', tile: tile + 1, ...where, fraction: at(tile / (tiles + 1)) });
       const out = await model({ ...controls[tile], tile, tiles, strength, attempt, seed: session.job.settings.seed });
       signal?.throwIfAborted();
       session.setOutput(tile, out);
     }
-    onProgress?.({ stage: 'GUARD', tile: tiles, tiles, attempt, fraction: tiles / (tiles + 1) });
+    onProgress?.({ stage: 'GUARD', tile: tiles, ...where, fraction: at(tiles / (tiles + 1)) });
     const r = session.accept(attempt);
-    if (r.kind === 'RETRY') continue;
+    if (r.kind === 'RETRY') {
+      sentBack = r.reason;
+      continue;
+    }
     const seconds = Math.round((performance.now() - start) / 10) / 100;
     return { image: r.image, report: { ...r.report, seconds }, reportJson: r.reportJson };
   }

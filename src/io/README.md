@@ -50,7 +50,7 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR/TIFF/DNG and the project file.
   URL's fragment into `sessionStorage`, `connectNative()` (null in the web version), and `NativeClient` for its API
   (info, hardware and recommendation, the model store by blob, the installer's pending choice, open folder, the
   heartbeat that keeps the launcher running). The contract is `engine/crates/rt-app/README.md`.
-- `project.ts`: el archivo de proyecto `.repack.json` (U2): `{ format, schema, state, meshes }`. El estado va tal cual
+- `project.ts`: el archivo de proyecto `.repack` (U2; hasta v0.1.6 `.repack.json`, que se sigue abriendo): `{ format, schema, state, meshes }`. El estado va tal cual
   (con `-0` conservado y `meta.dirty` a falso); cada malla que usa una pieza va una vez en `meshes` como GLB en base64
   (`glb.ts`, bit a bit), con sus aristas vivas (`sharpEdges`) y el mapa de triángulos (`triangleSource`) al lado.
   `loadProject` lee, migra (`STEPS`), comprueba la estructura y registra las mallas con identificadores que nadie más
@@ -77,7 +77,7 @@ USD/USDA/USDC/USDZ; out: PNG/JPEG/EXR/TIFF/DNG and the project file.
   `XResolution`/`YResolution`. U12: `encodeTiff` (uncompressed TIFF 6.0, RGB or RGBA with unassociated alpha, 8, 16 or
   32-bit float) and `encodeDng` (a linear raw DNG 1.4 of 32-bit floats), the same bytes as `rt_core::tiff` and
   `rt_core::dng` (the golden files in `tests/fixtures/tiff/`).
-- `project.ts`: the `.repack.json` envelope, schema 2 (U5), and `migrateProject` / `parseProject` with one step per
+- `project.ts`: the `.repack` envelope (once `.repack.json`), schema 2 (U5), and `migrateProject` / `parseProject` with one step per
   schema (1 → 2: the render block through `core/render.ts` `migrateRender`).
 - `results.ts`: the results history (U5) in IndexedDB (`meta`, `blobs` and `handles` stores), 50 results or 500 MB,
   oldest evicted first; in memory when the browser keeps nothing (a private window).

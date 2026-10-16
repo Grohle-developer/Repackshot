@@ -15,6 +15,7 @@
 //   `NativeFile`, read in ranges and hashed by the launcher, never copied whole
 //   into the page.
 
+import { PROJECT_FILTER_EXTENSIONS } from '../core/project-names';
 import type { Destination } from '../core/render';
 import type { FilesService } from './files';
 import type { ProjectFilesService, SaveResult } from './project-file';
@@ -294,7 +295,7 @@ export interface DesktopProjectOptions {
 
 export function createDesktopProjectFiles(api: DesktopApi, opts: DesktopProjectOptions): ProjectFilesService {
   let current: NativeGrant | null = null;
-  const filter = (): DialogFilter => ({ name: opts.description(), extensions: ['repack.json'] });
+  const filter = (): DialogFilter => ({ name: opts.description(), extensions: [...PROJECT_FILTER_EXTENSIONS] });
   const remember = (g: NativeGrant) => void api.setLastProject(g.id).catch(() => undefined);
   return {
     canSaveInPlace: true,

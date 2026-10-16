@@ -294,6 +294,18 @@ describe('models, groups and parts by box', () => {
     expect(ids('PART', { x0: 0, y0: c.y - 1, x1: W, y1: c.y + 1 }, 'crossing')).toEqual([k.cap]);
   });
 
+  it('through a lens’s distortion (O2) the parts are where the screen shows them (`Projection.shown`)', () => {
+    // The screen shows the projected picture 30 px to the right, as a stand-in for a traced lens's map.
+    const shift = (x: number, y: number): [number, number] => [x + 30, y];
+    const moved = { ...proj, shown: shift };
+    const cap = b('cap');
+    const there = { x0: cap.x0 + 29, y0: cap.y0 - 1, x1: cap.x1 + 31, y1: cap.y1 + 1 };
+    expect(ids('PART', there, 'window', s, moved)).toEqual([k.cap]);
+    expect(ids('PART', there, 'window')).toEqual([]);
+    expect(ids('PART', tiny({ x: centre(cap).x + 30, y: centre(cap).y }), 'crossing', s, moved)).toEqual([k.cap]);
+    expect(ids('PART', grow(cap, 1), 'window', s, moved)).toEqual([]);
+  });
+
   it('Group: a window takes a group when all of its parts are inside; a part with no group stands for itself', () => {
     const closure = grow(union(b('cap'), b('collar')), 1);
     expect(ids('GROUP', closure, 'window')).toEqual([k.closure]);
@@ -425,6 +437,14 @@ describe('faces by box', () => {
     expect(both).toEqual([...left, ...right]);
     // Without the ranges the same window takes nothing: the top is one surface and is not inside.
     expect(query({ x0: 90, y0: 330, x1: 190, y1: 510 }, 'window', shown)).toEqual([]);
+  });
+
+  it('through a lens’s distortion (O2) the faces are where the screen shows them (`shown`)', () => {
+    const shift = (x: number, y: number): [number, number] => [x + 200, y];
+    // The top covers x 100..260 projected: on the screen, 300..460.
+    expect(query({ x0: 290, y0: 330, x1: 470, y1: 510 }, 'window', shown, { shown: shift })).toEqual(p.top);
+    expect(query({ x0: 290, y0: 330, x1: 470, y1: 510 }, 'window', shown)).toEqual([]);
+    expect(query({ x0: 90, y0: 330, x1: 270, y1: 510 }, 'window', null, { shown: shift })).toEqual([]);
   });
 
   it('a window around a cube takes the faces of the visible set, whole (a CAD box: two triangles a face)', () => {

@@ -70,9 +70,13 @@
 #[cfg(test)]
 mod filter_tests;
 pub mod filters;
+pub mod paraxial;
 pub mod pupil;
 #[cfg(test)]
 mod tests;
+pub mod traced;
+#[cfg(test)]
+mod traced_tests;
 
 use crate::color::Rgb;
 use crate::fmath;
@@ -84,6 +88,7 @@ use crate::sampler::{
 use crate::scene::Camera;
 use filters::{light_disc, Filter, FilterParams, Lobe, MAX_FILTERS};
 use pupil::{Grid, Iris, Profile, Pupil};
+use traced::{CameraOptics, Prescription, Traced, TracedLens};
 
 /// `LENS.mask_kind` 0: no picture.
 pub const MASK_NONE: u32 = 0;
@@ -159,6 +164,11 @@ pub struct LensParams {
     pub mask: Vec<u8>,
     /// O3a: the effect filters in front of the lens, in order (`FILTER_NONE`: an empty slot).
     pub filters: [FilterParams; MAX_FILTERS],
+    /// O2: the traced lens (the section's trailing prescription); `None` is the enhanced thin
+    /// lens. With it the iris (blades, roundness, rotation, obstruction) sits at the stop, the
+    /// squeeze desqueezes the image, and `ca_amount` and `swirl` are its artistic overrides; the
+    /// thin-lens pupil, cat's eye, tilt and picture are not used.
+    pub prescription: Option<Prescription>,
 }
 
 impl Default for LensParams {
@@ -184,6 +194,7 @@ impl Default for LensParams {
             mask_height: 0,
             mask: Vec::new(),
             filters: [FilterParams::default(); MAX_FILTERS],
+            prescription: None,
         }
     }
 }
@@ -220,6 +231,9 @@ pub struct Lens {
     /// Whether the filters connect the camera samples to the lights (always, but for measuring
     /// what the connections bring: [`Lens::with_connections`]).
     connect: bool,
+    /// O2: the traced lens prepared for the camera ([`Lens::prepare`]); `None` until then, and
+    /// always for the thin lens.
+    traced: Option<TracedLens>,
 }
 
 fn unit(v: f32) -> bool {
@@ -288,6 +302,7 @@ impl Lens {
         Ok(Lens {
             filters,
             connect: true,
+            traced: None,
             tilt: fmath::sin_cos(p.tilt_deg * fmath::DEG_TO_RAD),
             tilt_axis: fmath::sin_cos(p.tilt_axis_deg * fmath::DEG_TO_RAD),
             params,
@@ -303,6 +318,33 @@ impl Lens {
     /// The pupil sampler.
     pub fn pupil(&self) -> &Pupil {
         &self.pupil
+    }
+
+    /// O2: prepares the traced lens for a camera's optics (scales, focuses, sizes the stop and
+    /// precomputes the pupil bounds); nothing for a thin lens, nothing when it is already
+    /// prepared for the same optics.
+    pub fn prepare(&mut self, camera: CameraOptics) -> Result<(), &'static str> {
+        let Some(p) = &self.params.prescription else {
+            return Ok(());
+        };
+        if self.traced.as_ref().is_some_and(|t| t.key() == camera) {
+            return Ok(());
+        }
+        self.traced = Some(TracedLens::new(p, &self.params, camera)?);
+        Ok(())
+    }
+
+    /// Takes the prepared traced lens of `old` when it is the same lens prepared for `camera`
+    /// (an update that only moved the camera keeps the precomputation).
+    pub fn reuse(&mut self, old: &Lens, camera: CameraOptics) {
+        if self.params == old.params && old.traced.as_ref().is_some_and(|t| t.key() == camera) {
+            self.traced = old.traced.clone();
+        }
+    }
+
+    /// O2: the traced lens, once prepared.
+    pub fn traced(&self) -> Option<&TracedLens> {
+        self.traced.as_ref()
     }
 
     /// The filters that scatter, in order (O3a).
@@ -358,6 +400,11 @@ impl Lens {
     /// (after every pupil effect): the camera of `generate_ray` with the shift, the squeeze
     /// already applied to `p`, and the tilt.
     pub fn thin_ray(&self, camera: &Camera, aspect: f32, u: f32, v: f32, p: (f32, f32)) -> Ray {
+        if let Some(traced) = &self.traced {
+            if let Some(ray) = self.traced_ray(traced, camera, aspect, u, v, p) {
+                return ray;
+            }
+        }
         let (forward, right, up) = camera.basis();
         let (x, y) = sensor_point(camera, aspect, u, v);
         let (x, y) = self.shifted(x, y);
@@ -431,17 +478,104 @@ impl Lens {
         sampler: &PixelSampler,
     ) -> (Ray, Rgb, Option<FilterPath>) {
         let (ray, weight) = self.sample_lens(camera, aspect, u, v, sampler);
+        self.filter_sample(camera, ray, weight, sampler)
+    }
+
+    /// O2: [`Lens::sample_filtered`] of several sensor points `(u, v)` with their samplers, into
+    /// `out` (one per point): a traced lens traces them [`traced::LANES`] at a time (the same bits
+    /// as one by one); any other lens samples them one by one.
+    pub fn sample_filtered_batch(
+        &self,
+        camera: &Camera,
+        aspect: f32,
+        points: &[(f32, f32)],
+        samplers: &[PixelSampler],
+        out: &mut Vec<(Ray, Rgb, Option<FilterPath>)>,
+    ) {
+        out.clear();
+        let n = points.len().min(samplers.len());
+        let Some(traced) = &self.traced else {
+            for k in 0..n {
+                let (u, v) = points[k];
+                out.push(self.sample_filtered(camera, aspect, u, v, &samplers[k]));
+            }
+            return;
+        };
+        let basis = camera.basis();
+        let mut start = 0;
+        while start < n {
+            let end = (start + traced::LANES).min(n);
+            let mut lanes = [traced::BatchSample::default(); traced::LANES];
+            for k in start..end {
+                let (u, v) = points[k];
+                let (x, y) = self.traced_film(camera, aspect, u, v);
+                let (band, group) = samplers[k].strata(DIM_LENS_BAND, 3);
+                lanes[k - start] = traced::BatchSample {
+                    x,
+                    y,
+                    u: group.get2(DIM_LENS),
+                    band: band as usize,
+                };
+            }
+            let traced_out = traced.sample_batch(&lanes[..end - start], self.params.swirl);
+            for k in start..end {
+                let (u, v) = points[k];
+                let lane = &lanes[k - start];
+                let (ray, weight) = self.traced_result(
+                    traced,
+                    camera,
+                    aspect,
+                    u,
+                    v,
+                    (lane.x, lane.y),
+                    lane.band,
+                    traced_out[k - start],
+                    basis,
+                );
+                out.push(self.filter_sample_in(camera, basis, ray, weight, &samplers[k]));
+            }
+            start = end;
+        }
+    }
+
+    /// The effect filters after the lens: what [`Lens::sample_filtered`] does to the ray and the
+    /// weight of the lens's sample.
+    fn filter_sample(
+        &self,
+        camera: &Camera,
+        ray: Ray,
+        weight: Rgb,
+        sampler: &PixelSampler,
+    ) -> (Ray, Rgb, Option<FilterPath>) {
+        if self.filters.is_empty() {
+            return (ray, weight, None);
+        }
+        self.filter_sample_in(camera, camera.basis(), ray, weight, sampler)
+    }
+
+    /// [`Lens::filter_sample`] with the camera's basis already at hand.
+    #[inline(always)]
+    fn filter_sample_in(
+        &self,
+        camera: &Camera,
+        basis: (Vec3, Vec3, Vec3),
+        ray: Ray,
+        weight: Rgb,
+        sampler: &PixelSampler,
+    ) -> (Ray, Rgb, Option<FilterPath>) {
         if self.filters.is_empty() {
             return (ray, weight, None);
         }
         // The three bands of a group share their filters' numbers too (one scattering, three
         // colours), as they share the pupil.
-        let numbers = if self.params.ca_amount > 0.0 && camera.lens_radius() > 0.0 {
+        let banded =
+            self.traced.is_some() || (self.params.ca_amount > 0.0 && camera.lens_radius() > 0.0);
+        let numbers = if banded {
             sampler.strata(DIM_LENS_BAND, 3).1
         } else {
             *sampler
         };
-        let (_, right, up) = camera.basis();
+        let (_, right, up) = basis;
         let mut path = FilterPath {
             origin: ray.origin,
             right,
@@ -543,6 +677,9 @@ impl Lens {
         v: f32,
         sampler: &PixelSampler,
     ) -> (Ray, Rgb) {
+        if let Some(traced) = &self.traced {
+            return self.sample_traced(traced, camera, aspect, u, v, sampler);
+        }
         if camera.lens_radius() == 0.0 {
             return (self.thin_ray(camera, aspect, u, v, (0.0, 0.0)), Rgb::WHITE);
         }
@@ -624,4 +761,138 @@ pub fn sensor_size(camera: &Camera, aspect: f32) -> (f32, f32) {
 pub fn sensor_point(camera: &Camera, aspect: f32, u: f32, v: f32) -> (f32, f32) {
     let (w, h) = sensor_size(camera, aspect);
     ((u - 0.5) * w, (0.5 - v) * h)
+}
+
+impl Lens {
+    /// The sensor position of `(u, v)` for the traced lens, from the optical axis (shift
+    /// included), desqueezed (an anamorphic lens's image is squeezed horizontally on the sensor).
+    fn traced_film(&self, camera: &Camera, aspect: f32, u: f32, v: f32) -> (f32, f32) {
+        let (sx, sy) = sensor_point(camera, aspect, u, v);
+        let (x, y) = self.shifted(sx, sy);
+        // An anamorphic lens desqueezes by its squeeze as traced at its focus; a lens without
+        // cylinders by nothing (the thin lens's squeeze does not apply to a traced lens).
+        let squeeze = match &self.traced {
+            Some(t) => t.squeeze().unwrap_or(1.0),
+            None => self.params.squeeze,
+        };
+        (x / squeeze, y)
+    }
+
+    /// A lens-frame ray (`traced`'s axis is −forward; its x and y are the camera's right and up)
+    /// in the world.
+    fn traced_world(traced: &TracedLens, camera: &Camera, origin: Vec3, dir: Vec3) -> Ray {
+        Self::traced_world_in(traced, camera, camera.basis(), origin, dir)
+    }
+
+    /// [`Lens::traced_world`] with the camera's basis already at hand (a batch computes it once).
+    #[inline(always)]
+    fn traced_world_in(
+        traced: &TracedLens,
+        camera: &Camera,
+        basis: (Vec3, Vec3, Vec3),
+        origin: Vec3,
+        dir: Vec3,
+    ) -> Ray {
+        let (forward, right, up) = basis;
+        let o = camera.position
+            + right * origin.x
+            + up * origin.y
+            + forward * (traced.pupil_z() - origin.z);
+        let d = (right * dir.x + up * dir.y - forward * dir.z).normalize();
+        Ray::new(o, d)
+    }
+
+    /// The traced ray of the image point `(u, v)` through `p` of the unit pupil: `(0, 0)` is the
+    /// chief ray (through the centre of the stop, band G), what the exact passes use; `None` when
+    /// the lens blocks it.
+    fn traced_ray(
+        &self,
+        traced: &TracedLens,
+        camera: &Camera,
+        aspect: f32,
+        u: f32,
+        v: f32,
+        p: (f32, f32),
+    ) -> Option<Ray> {
+        let (x, y) = self.traced_film(camera, aspect, u, v);
+        match traced.chief(x, y, p) {
+            Traced::Out { origin, dir } => Some(Self::traced_world(traced, camera, origin, dir)),
+            Traced::Blocked => None,
+        }
+    }
+
+    /// One camera sample through the traced lens: a band per sample (decision 3), stratified per
+    /// pixel with the pupil point shared by the three bands of a group; the point on the rear
+    /// plane from the lens dimensions; the weight of its radiometry and transmittance on its
+    /// channel. A sample the lens blocks still traces the chief ray (for the coverage of a
+    /// transparent background) and weighs black.
+    fn sample_traced(
+        &self,
+        traced: &TracedLens,
+        camera: &Camera,
+        aspect: f32,
+        u: f32,
+        v: f32,
+        sampler: &PixelSampler,
+    ) -> (Ray, Rgb) {
+        let (x, y) = self.traced_film(camera, aspect, u, v);
+        let (band, group) = sampler.strata(DIM_LENS_BAND, 3);
+        let band = band as usize;
+        let numbers = group.get2(DIM_LENS);
+        let sample = traced.sample(x, y, numbers, band, self.params.swirl);
+        self.traced_result(
+            traced,
+            camera,
+            aspect,
+            u,
+            v,
+            (x, y),
+            band,
+            sample,
+            camera.basis(),
+        )
+    }
+
+    /// The world ray and the colour weight of a traced sample of the sensor point `(u, v)`
+    /// (`film`, desqueezed) in `band`: what [`Lens::sample_traced`] makes of
+    /// [`TracedLens::sample`]'s answer (one by one or from a batch).
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn traced_result(
+        &self,
+        traced: &TracedLens,
+        camera: &Camera,
+        aspect: f32,
+        u: f32,
+        v: f32,
+        film: (f32, f32),
+        band: usize,
+        sample: (Traced, f32),
+        basis: (Vec3, Vec3, Vec3),
+    ) -> (Ray, Rgb) {
+        let (x, y) = film;
+        let (out, weight) = sample;
+        match out {
+            Traced::Out { origin, dir } => (
+                Self::traced_world_in(traced, camera, basis, origin, dir),
+                band_weight(band) * weight,
+            ),
+            Traced::Blocked => {
+                let ray = match traced.chief(x, y, (0.0, 0.0)) {
+                    Traced::Out { origin, dir } => {
+                        Self::traced_world_in(traced, camera, basis, origin, dir)
+                    }
+                    Traced::Blocked => {
+                        let (forward, right, up) = basis;
+                        let (sx, sy) = sensor_point(camera, aspect, u, v);
+                        Ray::new(
+                            camera.position,
+                            (forward * camera.focal_mm + right * sx + up * sy).normalize(),
+                        )
+                    }
+                };
+                (ray, Rgb::BLACK)
+            }
+        }
+    }
 }
