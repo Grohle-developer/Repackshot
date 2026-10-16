@@ -700,8 +700,17 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    la aproxima; y, E9c, *Número de Abbe*, de 0 a 100 —la dispersión
    cromática del vidrio macizo: cuanto menor, más separa los colores; 0,
    ninguna—, cuya ayuda dice también que Rápido la aproxima); madera
-   (dos colores, densidad de anillos…); tela (dos colores de hilo, tipo de
-   tejido, hilos por cm, pelusa); emisor (tipo, temperatura, potencia).
+   (dos colores, densidad de anillos por 100 mm, *Escala*, *Contraste de
+   anillos*, variación, ruidos, *Poros*: lo pintan el modo Completo y los
+   renders, y su punto «·» y su ayuda lo dicen; la vista Rápida muestra el
+   color medio; *Nudos*, *Tamaño de los nudos* en mm, *Variación de
+   tamaño* y *Oscuridad de los nudos*, que la vista Rápida ya enseña
+   oscureciendo donde caen; en el bambú, el MDF y el ébano están
+   desactivados y su ayuda dice por qué); tela (dos colores de hilo, tipo de
+   tejido, *Hilos por cm* (2–200, físicos), relieve, pelusa: el tejido, su
+   densidad y su relieve los pintan el modo Completo y los renders, y la
+   vista Rápida muestra su color medio); emisor (tipo, temperatura,
+   potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material
    propio* separa la instancia del preset cuando se edita (el nombre pasa
    a "Oro (editado)").
@@ -759,7 +768,12 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    por pieza*, y *Aplicar a toda la pieza*.
 4. **Pieza** — Nombre, visible, bloqueada, posición / rotación / escala
    (tres campos por fila, arrastrables), *Apoyar en el suelo*, *Centrar*,
-   *Dejar caer* (fase S2), radio de bisel de aristas (mm), suavizado.
+   *Dejar caer* (fase S2), radio de bisel de aristas (mm), suavizado. El
+   bisel es del material (lo dice la nota bajo el campo: *Es del material.
+   El modo Completo redondea las aristas vivas en el sombreado, como un
+   redondeo de este radio; la vista Rápida las muestra vivas*): lo dibuja el
+   motor desde E6 (`ARCHITECTURE.md` §5.2 septies); three.js no puede hacerlo
+   barato y la vista *Rápida* no lo intenta.
 5. **Físicas** (fase S2; `SPEC.md` §3.1) — **Papel**, segmentado:
    *Estático · Dinámico · Tela · Líquido*, con *Tela* y *Líquido*
    desactivados y un *tooltip* que dice *próximamente*; con varios nodos de

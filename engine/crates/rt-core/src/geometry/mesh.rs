@@ -1,6 +1,7 @@
 //! Indexed triangle meshes, structure-of-arrays, with their own BVH.
 
 use super::bvh::{leaf_ref, BuildParams, Bvh, BvhStats, BvhWidth, MAX_LEAF_FIRST};
+use super::edges::{EdgeCache, MeshEdges};
 use super::triangle::TriPacket;
 use crate::math::{Aabb, Vec3};
 use std::fmt;
@@ -93,6 +94,8 @@ pub struct Mesh {
     packets: Vec<TriPacket>,
     /// The vertex normals point, on the whole, against the winding order's normals.
     inside_out: bool,
+    /// The sharp and boundary edges, extracted on first use (E6, the edge bevel).
+    edges: EdgeCache,
 }
 
 impl Mesh {
@@ -149,6 +152,7 @@ impl Mesh {
             bvh: Bvh::default(),
             packets: Vec::new(),
             inside_out: false,
+            edges: EdgeCache::default(),
         };
         mesh.inside_out = mesh.normals_oppose_winding();
         mesh.build_bvh(width);
@@ -291,6 +295,13 @@ impl Mesh {
     /// Size figures of the mesh's BVH.
     pub fn bvh_stats(&self) -> BvhStats {
         self.bvh.stats()
+    }
+
+    /// The sharp and boundary edges of the mesh, for the edge bevel of the shading (see
+    /// [`MeshEdges`]). Extracted the first time they are asked for, then kept with the mesh (and
+    /// its clones) as long as it lives, like its BVH.
+    pub fn sharp_edges(&self) -> &MeshEdges {
+        self.edges.get(self)
     }
 
     /// The BVH and its leaf packets (for the kernels).

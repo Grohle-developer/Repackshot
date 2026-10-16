@@ -566,9 +566,11 @@ none). O1 added `LENS` (optional, right after `CAMR`): the optics of the camera 
 sampled through its 2-D CDF, the pupil's radial profile, a central obstruction, cat's eye, an
 anamorphic squeeze, lens shift and a Scheimpflug tilt, artistic chromatic bands and swirl); a file
 without it renders exactly as before. O3a appended the lens's three effect-filter slots (28 bytes
-each, written only when there are filters). E9 appended to `MATL` (100 bytes) `bevel_mm` (reserved
-for E6: read and kept, written 0), `scatter_mm`, `scatter_color` (three floats), `scatter_g` and
-`abbe` (the Abbe number of solid glass, E9c). The exact field layout and the semantics
+each, written only when there are filters). E6 appended `MATL.bevel_mm` (76 bytes: the radius of
+the edge bevel of the shading, `rt_core::bevel`) and added `PATN` (108 bytes, one per patterned
+material: the procedural wood or cloth of `rt_core::pattern`). E9 appended to `MATL` (100 bytes)
+`scatter_mm`, `scatter_color` (three floats), `scatter_g` and `abbe` (the Abbe number of solid
+glass, E9c). The exact field layout and the semantics
 are documented at the top of
 [`crates/rt-core/src/scene/rsb.rs`](crates/rt-core/src/scene/rsb.rs), which contains both the
 reader (`Scene::from_rsb`, and `Scene::update_from_rsb` for updates that keep the meshes) and the

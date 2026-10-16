@@ -109,9 +109,11 @@ describe.skipIf(!RT_WASM)('the passes of the real rt.wasm, rendered the pool’s
     for (const [fixture, image, prefix] of [
       ['tests/fixtures/example.rsb', 'PINNED_EXAMPLE_4SPP', ''],
       ['tests/fixtures/e5.rsb', 'PINNED_E5_HDRI_4SPP', 'E5_'],
+      // E6: the edge bevel; its normal pass is the bevelled shading normal.
+      ['tests/fixtures/e6.rsb', 'PINNED_E6_BEVEL_4SPP', 'E6_'],
     ] as const) {
       const rsb = new Uint8Array(readFileSync(fixture));
-      const [w, h] = fixture.includes('e5') ? [160, 120] : [512, 384];
+      const [w, h] = fixture.includes('example') ? [512, 384] : [160, 120];
       const { image: acc, passes } = renderWithPasses(rt, rsb, w, h, 4, ALL);
       expect(fnv1a(resolveRgb(acc, 4)), `${fixture}: the image`).toBe(pinned('engine/crates/rt-core/src/render.rs', image));
       expect(passHashes(passes).map((x) => x.toString(16)), `${fixture}: the passes`).toEqual(pinnedPasses(prefix).map((x) => x.toString(16)));

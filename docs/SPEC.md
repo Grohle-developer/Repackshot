@@ -102,7 +102,9 @@ genera de ahí (ver *Primitivas*, abajo).
 envolvente del modelo, detectada al importar y editable. Todo lo que
 tiene escala física se expresa en tamaños de pieza o se deriva de aquí:
 distancia de cámara, tamaño y distancia de focos, radio de bisel, escala
-del desgaste y del grano.
+del desgaste. La veta de la madera y la trama de la tela, no (E6, decisión
+del líder): sus anillos, poros, fibras e hilos tienen tamaño físico, el mismo
+en un joyero que en una mesa.
 
 **Apoyo en el suelo**: el punto más bajo de **todas** las mallas del
 objetivo (no de una sola) baja a `z = 0`. **Centrar**: el centro de la caja
@@ -558,14 +560,29 @@ las salidas sin ranura (barniz, transmisión, IOR…) con su valor medio. En
 *próximamente*), el material es el valor medio de cada salida sobre una
 esfera de muestras; lo dicen el inspector y el editor.
 
+**Bisel de aristas** (`bevelRadiusMm`, E6): radio en mm de un redondeo
+que el motor dibuja **solo en el sombreado** (la geometría no cambia):
+cerca de las aristas vivas de la malla (más de 20° entre caras, y los bordes
+abiertos), la normal gira como la de un redondeo circular de ese radio
+tangente a las dos caras, así que la arista coge luz en los reflejos y en la
+sombra como una arista redondeada de verdad. Vale para aristas convexas y
+cóncavas, esquinas (como una caja redondeada por una esfera) y aristas
+curvas; nunca cambia la normal a más de ese radio de una arista; donde una
+pieza es más fina que unos dos radios, el redondeo se ajusta a lo que cabe.
+Es del material (todas las familias salvo el emisor, que no tiene); una
+instancia nueva de un preset lleva el 0,25 % del tamaño de la pieza (el
+arreglo del Doctor). El modo *Completo* y los renders lo dibujan; la vista
+*Rápida* muestra las aristas vivas. Detalle técnico: `ARCHITECTURE.md`
+§5.2 septies.
+
 Familias y lo que significan para el motor:
 
 | Familia | Modelo | Parámetros propios |
 | --- | --- | --- |
 | `SIMPLE` | BSDF de principio físico: base, metal, rugosidad, barniz, anisotropía, subsuperficie, opacidad | — |
 | `GLASS` | dieléctrico con transmisión, IOR, rugosidad, color de absorción: el color es lo que conserva la luz blanca tras `absorptionMm` milímetros dentro de la pieza (0: tinte de superficie); con `walls` `THIN`, pared fina sin interior (lámina, bombilla, visera modelada como una superficie), que deja pasar la luz recta. Con `scatterMm` por encima de 0 (E9), el sólido está lleno de un medio dispersor: plástico translúcido, cera, jabón, leche, zumo; `scatterMm` es la distancia libre media en mm, `scatterColor` lo que conserva cada rebote de cada color (el albedo) y `scatterG` adónde va la luz en cada rebote (Henyey–Greenstein, de −0,9 hacia atrás a 0,9 hacia delante). El modo Completo hace el paseo aleatorio dentro de la pieza; el Rápido lo aproxima con un difuso translúcido. Con `abbe` por encima de 0 (E9c), el vidrio macizo sin medio separa la luz en colores (dispersión cromática): es su número de Abbe, cuanto menor, más separa (cristal 30–40, vidrio de ventana unos 60); el modo Completo refracta cada longitud de onda con su índice y el Rápido usa la dispersión de three.js | `ior`, `transmission`, `absorptionMm` (50), `walls` (`SOLID` · `THIN`), `scatterMm` (0), `scatterColor` (blanco), `scatterG` (0), `abbe` (0) |
-| `WOOD` | veta procedural: dos colores, densidad y variación de anillos, ruido axial, poro | `woodColor1/2`, `ringDensity`… |
-| `FABRIC` | trama procedural: dos colores de hilo, tejido (tafetán, sarga, satén, punto, malla), hilos por cm, relieve, pelusa | `threadColor1/2`, `weave`, `threadCount`, `fuzz` |
+| `WOOD` | veta procedural (E6): dos colores (primavera y verano) con el contraste de la especie, anillos por 100 mm (físicos) y su escala, variación y serpenteo de los anillos, ruido axial y de color, fibra, poros (anchura, profundidad, en anillo o difusos), la figura (anillos, tiras de bambú con sus haces y sus nodos, moteado de MDF, vetas de ébano) y los nudos de las maderas con anillos (cuántos por pieza, 0–12; diámetro en mm, 5–40, ± variación; oscuridad), colocados según la semilla del material. La vista *Rápida* muestra su color medio y dónde caen los nudos | `woodColor1/2`, `ringDensity`, `woodScale`, `ringContrast`, `poreSize`, `poreDepth`, `poreBand`, `woodFigure`, `knotCount`, `knotSize`, `knotSizeVar`, `knotDarkness`… |
+| `FABRIC` | trama procedural (E6): dos colores de hilo (urdimbre y trama), tejido (tafetán, sarga 2/2, sarga 3/1 de vaquero, raso, lona, punto, fieltro), hilos por cm (físicos, 2–200: los de cada tela del catálogo), relieve; pelusa (la vista *Rápida* la dibuja como *sheen*; el motor todavía no). La vista *Rápida* muestra el color medio del tejido | `threadColor1/2`, `weave`, `threadCount`, `weaveDepth`, `fuzz` |
 | `EMISSIVE` | emisor: cuerpo negro a temperatura o color, potencia | `emitKind`, `temperature`, `emitPower` |
 
 **Energía** (E9a): en el modo Completo los materiales no pierden luz con

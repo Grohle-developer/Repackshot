@@ -223,8 +223,9 @@ pub struct Material {
     /// white light after travelling this far inside (Beer–Lambert). 0: no absorption, the colour
     /// tints the surface instead (once per pass through a solid, or through a thin wall).
     pub absorption_mm: f32,
-    /// Reserved for E6 (the edge bevel radius in millimetres): read, kept and written back, not
-    /// rendered yet. 0.
+    /// Radius of the edge bevel in millimetres (E6, [`crate::bevel`]): the shading normal is
+    /// rounded within this distance of the mesh's sharp edges, as if they were filleted. 0 (or
+    /// less): sharp edges.
     pub bevel_mm: f32,
     /// Mean free path, in millimetres, of the scattering medium that fills a clear solid of this
     /// material (E9b, [`crate::integrator::medium`]); 0: none.
@@ -743,6 +744,9 @@ pub struct Scene {
     pub render: RenderSettings,
     /// Images the environment refers to (HDRI, background plate), by index.
     pub bitmaps: Vec<Bitmap>,
+    /// Procedural patterns of the materials (E6, `PATN`: wood), at most one per material (the
+    /// first counts).
+    pub patterns: Vec<crate::pattern::Pattern>,
     /// The ambient effects (S4a, `FXAM`), in file order. Their particles live in the geometry
     /// ([`Geometry::particle_sets`], built by [`Scene::build_particles`]).
     pub effects: Vec<AmbientParams>,
