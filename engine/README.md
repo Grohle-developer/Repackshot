@@ -566,7 +566,10 @@ none). O1 added `LENS` (optional, right after `CAMR`): the optics of the camera 
 sampled through its 2-D CDF, the pupil's radial profile, a central obstruction, cat's eye, an
 anamorphic squeeze, lens shift and a Scheimpflug tilt, artistic chromatic bands and swirl); a file
 without it renders exactly as before. O3a appended the lens's three effect-filter slots (28 bytes
-each, written only when there are filters). E6 appended `MATL.bevel_mm` (76 bytes: the radius of
+each, written only when there are filters). O2 appended the traced lens's prescription after
+those slots (written then, empty, even without filters): a surface count, the stop, the focus mode,
+the fastest f-number, the floating magnifications, four artistic overrides, the moving gaps and
+48 bytes per surface. E6 appended `MATL.bevel_mm` (76 bytes: the radius of
 the edge bevel of the shading, `rt_core::bevel`) and added `PATN` (108 bytes, one per patterned
 material: the procedural wood or cloth of `rt_core::pattern`). E9 appended to `MATL` (100 bytes)
 `scatter_mm`, `scatter_color` (three floats), `scatter_g` and `abbe` (the Abbe number of solid
@@ -611,8 +614,18 @@ byte for byte.
   the camera sees through the filter's PSF, weighted against the scattering with the balance
   heuristic lobe by lobe; a stack of three per camera; the O3a parity scene
   (`rt --write-o3a-example`), the filter sheet (`rt --filter-sheet`) and the measurement of the
-  noise the filters add with and without the connections (`rt --filter-noise`). Next: the traced
-  lens (O2).
+  noise the filters add with and without the connections (`rt --filter-noise`).
+* **O2**: the traced lens (`rt_core::optics::traced`, `optics::paraxial`): a prescription at the
+  end of `LENS` (spheres, planes, even aspheres, cylinders, mirrors; one stop) traced from the
+  sensor surface by surface after Kolb, Mitchell and Hanrahan (1995) with the stable intersection
+  and only `+ − × ÷ sqrt`, scaled to the camera's focal length, focused (unit, internal,
+  floating, and an anamorphic adapter's gap), three bands of Cauchy indices, coatings as
+  per-surface transmittance (T-stop and tint), exit-pupil bounds per image height, the artistic
+  overrides, and the lens information the interface shows (`LensInfo`: focal lengths, image scale,
+  back focus, f-number and T-stop, distortion, relative illumination, the cross-section;
+  `rt_scene_lens_info`, `POST /api/lens/info`); the O2 parity scene (`rt --write-o2-example`), the
+  catalogue as `rt` sends it (`rt --write-lens-catalogue`), the lens sheet (`rt --lens-sheet`) and
+  the measured cost of the traced camera (`rt --lens-cost`).
 
 ## Third-party data
 

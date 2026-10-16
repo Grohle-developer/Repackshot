@@ -938,8 +938,8 @@ gato recorta el haz hacia las esquinas y las oscurece (es el viñeteo
 óptico que lo acompaña); la aberración cromática pinta cada muestra en
 una de tres bandas (decisión 3) sin mover el plano de enfoque. Los tipos
 que necesitan la lente trazada (cometa de coma, respiración de foco,
-aberración esférica variable) esperan a O2 y el de difracción a la óptica
-de ondas. Lo que hace el motor está en `ARCHITECTURE.md` (sección `LENS`)
+aberración esférica variable) ponen su lente del catálogo en la cámara
+(O2) y el de difracción espera a la óptica de ondas. Lo que hace el motor está en `ARCHITECTURE.md` (sección `LENS`)
 y en `rt-core/src/optics`. El pase `coc` (X2) sigue siendo el de la
 lente fina redonda y sin inclinar, sea cual sea la óptica. El modo
 Rápido no dibuja profundidad de campo; del resto solo muestra el
@@ -971,6 +971,34 @@ destellos finos alrededor de cada luz. Un filtro de grado 0 no hace nada. Elegir
 bokeh o *Disco sencillo* no quita los filtros. Una cámara ortográfica no
 tiene filtros (como no tiene lente). El modo Rápido dibuja una
 aproximación en imagen con los mismos núcleos y el medidor lo dice.
+
+**Lente trazada (O2).** `CameraOptics.traced` (opcional; sin él o `null`,
+la lente fina, y los proyectos anteriores no cambian ni un byte): una
+lente del catálogo `src/data/lenses.json` (16 prescripciones de patentes
+caducadas y libros, nombres genéricos, claves estables) que el motor traza
+superficie a superficie. El proyecto guarda la **clave** y lo que la
+persona cambió, nunca una copia de las superficies: el **tratamiento** de
+las superficies aire–vidrio (`null`: el de la lente; sin tratar, monocapa,
+multicapa), el **hueco variable** de la lente blanda (`null`: el del
+diseño), el **objetivo detrás** de un adaptador (`null`: la doble Gauss
+normal) y cuatro ajustes **no físicos** (distorsión −1 barril … 1 cojín,
+viñeteo 0 … 1, carácter de la esférica −1 subcorregida … 1
+sobrecorregida, respiración −1 nada … 1 el doble). La lente se escala a la
+focal de la cámara y se enfoca a su distancia de enfoque; el f/ de la
+cámara nunca es más abierto que el de la lente. Con ella, el iris
+(láminas, redondez, giro, obstrucción) va en el diafragma de la lente y
+la aberración cromática y el remolino de la óptica son sus ajustes no
+físicos; el perfil de la pupila, el ojo de gato, la compresión anamórfica
+y la inclinación de la lente fina no se aplican (la lente hace su propia
+pupila, su ojo de gato y sus flecos; la inclinación, próximamente); el
+descentramiento sí. Un adaptador anamórfico desestira la imagen por la
+compresión que traza a ese foco. Lo que la interfaz enseña de la lente lo
+calcula el motor (regla 10): focal a infinito y al foco, tiraje, f/ en uso
+y T-stop, elementos y grupos, longitud, pupila de entrada, la compresión
+de un anamórfico, la distorsión y la luz hacia la esquina, y el corte. El
+modo Rápido aplica la distorsión y el viñeteo del motor como aproximación
+y el medidor lo dice; Completo y el render trazan la lente. Cambiar de
+lente no toca la resolución de salida.
 
 ### 3.6 · Imagen
 
@@ -1223,7 +1251,9 @@ biblioteca. El **proyecto** es el estado completo en un archivo
 La **biblioteca propia** guarda lo que el usuario crea y quiere reutilizar
 entre proyectos: materiales (*Guardar material como…*), montajes de luz
 (*Guardar montaje como…*), tipos de producto (*Guardar como tipo de
-producto*: el estudio actual como preset) y estudios. Aparece como pestaña
+producto*: el estudio actual como preset), estudios y lentes (*Guardar
+lente como…*, O2: la lente trazada de la cámara con su iris y sus ajustes
+no físicos, la prescripción por su clave del catálogo). Aparece como pestaña
 *Míos* en cada catálogo, con miniaturas renderizadas por el producto, se
 persiste en el navegador y se exporta e importa como un archivo JSON para
 llevarla a otra máquina. Los presets de fábrica no se editan: editar uno
