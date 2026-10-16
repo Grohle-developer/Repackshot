@@ -8685,8 +8685,8 @@ trabajo en curso en la vista, en los dos temas.
   14,7 MB de un 1280 × 720); con `data=0` no cambia nada y una caja mal escrita
   es 400 `bad-query`. Un lanzador sin `fit=` mandaría las sumas enteras y la
   página las reduce. Sin vista en vivo solo viajan cabeceras, como antes.
-- **Tests** (todos fallan sin la función: 16 mutaciones comprobadas una a una,
-  abajo): `tests/live-view.test.ts` (17: la cadencia y la caja con reloj falso,
+- **Tests** (todos fallan sin la función: 19 mutaciones comprobadas una a una,
+  al final de esta lista): `tests/live-view.test.ts` (17: la cadencia y la caja con reloj falso,
   la imagen —media de cajas, rejilla, baldosas sin muestras, cobertura, la
   imagen guardada igual a una nueva y rehaciendo solo lo cambiado—, la toma de
   la cola, la cola con un render falso que entrega imágenes, el motor del
@@ -8696,7 +8696,17 @@ trabajo en curso en la vista, en los dos temas.
   en `rt-app` `render.rs` (2: `fit_factor` y `parse_fit`, `Frame::fitted` con
   cajas cortadas por el borde) y `tests/server.rs` (1: un final pedido con
   `fit=16x16` llega en 16 × 12 con la bandera y las medias de sus cajas).
-  `tests/launcher-mock.ts` responde `fit=` como el lanzador.
+  `tests/launcher-mock.ts` responde `fit=` como el lanzador. Las mutaciones, cada
+  una con algún test en rojo: el clic en una fila que corre o espera solo abre
+  resultados; la petición sin la toma; sin cadencia; la toma para cualquier
+  trabajo de la vista; el escritorio sin pedir imagen; el *pool* sin hacerla;
+  *Cerrar* que no cierra; el trabajo mirado que no pasa a su resultado; el que
+  espera sin su línea; la imagen guardada rehecha entera; un solo peso para
+  todas las baldosas; la pestaña oculta que sigue pidiendo; la misma pasada
+  pedida dos veces; quitar el trabajo sin cerrar su vista; el lanzador simulado
+  sin `fit=`; la rejilla que lee las cajas enteras; y en `rt-app`, `fit=`
+  ignorado, la media de las cajas del borde sin contar solo sus píxeles y
+  `fit_factor` redondeando hacia abajo.
 - **Comprobación de navegador** `tools/queue-live-check.mjs` (web y
   `--desktop`, con el lanzador de *release* en `--serve-only`), las dos en
   verde: (a) la fila en curso abre la vista y llegan imágenes con más muestras;
@@ -8705,7 +8715,29 @@ trabajo en curso en la vista, en los dos temas.
   abierta, 0 después); (d) la fila terminada abre el visor de resultados; (e)
   el trabajo mirado hasta el final pasa a ser su resultado. Capturas
   `docs/ui/queue-live.png` y `docs/ui/queue-live-dark.png`.
-- **Coste medido** (`--measure`): COSTE_AQUI
+- **Coste medido** (`node tools/queue-live-check.mjs [--desktop] --measure`):
+  el mismo trabajo (la botella de ejemplo, visor en *Rápido*, las mismas
+  muestras) en pares, uno con la vista cerrada y otro con la vista abierta
+  sobre él (cuál va primero se alterna), tras un render de calentamiento; el
+  tiempo es el del motor (`data-seconds` del historial) y la CPU la de este
+  navegador y este lanzador. **Web** (*pool* wasm de 3 *workers*, 1280 × 720,
+  16 muestras, 10 pares): mediana cerrada 11,33 s, abierta 11,53 s (+1,8 %);
+  mediana de los cocientes de cada par 0,983 (−1,7 %), entre 0,946 y 1,092;
+  CPU, 0,990; 13 o 14 imágenes por render (unas 1,2 por segundo, de
+  640 × 360). **Escritorio** (lanzador nativo en 4 hilos, 1280 × 720, 64
+  muestras, 8 pares): mediana cerrada 14,97 s, abierta 15,01 s (+0,3 %);
+  mediana de los cocientes 1,007 (+0,7 %), entre 0,948 y 1,061; CPU, 1,000; 7 u
+  8 imágenes por render (una por pasada) y otras tantas peticiones `fit=`. En
+  las dos, el coste queda **dentro del ruido** de la máquina (±5 % de un par a
+  otro: es de 4 núcleos y la comparten otros agentes) y por debajo del 2 % en
+  las dos lecturas. Lo que cuesta una imagen, fuera del navegador
+  (`liveImage`, Node, la máquina cargada): 18 ms un 1280 × 720 entero a
+  640 × 360, 41 ms un 1920 × 1080 a 960 × 540; la imagen guardada del *pool*
+  solo rehace las cajas de las baldosas que han llegado desde la anterior.
+  La primera versión (cada imagen entera, con todas las lecturas de cada caja
+  y un tope de 1280 × 800) medía +11 % de mediana en cuatro pares de 1280 × 720
+  a 32 muestras (entre −2 y +31 %, con la máquina muy cargada): de ahí el tope
+  de 960 × 600, la rejilla de 2 × 2 y la imagen guardada.
 
 **Qué no encajó con el plan** (regla 12):
 
