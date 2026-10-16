@@ -8246,15 +8246,15 @@ y el confeti son discos opacos: ni la rejilla ni nada de S4b les cambia gran
 cosa.
 
 **Por qué la lluvia sigue por encima** (contado con contadores en una copia
-del motor, 512 × 288, 10 spp): sin efecto, la mayoría de los rayos de
-cámara salen al fondo (1 474 560 rayos de cámara y 124 644 vértices
-sombreados por muestra × 10); con la lluvia, las estelas cubren el 26 % del
-cuadro y cada rayo de cámara que toca una gota da dos vértices de vidrio
-(entrar y salir) y los rayos que siguen: los vértices de las gotas solas
-son 699 326, 5,6 veces todos los de la escena sin efecto. Es el transporte
+del motor, 512 × 288, 8 spp): sin efecto, la mayoría de los rayos de cámara
+salen al fondo (1 179 648 rayos de cámara y 124 644 vértices sombreados);
+con la lluvia, las estelas cubren el 26 % del cuadro y cada rayo de cámara
+que toca una gota da dos vértices de vidrio (entrar y salir) y los rayos
+que siguen: los vértices de las gotas solas son 699 326, 5,6 veces todos los
+de la escena sin efecto. Es el transporte
 de luz de un cuarto del cuadro de vidrio, no el recorrido de la BVH (la
 rejilla lo dejó en 1,8 candidatas por rayo de cámara y 1,7 hojas por
-recorrido de los rayos que siguen). Lo que quedaba de trabajo inútil se
+recorrido de los rayos que siguen, a 10 spp). Lo que quedaba de trabajo inútil se
 quitó: en una partícula clara y lisa (`is_mirror`: rugosidad al mínimo, sin
 metal ni difuso) la estimación de siguiente evento solo busca luces delta
 y las demás las encuentra su rayo BSDF, que cuenta lo que encuentra entero
@@ -8304,7 +8304,8 @@ proyecta sombra, y su cruce es un suceso recto (conserva la densidad y la
 selección de luces del último vértice para el MIS). La cámara y los
 caminos de lóbulos estrechos desde ella (un espejo, el vidrio liso de la
 botella) siguen viendo las gotas refractar. Los fotones de las cáusticas
-ya paraban en las partículas (no son emisores de cáusticas, S4a). En
+ya paraban en las partículas (no están entre las piezas que las enfocan,
+S4a). En
 `RAIN-side` desaparecen los puntitos del cuerpo y la etiqueta de la
 botella y del suelo (hoja, recorte); `RAIN-back` no cambia a ojo.
 
@@ -8313,10 +8314,11 @@ lo hacen fallar, y pasan sin ella):
 - `geometry::particles::grid_tests::camera_rays_find_through_the_screen_grid_what_brute_force_finds`
   (estenopeica, f/2 a 900 mm y f/1,4 a 300 mm; esferas, discos y cápsulas
   de 600 partículas, motas ensanchadas, algunas en el plano de la cámara o
-  detrás; 6 000 rayos, también fuera del cuadro, todos por la rejilla, el
-  mismo impacto que la fuerza bruta; y un rayo que no sale de la lente, por
-  la BVH). Mutaciones: sin el círculo de confusión; sin las partículas del
-  plano de la cámara.
+  detrás; 6 000 rayos, también fuera del cuadro, por la rejilla, el mismo
+  impacto que la fuerza bruta; un rayo que no sale de la lente, por la BVH;
+  y una multitud de 40 000 cuyas celdas llenas mandan sus rayos a la BVH,
+  con el mismo impacto). Mutaciones: sin el círculo de confusión; sin las
+  partículas del plano de la cámara.
 - `bsdf::forward::tests`: la fase integra 1 con `g` de coseno medio (g 0;
   0,3; 0,7; −0,5; 0,95); el muestreo da su densidad (histograma de `μ` a
   5σ); el horno blanco del BSDF (Lambert blanco y lóbulo blanco de cuota
