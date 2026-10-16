@@ -997,7 +997,10 @@ calcula el motor (regla 10): focal a infinito y al foco, tiraje, f/ en uso
 y T-stop, elementos y grupos, longitud, pupila de entrada, la compresión
 de un anamórfico, la distorsión y la luz hacia la esquina, y el corte. El
 modo Rápido aplica la distorsión y el viñeteo del motor como aproximación
-y el medidor lo dice; Completo y el render trazan la lente. Cambiar de
+y el medidor lo dice; Completo y el render trazan la lente. Lo que se dibuja
+encima (el contorno de la selección, el *gizmo*, los glifos) sigue esa
+misma distorsión, y un clic (enfocar con clic, seleccionar, la caja, el
+*gizmo*) cae en lo que está bajo el cursor: el mismo mapa al revés. Cambiar de
 lente no toca la resolución de salida.
 
 ### 3.6 · Imagen

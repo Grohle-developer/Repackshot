@@ -3805,6 +3805,26 @@ Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
   medidor dice *Lente trazada: distorsión y viñeteo aproximados, el render
   la traza*. `tools/lens-check.mjs` (Chromium local, 13 comprobaciones)
   deja `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
+- **El clic a través del perfil** (el 1.8 del triaje). El visor Rápido
+  dibuja la distorsión como un pase de pantalla y `pick` lanzaba el rayo
+  sin distorsionar: con un gran angular o el ojo de pez, enfocar con clic,
+  seleccionar, la caja y el *gizmo* no caían en lo que había bajo el cursor.
+  Ahora el mapa de la pantalla a la imagen sin distorsionar está una sola
+  vez en `render/lens-profile.ts`, en TypeScript y en GLSL uno junto al otro
+  con los mismos números (`profileSource`, `PROFILE_GLSL`,
+  `profileUniforms`): por él dibujan el pase de pantalla, el contorno de la
+  selección (la máscara se lee por el mapa: la línea rodea la pieza como se
+  dibuja) y los superpuestos (*gizmo*, glifos, trayectorias; en *Completo*,
+  las caras seleccionadas), y lo invierten el pico (enfocar con clic y
+  seleccionar), el *gizmo*, los glifos, `objectAt` (por `profileShown`, el
+  mapa al revés por bisección), la selección por caja
+  (`Projection.shown`) y el pase de ids de las caras. Sin perfil (lente
+  fina, o antes de que el motor diga sus números) es la identidad. La tabla
+  se lee ahora entre sus entradas (el pase leía la más cercana: un escalón,
+  un anillo, en cada una), y el perfil es el de la cámara por la que se
+  mira (al mirar a través de otra cámara o de una luz, L4, se aplicaba el de
+  la activa). La lógica de *Enfocar con clic* que deshace el `end` de la
+  órbita (`main.ts`, `core/view-objects.ts`) es de B1 y no se ha tocado.
 - **Hoja** `out/lens-sheet.html` (`rt --lens-sheet out/lens-sheet`,
   `node tools/lens-sheet.mjs --reuse`), 400 × 300: por lente el frasco
   abierto y a f/8 (96 muestras), los puntos de luz abiertos y con la lente
@@ -3867,7 +3887,7 @@ Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
   (rt-core), los cilindros del adaptador (rt-cli) y las filas de la
   baldosa, también con filtros y una fila que no es múltiplo de ocho,
   contra `camera_sample_filtered` píxel a píxel (rt-core).
-  `tests/traced-lens.test.ts` (13): la lente de un proyecto, los tipos de
+  `tests/traced-lens.test.ts` (14): la lente de un proyecto, los tipos de
   bokeh que la ponen, la composición (tratamiento, hueco variable,
   adaptador y su hueco de enfoque, en otro objetivo su enfoque), el perfil
   del visor con la escala del motor y no su focal, la información del
@@ -3876,9 +3896,25 @@ Fable**; capturas `docs/ui/lens-editor.png` y `docs/ui/lens-section.png`.
   del adaptador y no la de la lente fina, con el `rt.wasm` real el *hash*
   de O2 y las 16 lentes preparadas con su escala, su corte y la compresión
   del adaptador, la biblioteca de lentes (ida y vuelta por el fichero, una
-  clave desconocida rechazada) y el corte en SVG. `tests/optics.test.ts`:
-  los tipos de la lente trazada ponen su lente y sus miniaturas están al
-  día con la escena de la herramienta.
+  clave desconocida rechazada), el corte en SVG y el mapa del perfil (la
+  identidad sin perfil, las entradas de la tabla, sin escalones entre ellas
+  —con la entrada más cercana, falla— y de ida y vuelta).
+  `tests/optics.test.ts`: los tipos de la lente trazada ponen su lente y sus
+  miniaturas están al día con la escena de la herramienta.
+  `tests/box-select.test.ts`: piezas y caras donde las pone `shown`.
+  `tests/lens-pick-browser.test.ts` (Chromium con SwiftShader, la vista
+  previa real): una pared de placas en tres colores a 24 mm a través de un
+  barril de −20 % y del ojo de pez del catálogo como lo dice el `rt.wasm`
+  real; se lee el lienzo y se pica cada píxel de color seguro (unos 32 000):
+  ninguno da otra pieza que la dibujada, y unos 5 000 muestran otra que la
+  imagen sin distorsionar (con el rayo de antes, 4 022 fallos); la lente
+  fina, sin números y la vista a través de otra cámara, la identidad (con
+  el perfil de la cámara activa, 5 010 píxeles movidos); el contorno a dos
+  píxeles del borde dibujado de la pieza (sin el mapa, el 13 %); la caja
+  alrededor de la pieza dibujada la toma (sin `shown`, no); el pase de ids
+  encuentra sus caras (sin el mapa, ninguna); y el *gizmo* da su asa en el
+  95 % de los píxeles que pinta, como sin perfil (dibujado recto o picado
+  sin el mapa, del 70 al 79 %).
 
 **No encajó con el plan.** (1) **Coste**: en la primera entrega la cámara
 trazada pasaba del 25 % (29,1 %); la regla del encargo pedía lotes antes de
@@ -3924,7 +3960,18 @@ burbuja, cremoso y remolino, y si las prescripciones y los diafragmas
 supuestos, los `stopBasis: assumed`, se quedan); el ruido de las bandas y
 la propuesta del muestreo por celdas de (2); las constantes del adaptador
 (`ADAPTER_GAP_MM` 5, `ADAPTER_CLEARANCE` 2,2, `ADAPTER_FOCUS_TRAVEL` 0,6);
-y las focales de los gráficos de la hoja de (8).
+y las focales de los gráficos de la hoja de (8). (12) **El clic a través
+del perfil** llegó tras la entrega, del triaje (1.8). El mapa vale en los dos
+modos: en *Completo* la imagen es la del motor y el perfil la aproxima con
+sus propias tablas, como en *Rápido*. Los superpuestos se dibujan a un
+objetivo y de ahí al lienzo por el mapa: con SwiftShader a 800 × 600 el
+*gizmo* cuesta del orden de 30 a 60 ms más por fotograma con una lente
+trazada (en una GPU, despreciable), y sus líneas, de grosor fijo en
+píxeles, se adelgazan donde el perfil encoge la imagen. El pase de pantalla
+sostiene el borde de la imagen donde la fuente cae fuera de ella (un barril
+fuerte en las esquinas de un gran angular): el pico lanza por ese borde,
+lo que se ve; dibujar un campo más ancho para no estirar el borde queda
+propuesto.
 
 ## O3a · Filtros de efecto en la lente: difusión negra, blanca y dorada, brillo, red, estrella, rayas — **Opus** (tras O1, antes de O2), veredicto **Fable** — hecha
 

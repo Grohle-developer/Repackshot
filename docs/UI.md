@@ -656,7 +656,9 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
      *Aberración cromática* y *Remolino*. **Guardar lente como…** pide un
      nombre en el sitio y la guarda en *Míos*. Dos notas: el modo Rápido
      dibuja la distorsión y el viñeteo como aproximación (y el medidor añade
-     *Lente trazada: distorsión y viñeteo aproximados, el render la traza*),
+     *Lente trazada: distorsión y viñeteo aproximados, el render la traza*;
+     el contorno, el *gizmo* y los glifos van con ella, y los clics, la caja
+     y el *gizmo* cogen lo que se ve bajo el cursor),
      y con una lente trazada el perfil, el ojo de gato, la compresión
      anamórfica y la inclinación de la lente fina no se aplican (en *Óptica
      avanzada* salen apagados con esa nota). Cada cambio es una entrada de
