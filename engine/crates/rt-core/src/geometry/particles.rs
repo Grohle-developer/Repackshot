@@ -24,14 +24,55 @@
 //! BVH is built over the real sizes, once per effect: a camera ray grows its boxes by the most
 //! any particle of the set is widened ([`ParticleSet::camera_pad`]), so moving the camera or
 //! changing the image size never builds it again.
+//!
+//! **Screen grid** (S4b). Camera rays of a pinhole camera all leave one point, so a particle can
+//! only be hit by the rays whose direction projects into the particle's projection. For a
+//! perspective camera every set keeps a grid of [`GRID_CELL_PIXELS`]-pixel cells over the image
+//! with, per cell, the particles whose box (widened as camera rays see it, with the rounding pad)
+//! projects onto it ([`ScreenProjection`]): a camera ray from the camera tests the particles of its
+//! cell instead of walking the BVH. A box in front of the camera projects inside the convex hull of
+//! its corners' projections, and every point of a ray from the centre projects where its direction
+//! does, so the cell holds every particle the ray can hit and the nearest hit (with the same order)
+//! is the BVH's, bit for bit. A thin lens (aperture radius `R`, focus plane at depth `z_f`) is the
+//! same with the circle of confusion: a ray that starts on the aperture disc and crosses the focus
+//! plane at `F` is, at depth `z`, within `R |1/z − 1/z_f|` (in tangent units) of `F`'s
+//! projection, so each particle's rectangle grows by that at the worst depth of its box and the
+//! ray looks up the cell of `F`. Particles whose box reaches the camera's plane are tested by every
+//! ray; cells clamp to the image's border, so do the rays past it. A ray that does not start on
+//! the aperture disc (a traced lens's, a continuation from a cut-out) walks the BVH.
 
 use super::bvh::{leaf_range, leaf_ref, BuildParams, Bvh, BvhWidth};
 use crate::math::{Aabb, Ray, Vec3};
-use crate::scene::Camera;
+use crate::scene::{Camera, Material, MATERIAL_GLASS};
 use rt_sim::{AmbientParams, Particle, Shape};
 
 /// The thinnest a particle looks to a camera ray, in pixels (S0 §4).
 pub const MIN_PIXELS: f32 = 0.35;
+
+/// True when particles of material `m` are small clear drops, bubbles or crystals (S4b): no
+/// emitter, and at least half of the surface is clear dielectric (`(1 - metallic) transmission`,
+/// glass having no metal). Rays that already scattered off a rough lobe, and shadow rays, cross
+/// them straight instead of refracting (no caustics of particles); see [`crate::integrator`].
+pub fn is_clear_material(m: &Material) -> bool {
+    let metallic = if m.kind == MATERIAL_GLASS {
+        0.0
+    } else {
+        m.metallic.clamp(0.0, 1.0)
+    };
+    !m.is_emissive() && (1.0 - metallic) * m.transmission.clamp(0.0, 1.0) >= 0.5
+}
+
+/// Width of a cell of the screen grid, in pixels (S4b).
+pub const GRID_CELL_PIXELS: f32 = 4.0;
+/// Most cells of a screen grid: a larger image gets larger cells.
+const GRID_MAX_CELLS: u64 = 1 << 20;
+/// Most pieces a long capsule is laid out on the screen grid in.
+const GRID_MAX_PIECES: usize = 32;
+/// Most particles a camera ray tests from a cell of the screen grid: a ray of a fuller cell (or of
+/// a set with more particles that every ray tests) walks the BVH instead, which stops at the
+/// nearest hit where the cell would test them all. Measured on 200 000 widened motes (S4b): best
+/// or as good as the BVH at 128 x 72, 512 x 288 and 1920 x 1080.
+pub const GRID_MAX_CANDIDATES: usize = 128;
 
 /// Leaf policy of a particle BVH.
 const PARTICLE_LEAVES: BuildParams = BuildParams {
@@ -48,6 +89,83 @@ pub struct PixelFootprint {
     pub per_distance: f32,
     /// Width of a pixel at any distance (orthographic; 0 perspective).
     pub constant: f32,
+    /// How the camera's centre projects the world onto the image (perspective cameras; the
+    /// screen grid of camera rays, S4b).
+    pub screen: Option<ScreenProjection>,
+}
+
+/// The projection of a perspective camera onto its image, in pixels (S4b): what the screen grid of
+/// a particle set is laid out by.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScreenProjection {
+    /// The camera's centre (of its lens).
+    pub origin: Vec3,
+    /// Unit view direction.
+    pub forward: Vec3,
+    /// Unit right of the image.
+    pub right: Vec3,
+    /// Unit up of the image.
+    pub up: Vec3,
+    /// Pixels per unit of tangent across the view direction.
+    pub scale: f32,
+    /// Image width, pixels.
+    pub width: u32,
+    /// Image height, pixels.
+    pub height: u32,
+    /// Radius of the thin lens's aperture (0: a pinhole, whose rays all leave `origin`).
+    pub lens_radius: f32,
+    /// Depth of the focus plane along `forward` (with a lens).
+    pub focus: f32,
+}
+
+impl ScreenProjection {
+    /// Where the direction (or offset from the centre) `d` lands on the image, in pixels (x to the
+    /// right, y down); `None` when it does not point clearly in front of the camera or does not
+    /// give a finite position.
+    #[inline(always)]
+    pub fn project(&self, d: Vec3) -> Option<(f32, f32)> {
+        let z = d.dot(self.forward);
+        if z.is_nan() || z <= 1.0e-6 * d.abs().max_component() {
+            return None;
+        }
+        let k = self.scale / z;
+        let x = 0.5 * self.width as f32 + d.dot(self.right) * k;
+        let y = 0.5 * self.height as f32 - d.dot(self.up) * k;
+        (x.is_finite() && y.is_finite()).then_some((x, y))
+    }
+
+    /// Where a camera ray is looked up on the grid: for a pinhole, its direction when it leaves
+    /// exactly the centre; for a thin lens, the offset from the centre of the point where it
+    /// crosses the focus plane, when it leaves the aperture disc. `None` for any other ray.
+    #[inline(always)]
+    fn lookup(&self, ray: &Ray) -> Option<Vec3> {
+        let o = ray.origin - self.origin;
+        if self.lens_radius == 0.0 {
+            return (o.x == 0.0 && o.y == 0.0 && o.z == 0.0).then_some(ray.dir);
+        }
+        // On the lens's plane and inside its disc, within the rounding of the lens sample.
+        let tol = 1.0e-5 * (self.origin.abs().max_component() + self.lens_radius);
+        let along = o.dot(self.forward);
+        let across = o - self.forward * along;
+        let r = self.lens_radius * (1.0 + 1.0e-5) + tol;
+        let dz = ray.dir.dot(self.forward);
+        if along.abs() > tol || across.dot(across) > r * r || dz.is_nan() || dz <= 0.0 {
+            return None;
+        }
+        Some(o + ray.dir * ((self.focus - along) / dz))
+    }
+
+    /// How far, in pixels, a lens ray at depths `z0..z1` (> 0) strays from the projection of its
+    /// focus point: the circle of confusion at the worse end (0 for a pinhole).
+    #[inline]
+    fn confusion(&self, z0: f32, z1: f32) -> f32 {
+        if self.lens_radius == 0.0 {
+            return 0.0;
+        }
+        let inv_f = 1.0 / self.focus;
+        let worst = (1.0 / z0 - inv_f).abs().max((1.0 / z1 - inv_f).abs());
+        self.scale * self.lens_radius * (1.0 + 1.0e-3) * worst
+    }
 }
 
 impl PixelFootprint {
@@ -56,6 +174,7 @@ impl PixelFootprint {
         origin: Vec3::ZERO,
         per_distance: 0.0,
         constant: 0.0,
+        screen: None,
     };
 
     /// The footprint of a pixel of a `width x height` image through `camera` (the sensor size
@@ -67,19 +186,65 @@ impl PixelFootprint {
                 origin: camera.position,
                 per_distance: 0.0,
                 constant: camera.ortho_width / width as f32,
+                screen: None,
             };
         }
         let long = width.max(height) as f32;
+        let per_distance = camera.sensor_mm / (long * camera.focal_mm.max(1.0e-6));
+        let (forward, right, up) = camera.basis();
+        let scale = 1.0 / per_distance;
+        let lens_radius = camera.lens_radius();
+        let usable = scale.is_finite()
+            && scale > 0.0
+            && lens_radius.is_finite()
+            && (lens_radius == 0.0 || (camera.focus_dist.is_finite() && camera.focus_dist > 0.0));
         PixelFootprint {
             origin: camera.position,
-            per_distance: camera.sensor_mm / (long * camera.focal_mm.max(1.0e-6)),
+            per_distance,
             constant: 0.0,
+            screen: usable.then_some(ScreenProjection {
+                origin: camera.position,
+                forward,
+                right,
+                up,
+                scale,
+                width,
+                height,
+                lens_radius,
+                focus: camera.focus_dist,
+            }),
         }
     }
 
     /// Width of a pixel at `p`.
     pub fn at(&self, p: Vec3) -> f32 {
         self.constant + self.per_distance * (p - self.origin).length()
+    }
+}
+
+/// The screen grid of a particle set (S4b): per cell of the image, the slots of the particles
+/// whose widened box projects onto it.
+#[derive(Clone, Debug, PartialEq)]
+struct ScreenGrid {
+    projection: ScreenProjection,
+    /// Cell size, pixels.
+    cell: f32,
+    cols: u32,
+    rows: u32,
+    /// The slots of cell `c` are `slots[starts[c]..starts[c + 1]]`, in slot order.
+    starts: Vec<u32>,
+    slots: Vec<u32>,
+    /// Particles whose box reaches the camera's plane: every ray tests them.
+    everywhere: Vec<u32>,
+}
+
+impl ScreenGrid {
+    /// The cell of a pixel position, clamped to the grid.
+    #[inline(always)]
+    fn cell_of(&self, x: f32, y: f32) -> (u32, u32) {
+        let col = (x / self.cell).floor().clamp(0.0, (self.cols - 1) as f32) as u32;
+        let row = (y / self.cell).floor().clamp(0.0, (self.rows - 1) as f32) as u32;
+        (col, row)
     }
 }
 
@@ -104,6 +269,10 @@ pub struct ParticleSet {
     widened: bool,
     /// The most a particle is widened for camera rays (an upper bound), by which their boxes grow.
     camera_pad: f32,
+    /// Camera rays of a pinhole camera: the particles per cell of the image (S4b).
+    grid: Option<ScreenGrid>,
+    /// The effect's material is clear ([`is_clear_material`]), S4b.
+    clear: bool,
 }
 
 /// The nearest root of `a t² + 2 b t + c = 0` in `[t_min, t_max]` given the reduced discriminant
@@ -178,6 +347,12 @@ fn capsule_roots(ray: &Ray, c: Vec3, half: Vec3, r: f32) -> [f32; 6] {
         let b = o_perp.dot(d_perp);
         let l = o_perp - d_perp * (b / a);
         let disc = r * r - l.dot(l);
+        // A ray clearly outside the infinite cylinder around the axis misses the end spheres too
+        // (they lie inside it): no more roots (S4b). Not for a ray almost along the axis, whose
+        // distance to it is not that accurate, nor within rounding of the cylinder.
+        if disc < -1.0e-3 * r * r && a > 1.0e-6 * ray.dir.dot(ray.dir) {
+            return roots;
+        }
         if disc >= 0.0 {
             let cc = o_perp.dot(o_perp) - r * r;
             let (t0, t1) = stable_roots(a, b, cc, disc);
@@ -263,6 +438,8 @@ impl ParticleSet {
             bounds,
             widened: false,
             camera_pad: 0.0,
+            grid: None,
+            clear: false,
         };
         set.with_footprint(footprint, width)
     }
@@ -327,7 +504,170 @@ impl ParticleSet {
         } else {
             0.0
         };
+        self.grid = footprint.screen.and_then(|p| self.screen_grid(p));
         self
+    }
+
+    /// The boxes that hold the particle in `slot` as camera rays see it (widened), with the rounding
+    /// pad of the BVH's boxes, into `out`: one box, or for a capsule much longer than it is wide
+    /// the boxes of up to [`GRID_MAX_PIECES`] pieces of its axis, each swept by the radius (their
+    /// union holds the capsule, and lies far closer to it than its box when it is slanted).
+    fn camera_boxes(&self, slot: usize, out: &mut Vec<Aabb>) {
+        out.clear();
+        let c = self.centres[slot];
+        let r = self.camera_radius(slot);
+        let rounding =
+            |extent: Vec3| extent * 1.0e-4 + Vec3::splat(c.abs().max_component() * 1.0e-6);
+        if self.shape != Shape::Capsule {
+            let extent = Vec3::splat(r);
+            let pad = rounding(extent);
+            out.push(Aabb::new(c - extent - pad, c + extent + pad));
+            return;
+        }
+        let half = self.axes[slot];
+        let extent = half.abs() + Vec3::splat(r);
+        let pad = rounding(extent);
+        let length = 2.0 * half.length();
+        let pieces = if r > 0.0 {
+            ((length / (4.0 * r)).ceil() as usize).clamp(1, GRID_MAX_PIECES)
+        } else {
+            1
+        };
+        let (a, b) = (c - half, c + half);
+        // The ends of the pieces, the first and the last exactly at the capsule's.
+        let end = |k: usize| match k {
+            0 => a,
+            k if k == pieces => b,
+            k => a + (b - a) * (k as f32 / pieces as f32),
+        };
+        for k in 0..pieces {
+            let (p0, p1) = (end(k), end(k + 1));
+            let lo = Vec3::new(p0.x.min(p1.x), p0.y.min(p1.y), p0.z.min(p1.z)) - Vec3::splat(r);
+            let hi = Vec3::new(p0.x.max(p1.x), p0.y.max(p1.y), p0.z.max(p1.z)) + Vec3::splat(r);
+            // The pieces overlap by the rounding of their ends as well.
+            let seam = (b - a).abs() * (1.0e-4 / pieces as f32);
+            out.push(Aabb::new(lo - pad - seam, hi + pad + seam));
+        }
+    }
+
+    /// Lays the particles out on the image of `projection` ([`ScreenGrid`]). `None` without
+    /// particles.
+    fn screen_grid(&self, projection: ScreenProjection) -> Option<ScreenGrid> {
+        let (w, h) = (projection.width.max(1), projection.height.max(1));
+        if self.is_empty() {
+            return None;
+        }
+        let mut cell = GRID_CELL_PIXELS;
+        let cells = |cell: f32| {
+            let cols = (w as f32 / cell).ceil().max(1.0) as u64;
+            let rows = (h as f32 / cell).ceil().max(1.0) as u64;
+            (cols, rows)
+        };
+        while {
+            let (cols, rows) = cells(cell);
+            cols * rows > GRID_MAX_CELLS
+        } {
+            cell *= 2.0;
+        }
+        let (cols, rows) = cells(cell);
+        let mut grid = ScreenGrid {
+            projection,
+            cell,
+            cols: cols as u32,
+            rows: rows as u32,
+            starts: Vec::new(),
+            slots: Vec::new(),
+            everywhere: Vec::new(),
+        };
+        // Each particle's cells (sorted, once each), from its boxes' corners; or everywhere.
+        let mut boxes = Vec::new();
+        let mut mine: Vec<u32> = Vec::new();
+        let mut cells_of: Vec<u32> = Vec::new();
+        let mut first_cell: Vec<u32> = Vec::with_capacity(self.len() + 1);
+        first_cell.push(0);
+        'particles: for slot in 0..self.len() {
+            self.camera_boxes(slot, &mut boxes);
+            mine.clear();
+            for b in &boxes {
+                let mut lo = (f32::INFINITY, f32::INFINITY);
+                let mut hi = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+                let mut depth = (f32::INFINITY, f32::NEG_INFINITY);
+                for corner in 0..8 {
+                    let pick = |bit: u32, a: f32, b: f32| if corner & bit != 0 { b } else { a };
+                    let p = Vec3::new(
+                        pick(1, b.min.x, b.max.x),
+                        pick(2, b.min.y, b.max.y),
+                        pick(4, b.min.z, b.max.z),
+                    );
+                    let d = p - projection.origin;
+                    let Some((x, y)) = projection.project(d) else {
+                        grid.everywhere.push(slot as u32);
+                        first_cell.push(cells_of.len() as u32);
+                        continue 'particles;
+                    };
+                    lo = (lo.0.min(x), lo.1.min(y));
+                    hi = (hi.0.max(x), hi.1.max(y));
+                    let z = d.dot(projection.forward);
+                    depth = (depth.0.min(z), depth.1.max(z));
+                }
+                // The circle of confusion at the box's worst depth (a lens), and the rounding of
+                // the projections (the corners' and the rays').
+                let coc = projection.confusion(depth.0, depth.1);
+                if !coc.is_finite() {
+                    grid.everywhere.push(slot as u32);
+                    first_cell.push(cells_of.len() as u32);
+                    continue 'particles;
+                }
+                let margin = |v: f32| coc + 0.01 + 1.0e-5 * v.abs();
+                let (c0, r0) = grid.cell_of(lo.0 - margin(lo.0), lo.1 - margin(lo.1));
+                let (c1, r1) = grid.cell_of(hi.0 + margin(hi.0), hi.1 + margin(hi.1));
+                for row in r0..=r1 {
+                    for col in c0..=c1 {
+                        mine.push(row * grid.cols + col);
+                    }
+                }
+            }
+            mine.sort_unstable();
+            mine.dedup();
+            cells_of.extend_from_slice(&mine);
+            first_cell.push(cells_of.len() as u32);
+        }
+        // Counting sort by cell, slots in order within each.
+        let n = (cols * rows) as usize;
+        let mut starts = vec![0u32; n + 1];
+        for &c in &cells_of {
+            starts[c as usize + 1] += 1;
+        }
+        for i in 0..n {
+            starts[i + 1] += starts[i];
+        }
+        let mut next = starts.clone();
+        let mut slots = vec![0u32; cells_of.len()];
+        for slot in 0..self.len() {
+            let (a, b) = (first_cell[slot] as usize, first_cell[slot + 1] as usize);
+            for &c in &cells_of[a..b] {
+                slots[next[c as usize] as usize] = slot as u32;
+                next[c as usize] += 1;
+            }
+        }
+        grid.starts = starts;
+        grid.slots = slots;
+        (grid.everywhere.len() <= GRID_MAX_CANDIDATES).then_some(grid)
+    }
+
+    /// For a camera ray that leaves the camera's centre (a pinhole) or its aperture disc (a thin
+    /// lens): the slots of the particles it can hit, those of its cell of the screen grid and those
+    /// every ray tests (S4b). `None` for any other ray, for a cell with more than
+    /// [`GRID_MAX_CANDIDATES`] particles, or without a grid: the BVH then.
+    #[inline(always)]
+    pub(crate) fn screen_candidates(&self, ray: &Ray) -> Option<(&[u32], &[u32])> {
+        let grid = self.grid.as_ref()?;
+        let at = grid.projection.lookup(ray)?;
+        let (x, y) = grid.projection.project(at)?;
+        let (col, row) = grid.cell_of(x, y);
+        let c = (row * grid.cols + col) as usize;
+        let (a, b) = (grid.starts[c] as usize, grid.starts[c + 1] as usize);
+        (b - a <= GRID_MAX_CANDIDATES).then(|| (&grid.slots[a..b], &grid.everywhere[..]))
     }
 
     /// The radius a camera ray sees of the particle in `slot`: its own, or the minimum size on
@@ -345,6 +685,19 @@ impl ParticleSet {
     #[inline(always)]
     pub fn camera_pad(&self) -> f32 {
         self.camera_pad
+    }
+
+    /// The same particles made of `material` (the effect's, `None` when its index is out of range:
+    /// the default material): only whether they are clear ([`is_clear_material`]) is kept.
+    pub fn with_material(mut self, material: Option<&Material>) -> ParticleSet {
+        self.clear = material.is_some_and(is_clear_material);
+        self
+    }
+
+    /// True when the particles are small clear drops or bubbles ([`is_clear_material`]): rays after
+    /// a rough lobe and shadow rays cross them straight (S4b).
+    pub fn is_clear(&self) -> bool {
+        self.clear
     }
 
     /// The effect's parameters.
@@ -665,5 +1018,167 @@ mod tests {
             PixelFootprint::of(&ortho, 360, 200).at(Vec3::splat(77.0)),
             1.0
         );
+    }
+}
+
+#[cfg(test)]
+mod grid_tests {
+    use super::*;
+    use crate::geometry::{Geometry, RayClass};
+    use crate::rng::Pcg32;
+    use crate::simd::Isa;
+
+    /// `n` particles of `shape` in front of a camera at `(0, -1000, 100)` looking along +Y, from
+    /// specks that camera rays widen to drops 30 mm across, and a few that reach the camera's
+    /// plane or lie behind it.
+    fn particles(shape: Shape, n: u32, seed: u64) -> Vec<Particle> {
+        let mut rng = Pcg32::seeded(seed, 7);
+        let mut f = |lo: f32, hi: f32| lo + (hi - lo) * rng.next_f32();
+        (0..n)
+            .map(|id| {
+                let y = if id % 100 == 0 {
+                    f(-1060.0, -980.0) // straddling or behind the camera's plane
+                } else {
+                    f(-700.0, 400.0)
+                };
+                let centre = [f(-500.0, 500.0), y, f(-250.0, 450.0)];
+                let radius = if id % 3 == 0 {
+                    f(0.02, 0.3)
+                } else {
+                    f(0.5, 15.0)
+                };
+                let axis = match shape {
+                    Shape::Sphere => [0.0; 3],
+                    Shape::Disc => {
+                        let a = Vec3::new(f(-1.0, 1.0), f(-1.0, 1.0), f(-1.0, 1.0)).normalize();
+                        [a.x, a.y, a.z]
+                    }
+                    Shape::Capsule => [f(-15.0, 15.0), f(-15.0, 15.0), f(-40.0, 40.0)],
+                };
+                Particle {
+                    centre,
+                    radius,
+                    axis,
+                    tint: 0,
+                    id,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn camera_rays_find_through_the_screen_grid_what_brute_force_finds() {
+        let width = crate::geometry::BvhWidth::native();
+        for (fstop, focus) in [(0.0, 0.0), (2.0, 900.0), (1.4, 300.0)] {
+            let camera = Camera {
+                position: Vec3::new(0.0, -1000.0, 100.0),
+                target: Vec3::new(0.0, 0.0, 100.0),
+                fstop,
+                focus_dist: focus,
+                ..Camera::default()
+            };
+            let (w, h) = (120, 80);
+            let footprint = PixelFootprint::of(&camera, w, h);
+            assert_eq!(
+                footprint.screen.map(|s| s.lens_radius > 0.0),
+                Some(fstop > 0.0)
+            );
+            for (k, shape) in [Shape::Sphere, Shape::Disc, Shape::Capsule]
+                .into_iter()
+                .enumerate()
+            {
+                let params = AmbientParams {
+                    shape,
+                    count: 600,
+                    ..AmbientParams::default()
+                };
+                let set =
+                    ParticleSet::new(&params, &particles(shape, 600, k as u64), footprint, width);
+                assert!(set.widened());
+                let grid = set.grid.as_ref().expect("a grid");
+                assert!(!grid.everywhere.is_empty(), "some reach the camera's plane");
+                let geometry = Geometry::with_particles(Vec::new(), Vec::new(), vec![set], width)
+                    .expect("geometry");
+                let set = &geometry.particle_sets()[0];
+                let mut rng = Pcg32::seeded(11, k as u64);
+                let (mut hits, mut gridded) = (0, 0);
+                for _ in 0..6000 {
+                    // Beyond the frame too (the filter's reach, and the clamped border cells).
+                    let u = -0.1 + 1.2 * rng.next_f32();
+                    let v = -0.1 + 1.2 * rng.next_f32();
+                    let lens = crate::warp::concentric_disk((rng.next_f32(), rng.next_f32()));
+                    let ray = camera.generate_ray(w as f32 / h as f32, u, v, lens);
+                    gridded += set.screen_candidates(&ray).is_some() as u32;
+                    let found = geometry.trace_class(&ray, Isa::detect(), RayClass::Camera);
+                    assert_eq!(
+                        found,
+                        geometry.brute_force(&ray, RayClass::Camera).0,
+                        "f/{fstop}, {shape:?}, {ray:?}"
+                    );
+                    hits += found.is_some() as u32;
+                    // A ray that does not leave the lens walks the BVH, and finds the same.
+                    let mut off = ray;
+                    off.origin += camera.basis().0 * 2.0;
+                    assert!(set.screen_candidates(&off).is_none());
+                    assert_eq!(
+                        geometry.trace_class(&off, Isa::detect(), RayClass::Camera),
+                        geometry.brute_force(&off, RayClass::Camera).0
+                    );
+                }
+                eprintln!(
+                    "f/{fstop} at {focus}, {shape:?}: {hits} hits of 6000, {gridded} by the grid"
+                );
+                assert!(gridded >= 2000, "many camera rays use the grid: {gridded}");
+                assert!(hits > 300, "{hits}");
+            }
+        }
+        // A crowd (40 000 particles 4 mm across in a box of 150 mm): the rays of its full cells
+        // walk the BVH, and every ray still finds what brute force finds.
+        let camera = Camera {
+            position: Vec3::new(0.0, -1000.0, 100.0),
+            target: Vec3::new(0.0, 0.0, 100.0),
+            ..Camera::default()
+        };
+        let mut rng = Pcg32::seeded(5, 5);
+        let crowd: Vec<Particle> = (0..40_000)
+            .map(|id| Particle {
+                centre: [
+                    -75.0 + 150.0 * rng.next_f32(),
+                    -75.0 + 150.0 * rng.next_f32(),
+                    25.0 + 150.0 * rng.next_f32(),
+                ],
+                radius: 2.0,
+                axis: [0.0; 3],
+                tint: 0,
+                id,
+            })
+            .collect();
+        let params = AmbientParams {
+            count: 40_000,
+            ..AmbientParams::default()
+        };
+        let footprint = PixelFootprint::of(&camera, 120, 80);
+        let set = ParticleSet::new(&params, &crowd, footprint, width);
+        let geometry =
+            Geometry::with_particles(Vec::new(), Vec::new(), vec![set], width).expect("geometry");
+        let set = &geometry.particle_sets()[0];
+        let (mut gridded, mut walked) = (0, 0);
+        for _ in 0..3000 {
+            let (u, v) = (0.4 + 0.2 * rng.next_f32(), 0.3 + 0.4 * rng.next_f32());
+            let ray = camera.generate_ray(1.5, u, v, (0.0, 0.0));
+            match set.screen_candidates(&ray) {
+                Some((cell, _)) => {
+                    assert!(cell.len() <= GRID_MAX_CANDIDATES);
+                    gridded += 1;
+                }
+                None => walked += 1,
+            }
+            assert_eq!(
+                geometry.trace_class(&ray, Isa::detect(), RayClass::Camera),
+                geometry.brute_force(&ray, RayClass::Camera).0
+            );
+        }
+        eprintln!("crowd: {gridded} rays by the grid, {walked} by the BVH");
+        assert!(walked > 300, "{walked}");
     }
 }

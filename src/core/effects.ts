@@ -10,6 +10,7 @@
 // Gravity `gravity`, Variation `sizeVar` and `fallVar` together, Seed `seed`. Advanced shows the rest.
 
 import { AVAILABLE_EFFECTS, effectPreset, isEffectKind, type EffectKind, type EffectMaterial, type EffectShape, type EffectValues } from '../data/effects';
+import { materialPreset } from '../data/materials';
 import type { RGB } from '../data/types';
 import { isEmptyBox, type Box, type Vec3 } from './math';
 import { productBounds } from './scene';
@@ -339,6 +340,9 @@ export interface FxamFields {
   energy: number;
   spin: number;
   palette: RGB[];
+  /** S4b: the forward lobe of the particles' material (share 0..1, asymmetry). */
+  forward: number;
+  forwardG: number;
 }
 
 /** `FXAM.flags`. */
@@ -348,8 +352,25 @@ export const FX_FLAG_SHADOW = 4;
 
 const SHAPE_CODES: Record<EffectShape, number> = { SPHERE: 0, DISC: 1, CAPSULE: 2 };
 
+/** True when an effect renders with its own material (no catalogue key, or one the catalogue does not have). */
+export function usesOwnMaterial(e: AmbientEffect): boolean {
+  return !e.material || !materialPreset(e.material);
+}
+
+/**
+ * S4b: the forward lobe an effect's particles get, `[share, g]`: its own material's (an opaque one only: the engine
+ * gives a clear material none), none with a material of the catalogue.
+ */
+export function effectForward(e: AmbientEffect): [number, number] {
+  const m = e.ownMaterial;
+  if (!usesOwnMaterial(e) || m.kind === 'GLASS' || !(m.transmission <= 0)) return [0, 0];
+  const share = clamp(finite(m.forward ?? 0, 0), 0, 1);
+  return share > 0 ? [share, clamp(finite(m.forwardG ?? 0, 0), -0.95, 0.95)] : [0, 0];
+}
+
 /** The engine's parameters of an effect whose material is RSB material `materialId`. */
 export function effectFxam(state: ProjectState, e: AmbientEffect, materialId: number, engine = engineCap): FxamFields {
+  const [forward, forwardG] = effectForward(e);
   const r = effectRegion(state, e);
   const mm = (v: number) => v * 1000;
   const pos = (v: number) => Math.max(0, finite(v, 0));
@@ -380,11 +401,13 @@ export function effectFxam(state: ProjectState, e: AmbientEffect, materialId: nu
     energy: mm(pos(e.energy)),
     spin: finite(e.spin, 0),
     palette: e.palette.slice(0, MAX_PALETTE),
+    forward,
+    forwardG,
   };
 }
 
-/** Bytes of an `FXAM` payload (rt_sim::FXAM_BYTES). */
-export const FXAM_BYTES = 192;
+/** Bytes of an `FXAM` payload (rt_sim::FXAM_BYTES; 192 in S4a, 200 with the forward lobe of S4b). */
+export const FXAM_BYTES = 200;
 
 /**
  * The `FXAM` payload of an effect, little-endian, in the field order of rt_sim::params (the writer of the RSB and the
@@ -435,6 +458,8 @@ export function fxamPayload(e: FxamFields): Uint8Array {
   const tints = e.palette.slice(0, MAX_PALETTE);
   u32(tints.length);
   for (let i = 0; i < MAX_PALETTE; i++) vec(tints[i] ?? [1, 1, 1]);
+  f32(e.forward);
+  f32(e.forwardG);
   return out;
 }
 

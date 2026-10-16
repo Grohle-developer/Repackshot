@@ -7723,7 +7723,7 @@ Plan completo en `docs/STUDIO-TOOLS.md`. Fases, por oleadas a partir de la
 | **N5** | Opus | Dibujar y grabar recorridos, bloqueo de objetivo, desenfoque de movimiento |
 | **S0** | Fable | Decisiones de partículas: dónde vive el simulador, formato de caché, secciones RSB |
 | **S4a** — hecha | Opus | Ambiente: partículas de aire sin estado (`rt-sim`, `FXAM`, esferas, discos y cápsulas, la sección *Ambiente* de *Escena*); valores de los presets aceptados; lo que sigue, en S4b |
-| **S4b** | Opus | Partículas: el coste a las densidades de los presets, medido; un lóbulo hacia delante (Henyey–Greenstein) para polvo, polen y polvareda; gotas sin cáusticas |
+| **S4b** — hecha | Opus | Partículas: el coste a las densidades de los presets, medido (la rejilla de pantalla de los rayos de cámara, porque la lluvia pasaba de 1,3×); un lóbulo hacia delante (Henyey–Greenstein) para polvo, polen y polvareda; gotas sin cáusticas; la cuota del lóbulo y el coste de la lluvia, para el veredicto |
 | **S1**–**S10** | Opus, Sonnet | Dispersión e instancias; caída y reposo; gotas y condensación; emisores sin estado; volúmenes; humo; líquidos; pelo y césped; telas; mejoras (detalle en `docs/research/particles.md` §6) |
 
 ### A6 · Assets sin motor nuevo — **Sonnet** — hecha
@@ -8132,7 +8132,7 @@ sí se enciende en el haz.
 6. Las líneas de CI que faltan las añade el responsable a
    `.github/workflows/engine.yml` al fusionar.
 
-## S4b · Partículas: lóbulo hacia delante, lluvia sin cáusticas y coste medido — Opus
+## S4b · Partículas: lóbulo hacia delante, lluvia sin cáusticas y coste medido — Opus — hecha
 
 **Qué** (del veredicto de S4a):
 
@@ -8160,6 +8160,276 @@ sí se enciende en el haz.
    contraluz no cambia a ojo.
 
 **Depende de.** S4a, E12.
+
+**Hecho.**
+
+**1. El coste, medido primero.** `tools/ambient-sheet.mjs` gana una escena
+de coste por preset (`cost-<CLAVE>`: el preset a su densidad sobre la
+botella del ejemplo, con la clave lateral, como las de la hoja), además de
+la de 200 000 motas, y las mide en **rondas alternadas**: cada ronda
+renderiza la escena sin efecto y enseguida la del efecto (así la carga de
+la máquina compartida pesa igual en las dos), su cociente es el coste por
+muestra de esa ronda (las mismas muestras; la evaluación de las partículas,
+una vez por carga, aparte) y la hoja da la mediana (`--rounds`,
+`--cost-samples`, `--only cost`). Con el motor de S4a (512 × 288, 32 spp,
+2 hilos, 3 rondas; `out/s4b-cost-before`, el binario de `09d8196`):
+
+| Preset (partículas) | Rondas | Mediana |
+| --- | --- | --- |
+| Motas de polvo (1 912) | 1,15 / 1,28 / 1,18 | 1,18× |
+| Polen (510) | 1,27 / 1,27 / 1,05 | 1,27× |
+| **Lluvia (255)** | 2,08 / 1,76 / 2,02 | **2,02×** |
+| Nieve (153) | 1,07 / 1,18 / 1,21 | 1,18× |
+| Polvareda (4 889) | 1,37 / 1,14 / 1,08 | 1,14× |
+| Ceniza (191) | 1,11 / 1,06 / 1,04 | 1,06× |
+| Burbujas (127) | 1,24 / 1,19 / 1,14 | 1,19× |
+| Confeti (64) | 1,07 / 1,11 / 1,14 | 1,11× |
+| 200 000 motas (el tope, no un preset) | 2,93 / 2,70 / 2,99 | 2,93× |
+
+La lluvia pasa de 1,3×, así que lo primero fue la **rejilla de pantalla**
+(`geometry::particles`, `ScreenGrid`): con una cámara en perspectiva cada
+conjunto guarda una rejilla de celdas de 4 px sobre la imagen (celdas
+mayores si pasaría de 2²⁰) con, por celda, las partículas cuya caja
+(ensanchada como la ven los rayos de cámara, con el margen de redondeo de
+las cajas de la BVH, y una cápsula larga en hasta 32 trozos a lo largo de
+su eje) proyecta en ella; un rayo de cámara prueba las de su celda (y las
+que tocan el plano de la cámara, que prueba todo rayo) en lugar de
+recorrer la BVH, con la misma prueba y el mismo orden: el mismo impacto,
+bit a bit. Una caja delante de la cámara proyecta dentro de la envolvente
+de sus esquinas y todo punto de un rayo que sale del centro proyecta donde
+su dirección, así que la celda tiene todo lo que el rayo puede tocar. La
+BVH se queda para los demás rayos; el tope por defecto no cambia.
+**Pero la cámara del ejemplo y de la hoja (la de todo proyecto nuevo) es
+una lente fina a f/5,6**, cuyos rayos no salen de un punto: la rejilla de
+una estenopeica no la habría usado nunca (medido: 0 candidatos). Se
+generaliza sin perder la exactitud: un rayo que sale del disco de la
+apertura (radio `R`) y cruza el plano de foco (profundidad `z_f`) en `F`
+pasa, a la profundidad `z`, a menos de `R |1/z − 1/z_f|` (en tangente) de
+la proyección de `F`; cada rectángulo crece con ese círculo de confusión en
+la peor profundidad de su caja y el rayo busca la celda de `F`. Un rayo que
+no sale del disco (una lente trazada, la continuación desde un recorte)
+recorre la BVH. La rejilla prueba todas las candidatas de la celda y la BVH
+para en el impacto más cercano: una celda de más de 128 partículas
+(`GRID_MAX_CANDIDATES`) manda su rayo a la BVH (sin tope, 200 000 motas a
+128 × 72 costaban 721 M de instrucciones por muestra frente a 147 M sin
+rejilla; medido el rayo de cámara de esas motas con topes de 16, 64, 128,
+256 y ninguno, a 128 × 72, 512 × 288 y 1920 × 1080, 128 es el mejor o
+empata con la BVH en los tres: 1 355, 457 y 153 ns frente a 1 313, 1 137 y
+550 con 16). En la escena de coste de la lluvia, la rejilla deja 1,8
+partículas candidatas por rayo de cámara.
+
+Con la rejilla, el lóbulo y las gotas de abajo, y la cápsula que descarta
+antes el rayo que no toca su cilindro infinito, el coste a las densidades
+de los presets (el mismo método, 5 rondas, el binario final;
+`out/ambient-sheet`, carga ≈ 2,8 en 4 núcleos) y, para quitar el ruido de
+la máquina compartida, las **instrucciones por muestra** (*valgrind*,
+deterministas: 3 spp menos 1 spp a 512 × 288, un hilo; antes, el binario de
+`09d8196`):
+
+| Preset (partículas) | Tiempo, rondas | Tiempo | Instrucciones, S4a | Instrucciones, S4b |
+| --- | --- | --- | --- | --- |
+| Motas de polvo (1 912) | 1,07 / 1,07 / 1,06 / 0,93 / 1,09 | 1,07× | 1,22× | 1,08× |
+| Polen (510) | 1,02 / 1,10 / 1,14 / 1,07 / 1,05 | 1,07× | 1,15× | 1,07× |
+| **Lluvia (255)** | 1,76 / 1,63 / 1,62 / 1,63 / 1,77 | **1,63×** | 1,75× | **1,50×** |
+| Nieve (153) | 1,18 / 1,19 / 1,16 / 1,22 / 1,21 | 1,19× | 1,17× | 1,15× |
+| Polvareda (4 889) | 1,15 / 1,14 / 1,09 / 1,13 / 1,09 | 1,13× | 1,21× | 1,10× |
+| Ceniza (191) | 1,09 / 1,06 / 1,09 / 1,12 / 1,12 | 1,09× | 1,11× | 1,07× |
+| Burbujas (127) | 1,13 / 1,03 / 1,18 / 1,09 / 1,21 | 1,13× | 1,11× | 1,10× |
+| Confeti (64) | 1,11 / 1,16 / 1,14 / 1,07 / 1,10 | 1,11× | 1,11× | 1,11× |
+| 200 000 motas (el tope, no un preset) | 2,00 / 1,94 / 2,08 / 1,91 / 1,91 | 1,94× | 2,17× | 1,94× |
+
+Todos los presets quedan por debajo de 1,3× menos la lluvia. La escena sin
+efecto pasa de 874,2 M a 879,5 M instrucciones por muestra (+0,61 %: las
+comprobaciones nuevas del integrador; se saltan sin partículas y las
+entradas del BSDF van en línea), con los mismos píxeles. La nieve, la ceniza
+y el confeti son discos opacos: ni la rejilla ni nada de S4b les cambia gran
+cosa.
+
+**Por qué la lluvia sigue por encima** (contado con contadores en una copia
+del motor, 512 × 288, 8 spp): sin efecto, la mayoría de los rayos de cámara
+salen al fondo (1 179 648 rayos de cámara y 124 644 vértices sombreados);
+con la lluvia, las estelas cubren el 26 % del cuadro y cada rayo de cámara
+que toca una gota da dos vértices de vidrio (entrar y salir) y los rayos
+que siguen: los vértices de las gotas solas son 699 326, 5,6 veces todos los
+de la escena sin efecto. Es el transporte
+de luz de un cuarto del cuadro de vidrio, no el recorrido de la BVH (la
+rejilla lo dejó en 1,8 candidatas por rayo de cámara y 1,7 hojas por
+recorrido de los rayos que siguen, a 10 spp). Lo que quedaba de trabajo inútil se
+quitó: en una partícula clara y lisa (`is_mirror`: rugosidad al mínimo, sin
+metal ni difuso) la estimación de siguiente evento solo busca luces delta
+y las demás las encuentra su rayo BSDF, que cuenta lo que encuentra entero
+(una densidad infinita en el MIS: la heurística de potencia da 1); la NEE
+de un lóbulo de α = 10⁻³ no encontraba casi nada y trazaba un rayo de
+sombra por vértice. Se probó acotar el rayo que entra en una gota por su
+propia salida (exacto, con vuelta a la búsqueda entera): 0,7 % de las
+instrucciones, se quitó.
+
+**2. Lóbulo hacia delante** (`bsdf::forward`, con la cita de Henyey y
+Greenstein, *Diffuse radiation in the galaxy*, ApJ 93, 1941). Un lóbulo
+más del BSDF de la partícula: `(1 − s)·superficie + s·albedo·p(μ)/|cos θi|`
+con `p(μ) = (1 − g²)/(4π (1 + g² − 2gμ)^{3/2})`, `μ = −wi·wo` (el coseno
+entre la dirección de la luz antes y después), por unidad de radiancia y
+ángulo sólido, sea cual sea la normal del punto tocado (la partícula
+dispersa como una pequeña nube, no como una superficie; de ahí el
+`1/|cos θi|`, que el integrador vuelve a multiplicar). Se elige con
+probabilidad `s` y dentro `μ` por la inversa de su distribución acumulada
+(isótropo si `|g| < 10⁻³`, el acimut uniforme, `sin`/`cos` de `fmath`);
+`Bsdf::pdf` es la densidad de la mezcla, que es lo que el MIS de la NEE de
+E12 pondera; la NEE lo evalúa con todas las luces (también las que no son
+`glossy`, como el difuso). Sus rayos que atraviesan la partícula, y sus
+rayos de sombra, salen de su cara del fondo (de la partícula ensanchada si
+la tocó un rayo de cámara). `FXAM` crece a 200 B: `forward` (la cuota `s`,
+0..1) y `forward_g` (−1 < g < 1); una carga de 192 B (S4a) no tiene
+lóbulo. En la interfaz es parte del material propio del efecto
+(`EffectMaterial.forward`, `forwardG`): g 0,7 en el polvo, el polen y la
+polvareda, **cuota 0,5 (propuesta, regla 11)**, 0 en los demás; con un
+material del catálogo, o uno transparente, ninguno (el motor no distinguiría
+sus rayos de la refracción); un efecto guardado antes de S4b toma el de su
+preset al abrirse. La escena de paridad (`example::ambient_scene`) lo da a
+su polvo. `DUST_MOTES-back` se ve (hoja, arriba): las motas del haz
+brillan donde antes casi no; con la clave lateral, la media de la imagen
+pasa de 24,64 a 24,57 (de 255).
+
+**3. Gotas sin cáusticas.** Una partícula de material claro
+(`is_clear_material`: `(1 − metálico)·transmisión ≥ ½`, sin emisión:
+lluvia, burbujas) la cruzan **rectas, enteras y sin refracción** los rayos
+de sombra (si el efecto proyecta sombra, ahora la atraviesa: `passable`) y
+los rayos de un camino que ya rebotó en un lóbulo ancho
+(`RayClass::Rough`, `Tracer::trace_rough`: densidad de la muestra BSDF <
+`SHARP_PDF` = 100 sr⁻¹, más ancho que un GGX de rugosidad ≈ 0,15), con la
+transmitancia recta de una pared fina de su material (la de Fresnel de las
+dos caras y su tinte, una vez) y desde más allá de su cara del fondo
+(`Prepared::straight_through`); un rayo de esa clase solo ve el efecto si
+proyecta sombra, y su cruce es un suceso recto (conserva la densidad y la
+selección de luces del último vértice para el MIS). La cámara y los
+caminos de lóbulos estrechos desde ella (un espejo, el vidrio liso de la
+botella) siguen viendo las gotas refractar. Los fotones de las cáusticas
+ya paraban en las partículas (no están entre las piezas que las enfocan,
+S4a). En
+`RAIN-side` desaparecen los puntitos del cuerpo y la etiqueta de la
+botella y del suelo (hoja, recorte); `RAIN-back` no cambia a ojo.
+
+**Tests** (cada uno con su mutación, en una copia del motor: las quince
+lo hacen fallar, y pasan sin ella):
+- `geometry::particles::grid_tests::camera_rays_find_through_the_screen_grid_what_brute_force_finds`
+  (estenopeica, f/2 a 900 mm y f/1,4 a 300 mm; esferas, discos y cápsulas
+  de 600 partículas, motas ensanchadas, algunas en el plano de la cámara o
+  detrás; 6 000 rayos, también fuera del cuadro, por la rejilla, el mismo
+  impacto que la fuerza bruta; un rayo que no sale de la lente, por la BVH;
+  y una multitud de 40 000 cuyas celdas llenas mandan sus rayos a la BVH,
+  con el mismo impacto). Mutaciones: sin el círculo de confusión; sin las
+  partículas del plano de la cámara.
+- `bsdf::forward::tests`: la fase integra 1 con `g` de coseno medio (g 0;
+  0,3; 0,7; −0,5; 0,95); el muestreo da su densidad (histograma de `μ` a
+  5σ); el horno blanco del BSDF (Lambert blanco y lóbulo blanco de cuota
+  0,25, 0,5 y 1: 1 ± 1 % desde 0°, 45° y 80°) y la mezcla del polvo
+  (`(1 − s)·superficie + s·color`, ± 1,5 %); pesos `f |cos| / pdf` y la
+  densidad de la mezcla integra 1 en la esfera; sin lóbulo, los números de
+  la superficie bit a bit. Mutaciones: la densidad sin el lóbulo; la
+  evaluación sin `1/|cos θi|`.
+- `integrator::particle_tests` (nuevo): `the_forward_lobe_is_unbiased_with_either_technique_and_with_both`
+  (una mota blanca de 120 mm con una esfera de luz detrás y a un lado: MIS
+  2,38148, solo NEE 2,38179, solo BSDF 2,38721; 4096 spp, 8 × 8; la mota
+  proyecta sombra, así que prueba también que sus rayos salen de su cara
+  del fondo); `a_white_mote_with_a_forward_lobe_vanishes_in_the_white_furnace`
+  (cuota 0,5: 0,99997; 1: 1,00014); `a_light_behind_a_mote_lights_it_through_its_forward_lobe`
+  (0,050 sin lóbulo, 2,38 con él); `rough_paths_do_not_see_a_drop_that_casts_no_shadow`
+  (el suelo bajo una gota sin sombra es el suelo sin ella, bit a bit);
+  `shadow_rays_cross_a_drop_straight_with_its_transmittance` (bajo la gota,
+  0,9585 de la luz sin ella; la cuenta, `(1 − R)/(1 + R)` = 0,9607);
+  `rough_paths_cross_a_drop_that_casts_shadows_as_shadow_rays_do` (una gota
+  grande bajo un panel: MIS 2,18132, solo NEE 2,18133, solo BSDF 2,18051, y
+  menos luz que sin ella); `camera_rays_still_see_a_drop_refract` (una bola
+  de agua delante de una pared con la mitad izquierda encendida: la cámara
+  la ve al revés, 0 a la izquierda y 0,956 a la derecha);
+  `smooth_drops_leave_their_lights_to_their_bsdf_rays_without_bias`
+  (10,85212 con la regla, 10,85208 con la NEE en la gota). Mutaciones: el
+  rayo áspero ve la gota sin sombra; el rayo áspero refracta; el rayo de
+  sombra la toma por sólida; cruza cada cara; no es `passable`; los rayos
+  de sombra y los del lóbulo desde dentro de la mota; sin lóbulo; todo
+  camino sigue nítido; la cámara la cruza recta; la regla de las gotas
+  lisas con densidad 0.
+- `rt-sim::params`: la carga de 200 B con sus desplazamientos, la de 192 B
+  sin lóbulo, cuota fuera de 0..1 y `g` fuera de (−1, 1) rechazadas.
+- TypeScript: `tests/effects.test.ts` (qué presets mandan el lóbulo, ninguno
+  con un material del catálogo o transparente, los límites, un efecto de
+  antes de S4b toma el de su preset) y `tests/effects-rsb.test.ts` (la carga
+  byte a byte frente a la de `rt --write-ambient-example`, con el lóbulo
+  del polvo).
+
+***Hashes***: `PINNED_AMBIENT_4SPP` `0xeb60bea2` → `0x8f9efac8` (el lóbulo de
+su polvo y su lluvia de vidrio, que proyecta sombra, cruzada recta por los
+rayos de sombra y los ásperos), el mismo en escalar, SSE2, AVX2, en WASI
+escalar y `simd128` y en el `rt.wasm` real (`wasm-parity.mjs`); las
+partículas, `PINNED_AMBIENT_PARTICLES` `0xe38b8480`, no se mueven; ningún
+otro *hash* se mueve (sin partículas, las escenas no cambian un bit). En
+`engine.yml` el bloque de paridad de *Ambiente* lee los dos *pins* del
+fuente; solo cambia su comentario.
+
+**Hoja** `out/ambient-sheet.html` (512 × 288, 128 spp, 2 hilos): arriba,
+antes y después (el binario de `09d8196` frente a este, `--rt-before`) de
+`DUST_MOTES-back`, `POLLEN-back`, `DUST_CLOUD-back`, `DUST_MOTES-side`,
+`RAIN-side` y `RAIN-back`, cada par con un recorte ×2; los ocho presets con
+las dos luces; las motas con cuotas 0,25, 0,75 y 1 (las de arriba tienen
+0,5); `RAIN-side` a 1 024 spp; las estelas y las suavidades de S4a; la
+tabla de coste.
+
+**Qué no encajó con el plan.**
+- **La rejilla de una cámara estenopeica no habría servido**: la cámara de
+  todo proyecto nuevo (y la de la hoja) tiene f/5,6. Se hizo para la lente
+  fina también, exacta (arriba); sin ella el criterio no se habría movido.
+- **La lluvia sigue por encima de 1,3×** (1,63× en tiempo, 1,50× en
+  instrucciones, arriba): su coste es
+  sombrear el vidrio que cubre un cuarto del cuadro, no recorrer la BVH. Lo
+  que la bajaría ya no es exacto ni barato (estelas más cortas o menos
+  densas, o gotas de cámara más sencillas): para el veredicto.
+- **Los puntitos de `RAIN-side` tenían dos fuentes.** La que pedía el
+  veredicto (las cáusticas: rayos del cuerpo y la etiqueta de la botella y
+  del suelo que refractaban por las gotas hasta la clave) desaparece. La
+  otra se queda, porque es la refracción que el veredicto conserva: la
+  clave vista **a través de cada gota** por la cámara es un detalle
+  diminuto y brillante dentro de cada estela, y a 128 spp sale granulado;
+  converge (`RAIN-side` a 1 024 spp, en la hoja: las estelas salen
+  lisas). Para el veredicto.
+- **«Pasa con su cobertura»**: leído como la transmitancia recta de una
+  pared fina de su material (Fresnel de las dos caras, una vez). Y no solo
+  los rayos de sombra: la lluvia del preset no proyecta sombra, así que
+  cambiar solo esos no tocaba los puntitos; los rayos BSDF del suelo y de
+  la botella que la cruzan tienen que hacer lo mismo para que la NEE y el
+  BSDF estimen lo mismo (test de las tres técnicas).
+- **«La refracción se queda para los rayos de cámara»**: extendido a los
+  caminos de lóbulos estrechos desde la cámara (`SHARP_PDF`), para que la
+  lluvia se siga viendo a través del vidrio de la botella y en los
+  espejos; con la regla estricta desaparecería ahí. Para el veredicto.
+- **La regla de las gotas lisas** (NEE solo de luces delta) no estaba en
+  el *brief*: sale del recuento de la lluvia; no cambia la media (test).
+- **El lóbulo viaja en `FXAM`, no en `MATL`**: es del efecto (su material
+  propio), `MATL` es el de las piezas (y lo está cambiando M2b); solo con
+  material opaco. *Rápido* no lo enseña (los puntos de la vista previa).
+- La cápsula descarta el rayo que no toca su cilindro infinito antes de
+  calcular raíces (−2 % de las instrucciones de la lluvia); la cota del
+  rayo que entra en una gota se probó y se quitó (0,7 %).
+- **TRIAGE 1.2** (forma de gota y geometrías variadas, decisión pendiente,
+  regla 11; no se hizo): lo que deja hecho S4b: la rejilla y la BVH son
+  por conjunto y ya parten una cápsula en trozos (`camera_boxes`), así que
+  una forma nueva solo necesita su prueba de impacto, su normal, su salida
+  (`exit`) y sus cajas; la mezcla de formas por partícula sería un código
+  de forma por partícula en `rt-sim` y en `ParticleSet` (todas las rutas
+  ya despachan por forma en `hit`, `exit` y `normal`); y una gota en
+  lágrima de agua sería clara (`is_clear_material`) y lisa (`is_mirror`),
+  así que heredaría las reglas de cáusticas y de NEE sin tocarlas.
+
+**Para el veredicto** (regla 11):
+1. La **cuota del lóbulo**: 0,5 propuesta; la hoja tiene 0,25, 0,75 y 1
+   con las dos luces. Con más cuota, las motas del haz brillan más y las de
+   la clave lateral pierden algo de su difuso.
+2. El **coste de la lluvia** (1,63× en tiempo, 1,50× en instrucciones):
+   aceptarlo, o estelas más cortas o menos densas en el preset, o una gota
+   de cámara más sencilla.
+3. El **grano dentro de las estelas** con la clave lateral (la refracción
+   que se queda): aceptarlo como ruido que converge o regularizarlo.
+4. La **regla de los caminos nítidos** (`SHARP_PDF`) frente a «solo los
+   rayos de cámara» estrictos.
 
 ## Físicas: cuerpos rígidos, telas y líquidos — decisión **Fable**
 

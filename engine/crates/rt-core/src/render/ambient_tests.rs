@@ -21,8 +21,9 @@ use crate::scene::{
 use rt_sim::{Shape, FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW};
 
 /// Pinned hash of the S4a parity scene ([`crate::example::ambient_scene`]) at 4 samples per pixel
-/// (pinned again with the per-point light selection of E12).
-pub(crate) const PINNED_AMBIENT_4SPP: u32 = 0xeb60_bea2;
+/// (pinned again with the per-point light selection of E12, and with S4b: the forward lobe of its
+/// dust and its glass rain crossed straight by shadow rays and rough paths, `0xeb60bea2` before).
+pub(crate) const PINNED_AMBIENT_4SPP: u32 = 0x8f9e_fac8;
 
 #[test]
 fn the_ambient_example_has_a_pinned_hash_on_every_platform() {

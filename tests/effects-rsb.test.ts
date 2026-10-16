@@ -33,6 +33,12 @@ describe('FXAM: the engine layout', () => {
       const again = fxamPayload(readEffect(s.payload));
       expect(Array.from(again)).toEqual(Array.from(bytes));
     }
+    // S4b: the dust of the fixture has the forward lobe of the dust preset, the rain and the snow none.
+    expect(fx.map((s) => [readEffect(s.payload).forward, readEffect(s.payload).forwardG])).toEqual([
+      [0.5, Math.fround(0.7)],
+      [0, 0],
+      [0, 0],
+    ]);
   });
 
   it('puts the sections after the lights, one per effect that is on, each with its own material after the parts', () => {

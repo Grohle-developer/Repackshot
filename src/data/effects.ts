@@ -25,7 +25,9 @@ export type EffectShape = 'SPHERE' | 'DISC' | 'CAPSULE';
 
 /**
  * The engine's material of an effect (the RSB `MATL` fields it uses): `GLASS` is a clear dielectric (`ior`,
- * `transmission`), `SURFACE` the principled surface; `thin` makes the clear part a thin wall.
+ * `transmission`), `SURFACE` the principled surface; `thin` makes the clear part a thin wall. `forward` (S4b) is the
+ * share of what a particle scatters into a forward lobe (Henyey–Greenstein, asymmetry `forwardG`): what makes dust
+ * glow in the beam of a light behind it. It travels in the effect's `FXAM`, not in `MATL`; an opaque material only.
  */
 export interface EffectMaterial {
   kind: 'SURFACE' | 'GLASS';
@@ -36,6 +38,9 @@ export interface EffectMaterial {
   /** Absorption distance of the clear part, mm (0: none). */
   absorptionMm: number;
   thin: boolean;
+  /** Share of the forward lobe, 0..1 (0: none), and its asymmetry, -1 < g < 1 (S4b). */
+  forward: number;
+  forwardG: number;
 }
 
 /** The parameters of an effect that a preset sets (core/effects.ts `AmbientEffect` holds them, and more). */
@@ -97,8 +102,16 @@ const surface = (baseColor: RGB, roughness: number, extra: Partial<EffectMateria
   transmission: 0,
   absorptionMm: 0,
   thin: false,
+  forward: 0,
+  forwardG: 0,
   ...extra,
 });
+
+/**
+ * The forward lobe of the dust, the pollen and the dust cloud (S4b): g 0.7 is the brief's (ROADMAP S4b, point 2);
+ * the share of 0.5 is this phase's proposal, for the lead's verdict on the sheet (rule 11).
+ */
+const FORWARD = { forward: 0.5, forwardG: 0.7 };
 
 const BASE: Omit<EffectValues, 'density' | 'sizeMm' | 'shape'> = {
   sizeVar: 0.4,
@@ -134,7 +147,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     label: { en: 'Dust motes', es: 'Motas de polvo' },
     intent: { en: 'Specks floating in the air; a light behind the product makes them glow in its beam.', es: 'Motas que flotan en el aire; un foco detrás del producto las hace brillar en su haz.' },
     values: { ...BASE, density: 150_000, sizeMm: 0.2, sizeVar: 0.6, shape: 'SPHERE', energy: 0.02, chaos: 0.3, turbulenceScaleMm: 80, windSpeed: 0.02, gravity: 0.05, tintVar: 0.3, shadows: false },
-    material: surface([0.8, 0.78, 0.74], 0.35),
+    material: surface([0.8, 0.78, 0.74], 0.35, FORWARD),
   },
   {
     key: 'POLLEN',
@@ -142,7 +155,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     label: { en: 'Pollen', es: 'Polen' },
     intent: { en: 'Yellowish grains drifting slowly, for spring and garden scenes.', es: 'Granos amarillentos que derivan despacio, para escenas de primavera y jardín.' },
     values: { ...BASE, density: 40_000, sizeMm: 0.3, sizeVar: 0.4, shape: 'SPHERE', energy: 0.03, chaos: 0.4, windSpeed: 0.05, windDirDeg: 20, fallSpeed: 0.2, gravity: 0.1, tintVar: 0.3, shadows: false },
-    material: surface([0.85, 0.66, 0.22], 0.6),
+    material: surface([0.85, 0.66, 0.22], 0.6, FORWARD),
   },
   {
     key: 'RAIN',
@@ -150,7 +163,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     label: { en: 'Rain', es: 'Lluvia' },
     intent: { en: 'Falling drops as short streaks of water, slanted by the wind.', es: 'Gotas que caen como estelas cortas de agua, inclinadas por el viento.' },
     values: { ...BASE, density: 20_000, sizeMm: 1.2, sizeVar: 0.4, shape: 'CAPSULE', chaos: 0.05, turbulenceScaleMm: 300, windSpeed: 1, fallSpeed: 6.5, fallVar: 0.2, streak: 0.012, tintVar: 0, shadows: false },
-    material: { kind: 'GLASS', baseColor: [1, 1, 1], roughness: 0, ior: 1.33, transmission: 1, absorptionMm: 0, thin: false },
+    material: { kind: 'GLASS', baseColor: [1, 1, 1], roughness: 0, ior: 1.33, transmission: 1, absorptionMm: 0, thin: false, forward: 0, forwardG: 0 },
   },
   {
     key: 'SNOW',
@@ -166,7 +179,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     label: { en: 'Dust cloud', es: 'Polvareda' },
     intent: { en: 'A cloud of dust around the base, as if the product had just landed.', es: 'Una nube de polvo alrededor de la base, como si el producto acabara de aterrizar.' },
     values: { ...BASE, density: 3_000_000, sizeMm: 0.3, sizeVar: 0.6, shape: 'SPHERE', energy: 0.3, chaos: 0.8, turbulenceScaleMm: 60, turbulenceSpeed: 0.05, windSpeed: 0.2, fallSpeed: 0.1, gravity: 0.2, cloudRadius: 0.6, cloudSoftness: 0.6, tintVar: 0.3, shadows: false },
-    material: surface([0.55, 0.46, 0.36], 0.8),
+    material: surface([0.55, 0.46, 0.36], 0.8, FORWARD),
   },
   {
     key: 'ASH',
@@ -182,7 +195,7 @@ export const EFFECT_PRESETS: readonly EffectPreset[] = [
     label: { en: 'Rising bubbles', es: 'Burbujas que suben' },
     intent: { en: 'Clear bubbles rising around the product, for drinks and cosmetics.', es: 'Burbujas transparentes que suben alrededor del producto, para bebidas y cosmética.' },
     values: { ...BASE, density: 10_000, sizeMm: 2.5, sizeVar: 0.6, shape: 'SPHERE', energy: 0.05, chaos: 0.3, turbulenceScaleMm: 100, fallSpeed: 0.25, fallVar: 0.4, gravity: -1, tintVar: 0, shadows: false },
-    material: { kind: 'GLASS', baseColor: [1, 1, 1], roughness: 0, ior: 1.33, transmission: 1, absorptionMm: 0, thin: true },
+    material: { kind: 'GLASS', baseColor: [1, 1, 1], roughness: 0, ior: 1.33, transmission: 1, absorptionMm: 0, thin: true, forward: 0, forwardG: 0 },
   },
   {
     key: 'CONFETTI',
