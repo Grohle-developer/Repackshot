@@ -9906,7 +9906,16 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **5.1**: tamaño de las texturas y los procedurales relativo al sólido o
   absoluto (SPEC l. 456 contradice a SPEC l. 101 y a E6), y cómo convive
   con el tamaño manual.
-- **1.2**: la gota y la mezcla de geometrías en *Ambiente* (con S4b).
+- **1.2**: la gota y la mezcla de geometrías en *Ambiente* (con S4b; el
+  párrafo de S4b dice cómo lo facilita).
+- **S4b** (hoja `out/ambient-sheet.html` de esa fase, regenerable con
+  `tools/ambient-sheet.mjs`): la parte del lóbulo hacia delante (propuesta
+  0,5; la hoja tiene 0,25, 0,75 y 1); el coste de la lluvia (1,63× contra el
+  1,3× del criterio, que no es la búsqueda sino la luz que la atraviesa):
+  aceptarlo, rastros más cortos o más escasos, o un modelo de gota más
+  barato para la cámara; el grano dentro de los rastros bajo la luz lateral;
+  y la regla de los caminos estrechos desde la cámara (las gotas refractan
+  también en ellos) frente a solo los rayos de cámara.
 - **1.5**: el editor de elementos de una lente (editar, mover, añadir,
   girar 180°) sobre lo que O2 ya guarda como lente propia.
 - **1.6**: si M3b trae nodos *Madera* y *Tela* con las recetas de E6.
