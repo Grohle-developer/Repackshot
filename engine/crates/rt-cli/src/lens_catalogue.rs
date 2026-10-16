@@ -457,5 +457,106 @@ mod tests {
             include_str!("../../../../tests/fixtures/lens-catalogue.json"),
             "rt --write-lens-catalogue tests/fixtures/lens-catalogue.json"
         );
+        // The adapter focuses with its widest gap (the cylinders' air space), its lens as a unit.
+        assert_eq!(adapter.prescription.focus_mode, FOCUS_ANAMORPHIC);
+        assert_eq!(adapter.prescription.moving.len(), 1);
+        let gap = adapter.prescription.moving[0];
+        assert_eq!(gap.surface, 1);
+        assert!((gap.near - gap.base * ADAPTER_FOCUS_TRAVEL as f32).abs() < 1.0e-4);
+    }
+
+    /// The anamorphic adapter in front of the double Gauss, at 50 mm, f/4, prepared for a focus.
+    fn adapter(focus: f32, mode: Option<u32>) -> TracedLens {
+        let lens = catalogue()
+            .into_iter()
+            .find(|l| l.key == "anamorphic_adapter_2x")
+            .unwrap();
+        let mut p = lens.prescription;
+        if let Some(m) = mode {
+            p.focus_mode = m;
+        }
+        let params = rt_core::optics::LensParams {
+            squeeze: lens.squeeze,
+            prescription: Some(p.clone()),
+            ..rt_core::optics::LensParams::default()
+        };
+        TracedLens::new(
+            &p,
+            &params,
+            CameraOptics {
+                focal_mm: 50.0,
+                fstop: 4.0,
+                focus_dist: focus,
+                sensor_mm: 36.0,
+            },
+        )
+        .unwrap()
+    }
+
+    /// Where the rays from the centre of the sensor through two opposite points of the pupil,
+    /// `(±a, 0)` (the squeezed, horizontal meridian) or `(0, ±a)`, meet in front of the lens: the
+    /// distance from the camera position, and by how much they miss each other (mm, `f64`).
+    fn meeting(lens: &TracedLens, horizontal: bool) -> (f64, f64) {
+        let a = 0.15f32;
+        let ray = |s: f32| {
+            let p = if horizontal {
+                (s * a, 0.0)
+            } else {
+                (0.0, s * a)
+            };
+            match lens.chief(0.0, 0.0, p) {
+                Traced::Out { origin, dir } => (origin, dir),
+                Traced::Blocked => panic!("blocked"),
+            }
+        };
+        let v = |p: rt_core::math::Vec3| [f64::from(p.x), f64::from(p.y), f64::from(p.z)];
+        let ((o1, d1), (o2, d2)) = (ray(1.0), ray(-1.0));
+        let (o1, d1, o2, d2) = (v(o1), v(d1), v(o2), v(d2));
+        let dot = |p: [f64; 3], q: [f64; 3]| p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+        let w = [o1[0] - o2[0], o1[1] - o2[1], o1[2] - o2[2]];
+        let (aa, bb, cc, dd, ee) = (
+            dot(d1, d1),
+            dot(d1, d2),
+            dot(d2, d2),
+            dot(d1, w),
+            dot(d2, w),
+        );
+        let den = aa * cc - bb * bb;
+        let s = (bb * ee - cc * dd) / den;
+        let t = (aa * ee - bb * dd) / den;
+        let p: Vec<f64> = (0..3).map(|k| o1[k] + d1[k] * s).collect();
+        let q: Vec<f64> = (0..3).map(|k| o2[k] + d2[k] * t).collect();
+        let gap = (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt();
+        // The lens frame's axis points from the object to the sensor: the object is at −z.
+        (f64::from(lens.pupil_z()) - 0.5 * (p[2] + q[2]), gap)
+    }
+
+    #[test]
+    fn the_anamorphic_adapter_focuses_both_meridians_at_the_focus_distance_and_squeezes_by_two() {
+        for focus in [1500.0f32, 4000.0] {
+            let lens = adapter(focus, None);
+            for horizontal in [false, true] {
+                let (at, gap) = meeting(&lens, horizontal);
+                assert!(gap < 0.5, "{focus}: the rays miss by {gap} mm");
+                assert!(
+                    (at - f64::from(focus)).abs() < 0.03 * f64::from(focus),
+                    "{focus}, horizontal {horizontal}: focused at {at} mm"
+                );
+            }
+        }
+        // As one unit the cylinders' meridian focuses elsewhere: the gap is what brings it.
+        let unit = adapter(1500.0, Some(FOCUS_UNIT));
+        let (at, _) = meeting(&unit, true);
+        assert!(
+            (at - 1500.0).abs() > 0.1 * 1500.0,
+            "the horizontal meridian focuses at {at} mm without its gap"
+        );
+        // Far away the afocal adapter squeezes by its angular magnification (0.5: 2x); close up
+        // less (the gap moved), as the engine measures and the image is desqueezed by.
+        let far = adapter(1.0e6, None).squeeze().unwrap();
+        assert!((far - 2.0).abs() < 0.02, "squeeze at infinity {far}");
+        let near = adapter(1500.0, None).squeeze().unwrap();
+        assert!(near > 1.0 && near < far, "squeeze at 1.5 m {near}");
+        assert_eq!(adapter(1500.0, None).info().squeeze, near);
     }
 }

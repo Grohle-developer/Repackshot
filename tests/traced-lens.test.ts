@@ -6,9 +6,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { makeCamera, type CameraState } from '../src/core/camera';
 import { isNeutralOptics, normalizeOptics, OPTICS_NEUTRAL, opticsForBokeh, type CameraOptics } from '../src/core/optics';
-import { composeLens, DEFAULT_MASTER, isAdapter, masterLenses, newTracedLens, normalizeTracedLens, parseLensInfo, stateMagnification, type TracedLens } from '../src/core/traced-lens';
+import { ADAPTER_FOCUS_TRAVEL, composeLens, DEFAULT_MASTER, isAdapter, masterLenses, newTracedLens, normalizeTracedLens, parseLensInfo, stateMagnification, type TracedLens } from '../src/core/traced-lens';
 import { LENS_PRESCRIPTIONS, lensPrescription } from '../src/data/lenses';
-import { lensInfoRsb, lensToRsb, prescriptionBytes, prescriptionToRsb, writeRsb, type RsbPrescription, type RsbScene } from '../src/io/rsb';
+import { FOCUS_MODE, lensInfoRsb, lensToRsb, prescriptionBytes, prescriptionToRsb, writeRsb, type RsbPrescription, type RsbScene } from '../src/io/rsb';
 import { hasLensInfoExport, readLensInfo } from '../src/render/lens-info';
 import { readRsb } from './rsb-reader';
 import { fnv1a, loadRt, pinned, renderWithPasses, resolveRgb, RT_WASM } from './wasm-engine';
@@ -67,6 +67,14 @@ describe('the traced lens of a camera', () => {
     // Scaled to clear the master's front: its strongest radius 2.2 times that semi-aperture.
     const strongest = Math.min(...c.surfaces.slice(0, front).filter((s) => s.r !== null).map((s) => Math.abs(s.r!)));
     expect(strongest).toBeCloseTo(2.2 * master.surfaces[0].semiAperture!, 6);
+    // It focuses with its widest air gap (between the cylinders), its lens moving as one unit (rt-core
+    // FOCUS_ANAMORPHIC); in front of a lens that focuses otherwise, that lens's own focus.
+    expect(c.squeezeFocus).toEqual({ surface: 1, dBase: c.surfaces[1].d, dNear: c.surfaces[1].d! * ADAPTER_FOCUS_TRAVEL });
+    const rsb = prescriptionToRsb(newTracedLens(adapter.key), c);
+    expect([rsb.focusMode, rsb.moving]).toEqual([FOCUS_MODE.anamorphic, [{ surface: 1, base: c.surfaces[1].d, near: c.surfaces[1].d! * ADAPTER_FOCUS_TRAVEL }]]);
+    const tele = composeLens({ ...newTracedLens(adapter.key), master: 'telephoto_internal_focus' })!;
+    expect(tele.squeezeFocus).toBeNull();
+    expect(prescriptionToRsb(newTracedLens(adapter.key), tele).focusMode).toBe(FOCUS_MODE.internal);
     expect(stateMagnification('magnification 0.2')).toBe(0.2);
     expect(stateMagnification('infinity')).toBe(0);
   });
@@ -140,6 +148,11 @@ describe.skipIf(!RT_WASM)('the real rt.wasm', () => {
       expect(info.relativeIllumination.length, p.key).toBeGreaterThan(0);
       expect(info.elements, p.key).toBeGreaterThanOrEqual(1);
     }
+    // The adapter's squeeze as the engine traces it at the focus (2 m: a little under its 2x at infinity).
+    const ana = readLensInfo(rt, lensInfoRsb(camera(traced('anamorphic_adapter_2x'), { focalMm: 50, fstop: 0, focusDistance: 2000 }), 640, 480))!;
+    expect(ana.squeeze).toBeGreaterThan(1.5);
+    expect(ana.squeeze).toBeLessThan(2);
+    expect(readLensInfo(rt, lensInfoRsb(camera(traced('triplet')), 640, 480))!.squeeze).toBe(1);
     // The thin lens says so.
     expect(readLensInfo(rt, lensInfoRsb(camera(OPTICS_NEUTRAL), 640, 480))).toBeNull();
   }, 120000);

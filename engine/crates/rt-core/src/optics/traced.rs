@@ -571,14 +571,14 @@ impl TracedLens {
 /// Checks a prescription and scales it to `focal_mm`, with its band indices and transmittances.
 fn build(p: &Prescription, lens: &super::LensParams, focal_mm: f32) -> Result<Built, &'static str> {
     let n = p.surfaces.len();
-    if n < 2 || n > 64 {
+    if !(2..=64).contains(&n) {
         return Err("a prescription has 2 to 64 surfaces");
     }
     let stop = p.stop as usize;
     if stop >= n {
         return Err("the stop is not one of the surfaces");
     }
-    if !(focal_mm > 0.0) {
+    if focal_mm.is_nan() || focal_mm <= 0.0 {
         return Err("the focal length must be positive");
     }
     let dispersion = 1.0 + 3.0 * lens.ca_amount;
@@ -626,7 +626,7 @@ fn build(p: &Prescription, lens: &super::LensParams, focal_mm: f32) -> Result<Bu
         return Err("a lens ends in air");
     }
     let (efl, _) = paraxial::efl_bfl(&surfaces, 1).ok_or("the prescription is afocal")?;
-    if !(efl > 0.0) || !efl.is_finite() {
+    if !efl.is_finite() || efl <= 0.0 {
         return Err("the prescription does not form a real image");
     }
     let k = focal_mm / efl;
@@ -680,7 +680,7 @@ fn build(p: &Prescription, lens: &super::LensParams, focal_mm: f32) -> Result<Bu
 fn focus_of(surfaces: &[Surface], distance: f32) -> Option<(f32, f32)> {
     let far = !(distance > 0.0 && distance.is_finite());
     let image = paraxial::image_distance(surfaces, 1, if far { f32::INFINITY } else { distance })?;
-    if !(image > 0.0) || !image.is_finite() {
+    if !image.is_finite() || image <= 0.0 {
         return None;
     }
     // Lateral magnification: an object point 1 above the axis, its chief-free ray through the
@@ -1041,7 +1041,7 @@ impl TracedLens {
             bounds.push(rect);
             irradiance.push(e);
         }
-        if !(irradiance[0] > 0.0) {
+        if irradiance[0].is_nan() || irradiance[0] <= 0.0 {
             return Err("no light passes the lens on its axis");
         }
         self.normaliser = irradiance[0];
@@ -1332,6 +1332,7 @@ impl TracedLens {
             vignetting: 0.0,
             breathing: 1.0,
             field: 1.0,
+            squeeze: 0.0,
             info: LensInfo {
                 efl_mm: 0.0,
                 bfl_mm: 0.0,
@@ -1347,6 +1348,7 @@ impl TracedLens {
                 distortion: Vec::new(),
                 relative_illumination: Vec::new(),
                 sensor_mm: 0.0,
+                squeeze: 1.0,
             },
             key: CameraOptics {
                 focal_mm: 0.0,

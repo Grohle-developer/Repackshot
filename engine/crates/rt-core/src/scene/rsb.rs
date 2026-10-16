@@ -477,7 +477,8 @@ fn parse_lens(r: &mut Reader) -> Result<Lens, RsbError> {
                 aspheric: [r.f32()?, r.f32()?, r.f32()?, r.f32()?],
             });
         }
-        if !(f_number_min >= 0.0)
+        if f_number_min.is_nan()
+            || f_number_min < 0.0
             || !(-1.0..=1.0).contains(&distortion)
             || !(0.0..=1.0).contains(&vignetting)
             || !(-1.0..=1.0).contains(&spherical)

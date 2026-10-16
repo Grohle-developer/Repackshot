@@ -48,12 +48,17 @@ describe('the optics of a camera', () => {
     }
   });
 
-  it('a bokeh type sets its thin-lens parameters and keeps the tilt and shift; the traced ones are not offered', () => {
+  it('a bokeh type sets its thin-lens parameters and keeps the tilt and shift; a traced one puts its lens on (O2), wave optics is not offered', () => {
     const base = { ...OPTICS_NEUTRAL, tiltDeg: 3, shiftXMm: -2 };
     for (const t of BOKEH_TYPES) {
       const o = opticsForBokeh(base, t.key);
-      if (t.requires !== null) {
+      if (t.requires === 'wave') {
         expect(o, t.key).toBeNull();
+        continue;
+      }
+      if (t.requires === 'traced') {
+        expect(o?.traced?.key, t.key).toBe(t.lens);
+        expect([o!.bokeh, o!.tiltDeg, o!.shiftXMm]).toEqual([t.key, 3, -2]);
         continue;
       }
       expect(o!.bokeh).toBe(t.key);

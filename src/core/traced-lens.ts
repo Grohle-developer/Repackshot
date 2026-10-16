@@ -192,6 +192,8 @@ export interface EngineLensInfo {
   groups: number;
   /** The sensor behind the rear vertex, mm. */
   sensorMm: number;
+  /** An anamorphic lens's squeeze as traced at its focus (1 without cylinders): what the image is desqueezed by. */
+  squeeze: number;
   /** Distortion, percent, against image height (mm on the sensor). */
   distortion: [number, number][];
   /** Relative illumination against image height. */
@@ -236,9 +238,10 @@ export function parseLensInfo(text: string): EngineLensInfo | null | undefined {
     elements: num('elements'),
     groups: num('groups'),
     sensorMm: num('sensorMm'),
+    squeeze: r.squeeze === undefined ? 1 : num('squeeze'),
     distortion: distortion ?? [],
     relativeIllumination: ri ?? [],
   };
-  const numbers = [info.eflMm, info.bflMm, info.fNumber, info.tStop, info.lengthMm, info.elements, info.groups, ...info.transmittance];
+  const numbers = [info.eflMm, info.bflMm, info.fNumber, info.tStop, info.lengthMm, info.elements, info.groups, info.squeeze, ...info.transmittance];
   return numbers.every(Number.isFinite) && distortion && ri ? info : undefined;
 }
