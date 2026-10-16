@@ -50,7 +50,7 @@ no un requisito.
    sombra, cáusticas, calidad, y un rig de focos adecuado a la
    reflectancia típica de esa categoría.
 3. **Materiales.** Elegir el nivel (modelo, grupo, pieza, caras) y pulsar
-   o arrastrar un material del catálogo (77 presets en 7 categorías). Si
+   o arrastrar un material del catálogo (86 presets en 7 categorías). Si
    el objetivo ya tiene materiales distintos, se pregunta con inventario.
    Editar parámetros con nombres de fotógrafo. Añadir desgaste.
 4. **Luz.** Elegir un montaje del catálogo (72 en 8 estilos) por su
@@ -563,10 +563,18 @@ Familias y lo que significan para el motor:
 | Familia | Modelo | Parámetros propios |
 | --- | --- | --- |
 | `SIMPLE` | BSDF de principio físico: base, metal, rugosidad, barniz, anisotropía, subsuperficie, opacidad | — |
-| `GLASS` | dieléctrico con transmisión, IOR, rugosidad, color de absorción: el color es lo que conserva la luz blanca tras `absorptionMm` milímetros dentro de la pieza (0: tinte de superficie); con `walls` `THIN`, pared fina sin interior (lámina, bombilla, visera modelada como una superficie), que deja pasar la luz recta | `ior`, `transmission`, `absorptionMm` (50), `walls` (`SOLID` · `THIN`) |
+| `GLASS` | dieléctrico con transmisión, IOR, rugosidad, color de absorción: el color es lo que conserva la luz blanca tras `absorptionMm` milímetros dentro de la pieza (0: tinte de superficie); con `walls` `THIN`, pared fina sin interior (lámina, bombilla, visera modelada como una superficie), que deja pasar la luz recta. Con `scatterMm` por encima de 0 (E9), el sólido está lleno de un medio dispersor: plástico translúcido, cera, jabón, leche, zumo; `scatterMm` es la distancia libre media en mm, `scatterColor` lo que conserva cada rebote de cada color (el albedo) y `scatterG` adónde va la luz en cada rebote (Henyey–Greenstein, de −0,9 hacia atrás a 0,9 hacia delante). El modo Completo hace el paseo aleatorio dentro de la pieza; el Rápido lo aproxima con un difuso translúcido. Con `abbe` por encima de 0 (E9c), el vidrio macizo sin medio separa la luz en colores (dispersión cromática): es su número de Abbe, cuanto menor, más separa (cristal 30–40, vidrio de ventana unos 60); el modo Completo refracta cada longitud de onda con su índice y el Rápido usa la dispersión de three.js | `ior`, `transmission`, `absorptionMm` (50), `walls` (`SOLID` · `THIN`), `scatterMm` (0), `scatterColor` (blanco), `scatterG` (0), `abbe` (0) |
 | `WOOD` | veta procedural: dos colores, densidad y variación de anillos, ruido axial, poro | `woodColor1/2`, `ringDensity`… |
 | `FABRIC` | trama procedural: dos colores de hilo, tejido (tafetán, sarga, satén, punto, malla), hilos por cm, relieve, pelusa | `threadColor1/2`, `weave`, `threadCount`, `fuzz` |
 | `EMISSIVE` | emisor: cuerpo negro a temperatura o color, potencia | `emitKind`, `temperature`, `emitPower` |
+
+**Energía** (E9a): en el modo Completo los materiales no pierden luz con
+la rugosidad. Un metal blanco, un vidrio claro o un plástico blanco, con
+o sin barniz y con cualquier rugosidad, salen blancos en un entorno
+uniforme (±1 %): la luz que rebota varias veces entre las microfacetas
+vuelve, y la capa difusa recibe exactamente lo que el brillo no refleja.
+Con rugosidad 0, el metal y el vidrio no cambian; el plástico gana el
+8,6 % que antes perdía su capa difusa (ior 1,5).
 
 **Desgaste**: ocho tipos (aristas, arañazos, huellas, polvo, suciedad en
 cavidades, pátina, micro-variación de rugosidad, abolladuras), cada uno

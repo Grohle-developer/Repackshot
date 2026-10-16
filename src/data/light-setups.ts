@@ -393,7 +393,7 @@ export const LIGHT_SETUPS: readonly LightSetup[] = [
       { role: 'RIM', size: 0.3, sizeY: 3, az: 165, el: 70, dist: 3, share: 0.15 },
     ],
     backdrop: { kind: 'SWEEP', color: [0.3, 0.3, 0.3] },
-    pool: { az: 180, el: 15, cone: 22, share: 0.7 },
+    pool: { az: 180, el: 15, cone: 22, share: 0.85 },
     floor: { kind: 'GLOSSY', material: 'ACRYLIC_WHITE', color: [0.6, 0.6, 0.6] },
     envStrength: 0,
     exposureEv: 0,

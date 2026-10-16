@@ -25,6 +25,7 @@ pub mod lens_catalogue;
 pub mod lens_sheet;
 pub mod scenes;
 pub mod sheet;
+pub mod sss_sheet;
 pub mod tone;
 
 /// Edge length of the square tiles handed to the worker threads.

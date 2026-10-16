@@ -526,8 +526,8 @@ banderas) es opcional: sin ella, cada malla es una instancia identidad.
 Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
 `rt-core`):
 
-- **`MATL`** (72 B desde E5; los de 56 y 60 B se leen con los valores por
-  defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
+- **`MATL`** (100 B desde E9; los de 56, 60 y 72 B se leen con los valores
+  por defecto de lo que les falta): `kind` 0 principal (Lambert + GGX con
   barniz; la parte `transmission` es vidrio claro: reflexión y refracción
   GGX con el Fresnel dieléctrico exacto), 1 vidrio (el principal sin
   metal), 2 emisivo (radiancia `emission × emission_power`); desconocido =
@@ -536,7 +536,14 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   rectos). E5 añade `opacity` (1; por debajo, recorte estocástico),
   `anisotropy` (0) y `absorption_mm` (0; por encima, Beer–Lambert dentro
   del sólido: `base_color` es lo que conserva la luz blanca tras esos
-  milímetros).
+  milímetros). E9 añade, en este orden: `bevel_mm` (byte 72, reservado
+  para E6: se lee y se conserva, la interfaz escribe 0), `scatter_mm` (0;
+  por encima, el sólido claro está lleno de un medio dispersor con esa
+  distancia libre media, §5.2 sexies), `scatter_color` (tres `f32`, el albedo
+  de dispersión simple por canal; 1, 1, 1), `scatter_g` (0; la anisotropía
+  de Henyey–Greenstein, recortada a ±0,9) y `abbe` (0; el número de Abbe
+  del vidrio macizo sin medio: por encima de 0, dispersión cromática,
+  §5.2 sexies).
 - **`LGHT`** `kind`: 0 rectángulo, 1 disco, 2 sol, 3 punto y 4 foco
   (L4); ≥ 5 es error. Rectángulo y disco:
   unilaterales, `power` = flujo en W (mm → m), `spread_deg` = caída cosⁿ
@@ -720,9 +727,9 @@ sus texturas y sin ellas da los mismos bytes, y las escenas fijadas de
    (`io/texture-pixels.ts`, con el decodificador del navegador): el motor no
    lee PNG ni JPEG.
 2. **`MATL`**: los campos de antes (72 B), los de E6 (`f32 bevel_mm`, 76 B) y
-   E9 (`f32 scatter_mm scatter_color[3] scatter_g abbe`, 100 B) —ceros
-   mientras E6 y E9 no los escriban—, y desde el **byte 100** el bloque de
-   texturas:
+   E9 (`f32 scatter_mm scatter_color[3] scatter_g abbe`, 100 B) —E9 los
+   escribe siempre; el bisel, 0 mientras E6 no lo escriba—, y desde el
+   **byte 100** el bloque de texturas:
 
    ```text
    u32 texture_block_version (1)
@@ -847,7 +854,7 @@ que la baldosa multiplica antes de acumular (`render::camera_sample_weighted`):
   ignora `LENS`; el muestreo de luces, BSDF y recortes no ve nada nuevo.
 - *Hash* fijado de la escena O1 (`example::o1_scene`, todas las
   perillas a la vez y una textura de anillos): `PINNED_O1_LENS_4SPP` =
-  `0x1439a1a8` (tras E12: la selección de luz por punto mueve el hash) en cada ruta SIMD, en WASI, en el `rt_wasm.wasm` real
+  `0x087d1276` (desde la unión de E9 y E12: la compensación de energía y la selección de luz por punto mueven el hash) en cada ruta SIMD, en WASI, en el `rt_wasm.wasm` real
   (`rt --write-o1-example`, `tools/wasm-parity.mjs`, en CI) y con 1, 4 y
   16 hilos (`rt-cli/tests`).
 - **Filtros de efecto** (O3a, `optics::filters`): tras la pupila, cada
@@ -894,7 +901,7 @@ que la baldosa multiplica antes de acumular (`render::camera_sample_weighted`):
   colores). Una lente sin filtros no saca ninguno: los *hashes* de antes
   no se mueven. Escena de paridad `example::o3a_scene` (difusión negra
   1/2, estrella de 6 a 15° y rayas 1/2 sobre un diafragma de 6 láminas):
-  `PINNED_O3A_FILTERS_4SPP` = `0x49938f3b` en cada ruta SIMD, en WASI, en
+  `PINNED_O3A_FILTERS_4SPP` = `0x21e43bb1` (desde que le llegó E9a; antes `0x49938f3b`) en cada ruta SIMD, en WASI, en
   el `rt_wasm.wasm` real (`rt --write-o3a-example`, `tests/fixtures/o3a.rsb`)
   y con 1, 4 y 16 hilos. El visor Rápido aplica `(1 − s)·I + s·a·(I ⊗ K_T)`
   con los mismos núcleos proyectados por la focal (`render/lens-filter-*`;
@@ -936,7 +943,7 @@ con `HALO` = 72 filas alrededor (el alcance de todo el filtro) y da
 exactamente esas filas de la imagen entera, así que los anfitriones lo
 reparten entre hilos o *workers* sin cambiar un bit (bandas de 192 filas
 como mínimo). *Hash* fijado: el ejemplo a 4 muestras con *denoise*,
-`0x9ef7c8a0` (`PINNED_DENOISED_EXAMPLE_4SPP`, desde E12), igual con el `rt.wasm` real
+`0x2a430f92` (`PINNED_DENOISED_EXAMPLE_4SPP`, desde la unión de E9 y E12), igual con el `rt.wasm` real
 (`tools/wasm-parity.mjs --expect-denoised`) y por el código de la página
 (`tests/denoise.test.ts`).
 
@@ -978,7 +985,7 @@ relativa a la del suelo abierto, al fondo que muestra; con fondo
 transparente no se muestran. Coste: `caustic_photons` fotones por muestra,
 trazados por cada anfitrión antes de las baldosas de esa muestra (en wasm,
 cada *worker* guarda los 16 mapas de la última pasada). *Hash* fijado: la
-escena de E5 con 2048 fotones por muestra, `0x5419866e` (desde E12)
+escena de E5 con 2048 fotones por muestra, `0x7135df4b` (desde la unión de E9 y E12)
 (`PINNED_E5B_CAUSTICS_4SPP`, `rt --write-e5b-example`), igual en todas las
 rutas SIMD, en el `rt.wasm` real, por el lanzador con 1, 4 y 16 hilos y por
 el código de la página.
@@ -1404,7 +1411,7 @@ calculan la máscara una vez por baldosa: `rt` y el lanzador en un
 `OnceLock` por baldosa (la primera que la renderiza), el wasm en su escena
 cargada por rectángulo (`KEPT_EDGE_MASKS`, se vacía al actualizar la
 escena). En el ejemplo son el 1,8 % de los píxeles. *Hash* fijado del
-ejemplo con *Fino + bordes ×2*: `PINNED_E11_EDGES_4SPP` = `0x3d8f85de` (con la elección de luz de E12),
+ejemplo con *Fino + bordes ×2*: `PINNED_E11_EDGES_4SPP` = `0xd01702ce` (con la elección de luz de E12 y la compensación de energía de E9a),
 igual en escalar, SSE2 y AVX2, con baldosas de 32 y de 23, por `rt` y el
 lanzador con 1, 4 y 16 hilos, por el `rt.wasm` real (`wasm-parity.mjs`,
 `rt --write-e11-example`) y por el código de la página.
@@ -1422,6 +1429,104 @@ siempre; con otro, en un destino de `n` muestras (como mucho
 (`isXRRenderTarget`: curva de tono y sRGB en cada material, color de
 fondo en sRGB) guardado en `RGBA8` sin codificar ni decodificar, y lo
 copia tal cual al lienzo antes de los contornos y el *gizmo*.
+
+### 5.2 sexies · Materiales: energía, medios dispersores y dispersión (E9)
+
+**Compensación de energía** (`rt_core::bsdf::energy`, tablas en
+`bsdf/energy_table.rs`). El GGX de dispersión simple pierde la luz que
+rebota más de una vez entre microfacetas (un metal blanco de rugosidad 1
+reflejaba 0,356 en el *furnace*). El lóbulo especular (metal y dieléctrico
+opaco) y el barniz llevan el lóbulo añadido de Kulla y Conty (2017),
+`F_ms (1 − E(μo)) (1 − E(μi)) / (π (1 − E_avg))` con
+`F_ms = F_avg² E_avg / (1 − F_avg (1 − E_avg))` y el `F_avg` de Schlick
+`f0 + (f90 − f0)/21`, muestreado por el coseno y con su densidad en la
+mezcla del MIS. La parte clara (Walter 2007) se divide por su propio albedo
+de potencia `E_t(μo, α, η)` (Turquin 2019); con rugosidad, se muestrea
+primero la microfaceta y se refleja con su propio Fresnel (Walter 2007,
+§5.3). La capa difusa bajo el especular dieléctrico pesa
+`(1 − E_s(μo)) (1 − E_s(μi)) / (1 − E_s,avg)` (Kulla y Conty), y bajo el
+barniz, el producto de las dos transmisiones normalizado por su media
+conjunta (Gauss–Legendre de 8 puntos, `energy::joint_norm`). Las tablas son
+nuestras: Monte Carlo con semilla fija (VNDF de Heitz 2018, rejilla
+*jittered* 64 × 64 por nodo, PCG), 32 × 32 nodos en `√μ` y `√α` (y 17
+índices de refracción entrando y saliendo para la parte clara), en
+fracciones de 16 bits; un test las regenera bit a bit y otro mide el error
+de interpolación (< 0,5 % frente a 16 veces las muestras). Por debajo de
+`α = 0,002` no hay compensación: la rugosidad 0 conserva los bits.
+
+**Medios dispersores** (`rt_core::integrator::medium`). Un sólido claro
+(transmisión, no pared fina, no metal, no emisor, `ior ≥ 1,0001`) con
+`scatter_mm > 0` está lleno de un medio homogéneo: `σt = 1/scatter_mm`,
+`σs = albedo σt`, `σa = (1 − albedo) σt` por canal, más la absorción de
+`absorption_mm` y `base_color` si la hay. El camino que refracta dentro
+hace un paseo aleatorio (Chiang, Kutz y Burley, SIGGRAPH 2016): distancias
+de un canal *héroe* elegido una vez por paseo con MIS espectral sobre los
+tres (Wilkie et al. 2014, cocientes renormalizados en cada paso), fase de
+Henyey–Greenstein y, tras 32 eventos, ruleta rusa sobre el peso del propio
+paseo (lo que ha perdido desde que entró: el camino entra con el `1/η²` de
+la refracción, que la salida devuelve).
+**Sin estimación del siguiente evento dentro.** Un paseo que no dispersa
+cruza como el vidrio claro; uno que dispersa, al llegar a la frontera, se
+refleja hacia dentro con el Fresnel de salida (reflexión total incluida) o
+sale: el vértice de salida es un vértice de superficie con un lóbulo de
+transmisión lambertiano de albedo `η²` (`Bsdf::medium_exit`), donde el
+integrador muestrea una luz con su MIS y sigue con una dirección por el
+coseno. Como máximo 1024 pasos por camino (eventos y reflexiones en la
+frontera); pasado el tope, el paseo va recto a la frontera conservando todo
+salvo la absorción y sale por el lóbulo. Los medios no cuentan contra
+`RNDR.max_depth`. Todos sus números son dimensiones *hash* más allá de la
+tabla Sobol (`sampler::medium_dim`, 8 por paso), así que una escena sin
+medios no cambia ni un bit. Para el mapa de fotones un medio es receptor:
+guarda fotones en su superficie y ninguno entra (`caustics::is_caster`);
+el vértice de salida recoge los del exterior de su superficie.
+**Paredes finas alrededor de un medio** (una **aproximación**): un rayo de
+sombra desde un vértice de salida, y solo desde uno, atraviesa una pared de
+vidrio liso (rugosidad ≤ 0,05, del todo clara, sin barniz ni medio propio)
+donde la luz que la cruzara refractando saldría a menos de 5 mm de su
+entrada por una cara a menos de 15° de la primera, como si las dos
+refracciones se anularan: conserva las transmitancias de Fresnel de entrada
+y de salida y la absorción de la pared en ese tramo (su tinte en cada cara
+sin distancia de absorción), y sigue en su dirección desde la cara de
+salida; una pared más gruesa, rugosa o con barniz lo sigue parando. En una
+losa de leche bajo una placa de 3 mm queda un 2,0 % por debajo del camino
+exacto. Para el MIS, una muestra de la BSDF del vértice de salida que
+entra y sale de una pared así es un suceso recto de ese vértice (conserva
+su densidad y su distancia), así que una luz que encuentra detrás pesa
+frente a esos rayos de sombra; con cáusticas, la luz de una luz de fotones
+a través de una pared es del mapa, como a través de cualquier *caster*.
+Es lo que deja ver las luces a un líquido dentro de un frasco por el lado
+del frasco; la solución exacta (NEE de variedades) es E13.
+*Hash* fijado: la escena de E5 con un medio en su esfera de vidrio rugoso,
+`PINNED_E9_MEDIA_4SPP` (`rt --write-e9-example`, `tests/fixtures/e9.rsb`),
+igual en todas las rutas SIMD, en WASI, en el `rt.wasm` real y por el
+código de la página. En el visor **Rápido** (`src/render/materials.ts`),
+un medio es un difuso translúcido: el color con que vuelve la luz
+(similitud de van de Hulst, `(1 − s)(1 − 0,139 s)/(1 + 1,17 s)` con
+`s = √(1 − albedo)`) y una transmisión que baja con lo denso que es el
+medio para el tamaño de la pieza; la ayuda del inspector dice que Rápido lo
+aproxima.
+
+**Dispersión cromática** (`rt_core::integrator::dispersion`, E9c). Un
+sólido claro sin medio con `abbe > 0` refracta cada longitud de onda con
+su índice: la ley de Cauchy de dos términos, `n(λ) = A + B/λ²`, que pasa
+por `ior` en la línea d del helio (587,6 nm) y da el número de Abbe
+`V = (n_d − 1)/(n_F − n_C)` (líneas F, 486,1 nm, y C, 656,3 nm, del
+hidrógeno). El motor no es espectral: cada canal es una banda de
+longitudes de onda (rojo 580–700, verde 490–580, azul 400–490 nm). Al
+primer vidrio dispersivo que encuentra, un camino elige un canal con
+probabilidad ⅓ y una longitud de onda uniforme dentro de su banda, con una
+dimensión *hash* propia (`sampler::DIM_DISPERSION`, `1 << 23`), y desde
+ahí lleva solo ese canal, por 3, y refracta con esa longitud de onda en
+todo vidrio dispersivo; la esperanza de cada canal es la de refractar su
+banda entera. Los fotones de las cáusticas hacen lo mismo con su propio
+generador. Un camino que no encuentra vidrio dispersivo sigue blanco, así
+que una escena sin ninguno no cambia ni un bit. El precio es ruido de color
+donde hay dispersión. Los rayos de sombra no atraviesan el vidrio (E5) y la
+regla de las paredes de los medios usa `ior`, sin dispersión. *Hash*
+fijado: la escena de E9 lleva desde E9c una esfera de cristal de Abbe 40
+(`PINNED_E9_MEDIA_4SPP`). En **Rápido**, la `dispersion` de three.js
+(`KHR_materials_dispersion`: 20 / número de Abbe, hasta 2), solo en vidrio
+macizo sin medio.
 
 ### 5.3 · En el navegador: workers
 

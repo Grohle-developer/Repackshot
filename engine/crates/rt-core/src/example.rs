@@ -364,6 +364,49 @@ pub fn e5b_scene() -> Scene {
     scene
 }
 
+/// The E9 parity scene (`render.rs` pins its hash; `rt --write-e9-example` writes it for
+/// `tools/wasm-parity.mjs`): the E5 scene ([`e5_scene`], HDRI) with its big sphere filled with a
+/// scattering medium (a warm, slightly forward-scattering wax with an absorption distance, so the
+/// extinction differs between channels and the walk's spectral MIS is in the hash) behind a rough
+/// boundary, so walks, their reflections back in, their exit vertices with their light samples and
+/// the plain crossings all take part; and (E9c) a sphere of dispersive crystal (index 1.56, Abbe
+/// number 40) at the front right, so the wavelength a path chooses is in the hash too.
+pub fn e9_scene() -> Scene {
+    let mut scene = e5_scene(false);
+    scene.materials.push(Material {
+        kind: crate::scene::MATERIAL_GLASS,
+        roughness: 0.0,
+        ior: 1.56,
+        transmission: 1.0,
+        abbe: 40.0,
+        ..Material::default()
+    });
+    let mut instances = scene.geometry.instances().to_vec();
+    instances.push(Instance::new(
+        0,
+        Transform::from_rows([
+            [0.4, 0.0, 0.0, 200.0],
+            [0.0, 0.4, 0.0, -120.0],
+            [0.0, 0.0, 0.4, 0.0],
+        ]),
+        scene.materials.len() as u32 - 1,
+    ));
+    scene.geometry = Geometry::new(scene.geometry.meshes().to_vec(), instances).unwrap_or_default();
+    scene.materials[0] = Material {
+        kind: crate::scene::MATERIAL_GLASS,
+        base_color: Rgb::new(0.85, 0.7, 0.5),
+        roughness: 0.3,
+        ior: 1.44,
+        transmission: 1.0,
+        absorption_mm: 120.0,
+        scatter_mm: 4.0,
+        scatter_color: Rgb::new(0.995, 0.98, 0.95),
+        scatter_g: 0.3,
+        ..Material::default()
+    };
+    scene
+}
+
 /// The E11 parity scene: the example with the Blackman–Harris filter and twice the samples on
 /// its edges (`rt --write-e11-example`; `tools/wasm-parity.mjs` checks the real module renders
 /// rt-core's pinned image of it).

@@ -68,11 +68,14 @@ today.
   Rembrandt to a bright field does not change how bright the image is.
   Fine-tune every light in photographer's terms (softbox size, kelvin,
   spread), or place a light by pointing at where you want its reflection.
-- **77 materials in 7 categories** (metals, plastics, woods, fabrics, glass,
+- **86 materials in 7 categories** (metals, plastics, woods, fabrics, glass,
   emitters, others), each with its physics: brushed and polished metals,
   ABS, SLS nylon, printed PLA, polycarbonate, acrylic, 13 procedural
   woods, 11 woven fabrics, clear and frosted glass, Edison filaments to
-  sodium lamps and neon, car paint, carbon fibre, leather, ceramic.
+  sodium lamps and neon, car paint, carbon fibre, leather, ceramic, and
+  translucent ones that light scatters inside: white HDPE, natural PP,
+  frosted acrylic, wax, glycerine soap, milk, orange and apple juice,
+  cream.
   **Procedural wear** on every one of them: worn edges, scratches,
   fingerprints, dust, dirt in crevices, patina, micro roughness, dents,
   with nine one-click looks from *fresh from the factory* to *aged*, and

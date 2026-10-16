@@ -691,8 +691,15 @@ salvo los dos que construyen cosas: *Crear estudio* y *Render*.
    la suelta cae en la cara bajo el cursor. Debajo, los
    **parámetros** de la familia del material: color, metal, rugosidad,
    barniz, IOR, transmisión, opacidad, anisotropía, subsuperficie; vidrio
-   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm y
-   *Paredes*: *Macizo · Pared fina*); madera
+   (color, rugosidad, IOR, transmisión, *Distancia de absorción* en mm,
+   *Paredes*: *Macizo · Pared fina*, y bajo ellos, E9, *Dispersión
+   interna* en mm —lo que recorre la luz dentro entre dos rebotes; 0,
+   transparente—, *Color de dispersión* —lo que conserva cada rebote de
+   cada color— y *Dirección*, de −0,9 a 0,9, con la ayuda «hacia delante /
+   hacia atrás»; la ayuda de *Dispersión interna* dice que el modo Rápido
+   la aproxima; y, E9c, *Número de Abbe*, de 0 a 100 —la dispersión
+   cromática del vidrio macizo: cuanto menor, más separa los colores; 0,
+   ninguna—, cuya ayuda dice también que Rápido la aproxima); madera
    (dos colores, densidad de anillos…); tela (dos colores de hilo, tipo de
    tejido, hilos por cm, pelusa); emisor (tipo, temperatura, potencia).
    Solo se pintan los que la familia usa. Un botón *Convertir en material
@@ -1963,7 +1970,7 @@ Lo que **sí** debe funcionar de verdad en U1:
 - Catálogo de montajes de luz con sus 72 miniaturas, filtro por estilo,
   intención, anterior / siguiente; al elegir uno, el rig del visor cambia
   (`setupRig()`): se tienen que ver moverse las luces y cambiar su color.
-- Catálogo de materiales con sus 77 presets y sus esferas (ver §6),
+- Catálogo de materiales con sus 86 presets y sus esferas (ver §6),
   asignación por nivel con inventario de confirmación, parámetros por
   familia que se reflejan en el visor (color, metal, rugosidad, barniz,
   transmisión, emisión; madera y tela como aproximación de color plano
@@ -2048,7 +2055,7 @@ Lo que revisa quien reciba el PR, en este orden:
    recorre `src/ui/**/*.css` y falla si algún color (`#rgb`, `#rrggbb`,
    `rgb()`, `hsl()`) tiene saturación distinta de cero. Las miniaturas y
    el visor quedan fuera porque son contenido.
-3. Las 72 miniaturas de montaje y las 77 esferas de material se ven y se
+3. Las 72 miniaturas de montaje y las 86 esferas de material se ven y se
    eligen; cambiar montaje mueve las luces del visor; cambiar material
    cambia la pieza.
 4. Flujo completo sin ratón salvo en el visor: `Ctrl K` → "ejemplo" →

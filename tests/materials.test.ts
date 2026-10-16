@@ -16,8 +16,8 @@ import { partsWithMaterial, sharesMaterial } from '../src/core/transform';
 import { apply, exampleState, keyIds } from './helpers';
 
 describe('material instances', () => {
-  it('every one of the 82 presets (77 and the five set pieces of L6) makes an instance with wear and bevel', () => {
-    expect(MATERIAL_PRESETS).toHaveLength(82);
+  it('every one of the 92 presets (77, the five set pieces of L6, the ten of E9) makes an instance with wear and bevel', () => {
+    expect(MATERIAL_PRESETS).toHaveLength(92);
     for (const p of MATERIAL_PRESETS) {
       const m = instanceFromPreset('m1', p.key, 100)!;
       expect(m.family).toBe(p.family);

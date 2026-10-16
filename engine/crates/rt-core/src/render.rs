@@ -830,9 +830,9 @@ mod tests {
     }
 
     /// Pinned hash of the tile at the centre of the example (sample 3).
-    const PINNED_CENTRE: u32 = 0x8023_c8cf;
+    const PINNED_CENTRE: u32 = 0xe251_5c9a;
     /// Pinned hash of the tile over the small sphere of the example (sample 3).
-    const PINNED_SMALL_SPHERE: u32 = 0x8b22_0e08;
+    const PINNED_SMALL_SPHERE: u32 = 0x7b62_574d;
 
     /// Renders the whole example, 32-pixel tiles, samples `0..4`, and hashes the resolved film.
     pub(crate) fn example_4spp_hash() -> u32 {
@@ -859,7 +859,7 @@ mod tests {
     }
 
     /// Pinned hash of the whole example image at 4 samples per pixel.
-    pub(crate) const PINNED_EXAMPLE_4SPP: u32 = 0x8206_111f;
+    pub(crate) const PINNED_EXAMPLE_4SPP: u32 = 0x75ba_4cb4;
 
     /// Renders the whole E5 example (`sky` or HDRI), 32-pixel tiles, samples `0..4`, and hashes
     /// the resolved film.
@@ -901,9 +901,9 @@ mod tests {
     }
 
     /// Pinned hash of the E5 example (HDRI) at 4 samples per pixel.
-    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0x065d_16e0;
+    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0xfdf0_c2ac;
     /// Pinned hash of the E5 example (sky) at 4 samples per pixel.
-    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x1c24_c35c;
+    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x47fa_4eb7;
 
     #[test]
     fn the_e5c_physical_sky_has_a_pinned_hash_on_every_platform() {
@@ -922,7 +922,7 @@ mod tests {
     }
 
     /// Pinned hash of the E5c example (physical sky) at 4 samples per pixel.
-    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x9f4a_f472;
+    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0xf6fb_c84f;
 
     /// Renders all of `scene`, 32-pixel tiles, samples `0..4`, each with its photon map (traced
     /// once per sample, as every host does), and hashes the resolved film.
@@ -961,8 +961,28 @@ mod tests {
         assert_eq!(scene_4spp_hash(&scene, Isa::detect()), PINNED_E5_HDRI_4SPP);
     }
 
+    #[test]
+    fn the_e9_media_have_a_pinned_hash_on_every_platform() {
+        // E9b added scattering media and E9c dispersion. Scenes without either draw exactly the
+        // numbers they drew before (the hashes above); this one walks a medium behind a rough
+        // boundary and leaves it by exit vertices that sample the lights, and sends paths through
+        // a crystal sphere at the wavelength they choose there, through an RSB round trip;
+        // `tools/wasm-parity.mjs` checks the real module against it (`rt --write-e9-example`).
+        let scene = crate::example::e9_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("E9 example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(hash, PINNED_E9_MEDIA_4SPP, "media on {}", isa.name());
+        }
+    }
+
+    /// Pinned hash of the E9 example (scattering media and, since E9c, a dispersive crystal) at
+    /// 4 samples per pixel (E9b: `0xc6c9_036e`, without the crystal).
+    pub(crate) const PINNED_E9_MEDIA_4SPP: u32 = 0x5b5e_a281;
+
     /// Pinned hash of the E5b-1 example (caustics) at 4 samples per pixel.
-    pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x5419_866e;
+    pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x7135_df4b;
 
     #[test]
     fn the_o1_lens_has_a_pinned_hash_on_every_platform() {
@@ -981,7 +1001,7 @@ mod tests {
     }
 
     /// Pinned hash of the O1 example (the busy lens) at 4 samples per pixel.
-    pub(crate) const PINNED_O1_LENS_4SPP: u32 = 0x1439_a1a8;
+    pub(crate) const PINNED_O1_LENS_4SPP: u32 = 0x087d_1276;
 
     /// Renders all of `scene` as a host does with edge samples (E11): 32-pixel tiles, an
     /// [`EdgeMask`] per tile, samples `0..4`, and hashes the resolved film.
@@ -1024,7 +1044,7 @@ mod tests {
     }
 
     /// Pinned hash of the E11 example (fine filter, edges ×2) at 4 samples per pixel.
-    pub(crate) const PINNED_E11_EDGES_4SPP: u32 = 0x3d8f_85de;
+    pub(crate) const PINNED_E11_EDGES_4SPP: u32 = 0xd017_02ce;
 
     #[test]
     fn the_o3a_filters_have_a_pinned_hash_on_every_platform() {
@@ -1047,7 +1067,7 @@ mod tests {
     }
 
     /// Pinned hash of the O3a example (the filter stack) at 4 samples per pixel.
-    pub(crate) const PINNED_O3A_FILTERS_4SPP: u32 = 0x4993_8f3b;
+    pub(crate) const PINNED_O3A_FILTERS_4SPP: u32 = 0x21e4_3bb1;
 
     #[test]
     fn the_o2_traced_lens_has_a_pinned_hash_on_every_platform() {
@@ -1071,7 +1091,7 @@ mod tests {
     }
 
     /// Pinned hash of the O2 example (the traced double Gauss) at 4 samples per pixel.
-    pub(crate) const PINNED_O2_TRACED_4SPP: u32 = 0xe2e8_e3ab;
+    pub(crate) const PINNED_O2_TRACED_4SPP: u32 = 0x8f7d_0ef8;
 
     #[test]
     fn the_bvh_renders_exactly_what_brute_force_renders() {

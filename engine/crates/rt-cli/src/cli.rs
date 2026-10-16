@@ -26,6 +26,8 @@ USAGE:
     rt --write-e5-example <scene.rsb>
     rt --write-e5c-example <scene.rsb>
     rt --write-e5b-example <scene.rsb>
+    rt --write-e9-example <scene.rsb>
+    rt --sss-sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-e11-example <scene.rsb>
     rt --write-ambient-example <scene.rsb>
     rt --write-o1-example <scene.rsb>
@@ -96,6 +98,15 @@ OPTIONS:
         --write-e5b-example <f>
                             write the E5b-1 parity scene (the E5 scene with caustic photons)
                             as an RSB file
+        --write-e9-example <f>
+                            write the E9 parity scene (the E5 scene with a scattering
+                            medium in its big sphere and a dispersive crystal sphere) as
+                            an RSB file
+        --sss-sheet <dir>   render the E9 contact sheet of the scattering media (each
+                            recipe as a sphere, the perfume bottle filled with milk and
+                            juice, with and without the medium, the milk bottle with
+                            caustic photons, at N and 4 N samples, default 64) into
+                            <dir>: sss-sheet.html and sss/*.png
         --write-e11-example <f>
                             write the E11 parity scene (the example with the fine filter and
                             twice the samples on its edges) as an RSB file
@@ -284,6 +295,18 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the E9 parity scene (`rt_core::example::e9_scene`) as an RSB file.
+    WriteE9Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Render the E9 contact sheet of the scattering media into a directory.
+    SssSheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// Samples, threads and size overrides.
+        options: Options,
+    },
     /// Write the E11 parity scene (`rt_core::example::e11_scene`) as an RSB file.
     WriteE11Example {
         /// RSB file to write.
@@ -389,6 +412,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_e5 = None;
     let mut write_e5c = None;
     let mut write_e5b = None;
+    let mut write_e9 = None;
+    let mut sss_dir = None;
     let mut write_e11 = None;
     let mut write_ambient = None;
     let mut write_o1 = None;
@@ -479,6 +504,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
                 }
             }
             "--sheet" => sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--sss-sheet" => sss_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--filter-sheet" => filter_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--filter-noise" => filter_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--lens-sheet" => lens_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
@@ -498,6 +524,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--write-e5-example" => write_e5 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5c-example" => write_e5c = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e5b-example" => write_e5b = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-e9-example" => write_e9 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-e11-example" => write_e11 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--write-ambient-example" => {
                 write_ambient = Some(PathBuf::from(value(&mut it, arg)?));
@@ -544,6 +571,18 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--write-e5b-example takes no other option".into());
         }
         return Ok(Command::WriteE5bExample { path });
+    }
+    if let Some(path) = write_e9 {
+        if args.len() != 2 {
+            return Err("--write-e9-example takes no other option".into());
+        }
+        return Ok(Command::WriteE9Example { path });
+    }
+    if let Some(dir) = sss_dir {
+        if input.is_some() || output.is_some() {
+            return Err("--sss-sheet renders its own scenes".into());
+        }
+        return Ok(Command::SssSheet { dir, options });
     }
     if let Some(path) = write_e11 {
         if args.len() != 2 {
@@ -708,6 +747,12 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
+        Command::WriteE9Example { path } => {
+            let bytes = rt_core::example::e9_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
         Command::WriteE11Example { path } => {
             let bytes = rt_core::example::e11_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -718,6 +763,22 @@ pub fn run(command: Command) -> Result<(), String> {
             let bytes = rt_core::example::ambient_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::SssSheet { dir, options } => {
+            let size = options.size.unwrap_or(crate::sss_sheet::SIZE);
+            let samples = options.samples.unwrap_or(crate::sss_sheet::SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            let entries = crate::sss_sheet::run(&dir, size, samples, threads)?;
+            for e in &entries {
+                println!(
+                    "{:<36} {:>5} spp {:>8.1} s  mean {:.3}",
+                    e.key, e.samples, e.seconds, e.mean
+                );
+            }
+            println!("wrote {}", dir.join("sss-sheet.html").display());
             Ok(())
         }
         Command::WriteO1Example { path } => {
