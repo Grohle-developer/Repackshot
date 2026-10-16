@@ -562,6 +562,10 @@ impl Tracer for BruteForce<'_> {
     fn trace_shadow(&self, ray: &Ray) -> Option<crate::geometry::RayHit> {
         self.0.brute_force(ray, crate::geometry::RayClass::Shadow).0
     }
+
+    fn trace_rough(&self, ray: &Ray) -> Option<crate::geometry::RayHit> {
+        self.0.brute_force(ray, crate::geometry::RayClass::Rough).0
+    }
 }
 
 /// [`render_tile`] through [`BruteForce`]. Tests only.

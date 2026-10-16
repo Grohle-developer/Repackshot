@@ -20,7 +20,9 @@
 //! **Particles** (S4a). Each particle set is one more entry of the top level, walked after the
 //! instance BVH: its own flat BVH in world space, one particle per leaf ([`ParticleSet`]), with
 //! the nearest part found so far as the end of the search (the particles behind the part are never
-//! visited; an any-hit query that a part already answered does not look at them). A hit offers
+//! visited; an any-hit query that a part already answered does not look at them). A camera ray of
+//! a pinhole camera tests the particles of its cell of the set's screen grid instead (S4b,
+//! [`ParticleSet`]): a superset of the leaves it would visit. A hit offers
 //! `(t, instance of the set, particle id)` to the same order, so the same exactness holds. The
 //! [`RayClass`] of the query says which sets it sees.
 
@@ -698,15 +700,28 @@ fn nearest<B: Backend>(
         if set.is_empty() || !class.sees(set) {
             continue;
         }
+        let camera = class == RayClass::Camera;
+        let instance = first_set + k as u32;
+        // A camera ray from the pinhole's centre tests the particles of its cell of the screen
+        // grid (S4b): the same tests, so the same nearest hit.
+        if let Some((cell, everywhere)) = camera.then(|| set.screen_candidates(ray)).flatten() {
+            for &slot in cell.iter().chain(everywhere) {
+                let slot = slot as usize;
+                if let Some(t) = set.hit(slot, ray, r.t_min, best.t, true) {
+                    best.offer(t, instance, set.id(slot));
+                }
+            }
+            continue;
+        }
         let mut leaves = NearestParticles {
             set,
             ray,
             t_min: r.t_min,
-            camera: class == RayClass::Camera,
-            instance: first_set + k as u32,
+            camera,
+            instance,
             best: &mut best,
         };
-        walk_particles::<B, _>(set, &r, true, class == RayClass::Camera, &mut leaves, stack);
+        walk_particles::<B, _>(set, &r, true, camera, &mut leaves, stack);
     }
     best.hit()
 }

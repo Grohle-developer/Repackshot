@@ -1083,9 +1083,11 @@ pub fn e11_scene() -> Scene {
 
 /// The S4a parity scene: the example at 160 x 120 with three ambient effects, one of each shape:
 /// 20 000 motes of dust (spheres, fine enough to be widened to the minimum size on screen, with
-/// turbulence and tint variation), 3 000 raindrops (glass capsules slanted by the wind) and 2 000
-/// spinning snowflakes (discs, from a palette) that cast no shadow. `render.rs` pins its hash;
-/// `rt --write-ambient-example` writes it for `tools/wasm-parity.mjs`.
+/// turbulence, tint variation and, since S4b, the forward lobe of the dust preset), 3 000
+/// raindrops (glass capsules slanted by the wind, which shadow rays and the rays after a rough
+/// vertex cross straight, S4b) and 2 000 spinning snowflakes (discs, from a palette) that cast no
+/// shadow. `render.rs` pins its hash; `rt --write-ambient-example` writes it for
+/// `tools/wasm-parity.mjs`.
 pub fn ambient_scene() -> Scene {
     use crate::scene::{AmbientParams, MATERIAL_GLASS};
     use rt_sim::{Shape, FLAG_CAMERA, FLAG_REFLECTIONS, FLAG_SHADOW};
@@ -1135,6 +1137,8 @@ pub fn ambient_scene() -> Scene {
             tint_var: 0.4,
             flags: all,
             energy: 20.0,
+            forward: 0.5,
+            forward_g: 0.7,
             ..region
         },
         AmbientParams {

@@ -49,6 +49,10 @@
 //!   the distribution, Smith term and visible-normal sampling are the anisotropic GGX ones
 //!   (Heitz 2014, 2018). `a = 0` computes exactly what the isotropic lobe computes.
 //!
+//! * **Forward lobe** (S4b, [`forward`]): the particles of the ambient effects that ask for it
+//!   (dust, pollen, a dust cloud) scatter a share of the light by Henyey and Greenstein's phase
+//!   function around the direction it travelled; the surface keeps the rest. Every other surface
+//!   has none, and its BSDF is exactly the one described here.
 //! * **Multiple scattering** (E9a, [`energy`]): rough lobes get back the light that single
 //!   scattering loses between microfacets. The specular lobe (metal and opaque dielectric) and the
 //!   coat get Kulla and Conty's extra lobe `F_ms (1 - E(μo)) (1 - E(μi)) / (π (1 - E_avg))`,
@@ -72,6 +76,7 @@ use crate::warp;
 
 pub mod energy;
 pub mod energy_table;
+pub mod forward;
 
 /// Smallest GGX width: roughness 0 renders as an almost perfect mirror.
 pub const MIN_ALPHA: f32 = 1.0e-3;
@@ -344,6 +349,8 @@ pub struct Bsdf {
     coat_layer: energy::Layer,
     /// The diffuse lobe's normalisation under both layers ([`energy::joint_norm`]).
     diffuse_norm: f32,
+    /// The forward lobe of an ambient particle (S4b, [`forward`]); none for any other surface.
+    forward: forward::Forward,
 }
 
 impl Bsdf {
@@ -411,6 +418,7 @@ impl Bsdf {
             base_layer: energy::Layer::CLEAR,
             coat_layer: energy::Layer::CLEAR,
             diffuse_norm: 1.0,
+            forward: forward::Forward::NONE,
         };
         bsdf.ms = bsdf.multiple_scattering();
         bsdf.layers();
@@ -517,6 +525,7 @@ impl Bsdf {
             base_layer: energy::Layer::CLEAR,
             coat_layer: energy::Layer::CLEAR,
             diffuse_norm: 1.0,
+            forward: forward::Forward::NONE,
         }
     }
 
@@ -561,7 +570,13 @@ impl Bsdf {
         }
         let cos = cos.abs().min(1.0);
         let t = 1.0 - thin_reflectance(cos, self.eta);
-        self.tint * (self.clear * (1.0 - self.coat_fresnel(cos)) * t)
+        let through = self.tint * (self.clear * (1.0 - self.coat_fresnel(cos)) * t);
+        if self.forward.is_on() {
+            // The surface's share of the mixture with the forward lobe (S4b).
+            through * (1.0 - self.forward.share)
+        } else {
+            through
+        }
     }
 
     /// True when the specular lobe can reflect anything.
@@ -662,10 +677,8 @@ impl Bsdf {
         }
     }
 
-    /// `f(wo, wi)` (without the cosine). Zero unless `wo` is above the surface; `wi` below it
-    /// is the refraction of a solid clear part (thin walls transmit only straight, which no
-    /// evaluation sees).
-    pub fn eval(&self, wo: Vec3, wi: Vec3, lobes: Lobes) -> Rgb {
+    /// The surface's part of [`Bsdf::eval`] (everything but the forward lobe of S4b).
+    fn eval_surface(&self, wo: Vec3, wi: Vec3, lobes: Lobes) -> Rgb {
         if wo.z <= 0.0 {
             return Rgb::BLACK;
         }
@@ -749,9 +762,9 @@ impl Bsdf {
         self.tint * (self.clear * attenuation * value)
     }
 
-    /// Density, per steradian, with which [`Bsdf::sample`] returns `wi` for this `wo` (the
-    /// straight transmission of thin walls, a delta, is not part of it).
-    pub fn pdf(&self, wo: Vec3, wi: Vec3) -> f32 {
+    /// The surface's part of [`Bsdf::pdf`]: the density with which [`Bsdf::sample_surface`]
+    /// returns `wi`.
+    fn pdf_surface(&self, wo: Vec3, wi: Vec3) -> f32 {
         if wo.z <= 0.0 {
             return 0.0;
         }
@@ -804,10 +817,8 @@ impl Bsdf {
         w.clear * (1.0 - self.reflect_chance(wo.z, co)) * visible * jacobian
     }
 
-    /// Samples an incident direction for `wo` from the 2-D sample `u`. `None` when the surface
-    /// scatters nothing towards `wo`, or the sampled direction is not on the side its lobe
-    /// scatters to (total internal reflection of a microfacet included).
-    pub fn sample(&self, wo: Vec3, u: (f32, f32)) -> Option<BsdfSample> {
+    /// The surface's part of [`Bsdf::sample`] (everything but the forward lobe of S4b).
+    fn sample_surface(&self, wo: Vec3, u: (f32, f32)) -> Option<BsdfSample> {
         if wo.z <= 0.0 {
             return None;
         }
@@ -854,7 +865,7 @@ impl Bsdf {
         if !(pdf > 0.0 && pdf.is_finite()) {
             return None;
         }
-        let weight = self.eval(wo, wi, Lobes::All) * (wi.z / pdf);
+        let weight = self.eval_surface(wo, wi, Lobes::All) * (wi.z / pdf);
         Some(BsdfSample {
             wi,
             weight,
@@ -881,7 +892,7 @@ impl Bsdf {
             if !(pdf > 0.0 && pdf.is_finite()) {
                 return None;
             }
-            let weight = self.eval(wo, wi, Lobes::All) * (wi.z / pdf);
+            let weight = self.eval_surface(wo, wi, Lobes::All) * (wi.z / pdf);
             return Some(BsdfSample {
                 wi,
                 weight,
@@ -943,7 +954,7 @@ impl Bsdf {
             if !(pdf > 0.0 && pdf.is_finite()) {
                 return None;
             }
-            let weight = self.eval(wo, wi, Lobes::All) * (wi.z / pdf);
+            let weight = self.eval_surface(wo, wi, Lobes::All) * (wi.z / pdf);
             return Some(BsdfSample {
                 wi,
                 weight,

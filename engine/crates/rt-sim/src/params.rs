@@ -39,7 +39,11 @@
 //! 136  f32       spin                   turns per second of discs (0)
 //! 140  u32       palette_count          tints to choose from, 0..=4 (0)
 //! 144  f32[4][3] palette                linear RGB, multiplies the material's base colour
-//! ---- 192 B
+//! ---- 192 B (S4a)
+//! 192  f32       forward                share of the forward lobe of the particles' material,
+//!                                       0..1 (0: none; S4b)
+//! 196  f32       forward_g              its Henyey–Greenstein asymmetry, -1 < g < 1 (0)
+//! ---- 200 B
 //! ```
 
 use std::fmt;
@@ -47,7 +51,7 @@ use std::fmt;
 /// Bytes a payload must have: the fields of the brief.
 pub const FXAM_MIN_BYTES: usize = 128;
 /// Bytes this version writes.
-pub const FXAM_BYTES: usize = 192;
+pub const FXAM_BYTES: usize = 200;
 /// Largest `count` accepted (16 777 216): a hostile file cannot ask for more memory than that.
 pub const MAX_COUNT: u32 = 1 << 24;
 /// Most tints of a palette.
@@ -175,6 +179,11 @@ pub struct AmbientParams {
     pub palette_count: u32,
     /// Tints a particle picks one of (linear RGB multipliers of the base colour).
     pub palette: [[f32; 3]; MAX_PALETTE],
+    /// Share of what a particle scatters that goes into a forward lobe (Henyey–Greenstein), 0..1
+    /// (S4b; 0: none).
+    pub forward: f32,
+    /// Asymmetry of that lobe, `-1 < g < 1`.
+    pub forward_g: f32,
 }
 
 impl Default for AmbientParams {
@@ -207,6 +216,8 @@ impl Default for AmbientParams {
             spin: 0.0,
             palette_count: 0,
             palette: [[1.0; 3]; MAX_PALETTE],
+            forward: 0.0,
+            forward_g: 0.0,
         }
     }
 }
@@ -269,8 +280,8 @@ impl Reader<'_> {
 
 impl AmbientParams {
     /// Reads an `FXAM` payload. Fails when it is shorter than [`FXAM_MIN_BYTES`], holds a
-    /// non-finite number, a negative size, radius or scale, more than [`MAX_COUNT`] particles or
-    /// more than [`MAX_PALETTE`] tints.
+    /// non-finite number, a negative size, radius or scale, more than [`MAX_COUNT`] particles,
+    /// more than [`MAX_PALETTE`] tints, or a forward lobe outside its ranges.
     pub fn decode(payload: &[u8]) -> Result<AmbientParams, FxamError> {
         if payload.len() < FXAM_MIN_BYTES {
             return Err(FxamError::TooShort);
@@ -307,6 +318,8 @@ impl AmbientParams {
             spin: r.opt_f32(d.spin)?,
             palette_count: r.opt_u32(d.palette_count),
             palette: d.palette,
+            forward: d.forward,
+            forward_g: d.forward_g,
         };
         if p.palette_count as usize > MAX_PALETTE {
             return Err(FxamError::Invalid("palette_count must be at most 4"));
@@ -315,6 +328,14 @@ impl AmbientParams {
             if r.has(12) {
                 *tint = r.vec3()?;
             }
+        }
+        p.forward = r.opt_f32(d.forward)?;
+        p.forward_g = r.opt_f32(d.forward_g)?;
+        if !(0.0..=1.0).contains(&p.forward) {
+            return Err(FxamError::Invalid("forward must be within 0..1"));
+        }
+        if !(p.forward_g > -1.0 && p.forward_g < 1.0) {
+            return Err(FxamError::Invalid("forward_g must be within -1..1"));
         }
         if p.count > MAX_COUNT {
             return Err(FxamError::Invalid("count must be at most 16777216"));
@@ -378,6 +399,8 @@ impl AmbientParams {
         for v in self.palette.iter().flatten() {
             u(v.to_bits());
         }
+        u(self.forward.to_bits());
+        u(self.forward_g.to_bits());
         out
     }
 
@@ -424,6 +447,8 @@ mod tests {
                 [1.0, 1.0, 1.0],
                 [1.0, 1.0, 1.0],
             ],
+            forward: 0.5,
+            forward_g: 0.7,
         }
     }
 
@@ -454,6 +479,7 @@ mod tests {
             (0.9, 120.0, 1.5, 2)
         );
         assert_eq!((float(144), float(156 + 4)), (1.0, 0.4));
+        assert_eq!((float(192), float(196)), (0.5, 0.7));
     }
 
     #[test]
@@ -468,6 +494,10 @@ mod tests {
         );
         assert_eq!(short.palette, AmbientParams::default().palette);
         assert_eq!(short.streak, p.streak);
+        // A payload of S4a (192 bytes) has no forward lobe.
+        let s4a = AmbientParams::decode(&bytes[..192]).unwrap();
+        assert_eq!((s4a.forward, s4a.forward_g), (0.0, 0.0));
+        assert_eq!(s4a.palette, p.palette);
         // Longer payloads (a newer writer) are read as far as this version knows them.
         let mut long = bytes.clone();
         long.extend_from_slice(&[0xff; 40]);
@@ -494,6 +524,12 @@ mod tests {
         assert!(check(&|p| p.palette_count = 5).is_err());
         assert!(check(&|p| p.time = f32::NAN).is_err());
         assert!(check(&|p| p.wind[1] = f32::INFINITY).is_err());
+        assert!(check(&|p| p.forward = 1.0).is_ok());
+        assert!(check(&|p| p.forward = 1.01).is_err());
+        assert!(check(&|p| p.forward = -0.1).is_err());
+        assert!(check(&|p| p.forward_g = -0.99).is_ok());
+        assert!(check(&|p| p.forward_g = 1.0).is_err());
+        assert!(check(&|p| p.forward_g = f32::NAN).is_err());
         // Negative gravity rises, a negative time is a time: both are fine.
         assert!(check(&|p| p.gravity = -1.0).is_ok());
         assert!(check(&|p| p.time = -2.0).is_ok());

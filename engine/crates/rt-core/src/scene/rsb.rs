@@ -1154,7 +1154,7 @@ fn read_scene(bytes: &[u8], kept: Option<Kept>) -> Result<Scene, RsbError> {
     let render = render.unwrap_or_default();
     let width = crate::geometry::BvhWidth::native();
     let footprint = PixelFootprint::of(&camera, render.width, render.height);
-    let sets = particle_sets(&effects, kept_sets, footprint, width);
+    let sets = particle_sets(&effects, kept_sets, footprint, width, &scene.materials);
     scene.geometry = Geometry::with_particles(meshes, instances, sets, width)
         .map_err(|_| invalid_instance("too many instances"))?;
     scene.bitmaps = bitmaps;
