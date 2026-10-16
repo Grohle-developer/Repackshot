@@ -1113,6 +1113,7 @@ mod tests {
             ]),
             noisy: None,
             version: 1,
+            adaptive: None,
         };
         let img = linear_of(&frame).unwrap();
         let inv = (1.0f64 / 3.0) as f32;

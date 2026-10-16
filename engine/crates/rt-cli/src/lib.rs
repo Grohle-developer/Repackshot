@@ -254,8 +254,21 @@ pub fn render_progressive(
     threads: usize,
     budget: Option<Duration>,
 ) -> RenderOutput {
+    let spent = |_rays: u64, elapsed: Duration| budget.is_some_and(|b| elapsed >= b);
+    render_until(scene, samples, threads, &spent)
+}
+
+/// [`render_progressive`] that stops between passes once `spent(rays, elapsed)` says so (the
+/// rays cast and the time since the start): a time budget, or the cost of another render (the
+/// measurement of E10, [`adaptive_noise`]).
+pub fn render_until(
+    scene: &Scene,
+    samples: u32,
+    threads: usize,
+    spent: &dyn Fn(u64, Duration) -> bool,
+) -> RenderOutput {
     if Adaptive::enabled(&scene.render) {
-        return render_adaptive(scene, samples, threads, budget);
+        return render_adaptive_until(scene, samples, threads, spent);
     }
     let start = Instant::now();
     let (width, height) = (scene.render.width, scene.render.height);
@@ -340,7 +353,7 @@ pub fn render_progressive(
         });
         rays += pass_rays;
         done += count;
-        if budget.is_some_and(|b| start.elapsed() >= b) {
+        if spent(rays, start.elapsed()) {
             break;
         }
         pass = (pass * 2).min(MAX_PASS_SAMPLES);
@@ -401,6 +414,17 @@ pub fn render_adaptive(
     threads: usize,
     budget: Option<Duration>,
 ) -> RenderOutput {
+    let spent = |_rays: u64, elapsed: Duration| budget.is_some_and(|b| elapsed >= b);
+    render_adaptive_until(scene, samples, threads, &spent)
+}
+
+/// [`render_adaptive`] that stops between passes once `spent(rays, elapsed)` says so.
+pub fn render_adaptive_until(
+    scene: &Scene,
+    samples: u32,
+    threads: usize,
+    spent: &dyn Fn(u64, Duration) -> bool,
+) -> RenderOutput {
     let start = Instant::now();
     let (width, height) = (scene.render.width, scene.render.height);
     let prepared = Prepared::new(scene);
@@ -447,15 +471,59 @@ pub fn render_adaptive(
         rays += map_rays;
         let (maps, state) = (&maps, &adaptive);
         let warm = state.warming_up();
+        // After the first round the work is the active blocks of every tile, claimed one by one
+        // (a block's pixels cut from its tile's film, rendered and put back: the same bits), so
+        // the threads share it however few tiles have any.
+        let mut units: Vec<(usize, BlockWork)> = Vec::new();
+        if !warm {
+            let mut work = Vec::new();
+            for (i, &tile) in tiles.iter().enumerate() {
+                state.work(tile, count, &mut work);
+                units.extend(work.iter().map(|&b| (i, b)));
+            }
+        }
+        let units = &units;
         let next_tile = AtomicUsize::new(0);
         let pass_rays: u64 = std::thread::scope(|scope| {
             let workers: Vec<_> = (0..threads)
                 .map(|_| {
                     scope.spawn(|| {
                         let mut rays = 0u64;
-                        let mut work: Vec<BlockWork> = Vec::new();
                         loop {
-                            let i = next_tile.fetch_add(1, Ordering::Relaxed);
+                            let k = next_tile.fetch_add(1, Ordering::Relaxed);
+                            if !warm {
+                                let Some(&(i, block)) = units.get(k) else {
+                                    break;
+                                };
+                                let edges = edges[i].get_or_init(|| {
+                                    let mask = EdgeMask::of(scene, &prepared, tiles[i], isa);
+                                    rays += mask.rays();
+                                    mask
+                                });
+                                let r = block.rect;
+                                let mut part = films[i]
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner)
+                                    .cut(r.x, r.y, r.w, r.h);
+                                for j in 0..block.count {
+                                    rays += render_block(
+                                        scene,
+                                        &prepared,
+                                        maps.get(j as usize),
+                                        edges,
+                                        r,
+                                        block.first + j,
+                                        &mut part,
+                                        isa,
+                                    );
+                                }
+                                films[i]
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner)
+                                    .copy_region(&part);
+                                continue;
+                            }
+                            let i = k;
                             let (Some(&tile), Some(film)) = (tiles.get(i), films.get(i)) else {
                                 break;
                             };
@@ -465,7 +533,7 @@ pub fn render_adaptive(
                                 rays += mask.rays();
                                 mask
                             });
-                            if warm {
+                            {
                                 // The first round: every pixel, as without adaptive sampling.
                                 let mut passes = pass_films
                                     .get(i)
@@ -484,22 +552,6 @@ pub fn render_adaptive(
                                         );
                                     }
                                 }
-                                continue;
-                            }
-                            state.work(tile, count, &mut work);
-                            for block in &work {
-                                for j in 0..block.count {
-                                    rays += render_block(
-                                        scene,
-                                        &prepared,
-                                        maps.get(j as usize),
-                                        edges,
-                                        block.rect,
-                                        block.first + j,
-                                        &mut film,
-                                        isa,
-                                    );
-                                }
                             }
                         }
                         rays
@@ -516,7 +568,7 @@ pub fn render_adaptive(
         });
         rays += pass_rays;
         adaptive.advance(count);
-        if budget.is_some_and(|b| start.elapsed() >= b) {
+        if spent(rays, start.elapsed()) {
             break;
         }
         pass = (pass * 2).min(MAX_PASS_SAMPLES);

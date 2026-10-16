@@ -82,21 +82,64 @@ pub fn run(
     rounds: u32,
     threads: usize,
 ) -> Result<String, String> {
+    for (i, k) in ["RT_E10_KEY", "RT_E10_BLOCK", "RT_E10_Q", "RT_E10_EPS"].iter().enumerate() {
+        if let Ok(v) = std::env::var(k) {
+            rt_core::adaptive::EXP[i].store(v.parse().unwrap(), std::sync::atomic::Ordering::Relaxed);
+        }
+    }
     let mut rows = Vec::new();
     let mut refs = Vec::new();
     for (key, scene) in scenes(size) {
         let mut r = scene.clone();
-        r.render.seed = 1000;
-        let long = render_progressive(&r, reference, threads, None);
-        eprintln!(
-            "{key}: reference {reference} spp in {:.1} s",
-            long.elapsed.as_secs_f64()
-        );
-        let reference_image = long.film.resolve();
-        refs.push((key, long.elapsed.as_secs_f64()));
+        let cache = std::env::var("RT_E10_REFCACHE").ok().map(|d| {
+            Path::new(&d).join(format!("{key}-{}x{}-{reference}.f32", size.0, size.1))
+        });
+        let load = |p: &Path| -> Option<(Vec<f32>, Vec<f32>)> {
+            let b = std::fs::read(p).ok()?;
+            let v: Vec<f32> = b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+            let h = v.len() / 2;
+            Some((v[..h].to_vec(), v[h..].to_vec()))
+        };
+        let (reference_image, other_image, took) = match cache.as_deref().and_then(load) {
+            Some((a, b)) => (a, b, 0.0),
+            None => {
+                r.render.seed = 1000;
+                let long = render_progressive(&r, reference, threads, None);
+                r.render.seed = 2000;
+                let other = render_progressive(&r, reference, threads, None);
+                let (a, b) = (long.film.resolve(), other.film.resolve());
+                if let Some(p) = &cache {
+                    let bytes: Vec<u8> = a.iter().chain(&b).flat_map(|v| v.to_le_bytes()).collect();
+                    let _ = std::fs::write(p, bytes);
+                }
+                (a, b, long.elapsed.as_secs_f64())
+            }
+        };
+        let own = rel_mse(&other_image, &reference_image) / 2.0;
+        eprintln!("{key}: reference {reference} spp in {took:.1} s, its own relMSE {own:.8}");
+        refs.push((key, took));
         for round in 0..rounds {
+            let mut uniform_rays = 0u64;
             for adaptive in [false, true] {
-                let out = timed(&scene, 1 + round, adaptive, seconds, threads);
+                let out = if adaptive && std::env::var("RT_E10_WORK").is_ok() {
+                    let mut s2 = scene.clone();
+                    s2.render.seed = 1 + round;
+                    s2.render.adaptive = ADAPTIVE_ON;
+                    let stop = |rays: u64, _: Duration| rays >= uniform_rays;
+                    crate::render_until(&s2, 1 << 24, threads, &stop)
+                } else {
+                    timed(&scene, 1 + round, adaptive, seconds, threads)
+                };
+                if !adaptive {
+                    uniform_rays = out.rays;
+                }
+                if let Ok(d) = std::env::var("RT_E10_DUMP") {
+                    let name = format!("{key}-{}-{round}", if adaptive { "a" } else { "u" });
+                    let img: Vec<u8> = out.film.resolve().iter().chain(&out.film.weight).flat_map(|v| v.to_le_bytes()).collect();
+                    let _ = std::fs::write(Path::new(&d).join(name), img);
+                    let refb: Vec<u8> = reference_image.iter().flat_map(|v| v.to_le_bytes()).collect();
+                    let _ = std::fs::write(Path::new(&d).join(format!("{key}-ref")), refb);
+                }
                 let samples = out.adaptive.map_or((out.samples, out.samples), |a| (a.min, a.max));
                 let row = NoiseRow {
                     scene: key,
