@@ -294,6 +294,39 @@ pub fn render_tile_edges(
     )
 }
 
+/// E10, adaptive sampling ([`crate::adaptive`]): [`render_tile_edges`] of the pixels of `rect`
+/// only (a block of a round, inside the tile of `edges`), sample `sample_index` of each, with the
+/// photon map `photons` whatever its iteration (in an adaptive round, the pass's map `j` serves
+/// sample `j` of every block, so a map's iteration is not its blocks' sample index). The pixels
+/// are those [`render_tile_edges`] gives for the same sample index and map.
+#[allow(clippy::too_many_arguments)]
+pub fn render_block(
+    scene: &Scene,
+    prepared: &Prepared,
+    photons: Option<&PhotonMap>,
+    edges: &EdgeMask,
+    rect: TileRect,
+    sample_index: u32,
+    film: &mut Film,
+    isa: Isa,
+) -> u64 {
+    let tracer = BvhTracer {
+        geometry: &scene.geometry,
+        isa,
+    };
+    let photons = photons.filter(|_| prepared.has_caustics());
+    render_tile_traced(
+        scene,
+        prepared,
+        rect,
+        sample_index,
+        film,
+        &tracer,
+        photons,
+        Some(edges),
+    )
+}
+
 /// The sample indices of sample `sample_index` of a pixel that takes `k` per index (E11): `k`
 /// consecutive ones of its sequence (wrapping past `u32::MAX`, far beyond any host's samples).
 #[inline]

@@ -198,6 +198,8 @@ pub fn scene() -> Scene {
             denoise_strength: 1.0,
             pixel_filter: 0,
             edge_supersample: 1,
+            adaptive: 0,
+            noise_threshold: 0.0,
         },
         bitmaps: Vec::new(),
         patterns: Vec::new(),
@@ -366,6 +368,19 @@ pub fn e5b_scene() -> Scene {
     let mut scene = e5_scene(false);
     scene.render.caustic_photons = 2048;
     scene.render.caustic_radius = 4.0;
+    scene
+}
+
+/// The E10 parity scene: the E5b-1 scene ([`e5b_scene`]: glass, chrome, cut-outs and caustics)
+/// sampled adaptively ([`crate::adaptive`]) to a noise target of 3 % with at most 48 samples per
+/// pixel, its edges with two samples per index (E11). `rt --write-e10-example` writes it for
+/// `tools/wasm-parity.mjs --adaptive`; `rt-core` pins its image.
+pub fn e10_scene() -> Scene {
+    let mut scene = e5b_scene();
+    scene.render.adaptive = crate::adaptive::ADAPTIVE_ON;
+    scene.render.noise_threshold = 0.03;
+    scene.render.max_samples = 48;
+    scene.render.edge_supersample = 2;
     scene
 }
 

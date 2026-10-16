@@ -16,6 +16,7 @@ import { jobFileNames } from '../render-queue';
 import { formatClock, formatNumber, getLang, t } from '../strings';
 import type { UiState } from '../ui-state';
 import { statusTextOf } from './queue';
+import { formatDuration } from './render-window';
 
 /** What the live view shows, from the state alone (tests read it without a DOM). */
 export interface LiveViewModel {
@@ -65,7 +66,15 @@ export function liveDataText(s: ProjectState, job: RenderJob, frame: LiveFrame |
   const lang = getLang();
   const st = job.settings;
   const parts = [`${st.width} × ${st.height}`];
-  if (frame) {
+  if (frame && frame.minSamples !== undefined) {
+    // E10: an adaptive render: the samples of its pixels, its noise against the target and the time the engine expects.
+    parts.push(t('live.adaptive', { min: formatNumber(frame.minSamples, lang, 0), max: formatNumber(frame.samples, lang, 0) }));
+    const a = s.render.running?.jobId === job.id ? s.render.running.adaptive : undefined;
+    const pct = (v: number) => `${formatNumber(v * 100, lang, 1)} %`;
+    if (a && a.noise >= 0) parts.push(t('live.noiseOf', { noise: pct(a.noise), target: pct(a.target) }));
+    parts.push(formatClock(frame.seconds));
+    if (a && a.eta > 0) parts.push(t('live.eta', { t: formatDuration(a.eta) }));
+  } else if (frame) {
     const n = formatNumber(frame.samples, lang, 0);
     parts.push(st.finishBy === 'TIME' ? t('rw.summarySamples', { n }) : t('live.samplesOf', { n, of: formatNumber(st.maxSamples, lang, 0) }));
     parts.push(st.finishBy === 'SAMPLES' ? formatClock(frame.seconds) : t('live.timeOf', { t: formatClock(frame.seconds), of: formatClock(st.maxSeconds) }));

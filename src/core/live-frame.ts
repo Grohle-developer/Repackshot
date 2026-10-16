@@ -30,6 +30,8 @@ export interface LiveFrame {
   /** Samples every pixel of the picture has, and the seconds rendered so far: the engine's numbers. */
   samples: number;
   seconds: number;
+  /** E10, an adaptive render: its pixels have from `minSamples` to `samples` samples. */
+  minSamples?: number;
 }
 
 /**

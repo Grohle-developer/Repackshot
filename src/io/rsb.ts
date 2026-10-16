@@ -453,6 +453,10 @@ export interface RsbRender {
   pixelFilter: number;
   /** E11: the samples an edge pixel takes per sample index (1: none more; at most 16). */
   edgeSupersample: number;
+  /** E10: bit 0, adaptive sampling (render/adaptive.ts; 0 or absent: every pixel alike, as before). */
+  adaptive?: number;
+  /** E10: with adaptive sampling, the noise target, a fraction 0..1 (0 or absent: none). */
+  noiseThreshold?: number;
 }
 
 /** What the engine renders: `rt_core::scene::Scene`, field for field. */
@@ -594,7 +598,7 @@ export function defaultFloor(): RsbFloor {
 }
 
 export function defaultRender(): RsbRender {
-  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1 };
+  return { width: 640, height: 360, maxSamples: 64, seed: 0, maxSeconds: 0, exposureEv: 0, tonemap: TONEMAP_ACES, maxDepth: DEFAULT_MAX_DEPTH, clampIndirect: 0, passes: 0, denoise: 0, causticPhotons: 0, causticRadius: 0, denoiseStrength: 1, pixelFilter: 0, edgeSupersample: 1, adaptive: 0, noiseThreshold: 0 };
 }
 
 export const IDENTITY_ROWS: readonly number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
@@ -670,6 +674,13 @@ const LGHT_BYTES = 76;
 const ENVR_BYTES = 84;
 const FLOR_BYTES = 20;
 const RNDR_BYTES = 64;
+/** E10: with adaptive sampling asked for, `adaptive` and `noise_threshold` after it (rt-core writes them only then). */
+const RNDR_BYTES_ADAPTIVE = 72;
+
+/** The bytes of a render section: 64 as E11 wrote it, 72 with adaptive sampling (E10). */
+function renderBytes(r: RsbRender): number {
+  return (r.adaptive ?? 0) !== 0 || (r.noiseThreshold ?? 0) !== 0 ? RNDR_BYTES_ADAPTIVE : RNDR_BYTES;
+}
 const INST_BYTES = 60;
 
 function meshBytes(m: RsbMesh, uvs = false): number {
@@ -805,7 +816,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
   const lens = scene.camera.lens ?? null;
   if (lens) size += 8 + lensBytes(lens);
-  size += 8 + ENVR_BYTES + 8 + FLOR_BYTES + 8 + RNDR_BYTES;
+  size += 8 + ENVR_BYTES + 8 + FLOR_BYTES + 8 + renderBytes(scene.render);
   if (withMeshes) for (const m of scene.meshes) size += 8 + meshBytes(m, tex);
   if (withMeshes) for (const b of scene.bitmaps) size += 8 + bitmapBytes(b);
   if (withMeshes && images.length > 0) size += 8 + imagesBytes(images);
@@ -980,7 +991,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.vec(f.color);
   });
   const r = scene.render;
-  w.section(TAG_RNDR, RNDR_BYTES, () => {
+  w.section(TAG_RNDR, renderBytes(r), () => {
     w.u32(r.width);
     w.u32(r.height);
     w.u32(r.maxSamples);
@@ -997,6 +1008,10 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.f32(r.denoiseStrength);
     w.u32(r.pixelFilter);
     w.u32(r.edgeSupersample);
+    if (renderBytes(r) === RNDR_BYTES_ADAPTIVE) {
+      w.u32(r.adaptive ?? 0);
+      w.f32(r.noiseThreshold ?? 0);
+    }
   });
   // M3b: the materials' programs, last.
   for (const p of programs) {
@@ -1048,6 +1063,11 @@ export interface SceneView {
   pixelFilter?: number;
   /** E11, `RNDR.edge_supersample`: 1..16 (default 1). */
   edgeSupersample?: number;
+  /**
+   * E10, `RNDR.adaptive` and `RNDR.noise_threshold`: adaptive sampling to this noise target (a fraction, core/render.ts
+   * `noiseFraction`; 0: none, the samples or the time end it). Absent: every pixel alike, the bytes of before.
+   */
+  adaptive?: { noiseThreshold: number };
   /** E5b-1: the caustics switch and quality; Automatic is decided here, from the scene (core/caustics.ts). Default off. */
   caustics?: { mode: CausticsMode; quality: CausticsQuality };
   /**
@@ -1915,6 +1935,8 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     denoiseStrength: Number.isFinite(view.denoiseStrength) ? Math.max(0, Math.min(1, view.denoiseStrength!)) : 1,
     pixelFilter: Math.max(0, Math.round(view.pixelFilter ?? 0)) >>> 0,
     edgeSupersample: Math.max(1, Math.min(16, Math.round(Number.isFinite(view.edgeSupersample) ? view.edgeSupersample! : 1))),
+    adaptive: view.adaptive ? 1 : 0,
+    noiseThreshold: view.adaptive && Number.isFinite(view.adaptive.noiseThreshold) ? Math.max(0, Math.min(1, view.adaptive.noiseThreshold)) : 0,
   };
   if (view.caustics) {
     const centre: [number, number, number] | null = casterBounds

@@ -129,6 +129,9 @@ cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 4096 --max-secon
 cargo run --release -p rt-cli -- scene.rsb -o out.tif --bits 16   # TIFF: 8 (default), 16 (sRGB) or 32 (float, linear light)
 cargo run --release -p rt-cli -- scene.rsb -o out.dng              # a linear raw DNG: opens in a photo developer like a camera raw
 cargo run --release -p rt-cli -- --sheet ../out/sheet          # the contact sheet (below)
+cargo run --release -p rt-cli -- scene.rsb -o out.png --samples 1024 --noise 1   # adaptive, until every block is below 1 % noise
+cargo run --release -p rt-cli -- --write-e10-example e10.rsb # the E10 parity scene (the E5b-1 scene sampled adaptively)
+cargo run --release -p rt-cli -- --adaptive-noise ../out/noise --size 480x360 --max-seconds 20 --samples 4096 --rounds 3
 ```
 
 `--format png|tiff|dng` chooses the file; without it the extension of `-o` does (`.tif`, `.tiff`, `.dng`; anything else is a PNG).
@@ -144,7 +147,9 @@ Rendering is **progressive**: every tile has its own film, and passes of 1, 2, 4
 indices go over all tiles. The time budget (`--max-seconds`, else the scene's
 `RNDR.max_seconds`; 0 is no limit) is checked between passes, so every pixel always has the same
 number of samples and at least one pass is rendered. A tile's samples are always added in index
-order, so the film does not depend on the thread count or the pass sizes.
+order, so the film does not depend on the thread count or the pass sizes. With adaptive
+sampling (E10, below) the budget is checked between passes too, but the samples of a pixel
+depend on its block's noise.
 
 **Contact sheet.** `rt --sheet <dir>` renders the example part under six built-in light recipes
 (key only, three point, split, backlit panel visible to the camera, overhead, sun; defined in
@@ -437,6 +442,54 @@ The sheet adds the E5b-1 pairs: a glass sphere and the perfume bottle under a sm
 and with caustics, the bottle's caustics at the Final preset's samples without and with denoise,
 and two scenes at 4 spp without and with denoise.
 
+## Adaptive sampling (E10)
+
+`rt_core::adaptive`, with `RNDR.adaptive` bit 0 (the section grows to 72 bytes only when it is
+set or `noise_threshold` is; without them it is E11's byte for byte, and no pinned hash moved).
+The host renders in **rounds**. The first gives `WARMUP` = 16 samples to every pixel with the tile
+renderer of always (sample index = photon-map iteration; the exact passes and the albedo are
+made there only). At the end of every round, whatever the threads and tiles that rendered it,
+the whole image decides the next (`decide`): each pixel's relative error of the mean,
+`sqrt((E[l²] - E[l]²) / (n - 1)) / (max(mean, 0) + ε)` from the film's sums and `Film::lum2`,
+with `ε` 1 % of the screen's white at the scene's exposure; smoothed by a 3 x 3 box inside the
+image; the largest of every 8 x 8 block; the blocks above the noise target
+(`RNDR.noise_threshold`; without it, any) and below the sample cap are the candidates, and the
+round goes to those at or above the median of their errors (the threshold of the moment, falling
+as the image converges). No candidate left: converged. A round is 16 samples times
+`clamp(blocks / (4 active), 1, 16)`, never more than the least sampled active block has. A block
+left out keeps its samples and its mean: every pixel is the mean of its own samples `0..n`, in
+order (a test compares it bit for bit with the uniform image of those samples). The decision is
+`f32` in a fixed order and only happens at the ends of rounds, so the image is the same with any
+thread count, any tile size and any cut of a round into passes. In a pass every active block is
+at the same point of its round, so the `j`-th sample of the pass uses the photon map
+`iteration + done + j` (`Adaptive::iteration`): a pass traces as many maps as without adaptive
+sampling and two samples of a pixel never share one.
+
+`rt` (`render_adaptive`, `--adaptive`, `--noise P` in per cent, which implies it) gathers the
+tiles' films at the end of every round and, after the first, shares the active blocks of all
+tiles among its threads one by one (`Film::cut`, `render::render_block`, `copy_region`: the same
+bits as rendering in the tile). It prints the fewest and the most samples of a pixel and the
+rounds. The denoiser takes each pixel's count (`DenoiseInput::with_counts`: sums and `lum2`
+rescaled to the most samples, the variance divided by the pixel's own `n − 1`). The launcher does
+the same, publishes the sums rescaled to the most samples (`adaptive::rescale`) and puts the
+counts, the noise of the noisiest block and the seconds it expects to the target in its frame
+(68-byte header, `FLAG_ADAPTIVE`). The module exports `rt_render_block_rgba` (a block of a tile
+at a sample index and a photon-map iteration) and `rt_adaptive_decide` (the engine's decision, for
+`tools/wasm-parity.mjs --adaptive`); `rt_denoise` accepts the plane of counts as a fifteenth
+word. `PINNED_E10_ADAPTIVE` (`crates/rt-core/src/adaptive/tests.rs`, `0x264b4106`, 16 to 48 spp)
+is the E10 scene (`rt --write-e10-example`: the E5b scene with a 3 % target, 48 samples and edges
+x2) by `rt` with 1, 4 and 16 threads, tiles of 32, 24 and 13 and passes of 16, 5 and 3, by the
+launcher, in WASI, through the real module (scalar and SIMD) and through the page's own code;
+`PINNED_E10_DECISIONS` (`0xb492454a`) pins six decisions on a synthetic image, which the page's
+port (`src/render/adaptive.ts`) reproduces.
+
+`rt --adaptive-noise <dir>` measures the criterion on the E5b-1 sheet's key-only recipe and the
+glass bottle: two uniform references of other seeds (kept in `<dir>` and reused; half their
+relative error against each other is each one's own, taken off the table), then per round a
+uniform render for `--max-seconds`, an adaptive one for the same time and an adaptive one until
+it has cast as many rays as the uniform one; `noise.json` and a table of relMSE (E5b-1's: values
+clamped at 8, `(x − r)² / (r² + 0.01)`). The numbers measured are in `docs/ROADMAP.md`, E10.
+
 ## Exact passes (X2)
 
 `rt_core::passes` writes, next to the image, the per-pixel planes the AI post-processing guard
@@ -692,6 +745,12 @@ byte for byte.
   reads through M2b on one level of detail per mapping, curvature from the bevel's sharp edges, the
   bevel weight, cut-outs for camera and shadow rays, emission (an emitter whose program varies is
   not sampled as a light); `rt_features` bit 1, the M3b parity scene (`rt --write-m3b-example`).
+
+* **E10**: adaptive sampling by rounds (`rt_core::adaptive`: the relative error of the mean per
+  pixel, smoothed, by 8 x 8 blocks, the median of the candidates' errors as the threshold),
+  `RNDR.adaptive` and `noise_threshold`, `render::render_block`, `Film::cut`, the denoiser's
+  per-pixel counts, `rt --adaptive --noise --adaptive-noise --write-e10-example`,
+  `rt_render_block_rgba` and `rt_adaptive_decide` in the module, the E10 parity scene.
 
 * **S4a**: ambient particles without state (`rt-sim`: `FXAM`, closed-form motion, curl-noise
   drift), the three primitives with their BVH, the minimum size on screen with its energy kept,

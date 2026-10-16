@@ -14,6 +14,33 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - Solo a través de **una o dos** superficies: la sombra de un frasco o de un vaso hueco (cuatro superficies: entra y sale por las dos paredes) sigue llegando por los caminos que refractan o por las cáusticas; el vidrio rugoso, con barniz, texturado, con programa o dispersivo, y la luz del entorno, como antes. Bajo vidrio muy curvo (una bola, el costado de un vaso de agua) el camino se encuentra pocas veces y las cáusticas siguen siendo cosa del mapa de fotones; con las cáusticas encendidas, las luces que emiten fotones siguen llegando por el mapa (E13).
 
+## v0.1.13 — 2026-10-16
+
+Versión de prueba con el muestreo adaptativo y *Terminar por ruido* en la
+ventana de render. Lo de v0.1.2 a v0.1.12 sigue igual.
+
+### Motor
+
+- **Muestreo adaptativo**: tras 16 muestras a todos los píxeles, el motor reparte las siguientes por bloques de 8 × 8 según el ruido de cada uno (el error relativo de la media de cada píxel, de la varianza que ya llevaba la película), ronda a ronda, la misma imagen con cualquier número de hilos, baldosas o pasadas, igual en el navegador, en el lanzador y en `rt` (`--adaptive`, `--noise P`). Un bloque que ya no recibe muestras conserva su media. Sin pedirlo, los mismos píxeles que antes (E10).
+- El *denoise* pondera la varianza de cada píxel por sus propias muestras (E10).
+
+### Interfaz
+
+- *Render ▸ Calidad ▸ Terminar por* gana **Ruido**: el render acaba cuando cada parte de la imagen queda por debajo del umbral (0,5–5 %, el 1 % por defecto), con las muestras como tope, y la estimación sale de la última pasada del visor *Completo* (E10).
+- El medidor del visor dice *Adaptativo · mín–máx muestras*, y la vista en vivo del render, el ruido que queda frente al objetivo y el tiempo que el motor espera (E10).
+
+### Limitaciones conocidas de esta versión
+
+- El muestreo adaptativo deja, a igual tiempo, un 83–84 % del error del
+  uniforme en las escenas de prueba (el objetivo era el 60 %): la regla de
+  reparto actual no da más y cambiarla está pendiente de decidir. Solo se
+  usa con *Terminar por ruido*; los renders por muestras o por tiempo no
+  cambian.
+- La estimación del tiempo de *Ruido* sale de la última pasada del visor
+  *Completo* con el mismo umbral; con *Reducir ruido* encendido, el medidor
+  puede enseñar en su primera línea las muestras de la imagen filtrada.
+- Siguen las de la v0.1.12.
+
 ## v0.1.12 — 2026-10-16
 
 Versión de prueba con los materiales de nodos funcionando en el modo

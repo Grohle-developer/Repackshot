@@ -1246,8 +1246,12 @@ sRGB o 32 bits lineal, RAW DNG lineal), fondo
 transparente (no en JPEG ni en DNG), pases (fase posterior: alfa, profundidad, normales, id de
 pieza), cámara (una o todas), tamaño en píxeles con su tamaño de
 impresión y **ppp** (los píxeles mandan; los ppp se escriben en el
-archivo), **terminar por** muestras o por tiempo (o lo que llegue antes,
-en avanzado), ajustes avanzados del motor, en animación el rango, los fps
+archivo), **terminar por** muestras, por tiempo (o lo que llegue antes,
+en avanzado) o **por ruido** (E10: con muestreo adaptativo, cuando el error
+relativo de la media de cada píxel queda por debajo de un umbral del 0,5 al
+5 %, el 1 % por defecto, con las muestras como tope; las muestras van donde
+está el ruido, por bloques de 8 × 8, y cada píxel sigue siendo la media de
+sus propias muestras), ajustes avanzados del motor, en animación el rango, los fps
 y la salida (vídeo MP4/WebM o secuencia de fotogramas), y el
 **post-procesado IA** con sus ajustes (`AI-POST.md`). *Render* pone el
 trabajo el primero de la **cola** y lo arranca; *+ Añadir a la cola* lo

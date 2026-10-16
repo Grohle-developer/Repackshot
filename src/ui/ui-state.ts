@@ -379,6 +379,11 @@ export interface UiState {
   /** Pixel-samples per second the engine reached on this machine (measured, never assumed); null until measured. */
   throughput: number | null;
   /**
+   * E10: what the Full view sampling adaptively to a noise target (a fraction) said: the seconds it takes to reach it
+   * (those rendered and those it expects from its last pass) on `pixels` pixels; null until it said so.
+   */
+  noiseEstimate: { seconds: number; pixels: number; target: number } | null;
+  /**
    * Pixels a second the AI post-processing of a final render took on this machine (X4b: measured around the last
    * request of a job, never assumed; the model's loading included when it loaded then); null until measured.
    */
@@ -530,6 +535,7 @@ export function defaultUiState(): UiState {
     results: [],
     resultsStorage: 'LOADING',
     throughput: null,
+    noiseEstimate: null,
     aiThroughput: null,
     queueRun: 'IDLE',
     settings: defaultSettings(),

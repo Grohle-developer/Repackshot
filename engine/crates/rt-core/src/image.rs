@@ -133,6 +133,26 @@ impl Film {
         }
     }
 
+    /// A film over the image-space rectangle `width × height` from `(x, y)` holding this film's
+    /// sums of those pixels (zero where this film has none): a host renders a part of a tile into
+    /// it and puts it back with [`Film::copy_region`], with every pixel's samples added in the
+    /// same order, so the bits are those of rendering into this film itself (E10).
+    pub fn cut(&self, x: u32, y: u32, width: u32, height: u32) -> Film {
+        let mut out = Film::region(x, y, width, height);
+        for ly in 0..height {
+            for lx in 0..width {
+                if let Some(i) = self.index(x + lx, y + ly) {
+                    let j = (ly * width + lx) as usize;
+                    out.rgb[j * 3..j * 3 + 3].copy_from_slice(&self.rgb[i * 3..i * 3 + 3]);
+                    out.weight[j] = self.weight[i];
+                    out.alpha[j] = self.alpha[i];
+                    out.lum2[j] = self.lum2[i];
+                }
+            }
+        }
+        out
+    }
+
     /// Average linear radiance per pixel: `3 * width * height` floats. Pixels that received no
     /// sample are black.
     pub fn resolve(&self) -> Vec<f32> {
@@ -296,6 +316,23 @@ mod tests {
         region.splat(1, 0, Rgb::splat(3.0));
         film.copy_region(&region);
         assert_eq!(film.lum2[1], 9.0);
+    }
+
+    #[test]
+    fn a_cut_rendered_into_and_put_back_is_the_film_rendered_into_itself() {
+        let mut film = Film::region(4, 2, 4, 3);
+        film.splat(5, 3, Rgb::new(0.1, 0.2, 0.3));
+        let mut direct = film.clone();
+        let mut part = film.cut(5, 3, 2, 2);
+        assert_eq!(part.weight, vec![1.0, 0.0, 0.0, 0.0]);
+        for (x, y, c) in [(5, 3, 0.7f32), (6, 4, 0.3), (5, 3, 1.9)] {
+            part.splat(x, y, Rgb::splat(c));
+            direct.splat(x, y, Rgb::splat(c));
+        }
+        film.copy_region(&part);
+        assert_eq!(film, direct);
+        // Outside the film: nothing.
+        assert!(film.cut(0, 0, 2, 2).weight.iter().all(|&w| w == 0.0));
     }
 
     #[test]

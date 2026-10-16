@@ -49,12 +49,15 @@
 //! the request's own thread), so only the picture's pixels travel; the job renders as before.
 
 use crate::kept::{KeepLimits, Kept, KeptRender, Look, PassesBody};
+use rt_core::adaptive::{gather, rescale, Adaptive, BlockWork};
 use rt_core::caustics::{Photon, PhotonMap};
 use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, Passes, PASS_ALL};
 use rt_core::pixel_filter::EdgeMask;
-use rt_core::render::{render_tile_albedo_edges, render_tile_edges, render_tile_exact, tile_grid};
+use rt_core::render::{
+    render_block, render_tile_albedo_edges, render_tile_edges, render_tile_exact, tile_grid,
+};
 use rt_core::scene::{Scene, DENOISE_IMAGE, DENOISE_KEEP_NOISY};
 use rt_core::simd::Isa;
 use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset, GUIDE_PASSES};
@@ -113,9 +116,10 @@ impl Default for Limits {
 
 /// The frame header magic.
 pub const FRAME_MAGIC: [u8; 4] = *b"RPX1";
-/// Bytes of the frame header (U11: 52, with the image's number; a reader takes the length from
-/// the header itself, so one of 48 bytes still reads).
-pub const FRAME_HEADER: usize = 52;
+/// Bytes of the frame header (U11: 52, with the image's number; E10: 68, with what adaptive
+/// sampling says of the image; a reader takes the length from the header itself, so one of 48 or
+/// 52 bytes still reads).
+pub const FRAME_HEADER: usize = 68;
 /// U11: while a live viewport's switch is off, the guides' albedo is still rendered for this many
 /// samples (so turning it on denoises at once, with guides as good as those of the first passes),
 /// and then no more (the plain image costs nothing more after that).
@@ -147,8 +151,27 @@ pub const FLAG_CAUSTICS: u32 = 256;
 /// Frame flag (U14): the sums are scaled down by a whole factor ([`Frame::fitted`], `fit=` of
 /// `GET /api/render/<id>`): the header's width and height are the scaled picture's.
 pub const FLAG_SCALED: u32 = 512;
+/// Frame flag (E10): the image is sampled adaptively (`RNDR.adaptive`): its pixels have their own
+/// counts, from [`FrameAdaptive::min`] to [`FrameAdaptive::max`]; the sums are each pixel's
+/// rescaled to the header's `samples` (`rt_core::adaptive::rescale`), so they read as before.
+pub const FLAG_ADAPTIVE: u32 = 1024;
 /// Largest side a `fit=` box may ask for.
 pub const MAX_FIT: u32 = 16384;
+
+/// E10: what the frame of an adaptive image says of it (header bytes 52 to 68).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrameAdaptive {
+    /// The fewest samples of a pixel.
+    pub min: u32,
+    /// The most (the header's `samples`: the sums are rescaled to as many).
+    pub max: u32,
+    /// The largest block error of the last decision: the relative error of the mean of the
+    /// noisiest block (-1 before the first decision).
+    pub noise: f32,
+    /// Seconds to the noise target, from the last decision's remaining work and the last pass's
+    /// time per sample (-1: unknown, or no target).
+    pub eta: f32,
+}
 
 /// U14: the smallest whole factor `k` that fits a `width x height` image in `max_w x max_h`
 /// (`fitFactor` of `src/core/live-frame.ts`): the scaled image is `ceil(width / k) x ceil(height
@@ -308,6 +331,8 @@ pub struct Frame {
     /// U11: the number of the image in `sums`: it changes whenever they do (a pass, a denoised
     /// image of a live viewport, its switch), and only then.
     pub version: u32,
+    /// E10: with [`FLAG_ADAPTIVE`], the image's counts and its noise.
+    pub adaptive: Option<FrameAdaptive>,
 }
 
 impl Frame {
@@ -339,6 +364,12 @@ impl Frame {
         }
         h[40..48].copy_from_slice(&self.rays.to_le_bytes());
         h[48..52].copy_from_slice(&self.version.to_le_bytes());
+        if let Some(a) = self.adaptive {
+            h[52..56].copy_from_slice(&a.min.to_le_bytes());
+            h[56..60].copy_from_slice(&a.max.to_le_bytes());
+            h[60..64].copy_from_slice(&a.noise.to_le_bytes());
+            h[64..68].copy_from_slice(&a.eta.to_le_bytes());
+        }
         h
     }
 
@@ -417,7 +448,25 @@ impl Frame {
             noisy,
             // A header of before U11 has no image number.
             version: if header >= 52 { u(48)? } else { 0 },
+            adaptive: if header >= 68 && flags & FLAG_ADAPTIVE != 0 {
+                Some(FrameAdaptive {
+                    min: u(52)?,
+                    max: u(56)?,
+                    noise: f32::from_bits(u(60)?),
+                    eta: f32::from_bits(u(64)?),
+                })
+            } else {
+                None
+            },
         })
+    }
+
+    /// The frame with [`FLAG_ADAPTIVE`] set when it has [`Frame::adaptive`].
+    fn flagged(mut self) -> Frame {
+        if self.adaptive.is_some() {
+            self.flags |= FLAG_ADAPTIVE;
+        }
+        self
     }
 
     /// True when there are no sums yet.
@@ -489,6 +538,8 @@ struct Progress {
     active: u32,
     /// [`Frame::version`]: one more every time `sums` change.
     version: u32,
+    /// E10: what adaptive sampling says of the image in `sums`.
+    adaptive: Option<FrameAdaptive>,
     ended: Option<(u32, f32)>,
     error: Option<String>,
 }
@@ -540,6 +591,11 @@ struct LivePass {
     guides: Arc<Passes>,
     /// [`FLAG_CAUSTICS`] or 0.
     caustics: u32,
+    /// E10: each pixel's own samples (the sums and `lum2` are rescaled to `samples`); empty
+    /// without adaptive sampling.
+    counts: Vec<f32>,
+    /// E10: what the frames say of the adaptive image.
+    adaptive: Option<FrameAdaptive>,
 }
 
 impl Live {
@@ -726,6 +782,7 @@ impl Job {
                 mode: 0,
                 active: threads as u32,
                 version: 0,
+                adaptive: None,
                 ended: None,
                 error: None,
             }),
@@ -792,7 +849,9 @@ impl Job {
             sums: Arc::clone(&p.sums),
             noisy: p.noisy.clone(),
             version: p.version,
+            adaptive: p.adaptive,
         }
+        .flagged()
     }
 
     /// The job as it is now.
@@ -869,6 +928,7 @@ impl Job {
             (FLAG_DENOISED, "denoised"),
             (FLAG_NOISY, "noisy"),
             (FLAG_CAUSTICS, "caustics"),
+            (FLAG_ADAPTIVE, "adaptive"),
         ];
         let flags = names
             .iter()
@@ -951,20 +1011,23 @@ impl Job {
             let shown = if on {
                 // A denoised image of the newest pass is already there: shown at once.
                 match (&s.clean, &s.newest) {
-                    (Some((pass, clean)), Some(n)) if *pass == n.pass => {
-                        Some((Arc::clone(clean), n.samples, FLAG_DENOISED | n.caustics))
-                    }
+                    (Some((pass, clean)), Some(n)) if *pass == n.pass => Some((
+                        Arc::clone(clean),
+                        n.samples,
+                        FLAG_DENOISED | n.caustics,
+                        n.adaptive,
+                    )),
                     _ => None,
                 }
             } else if s.showing_clean {
                 // The noisy accumulation, as the last pass left it.
                 s.newest
                     .as_ref()
-                    .map(|n| (Arc::clone(&n.sums), n.samples, n.caustics))
+                    .map(|n| (Arc::clone(&n.sums), n.samples, n.caustics, n.adaptive))
             } else {
                 None
             };
-            if let Some((sums, samples, image)) = shown {
+            if let Some((sums, samples, image, adaptive)) = shown {
                 s.showing_clean = on;
                 if on {
                     s.presented += 1;
@@ -973,6 +1036,7 @@ impl Job {
                 p.sums = sums;
                 p.samples = samples;
                 p.image = image;
+                p.adaptive = adaptive;
                 p.version = p.version.wrapping_add(1);
             }
             live.refresh_pending(&s);
@@ -1014,6 +1078,8 @@ impl Job {
         lum2: Vec<f32>,
         guides: Arc<Passes>,
         caustics: u32,
+        counts: Vec<f32>,
+        adaptive: Option<FrameAdaptive>,
     ) {
         let mut s = lock(&live.state);
         s.newest = Some(Arc::new(LivePass {
@@ -1023,6 +1089,8 @@ impl Job {
             lum2,
             guides,
             caustics,
+            counts,
+            adaptive,
         }));
         let noisy = !(live.on() && s.showing_clean);
         if noisy {
@@ -1037,6 +1105,7 @@ impl Job {
                 p.samples = samples;
                 p.sums = sums;
                 p.image = caustics;
+                p.adaptive = adaptive;
                 p.version = p.version.wrapping_add(1);
             }
         }
@@ -1098,6 +1167,7 @@ impl Job {
                     &pass.lum2,
                     &pass.guides,
                     pass.samples,
+                    &pass.counts,
                     1,
                     Preset::VIEWPORT,
                     live.strength,
@@ -1120,6 +1190,7 @@ impl Job {
                 p.sums = clean;
                 p.samples = pass.samples;
                 p.image = FLAG_DENOISED | pass.caustics;
+                p.adaptive = pass.adaptive;
                 p.version = p.version.wrapping_add(1);
             }
             live.refresh_pending(&s);
@@ -1318,15 +1389,36 @@ impl Gate {
     }
 }
 
-/// The sums of the squared luminance of the tile films (`Film::lum2`), for the denoiser.
-fn lum2_of(films: &[Mutex<Film>], width: u32, height: u32) -> Vec<f32> {
+/// The sums of the squared luminance of the tile films (`Film::lum2`), for the denoiser; E10:
+/// with `scale`, each pixel's rescaled to that many samples ([`rescale`]).
+fn lum2_of(films: &[Mutex<Film>], width: u32, height: u32, scale: Option<u32>) -> Vec<f32> {
     let mut out = vec![0.0f32; width as usize * height as usize];
     for film in films {
         let f = lock(film);
         for ly in 0..f.height {
             let i = (f.origin_y + ly) as usize * width as usize + f.origin_x as usize;
             let j = (ly * f.width) as usize;
-            out[i..i + f.width as usize].copy_from_slice(&f.lum2[j..j + f.width as usize]);
+            let row = &mut out[i..i + f.width as usize];
+            row.copy_from_slice(&f.lum2[j..j + f.width as usize]);
+            if let Some(s) = scale {
+                for (k, v) in row.iter_mut().enumerate() {
+                    *v = rescale(*v, f.weight[j + k], s as f32);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// E10: each pixel's samples (`Film::weight`) of the tile films.
+fn counts_of(films: &[Mutex<Film>], width: u32, height: u32) -> Vec<f32> {
+    let mut out = vec![0.0f32; width as usize * height as usize];
+    for film in films {
+        let f = lock(film);
+        for ly in 0..f.height {
+            let i = (f.origin_y + ly) as usize * width as usize + f.origin_x as usize;
+            let j = (ly * f.width) as usize;
+            out[i..i + f.width as usize].copy_from_slice(&f.weight[j..j + f.width as usize]);
         }
     }
     out
@@ -1352,16 +1444,23 @@ fn denoise_bands(height: u32, threads: usize) -> u32 {
 /// `preset` (the full filter for a final, the viewport's for a live view) at `strength` (U11b,
 /// `RNDR.denoise_strength`: blended with the noisy sums), in bands on `threads` threads (each band
 /// exactly those rows of the whole image: the same bits for any thread count, as the web pool's).
+/// E10: an adaptive image's sums are rescaled to `samples` and `counts` holds each pixel's own
+/// samples (empty: all have `samples`).
+#[allow(clippy::too_many_arguments)]
 fn denoise_sums(
     sums: &[f32],
     lum2: &[f32],
     passes: &Passes,
     samples: u32,
+    counts: &[f32],
     threads: usize,
     preset: Preset,
     strength: f32,
 ) -> Option<Vec<f32>> {
-    let whole = DenoiseInput::whole(samples, sums, lum2, passes).ok()?;
+    let whole = DenoiseInput::whole(samples, sums, lum2, passes)
+        .ok()?
+        .with_counts(counts)
+        .ok()?;
     let h = passes.height;
     let bands = denoise_bands(h, threads);
     if bands == 1 {
@@ -1430,8 +1529,9 @@ fn photon_maps(
     (maps, rays)
 }
 
-/// The RGBA sums of the tile films.
-fn sums_of(films: &[Mutex<Film>], width: u32, height: u32) -> Vec<f32> {
+/// The RGBA sums of the tile films; E10: with `scale`, each pixel's rescaled to that many samples
+/// ([`rescale`]: the frames of an adaptive image).
+fn sums_of(films: &[Mutex<Film>], width: u32, height: u32, scale: Option<u32>) -> Vec<f32> {
     let mut out = vec![0.0f32; width as usize * height as usize * 4];
     for film in films {
         let f = lock(film);
@@ -1442,6 +1542,11 @@ fn sums_of(films: &[Mutex<Film>], width: u32, height: u32) -> Vec<f32> {
                     ((f.origin_y + ly) as usize * width as usize + (f.origin_x + lx) as usize) * 4;
                 out[i..i + 3].copy_from_slice(&f.rgb[j * 3..j * 3 + 3]);
                 out[i + 3] = f.alpha[j];
+                if let Some(s) = scale {
+                    for v in &mut out[i..i + 4] {
+                        *v = rescale(*v, f.weight[j], s as f32);
+                    }
+                }
             }
         }
     }
@@ -1517,37 +1622,111 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
     let ms = |t: Instant| t.duration_since(t0).as_secs_f64() * 1000.0;
     let (mut done, mut previous, mut passes, mut rays) = (0u32, 0u32, 0u32, 0u64);
     let mut ms_per_sample: Option<f64> = None;
+    // E10: adaptive sampling (`RNDR.adaptive`): rounds decided by the image at their ends, at
+    // most `max_samples` per pixel (none for a job by time). The frames carry each pixel's sums
+    // rescaled to the most samples of a pixel, so they read as before.
+    let mut adaptive =
+        Adaptive::enabled(&scene.render).then(|| Adaptive::new(&scene.render, job.max_samples));
+    let (w, h) = (width as usize, height as usize);
+    let (mut rgb, mut lum2_whole) = match adaptive {
+        Some(_) => (vec![0.0f32; w * h * 3], vec![0.0f32; w * h]),
+        None => (Vec::new(), Vec::new()),
+    };
+    // Milliseconds per pixel-sample of the last pass, and the pixel-samples still needed to reach
+    // the noise target since the last decision (for the time estimate of the frames).
+    let mut ms_per_unit: Option<f64> = None;
+    let mut remaining: Option<(f32, u64)> = None;
     // A live viewport's guides as the lane last got them: they change only while the albedo is
     // still being added.
     let mut guides: Option<Arc<Passes>> = None;
     let (tiles, films, prepared, pass_tiles) = (&tiles, &films, &prepared, &pass_films);
     while !job.cancelled() {
-        let Some(mut count) = next_pass(done, previous, job.max_samples) else {
-            break;
+        // E10: the round is over: the whole image decides the next one.
+        if let Some(ad) = adaptive.as_mut() {
+            if ad.left() == 0 {
+                for film in films {
+                    gather(&lock(film), width, &mut rgb, &mut lum2_whole);
+                }
+                let d = ad.decide(&rgb, 3, &lum2_whole);
+                remaining = (d.remaining > 0.0).then_some((d.remaining, 0));
+                if ad.converged() {
+                    // The last frame says what the last decision found (the image is the same).
+                    let (min, max) = ad.min_max();
+                    lock(&job.progress).adaptive = Some(FrameAdaptive {
+                        min,
+                        max,
+                        noise: d.max_error,
+                        eta: 0.0,
+                    });
+                    break;
+                }
+            }
+        }
+        let mut count = match adaptive.as_ref() {
+            Some(ad) => {
+                // The first round grows 1, 2, 4, 8 as a plain render does; the later ones go in
+                // passes as long as a round allows (every pass waits for its last block).
+                let size = if previous == 0 {
+                    1
+                } else if ad.warming_up() {
+                    (previous * 2).min(MAX_PASS_SAMPLES)
+                } else {
+                    MAX_PASS_SAMPLES
+                };
+                size.min(ad.left())
+            }
+            None => match next_pass(done, previous, job.max_samples) {
+                Some(count) => count,
+                None => break,
+            },
         };
         // A live viewport whose switch is on: passes about as long as a denoise, so the denoised
-        // image follows the accumulation (which pass a sample is in changes no pixel).
+        // image follows the accumulation (which pass a sample is in changes no pixel; with
+        // adaptive sampling the decisions are at the ends of rounds, not of passes).
         if let (Some(live), Some(per)) = (live, ms_per_sample) {
             if live.on() {
                 count = count.min(live_pass_cap(per, lock(&live.state).cost_ms));
             }
         }
+        // The time a sample of this pass is expected to take (E10: an adaptive pass renders only
+        // its blocks).
+        let per_sample = match (adaptive.as_ref(), ms_per_unit) {
+            (Some(ad), Some(unit)) => Some(unit * ad.pass_cost(count) as f64 / f64::from(count)),
+            (Some(_), None) => None,
+            (None, _) => ms_per_sample,
+        };
         let now = Instant::now();
-        if stop_for_time(done, ms(now), job.limit_ms, ms_per_sample, count)
+        if stop_for_time(done, ms(now), job.limit_ms, per_sample, count)
             || done > u32::MAX - 2 * MAX_PASS_SAMPLES
         {
             break;
         }
         let pass_start = Instant::now();
-        let first = done;
+        // The sample index (and photon map) of the pass's first sample: with adaptive sampling,
+        // the round's iteration (sample `j` of every block uses map `first + j`).
+        let first = adaptive.as_ref().map_or(done, Adaptive::iteration);
+        let warm = adaptive.as_ref().is_none_or(Adaptive::warming_up);
+        let cost = adaptive.as_ref().map_or(0, |ad| ad.pass_cost(count));
         // Caustics (E5b-1): the photon maps of this pass's samples, before its tiles.
         let (maps, map_rays) = photon_maps(scene, prepared, first, count, side_threads, isa);
         rays += map_rays;
         let maps = &maps;
+        // E10: after the first round, the work is the active blocks of every tile, claimed one by
+        // one (each cut from its tile's film, rendered and put back: the same bits).
+        let mut units: Vec<(usize, BlockWork)> = Vec::new();
+        if let (Some(ad), false) = (adaptive.as_ref(), warm) {
+            let mut work = Vec::new();
+            for (i, &tile) in tiles.iter().enumerate() {
+                ad.work(tile, count, &mut work);
+                units.extend(work.iter().map(|&b| (i, b)));
+            }
+        }
+        let units = &units;
+        let total = if warm { tiles.len() } else { units.len() };
         let next_tile = AtomicUsize::new(0);
         let next_tile = &next_tile;
         // Every tile of the pass is taken: a thread waiting for its turn has nothing left to do.
-        let over = || next_tile.load(Ordering::Relaxed) >= tiles.len();
+        let over = || next_tile.load(Ordering::Relaxed) >= total;
         let over = &over;
         // A live viewport renders the albedo of its guides while its switch is on, and for its
         // first samples while it is off (U11).
@@ -1570,7 +1749,36 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
                             if !go {
                                 break;
                             }
-                            let i = next_tile.fetch_add(1, Ordering::Relaxed);
+                            let k = next_tile.fetch_add(1, Ordering::Relaxed);
+                            if !warm {
+                                // E10: a block of an adaptive round.
+                                let Some(&(i, block)) = units.get(k) else {
+                                    gate.changed.notify_all();
+                                    break;
+                                };
+                                let edges = edges[i].get_or_init(|| {
+                                    let mask = EdgeMask::of(scene, prepared, tiles[i], isa);
+                                    rays += mask.rays();
+                                    mask
+                                });
+                                let r = block.rect;
+                                let mut part = lock(&films[i]).cut(r.x, r.y, r.w, r.h);
+                                for j in 0..block.count {
+                                    rays += render_block(
+                                        scene,
+                                        prepared,
+                                        maps.get(j as usize),
+                                        edges,
+                                        r,
+                                        block.first + j,
+                                        &mut part,
+                                        isa,
+                                    );
+                                }
+                                lock(&films[i]).copy_region(&part);
+                                continue;
+                            }
+                            let i = k;
                             let (Some(&tile), Some(film)) = (tiles.get(i), films.get(i)) else {
                                 // The last tile is taken: the waiting threads can leave the pass.
                                 gate.changed.notify_all();
@@ -1612,14 +1820,49 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
             // Some tiles may have this pass and others not: it is never published.
             break;
         }
-        ms_per_sample = Some(
-            Instant::now().duration_since(pass_start).as_secs_f64() * 1000.0 / f64::from(count),
-        );
+        let pass_ms = Instant::now().duration_since(pass_start).as_secs_f64() * 1000.0;
+        ms_per_sample = Some(pass_ms / f64::from(count));
         rays += pass_rays;
-        done += count;
         previous = count;
         passes += 1;
-        let sums = Arc::new(sums_of(films, width, height));
+        // E10: the round goes on; the frames say how many samples the pixels have and how far
+        // the noise is from its target.
+        let frame_adaptive = match adaptive.as_mut() {
+            Some(ad) => {
+                ad.advance(count);
+                if cost > 0 {
+                    ms_per_unit = Some(pass_ms / cost as f64);
+                }
+                if let Some((_, since)) = remaining.as_mut() {
+                    *since += cost;
+                }
+                let (min, max) = ad.min_max();
+                done = max;
+                let eta = match (remaining, ms_per_unit) {
+                    (Some((left, since)), Some(unit)) => {
+                        let left = (f64::from(left) - since as f64).max(0.0);
+                        if left.is_finite() {
+                            (left * unit / 1000.0) as f32
+                        } else {
+                            -1.0
+                        }
+                    }
+                    _ => -1.0,
+                };
+                Some(FrameAdaptive {
+                    min,
+                    max,
+                    noise: ad.last().map_or(-1.0, |d| d.max_error),
+                    eta,
+                })
+            }
+            None => {
+                done += count;
+                None
+            }
+        };
+        let scale = frame_adaptive.map(|a| a.max);
+        let sums = Arc::new(sums_of(films, width, height, scale));
         if let Some(live) = live {
             // U11: the lane's newest pass; the frames show it unless they show a denoised image.
             if guides.is_none() || albedo_more.load(Ordering::Relaxed) {
@@ -1628,8 +1871,24 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
             let guides = guides
                 .as_ref()
                 .map_or_else(|| Arc::new(Passes::new(width, height, 0)), Arc::clone);
-            let lum2 = lum2_of(films, width, height);
-            job.publish_live_pass(live, passes, done, rays, sums, lum2, guides, caustics);
+            let lum2 = lum2_of(films, width, height, scale);
+            let counts = if scale.is_some() {
+                counts_of(films, width, height)
+            } else {
+                Vec::new()
+            };
+            job.publish_live_pass(
+                live,
+                passes,
+                done,
+                rays,
+                sums,
+                lum2,
+                guides,
+                caustics,
+                counts,
+                frame_adaptive,
+            );
             continue;
         }
         {
@@ -1639,6 +1898,7 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
             p.rays = rays;
             p.sums = sums;
             p.image = caustics;
+            p.adaptive = frame_adaptive;
             p.version = p.version.wrapping_add(1);
         }
         job.changed.notify_all();
@@ -1657,12 +1917,21 @@ fn render(job: &Arc<Job>, scene: &Scene, gate: &Gate, isa: Isa) -> Option<Passes
     // A final that denoises: one more frame, its last, with the denoised image (and the one
     // without denoise when it asks for both), before it is kept and says it ended.
     if denoise && done > 0 {
-        let sums = sums_of(films, width, height);
+        // E10: an adaptive image's sums rescaled to its most samples, each pixel's variance with
+        // its own count.
+        let scale = adaptive.is_some().then_some(done);
+        let sums = sums_of(films, width, height, scale);
+        let counts = if scale.is_some() {
+            counts_of(films, width, height)
+        } else {
+            Vec::new()
+        };
         let clean = denoise_sums(
             &sums,
-            &lum2_of(films, width, height),
+            &lum2_of(films, width, height, scale),
             &passes_of(pass_tiles, width, height, mask),
             done,
+            &counts,
             threads,
             Preset::FULL,
             job.denoise_strength,
@@ -2214,6 +2483,7 @@ mod tests {
             sums: Arc::new((0..n).map(|i| i as f32).collect()),
             noisy: Some(Arc::new(vec![-1.0; n])),
             version: 3,
+            adaptive: None,
         }
     }
 
@@ -2819,6 +3089,214 @@ mod tests {
                 assert_eq!(*f.sums, want, "{kind:?} on {threads} threads");
             }
         }
+    }
+
+    /// `rt`'s render of an adaptive scene, as the launcher publishes it: each pixel's sums rescaled
+    /// to the most samples (E10), RGBA; and what adaptive sampling did.
+    fn rt_adaptive(scene: &Scene) -> (Vec<f32>, rt_cli::AdaptiveRun, rt_cli::RenderOutput) {
+        let out = rt_cli::render(scene, scene.render.max_samples, 3);
+        let run = out.adaptive.expect("adaptive");
+        let sums =
+            rt_post::denoise::rgba_sums(&rt_core::adaptive::rescale_film(&out.film, out.samples));
+        (sums, run, out)
+    }
+
+    #[test]
+    fn an_adaptive_image_is_rt_s_with_any_thread_count_in_a_final_and_a_view() {
+        // E10: the E10 scene (glass, caustics, edge samples, a noise target, a cap): a final and
+        // a view are `rt`'s image on 1, 4 and 16 threads (the decisions read the whole image
+        // between rounds; the blocks of a round are claimed one by one), the frames say how many
+        // samples the pixels have, and the sums are each pixel's rescaled to the most of them.
+        let _serial = serial();
+        let scene = rt_core::example::e10_scene();
+        let (want, run, _) = rt_adaptive(&scene);
+        assert!(run.max > run.min);
+        for threads in [1usize, 4, 16] {
+            let engine = Engine::new(threads);
+            for kind in [Kind::Final, Kind::Viewport] {
+                let job = engine.submit(kind, &scene.to_rsb(), "", "", None).unwrap();
+                let f = wait_done(&job);
+                assert_eq!(
+                    f.flags & (FLAG_DONE | FLAG_ADAPTIVE),
+                    FLAG_DONE | FLAG_ADAPTIVE
+                );
+                let a = f.adaptive.expect("adaptive numbers");
+                assert_eq!((a.min, a.max), (run.min, run.max), "{kind:?} on {threads}");
+                assert_eq!(f.samples, run.max);
+                assert!(a.noise > 0.0);
+                assert!(*f.sums == want, "{kind:?} on {threads} threads");
+            }
+        }
+        // Without the flag the job is the plain one: no adaptive numbers, every pixel alike.
+        let mut plain = scene.clone();
+        plain.render.adaptive = 0;
+        plain.render.max_samples = 4;
+        let engine = Engine::new(2);
+        let job = engine
+            .submit(Kind::Final, &plain.to_rsb(), "", "", None)
+            .unwrap();
+        let f = wait_done(&job);
+        assert_eq!(f.flags & FLAG_ADAPTIVE, 0);
+        assert!(f.adaptive.is_none());
+        assert!(f.sums.chunks_exact(4).all(|px| px[3] == 4.0));
+    }
+
+    #[test]
+    fn an_adaptive_final_that_denoises_weighs_each_pixel_s_variance_by_its_count() {
+        // E10: the denoiser gets the sums rescaled to the most samples and each pixel's own count
+        // (rt's `denoise_film`, the same bits); the count changes the image (the variance of a
+        // pixel of 16 samples is not the one of 48).
+        let _serial = serial();
+        let mut scene = small_example(256, 96, 72);
+        scene.render.adaptive = rt_core::adaptive::ADAPTIVE_ON;
+        scene.render.noise_threshold = 0.04;
+        scene.render.denoise = DENOISE_IMAGE;
+        let (_, run, out) = rt_adaptive(&scene);
+        // The parts (the background is left as it is) have pixels of different counts.
+        let passes = out.passes.as_ref().expect("guides");
+        let mut parts: Vec<f32> = (0..out.film.weight.len())
+            .filter(|&p| passes.part_id[p] != 0)
+            .map(|p| out.film.weight[p])
+            .collect();
+        parts.sort_by(f32::total_cmp);
+        parts.dedup();
+        assert!(parts.len() > 1 && run.max > run.min, "{parts:?}");
+        let clean = out.denoised(2).expect("guides");
+        let expect = rt_post::denoise::rgba_sums(&clean);
+        // The same image denoised as if every pixel had the most samples is another one.
+        let sums =
+            rt_post::denoise::rgba_sums(&rt_core::adaptive::rescale_film(&out.film, out.samples));
+        let lum2 = rt_core::adaptive::rescale_film(&out.film, out.samples).lum2;
+        let uniform = denoise_sums(&sums, &lum2, passes, run.max, &[], 2, Preset::FULL, 1.0)
+            .expect("denoise");
+        assert_ne!(uniform, expect);
+        for threads in [1usize, 4] {
+            let engine = Engine::new(threads);
+            let job = engine
+                .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+                .unwrap();
+            let f = wait_done(&job);
+            assert_eq!(
+                f.flags & (FLAG_DENOISED | FLAG_ADAPTIVE),
+                FLAG_DENOISED | FLAG_ADAPTIVE
+            );
+            assert!(*f.sums == expect, "{threads} threads");
+        }
+    }
+
+    #[test]
+    fn the_frames_of_an_adaptive_render_fit_the_live_view_pass_by_pass() {
+        // U14 with E10: the queue's live view reads the frame of every pass, scaled down; an
+        // adaptive pass renders only some blocks, but the sums of every frame are each pixel's
+        // rescaled to the frame's samples, so a box's mean is still the mean of its pixels' means
+        // (and the header keeps saying how many samples the pixels have).
+        let _serial = serial();
+        let scene = rt_core::example::e10_scene();
+        let engine = Engine::new(4);
+        let job = engine
+            .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+            .unwrap();
+        let mut seen = 0u32;
+        let mut frames = 0;
+        let mut last_max = 0;
+        loop {
+            let f = job.wait_newer(seen, Duration::from_secs(60));
+            if f.pass > seen && !f.is_empty() {
+                seen = f.pass;
+                frames += 1;
+                let a = f.adaptive.expect("adaptive numbers");
+                assert!(a.min <= a.max && a.max >= last_max);
+                assert_eq!(f.samples, a.max);
+                last_max = a.max;
+                let fit = f.fitted(40, 30);
+                assert_eq!((fit.width, fit.height), (40, 30));
+                assert_eq!(
+                    fit.flags & (FLAG_SCALED | FLAG_ADAPTIVE),
+                    FLAG_SCALED | FLAG_ADAPTIVE
+                );
+                assert_eq!(fit.adaptive, f.adaptive);
+                // The box of output pixel (7, 5): input pixels (28..32, 20..24).
+                let mut acc = [0f32; 4];
+                for y in 20..24usize {
+                    for x in 28..32usize {
+                        let px = &f.sums[(y * 160 + x) * 4..(y * 160 + x) * 4 + 4];
+                        for (a, v) in acc.iter_mut().zip(px) {
+                            *a += v;
+                        }
+                    }
+                }
+                let o = (5 * 40 + 7) * 4;
+                for (got, a) in fit.sums[o..o + 4].iter().zip(acc) {
+                    assert_eq!(*got, a * (1.0 / 16.0));
+                }
+                // Every pixel's coverage reads as opaque at the frame's samples.
+                assert!(f
+                    .sums
+                    .chunks_exact(4)
+                    .all(|px| (px[3] / f.samples as f32 - 1.0).abs() < 1.0e-5));
+            }
+            if f.finished() {
+                break;
+            }
+        }
+        assert!(frames > 5, "{frames} frames");
+    }
+
+    #[test]
+    fn adaptive_frames_carry_their_numbers_and_read_back() {
+        let mut f = counting_frame(3, 2);
+        f.adaptive = Some(FrameAdaptive {
+            min: 16,
+            max: 80,
+            noise: 0.025,
+            eta: 12.5,
+        });
+        let f = f.flagged();
+        assert_eq!(f.flags & FLAG_ADAPTIVE, FLAG_ADAPTIVE);
+        let mut bytes = Vec::new();
+        f.write(true, &mut bytes).unwrap();
+        assert_eq!(bytes.len(), FRAME_HEADER + 3 * 2 * 4 * 4 * 2);
+        let back = Frame::read(&bytes).expect("frame");
+        assert_eq!(back.adaptive, f.adaptive);
+        assert_eq!(back.flags & FLAG_ADAPTIVE, FLAG_ADAPTIVE);
+        // A header of 52 bytes (before E10) still reads, without the numbers.
+        let plain = counting_frame(3, 2);
+        let mut old = Vec::new();
+        plain.write(true, &mut old).unwrap();
+        old[4..8].copy_from_slice(&52u32.to_le_bytes());
+        old.drain(52..68);
+        let back = Frame::read(&old).expect("old frame");
+        assert!(back.adaptive.is_none());
+        assert_eq!(*back.sums, *plain.sums);
+    }
+
+    #[test]
+    fn an_adaptive_job_by_time_stops_between_passes_and_one_by_noise_when_it_is_clean() {
+        let _serial = serial();
+        let engine = Engine::new(2);
+        let mut scene = small_example(0, 64, 48);
+        scene.render.adaptive = rt_core::adaptive::ADAPTIVE_ON;
+        scene.render.max_seconds = 0.4;
+        let job = engine
+            .submit(Kind::Final, &scene.to_rsb(), "", "", Some(Finish::Time))
+            .unwrap();
+        let f = wait_done(&job);
+        assert_eq!(
+            f.flags & (FLAG_DONE | FLAG_ADAPTIVE),
+            FLAG_DONE | FLAG_ADAPTIVE
+        );
+        assert!(f.seconds < 5.0, "{}", f.seconds);
+        // By noise: a target the example reaches soon, and a cap it does not.
+        scene.render.max_seconds = 0.0;
+        scene.render.max_samples = 100_000;
+        scene.render.noise_threshold = 0.2;
+        let job = engine
+            .submit(Kind::Final, &scene.to_rsb(), "", "", None)
+            .unwrap();
+        let f = wait_done(&job);
+        let a = f.adaptive.expect("adaptive");
+        assert_eq!(f.flags & FLAG_DONE, FLAG_DONE);
+        assert!(a.max < 100_000 && a.noise <= 0.2 && a.noise > 0.0, "{a:?}");
     }
 
     #[test]
