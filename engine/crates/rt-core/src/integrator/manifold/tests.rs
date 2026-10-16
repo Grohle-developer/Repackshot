@@ -304,6 +304,7 @@ fn the_jacobian_is_what_finite_differences_of_the_solver_give() {
     for (scene, x, end, h) in cases {
         let analytic = solve_in(scene, x, end).0.expect("path").jacobian;
         let numeric = jacobian_by_differences(scene, x, end, h);
+        eprintln!("jacobian {analytic:.6e} vs differences {numeric:.6e}");
         assert!(
             (analytic / numeric - 1.0).abs() < 0.01,
             "{end:?}: {analytic} vs {numeric}"
@@ -549,6 +550,7 @@ fn a_point_light_lights_through_a_slab_as_its_image_does() {
     let h = (300.0 - 10.0 * (1.0 - 1.0 / 1.5)) * 1.0e-3;
     let intensity = f64::from(power) / (4.0 * std::f64::consts::PI);
     let want = 0.8 / std::f64::consts::PI * intensity * (1.0 - r) * (1.0 - r) / (h * h);
+    eprintln!("point light through a slab: {got:.6} vs {want:.6}");
     assert!((got / want - 1.0).abs() < 0.003, "{got} vs {want}");
     let mut without = Prepared::new(&scene);
     without.manifold = false;
@@ -573,6 +575,7 @@ fn a_sun_lights_through_a_pane_with_the_fresnel_of_both_faces() {
     let got = green(&render_with(&scene, &Prepared::new(&scene), 4));
     let f = f64::from(fresnel_dielectric(c, 1.5));
     let want = 0.8 / std::f64::consts::PI * 2.0 * f64::from(c) * (1.0 - f) * (1.0 - f);
+    eprintln!("sun through a pane: {got:.6} vs {want:.6}");
     assert!((got / want - 1.0).abs() < 0.002, "{got} vs {want}");
 }
 
@@ -602,6 +605,7 @@ fn light_through_glass_is_counted_once_with_either_technique_and_with_both() {
         8,
     );
     let [mis, lights, bsdf] = three_techniques(&scene, 2048);
+    eprintln!("floor under a slab: MIS {mis:.5}, connections {lights:.5}, BSDF {bsdf:.5}");
     assert!(mis > 0.0);
     for (name, v) in [("connections", lights), ("BSDF", bsdf)] {
         assert!((v / mis - 1.0).abs() < 0.02, "{name} {v} vs MIS {mis}");
@@ -768,7 +772,8 @@ fn on_faceted_glass_the_paths_through_other_facets_keep_their_weight() {
         },
         ..Scene::default()
     };
-    let [mis, _, bsdf] = three_techniques(&scene, 512);
+    let [mis, lights, bsdf] = three_techniques(&scene, 512);
+    eprintln!("faceted ball: MIS {mis:.5}, connections {lights:.5}, BSDF {bsdf:.5}");
     assert!(bsdf > 0.0);
     assert!((mis / bsdf - 1.0).abs() < 0.03, "MIS {mis} vs BSDF {bsdf}");
 }

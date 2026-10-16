@@ -37,7 +37,7 @@ USAGE:
     rt --write-e9-example <scene.rsb>
     rt --sss-sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-e13-example <scene.rsb>
-    rt --e13-sheet <dir> [--samples N] [--threads N] [--size WxH]
+    rt --e13-sheet <dir> [--samples N] [--threads N] [--size WxH] [--only keys]
     rt --write-e11-example <scene.rsb>
     rt --write-ambient-example <scene.rsb>
     rt --write-o1-example <scene.rsb>
@@ -108,8 +108,10 @@ OPTIONS:
                             double Gauss and through the thin lens (64x48, 1024 spp) and their
                             camera samples alone, and the camera sample of every lens, into
                             <dir>/cost.json
-        --only <keys>       with --filter-sheet or --lens-sheet: only those cells (comma
-                            separated), the others kept in index.json; with --filter-noise, only
+        --only <keys>       with --e13-sheet: only those scenes (milk-bottle, water-glass,
+                            glass-ball, e5-bottle); with --filter-sheet or --lens-sheet: only
+                            those cells (comma separated), the others kept in index.json;
+                            with --filter-noise, only
                             those filters; with --pattern-sheet, wood or cloth: only that one of
                             its two sheets
         --write-example <f> write the built-in example scene as an RSB file
@@ -402,6 +404,8 @@ pub enum Command {
         dir: PathBuf,
         /// Samples, threads and size overrides.
         options: Options,
+        /// Only these scenes (`--only key,key`).
+        only: Vec<String>,
     },
     /// Render the E9 contact sheet of the scattering media into a directory.
     SssSheet {
@@ -777,7 +781,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
         if input.is_some() || output.is_some() {
             return Err("--e13-sheet renders its own scenes".into());
         }
-        return Ok(Command::E13Sheet { dir, options });
+        return Ok(Command::E13Sheet { dir, options, only });
     }
     if let Some(path) = write_e11 {
         if args.len() != 2 {
@@ -1013,14 +1017,14 @@ pub fn run(command: Command) -> Result<(), String> {
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
             Ok(())
         }
-        Command::E13Sheet { dir, options } => {
+        Command::E13Sheet { dir, options, only } => {
             let size = options.size.unwrap_or(crate::e13_sheet::SIZE);
             let samples = options.samples.unwrap_or(crate::e13_sheet::SAMPLES);
             let threads = options
                 .threads
                 .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
             let reference = samples.saturating_mul(crate::e13_sheet::REFERENCE_FACTOR);
-            crate::e13_sheet::run(&dir, size, samples, reference, threads)?;
+            crate::e13_sheet::run(&dir, size, samples, reference, threads, &only)?;
             println!("wrote {}", dir.join("e13-sheet.html").display());
             Ok(())
         }

@@ -291,6 +291,7 @@ pub fn run(
     samples: u32,
     reference: u32,
     threads: usize,
+    only: &[String],
 ) -> Result<(), String> {
     let images = dir.join("e13");
     std::fs::create_dir_all(&images).map_err(|e| format!("{}: {e}", images.display()))?;
@@ -332,7 +333,10 @@ pub fn run(
     ];
     let mut rows = Vec::new();
     let mut json = String::from("{\n  \"scenes\": [\n");
-    for (n, (key, title, scene, region, lit)) in scenes.into_iter().enumerate() {
+    let scenes = scenes
+        .into_iter()
+        .filter(|(key, ..)| only.is_empty() || only.iter().any(|k| k == key));
+    for (n, (key, title, scene, region, lit)) in scenes.enumerate() {
         let mut scene = scene;
         scene.render.width = size.0;
         scene.render.height = size.1;
@@ -423,10 +427,23 @@ pub fn run(
                 green(&render_mode(&s, Mode::After, samples, threads).film)
             };
             let (a, b) = (after(0), after(1000));
+            // The control: the same milk without its bottle (no glass in the way at all).
+            let mut bare = scene.clone();
+            let milk_only: Vec<_> = bare.geometry.instances()[2..].to_vec();
+            bare.geometry =
+                rt_core::scene::Geometry::new(bare.geometry.meshes().to_vec(), milk_only)
+                    .unwrap_or_default();
+            let bare_after = |seed: u32| {
+                let mut s = bare.clone();
+                s.render.seed = s.render.seed.wrapping_add(seed);
+                green(&render_mode(&s, Mode::After, samples, threads).film)
+            };
+            let (c, d) = (bare_after(0), bare_after(1000));
             format!(
-                "Relative noise at {samples} spp with the connections: milk {:.4}, floor beside the bottle {:.4}.",
+                "Relative noise at {samples} spp with the connections: milk {:.4}, floor beside the bottle {:.4}; the same milk without its bottle {:.4}.",
                 noise(&a, &b, &pixels),
-                noise(&a, &b, &floor)
+                noise(&a, &b, &floor),
+                noise(&c, &d, &pixels)
             )
         } else {
             String::new()
