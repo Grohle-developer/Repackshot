@@ -157,7 +157,9 @@ jobs:
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o1.rsb" --expect "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/o1.rsb" --expect "$expected" --passes
           # S4a: ambient particles (dust widened to the minimum size, glass rain, spinning snow): the image,
-          # and the particles the module evaluates for the Fast preview (rt_particles_eval).
+          # and the particles the module evaluates for the Fast preview (rt_particles_eval). S4b: the dust has
+          # its forward lobe, the rain is crossed straight by shadow rays and rough paths, and the camera rays
+          # find the particles through the screen grid (PINNED_AMBIENT_4SPP pinned again).
           cargo run --release -p rt-cli -- --write-ambient-example "$RUNNER_TEMP/ambient.rsb"
           expected=$(sed -n 's/.*PINNED_AMBIENT_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render/ambient_tests.rs | tr -d _)
           particles=$(sed -n 's/.*PINNED_AMBIENT_PARTICLES: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render/ambient_tests.rs | tr -d _)

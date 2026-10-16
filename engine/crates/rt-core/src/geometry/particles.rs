@@ -68,6 +68,10 @@ pub const GRID_CELL_PIXELS: f32 = 4.0;
 const GRID_MAX_CELLS: u64 = 1 << 20;
 /// Most pieces a long capsule is laid out on the screen grid in.
 const GRID_MAX_PIECES: usize = 32;
+/// Most particles a camera ray tests from a cell of the screen grid: a ray of a fuller cell (or of
+/// a set with more particles that every ray tests) walks the BVH instead, which stops at the
+/// nearest hit where the cell would test them all.
+pub const GRID_MAX_CANDIDATES: usize = 16;
 
 /// Leaf policy of a particle BVH.
 const PARTICLE_LEAVES: BuildParams = BuildParams {
@@ -529,19 +533,14 @@ impl ParticleSet {
             1
         };
         let (a, b) = (c - half, c + half);
+        // The ends of the pieces, the first and the last exactly at the capsule's.
+        let end = |k: usize| match k {
+            0 => a,
+            k if k == pieces => b,
+            k => a + (b - a) * (k as f32 / pieces as f32),
+        };
         for k in 0..pieces {
-            // The ends of the piece, the last one exactly at the capsule's end.
-            let s0 = k as f32 / pieces as f32;
-            let s1 = if k + 1 == pieces {
-                1.0
-            } else {
-                (k + 1) as f32 / pieces as f32
-            };
-            let (p0, p1) = (a + (b - a) * s0, a + (b - a) * s1);
-            let (p0, p1) = (
-                if k == 0 { a } else { p0 },
-                if k + 1 == pieces { b } else { p1 },
-            );
+            let (p0, p1) = (end(k), end(k + 1));
             let lo = Vec3::new(p0.x.min(p1.x), p0.y.min(p1.y), p0.z.min(p1.z)) - Vec3::splat(r);
             let hi = Vec3::new(p0.x.max(p1.x), p0.y.max(p1.y), p0.z.max(p1.z)) + Vec3::splat(r);
             // The pieces overlap by the rounding of their ends as well.
@@ -652,12 +651,13 @@ impl ParticleSet {
         }
         grid.starts = starts;
         grid.slots = slots;
-        Some(grid)
+        (grid.everywhere.len() <= GRID_MAX_CANDIDATES).then_some(grid)
     }
 
     /// For a camera ray that leaves the camera's centre (a pinhole) or its aperture disc (a thin
     /// lens): the slots of the particles it can hit, those of its cell of the screen grid and those
-    /// every ray tests (S4b). `None` for any other ray, or without a grid: the BVH then.
+    /// every ray tests (S4b). `None` for any other ray, for a cell with more than
+    /// [`GRID_MAX_CANDIDATES`] particles, or without a grid: the BVH then.
     #[inline(always)]
     pub(crate) fn screen_candidates(&self, ray: &Ray) -> Option<(&[u32], &[u32])> {
         let grid = self.grid.as_ref()?;
@@ -666,7 +666,7 @@ impl ParticleSet {
         let (col, row) = grid.cell_of(x, y);
         let c = (row * grid.cols + col) as usize;
         let (a, b) = (grid.starts[c] as usize, grid.starts[c + 1] as usize);
-        Some((&grid.slots[a..b], &grid.everywhere))
+        (b - a <= GRID_MAX_CANDIDATES).then(|| (&grid.slots[a..b], &grid.everywhere[..]))
     }
 
     /// The radius a camera ray sees of the particle in `slot`: its own, or the minimum size on
@@ -1035,7 +1035,7 @@ mod grid_tests {
         let mut f = |lo: f32, hi: f32| lo + (hi - lo) * rng.next_f32();
         (0..n)
             .map(|id| {
-                let y = if id % 50 == 0 {
+                let y = if id % 100 == 0 {
                     f(-1060.0, -980.0) // straddling or behind the camera's plane
                 } else {
                     f(-700.0, 400.0)
@@ -1127,9 +1127,57 @@ mod grid_tests {
                 eprintln!(
                     "f/{fstop} at {focus}, {shape:?}: {hits} hits of 6000, {gridded} by the grid"
                 );
-                assert_eq!(gridded, 6000, "every camera ray uses the grid");
+                assert!(gridded >= 2000, "many camera rays use the grid: {gridded}");
                 assert!(hits > 300, "{hits}");
             }
         }
+        // A crowd (6 000 particles 4 mm across in a box of 150 mm): the rays of its full cells
+        // walk the BVH, and every ray still finds what brute force finds.
+        let camera = Camera {
+            position: Vec3::new(0.0, -1000.0, 100.0),
+            target: Vec3::new(0.0, 0.0, 100.0),
+            ..Camera::default()
+        };
+        let mut rng = Pcg32::seeded(5, 5);
+        let crowd: Vec<Particle> = (0..6000)
+            .map(|id| Particle {
+                centre: [
+                    -75.0 + 150.0 * rng.next_f32(),
+                    -75.0 + 150.0 * rng.next_f32(),
+                    25.0 + 150.0 * rng.next_f32(),
+                ],
+                radius: 2.0,
+                axis: [0.0; 3],
+                tint: 0,
+                id,
+            })
+            .collect();
+        let params = AmbientParams {
+            count: 6000,
+            ..AmbientParams::default()
+        };
+        let footprint = PixelFootprint::of(&camera, 120, 80);
+        let set = ParticleSet::new(&params, &crowd, footprint, width);
+        let geometry =
+            Geometry::with_particles(Vec::new(), Vec::new(), vec![set], width).expect("geometry");
+        let set = &geometry.particle_sets()[0];
+        let (mut gridded, mut walked) = (0, 0);
+        for _ in 0..3000 {
+            let (u, v) = (0.4 + 0.2 * rng.next_f32(), 0.3 + 0.4 * rng.next_f32());
+            let ray = camera.generate_ray(1.5, u, v, (0.0, 0.0));
+            match set.screen_candidates(&ray) {
+                Some((cell, _)) => {
+                    assert!(cell.len() <= GRID_MAX_CANDIDATES);
+                    gridded += 1;
+                }
+                None => walked += 1,
+            }
+            assert_eq!(
+                geometry.trace_class(&ray, Isa::detect(), RayClass::Camera),
+                geometry.brute_force(&ray, RayClass::Camera).0
+            );
+        }
+        eprintln!("crowd: {gridded} rays by the grid, {walked} by the BVH");
+        assert!(walked > 300, "{walked}");
     }
 }

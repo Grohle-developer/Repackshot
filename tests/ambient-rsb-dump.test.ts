@@ -81,6 +81,8 @@ describe.skipIf(!dir)('ambient contact sheet: RSB dump', () => {
         write(`DUST_MOTES-forward-${forward}-${light}`, 'forward-share', `Dust motes, forward share ${forward} (${light})`, apply(s, { type: 'effect/set', id: s.effects[0].id, patch }));
       }
     }
+    // S4b: the side-lit rain converged, against the grain of the refraction kept inside its streaks at 128 spp.
+    write('RAIN-side-1024', 'rain-converged', 'Rain, side key, 1024 spp', withEffect('side', 'RAIN'), 1024);
     for (const streak of [0.004, 0.012, 0.03]) write(`RAIN-streak-${streak}`, 'rain-streak', `Rain, streak ${streak * 1000} ms (backlight)`, withEffect('back', 'RAIN', { streak }));
     for (const softness of [0.2, 0.9]) {
       const s = withEffect('side', 'DUST_CLOUD');
@@ -91,9 +93,12 @@ describe.skipIf(!dir)('ambient contact sheet: RSB dump', () => {
     write('cost-none', 'cost', 'No effect', base('side'), costSpp);
     for (const p of AVAILABLE_EFFECTS) write(`cost-${p.key}`, 'cost', p.label.en, withEffect('side', p.key), costSpp);
     write('cost-dust200k', 'cost', '200 000 dust motes', withEffect('side', 'DUST_MOTES', { amountMode: 'COUNT', count: 200_000 }), costSpp);
-    const rows = { 'forward-share': 'Dust motes: other shares of the forward lobe (S4b; the presets above have 0.5, the proposal)' };
+    const rows = {
+      'forward-share': 'Dust motes: other shares of the forward lobe (S4b; the presets above have 0.5, the proposal)',
+      'rain-converged': 'Rain under the side key at 1024 spp: the grain left inside the streaks at 128 spp is the drops refracting the key, and converges (S4b)',
+    };
     writeFileSync(join(dir!, 'shots.json'), JSON.stringify({ width, height, spp, costSpp, lights: Object.fromEntries(Object.entries(LIGHTS).map(([k, v]) => [k, v.label])), rows, shots }, null, 2));
-    expect(shots).toHaveLength(8 * 2 + 3 * 2 + 3 + 2 + 1 + 8 + 1);
+    expect(shots).toHaveLength(8 * 2 + 3 * 2 + 1 + 3 + 2 + 1 + 8 + 1);
     expect(shots.find((x) => x.file === 'cost-dust200k')!.particles).toBe(200_000);
   });
 });

@@ -134,6 +134,7 @@ impl Bsdf {
     /// is the refraction of a solid clear part (thin walls transmit only straight, which no
     /// evaluation sees), or the forward lobe of a particle (S4b), which every light lights as the
     /// diffuse lobe is (`lobes` does not leave it out).
+    #[inline]
     pub fn eval(&self, wo: Vec3, wi: Vec3, lobes: Lobes) -> Rgb {
         let surface = self.eval_surface(wo, wi, lobes);
         if !self.forward.is_on() {
@@ -154,6 +155,7 @@ impl Bsdf {
     /// Density, per steradian, with which [`Bsdf::sample`] returns `wi` for this `wo` (the
     /// straight transmission of thin walls, a delta, is not part of it): with a forward lobe, the
     /// mixture of the surface's density and the lobe's, each by its probability.
+    #[inline]
     pub fn pdf(&self, wo: Vec3, wi: Vec3) -> f32 {
         let surface = self.pdf_surface(wo, wi);
         if !self.forward.is_on() {
@@ -171,6 +173,7 @@ impl Bsdf {
     /// scatters to (total internal reflection of a microfacet included). With a forward lobe the
     /// first dimension chooses it with probability `share` (rescaled for what follows), and the
     /// weight is that of the mixture, `f |cos| / pdf` with [`Bsdf::eval`] and [`Bsdf::pdf`].
+    #[inline]
     pub fn sample(&self, wo: Vec3, u: (f32, f32)) -> Option<BsdfSample> {
         if !self.forward.is_on() {
             return self.sample_surface(wo, u);

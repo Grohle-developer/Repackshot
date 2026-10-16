@@ -249,6 +249,8 @@ pub struct Prepared {
     /// Smooth clear particles leave their non-delta lights to their BSDF rays (always, but for the
     /// tests' reference, S4b).
     pub(crate) mirror_particles: bool,
+    /// The scene has particles (S4b: without them a path skips every check of theirs).
+    particles: bool,
     /// Per instance with an anisotropic material: the world centre and axis of its tangents.
     tangent_axes: Vec<Option<(Vec3, Vec3, Vec3)>>,
     /// The caustics of the scene (`RNDR.caustic_photons` above zero and something to focus
@@ -387,6 +389,7 @@ impl Prepared {
             exact_media: false,
             exit_walls: true,
             mirror_particles: true,
+            particles: !scene.geometry.particle_sets().is_empty(),
             tangent_axes,
             caustics,
             bevel: BevelSetup::new(scene),
@@ -1154,6 +1157,7 @@ pub fn radiance_weighted<T: Tracer>(
             // last vertex for the MIS of what lies behind.
             if let Some(h) = hit.filter(|h| {
                 !sharp
+                    && prepared.particles
                     && exit.is_none()
                     && scene
                         .geometry
@@ -1294,7 +1298,9 @@ pub fn radiance_weighted<T: Tracer>(
         };
         // S4b: the forward lobe of a particle that has one (dust, pollen, a dust cloud).
         let forward = match (exit, surface.instance, material) {
-            (None, Some((i, _)), Some(m)) => prepared.forward_lobe(scene, i, m),
+            (None, Some((i, _)), Some(m)) if prepared.particles => {
+                prepared.forward_lobe(scene, i, m)
+            }
             _ => None,
         };
         let bsdf = match forward {
@@ -1355,7 +1361,8 @@ pub fn radiance_weighted<T: Tracer>(
         // S4b: a smooth clear particle (a drop, a bubble) only reflects and refracts like a mirror:
         // next-event estimation there can only find delta lights, and every other light is left
         // to its BSDF ray, which counts what it finds whole (a density of infinity in the MIS).
-        let mirror = prepared.mirror_particles
+        let mirror = prepared.particles
+            && prepared.mirror_particles
             && surface.instance.is_some_and(|(i, _)| {
                 scene
                     .geometry
