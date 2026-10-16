@@ -992,10 +992,10 @@ mod tests {
 
     /// Pinned hash of the E5 example (HDRI) at 4 samples per pixel (`0xfdf0_c2ac` until E13: its
     /// panel now lights the floor and the parts through the glass sphere).
-    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0xa5c7_5c14;
+    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0x1c1a_76dc;
     /// Pinned hash of the E5 example (sky) at 4 samples per pixel (`0x47fa_4eb7` until E13: its
     /// sun now lights the floor through the glass sphere).
-    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0xa031_01a8;
+    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0xaf19_9b55;
 
     #[test]
     fn the_e5c_physical_sky_has_a_pinned_hash_on_every_platform() {
@@ -1015,7 +1015,7 @@ mod tests {
 
     /// Pinned hash of the E5c example (physical sky) at 4 samples per pixel (`0xf6fb_c84f` until
     /// E13, as the E5 sky's).
-    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x4af2_bed2;
+    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0xb65e_c6b2;
 
     /// Renders all of `scene`, 32-pixel tiles, samples `0..4`, each with its photon map (traced
     /// once per sample, as every host does), and hashes the resolved film.
@@ -1105,7 +1105,7 @@ mod tests {
     }
 
     /// Pinned hash of the E13 example (manifold next-event estimation) at 4 samples per pixel.
-    pub(crate) const PINNED_E13_MANIFOLD_4SPP: u32 = 0x7724_0793;
+    pub(crate) const PINNED_E13_MANIFOLD_4SPP: u32 = 0x0969_a3cc;
 
     #[test]
     fn without_the_connections_the_glass_scenes_render_as_before_e13() {

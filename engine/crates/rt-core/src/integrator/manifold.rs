@@ -14,12 +14,19 @@
 //! triangle), and each vertex has two equations, the tangential part of the generalised half
 //! vector `ĥ = (ηₐ ωₐ + η_b ω_b) / |…|` (`ωₐ`, `ω_b` the unit directions towards the previous
 //! and the next vertex, `η` the indices on their sides), which vanishes exactly where Snell's law
-//! holds about the shading normal. Newton's method solves them ([`solve`]): the linear system of
-//! the constraints' derivatives gives a step in the tangent planes, the stepped vertices are
-//! projected back onto the surfaces by tracing the segments again from `x` (so every segment is
-//! also checked to be free), and a step that does not lower the error is halved; at most
-//! [`MAX_ITERATIONS`] projections, `f32` throughout, no random numbers (the same path for the same
-//! `x` and `y` on every platform and thread). For a sun the end is a direction instead of a point.
+//! holds about the shading normal `n`. It is taken along the triangle's own tangents `e_s`
+//! projected onto the shading plane, `c_s = ĥ · (e_s − (n·e_s) n)`, so that its derivatives,
+//! the turning of `n` included, are exact (no frame that turns with the normal). Newton's method
+//! solves them ([`solve`]): the linear system of the constraints' derivatives gives a step in the
+//! tangent planes, the stepped vertices are projected back onto the surfaces by tracing the
+//! segments again from `x` (so every segment is also checked to be free), and a step that does
+//! not lower the sum of the squared constraints is halved; at most [`MAX_ITERATIONS`]
+//! projections, `f32` throughout, no random numbers (the same path for the same `x` and `y` on
+//! every platform and thread). For a sun the end is a direction instead of a point. Under curved
+//! glass the straight seed often lies outside the solution's basin (a glass ball bends the light
+//! far from the straight line); when Newton's method from it fails, a second seed is traced from
+//! the light, refracting by Snell's law at each surface of the chain ([`seed_from_light`]), and
+//! solved in turn ([`connection_path`]: the same function on both sides of the MIS).
 //!
 //! **The connection** is a light sample in the measure of the light: its weight is
 //! `f(x) |cos θx| T Le · J / p(y)`, where `p(y)` is the density next-event estimation drew `y`
@@ -440,12 +447,14 @@ fn seed_through<T: Tracer>(
 
 /// The constraints of a path, their derivatives along the vertices' tangents (`a`, row `2i + r`
 /// is the component `r` of vertex `i`, column `2j + s` its rate along tangent `s` of vertex `j`)
-/// and along the end's measure (`b`), and the largest error at a vertex.
+/// and along the end's measure (`b`), the largest error at a vertex and the sum of the squares
+/// (what a step must lower).
 struct Constraints {
     c: [f32; 4],
     a: [[f32; 4]; 4],
     b: [[f32; 2]; 4],
     err: f32,
+    merit: f32,
 }
 
 /// The two tangents the end of a path is measured along: the light's surface, the area across the
@@ -490,6 +499,7 @@ fn constraints(v: &[Vertex], end: &End) -> Option<Constraints> {
         a: [[0.0; 4]; 4],
         b: [[0.0; 2]; 4],
         err: 0.0,
+        merit: 0.0,
     };
     for i in 0..k {
         let vi = &v[i];
@@ -501,29 +511,35 @@ fn constraints(v: &[Vertex], end: &End) -> Option<Constraints> {
             return None;
         }
         let h = h_raw * (1.0 / hl);
-        let f = Frame::from_normal(vi.n);
+        // The tangential part of h, along the triangle's own (fixed) tangents projected onto the
+        // tangent plane of the shading normal: c_s = h·q_s with q_s = e_s − (n·e_s) n, whose
+        // derivatives are exact (no frame turns with the normal).
+        let n = vi.n;
+        let q = [0, 1].map(|s| vi.e[s] - n * n.dot(vi.e[s]));
         let (r0, r1) = (2 * i, 2 * i + 1);
-        out.c[r0] = h.dot(f.x);
-        out.c[r1] = h.dot(f.y);
-        out.err = out
-            .err
-            .max((out.c[r0] * out.c[r0] + out.c[r1] * out.c[r1]).sqrt());
-        // A change of the unnormalised half vector, as the tangential components of the unit one.
+        out.c[r0] = h.dot(q[0]);
+        out.c[r1] = h.dot(q[1]);
+        let here = out.c[r0] * out.c[r0] + out.c[r1] * out.c[r1];
+        out.err = out.err.max(here.sqrt());
+        out.merit += here;
+        // A change of the unnormalised half vector, as a change of c.
         let dc = |dh: Vec3| {
             let d = (dh - h * h.dot(dh)) * (1.0 / hl);
-            (d.dot(f.x), d.dot(f.y))
+            (d.dot(q[0]), d.dot(q[1]))
         };
         // How the unit directions to the previous and the next vertex turn as a point moves by e.
         let pa = |e: Vec3| (e - wa * wa.dot(e)) * (1.0 / la);
         let pb = |e: Vec3| (e - wb * wb.dot(e)) * inv_lb;
-        let hn = h.dot(vi.n);
+        let hn = h.dot(n);
         for s in 0..2 {
             let e = vi.e[s];
-            // The vertex itself: both directions turn, and so does its normal (the frame turns
-            // with it by the least rotation: ds = -(s·dn) n).
+            // The vertex itself: both directions turn, and so does its normal, which turns q:
+            // h·dq_r = −(dn·e_r)(h·n) − (n·e_r)(h·dn).
             let (cx, cy) = dc(-(pa(e) * vi.eta_a) - pb(e) * vi.eta_b);
-            out.a[r0][2 * i + s] = cx - f.x.dot(vi.dn[s]) * hn;
-            out.a[r1][2 * i + s] = cy - f.y.dot(vi.dn[s]) * hn;
+            let dn = vi.dn[s];
+            let turn = |r: usize| -dn.dot(vi.e[r]) * hn - n.dot(vi.e[r]) * h.dot(dn);
+            out.a[r0][2 * i + s] = cx + turn(0);
+            out.a[r1][2 * i + s] = cy + turn(1);
             if i > 0 {
                 let (cx, cy) = dc(pa(v[i - 1].e[s]) * vi.eta_a);
                 out.a[r0][2 * (i - 1) + s] = cx;
@@ -737,7 +753,7 @@ pub(crate) fn solve<T: Tracer>(
         )
         .and_then(|w| constraints(&w[..k], end).map(|c| (w, c)));
         match moved {
-            Some((w, c)) if c.err < cons.err => {
+            Some((w, c)) if c.merit < cons.merit => {
                 v = w;
                 cons = c;
                 beta = (2.0 * beta).min(1.0);
@@ -762,6 +778,84 @@ pub(crate) fn solve<T: Tracer>(
         chain: seed.chain,
         vertices: v,
         jacobian,
+    })
+}
+
+/// The seed traced from the light: the ray from the end towards `x`, refracted by Snell's law
+/// (about the shading normal) at each surface of `chain`, met in reverse order from the far side;
+/// its crossings, traced again from `x` ([`seed_through`]). Where the glass bends the light a long
+/// way from the straight line (a ball, the curved side of a glass of water), it starts Newton's
+/// method nearer the solution than the straight seed does. `None` when the refracted ray does not
+/// meet the chain's surfaces in that order.
+fn seed_from_light<T: Tracer>(
+    prepared: &Prepared,
+    scene: &Scene,
+    tracer: &T,
+    x: Vec3,
+    straight: &Seed,
+    end: &End,
+    rays: &mut u64,
+) -> Option<Seed> {
+    let chain = &straight.chain;
+    let k = chain.len;
+    let last = straight.vertices[k - 1].p;
+    // From the light's point, or from beyond the chain towards a sun.
+    let start = match *end {
+        End::Point { y, .. } => y,
+        End::Direction { w } => last + w * (2.0 * (last - x).length() + 100.0),
+    };
+    let (mut dir, _) = unit(x - start)?;
+    let mut origin = start;
+    let mut points = [Vec3::ZERO; MAX_CHAIN];
+    for j in (0..k).rev() {
+        let want = chain.crossings[j];
+        let accept = |i: u32| i == want.instance;
+        let ray = Ray::new(origin, dir);
+        let Stop::Surface { details, .. } = prepared.first_stop(scene, tracer, &ray, accept, rays)
+        else {
+            return None;
+        };
+        // Met from the far side: where x's side enters the solid, the light leaves it.
+        if details.outside == want.entering {
+            return None;
+        }
+        let ior = prepared.material(scene, want.instance).ior;
+        let (from, to) = if want.entering {
+            (ior, 1.0)
+        } else {
+            (1.0, ior)
+        };
+        let n = details.normal;
+        let eta = from / to;
+        let cos_i = -dir.dot(n);
+        let sin2 = eta * eta * (1.0 - cos_i * cos_i);
+        if !(sin2 < 1.0) {
+            return None;
+        }
+        dir = (dir * eta + n * (eta * cos_i - (1.0 - sin2).sqrt())).normalize();
+        points[j] = details.point;
+        origin = offset_origin(details.point, -details.geometric_normal);
+    }
+    let (wi, _) = unit(points[0] - x)?;
+    seed_through(prepared, scene, tracer, x, chain, wi, &points, rays)
+}
+
+/// The path manifold next-event estimation connects `x` to `end` by, for the straight seed
+/// `seed`: Newton's method from it, and from the seed traced from the light when that fails
+/// ([`seed_from_light`]), the first that converges. One function for both sides of the MIS, so
+/// each light point has at most one connection, the same on both.
+pub(crate) fn connection_path<T: Tracer>(
+    prepared: &Prepared,
+    scene: &Scene,
+    tracer: &T,
+    x: Vec3,
+    seed: &Seed,
+    end: &End,
+    rays: &mut u64,
+) -> Option<Path> {
+    solve(prepared, scene, tracer, x, seed, end, rays).or_else(|| {
+        let lit = seed_from_light(prepared, scene, tracer, x, seed, end, rays)?;
+        solve(prepared, scene, tracer, x, &lit, end, rays)
     })
 }
 
@@ -828,7 +922,7 @@ pub(crate) fn connect<T: Tracer>(
     end: &ManifoldEnd,
     rays: &mut u64,
 ) -> Option<Connection> {
-    let path = solve(prepared, scene, tracer, x, seed, &end.end, rays)?;
+    let path = connection_path(prepared, scene, tracer, x, seed, &end.end, rays)?;
     let v = path.vertices();
     let last = v[v.len() - 1];
     let (wb, distance) = match end.end {
@@ -964,7 +1058,9 @@ pub(crate) fn found_factor<T: Tracer>(
         if !same {
             return 1.0;
         }
-        let Some(path) = solve(prepared, scene, tracer, from, &seed, &end.end, &mut traced) else {
+        let Some(path) =
+            connection_path(prepared, scene, tracer, from, &seed, &end.end, &mut traced)
+        else {
             return 1.0;
         };
         let wi = path.wi();

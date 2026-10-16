@@ -377,7 +377,7 @@ fn manifold_connections_are_the_same_bits_with_1_4_or_16_threads() {
         .fold(0x811c_9dc5u32, |h, b| {
             (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
         });
-    assert_eq!(hash, 0x7724_0793);
+    assert_eq!(hash, 0x0969_a3cc);
 }
 
 #[test]
