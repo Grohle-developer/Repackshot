@@ -59,7 +59,7 @@ import type { PassKey, RenderPasses } from '../core/passes';
 import type { FinishBy, RenderProgress } from '../core/render';
 import type { ProjectState } from '../core/store';
 import type { ViewportLimit } from '../core/settings';
-import { readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
+import { readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderOptions } from './engine';
 import { QUIET_MS, type RenderedPixels, type SceneSource, type TracerView } from './pathtracer';
 import { CAUSTICS_PRESETS, DENOISE_IMAGE, denoiseIn } from '../core/caustics';
 import { advancedTouchesView, engineFieldsOf } from '../core/render';
@@ -604,8 +604,9 @@ export class NativeEngine {
         // E11: a gesture's frames keep the filter but not the edge samples.
         pixelFilter: this.filter.pixelFilter,
         edgeSupersample: scale > 1 ? 1 : this.filter.edgeSupersample,
-        // M2b: the textures, when the launcher's engine reads them.
+        // M2b: the textures, when the launcher's engine reads them; M3b: the material programs, when it runs them.
         ...(readsTextures(this.info.features) ? { textures: true } : {}),
+        ...(readsPrograms(this.info.features) ? { programs: true } : {}),
       },
     };
   }
@@ -1012,6 +1013,7 @@ export class NativeEngine {
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
         ...this.filter,
         ...(readsTextures(this.info.features) ? { textures: true } : {}),
+        ...(readsPrograms(this.info.features) ? { programs: true } : {}),
       };
       const built = this.source.build(state, view);
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.

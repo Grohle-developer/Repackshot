@@ -411,6 +411,10 @@ export function readRsb(bytes: Uint8Array): Partial<RsbScene> & { materials: Rsb
         out.images = readImages(s.payload);
         out.textures = true;
         break;
+      case 'PROG':
+        // M3b: a material's program, its bytes as written (core/material-program.ts `decodeProgram` reads them).
+        (out.programs ??= []).push({ material: s.payload.getUint32(0, true), bytes: new Uint8Array(s.payload.buffer, s.payload.byteOffset + 4, s.payload.byteLength - 4).slice() });
+        break;
     }
     if ((s.tag === 'MESH' && meshHasUvWord(s.payload)) || (s.tag === 'MATL' && s.payload.byteLength > 100)) out.textures = true;
   }

@@ -16,6 +16,8 @@ import { effectFxam, engineParticleCap, fxamPayload, FXAM_BYTES, type AmbientEff
 import { instanceFromPreset } from '../core/materials';
 import type { EffectMaterial } from '../data/effects';
 import { flattenGraph } from '../core/material-preview';
+import { compileGraph, encodeProgram, OUTPUT_KEYS, type Program } from '../core/material-program';
+import type { MaterialGraph } from '../core/material-graph';
 import { activeCamera, cameraPosition, outputFrameRect, SENSOR_MM, type CameraId, type CameraState } from '../core/camera';
 import { kelvinToRgb } from '../core/light-math';
 import { isSphereLike, lightFrame, SPOT_DEFAULTS, type LightInstance } from '../core/lighting';
@@ -55,6 +57,11 @@ export const TAG_INST = 'INST';
 export const TAG_BMAP = 'BMAP';
 /** M2a (read by the engine from M2b): the texture images, decoded to 8-bit rows (ARCHITECTURE §5.2). */
 export const TAG_IMGS = 'IMGS';
+/**
+ * M3b: a material's program (the compiled graph of a node material, core/material-program.ts `encodeProgram`, its
+ * images as IMGS indices), for an engine that runs them (render/engine.ts `readsPrograms`). Written last.
+ */
+export const TAG_PROG = 'PROG';
 /** O1: the camera's optics beyond the plain thin lens (optional, right after CAMR). */
 export const TAG_LENS = 'LENS';
 /** S4a: an ambient effect's parameters (rt_sim::params; the engine evaluates the particles). */
@@ -511,6 +518,16 @@ export interface RsbScene {
   images?: RsbImage[];
   /** S4a: the ambient effects (FXAM), each referring to its material by index. */
   effects?: RsbEffect[];
+  /** M3b: the materials' programs (PROG, last), each referring to its material by index. */
+  programs?: RsbProgram[];
+}
+
+/** M3b: a material's program, the payload of `PROG` after its material index. */
+export interface RsbProgram {
+  /** Index of its material among the MATL sections. */
+  material: number;
+  /** The program's bytes (`encodeProgram`, its images as indices into IMGS). */
+  bytes: Uint8Array;
 }
 
 /** S4a: an ambient effect, the fields of `FXAM` (core/effects.ts `effectFxam`). */
@@ -783,6 +800,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   const tex = scene.textures === true;
   const images = tex ? (scene.images ?? []) : [];
   const effects = scene.effects ?? [];
+  const programs = scene.programs ?? [];
   let size = 8 + 8 + CAMR_BYTES + scene.lights.length * (8 + LGHT_BYTES) + effects.length * (8 + FXAM_BYTES) + patterns.length * (8 + PATN_BYTES);
   for (const m of scene.materials) size += 8 + (tex ? materialBytes(m) : MATL_BYTES);
   const lens = scene.camera.lens ?? null;
@@ -792,6 +810,7 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
   if (withMeshes) for (const b of scene.bitmaps) size += 8 + bitmapBytes(b);
   if (withMeshes && images.length > 0) size += 8 + imagesBytes(images);
   if (instances) size += instances.length * (8 + INST_BYTES);
+  for (const p of programs) size += 8 + 4 + p.bytes.length;
 
   const w = new ByteWriter(size);
   w.tag(RSB_MAGIC);
@@ -979,6 +998,13 @@ export function writeRsb(scene: RsbScene, opts: WriteOptions = {}): Uint8Array {
     w.u32(r.pixelFilter);
     w.u32(r.edgeSupersample);
   });
+  // M3b: the materials' programs, last.
+  for (const p of programs) {
+    w.section(TAG_PROG, 4 + p.bytes.length, () => {
+      w.u32(p.material);
+      w.raw(p.bytes);
+    });
+  }
   if (w.length !== size) throw new Error(`RSB: wrote ${w.length} bytes, expected ${size}`);
   return w.bytes;
 }
@@ -1029,6 +1055,12 @@ export interface SceneView {
    * turns it on from the engine's own word). Off by default: the bytes are those of before M2a.
    */
   textures?: boolean;
+  /**
+   * M3b: write each node material's program (PROG) for an engine that runs them (render/engine.ts `readsPrograms`);
+   * only with `textures` (a program reads IMGS and the UVs). Off by default: a node material is the mean of its
+   * outputs, as before.
+   */
+  programs?: boolean;
   /** S4a: the engine's particle cap (default: core/effects.ts `engineParticleCap`, what Settings say here). */
   particleCap?: number;
 }
@@ -1127,14 +1159,17 @@ export const GLASS_ABSORPTION_MM = 50;
  * as a light when it emits. The edge bevel (E6, `bevelRadiusMm`) goes to every family but the
  * emitter, which has none. Wear comes later (E7).
  */
-export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMaterial {
+export function materialToRsb(inst: MaterialInstance | null | undefined, opts: { program?: Program | null } = {}): RsbMaterial {
   const m = defaultMaterial();
   if (!inst) {
     m.baseColor = [FALLBACK_GREY, FALLBACK_GREY, FALLBACK_GREY];
     return m;
   }
-  // M3a: until the engine evaluates graphs (M3b), a material of nodes is the means of its outputs.
-  if (inst.graph) inst = { ...inst, ...flattenGraph(inst.graph) };
+  // M3a: a material of nodes is the means of its outputs: all an engine that does not run graphs gets, and the base of
+  // the program (`opts.program`, PROG) for one that does (M3b): what it does not read point by point (the kind, the
+  // absorption, the thin walls, the bevel radius). A program whose emission varies is no emitter: it reflects and
+  // adds its emission where it has some, as Fast draws it.
+  if (inst.graph) inst = { ...inst, ...flattenGraph(inst.graph, !(opts.program && emissionVaries(opts.program))) };
   const p = inst.params;
   if (inst.family !== 'EMISSIVE') m.bevelMm = Math.max(0, num(inst.bevelRadiusMm, 0));
   switch (inst.family) {
@@ -1191,6 +1226,28 @@ export function materialToRsb(inst: MaterialInstance | null | undefined): RsbMat
     }
   }
   return m;
+}
+
+/** M3b: the emission or its strength is not a constant of the program (it varies over the part). */
+export function emissionVaries(p: Program): boolean {
+  const at = (k: string) => p.outputs[OUTPUT_KEYS.indexOf(k)];
+  return [at('emission'), at('emissionStrength')].some((o) => o.kind === 'F' || o.kind === 'V');
+}
+
+const programCache = new WeakMap<MaterialGraph, Program | null>();
+
+/**
+ * M3b: the program a node material is written as for an engine that runs them: its graph compiled (cached per graph
+ * object); null when it does not compile or a value of it is not finite (the RSB holds finite numbers only): the
+ * material is then its mean alone.
+ */
+export function graphProgram(g: MaterialGraph): Program | null {
+  const hit = programCache.get(g);
+  if (hit !== undefined) return hit;
+  const { program } = compileGraph(g);
+  const ok = program && Number.isFinite(program.absorptionMm) && program.consts.every((x) => Number.isFinite(x)) ? program : null;
+  programCache.set(g, ok);
+  return ok;
 }
 
 /** S4a: an effect's own material (data/effects.ts) as the engine's. */
@@ -1292,7 +1349,7 @@ export const CLOTH_SPAN_MM = 10;
  * and mesh) and its weave; the fuzz is not drawn.
  */
 export function patternToRsb(inst: MaterialInstance | null | undefined, _partSizeMm: number, material: number): RsbPattern | null {
-  // M3a: a material of nodes is the means of its outputs until M3b (`materialToRsb`): no pattern.
+  // M3a: a material of nodes has no pattern (its graph is its program, M3b, or the means of its outputs).
   if (!inst || inst.graph) return null;
   const p = inst.params;
   switch (inst.family) {
@@ -1704,14 +1761,18 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
     }
     return i;
   };
+  // M3b: the programs of the node materials, for an engine that runs them (they read IMGS and the UVs: textures on).
+  const programs: RsbProgram[] = [];
   const materialFor = (id: string | null): number => {
     const key = id && state.materials[id] ? id : null;
     let i = materialIndex.get(key);
     if (i === undefined) {
       const inst = key ? state.materials[key] : null;
-      const m = materialToRsb(inst);
+      const program = view.programs && view.textures && inst?.graph ? graphProgram(inst.graph) : null;
+      const m = materialToRsb(inst, { program });
       if (view.textures && key) m.textures = texturesToRsb(state.materials[key].textures, imageFor);
       i = materials.push(m) - 1;
+      if (program) programs.push({ material: i, bytes: encodeProgram(program, (ref, k) => imageFor(ref.id, program.images[k].srgb ? IMAGE_SRGB : IMAGE_LINEAR)) });
       const pattern = patternToRsb(inst, state.scene.partSizeMm, i);
       if (pattern) patterns.push(pattern);
       materialOrder.push(key);
@@ -1872,7 +1933,7 @@ export function projectScene(state: ProjectState, view: SceneView): ProjectScene
   }
 
   return {
-    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}) },
+    scene: { camera, materials, patterns, meshes, instances, lights, environment, floor, render, bitmaps, ...(view.textures ? { textures: true, images } : {}), ...(effects.length > 0 ? { effects } : {}), ...(programs.length > 0 ? { programs } : {}) },
     // The bitmaps travel with the meshes (an update keeps both): a new image is a new key. With textures (M2a) the
     // meshes carry their UVs and IMGS travels with them too.
     meshKey: meshKeys.join(';') + (imageKeys.length ? `|images:${imageKeys.join(',')}` : '') + (view.textures ? `|textures:${imageIds.join(',')}` : ''),

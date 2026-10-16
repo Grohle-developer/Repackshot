@@ -119,8 +119,8 @@ src/
     texture-images.ts       las imágenes de textura en el registro: id por contenido, límites (M2a)
     material-graph.ts       el grafo de un material (M3a): nodos, tomas con tipo y sus conversiones, conexiones, sus acciones `graph/*`, Simple ↔ Nodos (§5.2 quater)
     material-program.ts     el compilador del grafo a un programa lineal de registros f32 y vec3, sus códigos, límites y bytes: el contrato de M3b (§5.2 quater)
-    material-interp.ts      el intérprete de referencia del programa, en f32, y los puntos de la prueba cruzada con el motor (M3a)
-    material-preview.ts     las esferas de los nodos, los mapas de Rápido (`planBake`, `bakeRows`, `finishBake`) y la media que hace de parámetros (M3a)
+    material-interp.ts      el intérprete de referencia del programa, en f32, y los puntos de la prueba cruzada con el motor (M3a; el motor da sus bits, M3b)
+    material-preview.ts     las esferas de los nodos, los mapas de Rápido (`planBake`, `bakeRows`, `finishBake`) y la media que hace de parámetros (M3a; el `MATL` de un material de nodos, M3b)
     material-examples.ts    los diez grafos de ejemplo como grafos, y la etiqueta de su plástico dibujada sin archivo (M3a)
     noise.ts                el ruido de gradiente (Perlin 2002 y símplex) y su suma en octavas, en f32: el contrato de M3b (M3a)
     image-header.ts         tamaño y canales de un PNG o un JPEG por su cabecera, sin decodificar (M2a)
@@ -169,7 +169,7 @@ src/
     import.ts               punto de entrada: detecta el formato, aplica la hoja de opciones, produce nodos
     gltf.ts  obj.ts  stl.ts  fbx.ts  rhino.ts  threemf.ts  ply.ts  collada.ts  usd.ts  three-scene.ts  step.ts step-worker.ts occt-protocol.ts occt-convert.ts (I2, OCCT)
     project.ts (.repack)  library.ts (biblioteca propia, JSON)  image.ts (PNG/JPEG/EXR/TIFF/DNG)
-    rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c)
+    rsb.ts                  escritor del formato de escena binario del motor (§5.2); `materialOrder`, el orden de materiales que numeran los pases (X3c); los programas de los materiales de nodos (`PROG`, M3b)
     phys.ts                 escritor de PHY1, la escena del simulador (S2, §5.6)
     ai-runtime.ts           el motor de ejecución de la IA del lanzador (X3b); ai-post.ts, la tubería de escritorio (`DesktopAiService`, X3c)
     hdri.ts                 lectores propios de RGBE y OpenEXR, imagen de fondo, copia para la vista previa (E5)
@@ -230,7 +230,9 @@ engine/                     EL MOTOR. Workspace de Cargo, Rust, sin dependencias
                             imágenes (RGBE, OpenEXR, inflate, muestreo 2-D) y cielo (E5; el físico, E5c);
                             partículas de Ambiente: esferas, discos y cápsulas con su BVH y su rejilla de pantalla (geometry/particles.rs, S4a, S4b); el lóbulo hacia delante (bsdf/forward.rs, S4b);
                             texturas de imagen y etiquetas del sombreado (texture/: imagen y mipmaps, proyecciones,
-                            ranuras y etiquetas en el punto, M2b)
+                            ranuras y etiquetas en el punto, M2b);
+                            los programas de los materiales de nodos (program.rs y program/: lectura y comprobación,
+                            intérprete, ruido de M3a, el punto y el material del impacto, M3b)
   crates/rt-sim/            el simulador de partículas sin estado (S4a): `FXAM` ⇄ `AmbientParams`, `evaluate`
   crates/rt-cli/            binario nativo `rt`: renderiza un .rsb a PNG, TIFF o DNG con hilos; hojas de contacto
                             (las escenas de E5 en scenes.rs)
@@ -472,10 +474,10 @@ Vive en `engine/`, un workspace de Cargo con ocho *crates*:
 
 | Crate | Qué es | Reglas |
 | --- | --- | --- |
-| `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, texturas de imagen y etiquetas (M2b, `texture`), BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
+| `rt-core` | **El trazador.** Biblioteca: matemáticas, SIMD, BVH, intersección, aristas vivas y bisel del sombreado, texturas de imagen y etiquetas (M2b, `texture`), programas de material (M3b, `program`), BSDF, luces, entorno, muestreo, integrador, lector y escritor RSB, codificador PNG, película y tonemapping | Solo `core`/`alloc`/`std` sin APIs del sistema (nada de `fs`, `net`, `time`, `thread`); `#![deny(unsafe_code)]` salvo el módulo `simd`; `#![deny(missing_docs)]`; `f32` en todo; sin `unwrap` en rutas que dependan de la entrada; compila para `wasm32-unknown-unknown` |
 | `rt-sim` | **El simulador de partículas sin estado** (S0 §1–2, S4a): `AmbientParams` (lee y escribe la carga de `FXAM`), `evaluate(&params, max)` y `Evaluator::particle(id)`: cada partícula es función pura de (semilla, id, instante), en forma cerrada; fase propia (régimen estacionario: la región llena desde el primer instante), velocidad `v(a) = v_d + (v₀ − v_d)·e^{−a/τ}` integrada, deriva de *curl noise* como desplazamiento sin divergencia (Bridson, Houriham y Nordenstam, *Curl-noise for procedural fluid flow*, SIGGRAPH 2007), muerte en el suelo y renacimiento arriba (las que caen o suben nacen en su cara y viven lo que tardan en cruzar la caja; las que flotan viven siempre y la caja se envuelve), envolvente de nube por rechazo. La exponencial y el seno, tabulados con `fmath` una vez por efecto: nada de `exp`/`sin` por partícula | Las reglas de `rt-core`: solo `std` sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, hash contador `mix64((seed << 32) ^ id)`. Comparte `fmath.rs` y `rng.rs` de `rt-core` compilándolos por `#[path]` (un test de `rt-core` comprueba que dan lo mismo): `rt-core` depende de `rt-sim`, no al revés |
 | `rt-cli` | Binario nativo `rt`: lee un `.rsb`, renderiza con hilos (`std::thread::scope`, cola de baldosas atómica), escribe PNG, mide rayos/s; hojas de contacto y miniaturas en CI | Puede usar `std` entero |
-| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
+| `rt-wasm` | `cdylib` con exportaciones `extern "C"` escritas a mano (`rt_alloc`, `rt_free`, `rt_scene_load`, `rt_render_tile`, `rt_render_tile_passes`, `rt_render_tile_albedo`, `rt_scene_caustics`, `rt_denoise`, `rt_particles_eval` (S4a: las partículas de un `FXAM`, 8 `f32` cada una, para Rápido), `rt_version`, `rt_features` (M2b: lo que lee además del RSB de siempre; bit 0, las texturas; bit 1, los programas de material, M3b)…) y las del simulador (`phys_new`, `phys_step`, `phys_poses`, `phys_awake`, `phys_settled`, `phys_hash`…, S2). Sin `wasm-bindgen`; enlaza `rt-post` solo por su *denoise* (E5b-1), `rt-sim` (S4a) y `rt-phys` (S2) | El único `unsafe` fuera de `simd`: la reserva de memoria lineal, comentada bloque a bloque |
 | `rt-app` | Binario `repackshot`, el lanzador de escritorio (§5.5): servidor local, ventana, motor nativo, datos, equipo | `std` entero, **sin `unsafe`**; lo que necesita del sistema lo pide a procesos del sistema (`reg`, `nvidia-smi`) |
 | `rt-post` | **El *denoise* propio** (E5b-1, `rt_post::denoise`, §5.2 bis) y **la guarda del post-procesado IA** (X3a, `AI-POST.md` §3.2 y §7.2): condicionamiento (bordes de los cambios de id y de normal, profundidad normalizada), mosaicos de ~1024² con solape de ≥ 128 px y fusión de coseno alzado, relleno a múltiplo de 16 y recorte, la guarda (transferencia de sombreado, separación de frecuencias, regiones por id con ΔE₀₀), las comprobaciones y la máquina de pasos `plan` → `conditioning`/`tile_input` → `accept` con reintentos; informe con la forma de `GuardReport` en JSON escrito a mano | Las reglas de `rt-core`: sin APIs del sistema, `#![forbid(unsafe_code)]`, `f32`, determinista (solo las funciones de `rt_core::fmath` y las curvas de tono de `rt_core::color`, nada de `f32::ln`/`exp`/`powf` de `std`). Depende de `rt-core`; `rt-core` no sabe que existe. En escritorio la enlaza `rt-app` (X3c: `src/ai/post.rs`, el conductor nativo) |
 | `rt-sky` | **El cielo físico, fuera de línea** (E5c): simulador espectral de la atmósfera (capas esféricas, Rayleigh, aerosoles por turbidez, ozono, suelo lambertiano; dispersión simple por cuadratura y múltiple por Monte Carlo determinista), ajuste de la forma de Hošek–Wilkie con Levenberg–Marquardt propio y la tabla con su receta y su *hash* (`rt-sky table`); validación frente a cielos de bajo ruido, al cielo despejado de la CIE y a Preetham (`rt-sky validate`) | `std` entero (hilos, ficheros) y `f64`, pero reproducible: funciones elementales propias (`dmath`), un flujo aleatorio por elemento de trabajo, mismo resultado con cualquier número de hilos. Depende de `rt-core` (lee y prueba la tabla); `rt-core` no la conoce |
@@ -595,6 +597,8 @@ Semántica fijada en E3 (la fuente de verdad es el módulo `rsb` de
   mallas.
 - **Texturas** (contrato de M2a, el motor lo lee desde M2b): ver
   *Texturas en el RSB* al final de este apartado y §5.2 decies.
+- **Programas de material** (`PROG`, M3b): ver *Programas de material en el
+  RSB* al final de este apartado y §5.2 undecies.
 - **`FLOR`** (20 B, una como máximo): `mode` 0 ninguno, 1 plano
   lambertiano infinito, 2 atrapasombras; `z`; `color[3]`.
 - **`RNDR`** (52 B desde E5b-1; los de 28, 36 y 40 B se leen con los valores
@@ -860,6 +864,40 @@ imagen multiplica el parámetro, la emisión suma `tinte × imagen ×
 intensidad` en radiancia; una etiqueta cubre `|s − ½| ≤ ½`, `|t − ½| ≤ ½`,
 a menos de `depth_mm` de su plano y en superficies con `n · normal > 0`, y
 se compone en orden sobre el sustrato por su alfa.
+
+**Programas de material en el RSB** (M3b). El escritor TypeScript los escribe
+**solo cuando la vista lo pide** (`SceneView.programs`, con `textures`: un
+programa lee `IMGS` y las UV), y la vista lo pide cuando el motor dice que los
+corre: bit 1 de `rt_features()` y de `features` de `/api/info`
+(`rt_core::FEATURE_PROGRAMS`; `render/engine.ts` `readsPrograms`, que pide
+también el bit 0; el *pool* y `NativeEngine` lo ponen en las vistas de
+*Completo* y de *Render*, y *Exportar escena del motor* lo lleva). Apagado, o
+sin materiales de nodos, los bytes son los de antes (test). Encendido, cada
+material de nodos cuyo grafo compila escribe:
+
+- su **`MATL`** como hasta ahora: la media de cada salida sobre la esfera de
+  muestras (`flattenGraph`), con la familia de su salida (vidrio si tiene
+  absorción o paredes finas), y no emisor si la emisión o su intensidad no es
+  una constante del programa (`emissionVaries`): lo que el motor toma del
+  fichero (el tipo, la absorción, las paredes finas, el radio del bisel) y lo
+  que lee un motor de antes;
+- una **`PROG`** (nueva, detrás de todas las demás secciones, una por
+  material): `u32 material` (el índice de su `MATL`) y los bytes de
+  `encodeProgram` (§5.2 quater), con la tabla de imágenes en índices de
+  `IMGS` (la imagen en el espacio de color que pide su lectura: sRGB para
+  color, lineal para datos);
+- las **UV** de todas las mallas y las **imágenes** de los programas en
+  `IMGS`, como con las texturas.
+
+El lector de `rt-core`: la primera `PROG` de un material cuenta; una de otra
+versión del programa es de un fichero más nuevo y se salta (el material queda
+con su `MATL`); un programa inválido (§5.2 undecies), que no tenga las quince
+salidas de un material, de un material que no está o con una imagen que no es
+de `IMGS` o no es de su espacio de color hacen el fichero inválido. Las
+`PROG` viajan con los materiales en una actualización (los programas leen las
+imágenes conservadas). El escritor de `rt-core` escribe lo mismo:
+`tests/fixtures/m3b.rsb` (`rt --write-m3b-example`) se lee y se escribe en
+TypeScript a los mismos bytes (`tests/programs-engine.test.ts`).
 
 **Pases exactos** (X2, `rt_core::passes`; contrato en `AI-POST.md` §7.4 y
 `src/core/passes.ts`). Un plano por pase, `ancho × alto`, por filas desde
@@ -1415,7 +1453,8 @@ aplicado a la normal; su referencia es la altura) y bisel. Cada una es una
 constante f32 (`FC`), un registro f32 (`F`), una constante vec3 (`VC`) o un
 registro vec3 (`V`); la normal sin conexión es `V1`. Y dos campos del
 material, no del punto: la distancia de absorción y las paredes finas. El
-motor usará lo que necesita y llevará cada valor a su rango (M3b).
+motor (M3b) las usa todas menos la dispersión interna y lleva cada valor a su
+rango (§5.2 undecies).
 
 **Bytes** (`encodeProgram`, `decodeProgram`; little-endian): una cabecera de
 diez u32 (`0x4D475052` «RPGM», versión 1, instrucciones, constantes,
@@ -1424,12 +1463,12 @@ la distancia de absorción como f32, banderas: bit 0 paredes finas), las
 instrucciones (seis u32 cada una), las constantes (f32), la tabla de
 imágenes (tres u32: índice en `IMGS` o `0xFFFFFFFF`, 1 si sRGB, borde) y
 las salidas (dos u32: tipo 0 `FC`, 1 `F`, 2 `VC`, 3 `V`; índice).
-**Propuesta para M3b**, sin escribir aún: una sección `PROG` del RSB con
-los programas de la escena y, en `MATL`, tras el bloque de texturas, el
-índice de su programa (−1: ninguno); hasta entonces el escritor manda la
-**media de cada salida** sobre 64 puntos de una esfera
-(`core/material-preview.ts` `flattenGraph`) como los parámetros del
-material, y los bytes de una escena sin grafos son los de siempre.
+**En el RSB** (M3b): una sección `PROG` por material de nodos, con estos
+bytes (*Programas de material en el RSB*, §5.2); su `MATL` lleva la **media
+de cada salida** sobre 64 puntos de una esfera (`core/material-preview.ts`
+`flattenGraph`), que es lo único que recibe un motor que no corre programas;
+los bytes de una escena sin grafos son los de siempre. El motor los ejecuta
+como dice §5.2 undecies.
 
 **La prueba cruzada** (`tests/material-program.test.ts`). `contractPoints(n,
 semilla = 0x2545F491)`: un generador xorshift32 (`x ^= x << 13; x ^= x >>
@@ -1442,7 +1481,9 @@ calculado en f64 y redondeado **una vez** a f32. Para cada ejemplo, el
 FNV-1a de 32 bits de los bits f32 de todas sus salidas en los 1000 puntos
 (salida a salida, componente a componente, punto a punto; el plástico con
 etiqueta con la etiqueta de `core/material-examples.ts`) está fijado; el
-intérprete de Rust (M3b) tiene que dar los mismos.
+intérprete de Rust (M3b) da los mismos, y la prueba cruzada de M3b
+(`tests/material-program-cross.test.ts`, `tests/fixtures/material-programs.json`)
+lo extiende a cada instrucción y a los casos especiales, bit a bit.
 
 **En Rápido** (`core/material-preview.ts`, `render/graph-preview.ts`,
 `render/graph-client.ts`, `render/graph-worker.ts`). El programa se evalúa
@@ -2027,6 +2068,92 @@ el `rt.wasm` real y compara dónde caen las casillas y la etiqueta.
   con 1, 4 y 16 hilos, en WASI y en el `rt.wasm` real (CI), y sus seis pases
   (`PINNED_M2B_PASS_*`).
 
+### 5.2 undecies · Programas de material en el sombreado (M3b, `rt_core::program`)
+
+El motor ejecuta en *Completo* y en *Render* el programa de un material de
+nodos (§5.2 quater) en cada impacto, con los mismos bits que el intérprete de
+referencia de TypeScript (`core/material-interp.ts`): la prueba cruzada
+(`tests/material-program-cross.test.ts` escribe y fija
+`tests/fixtures/material-programs.json`; `program/tests.rs` lo corre) son los
+diez ejemplos en 1000 puntos, cada instrucción en cada modo en 200 y cada
+función en sus casos especiales, a tolerancia 0 (cada NaN contado como
+`0x7FC00000`: su signo y su carga son de la máquina, y el motor no los lee;
+`tests/program-hash.ts`), y la página corre al revés
+los programas del ejemplo del motor (`PINNED_M3B_PROGRAM_VALUES`). Un test de
+navegador (`tests/programs-full-browser.test.ts`) compara dónde caen los
+dibujos de los diez ejemplos en *Rápido* y con el `rt.wasm` real.
+
+- **Lectura** (`program.rs`, `Program::decode`): la cabecera, las
+  instrucciones, las constantes (finitas), la tabla de imágenes y las salidas
+  de `encodeProgram`; otra versión es `ProgramError::Version` (un fichero más
+  nuevo), y es `Invalid` un código desconocido, un operando que nada ha escrito
+  antes, un destino que es operando de su propia instrucción o fuera de su
+  archivo (los 9 registros del punto no se escriben), un índice de constantes o
+  de imagen fuera, una rampa de 0 o más de 64 paradas, más de los límites, bytes
+  de más o de menos. `is_material` pide las quince salidas con vectores en el
+  color base, la emisión y la normal.
+- **Intérprete** (`program/interp.rs`, `Runner`). Archivos de registros en la
+  pila, 256 `f32` y 256 `vec3`; ninguna asignación al correr (test); cada
+  instrucción en `f32` sin FMA, con `fmath` (las funciones de `core/f32math.ts`)
+  y el orden de operaciones de la referencia. El ruido (`program/noise.rs`) es el
+  de M3a: Perlin y símplex con el *hash* de esquina y la suma en octavas, con el
+  `Math.round` y el `ToUint32` de JavaScript donde la referencia los usa.
+  `TEX` lee con `TextureImage::sample` de M2b en el nivel de detalle de la huella
+  del rayo: las lecturas de una misma imagen por un mismo `MAP` (sus constantes
+  y su juego de UV), o por un mismo juego de UV o un paso desde él (`VADD`),
+  forman un grupo, y la primera mide el nivel (las diferencias del `MAP` por los
+  dos ejes de la huella, con la costura de la cilíndrica y la esférica; o el
+  cambio del juego de UV) que las demás repiten: las tres alturas de un relieve
+  se leen en un nivel. Unas coordenadas calculadas de otra forma, o un rayo sin
+  huella (los de sombra), leen el nivel 0, que es la lectura de la referencia.
+  `EDGE` y `CAVITY` preguntan al `Host`.
+- **El punto** (`program/shade.rs`, `context`), en el espacio de la pieza (la
+  malla; la transformación de la instancia lleva el punto, la dirección y la
+  normal): P; N, la normal de sombreado (con el bisel de E6) vuelta al exterior
+  de la pieza; UV0 y UV1 (el segundo juego es el primero si la malla tiene uno;
+  cero sin UV); I, hacia el origen del rayo; T, el gradiente de superficie de la
+  u del primer juego ortogonalizado contra N (`onb(N)` sin UV); B = N × T; y el
+  cambio de cada coordenada del primer juego por T y por B, por milímetro.
+- **El material** (`resolve`): el `MATL` de la escena con el color base, metal,
+  rugosidad, anisotropía, barniz y su rugosidad, transmisión, IOR y opacidad del
+  punto, cada uno en su rango (0–1; el IOR ≥ 1); un valor que no es un número
+  deja el del fichero. La dispersión interna no se lee (el medio de E9 es del
+  volumen). Un emisor (`MATL` de tipo emisor) toma `emisión × intensidad` como su
+  radiancia; cualquier otro material suma esa emisión a lo que refleja.
+- **La normal** del programa vuelve al mundo y al lado por el que llegó el rayo;
+  si mira de espaldas al que mira, se dobla hasta `MIN_FACING` de su lado (como
+  los mapas de normales de M2b). El punto de salida de los rayos y la normal
+  geométrica no cambian.
+- **Bisel**: la salida es un peso del radio del material. Constante, escala el
+  radio para toda la pieza (`BevelSetup::shading_point_scaled`; 1 es el bisel
+  de siempre bit a bit, 0 ninguno); calculada, el programa corre en el punto sin
+  biselar para el peso y, si es mayor que 0, otra vez en el punto biselado por
+  él para todo lo demás.
+- **Curvatura** (`BevelSetup::curvature`; E7 no está): de las aristas vivas
+  del bisel a menos de `r` mm del punto, `smoothstep(1 − d/r) · min(tan(θ/2), 1)`
+  (θ, el ángulo entre las caras), la mayor de las convexas (`EDGE`) y la de las
+  cóncavas (`CAVITY`); 0 en una malla sin aristas vivas. Se mide una vez por
+  impacto y radio.
+- **El integrador** (`Prepared::programs`, `ProgramSetup`): en cada impacto de
+  cámara o de BSDF de una instancia cuyo material tiene programa, tras el bisel
+  y antes de las texturas de M2b, que se aplican sobre el material del programa;
+  un material con programa no lleva el dibujo de E6. Una opacidad que no es la
+  constante 1 hace la instancia atravesable: la cámara recorta por ella, y los
+  rayos de sombra (`walk`, el cruce recto de S4b y las salidas de un medio)
+  leen el material del programa en el nivel 0 y sin peso de bisel. El pase de
+  albedo es el color base del programa; el de normales, el del bisel. Un emisor
+  cuya emisión no es constante en el programa no se muestrea como luz
+  (`emission_varies`, `light.rs`): lo encuentran los rayos que le dan. Las
+  partículas no tienen programa y los fotones de las cáusticas ven el `MATL`.
+- **Coste y determinismo.** Una escena sin programas no hace nada nuevo (sus
+  *hash* fijados no se mueven; el mismo PNG que antes). Con programas, cada
+  impacto corre el suyo (de 6 a 41 instrucciones en los ejemplos; +41–47 % por
+  rayo con todas las piezas de la escena con su grafo, ROADMAP M3b). El ejemplo
+  `rt_core::example::m3b_scene` tiene su *hash* fijado
+  (`PINNED_M3B_PROGRAMS_4SPP`) en todas las rutas SIMD, en `rt-cli` y `rt-app`
+  con 1, 4 y 16 hilos, en WASI y en el `rt.wasm` real (CI, y por el código de la
+  página), y sus seis pases (`PINNED_M3B_PASS_*`).
+
 ### 5.3 · En el navegador: workers
 
 `src/render/pathtracer.ts` implementa `RenderEngine` con un **pool de
@@ -2590,6 +2717,7 @@ ve se comprueban con `tools/box-select-check.mjs` y
 | Ventana de la lente (O2b) | `tests/lens-peek.test.ts` (con el `rt.wasm` real), `tests/lens-peek-browser.test.ts`, `tools/lens-hover-check.mjs` | A qué cámara se pregunta y que la lente puesta es la cámara tal cual; la caché (una pregunta por lente, compartida la que está en vuelo, otra al cambiar focal, foco, f/, encuadre o ajustes, la negativa se guarda y «sin motor» y el fallo no, acotada); el reposo de 300 ms (cruzar la lista no abre nada), cerrar al salir, con Esc y al elegir, y no reabrir hasta que vuelve el puntero; las tarjetas con solo los números del motor (cargando, sin motor y negada, sin números ni dibujo; es y en); la colocación dentro de la ventana; los números de lentes que no están en la cámara contra los del motor real. En Chromium, sobre la sección de verdad: abre junto a la lista y junto al chip con el nombre, la fuente, el dibujo y los números de esa lente, no toma foco ni puntero, el teclado la abre y la mueve de lente en lente, y elegir pone la lente. Con la aplicación y el motor reales: los números de la ventana son los de la sección al poner la lente, y volver a pasar no vuelve a preguntar al módulo |
 | Filtros de efecto (O3a) | `optics::filter_tests` de rt-core, `tests/lens-filters.test.ts`, `tools/lens-filters-check.mjs` | Grados → `s`; difusión blanca que conserva la media (±0,5 %), negra a 1 entre 0,90 y 0,97, dorada hacia el rojo; estrella de 6 con seis rayas (±2°); tres filtros de grado 0 = sin filtro bit a bit; la conexión con las luces y su MIS contra la dispersión sola (imagen ±3 % y suma exacta por lóbulo, también con media luz); `LENS` con huecos de ida y vuelta y la de O1 byte a byte; tinte solo en el halo y las rayas (dorada con el núcleo neutro; el suelo lejos de las luces de la hoja mueve su azul/rojo < 3 % a 1 y < 6 % a 2 con dorada y rayas); estrella que se alarga con el grado sin ensancharse, red con la cruz corta y más tenue que la estrella, brillo como nube de destellos y no anillo; aproximación del visor contra el motor en el horno (< 2 %); *hash* de O3a en SIMD, WASI, wasm y 1/4/16 hilos |
 | Texturas en el motor (M2b) | `texture::tests` de rt-core (con `tests/fixtures/texture-mapping.json`, que `tests/texture-mapping.test.ts` fija contra `core/textures.ts`), `render::tests` y `passes_tests` (fijados M2B), `rt-cli/tests/example.rs` y `rt-app` (hilos); `tests/textures-engine.test.ts` (con el `rt.wasm` real), `tests/textures-full-browser.test.ts` | Las cinco proyecciones y las etiquetas en 858 puntos del fixture (±2·10⁻⁵ relativo), gradientes contra diferencias finitas, *mipmaps* en lineal, nivel de detalle y huella de la cámara, marco del mapa de normales, recorte y cobertura también en las sombras, etiquetas en orden con su borde; ida y vuelta RSB, ficheros viejos y `m2b.rsb` byte a byte con el escritor de la página; el mismo fijado con 1, 4 y 16 hilos y en cada ruta SIMD; comparación por regiones con *Rápido* en Chromium (≥ 97 % de los píxeles asentados, control movido una casilla < 15 %; etiqueta con intersección sobre unión > 0,9) |
+| Programas de material en el motor (M3b) | `program::tests` y `program::scene_tests` de rt-core (con `tests/fixtures/material-programs.json`, que `tests/material-program-cross.test.ts` fija contra `core/material-interp.ts`), `integrator::tests`, `render::tests` y `passes_tests` (fijados M3B), `rt-cli/tests/example.rs` y `rt-app` (hilos, `features`); `tests/programs-engine.test.ts` (con el `rt.wasm` real), `tests/programs-full-browser.test.ts` | 172 casos de la prueba cruzada bit a bit (los diez ejemplos en 1000 puntos, cada instrucción, los casos especiales); los valores punto a punto en el espacio de la pieza, la normal, el recorte también en las sombras, la emisión y el emisor que deja de ser luz, el peso del bisel, la curvatura, el nivel de detalle, los rangos; `PROG` de ida y vuelta, ficheros viejos, versión nueva, inválidos y `m3b.rsb` byte a byte con el escritor de la página; el interruptor del *pool* y del lanzador; el mismo fijado con 1, 4 y 16 hilos y en cada ruta SIMD; comparación por regiones con *Rápido* en Chromium (siete grafos al 100 % de los píxeles asentados con correlación ≥ 0,99, control hundido; tono a menos de 40) |
 | Sets (L6) | `tests/sets.test.ts`, `data`, `rig`; `tools/setup-thumbs.mjs`, `tools/sets-sheet.mjs` | Los 72 montajes anteriores sin campos nuevos y con el mismo rig que antes contra los 16 tipos (fixture); los tipos de producto con los focos de su set a su nivel; ninguna tarjeta en el encuadre (16 focales, tres formas, tres proporciones, la cámara del set: recorte del polígono contra la pirámide de la cámara, y un caso que se ve para que la prueba no pase sola); aplicar, sustituir, quitar con otro montaje y con *Restablecer*, *Crear estudio* con un set, una entrada de deshacer; la decoración no es el producto ni la mira el Doctor; el charco (su parte del nivel, dónde cae, su potencia); *Usar la cámara del set*; el degradado como imagen de fondo del RSB; las miniaturas: la escena RSB de cada una tal como la construye el código ahora y el PNG del manifiesto, y el *hash* de una fijado; medidas sobre las miniaturas con los umbrales del veredicto en `LOOK` (`tests/thumb-metrics.ts`; `REPACKSHOT_SET_MEASURES=1` las imprime) |
 | Gestos en el navegador | `tools/material-drag-check.mjs`, `box-select-check.mjs`, `primitives-check.mjs` (U9), `lights-check.mjs` (L4), `sets-check.mjs` (L6) | Playwright con el Chromium local sobre `dist/`, en Rápido y en Completo, con ratón, lápiz y dedo; capturas en `docs/ui/` (las de Completo, en `out/`) |
 | Físicas (S2) | `cargo test -p rt-phys` (`tests/rigid.rs`); `tests/physics.test.ts`, `physics-engine.test.ts`; `tools/physics-check.mjs` | Una esfera descansa a `r ± 0,1` mm, una pila de tres cajas aguanta 5 s, una caja inclinada cae plana, un cubo resbala de una esfera, una rampa sostiene a μ 0,6 y deja resbalar a 0,1, mil esferas se asientan (< 20 s en *release*), dormir para la simulación, *hash* fijado igual con 1 y N hilos y en wasm; qué se simula, las poses de vuelta a los nodos, una simulación es una entrada de deshacer, *Reiniciar* otra, *Pausar* congela lo que se ve, el clip se guarda, se abre y se reproduce; tres primitivas que caen en el navegador |

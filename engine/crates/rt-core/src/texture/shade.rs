@@ -298,15 +298,16 @@ impl Prepared {
     }
 }
 
-/// The hit in the part's own space: the point, the outward interpolated normal, the UVs.
-struct Local {
-    p: Vec3,
-    n: Vec3,
-    uv: UvAt,
+/// The hit in the part's own space: the point, the outward interpolated normal, the UVs (also
+/// the shading point of a material program, M3b).
+pub(crate) struct Local {
+    pub(crate) p: Vec3,
+    pub(crate) n: Vec3,
+    pub(crate) uv: UvAt,
 }
 
 impl Local {
-    fn of(geometry: &Geometry, details: &Hit) -> Option<Local> {
+    pub(crate) fn of(geometry: &Geometry, details: &Hit) -> Option<Local> {
         let (mesh, _) = geometry.instance_mesh(details.instance)?;
         let tri = details.triangle as usize;
         let ids = mesh.triangle_indices(tri)?;

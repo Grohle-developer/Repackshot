@@ -800,6 +800,9 @@ pub struct Scene {
     /// The texture block of each material (M2b, `MATL` from byte 100), by material index; a
     /// material past the end of the list has none.
     pub textures: Vec<Option<MaterialTextures>>,
+    /// The material program of each material (M3b, `PROG`), by material index; a material past
+    /// the end of the list has none.
+    pub programs: Vec<Option<Arc<crate::program::Program>>>,
     /// The meshes carry their UV sets in the file although it has no images and no texture
     /// block (M2b). The writer gives every mesh its UV sets when this is set or when the scene has
     /// images or texture blocks, as the page's writer does when the scene carries textures.

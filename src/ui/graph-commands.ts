@@ -247,7 +247,7 @@ export function varyingOutputs(p: Program): string[] {
 
 /**
  * How Fast shows the material, in sentences: the maps and the surface they are made on, then what is approximated
- * or left out. What Full does with it until the engine evaluates graphs (M3b) comes last.
+ * or left out. What Full and Render do with it (the engine runs the graph, M3b) comes last.
  */
 export function fastNoteLines(s: ProjectState, material: MaterialId, g: MaterialGraph): string[] {
   const r = programOf(g);

@@ -576,9 +576,13 @@ la pieza puesto como proyección de caja (un ruido 3D se ve como su corte).
 Lo que no cabe en mapas se aproxima o se omite, y el inspector y el editor
 lo dicen: Fresnel y *de cara* a 60° de la normal, la curvatura como 0, y
 las salidas sin ranura (barniz, transmisión, IOR…) con su valor medio. En
-*Completo* y en *Render*, hasta que el motor evalúe grafos (fase M3b,
-*próximamente*), el material es el valor medio de cada salida sobre una
-esfera de muestras; lo dicen el inspector y el editor.
+*Completo* y en *Render* el motor ejecuta el grafo en cada punto (fase M3b):
+sus imágenes filtradas, Fresnel y *de cara* con la vista de verdad, la
+curvatura en las aristas vivas de la pieza, el peso del bisel, el recorte
+también en las sombras; la dispersión interna no se lee, y un emisor cuya
+emisión cambia por la superficie ilumina por los rayos que lo encuentran (no
+se muestrea como luz). Un motor anterior a M3b recibe el valor medio de cada
+salida sobre una esfera de muestras. Lo dicen el inspector y el editor.
 
 **Bisel de aristas** (`bevelRadiusMm`, E6): radio en mm de un redondeo
 que el motor dibuja **solo en el sombreado** (la geometría no cambia):
