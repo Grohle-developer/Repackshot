@@ -202,6 +202,9 @@ pub fn scene() -> Scene {
         bitmaps: Vec::new(),
         patterns: Vec::new(),
         effects: Vec::new(),
+        images: Vec::new(),
+        textures: Vec::new(),
+        textured: false,
     }
 }
 

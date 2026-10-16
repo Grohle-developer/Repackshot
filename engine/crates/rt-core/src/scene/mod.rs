@@ -13,8 +13,10 @@ pub use crate::geometry::{
     Geometry, GeometryError, Hit, Instance, Mesh, MeshError, ParticleSet, PixelFootprint, RayHit,
     Transform, INSTANCE_ONE_SIDED,
 };
+pub use crate::texture::{MaterialTextures, TextureImage};
 pub use rsb::RsbError;
 pub use rt_sim::AmbientParams;
+use std::sync::Arc;
 
 /// The particle sets of `effects` for `footprint`: a set of `kept` with the same parameters is
 /// reused (its BVH built again only for another footprint), any other effect is evaluated.
@@ -790,6 +792,14 @@ pub struct Scene {
     /// The ambient effects (S4a, `FXAM`), in file order. Their particles live in the geometry
     /// ([`Geometry::particle_sets`], built by [`Scene::build_particles`]).
     pub effects: Vec<AmbientParams>,
+    /// The texture images (M2b, `IMGS`), by index, with their mipmaps.
+    pub images: Vec<Arc<TextureImage>>,
+    /// The texture block of each material (M2b, `MATL` from byte 100), by material index; a
+    /// material past the end of the list has none.
+    pub textures: Vec<Option<MaterialTextures>>,
+    /// The file carried texture data (M2b: `IMGS`, a texture block or the meshes' UV sets): the
+    /// writer gives every mesh its UV sets then, as the page's writer does.
+    pub textured: bool,
 }
 
 impl Scene {

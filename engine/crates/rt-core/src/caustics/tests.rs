@@ -57,6 +57,7 @@ fn sphere_scene(radius: f32, light: Light, photons: u32, size: (u32, u32)) -> Sc
         bitmaps: Vec::new(),
         patterns: Vec::new(),
         effects: Vec::new(),
+        ..Scene::default()
     }
 }
 

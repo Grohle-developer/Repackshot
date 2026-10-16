@@ -23,7 +23,9 @@
 //!   panel does (flags `camera`, `glossy`).
 //! * **Emissive meshes**: instances whose material is emissive and carries
 //!   [`crate::scene::MATERIAL_FLAG_LIGHT`]; triangles are chosen in proportion to their area,
-//!   points uniformly on them. Two-sided unless the instance is one-sided.
+//!   points uniformly on them. Two-sided unless the instance is one-sided. Not an emitter whose
+//!   textures change its radiance over the surface (M2b, [`crate::texture`]): only the rays that
+//!   hit it find it.
 //! * **The environment** ([`EnvLight`]), importance sampled.
 //!
 //! **Which light** (E12). Next-event estimation picks **one** of them per vertex, with a
@@ -810,6 +812,11 @@ impl Lights {
             };
             let radiance = material.radiance();
             if material.flags & MATERIAL_FLAG_LIGHT == 0 || !positive(radiance.luminance()) {
+                continue;
+            }
+            // M2b: an emitter whose textures change its radiance over the surface is found by
+            // the rays that hit it, not sampled by its flux.
+            if crate::texture::shade::emission_varies(scene, instance.material_id) {
                 continue;
             }
             let Some(mesh) = scene.geometry.meshes().get(instance.mesh as usize) else {

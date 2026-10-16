@@ -51,6 +51,7 @@ pub mod scene;
 pub mod simd;
 pub mod sky;
 pub mod sky_table;
+pub mod texture;
 pub mod tiff;
 pub mod warp;
 
