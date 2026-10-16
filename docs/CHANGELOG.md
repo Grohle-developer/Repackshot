@@ -3,7 +3,10 @@
 Cada versión lista lo que trae, agrupado por áreas. Entre paréntesis, la
 fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
-## Sin publicar
+## v0.1.13 — 2026-10-16
+
+Versión de prueba con el muestreo adaptativo y *Terminar por ruido* en la
+ventana de render. Lo de v0.1.2 a v0.1.12 sigue igual.
 
 ### Motor
 
@@ -14,6 +17,18 @@ fase del roadmap (`ROADMAP.md`) de donde sale cada línea.
 
 - *Render ▸ Calidad ▸ Terminar por* gana **Ruido**: el render acaba cuando cada parte de la imagen queda por debajo del umbral (0,5–5 %, el 1 % por defecto), con las muestras como tope, y la estimación sale de la última pasada del visor *Completo* (E10).
 - El medidor del visor dice *Adaptativo · mín–máx muestras*, y la vista en vivo del render, el ruido que queda frente al objetivo y el tiempo que el motor espera (E10).
+
+### Limitaciones conocidas de esta versión
+
+- El muestreo adaptativo deja, a igual tiempo, un 83–84 % del error del
+  uniforme en las escenas de prueba (el objetivo era el 60 %): la regla de
+  reparto actual no da más y cambiarla está pendiente de decidir. Solo se
+  usa con *Terminar por ruido*; los renders por muestras o por tiempo no
+  cambian.
+- La estimación del tiempo de *Ruido* sale de la última pasada del visor
+  *Completo* con el mismo umbral; con *Reducir ruido* encendido, el medidor
+  puede enseñar en su primera línea las muestras de la imagen filtrada.
+- Siguen las de la v0.1.12.
 
 ## v0.1.12 — 2026-10-16
 

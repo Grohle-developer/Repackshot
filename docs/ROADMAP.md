@@ -10289,6 +10289,11 @@ cambia la luminancia y la saturación media en menos del 0,1 %).
 - **5.1**: tamaño de las texturas y los procedurales relativo al sólido o
   absoluto (SPEC l. 456 contradice a SPEC l. 101 y a E6), y cómo convive
   con el tamaño manual.
+- **E10**: el adaptativo da 0,83–0,84× el relMSE del uniforme a igual
+  tiempo contra el ≤ 0,6× del criterio; el reparto ideal por bloques de 8×8
+  llegaría a 0,48× y 0,38× a igual número de muestras. Aceptarlo, cambiar el
+  criterio o cambiar la regla de reparto (el contrato del brief: el cuantil
+  50 % del error, bajando). Está solo detrás de *Terminar por ruido*.
 - **1.2**: la gota y la mezcla de geometrías en *Ambiente* (con S4b; el
   párrafo de S4b dice cómo lo facilita).
 - **S4b** (hoja `out/ambient-sheet.html` de esa fase, regenerable con
