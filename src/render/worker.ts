@@ -32,6 +32,8 @@ interface RtExports {
   rt_render_tile_rgba(handle: number, x: number, y: number, w: number, h: number, sample: number, out: number): number;
   /** E5b-1 (absent in an older rt.wasm): caustic photons per sample of a loaded scene. */
   rt_scene_caustics?: (handle: number) => number;
+  /** E10 (absent in an older rt.wasm): a block of an adaptive round, with the photon map of `iteration`. */
+  rt_render_block_rgba?: (handle: number, x: number, y: number, w: number, h: number, sample: number, iteration: number, out: number) => number;
   /** X2 (absent in an older rt.wasm). */
   rt_render_tile_passes?: RtPassExports['rt_render_tile_passes'];
   rt_render_tile_albedo?: RtPassExports['rt_render_tile_albedo'];
@@ -59,6 +61,8 @@ interface Job {
   count: number;
   next: number;
   passes: number;
+  /** E10: a round of blocks (x, y, w, h, block, first, count each) and the photon-map iteration of its first sample. */
+  blocks?: { items: Int32Array; iteration: number };
 }
 let job: Job | null = null;
 
@@ -108,10 +112,54 @@ tick.port1.onmessage = () => {
   step();
 };
 
+/** E10: renders the next blocks of an adaptive round (a few at a time, each all its samples) and sends them. */
+function stepBlocks(j: Job & { blocks: { items: Int32Array; iteration: number } }): void {
+  if (!rt) return;
+  const { items, iteration } = j.blocks;
+  if (!rt.rt_render_block_rgba) {
+    job = null;
+    post({ type: 'error', generation: j.generation, reason: 'this rt.wasm samples no blocks (npm run engine:build)' });
+    return;
+  }
+  // Blocks are small: several of them between two looks at the messages.
+  for (let k = 0; k < 8 && j.next * 7 < items.length; k++) {
+    const o = j.next * 7;
+    const [x, y, w, h, block, first, count] = [items[o], items[o + 1], items[o + 2], items[o + 3], items[o + 4], items[o + 5], items[o + 6]];
+    j.next++;
+    const stride = w * h * 4;
+    if (stride * 4 > outLen) {
+      if (outPtr) rt.rt_free(outPtr, outLen);
+      outLen = Math.max(stride * 4, 32 * 32 * 16);
+      outPtr = rt.rt_alloc(outLen);
+    }
+    const data = new Float32Array(stride * count);
+    for (let s = 0; s < count; s++) {
+      const status = rt.rt_render_block_rgba(handle, x, y, w, h, first + s, iteration + s, outPtr);
+      if (status !== 0) {
+        job = null;
+        post({ type: 'error', generation: j.generation, reason: `rt_render_block_rgba returned ${status}` });
+        return;
+      }
+      data.set(new Float32Array(rt.memory.buffer, outPtr, stride), s * stride);
+    }
+    post({ type: 'tile', generation: j.generation, index: block, first, count, data, block: { x, y, w, h } }, [data.buffer]);
+  }
+  if (j.next * 7 >= items.length) {
+    job = null;
+    post({ type: 'done', generation: j.generation });
+    return;
+  }
+  schedule();
+}
+
 /** Renders the next tile of the job, all its samples, and sends them. */
 function step(): void {
   const j = job;
   if (!j || !rt) return;
+  if (j.blocks) {
+    stepBlocks(j as Job & { blocks: { items: Int32Array; iteration: number } });
+    return;
+  }
   if (j.next * 5 >= j.tiles.length) {
     job = null;
     post({ type: 'done', generation: j.generation });
@@ -206,6 +254,10 @@ scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     }
     case 'job':
       job = { generation: msg.generation, tiles: msg.tiles, first: msg.first, count: msg.count, next: 0, passes: msg.passes ?? 0 };
+      schedule();
+      return;
+    case 'blocks':
+      job = { generation: msg.generation, tiles: new Int32Array(0), first: 0, count: 0, next: 0, passes: 0, blocks: { items: msg.items, iteration: msg.iteration } };
       schedule();
       return;
     case 'cancel':

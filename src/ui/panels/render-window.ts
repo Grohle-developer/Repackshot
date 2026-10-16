@@ -24,6 +24,9 @@ import {
   FPS_CHOICES,
   frameRange,
   matchResolution,
+  noiseFraction,
+  NOISE_THRESHOLD_MAX,
+  NOISE_THRESHOLD_MIN,
   settingsOf,
   supportsAlpha,
   VIDEO_AVAILABLE,
@@ -66,9 +69,15 @@ function formatText(s: RenderSettings): string {
   return s.format;
 }
 
+/** E10: a noise threshold as the window writes it, "1.0 %". */
+export function noiseText(percent: number): string {
+  return `${formatNumber(percent, getLang(), 1)} %`;
+}
+
 function finishText(s: RenderSettings): string {
   const samples = t('rw.summarySamples', { n: formatNumber(s.maxSamples, getLang(), 0) });
   const time = formatClock(s.maxSeconds);
+  if (s.finishBy === 'NOISE') return t('rw.summaryNoise', { t: noiseText(s.noiseThreshold) });
   return s.finishBy === 'SAMPLES' ? samples : s.finishBy === 'TIME' ? time : t('rw.summaryOr', { a: samples, b: time });
 }
 
@@ -89,8 +98,15 @@ function throughputOf(ctx: Ctx): number | null {
   return ctx.ui.get().throughput;
 }
 
-/** The estimate line of the Quality section. */
-export function estimateLine(s: RenderSettings, tp: number | null, frames: number): string {
+/**
+ * The estimate line of the Quality section. E10, by noise: the time the Full view sampling to the same threshold took
+ * and expects from its last pass (`noise`), scaled to the output's pixels; nothing before it said so.
+ */
+export function estimateLine(s: RenderSettings, tp: number | null, frames: number, noise: { seconds: number; pixels: number; target: number } | null = null): string {
+  if (s.finishBy === 'NOISE' && s.mode !== 'ANIMATION') {
+    if (!noise || noise.target !== noiseFraction(s.noiseThreshold) || !(noise.pixels > 0) || !(noise.seconds >= 0)) return t('rw.estimateNoiseNone');
+    return t('rw.estimateNoise', { time: formatDuration((noise.seconds * s.width * s.height) / noise.pixels), t: noiseText(s.noiseThreshold) });
+  }
   if (s.mode === 'ANIMATION') {
     const each = estimateSeconds(s, tp, 1);
     if (each === null) return t('rw.estimateNone');
@@ -400,6 +416,8 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     [
       { value: 'SAMPLES' as const, label: t('rw.bySamples') },
       { value: 'TIME' as const, label: t('rw.byTime') },
+      // E10: adaptive sampling to a noise threshold.
+      { value: 'NOISE' as const, label: t('rw.byNoise') },
     ],
     s0.finishBy === 'FIRST' ? null : s0.finishBy,
     (v) => set({ finishBy: v }),
@@ -416,6 +434,18 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   const time = timeField(s0.maxSeconds, (v) => set({ maxSeconds: v }), t('rw.time'));
   const samplesRow = row(t('rw.samples'), h('div', { class: 'rw-inline' }, samples.el, tiers.el));
   const timeRow = row(t('rw.time'), h('div', { class: 'rw-inline' }, time.el, h('span', { class: 'aux' }, t('rw.timeTip'))));
+  // E10: the noise every pixel ends under (percent, the relative error of its mean).
+  const noise = numberField({
+    value: s0.noiseThreshold,
+    min: NOISE_THRESHOLD_MIN,
+    max: NOISE_THRESHOLD_MAX,
+    step: 0.1,
+    digits: 1,
+    format: (v) => noiseText(v),
+    ariaLabel: t('rw.noiseThreshold'),
+    onChange: (v, g) => set({ noiseThreshold: v }, g),
+  });
+  const noiseRow = row(t('rw.noiseThreshold'), h('div', { class: 'rw-stack' }, noise.el, h('div', { class: 'note' }, t('rw.noiseNote'))));
   const estimate = h('div', { class: 'rw-estimate tabular', role: 'status' });
   const perFrame = h('div', { class: 'note' }, t('rw.perFrame'));
   const firstOf = toggle(s0.finishBy === 'FIRST', (v) => set({ finishBy: v ? 'FIRST' : 'SAMPLES' }), t('rw.firstOf'));
@@ -481,6 +511,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     'div',
     { class: 'rw-section' },
     row(t('rw.finishBy'), h('div', { class: 'rw-inline' }, finishBy.el, firstNote)),
+    noiseRow,
     samplesRow,
     timeRow,
     row(t('rw.estimateLabel'), h('div', { class: 'rw-stack' }, estimate, perFrame)),
@@ -600,7 +631,9 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     finishBy.set(s.finishBy === 'FIRST' ? null : s.finishBy);
     firstNote.style.display = s.finishBy === 'FIRST' ? '' : 'none';
     samplesRow.style.display = s.finishBy === 'TIME' ? 'none' : '';
-    timeRow.style.display = s.finishBy === 'SAMPLES' ? 'none' : '';
+    timeRow.style.display = s.finishBy === 'SAMPLES' || s.finishBy === 'NOISE' ? 'none' : '';
+    noiseRow.style.display = s.finishBy === 'NOISE' ? '' : 'none';
+    noise.set(s.noiseThreshold);
     samples.set(s.maxSamples);
     tiers.set(s.quality === 'CUSTOM' ? null : s.quality);
     time.set(s.maxSeconds);
@@ -620,7 +653,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
     // Only a render that is denoised has an image without denoise to save.
     saveNoisyRow.style.display = denoiseIn(s.advanced.denoise, 'RENDER') ? '' : 'none';
     perFrame.style.display = anim ? '' : 'none';
-    estimate.textContent = estimateLine(s, throughputOf(ctx), anim ? fr.count : 1);
+    estimate.textContent = estimateLine(s, throughputOf(ctx), anim ? fr.count : 1, ctx.ui.get().noiseEstimate);
     summary.textContent = summaryLine(s, fr.count);
     // Edit mode.
     const w = ui.get().renderWindow;
@@ -629,7 +662,7 @@ export function renderWindow(ctx: Ctx, scope: Scope): HTMLElement {
   };
   // Settings, not progress: a running job's ticks change `s.render` but none of these.
   scope.watch(
-    (s, u) => [u.renderWindow, ...Object.values(settingsOf(s.render)), s.render.seq, s.camera, s.meta.name, s.animation.shots, s.animation.clips, s.studio.preset, s.studio.customPreset, u.throughput] as unknown[],
+    (s, u) => [u.renderWindow, ...Object.values(settingsOf(s.render)), s.render.seq, s.camera, s.meta.name, s.animation.shots, s.animation.clips, s.studio.preset, s.studio.customPreset, u.throughput, u.noiseEstimate] as unknown[],
     sync,
     (x, y) => x.length === y.length && x.every((v, i) => v === y[i]),
   );

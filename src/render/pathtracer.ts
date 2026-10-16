@@ -48,7 +48,8 @@
 
 import type { CameraState } from '../core/camera';
 import { passMask, type PassKey, type RenderPasses } from '../core/passes';
-import { advancedTouchesView, denoiseFraction, engineFieldsOf, type AdvancedSettings } from '../core/render';
+import { adaptiveOf, advancedTouchesView, denoiseFraction, engineFieldsOf, type AdvancedSettings, type RenderProgress } from '../core/render';
+import type { ViewportLimit as Limit } from '../core/settings';
 import { DEFAULT_PIXEL_FILTER, pixelFilterFields, type PixelFilterFields, type PixelFilterSetting } from '../core/antialias';
 import { DENOISE_IMAGE, DENOISE_KEEP_NOISY, denoiseIn, type CausticsMode, type CausticsQuality } from '../core/caustics';
 import { DENOISE_GUIDE_MASK, denoiseImage, type DenoiseJob, type DenoisePreset } from './denoise';
@@ -58,8 +59,9 @@ import type { ProjectState } from '../core/store';
 import { readsPrograms, readsTextures, type EngineStatus, type PickHit, type RenderEngine, type RenderOptions } from './engine';
 import type { WorkerReply, WorkerRequest } from './pool-protocol';
 import { ALBEDO_BIT, PassAccumulator } from './pass-planes';
-import { abortError, budgetProgress, runPasses, type PassBudget } from './schedule';
-import { Accumulator, assignTiles, chooseScale, Generations, LIVE_ALBEDO_SAMPLES, livePassCap, nextPass, scaledSize, type Tile, type TileResult } from './tiles';
+import { abortError, adaptiveProgress, budgetLimits, budgetOf, budgetProgress, runAdaptive, runPasses, type PassBudget } from './schedule';
+import { Accumulator, assignTiles, chooseScale, Generations, LIVE_ALBEDO_SAMPLES, livePassCap, MAX_PASS_SAMPLES, nextPass, scaledSize, TILE, type Tile, type TileResult } from './tiles';
+import { AdaptiveState, BLOCK, rescaledPlane, rescaledSums, type BlockWork } from './adaptive';
 import type { ViewportLimit } from '../core/settings';
 import { DisplayCurve } from './tonemap';
 import { bytesKey, Watchdog, WATCHDOG, type ViewportIssue } from './watchdog';
@@ -87,6 +89,8 @@ export interface TracerView {
   /** E11: `RNDR.pixel_filter` and `RNDR.edge_supersample` (Settings ▸ Render engine ▸ Edge smoothing; core/antialias.ts). */
   pixelFilter?: number;
   edgeSupersample?: number;
+  /** E10: adaptive sampling to this noise target (a fraction; `RNDR.adaptive`, `RNDR.noise_threshold`). */
+  adaptive?: { noiseThreshold: number };
   /** E5b-1: the caustics switch and quality (Automatic is decided by io/rsb.ts from the scene). */
   caustics?: { mode: CausticsMode; quality: CausticsQuality };
   /** M2b: the engine reads the textures (render/engine.ts `readsTextures`): the scene carries them. */
@@ -319,7 +323,7 @@ export class Pool {
    * give exactly the whole image's rows), with the full filter or (U11) the viewport's. A worker takes its band in
    * between the tiles it renders. Rejects when a worker cannot (an older rt.wasm).
    */
-  denoise(width: number, height: number, samples: number, sums: Float32Array, lum2: Float32Array, passes: RenderPasses, workers: readonly number[] = this.all(), preset: DenoisePreset = 'FULL', strength = 1): Promise<Float32Array | null> {
+  denoise(width: number, height: number, samples: number, sums: Float32Array, lum2: Float32Array, passes: RenderPasses, workers: readonly number[] = this.all(), preset: DenoisePreset = 'FULL', strength = 1, counts?: Float32Array): Promise<Float32Array | null> {
     const lane = workers.length > 0 ? workers : this.all();
     return denoiseImage(
       width,
@@ -340,6 +344,7 @@ export class Pool {
       },
       preset,
       strength,
+      counts,
     );
   }
 
@@ -400,6 +405,31 @@ export class Pool {
         const packed = new Int32Array(list.length * 5);
         list.forEach((t, j) => packed.set([t.x, t.y, t.w, t.h, t.index], j * 5));
         this.workers[i].postMessage({ type: 'job', generation, tiles: packed, first, count, ...(passes ? { passes } : {}) } satisfies WorkerRequest, [packed.buffer]);
+      });
+    });
+  }
+
+  /**
+   * E10: renders the blocks of a round of adaptive sampling (render/adaptive.ts `AdaptiveState.work`) on `workers`,
+   * block k on workers[k mod n], sample j of each with the photon map of `iteration + j`; each comes back as a tile result
+   * with its `block`. Resolves true when every worker is done, false when the generation was cancelled.
+   */
+  runBlocks(generation: number, items: readonly BlockWork[], iteration: number, onTile: (r: TileResult) => void, workers: readonly number[] = this.all()): Promise<boolean> {
+    const n = Math.max(1, workers.length);
+    const parts: BlockWork[][] = Array.from({ length: n }, () => []);
+    items.forEach((b, k) => parts[k % n].push(b));
+    const busy = parts.filter((p) => p.length > 0).length;
+    if (busy === 0) return Promise.resolve(true);
+    this.free(workers.filter((_, k) => parts[k].length > 0), generation);
+    return new Promise((resolve) => {
+      this.jobs.set(generation, { left: busy, onTile, done: resolve });
+      parts.forEach((list, k) => {
+        if (list.length === 0) return;
+        const i = workers[k];
+        this.busy[i] = generation;
+        const packed = new Int32Array(list.length * 7);
+        list.forEach((b, j) => packed.set([b.x, b.y, b.w, b.h, b.block, b.first, b.count], j * 7));
+        this.workers[i].postMessage({ type: 'blocks', generation, items: packed, iteration } satisfies WorkerRequest, [packed.buffer]);
       });
     });
   }
@@ -486,6 +516,8 @@ export function touchesImage(s: ProjectState, p: ProjectState): boolean {
     s.render.quality !== p.render.quality ||
     // Caustics and the other Advanced settings (E5b-1) reach the image; the denoise is the live switch (U11).
     advancedTouchesView(s.render.advanced, p.render.advanced) ||
+    // E10: Finish by Noise samples the view adaptively, to its threshold.
+    adaptiveKey(s) !== adaptiveKey(p) ||
     s.animation.clips !== p.animation.clips ||
     s.animation.shots !== p.animation.shots ||
     (s.animation.clips.length > 0 && (s.animation.playhead !== p.animation.playhead || s.animation.playing !== p.animation.playing))
@@ -533,8 +565,11 @@ export class PathTracerEngine implements RenderEngine {
   /** E11: the pixel filter and edge samples asked of views and Renders, and those of the view on screen. */
   private filter: PixelFilterFields = pixelFilterFields(DEFAULT_PIXEL_FILTER);
   private accFilter: PixelFilterFields | null = null;
-  /** U11: the viewport's last pass, as the lane denoises it: its samples, sums and squared luminance. */
-  private lastPass: { acc: Accumulator; samples: number; sum: Float32Array; lum2: Float32Array } | null = null;
+  /** U11: the viewport's last pass, as the lane denoises it: its samples, sums and squared luminance (E10: rescaled to its samples, with each pixel's count). */
+  private lastPass: { acc: Accumulator; samples: number; sum: Float32Array; lum2: Float32Array; counts?: Float32Array } | null = null;
+  /** E10: the adaptive sampling of the view on screen (null: every pixel alike), and its time estimate. */
+  private accAdaptive: AdaptiveState | null = null;
+  private adaptiveEta = -1;
   /** U11: the last pass denoised (its samples) and the denoised sums. */
   private clean: { acc: Accumulator; samples: number; sums: Float32Array } | null = null;
   /** U11: the denoise in flight on the view's workers (its number; 0: none). */
@@ -902,6 +937,8 @@ export class PathTracerEngine implements RenderEngine {
       // E11: a gesture's frames keep the filter but not the edge samples (they are gone before they would tell).
       pixelFilter: this.filter.pixelFilter,
       edgeSupersample: scale > 1 ? 1 : this.filter.edgeSupersample,
+      // E10: a view that follows the output's samples samples adaptively when the output finishes by noise.
+      ...(scale === 1 ? viewAdaptive(state, this.limit) : {}),
       // M2b: the textures, when this engine reads them; M3b: the material programs, when it runs them.
       ...(readsTextures(this.pool.features) ? { textures: true } : {}),
       ...(readsPrograms(this.pool.features) ? { programs: true } : {}),
@@ -964,7 +1001,9 @@ export class PathTracerEngine implements RenderEngine {
     // denoise can be turned on at any time.
     const denoise = ((view.denoise ?? 0) & DENOISE_IMAGE) !== 0;
     const mask = denoise ? DENOISE_GUIDE_MASK : 0;
-    const acc = new Accumulator(view.width, view.height, undefined, { lum2: denoise });
+    // E10: adaptive sampling (a view that follows an output finishing by noise): rounds decided by the image.
+    const adaptive = view.adaptive ? new AdaptiveState(view.width, view.height, { ev: this.source.tone(state).exposureEv, target: view.adaptive.noiseThreshold, cap: view.maxSamples }) : null;
+    const acc = new Accumulator(view.width, view.height, undefined, { lum2: denoise, blocks: adaptive !== null });
     this.accGuides = denoise ? new PassAccumulator(view.width, view.height, mask, acc.tiles, { gaps: true }) : null;
     this.lastPass = null;
     this.clean = null;
@@ -973,6 +1012,8 @@ export class PathTracerEngine implements RenderEngine {
     this.cleanImages = 0;
     this.cleanAt = 0;
     this.acc = acc;
+    this.accAdaptive = adaptive;
+    this.adaptiveEta = -1;
     this.accFilter = { pixelFilter: view.pixelFilter ?? 0, edgeSupersample: view.edgeSupersample ?? 1 };
     this.accGen = gen;
     this.accScale = scale;
@@ -991,24 +1032,52 @@ export class PathTracerEngine implements RenderEngine {
     let done = 0;
     let pass = 0;
     let msPerSample = 0;
+    // E10: milliseconds per pixel-sample of the last pass, and what the last decision says is left to the target.
+    let msPerUnit = 0;
+    let left: { work: number; since: number } | null = null;
     for (;;) {
-      const next = nextPass(done, pass, max);
+      // E10: the round is over: the image decides the next one.
+      if (adaptive && adaptive.left === 0) {
+        const d = adaptive.decide(acc.sum, 4, acc.lum2);
+        left = d.remaining > 0 ? { work: d.remaining, since: 0 } : null;
+        if (adaptive.converged) {
+          this.adaptiveEta = 0;
+          break;
+        }
+      }
+      let next: { first: number; count: number } | null;
+      if (adaptive) next = { first: adaptive.iteration, count: Math.min(pass <= 0 ? 1 : Math.min(pass * 2, MAX_PASS_SAMPLES), adaptive.left) };
+      else next = nextPass(done, pass, max);
       if (!next) break;
       // U11: with the live denoise on, a pass about as long as a denoise, so the denoised image follows.
       const p = denoise && this.liveOn && msPerSample > 0 ? { first: next.first, count: Math.min(next.count, livePassCap(msPerSample, this.denoiseMs)) } : next;
       // The guides' albedo while the switch is on, and for the first samples while it is off.
       const passMask = denoise && !this.liveOn && p.first >= LIVE_ALBEDO_SAMPLES ? mask & ~ALBEDO_BIT : mask;
       const started = performance.now();
-      const ok = await this.pool.run(gen, acc.tiles, p.first, p.count, (r) => this.onTile(gen, r), lane, passMask);
+      const cost = adaptive ? adaptive.passCost(p.count) : 0;
+      // E10: after the first round, only the round's blocks.
+      const ok = adaptive && !adaptive.warmingUp
+        ? await this.pool.runBlocks(gen, adaptive.work(p.count), adaptive.iteration, (r) => this.onTile(gen, r), lane)
+        : await this.pool.run(gen, acc.tiles, p.first, p.count, (r) => this.onTile(gen, r), lane, passMask);
       if (gen !== this.viewGen) return;
       if (!ok) {
         this.frameInFlight = false;
         return;
       }
       msPerSample = (performance.now() - started) / p.count;
-      // U11: the lane's newest pass (not an image a change is about to replace: the next view starts over).
+      if (adaptive) {
+        adaptive.advance(p.count);
+        if (cost > 0) msPerUnit = (performance.now() - started) / cost;
+        if (left) left.since += cost;
+        this.adaptiveEta = left && msPerUnit > 0 && Number.isFinite(left.work) ? (Math.max(0, left.work - left.since) * msPerUnit) / 1000 : -1;
+      }
+      // U11: the lane's newest pass (not an image a change is about to replace: the next view starts over). E10: an
+      // adaptive image goes as sums rescaled to its most samples, with every pixel's own count.
       if (denoise && !this.restartWanted) {
-        this.lastPass = { acc, samples: done + p.count, sum: acc.sum.slice(), lum2: acc.lum2.slice() };
+        if (adaptive) {
+          const s = adaptive.minMax().max;
+          this.lastPass = { acc, samples: s, sum: rescaledSums(acc.sum, acc.width, acc.height, acc.blockSamples, s), lum2: rescaledPlane(acc.lum2, acc.width, acc.height, acc.blockSamples, s), counts: adaptive.pixelCounts() };
+        } else this.lastPass = { acc, samples: done + p.count, sum: acc.sum.slice(), lum2: acc.lum2.slice() };
         this.pumpDenoise();
       }
       this.passes++;
@@ -1026,7 +1095,7 @@ export class PathTracerEngine implements RenderEngine {
         this.presentAll = true;
         if (!this.pendingSince) this.pendingSince = performance.now();
       }
-      done += p.count;
+      done = adaptive ? adaptive.minMax().max : done + p.count;
       pass = p.count;
       // The next view of a gesture, or the next step of a drag: this frame is shown, start over.
       if (this.restartWanted) return;
@@ -1048,9 +1117,12 @@ export class PathTracerEngine implements RenderEngine {
     const guides = this.accGuides;
     if (guides && r.albedo) guides.addAlbedo(r.index, r.first, r.count, r.albedo);
     if (guides && r.exact) guides.setExact(r.index, r.exact);
-    // Once the denoised image is on screen, the samples coming in are shown with the next one.
-    if (acc.add(r.index, r.first, r.count, r.data) && this.accScale === 1 && acc.shownSamples === 0) {
-      this.dirty.add(r.index);
+    // Once the denoised image is on screen, the samples coming in are shown with the next one. E10: a block of an
+    // adaptive round redraws its tile.
+    const b = r.block;
+    const added = b ? acc.addBlock(r.index, b.x, b.y, b.w, b.h, r.first, r.count, r.data) : acc.add(r.index, r.first, r.count, r.data);
+    if (added && this.accScale === 1 && acc.shownSamples === 0) {
+      this.dirty.add(b ? Math.floor(b.y / TILE) * Math.ceil(acc.width / TILE) + Math.floor(b.x / TILE) : r.index);
       if (!this.pendingSince) this.pendingSince = this.tileAt;
     }
   }
@@ -1073,7 +1145,7 @@ export class PathTracerEngine implements RenderEngine {
     const strength = this.liveStrength;
     this.denoising = id;
     this.pool
-      .denoise(acc.width, acc.height, last.samples, last.sum, last.lum2, guides.resolve(), this.accLane, 'VIEWPORT', strength)
+      .denoise(acc.width, acc.height, last.samples, last.sum, last.lum2, guides.resolve(), this.accLane, 'VIEWPORT', strength, last.counts)
       .then((sums) => {
         // (Of another strength than the one asked for now: dropped, and the pass denoised again.)
         if (!sums || gen !== this.accGen || this.acc !== acc || strength !== this.liveStrength) return;
@@ -1196,14 +1268,16 @@ export class PathTracerEngine implements RenderEngine {
     const full = acc !== null && this.accScale === 1;
     // A denoised view shows the samples of its last denoised image (E5b-1).
     const denoised = full && acc.shownSamples > 0;
-    const samples = full ? (denoised ? acc.shownSamples : acc.minSamples) : 0;
+    // E10: an adaptive view's pixels have from `min` to `max` samples: the meter says both, the image counts its most.
+    const range = full && acc.adaptive ? acc.sampleRange : null;
+    const samples = full ? (denoised ? acc.shownSamples : range ? range.max : acc.minSamples) : 0;
     const caustics = this.accLane.length > 0 ? this.pool.causticsOf(this.accLane[0]) : 0;
     const max = this.state ? this.viewportSamples(this.state) : 1;
     const end = this.stoppedAt || performance.now();
     const k = this.whileRender === 'SHARE' ? viewportWorkers(this.pool.size) : 0;
     // While a Render runs: the viewport shares the pool, or waits (by choice, or in a pool of one); nothing to
     // say once it has converged.
-    const converged = full && (samples >= max || this.timedOut);
+    const converged = full && (samples >= max || this.timedOut || (range !== null && this.viewDone && this.accGen === this.viewGen));
     const renderShare = this.rendering > 0 && !converged ? (k > 0 ? 'SHARED' : 'PAUSED') : undefined;
     const restarted = this.watchdog.recent(now);
     const issue: ViewportIssue | undefined = this.failure !== null ? { kind: 'FAILED', detail: this.failure } : restarted ? { kind: 'RESTARTED', detail: restarted } : undefined;
@@ -1231,6 +1305,7 @@ export class PathTracerEngine implements RenderEngine {
       ...(full && this.accGuides ? { liveDenoise: { ms: this.denoiseMs, images: this.cleanImages, accumulated: this.lastPass?.acc === acc ? this.lastPass.samples : 0, at: this.cleanAt } } : {}),
       ...(caustics > 0 && acc ? { caustics } : {}),
       ...(full && this.accFilter ? { pixelFilter: { ...this.accFilter } } : {}),
+      ...(range ? { adaptive: { min: range.min, max: range.max, noise: this.accAdaptive?.last?.maxError ?? -1, eta: this.adaptiveEta } } : {}),
     };
   }
 
@@ -1285,6 +1360,7 @@ export class PathTracerEngine implements RenderEngine {
         ...(opts.advanced ? { advanced: opts.advanced, ...engineFieldsOf(opts.advanced, 'RENDER') } : {}),
         ...(opts.passes?.length ? { passes: opts.passes } : {}),
         ...this.filter,
+        ...(opts.adaptive ? { adaptive: opts.adaptive } : {}),
         ...(readsTextures(this.pool.features) ? { textures: true } : {}),
         ...(readsPrograms(this.pool.features) ? { programs: true } : {}),
       };
@@ -1297,15 +1373,27 @@ export class PathTracerEngine implements RenderEngine {
       const built = this.source.build(state, view);
       const update = built.bytes(false);
       opts.onProgress?.({ jobId: null, progress: 0, samples: 0, seconds: 0 });
-      const acc = new Accumulator(opts.width, opts.height, undefined, { lum2: denoise });
+      // E10: adaptive sampling (Finish by Noise): rounds decided by the image, at most its samples per pixel.
+      const tone0 = this.source.tone(state);
+      const adaptive = view.adaptive ? new AdaptiveState(opts.width, opts.height, { ev: tone0.exposureEv, target: view.adaptive.noiseThreshold, cap: budgetLimits(budgetOf(opts)).samples }) : null;
+      let eta = -1;
+      const acc = new Accumulator(opts.width, opts.height, undefined, { lum2: denoise, blocks: adaptive !== null });
       const passes = mask ? new PassAccumulator(opts.width, opts.height, mask, acc.tiles) : null;
       // Without a finish-by (older callers): the samples or the time, whichever first; 0 s is no limit.
-      const budget: PassBudget = { finishBy: opts.finishBy ?? (opts.maxSeconds > 0 ? 'FIRST' : 'SAMPLES'), maxSamples: opts.maxSamples, maxSeconds: opts.maxSeconds };
+      const budget: PassBudget = budgetOf(opts);
       let done = 0;
       let lastReport = 0;
       const report = () => {
         const elapsed = performance.now() - t0;
-        opts.onProgress?.({ jobId: null, progress: budgetProgress(budget, acc.totalSamples / Math.max(1, acc.tiles.length), elapsed), samples: done, seconds: elapsed / 1000 });
+        const progress: RenderProgress = { jobId: null, progress: budgetProgress(budget, acc.totalSamples / Math.max(1, acc.tiles.length), elapsed), samples: done, seconds: elapsed / 1000 };
+        if (adaptive) {
+          const range = acc.sampleRange;
+          const noise = adaptive.last?.maxError ?? -1;
+          progress.samples = range.max;
+          progress.adaptive = { min: range.min, max: range.max, noise, target: view.adaptive!.noiseThreshold, eta };
+          progress.progress = adaptiveProgress(budget, range.max, elapsed, eta);
+        }
+        opts.onProgress?.(progress);
       };
       // U14: the queue's live view, when it wants a picture now: the accumulation as it is (each tile with its own
       // samples), scaled to its box, with the render's exposure and curve; the picture is kept, and only the boxes
@@ -1320,57 +1408,73 @@ export class PathTracerEngine implements RenderEngine {
           liveCurve = new DisplayCurve(tone.exposureEv, tone.tonemap);
         }
         const k = fitFactor(acc.width, acc.height, box);
-        if (livePic?.k !== k) livePic = new LivePicture(acc.width, acc.height, k);
-        livePic.update(acc.sum, acc.samples, liveCurve);
+        // E10: an adaptive accumulation counts its samples per block.
+        if (livePic?.k !== k) livePic = new LivePicture(acc.width, acc.height, k, acc.adaptive ? BLOCK : TILE);
+        livePic.update(acc.sum, acc.adaptive ? acc.blockSamples : acc.samples, liveCurve);
         const seconds = (performance.now() - t0) / 1000;
-        opts.onFrame({ width: livePic.width, height: livePic.height, rgba: livePic.rgba.slice(), renderWidth: opts.width, renderHeight: opts.height, samples: acc.minSamples, seconds });
+        opts.onFrame({ width: livePic.width, height: livePic.height, rgba: livePic.rgba.slice(), renderWidth: opts.width, renderHeight: opts.height, samples: acc.adaptive ? acc.sampleRange.max : acc.minSamples, seconds, ...(acc.adaptive ? { minSamples: acc.sampleRange.min } : {}) });
       };
-      const result = await runPasses(budget, {
-        now: () => performance.now(),
-        // Each pass on the workers the viewport leaves free now (all of them in Fast mode); the pool hands this
-        // job only its own generation's tiles, and which worker renders a tile does not change a pixel, nor a pass.
-        pass: async (first, count) => {
-          const lane = this.finalLane();
-          this.finalPass = lane;
-          try {
-            await this.ensureScene(lane, built, update);
-            if (signal?.aborted) return false;
-            return await this.pool.run(
-              gen,
-              acc.tiles,
-              first,
-              count,
-              (r) => {
-                acc.add(r.index, r.first, r.count, r.data);
-                if (passes && r.albedo) passes.addAlbedo(r.index, r.first, r.count, r.albedo);
-                if (passes && r.exact) passes.setExact(r.index, r.exact);
-                const now = performance.now();
-                if (now - lastReport > 100) {
-                  lastReport = now;
-                  report();
-                }
-                if (opts.frameBox) live();
-              },
-              lane,
-              mask,
-            );
-          } finally {
-            this.finalPass = null;
-          }
-        },
-        aborted: () => signal?.aborted === true,
-        progress: (samples) => {
-          done = samples;
+      const onTile = (r: TileResult) => {
+        const b = r.block;
+        if (b) acc.addBlock(r.index, b.x, b.y, b.w, b.h, r.first, r.count, r.data);
+        else acc.add(r.index, r.first, r.count, r.data);
+        if (passes && r.albedo) passes.addAlbedo(r.index, r.first, r.count, r.albedo);
+        if (passes && r.exact) passes.setExact(r.index, r.exact);
+        const now = performance.now();
+        if (now - lastReport > 100) {
+          lastReport = now;
           report();
-        },
-      });
+        }
+        if (opts.frameBox) live();
+      };
+      // Each pass on the workers the viewport leaves free now (all of them in Fast mode); the pool hands this job only
+      // its own generation's tiles, and which worker renders a tile does not change a pixel, nor a pass. E10: after the
+      // first round of an adaptive render, only the round's blocks.
+      const pass = async (first: number, count: number): Promise<boolean> => {
+        const lane = this.finalLane();
+        this.finalPass = lane;
+        try {
+          await this.ensureScene(lane, built, update);
+          if (signal?.aborted) return false;
+          if (adaptive && !adaptive.warmingUp) return await this.pool.runBlocks(gen, adaptive.work(count), adaptive.iteration, onTile, lane);
+          return await this.pool.run(gen, acc.tiles, first, count, onTile, lane, mask);
+        } finally {
+          this.finalPass = null;
+        }
+      };
+      const result = adaptive
+        ? await runAdaptive(budget, adaptive, {
+            now: () => performance.now(),
+            pass,
+            decide: () => adaptive.decide(acc.sum, 4, acc.lum2),
+            aborted: () => signal?.aborted === true,
+            progress: (samples, _ms, left) => {
+              done = samples;
+              eta = left;
+              report();
+            },
+          })
+        : await runPasses(budget, {
+            now: () => performance.now(),
+            pass,
+            aborted: () => signal?.aborted === true,
+            progress: (samples) => {
+              done = samples;
+              report();
+            },
+          });
       done = result.samples;
       const tone = this.source.tone(state);
+      // E10: an adaptive image goes on as sums rescaled to its most samples (what the files, the display and the denoiser
+      // read as sums of `done` samples), every pixel's own count for the denoiser.
+      const sums = adaptive ? rescaledSums(acc.sum, acc.width, acc.height, acc.blockSamples, done) : acc.sum;
+      const lum2 = adaptive && denoise ? rescaledPlane(acc.lum2, acc.width, acc.height, acc.blockSamples, done) : acc.lum2;
+      const counts = adaptive ? adaptive.pixelCounts() : undefined;
       // The engine's denoiser on the finished image (all the workers; the viewport may have its share back).
-      let image = acc.sum;
+      let image = sums;
       let denoised = false;
       if (denoise && passes && done > 0 && !signal?.aborted) {
-        const clean = await this.pool.denoise(opts.width, opts.height, done, acc.sum, acc.lum2, passes.resolve(), this.finalLane(), 'FULL', strength).catch((err) => {
+        const clean = await this.pool.denoise(opts.width, opts.height, done, sums, lum2, passes.resolve(), this.finalLane(), 'FULL', strength, counts).catch((err) => {
           console.warn(`render: denoise: ${err instanceof Error ? err.message : String(err)}`);
           return null;
         });
@@ -1384,7 +1488,7 @@ export class PathTracerEngine implements RenderEngine {
       const data = await this.pool.tonemap(image, opts.width, opts.height, done, tone.exposureEv, tone.tonemap);
       const noisy =
         denoised && keepNoisy
-          ? { data: await this.pool.tonemap(acc.sum, opts.width, opts.height, done, tone.exposureEv, tone.tonemap), ...(opts.keepLinear ? { sum: acc.sum } : {}) }
+          ? { data: await this.pool.tonemap(sums, opts.width, opts.height, done, tone.exposureEv, tone.tonemap), ...(opts.keepLinear ? { sum: sums } : {}) }
           : undefined;
       const seconds = (performance.now() - t0) / 1000;
       opts.onProgress?.({ jobId: null, progress: 1, samples: done, seconds });
@@ -1425,6 +1529,17 @@ export class PathTracerEngine implements RenderEngine {
     this.timer = null;
     this.pool.dispose();
   }
+}
+
+/** E10: a full-resolution view samples adaptively when it follows the output's samples and the output finishes by noise. */
+export function viewAdaptive(state: ProjectState, limit: Limit): { adaptive?: { noiseThreshold: number } } {
+  return limit.by === 'OUTPUT' ? adaptiveOf(state.render) : {};
+}
+
+/** E10: the key of what adaptive sampling a view asks for (a change starts the image over). */
+export function adaptiveKey(state: ProjectState): string {
+  const a = adaptiveOf(state.render).adaptive;
+  return a ? String(a.noiseThreshold) : '';
 }
 
 function sameLane(a: readonly number[], b: readonly number[]): boolean {

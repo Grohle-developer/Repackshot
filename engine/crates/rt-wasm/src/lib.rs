@@ -18,7 +18,9 @@ use rt_core::image::Film;
 use rt_core::integrator::Prepared;
 use rt_core::passes::{PassFilm, PASS_ALBEDO, PASS_EXACT};
 use rt_core::pixel_filter::EdgeMask;
-use rt_core::render::{render_tile_albedo_edges, render_tile_edges, render_tile_exact, TileRect};
+use rt_core::render::{
+    render_block, render_tile_albedo_edges, render_tile_edges, render_tile_exact, TileRect,
+};
 use rt_core::scene::Scene;
 use rt_core::simd::Isa;
 use rt_post::denoise::{denoise_rows_at, DenoiseInput, Preset};
@@ -470,6 +472,118 @@ fn render_region(
         );
         film
     })
+}
+
+/// The edge of the tiles whose edge masks [`render_block_rgba`] keeps: the pool's (and every
+/// host's) 32-pixel tiles, so the first round's masks serve the blocks of the later ones. Which
+/// tile a mask was found for changes no pixel (an edge depends on the pixel's neighbours only).
+pub const BLOCK_MASK_TILE: u32 = 32;
+
+/// E10, adaptive sampling: sample `sample_index` of the pixel rectangle `(x, y, w, h)` (a block of a
+/// round, `rt_core::adaptive`) with the photon map of `iteration` (traced now if it is not kept),
+/// as [`render_tile_rgba`] gives it: `w * h * 4` floats, RGBA. The edge mask is the one of the
+/// 32-pixel tile that holds the block (or of the rectangle itself when it is in none).
+pub fn render_block_rgba(
+    handle: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sample_index: u32,
+    iteration: u32,
+) -> Result<Vec<f32>, u32> {
+    with_tile(handle, w, h, |loaded| {
+        let rect = TileRect { x, y, w, h };
+        let (width, height) = (loaded.scene.render.width, loaded.scene.render.height);
+        let (tx, ty) = (
+            x / BLOCK_MASK_TILE * BLOCK_MASK_TILE,
+            y / BLOCK_MASK_TILE * BLOCK_MASK_TILE,
+        );
+        let tile = TileRect {
+            x: tx,
+            y: ty,
+            w: BLOCK_MASK_TILE.min(width.saturating_sub(tx)),
+            h: BLOCK_MASK_TILE.min(height.saturating_sub(ty)),
+        };
+        let inside = x + w <= tile.x + tile.w && y + h <= tile.y + tile.h;
+        let edges = loaded.edge_mask(if inside { tile } else { rect });
+        let map = loaded.photon_map(iteration);
+        let mut film = Film::region(x, y, w, h);
+        render_block(
+            &loaded.scene,
+            &loaded.prepared,
+            map.map(|i| &loaded.maps[i]),
+            &edges,
+            rect,
+            sample_index,
+            &mut film,
+            Isa::detect(),
+        );
+        let rgb = film.resolve();
+        let alpha = film.resolve_alpha();
+        let mut out = Vec::with_capacity(alpha.len() * 4);
+        for (px, a) in rgb.chunks_exact(3).zip(alpha) {
+            out.extend_from_slice(px);
+            out.push(a);
+        }
+        out
+    })
+}
+
+/// Words [`adaptive_decide`] writes about the decision: the next round's samples, the active
+/// blocks, the blocks, then the bits of the threshold, the largest error and the remaining work.
+pub const DECISION_WORDS: usize = 6;
+
+/// E10: the decision of `rt_core::adaptive::decide` for the parity tool and any host that keeps
+/// the round's state itself: `counts` the samples of every block (`u32`, row by row), `sums` the
+/// image's RGBA sums, `lum2` its squared-luminance sums, the exposure `ev` (the floor of the
+/// mean), the noise `target` and the sample `cap`. Returns each block's choice (1 or 0) and the
+/// decision's words ([`DECISION_WORDS`]).
+#[allow(clippy::too_many_arguments)]
+pub fn adaptive_decide(
+    width: u32,
+    height: u32,
+    ev: f32,
+    target: f32,
+    cap: u32,
+    counts: &[u32],
+    sums: &[f32],
+    lum2: &[f32],
+) -> Result<(Vec<u8>, [u32; DECISION_WORDS]), u32> {
+    let (cols, rows) = rt_core::adaptive::block_grid(width, height);
+    let n = width as usize * height as usize;
+    if width == 0
+        || height == 0
+        || counts.len() != (cols * rows) as usize
+        || sums.len() != n * 4
+        || lum2.len() != n
+    {
+        return Err(STATUS_BAD_TILE);
+    }
+    let mut active = vec![false; counts.len()];
+    let d = rt_core::adaptive::decide(
+        width,
+        height,
+        counts,
+        sums,
+        4,
+        lum2,
+        rt_core::adaptive::floor_for(ev),
+        target,
+        cap,
+        &mut active,
+    );
+    Ok((
+        active.into_iter().map(u8::from).collect(),
+        [
+            d.round,
+            d.active,
+            d.blocks,
+            d.threshold.to_bits(),
+            d.max_error.to_bits(),
+            d.remaining.to_bits(),
+        ],
+    ))
 }
 
 /// Renders sample `sample_index` of the pixel rectangle `(x, y, w, h)` and returns the linear

@@ -4,6 +4,7 @@
 
 import { DEFAULT_PIXEL_FILTER, pixelFilterSetting } from '../../core/antialias';
 import { aspectText } from '../../core/aspect';
+import { noiseFraction } from '../../core/render';
 import { activeCamera, cameraBasis, VIEW_KEYS, type ViewKey } from '../../core/camera';
 import { boxSize, isEmptyBox } from '../../core/math';
 import { clickModeOf, clickMods, CLICK_PIXELS, type Mods } from '../../core/box-select';
@@ -237,7 +238,17 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
       // E11: and the pixel filter it renders with, when it is not the factory one (Fine): the usual case stays quiet.
       const shownFilter = st.pixelFilter ? pixelFilterSetting(st.pixelFilter) : null;
       const filter = shownFilter !== DEFAULT_PIXEL_FILTER ? shownFilter : null;
+      // E10: an adaptive view (Finish by Noise): the engine's fewest and most samples of a pixel, and what it expects to
+      // take to the threshold (the render window's estimate).
+      const ad = st.adaptive;
+      if (ad && scale === 1 && !st.rendering && st.pixels) {
+        const target = noiseFraction(ctx.store.get().render.noiseThreshold);
+        const seconds = ad.eta >= 0 ? st.seconds + ad.eta : st.converged ? st.seconds : -1;
+        const prev = ctx.ui.get().noiseEstimate;
+        if (seconds >= 0 && (!prev || prev.target !== target || prev.pixels !== st.pixels || Math.abs(prev.seconds - seconds) > Math.max(1, prev.seconds * 0.1))) ctx.ui.set({ noiseEstimate: { seconds, pixels: st.pixels, target } });
+      }
       const parts = [
+        ad ? t('viewport.meterAdaptive', { min: formatNumber(ad.min, lang, 0), max: formatNumber(ad.max, lang, 0) }) : '',
         st.denoised ? t('viewport.meterDenoised') : '',
         st.caustics ? t('viewport.meterCaustics', { n: formatNumber(st.caustics, lang, 0) }) : '',
         filter ? t('viewport.meterFilter', { name: t(dyn(`set.engine.pixelFilter.${filter}`)) }) : '',
@@ -255,6 +266,7 @@ function meter(ctx: Ctx, scope: Scope): HTMLElement {
       el.dataset.denoised = st.denoised ? '1' : '0';
       el.dataset.caustics = String(st.caustics ?? 0);
       el.dataset.pixelFilter = String(st.pixelFilter?.pixelFilter ?? 0);
+      el.dataset.adaptive = ad ? `${ad.min}-${ad.max}` : '';
       el.dataset.edgeSamples = String(st.pixelFilter?.edgeSupersample ?? 1);
     } else {
       // E11: Fast mode's multisampling when it is not the canvas's usual 4×.

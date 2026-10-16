@@ -49,7 +49,7 @@ import type { AiPostProgress, AiPostRequest } from '../core/ai';
 import { aiFileName, pipelineOf, variantSettings } from '../core/ai-post';
 import { FrameCadence, liveBox } from '../core/live-frame';
 import { outputFileName, type NameValues } from '../core/name-template';
-import { formatExtension, frameRange, frameTime, jobCamera, needsDisplayCopy, type JobRuntime, type JobStatus, type RenderJob, type RenderSettings } from '../core/render';
+import { formatExtension, frameRange, frameTime, jobCamera, needsDisplayCopy, type JobRuntime, type JobStatus, type RenderJob, type RenderProgress, type RenderSettings } from '../core/render';
 import { controlsFor, frameControls, seedProvenance, type PluginLabel, type PluginManifest, type PluginRenderSettings } from '../core/plugins';
 import type { AiResultInfo, ResultMeta } from '../core/results';
 import type { ProjectState } from '../core/store';
@@ -401,12 +401,12 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
   for (let k = 0; k < total; k++) {
     if (signal.aborted) throw new DOMException('aborted', 'AbortError');
     const f = frames[k];
-    const tick = (p: number, samples: number, seconds: number, force = false) => {
+    const tick = (p: number, samples: number, seconds: number, force = false, adaptive?: RenderProgress['adaptive']) => {
       const t = now();
       if (!force && t - lastTick < 200) return;
       lastTick = t;
       const progress = Math.min(1, (k + p) / total);
-      ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress, samples, seconds, ...(anim ? { frame: k + 1, frames: total } : {}) } });
+      ctx.store.dispatch({ type: 'render/running', running: { jobId: job.id, progress, samples, seconds, ...(anim ? { frame: k + 1, frames: total } : {}), ...(adaptive ? { adaptive } : {}) } });
       patchJob(ctx, job.id, { progress, frame: anim ? k + 1 : 0 });
     };
     tick(0, 0, 0, true);
@@ -416,6 +416,7 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
       finishBy: s.finishBy,
       maxSamples: s.maxSamples,
       maxSeconds: s.maxSeconds,
+      noiseThreshold: s.noiseThreshold,
       transparent: s.transparent,
       format: s.format,
       bitDepth: s.bitDepth,
@@ -423,7 +424,7 @@ export async function runJob(ctx: Ctx, job: RenderJob, signal: AbortSignal, now:
       dpi: s.dpi,
       advanced: s.advanced,
       signal,
-      onProgress: (p, samples, seconds) => tick(p, samples, seconds),
+      onProgress: (p, samples, seconds, adaptive) => tick(p, samples, seconds, false, adaptive),
       frameBox: live.frameBox,
       onFrame: live.onFrame,
       ...(cam ? { camera: cam } : {}),

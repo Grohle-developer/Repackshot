@@ -13,6 +13,11 @@ export type WorkerRequest =
    * the exact planes of every tile (phase X2).
    */
   | { type: 'job'; generation: number; tiles: Int32Array; first: number; count: number; passes?: number }
+  /**
+   * E10, a round of adaptive sampling: `count`-sample runs of these blocks (x, y, w, h, block, first sample, samples
+   * each, `rt_render_block_rgba`), sample j of each with the photon map of `iteration + j`.
+   */
+  | { type: 'blocks'; generation: number; items: Int32Array; iteration: number }
   /** Stop the job of this generation (only that one). */
   | { type: 'cancel'; generation: number }
   /** Convert accumulated RGBA sums of `samples` samples to 8-bit pixels, exactly. */
@@ -34,7 +39,7 @@ export type WorkerReply =
    * A tile's samples. With passes: `albedo`, `count` samples of `w * h * 3` floats each, and once (the job
    * with `first` 0) `exact`, the tile's exact planes in key order (render/pass-planes.ts).
    */
-  | { type: 'tile'; generation: number; index: number; first: number; count: number; data: Float32Array; albedo?: Float32Array; exact?: Uint32Array }
+  | { type: 'tile'; generation: number; index: number; first: number; count: number; data: Float32Array; albedo?: Float32Array; exact?: Uint32Array; block?: { x: number; y: number; w: number; h: number } }
   | { type: 'done'; generation: number }
   | { type: 'error'; generation: number; reason: string }
   | { type: 'pixels'; id: number; bytes: Uint8ClampedArray }

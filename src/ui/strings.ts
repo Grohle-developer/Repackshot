@@ -207,6 +207,8 @@ const TABLE = {
   'viewport.cameraList': ['Cameras', 'Cámaras'],
   'viewport.meterFast': ['Fast · rasterised preview', 'Rápido · vista previa rasterizada'],
   'viewport.meterDenoised': ['Denoised', 'Ruido reducido'],
+  // E10: the view samples adaptively (Finish by Noise): the engine's fewest and most samples of a pixel.
+  'viewport.meterAdaptive': ['Adaptive · {min}–{max} samples', 'Adaptativo · {min}–{max} muestras'],
   'viewport.meterCaustics': ['Caustics · {n} photons per sample', 'Cáusticas · {n} fotones por muestra'],
   // E11: the filter of the image on screen when it is not the factory one (Fine), and Fast mode's multisampling when it is not 4×.
   'viewport.meterFilter': ['Filter · {name}', 'Filtro · {name}'],
@@ -1448,6 +1450,15 @@ const TABLE = {
   'rw.finishBy': ['Finish by', 'Terminar por'],
   'rw.bySamples': ['Samples', 'Muestras'],
   'rw.byTime': ['Time', 'Tiempo'],
+  // E10: Finish by Noise, adaptive sampling to a threshold.
+  'rw.byNoise': ['Noise', 'Ruido'],
+  'rw.noiseThreshold': ['Noise', 'Ruido'],
+  'rw.noiseNote': [
+    'Every pixel ends under this noise (the relative error of its mean): the samples go to the noisy parts, at most the samples above',
+    'Cada píxel termina por debajo de este ruido (el error relativo de su media): las muestras van a las partes ruidosas, como mucho las de arriba',
+  ],
+  'rw.estimateNoise': ['≈ {time} to {t} on this machine, from the last pass of the Full view', '≈ {time} hasta {t} en este equipo, según la última pasada del visor Completo'],
+  'rw.estimateNoiseNone': ['The time comes from the passes: in Full mode, or as the render runs', 'El tiempo sale de las pasadas: en modo Completo, o mientras se renderiza'],
   'rw.firstOfOn': ['Whichever comes first (Advanced)', 'Lo que llegue antes (Avanzado)'],
   'rw.samples': ['Samples', 'Muestras'],
   'rw.time': ['Time', 'Tiempo'],
@@ -1554,6 +1565,7 @@ const TABLE = {
     'Una pasada opcional que hace más natural la luz y el desgaste, con la geometría, los materiales, la resolución, el enfoque y el encuadre bloqueados.',
   ],
   'rw.summarySamples': ['{n} samples', '{n} muestras'],
+  'rw.summaryNoise': ['noise {t}', 'ruido {t}'],
   'rw.summaryOr': ['{a} or {b}', '{a} o {b}'],
   'rw.summaryFrames': ['{frames} · {fps} fps', '{frames} · {fps} fps'],
   'rw.perFrameShort': ['{x} per frame', '{x} por fotograma'],
@@ -1611,6 +1623,10 @@ const TABLE = {
   'live.stopped': ['This job was stopped before it finished.', 'Este trabajo se detuvo antes de terminar.'],
   'live.samplesOf': ['{n} of {of} samples', '{n} de {of} muestras'],
   'live.timeOf': ['{t} of {of}', '{t} de {of}'],
+  // E10: an adaptive render in the live view: the samples of its pixels, its noise and the time the engine expects.
+  'live.adaptive': ['adaptive · {min}–{max} samples', 'adaptativo · {min}–{max} muestras'],
+  'live.noiseOf': ['noise {noise} of {target}', 'ruido {noise} de {target}'],
+  'live.eta': ['≈ {t} left', 'quedan ≈ {t}'],
   'queue.timeline': ['Camera track', 'Pista de cámara'],
   'queue.frames': ['{n} frames', '{n} fotogramas'],
   'queue.frame1': ['1 frame', '1 fotograma'],
