@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 pub mod bench;
 pub mod cli;
+pub mod e13_sheet;
 pub mod filter_sheet;
 pub mod lens_catalogue;
 pub mod lens_sheet;

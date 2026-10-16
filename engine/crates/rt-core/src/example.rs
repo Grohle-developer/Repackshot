@@ -1353,6 +1353,67 @@ pub fn e9_scene() -> Scene {
     scene
 }
 
+/// The E13 parity scene (`render.rs` pins its hash; `rt --write-e13-example` writes it for
+/// `tools/wasm-parity.mjs`): the E5 scene ([`e5_scene`], HDRI) with its big sphere of smooth
+/// glass, a slab of milk under a 3 mm plate of clear glass at the front left and a point light
+/// beside the panel, so manifold next-event estimation is in the hash: Newton's method through a
+/// sphere and through a plate, from the floor, from opaque parts and from the milk's exit
+/// vertices, to an area light and to a delta point, with the BSDF side's MIS against it (the
+/// panel found through the glass); the cut-out card and the thin card stand on some of the
+/// paths, and the environment stays with BSDF sampling.
+pub fn e13_scene() -> Scene {
+    let mut scene = e5_scene(false);
+    scene.materials[0].roughness = 0.0;
+    scene.materials.push(Material {
+        kind: crate::scene::MATERIAL_GLASS,
+        ior: 1.35,
+        roughness: 0.0,
+        transmission: 1.0,
+        scatter_mm: 0.31,
+        scatter_color: Rgb::new(0.9996, 0.9993, 0.9963),
+        ..Material::default()
+    });
+    scene.materials.push(Material {
+        kind: crate::scene::MATERIAL_GLASS,
+        base_color: Rgb::new(0.92, 0.97, 0.95),
+        roughness: 0.0,
+        ior: 1.5,
+        transmission: 1.0,
+        ..Material::default()
+    });
+    let milk = scene.materials.len() as u32 - 2;
+    let mut meshes = scene.geometry.meshes().to_vec();
+    let mut instances = scene.geometry.instances().to_vec();
+    for (lo, hi, material) in [
+        (
+            Vec3::new(-230.0, -230.0, 0.0),
+            Vec3::new(-110.0, -130.0, 24.0),
+            milk,
+        ),
+        (
+            Vec3::new(-236.0, -236.0, 26.0),
+            Vec3::new(-104.0, -124.0, 29.0),
+            milk + 1,
+        ),
+    ] {
+        meshes.push(split_box(lo, hi, &[0, 1, 2, 3, 4, 5]));
+        instances.push(Instance::new(
+            meshes.len() as u32 - 1,
+            Transform::IDENTITY,
+            material,
+        ));
+    }
+    scene.geometry = Geometry::new(meshes, instances).unwrap_or_default();
+    scene.lights.push(Light {
+        kind: LightKind::Point,
+        position: Vec3::new(-260.0, -420.0, 520.0),
+        color: Rgb::new(1.0, 0.95, 0.85),
+        power: 6.0,
+        ..Light::default()
+    });
+    scene
+}
+
 /// The E11 parity scene: the example with the Blackman–Harris filter and twice the samples on
 /// its edges (`rt --write-e11-example`; `tools/wasm-parity.mjs` checks the real module renders
 /// rt-core's pinned image of it).

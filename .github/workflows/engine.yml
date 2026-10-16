@@ -10,10 +10,10 @@
 # The real `rt_wasm.wasm` renders the example scene in Node and must give the film hash the native
 # tests pin (tools/wasm-parity.mjs), and so must the E5 scene, the E5c physical sky, the E5b-1
 # caustics, the O1 lens, the S4a ambient particles, the E11 edges, the O3a lens filters, the E9
-# scattering media and dispersion, the E6 bevel, the E6 wood and cloth patterns, the M2b image
-# textures and labels and the M3b material programs; with every
-# exact pass of X2 rendered next to the image, the image keeps its hash and each pass gives the hash
-# the native tests pin. The AI guard's `post.wasm` (rt-post-wasm) runs the scenarios of
+# scattering media and dispersion, the E13 manifold connections through glass, the E6 bevel,
+# the E6 wood and cloth patterns, the M2b image textures and labels and the M3b material
+# programs; with every exact pass of X2 rendered next to the image, the image keeps its hash
+# and each pass gives the hash the native tests pin. The AI guard's `post.wasm` (rt-post-wasm) runs the scenarios of
 # tests/fixtures/ai-guard.json, which the native rt-post tests
 # pin, and must give the same image bits and report JSON (tests/ai-post-wasm.test.ts). The contact
 # sheet (six light recipes, then the E5 scenes and the E5c skies) is rendered and uploaded on every
@@ -185,6 +185,13 @@ jobs:
           expected=$(sed -n 's/.*PINNED_E9_MEDIA_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
           test -n "$expected"
           node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e9.rsb" --expect "$expected"
+          # E13: manifold next-event estimation (Newton's method through a smooth sphere and a glass
+          # plate, from the floor, the parts and a milk slab's exit vertices, to a panel and a point
+          # light, with the BSDF side's MIS against it) must give the native bits in WebAssembly.
+          cargo run --release -p rt-cli -- --write-e13-example "$RUNNER_TEMP/e13.rsb"
+          expected=$(sed -n 's/.*PINNED_E13_MANIFOLD_4SPP: u32 = 0x\([0-9a-f_]*\);.*/\1/p' crates/rt-core/src/render.rs | tr -d _)
+          test -n "$expected"
+          node tools/wasm-parity.mjs target/wasm32-unknown-unknown/release/rt_wasm.wasm "$RUNNER_TEMP/e13.rsb" --expect "$expected"
           # E6: the edge bevel (CAD-like parts, every edge rounded in the shading), alone and with
           # every pass interleaved (the normal pass carries the bevel).
           cargo run --release -p rt-cli -- --write-e6-example "$RUNNER_TEMP/e6.rsb"

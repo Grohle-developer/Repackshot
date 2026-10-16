@@ -357,6 +357,30 @@ fn media_are_the_same_bits_with_1_4_or_16_threads() {
 }
 
 #[test]
+fn manifold_connections_are_the_same_bits_with_1_4_or_16_threads() {
+    // E13: Newton's method takes no random numbers and solves each connection from its pixel's
+    // own light sample, so the E13 scene (connections through a smooth sphere and a glass plate,
+    // to a panel and a point light, from a milk slab's exit vertices too) does not depend on how
+    // many threads render it, and gives rt-core's pinned image (`PINNED_E13_MANIFOLD_4SPP`).
+    let scene = rt_core::example::e13_scene();
+    let one = rt_cli::render(&scene, 4, 1);
+    for threads in [4, 16] {
+        let many = rt_cli::render(&scene, 4, threads);
+        assert_eq!(one.film, many.film, "{threads} threads");
+        assert_eq!(one.rays, many.rays);
+    }
+    let hash = one
+        .film
+        .resolve()
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .fold(0x811c_9dc5u32, |h, b| {
+            (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+        });
+    assert_eq!(hash, 0x7724_0793);
+}
+
+#[test]
 fn a_lens_renders_the_same_bits_with_1_4_or_16_threads() {
     // O1: the pupil, the cat's eye and the chromatic band of every sample come from the pixel's
     // own sampler; the image does not depend on how many threads render it.

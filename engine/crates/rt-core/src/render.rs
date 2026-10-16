@@ -954,7 +954,12 @@ mod tests {
 
     /// Renders all of `scene`, 32-pixel tiles, samples `0..4`, and hashes the resolved film.
     pub(crate) fn scene_4spp_hash(scene: &Scene, isa: Isa) -> u32 {
-        let prepared = Prepared::new(scene);
+        scene_4spp_hash_with(scene, &Prepared::new(scene), isa)
+    }
+
+    /// [`scene_4spp_hash`] with a prepared scene of the test's own.
+    pub(crate) fn scene_4spp_hash_with(scene: &Scene, prepared: &Prepared, isa: Isa) -> u32 {
+        let prepared = prepared.clone();
         let (w, h) = (scene.render.width, scene.render.height);
         let mut film = Film::new(w, h);
         for tile in tile_grid(w, h, 32) {
@@ -985,10 +990,12 @@ mod tests {
         }
     }
 
-    /// Pinned hash of the E5 example (HDRI) at 4 samples per pixel.
-    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0xfdf0_c2ac;
-    /// Pinned hash of the E5 example (sky) at 4 samples per pixel.
-    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0x47fa_4eb7;
+    /// Pinned hash of the E5 example (HDRI) at 4 samples per pixel (`0xfdf0_c2ac` until E13: its
+    /// panel now lights the floor and the parts through the glass sphere).
+    pub(crate) const PINNED_E5_HDRI_4SPP: u32 = 0xa5c7_5c14;
+    /// Pinned hash of the E5 example (sky) at 4 samples per pixel (`0x47fa_4eb7` until E13: its
+    /// sun now lights the floor through the glass sphere).
+    pub(crate) const PINNED_E5_SKY_4SPP: u32 = 0xa031_01a8;
 
     #[test]
     fn the_e5c_physical_sky_has_a_pinned_hash_on_every_platform() {
@@ -1006,13 +1013,19 @@ mod tests {
         }
     }
 
-    /// Pinned hash of the E5c example (physical sky) at 4 samples per pixel.
-    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0xf6fb_c84f;
+    /// Pinned hash of the E5c example (physical sky) at 4 samples per pixel (`0xf6fb_c84f` until
+    /// E13, as the E5 sky's).
+    pub(crate) const PINNED_E5C_SKY_4SPP: u32 = 0x4af2_bed2;
 
     /// Renders all of `scene`, 32-pixel tiles, samples `0..4`, each with its photon map (traced
     /// once per sample, as every host does), and hashes the resolved film.
     pub(crate) fn caustic_4spp_hash(scene: &Scene, isa: Isa) -> u32 {
-        let prepared = Prepared::new(scene);
+        caustic_4spp_hash_with(scene, &Prepared::new(scene), isa)
+    }
+
+    /// [`caustic_4spp_hash`] with a prepared scene of the test's own.
+    pub(crate) fn caustic_4spp_hash_with(scene: &Scene, prepared: &Prepared, isa: Isa) -> u32 {
+        let prepared = prepared.clone();
         let (w, h) = (scene.render.width, scene.render.height);
         let mut film = Film::new(w, h);
         let maps: Vec<PhotonMap> = (0..4)
@@ -1068,6 +1081,59 @@ mod tests {
 
     /// Pinned hash of the E5b-1 example (caustics) at 4 samples per pixel.
     pub(crate) const PINNED_E5B_CAUSTICS_4SPP: u32 = 0x7135_df4b;
+
+    #[test]
+    fn the_e13_connections_have_a_pinned_hash_on_every_platform() {
+        // E13 added manifold next-event estimation. This scene connects through a smooth sphere
+        // and a glass plate, from the floor, the parts and a milk slab's exit vertices, to a panel
+        // and a point light, with the panel also found through the glass by BSDF samples, through
+        // an RSB round trip; `tools/wasm-parity.mjs` checks the real module against it
+        // (`rt --write-e13-example`).
+        let scene = crate::example::e13_scene();
+        assert_eq!(Scene::from_rsb(&scene.to_rsb()).as_ref(), Ok(&scene));
+        assert!(Prepared::new(&scene).manifold);
+        for isa in Isa::available() {
+            let hash = scene_4spp_hash(&scene, isa);
+            eprintln!("E13 example at 4 spp on {}: {hash:#010x}", isa.name());
+            assert_eq!(
+                hash,
+                PINNED_E13_MANIFOLD_4SPP,
+                "connections on {}",
+                isa.name()
+            );
+        }
+    }
+
+    /// Pinned hash of the E13 example (manifold next-event estimation) at 4 samples per pixel.
+    pub(crate) const PINNED_E13_MANIFOLD_4SPP: u32 = 0x7724_0793;
+
+    #[test]
+    fn without_the_connections_the_glass_scenes_render_as_before_e13() {
+        // E13 changes only what the connections add and the weights they share with BSDF
+        // samples: with them off, the E5 scenes give the hashes they had before (v0.1.12), and
+        // so do their caustics. (Scenes without smooth refracting surfaces have them off.)
+        let off = |scene: &Scene| {
+            let mut prepared = Prepared::new(scene);
+            prepared.set_manifold(false);
+            prepared
+        };
+        let isa = Isa::detect();
+        for (scene, before) in [
+            (crate::example::e5_scene(false), 0xfdf0_c2ac),
+            (crate::example::e5_scene(true), 0x47fa_4eb7),
+            (crate::example::e5c_scene(), 0xf6fb_c84f),
+        ] {
+            assert!(Prepared::new(&scene).manifold);
+            assert_eq!(scene_4spp_hash_with(&scene, &off(&scene), isa), before);
+        }
+        let scene = crate::example::e5b_scene();
+        assert_eq!(
+            caustic_4spp_hash_with(&scene, &off(&scene), isa),
+            0x7135_df4b
+        );
+        assert!(!Prepared::new(&crate::example::scene()).manifold);
+        assert!(!Prepared::new(&crate::example::e9_scene()).manifold);
+    }
 
     #[test]
     fn the_o1_lens_has_a_pinned_hash_on_every_platform() {

@@ -36,6 +36,8 @@ USAGE:
     rt --write-m3b-example <scene.rsb>
     rt --write-e9-example <scene.rsb>
     rt --sss-sheet <dir> [--samples N] [--threads N] [--size WxH]
+    rt --write-e13-example <scene.rsb>
+    rt --e13-sheet <dir> [--samples N] [--threads N] [--size WxH]
     rt --write-e11-example <scene.rsb>
     rt --write-ambient-example <scene.rsb>
     rt --write-o1-example <scene.rsb>
@@ -144,6 +146,15 @@ OPTIONS:
                             juice, with and without the medium, the milk bottle with
                             caustic photons, at N and 4 N samples, default 64) into
                             <dir>: sss-sheet.html and sss/*.png
+        --write-e13-example <f>
+                            write the E13 parity scene (the E5 scene with smooth glass, a
+                            milk slab under a glass plate and a point light: manifold
+                            connections) as an RSB file
+        --e13-sheet <dir>   render the E13 contact sheet of the manifold connections (the
+                            milk bottle, a glass of water and the glass ball under small
+                            lights, the E5 bottle: before, with the connections, with the
+                            photon map, and a reference at 32 N samples; N default 64)
+                            into <dir>: e13-sheet.html and e13/ (PNGs, sheet.json, RSBs)
         --write-e11-example <f>
                             write the E11 parity scene (the example with the fine filter and
                             twice the samples on its edges) as an RSB file
@@ -380,6 +391,18 @@ pub enum Command {
         /// RSB file to write.
         path: PathBuf,
     },
+    /// Write the E13 parity scene (`rt_core::example::e13_scene`) as an RSB file.
+    WriteE13Example {
+        /// RSB file to write.
+        path: PathBuf,
+    },
+    /// Render the E13 contact sheet of the manifold connections into a directory.
+    E13Sheet {
+        /// Output directory.
+        dir: PathBuf,
+        /// Samples, threads and size overrides.
+        options: Options,
+    },
     /// Render the E9 contact sheet of the scattering media into a directory.
     SssSheet {
         /// Output directory.
@@ -499,6 +522,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut write_m3b = None;
     let mut write_e9 = None;
     let mut sss_dir = None;
+    let mut write_e13 = None;
+    let mut e13_dir = None;
     let mut write_e11 = None;
     let mut write_ambient = None;
     let mut write_o1 = None;
@@ -595,6 +620,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             "--pattern-sheet" => pattern_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--materials" => pattern_materials = Some(PathBuf::from(value(&mut it, arg)?)),
             "--sss-sheet" => sss_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--e13-sheet" => e13_dir = Some(PathBuf::from(value(&mut it, arg)?)),
+            "--write-e13-example" => write_e13 = Some(PathBuf::from(value(&mut it, arg)?)),
             "--filter-sheet" => filter_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--filter-noise" => filter_noise_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--lens-sheet" => lens_sheet_dir = Some(PathBuf::from(value(&mut it, arg)?)),
@@ -739,6 +766,18 @@ pub fn parse_args(args: &[String]) -> Result<Command, String> {
             return Err("--sss-sheet renders its own scenes".into());
         }
         return Ok(Command::SssSheet { dir, options });
+    }
+    if let Some(path) = write_e13 {
+        if args.len() != 2 {
+            return Err("--write-e13-example takes no other option".into());
+        }
+        return Ok(Command::WriteE13Example { path });
+    }
+    if let Some(dir) = e13_dir {
+        if input.is_some() || output.is_some() {
+            return Err("--e13-sheet renders its own scenes".into());
+        }
+        return Ok(Command::E13Sheet { dir, options });
     }
     if let Some(path) = write_e11 {
         if args.len() != 2 {
@@ -966,6 +1005,23 @@ pub fn run(command: Command) -> Result<(), String> {
             let bytes = rt_core::example::m3b_scene().to_rsb();
             std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::WriteE13Example { path } => {
+            let bytes = rt_core::example::e13_scene().to_rsb();
+            std::fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("wrote {} ({} bytes)", path.display(), bytes.len());
+            Ok(())
+        }
+        Command::E13Sheet { dir, options } => {
+            let size = options.size.unwrap_or(crate::e13_sheet::SIZE);
+            let samples = options.samples.unwrap_or(crate::e13_sheet::SAMPLES);
+            let threads = options
+                .threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+            let reference = samples.saturating_mul(crate::e13_sheet::REFERENCE_FACTOR);
+            crate::e13_sheet::run(&dir, size, samples, reference, threads)?;
+            println!("wrote {}", dir.join("e13-sheet.html").display());
             Ok(())
         }
         Command::SssSheet { dir, options } => {

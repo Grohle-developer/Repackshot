@@ -798,6 +798,61 @@ pub fn bottle_caustics(size: (u32, u32), photons: u32) -> Scene {
     scene
 }
 
+/// E13: a glass of water on a white floor under one small disc light (30 mm, behind, to the left
+/// and high) and a dim dome: a tumbler of thin glass (a thin wall, crossed straight: 2 mm of
+/// parallel glass shifts the light but does not bend it) holding 70 mm of water (a solid of index
+/// 1.33). The water throws its caustic on the floor in front of the glass, through two surfaces:
+/// its flat top and its curved side. With `photons` caustic photons per sample (0: none).
+pub fn water_glass(size: (u32, u32), photons: u32) -> Scene {
+    let tumbler = lathe(&[(0.0, 1.0), (34.0, 1.0), (34.0, 100.0)], 128, 30.0, 0);
+    let water = lathe(
+        &[(0.0, 1.5), (33.5, 1.5), (33.5, 72.0), (0.0, 72.0)],
+        128,
+        30.0,
+        0,
+    );
+    let thin = Material {
+        flags: MATERIAL_FLAG_THIN,
+        ..glass(Rgb::splat(0.97), 0.0, 0.0)
+    };
+    let water_material = Material {
+        ior: 1.33,
+        ..glass(Rgb::WHITE, 0.0, 0.0)
+    };
+    let target = Vec3::new(0.0, 0.0, 40.0);
+    let mut render = settings(size, 24, 0.0);
+    render.caustic_photons = photons;
+    render.caustic_radius = 3.0;
+    Scene {
+        camera: camera(
+            Vec3::new(120.0, -520.0, 300.0),
+            Vec3::new(30.0, -60.0, 30.0),
+            70.0,
+        ),
+        materials: vec![thin, water_material],
+        geometry: Geometry::new(
+            vec![tumbler, water],
+            vec![
+                Instance::new(0, Transform::IDENTITY, 0),
+                Instance::new(1, Transform::IDENTITY, 1),
+            ],
+        )
+        .unwrap_or_default(),
+        lights: vec![disc(Vec3::new(-150.0, 240.0, 300.0), target, 30.0, 2.0)],
+        environment: dome(0.1),
+        floor: Floor {
+            mode: FloorMode::Visible,
+            z: 0.0,
+            color: Rgb::splat(0.8),
+        },
+        render,
+        bitmaps: Vec::new(),
+        patterns: Vec::new(),
+        effects: Vec::new(),
+        ..Scene::default()
+    }
+}
+
 /// Caustic photons per sample of the sheet's caustic scenes (the interface's *Medium*).
 pub const SHEET_CAUSTIC_PHOTONS: u32 = 16_384;
 

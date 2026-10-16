@@ -434,6 +434,26 @@ impl Prepared {
         }
     }
 
+    /// True when manifold next-event estimation (E13, [`manifold`]) is on: the scene has smooth
+    /// refracting surfaces it connects through.
+    pub fn has_manifold(&self) -> bool {
+        self.manifold
+    }
+
+    /// Turns manifold next-event estimation (E13, [`manifold`]) off or back on (it is on in every
+    /// scene with surfaces it connects through): with it off, the scene renders exactly as it did
+    /// before E13 (the thin-wall rule of E9b included). For references and comparisons.
+    pub fn set_manifold(&mut self, on: bool) {
+        self.manifold = on && self.chain_surfaces.iter().any(|&c| c);
+    }
+
+    /// Turns the thin-wall rule of E9b off or back on (on by default): with it and manifold
+    /// next-event estimation off, light reaches what is behind glass only by the paths that
+    /// refract onto a light, the unbiased (and noisy) reference of both.
+    pub fn set_thin_wall_rule(&mut self, on: bool) {
+        self.exit_walls = on;
+    }
+
     /// True when manifold next-event estimation connects through the surfaces of instance `i`
     /// (E13).
     pub(crate) fn chain_surface(&self, i: u32) -> bool {
